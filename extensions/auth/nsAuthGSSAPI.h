@@ -9,6 +9,7 @@
 #include "nsAuth.h"
 #include "nsIAuthModule.h"
 #include "nsString.h"
+#include "mozilla/Attributes.h"
 
 #define GSS_USE_FUNCTION_POINTERS 1
 
@@ -34,7 +35,7 @@
  * last call are required as input to the next.
  */
 
-class nsAuthGSSAPI : public nsIAuthModule
+class nsAuthGSSAPI MOZ_FINAL : public nsIAuthModule
 {
 public:
     NS_DECL_ISUPPORTS
@@ -54,7 +55,7 @@ private:
     gss_ctx_id_t mCtx;
     gss_OID      mMechOID;
     nsCString    mServiceName;
-    PRUint32     mServiceFlags;
+    uint32_t     mServiceFlags;
     nsString     mUsername;
     bool         mComplete;
 };

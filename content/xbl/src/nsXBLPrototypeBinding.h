@@ -32,11 +32,11 @@ class nsCSSStyleSheet;
 // insertion points. It contains comparison operators so that it can be stored
 // in an array sorted by index.
 struct InsertionItem {
-  PRUint32 insertionIndex;
+  uint32_t insertionIndex;
   nsIAtom* tag;
   nsIContent* defaultContent;
 
-  InsertionItem(PRUint32 aInsertionIndex, nsIAtom* aTag, nsIContent* aDefaultContent)
+  InsertionItem(uint32_t aInsertionIndex, nsIAtom* aTag, nsIContent* aDefaultContent)
     : insertionIndex(aInsertionIndex), tag(aTag), defaultContent(aDefaultContent) { }
 
   bool operator<(const InsertionItem& item) const
@@ -97,7 +97,7 @@ public:
 
   nsXBLProtoImplField* FindField(const nsString& aFieldName) const
   {
-    return mImplementation ? mImplementation->FindField(aFieldName) : nsnull;
+    return mImplementation ? mImplementation->FindField(aFieldName) : nullptr;
   }
 
   // Resolve all the fields for this binding on the object |obj|.
@@ -127,9 +127,9 @@ public:
   
   void SetImplementation(nsXBLProtoImpl* aImpl) { mImplementation = aImpl; }
   nsresult InstallImplementation(nsIContent* aBoundElement);
-  bool HasImplementation() const { return mImplementation != nsnull; }
+  bool HasImplementation() const { return mImplementation != nullptr; }
 
-  void AttributeChanged(nsIAtom* aAttribute, PRInt32 aNameSpaceID,
+  void AttributeChanged(nsIAtom* aAttribute, int32_t aNameSpaceID,
                         bool aRemoveFlag, nsIContent* aChangedElement,
                         nsIContent* aAnonymousContent, bool aNotify);
 
@@ -144,7 +144,7 @@ public:
   nsIStyleRuleProcessor* GetRuleProcessor();
   nsXBLPrototypeResources::sheet_array_type* GetStyleSheets();
 
-  bool HasInsertionPoints() { return mInsertionPointTable != nsnull; }
+  bool HasInsertionPoints() { return mInsertionPointTable != nullptr; }
   
   bool HasStyleSheets() {
     return mResources && mResources->mStyleSheetList.Length() > 0;
@@ -159,14 +159,14 @@ public:
   nsIContent* GetInsertionPoint(nsIContent* aBoundElement,
                                 nsIContent* aCopyRoot,
                                 const nsIContent *aChild,
-                                PRUint32* aIndex);
+                                uint32_t* aIndex);
 
   nsIContent* GetSingleInsertionPoint(nsIContent* aBoundElement,
                                       nsIContent* aCopyRoot,
-                                      PRUint32* aIndex, bool* aMultiple);
+                                      uint32_t* aIndex, bool* aMultiple);
 
-  nsIAtom* GetBaseTag(PRInt32* aNamespaceID);
-  void SetBaseTag(PRInt32 aNamespaceID, nsIAtom* aTag);
+  nsIAtom* GetBaseTag(int32_t* aNamespaceID);
+  void SetBaseTag(int32_t aNamespaceID, nsIAtom* aTag);
 
   bool ImplementsInterface(REFNSIID aIID) const;
 
@@ -192,11 +192,13 @@ public:
    * aFlags can contain XBLBinding_Serialize_InheritStyle to indicate that
    * mInheritStyle flag should be set, and XBLBinding_Serialize_IsFirstBinding
    * to indicate the first binding in a document.
+   * XBLBinding_Serialize_ChromeOnlyContent indicates that
+   * nsXBLPrototypeBinding::mChromeOnlyContent should be true.
    */
   nsresult Read(nsIObjectInputStream* aStream,
                 nsXBLDocumentInfo* aDocInfo,
                 nsIDocument* aDocument,
-                PRUint8 aFlags);
+                uint8_t aFlags);
 
   /**
    * Write this binding to the stream.
@@ -261,8 +263,8 @@ public:
    * a single byte with that value. Otherwise, XBLBinding_Serialize_CustomNamespace is
    * written out, followed by a string written with writeWStringZ.
    */
-  nsresult ReadNamespace(nsIObjectInputStream* aStream, PRInt32& aNameSpaceID);
-  nsresult WriteNamespace(nsIObjectOutputStream* aStream, PRInt32 aNameSpaceID);
+  nsresult ReadNamespace(nsIObjectInputStream* aStream, int32_t& aNameSpaceID);
+  nsresult WriteNamespace(nsIObjectOutputStream* aStream, int32_t aNameSpaceID);
 
 public:
   nsXBLPrototypeBinding();
@@ -282,7 +284,7 @@ public:
   void Trace(TraceCallback aCallback, void *aClosure) const;
 
 // Static members
-  static PRUint32 gRefCnt;
+  static uint32_t gRefCnt;
  
   static nsFixedSizeAllocator* kAttrPool;
 
@@ -301,16 +303,17 @@ public:
                              nsIContent* aCopyRoot,
                              nsIContent* aTemplChild);
 
+  bool ChromeOnlyContent() { return mChromeOnlyContent; }
 protected:
   // Ensure that mAttributeTable has been created.
   void EnsureAttributeTable();
   // Ad an entry to the attribute table
-  void AddToAttributeTable(PRInt32 aSourceNamespaceID, nsIAtom* aSourceTag,
-                           PRInt32 aDestNamespaceID, nsIAtom* aDestTag,
+  void AddToAttributeTable(int32_t aSourceNamespaceID, nsIAtom* aSourceTag,
+                           int32_t aDestNamespaceID, nsIAtom* aDestTag,
                            nsIContent* aContent);
   void ConstructAttributeTable(nsIContent* aElement);
   void ConstructInsertionTable(nsIContent* aElement);
-  void GetNestedChildren(nsIAtom* aTag, PRInt32 aNamespace,
+  void GetNestedChildren(nsIAtom* aTag, int32_t aNamespace,
                          nsIContent* aContent,
                          nsCOMArray<nsIContent> & aList);
   void CreateKeyHandlers();
@@ -332,6 +335,7 @@ protected:
   bool mInheritStyle;
   bool mCheckedBaseProto;
   bool mKeyHandlersRegistered;
+  bool mChromeOnlyContent;
  
   nsXBLPrototypeResources* mResources; // If we have any resources, this will be non-null.
                                       
@@ -346,7 +350,7 @@ protected:
 
   nsSupportsHashtable* mInterfaceTable; // A table of cached interfaces that we support.
 
-  PRInt32 mBaseNameSpaceID;    // If we extend a tagname/namespace, then that information will
+  int32_t mBaseNameSpaceID;    // If we extend a tagname/namespace, then that information will
   nsCOMPtr<nsIAtom> mBaseTag;  // be stored in here.
 
   nsCOMArray<nsXBLKeyEventHandler> mKeyHandlers;

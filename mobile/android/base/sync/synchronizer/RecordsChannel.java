@@ -73,8 +73,10 @@ public class RecordsChannel implements
   private long timestamp;
   private long fetchEnd = -1;
 
-  private final AtomicInteger numFetchFailed = new AtomicInteger();
-  private final AtomicInteger numStoreFailed = new AtomicInteger();
+  protected final AtomicInteger numFetched = new AtomicInteger();
+  protected final AtomicInteger numFetchFailed = new AtomicInteger();
+  protected final AtomicInteger numStored = new AtomicInteger();
+  protected final AtomicInteger numStoreFailed = new AtomicInteger();
 
   public RecordsChannel(RepositorySession source, RepositorySession sink, RecordsChannelDelegate delegate) {
     this.source    = source;
@@ -106,7 +108,17 @@ public class RecordsChannel implements
   }
 
   /**
+   * Get the number of records fetched so far.
+   *
+   * @return number of fetches.
+   */
+  public int getFetchCount() {
+    return numFetched.get();
+  }
+
+  /**
    * Get the number of fetch failures recorded so far.
+   *
    * @return number of fetch failures.
    */
   public int getFetchFailureCount() {
@@ -114,7 +126,17 @@ public class RecordsChannel implements
   }
 
   /**
+   * Get the number of store attempts (successful or not) so far.
+   *
+   * @return number of stores attempted.
+   */
+  public int getStoreCount() {
+    return numStored.get();
+  }
+
+  /**
    * Get the number of store failures recorded so far.
+   *
    * @return number of store failures.
    */
   public int getStoreFailureCount() {
@@ -134,7 +156,9 @@ public class RecordsChannel implements
       return;
     }
     sink.setStoreDelegate(this);
+    numFetched.set(0);
     numFetchFailed.set(0);
+    numStored.set(0);
     numStoreFailed.set(0);
     // Start a consumer thread.
     this.consumer = new ConcurrentRecordConsumer(this);
@@ -148,12 +172,13 @@ public class RecordsChannel implements
    * @throws InvalidSessionTransitionException 
    */
   public void beginAndFlow() throws InvalidSessionTransitionException {
-    Logger.info(LOG_TAG, "Beginning source.");
+    Logger.trace(LOG_TAG, "Beginning source.");
     source.begin(this);
   }
 
   @Override
   public void store(Record record) {
+    numStored.incrementAndGet();
     try {
       sink.store(record);
     } catch (NoStoreDelegateException e) {
@@ -172,23 +197,15 @@ public class RecordsChannel implements
 
   @Override
   public void onFetchedRecord(Record record) {
+    numFetched.incrementAndGet();
     this.toProcess.add(record);
     this.consumer.doNotify();
   }
 
   @Override
-  public void onFetchSucceeded(Record[] records, final long fetchEnd) {
-    for (Record record : records) {
-      this.toProcess.add(record);
-    }
-    this.consumer.doNotify();
-    this.onFetchCompleted(fetchEnd);
-  }
-
-  @Override
   public void onFetchCompleted(final long fetchEnd) {
-    Logger.info(LOG_TAG, "onFetchCompleted. Stopping consumer once stores are done.");
-    Logger.info(LOG_TAG, "Fetch timestamp is " + fetchEnd);
+    Logger.trace(LOG_TAG, "onFetchCompleted. Stopping consumer once stores are done.");
+    Logger.trace(LOG_TAG, "Fetch timestamp is " + fetchEnd);
     this.fetchEnd = fetchEnd;
     this.consumer.queueFilled();
   }
@@ -220,8 +237,8 @@ public class RecordsChannel implements
 
   @Override
   public void onStoreCompleted(long storeEnd) {
-    Logger.info(LOG_TAG, "onStoreCompleted. Notifying delegate of onFlowCompleted. " +
-                         "Fetch end is " + fetchEnd + ", store end is " + storeEnd);
+    Logger.trace(LOG_TAG, "onStoreCompleted. Notifying delegate of onFlowCompleted. " +
+                          "Fetch end is " + fetchEnd + ", store end is " + storeEnd);
     // TODO: synchronize on consumer callback?
     delegate.onFlowCompleted(this, fetchEnd, storeEnd);
   }
@@ -234,7 +251,7 @@ public class RecordsChannel implements
   @Override
   public void onBeginSucceeded(RepositorySession session) {
     if (session == source) {
-      Logger.info(LOG_TAG, "Source session began. Beginning sink session.");
+      Logger.trace(LOG_TAG, "Source session began. Beginning sink session.");
       try {
         sink.begin(this);
       } catch (InvalidSessionTransitionException e) {
@@ -243,7 +260,7 @@ public class RecordsChannel implements
       }
     }
     if (session == sink) {
-      Logger.info(LOG_TAG, "Sink session began. Beginning flow.");
+      Logger.trace(LOG_TAG, "Sink session began. Beginning flow.");
       this.flow();
       return;
     }

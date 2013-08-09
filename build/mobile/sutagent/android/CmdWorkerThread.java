@@ -12,6 +12,10 @@ import java.io.PrintWriter;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 
+import com.mozilla.SUTAgentAndroid.SUTAgentAndroid;
+
+import android.util.Log;
+
 // import com.mozilla.SUTAgentAndroid.DoCommand;
 
 public class CmdWorkerThread extends Thread
@@ -94,6 +98,8 @@ public class CmdWorkerThread extends Thread
             String inputLine, outputLine;
             DoCommand dc = new DoCommand(theParent.svc);
 
+            SUTAgentAndroid.log(dc, "CmdWorkerThread starts: "+getId());
+
             int nAvail = cmdIn.available();
             cmdIn.skip(nAvail);
 
@@ -128,6 +134,10 @@ public class CmdWorkerThread extends Thread
 
                 if ((inputLine += readLine(in)) != null)
                     {
+                    String message = String.format("%s : %s",
+                                     socket.getInetAddress().getHostAddress(), inputLine);
+                    SUTAgentAndroid.log(dc, message);
+
                     outputLine = dc.processCommand(inputLine, out, in, cmdOut);
                     if (outputLine.length() > 0)
                         {
@@ -156,6 +166,7 @@ public class CmdWorkerThread extends Thread
             in.close();
             in = null;
             socket.close();
+            SUTAgentAndroid.log(dc, "CmdWorkerThread ends: "+getId());
         }
     catch (IOException e)
         {

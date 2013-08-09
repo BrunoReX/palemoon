@@ -17,7 +17,6 @@
 #include "nsCOMPtr.h"
 #include "nsForwardReference.h"
 #include "nsIContentSink.h"
-#include "nsIDOMDocument.h"
 #include "nsIDOMEventListener.h"
 #include "nsIDOMHTMLFormElement.h"
 #include "nsIDOMXULDocument.h"
@@ -62,7 +61,7 @@ static PRLogModuleInfo* gLog;
 //----------------------------------------------------------------------
 
 XULContentSinkImpl::ContextStack::ContextStack()
-    : mTop(nsnull), mDepth(0)
+    : mTop(nullptr), mDepth(0)
 {
 }
 
@@ -140,7 +139,7 @@ XULContentSinkImpl::ContextStack::Clear()
     cur = next;
   }
 
-  mTop = nsnull;
+  mTop = nullptr;
   mDepth = 0;
 }
 
@@ -148,12 +147,12 @@ XULContentSinkImpl::ContextStack::Clear()
 
 
 XULContentSinkImpl::XULContentSinkImpl()
-    : mText(nsnull),
+    : mText(nullptr),
       mTextLength(0),
       mTextSize(0),
       mConstrainSize(true),
       mState(eInProlog),
-      mParser(nsnull)
+      mParser(nullptr)
 {
 
 #ifdef PR_LOGGING
@@ -205,7 +204,7 @@ XULContentSinkImpl::DidBuildModel(bool aTerminated)
     nsCOMPtr<nsIDocument> doc = do_QueryReferent(mDocument);
     if (doc) {
         doc->EndLoad();
-        mDocument = nsnull;
+        mDocument = nullptr;
     }
 
     // Drop our reference to the parser to get rid of a circular
@@ -261,7 +260,7 @@ nsresult
 XULContentSinkImpl::Init(nsIDocument* aDocument,
                          nsXULPrototypeDocument* aPrototype)
 {
-    NS_PRECONDITION(aDocument != nsnull, "null ptr");
+    NS_PRECONDITION(aDocument != nullptr, "null ptr");
     if (! aDocument)
         return NS_ERROR_NULL_POINTER;
     
@@ -303,9 +302,9 @@ XULContentSinkImpl::Init(nsIDocument* aDocument,
 //
 
 bool
-XULContentSinkImpl::IsDataInBuffer(PRUnichar* buffer, PRInt32 length)
+XULContentSinkImpl::IsDataInBuffer(PRUnichar* buffer, int32_t length)
 {
-    for (PRInt32 i = 0; i < length; ++i) {
+    for (int32_t i = 0; i < length; ++i) {
         if (buffer[i] == ' ' ||
             buffer[i] == '\t' ||
             buffer[i] == '\n' ||
@@ -363,7 +362,7 @@ XULContentSinkImpl::FlushText(bool aCreateTextNode)
             text->mValue.Trim(" \t\n\r");
 
         // hook it up
-        nsPrototypeArray* children = nsnull;
+        nsPrototypeArray* children = nullptr;
         rv = mContextStack.GetTopChildren(&children);
         if (NS_FAILED(rv)) return rv;
 
@@ -382,7 +381,7 @@ nsresult
 XULContentSinkImpl::NormalizeAttributeString(const PRUnichar *aExpatName,
                                              nsAttrName &aName)
 {
-    PRInt32 nameSpaceID;
+    int32_t nameSpaceID;
     nsCOMPtr<nsIAtom> prefix, localName;
     nsContentUtils::SplitExpatName(aExpatName, getter_AddRefs(prefix),
                                    getter_AddRefs(localName), &nameSpaceID);
@@ -424,9 +423,9 @@ XULContentSinkImpl::CreateElement(nsINodeInfo *aNodeInfo,
 NS_IMETHODIMP 
 XULContentSinkImpl::HandleStartElement(const PRUnichar *aName, 
                                        const PRUnichar **aAtts,
-                                       PRUint32 aAttsCount, 
-                                       PRInt32 aIndex, 
-                                       PRUint32 aLineNumber)
+                                       uint32_t aAttsCount, 
+                                       int32_t aIndex, 
+                                       uint32_t aLineNumber)
 { 
   // XXX Hopefully the parser will flag this before we get here. If
   // we're in the epilog, there should be no new elements
@@ -443,7 +442,7 @@ XULContentSinkImpl::HandleStartElement(const PRUnichar *aName,
       FlushText();
   }
 
-  PRInt32 nameSpaceID;
+  int32_t nameSpaceID;
   nsCOMPtr<nsIAtom> prefix, localName;
   nsContentUtils::SplitExpatName(aName, getter_AddRefs(prefix),
                                  getter_AddRefs(localName), &nameSpaceID);
@@ -507,19 +506,19 @@ XULContentSinkImpl::HandleEndElement(const PRUnichar *aName)
         FlushText();
 
         // Pop the context stack and do prototype hookup.
-        nsPrototypeArray* children = nsnull;
+        nsPrototypeArray* children = nullptr;
         rv = mContextStack.GetTopChildren(&children);
         if (NS_FAILED(rv)) return rv;
 
         nsXULPrototypeElement* element =
           static_cast<nsXULPrototypeElement*>(node.get());
 
-        PRInt32 count = children->Length();
+        int32_t count = children->Length();
         if (count) {
             if (!element->mChildren.SetCapacity(count))
                 return NS_ERROR_OUT_OF_MEMORY;
 
-            for (PRInt32 i = 0; i < count; ++i)
+            for (int32_t i = 0; i < count; ++i)
                 element->mChildren.AppendElement(children->ElementAt(i));
 
         }
@@ -581,7 +580,7 @@ XULContentSinkImpl::HandleComment(const PRUnichar *aName)
 }
 
 NS_IMETHODIMP 
-XULContentSinkImpl::HandleCDataSection(const PRUnichar *aData, PRUint32 aLength)
+XULContentSinkImpl::HandleCDataSection(const PRUnichar *aData, uint32_t aLength)
 {
     FlushText();
     return AddText(aData, aLength);
@@ -599,7 +598,7 @@ XULContentSinkImpl::HandleDoctypeDecl(const nsAString & aSubset,
 
 NS_IMETHODIMP 
 XULContentSinkImpl::HandleCharacterData(const PRUnichar *aData, 
-                                        PRUint32 aLength)
+                                        uint32_t aLength)
 {
   if (aData && mState != eInProlog && mState != eInEpilog) {
     return AddText(aData, aLength);
@@ -630,7 +629,7 @@ XULContentSinkImpl::HandleProcessingInstruction(const PRUnichar *aTarget,
     }
 
     nsresult rv;
-    nsPrototypeArray* children = nsnull;
+    nsPrototypeArray* children = nullptr;
     rv = mContextStack.GetTopChildren(&children);
     if (NS_FAILED(rv)) {
         return rv;
@@ -647,7 +646,7 @@ XULContentSinkImpl::HandleProcessingInstruction(const PRUnichar *aTarget,
 NS_IMETHODIMP
 XULContentSinkImpl::HandleXMLDeclaration(const PRUnichar *aVersion,
                                          const PRUnichar *aEncoding,
-                                         PRInt32 aStandalone)
+                                         int32_t aStandalone)
 {
   return NS_OK;
 }
@@ -719,7 +718,7 @@ XULContentSinkImpl::ReportError(const PRUnichar* aErrorText,
 
 nsresult
 XULContentSinkImpl::OpenRoot(const PRUnichar** aAttributes, 
-                             const PRUint32 aAttrLen, 
+                             const uint32_t aAttrLen, 
                              nsINodeInfo *aNodeInfo)
 {
     NS_ASSERTION(mState == eInProlog, "how'd we get here?");
@@ -773,8 +772,8 @@ XULContentSinkImpl::OpenRoot(const PRUnichar** aAttributes,
 
 nsresult
 XULContentSinkImpl::OpenTag(const PRUnichar** aAttributes, 
-                            const PRUint32 aAttrLen,
-                            const PRUint32 aLineNumber,
+                            const uint32_t aAttrLen,
+                            const uint32_t aLineNumber,
                             nsINodeInfo *aNodeInfo)
 {
     nsresult rv;
@@ -799,7 +798,7 @@ XULContentSinkImpl::OpenTag(const PRUnichar** aAttributes,
     }
 
     // Link this element to its parent.
-    nsPrototypeArray* children = nsnull;
+    nsPrototypeArray* children = nullptr;
     rv = mContextStack.GetTopChildren(&children);
     if (NS_FAILED(rv)) {
         delete element;
@@ -838,10 +837,10 @@ XULContentSinkImpl::OpenTag(const PRUnichar** aAttributes,
 
 nsresult
 XULContentSinkImpl::OpenScript(const PRUnichar** aAttributes,
-                               const PRUint32 aLineNumber)
+                               const uint32_t aLineNumber)
 {
-  PRUint32 langID = nsIProgrammingLanguage::JAVASCRIPT;
-  PRUint32 version = 0;
+  uint32_t langID = nsIProgrammingLanguage::JAVASCRIPT;
+  uint32_t version = 0;
   nsresult rv;
 
   // Look for SRC attribute and look for a LANGUAGE attribute
@@ -866,29 +865,7 @@ XULContentSinkImpl::OpenScript(const PRUnichar** aAttributes,
               NS_ENSURE_SUCCESS(rv, rv);
           }
 
-          // Javascript keeps the fast path, optimized for most-likely type
-          // Table ordered from most to least likely JS MIME types. For .xul
-          // files that we host, the likeliest type is application/x-javascript.
-          // See bug 62485, feel free to add <script type="..."> survey data to it,
-          // or to a new bug once 62485 is closed.
-          static const char *jsTypes[] = {
-              "application/x-javascript",
-              "text/javascript",
-              "text/ecmascript",
-              "application/javascript",
-              "application/ecmascript",
-              nsnull
-          };
-
-          bool isJavaScript = false;
-          for (PRInt32 i = 0; jsTypes[i]; i++) {
-              if (mimeType.LowerCaseEqualsASCII(jsTypes[i])) {
-                  isJavaScript = true;
-                  break;
-              }
-          }
-
-          if (isJavaScript) {
+          if (nsContentUtils::IsJavascriptMIMEType(mimeType)) {
               langID = nsIProgrammingLanguage::JAVASCRIPT;
               version = JSVERSION_LATEST;
           } else {
@@ -899,20 +876,11 @@ XULContentSinkImpl::OpenScript(const PRUnichar** aAttributes,
             // Get the version string, and ensure the language supports it.
             nsAutoString versionName;
             rv = parser.GetParameter("version", versionName);
-            if (NS_FAILED(rv)) {
-              if (rv != NS_ERROR_INVALID_ARG)
-                return rv;
-              // no version specified - version remains the default.
-            } else {
-              nsCOMPtr<nsIScriptRuntime> runtime;
-              rv = NS_GetJSRuntime(getter_AddRefs(runtime));
-              if (NS_FAILED(rv))
-                return rv;
-              rv = runtime->ParseVersion(versionName, &version);
-              if (NS_FAILED(rv)) {
-                NS_WARNING("This script language version is not supported - ignored");
-                langID = nsIProgrammingLanguage::UNKNOWN;
-              }
+
+            if (NS_SUCCEEDED(rv)) {
+              version = nsContentUtils::ParseJavascriptVersion(versionName);
+            } else if (rv != NS_ERROR_INVALID_ARG) {
+              return rv;
             }
           }
           // Some js specifics yet to be abstracted.
@@ -966,7 +934,7 @@ XULContentSinkImpl::OpenScript(const PRUnichar** aAttributes,
 
   // Don't process scripts that aren't known
   if (langID != nsIProgrammingLanguage::UNKNOWN) {
-      nsIScriptGlobalObject* globalObject = nsnull; // borrowed reference
+      nsIScriptGlobalObject* globalObject = nullptr; // borrowed reference
       if (doc)
           globalObject = doc->GetScriptGlobalObject();
       nsRefPtr<nsXULPrototypeScript> script =
@@ -977,7 +945,7 @@ XULContentSinkImpl::OpenScript(const PRUnichar** aAttributes,
       // If there is a SRC attribute...
       if (! src.IsEmpty()) {
           // Use the SRC attribute value to load the URL
-          rv = NS_NewURI(getter_AddRefs(script->mSrcURI), src, nsnull, mDocumentURL);
+          rv = NS_NewURI(getter_AddRefs(script->mSrcURI), src, nullptr, mDocumentURL);
 
           // Check if this document is allowed to load a script from this source
           // NOTE: if we ever allow scripts added via the DOM to run, we need to
@@ -1006,10 +974,10 @@ XULContentSinkImpl::OpenScript(const PRUnichar** aAttributes,
           // corrupting the FastLoad file trying to serialize it, in the case
           // where it's already there.
           if (globalObject)
-                script->DeserializeOutOfLine(nsnull, globalObject);
+                script->DeserializeOutOfLine(nullptr, globalObject);
       }
 
-      nsPrototypeArray* children = nsnull;
+      nsPrototypeArray* children = nullptr;
       rv = mContextStack.GetTopChildren(&children);
       if (NS_FAILED(rv)) {
           return rv;
@@ -1028,14 +996,14 @@ XULContentSinkImpl::OpenScript(const PRUnichar** aAttributes,
 
 nsresult
 XULContentSinkImpl::AddAttributes(const PRUnichar** aAttributes, 
-                                  const PRUint32 aAttrLen, 
+                                  const uint32_t aAttrLen, 
                                   nsXULPrototypeElement* aElement)
 {
   // Add tag attributes to the element
   nsresult rv;
 
   // Create storage for the attributes
-  nsXULPrototypeAttribute* attrs = nsnull;
+  nsXULPrototypeAttribute* attrs = nullptr;
   if (aAttrLen > 0) {
     attrs = new nsXULPrototypeAttribute[aAttrLen];
     if (! attrs)
@@ -1046,7 +1014,7 @@ XULContentSinkImpl::AddAttributes(const PRUnichar** aAttributes,
   aElement->mNumAttributes = aAttrLen;
 
   // Copy the attributes into the prototype
-  PRUint32 i;
+  uint32_t i;
   for (i = 0; i < aAttrLen; ++i) {
       rv = NormalizeAttributeString(aAttributes[i * 2], attrs[i].mName);
       NS_ENSURE_SUCCESS(rv, rv);
@@ -1058,7 +1026,7 @@ XULContentSinkImpl::AddAttributes(const PRUnichar** aAttributes,
 #ifdef PR_LOGGING
       if (PR_LOG_TEST(gLog, PR_LOG_DEBUG)) {
           nsAutoString extraWhiteSpace;
-          PRInt32 cnt = mContextStack.Depth();
+          int32_t cnt = mContextStack.Depth();
           while (--cnt >= 0)
               extraWhiteSpace.AppendLiteral("  ");
           nsAutoString qnameC,valueC;
@@ -1079,21 +1047,21 @@ XULContentSinkImpl::AddAttributes(const PRUnichar** aAttributes,
 
 nsresult
 XULContentSinkImpl::AddText(const PRUnichar* aText, 
-                            PRInt32 aLength)
+                            int32_t aLength)
 {
   // Create buffer when we first need it
   if (0 == mTextSize) {
       mText = (PRUnichar *) PR_MALLOC(sizeof(PRUnichar) * 4096);
-      if (nsnull == mText) {
+      if (nullptr == mText) {
           return NS_ERROR_OUT_OF_MEMORY;
       }
       mTextSize = 4096;
   }
 
   // Copy data from string into our buffer; flush buffer when it fills up
-  PRInt32 offset = 0;
+  int32_t offset = 0;
   while (0 != aLength) {
-    PRInt32 amount = mTextSize - mTextLength;
+    int32_t amount = mTextSize - mTextLength;
     if (amount > aLength) {
         amount = aLength;
     }
@@ -1107,7 +1075,7 @@ XULContentSinkImpl::AddText(const PRUnichar* aText,
       else {
         mTextSize += aLength;
         mText = (PRUnichar *) PR_REALLOC(mText, sizeof(PRUnichar) * mTextSize);
-        if (nsnull == mText) {
+        if (nullptr == mText) {
             return NS_ERROR_OUT_OF_MEMORY;
         }
       }

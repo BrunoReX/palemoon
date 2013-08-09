@@ -283,7 +283,7 @@ public:
     void CheckConsole();
 
 private:
-    static void HandleCommandLine(const char* aCmdLineString, nsIFile* aWorkingDir, PRUint32 aState);
+    static void HandleCommandLine(const char* aCmdLineString, nsIFile* aWorkingDir, uint32_t aState);
     static HDDEDATA CALLBACK HandleDDENotification( UINT     uType,
                                                     UINT     uFmt,
                                                     HCONV    hconv,
@@ -332,22 +332,6 @@ NS_IMPL_RELEASE_INHERITED(nsNativeAppSupportWin, nsNativeAppSupportBase)
 
 void
 nsNativeAppSupportWin::CheckConsole() {
-    // Try to attach console to the parent process.
-    // It will succeed when the parent process is a command line,
-    // so that stdio will be displayed in it.
-    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
-        // Change std handles to refer to new console handles. Before doing so,
-        // ensure that stdout/stderr haven't been redirected to a valid file
-        if (_fileno(stdout) == -1 || _get_osfhandle(fileno(stdout)) == -1)
-            freopen("CONOUT$", "w", stdout);
-        // There isn't any `CONERR$`, so that we merge stderr into CONOUT$
-        // http://msdn.microsoft.com/en-us/library/windows/desktop/ms683231%28v=vs.85%29.aspx
-        if (_fileno(stderr) == -1 || _get_osfhandle(fileno(stderr)) == -1)
-            freopen("CONOUT$", "w", stderr);
-        if (_fileno(stdin) == -1 || _get_osfhandle(fileno(stdin)) == -1)
-            freopen("CONIN$", "r", stdin);
-    }
-
     for ( int i = 1; i < gArgc; i++ ) {
         if ( strcmp( "-console", gArgv[i] ) == 0
              ||
@@ -408,8 +392,27 @@ nsNativeAppSupportWin::CheckConsole() {
 
             --gArgc;
 
-            // Don't bother doing this more than once.
-            break;
+        } else if ( strcmp( "-attach-console", gArgv[i] ) == 0
+                    ||
+                    strcmp( "/attach-console", gArgv[i] ) == 0 ) {
+            // Try to attach console to the parent process.
+            // It will succeed when the parent process is a command line,
+            // so that stdio will be displayed in it.
+            if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+                // Change std handles to refer to new console handles.
+                // Before doing so, ensure that stdout/stderr haven't been
+                // redirected to a valid file
+                if (_fileno(stdout) == -1 ||
+                    _get_osfhandle(fileno(stdout)) == -1)
+                    freopen("CONOUT$", "w", stdout);
+                // Merge stderr into CONOUT$ since there isn't any `CONERR$`.
+                // http://msdn.microsoft.com/en-us/library/windows/desktop/ms683231%28v=vs.85%29.aspx
+                if (_fileno(stderr) == -1 ||
+                    _get_osfhandle(fileno(stderr)) == -1)
+                    freopen("CONOUT$", "w", stderr);
+                if (_fileno(stdin) == -1 || _get_osfhandle(fileno(stdin)) == -1)
+                    freopen("CONIN$", "r", stdin);
+            }
         }
     }
 
@@ -577,7 +580,7 @@ struct MessageWindow {
 #if MOZ_DEBUG_DDE
             printf( "Incoming request: %s\n", (const char*)cds->lpData );
 #endif
-            nsCOMPtr<nsILocalFile> workingDir;
+            nsCOMPtr<nsIFile> workingDir;
 
             if (1 >= cds->dwData) {
                 char* wdpath = (char*) cds->lpData;
@@ -878,7 +881,7 @@ static nsCString hszValue( DWORD, HSZ ) {
 
 // Utility function to escape double-quotes within a string.
 static void escapeQuotes( nsAString &aString ) {
-    PRInt32 offset = -1;
+    int32_t offset = -1;
     while( 1 ) {
        // Find next '"'.
        offset = aString.FindChar( '"', ++offset );
@@ -961,7 +964,7 @@ nsNativeAppSupportWin::HandleDDENotification( UINT uType,       // transaction t
                     printf( "Handling dde XTYP_REQUEST request: [%s]...\n", NS_ConvertUTF16toUTF8(url).get() );
 #endif
                     // Now handle it.
-                    HandleCommandLine(NS_ConvertUTF16toUTF8(url).get(), nsnull, nsICommandLine::STATE_REMOTE_EXPLICIT);
+                    HandleCommandLine(NS_ConvertUTF16toUTF8(url).get(), nullptr, nsICommandLine::STATE_REMOTE_EXPLICIT);
 
                     // Return pseudo window ID.
                     result = CreateDDEData( 1 );
@@ -1030,10 +1033,10 @@ nsNativeAppSupportWin::HandleDDENotification( UINT uType,       // transaction t
 
                         // Use a string buffer for the output data, first
                         // save a quote.
-                        nsCAutoString   outpt( NS_LITERAL_CSTRING("\"") );
+                        nsAutoCString   outpt( NS_LITERAL_CSTRING("\"") );
                         // Now copy the URL converting the Unicode string
                         // to a single-byte ASCII string
-                        nsCAutoString tmpNativeStr;
+                        nsAutoCString tmpNativeStr;
                         NS_CopyUnicodeToNative( url, tmpNativeStr );
                         outpt.Append( tmpNativeStr );
                         // Add the "," used to separate the URL and the page
@@ -1130,7 +1133,7 @@ nsNativeAppSupportWin::HandleDDENotification( UINT uType,       // transaction t
             printf( "Handling dde XTYP_REQUEST request: [%s]...\n", NS_ConvertUTF16toUTF8(url).get() );
 #endif
             // Now handle it.
-            HandleCommandLine(NS_ConvertUTF16toUTF8(url).get(), nsnull, nsICommandLine::STATE_REMOTE_EXPLICIT);
+            HandleCommandLine(NS_ConvertUTF16toUTF8(url).get(), nullptr, nsICommandLine::STATE_REMOTE_EXPLICIT);
 
             // Release the data.
             DdeUnaccessData( hdata );
@@ -1152,7 +1155,7 @@ nsNativeAppSupportWin::HandleDDENotification( UINT uType,       // transaction t
 // if the closing '"' is missing) if the arg is quoted.  If the arg
 // is not quoted, then p+result will point to the first character
 // of the arg.
-static PRInt32 advanceToEndOfQuotedArg( const WCHAR *p, PRInt32 offset, PRInt32 len ) {
+static int32_t advanceToEndOfQuotedArg( const WCHAR *p, int32_t offset, int32_t len ) {
     // Check whether the current arg is quoted.
     if ( p[++offset] == '"' ) {
         // Advance past the closing quote.
@@ -1172,7 +1175,7 @@ void nsNativeAppSupportWin::ParseDDEArg( const WCHAR* args, int index, nsString&
         nsDependentString temp(args);
 
         // offset points to the comma preceding the desired arg.
-        PRInt32 offset = -1;
+        int32_t offset = -1;
         // Skip commas till we get to the arg we want.
         while( index-- ) {
             // If this arg is quoted, then go to closing quote.
@@ -1193,7 +1196,7 @@ void nsNativeAppSupportWin::ParseDDEArg( const WCHAR* args, int index, nsString&
         // deal with that before searching for the terminating comma.
         // We advance offset so it ends up pointing to the start of
         // the argument we want.
-        PRInt32 end = advanceToEndOfQuotedArg( args, offset++, temp.Length() );
+        int32_t end = advanceToEndOfQuotedArg( args, offset++, temp.Length() );
         // Find next comma (or end of string).
         end = temp.FindChar( ',', end );
         if ( end == kNotFound ) {
@@ -1251,7 +1254,7 @@ void nsNativeAppSupportWin::ActivateLastWindow() {
 void
 nsNativeAppSupportWin::HandleCommandLine(const char* aCmdLineString,
                                          nsIFile* aWorkingDir,
-                                         PRUint32 aState)
+                                         uint32_t aState)
 {
     nsresult rv;
 
@@ -1262,7 +1265,7 @@ nsNativeAppSupportWin::HandleCommandLine(const char* aCmdLineString,
     int between, quoted, bSlashCount;
     int argc;
     const char *p;
-    nsCAutoString arg;
+    nsAutoCString arg;
 
     nsCOMPtr<nsICommandLineRunner> cmdLine
         (do_CreateInstance("@mozilla.org/toolkit/command-line;1"));
@@ -1465,7 +1468,7 @@ protected:
   JSContext                         *mContext;
 };
 
-SafeJSContext::SafeJSContext() : mContext(nsnull) {
+SafeJSContext::SafeJSContext() : mContext(nullptr) {
 }
 
 SafeJSContext::~SafeJSContext() {
@@ -1554,7 +1557,7 @@ nsNativeAppSupportWin::OpenBrowserWindow()
         (do_CreateInstance("@mozilla.org/toolkit/command-line;1"));
     NS_ENSURE_TRUE(cmdLine, NS_ERROR_FAILURE);
 
-    rv = cmdLine->Init(0, argv, nsnull, nsICommandLine::STATE_REMOTE_EXPLICIT);
+    rv = cmdLine->Init(0, argv, nullptr, nsICommandLine::STATE_REMOTE_EXPLICIT);
     NS_ENSURE_SUCCESS(rv, rv);
 
     return cmdLine->Run();

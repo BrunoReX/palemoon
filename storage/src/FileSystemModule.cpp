@@ -10,7 +10,6 @@
 #include "nsString.h"
 #include "nsISimpleEnumerator.h"
 #include "nsIFile.h"
-#include "nsILocalFile.h"
 
 namespace {
 
@@ -43,7 +42,7 @@ public:
     return mCurrentFileName;
   }
 
-  PRInt64 RowId() const
+  int64_t RowId() const
   {
     return mRowId;
   }
@@ -57,13 +56,13 @@ private:
   nsString mDirectoryPath;
   nsString mCurrentFileName;
 
-  PRInt64 mRowId;
+  int64_t mRowId;
 };
 
 nsresult
 VirtualTableCursor::Init(const nsAString& aPath)
 {
-  nsCOMPtr<nsILocalFile> directory =
+  nsCOMPtr<nsIFile> directory =
     do_CreateInstance(NS_LOCAL_FILE_CONTRACTID);
   NS_ENSURE_TRUE(directory, NS_ERROR_FAILURE);
 
@@ -289,16 +288,16 @@ int RegisterFileSystemModule(sqlite3* aDB, const char* aName)
     Eof,
     Column,
     RowId,
-    nsnull,
-    nsnull,
-    nsnull,
-    nsnull,
-    nsnull,
-    nsnull,
-    nsnull
+    nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
+    nullptr
   };
 
-  return sqlite3_create_module(aDB, aName, &module, nsnull);
+  return sqlite3_create_module(aDB, aName, &module, nullptr);
 }
 
 } // namespace storage

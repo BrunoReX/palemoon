@@ -13,7 +13,6 @@
 #include <netcon.h>
 #include <objbase.h>
 #include <iprtrmib.h>
-#include "prmem.h"
 #include "plstr.h"
 #include "nsThreadUtils.h"
 #include "nsIObserverService.h"
@@ -46,9 +45,9 @@ static void InitNetshellLibrary(void)
 static void FreeDynamicLibraries(void)
 {
     if (sNetshell) {
-        sNcFreeNetconProperties = nsnull;
+        sNcFreeNetconProperties = nullptr;
         FreeLibrary(sNetshell);
-        sNetshell = nsnull;
+        sNetshell = nullptr;
     }
 }
 
@@ -61,7 +60,7 @@ nsNotifyAddrListener::nsNotifyAddrListener()
     : mLinkUp(true)  // assume true by default
     , mStatusKnown(false)
     , mCheckAttempted(false)
-    , mShutdownEvent(nsnull)
+    , mShutdownEvent(nullptr)
 {
 }
 
@@ -91,7 +90,7 @@ nsNotifyAddrListener::GetLinkStatusKnown(bool *aIsUp)
 }
 
 NS_IMETHODIMP
-nsNotifyAddrListener::GetLinkType(PRUint32 *aLinkType)
+nsNotifyAddrListener::GetLinkType(uint32_t *aLinkType)
 {
   NS_ENSURE_ARG_POINTER(aLinkType);
 
@@ -103,7 +102,9 @@ nsNotifyAddrListener::GetLinkType(PRUint32 *aLinkType)
 NS_IMETHODIMP
 nsNotifyAddrListener::Run()
 {
-    HANDLE ev = CreateEvent(nsnull, FALSE, FALSE, nsnull);
+    PR_SetCurrentThreadName("Link Monitor");
+
+    HANDLE ev = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     NS_ENSURE_TRUE(ev, NS_ERROR_OUT_OF_MEMORY);
 
     HANDLE handles[2] = { ev, mShutdownEvent };
@@ -182,7 +183,7 @@ nsNotifyAddrListener::Shutdown(void)
     // Have to break the cycle here, otherwise nsNotifyAddrListener holds
     // onto the thread and the thread holds onto the nsNotifyAddrListener
     // via its mRunnable
-    mThread = nsnull;
+    mThread = nullptr;
 
     CloseHandle(mShutdownEvent);
     mShutdownEvent = NULL;

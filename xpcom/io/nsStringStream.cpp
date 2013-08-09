@@ -8,7 +8,7 @@
  * Based on original code from nsIStringStream.cpp
  */
 
-#include "IPC/IPCMessageUtils.h"
+#include "ipc/IPCMessageUtils.h"
 
 #include "nsStringStream.h"
 #include "nsStreamUtils.h"
@@ -19,16 +19,20 @@
 #include "prerror.h"
 #include "plstr.h"
 #include "nsIClassInfoImpl.h"
-#include "nsIIPCSerializable.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/ipc/InputStreamUtils.h"
+#include "nsIIPCSerializableInputStream.h"
+
+using namespace mozilla::ipc;
 
 //-----------------------------------------------------------------------------
 // nsIStringInputStream implementation
 //-----------------------------------------------------------------------------
 
-class nsStringInputStream : public nsIStringInputStream
-                          , public nsISeekableStream
-                          , public nsISupportsCString
-                          , public nsIIPCSerializable
+class nsStringInputStream MOZ_FINAL : public nsIStringInputStream
+                                    , public nsISeekableStream
+                                    , public nsISupportsCString
+                                    , public nsIIPCSerializableInputStream
 {
 public:
     NS_DECL_ISUPPORTS
@@ -37,7 +41,7 @@ public:
     NS_DECL_NSISEEKABLESTREAM
     NS_DECL_NSISUPPORTSPRIMITIVE
     NS_DECL_NSISUPPORTSCSTRING
-    NS_DECL_NSIIPCSERIALIZABLE
+    NS_DECL_NSIIPCSERIALIZABLEINPUTSTREAM
 
     nsStringInputStream()
     {
@@ -48,12 +52,12 @@ private:
     ~nsStringInputStream()
     {}
 
-    PRUint32 Length() const
+    uint32_t Length() const
     {
         return mData.Length();
     }
 
-    PRUint32 LengthRemaining() const
+    uint32_t LengthRemaining() const
     {
         return Length() - mOffset;
     }
@@ -69,7 +73,7 @@ private:
     }
 
     nsDependentCSubstring mData;
-    PRUint32 mOffset;
+    uint32_t mOffset;
 };
 
 // This class needs to support threadsafe refcounting since people often
@@ -84,20 +88,19 @@ NS_IMPL_QUERY_INTERFACE5_CI(nsStringInputStream,
                             nsIInputStream,
                             nsISupportsCString,
                             nsISeekableStream,
-                            nsIIPCSerializable)
-NS_IMPL_CI_INTERFACE_GETTER5(nsStringInputStream,
+                            nsIIPCSerializableInputStream)
+NS_IMPL_CI_INTERFACE_GETTER4(nsStringInputStream,
                              nsIStringInputStream,
                              nsIInputStream,
                              nsISupportsCString,
-                             nsISeekableStream,
-                             nsIIPCSerializable)
+                             nsISeekableStream)
 
 /////////
 // nsISupportsCString implementation
 /////////
 
 NS_IMETHODIMP
-nsStringInputStream::GetType(PRUint16 *type)
+nsStringInputStream::GetType(uint16_t *type)
 {
     *type = TYPE_CSTRING;
     return NS_OK;
@@ -135,7 +138,7 @@ nsStringInputStream::ToString(char **result)
 /////////
 
 NS_IMETHODIMP
-nsStringInputStream::SetData(const char *data, PRInt32 dataLen)
+nsStringInputStream::SetData(const char *data, int32_t dataLen)
 {
     NS_ENSURE_ARG_POINTER(data);
     mData.Assign(data, dataLen);
@@ -144,7 +147,7 @@ nsStringInputStream::SetData(const char *data, PRInt32 dataLen)
 }
 
 NS_IMETHODIMP
-nsStringInputStream::AdoptData(char *data, PRInt32 dataLen)
+nsStringInputStream::AdoptData(char *data, int32_t dataLen)
 {
     NS_ENSURE_ARG_POINTER(data);
     mData.Adopt(data, dataLen);
@@ -153,7 +156,7 @@ nsStringInputStream::AdoptData(char *data, PRInt32 dataLen)
 }
 
 NS_IMETHODIMP
-nsStringInputStream::ShareData(const char *data, PRInt32 dataLen)
+nsStringInputStream::ShareData(const char *data, int32_t dataLen)
 {
     NS_ENSURE_ARG_POINTER(data);
 
@@ -177,7 +180,7 @@ nsStringInputStream::Close()
 }
     
 NS_IMETHODIMP
-nsStringInputStream::Available(PRUint32 *aLength)
+nsStringInputStream::Available(uint64_t *aLength)
 {
     NS_ASSERTION(aLength, "null ptr");
 
@@ -189,7 +192,7 @@ nsStringInputStream::Available(PRUint32 *aLength)
 }
 
 NS_IMETHODIMP
-nsStringInputStream::Read(char* aBuf, PRUint32 aCount, PRUint32 *aReadCount)
+nsStringInputStream::Read(char* aBuf, uint32_t aCount, uint32_t *aReadCount)
 {
     NS_ASSERTION(aBuf, "null ptr");
     return ReadSegments(NS_CopySegmentToBuffer, aBuf, aCount, aReadCount);
@@ -197,7 +200,7 @@ nsStringInputStream::Read(char* aBuf, PRUint32 aCount, PRUint32 *aReadCount)
 
 NS_IMETHODIMP
 nsStringInputStream::ReadSegments(nsWriteSegmentFun writer, void *closure,
-                                  PRUint32 aCount, PRUint32 *result)
+                                  uint32_t aCount, uint32_t *result)
 {
     NS_ASSERTION(result, "null ptr");
     NS_ASSERTION(Length() >= mOffset, "bad stream state");
@@ -206,7 +209,7 @@ nsStringInputStream::ReadSegments(nsWriteSegmentFun writer, void *closure,
         return NS_BASE_STREAM_CLOSED;
 
     // We may be at end-of-file
-    PRUint32 maxCount = LengthRemaining();
+    uint32_t maxCount = LengthRemaining();
     if (maxCount == 0) {
         *result = 0;
         return NS_OK;
@@ -237,14 +240,14 @@ nsStringInputStream::IsNonBlocking(bool *aNonBlocking)
 /////////
 
 NS_IMETHODIMP 
-nsStringInputStream::Seek(PRInt32 whence, PRInt64 offset)
+nsStringInputStream::Seek(int32_t whence, int64_t offset)
 {
     if (Closed())
         return NS_BASE_STREAM_CLOSED;
 
     // Compute new stream position.  The given offset may be a negative value.
  
-    PRInt64 newPos = offset;
+    int64_t newPos = offset;
     switch (whence) {
     case NS_SEEK_SET:
         break;
@@ -262,12 +265,12 @@ nsStringInputStream::Seek(PRInt32 whence, PRInt64 offset)
     NS_ENSURE_ARG(newPos >= 0);
     NS_ENSURE_ARG(newPos <= Length());
 
-    mOffset = (PRUint32)newPos;
+    mOffset = (uint32_t)newPos;
     return NS_OK;
 }
 
 NS_IMETHODIMP
-nsStringInputStream::Tell(PRInt64* outWhere)
+nsStringInputStream::Tell(int64_t* outWhere)
 {
     if (Closed())
         return NS_BASE_STREAM_CLOSED;
@@ -286,38 +289,36 @@ nsStringInputStream::SetEOF()
     return NS_OK;
 }
 
-/////////
-// nsIIPCSerializable implementation
-/////////
+void
+nsStringInputStream::Serialize(InputStreamParams& aParams)
+{
+    StringInputStreamParams params;
+    params.data() = PromiseFlatCString(mData);
+    aParams = params;
+}
 
 bool
-nsStringInputStream::Read(const IPC::Message *aMsg, void **aIter)
+nsStringInputStream::Deserialize(const InputStreamParams& aParams)
 {
-    using IPC::ReadParam;
-
-    nsCString value;
-
-    if (!ReadParam(aMsg, aIter, &value))
+    if (aParams.type() != InputStreamParams::TStringInputStreamParams) {
+        NS_ERROR("Received unknown parameters from the other process!");
         return false;
+    }
 
-    nsresult rv = SetData(value);
-    if (NS_FAILED(rv))
+    const StringInputStreamParams& params =
+        aParams.get_StringInputStreamParams();
+
+    if (NS_FAILED(SetData(params.data()))) {
+        NS_WARNING("SetData failed!");
         return false;
+    }
 
     return true;
 }
 
-void
-nsStringInputStream::Write(IPC::Message *aMsg)
-{
-    using IPC::WriteParam;
-
-    WriteParam(aMsg, static_cast<const nsCString&>(PromiseFlatCString(mData)));
-}
-
 nsresult
 NS_NewByteInputStream(nsIInputStream** aStreamResult,
-                      const char* aStringToRead, PRInt32 aLength,
+                      const char* aStringToRead, int32_t aLength,
                       nsAssignmentType aAssignment)
 {
     NS_PRECONDITION(aStreamResult, "null out ptr");
@@ -383,7 +384,7 @@ NS_NewCStringInputStream(nsIInputStream** aStreamResult,
 nsresult
 nsStringInputStreamConstructor(nsISupports *outer, REFNSIID iid, void **result)
 {
-    *result = nsnull;
+    *result = nullptr;
 
     NS_ENSURE_TRUE(!outer, NS_ERROR_NO_AGGREGATION);
 

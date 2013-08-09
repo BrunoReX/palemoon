@@ -13,6 +13,7 @@
 #include "nsExpirationTracker.h"
 #include "nsRect.h"
 #include "nsString.h"
+#include "mozilla/Attributes.h"
 
 class nsSHEntry;
 class nsISHEntry;
@@ -29,8 +30,8 @@ class nsDocShellEditorData;
 // back/forward cache.
 //
 // nsSHEntryShared is the vehicle for this sharing.
-class nsSHEntryShared : public nsIBFCacheEntry,
-                        public nsIMutationObserver
+class nsSHEntryShared MOZ_FINAL : public nsIBFCacheEntry,
+                                  public nsIMutationObserver
 {
   public:
     static void Startup();
@@ -63,7 +64,7 @@ class nsSHEntryShared : public nsIBFCacheEntry,
 
     // These members are copied by nsSHEntryShared::Duplicate().  If you add a
     // member here, be sure to update the Duplicate() implementation.
-    PRUint64                        mDocShellID;
+    uint64_t                        mDocShellID;
     nsCOMArray<nsIDocShellTreeItem> mChildShells;
     nsCOMPtr<nsISupports>           mOwner;
     nsCString                       mContentType;
@@ -72,11 +73,11 @@ class nsSHEntryShared : public nsIBFCacheEntry,
     bool                            mSticky;
     bool                            mDynamicallyCreated;
     nsCOMPtr<nsISupports>           mCacheKey;
-    PRUint32                        mLastTouched;
+    uint32_t                        mLastTouched;
 
     // These members aren't copied by nsSHEntryShared::Duplicate() because
     // they're specific to a particular content viewer.
-    PRUint64                        mID;
+    uint64_t                        mID;
     nsCOMPtr<nsIContentViewer>      mContentViewer;
     nsCOMPtr<nsIDocument>           mDocument;
     nsCOMPtr<nsILayoutHistoryState> mLayoutHistoryState;

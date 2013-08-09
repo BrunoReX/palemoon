@@ -18,7 +18,7 @@
 
 #include <stdio.h>
 
-class nsILocalFile;
+class nsIFile;
 
 class NS_COM_GLUE nsINIParser
 {
@@ -27,12 +27,12 @@ public:
     ~nsINIParser() { }
 
     /**
-     * Initialize the INIParser with a nsILocalFile. If this method fails, no
+     * Initialize the INIParser with a nsIFile. If this method fails, no
      * other methods should be called. This method reads and parses the file,
      * the class does not hold a file handle open. An instance must only be
      * initialized once.
      */
-    nsresult Init(nsILocalFile* aFile);
+    nsresult Init(nsIFile* aFile);
 
     /**
      * Initialize the INIParser with a file path. If this method fails, no
@@ -94,7 +94,7 @@ public:
      * @see GetString [1]
      */
     nsresult GetString(const char *aSection, const char* aKey,
-                       char *aResult, PRUint32 aResultLen);
+                       char *aResult, uint32_t aResultLen);
 
 private:
     struct INIValue

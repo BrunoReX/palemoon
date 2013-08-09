@@ -3,9 +3,11 @@
 
 const modules = [
   "async.js",
+  "bagheeraclient.js",
   "log4moz.js",
   "preferences.js",
   "rest.js",
+  "storageservice.js",
   "stringbundle.js",
   "tokenserverclient.js",
   "utils.js",
@@ -13,6 +15,8 @@ const modules = [
 
 const test_modules = [
   "aitcserver.js",
+  "bagheeraserver.js",
+  "logging.js",
   "storageserver.js",
 ];
 
@@ -22,11 +26,8 @@ function run_test() {
     Components.utils.import(resource, {});
   }
 
-  // TODO enable once build infra supports testing modules.
-  /*
   for each (let m in test_modules) {
     let resource = "resource://testing-common/services-common/" + m;
     Components.utils.import(resource, {});
   }
-  */
 }

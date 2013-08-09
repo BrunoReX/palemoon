@@ -15,23 +15,24 @@
 #include "gfxPlatform.h"
 
 #include "gfxFontTest.h"
+#include "mozilla/Attributes.h"
 
 #if defined(XP_MACOSX)
 #include "gfxTestCocoaHelper.h"
 #endif
 
-#ifdef MOZ_WIDGET_GTK2
+#ifdef MOZ_WIDGET_GTK
 #include "gtk/gtk.h"
 #endif
 
 class FrameTextRunCache;
 
-static FrameTextRunCache *gTextRuns = nsnull;
+static FrameTextRunCache *gTextRuns = nullptr;
 
 /*
  * Cache textruns and expire them after 3*10 seconds of no use.
  */
-class FrameTextRunCache : public nsExpirationTracker<gfxTextRun,3> {
+class FrameTextRunCache MOZ_FINAL : public nsExpirationTracker<gfxTextRun,3> {
 public:
  enum { TIMEOUT_SECONDS = 10 };
  FrameTextRunCache()
@@ -54,9 +55,9 @@ public:
 };
 
 static gfxTextRun *
-MakeTextRun(const PRUnichar *aText, PRUint32 aLength,
+MakeTextRun(const PRUnichar *aText, uint32_t aLength,
            gfxFontGroup *aFontGroup, const gfxFontGroup::Parameters* aParams,
-           PRUint32 aFlags)
+           uint32_t aFlags)
 {
    nsAutoPtr<gfxTextRun> textRun;
    if (aLength == 0) {
@@ -67,11 +68,11 @@ MakeTextRun(const PRUnichar *aText, PRUint32 aLength,
        textRun = aFontGroup->MakeTextRun(aText, aLength, aParams, aFlags);
    }
    if (!textRun)
-       return nsnull;
+       return nullptr;
    nsresult rv = gTextRuns->AddObject(textRun);
    if (NS_FAILED(rv)) {
        gTextRuns->RemoveFromCache(textRun);
-       return nsnull;
+       return nullptr;
    }
    return textRun.forget();
 }
@@ -93,7 +94,7 @@ MakeContext ()
 
 int
 main (int argc, char **argv) {
-#ifdef MOZ_WIDGET_GTK2
+#ifdef MOZ_WIDGET_GTK
    gtk_init(&argc, &argv);
 #endif
 #ifdef XP_MACOSX
@@ -101,7 +102,7 @@ main (int argc, char **argv) {
 #endif
 
    // Initialize XPCOM
-   nsresult rv = NS_InitXPCOM2(nsnull, nsnull, nsnull);
+   nsresult rv = NS_InitXPCOM2(nullptr, nullptr, nullptr);
    if (NS_FAILED(rv))
        return -1;
 
@@ -127,20 +128,20 @@ main (int argc, char **argv) {
                            NS_LITERAL_STRING(""));
 
        nsRefPtr<gfxFontGroup> fontGroup =
-           gfxPlatform::GetPlatform()->CreateFontGroup(NS_LITERAL_STRING("Geneva, MS Sans Serif, Helvetica,serif"), &style, nsnull);
+           gfxPlatform::GetPlatform()->CreateFontGroup(NS_LITERAL_STRING("Geneva, MS Sans Serif, Helvetica,serif"), &style, nullptr);
 
        gfxTextRunFactory::Parameters params = {
-           ctx, nsnull, nsnull, nsnull, 0, 60
+           ctx, nullptr, nullptr, nullptr, 0, 60
        };
 
-       PRUint32 flags = gfxTextRunFactory::TEXT_IS_PERSISTENT;
+       uint32_t flags = gfxTextRunFactory::TEXT_IS_PERSISTENT;
 
        // First load an Arabic word into the cache
        const char cString[] = "\xd8\xaa\xd9\x85";
        nsDependentCString cStr(cString);
        NS_ConvertUTF8toUTF16 str(cStr);
        gfxTextRun *tr = MakeTextRun(str.get(), str.Length(), fontGroup, &params, flags);
-       tr->GetAdvanceWidth(0, str.Length(), nsnull);
+       tr->GetAdvanceWidth(0, str.Length(), nullptr);
 
        // Now try to trigger an assertion with a word cache bug. The first
        // word is in the cache so it gets added to the new textrun directly.
@@ -149,7 +150,7 @@ main (int argc, char **argv) {
        nsDependentCString cStr2(cString2);
        NS_ConvertUTF8toUTF16 str2(cStr2);
        gfxTextRun *tr2 = MakeTextRun(str2.get(), str2.Length(), fontGroup, &params, flags);
-       tr2->GetAdvanceWidth(0, str2.Length(), nsnull);
+       tr2->GetAdvanceWidth(0, str2.Length(), nullptr);
    }
 
    fflush (stderr);

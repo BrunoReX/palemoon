@@ -5,15 +5,13 @@
 
 package org.mozilla.gecko.gfx;
 
+import org.mozilla.gecko.util.FloatUtils;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import android.graphics.Point;
 import android.graphics.PointF;
-import android.util.FloatMath;
-
-import org.json.JSONObject;
-import org.json.JSONException;
-import org.mozilla.gecko.FloatUtils;
-
-import java.lang.Math;
 
 public final class PointUtils {
     public static PointF add(PointF one, PointF two) {
@@ -31,15 +29,6 @@ public final class PointUtils {
     public static Point round(PointF point) {
         return new Point(Math.round(point.x), Math.round(point.y));
     }
-
-   /* Returns a new point that is a linear interpolation between start and end points. weight conrols the weighting
-    * of each of the original points (weight = 1 returns endPoint, weight = 0 returns startPoint)
-    */
-   public static PointF interpolate(PointF startPoint, PointF endPoint, float weight) {
-       float x = FloatUtils.interpolate(startPoint.x, endPoint.x, weight);
-       float y = FloatUtils.interpolate(startPoint.y, endPoint.y, weight);
-       return new PointF(x, y);
-   }
 
    /* Computes the magnitude of the given vector. */
    public static float distance(PointF point) {

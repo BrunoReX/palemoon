@@ -12,10 +12,9 @@
 
 #include "nsCOMPtr.h"
 
-#include "nsIContent.h"
+#include "mozilla/dom/Element.h"
 #include "nsIDOMElement.h"
 #include "nsIDOMMouseEvent.h"
-#include "nsIFrame.h"
 #include "nsIDOMEventListener.h"
 #include "nsCycleCollectionParticipant.h"
 
@@ -26,12 +25,12 @@ public:
     // false, the popup opens on left click on aElement or a descendant. If
     // aIsContext is true, the popup is a context menu which opens on a
     // context menu event.
-    nsXULPopupListener(nsIDOMElement *aElement, bool aIsContext);
+    nsXULPopupListener(mozilla::dom::Element* aElement, bool aIsContext);
     virtual ~nsXULPopupListener(void);
 
     // nsISupports
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-    NS_DECL_CYCLE_COLLECTION_CLASS(nsXULPopupListener)
+    NS_DECL_CYCLE_COLLECTION_SKIPPABLE_CLASS(nsXULPopupListener)
     NS_DECL_NSIDOMEVENTLISTENER
 
 protected:
@@ -49,7 +48,7 @@ private:
 #endif
 
     // |mElement| is the node to which this listener is attached.
-    nsCOMPtr<nsIDOMElement> mElement;
+    nsCOMPtr<mozilla::dom::Element> mElement;
 
     // The popup that is getting shown on top of mElement.
     nsCOMPtr<nsIContent> mPopupContent; 

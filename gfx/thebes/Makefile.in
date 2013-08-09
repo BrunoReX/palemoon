@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -47,11 +47,19 @@ EXPORTS	= \
 	gfxTypes.h \
 	gfxUtils.h \
 	gfxUserFontSet.h \
-	nsCoreAnimationSupport.h \
-	nsIOSurface.h \
 	nsSurfaceTexture.h \
+	gfxBaseSharedMemorySurface.h \
 	gfxSharedImageSurface.h \
+	gfxSharedQuartzSurface.h \
 	gfxReusableSurfaceWrapper.h \
+	gfxSVGGlyphs.h \
+	RoundedRect.h \
+	$(NULL)
+
+# gfxSVGGlyphs needs nsDOMParser.h
+LOCAL_INCLUDES += \
+	-I$(topsrcdir)/content/base/public \
+	-I$(topsrcdir)/content/xml/document/src \
 	$(NULL)
 
 ifeq ($(MOZ_WIDGET_TOOLKIT),android)
@@ -173,9 +181,10 @@ CPPSRCS	= \
 	gfxUtils.cpp \
 	gfxScriptItemizer.cpp \
 	gfxHarfBuzzShaper.cpp \
-	gfxSharedImageSurface.cpp \
+	gfxBaseSharedMemorySurface.cpp \
 	gfxReusableSurfaceWrapper.cpp \
 	nsSurfaceTexture.cpp \
+	gfxSVGGlyphs.cpp \
 	$(NULL)
 
 ifeq ($(MOZ_WIDGET_TOOLKIT),$(findstring $(MOZ_WIDGET_TOOLKIT),android gtk2 gonk qt))
@@ -331,7 +340,6 @@ CPPSRCS +=      gfxQuartzNativeDrawing.cpp
 
 CMMSRCS = \
 	gfxMacPlatformFontList.mm \
-	nsCoreAnimationSupport.mm \
 	$(NULL)
 
 endif
@@ -384,3 +392,9 @@ ifdef SOLARIS_SUNPRO_CXX
 gfxAlphaRecoverySSE2.$(OBJ_SUFFIX): OS_CXXFLAGS += -xarch=sse2 -xO4
 endif
 endif
+
+.PHONY: CONSTANT_TABLES
+CONSTANT_TABLES:
+	$(PYTHON) $(srcdir)/genTables.py
+
+gfxUtils.$(OBJ_SUFFIX): CONSTANT_TABLES

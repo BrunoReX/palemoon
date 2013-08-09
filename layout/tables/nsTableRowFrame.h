@@ -5,6 +5,7 @@
 #ifndef nsTableRowFrame_h__
 #define nsTableRowFrame_h__
 
+#include "mozilla/Attributes.h"
 #include "nscore.h"
 #include "nsContainerFrame.h"
 #include "nsTablePainter.h"
@@ -43,17 +44,17 @@ public:
 
   NS_IMETHOD Init(nsIContent*      aContent,
                   nsIFrame*        aParent,
-                  nsIFrame*        aPrevInFlow);
+                  nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
   /** @see nsIFrame::DidSetStyleContext */
   virtual void DidSetStyleContext(nsStyleContext* aOldStyleContext);
   
   NS_IMETHOD AppendFrames(ChildListID     aListID,
-                          nsFrameList&    aFrameList);
+                          nsFrameList&    aFrameList) MOZ_OVERRIDE;
   NS_IMETHOD InsertFrames(ChildListID     aListID,
                           nsIFrame*       aPrevFrame,
-                          nsFrameList&    aFrameList);
+                          nsFrameList&    aFrameList) MOZ_OVERRIDE;
   NS_IMETHOD RemoveFrame(ChildListID     aListID,
-                         nsIFrame*       aOldFrame);
+                         nsIFrame*       aOldFrame) MOZ_OVERRIDE;
 
   /** instantiate a new instance of nsTableRowFrame.
     * @param aPresShell the pres shell for this frame
@@ -68,7 +69,7 @@ public:
 
   NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                               const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists);
+                              const nsDisplayListSet& aLists) MOZ_OVERRIDE;
 
   nsTableCellFrame* GetFirstCell() ;
 
@@ -88,7 +89,7 @@ public:
   NS_IMETHOD Reflow(nsPresContext*          aPresContext,
                     nsHTMLReflowMetrics&     aDesiredSize,
                     const nsHTMLReflowState& aReflowState,
-                    nsReflowStatus&          aStatus);
+                    nsReflowStatus&          aStatus) MOZ_OVERRIDE;
 
   void DidResize();
 
@@ -97,17 +98,17 @@ public:
    *
    * @see nsGkAtoms::tableRowFrame
    */
-  virtual nsIAtom* GetType() const;
+  virtual nsIAtom* GetType() const MOZ_OVERRIDE;
 
 #ifdef DEBUG
-  NS_IMETHOD GetFrameName(nsAString& aResult) const;
+  NS_IMETHOD GetFrameName(nsAString& aResult) const MOZ_OVERRIDE;
 #endif
  
   void UpdateHeight(nscoord           aHeight,
                     nscoord           aAscent,
                     nscoord           aDescent,
-                    nsTableFrame*     aTableFrame = nsnull,
-                    nsTableCellFrame* aCellFrame  = nsnull);
+                    nsTableFrame*     aTableFrame = nullptr,
+                    nsTableCellFrame* aCellFrame  = nullptr);
 
   void ResetHeight(nscoord aRowStyleHeight);
 
@@ -129,7 +130,7 @@ public:
   nscoord GetRowBaseline();
  
   /** returns the ordinal position of this row in its table */
-  virtual PRInt32 GetRowIndex() const;
+  virtual int32_t GetRowIndex() const;
 
   /** set this row's starting row index */
   void SetRowIndex (int aRowIndex);
@@ -164,7 +165,7 @@ public:
    * @param aColIndex the col index
    */
   void InsertCellFrame(nsTableCellFrame* aFrame,
-                       PRInt32           aColIndex);
+                       int32_t           aColIndex);
 
   nsresult CalculateCellActualHeight(nsTableCellFrame* aCellFrame,
                                      nscoord&          aDesiredHeight);
@@ -220,11 +221,15 @@ public:
    * Sets full border widths before collapsing with cell borders
    * @param aForSide - side to set; only accepts right, left, and top
    */
-  void SetContinuousBCBorderWidth(PRUint8     aForSide,
+  void SetContinuousBCBorderWidth(uint8_t     aForSide,
                                   BCPixelSize aPixelValue);
 
+  virtual void InvalidateFrame(uint32_t aDisplayItemKey = 0) MOZ_OVERRIDE;
+  virtual void InvalidateFrameWithRect(const nsRect& aRect, uint32_t aDisplayItemKey = 0) MOZ_OVERRIDE;
+  virtual void InvalidateFrameForRemoval() MOZ_OVERRIDE { InvalidateFrameSubtree(); }
+
 #ifdef ACCESSIBILITY
-  virtual already_AddRefed<Accessible> CreateAccessible();
+  virtual mozilla::a11y::AccType AccessibleType() MOZ_OVERRIDE;
 #endif
 
 protected:
@@ -240,7 +245,7 @@ protected:
                             nsTableCellReflowState& aReflowState);
   
   /** implement abstract method on nsContainerFrame */
-  virtual PRIntn GetSkipSides() const;
+  virtual int GetSkipSides() const;
 
   // row-specific methods
 
@@ -295,9 +300,9 @@ private:
 
 };
 
-inline PRInt32 nsTableRowFrame::GetRowIndex() const
+inline int32_t nsTableRowFrame::GetRowIndex() const
 {
-  return PRInt32(mBits.mRowIndex);
+  return int32_t(mBits.mRowIndex);
 }
 
 inline void nsTableRowFrame::SetRowIndex (int aRowIndex)
@@ -414,7 +419,7 @@ inline nsMargin* nsTableRowFrame::GetBCBorderWidth(nsMargin& aBorder)
 inline void
 nsTableRowFrame::GetContinuousBCBorderWidth(nsMargin& aBorder)
 {
-  PRInt32 aPixelsToTwips = nsPresContext::AppUnitsPerCSSPixel();
+  int32_t aPixelsToTwips = nsPresContext::AppUnitsPerCSSPixel();
   aBorder.right = BC_BORDER_LEFT_HALF_COORD(aPixelsToTwips,
                                             mLeftContBorderWidth);
   aBorder.top = BC_BORDER_BOTTOM_HALF_COORD(aPixelsToTwips,
@@ -425,7 +430,7 @@ nsTableRowFrame::GetContinuousBCBorderWidth(nsMargin& aBorder)
 
 inline nscoord nsTableRowFrame::GetOuterTopContBCBorderWidth()
 {
-  PRInt32 aPixelsToTwips = nsPresContext::AppUnitsPerCSSPixel();
+  int32_t aPixelsToTwips = nsPresContext::AppUnitsPerCSSPixel();
   return BC_BORDER_TOP_HALF_COORD(aPixelsToTwips, mTopContBorderWidth);
 }
 

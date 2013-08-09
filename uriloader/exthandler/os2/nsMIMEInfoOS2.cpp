@@ -50,7 +50,7 @@ nsMIMEInfoOS2::~nsMIMEInfoOS2()
 // if the helper application is a DOS app, create an 8.3 filename
 static nsresult Make8Dot3Name(nsIFile *aFile, nsACString& aPath)
 {
-  nsCAutoString leafName;
+  nsAutoCString leafName;
   aFile->GetNativeLeafName(leafName);
   const char *lastDot = strrchr(leafName.get(), '.');
 
@@ -70,11 +70,10 @@ static nsresult Make8Dot3Name(nsIFile *aFile, nsACString& aPath)
 
     // this salting code was ripped directly from the profile manager.
     // turn PR_Now() into milliseconds since epoch 1058 & salt rand with that
-    double fpTime;
-    LL_L2D(fpTime, PR_Now());
+    double fpTime = double(PR_Now());
     srand((uint)(fpTime * 1e-6 + 0.5));
 
-    for (PRInt32 i=0; i < SALT_SIZE; i++)
+    for (int32_t i=0; i < SALT_SIZE; i++)
       saltedTempLeafName.Append(table[(rand()%TABLE_SIZE)]);
 
     AppendASCIItoUTF16(suffix, saltedTempLeafName);
@@ -115,7 +114,7 @@ NS_IMETHODIMP nsMIMEInfoOS2::LaunchWithFile(nsIFile *aFile)
     return NS_ERROR_INVALID_ARG;
   }
 
-  nsCAutoString filePath;
+  nsAutoCString filePath;
   aFile->GetNativePath(filePath);
 
   // if there's no program, use the WPS to open the file
@@ -125,7 +124,7 @@ NS_IMETHODIMP nsMIMEInfoOS2::LaunchWithFile(nsIFile *aFile)
     // if RWS is enabled, see if nsOSHelperAppService provided a handle for
     // the app associated with this file;  if so, use it to open the file;
     if (sUseRws) {
-      PRUint32 appHandle;
+      uint32_t appHandle;
       GetDefaultAppHandle(&appHandle);
       if (appHandle) {
         nsCOMPtr<nsIRwsService> rwsSvc(do_GetService("@mozilla.org/rwsos2;1"));
@@ -149,7 +148,7 @@ NS_IMETHODIMP nsMIMEInfoOS2::LaunchWithFile(nsIFile *aFile)
   }
 
   // open the data file using the specified program file
-  nsCAutoString appPath;
+  nsAutoCString appPath;
   if (application) {
     application->GetNativePath(appPath);
   }
@@ -238,7 +237,7 @@ void nsMIMEInfoOS2::SetDefaultApplication(nsIFile *aDefaultApplication)
 
 // gets/sets the handle of the WPS object associated with this mimetype
 
-void nsMIMEInfoOS2::GetDefaultAppHandle(PRUint32 *aHandle)
+void nsMIMEInfoOS2::GetDefaultAppHandle(uint32_t *aHandle)
 {
   if (aHandle) {
     if (mDefaultAppHandle <= 0x10000 || mDefaultAppHandle >= 0x40000)
@@ -248,7 +247,7 @@ void nsMIMEInfoOS2::GetDefaultAppHandle(PRUint32 *aHandle)
   return;
 }
 
-void nsMIMEInfoOS2::SetDefaultAppHandle(PRUint32 aHandle)
+void nsMIMEInfoOS2::SetDefaultAppHandle(uint32_t aHandle)
 {
   if (aHandle <= 0x10000 || aHandle >= 0x40000)
     mDefaultAppHandle = 0;
@@ -269,20 +268,20 @@ nsresult nsMIMEInfoOS2::LoadUriInternal(nsIURI *aURL)
   if (NS_FAILED(rv)) {
     return NS_ERROR_FAILURE;
   }
-  nsCAutoString urlSpec;
+  nsAutoCString urlSpec;
   aURL->GetSpec(urlSpec);
   uri->SetSpec(urlSpec);
 
   /* Get the protocol so we can look up the preferences */
-  nsCAutoString uProtocol;
+  nsAutoCString uProtocol;
   uri->GetScheme(uProtocol);
 
-  nsCAutoString branchName = NS_LITERAL_CSTRING("applications.") + uProtocol;
-  nsCAutoString prefName = branchName + branchName;
+  nsAutoCString branchName = NS_LITERAL_CSTRING("applications.") + uProtocol;
+  nsAutoCString prefName = branchName + branchName;
   nsAdoptingCString prefString = Preferences::GetCString(prefName.get());
 
-  nsCAutoString applicationName;
-  nsCAutoString parameters;
+  nsAutoCString applicationName;
+  nsAutoCString parameters;
 
   if (prefString.IsEmpty()) {
     char szAppFromINI[CCHMAXPATH];
@@ -300,9 +299,9 @@ nsresult nsMIMEInfoOS2::LoadUriInternal(nsIURI *aURL)
   }
 
   // Dissect the URI
-  nsCAutoString uURL, uUsername, uPassword, uHost, uPort, uPath;
-  nsCAutoString uEmail, uGroup;
-  PRInt32 iPort;
+  nsAutoCString uURL, uUsername, uPassword, uHost, uPort, uPath;
+  nsAutoCString uEmail, uGroup;
+  int32_t iPort;
 
   // when passing to OS/2 apps later, we need ASCII URLs,
   // UTF-8 would probably not get handled correctly
@@ -350,9 +349,9 @@ nsresult nsMIMEInfoOS2::LoadUriInternal(nsIURI *aURL)
       parameters.Append(" ");
       parameters.Append(prefString);
 
-      PRInt32 pos = parameters.Find(url.get());
+      int32_t pos = parameters.Find(url.get());
       if (pos != kNotFound) {
-        nsCAutoString uURL;
+        nsAutoCString uURL;
         aURL->GetSpec(uURL);
         NS_UnescapeURL(uURL);
         uURL.Cut(0, uProtocol.Length()+1);
@@ -410,7 +409,7 @@ nsresult nsMIMEInfoOS2::LoadUriInternal(nsIURI *aURL)
   printf("uGroup=%s\n", uGroup.get());
 #endif
 
-  PRInt32 pos;
+  int32_t pos;
   pos = parameters.Find(url.get());
   if (pos != kNotFound) {
     replaced = true;
@@ -469,9 +468,9 @@ nsresult nsMIMEInfoOS2::LoadUriInternal(nsIURI *aURL)
 #ifdef DEBUG_peter
   printf("params[0]=%s\n", params[0]);
 #endif
-  PRInt32 numParams = 1;
+  int32_t numParams = 1;
 
-  nsCOMPtr<nsILocalFile> application;
+  nsCOMPtr<nsIFile> application;
   rv = NS_NewNativeLocalFile(nsDependentCString(applicationName.get()), false, getter_AddRefs(application));
   if (NS_FAILED(rv)) {
      /* Maybe they didn't qualify the name - search path */
@@ -563,7 +562,7 @@ nsMIMEInfoOS2::GetIconURLVariant(nsIFile *aApplication, nsIVariant **_retval)
   nsresult rv = CallCreateInstance("@mozilla.org/variant;1", _retval);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCAutoString fileURLSpec;
+  nsAutoCString fileURLSpec;
   if (aApplication)
     NS_GetURLSpecFromFile(aApplication, fileURLSpec);
   else {
@@ -571,7 +570,7 @@ nsMIMEInfoOS2::GetIconURLVariant(nsIFile *aApplication, nsIVariant **_retval)
     fileURLSpec.Insert(NS_LITERAL_CSTRING("moztmp."), 0);
   }
 
-  nsCAutoString iconURLSpec(NS_LITERAL_CSTRING("moz-icon://"));
+  nsAutoCString iconURLSpec(NS_LITERAL_CSTRING("moz-icon://"));
   iconURLSpec += fileURLSpec;
   nsCOMPtr<nsIWritableVariant> writable(do_QueryInterface(*_retval));
   writable->SetAsAUTF8String(iconURLSpec);

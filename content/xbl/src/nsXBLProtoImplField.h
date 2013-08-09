@@ -9,7 +9,6 @@
 #include "nsIAtom.h"
 #include "nsString.h"
 #include "jsapi.h"
-#include "nsIContent.h"
 #include "nsString.h"
 #include "nsXBLProtoImplMember.h"
 
@@ -23,7 +22,7 @@ public:
   ~nsXBLProtoImplField();
 
   void AppendFieldText(const nsAString& aText);
-  void SetLineNumber(PRUint32 aLineNumber) {
+  void SetLineNumber(uint32_t aLineNumber) {
     mLineNumber = aLineNumber;
   }
   
@@ -41,12 +40,19 @@ public:
 
   const PRUnichar* GetName() const { return mName; }
 
+  unsigned AccessorAttributes() const {
+    return JSPROP_SHARED | JSPROP_GETTER | JSPROP_SETTER |
+           (mJSAttributes & (JSPROP_ENUMERATE | JSPROP_PERMANENT));
+  }
+
+  bool IsEmpty() const { return mFieldTextLength == 0; }
+
 protected:
   nsXBLProtoImplField* mNext;
   PRUnichar* mName;
   PRUnichar* mFieldText;
-  PRUint32 mFieldTextLength;
-  PRUint32 mLineNumber;
+  uint32_t mFieldTextLength;
+  uint32_t mLineNumber;
   unsigned mJSAttributes;
 };
 

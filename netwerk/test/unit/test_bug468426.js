@@ -1,6 +1,11 @@
-do_load_httpd_js();
+const Cc = Components.classes;
+const Ci = Components.interfaces;
+const Cu = Components.utils;
+const Cr = Components.results;
 
-var httpserver = new nsHttpServer();
+Cu.import("resource://testing-common/httpd.js");
+
+var httpserver = new HttpServer();
 var index = 0;
 var tests = [
     // Initial request. Cached variant will have no cookie
@@ -31,11 +36,6 @@ var tests = [
     { url : "/bug468426", server : "6", expected : "6", cookie: null},
 
 ];
-
-function getCacheService() {
-    return Components.classes["@mozilla.org/network/cache-service;1"]
-            .getService(Components.interfaces.nsICacheService);
-}
 
 function setupChannel(suffix, value, cookie) {
     var ios = Components.classes["@mozilla.org/network/io-service;1"]
@@ -72,8 +72,7 @@ function run_test() {
     httpserver.start(4444);
 
     // Clear cache and trigger the first test
-    getCacheService().evictEntries(
-            Components.interfaces.nsICache.STORE_ANYWHERE);
+    evict_cache_entries();
     triggerNextTest();
 
     do_test_pending();

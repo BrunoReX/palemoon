@@ -77,9 +77,9 @@ nsScrollbarFrame::GetType() const
 }
 
 NS_IMETHODIMP
-nsScrollbarFrame::AttributeChanged(PRInt32 aNameSpaceID,
+nsScrollbarFrame::AttributeChanged(int32_t aNameSpaceID,
                                    nsIAtom* aAttribute,
-                                   PRInt32 aModType)
+                                   int32_t aModType)
 {
   nsresult rv = nsBoxFrame::AttributeChanged(aNameSpaceID, aAttribute,
                                              aModType);
@@ -140,7 +140,7 @@ nsIScrollbarMediator*
 nsScrollbarFrame::GetScrollbarMediator()
 {
   if (!mScrollbarMediator)
-    return nsnull;
+    return nullptr;
   nsIFrame* f = mScrollbarMediator->GetPrimaryFrame();
 
   // check if the frame is a scroll frame. If so, get the scrollable frame

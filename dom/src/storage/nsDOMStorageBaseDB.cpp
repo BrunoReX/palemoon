@@ -5,8 +5,24 @@
 
 #include "nsDOMStorageBaseDB.h"
 #include "nsDOMStorage.h"
+#include "mozilla/Preferences.h"
 
-PRUint64 nsDOMStorageBaseDB::sGlobalVersion = 1;
+// Only allow relatively small amounts of data since performance of
+// the synchronous IO is very bad.
+#define DEFAULT_QUOTA_LIMIT (5 * 1024)
+
+uint64_t nsDOMStorageBaseDB::sGlobalVersion = 1;
+int32_t nsDOMStorageBaseDB::gQuotaLimit = DEFAULT_QUOTA_LIMIT * 1024;
+
+using namespace mozilla;
+
+/* static */
+void
+nsDOMStorageBaseDB::Init()
+{
+  Preferences::AddIntVarCache(&gQuotaLimit, "dom.storage.default_quota",
+                              DEFAULT_QUOTA_LIMIT);
+}
 
 nsDOMStorageBaseDB::nsDOMStorageBaseDB()
 {
@@ -31,7 +47,7 @@ nsDOMStorageBaseDB::IsScopeDirty(DOMStorageImpl* aStorage)
 // protected
 
 // static
-PRUint64
+uint64_t
 nsDOMStorageBaseDB::NextGlobalVersion()
 {
   sGlobalVersion++;
@@ -40,10 +56,10 @@ nsDOMStorageBaseDB::NextGlobalVersion()
   return sGlobalVersion;
 }
 
-PRUint64
+uint64_t
 nsDOMStorageBaseDB::CachedScopeVersion(DOMStorageImpl* aStorage)
 {
-  PRUint64 currentVersion;
+  uint64_t currentVersion;
   if (mScopesVersion.Get(aStorage->GetScopeDBKey(), &currentVersion))
     return currentVersion;
 
@@ -54,7 +70,7 @@ nsDOMStorageBaseDB::CachedScopeVersion(DOMStorageImpl* aStorage)
 void
 nsDOMStorageBaseDB::MarkScopeDirty(DOMStorageImpl* aStorage)
 {
-  PRUint64 nextVersion = NextGlobalVersion();
+  uint64_t nextVersion = NextGlobalVersion();
   mScopesVersion.Put(aStorage->GetScopeDBKey(), nextVersion);
 
   // We may do this because the storage updates its cache along with

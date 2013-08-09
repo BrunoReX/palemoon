@@ -28,8 +28,7 @@ NS_IMPL_ISUPPORTS2(nsXMLPrettyPrinter,
                    nsIDocumentObserver,
                    nsIMutationObserver)
 
-nsXMLPrettyPrinter::nsXMLPrettyPrinter() : mDocument(nsnull),
-                                           mUpdateDepth(0),
+nsXMLPrettyPrinter::nsXMLPrettyPrinter() : mDocument(nullptr),
                                            mUnhookPending(false)
 {
 }
@@ -44,7 +43,7 @@ nsXMLPrettyPrinter::PrettyPrint(nsIDocument* aDocument,
                                 bool* aDidPrettyPrint)
 {
     *aDidPrettyPrint = false;
-    
+
     // Check for iframe with display:none. Such iframes don't have presshells
     if (!aDocument->GetShell()) {
         return NS_OK;
@@ -98,7 +97,7 @@ nsXMLPrettyPrinter::PrettyPrint(nsIDocument* aDocument,
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsCOMPtr<nsIDOMDocument> xslDocument;
-    rv = nsSyncLoadService::LoadDocument(xslUri, nsnull, nsnull, true,
+    rv = nsSyncLoadService::LoadDocument(xslUri, nullptr, nullptr, true,
                                          getter_AddRefs(xslDocument));
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -189,7 +188,7 @@ nsXMLPrettyPrinter::Unhook()
                               NS_LITERAL_STRING("chrome://global/content/xml/XMLPrettyPrint.xml#prettyprint"));
     }
 
-    mDocument = nsnull;
+    mDocument = nullptr;
 
     NS_RELEASE_THIS();
 }
@@ -197,9 +196,9 @@ nsXMLPrettyPrinter::Unhook()
 void
 nsXMLPrettyPrinter::AttributeChanged(nsIDocument* aDocument,
                                      Element* aElement,
-                                     PRInt32 aNameSpaceID,
+                                     int32_t aNameSpaceID,
                                      nsIAtom* aAttribute,
-                                     PRInt32 aModType)
+                                     int32_t aModType)
 {
     MaybeUnhook(aElement);
 }
@@ -208,7 +207,7 @@ void
 nsXMLPrettyPrinter::ContentAppended(nsIDocument* aDocument,
                                     nsIContent* aContainer,
                                     nsIContent* aFirstNewContent,
-                                    PRInt32 aNewIndexInContainer)
+                                    int32_t aNewIndexInContainer)
 {
     MaybeUnhook(aContainer);
 }
@@ -217,7 +216,7 @@ void
 nsXMLPrettyPrinter::ContentInserted(nsIDocument* aDocument,
                                     nsIContent* aContainer,
                                     nsIContent* aChild,
-                                    PRInt32 aIndexInContainer)
+                                    int32_t aIndexInContainer)
 {
     MaybeUnhook(aContainer);
 }
@@ -226,7 +225,7 @@ void
 nsXMLPrettyPrinter::ContentRemoved(nsIDocument* aDocument,
                                    nsIContent* aContainer,
                                    nsIContent* aChild,
-                                   PRInt32 aIndexInContainer,
+                                   int32_t aIndexInContainer,
                                    nsIContent* aPreviousSibling)
 {
     MaybeUnhook(aContainer);
@@ -235,7 +234,7 @@ nsXMLPrettyPrinter::ContentRemoved(nsIDocument* aDocument,
 void
 nsXMLPrettyPrinter::NodeWillBeDestroyed(const nsINode* aNode)
 {
-    mDocument = nsnull;
+    mDocument = nullptr;
     NS_RELEASE_THIS();
 }
 

@@ -6,13 +6,10 @@
 #include "nsCOMPtr.h"
 #include "nsWindowRoot.h"
 #include "nsPIDOMWindow.h"
-#include "nsIDOMDocument.h"
-#include "nsIDocument.h"
 #include "nsEventListenerManager.h"
 #include "nsPresContext.h"
 #include "nsLayoutCID.h"
 #include "nsContentCID.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsString.h"
 #include "nsEventDispatcher.h"
 #include "nsGUIEvent.h"
@@ -45,16 +42,15 @@ nsWindowRoot::~nsWindowRoot()
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsWindowRoot)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsWindowRoot)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_MEMBER(mListenerManager,
-                                                  nsEventListenerManager)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mPopupNode)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mParent)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mListenerManager)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPopupNode)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParent)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsWindowRoot)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mListenerManager)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mPopupNode)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mParent)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mListenerManager)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mPopupNode)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mParent)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsWindowRoot)
@@ -85,7 +81,7 @@ nsWindowRoot::DispatchEvent(nsIDOMEvent* aEvt, bool *aRetVal)
 {
   nsEventStatus status = nsEventStatus_eIgnore;
   nsresult rv =  nsEventDispatcher::DispatchDOMEvent(
-    static_cast<nsIDOMEventTarget*>(this), nsnull, aEvt, nsnull, &status);
+    static_cast<nsIDOMEventTarget*>(this), nullptr, aEvt, nullptr, &status);
   *aRetVal = (status != nsEventStatus_eConsumeNoDefault);
   return rv;
 }
@@ -105,7 +101,7 @@ NS_IMETHODIMP
 nsWindowRoot::AddEventListener(const nsAString& aType,
                                nsIDOMEventListener *aListener,
                                bool aUseCapture, bool aWantsUntrusted,
-                               PRUint8 aOptionalArgc)
+                               uint8_t aOptionalArgc)
 {
   NS_ASSERTION(!aWantsUntrusted || aOptionalArgc > 1,
                "Won't check if this is chrome, you want to set "
@@ -123,7 +119,7 @@ nsWindowRoot::AddSystemEventListener(const nsAString& aType,
                                      nsIDOMEventListener *aListener,
                                      bool aUseCapture,
                                      bool aWantsUntrusted,
-                                     PRUint8 aOptionalArgc)
+                                     uint8_t aOptionalArgc)
 {
   NS_ASSERTION(!aWantsUntrusted || aOptionalArgc > 1,
                "Won't check if this is chrome, you want to set "
@@ -149,7 +145,7 @@ nsIScriptContext*
 nsWindowRoot::GetContextForEventHandlers(nsresult* aRv)
 {
   *aRv = NS_OK;
-  return nsnull;
+  return nullptr;
 }
 
 nsresult
@@ -178,7 +174,7 @@ nsWindowRoot::GetWindow()
 nsresult
 nsWindowRoot::GetControllers(nsIControllers** aResult)
 {
-  *aResult = nsnull;
+  *aResult = nullptr;
 
   // XXX: we should fix this so there's a generic interface that
   // describes controllers, so this code would have no special
@@ -221,7 +217,7 @@ nsWindowRoot::GetControllerForCommand(const char * aCommand,
                                       nsIController** _retval)
 {
   NS_ENSURE_ARG_POINTER(_retval);
-  *_retval = nsnull;
+  *_retval = nullptr;
 
   {
     nsCOMPtr<nsIControllers> controllers;

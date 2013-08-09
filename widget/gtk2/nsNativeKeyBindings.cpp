@@ -56,7 +56,7 @@ static const char *const sDeleteCommands[][2] = {
   // This deletes from the end of the previous word to the beginning of the
   // next word, but only if the caret is not in a word.
   // XXX need to implement in editor
-  { nsnull, nsnull } // WHITESPACE
+  { nullptr, nullptr } // WHITESPACE
 };
 
 static void
@@ -67,7 +67,7 @@ delete_from_cursor_cb(GtkWidget *w, GtkDeleteType del_type,
   gHandled = true;
 
   bool forward = count > 0;
-  if (PRUint32(del_type) >= ArrayLength(sDeleteCommands)) {
+  if (uint32_t(del_type) >= ArrayLength(sDeleteCommands)) {
     // unsupported deletion type
     return;
   }
@@ -146,8 +146,8 @@ static const char *const sMoveCommands[][2][2] = {
     { "cmd_selectTop", "cmd_selectBottom" }
   },
   { // HORIZONTAL_PAGES (unsupported)
-    { nsnull, nsnull },
-    { nsnull, nsnull }
+    { nullptr, nullptr },
+    { nullptr, nullptr }
   }
 };
 
@@ -158,7 +158,7 @@ move_cursor_cb(GtkWidget *w, GtkMovementStep step, gint count,
   g_signal_stop_emission_by_name(w, "move_cursor");
   gHandled = true;
   bool forward = count > 0;
-  if (PRUint32(step) >= ArrayLength(sMoveCommands)) {
+  if (uint32_t(step) >= ArrayLength(sMoveCommands)) {
     // unsupported movement type
     return;
   }
@@ -245,7 +245,7 @@ bool
 nsNativeKeyBindings::KeyPress(const nsNativeKeyEvent& aEvent,
                               DoCommandCallback aCallback, void *aCallbackData)
 {
-  PRUint32 keyCode;
+  uint32_t keyCode;
 
   if (aEvent.charCode != 0)
     keyCode = gdk_unicode_to_keyval(aEvent.charCode);
@@ -262,8 +262,8 @@ nsNativeKeyBindings::KeyPress(const nsNativeKeyEvent& aEvent,
     return false;
   }
 
-  for (PRUint32 i = 0; i < nativeKeyEvent->alternativeCharCodes.Length(); ++i) {
-    PRUint32 ch = nativeKeyEvent->IsShift() ?
+  for (uint32_t i = 0; i < nativeKeyEvent->alternativeCharCodes.Length(); ++i) {
+    uint32_t ch = nativeKeyEvent->IsShift() ?
         nativeKeyEvent->alternativeCharCodes[i].mShiftedCharCode :
         nativeKeyEvent->alternativeCharCodes[i].mUnshiftedCharCode;
     if (ch && ch != aEvent.charCode) {
@@ -293,7 +293,7 @@ bool
 nsNativeKeyBindings::KeyPressInternal(const nsNativeKeyEvent& aEvent,
                                       DoCommandCallback aCallback,
                                       void *aCallbackData,
-                                      PRUint32 aKeyCode)
+                                      uint32_t aKeyCode)
 {
   int modifiers = 0;
   if (aEvent.altKey)
@@ -308,12 +308,16 @@ nsNativeKeyBindings::KeyPressInternal(const nsNativeKeyEvent& aEvent,
   gCurrentCallbackData = aCallbackData;
 
   gHandled = false;
-
+#if (MOZ_WIDGET_GTK == 2)
   gtk_bindings_activate(GTK_OBJECT(mNativeTarget),
                         aKeyCode, GdkModifierType(modifiers));
+#else
+  gtk_bindings_activate(G_OBJECT(mNativeTarget),
+                        aKeyCode, GdkModifierType(modifiers));
+#endif
 
-  gCurrentCallback = nsnull;
-  gCurrentCallbackData = nsnull;
+  gCurrentCallback = nullptr;
+  gCurrentCallbackData = nullptr;
 
   return gHandled;
 }

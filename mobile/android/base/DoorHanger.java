@@ -5,6 +5,10 @@
 
 package org.mozilla.gecko;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import android.content.Context;
 import android.text.SpannableString;
 import android.text.method.LinkMovementMethod;
@@ -18,54 +22,85 @@ import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import org.json.JSONObject;
-import org.json.JSONException;
-
 public class DoorHanger extends LinearLayout implements Button.OnClickListener {
-    private static final String LOGTAG = "DoorHanger";
+    private static final String LOGTAG = "GeckoDoorHanger";
 
-    private Context mContext;
+    private GeckoApp mActivity;
+    // The popup that holds this doorhanger
+    private DoorHangerPopup mPopup;
     private LinearLayout mChoicesLayout;
     private TextView mTextView;
+
+    // LayoutParams used for adding button layouts
     static private LayoutParams mLayoutParams;
-    public Tab mTab;
-    // value used to identify the notification
-    private String mValue;
+    private final int mTabId;
+    // Value used to identify the notification
+    private final String mValue;
 
     // Optional checkbox added underneath message text
     private CheckBox mCheckBox;
 
-    static private LayoutInflater mInflater;
-
     private int mPersistence = 0;
+    private boolean mPersistWhileVisible = false;
     private long mTimeout = 0;
 
-    public DoorHanger(Context aContext, String aValue) {
-        super(aContext);
+    DoorHanger(GeckoApp aActivity, DoorHangerPopup aPopup, int aTabId, String aValue) {
+        super(aActivity);
 
-        mContext = aContext;
+        mActivity = aActivity;
+        mPopup = aPopup;
+        mTabId = aTabId;
         mValue = aValue;
+    }
+ 
+    int getTabId() {
+        return mTabId;
+    }
 
+    String getValue() {
+        return mValue;
+    }
+
+    // Postpone stuff that needs to be done on the main thread
+    void init(String message, JSONArray buttons, JSONObject options) {
         setOrientation(VERTICAL);
         setBackgroundResource(R.drawable.doorhanger_shadow_bg);
 
-        if (mInflater == null)
-            mInflater = LayoutInflater.from(mContext);
-
-        mInflater.inflate(R.layout.doorhanger, this);
-        hide();
+        LayoutInflater.from(mActivity).inflate(R.layout.doorhanger, this);
+        setVisibility(View.GONE);
 
         mTextView = (TextView) findViewById(R.id.doorhanger_title);
+        mTextView.setText(message);
+
         mChoicesLayout = (LinearLayout) findViewById(R.id.doorhanger_choices);
 
+        // Set the doorhanger text and buttons
+        for (int i = 0; i < buttons.length(); i++) {
+            try {
+                JSONObject buttonObject = buttons.getJSONObject(i);
+                String label = buttonObject.getString("label");
+                int callBackId = buttonObject.getInt("callback");
+                addButton(label, callBackId);
+            } catch (JSONException e) {
+                Log.e(LOGTAG, "Error creating doorhanger button", e);
+            }
+         }
+
+        // Enable the button layout if we have buttons.
+        if (buttons.length() > 0) {
+            mChoicesLayout.setVisibility(LinearLayout.VISIBLE);
+        }
+
+        setOptions(options);
+    }
+
+    private void addButton(String aText, int aCallback) {
         if (mLayoutParams == null)
             mLayoutParams = new LayoutParams(LayoutParams.FILL_PARENT,
                                              LayoutParams.FILL_PARENT,
                                              1.0f);
-    }
 
-    public void addButton(String aText, int aCallback) {
-        Button mButton = new Button(mContext);
+        Button mButton = new Button(mActivity);
         mButton.setText(aText);
         mButton.setTag(Integer.toString(aCallback));
         mButton.setOnClickListener(this);
@@ -80,50 +115,26 @@ public class DoorHanger extends LinearLayout implements Button.OnClickListener {
             // If the checkbox is being used, pass its value
             if (mCheckBox != null)
                 response.put("checked", mCheckBox.isChecked());
-        } catch (JSONException ex) {
-            Log.e(LOGTAG, "Error creating onClick response: " + ex);
+        } catch (JSONException e) {
+            Log.e(LOGTAG, "Error creating onClick response", e);
         }
 
         GeckoEvent e = GeckoEvent.createBroadcastEvent("Doorhanger:Reply", response.toString());
         GeckoAppShell.sendEventToGecko(e);
-        mTab.removeDoorHanger(mValue);
+        mPopup.removeDoorHanger(this);
 
         // This will hide the doorhanger (and hide the popup if there are no
         // more doorhangers to show)
-        ((GeckoApp)mContext).updatePopups(mTab);
+        mPopup.updatePopup();
     }
 
-    public void show() {
-        setVisibility(View.VISIBLE);
-    }
-
-    public void hide() {
-        setVisibility(View.GONE);
-    }
-
-    public boolean isVisible() {
-        return getVisibility() == View.VISIBLE;
-    }
-
-    public String getValue() {
-        return mValue;
-    }
-
-    public void setText(String aText) {
-        mTextView.setText(aText);
-    }
-
-    public Tab getTab() {
-        return mTab;
-    }
-
-    public void setTab(Tab tab) {
-        mTab = tab;
-    }
-
-    public void setOptions(JSONObject options) {
+    private void setOptions(JSONObject options) {
         try {
             mPersistence = options.getInt("persistence");
+        } catch (JSONException e) { }
+
+        try {
+            mPersistWhileVisible = options.getBoolean("persistWhileVisible");
         } catch (JSONException e) { }
 
         try {
@@ -139,7 +150,7 @@ public class DoorHanger extends LinearLayout implements Button.OnClickListener {
             URLSpan linkSpan = new URLSpan(linkUrl) {
                 @Override
                 public void onClick(View view) {
-                    GeckoApp.mAppContext.loadUrlInTab(this.getURL());
+                    Tabs.getInstance().loadUrlInTab(this.getURL());
                 }
             };
 
@@ -162,7 +173,14 @@ public class DoorHanger extends LinearLayout implements Button.OnClickListener {
 
     // This method checks with persistence and timeout options to see if
     // it's okay to remove a doorhanger.
-    public boolean shouldRemove() {
+    boolean shouldRemove() {
+        if (mPersistWhileVisible && mPopup.isShowing()) {
+            // We still want to decrement mPersistence, even if the popup is showing
+            if (mPersistence != 0)
+                mPersistence--;
+            return false;
+        }
+
         // If persistence is set to -1, the doorhanger will never be
         // automatically removed.
         if (mPersistence != 0) {

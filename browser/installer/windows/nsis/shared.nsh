@@ -2,6 +2,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+; The registration ID of the COM server which is used for choosing wether
+; to launch the Win8 metro browser or desktop browser.
+!define DELEGATE_EXECUTE_HANDLER_ID {5100FEC1-212B-4BF5-9BF8-3E650FD794A3}
+
 !macro PostUpdate
   ${CreateShortcutsLog}
 
@@ -30,14 +34,15 @@
     ${RegCleanMain} "Software\Mozilla"
     ${RegCleanUninstall}
     ${UpdateProtocolHandlers}
-    ${FixShellIconHandler}
+    ${FixShellIconHandler} "HKLM"
     ${SetAppLSPCategories} ${LSP_CATEGORIES}
 
     ; Win7 taskbar and start menu link maintenance
     Call FixShortcutAppModelIDs
 
-    ; Only update the Clients\StartMenuInternet registry key values if they
-    ; don't exist or this installation is the same as the one set in those keys.
+    ; Only update the Clients\StartMenuInternet registry key values in HKLM if
+    ; they don't exist or this installation is the same as the one set in those
+    ; keys.
     ${StrFilter} "${FileMainEXE}" "+" "" "" $1
     ReadRegStr $0 HKLM "Software\Clients\StartMenuInternet\$1\DefaultIcon" ""
     ${GetPathFromString} "$0" $0
@@ -46,7 +51,22 @@
       ${GetLongPath} "$0" $0
     ${EndIf}
     ${If} "$0" == "$INSTDIR"
-      ${SetStartMenuInternet} ; Does not use SHCTX
+      ${SetStartMenuInternet} "HKLM"
+    ${EndIf}
+
+    ; Only update the Clients\StartMenuInternet registry key values in HKCU if
+    ; they don't exist or this installation is the same as the one set in those
+    ; keys.  This is only done in Windows 8 to avoid a UAC prompt.
+    ${If} ${AtLeastWin8}
+      ReadRegStr $0 HKCU "Software\Clients\StartMenuInternet\$1\DefaultIcon" ""
+      ${GetPathFromString} "$0" $0
+      ${GetParent} "$0" $0
+      ${If} ${FileExists} "$0"
+        ${GetLongPath} "$0" $0
+      ${EndIf}
+      ${If} "$0" == "$INSTDIR"
+        ${SetStartMenuInternet} "HKCU"
+      ${EndIf}
     ${EndIf}
 
     ReadRegStr $0 HKLM "Software\mozilla.org\Mozilla" "CurrentVersion"
@@ -73,6 +93,8 @@
   ${CleanVirtualStore}
 
   ${RemoveDeprecatedFiles}
+
+  RmDir /r /REBOOTOK "$INSTDIR\${TO_BE_DELETED}"
 
 !ifdef MOZ_MAINTENANCE_SERVICE
   Call IsUserAdmin
@@ -127,8 +149,8 @@
 
   SetShellVarContext all      ; Set SHCTX to all users (e.g. HKLM)
   ${SetHandlers} ; Uses SHCTX
-  ${SetStartMenuInternet} ; Does not use SHCTX
-  ${FixShellIconHandler} ; Does not use SHCTX
+  ${SetStartMenuInternet} "HKLM"
+  ${FixShellIconHandler} "HKLM"
   ${ShowShortcuts}
   ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
   WriteRegStr HKLM "Software\Clients\StartMenuInternet" "" "$R9"
@@ -142,6 +164,9 @@
   ${StrFilter} "${FileMainEXE}" "+" "" "" $0
   StrCpy $R1 "Software\Clients\StartMenuInternet\$0\InstallInfo"
   WriteRegDWORD HKLM "$R1" "IconsVisible" 0
+  ${If} ${AtLeastWin8}
+    WriteRegDWORD HKCU "$R1" "IconsVisible" 0
+  ${EndIf}
 
   SetShellVarContext all  ; Set $DESKTOP to All Users
   ${Unless} ${FileExists} "$DESKTOP\${BrandFullName}.lnk"
@@ -201,6 +226,9 @@
   ${StrFilter} "${FileMainEXE}" "+" "" "" $0
   StrCpy $R1 "Software\Clients\StartMenuInternet\$0\InstallInfo"
   WriteRegDWORD HKLM "$R1" "IconsVisible" 1
+  ${If} ${AtLeastWin8}
+    WriteRegDWORD HKCU "$R1" "IconsVisible" 1
+  ${EndIf}
 
   SetShellVarContext all  ; Set $DESKTOP to All Users
   ${Unless} ${FileExists} "$DESKTOP\${BrandFullName}.lnk"
@@ -209,7 +237,7 @@
       ShellLink::SetShortCutWorkingDirectory "$DESKTOP\${BrandFullName}.lnk" "$INSTDIR"
       ${If} ${AtLeastWin7}
       ${AndIf} "$AppUserModelID" != ""
-        ApplicationID::Set "$DESKTOP\${BrandFullName}.lnk" "$AppUserModelID"
+        ApplicationID::Set "$DESKTOP\${BrandFullName}.lnk" "$AppUserModelID" "true"
       ${EndIf}
     ${Else}
       SetShellVarContext current  ; Set $DESKTOP to the current user's desktop
@@ -220,7 +248,7 @@
                                                  "$INSTDIR"
           ${If} ${AtLeastWin7}
           ${AndIf} "$AppUserModelID" != ""
-            ApplicationID::Set "$DESKTOP\${BrandFullName}.lnk" "$AppUserModelID"
+            ApplicationID::Set "$DESKTOP\${BrandFullName}.lnk" "$AppUserModelID" "true"
           ${EndIf}
         ${EndIf}
       ${EndUnless}
@@ -235,7 +263,7 @@
                                              "$INSTDIR"
       ${If} ${AtLeastWin7}
       ${AndIf} "$AppUserModelID" != ""
-        ApplicationID::Set "$SMPROGRAMS\${BrandFullName}.lnk" "$AppUserModelID"
+        ApplicationID::Set "$SMPROGRAMS\${BrandFullName}.lnk" "$AppUserModelID" "true"
       ${EndIf}
     ${Else}
       SetShellVarContext current  ; Set $SMPROGRAMS to the current user's Start
@@ -247,7 +275,7 @@
                                                  "$INSTDIR"
           ${If} ${AtLeastWin7}
           ${AndIf} "$AppUserModelID" != ""
-            ApplicationID::Set "$SMPROGRAMS\${BrandFullName}.lnk" "$AppUserModelID"
+            ApplicationID::Set "$SMPROGRAMS\${BrandFullName}.lnk" "$AppUserModelID" "true"
           ${EndIf}
         ${EndIf}
       ${EndUnless}
@@ -314,6 +342,16 @@
 
   ${AddDisabledDDEHandlerValues} "FirefoxURL" "$2" "$8,1" "${AppRegName} URL" \
                                  "true"
+!ifdef MOZ_METRO
+  ${If} ${AtLeastWin8}
+    ${CleanupMetroBrowserHandlerValues} ${DELEGATE_EXECUTE_HANDLER_ID}
+    ${AddMetroBrowserHandlerValues} ${DELEGATE_EXECUTE_HANDLER_ID} \
+                                    "$INSTDIR\CommandExecuteHandler.exe" \
+                                    $AppUserModelID \
+                                    "FirefoxURL" \
+                                    "FirefoxHTML"
+  ${EndIf}
+!endif
 
   ; An empty string is used for the 4th & 5th params because the following
   ; protocol handlers already have a display name and the additional keys
@@ -332,10 +370,15 @@
 ; the key name is derived from the main application executable.
 ; http://support.microsoft.com/kb/297878
 ;
+; In Windows 8 this changes slightly, you can store StartMenuInternet entries in
+; HKCU.  The icon in start menu for StartMenuInternet is deprecated as of Win7,
+; but the subkeys are what's important.  Control panel default programs looks
+; for them only in HKLM pre win8.
+;
 ; Note: we might be able to get away with using the full path to the
 ; application executable for the key name in order to support multiple
 ; installations.
-!macro SetStartMenuInternet
+!macro SetStartMenuInternet RegKey
   ${GetLongPath} "$INSTDIR\${FileMainEXE}" $8
   ${GetLongPath} "$INSTDIR\uninstall\helper.exe" $7
 
@@ -343,55 +386,55 @@
 
   StrCpy $0 "Software\Clients\StartMenuInternet\$R9"
 
-  WriteRegStr HKLM "$0" "" "${BrandFullName}"
+  WriteRegStr ${RegKey} "$0" "" "${BrandFullName}"
 
-  WriteRegStr HKLM "$0\DefaultIcon" "" "$8,0"
+  WriteRegStr ${RegKey} "$0\DefaultIcon" "" "$8,0"
 
   ; The Reinstall Command is defined at
   ; http://msdn.microsoft.com/library/default.asp?url=/library/en-us/shellcc/platform/shell/programmersguide/shell_adv/registeringapps.asp
-  WriteRegStr HKLM "$0\InstallInfo" "HideIconsCommand" "$\"$7$\" /HideShortcuts"
-  WriteRegStr HKLM "$0\InstallInfo" "ShowIconsCommand" "$\"$7$\" /ShowShortcuts"
-  WriteRegStr HKLM "$0\InstallInfo" "ReinstallCommand" "$\"$7$\" /SetAsDefaultAppGlobal"
+  WriteRegStr ${RegKey} "$0\InstallInfo" "HideIconsCommand" "$\"$7$\" /HideShortcuts"
+  WriteRegStr ${RegKey} "$0\InstallInfo" "ShowIconsCommand" "$\"$7$\" /ShowShortcuts"
+  WriteRegStr ${RegKey} "$0\InstallInfo" "ReinstallCommand" "$\"$7$\" /SetAsDefaultAppGlobal"
 
   ClearErrors
-  ReadRegDWORD $1 HKLM "$0\InstallInfo" "IconsVisible"
+  ReadRegDWORD $1 ${RegKey} "$0\InstallInfo" "IconsVisible"
   ; If the IconsVisible name value pair doesn't exist add it otherwise the
   ; application won't be displayed in Set Program Access and Defaults.
   ${If} ${Errors}
     ${If} ${FileExists} "$QUICKLAUNCH\${BrandFullName}.lnk"
-      WriteRegDWORD HKLM "$0\InstallInfo" "IconsVisible" 1
+      WriteRegDWORD ${RegKey} "$0\InstallInfo" "IconsVisible" 1
     ${Else}
-      WriteRegDWORD HKLM "$0\InstallInfo" "IconsVisible" 0
+      WriteRegDWORD ${RegKey} "$0\InstallInfo" "IconsVisible" 0
     ${EndIf}
   ${EndIf}
 
-  WriteRegStr HKLM "$0\shell\open\command" "" "$8"
+  WriteRegStr ${RegKey} "$0\shell\open\command" "" "$8"
 
-  WriteRegStr HKLM "$0\shell\properties" "" "$(CONTEXT_OPTIONS)"
-  WriteRegStr HKLM "$0\shell\properties\command" "" "$\"$8$\" -preferences"
+  WriteRegStr ${RegKey} "$0\shell\properties" "" "$(CONTEXT_OPTIONS)"
+  WriteRegStr ${RegKey} "$0\shell\properties\command" "" "$\"$8$\" -preferences"
 
-  WriteRegStr HKLM "$0\shell\safemode" "" "$(CONTEXT_SAFE_MODE)"
-  WriteRegStr HKLM "$0\shell\safemode\command" "" "$\"$8$\" -safe-mode"
+  WriteRegStr ${RegKey} "$0\shell\safemode" "" "$(CONTEXT_SAFE_MODE)"
+  WriteRegStr ${RegKey} "$0\shell\safemode\command" "" "$\"$8$\" -safe-mode"
 
   ; Vista Capabilities registry keys
-  WriteRegStr HKLM "$0\Capabilities" "ApplicationDescription" "$(REG_APP_DESC)"
-  WriteRegStr HKLM "$0\Capabilities" "ApplicationIcon" "$8,0"
-  WriteRegStr HKLM "$0\Capabilities" "ApplicationName" "${BrandShortName}"
+  WriteRegStr ${RegKey} "$0\Capabilities" "ApplicationDescription" "$(REG_APP_DESC)"
+  WriteRegStr ${RegKey} "$0\Capabilities" "ApplicationIcon" "$8,0"
+  WriteRegStr ${RegKey} "$0\Capabilities" "ApplicationName" "${BrandShortName}"
 
-  WriteRegStr HKLM "$0\Capabilities\FileAssociations" ".htm"   "FirefoxHTML"
-  WriteRegStr HKLM "$0\Capabilities\FileAssociations" ".html"  "FirefoxHTML"
-  WriteRegStr HKLM "$0\Capabilities\FileAssociations" ".shtml" "FirefoxHTML"
-  WriteRegStr HKLM "$0\Capabilities\FileAssociations" ".xht"   "FirefoxHTML"
-  WriteRegStr HKLM "$0\Capabilities\FileAssociations" ".xhtml" "FirefoxHTML"
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".htm"   "FirefoxHTML"
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".html"  "FirefoxHTML"
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".shtml" "FirefoxHTML"
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".xht"   "FirefoxHTML"
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".xhtml" "FirefoxHTML"
 
-  WriteRegStr HKLM "$0\Capabilities\StartMenu" "StartMenuInternet" "$R9"
+  WriteRegStr ${RegKey} "$0\Capabilities\StartMenu" "StartMenuInternet" "$R9"
 
-  WriteRegStr HKLM "$0\Capabilities\URLAssociations" "ftp"    "FirefoxURL"
-  WriteRegStr HKLM "$0\Capabilities\URLAssociations" "http"   "FirefoxURL"
-  WriteRegStr HKLM "$0\Capabilities\URLAssociations" "https"  "FirefoxURL"
+  WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "ftp"    "FirefoxURL"
+  WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "http"   "FirefoxURL"
+  WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "https"  "FirefoxURL"
 
   ; Vista Registered Application
-  WriteRegStr HKLM "Software\RegisteredApplications" "${AppRegName}" "$0\Capabilities"
+  WriteRegStr ${RegKey} "Software\RegisteredApplications" "${AppRegName}" "$0\Capabilities"
 !macroend
 !define SetStartMenuInternet "!insertmacro SetStartMenuInternet"
 
@@ -399,14 +442,14 @@
 ; due to changes not being detected by the IconHandler for side by side
 ; installs (see bug 268512). The symptoms can be either an incorrect icon or no
 ; icon being displayed for files associated with Firefox (does not use SHCTX).
-!macro FixShellIconHandler
+!macro FixShellIconHandler RegKey
   ClearErrors
-  ReadRegStr $1 HKLM "Software\Classes\FirefoxHTML\ShellEx\IconHandler" ""
+  ReadRegStr $1 ${RegKey} "Software\Classes\FirefoxHTML\ShellEx\IconHandler" ""
   ${Unless} ${Errors}
-    ReadRegStr $1 HKLM "Software\Classes\FirefoxHTML\DefaultIcon" ""
+    ReadRegStr $1 ${RegKey} "Software\Classes\FirefoxHTML\DefaultIcon" ""
     ${GetLongPath} "$INSTDIR\${FileMainEXE}" $2
     ${If} "$1" != "$2,1"
-      WriteRegStr HKLM "Software\Classes\FirefoxHTML\DefaultIcon" "" "$2,1"
+      WriteRegStr ${RegKey} "Software\Classes\FirefoxHTML\DefaultIcon" "" "$2,1"
     ${EndIf}
   ${EndUnless}
 !macroend
@@ -794,6 +837,10 @@
 ; Adds a pinned shortcut to Task Bar on update for Windows 7 and above if this
 ; macro has never been called before and the application is default (see
 ; PinToTaskBar for more details).
+; Since defaults handling is handled by Windows in Win8 and later, we always
+; attempt to pin a taskbar on that OS.  If Windows sets the defaults at
+; installation time, then we don't get the opportunity to run this code at
+; that time.
 !macro MigrateTaskBarShortcut
   ${GetShortcutsLogPath} $0
   ${If} ${FileExists} "$0"
@@ -803,13 +850,17 @@
       ClearErrors
       WriteIniStr "$0" "TASKBAR" "Migrated" "true"
       ${If} ${AtLeastWin7}
-        ; Check if the Firefox is the http handler for this user
-        SetShellVarContext current ; Set SHCTX to the current user
-        ${IsHandlerForInstallDir} "http" $R9
-        ${If} $TmpVal == "HKLM"
-          SetShellVarContext all ; Set SHCTX to all users
+        ; No need to check the default on Win8 and later
+        ${If} ${AtMostWin2008R2}
+          ; Check if the Firefox is the http handler for this user
+          SetShellVarContext current ; Set SHCTX to the current user
+          ${IsHandlerForInstallDir} "http" $R9
+          ${If} $TmpVal == "HKLM"
+            SetShellVarContext all ; Set SHCTX to all users
+          ${EndIf}
         ${EndIf}
         ${If} "$R9" == "true"
+        ${OrIf} ${AtLeastWin8}
           ${PinToTaskBar}
         ${EndIf}
       ${EndIf}
@@ -846,7 +897,7 @@
                 ShellLink::SetShortCutWorkingDirectory "$SMPROGRAMS\$1" \
                                                        "$INSTDIR"
                 ${If} "$AppUserModelID" != ""
-                  ApplicationID::Set "$SMPROGRAMS\$1" "$AppUserModelID"
+                  ApplicationID::Set "$SMPROGRAMS\$1" "$AppUserModelID" "true"
                 ${EndIf}
               ${EndIf}
             ${EndUnless}
@@ -931,7 +982,7 @@
                   ${If} ${AtLeastWin7}
                   ${AndIf} "$AppUserModelID" != ""
                     ApplicationID::Set "$SMPROGRAMS\${BrandFullName}.lnk" \
-                                       "$AppUserModelID"
+                                       "$AppUserModelID" "true"
                   ${EndIf}
                 ${EndIf}
               ${EndIf}
@@ -1047,7 +1098,12 @@ Function SetAsDefaultAppUserHKCU
   ; registry keys are for this install.
   ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
   ClearErrors
-  ReadRegStr $0 HKLM "Software\Clients\StartMenuInternet\$R9\DefaultIcon" ""
+  ReadRegStr $0 HKCU "Software\Clients\StartMenuInternet\$R9\DefaultIcon" ""
+  ${If} ${Errors}
+  ${OrIf} ${AtMostWin2008R2}
+    ClearErrors
+    ReadRegStr $0 HKLM "Software\Clients\StartMenuInternet\$R9\DefaultIcon" ""
+  ${EndIf}
   ${Unless} ${Errors}
     ${GetPathFromString} "$0" $0
     ${GetParent} "$0" $0
@@ -1060,6 +1116,27 @@ Function SetAsDefaultAppUserHKCU
   ${EndUnless}
 
   SetShellVarContext current  ; Set SHCTX to the current user (e.g. HKCU)
+
+  ${If} ${AtLeastWin8}
+    ${SetStartMenuInternet} "HKCU"
+    ${FixShellIconHandler} "HKCU"
+    ${FixClassKeys} ; Does not use SHCTX
+; If MOZ_METRO is defined and we're at least win8, then we should re-create
+; the start menu shortcut so that the Metro browser is accessible.
+; This is also for zip builds who won't have a start menu shortcut yet.
+!ifdef MOZ_METRO
+    Delete "$SMPROGRAMS\${BrandFullName}.lnk"
+    CreateShortCut "$SMPROGRAMS\${BrandFullName}.lnk" "$INSTDIR\${FileMainEXE}"
+    ${If} ${FileExists} "$SMPROGRAMS\${BrandFullName}.lnk"
+      ShellLink::SetShortCutWorkingDirectory "$SMPROGRAMS\${BrandFullName}.lnk" \
+                                             "$INSTDIR"
+      ${If} "$AppUserModelID" != ""
+        ApplicationID::Set "$SMPROGRAMS\${BrandFullName}.lnk" "$AppUserModelID" "true"
+      ${EndIf}
+    ${EndIf}
+!endif
+  ${EndIf}
+
   ${SetHandlers}
 
   ${If} ${AtLeastWinVista}
@@ -1070,6 +1147,8 @@ Function SetAsDefaultAppUserHKCU
     ClearErrors
     ReadRegStr $0 HKLM "Software\RegisteredApplications" "${AppRegName}"
     ${Unless} ${Errors}
+      ; This is all protected by a user choice hash in Windows 8 so it won't
+      ; help, but it also won't hurt.
       AppAssocReg::SetAppAsDefaultAll "${AppRegName}"
     ${EndUnless}
   ${EndIf}
@@ -1090,15 +1169,40 @@ FunctionEnd
 !ifdef NO_LOG
 
 Function SetAsDefaultAppUser
-  ; It is only possible to set this installation of the application as the
-  ; StartMenuInternet handler if it was added to the HKLM StartMenuInternet
-  ; registry keys.
+  ; On Win8, we want to avoid having a UAC prompt since we'll already have
+  ; another action for control panel default browser selection popping up
+  ; to the user.  Win8 is the first OS where the start menu keys can be
+  ; added into HKCU.  The call to SetAsDefaultAppUserHKCU will have already
+  ; set the HKCU keys for SetStartMenuInternet.
+  ${If} ${AtLeastWin8}
+    ; Check if this is running in an elevated process
+    ClearErrors
+    ${GetParameters} $0
+    ${GetOptions} "$0" "/UAC:" $0
+    ${If} ${Errors} ; Not elevated
+      Call SetAsDefaultAppUserHKCU
+    ${Else} ; Elevated - execute the function in the unelevated process
+      GetFunctionAddress $0 SetAsDefaultAppUserHKCU
+      UAC::ExecCodeSegment $0
+    ${EndIf}
+    Return ; Nothing more needs to be done
+  ${EndIf}
+
+  ; Before Win8, it is only possible to set this installation of the application
+  ; as the StartMenuInternet handler if it was added to the HKLM
+  ; StartMenuInternet registry keys.
   ; http://support.microsoft.com/kb/297878
 
   ; Check if this install location registered as the StartMenuInternet client
   ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
   ClearErrors
-  ReadRegStr $0 HKLM "Software\Clients\StartMenuInternet\$R9\DefaultIcon" ""
+  ReadRegStr $0 HKCU "Software\Clients\StartMenuInternet\$R9\DefaultIcon" ""
+  ${If} ${Errors}
+  ${OrIf} ${AtMostWin2008R2}
+    ClearErrors
+    ReadRegStr $0 HKLM "Software\Clients\StartMenuInternet\$R9\DefaultIcon" ""
+  ${EndIf}
+
   ${Unless} ${Errors}
     ${GetPathFromString} "$0" $0
     ${GetParent} "$0" $0
@@ -1126,12 +1230,12 @@ Function SetAsDefaultAppUser
   ; b) is not a member of the administrators group and chooses to elevate
   ${ElevateUAC}
 
-  ${SetStartMenuInternet} ; Does not use SHCTX
+  ${SetStartMenuInternet} "HKLM"
 
   SetShellVarContext all  ; Set SHCTX to all users (e.g. HKLM)
 
   ${FixClassKeys} ; Does not use SHCTX
-  ${FixShellIconHandler} ; Does not use SHCTX
+  ${FixShellIconHandler} "HKLM"
   ${RemoveDeprecatedKeys} ; Does not use SHCTX
 
   ClearErrors

@@ -80,7 +80,7 @@ class nsCaret : public nsISelectionListener
      */
     virtual nsIFrame* GetGeometry(nsISelection* aSelection,
                                   nsRect* aRect,
-                                  nscoord* aBidiIndicatorSize = nsnull);
+                                  nscoord* aBidiIndicatorSize = nullptr);
 
     /** EraseCaret
      *  this will erase the caret if its drawn and reset drawn status
@@ -97,7 +97,7 @@ class nsCaret : public nsISelectionListener
      *
      *  Note: This call breaks the caret's ability to blink at all.
      **/
-    nsresult    DrawAtPosition(nsIDOMNode* aNode, PRInt32 aOffset);
+    nsresult    DrawAtPosition(nsIDOMNode* aNode, int32_t aOffset);
 
     /** GetCaretFrame
      *  Get the current frame that the caret should be drawn in. If the caret is
@@ -106,7 +106,7 @@ class nsCaret : public nsISelectionListener
      *
      *  @param aOffset is result of the caret offset in the content.
      */
-    nsIFrame*     GetCaretFrame(PRInt32 *aOffset = nsnull);
+    nsIFrame*     GetCaretFrame(int32_t *aOffset = nullptr);
 
     /** GetCaretRect
      *  Get the current caret rect. Only call this when GetCaretFrame returns
@@ -157,11 +157,11 @@ class nsCaret : public nsISelectionListener
     static void   CaretBlinkCallback(nsITimer *aTimer, void *aClosure);
 
     nsresult      GetCaretFrameForNodeOffset(nsIContent* aContentNode,
-                                             PRInt32 aOffset,
+                                             int32_t aOffset,
                                              nsFrameSelection::HINT aFrameHint,
-                                             PRUint8 aBidiLevel,
+                                             uint8_t aBidiLevel,
                                              nsIFrame** aReturnFrame,
-                                             PRInt32* aReturnOffset);
+                                             int32_t* aReturnOffset);
 
     NS_IMETHOD CheckCaretDrawingState();
 
@@ -173,23 +173,19 @@ protected:
     void          StartBlinking();
     void          StopBlinking();
 
-    // If the nearest block has a potential 'text-overflow' marker then
-    // invalidate it.
-    void          InvalidateTextOverflowBlock();
-    
     bool          DrawAtPositionWithHint(nsIDOMNode* aNode,
-                                         PRInt32 aOffset,
+                                         int32_t aOffset,
                                          nsFrameSelection::HINT aFrameHint,
-                                         PRUint8 aBidiLevel,
+                                         uint8_t aBidiLevel,
                                          bool aInvalidate);
 
     struct Metrics {
       nscoord mBidiIndicatorSize; // width and height of bidi indicator
       nscoord mCaretWidth;        // full caret width including bidi indicator
     };
-    Metrics ComputeMetrics(nsIFrame* aFrame, PRInt32 aOffset, nscoord aCaretHeight);
+    Metrics ComputeMetrics(nsIFrame* aFrame, int32_t aOffset, nscoord aCaretHeight);
     nsresult GetGeometryForFrame(nsIFrame* aFrame,
-                                 PRInt32   aFrameOffset,
+                                 int32_t   aFrameOffset,
                                  nsRect*   aRect,
                                  nscoord*  aBidiIndicatorSize);
 
@@ -202,9 +198,7 @@ protected:
 
     void          DrawCaret(bool aInvalidate);
     void          DrawCaretAfterBriefDelay();
-    bool          UpdateCaretRects(nsIFrame* aFrame, PRInt32 aFrameOffset);
-    static void   InvalidateRects(const nsRect &aRect, const nsRect &aHook,
-                                  nsIFrame *aFrame);
+    bool          UpdateCaretRects(nsIFrame* aFrame, int32_t aFrameOffset);
     nsRect        GetHookRect()
     {
 #ifdef IBMBIDI
@@ -236,7 +230,7 @@ protected:
 
     // XXX these fields should go away and the values be acquired as needed,
     // probably by ComputeMetrics.
-    PRUint32              mBlinkRate;         // time for one cyle (on then off), in milliseconds
+    uint32_t              mBlinkRate;         // time for one cyle (on then off), in milliseconds
     nscoord               mCaretWidthCSSPx;   // caret width in CSS pixels
     float                 mCaretAspectRatio;  // caret width/height aspect ratio
     
@@ -254,7 +248,7 @@ protected:
     bool                  mKeyboardRTL;       // is the keyboard language right-to-left
     bool                  mBidiUI;            // is bidi UI turned on
     nsRect                mHookRect;          // directional hook on the caret
-    PRUint8               mLastBidiLevel;     // saved bidi level of the last draw request, to use when we erase
+    uint8_t               mLastBidiLevel;     // saved bidi level of the last draw request, to use when we erase
 #endif
     nsRect                mCaretRect;         // the last caret rect, in the coodinates of the last frame.
 
@@ -262,40 +256,11 @@ protected:
                                               // in (by DrawAtPosition()/DrawCaret()),
                                               // note that this can be different than where it was
                                               // actually drawn (anon <BR> in text control)
-    PRInt32               mLastContentOffset; // the offset for the last request
+    int32_t               mLastContentOffset; // the offset for the last request
 
     nsFrameSelection::HINT mLastHint;        // the hint associated with the last request, see also
                                               // mLastBidiLevel below
 
-};
-
-// handy stack-based class for temporarily disabling the caret
-
-class StCaretHider
-{
-public:
-               StCaretHider(nsCaret* aSelCon)
-               : mWasVisible(false), mCaret(aSelCon)
-               {
-                 if (mCaret)
-                 {
-                   mCaret->GetCaretVisible(&mWasVisible);
-                   if (mWasVisible)
-                     mCaret->SetCaretVisible(false);
-                 }
-               }
-
-               ~StCaretHider()
-               {
-                 if (mCaret && mWasVisible)
-                   mCaret->SetCaretVisible(true);
-                 // nsCOMPtr releases mPresShell
-               }
-
-protected:
-
-    bool                    mWasVisible;
-    nsCOMPtr<nsCaret>  mCaret;
 };
 
 #endif //nsCaret_h__

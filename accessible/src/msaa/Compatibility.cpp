@@ -47,7 +47,7 @@ IsModuleVersionLessThan(HMODULE aModuleHandle, DWORD aMajor, DWORD aMinor)
 // Compatibility
 ////////////////////////////////////////////////////////////////////////////////
 
-PRUint32 Compatibility::sConsumers = Compatibility::UNKNOWN;
+uint32_t Compatibility::sConsumers = Compatibility::UNKNOWN;
 
 void
 Compatibility::Init()
@@ -84,7 +84,8 @@ Compatibility::Init()
       ::GetModuleHandleW(L"TextExtractorImpl64"))
     sConsumers |= YOUDAO;
 
-  if (::GetModuleHandleW(L"uiautomation"))
+  if (::GetModuleHandleW(L"uiautomation") ||
+      ::GetModuleHandleW(L"uiautomationcore"))
     sConsumers |= UIAUTOMATION;
 
   // If we have a known consumer remove the unknown bit.
@@ -92,7 +93,7 @@ Compatibility::Init()
     sConsumers ^= Compatibility::UNKNOWN;
 
   // Gather telemetry
-  PRUint32 temp = sConsumers;
+  uint32_t temp = sConsumers;
   for (int i = 0; temp; i++) {
     if (temp & 0x1)
       statistics::A11yConsumers(i);

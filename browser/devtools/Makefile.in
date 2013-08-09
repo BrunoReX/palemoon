@@ -3,7 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH   = ../..
+DEPTH   = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir    = @srcdir@
 VPATH   = @srcdir@
@@ -14,6 +14,7 @@ include $(topsrcdir)/config/config.mk
 
 DIRS = \
   highlighter \
+  markupview \
   webconsole \
   commandline \
   sourceeditor \

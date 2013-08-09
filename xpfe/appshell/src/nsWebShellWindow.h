@@ -10,21 +10,23 @@
 #include "nsEvent.h"
 #include "nsIWebProgressListener.h"
 #include "nsITimer.h"
-
-// can't use forward class decl's because of template bugs on Solaris 
-#include "nsIDOMDocument.h"
-
 #include "nsCOMPtr.h"
 #include "nsXULWindow.h"
+#include "nsIWidgetListener.h"
 
 /* Forward declarations.... */
 class nsIURI;
 
+namespace mozilla {
+class WebShellWindowTimerCallback;
+} // namespace mozilla
+
 class nsWebShellWindow : public nsXULWindow,
-                         public nsIWebProgressListener
+                         public nsIWebProgressListener,
+                         public nsIWidgetListener
 {
 public:
-  nsWebShellWindow(PRUint32 aChromeFlags);
+  nsWebShellWindow(uint32_t aChromeFlags);
 
   // nsISupports interface...
   NS_DECL_ISUPPORTS_INHERITED
@@ -32,7 +34,7 @@ public:
   // nsWebShellWindow methods...
   nsresult Initialize(nsIXULWindow * aParent, nsIXULWindow * aOpener,
                       nsIURI* aUrl,
-                      PRInt32 aInitialWidth, PRInt32 aInitialHeight,
+                      int32_t aInitialWidth, int32_t aInitialHeight,
                       bool aIsHiddenWindow,
                       nsWidgetInitData& widgetInitData);
 
@@ -44,21 +46,33 @@ public:
   // nsIBaseWindow
   NS_IMETHOD Destroy();
 
+  // nsIWidgetListener
+  virtual nsIXULWindow* GetXULWindow() { return this; }
+  virtual nsIPresShell* GetPresShell();
+  virtual bool WindowMoved(nsIWidget* aWidget, int32_t x, int32_t y);
+  virtual bool WindowResized(nsIWidget* aWidget, int32_t aWidth, int32_t aHeight);
+  virtual bool RequestWindowClose(nsIWidget* aWidget);
+  virtual void SizeModeChanged(nsSizeMode sizeMode);
+  virtual void OSToolbarButtonPressed();
+  virtual bool ZLevelChanged(bool aImmediate, nsWindowZ *aPlacement,
+                             nsIWidget* aRequestBelow, nsIWidget** aActualBelow);
+  virtual void WindowActivated();
+  virtual void WindowDeactivated();
+
 protected:
+  friend class mozilla::WebShellWindowTimerCallback;
   
   virtual ~nsWebShellWindow();
 
   void                     LoadContentAreas();
   bool                     ExecuteCloseHandler();
-  void                     ConstrainToOpenerScreen(PRInt32* aX, PRInt32* aY);
-
-  static nsEventStatus HandleEvent(nsGUIEvent *aEvent);
+  void                     ConstrainToOpenerScreen(int32_t* aX, int32_t* aY);
 
   nsCOMPtr<nsITimer>      mSPTimer;
   mozilla::Mutex          mSPTimerLock;
 
-  void        SetPersistenceTimer(PRUint32 aDirtyFlags);
-  static void FirePersistenceTimer(nsITimer *aTimer, void *aClosure);
+  void        SetPersistenceTimer(uint32_t aDirtyFlags);
+  void        FirePersistenceTimer();
 };
 
 

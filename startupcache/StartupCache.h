@@ -21,6 +21,7 @@
 #include "nsIObserver.h"
 #include "nsIOutputStream.h"
 #include "nsIFile.h"
+#include "mozilla/Attributes.h"
 
 /**
  * The StartupCache is a persistent cache of simple key-value pairs,
@@ -43,6 +44,12 @@
  *
  * InvalidateCache() may be called if a client suspects data corruption 
  * or wishes to invalidate for any other reason. This will remove all existing cache data.
+ * Additionally, the static method IgnoreDiskCache() can be called if it is
+ * believed that the on-disk cache file is itself corrupt. This call implicitly
+ * calls InvalidateCache (if the singleton has been initialized) to ensure any
+ * data already read from disk is discarded. The cache will not load data from
+ * the disk file until a successful write occurs.
+ *
  * Finally, getDebugObjectOutputStream() allows debug code to wrap an objectstream
  * with a debug objectstream, to check for multiply-referenced objects. These will
  * generally fail to deserialize correctly, unless they are stateless singletons or the 
@@ -70,12 +77,12 @@ namespace scache {
 struct CacheEntry 
 {
   nsAutoArrayPtr<char> data;
-  PRUint32 size;
+  uint32_t size;
 
-  CacheEntry() : data(nsnull), size(0) { }
+  CacheEntry() : data(nullptr), size(0) { }
 
   // Takes possession of buf
-  CacheEntry(char* buf, PRUint32 len) : data(buf), size(len) { }
+  CacheEntry(char* buf, uint32_t len) : data(buf), size(len) { }
 
   ~CacheEntry()
   {
@@ -88,7 +95,7 @@ struct CacheEntry
 
 // We don't want to refcount StartupCache, and ObserverService wants to
 // refcount its listeners, so we'll let it refcount this instead.
-class StartupCacheListener : public nsIObserver
+class StartupCacheListener MOZ_FINAL : public nsIObserver
 {
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
@@ -105,13 +112,16 @@ public:
   // StartupCache methods. See above comments for a more detailed description.
 
   // Returns a buffer that was previously stored, caller takes ownership. 
-  nsresult GetBuffer(const char* id, char** outbuf, PRUint32* length);
+  nsresult GetBuffer(const char* id, char** outbuf, uint32_t* length);
 
   // Stores a buffer. Caller keeps ownership, we make a copy.
-  nsresult PutBuffer(const char* id, const char* inbuf, PRUint32 length);
+  nsresult PutBuffer(const char* id, const char* inbuf, uint32_t length);
 
   // Removes the cache file.
   void InvalidateCache();
+
+  // Signal that data should not be loaded from the cache file
+  static void IgnoreDiskCache();
 
   // In DEBUG builds, returns a stream that will attempt to check for
   // and disallow multiple writes of the same object.
@@ -156,7 +166,7 @@ private:
 
   nsClassHashtable<nsCStringHashKey, CacheEntry> mTable;
   nsRefPtr<nsZipArchive> mArchive;
-  nsCOMPtr<nsILocalFile> mFile;
+  nsCOMPtr<nsIFile> mFile;
   
   nsCOMPtr<nsIObserverService> mObserverService;
   nsRefPtr<StartupCacheListener> mListener;
@@ -166,6 +176,7 @@ private:
 
   static StartupCache *gStartupCache;
   static bool gShutdownInitiated;
+  static bool gIgnoreDiskCache;
   PRThread *mWriteThread;
 #ifdef DEBUG
   nsTHashtable<nsISupportsHashKey> mWriteObjectMap;
@@ -179,7 +190,7 @@ private:
 // references to the same object. We only support that if that object
 // is a singleton.
 #ifdef DEBUG
-class StartupCacheDebugOutputStream
+class StartupCacheDebugOutputStream MOZ_FINAL
   : public nsIObjectOutputStream
 {  
   NS_DECL_ISUPPORTS
@@ -205,7 +216,7 @@ class StartupCacheDebugOutputStream
       {0xb5, 0x77, 0xf9, 0x23, 0x57, 0xed, 0xa8, 0x84}}
 // contract id: "@mozilla.org/startupcache/cache;1"
 
-class StartupCacheWrapper 
+class StartupCacheWrapper MOZ_FINAL
   : public nsIStartupCache
 {
   NS_DECL_ISUPPORTS

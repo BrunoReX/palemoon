@@ -9,6 +9,9 @@
 
 #include "AccIterator.h"
 
+namespace mozilla {
+namespace a11y {
+
 /**
  * This class is used to return Relation objects from functions.  A copy
  * constructor doesn't work here because we need to mutate the old relation to
@@ -16,11 +19,12 @@
  */
 struct RelationCopyHelper
 {
-  RelationCopyHelper(AccIterable* aFirstIter, AccIterable* aLastIter) :
+  RelationCopyHelper(mozilla::a11y::AccIterable* aFirstIter,
+                     mozilla::a11y::AccIterable* aLastIter) :
     mFirstIter(aFirstIter), mLastIter(aLastIter) { }
 
-  AccIterable* mFirstIter;
-  AccIterable* mLastIter;
+  mozilla::a11y::AccIterable* mFirstIter;
+  mozilla::a11y::AccIterable* mLastIter;
 };
 
 /**
@@ -30,19 +34,20 @@ struct RelationCopyHelper
 class Relation
 {
 public:
-  Relation() : mFirstIter(nsnull), mLastIter(nsnull) { }
+  Relation() : mFirstIter(nullptr), mLastIter(nullptr) { }
 
   Relation(const RelationCopyHelper aRelation) :
     mFirstIter(aRelation.mFirstIter), mLastIter(aRelation.mLastIter) { }
 
-  Relation(AccIterable* aIter) : mFirstIter(aIter), mLastIter(aIter) { }
+  Relation(mozilla::a11y::AccIterable* aIter) :
+    mFirstIter(aIter), mLastIter(aIter) { }
 
   Relation(Accessible* aAcc) :
-    mFirstIter(nsnull), mLastIter(nsnull)
+    mFirstIter(nullptr), mLastIter(nullptr)
     { AppendTarget(aAcc); }
 
   Relation(DocAccessible* aDocument, nsIContent* aContent) :
-    mFirstIter(nsnull), mLastIter(nsnull)
+    mFirstIter(nullptr), mLastIter(nullptr)
     { AppendTarget(aDocument, aContent); }
 
   Relation& operator = (const RelationCopyHelper& aRH)
@@ -64,7 +69,7 @@ public:
     return RelationCopyHelper(mFirstIter.forget(), mLastIter);
   }
 
-  inline void AppendIter(AccIterable* aIter)
+  inline void AppendIter(mozilla::a11y::AccIterable* aIter)
   {
     if (mLastIter)
       mLastIter->mNextIter = aIter;
@@ -80,7 +85,7 @@ public:
   inline void AppendTarget(Accessible* aAcc)
   {
     if (aAcc)
-      AppendIter(new SingleAccIterator(aAcc));
+      AppendIter(new mozilla::a11y::SingleAccIterator(aAcc));
   }
 
   /**
@@ -98,14 +103,14 @@ public:
    */
   inline Accessible* Next()
   {
-    Accessible* target = nsnull;
+    Accessible* target = nullptr;
 
     // a trick nsAutoPtr deletes what it used to point to when assigned to
     while (mFirstIter && !(target = mFirstIter->Next()))
       mFirstIter = mFirstIter->mNextIter;
 
     if (!mFirstIter)
-      mLastIter = nsnull;
+      mLastIter = nullptr;
 
     return target;
   }
@@ -113,9 +118,12 @@ public:
 private:
   Relation& operator = (const Relation&);
 
-  nsAutoPtr<AccIterable> mFirstIter;
-  AccIterable* mLastIter;
+  nsAutoPtr<mozilla::a11y::AccIterable> mFirstIter;
+  mozilla::a11y::AccIterable* mLastIter;
 };
+
+} // namespace a11y
+} // namespace mozilla
 
 #endif
 

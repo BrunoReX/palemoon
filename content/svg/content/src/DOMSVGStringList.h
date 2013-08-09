@@ -11,6 +11,7 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsIDOMSVGStringList.h"
 #include "nsSVGElement.h"
+#include "mozilla/Attributes.h"
 
 namespace mozilla {
 
@@ -42,7 +43,7 @@ class SVGStringList;
  * them so it can return the same objects each time. It simply returns a new
  * string each time any given item is requested.
  */
-class DOMSVGStringList : public nsIDOMSVGStringList
+class DOMSVGStringList MOZ_FINAL : public nsIDOMSVGStringList
 {
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -63,7 +64,7 @@ public:
     GetDOMWrapper(SVGStringList *aList,
                   nsSVGElement *aElement,
                   bool aIsConditionalProcessingAttribute,
-                  PRUint8 aAttrEnum);
+                  uint8_t aAttrEnum);
 
 private:
   /**
@@ -71,7 +72,7 @@ private:
    * type.
    */
   DOMSVGStringList(nsSVGElement *aElement,
-                   bool aIsConditionalProcessingAttribute, PRUint8 aAttrEnum)
+                   bool aIsConditionalProcessingAttribute, uint8_t aAttrEnum)
     : mElement(aElement)
     , mAttrEnum(aAttrEnum)
     , mIsConditionalProcessingAttribute(aIsConditionalProcessingAttribute)
@@ -84,7 +85,7 @@ private:
   // Strong ref to our element to keep it alive.
   nsRefPtr<nsSVGElement> mElement;
 
-  PRUint8 mAttrEnum;
+  uint8_t mAttrEnum;
 
   bool    mIsConditionalProcessingAttribute;
 };

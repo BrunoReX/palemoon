@@ -30,7 +30,7 @@ BindingParamsArray::lock()
 
   // We also no longer need to hold a reference to our statement since it owns
   // us.
-  mOwningStatement = nsnull;
+  mOwningStatement = nullptr;
 }
 
 const StorageBaseStatementInternal *
@@ -80,7 +80,7 @@ BindingParamsArray::AddParams(mozIStorageBindingParams *aParameters)
 }
 
 NS_IMETHODIMP
-BindingParamsArray::GetLength(PRUint32 *_length)
+BindingParamsArray::GetLength(uint32_t *_length)
 {
   *_length = length();
   return NS_OK;

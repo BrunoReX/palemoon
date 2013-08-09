@@ -30,8 +30,8 @@ public:
                     bool aIsPrintPreview);
     NS_IMETHOD BeginDocument(PRUnichar* aTitle,
                              PRUnichar* aPrintToFileName,
-                             PRInt32 aStartPage,
-                             PRInt32 aEndPage);
+                             int32_t aStartPage,
+                             int32_t aEndPage);
     NS_IMETHOD EndDocument();
     NS_IMETHOD BeginPage() { return NS_OK; }
     NS_IMETHOD EndPage() { return NS_OK; }
@@ -44,8 +44,8 @@ protected:
     bool mIsPPreview : 1;     /* If true, is print preview */
     char   mPath[PATH_MAX];     /* If toPrinter = false, dest file */
     char   mPrinter[256];       /* Printer name */
-    nsCString              mSpoolName;
-    nsCOMPtr<nsILocalFile> mSpoolFile;
+    nsCString         mSpoolName;
+    nsCOMPtr<nsIFile> mSpoolFile;
 };
 
 class nsPrinterEnumeratorQt : public nsIPrinterEnumerator

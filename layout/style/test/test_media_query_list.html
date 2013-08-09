@@ -26,7 +26,7 @@ function run() {
   var subroot = subdoc.documentElement;
 
   var content_div = document.getElementById("content");
-  content_div.style.font = "-moz-initial";
+  content_div.style.font = "initial";
   var em_size =
     getComputedStyle(content_div, "").fontSize.match(/^(\d+)px$/)[1];
 
@@ -278,6 +278,19 @@ function run() {
 
     mql.removeListener(null);
     mql.removeListener(null);
+  })();
+
+  /* Bug 753777: test that things work in a freshly-created iframe */
+  (function() {
+    var iframe = document.createElement("iframe");
+    document.body.appendChild(iframe);
+
+    is(iframe.contentWindow.matchMedia("(min-width: 1px)").matches, true,
+       "(min-width: 1px) should match in newly-created iframe");
+    is(iframe.contentWindow.matchMedia("(max-width: 1px)").matches, false,
+       "(max-width: 1px) should not match in newly-created iframe");
+
+    document.body.removeChild(iframe);
   })();
 
   /* Bug 716751: listeners lost due to GC */

@@ -7,13 +7,17 @@
 #define DeleteRangeTxn_h__
 
 #include "EditAggregateTxn.h"
-#include "nsIDOMNode.h"
-#include "nsIDOMRange.h"
+#include "EditTxn.h"
+#include "nsAutoPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsID.h"
 #include "nsIEditor.h"
-#include "nsCOMPtr.h"
+#include "nsISupportsImpl.h"
+#include "nsRange.h"
+#include "nscore.h"
 
-class nsIDOMRange;
-class nsIEditor;
+class nsEditor;
+class nsINode;
 class nsRangeUpdater;
 
 /**
@@ -26,9 +30,9 @@ public:
     * @param aEditor the object providing basic editing operations
     * @param aRange  the range to delete
     */
-  NS_IMETHOD Init(nsIEditor *aEditor, 
-                  nsIDOMRange *aRange,
-                  nsRangeUpdater *aRangeUpdater);
+  nsresult Init(nsEditor* aEditor,
+                nsRange* aRange,
+                nsRangeUpdater* aRangeUpdater);
 
   DeleteRangeTxn();
 
@@ -41,41 +45,26 @@ public:
 
 protected:
 
-  NS_IMETHOD CreateTxnsToDeleteBetween(nsIDOMNode *aStartParent, 
-                                             PRUint32    aStartOffset, 
-                                             PRUint32    aEndOffset);
+  nsresult CreateTxnsToDeleteBetween(nsINode* aNode,
+                                     int32_t aStartOffset,
+                                     int32_t aEndOffset);
 
-  NS_IMETHOD CreateTxnsToDeleteNodesBetween();
+  nsresult CreateTxnsToDeleteNodesBetween();
 
-  NS_IMETHOD CreateTxnsToDeleteContent(nsIDOMNode *aParent, 
-                                             PRUint32 aOffset, 
-                                             nsIEditor::EDirection aAction);
-  
+  nsresult CreateTxnsToDeleteContent(nsINode* aParent,
+                                     int32_t aOffset,
+                                     nsIEditor::EDirection aAction);
+
 protected:
-  
-  /** p1 in the range */
-  nsCOMPtr<nsIDOMRange> mRange;			// is this really an owning ptr?
 
   /** p1 in the range */
-  nsCOMPtr<nsIDOMNode> mStartParent;
-
-  /** p1 offset */
-  PRInt32 mStartOffset;
-
-  /** p2 in the range */
-  nsCOMPtr<nsIDOMNode> mEndParent;
-
-  /** the closest common parent of p1 and p2 */
-  nsCOMPtr<nsIDOMNode> mCommonParent;
-
-  /** p2 offset */
-  PRInt32 mEndOffset;
+  nsRefPtr<nsRange> mRange;
 
   /** the editor for this transaction */
-  nsIEditor* mEditor;
+  nsEditor* mEditor;
 
   /** range updater object */
-  nsRangeUpdater *mRangeUpdater;
+  nsRangeUpdater* mRangeUpdater;
 };
 
 #endif

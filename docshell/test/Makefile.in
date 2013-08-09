@@ -3,16 +3,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
-relativesrcdir  = docshell/test
+relativesrcdir  = @relativesrcdir@
 
 MODULE = test_docshell
 
 DIRS += chrome \
 	navigation \
+	browser \
 	$(NULL)
 
 include $(DEPTH)/config/autoconf.mk
@@ -23,13 +24,7 @@ ifneq ($(OS_ARCH),Darwin)
 XPCSHELL_TESTS += unit_ipc
 endif
 
-ifneq (mobile,$(MOZ_BUILD_APP))
-	DIRS += browser
-endif
-
-include $(topsrcdir)/config/rules.mk
-
-_TEST_FILES = \
+MOCHITEST_FILES = \
 		test_bug94514.html \
 		bug94514-postpage.html \
 		test_bug123696.html \
@@ -97,17 +92,19 @@ _TEST_FILES = \
 		test_bug691547.html \
 		bug691547_frame.html \
 		test_bug694612.html \
+		test_bug703855.html \
+		file_bug703855.html \
 		test_bug713825.html \
 		test_bug728939.html \
 		file_bug728939.html \
+		test_bug797909.html \
 		$(NULL)
 
 ifeq ($(MOZ_WIDGET_TOOLKIT),cocoa)
-_TEST_FILES += \
+MOCHITEST_FILES += \
 		test_bug511449.html \
 		file_bug511449.html \
 		$(NULL)
 endif
 
-libs:: $(_TEST_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/tests/$(relativesrcdir)
+include $(topsrcdir)/config/rules.mk

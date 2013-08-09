@@ -5,16 +5,20 @@
 
 package org.mozilla.gecko;
 
+import org.mozilla.gecko.db.BrowserDB;
+import org.mozilla.gecko.db.BrowserContract.Combined;
+import org.mozilla.gecko.util.GeckoAsyncTask;
+
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.DialogInterface;
-import android.content.Intent;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.res.Configuration;
-import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
@@ -23,45 +27,28 @@ import android.text.InputType;
 import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.TextWatcher;
-import android.util.AttributeSet;
 import android.util.Log;
-import android.view.ActionMode;
 import android.view.ContextMenu;
 import android.view.ContextMenu.ContextMenuInfo;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
-import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
-import android.view.inputmethod.InputMethodManager;
 import android.view.inputmethod.EditorInfo;
-import android.widget.AdapterView;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.ExpandableListView;
 import android.widget.ImageButton;
 import android.widget.ListView;
 import android.widget.TabWidget;
 import android.widget.Toast;
 
-import org.mozilla.gecko.db.BrowserContract.Bookmarks;
-import org.mozilla.gecko.db.BrowserContract.Combined;
-import org.mozilla.gecko.db.BrowserDB.URLColumns;
-import org.mozilla.gecko.db.BrowserDB;
-import org.mozilla.gecko.AwesomeBarTabs.AwesomeBarCursorAdapter.AwesomeBarCursorItem;
-
-import org.json.JSONObject;
 import java.net.URLEncoder;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Map;
 
-public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
+public class AwesomeBar extends GeckoActivity {
     private static final String LOGTAG = "GeckoAwesomeBar";
-
-    private static final int SUGGESTION_TIMEOUT = 2000;
-    private static final int SUGGESTION_MAX = 3;
 
     private static final Collection<String> sSwypeInputMethods = Arrays.asList(new String[] {
                                                                  InputMethods.METHOD_SWYPE,
@@ -73,6 +60,7 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
     static final String TARGET_KEY = "target";
     static final String SEARCH_KEY = "search";
     static final String USER_ENTERED_KEY = "user_entered";
+    static final String READING_LIST_KEY = "reading_list";
     static enum Target { NEW_TAB, CURRENT_TAB };
 
     private String mTarget;
@@ -81,8 +69,6 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
     private ImageButton mGoButton;
     private ContentResolver mResolver;
     private ContextMenuSubject mContextMenuSubject;
-    private SuggestClient mSuggestClient;
-    private AsyncTask<String, Void, ArrayList<String>> mSuggestTask;
     private boolean mIsUsingSwype;
 
     @Override
@@ -186,24 +172,6 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
                     updateGoButton(text);
                 }
 
-                // cancel previous query
-                if (mSuggestTask != null) {
-                    mSuggestTask.cancel(true);
-                }
-
-                if (mSuggestClient != null) {
-                    mSuggestTask = new AsyncTask<String, Void, ArrayList<String>>() {
-                         protected ArrayList<String> doInBackground(String... query) {
-                             return mSuggestClient.query(query[0]);
-                         }
-
-                         protected void onPostExecute(ArrayList<String> suggestions) {
-                             mAwesomeTabs.setSuggestions(suggestions);
-                         }
-                    };
-                    mSuggestTask.execute(text);
-                }
-
                 if (Build.VERSION.SDK_INT >= 11) {
                     getActionBar().hide();
                 }
@@ -236,9 +204,16 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
 
         mText.setOnFocusChangeListener(new View.OnFocusChangeListener() {
             public void onFocusChange(View v, boolean hasFocus) {
-                if (!hasFocus) {
-                    InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (v == null || hasFocus) {
+                    return;
+                }
+
+                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                try {
                     imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
+                } catch (NullPointerException e) {
+                    Log.e(LOGTAG, "InputMethodManagerService, why are you throwing"
+                                  + " a NullPointerException? See bug 782096", e);
                 }
             }
         });
@@ -269,26 +244,11 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
             }
         });
 
-        registerForContextMenu(mAwesomeTabs.findViewById(R.id.all_pages_list));
-        registerForContextMenu(mAwesomeTabs.findViewById(R.id.bookmarks_list));
-        registerForContextMenu(mAwesomeTabs.findViewById(R.id.history_list));
-
-        GeckoAppShell.registerGeckoEventListener("SearchEngines:Data", this);
-        GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("SearchEngines:Get", null));
-    }
-
-    public void handleMessage(String event, JSONObject message) {
-        try {
-            if (event.equals("SearchEngines:Data")) {
-                final String suggestEngine =  message.isNull("suggestEngine") ? null : message.getString("suggestEngine");
-                final String suggestTemplate = message.isNull("suggestTemplate") ? null : message.getString("suggestTemplate");
-                if (suggestTemplate != null)
-                    mSuggestClient = new SuggestClient(GeckoApp.mAppContext, suggestTemplate, SUGGESTION_TIMEOUT, SUGGESTION_MAX);
-                mAwesomeTabs.setSearchEngines(suggestEngine, message.getJSONArray("searchEngines"));
-            }
-        } catch (Exception e) {
-            // do nothing
-            Log.i(LOGTAG, "handleMessage throws " + e + " for message: " + event);
+        boolean showReadingList = intent.getBooleanExtra(READING_LIST_KEY, false);
+        if (showReadingList) {
+            BookmarksTab bookmarksTab = mAwesomeTabs.getBookmarksTab();
+            bookmarksTab.setShowReadingList(true);
+            mAwesomeTabs.setCurrentTabByTag(bookmarksTab.getTag());
         }
     }
 
@@ -367,12 +327,15 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
         mGoButton.setVisibility(View.VISIBLE);
 
         int imageResource = R.drawable.ic_awesomebar_go;
+        String contentDescription = getString(R.string.go);
         int imeAction = EditorInfo.IME_ACTION_GO;
         if (isSearchUrl(text)) {
             imageResource = R.drawable.ic_awesomebar_search;
+            contentDescription = getString(R.string.search);
             imeAction = EditorInfo.IME_ACTION_SEARCH;
         }
         mGoButton.setImageResource(imageResource);
+        mGoButton.setContentDescription(contentDescription);
 
         int actionBits = mText.getImeOptions() & EditorInfo.IME_MASK_ACTION;
         if (actionBits != imeAction) {
@@ -404,12 +367,20 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
 
     private void openUserEnteredAndFinish(String url) {
         int index = url.indexOf(' ');
-        if (index != -1) {
-            String keywordUrl = BrowserDB.getUrlForKeyword(mResolver, url.substring(0, index));
-            if (keywordUrl != null && keywordUrl.contains("%s")) {
-                String search = URLEncoder.encode(url.substring(index + 1));
-                url = keywordUrl.replace("%s", search);
-            }
+        String keywordUrl = null;
+        String keywordSearch = null;
+
+        if (index == -1) {
+            keywordUrl = BrowserDB.getUrlForKeyword(mResolver, url);
+            keywordSearch = "";
+        } else {
+            keywordUrl = BrowserDB.getUrlForKeyword(mResolver, url.substring(0, index));
+            keywordSearch = url.substring(index + 1);
+        }
+
+        if (keywordUrl != null) {
+            String search = URLEncoder.encode(keywordSearch);
+            url = keywordUrl.replace("%s", search);
         }
 
         Intent resultIntent = new Intent();
@@ -438,7 +409,6 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
         // by any of the views, which usually means the edit box lost focus
         if (keyCode == KeyEvent.KEYCODE_BACK ||
             keyCode == KeyEvent.KEYCODE_MENU ||
-            keyCode == KeyEvent.KEYCODE_SEARCH ||
             keyCode == KeyEvent.KEYCODE_DPAD_UP ||
             keyCode == KeyEvent.KEYCODE_DPAD_DOWN ||
             keyCode == KeyEvent.KEYCODE_DPAD_LEFT ||
@@ -448,29 +418,27 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
             keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
             keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
             return super.onKeyDown(keyCode, event);
+        } else if (keyCode == KeyEvent.KEYCODE_SEARCH) {
+             mText.setText("");
+             mText.requestFocus();
+             InputMethodManager imm = (InputMethodManager) mText.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+             imm.showSoftInput(mText, InputMethodManager.SHOW_IMPLICIT);
+             return true;
         } else {
-            int selStart = -1;
-            int selEnd = -1;
-            if (mText.hasSelection()) {
-                selStart = mText.getSelectionStart();
-                selEnd = mText.getSelectionEnd();
-            }
+            int prevSelStart = mText.getSelectionStart();
+            int prevSelEnd = mText.getSelectionEnd();
 
-            if (selStart >= 0) {
-                // Restore the selection, which gets lost due to the focus switch
-                mText.setSelection(selStart, selEnd);
-            }
-
-            // Manually dispatch the key event to the AwesomeBar before restoring (default) input
-            // focus. dispatchKeyEvent() will update AwesomeBar's cursor position.
+            // Manually dispatch the key event to the AwesomeBar. If selection changed as
+            // a result of the key event, then give focus back to mText
             mText.dispatchKeyEvent(event);
-            int newCursorPos = mText.getSelectionEnd();
 
-            // requestFocusFromTouch() will select all AwesomeBar text, so we must restore cursor
-            // position so subsequent typing does not overwrite all text.
-            mText.requestFocusFromTouch();
-            mText.setSelection(newCursorPos);
-
+            int curSelStart = mText.getSelectionStart();
+            int curSelEnd = mText.getSelectionEnd();
+            if (prevSelStart != curSelStart || prevSelEnd != curSelEnd) {
+                mText.requestFocusFromTouch();
+                // Restore the selection, which gets lost due to the focus switch
+                mText.setSelection(curSelStart, curSelEnd);
+            }
             return true;
         }
     }
@@ -490,7 +458,6 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
     public void onDestroy() {
         super.onDestroy();
         mAwesomeTabs.destroy();
-        GeckoAppShell.unregisterGeckoEventListener("SearchEngines:Data", this);
     }
 
     @Override
@@ -504,19 +471,25 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
         cancelAndFinish();
     }
 
-    private class ContextMenuSubject {
+    static public class ContextMenuSubject {
         public int id;
         public String url;
         public byte[] favicon;
         public String title;
         public String keyword;
+        public int display;
 
         public ContextMenuSubject(int id, String url, byte[] favicon, String title, String keyword) {
+            this(id, url, favicon, title, keyword, Combined.DISPLAY_NORMAL);
+        }
+
+        public ContextMenuSubject(int id, String url, byte[] favicon, String title, String keyword, int display) {
             this.id = id;
             this.url = url;
             this.favicon = favicon;
             this.title = title;
             this.keyword = keyword;
+            this.display = display;
         }
     };
 
@@ -524,91 +497,8 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
     public void onCreateContextMenu(ContextMenu menu, View view, ContextMenuInfo menuInfo) {
         super.onCreateContextMenu(menu, view, menuInfo);
         ListView list = (ListView) view;
-        mContextMenuSubject = null;
-
-        if (list == findViewById(R.id.history_list)) {
-            if (!(menuInfo instanceof ExpandableListView.ExpandableListContextMenuInfo)) {
-                Log.e(LOGTAG, "menuInfo is not ExpandableListContextMenuInfo");
-                return;
-            }
-
-            ExpandableListView.ExpandableListContextMenuInfo info = (ExpandableListView.ExpandableListContextMenuInfo) menuInfo;
-            int childPosition = ExpandableListView.getPackedPositionChild(info.packedPosition);
-            int groupPosition = ExpandableListView.getPackedPositionGroup(info.packedPosition);
-
-            // Check if long tap is on a header row
-            if (groupPosition < 0 || childPosition < 0)
-                return;
-
-            ExpandableListView exList = (ExpandableListView) list;
-
-            // The history list is backed by a SimpleExpandableListAdapter
-            @SuppressWarnings("rawtypes")
-            Map map = (Map) exList.getExpandableListAdapter().getChild(groupPosition, childPosition);
-            mContextMenuSubject = new ContextMenuSubject((Integer) map.get(Combined.HISTORY_ID),
-                                                         (String) map.get(URLColumns.URL),
-                                                         (byte[]) map.get(URLColumns.FAVICON),
-                                                         (String) map.get(URLColumns.TITLE),
-                                                         null);
-        } else {
-            if (!(menuInfo instanceof AdapterView.AdapterContextMenuInfo)) {
-                Log.e(LOGTAG, "menuInfo is not AdapterContextMenuInfo");
-                return;
-            }
-
-            AdapterView.AdapterContextMenuInfo info = (AdapterView.AdapterContextMenuInfo) menuInfo;
-            Object selectedItem = list.getItemAtPosition(info.position);
-
-            Cursor cursor = null;
-            if (selectedItem instanceof AwesomeBarCursorItem) {
-                // All pages tab uses AwesomeBarCursorItems for things that aren't search items
-                cursor = ((AwesomeBarCursorItem) selectedItem).getCursor();
-            } else if (selectedItem instanceof Cursor) {
-                // The bookmarks tab uses Cursors
-                cursor = (Cursor) selectedItem;
-            } else {
-                Log.e(LOGTAG, "item at " + info.position + " is not an AwesomeBarCursorItem or a Cursor");
-                return;
-            }
-
-            // Don't show the context menu for folders
-            if (!(list == findViewById(R.id.bookmarks_list) &&
-                  cursor.getInt(cursor.getColumnIndexOrThrow(Bookmarks.TYPE)) == Bookmarks.TYPE_FOLDER)) {
-                String keyword = null;
-                int keywordCol = cursor.getColumnIndex(URLColumns.KEYWORD);
-                if (keywordCol != -1)
-                    keyword = cursor.getString(keywordCol);
-
-                // Use the bookmark id for the Bookmarks tab and the history id for the Top Sites tab 
-                int id = (list == findViewById(R.id.bookmarks_list)) ? cursor.getInt(cursor.getColumnIndexOrThrow(Bookmarks._ID)) :
-                                                                       cursor.getInt(cursor.getColumnIndexOrThrow(Combined.HISTORY_ID));
-
-                mContextMenuSubject = new ContextMenuSubject(id,
-                                                             cursor.getString(cursor.getColumnIndexOrThrow(URLColumns.URL)),
-                                                             cursor.getBlob(cursor.getColumnIndexOrThrow(URLColumns.FAVICON)),
-                                                             cursor.getString(cursor.getColumnIndexOrThrow(URLColumns.TITLE)),
-                                                             keyword);
-            }
-        }
-
-        if (mContextMenuSubject == null)
-            return;
-
-        MenuInflater inflater = getMenuInflater();
-        inflater.inflate(R.menu.awesomebar_contextmenu, menu);
-        
-        if (list != findViewById(R.id.bookmarks_list)) {
-            menu.findItem(R.id.remove_bookmark).setVisible(false);
-            menu.findItem(R.id.edit_bookmark).setVisible(false);
-
-            // Hide "Remove" item if there isn't a valid history ID
-            if (mContextMenuSubject.id < 0)
-                menu.findItem(R.id.remove_history).setVisible(false);
-        } else {
-            menu.findItem(R.id.remove_history).setVisible(false);
-        }
-
-        menu.setHeaderTitle(mContextMenuSubject.title);
+        AwesomeBarTab tab = mAwesomeTabs.getAwesomeBarTabForView(view);
+        mContextMenuSubject = tab.getSubject(menu, view, menuInfo);
     }
 
     @Override
@@ -621,6 +511,7 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
         final byte[] b = mContextMenuSubject.favicon;
         final String title = mContextMenuSubject.title;
         final String keyword = mContextMenuSubject.keyword;
+        final int display = mContextMenuSubject.display;
 
         switch (item.getItemId()) {
             case R.id.open_new_tab: {
@@ -629,8 +520,21 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
                     break;
                 }
 
-                GeckoApp.mAppContext.loadUrl(url, AwesomeBar.Target.NEW_TAB);
+                String newTabUrl = url;
+                if (display == Combined.DISPLAY_READER)
+                    newTabUrl = ReaderModeUtils.getAboutReaderForUrl(url, true);
+
+                Tabs.getInstance().loadUrl(newTabUrl, Tabs.LOADURL_NEW_TAB);
                 Toast.makeText(this, R.string.new_tab_opened, Toast.LENGTH_SHORT).show();
+                break;
+            }
+            case R.id.open_in_reader: {
+                if (url == null) {
+                    Log.e(LOGTAG, "Can't open in reader mode because URL is null");
+                    break;
+                }
+
+                openUrlAndFinish(ReaderModeUtils.getAboutReaderForUrl(url, true));
                 break;
             }
             case R.id.edit_bookmark: {
@@ -648,7 +552,7 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
 
                 editPrompt.setPositiveButton(R.string.button_ok, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface dialog, int whichButton) {
-                        (new GeckoAsyncTask<Void, Void, Void>() {
+                        (new GeckoAsyncTask<Void, Void, Void>(GeckoApp.mAppContext, GeckoAppShell.getHandler()) {
                             @Override
                             public Void doInBackground(Void... params) {
                                 String newUrl = locationText.getText().toString().trim();
@@ -711,8 +615,12 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
                     @Override
                     public void onPostExecute(Void result) {
                         int messageId = R.string.bookmark_removed;
-                        if (mInReadingList)
+                        if (mInReadingList) {
                             messageId = R.string.reading_list_removed;
+
+                            GeckoEvent e = GeckoEvent.createBroadcastEvent("Reader:Remove", url);
+                            GeckoAppShell.sendEventToGecko(e);
+                        }
 
                         Toast.makeText(AwesomeBar.this, messageId, Toast.LENGTH_SHORT).show();
                     }
@@ -720,7 +628,7 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
                 break;
             }
             case R.id.remove_history: {
-                (new GeckoAsyncTask<Void, Void, Void>() {
+                (new GeckoAsyncTask<Void, Void, Void>(GeckoApp.mAppContext, GeckoAppShell.getHandler()) {
                     @Override
                     public Void doInBackground(Void... params) {
                         BrowserDB.removeHistoryEntry(mResolver, id);
@@ -763,6 +671,12 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
             }
         }
         return true;
+    }
+
+    public static String getReaderForUrl(String url) {
+        // FIXME: still need to define the final way to open items from
+        // reading list. For now, we're using an about:reader page.
+        return "about:reader?url=" + Uri.encode(url) + "&readingList=1";
     }
 
     private static boolean hasCompositionString(Editable content) {

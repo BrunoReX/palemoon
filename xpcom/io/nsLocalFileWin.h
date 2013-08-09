@@ -16,13 +16,15 @@
 #include "nsIHashable.h"
 #include "nsIClassInfoImpl.h"
 
+#include "mozilla/Attributes.h"
+
 #include "windows.h"
 #include "shlobj.h"
 
 #include <sys/stat.h>
 
-class nsLocalFile : public nsILocalFileWin,
-                    public nsIHashable
+class nsLocalFile MOZ_FINAL : public nsILocalFileWin,
+                              public nsIHashable
 {
 public:
     NS_DEFINE_STATIC_CID_ACCESSOR(NS_LOCAL_FILE_CID)
@@ -91,7 +93,7 @@ private:
                             bool followSymlinks, bool move,
                             bool skipNtfsAclReset = false);
 
-    nsresult SetModDate(PRInt64 aLastModifiedTime, const PRUnichar *filePath);
+    nsresult SetModDate(int64_t aLastModifiedTime, const PRUnichar *filePath);
     nsresult HasFileAttribute(DWORD fileAttrib, bool *_retval);
     nsresult AppendInternal(const nsAFlatString &node,
                             bool multipleComponents);

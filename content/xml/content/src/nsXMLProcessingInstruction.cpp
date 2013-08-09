@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsGenericElement.h"
 #include "nsGkAtoms.h"
 #include "nsUnicharUtils.h"
 #include "nsXMLProcessingInstruction.h"
@@ -26,11 +25,11 @@ NS_NewXMLProcessingInstruction(nsIContent** aInstancePtrResult,
                                                     aNodeInfoManager, aData);
   }
 
-  *aInstancePtrResult = nsnull;
+  *aInstancePtrResult = nullptr;
 
   nsCOMPtr<nsINodeInfo> ni;
   ni = aNodeInfoManager->GetNodeInfo(nsGkAtoms::processingInstructionTagName,
-                                     nsnull, kNameSpaceID_None,
+                                     nullptr, kNameSpaceID_None,
                                      nsIDOMNode::PROCESSING_INSTRUCTION_NODE,
                                      target);
   NS_ENSURE_TRUE(ni, NS_ERROR_OUT_OF_MEMORY);
@@ -101,7 +100,7 @@ nsXMLProcessingInstruction::GetAttrValue(nsIAtom *aName, nsAString& aValue)
 }
 
 bool
-nsXMLProcessingInstruction::IsNodeOfType(PRUint32 aFlags) const
+nsXMLProcessingInstruction::IsNodeOfType(uint32_t aFlags) const
 {
   return !(aFlags & ~(eCONTENT | ePROCESSING_INSTRUCTION | eDATA_NODE));
 }
@@ -118,9 +117,9 @@ nsXMLProcessingInstruction::CloneDataNode(nsINodeInfo *aNodeInfo,
 
 #ifdef DEBUG
 void
-nsXMLProcessingInstruction::List(FILE* out, PRInt32 aIndent) const
+nsXMLProcessingInstruction::List(FILE* out, int32_t aIndent) const
 {
-  PRInt32 index;
+  int32_t index;
   for (index = aIndent; --index >= 0; ) fputs("  ", out);
 
   fprintf(out, "Processing instruction refcount=%d<", mRefCnt.get());
@@ -134,7 +133,7 @@ nsXMLProcessingInstruction::List(FILE* out, PRInt32 aIndent) const
 }
 
 void
-nsXMLProcessingInstruction::DumpContent(FILE* out, PRInt32 aIndent,
+nsXMLProcessingInstruction::DumpContent(FILE* out, int32_t aIndent,
                                         bool aDumpAll) const
 {
 }

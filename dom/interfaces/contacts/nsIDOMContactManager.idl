@@ -4,7 +4,7 @@
 
 #include "domstubs.idl"
 #include "nsIDOMContactProperties.idl"
-#include "nsIDOMEvent.idl"
+#include "nsIDOMEventTarget.idl"
 
 interface nsIArray;
 interface nsIDOMContactFindOptions;
@@ -17,15 +17,8 @@ interface nsIDOMContact : nsIDOMContactProperties
   attribute DOMString id;
   readonly attribute jsval     published;
   readonly attribute jsval     updated;
-  
-  void init(in nsIDOMContactProperties properties);  // Workaround BUG 723206
-};
 
-[scriptable, uuid(a8cd4ba0-93d1-11e1-b0c4-0800200c9a66)]
-interface mozIDOMContactEvent : nsIDOMEvent
-{
-  readonly attribute DOMString contactID;
-  readonly attribute DOMString reason;
+  void init(in nsIDOMContactProperties properties);  // Workaround BUG 723206
 };
 
 [scriptable, uuid(d88af7e0-a45f-11e1-b3dd-0800200c9a66)]

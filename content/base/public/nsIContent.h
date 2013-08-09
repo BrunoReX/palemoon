@@ -5,32 +5,22 @@
 #ifndef nsIContent_h___
 #define nsIContent_h___
 
-#include "nsCOMPtr.h" // for already_AddRefed
-#include "nsStringGlue.h"
-#include "nsCaseTreatment.h"
-#include "nsChangeHint.h"
-#include "nsINode.h"
-#include "nsIDocument.h" // for IsInHTMLDocument
+#include "nsCaseTreatment.h" // for enum, cannot be forward-declared
+#include "nsCOMPtr.h"        // for already_AddRefed in constructor
+#include "nsIDocument.h"     // for use in inline function (IsInHTMLDocument)
+#include "nsINode.h"         // for base class
 
 // Forward declarations
+class nsAString;
 class nsIAtom;
-class nsIDOMEvent;
-class nsIContent;
-class nsEventListenerManager;
 class nsIURI;
 class nsRuleWalker;
 class nsAttrValue;
 class nsAttrName;
 class nsTextFragment;
-class nsIDocShell;
 class nsIFrame;
-class nsISMILAttr;
-class nsIDOMCSSStyleDeclaration;
 
 namespace mozilla {
-namespace css {
-class StyleRule;
-} // namespace css
 namespace widget {
 struct IMEState;
 } // namespace widget
@@ -45,8 +35,8 @@ enum nsLinkState {
 
 // IID for the nsIContent interface
 #define NS_ICONTENT_IID \
-{ 0xa887c108, 0xc25e, 0x42ab, \
-  { 0x87, 0xef, 0xad, 0x4b, 0xee, 0x50, 0x28, 0x28 } }
+{ 0xe2985850, 0x81ca, 0x4b5d, \
+  { 0xb0, 0xf3, 0xe3, 0x95, 0xd5, 0x0d, 0x85, 0x64 } }
 
 /**
  * A node of content in a document's content model. This interface
@@ -61,11 +51,11 @@ public:
   // nsIContent is that it exists with an IID
 
   nsIContent(already_AddRefed<nsINodeInfo> aNodeInfo)
-    : nsINode(aNodeInfo),
-      mPrimaryFrame(nsnull)
+    : nsINode(aNodeInfo)
   {
     NS_ASSERTION(mNodeInfo,
                  "No nsINodeInfo passed to nsIContent, PREPARE TO CRASH!!!");
+    SetNodeIsContent();
   }
 #endif // MOZILLA_INTERNAL_API
 
@@ -171,7 +161,7 @@ public:
    *  of this node in the tree, but those other nodes cannot be reached from the
    *  eAllButXBL child list.
    */
-  virtual already_AddRefed<nsINodeList> GetChildren(PRUint32 aFilter) = 0;
+  virtual already_AddRefed<nsINodeList> GetChildren(uint32_t aFilter) = 0;
 
   /**
    * Get whether this content is C++-generated anonymous content
@@ -187,6 +177,12 @@ public:
     return HasFlag(NODE_IS_NATIVE_ANONYMOUS_ROOT);
   }
 
+  bool IsRootOfChromeAccessOnlySubtree() const
+  {
+    return HasFlag(NODE_IS_NATIVE_ANONYMOUS_ROOT |
+                   NODE_IS_ROOT_OF_CHROME_ONLY_ACCESS);
+  }
+
   /**
    * Makes this content anonymous
    * @see nsIAnonymousContentCreator
@@ -198,10 +194,10 @@ public:
   }
 
   /**
-   * Returns |this| if it is not native anonymous, otherwise
-   * first non native anonymous ancestor.
+   * Returns |this| if it is not chrome-only/native anonymous, otherwise
+   * first non chrome-only/native anonymous ancestor.
    */
-  virtual nsIContent* FindFirstNonNativeAnonymous() const;
+  virtual nsIContent* FindFirstNonChromeOnlyAccessContent() const;
 
   /**
    * Returns true if and only if this node has a parent, but is not in
@@ -236,9 +232,12 @@ public:
    */
   bool IsInAnonymousSubtree() const
   {
-    NS_ASSERTION(!IsInNativeAnonymousSubtree() || GetBindingParent() || !GetParent(),
-                 "must have binding parent when in native anonymous subtree with a parent node");
-    return IsInNativeAnonymousSubtree() || GetBindingParent() != nsnull;
+    NS_ASSERTION(!IsInNativeAnonymousSubtree() || GetBindingParent() ||
+                 (!IsInDoc() &&
+                  static_cast<nsIContent*>(SubtreeRoot())->IsInNativeAnonymousSubtree()),
+                 "Must have binding parent when in native anonymous subtree which is in document.\n"
+                 "Native anonymous subtree which is not in document must have native anonymous root.");
+    return IsInNativeAnonymousSubtree() || GetBindingParent() != nullptr;
   }
 
   /**
@@ -254,58 +253,57 @@ public:
    * Get the namespace that this element's tag is defined in
    * @return the namespace
    */
-  PRInt32 GetNameSpaceID() const
+  inline int32_t GetNameSpaceID() const
   {
     return mNodeInfo->NamespaceID();
-  }
-
-  /**
-   * Get the tag for this element. This will always return a non-null
-   * atom pointer (as implied by the naming of the method).
-   */
-  nsIAtom *Tag() const
-  {
-    return mNodeInfo->NameAtom();
   }
 
   /**
    * Get the NodeInfo for this element
    * @return the nodes node info
    */
-  nsINodeInfo *NodeInfo() const
+  inline nsINodeInfo* NodeInfo() const
   {
     return mNodeInfo;
   }
 
-  inline bool IsInNamespace(PRInt32 aNamespace) const {
+  inline bool IsInNamespace(int32_t aNamespace) const
+  {
     return mNodeInfo->NamespaceID() == aNamespace;
   }
 
-  inline bool IsHTML() const {
+  inline bool IsHTML() const
+  {
     return IsInNamespace(kNameSpaceID_XHTML);
   }
 
-  inline bool IsHTML(nsIAtom* aTag) const {
+  inline bool IsHTML(nsIAtom* aTag) const
+  {
     return mNodeInfo->Equals(aTag, kNameSpaceID_XHTML);
   }
 
-  inline bool IsSVG() const {
+  inline bool IsSVG() const
+  {
     return IsInNamespace(kNameSpaceID_SVG);
   }
 
-  inline bool IsSVG(nsIAtom* aTag) const {
+  inline bool IsSVG(nsIAtom* aTag) const
+  {
     return mNodeInfo->Equals(aTag, kNameSpaceID_SVG);
   }
 
-  inline bool IsXUL() const {
+  inline bool IsXUL() const
+  {
     return IsInNamespace(kNameSpaceID_XUL);
   }
 
-  inline bool IsMathML() const {
+  inline bool IsMathML() const
+  {
     return IsInNamespace(kNameSpaceID_MathML);
   }
 
-  inline bool IsMathML(nsIAtom* aTag) const {
+  inline bool IsMathML(nsIAtom* aTag) const
+  {
     return mNodeInfo->Equals(aTag, kNameSpaceID_MathML);
   }
 
@@ -324,7 +322,7 @@ public:
    * null otherwise.
    *
    * @param aStr the unparsed attribute string
-   * @return the node info. May be nsnull.
+   * @return the node info. May be nullptr.
    */
   virtual already_AddRefed<nsINodeInfo> GetExistingAttrNameFromQName(const nsAString& aStr) const = 0;
 
@@ -341,10 +339,10 @@ public:
    * @param aNotify specifies how whether or not the document should be
    *        notified of the attribute change.
    */
-  nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+  nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                    const nsAString& aValue, bool aNotify)
   {
-    return SetAttr(aNameSpaceID, aName, nsnull, aValue, aNotify);
+    return SetAttr(aNameSpaceID, aName, nullptr, aValue, aNotify);
   }
 
   /**
@@ -361,7 +359,7 @@ public:
    * @param aNotify specifies how whether or not the document should be
    *        notified of the attribute change.
    */
-  virtual nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+  virtual nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                            nsIAtom* aPrefix, const nsAString& aValue,
                            bool aNotify) = 0;
 
@@ -375,7 +373,7 @@ public:
    * @returns true if the attribute was set (even when set to empty string)
    *          false when not set.
    */
-  virtual bool GetAttr(PRInt32 aNameSpaceID, nsIAtom* aName, 
+  virtual bool GetAttr(int32_t aNameSpaceID, nsIAtom* aName, 
                          nsAString& aResult) const = 0;
 
   /**
@@ -385,7 +383,7 @@ public:
    * @param aAttr the attribute name
    * @return whether an attribute exists
    */
-  virtual bool HasAttr(PRInt32 aNameSpaceID, nsIAtom* aName) const = 0;
+  virtual bool HasAttr(int32_t aNameSpaceID, nsIAtom* aName) const = 0;
 
   /**
    * Test whether this content node's given attribute has the given value.  If
@@ -397,7 +395,7 @@ public:
    * @param aValue The value to compare to.
    * @param aCaseSensitive Whether to do a case-sensitive compare on the value.
    */
-  virtual bool AttrValueIs(PRInt32 aNameSpaceID,
+  virtual bool AttrValueIs(int32_t aNameSpaceID,
                              nsIAtom* aName,
                              const nsAString& aValue,
                              nsCaseTreatment aCaseSensitive) const
@@ -415,7 +413,7 @@ public:
    * @param aValue The value to compare to.  Must not be null.
    * @param aCaseSensitive Whether to do a case-sensitive compare on the value.
    */
-  virtual bool AttrValueIs(PRInt32 aNameSpaceID,
+  virtual bool AttrValueIs(int32_t aNameSpaceID,
                              nsIAtom* aName,
                              nsIAtom* aValue,
                              nsCaseTreatment aCaseSensitive) const
@@ -445,7 +443,7 @@ public:
    * indicating the first value of aValues that matched
    */
   typedef nsIAtom* const* const AttrValuesArray;
-  virtual PRInt32 FindAttrValueIn(PRInt32 aNameSpaceID,
+  virtual int32_t FindAttrValueIn(int32_t aNameSpaceID,
                                   nsIAtom* aName,
                                   AttrValuesArray* aValues,
                                   nsCaseTreatment aCaseSensitive) const
@@ -461,7 +459,7 @@ public:
    * @param aNotify specifies whether or not the document should be
    * notified of the attribute change
    */
-  virtual nsresult UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttr, 
+  virtual nsresult UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttr, 
                              bool aNotify) = 0;
 
 
@@ -476,14 +474,14 @@ public:
    * @note    The pointer returned by this function is only valid until the
    *          next call of either GetAttrNameAt or SetAttr on the element.
    */
-  virtual const nsAttrName* GetAttrNameAt(PRUint32 aIndex) const = 0;
+  virtual const nsAttrName* GetAttrNameAt(uint32_t aIndex) const = 0;
 
   /**
    * Get the number of all specified attributes.
    *
    * @return the number of attributes
    */
-  virtual PRUint32 GetAttrCount() const = 0;
+  virtual uint32_t GetAttrCount() const = 0;
 
   /**
    * Get direct access (but read only) to the text in the text content.
@@ -496,14 +494,14 @@ public:
    * Get the length of the text content.
    * NOTE: This should not be called on elements.
    */
-  virtual PRUint32 TextLength() const = 0;
+  virtual uint32_t TextLength() const = 0;
 
   /**
    * Set the text to the given value. If aNotify is true then
    * the document is notified of the content change.
    * NOTE: For elements this always ASSERTS and returns NS_ERROR_FAILURE
    */
-  virtual nsresult SetText(const PRUnichar* aBuffer, PRUint32 aLength,
+  virtual nsresult SetText(const PRUnichar* aBuffer, uint32_t aLength,
                            bool aNotify) = 0;
 
   /**
@@ -511,7 +509,7 @@ public:
    * the document is notified of the content change.
    * NOTE: For elements this always ASSERTS and returns NS_ERROR_FAILURE
    */
-  virtual nsresult AppendText(const PRUnichar* aBuffer, PRUint32 aLength,
+  virtual nsresult AppendText(const PRUnichar* aBuffer, uint32_t aLength,
                               bool aNotify) = 0;
 
   /**
@@ -558,7 +556,7 @@ public:
    *         > 0 can be tabbed to in the order specified by this value
    * @return whether the content is focusable via mouse, kbd or script.
    */
-  virtual bool IsFocusable(PRInt32 *aTabIndex = nsnull, bool aWithMouse = false)
+  virtual bool IsFocusable(int32_t *aTabIndex = nullptr, bool aWithMouse = false)
   {
     if (aTabIndex) 
       *aTabIndex = -1; // Default, not tabbable
@@ -650,7 +648,7 @@ public:
     */
   virtual already_AddRefed<nsIURI> GetHrefURI() const
   {
-    return nsnull;
+    return nullptr;
   }
 
   /**
@@ -669,7 +667,7 @@ public:
    *
    * If you also need to determine whether the parser is the one creating your
    * element (through createElement() or cloneNode() generally) then add a
-   * PRUint32 aFromParser to the NS_NewXXX() constructor for your element and
+   * uint32_t aFromParser to the NS_NewXXX() constructor for your element and
    * have the parser pass the appropriate flags. See nsHTMLInputElement.cpp and
    * nsHTMLContentSink::MakeContentObject().
    *
@@ -740,7 +738,7 @@ public:
     if (HasID()) {
       return DoGetID();
     }
-    return nsnull;
+    return nullptr;
   }
 
   /**
@@ -753,7 +751,7 @@ public:
     if (HasFlag(NODE_MAY_HAVE_CLASS)) {
       return DoGetClasses();
     }
-    return nsnull;
+    return nullptr;
   }
 
   /**
@@ -761,31 +759,6 @@ public:
    * hint rules) for this content node.
    */
   NS_IMETHOD WalkContentStyleRules(nsRuleWalker* aRuleWalker) = 0;
-
-  /**
-   * Is the attribute named stored in the mapped attributes?
-   *
-   * // XXXbz we use this method in HasAttributeDependentStyle, so svg
-   *    returns true here even though it stores nothing in the mapped
-   *    attributes.
-   */
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const = 0;
-
-  /**
-   * Get a hint that tells the style system what to do when 
-   * an attribute on this node changes, if something needs to happen
-   * in response to the change *other* than the result of what is
-   * mapped into style data via any type of style rule.
-   */
-  virtual nsChangeHint GetAttributeChangeHint(const nsIAtom* aAttribute,
-                                              PRInt32 aModType) const = 0;
-
-  /**
-   * Returns an atom holding the name of the "class" attribute on this
-   * content node (if applicable).  Returns null if there is no
-   * "class" attribute for this type of content node.
-   */
-  virtual nsIAtom *GetClassAttributeName() const = 0;
 
   /**
    * Should be called when the node can become editable or when it can stop
@@ -817,8 +790,12 @@ public:
    * In the case of absolutely positioned elements and floated elements, this
    * frame is the out of flow frame, not the placeholder.
    */
-  nsIFrame* GetPrimaryFrame() const { return mPrimaryFrame; }
+  nsIFrame* GetPrimaryFrame() const
+  {
+    return IsInDoc() ? mPrimaryFrame : nullptr;
+  }
   void SetPrimaryFrame(nsIFrame* aFrame) {
+    NS_ASSERTION(IsInDoc(), "This will end badly!");
     NS_PRECONDITION(!aFrame || !mPrimaryFrame || aFrame == mPrimaryFrame,
                     "Losing track of existing primary frame");
     mPrimaryFrame = aFrame;
@@ -873,6 +850,7 @@ public:
   virtual bool IsPurple() = 0;
   virtual void RemovePurple() = 0;
 
+  virtual bool OwnedOnlyByTheDOMTree() { return false; }
 protected:
   /**
    * Hook for implementing GetID.  This is guaranteed to only be
@@ -887,24 +865,19 @@ private:
    */
   virtual const nsAttrValue* DoGetClasses() const = 0;
 
-  /**
-   * Pointer to our primary frame.  Might be null.
-   */
-  nsIFrame* mPrimaryFrame;
-
 public:
 #ifdef DEBUG
   /**
    * List the content (and anything it contains) out to the given
    * file stream. Use aIndent as the base indent during formatting.
    */
-  virtual void List(FILE* out = stdout, PRInt32 aIndent = 0) const = 0;
+  virtual void List(FILE* out = stdout, int32_t aIndent = 0) const = 0;
 
   /**
    * Dump the content (and anything it contains) out to the given
    * file stream. Use aIndent as the base indent during formatting.
    */
-  virtual void DumpContent(FILE* out = stdout, PRInt32 aIndent = 0,
+  virtual void DumpContent(FILE* out = stdout, int32_t aIndent = 0,
                            bool aDumpAll = true) const = 0;
 #endif
 
@@ -916,7 +889,7 @@ public:
   };
 
   // Tab focus model bit field:
-  static PRInt32 sTabFocusModel;
+  static int32_t sTabFocusModel;
 
   // accessibility.tabfocus_applies_to_xul pref - if it is set to true,
   // the tabfocus bit field applies to xul elements.
@@ -924,5 +897,30 @@ public:
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIContent, NS_ICONTENT_IID)
+
+inline nsIContent* nsINode::AsContent()
+{
+  MOZ_ASSERT(IsContent());
+  return static_cast<nsIContent*>(this);
+}
+
+#define NS_IMPL_FROMCONTENT_HELPER(_class, _check)                             \
+  static _class* FromContent(nsIContent* aContent)                             \
+  {                                                                            \
+    return aContent->_check ? static_cast<_class*>(aContent) : nullptr;        \
+  }                                                                            \
+  static _class* FromContentOrNull(nsIContent* aContent)                       \
+  {                                                                            \
+    return aContent ? FromContent(aContent) : nullptr;                         \
+  }
+
+#define NS_IMPL_FROMCONTENT(_class, _nsid)                                     \
+  NS_IMPL_FROMCONTENT_HELPER(_class, IsInNamespace(_nsid))
+
+#define NS_IMPL_FROMCONTENT_WITH_TAG(_class, _nsid, _tag)                      \
+  NS_IMPL_FROMCONTENT_HELPER(_class, NodeInfo()->Equals(nsGkAtoms::_tag, _nsid))
+
+#define NS_IMPL_FROMCONTENT_HTML_WITH_TAG(_class, _tag)                        \
+  NS_IMPL_FROMCONTENT_WITH_TAG(_class, kNameSpaceID_XHTML, _tag)
 
 #endif /* nsIContent_h___ */

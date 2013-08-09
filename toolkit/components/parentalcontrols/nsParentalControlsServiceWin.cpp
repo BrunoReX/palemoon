@@ -41,9 +41,9 @@ MyEventRegister gEventRegister = NULL;
 MyEventUnregister gEventUnregister = NULL;
 
 nsParentalControlsServiceWin::nsParentalControlsServiceWin() :
-  mPC(nsnull)
-, mEnabled(false)
-, mProvider(nsnull)
+  mEnabled(false)
+, mProvider(0)
+, mPC(nullptr)
 {
   HRESULT hr;
   CoInitialize(NULL);
@@ -56,7 +56,7 @@ nsParentalControlsServiceWin::nsParentalControlsServiceWin() :
   if (FAILED(mPC->GetUserSettings(NULL, getter_AddRefs(wpcs)))) {
     // Not available on this os or not enabled for this user account or we're running as admin
     mPC->Release();
-    mPC = nsnull;
+    mPC = nullptr;
     return;
   }
 
@@ -141,7 +141,7 @@ nsParentalControlsServiceWin::GetLoggingEnabled(bool *aResult)
 
 // Post a log event to the system
 NS_IMETHODIMP
-nsParentalControlsServiceWin::Log(PRInt16 aEntryType, bool blocked, nsIURI *aSource, nsIFile *aTarget)
+nsParentalControlsServiceWin::Log(int16_t aEntryType, bool blocked, nsIURI *aSource, nsIFile *aTarget)
 {
   if (!mEnabled)
     return NS_ERROR_NOT_AVAILABLE;
@@ -187,17 +187,17 @@ nsParentalControlsServiceWin::RequestURIOverride(nsIURI *aTarget, nsIInterfaceRe
 
   NS_ENSURE_ARG_POINTER(aTarget);
 
-  nsCAutoString spec;
+  nsAutoCString spec;
   aTarget->GetSpec(spec);
   if (spec.IsEmpty())
     return NS_ERROR_INVALID_ARG;
 
-  HWND hWnd = nsnull;
+  HWND hWnd = nullptr;
   // If we have a native window, use its handle instead
   nsCOMPtr<nsIWidget> widget(do_GetInterface(aWindowContext));
   if (widget)
     hWnd = (HWND)widget->GetNativeData(NS_NATIVE_WINDOW);
-  if (hWnd == nsnull)
+  if (hWnd == nullptr)
     hWnd = GetDesktopWindow();
 
   BOOL ret;
@@ -223,7 +223,7 @@ nsParentalControlsServiceWin::RequestURIOverrides(nsIArray *aTargets, nsIInterfa
 
   NS_ENSURE_ARG_POINTER(aTargets);
 
-  PRUint32 arrayLength = 0;
+  uint32_t arrayLength = 0;
   aTargets->GetLength(&arrayLength);
   if (!arrayLength)
     return NS_ERROR_INVALID_ARG;
@@ -235,16 +235,16 @@ nsParentalControlsServiceWin::RequestURIOverrides(nsIArray *aTargets, nsIInterfa
     return RequestURIOverride(uri, aWindowContext, _retval);
   }
 
-  HWND hWnd = nsnull;
+  HWND hWnd = nullptr;
   // If we have a native window, use its handle instead
   nsCOMPtr<nsIWidget> widget(do_GetInterface(aWindowContext));
   if (widget)
     hWnd = (HWND)widget->GetNativeData(NS_NATIVE_WINDOW);
-  if (hWnd == nsnull)
+  if (hWnd == nullptr)
     hWnd = GetDesktopWindow();
 
   // The first entry should be the root uri
-  nsCAutoString rootSpec;
+  nsAutoCString rootSpec;
   nsCOMPtr<nsIURI> rootURI = do_QueryElementAt(aTargets, 0);
   if (!rootURI)
     return NS_ERROR_INVALID_ARG;
@@ -254,19 +254,19 @@ nsParentalControlsServiceWin::RequestURIOverrides(nsIArray *aTargets, nsIInterfa
     return NS_ERROR_INVALID_ARG;
 
   // Allocate an array of sub uri
-  PRInt32 count = arrayLength - 1;
+  int32_t count = arrayLength - 1;
   nsAutoArrayPtr<LPCWSTR> arrUrls(new LPCWSTR[count]);
   if (!arrUrls)
     return NS_ERROR_OUT_OF_MEMORY;
 
-  PRUint32 uriIdx = 0, idx;
+  uint32_t uriIdx = 0, idx;
   for (idx = 1; idx < arrayLength; idx++)
   {
     nsCOMPtr<nsIURI> uri = do_QueryElementAt(aTargets, idx);
     if (!uri)
       continue;
 
-    nsCAutoString subURI;
+    nsAutoCString subURI;
     if (NS_FAILED(uri->GetSpec(subURI)))
       continue;
 
@@ -301,7 +301,7 @@ nsParentalControlsServiceWin::RequestURIOverrides(nsIArray *aTargets, nsIInterfa
 void
 nsParentalControlsServiceWin::LogFileDownload(bool blocked, nsIURI *aSource, nsIFile *aTarget)
 {
-  nsCAutoString curi;
+  nsAutoCString curi;
 
   if (!gEventWrite)
     return;
@@ -313,7 +313,7 @@ nsParentalControlsServiceWin::LogFileDownload(bool blocked, nsIURI *aSource, nsI
 
   // Get the name of the currently running process
   nsCOMPtr<nsIXULAppInfo> appInfo = do_GetService("@mozilla.org/xre/app-info;1");
-  nsCAutoString asciiAppName;
+  nsAutoCString asciiAppName;
   if (appInfo)
     appInfo->GetName(asciiAppName);
   nsAutoString appName = NS_ConvertUTF8toUTF16(asciiAppName);

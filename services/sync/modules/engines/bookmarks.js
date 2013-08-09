@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const EXPORTED_SYMBOLS = ['BookmarksEngine', "PlacesItem", "Bookmark",
-                          "BookmarkFolder", "BookmarkQuery",
-                          "Livemark", "BookmarkSeparator"];
+this.EXPORTED_SYMBOLS = ['BookmarksEngine', "PlacesItem", "Bookmark",
+                         "BookmarkFolder", "BookmarkQuery",
+                         "Livemark", "BookmarkSeparator"];
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -12,13 +12,11 @@ const Cu = Components.utils;
 
 Cu.import("resource://gre/modules/PlacesUtils.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+Cu.import("resource://services-common/async.js");
+Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/engines.js");
 Cu.import("resource://services-sync/record.js");
-Cu.import("resource://services-common/async.js");
 Cu.import("resource://services-sync/util.js");
-Cu.import("resource://services-sync/constants.js");
-
-Cu.import("resource://services-sync/main.js");      // For access to Service.
 
 const ALLBOOKMARKS_ANNO    = "AllBookmarks";
 const DESCRIPTION_ANNO     = "bookmarkProperties/description";
@@ -35,7 +33,7 @@ const ANNOS_TO_TRACK = [DESCRIPTION_ANNO, SIDEBAR_ANNO,
 const SERVICE_NOT_SUPPORTED = "Service not supported on this platform";
 const FOLDER_SORTINDEX = 1000000;
 
-function PlacesItem(collection, id, type) {
+this.PlacesItem = function PlacesItem(collection, id, type) {
   CryptoWrapper.call(this, collection, id);
   this.type = type || "item";
 }
@@ -78,7 +76,7 @@ Utils.deferGetSet(PlacesItem,
                   "cleartext",
                   ["hasDupe", "parentid", "parentName", "type"]);
 
-function Bookmark(collection, id, type) {
+this.Bookmark = function Bookmark(collection, id, type) {
   PlacesItem.call(this, collection, id, type || "bookmark");
 }
 Bookmark.prototype = {
@@ -91,7 +89,7 @@ Utils.deferGetSet(Bookmark,
                   ["title", "bmkUri", "description",
                    "loadInSidebar", "tags", "keyword"]);
 
-function BookmarkQuery(collection, id) {
+this.BookmarkQuery = function BookmarkQuery(collection, id) {
   Bookmark.call(this, collection, id, "query");
 }
 BookmarkQuery.prototype = {
@@ -103,7 +101,7 @@ Utils.deferGetSet(BookmarkQuery,
                   "cleartext",
                   ["folderName", "queryId"]);
 
-function BookmarkFolder(collection, id, type) {
+this.BookmarkFolder = function BookmarkFolder(collection, id, type) {
   PlacesItem.call(this, collection, id, type || "folder");
 }
 BookmarkFolder.prototype = {
@@ -114,7 +112,7 @@ BookmarkFolder.prototype = {
 Utils.deferGetSet(BookmarkFolder, "cleartext", ["description", "title",
                                                 "children"]);
 
-function Livemark(collection, id) {
+this.Livemark = function Livemark(collection, id) {
   BookmarkFolder.call(this, collection, id, "livemark");
 }
 Livemark.prototype = {
@@ -124,7 +122,7 @@ Livemark.prototype = {
 
 Utils.deferGetSet(Livemark, "cleartext", ["siteUri", "feedUri"]);
 
-function BookmarkSeparator(collection, id) {
+this.BookmarkSeparator = function BookmarkSeparator(collection, id) {
   PlacesItem.call(this, collection, id, "separator");
 }
 BookmarkSeparator.prototype = {
@@ -193,8 +191,8 @@ let kSpecialIds = {
   get mobile()  this.findMobileRoot(true),
 };
 
-function BookmarksEngine() {
-  SyncEngine.call(this, "Bookmarks");
+this.BookmarksEngine = function BookmarksEngine(service) {
+  SyncEngine.call(this, "Bookmarks", service);
 }
 BookmarksEngine.prototype = {
   __proto__: SyncEngine.prototype,
@@ -410,8 +408,8 @@ BookmarksEngine.prototype = {
   }
 };
 
-function BookmarksStore(name) {
-  Store.call(this, name);
+function BookmarksStore(name, engine) {
+  Store.call(this, name, engine);
 
   // Explicitly nullify our references to our cached services so we don't leak
   Svc.Obs.add("places-shutdown", function() {
@@ -436,7 +434,7 @@ BookmarksStore.prototype = {
   preprocessTagQuery: function preprocessTagQuery(record) {
     if (record.type != "query" ||
         record.bmkUri == null ||
-        record.folderName == null)
+        !record.folderName)
       return;
     
     // Yes, this works without chopping off the "place:" prefix.
@@ -487,17 +485,31 @@ BookmarksStore.prototype = {
   },
   
   applyIncoming: function BStore_applyIncoming(record) {
-    // Don't bother with pre and post-processing for deletions.
+    let isSpecial = record.id in kSpecialIds;
+
     if (record.deleted) {
+      if (isSpecial) {
+        this._log.warn("Ignoring deletion for special record " + record.id);
+        return;
+      }
+
+      // Don't bother with pre and post-processing for deletions.
       Store.prototype.applyIncoming.call(this, record);
       return;
     }
 
     // For special folders we're only interested in child ordering.
-    if ((record.id in kSpecialIds) && record.children) {
+    if (isSpecial && record.children) {
       this._log.debug("Processing special node: " + record.id);
       // Reorder children later
       this._childrenToOrder[record.id] = record.children;
+      return;
+    }
+
+    // Skip malformed records. (Bug 806460.)
+    if (record.type == "query" &&
+        !record.bmkUri) {
+      this._log.warn("Skipping malformed query bookmark: " + record.id);
       return;
     }
 
@@ -763,6 +775,11 @@ BookmarksStore.prototype = {
   },
 
   remove: function BStore_remove(record) {
+    if (kSpecialIds.isSpecialGUID(record.id)) {
+      this._log.warn("Refusing to remove special folder " + record.id);
+      return;
+    }
+
     let itemId = this.idForGUID(record.id);
     if (itemId <= 0) {
       this._log.debug("Item " + record.id + " already removed");
@@ -1255,8 +1272,8 @@ BookmarksStore.prototype = {
   }
 };
 
-function BookmarksTracker(name) {
-  Tracker.call(this, name);
+function BookmarksTracker(name, engine) {
+  Tracker.call(this, name, engine);
 
   Svc.Obs.add("places-shutdown", this);
   Svc.Obs.add("weave:engine:start-tracking", this);
@@ -1286,7 +1303,7 @@ BookmarksTracker.prototype = {
           this._enabled = false;
         }
         break;
-        
+
       case "bookmarks-restore-begin":
         this._log.debug("Ignoring changes from importing bookmarks.");
         this.ignoreAll = true;
@@ -1294,11 +1311,11 @@ BookmarksTracker.prototype = {
       case "bookmarks-restore-success":
         this._log.debug("Tracking all items on successful import.");
         this.ignoreAll = false;
-        
+
         this._log.debug("Restore succeeded: wiping server and other clients.");
-        Weave.Service.resetClient([this.name]);
-        Weave.Service.wipeServer([this.name]);
-        Clients.sendCommand("wipeEngine", [this.name]);
+        this.engine.service.resetClient([this.name]);
+        this.engine.service.wipeServer([this.name]);
+        this.engine.service.clientsEngine.sendCommand("wipeEngine", [this.name]);
         break;
       case "bookmarks-restore-failed":
         this._log.debug("Tracking all items on failed import.");

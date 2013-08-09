@@ -39,7 +39,7 @@ class nsINativeAppSupport;
 class nsICmdLineService;
 class nsXREDirProvider;
 class nsIToolkitProfileService;
-class nsILocalFile;
+class nsIFile;
 class nsIProfileLock;
 class nsIProfileUnlocker;
 class nsIFactory;
@@ -89,7 +89,7 @@ NS_NewToolkitProfileFactory(nsIFactory* *aResult);
  *         directory cannot be unlocked.
  */
 NS_HIDDEN_(nsresult)
-NS_LockProfilePath(nsILocalFile* aPath, nsILocalFile* aTempPath,
+NS_LockProfilePath(nsIFile* aPath, nsIFile* aTempPath,
                    nsIProfileUnlocker* *aUnlocker, nsIProfileLock* *aResult);
 
 NS_HIDDEN_(void)
@@ -99,7 +99,7 @@ WriteConsoleLog();
 BOOL
 WinLaunchChild(const PRUnichar *exePath, int argc, 
                char **argv, HANDLE userToken = NULL,
-               HANDLE *hProcess = nsnull);
+               HANDLE *hProcess = nullptr);
 BOOL
 WriteStatusPending(LPCWSTR updateDirPath);
 BOOL
@@ -107,46 +107,6 @@ WriteStatusApplied(LPCWSTR updateDirPath);
 #endif
 
 #define NS_NATIVEAPPSUPPORT_CONTRACTID "@mozilla.org/toolkit/native-app-support;1"
-
-// Like nsXREAppData, but releases all strong refs/allocated memory
-// in the destructor.
-class ScopedAppData : public nsXREAppData
-{
-public:
-  ScopedAppData() { Zero(); this->size = sizeof(*this); }
-
-  ScopedAppData(const nsXREAppData* aAppData);
-
-  void Zero() { memset(this, 0, sizeof(*this)); }
-
-  ~ScopedAppData();
-};
-
-/**
- * Given "str" is holding a string allocated with NS_Alloc, or null:
- * replace the value in "str" with a new value.
- *
- * @param newvalue Null is permitted. The string is cloned with
- *                 NS_strdup
- */
-void SetAllocatedString(const char *&str, const char *newvalue);
-
-/**
- * Given "str" is holding a string allocated with NS_Alloc, or null:
- * replace the value in "str" with a new value.
- *
- * @param newvalue If "newvalue" is the empty string, "str" will be set
- *                 to null.
- */
-void SetAllocatedString(const char *&str, const nsACString &newvalue);
-
-template<class T>
-void SetStrongPtr(T *&ptr, T* newvalue)
-{
-  NS_IF_RELEASE(ptr);
-  ptr = newvalue;
-  NS_IF_ADDREF(ptr);
-}
 
 namespace mozilla {
 namespace startup {

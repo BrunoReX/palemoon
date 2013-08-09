@@ -9,6 +9,9 @@ const Cr = Components.results;
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 Components.utils.import("resource://gre/modules/Services.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "DeferredTask",
+  "resource://gre/modules/DeferredTask.jsm");
+
 const PERMS_FILE      = 0644;
 const PERMS_DIRECTORY = 0755;
 
@@ -279,64 +282,6 @@ function ENSURE_WARN(assertion, message, resultCode) {
     throw Components.Exception(message, resultCode);
 }
 
-/**
- * A delayed treatment that may be delayed even further.
- *
- * Use this for instance if you write data to a file and you expect
- * that you may have to rewrite data very soon afterwards. With
- * |Lazy|, the treatment is delayed by a few milliseconds and,
- * should a new change to the data occur during this period,
- * 1/ only the final version of the data is actually written;
- * 2/ a further grace delay is added to take into account other
- * changes.
- *
- * @constructor
- * @param {Function} code The code to execute after the delay.
- * @param {number=} delay An optional delay, in milliseconds.
- */
-function Lazy(code, delay) {
-  LOG("Lazy: Creating a Lazy");
-  this._callback =
-    (function(){
-       code();
-       this._timer = null;
-     }).bind(this);
-  this._delay = delay || LAZY_SERIALIZE_DELAY;
-  this._timer = null;
-}
-Lazy.prototype = {
-  /**
-   * Start (or postpone) treatment.
-   */
-  go: function Lazy_go() {
-    LOG("Lazy_go: starting");
-    if (this._timer) {
-      LOG("Lazy_go: reusing active timer");
-      this._timer.delay = this._delay;
-    } else {
-      LOG("Lazy_go: creating timer");
-      this._timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
-      this._timer.
-        initWithCallback(this._callback,
-                         this._delay,
-                         Ci.nsITimer.TYPE_ONE_SHOT);
-    }
-  },
-  /**
-   * Perform any postponed treatment immediately.
-   */
-  flush: function Lazy_flush() {
-    LOG("Lazy_flush: starting");
-    if (!this._timer) {
-      return;
-    }
-    this._timer.cancel();
-    this._timer = null;
-    this._callback();
-  }
-};
-
-
 function loadListener(aChannel, aEngine, aCallback) {
   this._channel = aChannel;
   this._bytes = [];
@@ -502,7 +447,7 @@ function getDir(aKey, aIFace) {
  */
 function queryCharsetFromCode(aCode) {
   const codes = [];
-  codes[0] = "x-mac-roman";
+  codes[0] = "macintosh";
   codes[6] = "x-mac-greek";
   codes[35] = "x-mac-turkish";
   codes[513] = "ISO-8859-1";
@@ -512,7 +457,6 @@ function queryCharsetFromCode(aCode) {
   codes[519] = "ISO-8859-7";
   codes[520] = "ISO-8859-8";
   codes[521] = "ISO-8859-9";
-  codes[1049] = "IBM864";
   codes[1280] = "windows-1252";
   codes[1281] = "windows-1250";
   codes[1282] = "windows-1251";
@@ -543,7 +487,7 @@ function queryCharsetFromCode(aCode) {
 }
 function fileCharsetFromCode(aCode) {
   const codes = [
-    "x-mac-roman",           // 0
+    "macintosh",             // 0
     "Shift_JIS",             // 1
     "Big5",                  // 2
     "EUC-KR",                // 3
@@ -575,7 +519,7 @@ function fileCharsetFromCode(aCode) {
     "X-MAC-VIETNAMESE",      // 30
     "X-MAC-EXTARABIC"        // 31
   ];
-  // Sherlock files have always defaulted to x-mac-roman, so do that here too
+  // Sherlock files have always defaulted to macintosh, so do that here too
   return codes[aCode] || codes[0];
 }
 
@@ -734,9 +678,9 @@ function getMozParamPref(prefName)
  *
  * @see nsIBrowserSearchService.idl
  */
-let gEnginesLoaded = false;
+let gInitialized = false;
 function notifyAction(aEngine, aVerb) {
-  if (gEnginesLoaded) {
+  if (gInitialized) {
     LOG("NOTIFY: Engine: \"" + aEngine.name + "\"; Verb: \"" + aVerb + "\"");
     Services.obs.notifyObservers(aEngine, SEARCH_ENGINE_TOPIC, aVerb);
   }
@@ -2466,22 +2410,90 @@ Submission.prototype = {
   }
 }
 
+function executeSoon(func) {
+  Services.tm.mainThread.dispatch(func, Ci.nsIThread.DISPATCH_NORMAL);
+}
+
 // nsIBrowserSearchService
 function SearchService() {
   // Replace empty LOG function with the useful one if the log pref is set.
   if (getBoolPref(BROWSER_SEARCH_PREF + "log", false))
     LOG = DO_LOG;
 
-  try {
-    this._loadEngines();
-  } catch (ex) {
-    LOG("_init: failure loading engines: " + ex);
-  }
-  gEnginesLoaded = true;
-  this._addObservers();
+  /**
+   * If initialization is not complete yet, an array of
+   * |nsIBrowserSearchInitObserver| expecting the result of the end of
+   * initialization.
+   * Once initialization is complete, |null|.
+   */
+  this._initObservers = [];
 }
+
 SearchService.prototype = {
   classID: Components.ID("{7319788a-fe93-4db3-9f39-818cf08f4256}"),
+
+  // The current status of initialization. Note that it does not determine if
+  // initialization is complete, only if an error has been encountered so far.
+  _initRV: Cr.NS_OK,
+
+  // If initialization has not been completed yet, perform synchronous
+  // initialization.
+  // Throws in case of initialization error.
+  _ensureInitialized: function  SRCH_SVC__ensureInitialized() {
+    if (gInitialized) {
+      if (!Components.isSuccessCode(this._initRV)) {
+        throw this._initRV;
+      }
+
+      // Ensure that the following calls to |_ensureInitialized| can be inlined
+      // to a noop. Note that we could do this at the end of both |_init| and
+      // |_syncInit|, to save one call to a non-empty |_ensureInitialized|, but
+      // this would complicate code.
+      delete this._ensureInitialized;
+      this._ensureInitialized = function SRCH_SVC__ensureInitializedDone() { };
+      return;
+    }
+
+    let warning =
+      "Search service falling back to synchronous initialization at " +
+      new Error().stack +
+      "\n" +
+      "This is generally the consequence of an add-on using a deprecated " +
+      "search service API.";
+    // Bug 785487 - Disable reportError until our own callers are fixed.
+    //Components.utils.reportError(warning);
+    LOG(warning);
+
+    this._syncInit();
+    if (!Components.isSuccessCode(this._initRV)) {
+      throw this._initRV;
+    }
+  },
+
+  // Synchronous implementation of the initializer.
+  // Used as by |_ensureInitialized| as a fallback if initialization is not
+  // complete. In this implementation, it is also used by |init|.
+  _syncInit: function SRCH_SVC__syncInit() {
+    try {
+      this._loadEngines();
+    } catch (ex) {
+      this._initRV = Cr.NS_ERROR_FAILURE;
+      LOG("_syncInit: failure loading engines: " + ex);
+    }
+    this._addObservers();
+
+    gInitialized = true;
+
+    // Notify all of the init observers
+    this._initObservers.forEach(function (observer) {
+      try {
+        observer.onInitComplete(this._initRV);
+      } catch (x) {
+        LOG("nsIBrowserInitObserver failed with error " + x);
+      }
+    }, this);
+    this._initObservers = null;
+  },
 
   _engines: { },
   __sortedEngines: null,
@@ -3151,7 +3163,36 @@ SearchService.prototype = {
   },
 
   // nsIBrowserSearchService
+  init: function SRCH_SVC_init(observer) {
+    if (gInitialized) {
+      if (observer) {
+        executeSoon(function () {
+          observer.onInitComplete(this._initRV);
+        });
+      }
+      return;
+    }
+
+    if (observer)
+      this._initObservers.push(observer);
+
+    if (!this._initStarted) {
+      executeSoon((function () {
+        // Someone may have since called syncInit via ensureInitialized - if so,
+        // nothing to do here.
+        if (!gInitialized)
+          this._syncInit();
+      }).bind(this));
+      this._initStarted = true;
+    }
+  },
+
+  get isInitialized() {
+    return gInitialized;
+  },
+
   getEngines: function SRCH_SVC_getEngines(aCount) {
+    this._ensureInitialized();
     LOG("getEngines: getting all engines");
     var engines = this._getSortedEngines(true);
     aCount.value = engines.length;
@@ -3159,6 +3200,7 @@ SearchService.prototype = {
   },
 
   getVisibleEngines: function SRCH_SVC_getVisible(aCount) {
+    this._ensureInitialized();
     LOG("getVisibleEngines: getting all visible engines");
     var engines = this._getSortedEngines(false);
     aCount.value = engines.length;
@@ -3166,6 +3208,7 @@ SearchService.prototype = {
   },
 
   getDefaultEngines: function SRCH_SVC_getDefault(aCount) {
+    this._ensureInitialized();
     function isDefault(engine) {
       return engine._isDefault;
     };
@@ -3224,10 +3267,12 @@ SearchService.prototype = {
   },
 
   getEngineByName: function SRCH_SVC_getEngineByName(aEngineName) {
+    this._ensureInitialized();
     return this._engines[aEngineName] || null;
   },
 
   getEngineByAlias: function SRCH_SVC_getEngineByAlias(aAlias) {
+    this._ensureInitialized();
     for (var engineName in this._engines) {
       var engine = this._engines[engineName];
       if (engine && engine.alias == aAlias)
@@ -3239,6 +3284,7 @@ SearchService.prototype = {
   addEngineWithDetails: function SRCH_SVC_addEWD(aName, aIconURL, aAlias,
                                                  aDescription, aMethod,
                                                  aTemplate) {
+    this._ensureInitialized();
     if (!aName)
       FAIL("Invalid name passed to addEngineWithDetails!");
     if (!aMethod)
@@ -3258,6 +3304,7 @@ SearchService.prototype = {
   addEngine: function SRCH_SVC_addEngine(aEngineURL, aDataType, aIconURL,
                                          aConfirm) {
     LOG("addEngine: Adding \"" + aEngineURL + "\".");
+    this._ensureInitialized();
     try {
       var uri = makeURI(aEngineURL);
       var engine = new Engine(uri, aDataType, false);
@@ -3270,6 +3317,7 @@ SearchService.prototype = {
   },
 
   removeEngine: function SRCH_SVC_removeEngine(aEngine) {
+    this._ensureInitialized();
     if (!aEngine)
       FAIL("no engine passed to removeEngine!");
 
@@ -3317,6 +3365,7 @@ SearchService.prototype = {
   },
 
   moveEngine: function SRCH_SVC_moveEngine(aEngine, aNewIndex) {
+    this._ensureInitialized();
     if ((aNewIndex > this._sortedEngines.length) || (aNewIndex < 0))
       FAIL("SRCH_SVC_moveEngine: Index out of bounds!");
     if (!(aEngine instanceof Ci.nsISearchEngine))
@@ -3366,6 +3415,7 @@ SearchService.prototype = {
   },
 
   restoreDefaultEngines: function SRCH_SVC_resetDefaultEngines() {
+    this._ensureInitialized();
     for each (var e in this._engines) {
       // Unhide all default engines
       if (e.hidden && e._isDefault)
@@ -3374,11 +3424,13 @@ SearchService.prototype = {
   },
 
   get originalDefaultEngine() {
+    this._ensureInitialized();
     const defPref = BROWSER_SEARCH_PREF + "defaultenginename";
     return this.getEngineByName(getLocalizedPref(defPref, ""));
   },
 
   get defaultEngine() {
+    this._ensureInitialized();
     let defaultEngine = this.originalDefaultEngine;
     if (!defaultEngine || defaultEngine.hidden)
       defaultEngine = this._getSortedEngines(false)[0] || null;
@@ -3386,6 +3438,7 @@ SearchService.prototype = {
   },
 
   get currentEngine() {
+    this._ensureInitialized();
     if (!this._currentEngine) {
       let selectedEngine = getLocalizedPref(BROWSER_SEARCH_PREF +
                                             "selectedEngine");
@@ -3397,6 +3450,7 @@ SearchService.prototype = {
     return this._currentEngine;
   },
   set currentEngine(val) {
+    this._ensureInitialized();
     if (!(val instanceof Ci.nsISearchEngine))
       FAIL("Invalid argument passed to currentEngine setter");
 
@@ -3721,10 +3775,10 @@ var engineMetadataService = {
         let istream = converter.convertToInputStream(JSON.stringify(store));
         NetUtil.asyncCopy(istream, ostream, callback);
       }
-      this._lazyWriter = new Lazy(writeCommit);
+      this._lazyWriter = new DeferredTask(writeCommit, LAZY_SERIALIZE_DELAY);
     }
     LOG("epsCommit: (re)setting timer");
-    this._lazyWriter.go();
+    this._lazyWriter.start();
   },
   _lazyWriter: null,
 };
@@ -3794,6 +3848,6 @@ var engineUpdateService = {
   }
 };
 
-var NSGetFactory = XPCOMUtils.generateNSGetFactory([SearchService]);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory([SearchService]);
 
 #include ../../../toolkit/content/debug.js

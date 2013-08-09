@@ -13,20 +13,24 @@ EXPORTS_mozilla += \
   Attributes.h \
   BloomFilter.h \
   CheckedInt.h \
+  Constants.h \
+  EnumSet.h \
   FloatingPoint.h \
   GuardObjects.h \
   HashFunctions.h \
   Likely.h \
   LinkedList.h \
+  MathAlgorithms.h \
   MSStdInt.h \
   NullPtr.h \
   RangedPtr.h \
   RefPtr.h \
   Scoped.h \
   StandardInteger.h \
+  SHA1.h \
   ThreadLocal.h \
-  Types.h \
   TypeTraits.h \
+  Types.h \
   Util.h \
   WeakPtr.h \
   $(NULL)

@@ -89,19 +89,18 @@ public class GeckoAppShell
 
     public static native void notifyBatteryChange(double aLevel, boolean aCharging, double aRemainingTime);
 
-    public static native void notifySmsReceived(String aSender, String aBody, long aTimestamp);
-    public static native int  saveMessageInSentbox(String aReceiver, String aBody, long aTimestamp);
-    public static native void notifySmsSent(int aId, String aReceiver, String aBody, long aTimestamp, int aRequestId, long aProcessId);
-    public static native void notifySmsDelivered(int aId, String aReceiver, String aBody, long aTimestamp);
-    public static native void notifySmsSendFailed(int aError, int aRequestId, long aProcessId);
-    public static native void notifyGetSms(int aId, String aReceiver, String aSender, String aBody, long aTimestamp, int aRequestId, long aProcessId);
-    public static native void notifyGetSmsFailed(int aError, int aRequestId, long aProcessId);
-    public static native void notifySmsDeleted(boolean aDeleted, int aRequestId, long aProcessId);
-    public static native void notifySmsDeleteFailed(int aError, int aRequestId, long aProcessId);
-    public static native void notifyNoMessageInList(int aRequestId, long aProcessId);
-    public static native void notifyListCreated(int aListId, int aMessageId, String aReceiver, String aSender, String aBody, long aTimestamp, int aRequestId, long aProcessId);
-    public static native void notifyGotNextMessage(int aMessageId, String aReceiver, String aSender, String aBody, long aTimestamp, int aRequestId, long aProcessId);
-    public static native void notifyReadingMessageListFailed(int aError, int aRequestId, long aProcessId);
+    public static native void notifySmsReceived(String aSender, String aBody, int aMessageClass, long aTimestamp);
+    public static native void notifySmsSent(int aId, String aReceiver, String aBody, long aTimestamp, int aRequestId);
+    public static native void notifySmsDelivery(int aId, int aDeliveryStatus, String aReceiver, String aBody, long aTimestamp);
+    public static native void notifySmsSendFailed(int aError, int aRequestId);
+    public static native void notifyGetSms(int aId, int aDeliveryStatus, String aReceiver, String aSender, String aBody, long aTimestamp, int aRequestId);
+    public static native void notifyGetSmsFailed(int aError, int aRequestId);
+    public static native void notifySmsDeleted(boolean aDeleted, int aRequestId);
+    public static native void notifySmsDeleteFailed(int aError, int aRequestId);
+    public static native void notifyNoMessageInList(int aRequestId);
+    public static native void notifyListCreated(int aListId, int aMessageId, int aDeliveryStatus, String aReceiver, String aSender, String aBody, long aTimestamp, int aRequestId);
+    public static native void notifyGotNextMessage(int aMessageId, int aDeliveryStatus, String aReceiver, String aSender, String aBody, long aTimestamp, int aRequestId);
+    public static native void notifyReadingMessageListFailed(int aError, int aRequestId);
     public static native void onSurfaceTextureFrameAvailable(Object surfaceTexture, int id);
 
     // A looper thread, accessed by GeckoAppShell.getHandler
@@ -539,7 +538,7 @@ public class GeckoAppShell
         }
     }
 
-    public static void notifyIMEEnabled(int state, String typeHint,
+    public static void notifyIMEEnabled(int state, String typeHint, String modeHint,
                                         String actionHint, boolean landscapeFS)
     {
         if (GeckoApp.surfaceView == null)
@@ -549,6 +548,7 @@ public class GeckoAppShell
            In addition, the IME UI is hidden */
         GeckoApp.surfaceView.mIMEState = state;
         GeckoApp.surfaceView.mIMETypeHint = typeHint;
+        GeckoApp.surfaceView.mIMEModeHint = modeHint;
         GeckoApp.surfaceView.mIMEActionHint = actionHint;
         GeckoApp.surfaceView.mIMELandscapeFS = landscapeFS;
         IMEStateUpdater.enableIME();
@@ -578,8 +578,10 @@ public class GeckoAppShell
 
     // these 2 stubs are never called in XUL Fennec, but we need them so that
     // the JNI code shared between XUL and Native Fennec doesn't die.
-    public static void notifyScreenShot(final ByteBuffer data, final int tabId, final int x, final int y,
-                                        final int width, final int height, final int token) {
+    public static void notifyScreenShot(final ByteBuffer data, final int tabId, 
+                                        final int left, final int top,
+                                        final int right, final int bottom, 
+                                        final int bufferWidth, final int bufferHeight, final int token) {
     }
 
     public static void notifyPaintedRect(float top, float left, float bottom, float right) {
@@ -1525,20 +1527,6 @@ public class GeckoAppShell
         return SurfaceInfo.class;
     }
 
-    static native void executeNextRunnable();
-
-    static class GeckoRunnableCallback implements Runnable {
-        public void run() {
-            Log.i("GeckoShell", "run GeckoRunnableCallback");
-            GeckoAppShell.executeNextRunnable();
-        }
-    }
-
-    public static void postToJavaThread(boolean mainThread) {
-        Log.i("GeckoShell", "post to " + (mainThread ? "main " : "") + "java thread");
-        getMainHandler().post(new GeckoRunnableCallback());
-    }
-
     public static android.hardware.Camera sCamera = null;
     
     static native void cameraCallbackBridge(byte[] data);
@@ -1659,25 +1647,6 @@ public class GeckoAppShell
         }
     }
 
-
-    static SynchronousQueue<Date> sTracerQueue = new SynchronousQueue<Date>();
-    public static void fireAndWaitForTracerEvent() {
-        getMainHandler().post(new Runnable() { 
-                public void run() {
-                    try {
-                        sTracerQueue.put(new Date());
-                    } catch(InterruptedException ie) {
-                        Log.w("GeckoAppShell", "exception firing tracer", ie);
-                    }
-                }
-        });
-        try {
-            sTracerQueue.take();
-        } catch(InterruptedException ie) {
-            Log.w("GeckoAppShell", "exception firing tracer", ie);
-        }
-    }
-
     // unused
     static void checkUriVisited(String uri) {}
     // unused
@@ -1722,60 +1691,44 @@ public class GeckoAppShell
     /*
      * WebSMS related methods.
      */
-    public static int getNumberOfMessagesForText(String aText) {
-        if (SmsManager.getInstance() == null) {
-            return 0;
-        }
-
-        return SmsManager.getInstance().getNumberOfMessagesForText(aText);
-    }
-
-    public static void sendMessage(String aNumber, String aMessage, int aRequestId, long aProcessId) {
+    public static void sendMessage(String aNumber, String aMessage, int aRequestId) {
         if (SmsManager.getInstance() == null) {
             return;
         }
 
-        SmsManager.getInstance().send(aNumber, aMessage, aRequestId, aProcessId);
+        SmsManager.getInstance().send(aNumber, aMessage, aRequestId);
     }
 
-    public static int saveSentMessage(String aRecipient, String aBody, long aDate) {
-        if (SmsManager.getInstance() == null) {
-            return -1;
-        }
-
-        return SmsManager.getInstance().saveSentMessage(aRecipient, aBody, aDate);
-    }
-
-    public static void getMessage(int aMessageId, int aRequestId, long aProcessId) {
+    public static void getMessage(int aMessageId, int aRequestId) {
         if (SmsManager.getInstance() == null) {
             return;
         }
 
-        SmsManager.getInstance().getMessage(aMessageId, aRequestId, aProcessId);
+        SmsManager.getInstance().getMessage(aMessageId, aRequestId);
     }
 
-    public static void deleteMessage(int aMessageId, int aRequestId, long aProcessId) {
+    public static void deleteMessage(int aMessageId, int aRequestId) {
         if (SmsManager.getInstance() == null) {
             return;
         }
 
-        SmsManager.getInstance().deleteMessage(aMessageId, aRequestId, aProcessId);
+        SmsManager.getInstance().deleteMessage(aMessageId, aRequestId);
     }
 
-    public static void createMessageList(long aStartDate, long aEndDate, String[] aNumbers, int aNumbersCount, int aDeliveryState, boolean aReverse, int aRequestId, long aProcessId) {
+    public static void createMessageList(long aStartDate, long aEndDate, String[] aNumbers, int aNumbersCount, int aDeliveryState, boolean aReverse, int aRequestId) {
         if (SmsManager.getInstance() == null) {
             return;
         }
 
-        SmsManager.getInstance().createMessageList(aStartDate, aEndDate, aNumbers, aNumbersCount, aDeliveryState, aReverse, aRequestId, aProcessId);
+        SmsManager.getInstance().createMessageList(aStartDate, aEndDate, aNumbers, aNumbersCount, aDeliveryState, aReverse, aRequestId);
     }
 
-    public static void getNextMessageInList(int aListId, int aRequestId, long aProcessId) {
+    public static void getNextMessageInList(int aListId, int aRequestId) {
         if (SmsManager.getInstance() == null) {
             return;
         }
 
-        SmsManager.getInstance().getNextMessageInList(aListId, aRequestId, aProcessId);
+        SmsManager.getInstance().getNextMessageInList(aListId, aRequestId);
     }
 
     public static void clearMessageList(int aListId) {
@@ -1841,6 +1794,10 @@ public class GeckoAppShell
     }
 
     public static void notifyWakeLockChanged(String topic, String state) {
+    }
+
+    public static String getGfxInfoData() {
+        return null;
     }
 
     public static void registerSurfaceTextureFrameListener(Object surfaceTexture, final int id) {

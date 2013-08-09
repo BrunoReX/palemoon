@@ -1,3 +1,5 @@
+. "$topsrcdir/browser/config/mozconfigs/common"
+
 # for pgo
 mk_add_options PROFILE_GEN_SCRIPT='$(PYTHON) $(MOZ_OBJDIR)/_profile/pgo/profileserver.py'
 
@@ -14,7 +16,11 @@ export MOZILLA_OFFICIAL=1
 
 export MOZ_TELEMETRY_REPORTING=1
 
-mk_add_options MOZ_MAKE_FLAGS=-j1
+if test -n "${_PYMAKE}"; then
+  mk_add_options MOZ_MAKE_FLAGS=-j4
+else
+  mk_add_options MOZ_MAKE_FLAGS=-j1
+fi
 
 if test "$PROCESSOR_ARCHITECTURE" = "AMD64" -o "$PROCESSOR_ARCHITEW6432" = "AMD64"; then
   . $topsrcdir/build/win32/mozconfig.vs2010-win64
@@ -25,8 +31,4 @@ fi
 # Package js shell.
 export MOZ_PACKAGE_JSSHELL=1
 
-# For known full-clobber builds on Windows (like nightlies/try), 
-# this speeds things up. IS_NIGHTLY is set by the build automation.
-if test "$IS_NIGHTLY" != ""; then 
-  ac_add_options --disable-auto-deps
-fi
+. "$topsrcdir/build/mozconfig.common.override"

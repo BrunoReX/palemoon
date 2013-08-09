@@ -103,7 +103,7 @@ var gSwitchApp = false;
 var gDisableReplaceFallback = false;
 
 // Time to wait for the test helper process before continuing the test
-const TEST_HELPER_TIMEOUT = 1000;
+const TEST_HELPER_TIMEOUT = 2000;
 
 // Use a copy of the main application executable for the test to avoid main
 // executable in use errors.
@@ -113,6 +113,9 @@ var gTestserver;
 
 var gXHR;
 var gXHRCallback;
+
+var gUpdatePrompt;
+var gUpdatePromptCallback;
 
 var gCheckFunc;
 var gResponseBody;
@@ -294,6 +297,17 @@ const STATE_APPLIED_PLATFORM = IS_WIN ? STATE_APPLIED_SVC : STATE_APPLIED;
 const STATE_APPLIED_PLATFORM = STATE_APPLIED;
 #endif
 
+// This makes it possible to run most tests on xulrunner where the update
+// channel default preference is not set.
+if (APP_BIN_NAME == "xulrunner") {
+  try {
+    gDefaultPrefBranch.getCharPref(PREF_APP_UPDATE_CHANNEL);
+  }
+  catch (e) {
+    setUpdateChannel("test_channel");
+  }
+}
+
 /**
  * Nulls out the most commonly used global vars used by tests as appropriate.
  */
@@ -303,6 +317,10 @@ function cleanUp() {
   // Force the update manager to reload the update data to prevent it from
   // writing the old data to the files that have just been removed.
   reloadUpdateManagerData();
+
+  if (gChannel) {
+    gPrefRoot.removeObserver(PREF_APP_UPDATE_CHANNEL, observer);
+  }
 
   // Call app update's observe method passing xpcom-shutdown to test that the
   // shutdown of app update runs without throwing or leaking. The observer
@@ -323,7 +341,7 @@ function cleanUp() {
     gXHR             = null;
   }
 
-  gTestserver    = null;
+  gTestserver = null;
 }
 
 /**
@@ -427,6 +445,7 @@ if (IS_WIN) {
     file.QueryInterface(AUS_Ci.nsILocalFileWin);
     file.fileAttributesWin |= file.WFA_READONLY;
     file.fileAttributesWin &= ~file.WFA_READWRITE;
+    logTestInfo("testing the successful creation of the lock file");
     do_check_true(file.exists());
     do_check_false(file.isWritable());
   }
@@ -439,8 +458,86 @@ if (IS_WIN) {
     file.QueryInterface(AUS_Ci.nsILocalFileWin);
     file.fileAttributesWin |= file.WFA_READWRITE;
     file.fileAttributesWin &= ~file.WFA_READONLY;
+    logTestInfo("removing and testing the successful removal of the lock file");
     file.remove(false);
     do_check_false(file.exists());
+  }
+}
+
+/**
+ * Copies a directory and its children. First it tries nsIFile::CopyTo on the
+ * source directory and if that fails it will fall back to recursing.
+ *
+ * @param  aSrcDir
+ *         nsIFile for the source directory to be copied from.
+ * @param  aDestDir
+ *         nsIFile for the destination directory parent.
+ * @param  aDestLeafName
+ *         the destination directory name.
+ */
+function copyDirRecursive(aSrcDir, aDestDir, aDestLeafName) {
+  try {
+    aSrcDir.copyTo(aDestDir, aDestLeafName);
+    return;
+  }
+  catch (e) {
+    logTestInfo("copyTo error - src path: " + aSrcDir.path + ", dest path: " +
+                aDestDir.path + ", dir name: " + aDestLeafName +
+                ", exception: " + e);
+  }
+
+  let destDir = aDestDir.clone();
+  destDir.append(aDestLeafName);
+  if (!destDir.exists()) {
+    try {
+      destDir.create(AUS_Ci.nsIFile.DIRECTORY_TYPE, PERMS_DIRECTORY);
+    }
+    catch (e) {
+      logTestInfo("unable to create directory, path: " + destDir.path +
+                  ", exception: " + e);
+      do_throw(e);
+    }
+  }
+  var dirEntries = aSrcDir.directoryEntries;
+  while (dirEntries.hasMoreElements()) {
+    let entry = dirEntries.getNext().QueryInterface(AUS_Ci.nsIFile);
+
+    if (entry.isDirectory()) {
+      copyDirRecursive(entry, destDir, entry.leafName);
+    }
+    else {
+      let destFile = destDir.clone();
+      destFile.append(entry.leafName);
+      if (destFile.exists()) {
+        try {
+          destFile.remove(false);
+        }
+        catch (e) {
+          logTestInfo("unable to remove file, path: " + destFile.path +
+                      ", exception: " + e);
+          let bakFile = destDir.clone();
+          bakFile.append(entry.leafName + ".bak");
+          logTestInfo("attempting moveTo of file, src path: " + destFile.path +
+                      ", dest path: " + bakFile.path + ", exception: " + e);
+          try {
+            destFile.moveTo(destDir, bakFile.leafName);
+          }
+          catch (e) {
+            logTestInfo("unable to move file, src path: " + destFile.path +
+                        ", dest path: " + bakFile.path + ", exception: " + e);
+            do_throw(e);
+          }
+        }
+      }
+      try {
+        entry.copyTo(destDir, entry.leafName);
+      }
+      catch (e) {
+        logTestInfo("unable to copy file, src path: " + entry.path +
+                    ", dest path: " + destFile.path + ", exception: " + e);
+        do_throw(e);
+      }
+    }
   }
 }
 
@@ -1139,6 +1236,8 @@ function checkUpdateLogContents(aCompareLogFile) {
   // Skip the source/destination lines since they contain absolute paths.
   updateLogContents = updateLogContents.replace(/SOURCE DIRECTORY.*/g, "");
   updateLogContents = updateLogContents.replace(/DESTINATION DIRECTORY.*/g, "");
+  // Skip lines that log failed attempts to open the callback executable.
+  updateLogContents = updateLogContents.replace(/NS_main: callback app open attempt .*/g, "");
   if (gSwitchApp) {
     // Remove the lines which contain absolute paths
     updateLogContents = updateLogContents.replace(/^Begin moving.*$/mg, "");
@@ -1385,8 +1484,7 @@ function checkCallbackAppLog() {
               "and the expected command line arguments passed to it");
   do_check_eq(logContents, expectedLogContents);
 
-  // Use a timeout to give any files that were in use additional time to close.
-  do_timeout(TEST_HELPER_TIMEOUT, do_test_finished);
+  removeCallbackCopy();
 }
 
 /**
@@ -1416,7 +1514,7 @@ function checkCallbackServiceLog() {
               "and the expected command line arguments passed to it");
   do_check_eq(logContents, expectedLogContents);
 
-  do_timeout(TEST_HELPER_TIMEOUT, do_test_finished);
+  removeCallbackCopy();
 }
 
 function removeCallbackCopy() {
@@ -1426,18 +1524,65 @@ function removeCallbackCopy() {
   appBinCopy.append(TEST_ID + FILE_WIN_TEST_EXE);
   if (appBinCopy.exists()) {
     try {
+      logTestInfo("attempting removal of file: " + appBinCopy.path);
       appBinCopy.remove(false);
-      // Use a timeout to give any files that were in use additional 
-      // time to close.  Same as updater.exe without service tests.
-      do_timeout(TEST_HELPER_TIMEOUT, do_test_finished);
     }
     catch (e) {
-      logTestInfo("unable to remove file during cleanup. Exception: " + e);
+      logTestInfo("non-fatal error removing file during cleanup (will try " +
+                  "again). File: " + appBinCopy.path + " Exception: " + e);
       do_timeout(TEST_HELPER_TIMEOUT, removeCallbackCopy);
+      return;
     }
-  } else {
-    do_timeout(TEST_HELPER_TIMEOUT, do_test_finished);
   }
+  // Use a timeout to give any files that were in use additional 
+  // time to close.  Same as updater.exe without service tests.
+  do_timeout(TEST_HELPER_TIMEOUT, do_test_finished);
+}
+
+// Waits until files that are in use that break tests are no longer in use and
+// then calls removeCallbackCopy.
+function waitForFilesInUse() {
+  let maintSvcInstaller = getAppDir();
+  maintSvcInstaller.append("MAINTENANCE_SERVICE_INSTALLER_BIN_FILE");
+
+  let helper = getAppDir();
+  helper.append("uninstall");
+  helper.append("helper.exe");
+
+  let files = [maintSvcInstaller, helper];
+  for (let i = 0; i < files.length; ++i) {
+    let file = files[i];
+    let fileBak = file.parent.clone();
+    if (file.exists()) {
+      fileBak.append(file.leafName + ".bak");
+      try {
+        if (fileBak.exists()) {
+          fileBak.remove(false);
+        }
+        file.copyTo(fileBak.parent, fileBak.leafName);
+        file.remove(false);
+        fileBak.moveTo(file.parent, file.leafName);
+        logTestInfo("file is not in use. path: " + file.path);
+      }
+      catch (e) {
+        logTestInfo("file in use, will try again after " + CHECK_TIMEOUT_MILLI +
+                    " ms, path: " + file.path + ", exception: " + e);
+        try {
+          if (fileBak.exists()) {
+            fileBak.remove(false);
+          }
+        }
+        catch (e) {
+          logTestInfo("unable to remove file, this should never happen! " +
+                      "path: " + fileBak.path + ", exception: " + e);
+        }
+        do_timeout(CHECK_TIMEOUT_MILLI, waitForFilesInUse);
+        return;
+      }
+    }
+  }
+
+  removeCallbackCopy();
 }
 
 /**
@@ -1501,6 +1646,7 @@ function overrideXHR(callback) {
   registrar.registerFactory(gXHR.classID, gXHR.classDescription,
                             gXHR.contractID, gXHR);
 }
+
 
 /**
  * Bare bones XMLHttpRequest implementation for testing onprogress, onerror,
@@ -1566,6 +1712,63 @@ xhr.prototype = {
   get wrappedJSObject() { return this; }
 };
 
+function overrideUpdatePrompt(callback) {
+  var registrar = Components.manager.QueryInterface(AUS_Ci.nsIComponentRegistrar);
+  gUpdatePrompt = new UpdatePrompt();
+  gUpdatePromptCallback = callback;
+  registrar.registerFactory(gUpdatePrompt.classID, gUpdatePrompt.classDescription,
+                            gUpdatePrompt.contractID, gUpdatePrompt);
+}
+
+function UpdatePrompt() {
+  var fns = ["checkForUpdates", "showUpdateAvailable", "showUpdateDownloaded",
+             "showUpdateError", "showUpdateHistory", "showUpdateInstalled"];
+
+  fns.forEach(function(promptFn) {
+    UpdatePrompt.prototype[promptFn] = function() {
+      if (!gUpdatePromptCallback) {
+        return;
+      }
+
+      var callback = gUpdatePromptCallback[promptFn];
+      if (!callback) {
+        return;
+      }
+
+      callback.apply(gUpdatePromptCallback,
+                     Array.prototype.slice.call(arguments));
+    }
+  });
+}
+
+UpdatePrompt.prototype = {
+  flags: AUS_Ci.nsIClassInfo.SINGLETON,
+  implementationLanguage: AUS_Ci.nsIProgrammingLanguage.JAVASCRIPT,
+  getHelperForLanguage: function(language) null,
+  getInterfaces: function(count) {
+    var interfaces = [AUS_Ci.nsISupports, AUS_Ci.nsIUpdatePrompt];
+    count.value = interfaces.length;
+    return interfaces;
+  },
+  classDescription: "UpdatePrompt",
+  contractID: "@mozilla.org/updates/update-prompt;1",
+  classID: Components.ID("{8c350a15-9b90-4622-93a1-4d320308664b}"),
+  createInstance: function (outer, aIID) {
+    if (outer == null)
+      return gUpdatePrompt.QueryInterface(aIID);
+    throw AUS_Cr.NS_ERROR_NO_AGGREGATION;
+  },
+  QueryInterface: function(aIID) {
+    if (aIID.equals(AUS_Ci.nsIClassInfo) ||
+        aIID.equals(AUS_Ci.nsISupports) ||
+        aIID.equals(AUS_Ci.nsIUpdatePrompt))
+      return gUpdatePrompt;
+    throw AUS_Cr.NS_ERROR_NO_INTERFACE;
+  },
+};
+
+
+
 /* Update check listener */
 const updateCheckListener = {
   onProgress: function UCL_onProgress(request, position, totalSize) {
@@ -1586,12 +1789,13 @@ const updateCheckListener = {
   onError: function UCL_onError(request, update) {
     gRequestURL = request.channel.originalURI.spec;
     gStatusCode = request.status;
+
     gStatusText = update.statusText;
     logTestInfo("url = " + gRequestURL + ", " +
                 "request.status = " + gStatusCode + ", " +
                 "update.statusText = " + gStatusText);
     // Use a timeout to allow the XHR to complete
-    do_execute_soon(gCheckFunc);
+    do_execute_soon(gCheckFunc.bind(null, request, update));
   },
 
   QueryInterface: function(aIID) {
@@ -1612,15 +1816,15 @@ const updateCheckListener = {
 function start_httpserver(aRelativeDirName) {
   var dir = do_get_file(aRelativeDirName);
   if (!dir.exists())
-    do_throw("The directory used by nsHttpServer does not exist! path: " +
+    do_throw("The directory used by HttpServer does not exist! path: " +
              dir.path + "\n");
 
   if (!dir.isDirectory())
-    do_throw("A file instead of a directory was specified for nsHttpServer " +
+    do_throw("A file instead of a directory was specified for HttpServer " +
              "registerDirectory! path: " + dir.path + "\n");
 
-  do_load_httpd_js();
-  gTestserver = new nsHttpServer();
+  Components.utils.import("resource://testing-common/httpd.js");
+  gTestserver = new HttpServer();
   gTestserver.registerDirectory("/data/", dir);
   gTestserver.start(4444);
 }

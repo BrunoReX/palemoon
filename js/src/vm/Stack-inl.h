@@ -13,7 +13,9 @@
 
 #include "methodjit/MethodJIT.h"
 #include "vm/Stack.h"
-
+#ifdef JS_ION
+#include "ion/IonFrameIterator-inl.h"
+#endif
 #include "jsscriptinlines.h"
 
 #include "ArgumentsObject-inl.h"
@@ -65,7 +67,7 @@ StackFrame::varObj()
 inline JSCompartment *
 StackFrame::compartment() const
 {
-    JS_ASSERT_IF(isScriptFrame(), scopeChain()->compartment() == script()->compartment());
+    JS_ASSERT(scopeChain()->compartment() == script()->compartment());
     return scopeChain()->compartment();
 }
 
@@ -73,8 +75,8 @@ StackFrame::compartment() const
 inline mjit::JITScript *
 StackFrame::jit()
 {
-    JSScript *script_ = script();
-    return script_->getJIT(isConstructing(), script_->compartment()->needsBarrier());
+    AutoAssertNoGC nogc;
+    return script()->getJIT(isConstructing(), script()->compartment()->compileBarriers());
 }
 #endif
 
@@ -86,13 +88,12 @@ StackFrame::initPrev(JSContext *cx)
         prev_ = regs->fp();
         prevpc_ = regs->pc;
         prevInline_ = regs->inlined();
-        JS_ASSERT_IF(!prev_->isDummyFrame(),
-                     uint32_t(prevpc_ - prev_->script()->code) < prev_->script()->length);
+        JS_ASSERT(uint32_t(prevpc_ - prev_->script()->code) < prev_->script()->length);
     } else {
         prev_ = NULL;
 #ifdef DEBUG
         prevpc_ = (jsbytecode *)0xbadc;
-        prevInline_ = (JSInlinedSite *)0xbadc;
+        prevInline_ = (InlinedSite *)0xbadc;
 #endif
     }
 }
@@ -114,6 +115,9 @@ StackFrame::initInlineFrame(JSFunction *fun, StackFrame *prevfp, jsbytecode *pre
     flags_ = StackFrame::FUNCTION;
     exec.fun = fun;
     resetInlinePrev(prevfp, prevpc);
+
+    if (prevfp->hasPushedSPSFrame())
+        setPushedSPSFrame();
 }
 
 inline void
@@ -130,11 +134,12 @@ inline void
 StackFrame::initCallFrame(JSContext *cx, JSFunction &callee,
                           JSScript *script, uint32_t nactual, StackFrame::Flags flagsArg)
 {
+    AutoAssertNoGC nogc;
     JS_ASSERT((flagsArg & ~(CONSTRUCTING |
                             LOWERED_CALL_APPLY |
                             OVERFLOW_ARGS |
                             UNDERFLOW_ARGS)) == 0);
-    JS_ASSERT(script == callee.script());
+    JS_ASSERT(callee.script() == script);
 
     /* Initialize stack frame members. */
     flags_ = FUNCTION | HAS_PREVPC | HAS_SCOPECHAIN | HAS_BLOCKCHAIN | flagsArg;
@@ -147,9 +152,8 @@ StackFrame::initCallFrame(JSContext *cx, JSFunction &callee,
     JS_ASSERT(!hasBlockChain());
     JS_ASSERT(!hasHookData());
     JS_ASSERT(annotation() == NULL);
-    JS_ASSERT(!hasCallObj());
 
-    SetValueRangeToUndefined(slots(), script->nfixed);
+    initVarsToUndefined();
 }
 
 /*
@@ -171,84 +175,139 @@ StackFrame::initFixupFrame(StackFrame *prev, StackFrame::Flags flags, void *ncod
     u.nactual = nactual;
 }
 
+inline bool
+StackFrame::jitHeavyweightFunctionPrologue(JSContext *cx)
+{
+    JS_ASSERT(isNonEvalFunctionFrame());
+    JS_ASSERT(fun()->isHeavyweight());
+
+    CallObject *callobj = CallObject::createForFunction(cx, this);
+    if (!callobj)
+        return false;
+
+    pushOnScopeChain(*callobj);
+    flags_ |= HAS_CALL_OBJ;
+
+    return true;
+}
+
+inline void
+StackFrame::initVarsToUndefined()
+{
+    AutoAssertNoGC nogc;
+    SetValueRangeToUndefined(slots(), script()->nfixed);
+}
+
 inline JSObject *
 StackFrame::createRestParameter(JSContext *cx)
 {
     JS_ASSERT(fun()->hasRest());
     unsigned nformal = fun()->nargs - 1, nactual = numActualArgs();
     unsigned nrest = (nactual > nformal) ? nactual - nformal : 0;
-    return NewDenseCopiedArray(cx, nrest, actualArgs() + nformal);
+    return NewDenseCopiedArray(cx, nrest, actuals() + nformal);
 }
 
 inline Value &
-StackFrame::canonicalActualArg(unsigned i) const
+StackFrame::unaliasedVar(unsigned i, MaybeCheckAliasing checkAliasing)
 {
-    if (i < numFormalArgs())
-        return formalArg(i);
+    AutoAssertNoGC nogc;
+    JS_ASSERT_IF(checkAliasing, !script()->varIsAliased(i));
+    JS_ASSERT(i < script()->nfixed);
+    return slots()[i];
+}
+
+inline Value &
+StackFrame::unaliasedLocal(unsigned i, MaybeCheckAliasing checkAliasing)
+{
+#ifdef DEBUG
+    AutoAssertNoGC nogc;
+    if (checkAliasing) {
+        JS_ASSERT(i < script()->nslots);
+        if (i < script()->nfixed) {
+            JS_ASSERT(!script()->varIsAliased(i));
+        } else {
+            unsigned depth = i - script()->nfixed;
+            for (StaticBlockObject *b = maybeBlockChain(); b; b = b->enclosingBlock()) {
+                if (b->containsVarAtDepth(depth)) {
+                    JS_ASSERT(!b->isAliased(depth - b->stackDepth()));
+                    break;
+                }
+            }
+        }
+    }
+#endif
+    return slots()[i];
+}
+
+inline Value &
+StackFrame::unaliasedFormal(unsigned i, MaybeCheckAliasing checkAliasing)
+{
+    JS_ASSERT(i < numFormalArgs());
+    JS_ASSERT_IF(checkAliasing, !script()->argsObjAliasesFormals());
+    if (checkAliasing && script()->formalIsAliased(i)) {
+        while (true) {}
+    }
+    JS_ASSERT_IF(checkAliasing, !script()->formalIsAliased(i));
+    return formals()[i];
+}
+
+inline Value &
+StackFrame::unaliasedActual(unsigned i, MaybeCheckAliasing checkAliasing)
+{
     JS_ASSERT(i < numActualArgs());
-    return actualArgs()[i];
+    JS_ASSERT_IF(checkAliasing, !script()->argsObjAliasesFormals());
+    JS_ASSERT_IF(checkAliasing && i < numFormalArgs(), !script()->formalIsAliased(i));
+    return i < numFormalArgs() ? formals()[i] : actuals()[i];
 }
 
 template <class Op>
-inline bool
-StackFrame::forEachCanonicalActualArg(Op op, unsigned start /* = 0 */, unsigned count /* = unsigned(-1) */)
+inline void
+StackFrame::forEachUnaliasedActual(Op op)
 {
-    unsigned nformal = fun()->nargs;
-    JS_ASSERT(start <= nformal);
+    JS_ASSERT(!script()->funHasAnyAliasedFormal);
+    JS_ASSERT(!script()->needsArgsObj());
 
-    Value *formals = formalArgsEnd() - nformal;
+    unsigned nformal = numFormalArgs();
     unsigned nactual = numActualArgs();
-    if (count == unsigned(-1))
-        count = nactual - start;
 
-    unsigned end = start + count;
-    JS_ASSERT(end >= start);
-    JS_ASSERT(end <= nactual);
+    const Value *formalsEnd = (const Value *)this;
+    const Value *formals = formalsEnd - nformal;
 
-    if (end <= nformal) {
-        Value *p = formals + start;
-        for (; start < end; ++p, ++start) {
-            if (!op(start, p))
-                return false;
-        }
+    if (nactual <= nformal) {
+        const Value *actualsEnd = formals + nactual;
+        for (const Value *p = formals; p < actualsEnd; ++p)
+            op(*p);
     } else {
-        for (Value *p = formals + start; start < nformal; ++p, ++start) {
-            if (!op(start, p))
-                return false;
-        }
-        JS_ASSERT(start >= nformal);
-        Value *actuals = formals - (nactual + 2) + start;
-        for (Value *p = actuals; start < end; ++p, ++start) {
-            if (!op(start, p))
-                return false;
-        }
-    }
-    return true;
-}
+        for (const Value *p = formals; p < formalsEnd; ++p)
+            op(*p);
 
-template <class Op>
-inline bool
-StackFrame::forEachFormalArg(Op op)
-{
-    Value *formals = formalArgsEnd() - fun()->nargs;
-    Value *formalsEnd = formalArgsEnd();
-    unsigned i = 0;
-    for (Value *p = formals; p != formalsEnd; ++p, ++i) {
-        if (!op(i, p))
-            return false;
+        const Value *actualsEnd = formals - 2;
+        const Value *actuals = actualsEnd - nactual;
+        for (const Value *p = actuals + nformal; p < actualsEnd; ++p)
+            op(*p);
     }
-    return true;
 }
 
 struct CopyTo
 {
     Value *dst;
     CopyTo(Value *dst) : dst(dst) {}
-    bool operator()(unsigned, Value *src) {
-        *dst++ = *src;
-        return true;
-    }
+    void operator()(const Value &src) { *dst++ = src; }
 };
+
+struct CopyToHeap
+{
+    HeapValue *dst;
+    CopyToHeap(HeapValue *dst) : dst(dst) {}
+    void operator()(const Value &src) { dst->init(src); ++dst; }
+};
+
+inline unsigned
+StackFrame::numFormalArgs() const
+{
+    JS_ASSERT(hasArgs());
+    return fun()->nargs;
+}
 
 inline unsigned
 StackFrame::numActualArgs() const
@@ -267,57 +326,51 @@ StackFrame::numActualArgs() const
     return numFormalArgs();
 }
 
-inline Value *
-StackFrame::actualArgs() const
+inline ArgumentsObject &
+StackFrame::argsObj() const
 {
-    JS_ASSERT(hasArgs());
-    Value *argv = formalArgs();
-    if (JS_UNLIKELY(flags_ & OVERFLOW_ARGS))
-        return argv - (2 + u.nactual);
-    return argv;
-}
-
-inline Value *
-StackFrame::actualArgsEnd() const
-{
-    JS_ASSERT(hasArgs());
-    if (JS_UNLIKELY(flags_ & OVERFLOW_ARGS))
-        return formalArgs() - 2;
-    return formalArgs() + numActualArgs();
+    JS_ASSERT(script()->needsArgsObj());
+    JS_ASSERT(flags_ & HAS_ARGS_OBJ);
+    return *argsObj_;
 }
 
 inline void
-StackFrame::setScopeChain(JSObject &obj)
+StackFrame::initArgsObj(ArgumentsObject &argsobj)
 {
-#ifdef DEBUG
-    JS_ASSERT(&obj != NULL);
-    if (hasCallObj()) {
-        JSObject *pobj = &obj;
-        while (pobj && !pobj->isWith() && pobj->asScope().maybeStackFrame() != this)
-            pobj = pobj->enclosingScope();
-        JS_ASSERT(pobj);
-    } else {
-        for (JSObject *pobj = &obj; pobj->isScope() && !pobj->isWith(); pobj = pobj->enclosingScope())
-            JS_ASSERT_IF(pobj->isCall(), pobj->asScope().maybeStackFrame() != this);
-    }
-#endif
-    scopeChain_ = &obj;
+    JS_ASSERT(script()->needsArgsObj());
+    flags_ |= HAS_ARGS_OBJ;
+    argsObj_ = &argsobj;
+}
+
+inline ScopeObject &
+StackFrame::aliasedVarScope(ScopeCoordinate sc) const
+{
+    JSObject *scope = &scopeChain()->asScope();
+    for (unsigned i = sc.hops; i; i--)
+        scope = &scope->asScope().enclosingScope();
+    return scope->asScope();
+}
+
+inline void
+StackFrame::pushOnScopeChain(ScopeObject &scope)
+{
+    JS_ASSERT(*scopeChain() == scope.enclosingScope() ||
+              *scopeChain() == scope.asCall().enclosingScope().asDeclEnv().enclosingScope());
+    scopeChain_ = &scope;
     flags_ |= HAS_SCOPECHAIN;
 }
 
 inline void
-StackFrame::initScopeChain(CallObject &obj)
+StackFrame::popOffScopeChain()
 {
-    JS_ASSERT(&obj != NULL);
-    JS_ASSERT(!hasCallObj() && obj.maybeStackFrame() == this);
-    scopeChain_ = &obj;
-    flags_ |= HAS_SCOPECHAIN | HAS_CALL_OBJ;
+    JS_ASSERT(flags_ & HAS_SCOPECHAIN);
+    scopeChain_ = &scopeChain_->asScope().enclosingScope();
 }
 
 inline CallObject &
 StackFrame::callObj() const
 {
-    JS_ASSERT_IF(isNonEvalFunctionFrame() || isStrictEvalFrame(), hasCallObj());
+    JS_ASSERT(fun()->isHeavyweight());
 
     JSObject *pobj = scopeChain();
     while (JS_UNLIKELY(!pobj->isCall()))
@@ -325,111 +378,29 @@ StackFrame::callObj() const
     return pobj->asCall();
 }
 
-inline bool
-StackFrame::maintainNestingState() const
-{
-    /*
-     * Whether to invoke the nesting epilogue/prologue to maintain active
-     * frame counts and check for reentrant outer functions.
-     */
-    return isNonEvalFunctionFrame() && !isGeneratorFrame() && script()->nesting();
-}
-
-inline bool
-StackFrame::functionPrologue(JSContext *cx)
-{
-    JS_ASSERT(isNonEvalFunctionFrame());
-    JS_ASSERT(!isGeneratorFrame());
-
-    if (fun()->isHeavyweight()) {
-        CallObject *callobj = CallObject::createForFunction(cx, this);
-        if (!callobj)
-            return false;
-        initScopeChain(*callobj);
-    } else {
-        /* Force instantiation of the scope chain, for JIT frames. */
-        scopeChain();
-    }
-
-    if (script()->nesting()) {
-        JS_ASSERT(maintainNestingState());
-        types::NestingPrologue(cx, this);
-    }
-
-    return true;
-}
-
-inline void
-StackFrame::functionEpilogue(JSContext *cx)
-{
-    JS_ASSERT(isNonEvalFunctionFrame());
-
-    if (cx->compartment->debugMode())
-        cx->runtime->debugScopes->onPopCall(this);
-
-    if (flags_ & (HAS_ARGS_OBJ | HAS_CALL_OBJ)) {
-        if (hasCallObj())
-            js_PutCallObject(this, scopeChain_->asCall());
-        if (hasArgsObj())
-            js_PutArgsObject(this);
-    }
-
-    if (maintainNestingState())
-        types::NestingEpilogue(this);
-}
-
-inline void
-StackFrame::updateEpilogueFlags()
-{
-    if (flags_ & (HAS_ARGS_OBJ | HAS_CALL_OBJ)) {
-        if (hasArgsObj() && !argsObj().maybeStackFrame())
-            flags_ &= ~HAS_ARGS_OBJ;
-        if (hasCallObj() && !callObj().maybeStackFrame()) {
-            /*
-             * For function frames, the call object may or may not have have an
-             * enclosing DeclEnv object, so we use the callee's parent, since
-             * it was the initial scope chain. For global (strict) eval frames,
-             * there is no callee, but the call object's parent is the initial
-             * scope chain.
-             */
-            scopeChain_ = isFunctionFrame()
-                          ? callee().environment()
-                          : &scopeChain_->asScope().enclosingScope();
-            flags_ &= ~HAS_CALL_OBJ;
-        }
-    }
-
-    /*
-     * For outer/inner function frames, undo the active frame balancing so that
-     * when we redo it in the epilogue we get the right final value. The other
-     * nesting epilogue changes (update active args/vars) are idempotent.
-     */
-    if (maintainNestingState())
-        script()->nesting()->activeFrames++;
-}
-
 /*****************************************************************************/
 
 STATIC_POSTCONDITION(!return || ubound(from) >= nvals)
 JS_ALWAYS_INLINE bool
-StackSpace::ensureSpace(JSContext *cx, MaybeReportError report, Value *from, ptrdiff_t nvals,
-                        JSCompartment *dest) const
+StackSpace::ensureSpace(JSContext *cx, MaybeReportError report, Value *from, ptrdiff_t nvals) const
 {
+    AssertCanGC();
     assertInvariants();
     JS_ASSERT(from >= firstUnused());
 #ifdef XP_WIN
     JS_ASSERT(from <= commitEnd_);
 #endif
     if (JS_UNLIKELY(conservativeEnd_ - from < nvals))
-        return ensureSpaceSlow(cx, report, from, nvals, dest);
+        return ensureSpaceSlow(cx, report, from, nvals);
     return true;
 }
 
 inline Value *
 StackSpace::getStackLimit(JSContext *cx, MaybeReportError report)
 {
+    AssertCanGC();
     FrameRegs &regs = cx->regs();
-    unsigned nvals = regs.fp()->numSlots() + STACK_JIT_EXTRA;
+    unsigned nvals = regs.fp()->script()->nslots + STACK_JIT_EXTRA;
     return ensureSpace(cx, report, regs.sp, nvals)
            ? conservativeEnd_
            : NULL;
@@ -441,6 +412,7 @@ JS_ALWAYS_INLINE StackFrame *
 ContextStack::getCallFrame(JSContext *cx, MaybeReportError report, const CallArgs &args,
                            JSFunction *fun, JSScript *script, StackFrame::Flags *flags) const
 {
+    AssertCanGC();
     JS_ASSERT(fun->script() == script);
     unsigned nformal = fun->nargs;
 
@@ -450,7 +422,7 @@ ContextStack::getCallFrame(JSContext *cx, MaybeReportError report, const CallArg
     /* Include extra space to satisfy the method-jit stackLimit invariant. */
     unsigned nvals = VALUES_PER_STACK_FRAME + script->nslots + StackSpace::STACK_JIT_EXTRA;
 
-    /* Maintain layout invariant: &formalArgs[0] == ((Value *)fp) - nformal. */
+    /* Maintain layout invariant: &formals[0] == ((Value *)fp) - nformal. */
 
     if (args.length() == nformal) {
         if (!space().ensureSpace(cx, report, firstUnused, nvals))
@@ -480,15 +452,16 @@ ContextStack::getCallFrame(JSContext *cx, MaybeReportError report, const CallArg
 JS_ALWAYS_INLINE bool
 ContextStack::pushInlineFrame(JSContext *cx, FrameRegs &regs, const CallArgs &args,
                               JSFunction &callee, JSScript *script,
-                              InitialFrameFlags initial)
+                              InitialFrameFlags initial, MaybeReportError report)
 {
+    AssertCanGC();
     JS_ASSERT(onTop());
     JS_ASSERT(regs.sp == args.end());
     /* Cannot assert callee == args.callee() since this is called from LeaveTree. */
-    JS_ASSERT(script == callee.script());
+    JS_ASSERT(callee.script() == script);
 
     StackFrame::Flags flags = ToFrameFlags(initial);
-    StackFrame *fp = getCallFrame(cx, REPORT_ERROR, args, &callee, script, &flags);
+    StackFrame *fp = getCallFrame(cx, report, args, &callee, script, &flags);
     if (!fp)
         return false;
 
@@ -508,6 +481,7 @@ ContextStack::pushInlineFrame(JSContext *cx, FrameRegs &regs, const CallArgs &ar
                               JSFunction &callee, JSScript *script,
                               InitialFrameFlags initial, Value **stackLimit)
 {
+    AssertCanGC();
     if (!pushInlineFrame(cx, regs, args, callee, script, initial))
         return false;
     *stackLimit = space().conservativeEnd_;
@@ -519,6 +493,7 @@ ContextStack::getFixupFrame(JSContext *cx, MaybeReportError report,
                             const CallArgs &args, JSFunction *fun, JSScript *script,
                             void *ncode, InitialFrameFlags initial, Value **stackLimit)
 {
+    AssertCanGC();
     JS_ASSERT(onTop());
     JS_ASSERT(fun->script() == args.callee().toFunction()->script());
     JS_ASSERT(fun->script() == script);
@@ -542,9 +517,7 @@ ContextStack::popInlineFrame(FrameRegs &regs)
     JS_ASSERT(&regs == &seg_->regs());
 
     StackFrame *fp = regs.fp();
-    fp->functionEpilogue(cx_);
-
-    Value *newsp = fp->actualArgs() - 1;
+    Value *newsp = fp->actuals() - 1;
     JS_ASSERT(newsp >= fp->prev()->base());
 
     newsp[-1] = fp->returnValue();
@@ -557,30 +530,42 @@ ContextStack::popFrameAfterOverflow()
     /* Restore the regs to what they were on entry to JSOP_CALL. */
     FrameRegs &regs = seg_->regs();
     StackFrame *fp = regs.fp();
-    regs.popFrame(fp->actualArgsEnd());
+    regs.popFrame(fp->actuals() + fp->numActualArgs());
 }
 
 inline JSScript *
-ContextStack::currentScript(jsbytecode **ppc) const
+ContextStack::currentScript(jsbytecode **ppc,
+                            MaybeAllowCrossCompartment allowCrossCompartment) const
 {
+    AutoAssertNoGC nogc;
+
     if (ppc)
         *ppc = NULL;
 
-    FrameRegs *regs = maybeRegs();
-    StackFrame *fp = regs ? regs->fp() : NULL;
-    while (fp && fp->isDummyFrame())
-        fp = fp->prev();
-    if (!fp)
+    if (!hasfp())
         return NULL;
 
+    FrameRegs &regs = this->regs();
+    StackFrame *fp = regs.fp();
+
+#ifdef JS_ION
+    if (fp->beginsIonActivation()) {
+        RootedScript script(cx_);
+        ion::GetPcScript(cx_, &script, ppc);
+        if (!allowCrossCompartment && script->compartment() != cx_->compartment)
+            return NULL;
+        return script;
+    }
+#endif
+
 #ifdef JS_METHODJIT
-    mjit::CallSite *inlined = regs->inlined();
+    mjit::CallSite *inlined = regs.inlined();
     if (inlined) {
-        mjit::JITChunk *chunk = fp->jit()->chunk(regs->pc);
+        mjit::JITChunk *chunk = fp->jit()->chunk(regs.pc);
         JS_ASSERT(inlined->inlineIndex < chunk->nInlineFrames);
         mjit::InlineFrame *frame = &chunk->inlineFrames()[inlined->inlineIndex];
-        JSScript *script = frame->fun->script();
-        if (script->compartment() != cx_->compartment)
+        RawScript script = frame->fun->script().get(nogc);
+        if (!allowCrossCompartment && script->compartment() != cx_->compartment)
             return NULL;
         if (ppc)
             *ppc = script->code + inlined->pcOffset;
@@ -588,8 +573,8 @@ ContextStack::currentScript(jsbytecode **ppc) const
     }
 #endif
 
-    JSScript *script = fp->script();
-    if (script->compartment() != cx_->compartment)
+    RawScript script = fp->script().get(nogc);
+    if (!allowCrossCompartment && script->compartment() != cx_->compartment)
         return NULL;
 
     if (ppc)
@@ -597,49 +582,20 @@ ContextStack::currentScript(jsbytecode **ppc) const
     return script;
 }
 
-inline JSScript *
-ContextStack::currentScriptWithDiagnostics(jsbytecode **ppc) const
-{
-    if (ppc)
-        *ppc = NULL;
-
-    FrameRegs *regs = maybeRegs();
-    StackFrame *fp = regs ? regs->fp() : NULL;
-    while (fp && fp->isDummyFrame())
-        fp = fp->prev();
-    if (!fp)
-        *(int *) 0x10 = 0;
-
-#ifdef JS_METHODJIT
-    mjit::CallSite *inlined = regs->inlined();
-    if (inlined) {
-        mjit::JITChunk *chunk = fp->jit()->chunk(regs->pc);
-        JS_ASSERT(inlined->inlineIndex < chunk->nInlineFrames);
-        mjit::InlineFrame *frame = &chunk->inlineFrames()[inlined->inlineIndex];
-        JSScript *script = frame->fun->script();
-        if (script->compartment() != cx_->compartment)
-            *(int *) 0x20 = 0;
-        if (ppc)
-            *ppc = script->code + inlined->pcOffset;
-        return script;
-    }
-#endif
-
-    JSScript *script = fp->script();
-    if (script->compartment() != cx_->compartment)
-        *(int *) 0x30 = 0;
-
-    if (ppc)
-        *ppc = fp->pcQuadratic(*this);
-    if (!script)
-        *(int *) 0x40 = 0;
-    return script;
-}
-
 inline HandleObject
 ContextStack::currentScriptedScopeChain() const
 {
     return fp()->scopeChain();
+}
+
+template <class Op>
+inline void
+StackIter::ionForEachCanonicalActualArg(Op op)
+{
+    JS_ASSERT(isIon());
+#ifdef JS_ION
+    ionInlineFrames_.forEachCanonicalActualArg(op, 0, -1);
+#endif
 }
 
 } /* namespace js */

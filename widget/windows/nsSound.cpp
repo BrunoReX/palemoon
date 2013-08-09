@@ -26,7 +26,7 @@
 #include "nsNativeCharsetUtils.h"
 
 #ifdef PR_LOGGING
-PRLogModuleInfo* gWin32SoundLog = nsnull;
+PRLogModuleInfo* gWin32SoundLog = nullptr;
 #endif
 
 class nsSoundPlayer: public nsRunnable {
@@ -74,6 +74,8 @@ protected:
 NS_IMETHODIMP
 nsSoundPlayer::Run()
 {
+  PR_SetCurrentThreadName("Play Sound");
+
   NS_PRECONDITION(!mSoundName.IsEmpty(), "Sound name should not be empty");
   ::PlaySoundW(mSoundName.get(), NULL, SND_NODEFAULT | SND_ALIAS | SND_ASYNC);
   nsCOMPtr<nsIRunnable> releaser = new SoundReleaser(mSound);
@@ -109,7 +111,7 @@ nsSound::nsSound()
     }
 #endif
 
-    mLastSound = nsnull;
+    mLastSound = nullptr;
 }
 
 nsSound::~nsSound()
@@ -122,7 +124,7 @@ void nsSound::ShutdownOldPlayerThread()
 {
   if (mPlayerThread) {
     mPlayerThread->Shutdown();
-    mPlayerThread = nsnull;
+    mPlayerThread = nullptr;
   }
 }
 
@@ -130,11 +132,11 @@ void nsSound::PurgeLastSound()
 {
   if (mLastSound) {
     // Halt any currently playing sound.
-    ::PlaySound(nsnull, nsnull, SND_PURGE);
+    ::PlaySound(nullptr, nullptr, SND_PURGE);
 
     // Now delete the buffer.
     free(mLastSound);
-    mLastSound = nsnull;
+    mLastSound = nullptr;
   }
 }
 
@@ -148,8 +150,8 @@ NS_IMETHODIMP nsSound::Beep()
 NS_IMETHODIMP nsSound::OnStreamComplete(nsIStreamLoader *aLoader,
                                         nsISupports *context,
                                         nsresult aStatus,
-                                        PRUint32 dataLen,
-                                        const PRUint8 *data)
+                                        uint32_t dataLen,
+                                        const uint8_t *data)
 {
   // print a load error on bad status
   if (NS_FAILED(aStatus)) {
@@ -164,7 +166,7 @@ NS_IMETHODIMP nsSound::OnStreamComplete(nsIStreamLoader *aLoader,
         nsCOMPtr<nsIURI> uri;
         channel->GetURI(getter_AddRefs(uri));
         if (uri) {
-          nsCAutoString uriSpec;
+          nsAutoCString uriSpec;
           uri->GetSpec(uriSpec);
           PR_LOG(gWin32SoundLog, PR_LOG_ALWAYS,
                  ("Failed to load %s\n", uriSpec.get()));
@@ -181,7 +183,7 @@ NS_IMETHODIMP nsSound::OnStreamComplete(nsIStreamLoader *aLoader,
   if (data && dataLen > 0) {
     DWORD flags = SND_MEMORY | SND_NODEFAULT;
     // We try to make a copy so we can play it async.
-    mLastSound = (PRUint8 *) malloc(dataLen);
+    mLastSound = (uint8_t *) malloc(dataLen);
     if (mLastSound) {
       memcpy(mLastSound, data, dataLen);
       data = mLastSound;
@@ -218,7 +220,7 @@ NS_IMETHODIMP nsSound::Init()
   // it is initialized.
   // If we wait until the first sound is played, there will
   // be a time lag as the library gets loaded.
-  ::PlaySound(nsnull, nsnull, SND_PURGE);
+  ::PlaySound(nullptr, nullptr, SND_PURGE);
 
   return NS_OK;
 }
@@ -241,7 +243,7 @@ NS_IMETHODIMP nsSound::PlaySystemSound(const nsAString &aSoundAlias)
 
   NS_WARNING("nsISound::playSystemSound is called with \"_moz_\" events, they are obsolete, use nsISound::playEventSound instead");
 
-  PRUint32 eventId;
+  uint32_t eventId;
   if (aSoundAlias.Equals(NS_SYSSOUND_MAIL_BEEP))
     eventId = EVENT_NEW_MAIL_RECEIVED;
   else if (aSoundAlias.Equals(NS_SYSSOUND_CONFIRM_DIALOG))
@@ -258,12 +260,12 @@ NS_IMETHODIMP nsSound::PlaySystemSound(const nsAString &aSoundAlias)
   return PlayEventSound(eventId);
 }
 
-NS_IMETHODIMP nsSound::PlayEventSound(PRUint32 aEventId)
+NS_IMETHODIMP nsSound::PlayEventSound(uint32_t aEventId)
 {
   ShutdownOldPlayerThread();
   PurgeLastSound();
 
-  const wchar_t *sound = nsnull;
+  const wchar_t *sound = nullptr;
   switch (aEventId) {
     case EVENT_NEW_MAIL_RECEIVED:
       sound = L"MailBeep";

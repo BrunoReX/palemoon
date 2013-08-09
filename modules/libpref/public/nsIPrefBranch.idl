@@ -78,6 +78,19 @@ interface nsIPrefBranch : nsISupports
   void setBoolPref(in string aPrefName, in boolean aValue);
 
   /**
+   * Called to get the state of an individual floating-point preference.
+   * "Floating point" preferences are really string preferences that
+   * are converted to floating point numbers.
+   *
+   * @param aPrefName The floating point preference to get the state of.
+   *
+   * @return float  The value of the requested floating point preference.
+   *
+   * @see setCharPref
+   */
+  float getFloatPref(in string aPrefName);
+
+  /**
    * Called to get the state of an individual string preference.
    *
    * @param aPrefName The string preference to retrieve.
@@ -133,7 +146,7 @@ interface nsIPrefBranch : nsISupports
    * @param aPrefName The complex preference to get the value of.
    * @param aType     The XPCOM interface that this complex preference
    *                  represents. Interfaces currently supported are:
-   *                    - nsILocalFile
+   *                    - nsIFile
    *                    - nsISupportsString (UniChar)
    *                    - nsIPrefLocalizedString (Localized UniChar)
    * @param aValue    The XPCOM object into which to the complex preference 
@@ -155,7 +168,7 @@ interface nsIPrefBranch : nsISupports
    * @param aPrefName The complex preference to set the value of.
    * @param aType     The XPCOM interface that this complex preference
    *                  represents. Interfaces currently supported are:
-   *                    - nsILocalFile
+   *                    - nsIFile
    *                    - nsISupportsString (UniChar)
    *                    - nsIPrefLocalizedString (Localized UniChar)
    * @param aValue    The XPCOM object from which to set the complex preference 

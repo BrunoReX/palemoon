@@ -14,83 +14,53 @@ namespace sms {
 NS_IMPL_ISUPPORTS1(SmsDatabaseService, nsISmsDatabaseService)
 
 NS_IMETHODIMP
-SmsDatabaseService::SaveReceivedMessage(const nsAString& aSender,
-                                        const nsAString& aBody,
-                                        PRUint64 aDate, PRInt32* aId)
-{
-  // The Android stock SMS app does this already.
-  *aId = -1;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-SmsDatabaseService::SaveSentMessage(const nsAString& aReceiver,
-                                    const nsAString& aBody,
-                                    PRUint64 aDate, PRInt32* aId)
-{
-  *aId = -1;
-
-  if (!AndroidBridge::Bridge()) {
-    return NS_OK;
-  }
-
-  *aId = AndroidBridge::Bridge()->SaveSentMessage(aReceiver, aBody, aDate);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-SmsDatabaseService::GetMessageMoz(PRInt32 aMessageId, PRInt32 aRequestId,
-                                  PRUint64 aProcessId)
+SmsDatabaseService::GetMessageMoz(int32_t aMessageId, nsISmsRequest* aRequest)
 {
   if (!AndroidBridge::Bridge()) {
     return NS_OK;
   }
 
-  AndroidBridge::Bridge()->GetMessage(aMessageId, aRequestId, aProcessId);
+  AndroidBridge::Bridge()->GetMessage(aMessageId, aRequest);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-SmsDatabaseService::DeleteMessage(PRInt32 aMessageId, PRInt32 aRequestId,
-                                  PRUint64 aProcessId)
+SmsDatabaseService::DeleteMessage(int32_t aMessageId, nsISmsRequest* aRequest)
 {
   if (!AndroidBridge::Bridge()) {
     return NS_OK;
   }
 
-  AndroidBridge::Bridge()->DeleteMessage(aMessageId, aRequestId, aProcessId);
+  AndroidBridge::Bridge()->DeleteMessage(aMessageId, aRequest);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 SmsDatabaseService::CreateMessageList(nsIDOMMozSmsFilter* aFilter,
-                                      bool aReverse, PRInt32 aRequestId,
-                                      PRUint64 aProcessId)
+                                      bool aReverse, nsISmsRequest* aRequest)
 {
   if (!AndroidBridge::Bridge()) {
     return NS_OK;
   }
 
   AndroidBridge::Bridge()->CreateMessageList(
-    static_cast<SmsFilter*>(aFilter)->GetData(), aReverse, aRequestId, aProcessId
-  );
+    static_cast<SmsFilter*>(aFilter)->GetData(), aReverse, aRequest);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-SmsDatabaseService::GetNextMessageInList(PRInt32 aListId, PRInt32 aRequestId,
-                                         PRUint64 aProcessId)
+SmsDatabaseService::GetNextMessageInList(int32_t aListId, nsISmsRequest* aRequest)
 {
   if (!AndroidBridge::Bridge()) {
     return NS_OK;
   }
 
-  AndroidBridge::Bridge()->GetNextMessageInList(aListId, aRequestId, aProcessId);
+  AndroidBridge::Bridge()->GetNextMessageInList(aListId, aRequest);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-SmsDatabaseService::ClearMessageList(PRInt32 aListId)
+SmsDatabaseService::ClearMessageList(int32_t aListId)
 {
   if (!AndroidBridge::Bridge()) {
     return NS_OK;
@@ -101,11 +71,18 @@ SmsDatabaseService::ClearMessageList(PRInt32 aListId)
 }
 
 NS_IMETHODIMP
-SmsDatabaseService::MarkMessageRead(PRInt32 aMessageId, bool aValue,
-                                    PRInt32 aRequestId, PRUint64 aProcessId)
+SmsDatabaseService::MarkMessageRead(int32_t aMessageId, bool aValue,
+                                    nsISmsRequest* aRequest)
 {
   // TODO: This would need to be implemented as part of Bug 748391
   return NS_OK;
+}
+
+NS_IMETHODIMP
+SmsDatabaseService::GetThreadList(nsISmsRequest* aRequest)
+{
+  NS_NOTYETIMPLEMENTED("Implement me!");
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 } // namespace sms

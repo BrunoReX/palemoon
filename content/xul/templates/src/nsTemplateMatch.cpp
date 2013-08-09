@@ -20,13 +20,13 @@ nsTemplateMatch::Destroy(nsFixedSizeAllocator& aPool,
         aMatch->mResult->HasBeenRemoved();
     aMatch->~nsTemplateMatch();
     aPool.Free(aMatch, sizeof(*aMatch));
-    aMatch = nsnull;
+    aMatch = nullptr;
 }
 
 nsresult
 nsTemplateMatch::RuleMatched(nsTemplateQuerySet* aQuerySet,
                              nsTemplateRule* aRule,
-                             PRInt16 aRuleIndex,
+                             int16_t aRuleIndex,
                              nsIXULTemplateResult* aResult)
 {
     // assign the rule index, used to indicate that a match is active, and

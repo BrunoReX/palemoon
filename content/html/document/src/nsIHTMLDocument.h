@@ -17,8 +17,8 @@ class nsContentList;
 class nsWrapperCache;
 
 #define NS_IHTMLDOCUMENT_IID \
-{ 0xa921276f, 0x5e70, 0x42e0, \
-  { 0xb8, 0x36, 0x7e, 0x6a, 0xb8, 0x30, 0xb3, 0xc0 } }
+{ 0xcf814492, 0x303c, 0x4718, \
+  { 0x9a, 0x3e, 0x39, 0xbc, 0xd5, 0x2c, 0x10, 0xdb } }
 
 /**
  * HTML document extensions to nsIDocument.
@@ -54,12 +54,9 @@ public:
    */
   // XXXbz is this still needed now that we can flush just content,
   // not the rest?
-  virtual PRInt32 GetNumFormsSynchronous() = 0;
+  virtual int32_t GetNumFormsSynchronous() = 0;
   
   virtual bool IsWriting() = 0;
-
-  virtual bool GetIsFrameset() = 0;
-  virtual void SetIsFrameset(bool aFrameset) = 0;
 
   /**
    * Get the list of form elements in the document.
@@ -82,7 +79,7 @@ public:
    *                true, -1 if it was changed to false
    */
   virtual nsresult ChangeContentEditableCount(nsIContent *aElement,
-                                              PRInt32 aChange) = 0;
+                                              int32_t aChange) = 0;
 
   enum EditingState {
     eTearingDown = -2,

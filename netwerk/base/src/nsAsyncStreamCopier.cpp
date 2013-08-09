@@ -16,7 +16,7 @@ using namespace mozilla;
 //
 // NSPR_LOG_MODULES=nsStreamCopier:5
 //
-static PRLogModuleInfo *gStreamCopierLog = nsnull;
+static PRLogModuleInfo *gStreamCopierLog = nullptr;
 #endif
 #define LOG(args) PR_LOG(gStreamCopierLog, PR_LOG_DEBUG, args)
 
@@ -59,7 +59,7 @@ nsAsyncStreamCopier::Complete(nsresult status)
     nsCOMPtr<nsISupports> ctx;
     {
         MutexAutoLock lock(mLock);
-        mCopierCtx = nsnull;
+        mCopierCtx = nullptr;
 
         if (mIsPending) {
             mIsPending = false;
@@ -68,8 +68,8 @@ nsAsyncStreamCopier::Complete(nsresult status)
             // setup OnStopRequest callback and release references...
             observer = mObserver;
             ctx = mObserverContext;
-            mObserver = nsnull;
-            mObserverContext = nsnull;
+            mObserver = nullptr;
+            mObserverContext = nullptr;
         }
     }
 
@@ -170,7 +170,7 @@ nsAsyncStreamCopier::SetLoadFlags(nsLoadFlags aLoadFlags)
 NS_IMETHODIMP
 nsAsyncStreamCopier::GetLoadGroup(nsILoadGroup **aLoadGroup)
 {
-    *aLoadGroup = nsnull;
+    *aLoadGroup = nullptr;
     return NS_OK;
 }
 
@@ -189,7 +189,7 @@ nsAsyncStreamCopier::Init(nsIInputStream *source,
                           nsIEventTarget *target,
                           bool sourceBuffered,
                           bool sinkBuffered,
-                          PRUint32 chunkSize,
+                          uint32_t chunkSize,
                           bool closeSource,
                           bool closeSink)
 {
@@ -244,9 +244,12 @@ nsAsyncStreamCopier::AsyncCopy(nsIRequestObserver *observer, nsISupports *ctx)
     // we want to receive progress notifications; release happens in
     // OnAsyncCopyComplete.
     NS_ADDREF_THIS();
-    rv = NS_AsyncCopy(mSource, mSink, mTarget, mMode, mChunkSize,
-                      OnAsyncCopyComplete, this, mCloseSource, mCloseSink,
-                      getter_AddRefs(mCopierCtx));
+    {
+      MutexAutoLock lock(mLock);
+      rv = NS_AsyncCopy(mSource, mSink, mTarget, mMode, mChunkSize,
+                        OnAsyncCopyComplete, this, mCloseSource, mCloseSink,
+                        getter_AddRefs(mCopierCtx));
+    }
     if (NS_FAILED(rv)) {
         NS_RELEASE_THIS();
         Cancel(rv);

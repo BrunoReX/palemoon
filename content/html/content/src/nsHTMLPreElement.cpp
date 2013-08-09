@@ -8,12 +8,14 @@
 #include "nsIDOMHTMLPreElement.h"
 #include "nsIDOMEventTarget.h"
 #include "nsGenericHTMLElement.h"
+#include "nsAttrValueInlines.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsMappedAttributes.h"
 #include "nsRuleData.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 class nsHTMLPreElement : public nsGenericHTMLElement,
                          public nsIDOMHTMLPreElement
@@ -26,19 +28,19 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLPreElement
-  NS_IMETHOD GetWidth(PRInt32* aWidth);
-  NS_IMETHOD SetWidth(PRInt32 aWidth);
+  NS_IMETHOD GetWidth(int32_t* aWidth);
+  NS_IMETHOD SetWidth(int32_t aWidth);
 
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
@@ -66,8 +68,8 @@ nsHTMLPreElement::~nsHTMLPreElement()
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLPreElement, nsGenericElement)
-NS_IMPL_RELEASE_INHERITED(nsHTMLPreElement, nsGenericElement)
+NS_IMPL_ADDREF_INHERITED(nsHTMLPreElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLPreElement, Element)
 
 
 DOMCI_NODE_DATA(HTMLPreElement, nsHTMLPreElement)
@@ -87,7 +89,7 @@ NS_IMPL_INT_ATTR(nsHTMLPreElement, Width, width)
 
 
 bool
-nsHTMLPreElement::ParseAttribute(PRInt32 aNamespaceID,
+nsHTMLPreElement::ParseAttribute(int32_t aNamespaceID,
                                  nsIAtom* aAttribute,
                                  const nsAString& aValue,
                                  nsAttrValue& aResult)
@@ -155,7 +157,7 @@ nsHTMLPreElement::IsAttributeMapped(const nsIAtom* aAttribute) const
     { &nsGkAtoms::wrap },
     { &nsGkAtoms::cols },
     { &nsGkAtoms::width },
-    { nsnull },
+    { nullptr },
   };
   
   static const MappedAttributeEntry* const map[] = {

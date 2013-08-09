@@ -7,16 +7,18 @@
 #include "nsGenericHTMLElement.h"
 #include "nsStyleConsts.h"
 #include "nsIDocument.h"
-#include "nsIDOMHTMLDocument.h"
 #include "nsContentUtils.h"
+#include "nsStubMutationObserver.h"
+
+using namespace mozilla::dom;
 
 class nsHTMLTitleElement : public nsGenericHTMLElement,
                            public nsIDOMHTMLTitleElement,
                            public nsStubMutationObserver
 {
 public:
-  using nsGenericElement::GetText;
-  using nsGenericElement::SetText;
+  using Element::GetText;
+  using Element::SetText;
 
   nsHTMLTitleElement(already_AddRefed<nsINodeInfo> aNodeInfo);
   virtual ~nsHTMLTitleElement();
@@ -25,13 +27,13 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLTitleElement
   NS_DECL_NSIDOMHTMLTITLEELEMENT
@@ -75,8 +77,8 @@ nsHTMLTitleElement::~nsHTMLTitleElement()
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLTitleElement, nsGenericElement) 
-NS_IMPL_RELEASE_INHERITED(nsHTMLTitleElement, nsGenericElement) 
+NS_IMPL_ADDREF_INHERITED(nsHTMLTitleElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLTitleElement, Element)
 
 
 DOMCI_NODE_DATA(HTMLTitleElement, nsHTMLTitleElement)
@@ -119,7 +121,7 @@ void
 nsHTMLTitleElement::ContentAppended(nsIDocument *aDocument,
                                     nsIContent *aContainer,
                                     nsIContent *aFirstNewContent,
-                                    PRInt32 aNewIndexInContainer)
+                                    int32_t aNewIndexInContainer)
 {
   SendTitleChangeEvent(false);
 }
@@ -128,7 +130,7 @@ void
 nsHTMLTitleElement::ContentInserted(nsIDocument *aDocument,
                                     nsIContent *aContainer,
                                     nsIContent *aChild,
-                                    PRInt32 aIndexInContainer)
+                                    int32_t aIndexInContainer)
 {
   SendTitleChangeEvent(false);
 }
@@ -137,7 +139,7 @@ void
 nsHTMLTitleElement::ContentRemoved(nsIDocument *aDocument,
                                    nsIContent *aContainer,
                                    nsIContent *aChild,
-                                   PRInt32 aIndexInContainer,
+                                   int32_t aIndexInContainer,
                                    nsIContent *aPreviousSibling)
 {
   SendTitleChangeEvent(false);

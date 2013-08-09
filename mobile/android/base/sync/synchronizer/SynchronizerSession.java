@@ -6,6 +6,7 @@ package org.mozilla.gecko.sync.synchronizer;
 
 
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.mozilla.gecko.sync.Logger;
 import org.mozilla.gecko.sync.repositories.InactiveSessionException;
@@ -74,6 +75,9 @@ implements RecordsChannelDelegate,
   private boolean flowAToBCompleted = false;
   private boolean flowBToACompleted = false;
 
+  protected final AtomicInteger numInboundRecords = new AtomicInteger(-1);
+  protected final AtomicInteger numOutboundRecords = new AtomicInteger(-1);
+
   /*
    * Public API: constructor, init, synchronize.
    */
@@ -98,6 +102,30 @@ implements RecordsChannelDelegate,
     this.getSynchronizer().repositoryA.createSession(this, context);
   }
 
+  /**
+   * Get the number of records fetched from the first repository (usually the
+   * server, hence inbound).
+   * <p>
+   * Valid only after first flow has completed.
+   *
+   * @return number of records, or -1 if not valid.
+   */
+  public int getInboundCount() {
+    return numInboundRecords.get();
+  }
+
+  /**
+   * Get the number of records fetched from the second repository (usually the
+   * local store, hence outbound).
+   * <p>
+   * Valid only after second flow has completed.
+   *
+   * @return number of records, or -1 if not valid.
+   */
+  public int getOutboundCount() {
+    return numOutboundRecords.get();
+  }
+
   // These are accessed by `abort` and `synchronize`, both of which are synchronized.
   // Guarded by `this`.
   protected RecordsChannel channelAToB;
@@ -107,6 +135,9 @@ implements RecordsChannelDelegate,
    * Please don't call this until you've been notified with onInitialized.
    */
   public synchronized void synchronize() {
+    numInboundRecords.set(-1);
+    numOutboundRecords.set(-1);
+
     // First thing: decide whether we should.
     if (!sessionA.dataAvailable() &&
         !sessionB.dataAvailable()) {
@@ -157,7 +188,7 @@ implements RecordsChannelDelegate,
     // This is the *first* channel to flow.
     channelAToB = new RecordsChannel(this.sessionA, this.sessionB, channelAToBDelegate);
 
-    Logger.info(LOG_TAG, "Starting A to B flow. Channel is " + channelAToB);
+    Logger.trace(LOG_TAG, "Starting A to B flow. Channel is " + channelAToB);
     try {
       channelAToB.beginAndFlow();
     } catch (InvalidSessionTransitionException e) {
@@ -174,10 +205,11 @@ implements RecordsChannelDelegate,
    * @param storeEnd timestamp when stores completed.
    */
   public void onFirstFlowCompleted(RecordsChannel recordsChannel, long fetchEnd, long storeEnd) {
-    Logger.info(LOG_TAG, "First RecordsChannel onFlowCompleted.");
-    Logger.info(LOG_TAG, "Fetch end is " + fetchEnd + ". Store end is " + storeEnd + ". Starting next.");
+    Logger.trace(LOG_TAG, "First RecordsChannel onFlowCompleted.");
+    Logger.debug(LOG_TAG, "Fetch end is " + fetchEnd + ". Store end is " + storeEnd + ". Starting next.");
     pendingATimestamp = fetchEnd;
     storeEndBTimestamp = storeEnd;
+    numInboundRecords.set(recordsChannel.getFetchCount());
     flowAToBCompleted = true;
     channelBToA.flow();
   }
@@ -191,11 +223,12 @@ implements RecordsChannelDelegate,
    * @param storeEnd timestamp when stores completed.
    */
   public void onSecondFlowCompleted(RecordsChannel recordsChannel, long fetchEnd, long storeEnd) {
-    Logger.info(LOG_TAG, "Second RecordsChannel onFlowCompleted.");
-    Logger.info(LOG_TAG, "Fetch end is " + fetchEnd + ". Store end is " + storeEnd + ". Finishing.");
+    Logger.trace(LOG_TAG, "Second RecordsChannel onFlowCompleted.");
+    Logger.debug(LOG_TAG, "Fetch end is " + fetchEnd + ". Store end is " + storeEnd + ". Finishing.");
 
     pendingBTimestamp = fetchEnd;
     storeEndATimestamp = storeEnd;
+    numOutboundRecords.set(recordsChannel.getFetchCount());
     flowBToACompleted = true;
 
     // Finish the two sessions.
@@ -341,11 +374,11 @@ implements RecordsChannelDelegate,
   @Override
   public void onFinishSucceeded(RepositorySession session,
                                 RepositorySessionBundle bundle) {
-    Logger.info(LOG_TAG, "onFinishSucceeded. Flows? " + flowAToBCompleted + ", " + flowBToACompleted);
+    Logger.debug(LOG_TAG, "onFinishSucceeded. Flows? " + flowAToBCompleted + ", " + flowBToACompleted);
 
     if (session == sessionA) {
       if (flowAToBCompleted) {
-        Logger.info(LOG_TAG, "onFinishSucceeded: bumping session A's timestamp to " + pendingATimestamp + " or " + storeEndATimestamp);
+        Logger.debug(LOG_TAG, "onFinishSucceeded: bumping session A's timestamp to " + pendingATimestamp + " or " + storeEndATimestamp);
         bundle.bumpTimestamp(Math.max(pendingATimestamp, storeEndATimestamp));
         this.synchronizer.bundleA = bundle;
       } else {
@@ -354,7 +387,7 @@ implements RecordsChannelDelegate,
         return;
       }
       if (this.sessionB != null) {
-        Logger.info(LOG_TAG, "Finishing session B.");
+        Logger.trace(LOG_TAG, "Finishing session B.");
         // On to the next.
         try {
           this.sessionB.finish(this);
@@ -365,10 +398,10 @@ implements RecordsChannelDelegate,
       }
     } else if (session == sessionB) {
       if (flowBToACompleted) {
-        Logger.info(LOG_TAG, "onFinishSucceeded: bumping session B's timestamp to " + pendingBTimestamp + " or " + storeEndBTimestamp);
+        Logger.debug(LOG_TAG, "onFinishSucceeded: bumping session B's timestamp to " + pendingBTimestamp + " or " + storeEndBTimestamp);
         bundle.bumpTimestamp(Math.max(pendingBTimestamp, storeEndBTimestamp));
         this.synchronizer.bundleB = bundle;
-        Logger.info(LOG_TAG, "Notifying delegate.onSynchronized.");
+        Logger.trace(LOG_TAG, "Notifying delegate.onSynchronized.");
         this.delegate.onSynchronized(this);
       } else {
         // Should not happen!

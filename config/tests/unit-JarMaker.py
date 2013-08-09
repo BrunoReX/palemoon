@@ -4,10 +4,9 @@ import os, sys, os.path, time, inspect
 from filecmp import dircmp
 from tempfile import mkdtemp
 from shutil import rmtree, copy2
+from StringIO import StringIO
 from zipfile import ZipFile
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-
-from mozunit import MozTestRunner
+import mozunit
 from JarMaker import JarMaker
 
 if sys.platform == "win32":
@@ -139,7 +138,7 @@ class TestJarMaker(unittest.TestCase):
     """
     Unit tests for JarMaker.py
     """
-    debug = True # set to True to debug failing tests on disk
+    debug = False # set to True to debug failing tests on disk
     def setUp(self):
         self.tmpdir = mkdtemp()
         self.srcdir = os.path.join(self.tmpdir, 'src')
@@ -154,15 +153,19 @@ class TestJarMaker(unittest.TestCase):
     def tearDown(self):
         if self.debug:
             print self.tmpdir
-        else:
+        elif sys.platform != "win32":
+            # can't clean up on windows
             rmtree(self.tmpdir)
 
-    def _jar_and_compare(self, *args, **kwargs):
+    def _jar_and_compare(self, infile, **kwargs):
         jm = JarMaker(outputFormat='jar')
-        kwargs['jardir'] = os.path.join(self.builddir, 'chrome')
+        jardir = os.path.join(self.builddir, 'chrome')
         if 'topsourcedir' not in kwargs:
             kwargs['topsourcedir'] = self.srcdir
-        jm.makeJars(*args, **kwargs)
+        for attr in ('topsourcedir', 'sourcedirs'):
+            if attr in kwargs:
+                setattr(jm, attr, kwargs[attr])
+        jm.makeJar(infile, jardir)
         cwd = os.getcwd()
         os.chdir(self.builddir)
         try:
@@ -216,8 +219,7 @@ class TestJarMaker(unittest.TestCase):
         '''Test a simple jar.mn'''
         self._create_simple_setup()
         # call JarMaker
-        rv = self._jar_and_compare((os.path.join(self.srcdir,'jar.mn'),),
-                                   tuple(),
+        rv = self._jar_and_compare(os.path.join(self.srcdir,'jar.mn'),
                                    sourcedirs = [self.srcdir])
         self.assertTrue(not rv, rv)
 
@@ -228,56 +230,75 @@ class TestJarMaker(unittest.TestCase):
 
         self._create_simple_setup()
         jm = JarMaker(outputFormat='symlink')
-        kwargs = {
-            'sourcedirs': [self.srcdir],
-            'topsourcedir': self.srcdir,
-            'jardir': os.path.join(self.builddir, 'chrome'),
-        }
-        jm.makeJars((os.path.join(self.srcdir,'jar.mn'),), tuple(), **kwargs)
+        jm.sourcedirs = [self.srcdir]
+        jm.topsourcedir = self.srcdir
+        jardir = os.path.join(self.builddir, 'chrome')
+        jm.makeJar(os.path.join(self.srcdir,'jar.mn'), jardir)
         # All we do is check that srcdir/bar points to builddir/chrome/test/dir/foo
         srcbar = os.path.join(self.srcdir, 'bar')
         destfoo = os.path.join(self.builddir, 'chrome', 'test', 'dir', 'foo')
         self.assertTrue(is_symlink_to(destfoo, srcbar),
                         "%s is not a symlink to %s" % (destfoo, srcbar))
 
-    def test_k_multi_relative_jar(self):
-        '''Test the API for multiple l10n jars, with different relative paths'''
-        # create app src content
-        def _mangle(relpath):
-            'method we use to map relpath to srcpaths'
-            return os.path.join(self.srcdir, 'other-' + relpath)
-        jars = []
-        for relpath in ('foo', 'bar'):
-            ldir = os.path.join(self.srcdir, relpath, 'locales')
-            os.makedirs(ldir)
-            jp = os.path.join(ldir, 'jar.mn')
-            jars.append(jp)
-            open(jp, 'w').write('''ab-CD.jar:
-% locale app ab-CD %app
-  app/''' + relpath + ' (%' + relpath + ''')
-''')
-            ldir = _mangle(relpath)
-            os.mkdir(ldir)
-            open(os.path.join(ldir, relpath), 'w').write(relpath+" content\n")
-        # create reference
-        mf = open(os.path.join(self.refdir, 'chrome.manifest'), 'w')
-        mf.write('manifest chrome/ab-CD.manifest\n')
-        mf.close()
 
-        chrome_ref = os.path.join(self.refdir, 'chrome')
-        os.mkdir(chrome_ref)
-        mf = open(os.path.join(chrome_ref, 'ab-CD.manifest'), 'wb')
-        mf.write('locale app ab-CD jar:ab-CD.jar!/app\n')
-        mf.close()
-        ldir = os.path.join(chrome_ref, 'ab-CD.jar', 'app')
-        os.makedirs(ldir)
-        for relpath in ('foo', 'bar'):
-            open(os.path.join(ldir, relpath), 'w').write(relpath+" content\n")
-        # call JarMaker
-        difference = self._jar_and_compare(jars,
-                                           (_mangle,),
-                                           sourcedirs = [])
-        self.assertTrue(not difference, difference)
+class Test_relativesrcdir(unittest.TestCase):
+    def setUp(self):
+        self.jm = JarMaker()
+        self.jm.topsourcedir = '/TOPSOURCEDIR'
+        self.jm.relativesrcdir = 'browser/locales'
+        self.fake_empty_file = StringIO()
+        self.fake_empty_file.name = 'fake_empty_file'
+    def tearDown(self):
+        del self.jm
+        del self.fake_empty_file
+    def test_en_US(self):
+        jm = self.jm
+        jm.makeJar(self.fake_empty_file, '/NO_OUTPUT_REQUIRED')
+        self.assertEquals(jm.localedirs,
+                          [
+                            os.path.join(os.path.abspath('/TOPSOURCEDIR'),
+                                         'browser/locales', 'en-US')
+                            ])
+    def test_l10n_no_merge(self):
+        jm = self.jm
+        jm.l10nbase = '/L10N_BASE'
+        jm.makeJar(self.fake_empty_file, '/NO_OUTPUT_REQUIRED')
+        self.assertEquals(jm.localedirs, [os.path.join('/L10N_BASE', 'browser')])
+    def test_l10n_merge(self):
+        jm = self.jm
+        jm.l10nbase = '/L10N_BASE'
+        jm.l10nmerge = '/L10N_MERGE'
+        jm.makeJar(self.fake_empty_file, '/NO_OUTPUT_REQUIRED')
+        self.assertEquals(jm.localedirs,
+                          [os.path.join('/L10N_MERGE', 'browser'),
+                           os.path.join('/L10N_BASE', 'browser'),
+                           os.path.join(os.path.abspath('/TOPSOURCEDIR'),
+                                        'browser/locales', 'en-US')
+                           ])
+    def test_override(self):
+        jm = self.jm
+        jm.outputFormat = 'flat'  # doesn't touch chrome dir without files
+        jarcontents = StringIO('''en-US.jar:
+relativesrcdir dom/locales:
+''')
+        jarcontents.name = 'override.mn'
+        jm.makeJar(jarcontents, '/NO_OUTPUT_REQUIRED')
+        self.assertEquals(jm.localedirs,
+                          [
+                            os.path.join(os.path.abspath('/TOPSOURCEDIR'),
+                                         'dom/locales', 'en-US')
+                            ])
+    def test_override_l10n(self):
+        jm = self.jm
+        jm.l10nbase = '/L10N_BASE'
+        jm.outputFormat = 'flat'  # doesn't touch chrome dir without files
+        jarcontents = StringIO('''en-US.jar:
+relativesrcdir dom/locales:
+''')
+        jarcontents.name = 'override.mn'
+        jm.makeJar(jarcontents, '/NO_OUTPUT_REQUIRED')
+        self.assertEquals(jm.localedirs, [os.path.join('/L10N_BASE', 'dom')])
+
 
 if __name__ == '__main__':
-    unittest.main(testRunner=MozTestRunner())
+    mozunit.main()

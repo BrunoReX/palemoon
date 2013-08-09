@@ -3,11 +3,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "base/basictypes.h"
+
 #include "gfxAndroidPlatform.h"
 #include "mozilla/gfx/2D.h"
 
 #include "gfxFT2FontList.h"
 #include "gfxImageSurface.h"
+#include "mozilla/dom/ContentChild.h"
 #include "nsXULAppAPI.h"
 #include "nsIScreen.h"
 #include "nsIScreenManager.h"
@@ -16,16 +19,79 @@
 
 #include "ft2build.h"
 #include FT_FREETYPE_H
+#include FT_MODULE_H
+
 using namespace mozilla;
+using namespace mozilla::dom;
 using namespace mozilla::gfx;
 
 static FT_Library gPlatformFTLibrary = NULL;
 
 #define LOG(args...)  __android_log_print(ANDROID_LOG_INFO, "GeckoFonts" , ## args)
 
+static int64_t sFreetypeMemoryUsed;
+static FT_MemoryRec_ sFreetypeMemoryRecord;
+
+static int64_t
+GetFreetypeSize()
+{
+    return sFreetypeMemoryUsed;
+}
+
+NS_MEMORY_REPORTER_IMPLEMENT(Freetype,
+    "explicit/freetype",
+    KIND_HEAP,
+    UNITS_BYTES,
+    GetFreetypeSize,
+    "Memory used by Freetype."
+)
+
+NS_MEMORY_REPORTER_MALLOC_SIZEOF_ON_ALLOC_FUN(FreetypeMallocSizeOfOnAlloc, "freetype")
+NS_MEMORY_REPORTER_MALLOC_SIZEOF_ON_FREE_FUN(FreetypeMallocSizeOfOnFree)
+
+static void*
+CountingAlloc(FT_Memory memory, long size)
+{
+    void *p = malloc(size);
+    sFreetypeMemoryUsed += FreetypeMallocSizeOfOnAlloc(p);
+    return p;
+}
+
+static void
+CountingFree(FT_Memory memory, void* p)
+{
+    sFreetypeMemoryUsed -= FreetypeMallocSizeOfOnFree(p);
+    free(p);
+}
+
+static void*
+CountingRealloc(FT_Memory memory, long cur_size, long new_size, void* p)
+{
+    sFreetypeMemoryUsed -= FreetypeMallocSizeOfOnFree(p);
+    void *pnew = realloc(p, new_size);
+    if (pnew) {
+        sFreetypeMemoryUsed += FreetypeMallocSizeOfOnAlloc(pnew);
+    } else {
+        // realloc failed;  undo the decrement from above
+        sFreetypeMemoryUsed += FreetypeMallocSizeOfOnAlloc(p);
+    }
+    return pnew;
+}
+
 gfxAndroidPlatform::gfxAndroidPlatform()
 {
-    FT_Init_FreeType(&gPlatformFTLibrary);
+    // A custom allocator.  It counts allocations, enabling memory reporting.
+    sFreetypeMemoryRecord.user    = nullptr;
+    sFreetypeMemoryRecord.alloc   = CountingAlloc;
+    sFreetypeMemoryRecord.free    = CountingFree;
+    sFreetypeMemoryRecord.realloc = CountingRealloc;
+
+    // These two calls are equivalent to FT_Init_FreeType(), but allow us to
+    // provide a custom memory allocator.
+    FT_New_Library(&sFreetypeMemoryRecord, &gPlatformFTLibrary);
+    FT_Add_Default_Modules(gPlatformFTLibrary);
+
+    NS_RegisterMemoryReporter(new NS_MEMORY_REPORTER_NAME(Freetype));
 
     nsCOMPtr<nsIScreenManager> screenMgr = do_GetService("@mozilla.org/gfx/screenmanager;1");
     nsCOMPtr<nsIScreen> screen;
@@ -35,14 +101,14 @@ gfxAndroidPlatform::gfxAndroidPlatform()
 
     mOffscreenFormat = mScreenDepth == 16
                        ? gfxASurface::ImageFormatRGB16_565
-                       : gfxASurface::ImageFormatARGB32;
+                       : gfxASurface::ImageFormatRGB24;
 }
 
 gfxAndroidPlatform::~gfxAndroidPlatform()
 {
     cairo_debug_reset_static_data();
 
-    FT_Done_FreeType(gPlatformFTLibrary);
+    FT_Done_Library(gPlatformFTLibrary);
     gPlatformFTLibrary = NULL;
 }
 
@@ -54,17 +120,6 @@ gfxAndroidPlatform::CreateOffscreenSurface(const gfxIntSize& size,
     newSurface = new gfxImageSurface(size, OptimalFormatForContent(contentType));
 
     return newSurface.forget();
-}
-
-mozilla::gfx::SurfaceFormat
-gfxAndroidPlatform::Optimal2DFormatForContent(gfxASurface::gfxContentType aContent)
-{
-    // On Android we always use RGB565 for now.
-    if (aContent == gfxASurface::CONTENT_COLOR) {
-        return mozilla::gfx::FORMAT_R5G6B5;
-    } else {
-        return gfxPlatform::Optimal2DFormatForContent(aContent);
-    }
 }
 
 nsresult
@@ -122,11 +177,11 @@ gfxAndroidPlatform::CreatePlatformFontList()
         return list;
     }
     gfxPlatformFontList::Shutdown();
-    return nsnull;
+    return nullptr;
 }
 
 bool
-gfxAndroidPlatform::IsFontFormatSupported(nsIURI *aFontURI, PRUint32 aFormatFlags)
+gfxAndroidPlatform::IsFontFormatSupported(nsIURI *aFontURI, uint32_t aFormatFlags)
 {
     // check for strange format flags
     NS_ASSERTION(!(aFormatFlags & gfxUserFontSet::FLAG_FORMAT_NOT_USED),
@@ -164,24 +219,27 @@ gfxAndroidPlatform::GetFTLibrary()
 
 gfxFontEntry* 
 gfxAndroidPlatform::MakePlatformFont(const gfxProxyFontEntry *aProxyEntry,
-                                     const PRUint8 *aFontData, PRUint32 aLength)
+                                     const uint8_t *aFontData, uint32_t aLength)
 {
     return gfxPlatformFontList::PlatformFontList()->MakePlatformFont(aProxyEntry,
                                                                      aFontData,
                                                                      aLength);
 }
 
-RefPtr<ScaledFont>
-gfxAndroidPlatform::GetScaledFontForFont(gfxFont *aFont)
+TemporaryRef<ScaledFont>
+gfxAndroidPlatform::GetScaledFontForFont(DrawTarget* aTarget, gfxFont *aFont)
 {
-    NS_ASSERTION(aFont->GetType() == gfxFont::FONT_TYPE_FT2, "Expecting Freetype font");
     NativeFont nativeFont;
+    if (aTarget->GetType() == BACKEND_CAIRO) {
+        nativeFont.mType = NATIVE_FONT_CAIRO_FONT_FACE;
+        nativeFont.mFont = NULL;
+        return Factory::CreateScaledFontWithCairo(nativeFont, aFont->GetAdjustedSize(), aFont->GetCairoScaledFont());
+    }
+ 
+    NS_ASSERTION(aFont->GetType() == gfxFont::FONT_TYPE_FT2, "Expecting Freetype font");
     nativeFont.mType = NATIVE_FONT_SKIA_FONT_FACE;
     nativeFont.mFont = static_cast<gfxFT2FontBase*>(aFont)->GetFontOptions();
-    RefPtr<ScaledFont> scaledFont =
-      Factory::CreateScaledFontForNativeFont(nativeFont, aFont->GetAdjustedSize());
-
-    return scaledFont;
+    return Factory::CreateScaledFontForNativeFont(nativeFont, aFont->GetAdjustedSize());
 }
 
 bool
@@ -198,15 +256,10 @@ gfxAndroidPlatform::FontHintingEnabled()
     // want to re-enable hinting.
     return false;
 #else
-    // Otherwise, if we're in a content process, assume we don't want
-    // hinting.
-    //
-    // XXX when we use content processes to load "apps", we'll want to
-    // configure this dynamically based on whether we're an "app
-    // content process" or a "browser content process".  The former
-    // wants hinting, the latter doesn't since it might be
-    // non-reflow-zoomed.
-    return (XRE_GetProcessType() != GeckoProcessType_Content);
+    // Otherwise, enable hinting unless we're in a content process
+    // that might be used for non-reflowing zoom.
+    return XRE_GetProcessType() != GeckoProcessType_Content ||
+           ContentChild::GetSingleton()->HasOwnApp();
 #endif //  MOZ_USING_ANDROID_JAVA_WIDGETS
 }
 

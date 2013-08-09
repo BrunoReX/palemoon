@@ -95,8 +95,7 @@ public:
                                     nsFrameList&    aFrameList);
 
   NS_HIDDEN_(nsresult) RemoveFrame(ChildListID     aListID,
-                                   nsIFrame*       aOldFrame,
-                                   bool            aInvalidate = true);
+                                   nsIFrame*       aOldFrame);
 
   /*
    * Notification that a frame is about to be destroyed. This allows any
@@ -143,19 +142,14 @@ public:
 
   /*
    * Add/restore state for one frame
-   * (special, global type, like scroll position)
    */
   NS_HIDDEN_(void) CaptureFrameStateFor(nsIFrame*              aFrame,
-                                        nsILayoutHistoryState* aState,
-                                        nsIStatefulFrame::SpecialStateID aID =
-                                                      nsIStatefulFrame::eNoID);
+                                        nsILayoutHistoryState* aState);
 
   NS_HIDDEN_(void) RestoreFrameStateFor(nsIFrame*              aFrame,
-                                        nsILayoutHistoryState* aState,
-                                        nsIStatefulFrame::SpecialStateID aID =
-                                                      nsIStatefulFrame::eNoID);
+                                        nsILayoutHistoryState* aState);
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
   /**
    * DEBUG ONLY method to verify integrity of style tree versus frame tree
    */
@@ -191,6 +185,7 @@ private:
                           nsIContent        *aParentContent,
                           nsStyleChangeList *aChangeList, 
                           nsChangeHint       aMinChange,
+                          nsChangeHint       aParentFrameHintsNotHandledForDescendants,
                           nsRestyleHint      aRestyleHint,
                           RestyleTracker&    aRestyleTracker,
                           DesiredA11yNotifications aDesiredA11yNotifications,

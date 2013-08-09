@@ -51,7 +51,7 @@ enum BFScolors {white, gray, black};
 
 struct BFSState {
     BFScolors   color;
-    PRInt32     distance;
+    int32_t     distance;
     nsCStringKey  *predecessor;
     ~BFSState() {
         delete predecessor;
@@ -67,7 +67,7 @@ struct SCTableData {
     } data;
 
     SCTableData(nsCStringKey* aKey) : key(aKey) {
-        data.state = nsnull;
+        data.state = nullptr;
     }
 };
 #endif // __nsstreamconverterservice__h___

@@ -23,7 +23,7 @@ NS_IMPL_ISUPPORTS1(nsDataDocumentContentPolicy, nsIContentPolicy)
 // Checks a URI for the given flags.  Returns true if the URI has the flags,
 // and false if not (or if we weren't able to tell).
 static bool
-HasFlags(nsIURI* aURI, PRUint32 aURIFlags)
+HasFlags(nsIURI* aURI, uint32_t aURIFlags)
 {
   bool hasFlags;
   nsresult rv = NS_URIChainHasFlags(aURI, aURIFlags, &hasFlags);
@@ -31,13 +31,14 @@ HasFlags(nsIURI* aURI, PRUint32 aURIFlags)
 }
 
 NS_IMETHODIMP
-nsDataDocumentContentPolicy::ShouldLoad(PRUint32 aContentType,
+nsDataDocumentContentPolicy::ShouldLoad(uint32_t aContentType,
                                         nsIURI *aContentLocation,
                                         nsIURI *aRequestingLocation,
                                         nsISupports *aRequestingContext,
                                         const nsACString &aMimeGuess,
                                         nsISupports *aExtra,
-                                        PRInt16 *aDecision)
+                                        nsIPrincipal *aRequestPrincipal,
+                                        int16_t *aDecision)
 {
   *aDecision = nsIContentPolicy::ACCEPT;
   // Look for the document.  In most cases, aRequestingContext is a node.
@@ -61,8 +62,11 @@ nsDataDocumentContentPolicy::ShouldLoad(PRUint32 aContentType,
 
   // Nothing else is OK to load for data documents
   if (doc->IsLoadedAsData()) {
-    *aDecision = nsIContentPolicy::REJECT_TYPE;
-    return NS_OK;
+    // ...but let static (print/print preview) documents to load fonts.
+    if (!doc->IsStaticDocument() || aContentType != nsIContentPolicy::TYPE_FONT) {
+      *aDecision = nsIContentPolicy::REJECT_TYPE;
+      return NS_OK;
+    }
   }
 
   if (doc->IsBeingUsedAsImage()) {
@@ -88,7 +92,7 @@ nsDataDocumentContentPolicy::ShouldLoad(PRUint32 aContentType,
           requestingPrincipal->GetURI(getter_AddRefs(principalURI));
         if (NS_SUCCEEDED(rv) && principalURI) {
           nsScriptSecurityManager::ReportError(
-            nsnull, NS_LITERAL_STRING("CheckSameOriginError"), principalURI,
+            nullptr, NS_LITERAL_STRING("CheckSameOriginError"), principalURI,
             aContentLocation);
         }
       }
@@ -123,14 +127,16 @@ nsDataDocumentContentPolicy::ShouldLoad(PRUint32 aContentType,
 }
 
 NS_IMETHODIMP
-nsDataDocumentContentPolicy::ShouldProcess(PRUint32 aContentType,
+nsDataDocumentContentPolicy::ShouldProcess(uint32_t aContentType,
                                            nsIURI *aContentLocation,
                                            nsIURI *aRequestingLocation,
                                            nsISupports *aRequestingContext,
                                            const nsACString &aMimeGuess,
                                            nsISupports *aExtra,
-                                           PRInt16 *aDecision)
+                                           nsIPrincipal *aRequestPrincipal,
+                                           int16_t *aDecision)
 {
   return ShouldLoad(aContentType, aContentLocation, aRequestingLocation,
-                    aRequestingContext, aMimeGuess, aExtra, aDecision);
+                    aRequestingContext, aMimeGuess, aExtra, aRequestPrincipal,
+                    aDecision);
 }

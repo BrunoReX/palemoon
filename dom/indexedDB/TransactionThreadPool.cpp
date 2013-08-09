@@ -20,11 +20,11 @@ USING_INDEXEDDB_NAMESPACE
 
 namespace {
 
-const PRUint32 kThreadLimit = 20;
-const PRUint32 kIdleThreadLimit = 5;
-const PRUint32 kIdleThreadTimeoutMs = 30000;
+const uint32_t kThreadLimit = 20;
+const uint32_t kIdleThreadLimit = 5;
+const uint32_t kIdleThreadTimeoutMs = 30000;
 
-TransactionThreadPool* gInstance = nsnull;
+TransactionThreadPool* gInstance = nullptr;
 bool gShutdown = false;
 
 inline
@@ -34,11 +34,11 @@ CheckOverlapAndMergeObjectStores(nsTArray<nsString>& aLockedStores,
                                  bool aShouldMerge,
                                  bool* aStoresOverlap)
 {
-  PRUint32 length = aObjectStores.Length();
+  uint32_t length = aObjectStores.Length();
 
   bool overlap = false;
 
-  for (PRUint32 index = 0; index < length; index++) {
+  for (uint32_t index = 0; index < length; index++) {
     const nsString& storeName = aObjectStores[index];
     if (aLockedStores.Contains(storeName)) {
       overlap = true;
@@ -83,7 +83,7 @@ TransactionThreadPool::~TransactionThreadPool()
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
   NS_ASSERTION(gInstance == this, "Different instances!");
-  gInstance = nsnull;
+  gInstance = nullptr;
 }
 
 // static
@@ -95,7 +95,7 @@ TransactionThreadPool::GetOrCreate()
     nsAutoPtr<TransactionThreadPool> pool(new TransactionThreadPool());
 
     nsresult rv = pool->Init();
-    NS_ENSURE_SUCCESS(rv, nsnull);
+    NS_ENSURE_SUCCESS(rv, nullptr);
 
     gInstance = pool.forget();
   }
@@ -122,7 +122,7 @@ TransactionThreadPool::Shutdown()
       NS_WARNING("Failed to shutdown thread pool!");
     }
     delete gInstance;
-    gInstance = nsnull;
+    gInstance = nullptr;
   }
 }
 
@@ -135,6 +135,9 @@ TransactionThreadPool::Init()
 
   nsresult rv;
   mThreadPool = do_CreateInstance(NS_THREADPOOL_CONTRACTID, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = mThreadPool->SetName(NS_LITERAL_CSTRING("IndexedDB Trans"));
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = mThreadPool->SetThreadLimit(kThreadLimit);
@@ -159,18 +162,18 @@ TransactionThreadPool::Cleanup()
 
   // Make sure the pool is still accessible while any callbacks generated from
   // the other threads are processed.
-  rv = NS_ProcessPendingEvents(nsnull);
+  rv = NS_ProcessPendingEvents(nullptr);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (!mCompleteCallbacks.IsEmpty()) {
     // Run all callbacks manually now.
-    for (PRUint32 index = 0; index < mCompleteCallbacks.Length(); index++) {
+    for (uint32_t index = 0; index < mCompleteCallbacks.Length(); index++) {
       mCompleteCallbacks[index].mCallback->Run();
     }
     mCompleteCallbacks.Clear();
 
     // And make sure they get processed.
-    rv = NS_ProcessPendingEvents(nsnull);
+    rv = NS_ProcessPendingEvents(nullptr);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -197,7 +200,7 @@ TransactionThreadPool::FinishTransaction(IDBTransaction* aTransaction)
   nsTArray<TransactionInfo>& transactionsInProgress =
     dbTransactionInfo->transactions;
 
-  PRUint32 transactionCount = transactionsInProgress.Length();
+  uint32_t transactionCount = transactionsInProgress.Length();
 
 #ifdef DEBUG
   if (aTransaction->mMode == IDBTransaction::VERSION_CHANGE) {
@@ -216,7 +219,7 @@ TransactionThreadPool::FinishTransaction(IDBTransaction* aTransaction)
     mTransactionsInProgress.Remove(databaseId);
 
     // See if we need to fire any complete callbacks.
-    PRUint32 index = 0;
+    uint32_t index = 0;
     while (index < mCompleteCallbacks.Length()) {
       if (MaybeFireCallback(mCompleteCallbacks[index])) {
         mCompleteCallbacks.RemoveElementAt(index);
@@ -230,7 +233,7 @@ TransactionThreadPool::FinishTransaction(IDBTransaction* aTransaction)
     // We need to rebuild the locked object store list.
     nsTArray<nsString> storesWriting, storesReading;
 
-    for (PRUint32 index = 0, count = transactionCount; index < count; index++) {
+    for (uint32_t index = 0, count = transactionCount; index < count; index++) {
       IDBTransaction* transaction = transactionsInProgress[index].transaction;
       if (transaction == aTransaction) {
         NS_ASSERTION(count == transactionCount, "More than one match?!");
@@ -276,7 +279,7 @@ TransactionThreadPool::FinishTransaction(IDBTransaction* aTransaction)
   queuedDispatch.SwapElements(mDelayedDispatchQueue);
 
   transactionCount = queuedDispatch.Length();
-  for (PRUint32 index = 0; index < transactionCount; index++) {
+  for (uint32_t index = 0; index < transactionCount; index++) {
     if (NS_FAILED(Dispatch(queuedDispatch[index]))) {
       NS_WARNING("Dispatch failed!");
     }
@@ -295,24 +298,24 @@ TransactionThreadPool::TransactionCanRun(IDBTransaction* aTransaction,
 
   nsIAtom* databaseId = aTransaction->mDatabase->Id();
   const nsTArray<nsString>& objectStoreNames = aTransaction->mObjectStoreNames;
-  const PRUint16 mode = aTransaction->mMode;
+  const uint16_t mode = aTransaction->mMode;
 
   // See if we can run this transaction now.
   DatabaseTransactionInfo* dbTransactionInfo;
   if (!mTransactionsInProgress.Get(databaseId, &dbTransactionInfo)) {
     // First transaction for this database, fine to run.
     *aCanRun = true;
-    *aExistingQueue = nsnull;
+    *aExistingQueue = nullptr;
     return NS_OK;
   }
 
   nsTArray<TransactionInfo>& transactionsInProgress =
     dbTransactionInfo->transactions;
 
-  PRUint32 transactionCount = transactionsInProgress.Length();
+  uint32_t transactionCount = transactionsInProgress.Length();
   NS_ASSERTION(transactionCount, "Should never be 0!");
 
-  for (PRUint32 index = 0; index < transactionCount; index++) {
+  for (uint32_t index = 0; index < transactionCount; index++) {
     // See if this transaction is in out list of current transactions.
     const TransactionInfo& info = transactionsInProgress[index];
     if (info.transaction == aTransaction) {
@@ -342,12 +345,12 @@ TransactionThreadPool::TransactionCanRun(IDBTransaction* aTransaction,
   if (writeOverlap ||
       (readOverlap && mode == IDBTransaction::READ_WRITE)) {
     *aCanRun = false;
-    *aExistingQueue = nsnull;
+    *aExistingQueue = nullptr;
     return NS_OK;
   }
 
   *aCanRun = true;
-  *aExistingQueue = nsnull;
+  *aExistingQueue = nullptr;
   return NS_OK;
 }
 
@@ -394,7 +397,7 @@ TransactionThreadPool::Dispatch(IDBTransaction* aTransaction,
 
 #ifdef DEBUG
   if (aTransaction->mMode == IDBTransaction::VERSION_CHANGE) {
-    NS_ASSERTION(!mTransactionsInProgress.Get(databaseId, nsnull),
+    NS_ASSERTION(!mTransactionsInProgress.Get(databaseId, nullptr),
                  "Shouldn't have anything in progress!");
   }
 #endif
@@ -447,8 +450,8 @@ TransactionThreadPool::Dispatch(IDBTransaction* aTransaction,
 
 bool
 TransactionThreadPool::WaitForAllDatabasesToComplete(
-                                   nsTArray<nsRefPtr<IDBDatabase> >& aDatabases,
-                                   nsIRunnable* aCallback)
+                                            nsTArray<IDBDatabase*>& aDatabases,
+                                            nsIRunnable* aCallback)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
   NS_ASSERTION(!aDatabases.IsEmpty(), "No databases to wait on!");
@@ -491,10 +494,10 @@ TransactionThreadPool::AbortTransactionsForDatabase(IDBDatabase* aDatabase)
   nsTArray<TransactionInfo>& transactionsInProgress =
     dbTransactionInfo->transactions;
 
-  PRUint32 transactionCount = transactionsInProgress.Length();
+  uint32_t transactionCount = transactionsInProgress.Length();
   NS_ASSERTION(transactionCount, "Should never be 0!");
 
-  for (PRUint32 index = 0; index < transactionCount; index++) {
+  for (uint32_t index = 0; index < transactionCount; index++) {
     // See if any transaction belongs to this IDBDatabase instance
     IDBTransaction* transaction = transactionsInProgress[index].transaction;
     if (transaction->Database() == aDatabase) {
@@ -503,7 +506,7 @@ TransactionThreadPool::AbortTransactionsForDatabase(IDBDatabase* aDatabase)
   }
 
   // Collect any pending transactions.
-  for (PRUint32 index = 0; index < mDelayedDispatchQueue.Length(); index++) {
+  for (uint32_t index = 0; index < mDelayedDispatchQueue.Length(); index++) {
     // See if any transaction belongs to this IDBDatabase instance
     IDBTransaction* transaction = mDelayedDispatchQueue[index].transaction;
     if (transaction->Database() == aDatabase) {
@@ -513,7 +516,7 @@ TransactionThreadPool::AbortTransactionsForDatabase(IDBDatabase* aDatabase)
 
   // Abort transactions. Do this after collecting the transactions in case
   // calling Abort() modifies the data structures we're iterating above.
-  for (PRUint32 index = 0; index < transactions.Length(); index++) {
+  for (uint32_t index = 0; index < transactions.Length(); index++) {
     // This can fail, for example if the transaction is in the process of
     // being comitted. That is expected and fine, so we ignore any returned
     // errors.
@@ -536,10 +539,10 @@ TransactionThreadPool::HasTransactionsForDatabase(IDBDatabase* aDatabase)
   nsTArray<TransactionInfo>& transactionsInProgress =
     dbTransactionInfo->transactions;
 
-  PRUint32 transactionCount = transactionsInProgress.Length();
+  uint32_t transactionCount = transactionsInProgress.Length();
   NS_ASSERTION(transactionCount, "Should never be 0!");
 
-  for (PRUint32 index = 0; index < transactionCount; index++) {
+  for (uint32_t index = 0; index < transactionCount; index++) {
     // See if any transaction belongs to this IDBDatabase instance
     if (transactionsInProgress[index].transaction->Database() == aDatabase) {
       return true;
@@ -554,9 +557,9 @@ TransactionThreadPool::MaybeFireCallback(DatabasesCompleteCallback& aCallback)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
-  for (PRUint32 index = 0; index < aCallback.mDatabases.Length(); index++) {
+  for (uint32_t index = 0; index < aCallback.mDatabases.Length(); index++) {
     if (mTransactionsInProgress.Get(aCallback.mDatabases[index]->Id(),
-                                    nsnull)) {
+                                    nullptr)) {
       return false;
     }
   }
@@ -630,11 +633,11 @@ TransactionThreadPool::TransactionQueue::Run()
       }
     }
 
-    PRUint32 count = queue.Length();
-    for (PRUint32 index = 0; index < count; index++) {
+    uint32_t count = queue.Length();
+    for (uint32_t index = 0; index < count; index++) {
       nsCOMPtr<nsIRunnable>& runnable = queue[index];
       runnable->Run();
-      runnable = nsnull;
+      runnable = nullptr;
     }
 
     if (count) {
@@ -677,7 +680,7 @@ FinishTransactionRunnable::Run()
 
   if (mFinishRunnable) {
     mFinishRunnable->Run();
-    mFinishRunnable = nsnull;
+    mFinishRunnable = nullptr;
   }
 
   return NS_OK;

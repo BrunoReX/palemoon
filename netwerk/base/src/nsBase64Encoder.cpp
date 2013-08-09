@@ -22,7 +22,7 @@ nsBase64Encoder::Flush()
 }
 
 NS_IMETHODIMP
-nsBase64Encoder::Write(const char* aBuf, PRUint32 aCount, PRUint32* _retval)
+nsBase64Encoder::Write(const char* aBuf, uint32_t aCount, uint32_t* _retval)
 {
   mData.Append(aBuf, aCount);
   *_retval = aCount;
@@ -30,8 +30,8 @@ nsBase64Encoder::Write(const char* aBuf, PRUint32 aCount, PRUint32* _retval)
 }
 
 NS_IMETHODIMP
-nsBase64Encoder::WriteFrom(nsIInputStream* aStream, PRUint32 aCount,
-                           PRUint32* _retval)
+nsBase64Encoder::WriteFrom(nsIInputStream* aStream, uint32_t aCount,
+                           uint32_t* _retval)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -39,8 +39,8 @@ nsBase64Encoder::WriteFrom(nsIInputStream* aStream, PRUint32 aCount,
 NS_IMETHODIMP
 nsBase64Encoder::WriteSegments(nsReadSegmentFun aReader,
                                void* aClosure,
-                               PRUint32 aCount,
-                               PRUint32* _retval)
+                               uint32_t aCount,
+                               uint32_t* _retval)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -55,7 +55,7 @@ nsBase64Encoder::IsNonBlocking(bool* aNonBlocking)
 nsresult
 nsBase64Encoder::Finish(nsCSubstring& result)
 {
-  char* b64 = PL_Base64Encode(mData.get(), mData.Length(), nsnull);
+  char* b64 = PL_Base64Encode(mData.get(), mData.Length(), nullptr);
   if (!b64)
     return NS_ERROR_OUT_OF_MEMORY;
 

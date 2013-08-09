@@ -14,6 +14,7 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsString.h"
 #include "nsIWeakReference.h"
+#include "mozilla/Attributes.h"
 
 #ifdef MOZ_LOGGING
 // Uncomment the next line to force logging on in release builds
@@ -23,7 +24,7 @@
 
 class nsDocumentOpenInfo;
 
-class nsURILoader : public nsIURILoader
+class nsURILoader MOZ_FINAL : public nsIURILoader
 {
 public:
   NS_DECL_NSIURILOADER
@@ -38,7 +39,7 @@ protected:
    * channel is opened already.
    */
   NS_HIDDEN_(nsresult) OpenChannel(nsIChannel* channel,
-                                   PRUint32 aFlags,
+                                   uint32_t aFlags,
                                    nsIInterfaceRequestor* aWindowContext,
                                    bool aChannelOpen,
                                    nsIStreamListener** aListener);
@@ -59,23 +60,5 @@ protected:
   
   friend class nsDocumentOpenInfo;
 };
-
-/**
- * The load has been cancelled because it was found on a malware or phishing blacklist.
- * XXX: this belongs in an nsDocShellErrors.h file of some sort.
- */
-#define NS_ERROR_MALWARE_URI   NS_ERROR_GENERATE_FAILURE(NS_ERROR_MODULE_URILOADER, 30)
-#define NS_ERROR_PHISHING_URI  NS_ERROR_GENERATE_FAILURE(NS_ERROR_MODULE_URILOADER, 31)
-
-/**
- * Used when "Save Link As..." doesn't see the headers quickly enough to choose
- * a filename.  See nsContextMenu.js. 
- */
-#define NS_ERROR_SAVE_LINK_AS_TIMEOUT  NS_ERROR_GENERATE_FAILURE(NS_ERROR_MODULE_URILOADER, 32)
-
-/** Used when the data from a channel has already been parsed and cached
- *  so it doesn't need to be reparsed from the original source.
- */
-#define NS_ERROR_PARSED_DATA_CACHED    NS_ERROR_GENERATE_FAILURE(NS_ERROR_MODULE_URILOADER, 33)
 
 #endif /* nsURILoader_h__ */

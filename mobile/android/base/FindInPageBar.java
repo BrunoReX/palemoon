@@ -8,14 +8,11 @@ import android.content.Context;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.RelativeLayout;
-import android.widget.RelativeLayout.LayoutParams;
 
 public class FindInPageBar extends RelativeLayout implements TextWatcher, View.OnClickListener {
     private static final String LOGTAG = "GeckoFindInPagePopup";
@@ -37,6 +34,10 @@ public class FindInPageBar extends RelativeLayout implements TextWatcher, View.O
         content.findViewById(R.id.find_prev).setOnClickListener(this);
         content.findViewById(R.id.find_next).setOnClickListener(this);
         content.findViewById(R.id.find_close).setOnClickListener(this);
+
+        // Capture clicks on the rest of the view to prevent them from
+        // leaking into other views positioned below.
+        content.setOnClickListener(this);
 
         mFindText = (CustomEditText) content.findViewById(R.id.find_text);
         mFindText.addTextChangedListener(this);
@@ -107,9 +108,11 @@ public class FindInPageBar extends RelativeLayout implements TextWatcher, View.O
         switch (v.getId()) {
             case R.id.find_prev:
                 GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("FindInPage:Prev", mFindText.getText().toString()));
+                getInputMethodManager(mFindText).hideSoftInputFromWindow(mFindText.getWindowToken(), 0);
                 break;
             case R.id.find_next:
                 GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("FindInPage:Next", mFindText.getText().toString()));
+                getInputMethodManager(mFindText).hideSoftInputFromWindow(mFindText.getWindowToken(), 0);
                 break;
             case R.id.find_close:
                 hide();

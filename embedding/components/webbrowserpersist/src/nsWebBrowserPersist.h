@@ -20,7 +20,7 @@
 #include "nsIDocumentEncoder.h"
 #include "nsITransport.h"
 #include "nsIProgressEventSink.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIWebProgressListener2.h"
 
 #include "nsHashtable.h"
@@ -63,7 +63,7 @@ protected:
     nsresult SaveURIInternal(
         nsIURI *aURI, nsISupports *aCacheKey, nsIURI *aReferrer,
         nsIInputStream *aPostData, const char *aExtraHeaders, nsIURI *aFile,
-        bool aCalcFileExt);
+        bool aCalcFileExt, bool aIsPrivate);
     nsresult SaveChannelInternal(
         nsIChannel *aChannel, nsIURI *aFile, bool aCalcFileExt);
     nsresult SaveDocumentInternal(
@@ -81,14 +81,14 @@ private:
     void Cleanup();
     void CleanupLocalFiles();
     nsresult GetValidURIFromObject(nsISupports *aObject, nsIURI **aURI) const;
-    nsresult GetLocalFileFromURI(nsIURI *aURI, nsILocalFile **aLocalFile) const;
+    nsresult GetLocalFileFromURI(nsIURI *aURI, nsIFile **aLocalFile) const;
     nsresult AppendPathToURI(nsIURI *aURI, const nsAString & aPath) const;
     nsresult MakeAndStoreLocalFilenameInURIMap(
         nsIURI *aURI, bool aNeedsPersisting, URIData **aData);
     nsresult MakeOutputStream(
         nsIURI *aFile, nsIOutputStream **aOutputStream);
     nsresult MakeOutputStreamFromFile(
-        nsILocalFile *aFile, nsIOutputStream **aOutputStream);
+        nsIFile *aFile, nsIOutputStream **aOutputStream);
     nsresult MakeOutputStreamFromURI(nsIURI *aURI, nsIOutputStream  **aOutStream);
     nsresult CreateChannelFromURI(nsIURI *aURI, nsIChannel **aChannel);
     nsresult StartUpload(nsIStorageStream *aOutStream, nsIURI *aDestinationURI,
@@ -103,19 +103,19 @@ private:
     nsresult StoreURI(
         const char *aURI,
         bool aNeedsPersisting = true,
-        URIData **aData = nsnull);
+        URIData **aData = nullptr);
     nsresult StoreURI(
         nsIURI *aURI,
         bool aNeedsPersisting = true,
-        URIData **aData = nsnull);
+        URIData **aData = nullptr);
     nsresult StoreURIAttributeNS(
         nsIDOMNode *aNode, const char *aNamespaceURI, const char *aAttribute,
         bool aNeedsPersisting = true,
-        URIData **aData = nsnull);
+        URIData **aData = nullptr);
     nsresult StoreURIAttribute(
         nsIDOMNode *aNode, const char *aAttribute,
         bool aNeedsPersisting = true,
-        URIData **aData = nsnull)
+        URIData **aData = nullptr)
     {
         return StoreURIAttributeNS(aNode, "", aAttribute, aNeedsPersisting, aData);
     }
@@ -136,7 +136,7 @@ private:
     nsresult SaveDocumentWithFixup(
         nsIDOMDocument *pDocument, nsIDocumentEncoderNodeFixup *pFixup,
         nsIURI *aFile, bool aReplaceExisting, const nsACString &aFormatType,
-        const nsCString &aSaveCharset, PRUint32  aFlags);
+        const nsCString &aSaveCharset, uint32_t  aFlags);
     nsresult SaveSubframeContent(
         nsIDOMDocument *aFrameContent, URIData *aData);
     nsresult SetDocumentBase(nsIDOMDocument *aDocument, nsIURI *aBaseURI);
@@ -177,7 +177,7 @@ private:
     nsCOMPtr<nsIURI>          mCurrentBaseURI;
     nsCString                 mCurrentCharset;
     nsCOMPtr<nsIURI>          mTargetBaseURI;
-    PRUint32                  mCurrentThingsToPersist;
+    uint32_t                  mCurrentThingsToPersist;
 
     nsCOMPtr<nsIMIMEService>  mMIMEService;
     nsCOMPtr<nsIURI>          mURI;
@@ -202,12 +202,13 @@ private:
     bool                      mStartSaving;
     bool                      mReplaceExisting;
     bool                      mSerializingOutput;
-    PRUint32                  mPersistFlags;
-    PRUint32                  mPersistResult;
-    PRInt64                   mTotalCurrentProgress;
-    PRInt64                   mTotalMaxProgress;
-    PRInt16                   mWrapColumn;
-    PRUint32                  mEncodingFlags;
+    bool                      mIsPrivate;
+    uint32_t                  mPersistFlags;
+    nsresult                  mPersistResult;
+    int64_t                   mTotalCurrentProgress;
+    int64_t                   mTotalMaxProgress;
+    int16_t                   mWrapColumn;
+    uint32_t                  mEncodingFlags;
     nsString                  mContentType;
 };
 

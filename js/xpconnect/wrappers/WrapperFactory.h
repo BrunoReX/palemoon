@@ -18,8 +18,7 @@ class WrapperFactory {
     enum { WAIVE_XRAY_WRAPPER_FLAG = js::Wrapper::LAST_USED_FLAG << 1,
            IS_XRAY_WRAPPER_FLAG    = WAIVE_XRAY_WRAPPER_FLAG << 1,
            SCRIPT_ACCESS_ONLY_FLAG = IS_XRAY_WRAPPER_FLAG << 1,
-           PARTIALLY_TRANSPARENT   = SCRIPT_ACCESS_ONLY_FLAG << 1,
-           SOW_FLAG                = PARTIALLY_TRANSPARENT << 1,
+           SOW_FLAG                = SCRIPT_ACCESS_ONLY_FLAG << 1,
 
            // Prevent scripts from shadowing native properties.
            // NB: Applies only to Xray wrappers.
@@ -38,10 +37,6 @@ class WrapperFactory {
         return HasWrapperFlag(wrapper, IS_XRAY_WRAPPER_FLAG);
     }
 
-    static bool IsPartiallyTransparent(JSObject *wrapper) {
-        return HasWrapperFlag(wrapper, PARTIALLY_TRANSPARENT);
-    }
-
     static bool HasWaiveXrayFlag(JSObject *wrapper) {
         return HasWrapperFlag(wrapper, WAIVE_XRAY_WRAPPER_FLAG);
     }
@@ -50,6 +45,8 @@ class WrapperFactory {
         return HasWrapperFlag(wrapper, SHADOWING_FORBIDDEN);
     }
 
+    static JSObject *GetXrayWaiver(JSObject *obj);
+    static JSObject *CreateXrayWaiver(JSContext *cx, JSObject *obj);
     static JSObject *WaiveXray(JSContext *cx, JSObject *obj);
 
     static JSObject *DoubleWrap(JSContext *cx, JSObject *obj, unsigned flags);
@@ -62,6 +59,7 @@ class WrapperFactory {
 
     // Rewrap an object that is about to cross compartment boundaries.
     static JSObject *Rewrap(JSContext *cx,
+                            JSObject *existing,
                             JSObject *obj,
                             JSObject *wrappedProto,
                             JSObject *parent,
@@ -88,9 +86,15 @@ class WrapperFactory {
 
     // Wrap a (same compartment) Components object.
     static JSObject *WrapComponentsObject(JSContext *cx, JSObject *obj);
+
+    // Wrap a same-compartment object for Xray inspection.
+    static JSObject *WrapForSameCompartmentXray(JSContext *cx, JSObject *obj);
+
+    // Returns true if the wrapper is in not shadowing mode for the id.
+    static bool XrayWrapperNotShadowing(JSObject *wrapper, jsid id);
 };
 
-extern js::Wrapper WaiveXrayWrapperWrapper;
+extern js::Wrapper XrayWaiver;
 
 }
 

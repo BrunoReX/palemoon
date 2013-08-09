@@ -19,13 +19,14 @@ public:
   RenderFrameChild() {}
   virtual ~RenderFrameChild() {}
 
+  void CancelDefaultPanZoom();
+  void DetectScrollableSubframe();
+
   void Destroy();
 
 protected:
-  NS_OVERRIDE
-  virtual PLayersChild* AllocPLayers(LayerManager::LayersBackend* aBackendType, int* aMaxTextureSize);
-  NS_OVERRIDE
-  virtual bool DeallocPLayers(PLayersChild* aLayers);
+  virtual PLayersChild* AllocPLayers() MOZ_OVERRIDE;
+  virtual bool DeallocPLayers(PLayersChild* aLayers) MOZ_OVERRIDE;
 };
 
 } // namespace layout

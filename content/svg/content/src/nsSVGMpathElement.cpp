@@ -122,7 +122,7 @@ nsSVGMpathElement::UnbindFromTree(bool aDeep, bool aNullParent)
 }
 
 bool
-nsSVGMpathElement::ParseAttribute(PRInt32 aNamespaceID,
+nsSVGMpathElement::ParseAttribute(int32_t aNamespaceID,
                                   nsIAtom* aAttribute,
                                   const nsAString& aValue,
                                   nsAttrValue& aResult)
@@ -141,7 +141,7 @@ nsSVGMpathElement::ParseAttribute(PRInt32 aNamespaceID,
 }
 
 nsresult
-nsSVGMpathElement::UnsetAttr(PRInt32 aNamespaceID,
+nsSVGMpathElement::UnsetAttr(int32_t aNamespaceID,
                              nsIAtom* aAttribute, bool aNotify)
 {
   nsresult rv = nsSVGMpathElementBase::UnsetAttr(aNamespaceID, aAttribute,
@@ -172,9 +172,9 @@ nsSVGMpathElement::GetStringInfo()
 void
 nsSVGMpathElement::AttributeChanged(nsIDocument* aDocument,
                                     Element* aElement,
-                                    PRInt32 aNameSpaceID,
+                                    int32_t aNameSpaceID,
                                     nsIAtom* aAttribute,
-                                    PRInt32 aModType)
+                                    int32_t aModType)
 {
   if (aNameSpaceID == kNameSpaceID_None) {
     if (aAttribute == nsGkAtoms::d) {
@@ -193,14 +193,14 @@ nsSVGMpathElement::GetReferencedPath()
     NS_ABORT_IF_FALSE(!mHrefTarget.get(),
                       "We shouldn't have an xlink:href target "
                       "if we don't have an xlink:href attribute");
-    return nsnull;
+    return nullptr;
   }
 
   nsIContent* genericTarget = mHrefTarget.get();
   if (genericTarget && genericTarget->IsSVG(nsGkAtoms::path)) {
     return static_cast<nsSVGPathElement*>(genericTarget);
   }
-  return nsnull;
+  return nullptr;
 }
 
 //----------------------------------------------------------------------

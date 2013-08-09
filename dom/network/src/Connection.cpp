@@ -30,12 +30,10 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(Connection)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(Connection,
                                                   nsDOMEventTargetHelper)
-  NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(change)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(Connection,
                                                 nsDOMEventTargetHelper)
-  NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(change)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(Connection)
@@ -46,6 +44,8 @@ NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetHelper)
 
 NS_IMPL_ADDREF_INHERITED(Connection, nsDOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(Connection, nsDOMEventTargetHelper)
+
+NS_IMPL_EVENT_HANDLER(Connection, change)
 
 Connection::Connection()
   : mCanBeMetered(kDefaultCanBeMetered)
@@ -97,25 +97,6 @@ Connection::GetMetered(bool* aMetered)
   return NS_OK;
 }
 
-NS_IMPL_EVENT_HANDLER(Connection, change)
-
-nsresult
-Connection::DispatchTrustedEventToSelf(const nsAString& aEventName)
-{
-  nsRefPtr<nsDOMEvent> event = new nsDOMEvent(nsnull, nsnull);
-  nsresult rv = event->InitEvent(aEventName, false, false);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  rv = event->SetTrusted(true);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  bool dummy;
-  rv = DispatchEvent(event, &dummy);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return NS_OK;
-}
-
 void
 Connection::UpdateFromNetworkInfo(const hal::NetworkInformation& aNetworkInfo)
 {
@@ -136,7 +117,7 @@ Connection::Notify(const hal::NetworkInformation& aNetworkInfo)
     return;
   }
 
-  DispatchTrustedEventToSelf(CHANGE_EVENT_NAME);
+  DispatchTrustedEvent(CHANGE_EVENT_NAME);
 }
 
 } // namespace network

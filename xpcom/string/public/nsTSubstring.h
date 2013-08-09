@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// IWYU pragma: private, include "nsAString.h"
+
 #ifndef MOZILLA_INTERNAL_API
 #error Cannot use internal string classes without MOZILLA_INTERNAL_API defined. Use the frozen header nsStringAPI.h instead.
 #endif
@@ -18,7 +20,7 @@ class nsTStringComparator_CharT
 
       nsTStringComparator_CharT() {}
 
-      virtual int operator()( const char_type*, const char_type*, PRUint32, PRUint32 ) const = 0;
+      virtual int operator()( const char_type*, const char_type*, uint32_t, uint32_t ) const = 0;
   };
 
 
@@ -33,7 +35,7 @@ class nsTDefaultStringComparator_CharT
 
       nsTDefaultStringComparator_CharT() {}
 
-      virtual int operator()( const char_type*, const char_type*, PRUint32, PRUint32 ) const;
+      virtual int operator()( const char_type*, const char_type*, uint32_t, uint32_t ) const;
   };
 
   /**
@@ -74,8 +76,8 @@ class nsTSubstring_CharT
       typedef char_type*                          char_iterator;
       typedef const char_type*                    const_char_iterator;
 
-      typedef PRUint32                            size_type;
-      typedef PRUint32                            index_type;
+      typedef uint32_t                            size_type;
+      typedef uint32_t                            index_type;
 
     public:
 
@@ -247,7 +249,7 @@ class nsTSubstring_CharT
         }
 
       size_type NS_FASTCALL CountChar( char_type ) const;
-      PRInt32 NS_FASTCALL FindChar( char_type, index_type offset = 0 ) const;
+      int32_t NS_FASTCALL FindChar( char_type, index_type offset = 0 ) const;
 
 
         /**
@@ -405,30 +407,31 @@ class nsTSubstring_CharT
        * codes documented in prprf.h
        */
       void AppendPrintf( const char* format, ... );
-      void AppendInt( PRInt32 aInteger )
+      void AppendPrintf( const char* format, va_list ap );
+      void AppendInt( int32_t aInteger )
                  { AppendPrintf( "%d", aInteger ); }
-      void AppendInt( PRInt32 aInteger, int aRadix )
+      void AppendInt( int32_t aInteger, int aRadix )
         {
           const char *fmt = aRadix == 10 ? "%d" : aRadix == 8 ? "%o" : "%x";
           AppendPrintf( fmt, aInteger );
         }
-      void AppendInt( PRUint32 aInteger )
+      void AppendInt( uint32_t aInteger )
                  { AppendPrintf( "%u", aInteger ); }
-      void AppendInt( PRUint32 aInteger, int aRadix )
+      void AppendInt( uint32_t aInteger, int aRadix )
         {
           const char *fmt = aRadix == 10 ? "%u" : aRadix == 8 ? "%o" : "%x";
           AppendPrintf( fmt, aInteger );
         }
-      void AppendInt( PRInt64 aInteger )
+      void AppendInt( int64_t aInteger )
                  { AppendPrintf( "%lld", aInteger ); }
-      void AppendInt( PRInt64 aInteger, int aRadix )
+      void AppendInt( int64_t aInteger, int aRadix )
         {
           const char *fmt = aRadix == 10 ? "%lld" : aRadix == 8 ? "%llo" : "%llx";
           AppendPrintf( fmt, aInteger );
         }
-      void AppendInt( PRUint64 aInteger )
+      void AppendInt( uint64_t aInteger )
                  { AppendPrintf( "%llu", aInteger ); }
-      void AppendInt( PRUint64 aInteger, int aRadix )
+      void AppendInt( uint64_t aInteger, int aRadix )
         {
           const char *fmt = aRadix == 10 ? "%llu" : aRadix == 8 ? "%llo" : "%llx";
           AppendPrintf( fmt, aInteger );
@@ -534,7 +537,7 @@ class nsTSubstring_CharT
         {
           if (!EnsureMutable(newLen))
             {
-              *data = nsnull;
+              *data = nullptr;
               return 0;
             }
 
@@ -558,7 +561,7 @@ class nsTSubstring_CharT
          *  @param  aOffset -- where in this string to start stripping chars
          */
          
-      void StripChar( char_type aChar, PRInt32 aOffset=0 );
+      void StripChar( char_type aChar, int32_t aOffset=0 );
 
         /**
          *  This method is used to remove all occurrences of aChars from this
@@ -568,7 +571,7 @@ class nsTSubstring_CharT
          *  @param  aOffset -- where in this string to start stripping chars
          */
 
-      void StripChars( const char_type* aChars, PRUint32 aOffset=0 );
+      void StripChars( const char_type* aChars, uint32_t aOffset=0 );
 
         /**
          * If the string uses a shared buffer, this method
@@ -591,7 +594,7 @@ class nsTSubstring_CharT
          * base type, which helps avoid converting to nsTAString.
          */
       nsTSubstring_CharT(const substring_tuple_type& tuple)
-        : mData(nsnull),
+        : mData(nullptr),
           mLength(0),
           mFlags(F_NONE)
         {
@@ -607,10 +610,10 @@ class nsTSubstring_CharT
         // XXXbz or can I just include nscore.h and use NS_BUILD_REFCNT_LOGGING?
 #if defined(DEBUG) || defined(FORCE_BUILD_REFCNT_LOGGING)
 #define XPCOM_STRING_CONSTRUCTOR_OUT_OF_LINE
-      nsTSubstring_CharT( char_type *data, size_type length, PRUint32 flags );
+      nsTSubstring_CharT( char_type *data, size_type length, uint32_t flags );
 #else
 #undef XPCOM_STRING_CONSTRUCTOR_OUT_OF_LINE
-      nsTSubstring_CharT( char_type *data, size_type length, PRUint32 flags )
+      nsTSubstring_CharT( char_type *data, size_type length, uint32_t flags )
         : mData(data),
           mLength(length),
           mFlags(flags) {}
@@ -636,7 +639,7 @@ class nsTSubstring_CharT
 
       char_type*  mData;
       size_type   mLength;
-      PRUint32    mFlags;
+      uint32_t    mFlags;
 
         // default initialization 
       nsTSubstring_CharT()
@@ -646,7 +649,7 @@ class nsTSubstring_CharT
 
         // version of constructor that leaves mData and mLength uninitialized
       explicit
-      nsTSubstring_CharT( PRUint32 flags )
+      nsTSubstring_CharT( uint32_t flags )
         : mFlags(flags) {}
 
         // copy-constructor, constructs as dependent on given object
@@ -681,7 +684,7 @@ class nsTSubstring_CharT
          *
          * XXX we should expose a way for subclasses to free old_data.
          */
-      bool NS_FASTCALL MutatePrep( size_type capacity, char_type** old_data, PRUint32* old_flags );
+      bool NS_FASTCALL MutatePrep( size_type capacity, char_type** old_data, uint32_t* old_flags );
 
         /**
          * this function prepares a section of mData to be modified.  if
@@ -707,7 +710,7 @@ class nsTSubstring_CharT
                        size_type newLength) NS_WARN_UNUSED_RESULT
       {
         cutLength = NS_MIN(cutLength, mLength - cutStart);
-        PRUint32 newTotalLen = mLength - cutLength + newLength;
+        uint32_t newTotalLen = mLength - cutLength + newLength;
         if (cutStart == mLength && Capacity() > newTotalLen) {
           mFlags &= ~F_VOIDED;
           mData[newTotalLen] = char_type(0);
@@ -757,14 +760,13 @@ class nsTSubstring_CharT
         /**
          * this helper function stores the specified dataFlags in mFlags
          */
-      void SetDataFlags(PRUint32 dataFlags)
+      void SetDataFlags(uint32_t dataFlags)
         {
           NS_ASSERTION((dataFlags & 0xFFFF0000) == 0, "bad flags");
           mFlags = dataFlags | (mFlags & 0xFFFF0000);
         }
 
-      static PRIntn AppendFunc( void* arg, const char* s, PRUint32 len);
-      void AppendPrintf( const char* format, va_list ap );
+      static int AppendFunc( void* arg, const char* s, uint32_t len);
 
     public:
 

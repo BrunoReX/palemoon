@@ -48,13 +48,15 @@ protected:
 
   void GetSelection(nsIPresShell *aPresShell, nsISelectionController **aSelCon, 
                     nsISelection **aDomSel);
+  // *aNewRange may not be collapsed.  If you want to collapse it in a
+  // particular way, you need to do it yourself.
   bool IsRangeVisible(nsIPresShell *aPresShell, nsPresContext *aPresContext,
                         nsIDOMRange *aRange, bool aMustBeVisible, 
                         bool aGetTopVisibleLeaf, nsIDOMRange **aNewRange,
                         bool *aUsesIndependentSelection);
   nsresult FindItNow(nsIPresShell *aPresShell, bool aIsLinksOnly,
                      bool aIsFirstVisiblePreferred, bool aFindPrev,
-                     PRUint16* aResult);
+                     uint16_t* aResult);
   nsresult GetSearchContainers(nsISupports *aContainer,
                                nsISelectionController *aSelectionController,
                                bool aIsFirstVisiblePreferred,
@@ -78,7 +80,7 @@ protected:
   nsCOMPtr<nsIDOMWindow> mCurrentWindow;
   // mLastFindLength is the character length of the last find string.  It is used for
   // disabling the "not found" sound when using backspace or delete
-  PRUint32 mLastFindLength;
+  uint32_t mLastFindLength;
 
   // Sound is played asynchronously on some platforms.
   // If we destroy mSoundInterface before sound has played, it won't play
@@ -107,7 +109,7 @@ protected:
     }
 
     mFind->SetCaseSensitive(mCaseSensitive);
-    mFind->SetWordBreaker(nsnull);
+    mFind->SetWordBreaker(nullptr);
 
     return true;
   }

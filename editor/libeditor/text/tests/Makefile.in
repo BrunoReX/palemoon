@@ -3,16 +3,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
-relativesrcdir  = editor/libeditor/text/tests
+relativesrcdir  = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
-include $(topsrcdir)/config/rules.mk
 
-_TEST_FILES = \
+MOCHITEST_FILES = \
 		test_bug318065.html \
 		test_bug471722.html \
 		test_bug527935.html \
@@ -34,26 +33,23 @@ _TEST_FILES = \
 		test_bug681229.html \
 		test_bug692520.html \
 		test_bug740784.html \
+		test_bug757771.html \
 		test_dom_input_event_on_texteditor.html \
 		$(NULL)
 
 # disables the key handling test on gtk2 because gtk2 overrides some key events
 # on our editor, and the combinations depend on the system.
 ifneq ($(MOZ_WIDGET_TOOLKIT),gtk2)
-_TEST_FILES += \
+MOCHITEST_FILES += \
 		test_texteditor_keyevent_handling.html \
 		$(NULL)
 endif
 
-_CHROME_TEST_FILES = \
+MOCHITEST_CHROME_FILES = \
 		test_bug471319.html \
 		test_bug483651.html \
 		test_bug636465.xul \
 		$(NULL)
 
-libs:: $(_TEST_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/tests/$(relativesrcdir)
-
-libs:: $(_CHROME_TEST_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/chrome/$(relativesrcdir)
+include $(topsrcdir)/config/rules.mk
 

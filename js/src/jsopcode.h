@@ -15,8 +15,6 @@
 #include "jspubtd.h"
 #include "jsutil.h"
 
-JS_BEGIN_EXTERN_C
-
 /*
  * JS operation bytecodes.
  */
@@ -60,7 +58,7 @@ typedef enum JSOp {
 #define JOF_INT8          18      /* int8_t immediate operand */
 #define JOF_ATOMOBJECT    19      /* uint16_t constant index + object index */
 #define JOF_UINT16PAIR    20      /* pair of uint16_t immediates */
-#define JOF_SCOPECOORD    21      /* pair of uint16_t immediates followed by atom index */
+#define JOF_SCOPECOORD    21      /* pair of uint16_t immediates followed by block index */
 #define JOF_TYPEMASK      0x001f  /* mask for above immediate types */
 
 #define JOF_NAME          (1U<<5) /* name operation */
@@ -79,7 +77,7 @@ typedef enum JSOp {
 #define JOF_DETECTING    (1U<<14) /* object detection for JSNewResolveOp */
 #define JOF_BACKPATCH    (1U<<15) /* backpatch placeholder during codegen */
 #define JOF_LEFTASSOC    (1U<<16) /* left-associative operator */
-#define JOF_DECLARING    (1U<<17) /* var, const, or function declaration op */
+/* (1U<<17) is unused */
 /* (1U<<18) is unused */
 #define JOF_PARENHEAD    (1U<<20) /* opcode consumes value of expression in
                                      parenthesized statement head */
@@ -322,22 +320,6 @@ js_DecompileToString(JSContext *cx, const char *name, JSFunction *fun,
                      JSDecompilerPtr decompiler);
 
 /*
- * Find the source expression that resulted in v, and return a newly allocated
- * C-string containing it.  Fall back on v's string conversion (fallback) if we
- * can't find the bytecode that generated and pushed v on the operand stack.
- *
- * Search the current stack frame if spindex is JSDVG_SEARCH_STACK.  Don't
- * look for v on the stack if spindex is JSDVG_IGNORE_STACK.  Otherwise,
- * spindex is the negative index of v, measured from cx->fp->sp, or from a
- * lower frame's sp if cx->fp is native.
- *
- * The caller must call JS_free on the result after a succsesful call.
- */
-extern char *
-js_DecompileValueGenerator(JSContext *cx, int spindex, jsval v,
-                           JSString *fallback);
-
-/*
  * Given bytecode address pc in script's main program code, return the operand
  * stack depth just before (JSOp) *pc executes.
  */
@@ -347,8 +329,6 @@ js_ReconstructStackDepth(JSContext *cx, JSScript *script, jsbytecode *pc);
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
-
-JS_END_EXTERN_C
 
 #define JSDVG_IGNORE_STACK      0
 #define JSDVG_SEARCH_STACK      1
@@ -361,12 +341,26 @@ js_GetVariableBytecodeLength(jsbytecode *pc);
 
 namespace js {
 
-static inline char *
-DecompileValueGenerator(JSContext *cx, int spindex, const Value &v,
-                        JSString *fallback)
-{
-    return js_DecompileValueGenerator(cx, spindex, v, fallback);
-}
+/*
+ * Find the source expression that resulted in v, and return a newly allocated
+ * C-string containing it.  Fall back on v's string conversion (fallback) if we
+ * can't find the bytecode that generated and pushed v on the operand stack.
+ *
+ * Search the current stack frame if spindex is JSDVG_SEARCH_STACK.  Don't
+ * look for v on the stack if spindex is JSDVG_IGNORE_STACK.  Otherwise,
+ * spindex is the negative index of v, measured from cx->fp->sp, or from a
+ * lower frame's sp if cx->fp is native.
+ *
+ * The optional argument skipStackHits can be used to skip a hit in the stack
+ * frame. This can be useful in self-hosted code that wants to report value
+ * errors containing decompiled values that are useful for the user, instead of
+ * values used internally by the self-hosted code.
+ *
+ * The caller must call JS_free on the result after a succsesful call.
+ */
+char *
+DecompileValueGenerator(JSContext *cx, int spindex, HandleValue v,
+                        HandleString fallback, int skipStackHits = 0);
 
 /*
  * Sprintf, but with unlimited and automatically allocated buffering.
@@ -397,6 +391,7 @@ class Sprinter
     char                    *base;          /* malloc'd buffer address */
     size_t                  size;           /* size of buffer allocated at base */
     ptrdiff_t               offset;         /* offset of next free char in buffer */
+    bool                    reportedOOM;    /* this sprinter has reported OOM in string ops */
 
     bool realloc_(size_t newSize);
 
@@ -445,6 +440,16 @@ class Sprinter
     /* Get the offset */
     ptrdiff_t getOffset() const;
     ptrdiff_t getOffsetOf(const char *string) const;
+
+    /*
+     * Report that a string operation failed to get the memory it requested. The
+     * first call to this function calls JS_ReportOutOfMemory, and sets this
+     * Sprinter's outOfMemory flag; subsequent calls do nothing.
+     */
+    void reportOutOfMemory();
+
+    /* Return true if this Sprinter ran out of memory. */
+    bool hadOutOfMemory() const;
 };
 
 extern ptrdiff_t
@@ -486,6 +491,37 @@ FlowsIntoNext(JSOp op)
            op != JSOP_GOTO && op != JSOP_RETSUB;
 }
 
+inline bool
+IsArgOp(JSOp op)
+{
+    return JOF_OPTYPE(op) == JOF_QARG;
+}
+
+inline bool
+IsLocalOp(JSOp op)
+{
+    return JOF_OPTYPE(op) == JOF_LOCAL;
+}
+
+inline bool
+IsGlobalOp(JSOp op)
+{
+    return js_CodeSpec[op].format & JOF_GNAME;
+}
+
+inline bool
+IsGetterPC(jsbytecode *pc)
+{
+    JSOp op = JSOp(*pc);
+    return op == JSOP_LENGTH  || op == JSOP_GETPROP || op == JSOP_CALLPROP;
+}
+
+inline bool
+IsSetterPC(jsbytecode *pc)
+{
+    JSOp op = JSOp(*pc);
+    return op == JSOP_SETPROP || op == JSOP_SETNAME || op == JSOP_SETGNAME;
+}
 /*
  * Counts accumulated for a single opcode in a script. The counts tracked vary
  * between opcodes, and this structure ensures that counts are accessed in a
@@ -497,6 +533,8 @@ class PCCounts
     double *counts;
 #ifdef DEBUG
     size_t capacity;
+#elif JS_BITS_PER_WORD == 32
+    void *padding;
 #endif
 
  public:
@@ -615,21 +653,30 @@ class PCCounts
     }
 };
 
+/* Necessary for alignment with the script. */
+JS_STATIC_ASSERT(sizeof(PCCounts) % sizeof(Value) == 0);
+
+static inline jsbytecode *
+GetNextPc(jsbytecode *pc)
+{
+    return pc + js_CodeSpec[JSOp(*pc)].length;
+}
+
 } /* namespace js */
 
 #if defined(DEBUG)
 /*
  * Disassemblers, for debugging only.
  */
-extern JS_FRIEND_API(JSBool)
-js_Disassemble(JSContext *cx, JSScript *script, JSBool lines, js::Sprinter *sp);
+JSBool
+js_Disassemble(JSContext *cx, JS::Handle<JSScript*> script, JSBool lines, js::Sprinter *sp);
 
-extern JS_FRIEND_API(unsigned)
-js_Disassemble1(JSContext *cx, JSScript *script, jsbytecode *pc, unsigned loc,
+unsigned
+js_Disassemble1(JSContext *cx, JS::Handle<JSScript*> script, jsbytecode *pc, unsigned loc,
                 JSBool lines, js::Sprinter *sp);
 
-extern JS_FRIEND_API(void)
-js_DumpPCCounts(JSContext *cx, JSScript *script, js::Sprinter *sp);
+void
+js_DumpPCCounts(JSContext *cx, JS::Handle<JSScript*> script, js::Sprinter *sp);
 #endif
 
 #endif /* jsopcode_h___ */

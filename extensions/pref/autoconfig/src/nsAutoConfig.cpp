@@ -68,7 +68,7 @@ NS_IMETHODIMP nsAutoConfig::GetConfigURL(char **aConfigURL)
         return NS_ERROR_NULL_POINTER;
 
     if (mConfigURL.IsEmpty()) {
-        *aConfigURL = nsnull;
+        *aConfigURL = nullptr;
         return NS_OK;
     }
     
@@ -96,10 +96,10 @@ NS_IMETHODIMP
 nsAutoConfig::OnDataAvailable(nsIRequest *request, 
                               nsISupports *context,
                               nsIInputStream *aIStream, 
-                              PRUint32 aSourceOffset,
-                              PRUint32 aLength)
+                              uint64_t aSourceOffset,
+                              uint32_t aLength)
 {    
-    PRUint32 amt, size;
+    uint32_t amt, size;
     nsresult rv;
     char buf[1024];
     
@@ -130,7 +130,7 @@ nsAutoConfig::OnStopRequest(nsIRequest *request, nsISupports *context,
     // Checking for the http response, if failure go read the failover file.
     nsCOMPtr<nsIHttpChannel> pHTTPCon(do_QueryInterface(request));
     if (pHTTPCon) {
-        PRUint32 httpStatus;
+        uint32_t httpStatus;
         pHTTPCon->GetResponseStatus(&httpStatus);
         if (httpStatus != 200) 
         {
@@ -142,7 +142,7 @@ nsAutoConfig::OnStopRequest(nsIRequest *request, nsISupports *context,
     // Send the autoconfig.jsc to javascript engine.
     
     rv = EvaluateAdminConfigScript(mBuf.get(), mBuf.Length(),
-                              nsnull, false,true, false);
+                              nullptr, false,true, false);
     if (NS_SUCCEEDED(rv)) {
 
         // Write the autoconfig.jsc to failover.jsc (cached copy) 
@@ -209,7 +209,7 @@ NS_IMETHODIMP nsAutoConfig::Observe(nsISupports *aSubject,
 nsresult nsAutoConfig::downloadAutoConfig()
 {
     nsresult rv;
-    nsCAutoString emailAddr;
+    nsAutoCString emailAddr;
     nsXPIDLCString urlName;
     static bool firstTime = true;
     
@@ -223,7 +223,7 @@ nsresult nsAutoConfig::downloadAutoConfig()
     // in the previous read, we need to remove it when timer kicks in and 
     // downloads the autoconfig file again. 
     // If necessary, the email address will be added again as an argument.
-    PRInt32 index = mConfigURL.RFindChar((PRUnichar)'?');
+    int32_t index = mConfigURL.RFindChar((PRUnichar)'?');
     if (index != -1)
         mConfigURL.Truncate(index);
 
@@ -238,7 +238,7 @@ nsresult nsAutoConfig::downloadAutoConfig()
         if (NS_FAILED(rv)) 
             return rv;
     
-        rv = prefs->GetBranch(nsnull,getter_AddRefs(mPrefBranch));
+        rv = prefs->GetBranch(nullptr,getter_AddRefs(mPrefBranch));
         if (NS_FAILED(rv))
             return rv;
     }
@@ -285,7 +285,7 @@ nsresult nsAutoConfig::downloadAutoConfig()
     nsCOMPtr<nsIURI> url;
     nsCOMPtr<nsIChannel> channel;
     
-    rv = NS_NewURI(getter_AddRefs(url), mConfigURL.get(), nsnull, nsnull);
+    rv = NS_NewURI(getter_AddRefs(url), mConfigURL.get(), nullptr, nullptr);
     if (NS_FAILED(rv))
     {
         PR_LOG(MCD, PR_LOG_DEBUG, ("failed to create URL - is autoadmin.global_config_url valid? - %s\n", mConfigURL.get()));
@@ -294,11 +294,11 @@ nsresult nsAutoConfig::downloadAutoConfig()
 
     PR_LOG(MCD, PR_LOG_DEBUG, ("running MCD url %s\n", mConfigURL.get()));
     // open a channel for the url
-    rv = NS_NewChannel(getter_AddRefs(channel),url, nsnull, nsnull, nsnull, nsIRequest::INHIBIT_PERSISTENT_CACHING | nsIRequest::LOAD_BYPASS_CACHE);
+    rv = NS_NewChannel(getter_AddRefs(channel),url, nullptr, nullptr, nullptr, nsIRequest::INHIBIT_PERSISTENT_CACHING | nsIRequest::LOAD_BYPASS_CACHE);
     if (NS_FAILED(rv)) 
         return rv;
 
-    rv = channel->AsyncOpen(this, nsnull); 
+    rv = channel->AsyncOpen(this, nullptr); 
     if (NS_FAILED(rv)) {
         readOfflineFile();
         return rv;
@@ -328,7 +328,7 @@ nsresult nsAutoConfig::downloadAutoConfig()
         while (!mLoaded)
             NS_ENSURE_STATE(NS_ProcessNextEvent(thread));
         
-        PRInt32 minutes;
+        int32_t minutes;
         rv = mPrefBranch->GetIntPref("autoadmin.refresh_interval", 
                                      &minutes);
         if (NS_SUCCEEDED(rv) && minutes > 0) {
@@ -417,17 +417,17 @@ nsresult nsAutoConfig::evaluateLocalFile(nsIFile *file)
     if (NS_FAILED(rv)) 
         return rv;
         
-    PRInt64 fileSize;
-    PRUint32 fs, amt=0;
+    int64_t fileSize;
     file->GetFileSize(&fileSize);
-    LL_L2UI(fs, fileSize); // Converting 64 bit structure to unsigned int
+    uint32_t fs = fileSize; // Converting 64 bit structure to unsigned int
     char *buf = (char *)PR_Malloc(fs * sizeof(char));
     if (!buf) 
         return NS_ERROR_OUT_OF_MEMORY;
-    
+
+    uint32_t amt = 0;
     rv = inStr->Read(buf, fs, &amt);
     if (NS_SUCCEEDED(rv)) {
-      EvaluateAdminConfigScript(buf, fs, nsnull, false, 
+      EvaluateAdminConfigScript(buf, fs, nullptr, false, 
                                 true, false);
     }
     inStr->Close();
@@ -440,7 +440,7 @@ nsresult nsAutoConfig::writeFailoverFile()
     nsresult rv;
     nsCOMPtr<nsIFile> failoverFile; 
     nsCOMPtr<nsIOutputStream> outStr;
-    PRUint32 amt;
+    uint32_t amt;
     
     rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
                                 getter_AddRefs(failoverFile));
@@ -479,7 +479,7 @@ nsresult nsAutoConfig::getEmailAddr(nsACString & emailAddr)
                                       getter_Copies(prefValue));
         if (NS_FAILED(rv) || prefValue.IsEmpty())
             return PromptForEMailAddress(emailAddr);
-        PRInt32 commandIndex = prefValue.FindChar(',');
+        int32_t commandIndex = prefValue.FindChar(',');
         if (commandIndex != kNotFound)
           prefValue.Truncate(commandIndex);
         emailAddr = NS_LITERAL_CSTRING("mail.identity.") +
@@ -526,7 +526,7 @@ nsresult nsAutoConfig::PromptForEMailAddress(nsACString &emailAddress)
     bool check = false;
     nsXPIDLString emailResult;
     bool success;
-    rv = promptService->Prompt(nsnull, title.get(), err.get(), getter_Copies(emailResult), nsnull, &check, &success);
+    rv = promptService->Prompt(nullptr, title.get(), err.get(), getter_Copies(emailResult), nullptr, &check, &success);
     if (!success)
       return NS_ERROR_FAILURE;
     NS_ENSURE_SUCCESS(rv, rv);

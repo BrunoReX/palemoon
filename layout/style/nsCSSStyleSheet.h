@@ -20,6 +20,8 @@
 #include "nsCOMArray.h"
 #include "nsTArray.h"
 #include "nsString.h"
+#include "mozilla/CORSMode.h"
+#include "nsCycleCollectionParticipant.h"
 
 class nsXMLNameSpaceMap;
 class nsCSSRuleProcessor;
@@ -48,9 +50,9 @@ class nsCSSStyleSheetInner {
 public:
   friend class nsCSSStyleSheet;
   friend class nsCSSRuleProcessor;
-  friend nsresult NS_NewCSSStyleSheet(nsCSSStyleSheet** aInstancePtrResult);
 private:
-  nsCSSStyleSheetInner(nsCSSStyleSheet* aPrimarySheet);
+  nsCSSStyleSheetInner(nsCSSStyleSheet* aPrimarySheet,
+                       mozilla::CORSMode aCORSMode);
   nsCSSStyleSheetInner(nsCSSStyleSheetInner& aCopy,
                        nsCSSStyleSheet* aPrimarySheet);
   ~nsCSSStyleSheetInner();
@@ -79,6 +81,7 @@ private:
   // child sheet that means we've already ensured unique inners throughout its
   // parent chain and things are good.
   nsRefPtr<nsCSSStyleSheet> mFirstChild;
+  mozilla::CORSMode      mCORSMode;
   bool                   mComplete;
 
 #ifdef DEBUG
@@ -106,48 +109,50 @@ class nsCSSStyleSheet MOZ_FINAL : public nsIStyleSheet,
                                   public nsICSSLoaderObserver
 {
 public:
-  nsCSSStyleSheet();
+  nsCSSStyleSheet(mozilla::CORSMode aCORSMode);
 
-  NS_DECL_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsCSSStyleSheet,
+                                           nsIStyleSheet)
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_CSS_STYLE_SHEET_IMPL_CID)
 
   // nsIStyleSheet interface
   virtual nsIURI* GetSheetURI() const;
-  virtual nsIURI* GetBaseURI() const;
-  virtual void GetTitle(nsString& aTitle) const;
-  virtual void GetType(nsString& aType) const;
-  virtual bool HasRules() const;
-  virtual bool IsApplicable() const;
-  virtual void SetEnabled(bool aEnabled);
-  virtual bool IsComplete() const;
-  virtual void SetComplete();
-  virtual nsIStyleSheet* GetParentSheet() const;  // may be null
-  virtual nsIDocument* GetOwningDocument() const;  // may be null
-  virtual void SetOwningDocument(nsIDocument* aDocument);
+  virtual nsIURI* GetBaseURI() const MOZ_OVERRIDE;
+  virtual void GetTitle(nsString& aTitle) const MOZ_OVERRIDE;
+  virtual void GetType(nsString& aType) const MOZ_OVERRIDE;
+  virtual bool HasRules() const MOZ_OVERRIDE;
+  virtual bool IsApplicable() const MOZ_OVERRIDE;
+  virtual void SetEnabled(bool aEnabled) MOZ_OVERRIDE;
+  virtual bool IsComplete() const MOZ_OVERRIDE;
+  virtual void SetComplete() MOZ_OVERRIDE;
+  virtual nsIStyleSheet* GetParentSheet() const MOZ_OVERRIDE;  // may be null
+  virtual nsIDocument* GetOwningDocument() const MOZ_OVERRIDE;  // may be null
+  virtual void SetOwningDocument(nsIDocument* aDocument) MOZ_OVERRIDE;
 
   // Find the ID of the owner inner window.
-  PRUint64 FindOwningWindowInnerID() const;
+  uint64_t FindOwningWindowInnerID() const;
 #ifdef DEBUG
-  virtual void List(FILE* out = stdout, PRInt32 aIndent = 0) const;
+  virtual void List(FILE* out = stdout, int32_t aIndent = 0) const MOZ_OVERRIDE;
 #endif
 
   void AppendStyleSheet(nsCSSStyleSheet* aSheet);
-  void InsertStyleSheetAt(nsCSSStyleSheet* aSheet, PRInt32 aIndex);
+  void InsertStyleSheetAt(nsCSSStyleSheet* aSheet, int32_t aIndex);
 
   // XXX do these belong here or are they generic?
   void PrependStyleRule(mozilla::css::Rule* aRule);
   void AppendStyleRule(mozilla::css::Rule* aRule);
   void ReplaceStyleRule(mozilla::css::Rule* aOld, mozilla::css::Rule* aNew);
 
-  PRInt32 StyleRuleCount() const;
-  nsresult GetStyleRuleAt(PRInt32 aIndex, mozilla::css::Rule*& aRule) const;
+  int32_t StyleRuleCount() const;
+  nsresult GetStyleRuleAt(int32_t aIndex, mozilla::css::Rule*& aRule) const;
 
-  nsresult DeleteRuleFromGroup(mozilla::css::GroupRule* aGroup, PRUint32 aIndex);
-  nsresult InsertRuleIntoGroup(const nsAString& aRule, mozilla::css::GroupRule* aGroup, PRUint32 aIndex, PRUint32* _retval);
+  nsresult DeleteRuleFromGroup(mozilla::css::GroupRule* aGroup, uint32_t aIndex);
+  nsresult InsertRuleIntoGroup(const nsAString& aRule, mozilla::css::GroupRule* aGroup, uint32_t aIndex, uint32_t* _retval);
   nsresult ReplaceRuleInGroup(mozilla::css::GroupRule* aGroup, mozilla::css::Rule* aOld, mozilla::css::Rule* aNew);
 
-  PRInt32 StyleSheetCount() const;
+  int32_t StyleSheetCount() const;
 
   /**
    * SetURIs must be called on all sheets before parsing into them.
@@ -166,9 +171,13 @@ public:
   // Principal() never returns a null pointer.
   nsIPrincipal* Principal() const { return mInner->mPrincipal; }
 
+  // The document this style sheet is associated with.  May be null
+  nsIDocument* GetDocument() const { return mDocument; }
+
   void SetTitle(const nsAString& aTitle) { mTitle = aTitle; }
   void SetMedia(nsMediaList* aMedia);
   void SetOwningNode(nsIDOMNode* aOwningNode) { mOwningNode = aOwningNode; /* Not ref counted */ }
+  nsIDOMNode* GetOwningNode() const { return mOwningNode; }
 
   void SetOwnerRule(mozilla::css::ImportRule* aOwnerRule) { mOwnerRule = aOwnerRule; /* Not ref counted */ }
   mozilla::css::ImportRule* GetOwnerRule() const { return mOwnerRule; }
@@ -195,7 +204,7 @@ public:
    * Like the DOM insertRule() method, but doesn't do any security checks
    */
   nsresult InsertRuleInternal(const nsAString& aRule,
-                              PRUint32 aIndex, PRUint32* aReturn);
+                              uint32_t aIndex, uint32_t* aReturn);
 
   /* Get the URI this sheet was originally loaded from, if any.  Can
      return null */
@@ -235,7 +244,10 @@ public:
   // list after we clone a unique inner for ourselves.
   static bool RebuildChildList(mozilla::css::Rule* aRule, void* aBuilder);
 
-  size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
+  size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const MOZ_OVERRIDE;
+
+  // Get this style sheet's CORS mode
+  mozilla::CORSMode GetCORSMode() const { return mInner->mCORSMode; }
 
 private:
   nsCSSStyleSheet(const nsCSSStyleSheet& aCopy,
@@ -257,11 +269,23 @@ protected:
 
   // Return success if the subject principal subsumes the principal of our
   // inner, error otherwise.  This will also succeed if the subject has
-  // UniversalXPConnect.
-  nsresult SubjectSubsumesInnerPrincipal() const;
+  // UniversalXPConnect or if access is allowed by CORS.  In the latter case,
+  // it will set the principal of the inner to the subject principal.
+  nsresult SubjectSubsumesInnerPrincipal();
 
   // Add the namespace mapping from this @namespace rule to our namespace map
   nsresult RegisterNamespaceRule(mozilla::css::Rule* aRule);
+
+  // Drop our reference to mRuleCollection
+  void DropRuleCollection();
+
+  // Drop our reference to mMedia
+  void DropMedia();
+
+  // Unlink our inner, if needed, for cycle collection
+  void UnlinkInner();
+  // Traverse our inner, if needed, for cycle collection
+  void TraverseInner(nsCycleCollectionTraversalCallback &);
 
 protected:
   nsString              mTitle;
@@ -270,7 +294,7 @@ protected:
   nsCSSStyleSheet*      mParent;    // weak ref
   mozilla::css::ImportRule* mOwnerRule; // weak ref
 
-  CSSRuleListImpl*      mRuleCollection;
+  nsRefPtr<CSSRuleListImpl> mRuleCollection;
   nsIDocument*          mDocument; // weak ref; parents maintain this for their children
   nsIDOMNode*           mOwningNode; // weak ref
   bool                  mDisabled;
@@ -282,12 +306,9 @@ protected:
 
   friend class nsMediaList;
   friend class nsCSSRuleProcessor;
-  friend nsresult NS_NewCSSStyleSheet(nsCSSStyleSheet** aInstancePtrResult);
   friend struct ChildSheetListBuilder;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsCSSStyleSheet, NS_CSS_STYLE_SHEET_IMPL_CID)
-
-nsresult NS_NewCSSStyleSheet(nsCSSStyleSheet** aInstancePtrResult);
 
 #endif /* !defined(nsCSSStyleSheet_h_) */

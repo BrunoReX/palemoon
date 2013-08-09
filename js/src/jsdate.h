@@ -38,10 +38,13 @@ TimeClip(double time)
     return ToInteger(time + (+0.0));
 }
 
+/* ES5 15.9.1.7. Set by UpdateLocalTZA(). */
+extern double LocalTZA;
+
 } /* namespace js */
 
 extern JSObject *
-js_InitDateClass(JSContext *cx, JSObject *obj);
+js_InitDateClass(JSContext *cx, js::HandleObject obj);
 
 /*
  * These functions provide a C interface to the date/time object
@@ -51,7 +54,7 @@ js_InitDateClass(JSContext *cx, JSObject *obj);
  * Construct a new Date Object from a time value given in milliseconds UTC
  * since the epoch.
  */
-extern JS_FRIEND_API(JSObject*)
+extern JS_FRIEND_API(JSObject *)
 js_NewDateObjectMsec(JSContext* cx, double msec_time);
 
 /*
@@ -61,32 +64,30 @@ js_NewDateObjectMsec(JSContext* cx, double msec_time);
  * due to the 0-based month numbering copied into JS from Java (java.util.Date
  * in 1995).
  */
-extern JS_FRIEND_API(JSObject*)
+extern JS_FRIEND_API(JSObject *)
 js_NewDateObject(JSContext* cx, int year, int mon, int mday,
                  int hour, int min, int sec);
 
-extern JS_FRIEND_API(int)
-js_DateGetYear(JSContext *cx, JSObject* obj);
+extern void
+js_ClearDateCaches();
 
 extern JS_FRIEND_API(int)
-js_DateGetMonth(JSContext *cx, JSObject* obj);
+js_DateGetYear(JSContext *cx, JSRawObject obj);
 
 extern JS_FRIEND_API(int)
-js_DateGetDate(JSContext *cx, JSObject* obj);
+js_DateGetMonth(JSContext *cx, JSRawObject obj);
 
 extern JS_FRIEND_API(int)
-js_DateGetHours(JSContext *cx, JSObject* obj);
+js_DateGetDate(JSContext *cx, JSRawObject obj);
 
 extern JS_FRIEND_API(int)
-js_DateGetMinutes(JSContext *cx, JSObject* obj);
+js_DateGetHours(JSContext *cx, JSRawObject obj);
 
 extern JS_FRIEND_API(int)
-js_DateGetSeconds(JSContext *cx, JSObject* obj);
+js_DateGetMinutes(JSContext *cx, JSRawObject obj);
 
-typedef uint32_t JSIntervalTime;
-
-extern JS_FRIEND_API(JSIntervalTime)
-js_IntervalNow();
+extern JS_FRIEND_API(int)
+js_DateGetSeconds(JSRawObject obj);
 
 /* Date constructor native. Exposed only so the JIT can know its address. */
 JSBool

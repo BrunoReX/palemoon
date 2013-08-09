@@ -32,13 +32,13 @@ nsStreamListenerTee::OnStopRequest(nsIRequest *request,
     NS_ENSURE_TRUE(mListener, NS_ERROR_NOT_INITIALIZED);
     // it is critical that we close out the input stream tee
     if (mInputTee) {
-        mInputTee->SetSink(nsnull);
+        mInputTee->SetSink(nullptr);
         mInputTee = 0;
     }
 
     // release sink on the same thread where the data was written (bug 716293)
     if (mEventTarget) {
-        nsIOutputStream *sink = nsnull;
+        nsIOutputStream *sink = nullptr;
         mSink.swap(sink);
         NS_ProxyRelease(mEventTarget, sink);
     }
@@ -57,8 +57,8 @@ NS_IMETHODIMP
 nsStreamListenerTee::OnDataAvailable(nsIRequest *request,
                                      nsISupports *context,
                                      nsIInputStream *input,
-                                     PRUint32 offset,
-                                     PRUint32 count)
+                                     uint64_t offset,
+                                     uint32_t count)
 {
     NS_ENSURE_TRUE(mListener, NS_ERROR_NOT_INITIALIZED);
     NS_ENSURE_TRUE(mSink, NS_ERROR_NOT_INITIALIZED);

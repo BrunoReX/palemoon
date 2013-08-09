@@ -5,10 +5,11 @@
 
 #include "nsIObserver.h"
 #include "nsCycleCollectionParticipant.h"
+#include "mozilla/Attributes.h"
 
 struct JSTracer;
 
-class nsCCUncollectableMarker : public nsIObserver
+class nsCCUncollectableMarker MOZ_FINAL : public nsIObserver
 {
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
@@ -21,18 +22,18 @@ class nsCCUncollectableMarker : public nsIObserver
   /**
    * Checks if we're collecting during a given generation
    */
-  static bool InGeneration(PRUint32 aGeneration)
+  static bool InGeneration(uint32_t aGeneration)
   {
     return aGeneration && aGeneration == sGeneration;
   }
 
   static bool InGeneration(nsCycleCollectionTraversalCallback& aCb,
-                           PRUint32 aGeneration)
+                           uint32_t aGeneration)
   {
     return InGeneration(aGeneration) && !aCb.WantAllTraces();
   }
 
-  static PRUint32 sGeneration;
+  static uint32_t sGeneration;
 
 private:
   nsCCUncollectableMarker() {}

@@ -11,6 +11,7 @@
 #include "nsIObserver.h"
 #include "mozilla/storage.h"
 #include "mozilla/storage/StatementCache.h"
+#include "mozilla/Attributes.h"
 
 // This is the schema version. Update it at any schema change and add a
 // corresponding migrateVxx method below.
@@ -58,8 +59,8 @@ enum JournalMode {
 , JOURNAL_WAL
 };
 
-class Database : public nsIObserver
-               , public nsSupportsWeakReference
+class Database MOZ_FINAL : public nsIObserver
+                         , public nsSupportsWeakReference
 {
   typedef mozilla::storage::StatementCache<mozIStorageStatement> StatementCache;
   typedef mozilla::storage::StatementCache<mozIStorageAsyncStatement> AsyncStatementCache;
@@ -97,7 +98,7 @@ public:
    *
    * @return one of the nsINavHistoryService::DATABASE_STATUS_* constants.
    */
-  PRUint16 GetDatabaseStatus() const
+  uint16_t GetDatabaseStatus() const
   {
     return mDatabaseStatus;
   }
@@ -163,7 +164,7 @@ public:
   GetStatement(const nsACString& aQuery) const
   {
     if (mShuttingDown) {
-      return nsnull;
+      return nullptr;
     }
     if (NS_IsMainThread()) {
       return mMainThreadStatements.GetCachedStatement(aQuery);
@@ -201,7 +202,7 @@ public:
   GetAsyncStatement(const nsACString& aQuery) const
   {
     if (mShuttingDown) {
-      return nsnull;
+      return nullptr;
     }
     MOZ_ASSERT(NS_IsMainThread());
     return mMainThreadAsyncStatements.GetCachedStatement(aQuery);
@@ -293,9 +294,8 @@ private:
   mutable AsyncStatementCache mMainThreadAsyncStatements;
   mutable StatementCache mAsyncThreadStatements;
 
-  PRInt32 mDBPageSize;
-  enum JournalMode mCurrentJournalMode;
-  PRUint16 mDatabaseStatus;
+  int32_t mDBPageSize;
+  uint16_t mDatabaseStatus;
   bool mShuttingDown;
 };
 

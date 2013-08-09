@@ -3,7 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -88,9 +88,12 @@ EXPORTS = \
 		nsProxyRelease.h \
 		nsXPTCUtils.h \
 		nsCycleCollectorUtils.h \
+		nsCycleCollectionNoteChild.h \
+		nsCycleCollectionTraversalCallback.h \
 		$(NULL)
 
 EXPORTS_mozilla = \
+  AppData.h \
   AutoRestore.h \
   BlockingResourceBase.h \
   CondVar.h \

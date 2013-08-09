@@ -11,6 +11,7 @@
 #include "nsIObserver.h"
 #include "nsIContent.h"
 #include "nsIWidget.h"
+#include "mozilla/Attributes.h"
 
 #define FOCUSMETHOD_MASK 0xF000
 #define FOCUSMETHODANDRING_MASK 0xF0F000
@@ -20,12 +21,6 @@
 class nsIDocShellTreeItem;
 class nsPIDOMWindow;
 
-namespace mozilla {
-namespace dom {
-  class TabParent;
-}
-}
-
 struct nsDelayedBlurOrFocusEvent;
 
 /**
@@ -33,9 +28,9 @@ struct nsDelayedBlurOrFocusEvent;
  * which receives key events.
  */
 
-class nsFocusManager : public nsIFocusManager,
-                       public nsIObserver,
-                       public nsSupportsWeakReference
+class nsFocusManager MOZ_FINAL : public nsIFocusManager,
+                                 public nsIObserver,
+                                 public nsSupportsWeakReference
 {
   typedef mozilla::widget::InputContextAction InputContextAction;
 
@@ -115,7 +110,7 @@ public:
   /**
    * Returns an InputContextAction cause for aFlags.
    */
-  static InputContextAction::Cause GetFocusMoveActionCause(PRUint32 aFlags);
+  static InputContextAction::Cause GetFocusMoveActionCause(uint32_t aFlags);
 
   static bool sMouseFocusesFormControl;
 
@@ -141,7 +136,7 @@ protected:
    * All actual focus changes must use this method to do so. (as opposed
    * to those that update the focus in an inactive window for instance).
    */
-  void SetFocusInner(nsIContent* aNewContent, PRInt32 aFlags,
+  void SetFocusInner(nsIContent* aNewContent, int32_t aFlags,
                      bool aFocusChanged, bool aAdjustWidget);
 
   /**
@@ -192,7 +187,7 @@ protected:
    * frame, so only the IsFocusable method on the content node must be
    * true.
    */
-  nsIContent* CheckIfFocusable(nsIContent* aContent, PRUint32 aFlags);
+  nsIContent* CheckIfFocusable(nsIContent* aContent, uint32_t aFlags);
 
   /**
    * Blurs the currently focused element. Returns false if another element was
@@ -248,7 +243,7 @@ protected:
    */
   void Focus(nsPIDOMWindow* aWindow,
              nsIContent* aContent,
-             PRUint32 aFlags,
+             uint32_t aFlags,
              bool aIsNewDocument,
              bool aFocusChanged,
              bool aWindowRaised,
@@ -262,11 +257,11 @@ protected:
    *
    * aWindowRaised should only be true if called from WindowRaised.
    */
-  void SendFocusOrBlurEvent(PRUint32 aType,
+  void SendFocusOrBlurEvent(uint32_t aType,
                             nsIPresShell* aPresShell,
                             nsIDocument* aDocument,
                             nsISupports* aTarget,
-                            PRUint32 aFocusMethod,
+                            uint32_t aFocusMethod,
                             bool aWindowRaised,
                             bool aIsRefocus = false);
 
@@ -275,7 +270,7 @@ protected:
    */
   void ScrollIntoView(nsIPresShell* aPresShell,
                       nsIContent* aContent,
-                      PRUint32 aFlags);
+                      uint32_t aFlags);
 
   /**
    * Raises the top-level window aWindow at the widget level.
@@ -332,7 +327,7 @@ protected:
    */
   nsresult DetermineElementToMoveFocus(nsPIDOMWindow* aWindow,
                                        nsIContent* aStart,
-                                       PRInt32 aType, bool aNoParentTraversal,
+                                       int32_t aType, bool aNoParentTraversal,
                                        nsIContent** aNextContent);
 
   /**
@@ -368,7 +363,7 @@ protected:
                                   nsIContent* aOriginalStartContent,
                                   nsIContent* aStartContent,
                                   bool aForward,
-                                  PRInt32 aCurrentTabIndex,
+                                  int32_t aCurrentTabIndex,
                                   bool aIgnoreTabIndex,
                                   nsIContent** aResultContent);
 
@@ -385,7 +380,7 @@ protected:
    * aStartContent is the current image map area.
    */
   nsIContent* GetNextTabbableMapArea(bool aForward,
-                                     PRInt32 aCurrentTabIndex,
+                                     int32_t aCurrentTabIndex,
                                      nsIContent* aImageContent,
                                      nsIContent* aStartContent);
 
@@ -394,8 +389,8 @@ protected:
    * is true, or the previous tabindex value if aForward is false. aParent is
    * the node from which to start looking for tab indicies.
    */
-  PRInt32 GetNextTabIndex(nsIContent* aParent,
-                          PRInt32 aCurrentTabIndex,
+  int32_t GetNextTabIndex(nsIContent* aParent,
+                          int32_t aCurrentTabIndex,
                           bool aForward);
 
   /**
@@ -412,12 +407,6 @@ protected:
                               nsIDocument* aDocument,
                               bool aIsForDocNavigation,
                               bool aCheckVisibility);
-
-  /**
-   * Get the TabParent associated with aContent if it is a remote browser,
-   * or null in all other cases.
-   */
-  mozilla::dom::TabParent* GetRemoteForContent(nsIContent* aContent);
 
   /**
    * Get the last docshell child of aItem and return it in aResult.

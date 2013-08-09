@@ -36,8 +36,8 @@ public:
   NS_DECL_NSIDOMSVGURIREFERENCE
 
   // XXX: I wish we could use virtual inheritance
-  NS_FORWARD_NSIDOMNODE(nsSVGAElementBase::)
-  NS_FORWARD_NSIDOMELEMENT(nsSVGAElementBase::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
   NS_FORWARD_NSIDOMSVGELEMENT(nsSVGAElementBase::)
 
   // nsINode interface methods
@@ -56,21 +56,21 @@ public:
   virtual void UnbindFromTree(bool aDeep = true,
                               bool aNullParent = true);
   NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const;
-  virtual bool IsFocusable(PRInt32 *aTabIndex = nsnull, bool aWithMouse = false);
+  virtual bool IsFocusable(int32_t *aTabIndex = nullptr, bool aWithMouse = false);
   virtual bool IsLink(nsIURI** aURI) const;
   virtual void GetLinkTarget(nsAString& aTarget);
   virtual nsLinkState GetLinkState() const;
   virtual already_AddRefed<nsIURI> GetHrefURI() const;
   virtual nsEventStates IntrinsicState() const;
-  nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+  nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                    const nsAString& aValue, bool aNotify)
   {
-    return SetAttr(aNameSpaceID, aName, nsnull, aValue, aNotify);
+    return SetAttr(aNameSpaceID, aName, nullptr, aValue, aNotify);
   }
-  virtual nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+  virtual nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                            nsIAtom* aPrefix, const nsAString& aValue,
                            bool aNotify);
-  virtual nsresult UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
+  virtual nsresult UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
                              bool aNotify);
 
   virtual nsXPCClassInfo* GetClassInfo();

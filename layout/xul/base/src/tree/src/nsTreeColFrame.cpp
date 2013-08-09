@@ -9,7 +9,6 @@
 #include "nsIContent.h"
 #include "nsStyleContext.h"
 #include "nsINameSpaceManager.h" 
-#include "nsIDocument.h"
 #include "nsIBoxObject.h"
 #include "nsTreeBoxObject.h"
 #include "nsIDOMElement.h"
@@ -130,9 +129,9 @@ nsTreeColFrame::BuildDisplayListForChildren(nsDisplayListBuilder*   aBuilder,
 }
 
 NS_IMETHODIMP
-nsTreeColFrame::AttributeChanged(PRInt32 aNameSpaceID,
+nsTreeColFrame::AttributeChanged(int32_t aNameSpaceID,
                                  nsIAtom* aAttribute,
-                                 PRInt32 aModType)
+                                 int32_t aModType)
 {
   nsresult rv = nsBoxFrame::AttributeChanged(aNameSpaceID, aAttribute,
                                              aModType);
@@ -162,7 +161,7 @@ nsTreeColFrame::SetBounds(nsBoxLayoutState& aBoxLayoutState,
 nsITreeBoxObject*
 nsTreeColFrame::GetTreeBoxObject()
 {
-  nsITreeBoxObject* result = nsnull;
+  nsITreeBoxObject* result = nullptr;
 
   nsIContent* parent = mContent->GetParent();
   if (parent) {

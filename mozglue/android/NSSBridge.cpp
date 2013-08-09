@@ -48,7 +48,7 @@ setup_nss_functions(void *nss_handle,
     LOG("Missing handle\n");
     return FAILURE;
   }
-#define GETFUNC(name) f_ ## name = (name ## _t) __wrap_dlsym(nss_handle, #name); \
+#define GETFUNC(name) f_ ## name = (name ## _t) (uintptr_t) __wrap_dlsym(nss_handle, #name); \
                       if (!f_ ##name) return FAILURE;
   GETFUNC(NSS_Initialize);
   GETFUNC(NSS_Shutdown);
@@ -59,13 +59,13 @@ setup_nss_functions(void *nss_handle,
   GETFUNC(PK11_InitPin);
   GETFUNC(SECITEM_ZfreeItem);
 #undef GETFUNC
-#define NSPRFUNC(name) f_ ## name = (name ## _t) __wrap_dlsym(nspr_handle, #name); \
+#define NSPRFUNC(name) f_ ## name = (name ## _t) (uintptr_t) __wrap_dlsym(nspr_handle, #name); \
                        if (!f_ ##name) return FAILURE;
   NSPRFUNC(PR_ErrorToString);
   NSPRFUNC(PR_GetError);
   NSPRFUNC(PR_Free);
 #undef NSPRFUNC
-#define PLCFUNC(name) f_ ## name = (name ## _t) __wrap_dlsym(plc_handle, #name); \
+#define PLCFUNC(name) f_ ## name = (name ## _t) (uintptr_t) __wrap_dlsym(plc_handle, #name); \
                       if (!f_ ##name) return FAILURE;
   PLCFUNC(PL_Base64Encode);
   PLCFUNC(PL_Base64Decode);
@@ -204,7 +204,7 @@ doCrypto(JNIEnv* jenv, const char *path, const char *value, char** result, bool 
       LOG("Encrypted: %s\n", *result);
     } else {
       LOG("Decoding: %s\n", value);
-      rv = decode(value, &request.data, (PRInt32*)&request.len);
+      rv = decode(value, &request.data, (int32_t*)&request.len);
       if (rv != SECSuccess) {
           throwError(jenv, "decode");
           return rv;
@@ -234,7 +234,7 @@ done:
  * Base64 encodes the data passed in. The caller must deallocate _retval using free();
  */
 SECStatus
-encode(const unsigned char *data, PRInt32 dataLen, char **_retval)
+encode(const unsigned char *data, int32_t dataLen, char **_retval)
 {
   SECStatus rv = SECSuccess;
   char *encoded = f_PL_Base64Encode((const char *)data, dataLen, NULL);
@@ -259,10 +259,10 @@ encode(const unsigned char *data, PRInt32 dataLen, char **_retval)
  * Base64 decodes the data passed in. The caller must deallocate result using free();
  */
 SECStatus
-decode(const char *data, unsigned char **result, PRInt32 *length)
+decode(const char *data, unsigned char **result, int32_t *length)
 {
   SECStatus rv = SECSuccess;
-  PRUint32 len = strlen(data);
+  uint32_t len = strlen(data);
   int adjust = 0;
 
   /* Compute length adjustment */

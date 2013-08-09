@@ -54,6 +54,12 @@ static int gPassedTests = 0;
 #else
 #include <sstream>
 
+// Print nsresult as uint32_t
+std::ostream& operator<<(std::ostream& aStream, const nsresult aInput)
+{
+  return aStream << static_cast<uint32_t>(aInput);
+}
+
 #define do_check_eq(aExpected, aActual) \
   PR_BEGIN_MACRO \
     gTotalTests++; \
@@ -118,10 +124,10 @@ public:
 
   void SpinUntilCompleted();
 
-  PRUint16 completionReason;
+  uint16_t completionReason;
 
 protected:
-  ~AsyncStatementSpinner() {}
+  virtual ~AsyncStatementSpinner() {}
   volatile bool mCompleted;
 };
 
@@ -144,14 +150,14 @@ AsyncStatementSpinner::HandleResult(mozIStorageResultSet *aResultSet)
 NS_IMETHODIMP
 AsyncStatementSpinner::HandleError(mozIStorageError *aError)
 {
-  PRInt32 result;
+  int32_t result;
   nsresult rv = aError->GetResult(&result);
   NS_ENSURE_SUCCESS(rv, rv);
-  nsCAutoString message;
+  nsAutoCString message;
   rv = aError->GetMessage(message);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCAutoString warnMsg;
+  nsAutoCString warnMsg;
   warnMsg.Append("An error occurred while executing an async statement: ");
   warnMsg.AppendInt(result);
   warnMsg.Append(" ");
@@ -162,7 +168,7 @@ AsyncStatementSpinner::HandleError(mozIStorageError *aError)
 }
 
 NS_IMETHODIMP
-AsyncStatementSpinner::HandleCompletion(PRUint16 aReason)
+AsyncStatementSpinner::HandleCompletion(uint16_t aReason)
 {
   completionReason = aReason;
   mCompleted = true;

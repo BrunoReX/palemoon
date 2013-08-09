@@ -60,16 +60,16 @@ private:
     mutable JSObject* mObj;
 
     static JSBool
-    CPOW_AddProperty(JSContext *cx, JSHandleObject obj, JSHandleId id, jsval *vp);
+    CPOW_AddProperty(JSContext *cx, JSHandleObject obj, JSHandleId id, JSMutableHandleValue vp);
 
     static JSBool
-    CPOW_DelProperty(JSContext *cx, JSHandleObject obj, JSHandleId id, jsval *vp);
+    CPOW_DelProperty(JSContext *cx, JSHandleObject obj, JSHandleId id, JSMutableHandleValue vp);
 
     static JSBool
-    CPOW_GetProperty(JSContext *cx, JSHandleObject obj, JSHandleId id, jsval *vp);
+    CPOW_GetProperty(JSContext *cx, JSHandleObject obj, JSHandleId id, JSMutableHandleValue vp);
     
     static JSBool
-    CPOW_SetProperty(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, jsval *vp);
+    CPOW_SetProperty(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, JSMutableHandleValue vp);
 
     JSBool NewEnumerateInit(JSContext* cx, jsval* statep, jsid* idp);
     JSBool NewEnumerateNext(JSContext* cx, jsval* statep, jsid* idp);
@@ -80,10 +80,10 @@ private:
 
     static JSBool
     CPOW_NewResolve(JSContext *cx, JSHandleObject obj, JSHandleId id, unsigned flags,
-                    JSObject **objp);
+                    JSMutableHandleObject objp);
 
     static JSBool
-    CPOW_Convert(JSContext *cx, JSHandleObject obj, JSType type, jsval *vp);
+    CPOW_Convert(JSContext *cx, JSHandleObject obj, JSType type, JSMutableHandleValue vp);
 
     static void
     CPOW_Finalize(js::FreeOp* fop, JSObject* obj);
@@ -95,20 +95,20 @@ private:
     CPOW_Construct(JSContext *cx, unsigned argc, jsval *vp);
     
     static JSBool
-    CPOW_HasInstance(JSContext *cx, JSHandleObject obj, const jsval *v, JSBool *bp);
+    CPOW_HasInstance(JSContext *cx, JSHandleObject obj, JSMutableHandleValue vp, JSBool *bp);
 
     static JSBool
-    CPOW_Equality(JSContext *cx, JSHandleObject obj, const jsval *v, JSBool *bp);
+    CPOW_Equality(JSContext *cx, JSHandleObject obj, JSHandleValue v, JSBool *bp);
 
     static bool jsval_to_JSVariant(JSContext* cx, jsval from, JSVariant* to);
     static bool jsval_from_JSVariant(JSContext* cx, const JSVariant& from,
                                      jsval* to);
     static bool
-    JSObject_to_PObjectWrapperParent(JSObject* from, PObjectWrapperParent** to);
+    JSObject_to_PObjectWrapperParent(JSContext* cx, JSObject* from, PObjectWrapperParent** to);
     static bool
     JSObject_from_PObjectWrapperParent(JSContext* cx,
                                        const PObjectWrapperParent* from,
-                                       JSObject** to);
+                                       JSMutableHandleObject to);
     static bool
     jsval_from_PObjectWrapperParent(JSContext* cx,
                                     const PObjectWrapperParent* from,

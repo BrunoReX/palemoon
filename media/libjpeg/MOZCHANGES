@@ -44,7 +44,7 @@ To upgrade to a new revision of libjpeg-turbo, do the following:
 * Restore files modified in the Mozilla repository.
 
     $ hg revert --no-backup config.h jconfig.h Makefile.in MOZCHANGES \
-      mozilla.diff simd/Makefile.in
+      mozilla.diff simd/Makefile.in genTables.py
 
 * Update config.h and jconfig.h as noted previously.
 
@@ -58,6 +58,22 @@ To upgrade to a new revision of libjpeg-turbo, do the following:
 
     $ hg addremove
 
+== December 12, 2012 ==
+
+* Replace the runtime computed jpeg_nbits_table with constants in
+  jpeg_nbits_table.h to make it shareable among processes. (bug 815473)
+
+== October 13, 2012 ==
+
+* Modified config.h to use MOZ_ALWAYS_INLINE (bug 800106).
+
+== July 4, 2012 (libjpeg-turbo v1.2.1 r853 2012-06-30) ==
+
+* Updated to v1.2.1 stable release.
+
+== June 5, 2012 (libjpeg-turbo v1.2.x branch, r831 2012-05-30) ==
+
+* Updated to latest version on v1.2.x branch (bug 759891).
 
 == February 10, 2012 (libjpeg-turbo v1.2.0 r807 2012-02-10) ==
 

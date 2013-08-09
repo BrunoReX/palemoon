@@ -55,9 +55,11 @@ class FrameEntry
     }
 #endif
 
-    /* For a constant double FrameEntry, truncate to an int32. */
-    void convertConstantDoubleToInt32(JSContext *cx) {
-        JS_ASSERT(isType(JSVAL_TYPE_DOUBLE) && isConstant());
+    /* For a constant double FrameEntry, truncate to an int32_t. */
+    void convertConstantDoubleOrBooleanToInt32(JSContext *cx) {
+        JS_ASSERT(isConstant());
+        JS_ASSERT(isType(JSVAL_TYPE_DOUBLE) || isType(JSVAL_TYPE_BOOLEAN));
+
         int32_t value;
         ToInt32(cx, getValue(), &value);
 

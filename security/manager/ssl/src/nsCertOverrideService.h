@@ -15,6 +15,7 @@
 #include "nsIFile.h"
 #include "secoidt.h"
 #include "nsWeakReference.h"
+#include "mozilla/Attributes.h"
 
 class nsCertOverride
 {
@@ -48,7 +49,7 @@ public:
   }
 
   nsCString mAsciiHost;
-  PRInt32 mPort;
+  int32_t mPort;
   bool mIsTemporary; // true: session only, false: stored on disk
   nsCString mFingerprint;
   nsCString mFingerprintAlgOID;
@@ -62,7 +63,7 @@ public:
 
 
 // hash entry class
-class nsCertOverrideEntry : public PLDHashEntryHdr
+class nsCertOverrideEntry MOZ_FINAL : public PLDHashEntryHdr
 {
   public:
     // Hash methods
@@ -107,8 +108,8 @@ class nsCertOverrideEntry : public PLDHashEntryHdr
     static PLDHashNumber HashKey(KeyTypePointer aKey)
     {
       // PL_DHashStringKey doesn't use the table parameter, so we can safely
-      // pass nsnull
-      return PL_DHashStringKey(nsnull, aKey);
+      // pass nullptr
+      return PL_DHashStringKey(nullptr, aKey);
     }
 
     enum { ALLOW_MEMMOVE = false };
@@ -125,9 +126,9 @@ class nsCertOverrideEntry : public PLDHashEntryHdr
     nsCString mHostWithPort;
 };
 
-class nsCertOverrideService : public nsICertOverrideService
-                            , public nsIObserver
-                            , public nsSupportsWeakReference
+class nsCertOverrideService MOZ_FINAL : public nsICertOverrideService
+                                      , public nsIObserver
+                                      , public nsSupportsWeakReference
 {
 public:
   NS_DECL_ISUPPORTS
@@ -141,8 +142,8 @@ public:
   void RemoveAllTemporaryOverrides();
 
   typedef void 
-  (*PR_CALLBACK CertOverrideEnumerator)(const nsCertOverride &aSettings,
-                                        void *aUserData);
+  (*CertOverrideEnumerator)(const nsCertOverride &aSettings,
+                            void *aUserData);
 
   // aCert == null: return all overrides
   // aCert != null: return overrides that match the given cert
@@ -153,7 +154,7 @@ public:
     // Concates host name and the port number. If the port number is -1 then
     // port 443 is automatically used. This method ensures there is always a port
     // number separated with colon.
-    static void GetHostWithPort(const nsACString & aHostName, PRInt32 aPort, nsACString& _retval);
+    static void GetHostWithPort(const nsACString & aHostName, int32_t aPort, nsACString& _retval);
 
 protected:
     mozilla::ReentrantMonitor monitor;
@@ -166,7 +167,7 @@ protected:
     void RemoveAllFromMemory();
     nsresult Read();
     nsresult Write();
-    nsresult AddEntryToList(const nsACString &host, PRInt32 port,
+    nsresult AddEntryToList(const nsACString &host, int32_t port,
                             nsIX509Cert *aCert,
                             const bool aIsTemporary,
                             const nsACString &algo_oid, 

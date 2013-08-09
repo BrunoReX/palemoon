@@ -6,6 +6,7 @@ package org.mozilla.gecko.sync.stage;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 
 import org.json.simple.parser.ParseException;
@@ -40,6 +41,7 @@ import org.mozilla.gecko.sync.repositories.delegates.RepositorySessionWipeDelega
 import org.mozilla.gecko.sync.synchronizer.ServerLocalSynchronizer;
 import org.mozilla.gecko.sync.synchronizer.Synchronizer;
 import org.mozilla.gecko.sync.synchronizer.SynchronizerDelegate;
+import org.mozilla.gecko.sync.synchronizer.SynchronizerSession;
 
 import android.content.Context;
 
@@ -57,6 +59,9 @@ public abstract class ServerSyncStage implements
   protected static final String LOG_TAG = "ServerSyncStage";
 
   protected final GlobalSession session;
+
+  protected long stageStartTimestamp = -1;
+  protected long stageCompleteTimestamp = -1;
 
   public ServerSyncStage(GlobalSession session) {
     if (session == null) {
@@ -80,15 +85,61 @@ public abstract class ServerSyncStage implements
       // Fall through; null engineSettings will pass below.
     }
 
+    // We can be disabled by the server's meta/global record, or malformed in the server's meta/global record,
+    // or by the user manually in Sync Settings.
     // We catch the subclasses of MetaGlobalException to trigger various resets and wipes in execute().
-    return session.engineIsEnabled(this.getEngineName(), engineSettings);
+    boolean enabledInMetaGlobal = session.engineIsEnabled(this.getEngineName(), engineSettings);
+
+    // Check for manual changes to engines by the user.
+    checkAndUpdateUserSelectedEngines(enabledInMetaGlobal);
+
+    // Check for changes on the server.
+    if (!enabledInMetaGlobal) {
+      Logger.debug(LOG_TAG, "Stage " + this.getEngineName() + " disabled by server meta/global.");
+      return false;
+    }
+
+    // We can also be disabled just for this sync.
+    if (session.config.stagesToSync == null) {
+      return true;
+    }
+    boolean enabledThisSync = session.config.stagesToSync.contains(this.getEngineName()); // For ServerSyncStage, stage name == engine name.
+    if (!enabledThisSync) {
+      Logger.debug(LOG_TAG, "Stage " + this.getEngineName() + " disabled just for this sync.");
+    }
+    return enabledThisSync;
+  }
+
+  /**
+   * Compares meta/global engine state to user selected engines from Sync
+   * Settings and throws an exception if they don't match and meta/global needs
+   * to be updated.
+   *
+   * @param enabledInMetaGlobal
+   *          boolean of engine sync state in meta/global
+   * @throws MetaGlobalException
+   *           if engine sync state has been changed in Sync Settings, with new
+   *           engine sync state.
+   */
+  protected void checkAndUpdateUserSelectedEngines(boolean enabledInMetaGlobal) throws MetaGlobalException {
+    Map<String, Boolean> selectedEngines = session.config.userSelectedEngines;
+    String thisEngine = this.getEngineName();
+
+    if (selectedEngines != null && selectedEngines.containsKey(thisEngine)) {
+      boolean enabledInSelection = selectedEngines.get(thisEngine);
+      if (enabledInMetaGlobal != enabledInSelection) {
+        // Engine enable state has been changed by the user.
+        Logger.debug(LOG_TAG, "Engine state has been changed by user. Throwing exception.");
+        throw new MetaGlobalException.MetaGlobalEngineStateChangedException(enabledInSelection);
+      }
+    }
   }
 
   protected EngineSettings getEngineSettings() throws NonObjectJSONException, IOException, ParseException {
     Integer version = getStorageVersion();
     if (version == null) {
       Logger.warn(LOG_TAG, "null storage version for " + this + "; using version 0.");
-      version = new Integer(0);
+      version = Integer.valueOf(0);
     }
 
     SynchronizerConfiguration config = this.getConfig();
@@ -160,7 +211,7 @@ public abstract class ServerSyncStage implements
    * Reset timestamps and possibly set syncID.
    * @param syncID if non-null, new syncID to persist.
    */
-  public void resetLocal(String syncID) {
+  protected void resetLocal(String syncID) {
     // Clear both timestamps.
     SynchronizerConfiguration config;
     try {
@@ -435,16 +486,18 @@ public abstract class ServerSyncStage implements
     final String name = getEngineName();
     Logger.debug(LOG_TAG, "Starting execute for " + name);
 
+    stageStartTimestamp = System.currentTimeMillis();
+
     try {
       if (!this.isEnabled()) {
-        Logger.info(LOG_TAG, "Stage " + name + " disabled; skipping.");
+        Logger.info(LOG_TAG, "Skipping stage " + name + ".");
         session.advance();
         return;
       }
     } catch (MetaGlobalException.MetaGlobalMalformedSyncIDException e) {
       // Bad engine syncID. This should never happen. Wipe the server.
       try {
-        session.updateMetaGlobalWith(name, new EngineSettings(Utils.generateGuid(), this.getStorageVersion()));
+        session.recordForMetaGlobalUpdate(name, new EngineSettings(Utils.generateGuid(), this.getStorageVersion()));
         Logger.info(LOG_TAG, "Wiping server because malformed engine sync ID was found in meta/global.");
         wipeServer();
         Logger.info(LOG_TAG, "Wiped server after malformed engine sync ID found in meta/global.");
@@ -454,7 +507,7 @@ public abstract class ServerSyncStage implements
     } catch (MetaGlobalException.MetaGlobalMalformedVersionException e) {
       // Bad engine version. This should never happen. Wipe the server.
       try {
-        session.updateMetaGlobalWith(name, new EngineSettings(Utils.generateGuid(), this.getStorageVersion()));
+        session.recordForMetaGlobalUpdate(name, new EngineSettings(Utils.generateGuid(), this.getStorageVersion()));
         Logger.info(LOG_TAG, "Wiping server because malformed engine version was found in meta/global.");
         wipeServer();
         Logger.info(LOG_TAG, "Wiped server after malformed engine version found in meta/global.");
@@ -466,6 +519,31 @@ public abstract class ServerSyncStage implements
       Logger.warn(LOG_TAG, "Remote engine syncID different from local engine syncID:" +
                            " resetting local engine and assuming remote engine syncID.");
       this.resetLocal(e.serverSyncID);
+    } catch (MetaGlobalException.MetaGlobalEngineStateChangedException e) {
+      boolean isEnabled = e.isEnabled;
+      if (!isEnabled) {
+        // Engine has been disabled; update meta/global with engine removal for upload.
+        session.removeEngineFromMetaGlobal(name);
+      } else {
+        // Add engine with new syncID to meta/global for upload.
+        String newSyncID = Utils.generateGuid();
+        session.recordForMetaGlobalUpdate(name, new EngineSettings(newSyncID, this.getStorageVersion()));
+        // Update SynchronizerConfiguration w/ new engine syncID.
+        this.resetLocal(newSyncID);
+      }
+      try {
+        // Engine sync status has changed. Wipe server.
+        Logger.warn(LOG_TAG, "Wiping server because engine sync state changed.");
+        wipeServer();
+        Logger.warn(LOG_TAG, "Wiped server because engine sync state changed.");
+      } catch (Exception ex) {
+        session.abort(ex, "Failed to wipe server after engine sync state changed");
+      }
+      if (!isEnabled) {
+        Logger.warn(LOG_TAG, "Stage has been disabled. Advancing to next stage.");
+        session.advance();
+        return;
+      }
     } catch (MetaGlobalException e) {
       session.abort(e, "Inappropriate meta/global; refusing to execute " + name + " stage.");
       return;
@@ -497,12 +575,22 @@ public abstract class ServerSyncStage implements
   }
 
   /**
+   * Express the duration taken by this stage as a String, like "0.56 seconds".
+   *
+   * @return formatted string.
+   */
+  protected String getStageDurationString() {
+    return Utils.formatDuration(stageStartTimestamp, stageCompleteTimestamp);
+  }
+
+  /**
    * We synced this engine!  Persist timestamps and advance the session.
    *
    * @param synchronizer the <code>Synchronizer</code> that succeeded.
    */
   @Override
   public void onSynchronized(Synchronizer synchronizer) {
+    stageCompleteTimestamp = System.currentTimeMillis();
     Logger.debug(LOG_TAG, "onSynchronized.");
 
     SynchronizerConfiguration newConfig = synchronizer.save();
@@ -512,6 +600,11 @@ public abstract class ServerSyncStage implements
       Logger.warn(LOG_TAG, "Didn't get configuration from synchronizer after success.");
     }
 
+    final SynchronizerSession synchronizerSession = synchronizer.getSynchronizerSession();
+    int inboundCount = synchronizerSession.getInboundCount();
+    int outboundCount = synchronizerSession.getOutboundCount();
+    Logger.info(LOG_TAG, "Received " + inboundCount + " and sent " + outboundCount +
+        " records in " + getStageDurationString() + ".");
     Logger.info(LOG_TAG, "Advancing session.");
     session.advance();
   }
@@ -526,6 +619,7 @@ public abstract class ServerSyncStage implements
   @Override
   public void onSynchronizeFailed(Synchronizer synchronizer,
                                   Exception lastException, String reason) {
+    stageCompleteTimestamp = System.currentTimeMillis();
     Logger.warn(LOG_TAG, "Synchronize failed: " + reason, lastException);
 
     // This failure could be due to a 503 or a 401 and it could have headers.
@@ -540,7 +634,8 @@ public abstract class ServerSyncStage implements
       }
     }
 
-    Logger.info(LOG_TAG, "Advancing session even though stage failed. Timestamps not persisted.");
+    Logger.info(LOG_TAG, "Advancing session even though stage failed (took " + getStageDurationString() +
+        "). Timestamps not persisted.");
     session.advance();
   }
 }

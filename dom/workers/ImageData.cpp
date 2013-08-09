@@ -40,8 +40,8 @@ public:
   Create(JSContext* aCx, uint32_t aWidth, uint32_t aHeight, JSObject *aData)
   {
     MOZ_ASSERT(aData);
-    MOZ_ASSERT(JS_IsTypedArrayObject(aData, aCx));
-    MOZ_ASSERT(JS_IsUint8ClampedArray(aData, aCx));
+    MOZ_ASSERT(JS_IsTypedArrayObject(aData));
+    MOZ_ASSERT(JS_IsUint8ClampedArray(aData));
 
     JSObject* obj = JS_NewObject(aCx, &sClass, NULL, NULL);
     if (!obj) {
@@ -114,7 +114,7 @@ private:
   }
 
   static JSBool
-  GetProperty(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, jsval* aVp)
+  GetProperty(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, JSMutableHandleValue aVp)
   {
     JSClass* classPtr = JS_GetClass(aObj);
     if (classPtr != &sClass) {
@@ -127,7 +127,7 @@ private:
     MOZ_ASSERT(JSID_IS_INT(aIdval));
     MOZ_ASSERT(JSID_TO_INT(aIdval) >= 0 && JSID_TO_INT(aIdval) < SLOT_COUNT);
 
-    *aVp = JS_GetReservedSlot(aObj, JSID_TO_INT(aIdval));
+    aVp.set(JS_GetReservedSlot(aObj, JSID_TO_INT(aIdval)));
     return true;
   }
 };
@@ -148,10 +148,10 @@ JSPropertySpec ImageData::sProperties[] = {
   // something about it in the mean time. So we use NULL, which defaults to the
   // class setter (JS_StrictPropertyStub), which is always a silent no-op,
   // regardless of strict mode. Not ideal, but good enough for now.
-  { "width", SLOT_width, PROPERTY_FLAGS, GetProperty, NULL },
-  { "height", SLOT_height, PROPERTY_FLAGS, GetProperty, NULL },
-  { "data", SLOT_data, PROPERTY_FLAGS, GetProperty, NULL },
-  { 0, 0, 0, NULL, NULL }
+  { "width", SLOT_width, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty), JSOP_NULLWRAPPER },
+  { "height", SLOT_height, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty), JSOP_NULLWRAPPER },
+  { "data", SLOT_data, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty), JSOP_NULLWRAPPER },
+  { 0, 0, 0, JSOP_NULLWRAPPER, JSOP_NULLWRAPPER }
 };
 
 } // anonymous namespace

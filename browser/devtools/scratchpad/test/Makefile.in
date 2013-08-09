@@ -2,16 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH			= ../../../..
+DEPTH			= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH			= @srcdir@
-relativesrcdir  = browser/devtools/scratchpad/test
+relativesrcdir  = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
-include $(topsrcdir)/config/rules.mk
 
-_BROWSER_TEST_FILES = \
+MOCHITEST_BROWSER_FILES = \
 		browser_scratchpad_initialization.js \
 		browser_scratchpad_contexts.js \
 		browser_scratchpad_tab_switch.js \
@@ -32,7 +31,11 @@ _BROWSER_TEST_FILES = \
 		browser_scratchpad_bug650345_find_ui.js \
 		browser_scratchpad_bug714942_goto_line_ui.js \
 		browser_scratchpad_bug_650760_help_key.js \
+		browser_scratchpad_bug_651942_recent_files.js \
+		browser_scratchpad_bug756681_display_non_error_exceptions.js \
+		browser_scratchpad_bug_751744_revert_to_saved.js \
+		browser_scratchpad_bug740948_reload_and_run.js \
+		browser_scratchpad_bug_661762_wrong_window_focus.js \
 		head.js \
 
-libs:: $(_BROWSER_TEST_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/browser/$(relativesrcdir)
+include $(topsrcdir)/config/rules.mk

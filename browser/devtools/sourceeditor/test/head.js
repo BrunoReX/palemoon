@@ -4,6 +4,12 @@
 
 "use strict";
 
+function getLoadContext() {
+  return window.QueryInterface(Ci.nsIInterfaceRequestor)
+               .getInterface(Ci.nsIWebNavigation)
+               .QueryInterface(Ci.nsILoadContext);
+}
+
 /*
  * Polls the X11 primary selection buffer waiting for the expected value. A known
  * value different than the expected value is put on the clipboard first (and
@@ -53,6 +59,7 @@ function waitForSelection(aExpectedStringOrValidatorFn, aSetupFn,
 
       let transferable = Cc["@mozilla.org/widget/transferable;1"].
                          createInstance(Ci.nsITransferable);
+      transferable.init(getLoadContext());
       transferable.addDataFlavor(requestedFlavor);
 
       clipboard.getData(transferable, clipboard.kSelectionClipboard);
@@ -89,7 +96,8 @@ function waitForSelection(aExpectedStringOrValidatorFn, aSetupFn,
     let clipboardHelper = Cc["@mozilla.org/widget/clipboardhelper;1"].
                           getService(Ci.nsIClipboardHelper);
     clipboardHelper.copyStringToClipboard(preExpectedVal,
-                                          Ci.nsIClipboard.kSelectionClipboard);
+                                          Ci.nsIClipboard.kSelectionClipboard,
+                                          document);
 
     wait(function(aData) aData == preExpectedVal,
          function() {
@@ -105,3 +113,70 @@ waitForSelection.__defineGetter__("_monotonicCounter", function () {
   return waitForSelection.__monotonicCounter++;
 });
 
+/**
+ * Open a new window with a source editor inside.
+ *
+ * @param function aCallback
+ *        The function you want invoked once the editor is loaded. The function
+ *        is given two arguments: editor instance and the window object.
+ * @param object [aOptions]
+ *        The options object to pass to the SourceEditor.init() method.
+ */
+function openSourceEditorWindow(aCallback, aOptions) {
+  const windowUrl = "data:text/xml;charset=UTF-8,<?xml version='1.0'?>" +
+    "<window xmlns='http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul'" +
+    " title='Test for Source Editor' width='600' height='500'><box flex='1'/></window>";
+  const windowFeatures = "chrome,titlebar,toolbar,centerscreen,resizable,dialog=no";
+
+  let editor = null;
+  let testWin = Services.ww.openWindow(null, windowUrl, "_blank",
+                                       windowFeatures, null);
+  testWin.addEventListener("load", function onWindowLoad() {
+    testWin.removeEventListener("load", onWindowLoad, false);
+    waitForFocus(initEditor, testWin);
+  }, false);
+
+  function initEditor()
+  {
+    let tempScope = {};
+    Cu.import("resource:///modules/source-editor.jsm", tempScope);
+
+    let box = testWin.document.querySelector("box");
+    editor = new tempScope.SourceEditor();
+    editor.init(box, aOptions || {}, editorLoaded);
+  }
+
+  function editorLoaded()
+  {
+    editor.focus();
+    waitForFocus(aCallback.bind(null, editor, testWin), testWin);
+  }
+}
+
+/**
+ * Get text needed to fill the editor view.
+ *
+ * @param object aEditor
+ *        The SourceEditor instance you work with.
+ * @param number aPages
+ *        The number of pages you want filled with lines.
+ * @return string
+ *         The string you can insert into the editor so you fill the desired
+ *         number of pages.
+ */
+function fillEditor(aEditor, aPages) {
+  let view = aEditor._view;
+  let model = aEditor._model;
+
+  let lineHeight = view.getLineHeight();
+  let editorHeight = view.getClientArea().height;
+  let linesPerPage = Math.floor(editorHeight / lineHeight);
+  let totalLines = aPages * linesPerPage;
+
+  let text = "";
+  for (let i = 0; i < totalLines; i++) {
+    text += "l" + i + " lorem ipsum dolor sit amet. lipsum foobaris bazbaz,\n";
+  }
+
+  return text;
+}

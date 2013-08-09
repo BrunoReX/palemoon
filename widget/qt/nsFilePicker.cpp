@@ -25,7 +25,7 @@
 #include "prlog.h"
 
 #ifdef PR_LOGGING
-static PRLogModuleInfo* sFilePickerLog = nsnull;
+static PRLogModuleInfo* sFilePickerLog = nullptr;
 #endif
 
 #include "nsDirectoryServiceDefs.h"
@@ -49,14 +49,14 @@ nsFilePicker::~nsFilePicker()
 }
 
 NS_IMETHODIMP
-nsFilePicker::Init(nsIDOMWindow* parent, const nsAString& title, PRInt16 mode)
+nsFilePicker::Init(nsIDOMWindow* parent, const nsAString& title, int16_t mode)
 {
     return nsBaseFilePicker::Init(parent, title, mode);
 }
 
 /* void appendFilters (in long filterMask); */
 NS_IMETHODIMP
-nsFilePicker::AppendFilters(PRInt32 filterMask)
+nsFilePicker::AppendFilters(int32_t filterMask)
 {
     return nsBaseFilePicker::AppendFilters(filterMask);
 }
@@ -70,7 +70,7 @@ nsFilePicker::AppendFilter(const nsAString& aTitle, const nsAString& aFilter)
         return NS_OK;
     }
 
-    nsCAutoString filter, name;
+    nsAutoCString filter, name;
     CopyUTF16toUTF8(aFilter, filter);
     CopyUTF16toUTF8(aTitle, name);
 
@@ -114,7 +114,7 @@ nsFilePicker::SetDefaultExtension(const nsAString& aDefaultExtension)
 
 /* attribute long filterIndex; */
 NS_IMETHODIMP
-nsFilePicker::GetFilterIndex(PRInt32* aFilterIndex)
+nsFilePicker::GetFilterIndex(int32_t* aFilterIndex)
 {
     *aFilterIndex = mSelectedType;
 
@@ -122,25 +122,25 @@ nsFilePicker::GetFilterIndex(PRInt32* aFilterIndex)
 }
 
 NS_IMETHODIMP
-nsFilePicker::SetFilterIndex(PRInt32 aFilterIndex)
+nsFilePicker::SetFilterIndex(int32_t aFilterIndex)
 {
     mSelectedType = aFilterIndex;
 
     return NS_OK;
 }
 
-/* readonly attribute nsILocalFile file; */
+/* readonly attribute nsIFile file; */
 NS_IMETHODIMP
-nsFilePicker::GetFile(nsILocalFile* *aFile)
+nsFilePicker::GetFile(nsIFile* *aFile)
 {
     NS_ENSURE_ARG_POINTER(aFile);
 
-    *aFile = nsnull;
+    *aFile = nullptr;
     if (mFile.IsEmpty()) {
         return NS_OK;
     }
 
-    nsCOMPtr<nsILocalFile> file(do_CreateInstance("@mozilla.org/file/local;1"));
+    nsCOMPtr<nsIFile> file(do_CreateInstance("@mozilla.org/file/local;1"));
     NS_ENSURE_TRUE(file, NS_ERROR_FAILURE);
 
     file->InitWithNativePath(mFile);
@@ -154,7 +154,7 @@ nsFilePicker::GetFile(nsILocalFile* *aFile)
 NS_IMETHODIMP
 nsFilePicker::GetFileURL(nsIURI* *aFileURL)
 {
-    nsCOMPtr<nsILocalFile> file;
+    nsCOMPtr<nsIFile> file;
     GetFile(getter_AddRefs(file));
 
     nsCOMPtr<nsIURI> uri;
@@ -179,16 +179,16 @@ nsFilePicker::GetFiles(nsISimpleEnumerator* *aFiles)
 
 /* short show (); */
 NS_IMETHODIMP
-nsFilePicker::Show(PRInt16* aReturn)
+nsFilePicker::Show(int16_t* aReturn)
 {
-    nsCAutoString directory;
+    nsAutoCString directory;
     if (mDisplayDirectory) {
         mDisplayDirectory->GetNativePath(directory);
     }
 
     QStringList filters;
-    PRUint32 count = mFilters.Length();
-    for (PRUint32 i = 0; i < count; ++i) {
+    uint32_t count = mFilters.Length();
+    for (uint32_t i = 0; i < count; ++i) {
         filters.append(mFilters[i].get());
     }
 
@@ -275,7 +275,7 @@ nsFilePicker::Show(PRInt16* aReturn)
 
     *aReturn = nsIFilePicker::returnOK;
     if (mMode == modeSave) {
-        nsCOMPtr<nsILocalFile> file;
+        nsCOMPtr<nsIFile> file;
         GetFile(getter_AddRefs(file));
         if (file) {
             bool exists = false;
@@ -289,7 +289,7 @@ nsFilePicker::Show(PRInt16* aReturn)
     return NS_OK;
 }
 
-void nsFilePicker::InitNative(nsIWidget *aParent, const nsAString &aTitle, PRInt16 mode)
+void nsFilePicker::InitNative(nsIWidget *aParent, const nsAString &aTitle, int16_t mode)
 {
     PR_LOG(sFilePickerLog, PR_LOG_DEBUG, ("nsFilePicker::InitNative"));
     nsAutoString str(aTitle);

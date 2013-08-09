@@ -5,19 +5,20 @@
 
 package org.mozilla.gecko;
 
-import java.util.ArrayList;
+import org.mozilla.gecko.PropertyAnimator.Property;
 
 import android.content.Context;
+import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
-import android.graphics.PointF;
 import android.text.TextUtils;
 import android.util.AttributeSet;
-import android.view.GestureDetector;
-import android.view.GestureDetector.SimpleOnGestureListener;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
+import android.view.VelocityTracker;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
+import android.widget.AbsListView;
 import android.widget.AbsListView.RecyclerListener;
 import android.widget.BaseAdapter;
 import android.widget.Button;
@@ -27,33 +28,26 @@ import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 
-import org.mozilla.gecko.gfx.PointUtils;
-import org.mozilla.gecko.PropertyAnimator.Property;
+import java.util.ArrayList;
+import java.util.List;
 
 public class TabsTray extends LinearLayout 
-                      implements TabsPanel.PanelView,
-                                 Tabs.OnTabsChangedListener {
+                      implements TabsPanel.PanelView {
     private static final String LOGTAG = "GeckoTabsTray";
 
     private Context mContext;
+    private TabsPanel mTabsPanel;
 
     private static ListView mList;
     private TabsAdapter mTabsAdapter;
-    private boolean mWaitingForClose;
 
-    private GestureDetector mGestureDetector;
-    private TabSwipeGestureListener mListener;
-    // Minimum velocity swipe that will close a tab, in inches/sec
-    private static final int SWIPE_CLOSE_VELOCITY = 5;
-    // Time to animate non-flicked tabs of screen, in milliseconds
-    private static final int MAX_ANIMATION_TIME = 250;
-    // Extra weight given to detecting vertical swipes over horizontal ones
-    private static final float SWIPE_VERTICAL_WEIGHT = 1.5f;
-    private static enum DragDirection {
-        UNKNOWN,
-        HORIZONTAL,
-        VERTICAL
-    }
+    private List<View> mPendingClosedTabs;
+    private int mCloseAnimationCount;
+
+    private TabSwipeGestureListener mSwipeListener;
+
+    // Time to animate non-flinged tabs of screen, in milliseconds
+    private static final int ANIMATION_DURATION = 250;
 
     private static final String ABOUT_HOME = "about:home";
 
@@ -63,30 +57,18 @@ public class TabsTray extends LinearLayout
 
         LayoutInflater.from(context).inflate(R.layout.tabs_tray, this);
 
+        mCloseAnimationCount = 0;
+        mPendingClosedTabs = new ArrayList<View>();
+
         mList = (ListView) findViewById(R.id.list);
         mList.setItemsCanFocus(true);
-        mListener = new TabSwipeGestureListener(mList);
-        mGestureDetector = new GestureDetector(context, mListener);
 
-        mList.setOnTouchListener(new View.OnTouchListener() {
-            public  boolean onTouch(View v, MotionEvent event) {
-                boolean result = mGestureDetector.onTouchEvent(event);
+        mTabsAdapter = new TabsAdapter(mContext);
+        mList.setAdapter(mTabsAdapter);
 
-                // if this is an touch end event, we need to reset the state
-                // of the gesture listener
-                switch (event.getAction() & MotionEvent.ACTION_MASK) {
-                    case MotionEvent.ACTION_UP:
-                      mListener.onTouchEnd(event);
-                }
-
-                // the simple gesture detector doesn't actually call our methods for every touch event
-                // if we're horizontally scrolling we should always return true to prevent scrolling the list
-                if (mListener.getDirection() == DragDirection.HORIZONTAL)
-                    result = true;
-
-                return result;
-            }
-        });
+        mSwipeListener = new TabSwipeGestureListener(mList);
+        mList.setOnTouchListener(mSwipeListener);
+        mList.setOnScrollListener(mSwipeListener.makeScrollListener());
 
         mList.setRecyclerListener(new RecyclerListener() {
             @Override
@@ -103,66 +85,26 @@ public class TabsTray extends LinearLayout
     }
 
     @Override
-    public void show() {
-        mWaitingForClose = false;
+    public void setTabsPanel(TabsPanel panel) {
+        mTabsPanel = panel;
+    }
 
-        Tabs.registerOnTabsChangedListener(this);
+    @Override
+    public void show() {
         Tabs.getInstance().refreshThumbnails();
-        onTabChanged(null, null, null);
+        Tabs.registerOnTabsChangedListener(mTabsAdapter);
+        mTabsAdapter.refreshTabsData();
     }
 
     @Override
     public void hide() {
-        Tabs.unregisterOnTabsChangedListener(this);
+        Tabs.unregisterOnTabsChangedListener(mTabsAdapter);
         GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Tab:Screenshot:Cancel",""));
         mTabsAdapter.clear();
-        mTabsAdapter.notifyDataSetChanged();
     }
 
-    public void onTabChanged(Tab tab, Tabs.TabEvents msg, Object data) {
-        if (mTabsAdapter == null) {
-            mTabsAdapter = new TabsAdapter(mContext, Tabs.getInstance().getTabsInOrder());
-            mList.setAdapter(mTabsAdapter);
-
-            int selected = mTabsAdapter.getPositionForTab(Tabs.getInstance().getSelectedTab());
-            if (selected == -1)
-                return;
-
-            mList.setSelection(selected);
-            return;
-        }
-
-        int index = Tabs.getInstance().getIndexOf(tab);
-        if (msg == Tabs.TabEvents.ADDED) {
-            if (index == -1) // If the tab has already been removed, do nothing.
-                return;
-            if (index > mTabsAdapter.getCount())
-                index = mTabsAdapter.getCount();
-            mTabsAdapter.addTab(index, tab);
-            mTabsAdapter.notifyDataSetChanged();
-            return;
-        }
-
-        int position = mTabsAdapter.getPositionForTab(tab);
-        if (position == -1)
-            return;
-
-        if (index == -1) {
-            mWaitingForClose = false;
-            mTabsAdapter.removeTab(tab);
-            mTabsAdapter.notifyDataSetChanged();
-        } else {
-            View view = mList.getChildAt(position - mList.getFirstVisiblePosition());
-            if (view == null)
-                return;
-
-            TabRow row = (TabRow) view.getTag();
-            mTabsAdapter.assignValues(row, tab);
-        }
-    }
-
-    void autoHideTabs() {
-        GeckoApp.mAppContext.autoHideTabs();
+    void autoHidePanel() {
+        mTabsPanel.autoHidePanel();
     }
 
     // ViewHolder for a row in the list
@@ -182,34 +124,78 @@ public class TabsTray extends LinearLayout
     }
 
     // Adapter to bind tabs into a list
-    private class TabsAdapter extends BaseAdapter {
+    private class TabsAdapter extends BaseAdapter implements Tabs.OnTabsChangedListener {
         private Context mContext;
         private ArrayList<Tab> mTabs;
         private LayoutInflater mInflater;
         private Button.OnClickListener mOnCloseClickListener;
 
-        public TabsAdapter(Context context, ArrayList<Tab> tabs) {
+        public TabsAdapter(Context context) {
             mContext = context;
             mInflater = LayoutInflater.from(mContext);
-            mTabs = new ArrayList<Tab>();
-
-            if (tabs == null)
-                return;
-
-            for (int i = 0; i < tabs.size(); i++) {
-                mTabs.add(tabs.get(i));
-            }
 
             mOnCloseClickListener = new Button.OnClickListener() {
                 public void onClick(View v) {
                     TabRow tab = (TabRow) v.getTag();
-                    animateTo(tab.info, tab.info.getWidth(), MAX_ANIMATION_TIME);
+                    animateClose(tab.info, tab.info.getWidth());
                 }
             };
         }
 
+        public void onTabChanged(Tab tab, Tabs.TabEvents msg, Object data) {
+            switch (msg) {
+                case ADDED:
+                    // Refresh the list to make sure the new tab is added in the right position.
+                    refreshTabsData();
+                    break;
+
+                case CLOSED:
+                    removeTab(tab);
+                    break;
+
+                case SELECTED:
+                    // Update the selected position, then fall through...
+                    updateSelectedPosition();
+                case UNSELECTED:
+                    // We just need to update the style for the unselected tab...
+                case THUMBNAIL:
+                case TITLE:
+                    View view = mList.getChildAt(getPositionForTab(tab) - mList.getFirstVisiblePosition());
+                    if (view == null)
+                        return;
+
+                    TabRow row = (TabRow) view.getTag();
+                    assignValues(row, tab);
+                    break;
+            }
+        }
+
+        private void refreshTabsData() {
+            // Store a different copy of the tabs, so that we don't have to worry about
+            // accidentally updating it on the wrong thread.
+            mTabs = new ArrayList<Tab>();
+
+            Iterable<Tab> tabs = Tabs.getInstance().getTabsInOrder();
+            for (Tab tab : tabs) {
+                mTabs.add(tab);
+            }
+
+            notifyDataSetChanged(); // Be sure to call this whenever mTabs changes.
+            updateSelectedPosition();
+        }
+
+        // Updates the selected position in the list so that it will be scrolled to the right place.
+        private void updateSelectedPosition() {
+            int selected = getPositionForTab(Tabs.getInstance().getSelectedTab());
+            if (selected == -1)
+                return;
+
+            mList.setSelection(selected);
+        }
+
         public void clear() {
             mTabs = null;
+            notifyDataSetChanged(); // Be sure to call this whenever mTabs changes.
         }
 
         public int getCount() {
@@ -224,22 +210,19 @@ public class TabsTray extends LinearLayout
             return position;
         }
 
-        public int getPositionForTab(Tab tab) {
+        private int getPositionForTab(Tab tab) {
             if (mTabs == null || tab == null)
                 return -1;
 
             return mTabs.indexOf(tab);
         }
 
-        public void addTab(int index, Tab tab) {
-            mTabs.add(index, tab);
-        }
-
-        public void removeTab(Tab tab) {
+        private void removeTab(Tab tab) {
             mTabs.remove(tab);
+            notifyDataSetChanged(); // Be sure to call this whenever mTabs changes.
         }
 
-        public void assignValues(TabRow row, Tab tab) {
+        private void assignValues(TabRow row, Tab tab) {
             if (row == null || tab == null)
                 return;
 
@@ -258,14 +241,9 @@ public class TabsTray extends LinearLayout
             else
                 row.info.setBackgroundResource(R.drawable.tabs_tray_default_selector);
 
-            // this may be a recycled view that was animated off screen
-            // reset the scroll state here
-            row.info.scrollTo(0,0);
-
             row.title.setText(tab.getDisplayTitle());
 
             row.close.setTag(row);
-            row.close.setVisibility(mTabs.size() > 1 ? View.VISIBLE : View.INVISIBLE);
         }
 
         public View getView(int position, View convertView, ViewGroup parent) {
@@ -289,156 +267,295 @@ public class TabsTray extends LinearLayout
         }
     }
 
-    private void animateTo(final View view, int x, int duration) {
-        PropertyAnimator pa = new PropertyAnimator(duration);
-        pa.attach(view, Property.SLIDE_LEFT, x);
-        if (x != 0 && !mWaitingForClose) {
-            mWaitingForClose = true;
+    private void animateClose(final View view, int x) {
+        PropertyAnimator animator = new PropertyAnimator(ANIMATION_DURATION);
+        animator.attach(view, Property.ALPHA, 0);
+        animator.attach(view, Property.TRANSLATION_X, x);
 
-            TabRow tab = (TabRow)view.getTag();
-            final int tabId = tab.id;
+        mCloseAnimationCount++;
+        mPendingClosedTabs.add(view);
 
-            pa.setPropertyAnimationListener(new PropertyAnimator.PropertyAnimationListener() {
-                public void onPropertyAnimationStart() { }
-                public void onPropertyAnimationEnd() {
-                    Tabs tabs = Tabs.getInstance();
-                    Tab tab = tabs.getTab(tabId);
-                    tabs.closeTab(tab);
+        animator.setPropertyAnimationListener(new PropertyAnimator.PropertyAnimationListener() {
+            public void onPropertyAnimationStart() { }
+            public void onPropertyAnimationEnd() {
+                mCloseAnimationCount--;
+                if (mCloseAnimationCount > 0)
+                    return;
+
+                for (View pendingView : mPendingClosedTabs) {
+                    animateFinishClose(pendingView);
                 }
-            });
-        } else if (x != 0 && mWaitingForClose) {
-          // if this asked us to close, but we were already doing it just bail out
-          return;
-        }
-        pa.start();
+
+                mPendingClosedTabs.clear();
+            }
+        });
+
+        animator.start();
     }
 
-    private class TabSwipeGestureListener extends SimpleOnGestureListener {
-        private View mList = null;
-        private View mView = null;
-        private PointF start = null;
-        private DragDirection dir = DragDirection.UNKNOWN;
+    private void animateFinishClose(final View view) {
+        PropertyAnimator animator = new PropertyAnimator(ANIMATION_DURATION);
+        animator.attach(view, Property.HEIGHT, 1);
 
-        public TabSwipeGestureListener(View v) {
-            mList = v;
+        TabRow tab = (TabRow)view.getTag();
+        final int tabId = tab.id;
+        final int originalHeight = view.getHeight();
+
+        animator.setPropertyAnimationListener(new PropertyAnimator.PropertyAnimationListener() {
+            public void onPropertyAnimationStart() { }
+            public void onPropertyAnimationEnd() {
+                // Reset view presentation as it will be recycled in the
+                // list view by the adapter.
+                AnimatorProxy proxy = AnimatorProxy.create(view);
+                proxy.setAlpha(1);
+                proxy.setTranslationX(0);
+                proxy.setHeight(originalHeight);
+
+                Tabs tabs = Tabs.getInstance();
+                Tab tab = tabs.getTab(tabId);
+                tabs.closeTab(tab);
+            }
+        });
+
+        animator.start();
+    }
+
+    private void animateCancel(final View view) {
+        PropertyAnimator animator = new PropertyAnimator(ANIMATION_DURATION);
+        animator.attach(view, Property.ALPHA, 1);
+        animator.attach(view, Property.TRANSLATION_X, 0);
+
+        animator.setPropertyAnimationListener(new PropertyAnimator.PropertyAnimationListener() {
+            public void onPropertyAnimationStart() { }
+            public void onPropertyAnimationEnd() {
+                TabRow tab = (TabRow) view.getTag();
+                tab.close.setVisibility(View.VISIBLE);
+            }
+        });
+
+        animator.start();
+    }
+
+    private class TabSwipeGestureListener implements View.OnTouchListener {
+        // same value the stock browser uses for after drag animation velocity in pixels/sec
+        // http://androidxref.com/4.0.4/xref/packages/apps/Browser/src/com/android/browser/NavTabScroller.java#61
+        private static final float MIN_VELOCITY = 750;
+
+        private int mSwipeThreshold;
+        private int mMinFlingVelocity;
+
+        private int mMaxFlingVelocity;
+        private VelocityTracker mVelocityTracker;
+
+        private ListView mListView;
+        private int mListWidth = 1;
+
+        private View mSwipeView;
+        private AnimatorProxy mSwipeProxy;
+        private int mSwipeViewPosition;
+        private Runnable mPendingCheckForTap;
+
+        private float mSwipeStart;
+        private boolean mSwiping;
+        private boolean mEnabled;
+
+        public TabSwipeGestureListener(ListView listView) {
+            mListView = listView;
+
+            mSwipeView = null;
+            mSwipeProxy = null;
+            mSwipeViewPosition = ListView.INVALID_POSITION;
+            mSwiping = false;
+            mEnabled = true;
+
+            ViewConfiguration vc = ViewConfiguration.get(listView.getContext());
+            mSwipeThreshold = vc.getScaledTouchSlop();
+            mMinFlingVelocity = (int) (getContext().getResources().getDisplayMetrics().density * MIN_VELOCITY);
+            mMaxFlingVelocity = vc.getScaledMaximumFlingVelocity();
         }
 
-        public DragDirection getDirection() {
-            return dir;
+        public void setEnabled(boolean enabled) {
+            mEnabled = enabled;
+        }
+
+        public AbsListView.OnScrollListener makeScrollListener() {
+            return new AbsListView.OnScrollListener() {
+                @Override
+                public void onScrollStateChanged(AbsListView absListView, int scrollState) {
+                    setEnabled(scrollState != AbsListView.OnScrollListener.SCROLL_STATE_TOUCH_SCROLL);
+                }
+
+                @Override
+                public void onScroll(AbsListView absListView, int i, int i1, int i2) {
+                }
+            };
         }
 
         @Override
-        public boolean onDown(MotionEvent e) {
-            mView = findViewAt((int)e.getX(), (int)e.getY());
-            if (mView == null)
+        public boolean onTouch(View view, MotionEvent e) {
+            if (!mEnabled)
                 return false;
 
-            mView.setPressed(true);
-            start = new PointF(e.getX(), e.getY());
-            return false;
-        }
+            if (mListWidth < 2)
+                mListWidth = mListView.getWidth();
 
-        public boolean onTouchEnd(MotionEvent e) {
-            if (mView != null) {
+            switch (e.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN: {
+                    // Check if we should set pressed state on the
+                    // touched view after a standard delay.
+                    triggerCheckForTap();
 
-                // if the user was dragging horizontally, check to see if we should close the tab
-                if (dir == DragDirection.HORIZONTAL) {
-                    int finalPos = 0;
-                    // if the swipe started on the left and ended in the right 25% of the tray
-                    // or vice versa, close the tab
-                    if ((start.x > mList.getWidth() / 2 && e.getX() < mList.getWidth() * 0.25 )) {
-                        finalPos = -1 * mView.getWidth();
-                    } else if (start.x < mList.getWidth() / 2 && e.getX() > mList.getWidth() * 0.75) {
-                        finalPos = mView.getWidth();
+                    // Find out which view is being touched
+                    mSwipeView = findViewAt(e.getRawX(), e.getRawY());
+
+                    if (mSwipeView != null) {
+                        mSwipeStart = e.getRawX();
+                        mSwipeViewPosition = mListView.getPositionForView(mSwipeView);
+
+                        mVelocityTracker = VelocityTracker.obtain();
+                        mVelocityTracker.addMovement(e);
                     }
-    
-                    animateTo(mView, finalPos, MAX_ANIMATION_TIME);
-                } else if (mView != null && dir == DragDirection.UNKNOWN) {
-                    // the user didn't attempt to scroll the view, so select the row
-                    TabRow tab = (TabRow)mView.getTag();
-                    int tabId = tab.id;
-                    Tabs.getInstance().selectTab(tabId);
-                    autoHideTabs();
+
+                    view.onTouchEvent(e);
+                    return true;
+                }
+
+                case MotionEvent.ACTION_UP: {
+                    if (mSwipeView == null)
+                        break;
+
+                    cancelCheckForTap();
+                    mSwipeView.setPressed(false);
+
+                    if (!mSwiping) {
+                        TabRow tab = (TabRow) mSwipeView.getTag();
+                        Tabs.getInstance().selectTab(tab.id);
+                        autoHidePanel();
+                        break;
+                    }
+
+                    float deltaX = mSwipeProxy.getTranslationX();
+
+                    mVelocityTracker.addMovement(e);
+                    mVelocityTracker.computeCurrentVelocity(1000, mMaxFlingVelocity);
+
+                    float velocityX = Math.abs(mVelocityTracker.getXVelocity());
+                    float velocityY = Math.abs(mVelocityTracker.getYVelocity());
+
+                    boolean dismiss = false;
+                    boolean dismissRight = false;
+
+                    if (Math.abs(deltaX) > mListWidth / 2) {
+                        dismiss = true;
+                        dismissRight = (deltaX > 0);
+                    } else if (mMinFlingVelocity <= velocityX && velocityX <= mMaxFlingVelocity
+                            && velocityY < velocityX) {
+                        dismiss = mSwiping && (deltaX * mVelocityTracker.getXVelocity() > 0);
+                        dismissRight = (mVelocityTracker.getXVelocity() > 0);
+                    }
+
+                    if (dismiss)
+                        animateClose(mSwipeView, (dismissRight ? mListWidth : -mListWidth));
+                    else
+                        animateCancel(mSwipeView);
+
+                    mVelocityTracker = null;
+                    mSwipeView = null;
+                    mSwipeViewPosition = ListView.INVALID_POSITION;
+                    mSwipeProxy = null;
+
+                    mSwipeStart = 0;
+                    mSwiping = false;
+
+                    break;
+                }
+
+                case MotionEvent.ACTION_MOVE: {
+                    if (mSwipeView == null)
+                        break;
+
+                    mVelocityTracker.addMovement(e);
+
+                    float deltaX = e.getRawX() - mSwipeStart;
+                    if (Math.abs(deltaX) > mSwipeThreshold) {
+                        // If we're actually swiping, make sure we don't
+                        // set pressed state on the swiped view.
+                        cancelCheckForTap();
+
+                        mSwiping = true;
+                        mListView.requestDisallowInterceptTouchEvent(true);
+
+                        TabRow tab = (TabRow) mSwipeView.getTag();
+                        tab.close.setVisibility(View.INVISIBLE);
+
+                        // Stops listview from highlighting the touched item
+                        // in the list when swiping.
+                        MotionEvent cancelEvent = MotionEvent.obtain(e);
+                        cancelEvent.setAction(MotionEvent.ACTION_CANCEL |
+                                (e.getActionIndex() << MotionEvent.ACTION_POINTER_INDEX_SHIFT));
+                        mListView.onTouchEvent(cancelEvent);
+
+                        mSwipeProxy = AnimatorProxy.create(mSwipeView);
+                    }
+
+                    if (mSwiping) {
+                        mSwipeProxy.setTranslationX(deltaX);
+                        mSwipeProxy.setAlpha(Math.max(0.1f, Math.min(1f,
+                                1f - 2f * Math.abs(deltaX) / mListWidth)));
+
+                        return true;
+                    }
+
+                    break;
                 }
             }
 
-            mView = null;
-            start = null;
-            dir = DragDirection.UNKNOWN;
             return false;
         }
 
-        @Override
-        public boolean onScroll(MotionEvent event1, MotionEvent event2, float distanceX, float distanceY) {
-            if (mView == null)
-                return false;
-
-            // if there is only one tab left, we want to recognize the scroll and
-            // stop any click/selection events, but not scroll/close the view
-            if (Tabs.getInstance().getCount() == 1) {
-                mView.setPressed(false);
-                mView = null;
-                return false;
-            }
-
-            if (dir == DragDirection.UNKNOWN) {
-                // check if this scroll is more horizontal than vertical. Weight vertical drags a little higher
-                // by using a multiplier
-                if (Math.abs(distanceX) > Math.abs(distanceY) * SWIPE_VERTICAL_WEIGHT) {
-                    dir = DragDirection.HORIZONTAL;
-                } else {
-                    dir = DragDirection.VERTICAL;
-                }
-                mView.setPressed(false);
-            }
-
-            if (dir == DragDirection.HORIZONTAL) {
-                mView.scrollBy((int) distanceX, 0);
-                return true;
-            }
-
-            return false;
-        }
-
-        @Override
-        public boolean onFling(MotionEvent event1, MotionEvent event2, float velocityX, float velocityY) {
-            if (mView == null || Tabs.getInstance().getCount() == 1)
-                return false;
-
-            // velocityX is in pixels/sec. divide by pixels/inch to compare it with swipe velocity
-            // also make sure that the swipe is in a mostly horizontal direction
-            if (Math.abs(velocityX) > Math.abs(velocityY * SWIPE_VERTICAL_WEIGHT) &&
-                Math.abs(velocityX)/GeckoAppShell.getDpi() > SWIPE_CLOSE_VELOCITY) {
-                // is this is a swipe, we want to continue the row moving at the swipe velocity
-                float d = (velocityX > 0 ? 1 : -1) * mView.getWidth();
-                // convert the velocity (px/sec) to ms by taking the distance
-                // multiply by 1000 to convert seconds to milliseconds
-                animateTo(mView, (int)d, (int)((d + mView.getScrollX())*1000/velocityX));
-            }
-
-            return false; 
-        }
-
-        private View findViewAt(int x, int y) {
+        private View findViewAt(float rawX, float rawY) {
             if (mList == null)
                 return null;
 
-            ListView list = (ListView)mList;
-            x += list.getScrollX();
-            y += list.getScrollY();
+            Rect rect = new Rect();
 
-            final int count = list.getChildCount();
-            for (int i = count - 1; i >= 0; i--) {
-                View child = list.getChildAt(i);
-                if (child.getVisibility() == View.VISIBLE) {
-                    if ((x >= child.getLeft()) && (x < child.getRight())
-                            && (y >= child.getTop()) && (y < child.getBottom())) {
-                        return child;
-                    }
-                }
+            int[] listViewCoords = new int[2];
+            mListView.getLocationOnScreen(listViewCoords);
+
+            int x = (int) rawX - listViewCoords[0];
+            int y = (int) rawY - listViewCoords[1];
+
+            for (int i = 0; i < mListView.getChildCount(); i++) {
+                View child = mListView.getChildAt(i);
+                child.getHitRect(rect);
+
+                if (rect.contains(x, y))
+                    return child;
             }
+
             return null;
+        }
+
+        private void triggerCheckForTap() {
+            if (mPendingCheckForTap == null)
+                mPendingCheckForTap = new CheckForTap();
+
+            mListView.postDelayed(mPendingCheckForTap, ViewConfiguration.getTapTimeout());
+        }
+
+        private void cancelCheckForTap() {
+            if (mPendingCheckForTap == null)
+                return;
+
+            mListView.removeCallbacks(mPendingCheckForTap);
+        }
+
+        private class CheckForTap implements Runnable {
+            @Override
+            public void run() {
+                if (!mSwiping && mSwipeView != null && mEnabled)
+                    mSwipeView.setPressed(true);
+            }
         }
     }
 }
-

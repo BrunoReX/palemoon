@@ -14,7 +14,7 @@ public:
     nsASocketHandler()
         : mCondition(NS_OK)
         , mPollFlags(0)
-        , mPollTimeout(PR_UINT16_MAX)
+        , mPollTimeout(UINT16_MAX)
         {}
 
     //
@@ -29,18 +29,18 @@ public:
     // the socket transport service will check these flags before calling
     // PR_Poll.
     //
-    PRUint16 mPollFlags;
+    uint16_t mPollFlags;
 
     //
     // this value specifies the maximum amount of time in seconds that may be
     // spent waiting for activity on this socket.  if this timeout is reached,
     // then OnSocketReady will be called with outFlags = -1.
     //
-    // the default value for this member is PR_UINT16_MAX, which disables the
-    // timeout error checking.  (i.e., a timeout value of PR_UINT16_MAX is
+    // the default value for this member is UINT16_MAX, which disables the
+    // timeout error checking.  (i.e., a timeout value of UINT16_MAX is
     // never reached.)
     //
-    PRUint16 mPollTimeout;
+    uint16_t mPollTimeout;
 
     //
     // called to service a socket
@@ -51,7 +51,7 @@ public:
     //   outFlags  - value of PR_PollDesc::out_flags after PR_Poll returns
     //               or -1 if a timeout occurred
     //
-    virtual void OnSocketReady(PRFileDesc *fd, PRInt16 outFlags) = 0;
+    virtual void OnSocketReady(PRFileDesc *fd, int16_t outFlags) = 0;
 
     //
     // called when a socket is no longer under the control of the socket
@@ -60,6 +60,13 @@ public:
     // by the socket transport service.
     //
     virtual void OnSocketDetached(PRFileDesc *fd) = 0;
+
+    //
+    // called to determine if the socket is for a local peer.
+    // when used for server sockets, indicates if it only accepts local
+    // connections.
+    //
+    virtual void IsLocal(bool *aIsLocal) = 0;
 };
 
 #endif // !nsASocketHandler_h__

@@ -118,7 +118,7 @@ function testConsoleGroup(aMessageObject) {
 function startTraceTest() {
   gLevel = "trace";
   gArgs = [
-    {filename: TEST_URI, lineNumber: 6, functionName: null, language: 2},
+    {filename: TEST_URI, lineNumber: 6, functionName: "window.foobar585956c", language: 2},
     {filename: TEST_URI, lineNumber: 11, functionName: "foobar585956b", language: 2},
     {filename: TEST_URI, lineNumber: 15, functionName: "foobar585956a", language: 2},
     {filename: TEST_URI, lineNumber: 1, functionName: "onclick", language: 2}
@@ -207,7 +207,11 @@ function observeConsoleTest() {
 
   expect("error", "arg");
   win.console.error("arg");
+  yield;
 
+  let obj2 = { b: 2 };
+  expect("log", "omg ", obj, " foo ", 4, obj2);
+  win.console.log("omg %o foo %o", obj, 4, obj2);
   yield;
 
   startTraceTest();

@@ -51,7 +51,9 @@
 @BINPATH@/@DLL_PREFIX@xpcom@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@nspr4@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@mozalloc@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@soundtouch@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@mozglue@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@omxplugin@DLL_SUFFIX@
 #ifdef XP_MACOSX
 @BINPATH@/XUL
 #else
@@ -149,7 +151,6 @@
 @BINPATH@/components/content_htmldoc.xpt
 @BINPATH@/components/content_html.xpt
 @BINPATH@/components/content_xslt.xpt
-@BINPATH@/components/content_xtf.xpt
 @BINPATH@/components/cookie.xpt
 @BINPATH@/components/directory.xpt
 @BINPATH@/components/docshell.xpt
@@ -164,6 +165,7 @@
 #ifdef MOZ_B2G_BT
 @BINPATH@/components/dom_bluetooth.xpt
 #endif
+@BINPATH@/components/dom_camera.xpt
 @BINPATH@/components/dom_canvas.xpt
 @BINPATH@/components/dom_core.xpt
 @BINPATH@/components/dom_css.xpt
@@ -176,6 +178,7 @@
 @BINPATH@/components/dom_html.xpt
 @BINPATH@/components/dom_indexeddb.xpt
 @BINPATH@/components/dom_offline.xpt
+@BINPATH@/components/dom_browserelement.xpt
 @BINPATH@/components/dom_json.xpt
 @BINPATH@/components/dom_range.xpt
 @BINPATH@/components/dom_sidebar.xpt
@@ -326,6 +329,8 @@
 @BINPATH@/components/nsLoginInfo.js
 @BINPATH@/components/nsLoginManager.js
 @BINPATH@/components/nsLoginManagerPrompter.js
+@BINPATH@/components/SiteSpecificUserAgent.js
+@BINPATH@/components/SiteSpecificUserAgent.manifest
 @BINPATH@/components/storage-Legacy.js
 @BINPATH@/components/storage-mozStorage.js
 @BINPATH@/components/crypto-SDR.js
@@ -339,8 +344,6 @@
 @BINPATH@/components/nsHelperAppDlg.js
 @BINPATH@/components/nsDownloadManagerUI.manifest
 @BINPATH@/components/nsDownloadManagerUI.js
-@BINPATH@/components/nsProxyAutoConfig.manifest
-@BINPATH@/components/nsProxyAutoConfig.js
 @BINPATH@/components/NetworkGeolocationProvider.manifest
 @BINPATH@/components/NetworkGeolocationProvider.js
 @BINPATH@/components/GPSDGeolocationProvider.manifest
@@ -432,8 +435,16 @@
 @BINPATH@/components/WeaveCrypto.manifest
 @BINPATH@/components/WeaveCrypto.js
 #endif
+#ifdef MOZ_SERVICES_HEALTHREPORT
+@BINPATH@/components/HealthReportComponents.manifest
+@BINPATH@/components/HealthReportService.js
+#endif
 @BINPATH@/components/TelemetryPing.js
 @BINPATH@/components/TelemetryPing.manifest
+
+@BINPATH@/components/TCPSocket.js
+@BINPATH@/components/TCPSocketParentIntermediary.js
+@BINPATH@/components/TCPSocket.manifest
 
 ; Modules
 @BINPATH@/modules/*
@@ -493,6 +504,9 @@
 @BINPATH@/@PREF_DIR@/channel-prefs.js
 #ifdef MOZ_SERVICES_SYNC
 @BINPATH@/@PREF_DIR@/services-sync.js
+#endif
+#ifdef MOZ_SERVICES_HEALTHREPORT
+@BINPATH@/@PREF_DIR@/healthreport-prefs.js
 #endif
 @BINPATH@/greprefs.js
 @BINPATH@/defaults/autoconfig/platform.js

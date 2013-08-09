@@ -28,18 +28,18 @@ public:
     
     NS_DECL_ISUPPORTS
 
-    nsresult    GetInputStream(PRUint32 offset, nsIInputStream ** inputStream);
-    nsresult    GetOutputStream(PRUint32 offset, nsIOutputStream ** outputStream);
+    nsresult    GetInputStream(uint32_t offset, nsIInputStream ** inputStream);
+    nsresult    GetOutputStream(uint32_t offset, nsIOutputStream ** outputStream);
 
     nsresult    CloseOutputStream(nsDiskCacheOutputStream * outputStream);
     nsresult    CloseOutputStreamInternal(nsDiskCacheOutputStream * outputStream);
         
     nsresult    Write( const char * buffer,
-                       PRUint32     count,
-                       PRUint32 *   bytesWritten);
+                       uint32_t     count,
+                       uint32_t *   bytesWritten);
 
-    nsresult    Seek(PRInt32 whence, PRInt32 offset);
-    nsresult    Tell(PRUint32 * position);    
+    nsresult    Seek(int32_t whence, int32_t offset);
+    nsresult    Tell(uint32_t * position);    
     nsresult    SetEOF();
 
     nsresult    ClearBinding();
@@ -51,6 +51,8 @@ public:
                     NS_ASSERTION(mInStreamCount >= 0, "mInStreamCount has gone negative");
                 }
 
+    size_t     SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf);
+
     // GCC 2.95.2 requires this to be defined, although we never call it.
     // and OS/2 requires that it not be private
     nsDiskCacheStreamIO() { NS_NOTREACHED("oops"); }
@@ -58,26 +60,25 @@ private:
 
 
     void        Close();
-    nsresult    OpenCacheFile(PRIntn flags, PRFileDesc ** fd);
+    nsresult    OpenCacheFile(int flags, PRFileDesc ** fd);
     nsresult    ReadCacheBlocks();
     nsresult    FlushBufferToFile();
     void        UpdateFileSize();
     void        DeleteBuffer();
     nsresult    Flush();
 
-
     nsDiskCacheBinding *        mBinding;       // not an owning reference
     nsDiskCacheDevice *         mDevice;
     nsDiskCacheOutputStream *   mOutStream;     // not an owning reference
-    PRInt32                     mInStreamCount;
-    nsCOMPtr<nsILocalFile>      mLocalFile;
+    int32_t                     mInStreamCount;
+    nsCOMPtr<nsIFile>           mLocalFile;
     PRFileDesc *                mFD;
 
-    PRUint32                    mStreamPos;     // for Output Streams
-    PRUint32                    mStreamEnd;
-    PRUint32                    mBufPos;        // current mark in buffer
-    PRUint32                    mBufEnd;        // current end of data in buffer
-    PRUint32                    mBufSize;       // current end of buffer
+    uint32_t                    mStreamPos;     // for Output Streams
+    uint32_t                    mStreamEnd;
+    uint32_t                    mBufPos;        // current mark in buffer
+    uint32_t                    mBufEnd;        // current end of data in buffer
+    uint32_t                    mBufSize;       // current end of buffer
     bool                        mBufDirty;
     char *                      mBuffer;
     

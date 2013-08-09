@@ -13,6 +13,7 @@
 #include "nsIThread.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
+#include "mozilla/Attributes.h"
 #endif
 
 class nsIFile;
@@ -52,14 +53,16 @@ NS_HIDDEN_(nsresult) ProcessUpdates(nsIFile *greDir, nsIFile *appDir,
                                     int argc, char **argv,
                                     const char *appVersion,
                                     bool restart = true,
-                                    ProcessType *pid = nsnull);
+                                    bool isOSUpdate = false,
+                                    nsIFile *osApplyToDir = nullptr,
+                                    ProcessType *pid = nullptr);
 
 #ifdef MOZ_UPDATER
 // The implementation of the update processor handles the task of loading the
 // updater application in the background for applying an update.
 // XXX ehsan this is living in this file in order to make use of the existing
 // stuff here, we might want to move it elsewhere in the future.
-class nsUpdateProcessor : public nsIUpdateProcessor
+class nsUpdateProcessor MOZ_FINAL : public nsIUpdateProcessor
 {
 public:
   nsUpdateProcessor();
@@ -71,7 +74,8 @@ private:
   struct BackgroundUpdateInfo {
     BackgroundUpdateInfo()
       : mArgc(0),
-        mArgv(nsnull)
+        mArgv(nullptr),
+        mIsOSUpdate(false)
     {}
     ~BackgroundUpdateInfo() {
       for (int i = 0; i < mArgc; ++i) {
@@ -83,9 +87,11 @@ private:
     nsCOMPtr<nsIFile> mGREDir;
     nsCOMPtr<nsIFile> mAppDir;
     nsCOMPtr<nsIFile> mUpdateRoot;
+    nsCOMPtr<nsIFile> mOSApplyToDir;
     int mArgc;
     char **mArgv;
-    nsCAutoString mAppVersion;
+    nsAutoCString mAppVersion;
+    bool mIsOSUpdate;
   };
 
 private:

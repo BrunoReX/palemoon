@@ -47,7 +47,7 @@ nsSecretDecoderRing::~nsSecretDecoderRing()
 
 /* [noscript] long encrypt (in buffer data, in long dataLen, out buffer result); */
 NS_IMETHODIMP nsSecretDecoderRing::
-Encrypt(unsigned char * data, PRInt32 dataLen, unsigned char * *result, PRInt32 *_retval)
+Encrypt(unsigned char * data, int32_t dataLen, unsigned char * *result, int32_t *_retval)
 {
   nsNSSShutDownPreventionLock locker;
   nsresult rv = NS_OK;
@@ -58,7 +58,6 @@ Encrypt(unsigned char * data, PRInt32 dataLen, unsigned char * *result, PRInt32 
   SECItem reply;
   SECStatus s;
   nsCOMPtr<nsIInterfaceRequestor> ctx = new PipUIContext();
-  if (!ctx) { rv = NS_ERROR_OUT_OF_MEMORY; goto loser; }
 
   slot = PK11_GetInternalKeySlot();
   if (!slot) { rv = NS_ERROR_NOT_AVAILABLE; goto loser; }
@@ -91,7 +90,7 @@ loser:
 
 /* [noscript] long decrypt (in buffer data, in long dataLen, out buffer result); */
 NS_IMETHODIMP nsSecretDecoderRing::
-Decrypt(unsigned char * data, PRInt32 dataLen, unsigned char * *result, PRInt32 *_retval)
+Decrypt(unsigned char * data, int32_t dataLen, unsigned char * *result, int32_t *_retval)
 {
   nsNSSShutDownPreventionLock locker;
   nsresult rv = NS_OK;
@@ -101,7 +100,6 @@ Decrypt(unsigned char * data, PRInt32 dataLen, unsigned char * *result, PRInt32 
   SECItem request;
   SECItem reply;
   nsCOMPtr<nsIInterfaceRequestor> ctx = new PipUIContext();
-  if (!ctx) { rv = NS_ERROR_OUT_OF_MEMORY; goto loser; }
 
   *result = 0;
   *_retval = 0;
@@ -138,9 +136,9 @@ EncryptString(const char *text, char **_retval)
   nsNSSShutDownPreventionLock locker;
   nsresult rv = NS_OK;
   unsigned char *encrypted = 0;
-  PRInt32 eLen;
+  int32_t eLen;
 
-  if (text == nsnull || _retval == nsnull) {
+  if (!text || !_retval) {
     rv = NS_ERROR_INVALID_POINTER;
     goto loser;
   }
@@ -164,11 +162,11 @@ DecryptString(const char *crypt, char **_retval)
   nsresult rv = NS_OK;
   char *r = 0;
   unsigned char *decoded = 0;
-  PRInt32 decodedLen;
+  int32_t decodedLen;
   unsigned char *decrypted = 0;
-  PRInt32 decryptedLen;
+  int32_t decryptedLen;
 
-  if (crypt == nsnull || _retval == nsnull) {
+  if (!crypt || !_retval) {
     rv = NS_ERROR_INVALID_POINTER;
     goto loser;
   }
@@ -278,7 +276,7 @@ LogoutAndTeardown()
   // bug 517584.
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
   if (os)
-    os->NotifyObservers(nsnull, "net:prune-dead-connections", nsnull);
+    os->NotifyObservers(nullptr, "net:prune-dead-connections", nullptr);
 
   return rv;
 }
@@ -293,11 +291,11 @@ SetWindow(nsISupports *w)
 // Support routines
 
 nsresult nsSecretDecoderRing::
-encode(const unsigned char *data, PRInt32 dataLen, char **_retval)
+encode(const unsigned char *data, int32_t dataLen, char **_retval)
 {
   nsresult rv = NS_OK;
 
-  char *result = PL_Base64Encode((const char *)data, dataLen, NULL);
+  char *result = PL_Base64Encode((const char *)data, dataLen, nullptr);
   if (!result) { rv = NS_ERROR_OUT_OF_MEMORY; goto loser; }
 
   *_retval = NS_strdup(result);
@@ -309,10 +307,10 @@ loser:
 }
 
 nsresult nsSecretDecoderRing::
-decode(const char *data, unsigned char **result, PRInt32 * _retval)
+decode(const char *data, unsigned char **result, int32_t * _retval)
 {
   nsresult rv = NS_OK;
-  PRUint32 len = PL_strlen(data);
+  uint32_t len = PL_strlen(data);
   int adjust = 0;
 
   /* Compute length adjustment */
@@ -321,7 +319,7 @@ decode(const char *data, unsigned char **result, PRInt32 * _retval)
     if (data[len-2] == '=') adjust++;
   }
 
-  *result = (unsigned char *)PL_Base64Decode(data, len, NULL);
+  *result = (unsigned char *)PL_Base64Decode(data, len, nullptr);
   if (!*result) { rv = NS_ERROR_ILLEGAL_VALUE; goto loser; }
 
   *_retval = (len*3)/4 - adjust;

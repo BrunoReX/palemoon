@@ -20,9 +20,9 @@ class GeckoInstance(object):
     def start(self):
         profile = self.profile
         if not profile:
-            prefs = {"dom.allow_XUL_XBL_for_file": True,
-                     "marionette.defaultPrefs.enabled": True,
-                     "marionette.defaultPrefs.port": 2828}
+            prefs = {"marionette.defaultPrefs.enabled": True,
+                     "marionette.defaultPrefs.port": 2828,
+                     "browser.warnOnQuit": False}
             profile = {"preferences": prefs, "restore":False}
         print "starting runner"
         self.runner = Runner.create(binary=self.bin, profile_args=profile, cmdargs=['-no-remote'])

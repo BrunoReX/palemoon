@@ -14,6 +14,7 @@
 #include "mozilla/css/Rule.h"
 #include "nsCOMArray.h"
 #include "nsAutoPtr.h"
+#include "nsCycleCollectionParticipant.h"
 
 class nsPresContext;
 class nsMediaQueryResultCacheKey;
@@ -33,20 +34,23 @@ protected:
   virtual ~GroupRule();
 public:
 
+  NS_DECL_CYCLE_COLLECTION_CLASS(GroupRule)
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+
   // implement part of nsIStyleRule and Rule
   DECL_STYLE_RULE_INHERIT_NO_DOMRULE
   virtual void SetStyleSheet(nsCSSStyleSheet* aSheet);
 
   // to help implement nsIStyleRule
 #ifdef DEBUG
-  virtual void List(FILE* out = stdout, PRInt32 aIndent = 0) const;
+  virtual void List(FILE* out = stdout, int32_t aIndent = 0) const;
 #endif
 
 public:
   void AppendStyleRule(Rule* aRule);
 
-  PRInt32 StyleRuleCount() const { return mRules.Count(); }
-  Rule* GetStyleRuleAt(PRInt32 aIndex) const;
+  int32_t StyleRuleCount() const { return mRules.Count(); }
+  Rule* GetStyleRuleAt(int32_t aIndex) const;
 
   typedef nsCOMArray<Rule>::nsCOMArrayEnumFunc RuleEnumFunc;
   bool EnumerateRulesForwards(RuleEnumFunc aFunc, void * aData) const;
@@ -56,8 +60,8 @@ public:
    * called WillDirty() on the parent stylesheet.  After they are
    * called, DidDirty() needs to be called on the sheet.
    */
-  nsresult DeleteStyleRuleAt(PRUint32 aIndex);
-  nsresult InsertStyleRulesAt(PRUint32 aIndex,
+  nsresult DeleteStyleRuleAt(uint32_t aIndex);
+  nsresult InsertStyleRulesAt(uint32_t aIndex,
                               nsCOMArray<Rule>& aRules);
   nsresult ReplaceStyleRule(Rule *aOld, Rule *aNew);
 
@@ -76,9 +80,9 @@ protected:
   // to implement common methods on nsIDOMCSSMediaRule and
   // nsIDOMCSSMozDocumentRule
   nsresult GetCssRules(nsIDOMCSSRuleList* *aRuleList);
-  nsresult InsertRule(const nsAString & aRule, PRUint32 aIndex,
-                      PRUint32* _retval);
-  nsresult DeleteRule(PRUint32 aIndex);
+  nsresult InsertRule(const nsAString & aRule, uint32_t aIndex,
+                      uint32_t* _retval);
+  nsresult DeleteRule(uint32_t aIndex);
 
   nsCOMArray<Rule> mRules;
   nsRefPtr<GroupRuleRuleList> mRuleCollection; // lazily constructed

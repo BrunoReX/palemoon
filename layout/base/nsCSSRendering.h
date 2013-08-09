@@ -29,12 +29,13 @@ class nsRenderingContext;
  */
 class nsImageRenderer {
 public:
+  typedef mozilla::layers::LayerManager LayerManager;
   typedef mozilla::layers::ImageContainer ImageContainer;
 
   enum {
     FLAG_SYNC_DECODE_IMAGES = 0x01
   };
-  nsImageRenderer(nsIFrame* aForFrame, const nsStyleImage* aImage, PRUint32 aFlags);
+  nsImageRenderer(nsIFrame* aForFrame, const nsStyleImage* aImage, uint32_t aFlags);
   ~nsImageRenderer();
   /**
    * Populates member variables to get ready for rendering.
@@ -60,9 +61,9 @@ public:
             const nsPoint&       aAnchor,
             const nsRect&        aDirty);
 
-
   bool IsRasterImage();
-  already_AddRefed<ImageContainer> GetContainer();
+  already_AddRefed<ImageContainer> GetContainer(LayerManager* aManager);
+
 private:
   /*
    * Compute the "unscaled" dimensions of the image in aUnscaled{Width,Height}
@@ -96,7 +97,7 @@ private:
   nsLayoutUtils::SurfaceFromElementResult mImageElementSurface;
   bool                      mIsReady;
   nsSize                    mSize; // unscaled size of the image, in app units
-  PRUint32                  mFlags;
+  uint32_t                  mFlags;
 };
 
 /**
@@ -108,7 +109,7 @@ struct nsBackgroundLayerState {
   /**
    * @param aFlags some combination of nsCSSRendering::PAINTBG_* flags
    */
-  nsBackgroundLayerState(nsIFrame* aForFrame, const nsStyleImage* aImage, PRUint32 aFlags)
+  nsBackgroundLayerState(nsIFrame* aForFrame, const nsStyleImage* aImage, uint32_t aFlags)
     : mImageRenderer(aForFrame, aImage, aFlags) {}
 
   /**
@@ -173,7 +174,7 @@ struct nsCSSRendering {
                           const nsRect& aDirtyRect,
                           const nsRect& aBorderArea,
                           nsStyleContext* aStyleContext,
-                          PRIntn aSkipSides = 0);
+                          int aSkipSides = 0);
 
   /**
    * Like PaintBorder, but taking an nsStyleBorder argument instead of
@@ -186,7 +187,7 @@ struct nsCSSRendering {
                                          const nsRect& aBorderArea,
                                          const nsStyleBorder& aBorderStyle,
                                          nsStyleContext* aStyleContext,
-                                         PRIntn aSkipSides = 0);
+                                         int aSkipSides = 0);
 
 
   /**
@@ -300,10 +301,18 @@ struct nsCSSRendering {
                            bool& aDrawBackgroundImage,
                            bool& aDrawBackgroundColor);
 
+  static nsRect
+  ComputeBackgroundPositioningArea(nsPresContext* aPresContext,
+                                   nsIFrame* aForFrame,
+                                   const nsRect& aBorderArea,
+                                   const nsStyleBackground& aBackground,
+                                   const nsStyleBackground::Layer& aLayer,
+                                   nsIFrame** aAttachedToFrame);
+
   static nsBackgroundLayerState
   PrepareBackgroundLayer(nsPresContext* aPresContext,
                          nsIFrame* aForFrame,
-                         PRUint32 aFlags,
+                         uint32_t aFlags,
                          const nsRect& aBorderArea,
                          const nsRect& aBGClipRect,
                          const nsStyleBackground& aBackground,
@@ -334,13 +343,25 @@ struct nsCSSRendering {
                               nsIFrame* aForFrame,
                               const nsRect& aDirtyRect,
                               const nsRect& aBorderArea,
-                              PRUint32 aFlags,
-                              nsRect* aBGClipRect = nsnull);
+                              uint32_t aFlags,
+                              nsRect* aBGClipRect = nullptr,
+                              int32_t aLayer = -1);
+ 
+  static void PaintBackgroundColor(nsPresContext* aPresContext,
+                                   nsRenderingContext& aRenderingContext,
+                                   nsIFrame* aForFrame,
+                                   const nsRect& aDirtyRect,
+                                   const nsRect& aBorderArea,
+                                   uint32_t aFlags);
 
   /**
    * Same as |PaintBackground|, except using the provided style structs.
    * This short-circuits the code that ensures that the root element's
    * background is drawn on the canvas.
+   * The aLayer parameter allows you to paint a single layer of the background.
+   * The default value for aLayer, -1, means that all layers will be painted.
+   * The background color will only be painted if the back-most layer is also
+   * being painted.
    */
   static void PaintBackgroundWithSC(nsPresContext* aPresContext,
                                     nsRenderingContext& aRenderingContext,
@@ -349,9 +370,18 @@ struct nsCSSRendering {
                                     const nsRect& aBorderArea,
                                     nsStyleContext *aStyleContext,
                                     const nsStyleBorder& aBorder,
-                                    PRUint32 aFlags,
-                                    nsRect* aBGClipRect = nsnull);
+                                    uint32_t aFlags,
+                                    nsRect* aBGClipRect = nullptr,
+                                    int32_t aLayer = -1);
 
+  static void PaintBackgroundColorWithSC(nsPresContext* aPresContext,
+                                         nsRenderingContext& aRenderingContext,
+                                         nsIFrame* aForFrame,
+                                         const nsRect& aDirtyRect,
+                                         const nsRect& aBorderArea,
+                                         nsStyleContext *aStyleContext,
+                                         const nsStyleBorder& aBorder,
+                                         uint32_t aFlags);
   /**
    * Returns the rectangle covered by the given background layer image, taking
    * into account background positioning, sizing, and repetition, but not
@@ -364,22 +394,28 @@ struct nsCSSRendering {
                                        const nsStyleBackground::Layer& aLayer);
 
   /**
-   * Called by the presShell when painting is finished, so we can clear our
-   * inline background data cache.
+   * Called when we start creating a display list. The frame tree will not
+   * change until a matching EndFrameTreeLocked is called.
    */
-  static void DidPaint();
+  static void BeginFrameTreesLocked();
+  /**
+   * Called when we've finished using a display list. When all
+   * BeginFrameTreeLocked calls have been balanced by an EndFrameTreeLocked,
+   * the frame tree may start changing again.
+   */
+  static void EndFrameTreesLocked();
 
   // Draw a border segment in the table collapsing border model without
   // beveling corners
   static void DrawTableBorderSegment(nsRenderingContext& aContext,
-                                     PRUint8              aBorderStyle,  
+                                     uint8_t              aBorderStyle,  
                                      nscolor              aBorderColor,
                                      const nsStyleBackground* aBGColor,
                                      const nsRect&        aBorderRect,
-                                     PRInt32              aAppUnitsPerCSSPixel,
-                                     PRUint8              aStartBevelSide = 0,
+                                     int32_t              aAppUnitsPerCSSPixel,
+                                     uint8_t              aStartBevelSide = 0,
                                      nscoord              aStartBevelOffset = 0,
-                                     PRUint8              aEndBevelSide = 0,
+                                     uint8_t              aEndBevelSide = 0,
                                      nscoord              aEndBevelOffset = 0);
 
   /**
@@ -387,10 +423,16 @@ struct nsCSSRendering {
    * NOTE: aPt, aLineSize, aAscent and aOffset are non-rounded device pixels,
    *       not app units.
    *   input:
+   *     @param aFrame            the frame which needs the decoration line
    *     @param aGfxContext
    *     @param aDirtyRect        no need to paint outside this rect
    *     @param aColor            the color of the decoration line
    *     @param aPt               the top/left edge of the text
+   *     @param aXInFrame         the distance between aPt.x and left edge of
+   *                              aFrame.  If the decoration line is for shadow,
+   *                              set the distance between the left edge of
+   *                              the aFrame and the position of the text as
+   *                              positioned without offset of the shadow.
    *     @param aLineSize         the width and the height of the decoration
    *                              line
    *     @param aAscent           the ascent of the text
@@ -415,16 +457,38 @@ struct nsCSSRendering {
    *                              if it's possible.  Therefore, this value is
    *                              used for strikeout line and overline too.
    */
-  static void PaintDecorationLine(gfxContext* aGfxContext,
+  static void PaintDecorationLine(nsIFrame* aFrame,
+                                  gfxContext* aGfxContext,
                                   const gfxRect& aDirtyRect,
                                   const nscolor aColor,
                                   const gfxPoint& aPt,
+                                  const gfxFloat aXInFrame,
                                   const gfxSize& aLineSize,
                                   const gfxFloat aAscent,
                                   const gfxFloat aOffset,
-                                  const PRUint8 aDecoration,
-                                  const PRUint8 aStyle,
+                                  const uint8_t aDecoration,
+                                  const uint8_t aStyle,
                                   const gfxFloat aDescentLimit = -1.0);
+
+  /**
+   * Adds a path corresponding to the outline of the decoration line to
+   * the specified context.  Arguments have the same meaning as for
+   * PaintDecorationLine.  Currently this only works for solid
+   * decorations; for other decoration styles, an empty path is added
+   * to the context.
+   */
+  static void DecorationLineToPath(nsIFrame* aFrame,
+                                   gfxContext* aGfxContext,
+                                   const gfxRect& aDirtyRect,
+                                   const nscolor aColor,
+                                   const gfxPoint& aPt,
+                                   const gfxFloat aXInFrame,
+                                   const gfxSize& aLineSize,
+                                   const gfxFloat aAscent,
+                                   const gfxFloat aOffset,
+                                   const uint8_t aDecoration,
+                                   const uint8_t aStyle,
+                                   const gfxFloat aDescentLimit = -1.0);
 
   /**
    * Function for getting the decoration line rect for the text.
@@ -463,8 +527,8 @@ struct nsCSSRendering {
                                       const gfxSize& aLineSize,
                                       const gfxFloat aAscent,
                                       const gfxFloat aOffset,
-                                      const PRUint8 aDecoration,
-                                      const PRUint8 aStyle,
+                                      const uint8_t aDecoration,
+                                      const uint8_t aStyle,
                                       const gfxFloat aDescentLimit = -1.0);
 
 protected:
@@ -472,9 +536,35 @@ protected:
                                                const gfxSize& aLineSize,
                                                const gfxFloat aAscent,
                                                const gfxFloat aOffset,
-                                               const PRUint8 aDecoration,
-                                               const PRUint8 aStyle,
+                                               const uint8_t aDecoration,
+                                               const uint8_t aStyle,
                                                const gfxFloat aDscentLimit);
+
+  /**
+   * Returns inflated rect for painting a decoration line.
+   * Complex style decoration lines should be painted from leftmost of nearest
+   * ancestor block box because that makes better look of connection of lines
+   * for different nodes.  ExpandPaintingRectForDecorationLine() returns
+   * a rect for actual painting rect for the clipped rect.
+   *
+   * input:
+   *     @param aFrame            the frame which needs the decoration line.
+   *     @param aStyle            the style of the complex decoration line
+   *                              NS_STYLE_TEXT_DECORATION_STYLE_DOTTED or
+   *                              NS_STYLE_TEXT_DECORATION_STYLE_DASHED or
+   *                              NS_STYLE_TEXT_DECORATION_STYLE_WAVY.
+   *     @param aClippedRect      the clipped rect for the decoration line.
+   *                              in other words, visible area of the line.
+   *     @param aXInFrame         the distance between left edge of aFrame and
+   *                              aClippedRect.pos.x.
+   *     @param aCycleLength      the width of one cycle of the line style.
+   */
+  static gfxRect ExpandPaintingRectForDecorationLine(
+                   nsIFrame* aFrame,
+                   const uint8_t aStyle,
+                   const gfxRect &aClippedRect,
+                   const gfxFloat aXInFrame,
+                   const gfxFloat aCycleLength);
 };
 
 /*
@@ -545,9 +635,9 @@ public:
    */
   gfxContext* Init(const nsRect& aRect, nscoord aSpreadRadius,
                    nscoord aBlurRadius,
-                   PRInt32 aAppUnitsPerDevPixel, gfxContext* aDestinationCtx,
+                   int32_t aAppUnitsPerDevPixel, gfxContext* aDestinationCtx,
                    const nsRect& aDirtyRect, const gfxRect* aSkipRect,
-                   PRUint32 aFlags = 0);
+                   uint32_t aFlags = 0);
 
   /**
    * Does the actual blurring/spreading. Users of this object *must*
@@ -577,7 +667,7 @@ public:
    * margin for a spread radius is itself, on all sides.)
    */
   static nsMargin GetBlurRadiusMargin(nscoord aBlurRadius,
-                                      PRInt32 aAppUnitsPerDevPixel);
+                                      int32_t aAppUnitsPerDevPixel);
 
 protected:
   gfxAlphaBoxBlur blur;

@@ -11,7 +11,6 @@ let TabView = {
   _closedLastVisibleTabBeforeFrameInitialized: false,
   _isFrameLoading: false,
   _initFrameCallbacks: [],
-  _lastSessionGroupName: null,
   PREF_BRANCH: "browser.panorama.",
   PREF_FIRST_RUN: "browser.panorama.experienced_first_run",
   PREF_STARTUP_PAGE: "browser.startup.page",
@@ -292,7 +291,8 @@ let TabView = {
         // if group has title, it's not hidden and there is no active group or
         // the active group id doesn't match the group id, a group menu item
         // would be added.
-        if (!groupItem.hidden && groupItem.getChildren().length &&
+        if (!groupItem.hidden &&
+            (groupItem.getTitle().trim() || groupItem.getChildren().length) &&
             (!activeGroup || activeGroup.id != groupItem.id)) {
           let menuItem = self._createGroupMenuItem(groupItem);
           popup.insertBefore(menuItem, separator);

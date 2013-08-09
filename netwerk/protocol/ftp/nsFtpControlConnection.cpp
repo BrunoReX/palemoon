@@ -34,15 +34,15 @@ nsFtpControlConnection::OnInputStreamReady(nsIAsyncInputStream *stream)
     char data[4096];
 
     // Consume data whether we have a listener or not.
-    PRUint32 avail;
-    nsresult rv = stream->Available(&avail);
+    uint64_t avail64;
+    uint32_t avail;
+    nsresult rv = stream->Available(&avail64);
     if (NS_SUCCEEDED(rv)) {
-        if (avail > sizeof(data))
-            avail = sizeof(data);
+        avail = (uint32_t)NS_MIN(avail64, (uint64_t)sizeof(data));
 
-        PRUint32 n;
+        uint32_t n;
         rv = stream->Read(data, avail, &n);
-        if (NS_SUCCEEDED(rv) && n != avail)
+        if (NS_SUCCEEDED(rv))
             avail = n;
     }
 
@@ -65,7 +65,7 @@ nsFtpControlConnection::OnInputStreamReady(nsIAsyncInputStream *stream)
 }
 
 nsFtpControlConnection::nsFtpControlConnection(const nsCSubstring& host,
-                                               PRUint32 port)
+                                               uint32_t port)
     : mServerType(0), mSessionId(gFtpHandler->GetSessionId()), mHost(host)
     , mPort(port)
 {
@@ -101,7 +101,7 @@ nsFtpControlConnection::Connect(nsIProxyInfo* proxyInfo,
     if (NS_FAILED(rv))
         return rv;
 
-    rv = sts->CreateTransport(nsnull, 0, mHost, mPort, proxyInfo,
+    rv = sts->CreateTransport(nullptr, 0, mHost, mPort, proxyInfo,
                               getter_AddRefs(mSocket)); // the command transport
     if (NS_FAILED(rv))
         return rv;
@@ -140,7 +140,7 @@ nsFtpControlConnection::WaitData(nsFtpControlConnectionListener *listener)
     // If listener is null, then simply disconnect the listener.  Otherwise,
     // ensure that we are listening.
     if (!listener) {
-        mListener = nsnull;
+        mListener = nullptr;
         return NS_OK;
     }
 
@@ -162,9 +162,9 @@ nsFtpControlConnection::Disconnect(nsresult status)
         // break cyclic reference!
         mSocket->Close(status);
         mSocket = 0;
-        mSocketInput->AsyncWait(nsnull, 0, 0, nsnull);  // clear any observer
-        mSocketInput = nsnull;
-        mSocketOutput = nsnull;
+        mSocketInput->AsyncWait(nullptr, 0, 0, nullptr);  // clear any observer
+        mSocketInput = nullptr;
+        mSocketOutput = nullptr;
     }
 
     return NS_OK;
@@ -175,8 +175,8 @@ nsFtpControlConnection::Write(const nsCSubstring& command)
 {
     NS_ENSURE_STATE(mSocketOutput);
 
-    PRUint32 len = command.Length();
-    PRUint32 cnt;
+    uint32_t len = command.Length();
+    uint32_t cnt;
     nsresult rv = mSocketOutput->Write(command.Data(), len, &cnt);
 
     if (NS_FAILED(rv))

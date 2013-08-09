@@ -83,14 +83,14 @@ class NS_COM_GLUE GenericClassInfo : public nsIClassInfo
 public:
   struct ClassInfoData
   {
-    typedef NS_CALLBACK(GetInterfacesProc)(PRUint32* NS_OUTPARAM countp,
-                                           nsIID*** NS_OUTPARAM array);
-    typedef NS_CALLBACK(GetLanguageHelperProc)(PRUint32 language,
+    typedef NS_CALLBACK(GetInterfacesProc)(uint32_t* countp,
+                                           nsIID*** array);
+    typedef NS_CALLBACK(GetLanguageHelperProc)(uint32_t language,
                                                nsISupports** helper);
 
     GetInterfacesProc getinterfaces;
     GetLanguageHelperProc getlanguagehelper;
-    PRUint32 flags;
+    uint32_t flags;
     nsCID cid;
   };
 
@@ -109,14 +109,14 @@ private:
 #define NS_CI_INTERFACE_GETTER_NAME(_class) _class##_GetInterfacesHelper
 #define NS_DECL_CI_INTERFACE_GETTER(_class)                                   \
   extern NS_IMETHODIMP NS_CI_INTERFACE_GETTER_NAME(_class)                    \
-     (PRUint32 * NS_OUTPARAM, nsIID *** NS_OUTPARAM);
+     (uint32_t *, nsIID ***);
 
 #define NS_IMPL_CLASSINFO(_class, _getlanguagehelper, _flags, _cid)     \
   NS_DECL_CI_INTERFACE_GETTER(_class)                                   \
   static const GenericClassInfo::ClassInfoData k##_class##ClassInfoData = { \
     NS_CI_INTERFACE_GETTER_NAME(_class),                                \
     _getlanguagehelper,                                                 \
-    _flags,                                                             \
+    _flags | nsIClassInfo::SINGLETON_CLASSINFO,                         \
     _cid,                                                               \
   };                                                                    \
   static char k##_class##ClassInfoDataPlace[sizeof(GenericClassInfo)];  \
@@ -132,8 +132,7 @@ private:
 
 #define NS_CLASSINFO_HELPER_BEGIN(_class, _c)                                 \
 NS_IMETHODIMP                                                                 \
-NS_CI_INTERFACE_GETTER_NAME(_class)(PRUint32 *count NS_OUTPARAM,              \
-                                    nsIID ***array NS_OUTPARAM)               \
+NS_CI_INTERFACE_GETTER_NAME(_class)(uint32_t *count, nsIID ***array)          \
 {                                                                             \
     *count = _c;                                                              \
     *array = (nsIID **)nsMemory::Alloc(sizeof (nsIID *) * _c);

@@ -10,7 +10,7 @@
 #include "nsDisplayList.h"
 
 nsIFrame*
-NS_NewSelectsAreaFrame(nsIPresShell* aShell, nsStyleContext* aContext, PRUint32 aFlags)
+NS_NewSelectsAreaFrame(nsIPresShell* aShell, nsStyleContext* aContext, uint32_t aFlags)
 {
   nsSelectsAreaFrame* it = new (aShell) nsSelectsAreaFrame(aContext);
 
@@ -53,7 +53,7 @@ void nsDisplayOptionEventGrabber::HitTest(nsDisplayListBuilder* aBuilder,
   nsTArray<nsIFrame*> outFrames;
   mList.HitTest(aBuilder, aRect, aState, &outFrames);
 
-  for (PRUint32 i = 0; i < outFrames.Length(); i++) {
+  for (uint32_t i = 0; i < outFrames.Length(); i++) {
     nsIFrame* selectedFrame = outFrames.ElementAt(i);
     while (selectedFrame &&
            !(selectedFrame->GetContent() &&
@@ -84,7 +84,7 @@ public:
                                   nsIFrame* aFrame, nsDisplayList* aList) {
     // We can't specify the underlying frame here. We need this list to be
     // exploded if sorted.
-    return new (aBuilder) nsDisplayOptionEventGrabber(aBuilder, nsnull, aList);
+    return new (aBuilder) nsDisplayOptionEventGrabber(aBuilder, nullptr, aList);
   }
   virtual nsDisplayItem* WrapItem(nsDisplayListBuilder* aBuilder,
                                   nsDisplayItem* aItem) {
@@ -100,7 +100,7 @@ static nsListControlFrame* GetEnclosingListFrame(nsIFrame* aSelectsAreaFrame)
       return static_cast<nsListControlFrame*>(frame);
     frame = frame->GetParent();
   }
-  return nsnull;
+  return nullptr;
 }
 
 class nsDisplayListFocus : public nsDisplayItem {
@@ -122,7 +122,7 @@ public:
     // the nsSelectsAreaFrame
     nsListControlFrame* listFrame = GetEnclosingListFrame(GetUnderlyingFrame());
     return listFrame->GetVisualOverflowRectRelativeToSelf() +
-           aBuilder->ToReferenceFrame(listFrame);
+           listFrame->GetOffsetToCrossDoc(ReferenceFrame());
   }
   virtual void Paint(nsDisplayListBuilder* aBuilder,
                      nsRenderingContext* aCtx) {

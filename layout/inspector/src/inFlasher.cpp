@@ -67,7 +67,7 @@ inFlasher::SetColor(const nsAString& aColor)
 }
 
 NS_IMETHODIMP
-inFlasher::GetThickness(PRUint16 *aThickness)
+inFlasher::GetThickness(uint16_t *aThickness)
 {
   NS_PRECONDITION(aThickness, "Null pointer");
   *aThickness = mThickness;
@@ -75,7 +75,7 @@ inFlasher::GetThickness(PRUint16 *aThickness)
 }
 
 NS_IMETHODIMP
-inFlasher::SetThickness(PRUint16 aThickness)
+inFlasher::SetThickness(uint16_t aThickness)
 {
   mThickness = aThickness;
   return NS_OK;
@@ -103,7 +103,7 @@ inFlasher::RepaintElement(nsIDOMElement* aElement)
   nsIFrame* frame = inLayoutUtils::GetFrameFor(aElement);
   if (!frame) return NS_OK;
 
-  frame->Invalidate(frame->GetRect());
+  frame->InvalidateFrame();
 
   return NS_OK;
 }
@@ -134,7 +134,7 @@ inFlasher::DrawElementOutline(nsIDOMElement* aElement)
         rcontext->InvertRect(rect);
       }
 
-      bool isLastFrame = frame->GetNextContinuation() == nsnull;
+      bool isLastFrame = frame->GetNextContinuation() == nullptr;
       DrawOutline(rect.x, rect.y, rect.width, rect.height, rcontext,
                   isFirstFrame, isLastFrame);
       isFirstFrame = false;

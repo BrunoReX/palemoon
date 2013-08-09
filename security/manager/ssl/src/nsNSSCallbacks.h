@@ -13,16 +13,17 @@
 #include "nsIStreamLoader.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/Attributes.h"
 
-char* PR_CALLBACK
+char*
 PK11PasswordPrompt(PK11SlotInfo *slot, PRBool retry, void* arg);
 
-void PR_CALLBACK HandshakeCallback(PRFileDesc *fd, void *client_data);
+void HandshakeCallback(PRFileDesc *fd, void *client_data);
 
 SECStatus RegisterMyOCSPAIAInfoCallback();
 SECStatus UnregisterMyOCSPAIAInfoCallback();
 
-class nsHTTPListener : public nsIStreamLoaderObserver
+class nsHTTPListener MOZ_FINAL : public nsIStreamLoaderObserver
 {
 private:
   // For XPCOM implementations that are not a base class for some other
@@ -41,11 +42,11 @@ public:
   nsresult mResultCode;
 
   bool mHttpRequestSucceeded;
-  PRUint16 mHttpResponseCode;
+  uint16_t mHttpResponseCode;
   nsCString mHttpResponseContentType;
 
-  const PRUint8* mResultData; // not owned, refers to mLoader
-  PRUint32 mResultLen;
+  const uint8_t* mResultData; // not owned, refers to mLoader
+  uint32_t mResultLen;
   
   mozilla::Mutex mLock;
   mozilla::CondVar mCondition;
@@ -67,17 +68,17 @@ class nsNSSHttpServerSession
 {
 public:
   nsCString mHost;
-  PRUint16 mPort;  
+  uint16_t mPort;  
 
   static SECStatus createSessionFcn(const char *host,
-                                    PRUint16 portnum,
+                                    uint16_t portnum,
                                     SEC_HTTP_SERVER_SESSION *pSession);
 };
 
 class nsNSSHttpRequestSession
 {
 protected:
-  PRInt32 mRefCount;
+  int32_t mRefCount;
 
 public:
   static SECStatus createFcn(SEC_HTTP_SERVER_SESSION session,
@@ -88,18 +89,18 @@ public:
                              SEC_HTTP_REQUEST_SESSION *pRequest);
 
   SECStatus setPostDataFcn(const char *http_data, 
-                           const PRUint32 http_data_len,
+                           const uint32_t http_data_len,
                            const char *http_content_type);
 
   SECStatus addHeaderFcn(const char *http_header_name, 
                          const char *http_header_value);
 
   SECStatus trySendAndReceiveFcn(PRPollDesc **pPollDesc,
-                                 PRUint16 *http_response_code, 
+                                 uint16_t *http_response_code, 
                                  const char **http_response_content_type, 
                                  const char **http_response_headers, 
                                  const char **http_response_data, 
-                                 PRUint32 *http_response_data_len);
+                                 uint32_t *http_response_data_len);
 
   SECStatus cancelFcn();
   SECStatus freeFcn();
@@ -124,18 +125,18 @@ protected:
 
   SECStatus internal_send_receive_attempt(bool &retryable_error,
                                           PRPollDesc **pPollDesc,
-                                          PRUint16 *http_response_code,
+                                          uint16_t *http_response_code,
                                           const char **http_response_content_type,
                                           const char **http_response_headers,
                                           const char **http_response_data,
-                                          PRUint32 *http_response_data_len);
+                                          uint32_t *http_response_data_len);
 };
 
 class nsNSSHttpInterface
 {
 public:
   static SECStatus createSessionFcn(const char *host,
-                                    PRUint16 portnum,
+                                    uint16_t portnum,
                                     SEC_HTTP_SERVER_SESSION *pSession)
   {
     return nsNSSHttpServerSession::createSessionFcn(host, portnum, pSession);
@@ -169,7 +170,7 @@ public:
 
   static SECStatus setPostDataFcn(SEC_HTTP_REQUEST_SESSION request, 
                                   const char *http_data, 
-                                  const PRUint32 http_data_len,
+                                  const uint32_t http_data_len,
                                   const char *http_content_type)
   {
     return static_cast<nsNSSHttpRequestSession*>(request)
@@ -186,11 +187,11 @@ public:
 
   static SECStatus trySendAndReceiveFcn(SEC_HTTP_REQUEST_SESSION request, 
                                         PRPollDesc **pPollDesc,
-                                        PRUint16 *http_response_code, 
+                                        uint16_t *http_response_code, 
                                         const char **http_response_content_type, 
                                         const char **http_response_headers, 
                                         const char **http_response_data, 
-                                        PRUint32 *http_response_data_len)
+                                        uint32_t *http_response_data_len)
   {
     return static_cast<nsNSSHttpRequestSession*>(request)
             ->trySendAndReceiveFcn(pPollDesc, http_response_code, http_response_content_type, 

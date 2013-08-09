@@ -43,7 +43,7 @@ int commit_hook(void *aArg)
 void
 check_transaction(mozIStorageConnection *aDB,
                   mozIStorageBaseStatement **aStmts,
-                  PRUint32 aStmtsLen,
+                  uint32_t aStmtsLen,
                   bool aTransactionExpected)
 {
   // -- install a transaction commit hook.
@@ -71,7 +71,7 @@ check_transaction(mozIStorageConnection *aDB,
   }
 
   // -- cleanup
-  for (PRUint32 i = 0; i < aStmtsLen; ++i) {
+  for (uint32_t i = 0; i < aStmtsLen; ++i) {
     aStmts[i]->Finalize();
   }
   blocking_async_close(aDB);
@@ -352,14 +352,14 @@ test_MultipleParamsAsyncReadStatement()
   // -- bind multiple BindingParams
   nsCOMPtr<mozIStorageBindingParamsArray> paramsArray;
   stmt->NewBindingParamsArray(getter_AddRefs(paramsArray));
-  for (PRInt32 i = 0; i < 2; i++) {
+  for (int32_t i = 0; i < 2; i++) {
     nsCOMPtr<mozIStorageBindingParams> params;
     paramsArray->NewBindingParams(getter_AddRefs(params));
     params->BindInt32ByName(NS_LITERAL_CSTRING("param"), 1);
     paramsArray->AddParams(params);
   }
   stmt->BindParameters(paramsArray);
-  paramsArray = nsnull;
+  paramsArray = nullptr;
 
   mozIStorageBaseStatement *stmts[] = {
     stmt,
@@ -386,14 +386,14 @@ test_MultipleParamsReadStatement()
   // -- bind multiple BindingParams
   nsCOMPtr<mozIStorageBindingParamsArray> paramsArray;
   stmt->NewBindingParamsArray(getter_AddRefs(paramsArray));
-  for (PRInt32 i = 0; i < 2; i++) {
+  for (int32_t i = 0; i < 2; i++) {
     nsCOMPtr<mozIStorageBindingParams> params;
     paramsArray->NewBindingParams(getter_AddRefs(params));
     params->BindInt32ByName(NS_LITERAL_CSTRING("param"), 1);
     paramsArray->AddParams(params);
   }
   stmt->BindParameters(paramsArray);
-  paramsArray = nsnull;
+  paramsArray = nullptr;
 
   mozIStorageBaseStatement *stmts[] = {
     stmt,
@@ -428,14 +428,14 @@ test_MultipleParamsAsyncWriteStatement()
   // -- bind multiple BindingParams
   nsCOMPtr<mozIStorageBindingParamsArray> paramsArray;
   stmt->NewBindingParamsArray(getter_AddRefs(paramsArray));
-  for (PRInt32 i = 0; i < 2; i++) {
+  for (int32_t i = 0; i < 2; i++) {
     nsCOMPtr<mozIStorageBindingParams> params;
     paramsArray->NewBindingParams(getter_AddRefs(params));
     params->BindInt32ByName(NS_LITERAL_CSTRING("param"), 1);
     paramsArray->AddParams(params);
   }
   stmt->BindParameters(paramsArray);
-  paramsArray = nsnull;
+  paramsArray = nullptr;
 
   mozIStorageBaseStatement *stmts[] = {
     stmt,
@@ -470,14 +470,14 @@ test_MultipleParamsWriteStatement()
   // -- bind multiple BindingParams
   nsCOMPtr<mozIStorageBindingParamsArray> paramsArray;
   stmt->NewBindingParamsArray(getter_AddRefs(paramsArray));
-  for (PRInt32 i = 0; i < 2; i++) {
+  for (int32_t i = 0; i < 2; i++) {
     nsCOMPtr<mozIStorageBindingParams> params;
     paramsArray->NewBindingParams(getter_AddRefs(params));
     params->BindInt32ByName(NS_LITERAL_CSTRING("param"), 1);
     paramsArray->AddParams(params);
   }
   stmt->BindParameters(paramsArray);
-  paramsArray = nsnull;
+  paramsArray = nullptr;
 
   mozIStorageBaseStatement *stmts[] = {
     stmt,

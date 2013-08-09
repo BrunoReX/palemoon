@@ -8,8 +8,9 @@
 #include "nsIXPCSecurityManager.idl"
 interface nsIURI;
 interface nsIChannel;
+interface nsIDocShell;
 
-[scriptable, uuid(3708aa92-e2d9-4fd1-9e46-edfa3eb5ebf5)]
+[scriptable, uuid(ae486501-ec57-4ec8-a565-6880ca4ae6c4)]
 interface nsIScriptSecurityManager : nsIXPCSecurityManager
 {
     ///////////////// Security Checks //////////////////
@@ -20,7 +21,7 @@ interface nsIScriptSecurityManager : nsIXPCSecurityManager
                                         in JSObjectPtr aJSObject,
                                         in string aClassName,
                                         in jsid aProperty,
-                                        in PRUint32 aAction);
+                                        in uint32_t aAction);
 
     /**
      * Check that the script currently running in context "cx" can load "uri".
@@ -70,6 +71,10 @@ interface nsIScriptSecurityManager : nsIXPCSecurityManager
     // DISALLOW_INHERIT_PRINCIPAL
     const unsigned long DISALLOW_SCRIPT = 1 << 3;
 
+    // Do not report errors if we just want to check if a principal can load
+    // a URI to not unnecessarily spam the error console.
+    const unsigned long DONT_REPORT_ERRORS = 1 << 4;
+
     /**
      * Check that content with principal aPrincipal can load "uri".
      *
@@ -85,21 +90,6 @@ interface nsIScriptSecurityManager : nsIXPCSecurityManager
                                    in unsigned long flags);
 
     /**
-     * Check that content from "from" can load "uri".
-     *
-     * Will return error code NS_ERROR_DOM_BAD_URI if the load request
-     * should be denied.
-     *
-     * @param from the URI causing the load
-     * @param uri the URI that is being loaded
-     * @param flags the permission set, see above
-     *
-     * @deprecated Use checkLoadURIWithPrincipal instead of this function.
-     */
-    [deprecated] void checkLoadURI(in nsIURI from, in nsIURI uri,
-                                   in unsigned long flags);
-
-    /**
      * Similar to checkLoadURIWithPrincipal but there are two differences:
      *
      * 1) The URI is a string, not a URI object.
@@ -110,15 +100,6 @@ interface nsIScriptSecurityManager : nsIXPCSecurityManager
      */
     void checkLoadURIStrWithPrincipal(in nsIPrincipal aPrincipal,
                                       in AUTF8String uri,
-                                      in unsigned long flags);
-
-    /**
-     * Same as CheckLoadURI but takes string arguments for ease of use
-     * by scripts
-     *
-     * @deprecated Use checkLoadURIStrWithPrincipal instead of this function.
-     */
-    [deprecated] void checkLoadURIStr(in AUTF8String from, in AUTF8String uri,
                                       in unsigned long flags);
 
     /**
@@ -155,51 +136,43 @@ interface nsIScriptSecurityManager : nsIXPCSecurityManager
     nsIPrincipal getSystemPrincipal();
 
     /**
-     * Return a principal with the specified certificate fingerprint, subject
-     * name (the full name or concatenated set of names of the entity
-     * represented by the certificate), pretty name, certificate, and
-     * codebase URI.  The certificate fingerprint and subject name MUST be
-     * nonempty; otherwise an error will be thrown.  Similarly, aCert must
-     * not be null.
-     */
-    [noscript] nsIPrincipal
-         getCertificatePrincipal(in AUTF8String aCertFingerprint,
-                                 in AUTF8String aSubjectName,
-                                 in AUTF8String aPrettyName,
-                                 in nsISupports aCert,
-                                 in nsIURI aURI);
-
-    /**
      * Return a principal that has the same origin as aURI.
+     * This principals should not be used for any data/permission check, it will
+     * have appId = UNKNOWN_APP_ID.
      */
-    nsIPrincipal getCodebasePrincipal(in nsIURI aURI);
-
-    ///////////////// Capabilities API /////////////////////
-    /**
-     * Request that 'capability' can be enabled by scripts or applets
-     * running with 'principal'. Will prompt user if
-     * necessary. Returns nsIPrincipal::ENABLE_GRANTED or
-     * nsIPrincipal::ENABLE_DENIED based on user's choice.
-     */
-    [noscript] short requestCapability(in nsIPrincipal principal,
-                                       in string capability);
+    nsIPrincipal getSimpleCodebasePrincipal(in nsIURI aURI);
 
     /**
-     * Return true if the currently executing script has 'capability' enabled.
+     * Returns a principal that has the given information.
+     * @param appId is the app id of the principal. It can't be UNKNOWN_APP_ID.
+     * @param inMozBrowser is true if the principal has to be considered as
+     * inside a mozbrowser frame.
      */
-    boolean isCapabilityEnabled(in string capability);
+    nsIPrincipal getAppCodebasePrincipal(in nsIURI uri,
+                                         in unsigned long appId,
+                                         in boolean inMozBrowser);
 
     /**
-     * Enable 'capability' in the innermost frame of the currently executing
-     * script.
+     * Returns a principal that has the appId and inMozBrowser of the docshell
+     * inside a mozbrowser frame.
+     * @param docShell to get appId/inMozBrowser from.
      */
-    void enableCapability(in string capability);
+    nsIPrincipal getDocShellCodebasePrincipal(in nsIURI uri,
+                                              in nsIDocShell docShell);
 
-    //////////////// Master Certificate Functions ////////////////////
     /**
-     * Allow 'certificateID' to enable 'capability.' Can only be performed
-     * by code signed by the system certificate.
+     * Returns a principal with that has the same origin as uri and is not part
+     * of an appliction.
+     * The returned principal will have appId = NO_APP_ID.
      */
+    nsIPrincipal getNoAppCodebasePrincipal(in nsIURI uri);
+
+    /**
+     * Legacy name for getNoAppCodebasePrincipal.
+     *
+     * @deprecated use getNoAppCodebasePrincipal instead.
+     */
+    [deprecated] nsIPrincipal getCodebasePrincipal(in nsIURI uri);
 
     ///////////////////////
     /**
@@ -230,13 +203,6 @@ interface nsIScriptSecurityManager : nsIXPCSecurityManager
     void checkSameOriginURI(in nsIURI aSourceURI,
                             in nsIURI aTargetURI,
                             in boolean reportError);
-
-    /**
-     * Returns the principal of the global object of the given context, or null
-     * if no global or no principal.
-     */
-    [noscript] nsIPrincipal getPrincipalFromContext(in JSContextPtr cx);
-
     /**
      * Get the principal for the given channel.  This will typically be the
      * channel owner if there is one, and the codebase principal for the
@@ -258,31 +224,18 @@ interface nsIScriptSecurityManager : nsIXPCSecurityManager
      * principal.
      */
     [noscript,notxpcom] nsIPrincipal getCxSubjectPrincipal(in JSContextPtr cx);
-    [noscript,notxpcom] nsIPrincipal getCxSubjectPrincipalAndFrame(in JSContextPtr cx,
-                                                                   out JSStackFramePtr fp);
+
+    const unsigned long NO_APP_ID = 0;
+    const unsigned long UNKNOWN_APP_ID = 4294967295; // UINT32_MAX
 
     /**
-     * If no scripted code is running "above" (or called from) fp, then
-     * instead of looking at cx->globalObject, we will return |principal|.
-     * This function only affects |cx|. If someone pushes another context onto
-     * the context stack, then it supersedes this call.
-     * NOTE: If |fp| is non-null popContextPrincipal must be called before fp
-     * has finished executing.
-     *
-     * @param cx The context to clamp.
-     * @param fp The frame pointer to clamp at. May be 'null'.
-     * @param principal The principal to clamp to.
+     * Returns the extended origin for the uri.
+     * appId can be NO_APP_ID or a valid app id. appId should not be
+     * UNKNOWN_APP_ID.
+     * inMozBrowser has to be true if the uri is inside a mozbrowser iframe.
      */
-    [noscript] void pushContextPrincipal(in JSContextPtr cx,
-                                         in JSStackFramePtr fp,
-                                         in nsIPrincipal principal);
-
-    /**
-     * Removes a clamp set by pushContextPrincipal from cx. This must be
-     * called in a stack-like fashion (e.g., given two contexts |a| and |b|,
-     * it is not legal to do: push(a) push(b) pop(a)).
-     */
-    [noscript] void popContextPrincipal(in JSContextPtr cx);
+    AUTF8String getExtendedOrigin(in nsIURI uri, in unsigned long appId,
+                                  in boolean inMozBrowser);
 };
 
 %{C++

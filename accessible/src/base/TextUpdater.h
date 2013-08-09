@@ -3,11 +3,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef TextUpdater_h_
-#define TextUpdater_h_
+#ifndef mozilla_a11y_TextUpdater_h__
+#define mozilla_a11y_TextUpdater_h__
 
 #include "AccEvent.h"
 #include "HyperTextAccessible.h"
+
+namespace mozilla {
+namespace a11y {
 
 /**
  * Used to find a difference between old and new text and fire text change
@@ -19,25 +22,23 @@ public:
   /**
    * Start text of the text leaf update.
    */
-  static void Run(DocAccessible* aDocument,
-                  mozilla::a11y::TextLeafAccessible* aTextLeaf,
+  static void Run(DocAccessible* aDocument, TextLeafAccessible* aTextLeaf,
                   const nsAString& aNewText);
 
 private:
-  TextUpdater(DocAccessible* aDocument,
-              mozilla::a11y::TextLeafAccessible* aTextLeaf) :
-    mDocument(aDocument), mTextLeaf(aTextLeaf), mHyperText(nsnull),
+  TextUpdater(DocAccessible* aDocument, TextLeafAccessible* aTextLeaf) :
+    mDocument(aDocument), mTextLeaf(aTextLeaf), mHyperText(nullptr),
     mTextOffset(-1) { }
 
   ~TextUpdater()
-    { mDocument = nsnull; mTextLeaf = nsnull; mHyperText = nsnull; }
+    { mDocument = nullptr; mTextLeaf = nullptr; mHyperText = nullptr; }
 
   /**
    * Update text of the text leaf accessible, fire text change and value change
    * (if applicable) events for its container hypertext accessible.
    */
   void DoUpdate(const nsAString& aNewText, const nsAString& aOldText,
-                PRUint32 aSkipStart);
+                uint32_t aSkipStart);
 
 private:
   TextUpdater();
@@ -49,13 +50,13 @@ private:
    */
   void ComputeTextChangeEvents(const nsAString& aStr1,
                                const nsAString& aStr2,
-                               PRUint32* aEntries,
+                               uint32_t* aEntries,
                                nsTArray<nsRefPtr<AccEvent> >& aEvents);
 
   /**
    * Helper to create text change events for inserted text.
    */
-  inline void FireInsertEvent(const nsAString& aText, PRUint32 aAddlOffset,
+  inline void FireInsertEvent(const nsAString& aText, uint32_t aAddlOffset,
                               nsTArray<nsRefPtr<AccEvent> >& aEvents)
   {
     nsRefPtr<AccEvent> event =
@@ -67,7 +68,7 @@ private:
   /**
    * Helper to create text change events for removed text.
    */
-  inline void FireDeleteEvent(const nsAString& aText, PRUint32 aAddlOffset,
+  inline void FireDeleteEvent(const nsAString& aText, uint32_t aAddlOffset,
                               nsTArray<nsRefPtr<AccEvent> >& aEvents)
   {
     nsRefPtr<AccEvent> event =
@@ -80,13 +81,16 @@ private:
    * The constant used to skip string difference calculation in case of long
    * strings.
    */
-  const static PRUint32 kMaxStrLen = 1 << 6;
+  const static uint32_t kMaxStrLen = 1 << 6;
 
 private:
   DocAccessible* mDocument;
-  mozilla::a11y::TextLeafAccessible* mTextLeaf;
+  TextLeafAccessible* mTextLeaf;
   HyperTextAccessible* mHyperText;
-  PRInt32 mTextOffset;
+  int32_t mTextOffset;
 };
+
+} // namespace a11y
+} // namespace mozilla
 
 #endif

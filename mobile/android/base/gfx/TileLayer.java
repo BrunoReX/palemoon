@@ -5,16 +5,11 @@
 
 package org.mozilla.gecko.gfx;
 
-import android.graphics.Point;
 import android.graphics.Rect;
-import android.graphics.RectF;
-import android.graphics.Region;
 import android.opengl.GLES20;
 import android.util.Log;
-import java.nio.Buffer;
+
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.FloatBuffer;
 
 /**
  * Base class for tile layers, which encapsulate the logic needed to draw textured tiles in OpenGL
@@ -53,6 +48,16 @@ public abstract class TileLayer extends Layer {
                 TextureReaper.get().add(mTextureIDs);
         } finally {
             super.finalize();
+        }
+    }
+
+    public void destroy() {
+        try {
+            if (mImage != null) {
+                mImage.destroy();
+            }
+        } catch (Exception ex) {
+            Log.e(LOGTAG, "error clearing buffers: ", ex);
         }
     }
 
@@ -157,9 +162,10 @@ public abstract class TileLayer extends Layer {
     }
 
     private void bindAndSetGLParameters() {
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mTextureIDs[0]);
         GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER,
-                               GLES20.GL_NEAREST);
+                               GLES20.GL_LINEAR);
         GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER,
                                GLES20.GL_LINEAR);
 

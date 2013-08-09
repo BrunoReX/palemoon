@@ -4,17 +4,28 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
+#include "mozFlushType.h"
+#include "mozilla/Assertions.h"
+#include "nsCOMPtr.h"
 #include "nsCRT.h"
-#include "nsString.h"
-
-#include "nsIEditor.h"
-#include "nsIPlaintextEditor.h"
-#include "nsIEditorMailSupport.h"
-#include "nsISelectionController.h"
-#include "nsIClipboard.h"
-
+#include "nsDebug.h"
 #include "nsEditorCommands.h"
+#include "nsError.h"
+#include "nsIClipboard.h"
+#include "nsICommandParams.h"
+#include "nsID.h"
+#include "nsIDOMDocument.h"
 #include "nsIDocument.h"
+#include "nsIEditor.h"
+#include "nsIEditorMailSupport.h"
+#include "nsIPlaintextEditor.h"
+#include "nsISelection.h"
+#include "nsISelectionController.h"
+#include "nsITransferable.h"
+#include "nsString.h"
+#include "nsAString.h"
+
+class nsISupports;
 
 
 #define STATE_ENABLED  "state_enabled"
@@ -430,7 +441,7 @@ nsPasteTransferableCommand::IsCommandEnabled(const char *aCommandName,
     nsresult rv = editor->GetIsSelectionEditable(&isEditable);
     NS_ENSURE_SUCCESS(rv, rv);
     if (isEditable)
-      return editor->CanPasteTransferable(nsnull, outCmdEnabled);
+      return editor->CanPasteTransferable(nullptr, outCmdEnabled);
   }
 
   *outCmdEnabled = false;
@@ -527,64 +538,60 @@ nsSwitchTextDirectionCommand::GetCommandStateParams(const char *aCommandName,
 }
 
 NS_IMETHODIMP
-nsDeleteCommand::IsCommandEnabled(const char * aCommandName,
-                                  nsISupports *aCommandRefCon,
-                                  bool *outCmdEnabled)
+nsDeleteCommand::IsCommandEnabled(const char* aCommandName,
+                                  nsISupports* aCommandRefCon,
+                                  bool* outCmdEnabled)
 {
   NS_ENSURE_ARG_POINTER(outCmdEnabled);
   nsCOMPtr<nsIEditor> editor = do_QueryInterface(aCommandRefCon);
   *outCmdEnabled = false;
 
-  // we can delete when we can cut
   NS_ENSURE_TRUE(editor, NS_OK);
-    
-  bool isEditable = false;
-  nsresult rv = editor->GetIsSelectionEditable(&isEditable);
+
+  // We can generally delete whenever the selection is editable.  However,
+  // cmd_delete doesn't make sense if the selection is collapsed because it's
+  // directionless, which is the same condition under which we can't cut.
+  nsresult rv = editor->GetIsSelectionEditable(outCmdEnabled);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (!isEditable)
-    return NS_OK;
-  else if (!nsCRT::strcmp(aCommandName,"cmd_delete"))
-    return editor->CanCut(outCmdEnabled);
-  else if (!nsCRT::strcmp(aCommandName,"cmd_deleteCharBackward"))
-    *outCmdEnabled = true;
-  else if (!nsCRT::strcmp(aCommandName,"cmd_deleteCharForward"))
-    *outCmdEnabled = true;
-  else if (!nsCRT::strcmp(aCommandName,"cmd_deleteWordBackward"))
-    *outCmdEnabled = true;
-  else if (!nsCRT::strcmp(aCommandName,"cmd_deleteWordForward"))
-    *outCmdEnabled = true;
-  else if (!nsCRT::strcmp(aCommandName,"cmd_deleteToBeginningOfLine"))
-    *outCmdEnabled = true;
-  else if (!nsCRT::strcmp(aCommandName,"cmd_deleteToEndOfLine"))
-    *outCmdEnabled = true;  
+  if (!nsCRT::strcmp("cmd_delete", aCommandName) && *outCmdEnabled) {
+    rv = editor->CanCut(outCmdEnabled);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   return NS_OK;
 }
 
 
 NS_IMETHODIMP
-nsDeleteCommand::DoCommand(const char *aCommandName, nsISupports *aCommandRefCon)
+nsDeleteCommand::DoCommand(const char* aCommandName,
+                           nsISupports* aCommandRefCon)
 {
   nsCOMPtr<nsIEditor> editor = do_QueryInterface(aCommandRefCon);
   NS_ENSURE_TRUE(editor, NS_ERROR_FAILURE);
-    
+
   nsIEditor::EDirection deleteDir = nsIEditor::eNone;
-  
-  if (!nsCRT::strcmp("cmd_delete",aCommandName))
+
+  if (!nsCRT::strcmp("cmd_delete", aCommandName)) {
+    // Really this should probably be eNone, but it only makes a difference if
+    // the selection is collapsed, and then this command is disabled.  So let's
+    // keep it as it always was to avoid breaking things.
     deleteDir = nsIEditor::ePrevious;
-  else if (!nsCRT::strcmp("cmd_deleteCharBackward",aCommandName))
-    deleteDir = nsIEditor::ePrevious;
-  else if (!nsCRT::strcmp("cmd_deleteCharForward",aCommandName))
+  } else if (!nsCRT::strcmp("cmd_deleteCharForward", aCommandName)) {
     deleteDir = nsIEditor::eNext;
-  else if (!nsCRT::strcmp("cmd_deleteWordBackward",aCommandName))
+  } else if (!nsCRT::strcmp("cmd_deleteCharBackward", aCommandName)) {
+    deleteDir = nsIEditor::ePrevious;
+  } else if (!nsCRT::strcmp("cmd_deleteWordBackward", aCommandName)) {
     deleteDir = nsIEditor::ePreviousWord;
-  else if (!nsCRT::strcmp("cmd_deleteWordForward",aCommandName))
+  } else if (!nsCRT::strcmp("cmd_deleteWordForward", aCommandName)) {
     deleteDir = nsIEditor::eNextWord;
-  else if (!nsCRT::strcmp("cmd_deleteToBeginningOfLine",aCommandName))
+  } else if (!nsCRT::strcmp("cmd_deleteToBeginningOfLine", aCommandName)) {
     deleteDir = nsIEditor::eToBeginningOfLine;
-  else if (!nsCRT::strcmp("cmd_deleteToEndOfLine",aCommandName))
+  } else if (!nsCRT::strcmp("cmd_deleteToEndOfLine", aCommandName)) {
     deleteDir = nsIEditor::eToEndOfLine;
+  } else {
+    MOZ_NOT_REACHED("Unrecognized nsDeleteCommand");
+  }
 
   return editor->DeleteSelection(deleteDir, nsIEditor::eStrip);
 }
@@ -863,7 +870,7 @@ nsPasteQuotationCommand::IsCommandEnabled(const char * aCommandName,
   nsCOMPtr<nsIEditor> editor = do_QueryInterface(refCon);
   nsCOMPtr<nsIEditorMailSupport>  mailEditor = do_QueryInterface(refCon);
   if (editor && mailEditor) {
-    PRUint32 flags;
+    uint32_t flags;
     editor->GetFlags(&flags);
     if (!(flags & nsIPlaintextEditor::eEditorSingleLineMask))
       return editor->CanPaste(nsIClipboard::kGlobalClipboard, outCmdEnabled);

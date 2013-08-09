@@ -9,7 +9,7 @@
 #include "SVGAnimatedPointList.h"
 #include "nsSVGElement.h"
 #include "nsIDOMSVGPoint.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 #include "nsIDOMSVGMatrix.h"
 #include "nsContentUtils.h" // NS_ENSURE_FINITE
 #include "DOMSVGMatrix.h"
@@ -26,12 +26,12 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(DOMSVGPoint)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(DOMSVGPoint)
   // We may not belong to a list, so we must null check tmp->mList.
   if (tmp->mList) {
-    tmp->mList->mItems[tmp->mListIndex] = nsnull;
+    tmp->mList->mItems[tmp->mListIndex] = nullptr;
   }
-NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mList)
+NS_IMPL_CYCLE_COLLECTION_UNLINK(mList)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(DOMSVGPoint)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mList)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mList)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(DOMSVGPoint)
@@ -136,7 +136,7 @@ DOMSVGPoint::MatrixTransform(nsIDOMSVGMatrix *matrix,
 
 void
 DOMSVGPoint::InsertingIntoList(DOMSVGPointList *aList,
-                               PRUint32 aListIndex,
+                               uint32_t aListIndex,
                                bool aIsAnimValItem)
 {
   NS_ABORT_IF_FALSE(!HasOwner(), "Inserting item that already has an owner");
@@ -153,7 +153,7 @@ void
 DOMSVGPoint::RemovingFromList()
 {
   mPt = InternalItem();
-  mList = nsnull;
+  mList = nullptr;
   NS_ABORT_IF_FALSE(!mIsReadonly, "mIsReadonly set for list");
   mIsAnimValItem = false;
 }

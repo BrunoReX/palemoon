@@ -15,6 +15,7 @@
 #include "nsIInterfaceRequestor.h"
 #include "nsIChannelEventSink.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
+#include "mozilla/Attributes.h"
 
 class nsIURI;
 class nsIParser;
@@ -31,30 +32,20 @@ NS_StartCORSPreflight(nsIChannel* aRequestChannel,
                       nsTArray<nsCString>& aACUnsafeHeaders,
                       nsIChannel** aPreflightChannel);
 
-class nsCORSListenerProxy : public nsIStreamListener,
-                            public nsIInterfaceRequestor,
-                            public nsIChannelEventSink,
-                            public nsIAsyncVerifyRedirectCallback
+class nsCORSListenerProxy MOZ_FINAL : public nsIStreamListener,
+                                      public nsIInterfaceRequestor,
+                                      public nsIChannelEventSink,
+                                      public nsIAsyncVerifyRedirectCallback
 {
 public:
   nsCORSListenerProxy(nsIStreamListener* aOuter,
                       nsIPrincipal* aRequestingPrincipal,
-                      nsIChannel* aChannel,
-                      bool aWithCredentials,
-                      nsresult* aResult);
+                      bool aWithCredentials);
   nsCORSListenerProxy(nsIStreamListener* aOuter,
                       nsIPrincipal* aRequestingPrincipal,
-                      nsIChannel* aChannel,
-                      bool aWithCredentials,
-                      bool aAllowDataURI,
-                      nsresult* aResult);
-  nsCORSListenerProxy(nsIStreamListener* aOuter,
-                      nsIPrincipal* aRequestingPrincipal,
-                      nsIChannel* aChannel,
                       bool aWithCredentials,
                       const nsCString& aPreflightMethod,
-                      const nsTArray<nsCString>& aPreflightHeaders,
-                      nsresult* aResult);
+                      const nsTArray<nsCString>& aPreflightHeaders);
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIREQUESTOBSERVER
@@ -67,6 +58,8 @@ public:
   static void Startup();
 
   static void Shutdown();
+
+  nsresult Init(nsIChannel* aChannel, bool aAllowDataURI = false);
 
 private:
   nsresult UpdateChannel(nsIChannel* aChannel, bool aAllowDataURI = false);

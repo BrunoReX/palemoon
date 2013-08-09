@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH = ../..
+DEPTH = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir = @srcdir@
 VPATH = @srcdir@
@@ -23,13 +23,17 @@ EXPORT_LIBRARY = 1
 ##
 IPDLDIRS =  \
   uriloader/exthandler \
+  dom/devicestorage \
   dom/indexedDB/ipc \
+  dom/bluetooth/ipc \
   dom/plugins/ipc  \
-  dom/ipc  \
+  dom/ipc \
   dom/sms/src/ipc \
   dom/src/storage \
+  dom/network/src \
   gfx/layers/ipc \
   hal/sandbox \
+  ipc/glue  \
   ipc/testshell  \
   js/ipc  \
   layout/ipc \
@@ -52,6 +56,7 @@ DIRS += test
 endif
 
 vpath %.ipdl $(topsrcdir)
+vpath %.ipdlh $(topsrcdir)
 
 define ADD_IPDLDIR
 include $(topsrcdir)/$(IPDLDIR)/ipdl.mk
@@ -69,6 +74,7 @@ CPPSRCS =					\
   $(PROTOCOLS:%.ipdl=%Parent.cpp)		\
   $(PROTOCOLS:%.ipdl=%Child.cpp)		\
   $(PROTOCOLS:%.ipdl=%.cpp)			\
+  $(PROTOCOLS:%.ipdlh=%.cpp)			\
   $(NULL)
 
 GARBAGE += $(CPPSRCS)

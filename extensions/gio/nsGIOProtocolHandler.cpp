@@ -142,13 +142,13 @@ class nsGIOInputStream : public nsIInputStream
 
     nsGIOInputStream(const nsCString &uriSpec)
       : mSpec(uriSpec)
-      , mChannel(nsnull)
-      , mHandle(nsnull)
-      , mStream(nsnull)
-      , mBytesRemaining(PR_UINT32_MAX)
+      , mChannel(nullptr)
+      , mHandle(nullptr)
+      , mStream(nullptr)
+      , mBytesRemaining(UINT64_MAX)
       , mStatus(NS_OK)
-      , mDirList(nsnull)
-      , mDirListPtr(nsnull)
+      , mDirList(nullptr)
+      , mDirListPtr(nullptr)
       , mDirBufCursor(0)
       , mDirOpen(false)
       , mMonitorMountInProgress("GIOInputStream::MountFinished") { }
@@ -175,7 +175,7 @@ class nsGIOInputStream : public nsIInputStream
     void           SetMountResult(MountOperationResult result, gint error_code);
   private:
     nsresult       DoOpen();
-    nsresult       DoRead(char *aBuf, PRUint32 aCount, PRUint32 *aCountRead);
+    nsresult       DoRead(char *aBuf, uint32_t aCount, uint32_t *aCountRead);
     nsresult       SetContentTypeOfChannel(const char *contentType);
     nsresult       MountVolume();
     nsresult       DoOpenDirectory();
@@ -184,12 +184,12 @@ class nsGIOInputStream : public nsIInputStream
     nsIChannel           *mChannel; // manually refcounted
     GFile                *mHandle;
     GFileInputStream     *mStream;
-    PRUint64              mBytesRemaining;
+    uint64_t              mBytesRemaining;
     nsresult              mStatus;
     GList                *mDirList;
     GList                *mDirListPtr;
     nsCString             mDirBuf;
-    PRUint32              mDirBufCursor;
+    uint32_t              mDirBufCursor;
     bool                  mDirOpen;
     MountOperationResult  mMountRes;
     mozilla::Monitor      mMonitorMountInProgress;
@@ -350,7 +350,7 @@ nsGIOInputStream::DoOpen()
   nsresult rv;
   GError *error = NULL;
 
-  NS_ASSERTION(mHandle == nsnull, "already open");
+  NS_ASSERTION(mHandle == nullptr, "already open");
 
   mHandle = g_file_new_for_uri( mSpec.get() );
 
@@ -417,13 +417,13 @@ nsGIOInputStream::DoOpen()
  *         error code otherwise
  */
 nsresult
-nsGIOInputStream::DoRead(char *aBuf, PRUint32 aCount, PRUint32 *aCountRead)
+nsGIOInputStream::DoRead(char *aBuf, uint32_t aCount, uint32_t *aCountRead)
 {
   nsresult rv = NS_ERROR_NOT_AVAILABLE;
   if (mStream) {
     // file read
     GError *error = NULL;    
-    PRUint32 bytes_read = g_input_stream_read(G_INPUT_STREAM(mStream),
+    uint32_t bytes_read = g_input_stream_read(G_INPUT_STREAM(mStream),
                                               aBuf,
                                               aCount,
                                               NULL,
@@ -444,10 +444,10 @@ nsGIOInputStream::DoRead(char *aBuf, PRUint32 aCount, PRUint32 *aCountRead)
     while (aCount && rv != NS_BASE_STREAM_CLOSED)
     {
       // Copy data out of our buffer
-      PRUint32 bufLen = mDirBuf.Length() - mDirBufCursor;
+      uint32_t bufLen = mDirBuf.Length() - mDirBufCursor;
       if (bufLen)
       {
-        PRUint32 n = NS_MIN(bufLen, aCount);
+        uint32_t n = NS_MIN(bufLen, aCount);
         memcpy(aBuf, mDirBuf.get() + mDirBufCursor, n);
         *aCountRead += n;
         aBuf += n;
@@ -487,7 +487,7 @@ nsGIOInputStream::DoRead(char *aBuf, PRUint32 aCount, PRUint32 *aCountRead)
 
         // The "content-length" field
         // XXX truncates size from 64-bit to 32-bit
-        mDirBuf.AppendInt(PRInt32(g_file_info_get_size(info)));
+        mDirBuf.AppendInt(int32_t(g_file_info_get_size(info)));
         mDirBuf.Append(' ');
 
         // The "last-modified" field
@@ -590,22 +590,22 @@ nsGIOInputStream::Close()
   if (mStream)
   {
     g_object_unref(mStream);
-    mStream = nsnull;
+    mStream = nullptr;
   }
 
   if (mHandle)
   {
     g_object_unref(mHandle);
-    mHandle = nsnull;
+    mHandle = nullptr;
   }
 
   if (mDirList)
   {
     // Destroy the list of GIOFileInfo objects...
-    g_list_foreach(mDirList, (GFunc) g_object_unref, nsnull);
+    g_list_foreach(mDirList, (GFunc) g_object_unref, nullptr);
     g_list_free(mDirList);
-    mDirList = nsnull;
-    mDirListPtr = nsnull;
+    mDirList = nullptr;
+    mDirListPtr = nullptr;
   }
 
   if (mChannel)
@@ -617,7 +617,7 @@ nsGIOInputStream::Close()
       rv = NS_ProxyRelease(thread, mChannel);
 
     NS_ASSERTION(thread && NS_SUCCEEDED(rv), "leaking channel reference");
-    mChannel = nsnull;
+    mChannel = nullptr;
   }
 
   mSpec.Truncate(); // free memory
@@ -634,17 +634,12 @@ nsGIOInputStream::Close()
  * @param aResult remaining bytes
  */
 NS_IMETHODIMP
-nsGIOInputStream::Available(PRUint32 *aResult)
+nsGIOInputStream::Available(uint64_t *aResult)
 {
   if (NS_FAILED(mStatus))
     return mStatus;
 
-  /* When remaining bytes are bigger than max PRUint32 value an aResult must
-     be set to PRUint32 maximum */
-  if (mBytesRemaining > PR_UINT32_MAX)
-    *aResult = PR_UINT32_MAX;
-  else
-    *aResult = mBytesRemaining;
+  *aResult = mBytesRemaining;
 
   return NS_OK;
 }
@@ -657,8 +652,8 @@ nsGIOInputStream::Available(PRUint32 *aResult)
  */
 NS_IMETHODIMP
 nsGIOInputStream::Read(char     *aBuf,
-                       PRUint32  aCount,
-                       PRUint32 *aCountRead)
+                       uint32_t  aCount,
+                       uint32_t *aCountRead)
 {
   *aCountRead = 0;
   // Check if file is already opened, otherwise open it
@@ -681,8 +676,8 @@ nsGIOInputStream::Read(char     *aBuf,
 NS_IMETHODIMP
 nsGIOInputStream::ReadSegments(nsWriteSegmentFun aWriter,
                                void             *aClosure,
-                               PRUint32          aCount,
-                               PRUint32         *aResult)
+                               uint32_t          aCount,
+                               uint32_t         *aResult)
 {
   // There is no way to implement this using GnomeVFS, but fortunately
   // that doesn't matter.  Because we are a blocking input stream, Necko
@@ -775,7 +770,7 @@ mount_operation_ask_password (GMountOperation   *mount_op,
     return;
   }
 
-  nsCAutoString scheme, hostPort;
+  nsAutoCString scheme, hostPort;
   uri->GetScheme(scheme);
   uri->GetHostPort(hostPort);
 
@@ -854,18 +849,18 @@ mount_operation_ask_password (GMountOperation   *mount_op,
   // Prompt the user...
   nsresult rv;
   bool retval = false;
-  PRUnichar *user = nsnull, *pass = nsnull;
+  PRUnichar *user = nullptr, *pass = nullptr;
   if (default_user) {
     // user will be freed by PromptUsernameAndPassword
     user = ToNewUnicode(NS_ConvertUTF8toUTF16(default_user));
   }
   if (flags & G_ASK_PASSWORD_NEED_USERNAME) {
-    rv = prompt->PromptUsernameAndPassword(nsnull, nsmessage.get(),
+    rv = prompt->PromptUsernameAndPassword(nullptr, nsmessage.get(),
                                            key.get(),
                                            nsIAuthPrompt::SAVE_PASSWORD_PERMANENTLY,
                                            &user, &pass, &retval);
   } else {
-    rv = prompt->PromptPassword(nsnull, nsmessage.get(),
+    rv = prompt->PromptPassword(nullptr, nsmessage.get(),
                                 key.get(),
                                 nsIAuthPrompt::SAVE_PASSWORD_PERMANENTLY,
                                 &pass, &retval);
@@ -948,7 +943,7 @@ nsGIOProtocolHandler::IsSupportedProtocol(const nsCString &aSpec)
   if (!colon)
     return false;
 
-  PRUint32 length = colon - specString + 1;
+  uint32_t length = colon - specString + 1;
 
   // <scheme> + ':'
   nsCString scheme(specString, length);
@@ -971,14 +966,14 @@ nsGIOProtocolHandler::GetScheme(nsACString &aScheme)
 }
 
 NS_IMETHODIMP
-nsGIOProtocolHandler::GetDefaultPort(PRInt32 *aDefaultPort)
+nsGIOProtocolHandler::GetDefaultPort(int32_t *aDefaultPort)
 {
   *aDefaultPort = -1;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsGIOProtocolHandler::GetProtocolFlags(PRUint32 *aProtocolFlags)
+nsGIOProtocolHandler::GetProtocolFlags(uint32_t *aProtocolFlags)
 {
   // Is URI_STD true of all GnomeVFS URI types?
   *aProtocolFlags = URI_STD | URI_DANGEROUS_TO_LOAD;
@@ -1000,7 +995,7 @@ nsGIOProtocolHandler::NewURI(const nsACString &aSpec,
     if (!IsSupportedProtocol(flatSpec))
       return NS_ERROR_UNKNOWN_PROTOCOL;
 
-    PRInt32 colon_location = flatSpec.FindChar(':');
+    int32_t colon_location = flatSpec.FindChar(':');
     if (colon_location <= 0)
       return NS_ERROR_UNKNOWN_PROTOCOL;
 
@@ -1051,7 +1046,7 @@ nsGIOProtocolHandler::NewChannel(nsIURI *aURI, nsIChannel **aResult)
   NS_ENSURE_ARG_POINTER(aURI);
   nsresult rv;
 
-  nsCAutoString spec;
+  nsAutoCString spec;
   rv = aURI->GetSpec(spec);
   if (NS_FAILED(rv))
     return rv;
@@ -1076,7 +1071,7 @@ nsGIOProtocolHandler::NewChannel(nsIURI *aURI, nsIChannel **aResult)
 }
 
 NS_IMETHODIMP
-nsGIOProtocolHandler::AllowPort(PRInt32 aPort,
+nsGIOProtocolHandler::AllowPort(int32_t aPort,
                                 const char *aScheme,
                                 bool *aResult)
 {

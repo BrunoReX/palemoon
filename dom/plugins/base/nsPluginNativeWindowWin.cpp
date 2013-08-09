@@ -28,8 +28,8 @@ using namespace mozilla;
 
 #define NP_POPUP_API_VERSION 16
 
-#define nsMajorVersion(v)       (((PRInt32)(v) >> 16) & 0xffff)
-#define nsMinorVersion(v)       ((PRInt32)(v) & 0xffff)
+#define nsMajorVersion(v)       (((int32_t)(v) >> 16) & 0xffff)
+#define nsMinorVersion(v)       ((int32_t)(v) & 0xffff)
 #define versionOK(suppliedV, requiredV)                   \
   (nsMajorVersion(suppliedV) == nsMajorVersion(requiredV) \
    && nsMinorVersion(suppliedV) >= nsMinorVersion(requiredV))
@@ -307,7 +307,7 @@ static LRESULT CALLBACK PluginWndProcInternal(HWND hWnd, UINT msg, WPARAM wParam
   }
 
   if (enablePopups && inst) {
-    PRUint16 apiVersion;
+    uint16_t apiVersion;
     if (NS_SUCCEEDED(inst->GetPluginAPIVersion(&apiVersion)) &&
         !versionOK(apiVersion, NP_POPUP_API_VERSION)) {
       inst->PushPopupsEnabledState(true);
@@ -491,7 +491,7 @@ HookSetWindowLongPtr()
 nsPluginNativeWindowWin::nsPluginNativeWindowWin() : nsPluginNativeWindow()
 {
   // initialize the struct fields
-  window = nsnull; 
+  window = nullptr; 
   x = 0; 
   y = 0; 
   width = 0; 
@@ -564,7 +564,7 @@ nsPluginNativeWindowWin::GetPluginWindowEvent(HWND aWnd, UINT aMsg, WPARAM aWPar
   if (!mWeakRef) {
     mWeakRef = this;
     if (!mWeakRef)
-      return nsnull;
+      return nullptr;
   }
 
   PluginWindowEvent *event;
@@ -575,13 +575,13 @@ nsPluginNativeWindowWin::GetPluginWindowEvent(HWND aWnd, UINT aMsg, WPARAM aWPar
   if (!mCachedPluginWindowEvent) 
   {
     event = new PluginWindowEvent();
-    if (!event) return nsnull;
+    if (!event) return nullptr;
     mCachedPluginWindowEvent = event;
   }
   else if (mCachedPluginWindowEvent->InUse())
   {
     event = new PluginWindowEvent();
-    if (!event) return nsnull;
+    if (!event) return nullptr;
   }
   else
   {
@@ -606,7 +606,7 @@ nsresult nsPluginNativeWindowWin::CallSetWindow(nsRefPtr<nsNPAPIPluginInstance> 
 
   // check plugin mime type and cache it if it will need special treatment later
   if (mPluginType == nsPluginType_Unknown) {
-    const char* mimetype = nsnull;
+    const char* mimetype = nullptr;
     aPluginInstance->GetMIMEType(&mimetype);
     if (mimetype) { 
       if (!strcmp(mimetype, "application/x-shockwave-flash"))
@@ -694,7 +694,7 @@ nsresult nsPluginNativeWindowWin::SubclassAndAssociateWindow()
   if (!mPluginWinProc)
     return NS_ERROR_FAILURE;
 
-  nsPluginNativeWindowWin * win = (nsPluginNativeWindowWin *)::GetProp(hWnd, NS_PLUGIN_WINDOW_PROPERTY_ASSOCIATION);
+  DebugOnly<nsPluginNativeWindowWin *> win = (nsPluginNativeWindowWin *)::GetProp(hWnd, NS_PLUGIN_WINDOW_PROPERTY_ASSOCIATION);
   NS_ASSERTION(!win || (win == this), "plugin window already has property and this is not us");
   
   if (!::SetProp(hWnd, NS_PLUGIN_WINDOW_PROPERTY_ASSOCIATION, (HANDLE)this))
@@ -706,7 +706,7 @@ nsresult nsPluginNativeWindowWin::SubclassAndAssociateWindow()
 nsresult nsPluginNativeWindowWin::UndoSubclassAndAssociateWindow()
 {
   // release plugin instance
-  SetPluginInstance(nsnull);
+  SetPluginInstance(nullptr);
 
   // remove window property
   HWND hWnd = (HWND)window;

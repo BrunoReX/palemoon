@@ -4,12 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsError.h"
 #include "SVGTransform.h"
 #include "nsContentUtils.h"
 #include "nsTextFormatter.h"
 
 namespace {
-  const double radPerDegree = 2.0*3.1415926535 / 360.0;
+  const double radPerDegree = 2.0 * M_PI / 360.0;
 }
 
 namespace mozilla {
@@ -125,7 +126,7 @@ nsresult
 SVGTransform::SetSkewX(float aAngle)
 {
   double ta = tan(aAngle*radPerDegree);
-  NS_ENSURE_FINITE(ta, NS_ERROR_DOM_SVG_INVALID_VALUE_ERR);
+  NS_ENSURE_FINITE(ta, NS_ERROR_RANGE_ERR);
 
   mType    = nsIDOMSVGTransform::SVG_TRANSFORM_SKEWX;
   mMatrix.Reset();
@@ -140,7 +141,7 @@ nsresult
 SVGTransform::SetSkewY(float aAngle)
 {
   double ta = tan(aAngle*radPerDegree);
-  NS_ENSURE_FINITE(ta, NS_ERROR_DOM_SVG_INVALID_VALUE_ERR);
+  NS_ENSURE_FINITE(ta, NS_ERROR_RANGE_ERR);
 
   mType    = nsIDOMSVGTransform::SVG_TRANSFORM_SKEWY;
   mMatrix.Reset();
@@ -159,7 +160,7 @@ SVGTransformSMILData::SVGTransformSMILData(const SVGTransform& aTransform)
     mTransformType <= nsIDOMSVGTransform::SVG_TRANSFORM_SKEWY,
     "Unexpected transform type");
 
-  for (PRUint32 i = 0; i < NUM_STORED_PARAMS; ++i) {
+  for (uint32_t i = 0; i < NUM_STORED_PARAMS; ++i) {
     mParams[i] = 0.f;
   }
 

@@ -7,12 +7,13 @@
 #ifndef nsGridLayout2_h___
 #define nsGridLayout2_h___
 
+#include "mozilla/Attributes.h"
 #include "nsStackLayout.h"
 #include "nsIGridPart.h"
-#include "nsCOMPtr.h"
-#include "nsIFrame.h"
+#include "nsCoord.h"
 #include "nsGrid.h"
 
+class nsIPresContext;
 class nsGridRowGroupLayout;
 class nsGridRowLayout;
 class nsGridRow;
@@ -31,36 +32,36 @@ public:
 
   NS_DECL_ISUPPORTS_INHERITED
 
-  NS_IMETHOD Layout(nsIBox* aBox, nsBoxLayoutState& aBoxLayoutState);
-  virtual void IntrinsicWidthsDirty(nsIBox* aBox, nsBoxLayoutState& aBoxLayoutState);
+  NS_IMETHOD Layout(nsIFrame* aBox, nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
+  virtual void IntrinsicWidthsDirty(nsIFrame* aBox, nsBoxLayoutState& aBoxLayoutState);
 
-  virtual nsGridRowGroupLayout* CastToRowGroupLayout() { return nsnull; }
-  virtual nsGridLayout2* CastToGridLayout() { return this; }
-  virtual nsGrid* GetGrid(nsIBox* aBox, PRInt32* aIndex, nsGridRowLayout* aRequestor=nsnull);
-  virtual nsIGridPart* GetParentGridPart(nsIBox* aBox, nsIBox** aParentBox) {
-    NS_NOTREACHED("Should not be called"); return nsnull;
+  virtual nsGridRowGroupLayout* CastToRowGroupLayout() { return nullptr; }
+  virtual nsGridLayout2* CastToGridLayout() MOZ_OVERRIDE { return this; }
+  virtual nsGrid* GetGrid(nsIFrame* aBox, int32_t* aIndex, nsGridRowLayout* aRequestor=nullptr) MOZ_OVERRIDE;
+  virtual nsIGridPart* GetParentGridPart(nsIFrame* aBox, nsIFrame** aParentBox) MOZ_OVERRIDE {
+    NS_NOTREACHED("Should not be called"); return nullptr;
   }
-  virtual nsSize GetMinSize(nsIBox* aBox, nsBoxLayoutState& aBoxLayoutState);
-  virtual nsSize GetMaxSize(nsIBox* aBox, nsBoxLayoutState& aBoxLayoutState);
-  virtual nsSize GetPrefSize(nsIBox* aBox, nsBoxLayoutState& aBoxLayoutState);
-  virtual void CountRowsColumns(nsIBox* aBox, PRInt32& aRowCount, PRInt32& aComputedColumnCount) { aRowCount++; }
-  virtual void DirtyRows(nsIBox* aBox, nsBoxLayoutState& aState) { }
-  virtual PRInt32 BuildRows(nsIBox* aBox, nsGridRow* aRows);
-  virtual nsMargin GetTotalMargin(nsIBox* aBox, bool aIsHorizontal);
-  virtual Type GetType() { return eGrid; }
-  virtual void ChildrenInserted(nsIBox* aBox, nsBoxLayoutState& aState,
-                                nsIBox* aPrevBox,
+  virtual nsSize GetMinSize(nsIFrame* aBox, nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
+  virtual nsSize GetMaxSize(nsIFrame* aBox, nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
+  virtual nsSize GetPrefSize(nsIFrame* aBox, nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
+  virtual void CountRowsColumns(nsIFrame* aBox, int32_t& aRowCount, int32_t& aComputedColumnCount) MOZ_OVERRIDE { aRowCount++; }
+  virtual void DirtyRows(nsIFrame* aBox, nsBoxLayoutState& aState) MOZ_OVERRIDE { }
+  virtual int32_t BuildRows(nsIFrame* aBox, nsGridRow* aRows) MOZ_OVERRIDE;
+  virtual nsMargin GetTotalMargin(nsIFrame* aBox, bool aIsHorizontal) MOZ_OVERRIDE;
+  virtual Type GetType() MOZ_OVERRIDE { return eGrid; }
+  virtual void ChildrenInserted(nsIFrame* aBox, nsBoxLayoutState& aState,
+                                nsIFrame* aPrevBox,
                                 const nsFrameList::Slice& aNewChildren);
-  virtual void ChildrenAppended(nsIBox* aBox, nsBoxLayoutState& aState,
+  virtual void ChildrenAppended(nsIFrame* aBox, nsBoxLayoutState& aState,
                                 const nsFrameList::Slice& aNewChildren);
-  virtual void ChildrenRemoved(nsIBox* aBox, nsBoxLayoutState& aState,
-                             nsIBox* aChildList);
-  virtual void ChildrenSet(nsIBox* aBox, nsBoxLayoutState& aState,
-                         nsIBox* aChildList);
+  virtual void ChildrenRemoved(nsIFrame* aBox, nsBoxLayoutState& aState,
+                               nsIFrame* aChildList);
+  virtual void ChildrenSet(nsIFrame* aBox, nsBoxLayoutState& aState,
+                           nsIFrame* aChildList);
 
   virtual nsIGridPart* AsGridPart() { return this; }
 
-  static void AddOffset(nsBoxLayoutState& aState, nsIBox* aChild, nsSize& aSize);
+  static void AddOffset(nsBoxLayoutState& aState, nsIFrame* aChild, nsSize& aSize);
 
 protected:
 

@@ -4,7 +4,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ChangeAttributeTxn.h"
-#include "nsIDOMElement.h"
+#include "nsAString.h"
+#include "nsDebug.h"                    // for NS_ASSERTION
+#include "nsError.h"                    // for NS_ERROR_NOT_INITIALIZED, etc
+#include "nsIDOMElement.h"              // for nsIDOMElement
+#include "nsIEditor.h"                  // for nsIEditor
+#include "nsString.h"                   // for nsString
 
 ChangeAttributeTxn::ChangeAttributeTxn()
   : EditTxn()
@@ -14,11 +19,11 @@ ChangeAttributeTxn::ChangeAttributeTxn()
 NS_IMPL_CYCLE_COLLECTION_CLASS(ChangeAttributeTxn)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(ChangeAttributeTxn, EditTxn)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mElement)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mElement)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(ChangeAttributeTxn, EditTxn)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mElement)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mElement)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_ADDREF_INHERITED(ChangeAttributeTxn, EditTxn)

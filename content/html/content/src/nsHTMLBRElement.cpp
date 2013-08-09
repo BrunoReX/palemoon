@@ -8,12 +8,14 @@
 #include "nsIDOMHTMLBRElement.h"
 #include "nsIDOMEventTarget.h"
 #include "nsGenericHTMLElement.h"
+#include "nsAttrValueInlines.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsMappedAttributes.h"
 #include "nsRuleData.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 class nsHTMLBRElement : public nsGenericHTMLElement,
                         public nsIDOMHTMLBRElement
@@ -26,18 +28,18 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLBRElement
   NS_DECL_NSIDOMHTMLBRELEMENT    
 
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
@@ -61,8 +63,8 @@ nsHTMLBRElement::~nsHTMLBRElement()
 {
 }
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLBRElement, nsGenericElement) 
-NS_IMPL_RELEASE_INHERITED(nsHTMLBRElement, nsGenericElement) 
+NS_IMPL_ADDREF_INHERITED(nsHTMLBRElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLBRElement, Element)
 
 
 DOMCI_NODE_DATA(HTMLBRElement, nsHTMLBRElement)
@@ -89,7 +91,7 @@ static const nsAttrValue::EnumTable kClearTable[] = {
 };
 
 bool
-nsHTMLBRElement::ParseAttribute(PRInt32 aNamespaceID,
+nsHTMLBRElement::ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult)
@@ -123,7 +125,7 @@ nsHTMLBRElement::IsAttributeMapped(const nsIAtom* aAttribute) const
 {
   static const MappedAttributeEntry attributes[] = {
     { &nsGkAtoms::clear },
-    { nsnull }
+    { nullptr }
   };
 
   static const MappedAttributeEntry* const map[] = {

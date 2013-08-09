@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH = ../../..
+DEPTH = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir = @srcdir@
 VPATH = @srcdir@
@@ -18,12 +18,14 @@ CPPSRCS = \
   Accessible.cpp \
   ApplicationAccessible.cpp \
   ARIAGridAccessible.cpp \
+  BaseAccessibles.cpp \
   DocAccessible.cpp \
   FormControlAccessible.cpp \
   HyperTextAccessible.cpp \
   ImageAccessible.cpp \
   OuterDocAccessible.cpp \
   RootAccessible.cpp \
+  TableCellAccessible.cpp \
   TextLeafAccessible.cpp \
   $(NULL)
 
@@ -31,6 +33,8 @@ EXPORTS_NAMESPACES = mozilla/a11y
 
 EXPORTS_mozilla/a11y = \
   Accessible.h \
+  DocAccessible.h \
+  HyperTextAccessible.h \
   $(null)
 
 # we don't want the shared lib, but we want to force the creation of a static lib.
@@ -69,4 +73,8 @@ LOCAL_INCLUDES += \
   $(NULL)
 endif
 endif
+endif
+
+ifneq ($(A11Y_LOG),0)
+  DEFINES += -DA11Y_LOG
 endif

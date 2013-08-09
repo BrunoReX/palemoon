@@ -13,7 +13,6 @@
 #include "nsAccEvent.h"
 #include "States.h"
 
-#include "nsIDOMDocument.h"
 #include "nsEventStateManager.h"
 #include "nsIServiceManager.h"
 #ifdef MOZ_XUL
@@ -29,14 +28,14 @@ using namespace mozilla::a11y;
 ////////////////////////////////////////////////////////////////////////////////
 // AccEvent constructors
 
-AccEvent::AccEvent(PRUint32 aEventType, Accessible* aAccessible,
+AccEvent::AccEvent(uint32_t aEventType, Accessible* aAccessible,
                    EIsFromUserInput aIsFromUserInput, EEventRule aEventRule) :
   mEventType(aEventType), mEventRule(aEventRule), mAccessible(aAccessible)
 {
   CaptureIsFromUserInput(aIsFromUserInput);
 }
 
-AccEvent::AccEvent(PRUint32 aEventType, nsINode* aNode,
+AccEvent::AccEvent(uint32_t aEventType, nsINode* aNode,
                    EIsFromUserInput aIsFromUserInput, EEventRule aEventRule) :
   mEventType(aEventType), mEventRule(aEventRule), mNode(aNode)
 {
@@ -74,7 +73,7 @@ AccEvent::GetDocAccessible()
   if (node)
     return GetAccService()->GetDocAccessible(node->OwnerDoc());
 
-  return nsnull;
+  return nullptr;
 }
 
 already_AddRefed<nsAccEvent>
@@ -88,10 +87,10 @@ AccEvent::CreateXPCOMObject()
 ////////////////////////////////////////////////////////////////////////////////
 // AccEvent cycle collection
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(AccEvent)
+NS_IMPL_CYCLE_COLLECTION_NATIVE_CLASS(AccEvent)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_NATIVE(AccEvent)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mAccessible)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mAccessible)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_BEGIN(AccEvent)
@@ -115,7 +114,7 @@ AccEvent::GetAccessibleForNode() const
       return document->GetAccessible(mNode);
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 void
@@ -128,10 +127,8 @@ AccEvent::CaptureIsFromUserInput(EIsFromUserInput aIsFromUserInput)
     // XXX: remove this hack during reorganization of 506907. Meanwhile we
     // want to get rid an assertion for application accessible events which
     // don't have DOM node (see bug 506206).
-    ApplicationAccessible* applicationAcc =
-      nsAccessNode::GetApplicationAccessible();
 
-    if (mAccessible != static_cast<nsIAccessible*>(applicationAcc))
+    if (mAccessible != static_cast<nsIAccessible*>(ApplicationAcc()))
       NS_ASSERTION(targetNode, "There should always be a DOM node for an event");
   }
 #endif
@@ -168,7 +165,7 @@ AccEvent::CaptureIsFromUserInput(EIsFromUserInput aIsFromUserInput)
 // support correct state change coalescence (XXX Bug 569356). Also we need to
 // decide how to coalesce events created via accessible (instead of node).
 AccStateChangeEvent::
-  AccStateChangeEvent(Accessible* aAccessible, PRUint64 aState,
+  AccStateChangeEvent(Accessible* aAccessible, uint64_t aState,
                       bool aIsEnabled, EIsFromUserInput aIsFromUserInput):
   AccEvent(nsIAccessibleEvent::EVENT_STATE_CHANGE, aAccessible,
            aIsFromUserInput, eAllowDupes),
@@ -177,7 +174,7 @@ AccStateChangeEvent::
 }
 
 AccStateChangeEvent::
-  AccStateChangeEvent(nsINode* aNode, PRUint64 aState, bool aIsEnabled):
+  AccStateChangeEvent(nsINode* aNode, uint64_t aState, bool aIsEnabled):
   AccEvent(::nsIAccessibleEvent::EVENT_STATE_CHANGE, aNode,
            eAutoDetect, eAllowDupes),
   mState(aState), mIsEnabled(aIsEnabled)
@@ -185,7 +182,7 @@ AccStateChangeEvent::
 }
 
 AccStateChangeEvent::
-  AccStateChangeEvent(nsINode* aNode, PRUint64 aState) :
+  AccStateChangeEvent(nsINode* aNode, uint64_t aState) :
   AccEvent(::nsIAccessibleEvent::EVENT_STATE_CHANGE, aNode,
            eAutoDetect, eAllowDupes),
   mState(aState)
@@ -217,14 +214,13 @@ AccStateChangeEvent::CreateXPCOMObject()
 // we are ready to fire the event and so we will no longer assert at that point
 // if the node was removed from the document. Either way, the AT won't work with
 // a defunct accessible so the behaviour should be equivalent.
-// XXX revisit this when coalescence is faster (eCoalesceFromSameSubtree)
 AccTextChangeEvent::
-  AccTextChangeEvent(Accessible* aAccessible, PRInt32 aStart,
+  AccTextChangeEvent(Accessible* aAccessible, int32_t aStart,
                      const nsAString& aModifiedText, bool aIsInserted,
                      EIsFromUserInput aIsFromUserInput)
   : AccEvent(aIsInserted ?
-             static_cast<PRUint32>(nsIAccessibleEvent::EVENT_TEXT_INSERTED) :
-             static_cast<PRUint32>(nsIAccessibleEvent::EVENT_TEXT_REMOVED),
+             static_cast<uint32_t>(nsIAccessibleEvent::EVENT_TEXT_INSERTED) :
+             static_cast<uint32_t>(nsIAccessibleEvent::EVENT_TEXT_REMOVED),
              aAccessible, aIsFromUserInput, eAllowDupes)
   , mStart(aStart)
   , mIsInserted(aIsInserted)
@@ -246,17 +242,23 @@ AccTextChangeEvent::CreateXPCOMObject()
 
 
 ////////////////////////////////////////////////////////////////////////////////
-// AccMutationEvent
+// AccReorderEvent
 ////////////////////////////////////////////////////////////////////////////////
 
-AccMutationEvent::
-  AccMutationEvent(PRUint32 aEventType, Accessible* aTarget,
-                   nsINode* aTargetNode) :
-  AccEvent(aEventType, aTarget, eAutoDetect, eCoalesceFromSameSubtree)
+uint32_t
+AccReorderEvent::IsShowHideEventTarget(const Accessible* aTarget) const
 {
-  mNode = aTargetNode;
-}
+  uint32_t count = mDependentEvents.Length();
+  for (uint32_t index = count - 1; index < count; index--) {
+    if (mDependentEvents[index]->mAccessible == aTarget &&
+        mDependentEvents[index]->mEventType == nsIAccessibleEvent::EVENT_SHOW ||
+        mDependentEvents[index]->mEventType == nsIAccessibleEvent::EVENT_HIDE) {
+      return mDependentEvents[index]->mEventType;
+    }
+  }
 
+  return 0;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // AccHideEvent
@@ -266,7 +268,6 @@ AccHideEvent::
   AccHideEvent(Accessible* aTarget, nsINode* aTargetNode) :
   AccMutationEvent(::nsIAccessibleEvent::EVENT_HIDE, aTarget, aTargetNode)
 {
-  mParent = mAccessible->Parent();
   mNextSibling = mAccessible->NextSibling();
   mPrevSibling = mAccessible->PrevSibling();
 }
@@ -296,7 +297,7 @@ AccShowEvent::
 ////////////////////////////////////////////////////////////////////////////////
 
 AccCaretMoveEvent::
-  AccCaretMoveEvent(Accessible* aAccessible, PRInt32 aCaretOffset) :
+  AccCaretMoveEvent(Accessible* aAccessible, int32_t aCaretOffset) :
   AccEvent(::nsIAccessibleEvent::EVENT_TEXT_CARET_MOVED, aAccessible),
   mCaretOffset(aCaretOffset)
 {
@@ -327,7 +328,7 @@ AccSelChangeEvent::
                     SelChangeType aSelChangeType) :
     AccEvent(0, aItem, eAutoDetect, eCoalesceSelectionChange),
     mWidget(aWidget), mItem(aItem), mSelChangeType(aSelChangeType),
-    mPreceedingCount(0), mPackedEvent(nsnull)
+    mPreceedingCount(0), mPackedEvent(nullptr)
 {
   if (aSelChangeType == eSelectionAdd) {
     if (mWidget->GetSelectedItem(1))
@@ -345,8 +346,8 @@ AccSelChangeEvent::
 ////////////////////////////////////////////////////////////////////////////////
 
 AccTableChangeEvent::
-  AccTableChangeEvent(Accessible* aAccessible, PRUint32 aEventType,
-                      PRInt32 aRowOrColIndex, PRInt32 aNumRowsOrCols) :
+  AccTableChangeEvent(Accessible* aAccessible, uint32_t aEventType,
+                      int32_t aRowOrColIndex, int32_t aNumRowsOrCols) :
   AccEvent(aEventType, aAccessible),
   mRowOrColIndex(aRowOrColIndex), mNumRowsOrCols(aNumRowsOrCols)
 {
@@ -368,9 +369,11 @@ AccTableChangeEvent::CreateXPCOMObject()
 AccVCChangeEvent::
   AccVCChangeEvent(Accessible* aAccessible,
                    nsIAccessible* aOldAccessible,
-                   PRInt32 aOldStart, PRInt32 aOldEnd) :
+                   int32_t aOldStart, int32_t aOldEnd,
+                   int16_t aReason) :
     AccEvent(::nsIAccessibleEvent::EVENT_VIRTUALCURSOR_CHANGED, aAccessible),
-    mOldAccessible(aOldAccessible), mOldStart(aOldStart), mOldEnd(aOldEnd)
+    mOldAccessible(aOldAccessible), mOldStart(aOldStart), mOldEnd(aOldEnd),
+    mReason(aReason)
 {
 }
 

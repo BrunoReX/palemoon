@@ -6,9 +6,10 @@
 let tempScope = {};
 Cu.import("resource:///modules/HUDService.jsm", tempScope);
 let HUDService = tempScope.HUDService;
-let ConsoleUtils = tempScope.ConsoleUtils;
-Cu.import("resource:///modules/WebConsoleUtils.jsm", tempScope);
+Cu.import("resource://gre/modules/devtools/WebConsoleUtils.jsm", tempScope);
 let WebConsoleUtils = tempScope.WebConsoleUtils;
+const WEBCONSOLE_STRINGS_URI = "chrome://browser/locale/devtools/webconsole.properties";
+let WCU_l10n = new WebConsoleUtils.l10n(WEBCONSOLE_STRINGS_URI);
 
 function log(aMsg)
 {
@@ -32,7 +33,7 @@ let tab, browser, hudId, hud, hudBox, filterBox, outputNode, cs;
 function addTab(aURL)
 {
   gBrowser.selectedTab = gBrowser.addTab();
-  content.location = aURL;
+  content.location.assign(aURL);
   tab = gBrowser.selectedTab;
   browser = gBrowser.getBrowserForTab(tab);
 }
@@ -180,6 +181,57 @@ function closeConsole(aTab, aCallback)
   HUDService.deactivateHUDForContext(aTab || tab);
 }
 
+/**
+ * Polls a given function waiting for opening context menu.
+ *
+ * @Param {nsIDOMElement} aContextMenu
+ * @param object aOptions
+ *        Options object with the following properties:
+ *        - successFn
+ *        A function called if opening the given context menu - success to return.
+ *        - failureFn
+ *        A function called if not opening the given context menu - fails to return.
+ *        - target
+ *        The target element for showing a context menu.
+ *        - timeout
+ *        Timeout for popup shown, in milliseconds. Default is 5000.
+ */
+function waitForOpenContextMenu(aContextMenu, aOptions) {
+  let start = Date.now();
+  let timeout = aOptions.timeout || 5000;
+  let targetElement = aOptions.target;
+
+  if (!aContextMenu) {
+    ok(false, "Can't get a context menu.");
+    aOptions.failureFn();
+    return;
+  }
+  if (!targetElement) {
+    ok(false, "Can't get a target element.");
+    aOptions.failureFn();
+    return;
+  }
+
+  function onPopupShown() {
+    aContextMenu.removeEventListener("popupshown", onPopupShown);
+    clearTimeout(onTimeout);
+    aOptions.successFn();
+  }
+
+
+  aContextMenu.addEventListener("popupshown", onPopupShown);
+
+  let onTimeout = setTimeout(function(){
+    aContextMenu.removeEventListener("popupshown", onPopupShown);
+    aOptions.failureFn();
+  }, timeout);
+
+  // open a context menu.
+  let eventDetails = { type : "contextmenu", button : 2};
+  EventUtils.synthesizeMouse(targetElement, 2, 2,
+                             eventDetails, targetElement.ownerDocument.defaultView);
+}
+
 function finishTest()
 {
   browser = hudId = hud = filterBox = outputNode = cs = null;
@@ -202,7 +254,7 @@ function tearDown()
   while (gBrowser.tabs.length > 1) {
     gBrowser.removeCurrentTab();
   }
-  tab = browser = hudId = hud = filterBox = outputNode = cs = null;
+  WCU_l10n = tab = browser = hudId = hud = filterBox = outputNode = cs = null;
 }
 
 registerCleanupFunction(tearDown);

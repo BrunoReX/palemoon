@@ -28,7 +28,7 @@ nsRDFConMemberTestNode::nsRDFConMemberTestNode(TestNode* aParent,
 {
 #ifdef PR_LOGGING
     if (PR_LOG_TEST(gXULTemplateLog, PR_LOG_DEBUG)) {
-        nsCAutoString props;
+        nsAutoCString props;
 
         nsResourceSet& containmentProps = aProcessor->ContainmentProperties();
         nsResourceSet::ConstIterator last = containmentProps.Last();
@@ -137,7 +137,7 @@ nsRDFConMemberTestNode::FilterInstantiations(InstantiationSet& aInstantiations,
 
             if (rdfcontainer) {
                 // RDF containers are easy. Just use the container API.
-                PRInt32 index;
+                int32_t index;
                 rv = rdfcontainer->IndexOf(memberValue, &index);
                 if (NS_FAILED(rv)) return rv;
 
@@ -379,7 +379,7 @@ nsRDFConMemberTestNode::FilterInstantiations(InstantiationSet& aInstantiations,
                         variable = mMemberVariable;
 
                         value = do_QueryInterface(isupports);
-                        NS_ASSERTION(value != nsnull, "member is not an nsIRDFNode");
+                        NS_ASSERTION(value != nullptr, "member is not an nsIRDFNode");
                         if (! value) continue;
 
 #ifdef PR_LOGGING
@@ -396,7 +396,7 @@ nsRDFConMemberTestNode::FilterInstantiations(InstantiationSet& aInstantiations,
                         variable = mContainerVariable;
 
                         valueRes = do_QueryInterface(isupports);
-                        NS_ASSERTION(valueRes != nsnull, "container is not an nsIRDFResource");
+                        NS_ASSERTION(valueRes != nullptr, "container is not an nsIRDFResource");
                         if (! valueRes) continue;
 
                         value = valueRes;

@@ -33,7 +33,7 @@
 #include "nsIDOMCompositionListener.h"
 #include "nsIDOMTextListener.h"
 #include "nsIDOMMouseEvent.h"
-#include "nsIDOMNSEvent.h"
+#include "nsIDOMWheelEvent.h"
 #include "nsIView.h"
 #include "nsGUIEvent.h"
 #include "nsIViewManager.h"
@@ -42,11 +42,13 @@
 #include "nsIContent.h"
 #include "nsITimer.h"
 
+using namespace mozilla;
+
 const int MIN_INT =((int) (1 << (sizeof(int) * 8 - 1)));
 
 static int g_lastX=MIN_INT;
 static int g_lastY=MIN_INT;
-static PRInt32 g_panning = 0;
+static int32_t g_panning = 0;
 static bool g_is_scrollable = false;
 
 #define EM_MULT 16.
@@ -77,7 +79,7 @@ private:
   void RemoveWindowListeners(nsIDOMWindow *aDOMWin);
   void GetChromeEventHandler(nsIDOMWindow *aDOMWin, nsIDOMEventTarget **aChromeTarget);
   void AttachWindowListeners(nsIDOMWindow *aDOMWin);
-  bool IsXULNode(nsIDOMNode *aNode, PRUint32 *aType = 0);
+  bool IsXULNode(nsIDOMNode *aNode, uint32_t *aType = 0);
   nsresult GetDOMWindowByNode(nsIDOMNode *aNode, nsIDOMWindow * *aDOMWindow);
   nsresult UpdateFromEvent(nsIDOMEvent *aDOMEvent);
   nsresult MouseDown(nsIDOMEvent* aDOMEvent);
@@ -114,25 +116,22 @@ nsWidgetUtils::Init()
 nsresult
 nsWidgetUtils::UpdateFromEvent(nsIDOMEvent *aDOMEvent)
 {
-  nsCOMPtr <nsIDOMMouseEvent> mouseEvent;
-  mouseEvent = do_QueryInterface(aDOMEvent);
+  nsCOMPtr<nsIDOMMouseEvent> mouseEvent = do_QueryInterface(aDOMEvent);
   if (!mouseEvent)
     return NS_OK;
 
-  ((nsIDOMMouseEvent*)mouseEvent)->GetScreenX(&g_lastX);
-  ((nsIDOMMouseEvent*)mouseEvent)->GetScreenY(&g_lastY);
+  mouseEvent->GetScreenX(&g_lastX);
+  mouseEvent->GetScreenY(&g_lastY);
 
   nsCOMPtr<nsIDOMWindow> mWindow;
   nsCOMPtr<nsIDOMNode> mNode;
   nsCOMPtr<nsIDOMNode> mOrigNode;
 
-  PRUint32 type = 0;
+  uint32_t type = 0;
   bool isXul = false;
   {
-    nsCOMPtr <nsIDOMNSEvent> aEvent = do_QueryInterface(aDOMEvent);
     nsCOMPtr<nsIDOMEventTarget> eventOrigTarget;
-    if (aEvent)
-      aEvent->GetOriginalTarget(getter_AddRefs(eventOrigTarget));
+    aDOMEvent->GetOriginalTarget(getter_AddRefs(eventOrigTarget));
     if (eventOrigTarget)
       mOrigNode = do_QueryInterface(eventOrigTarget);
     isXul = IsXULNode(mOrigNode, &type);
@@ -205,7 +204,7 @@ nsWidgetUtils::MouseUp(nsIDOMEvent* aDOMEvent)
      nsresult rv;
      if (mTimer) {
        rv = mTimer->InitWithFuncCallback(nsWidgetUtils::StopPanningCallback,
-                                        nsnull, 500, nsITimer::TYPE_ONE_SHOT);
+                                        nullptr, 500, nsITimer::TYPE_ONE_SHOT);
        if (NS_SUCCEEDED(rv))
          return NS_OK;
      }
@@ -236,27 +235,20 @@ nsWidgetUtils::MouseMove(nsIDOMEvent* aDOMEvent)
     if (NS_FAILED(UpdateFromEvent(aDOMEvent)))
       return NS_OK;
 
-  nsEventStatus statusX;
-  nsMouseScrollEvent scrollEventX(true, NS_MOUSE_SCROLL, mWidget);
-  scrollEventX.delta = dx;
-  scrollEventX.scrollFlags = nsMouseScrollEvent::kIsHorizontal | nsMouseScrollEvent::kHasPixels;
-  mViewManager->DispatchEvent(&scrollEventX, aView, &statusX);
-  if(statusX != nsEventStatus_eIgnore ){
-    if (dx > 5)
+  nsEventStatus status;
+  widget::WheelEvent wheelEvent(true, NS_WHEEL_WHEEL, mWidget);
+  wheelEvent.deltaMode = nsIDOMWheelEvent::DOM_DELTA_LINE;
+  wheelEvent.deltaX = wheelEvent.lineOrPageDeltaX = dx;
+  wheelEvent.deltaY = wheelEvent.lineOrPageDeltaY = dy;
+  mViewManager->DispatchEvent(&wheelEvent, aView, &status);
+  if (status != nsEventStatus_eIgnore) {
+    if (dx > 5 || dy > 5) {
       g_panning = true;
+    }
     g_lastX = x;
-  }
-
-  nsEventStatus statusY;
-  nsMouseScrollEvent scrollEventY(true, NS_MOUSE_SCROLL, mWidget);
-  scrollEventY.delta = dy;
-  scrollEventY.scrollFlags = nsMouseScrollEvent::kIsVertical | nsMouseScrollEvent::kHasPixels;
-  mViewManager->DispatchEvent(&scrollEventY, aView, &statusY);
-  if(statusY != nsEventStatus_eIgnore ){
-    if (dy > 5)
-      g_panning = true;
     g_lastY = y;
   }
+
   if (g_panning) {
      aDOMEvent->StopPropagation();
      aDOMEvent->PreventDefault();
@@ -267,13 +259,13 @@ nsWidgetUtils::MouseMove(nsIDOMEvent* aDOMEvent)
 
 // nsIContentPolicy Implementation
 NS_IMETHODIMP
-nsWidgetUtils::ShouldLoad(PRUint32          aContentType,
+nsWidgetUtils::ShouldLoad(uint32_t          aContentType,
                           nsIURI           *aContentLocation,
                           nsIURI           *aRequestingLocation,
                           nsISupports      *aRequestingContext,
                           const nsACString &aMimeGuess,
                           nsISupports      *aExtra,
-                          PRInt16          *aDecision)
+                          int16_t          *aDecision)
 {
     *aDecision = nsIContentPolicy::ACCEPT;
     nsresult rv;
@@ -285,9 +277,9 @@ nsWidgetUtils::ShouldLoad(PRUint32          aContentType,
     if (!aContentLocation)
         return NS_OK;
 
-    nsCAutoString scheme;
+    nsAutoCString scheme;
     rv = aContentLocation->GetScheme(scheme);
-    nsCAutoString lscheme;
+    nsAutoCString lscheme;
     ToLowerCase(scheme, lscheme);
     if (!lscheme.EqualsLiteral("ftp") &&
         !lscheme.EqualsLiteral("http") &&
@@ -318,20 +310,20 @@ nsWidgetUtils::HandleEvent(nsIDOMEvent* aDOMEvent)
 }
 
 NS_IMETHODIMP
-nsWidgetUtils::ShouldProcess(PRUint32          aContentType,
+nsWidgetUtils::ShouldProcess(uint32_t          aContentType,
                              nsIURI           *aContentLocation,
                              nsIURI           *aRequestingLocation,
                              nsISupports      *aRequestingContext,
                              const nsACString &aMimeGuess,
                              nsISupports      *aExtra,
-                             PRInt16          *aDecision)
+                             int16_t          *aDecision)
 {
     *aDecision = nsIContentPolicy::ACCEPT;
     return NS_OK;
 }
 
 bool
-nsWidgetUtils::IsXULNode(nsIDOMNode *aNode, PRUint32 *aType)
+nsWidgetUtils::IsXULNode(nsIDOMNode *aNode, uint32_t *aType)
 {
   bool retval = false;
   if (!aNode) return retval;
@@ -377,7 +369,7 @@ nsWidgetUtils::GetChromeEventHandler(nsIDOMWindow *aDOMWin,
                                      nsIDOMEventTarget **aChromeTarget)
 {
     nsCOMPtr<nsPIDOMWindow> privateDOMWindow(do_QueryInterface(aDOMWin));
-    nsIDOMEventTarget* chromeEventHandler = nsnull;
+    nsIDOMEventTarget* chromeEventHandler = nullptr;
     if (privateDOMWindow) {
         chromeEventHandler = privateDOMWindow->GetChromeEventHandler();
     }
@@ -489,7 +481,7 @@ static NS_METHOD WidgetUtilsRegistration(nsIComponentManager *aCompMgr,
     if (NS_FAILED(rv))
         return rv;
 
-    char* previous = nsnull;
+    char* previous = nullptr;
     rv = catman->AddCategoryEntry("app-startup",
                                   "WidgetUtils",
                                   WidgetUtils_ContractID,

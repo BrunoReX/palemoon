@@ -3,9 +3,8 @@
 
 MARIONETTE_TIMEOUT = 10000;
 
-const WHITELIST_PREF = "dom.sms.whitelist";
-let uriPrePath = window.location.protocol + "//" + window.location.host;
-SpecialPowers.setCharPref(WHITELIST_PREF, uriPrePath);
+SpecialPowers.setBoolPref("dom.sms.enabled", true);
+SpecialPowers.addPermission("sms", true, document);
 
 let sms = window.navigator.mozSms;
 let sender = "5555552368";
@@ -26,11 +25,14 @@ sms.onreceived = function onreceived(event) {
   ok(message instanceof MozSmsMessage);
 
   is(message.delivery, "received");
+  is(message.deliveryStatus, "success");
   is(message.sender, sender);
   is(message.receiver, null);
   is(message.body, body);
+  is(message.messageClass, "normal");
   ok(message.timestamp instanceof Date);
-  ok(message.timestamp.getTime() > now);
+  // SMSC timestamp is in seconds.
+  ok(Math.floor(message.timestamp.getTime() / 1000) >= Math.floor(now / 1000));
 
   cleanUp();
 };
@@ -41,6 +43,6 @@ function cleanUp() {
     return;
   }
 
-  SpecialPowers.clearUserPref(WHITELIST_PREF);
+  SpecialPowers.removePermission("sms", document);
   finish();
 }

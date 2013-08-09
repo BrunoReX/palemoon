@@ -3,10 +3,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
+FAIL_ON_WARNINGS = 1
 
 include $(DEPTH)/config/autoconf.mk
 
@@ -38,7 +39,9 @@ LOCAL_INCLUDES	= \
 	-I$(srcdir)/../../../xml/content/src \
 	-I$(srcdir)/../../../base/src \
 	-I$(srcdir)/../../../xml/document/src \
+	-I$(srcdir)/../../../../layout/generic \
 	-I$(srcdir)/../../../../layout/style \
+	-I$(srcdir)/../../../../layout/xul/base/src \
 	-I$(srcdir)/../../../html/content/src \
 	-I$(srcdir)/../../../events/src \
 	-I$(srcdir)/../../../xbl/src \

@@ -11,11 +11,30 @@
 #include <shobjidl.h>
 #include "nsAutoPtr.h"
 #include "nsString.h"
+#include "nsRegion.h"
+#include "nsRect.h"
+
+#include "nsThreadUtils.h"
+#include "nsICryptoHash.h"
+#ifdef MOZ_PLACES
+#include "nsIFaviconService.h"
+#endif
+#include "nsIDownloader.h"
+#include "nsIURI.h"
+
+#include "mozilla/Attributes.h"
 
 class nsWindow;
 
 namespace mozilla {
 namespace widget {
+
+class myDownloadObserver MOZ_FINAL : public nsIDownloadObserver
+{
+public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIDOWNLOADOBSERVER
+};
 
 class WinUtils {
 public:
@@ -98,7 +117,7 @@ public:
   /**
    * GetMonitorCount() returns count of monitors on the environment.
    */
-  static PRInt32 GetMonitorCount();
+  static int32_t GetMonitorCount();
 
   /**
    * IsOurProcessWindow() returns TRUE if aWnd belongs our process.
@@ -167,7 +186,7 @@ public:
    * one of nsIDOMMouseEvent::MOZ_SOURCE_*.  This method MUST be called during
    * mouse message handling.
    */
-  static PRUint16 GetMouseInputSource();
+  static uint16_t GetMouseInputSource();
 
   /**
    * SHCreateItemFromParsingName() calls native SHCreateItemFromParsingName()
@@ -188,6 +207,22 @@ public:
   static bool GetShellItemPath(IShellItem* aItem,
                                nsString& aResultString);
 
+  /**
+   * ConvertHRGNToRegion converts a Windows HRGN to an nsIntRegion.
+   *
+   * aRgn the HRGN to convert.
+   * returns the nsIntRegion.
+   */
+  static nsIntRegion ConvertHRGNToRegion(HRGN aRgn);
+
+  /**
+   * ToIntRect converts a Windows RECT to a nsIntRect.
+   *
+   * aRect the RECT to convert.
+   * returns the nsIntRect.
+   */
+  static nsIntRect ToIntRect(const RECT& aRect);
+
 private:
   typedef HRESULT (WINAPI * SHCreateItemFromParsingNamePtr)(PCWSTR pszPath,
                                                             IBindCtx *pbc,
@@ -202,6 +237,101 @@ private:
    */
   static bool VistaCreateItemFromParsingNameInit();
 };
+
+#ifdef MOZ_PLACES
+class AsyncFaviconDataReady MOZ_FINAL : public nsIFaviconDataCallback
+{
+public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIFAVICONDATACALLBACK
+  
+  AsyncFaviconDataReady(nsIURI *aNewURI, 
+                        nsCOMPtr<nsIThread> &aIOThread, 
+                        const bool aURLShortcut);
+  nsresult OnFaviconDataNotAvailable(void);
+private:
+  nsCOMPtr<nsIURI> mNewURI;
+  nsCOMPtr<nsIThread> mIOThread;
+  const bool mURLShortcut;
+};
+#endif
+
+/**
+  * Asynchronously tries add the list to the build
+  */
+class AsyncWriteIconToDisk : public nsIRunnable
+{
+public:
+  const bool mURLShortcut;
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIRUNNABLE
+
+  // Warning: AsyncWriteIconToDisk assumes ownership of the aData buffer passed in
+  AsyncWriteIconToDisk(const nsAString &aIconPath,
+                       const nsACString &aMimeTypeOfInputData,
+                       uint8_t *aData, 
+                       uint32_t aDataLen,
+                       const bool aURLShortcut);
+  virtual ~AsyncWriteIconToDisk();
+
+private:
+  nsAutoString mIconPath;
+  nsAutoCString mMimeTypeOfInputData;
+  nsAutoArrayPtr<uint8_t> mBuffer;
+  uint32_t mBufferLength;
+};
+
+class AsyncDeleteIconFromDisk : public nsIRunnable
+{
+public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIRUNNABLE
+
+  AsyncDeleteIconFromDisk(const nsAString &aIconPath);
+  virtual ~AsyncDeleteIconFromDisk();
+
+private:
+  nsAutoString mIconPath;
+};
+
+class AsyncDeleteAllFaviconsFromDisk : public nsIRunnable
+{
+public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIRUNNABLE
+
+  AsyncDeleteAllFaviconsFromDisk();
+  virtual ~AsyncDeleteAllFaviconsFromDisk();
+};
+
+class FaviconHelper
+{
+public:
+  static const char kJumpListCacheDir[];
+  static const char kShortcutCacheDir[];
+  static nsresult ObtainCachedIconFile(nsCOMPtr<nsIURI> aFaviconPageURI,
+                                       nsString &aICOFilePath,
+                                       nsCOMPtr<nsIThread> &aIOThread,
+                                       bool aURLShortcut);
+
+  static nsresult HashURI(nsCOMPtr<nsICryptoHash> &aCryptoHash, 
+                          nsIURI *aUri,
+                          nsACString& aUriHash);
+
+  static nsresult GetOutputIconPath(nsCOMPtr<nsIURI> aFaviconPageURI,
+                                    nsCOMPtr<nsIFile> &aICOFile,
+                                    bool aURLShortcut);
+
+  static nsresult 
+  CacheIconFileFromFaviconURIAsync(nsCOMPtr<nsIURI> aFaviconPageURI,
+                                   nsCOMPtr<nsIFile> aICOFile,
+                                   nsCOMPtr<nsIThread> &aIOThread,
+                                   bool aURLShortcut);
+
+  static int32_t GetICOCacheSecondsTimeout();
+};
+
+
 
 } // namespace widget
 } // namespace mozilla

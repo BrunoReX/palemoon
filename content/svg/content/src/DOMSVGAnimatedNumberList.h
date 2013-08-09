@@ -11,6 +11,7 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsIDOMSVGAnimatedNumberList.h"
 #include "nsSVGElement.h"
+#include "mozilla/Attributes.h"
 
 namespace mozilla {
 
@@ -33,7 +34,7 @@ class SVGNumberList;
  * out our pointers to them when they die (making our pointers to them true
  * weak refs).
  */
-class DOMSVGAnimatedNumberList : public nsIDOMSVGAnimatedNumberList
+class DOMSVGAnimatedNumberList MOZ_FINAL : public nsIDOMSVGAnimatedNumberList
 {
   friend class DOMSVGNumberList;
 
@@ -56,12 +57,12 @@ public:
   static already_AddRefed<DOMSVGAnimatedNumberList>
     GetDOMWrapper(SVGAnimatedNumberList *aList,
                   nsSVGElement *aElement,
-                  PRUint8 aAttrEnum);
+                  uint8_t aAttrEnum);
 
   /**
    * This method returns the DOMSVGAnimatedNumberList wrapper for an internal
    * SVGAnimatedNumberList object if it currently has a wrapper. If it does
-   * not, then nsnull is returned.
+   * not, then nullptr is returned.
    */
   static DOMSVGAnimatedNumberList*
     GetDOMWrapperIfExists(SVGAnimatedNumberList *aList);
@@ -93,9 +94,9 @@ private:
    * Only our static GetDOMWrapper() factory method may create objects of our
    * type.
    */
-  DOMSVGAnimatedNumberList(nsSVGElement *aElement, PRUint8 aAttrEnum)
-    : mBaseVal(nsnull)
-    , mAnimVal(nsnull)
+  DOMSVGAnimatedNumberList(nsSVGElement *aElement, uint8_t aAttrEnum)
+    : mBaseVal(nullptr)
+    , mAnimVal(nullptr)
     , mElement(aElement)
     , mAttrEnum(aAttrEnum)
   {}
@@ -116,7 +117,7 @@ private:
   // ourself, but also for our base/animVal and all of their items.
   nsRefPtr<nsSVGElement> mElement;
 
-  PRUint8 mAttrEnum;
+  uint8_t mAttrEnum;
 };
 
 } // namespace mozilla

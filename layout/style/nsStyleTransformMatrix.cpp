@@ -39,14 +39,21 @@ static double FlushToZero(double aVal)
     return aVal;
 }
 
-/* Helper function to fill in an nscoord with the specified nsCSSValue. */
-static nscoord CalcLength(const nsCSSValue &aValue,
-                          nsStyleContext* aContext,
-                          nsPresContext* aPresContext,
-                          bool &aCanStoreInRuleTree)
+float
+ProcessTranslatePart(const nsCSSValue& aValue,
+                     nsStyleContext* aContext,
+                     nsPresContext* aPresContext,
+                     bool& aCanStoreInRuleTree,
+                     nscoord aSize,
+                     float aAppUnitsPerMatrixUnit)
 {
-  if (aValue.GetUnit() == eCSSUnit_Pixel ||
-      aValue.GetUnit() == eCSSUnit_Number) {
+  nscoord offset = 0;
+  float percent = 0.0f;
+
+  if (aValue.GetUnit() == eCSSUnit_Percent) {
+    percent = aValue.GetPercentValue();
+  } else if (aValue.GetUnit() == eCSSUnit_Pixel ||
+             aValue.GetUnit() == eCSSUnit_Number) {
     // Handle this here (even though nsRuleNode::CalcLength handles it
     // fine) so that callers are allowed to pass a null style context
     // and pres context to SetToTransformFunction if they know (as
@@ -54,24 +61,10 @@ static nscoord CalcLength(const nsCSSValue &aValue,
     // function have already been computed to pixels and percents.
     //
     // Raw numbers are treated as being pixels.
-    return nsPresContext::CSSPixelsToAppUnits(aValue.GetFloatValue());
-  }
-  return nsRuleNode::CalcLength(aValue, aContext, aPresContext,
-                                aCanStoreInRuleTree);
-}
-
-static float
-ProcessTranslatePart(const nsCSSValue& aValue,
-                     nsStyleContext* aContext,
-                     nsPresContext* aPresContext,
-                     bool& aCanStoreInRuleTree,
-                     nscoord aSize, float aAppUnitsPerMatrixUnit)
-{
-  nscoord offset = 0;
-  float percent = 0.0f;
-
-  if (aValue.GetUnit() == eCSSUnit_Percent) {
-    percent = aValue.GetPercentValue();
+    //
+    // Don't convert to aValue to AppUnits here to avoid precision issues.
+    return aValue.GetFloatValue() *
+           (float(nsPresContext::AppUnitsPerCSSPixel()) / aAppUnitsPerMatrixUnit);
   } else if (aValue.IsCalcUnit()) {
     nsRuleNode::ComputedCalc result =
       nsRuleNode::SpecifiedCalcToComputedCalc(aValue, aContext, aPresContext,
@@ -79,8 +72,8 @@ ProcessTranslatePart(const nsCSSValue& aValue,
     percent = result.mPercent;
     offset = result.mLength;
   } else {
-    offset = CalcLength(aValue, aContext, aPresContext,
-                         aCanStoreInRuleTree);
+    offset = nsRuleNode::CalcLength(aValue, aContext, aPresContext,
+                                    aCanStoreInRuleTree);
   }
 
   return (percent * NSAppUnitsToFloatPixels(aSize, aAppUnitsPerMatrixUnit)) + 
@@ -167,7 +160,7 @@ ProcessMatrix3D(gfx3DMatrix& aMatrix,
 }
 
 /* Helper function to process two matrices that we need to interpolate between */
-static void
+void
 ProcessInterpolateMatrix(gfx3DMatrix& aMatrix,
                          const nsCSSValue::Array* aData,
                          nsStyleContext* aContext,
@@ -623,7 +616,7 @@ ReadTransforms(const nsCSSValueList* aList,
 {
   gfx3DMatrix result;
 
-  for (const nsCSSValueList* curr = aList; curr != nsnull; curr = curr->mNext) {
+  for (const nsCSSValueList* curr = aList; curr != nullptr; curr = curr->mNext) {
     const nsCSSValue &currElem = curr->mValue;
     NS_ASSERTION(currElem.GetUnit() == eCSSUnit_Function,
                  "Stream should consist solely of functions!");

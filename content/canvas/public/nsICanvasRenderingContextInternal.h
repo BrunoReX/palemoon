@@ -9,14 +9,14 @@
 #include "nsISupports.h"
 #include "nsIInputStream.h"
 #include "nsIDocShell.h"
+#include "nsHTMLCanvasElement.h"
 #include "gfxPattern.h"
 #include "mozilla/RefPtr.h"
 
 #define NS_ICANVASRENDERINGCONTEXTINTERNAL_IID \
-{ 0xffb42d3c, 0x8281, 0x44c8, \
-  { 0xac, 0xba, 0x73, 0x15, 0x31, 0xaa, 0xe5, 0x07 } }
+{ 0x8b8da863, 0xd151, 0x4014, \
+  { 0x8b, 0xdc, 0x62, 0xb5, 0x0d, 0xc0, 0x2b, 0x62 } }
 
-class nsHTMLCanvasElement;
 class gfxContext;
 class gfxASurface;
 class nsIPropertyBag;
@@ -46,20 +46,25 @@ public:
     RenderFlagPremultAlpha = 0x1
   };
 
-  // This method should NOT hold a ref to aParentCanvas; it will be called
-  // with nsnull when the element is going away.
-  NS_IMETHOD SetCanvasElement(nsHTMLCanvasElement* aParentCanvas) = 0;
+  void SetCanvasElement(nsHTMLCanvasElement* aParentCanvas)
+  {
+    mCanvasElement = aParentCanvas;
+  }
+  nsHTMLCanvasElement* GetParentObject() const
+  {
+    return mCanvasElement;
+  }
 
   // Sets the dimensions of the canvas, in pixels.  Called
   // whenever the size of the element changes.
-  NS_IMETHOD SetDimensions(PRInt32 width, PRInt32 height) = 0;
+  NS_IMETHOD SetDimensions(int32_t width, int32_t height) = 0;
 
-  NS_IMETHOD InitializeWithSurface(nsIDocShell *docShell, gfxASurface *surface, PRInt32 width, PRInt32 height) = 0;
+  NS_IMETHOD InitializeWithSurface(nsIDocShell *docShell, gfxASurface *surface, int32_t width, int32_t height) = 0;
 
   // Render the canvas at the origin of the given gfxContext
   NS_IMETHOD Render(gfxContext *ctx,
                     gfxPattern::GraphicsFilter aFilter,
-                    PRUint32 aFlags = RenderFlagPremultAlpha) = 0;
+                    uint32_t aFlags = RenderFlagPremultAlpha) = 0;
 
   // Gives you a stream containing the image represented by this context.
   // The format is given in aMimeTime, for example "image/png".
@@ -76,8 +81,7 @@ public:
   NS_IMETHOD GetThebesSurface(gfxASurface **surface) = 0;
   
   // This gets an Azure SourceSurface for the canvas, this will be a snapshot
-  // of the canvas at the time it was called. This will return null for a
-  // non-azure canvas.
+  // of the canvas at the time it was called.
   virtual mozilla::TemporaryRef<mozilla::gfx::SourceSurface> GetSurfaceSnapshot() = 0;
 
   // If this context is opaque, the backing store of the canvas should
@@ -119,7 +123,16 @@ public:
   // anything into this canvas before changing the shmem state, it will be
   // lost.
   NS_IMETHOD SetIsIPC(bool isIPC) = 0;
+
+protected:
+  nsRefPtr<nsHTMLCanvasElement> mCanvasElement;
 };
+
+namespace mozilla {
+namespace dom {
+
+}
+}
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsICanvasRenderingContextInternal,
                               NS_ICANVASRENDERINGCONTEXTINTERNAL_IID)

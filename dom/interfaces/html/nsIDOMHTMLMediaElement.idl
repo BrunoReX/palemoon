@@ -27,14 +27,15 @@ interface nsIDOMMediaStream;
 #endif
 %}
 
-[scriptable, uuid(6b938133-a8c2-424a-9401-a631f74aeff5)]
+[scriptable, uuid(d9331886-3928-11e2-b0e1-10bf48d64bd4)]
 interface nsIDOMHTMLMediaElement : nsIDOMHTMLElement
 {
   // error state
   readonly attribute nsIDOMMediaError error;
 
   // network state
-  [implicit_jscontext] attribute jsval src;
+           attribute DOMString src;
+  [implicit_jscontext] attribute jsval mozSrcObject;
   readonly attribute DOMString currentSrc;
            attribute DOMString crossorigin;
   const unsigned short NETWORK_EMPTY = 0;
@@ -42,7 +43,7 @@ interface nsIDOMHTMLMediaElement : nsIDOMHTMLElement
   const unsigned short NETWORK_LOADING = 2;
   const unsigned short NETWORK_NO_SOURCE = 3;
   readonly attribute unsigned short networkState;
-           attribute DOMString preload;  
+           attribute DOMString preload;
   readonly attribute nsIDOMTimeRanges buffered;
   void load();
   DOMString canPlayType(in DOMString type);
@@ -91,6 +92,12 @@ interface nsIDOMHTMLMediaElement : nsIDOMHTMLElement
   readonly attribute unsigned long mozSampleRate;
            attribute unsigned long mozFrameBufferLength;
 
+  // Mozilla extension: return embedded metadata from the stream as a
+  // JSObject with key:value pairs for each tag. This can be used by
+  // player interfaces to display the song title, artist, etc.
+  [implicit_jscontext]
+  jsval mozGetMetadata();
+
   // Mozilla extension: load data from another media element. This is like
   // load() but we don't run the resource selection algorithm; instead
   // we just set our source to other's currentSrc. This is optimized
@@ -103,4 +110,43 @@ interface nsIDOMHTMLMediaElement : nsIDOMHTMLElement
   // the media element has a fragment URI for the currentSrc, otherwise
   // it is equal to the media duration.
   readonly attribute double mozFragmentEnd;
+
+   // Mozilla extension: an audio channel type for media elements.
+   // An exception is thrown if the app tries to change the audio channel type
+   // without the permission (manifest file for B2G apps).
+   // The supported values are:
+   // * normal (default value)
+   //   Automatically paused if "notification" or higher priority channel
+   //   is played
+   //   Use case: normal applications
+   // * content
+   //   Automatically paused if "notification" or higher priority channel
+   //   is played. Also paused if another app starts using "content"
+   //   channel. Using this channel never affects applications using
+   //   the "normal" channel.
+   //   Use case: video/audio players
+   // * notification
+   //   Automatically paused if "alarm" or higher priority channel is played.
+   //   Use case: New email, incoming SMS
+   // * alarm
+   //   Automatically paused if "telephony" or higher priority channel is
+   //   played.
+   //   User case: Alarm clock, calendar alarms
+   // * telephony
+   //   Automatically paused if "ringer" or higher priority
+   //   channel is played.
+   //   Use case: dialer, voip
+   // * ringer
+   //   Automatically paused if "publicnotification" or higher priority
+   //   channel is played.
+   //   Use case: dialer, voip
+   // * publicnotification
+   //   Always plays in speaker, even when headphones are plugged in.
+   //   Use case: Camera shutter sound.
+   attribute DOMString mozAudioChannelType;
+
+  // In addition the media element has these new events:
+  // * onmozinterruptbegin - called when the media element is interrupted
+  //   because of the audiochannel manager.
+  // * onmozinterruptend - called when the interruption is concluded
 };

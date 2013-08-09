@@ -14,6 +14,8 @@
 #include "nsSVGElement.h"
 #include "nsTArray.h"
 #include "SVGPointList.h" // IWYU pragma: keep
+#include "mozilla/Attributes.h"
+#include "mozilla/ErrorResult.h"
 
 class nsIDOMSVGPoint;
 
@@ -47,8 +49,8 @@ class SVGAnimatedPointList;
  *
  * Our DOM items are created lazily on demand as and when script requests them.
  */
-class DOMSVGPointList : public nsIDOMSVGPointList,
-                        public nsWrapperCache
+class DOMSVGPointList MOZ_FINAL : public nsIDOMSVGPointList,
+                                  public nsWrapperCache
 {
   friend class DOMSVGPoint;
 
@@ -90,7 +92,7 @@ public:
   /**
    * This method returns the DOMSVGPointList wrapper for an internal
    * SVGPointList object if it currently has a wrapper. If it does
-   * not, then nsnull is returned.
+   * not, then nullptr is returned.
    */
   static DOMSVGPointList*
   GetDOMWrapperIfExists(void *aList);
@@ -99,7 +101,7 @@ public:
    * This will normally be the same as InternalList().Length(), except if
    * we've hit OOM, in which case our length will be zero.
    */
-  PRUint32 Length() const {
+  uint32_t LengthNoFlush() const {
     NS_ABORT_IF_FALSE(mItems.Length() == 0 ||
                       mItems.Length() == InternalList().Length(),
                       "DOM wrapper's list length is out of sync");
@@ -130,6 +132,45 @@ public:
    */
   bool AttrIsAnimating() const;
 
+  uint32_t NumberOfItems() const
+  {
+    if (IsAnimValList()) {
+      Element()->FlushAnimations();
+    }
+    return LengthNoFlush();
+  }
+  void Clear(ErrorResult& aError);
+  already_AddRefed<nsIDOMSVGPoint> Initialize(nsIDOMSVGPoint *aNewItem,
+                                              ErrorResult& aError);
+  nsIDOMSVGPoint* GetItem(uint32_t aIndex, ErrorResult& aError)
+  {
+    bool found;
+    nsIDOMSVGPoint* item = IndexedGetter(aIndex, found, aError);
+    if (!found) {
+      aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+    }
+    return item;
+  }
+  nsIDOMSVGPoint* IndexedGetter(uint32_t aIndex, bool& aFound,
+                                ErrorResult& aError);
+  already_AddRefed<nsIDOMSVGPoint> InsertItemBefore(nsIDOMSVGPoint *aNewItem,
+                                                     uint32_t aIndex,
+                                                     ErrorResult& aError);
+  already_AddRefed<nsIDOMSVGPoint> ReplaceItem(nsIDOMSVGPoint *aNewItem,
+                                               uint32_t aIndex,
+                                               ErrorResult& aError);
+  already_AddRefed<nsIDOMSVGPoint> RemoveItem(uint32_t aIndex,
+                                              ErrorResult& aError);
+  already_AddRefed<nsIDOMSVGPoint> AppendItem(nsIDOMSVGPoint *aNewItem,
+                                              ErrorResult& aError)
+  {
+    return InsertItemBefore(aNewItem, LengthNoFlush(), aError);
+  }
+  uint32_t Length() const
+  {
+    return NumberOfItems();
+  }
+
 private:
 
   /**
@@ -147,7 +188,7 @@ private:
 
   ~DOMSVGPointList();
 
-  nsSVGElement* Element() {
+  nsSVGElement* Element() const {
     return mElement.get();
   }
 
@@ -169,10 +210,10 @@ private:
   SVGAnimatedPointList& InternalAList() const;
 
   /// Creates a DOMSVGPoint for aIndex, if it doesn't already exist.
-  void EnsureItemAt(PRUint32 aIndex);
+  void EnsureItemAt(uint32_t aIndex);
 
-  void MaybeInsertNullInAnimValListAt(PRUint32 aIndex);
-  void MaybeRemoveItemFromAnimValListAt(PRUint32 aIndex);
+  void MaybeInsertNullInAnimValListAt(uint32_t aIndex);
+  void MaybeRemoveItemFromAnimValListAt(uint32_t aIndex);
 
   // Weak refs to our DOMSVGPoint items. The items are friends and take care
   // of clearing our pointer to them when they die.

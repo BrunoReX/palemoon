@@ -19,6 +19,7 @@
 #include "nsIWindowWatcher.h"
 #include "nsPIWindowWatcher.h"
 #include "nsIDOMWindow.h"
+#include "nsPIDOMWindow.h"
 #include "nsWebShellWindow.h"
 
 #include "nsIEnumerator.h"
@@ -81,17 +82,17 @@ NS_IMETHODIMP
 nsAppShellService::CreateHiddenWindow()
 {
   nsresult rv;
-  PRInt32 initialHeight = 100, initialWidth = 100;
-    
+  int32_t initialHeight = 100, initialWidth = 100;
+
 #ifdef XP_MACOSX
-  PRUint32    chromeMask = 0;
+  uint32_t    chromeMask = 0;
   nsAdoptingCString prefVal =
       Preferences::GetCString("browser.hiddenWindowChromeURL");
   const char* hiddenWindowURL = prefVal.get() ? prefVal.get() : DEFAULT_HIDDENWINDOW_URL;
   mApplicationProvidedHiddenWindow = prefVal.get() ? true : false;
 #else
   static const char hiddenWindowURL[] = DEFAULT_HIDDENWINDOW_URL;
-  PRUint32    chromeMask =  nsIWebBrowserChrome::CHROME_ALL;
+  uint32_t    chromeMask =  nsIWebBrowserChrome::CHROME_ALL;
 #endif
 
   nsCOMPtr<nsIURI> url;
@@ -99,7 +100,7 @@ nsAppShellService::CreateHiddenWindow()
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsRefPtr<nsWebShellWindow> newWindow;
-  rv = JustCreateTopWindow(nsnull, url,
+  rv = JustCreateTopWindow(nullptr, url,
                            chromeMask, initialWidth, initialHeight,
                            true, getter_AddRefs(newWindow));
   NS_ENSURE_SUCCESS(rv, rv);
@@ -117,7 +118,7 @@ nsAppShellService::DestroyHiddenWindow()
   if (mHiddenWindow) {
     mHiddenWindow->Destroy();
 
-    mHiddenWindow = nsnull;
+    mHiddenWindow = nullptr;
   }
 
   return NS_OK;
@@ -129,9 +130,9 @@ nsAppShellService::DestroyHiddenWindow()
 NS_IMETHODIMP
 nsAppShellService::CreateTopLevelWindow(nsIXULWindow *aParent,
                                         nsIURI *aUrl, 
-                                        PRUint32 aChromeMask,
-                                        PRInt32 aInitialWidth,
-                                        PRInt32 aInitialHeight,
+                                        uint32_t aChromeMask,
+                                        int32_t aInitialWidth,
+                                        int32_t aInitialHeight,
                                         nsIXULWindow **aResult)
 
 {
@@ -139,7 +140,7 @@ nsAppShellService::CreateTopLevelWindow(nsIXULWindow *aParent,
 
   StartupTimeline::RecordOnce(StartupTimeline::CREATE_TOP_LEVEL_WINDOW);
 
-  nsWebShellWindow *newWindow = nsnull;
+  nsWebShellWindow *newWindow = nullptr;
   rv = JustCreateTopWindow(aParent, aUrl,
                            aChromeMask, aInitialWidth, aInitialHeight,
                            false, &newWindow);  // addrefs
@@ -158,11 +159,11 @@ nsAppShellService::CreateTopLevelWindow(nsIXULWindow *aParent,
   return rv;
 }
 
-PRUint32
+uint32_t
 nsAppShellService::CalculateWindowZLevel(nsIXULWindow *aParent,
-                                         PRUint32      aChromeMask)
+                                         uint32_t      aChromeMask)
 {
-  PRUint32 zLevel;
+  uint32_t zLevel;
 
   zLevel = nsIXULWindow::normalZ;
   if (aChromeMask & nsIWebBrowserChrome::CHROME_WINDOW_RAISED)
@@ -177,7 +178,7 @@ nsAppShellService::CalculateWindowZLevel(nsIXULWindow *aParent,
 
      On Mac OS X, bind modality to parent window instead of app (ala Mac OS 9)
   */
-  PRUint32 modalDepMask = nsIWebBrowserChrome::CHROME_MODAL |
+  uint32_t modalDepMask = nsIWebBrowserChrome::CHROME_MODAL |
                           nsIWebBrowserChrome::CHROME_DEPENDENT;
   if (aParent && (aChromeMask & modalDepMask)) {
     aParent->GetZLevel(&zLevel);
@@ -206,7 +207,7 @@ CheckForFullscreenWindow()
     return false;
 
   nsCOMPtr<nsISimpleEnumerator> windowList;
-  wm->GetXULWindowEnumerator(nsnull, getter_AddRefs(windowList));
+  wm->GetXULWindowEnumerator(nullptr, getter_AddRefs(windowList));
   if (!windowList)
     return false;
 
@@ -220,7 +221,7 @@ CheckForFullscreenWindow()
     windowList->GetNext(getter_AddRefs(supportsWindow));
     nsCOMPtr<nsIBaseWindow> baseWin(do_QueryInterface(supportsWindow));
     if (baseWin) {
-      PRInt32 sizeMode;
+      int32_t sizeMode;
       nsCOMPtr<nsIWidget> widget;
       baseWin->GetMainWidget(getter_AddRefs(widget));
       if (widget && NS_SUCCEEDED(widget->GetSizeMode(&sizeMode)) && 
@@ -239,13 +240,13 @@ CheckForFullscreenWindow()
 nsresult
 nsAppShellService::JustCreateTopWindow(nsIXULWindow *aParent,
                                        nsIURI *aUrl, 
-                                       PRUint32 aChromeMask,
-                                       PRInt32 aInitialWidth,
-                                       PRInt32 aInitialHeight,
+                                       uint32_t aChromeMask,
+                                       int32_t aInitialWidth,
+                                       int32_t aInitialHeight,
                                        bool aIsHiddenWindow,
                                        nsWebShellWindow **aResult)
 {
-  *aResult = nsnull;
+  *aResult = nullptr;
   NS_ENSURE_STATE(!mXPCOMWillShutDown);
 
   nsCOMPtr<nsIXULWindow> parent;
@@ -284,7 +285,7 @@ nsAppShellService::JustCreateTopWindow(nsIXULWindow *aParent,
   // windows opened from nsPromptService::DoDialog() still are sheets.  This
   // fixes bmo bug 395465 (see nsCocoaWindow::StandardCreate() and
   // nsCocoaWindow::SetModal()).
-  PRUint32 sheetMask = nsIWebBrowserChrome::CHROME_OPENAS_DIALOG |
+  uint32_t sheetMask = nsIWebBrowserChrome::CHROME_OPENAS_DIALOG |
                        nsIWebBrowserChrome::CHROME_MODAL |
                        nsIWebBrowserChrome::CHROME_OPENAS_CHROME;
   if (parent && ((aChromeMask & sheetMask) == sheetMask))
@@ -338,17 +339,17 @@ nsAppShellService::JustCreateTopWindow(nsIXULWindow *aParent,
   nsCOMPtr<nsIXULChromeRegistry> reg =
     mozilla::services::GetXULChromeRegistryService();
   if (reg) {
-    nsCAutoString package;
+    nsAutoCString package;
     package.AssignLiteral("global");
     bool isRTL = false;
     reg->IsLocaleRTL(package, &isRTL);
     widgetInitData.mRTL = isRTL;
   }
 
-  nsresult rv = window->Initialize(parent, center ? aParent : nsnull,
+  nsresult rv = window->Initialize(parent, center ? aParent : nullptr,
                                    aUrl, aInitialWidth, aInitialHeight,
                                    aIsHiddenWindow, widgetInitData);
-      
+
   NS_ENSURE_SUCCESS(rv, rv);
 
   window.swap(*aResult); // transfer reference
@@ -380,7 +381,7 @@ nsAppShellService::GetHiddenDOMWindow(nsIDOMWindow **aWindow)
 
   rv = mHiddenWindow->GetDocShell(getter_AddRefs(docShell));
   NS_ENSURE_SUCCESS(rv, rv);
-  
+
   nsCOMPtr<nsIDOMWindow> hiddenDOMWindow(do_GetInterface(docShell, &rv));
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -395,8 +396,8 @@ nsAppShellService::GetHiddenWindowAndJSContext(nsIDOMWindow **aWindow,
 {
     nsresult rv = NS_OK;
     if ( aWindow && aJSContext ) {
-        *aWindow    = nsnull;
-        *aJSContext = nsnull;
+        *aWindow    = nullptr;
+        *aJSContext = nullptr;
 
         if ( mHiddenWindow ) {
             // Convert hidden window to nsIDOMWindow and extract its JSContext.
@@ -450,6 +451,14 @@ nsAppShellService::GetApplicationProvidedHiddenWindow(bool* aAPHW)
 NS_IMETHODIMP
 nsAppShellService::RegisterTopLevelWindow(nsIXULWindow* aWindow)
 {
+  NS_ENSURE_ARG_POINTER(aWindow);
+
+  nsCOMPtr<nsIDocShell> docShell;
+  aWindow->GetDocShell(getter_AddRefs(docShell));
+  nsCOMPtr<nsPIDOMWindow> domWindow(do_GetInterface(docShell));
+  NS_ENSURE_TRUE(domWindow, NS_ERROR_FAILURE);
+  domWindow->SetInitialPrincipalToSubject();
+
   // tell the window mediator about the new window
   nsCOMPtr<nsIWindowMediator> mediator
     ( do_GetService(NS_WINDOWMEDIATOR_CONTRACTID) );
@@ -461,16 +470,8 @@ nsAppShellService::RegisterTopLevelWindow(nsIXULWindow* aWindow)
   // tell the window watcher about the new window
   nsCOMPtr<nsPIWindowWatcher> wwatcher ( do_GetService(NS_WINDOWWATCHER_CONTRACTID) );
   NS_ASSERTION(wwatcher, "No windowwatcher?");
-  if (wwatcher) {
-    nsCOMPtr<nsIDocShell> docShell;
-    aWindow->GetDocShell(getter_AddRefs(docShell));
-    NS_ASSERTION(docShell, "Window has no docshell");
-    if (docShell) {
-      nsCOMPtr<nsIDOMWindow> domWindow(do_GetInterface(docShell));
-      NS_ASSERTION(domWindow, "Couldn't get DOM window.");
-      if (domWindow)
-        wwatcher->AddWindow(domWindow, 0);
-    }
+  if (wwatcher && domWindow) {
+    wwatcher->AddWindow(domWindow, 0);
   }
 
   // an ongoing attempt to quit is stopped by a newly opened window
@@ -479,7 +480,7 @@ nsAppShellService::RegisterTopLevelWindow(nsIXULWindow* aWindow)
   NS_ASSERTION(obssvc, "Couldn't get observer service.");
 
   if (obssvc)
-    obssvc->NotifyObservers(aWindow, "xul-window-registered", nsnull);
+    obssvc->NotifyObservers(aWindow, "xul-window-registered", nullptr);
 
   return NS_OK;
 }
@@ -499,7 +500,7 @@ nsAppShellService::UnregisterTopLevelWindow(nsIXULWindow* aWindow)
     */
     return NS_ERROR_FAILURE;
   }
-  
+
   NS_ENSURE_ARG_POINTER(aWindow);
 
   if (aWindow == mHiddenWindow) {
@@ -514,7 +515,7 @@ nsAppShellService::UnregisterTopLevelWindow(nsIXULWindow* aWindow)
 
   if (mediator)
     mediator->UnregisterWindow(aWindow);
-	
+
   // tell the window watcher
   nsCOMPtr<nsPIWindowWatcher> wwatcher ( do_GetService(NS_WINDOWWATCHER_CONTRACTID) );
   NS_ASSERTION(wwatcher, "Couldn't get windowwatcher, doing xpcom shutdown?");

@@ -72,14 +72,15 @@ public:
    * is what Uniscribe assumes.)
    */
   static bool
-  IsSpaceCombiningSequenceTail(const PRUnichar* aChars, PRInt32 aLength) {
+  IsSpaceCombiningSequenceTail(const PRUnichar* aChars, int32_t aLength) {
     return aLength > 0 && aChars[0] == 0x200D; // ZWJ
   }
 
   enum CompressionMode {
     COMPRESS_NONE,
     COMPRESS_WHITESPACE,
-    COMPRESS_WHITESPACE_NEWLINE
+    COMPRESS_WHITESPACE_NEWLINE,
+    DISCARD_NEWLINE
   };
 
   /**
@@ -90,34 +91,35 @@ public:
    * 
    * @param aCompressWhitespace control what is compressed to a
    * single space character: no compression, compress spaces (not followed
-   * by combining mark) and tabs, and compress those plus newlines.
+   * by combining mark) and tabs, compress those plus newlines, or
+   * no compression except newlines are discarded.
    * @param aIncomingFlags a flag indicating whether there was whitespace
    * or an Arabic character preceding this text. We set it to indicate if
    * there's an Arabic character or whitespace preceding the end of this text.
    */
-  static PRUnichar* TransformText(const PRUnichar* aText, PRUint32 aLength,
+  static PRUnichar* TransformText(const PRUnichar* aText, uint32_t aLength,
                                   PRUnichar* aOutput,
                                   CompressionMode aCompression,
-                                  PRUint8 * aIncomingFlags,
+                                  uint8_t * aIncomingFlags,
                                   gfxSkipCharsBuilder* aSkipChars,
-                                  PRUint32* aAnalysisFlags);
+                                  uint32_t* aAnalysisFlags);
 
-  static PRUint8* TransformText(const PRUint8* aText, PRUint32 aLength,
-                                PRUint8* aOutput,
+  static uint8_t* TransformText(const uint8_t* aText, uint32_t aLength,
+                                uint8_t* aOutput,
                                 CompressionMode aCompression,
-                                PRUint8 * aIncomingFlags,
+                                uint8_t * aIncomingFlags,
                                 gfxSkipCharsBuilder* aSkipChars,
-                                PRUint32* aAnalysisFlags);
+                                uint32_t* aAnalysisFlags);
 
   static void
-  AppendLineBreakOffset(nsTArray<PRUint32>* aArray, PRUint32 aOffset)
+  AppendLineBreakOffset(nsTArray<uint32_t>* aArray, uint32_t aOffset)
   {
     if (aArray->Length() > 0 && (*aArray)[aArray->Length() - 1] == aOffset)
       return;
     aArray->AppendElement(aOffset);
   }
 
-  static PRUint32
+  static uint32_t
   ComputeApproximateLengthWithWhitespaceCompression(nsIContent *aContent,
                                                     const nsStyleText
                                                       *aStyleText);
@@ -130,16 +132,16 @@ public:
     LENGTH_INCLUDES_SKIPPED = true
   };
   nsSkipCharsRunIterator(const gfxSkipCharsIterator& aStart,
-      LengthMode aLengthIncludesSkipped, PRUint32 aLength)
+      LengthMode aLengthIncludesSkipped, uint32_t aLength)
     : mIterator(aStart), mRemainingLength(aLength), mRunLength(0),
       mVisitSkipped(false),
       mLengthIncludesSkipped(aLengthIncludesSkipped) {
   }
   void SetVisitSkipped() { mVisitSkipped = true; }
-  void SetOriginalOffset(PRInt32 aOffset) {
+  void SetOriginalOffset(int32_t aOffset) {
     mIterator.SetOriginalOffset(aOffset);
   }
-  void SetSkippedOffset(PRUint32 aOffset) {
+  void SetSkippedOffset(uint32_t aOffset) {
     mIterator.SetSkippedOffset(aOffset);
   }
 
@@ -147,15 +149,15 @@ public:
   bool NextRun();
   bool IsSkipped() const { return mSkipped; }
   // Always returns something > 0
-  PRInt32 GetRunLength() const { return mRunLength; }
+  int32_t GetRunLength() const { return mRunLength; }
   const gfxSkipCharsIterator& GetPos() const { return mIterator; }
-  PRInt32 GetOriginalOffset() const { return mIterator.GetOriginalOffset(); }
-  PRUint32 GetSkippedOffset() const { return mIterator.GetSkippedOffset(); }
+  int32_t GetOriginalOffset() const { return mIterator.GetOriginalOffset(); }
+  uint32_t GetSkippedOffset() const { return mIterator.GetSkippedOffset(); }
 
 private:
   gfxSkipCharsIterator mIterator;
-  PRInt32              mRemainingLength;
-  PRInt32              mRunLength;
+  int32_t              mRemainingLength;
+  int32_t              mRunLength;
   bool                 mSkipped;
   bool                 mVisitSkipped;
   bool                 mLengthIncludesSkipped;

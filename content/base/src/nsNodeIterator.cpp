@@ -12,11 +12,11 @@
 
 #include "nsIDOMNode.h"
 #include "nsIDOMNodeFilter.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 
 #include "nsIContent.h"
 #include "nsIDocument.h"
-
+#include "nsDOMClassInfoID.h"
 #include "nsContentUtils.h"
 #include "nsCOMPtr.h"
 
@@ -62,7 +62,7 @@ bool nsNodeIterator::NodePointer::MoveToPrevious(nsINode *aRoot)
     if (mNode == aRoot)
         return false;
 
-    MoveBackward(mNode->GetNodeParent(), mNode->GetPreviousSibling());
+    MoveBackward(mNode->GetParentNode(), mNode->GetPreviousSibling());
 
     return true;
 }
@@ -113,7 +113,7 @@ bool nsNodeIterator::NodePointer::MoveForward(nsINode *aRoot, nsINode *aNode)
             mNode = sibling;
             return true;
         }
-        aNode = aNode->GetNodeParent();
+        aNode = aNode->GetParentNode();
     }
 
     return false;
@@ -136,7 +136,7 @@ void nsNodeIterator::NodePointer::MoveBackward(nsINode *aParent, nsINode *aNode)
  */
 
 nsNodeIterator::nsNodeIterator(nsINode *aRoot,
-                               PRUint32 aWhatToShow,
+                               uint32_t aWhatToShow,
                                nsIDOMNodeFilter *aFilter) :
     nsTraversal(aRoot, aWhatToShow, aFilter),
     mDetached(false),
@@ -160,12 +160,12 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(nsNodeIterator)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsNodeIterator)
     if (!tmp->mDetached && tmp->mRoot)
         tmp->mRoot->RemoveMutationObserver(tmp);
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mRoot)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mFilter)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mRoot)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFilter)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsNodeIterator)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mRoot)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mFilter)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRoot)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFilter)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 DOMCI_DATA(NodeIterator, nsNodeIterator)
@@ -187,13 +187,13 @@ NS_IMETHODIMP nsNodeIterator::GetRoot(nsIDOMNode * *aRoot)
     if (mRoot)
         return CallQueryInterface(mRoot, aRoot);
 
-    *aRoot = nsnull;
+    *aRoot = nullptr;
 
     return NS_OK;
 }
 
 /* readonly attribute unsigned long whatToShow; */
-NS_IMETHODIMP nsNodeIterator::GetWhatToShow(PRUint32 *aWhatToShow)
+NS_IMETHODIMP nsNodeIterator::GetWhatToShow(uint32_t *aWhatToShow)
 {
     *aWhatToShow = mWhatToShow;
     return NS_OK;
@@ -233,9 +233,9 @@ nsNodeIterator::NextOrPrevNode(NodePointer::MoveToMethodType aMove,
                                nsIDOMNode **_retval)
 {
     nsresult rv;
-    PRInt16 filtered;
+    int16_t filtered;
 
-    *_retval = nsnull;
+    *_retval = nullptr;
 
     if (mDetached || mInAcceptNode)
         return NS_ERROR_DOM_INVALID_STATE_ERR;
@@ -285,7 +285,7 @@ NS_IMETHODIMP nsNodeIterator::GetReferenceNode(nsIDOMNode * *aRefNode)
     if (mPointer.mNode)
         return CallQueryInterface(mPointer.mNode, aRefNode);
 
-    *aRefNode = nsnull;
+    *aRefNode = nullptr;
     return NS_OK;
 }
 
@@ -303,7 +303,7 @@ NS_IMETHODIMP nsNodeIterator::GetPointerBeforeReferenceNode(bool *aBeforeNode)
 void nsNodeIterator::ContentRemoved(nsIDocument *aDocument,
                                     nsIContent *aContainer,
                                     nsIContent *aChild,
-                                    PRInt32 aIndexInContainer,
+                                    int32_t aIndexInContainer,
                                     nsIContent *aPreviousSibling)
 {
     nsINode *container = NODE_FROM(aContainer, aDocument);

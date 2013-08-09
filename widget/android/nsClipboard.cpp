@@ -27,13 +27,13 @@ nsClipboard::nsClipboard()
 
 NS_IMETHODIMP
 nsClipboard::SetData(nsITransferable *aTransferable,
-                     nsIClipboardOwner *anOwner, PRInt32 aWhichClipboard)
+                     nsIClipboardOwner *anOwner, int32_t aWhichClipboard)
 {
   if (aWhichClipboard != kGlobalClipboard)
     return NS_ERROR_NOT_IMPLEMENTED;
 
   nsCOMPtr<nsISupports> tmp;
-  PRUint32 len;
+  uint32_t len;
   nsresult rv  = aTransferable->GetTransferData(kUnicodeMime, getter_AddRefs(tmp),
                                                 &len);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -50,14 +50,17 @@ nsClipboard::SetData(nsITransferable *aTransferable,
       return NS_ERROR_NOT_IMPLEMENTED;
 
   } else {
-    ContentChild::GetSingleton()->SendSetClipboardText(buffer, aWhichClipboard);
+    bool isPrivateData = false;
+    aTransferable->GetIsPrivateData(&isPrivateData);
+    ContentChild::GetSingleton()->SendSetClipboardText(buffer, isPrivateData,
+                                                       aWhichClipboard);
   }
 
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsClipboard::GetData(nsITransferable *aTransferable, PRInt32 aWhichClipboard)
+nsClipboard::GetData(nsITransferable *aTransferable, int32_t aWhichClipboard)
 {
   if (aWhichClipboard != kGlobalClipboard)
     return NS_ERROR_NOT_IMPLEMENTED;
@@ -93,7 +96,7 @@ nsClipboard::GetData(nsITransferable *aTransferable, PRInt32 aWhichClipboard)
 }
 
 NS_IMETHODIMP
-nsClipboard::EmptyClipboard(PRInt32 aWhichClipboard)
+nsClipboard::EmptyClipboard(int32_t aWhichClipboard)
 {
   if (aWhichClipboard != kGlobalClipboard)
     return NS_ERROR_NOT_IMPLEMENTED;
@@ -109,8 +112,8 @@ nsClipboard::EmptyClipboard(PRInt32 aWhichClipboard)
 
 NS_IMETHODIMP
 nsClipboard::HasDataMatchingFlavors(const char **aFlavorList,
-                                    PRUint32 aLength, PRInt32 aWhichClipboard,
-                                    bool *aHasText NS_OUTPARAM)
+                                    uint32_t aLength, int32_t aWhichClipboard,
+                                    bool *aHasText)
 {
   *aHasText = false;
   if (aWhichClipboard != kGlobalClipboard)
@@ -125,7 +128,7 @@ nsClipboard::HasDataMatchingFlavors(const char **aFlavorList,
 }
 
 NS_IMETHODIMP
-nsClipboard::SupportsSelectionClipboard(bool *aIsSupported NS_OUTPARAM)
+nsClipboard::SupportsSelectionClipboard(bool *aIsSupported)
 {
   *aIsSupported = false;
   return NS_OK;

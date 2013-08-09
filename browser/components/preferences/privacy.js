@@ -1,9 +1,7 @@
-/*
-# -*- Mode: Java; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
-*/
+/* -*- Mode: Java; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 
@@ -224,18 +222,22 @@ var gPrivacyPane = {
 
     observe: function PPP_observe(aSubject, aTopic, aData)
     {
-      let privateBrowsingService = Components.classes["@mozilla.org/privatebrowsing;1"].
-        getService(Components.interfaces.nsIPrivateBrowsingService);
-
       // Toggle the private browsing mode without switching the session
       let prefValue = document.getElementById("browser.privatebrowsing.autostart").value;
       let keepCurrentSession = document.getElementById("browser.privatebrowsing.keep_current_session");
       keepCurrentSession.value = true;
+
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
+      let privateBrowsingService = Components.classes["@mozilla.org/privatebrowsing;1"].
+        getService(Components.interfaces.nsIPrivateBrowsingService);
+
       // If activating from within the private browsing mode, reset the
       // private session
       if (prefValue && privateBrowsingService.privateBrowsingEnabled)
         privateBrowsingService.privateBrowsingEnabled = false;
       privateBrowsingService.privateBrowsingEnabled = prefValue;
+#endif
+
       keepCurrentSession.reset();
     }
   },

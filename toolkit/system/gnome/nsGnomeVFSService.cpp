@@ -16,7 +16,7 @@ extern "C" {
 #include <libgnomevfs/gnome-vfs-mime-handlers.h>
 }
 
-class nsGnomeVFSMimeApp : public nsIGnomeVFSMimeApp
+class nsGnomeVFSMimeApp MOZ_FINAL : public nsIGnomeVFSMimeApp
 {
 public:
   NS_DECL_ISUPPORTS
@@ -60,7 +60,7 @@ nsGnomeVFSMimeApp::GetCanOpenMultipleFiles(bool* aCanOpen)
 }
 
 NS_IMETHODIMP
-nsGnomeVFSMimeApp::GetExpectsURIs(PRInt32* aExpects)
+nsGnomeVFSMimeApp::GetExpectsURIs(int32_t* aExpects)
 {
   *aExpects = mApp->expects_uris;
   return NS_OK;
@@ -86,7 +86,7 @@ nsGnomeVFSMimeApp::Launch(const nsACString &aUri)
   return NS_OK;
 }
 
-class UTF8StringEnumerator : public nsIUTF8StringEnumerator
+class UTF8StringEnumerator MOZ_FINAL : public nsIUTF8StringEnumerator
 {
 public:
   UTF8StringEnumerator() : mIndex(0) { }
@@ -96,7 +96,7 @@ public:
   NS_DECL_NSIUTF8STRINGENUMERATOR
 
   nsTArray<nsCString> mStrings;
-  PRUint32            mIndex;
+  uint32_t            mIndex;
 };
 
 NS_IMPL_ISUPPORTS1(UTF8StringEnumerator, nsIUTF8StringEnumerator)
@@ -122,7 +122,7 @@ UTF8StringEnumerator::GetNext(nsACString& aResult)
 NS_IMETHODIMP
 nsGnomeVFSMimeApp::GetSupportedURISchemes(nsIUTF8StringEnumerator** aSchemes)
 {
-  *aSchemes = nsnull;
+  *aSchemes = nullptr;
 
   nsRefPtr<UTF8StringEnumerator> array = new UTF8StringEnumerator();
   NS_ENSURE_TRUE(array, NS_ERROR_OUT_OF_MEMORY);
@@ -156,7 +156,7 @@ NS_IMETHODIMP
 nsGnomeVFSService::GetMimeTypeFromExtension(const nsACString &aExtension,
                                             nsACString& aMimeType)
 {
-  nsCAutoString fileExtToUse(".");
+  nsAutoCString fileExtToUse(".");
   fileExtToUse.Append(aExtension);
 
   const char *mimeType = gnome_vfs_mime_type_from_name(fileExtToUse.get());
@@ -171,7 +171,7 @@ NS_IMETHODIMP
 nsGnomeVFSService::GetAppForMimeType(const nsACString &aMimeType,
                                      nsIGnomeVFSMimeApp** aApp)
 {
-  *aApp = nsnull;
+  *aApp = nullptr;
   GnomeVFSMimeApplication *app =
    gnome_vfs_mime_get_default_application(PromiseFlatCString(aMimeType).get());
 
@@ -201,7 +201,7 @@ nsGnomeVFSService::GetDescriptionForMimeType(const nsACString &aMimeType,
 NS_IMETHODIMP
 nsGnomeVFSService::ShowURI(nsIURI *aURI)
 {
-  nsCAutoString spec;
+  nsAutoCString spec;
   aURI->GetSpec(spec);
 
   if (gnome_vfs_url_show_with_env(spec.get(), NULL) == GNOME_VFS_OK)

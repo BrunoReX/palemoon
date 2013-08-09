@@ -2,18 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH	= ../../../..
+DEPTH	= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir	= @srcdir@
 VPATH	= @srcdir@
-relativesrcdir	= dom/tests/mochitest/pointerlock
+relativesrcdir	= @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-include $(topsrcdir)/config/rules.mk
-
-_TEST_FILES	= \
-		test_pointerlock-api.html \
+MOCHITEST_FILES	= \
 		pointerlock_utils.js \
 		file_approval.html \
 		file_pointerlock-api.html \
@@ -32,8 +29,16 @@ _TEST_FILES	= \
 		file_screenClientXYConst.html \
 		file_suppressSomeMouseEvents.html \
 		file_locksvgelement.html \
+		file_allowPointerLockSandboxFlag.html \
 		iframe_differentDOM.html \
 		$(NULL)
 
-libs:: $(_TEST_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/tests/$(relativesrcdir)
+ifneq (gtk2,$(MOZ_WIDGET_TOOLKIT))
+MOCHITEST_FILES += \
+		test_pointerlock-api.html \
+		$(NULL)
+else
+$(warning test_pointerlock-api.html is disabled on Linux for intermittent failures. Bug 788164)
+endif
+
+include $(topsrcdir)/config/rules.mk

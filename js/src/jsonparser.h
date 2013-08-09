@@ -27,11 +27,8 @@ class JSONParser
     /* Data members */
 
     JSContext * const cx;
-    mozilla::RangedPtr<const jschar> current;
-    const mozilla::RangedPtr<const jschar> end;
-
-    /* For current/end as cursors into a string. */
-    js::SkipRoot root;
+    JS::StableCharPtr current;
+    const JS::StableCharPtr end;
 
     js::Value v;
 
@@ -58,13 +55,12 @@ class JSONParser
      * Description of this syntax is deliberately omitted: new code should only
      * use strict JSON parsing.
      */
-    JSONParser(JSContext *cx, const jschar *data, size_t length,
+    JSONParser(JSContext *cx, JS::StableCharPtr data, size_t length,
                ParsingMode parsingMode = StrictJSON,
                ErrorHandling errorHandling = RaiseError)
       : cx(cx),
-        current(data, length),
-        end(data + length, data, length),
-        root(cx, thisDuringConstruction()),
+        current(data),
+        end((data + length).get(), data.get(), length),
         parsingMode(parsingMode),
         errorHandling(errorHandling)
 #ifdef DEBUG
@@ -84,7 +80,7 @@ class JSONParser
      * otherwise return true and set *vp to |undefined|.  (JSON syntax can't
      * represent |undefined|, so the JSON data couldn't have specified it.)
      */
-    bool parse(js::Value *vp);
+    bool parse(js::MutableHandleValue vp);
 
   private:
     js::Value numberValue() const {

@@ -12,20 +12,26 @@
 #include "nsAutoPtr.h"
 #include "nsTObserverArray.h"
 #include "nsCycleCollectionParticipant.h"
+#include "mozilla/Attributes.h"
+
+namespace mozilla {
+namespace a11y {
 
 class Accessible;
-class nsIAccessibleTraversalRule;
 
-// raised when current pivot's position is needed but it is not in the tree.
-#define NS_ERROR_NOT_IN_TREE \
-NS_ERROR_GENERATE_FAILURE(NS_ERROR_MODULE_GENERAL, 0x26)
+} // namespace a11y
+} // namespace mozilla
+
+class nsIAccessibleTraversalRule;
 
 /**
  * Class represents an accessible pivot.
  */
-class nsAccessiblePivot: public nsIAccessiblePivot
+class nsAccessiblePivot MOZ_FINAL : public nsIAccessiblePivot
 {
 public:
+  typedef mozilla::a11y::Accessible Accessible;
+
   nsAccessiblePivot(Accessible* aRoot);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -44,10 +50,12 @@ private:
   void operator = (const nsAccessiblePivot&) MOZ_DELETE;
 
   /*
-   * Notify all observers on a pivot change.
+   * Notify all observers on a pivot change. Return true if it has changed and
+   * observers have been notified.
    */
-  void NotifyPivotChanged(Accessible* aOldAccessible,
-                          PRInt32 aOldStart, PRInt32 aOldEnd);
+  bool NotifyOfPivotChange(Accessible* aOldAccessible,
+                           int32_t aOldStart, int32_t aOldEnd,
+                           PivotMoveReason aReason);
 
   /*
    * Check to see that the given accessible is in the pivot's subtree.
@@ -72,9 +80,9 @@ private:
                              nsresult* aResult);
 
   /*
-   * Update the pivot, and notify observers.
+   * Update the pivot, and notify observers. Return true if it moved.
    */
-  void MovePivotInternal(Accessible* aPosition);
+  bool MovePivotInternal(Accessible* aPosition, PivotMoveReason aReason);
 
   /*
    * The root accessible.
@@ -89,12 +97,12 @@ private:
   /*
    * The text start offset ofthe pivot.
    */
-  PRInt32 mStartOffset;
+  int32_t mStartOffset;
 
   /*
    * The text end offset ofthe pivot.
    */
-  PRInt32 mEndOffset;
+  int32_t mEndOffset;
 
   /*
    * The list of pivot-changed observers.

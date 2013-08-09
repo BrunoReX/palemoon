@@ -9,10 +9,7 @@
 #include "nsIPresShell.h"
 #include "nsFrameManager.h"
 #include "nsIContent.h"
-#include "nsIDocument.h"
-#include "nsIDOMDocument.h"
 #include "nsIDOMElement.h"
-#include "nsIFrame.h"
 #include "nsINameSpaceManager.h"
 #include "nsGkAtoms.h"
 #include "nsMenuPopupFrame.h"
@@ -30,13 +27,6 @@ protected:
   virtual ~nsPopupBoxObject() {}
 
   nsPopupSetFrame* GetPopupSetFrame();
-  nsMenuPopupFrame* GetMenuPopupFrame()
-  {
-    nsIFrame* frame = GetFrame(false);
-    if (frame && frame->GetType() == nsGkAtoms::menuPopupFrame)
-      return static_cast<nsMenuPopupFrame*>(frame);
-    return nsnull;
-  }
 };
 
 NS_IMPL_ISUPPORTS_INHERITED1(nsPopupBoxObject, nsBoxObject, nsIPopupBoxObject)
@@ -46,7 +36,7 @@ nsPopupBoxObject::GetPopupSetFrame()
 {
   nsIRootBox* rootBox = nsIRootBox::GetRootBox(GetPresShell(false));
   if (!rootBox)
-    return nsnull;
+    return nullptr;
 
   return rootBox->GetPopupSetFrame();
 }
@@ -64,7 +54,7 @@ nsPopupBoxObject::HidePopup()
 NS_IMETHODIMP
 nsPopupBoxObject::ShowPopup(nsIDOMElement* aAnchorElement,
                             nsIDOMElement* aPopupElement,
-                            PRInt32 aXPos, PRInt32 aYPos,
+                            int32_t aXPos, int32_t aYPos,
                             const PRUnichar *aPopupType,
                             const PRUnichar *aAnchorAlignment,
                             const PRUnichar *aPopupAlignment)
@@ -88,7 +78,7 @@ nsPopupBoxObject::ShowPopup(nsIDOMElement* aAnchorElement,
 NS_IMETHODIMP
 nsPopupBoxObject::OpenPopup(nsIDOMElement* aAnchorElement,
                             const nsAString& aPosition,
-                            PRInt32 aXPos, PRInt32 aYPos,
+                            int32_t aXPos, int32_t aYPos,
                             bool aIsContextMenu,
                             bool aAttributesOverride,
                             nsIDOMEvent* aTriggerEvent)
@@ -104,7 +94,7 @@ nsPopupBoxObject::OpenPopup(nsIDOMElement* aAnchorElement,
 }
 
 NS_IMETHODIMP
-nsPopupBoxObject::OpenPopupAtScreen(PRInt32 aXPos, PRInt32 aYPos,
+nsPopupBoxObject::OpenPopupAtScreen(int32_t aXPos, int32_t aYPos,
                                     bool aIsContextMenu,
                                     nsIDOMEvent* aTriggerEvent)
 {
@@ -115,9 +105,9 @@ nsPopupBoxObject::OpenPopupAtScreen(PRInt32 aXPos, PRInt32 aYPos,
 }
 
 NS_IMETHODIMP
-nsPopupBoxObject::MoveTo(PRInt32 aLeft, PRInt32 aTop)
+nsPopupBoxObject::MoveTo(int32_t aLeft, int32_t aTop)
 {
-  nsMenuPopupFrame *menuPopupFrame = GetMenuPopupFrame();
+  nsMenuPopupFrame *menuPopupFrame = mContent ? do_QueryFrame(mContent->GetPrimaryFrame()) : nullptr;
   if (menuPopupFrame) {
     menuPopupFrame->MoveTo(aLeft, aTop, true);
   }
@@ -126,7 +116,25 @@ nsPopupBoxObject::MoveTo(PRInt32 aLeft, PRInt32 aTop)
 }
 
 NS_IMETHODIMP
-nsPopupBoxObject::SizeTo(PRInt32 aWidth, PRInt32 aHeight)
+nsPopupBoxObject::MoveToAnchor(nsIDOMElement* aAnchorElement,
+                               const nsAString& aPosition,
+                               int32_t aXPos, int32_t aYPos,
+                               bool aAttributesOverride)
+{
+  if (mContent) {
+    nsCOMPtr<nsIContent> anchorContent(do_QueryInterface(aAnchorElement));
+
+    nsMenuPopupFrame *menuPopupFrame = do_QueryFrame(mContent->GetPrimaryFrame());
+    if (menuPopupFrame && menuPopupFrame->PopupState() == ePopupOpenAndVisible) {
+      menuPopupFrame->MoveToAnchor(anchorContent, aPosition, aXPos, aYPos, aAttributesOverride);
+    }
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsPopupBoxObject::SizeTo(int32_t aWidth, int32_t aHeight)
 {
   if (!mContent)
     return NS_OK;
@@ -136,7 +144,13 @@ nsPopupBoxObject::SizeTo(PRInt32 aWidth, PRInt32 aHeight)
   height.AppendInt(aHeight);
 
   nsCOMPtr<nsIContent> content = mContent;
-  content->SetAttr(kNameSpaceID_None, nsGkAtoms::width, width, false);
+
+  // We only want to pass aNotify=true to SetAttr once, but must make sure
+  // we pass it when a value is being changed.  Thus, we check if the height
+  // is the same and if so, pass true when setting the width.
+  bool heightSame = content->AttrValueIs(kNameSpaceID_None, nsGkAtoms::height, height, eCaseMatters);
+
+  content->SetAttr(kNameSpaceID_None, nsGkAtoms::width, width, heightSame);
   content->SetAttr(kNameSpaceID_None, nsGkAtoms::height, height, true);
 
   return NS_OK;
@@ -145,7 +159,9 @@ nsPopupBoxObject::SizeTo(PRInt32 aWidth, PRInt32 aHeight)
 NS_IMETHODIMP
 nsPopupBoxObject::GetAutoPosition(bool* aShouldAutoPosition)
 {
-  nsMenuPopupFrame *menuPopupFrame = GetMenuPopupFrame();
+  *aShouldAutoPosition = true;
+
+  nsMenuPopupFrame *menuPopupFrame = mContent ? do_QueryFrame(mContent->GetPrimaryFrame()) : nullptr;
   if (menuPopupFrame) {
     *aShouldAutoPosition = menuPopupFrame->GetAutoPosition();
   }
@@ -156,7 +172,7 @@ nsPopupBoxObject::GetAutoPosition(bool* aShouldAutoPosition)
 NS_IMETHODIMP
 nsPopupBoxObject::SetAutoPosition(bool aShouldAutoPosition)
 {
-  nsMenuPopupFrame *menuPopupFrame = GetMenuPopupFrame();
+  nsMenuPopupFrame *menuPopupFrame = mContent ? do_QueryFrame(mContent->GetPrimaryFrame()) : nullptr;
   if (menuPopupFrame) {
     menuPopupFrame->SetAutoPosition(aShouldAutoPosition);
   }
@@ -172,9 +188,9 @@ nsPopupBoxObject::EnableRollup(bool aShouldRollup)
 }
 
 NS_IMETHODIMP
-nsPopupBoxObject::SetConsumeRollupEvent(PRUint32 aConsume)
+nsPopupBoxObject::SetConsumeRollupEvent(uint32_t aConsume)
 {
-  nsMenuPopupFrame *menuPopupFrame = GetMenuPopupFrame();
+  nsMenuPopupFrame *menuPopupFrame = do_QueryFrame(GetFrame(false));
   if (menuPopupFrame) {
     menuPopupFrame->SetConsumeRollupEvent(aConsume);
   }
@@ -204,7 +220,7 @@ nsPopupBoxObject::GetPopupState(nsAString& aState)
   // set this here in case there's no frame for the popup
   aState.AssignLiteral("closed");
 
-  nsMenuPopupFrame *menuPopupFrame = GetMenuPopupFrame();
+  nsMenuPopupFrame *menuPopupFrame = mContent ? do_QueryFrame(mContent->GetPrimaryFrame()) : nullptr;
   if (menuPopupFrame) {
     switch (menuPopupFrame->PopupState()) {
       case ePopupShowing:
@@ -232,9 +248,10 @@ nsPopupBoxObject::GetPopupState(nsAString& aState)
 NS_IMETHODIMP
 nsPopupBoxObject::GetTriggerNode(nsIDOMNode** aTriggerNode)
 {
-  *aTriggerNode = nsnull;
+  *aTriggerNode = nullptr;
 
-  nsIContent* triggerContent = nsMenuPopupFrame::GetTriggerContent(GetMenuPopupFrame());
+  nsMenuPopupFrame *menuPopupFrame = mContent ? do_QueryFrame(mContent->GetPrimaryFrame()) : nullptr;
+  nsIContent* triggerContent = nsMenuPopupFrame::GetTriggerContent(menuPopupFrame);
   if (triggerContent)
     CallQueryInterface(triggerContent, aTriggerNode);
 
@@ -244,9 +261,9 @@ nsPopupBoxObject::GetTriggerNode(nsIDOMNode** aTriggerNode)
 NS_IMETHODIMP
 nsPopupBoxObject::GetAnchorNode(nsIDOMElement** aAnchor)
 {
-  *aAnchor = nsnull;
+  *aAnchor = nullptr;
 
-  nsMenuPopupFrame *menuPopupFrame = GetMenuPopupFrame();
+  nsMenuPopupFrame *menuPopupFrame = mContent ? do_QueryFrame(mContent->GetPrimaryFrame()) : nullptr;
   if (!menuPopupFrame)
     return NS_OK;
 
@@ -266,7 +283,7 @@ nsPopupBoxObject::GetOuterScreenRect(nsIDOMClientRect** aRect)
 
   NS_ADDREF(*aRect = rect);
 
-  nsMenuPopupFrame *menuPopupFrame = GetMenuPopupFrame();
+  nsMenuPopupFrame *menuPopupFrame = do_QueryFrame(GetFrame(false));
   if (!menuPopupFrame)
     return NS_OK;
 
@@ -282,7 +299,7 @@ nsPopupBoxObject::GetOuterScreenRect(nsIDOMClientRect** aRect)
       nsIntRect screenRect;
       widget->GetScreenBounds(screenRect);
 
-      PRInt32 pp = menuPopupFrame->PresContext()->AppUnitsPerDevPixel();
+      int32_t pp = menuPopupFrame->PresContext()->AppUnitsPerDevPixel();
       rect->SetLayoutRect(screenRect.ToAppUnits(pp));
     }
   }

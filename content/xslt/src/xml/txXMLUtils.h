@@ -31,7 +31,7 @@ public:
     {
     }
 
-    txExpandedName(PRInt32 aNsID,
+    txExpandedName(int32_t aNsID,
                    nsIAtom* aLocalName) : mNamespaceID(aNsID),
                                           mLocalName(aLocalName)
     {
@@ -49,7 +49,7 @@ public:
     void reset()
     {
         mNamespaceID = kNameSpaceID_None;
-        mLocalName = nsnull;
+        mLocalName = nullptr;
     }
 
     bool isNull()
@@ -76,7 +76,7 @@ public:
                 (mNamespaceID != rhs.mNamespaceID));
     }
 
-    PRInt32 mNamespaceID;
+    int32_t mNamespaceID;
     nsCOMPtr<nsIAtom> mLocalName;
 };
 
@@ -85,7 +85,7 @@ class XMLUtils {
 public:
     static nsresult splitExpatName(const PRUnichar *aExpatName,
                                    nsIAtom **aPrefix, nsIAtom **aLocalName,
-                                   PRInt32* aNameSpaceID);
+                                   int32_t* aNameSpaceID);
     static nsresult splitQName(const nsAString& aName, nsIAtom** aPrefix,
                                nsIAtom** aLocalName);
     static const nsDependentSubstring getLocalPart(const nsAString& src);

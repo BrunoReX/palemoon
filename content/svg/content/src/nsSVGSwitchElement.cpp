@@ -26,11 +26,11 @@ NS_IMPL_NS_NEW_SVG_ELEMENT(Switch)
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsSVGSwitchElement)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsSVGSwitchElement,
                                                   nsSVGSwitchElementBase)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mActiveChild)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mActiveChild)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsSVGSwitchElement,
                                                 nsSVGSwitchElementBase)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mActiveChild)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mActiveChild)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_ADDREF_INHERITED(nsSVGSwitchElement,nsSVGSwitchElementBase)
@@ -68,7 +68,8 @@ nsSVGSwitchElement::MaybeInvalidate()
 
   nsIFrame *frame = GetPrimaryFrame();
   if (frame) {
-    nsSVGUtils::InvalidateAndScheduleBoundsUpdate(frame);
+    nsSVGUtils::InvalidateBounds(frame, false);
+    nsSVGUtils::ScheduleReflowSVG(frame);
   }
 
   mActiveChild = newActiveChild;
@@ -85,7 +86,7 @@ NS_IMPL_ELEMENT_CLONE_WITH_INIT(nsSVGSwitchElement)
 
 nsresult
 nsSVGSwitchElement::InsertChildAt(nsIContent* aKid,
-                                  PRUint32 aIndex,
+                                  uint32_t aIndex,
                                   bool aNotify)
 {
   nsresult rv = nsSVGSwitchElementBase::InsertChildAt(aKid, aIndex, aNotify);
@@ -96,7 +97,7 @@ nsSVGSwitchElement::InsertChildAt(nsIContent* aKid,
 }
 
 void
-nsSVGSwitchElement::RemoveChildAt(PRUint32 aIndex, bool aNotify)
+nsSVGSwitchElement::RemoveChildAt(uint32_t aIndex, bool aNotify)
 {
   nsSVGSwitchElementBase::RemoveChildAt(aIndex, aNotify);
   MaybeInvalidate();
@@ -137,8 +138,8 @@ nsSVGSwitchElement::FindActiveChild() const
     Preferences::GetLocalizedString("intl.accept_languages");
 
   if (allowReorder && !acceptLangs.IsEmpty()) {
-    PRInt32 bestLanguagePreferenceRank = -1;
-    nsIContent *bestChild = nsnull;
+    int32_t bestLanguagePreferenceRank = -1;
+    nsIContent *bestChild = nullptr;
     for (nsIContent* child = nsINode::GetFirstChild();
          child;
          child = child->GetNextSibling()) {
@@ -150,7 +151,7 @@ nsSVGSwitchElement::FindActiveChild() const
       if (tests) {
         if (tests->PassesConditionalProcessingTests(
                             DOMSVGTests::kIgnoreSystemLanguage)) {
-          PRInt32 languagePreferenceRank =
+          int32_t languagePreferenceRank =
               tests->GetBestLanguagePreferenceRank(acceptLangs);
           switch (languagePreferenceRank) {
           case 0:
@@ -186,5 +187,5 @@ nsSVGSwitchElement::FindActiveChild() const
       return child;
     }
   }
-  return nsnull;
+  return nullptr;
 }

@@ -11,27 +11,36 @@
 #include "nsString.h"
 #include "jspubtd.h"
 #include "Types.h"
+#include "mozilla/Attributes.h"
 
 namespace mozilla {
 namespace dom {
 namespace sms {
 
-class SmsMessage : public nsIDOMMozSmsMessage
+class SmsMessage MOZ_FINAL : public nsIDOMMozSmsMessage
 {
 public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIDOMMOZSMSMESSAGE
 
-  SmsMessage(PRInt32 aId, DeliveryState aDelivery, const nsString& aSender,
-             const nsString& aReceiver, const nsString& aBody,
-             PRUint64 aTimestamp, bool aRead);
+  SmsMessage(int32_t aId,
+             DeliveryState aDelivery,
+             DeliveryStatus aDeliveryStatus,
+             const nsString& aSender,
+             const nsString& aReceiver,
+             const nsString& aBody,
+             MessageClass aMessageClass,
+             uint64_t aTimestamp,
+             bool aRead);
   SmsMessage(const SmsMessageData& aData);
 
-  static nsresult Create(PRInt32 aId,
+  static nsresult Create(int32_t aId,
                          const nsAString& aDelivery,
+                         const nsAString& aDeliveryStatus,
                          const nsAString& aSender,
                          const nsAString& aReceiver,
                          const nsAString& aBody,
+                         const nsAString& aMessageClass,
                          const JS::Value& aTimestamp,
                          const bool aRead,
                          JSContext* aCx,

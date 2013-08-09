@@ -8,7 +8,7 @@
 #include "nsIAppShellService.h"
 #include "nsPIDOMWindow.h"
 #include "nsIInterfaceRequestor.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIObserverService.h"
 #include "nsIPrefBranch.h"
 #include "nsIPrefService.h"
@@ -34,10 +34,11 @@
 #include "nsAppShellCID.h"
 #include "nsXPCOMCIDInternal.h"
 #include "mozilla/Services.h"
-#include "mozilla/FunctionTimer.h"
 #include "nsIXPConnect.h"
 #include "jsapi.h"
 #include "prenv.h"
+#include "nsAppDirectoryServiceDefs.h"
+#include "mozilla/mozPoisonWrite.h"
 
 #if defined(XP_WIN)
 #include <windows.h>
@@ -48,17 +49,40 @@
 #include <sys/syscall.h>
 #endif
 
-#ifdef XP_MACOSX
-#include <sys/sysctl.h>
-#endif
-
-#ifdef __OpenBSD__
+#if defined(XP_MACOSX) || defined(__DragonFly__) || defined(__FreeBSD__) \
+  || defined(__NetBSD__) || defined(__OpenBSD__)
 #include <sys/param.h>
 #include <sys/sysctl.h>
 #endif
 
+#if defined(__DragonFly__) || defined(__FreeBSD__)
+#include <sys/user.h>
+#endif
+
 #include "mozilla/Telemetry.h"
 #include "mozilla/StartupTimeline.h"
+
+#if defined(__NetBSD__)
+#undef KERN_PROC
+#define KERN_PROC KERN_PROC2
+#define KINFO_PROC struct kinfo_proc2
+#else
+#define KINFO_PROC struct kinfo_proc
+#endif
+
+#if defined(XP_MACOSX)
+#define KP_START_SEC kp_proc.p_un.__p_starttime.tv_sec
+#define KP_START_USEC kp_proc.p_un.__p_starttime.tv_usec
+#elif defined(__DragonFly__)
+#define KP_START_SEC kp_start.tv_sec
+#define KP_START_USEC kp_start.tv_usec
+#elif defined(__FreeBSD__)
+#define KP_START_SEC ki_start.tv_sec
+#define KP_START_USEC ki_start.tv_usec
+#else
+#define KP_START_SEC p_ustart_sec
+#define KP_START_USEC p_ustart_usec
+#endif
 
 static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
 
@@ -89,6 +113,10 @@ static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
 #define NS_SESSION_STORE_WINDOW_RESTORED_EVENT_CID \
   { 0x917B96B1, 0xECAD, 0x4DAB, \
   { 0xA7, 0x60, 0x8D, 0x49, 0x02, 0x77, 0x48, 0xAE} }
+// {26D1E091-0AE7-4F49-A554-4214445C505C}
+#define NS_XPCOM_SHUTDOWN_EVENT_CID \
+  { 0x26D1E091, 0x0AE7, 0x4F49, \
+  { 0xA5, 0x54, 0x42, 0x14, 0x44, 0x5C, 0x50, 0x5C} }
 
 static NS_DEFINE_CID(kApplicationTracingCID,
   NS_APPLICATION_TRACING_CID);
@@ -96,6 +124,8 @@ static NS_DEFINE_CID(kPlacesInitCompleteCID,
   NS_PLACES_INIT_COMPLETE_EVENT_CID);
 static NS_DEFINE_CID(kSessionStoreWindowRestoredCID,
   NS_SESSION_STORE_WINDOW_RESTORED_EVENT_CID);
+static NS_DEFINE_CID(kXPCOMShutdownCID,
+  NS_XPCOM_SHUTDOWN_EVENT_CID);  
 #endif //defined(XP_WIN)
 
 using namespace mozilla;
@@ -132,28 +162,25 @@ nsAppStartup::nsAppStartup() :
   mRestart(false),
   mInterrupted(false),
   mIsSafeModeNecessary(false),
-  mStartupCrashTrackingEnded(false)
+  mStartupCrashTrackingEnded(false),
+  mCachedShutdownTime(false),
+  mLastShutdownTime(0)
 { }
 
 
 nsresult
 nsAppStartup::Init()
 {
-  NS_TIME_FUNCTION;
   nsresult rv;
 
   // Create widget application shell
   mAppShell = do_GetService(kAppShellCID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  NS_TIME_FUNCTION_MARK("Got AppShell service");
-
   nsCOMPtr<nsIObserverService> os =
     mozilla::services::GetObserverService();
   if (!os)
     return NS_ERROR_FAILURE;
-
-  NS_TIME_FUNCTION_MARK("Got Observer service");
 
   os->AddObserver(this, "quit-application-forced", true);
   os->AddObserver(this, "sessionstore-windows-restored", true);
@@ -162,6 +189,7 @@ nsAppStartup::Init()
   os->AddObserver(this, "xul-window-destroyed", true);
 
 #if defined(XP_WIN)
+  os->AddObserver(this, "xpcom-shutdown", true);
   os->AddObserver(this, "places-init-complete", true);
   // This last event is only interesting to us for xperf-based measures
 
@@ -187,6 +215,13 @@ nsAppStartup::Init()
                NS_LITERAL_CSTRING("sessionstore-windows-restored"));
     NS_WARN_IF_FALSE(mSessionWindowRestoredProbe,
                      "Cannot initialize probe 'sessionstore-windows-restored'");
+                     
+    mXPCOMShutdownProbe =
+      mProbesManager->
+      GetProbe(kXPCOMShutdownCID,
+               NS_LITERAL_CSTRING("xpcom-shutdown"));
+    NS_WARN_IF_FALSE(mXPCOMShutdownProbe,
+                     "Cannot initialize probe 'xpcom-shutdown'");
 
     rv = mProbesManager->StartSession();
     NS_WARN_IF_FALSE(NS_SUCCEEDED(rv),
@@ -260,6 +295,83 @@ nsAppStartup::Run(void)
   return mRestart ? NS_SUCCESS_RESTART_APP : NS_OK;
 }
 
+static TimeStamp gRecordedShutdownStartTime;
+static bool gAlreadyFreedShutdownTimeFileName = false;
+static char *gRecordedShutdownTimeFileName = NULL;
+
+static char *
+GetShutdownTimeFileName()
+{
+  if (gAlreadyFreedShutdownTimeFileName) {
+    return NULL;
+  }
+
+  if (!gRecordedShutdownTimeFileName) {
+    nsCOMPtr<nsIFile> mozFile;
+    NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR, getter_AddRefs(mozFile));
+    if (!mozFile)
+      return NULL;
+
+    mozFile->AppendNative(NS_LITERAL_CSTRING("Telemetry.ShutdownTime.txt"));
+    nsAutoCString nativePath;
+    nsresult rv = mozFile->GetNativePath(nativePath);
+    if (!NS_SUCCEEDED(rv))
+      return NULL;
+
+    gRecordedShutdownTimeFileName = PL_strdup(nativePath.get());
+  }
+
+  return gRecordedShutdownTimeFileName;
+}
+
+static void
+RecordShutdownStartTimeStamp() {
+  if (!Telemetry::CanRecord())
+    return;
+
+  gRecordedShutdownStartTime = TimeStamp::Now();
+
+  GetShutdownTimeFileName();
+}
+
+namespace mozilla {
+void
+RecordShutdownEndTimeStamp() {
+  if (!gRecordedShutdownTimeFileName || gAlreadyFreedShutdownTimeFileName)
+    return;
+
+  nsCString name(gRecordedShutdownTimeFileName);
+  PL_strfree(gRecordedShutdownTimeFileName);
+  gRecordedShutdownTimeFileName = NULL;
+  gAlreadyFreedShutdownTimeFileName = true;
+
+  nsCString tmpName = name;
+  tmpName += ".tmp";
+  FILE *f = fopen(tmpName.get(), "w");
+  if (!f)
+    return;
+  // On a normal release build this should be called just before
+  // calling _exit, but on a debug build or when the user forces a full
+  // shutdown this is called as late as possible, so we have to
+  // white list this write as write poisoning will be enabled.
+  int fd = fileno(f);
+  MozillaRegisterDebugFD(fd);
+
+  TimeStamp now = TimeStamp::Now();
+  MOZ_ASSERT(now >= gRecordedShutdownStartTime);
+  TimeDuration diff = now - gRecordedShutdownStartTime;
+  uint32_t diff2 = diff.ToMilliseconds();
+  int written = fprintf(f, "%d\n", diff2);
+  MozillaUnRegisterDebugFILE(f);
+  int rv = fclose(f);
+  if (written < 0 || rv != 0) {
+    PR_Delete(tmpName.get());
+    return;
+  }
+  PR_Delete(name.get());
+  PR_Rename(tmpName.get(), name.get());
+}
+}
 
 NS_IMETHODIMP
 nsAppStartup::Quit(uint32_t aMode)
@@ -274,6 +386,8 @@ nsAppStartup::Quit(uint32_t aMode)
 
   if (mShuttingDown)
     return NS_OK;
+
+  RecordShutdownStartTimeStamp();
 
   // If we're considering quitting, we will only do so if:
   if (ferocity == eConsiderQuit) {
@@ -310,7 +424,7 @@ nsAppStartup::Quit(uint32_t aMode)
     nsCOMPtr<nsISimpleEnumerator> windowEnumerator;
     nsCOMPtr<nsIWindowMediator> mediator (do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
     if (mediator) {
-      mediator->GetEnumerator(nsnull, getter_AddRefs(windowEnumerator));
+      mediator->GetEnumerator(nullptr, getter_AddRefs(windowEnumerator));
       if (windowEnumerator) {
         bool more;
         while (windowEnumerator->HasMoreElements(&more), more) {
@@ -345,7 +459,7 @@ nsAppStartup::Quit(uint32_t aMode)
       ExitLastWindowClosingSurvivalArea();
 #endif
       if (obsService)
-        obsService->NotifyObservers(nsnull, "quit-application-granted", nsnull);
+        obsService->NotifyObservers(nullptr, "quit-application-granted", nullptr);
     }
 
     /* Enumerate through each open window and close it. It's important to do
@@ -364,7 +478,7 @@ nsAppStartup::Quit(uint32_t aMode)
            method hasn't had a chance to wrap itself up yet. So give up.
            We'll return (with eConsiderQuit) as the remaining windows are
            closed. */
-        mediator->GetEnumerator(nsnull, getter_AddRefs(windowEnumerator));
+        mediator->GetEnumerator(nullptr, getter_AddRefs(windowEnumerator));
         if (windowEnumerator) {
           bool more;
           while (windowEnumerator->HasMoreElements(&more), more) {
@@ -396,7 +510,7 @@ nsAppStartup::Quit(uint32_t aMode)
     if (obsService) {
       NS_NAMED_LITERAL_STRING(shutdownStr, "shutdown");
       NS_NAMED_LITERAL_STRING(restartStr, "restart");
-      obsService->NotifyObservers(nsnull, "quit-application",
+      obsService->NotifyObservers(nullptr, "quit-application",
         mRestart ? restartStr.get() : shutdownStr.get());
     }
 
@@ -434,7 +548,7 @@ nsAppStartup::CloseAllWindows()
 
   nsCOMPtr<nsISimpleEnumerator> windowEnumerator;
 
-  mediator->GetEnumerator(nsnull, getter_AddRefs(windowEnumerator));
+  mediator->GetEnumerator(nullptr, getter_AddRefs(windowEnumerator));
 
   if (!windowEnumerator)
     return;
@@ -469,6 +583,47 @@ nsAppStartup::ExitLastWindowClosingSurvivalArea(void)
   if (mRunning)
     Quit(eConsiderQuit);
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsAppStartup::GetLastShutdownDuration(uint32_t *aResult)
+{
+  // We make this check so that GetShutdownTimeFileName() doesn't get
+  // called; calling that function without telemetry enabled violates
+  // assumptions that the write-the-shutdown-timestamp machinery makes.
+  if (!Telemetry::CanRecord()) {
+    *aResult = 0;
+    return NS_OK;
+  }
+
+  if (!mCachedShutdownTime) {
+    const char *filename = GetShutdownTimeFileName();
+
+    if (!filename) {
+      *aResult = 0;
+      return NS_OK;
+    }
+
+    FILE *f = fopen(filename, "r");
+    if (!f) {
+      *aResult = 0;
+      return NS_OK;
+    }
+
+    int shutdownTime;
+    int r = fscanf(f, "%d\n", &shutdownTime);
+    fclose(f);
+    if (r != 1) {
+      *aResult = 0;
+      return NS_OK;
+    }
+
+    mLastShutdownTime = shutdownTime;
+    mCachedShutdownTime = true;
+  }
+
+  *aResult = mLastShutdownTime;
   return NS_OK;
 }
 
@@ -603,6 +758,10 @@ nsAppStartup::Observe(nsISupports *aSubject,
     if (mPlacesInitCompleteProbe) {
       mPlacesInitCompleteProbe->Trigger();
     }
+  } else if (!strcmp(aTopic, "xpcom-shutdown")) {
+    if (mXPCOMShutdownProbe) {
+      mXPCOMShutdownProbe->Trigger();
+    }
 #endif //defined(XP_WIN)
   } else {
     NS_ERROR("Unexpected observer topic.");
@@ -642,6 +801,8 @@ JiffiesSinceBoot(const char *file)
 static void
 ThreadedCalculateProcessCreationTimestamp(void *aClosure)
 {
+  PR_SetCurrentThreadName("Startup Timer");
+
   PRTime now = PR_Now();
   long hz = sysconf(_SC_CLK_TCK);
   if (!hz)
@@ -692,42 +853,30 @@ CalculateProcessCreationTimestamp()
 #endif
   return timestamp;
 }
-#elif defined(XP_MACOSX)
+#elif defined(XP_MACOSX) || defined(__DragonFly__) || defined(__FreeBSD__) \
+  || defined(__NetBSD__) || defined(__OpenBSD__)
 static PRTime
 CalculateProcessCreationTimestamp()
 {
-  int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid() };
-  size_t buffer_size;
-  if (sysctl(mib, 4, NULL, &buffer_size, NULL, 0))
+  int mib[] = {
+    CTL_KERN,
+    KERN_PROC,
+    KERN_PROC_PID,
+    getpid(),
+#if defined(__NetBSD__) || defined(__OpenBSD__)
+    sizeof(KINFO_PROC),
+    1,
+#endif
+  };
+  u_int miblen = sizeof(mib) / sizeof(mib[0]);
+
+  KINFO_PROC proc;
+  size_t buffer_size = sizeof(proc);
+  if (sysctl(mib, miblen, &proc, &buffer_size, NULL, 0))
     return 0;
 
-  struct kinfo_proc *proc = (kinfo_proc*) malloc(buffer_size);  
-  if (sysctl(mib, 4, proc, &buffer_size, NULL, 0)) {
-    free(proc);
-    return 0;
-  }
-  PRTime starttime = static_cast<PRTime>(proc->kp_proc.p_un.__p_starttime.tv_sec) * PR_USEC_PER_SEC;
-  starttime += proc->kp_proc.p_un.__p_starttime.tv_usec;
-  free(proc);
-  return starttime;
-}
-#elif defined(__OpenBSD__)
-static PRTime
-CalculateProcessCreationTimestamp()
-{
-  int mib[6] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid(), sizeof(struct kinfo_proc), 1 };
-  size_t buffer_size;
-  if (sysctl(mib, 6, NULL, &buffer_size, NULL, 0))
-    return 0;
-
-  struct kinfo_proc *proc = (struct kinfo_proc*) malloc(buffer_size);
-  if (sysctl(mib, 6, proc, &buffer_size, NULL, 0)) {
-    free(proc);
-    return 0;
-  }
-  PRTime starttime = static_cast<PRTime>(proc->p_ustart_sec) * PR_USEC_PER_SEC;
-  starttime += proc->p_ustart_usec;
-  free(proc);
+  PRTime starttime = static_cast<PRTime>(proc.KP_START_SEC) * PR_USEC_PER_SEC;
+  starttime += proc.KP_START_USEC;
   return starttime;
 }
 #else
@@ -813,7 +962,7 @@ nsAppStartup::TrackStartupCrashBegin(bool *aIsSafeModeNecessary)
 
   xr->GetInSafeMode(&inSafeMode);
 
-  PRInt64 replacedLockTime;
+  PRTime replacedLockTime;
   rv = xr->GetReplacedLockTime(&replacedLockTime);
 
   if (NS_FAILED(rv) || !replacedLockTime) {
@@ -884,7 +1033,7 @@ nsAppStartup::TrackStartupCrashBegin(bool *aIsSafeModeNecessary)
   mIsSafeModeNecessary = (recentCrashes > maxResumedCrashes && maxResumedCrashes != -1);
 
   nsCOMPtr<nsIPrefService> prefs = Preferences::GetService();
-  rv = prefs->SavePrefFile(nsnull); // flush prefs to disk since we are tracking crashes
+  rv = prefs->SavePrefFile(nullptr); // flush prefs to disk since we are tracking crashes
   NS_ENSURE_SUCCESS(rv, rv);
 
   GetAutomaticSafeModeNecessary(aIsSafeModeNecessary);
@@ -937,7 +1086,7 @@ nsAppStartup::TrackStartupCrashEnd()
     if (NS_FAILED(rv)) NS_WARNING("Could not clear startup crash count.");
   }
   nsCOMPtr<nsIPrefService> prefs = Preferences::GetService();
-  rv = prefs->SavePrefFile(nsnull); // flush prefs to disk since we are tracking crashes
+  rv = prefs->SavePrefFile(nullptr); // flush prefs to disk since we are tracking crashes
 
   return rv;
 }

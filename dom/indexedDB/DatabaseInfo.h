@@ -10,6 +10,7 @@
 #include "mozilla/dom/indexedDB/IndexedDatabase.h"
 
 #include "mozilla/dom/indexedDB/Key.h"
+#include "mozilla/dom/indexedDB/KeyPath.h"
 #include "mozilla/dom/indexedDB/IDBObjectStore.h"
 
 #include "nsRefPtrHashtable.h"
@@ -41,9 +42,9 @@ struct DatabaseInfoGuts
   // Make sure to update ipc/SerializationHelpers.h when changing members here!
   nsString name;
   nsCString origin;
-  PRUint64 version;
-  PRInt64 nextObjectStoreId;
-  PRInt64 nextIndexId;
+  uint64_t version;
+  int64_t nextObjectStoreId;
+  int64_t nextIndexId;
 };
 
 struct DatabaseInfo : public DatabaseInfoGuts
@@ -60,8 +61,6 @@ struct DatabaseInfo : public DatabaseInfoGuts
   static bool Put(DatabaseInfo* aInfo);
 
   static void Remove(nsIAtom* aId);
-
-  static void RemoveAllForOrigin(const nsACString& aOrigin);
 
   bool GetObjectStoreNames(nsTArray<nsString>& aNames);
   bool ContainsStoreName(const nsAString& aName);
@@ -91,7 +90,7 @@ struct IndexInfo
   ~IndexInfo();
 #else
   IndexInfo()
-  : id(LL_MININT), unique(false), multiEntry(false) { }
+  : id(INT64_MIN), keyPath(0), unique(false), multiEntry(false) { }
 #endif
 
   bool operator==(const IndexInfo& aOther) const
@@ -99,16 +98,14 @@ struct IndexInfo
     return this->name == aOther.name &&
            this->id == aOther.id &&
            this->keyPath == aOther.keyPath &&
-           this->keyPathArray == aOther.keyPathArray &&
            this->unique == aOther.unique &&
            this->multiEntry == aOther.multiEntry;
   };
 
   // Make sure to update ipc/SerializationHelpers.h when changing members here!
   nsString name;
-  PRInt64 id;
-  nsString keyPath;
-  nsTArray<nsString> keyPathArray;
+  int64_t id;
+  KeyPath keyPath;
   bool unique;
   bool multiEntry;
 };
@@ -116,7 +113,7 @@ struct IndexInfo
 struct ObjectStoreInfoGuts
 {
   ObjectStoreInfoGuts()
-  : id(0), autoIncrement(false)
+  : id(0), keyPath(0), autoIncrement(false)
   { }
 
   bool operator==(const ObjectStoreInfoGuts& aOther) const
@@ -129,12 +126,12 @@ struct ObjectStoreInfoGuts
 
   // Constant members, can be gotten on any thread
   nsString name;
-  PRInt64 id;
-  nsString keyPath;
-  nsTArray<nsString> keyPathArray;
+  int64_t id;
+  KeyPath keyPath;
   bool autoIncrement;
 
-  // Main-thread only members. This must *not* be touced on the database thread
+  // Main-thread only members. This must *not* be touched on the database
+  // thread.
   nsTArray<IndexInfo> indexes;
 };
 
@@ -159,8 +156,8 @@ public:
 
   // Database-thread members. After the ObjectStoreInfo has been initialized,
   // these can *only* be touced on the database thread.
-  PRInt64 nextAutoIncrementId;
-  PRInt64 comittedAutoIncrementId;
+  int64_t nextAutoIncrementId;
+  int64_t comittedAutoIncrementId;
 
   // This is threadsafe since the ObjectStoreInfos are created on the database
   // thread but then only used from the main thread. Ideal would be if we
@@ -173,6 +170,7 @@ struct IndexUpdateInfo
 {
 #ifdef NS_BUILD_REFCNT_LOGGING
   IndexUpdateInfo();
+  IndexUpdateInfo(const IndexUpdateInfo& aOther);
   ~IndexUpdateInfo();
 #endif
 
@@ -184,7 +182,7 @@ struct IndexUpdateInfo
   };
 
   // Make sure to update ipc/SerializationHelpers.h when changing members here!
-  PRInt64 indexId;
+  int64_t indexId;
   bool indexUnique;
   Key value;
 };

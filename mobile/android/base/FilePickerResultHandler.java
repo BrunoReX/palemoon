@@ -4,10 +4,8 @@
 
 package org.mozilla.gecko;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.util.concurrent.SynchronousQueue;
+import org.mozilla.gecko.util.ActivityResultHandler;
+
 import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.Intent;
@@ -15,6 +13,11 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.provider.OpenableColumns;
 import android.util.Log;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.util.concurrent.SynchronousQueue;
 
 abstract class FilePickerResultHandler implements ActivityResultHandler {
     private static final String LOGTAG = "GeckoFilePickerResultHandler";

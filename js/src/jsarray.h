@@ -41,7 +41,7 @@ js_IdIsIndex(jsid id, uint32_t *indexp)
 }
 
 extern JSObject *
-js_InitArrayClass(JSContext *cx, JSObject *obj);
+js_InitArrayClass(JSContext *cx, js::HandleObject obj);
 
 extern bool
 js_InitContextBusyArrayTable(JSContext *cx);
@@ -50,57 +50,54 @@ namespace js {
 
 /* Create a dense array with no capacity allocated, length set to 0. */
 extern JSObject * JS_FASTCALL
-NewDenseEmptyArray(JSContext *cx, JSObject *proto=NULL);
+NewDenseEmptyArray(JSContext *cx, RawObject proto = NULL);
 
 /* Create a dense array with length and capacity == 'length', initialized length set to 0. */
 extern JSObject * JS_FASTCALL
-NewDenseAllocatedArray(JSContext *cx, uint32_t length, JSObject *proto=NULL);
-
-/*
- * Create a dense array with length, capacity and initialized length == 'length', and filled with holes.
- * This is a kludge, as the tracer doesn't yet track/update initialized length when initializing
- * array elements.
- */
-extern JSObject * JS_FASTCALL
-NewDenseAllocatedEmptyArray(JSContext *cx, uint32_t length, JSObject *proto=NULL);
+NewDenseAllocatedArray(JSContext *cx, uint32_t length, RawObject proto = NULL);
 
 /*
  * Create a dense array with a set length, but without allocating space for the
  * contents. This is useful, e.g., when accepting length from the user.
  */
 extern JSObject * JS_FASTCALL
-NewDenseUnallocatedArray(JSContext *cx, uint32_t length, JSObject *proto=NULL);
+NewDenseUnallocatedArray(JSContext *cx, uint32_t length, RawObject proto = NULL);
 
-/* Create a dense array with a copy of vp. */
+/* Create a dense array with a copy of the dense array elements in src. */
 extern JSObject *
-NewDenseCopiedArray(JSContext *cx, uint32_t length, const Value *vp, JSObject *proto = NULL);
+NewDenseCopiedArray(JSContext *cx, uint32_t length, HandleObject src, uint32_t elementOffset, RawObject proto = NULL);
+
+/* Create a dense array from the given array values, which must be rooted */
+extern JSObject *
+NewDenseCopiedArray(JSContext *cx, uint32_t length, const Value *values, RawObject proto = NULL);
 
 /* Create a sparse array. */
 extern JSObject *
 NewSlowEmptyArray(JSContext *cx);
 
-} /* namespace js */
+/* Get the common shape used by all dense arrays with a prototype at globalObj. */
+extern Shape *
+GetDenseArrayShape(JSContext *cx, HandleObject globalObj);
 
 extern JSBool
-js_GetLengthProperty(JSContext *cx, JSObject *obj, uint32_t *lengthp);
+GetLengthProperty(JSContext *cx, HandleObject obj, uint32_t *lengthp);
 
 extern JSBool
-js_SetLengthProperty(JSContext *cx, JSObject *obj, double length);
-
-namespace js {
+SetLengthProperty(JSContext *cx, HandleObject obj, double length);
 
 extern JSBool
-array_defineElement(JSContext *cx, HandleObject obj, uint32_t index, const Value *value,
+array_defineElement(JSContext *cx, HandleObject obj, uint32_t index, HandleValue value,
                     PropertyOp getter, StrictPropertyOp setter, unsigned attrs);
 
 extern JSBool
-array_deleteElement(JSContext *cx, HandleObject obj, uint32_t index, Value *rval, JSBool strict);
+array_deleteElement(JSContext *cx, HandleObject obj, uint32_t index,
+                    MutableHandleValue rval, JSBool strict);
 
 /*
  * Copy 'length' elements from aobj to vp.
  *
  * This function assumes 'length' is effectively the result of calling
- * js_GetLengthProperty on aobj.
+ * js_GetLengthProperty on aobj. vp must point to rooted memory.
  */
 extern bool
 GetElements(JSContext *cx, HandleObject aobj, uint32_t length, js::Value *vp);
@@ -119,6 +116,12 @@ array_pop(JSContext *cx, unsigned argc, js::Value *vp);
 extern JSBool
 array_concat(JSContext *cx, unsigned argc, js::Value *vp);
 
+extern bool
+array_concat_dense(JSContext *cx, HandleObject obj1, HandleObject obj2, HandleObject result);
+
+extern void
+ArrayShiftMoveElements(JSObject *obj);
+
 extern JSBool
 array_shift(JSContext *cx, unsigned argc, js::Value *vp);
 
@@ -126,7 +129,7 @@ array_shift(JSContext *cx, unsigned argc, js::Value *vp);
 
 #ifdef DEBUG
 extern JSBool
-js_ArrayInfo(JSContext *cx, unsigned argc, jsval *vp);
+js_ArrayInfo(JSContext *cx, unsigned argc, js::Value *vp);
 #endif
 
 /*
@@ -140,13 +143,13 @@ extern JSBool
 js_NewbornArrayPush(JSContext *cx, js::HandleObject obj, const js::Value &v);
 
 JSBool
-js_PrototypeHasIndexedProperties(JSContext *cx, JSObject *obj);
+js_PrototypeHasIndexedProperties(JSObject *obj);
 
 /*
  * Utility to access the value from the id returned by array_lookupProperty.
  */
 JSBool
-js_GetDenseArrayElementValue(JSContext *cx, JSObject *obj, jsid id,
+js_GetDenseArrayElementValue(JSContext *cx, js::HandleObject obj, jsid id,
                              js::Value *vp);
 
 /* Array constructor native. Exposed only so the JIT can know its address. */

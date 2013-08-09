@@ -49,9 +49,9 @@ struct ImmPayload : Imm64
 
 class PunboxAssembler : public JSC::MacroAssembler
 {
+  public:
     static const uint32_t PAYLOAD_OFFSET = 0;
 
-  public:
     static const JSC::MacroAssembler::Scale JSVAL_SCALE = JSC::MacroAssembler::TimesEight;
 
     template <typename T>
@@ -336,6 +336,10 @@ class PunboxAssembler : public JSC::MacroAssembler
         return testBoolean(cond, Registers::ValueReg);
     }
 
+    Jump testMagic(Condition cond, RegisterID reg) {
+        return branchPtr(cond, reg, ImmTag(JSVAL_SHIFTED_TAG_MAGIC));
+    }
+
     Jump testString(Condition cond, RegisterID reg) {
         return branchPtr(cond, reg, ImmTag(JSVAL_SHIFTED_TAG_STRING));
     }
@@ -343,6 +347,11 @@ class PunboxAssembler : public JSC::MacroAssembler
     Jump testString(Condition cond, Address address) {
         loadTypeTag(address, Registers::ValueReg);
         return testString(cond, Registers::ValueReg);
+    }
+
+    Jump testPrivate(Condition cond, Address address, void *ptr) {
+        uint64_t valueBits = PrivateValue(ptr).asRawBits();
+        return branchPtr(cond, address, ImmPtr((void *) valueBits));
     }
 
     void compareValue(Address one, Address two, RegisterID T0, RegisterID T1,

@@ -2,75 +2,22 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "nsIDOMHTMLOptGroupElement.h"
+#include "nsHTMLOptGroupElement.h"
 #include "nsIDOMEventTarget.h"
-#include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsIFrame.h"
 #include "nsIFormControlFrame.h"
 #include "nsEventStates.h"
-#include "nsIDocument.h"
 
 #include "nsEventDispatcher.h"
 #include "nsHTMLSelectElement.h"
 
+using namespace mozilla::dom;
+
 /**
  * The implementation of &lt;optgroup&gt;
  */
-class nsHTMLOptGroupElement : public nsGenericHTMLElement,
-                              public nsIDOMHTMLOptGroupElement
-{
-public:
-  nsHTMLOptGroupElement(already_AddRefed<nsINodeInfo> aNodeInfo);
-  virtual ~nsHTMLOptGroupElement();
-
-  // nsISupports
-  NS_DECL_ISUPPORTS_INHERITED
-
-  // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
-
-  // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
-
-  // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
-
-  // nsIDOMHTMLOptGroupElement
-  NS_DECL_NSIDOMHTMLOPTGROUPELEMENT
-
-  // nsINode
-  virtual nsresult InsertChildAt(nsIContent* aKid, PRUint32 aIndex,
-                                 bool aNotify);
-  virtual void RemoveChildAt(PRUint32 aIndex, bool aNotify);
-
-  // nsIContent
-  virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor);
-
-  virtual nsEventStates IntrinsicState() const;
- 
-  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
-
-  virtual nsXPCClassInfo* GetClassInfo();
-
-  virtual nsresult AfterSetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
-                                const nsAttrValue* aValue, bool aNotify);
-
-  virtual nsIDOMNode* AsDOMNode() { return this; }
-
-  virtual bool IsDisabled() const {
-    return HasAttr(kNameSpaceID_None, nsGkAtoms::disabled);
-  }
-protected:
-
-  /**
-   * Get the select content element that contains this option
-   * @param aSelectElement the select element [OUT]
-   */
-  nsIContent* GetSelect();
-};
-
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(OptGroup)
 
@@ -87,8 +34,8 @@ nsHTMLOptGroupElement::~nsHTMLOptGroupElement()
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLOptGroupElement, nsGenericElement)
-NS_IMPL_RELEASE_INHERITED(nsHTMLOptGroupElement, nsGenericElement)
+NS_IMPL_ADDREF_INHERITED(nsHTMLOptGroupElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLOptGroupElement, Element)
 
 
 DOMCI_NODE_DATA(HTMLOptGroupElement, nsHTMLOptGroupElement)
@@ -144,12 +91,12 @@ nsHTMLOptGroupElement::GetSelect()
     }
   }
   
-  return nsnull;
+  return nullptr;
 }
 
 nsresult
 nsHTMLOptGroupElement::InsertChildAt(nsIContent* aKid,
-                                     PRUint32 aIndex,
+                                     uint32_t aIndex,
                                      bool aNotify)
 {
   nsSafeOptionListMutation safeMutation(GetSelect(), this, aKid, aIndex, aNotify);
@@ -161,15 +108,15 @@ nsHTMLOptGroupElement::InsertChildAt(nsIContent* aKid,
 }
 
 void
-nsHTMLOptGroupElement::RemoveChildAt(PRUint32 aIndex, bool aNotify)
+nsHTMLOptGroupElement::RemoveChildAt(uint32_t aIndex, bool aNotify)
 {
-  nsSafeOptionListMutation safeMutation(GetSelect(), this, nsnull, aIndex,
+  nsSafeOptionListMutation safeMutation(GetSelect(), this, nullptr, aIndex,
                                         aNotify);
   nsGenericHTMLElement::RemoveChildAt(aIndex, aNotify);
 }
 
 nsresult
-nsHTMLOptGroupElement::AfterSetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+nsHTMLOptGroupElement::AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                                     const nsAttrValue* aValue, bool aNotify)
 {
   if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::disabled) {

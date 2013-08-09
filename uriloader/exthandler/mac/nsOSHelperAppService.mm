@@ -13,7 +13,7 @@
 #include "nsTArray.h"
 #include "nsXPIDLString.h"
 #include "nsIURL.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsILocalFileMac.h"
 #include "nsMimeTypes.h"
 #include "nsIStringBundle.h"
@@ -173,7 +173,7 @@ nsresult nsOSHelperAppService::GetFileTokenForPath(const PRUnichar * aPlatformAp
 
   if (::CFStringGetCharacterAtIndex(pathAsCFString, 0) == '/') {
     // we have a Posix path
-    pathAsCFURL = ::CFURLCreateWithFileSystemPath(nsnull, pathAsCFString,
+    pathAsCFURL = ::CFURLCreateWithFileSystemPath(nullptr, pathAsCFString,
                                                   kCFURLPOSIXPathStyle, false);
     if (!pathAsCFURL) {
       ::CFRelease(pathAsCFString);
@@ -193,7 +193,7 @@ nsresult nsOSHelperAppService::GetFileTokenForPath(const PRUnichar * aPlatformAp
       return NS_ERROR_FILE_UNRECOGNIZED_PATH;
     }
 
-    pathAsCFURL = ::CFURLCreateWithFileSystemPath(nsnull, pathAsCFString,
+    pathAsCFURL = ::CFURLCreateWithFileSystemPath(nullptr, pathAsCFString,
                                                   kCFURLHFSPathStyle, false);
     if (!pathAsCFURL) {
       ::CFRelease(pathAsCFString);
@@ -312,7 +312,7 @@ nsOSHelperAppService::GetMIMEInfoFromOS(const nsACString& aMIMEType,
   // Create a Mac-specific MIME info so we can use Mac-specific members.
   nsMIMEInfoMac* mimeInfoMac = new nsMIMEInfoMac(aMIMEType);
   if (!mimeInfoMac)
-    return nsnull;
+    return nullptr;
   NS_ADDREF(mimeInfoMac);
 
   NSAutoreleasePool *localPool = [[NSAutoreleasePool alloc] init];
@@ -354,7 +354,7 @@ nsOSHelperAppService::GetMIMEInfoFromOS(const nsACString& aMIMEType,
     CFStringRef cfExt = ::CFStringCreateWithCString(NULL, flatExt.get(), kCFStringEncodingUTF8);
     if (cfExt) {
       err = ::LSGetApplicationForInfo(kLSUnknownType, kLSUnknownCreator, cfExt,
-                                      kLSRolesAll, &extAppFSRef, nsnull);
+                                      kLSRolesAll, &extAppFSRef, nullptr);
       if (err == noErr) {
         haveAppForExt = true;
         PR_LOG(mLog, PR_LOG_DEBUG, ("LSGetApplicationForInfo found a default application\n"));
@@ -433,7 +433,7 @@ nsOSHelperAppService::GetMIMEInfoFromOS(const nsACString& aMIMEType,
       NSString *extStr = [NSString stringWithCString:flatExt.get() encoding:NSASCIIStringEncoding];
       NSString *typeStr = map ? [map MIMETypeForExtension:extStr] : NULL;
       if (typeStr) {
-        nsCAutoString mimeType;
+        nsAutoCString mimeType;
         mimeType.Assign((char *)[typeStr cStringUsingEncoding:NSASCIIStringEncoding]);
         mimeInfoMac->SetMIMEType(mimeType);
         haveAppForType = true;
@@ -465,7 +465,7 @@ nsOSHelperAppService::GetMIMEInfoFromOS(const nsACString& aMIMEType,
     if (!app) {
       NS_RELEASE(mimeInfoMac);
       [localPool release];
-      return nsnull;
+      return nullptr;
     }
 
     CFStringRef cfAppName = NULL;
@@ -496,7 +496,7 @@ nsOSHelperAppService::GetMIMEInfoFromOS(const nsACString& aMIMEType,
     mimeInfoMac->SetPreferredAction(nsIMIMEInfo::saveToDisk);
   }
 
-  nsCAutoString mimeType;
+  nsAutoCString mimeType;
   mimeInfoMac->GetMIMEType(mimeType);
   if (*aFound && !mimeType.IsEmpty()) {
     // If we have a MIME type, make sure its preferred extension is included
@@ -505,7 +505,7 @@ nsOSHelperAppService::GetMIMEInfoFromOS(const nsACString& aMIMEType,
     NSString *typeStr = [NSString stringWithCString:mimeType.get() encoding:NSASCIIStringEncoding];
     NSString *extStr = map ? [map preferredExtensionForMIMEType:typeStr] : NULL;
     if (extStr) {
-      nsCAutoString preferredExt;
+      nsAutoCString preferredExt;
       preferredExt.Assign((char *)[extStr cStringUsingEncoding:NSASCIIStringEncoding]);
       mimeInfoMac->AppendExtension(preferredExt);
     }
@@ -567,7 +567,7 @@ nsOSHelperAppService::GetProtocolHandlerInfoFromOS(const nsACString &aScheme,
 }
 
 void
-nsOSHelperAppService::FixFilePermissions(nsILocalFile* aFile)
+nsOSHelperAppService::FixFilePermissions(nsIFile* aFile)
 {
   aFile->SetPermissions(mPermissions);
 }

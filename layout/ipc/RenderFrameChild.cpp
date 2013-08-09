@@ -32,8 +32,20 @@ RenderFrameChild::Destroy()
   // WARNING: |this| is dead, hands off
 }
 
+void
+RenderFrameChild::CancelDefaultPanZoom()
+{
+  SendCancelDefaultPanZoom();
+}
+
+void
+RenderFrameChild::DetectScrollableSubframe()
+{
+  SendDetectScrollableSubframe();
+}
+
 PLayersChild*
-RenderFrameChild::AllocPLayers(LayerManager::LayersBackend* aBackendType, int* aMaxTextureSize)
+RenderFrameChild::AllocPLayers()
 {
   return new ShadowLayersChild();
 }

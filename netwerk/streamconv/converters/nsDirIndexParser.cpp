@@ -36,7 +36,7 @@ nsresult
 nsDirIndexParser::Init() {
   mLineStart = 0;
   mHasDescription = false;
-  mFormat = nsnull;
+  mFormat = nullptr;
 
   // get default charset to be used for directory listings (fallback to
   // ISO-8859-1 if pref is unavailable).
@@ -121,7 +121,7 @@ NS_IMETHODIMP
 nsDirIndexParser::OnStopRequest(nsIRequest *aRequest, nsISupports *aCtxt,
                                 nsresult aStatusCode) {
   // Finish up
-  if (mBuf.Length() > (PRUint32) mLineStart) {
+  if (mBuf.Length() > (uint32_t) mLineStart) {
     ProcessData(aRequest, aCtxt);
   }
 
@@ -136,7 +136,7 @@ nsDirIndexParser::gFieldTable[] = {
   { "Last-Modified", FIELD_LASTMODIFIED },
   { "Content-Type", FIELD_CONTENTTYPE },
   { "File-Type", FIELD_FILETYPE },
-  { nsnull, FIELD_UNKNOWN }
+  { nullptr, FIELD_UNKNOWN }
 };
 
 nsrefcnt nsDirIndexParser::gRefCntParser = 0;
@@ -172,7 +172,7 @@ nsDirIndexParser::ParseFormat(const char* aFormatStr) {
   delete[] mFormat;
   mFormat = new int[num+1];
   // Prevent NULL Deref - Bug 443299 
-  if (mFormat == nsnull)
+  if (mFormat == nullptr)
     return NS_ERROR_OUT_OF_MEMORY;
   mFormat[num] = -1;
   
@@ -184,8 +184,8 @@ nsDirIndexParser::ParseFormat(const char* aFormatStr) {
     if (! *aFormatStr)
       break;
 
-    nsCAutoString name;
-    PRInt32     len = 0;
+    nsAutoCString name;
+    int32_t     len = 0;
     while (aFormatStr[len] && !nsCRT::IsAsciiSpace(PRUnichar(aFormatStr[len])))
       ++len;
     name.SetCapacity(len + 1);
@@ -224,9 +224,9 @@ nsDirIndexParser::ParseData(nsIDirIndex *aIdx, char* aDataStr) {
 
   nsresult rv = NS_OK;
 
-  nsCAutoString filename;
+  nsAutoCString filename;
 
-  for (PRInt32 i = 0; mFormat[i] != -1; ++i) {
+  for (int32_t i = 0; mFormat[i] != -1; ++i) {
     // If we've exhausted the data before we run out of fields, just
     // bail.
     if (! *aDataStr)
@@ -267,7 +267,7 @@ nsDirIndexParser::ParseData(nsIDirIndex *aIdx, char* aDataStr) {
       nsAutoString entryuri;
       
       if (gTextToSubURI) {
-        PRUnichar   *result = nsnull;
+        PRUnichar   *result = nullptr;
         if (NS_SUCCEEDED(rv = gTextToSubURI->UnEscapeAndConvert(mEncoding.get(), filename.get(),
                                                                 &result)) && (result)) {
           if (*result) {
@@ -300,12 +300,12 @@ nsDirIndexParser::ParseData(nsIDirIndex *aIdx, char* aDataStr) {
       break;
     case FIELD_CONTENTLENGTH:
       {
-        PRInt64 len;
-        PRInt32 status = PR_sscanf(value, "%lld", &len);
+        int64_t len;
+        int32_t status = PR_sscanf(value, "%lld", &len);
         if (status == 1)
           aIdx->SetSize(len);
         else
-          aIdx->SetSize(LL_MAXUINT); // LL_MAXUINT means unknown
+          aIdx->SetSize(UINT64_MAX); // UINT64_MAX means unknown
       }
       break;
     case FIELD_LASTMODIFIED:
@@ -345,12 +345,12 @@ nsDirIndexParser::ParseData(nsIDirIndex *aIdx, char* aDataStr) {
 NS_IMETHODIMP
 nsDirIndexParser::OnDataAvailable(nsIRequest *aRequest, nsISupports *aCtxt,
                                   nsIInputStream *aStream,
-                                  PRUint32 aSourceOffset,
-                                  PRUint32 aCount) {
+                                  uint64_t aSourceOffset,
+                                  uint32_t aCount) {
   if (aCount < 1)
     return NS_OK;
   
-  PRInt32 len = mBuf.Length();
+  int32_t len = mBuf.Length();
   
   // Ensure that our mBuf has capacity to hold the data we're about to
   // read.
@@ -359,7 +359,7 @@ nsDirIndexParser::OnDataAvailable(nsIRequest *aRequest, nsISupports *aCtxt,
 
   // Now read the data into our buffer.
   nsresult rv;
-  PRUint32 count;
+  uint32_t count;
   rv = aStream->Read(mBuf.BeginWriting() + len, aCount, &count);
   if (NS_FAILED(rv)) return rv;
 
@@ -376,18 +376,18 @@ nsDirIndexParser::ProcessData(nsIRequest *aRequest, nsISupports *aCtxt) {
   if (!mListener)
     return NS_ERROR_FAILURE;
   
-  PRInt32     numItems = 0;
+  int32_t     numItems = 0;
   
   while(true) {
     ++numItems;
     
-    PRInt32             eol = mBuf.FindCharInSet("\n\r", mLineStart);
+    int32_t             eol = mBuf.FindCharInSet("\n\r", mLineStart);
     if (eol < 0)        break;
     mBuf.SetCharAt(PRUnichar('\0'), eol);
     
     const char  *line = mBuf.get() + mLineStart;
     
-    PRInt32 lineLen = eol - mLineStart;
+    int32_t lineLen = eol - mLineStart;
     mLineStart = eol + 1;
     
     if (lineLen >= 4) {

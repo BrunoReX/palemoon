@@ -5,107 +5,1493 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const PROPERTY_VIEW_FLASH_DURATION = 400; // ms
+const SOURCE_URL_MAX_LENGTH = 64; // chars
+const SOURCE_SYNTAX_HIGHLIGHT_MAX_FILE_SIZE = 1048576; // 1 MB in bytes
+const PANES_APPEARANCE_DELAY = 50; // ms
+const BREAKPOINT_LINE_TOOLTIP_MAX_LENGTH = 1000; // chars
+const BREAKPOINT_CONDITIONAL_POPUP_POSITION = "after_start";
+const BREAKPOINT_CONDITIONAL_POPUP_OFFSET = 50; // px
+const GLOBAL_SEARCH_LINE_MAX_LENGTH = 300; // chars
+const GLOBAL_SEARCH_EXPAND_MAX_RESULTS = 50;
+const GLOBAL_SEARCH_ACTION_MAX_DELAY = 1500; // ms
+const SEARCH_GLOBAL_FLAG = "!";
+const SEARCH_LINE_FLAG = ":";
+const SEARCH_TOKEN_FLAG = "#";
+const SEARCH_VARIABLE_FLAG = "*";
 
 /**
- * Object mediating visual changes and event listeners between the debugger and
- * the html view.
+ * Object defining the debugger view components.
  */
 let DebuggerView = {
+  /**
+   * Initializes the debugger view.
+   *
+   * @param function aCallback
+   *        Called after the view finishes initializing.
+   */
+  initialize: function DV_initialize(aCallback) {
+    dumpn("Initializing the DebuggerView");
+
+    this._initializeWindow();
+    this._initializePanes();
+
+    this.Toolbar.initialize();
+    this.Options.initialize();
+    this.ChromeGlobals.initialize();
+    this.Sources.initialize();
+    this.Filtering.initialize();
+    this.StackFrames.initialize();
+    this.Breakpoints.initialize();
+    this.WatchExpressions.initialize();
+    this.GlobalSearch.initialize();
+
+    this.Variables = new VariablesView(document.getElementById("variables"));
+    this.Variables.searchPlaceholder = L10N.getStr("emptyVariablesFilterText");
+    this.Variables.emptyText = L10N.getStr("emptyVariablesText");
+    this.Variables.nonEnumVisible = Prefs.variablesNonEnumVisible;
+    this.Variables.searchEnabled = Prefs.variablesSearchboxVisible;
+    this.Variables.eval = DebuggerController.StackFrames.evaluate;
+    this.Variables.lazyEmpty = true;
+
+    this._initializeEditor(aCallback);
+  },
 
   /**
-   * An instance of SourceEditor.
+   * Destroys the debugger view.
+   *
+   * @param function aCallback
+   *        Called after the view finishes destroying.
    */
-  editor: null,
+  destroy: function DV_destroy(aCallback) {
+    dumpn("Destroying the DebuggerView");
+
+    this.Toolbar.destroy();
+    this.Options.destroy();
+    this.ChromeGlobals.destroy();
+    this.Sources.destroy();
+    this.Filtering.destroy();
+    this.StackFrames.destroy();
+    this.Breakpoints.destroy();
+    this.WatchExpressions.destroy();
+    this.GlobalSearch.destroy();
+
+    this._destroyWindow();
+    this._destroyPanes();
+    this._destroyEditor();
+    aCallback();
+  },
 
   /**
-   * Initializes UI properties for all the displayed panes.
+   * Initializes the UI for the window.
    */
-  initializePanes: function DV_initializePanes() {
-    let stackframes = document.getElementById("stackframes");
-    stackframes.setAttribute("width", Prefs.stackframesWidth);
+  _initializeWindow: function DV__initializeWindow() {
+    dumpn("Initializing the DebuggerView window");
 
-    let variables = document.getElementById("variables");
-    variables.setAttribute("width", Prefs.variablesWidth);
+    let isRemote = window._isRemoteDebugger;
+    let isChrome = window._isChromeDebugger;
+
+    if (isRemote || isChrome) {
+      window.moveTo(Prefs.windowX, Prefs.windowY);
+      window.resizeTo(Prefs.windowWidth, Prefs.windowHeight);
+
+      if (isRemote) {
+        document.title = L10N.getStr("remoteDebuggerWindowTitle");
+      } else {
+        document.title = L10N.getStr("chromeDebuggerWindowTitle");
+      }
+    }
+  },
+
+  /**
+   * Destroys the UI for the window.
+   */
+  _destroyWindow: function DV__initializeWindow() {
+    dumpn("Destroying the DebuggerView window");
+
+    if (window._isRemoteDebugger || window._isChromeDebugger) {
+      Prefs.windowX = window.screenX;
+      Prefs.windowY = window.screenY;
+      Prefs.windowWidth = window.outerWidth;
+      Prefs.windowHeight = window.outerHeight;
+    }
+  },
+
+  /**
+   * Initializes the UI for all the displayed panes.
+   */
+  _initializePanes: function DV__initializePanes() {
+    dumpn("Initializing the DebuggerView panes");
+
+    this._togglePanesButton = document.getElementById("toggle-panes");
+    this._stackframesAndBreakpoints = document.getElementById("stackframes+breakpoints");
+    this._variablesAndExpressions = document.getElementById("variables+expressions");
+
+    this._stackframesAndBreakpoints.setAttribute("width", Prefs.stackframesWidth);
+    this._variablesAndExpressions.setAttribute("width", Prefs.variablesWidth);
+    this.togglePanes({
+      visible: Prefs.panesVisibleOnStartup,
+      animated: false
+    });
+  },
+
+  /**
+   * Destroys the UI for all the displayed panes.
+   */
+  _destroyPanes: function DV__initializePanes() {
+    dumpn("Destroying the DebuggerView panes");
+
+    Prefs.stackframesWidth = this._stackframesAndBreakpoints.getAttribute("width");
+    Prefs.variablesWidth = this._variablesAndExpressions.getAttribute("width");
+
+    this._togglePanesButton = null;
+    this._stackframesAndBreakpoints = null;
+    this._variablesAndExpressions = null;
   },
 
   /**
    * Initializes the SourceEditor instance.
+   *
+   * @param function aCallback
+   *        Called after the editor finishes initializing.
    */
-  initializeEditor: function DV_initializeEditor() {
-    let placeholder = document.getElementById("editor");
+  _initializeEditor: function DV__initializeEditor(aCallback) {
+    dumpn("Initializing the DebuggerView editor");
 
+    let placeholder = document.getElementById("editor");
     let config = {
       mode: SourceEditor.MODES.JAVASCRIPT,
-      showLineNumbers: true,
       readOnly: true,
+      showLineNumbers: true,
       showAnnotationRuler: true,
-      showOverviewRuler: true,
+      showOverviewRuler: true
     };
 
     this.editor = new SourceEditor();
-    this.editor.init(placeholder, config, this._onEditorLoad.bind(this));
+    this.editor.init(placeholder, config, function() {
+      this._onEditorLoad();
+      aCallback();
+    }.bind(this));
   },
 
   /**
-   * Removes the displayed panes and saves any necessary state.
+   * The load event handler for the source editor, also executing any necessary
+   * post-load operations.
    */
-  destroyPanes: function DV_destroyPanes() {
-    let stackframes = document.getElementById("stackframes");
-    Prefs.stackframesWidth = stackframes.getAttribute("width");
+  _onEditorLoad: function DV__onEditorLoad() {
+    dumpn("Finished loading the DebuggerView editor");
 
-    let variables = document.getElementById("variables");
-    Prefs.variablesWidth = variables.getAttribute("width");
+    DebuggerController.Breakpoints.initialize();
+    window.dispatchEvent("Debugger:EditorLoaded", this.editor);
+    this.editor.focus();
   },
 
   /**
-   * Removes the SourceEditor instance and added breakpoints.
+   * Destroys the SourceEditor instance and also executes any necessary
+   * post-unload operations.
    */
-  destroyEditor: function DV_destroyEditor() {
+  _destroyEditor: function DV__destroyEditor() {
+    dumpn("Destroying the DebuggerView editor");
+
     DebuggerController.Breakpoints.destroy();
+    window.dispatchEvent("Debugger:EditorUnloaded", this.editor);
     this.editor = null;
   },
 
   /**
-   * The load event handler for the source editor. This method does post-load
-   * editor initialization.
+   * Sets the proper editor mode (JS or HTML) according to the specified
+   * content type, or by determining the type from the url.
+   *
+   * @param string aUrl
+   *        The script url.
+   * @param string aContentType [optional]
+   *        The script content type.
+   * @param string aTextContent [optional]
+   *        The script text content.
    */
-  _onEditorLoad: function DV__onEditorLoad() {
-    DebuggerController.Breakpoints.initialize();
+  setEditorMode:
+  function DV_setEditorMode(aUrl, aContentType = "", aTextContent = "") {
+    if (!this.editor) {
+      return;
+    }
+    dumpn("Setting the DebuggerView editor mode: " + aUrl +
+          ", content type: " + aContentType);
+
+    if (aContentType) {
+      if (/javascript/.test(aContentType)) {
+        this.editor.setMode(SourceEditor.MODES.JAVASCRIPT);
+      } else {
+        this.editor.setMode(SourceEditor.MODES.HTML);
+      }
+    } else if (aTextContent.match(/^\s*</)) {
+      // Use HTML mode for files in which the first non whitespace character is
+      // &lt;, regardless of extension.
+      this.editor.setMode(SourceEditor.MODES.HTML);
+    } else {
+      // Use JS mode for files with .js and .jsm extensions.
+      if (/\.jsm?$/.test(SourceUtils.trimUrlQuery(aUrl))) {
+        this.editor.setMode(SourceEditor.MODES.JAVASCRIPT);
+      } else {
+        this.editor.setMode(SourceEditor.MODES.TEXT);
+      }
+    }
   },
 
   /**
-   * Sets the close button hidden or visible. It's hidden by default.
-   * @param boolean aVisibleFlag
+   * Load the editor with the specified source text.
+   *
+   * @param object aSource
+   *        The source object coming from the active thread.
+   * @param object aOptions [optional]
+   *        Additional options for showing the source. Supported options:
+   *        - caretLine: place the caret position at the given line number
+   *        - debugLine: place the debug location at the given line number
+   *        - callback: function called when the source is shown
    */
-  showCloseButton: function DV_showCloseButton(aVisibleFlag) {
-    document.getElementById("close").setAttribute("hidden", !aVisibleFlag);
-  }
+  setEditorSource: function DV_setEditorSource(aSource, aOptions = {}) {
+    if (!this.editor) {
+      return;
+    }
+    dumpn("Setting the DebuggerView editor source: " + aSource.url +
+          ", loaded: " + aSource.loaded +
+          ", options: " + aOptions.toSource());
+
+    // If the source is not loaded, display a placeholder text.
+    if (!aSource.loaded) {
+      this.editor.setMode(SourceEditor.MODES.TEXT);
+      this.editor.setText(L10N.getStr("loadingText"));
+      this.editor.resetUndo();
+
+      // Get the source text from the active thread.
+      DebuggerController.SourceScripts.getText(aSource, function(aUrl, aText) {
+        aSource.loaded = true;
+        aSource.text = aText;
+        this.setEditorSource(aSource, aOptions);
+      }.bind(this));
+    }
+    // If the source is already loaded, display it immediately.
+    else {
+      if (this._editorSource != aSource) {
+        // Avoid setting the editor mode for very large files.
+        if (aSource.text.length < SOURCE_SYNTAX_HIGHLIGHT_MAX_FILE_SIZE) {
+          this.setEditorMode(aSource.url, aSource.contentType, aSource.text);
+        } else {
+          this.editor.setMode(SourceEditor.MODES.TEXT);
+        }
+        this.editor.setText(aSource.text);
+        this.editor.resetUndo();
+      }
+      this._editorSource = aSource;
+      this.updateEditor();
+
+      DebuggerView.Sources.selectedValue = aSource.url;
+      DebuggerController.Breakpoints.updateEditorBreakpoints();
+
+      // Handle any additional options for showing the source.
+      if (aOptions.caretLine) {
+        editor.setCaretPosition(aOptions.caretLine - 1);
+      }
+      if (aOptions.debugLine) {
+        editor.setDebugLocation(aOptions.debugLine - 1);
+      }
+      if (aOptions.callback) {
+        aOptions.callback(aSource);
+      }
+      // Notify that we've shown a source file.
+      window.dispatchEvent("Debugger:SourceShown", aSource);
+    }
+  },
+
+  /**
+   * Update the source editor's current caret and debug location based on
+   * a requested url and line. If unspecified, they default to the location
+   * given by the currently active frame in the stack.
+   *
+   * @param string aUrl [optional]
+   *        The target source url.
+   * @param number aLine [optional]
+   *        The target line number in the source.
+   * @param object aFlags [optional]
+   *        An object containing some of the following boolean properties:
+   *          - noSwitch: don't switch to the source if not currently selected
+   *          - noCaret: don't set the caret location at the specified line
+   *          - noDebug: don't set the debug location at the specified line
+   */
+  updateEditor: function DV_updateEditor(aUrl, aLine, aFlags = {}) {
+    if (!this.editor) {
+      return;
+    }
+    // If the location is not specified, default to the location given by
+    // the currently active frame in the stack.
+    if (!aUrl && !aLine) {
+      let cachedFrames = DebuggerController.activeThread.cachedFrames;
+      let currentFrame = DebuggerController.StackFrames.currentFrame;
+      let frame = cachedFrames[currentFrame];
+      if (frame) {
+        let { url, line } = frame.where;
+        this.updateEditor(url, line, { noSwitch: true });
+      }
+      return;
+    }
+
+    dumpn("Updating the DebuggerView editor: " + aUrl + " @ " + aLine +
+          ", flags: " + aFlags.toSource());
+
+    // If the currently displayed source is the requested one, update.
+    if (this.Sources.selectedValue == aUrl) {
+      updateLine(aLine);
+    }
+    // If the requested source exists, display it and update.
+    else if (this.Sources.containsValue(aUrl) && !aFlags.noSwitch) {
+      this.Sources.selectedValue = aUrl;
+      updateLine(aLine);
+    }
+    // Dumb request, invalidate the caret position and debug location.
+    else {
+      updateLine(0);
+    }
+
+    // Updates the source editor's caret position and debug location.
+    // @param number a Line
+    function updateLine(aLine) {
+      if (!aFlags.noCaret) {
+        DebuggerView.editor.setCaretPosition(aLine - 1);
+      }
+      if (!aFlags.noDebug) {
+        DebuggerView.editor.setDebugLocation(aLine - 1);
+      }
+    }
+  },
+
+  /**
+   * Gets the text in the source editor's specified line.
+   *
+   * @param number aLine [optional]
+   *        The line to get the text from.
+   *        If unspecified, it defaults to the current caret position line.
+   * @return string
+   *         The specified line's text.
+   */
+  getEditorLine: function SS_getEditorLine(aLine) {
+    let line = aLine || this.editor.getCaretPosition().line;
+    let start = this.editor.getLineStart(line);
+    let end = this.editor.getLineEnd(line);
+    return this.editor.getText(start, end);
+  },
+
+  /**
+   * Gets the visibility state of the panes.
+   * @return boolean
+   */
+  get panesHidden()
+    this._togglePanesButton.hasAttribute("panesHidden"),
+
+  /**
+   * Sets all the panes hidden or visible.
+   *
+   * @param object aFlags [optional]
+   *        An object containing some of the following boolean properties:
+   *        - visible: true if the pane should be shown, false for hidden
+   *        - animated: true to display an animation on toggle
+   *        - callback: a function to invoke when the panes toggle finishes
+   */
+  togglePanes: function DV__togglePanes(aFlags = {}) {
+    // Avoid useless toggles.
+    if (aFlags.visible == !this.panesHidden) {
+      aFlags.callback && aFlags.callback();
+      return;
+    }
+
+    if (aFlags.visible) {
+      this._stackframesAndBreakpoints.style.marginLeft = "0";
+      this._variablesAndExpressions.style.marginRight = "0";
+      this._togglePanesButton.removeAttribute("panesHidden");
+      this._togglePanesButton.setAttribute("tooltiptext", L10N.getStr("collapsePanes"));
+    } else {
+      let marginL = ~~(this._stackframesAndBreakpoints.getAttribute("width")) + 1;
+      let marginR = ~~(this._variablesAndExpressions.getAttribute("width")) + 1;
+      this._stackframesAndBreakpoints.style.marginLeft = -marginL + "px";
+      this._variablesAndExpressions.style.marginRight = -marginR + "px";
+      this._togglePanesButton.setAttribute("panesHidden", "true");
+      this._togglePanesButton.setAttribute("tooltiptext", L10N.getStr("expandPanes"));
+    }
+
+    if (aFlags.animated) {
+      this._stackframesAndBreakpoints.setAttribute("animated", "");
+      this._variablesAndExpressions.setAttribute("animated", "");
+
+      // Displaying the panes may have the effect of triggering scrollbars to
+      // appear in the source editor, which would render the currently
+      // highlighted line to appear behind them in some cases.
+      let self = this;
+
+      window.addEventListener("transitionend", function onEvent() {
+        window.removeEventListener("transitionend", onEvent, false);
+        aFlags.callback && aFlags.callback();
+        self.updateEditor();
+      }, false);
+    } else {
+      this._stackframesAndBreakpoints.removeAttribute("animated");
+      this._variablesAndExpressions.removeAttribute("animated");
+      aFlags.callback && aFlags.callback();
+    }
+  },
+
+  /**
+   * Sets all the panes visible after a short period of time.
+   *
+   * @param function aCallback
+   *        A function to invoke when the panes toggle finishes.
+   */
+  showPanesSoon: function DV__showPanesSoon(aCallback) {
+    // Try to keep animations as smooth as possible, so wait a few cycles.
+    window.setTimeout(function() {
+      DebuggerView.togglePanes({
+        visible: true,
+        animated: true,
+        callback: aCallback
+      });
+    }, PANES_APPEARANCE_DELAY);
+  },
+
+  /**
+   * Handles any initialization on a tab navigation event issued by the client.
+   */
+  _handleTabNavigation: function DV__handleTabNavigation() {
+    dumpn("Handling tab navigation in the DebuggerView");
+
+    this.ChromeGlobals.empty();
+    this.Sources.empty();
+    this.Filtering.clearSearch();
+    this.GlobalSearch.clearView();
+    this.GlobalSearch.clearCache();
+    this.StackFrames.empty();
+    this.Breakpoints.empty();
+    this.Breakpoints.unhighlightBreakpoint();
+    this.Variables.empty();
+    SourceUtils.clearLabelsCache();
+
+    if (this.editor) {
+      this.editor.setText("");
+      this._editorSource = null;
+    }
+  },
+
+  Toolbar: null,
+  Options: null,
+  ChromeGlobals: null,
+  Sources: null,
+  Filtering: null,
+  StackFrames: null,
+  Breakpoints: null,
+  GlobalSearch: null,
+  Variables: null,
+  _editor: null,
+  _editorSource: null,
+  _togglePanesButton: null,
+  _stackframesAndBreakpoints: null,
+  _variablesAndExpressions: null,
+  _isInitialized: false,
+  _isDestroyed: false
+};
+
+/**
+ * A generic item used to describe elements present in views like the
+ * ChromeGlobals, Sources, Stackframes, Breakpoints etc.
+ *
+ * @param string aLabel
+ *        The label displayed in the container.
+ * @param string aValue
+ *        The actual internal value of the item.
+ * @param string aDescription [optional]
+ *        An optional description of the item.
+ * @param any aAttachment [optional]
+ *        Some attached primitive/object.
+ */
+function MenuItem(aLabel, aValue, aDescription, aAttachment) {
+  this._label = aLabel + "";
+  this._value = aValue + "";
+  this._description = aDescription + "";
+  this.attachment = aAttachment;
+}
+
+MenuItem.prototype = {
+  /**
+   * Gets the label set for this item.
+   * @return string
+   */
+  get label() this._label,
+
+  /**
+   * Gets the value set for this item.
+   * @return string
+   */
+  get value() this._value,
+
+  /**
+   * Gets the description set for this item.
+   * @return string
+   */
+  get description() this._description,
+
+  /**
+   * Gets the element associated with this item.
+   * @return nsIDOMNode
+   */
+  get target() this._target,
+
+  _label: "",
+  _value: "",
+  _description: "",
+  _target: null,
+  finalize: null,
+  attachment: null
+};
+
+/**
+ * A generic items container, used for displaying views like the
+ * ChromeGlobals, Sources, Stackframes, Breakpoints etc.
+ * Iterable via "for (let item in menuContainer) { }".
+ *
+ * Language:
+ *   - An "item" is an instance (or compatible iterface) of a MenuItem.
+ *   - An "element" or "node" is a nsIDOMNode.
+ *
+ * The container node supplied to all instances of this constructor can either
+ * be a <menulist> element, or any other object interfacing the following
+ * methods:
+ *   - function:nsIDOMNode appendItem(aLabel:string, aValue:string)
+ *   - function:nsIDOMNode insertItemAt(aIndex:number, aLabel:string, aValue:string)
+ *   - function:nsIDOMNode getItemAtIndex(aIndex:number)
+ *   - function removeChild(aChild:nsIDOMNode)
+ *   - function removeAllItems()
+ *   - get:number itemCount()
+ *   - get:number selectedIndex()
+ *   - set selectedIndex(aIndex:number)
+ *   - get:nsIDOMNode selectedItem()
+ *   - set selectedItem(aChild:nsIDOMNode)
+ *   - function getAttribute(aName:string)
+ *   - function setAttribute(aName:string, aValue:string)
+ *   - function removeAttribute(aName:string)
+ *   - function addEventListener(aName:string, aCallback:function, aBubbleFlag:boolean)
+ *   - function removeEventListener(aName:string, aCallback:function, aBubbleFlag:boolean)
+ *
+ * @param nsIDOMNode aContainerNode [optional]
+ *        The element associated with the displayed container. Although required,
+ *        derived objects may set this value later, upon debugger initialization.
+ */
+function MenuContainer(aContainerNode) {
+  this._container = aContainerNode;
+  this._stagedItems = [];
+  this._itemsByLabel = new Map();
+  this._itemsByValue = new Map();
+  this._itemsByElement = new Map();
+}
+
+MenuContainer.prototype = {
+  /**
+   * Prepares an item to be added to this container. This allows for a large
+   * number of items to be batched up before being alphabetically sorted and
+   * added in this menu.
+   *
+   * If the "forced" flag is true, the item will be immediately inserted at the
+   * correct position in this container, so that all the items remain sorted.
+   * This can (possibly) be much slower than batching up multiple items.
+   *
+   * By default, this container assumes that all the items should be displayed
+   * sorted by their label. This can be overridden with the "unsorted" flag.
+   *
+   * Furthermore, this container makes sure that all the items are unique
+   * (two items with the same label or value are not allowed) and non-degenerate
+   * (items with "undefined" or "null" labels/values). This can, as well, be
+   * overridden via the "relaxed" flag.
+   *
+   * @param string aLabel
+   *        The label displayed in the container.
+   * @param string aValue
+   *        The actual internal value of the item.
+   * @param object aOptions [optional]
+   *        Additional options or flags supported by this operation:
+   *          - forced: true to force the item to be immediately appended
+   *          - unsorted: true if the items should not always remain sorted
+   *          - relaxed: true if this container should allow dupes & degenerates
+   *          - description: an optional description of the item
+   *          - attachment: some attached primitive/object
+   * @return MenuItem
+   *         The item associated with the displayed element if a forced push,
+   *         undefined if the item was staged for a later commit.
+   */
+  push: function DVMC_push(aLabel, aValue, aOptions = {}) {
+    let item = new MenuItem(
+      aLabel, aValue, aOptions.description, aOptions.attachment);
+
+    // Batch the item to be added later.
+    if (!aOptions.forced) {
+      this._stagedItems.push(item);
+    }
+    // Immediately insert the item at the specified index.
+    else if (aOptions.forced && aOptions.forced.atIndex !== undefined) {
+      return this._insertItemAt(aOptions.forced.atIndex, item, aOptions);
+    }
+    // Find the target position in this container and insert the item there.
+    else if (!aOptions.unsorted) {
+      return this._insertItemAt(this._findExpectedIndex(aLabel), item, aOptions);
+    }
+    // Just append the item in this container.
+    else {
+      return this._appendItem(item, aOptions);
+    }
+  },
+
+  /**
+   * Flushes all the prepared items into this container.
+   *
+   * @param object aOptions [optional]
+   *        Additional options or flags supported by this operation:
+   *          - unsorted: true if the items should not be sorted beforehand
+   */
+  commit: function DVMC_commit(aOptions = {}) {
+    let stagedItems = this._stagedItems;
+
+    // By default, sort the items before adding them to this container.
+    if (!aOptions.unsorted) {
+      stagedItems.sort(function(a, b) a.label.toLowerCase() > b.label.toLowerCase());
+    }
+    // Append the prepared items to this container.
+    for (let item of stagedItems) {
+      this._appendItem(item, aOptions);
+    }
+    // Recreate the temporary items list for ulterior pushes.
+    this._stagedItems = [];
+  },
+
+  /**
+   * Updates this container to reflect the information provided by the
+   * currently selected item.
+   *
+   * @return boolean
+   *         True if a selected item was available, false otherwise.
+   */
+  refresh: function DVMC_refresh() {
+    let selectedValue = this.selectedValue;
+    if (!selectedValue) {
+      return false;
+    }
+
+    let entangledLabel = this.getItemByValue(selectedValue).label;
+
+    this._container.setAttribute("label", entangledLabel);
+    this._container.setAttribute("tooltiptext", selectedValue);
+    return true;
+  },
+
+  /**
+   * Immediately removes the specified item from this container.
+   *
+   * @param MenuItem aItem
+   *        The item associated with the element to remove.
+   */
+  remove: function DVMC__remove(aItem) {
+    this._container.removeChild(aItem.target);
+    this._untangleItem(aItem);
+  },
+
+  /**
+   * Removes all items from this container.
+   */
+  empty: function DVMC_empty() {
+    this._preferredValue = this.selectedValue;
+    this._container.selectedIndex = -1;
+    this._container.setAttribute("label", this._emptyLabel);
+    this._container.removeAttribute("tooltiptext");
+    this._container.removeAllItems();
+
+    for (let [, item] of this._itemsByElement) {
+      this._untangleItem(item);
+    }
+
+    this._itemsByLabel = new Map();
+    this._itemsByValue = new Map();
+    this._itemsByElement = new Map();
+    this._stagedItems = [];
+  },
+
+  /**
+   * Toggles all the items in this container hidden or visible.
+   *
+   * @param boolean aVisibleFlag
+   *        Specifies the intended visibility.
+   */
+  toggleContents: function DVMC_toggleContents(aVisibleFlag) {
+    for (let [, item] of this._itemsByElement) {
+      item.target.hidden = !aVisibleFlag;
+    }
+  },
+
+  /**
+   * Does not remove any item in this container. Instead, it overrides the
+   * current label to signal that it is unavailable and removes the tooltip.
+   */
+  setUnavailable: function DVMC_setUnavailable() {
+    this._container.setAttribute("label", this._unavailableLabel);
+    this._container.removeAttribute("tooltiptext");
+  },
+
+  /**
+   * Checks whether an item with the specified label is among the elements
+   * shown in this container.
+   *
+   * @param string aLabel
+   *        The item's label.
+   * @return boolean
+   *         True if the label is known, false otherwise.
+   */
+  containsLabel: function DVMC_containsLabel(aLabel) {
+    return this._itemsByLabel.has(aLabel) ||
+           this._stagedItems.some(function(o) o.label == aLabel);
+  },
+
+  /**
+   * Checks whether an item with the specified value is among the elements
+   * shown in this container.
+   *
+   * @param string aValue
+   *        The item's value.
+   * @return boolean
+   *         True if the value is known, false otherwise.
+   */
+  containsValue: function DVMC_containsValue(aValue) {
+    return this._itemsByValue.has(aValue) ||
+           this._stagedItems.some(function(o) o.value == aValue);
+  },
+
+  /**
+   * Checks whether an item with the specified trimmed value is among the
+   * elements shown in this container.
+   *
+   * @param string aValue
+   *        The item's value.
+   * @param function aTrim [optional]
+   *        A custom trimming function.
+   * @return boolean
+   *         True if the trimmed value is known, false otherwise.
+   */
+  containsTrimmedValue:
+  function DVMC_containsTrimmedValue(aValue,
+                                     aTrim = SourceUtils.trimUrlQuery) {
+    let trimmedValue = aTrim(aValue);
+
+    for (let [value] of this._itemsByValue) {
+      if (aTrim(value) == trimmedValue) {
+        return true;
+      }
+    }
+    return this._stagedItems.some(function(o) aTrim(o.value) == trimmedValue);
+  },
+
+  /**
+   * Gets the preferred selected value to be displayed in this container.
+   * @return string
+   */
+  get preferredValue() this._preferredValue,
+
+  /**
+   * Retrieves the selected element's index in this container.
+   * @return number
+   */
+  get selectedIndex() this._container.selectedIndex,
+
+  /**
+   * Retrieves the item associated with the selected element.
+   * @return MenuItem
+   */
+  get selectedItem()
+    this._container.selectedItem ?
+    this._itemsByElement.get(this._container.selectedItem) : null,
+
+  /**
+   * Retrieves the label of the selected element.
+   * @return string
+   */
+  get selectedLabel()
+    this._container.selectedItem ?
+    this._itemsByElement.get(this._container.selectedItem).label : null,
+
+  /**
+   * Retrieves the value of the selected element.
+   * @return string
+   */
+  get selectedValue()
+    this._container.selectedItem ?
+    this._itemsByElement.get(this._container.selectedItem).value : null,
+
+  /**
+   * Selects the element at the specified index in this container.
+   * @param number aIndex
+   */
+  set selectedIndex(aIndex) this._container.selectedIndex = aIndex,
+
+  /**
+   * Selects the element with the entangled item in this container.
+   * @param MenuItem aItem
+   */
+  set selectedItem(aItem) this._container.selectedItem = aItem.target,
+
+  /**
+   * Selects the element with the specified label in this container.
+   * @param string aLabel
+   */
+  set selectedLabel(aLabel) {
+    let item = this._itemsByLabel.get(aLabel);
+    if (item) {
+      this._container.selectedItem = item.target;
+    }
+  },
+
+  /**
+   * Selects the element with the specified value in this container.
+   * @param string aValue
+   */
+  set selectedValue(aValue) {
+    let item = this._itemsByValue.get(aValue);
+    if (item) {
+      this._container.selectedItem = item.target;
+    }
+  },
+
+  /**
+   * Gets the item in the container having the specified index.
+   *
+   * @param number aIndex
+   *        The index used to identify the element.
+   * @return MenuItem
+   *         The matched item, or null if nothing is found.
+   */
+  getItemAtIndex: function DVMC_getItemAtIndex(aIndex) {
+    return this.getItemForElement(this._container.getItemAtIndex(aIndex));
+  },
+
+  /**
+   * Gets the item in the container having the specified label.
+   *
+   * @param string aLabel
+   *        The label used to identify the element.
+   * @return MenuItem
+   *         The matched item, or null if nothing is found.
+   */
+  getItemByLabel: function DVMC_getItemByLabel(aLabel) {
+    return this._itemsByLabel.get(aLabel);
+  },
+
+  /**
+   * Gets the item in the container having the specified value.
+   *
+   * @param string aValue
+   *        The value used to identify the element.
+   * @return MenuItem
+   *         The matched item, or null if nothing is found.
+   */
+  getItemByValue: function DVMC_getItemByValue(aValue) {
+    return this._itemsByValue.get(aValue);
+  },
+
+  /**
+   * Gets the item in the container associated with the specified element.
+   *
+   * @param nsIDOMNode aElement
+   *        The element used to identify the item.
+   * @return MenuItem
+   *         The matched item, or null if nothing is found.
+   */
+  getItemForElement:
+  function DVMC_getItemForElement(aElement) {
+    while (aElement) {
+      let item = this._itemsByElement.get(aElement);
+      if (item) {
+        return item;
+      }
+      aElement = aElement.parentNode;
+    }
+    return null;
+  },
+
+  /**
+   * Returns the list of labels in this container.
+   * @return array
+   */
+  get labels() {
+    let labels = [];
+    for (let [label] of this._itemsByLabel) {
+      labels.push(label);
+    }
+    return labels;
+  },
+
+  /**
+   * Returns the list of values in this container.
+   * @return array
+   */
+  get values() {
+    let values = [];
+    for (let [value] of this._itemsByValue) {
+      values.push(value);
+    }
+    return values;
+  },
+
+  /**
+   * Gets the total items in this container.
+   * @return number
+   */
+  get totalItems() {
+    return this._itemsByElement.size;
+  },
+
+  /**
+   * Gets the total visible (non-hidden) items in this container.
+   * @return number
+   */
+  get visibleItems() {
+    let count = 0;
+    for (let [element] of this._itemsByElement) {
+      count += element.hidden ? 0 : 1;
+    }
+    return count;
+  },
+
+  /**
+   * Specifies the required conditions for an item to be considered unique.
+   * Possible values:
+   *   - 1: label AND value are different from all other items
+   *   - 2: label OR value are different from all other items
+   *   - 3: only label is required to be different
+   *   - 4: only value is required to be different
+   */
+  uniquenessQualifier: 1,
+
+  /**
+   * Checks if an item is unique in this container.
+   *
+   * @param MenuItem aItem
+   *        An object containing a label and a value property.
+   * @return boolean
+   *         True if the element is unique, false otherwise.
+   */
+  isUnique: function DVMC_isUnique(aItem) {
+    switch (this.uniquenessQualifier) {
+      case 1:
+        return !this._itemsByLabel.has(aItem.label) &&
+               !this._itemsByValue.has(aItem.value);
+      case 2:
+        return !this._itemsByLabel.has(aItem.label) ||
+               !this._itemsByValue.has(aItem.value);
+      case 3:
+        return !this._itemsByLabel.has(aItem.label);
+      case 4:
+        return !this._itemsByValue.has(aItem.value);
+    }
+    return false;
+  },
+
+  /**
+   * Checks if an item's label and value are eligible for this container.
+   *
+   * @param MenuItem aItem
+   *        An object containing a label and a value property.
+   * @return boolean
+   *         True if the element is eligible, false otherwise.
+   */
+  isEligible: function DVMC_isEligible(aItem) {
+    return this.isUnique(aItem) &&
+           aItem.label != "undefined" && aItem.label != "null" &&
+           aItem.value != "undefined" && aItem.value != "null";
+  },
+
+  /**
+   * Finds the expected item index in this container based on its label.
+   *
+   * @param string aLabel
+   *        The label used to identify the element.
+   * @return number
+   *         The expected item index.
+   */
+  _findExpectedIndex: function DVMC__findExpectedIndex(aLabel) {
+    let container = this._container;
+    let itemCount = container.itemCount;
+
+    for (let i = 0; i < itemCount; i++) {
+      if (this.getItemForElement(container.getItemAtIndex(i)).label > aLabel) {
+        return i;
+      }
+    }
+    return itemCount;
+  },
+
+  /**
+   * Immediately appends an item in this container.
+   *
+   * @param MenuItem aItem
+   *        An object containing a label and a value property.
+   * @param object aOptions [optional]
+   *        Additional options or flags supported by this operation:
+   *          - relaxed: true if this container should allow dupes & degenerates
+   * @return MenuItem
+   *         The item associated with the displayed element, null if rejected.
+   */
+  _appendItem:
+  function DVMC__appendItem(aItem, aOptions = {}) {
+    if (!aOptions.relaxed && !this.isEligible(aItem)) {
+      return null;
+    }
+
+    return this._entangleItem(aItem, this._container.appendItem(
+      aItem.label, aItem.value, "", aOptions.attachment));
+  },
+
+  /**
+   * Immediately inserts an item in this container at the specified index.
+   *
+   * @param number aIndex
+   *        The position in the container intended for this item.
+   * @param MenuItem aItem
+   *        An object containing a label and a value property.
+   * @param object aOptions [optional]
+   *        Additional options or flags supported by this operation:
+   *          - relaxed: true if this container should allow dupes & degenerates
+   * @return MenuItem
+   *         The item associated with the displayed element, null if rejected.
+   */
+  _insertItemAt:
+  function DVMC__insertItemAt(aIndex, aItem, aOptions) {
+    if (!aOptions.relaxed && !this.isEligible(aItem)) {
+      return null;
+    }
+
+    return this._entangleItem(aItem, this._container.insertItemAt(
+      aIndex, aItem.label, aItem.value, "", aOptions.attachment));
+  },
+
+  /**
+   * Entangles an item (model) with a displayed node element (view).
+   *
+   * @param MenuItem aItem
+   *        The item describing the element.
+   * @param nsIDOMNode aElement
+   *        The element displaying the item.
+   * @return MenuItem
+   *         The same item.
+   */
+  _entangleItem: function DVMC__entangleItem(aItem, aElement) {
+    this._itemsByLabel.set(aItem.label, aItem);
+    this._itemsByValue.set(aItem.value, aItem);
+    this._itemsByElement.set(aElement, aItem);
+
+    aItem._target = aElement;
+    return aItem;
+  },
+
+  /**
+   * Untangles an item (model) from a displayed node element (view).
+   *
+   * @param MenuItem aItem
+   *        The item describing the element.
+   * @return MenuItem
+   *         The same item.
+   */
+  _untangleItem: function DVMC__untangleItem(aItem) {
+    if (aItem.finalize instanceof Function) {
+      aItem.finalize(aItem);
+    }
+
+    this._itemsByLabel.delete(aItem.label);
+    this._itemsByValue.delete(aItem.value);
+    this._itemsByElement.delete(aItem.target);
+
+    aItem._target = null;
+    return aItem;
+  },
+
+  /**
+   * A generator-iterator over all the items in this container.
+   */
+  __iterator__: function DVMC_iterator() {
+    for (let [, item] of this._itemsByElement) {
+      yield item;
+    }
+  },
+
+  _container: null,
+  _stagedItems: null,
+  _itemsByLabel: null,
+  _itemsByValue: null,
+  _itemsByElement: null,
+  _preferredValue: null,
+  _emptyLabel: "",
+  _unavailableLabel: ""
+};
+
+/**
+ * A stacked list of items, compatible with MenuContainer instances, used for
+ * displaying views like the StackFrames, Breakpoints etc.
+ *
+ * Custom methods introduced by this view, not necessary for a MenuContainer:
+ * set emptyText(aValue:string)
+ * set permaText(aValue:string)
+ * set itemType(aType:string)
+ * set itemFactory(aCallback:function)
+ *
+ * TODO: Use this in #796135 - "Provide some obvious UI for scripts filtering".
+ *
+ * @param nsIDOMNode aAssociatedNode
+ *        The element associated with the displayed container.
+ */
+function StackList(aAssociatedNode) {
+  this._parent = aAssociatedNode;
+
+  // Create an internal list container.
+  this._list = document.createElement("vbox");
+  this._parent.appendChild(this._list);
+}
+
+StackList.prototype = {
+  /**
+   * Immediately appends an item in this container.
+   *
+   * @param string aLabel
+   *        The label displayed in the container.
+   * @param string aValue
+   *        The actual internal value of the item.
+   * @param string aDescription [optional]
+   *        An optional description of the item.
+   * @param any aAttachment [optional]
+   *        Some attached primitive/object.
+   * @return nsIDOMNode
+   *         The element associated with the displayed item.
+   */
+  appendItem:
+  function DVSL_appendItem(aLabel, aValue, aDescription, aAttachment) {
+    return this.insertItemAt(
+      Number.MAX_VALUE, aLabel, aValue, aDescription, aAttachment);
+  },
+
+  /**
+   * Immediately inserts an item in this container at the specified index.
+   *
+   * @param number aIndex
+   *        The position in the container intended for this item.
+   * @param string aLabel
+   *        The label displayed in the container.
+   * @param string aValue
+   *        The actual internal value of the item.
+   * @param string aDescription [optional]
+   *        An optional description of the item.
+   * @param any aAttachment [optional]
+   *        Some attached primitive/object.
+   * @return nsIDOMNode
+   *         The element associated with the displayed item.
+   */
+  insertItemAt:
+  function DVSL_insertItemAt(aIndex, aLabel, aValue, aDescription, aAttachment) {
+    let list = this._list;
+    let childNodes = list.childNodes;
+
+    let element = document.createElement(this.itemType);
+    this._createItemView(element, aLabel, aValue, aAttachment);
+    this._removeEmptyNotice();
+
+    return list.insertBefore(element, childNodes[aIndex]);
+  },
+
+  /**
+   * Returns the child node in this container situated at the specified index.
+   *
+   * @param number aIndex
+   *        The position in the container intended for this item.
+   * @return nsIDOMNode
+   *         The element associated with the displayed item.
+   */
+  getItemAtIndex: function DVSL_getItemAtIndex(aIndex) {
+    return this._list.childNodes[aIndex];
+  },
+
+  /**
+   * Immediately removes the specified child node from this container.
+   *
+   * @param nsIDOMNode aChild
+   *        The element associated with the displayed item.
+   */
+  removeChild: function DVSL__removeChild(aChild) {
+    this._list.removeChild(aChild);
+
+    if (!this.itemCount) {
+      this._appendEmptyNotice();
+    }
+  },
+
+  /**
+   * Immediately removes all of the child nodes from this container.
+   */
+  removeAllItems: function DVSL_removeAllItems() {
+    let parent = this._parent;
+    let list = this._list;
+    let firstChild;
+
+    while (firstChild = list.firstChild) {
+      list.removeChild(firstChild);
+    }
+    parent.scrollTop = 0;
+    parent.scrollLeft = 0;
+
+    this._selectedItem = null;
+    this._selectedIndex = -1;
+    this._appendEmptyNotice();
+  },
+
+  /**
+   * Gets the number of child nodes present in this container.
+   * @return number
+   */
+  get itemCount() this._list.childNodes.length,
+
+  /**
+   * Gets the index of the selected child node in this container.
+   * @return number
+   */
+  get selectedIndex() this._selectedIndex,
+
+  /**
+   * Sets the index of the selected child node in this container.
+   * Only one child node may be selected at a time.
+   * @param number aIndex
+   */
+  set selectedIndex(aIndex) this.selectedItem = this._list.childNodes[aIndex],
+
+  /**
+   * Gets the currently selected child node in this container.
+   * @return nsIDOMNode
+   */
+  get selectedItem() this._selectedItem,
+
+  /**
+   * Sets the currently selected child node in this container.
+   * @param nsIDOMNode aChild
+   */
+  set selectedItem(aChild) {
+    let childNodes = this._list.childNodes;
+
+    if (!aChild) {
+      this._selectedItem = null;
+      this._selectedIndex = -1;
+    }
+    for (let node of childNodes) {
+      if (node == aChild) {
+        node.classList.add("selected");
+        this._selectedIndex = Array.indexOf(childNodes, node);
+        this._selectedItem = node;
+      } else {
+        node.classList.remove("selected");
+      }
+    }
+  },
+
+  /**
+   * Applies an attribute to this container.
+   *
+   * @param string aName
+   *        The name of the attribute to set.
+   * @return string
+   *         The attribute value.
+   */
+  getAttribute: function DVSL_setAttribute(aName) {
+    return this._parent.getAttribute(aName);
+  },
+
+  /**
+   * Applies an attribute to this container.
+   *
+   * @param string aName
+   *        The name of the attribute to set.
+   * @param any aValue
+   *        The supplied attribute value.
+   */
+  setAttribute: function DVSL_setAttribute(aName, aValue) {
+    this._parent.setAttribute(aName, aValue);
+  },
+
+  /**
+   * Removes an attribute applied to this container.
+   *
+   * @param string aName
+   *        The name of the attribute to remove.
+   */
+  removeAttribute: function DVSL_removeAttribute(aName) {
+    this._parent.removeAttribute(aName);
+  },
+
+  /**
+   * Adds an event listener to this container.
+   *
+   * @param string aName
+   *        The name of the listener to set.
+   * @param function aCallback
+   *        The function to be called when the event is triggered.
+   * @param boolean aBubbleFlag
+   *        True if the event should bubble.
+   */
+  addEventListener:
+  function DVSL_addEventListener(aName, aCallback, aBubbleFlag) {
+    this._parent.addEventListener(aName, aCallback, aBubbleFlag);
+  },
+
+  /**
+   * Removes an event listener added to this container.
+   *
+   * @param string aName
+   *        The name of the listener to remove.
+   * @param function aCallback
+   *        The function called when the event was triggered.
+   * @param boolean aBubbleFlag
+   *        True if the event was bubbling.
+   */
+  removeEventListener:
+  function DVSL_removeEventListener(aName, aCallback, aBubbleFlag) {
+    this._parent.removeEventListener(aName, aCallback, aBubbleFlag);
+  },
+
+  /**
+   * Sets the text displayed permanently in this container's header.
+   * @param string aValue
+   */
+  set permaText(aValue) {
+    if (this._permaTextNode) {
+      this._permaTextNode.setAttribute("value", aValue);
+    }
+    this._permaTextValue = aValue;
+    this._appendPermaNotice();
+  },
+
+  /**
+   * Sets the text displayed in this container when there are no available items.
+   * @param string aValue
+   */
+  set emptyText(aValue) {
+    if (this._emptyTextNode) {
+      this._emptyTextNode.setAttribute("value", aValue);
+    }
+    this._emptyTextValue = aValue;
+    this._appendEmptyNotice();
+  },
+
+  /**
+   * Overrides the item's element type (e.g. "vbox" or "hbox").
+   * @param string aType
+   */
+  itemType: "hbox",
+
+  /**
+   * Overrides the customization function for creating an item's UI.
+   * @param function aCallback
+   */
+  set itemFactory(aCallback) this._createItemView = aCallback,
+
+  /**
+   * Customization function for creating an item's UI for this container.
+   *
+   * @param nsIDOMNode aElementNode
+   *        The element associated with the displayed item.
+   * @param string aLabel
+   *        The item's label.
+   * @param string aValue
+   *        The item's value.
+   */
+  _createItemView: function DVSL__createItemView(aElementNode, aLabel, aValue) {
+    let labelNode = document.createElement("label");
+    let valueNode = document.createElement("label");
+    let spacer = document.createElement("spacer");
+
+    labelNode.setAttribute("value", aLabel);
+    valueNode.setAttribute("value", aValue);
+    spacer.setAttribute("flex", "1");
+
+    aElementNode.appendChild(labelNode);
+    aElementNode.appendChild(spacer);
+    aElementNode.appendChild(valueNode);
+
+    aElementNode.labelNode = labelNode;
+    aElementNode.valueNode = valueNode;
+  },
+
+  /**
+   * Creates and appends a label displayed permanently in this container's header.
+   */
+  _appendPermaNotice: function DVSL__appendPermaNotice() {
+    if (this._permaTextNode || !this._permaTextValue) {
+      return;
+    }
+
+    let label = document.createElement("label");
+    label.className = "empty list-item";
+    label.setAttribute("value", this._permaTextValue);
+
+    this._parent.insertBefore(label, this._list);
+    this._permaTextNode = label;
+  },
+
+  /**
+   * Creates and appends a label signaling that this container is empty.
+   */
+  _appendEmptyNotice: function DVSL__appendEmptyNotice() {
+    if (this._emptyTextNode || !this._emptyTextValue) {
+      return;
+    }
+
+    let label = document.createElement("label");
+    label.className = "empty list-item";
+    label.setAttribute("value", this._emptyTextValue);
+
+    this._parent.appendChild(label);
+    this._emptyTextNode = label;
+  },
+
+  /**
+   * Removes the label signaling that this container is empty.
+   */
+  _removeEmptyNotice: function DVSL__removeEmptyNotice() {
+    if (!this._emptyTextNode) {
+      return;
+    }
+
+    this._parent.removeChild(this._emptyTextNode);
+    this._emptyTextNode = null;
+  },
+
+  _parent: null,
+  _list: null,
+  _selectedIndex: -1,
+  _selectedItem: null,
+  _permaTextNode: null,
+  _permaTextValue: "",
+  _emptyTextNode: null,
+  _emptyTextValue: ""
 };
 
 /**
  * A simple way of displaying a "Connect to..." prompt.
  */
 function RemoteDebuggerPrompt() {
-
-  /**
-   * The remote uri the user wants to connect to.
-   */
-  this.uri = null;
+  this.remote = {};
 }
 
 RemoteDebuggerPrompt.prototype = {
-
   /**
-   * Shows the prompt and sets the uri using the user input.
+   * Shows the prompt and waits for a remote host and port to connect to.
    *
    * @param boolean aIsReconnectingFlag
-   *                True to show the reconnect message instead.
+   *        True to show the reconnect message instead of the connect request.
    */
   show: function RDP_show(aIsReconnectingFlag) {
     let check = { value: Prefs.remoteAutoConnect };
-    let input = { value: "http://" + Prefs.remoteHost +
-                               ":" + Prefs.remotePort + "/" };
+    let input = { value: Prefs.remoteHost + ":" + Prefs.remotePort };
+    let parts;
 
     while (true) {
       let result = Services.prompt.prompt(null,
@@ -115,1782 +1501,17 @@ RemoteDebuggerPrompt.prototype = {
           : "remoteDebuggerPromptMessage"), input,
         L10N.getStr("remoteDebuggerPromptCheck"), check);
 
-      Prefs.remoteAutoConnect = check.value;
-
-      try {
-        let uri = Services.io.newURI(input.value, null, null);
-        let url = uri.QueryInterface(Ci.nsIURL);
-
-        // If a url could be successfully retrieved, then the uri is correct.
-        this.uri = uri;
-        return result;
+      if (!result) {
+        return false;
       }
-      catch(e) { }
+      if ((parts = input.value.split(":")).length == 2) {
+        let [host, port] = parts;
+
+        if (host.length && port.length) {
+          this.remote = { host: host, port: port, auto: check.value };
+          return true;
+        }
+      }
     }
   }
 };
-
-/**
- * Functions handling the scripts UI.
- */
-function ScriptsView() {
-  this._onScriptsChange = this._onScriptsChange.bind(this);
-  this._onScriptsSearch = this._onScriptsSearch.bind(this);
-  this._onScriptsKeyUp = this._onScriptsKeyUp.bind(this);
-}
-
-ScriptsView.prototype = {
-
-  /**
-   * Removes all elements from the scripts container, leaving it empty.
-   */
-  empty: function DVS_empty() {
-    while (this._scripts.firstChild) {
-      this._scripts.removeChild(this._scripts.firstChild);
-    }
-  },
-
-  /**
-   * Removes the input in the searchbox and unhides all the scripts.
-   */
-  clearSearch: function DVS_clearSearch() {
-    this._searchbox.value = "";
-    this._onScriptsSearch({});
-  },
-
-  /**
-   * Checks whether the script with the specified URL is among the scripts
-   * known to the debugger (ignoring the query & reference).
-   *
-   * @param string aUrl
-   *        The script URL.
-   * @return boolean
-   */
-  containsIgnoringQuery: function DVS_containsIgnoringQuery(aUrl) {
-    let sourceScripts = DebuggerController.SourceScripts;
-    aUrl = sourceScripts.trimUrlQuery(aUrl);
-
-    if (this._tmpScripts.some(function(element) {
-      return sourceScripts.trimUrlQuery(element.script.url) == aUrl;
-    })) {
-      return true;
-    }
-    if (this.scriptLocations.some(function(url) {
-      return sourceScripts.trimUrlQuery(url) == aUrl;
-    })) {
-      return true;
-    }
-    return false;
-  },
-
-  /**
-   * Checks whether the script with the specified URL is among the scripts
-   * known to the debugger and shown in the list.
-   *
-   * @param string aUrl
-   *        The script URL.
-   * @return boolean
-   */
-  contains: function DVS_contains(aUrl) {
-    if (this._tmpScripts.some(function(element) {
-      return element.script.url == aUrl;
-    })) {
-      return true;
-    }
-    if (this._scripts.getElementsByAttribute("value", aUrl).length > 0) {
-      return true;
-    }
-    return false;
-  },
-
-  /**
-   * Checks whether the script with the specified label is among the scripts
-   * known to the debugger and shown in the list.
-   *
-   * @param string aLabel
-   *        The script label.
-   * @return boolean
-   */
-  containsLabel: function DVS_containsLabel(aLabel) {
-    if (this._tmpScripts.some(function(element) {
-      return element.label == aLabel;
-    })) {
-      return true;
-    }
-    if (this._scripts.getElementsByAttribute("label", aLabel).length > 0) {
-      return true;
-    }
-    return false;
-  },
-
-  /**
-   * Selects the script with the specified URL from the list.
-   *
-   * @param string aUrl
-   *        The script URL.
-   */
-  selectScript: function DVS_selectScript(aUrl) {
-    for (let i = 0, l = this._scripts.itemCount; i < l; i++) {
-      if (this._scripts.getItemAtIndex(i).value == aUrl) {
-        this._scripts.selectedIndex = i;
-        return;
-      }
-    }
-  },
-
-  /**
-   * Checks whether the script with the specified URL is selected in the list.
-   *
-   * @param string aUrl
-   *        The script URL.
-   */
-  isSelected: function DVS_isSelected(aUrl) {
-    if (this._scripts.selectedItem &&
-        this._scripts.selectedItem.value == aUrl) {
-      return true;
-    }
-    return false;
-  },
-
-  /**
-   * Retrieve the URL of the selected script.
-   * @return string | null
-   */
-  get selected() {
-    return this._scripts.selectedItem ?
-           this._scripts.selectedItem.value : null;
-  },
-
-  /**
-   * Returns the list of labels in the scripts container.
-   * @return array
-   */
-  get scriptLabels() {
-    let labels = [];
-    for (let i = 0, l = this._scripts.itemCount; i < l; i++) {
-      labels.push(this._scripts.getItemAtIndex(i).label);
-    }
-    return labels;
-  },
-
-  /**
-   * Returns the list of URIs for scripts in the page.
-   * @return array
-   */
-  get scriptLocations() {
-    let locations = [];
-    for (let i = 0, l = this._scripts.itemCount; i < l; i++) {
-      locations.push(this._scripts.getItemAtIndex(i).value);
-    }
-    return locations;
-  },
-
-  /**
-   * Gets the number of visible (hidden=false) scripts in the container.
-   * @return number
-   */
-  get visibleItemsCount() {
-    let count = 0;
-    for (let i = 0, l = this._scripts.itemCount; i < l; i++) {
-      count += this._scripts.getItemAtIndex(i).hidden ? 0 : 1;
-    }
-    return count;
-  },
-
-  /**
-   * Prepares a script to be added to the scripts container. This allows
-   * for a large number of scripts to be batched up before being
-   * alphabetically sorted and added in the container.
-   * @see ScriptsView.commitScripts
-   *
-   * If aForceFlag is true, the script will be immediately inserted at the
-   * necessary position in the container so that all the scripts remain sorted.
-   * This can be much slower than batching up multiple scripts.
-   *
-   * @param string aLabel
-   *        The simplified script location to be shown.
-   * @param string aScript
-   *        The source script.
-   * @param boolean aForceFlag
-   *        True to force the script to be immediately added.
-   */
-  addScript: function DVS_addScript(aLabel, aScript, aForceFlag) {
-    // Batch the script to be added later.
-    if (!aForceFlag) {
-      this._tmpScripts.push({ label: aLabel, script: aScript });
-      return;
-    }
-
-    // Find the target position in the menulist and insert the script there.
-    for (let i = 0, l = this._scripts.itemCount; i < l; i++) {
-      if (this._scripts.getItemAtIndex(i).label > aLabel) {
-        this._createScriptElement(aLabel, aScript, i);
-        return;
-      }
-    }
-    // The script is alphabetically the last one.
-    this._createScriptElement(aLabel, aScript, -1, true);
-  },
-
-  /**
-   * Adds all the prepared scripts to the scripts container.
-   * If a script already exists (was previously added), nothing happens.
-   */
-  commitScripts: function DVS_commitScripts() {
-    let newScripts = this._tmpScripts;
-    this._tmpScripts = [];
-
-    if (!newScripts || !newScripts.length) {
-      return;
-    }
-    newScripts.sort(function(a, b) {
-      return a.label.toLowerCase() > b.label.toLowerCase();
-    });
-
-    for (let i = 0, l = newScripts.length; i < l; i++) {
-      let item = newScripts[i];
-      this._createScriptElement(item.label, item.script, -1, true);
-    }
-  },
-
-  /**
-   * Creates a custom script element and adds it to the scripts container.
-   * If the script with the specified label already exists, nothing happens.
-   *
-   * @param string aLabel
-   *        The simplified script location to be shown.
-   * @param string aScript
-   *        The source script.
-   * @param number aIndex
-   *        The index where to insert to new script in the container.
-   *        Pass -1 to append the script at the end.
-   * @param boolean aSelectIfEmptyFlag
-   *        True to set the newly created script as the currently selected item
-   *        if there are no other existing scripts in the container.
-   */
-  _createScriptElement: function DVS__createScriptElement(
-    aLabel, aScript, aIndex, aSelectIfEmptyFlag)
-  {
-    // Make sure we don't duplicate anything.
-    if (aLabel == "null" || this.containsLabel(aLabel) || this.contains(aScript.url)) {
-      return;
-    }
-
-    let scriptItem =
-      aIndex == -1 ? this._scripts.appendItem(aLabel, aScript.url)
-                   : this._scripts.insertItemAt(aIndex, aLabel, aScript.url);
-
-    scriptItem.setAttribute("tooltiptext", aScript.url);
-    scriptItem.setUserData("sourceScript", aScript, null);
-
-    if (this._scripts.itemCount == 1 && aSelectIfEmptyFlag) {
-      this._scripts.selectedItem = scriptItem;
-    }
-  },
-
-  /**
-   * Gets the entered file, line and token entered in the searchbox.
-   *
-   * @return array
-   *         A [file, line, token] array.
-   */
-  _getSearchboxInfo: function DVS__getSearchboxInfo() {
-    let rawValue = this._searchbox.value.toLowerCase();
-
-    let rawLength = rawValue.length;
-    let lastColon = rawValue.lastIndexOf(":");
-    let lastAt = rawValue.lastIndexOf("#");
-
-    let fileEnd = lastColon != -1 ? lastColon : lastAt != -1 ? lastAt : rawLength;
-    let lineEnd = lastAt != -1 ? lastAt : rawLength;
-
-    let file = rawValue.slice(0, fileEnd);
-    let line = window.parseInt(rawValue.slice(fileEnd + 1, lineEnd)) || -1;
-    let token = rawValue.slice(lineEnd + 1);
-
-    return [file, line, token];
-  },
-
-  /**
-   * The click listener for the scripts container.
-   */
-  _onScriptsChange: function DVS__onScriptsChange() {
-    let script = this._scripts.selectedItem.getUserData("sourceScript");
-    this._preferredScript = script;
-    DebuggerController.SourceScripts.showScript(script);
-  },
-
-  /**
-   * The search listener for the scripts search box.
-   */
-  _onScriptsSearch: function DVS__onScriptsSearch(e) {
-    let editor = DebuggerView.editor;
-    let scripts = this._scripts;
-    let [file, line, token] = this._getSearchboxInfo();
-
-    // Presume we won't find anything.
-    scripts.selectedItem = this._preferredScript;
-
-    // If we're not searching for a file anymore, unhide all the scripts.
-    if (!file) {
-      for (let i = 0, l = scripts.itemCount; i < l; i++) {
-        scripts.getItemAtIndex(i).hidden = false;
-      }
-    } else {
-      for (let i = 0, l = scripts.itemCount, found = false; i < l; i++) {
-        let item = scripts.getItemAtIndex(i);
-        let target = item.label.toLowerCase();
-
-        // Search is not case sensitive, and is tied to the label not the url.
-        if (target.match(file)) {
-          item.hidden = false;
-
-          if (!found) {
-            found = true;
-            scripts.selectedItem = item;
-          }
-        }
-        // Hide what doesn't match our search.
-        else {
-          item.hidden = true;
-        }
-      }
-    }
-    if (line > -1) {
-      editor.setCaretPosition(line - 1);
-    }
-    if (token) {
-      let offset = editor.find(token, { ignoreCase: true });
-      if (offset > -1) {
-        editor.setSelection(offset, offset + token.length)
-      }
-    }
-  },
-
-  /**
-   * The keyup listener for the scripts search box.
-   */
-  _onScriptsKeyUp: function DVS__onScriptsKeyUp(e) {
-    if (e.keyCode === e.DOM_VK_ESCAPE) {
-      DebuggerView.editor.focus();
-      return;
-    }
-
-    if (e.keyCode === e.DOM_VK_RETURN || e.keyCode === e.DOM_VK_ENTER) {
-      let token = this._getSearchboxInfo()[2];
-      let editor = DebuggerView.editor;
-      let offset = editor.findNext(true);
-      if (offset > -1) {
-        editor.setSelection(offset, offset + token.length)
-      }
-    }
-  },
-
-  /**
-   * The cached scripts container and search box.
-   */
-  _scripts: null,
-  _searchbox: null,
-
-  /**
-   * Initialization function, called when the debugger is initialized.
-   */
-  initialize: function DVS_initialize() {
-    this._scripts = document.getElementById("scripts");
-    this._searchbox = document.getElementById("scripts-search");
-    this._scripts.addEventListener("select", this._onScriptsChange, false);
-    this._searchbox.addEventListener("select", this._onScriptsSearch, false);
-    this._searchbox.addEventListener("input", this._onScriptsSearch, false);
-    this._searchbox.addEventListener("keyup", this._onScriptsKeyUp, false);
-    this.commitScripts();
-  },
-
-  /**
-   * Destruction function, called when the debugger is shut down.
-   */
-  destroy: function DVS_destroy() {
-    this._scripts.removeEventListener("select", this._onScriptsChange, false);
-    this._searchbox.removeEventListener("select", this._onScriptsSearch, false);
-    this._searchbox.removeEventListener("input", this._onScriptsSearch, false);
-    this._searchbox.removeEventListener("keyup", this._onScriptsKeyUp, false);
-    this._scripts = null;
-    this._searchbox = null;
-  }
-};
-
-/**
- * Functions handling the html stackframes UI.
- */
-function StackFramesView() {
-  this._onFramesScroll = this._onFramesScroll.bind(this);
-  this._onPauseExceptionsClick = this._onPauseExceptionsClick.bind(this);
-  this._onCloseButtonClick = this._onCloseButtonClick.bind(this);
-  this._onResumeButtonClick = this._onResumeButtonClick.bind(this);
-  this._onStepOverClick = this._onStepOverClick.bind(this);
-  this._onStepInClick = this._onStepInClick.bind(this);
-  this._onStepOutClick = this._onStepOutClick.bind(this);
-}
-
-StackFramesView.prototype = {
-
-  /**
-   * Sets the current frames state based on the debugger active thread state.
-   *
-   * @param string aState
-   *        Either "paused" or "attached".
-   */
-   updateState: function DVF_updateState(aState) {
-     let resume = document.getElementById("resume");
-
-     // If we're paused, show a pause label and a resume label on the button.
-     if (aState == "paused") {
-       resume.setAttribute("tooltiptext", L10N.getStr("resumeTooltip"));
-       resume.setAttribute("checked", true);
-     }
-     // If we're attached, do the opposite.
-     else if (aState == "attached") {
-       resume.setAttribute("tooltiptext", L10N.getStr("pauseTooltip"));
-       resume.removeAttribute("checked");
-     }
-
-     DebuggerView.Scripts.clearSearch();
-   },
-
-  /**
-   * Removes all elements from the stackframes container, leaving it empty.
-   */
-  empty: function DVF_empty() {
-    while (this._frames.firstChild) {
-      this._frames.removeChild(this._frames.firstChild);
-    }
-  },
-
-  /**
-   * Removes all elements from the stackframes container, and adds a child node
-   * with an empty text note attached.
-   */
-  emptyText: function DVF_emptyText() {
-    // Make sure the container is empty first.
-    this.empty();
-
-    let item = document.createElement("label");
-
-    // The empty node should look grayed out to avoid confusion.
-    item.className = "list-item empty";
-    item.setAttribute("value", L10N.getStr("emptyStackText"));
-
-    this._frames.appendChild(item);
-  },
-
-  /**
-   * Adds a frame to the stackframes container.
-   * If the frame already exists (was previously added), null is returned.
-   * Otherwise, the newly created element is returned.
-   *
-   * @param number aDepth
-   *        The frame depth specified by the debugger.
-   * @param string aFrameNameText
-   *        The name to be displayed in the list.
-   * @param string aFrameDetailsText
-   *        The details to be displayed in the list.
-   * @return object
-   *         The newly created html node representing the added frame.
-   */
-  addFrame: function DVF_addFrame(aDepth, aFrameNameText, aFrameDetailsText) {
-    // Make sure we don't duplicate anything.
-    if (document.getElementById("stackframe-" + aDepth)) {
-      return null;
-    }
-
-    let frame = document.createElement("box");
-    let frameName = document.createElement("label");
-    let frameDetails = document.createElement("label");
-
-    // Create a list item to be added to the stackframes container.
-    frame.id = "stackframe-" + aDepth;
-    frame.className = "dbg-stackframe list-item";
-
-    // This list should display the name and details for the frame.
-    frameName.className = "dbg-stackframe-name plain";
-    frameDetails.className = "dbg-stackframe-details plain";
-    frameName.setAttribute("value", aFrameNameText);
-    frameDetails.setAttribute("value", aFrameDetailsText);
-
-    let spacer = document.createElement("spacer");
-    spacer.setAttribute("flex", "1");
-
-    frame.appendChild(frameName);
-    frame.appendChild(spacer);
-    frame.appendChild(frameDetails);
-
-    this._frames.appendChild(frame);
-
-    // Return the element for later use if necessary.
-    return frame;
-  },
-
-  /**
-   * Highlights a frame from the stackframe container as selected/deselected.
-   *
-   * @param number aDepth
-   *        The frame depth specified by the debugger.
-   * @param boolean aFlag
-   *        True if the frame should be deselected, false otherwise.
-   */
-  highlightFrame: function DVF_highlightFrame(aDepth, aFlag) {
-    let frame = document.getElementById("stackframe-" + aDepth);
-
-    // The list item wasn't found in the stackframe container.
-    if (!frame) {
-      return;
-    }
-
-    // Add the 'selected' css class if the frame isn't already selected.
-    if (!aFlag && !frame.classList.contains("selected")) {
-      frame.classList.add("selected");
-    }
-    // Remove the 'selected' css class if the frame is already selected.
-    else if (aFlag && frame.classList.contains("selected")) {
-      frame.classList.remove("selected");
-    }
-  },
-
-  /**
-   * Deselects a frame from the stackframe container.
-   *
-   * @param number aDepth
-   *        The frame depth specified by the debugger.
-   */
-  unhighlightFrame: function DVF_unhighlightFrame(aDepth) {
-    this.highlightFrame(aDepth, true);
-  },
-
-  /**
-   * Gets the current dirty state.
-   *
-   * @return boolean value
-   *         True if should load more frames.
-   */
-  get dirty() {
-    return this._dirty;
-  },
-
-  /**
-   * Sets if the active thread has more frames that need to be loaded.
-   *
-   * @param boolean aValue
-   *        True if should load more frames.
-   */
-  set dirty(aValue) {
-    this._dirty = aValue;
-  },
-
-  /**
-   * Listener handling the stackframes container click event.
-   */
-  _onFramesClick: function DVF__onFramesClick(aEvent) {
-    let target = aEvent.target;
-
-    while (target) {
-      if (target.debuggerFrame) {
-        DebuggerController.StackFrames.selectFrame(target.debuggerFrame.depth);
-        return;
-      }
-      target = target.parentNode;
-    }
-  },
-
-  /**
-   * Listener handling the stackframes container scroll event.
-   */
-  _onFramesScroll: function DVF__onFramesScroll(aEvent) {
-    // Update the stackframes container only if we have to.
-    if (this._dirty) {
-      let clientHeight = this._frames.clientHeight;
-      let scrollTop = this._frames.scrollTop;
-      let scrollHeight = this._frames.scrollHeight;
-
-      // If the stackframes container was scrolled past 95% of the height,
-      // load more content.
-      if (scrollTop >= (scrollHeight - clientHeight) * 0.95) {
-        this._dirty = false;
-
-        DebuggerController.StackFrames.addMoreFrames();
-      }
-    }
-  },
-
-  /**
-   * Listener handling the close button click event.
-   */
-  _onCloseButtonClick: function DVF__onCloseButtonClick() {
-    DebuggerController.dispatchEvent("Debugger:Close");
-  },
-
-  /**
-   * Listener handling the pause-on-exceptions click event.
-   */
-  _onPauseExceptionsClick: function DVF__onPauseExceptionsClick() {
-    let option = document.getElementById("pause-exceptions");
-    DebuggerController.StackFrames.updatePauseOnExceptions(option.checked);
-  },
-
-  /**
-   * Listener handling the pause/resume button click event.
-   */
-  _onResumeButtonClick: function DVF__onResumeButtonClick() {
-    if (DebuggerController.activeThread.paused) {
-      DebuggerController.activeThread.resume();
-    } else {
-      DebuggerController.activeThread.interrupt();
-    }
-  },
-
-  /**
-   * Listener handling the step over button click event.
-   */
-  _onStepOverClick: function DVF__onStepOverClick() {
-    DebuggerController.activeThread.stepOver();
-  },
-
-  /**
-   * Listener handling the step in button click event.
-   */
-  _onStepInClick: function DVF__onStepInClick() {
-    DebuggerController.activeThread.stepIn();
-  },
-
-  /**
-   * Listener handling the step out button click event.
-   */
-  _onStepOutClick: function DVF__onStepOutClick() {
-    DebuggerController.activeThread.stepOut();
-  },
-
-  /**
-   * Specifies if the active thread has more frames which need to be loaded.
-   */
-  _dirty: false,
-
-  /**
-   * The cached stackframes container.
-   */
-  _frames: null,
-
-  /**
-   * Initialization function, called when the debugger is initialized.
-   */
-  initialize: function DVF_initialize() {
-    let close = document.getElementById("close");
-    let pauseOnExceptions = document.getElementById("pause-exceptions");
-    let resume = document.getElementById("resume");
-    let stepOver = document.getElementById("step-over");
-    let stepIn = document.getElementById("step-in");
-    let stepOut = document.getElementById("step-out");
-    let frames = document.getElementById("stackframes");
-
-    close.addEventListener("click", this._onCloseButtonClick, false);
-    pauseOnExceptions.checked = DebuggerController.StackFrames.pauseOnExceptions;
-    pauseOnExceptions.addEventListener("click",
-                                        this._onPauseExceptionsClick,
-                                        false);
-    resume.addEventListener("click", this._onResumeButtonClick, false);
-    stepOver.addEventListener("click", this._onStepOverClick, false);
-    stepIn.addEventListener("click", this._onStepInClick, false);
-    stepOut.addEventListener("click", this._onStepOutClick, false);
-    frames.addEventListener("click", this._onFramesClick, false);
-    frames.addEventListener("scroll", this._onFramesScroll, false);
-    window.addEventListener("resize", this._onFramesScroll, false);
-
-    this._frames = frames;
-  },
-
-  /**
-   * Destruction function, called when the debugger is shut down.
-   */
-  destroy: function DVF_destroy() {
-    let close = document.getElementById("close");
-    let pauseOnExceptions = document.getElementById("pause-exceptions");
-    let resume = document.getElementById("resume");
-    let stepOver = document.getElementById("step-over");
-    let stepIn = document.getElementById("step-in");
-    let stepOut = document.getElementById("step-out");
-    let frames = this._frames;
-
-    close.removeEventListener("click", this._onCloseButtonClick, false);
-    pauseOnExceptions.removeEventListener("click",
-                                          this._onPauseExceptionsClick,
-                                          false);
-    resume.removeEventListener("click", this._onResumeButtonClick, false);
-    stepOver.removeEventListener("click", this._onStepOverClick, false);
-    stepIn.removeEventListener("click", this._onStepInClick, false);
-    stepOut.removeEventListener("click", this._onStepOutClick, false);
-    frames.removeEventListener("click", this._onFramesClick, false);
-    frames.removeEventListener("scroll", this._onFramesScroll, false);
-    window.removeEventListener("resize", this._onFramesScroll, false);
-
-    this._frames = null;
-  }
-};
-
-/**
- * Functions handling the properties view.
- */
-function PropertiesView() {
-  this.addScope = this._addScope.bind(this);
-  this._addVar = this._addVar.bind(this);
-  this._addProperties = this._addProperties.bind(this);
-}
-
-PropertiesView.prototype = {
-  /**
-   * A monotonically-increasing counter, that guarantees the uniqueness of scope
-   * IDs.
-   */
-  _idCount: 1,
-
-  /**
-   * Adds a scope to contain any inspected variables.
-   * If the optional id is not specified, the scope html node will have a
-   * default id set as aName-scope.
-   *
-   * @param string aName
-   *        The scope name (e.g. "Local", "Global" or "With block").
-   * @param string aId
-   *        Optional, an id for the scope html node.
-   * @return object
-   *         The newly created html node representing the added scope or null
-   *         if a node was not created.
-   */
-  _addScope: function DVP__addScope(aName, aId) {
-    // Make sure the parent container exists.
-    if (!this._vars) {
-      return null;
-    }
-
-    // Generate a unique id for the element, if not specified.
-    aId = aId || aName.toLowerCase().trim().replace(/\s+/g, "-") + this._idCount++;
-
-    // Contains generic nodes and functionality.
-    let element = this._createPropertyElement(aName, aId, "scope", this._vars);
-
-    // Make sure the element was created successfully.
-    if (!element) {
-      return null;
-    }
-    element._identifier = aName;
-
-    /**
-     * @see DebuggerView.Properties._addVar
-     */
-    element.addVar = this._addVar.bind(this, element);
-
-    /**
-     * @see DebuggerView.Properties.addScopeToHierarchy
-     */
-    element.addToHierarchy = this.addScopeToHierarchy.bind(this, element);
-
-    // Setup the additional elements specific for a scope node.
-    element.refresh(function() {
-      let title = element.getElementsByClassName("title")[0];
-      title.classList.add("devtools-toolbar");
-    }.bind(this));
-
-    // Return the element for later use if necessary.
-    return element;
-  },
-
-  /**
-   * Removes all added scopes in the property container tree.
-   */
-  empty: function DVP_empty() {
-    while (this._vars.firstChild) {
-      this._vars.removeChild(this._vars.firstChild);
-    }
-  },
-
-  /**
-   * Removes all elements from the variables container, and adds a child node
-   * with an empty text note attached.
-   */
-  emptyText: function DVP_emptyText() {
-    // Make sure the container is empty first.
-    this.empty();
-
-    let item = document.createElement("label");
-
-    // The empty node should look grayed out to avoid confusion.
-    item.className = "list-item empty";
-    item.setAttribute("value", L10N.getStr("emptyVariablesText"));
-
-    this._vars.appendChild(item);
-  },
-
-  /**
-   * Adds a variable to a specified scope.
-   * If the optional id is not specified, the variable html node will have a
-   * default id set as aScope.id->aName-variable.
-   *
-   * @param object aScope
-   *        The parent scope element.
-   * @param string aName
-   *        The variable name.
-   * @param object aFlags
-   *        Optional, contains configurable, enumerable or writable flags.
-   * @param string aId
-   *        Optional, an id for the variable html node.
-   * @return object
-   *         The newly created html node representing the added var.
-   */
-  _addVar: function DVP__addVar(aScope, aName, aFlags, aId) {
-    // Make sure the scope container exists.
-    if (!aScope) {
-      return null;
-    }
-
-    // Compute the id of the element if not specified.
-    aId = aId || (aScope.id + "->" + aName + "-variable");
-
-    // Contains generic nodes and functionality.
-    let element = this._createPropertyElement(aName, aId, "variable",
-                                              aScope.getElementsByClassName("details")[0]);
-
-    // Make sure the element was created successfully.
-    if (!element) {
-      return null;
-    }
-    element._identifier = aName;
-
-    /**
-     * @see DebuggerView.Properties._setGrip
-     */
-    element.setGrip = this._setGrip.bind(this, element);
-
-    /**
-     * @see DebuggerView.Properties._addProperties
-     */
-    element.addProperties = this._addProperties.bind(this, element);
-
-    // Setup the additional elements specific for a variable node.
-    element.refresh(function() {
-      let separatorLabel = document.createElement("label");
-      let valueLabel = document.createElement("label");
-      let title = element.getElementsByClassName("title")[0];
-
-      // Separator between the variable name and its value.
-      separatorLabel.className = "plain";
-      separatorLabel.setAttribute("value", ":");
-
-      // The variable information (type, class and/or value).
-      valueLabel.className = "value plain";
-
-      if (aFlags) {
-        // Use attribute flags to specify the element type and tooltip text.
-        let tooltip = [];
-
-        !aFlags.configurable ? element.setAttribute("non-configurable", "")
-                             : tooltip.push("configurable");
-        !aFlags.enumerable   ? element.setAttribute("non-enumerable", "")
-                             : tooltip.push("enumerable");
-        !aFlags.writable     ? element.setAttribute("non-writable", "")
-                             : tooltip.push("writable");
-
-        element.setAttribute("tooltiptext", tooltip.join(", "));
-      }
-      if (aName === "this") { element.setAttribute("self", ""); }
-
-      // Handle the click event when pressing the element value label.
-      valueLabel.addEventListener("click", this._activateElementInputMode.bind({
-        scope: this,
-        element: element,
-        valueLabel: valueLabel
-      }));
-
-      // Maintain the symbolic name of the variable.
-      Object.defineProperty(element, "token", {
-        value: aName,
-        writable: false,
-        enumerable: true,
-        configurable: true
-      });
-
-      title.appendChild(separatorLabel);
-      title.appendChild(valueLabel);
-
-      // Remember a simple hierarchy between the parent and the element.
-      this._saveHierarchy({
-        parent: aScope,
-        element: element,
-        valueLabel: valueLabel
-      });
-    }.bind(this));
-
-    // Return the element for later use if necessary.
-    return element;
-  },
-
-  /**
-   * Sets the specific grip for a variable.
-   * The grip should contain the value or the type & class, as defined in the
-   * remote debugger protocol. For convenience, undefined and null are
-   * both considered types.
-   *
-   * @param object aVar
-   *        The parent variable element.
-   * @param object aGrip
-   *        The primitive or object defining the grip, specifying
-   *        the value and/or type & class of the variable (if the type
-   *        is not specified, it will be inferred from the value).
-   *        e.g. 42
-   *             true
-   *             "nasu"
-   *             { type: "undefined" }
-   *             { type: "null" }
-   *             { type: "object", class: "Object" }
-   * @return object
-   *         The same variable.
-   */
-  _setGrip: function DVP__setGrip(aVar, aGrip) {
-    // Make sure the variable container exists.
-    if (!aVar) {
-      return null;
-    }
-    if (aGrip === undefined) {
-      aGrip = { type: "undefined" };
-    }
-    if (aGrip === null) {
-      aGrip = { type: "null" };
-    }
-
-    let valueLabel = aVar.getElementsByClassName("value")[0];
-
-    // Make sure the value node exists.
-    if (!valueLabel) {
-      return null;
-    }
-
-    this._applyGrip(valueLabel, aGrip);
-    return aVar;
-  },
-
-  /**
-   * Applies the necessary text content and class name to a value node based
-   * on a grip.
-   *
-   * @param object aValueLabel
-   *        The value node to apply the changes to.
-   * @param object aGrip
-   *        @see DebuggerView.Properties._setGrip
-   */
-  _applyGrip: function DVP__applyGrip(aValueLabel, aGrip) {
-    let prevGrip = aValueLabel.currentGrip;
-    if (prevGrip) {
-      aValueLabel.classList.remove(this._propertyColor(prevGrip));
-    }
-
-    aValueLabel.setAttribute("value", this._propertyString(aGrip));
-    aValueLabel.classList.add(this._propertyColor(aGrip));
-    aValueLabel.currentGrip = aGrip;
-  },
-
-  /**
-   * Adds multiple properties to a specified variable.
-   * This function handles two types of properties: data properties and
-   * accessor properties, as defined in the remote debugger protocol spec.
-   *
-   * @param object aVar
-   *        The parent variable element.
-   * @param object aProperties
-   *        An object containing the key: descriptor data properties,
-   *        specifying the value and/or type & class of the variable,
-   *        or 'get' & 'set' accessor properties.
-   *        e.g. { "someProp0": { value: 42 },
-   *               "someProp1": { value: true },
-   *               "someProp2": { value: "nasu" },
-   *               "someProp3": { value: { type: "undefined" } },
-   *               "someProp4": { value: { type: "null" } },
-   *               "someProp5": { value: { type: "object", class: "Object" } },
-   *               "someProp6": { get: { type: "object", class: "Function" },
-   *                              set: { type: "undefined" } }
-   * @return object
-   *         The same variable.
-   */
-  _addProperties: function DVP__addProperties(aVar, aProperties) {
-    // For each property, add it using the passed object key/grip.
-    for (let i in aProperties) {
-      // Can't use aProperties.hasOwnProperty(i), because it may be overridden.
-      if (Object.getOwnPropertyDescriptor(aProperties, i)) {
-
-        // Get the specified descriptor for current property.
-        let desc = aProperties[i];
-
-        // As described in the remote debugger protocol, the value grip must be
-        // contained in a 'value' property.
-        let value = desc["value"];
-
-        // For accessor property descriptors, the two grips need to be
-        // contained in 'get' and 'set' properties.
-        let getter = desc["get"];
-        let setter = desc["set"];
-
-        // Handle data property and accessor property descriptors.
-        if (value !== undefined) {
-          this._addProperty(aVar, [i, value], desc);
-        }
-        if (getter !== undefined || setter !== undefined) {
-          let prop = this._addProperty(aVar, [i]).expand();
-          prop.getter = this._addProperty(prop, ["get", getter], desc);
-          prop.setter = this._addProperty(prop, ["set", setter], desc);
-        }
-      }
-    }
-    return aVar;
-  },
-
-  /**
-   * Adds a property to a specified variable.
-   * If the optional id is not specified, the property html node will have a
-   * default id set as aVar.id->aKey-property.
-   *
-   * @param object aVar
-   *        The parent variable element.
-   * @param array aProperty
-   *        An array containing the key and grip properties, specifying
-   *        the value and/or type & class of the variable (if the type
-   *        is not specified, it will be inferred from the value).
-   *        e.g. ["someProp0", 42]
-   *             ["someProp1", true]
-   *             ["someProp2", "nasu"]
-   *             ["someProp3", { type: "undefined" }]
-   *             ["someProp4", { type: "null" }]
-   *             ["someProp5", { type: "object", class: "Object" }]
-   * @param object aFlags
-   *        Contains configurable, enumerable or writable flags.
-   * @param string aName
-   *        Optional, the property name.
-   * @paarm string aId
-   *        Optional, an id for the property html node.
-   * @return object
-   *         The newly created html node representing the added prop.
-   */
-  _addProperty: function DVP__addProperty(aVar, aProperty, aFlags, aName, aId) {
-    // Make sure the variable container exists.
-    if (!aVar) {
-      return null;
-    }
-
-    // Compute the id of the element if not specified.
-    aId = aId || (aVar.id + "->" + aProperty[0] + "-property");
-
-    // Contains generic nodes and functionality.
-    let element = this._createPropertyElement(aName, aId, "property",
-                                              aVar.getElementsByClassName("details")[0]);
-
-    // Make sure the element was created successfully.
-    if (!element) {
-      return null;
-    }
-    element._identifier = aName;
-
-    /**
-     * @see DebuggerView.Properties._setGrip
-     */
-    element.setGrip = this._setGrip.bind(this, element);
-
-    /**
-     * @see DebuggerView.Properties._addProperties
-     */
-    element.addProperties = this._addProperties.bind(this, element);
-
-    // Setup the additional elements specific for a variable node.
-    element.refresh(function(pKey, pGrip) {
-      let title = element.getElementsByClassName("title")[0];
-      let nameLabel = title.getElementsByClassName("name")[0];
-      let separatorLabel = document.createElement("label");
-      let valueLabel = document.createElement("label");
-
-      if ("undefined" !== typeof pKey) {
-        // Use a key element to specify the property name.
-        nameLabel.className = "key plain";
-        nameLabel.setAttribute("value", pKey.trim());
-        title.appendChild(nameLabel);
-      }
-      if ("undefined" !== typeof pGrip) {
-        // Separator between the variable name and its value.
-        separatorLabel.className = "plain";
-        separatorLabel.setAttribute("value", ":");
-
-        // Use a value element to specify the property value.
-        valueLabel.className = "value plain";
-        this._applyGrip(valueLabel, pGrip);
-
-        title.appendChild(separatorLabel);
-        title.appendChild(valueLabel);
-      }
-
-      if (aFlags) {
-        // Use attribute flags to specify the element type and tooltip text.
-        let tooltip = [];
-
-        !aFlags.configurable ? element.setAttribute("non-configurable", "")
-                             : tooltip.push("configurable");
-        !aFlags.enumerable   ? element.setAttribute("non-enumerable", "")
-                             : tooltip.push("enumerable");
-        !aFlags.writable     ? element.setAttribute("non-writable", "")
-                             : tooltip.push("writable");
-
-        element.setAttribute("tooltiptext", tooltip.join(", "));
-      }
-      if (pKey === "__proto__ ") { element.setAttribute("proto", ""); }
-
-      // Handle the click event when pressing the element value label.
-      valueLabel.addEventListener("click", this._activateElementInputMode.bind({
-        scope: this,
-        element: element,
-        valueLabel: valueLabel
-      }));
-
-      // Maintain the symbolic name of the property.
-      Object.defineProperty(element, "token", {
-        value: aVar.token + "['" + pKey + "']",
-        writable: false,
-        enumerable: true,
-        configurable: true
-      });
-
-      // Remember a simple hierarchy between the parent and the element.
-      this._saveHierarchy({
-        parent: aVar,
-        element: element,
-        valueLabel: valueLabel
-      });
-
-      // Save the property to the variable for easier access.
-      Object.defineProperty(aVar, pKey, { value: element,
-                                          writable: false,
-                                          enumerable: true,
-                                          configurable: true });
-    }.bind(this), aProperty);
-
-    // Return the element for later use if necessary.
-    return element;
-  },
-
-  /**
-   * Makes an element's (variable or priperty) value editable.
-   * Make sure 'this' is bound to an object containing the properties:
-   * {
-   *   "scope": the original scope to be used, probably DebuggerView.Properties,
-   *   "element": the element whose value should be made editable,
-   *   "valueLabel": the label displaying the value
-   * }
-   *
-   * @param event aEvent [optional]
-   *        The event requesting this action.
-   */
-  _activateElementInputMode: function DVP__activateElementInputMode(aEvent) {
-    if (aEvent) {
-      aEvent.stopPropagation();
-    }
-
-    let self = this.scope;
-    let element = this.element;
-    let valueLabel = this.valueLabel;
-    let titleNode = valueLabel.parentNode;
-    let initialValue = valueLabel.getAttribute("value");
-
-    // When editing an object we need to collapse it first, in order to avoid
-    // displaying an inconsistent state while the user is editing.
-    element._previouslyExpanded = element.expanded;
-    element._preventExpand = true;
-    element.collapse();
-    element.forceHideArrow();
-
-    // Create a texbox input element which will be shown in the current
-    // element's value location.
-    let textbox = document.createElement("textbox");
-    textbox.setAttribute("value", initialValue);
-    textbox.className = "element-input";
-    textbox.width = valueLabel.clientWidth + 1;
-
-    // Save the new value when the texbox looses focus or ENTER is pressed.
-    function DVP_element_textbox_blur(aTextboxEvent) {
-      DVP_element_textbox_save();
-    }
-
-    function DVP_element_textbox_keyup(aTextboxEvent) {
-      if (aTextboxEvent.keyCode === aTextboxEvent.DOM_VK_LEFT ||
-          aTextboxEvent.keyCode === aTextboxEvent.DOM_VK_RIGHT ||
-          aTextboxEvent.keyCode === aTextboxEvent.DOM_VK_UP ||
-          aTextboxEvent.keyCode === aTextboxEvent.DOM_VK_DOWN) {
-        return;
-      }
-      if (aTextboxEvent.keyCode === aTextboxEvent.DOM_VK_RETURN ||
-          aTextboxEvent.keyCode === aTextboxEvent.DOM_VK_ENTER) {
-        DVP_element_textbox_save();
-        return;
-      }
-      if (aTextboxEvent.keyCode === aTextboxEvent.DOM_VK_ESCAPE) {
-        valueLabel.setAttribute("value", initialValue);
-        DVP_element_textbox_clear();
-        return;
-      }
-    }
-
-    // The actual save mechanism for the new variable/property value.
-    function DVP_element_textbox_save() {
-      if (textbox.value !== valueLabel.getAttribute("value")) {
-        valueLabel.setAttribute("value", textbox.value);
-
-        let expr = "(" + element.token + "=" + textbox.value + ")";
-        DebuggerController.StackFrames.evaluate(expr);
-      }
-      DVP_element_textbox_clear();
-    }
-
-    // Removes the event listeners and appends the value node again.
-    function DVP_element_textbox_clear() {
-      element._preventExpand = false;
-      if (element._previouslyExpanded) {
-        element._previouslyExpanded = false;
-        element.expand();
-      }
-      element.showArrow();
-
-      textbox.removeEventListener("blur", DVP_element_textbox_blur, false);
-      textbox.removeEventListener("keyup", DVP_element_textbox_keyup, false);
-      titleNode.removeChild(textbox);
-      titleNode.appendChild(valueLabel);
-    }
-
-    textbox.addEventListener("blur", DVP_element_textbox_blur, false);
-    textbox.addEventListener("keyup", DVP_element_textbox_keyup, false);
-    titleNode.removeChild(valueLabel);
-    titleNode.appendChild(textbox);
-
-    textbox.select();
-
-    // When the value is a string (displayed as "value"), then we probably want
-    // to change it to another string in the textbox, so to avoid typing the ""
-    // again, tackle with the selection bounds just a bit.
-    if (valueLabel.getAttribute("value").match(/^"[^"]*"$/)) {
-      textbox.selectionEnd--;
-      textbox.selectionStart++;
-    }
-  },
-
-  /**
-   * Returns a custom formatted property string for a type and a value.
-   *
-   * @param string | object aGrip
-   *        The variable grip.
-   * @return string
-   *         The formatted property string.
-   */
-  _propertyString: function DVP__propertyString(aGrip) {
-    if (aGrip && "object" === typeof aGrip) {
-      switch (aGrip.type) {
-        case "undefined":
-          return "undefined";
-        case "null":
-          return "null";
-        default:
-          return "[" + aGrip.type + " " + aGrip.class + "]";
-      }
-    } else {
-      switch (typeof aGrip) {
-        case "string":
-          return "\"" + aGrip + "\"";
-        case "boolean":
-          return aGrip ? "true" : "false";
-        default:
-          return aGrip + "";
-      }
-    }
-    return aGrip + "";
-  },
-
-  /**
-   * Returns a custom class style for a type and a value.
-   *
-   * @param string | object aGrip
-   *        The variable grip.
-   *
-   * @return string
-   *         The css class style.
-   */
-  _propertyColor: function DVP__propertyColor(aGrip) {
-    if (aGrip && "object" === typeof aGrip) {
-      switch (aGrip.type) {
-        case "undefined":
-          return "token-undefined";
-        case "null":
-          return "token-null";
-      }
-    } else {
-      switch (typeof aGrip) {
-        case "string":
-          return "token-string";
-        case "boolean":
-          return "token-boolean";
-        case "number":
-          return "token-number";
-      }
-    }
-    return "token-other";
-  },
-
-  /**
-   * Creates an element which contains generic nodes and functionality used by
-   * any scope, variable or property added to the tree.
-   * If the variable or property already exists, null is returned.
-   * Otherwise, the newly created element is returned.
-   *
-   * @param string aName
-   *        A generic name used in a title strip.
-   * @param string aId
-   *        id used by the created element node.
-   * @param string aClass
-   *        Recommended style class used by the created element node.
-   * @param object aParent
-   *        The parent node which will contain the element.
-   * @return object
-   *         The newly created html node representing the generic elem.
-   */
-  _createPropertyElement: function DVP__createPropertyElement(aName, aId, aClass, aParent) {
-    // Make sure we don't duplicate anything and the parent exists.
-    if (document.getElementById(aId)) {
-      return null;
-    }
-    if (!aParent) {
-      return null;
-    }
-
-    let element = document.createElement("vbox");
-    let arrow = document.createElement("box");
-    let name = document.createElement("label");
-
-    let title = document.createElement("box");
-    let details = document.createElement("vbox");
-
-    // Create a scope node to contain all the elements.
-    element.id = aId;
-    element.className = aClass;
-
-    // The expand/collapse arrow.
-    arrow.className = "arrow";
-    arrow.style.visibility = "hidden";
-
-    // The name element.
-    name.className = "name plain";
-    name.setAttribute("value", aName || "");
-
-    // The title element, containing the arrow and the name.
-    title.className = "title";
-    title.setAttribute("align", "center")
-
-    // The node element which will contain any added scope variables.
-    details.className = "details";
-
-    // Add the click event handler for the title, or arrow and name.
-    if (aClass === "scope") {
-      title.addEventListener("click", function() { element.toggle(); }, false);
-    } else {
-      arrow.addEventListener("click", function() { element.toggle(); }, false);
-      name.addEventListener("click", function() { element.toggle(); }, false);
-    }
-
-    title.appendChild(arrow);
-    title.appendChild(name);
-
-    element.appendChild(title);
-    element.appendChild(details);
-
-    aParent.appendChild(element);
-
-    /**
-     * Shows the element, setting the display style to "block".
-     * @return object
-     *         The same element.
-     */
-    element.show = function DVP_element_show() {
-      element.style.display = "-moz-box";
-
-      if ("function" === typeof element.onshow) {
-        element.onshow(element);
-      }
-      return element;
-    };
-
-    /**
-     * Hides the element, setting the display style to "none".
-     * @return object
-     *         The same element.
-     */
-    element.hide = function DVP_element_hide() {
-      element.style.display = "none";
-
-      if ("function" === typeof element.onhide) {
-        element.onhide(element);
-      }
-      return element;
-    };
-
-    /**
-     * Expands the element, showing all the added details.
-     *
-     * @param boolean aSkipAnimationFlag
-     *        Pass true to not show an opening animation.
-     * @return object
-     *         The same element.
-     */
-    element.expand = function DVP_element_expand(aSkipAnimationFlag) {
-      if (element._preventExpand) {
-        return;
-      }
-      arrow.setAttribute("open", "");
-      details.setAttribute("open", "");
-
-      if (!aSkipAnimationFlag) {
-        details.setAttribute("animated", "");
-      }
-      if ("function" === typeof element.onexpand) {
-        element.onexpand(element);
-      }
-      return element;
-    };
-
-    /**
-     * Collapses the element, hiding all the added details.
-     * @return object
-     *         The same element.
-     */
-    element.collapse = function DVP_element_collapse() {
-      if (element._preventCollapse) {
-        return;
-      }
-      arrow.removeAttribute("open");
-      details.removeAttribute("open");
-      details.removeAttribute("animated");
-
-      if ("function" === typeof element.oncollapse) {
-        element.oncollapse(element);
-      }
-      return element;
-    };
-
-    /**
-     * Toggles between the element collapse/expand state.
-     * @return object
-     *         The same element.
-     */
-    element.toggle = function DVP_element_toggle() {
-      element.expanded = !element.expanded;
-
-      if ("function" === typeof element.ontoggle) {
-        element.ontoggle(element);
-      }
-      return element;
-    };
-
-    /**
-     * Shows the element expand/collapse arrow (only if necessary!).
-     * @return object
-     *         The same element.
-     */
-    element.showArrow = function DVP_element_showArrow() {
-      if (element._forceShowArrow || details.childNodes.length) {
-        arrow.style.visibility = "visible";
-      }
-      return element;
-    };
-
-    /**
-     * Hides the element expand/collapse arrow.
-     * @return object
-     *         The same element.
-     */
-    element.hideArrow = function DVP_element_hideArrow() {
-      if (!element._forceShowArrow) {
-        arrow.style.visibility = "hidden";
-      }
-      return element;
-    };
-
-    /**
-     * Forces the element expand/collapse arrow to be visible, even if there
-     * are no child elements.
-     *
-     * @return object
-     *         The same element.
-     */
-    element.forceShowArrow = function DVP_element_forceShowArrow() {
-      element._forceShowArrow = true;
-      arrow.style.visibility = "visible";
-      return element;
-    };
-
-    /**
-     * Forces the element expand/collapse arrow to be hidden, even if there
-     * are some child elements.
-     *
-     * @return object
-     *         The same element.
-     */
-    element.forceHideArrow = function DVP_element_forceHideArrow() {
-      arrow.style.visibility = "hidden";
-      return element;
-    };
-
-    /**
-     * Returns if the element is visible.
-     * @return boolean
-     *         True if the element is visible.
-     */
-    Object.defineProperty(element, "visible", {
-      get: function DVP_element_getVisible() {
-        return element.style.display !== "none";
-      },
-      set: function DVP_element_setVisible(value) {
-        if (value) {
-          element.show();
-        } else {
-          element.hide();
-        }
-      }
-    });
-
-    /**
-     * Returns if the element is expanded.
-     * @return boolean
-     *         True if the element is expanded.
-     */
-    Object.defineProperty(element, "expanded", {
-      get: function DVP_element_getExpanded() {
-        return arrow.hasAttribute("open");
-      },
-      set: function DVP_element_setExpanded(value) {
-        if (value) {
-          element.expand();
-        } else {
-          element.collapse();
-        }
-      }
-    });
-
-    /**
-     * Removes all added children in the details container tree.
-     * @return object
-     *         The same element.
-     */
-    element.empty = function DVP_element_empty() {
-      // This details node won't have any elements, so hide the arrow.
-      arrow.style.visibility = "hidden";
-      while (details.firstChild) {
-        details.removeChild(details.firstChild);
-      }
-
-      if ("function" === typeof element.onempty) {
-        element.onempty(element);
-      }
-      return element;
-    };
-
-    /**
-     * Removes the element from the parent node details container tree.
-     * @return object
-     *         The same element.
-     */
-    element.remove = function DVP_element_remove() {
-      element.parentNode.removeChild(element);
-
-      if ("function" === typeof element.onremove) {
-        element.onremove(element);
-      }
-      return element;
-    };
-
-    /**
-     * Returns if the element expander (arrow) is visible.
-     * @return boolean
-     *         True if the arrow is visible.
-     */
-    Object.defineProperty(element, "arrowVisible", {
-      get: function DVP_element_getArrowVisible() {
-        return arrow.style.visibility !== "hidden";
-      },
-      set: function DVP_element_setExpanded(value) {
-        if (value) {
-          element.showArrow();
-        } else {
-          element.hideArrow();
-        }
-      }
-    });
-
-    /**
-     * Generic function refreshing the internal state of the element when
-     * it's modified (e.g. a child detail, variable, property is added).
-     *
-     * @param function aFunction
-     *        The function logic used to modify the internal state.
-     * @param array aArguments
-     *        Optional arguments array to be applied to aFunction.
-     */
-    element.refresh = function DVP_element_refresh(aFunction, aArguments) {
-      if ("function" === typeof aFunction) {
-        aFunction.apply(this, aArguments);
-      }
-
-      let node = aParent.parentNode;
-      let arrow = node.getElementsByClassName("arrow")[0];
-      let children = node.getElementsByClassName("details")[0].childNodes.length;
-
-      // If the parent details node has at least one element, set the
-      // expand/collapse arrow visible.
-      if (children) {
-        arrow.style.visibility = "visible";
-      } else {
-        arrow.style.visibility = "hidden";
-      }
-    }.bind(this);
-
-    // Return the element for later use and customization.
-    return element;
-  },
-
-  /**
-   * Remember a simple hierarchy of parent->element->children.
-   *
-   * @param object aProperties
-   *        Container for the parent, element and the associated value node.
-   */
-  _saveHierarchy: function DVP__saveHierarchy(aProperties) {
-    let parent = aProperties.parent;
-    let element = aProperties.element;
-    let valueLabel = aProperties.valueLabel;
-    let store = aProperties.store || parent._children;
-
-    // Make sure we have a valid element and a children storage object.
-    if (!element || !store) {
-      return;
-    }
-
-    let relation = {
-      root: parent ? (parent._root || parent) : null,
-      parent: parent || null,
-      element: element,
-      valueLabel: valueLabel,
-      children: {}
-    };
-
-    store[element._identifier] = relation;
-    element._root = relation.root;
-    element._children = relation.children;
-  },
-
-  /**
-   * Creates an object to store a hierarchy of scopes, variables and properties
-   * and saves the previous store.
-   */
-  createHierarchyStore: function DVP_createHierarchyStore() {
-    this._prevHierarchy = this._currHierarchy;
-    this._currHierarchy = {};
-  },
-
-  /**
-   * Creates a hierarchy holder for a scope.
-   *
-   * @param object aScope
-   *        The designated scope to track.
-   */
-  addScopeToHierarchy: function DVP_addScopeToHierarchy(aScope) {
-    this._saveHierarchy({ element: aScope, store: this._currHierarchy });
-  },
-
-  /**
-   * Briefly flash the variables that changed between pauses.
-   */
-  commitHierarchy: function DVS_commitHierarchy() {
-    for (let i in this._currHierarchy) {
-      let currScope = this._currHierarchy[i];
-      let prevScope = this._prevHierarchy[i];
-
-      if (!prevScope) {
-        continue;
-      }
-
-      for (let v in currScope.children) {
-        let currVar = currScope.children[v];
-        let prevVar = prevScope.children[v];
-
-        let action = "";
-
-        if (prevVar) {
-          let prevValue = prevVar.valueLabel.getAttribute("value");
-          let currValue = currVar.valueLabel.getAttribute("value");
-
-          if (currValue != prevValue) {
-            action = "changed";
-          } else {
-            action = "unchanged";
-          }
-        } else {
-          action = "added";
-        }
-
-        if (action) {
-          currVar.element.setAttribute(action, "");
-
-          window.setTimeout(function() {
-           currVar.element.removeAttribute(action);
-          }, PROPERTY_VIEW_FLASH_DURATION);
-        }
-      }
-    }
-  },
-
-  /**
-   * A simple model representation of all the scopes, variables and properties,
-   * with parent-child relations.
-   */
-  _currHierarchy: null,
-  _prevHierarchy: null,
-
-  /**
-   * The cached variable properties container.
-   */
-  _vars: null,
-
-  /**
-   * Initialization function, called when the debugger is initialized.
-   */
-  initialize: function DVP_initialize() {
-    this.createHierarchyStore();
-
-    this._vars = document.getElementById("variables");
-  },
-
-  /**
-   * Destruction function, called when the debugger is shut down.
-   */
-  destroy: function DVP_destroy() {
-    this._currHierarchy = null;
-    this._prevHierarchy = null;
-    this._vars = null;
-  }
-};
-
-/**
- * Preliminary setup for the DebuggerView object.
- */
-DebuggerView.Scripts = new ScriptsView();
-DebuggerView.StackFrames = new StackFramesView();
-DebuggerView.Properties = new PropertiesView();
-
-/**
- * Export the source editor to the global scope for easier access in tests.
- */
-Object.defineProperty(window, "editor", {
-  get: function() { return DebuggerView.editor; }
-});

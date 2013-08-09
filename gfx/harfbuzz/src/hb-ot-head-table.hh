@@ -32,6 +32,8 @@
 #include "hb-open-type-private.hh"
 
 
+namespace OT {
+
 
 /*
  * head -- Font Header
@@ -45,7 +47,7 @@ struct head
 
   inline unsigned int get_upem (void) const {
     unsigned int upem = unitsPerEm;
-    /* If no valid head table found, assume 1000, which matches typicaly Type1 usage. */
+    /* If no valid head table found, assume 1000, which matches typical Type1 usage. */
     return 16 <= upem && upem <= 16384 ? upem : 1000;
   }
 
@@ -54,7 +56,7 @@ struct head
     return TRACE_RETURN (c->check_struct (this) && likely (version.major == 1));
   }
 
-  private:
+  protected:
   FixedVersion	version;		/* Version of the head table--currently
 					 * 0x00010000 for version 1.0. */
   FixedVersion	fontRevision;		/* Set by font manufacturer. */
@@ -140,6 +142,8 @@ struct head
   DEFINE_SIZE_STATIC (54);
 };
 
+
+} // namespace OT
 
 
 #endif /* HB_OT_HEAD_TABLE_HH */

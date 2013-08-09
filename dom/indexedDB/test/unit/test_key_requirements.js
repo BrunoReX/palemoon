@@ -8,9 +8,8 @@ var testGenerator = testSteps();
 function testSteps()
 {
   const name = this.window ? window.location.pathname : "Splendid Test";
-  const description = "My Test Database";
 
-  let request = mozIndexedDB.open(name, 1, description);
+  let request = indexedDB.open(name, 1);
   request.onerror = errorHandler;
   request.onupgradeneeded = grabEventAndContinueHandler;
   let event = yield;
@@ -178,7 +177,7 @@ function testSteps()
   is(event.target.result, key1, "put gave back the same key");
 
   request = objectStore.add({id:10});
-  request.onerror = new ExpectError("ConstraintError");
+  request.addEventListener("error", new ExpectError("ConstraintError", true));
   request.onsuccess = unexpectedSuccessHandler;
   event = yield;
 

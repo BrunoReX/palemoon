@@ -3,8 +3,7 @@
 
 MARIONETTE_TIMEOUT = 10000;
 
-const WHITELIST_PREF = "dom.telephony.app.phone.url";
-SpecialPowers.setCharPref(WHITELIST_PREF, window.location.href);
+SpecialPowers.addPermission("telephony", true, document);
 
 let telephony = window.navigator.mozTelephony;
 let number = "not a valid phone number";
@@ -22,7 +21,12 @@ function verifyInitialState() {
   runEmulatorCmd("gsm list", function(result) {
     log("Initial call list: " + result);
     is(result[0], "OK");
-    dial();
+    if (result[0] == "OK") {
+      dial();
+    } else {
+      log("Call exists from a previous test, failing out.");
+      cleanUp();
+    }
   });
 }
 
@@ -54,7 +58,7 @@ function dial() {
 }
 
 function cleanUp() {
-  SpecialPowers.clearUserPref(WHITELIST_PREF);
+  SpecialPowers.removePermission("telephony", document);
   finish();
 }
 

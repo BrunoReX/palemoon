@@ -22,24 +22,6 @@ class nsHostResolver;
 class nsHostRecord;
 class nsResolveHostCallback;
 
-/* XXX move this someplace more generic */
-#define NS_DECL_REFCOUNTED_THREADSAFE(classname)                             \
-  private:                                                                   \
-    nsAutoRefCnt _refc;                                                      \
-  public:                                                                    \
-    PRInt32 AddRef() {                                                       \
-        PRInt32 n = NS_AtomicIncrementRefcnt(_refc);                         \
-        NS_LOG_ADDREF(this, n, #classname, sizeof(classname));               \
-        return n;                                                            \
-    }                                                                        \
-    PRInt32 Release() {                                                      \
-        PRInt32 n = NS_AtomicDecrementRefcnt(_refc);                         \
-        NS_LOG_RELEASE(this, n, #classname);                                 \
-        if (n == 0)                                                          \
-            delete this;                                                     \
-        return n;                                                            \
-    }
-
 #define MAX_RESOLVER_THREADS_FOR_ANY_PRIORITY  3
 #define MAX_RESOLVER_THREADS_FOR_HIGH_PRIORITY 5
 #define MAX_NON_PRIORITY_REQUESTS 150
@@ -50,8 +32,8 @@ class nsResolveHostCallback;
 struct nsHostKey
 {
     const char *host;
-    PRUint16    flags;
-    PRUint16    af;
+    uint16_t    flags;
+    uint16_t    af;
 };
 
 /**
@@ -62,7 +44,7 @@ class nsHostRecord : public PRCList, public nsHostKey
     typedef mozilla::Mutex Mutex;
 
 public:
-    NS_DECL_REFCOUNTED_THREADSAFE(nsHostRecord)
+    NS_INLINE_DECL_THREADSAFE_REFCOUNTING(nsHostRecord)
 
     /* instantiates a new host record */
     static nsresult Create(const nsHostKey *key, nsHostRecord **record);
@@ -93,7 +75,7 @@ public:
                                 (though never for more than 60 seconds), but a use
                                 of that negative entry forces an asynchronous refresh. */
 
-    PRUint32     expiration; /* measured in minutes since epoch */
+    uint32_t     expiration; /* measured in minutes since epoch */
 
     bool HasResult() const { return addr_info || addr || negative; }
 
@@ -178,14 +160,14 @@ public:
     /**
      * host resolver instances are reference counted.
      */
-    NS_DECL_REFCOUNTED_THREADSAFE(nsHostResolver)
+    NS_INLINE_DECL_THREADSAFE_REFCOUNTING(nsHostResolver)
 
     /**
      * creates an addref'd instance of a nsHostResolver object.
      */
-    static nsresult Create(PRUint32         maxCacheEntries,  // zero disables cache
-                           PRUint32         maxCacheLifetime, // minutes
-                           PRUint32         lifetimeGracePeriod, // minutes
+    static nsresult Create(uint32_t         maxCacheEntries,  // zero disables cache
+                           uint32_t         maxCacheLifetime, // minutes
+                           uint32_t         lifetimeGracePeriod, // minutes
                            nsHostResolver **resolver);
     
     /**
@@ -202,8 +184,8 @@ public:
      * by having the callback implementation return without doing anything).
      */
     nsresult ResolveHost(const char            *hostname,
-                         PRUint16               flags,
-                         PRUint16               af,
+                         uint16_t               flags,
+                         uint16_t               af,
                          nsResolveHostCallback *callback);
 
     /**
@@ -213,8 +195,8 @@ public:
      * callback if the callback is still pending with the given status.
      */
     void DetachCallback(const char            *hostname,
-                        PRUint16               flags,
-                        PRUint16               af,
+                        uint16_t               flags,
+                        uint16_t               af,
                         nsResolveHostCallback *callback,
                         nsresult               status);
 
@@ -226,8 +208,8 @@ public:
      * host record, it is removed from any request queues it might be on. 
      */
     void CancelAsyncRequest(const char            *host,
-                            PRUint16               flags,
-                            PRUint16               af,
+                            uint16_t               flags,
+                            uint16_t               af,
                             nsIDNSListener        *aListener,
                             nsresult               status);
     /**
@@ -242,12 +224,14 @@ public:
         RES_CANON_NAME   = 1 << 1,
         RES_PRIORITY_MEDIUM   = 1 << 2,
         RES_PRIORITY_LOW  = 1 << 3,
-        RES_SPECULATE     = 1 << 4   
+        RES_SPECULATE     = 1 << 4,
+        //RES_DISABLE_IPV6 = 1 << 5, // Not used
+        RES_OFFLINE       = 1 << 6
     };
 
 private:
-    nsHostResolver(PRUint32 maxCacheEntries = 50, PRUint32 maxCacheLifetime = 1,
-                   PRUint32 lifetimeGracePeriod = 0);
+    nsHostResolver(uint32_t maxCacheEntries = 50, uint32_t maxCacheLifetime = 1,
+                   uint32_t lifetimeGracePeriod = 0);
    ~nsHostResolver();
 
     nsresult Init();
@@ -272,21 +256,21 @@ private:
         METHOD_NETWORK_SHARED = 7
     };
 
-    PRUint32      mMaxCacheEntries;
-    PRUint32      mMaxCacheLifetime;
-    PRUint32      mGracePeriod;
+    uint32_t      mMaxCacheEntries;
+    uint32_t      mMaxCacheLifetime;
+    uint32_t      mGracePeriod;
     Mutex         mLock;
     CondVar       mIdleThreadCV;
-    PRUint32      mNumIdleThreads;
-    PRUint32      mThreadCount;
-    PRUint32      mActiveAnyThreadCount;
+    uint32_t      mNumIdleThreads;
+    uint32_t      mThreadCount;
+    uint32_t      mActiveAnyThreadCount;
     PLDHashTable  mDB;
     PRCList       mHighQ;
     PRCList       mMediumQ;
     PRCList       mLowQ;
     PRCList       mEvictionQ;
-    PRUint32      mEvictionQSize;
-    PRUint32      mPendingCount;
+    uint32_t      mEvictionQSize;
+    uint32_t      mPendingCount;
     PRTime        mCreationTime;
     bool          mShutdown;
     PRIntervalTime mLongIdleTimeout;

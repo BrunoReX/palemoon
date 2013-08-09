@@ -8,7 +8,6 @@
 #include "nsResizerFrame.h"
 #include "nsIContent.h"
 #include "nsIDocument.h"
-#include "nsIDOMXULDocument.h"
 #include "nsIDOMNodeList.h"
 #include "nsGkAtoms.h"
 #include "nsINameSpaceManager.h"
@@ -28,8 +27,9 @@
 #include "nsMenuPopupFrame.h"
 #include "nsIScreenManager.h"
 #include "mozilla/dom/Element.h"
-#include "nsContentErrors.h"
+#include "nsError.h"
 
+using namespace mozilla;
 
 //
 // NS_NewResizerFrame
@@ -63,9 +63,11 @@ nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
   bool doDefault = true;
 
   switch (aEvent->message) {
+    case NS_TOUCH_START:
     case NS_MOUSE_BUTTON_DOWN: {
-      if (aEvent->eventStructType == NS_MOUSE_EVENT &&
-        static_cast<nsMouseEvent*>(aEvent)->button == nsMouseEvent::eLeftButton)
+      if (aEvent->eventStructType == NS_TOUCH_EVENT ||
+          (aEvent->eventStructType == NS_MOUSE_EVENT &&
+        static_cast<nsMouseEvent*>(aEvent)->button == nsMouseEvent::eLeftButton))
       {
         nsCOMPtr<nsIBaseWindow> window;
         nsIPresShell* presShell = aPresContext->GetPresShell();
@@ -113,32 +115,38 @@ nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
                                      &mMouseDownRect.width, &mMouseDownRect.height);
         }
 
+        // remember current mouse coordinates
+        nsIntPoint refPoint;
+        if (!GetEventPoint(aEvent, refPoint))
+          return NS_OK;
+        mMouseDownPoint = refPoint + aEvent->widget->WidgetToScreenOffset();
+
         // we're tracking
         mTrackingMouseMove = true;
-
-        // remember current mouse coordinates
-        mMouseDownPoint = aEvent->refPoint + aEvent->widget->WidgetToScreenOffset();
 
         nsIPresShell::SetCapturingContent(GetContent(), CAPTURE_IGNOREALLOWED);
       }
     }
     break;
 
+  case NS_TOUCH_END:
   case NS_MOUSE_BUTTON_UP: {
 
-    if (mTrackingMouseMove && aEvent->eventStructType == NS_MOUSE_EVENT &&
-        static_cast<nsMouseEvent*>(aEvent)->button == nsMouseEvent::eLeftButton)
+      if (aEvent->eventStructType == NS_TOUCH_EVENT ||
+          (aEvent->eventStructType == NS_MOUSE_EVENT &&
+        static_cast<nsMouseEvent*>(aEvent)->button == nsMouseEvent::eLeftButton))
     {
       // we're done tracking.
       mTrackingMouseMove = false;
 
-      nsIPresShell::SetCapturingContent(nsnull, 0);
+      nsIPresShell::SetCapturingContent(nullptr, 0);
 
       doDefault = false;
     }
   }
   break;
 
+  case NS_TOUCH_MOVE:
   case NS_MOUSE_MOVE: {
     if (mTrackingMouseMove)
     {
@@ -148,12 +156,9 @@ nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
         GetContentToResize(presShell, getter_AddRefs(window));
 
       // check if the returned content really is a menupopup
-      nsMenuPopupFrame* menuPopupFrame = nsnull;
+      nsMenuPopupFrame* menuPopupFrame = nullptr;
       if (contentToResize) {
-        nsIFrame* frameToResize = contentToResize->GetPrimaryFrame();
-        if (frameToResize && frameToResize->GetType() == nsGkAtoms::menuPopupFrame) {
-          menuPopupFrame = static_cast<nsMenuPopupFrame *>(frameToResize);
-        }
+        menuPopupFrame = do_QueryFrame(contentToResize->GetPrimaryFrame());
       }
 
       // both MouseMove and direction are negative when pointing to the
@@ -161,7 +166,10 @@ nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
 
       // retrieve the offset of the mousemove event relative to the mousedown.
       // The difference is how much the resize needs to be
-      nsIntPoint screenPoint(aEvent->refPoint + aEvent->widget->WidgetToScreenOffset());
+      nsIntPoint refPoint;
+      if (!GetEventPoint(aEvent, refPoint))
+        return NS_OK;
+      nsIntPoint screenPoint(refPoint + aEvent->widget->WidgetToScreenOffset());
       nsIntPoint mouseMove(screenPoint - mMouseDownPoint);
 
       // Determine which direction to resize by checking the dir attribute.
@@ -179,8 +187,19 @@ nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
       }
 
       nsIntRect rect = mMouseDownRect;
-      AdjustDimensions(&rect.x, &rect.width, mouseMove.x, direction.mHorizontal);
-      AdjustDimensions(&rect.y, &rect.height, mouseMove.y, direction.mVertical);
+
+      // Check if there are any size constraints on this window.
+      widget::SizeConstraints sizeConstraints;
+      if (window) {
+        nsCOMPtr<nsIWidget> widget;
+        window->GetMainWidget(getter_AddRefs(widget));
+        sizeConstraints = widget->GetSizeConstraints();
+      }
+
+      AdjustDimensions(&rect.x, &rect.width, sizeConstraints.mMinSize.width,
+                       sizeConstraints.mMaxSize.width, mouseMove.x, direction.mHorizontal);
+      AdjustDimensions(&rect.y, &rect.height, sizeConstraints.mMinSize.height,
+                       sizeConstraints.mMaxSize.height, mouseMove.y, direction.mVertical);
 
       // Don't allow resizing a window or a popup past the edge of the screen,
       // so adjust the rectangle to fit within the available screen area.
@@ -189,7 +208,12 @@ nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
         nsCOMPtr<nsIScreenManager> sm(do_GetService("@mozilla.org/gfx/screenmanager;1"));
         if (sm) {
           nsIntRect frameRect = GetScreenRect();
-          sm->ScreenForRect(frameRect.x, frameRect.y, 1, 1, getter_AddRefs(screen));
+          // ScreenForRect requires display pixels, so scale from device pix
+          double scale;
+          window->GetUnscaledDevicePixelsPerCSSPixel(&scale);
+          sm->ScreenForRect(NSToIntRound(frameRect.x / scale),
+                            NSToIntRound(frameRect.y / scale), 1, 1,
+                            getter_AddRefs(screen));
           if (screen) {
             nsIntRect screenRect;
             screen->GetRect(&screenRect.x, &screenRect.y,
@@ -242,6 +266,10 @@ nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
         ResizeContent(contentToResize, direction, sizeInfo, &originalSizeInfo);
         MaybePersistOriginalSize(contentToResize, originalSizeInfo);
 
+        // Move the popup to the new location unless it is anchored, since
+        // the position shouldn't change. nsMenuPopupFrame::SetPopupPosition
+        // will instead ensure that the popup's position is anchored at the
+        // right place.
         if (weakFrame.IsAlive() &&
             (oldRect.x != rect.x || oldRect.y != rect.y) &&
             (!menuPopupFrame->IsAnchored() ||
@@ -274,8 +302,8 @@ nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
       nsIContent* contentToResize =
         GetContentToResize(presShell, getter_AddRefs(window));
       if (contentToResize) {
-        nsIFrame* frameToResize = contentToResize->GetPrimaryFrame();
-        if (frameToResize && frameToResize->GetType() == nsGkAtoms::menuPopupFrame)
+        nsMenuPopupFrame* menuPopupFrame = do_QueryFrame(contentToResize->GetPrimaryFrame());
+        if (menuPopupFrame)
           break; // Don't restore original sizing for menupopup frames until
                  // we handle screen constraints here. (Bug 357725)
 
@@ -297,7 +325,7 @@ nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
 nsIContent*
 nsResizerFrame::GetContentToResize(nsIPresShell* aPresShell, nsIBaseWindow** aWindow)
 {
-  *aWindow = nsnull;
+  *aWindow = nullptr;
 
   nsAutoString elementid;
   mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::element, elementid);
@@ -306,8 +334,9 @@ nsResizerFrame::GetContentToResize(nsIPresShell* aPresShell, nsIBaseWindow** aWi
     // resize the widget associated with the window.
     nsIFrame* popup = GetParent();
     while (popup) {
-      if (popup->GetType() == nsGkAtoms::menuPopupFrame) {
-        return popup->GetContent();
+      nsMenuPopupFrame* popupFrame = do_QueryFrame(popup);
+      if (popupFrame) {
+        return popupFrame->GetContent();
       }
       popup = popup->GetParent();
     }
@@ -317,7 +346,7 @@ nsResizerFrame::GetContentToResize(nsIPresShell* aPresShell, nsIBaseWindow** aWi
     nsCOMPtr<nsISupports> cont = aPresShell->GetPresContext()->GetContainer();
     nsCOMPtr<nsIDocShellTreeItem> dsti = do_QueryInterface(cont);
     if (dsti) {
-      PRInt32 type = -1;
+      int32_t type = -1;
       isChromeShell = (NS_SUCCEEDED(dsti->GetItemType(&type)) &&
                        type == nsIDocShellTreeItem::typeChrome);
     }
@@ -325,9 +354,9 @@ nsResizerFrame::GetContentToResize(nsIPresShell* aPresShell, nsIBaseWindow** aWi
     if (!isChromeShell) {
       // don't allow resizers in content shells, except for the viewport
       // scrollbar which doesn't have a parent
-      nsIContent* nonNativeAnon = mContent->FindFirstNonNativeAnonymous();
+      nsIContent* nonNativeAnon = mContent->FindFirstNonChromeOnlyAccessContent();
       if (!nonNativeAnon || nonNativeAnon->GetParent()) {
-        return nsnull;
+        return nullptr;
       }
     }
 
@@ -345,37 +374,37 @@ nsResizerFrame::GetContentToResize(nsIPresShell* aPresShell, nsIBaseWindow** aWi
       }
     }
 
-    return nsnull;
+    return nullptr;
   }
 
   if (elementid.EqualsLiteral("_parent")) {
     // return the parent, but skip over native anonymous content
     nsIContent* parent = mContent->GetParent();
-    return parent ? parent->FindFirstNonNativeAnonymous() : nsnull;
+    return parent ? parent->FindFirstNonChromeOnlyAccessContent() : nullptr;
   }
 
   return aPresShell->GetDocument()->GetElementById(elementid);
 }
 
-/* adjust the window position and size according to the mouse movement and
- * the resizer direction
- */
 void
-nsResizerFrame::AdjustDimensions(PRInt32* aPos, PRInt32* aSize,
-                                 PRInt32 aMovement, PRInt8 aResizerDirection)
+nsResizerFrame::AdjustDimensions(int32_t* aPos, int32_t* aSize,
+                                 int32_t aMinSize, int32_t aMaxSize,
+                                 int32_t aMovement, int8_t aResizerDirection)
 {
-  switch(aResizerDirection)
-  {
-    case -1:
-      // only move the window when the direction is top and/or left
-      *aPos+= aMovement;
-      // falling through: the window is resized in both cases
-    case 1:
-      *aSize+= aResizerDirection*aMovement;
-      // use one as a minimum size or the element could disappear
-      if (*aSize < 1)
-        *aSize = 1;
-  }
+  int32_t oldSize = *aSize;
+
+  *aSize += aResizerDirection * aMovement;
+  // use one as a minimum size or the element could disappear
+  if (*aSize < 1)
+    *aSize = 1;
+
+  // Constrain the size within the minimum and maximum size.
+  *aSize = NS_MAX(aMinSize, NS_MIN(aMaxSize, *aSize));
+
+  // For left and top resizers, the window must be moved left by the same
+  // amount that the window was resized.
+  if (aResizerDirection == -1)
+    *aPos += oldSize - *aSize;
 }
 
 /* static */ void
@@ -470,7 +499,7 @@ nsResizerFrame::RestoreOriginalSize(nsIContent* aContent)
 
   NS_ASSERTION(sizeInfo, "We set a null sizeInfo!?");
   Direction direction = {1, 1};
-  ResizeContent(aContent, direction, *sizeInfo, nsnull);
+  ResizeContent(aContent, direction, *sizeInfo, nullptr);
   aContent->DeleteProperty(nsGkAtoms::_moz_original_size);
 }
 
@@ -484,7 +513,7 @@ nsResizerFrame::GetDirection()
      &nsGkAtoms::left,                           &nsGkAtoms::right,
      &nsGkAtoms::bottomleft, &nsGkAtoms::bottom, &nsGkAtoms::bottomright,
      &nsGkAtoms::bottomstart,                    &nsGkAtoms::bottomend,
-     nsnull};
+     nullptr};
 
   static const Direction directions[] =
     {{-1, -1}, {0, -1}, {1, -1},
@@ -496,7 +525,7 @@ nsResizerFrame::GetDirection()
   if (!GetContent())
     return directions[0]; // default: topleft
 
-  PRInt32 index = GetContent()->FindAttrValueIn(kNameSpaceID_None,
+  int32_t index = GetContent()->FindAttrValueIn(kNameSpaceID_None,
                                                 nsGkAtoms::dir,
                                                 strings, eCaseMatters);
   if(index < 0)

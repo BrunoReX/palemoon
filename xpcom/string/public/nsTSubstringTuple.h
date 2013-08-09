@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// IWYU pragma: private, include "nsSubstringTuple.h"
 
   /**
    * nsTSubstringTuple_CharT
@@ -24,18 +25,18 @@ class nsTSubstringTuple_CharT
       typedef nsTSubstringTuple_CharT    self_type;
       typedef nsTSubstring_CharT         substring_type;
       typedef nsTSubstring_CharT         base_string_type;
-      typedef PRUint32                   size_type;
+      typedef uint32_t                   size_type;
 
     public:
 
       nsTSubstringTuple_CharT(const base_string_type* a, const base_string_type* b)
-        : mHead(nsnull)
+        : mHead(nullptr)
         , mFragA(a)
         , mFragB(b) {}
 
       nsTSubstringTuple_CharT(const self_type& head, const base_string_type* b)
         : mHead(&head)
-        , mFragA(nsnull) // this fragment is ignored when head != nsnull
+        , mFragA(nullptr) // this fragment is ignored when head != nullptr
         , mFragB(b) {}
 
         /**
@@ -48,7 +49,7 @@ class nsTSubstringTuple_CharT
          * to be equal to or greater than the value returned by the Length()
          * method.  the string written to |buf| is not null-terminated.
          */
-      void WriteTo(char_type *buf, PRUint32 bufLen) const;
+      void WriteTo(char_type *buf, uint32_t bufLen) const;
 
         /**
          * returns true if this tuple is dependent on (i.e., overlapping with)

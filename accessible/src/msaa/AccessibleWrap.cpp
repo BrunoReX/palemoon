@@ -8,29 +8,23 @@
 #include "Compatibility.h"
 #include "DocAccessible-inl.h"
 #include "EnumVariant.h"
+#include "ia2AccessibleRelation.h"
 #include "nsAccUtils.h"
 #include "nsCoreUtils.h"
+#include "nsIAccessibleEvent.h"
+#include "nsIAccessibleRelation.h"
 #include "nsWinUtils.h"
 #include "Relation.h"
 #include "Role.h"
-#include "States.h"
-
-#include "ia2AccessibleRelation.h"
-
-#include "nsIAccessibleEvent.h"
-#include "nsIAccessibleRelation.h"
-
-#include "Accessible2_i.c"
-#include "AccessibleRole.h"
-#include "AccessibleStates.h"
 #include "RootAccessible.h"
+#include "States.h"
+#include "uiaRawElmProvider.h"
 
-#ifdef DEBUG
+#ifdef A11Y_LOG
 #include "Logging.h"
 #endif
 
 #include "nsIMutableArray.h"
-#include "nsIDOMDocument.h"
 #include "nsIFrame.h"
 #include "nsIScrollableFrame.h"
 #include "nsINameSpaceManager.h"
@@ -41,13 +35,17 @@
 #include "nsIViewManager.h"
 #include "nsEventMap.h"
 #include "nsArrayUtils.h"
+#include "mozilla/Preferences.h"
 
+#include "Accessible2_i.c"
+#include "AccessibleRole.h"
+#include "AccessibleStates.h"
 #include "OLEACC.H"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
 
-const PRUint32 USE_ROLE_STRING = 0;
+const uint32_t USE_ROLE_STRING = 0;
 
 /* For documentation of the accessibility architecture,
  * see http://lxr.mozilla.org/seamonkey/source/accessible/accessible-docs.html
@@ -62,7 +60,7 @@ static gAccessibles = 0;
 EXTERN_C GUID CDECL CLSID_Accessible =
 { 0x61044601, 0xa811, 0x4e2b, { 0xbb, 0xba, 0x17, 0xbf, 0xab, 0xd3, 0x29, 0xd7 } };
 
-static const PRInt32 kIEnumVariantDisconnected = -1;
+static const int32_t kIEnumVariantDisconnected = -1;
 
 ////////////////////////////////////////////////////////////////////////////////
 // AccessibleWrap
@@ -103,13 +101,13 @@ __try {
   }
 
   if (NULL == *ppv) {
-    HRESULT hr = CAccessibleHyperlink::QueryInterface(iid, ppv);
+    HRESULT hr = ia2AccessibleHyperlink::QueryInterface(iid, ppv);
     if (SUCCEEDED(hr))
       return hr;
   }
 
   if (NULL == *ppv) {
-    HRESULT hr = CAccessibleValue::QueryInterface(iid, ppv);
+    HRESULT hr = ia2AccessibleValue::QueryInterface(iid, ppv);
     if (SUCCEEDED(hr))
       return hr;
   }
@@ -121,6 +119,32 @@ __try {
 } __except(FilterA11yExceptions(::GetExceptionCode(), GetExceptionInformation())) { }
 
   return S_OK;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// IServiceProvider
+
+STDMETHODIMP
+AccessibleWrap::QueryService(REFGUID aGuidService, REFIID aIID,
+                             void** aInstancePtr)
+{
+  if (!aInstancePtr)
+    return E_INVALIDARG;
+
+  *aInstancePtr = NULL;
+
+  // UIA IAccessibleEx
+  if (aGuidService == IID_IAccessibleEx &&
+      Preferences::GetBool("accessibility.uia.enable")) {
+    IAccessibleEx* accEx = new uiaRawElmProvider(this);
+    HRESULT hr = accEx->QueryInterface(aIID, aInstancePtr);
+    if (FAILED(hr))
+      delete accEx;
+
+    return hr;
+  }
+
+  return nsAccessNodeWrap::QueryService(aGuidService, aIID, aInstancePtr);
 }
 
 //-----------------------------------------------------
@@ -142,7 +166,7 @@ __try {
     // accessibles.
     if (!doc->ParentDocument() ||
         nsWinUtils::IsWindowEmulationStarted() &&
-        nsCoreUtils::IsTabDocument(doc->GetDocumentNode())) {
+        nsCoreUtils::IsTabDocument(doc->DocumentNode())) {
       HWND hwnd = static_cast<HWND>(doc->GetNativeWindow());
       if (hwnd && SUCCEEDED(::AccessibleObjectFromWindow(hwnd, OBJID_WINDOW,
                                                          IID_IAccessible,
@@ -240,7 +264,7 @@ __try {
 
   // The name was not provided, e.g. no alt attribute for an image. A screen
   // reader may choose to invent its own accessible name, e.g. from an image src
-  // attribute. Refer to NS_OK_EMPTY_NAME return value.
+  // attribute. Refer to eNoNameOnPurpose return value.
   if (name.IsVoid())
     return S_FALSE;
 
@@ -344,9 +368,10 @@ __try {
 #endif
 
   a11y::role geckoRole = xpAccessible->Role();
-  PRUint32 msaaRole = 0;
+  uint32_t msaaRole = 0;
 
-#define ROLE(_geckoRole, stringRole, atkRole, macRole, _msaaRole, ia2Role) \
+#define ROLE(_geckoRole, stringRole, atkRole, macRole, \
+             _msaaRole, ia2Role, nameRule) \
   case roles::_geckoRole: \
     msaaRole = _msaaRole; \
     break;
@@ -439,8 +464,8 @@ __try {
   //   INVALID -> ALERT_HIGH
   //   CHECKABLE -> MARQUEED
 
-  PRUint32 msaaState = 0;
-  nsAccUtils::To32States(xpAccessible->State(), &msaaState, nsnull);
+  uint32_t msaaState = 0;
+  nsAccUtils::To32States(xpAccessible->State(), &msaaState, nullptr);
   pvarState->lVal = msaaState;
 } __except(FilterA11yExceptions(::GetExceptionCode(), GetExceptionInformation())) { }
   return S_OK;
@@ -572,7 +597,7 @@ public:
 
 private:
   nsCOMPtr<nsIArray> mArray;
-  PRUint32 mCurIndex;
+  uint32_t mCurIndex;
   nsAutoRefCnt mRefCnt;
 };
 
@@ -615,7 +640,7 @@ STDMETHODIMP
 AccessibleEnumerator::Next(unsigned long celt, VARIANT FAR* rgvar, unsigned long FAR* pceltFetched)
 {
 __try {
-  PRUint32 length = 0;
+  uint32_t length = 0;
   mArray->GetLength(&length);
 
   HRESULT hr = S_OK;
@@ -626,7 +651,7 @@ __try {
     celt = length - mCurIndex;
   }
 
-  for (PRUint32 i = 0; i < celt; ++i, ++mCurIndex) {
+  for (uint32_t i = 0; i < celt; ++i, ++mCurIndex) {
     // Copy the elements of the array into rgvar
     nsCOMPtr<nsIAccessible> accel(do_QueryElementAt(mArray, mCurIndex));
     NS_ASSERTION(accel, "Invalid pointer in mArray");
@@ -662,7 +687,7 @@ STDMETHODIMP
 AccessibleEnumerator::Skip(unsigned long celt)
 {
 __try {
-  PRUint32 length = 0;
+  uint32_t length = 0;
   mArray->GetLength(&length);
   // Check if we can skip the requested number of elements
   if (celt > length - mCurIndex) {
@@ -809,7 +834,7 @@ __try {
   if (xpAccessible->IsDefunct())
     return CO_E_OBJNOTCONNECTED;
 
-  PRInt32 x, y, width, height;
+  int32_t x, y, width, height;
   if (NS_FAILED(xpAccessible->GetBounds(&x, &y, &width, &height)))
     return E_FAIL;
 
@@ -846,8 +871,8 @@ __try {
 
   VariantInit(pvarEndUpAt);
 
-  Accessible* navAccessible = nsnull;
-  PRUint32 xpRelation = 0;
+  Accessible* navAccessible = nullptr;
+  uint32_t xpRelation = 0;
 
   switch(navDir) {
     case NAVDIR_FIRSTCHILD:
@@ -1026,7 +1051,7 @@ __try {
   if (IsDefunct())
     return CO_E_OBJNOTCONNECTED;
 
-  for (PRUint32 relType = nsIAccessibleRelation::RELATION_FIRST;
+  for (uint32_t relType = nsIAccessibleRelation::RELATION_FIRST;
        relType <= nsIAccessibleRelation::RELATION_LAST; relType++) {
     Relation rel = RelationByType(relType);
     if (rel.Next())
@@ -1050,8 +1075,8 @@ __try {
   if (IsDefunct())
     return CO_E_OBJNOTCONNECTED;
 
-  PRUint32 relIdx = 0;
-  for (PRUint32 relType = nsIAccessibleRelation::RELATION_FIRST;
+  uint32_t relIdx = 0;
+  for (uint32_t relType = nsIAccessibleRelation::RELATION_FIRST;
        relType <= nsIAccessibleRelation::RELATION_LAST; relType++) {
     Relation rel = RelationByType(relType);
     nsRefPtr<ia2AccessibleRelation> ia2Relation =
@@ -1085,7 +1110,7 @@ __try {
   if (IsDefunct())
     return CO_E_OBJNOTCONNECTED;
 
-  for (PRUint32 relType = nsIAccessibleRelation::RELATION_FIRST;
+  for (uint32_t relType = nsIAccessibleRelation::RELATION_FIRST;
        relType <= nsIAccessibleRelation::RELATION_LAST &&
        *aNRelations < aMaxRelations; relType++) {
     Relation rel = RelationByType(relType);
@@ -1111,7 +1136,8 @@ __try {
   if (IsDefunct())
     return CO_E_OBJNOTCONNECTED;
 
-#define ROLE(_geckoRole, stringRole, atkRole, macRole, msaaRole, ia2Role) \
+#define ROLE(_geckoRole, stringRole, atkRole, macRole, \
+             msaaRole, ia2Role, nameRule) \
   case roles::_geckoRole: \
     *aRole = ia2Role; \
     break;
@@ -1161,7 +1187,7 @@ __try {
   if (IsDefunct())
       return CO_E_OBJNOTCONNECTED;
 
-  PRUint32 geckoCoordType = (aCoordType == IA2_COORDTYPE_SCREEN_RELATIVE) ?
+  uint32_t geckoCoordType = (aCoordType == IA2_COORDTYPE_SCREEN_RELATIVE) ?
     nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE :
     nsIAccessibleCoordinateType::COORDTYPE_PARENT_RELATIVE;
 
@@ -1207,7 +1233,7 @@ __try {
 
   // XXX: bug 344674 should come with better approach that we have here.
 
-  PRUint64 state = State();
+  uint64_t state = State();
 
   if (state & states::INVALID)
     *aStates |= IA2_STATE_INVALID_ENTRY;
@@ -1372,7 +1398,7 @@ __try {
   Language(lang);
 
   // If primary code consists from two letters then expose it as language.
-  PRInt32 offset = lang.FindChar('-', 0);
+  int32_t offset = lang.FindChar('-', 0);
   if (offset == -1) {
     if (lang.Length() == 2) {
       aLocale->language = ::SysAllocString(lang.get());
@@ -1414,11 +1440,7 @@ __try {
   if (IsDefunct())
     return CO_E_OBJNOTCONNECTED;
 
-  nsCOMPtr<nsIPersistentProperties> attributes;
-  nsresult rv = GetAttributes(getter_AddRefs(attributes));
-  if (NS_FAILED(rv))
-    return GetHRESULT(rv);
-
+  nsCOMPtr<nsIPersistentProperties> attributes = Attributes();
   return ConvertToIA2Attributes(attributes, aAttributes);
 
 } __except(nsAccessNodeWrap::FilterA11yExceptions(::GetExceptionCode(), GetExceptionInformation())) { }
@@ -1508,17 +1530,17 @@ AccessibleWrap::HandleAccEvent(AccEvent* aEvent)
 nsresult
 AccessibleWrap::FirePlatformEvent(AccEvent* aEvent)
 {
-  PRUint32 eventType = aEvent->GetEventType();
+  uint32_t eventType = aEvent->GetEventType();
 
   NS_ENSURE_TRUE(eventType > 0 &&
                  eventType < nsIAccessibleEvent::EVENT_LAST_ENTRY,
                  NS_ERROR_FAILURE);
 
-  PRUint32 winLastEntry = gWinEventMap[nsIAccessibleEvent::EVENT_LAST_ENTRY];
+  uint32_t winLastEntry = gWinEventMap[nsIAccessibleEvent::EVENT_LAST_ENTRY];
   NS_ASSERTION(winLastEntry == kEVENT_LAST_ENTRY,
                "MSAA event map skewed");
 
-  PRUint32 winEvent = gWinEventMap[eventType];
+  uint32_t winEvent = gWinEventMap[eventType];
   if (!winEvent)
     return NS_OK;
 
@@ -1534,7 +1556,7 @@ AccessibleWrap::FirePlatformEvent(AccEvent* aEvent)
     UpdateSystemCaret();
   }
 
-  PRInt32 childID = GetChildIDFor(accessible); // get the id for the accessible
+  int32_t childID = GetChildIDFor(accessible); // get the id for the accessible
   if (!childID)
     return NS_OK; // Can't fire an event without a child ID
 
@@ -1542,7 +1564,7 @@ AccessibleWrap::FirePlatformEvent(AccEvent* aEvent)
   NS_ENSURE_TRUE(hWnd, NS_ERROR_FAILURE);
 
   nsAutoString tag;
-  nsCAutoString id;
+  nsAutoCString id;
   nsIContent* cnt = accessible->GetContent();
   if (cnt) {
     cnt->Tag()->ToString(tag);
@@ -1551,7 +1573,7 @@ AccessibleWrap::FirePlatformEvent(AccEvent* aEvent)
       aid->ToUTF8String(id);
   }
 
-#ifdef DEBUG
+#ifdef A11Y_LOG
   if (logging::IsEnabled(logging::ePlatforms)) {
     printf("\n\nMSAA event: event: %d, target: %s@id='%s', childid: %d, hwnd: %d\n\n",
            eventType, NS_ConvertUTF16toUTF8(tag).get(), id.get(),
@@ -1575,7 +1597,7 @@ AccessibleWrap::FirePlatformEvent(AccEvent* aEvent)
 
 //------- Helper methods ---------
 
-PRInt32
+int32_t
 AccessibleWrap::GetChildIDFor(Accessible* aAccessible)
 {
   // A child ID of the window is required, when we use NotifyWinEvent,
@@ -1594,7 +1616,7 @@ AccessibleWrap::GetHWNDFor(Accessible* aAccessible)
   if (aAccessible) {
     DocAccessible* document = aAccessible->Document();
     if(!document)
-      return nsnull;
+      return nullptr;
 
     // Popup lives in own windows, use its HWND until the popup window is
     // hidden to make old JAWS versions work with collapsed comboboxes (see
@@ -1602,28 +1624,24 @@ AccessibleWrap::GetHWNDFor(Accessible* aAccessible)
     nsIFrame* frame = aAccessible->GetFrame();
     if (frame) {
       nsIWidget* widget = frame->GetNearestWidget();
-      if (widget) {
-        bool isVisible = false;
-        widget->IsVisible(isVisible);
-        if (isVisible) {
-          nsIPresShell* shell = document->PresShell();
-          nsIViewManager* vm = shell->GetViewManager();
-          if (vm) {
-            nsCOMPtr<nsIWidget> rootWidget;
-            vm->GetRootWidget(getter_AddRefs(rootWidget));
-            // Make sure the accessible belongs to popup. If not then use
-            // document HWND (which might be different from root widget in the
-            // case of window emulation).
-            if (rootWidget != widget)
-              return static_cast<HWND>(widget->GetNativeData(NS_NATIVE_WINDOW));
-          }
+      if (widget && widget->IsVisible()) {
+        nsIPresShell* shell = document->PresShell();
+        nsIViewManager* vm = shell->GetViewManager();
+        if (vm) {
+          nsCOMPtr<nsIWidget> rootWidget;
+          vm->GetRootWidget(getter_AddRefs(rootWidget));
+          // Make sure the accessible belongs to popup. If not then use
+          // document HWND (which might be different from root widget in the
+          // case of window emulation).
+          if (rootWidget != widget)
+            return static_cast<HWND>(widget->GetNativeData(NS_NATIVE_WINDOW));
         }
       }
     }
 
     return static_cast<HWND>(document->GetNativeWindow());
   }
-  return nsnull;
+  return nullptr;
 }
 
 HRESULT
@@ -1656,11 +1674,11 @@ AccessibleWrap::ConvertToIA2Attributes(nsIPersistentProperties *aAttributes,
     if (!propElem)
       return E_FAIL;
 
-    nsCAutoString name;
+    nsAutoCString name;
     if (NS_FAILED(propElem->GetKey(name)))
       return E_FAIL;
 
-    PRUint32 offset = 0;
+    uint32_t offset = 0;
     while ((offset = name.FindCharInSet(kCharsToEscape, offset)) != kNotFound) {
       name.Insert('\\', offset);
       offset += 2;
@@ -1697,7 +1715,7 @@ AccessibleWrap::NativeAccessible(nsIAccessible* aAccessible)
    return NULL;
   }
 
-  IAccessible* msaaAccessible = nsnull;
+  IAccessible* msaaAccessible = nullptr;
   aAccessible->GetNativeInterface(reinterpret_cast<void**>(&msaaAccessible));
   return static_cast<IDispatch*>(msaaAccessible);
 }
@@ -1706,14 +1724,14 @@ Accessible*
 AccessibleWrap::GetXPAccessibleFor(const VARIANT& aVarChild)
 {
   if (aVarChild.vt != VT_I4)
-    return nsnull;
+    return nullptr;
 
   // if its us real easy - this seems to always be the case
   if (aVarChild.lVal == CHILDID_SELF)
     return this;
 
   if (nsAccUtils::MustPrune(this))
-    return nsnull;
+    return nullptr;
 
   // If lVal negative then it is treated as child ID and we should look for
   // accessible through whole accessible subtree including subdocuments.
@@ -1735,7 +1753,7 @@ AccessibleWrap::GetXPAccessibleFor(const VARIANT& aVarChild)
 
       // Check whether the accessible for the given ID is a child of ARIA
       // document.
-      Accessible* parent = child ? child->Parent() : nsnull;
+      Accessible* parent = child ? child->Parent() : nullptr;
       while (parent && parent != document) {
         if (parent == this)
           return child;
@@ -1744,7 +1762,7 @@ AccessibleWrap::GetXPAccessibleFor(const VARIANT& aVarChild)
       }
     }
 
-    return nsnull;
+    return nullptr;
   }
 
   // Gecko child indices are 0-based in contrast to indices used in MSAA.

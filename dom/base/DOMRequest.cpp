@@ -10,8 +10,9 @@
 #include "nsDOMClassInfo.h"
 #include "DOMError.h"
 #include "nsEventDispatcher.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsDOMEvent.h"
+#include "nsContentUtils.h"
+#include "nsThreadUtils.h"
 
 using mozilla::dom::DOMRequest;
 using mozilla::dom::DOMRequestService;
@@ -20,6 +21,21 @@ DOMRequest::DOMRequest(nsIDOMWindow* aWindow)
   : mResult(JSVAL_VOID)
   , mDone(false)
   , mRooted(false)
+{
+  Init(aWindow);
+}
+
+// We need this constructor for dom::Activity that inherits from DOMRequest
+// but has no window available from the constructor.
+DOMRequest::DOMRequest()
+  : mResult(JSVAL_VOID)
+  , mDone(false)
+  , mRooted(false)
+{
+}
+
+void
+DOMRequest::Init(nsIDOMWindow* aWindow)
 {
   nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aWindow);
   BindToOwner(window->IsInnerWindow() ? window.get() :
@@ -32,9 +48,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(DOMRequest)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(DOMRequest,
                                                   nsDOMEventTargetHelper)
-  NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(success)
-  NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(error)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mError)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mError)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(DOMRequest,
@@ -43,19 +57,14 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(DOMRequest,
     tmp->mResult = JSVAL_VOID;
     tmp->UnrootResultVal();
   }
-  NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(success)
-  NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(error)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mError)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mError)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(DOMRequest,
                                                nsDOMEventTargetHelper)
   // Don't need NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER because
   // nsDOMEventTargetHelper does it for us.
-  if (JSVAL_IS_GCTHING(tmp->mResult)) {
-    void *gcThing = JSVAL_TO_GCTHING(tmp->mResult);
-    NS_IMPL_CYCLE_COLLECTION_TRACE_JS_CALLBACK(gcThing, "mResult")
-  }
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(mResult)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(DOMRequest)
@@ -66,8 +75,8 @@ NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetHelper)
 NS_IMPL_ADDREF_INHERITED(DOMRequest, nsDOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(DOMRequest, nsDOMEventTargetHelper)
 
-NS_IMPL_EVENT_HANDLER(DOMRequest, success);
-NS_IMPL_EVENT_HANDLER(DOMRequest, error);
+NS_IMPL_EVENT_HANDLER(DOMRequest, success)
+NS_IMPL_EVENT_HANDLER(DOMRequest, error)
 
 NS_IMETHODIMP
 DOMRequest::GetReadyState(nsAString& aReadyState)
@@ -148,7 +157,7 @@ DOMRequest::FireEvent(const nsAString& aType, bool aBubble, bool aCancelable)
     return;
   }
 
-  nsRefPtr<nsDOMEvent> event = new nsDOMEvent(nsnull, nsnull);
+  nsRefPtr<nsDOMEvent> event = new nsDOMEvent(nullptr, nullptr);
   nsresult rv = event->InitEvent(aType, aBubble, aCancelable);
   if (NS_FAILED(rv)) {
     return;
@@ -167,7 +176,10 @@ void
 DOMRequest::RootResultVal()
 {
   NS_ASSERTION(!mRooted, "Don't call me if already rooted!");
-  NS_HOLD_JS_OBJECTS(this, DOMRequest);
+  nsXPCOMCycleCollectionParticipant *participant;
+  CallQueryInterface(this, &participant);
+  nsContentUtils::HoldJSObjects(NS_CYCLE_COLLECTION_UPCAST(this, DOMRequest),
+                                participant);
   mRooted = true;
 }
 
@@ -185,6 +197,7 @@ NS_IMETHODIMP
 DOMRequestService::CreateRequest(nsIDOMWindow* aWindow,
                                  nsIDOMDOMRequest** aRequest)
 {
+  NS_ENSURE_STATE(aWindow);
   NS_ADDREF(*aRequest = new DOMRequest(aWindow));
   
   return NS_OK;
@@ -194,6 +207,7 @@ NS_IMETHODIMP
 DOMRequestService::FireSuccess(nsIDOMDOMRequest* aRequest,
                                const jsval& aResult)
 {
+  NS_ENSURE_STATE(aRequest);
   static_cast<DOMRequest*>(aRequest)->FireSuccess(aResult);
 
   return NS_OK;
@@ -203,7 +217,97 @@ NS_IMETHODIMP
 DOMRequestService::FireError(nsIDOMDOMRequest* aRequest,
                              const nsAString& aError)
 {
+  NS_ENSURE_STATE(aRequest);
   static_cast<DOMRequest*>(aRequest)->FireError(aError);
 
+  return NS_OK;
+}
+
+class FireSuccessAsyncTask : public nsRunnable
+{
+public:
+  FireSuccessAsyncTask(DOMRequest* aRequest,
+                       const jsval& aResult) :
+    mReq(aRequest),
+    mResult(aResult)
+  {
+    NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+    nsresult rv;
+    nsIScriptContext* sc = mReq->GetContextForEventHandlers(&rv);
+    MOZ_ASSERT(NS_SUCCEEDED(rv) && sc->GetNativeContext());
+    JSAutoRequest ar(sc->GetNativeContext());
+    JS_AddValueRoot(sc->GetNativeContext(), &mResult);
+  }
+
+  NS_IMETHODIMP
+  Run()
+  {
+    mReq->FireSuccess(mResult);
+    return NS_OK;
+  }
+
+  ~FireSuccessAsyncTask()
+  {
+    NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+    nsresult rv;
+    nsIScriptContext* sc = mReq->GetContextForEventHandlers(&rv);
+    MOZ_ASSERT(NS_SUCCEEDED(rv) && sc->GetNativeContext());
+
+    // We need to build a new request, otherwise we assert since there won't be
+    // a request available yet.
+    JSAutoRequest ar(sc->GetNativeContext());
+    JS_RemoveValueRoot(sc->GetNativeContext(), &mResult);
+  }
+private:
+  nsRefPtr<DOMRequest> mReq;
+  jsval mResult;
+};
+
+class FireErrorAsyncTask : public nsRunnable
+{
+public:
+  FireErrorAsyncTask(DOMRequest* aRequest,
+                     const nsAString& aError) :
+    mReq(aRequest),
+    mError(aError)
+  {
+  }
+
+  NS_IMETHODIMP
+  Run()
+  {
+    mReq->FireError(mError);
+    return NS_OK;
+  }
+private:
+  nsRefPtr<DOMRequest> mReq;
+  nsString mError;
+};
+
+NS_IMETHODIMP
+DOMRequestService::FireSuccessAsync(nsIDOMDOMRequest* aRequest,
+                                    const jsval& aResult)
+{
+  NS_ENSURE_STATE(aRequest);
+  nsCOMPtr<nsIRunnable> asyncTask =
+    new FireSuccessAsyncTask(static_cast<DOMRequest*>(aRequest), aResult);
+  if (NS_FAILED(NS_DispatchToMainThread(asyncTask))) {
+    NS_WARNING("Failed to dispatch to main thread!");
+    return NS_ERROR_FAILURE;
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+DOMRequestService::FireErrorAsync(nsIDOMDOMRequest* aRequest,
+                                  const nsAString& aError)
+{
+  NS_ENSURE_STATE(aRequest);
+  nsCOMPtr<nsIRunnable> asyncTask =
+    new FireErrorAsyncTask(static_cast<DOMRequest*>(aRequest), aError);
+  if (NS_FAILED(NS_DispatchToMainThread(asyncTask))) {
+    NS_WARNING("Failed to dispatch to main thread!");
+    return NS_ERROR_FAILURE;
+  }
   return NS_OK;
 }

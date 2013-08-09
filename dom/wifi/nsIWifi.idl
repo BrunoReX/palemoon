@@ -6,34 +6,79 @@
 #include "nsIDOMDOMRequest.idl"
 #include "nsIDOMEvent.idl"
 
-[scriptable, uuid(abb936bc-ba81-4c23-8dfa-3e5d96557044)]
-interface nsIWifi : nsISupports {
+interface nsIVariant;
+
+[scriptable, uuid(cf1ac02b-1f39-446e-815b-651ac78d2233)]
+interface nsIWifiScanResult : nsISupports {
+    readonly attribute DOMString ssid;
+    readonly attribute DOMString bssid;
+
+    const int32_t WPA_PSK = 0x01;
+    const int32_t WPA_EAP = 0x02;
+    const int32_t WEP = 0x04;
+    readonly attribute uint32_t capabilities;
+
+    /**
+     * Strength of the signal to network.
+     */
+    readonly attribute uint32_t signalStrength;
+
+    readonly attribute uint32_t relSignalStrength;
+    readonly attribute boolean connected;
+};
+
+[scriptable, uuid(a6931ebf-8493-4014-90e2-99f406999982)]
+interface nsIWifiScanResultsReady : nsISupports {
+
+    /**
+     * Callback with list of networks.
+     */
+    void onready(in uint32_t count, [array, size_is(count)] in nsIWifiScanResult results);
+
+    /**
+     * Callback if scanning for networks failed after 3 retry attempts.
+     */
+    void onfailure();
+};
+
+[scriptable, uuid(08dfefed-5c5d-4468-8c5d-2c65c24692d9)]
+interface nsIWifi : nsISupports
+{
     /**
      * Shutdown the wifi system.
      */
     void shutdown();
-};
-
-[scriptable, uuid(e3d5a7d7-6abd-4ac2-83dc-5315ec08a1c3)]
-interface nsIDOMWifiManager : nsISupports {
-    /**
-     * TODO Remove in favor of a settings API.
-     * Activates or disactivates wifi.
-     * onsuccess: Wifi has been successfully activated and can start
-     *            attempting to connect to networks. request.value will be true.
-     * onerror: Wifi was not successfully activated. (TODO provide details!)
-     */
-    nsIDOMDOMRequest setEnabled(in boolean enabled);
 
     /**
      * Returns the list of currently available networks as well as the list of
      * currently configured networks.
+     *
+     * On success a callback is notified with the list of networks.
+     * On failure after 3 scan retry attempts a callback is notified of failure.
+     */
+    void getWifiScanResults(in nsIWifiScanResultsReady callback);
+};
+
+[scriptable, uuid(caa76ee3-8ffe-4ea5-bc59-3b53a9df0d07)]
+interface nsIDOMWifiManager : nsISupports
+{
+    /**
+     * Returns the list of currently available networks.
      * onsuccess: We have obtained the current list of networks. request.value
      *            is an object whose property names are SSIDs and values are
      *            network objects.
      * onerror: We were unable to obtain a list of property names.
      */
     nsIDOMDOMRequest getNetworks();
+
+    /**
+     * Returns the list of networks known to the system that will be
+     * automatically connected to if they're in range.
+     * onsuccess: request.value is an object whose property names are
+     *            SSIDs and values are network objects.
+     * onerror: We were unable to obtain a list of known networks.
+     */
+    nsIDOMDOMRequest getKnownNetworks();
 
     /**
      * Takes one of the networks returned from getNetworks and tries to
@@ -60,10 +105,36 @@ interface nsIDOMWifiManager : nsISupports {
     nsIDOMDOMRequest forget(in jsval network);
 
     /**
-     * TODO Remove in favor of a settings API.
+     * Wi-Fi Protected Setup functionality.
+     * @param detail WPS detail which has 'method' and 'pin' field.
+     *               The possible method field values are:
+     *                 - pbc: The Push Button Configuration.
+     *                 - pin: The PIN configuration.
+     *                 - cancel: Request to cancel WPS in progress.
+     *               If method field is 'pin', 'pin' field can exist and has
+     *               a PIN number.
+     * onsuccess: We have successfully started/canceled wps.
+     * onerror: We have failed to start/cancel wps.
+     */
+    nsIDOMDOMRequest wps(in jsval detail);
+
+    /**
+     * Turn on/off wifi power saving mode.
+     * @param enabled true or false.
+     * onsuccess: We have successfully turn on/off wifi power saving mode.
+     * onerror: We have failed to turn on/off wifi power saving mode.
+     */
+    nsIDOMDOMRequest setPowerSavingMode(in boolean enabled);
+
+    /**
      * Returns whether or not wifi is currently enabled.
      */
     readonly attribute boolean enabled;
+
+    /**
+     * Returns the MAC address of the wifi adapter.
+     */
+    readonly attribute DOMString macAddress;
 
     /**
      * An non-null object containing the following information:
@@ -77,14 +148,14 @@ interface nsIDOMWifiManager : nsISupports {
 
     /**
      * A connectionInformation object with the same information found in an
-     * nsIDOMWifiConnectionInfoEvent (but without the network).
+     * nsIDOMMozWifiConnectionInfoEvent (but without the network).
      * If we are not currently connected to a network, this will be null.
      */
     readonly attribute jsval connectionInformation;
 
     /**
      * State notification listeners. These all take an
-     * nsIDOMWifiStatusChangeEvent with the new status and a network (which
+     * nsIDOMMozWifiStatusChangeEvent with the new status and a network (which
      * may be null).
      *
      * The possible statuses are:
@@ -100,49 +171,18 @@ interface nsIDOMWifiManager : nsISupports {
      *                   disconnected for any reason (transition: connected ->
      *                   disconnected).
      */
-             attribute nsIDOMEventListener onstatuschange;
+    attribute nsIDOMEventListener onstatuschange;
 
     /**
      * An event listener that is called with information about the signal
      * strength and link speed every 5 seconds.
      */
-             attribute nsIDOMEventListener connectionInfoUpdate;
-};
-
-[scriptable, uuid(4674c6f1-ea64-44db-ac2f-e7bd6514dfd6)]
-interface nsIDOMWifiStatusChangeEvent : nsIDOMEvent {
-    /**
-     * Network object with a SSID field describing the network affected by
-     * this change. This might be null.
-     */
-    readonly attribute jsval network;
+    attribute nsIDOMEventListener connectionInfoUpdate;
 
     /**
-     * String describing the current status of the wifi manager. See above for
-     * the possible values.
+     * These two events fire when the wifi system is brought online or taken
+     * offline.
      */
-    readonly attribute string status;
-};
-
-[scriptable, uuid(5c9ee332-dd98-4227-b7fc-768418fd50e3)]
-interface nsIDOMWifiConnectionInfoEvent : nsIDOMEvent {
-    /**
-     * Network object with an SSID field.
-     */
-    readonly attribute jsval network;
-
-    /**
-     * Strength of the signal to network, in dBm between -55 and -100 dBm.
-     */
-    readonly attribute short signalStrength;
-
-    /**
-     * Relative signal strength between 0 and 100.
-     */
-    readonly attribute short relSignalStrength;
-
-    /**
-     * Link spead in Mb/s.
-     */
-    readonly attribute long linkSpeed;
+    attribute nsIDOMEventListener onenabled;
+    attribute nsIDOMEventListener ondisabled;
 };

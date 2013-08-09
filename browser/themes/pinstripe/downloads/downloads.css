@@ -9,7 +9,6 @@
 }
 
 #downloadsListBox {
-  width: 60ch;
   background: transparent;
   padding: 4px;
   color: inherit;
@@ -20,7 +19,7 @@
 }
 
 #downloadsHistory {
-  background: inherit;
+  background: transparent;
   border-bottom-left-radius: 6px;
   border-bottom-right-radius: 6px;
   color: hsl(210,100%,75%);
@@ -32,17 +31,20 @@
   border-top-right-radius: 6px;
 }
 
+#downloadsSummary,
 #downloadsPanel[hasdownloads] > #downloadsHistory {
-  border-top: 1px solid hsla(0,0%,100%,.1);
-  background-color: hsla(0,0%,7%,.3);
-  box-shadow: 0 1px 1px hsla(0,0%,0%,.25) inset;
+  background: #e5e5e5;
+  border-top: 1px solid hsla(0,0%,0%,.1);
+  box-shadow: 0 -1px hsla(0,0%,100%,.5) inset, 0 1px 1px hsla(0,0%,0%,.03) inset;
 }
 
 #downloadsHistory > .button-box {
+  color: #808080;
   margin: 1em;
 }
 
 #downloadsHistory:-moz-focusring > .button-box {
+  outline: 1px -moz-dialogtext dotted;
   border-top-left-radius: 6px;
   border-top-right-radius: 6px;
 }
@@ -52,16 +54,34 @@
   border-bottom-right-radius: 6px;
 }
 
-/*** List items ***/
+/*** Downloads Summary and List items ***/
 
+#downloadsSummary,
 richlistitem[type="download"] {
   height: 7em;
+  -moz-padding-end: 0;
+  color: inherit;
+}
+
+#downloadsSummary {
+  padding: 8px 38px 8px 12px;
+  cursor: pointer;
+}
+
+#downloadsSummary > .downloadTypeIcon {
+  list-style-image: url("chrome://mozapps/skin/downloads/downloadIcon.png");
+}
+
+#downloadsSummaryDescription {
+  color: -moz-nativehyperlinktext;
+}
+
+richlistitem[type="download"] {
   margin: 0;
   border-top: 1px solid hsla(0,0%,100%,.07);
   border-bottom: 1px solid hsla(0,0%,0%,.2);
   background: transparent;
-  padding: 0;
-  color: inherit;
+  padding: 8px;
 }
 
 richlistitem[type="download"]:first-child {
@@ -73,15 +93,8 @@ richlistitem[type="download"]:last-child {
 }
 
 #downloadsListBox:-moz-focusring > richlistitem[type="download"][selected] {
-  outline: 1px #999 dotted;
+  outline: 1px -moz-dialogtext dotted;
   outline-offset: -1px;
-  -moz-outline-radius: 3px;
-}
-
-.downloadInfo {
-  color: white;
-  padding: 8px;
-  -moz-padding-end: 0;
 }
 
 .downloadTypeIcon {
@@ -110,7 +123,7 @@ richlistitem[type="download"]:last-child {
   -moz-appearance: none;
   min-width: 0;
   min-height: 0;
-  margin: 6px;
+  margin: 3px;
   border: none;
   background: transparent;
   padding: 5px;
@@ -121,15 +134,13 @@ richlistitem[type="download"]:last-child {
   padding: 0;
 }
 
-/*** Highlighted list items ***/
-
-richlistitem[type="download"][state="1"] .downloadInfo {
-  border-top: 1px solid transparent;
-  border-bottom: 1px solid transparent;
-  -moz-padding-end: 8px;
+.downloadButton:-moz-focusring > .button-box {
+  outline: 1px -moz-dialogtext dotted;
 }
 
-richlistitem[type="download"][state="1"] .downloadInfo:hover {
+/*** Highlighted list items ***/
+
+richlistitem[type="download"][state="1"]:hover {
   border-radius: 3px;
   border-top: 1px solid hsla(0,0%,100%,.2);
   border-bottom: 1px solid hsla(0,0%,0%,.4);
@@ -142,40 +153,27 @@ richlistitem[type="download"][state="1"] .downloadInfo:hover {
 /*** Button icons ***/
 
 .downloadButton.downloadCancel {
-  -moz-image-region: rect(0px, 14px, 14px, 0px);
-}
-.downloadButton.downloadCancel:hover {
-  -moz-image-region: rect(0px, 28px, 14px, 14px);
-}
-.downloadButton.downloadCancel:active {
-  -moz-image-region: rect(0px, 42px, 14px, 28px);
+  -moz-image-region: rect(0px, 16px, 16px, 0px);
 }
 
 .downloadButton.downloadShow {
-  -moz-image-region: rect(14px, 14px, 28px, 0px);
+  -moz-image-region: rect(16px, 16px, 32px, 0px);
 }
-.downloadButton.downloadShow:hover {
-  -moz-image-region: rect(14px, 28px, 28px, 14px);
+richlistitem[type="download"][state="1"]:hover > .downloadButton.downloadShow {
+  -moz-image-region: rect(16px, 32px, 32px, 16px);
 }
-.downloadButton.downloadShow:active {
-  -moz-image-region: rect(14px, 42px, 28px, 28px);
+richlistitem[type="download"][state="1"]:hover > .downloadButton.downloadShow:hover {
+  -moz-image-region: rect(16px, 48px, 32px, 32px);
+}
+richlistitem[type="download"][state="1"]:hover > .downloadButton.downloadShow:active {
+  -moz-image-region: rect(16px, 64px, 32px, 48px);
 }
 
 .downloadButton.downloadRetry {
-  -moz-image-region: rect(28px, 14px, 42px, 0px);
-}
-.downloadButton.downloadRetry:hover {
-  -moz-image-region: rect(28px, 28px, 42px, 14px);
-}
-.downloadButton.downloadRetry:active {
-  -moz-image-region: rect(28px, 42px, 42px, 28px);
+  -moz-image-region: rect(32px, 16px, 48px, 0px);
 }
 
 /*** Status and progress indicator ***/
-
-#downloads-indicator {
-  width: 35px;
-}
 
 #downloads-indicator-anchor {
   min-width: 20px;
@@ -193,15 +191,9 @@ richlistitem[type="download"][state="1"] .downloadInfo:hover {
                               0, 140, 20, 120) center no-repeat;
 }
 
-#downloads-indicator-icon:-moz-lwtheme-brighttext {
-  background: -moz-image-rect(url("chrome://browser/skin/Toolbar-inverted.png"),
-                              0, 140, 20, 120) center no-repeat;
-}
-
 #downloads-indicator[attention]
 #downloads-indicator-icon {
-  background: -moz-image-rect(url("chrome://browser/skin/downloads/download-glow.png"),
-                              14, 34, 34, 14) center no-repeat;
+  background-image: url("chrome://browser/skin/downloads/download-glow.png");
 }
 
 #downloads-indicator:not([counter])
@@ -213,8 +205,28 @@ richlistitem[type="download"][state="1"] .downloadInfo:hover {
 
 #downloads-indicator:not([counter])[attention]
 #downloads-indicator-counter {
-  background-image: -moz-image-rect(url("chrome://browser/skin/downloads/download-glow.png"),
-                                    14, 34, 34, 14);
+  background-image: url("chrome://browser/skin/downloads/download-glow.png");
+}
+
+@media (min-resolution: 2dppx) {
+  #downloads-indicator-icon:not(:-moz-lwtheme-brighttext) {
+    background-image: -moz-image-rect(url("chrome://browser/skin/Toolbar@2x.png"), 0, 280, 40, 240);
+    background-size: 20px;
+  }
+
+  #downloads-indicator:not([counter]) #downloads-indicator-counter {
+    background-image: -moz-image-rect(url("chrome://browser/skin/Toolbar@2x.png"), 0, 280, 40, 240);
+  }
+
+  #downloads-indicator[attention]
+  #downloads-indicator-icon {
+    background-image: url("chrome://browser/skin/downloads/download-glow@2x.png");
+  }
+
+  #downloads-indicator:not([counter])[attention]
+  #downloads-indicator-counter {
+    background-image: url("chrome://browser/skin/downloads/download-glow@2x.png");
+  }
 }
 
 /*** Event notification ***/
@@ -226,42 +238,42 @@ richlistitem[type="download"][state="1"] .downloadInfo:hover {
   background-size: 16px;
 }
 
-@-moz-keyframes downloadsIndicatorNotificationRight {
-  from { opacity: 0; -moz-transform: translate(-128px, 128px) scale(8); }
-  20%  { opacity: .85; -moz-animation-timing-function: ease-out; }
-  to   { opacity: 0; -moz-transform: translate(0) scale(1); }
+@keyframes downloadsIndicatorNotificationRight {
+  from { opacity: 0; transform: translate(-128px, 128px) scale(8); }
+  20%  { opacity: .85; animation-timing-function: ease-out; }
+  to   { opacity: 0; transform: translate(0) scale(1); }
 }
 
-@-moz-keyframes downloadsIndicatorNotificationLeft {
-  from { opacity: 0; -moz-transform: translate(128px, 128px) scale(8); }
-  20%  { opacity: .85; -moz-animation-timing-function: ease-out; }
-  to   { opacity: 0; -moz-transform: translate(0) scale(1); }
+@keyframes downloadsIndicatorNotificationLeft {
+  from { opacity: 0; transform: translate(128px, 128px) scale(8); }
+  20%  { opacity: .85; animation-timing-function: ease-out; }
+  to   { opacity: 0; transform: translate(0) scale(1); }
 }
 
 #downloads-indicator[notification] > #downloads-indicator-anchor > #downloads-indicator-notification {
-  -moz-animation-name: downloadsIndicatorNotificationRight;
-  -moz-animation-duration: 1s;
+  animation-name: downloadsIndicatorNotificationRight;
+  animation-duration: 1s;
 }
 
 #downloads-indicator[notification]:-moz-locale-dir(rtl) > #downloads-indicator-anchor > #downloads-indicator-notification {
-  -moz-animation-name: downloadsIndicatorNotificationLeft;
+  animation-name: downloadsIndicatorNotificationLeft;
 }
 
 /*** Progress bar and text ***/
 
 #downloads-indicator-counter {
-  height: 12px;
-  margin: 0;
+  height: 9px;
+  margin: -3px 0 0;
   color: hsl(0,0%,30%);
   text-shadow: 0 1px 0 hsla(0,0%,100%,.5);
-  font-size: 10px;
-  line-height: 10px;
+  font-size: 9px;
+  line-height: 9px;
   text-align: center;
 }
 
 #downloads-indicator-progress {
-  width: 24px;
-  height: 4px;
+  width: 16px;
+  height: 5px;
   min-width: 0;
   min-height: 0;
   margin-top: 1px;
@@ -274,9 +286,10 @@ richlistitem[type="download"][state="1"] .downloadInfo:hover {
   -moz-appearance: none;
   min-width: 0;
   min-height: 0;
-  background-image: -moz-linear-gradient(#41a0ff, #2090ff);
+  background-color: rgb(90, 185, 255);
+  background-image: linear-gradient(transparent 1px, rgba(255, 255, 255, 0.4) 1px, rgba(255, 255, 255, 0.4) 2px, transparent 2px);
   border: 1px solid;
-  border-color: hsla(0,0%,0%,.6) hsla(0,0%,0%,.2) hsla(0,0%,0%,.2);
+  border-color: rgba(0,43,86,.6) rgba(0,43,86,.4) rgba(0,43,86,.4);
   border-radius: 2px 0 0 2px;
 }
 
@@ -284,17 +297,17 @@ richlistitem[type="download"][state="1"] .downloadInfo:hover {
   -moz-appearance: none;
   min-width: 0;
   min-height: 0;
-  background-image: -moz-linear-gradient(#9a9a9a, #a1a1a1);
+  background-image: -moz-linear-gradient(#505050, #575757);
   border: 1px solid;
-  border-color: hsla(0,0%,0%,.4) hsla(0,0%,0%,.3) hsla(0,0%,0%,.2);
+  border-color: hsla(0,0%,0%,.6) hsla(0,0%,0%,.4) hsla(0,0%,0%,.4);
   -moz-border-start: none;
   border-radius: 0 2px 2px 0;
 }
 
 #downloads-indicator[paused] > #downloads-indicator-anchor > #downloads-indicator-progress-area > #downloads-indicator-progress > .progress-bar {
-  background-image: -moz-linear-gradient(#a0a000, #909000);
+  background-color: rgb(220, 230, 81);
 }
 
 #downloads-indicator[paused] > #downloads-indicator-anchor > #downloads-indicator-progress-area > #downloads-indicator-progress > .progress-remainder {
-  background-image: -moz-linear-gradient(#9a9a00, #a1a100);
+  background-image: -moz-linear-gradient(#4b5000, #515700);
 }

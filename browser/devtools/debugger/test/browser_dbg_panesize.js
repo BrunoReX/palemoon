@@ -12,9 +12,17 @@ function test() {
       "Shouldn't have a debugger pane for this tab yet.");
 
     let pane = DebuggerUI.toggleDebugger();
-    let someHeight = parseInt(Math.random() * 200) + 200;
-
     ok(pane, "toggleDebugger() should return a pane.");
+
+    let preferredHeight = Services.prefs.getIntPref("devtools.debugger.ui.height");
+    let someHeight;
+
+    do {
+      someHeight = parseInt(Math.random() * 200) + 200;
+    } while (someHeight == preferredHeight)
+
+    info("Preferred pane height: " + preferredHeight);
+    info("Generated pane height: " + someHeight);
 
     is(DebuggerUI.getDebugger(), pane,
       "getDebugger() should return the same pane as toggleDebugger().");
@@ -26,17 +34,21 @@ function test() {
       "The debugger pane height should be the same as the preferred value.");
 
     pane._frame.height = someHeight;
+
     ok(DebuggerUI.preferences.height !== someHeight,
       "Height preferences shouldn't have been updated yet.");
 
-    pane._frame.addEventListener("Debugger:Connecting", function dbgConnected() {
-      pane._frame.removeEventListener("Debugger:Connecting", dbgConnected, true);
-
+    wait_for_connect_and_resume(function() {
       removeTab(tab1);
-      finish();
+    });
+
+    window.addEventListener("Debugger:Shutdown", function dbgShutdown() {
+      window.removeEventListener("Debugger:Shutdown", dbgShutdown, true);
 
       is(DebuggerUI.preferences.height, someHeight,
         "Height preferences should have been updated by now.");
+
+      finish();
 
     }, true);
   });

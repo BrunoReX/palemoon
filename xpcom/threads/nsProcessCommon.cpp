@@ -64,15 +64,16 @@ NS_IMPL_THREADSAFE_ISUPPORTS2(nsProcess, nsIProcess,
 
 //Constructor
 nsProcess::nsProcess()
-    : mThread(nsnull)
+    : mThread(nullptr)
     , mLock("nsProcess.mLock")
     , mShutdown(false)
+    , mBlocking(false)
     , mPid(-1)
-    , mObserver(nsnull)
-    , mWeakObserver(nsnull)
+    , mObserver(nullptr)
+    , mWeakObserver(nullptr)
     , mExitValue(-1)
 #if !defined(XP_MACOSX)
-    , mProcess(nsnull)
+    , mProcess(nullptr)
 #endif
 {
 }
@@ -212,7 +213,7 @@ static int assembleCmdLine(char *const *argv, PRUnichar **wideCmdLine,
     } 
 
     *p = '\0';
-    PRInt32 numChars = MultiByteToWideChar(codePage, 0, cmdLine, -1, NULL, 0); 
+    int32_t numChars = MultiByteToWideChar(codePage, 0, cmdLine, -1, NULL, 0); 
     *wideCmdLine = (PRUnichar *) PR_MALLOC(numChars*sizeof(PRUnichar));
     MultiByteToWideChar(codePage, 0, cmdLine, -1, *wideCmdLine, numChars); 
     PR_Free(cmdLine);
@@ -220,9 +221,13 @@ static int assembleCmdLine(char *const *argv, PRUnichar **wideCmdLine,
 }
 #endif
 
-void PR_CALLBACK nsProcess::Monitor(void *arg)
+void nsProcess::Monitor(void *arg)
 {
     nsRefPtr<nsProcess> process = dont_AddRef(static_cast<nsProcess*>(arg));
+
+    if (!process->mBlocking)
+        PR_SetCurrentThreadName("RunProcess");
+
 #if defined(PROCESSMODEL_WINAPI)
     DWORD dwRetVal;
     unsigned long exitCode = -1;
@@ -255,7 +260,7 @@ void PR_CALLBACK nsProcess::Monitor(void *arg)
         }
     }
 #else
-    PRInt32 exitCode = -1;
+    int32_t exitCode = -1;
     if (PR_WaitProcess(process->mProcess, &exitCode) != PR_SUCCESS)
         exitCode = -1;
 #endif
@@ -264,7 +269,7 @@ void PR_CALLBACK nsProcess::Monitor(void *arg)
     {
         MutexAutoLock lock(process->mLock);
 #if !defined(XP_MACOSX)
-        process->mProcess = nsnull;
+        process->mProcess = nullptr;
 #endif
         process->mExitValue = exitCode;
         if (process->mShutdown)
@@ -292,7 +297,7 @@ void nsProcess::ProcessComplete()
         if (os)
             os->RemoveObserver(this, "xpcom-shutdown");
         PR_JoinThread(mThread);
-        mThread = nsnull;
+        mThread = nullptr;
     }
 
     const char* topic;
@@ -307,23 +312,23 @@ void nsProcess::ProcessComplete()
         observer = do_QueryReferent(mWeakObserver);
     else if (mObserver)
         observer = mObserver;
-    mObserver = nsnull;
-    mWeakObserver = nsnull;
+    mObserver = nullptr;
+    mWeakObserver = nullptr;
 
     if (observer)
-        observer->Observe(NS_ISUPPORTS_CAST(nsIProcess*, this), topic, nsnull);
+        observer->Observe(NS_ISUPPORTS_CAST(nsIProcess*, this), topic, nullptr);
 }
 
 // XXXldb |args| has the wrong const-ness
 NS_IMETHODIMP  
-nsProcess::Run(bool blocking, const char **args, PRUint32 count)
+nsProcess::Run(bool blocking, const char **args, uint32_t count)
 {
-    return CopyArgsAndRunProcess(blocking, args, count, nsnull, false);
+    return CopyArgsAndRunProcess(blocking, args, count, nullptr, false);
 }
 
 // XXXldb |args| has the wrong const-ness
 NS_IMETHODIMP  
-nsProcess::RunAsync(const char **args, PRUint32 count,
+nsProcess::RunAsync(const char **args, uint32_t count,
                     nsIObserver* observer, bool holdWeak)
 {
     return CopyArgsAndRunProcess(false, args, count, observer, holdWeak);
@@ -331,7 +336,7 @@ nsProcess::RunAsync(const char **args, PRUint32 count,
 
 nsresult
 nsProcess::CopyArgsAndRunProcess(bool blocking, const char** args,
-                                 PRUint32 count, nsIObserver* observer,
+                                 uint32_t count, nsIObserver* observer,
                                  bool holdWeak)
 {
     // Add one to the count for the program name and one for NULL termination.
@@ -343,7 +348,7 @@ nsProcess::CopyArgsAndRunProcess(bool blocking, const char** args,
 
     my_argv[0] = ToNewUTF8String(mTargetPath);
 
-    for (PRUint32 i = 0; i < count; i++) {
+    for (uint32_t i = 0; i < count; i++) {
         my_argv[i + 1] = const_cast<char*>(args[i]);
     }
 
@@ -358,14 +363,14 @@ nsProcess::CopyArgsAndRunProcess(bool blocking, const char** args,
 
 // XXXldb |args| has the wrong const-ness
 NS_IMETHODIMP  
-nsProcess::Runw(bool blocking, const PRUnichar **args, PRUint32 count)
+nsProcess::Runw(bool blocking, const PRUnichar **args, uint32_t count)
 {
-    return CopyArgsAndRunProcessw(blocking, args, count, nsnull, false);
+    return CopyArgsAndRunProcessw(blocking, args, count, nullptr, false);
 }
 
 // XXXldb |args| has the wrong const-ness
 NS_IMETHODIMP  
-nsProcess::RunwAsync(const PRUnichar **args, PRUint32 count,
+nsProcess::RunwAsync(const PRUnichar **args, uint32_t count,
                     nsIObserver* observer, bool holdWeak)
 {
     return CopyArgsAndRunProcessw(false, args, count, observer, holdWeak);
@@ -373,7 +378,7 @@ nsProcess::RunwAsync(const PRUnichar **args, PRUint32 count,
 
 nsresult
 nsProcess::CopyArgsAndRunProcessw(bool blocking, const PRUnichar** args,
-                                  PRUint32 count, nsIObserver* observer,
+                                  uint32_t count, nsIObserver* observer,
                                   bool holdWeak)
 {
     // Add one to the count for the program name and one for NULL termination.
@@ -385,7 +390,7 @@ nsProcess::CopyArgsAndRunProcessw(bool blocking, const PRUnichar** args,
 
     my_argv[0] = ToNewUTF8String(mTargetPath);
 
-    for (PRUint32 i = 0; i < count; i++) {
+    for (uint32_t i = 0; i < count; i++) {
         my_argv[i + 1] = ToNewUTF8String(nsDependentString(args[i]));
     }
 
@@ -393,7 +398,7 @@ nsProcess::CopyArgsAndRunProcessw(bool blocking, const PRUnichar** args,
 
     nsresult rv = RunProcess(blocking, my_argv, observer, holdWeak, true);
 
-    for (PRUint32 i = 0; i <= count; i++) {
+    for (uint32_t i = 0; i <= count; i++) {
         NS_Free(my_argv[i]);
     }
     NS_Free(my_argv);
@@ -438,15 +443,13 @@ nsProcess::RunProcess(bool blocking, char **my_argv, nsIObserver* observer,
      */
 
     // The program name in my_argv[0] is always UTF-8
-    PRInt32 numChars = MultiByteToWideChar(CP_UTF8, 0, my_argv[0], -1, NULL, 0); 
-    PRUnichar* wideFile = (PRUnichar *) PR_MALLOC(numChars * sizeof(PRUnichar));
-    MultiByteToWideChar(CP_UTF8, 0, my_argv[0], -1, wideFile, numChars); 
+    NS_ConvertUTF8toUTF16 wideFile(my_argv[0]);
 
     SHELLEXECUTEINFOW sinfo;
     memset(&sinfo, 0, sizeof(SHELLEXECUTEINFOW));
     sinfo.cbSize = sizeof(SHELLEXECUTEINFOW);
     sinfo.hwnd   = NULL;
-    sinfo.lpFile = wideFile;
+    sinfo.lpFile = wideFile.get();
     sinfo.nShow  = SW_SHOWNORMAL;
     sinfo.fMask  = SEE_MASK_FLAG_DDEWAIT |
                    SEE_MASK_NO_CONSOLE |
@@ -462,7 +465,6 @@ nsProcess::RunProcess(bool blocking, char **my_argv, nsIObserver* observer,
 
     mProcess = sinfo.hProcess;
 
-    PR_Free(wideFile);
     if (cmdLine)
         PR_Free(cmdLine);
 
@@ -486,7 +488,7 @@ nsProcess::RunProcess(bool blocking, char **my_argv, nsIObserver* observer,
     // Note that the 'argv' array is already null-terminated, which 'posix_spawnp' requires.
     pid_t newPid = 0;
     int result = posix_spawnp(&newPid, my_argv[0], NULL, &spawnattr, my_argv, *_NSGetEnviron());
-    mPid = static_cast<PRInt32>(newPid);
+    mPid = static_cast<int32_t>(newPid);
 
     posix_spawnattr_destroy(&spawnattr);
 
@@ -498,13 +500,14 @@ nsProcess::RunProcess(bool blocking, char **my_argv, nsIObserver* observer,
     if (!mProcess)
         return NS_ERROR_FAILURE;
     struct MYProcess {
-        PRUint32 pid;
+        uint32_t pid;
     };
     MYProcess* ptrProc = (MYProcess *) mProcess;
     mPid = ptrProc->pid;
 #endif
 
     NS_ADDREF_THIS();
+    mBlocking = blocking;
     if (blocking) {
         Monitor(this);
         if (mExitValue < 0)
@@ -540,7 +543,7 @@ NS_IMETHODIMP nsProcess::GetIsRunning(bool *aIsRunning)
 }
 
 NS_IMETHODIMP
-nsProcess::GetPid(PRUint32 *aPid)
+nsProcess::GetPid(uint32_t *aPid)
 {
     if (!mThread)
         return NS_ERROR_FAILURE;
@@ -559,7 +562,7 @@ nsProcess::Kill()
     {
         MutexAutoLock lock(mLock);
 #if defined(PROCESSMODEL_WINAPI)
-        if (TerminateProcess(mProcess, NULL) == 0)
+        if (TerminateProcess(mProcess, 0) == 0)
             return NS_ERROR_FAILURE;
 #elif defined(XP_MACOSX)
         if (kill(mPid, SIGKILL) != 0)
@@ -576,13 +579,13 @@ nsProcess::Kill()
     if (os)
         os->RemoveObserver(this, "xpcom-shutdown");
     PR_JoinThread(mThread);
-    mThread = nsnull;
+    mThread = nullptr;
 
     return NS_OK;
 }
 
 NS_IMETHODIMP
-nsProcess::GetExitValue(PRInt32 *aExitValue)
+nsProcess::GetExitValue(int32_t *aExitValue)
 {
     MutexAutoLock lock(mLock);
 
@@ -600,11 +603,11 @@ nsProcess::Observe(nsISupports* subject, const char* topic, const PRUnichar* dat
           mozilla::services::GetObserverService();
         if (os)
             os->RemoveObserver(this, "xpcom-shutdown");
-        mThread = nsnull;
+        mThread = nullptr;
     }
 
-    mObserver = nsnull;
-    mWeakObserver = nsnull;
+    mObserver = nullptr;
+    mWeakObserver = nullptr;
 
     MutexAutoLock lock(mLock);
     mShutdown = true;

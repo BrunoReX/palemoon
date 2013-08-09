@@ -21,7 +21,7 @@ FormHistory.prototype = {
     classID          : Components.ID("{0c1bb408-71a2-403f-854a-3a0659829ded}"),
     QueryInterface   : XPCOMUtils.generateQI([Ci.nsIFormHistory2,
                                               Ci.nsIObserver,
-                                              Ci.nsIFrameMessageListener,
+                                              Ci.nsIMessageListener,
                                               Ci.nsISupportsWeakReference,
                                               ]),
 
@@ -73,21 +73,6 @@ FormHistory.prototype = {
         return this._uuidService;
     },
 
-    // Private Browsing Service
-    // If the service is not available, null will be returned.
-    _privBrowsingSvc : undefined,
-    get privBrowsingSvc() {
-        if (this._privBrowsingSvc == undefined) {
-            if ("@mozilla.org/privatebrowsing;1" in Cc)
-                this._privBrowsingSvc = Cc["@mozilla.org/privatebrowsing;1"].
-                                        getService(Ci.nsIPrivateBrowsingService);
-            else
-                this._privBrowsingSvc = null;
-        }
-        return this._privBrowsingSvc;
-    },
-
-
     log : function log(message) {
         if (!this.debug)
             return;
@@ -104,7 +89,7 @@ FormHistory.prototype = {
         this.dbStmts = {};
 
         this.messageManager = Cc["@mozilla.org/globalmessagemanager;1"].
-                              getService(Ci.nsIChromeFrameMessageManager);
+                              getService(Ci.nsIMessageListenerManager);
         this.messageManager.loadFrameScript("chrome://satchel/content/formSubmitListener.js", true);
         this.messageManager.addMessageListener("FormHistory:FormSubmitEntries", this);
 
@@ -143,8 +128,7 @@ FormHistory.prototype = {
 
 
     addEntry : function addEntry(name, value) {
-        if (!this.enabled ||
-            this.privBrowsingSvc && this.privBrowsingSvc.privateBrowsingEnabled)
+        if (!this.enabled)
             return;
 
         this.log("addEntry for " + name + "=" + value);
@@ -939,7 +923,10 @@ FormHistory.prototype = {
             stmt.finalize();
         }
         this.dbStmts = {};
-        if (this.dbConnection === undefined)
+
+        let connectionDescriptor = Object.getOwnPropertyDescriptor(FormHistory.prototype, "dbConnection");
+        // Return if the database hasn't been opened.
+        if (!connectionDescriptor || connectionDescriptor.value === undefined)
             return;
 
         let completed = false;
@@ -977,4 +964,4 @@ FormHistory.prototype = {
 };
 
 let component = [FormHistory];
-var NSGetFactory = XPCOMUtils.generateNSGetFactory(component);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory(component);

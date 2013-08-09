@@ -13,7 +13,7 @@
 
 nsCategoryObserver::nsCategoryObserver(const char* aCategory,
                                        nsCategoryListener* aListener)
-  : mListener(nsnull), mCategory(aCategory), mObserversRemoved(false)
+  : mListener(nullptr), mCategory(aCategory), mObserversRemoved(false)
 {
   mHash.Init();
   mListener = aListener;
@@ -36,7 +36,7 @@ nsCategoryObserver::nsCategoryObserver(const char* aCategory,
     nsCOMPtr<nsISupportsCString> entryName = do_QueryInterface(entry, &rv);
 
     if (NS_SUCCEEDED(rv)) {
-      nsCAutoString categoryEntry;
+      nsAutoCString categoryEntry;
       rv = entryName->GetData(categoryEntry);
 
       nsCString entryValue;
@@ -61,7 +61,7 @@ nsCategoryObserver::nsCategoryObserver(const char* aCategory,
     serv->AddObserver(this, NS_XPCOM_CATEGORY_CLEARED_OBSERVER_ID, false);
   }
 
-  for (PRInt32 i = entries.Length() - 1; i >= 0; --i)
+  for (int32_t i = entries.Length() - 1; i >= 0; --i)
     mListener->EntryAdded(entries[i]);
 }
 
@@ -72,7 +72,7 @@ NS_IMPL_ISUPPORTS1(nsCategoryObserver, nsIObserver)
 
 void
 nsCategoryObserver::ListenerDied() {
-  mListener = nsnull;
+  mListener = nullptr;
   RemoveObservers();
 }
 
@@ -110,7 +110,7 @@ nsCategoryObserver::Observe(nsISupports* aSubject, const char* aTopic,
       !nsDependentString(aData).Equals(NS_ConvertASCIItoUTF16(mCategory)))
     return NS_OK;
 
-  nsCAutoString str;
+  nsAutoCString str;
   nsCOMPtr<nsISupportsCString> strWrapper(do_QueryInterface(aSubject));
   if (strWrapper)
     strWrapper->GetData(str);
@@ -121,7 +121,7 @@ nsCategoryObserver::Observe(nsISupports* aSubject, const char* aTopic,
     // added and an nsCategoryObserver gets instantiated before events get
     // processed, we'd get the notification for an existing entry.
     // Do nothing in that case.
-    if (mHash.Get(str, nsnull))
+    if (mHash.Get(str, nullptr))
       return NS_OK;
 
     nsCOMPtr<nsICategoryManager> catMan =
@@ -137,7 +137,7 @@ nsCategoryObserver::Observe(nsISupports* aSubject, const char* aTopic,
     mHash.Put(str, entryValue);
     mListener->EntryAdded(entryValue);
   } else if (strcmp(aTopic, NS_XPCOM_CATEGORY_ENTRY_REMOVED_OBSERVER_ID) == 0) {
-    nsCAutoString val;
+    nsAutoCString val;
     if (mHash.Get(str, &val)) {
       mHash.Remove(str);
       mListener->EntryRemoved(val);

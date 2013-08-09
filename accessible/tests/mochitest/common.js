@@ -73,11 +73,17 @@ const STATE_BUSY = nsIAccessibleStates.STATE_BUSY;
 
 const SCROLL_TYPE_ANYWHERE = nsIAccessibleScrollType.SCROLL_TYPE_ANYWHERE;
 
+const COORDTYPE_SCREEN_RELATIVE = nsIAccessibleCoordinateType.COORDTYPE_SCREEN_RELATIVE;
+const COORDTYPE_WINDOW_RELATIVE = nsIAccessibleCoordinateType.COORDTYPE_WINDOW_RELATIVE;
+const COORDTYPE_PARENT_RELATIVE = nsIAccessibleCoordinateType.COORDTYPE_PARENT_RELATIVE;
+
 const kEmbedChar = String.fromCharCode(0xfffc);
 
 const kDiscBulletText = String.fromCharCode(0x2022) + " ";
 const kCircleBulletText = String.fromCharCode(0x25e6) + " ";
 const kSquareBulletText = String.fromCharCode(0x25aa) + " ";
+
+const MAX_TRIM_LENGTH = 100;
 
 /**
  * nsIAccessibleRetrieval service.
@@ -95,6 +101,10 @@ function enableLogging(aModules)
 function disableLogging()
 {
   gAccRetrieval.setLogging("");
+}
+function isLogged(aModule)
+{
+  return gAccRetrieval.isLogged(aModule);
 }
 
 /**
@@ -514,24 +524,6 @@ function testDefunctAccessible(aAcc, aNodeOrId)
 }
 
 /**
- * Ensure that image map accessible tree is created.
- */
-function ensureImageMapTree(aID)
-{
-  // XXX: We send a useless mouse move to the image to force it to setup its
-  // image map, because flushing layout won't do it. Hopefully bug 135040
-  // will make this not suck.
-  var image = getNode(aID);
-  synthesizeMouse(image, 10, 10, { type: "mousemove" },
-                  image.ownerDocument.defaultView);
-
-  // XXX This may affect a11y more than other code because imagemaps may not
-  // get drawn or have an mouse event over them. Bug 570322 tracks a11y
-  // dealing with this.
-  todo(false, "Need to remove this image map workaround.");
-}
-
-/**
  * Convert role to human readable string.
  */
 function roleToString(aRole)
@@ -572,6 +564,13 @@ function relationTypeToString(aRelationType)
   return gAccRetrieval.getStringRelationType(aRelationType);
 }
 
+function getLoadContext() {
+  const Ci = Components.interfaces;
+  return window.QueryInterface(Ci.nsIInterfaceRequestor)
+               .getInterface(Ci.nsIWebNavigation)
+               .QueryInterface(Ci.nsILoadContext);
+}
+
 /**
  * Return text from clipboard.
  */
@@ -584,6 +583,7 @@ function getTextFromClipboard()
 
   var trans = Components.classes["@mozilla.org/widget/transferable;1"].
     createInstance(Components.interfaces.nsITransferable);
+  trans.init(getLoadContext());
   if (!trans)
     return;
 
@@ -613,7 +613,7 @@ function prettyName(aIdentifier)
     try {
       msg += ", role: " + roleToString(acc.role);
       if (acc.name)
-        msg += ", name: '" + acc.name + "'";
+        msg += ", name: '" + shortenString(acc.name) + "'";
     } catch (e) {
       msg += "defunct";
     }
@@ -629,6 +629,22 @@ function prettyName(aIdentifier)
     return "[ " + getNodePrettyName(aIdentifier) + " ]";
 
   return " '" + aIdentifier + "' ";
+}
+
+/**
+ * Shorten a long string if it exceeds MAX_TRIM_LENGTH.
+ * @param aString the string to shorten.
+ * @returns the shortened string.
+ */
+function shortenString(aString, aMaxLength)
+{
+  if (aString.length <= MAX_TRIM_LENGTH)
+    return aString;
+
+  // Trim the string if its length is > MAX_TRIM_LENGTH characters.
+  var trimOffset = MAX_TRIM_LENGTH / 2;
+  return aString.substring(0, trimOffset - 1) + "..." +
+    aString.substring(aString.length - trimOffset, aString.length);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

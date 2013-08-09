@@ -37,11 +37,11 @@ protected:
   {
     nsCString      mEntryName;
 
-    PRUint8       mEntryType;
+    uint8_t       mEntryType;
     union {
     
       bool                    mBoolean;
-      PRInt32                 mLong;
+      int32_t                 mLong;
       double                  mDouble;
       nsString*               mString;
       nsCString*              mCString;
@@ -49,7 +49,7 @@ protected:
 
     nsCOMPtr<nsISupports>   mISupports;    
     
-    HashEntry(PRUint8 inType, const char * inEntryName)
+    HashEntry(uint8_t inType, const char * inEntryName)
     : mEntryName(inEntryName)
     , mEntryType(inType)
     {
@@ -90,7 +90,7 @@ protected:
         delete mData.mCString;
     }
     
-    void Reset(PRUint8 inNewType)
+    void Reset(uint8_t inNewType)
     {
       switch (mEntryType)
       {
@@ -98,9 +98,9 @@ protected:
         case eBooleanType:      mData.mBoolean = false;  break;
         case eLongType:         mData.mLong = 0;            break;
         case eDoubleType:       mData.mDouble = 0.0;        break;
-        case eWStringType:      delete mData.mString; mData.mString = nsnull;     break;
-        case eISupportsType:    mISupports = nsnull;        break;    // clear the nsCOMPtr
-        case eStringType:       delete mData.mCString; mData.mCString = nsnull;   break;
+        case eWStringType:      delete mData.mString; mData.mString = nullptr;     break;
+        case eISupportsType:    mISupports = nullptr;        break;    // clear the nsCOMPtr
+        case eStringType:       delete mData.mCString; mData.mCString = nullptr;   break;
         default:
           NS_ERROR("Unknown type");
       }
@@ -112,10 +112,10 @@ protected:
 
 
   HashEntry*          GetNamedEntry(const char * name);
-  HashEntry*          GetIndexedEntry(PRInt32 index);
-  PRUint32            GetNumEntries();
+  HashEntry*          GetIndexedEntry(int32_t index);
+  uint32_t            GetNumEntries();
   
-  nsresult            GetOrMakeEntry(const char * name, PRUint8 entryType, HashEntry*& outEntry);
+  nsresult            GetOrMakeEntry(const char * name, uint8_t entryType, HashEntry*& outEntry);
   
 protected:
 
@@ -144,8 +144,8 @@ protected:
   PLDHashTable    mValuesHash;
   
   // enumerator data
-  PRInt32         mCurEntry;
-  PRInt32         mNumEntries;      // number of entries at start of enumeration (-1 indicates not known)
+  int32_t         mCurEntry;
+  int32_t         mNumEntries;      // number of entries at start of enumeration (-1 indicates not known)
     
   static PLDHashTableOps    sHashOps;
 };

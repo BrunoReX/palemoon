@@ -105,7 +105,7 @@ public:
                                        nsISupports* aContainer,
                                        nsIStreamListener **aDocListener,
                                        bool aReset = true,
-                                       nsIContentSink* aSink = nsnull);
+                                       nsIContentSink* aSink = nullptr);
 
     virtual void SetContentType(const nsAString& aContentType);
 
@@ -133,7 +133,7 @@ public:
     bool OnDocumentParserError();
 
     // nsIDOMNode interface overrides
-    NS_IMETHOD CloneNode(bool deep, PRUint8 aOptionalArgc, nsIDOMNode **_retval)
+    NS_IMETHOD CloneNode(bool deep, uint8_t aOptionalArgc, nsIDOMNode **_retval)
         MOZ_OVERRIDE;
 
     // nsIDOMDocument
@@ -166,7 +166,7 @@ public:
 
     static bool
     MatchAttribute(nsIContent* aContent,
-                   PRInt32 aNameSpaceID,
+                   int32_t aNameSpaceID,
                    nsIAtom* aAttrName,
                    void* aData);
 
@@ -186,7 +186,7 @@ protected:
     void
     RemoveElementFromRefMap(mozilla::dom::Element* aElement);
 
-    nsresult GetViewportSize(PRInt32* aWidth, PRInt32* aHeight);
+    nsresult GetViewportSize(int32_t* aWidth, int32_t* aHeight);
 
     nsresult PrepareToLoad(nsISupports* aContainer,
                            const char* aCommand,
@@ -222,7 +222,7 @@ protected:
 
     nsresult
     BroadcastAttributeChangeFromOverlay(nsIContent* aNode,
-                                        PRInt32 aNameSpaceID,
+                                        int32_t aNameSpaceID,
                                         nsIAtom* aAttribute,
                                         nsIAtom* aPrefix,
                                         const nsAString& aValue);
@@ -232,7 +232,7 @@ protected:
     static NS_HIDDEN_(int) DirectionChanged(const char* aPrefName, void* aData);
 
     // pseudo constants
-    static PRInt32 gRefCnt;
+    static int32_t gRefCnt;
 
     static nsIAtom** kIdentityAttrs[];
 
@@ -245,11 +245,8 @@ protected:
 
     static PRLogModuleInfo* gXULLog;
 
-    bool
-    IsCapabilityEnabled(const char* aCapabilityLabel);
-
     nsresult
-    Persist(nsIContent* aElement, PRInt32 aNameSpaceID, nsIAtom* aAttribute);
+    Persist(nsIContent* aElement, int32_t aNameSpaceID, nsIAtom* aAttribute);
 
     // IMPORTANT: The ownership implicit in the following member
     // variables has been explicitly checked and set using nsCOMPtr
@@ -291,7 +288,7 @@ protected:
         BuilderTable;
     BuilderTable* mTemplateBuilderTable;
 
-    PRUint32 mPendingSheets;
+    uint32_t mPendingSheets;
 
     /**
      * document lightweight theme for use with :-moz-lwtheme, :-moz-lwtheme-brighttext
@@ -308,24 +305,24 @@ protected:
         struct Entry {
             nsXULPrototypeElement* mPrototype;
             nsIContent*            mElement;
-            PRInt32                mIndex;
+            int32_t                mIndex;
             Entry*                 mNext;
         };
 
         Entry* mTop;
-        PRInt32 mDepth;
+        int32_t mDepth;
 
     public:
         ContextStack();
         ~ContextStack();
 
-        PRInt32 Depth() { return mDepth; }
+        int32_t Depth() { return mDepth; }
 
         nsresult Push(nsXULPrototypeElement* aPrototype, nsIContent* aElement);
         nsresult Pop();
-        nsresult Peek(nsXULPrototypeElement** aPrototype, nsIContent** aElement, PRInt32* aIndex);
+        nsresult Peek(nsXULPrototypeElement** aPrototype, nsIContent** aElement, int32_t* aIndex);
 
-        nsresult SetTopIndex(PRInt32 aIndex);
+        nsresult SetTopIndex(int32_t aIndex);
     };
 
     friend class ContextStack;
@@ -345,7 +342,7 @@ protected:
      * same order as in the document, then the overlays from the chrome
      * registry.
      */
-    nsCOMArray<nsIURI> mUnloadedOverlays;
+    nsTArray<nsCOMPtr<nsIURI> > mUnloadedOverlays;
 
     /**
      * Load the transcluded script at the specified URI. If the
@@ -565,7 +562,7 @@ protected:
      */
     nsresult
     CreateAndInsertPI(const nsXULPrototypePI* aProtoPI,
-                      nsINode* aParent, PRUint32 aIndex);
+                      nsINode* aParent, uint32_t aIndex);
 
     /**
      * Inserts the passed <?xml-stylesheet ?> PI at the specified
@@ -579,7 +576,7 @@ protected:
     nsresult
     InsertXMLStylesheetPI(const nsXULPrototypePI* aProtoPI,
                           nsINode* aParent,
-                          PRUint32 aIndex,
+                          uint32_t aIndex,
                           nsIContent* aPINode);
 
     /**
@@ -589,7 +586,7 @@ protected:
     nsresult
     InsertXULOverlayPI(const nsXULPrototypePI* aProtoPI,
                        nsINode* aParent,
-                       PRUint32 aIndex,
+                       uint32_t aIndex,
                        nsIContent* aPINode);
 
     /**

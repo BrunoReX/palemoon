@@ -29,7 +29,6 @@
 
 #include "nsCOMPtr.h"
 #include "nsIContent.h"
-#include "nsINodeInfo.h"
 #include "nsIDocument.h"
 #include "nsIDOMElement.h"
 #include "nsIDOMXULCommandDispatcher.h"
@@ -168,7 +167,7 @@ nsXULContentUtils::GetCollation()
 
 nsresult
 nsXULContentUtils::FindChildByTag(nsIContent* aElement,
-                                  PRInt32 aNameSpaceID,
+                                  int32_t aNameSpaceID,
                                   nsIAtom* aTag,
                                   nsIContent** aResult)
 {
@@ -183,7 +182,7 @@ nsXULContentUtils::FindChildByTag(nsIContent* aElement,
         }
     }
 
-    *aResult = nsnull;
+    *aResult = nullptr;
     return NS_RDF_NO_VALUE; // not found
 }
 
@@ -245,15 +244,15 @@ nsXULContentUtils::GetTextForNode(nsIRDFNode* aNode, nsAString& aResult)
 
     nsCOMPtr<nsIRDFDate> dateLiteral = do_QueryInterface(aNode);
     if (dateLiteral) {
-        PRInt64	value;
+        PRTime value;
         rv = dateLiteral->GetValue(&value);
         if (NS_FAILED(rv)) return rv;
 
         nsAutoString str;
-        rv = gFormat->FormatPRTime(nsnull /* nsILocale* locale */,
+        rv = gFormat->FormatPRTime(nullptr /* nsILocale* locale */,
                                   kDateFormatShort,
                                   kTimeFormatSeconds,
-                                  PRTime(value),
+                                  value,
                                   str);
         aResult.Assign(str);
 
@@ -264,7 +263,7 @@ nsXULContentUtils::GetTextForNode(nsIRDFNode* aNode, nsAString& aResult)
 
     nsCOMPtr<nsIRDFInt> intLiteral = do_QueryInterface(aNode);
     if (intLiteral) {
-        PRInt32	value;
+        int32_t	value;
         rv = intLiteral->GetValue(&value);
         if (NS_FAILED(rv)) return rv;
 
@@ -313,7 +312,7 @@ nsXULContentUtils::MakeElementURI(nsIDocument* aDocument,
     rv = docURI->GetSpec(aURI);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    nsCAutoString ref;
+    nsAutoCString ref;
     NS_EscapeURL(NS_ConvertUTF16toUTF8(aElementID), esc_FilePath | esc_AlwaysCopy, ref);
 
     aURI.Append('#');
@@ -354,7 +353,7 @@ nsXULContentUtils::MakeElementID(nsIDocument* aDocument,
                             aDocument->GetDocumentCharacterSet().get());
     NS_ENSURE_SUCCESS(rv, rv);
 
-    nsCAutoString ref;
+    nsAutoCString ref;
     uri->GetRef(ref);
     CopyUTF8toUTF16(ref, aElementID);
 
@@ -362,10 +361,10 @@ nsXULContentUtils::MakeElementID(nsIDocument* aDocument,
 }
 
 nsresult
-nsXULContentUtils::GetResource(PRInt32 aNameSpaceID, nsIAtom* aAttribute, nsIRDFResource** aResult)
+nsXULContentUtils::GetResource(int32_t aNameSpaceID, nsIAtom* aAttribute, nsIRDFResource** aResult)
 {
     // construct a fully-qualified URI from the namespace/tag pair.
-    NS_PRECONDITION(aAttribute != nsnull, "null ptr");
+    NS_PRECONDITION(aAttribute != nullptr, "null ptr");
     if (! aAttribute)
         return NS_ERROR_NULL_POINTER;
 
@@ -375,7 +374,7 @@ nsXULContentUtils::GetResource(PRInt32 aNameSpaceID, nsIAtom* aAttribute, nsIRDF
 
 
 nsresult
-nsXULContentUtils::GetResource(PRInt32 aNameSpaceID, const nsAString& aAttribute, nsIRDFResource** aResult)
+nsXULContentUtils::GetResource(int32_t aNameSpaceID, const nsAString& aAttribute, nsIRDFResource** aResult)
 {
     // construct a fully-qualified URI from the namespace/tag pair.
 
@@ -413,18 +412,18 @@ nsXULContentUtils::SetCommandUpdater(nsIDocument* aDocument, nsIContent* aElemen
     // Deal with setting up a 'commandupdater'. Pulls the 'events' and
     // 'targets' attributes off of aElement, and adds it to the
     // document's command dispatcher.
-    NS_PRECONDITION(aDocument != nsnull, "null ptr");
+    NS_PRECONDITION(aDocument != nullptr, "null ptr");
     if (! aDocument)
         return NS_ERROR_NULL_POINTER;
 
-    NS_PRECONDITION(aElement != nsnull, "null ptr");
+    NS_PRECONDITION(aElement != nullptr, "null ptr");
     if (! aElement)
         return NS_ERROR_NULL_POINTER;
 
     nsresult rv;
 
     nsCOMPtr<nsIDOMXULDocument> xuldoc = do_QueryInterface(aDocument);
-    NS_ASSERTION(xuldoc != nsnull, "not a xul document");
+    NS_ASSERTION(xuldoc != nullptr, "not a xul document");
     if (! xuldoc)
         return NS_ERROR_UNEXPECTED;
 
@@ -433,7 +432,7 @@ nsXULContentUtils::SetCommandUpdater(nsIDocument* aDocument, nsIContent* aElemen
     NS_ASSERTION(NS_SUCCEEDED(rv), "unable to get dispatcher");
     if (NS_FAILED(rv)) return rv;
 
-    NS_ASSERTION(dispatcher != nsnull, "no dispatcher");
+    NS_ASSERTION(dispatcher != nullptr, "no dispatcher");
     if (! dispatcher)
         return NS_ERROR_UNEXPECTED;
 
@@ -449,7 +448,7 @@ nsXULContentUtils::SetCommandUpdater(nsIDocument* aDocument, nsIContent* aElemen
         targets.AssignLiteral("*");
 
     nsCOMPtr<nsIDOMElement> domelement = do_QueryInterface(aElement);
-    NS_ASSERTION(domelement != nsnull, "not a DOM element");
+    NS_ASSERTION(domelement != nullptr, "not a DOM element");
     if (! domelement)
         return NS_ERROR_UNEXPECTED;
 

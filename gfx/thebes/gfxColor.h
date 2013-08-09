@@ -11,7 +11,9 @@
 #include "prbit.h" // for PR_ROTATE_(LEFT,RIGHT)32
 #include "prio.h"  // for ntohl
 
-#define GFX_UINT32_FROM_BPTR(pbptr,i) (((PRUint32*)(pbptr))[i])
+#include "mozilla/Attributes.h" // for MOZ_ALWAYS_INLINE
+
+#define GFX_UINT32_FROM_BPTR(pbptr,i) (((uint32_t*)(pbptr))[i])
 
 #if defined(IS_BIG_ENDIAN)
   #define GFX_NTOHL(x) (x)
@@ -58,14 +60,14 @@
 /**
  * GFX_BLOCK_RGB_TO_FRGB(from,to)
  *   sizeof(*from) == sizeof(char)
- *   sizeof(*to)   == sizeof(PRUint32)
+ *   sizeof(*to)   == sizeof(uint32_t)
  *
  * Copy 4 pixels at a time, reading blocks of 12 bytes (RGB x4)
  *   and writing blocks of 16 bytes (FRGB x4)
  */
 #define GFX_BLOCK_RGB_TO_FRGB(from,to) \
   PR_BEGIN_MACRO \
-    PRUint32 m0 = GFX_UINT32_FROM_BPTR(from,0), \
+    uint32_t m0 = GFX_UINT32_FROM_BPTR(from,0), \
              m1 = GFX_UINT32_FROM_BPTR(from,1), \
              m2 = GFX_UINT32_FROM_BPTR(from,2), \
              rgbr = GFX_NTOHL(m0), \
@@ -91,34 +93,40 @@
      (((((unsigned)(v)) << 8) + ((unsigned)(v)) + 255) >> 16)
 
 /**
- * Fast premultiply macro
+ * Fast premultiply
  *
  * equivalent to (((c)*(a))/255)
  */
-#define GFX_PREMULTIPLY(c,a) GFX_DIVIDE_BY_255((c)*(a))
+uint8_t MOZ_ALWAYS_INLINE gfxPreMultiply(uint8_t c, uint8_t a) {
+    return GFX_DIVIDE_BY_255((c)*(a));
+}
 
-/** 
- * Macro to pack the 4 8-bit channels (A,R,G,B) 
- * into a 32-bit packed premultiplied pixel.
- *
- * The checks for 0 alpha or max alpha ensure that the
- * compiler selects the quicked calculation when alpha is constant.
- */
-#define GFX_PACKED_PIXEL(a,r,g,b)                                       \
-    ((a) == 0x00) ? 0x00000000 :                                        \
-    ((a) == 0xFF) ? ((0xFF << 24) | ((r) << 16) | ((g) << 8) | (b))     \
-                  : ((a) << 24) |                                       \
-                    (GFX_PREMULTIPLY(r,a) << 16) |                      \
-                    (GFX_PREMULTIPLY(g,a) << 8) |                       \
-                    (GFX_PREMULTIPLY(b,a))
-
-/** 
- * Macro to pack the 4 8-bit channels (A,R,G,B) 
+/**
+ * Pack the 4 8-bit channels (A,R,G,B)
  * into a 32-bit packed NON-premultiplied pixel.
  */
-#define GFX_PACKED_PIXEL_NO_PREMULTIPLY(a,r,g,b)                        \
-    (((a) << 24) | ((r) << 16) | ((g) << 8) | (b))
+uint32_t MOZ_ALWAYS_INLINE
+gfxPackedPixelNoPreMultiply(uint8_t a, uint8_t r, uint8_t g, uint8_t b) {
+    return (((a) << 24) | ((r) << 16) | ((g) << 8) | (b));
+}
 
+/**
+ * Pack the 4 8-bit channels (A,R,G,B)
+ * into a 32-bit packed premultiplied pixel.
+ */
+uint32_t MOZ_ALWAYS_INLINE
+gfxPackedPixel(uint8_t a, uint8_t r, uint8_t g, uint8_t b) {
+    if (a == 0x00)
+        return 0x00000000;
+    else if (a == 0xFF) {
+        return gfxPackedPixelNoPreMultiply(a, r, g, b);
+    } else {
+        return  ((a) << 24) |
+                (gfxPreMultiply(r,a) << 16) |
+                (gfxPreMultiply(g,a) << 8)  |
+                (gfxPreMultiply(b,a));
+    }
+}
 
 /**
  * A color value, storing red, green, blue and alpha components.
@@ -156,7 +164,7 @@ struct THEBES_API gfxRGBA {
      *
      * @see gfxRGBA::Packed
      */
-    gfxRGBA(PRUint32 c, PackedColorType colorType = PACKED_ABGR) {
+    gfxRGBA(uint32_t c, PackedColorType colorType = PACKED_ABGR) {
         if (colorType == PACKED_ABGR ||
             colorType == PACKED_ABGR_PREMULTIPLIED)
         {
@@ -198,29 +206,29 @@ struct THEBES_API gfxRGBA {
 
     /**
      * Returns this color value as a packed 32-bit integer. This reconstructs
-     * the int32 based on the given colorType, always in the native byte order.
+     * the int32_t based on the given colorType, always in the native byte order.
      *
      * Note: gcc 4.2.3 on at least Ubuntu (x86) does something strange with
-     * (PRUint8)(c * 255.0) << x, where the result is different than
-     * double d = c * 255.0; v = ((PRUint8) d) << x. 
+     * (uint8_t)(c * 255.0) << x, where the result is different than
+     * double d = c * 255.0; v = ((uint8_t) d) << x. 
      */
-    PRUint32 Packed(PackedColorType colorType = PACKED_ABGR) const {
+    uint32_t Packed(PackedColorType colorType = PACKED_ABGR) const {
         gfxFloat rb = (r * 255.0);
         gfxFloat gb = (g * 255.0);
         gfxFloat bb = (b * 255.0);
         gfxFloat ab = (a * 255.0);
 
         if (colorType == PACKED_ABGR) {
-            return (PRUint8(ab) << 24) |
-                   (PRUint8(bb) << 16) |
-                   (PRUint8(gb) << 8) |
-                   (PRUint8(rb) << 0);
+            return (uint8_t(ab) << 24) |
+                   (uint8_t(bb) << 16) |
+                   (uint8_t(gb) << 8) |
+                   (uint8_t(rb) << 0);
         }
         if (colorType == PACKED_ARGB || colorType == PACKED_XRGB) {
-            return (PRUint8(ab) << 24) |
-                   (PRUint8(rb) << 16) |
-                   (PRUint8(gb) << 8) |
-                   (PRUint8(bb) << 0);
+            return (uint8_t(ab) << 24) |
+                   (uint8_t(rb) << 16) |
+                   (uint8_t(gb) << 8) |
+                   (uint8_t(bb) << 0);
         }
 
         rb *= a;
@@ -228,16 +236,16 @@ struct THEBES_API gfxRGBA {
         bb *= a;
 
         if (colorType == PACKED_ABGR_PREMULTIPLIED) {
-            return (((PRUint8)(ab) << 24) |
-                    ((PRUint8)(bb) << 16) |
-                    ((PRUint8)(gb) << 8) |
-                    ((PRUint8)(rb) << 0));
+            return (((uint8_t)(ab) << 24) |
+                    ((uint8_t)(bb) << 16) |
+                    ((uint8_t)(gb) << 8) |
+                    ((uint8_t)(rb) << 0));
         }
         if (colorType == PACKED_ARGB_PREMULTIPLIED) {
-            return (((PRUint8)(ab) << 24) |
-                    ((PRUint8)(rb) << 16) |
-                    ((PRUint8)(gb) << 8) |
-                    ((PRUint8)(bb) << 0));
+            return (((uint8_t)(ab) << 24) |
+                    ((uint8_t)(rb) << 16) |
+                    ((uint8_t)(gb) << 8) |
+                    ((uint8_t)(bb) << 0));
         }
 
         return 0;

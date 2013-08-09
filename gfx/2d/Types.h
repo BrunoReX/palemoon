@@ -7,6 +7,7 @@
 #define MOZILLA_GFX_TYPES_H_
 
 #include "mozilla/StandardInteger.h"
+#include "mozilla/NullPtr.h"
 
 #include <stddef.h>
 
@@ -25,7 +26,8 @@ enum SurfaceType
   SURFACE_COREGRAPHICS_IMAGE, /* Surface wrapping a CoreGraphics Image */
   SURFACE_COREGRAPHICS_CGCONTEXT, /* Surface wrapping a CG context */
   SURFACE_SKIA, /* Surface wrapping a Skia bitmap */
-  SURFACE_DUAL_DT /* Snapshot of a dual drawtarget */
+  SURFACE_DUAL_DT, /* Snapshot of a dual drawtarget */
+  SURFACE_RECORDING /* Surface used for recording */
 };
 
 enum SurfaceFormat
@@ -38,11 +40,13 @@ enum SurfaceFormat
 
 enum BackendType
 {
-  BACKEND_NONE,
+  BACKEND_NONE = 0,
   BACKEND_DIRECT2D,
   BACKEND_COREGRAPHICS,
+  BACKEND_COREGRAPHICS_ACCELERATED,
   BACKEND_CAIRO,
-  BACKEND_SKIA
+  BACKEND_SKIA,
+  BACKEND_RECORDING
 };
 
 enum FontType
@@ -59,7 +63,8 @@ enum NativeSurfaceType
 {
   NATIVE_SURFACE_D3D10_TEXTURE,
   NATIVE_SURFACE_CAIRO_SURFACE,
-  NATIVE_SURFACE_CGCONTEXT
+  NATIVE_SURFACE_CGCONTEXT,
+  NATIVE_SURFACE_CGCONTEXT_ACCELERATED
 };
 
 enum NativeFontType
@@ -82,7 +87,7 @@ enum FontStyle
 enum CompositionOp { OP_OVER, OP_ADD, OP_ATOP, OP_OUT, OP_IN, OP_SOURCE, OP_DEST_IN, OP_DEST_OUT, OP_DEST_OVER, OP_DEST_ATOP, OP_XOR, OP_COUNT };
 enum ExtendMode { EXTEND_CLAMP, EXTEND_REPEAT, EXTEND_REFLECT };
 enum FillRule { FILL_WINDING, FILL_EVEN_ODD };
-enum AntialiasMode { AA_NONE, AA_GRAY, AA_SUBPIXEL };
+enum AntialiasMode { AA_NONE, AA_GRAY, AA_SUBPIXEL, AA_DEFAULT };
 enum Snapping { SNAP_NONE, SNAP_ALIGNED };
 enum Filter { FILTER_LINEAR, FILTER_POINT };
 enum PatternType { PATTERN_COLOR, PATTERN_SURFACE, PATTERN_LINEAR_GRADIENT, PATTERN_RADIAL_GRADIENT };
@@ -114,6 +119,12 @@ public:
     return newColor;
   }
 
+  uint32_t ToABGR() const
+  {
+    return uint32_t(r * 255.0f) | uint32_t(g * 255.0f) << 8 |
+           uint32_t(b * 255.0f) << 16 | uint32_t(a * 255.0f) << 24;
+  }
+
   Float r, g, b, a;
 };
 
@@ -130,7 +141,7 @@ struct GradientStop
 }
 }
 
-#ifdef XP_WIN
+#if defined(XP_WIN) && defined(MOZ_GFX)
 #ifdef GFX2D_INTERNAL
 #define GFX2D_API __declspec(dllexport)
 #else

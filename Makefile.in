@@ -3,7 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= .
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -37,7 +37,6 @@ ifndef LIBXUL_SDK
 ifeq (android,$(MOZ_WIDGET_TOOLKIT))
 tier_base_dirs += \
   other-licenses/android \
-  other-licenses/skia-npapi \
   $(NULL)
 endif
 ifeq (gonk,$(MOZ_WIDGET_TOOLKIT))
@@ -47,8 +46,10 @@ tier_base_dirs += \
 endif
 
 ifdef MOZ_MEMORY
-tier_base_dirs += memory/jemalloc
-tier_base_dirs += memory/build
+tier_base_dirs += memory
+endif
+ifndef MOZ_NATIVE_ZLIB
+tier_base_dirs += modules/zlib
 endif
 tier_base_dirs += \
   mozglue \
@@ -64,7 +65,7 @@ endif
 include $(topsrcdir)/config/config.mk
 
 GARBAGE_DIRS += dist _javagen _profile _tests staticlib
-DIST_GARBAGE = config.cache config.log config.status config-defs.h \
+DIST_GARBAGE = config.cache config.log config.status* config-defs.h \
    config/autoconf.mk \
    unallmakefiles mozilla-config.h \
    netwerk/necko-config.h xpcom/xpcom-config.h xpcom/xpcom-private.h \
@@ -75,7 +76,7 @@ default alldep all:: $(topsrcdir)/configure config.status
 	$(RM) -r $(DIST)/include
 	$(RM) -r $(DIST)/private
 	$(RM) -r $(DIST)/public
-	$(RM) -r $(DIST)/bin/components
+	$(RM) $(DIST)/bin/chrome.manifest $(DIST)/bin/components/components.manifest
 	$(RM) -r _tests
 
 $(topsrcdir)/configure: $(topsrcdir)/configure.in
@@ -149,13 +150,6 @@ SYMBOL_INDEX_NAME = \
 
 buildsymbols:
 ifdef MOZ_CRASHREPORTER
-ifdef USE_ELF_HACK
-    ifeq (mobile,$(MOZ_BUILD_APP))
-		$(MAKE) -C mobile/xul/installer elfhack
-    else
-		$(MAKE) -C $(MOZ_BUILD_APP)/installer elfhack
-    endif
-endif
 	echo building symbol store
 	$(RM) -r $(DIST)/crashreporter-symbols
 	$(RM) "$(DIST)/$(SYMBOL_ARCHIVE_BASENAME).zip"
@@ -166,17 +160,17 @@ endif
 	  $(foreach dir,$(SYM_STORE_SOURCE_DIRS),-s $(dir))               \
 	  $(DUMP_SYMS_BIN)                                                \
 	  $(DIST)/crashreporter-symbols                                   \
-	  $(MAKE_SYM_STORE_PATH) >                                        \
+	  $(MAKE_SYM_STORE_PATH) | grep -iv test >                        \
 	  $(DIST)/crashreporter-symbols/$(SYMBOL_INDEX_NAME)
 	echo packing symbols
 	$(NSINSTALL) -D $(DIST)/$(PKG_PATH)
 	cd $(DIST)/crashreporter-symbols && \
-          zip -r9D "../$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).zip" .
+          zip -r9D "../$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).zip" . -x "*test*" -x "*Test*"
 	cd $(DIST)/crashreporter-symbols && \
 	grep "sym" $(SYMBOL_INDEX_NAME) > $(SYMBOL_INDEX_NAME).tmp && \
 	  mv $(SYMBOL_INDEX_NAME).tmp $(SYMBOL_INDEX_NAME)
 	cd $(DIST)/crashreporter-symbols && \
-          zip -r9D "../$(PKG_PATH)$(SYMBOL_ARCHIVE_BASENAME).zip" . -i "*.sym" -i "*.txt"
+          zip -r9D "../$(PKG_PATH)$(SYMBOL_ARCHIVE_BASENAME).zip" . -i "*.sym" -i "*.txt"  -x "*test*" -x "*Test*"
 endif # MOZ_CRASHREPORTER
 
 uploadsymbols:
@@ -217,3 +211,5 @@ ifeq ($(OS_TARGET)_$(TARGET_XPCOM_ABI),Linux_x86-gcc3)
 scheck::
 	@relcount=`find $(DIST)/bin -name "*.so" | xargs objdump -R | grep R_386_PC32 | wc -l` && if test $$relcount -gt 0; then echo "FAILED: R_386_PC32 relocations detected in a shared library.  Did you use a system header without adding it to config/system-headers?"; exit 1; else echo "PASSED"; fi
 endif
+
+js/src/Makefile: subsrcdir := js/src

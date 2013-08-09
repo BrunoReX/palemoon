@@ -45,6 +45,7 @@
 #include <string>
 #include <sstream>
 #include <list>
+#include <ctime>
 
 #ifdef XP_WIN
 #include <process.h>
@@ -58,19 +59,13 @@
 
 using namespace std;
 
-#define PLUGIN_NAME        "Test Plug-in"
-#define PLUGIN_DESCRIPTION "Plug-in for testing purposes.\xE2\x84\xA2 "          \
-    "(\xe0\xa4\xb9\xe0\xa4\xbf\xe0\xa4\xa8\xe0\xa5\x8d\xe0\xa4\xa6\xe0\xa5\x80 " \
-    "\xe4\xb8\xad\xe6\x96\x87 "                                                  \
-    "\xd8\xa7\xd9\x84\xd8\xb9\xd8\xb1\xd8\xa8\xd9\x8a\xd8\xa9)"
 #define PLUGIN_VERSION     "1.0.0.0"
-
 #define ARRAY_LENGTH(a) (sizeof(a)/sizeof(a[0]))
 #define STATIC_ASSERT(condition)                                \
     extern void np_static_assert(int arg[(condition) ? 1 : -1])
 
-static char sPluginName[] = PLUGIN_NAME; 
-static char sPluginDescription[] = PLUGIN_DESCRIPTION;
+extern const char *sPluginName;
+extern const char *sPluginDescription;
 static char sPluginVersion[] = PLUGIN_VERSION;
 
 //
@@ -130,6 +125,7 @@ static bool getLastMouseY(NPObject* npobj, const NPVariant* args, uint32_t argCo
 static bool getPaintCount(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 static bool getWidthAtLastPaint(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 static bool setInvalidateDuringPaint(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
+static bool setSlowPaint(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 static bool getError(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 static bool doInternalConsistencyCheck(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 static bool setColor(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
@@ -168,6 +164,7 @@ static bool setSitesWithData(NPObject* npobj, const NPVariant* args, uint32_t ar
 static bool setSitesWithDataCapabilities(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 static bool getLastKeyText(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 static bool getNPNVdocumentOrigin(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
+static bool getMouseUpEventCount(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 
 static const NPUTF8* sPluginMethodIdentifierNames[] = {
   "npnEvaluateTest",
@@ -190,6 +187,7 @@ static const NPUTF8* sPluginMethodIdentifierNames[] = {
   "getPaintCount",
   "getWidthAtLastPaint",
   "setInvalidateDuringPaint",
+  "setSlowPaint",
   "getError",
   "doInternalConsistencyCheck",
   "setColor",
@@ -227,7 +225,8 @@ static const NPUTF8* sPluginMethodIdentifierNames[] = {
   "setSitesWithData",
   "setSitesWithDataCapabilities",
   "getLastKeyText",
-  "getNPNVdocumentOrigin"
+  "getNPNVdocumentOrigin",
+  "getMouseUpEventCount"
 };
 static NPIdentifier sPluginMethodIdentifiers[ARRAY_LENGTH(sPluginMethodIdentifierNames)];
 static const ScriptableFunction sPluginMethodFunctions[] = {
@@ -251,6 +250,7 @@ static const ScriptableFunction sPluginMethodFunctions[] = {
   getPaintCount,
   getWidthAtLastPaint,
   setInvalidateDuringPaint,
+  setSlowPaint,
   getError,
   doInternalConsistencyCheck,
   setColor,
@@ -288,7 +288,8 @@ static const ScriptableFunction sPluginMethodFunctions[] = {
   setSitesWithData,
   setSitesWithDataCapabilities,
   getLastKeyText,
-  getNPNVdocumentOrigin
+  getNPNVdocumentOrigin,
+  getMouseUpEventCount
 };
 
 STATIC_ASSERT(ARRAY_LENGTH(sPluginMethodIdentifierNames) ==
@@ -501,6 +502,15 @@ static void sendBufferToFrame(NPP instance)
   }
 }
 
+static void XPSleep(unsigned int seconds)
+{
+#ifdef XP_WIN
+  Sleep(1000 * seconds);
+#else
+  sleep(seconds);
+#endif
+}
+
 TestFunction
 getFuncFromString(const char* funcname)
 {
@@ -545,9 +555,9 @@ drawAsyncBitmapColor(InstanceData* instanceData)
 {
   NPP npp = instanceData->npp;
 
-  PRUint32 *pixelData = (PRUint32*)instanceData->backBuffer->bitmap.data;
+  uint32_t *pixelData = (uint32_t*)instanceData->backBuffer->bitmap.data;
 
-  PRUint32 rgba = instanceData->scriptableObject->drawColor;
+  uint32_t rgba = instanceData->scriptableObject->drawColor;
 
   unsigned char subpixels[4];
   subpixels[0] = rgba & 0xFF;
@@ -555,13 +565,13 @@ drawAsyncBitmapColor(InstanceData* instanceData)
   subpixels[2] = (rgba & 0xFF0000) >> 16;
   subpixels[3] = (rgba & 0xFF000000) >> 24;
 
-  subpixels[0] = PRUint8(float(subpixels[3] * subpixels[0]) / 0xFF);
-  subpixels[1] = PRUint8(float(subpixels[3] * subpixels[1]) / 0xFF);
-  subpixels[2] = PRUint8(float(subpixels[3] * subpixels[2]) / 0xFF);
-  PRUint32 premultiplied;
+  subpixels[0] = uint8_t(float(subpixels[3] * subpixels[0]) / 0xFF);
+  subpixels[1] = uint8_t(float(subpixels[3] * subpixels[1]) / 0xFF);
+  subpixels[2] = uint8_t(float(subpixels[3] * subpixels[2]) / 0xFF);
+  uint32_t premultiplied;
   memcpy(&premultiplied, subpixels, sizeof(premultiplied));
 
-  for (PRUint32* lastPixel = pixelData + instanceData->backBuffer->size.width * instanceData->backBuffer->size.height;
+  for (uint32_t* lastPixel = pixelData + instanceData->backBuffer->size.width * instanceData->backBuffer->size.height;
 	pixelData < lastPixel;
 	++pixelData) {
     *pixelData = premultiplied;
@@ -602,7 +612,7 @@ NP_GetPluginVersion()
 }
 #endif
 
-static char sMimeDescription[] = "application/x-test:tst:Test mimetype";
+extern const char *sMimeDescription;
 
 #if defined(XP_UNIX)
 NP_EXPORT(const char*) NP_GetMIMEDescription()
@@ -618,10 +628,10 @@ NP_EXPORT(NPError)
 NP_GetValue(void* future, NPPVariable aVariable, void* aValue) {
   switch (aVariable) {
     case NPPVpluginNameString:
-      *((char**)aValue) = sPluginName;
+      *((const char**)aValue) = sPluginName;
       break;
     case NPPVpluginDescriptionString:
-      *((char**)aValue) = sPluginDescription;
+      *((const char**)aValue) = sPluginDescription;
       break;
     default:
       return NPERR_INVALID_PARAM;
@@ -767,6 +777,7 @@ NPP_New(NPMIMEType pluginType, NPP instance, uint16_t mode, int16_t argc, char* 
   instanceData->hasWidget = false;
   instanceData->npnNewStream = false;
   instanceData->invalidateDuringPaint = false;
+  instanceData->slowPaint = false;
   instanceData->writeCount = 0;
   instanceData->writeReadyCount = 0;
   memset(&instanceData->window, 0, sizeof(instanceData->window));
@@ -782,6 +793,7 @@ NPP_New(NPMIMEType pluginType, NPP instance, uint16_t mode, int16_t argc, char* 
   instanceData->asyncDrawing = AD_NONE;
   instanceData->frontBuffer = NULL;
   instanceData->backBuffer = NULL;
+  instanceData->mouseUpEventCount = 0;
   instance->pdata = instanceData;
 
   TestNPObject* scriptableObject = (TestNPObject*)NPN_CreateObject(instance, &sNPClass);
@@ -1082,8 +1094,10 @@ NPP_SetWindow(NPP instance, NPWindow* window)
 
   if (instanceData->asyncDrawing == AD_BITMAP) {
     if (instanceData->frontBuffer &&
-        instanceData->frontBuffer->size.width == window->width &&
-        instanceData->frontBuffer->size.height == window->height) {
+	instanceData->frontBuffer->size.width >= 0 &&
+       (uint32_t)instanceData->frontBuffer->size.width == window->width &&
+       instanceData ->frontBuffer->size.height >= 0 &&
+       (uint32_t)instanceData->frontBuffer->size.height == window->height) {
           return NPERR_NO_ERROR;
     }
     if (instanceData->frontBuffer) {
@@ -1959,7 +1973,7 @@ scriptableInvokeDefault(NPObject* npobj, const NPVariant* args, uint32_t argCoun
   }
 
   ostringstream value;
-  value << PLUGIN_NAME;
+  value << sPluginName;
   for (uint32_t i = 0; i < argCount; i++) {
     switch(args[i].type) {
       case NPVariantType_Int32:
@@ -2489,6 +2503,22 @@ setInvalidateDuringPaint(NPObject* npobj, const NPVariant* args, uint32_t argCou
 }
 
 static bool
+setSlowPaint(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result)
+{
+  if (argCount != 1)
+    return false;
+
+  if (!NPVARIANT_IS_BOOLEAN(args[0]))
+    return false;
+  bool slow = NPVARIANT_TO_BOOLEAN(args[0]);
+
+  NPP npp = static_cast<TestNPObject*>(npobj)->npp;
+  InstanceData* id = static_cast<InstanceData*>(npp->pdata);
+  id->slowPaint = slow;
+  return true;
+}
+
+static bool
 getError(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result)
 {
   if (argCount != 0)
@@ -2775,6 +2805,10 @@ void notifyDidPaint(InstanceData* instanceData)
     r.right = instanceData->window.width;
     r.bottom = instanceData->window.height;
     NPN_InvalidateRect(instanceData->npp, &r);
+  }
+
+  if (instanceData->slowPaint) {
+    XPSleep(1);
   }
 
   if (instanceData->runScriptOnPaint) {
@@ -3165,11 +3199,7 @@ FinishGCRace(void* closure)
 {
   GCRaceData* rd = static_cast<GCRaceData*>(closure);
 
-#ifdef XP_WIN
-  Sleep(5000);
-#else
-  sleep(5);
-#endif
+  XPSleep(5);
 
   NPVariant arg;
   OBJECT_TO_NPVARIANT(rd->localFunc_, arg);
@@ -3209,11 +3239,29 @@ hangPlugin(NPObject* npobj, const NPVariant* args, uint32_t argCount,
 {
   mozilla::NoteIntentionalCrash("plugin");
 
+  bool busyHang = false;
+  if ((argCount == 1) && NPVARIANT_IS_BOOLEAN(args[0])) {
+    busyHang = NPVARIANT_TO_BOOLEAN(args[0]);
+  }
+
+  if (busyHang) {    
+    const time_t start = std::time(NULL);
+    while ((std::time(NULL) - start) < 100000) {
+      volatile int dummy = 0;
+      for (int i=0; i<1000; ++i) {
+        dummy++;
+      }
+    }
+  } else {
 #ifdef XP_WIN
   Sleep(100000000);
+    Sleep(100000000);
 #else
   pause();
+    pause();
 #endif
+  }
+
   // NB: returning true here means that we weren't terminated, and
   // thus the hang detection/handling didn't work correctly.  The
   // test harness will succeed in calling this function, and the
@@ -3221,7 +3269,7 @@ hangPlugin(NPObject* npobj, const NPVariant* args, uint32_t argCount,
   return true;
 }
 
-#if defined(MOZ_WIDGET_GTK2)
+#if defined(MOZ_WIDGET_GTK)
 bool
 getClipboardText(NPObject* npobj, const NPVariant* args, uint32_t argCount,
                  NPVariant* result)
@@ -3230,7 +3278,7 @@ getClipboardText(NPObject* npobj, const NPVariant* args, uint32_t argCount,
   InstanceData* id = static_cast<InstanceData*>(npp->pdata);
   string sel = pluginGetClipboardText(id);
 
-  uint32 len = sel.size();
+  uint32_t len = sel.size();
   char* selCopy = static_cast<char*>(NPN_MemAlloc(1 + len));
   if (!selCopy)
     return false;
@@ -3575,10 +3623,10 @@ bool setSitesWithData(NPObject* npobj, const NPVariant* args, uint32_t argCount,
 
     // Parse out the three tokens into a siteData struct.
     const char* siteEnd = strchr(iterator, ':');
-    *((char*) siteEnd) = NULL;
+    *((char*) siteEnd) = '\0';
     const char* flagsEnd = strchr(siteEnd + 1, ':');
-    *((char*) flagsEnd) = NULL;
-    *((char*) next) = NULL;
+    *((char*) flagsEnd) = '\0';
+    *((char*) next) = '\0';
     
     siteData data;
     data.site = string(iterator);
@@ -3634,5 +3682,17 @@ bool getNPNVdocumentOrigin(NPObject* npobj, const NPVariant* args, uint32_t argC
   }
 
   STRINGZ_TO_NPVARIANT(origin, *result);
+  return true;
+}
+
+bool getMouseUpEventCount(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result)
+{
+  if (argCount != 0) {
+    return false;
+  }
+  
+  NPP npp = static_cast<TestNPObject*>(npobj)->npp;
+  InstanceData* id = static_cast<InstanceData*>(npp->pdata);
+  INT32_TO_NPVARIANT(id->mouseUpEventCount, *result);
   return true;
 }

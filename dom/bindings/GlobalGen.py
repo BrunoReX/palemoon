@@ -39,11 +39,7 @@ def main():
                  help="Directory in which to cache lex/parse tables.")
     o.add_option("--verbose-errors", action='store_true', default=False,
                  help="When an error happens, display the Python traceback.")
-    o.add_option("--use-jsop-accessors", action='store_true', default=False,
-                 dest='useJSOPAccessors',
-                 help="Use JSPropertyOps instead of JSNatives for getters and setters")
     (options, args) = o.parse_args()
-    Codegen.generateNativeAccessors = not options.useJSOPAccessors
 
     if len(args) < 2:
         o.error(usageString)
@@ -76,6 +72,10 @@ def main():
     # Generate the common code.
     generate_file(config, 'RegisterBindings', 'declare')
     generate_file(config, 'RegisterBindings', 'define')
+
+    generate_file(config, 'UnionTypes', 'declare')
+    generate_file(config, 'UnionTypes', 'define')
+    generate_file(config, 'UnionConversions', 'declare')
 
 if __name__ == '__main__':
     main()

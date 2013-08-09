@@ -2,34 +2,39 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "VolumeManager.h"
+
+#include "Volume.h"
+#include "VolumeCommand.h"
+#include "VolumeManagerLog.h"
+#include "VolumeServiceTest.h"
+
+#include "nsWhitespaceTokenizer.h"
+#include "nsXULAppAPI.h"
+
+#include "base/message_loop.h"
+#include "mozilla/Scoped.h"
+#include "mozilla/StaticPtr.h"
+
 #include <android/log.h>
 #include <cutils/sockets.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 
-#include "base/message_loop.h"
-#include "nsWhitespaceTokenizer.h"
-#include "nsXULAppAPI.h"
-
-#include "Volume.h"
-#include "VolumeCommand.h"
-#include "VolumeManager.h"
-#include "VolumeManagerLog.h"
-
-//using namespace mozilla::dom::gonk;
-
 namespace mozilla {
 namespace system {
 
-static RefPtr<VolumeManager> sVolumeManager;
+static StaticRefPtr<VolumeManager> sVolumeManager;
+
+VolumeManager::STATE VolumeManager::mState = VolumeManager::UNINITIALIZED;
+VolumeManager::StateObserverList VolumeManager::mStateObserverList;
 
 /***************************************************************************/
 
 VolumeManager::VolumeManager()
-  : mState(VolumeManager::STARTING),
+  : LineWatcher('\0', kRcvBufSize),
     mSocket(-1),
-    mCommandPending(false),
-    mRcvIdx(0)
+    mCommandPending(false)
 {
   DBG("VolumeManager constructor called");
 }
@@ -39,20 +44,35 @@ VolumeManager::~VolumeManager()
 }
 
 //static
+size_t
+VolumeManager::NumVolumes()
+{
+  if (!sVolumeManager) {
+    return 0;
+  }
+  return sVolumeManager->mVolumeArray.Length();
+}
+
+//static
+TemporaryRef<Volume>
+VolumeManager::GetVolume(size_t aIndex)
+{
+  MOZ_ASSERT(aIndex < NumVolumes());
+  return sVolumeManager->mVolumeArray[aIndex];
+}
+
+//static
 VolumeManager::STATE
 VolumeManager::State()
 {
-  if (!sVolumeManager) {
-    return VolumeManager::UNINITIALIZED;
-  }
-  return sVolumeManager->mState;
+  return mState;
 }
 
 //static
 const char *
-VolumeManager::StateStr()
+VolumeManager::StateStr(VolumeManager::STATE aState)
 {
-  switch (State()) {
+  switch (aState) {
     case UNINITIALIZED: return "Uninitialized";
     case STARTING:      return "Starting";
     case VOLUMES_READY: return "Volumes Ready";
@@ -65,12 +85,11 @@ VolumeManager::StateStr()
 void
 VolumeManager::SetState(STATE aNewState)
 {
-  if (!sVolumeManager) {
-    return;
-  }
-  if (sVolumeManager->mState != aNewState) {
-    sVolumeManager->mState = aNewState;
-    sVolumeManager->mStateObserverList.Broadcast(StateChangedEvent());
+  if (mState != aNewState) {
+    LOG("changing state from '%s' to '%s'",
+        StateStr(mState), StateStr(aNewState));
+    mState = aNewState;
+    mStateObserverList.Broadcast(StateChangedEvent());
   }
 }
 
@@ -78,13 +97,13 @@ VolumeManager::SetState(STATE aNewState)
 void
 VolumeManager::RegisterStateObserver(StateObserver *aObserver)
 {
-  sVolumeManager->mStateObserverList.AddObserver(aObserver);
+  mStateObserverList.AddObserver(aObserver);
 }
 
 //static
 void VolumeManager::UnregisterStateObserver(StateObserver *aObserver)
 {
-  sVolumeManager->mStateObserverList.RemoveObserver(aObserver);
+  mStateObserverList.RemoveObserver(aObserver);
 }
 
 //static
@@ -94,11 +113,12 @@ VolumeManager::FindVolumeByName(const nsCSubstring &aName)
   if (!sVolumeManager) {
     return NULL;
   }
-  for (VolumeArray::iterator volIter = sVolumeManager->mVolumeArray.begin();
-       volIter != sVolumeManager->mVolumeArray.end();
-       volIter++) {
-    if ((*volIter)->Name().Equals(aName)) {
-      return *volIter;
+  VolumeArray::size_type  numVolumes = NumVolumes();
+  VolumeArray::index_type volIndex;
+  for (volIndex = 0; volIndex < numVolumes; volIndex++) {
+    RefPtr<Volume> vol = GetVolume(volIndex);
+    if (vol->Name().Equals(aName)) {
+      return vol;
     }
   }
   return NULL;
@@ -114,7 +134,7 @@ VolumeManager::FindAddVolumeByName(const nsCSubstring &aName)
   }
   // No volume found, create and add a new one.
   vol = new Volume(aName);
-  sVolumeManager->mVolumeArray.push_back(vol);
+  sVolumeManager->mVolumeArray.AppendElement(vol);
   return vol;
 }
 
@@ -132,12 +152,8 @@ class VolumeListCallback : public VolumeResponseCallback
         // we have of the same name, or add new ones if they don't exist.
         nsCWhitespaceTokenizer tokenizer(ResponseStr());
         nsDependentCSubstring volName(tokenizer.nextToken());
-        nsDependentCSubstring mntPoint(tokenizer.nextToken());
-        nsCString state(tokenizer.nextToken());
         RefPtr<Volume> vol = VolumeManager::FindAddVolumeByName(volName);
-        vol->SetMountPoint(mntPoint);
-        PRInt32 errCode;
-        vol->SetState((Volume::STATE)state.ToInteger(&errCode));
+        vol->HandleVoldResponse(ResponseCode(), tokenizer);
         break;
       }
 
@@ -256,75 +272,37 @@ VolumeManager::WriteCommandData()
 }
 
 void
-VolumeManager::OnFileCanReadWithoutBlocking(int aFd)
+VolumeManager::OnLineRead(int aFd, nsDependentCSubstring& aMessage)
 {
   MOZ_ASSERT(aFd == mSocket.get());
-  while (true) {
-    ssize_t bytesRemaining = read(aFd, &mRcvBuf[mRcvIdx], sizeof(mRcvBuf) - mRcvIdx);
-    if (bytesRemaining < 0) {
-      if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
-        return;
-      }
-      if (errno == EINTR) {
-        continue;
-      }
-      ERR("Unknown read error: %d (%s) - restarting", errno, strerror(errno));
-      Restart();
-      return;
-    }
-    if (bytesRemaining == 0) {
-      // This means that vold probably crashed
-      ERR("Vold appears to have crashed - restarting");
-      Restart();
-      return;
-    }
-    // We got some data. Each line is terminated by a null character
-    DBG("Read %ld bytes", bytesRemaining);
-    while (bytesRemaining > 0) {
-      bytesRemaining--;
-      if (mRcvBuf[mRcvIdx] == '\0') {
-        // We found a line terminator. Each line is formatted as an
-        // integer response code followed by the rest of the line.
-        // Fish out the response code.
-        char *endPtr;
-        int responseCode = strtol(mRcvBuf, &endPtr, 10);
-        if (*endPtr == ' ') {
-          endPtr++;
-        }
+  char *endPtr;
+  int responseCode = strtol(aMessage.Data(), &endPtr, 10);
+  if (*endPtr == ' ') {
+    endPtr++;
+  }
 
-        // Now fish out the rest of the line after the response code
-        nsDependentCString  responseLine(endPtr, &mRcvBuf[mRcvIdx] - endPtr);
-        DBG("Rcvd: %d '%s'", responseCode, responseLine.Data());
+  // Now fish out the rest of the line after the response code
+  nsDependentCString  responseLine(endPtr, aMessage.Length() - (endPtr - aMessage.Data()));
+  DBG("Rcvd: %d '%s'", responseCode, responseLine.Data());
 
-        if (responseCode >= ResponseCode::UnsolicitedInformational) {
-          // These are unsolicited broadcasts. We intercept these and process
-          // them ourselves
-          HandleBroadcast(responseCode, responseLine);
-        } else {
-          // Everything else is considered to be part of the command response.
-          if (mCommands.size() > 0) {
-            VolumeCommand *cmd = mCommands.front();
-            cmd->HandleResponse(responseCode, responseLine);
-            if (responseCode >= ResponseCode::CommandOkay) {
-              // That's a terminating response. We can remove the command.
-              mCommands.pop();
-              mCommandPending = false;
-              // Start the next command, if there is one.
-              WriteCommandData();
-            }
-          } else {
-            ERR("Response with no command");
-          }
-        }
-        if (bytesRemaining > 0) {
-          // There is data in the receive buffer beyond the current line.
-          // Shift it down to the beginning.
-          memmove(&mRcvBuf[0], &mRcvBuf[mRcvIdx + 1], bytesRemaining);
-        }
-        mRcvIdx = 0;
-      } else {
-        mRcvIdx++;
+  if (responseCode >= ResponseCode::UnsolicitedInformational) {
+    // These are unsolicited broadcasts. We intercept these and process
+    // them ourselves
+    HandleBroadcast(responseCode, responseLine);
+  } else {
+    // Everything else is considered to be part of the command response.
+    if (mCommands.size() > 0) {
+      VolumeCommand *cmd = mCommands.front();
+      cmd->HandleResponse(responseCode, responseLine);
+      if (responseCode >= ResponseCode::CommandOkay) {
+        // That's a terminating response. We can remove the command.
+        mCommands.pop();
+        mCommandPending = false;
+        // Start the next command, if there is one.
+        WriteCommandData();
       }
+    } else {
+      ERR("Response with no command");
     }
   }
 }
@@ -339,9 +317,6 @@ VolumeManager::OnFileCanWriteWithoutBlocking(int aFd)
 void
 VolumeManager::HandleBroadcast(int aResponseCode, nsCString &aResponseLine)
 {
-  if (aResponseCode != ResponseCode::VolumeStateChange) {
-    return;
-  }
   // Format of the line is something like:
   //
   //  Volume sdcard /mnt/sdcard state changed from 7 (Shared-Unmounted) to 1 (Idle-Unmounted)
@@ -355,14 +330,7 @@ VolumeManager::HandleBroadcast(int aResponseCode, nsCString &aResponseLine)
   if (!vol) {
     return;
   }
-
-  const char *s = strstr(aResponseLine.get(), " to ");
-
-  if (!s) {
-    return;
-  }
-  s += 4;
-  vol->SetState((Volume::STATE)atoi(s));
+  vol->HandleVoldResponse(aResponseCode, tokenizer);
 }
 
 void
@@ -376,7 +344,6 @@ VolumeManager::Restart()
   }
   mCommandPending = false;
   mSocket.dispose();
-  mRcvIdx = 0;
   Start();
 }
 
@@ -389,6 +356,7 @@ VolumeManager::Start()
   if (!sVolumeManager) {
     return;
   }
+  SetState(STARTING);
   if (!sVolumeManager->OpenSocket()) {
     // Socket open failed, try again in a second.
     MessageLoopForIO::current()->
@@ -396,6 +364,12 @@ VolumeManager::Start()
                       NewRunnableFunction(VolumeManager::Start),
                       1000);
   }
+}
+
+void
+VolumeManager::OnError()
+{
+  Restart();
 }
 
 /***************************************************************************/
@@ -408,6 +382,8 @@ InitVolumeManagerIOThread()
 
   sVolumeManager = new VolumeManager();
   VolumeManager::Start();
+
+  InitVolumeServiceTestIOThread();
 }
 
 static void
@@ -438,6 +414,8 @@ InitVolumeManager()
 void
 ShutdownVolumeManager()
 {
+  ShutdownVolumeServiceTest();
+
   XRE_GetIOMessageLoop()->PostTask(
       FROM_HERE,
       NewRunnableFunction(ShutdownVolumeManagerIOThread));
@@ -445,4 +423,3 @@ ShutdownVolumeManager()
 
 } // system
 } // mozilla
-

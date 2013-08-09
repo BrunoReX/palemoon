@@ -34,6 +34,7 @@ class nsPluginStreamListenerPeer; // browser-initiated stream class
 class nsNPAPIPluginStreamListener; // plugin-initiated stream class
 class nsIPluginInstanceOwner;
 class nsIOutputStream;
+class nsPluginInstanceOwner;
 
 #if defined(OS_WIN)
 const NPDrawingModel kDefaultDrawingModel = NPDrawingModelSyncWin;
@@ -41,7 +42,7 @@ const NPDrawingModel kDefaultDrawingModel = NPDrawingModelSyncWin;
 const NPDrawingModel kDefaultDrawingModel = NPDrawingModelSyncX;
 #elif defined(XP_MACOSX)
 #ifndef NP_NO_QUICKDRAW
-const NPDrawingModel kDefaultDrawingModel = NPDrawingModelQuickDraw;
+const NPDrawingModel kDefaultDrawingModel = NPDrawingModelQuickDraw; // Not supported
 #else
 const NPDrawingModel kDefaultDrawingModel = NPDrawingModelCoreGraphics;
 #endif
@@ -57,6 +58,7 @@ public:
   nsCOMPtr<nsITimer> timer;
   void (*callback)(NPP npp, uint32_t timerID);
   bool inCallback;
+  bool needUnschedule;
 };
 
 class nsNPAPIPluginInstance : public nsISupports
@@ -67,25 +69,25 @@ private:
 public:
   NS_DECL_ISUPPORTS
 
-  nsresult Initialize(nsNPAPIPlugin *aPlugin, nsIPluginInstanceOwner* aOwner, const char* aMIMEType);
+  nsresult Initialize(nsNPAPIPlugin *aPlugin, nsPluginInstanceOwner* aOwner, const char* aMIMEType);
   nsresult Start();
   nsresult Stop();
   nsresult SetWindow(NPWindow* window);
   nsresult NewStreamFromPlugin(const char* type, const char* target, nsIOutputStream* *result);
   nsresult Print(NPPrint* platformPrint);
-  nsresult HandleEvent(void* event, PRInt16* result);
+  nsresult HandleEvent(void* event, int16_t* result);
   nsresult GetValueFromPlugin(NPPVariable variable, void* value);
-  nsresult GetDrawingModel(PRInt32* aModel);
+  nsresult GetDrawingModel(int32_t* aModel);
   nsresult IsRemoteDrawingCoreAnimation(bool* aDrawing);
+  nsresult ContentsScaleFactorChanged(double aContentsScaleFactor);
   nsresult GetJSObject(JSContext *cx, JSObject** outObject);
-  nsresult DefineJavaProperties();
   bool ShouldCache();
   nsresult IsWindowless(bool* isWindowless);
   nsresult AsyncSetWindow(NPWindow* window);
-  nsresult GetImageContainer(ImageContainer **aContainer);
+  nsresult GetImageContainer(mozilla::layers::ImageContainer **aContainer);
   nsresult GetImageSize(nsIntSize* aSize);
   nsresult NotifyPainted(void);
-  nsresult UseAsyncPainting(bool* aIsAsync);
+  nsresult GetIsOOP(bool* aIsOOP);
   nsresult SetBackgroundUnknown();
   nsresult BeginUpdateBackground(nsIntRect* aRect, gfxContext** aContext);
   nsresult EndUpdateBackground(gfxContext* aContext, nsIntRect* aRect);
@@ -93,15 +95,14 @@ public:
   nsresult GetFormValue(nsAString& aValue);
   nsresult PushPopupsEnabledState(bool aEnabled);
   nsresult PopPopupsEnabledState();
-  nsresult GetPluginAPIVersion(PRUint16* version);
+  nsresult GetPluginAPIVersion(uint16_t* version);
   nsresult InvalidateRect(NPRect *invalidRect);
   nsresult InvalidateRegion(NPRegion invalidRegion);
   nsresult GetMIMEType(const char* *result);
   nsresult GetJSContext(JSContext* *outContext);
-  nsresult GetOwner(nsIPluginInstanceOwner **aOwner);
-  nsresult SetOwner(nsIPluginInstanceOwner *aOwner);
+  nsPluginInstanceOwner* GetOwner();
+  void SetOwner(nsPluginInstanceOwner *aOwner);
   nsresult ShowStatus(const char* message);
-  nsresult InvalidateOwner();
 #if defined(MOZ_WIDGET_QT) && (MOZ_PLATFORM_MAEMO == 6)
   nsresult HandleGUIEvent(const nsGUIEvent& anEvent, bool* handled);
 #endif
@@ -132,13 +133,14 @@ public:
   void NotifyFullScreen(bool aFullScreen);
   void NotifySize(nsIntSize size);
 
+  nsIntSize CurrentSize() { return mCurrentSize; }
+
   bool IsOnScreen() {
     return mOnScreen;
   }
 
-  PRUint32 GetANPDrawingModel() { return mANPDrawingModel; }
-  void SetANPDrawingModel(PRUint32 aModel);
-
+  uint32_t GetANPDrawingModel() { return mANPDrawingModel; }
+  void SetANPDrawingModel(uint32_t aModel);
 
   void* GetJavaSurface();
 
@@ -146,8 +148,8 @@ public:
 
   // These are really mozilla::dom::ScreenOrientation, but it's
   // difficult to include that here
-  PRUint32 FullScreenOrientation() { return mFullScreenOrientation; }
-  void SetFullScreenOrientation(PRUint32 orientation);
+  uint32_t FullScreenOrientation() { return mFullScreenOrientation; }
+  void SetFullScreenOrientation(uint32_t orientation);
 
   void SetWakeLock(bool aLock);
 
@@ -161,14 +163,14 @@ public:
     {
     }
 
-    TextureInfo(GLuint aTexture, PRInt32 aWidth, PRInt32 aHeight, GLuint aInternalFormat) :
+    TextureInfo(GLuint aTexture, int32_t aWidth, int32_t aHeight, GLuint aInternalFormat) :
       mTexture(aTexture), mWidth(aWidth), mHeight(aHeight), mInternalFormat(aInternalFormat)
     {
     }
 
     GLuint mTexture;
-    PRInt32 mWidth;
-    PRInt32 mHeight;
+    int32_t mWidth;
+    int32_t mHeight;
     GLuint mInternalFormat;
   };
 
@@ -190,7 +192,7 @@ public:
 
     ~VideoInfo()
     {
-      mSurfaceTexture = nsnull;
+      mSurfaceTexture = nullptr;
     }
 
     nsRefPtr<nsSurfaceTexture> mSurfaceTexture;
@@ -205,6 +207,8 @@ public:
 
   void SetInverted(bool aInverted);
   bool Inverted() { return mInverted; }
+
+  static nsNPAPIPluginInstance* GetFromNPP(NPP npp);
 #endif
 
   nsresult NewStreamListener(const char* aURL, void* notifyData,
@@ -234,7 +238,7 @@ public:
   mozilla::TimeStamp StopTime();
 
   // cache this NPAPI plugin
-  nsresult SetCached(bool aCache);
+  void SetCached(bool aCache);
 
   already_AddRefed<nsPIDOMWindow> GetDOMWindow();
 
@@ -242,7 +246,7 @@ public:
 
   nsresult GetDOMElement(nsIDOMElement* *result);
 
-  nsNPAPITimer* TimerWithID(uint32_t id, PRUint32* index);
+  nsNPAPITimer* TimerWithID(uint32_t id, uint32_t* index);
   uint32_t      ScheduleTimer(uint32_t interval, NPBool repeat, void (*timerFunc)(NPP npp, uint32_t timerID));
   void          UnscheduleTimer(uint32_t timerID);
   NPError       PopUpContextMenu(NPMenu* menu);
@@ -266,14 +270,30 @@ public:
   // event model is not supported.
   void CarbonNPAPIFailure();
 
+  // Returns the contents scale factor of the screen the plugin is drawn on.
+  double GetContentsScaleFactor();
+
+  static bool InPluginCall() { return gInPluginCalls > 0; }
+  static void BeginPluginCall() { ++gInPluginCalls; }
+  static void EndPluginCall()
+  {
+    NS_ASSERTION(InPluginCall(), "Must be in plugin call");
+    --gInPluginCalls;
+  }
+
 protected:
 
   nsresult GetTagType(nsPluginTagType *result);
-  nsresult GetAttributes(PRUint16& n, const char*const*& names,
+  nsresult GetAttributes(uint16_t& n, const char*const*& names,
                          const char*const*& values);
-  nsresult GetParameters(PRUint16& n, const char*const*& names,
+  nsresult GetParameters(uint16_t& n, const char*const*& names,
                          const char*const*& values);
-  nsresult GetMode(PRInt32 *result);
+  nsresult GetMode(int32_t *result);
+
+  // check if this is a Java applet and affected by bug 750480
+  void CheckJavaC2PJSObjectQuirk(uint16_t paramCount,
+                                 const char* const* names,
+                                 const char* const* values);
 
   // The structure used to communicate between the plugin instance and
   // the browser.
@@ -282,7 +302,7 @@ protected:
   NPDrawingModel mDrawingModel;
 
 #ifdef MOZ_WIDGET_ANDROID
-  PRUint32 mANPDrawingModel;
+  uint32_t mANPDrawingModel;
 
   friend class PluginEventRunnable;
 
@@ -290,7 +310,7 @@ protected:
   void PopPostedEvent(PluginEventRunnable* r);
   void OnSurfaceTextureFrameAvailable();
 
-  PRUint32 mFullScreenOrientation;
+  uint32_t mFullScreenOrientation;
   bool mWakeLocked;
   bool mFullScreen;
   bool mInverted;
@@ -332,7 +352,7 @@ private:
 
   // Weak pointer to the owner. The owner nulls this out (by calling
   // InvalidateOwner()) when it's no longer our owner.
-  nsIPluginInstanceOwner *mOwner;
+  nsPluginInstanceOwner *mOwner;
 
   nsTArray<nsNPAPITimer*> mTimers;
 
@@ -343,7 +363,6 @@ private:
   // This is only valid when the plugin is actually stopped!
   mozilla::TimeStamp mStopTime;
 
-  bool mUsePluginLayersPref;
 #ifdef MOZ_WIDGET_ANDROID
   void EnsureSharedTexture();
   nsSurfaceTexture* CreateSurfaceTexture();
@@ -353,6 +372,11 @@ private:
 
   nsIntSize mCurrentSize;
 #endif
+
+  // is this instance Java and affected by bug 750480?
+  bool mHaveJavaC2PJSObjectQuirk;
+
+  static uint32_t gInPluginCalls;
 };
 
 #endif // nsNPAPIPluginInstance_h_

@@ -8,13 +8,15 @@
 
 #include "MediaSegment.h"
 #include "nsISupportsImpl.h"
-#include "nsAudioStream.h"
+#include "AudioSampleFormat.h"
 #include "SharedBuffer.h"
 
 namespace mozilla {
 
+class AudioStream;
+
 struct AudioChunk {
-  typedef nsAudioStream::SampleFormat SampleFormat;
+  typedef mozilla::AudioSampleFormat SampleFormat;
 
   // Generic methods
   void SliceTo(TrackTicks aStart, TrackTicks aEnd)
@@ -22,7 +24,7 @@ struct AudioChunk {
     NS_ASSERTION(aStart >= 0 && aStart < aEnd && aEnd <= mDuration,
                  "Slice out of bounds");
     if (mBuffer) {
-      mOffset += PRInt32(aStart);
+      mOffset += int32_t(aStart);
     }
     mDuration = aEnd - aStart;
   }
@@ -39,10 +41,10 @@ struct AudioChunk {
     }
     return true;
   }
-  bool IsNull() const { return mBuffer == nsnull; }
+  bool IsNull() const { return mBuffer == nullptr; }
   void SetNull(TrackTicks aDuration)
   {
-    mBuffer = nsnull;
+    mBuffer = nullptr;
     mDuration = aDuration;
     mOffset = 0;
     mVolume = 1.0f;
@@ -50,9 +52,9 @@ struct AudioChunk {
 
   TrackTicks mDuration;           // in frames within the buffer
   nsRefPtr<SharedBuffer> mBuffer; // null means data is all zeroes
-  PRInt32 mBufferLength;          // number of frames in mBuffer (only meaningful if mBuffer is nonnull)
+  int32_t mBufferLength;          // number of frames in mBuffer (only meaningful if mBuffer is nonnull)
   SampleFormat mBufferFormat;     // format of frames in mBuffer (only meaningful if mBuffer is nonnull)
-  PRInt32 mOffset;                // in frames within the buffer (zero if mBuffer is null)
+  int32_t mOffset;                // in frames within the buffer (zero if mBuffer is null)
   float mVolume;                  // volume multiplier to apply (1.0f if mBuffer is nonnull)
 };
 
@@ -62,18 +64,7 @@ struct AudioChunk {
  */
 class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
 public:
-  typedef nsAudioStream::SampleFormat SampleFormat;
-
-  static int GetSampleSize(SampleFormat aFormat)
-  {
-    switch (aFormat) {
-    case nsAudioStream::FORMAT_U8: return 1;
-    case nsAudioStream::FORMAT_S16_LE: return 2;
-    case nsAudioStream::FORMAT_FLOAT32: return 4;
-    }
-    NS_ERROR("Bad format");
-    return 0;
-  }
+  typedef mozilla::AudioSampleFormat SampleFormat;
 
   AudioSegment() : MediaSegmentBase<AudioSegment, AudioChunk>(AUDIO), mChannels(0) {}
 
@@ -81,32 +72,19 @@ public:
   {
     return mChannels > 0;
   }
-  void Init(PRInt32 aChannels)
+  void Init(int32_t aChannels)
   {
     NS_ASSERTION(aChannels > 0, "Bad number of channels");
     NS_ASSERTION(!IsInitialized(), "Already initialized");
     mChannels = aChannels;
   }
-  PRInt32 GetChannels()
+  int32_t GetChannels()
   {
     NS_ASSERTION(IsInitialized(), "Not initialized");
     return mChannels;
   }
-  /**
-   * Returns the format of the first audio frame that has data, or
-   * FORMAT_FLOAT32 if there is none.
-   */
-  SampleFormat GetFirstFrameFormat()
-  {
-    for (ChunkIterator ci(*this); !ci.IsEnded(); ci.Next()) {
-      if (ci->mBuffer) {
-        return ci->mBufferFormat;
-      }
-    }
-    return nsAudioStream::FORMAT_FLOAT32;
-  }
-  void AppendFrames(already_AddRefed<SharedBuffer> aBuffer, PRInt32 aBufferLength,
-                    PRInt32 aStart, PRInt32 aEnd, SampleFormat aFormat)
+  void AppendFrames(already_AddRefed<SharedBuffer> aBuffer, int32_t aBufferLength,
+                    int32_t aStart, int32_t aEnd, SampleFormat aFormat)
   {
     NS_ASSERTION(mChannels > 0, "Not initialized");
     AudioChunk* chunk = AppendChunk(aEnd - aStart);
@@ -121,14 +99,7 @@ public:
    * aOutput must have a matching number of channels, but we will automatically
    * convert sample formats.
    */
-  void WriteTo(nsAudioStream* aOutput);
-
-  using MediaSegmentBase<AudioSegment, AudioChunk>::AppendFrom;
-  void AppendFrom(AudioSegment* aSource)
-  {
-    NS_ASSERTION(aSource->mChannels == mChannels, "Non-matching channels");
-    MediaSegmentBase<AudioSegment, AudioChunk>::AppendFrom(aSource);
-  }
+  void WriteTo(AudioStream* aOutput);
 
   // Segment-generic methods not in MediaSegmentBase
   void InitFrom(const AudioSegment& aOther)
@@ -136,15 +107,14 @@ public:
     NS_ASSERTION(mChannels == 0, "Channels already set");
     mChannels = aOther.mChannels;
   }
-  void SliceFrom(const AudioSegment& aOther, TrackTicks aStart, TrackTicks aEnd)
+  void CheckCompatible(const AudioSegment& aOther) const
   {
-    InitFrom(aOther);
-    BaseSliceFrom(aOther, aStart, aEnd);
+    NS_ASSERTION(aOther.mChannels == mChannels, "Non-matching channels");
   }
   static Type StaticType() { return AUDIO; }
 
 protected:
-  PRInt32 mChannels;
+  int32_t mChannels;
 };
 
 }

@@ -31,7 +31,7 @@ public:
   }
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericDOMDataNode::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 };
 
 class nsDOMDocumentType : public nsDOMDocumentTypeForward
@@ -53,19 +53,16 @@ public:
   // nsIDOMDocumentType
   NS_DECL_NSIDOMDOCUMENTTYPE
 
-  NS_IMETHODIMP GetNodeValue(nsAString& aNodeValue)
+  // nsINode
+  virtual bool IsNodeOfType(uint32_t aFlags) const;
+  virtual void GetNodeValueInternal(nsAString& aNodeValue)
   {
     SetDOMStringToNull(aNodeValue);
-  
-    return NS_OK;
   }
-  NS_IMETHODIMP SetNodeValue(const nsAString& aNodeValue)
+  virtual void SetNodeValueInternal(const nsAString& aNodeValue,
+                                    mozilla::ErrorResult& aError)
   {
-    return NS_OK;
   }
-
-  // nsINode
-  virtual bool IsNodeOfType(PRUint32 aFlags) const;
 
   // nsIContent overrides
   virtual const nsTextFragment* GetText();

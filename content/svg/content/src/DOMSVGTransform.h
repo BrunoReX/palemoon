@@ -15,6 +15,7 @@
 #include "nsIDOMSVGTransform.h"
 #include "nsTArray.h"
 #include "SVGTransform.h"
+#include "mozilla/Attributes.h"
 
 class nsSVGElement;
 
@@ -29,7 +30,7 @@ struct gfxMatrix;
   { 0x0A799862, 0x9469, 0x41FE, \
     { 0xB4, 0xCD, 0x20, 0x19, 0xE6, 0x5D, 0x8D, 0xA6 } }
 
-#define MOZ_SVG_LIST_INDEX_BIT_COUNT 22 // supports > 4 million list items
+#define MOZ_SVG_LIST_INDEX_BIT_COUNT 31 // supports > 2 billion list items
 
 namespace mozilla {
 
@@ -38,7 +39,7 @@ class DOMSVGMatrix;
 /**
  * DOM wrapper for an SVG transform. See DOMSVGLength.h.
  */
-class DOMSVGTransform : public nsIDOMSVGTransform
+class DOMSVGTransform MOZ_FINAL : public nsIDOMSVGTransform
 {
 public:
   NS_DECLARE_STATIC_IID_ACCESSOR(MOZILLA_DOMSVGTRANSFORM_IID)
@@ -50,7 +51,7 @@ public:
    * Generic ctor for DOMSVGTransform objects that are created for an attribute.
    */
   DOMSVGTransform(DOMSVGTransformList *aList,
-                  PRUint32 aListIndex,
+                  uint32_t aListIndex,
                   bool aIsAnimValItem);
 
   /**
@@ -78,7 +79,7 @@ public:
     // unlinked us using the cycle collector code, then that has already
     // happened, and mList is null.
     if (mList) {
-      mList->mItems[mListIndex] = nsnull;
+      mList->mItems[mListIndex] = nullptr;
     }
   };
 
@@ -114,15 +115,15 @@ public:
    * DOMSVGTransformList).)
    */
   void InsertingIntoList(DOMSVGTransformList *aList,
-                         PRUint32 aListIndex,
+                         uint32_t aListIndex,
                          bool aIsAnimValItem);
 
-  static PRUint32 MaxListIndex() {
+  static uint32_t MaxListIndex() {
     return (1U << MOZ_SVG_LIST_INDEX_BIT_COUNT) - 1;
   }
 
   /// This method is called to notify this object that its list index changed.
-  void UpdateListIndex(PRUint32 aListIndex) {
+  void UpdateListIndex(uint32_t aListIndex) {
     mListIndex = aListIndex;
   }
 
@@ -180,8 +181,8 @@ private:
   // Bounds for the following are checked in the ctor, so be sure to update
   // that if you change the capacity of any of the following.
 
-  PRUint32 mListIndex:MOZ_SVG_LIST_INDEX_BIT_COUNT;
-  bool mIsAnimValItem:1;
+  uint32_t mListIndex:MOZ_SVG_LIST_INDEX_BIT_COUNT;
+  uint32_t mIsAnimValItem:1;
 
   // Usually this class acts as a wrapper for an SVGTransform object which is
   // part of a list and is accessed by going via the owning Element.

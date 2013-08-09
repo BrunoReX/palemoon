@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <dlfcn.h>
 #import <AppKit/AppKit.h>
 #import <QuartzCore/QuartzCore.h>
 #include "PluginUtilsOSX.h"
@@ -14,32 +15,92 @@
 
 #include "nsDebug.h"
 
+@interface CALayer (ContentsScale)
+- (double)contentsScale;
+- (void)setContentsScale:(double)scale;
+@end
+
 using namespace mozilla::plugins::PluginUtilsOSX;
 
 @interface CGBridgeLayer : CALayer {
   DrawPluginFunc mDrawFunc;
   void* mPluginInstance;
   nsIntRect mUpdateRect;
+  BOOL mAvoidCGCrashes;
+  CGContextRef mLastCGContext;
 }
-- (void) setDrawFunc: (DrawPluginFunc)aFunc pluginInstance:(void*) aPluginInstance;
-- (void) updateRect: (nsIntRect)aRect;
+- (void)setDrawFunc:(DrawPluginFunc)aFunc
+     pluginInstance:(void*)aPluginInstance
+     avoidCGCrashes:(BOOL)aAvoidCGCrashes;
+- (void)updateRect:(nsIntRect)aRect;
+- (void)protectLastCGContext;
 
 @end
 
+// CGBitmapContextSetData() is an undocumented function present (with
+// the same signature) since at least OS X 10.5.  As the name suggests,
+// it's used to replace the "data" in a bitmap context that was
+// originally specified in a call to CGBitmapContextCreate() or
+// CGBitmapContextCreateWithData().
+typedef void (*CGBitmapContextSetDataFunc) (CGContextRef c,
+                                            size_t x,
+                                            size_t y,
+                                            size_t width,
+                                            size_t height,
+                                            void* data,
+                                            size_t bitsPerComponent,
+                                            size_t bitsPerPixel,
+                                            size_t bytesPerRow);
+CGBitmapContextSetDataFunc CGBitmapContextSetDataPtr = NULL;
+
 @implementation CGBridgeLayer
-- (void) updateRect: (nsIntRect)aRect
+- (void) updateRect:(nsIntRect)aRect
 {
    mUpdateRect.UnionRect(mUpdateRect, aRect);
 }
 
-- (void) setDrawFunc: (DrawPluginFunc)aFunc pluginInstance:(void*) aPluginInstance
+- (void) setDrawFunc:(DrawPluginFunc)aFunc
+      pluginInstance:(void*)aPluginInstance
+      avoidCGCrashes:(BOOL)aAvoidCGCrashes
 {
   mDrawFunc = aFunc;
   mPluginInstance = aPluginInstance;
+  mAvoidCGCrashes = aAvoidCGCrashes;
+  mLastCGContext = nil;
+}
+
+// The Flash plugin, in very unusual circumstances, can (in CoreGraphics
+// mode) try to access the CGContextRef from -[CGBridgeLayer drawInContext:]
+// outside of any call to NPP_HandleEvent(NPCocoaEventDrawRect).  This usually
+// crashes the plugin process (probably because it tries to access deleted
+// memory).  We stop these crashes from happening by holding a reference to
+// the CGContextRef, and also by ensuring that it's data won't get deleted.
+// The CGContextRef won't "work" in this form.  But this won't cause trouble
+// for plugins that do things correctly (that don't access this CGContextRef
+// outside of the call to NPP_HandleEvent() that passes it to the plugin).
+// The OS may reuse this CGContextRef (it may get passed to other calls to
+// -[CGBridgeLayer drawInContext:]).  But before each call the OS calls
+// CGBitmapContextSetData() to replace its data, which undoes the changes
+// we make here.  See bug 804606.
+- (void)protectLastCGContext
+{
+  if (!mAvoidCGCrashes || !mLastCGContext) {
+    return;
+  }
+
+  static char ensuredData[128] = {0};
+
+  if (!CGBitmapContextSetDataPtr) {
+    CGBitmapContextSetDataPtr = (CGBitmapContextSetDataFunc)
+      dlsym(RTLD_DEFAULT, "CGBitmapContextSetData");
+  }
+
+  if (CGBitmapContextSetDataPtr && (GetContextType(mLastCGContext) == CG_CONTEXT_TYPE_BITMAP)) {
+    CGBitmapContextSetDataPtr(mLastCGContext, 0, 0, 1, 1, ensuredData, 8, 32, 64);
+  }
 }
 
 - (void)drawInContext:(CGContextRef)aCGContext
-
 {
   ::CGContextSaveGState(aCGContext); 
   ::CGContextTranslateCTM(aCGContext, 0, self.bounds.size.height);
@@ -47,16 +108,36 @@ using namespace mozilla::plugins::PluginUtilsOSX;
 
   mDrawFunc(aCGContext, mPluginInstance, mUpdateRect);
 
-  ::CGContextRestoreGState(aCGContext); 
+  ::CGContextRestoreGState(aCGContext);
+
+  if (mAvoidCGCrashes) {
+    if (mLastCGContext) {
+      ::CGContextRelease(mLastCGContext);
+    }
+    mLastCGContext = aCGContext;
+    ::CGContextRetain(mLastCGContext);
+  }
 
   mUpdateRect.SetEmpty();
 }
 
+- (void)dealloc
+{
+  if (mLastCGContext) {
+    ::CGContextRelease(mLastCGContext);
+  }
+  [super dealloc];
+}
+
 @end
 
-void* mozilla::plugins::PluginUtilsOSX::GetCGLayer(DrawPluginFunc aFunc, void* aPluginInstance) {
+void* mozilla::plugins::PluginUtilsOSX::GetCGLayer(DrawPluginFunc aFunc, void* aPluginInstance,
+                                                   bool aAvoidCGCrashes)
+{
   CGBridgeLayer *bridgeLayer = [[CGBridgeLayer alloc] init ];
-  [bridgeLayer setDrawFunc:aFunc pluginInstance:aPluginInstance];
+  [bridgeLayer setDrawFunc:aFunc
+            pluginInstance:aPluginInstance
+            avoidCGCrashes:aAvoidCGCrashes];
   return bridgeLayer;
 }
 
@@ -72,6 +153,7 @@ void mozilla::plugins::PluginUtilsOSX::Repaint(void *caLayer, nsIntRect aRect) {
   [bridgeLayer setNeedsDisplay];
   [bridgeLayer displayIfNeeded];
   [CATransaction commit];
+  [bridgeLayer protectLastCGContext];
 }
 
 @interface EventProcessor : NSObject {
@@ -264,6 +346,14 @@ size_t nsDoubleBufferCARenderer::GetFrontSurfaceHeight() {
   return mFrontSurface->GetHeight();
 }
 
+double nsDoubleBufferCARenderer::GetFrontSurfaceContentsScaleFactor() {
+  if (!HasFrontSurface()) {
+    return 1.0;
+  }
+
+  return mFrontSurface->GetContentsScaleFactor();
+}
+
 size_t nsDoubleBufferCARenderer::GetBackSurfaceWidth() {
   if (!HasBackSurface()) {
     return 0;
@@ -278,6 +368,14 @@ size_t nsDoubleBufferCARenderer::GetBackSurfaceHeight() {
   }
 
   return mBackSurface->GetHeight();
+}
+
+double nsDoubleBufferCARenderer::GetBackSurfaceContentsScaleFactor() {
+  if (!HasBackSurface()) {
+    return 1.0;
+  }
+
+  return mBackSurface->GetContentsScaleFactor();
 }
 
 IOSurfaceID nsDoubleBufferCARenderer::GetFrontSurfaceID() {
@@ -305,21 +403,23 @@ void nsDoubleBufferCARenderer::SetCALayer(void *aCALayer) {
 }
 
 bool nsDoubleBufferCARenderer::InitFrontSurface(size_t aWidth, size_t aHeight,
+                                                double aContentsScaleFactor,
                                                 AllowOfflineRendererEnum aAllowOfflineRenderer) {
   if (!mCALayer) {
     return false;
   }
 
-  mFrontSurface = nsIOSurface::CreateIOSurface(aWidth, aHeight);
+  mContentsScaleFactor = aContentsScaleFactor;
+  mFrontSurface = MacIOSurface::CreateIOSurface(aWidth, aHeight, mContentsScaleFactor);
   if (!mFrontSurface) {
-    mCARenderer = nsnull;
+    mCARenderer = nullptr;
     return false;
   }
 
   if (!mCARenderer) {
     mCARenderer = new nsCARenderer();
     if (!mCARenderer) {
-      mFrontSurface = nsnull;
+      mFrontSurface = nullptr;
       return false;
     }
 
@@ -328,11 +428,12 @@ bool nsDoubleBufferCARenderer::InitFrontSurface(size_t aWidth, size_t aHeight,
     nsresult result = mCARenderer->SetupRenderer(mCALayer,
                         mFrontSurface->GetWidth(),
                         mFrontSurface->GetHeight(),
+                        mContentsScaleFactor,
                         aAllowOfflineRenderer);
 
     if (result != NS_OK) {
-      mCARenderer = nsnull;
-      mFrontSurface = nsnull;
+      mCARenderer = nullptr;
+      mFrontSurface = nullptr;
       return false;
     }
   } else {
@@ -347,11 +448,12 @@ void nsDoubleBufferCARenderer::Render() {
     return;
   }
 
-  mCARenderer->Render(GetFrontSurfaceWidth(), GetFrontSurfaceHeight(), nsnull);
+  mCARenderer->Render(GetFrontSurfaceWidth(), GetFrontSurfaceHeight(),
+                      mContentsScaleFactor, nullptr);
 }
 
 void nsDoubleBufferCARenderer::SwapSurfaces() {
-  nsRefPtr<nsIOSurface> prevFrontSurface = mFrontSurface;
+  RefPtr<MacIOSurface> prevFrontSurface = mFrontSurface;
   mFrontSurface = mBackSurface;
   mBackSurface = prevFrontSurface;
 
@@ -361,16 +463,16 @@ void nsDoubleBufferCARenderer::SwapSurfaces() {
 }
 
 void nsDoubleBufferCARenderer::ClearFrontSurface() {
-  mFrontSurface = nsnull;
+  mFrontSurface = nullptr;
   if (!mFrontSurface && !mBackSurface) {
-    mCARenderer = nsnull;
+    mCARenderer = nullptr;
   }
 }
 
 void nsDoubleBufferCARenderer::ClearBackSurface() {
-  mBackSurface = nsnull;
+  mBackSurface = nullptr;
   if (!mFrontSurface && !mBackSurface) {
-    mCARenderer = nsnull;
+    mCARenderer = nullptr;
   }
 }
 

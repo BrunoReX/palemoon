@@ -31,6 +31,8 @@ enum nsDOMClassInfoID {
  */
 
 /**
+ * !! THIS MECHANISM IS DEPRECATED, DO NOT ADD MORE INTERFACE TO THESE LISTS !!
+ *
  * DOMCI_CASTABLE_INTERFACES contains the list of interfaces that we have a bit
  * for in nsDOMClassInfo's mInterfacesBitmap. To use it you need to define
  * DOMCI_CASTABLE_INTERFACE(interface, bit, extra) and then call
@@ -40,48 +42,41 @@ enum nsDOMClassInfoID {
  *
  * WARNING: Be very careful when adding interfaces to this list. Every object
  *          that implements one of these interfaces must be directly castable
- *          to that interface from the *canonical* nsISupports!
+ *          to that interface from the *canonical* nsISupports! Also, none of
+ *          the objects that implement these interfaces may use the new DOM
+ *          bindings.
  */
 #undef DOMCI_CASTABLE_INTERFACE
 #define DOMCI_CASTABLE_INTERFACES(_extra)                                     \
 DOMCI_CASTABLE_INTERFACE(nsINode, nsINode, 0, _extra)                         \
-DOMCI_CASTABLE_INTERFACE(nsIContent, nsIContent, 1, _extra)                   \
-DOMCI_CASTABLE_INTERFACE(nsIDocument, nsIDocument, 2, _extra)                 \
-DOMCI_CASTABLE_INTERFACE(nsINodeList, nsINodeList, 3, _extra)                 \
-DOMCI_CASTABLE_INTERFACE(nsICSSDeclaration, nsICSSDeclaration, 4, _extra)     \
+DOMCI_CASTABLE_NODECL_INTERFACE(mozilla::dom::Element,  mozilla::dom::Element,\
+                                1, _extra)                                    \
 DOMCI_CASTABLE_INTERFACE(nsDocument, nsIDocument, 5, _extra)                  \
 DOMCI_CASTABLE_INTERFACE(nsGenericHTMLElement, nsGenericHTMLElement, 6,       \
                          _extra)                                              \
 DOMCI_CASTABLE_INTERFACE(nsHTMLDocument, nsIDocument, 7, _extra)              \
 DOMCI_CASTABLE_INTERFACE(nsStyledElement, nsStyledElement, 8, _extra)         \
-DOMCI_CASTABLE_INTERFACE(nsSVGStylableElement, nsIContent, 9, _extra)         \
-DOMCI_CASTABLE_INTERFACE(nsIDOMWebGLRenderingContext,                         \
-                         nsIDOMWebGLRenderingContext, 10, _extra)             \
-DOMCI_CASTABLE_INTERFACE(nsIWebGLUniformLocation,                             \
-                         nsIWebGLUniformLocation, 11, _extra)                 \
-DOMCI_CASTABLE_INTERFACE(nsIDOMImageData, nsIDOMImageData, 12, _extra)        \
-DOMCI_CASTABLE_NAMESPACED_INTERFACE(mozilla, WebGLUniformLocation,            \
-                                    nsIWebGLUniformLocation, 13, _extra)
+DOMCI_CASTABLE_INTERFACE(nsSVGStylableElement, nsIContent, 9, _extra)
  
 // Make sure all classes mentioned in DOMCI_CASTABLE_INTERFACES
 // have been declared.
-#undef DOMCI_CASTABLE_NAMESPACED_INTERFACE
+#define DOMCI_CASTABLE_NODECL_INTERFACE(_interface, _u1, _u2, _u3) /* Nothing */
 #define DOMCI_CASTABLE_INTERFACE(_interface, _u1, _u2, _u3) class _interface;
-#define DOMCI_CASTABLE_NAMESPACED_INTERFACE(ns, className, interface, bit, _extra) \
-  namespace ns {                                                        \
-  class className;                                                      \
-  }
 DOMCI_CASTABLE_INTERFACES(unused)
 #undef DOMCI_CASTABLE_INTERFACE
-#undef DOMCI_CASTABLE_NAMESPACED_INTERFACE
+#undef DOMCI_CASTABLE_NODECL_INTERFACE
+namespace mozilla {
+namespace dom {
+class Element;
+} // namespace dom
+} // namespace mozilla
 
-#define DOMCI_CASTABLE_NAMESPACED_INTERFACE(ns, className, interface, bit, _extra) \
-  DOMCI_CASTABLE_INTERFACE(ns::className, interface, bit, _extra)
+#define DOMCI_CASTABLE_NODECL_INTERFACE DOMCI_CASTABLE_INTERFACE
 
 #ifdef _IMPL_NS_LAYOUT
 
 #define DOMCI_CLASS(_dom_class)                                               \
-  extern const PRUint32 kDOMClassInfo_##_dom_class##_interfaces;
+  extern const uint32_t kDOMClassInfo_##_dom_class##_interfaces;
 
 #include "nsDOMClassInfoClasses.h"
 
@@ -130,7 +125,7 @@ template <typename Interface> struct DOMCI_CastableTo {
   (DOMCI_CASTABLE_TO(_interface, _class) ? 1 << _bit : 0) +
 
 #define DOMCI_DATA(_dom_class, _class)                                        \
-const PRUint32 kDOMClassInfo_##_dom_class##_interfaces =                      \
+const uint32_t kDOMClassInfo_##_dom_class##_interfaces =                      \
   DOMCI_CASTABLE_INTERFACES(_class)                                           \
   0;
 
@@ -145,7 +140,7 @@ NS_GetDOMClassInfoInstance(nsDOMClassInfoID aID);
       aIID.Equals(NS_GET_IID(nsXPCClassInfo))) {                              \
     foundInterface = NS_GetDOMClassInfoInstance(eDOMClassInfo_##_class##_id); \
     if (!foundInterface) {                                                    \
-      *aInstancePtr = nsnull;                                                 \
+      *aInstancePtr = nullptr;                                                 \
       return NS_ERROR_OUT_OF_MEMORY;                                          \
     }                                                                         \
   } else
@@ -156,7 +151,7 @@ NS_GetDOMClassInfoInstance(nsDOMClassInfoID aID);
        aIID.Equals(NS_GET_IID(nsXPCClassInfo)))) {                            \
     foundInterface = NS_GetDOMClassInfoInstance(eDOMClassInfo_##_class##_id); \
     if (!foundInterface) {                                                    \
-      *aInstancePtr = nsnull;                                                 \
+      *aInstancePtr = nullptr;                                                 \
       return NS_ERROR_OUT_OF_MEMORY;                                          \
     }                                                                         \
   } else

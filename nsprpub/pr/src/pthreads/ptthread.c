@@ -19,6 +19,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <signal.h>
+#include <dlfcn.h>
 
 #ifdef SYMBIAN
 /* In Open C sched_get_priority_min/max do not work properly, so we undefine
@@ -42,7 +43,7 @@ static struct _PT_Bookeeping
     PRCondVar *cv;              /* used to signal global things */
     PRInt32 system, user;       /* a count of the two different types */
     PRUintn this_many;          /* number of threads allowed for exit */
-    pthread_key_t key;          /* private private data key */
+    pthread_key_t key;          /* thread private data key */
     PRThread *first, *last;     /* list of threads we know about */
 #if defined(_PR_DCETHREADS) || defined(_POSIX_THREAD_PRIORITY_SCHEDULING)
     PRInt32 minPrio, maxPrio;   /* range of scheduling priorities */
@@ -794,6 +795,8 @@ static void _pt_thread_death_internal(void *arg, PRBool callDestructors)
     PR_Free(thred->privateData);
     if (NULL != thred->errorString)
         PR_Free(thred->errorString);
+    if (NULL != thred->name)
+        PR_Free(thred->name);
     PR_Free(thred->stack);
     if (NULL != thred->syspoll_list)
         PR_Free(thred->syspoll_list);
@@ -972,6 +975,8 @@ void _PR_Fini(void)
         rv = pthread_setspecific(pt_book.key, NULL);
         PR_ASSERT(0 == rv);
     }
+    rv = pthread_key_delete(pt_book.key);
+    PR_ASSERT(0 == rv);
     /* TODO: free other resources used by NSPR */
     /* _pr_initialized = PR_FALSE; */
 }  /* _PR_Fini */
@@ -1611,6 +1616,88 @@ PR_IMPLEMENT(void*)PR_GetSP(PRThread *thred)
 }  /* PR_GetSP */
 
 #endif /* !defined(_PR_DCETHREADS) */
+
+PR_IMPLEMENT(PRStatus) PR_SetCurrentThreadName(const char *name)
+{
+    PRThread *thread;
+    size_t nameLen;
+    int result;
+
+    if (!name) {
+        PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
+        return PR_FAILURE;
+    }
+
+    thread = PR_GetCurrentThread();
+    if (!thread)
+        return PR_FAILURE;
+
+    PR_Free(thread->name);
+    nameLen = strlen(name);
+    thread->name = (char *)PR_Malloc(nameLen + 1);
+    if (!thread->name)
+        return PR_FAILURE;
+    memcpy(thread->name, name, nameLen + 1);
+
+#if defined(OPENBSD) || defined(FREEBSD)
+    result = pthread_set_name_np(thread->id, name);
+#else /* not BSD */
+    /*
+     * On OSX, pthread_setname_np is only available in 10.6 or later, so test
+     * for it at runtime.  It also may not be available on all linux distros.
+     */
+#if defined(DARWIN)
+    int (*dynamic_pthread_setname_np)(const char*);
+#else
+    int (*dynamic_pthread_setname_np)(pthread_t, const char*);
+#endif
+
+    *(void**)(&dynamic_pthread_setname_np) =
+        dlsym(RTLD_DEFAULT, "pthread_setname_np");
+    if (!dynamic_pthread_setname_np)
+        return PR_SUCCESS;
+
+    /*
+     * The 15-character name length limit is an experimentally determined
+     * length of a null-terminated string that most linux distros and OS X
+     * accept as an argument to pthread_setname_np.  Otherwise the E2BIG
+     * error is returned by the function.
+     */
+#define SETNAME_LENGTH_CONSTRAINT 15
+#define SETNAME_FRAGMENT1_LENGTH (SETNAME_LENGTH_CONSTRAINT >> 1)
+#define SETNAME_FRAGMENT2_LENGTH \
+    (SETNAME_LENGTH_CONSTRAINT - SETNAME_FRAGMENT1_LENGTH - 1)
+    char name_dup[SETNAME_LENGTH_CONSTRAINT + 1];
+    if (nameLen > SETNAME_LENGTH_CONSTRAINT) {
+        memcpy(name_dup, name, SETNAME_FRAGMENT1_LENGTH);
+        name_dup[SETNAME_FRAGMENT1_LENGTH] = '~';
+        /* Note that this also copies the null terminator. */
+        memcpy(name_dup + SETNAME_FRAGMENT1_LENGTH + 1,
+               name + nameLen - SETNAME_FRAGMENT2_LENGTH,
+               SETNAME_FRAGMENT2_LENGTH + 1);
+        name = name_dup;
+    }
+
+#if defined(DARWIN)
+    result = dynamic_pthread_setname_np(name);
+#else
+    result = dynamic_pthread_setname_np(thread->id, name);
+#endif
+#endif /* not BSD */
+
+    if (result) {
+        PR_SetError(PR_UNKNOWN_ERROR, result);
+        return PR_FAILURE;
+    }
+    return PR_SUCCESS;
+}
+
+PR_IMPLEMENT(const char *) PR_GetThreadName(const PRThread *thread)
+{
+    if (!thread)
+        return NULL;
+    return thread->name;
+}
 
 #endif  /* defined(_PR_PTHREADS) || defined(_PR_DCETHREADS) */
 

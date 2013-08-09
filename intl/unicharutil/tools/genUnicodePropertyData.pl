@@ -34,10 +34,8 @@
 # (2) Run this tool using a command line of the form
 #
 #         perl genUnicodePropertyData.pl \
-#                 /path/to/hb-common.h   \
+#                 /path/to/harfbuzz/src  \
 #                 /path/to/UCD-directory
-#
-#     (where hb-common.h is found in the gfx/harfbuzz/src directory).
 #
 #     This will generate (or overwrite!) the files
 #
@@ -54,10 +52,10 @@ if ($#ARGV != 1) {
 # Run this tool using a command line of the form
 #
 #     perl genUnicodePropertyData.pl \
-#             /path/to/hb-common.h   \
+#             /path/to/harfbuzz/src  \
 #             /path/to/UCD-directory
 #
-# where hb-common.h is currently found in the gfx/harfbuzz/src directory,
+# where harfbuzz/src is the directory containing harfbuzz .cc and .hh files,
 # and UCD-directory is a directory containing the current Unicode Character
 # Database files (UnicodeData.txt, etc), available from
 # http://www.unicode.org/Public/UNIDATA/
@@ -207,23 +205,33 @@ my %catCode;
 my @scriptCodeToTag;
 my @scriptCodeToName;
 
-open FH, "< $ARGV[0]" or die "can't open $ARGV[0] (should be header file hb-common.h)\n";
-while (<FH>) {
-    if (m/HB_SCRIPT_([A-Z_]+)\s*=\s*HB_TAG\s*\(('.','.','.','.')\)\s*,/) {
-        unless (exists $scriptCode{$1}) {
-            warn "unknown script name $1 found in hb-common.h\n";
-            next;
+sub readHarfBuzzHeader
+{
+    my $file = shift;
+    open FH, "< $ARGV[0]/$file" or die "can't open harfbuzz header $ARGV[0]/$file\n";
+    while (<FH>) {
+        if (m/HB_SCRIPT_([A-Z_]+)\s*=\s*HB_TAG\s*\(('.','.','.','.')\)\s*,/) {
+            unless (exists $scriptCode{$1}) {
+                warn "unknown script name $1 found in $file\n";
+                next;
+            }
+            $sc = $scriptCode{$1};
+            $scriptCodeToTag[$sc] = $2;
+            $scriptCodeToName[$sc] = $1;
         }
-        $sc = $scriptCode{$1};
-        $scriptCodeToTag[$sc] = $2;
-        $scriptCodeToName[$sc] = $1;
+        if (m/HB_UNICODE_GENERAL_CATEGORY_([A-Z_]+)/) {
+            $cc++;
+            $catCode{$1} = $cc;
+        }
     }
-    if (m/HB_UNICODE_GENERAL_CATEGORY_([A-Z_]+)/) {
-        $cc++;
-        $catCode{$1} = $cc;
-    }
+    close FH;
 }
-close FH;
+
+&readHarfBuzzHeader("hb-common.h");
+&readHarfBuzzHeader("hb-unicode.h");
+
+die "didn't find HarfBuzz script codes\n" if $sc == -1;
+die "didn't find HarfBuzz category codes\n" if $cc == -1;
 
 my %xidmodCode = (
 'inclusion'         => 0,
@@ -272,6 +280,7 @@ my @xidmod;
 my @numericvalue;
 my @hanVariant;
 my @bidicategory;
+my @fullWidth;
 for (my $i = 0; $i < 0x110000; ++$i) {
     $script[$i] = $scriptCode{"UNKNOWN"};
     $category[$i] = $catCode{"UNASSIGNED"};
@@ -281,6 +290,7 @@ for (my $i = 0; $i < 0x110000; ++$i) {
     $numericvalue[$i] = -1;
     $hanVariant[$i] = 0;
     $bidicategory[$i] = $bidicategoryCode{"L"};
+    $fullWidth[$i] = 0;
 }
 
 # blocks where the default for bidi category is not L
@@ -396,6 +406,16 @@ while (<FH>) {
         }
         if ($fields[1] =~ /CJK/) {
           @hanVariant[$usv] = 3;
+        }
+        if ($fields[5] =~ /^<narrow>/) {
+          my $wideChar = hex(substr($fields[5], 9));
+          die "didn't expect supplementary-plane values here" if $usv > 0xffff || $wideChar > 0xffff;
+          $fullWidth[$usv] = $wideChar;
+        }
+        elsif ($fields[5] =~ /^<wide>/) {
+          my $narrowChar = hex(substr($fields[5], 7));
+          die "didn't expect supplementary-plane values here" if $usv > 0xffff || $narrowChar > 0xffff;
+          $fullWidth[$narrowChar] = $usv;
         }
     }
 }
@@ -622,9 +642,10 @@ $versionInfo
 
 #ifndef NS_UNICODE_SCRIPT_CODES
 #define NS_UNICODE_SCRIPT_CODES
+
 __END
 
-print DATA_TABLES "static const PRUint32 sScriptCodeToTag[] = {\n";
+print DATA_TABLES "static const uint32_t sScriptCodeToTag[] = {\n";
 for (my $i = 0; $i < scalar @scriptCodeToTag; ++$i) {
   printf DATA_TABLES "  HB_TAG(%s)", $scriptCodeToTag[$i];
   print DATA_TABLES $i < $#scriptCodeToTag ? ",\n" : "\n";
@@ -633,19 +654,21 @@ print DATA_TABLES "};\n\n";
 
 our $totalData = 0;
 
-print DATA_TABLES "static const PRInt16 sMirrorOffsets[] = {\n";
+print DATA_TABLES "static const int16_t sMirrorOffsets[] = {\n";
 for (my $i = 0; $i < scalar @offsets; ++$i) {
     printf DATA_TABLES "  $offsets[$i]";
     print DATA_TABLES $i < $#offsets ? ",\n" : "\n";
 }
 print DATA_TABLES "};\n\n";
 
+print HEADER "#pragma pack(1)\n\n";
+
 sub sprintCharProps1
 {
   my $usv = shift;
   return sprintf("{%d,%d,%d}, ", $mirror[$usv], $hangul[$usv], $combining[$usv]);
 }
-&genTables("CharProp1", "struct nsCharProps1 {\n  unsigned char  mMirrorOffsetIndex:5;\n  unsigned char mHangulType:3;\n  unsigned char mCombiningClass:8;\n};",
+&genTables("CharProp1", "struct nsCharProps1 {\n  unsigned char mMirrorOffsetIndex:5;\n  unsigned char mHangulType:3;\n  unsigned char mCombiningClass:8;\n};",
            "nsCharProps1", 11, 5, \&sprintCharProps1, 1, 2, 1);
 
 sub sprintCharProps2
@@ -658,6 +681,8 @@ sub sprintCharProps2
 &genTables("CharProp2", "struct nsCharProps2 {\n  unsigned char mScriptCode:8;\n  unsigned char mEAW:3;\n  unsigned char mCategory:5;\n  unsigned char mBidiCategory:5;\n  unsigned char mXidmod:4;\n  signed char mNumericValue:5;\n  unsigned char mHanVariant:2;\n};",
            "nsCharProps2", 11, 5, \&sprintCharProps2, 16, 4, 1);
 
+print HEADER "#pragma pack()\n\n";
+
 sub sprintHanVariants
 {
   my $baseUsv = shift;
@@ -669,22 +694,29 @@ sub sprintHanVariants
   }
   return sprintf("0x%02x,", $val);
 }
-&genTables("HanVariant", "", "PRUint8", 9, 7, \&sprintHanVariants, 2, 1, 4);
+&genTables("HanVariant", "", "uint8_t", 9, 7, \&sprintHanVariants, 2, 1, 4);
+
+sub sprintFullWidth
+{
+  my $usv = shift;
+  return sprintf("0x%04x,", $fullWidth[$usv]);
+}
+&genTables("FullWidth", "", "uint16_t", 10, 6, \&sprintFullWidth, 0, 2, 1);
 
 sub sprintCasemap
 {
   my $usv = shift;
   return sprintf("0x%08x,", $casemap[$usv]);
 }
-&genTables("CaseMap", "", "PRUint32", 11, 5, \&sprintCasemap, 1, 4, 1);
+&genTables("CaseMap", "", "uint32_t", 11, 5, \&sprintCasemap, 1, 4, 1);
 
 print STDERR "Total data = $totalData\n";
 
-printf DATA_TABLES "const PRUint32 kTitleToUpper = 0x%08x;\n", $kTitleToUpper;
-printf DATA_TABLES "const PRUint32 kUpperToLower = 0x%08x;\n", $kUpperToLower;
-printf DATA_TABLES "const PRUint32 kLowerToTitle = 0x%08x;\n", $kLowerToTitle;
-printf DATA_TABLES "const PRUint32 kLowerToUpper = 0x%08x;\n", $kLowerToUpper;
-printf DATA_TABLES "const PRUint32 kCaseMapCharMask = 0x%08x;\n\n", $kCaseMapCharMask;
+printf DATA_TABLES "const uint32_t kTitleToUpper = 0x%08x;\n", $kTitleToUpper;
+printf DATA_TABLES "const uint32_t kUpperToLower = 0x%08x;\n", $kUpperToLower;
+printf DATA_TABLES "const uint32_t kLowerToTitle = 0x%08x;\n", $kLowerToTitle;
+printf DATA_TABLES "const uint32_t kLowerToUpper = 0x%08x;\n", $kLowerToUpper;
+printf DATA_TABLES "const uint32_t kCaseMapCharMask = 0x%08x;\n\n", $kCaseMapCharMask;
 
 sub genTables
 {
@@ -729,7 +761,7 @@ sub genTables
   }
 
   if ($maxPlane) {
-    print DATA_TABLES "static const PRUint8 s${prefix}Planes[$maxPlane] = {";
+    print DATA_TABLES "static const uint8_t s${prefix}Planes[$maxPlane] = {";
     print DATA_TABLES join(',', map { sprintf("%d", $_) } unpack('C*', $planeMap));
     print DATA_TABLES "};\n\n";
   }
@@ -737,11 +769,16 @@ sub genTables
   my $chCount = scalar @char;
   my $pmBits = $chCount > 255 ? 16 : 8;
   my $pmCount = scalar @pageMap;
-  print DATA_TABLES "static const PRUint${pmBits} s${prefix}Pages[$pmCount][$indexLen] = {\n";
+  if ($maxPlane == 0) {
+    die "there should only be one pageMap entry!" if $pmCount > 1;
+    print DATA_TABLES "static const uint${pmBits}_t s${prefix}Pages[$indexLen] = {\n";
+  } else {
+    print DATA_TABLES "static const uint${pmBits}_t s${prefix}Pages[$pmCount][$indexLen] = {\n";
+  }
   for (my $i = 0; $i < scalar @pageMap; ++$i) {
-    print DATA_TABLES "  {";
+    print DATA_TABLES $maxPlane > 0 ? "  {" : "  ";
     print DATA_TABLES join(',', map { sprintf("%d", $_) } unpack('S*', $pageMap[$i]));
-    print DATA_TABLES $i < $#pageMap ? "},\n" : "}\n";
+    print DATA_TABLES $maxPlane > 0 ? ($i < $#pageMap ? "},\n" : "}\n") : "\n";
   }
   print DATA_TABLES "};\n\n";
 
@@ -776,7 +813,8 @@ print HEADER "enum {\n";
 for (my $i = 0; $i < scalar @scriptCodeToName; ++$i) {
   print HEADER "  MOZ_SCRIPT_", $scriptCodeToName[$i], " = ", $i, ",\n";
 }
-print HEADER "  MOZ_SCRIPT_INVALID = -1\n";
+print HEADER "\n  MOZ_NUM_SCRIPT_CODES = ", scalar @scriptCodeToName, ",\n";
+print HEADER "\n  MOZ_SCRIPT_INVALID = -1\n";
 print HEADER "};\n\n";
 
 print HEADER <<__END;

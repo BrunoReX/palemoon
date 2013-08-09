@@ -25,11 +25,11 @@ nsresult auxLoad(char *uriBuf);
 //----------------------------------------------------------------------
 
 
-#define RETURN_IF_FAILED(rv, step) \
+#define RETURN_IF_FAILED(rv, ret, step) \
     PR_BEGIN_MACRO \
     if (NS_FAILED(rv)) { \
-        printf(">>> %s failed: rv=%x\n", step, rv); \
-        return rv;\
+        printf(">>> %s failed: rv=%x\n", step, static_cast<uint32_t>(rv)); \
+        return ret;\
     } \
     PR_END_MACRO
 
@@ -42,7 +42,7 @@ static nsCOMArray<nsIURI> uriList;
 static int numStart=0;
 static int numFound=0;
 
-static PRInt32 gKeepRunning = 0;
+static int32_t gKeepRunning = 0;
 
 
 //--------writer fun----------------------
@@ -50,9 +50,9 @@ static PRInt32 gKeepRunning = 0;
 static NS_METHOD streamParse (nsIInputStream* in,
                               void* closure,
                               const char* fromRawSegment,
-                              PRUint32 toOffset,
-                              PRUint32 count,
-                              PRUint32 *writeCount) {
+                              uint32_t toOffset,
+                              uint32_t count,
+                              uint32_t *writeCount) {
 
   char parseBuf[2048], loc[2048], lineBuf[2048];
   char *loc_t, *loc_t2;
@@ -161,26 +161,27 @@ MyListener::OnStopRequest(nsIRequest *req, nsISupports *ctxt, nsresult status)
 NS_IMETHODIMP
 MyListener::OnDataAvailable(nsIRequest *req, nsISupports *ctxt,
                             nsIInputStream *stream,
-                            PRUint32 offset, PRUint32 count)
+                            uint64_t offset, uint32_t count)
 {
     //printf(">>> OnDataAvailable [count=%u]\n", count);
     nsresult rv = NS_ERROR_FAILURE;
-    PRUint32 bytesRead=0;
+    uint32_t bytesRead=0;
     char buf[1024];
 
-    if(ctxt == nsnull) {
+    if(ctxt == nullptr) {
       bytesRead=0;
-      rv = stream->ReadSegments(streamParse, &offset, count, &bytesRead);
+      rv = stream->ReadSegments(streamParse, nullptr, count, &bytesRead);
     } else {
       while (count) {
-        PRUint32 amount = NS_MIN<PRUint32>(count, sizeof(buf));
+        uint32_t amount = NS_MIN<uint32_t>(count, sizeof(buf));
         rv = stream->Read(buf, amount, &bytesRead);  
         count -= bytesRead;
       }
     }
 
     if (NS_FAILED(rv)) {
-      printf(">>> stream->Read failed with rv=%x\n", rv);
+      printf(">>> stream->Read failed with rv=%x\n",
+             static_cast<uint32_t>(rv));
       return rv;
     }
 
@@ -223,7 +224,7 @@ MyNotifications::OnStatus(nsIRequest *req, nsISupports *ctx,
 
 NS_IMETHODIMP
 MyNotifications::OnProgress(nsIRequest *req, nsISupports *ctx,
-                            PRUint64 progress, PRUint64 progressMax)
+                            uint64_t progress, uint64_t progressMax)
 {
     // char buf[100];
     // PR_snprintf(buf, sizeof(buf), "%llu/%llu\n", progress, progressMax);
@@ -286,7 +287,7 @@ nsresult auxLoad(char *uriBuf)
 
     //Compare to see if exists
     bool equal;
-    for(PRInt32 i = 0; i < uriList.Count(); i++) {
+    for(int32_t i = 0; i < uriList.Count(); i++) {
       uri->Equals(uriList[i], &equal);
       if(equal) {
         printf("(duplicate, canceling) %s\n",uriBuf); 
@@ -295,12 +296,12 @@ nsresult auxLoad(char *uriBuf)
     }
     printf("\n");
     uriList.AppendObject(uri);
-    rv = NS_NewChannel(getter_AddRefs(chan), uri, nsnull, nsnull, callbacks);
-    RETURN_IF_FAILED(rv, "NS_NewChannel");
+    rv = NS_NewChannel(getter_AddRefs(chan), uri, nullptr, nullptr, callbacks);
+    RETURN_IF_FAILED(rv, rv, "NS_NewChannel");
 
     gKeepRunning++;
     rv = chan->AsyncOpen(listener, myBool);
-    RETURN_IF_FAILED(rv, "AsyncOpen");
+    RETURN_IF_FAILED(rv, rv, "AsyncOpen");
 
     return NS_OK;
 
@@ -327,7 +328,7 @@ int main(int argc, char **argv)
     }
     {
         nsCOMPtr<nsIServiceManager> servMan;
-        NS_InitXPCOM2(getter_AddRefs(servMan), nsnull, nsnull);
+        NS_InitXPCOM2(getter_AddRefs(servMan), nullptr, nullptr);
 
         PRTime start, finish;
 
@@ -337,32 +338,29 @@ int main(int argc, char **argv)
         nsCOMPtr<nsIInterfaceRequestor> callbacks = new MyNotifications();
 
         rv = NS_NewURI(getter_AddRefs(baseURI), argv[1]);
-        RETURN_IF_FAILED(rv, "NS_NewURI");
+        RETURN_IF_FAILED(rv, -1, "NS_NewURI");
 
-        rv = NS_NewChannel(getter_AddRefs(chan), baseURI, nsnull, nsnull, callbacks);
-        RETURN_IF_FAILED(rv, "NS_OpenURI");
+        rv = NS_NewChannel(getter_AddRefs(chan), baseURI, nullptr, nullptr, callbacks);
+        RETURN_IF_FAILED(rv, -1, "NS_OpenURI");
         gKeepRunning++;
 
         //TIMER STARTED-----------------------
         printf("Starting clock ... \n");
         start = PR_Now();
-        rv = chan->AsyncOpen(listener, nsnull);
-        RETURN_IF_FAILED(rv, "AsyncOpen");
+        rv = chan->AsyncOpen(listener, nullptr);
+        RETURN_IF_FAILED(rv, -1, "AsyncOpen");
 
         PumpEvents();
 
         finish = PR_Now();
-        PRUint32 totalTime32;
-        PRUint64 totalTime64;
-        LL_SUB(totalTime64, finish, start);
-        LL_L2UI(totalTime32, totalTime64);
+        uint32_t totalTime32 = uint32_t(finish - start);
 
         printf("\n\n--------------------\nAll done:\nnum found:%d\nnum start:%d\n", numFound, numStart);
 
         printf("\n\n>>PageLoadTime>>%u>>\n\n", totalTime32);
     } // this scopes the nsCOMPtrs
     // no nsCOMPtrs are allowed to be alive when you call NS_ShutdownXPCOM
-    rv = NS_ShutdownXPCOM(nsnull);
+    rv = NS_ShutdownXPCOM(nullptr);
     NS_ASSERTION(NS_SUCCEEDED(rv), "NS_ShutdownXPCOM failed");
     return 0;
 }

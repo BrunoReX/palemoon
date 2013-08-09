@@ -5,6 +5,7 @@
 #include "prthread.h"
 #include "nsIEventTarget.h"
 #include "nsIInterfaceRequestorUtils.h"
+#include "mozilla/Attributes.h"
 
 #include "sqlite3.h"
 
@@ -28,7 +29,7 @@ spin_events_loop_until_true(const bool* const aCondition)
 ////////////////////////////////////////////////////////////////////////////////
 //// mozIStorageStatementCallback implementation
 
-class UnownedCallback : public mozIStorageStatementCallback
+class UnownedCallback MOZ_FINAL : public mozIStorageStatementCallback
 {
 public:
   NS_DECL_ISUPPORTS
@@ -75,7 +76,7 @@ public:
     return NS_OK;
   }
 
-  NS_IMETHOD HandleCompletion(PRUint16 aReason)
+  NS_IMETHOD HandleCompletion(uint16_t aReason)
   {
     mCompleted = true;
     return NS_OK;
@@ -111,7 +112,7 @@ test_SpinEventsLoopInHandleResult()
   db->CreateStatement(NS_LITERAL_CSTRING(
     "INSERT INTO test (id) VALUES (?)"
   ), getter_AddRefs(stmt));
-  for (PRInt32 i = 0; i < 30; ++i) {
+  for (int32_t i = 0; i < 30; ++i) {
     stmt->BindInt32ByIndex(0, i);
     stmt->Execute();
     stmt->Reset();

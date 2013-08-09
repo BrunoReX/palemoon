@@ -28,7 +28,7 @@ struct TestContext {
     nsCOMPtr<nsIChannel> channel;
     nsCOMPtr<nsIInputStream> inputStream;
     PRTime t1, t2;
-    PRUint32 bytesRead, totalRead;
+    uint32_t bytesRead, totalRead;
 
     TestContext()
         : t1(0), t2(0), bytesRead(0), totalRead(0)
@@ -56,7 +56,7 @@ main(int argc, char **argv)
         rv = NS_NewURI(getter_AddRefs(c[i].uri), argv[i+1]);
         RETURN_IF_FAILED(rv, "NS_NewURI");
 
-        rv = NS_OpenURI(getter_AddRefs(c[i].channel), c[i].uri, nsnull, nsnull);
+        rv = NS_OpenURI(getter_AddRefs(c[i].channel), c[i].uri, nullptr, nullptr);
         RETURN_IF_FAILED(rv, "NS_OpenURI");
 
         nsCOMPtr<nsIHTTPChannel> httpChannel = do_QueryInterface(c[i].channel);
@@ -100,6 +100,6 @@ main(int argc, char **argv)
 
     delete[] c;
 
-    NS_ShutdownXPCOM(nsnull);
+    NS_ShutdownXPCOM(nullptr);
     return 0;
 }

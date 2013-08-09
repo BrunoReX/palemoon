@@ -85,14 +85,14 @@ NS_IMETHODIMP nsPrintProgress::OpenProgressDialog(nsIDOMWindow *parent,
 NS_IMETHODIMP nsPrintProgress::CloseProgressDialog(bool forceClose)
 {
   m_closeProgress = true;
-  return OnStateChange(nsnull, nsnull, nsIWebProgressListener::STATE_STOP, forceClose);
+  return OnStateChange(nullptr, nullptr, nsIWebProgressListener::STATE_STOP, forceClose);
 }
 
 /* nsIPrompt GetPrompter (); */
 NS_IMETHODIMP nsPrintProgress::GetPrompter(nsIPrompt **_retval)
 {
   NS_ENSURE_ARG_POINTER(_retval);
-  *_retval = nsnull;
+  *_retval = nullptr;
 
   if (! m_closeProgress && m_dialog)
     return m_dialog->GetPrompter(_retval);
@@ -110,7 +110,7 @@ NS_IMETHODIMP nsPrintProgress::GetProcessCanceledByUser(bool *aProcessCanceledBy
 NS_IMETHODIMP nsPrintProgress::SetProcessCanceledByUser(bool aProcessCanceledByUser)
 {
   m_processCanceled = aProcessCanceledByUser;
-  OnStateChange(nsnull, nsnull, nsIWebProgressListener::STATE_STOP, false);
+  OnStateChange(nullptr, nullptr, nsIWebProgressListener::STATE_STOP, false);
   return NS_OK;
 }
 
@@ -129,12 +129,12 @@ NS_IMETHODIMP nsPrintProgress::RegisterListener(nsIWebProgressListener * listene
   {
     m_listenerList->AppendElement(listener);
     if (m_closeProgress || m_processCanceled)
-      listener->OnStateChange(nsnull, nsnull, nsIWebProgressListener::STATE_STOP, 0);
+      listener->OnStateChange(nullptr, nullptr, nsIWebProgressListener::STATE_STOP, 0);
     else
     {
-      listener->OnStatusChange(nsnull, nsnull, 0, m_pendingStatus.get());
+      listener->OnStatusChange(nullptr, nullptr, 0, m_pendingStatus.get());
       if (m_pendingStateFlags != -1)
-        listener->OnStateChange(nsnull, nsnull, m_pendingStateFlags, m_pendingStateValue);
+        listener->OnStateChange(nullptr, nullptr, m_pendingStateFlags, m_pendingStateValue);
     }
   }
     
@@ -154,13 +154,13 @@ NS_IMETHODIMP nsPrintProgress::UnregisterListener(nsIWebProgressListener *listen
 NS_IMETHODIMP nsPrintProgress::DoneIniting()
 {
   if (m_observer) {
-    m_observer->Observe(nsnull, nsnull, nsnull);
+    m_observer->Observe(nullptr, nullptr, nullptr);
   }
   return NS_OK;
 }
 
 /* void onStateChange (in nsIWebProgress aWebProgress, in nsIRequest aRequest, in unsigned long aStateFlags, in nsresult aStatus); */
-NS_IMETHODIMP nsPrintProgress::OnStateChange(nsIWebProgress *aWebProgress, nsIRequest *aRequest, PRUint32 aStateFlags, nsresult aStatus)
+NS_IMETHODIMP nsPrintProgress::OnStateChange(nsIWebProgress *aWebProgress, nsIRequest *aRequest, uint32_t aStateFlags, nsresult aStatus)
 {
   nsresult rv = NS_OK;
 
@@ -169,8 +169,8 @@ NS_IMETHODIMP nsPrintProgress::OnStateChange(nsIWebProgress *aWebProgress, nsIRe
   
   if (m_listenerList)
   {
-    PRUint32 count;
-    PRInt32 i;
+    uint32_t count;
+    int32_t i;
 
     rv = m_listenerList->Count(&count);
     NS_ASSERTION(NS_SUCCEEDED(rv), "m_listenerList->Count() failed");
@@ -192,14 +192,14 @@ NS_IMETHODIMP nsPrintProgress::OnStateChange(nsIWebProgress *aWebProgress, nsIRe
 }
 
 /* void onProgressChange (in nsIWebProgress aWebProgress, in nsIRequest aRequest, in long aCurSelfProgress, in long aMaxSelfProgress, in long aCurTotalProgress, in long aMaxTotalProgress); */
-NS_IMETHODIMP nsPrintProgress::OnProgressChange(nsIWebProgress *aWebProgress, nsIRequest *aRequest, PRInt32 aCurSelfProgress, PRInt32 aMaxSelfProgress, PRInt32 aCurTotalProgress, PRInt32 aMaxTotalProgress)
+NS_IMETHODIMP nsPrintProgress::OnProgressChange(nsIWebProgress *aWebProgress, nsIRequest *aRequest, int32_t aCurSelfProgress, int32_t aMaxSelfProgress, int32_t aCurTotalProgress, int32_t aMaxTotalProgress)
 {
   nsresult rv = NS_OK;
 
   if (m_listenerList)
   {
-    PRUint32 count;
-    PRInt32 i;
+    uint32_t count;
+    int32_t i;
 
     rv = m_listenerList->Count(&count);
     NS_ASSERTION(NS_SUCCEEDED(rv), "m_listenerList->Count() failed");
@@ -221,7 +221,7 @@ NS_IMETHODIMP nsPrintProgress::OnProgressChange(nsIWebProgress *aWebProgress, ns
 }
 
 /* void onLocationChange (in nsIWebProgress aWebProgress, in nsIRequest aRequest, in nsIURI location, in unsigned long aFlags); */
-NS_IMETHODIMP nsPrintProgress::OnLocationChange(nsIWebProgress *aWebProgress, nsIRequest *aRequest, nsIURI *location, PRUint32 aFlags)
+NS_IMETHODIMP nsPrintProgress::OnLocationChange(nsIWebProgress *aWebProgress, nsIRequest *aRequest, nsIURI *location, uint32_t aFlags)
 {
     return NS_OK;
 }
@@ -235,8 +235,8 @@ NS_IMETHODIMP nsPrintProgress::OnStatusChange(nsIWebProgress *aWebProgress, nsIR
   m_pendingStatus = aMessage;
   if (m_listenerList)
   {
-    PRUint32 count;
-    PRInt32 i;
+    uint32_t count;
+    int32_t i;
 
     rv = m_listenerList->Count(&count);
     NS_ASSERTION(NS_SUCCEEDED(rv), "m_listenerList->Count() failed");
@@ -258,7 +258,7 @@ NS_IMETHODIMP nsPrintProgress::OnStatusChange(nsIWebProgress *aWebProgress, nsIR
 }
 
 /* void onSecurityChange (in nsIWebProgress aWebProgress, in nsIRequest aRequest, in unsigned long state); */
-NS_IMETHODIMP nsPrintProgress::OnSecurityChange(nsIWebProgress *aWebProgress, nsIRequest *aRequest, PRUint32 state)
+NS_IMETHODIMP nsPrintProgress::OnSecurityChange(nsIWebProgress *aWebProgress, nsIRequest *aRequest, uint32_t state)
 {
     return NS_OK;
 }
@@ -269,8 +269,8 @@ nsresult nsPrintProgress::ReleaseListeners()
 
   if (m_listenerList)
   {
-    PRUint32 count;
-    PRInt32 i;
+    uint32_t count;
+    int32_t i;
 
     rv = m_listenerList->Count(&count);
     NS_ASSERTION(NS_SUCCEEDED(rv), "m_listenerList->Count() failed");
@@ -284,7 +284,7 @@ nsresult nsPrintProgress::ReleaseListeners()
 
 NS_IMETHODIMP nsPrintProgress::ShowStatusString(const PRUnichar *status)
 {
-  return OnStatusChange(nsnull, nsnull, NS_OK, status);
+  return OnStatusChange(nullptr, nullptr, NS_OK, status);
 }
 
 /* void startMeteors (); */
@@ -300,7 +300,7 @@ NS_IMETHODIMP nsPrintProgress::StopMeteors()
 }
 
 /* void showProgress (in long percent); */
-NS_IMETHODIMP nsPrintProgress::ShowProgress(PRInt32 percent)
+NS_IMETHODIMP nsPrintProgress::ShowProgress(int32_t percent)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }

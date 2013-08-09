@@ -8,7 +8,7 @@
                 android:layout_height="wrap_content">
 
     <RelativeLayout android:id="@+id/menu_panel"
-                    android:layout_width="wrap_content"
+                    android:layout_width="@dimen/menu_popup_width"
                     android:layout_height="wrap_content"
                     android:layout_alignParentRight="true"
                     android:background="@drawable/menu_popup_bg">
@@ -18,10 +18,9 @@
     </RelativeLayout>
 
     <ImageView android:id="@+id/menu_arrow"
-               android:layout_width="28dip"
-               android:layout_height="10dip"
-               android:layout_marginTop="2dip"
-               android:layout_marginRight="8dip"
+               android:layout_width="40dip"
+               android:layout_height="12dip"
+               android:layout_marginRight="@dimen/menu_popup_arrow_margin"
                android:layout_alignRight="@id/menu_panel"
                android:src="@drawable/menu_popup_arrow"
                android:scaleType="fitXY"/>

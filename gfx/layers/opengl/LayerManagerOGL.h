@@ -6,7 +6,6 @@
 #ifndef GFX_LAYERMANAGEROGL_H
 #define GFX_LAYERMANAGEROGL_H
 
-#include "Layers.h"
 #include "LayerManagerOGLProgram.h"
 
 #include "mozilla/layers/ShadowLayers.h"
@@ -37,12 +36,14 @@ typedef int GLsizei;
 namespace mozilla {
 namespace layers {
 
+class Composer2D;
 class LayerOGL;
 class ShadowThebesLayer;
 class ShadowContainerLayer;
 class ShadowImageLayer;
 class ShadowCanvasLayer;
 class ShadowColorLayer;
+struct FPSState;
 
 /**
  * This is the LayerManager used for OpenGL 2.1 and OpenGL ES 2.0.
@@ -58,8 +59,6 @@ public:
   LayerManagerOGL(nsIWidget *aWidget, int aSurfaceWidth = -1, int aSurfaceHeight = -1,
                   bool aIsRenderingToEGLSurface = false);
   virtual ~LayerManagerOGL();
-
-  void CleanupResources();
 
   void Destroy();
 
@@ -103,7 +102,8 @@ public:
 
   void EndConstruction();
 
-  virtual bool EndEmptyTransaction();
+  virtual bool EndEmptyTransaction(EndTransactionFlags aFlags = END_DEFAULT);
+  virtual void NotifyShadowTreeTransaction();
   virtual void EndTransaction(DrawThebesLayerCallback aCallback,
                               void* aCallbackData,
                               EndTransactionFlags aFlags = END_DEFAULT);
@@ -114,13 +114,15 @@ public:
   {
       if (!mGLContext)
           return false;
-      PRInt32 maxSize = mGLContext->GetMaxTextureSize();
+      int32_t maxSize = GetMaxTextureSize();
       return aSize <= gfxIntSize(maxSize, maxSize);
   }
 
-  virtual PRInt32 GetMaxTextureSize() const
+  virtual int32_t GetMaxTextureSize() const
   {
-    return mGLContext->GetMaxTextureSize();
+    int32_t maxSize;
+    mGLContext->fGetIntegerv(LOCAL_GL_MAX_TEXTURE_SIZE, &maxSize);
+    return maxSize;
   }
 
   virtual already_AddRefed<ThebesLayer> CreateThebesLayer();
@@ -138,9 +140,15 @@ public:
   virtual already_AddRefed<ShadowImageLayer> CreateShadowImageLayer();
   virtual already_AddRefed<ShadowColorLayer> CreateShadowColorLayer();
   virtual already_AddRefed<ShadowCanvasLayer> CreateShadowCanvasLayer();
+  virtual already_AddRefed<ShadowRefLayer> CreateShadowRefLayer();
 
   virtual LayersBackend GetBackendType() { return LAYERS_OPENGL; }
   virtual void GetBackendName(nsAString& name) { name.AssignLiteral("OpenGL"); }
+
+  virtual already_AddRefed<gfxASurface>
+    CreateOptimalMaskSurface(const gfxIntSize &aSize);
+
+  virtual void ClearCachedResources(Layer* aSubtree = nullptr) MOZ_OVERRIDE;
 
   /**
    * Helper methods.
@@ -314,9 +322,6 @@ public:
                                       GLenum aWrapMode = LOCAL_GL_REPEAT,
                                       bool aFlipped = false);
 
-  virtual gfxASurface::gfxImageFormat MaskImageFormat() 
-  { return gfxASurface::ImageFormatARGB32; }
-
 #ifdef MOZ_LAYERS_HAVE_LOG
   virtual const char* Name() const { return "OGL"; }
 #endif // MOZ_LAYERS_HAVE_LOG
@@ -345,10 +350,32 @@ public:
   gfxMatrix& GetWorldTransform(void);
   void WorldTransformRect(nsIntRect& aRect);
 
+  void UpdateRenderBounds(const nsIntRect& aRect);
+
   /**
    * Set the size of the surface we're rendering to.
    */
   void SetSurfaceSize(int width, int height);
+
+  bool CompositingDisabled() { return mCompositingDisabled; }
+  void SetCompositingDisabled(bool aCompositingDisabled) { mCompositingDisabled = aCompositingDisabled; }
+
+  /**
+   * Creates a DrawTarget which is optimized for inter-operating with this
+   * layermanager.
+   */
+  virtual TemporaryRef<mozilla::gfx::DrawTarget>
+    CreateDrawTarget(const mozilla::gfx::IntSize &aSize,
+                     mozilla::gfx::SurfaceFormat aFormat);
+
+  /**
+   * Calculates the 'completeness' of the rendering that intersected with the
+   * screen on the last render. This is only useful when progressive tile
+   * drawing is enabled, otherwise this will always return 1.0.
+   * This function's expense scales with the size of the layer tree and the
+   * complexity of individual layers' valid regions.
+   */
+  float ComputeRenderIntegrity();
 
 private:
   /** Widget associated with this layer manager */
@@ -364,6 +391,9 @@ private:
   nsRefPtr<gfxContext> mTarget;
 
   nsRefPtr<GLContext> mGLContext;
+
+  /** Our more efficient but less powerful alter ego, if one is available. */
+  nsRefPtr<Composer2D> mComposer2D;
 
   already_AddRefed<mozilla::gl::GLContext> CreateContext();
 
@@ -391,6 +421,7 @@ private:
 
   /** Misc */
   bool mHasBGRA;
+  bool mCompositingDisabled;
 
   /**
    * When rendering to an EGL surface (e.g. on Android), we rely on being told
@@ -428,32 +459,58 @@ private:
    */
   void AddPrograms(gl::ShaderProgramType aType);
 
+  /**
+   * Recursive helper method for use by ComputeRenderIntegrity. Subtracts
+   * any incomplete rendering on aLayer from aScreenRegion. Any low-precision
+   * rendering is included in aLowPrecisionScreenRegion. aTransform is the
+   * accumulated transform of intermediate surfaces beneath aLayer.
+   */
+  static void ComputeRenderIntegrityInternal(Layer* aLayer,
+                                             nsIntRegion& aScreenRegion,
+                                             nsIntRegion& aLowPrecisionScreenRegion,
+                                             const gfx3DMatrix& aTransform);
+
   /* Thebes layer callbacks; valid at the end of a transaciton,
    * while rendering */
   DrawThebesLayerCallback mThebesLayerCallback;
   void *mThebesLayerCallbackData;
   gfxMatrix mWorldMatrix;
-
-  struct FPSState
-  {
-      GLuint texture;
-      int fps;
-      bool initialized;
-      int fcount;
-      TimeStamp last;
-
-      FPSState()
-        : texture(0)
-        , fps(0)
-        , initialized(false)
-        , fcount(0)
-      {
-        last = TimeStamp::Now();
-      }
-      void DrawFPS(GLContext*, ShaderProgramOGL*);
-  } mFPS;
+  nsAutoPtr<FPSState> mFPS;
+  nsIntRect mRenderBounds;
+#ifdef DEBUG
+  // NB: only interesting when this is a purely compositing layer
+  // manager.  True after possibly onscreen layers have had their
+  // cached resources cleared outside of a transaction, and before the
+  // next forwarded transaction that re-validates their buffers.
+  bool mMaybeInvalidTree;
+#endif
 
   static bool sDrawFPS;
+  static bool sFrameCounter;
+};
+
+enum LayerRenderStateFlags {
+  LAYER_RENDER_STATE_Y_FLIPPED = 1 << 0,
+  LAYER_RENDER_STATE_BUFFER_ROTATION = 1 << 1
+};
+
+struct LayerRenderState {
+  LayerRenderState() : mSurface(nullptr), mFlags(0)
+  {}
+
+  LayerRenderState(SurfaceDescriptor* aSurface, uint32_t aFlags = 0)
+    : mSurface(aSurface)
+    , mFlags(aFlags)
+  {}
+
+  bool YFlipped() const
+  { return mFlags & LAYER_RENDER_STATE_Y_FLIPPED; }
+
+  bool BufferRotated() const
+  { return mFlags & LAYER_RENDER_STATE_BUFFER_ROTATION; }
+
+  SurfaceDescriptor* mSurface;
+  uint32_t mFlags;
 };
 
 /**
@@ -469,7 +526,7 @@ public:
   virtual ~LayerOGL() { }
 
   virtual LayerOGL *GetFirstChildOGL() {
-    return nsnull;
+    return nullptr;
   }
 
   /* Do NOT call this from the generic LayerOGL destructor.  Only from the
@@ -478,6 +535,8 @@ public:
   virtual void Destroy() = 0;
 
   virtual Layer* GetLayer() = 0;
+
+  virtual LayerRenderState GetRenderState() { return LayerRenderState(); }
 
   virtual void RenderLayer(int aPreviousFrameBuffer,
                            const nsIntPoint& aOffset) = 0;

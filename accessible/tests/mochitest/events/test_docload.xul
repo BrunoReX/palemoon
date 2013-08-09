@@ -110,7 +110,9 @@
 
       function getNestedDoc()
       {
-        return currentTabDocument().getElementsByTagName("iframe")[0].firstChild;
+        var iframeNodes = currentTabDocument().getElementsByTagName("iframe");
+        return iframeNodes && iframeNodes.length > 0 ?
+          iframeNodes[0].firstChild : null;
       }
     }
 

@@ -7,7 +7,7 @@
 #include "nsUserInfo.h"
 #include "nsToolkitCompsCID.h"
 #include "nsFindService.h"
-#if defined(MOZ_UPDATER) && !defined(ANDROID)
+#if defined(USE_MOZ_UPDATER)
 #include "nsUpdateDriver.h"
 #endif
 
@@ -15,9 +15,7 @@
 #include "nsParentalControlsServiceWin.h"
 #endif
 
-#ifdef ALERTS_SERVICE
 #include "nsAlertsService.h"
-#endif
 
 #include "nsDownloadManager.h"
 #include "nsDownloadProxy.h"
@@ -45,9 +43,7 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(nsFindService)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsParentalControlsServiceWin)
 #endif
 
-#ifdef ALERTS_SERVICE
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsAlertsService)
-#endif
 
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsDownloadManager,
                                          nsDownloadManager::GetSingleton) 
@@ -81,15 +77,13 @@ nsUrlClassifierDBServiceConstructor(nsISupports *aOuter, REFNSIID aIID,
 #endif
 
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsBrowserStatusFilter)
-#if defined(MOZ_UPDATER) && !defined(ANDROID)
+#if defined(USE_MOZ_UPDATER)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsUpdateProcessor)
 #endif
 
 NS_DEFINE_NAMED_CID(NS_TOOLKIT_APPSTARTUP_CID);
 NS_DEFINE_NAMED_CID(NS_USERINFO_CID);
-#ifdef ALERTS_SERVICE
 NS_DEFINE_NAMED_CID(NS_ALERTSSERVICE_CID);
-#endif
 #if defined(XP_WIN) && !defined(MOZ_DISABLE_PARENTAL_CONTROLS)
 NS_DEFINE_NAMED_CID(NS_PARENTALCONTROLSSERVICE_CID);
 #endif
@@ -105,16 +99,14 @@ NS_DEFINE_NAMED_CID(NS_URLCLASSIFIERUTILS_CID);
 #endif
 NS_DEFINE_NAMED_CID(NS_BROWSERSTATUSFILTER_CID);
 NS_DEFINE_NAMED_CID(NS_CHARSETMENU_CID);
-#if defined(MOZ_UPDATER) && !defined(ANDROID)
+#if defined(USE_MOZ_UPDATER)
 NS_DEFINE_NAMED_CID(NS_UPDATEPROCESSOR_CID);
 #endif
 
 static const mozilla::Module::CIDEntry kToolkitCIDs[] = {
   { &kNS_TOOLKIT_APPSTARTUP_CID, false, NULL, nsAppStartupConstructor },
   { &kNS_USERINFO_CID, false, NULL, nsUserInfoConstructor },
-#ifdef ALERTS_SERVICE
   { &kNS_ALERTSSERVICE_CID, false, NULL, nsAlertsServiceConstructor },
-#endif
 #if defined(XP_WIN) && !defined(MOZ_DISABLE_PARENTAL_CONTROLS)
   { &kNS_PARENTALCONTROLSSERVICE_CID, false, NULL, nsParentalControlsServiceWinConstructor },
 #endif
@@ -130,7 +122,7 @@ static const mozilla::Module::CIDEntry kToolkitCIDs[] = {
 #endif
   { &kNS_BROWSERSTATUSFILTER_CID, false, NULL, nsBrowserStatusFilterConstructor },
   { &kNS_CHARSETMENU_CID, false, NULL, NS_NewCharsetMenu },
-#if defined(MOZ_UPDATER) && !defined(ANDROID)
+#if defined(USE_MOZ_UPDATER)
   { &kNS_UPDATEPROCESSOR_CID, false, NULL, nsUpdateProcessorConstructor },
 #endif
   { NULL }
@@ -139,9 +131,7 @@ static const mozilla::Module::CIDEntry kToolkitCIDs[] = {
 static const mozilla::Module::ContractIDEntry kToolkitContracts[] = {
   { NS_APPSTARTUP_CONTRACTID, &kNS_TOOLKIT_APPSTARTUP_CID },
   { NS_USERINFO_CONTRACTID, &kNS_USERINFO_CID },
-#ifdef ALERTS_SERVICE
   { NS_ALERTSERVICE_CONTRACTID, &kNS_ALERTSSERVICE_CID },
-#endif
 #if defined(XP_WIN) && !defined(MOZ_DISABLE_PARENTAL_CONTROLS)
   { NS_PARENTALCONTROLSSERVICE_CONTRACTID, &kNS_PARENTALCONTROLSSERVICE_CID },
 #endif
@@ -158,7 +148,7 @@ static const mozilla::Module::ContractIDEntry kToolkitContracts[] = {
 #endif
   { NS_BROWSERSTATUSFILTER_CONTRACTID, &kNS_BROWSERSTATUSFILTER_CID },
   { NS_RDF_DATASOURCE_CONTRACTID_PREFIX NS_CHARSETMENU_PID, &kNS_CHARSETMENU_CID },
-#if defined(MOZ_UPDATER) && !defined(ANDROID)
+#if defined(USE_MOZ_UPDATER)
   { NS_UPDATEPROCESSOR_CONTRACTID, &kNS_UPDATEPROCESSOR_CID },
 #endif
   { NULL }

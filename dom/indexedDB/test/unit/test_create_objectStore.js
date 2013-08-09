@@ -8,7 +8,6 @@ var testGenerator = testSteps();
 function testSteps()
 {
   const name = this.window ? window.location.pathname : "Splendid Test";
-  const description = "My Test Database";
   const objectStoreInfo = [
     { name: "1", options: { keyPath: null } },
     { name: "2", options: { keyPath: null, autoIncrement: true } },
@@ -26,9 +25,10 @@ function testSteps()
     { name: undefined }
   ];
 
-  let request = mozIndexedDB.open(name, 1, description);
+  let request = indexedDB.open(name, 1);
   request.onerror = errorHandler;
   request.onupgradeneeded = grabEventAndContinueHandler;
+  request.onsuccess = unexpectedSuccessHandler;
   let event = yield;
 
   let db = event.target.result;
@@ -98,6 +98,37 @@ function testSteps()
     }
     is(found, true, "transaction has correct objectStoreNames list");
   }
+
+  // Can't handle autoincrement and empty keypath
+  let ex;
+  try {
+    db.createObjectStore("storefail", { keyPath: "", autoIncrement: true });
+  }
+  catch(e) {
+    ex = e;
+  }
+  ok(ex, "createObjectStore with empty keyPath and autoIncrement should throw");
+  is(ex.name, "InvalidAccessError", "should throw right exception");
+  ok(ex instanceof DOMException, "should throw right exception");
+  is(ex.code, DOMException.INVALID_ACCESS_ERR, "should throw right exception");
+
+  // Can't handle autoincrement and array keypath
+  let ex;
+  try {
+    db.createObjectStore("storefail", { keyPath: ["a"], autoIncrement: true });
+  }
+  catch(e) {
+    ex = e;
+  }
+  ok(ex, "createObjectStore with array keyPath and autoIncrement should throw");
+  is(ex.name, "InvalidAccessError", "should throw right exception");
+  ok(ex instanceof DOMException, "should throw right exception");
+  is(ex.code, DOMException.INVALID_ACCESS_ERR, "should throw right exception");
+
+  request.onsuccess = grabEventAndContinueHandler;
+  request.onupgradeneeded = unexpectedSuccessHandler;
+
+  event = yield;
 
   finishTest();
   yield;

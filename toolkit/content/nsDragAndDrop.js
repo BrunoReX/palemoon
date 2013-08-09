@@ -1,7 +1,8 @@
-# -*- Mode: Java; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 ////////////////////////////////////////////////////////////////////////
 //
@@ -129,7 +130,9 @@ var nsTransferable = {
     {
       const kXferableContractID = "@mozilla.org/widget/transferable;1";
       const kXferableIID = Components.interfaces.nsITransferable;
-      return Components.classes[kXferableContractID].createInstance(kXferableIID);
+      var trans = Components.classes[kXferableContractID].createInstance(kXferableIID);
+      trans.init(null);
+      return trans;
     }
 };  
 
@@ -562,11 +565,10 @@ var nsDragAndDrop = {
       aDraggedText = aDraggedText.replace(/^\s*|\s*$/g, '');
 
       var uri;
-
+      var ioService = Components.classes["@mozilla.org/network/io-service;1"]
+                                .getService(Components.interfaces.nsIIOService);
       try {
-        uri = Components.classes["@mozilla.org/network/io-service;1"]
-                        .getService(Components.interfaces.nsIIOService)
-                        .newURI(aDraggedText, null, null);
+        uri = ioService.newURI(aDraggedText, null, null);
       } catch (e) {
       }
 
@@ -585,11 +587,12 @@ var nsDragAndDrop = {
       var sourceDoc = aDragSession.sourceDocument;
       // Use "file:///" as the default sourceURI so that drops of file:// URIs
       // are always allowed.
-      var sourceURI = sourceDoc ? sourceDoc.documentURI : "file:///";
+      var principal = sourceDoc ? sourceDoc.nodePrincipal
+                                : secMan.getSimpleCodebasePrincipal(ioService.newURI("file:///", null, null));
 
       try {
-        secMan.checkLoadURIStr(sourceURI, aDraggedText,
-                               nsIScriptSecurityManager.STANDARD);
+        secMan.checkLoadURIStrWithPrincipal(principal, aDraggedText,
+                                            nsIScriptSecurityManager.STANDARD);
       } catch (e) {
         // Stop event propagation right here.
         aEvent.stopPropagation();

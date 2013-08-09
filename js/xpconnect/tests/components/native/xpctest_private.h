@@ -15,8 +15,9 @@
 #include "nsStringGlue.h"
 #include "xpctest_attributes.h"
 #include "xpctest_params.h"
+#include "mozilla/Attributes.h"
 
-class xpcTestObjectReadOnly : public nsIXPCTestObjectReadOnly {
+class xpcTestObjectReadOnly MOZ_FINAL : public nsIXPCTestObjectReadOnly {
  public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIXPCTESTOBJECTREADONLY
@@ -24,13 +25,14 @@ class xpcTestObjectReadOnly : public nsIXPCTestObjectReadOnly {
 
  private:
     bool    boolProperty;
-    PRInt16 shortProperty;
-    PRInt32 longProperty;
+    int16_t shortProperty;
+    int32_t longProperty;
     float   floatProperty;
     char    charProperty;
+    PRTime  timeProperty;
 };
 
-class xpcTestObjectReadWrite : public nsIXPCTestObjectReadWrite {
+class xpcTestObjectReadWrite MOZ_FINAL : public nsIXPCTestObjectReadWrite {
   public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIXPCTESTOBJECTREADWRITE
@@ -40,14 +42,15 @@ class xpcTestObjectReadWrite : public nsIXPCTestObjectReadWrite {
 
  private:
      bool boolProperty;
-     PRInt16 shortProperty;
-     PRInt32 longProperty;
+     int16_t shortProperty;
+     int32_t longProperty;
      float floatProperty;
      char charProperty;
      char *stringProperty;
+     PRTime timeProperty;
 };
 
-class nsXPCTestParams : public nsIXPCTestParams
+class nsXPCTestParams MOZ_FINAL : public nsIXPCTestParams
 {
 public:
     NS_DECL_ISUPPORTS

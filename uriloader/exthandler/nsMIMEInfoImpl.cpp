@@ -8,7 +8,7 @@
 #include "nsXPIDLString.h"
 #include "nsReadableUtils.h"
 #include "nsStringEnumerator.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIFileURL.h"
 #include "nsEscape.h"
 #include "nsNetUtil.h"
@@ -73,10 +73,10 @@ nsMIMEInfoBase::ExtensionExists(const nsACString& aExtension, bool *_retval)
 {
     NS_ASSERTION(!aExtension.IsEmpty(), "no extension");
     bool found = false;
-    PRUint32 extCount = mExtensions.Length();
+    uint32_t extCount = mExtensions.Length();
     if (extCount < 1) return NS_OK;
 
-    for (PRUint8 i=0; i < extCount; i++) {
+    for (uint8_t i=0; i < extCount; i++) {
         const nsCString& ext = mExtensions[i];
         if (ext.Equals(aExtension, nsCaseInsensitiveCStringComparator())) {
             found = true;
@@ -102,8 +102,8 @@ NS_IMETHODIMP
 nsMIMEInfoBase::SetPrimaryExtension(const nsACString& aExtension)
 {
   NS_ASSERTION(!aExtension.IsEmpty(), "no extension");
-  PRUint32 extCount = mExtensions.Length();
-  PRUint8 i;
+  uint32_t extCount = mExtensions.Length();
+  uint8_t i;
   bool found = false;
   for (i=0; i < extCount; i++) {
     const nsCString& ext = mExtensions[i];
@@ -167,7 +167,7 @@ nsMIMEInfoBase::Equals(nsIMIMEInfo *aMIMEInfo, bool *_retval)
 {
     if (!aMIMEInfo) return NS_ERROR_NULL_POINTER;
 
-    nsCAutoString type;
+    nsAutoCString type;
     nsresult rv = aMIMEInfo->GetMIMEType(type);
     if (NS_FAILED(rv)) return rv;
 
@@ -182,7 +182,7 @@ nsMIMEInfoBase::SetFileExtensions(const nsACString& aExtensions)
     mExtensions.Clear();
     nsCString extList( aExtensions );
     
-    PRInt32 breakLocation = -1;
+    int32_t breakLocation = -1;
     while ( (breakLocation= extList.FindChar(',') )!= -1)
     {
         mExtensions.AppendElement(Substring(extList.get(), extList.get() + breakLocation));
@@ -260,7 +260,7 @@ nsMIMEInfoBase::SetAlwaysAskBeforeHandling(bool aAlwaysAsk)
 
 /* static */
 nsresult 
-nsMIMEInfoBase::GetLocalFileFromURI(nsIURI *aURI, nsILocalFile **aFile)
+nsMIMEInfoBase::GetLocalFileFromURI(nsIURI *aURI, nsIFile **aFile)
 {
   nsresult rv;
 
@@ -300,7 +300,7 @@ nsMIMEInfoBase::LaunchWithFile(nsIFile* aFile)
     rv = localHandler->GetExecutable(getter_AddRefs(executable));
     NS_ENSURE_SUCCESS(rv, rv);
 
-    nsCAutoString path;
+    nsAutoCString path;
     aFile->GetNativePath(path);
     return LaunchWithIProcess(executable, path);
   }
@@ -349,11 +349,11 @@ nsMIMEInfoBase::InitProcess(nsIFile* aApp, nsresult* aResult)
   nsCOMPtr<nsIProcess> process = do_CreateInstance(NS_PROCESS_CONTRACTID,
                                                    aResult);
   if (NS_FAILED(*aResult))
-    return nsnull;
+    return nullptr;
 
   *aResult = process->Init(aApp);
   if (NS_FAILED(*aResult))
-    return nsnull;
+    return nullptr;
 
   return process.forget();
 }
@@ -418,7 +418,7 @@ nsMIMEInfoImpl::LaunchDefaultWithFile(nsIFile* aFile)
   if (!mDefaultApplication)
     return NS_ERROR_FILE_NOT_FOUND;
 
-  nsCAutoString nativePath;
+  nsAutoCString nativePath;
   aFile->GetNativePath(nativePath);
   
   return LaunchWithIProcess(mDefaultApplication, nativePath);

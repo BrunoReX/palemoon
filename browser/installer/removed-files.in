@@ -87,6 +87,8 @@ components/xpcom.xpt
 components/xpti.dat
 components/xptitemp.dat
 components/nsMicrosummaryService.js
+components/nsProxyAutoConfig.manifest
+components/nsProxyAutoConfig.js
 D3DCompiler_42.dll
 d3dx9_42.dll
 defaults/pref/all.js
@@ -120,6 +122,7 @@ extensions/talkback@mozilla.org/components/qfaservices.xpt
 extensions/talkback@mozilla.org/install.rdf
 extensions/{641d8d09-7dda-4850-8228-ac0ab65e2ac9}/
 extensions/{641d8d09-7dda-4850-8228-ac0ab65e2ac9}/install.rdf
+extensions/{972ce4c6-7e08-4474-a285-3208198ce6fd}/preview.png
 extensions/testpilot@labs.mozilla.com/chrome.manifest
 extensions/testpilot@labs.mozilla.com/components/TestPilot.js
 extensions/testpilot@labs.mozilla.com/content/all-studies-window.js
@@ -288,6 +291,9 @@ res/ua.css
 res/unixcharset.properties
 res/viewsource.css
 res/wincharset.properties
+#ifdef XP_MACOSX
+run-mozilla.sh
+#endif
 searchplugins/DRAE.gif
 searchplugins/DRAE.png
 searchplugins/DRAE.src
@@ -875,6 +881,9 @@ xpicleanup@BIN_SUFFIX@
   components/amContentHandler.js
   components/amWebInstallListener.js
   components/browser.xpt
+  components/BrowserElementParent.js
+  components/BrowserElementParent.manifest
+  components/BrowserElementPromptService.jsm
   components/components.manifest
   components/contentAreaDropListener.js
   components/contentSecurityPolicy.js
@@ -914,6 +923,7 @@ xpicleanup@BIN_SUFFIX@
   components/nsPlacesExpiration.js
   components/nsPrivateBrowsingService.js
   components/nsPrompter.js
+  components/nsProxyAutoConfig.manifest
   components/nsProxyAutoConfig.js
   components/nsSafebrowsingApplication.js
   components/nsSearchService.js
@@ -1336,6 +1346,25 @@ xpicleanup@BIN_SUFFIX@
   plugins/MRJPlugin.plugin/Contents/Resources/MRJPlugin.rsrc
   redo-prebinding.sh
   res/bloatcycle.html
+  res/cursors/arrowN.tiff
+  res/cursors/arrowS.tiff
+  res/cursors/colResize.tiff
+  res/cursors/help.tiff
+  res/cursors/rowResize.tiff
+  res/cursors/sizeNE.tiff
+  res/cursors/sizeNESW.tiff
+  res/cursors/sizeNS.tiff
+  res/cursors/sizeNW.tiff
+  res/cursors/sizeNWSE.tiff
+  res/cursors/sizeSE.tiff
+  res/cursors/sizeSW.tiff
+  res/cursors/spin1.tiff
+  res/cursors/spin2.tiff
+  res/cursors/spin3.tiff
+  res/cursors/spin4.tiff
+  res/cursors/vtIBeam.tiff
+  res/cursors/zoomIn.tiff
+  res/cursors/zoomOut.tiff
   res/cursors/CVS/Entries
   res/cursors/CVS/Repository
   res/cursors/CVS/Root
@@ -1366,6 +1395,29 @@ xpicleanup@BIN_SUFFIX@
   js3250.dll
   mozcpp19.dll
   mozcrt19.dll
+  #if MOZ_MSVC_REDIST != 1400
+    Microsoft.VC80.CRT.manifest
+    msvcm80.dll
+    msvcp80.dll
+    msvcr80.dll
+  #endif
+  #if MOZ_MSVC_REDIST != 1500
+    Microsoft.VC90.CRT.manifest
+    msvcm90.dll
+    msvcp90.dll
+    msvcr90.dll
+  #endif
+  #if MOZ_MSVC_REDIST != 1600
+    msvcp100.dll
+    msvcr100.dll
+  #endif
+  #if MOZ_MSVC_REDIST != 1700
+    msvcp110.dll
+    msvcr110.dll
+    #ifdef MOZ_METRO
+      vccorlib110.dll
+    #endif
+  #endif
   plugins/npnul32.dll
 #endif
 @DLL_PREFIX@xpcom_core@DLL_SUFFIX@

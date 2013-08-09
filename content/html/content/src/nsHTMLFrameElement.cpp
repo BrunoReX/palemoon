@@ -8,9 +8,9 @@
 #include "nsIDOMHTMLFrameElement.h"
 #include "nsGenericHTMLFrameElement.h"
 #include "nsGkAtoms.h"
-#include "nsIDocument.h"
-#include "nsIDOMDocument.h"
-#include "nsDOMError.h"
+#include "nsError.h"
+
+class nsIDOMDocument;
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -27,19 +27,19 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLFrameElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLFrameElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLFrameElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLFrameElement
   NS_DECL_NSIDOMHTMLFRAMEELEMENT
 
   // nsIContent
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
@@ -65,8 +65,8 @@ nsHTMLFrameElement::~nsHTMLFrameElement()
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLFrameElement, nsGenericElement)
-NS_IMPL_RELEASE_INHERITED(nsHTMLFrameElement, nsGenericElement)
+NS_IMPL_ADDREF_INHERITED(nsHTMLFrameElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLFrameElement, Element)
 
 
 DOMCI_NODE_DATA(HTMLFrameElement, nsHTMLFrameElement)
@@ -105,7 +105,7 @@ nsHTMLFrameElement::GetContentWindow(nsIDOMWindow** aContentWindow)
 }
 
 bool
-nsHTMLFrameElement::ParseAttribute(PRInt32 aNamespaceID,
+nsHTMLFrameElement::ParseAttribute(int32_t aNamespaceID,
                                    nsIAtom* aAttribute,
                                    const nsAString& aValue,
                                    nsAttrValue& aResult)

@@ -9,8 +9,6 @@
 #ifndef __mozilla_widget_GfxDriverInfo_h__
 #define __mozilla_widget_GfxDriverInfo_h__
 
-#define V(a,b,c,d) GFX_DRIVER_VERSION(a,b,c,d)
-
 // Macros for adding a blocklist item to the static list.
 #define APPEND_TO_DRIVER_BLOCKLIST(os, vendor, devices, feature, featureStatus, driverComparator, driverVersion, suggestedVersion) \
     mDriverInfo->AppendElement(GfxDriverInfo(os, vendor, devices, feature, featureStatus, driverComparator, driverVersion, suggestedVersion))
@@ -26,10 +24,12 @@ enum OperatingSystem {
   DRIVER_OS_WINDOWS_SERVER_2003,
   DRIVER_OS_WINDOWS_VISTA,
   DRIVER_OS_WINDOWS_7,
+  DRIVER_OS_WINDOWS_8,
   DRIVER_OS_LINUX,
   DRIVER_OS_OS_X_10_5,
   DRIVER_OS_OS_X_10_6,
   DRIVER_OS_OS_X_10_7,
+  DRIVER_OS_OS_X_10_8,
   DRIVER_OS_ANDROID,
   DRIVER_OS_ALL
 };
@@ -77,8 +77,8 @@ struct GfxDriverInfo
   // If |ownDevices| is true, you are transferring ownership of the devices
   // array, and it will be deleted when this GfxDriverInfo is destroyed.
   GfxDriverInfo(OperatingSystem os, nsAString& vendor, GfxDeviceFamily* devices,
-                PRInt32 feature, PRInt32 featureStatus, VersionComparisonOp op,
-                PRUint64 driverVersion, const char *suggestedVersion = nsnull,
+                int32_t feature, int32_t featureStatus, VersionComparisonOp op,
+                uint64_t driverVersion, const char *suggestedVersion = nullptr,
                 bool ownDevices = false);
 
   GfxDriverInfo();
@@ -86,6 +86,7 @@ struct GfxDriverInfo
   ~GfxDriverInfo();
 
   OperatingSystem mOperatingSystem;
+  uint32_t mOperatingSystemVersion;
 
   nsString mAdapterVendor;
 
@@ -97,18 +98,18 @@ struct GfxDriverInfo
   bool mDeleteDevices;
 
   /* A feature from nsIGfxInfo, or all features */
-  PRInt32 mFeature;
-  static PRInt32 allFeatures;
+  int32_t mFeature;
+  static int32_t allFeatures;
 
   /* A feature status from nsIGfxInfo */
-  PRInt32 mFeatureStatus;
+  int32_t mFeatureStatus;
 
   VersionComparisonOp mComparisonOp;
 
   /* versions are assumed to be A.B.C.D packed as 0xAAAABBBBCCCCDDDD */
-  PRUint64 mDriverVersion;
-  PRUint64 mDriverVersionMax;
-  static PRUint64 allDriverVersions;
+  uint64_t mDriverVersion;
+  uint64_t mDriverVersionMax;
+  static uint64_t allDriverVersions;
 
   const char *mSuggestedVersion;
 
@@ -117,20 +118,107 @@ struct GfxDriverInfo
 
   static const nsAString& GetDeviceVendor(DeviceVendor id);
   static nsAString* mDeviceVendors[DeviceVendorMax];
+
+  nsString mModel, mHardware, mProduct, mManufacturer;
 };
 
 #define GFX_DRIVER_VERSION(a,b,c,d) \
-  ((PRUint64(a)<<48) | (PRUint64(b)<<32) | (PRUint64(c)<<16) | PRUint64(d))
+  ((uint64_t(a)<<48) | (uint64_t(b)<<32) | (uint64_t(c)<<16) | uint64_t(d))
+
+static uint64_t
+V(uint32_t a, uint32_t b, uint32_t c, uint32_t d)
+{
+  // We make sure every driver number is padded by 0s, this will allow us the
+  // easiest 'compare as if decimals' approach. See ParseDriverVersion for a
+  // more extensive explanation of this approach.
+  while (b > 0 && b < 1000) {
+    b *= 10;
+  }
+  while (c > 0 && c < 1000) {
+    c *= 10;
+  }
+  while (d > 0 && d < 1000) {
+    d *= 10;
+  }
+  return GFX_DRIVER_VERSION(a, b, c, d);
+}
+
+// All destination string storage needs to have at least 5 bytes available.
+static bool SplitDriverVersion(const char *aSource, char *aAStr, char *aBStr, char *aCStr, char *aDStr)
+{
+  // sscanf doesn't do what we want here to we parse this manually.
+  int len = strlen(aSource);
+  char *dest[4] = { aAStr, aBStr, aCStr, aDStr };
+  int destIdx = 0;
+  int destPos = 0;
+
+  for (int i = 0; i < len; i++) {
+    if (destIdx > ArrayLength(dest)) {
+      // Invalid format found. Ensure we don't access dest beyond bounds.
+      return false;
+    }
+
+    if (aSource[i] == '.') {
+      dest[destIdx++][destPos] = 0;
+      destPos = 0;
+      continue;
+    }
+
+    if (destPos > 3) {
+      // Ignore more than 4 chars. Ensure we never access dest[destIdx]
+      // beyond its bounds.
+      continue;
+    }
+
+    dest[destIdx][destPos++] = aSource[i];
+  }
+
+  // Add last terminator.
+  dest[destIdx][destPos] = 0;
+
+  if (destIdx != ArrayLength(dest) - 1) {
+    return false;
+  }
+  return true;
+}
+
+// This allows us to pad driver versiopn 'substrings' with 0s, this
+// effectively allows us to treat the version numbers as 'decimals'. This is
+// a little strange but this method seems to do the right thing for all
+// different vendor's driver strings. i.e. .98 will become 9800, which is
+// larger than .978 which would become 9780.
+static void PadDriverDecimal(char *aString)
+{
+  for (int i = 0; i < 4; i++) {
+    if (!aString[i]) {
+      for (int c = i; c < 4; c++) {
+        aString[c] = '0';
+      }
+      break;
+    }
+  }
+  aString[4] = 0;
+}
 
 inline bool
-ParseDriverVersion(nsAString& aVersion, PRUint64 *aNumericVersion)
+ParseDriverVersion(nsAString& aVersion, uint64_t *aNumericVersion)
 {
 #if defined(XP_WIN)
   int a, b, c, d;
+  char aStr[8], bStr[8], cStr[8], dStr[8];
   /* honestly, why do I even bother */
-  if (sscanf(NS_LossyConvertUTF16toASCII(aVersion).get(),
-             "%d.%d.%d.%d", &a, &b, &c, &d) != 4)
+  if (!SplitDriverVersion(NS_LossyConvertUTF16toASCII(aVersion).get(), aStr, bStr, cStr, dStr))
     return false;
+
+  PadDriverDecimal(bStr);
+  PadDriverDecimal(cStr);
+  PadDriverDecimal(dStr);
+
+  a = atoi(aStr);
+  b = atoi(bStr);
+  c = atoi(cStr);
+  d = atoi(dStr);
+
   if (a < 0 || a > 0xffff) return false;
   if (b < 0 || b > 0xffff) return false;
   if (c < 0 || c > 0xffff) return false;

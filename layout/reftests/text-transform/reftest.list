@@ -4,6 +4,7 @@
 == capitalize-4.html capitalize-4-ref.html
 == capitalize-5.html capitalize-5-ref.html
 == capitalize-6.html capitalize-6-ref.html
+== capitalize-7.html capitalize-7-ref.html
 == lowercase-1.html lowercase-ref.html
 == lowercase-sigma-1.html lowercase-sigma-1-ref.html
 == small-caps-1.html small-caps-1-ref.html
@@ -21,3 +22,6 @@ HTTP(..) != small-caps-turkish-1.html small-caps-turkish-1-notref.html
 == greek-uppercase-1.html greek-uppercase-1-ref.html
 == greek-uppercase-2.html greek-uppercase-2-ref.html
 == greek-small-caps-1.html greek-small-caps-1-ref.html
+== fullwidth-1.html fullwidth-1-ref.html
+== fullwidth-2.html fullwidth-2-ref.html
+== fullwidth-all.html fullwidth-all-ref.html

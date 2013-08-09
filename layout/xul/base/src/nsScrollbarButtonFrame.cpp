@@ -86,7 +86,7 @@ nsScrollbarButtonFrame::HandleButtonPress(nsPresContext* aPresContext,
 {
   // Get the desired action for the scrollbar button.
   LookAndFeel::IntID tmpAction;
-  PRUint16 button = static_cast<nsMouseEvent*>(aEvent)->button;
+  uint16_t button = static_cast<nsMouseEvent*>(aEvent)->button;
   if (button == nsMouseEvent::eLeftButton) {
     tmpAction = LookAndFeel::eIntID_ScrollButtonLeftMouseButtonAction;
   } else if (button == nsMouseEvent::eMiddleButton) {
@@ -98,7 +98,7 @@ nsScrollbarButtonFrame::HandleButtonPress(nsPresContext* aPresContext,
   }
 
   // Get the button action metric from the pres. shell.
-  PRInt32 pressedButtonAction;
+  int32_t pressedButtonAction;
   if (NS_FAILED(LookAndFeel::GetInt(tmpAction, &pressedButtonAction))) {
     return false;
   }
@@ -107,7 +107,7 @@ nsScrollbarButtonFrame::HandleButtonPress(nsPresContext* aPresContext,
   nsIFrame* scrollbar;
   GetParentWithTag(nsGkAtoms::scrollbar, this, scrollbar);
 
-  if (scrollbar == nsnull)
+  if (scrollbar == nullptr)
     return false;
 
   // get the scrollbars content node
@@ -115,11 +115,11 @@ nsScrollbarButtonFrame::HandleButtonPress(nsPresContext* aPresContext,
 
   static nsIContent::AttrValuesArray strings[] = { &nsGkAtoms::increment,
                                                    &nsGkAtoms::decrement,
-                                                   nsnull };
-  PRInt32 index = mContent->FindAttrValueIn(kNameSpaceID_None,
+                                                   nullptr };
+  int32_t index = mContent->FindAttrValueIn(kNameSpaceID_None,
                                             nsGkAtoms::type,
                                             strings, eCaseMatters);
-  PRInt32 direction;
+  int32_t direction;
   if (index == 0) 
     direction = 1;
   else if (index == 1)
@@ -173,7 +173,7 @@ nsScrollbarButtonFrame::HandleRelease(nsPresContext* aPresContext,
                                       nsGUIEvent*     aEvent,
                                       nsEventStatus*  aEventStatus)
 {
-  nsIPresShell::SetCapturingContent(nsnull, 0);
+  nsIPresShell::SetCapturingContent(nullptr, 0);
   // we're not active anymore
   mContent->UnsetAttr(kNameSpaceID_None, nsGkAtoms::active, true);
   StopRepeat();
@@ -205,18 +205,18 @@ nsScrollbarButtonFrame::DoButtonAction(bool aSmoothScroll)
   nsIFrame* scrollbar;
   GetParentWithTag(nsGkAtoms::scrollbar, this, scrollbar);
 
-  if (scrollbar == nsnull)
+  if (scrollbar == nullptr)
     return;
 
   // get the scrollbars content node
   nsCOMPtr<nsIContent> content = scrollbar->GetContent();
 
   // get the current pos
-  PRInt32 curpos = nsSliderFrame::GetCurrentPosition(content);
-  PRInt32 oldpos = curpos;
+  int32_t curpos = nsSliderFrame::GetCurrentPosition(content);
+  int32_t oldpos = curpos;
 
   // get the max pos
-  PRInt32 maxpos = nsSliderFrame::GetMaxPosition(content);
+  int32_t maxpos = nsSliderFrame::GetMaxPosition(content);
 
   // increment the given amount
   if (mIncrement)
@@ -255,7 +255,7 @@ nsScrollbarButtonFrame::GetChildWithTag(nsPresContext* aPresContext,
 {
   // recursively search our children
   nsIFrame* childFrame = start->GetFirstPrincipalChild();
-  while (nsnull != childFrame) 
+  while (nullptr != childFrame) 
   {    
     // get the content node
     nsIContent* child = childFrame->GetContent();
@@ -272,13 +272,13 @@ nsScrollbarButtonFrame::GetChildWithTag(nsPresContext* aPresContext,
 
      // recursive search the child
      GetChildWithTag(aPresContext, atom, childFrame, result);
-     if (result != nsnull) 
+     if (result != nullptr) 
        return NS_OK;
 
     childFrame = childFrame->GetNextSibling();
   }
 
-  result = nsnull;
+  result = nullptr;
   return NS_OK;
 }
 
@@ -301,7 +301,7 @@ nsScrollbarButtonFrame::GetParentWithTag(nsIAtom* toFind, nsIFrame* start,
       }
    }
 
-   result = nsnull;
+   result = nullptr;
    return NS_OK;
 }
 

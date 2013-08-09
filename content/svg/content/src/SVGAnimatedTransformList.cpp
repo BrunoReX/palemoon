@@ -6,11 +6,12 @@
 #include "SVGAnimatedTransformList.h"
 #include "DOMSVGAnimatedTransformList.h"
 
+#include "nsISMILAnimationElement.h"
 #include "nsSMILValue.h"
+#include "prdtoa.h"
+#include "SVGContentUtils.h"
 #include "SVGTransform.h"
 #include "SVGTransformListSMILType.h"
-#include "nsSVGUtils.h"
-#include "prdtoa.h"
 
 namespace mozilla {
 
@@ -35,7 +36,7 @@ SVGAnimatedTransformList::SetBaseValueString(const nsAString& aValue)
   }
 
   // We don't need to call DidChange* here - we're only called by
-  // nsSVGElement::ParseAttribute under nsGenericElement::SetAttr,
+  // nsSVGElement::ParseAttribute under Element::SetAttr,
   // which takes care of notifying.
 
   rv = mBaseVal.CopyFrom(newBaseValue);
@@ -115,7 +116,7 @@ SVGAnimatedTransformList::ClearAnimValue(nsSVGElement *aElement)
     //
     domWrapper->InternalAnimValListWillChangeLengthTo(mBaseVal.Length());
   }
-  mAnimVal = nsnull;
+  mAnimVal = nullptr;
   aElement->DidAnimateTransformList();
 }
 
@@ -182,8 +183,8 @@ SVGAnimatedTransformList::SMILAnimatedTransformList::ParseValue(
   PR_STATIC_ASSERT(SVGTransformSMILData::NUM_SIMPLE_PARAMS == 3);
 
   float params[3] = { 0.f };
-  PRInt32 numParsed = ParseParameterList(aSpec, params, 3);
-  PRUint16 transformType;
+  int32_t numParsed = ParseParameterList(aSpec, params, 3);
+  uint16_t transformType;
 
   if (aTransformType == nsGkAtoms::translate) {
     // tx [ty=0]
@@ -238,11 +239,11 @@ namespace
   }
 } // end anonymous namespace block
 
-PRInt32
+int32_t
 SVGAnimatedTransformList::SMILAnimatedTransformList::ParseParameterList(
   const nsAString& aSpec,
   float* aVars,
-  PRInt32 aNVars)
+  int32_t aNVars)
 {
   NS_ConvertUTF16toUTF8 spec(aSpec);
 

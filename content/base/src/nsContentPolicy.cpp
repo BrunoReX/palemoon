@@ -54,7 +54,7 @@ nsContentPolicy::~nsContentPolicy()
 #define WARN_IF_URI_UNINITIALIZED(uri,name)                         \
   PR_BEGIN_MACRO                                                    \
     if ((uri)) {                                                    \
-        nsCAutoString spec;                                         \
+        nsAutoCString spec;                                         \
         (uri)->GetAsciiSpec(spec);                                  \
         if (spec.IsEmpty()) {                                       \
             NS_WARNING(name " is uninitialized, fix caller");       \
@@ -70,13 +70,14 @@ nsContentPolicy::~nsContentPolicy()
 
 inline nsresult
 nsContentPolicy::CheckPolicy(CPMethod          policyMethod,
-                             PRUint32          contentType,
+                             uint32_t          contentType,
                              nsIURI           *contentLocation,
                              nsIURI           *requestingLocation,
                              nsISupports      *requestingContext,
                              const nsACString &mimeType,
                              nsISupports      *extra,
-                             PRInt16           *decision)
+                             nsIPrincipal     *requestPrincipal,
+                             int16_t           *decision)
 {
     //sanity-check passed-through parameters
     NS_PRECONDITION(decision, "Null out pointer");
@@ -117,12 +118,13 @@ nsContentPolicy::CheckPolicy(CPMethod          policyMethod,
      */
     nsresult rv;
     const nsCOMArray<nsIContentPolicy>& entries = mPolicies.GetEntries();
-    PRInt32 count = entries.Count();
-    for (PRInt32 i = 0; i < count; i++) {
+    int32_t count = entries.Count();
+    for (int32_t i = 0; i < count; i++) {
         /* check the appropriate policy */
         rv = (entries[i]->*policyMethod)(contentType, contentLocation,
                                          requestingLocation, requestingContext,
-                                         mimeType, extra, decision);
+                                         mimeType, extra, requestPrincipal,
+                                         decision);
 
         if (NS_SUCCEEDED(rv) && NS_CP_REJECTED(*decision)) {
             /* policy says no, no point continuing to check */
@@ -149,11 +151,11 @@ nsContentPolicy::CheckPolicy(CPMethod          policyMethod,
       } else {                                                                \
         resultName = "(null ptr)";                                            \
       }                                                                       \
-      nsCAutoString spec("None");                                             \
+      nsAutoCString spec("None");                                             \
       if (contentLocation) {                                                  \
           contentLocation->GetSpec(spec);                                     \
       }                                                                       \
-      nsCAutoString refSpec("None");                                          \
+      nsAutoCString refSpec("None");                                          \
       if (requestingLocation) {                                               \
           requestingLocation->GetSpec(refSpec);                               \
       }                                                                       \
@@ -171,36 +173,40 @@ nsContentPolicy::CheckPolicy(CPMethod          policyMethod,
 #endif //!defined(PR_LOGGING)
 
 NS_IMETHODIMP
-nsContentPolicy::ShouldLoad(PRUint32          contentType,
+nsContentPolicy::ShouldLoad(uint32_t          contentType,
                             nsIURI           *contentLocation,
                             nsIURI           *requestingLocation,
                             nsISupports      *requestingContext,
                             const nsACString &mimeType,
                             nsISupports      *extra,
-                            PRInt16          *decision)
+                            nsIPrincipal     *requestPrincipal,
+                            int16_t          *decision)
 {
     // ShouldProcess does not need a content location, but we do
     NS_PRECONDITION(contentLocation, "Must provide request location");
     nsresult rv = CheckPolicy(&nsIContentPolicy::ShouldLoad, contentType,
                               contentLocation, requestingLocation,
-                              requestingContext, mimeType, extra, decision);
+                              requestingContext, mimeType, extra,
+                              requestPrincipal, decision);
     LOG_CHECK("ShouldLoad");
 
     return rv;
 }
 
 NS_IMETHODIMP
-nsContentPolicy::ShouldProcess(PRUint32          contentType,
+nsContentPolicy::ShouldProcess(uint32_t          contentType,
                                nsIURI           *contentLocation,
                                nsIURI           *requestingLocation,
                                nsISupports      *requestingContext,
                                const nsACString &mimeType,
                                nsISupports      *extra,
-                               PRInt16          *decision)
+                               nsIPrincipal     *requestPrincipal,
+                               int16_t          *decision)
 {
     nsresult rv = CheckPolicy(&nsIContentPolicy::ShouldProcess, contentType,
                               contentLocation, requestingLocation,
-                              requestingContext, mimeType, extra, decision);
+                              requestingContext, mimeType, extra,
+                              requestPrincipal, decision);
     LOG_CHECK("ShouldProcess");
 
     return rv;

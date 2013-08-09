@@ -23,8 +23,8 @@ public:
   NS_DECL_NSIDOMSVGPOLYLINEELEMENT
 
   // xxx I wish we could use virtual inheritance
-  NS_FORWARD_NSIDOMNODE(nsSVGPolylineElementBase::)
-  NS_FORWARD_NSIDOMELEMENT(nsSVGPolylineElementBase::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
   NS_FORWARD_NSIDOMSVGELEMENT(nsSVGPolylineElementBase::)
 
   // nsIContent interface

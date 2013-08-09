@@ -18,47 +18,30 @@
 #include <ieeefp.h>
 #endif
 
-//A trick to handle IEEE floating point exceptions on FreeBSD - E.D.
-#ifdef __FreeBSD__
-#include <ieeefp.h>
-#ifdef __alpha__
-static fp_except_t allmask = FP_X_INV|FP_X_OFL|FP_X_UFL|FP_X_DZ|FP_X_IMP;
-#else
-static fp_except_t allmask = FP_X_INV|FP_X_OFL|FP_X_UFL|FP_X_DZ|FP_X_IMP|FP_X_DNML;
-#endif
-static fp_except_t oldmask = fpsetmask(~allmask);
-#endif
-
 #include "nsAString.h"
-#include "nsIStatefulFrame.h"
-#include "nsINodeInfo.h"
 #include "nsNodeInfoManager.h"
-#include "nsContentList.h"
-#include "nsDOMClassInfoID.h"
 #include "nsIXPCScriptable.h"
 #include "nsDataHashtable.h"
-#include "nsIScriptRuntime.h"
-#include "nsIScriptGlobalObject.h"
 #include "nsIDOMEvent.h"
 #include "nsTArray.h"
-#include "nsTextFragment.h"
 #include "nsReadableUtils.h"
 #include "nsINode.h"
-#include "nsHashtable.h"
 #include "nsIDOMNode.h"
 #include "nsHtml5StringParser.h"
-#include "nsIParser.h"
 #include "nsIDocument.h"
-#include "nsIFragmentContentSink.h"
 #include "nsContentSink.h"
 #include "nsMathUtils.h"
 #include "nsThreadUtils.h"
 #include "nsIContent.h"
 #include "nsCharSeparatedTokenizer.h"
+#include "gfxContext.h"
+#include "gfxFont.h"
+#include "nsContentList.h"
 
 #include "mozilla/AutoRestore.h"
 #include "mozilla/GuardObjects.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/Assertions.h"
 
 struct nsNativeKeyEvent; // Don't include nsINativeKeyBindings.h here: it will force strange compilation error!
 
@@ -70,16 +53,20 @@ class nsIDocument;
 class nsIDocumentObserver;
 class nsIDocShell;
 class nsINameSpaceManager;
+class nsIFragmentContentSink;
+class nsIScriptGlobalObject;
 class nsIScriptSecurityManager;
+class nsTextFragment;
 class nsIJSContextStack;
 class nsIThreadJSContextStack;
+class nsIParser;
 class nsIParserService;
 class nsIIOService;
 class nsIURI;
 class imgIContainer;
-class imgIDecoderObserver;
+class imgINotificationObserver;
 class imgIRequest;
-class imgILoader;
+class imgLoader;
 class imgICache;
 class nsIImageLoadingContent;
 class nsIDOMHTMLFormElement;
@@ -95,6 +82,7 @@ class nsEventListenerManager;
 class nsIScriptContext;
 class nsIRunnable;
 class nsIInterfaceRequestor;
+class nsINodeInfo;
 template<class E> class nsCOMArray;
 template<class K, class V> class nsRefPtrHashtable;
 struct JSRuntime;
@@ -102,9 +90,6 @@ class nsIWidget;
 class nsIDragSession;
 class nsIPresShell;
 class nsIXPConnectJSObjectHolder;
-#ifdef MOZ_XTF
-class nsIXTFService;
-#endif
 #ifdef IBMBIDI
 class nsIBidiKeyboard;
 #endif
@@ -117,8 +102,11 @@ struct nsIntMargin;
 class nsPIDOMWindow;
 class nsIDocumentLoaderFactory;
 class nsIDOMHTMLInputElement;
+class gfxTextObjectPaint;
 
 namespace mozilla {
+
+class Selection;
 
 namespace layers {
   class LayerManager;
@@ -138,7 +126,8 @@ enum EventNameType {
   EventNameType_XUL = 0x0002,
   EventNameType_SVGGraphic = 0x0004, // svg graphic elements
   EventNameType_SVGSVG = 0x0008, // the svg element
-  EventNameType_SMIL = 0x0016, // smil elements
+  EventNameType_SMIL = 0x0010, // smil elements
+  EventNameType_HTMLBodyOrFramesetOnly = 0x0020,
 
   EventNameType_HTMLXUL = 0x0003,
   EventNameType_All = 0xFFFF
@@ -162,11 +151,11 @@ struct ViewportInfo
 
     // The width of the viewport, specified by the <meta name="viewport"> tag,
     // in CSS pixels.
-    PRUint32 width;
+    uint32_t width;
 
     // The height of the viewport, specified by the <meta name="viewport"> tag,
     // in CSS pixels.
-    PRUint32 height;
+    uint32_t height;
 
     // Whether or not we should automatically size the viewport to the device's
     // width. This is true if the document has been optimized for mobile, and
@@ -176,30 +165,22 @@ struct ViewportInfo
 
     // Whether or not the user can zoom in and out on the page. Default is true.
     bool allowZoom;
-
-    // This is a holdover from e10s fennec, and might be removed in the future.
-    // It's a hack to work around bugs that didn't allow zooming of documents
-    // from within the parent process. It is still used in native Fennec for XUL
-    // documents, but it should probably be removed.
-    // Currently, from, within GetViewportInfo(), This is only set to false
-    // if the document is a XUL document.
-    bool autoScale;
 };
 
 struct EventNameMapping
 {
   nsIAtom* mAtom;
-  PRUint32 mId;
-  PRInt32  mType;
-  PRUint32 mStructType;
+  uint32_t mId;
+  int32_t  mType;
+  uint32_t mStructType;
 };
 
 struct nsShortcutCandidate {
-  nsShortcutCandidate(PRUint32 aCharCode, bool aIgnoreShift) :
+  nsShortcutCandidate(uint32_t aCharCode, bool aIgnoreShift) :
     mCharCode(aCharCode), mIgnoreShift(aIgnoreShift)
   {
   }
-  PRUint32 mCharCode;
+  uint32_t mCharCode;
   bool     mIgnoreShift;
 };
 
@@ -217,24 +198,7 @@ public:
    */
   static JSContext* GetContextFromDocument(nsIDocument *aDocument);
 
-  /**
-   * When a document's scope changes (e.g., from document.open(), call this
-   * function to move all content wrappers from the old scope to the new one.
-   */
-  static nsresult ReparentContentWrappersInScope(JSContext *cx,
-                                                 nsIScriptGlobalObject *aOldScope,
-                                                 nsIScriptGlobalObject *aNewScope);
-
   static bool     IsCallerChrome();
-
-  static bool     IsCallerTrustedForRead();
-
-  static bool     IsCallerTrustedForWrite();
-
-  /**
-   * Check whether a caller has UniversalXPConnect.
-   */
-  static bool     CallerHasUniversalXPConnect();
 
   static bool     IsImageSrcSetDisabled();
 
@@ -281,9 +245,9 @@ public:
    * This method just sucks.
    */
   static nsresult GetAncestorsAndOffsets(nsIDOMNode* aNode,
-                                         PRInt32 aOffset,
+                                         int32_t aOffset,
                                          nsTArray<nsIContent*>* aAncestorNodes,
-                                         nsTArray<PRInt32>* aAncestorOffsets);
+                                         nsTArray<int32_t>* aAncestorOffsets);
 
   /*
    * The out parameter, |aCommonAncestor| will be the closest node, if any,
@@ -306,10 +270,9 @@ public:
    * Returns true if aNode1 is before aNode2 in the same connected
    * tree.
    */
-  static bool PositionIsBefore(nsINode* aNode1,
-                                 nsINode* aNode2)
+  static bool PositionIsBefore(nsINode* aNode1, nsINode* aNode2)
   {
-    return (aNode2->CompareDocPosition(aNode1) &
+    return (aNode2->CompareDocumentPosition(*aNode1) &
       (nsIDOMNode::DOCUMENT_POSITION_PRECEDING |
        nsIDOMNode::DOCUMENT_POSITION_DISCONNECTED)) ==
       nsIDOMNode::DOCUMENT_POSITION_PRECEDING;
@@ -324,12 +287,12 @@ public:
    *  the result is 1, and the optional aDisconnected parameter
    *  is set to true.
    */
-  static PRInt32 ComparePoints(nsINode* aParent1, PRInt32 aOffset1,
-                               nsINode* aParent2, PRInt32 aOffset2,
-                               bool* aDisconnected = nsnull);
-  static PRInt32 ComparePoints(nsIDOMNode* aParent1, PRInt32 aOffset1,
-                               nsIDOMNode* aParent2, PRInt32 aOffset2,
-                               bool* aDisconnected = nsnull);
+  static int32_t ComparePoints(nsINode* aParent1, int32_t aOffset1,
+                               nsINode* aParent2, int32_t aOffset2,
+                               bool* aDisconnected = nullptr);
+  static int32_t ComparePoints(nsIDOMNode* aParent1, int32_t aOffset1,
+                               nsIDOMNode* aParent2, int32_t aOffset2,
+                               bool* aDisconnected = nullptr);
 
   /**
    * Brute-force search of the element subtree rooted at aContent for
@@ -352,15 +315,15 @@ public:
    *
    * @see nsIDOMNode
    */
-  static PRUint16 ReverseDocumentPosition(PRUint16 aDocumentPosition);
+  static uint16_t ReverseDocumentPosition(uint16_t aDocumentPosition);
 
-  static PRUint32 CopyNewlineNormalizedUnicodeTo(const nsAString& aSource,
-                                                 PRUint32 aSrcOffset,
+  static uint32_t CopyNewlineNormalizedUnicodeTo(const nsAString& aSource,
+                                                 uint32_t aSrcOffset,
                                                  PRUnichar* aDest,
-                                                 PRUint32 aLength,
+                                                 uint32_t aLength,
                                                  bool& aLastCharCR);
 
-  static PRUint32 CopyNewlineNormalizedUnicodeTo(nsReadingIterator<PRUnichar>& aSrcStart, const nsReadingIterator<PRUnichar>& aSrcEnd, nsAString& aDest);
+  static uint32_t CopyNewlineNormalizedUnicodeTo(nsReadingIterator<PRUnichar>& aSrcStart, const nsReadingIterator<PRUnichar>& aSrcEnd, nsAString& aDest);
 
   static const nsDependentSubstring TrimCharsInSet(const char* aSet,
                                                    const nsAString& aValue);
@@ -372,14 +335,14 @@ public:
   /**
    * Returns true if aChar is of class Ps, Pi, Po, Pf, or Pe.
    */
-  static bool IsFirstLetterPunctuation(PRUint32 aChar);
-  static bool IsFirstLetterPunctuationAt(const nsTextFragment* aFrag, PRUint32 aOffset);
+  static bool IsFirstLetterPunctuation(uint32_t aChar);
+  static bool IsFirstLetterPunctuationAt(const nsTextFragment* aFrag, uint32_t aOffset);
  
   /**
    * Returns true if aChar is of class Lu, Ll, Lt, Lm, Lo, Nd, Nl or No
    */
-  static bool IsAlphanumeric(PRUint32 aChar);
-  static bool IsAlphanumericAt(const nsTextFragment* aFrag, PRUint32 aOffset);
+  static bool IsAlphanumeric(uint32_t aChar);
+  static bool IsAlphanumericAt(const nsTextFragment* aFrag, uint32_t aOffset);
 
   /*
    * Is the character an HTML whitespace character?
@@ -418,7 +381,7 @@ public:
    * @param aValue the value to parse
    * @return 1 to 7, or 0 if the value couldn't be parsed
    */
-  static PRInt32 ParseLegacyFontSize(const nsAString& aValue);
+  static int32_t ParseLegacyFontSize(const nsAString& aValue);
 
   static void Shutdown();
 
@@ -492,17 +455,6 @@ public:
     return sIOService;
   }
 
-  static imgILoader* GetImgLoader()
-  {
-    if (!sImgLoaderInitialized)
-      InitImgLoader();
-    return sImgLoader;
-  }
-
-#ifdef MOZ_XTF
-  static nsIXTFService* GetXTFService();
-#endif
-
 #ifdef IBMBIDI
   static nsIBidiKeyboard* GetBidiKeyboard();
 #endif
@@ -522,7 +474,6 @@ public:
 
   static nsresult GenerateStateKey(nsIContent* aContent,
                                    const nsIDocument* aDocument,
-                                   nsIStatefulFrame::SpecialStateID aID,
                                    nsACString& aKey);
 
   /**
@@ -553,10 +504,10 @@ public:
    * @param aCharset empty if not found
    * @return boolean indicating whether a BOM was detected.
    */
-  static bool CheckForBOM(const unsigned char* aBuffer, PRUint32 aLength,
-                          nsACString& aCharset, bool *bigEndian = nsnull);
+  static bool CheckForBOM(const unsigned char* aBuffer, uint32_t aLength,
+                          nsACString& aCharset, bool *bigEndian = nullptr);
 
-  static nsresult GuessCharset(const char *aData, PRUint32 aDataLen,
+  static nsresult GuessCharset(const char *aData, uint32_t aDataLen,
                                nsACString &aCharset);
 
   /**
@@ -572,20 +523,20 @@ public:
 
   static nsresult CheckQName(const nsAString& aQualifiedName,
                              bool aNamespaceAware = true,
-                             const PRUnichar** aColon = nsnull);
+                             const PRUnichar** aColon = nullptr);
 
   static nsresult SplitQName(const nsIContent* aNamespaceResolver,
                              const nsAFlatString& aQName,
-                             PRInt32 *aNamespace, nsIAtom **aLocalName);
+                             int32_t *aNamespace, nsIAtom **aLocalName);
 
   static nsresult GetNodeInfoFromQName(const nsAString& aNamespaceURI,
                                        const nsAString& aQualifiedName,
                                        nsNodeInfoManager* aNodeInfoManager,
-                                       PRUint16 aNodeType,
+                                       uint16_t aNodeType,
                                        nsINodeInfo** aNodeInfo);
 
   static void SplitExpatName(const PRUnichar *aExpatName, nsIAtom **aPrefix,
-                             nsIAtom **aTagName, PRInt32 *aNameSpaceID);
+                             nsIAtom **aTagName, int32_t *aNameSpaceID);
 
   // Get a permission-manager setting for the given principal and type.
   // If the pref doesn't exist or if it isn't ALLOW_ACTION, false is
@@ -598,6 +549,22 @@ public:
   // returned, otherwise true is returned. Always returns false for the
   // system principal, and true for a null principal.
   static bool IsSitePermDeny(nsIPrincipal* aPrincipal, const char* aType);
+
+  // Get a permission-manager setting for the given principal and type.
+  // If the pref doesn't exist or if it isn't ALLOW_ACTION, false is
+  // returned, otherwise true is returned. Always returns true for the
+  // system principal, and false for a null principal.
+  // This version checks the permission for an exact host match on
+  // the principal
+  static bool IsExactSitePermAllow(nsIPrincipal* aPrincipal, const char* aType);
+
+  // Get a permission-manager setting for the given principal and type.
+  // If the pref doesn't exist or if it isn't DENY_ACTION, false is
+  // returned, otherwise true is returned. Always returns false for the
+  // system principal, and true for a null principal.
+  // This version checks the permission for an exact host match on
+  // the principal
+  static bool IsExactSitePermDeny(nsIPrincipal* aPrincipal, const char* aType);
 
   // Returns true if aDoc1 and aDoc2 have equal NodePrincipal()s.
   static bool HaveEqualPrincipals(nsIDocument* aDoc1, nsIDocument* aDoc2);
@@ -623,15 +590,15 @@ public:
    * @return true if aContent has an attribute aName in namespace aNameSpaceID,
    * and the attribute value is non-empty.
    */
-  static bool HasNonEmptyAttr(const nsIContent* aContent, PRInt32 aNameSpaceID,
+  static bool HasNonEmptyAttr(const nsIContent* aContent, int32_t aNameSpaceID,
                                 nsIAtom* aName);
 
   /**
    * Method that gets the primary presContext for the node.
    * 
    * @param aContent The content node.
-   * @return the presContext, or nsnull if the content is not in a document
-   *         (if GetCurrentDoc returns nsnull)
+   * @return the presContext, or nullptr if the content is not in a document
+   *         (if GetCurrentDoc returns nullptr)
    */
   static nsPresContext* GetContextForContent(const nsIContent* aContent);
 
@@ -655,7 +622,7 @@ public:
                              nsISupports* aContext,
                              nsIDocument* aLoadingDocument,
                              nsIPrincipal* aLoadingPrincipal,
-                             PRInt16* aImageBlockingStatus = nsnull);
+                             int16_t* aImageBlockingStatus = nullptr);
   /**
    * Method to start an image load.  This does not do any security checks.
    * This method will attempt to make aURI immutable; a caller that wants to
@@ -673,14 +640,21 @@ public:
                             nsIDocument* aLoadingDocument,
                             nsIPrincipal* aLoadingPrincipal,
                             nsIURI* aReferrer,
-                            imgIDecoderObserver* aObserver,
-                            PRInt32 aLoadFlags,
+                            imgINotificationObserver* aObserver,
+                            int32_t aLoadFlags,
                             imgIRequest** aRequest);
+
+  /**
+   * Obtain an image loader that respects the given document/channel's privacy status.
+   * Null document/channel arguments return the public image loader.
+   */
+  static imgLoader* GetImgLoaderForDocument(nsIDocument* aDoc);
+  static imgLoader* GetImgLoaderForChannel(nsIChannel* aChannel);
 
   /**
    * Returns whether the given URI is in the image cache.
    */
-  static bool IsImageInCache(nsIURI* aURI);
+  static bool IsImageInCache(nsIURI* aURI, nsIDocument* aDocument);
 
   /**
    * Method to get an imgIContainer from an image loading content
@@ -689,7 +663,7 @@ public:
    * @param aRequest The image request [out]
    * @return the imgIContainer corresponding to the first frame of the image
    */
-  static already_AddRefed<imgIContainer> GetImageFromContent(nsIImageLoadingContent* aContent, imgIRequest **aRequest = nsnull);
+  static already_AddRefed<imgIContainer> GetImageFromContent(nsIImageLoadingContent* aContent, imgIRequest **aRequest = nullptr);
 
   /**
    * Helper method to call imgIRequest::GetStaticRequest.
@@ -742,8 +716,8 @@ public:
    * SVG's "evt" and the rest of the world's "event", and because onerror
    * takes 3 args.
    */
-  static void GetEventArgNames(PRInt32 aNameSpaceID, nsIAtom *aEventName,
-                               PRUint32 *aArgCount, const char*** aArgNames);
+  static void GetEventArgNames(int32_t aNameSpaceID, nsIAtom *aEventName,
+                               uint32_t *aArgCount, const char*** aArgNames);
 
   /**
    * If aNode is not an element, return true exactly when aContent's binding
@@ -770,16 +744,41 @@ public:
   }
 
   /**
+   * Report a non-localized error message to the error console.
+   *   @param aErrorText the error message
+   *   @param aErrorFlags See nsIScriptError.
+   *   @param aCategory Name of module reporting error.
+   *   @param aDocument Reference to the document which triggered the message.
+   *   @param [aURI=nullptr] (Optional) URI of resource containing error.
+   *   @param [aSourceLine=EmptyString()] (Optional) The text of the line that
+              contains the error (may be empty).
+   *   @param [aLineNumber=0] (Optional) Line number within resource
+              containing error.
+   *   @param [aColumnNumber=0] (Optional) Column number within resource
+              containing error.
+              If aURI is null, then aDocument->GetDocumentURI() is used.
+   */
+  static nsresult ReportToConsoleNonLocalized(const nsAString& aErrorText,
+                                              uint32_t aErrorFlags,
+                                              const char *aCategory,
+                                              nsIDocument* aDocument,
+                                              nsIURI* aURI = nullptr,
+                                              const nsAFlatString& aSourceLine
+                                                = EmptyString(),
+                                              uint32_t aLineNumber = 0,
+                                              uint32_t aColumnNumber = 0);
+
+  /**
    * Report a localized error message to the error console.
    *   @param aErrorFlags See nsIScriptError.
    *   @param aCategory Name of module reporting error.
    *   @param aDocument Reference to the document which triggered the message.
    *   @param aFile Properties file containing localized message.
    *   @param aMessageName Name of localized message.
-   *   @param [aParams=nsnull] (Optional) Parameters to be substituted into
+   *   @param [aParams=nullptr] (Optional) Parameters to be substituted into
               localized message.
    *   @param [aParamsLength=0] (Optional) Length of aParams.
-   *   @param [aURI=nsnull] (Optional) URI of resource containing error.
+   *   @param [aURI=nullptr] (Optional) URI of resource containing error.
    *   @param [aSourceLine=EmptyString()] (Optional) The text of the line that
               contains the error (may be empty).
    *   @param [aLineNumber=0] (Optional) Line number within resource
@@ -802,18 +801,18 @@ public:
     eCOMMON_DIALOG_PROPERTIES,
     PropertiesFile_COUNT
   };
-  static nsresult ReportToConsole(PRUint32 aErrorFlags,
+  static nsresult ReportToConsole(uint32_t aErrorFlags,
                                   const char *aCategory,
                                   nsIDocument* aDocument,
                                   PropertiesFile aFile,
                                   const char *aMessageName,
-                                  const PRUnichar **aParams = nsnull,
-                                  PRUint32 aParamsLength = 0,
-                                  nsIURI* aURI = nsnull,
+                                  const PRUnichar **aParams = nullptr,
+                                  uint32_t aParamsLength = 0,
+                                  nsIURI* aURI = nullptr,
                                   const nsAFlatString& aSourceLine
                                     = EmptyString(),
-                                  PRUint32 aLineNumber = 0,
-                                  PRUint32 aColumnNumber = 0);
+                                  uint32_t aLineNumber = 0,
+                                  uint32_t aColumnNumber = 0);
 
   /**
    * Get the localized string named |aKey| in properties file |aFile|.
@@ -823,6 +822,16 @@ public:
                                      nsXPIDLString& aResult);
 
   /**
+   * A helper function that parses a sandbox attribute (of an <iframe> or
+   * a CSP directive) and converts it to the set of flags used internally.
+   *
+   * @param aAttribute 	the value of the sandbox attribute
+   * @return 			the set of flags
+   */
+  static uint32_t ParseSandboxAttributeToFlags(const nsAString& aSandboxAttr);
+
+
+  /**
    * Fill (with the parameters given) the localized string named |aKey| in
    * properties file |aFile|.
    */
@@ -830,11 +839,11 @@ private:
   static nsresult FormatLocalizedString(PropertiesFile aFile,
                                         const char* aKey,
                                         const PRUnichar** aParams,
-                                        PRUint32 aParamsLength,
+                                        uint32_t aParamsLength,
                                         nsXPIDLString& aResult);
   
 public:
-  template<PRUint32 N>
+  template<uint32_t N>
   static nsresult FormatLocalizedString(PropertiesFile aFile,
                                         const char* aKey,
                                         const PRUnichar* (&aParams)[N],
@@ -893,7 +902,7 @@ public:
    * @return true if there are mutation listeners of the specified type
    */
   static bool HasMutationListeners(nsINode* aNode,
-                                     PRUint32 aType,
+                                     uint32_t aType,
                                      nsINode* aTargetForSubtreeModified);
 
   /**
@@ -908,7 +917,7 @@ public:
    * @return true if there are mutation listeners of the specified type
    */
   static bool HasMutationListeners(nsIDocument* aDocument,
-                                     PRUint32 aType);
+                                     uint32_t aType);
   /**
    * Synchronously fire DOMNodeRemoved on aChild. Only fires the event if
    * there really are listeners by checking using the HasMutationListeners
@@ -942,7 +951,7 @@ public:
                                        const nsAString& aEventName,
                                        bool aCanBubble,
                                        bool aCancelable,
-                                       bool *aDefaultAction = nsnull);
+                                       bool *aDefaultAction = nullptr);
                                        
   /**
    * This method creates and dispatches a untrusted event.
@@ -962,7 +971,7 @@ public:
                                          const nsAString& aEventName,
                                          bool aCanBubble,
                                          bool aCancelable,
-                                         bool *aDefaultAction = nsnull);
+                                         bool *aDefaultAction = nullptr);
 
   /**
    * This method creates and dispatches a trusted event to the chrome
@@ -984,7 +993,7 @@ public:
                                       const nsAString& aEventName,
                                       bool aCanBubble,
                                       bool aCancelable,
-                                      bool *aDefaultAction = nsnull);
+                                      bool *aDefaultAction = nullptr);
 
   /**
    * Determines if an event attribute name (such as onclick) is valid for
@@ -994,7 +1003,7 @@ public:
    * @param aName the event name to look up
    * @param aType the type of content
    */
-  static bool IsEventAttributeName(nsIAtom* aName, PRInt32 aType);
+  static bool IsEventAttributeName(nsIAtom* aName, int32_t aType);
 
   /**
    * Return the event id for the event with the given name. The name is the
@@ -1003,7 +1012,7 @@ public:
    *
    * @param aName the event name to look up
    */
-  static PRUint32 GetEventId(nsIAtom* aName);
+  static uint32_t GetEventId(nsIAtom* aName);
 
   /**
    * Return the category for the event with the given name. The name is the
@@ -1012,7 +1021,7 @@ public:
    *
    * @param aName the event name to look up
    */
-  static PRUint32 GetEventCategory(const nsAString& aName);
+  static uint32_t GetEventCategory(const nsAString& aName);
 
   /**
    * Return the event id and atom for the event with the given name.
@@ -1024,8 +1033,8 @@ public:
    * @param aEventStruct only return event id in aEventStruct category
    */
   static nsIAtom* GetEventIdAndAtom(const nsAString& aName,
-                                    PRUint32 aEventStruct,
-                                    PRUint32* aEventID);
+                                    uint32_t aEventStruct,
+                                    uint32_t* aEventID);
 
   /**
    * Used only during traversal of the XPCOM graph by the cycle
@@ -1052,7 +1061,7 @@ public:
   static nsEventListenerManager* GetListenerManager(nsINode* aNode,
                                                     bool aCreateIfNotFound);
 
-  static void UnmarkGrayJSListenersInCCGenerationDocuments(PRUint32 aGeneration);
+  static void UnmarkGrayJSListenersInCCGenerationDocuments(uint32_t aGeneration);
 
   /**
    * Remove the eventlistener manager for aNode.
@@ -1076,7 +1085,7 @@ public:
    * @param aNamespaceID namespace of the node
    */
   static bool IsValidNodeName(nsIAtom *aLocalName, nsIAtom *aPrefix,
-                                PRInt32 aNamespaceID);
+                                int32_t aNamespaceID);
 
   /**
    * Creates a DocumentFragment from text using a context node to resolve
@@ -1115,7 +1124,7 @@ public:
   static nsresult ParseFragmentHTML(const nsAString& aSourceBuffer,
                                     nsIContent* aTargetNode,
                                     nsIAtom* aContextLocalName,
-                                    PRInt32 aContextNamespace,
+                                    int32_t aContextNamespace,
                                     bool aQuirks,
                                     bool aPreventScriptExecution);
 
@@ -1169,8 +1178,8 @@ public:
    */
   static nsresult ConvertToPlainText(const nsAString& aSourceBuffer,
                                      nsAString& aResultBuffer,
-                                     PRUint32 aFlags,
-                                     PRUint32 aWrapCol);
+                                     uint32_t aFlags,
+                                     uint32_t aWrapCol);
 
   /**
    * Creates a new XML document, which is marked to be loaded as data.
@@ -1288,25 +1297,40 @@ public:
   static nsresult DropJSObjects(void* aScriptObjectHolder);
 
 #ifdef DEBUG
-  static void CheckCCWrapperTraversal(nsISupports* aScriptObjectHolder,
-                                      nsWrapperCache* aCache);
+  static bool AreJSObjectsHeld(void* aScriptObjectHolder); 
+
+  static void CheckCCWrapperTraversal(void* aScriptObjectHolder,
+                                      nsWrapperCache* aCache,
+                                      nsScriptObjectTracer* aTracer);
 #endif
 
   static void PreserveWrapper(nsISupports* aScriptObjectHolder,
                               nsWrapperCache* aCache)
   {
     if (!aCache->PreservingWrapper()) {
+      nsISupports *ccISupports;
+      aScriptObjectHolder->QueryInterface(NS_GET_IID(nsCycleCollectionISupports),
+                                          reinterpret_cast<void**>(&ccISupports));
+      MOZ_ASSERT(ccISupports);
       nsXPCOMCycleCollectionParticipant* participant;
-      CallQueryInterface(aScriptObjectHolder, &participant);
-      HoldJSObjects(aScriptObjectHolder, participant);
+      CallQueryInterface(ccISupports, &participant);
+      PreserveWrapper(ccISupports, aCache, participant);
+    }
+  }
+  static void PreserveWrapper(void* aScriptObjectHolder,
+                              nsWrapperCache* aCache,
+                              nsScriptObjectTracer* aTracer)
+  {
+    if (!aCache->PreservingWrapper()) {
+      HoldJSObjects(aScriptObjectHolder, aTracer);
       aCache->SetPreservingWrapper(true);
 #ifdef DEBUG
       // Make sure the cycle collector will be able to traverse to the wrapper.
-      CheckCCWrapperTraversal(aScriptObjectHolder, aCache);
+      CheckCCWrapperTraversal(aScriptObjectHolder, aCache, aTracer);
 #endif
     }
   }
-  static void ReleaseWrapper(nsISupports* aScriptObjectHolder,
+  static void ReleaseWrapper(void* aScriptObjectHolder,
                              nsWrapperCache* aCache);
   static void TraceWrapper(nsWrapperCache* aCache, TraceCallback aCallback,
                            void *aClosure);
@@ -1343,12 +1367,12 @@ public:
    */
   static nsresult CheckSecurityBeforeLoad(nsIURI* aURIToLoad,
                                           nsIPrincipal* aLoadingPrincipal,
-                                          PRUint32 aCheckLoadFlags,
+                                          uint32_t aCheckLoadFlags,
                                           bool aAllowData,
-                                          PRUint32 aContentPolicyType,
+                                          uint32_t aContentPolicyType,
                                           nsISupports* aContext,
                                           const nsACString& aMimeGuess = EmptyCString(),
-                                          nsISupports* aExtra = nsnull);
+                                          nsISupports* aExtra = nullptr);
 
   /**
    * Returns true if aPrincipal is the system principal.
@@ -1438,7 +1462,7 @@ public:
    *                          the first item is most preferred.
    */
   static void GetAccessKeyCandidates(nsKeyEvent* aNativeKeyEvent,
-                                     nsTArray<PRUint32>& aCandidates);
+                                     nsTArray<uint32_t>& aCandidates);
 
   /**
    * Hide any XUL popups associated with aDocument, including any documents
@@ -1458,7 +1482,7 @@ public:
 
   // filters the drag and drop action to fit within the effects allowed and
   // returns it.
-  static PRUint32 FilterDropEffect(PRUint32 aAction, PRUint32 aEffectAllowed);
+  static uint32_t FilterDropEffect(uint32_t aAction, uint32_t aEffectAllowed);
 
   /*
    * Return true if the target of a drop event is a content document that is
@@ -1547,10 +1571,29 @@ public:
    * which places the viewport information in the document header instead
    * of returning it directly.
    *
+   * @param aDisplayWidth width of the on-screen display area for this
+   * document, in device pixels.
+   * @param aDisplayHeight height of the on-screen display area for this
+   * document, in device pixels.
+   *
    * NOTE: If the site is optimized for mobile (via the doctype), this
    * will return viewport information that specifies default information.
    */
-  static ViewportInfo GetViewportInfo(nsIDocument* aDocument);
+  static ViewportInfo GetViewportInfo(nsIDocument* aDocument,
+                                      uint32_t aDisplayWidth,
+                                      uint32_t aDisplayHeight);
+
+  /**
+   * Constrain the viewport calculations from the GetViewportInfo() function
+   * in order to always return sane minimum/maximum values. This modifies the
+   * ViewportInfo struct passed as an input parameter, in place.
+   */
+  static void ConstrainViewportValues(ViewportInfo& aViewInfo);
+
+  /**
+   * The device-pixel-to-CSS-px ratio used to adjust meta viewport values.
+   */
+  static double GetDevicePixelsPerMetaViewportPixel(nsIWidget* aWidget);
 
   // Call EnterMicroTask when you're entering JS execution.
   // Usually the best way to do this is to use nsAutoMicroTask.
@@ -1558,8 +1601,8 @@ public:
   static void LeaveMicroTask();
 
   static bool IsInMicroTask() { return sMicroTaskLevel != 0; }
-  static PRUint32 MicroTaskLevel() { return sMicroTaskLevel; }
-  static void SetMicroTaskLevel(PRUint32 aLevel) { sMicroTaskLevel = aLevel; }
+  static uint32_t MicroTaskLevel() { return sMicroTaskLevel; }
+  static void SetMicroTaskLevel(uint32_t aLevel) { sMicroTaskLevel = aLevel; }
 
   /* Process viewport META data. This gives us information for the scale
    * and zoom of a page on mobile devices. We stick the information in
@@ -1574,6 +1617,7 @@ public:
                                                       nsresult* aRv);
 
   static JSContext *GetCurrentJSContext();
+  static JSContext *GetSafeJSContext();
 
   /**
    * Case insensitive comparison between two strings. However it only ignores
@@ -1591,13 +1635,13 @@ public:
    */
   static bool EqualsLiteralIgnoreASCIICase(const nsAString& aStr1,
                                            const char* aStr2,
-                                           const PRUint32 len);
+                                           const uint32_t len);
 #ifdef NS_DISABLE_LITERAL_TEMPLATE
   static inline bool
   EqualsLiteralIgnoreASCIICase(const nsAString& aStr1,
                                const char* aStr2)
   {
-    PRUint32 len = strlen(aStr2);
+    uint32_t len = strlen(aStr2);
     return EqualsLiteralIgnoreASCIICase(aStr1, aStr2, len);
   }
 #else
@@ -1633,6 +1677,11 @@ public:
    */
   static nsresult ASCIIToUpper(nsAString& aStr);
   static nsresult ASCIIToUpper(const nsAString& aSource, nsAString& aDest);
+
+  /**
+   * Return whether aStr contains an ASCII uppercase character.
+   */
+  static bool StringContainsASCIIUpper(const nsAString& aStr);
 
   // Returns NS_OK for same origin, error (NS_ERROR_DOM_BAD_URI) if not.
   static nsresult CheckSameOrigin(nsIChannel *aOldChannel, nsIChannel *aNewChannel);
@@ -1675,15 +1724,15 @@ public:
    */
   static nsresult DispatchXULCommand(nsIContent* aTarget,
                                      bool aTrusted,
-                                     nsIDOMEvent* aSourceEvent = nsnull,
-                                     nsIPresShell* aShell = nsnull,
+                                     nsIDOMEvent* aSourceEvent = nullptr,
+                                     nsIPresShell* aShell = nullptr,
                                      bool aCtrl = false,
                                      bool aAlt = false,
                                      bool aShift = false,
                                      bool aMeta = false);
 
   /**
-   * Gets the nsIDocument given the script context. Will return nsnull on failure.
+   * Gets the nsIDocument given the script context. Will return nullptr on failure.
    *
    * @param aScriptContext the script context to get the document for; can be null
    *
@@ -1692,7 +1741,7 @@ public:
   static already_AddRefed<nsIDocument>
   GetDocumentFromScriptContext(nsIScriptContext *aScriptContext);
 
-  static bool CheckMayLoad(nsIPrincipal* aPrincipal, nsIChannel* aChannel);
+  static bool CheckMayLoad(nsIPrincipal* aPrincipal, nsIChannel* aChannel, bool aAllowIfInheritsPrincipal);
 
   /**
    * The method checks whether the caller can access native anonymous content.
@@ -1705,10 +1754,10 @@ public:
                              nsISupports *native, const nsIID* aIID, jsval *vp,
                              // If non-null aHolder will keep the jsval alive
                              // while there's a ref to it
-                             nsIXPConnectJSObjectHolder** aHolder = nsnull,
+                             nsIXPConnectJSObjectHolder** aHolder = nullptr,
                              bool aAllowWrapping = false)
   {
-    return WrapNative(cx, scope, native, nsnull, aIID, vp, aHolder,
+    return WrapNative(cx, scope, native, nullptr, aIID, vp, aHolder,
                       aAllowWrapping);
   }
 
@@ -1717,10 +1766,10 @@ public:
                              nsISupports *native, jsval *vp,
                              // If non-null aHolder will keep the jsval alive
                              // while there's a ref to it
-                             nsIXPConnectJSObjectHolder** aHolder = nsnull,
+                             nsIXPConnectJSObjectHolder** aHolder = nullptr,
                              bool aAllowWrapping = false)
   {
-    return WrapNative(cx, scope, native, nsnull, nsnull, vp, aHolder,
+    return WrapNative(cx, scope, native, nullptr, nullptr, vp, aHolder,
                       aAllowWrapping);
   }
   static nsresult WrapNative(JSContext *cx, JSObject *scope,
@@ -1728,10 +1777,10 @@ public:
                              jsval *vp,
                              // If non-null aHolder will keep the jsval alive
                              // while there's a ref to it
-                             nsIXPConnectJSObjectHolder** aHolder = nsnull,
+                             nsIXPConnectJSObjectHolder** aHolder = nullptr,
                              bool aAllowWrapping = false)
   {
-    return WrapNative(cx, scope, native, cache, nsnull, vp, aHolder,
+    return WrapNative(cx, scope, native, cache, nullptr, vp, aHolder,
                       aAllowWrapping);
   }
 
@@ -1740,6 +1789,10 @@ public:
    */
   static nsresult CreateArrayBuffer(JSContext *aCx, const nsACString& aData,
                                     JSObject** aResult);
+
+  static nsresult CreateBlobBuffer(JSContext* aCx,
+                                   const nsACString& aData,
+                                   jsval& aBlob);
 
   static void StripNullChars(const nsAString& aInStr, nsAString& aOutStr);
 
@@ -1769,16 +1822,34 @@ public:
    * Utility method for getElementsByClassName.  aRootNode is the node (either
    * document or element), which getElementsByClassName was called on.
    */
-  static nsresult GetElementsByClassName(nsINode* aRootNode,
-                                         const nsAString& aClasses,
-                                         nsIDOMNodeList** aReturn);
+  static already_AddRefed<nsContentList>
+  GetElementsByClassName(nsINode* aRootNode, const nsAString& aClasses)
+  {
+    NS_PRECONDITION(aRootNode, "Must have root node");
+
+    return NS_GetFuncStringHTMLCollection(aRootNode, MatchClassNames,
+                                          DestroyClassNameArray,
+                                          AllocClassMatchingInfo,
+                                          aClasses);
+  }
+
+  /**
+   * Returns a presshell for this document, if there is one. This will be
+   * aDoc's direct presshell if there is one, otherwise we'll look at all
+   * ancestor documents to try to find a presshell, so for example this can
+   * still find a presshell for documents in display:none frames that have
+   * no presentation. So you have to be careful how you use this presshell ---
+   * getting generic data like a device context or widget from it is OK, but it
+   * might not be this document's actual presentation.
+   */
+  static nsIPresShell* FindPresShellForDocument(nsIDocument* aDoc);
 
   /**
    * Returns the widget for this document if there is one. Looks at all ancestor
    * documents to try to find a widget, so for example this can still find a
    * widget for documents in display:none frames that have no presentation.
    */
-  static nsIWidget *WidgetForDocument(nsIDocument *aDoc);
+  static nsIWidget* WidgetForDocument(nsIDocument* aDoc);
 
   /**
    * Returns a layer manager to use for the given document. Basically we
@@ -1791,7 +1862,7 @@ public:
    * layer manager should be used for retained layers
    */
   static already_AddRefed<mozilla::layers::LayerManager>
-  LayerManagerForDocument(nsIDocument *aDoc, bool *aAllowRetaining = nsnull);
+  LayerManagerForDocument(nsIDocument *aDoc, bool *aAllowRetaining = nullptr);
 
   /**
    * Returns a layer manager to use for the given document. Basically we
@@ -1808,7 +1879,7 @@ public:
    * layer manager should be used for retained layers
    */
   static already_AddRefed<mozilla::layers::LayerManager>
-  PersistentLayerManagerForDocument(nsIDocument *aDoc, bool *aAllowRetaining = nsnull);
+  PersistentLayerManagerForDocument(nsIDocument *aDoc, bool *aAllowRetaining = nullptr);
 
   /**
    * Determine whether a content node is focused or not,
@@ -1831,6 +1902,11 @@ public:
    */
   static bool IsRequestFullScreenAllowed();
 
+  /**
+   * Returns true if the idle observers API is enabled.
+   */
+  static bool IsIdleObserverAPIEnabled() { return sIsIdleObserverAPIEnabled; }
+  
   /**
    * Returns true if the doc tree branch which contains aDoc contains any
    * plugins which we don't control event dispatch for, i.e. do any plugins
@@ -1863,6 +1939,7 @@ public:
   static void GetShiftText(nsAString& text);
   static void GetControlText(nsAString& text);
   static void GetMetaText(nsAString& text);
+  static void GetOSText(nsAString& text);
   static void GetAltText(nsAString& text);
   static void GetModifierSeparatorText(nsAString& text);
 
@@ -1905,7 +1982,7 @@ public:
 
   static already_AddRefed<nsIDocumentLoaderFactory>
   FindInternalContentViewer(const char* aType,
-                            ContentViewerType* aLoaderType = nsnull);
+                            ContentViewerType* aLoaderType = nullptr);
 
   /**
    * This helper method returns true if the aPattern pattern matches aValue.
@@ -1942,15 +2019,17 @@ public:
    * Set the given principal as the owner of the given channel, if
    * needed.  aURI must be the URI of aChannel.  aPrincipal may be
    * null.  If aSetUpForAboutBlank is true, then about:blank will get
-   * the principal set up on it.
-   *
+   * the principal set up on it. If aForceOwner is true, the owner
+   * will be set on the channel, even if the principal can be determined
+   * from the channel.
    * The return value is whether the principal was set up as the owner
    * of the channel.
    */
   static bool SetUpChannelOwner(nsIPrincipal* aLoadingPrincipal,
                                 nsIChannel* aChannel,
                                 nsIURI* aURI,
-                                bool aSetUpForAboutBlank);
+                                bool aSetUpForAboutBlank,
+                                bool aForceOwner = false);
 
   static nsresult Btoa(const nsAString& aBinaryData,
                        nsAString& aAsciiBase64String);
@@ -1967,7 +2046,7 @@ public:
 
   /**
    * Returns whether the input element passed in parameter has the autocomplete
-   * functionnality enabled. It is taking into account the form owner.
+   * functionality enabled. It is taking into account the form owner.
    * NOTE: the caller has to make sure autocomplete makes sense for the
    * element's type.
    *
@@ -1975,18 +2054,6 @@ public:
    * @return whether the input element has autocomplete enabled.
    */
   static bool IsAutocompleteEnabled(nsIDOMHTMLInputElement* aInput);
-
-  /**
-   * If the URI is chrome, return true unconditionarlly.
-   *
-   * Otherwise, get the contents of the given pref, and treat it as a
-   * comma-separated list of URIs.  Return true if the given URI's prepath is
-   * in the list, and false otherwise.
-   *
-   * Comparisons are case-insensitive, and whitespace between elements of the
-   * comma-separated list is ignored.
-   */
-  static bool URIIsChromeOrInPref(nsIURI *aURI, const char *aPref);
 
   /**
    * This will parse aSource, to extract the value of the pseudo attribute
@@ -2009,29 +2076,99 @@ public:
    * Returns true if the language name is a version of JavaScript and
    * false otherwise
    */
-  static bool IsJavaScriptLanguage(const nsString& aName, PRUint32 *aVerFlags);
+  static bool IsJavaScriptLanguage(const nsString& aName, uint32_t *aVerFlags);
+
+  /**
+   * Returns the JSVersion for a string of the form '1.n', n = 0, ..., 8, and
+   * JSVERSION_UNKNOWN for other strings.
+   */
+  static JSVersion ParseJavascriptVersion(const nsAString& aVersionStr);
+
+  static bool IsJavascriptMIMEType(const nsAString& aMIMEType)
+  {
+    // Table ordered from most to least likely JS MIME types.
+    static const char* jsTypes[] = {
+      "text/javascript",
+      "text/ecmascript",
+      "application/javascript",
+      "application/ecmascript",
+      "application/x-javascript",
+      "application/x-ecmascript",
+      "text/javascript1.0",
+      "text/javascript1.1",
+      "text/javascript1.2",
+      "text/javascript1.3",
+      "text/javascript1.4",
+      "text/javascript1.5",
+      "text/jscript",
+      "text/livescript",
+      "text/x-ecmascript",
+      "text/x-javascript",
+      nullptr
+    };
+
+    for (uint32_t i = 0; jsTypes[i]; ++i) {
+      if (aMIMEType.LowerCaseEqualsASCII(jsTypes[i])) {
+        return true;
+      }
+    }
+
+    return false;
+  }
 
   static void SplitMimeType(const nsAString& aValue, nsString& aType,
                             nsString& aParams);
 
-  /** 
-   * Takes a window and a string to check prefs against. Assumes that
-   * the window is an app window, and that the pref is a comma
-   * seperated list of app urls that have permission to use whatever
-   * the preference refers to (for example, does the current window
-   * have access to mozTelephony). Chrome is always given permissions
-   * for the requested preference. Sets aAllowed based on preference.
-   *
-   * @param aWindow Current window asking for preference permission
-   * @param aPrefURL Preference name
-   * @param aAllowed [out] outparam on whether or not window is allowed
-   *                       to access pref
-   *
-   * @return NS_OK on successful preference lookup, error code otherwise
+  /**
+   * Function checks if the user is idle.
+   * 
+   * @param aRequestedIdleTimeInMS    The idle observer's requested idle time.
+   * @param aUserIsIdle               boolean indicating if the user 
+   *                                  is currently idle or not.   *
+   * @return NS_OK                    NS_OK returned if the requested idle service and 
+   *                                  the current idle time were successfully obtained.
+   *                                  NS_ERROR_FAILURE returned if the the requested
+   *                                  idle service or the current idle were not obtained.
    */
-  static nsresult IsOnPrefWhitelist(nsPIDOMWindow* aWindow,
-                                    const char* aPrefURL, bool *aAllowed);
-  
+  static nsresult IsUserIdle(uint32_t aRequestedIdleTimeInMS, bool* aUserIsIdle);
+
+  /**
+   * Takes a selection, and a text control element (<input> or <textarea>), and
+   * returns the offsets in the text content corresponding to the selection.
+   * The selection's anchor and focus must both be in the root node passed or a
+   * descendant.
+   *
+   * @param aSelection      Selection to check
+   * @param aRoot           Root <input> or <textarea> element
+   * @param aOutStartOffset Output start offset
+   * @param aOutEndOffset   Output end offset
+   */
+  static void GetSelectionInTextControl(mozilla::Selection* aSelection,
+                                        Element* aRoot,
+                                        int32_t& aOutStartOffset,
+                                        int32_t& aOutEndOffset);
+
+  static nsIEditor* GetHTMLEditor(nsPresContext* aPresContext);
+
+  static bool PaintSVGGlyph(Element *aElement, gfxContext *aContext,
+                            gfxFont::DrawMode aDrawMode,
+                            gfxTextObjectPaint *aObjectPaint);
+
+  static bool GetSVGGlyphExtents(Element *aElement, const gfxMatrix& aSVGToAppSpace,
+                                 gfxRect *aResult);
+
+  /**
+   * Check whether a spec feature/version is supported.
+   * @param aObject the object, which should support the feature,
+   *        for example nsIDOMNode or nsIDOMDOMImplementation
+   * @param aFeature the feature ("Views", "Core", "HTML", "Range" ...)
+   * @param aVersion the version ("1.0", "2.0", ...)
+   * @return whether the feature is supported or not
+   */
+  static bool InternalIsSupported(nsISupports* aObject,
+                                  const nsAString& aFeature,
+                                  const nsAString& aVersion);
+
 private:
   static bool InitializeEventTable();
 
@@ -2052,11 +2189,17 @@ private:
                                 bool aCanBubble,
                                 bool aCancelable,
                                 bool aTrusted,
-                                bool *aDefaultAction = nsnull);
+                                bool *aDefaultAction = nullptr);
 
   static void InitializeModifierStrings();
 
   static void DropFragmentParsers();
+
+  static bool MatchClassNames(nsIContent* aContent, int32_t aNamespaceID,
+                              nsIAtom* aAtom, void* aData);
+  static void DestroyClassNameArray(void* aData);
+  static void* AllocClassMatchingInfo(nsINode* aRootNode,
+                                      const nsString* aClasses);
 
   static nsIDOMScriptObjectFactory *sDOMScriptObjectFactory;
 
@@ -2072,16 +2215,14 @@ private:
 
   static nsIIOService *sIOService;
 
-#ifdef MOZ_XTF
-  static nsIXTFService *sXTFService;
-#endif
-
   static bool sImgLoaderInitialized;
   static void InitImgLoader();
 
-  // The following two members are initialized lazily
-  static imgILoader* sImgLoader;
+  // The following four members are initialized lazily
+  static imgLoader* sImgLoader;
+  static imgLoader* sPrivateImgLoader;
   static imgICache* sImgCache;
+  static imgICache* sPrivateImgCache;
 
   static nsIConsoleService* sConsoleService;
 
@@ -2098,22 +2239,22 @@ private:
   static nsILineBreaker* sLineBreaker;
   static nsIWordBreaker* sWordBreaker;
 
-  static PRUint32 sJSGCThingRootCount;
+  static uint32_t sJSGCThingRootCount;
 
 #ifdef IBMBIDI
   static nsIBidiKeyboard* sBidiKeyboard;
 #endif
 
   static bool sInitialized;
-  static PRUint32 sScriptBlockerCount;
+  static uint32_t sScriptBlockerCount;
 #ifdef DEBUG
-  static PRUint32 sDOMNodeRemovedSuppressCount;
+  static uint32_t sDOMNodeRemovedSuppressCount;
 #endif
-  static PRUint32 sMicroTaskLevel;
+  static uint32_t sMicroTaskLevel;
   // Not an nsCOMArray because removing elements from those is slower
   static nsTArray< nsCOMPtr<nsIRunnable> >* sBlockedScriptRunners;
-  static PRUint32 sRunnersCountAtFirstBlocker;
-  static PRUint32 sScriptBlockerCountWhereRunnersPrevented;
+  static uint32_t sRunnersCountAtFirstBlocker;
+  static uint32_t sScriptBlockerCountWhereRunnersPrevented;
 
   static nsIInterfaceRequestor* sSameOriginChecker;
 
@@ -2121,7 +2262,8 @@ private:
   static bool sAllowXULXBL_for_file;
   static bool sIsFullScreenApiEnabled;
   static bool sTrustedFullScreenOnly;
-  static PRUint32 sHandlingInputTimeout;
+  static uint32_t sHandlingInputTimeout;
+  static bool sIsIdleObserverAPIEnabled;
 
   static nsHtml5StringParser* sHTMLFragmentParser;
   static nsIParser* sXMLFragmentParser;
@@ -2135,6 +2277,7 @@ private:
   static nsString* sShiftText;
   static nsString* sControlText;
   static nsString* sMetaText;
+  static nsString* sOSText;
   static nsString* sAltText;
   static nsString* sModifierSeparator;
 };
@@ -2144,7 +2287,7 @@ typedef nsCharSeparatedTokenizerTemplate<nsContentUtils::IsHTMLWhitespace>
 
 #define NS_HOLD_JS_OBJECTS(obj, clazz)                                         \
   nsContentUtils::HoldJSObjects(NS_CYCLE_COLLECTION_UPCAST(obj, clazz),        \
-                                &NS_CYCLE_COLLECTION_NAME(clazz))
+                                NS_CYCLE_COLLECTION_PARTICIPANT(clazz))
 
 #define NS_DROP_JS_OBJECTS(obj, clazz)                                         \
   nsContentUtils::DropJSObjects(NS_CYCLE_COLLECTION_UPCAST(obj, clazz))
@@ -2228,7 +2371,7 @@ public:
   if (aIID.Equals(NS_GET_IID(_interface))) {                                  \
     foundInterface = static_cast<_interface *>(_allocator);                   \
     if (!foundInterface) {                                                    \
-      *aInstancePtr = nsnull;                                                 \
+      *aInstancePtr = nullptr;                                                 \
       return NS_ERROR_OUT_OF_MEMORY;                                          \
     }                                                                         \
   } else
@@ -2272,10 +2415,10 @@ public:
 #define NS_CONTENT_DELETE_LIST_MEMBER(type_, ptr_, member_)                   \
   {                                                                           \
     type_ *cur = (ptr_)->member_;                                             \
-    (ptr_)->member_ = nsnull;                                                 \
+    (ptr_)->member_ = nullptr;                                                 \
     while (cur) {                                                             \
       type_ *next = cur->member_;                                             \
-      cur->member_ = nsnull;                                                  \
+      cur->member_ = nullptr;                                                  \
       delete cur;                                                             \
       cur = next;                                                             \
     }                                                                         \
@@ -2289,7 +2432,7 @@ public:
   nsresult GetParameter(const char* aParameterName, nsAString& aResult);
   nsresult GetType(nsAString& aResult)
   {
-    return GetParameter(nsnull, aResult);
+    return GetParameter(nullptr, aResult);
   }
 
 private:

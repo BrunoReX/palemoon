@@ -31,7 +31,7 @@ CairoFormatToSurfaceFormat(cairo_format_t format)
 SourceSurfaceCairo::SourceSurfaceCairo(cairo_surface_t* aSurface,
                                        const IntSize& aSize,
                                        const SurfaceFormat& aFormat,
-                                       DrawTargetCairo* aDrawTarget /* = NULL */)
+                                       DrawTargetCairo* aDrawTarget /* = nullptr */)
  : mSize(aSize)
  , mFormat(aFormat)
  , mSurface(aSurface)
@@ -42,7 +42,6 @@ SourceSurfaceCairo::SourceSurfaceCairo(cairo_surface_t* aSurface,
 
 SourceSurfaceCairo::~SourceSurfaceCairo()
 {
-  MarkIndependent();
   cairo_surface_destroy(mSurface);
 }
 
@@ -92,7 +91,7 @@ void
 SourceSurfaceCairo::DrawTargetWillChange()
 {
   if (mDrawTarget) {
-    mDrawTarget = NULL;
+    mDrawTarget = nullptr;
 
     // We're about to lose our version of the surface, so make a copy of it.
     cairo_surface_t* surface = cairo_surface_create_similar(mSurface,
@@ -103,19 +102,11 @@ SourceSurfaceCairo::DrawTargetWillChange()
     cairo_set_source(ctx, pat);
     cairo_paint(ctx);
     cairo_destroy(ctx);
+    cairo_pattern_destroy(pat);
 
     // Swap in this new surface.
     cairo_surface_destroy(mSurface);
     mSurface = surface;
-  }
-}
-
-void
-SourceSurfaceCairo::MarkIndependent()
-{
-  if (mDrawTarget) {
-    mDrawTarget->RemoveSnapshot(this);
-    mDrawTarget = NULL;
   }
 }
 

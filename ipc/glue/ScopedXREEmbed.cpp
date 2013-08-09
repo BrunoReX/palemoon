@@ -8,7 +8,6 @@
 #include "base/string_util.h"
 
 #include "nsIFile.h"
-#include "nsILocalFile.h"
 
 #include "nsCOMPtr.h"
 #include "nsServiceManagerUtils.h"
@@ -41,7 +40,7 @@ ScopedXREEmbed::Start()
 #  error Sorry
 #endif
 
-  nsCOMPtr<nsILocalFile> localFile;
+  nsCOMPtr<nsIFile> localFile;
   nsresult rv = XRE_GetBinaryPath(path.c_str(), getter_AddRefs(localFile));
   if (NS_FAILED(rv))
     return;
@@ -52,7 +51,7 @@ ScopedXREEmbed::Start()
     return;
 
   localFile = do_QueryInterface(parent);
-  NS_ENSURE_TRUE(localFile,);
+  NS_ENSURE_TRUE_VOID(localFile);
 
 #ifdef OS_MACOSX
   if (XRE_GetProcessType() == GeckoProcessType_Content) {
@@ -63,25 +62,25 @@ ScopedXREEmbed::Start()
       return;
 
     localFile = do_QueryInterface(parent);
-    NS_ENSURE_TRUE(localFile,);
+    NS_ENSURE_TRUE_VOID(localFile);
 
     rv = localFile->GetParent(getter_AddRefs(parent));
     if (NS_FAILED(rv))
       return;
 
     localFile = do_QueryInterface(parent);
-    NS_ENSURE_TRUE(localFile,);
+    NS_ENSURE_TRUE_VOID(localFile);
 
     rv = localFile->GetParent(getter_AddRefs(parent));
     if (NS_FAILED(rv))
       return;
 
     localFile = do_QueryInterface(parent);
-    NS_ENSURE_TRUE(localFile,);
+    NS_ENSURE_TRUE_VOID(localFile);
   }
 #endif
 
-  rv = XRE_InitEmbedding2(localFile, localFile, nsnull);
+  rv = XRE_InitEmbedding2(localFile, localFile, nullptr);
   if (NS_FAILED(rv))
     return;
 

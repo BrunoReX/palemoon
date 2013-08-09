@@ -6,14 +6,13 @@
 
 #include "nsRecentBadCerts.h"
 #include "nsIX509Cert.h"
+#include "mozilla/RefPtr.h"
 #include "nsSSLStatus.h"
 #include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
 #include "nsNSSCertificate.h"
 #include "nsCRT.h"
 #include "nsPromiseFlatString.h"
 #include "nsStringBuffer.h"
-#include "nsAutoPtr.h"
 #include "nspr.h"
 #include "pk11pub.h"
 #include "certdb.h"
@@ -52,14 +51,12 @@ nsRecentBadCertsService::GetRecentBadCert(const nsAString & aHostNameWithPort,
   if (!aHostNameWithPort.Length())
     return NS_ERROR_INVALID_ARG;
 
-  *aStatus = nsnull;
-  nsRefPtr<nsSSLStatus> status = new nsSSLStatus();
-  if (!status)
-    return NS_ERROR_OUT_OF_MEMORY;
+  *aStatus = nullptr;
+  RefPtr<nsSSLStatus> status(new nsSSLStatus());
 
   SECItem foundDER;
   foundDER.len = 0;
-  foundDER.data = nsnull;
+  foundDER.data = nullptr;
 
   bool isDomainMismatch = false;
   bool isNotValidAtThisTime = false;
@@ -69,7 +66,7 @@ nsRecentBadCertsService::GetRecentBadCert(const nsAString & aHostNameWithPort,
     ReentrantMonitorAutoEnter lock(monitor);
     for (size_t i=0; i<const_recently_seen_list_size; ++i) {
       if (mCerts[i].mHostWithPort.Equals(aHostNameWithPort)) {
-        SECStatus srv = SECITEM_CopyItem(nsnull, &foundDER, &mCerts[i].mDERCert);
+        SECStatus srv = SECITEM_CopyItem(nullptr, &foundDER, &mCerts[i].mDERCert);
         if (srv != SECSuccess)
           return NS_ERROR_OUT_OF_MEMORY;
 
@@ -86,7 +83,7 @@ nsRecentBadCertsService::GetRecentBadCert(const nsAString & aHostNameWithPort,
     nssCert = CERT_FindCertByDERCert(certdb, &foundDER);
     if (!nssCert) 
       nssCert = CERT_NewTempCertificate(certdb, &foundDER,
-                                        nsnull, // no nickname
+                                        nullptr, // no nickname
                                         false, // not perm
                                         true); // copy der
 
@@ -135,7 +132,7 @@ nsRecentBadCertsService::AddBadCert(const nsAString &hostWithPort,
   NS_ENSURE_SUCCESS(rv, rv);
 
   SECItem tempItem;
-  rv = cert->GetRawDER(&tempItem.len, (PRUint8 **)&tempItem.data);
+  rv = cert->GetRawDER(&tempItem.len, (uint8_t **)&tempItem.data);
   NS_ENSURE_SUCCESS(rv, rv);
 
   {

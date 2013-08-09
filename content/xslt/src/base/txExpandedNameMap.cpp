@@ -26,7 +26,7 @@ class txMapItemComparator
 nsresult txExpandedNameMap_base::addItem(const txExpandedName& aKey,
                                          void* aValue)
 {
-    PRUint32 pos = mItems.IndexOf(aKey, 0, txMapItemComparator());
+    uint32_t pos = mItems.IndexOf(aKey, 0, txMapItemComparator());
     if (pos != mItems.NoIndex) {
         return NS_ERROR_XSLT_ALREADY_SET;
     }
@@ -52,8 +52,8 @@ nsresult txExpandedNameMap_base::setItem(const txExpandedName& aKey,
                                          void* aValue,
                                          void** aOldValue)
 {
-    *aOldValue = nsnull;
-    PRUint32 pos = mItems.IndexOf(aKey, 0, txMapItemComparator());
+    *aOldValue = nullptr;
+    uint32_t pos = mItems.IndexOf(aKey, 0, txMapItemComparator());
     if (pos != mItems.NoIndex) {
         *aOldValue = mItems[pos].mValue;
         mItems[pos].mValue = aValue;
@@ -78,12 +78,12 @@ nsresult txExpandedNameMap_base::setItem(const txExpandedName& aKey,
  */
 void* txExpandedNameMap_base::getItem(const txExpandedName& aKey) const
 {
-    PRUint32 pos = mItems.IndexOf(aKey, 0, txMapItemComparator());
+    uint32_t pos = mItems.IndexOf(aKey, 0, txMapItemComparator());
     if (pos != mItems.NoIndex) {
         return mItems[pos].mValue;
     }
 
-    return nsnull;
+    return nullptr;
 }
 
 /**
@@ -94,8 +94,8 @@ void* txExpandedNameMap_base::getItem(const txExpandedName& aKey) const
  */
 void* txExpandedNameMap_base::removeItem(const txExpandedName& aKey)
 {
-    void* value = nsnull;
-    PRUint32 pos = mItems.IndexOf(aKey, 0, txMapItemComparator());
+    void* value = nullptr;
+    uint32_t pos = mItems.IndexOf(aKey, 0, txMapItemComparator());
     if (pos != mItems.NoIndex) {
         value = mItems[pos].mValue;
         mItems.RemoveElementAt(pos);

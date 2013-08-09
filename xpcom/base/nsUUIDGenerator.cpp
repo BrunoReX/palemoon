@@ -40,9 +40,9 @@ nsUUIDGenerator::Init()
     /* initialize random number generator using NSPR random noise */
     unsigned int seed;
 
-    PRSize bytes = 0;
+    size_t bytes = 0;
     while (bytes < sizeof(seed)) {
-        PRSize nbytes = PR_GetRandomNoise(((unsigned char *)&seed)+bytes,
+        size_t nbytes = PR_GetRandomNoise(((unsigned char *)&seed)+bytes,
                                           sizeof(seed)-bytes);
         if (nbytes == 0) {
             return NS_ERROR_FAILURE;
@@ -78,7 +78,7 @@ NS_IMETHODIMP
 nsUUIDGenerator::GenerateUUID(nsID** ret)
 {
     nsID *id = static_cast<nsID*>(NS_Alloc(sizeof(nsID)));
-    if (id == nsnull)
+    if (id == nullptr)
         return NS_ERROR_OUT_OF_MEMORY;
 
     nsresult rv = GenerateUUIDInPlace(id);
@@ -100,7 +100,7 @@ nsUUIDGenerator::GenerateUUIDInPlace(nsID* id)
 
 #if defined(XP_WIN)
     HRESULT hr = CoCreateGuid((GUID*)id);
-    if (NS_FAILED(hr))
+    if (FAILED(hr))
         return NS_ERROR_FAILURE;
 #elif defined(XP_MACOSX)
     CFUUIDRef uuid = CFUUIDCreate(kCFAllocatorDefault);
@@ -120,7 +120,7 @@ nsUUIDGenerator::GenerateUUIDInPlace(nsID* id)
     setstate(mState);
 #endif
 
-    PRSize bytesLeft = sizeof(nsID);
+    size_t bytesLeft = sizeof(nsID);
     while (bytesLeft > 0) {
 #ifdef ANDROID
         long rval = arc4random();
@@ -130,15 +130,15 @@ nsUUIDGenerator::GenerateUUIDInPlace(nsID* id)
 #endif
 
 
-        PRUint8 *src = (PRUint8*)&rval;
+        uint8_t *src = (uint8_t*)&rval;
         // We want to grab the mRBytes least significant bytes of rval, since
         // mRBytes less than sizeof(rval) means the high bytes are 0.
 #ifdef IS_BIG_ENDIAN
         src += sizeof(rval) - mRBytes;
 #endif
-        PRUint8 *dst = ((PRUint8*) id) + (sizeof(nsID) - bytesLeft);
-        PRSize toWrite = (bytesLeft < mRBytes ? bytesLeft : mRBytes);
-        for (PRSize i = 0; i < toWrite; i++)
+        uint8_t *dst = ((uint8_t*) id) + (sizeof(nsID) - bytesLeft);
+        size_t toWrite = (bytesLeft < mRBytes ? bytesLeft : mRBytes);
+        for (size_t i = 0; i < toWrite; i++)
             dst[i] = src[i];
 
         bytesLeft -= toWrite;

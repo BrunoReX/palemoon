@@ -11,7 +11,7 @@
 #include "nsXULAppAPI.h"
 
 #include <stdlib.h>
-#if defined(MOZ_WIDGET_GTK2)
+#if defined(MOZ_WIDGET_GTK)
 #include <glib.h>
 #endif
 
@@ -20,7 +20,7 @@
 #include "nsIAppShell.h"
 #include "nsIAppStartupNotifier.h"
 #include "nsIDirectoryService.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIToolkitChromeRegistry.h"
 #include "nsIToolkitProfile.h"
 
@@ -74,6 +74,8 @@
 
 #include "mozilla/Util.h" // for DebugOnly
 
+#include "sampler.h"
+
 #ifdef MOZ_IPDL_TESTS
 #include "mozilla/_ipdltest/IPDLUnitTests.h"
 #include "mozilla/_ipdltest/IPDLUnitTestProcessChild.h"
@@ -110,12 +112,12 @@ static const PRUnichar kShellLibraryName[] =  L"shell32.dll";
 #endif
 
 nsresult
-XRE_LockProfileDirectory(nsILocalFile* aDirectory,
+XRE_LockProfileDirectory(nsIFile* aDirectory,
                          nsISupports* *aLockObject)
 {
   nsCOMPtr<nsIProfileLock> lock;
 
-  nsresult rv = NS_LockProfilePath(aDirectory, nsnull, nsnull,
+  nsresult rv = NS_LockProfilePath(aDirectory, nullptr, nullptr,
                                    getter_AddRefs(lock));
   if (NS_SUCCEEDED(rv))
     NS_ADDREF(*aLockObject = lock);
@@ -123,15 +125,15 @@ XRE_LockProfileDirectory(nsILocalFile* aDirectory,
   return rv;
 }
 
-static PRInt32 sInitCounter;
+static int32_t sInitCounter;
 
 nsresult
-XRE_InitEmbedding2(nsILocalFile *aLibXULDirectory,
-		   nsILocalFile *aAppDirectory,
+XRE_InitEmbedding2(nsIFile *aLibXULDirectory,
+		   nsIFile *aAppDirectory,
 		   nsIDirectoryServiceProvider *aAppDirProvider)
 {
   // Initialize some globals to make nsXREDirProvider happy
-  static char* kNullCommandLine[] = { nsnull };
+  static char* kNullCommandLine[] = { nullptr };
   gArgv = kNullCommandLine;
   gArgc = 0;
 
@@ -154,7 +156,7 @@ XRE_InitEmbedding2(nsILocalFile *aLibXULDirectory,
   if (NS_FAILED(rv))
     return rv;
 
-  rv = NS_InitXPCOM2(nsnull, aAppDirectory, gDirServiceProvider);
+  rv = NS_InitXPCOM2(nullptr, aAppDirectory, gDirServiceProvider);
   if (NS_FAILED(rv))
     return rv;
 
@@ -169,7 +171,7 @@ XRE_InitEmbedding2(nsILocalFile *aLibXULDirectory,
   if (!startupNotifier)
     return NS_ERROR_FAILURE;
 
-  startupNotifier->Observe(nsnull, APPSTARTUP_TOPIC, nsnull);
+  startupNotifier->Observe(nullptr, APPSTARTUP_TOPIC, nullptr);
 
   return NS_OK;
 }
@@ -191,7 +193,7 @@ XRE_TermEmbedding()
                "XRE_TermEmbedding without XRE_InitEmbedding");
 
   gDirServiceProvider->DoShutdown();
-  NS_ShutdownXPCOM(nsnull);
+  NS_ShutdownXPCOM(nullptr);
   delete gDirServiceProvider;
 }
 
@@ -199,7 +201,7 @@ const char*
 XRE_ChildProcessTypeToString(GeckoProcessType aProcessType)
 {
   return (aProcessType < GeckoProcessType_End) ?
-    kGeckoProcessTypeString[aProcessType] : nsnull;
+    kGeckoProcessTypeString[aProcessType] : nullptr;
 }
 
 GeckoProcessType
@@ -226,8 +228,8 @@ GeckoProcessType sChildProcessType = GeckoProcessType_Default;
 // IPDL wants access to this crashreporter interface, and
 // crashreporter is built in such a way to make that awkward
 bool
-XRE_TakeMinidumpForChild(PRUint32 aChildPid, nsILocalFile** aDump,
-                         PRUint32* aSequence)
+XRE_TakeMinidumpForChild(uint32_t aChildPid, nsIFile** aDump,
+                         uint32_t* aSequence)
 {
   return CrashReporter::TakeMinidumpForChild(aChildPid, aDump, aSequence);
 }
@@ -251,7 +253,7 @@ SetTaskbarGroupId(const nsString& aId)
 {
     typedef HRESULT (WINAPI * SetCurrentProcessExplicitAppUserModelIDPtr)(PCWSTR AppID);
 
-    SetCurrentProcessExplicitAppUserModelIDPtr funcAppUserModelID = nsnull;
+    SetCurrentProcessExplicitAppUserModelIDPtr funcAppUserModelID = nullptr;
 
     HMODULE hDLL = ::LoadLibraryW(kShellLibraryName);
 
@@ -280,6 +282,8 @@ XRE_InitChildProcess(int aArgc,
   NS_ENSURE_ARG_MIN(aArgc, 2);
   NS_ENSURE_ARG_POINTER(aArgv);
   NS_ENSURE_ARG_POINTER(aArgv[0]);
+  SAMPLER_INIT();
+  SAMPLE_LABEL("Startup", "XRE_InitChildProcess");
 
   sChildProcessType = aProcess;
 
@@ -287,7 +291,7 @@ XRE_InitChildProcess(int aArgc,
   // regardless of architecture so we don't have any cross-arch issues here.
 #ifdef XP_MACOSX
   if (aArgc < 1)
-    return 1;
+    return NS_ERROR_FAILURE;
   const char* const mach_port_name = aArgv[--aArgc];
 
   const int kTimeoutMs = 1000;
@@ -295,39 +299,39 @@ XRE_InitChildProcess(int aArgc,
   MachSendMessage child_message(0);
   if (!child_message.AddDescriptor(mach_task_self())) {
     NS_WARNING("child AddDescriptor(mach_task_self()) failed.");
-    return 1;
+    return NS_ERROR_FAILURE;
   }
 
   ReceivePort child_recv_port;
   mach_port_t raw_child_recv_port = child_recv_port.GetPort();
   if (!child_message.AddDescriptor(raw_child_recv_port)) {
     NS_WARNING("Adding descriptor to message failed");
-    return 1;
+    return NS_ERROR_FAILURE;
   }
 
   MachPortSender child_sender(mach_port_name);
   kern_return_t err = child_sender.SendMessage(child_message, kTimeoutMs);
   if (err != KERN_SUCCESS) {
     NS_WARNING("child SendMessage() failed");
-    return 1;
+    return NS_ERROR_FAILURE;
   }
 
   MachReceiveMessage parent_message;
   err = child_recv_port.WaitForMessage(&parent_message, kTimeoutMs);
   if (err != KERN_SUCCESS) {
     NS_WARNING("child WaitForMessage() failed");
-    return 1;
+    return NS_ERROR_FAILURE;
   }
 
   if (parent_message.GetTranslatedPort(0) == MACH_PORT_NULL) {
     NS_WARNING("child GetTranslatedPort(0) failed");
-    return 1;
+    return NS_ERROR_FAILURE;
   }
   err = task_set_bootstrap_port(mach_task_self(),
                                 parent_message.GetTranslatedPort(0));
   if (err != KERN_SUCCESS) {
     NS_WARNING("child task_set_bootstrap_port() failed");
-    return 1;
+    return NS_ERROR_FAILURE;
   }
 #endif
 
@@ -335,7 +339,7 @@ XRE_InitChildProcess(int aArgc,
 
 #if defined(MOZ_CRASHREPORTER)
   if (aArgc < 1)
-    return 1;
+    return NS_ERROR_FAILURE;
   const char* const crashReporterArg = aArgv[--aArgc];
   
 #  if defined(XP_WIN) || defined(XP_MACOSX)
@@ -363,7 +367,7 @@ XRE_InitChildProcess(int aArgc,
   gArgv = aArgv;
   gArgc = aArgc;
 
-#if defined(MOZ_WIDGET_GTK2)
+#if defined(MOZ_WIDGET_GTK)
   g_thread_init(NULL);
 #endif
 
@@ -419,7 +423,7 @@ XRE_InitChildProcess(int aArgc,
 
   NS_LogInit();
 
-  int rv = XRE_InitCommandLine(aArgc, aArgv);
+  nsresult rv = XRE_InitCommandLine(aArgc, aArgv);
   if (NS_FAILED(rv)) {
     NS_LogTerm();
     return NS_ERROR_FAILURE;
@@ -543,7 +547,7 @@ XRE_InitParentProcess(int aArgc,
 
   gArgc = aArgc;
   gArgv = aArgv;
-  int rv = XRE_InitCommandLine(gArgc, gArgv);
+  nsresult rv = XRE_InitCommandLine(gArgc, gArgv);
   if (NS_FAILED(rv))
       return NS_ERROR_FAILURE;
 
@@ -683,7 +687,7 @@ TestShellParent* GetOrCreateTestShellParent()
     if (!gContentParent) {
         NS_ADDREF(gContentParent = ContentParent::GetNewOrUsed());
     } else if (!gContentParent->IsAlive()) {
-        return nsnull;
+        return nullptr;
     }
     TestShellParent* tsp = gContentParent->GetTestShellSingleton();
     if (!tsp) {

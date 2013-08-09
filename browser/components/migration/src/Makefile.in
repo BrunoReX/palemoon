@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -15,18 +15,24 @@ LIBRARY_NAME	= migration_s
 FORCE_STATIC_LIB = 1
 USE_STATIC_LIBS = 1
 
-EXTRA_PP_COMPONENTS = \
+EXTRA_COMPONENTS = \
   ProfileMigrator.js \
-  ChromeProfileMigrator.js \
   FirefoxProfileMigrator.js \
   $(NULL)
 
-ifeq ($(OS_ARCH)_$(GNU_CXX),WINNT_)
+EXTRA_PP_COMPONENTS = \
+  ChromeProfileMigrator.js \
+  $(NULL)
+
+ifeq ($(OS_ARCH),WINNT)
 CPPSRCS += nsIEHistoryEnumerator.cpp
 
-EXTRA_PP_COMPONENTS += IEProfileMigrator.js \
-                       SafariProfileMigrator.js \
+EXTRA_COMPONENTS += IEProfileMigrator.js \
+                    $(NULL)
+
+EXTRA_PP_COMPONENTS += SafariProfileMigrator.js \
                        $(NULL)
+
 DEFINES += -DHAS_IE_MIGRATOR -DHAS_SAFARI_MIGRATOR
 endif
 

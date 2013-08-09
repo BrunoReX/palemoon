@@ -15,7 +15,7 @@ Cu.import("resource:///modules/inspector.jsm");
 
 // This module doesn't currently export any symbols directly, it only
 // registers inspector tools.
-var EXPORTED_SYMBOLS = [];
+this.EXPORTED_SYMBOLS = [];
 
 /**
  * Lookup l10n string from a string bundle.
@@ -146,9 +146,9 @@ RuleViewTool.prototype = {
   },
 
   destroy: function RVT_destroy() {
-    this.inspector.removeListener("select", this._onSelect);
-    this.inspector.removeListener("change", this._onChange);
-    this.inspector.removeListener("sidebaractivated-ruleview", this._onChange);
+    this.inspector.off("select", this._onSelect);
+    this.inspector.off("change", this._onChange);
+    this.inspector.off("sidebaractivated-ruleview", this._onChange);
     this.view.element.removeEventListener("CssRuleViewChanged",
                                           this._changeHandler);
     this.view.element.removeEventListener("CssRuleViewCSSLinkClicked",
@@ -214,9 +214,9 @@ ComputedViewTool.prototype = {
 
   destroy: function CVT_destroy(aContext)
   {
-    this.inspector.removeListener("select", this._onSelect);
-    this.inspector.removeListener("change", this._onChange);
-    this.inspector.removeListener("sidebaractivated-computedview", this._onChange);
+    this.inspector.off("select", this._onSelect);
+    this.inspector.off("change", this._onChange);
+    this.inspector.off("sidebaractivated-computedview", this._onChange);
     this.view.destroy();
     delete this.view;
 

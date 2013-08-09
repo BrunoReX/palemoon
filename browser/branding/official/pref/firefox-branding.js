@@ -17,12 +17,14 @@ pref("app.update.download.backgroundInterval", 600);
 pref("app.update.url.manual", "http://www.palemoon.org/");
 // A default value for the "More information about this update" link
 // supplied in the "An update is available" page of the update wizard. 
-pref("app.update.url.details", "http://www.palemoon.org/");
+pref("app.update.url.details", "http://www.palemoon.org/releasenotes-ng.shtml");
 // Additional Update fixes - no SSL damnit, I don't have a cert (4.0)
 pref("app.update.cert.checkAttributes", false);
 pref("app.update.cert.requireBuiltIn", false);
 // Fix useragent for UA sniffing websites
 pref("general.useragent.compatMode.firefox", true);
+// Make sure we shortcut out of a11y to save walking unnecessary code
+pref("accessibility.force_disabled", 1);
 
 // ****************** Release notes and vendor URLs ******************
 
@@ -41,8 +43,8 @@ pref("extensions.blocklist.url", "https://addons.mozilla.org/blocklist/3/firefox
 pref("extensions.webservice.discoverURL","https://services.addons.mozilla.org/%LOCALE%/firefox/discovery/pane/%VERSION%/%OS%");
 pref("extensions.getAddons.get.url","https://services.addons.mozilla.org/%LOCALE%/firefox/api/%API_VERSION%/search/guid:%IDS%?src=firefox&appOS=%OS%&appVersion=%VERSION%&tMain=%TIME_MAIN%&tFirstPaint=%TIME_FIRST_PAINT%&tSessionRestored=%TIME_SESSION_RESTORED%");
 //Add-on updates: hard-code base Firefox version number.
-pref("extensions.update.background.url","https://versioncheck-bg.addons.mozilla.org/update/VersionCheck.php?reqVersion=%REQ_VERSION%&id=%ITEM_ID%&version=%ITEM_VERSION%&maxAppVersion=%ITEM_MAXAPPVERSION%&status=%ITEM_STATUS%&appID=%APP_ID%&appVersion=15.0&appOS=%APP_OS%&appABI=%APP_ABI%&locale=%APP_LOCALE%&currentAppVersion=%CURRENT_APP_VERSION%&updateType=%UPDATE_TYPE%&compatMode=%COMPATIBILITY_MODE%");
-pref("extensions.update.url","https://versioncheck.addons.mozilla.org/update/VersionCheck.php?reqVersion=%REQ_VERSION%&id=%ITEM_ID%&version=%ITEM_VERSION%&maxAppVersion=%ITEM_MAXAPPVERSION%&status=%ITEM_STATUS%&appID=%APP_ID%&appVersion=15.0&appOS=%APP_OS%&appABI=%APP_ABI%&locale=%APP_LOCALE%&currentAppVersion=%CURRENT_APP_VERSION%&updateType=%UPDATE_TYPE%&compatMode=%COMPATIBILITY_MODE%");
+pref("extensions.update.background.url","https://versioncheck-bg.addons.mozilla.org/update/VersionCheck.php?reqVersion=%REQ_VERSION%&id=%ITEM_ID%&version=%ITEM_VERSION%&maxAppVersion=%ITEM_MAXAPPVERSION%&status=%ITEM_STATUS%&appID=%APP_ID%&appVersion=19.0&appOS=%APP_OS%&appABI=%APP_ABI%&locale=%APP_LOCALE%&currentAppVersion=%CURRENT_APP_VERSION%&updateType=%UPDATE_TYPE%&compatMode=%COMPATIBILITY_MODE%");
+pref("extensions.update.url","https://versioncheck.addons.mozilla.org/update/VersionCheck.php?reqVersion=%REQ_VERSION%&id=%ITEM_ID%&version=%ITEM_VERSION%&maxAppVersion=%ITEM_MAXAPPVERSION%&status=%ITEM_STATUS%&appID=%APP_ID%&appVersion=19.0&appOS=%APP_OS%&appABI=%APP_ABI%&locale=%APP_LOCALE%&currentAppVersion=%CURRENT_APP_VERSION%&updateType=%UPDATE_TYPE%&compatMode=%COMPATIBILITY_MODE%");
 //Search engine fixes
 pref("browser.search.searchEnginesURL", "https://addons.mozilla.org/%LOCALE%/firefox/search-engines/");
 //Safebrowsing URL fixes
@@ -83,13 +85,11 @@ pref("network.dnsCacheExpiration", 3600); //TTL 1 hour
 pref("nglayout.initialpaint.delay", 150);
 pref("webgl.prefer-native-gl", false); 
 pref("webgl.force-enabled", true); 
-pref("gfx.font_rendering.directwrite.enabled", false); //Too many issues with this!
+pref("gfx.font_rendering.directwrite.enabled", false); //IGPs can't deal with this very well
 pref("gfx.direct2d.force-enabled", false); //D2D force may cause issues for poor drivers, so off by default.
 // JIT the chrome!
 pref("javascript.options.jitprofiling.chrome", true);
 pref("javascript.options.methodjit.chrome", true);
-// Azure for content (off for now, performance hit)
-// pref("gfx.content.azure.enabled",true);
 
 // ****************** UI config ******************
 
@@ -100,8 +100,8 @@ pref("browser.search.context.loadInBackground", true); //don't swap focus to the
 pref("browser.ctrlTab.previews", true);
 pref("browser.allTabs.previews", true);
 pref("browser.urlbar.trimURLs", false); //stop being a derp, Mozilla!
-pref("browser.preferences.animateFadeIn", true); //Animate preferences windows
-pref("browser.identity.ssl_domain_display", 1); //show domain verified SSL
+pref("browser.preferences.animateFadeIn", false); //Animate preferences windows; off because of errors in sizing logic & add-ons
+pref("browser.identity.ssl_domain_display", 1); //show domain verified SSL (blue)
 pref("browser.urlbar.autoFill", true);
 pref("browser.urlbar.autoFill.typed", true);
 
@@ -112,9 +112,13 @@ pref("devtools.inspector.enabled",false);
 pref("devtools.styleeditor.enabled",false); //NIIB
 pref("devtools.styleinspector.enabled",false); //NIIB
 pref("devtools.tilt.enabled",false); //Tilt? WHY? NIIB
-//advanced webdev only (stripped firebug clone)
+pref("devtools.layoutview.enabled",false);
+pref("devtools.ruleview.enabled",false);
+pref("devtools.toolbar.enabled",false);
 pref("devtools.responsiveUI.enabled",false); 
 pref("devtools.debugger.enabled",false);
+
+pref("social.enabled", false);
 
 //Set tabs NOT on top
 pref("browser.tabs.onTop",false); 
@@ -138,7 +142,7 @@ pref("general.smoothScroll.scrollbars.durationMaxMS",200);
 
 // Download manager
 pref("browser.download.manager.flashCount", 10);
-pref("browser.download.manager.scanWhenDone", false);
+pref("browser.download.manager.scanWhenDone", false); //NIIB, make sure to disable to prevent hangups
 pref("browser.altClickSave", true); //SBaD,M! (#2)
 
 //plugin kill timeout
@@ -166,7 +170,7 @@ pref("javascript.options.gc_on_memory_pressure", true);
 pref("javascript.options.mem.disable_explicit_compartment_gc", true);
 //add IGC and adjust time slice
 pref("javascript.options.mem.gc_incremental",true);
-pref("javascript.options.mem.gc_incremental_slice_ms",25);
+pref("javascript.options.mem.gc_incremental_slice_ms",20);
 
 //DOM
 pref("dom.disable_window_status_change", false); //Allow status feedback by default

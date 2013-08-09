@@ -7,15 +7,14 @@
 #include "nsSMILCompositor.h"
 #include "nsSMILCSSProperty.h"
 #include "nsCSSProps.h"
-#include "nsComponentManagerUtils.h"
 #include "nsITimer.h"
-#include "nsIContent.h"
 #include "mozilla/dom/Element.h"
 #include "nsIDocument.h"
 #include "nsISMILAnimationElement.h"
 #include "nsIDOMSVGAnimationElement.h"
 #include "nsSMILTimedElement.h"
 
+using namespace mozilla;
 using namespace mozilla::dom;
 
 //----------------------------------------------------------------------
@@ -65,14 +64,14 @@ nsSMILAnimationController::Disconnect()
 
   StopSampling(GetRefreshDriver());
 
-  mDocument = nsnull; // (raw pointer)
+  mDocument = nullptr; // (raw pointer)
 }
 
 //----------------------------------------------------------------------
 // nsSMILTimeContainer methods:
 
 void
-nsSMILAnimationController::Pause(PRUint32 aType)
+nsSMILAnimationController::Pause(uint32_t aType)
 {
   nsSMILTimeContainer::Pause(aType);
 
@@ -83,7 +82,7 @@ nsSMILAnimationController::Pause(PRUint32 aType)
 }
 
 void
-nsSMILAnimationController::Resume(PRUint32 aType)
+nsSMILAnimationController::Resume(uint32_t aType)
 {
   bool wasPaused = (mPauseState != 0);
   // Update mCurrentSampleTime so that calls to GetParentTime--used for
@@ -215,7 +214,7 @@ nsSMILAnimationController::Traverse(
   }
 }
 
-/*static*/ PR_CALLBACK PLDHashOperator
+/*static*/ PLDHashOperator
 nsSMILAnimationController::CompositorTableEntryTraverse(
                                       nsSMILCompositor* aCompositor,
                                       void* aArg)
@@ -229,7 +228,7 @@ nsSMILAnimationController::CompositorTableEntryTraverse(
 void
 nsSMILAnimationController::Unlink()
 {
-  mLastCompositorTable = nsnull;
+  mLastCompositorTable = nullptr;
 }
 
 //----------------------------------------------------------------------
@@ -305,7 +304,7 @@ nsSMILAnimationController::MaybeStartSampling(nsRefreshDriver* aRefreshDriver)
 //----------------------------------------------------------------------
 // Sample-related methods and callbacks
 
-PR_CALLBACK PLDHashOperator
+PLDHashOperator
 TransferCachedBaseValue(nsSMILCompositor* aCompositor,
                         void* aData)
 {
@@ -321,7 +320,7 @@ TransferCachedBaseValue(nsSMILCompositor* aCompositor,
   return PL_DHASH_NEXT;  
 }
 
-PR_CALLBACK PLDHashOperator
+PLDHashOperator
 RemoveCompositorFromTable(nsSMILCompositor* aCompositor,
                           void* aData)
 {
@@ -331,7 +330,7 @@ RemoveCompositorFromTable(nsSMILCompositor* aCompositor,
   return PL_DHASH_NEXT;
 }
 
-PR_CALLBACK PLDHashOperator
+PLDHashOperator
 DoClearAnimationEffects(nsSMILCompositor* aCompositor,
                         void* /*aData*/)
 {
@@ -339,7 +338,7 @@ DoClearAnimationEffects(nsSMILCompositor* aCompositor,
   return PL_DHASH_NEXT;
 }
 
-PR_CALLBACK PLDHashOperator
+PLDHashOperator
 DoComposeAttribute(nsSMILCompositor* aCompositor,
                    void* /*aData*/)
 {
@@ -360,18 +359,16 @@ nsSMILAnimationController::DoSample(bool aSkipUnchangedContainers)
     NS_ERROR("Shouldn't be sampling after document has disconnected");
     return;
   }
+  if (mRunningSample) {
+    NS_ERROR("Shouldn't be recursively sampling");
+    return;
+  }
 
   mResampleNeeded = false;
   // Set running sample flag -- do this before flushing styles so that when we
   // flush styles we don't end up requesting extra samples
+  AutoRestore<bool> autoRestoreRunningSample(mRunningSample);
   mRunningSample = true;
-  nsCOMPtr<nsIDocument> kungFuDeathGrip(mDocument);  // keeps 'this' alive too
-  mDocument->FlushPendingNotifications(Flush_Style);
-
-  // WARNING: 
-  // WARNING: the above flush may have destroyed the pres shell and/or
-  // WARNING: frames and other layout related objects.
-  // WARNING:
   
   // STEP 1: Bring model up to date
   // (i)  Rewind elements where necessary
@@ -436,16 +433,29 @@ nsSMILAnimationController::DoSample(bool aSkipUnchangedContainers)
 
     // * For each entry that remains in prev sample's hash table (i.e. for
     // every target that's no longer animated), clear animation effects.
-    mLastCompositorTable->EnumerateEntries(DoClearAnimationEffects, nsnull);
+    mLastCompositorTable->EnumerateEntries(DoClearAnimationEffects, nullptr);
   }
+
+  // return early if there are no active animations to avoid a style flush
+  if (currentCompositorTable->Count() == 0) {
+    mLastCompositorTable = nullptr;
+    return;
+  }
+
+  nsCOMPtr<nsIDocument> kungFuDeathGrip(mDocument);  // keeps 'this' alive too
+  mDocument->FlushPendingNotifications(Flush_Style);
+
+  // WARNING: 
+  // WARNING: the above flush may have destroyed the pres shell and/or
+  // WARNING: frames and other layout related objects.
+  // WARNING:
 
   // STEP 5: Compose currently-animated attributes.
   // XXXdholbert: This step traverses our animation targets in an effectively
   // random order. For animation from/to 'inherit' values to work correctly
   // when the inherited value is *also* being animated, we really should be
   // traversing our animated nodes in an ancestors-first order (bug 501183)
-  currentCompositorTable->EnumerateEntries(DoComposeAttribute, nsnull);
-  mRunningSample = false;
+  currentCompositorTable->EnumerateEntries(DoComposeAttribute, nullptr);
 
   // Update last compositor table
   mLastCompositorTable = currentCompositorTable.forget();
@@ -461,11 +471,11 @@ nsSMILAnimationController::RewindElements()
   if (!rewindNeeded)
     return;
 
-  mAnimationElementTable.EnumerateEntries(RewindAnimation, nsnull);
-  mChildContainerTable.EnumerateEntries(ClearRewindNeeded, nsnull);
+  mAnimationElementTable.EnumerateEntries(RewindAnimation, nullptr);
+  mChildContainerTable.EnumerateEntries(ClearRewindNeeded, nullptr);
 }
 
-/*static*/ PR_CALLBACK PLDHashOperator
+/*static*/ PLDHashOperator
 nsSMILAnimationController::RewindNeeded(TimeContainerPtrKey* aKey,
                                         void* aData)
 {
@@ -482,7 +492,7 @@ nsSMILAnimationController::RewindNeeded(TimeContainerPtrKey* aKey,
   return PL_DHASH_NEXT;
 }
 
-/*static*/ PR_CALLBACK PLDHashOperator
+/*static*/ PLDHashOperator
 nsSMILAnimationController::RewindAnimation(AnimationElementPtrKey* aKey,
                                            void* aData)
 {
@@ -495,7 +505,7 @@ nsSMILAnimationController::RewindAnimation(AnimationElementPtrKey* aKey,
   return PL_DHASH_NEXT;
 }
 
-/*static*/ PR_CALLBACK PLDHashOperator
+/*static*/ PLDHashOperator
 nsSMILAnimationController::ClearRewindNeeded(TimeContainerPtrKey* aKey,
                                              void* aData)
 {
@@ -523,7 +533,7 @@ nsSMILAnimationController::DoMilestoneSamples()
   // registered for those times. This way events can fire in the correct order,
   // dependencies can be resolved etc.
 
-  nsSMILTime sampleTime = LL_MININT;
+  nsSMILTime sampleTime = INT64_MIN;
 
   while (true) {
     // We want to find any milestones AT OR BEFORE the current sample time so we
@@ -541,7 +551,7 @@ nsSMILAnimationController::DoMilestoneSamples()
     GetMilestoneElementsParams params;
     params.mMilestone = nextMilestone;
     mChildContainerTable.EnumerateEntries(GetMilestoneElements, &params);
-    PRUint32 length = params.mElements.Length();
+    uint32_t length = params.mElements.Length();
 
     // During the course of a sampling we don't want to actually go backwards.
     // Due to negative offsets, early ends and the like, a timed element might
@@ -554,12 +564,12 @@ nsSMILAnimationController::DoMilestoneSamples()
     // dependencies will be appropriately resolved.
     sampleTime = NS_MAX(nextMilestone.mTime, sampleTime);
 
-    for (PRUint32 i = 0; i < length; ++i) {
+    for (uint32_t i = 0; i < length; ++i) {
       nsISMILAnimationElement* elem = params.mElements[i].get();
       NS_ABORT_IF_FALSE(elem, "NULL animation element in list");
       nsSMILTimeContainer* container = elem->GetTimeContainer();
       if (!container)
-        // The container may be nsnull if the element has been detached from its
+        // The container may be nullptr if the element has been detached from its
         // parent since registering a milestone.
         continue;
 
@@ -580,7 +590,7 @@ nsSMILAnimationController::DoMilestoneSamples()
   }
 }
 
-/*static*/ PR_CALLBACK PLDHashOperator
+/*static*/ PLDHashOperator
 nsSMILAnimationController::GetNextMilestone(TimeContainerPtrKey* aKey,
                                             void* aData)
 {
@@ -605,7 +615,7 @@ nsSMILAnimationController::GetNextMilestone(TimeContainerPtrKey* aKey,
   return PL_DHASH_NEXT;
 }
 
-/*static*/ PR_CALLBACK PLDHashOperator
+/*static*/ PLDHashOperator
 nsSMILAnimationController::GetMilestoneElements(TimeContainerPtrKey* aKey,
                                                 void* aData)
 {
@@ -627,7 +637,7 @@ nsSMILAnimationController::GetMilestoneElements(TimeContainerPtrKey* aKey,
   return PL_DHASH_NEXT;
 }
 
-/*static*/ PR_CALLBACK PLDHashOperator
+/*static*/ PLDHashOperator
 nsSMILAnimationController::SampleTimeContainer(TimeContainerPtrKey* aKey,
                                                void* aData)
 {
@@ -650,7 +660,7 @@ nsSMILAnimationController::SampleTimeContainer(TimeContainerPtrKey* aKey,
   return PL_DHASH_NEXT;
 }
 
-/*static*/ PR_CALLBACK PLDHashOperator
+/*static*/ PLDHashOperator
 nsSMILAnimationController::SampleAnimation(AnimationElementPtrKey* aKey,
                                            void* aData)
 {
@@ -750,7 +760,7 @@ nsSMILAnimationController::GetTargetIdentifierForAnimation(
   // SMILANIM section 3.1, attributeName may
   // have an XMLNS prefix to indicate the XML namespace.
   nsCOMPtr<nsIAtom> attributeName;
-  PRInt32 attributeNamespaceID;
+  int32_t attributeNamespaceID;
   if (!aAnimElem->GetTargetAttributeName(&attributeNamespaceID,
                                          getter_AddRefs(attributeName)))
     // Animation has no target attr -- skip it.
@@ -772,7 +782,8 @@ nsSMILAnimationController::GetTargetIdentifierForAnimation(
         isCSS = targetElem->GetNameSpaceID() != kNameSpaceID_SVG;
       } else {
         nsCSSProperty prop =
-          nsCSSProps::LookupProperty(nsDependentAtomString(attributeName));
+          nsCSSProps::LookupProperty(nsDependentAtomString(attributeName),
+                                     nsCSSProps::eEnabled);
         isCSS = nsSMILCSSProperty::IsPropertyAnimatable(prop);
       }
     }
@@ -822,16 +833,16 @@ nsSMILAnimationController::GetRefreshDriver()
 {
   if (!mDocument) {
     NS_ERROR("Requesting refresh driver after document has disconnected!");
-    return nsnull;
+    return nullptr;
   }
 
   nsIPresShell* shell = mDocument->GetShell();
   if (!shell) {
-    return nsnull;
+    return nullptr;
   }
 
   nsPresContext* context = shell->GetPresContext();
-  return context ? context->RefreshDriver() : nsnull;
+  return context ? context->RefreshDriver() : nullptr;
 }
 
 void

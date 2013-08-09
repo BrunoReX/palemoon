@@ -10,7 +10,8 @@
 #include <QInputContext>
 #endif
 #include <QtCore/QTimer>
-
+// Solve conflict of qgl.h and GLDefs.h
+#define GLdouble_defined 1
 #include "mozqwidget.h"
 #include "nsWindow.h"
 
@@ -76,7 +77,8 @@ MozQWidget::~MozQWidget()
 
 void MozQWidget::paint(QPainter* aPainter, const QStyleOptionGraphicsItem* aOption, QWidget* aWidget /*= 0*/)
 {
-    mReceiver->DoPaint(aPainter, aOption, aWidget);
+    if (mReceiver)
+        mReceiver->DoPaint(aPainter, aOption, aWidget);
 }
 
 void MozQWidget::activate()
@@ -404,7 +406,9 @@ void MozQWidget::closeEvent(QCloseEvent* aEvent)
 
 void MozQWidget::hideEvent(QHideEvent* aEvent)
 {
-    mReceiver->hideEvent(aEvent);
+    if (mReceiver) {
+        mReceiver->hideEvent(aEvent);
+    }
     QGraphicsWidget::hideEvent(aEvent);
 }
 
@@ -414,7 +418,7 @@ void MozQWidget::showEvent(QShowEvent* aEvent)
     QGraphicsWidget::showEvent(aEvent);
 }
 
-bool MozQWidget::SetCursor(nsCursor aCursor)
+void MozQWidget::SetCursor(nsCursor aCursor)
 {
     Qt::CursorShape cursor = Qt::ArrowCursor;
     switch(aCursor) {
@@ -467,16 +471,12 @@ bool MozQWidget::SetCursor(nsCursor aCursor)
     }
 
     setCursor(cursor);
-
-    return NS_OK;
 }
 
-bool MozQWidget::SetCursor(const QPixmap& aCursor, int aHotX, int aHotY)
+void MozQWidget::SetCursor(const QPixmap& aCursor, int aHotX, int aHotY)
 {
     QCursor bitmapCursor(aCursor, aHotX, aHotY);
     setCursor(bitmapCursor);
-
-    return NS_OK;
 }
 
 void MozQWidget::setModal(bool modal)
@@ -624,7 +624,7 @@ MozQWidget::NotifyVKB(const QRect& rect)
     if (observerService) {
         QString rect = QString("{\"left\": %1, \"top\": %2, \"right\": %3, \"bottom\": %4}")
                                .arg(bounds.x()).arg(bounds.y()).arg(bounds.width()).arg(bounds.height());
-        observerService->NotifyObservers(nsnull, "softkb-change", rect.utf16());
+        observerService->NotifyObservers(nullptr, "softkb-change", rect.utf16());
     }
 }
 
@@ -633,7 +633,7 @@ void MozQWidget::SwitchToForeground()
     nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
     if (!os)
         return;
-    os->NotifyObservers(nsnull, "application-foreground", nsnull);
+    os->NotifyObservers(nullptr, "application-foreground", nullptr);
 }
 
 void MozQWidget::SwitchToBackground()
@@ -641,6 +641,6 @@ void MozQWidget::SwitchToBackground()
     nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
     if (!os)
         return;
-    os->NotifyObservers(nsnull, "application-background", nsnull);
+    os->NotifyObservers(nullptr, "application-background", nullptr);
 }
 

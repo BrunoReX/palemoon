@@ -3,9 +3,11 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 browser.jar:
-    content/browser/inspector.html                (highlighter/inspector.html)
+    content/browser/devtools/markup-view.xhtml    (markupview/markup-view.xhtml)
+    content/browser/devtools/markup-view.css      (markupview/markup-view.css)
     content/browser/NetworkPanel.xhtml            (webconsole/NetworkPanel.xhtml)
-    content/browser/devtools/HUDService-content.js (webconsole/HUDService-content.js)
+    content/browser/devtools/webconsole.js        (webconsole/webconsole.js)
+*   content/browser/devtools/webconsole.xul       (webconsole/webconsole.xul)
 *   content/browser/scratchpad.xul                (scratchpad/scratchpad.xul)
     content/browser/scratchpad.js                 (scratchpad/scratchpad.js)
     content/browser/splitview.css                 (shared/splitview.css)
@@ -22,6 +24,8 @@ browser.jar:
     content/browser/debugger.css                  (debugger/debugger.css)
     content/browser/debugger-controller.js        (debugger/debugger-controller.js)
     content/browser/debugger-view.js              (debugger/debugger-view.js)
-    content/browser/devtools/gcli.css             (commandline/gcli.css)
-    content/browser/devtools/gclioutput.xhtml     (commandline/gclioutput.xhtml)
-    content/browser/devtools/gclitooltip.xhtml    (commandline/gclitooltip.xhtml)
+    content/browser/debugger-toolbar.js           (debugger/debugger-toolbar.js)
+    content/browser/debugger-panes.js             (debugger/debugger-panes.js)
+    content/browser/devtools/commandline.css      (commandline/commandline.css)
+    content/browser/devtools/commandlineoutput.xhtml  (commandline/commandlineoutput.xhtml)
+    content/browser/devtools/commandlinetooltip.xhtml  (commandline/commandlinetooltip.xhtml)

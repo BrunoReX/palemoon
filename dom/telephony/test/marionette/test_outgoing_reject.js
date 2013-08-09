@@ -3,8 +3,7 @@
 
 MARIONETTE_TIMEOUT = 10000;
 
-const WHITELIST_PREF = "dom.telephony.app.phone.url";
-SpecialPowers.setCharPref(WHITELIST_PREF, window.location.href);
+SpecialPowers.addPermission("telephony", true, document);
 
 let telephony = window.navigator.mozTelephony;
 let number = "5555552368";
@@ -22,7 +21,12 @@ function verifyInitialState() {
   runEmulatorCmd("gsm list", function(result) {
     log("Initial call list: " + result);
     is(result[0], "OK");
-    dial();
+    if (result[0] == "OK") {
+      dial();
+    } else {
+      log("Call exists from a previous test, failing out.");
+      cleanUp();
+    }    
   });
 }
 
@@ -34,22 +38,27 @@ function dial() {
   is(outgoing.number, number);
   is(outgoing.state, "dialing");
 
-  //is(outgoing, telephony.active); // bug 757587
-  //ok(telephony.calls === calls); // bug 757587
-  //is(calls.length, 1); // bug 757587
-  //is(calls[0], outgoing); // bug 757587
+  is(outgoing, telephony.active);
+  //ok(telephony.calls === calls); // bug 717414
+  is(telephony.calls.length, 1);
+  is(telephony.calls[0], outgoing);
 
-  runEmulatorCmd("gsm list", function(result) {
-    log("Call list is now: " + result);
-    is(result[0], "outbound to  " + number + " : unknown");
-    is(result[1], "OK");
-    reject();
-  });
+  outgoing.onalerting = function onalerting(event) {
+    log("Received 'onalerting' call event.");
+    is(outgoing, event.call);
+    is(outgoing.state, "alerting");
+
+    runEmulatorCmd("gsm list", function(result) {
+      log("Call list is now: " + result);
+      is(result[0], "outbound to  " + number + " : ringing");
+      is(result[1], "OK");
+      reject();
+    });
+  };
 }
 
 function reject() {
   log("Reject the outgoing call on the other end.");
-
   // We get no "disconnecting" event when the remote party rejects the call.
 
   outgoing.ondisconnected = function ondisconnected(event) {
@@ -57,7 +66,7 @@ function reject() {
     is(outgoing, event.call);
     is(outgoing.state, "disconnected");
 
-    //is(telephony.active, null);  // bug 757587
+    is(telephony.active, null);
     is(telephony.calls.length, 0);
 
     runEmulatorCmd("gsm list", function(result) {
@@ -70,7 +79,7 @@ function reject() {
 };
 
 function cleanUp() {
-  SpecialPowers.clearUserPref(WHITELIST_PREF);
+  SpecialPowers.removePermission("telephony", document);
   finish();
 }
 

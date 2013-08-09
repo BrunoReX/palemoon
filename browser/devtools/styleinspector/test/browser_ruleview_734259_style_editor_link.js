@@ -7,7 +7,7 @@ let doc;
 let contentWindow;
 
 let tempScope = {};
-Cu.import("resource:///modules/Services.jsm", tempScope);
+Cu.import("resource://gre/modules/Services.jsm", tempScope);
 let Services = tempScope.Services;
 
 function createDocument()
@@ -52,7 +52,6 @@ function inspectorUIOpen()
 
   // Make sure the inspector is open.
   ok(InspectorUI.inspecting, "Inspector is highlighting");
-  ok(!InspectorUI.treePanel.isOpen(), "Inspector Tree Panel is not open");
   ok(!InspectorUI.isSidebarOpen, "Inspector Sidebar is not open");
   ok(!InspectorUI.store.isEmpty(), "InspectorUI.store is not empty");
   is(InspectorUI.store.length, 1, "Inspector.store.length = 1");

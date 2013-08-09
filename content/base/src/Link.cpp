@@ -6,11 +6,11 @@
 
 #include "Link.h"
 
+#include "mozilla/dom/Element.h"
 #include "nsEventStates.h"
 #include "nsIURL.h"
 #include "nsISizeOf.h"
 
-#include "nsContentUtils.h"
 #include "nsEscape.h"
 #include "nsGkAtoms.h"
 #include "nsString.h"
@@ -90,18 +90,20 @@ Link::LinkState() const
       return nsEventStates();
     }
 
+    // Assume that we are not visited until we are told otherwise.
+    self->mLinkState = eLinkState_Unvisited;
+
     // We have a good href, so register with History.
-    nsresult rv = mHistory->RegisterVisitedCallback(hrefURI, self);
-    if (NS_SUCCEEDED(rv)) {
-      self->mRegistered = true;
+    if (mHistory) {
+      nsresult rv = mHistory->RegisterVisitedCallback(hrefURI, self);
+      if (NS_SUCCEEDED(rv)) {
+        self->mRegistered = true;
 
-      // Assume that we are not visited until we are told otherwise.
-      self->mLinkState = eLinkState_Unvisited;
-
-      // And make sure we are in the document's link map.
-      nsIDocument *doc = element->GetCurrentDoc();
-      if (doc) {
-        doc->AddStyleRelevantLink(self);
+        // And make sure we are in the document's link map.
+        nsIDocument *doc = element->GetCurrentDoc();
+        if (doc) {
+          doc->AddStyleRelevantLink(self);
+        }
       }
     }
   }
@@ -189,7 +191,7 @@ Link::SetHost(const nsAString &aHost)
     if (iter != end) {
       nsAutoString portStr(Substring(iter, end));
       nsresult rv;
-      PRInt32 port = portStr.ToInteger((PRInt32 *)&rv);
+      int32_t port = portStr.ToInteger(&rv);
       if (NS_SUCCEEDED(rv)) {
         (void)uri->SetPort(port);
       }
@@ -255,7 +257,7 @@ Link::SetPort(const nsAString &aPort)
 
   nsresult rv;
   nsAutoString portStr(aPort);
-  PRInt32 port = portStr.ToInteger((PRInt32 *)&rv);
+  int32_t port = portStr.ToInteger(&rv);
   if (NS_FAILED(rv)) {
     return NS_OK;
   }
@@ -287,7 +289,7 @@ Link::GetProtocol(nsAString &_protocol)
     _protocol.AssignLiteral("http");
   }
   else {
-    nsCAutoString scheme;
+    nsAutoCString scheme;
     (void)uri->GetScheme(scheme);
     CopyASCIItoUTF16(scheme, _protocol);
   }
@@ -306,7 +308,7 @@ Link::GetHost(nsAString &_host)
     return NS_OK;
   }
 
-  nsCAutoString hostport;
+  nsAutoCString hostport;
   nsresult rv = uri->GetHostPort(hostport);
   if (NS_SUCCEEDED(rv)) {
     CopyUTF8toUTF16(hostport, _host);
@@ -325,7 +327,7 @@ Link::GetHostname(nsAString &_hostname)
     return NS_OK;
   }
 
-  nsCAutoString host;
+  nsAutoCString host;
   nsresult rv = uri->GetHost(host);
   // Note that failure to get the host from the URI is not necessarily a bad
   // thing.  Some URIs do not have a host.
@@ -348,7 +350,7 @@ Link::GetPathname(nsAString &_pathname)
     return NS_OK;
   }
 
-  nsCAutoString file;
+  nsAutoCString file;
   nsresult rv = url->GetFilePath(file);
   NS_ENSURE_SUCCESS(rv, rv);
   CopyUTF8toUTF16(file, _pathname);
@@ -368,7 +370,7 @@ Link::GetSearch(nsAString &_search)
     return NS_OK;
   }
 
-  nsCAutoString search;
+  nsAutoCString search;
   nsresult rv = url->GetQuery(search);
   if (NS_SUCCEEDED(rv) && !search.IsEmpty()) {
     CopyUTF8toUTF16(NS_LITERAL_CSTRING("?") + search, _search);
@@ -387,7 +389,7 @@ Link::GetPort(nsAString &_port)
     return NS_OK;
   }
 
-  PRInt32 port;
+  int32_t port;
   nsresult rv = uri->GetPort(&port);
   // Note that failure to get the port from the URI is not necessarily a bad
   // thing.  Some URIs do not have a port.
@@ -411,7 +413,7 @@ Link::GetHash(nsAString &_hash)
     return NS_OK;
   }
 
-  nsCAutoString ref;
+  nsAutoCString ref;
   nsresult rv = uri->GetRef(ref);
   if (NS_SUCCEEDED(rv) && !ref.IsEmpty()) {
     NS_UnescapeURL(ref); // XXX may result in random non-ASCII bytes!
@@ -443,7 +445,7 @@ Link::ResetLinkState(bool aNotify)
   mLinkState = defaultState;
 
   // Get rid of our cached URI.
-  mCachedURI = nsnull;
+  mCachedURI = nullptr;
 
   // We have to be very careful here: if aNotify is false we do NOT
   // want to call UpdateState, because that will call into LinkState()
@@ -469,10 +471,12 @@ Link::UnregisterFromHistory()
   NS_ASSERTION(mCachedURI, "mRegistered is true, but we have no cached URI?!");
 
   // And tell History to stop tracking us.
-  nsresult rv = mHistory->UnregisterVisitedCallback(mCachedURI, this);
-  NS_ASSERTION(NS_SUCCEEDED(rv), "This should only fail if we misuse the API!");
-  if (NS_SUCCEEDED(rv)) {
-    mRegistered = false;
+  if (mHistory) {
+    nsresult rv = mHistory->UnregisterVisitedCallback(mCachedURI, this);
+    NS_ASSERTION(NS_SUCCEEDED(rv), "This should only fail if we misuse the API!");
+    if (NS_SUCCEEDED(rv)) {
+      mRegistered = false;
+    }
   }
 }
 
@@ -481,7 +485,7 @@ Link::GetURIToMutate()
 {
   nsCOMPtr<nsIURI> uri(GetURI());
   if (!uri) {
-    return nsnull;
+    return nullptr;
   }
   nsCOMPtr<nsIURI> clone;
   (void)uri->Clone(getter_AddRefs(clone));
@@ -493,7 +497,7 @@ Link::SetHrefAttribute(nsIURI *aURI)
 {
   NS_ASSERTION(aURI, "Null URI is illegal!");
 
-  nsCAutoString href;
+  nsAutoCString href;
   (void)aURI->GetSpec(href);
   (void)mElement->SetAttr(kNameSpaceID_None, nsGkAtoms::href,
                           NS_ConvertUTF8toUTF16(href), true);

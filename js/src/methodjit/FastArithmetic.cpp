@@ -150,7 +150,7 @@ mjit::Compiler::jsop_binary_slow(JSOp op, VoidStub stub, JSValueType type,
     JS_ASSERT_IF(isStringResult && type != JSVAL_TYPE_UNKNOWN, type == JSVAL_TYPE_STRING);
 
     prepareStubCall(Uses(2));
-    INLINE_STUBCALL(stub, REJOIN_BINARY);
+    INLINE_STUBCALL(stub, REJOIN_FALLTHROUGH);
     frame.popn(2);
     frame.pushSynced(isStringResult ? JSVAL_TYPE_STRING : type);
     return true;
@@ -170,6 +170,7 @@ mjit::Compiler::jsop_binary(JSOp op, VoidStub stub, JSValueType type, types::Typ
              * itself. Note that monitorOverflow will propagate the type as
              * necessary if a *INC operation overflowed.
              */
+            RootedScript script(cx, script_);
             types::TypeScript::MonitorOverflow(cx, script, PC);
             return false;
         }
@@ -197,7 +198,7 @@ mjit::Compiler::jsop_binary(JSOp op, VoidStub stub, JSValueType type, types::Typ
      * from ignored overflows are not live across points where the interpreter
      * can join into JIT code (loop heads and safe points).
      */
-    CrossSSAValue pushv(a->inlineIndex, SSAValue::PushedValue(PC - script->code, 0));
+    CrossSSAValue pushv(a->inlineIndex, SSAValue::PushedValue(PC - script_->code, 0));
     bool cannotOverflow = loop && loop->cannotIntegerOverflow(pushv);
     bool ignoreOverflow = loop && loop->ignoreIntegerOverflow(pushv);
 
@@ -352,7 +353,7 @@ mjit::Compiler::jsop_binary_double(FrameEntry *lhs, FrameEntry *rhs, JSOp op,
     types::TypeSet *resultTypes = pushedTypeSet(0);
     if (resultTypes && !resultTypes->hasType(types::Type::DoubleType())) {
         /*
-         * Call a stub and try harder to convert to int32, failing that trigger
+         * Call a stub and try harder to convert to int32_t, failing that trigger
          * recompilation of this script.
          */
         stubcc.linkExit(masm.jump(), Uses(2));
@@ -366,7 +367,7 @@ mjit::Compiler::jsop_binary_double(FrameEntry *lhs, FrameEntry *rhs, JSOp op,
         done.getJump().linkTo(masm.label(), &masm);
 
     stubcc.leave();
-    OOL_STUBCALL(stub, REJOIN_BINARY);
+    OOL_STUBCALL(stub, REJOIN_FALLTHROUGH);
 
     if (allocateRight)
         frame.freeReg(fpRight);
@@ -464,7 +465,7 @@ mjit::Compiler::jsop_binary_full_simple(FrameEntry *fe, JSOp op, VoidStub stub, 
     /* Slow call - use frame.sync to avoid erroneous jump repatching in stubcc. */
     frame.sync(stubcc.masm, Uses(2));
     stubcc.leave();
-    OOL_STUBCALL(stub, REJOIN_BINARY);
+    OOL_STUBCALL(stub, REJOIN_FALLTHROUGH);
 
     /* Finish up stack operations. */
     frame.popn(2);
@@ -731,7 +732,7 @@ mjit::Compiler::jsop_binary_full(FrameEntry *lhs, FrameEntry *rhs, JSOp op,
     /* Slow call - use frame.sync to avoid erroneous jump repatching in stubcc. */
     frame.sync(stubcc.masm, Uses(2));
     stubcc.leave();
-    OOL_STUBCALL(stub, REJOIN_BINARY);
+    OOL_STUBCALL(stub, REJOIN_FALLTHROUGH);
 
     /* Finish up stack operations. */
     frame.popn(2);
@@ -910,6 +911,7 @@ mjit::Compiler::jsop_mod()
     if (tryBinaryConstantFold(cx, frame, JSOP_MOD, lhs, rhs, &v)) {
         types::TypeSet *pushed = pushedTypeSet(0);
         if (!v.isInt32() && pushed && !pushed->hasType(types::Type::DoubleType())) {
+            RootedScript script(cx, script_);
             types::TypeScript::MonitorOverflow(cx, script, PC);
             return false;
         }

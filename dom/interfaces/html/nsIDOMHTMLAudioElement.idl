@@ -20,11 +20,11 @@
  * @status UNDER_DEVELOPMENT
  */
 
-[scriptable, uuid(32c54e30-5063-4e35-8fc9-890e50fed147)]
+[scriptable, uuid(ee5df17c-3928-11e2-8808-10bf48d64bd4)]
 interface nsIDOMHTMLAudioElement : nsIDOMHTMLMediaElement
 {
   // Setup the audio stream for writing
-  void mozSetup(in PRUint32 channels, in PRUint32 rate);
+  void mozSetup(in uint32_t channels, in uint32_t rate);
 
   // Write audio to the audio stream
   [implicit_jscontext]

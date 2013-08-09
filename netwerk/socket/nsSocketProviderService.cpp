@@ -7,7 +7,7 @@
 #include "nsIServiceManager.h"
 #include "nsISocketProvider.h"
 #include "nsSocketProviderService.h"
-#include "nsNetError.h"
+#include "nsError.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -32,7 +32,7 @@ nsSocketProviderService::GetSocketProvider(const char         *type,
                                            nsISocketProvider **result)
 {
   nsresult rv;
-  nsCAutoString contractID(
+  nsAutoCString contractID(
           NS_LITERAL_CSTRING(NS_NETWORK_SOCKET_CONTRACTID_PREFIX) +
           nsDependentCString(type));
 

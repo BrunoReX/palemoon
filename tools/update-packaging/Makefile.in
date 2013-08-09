@@ -4,7 +4,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -35,6 +35,7 @@ endif
 MAR_BIN	= $(LIBXUL_DIST)/host/bin/mar$(HOST_BIN_SUFFIX)
 MBSDIFF_BIN	= $(LIBXUL_DIST)/host/bin/mbsdiff$(HOST_BIN_SUFFIX)
 
+.DEFAULT_GOAL := full-update
 full-update:: complete-patch
 
 ifeq ($(OS_TARGET), WINNT)

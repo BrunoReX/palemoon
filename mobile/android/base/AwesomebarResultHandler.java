@@ -4,7 +4,8 @@
 
 package org.mozilla.gecko;
 
-import java.util.concurrent.SynchronousQueue;
+import org.mozilla.gecko.util.ActivityResultHandler;
+
 import android.content.Intent;
 
 class AwesomebarResultHandler implements ActivityResultHandler {
@@ -15,9 +16,16 @@ class AwesomebarResultHandler implements ActivityResultHandler {
             String url = data.getStringExtra(AwesomeBar.URL_KEY);
             AwesomeBar.Target target = AwesomeBar.Target.valueOf(data.getStringExtra(AwesomeBar.TARGET_KEY));
             String searchEngine = data.getStringExtra(AwesomeBar.SEARCH_KEY);
-            boolean userEntered = data.getBooleanExtra(AwesomeBar.USER_ENTERED_KEY, false);
-            if (url != null && url.length() > 0)
-                GeckoApp.mAppContext.loadRequest(url, target, searchEngine, userEntered);
+            if (url != null && url.length() > 0) {
+                int flags = Tabs.LOADURL_NONE;
+                if (target == AwesomeBar.Target.NEW_TAB) {
+                    flags |= Tabs.LOADURL_NEW_TAB;
+                }
+                if (data.getBooleanExtra(AwesomeBar.USER_ENTERED_KEY, false)) {
+                    flags |= Tabs.LOADURL_USER_ENTERED;
+                }
+                Tabs.getInstance().loadUrl(url, searchEngine, -1, flags);
+            }
         }
     }
 }

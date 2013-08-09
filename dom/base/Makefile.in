@@ -3,10 +3,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
+FAIL_ON_WARNINGS := 1
 
 include $(DEPTH)/config/autoconf.mk
 
@@ -19,11 +20,14 @@ DIRS = \
   test \
   $(NULL)
 
+EXTRA_COMPONENTS = \
+  SiteSpecificUserAgent.js \
+  SiteSpecificUserAgent.manifest \
+  $(NULL)
+
 EXTRA_PP_COMPONENTS = \
   ConsoleAPI.js \
   ConsoleAPI.manifest \
-  BrowserElementParent.js \
-  BrowserElementParent.manifest \
   $(NULL)
 
 EXTRA_JS_MODULES = ConsoleAPIStorage.jsm \
@@ -32,6 +36,7 @@ EXTRA_JS_MODULES = ConsoleAPIStorage.jsm \
 EXTRA_JS_MODULES += \
   DOMRequestHelper.jsm \
   IndexedDBHelper.jsm \
+  ObjectWrapper.jsm \
   $(NULL)
 
 XPIDLSRCS = \
@@ -39,17 +44,16 @@ XPIDLSRCS = \
   nsIDOMDOMRequest.idl \
   nsIEntropyCollector.idl \
   nsIScriptChannel.idl \
+  nsISiteSpecificUserAgent.idl \
   $(NULL)
 
 EXPORTS = \
   nsDOMCID.h \
   nsDOMClassInfoClasses.h \
   nsDOMClassInfoID.h \
-  nsDOMError.h \
   nsDOMJSUtils.h \
   nsDOMScriptObjectHolder.h \
   nsDOMString.h \
-  nsIBaseDOMException.h \
   nsIDOMClassInfo.h \
   nsIDOMScriptObjectFactory.h \
   nsIJSEventListener.h \
@@ -59,14 +63,16 @@ EXPORTS = \
   nsIScriptGlobalObject.h \
   nsIScriptGlobalObjectOwner.h \
   nsIScriptNameSpaceManager.h \
-  nsIScriptObjectOwner.h \
   nsIScriptObjectPrincipal.h \
   nsIScriptRuntime.h \
   nsIScriptTimeoutHandler.h \
+  nsJSEnvironment.h \
+  nsJSUtils.h \
   nsPIDOMWindow.h \
   nsPIWindowRoot.h \
   nsFocusManager.h \
   nsWrapperCache.h \
+  nsWrapperCacheInlines.h \
   nsContentPermissionHelper.h \
   nsStructuredCloneContainer.h \
   nsWindowMemoryReporter.h \
@@ -78,6 +84,7 @@ EXPORTS_mozilla/dom = \
   DOMRequest.h \
   StructuredCloneTags.h \
   ScreenOrientation.h \
+  URL.h \
   $(NULL)
 
 CPPSRCS =			\
@@ -109,6 +116,7 @@ CPPSRCS =			\
 	DOMError.cpp \
 	DOMRequest.cpp \
 	Navigator.cpp \
+	URL.cpp \
 	$(NULL)
 
 include $(topsrcdir)/dom/dom-config.mk
@@ -119,6 +127,10 @@ endif
 
 ifdef MOZ_B2G_RIL
 DEFINES += -DMOZ_B2G_RIL
+endif
+
+ifdef MOZ_B2G_FM
+DEFINES += -DMOZ_B2G_FM
 endif
 
 include $(topsrcdir)/config/config.mk
@@ -136,3 +148,8 @@ ifdef MOZ_X11
 CXXFLAGS += $(TK_CFLAGS)
 LDFLAGS += $(TK_LIBS)
 endif
+
+XPIDL_FLAGS += \
+  -I$(topsrcdir)/dom/interfaces/base \
+  -I$(topsrcdir)/dom/interfaces/events \
+  $(NULL)

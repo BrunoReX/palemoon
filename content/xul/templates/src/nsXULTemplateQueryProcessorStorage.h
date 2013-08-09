@@ -16,10 +16,11 @@
 #include "mozIStorageValueArray.h"
 #include "mozIStorageStatement.h"
 #include "mozIStorageConnection.h"
+#include "mozilla/Attributes.h"
 
 class nsXULTemplateQueryProcessorStorage;
 
-class nsXULTemplateResultSetStorage : public nsISimpleEnumerator
+class nsXULTemplateResultSetStorage MOZ_FINAL : public nsISimpleEnumerator
 {
 private:
 
@@ -37,13 +38,13 @@ public:
 
     nsXULTemplateResultSetStorage(mozIStorageStatement* aStatement);
 
-    PRInt32 GetColumnIndex(nsIAtom* aColumnName);
+    int32_t GetColumnIndex(nsIAtom* aColumnName);
 
     void FillColumnValues(nsCOMArray<nsIVariant>& aArray);
 
 };
 
-class nsXULTemplateQueryProcessorStorage : public nsIXULTemplateQueryProcessor
+class nsXULTemplateQueryProcessorStorage MOZ_FINAL : public nsIXULTemplateQueryProcessor
 {
 public:
 

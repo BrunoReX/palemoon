@@ -6,8 +6,7 @@ import os
 import imp
 from tempfile import mkdtemp
 from shutil import rmtree
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from mozunit import MozTestRunner
+import mozunit
 
 from UserString import UserString
 # Create a controlled configuration for use by expandlibs
@@ -36,8 +35,7 @@ config_unix = {
 
 config = sys.modules['expandlibs_config'] = imp.new_module('expandlibs_config')
 
-from expandlibs import LibDescriptor, ExpandArgs, relativize
-from expandlibs_deps import ExpandLibsDeps, split_args
+from expandlibs import LibDescriptor, ExpandArgs, relativize, ExpandLibsDeps
 from expandlibs_gen import generate
 from expandlibs_exec import ExpandArgsMore, SectionFinder
 
@@ -213,12 +211,6 @@ class TestExpandLibsDeps(TestExpandInit):
         args = self.arg_files + [self.tmpfile('liby', Lib('y'))]
         self.assertRelEqual(ExpandLibsDeps(args), ExpandArgs(args))
 
-class TestSplitArgs(unittest.TestCase):
-    def test_split_args(self):
-        self.assertEqual(split_args(['a', '=', 'b', 'c']), {'a': ['b', 'c']})
-        self.assertEqual(split_args(['a', '=', 'b', 'c', ',', 'd', '=', 'e', 'f', 'g', ',', 'h', '=', 'i']),
-                         {'a': ['b', 'c'], 'd': ['e', 'f', 'g'], 'h': ['i']})
-
 class TestExpandArgsMore(TestExpandInit):
     def test_makelist(self):
         '''Test grouping object files in lists'''
@@ -392,4 +384,4 @@ class TestSymbolOrder(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main(testRunner=MozTestRunner())
+    mozunit.main()

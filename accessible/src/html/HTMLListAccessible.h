@@ -7,8 +7,8 @@
 #ifndef mozilla_a11y_HTMLListAccessible_h__
 #define mozilla_a11y_HTMLListAccessible_h__
 
+#include "BaseAccessibles.h"
 #include "HyperTextAccessibleWrap.h"
-#include "nsBaseWidgetAccessible.h"
 
 namespace mozilla {
 namespace a11y {
@@ -30,7 +30,7 @@ public:
 
   // Accessible
   virtual a11y::role NativeRole();
-  virtual PRUint64 NativeState();
+  virtual uint64_t NativeState();
 };
 
 
@@ -50,12 +50,12 @@ public:
   virtual void Shutdown();
 
   // nsIAccessible
-  NS_IMETHOD GetBounds(PRInt32* aX, PRInt32* aY,
-                       PRInt32* aWidth, PRInt32* aHeight);
+  NS_IMETHOD GetBounds(int32_t* aX, int32_t* aY,
+                       int32_t* aWidth, int32_t* aHeight);
 
   // Accessible
   virtual a11y::role NativeRole();
-  virtual PRUint64 NativeState();
+  virtual uint64_t NativeState();
 
   // nsHTMLLIAccessible
   void UpdateBullet(bool aHasBullet);
@@ -72,23 +72,21 @@ private:
 /**
  * Used for bullet of HTML list item element (for example, HTML li).
  */
-class HTMLListBulletAccessible : public nsLeafAccessible
+class HTMLListBulletAccessible : public LeafAccessible
 {
 public:
-  HTMLListBulletAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-    nsLeafAccessible(aContent, aDoc) { }
+  HTMLListBulletAccessible(nsIContent* aContent, DocAccessible* aDoc);
   virtual ~HTMLListBulletAccessible() { }
 
   // nsAccessNode
   virtual nsIFrame* GetFrame() const;
-  virtual bool IsPrimaryForNode() const;
 
   // Accessible
   virtual ENameValueFlag Name(nsString& aName);
   virtual a11y::role NativeRole();
-  virtual PRUint64 NativeState();
-  virtual void AppendTextTo(nsAString& aText, PRUint32 aStartOffset = 0,
-                            PRUint32 aLength = PR_UINT32_MAX);
+  virtual uint64_t NativeState();
+  virtual void AppendTextTo(nsAString& aText, uint32_t aStartOffset = 0,
+                            uint32_t aLength = UINT32_MAX);
 
   // HTMLListBulletAccessible
 
@@ -98,15 +96,15 @@ public:
   bool IsInside() const;
 };
 
-} // namespace a11y
-} // namespace mozilla
 
-
-inline mozilla::a11y::HTMLLIAccessible*
+inline HTMLLIAccessible*
 Accessible::AsHTMLListItem()
 {
   return mFlags & eHTMLListItemAccessible ?
-    static_cast<mozilla::a11y::HTMLLIAccessible*>(this) : nsnull;
+    static_cast<HTMLLIAccessible*>(this) : nullptr;
 }
+
+} // namespace a11y
+} // namespace mozilla
 
 #endif

@@ -42,13 +42,13 @@ public:
   // using GfxInfoBase::GetFeatureSuggestedDriverVersion;
   // using GfxInfoBase::GetWebGLParameter;
   // to import the relevant methods into their namespace.
-  NS_SCRIPTABLE NS_IMETHOD GetFeatureStatus(PRInt32 aFeature, PRInt32 *_retval NS_OUTPARAM);
-  NS_SCRIPTABLE NS_IMETHOD GetFeatureSuggestedDriverVersion(PRInt32 aFeature, nsAString & _retval NS_OUTPARAM);
-  NS_SCRIPTABLE NS_IMETHOD GetWebGLParameter(const nsAString & aParam, nsAString & _retval NS_OUTPARAM);
+  NS_IMETHOD GetFeatureStatus(int32_t aFeature, int32_t *_retval);
+  NS_IMETHOD GetFeatureSuggestedDriverVersion(int32_t aFeature, nsAString & _retval);
+  NS_IMETHOD GetWebGLParameter(const nsAString & aParam, nsAString & _retval);
 
-  NS_SCRIPTABLE NS_IMETHOD GetFailures(PRUint32 *failureCount NS_OUTPARAM, char ***failures NS_OUTPARAM);
+  NS_IMETHOD GetFailures(uint32_t *failureCount, char ***failures);
   NS_IMETHOD_(void) LogFailure(const nsACString &failure);
-  NS_SCRIPTABLE NS_IMETHOD GetInfo(JSContext*, jsval*);
+  NS_IMETHOD GetInfo(JSContext*, jsval*);
 
   // Initialization function. If you override this, you must call this class's
   // version of Init first.
@@ -68,27 +68,33 @@ public:
   static nsTArray<GfxDriverInfo>* mDriverInfo;
   static bool mDriverInfoObserverInitialized;
 
+  virtual const nsAString& Model() const { return nsString(); }
+  virtual const nsAString& Hardware() const { return nsString(); }
+  virtual const nsAString& Product() const { return nsString(); }
+  virtual const nsAString& Manufacturer() const { return nsString(); }
+  virtual uint32_t OperatingSystemVersion() const { return 0; }
+
 protected:
 
-  virtual nsresult GetFeatureStatusImpl(PRInt32 aFeature, PRInt32* aStatus,
+  virtual nsresult GetFeatureStatusImpl(int32_t aFeature, int32_t* aStatus,
                                         nsAString& aSuggestedDriverVersion,
                                         const nsTArray<GfxDriverInfo>& aDriverInfo,
-                                        OperatingSystem* aOS = nsnull);
+                                        OperatingSystem* aOS = nullptr);
 
   // Gets the driver info table. Used by GfxInfoBase to check for general cases
   // (while subclasses check for more specific ones).
   virtual const nsTArray<GfxDriverInfo>& GetGfxDriverInfo() = 0;
 
 private:
-  virtual PRInt32 FindBlocklistedDeviceInList(const nsTArray<GfxDriverInfo>& aDriverInfo,
+  virtual int32_t FindBlocklistedDeviceInList(const nsTArray<GfxDriverInfo>& aDriverInfo,
                                               nsAString& aSuggestedVersion,
-                                              PRInt32 aFeature,
+                                              int32_t aFeature,
                                               OperatingSystem os);
 
   void EvaluateDownloadedBlacklist(nsTArray<GfxDriverInfo>& aDriverInfo);
 
   nsCString mFailures[9]; // The choice of 9 is Ehsan's
-  PRUint32 mFailureCount;
+  uint32_t mFailureCount;
 
 };
 

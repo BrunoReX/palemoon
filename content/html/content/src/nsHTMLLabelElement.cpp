@@ -15,15 +15,16 @@
 #include "nsPresContext.h"
 #include "nsIFormControl.h"
 #include "nsIForm.h"
-#include "nsIDOMDocument.h"
 #include "nsIDocument.h"
 #include "nsGUIEvent.h"
 #include "nsEventDispatcher.h"
 #include "nsPIDOMWindow.h"
 #include "nsFocusManager.h"
+#include "mozilla/ErrorResult.h"
 
 // construction, destruction
 
+using namespace mozilla;
 using namespace mozilla::dom;
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Label)
@@ -42,8 +43,8 @@ nsHTMLLabelElement::~nsHTMLLabelElement()
 // nsISupports 
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLLabelElement, nsGenericElement) 
-NS_IMPL_RELEASE_INHERITED(nsHTMLLabelElement, nsGenericElement) 
+NS_IMPL_ADDREF_INHERITED(nsHTMLLabelElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLLabelElement, Element)
 
 
 DOMCI_NODE_DATA(HTMLLabelElement, nsHTMLLabelElement)
@@ -80,8 +81,8 @@ nsHTMLLabelElement::GetControl(nsIDOMHTMLElement** aElement)
 
 NS_IMPL_STRING_ATTR(nsHTMLLabelElement, HtmlFor, _for)
 
-NS_IMETHODIMP
-nsHTMLLabelElement::Focus()
+void
+nsHTMLLabelElement::Focus(ErrorResult& aError)
 {
   // retarget the focus method at the for content
   nsIFocusManager* fm = nsFocusManager::GetFocusManager();
@@ -90,8 +91,6 @@ nsHTMLLabelElement::Focus()
     if (elem)
       fm->SetFocus(elem, 0);
   }
-
-  return NS_OK;
 }
 
 nsresult
@@ -249,7 +248,7 @@ nsHTMLLabelElement::SubmitNamesValues(nsFormSubmission* aFormSubmission)
 }
 
 nsresult
-nsHTMLLabelElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName, nsIAtom* aPrefix,
+nsHTMLLabelElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName, nsIAtom* aPrefix,
                             const nsAString& aValue, bool aNotify)
 {
   return nsGenericHTMLFormElement::SetAttr(aNameSpaceID, aName, aPrefix, aValue,
@@ -257,7 +256,7 @@ nsHTMLLabelElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName, nsIAtom* aPref
 }
 
 nsresult
-nsHTMLLabelElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
+nsHTMLLabelElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
                               bool aNotify)
 {
   return nsGenericHTMLFormElement::UnsetAttr(aNameSpaceID, aAttribute, aNotify);
@@ -278,7 +277,7 @@ nsHTMLLabelElement::PerformAccesskey(bool aKeyCausesActivation,
 
     // Click on it if the users prefs indicate to do so.
     nsMouseEvent event(aIsTrustedEvent, NS_MOUSE_CLICK,
-                       nsnull, nsMouseEvent::eReal);
+                       nullptr, nsMouseEvent::eReal);
     event.inputSource = nsIDOMMouseEvent::MOZ_SOURCE_KEYBOARD;
 
     nsAutoPopupStatePusher popupStatePusher(aIsTrustedEvent ?
@@ -304,7 +303,7 @@ nsHTMLLabelElement::GetLabeledElement()
   // and this element should be a labelable form control.
   nsIDocument* doc = GetCurrentDoc();
   if (!doc) {
-    return nsnull;
+    return nullptr;
   }
 
   Element* element = doc->GetElementById(elementId);
@@ -312,7 +311,7 @@ nsHTMLLabelElement::GetLabeledElement()
     return element;
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 Element*
@@ -320,12 +319,12 @@ nsHTMLLabelElement::GetFirstLabelableDescendant()
 {
   for (nsIContent* cur = nsINode::GetFirstChild(); cur;
        cur = cur->GetNextNode(this)) {
-    Element* element = cur->IsElement() ? cur->AsElement() : nsnull;
+    Element* element = cur->IsElement() ? cur->AsElement() : nullptr;
     if (element && element->IsLabelable()) {
       return element;
     }
   }
 
-  return nsnull;
+  return nullptr;
 }
 

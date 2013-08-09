@@ -6,15 +6,14 @@ package org.mozilla.gecko;
 
 import android.content.Context;
 import android.content.res.TypedArray;
+import android.text.TextUtils;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.text.TextUtils;
 
-public class AboutHomeSection extends LinearLayout {
+public class AboutHomeSection extends GeckoLinearLayout {
     private static final String LOGTAG = "GeckoAboutHomeSection";
 
     private TextView mTitle;

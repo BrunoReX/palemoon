@@ -6,7 +6,7 @@
 
 #include "nsArrayEnumerator.h"
 #include "nsCOMArray.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIVariant.h"
 #include "nsMIMEInfoWin.h"
 #include "nsNetUtil.h"
@@ -36,16 +36,12 @@ nsresult
 nsMIMEInfoWin::LaunchDefaultWithFile(nsIFile* aFile)
 {
   // Launch the file, unless it is an executable.
-  nsCOMPtr<nsILocalFile> local(do_QueryInterface(aFile));
-  if (!local)
-    return NS_ERROR_FAILURE;
-
   bool executable = true;
-  local->IsExecutable(&executable);
+  aFile->IsExecutable(&executable);
   if (executable)
     return NS_ERROR_FAILURE;
 
-  return local->Launch();
+  return aFile->Launch();
 }
 
 NS_IMETHODIMP
@@ -88,9 +84,7 @@ nsMIMEInfoWin::LaunchWithFile(nsIFile* aFile)
 
         // executable is rundll32, everything else is a list of parameters, 
         // including the dll handler.
-        nsCOMPtr<nsILocalFile> locFile(do_QueryInterface(aFile));
-
-        if (!GetDllLaunchInfo(executable, locFile, args, false))
+        if (!GetDllLaunchInfo(executable, aFile, args, false))
           return NS_ERROR_INVALID_ARG;
 
         WCHAR rundll32Path[MAX_PATH + sizeof(RUNDLL32_EXE) / sizeof(WCHAR) + 1] = {L'\0'};
@@ -102,7 +96,7 @@ nsMIMEInfoWin::LaunchWithFile(nsIFile* aFile)
         SHELLEXECUTEINFOW seinfo;
         memset(&seinfo, 0, sizeof(seinfo));
         seinfo.cbSize = sizeof(SHELLEXECUTEINFOW);
-        seinfo.fMask  = NULL;
+        seinfo.fMask  = 0;
         seinfo.hwnd   = NULL;
         seinfo.lpVerb = NULL;
         seinfo.lpFile = rundll32Path;
@@ -181,9 +175,9 @@ static nsresult GetIconURLVariant(nsIFile* aApplication, nsIVariant* *_retval)
   nsresult rv = CallCreateInstance("@mozilla.org/variant;1", _retval);
   if (NS_FAILED(rv))
     return rv;
-  nsCAutoString fileURLSpec;
+  nsAutoCString fileURLSpec;
   NS_GetURLSpecFromFile(aApplication, fileURLSpec);
-  nsCAutoString iconURLSpec; iconURLSpec.AssignLiteral("moz-icon://");
+  nsAutoCString iconURLSpec; iconURLSpec.AssignLiteral("moz-icon://");
   iconURLSpec += fileURLSpec;
   nsCOMPtr<nsIWritableVariant> writable(do_QueryInterface(*_retval));
   writable->SetAsAUTF8String(iconURLSpec);
@@ -231,11 +225,11 @@ nsMIMEInfoWin::LoadUriInternal(nsIURI * aURL)
   if (aURL)
   {
     // extract the url spec from the url
-    nsCAutoString urlSpec;
+    nsAutoCString urlSpec;
     aURL->GetAsciiSpec(urlSpec);
  
     // Unescape non-ASCII characters in the URL
-    nsCAutoString urlCharset;
+    nsAutoCString urlCharset;
     nsAutoString utf16Spec;
     rv = aURL->GetOriginCharset(urlCharset);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -284,7 +278,7 @@ nsMIMEInfoWin::LoadUriInternal(nsIURI * aURL)
 bool nsMIMEInfoWin::GetLocalHandlerApp(const nsAString& aCommandHandler,
                                          nsCOMPtr<nsILocalHandlerApp>& aApp)
 {
-  nsCOMPtr<nsILocalFile> locfile;
+  nsCOMPtr<nsIFile> locfile;
   nsresult rv = 
     NS_NewLocalFile(aCommandHandler, true, getter_AddRefs(locfile));
   if (NS_FAILED(rv))
@@ -321,7 +315,7 @@ bool nsMIMEInfoWin::GetAppsVerbCommandHandler(const nsAString& appExeName,
     return false;
 
   // Check for the NoOpenWith flag, if it exists
-  PRUint32 value;
+  uint32_t value;
   if (NS_SUCCEEDED(appKey->ReadIntValue(
       NS_LITERAL_STRING("NoOpenWith"), &value)) &&
       value == 1)
@@ -368,19 +362,15 @@ bool nsMIMEInfoWin::GetAppsVerbCommandHandler(const nsAString& appExeName,
 // back to the full handler path based on the dll.
 // (dll, targetfile, return args, open/edit)
 bool nsMIMEInfoWin::GetDllLaunchInfo(nsIFile * aDll,
-                                       nsILocalFile * aFile,
+                                       nsIFile * aFile,
                                        nsAString& args,
                                        bool edit)
 {
   if (!aDll || !aFile) 
     return false;
 
-  nsCOMPtr<nsILocalFile> localDll(do_QueryInterface(aDll));
-  if (!localDll)
-    return false;
-
   nsString appExeName;
-  localDll->GetLeafName(appExeName);
+  aDll->GetLeafName(appExeName);
 
   nsCOMPtr<nsIWindowsRegKey> appKey = 
     do_CreateInstance("@mozilla.org/windows-registry-key;1");
@@ -399,7 +389,7 @@ bool nsMIMEInfoWin::GetDllLaunchInfo(nsIFile * aDll,
     return false;
 
   // Check for the NoOpenWith flag, if it exists
-  PRUint32 value;
+  uint32_t value;
   rv = appKey->ReadIntValue(NS_LITERAL_STRING("NoOpenWith"), &value);
   if (NS_SUCCEEDED(rv) && value == 1)
     return false;
@@ -429,7 +419,7 @@ bool nsMIMEInfoWin::GetDllLaunchInfo(nsIFile * aDll,
   if (NS_SUCCEEDED(appKey->ReadStringValue(EmptyString(),
                                            appFilesystemCommand))) {
     // Replace embedded environment variables.
-    PRUint32 bufLength = 
+    uint32_t bufLength = 
       ::ExpandEnvironmentStringsW(appFilesystemCommand.get(),
                                   L"", 0);
     if (bufLength == 0) // Error
@@ -449,7 +439,7 @@ bool nsMIMEInfoWin::GetDllLaunchInfo(nsIFile * aDll,
     // Photo Gallery\PhotoViewer.dll", ImageView_Fullscreen %1
     nsAutoString params;
     NS_NAMED_LITERAL_STRING(rundllSegment, "rundll32.exe ");
-    PRInt32 index = appFilesystemCommand.Find(rundllSegment);
+    int32_t index = appFilesystemCommand.Find(rundllSegment);
     if (index > kNotFound) {
       params.Append(Substring(appFilesystemCommand,
                     index + rundllSegment.Length()));
@@ -523,9 +513,9 @@ void nsMIMEInfoWin::ProcessPath(nsCOMPtr<nsIMutableArray>& appList,
 
   // Don't include firefox.exe in the list
   WCHAR exe[MAX_PATH+1];
-  PRUint32 len = GetModuleFileNameW(NULL, exe, MAX_PATH);
+  uint32_t len = GetModuleFileNameW(NULL, exe, MAX_PATH);
   if (len < MAX_PATH && len != 0) {
-    PRUint32 index = lower.Find(exe);
+    uint32_t index = lower.Find(exe);
     if (index != -1)
       return;
   }
@@ -549,7 +539,7 @@ static bool IsPathInList(nsAString& appPath,
   nsAutoString tmp(appPath);
   ToLowerCase(tmp);
 
-  for (PRUint32 i = 0; i < trackList.Length(); i++) {
+  for (uint32_t i = 0; i < trackList.Length(); i++) {
     if (tmp.Equals(trackList[i]))
       return true;
   }
@@ -570,7 +560,7 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
 {
   nsresult rv;
 
-  *_retval = nsnull;
+  *_retval = nullptr;
 
   nsCOMPtr<nsIMutableArray> appList =
     do_CreateInstance("@mozilla.org/array;1");
@@ -580,7 +570,7 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
 
   nsTArray<nsString> trackList;
 
-  nsCAutoString fileExt;
+  nsAutoCString fileExt;
   GetPrimaryExtension(fileExt);
 
   nsCOMPtr<nsIWindowsRegKey> regKey =
@@ -602,7 +592,7 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
     // of file extensions related to mime type are simply not defined,
     // (application/rss+xml & application/atom+xml are good examples)
     // in which case we can only provide a generic list.
-    nsCAutoString mimeType;
+    nsAutoCString mimeType;
     GetMIMEType(mimeType);
     if (!mimeType.IsEmpty()) {
       workingRegistryPath.AppendLiteral("MIME\\Database\\Content Type\\");
@@ -654,7 +644,7 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
     }
 
 
-    // 2) list HKEY_CLASSES_ROOT\.ext\OpenWithList\ 
+    // 2) list HKEY_CLASSES_ROOT\.ext\OpenWithList
     
     workingRegistryPath = fileExtToUse;
     workingRegistryPath.AppendLiteral("\\OpenWithList");
@@ -663,9 +653,9 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
                       workingRegistryPath,
                       nsIWindowsRegKey::ACCESS_QUERY_VALUE);
     if (NS_SUCCEEDED(rv)) {
-      PRUint32 count = 0;
+      uint32_t count = 0;
       if (NS_SUCCEEDED(regKey->GetValueCount(&count)) && count > 0) {
-        for (PRUint32 index = 0; index < count; index++) {
+        for (uint32_t index = 0; index < count; index++) {
           nsAutoString appName;
           if (NS_FAILED(regKey->GetValueName(index, appName)))
             continue;
@@ -694,9 +684,9 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
                       workingRegistryPath,
                       nsIWindowsRegKey::ACCESS_QUERY_VALUE);
     if (NS_SUCCEEDED(rv)) {
-      PRUint32 count = 0;
+      uint32_t count = 0;
       if (NS_SUCCEEDED(regKey->GetValueCount(&count)) && count > 0) {
-        for (PRUint32 index = 0; index < count; index++) {
+        for (uint32_t index = 0; index < count; index++) {
           // HKEY_CLASSES_ROOT\.ext\OpenWithProgids\Windows.XPSReachViewer
           nsAutoString appProgId;
           if (NS_FAILED(regKey->GetValueName(index, appProgId)))
@@ -717,8 +707,8 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
 
     // 4) Add any non configured applications located in the MRU list
 
-    // HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\
-    // Explorer\FileExts\.ext\OpenWithList
+    // HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion
+    // \Explorer\FileExts\.ext\OpenWithList
     workingRegistryPath =
       NS_LITERAL_STRING("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\");
     workingRegistryPath += fileExtToUse;
@@ -728,9 +718,9 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
                       workingRegistryPath,
                       nsIWindowsRegKey::ACCESS_QUERY_VALUE);
     if (NS_SUCCEEDED(rv)) {
-      PRUint32 count = 0;
+      uint32_t count = 0;
       if (NS_SUCCEEDED(regKey->GetValueCount(&count)) && count > 0) {
-        for (PRUint32 index = 0; index < count; index++) {
+        for (uint32_t index = 0; index < count; index++) {
           nsAutoString appName, appValue;
           if (NS_FAILED(regKey->GetValueName(index, appName)))
             continue;
@@ -755,8 +745,8 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
     // 5) Add any non configured progids in the MRU list, with the
     // different step of resolving the progids for the command handler.
     
-    // HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\
-    // Explorer\FileExts\.ext\OpenWithProgids
+    // HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion
+    // \Explorer\FileExts\.ext\OpenWithProgids
     workingRegistryPath =
       NS_LITERAL_STRING("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\");
     workingRegistryPath += fileExtToUse;
@@ -766,9 +756,9 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
                  workingRegistryPath,
                  nsIWindowsRegKey::ACCESS_QUERY_VALUE);
     if (NS_SUCCEEDED(rv)) {
-      PRUint32 count = 0;
+      uint32_t count = 0;
       if (NS_SUCCEEDED(regKey->GetValueCount(&count)) && count > 0) {
-        for (PRUint32 index = 0; index < count; index++) {
+        for (uint32_t index = 0; index < count; index++) {
           nsAutoString appIndex, appProgId;
           if (NS_FAILED(regKey->GetValueName(index, appProgId)))
             continue;
@@ -808,9 +798,9 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
                                    openWithListPath,
                                    nsIWindowsRegKey::ACCESS_QUERY_VALUE);
         if (NS_SUCCEEDED(rv)) {
-          PRUint32 count = 0;
+          uint32_t count = 0;
           if (NS_SUCCEEDED(regKey->GetValueCount(&count)) && count > 0) {
-            for (PRUint32 index = 0; index < count; index++) {
+            for (uint32_t index = 0; index < count; index++) {
               nsAutoString appName;
               if (NS_FAILED(regKey->GetValueName(index, appName)))
                 continue;
@@ -830,7 +820,7 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
   } // extKnown == false
 
 
-  // 7) list global HKEY_CLASSES_ROOT\*\OpenWithList\
+  // 7) list global HKEY_CLASSES_ROOT\*\OpenWithList
   // Listing general purpose handlers, not specific to a mime type or file extension
 
   workingRegistryPath = NS_LITERAL_STRING("*\\OpenWithList");
@@ -839,9 +829,9 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
                     workingRegistryPath,
                     nsIWindowsRegKey::ACCESS_QUERY_VALUE);
   if (NS_SUCCEEDED(rv)) {
-    PRUint32 count = 0;
+    uint32_t count = 0;
     if (NS_SUCCEEDED(regKey->GetValueCount(&count)) && count > 0) {
-      for (PRUint32 index = 0; index < count; index++) {
+      for (uint32_t index = 0; index < count; index++) {
         nsAutoString appName;
         if (NS_FAILED(regKey->GetValueName(index, appName)))
           continue;
@@ -867,9 +857,9 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
                     nsIWindowsRegKey::ACCESS_ENUMERATE_SUB_KEYS|
                     nsIWindowsRegKey::ACCESS_QUERY_VALUE);
   if (NS_SUCCEEDED(rv)) {
-    PRUint32 count = 0;
+    uint32_t count = 0;
     if (NS_SUCCEEDED(regKey->GetChildCount(&count)) && count > 0) {
-      for (PRUint32 index = 0; index < count; index++) {
+      for (uint32_t index = 0; index < count; index++) {
         nsAutoString appName;
         if (NS_FAILED(regKey->GetChildName(index, appName)))
           continue;

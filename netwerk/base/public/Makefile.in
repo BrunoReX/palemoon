@@ -3,10 +3,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
+FAIL_ON_WARNINGS := 1
 
 include $(DEPTH)/config/autoconf.mk
 
@@ -52,12 +53,12 @@ XPIDLSRCS	= \
 		nsIInputStreamPump.idl \
 		nsIInputStreamChannel.idl \
                 nsIIOService2.idl \
-                nsIIPCSerializable.idl \
 		nsIMIMEInputStream.idl \
 		nsINetAddr.idl \
                 nsINetworkLinkService.idl \
 		nsIPermission.idl \
 		nsIPermissionManager.idl \
+		nsIPrivateBrowsingChannel.idl \
 		nsIPrivateBrowsingService.idl \
 		nsIProgressEventSink.idl \
 		nsIPrompt.idl \
@@ -66,7 +67,6 @@ XPIDLSRCS	= \
 		nsIProtocolProxyFilter.idl \
 		nsIProtocolProxyCallback.idl \
 		nsIProxiedProtocolHandler.idl \
-		nsIProxyAutoConfig.idl \
 		nsIProxyInfo.idl \
 		nsITransport.idl \
 		nsISocketTransport.idl \
@@ -125,7 +125,6 @@ endif
 
 EXPORTS		= \
 		netCore.h \
-		nsNetError.h \
 		nsNetUtil.h \
 		nsNetStrings.h \
 		nsChannelProperties.h \

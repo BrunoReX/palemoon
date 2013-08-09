@@ -6,10 +6,12 @@
 #ifndef SplitElementTxn_h__
 #define SplitElementTxn_h__
 
-#include "EditTxn.h"
-#include "nsIDOMNode.h"
-#include "nsCOMPtr.h"
-#include "nsIEditor.h"
+#include "EditTxn.h"                    // for EditTxn, NS_DECL_EDITTXN
+#include "nsCOMPtr.h"                   // for nsCOMPtr
+#include "nsCycleCollectionParticipant.h"
+#include "nsIDOMNode.h"                 // for nsIDOMNode
+#include "nsISupportsImpl.h"            // for NS_DECL_ISUPPORTS_INHERITED
+#include "nscore.h"                     // for NS_IMETHOD
 
 class nsEditor;
 
@@ -29,7 +31,7 @@ public:
     */
   NS_IMETHOD Init (nsEditor   *aEditor,
                    nsIDOMNode *aNode,
-                   PRInt32     aOffset);
+                   int32_t     aOffset);
 
   SplitElementTxn();
 
@@ -51,7 +53,7 @@ protected:
     * mOffset is the index of the first child in the right node. 
     * -1 means the new node gets no children.
     */
-  PRInt32  mOffset;
+  int32_t  mOffset;
 
   /** the element we create when splitting mElement */
   nsCOMPtr<nsIDOMNode> mNewLeftNode;

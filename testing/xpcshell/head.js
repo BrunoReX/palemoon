@@ -35,16 +35,27 @@ let (ios = Components.classes["@mozilla.org/network/io-service;1"]
   ios.offline = false;
 }
 
-// Disable IPv6 lookups for 'localhost' on windows.
+// Determine if we're running on parent or child
+let runningInParent = true;
 try {
-  if ("@mozilla.org/windows-registry-key;1" in Components.classes) {
-    let processType = Components.classes["@mozilla.org/xre/runtime;1"].
-      getService(Components.interfaces.nsIXULRuntime).processType;
-    if (processType == Components.interfaces.nsIXULRuntime.PROCESS_TYPE_DEFAULT) {
-      let (prefs = Components.classes["@mozilla.org/preferences-service;1"]
-                   .getService(Components.interfaces.nsIPrefBranch)) {
-        prefs.setCharPref("network.dns.ipv4OnlyDomains", "localhost");
-      }
+  runningInParent = Components.classes["@mozilla.org/xre/runtime;1"].
+                    getService(Components.interfaces.nsIXULRuntime).processType
+                    == Components.interfaces.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
+} 
+catch (e) { }
+
+try {
+  if (runningInParent) {
+    let prefs = Components.classes["@mozilla.org/preferences-service;1"]
+                .getService(Components.interfaces.nsIPrefBranch);
+
+    // disable necko IPC security checks for xpcshell, as they lack the
+    // docshells needed to pass them
+    prefs.setBoolPref("network.disable.ipc.security", true);
+
+    // Disable IPv6 lookups for 'localhost' on windows.
+    if ("@mozilla.org/windows-registry-key;1" in Components.classes) {
+      prefs.setCharPref("network.dns.ipv4OnlyDomains", "localhost");
     }
   }
 }
@@ -56,9 +67,7 @@ catch (e) { }
 // Note that if we're in a child process, we don't want to init the
 // crashreporter component.
 try { // nsIXULRuntime is not available in some configurations.
-  let processType = Components.classes["@mozilla.org/xre/runtime;1"].
-    getService(Components.interfaces.nsIXULRuntime).processType;
-  if (processType == Components.interfaces.nsIXULRuntime.PROCESS_TYPE_DEFAULT &&
+  if (runningInParent &&
       "@mozilla.org/toolkit/crash-reporter;1" in Components.classes) {
     // Remember to update </toolkit/crashreporter/test/unit/test_crashreporter.js>
     // too if you change this initial setting.
@@ -281,7 +290,18 @@ function _register_protocol_handlers() {
                         createInstance(Components.interfaces.nsILocalFile);
       modulesFile.initWithPath(_TESTING_MODULES_DIR);
 
+      if (!modulesFile.exists()) {
+        throw new Error("Specified modules directory does not exist: " +
+                        _TESTING_MODULES_DIR);
+      }
+
+      if (!modulesFile.isDirectory()) {
+        throw new Error("Specified modules directory is not a directory: " +
+                        _TESTING_MODULES_DIR);
+      }
+
       let modulesURI = ios.newFileURI(modulesFile);
+
       protocolHandler.setSubstitution("testing-common", modulesURI);
     }
   }
@@ -652,14 +672,6 @@ function do_get_cwd() {
   return do_get_file("");
 }
 
-/**
- * Loads _HTTPD_JS_PATH file, which is dynamically defined by
- * <runxpcshelltests.py>.
- */
-function do_load_httpd_js() {
-  load(_HTTPD_JS_PATH);
-}
-
 function do_load_manifest(path) {
   var lf = do_get_file(path);
   const nsIComponentRegistrar = Components.interfaces.nsIComponentRegistrar;
@@ -785,11 +797,7 @@ function do_get_profile() {
 function do_load_child_test_harness()
 {
   // Make sure this isn't called from child process
-  var runtime = Components.classes["@mozilla.org/xre/app-info;1"]
-                  .getService(Components.interfaces.nsIXULRuntime);
-  if (runtime.processType != 
-            Components.interfaces.nsIXULRuntime.PROCESS_TYPE_DEFAULT) 
-  {
+  if (!runningInParent) {
     do_throw("run_test_in_child cannot be called from child!");
   }
 
@@ -814,7 +822,8 @@ function do_load_child_test_harness()
       + "const _XPCSHELL_PROCESS='child';";
 
   if (this._TESTING_MODULES_DIR) {
-    command += "const _TESTING_MODULES_DIR='" + _TESTING_MODULES_DIR + "'; ";
+    normalized = this._TESTING_MODULES_DIR.replace('\\', '\\\\', 'g');
+    command += "const _TESTING_MODULES_DIR='" + normalized + "'; ";
   }
 
   command += "load(_HEAD_JS_PATH);";

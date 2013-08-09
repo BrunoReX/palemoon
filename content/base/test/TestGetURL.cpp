@@ -4,7 +4,6 @@
 
 #include "TestHarness.h"
 
-#include "nsIDOMDocument.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIXMLHttpRequest.h"
@@ -43,20 +42,20 @@ nsresult TestGetURL(const nsCString& aURL)
   rv = secman->GetSystemPrincipal(getter_AddRefs(systemPrincipal));
   TEST_ENSURE_SUCCESS(rv, "Couldn't get system principal!");
 
-  rv = xhr->Init(systemPrincipal, nsnull, nsnull, nsnull);
+  rv = xhr->Init(systemPrincipal, nullptr, nullptr, nullptr);
   TEST_ENSURE_SUCCESS(rv, "Couldn't initialize the XHR!");
 
   rv = xhr->Open(getString, aURL, false, empty, empty);
   TEST_ENSURE_SUCCESS(rv, "OpenRequest failed!");
 
-  rv = xhr->Send(nsnull, nsnull);
+  rv = xhr->Send(nullptr);
   TEST_ENSURE_SUCCESS(rv, "Send failed!");
 
   nsAutoString response;
   rv = xhr->GetResponseText(response);
   TEST_ENSURE_SUCCESS(rv, "GetResponse failed!");
 
-  nsCAutoString responseUTF8 = NS_ConvertUTF16toUTF8(response);
+  nsAutoCString responseUTF8 = NS_ConvertUTF16toUTF8(response);
   printf("#BEGIN\n");
   printf("%s", responseUTF8.get());
   printf("\n#EOF\n");
@@ -75,7 +74,7 @@ int main(int argc, char** argv)
   if (xpcom.failed())
     return 1;
 
-  nsCAutoString targetURL(argv[1]);
+  nsAutoCString targetURL(argv[1]);
 
   int retval = 0;
   if (NS_FAILED(TestGetURL(targetURL))) {

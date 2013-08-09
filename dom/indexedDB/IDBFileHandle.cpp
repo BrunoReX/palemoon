@@ -8,10 +8,11 @@
 
 #include "nsIStandardFileStream.h"
 
+#include "mozilla/dom/file/File.h"
 #include "nsDOMClassInfoID.h"
 
 #include "FileStream.h"
-#include "mozilla/dom/file/File.h"
+#include "IDBDatabase.h"
 
 USING_INDEXEDDB_NAMESPACE
 
@@ -24,11 +25,11 @@ GetFileFor(FileInfo* aFileInfo)
 {
   FileManager* fileManager = aFileInfo->Manager();
   nsCOMPtr<nsIFile> directory = fileManager->GetDirectory();
-  NS_ENSURE_TRUE(directory, nsnull);
+  NS_ENSURE_TRUE(directory, nullptr);
 
   nsCOMPtr<nsIFile> file = fileManager->GetFileForId(directory,
                                                      aFileInfo->Id());
-  NS_ENSURE_TRUE(file, nsnull);
+  NS_ENSURE_TRUE(file, nullptr);
 
   return file.forget();
 }
@@ -56,7 +57,7 @@ IDBFileHandle::Create(IDBDatabase* aDatabase,
   newFile->mType = aType;
 
   newFile->mFile = GetFileFor(fileInfo);
-  NS_ENSURE_TRUE(newFile->mFile, nsnull);
+  NS_ENSURE_TRUE(newFile->mFile, nullptr);
   newFile->mFileName.AppendInt(fileInfo->Id());
 
   fileInfo.swap(newFile->mFileInfo);
@@ -79,7 +80,7 @@ IDBFileHandle::CreateStream(nsIFile* aFile, bool aReadOnly)
 
   nsresult rv = stream->Init(aFile, streamMode,
                              nsIStandardFileStream::FLAGS_DEFER_OPEN);
-  NS_ENSURE_SUCCESS(rv, nsnull);
+  NS_ENSURE_SUCCESS(rv, nullptr);
 
   nsCOMPtr<nsISupports> result =
     NS_ISUPPORTS_CAST(nsIStandardFileStream*, stream);
@@ -88,7 +89,7 @@ IDBFileHandle::CreateStream(nsIFile* aFile, bool aReadOnly)
 
 already_AddRefed<nsIDOMFile>
 IDBFileHandle::CreateFileObject(mozilla::dom::file::LockedFile* aLockedFile,
-                                PRUint32 aFileSize)
+                                uint32_t aFileSize)
 {
   nsCOMPtr<nsIDOMFile> file = new mozilla::dom::file::File(
     mName, mType, aFileSize, mFile, aLockedFile, mFileInfo);

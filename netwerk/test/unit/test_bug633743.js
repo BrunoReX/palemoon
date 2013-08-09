@@ -1,19 +1,15 @@
-do_load_httpd_js();
+const Cc = Components.classes;
+const Ci = Components.interfaces;
+const Cu = Components.utils;
+const Cr = Components.results;
+
+Cu.import("resource://testing-common/httpd.js");
 
 const VALUE_HDR_NAME = "X-HTTP-VALUE-HEADER";
 const VARY_HDR_NAME = "X-HTTP-VARY-HEADER";
 const CACHECTRL_HDR_NAME = "X-CACHE-CONTROL-HEADER";
 
 var httpserver = null;
-
-var _CSvc;
-function get_cache_service() {
-  if (_CSvc)
-    return _CSvc;
-
-  return _CSvc = Cc["@mozilla.org/network/cache-service;1"].
-    getService(Ci.nsICacheService);
-}
 
 function make_channel(flags, vary, value) {
   var ios = Cc["@mozilla.org/network/io-service;1"].
@@ -182,9 +178,9 @@ function handler(metadata, response) {
 function run_test() {
 
   // clear the cache
-  get_cache_service().evictEntries(Ci.nsICache.STORE_ANYWHERE);
+  evict_cache_entries();
 
-  httpserver = new nsHttpServer();
+  httpserver = new HttpServer();
   httpserver.registerPathHandler("/bug633743", handler);
   httpserver.start(4444);
 

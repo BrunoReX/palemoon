@@ -18,37 +18,6 @@
 	{ 0x25359602, 0xfc70, 0x4d13,	\
 		{ 0xa9, 0xab, 0x80, 0x86, 0xd3, 0x82, 0x7c, 0xd }}
 
-// XXX deprecated
-/*---------- BEGIN DEPRECATED */ 
-#define NS_EXACT_LENGTH \
-  NS_ERROR_GENERATE_SUCCESS(NS_ERROR_MODULE_UCONV, 11)
-
-#define NS_PARTIAL_MORE_INPUT \
-  NS_ERROR_GENERATE_SUCCESS(NS_ERROR_MODULE_UCONV, 12)
-
-#define NS_PARTIAL_MORE_OUTPUT \
-  NS_ERROR_GENERATE_SUCCESS(NS_ERROR_MODULE_UCONV, 13)
-
-#define NS_ERROR_ILLEGAL_INPUT \
-  NS_ERROR_GENERATE_FAILURE(NS_ERROR_MODULE_UCONV, 14)
-/*---------- END DEPRECATED */ 
-
-// XXX make us hex! (same digits though)
-#define NS_OK_UDEC_EXACTLENGTH      \
-  NS_ERROR_GENERATE_SUCCESS(NS_ERROR_MODULE_UCONV, 11)
-
-#define NS_OK_UDEC_MOREINPUT        \
-  NS_ERROR_GENERATE_SUCCESS(NS_ERROR_MODULE_UCONV, 12)
-
-#define NS_OK_UDEC_MOREOUTPUT       \
-  NS_ERROR_GENERATE_SUCCESS(NS_ERROR_MODULE_UCONV, 13)
-
-#define NS_ERROR_UDEC_ILLEGALINPUT  \
-  NS_ERROR_GENERATE_FAILURE(NS_ERROR_MODULE_UCONV, 14)
-
-#define NS_OK_UDEC_NOBOMFOUND       \
-  NS_ERROR_GENERATE_SUCCESS(NS_ERROR_MODULE_UCONV, 14)
-
 
 #define NS_UNICODEDECODER_CONTRACTID_BASE "@mozilla.org/intl/unicode/decoder;1?charset="
 
@@ -122,8 +91,8 @@ public:
    *                    the caller must skip over one byte, reset the decoder
    *                    and retry.
    */
-  NS_IMETHOD Convert(const char * aSrc, PRInt32 * aSrcLength, 
-      PRUnichar * aDest, PRInt32 * aDestLength) = 0;
+  NS_IMETHOD Convert(const char * aSrc, int32_t * aSrcLength, 
+      PRUnichar * aDest, int32_t * aDestLength) = 0;
 
   /**
    * Returns a quick estimation of the size of the buffer needed to hold the
@@ -136,8 +105,8 @@ public:
    * @return            NS_EXACT_LENGTH if an exact length was computed
    *                    NS_OK is all we have is an approximation
    */
-  NS_IMETHOD GetMaxLength(const char * aSrc, PRInt32 aSrcLength, 
-      PRInt32 * aDestLength) = 0;
+  NS_IMETHOD GetMaxLength(const char * aSrc, int32_t aSrcLength, 
+      int32_t * aDestLength) = 0;
 
   /**
    * Resets the charset converter so it may be recycled for a completely 
@@ -152,7 +121,7 @@ public:
    * @see kOnError_Recover
    * @see kOnError_Signal
    */
-  virtual void SetInputErrorBehavior(PRInt32 aBehavior) = 0;
+  virtual void SetInputErrorBehavior(int32_t aBehavior) = 0;
 
   /**
    * return the UNICODE character for unmapped character

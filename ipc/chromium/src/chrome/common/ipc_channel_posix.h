@@ -91,11 +91,11 @@ class Channel::ChannelImpl : public MessageLoopForIO::Watcher {
     // We assume a worst case: kReadBufferSize bytes of messages, where each
     // message has no payload and a full complement of descriptors.
     MAX_READ_FDS = (Channel::kReadBufferSize / sizeof(IPC::Message::Header)) *
-                   FileDescriptorSet::MAX_DESCRIPTORS_PER_MESSAGE,
+                   FileDescriptorSet::MAX_DESCRIPTORS_PER_MESSAGE
   };
 
   // This is a control message buffer large enough to hold kMaxReadFDs
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) || defined(OS_NETBSD)
   // TODO(agl): OSX appears to have non-constant CMSG macros!
   char input_cmsg_buf_[1024];
 #else

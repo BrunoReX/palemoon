@@ -18,39 +18,37 @@ static const char PROPERTY_NAME[] = "foo";
 
 BEGIN_TEST(testDefineGetterSetterNonEnumerable)
 {
-    jsvalRoot vobj(cx);
-    JSObject *obj = JS_NewObject(cx, NULL, NULL, NULL);
+    js::RootedValue vobj(cx);
+    js::RootedObject obj(cx, JS_NewObject(cx, NULL, NULL, NULL));
     CHECK(obj);
     vobj = OBJECT_TO_JSVAL(obj);
 
-    jsvalRoot vget(cx);
     JSFunction *funGet = JS_NewFunction(cx, native, 0, 0, NULL, "get");
     CHECK(funGet);
-    JSObject *funGetObj = JS_GetFunctionObject(funGet);
-    vget = OBJECT_TO_JSVAL(funGetObj);
+    js::RootedObject funGetObj(cx, JS_GetFunctionObject(funGet));
+    js::RootedValue vget(cx, OBJECT_TO_JSVAL(funGetObj));
 
-    jsvalRoot vset(cx);
     JSFunction *funSet = JS_NewFunction(cx, native, 1, 0, NULL, "set");
     CHECK(funSet);
-    JSObject *funSetObj = JS_GetFunctionObject(funSet);
-    vset = OBJECT_TO_JSVAL(funSetObj);
+    js::RootedObject funSetObj(cx, JS_GetFunctionObject(funSet));
+    js::RootedValue vset(cx, OBJECT_TO_JSVAL(funSetObj));
 
-    CHECK(JS_DefineProperty(cx, JSVAL_TO_OBJECT(vobj), PROPERTY_NAME,
+    js::RootedObject vObject(cx, JSVAL_TO_OBJECT(vobj));
+    CHECK(JS_DefineProperty(cx, vObject, PROPERTY_NAME,
                             JSVAL_VOID,
-                            JS_DATA_TO_FUNC_PTR(JSPropertyOp, funGetObj),
-                            JS_DATA_TO_FUNC_PTR(JSStrictPropertyOp, funSetObj),
+                            JS_DATA_TO_FUNC_PTR(JSPropertyOp, (JSObject*) funGetObj),
+                            JS_DATA_TO_FUNC_PTR(JSStrictPropertyOp, (JSObject*) funSetObj),
                             JSPROP_GETTER | JSPROP_SETTER | JSPROP_ENUMERATE));
 
-    CHECK(JS_DefineProperty(cx, JSVAL_TO_OBJECT(vobj), PROPERTY_NAME,
+    CHECK(JS_DefineProperty(cx, vObject, PROPERTY_NAME,
                             JSVAL_VOID,
-                            JS_DATA_TO_FUNC_PTR(JSPropertyOp, funGetObj),
-                            JS_DATA_TO_FUNC_PTR(JSStrictPropertyOp, funSetObj),
+                            JS_DATA_TO_FUNC_PTR(JSPropertyOp, (JSObject*) funGetObj),
+                            JS_DATA_TO_FUNC_PTR(JSStrictPropertyOp, (JSObject*) funSetObj),
                             JSPROP_GETTER | JSPROP_SETTER | JSPROP_PERMANENT));
 
     JSBool found = JS_FALSE;
     unsigned attrs = 0;
-    CHECK(JS_GetPropertyAttributes(cx, JSVAL_TO_OBJECT(vobj), PROPERTY_NAME,
-                                   &attrs, &found));
+    CHECK(JS_GetPropertyAttributes(cx, vObject, PROPERTY_NAME, &attrs, &found));
     CHECK(found);
     CHECK(attrs & JSPROP_GETTER);
     CHECK(attrs & JSPROP_SETTER);

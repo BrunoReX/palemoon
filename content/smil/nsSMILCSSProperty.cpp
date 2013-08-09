@@ -17,7 +17,7 @@ using namespace mozilla::dom;
 
 // Helper function
 static bool
-GetCSSComputedValue(nsIContent* aElem,
+GetCSSComputedValue(Element* aElem,
                     nsCSSProperty aPropID,
                     nsAString& aResult)
 {
@@ -40,16 +40,11 @@ GetCSSComputedValue(nsIContent* aElem,
     return false;
   }
 
-  nsRefPtr<nsComputedDOMStyle> computedStyle;
-  nsCOMPtr<nsIDOMElement> domElement(do_QueryInterface(aElem));
-  nsresult rv = NS_NewComputedDOMStyle(domElement, EmptyString(), shell,
-                                       getter_AddRefs(computedStyle));
+  nsRefPtr<nsComputedDOMStyle> computedStyle =
+    NS_NewComputedDOMStyle(aElem, EmptyString(), shell);
 
-  if (NS_SUCCEEDED(rv)) {
-    computedStyle->GetPropertyValue(aPropID, aResult);
-    return true;
-  }
-  return false;
+  computedStyle->GetPropertyValue(aPropID, aResult);
+  return true;
 }
 
 // Class Methods
@@ -91,8 +86,7 @@ nsSMILCSSProperty::GetBaseValue() const
   // GENERAL CASE: Non-Shorthands
   // (1) Put empty string in override style for property mPropID
   // (saving old override style value, so we can set it again when we're done)
-  nsCOMPtr<nsICSSDeclaration> overrideDecl =
-    do_QueryInterface(mElement->GetSMILOverrideStyle());
+  nsICSSDeclaration* overrideDecl = mElement->GetSMILOverrideStyle();
   nsAutoString cachedOverrideStyleVal;
   if (overrideDecl) {
     overrideDecl->GetPropertyValue(mPropID, cachedOverrideStyleVal);
@@ -121,7 +115,7 @@ nsSMILCSSProperty::GetBaseValue() const
     // the cached (computed) value and detect changes for us.
     nsSMILCSSValueType::ValueFromString(mPropID, mElement,
                                         computedStyleVal, baseValue,
-                                        nsnull);
+                                        nullptr);
   }
   return baseValue;
 }
@@ -163,8 +157,7 @@ nsSMILCSSProperty::SetAnimValue(const nsSMILValue& aValue)
   }
 
   // Use string value to style the target element
-  nsCOMPtr<nsICSSDeclaration> overrideDecl =
-    do_QueryInterface(mElement->GetSMILOverrideStyle());
+  nsICSSDeclaration* overrideDecl = mElement->GetSMILOverrideStyle();
   if (overrideDecl) {
     nsAutoString oldValStr;
     overrideDecl->GetPropertyValue(mPropID, oldValStr);
@@ -180,8 +173,7 @@ void
 nsSMILCSSProperty::ClearAnimValue()
 {
   // Put empty string in override style for our property
-  nsCOMPtr<nsICSSDeclaration> overrideDecl =
-    do_QueryInterface(mElement->GetSMILOverrideStyle());
+  nsICSSDeclaration* overrideDecl = mElement->GetSMILOverrideStyle();
   if (overrideDecl) {
     overrideDecl->SetPropertyValue(mPropID, EmptyString());
   }

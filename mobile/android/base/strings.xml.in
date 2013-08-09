@@ -11,7 +11,8 @@
 ]>
 #includesubst @BOOKMARKSPATH@
 <resources>
-#include ../sync/strings.xml.in
+  <string name="moz_app_displayname">@MOZ_APP_DISPLAYNAME@</string>
+#include ../services/strings.xml.in
   <string name="splash_settingup">&splash_settingup;</string>
   <string name="splash_bookmarks_history">&splash_bookmarks_history;</string>
   <string name="no_space_to_start_error">&no_space_to_start_error;</string>
@@ -20,7 +21,6 @@
   <string name="awesomebar_all_pages_title">&awesomebar_all_pages_title;</string>
   <string name="awesomebar_bookmarks_title">&awesomebar_bookmarks_title;</string>
   <string name="awesomebar_history_title">&awesomebar_history_title;</string>
-  <string name="awesomebar_search_engine">&awesomebar_search_engine;</string>
 
   <string name="crash_reporter_title">&crash_reporter_title;</string>
   <string name="crash_message">&crash_message;</string>
@@ -56,9 +56,11 @@
 
   <string name="share">&share;</string>
   <string name="share_title">&share_title;</string>
+  <string name="share_image_failed">&share_image_failed;</string>
   <string name="save_as_pdf">&save_as_pdf;</string>
   <string name="find_in_page">&find_in_page;</string>
   <string name="desktop_mode">&desktop_mode;</string>
+  <string name="tools">&tools;</string>
 
   <string name="find_text">&find_text;</string>
   <string name="find_prev">&find_prev;</string>
@@ -75,7 +77,12 @@
   <string name="pref_do_not_track">&pref_do_not_track;</string>
   <string name="pref_telemetry">&pref_telemetry;</string>
   <string name="pref_remember_signons">&pref_remember_signons;</string>
-  <string name="pref_cookies">&pref_cookies;</string>
+
+  <string name="pref_cookies_menu">&pref_cookies_menu;</string>
+  <string name="pref_cookies_accept_all">&pref_cookies_accept_all;</string>
+  <string name="pref_cookies_not_accept_foreign">&pref_cookies_not_accept_foreign;</string>
+  <string name="pref_cookies_disabled">&pref_cookies_disabled;</string>
+
   <string name="pref_char_encoding">&pref_char_encoding;</string>
   <string name="pref_char_encoding_on">&pref_char_encoding_on;</string>
   <string name="pref_char_encoding_off">&pref_char_encoding_off;</string>
@@ -90,19 +97,29 @@
   <string name="pref_font_size_medium">&pref_font_size_medium;</string>
   <string name="pref_font_size_large">&pref_font_size_large;</string>
   <string name="pref_font_size_xlarge">&pref_font_size_xlarge;</string>
+  <string name="pref_font_size_set">&pref_font_size_set;</string>
+  <string name="pref_font_size_adjust_char">&pref_font_size_adjust_char;</string>
+  <string name="pref_font_size_preview_text">&pref_font_size_preview_text;</string>
+  <string name="pref_reflow_on_zoom">&pref_reflow_on_zoom2;</string>
+  <string name="pref_show_product_announcements">&pref_show_product_announcements;</string>
   <string name="pref_sync">&pref_sync;</string>
-  <string name="pref_import_android">&pref_import_android;</string>
+  <string name="pref_search_suggestions">&pref_search_suggestions;</string>
   <string name="pref_private_data_history">&pref_private_data_history;</string>
   <string name="pref_private_data_formdata">&pref_private_data_formdata;</string>
-  <string name="pref_search_suggestions">&pref_search_suggestions;</string>
-
-  <string name="reload">&reload;</string>
-  <string name="pref_private_data_cookies">&pref_private_data_cookies;</string>
+  <string name="pref_private_data_cookies2">&pref_private_data_cookies2;</string>
   <string name="pref_private_data_passwords">&pref_private_data_passwords;</string>
   <string name="pref_private_data_cache">&pref_private_data_cache;</string>
-  <string name="pref_private_data_sessions">&pref_private_data_sessions;</string>
   <string name="pref_private_data_offlineApps">&pref_private_data_offlineApps;</string>
   <string name="pref_private_data_siteSettings">&pref_private_data_siteSettings;</string>
+  <string name="pref_import_android">&pref_import_android;</string>
+  <string name="pref_update_autodownload">&pref_update_autodownload;</string>
+  <string name="pref_update_autodownload_wifi">&pref_update_autodownload_wifi;</string>
+  <string name="pref_update_autodownload_disabled">&pref_update_autodownload_disabled;</string>
+  <string name="pref_update_autodownload_enabled">&pref_update_autodownload_enabled;</string>
+
+  <string name="go">&go;</string>
+  <string name="search">&search;</string>
+  <string name="reload">&reload;</string>
   <string name="forward">&forward;</string>
   <string name="menu">&menu;</string>
   <string name="back">&back;</string>
@@ -111,25 +128,30 @@
   <string name="close_tab">&close_tab;</string>
   <string name="new_tab">&new_tab;</string>
   <string name="new_tab_opened">&new_tab_opened;</string>
+  <string name="one_tab">&one_tab;</string>
   <string name="num_tabs">&num_tabs;</string>
   <string name="addons">&addons;</string>
   <string name="downloads">&downloads;</string>
+  <string name="apps">&apps;</string>
   <string name="char_encoding">&char_encoding;</string>
+  <string name="new_pb_tab">&new_pb_tab;</string>
   <!-- This string only appears in developer builds, which
        is why it is not localizable. -->
   <string name="toggle_profiling">Toggle Profiling</string>
 
-  <string name="site_settings_title">&site_settings_title;</string>
+  <string name="site_settings_title">&site_settings_title2;</string>
   <string name="site_settings_cancel">&site_settings_cancel;</string>
   <string name="site_settings_clear">&site_settings_clear;</string>
   <string name="site_settings_no_settings">&site_settings_no_settings;</string>
 
-  <string name="add_to_reading_list">&add_to_reading_list;</string>
+  <string name="reading_list">&reading_list;</string>
   <string name="reading_list_added">&reading_list_added;</string>
   <string name="reading_list_removed">&reading_list_removed;</string>
-  <string name="reader_mode">&reader_mode;</string>
+  <string name="reading_list_failed">&reading_list_failed;</string>
+  <string name="reader">&reader;</string>
 
   <string name="contextmenu_open_new_tab">&contextmenu_open_new_tab;</string>
+  <string name="contextmenu_open_in_reader">&contextmenu_open_in_reader;</string>
   <string name="contextmenu_remove_history">&contextmenu_remove_history;</string>
   <string name="contextmenu_remove_bookmark">&contextmenu_remove_bookmark;</string>
   <string name="contextmenu_add_to_launcher">&contextmenu_add_to_launcher;</string>
@@ -155,16 +177,20 @@
   <string name="button_ok">&button_ok;</string>
   <string name="button_cancel">&button_cancel;</string>
   <string name="button_clear_data">&button_clear_data;</string>
+  <string name="button_set">&button_set;</string>
+  <string name="button_clear">&button_clear;</string>
+  <string name="button_yes">&button_yes;</string>
+  <string name="button_no">&button_no;</string>
 
   <string name="abouthome_addons_title">&abouthome_addons_title;</string>
   <string name="abouthome_addons_browse">&abouthome_addons_browse;</string>
   <string name="abouthome_last_tabs_title">&abouthome_last_tabs_title;</string>
   <string name="abouthome_last_tabs_open">&abouthome_last_tabs_open;</string>
   <string name="abouthome_top_sites_title">&abouthome_top_sites_title;</string>
-  <string name="abouthome_top_sites_browse">&abouthome_top_sites_browse;</string>
-  <string name="abouthome_no_top_sites">&abouthome_no_top_sites;</string>
-  <string name="abouthome_about_sync">&abouthome_about_sync;</string>
+  <string name="abouthome_about_sync">&abouthome_about_sync3;</string>
+  <string name="abouthome_about_apps">&abouthome_about_apps3;</string>
   <string name="abouthome_sync_bold_name">&abouthome_sync_bold_name;</string>
+  <string name="abouthome_apps_bold_name">&abouthome_apps_bold_name2;</string>
 
   <string name="filepicker_title">&filepicker_title;</string>
   <string name="filepicker_audio_title">&filepicker_audio_title;</string>
@@ -180,7 +206,7 @@
   <string name="bookmarkdefaults_url_addons">https://addons.mozilla.org/@AB_CD@/android/</string>
 
   <string name="bookmarkdefaults_title_support">@bookmarks_support@</string>
-  <string name="bookmarkdefaults_url_support">http://support.mozilla.org/@AB_CD@/mobile</string>
+  <string name="bookmarkdefaults_url_support">http://support.mozilla.org/@AB_CD@/products/mobile</string>
 
   <string name="bookmarkdefaults_title_abouthome">@bookmarks_aboutHome@</string>
   <string name="bookmarkdefaults_url_abouthome">about:home</string>
@@ -189,6 +215,10 @@
   <string name="identity_connected_to">&identity_connected_to;</string>
   <string name="identity_run_by">&identity_run_by;</string>
 
+  <!-- Clear private data -->
+  <string name="private_data_success">&private_data_success;</string>
+  <string name="private_data_fail">&private_data_fail;</string>
+
   <!-- Bookmark import/export -->
   <string name="bookmarkhistory_button_import">&bookmarkhistory_button_import;</string>
   <string name="bookmarkhistory_import_both">&bookmarkhistory_import_both;</string>
@@ -196,8 +226,23 @@
   <string name="bookmarkhistory_import_history">&bookmarkhistory_import_history;</string>
   <string name="bookmarkhistory_import_wait">&bookmarkhistory_import_wait;</string>
 
-  <!-- Clear private data -->
-  <string name="private_data_success">&private_data_success;</string>
-  <string name="private_data_fail">&private_data_fail;</string>
+  <string name="webapp_generic_name">&webapp_generic_name;</string>
+
+  <string name="searchable_description">&searchable_description;</string>
+
+  <!-- Updater notifications -->
+  <string name="updater_start_title">&updater_start_title2;</string>
+  <string name="updater_start_select">&updater_start_select2;</string>
+ 
+  <string name="updater_downloading_title">&updater_downloading_title2;</string>
+  <string name="updater_downloading_title_failed">&updater_downloading_title_failed2;</string>
+  <string name="updater_downloading_select">&updater_downloading_select2;</string>
+  <string name="updater_downloading_retry">&updater_downloading_retry2;</string>
+   
+  <string name="updater_apply_title">&updater_apply_title2;</string>
+  <string name="updater_apply_select">&updater_apply_select2;</string>
+
+  <!-- Search suggestions opt-in -->
+  <string name="suggestions_prompt">&suggestions_prompt;</string>
 
 </resources>

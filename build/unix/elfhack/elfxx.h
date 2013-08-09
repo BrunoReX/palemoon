@@ -135,6 +135,7 @@ public:
     ElfLocation(unsigned int location, Elf *elf);
     unsigned int getValue();
     ElfSection *getSection() { return section; }
+    const char *getBuffer();
 };
 
 class ElfSize: public ElfValue {
@@ -164,13 +165,27 @@ private:
     void init(const char *buf, size_t len, char ei_data)
     {
         R e;
-        assert(len <= sizeof(e));
+        assert(len >= sizeof(e));
         memcpy(&e, buf, sizeof(e));
         if (ei_data == ELFDATA2LSB) {
             T::template swap<little_endian>(e, *this);
             return;
         } else if (ei_data == ELFDATA2MSB) {
             T::template swap<big_endian>(e, *this);
+            return;
+        }
+        throw std::runtime_error("Unsupported ELF data encoding");
+    }
+
+    template <typename R>
+    void serialize(const char *buf, size_t len, char ei_data)
+    {
+        assert(len >= sizeof(R));
+        if (ei_data == ELFDATA2LSB) {
+            T::template swap<little_endian>(*this, *(R *)buf);
+            return;
+        } else if (ei_data == ELFDATA2MSB) {
+            T::template swap<big_endian>(*this, *(R *)buf);
             return;
         }
         throw std::runtime_error("Unsupported ELF data encoding");
@@ -194,23 +209,13 @@ public:
         if (ei_class == ELFCLASS32) {
             typename T::Type32 e;
             file.read((char *)&e, sizeof(e));
-            if (ei_data == ELFDATA2LSB) {
-                T::template swap<little_endian>(e, *this);
-                return;
-            } else if (ei_data == ELFDATA2MSB) {
-                T::template swap<big_endian>(e, *this);
-                return;
-            }
+            init<typename T::Type32>((char *)&e, sizeof(e), ei_data);
+            return;
         } else if (ei_class == ELFCLASS64) {
             typename T::Type64 e;
             file.read((char *)&e, sizeof(e));
-            if (ei_data == ELFDATA2LSB) {
-                T::template swap<little_endian>(e, *this);
-                return;
-            } else if (ei_data == ELFDATA2MSB) {
-                T::template swap<big_endian>(e, *this);
-                return;
-            }
+            init<typename T::Type64>((char *)&e, sizeof(e), ei_data);
+            return;
         }
         throw std::runtime_error("Unsupported ELF class or data encoding");
     }
@@ -219,28 +224,28 @@ public:
     {
         if (ei_class == ELFCLASS32) {
             typename T::Type32 e;
-            if (ei_data == ELFDATA2LSB) {
-                T::template swap<little_endian>(*this, e);
-                file.write((char *)&e, sizeof(e));
-                return;
-            } else if (ei_data == ELFDATA2MSB) {
-                T::template swap<big_endian>(*this, e);
-                file.write((char *)&e, sizeof(e));
-                return;
-            }
+            serialize<typename T::Type32>((char *)&e, sizeof(e), ei_data);
+            file.write((char *)&e, sizeof(e));
+            return;
         } else if (ei_class == ELFCLASS64) {
             typename T::Type64 e;
-            if (ei_data == ELFDATA2LSB) {
-                T::template swap<little_endian>(*this, e);
-                file.write((char *)&e, sizeof(e));
-                return;
-            } else if (ei_data == ELFDATA2MSB) {
-                T::template swap<big_endian>(*this, e);
-                file.write((char *)&e, sizeof(e));
-                return;
-            }
+            serialize<typename T::Type64>((char *)&e, sizeof(e), ei_data);
+            file.write((char *)&e, sizeof(e));
+            return;
         }
         throw std::runtime_error("Unsupported ELF class or data encoding");
+    }
+
+    void serialize(char *buf, size_t len, char ei_class, char ei_data)
+    {
+        if (ei_class == ELFCLASS32) {
+            serialize<typename T::Type32>(buf, len, ei_data);
+            return;
+        } else if (ei_class == ELFCLASS64) {
+            serialize<typename T::Type64>(buf, len, ei_data);
+            return;
+        }
+        throw std::runtime_error("Unsupported ELF class");
     }
 
     static inline unsigned int size(char ei_class)
@@ -265,10 +270,11 @@ public:
 
     ElfSection *getSectionAt(unsigned int offset);
 
-    ElfSegment *getSegmentByType(unsigned int type);
+    ElfSegment *getSegmentByType(unsigned int type, ElfSegment *last = NULL);
 
     ElfDynamic_Section *getDynSection();
 
+    void normalize();
     void write(std::ofstream &file);
 
     char getClass();
@@ -276,6 +282,14 @@ public:
     char getType();
     char getMachine();
     unsigned int getSize();
+
+    void insertSegmentAfter(ElfSegment *previous, ElfSegment *segment) {
+        std::vector<ElfSegment *>::iterator prev = std::find(segments.begin(), segments.end(), previous);
+        segments.insert(prev + 1, segment);
+    }
+
+    void removeSegment(ElfSegment *segment);
+
 private:
     Elf_Ehdr *ehdr;
     ElfLocation eh_entry;
@@ -313,11 +327,8 @@ public:
     SectionInfo getInfo() { return info; }
 
     void shrink(unsigned int newsize) {
-        if (newsize < shdr.sh_size) {
+        if (newsize < shdr.sh_size)
             shdr.sh_size = newsize;
-            if (next)
-                next->markDirty();
-        }
     }
 
     unsigned int getOffset();
@@ -339,7 +350,7 @@ public:
                 (getType() == SHT_GNU_verdef) ||
                 (getType() == SHT_GNU_verneed) ||
                 (getType() == SHT_GNU_versym) ||
-                isInSegmentType(PT_INTERP)) &&
+                getSegmentByType(PT_INTERP)) &&
                 (getFlags() & SHF_ALLOC);
     }
 
@@ -358,6 +369,7 @@ public:
             next->previous = this;
         if (dirty)
             markDirty();
+        insertInSegments(section->segments);
     }
 
     void insertBefore(ElfSection *section, bool dirty = true) {
@@ -375,6 +387,7 @@ public:
             previous->next = this;
         if (dirty)
             markDirty();
+        insertInSegments(section->segments);
     }
 
     void markDirty() {
@@ -409,7 +422,10 @@ private:
         segments.erase(i, i + 1);
     }
 
-    bool isInSegmentType(unsigned int type);
+    ElfSegment *getSegmentByType(unsigned int type);
+
+    void insertInSegments(std::vector<ElfSegment *> &segs);
+
 protected:
     Elf_Shdr shdr;
     char *data;
@@ -438,11 +454,16 @@ public:
     unsigned int getAddr();
 
     void addSection(ElfSection *section);
+    void removeSection(ElfSection *section);
 
     std::list<ElfSection *>::iterator begin() { return sections.begin(); }
     std::list<ElfSection *>::iterator end() { return sections.end(); }
 
-    ElfSegment *splitBefore(ElfSection *section);
+    void clear();
+
+    bool isElfHackFillerSegment() {
+      return type == PT_LOAD && flags == 0;
+    }
 private:
     unsigned int type;
     int v_p_diff; // Difference between physical and virtual address
@@ -505,7 +526,7 @@ public:
 
     ElfValue *getValueForType(unsigned int tag);
     ElfSection *getSectionForType(unsigned int tag);
-    void setValueForType(unsigned int tag, ElfValue *val);
+    bool setValueForType(unsigned int tag, ElfValue *val);
 private:
     std::vector<Elf_DynValue> dyns;
 };
@@ -637,11 +658,17 @@ inline unsigned int Elf::getSize() {
     return section->getOffset() + section->getSize();
 }
 
-inline bool ElfSection::isInSegmentType(unsigned int type) {
+inline ElfSegment *ElfSection::getSegmentByType(unsigned int type) {
     for (std::vector<ElfSegment *>::iterator seg = segments.begin(); seg != segments.end(); seg++)
         if ((*seg)->getType() == type)
-            return true;
-    return false;
+            return *seg;
+    return NULL;
+}
+
+inline void ElfSection::insertInSegments(std::vector<ElfSegment *> &segs) {
+    for (std::vector<ElfSegment *>::iterator it = segs.begin(); it != segs.end(); ++it) {
+        (*it)->addSection(this);
+    }
 }
 
 inline ElfLocation::ElfLocation(ElfSection *section, unsigned int off, enum position pos)
@@ -659,6 +686,10 @@ inline ElfLocation::ElfLocation(unsigned int location, Elf *elf) {
 
 inline unsigned int ElfLocation::getValue() {
     return (section ? section->getAddr() : 0) + offset;
+}
+
+inline const char *ElfLocation::getBuffer() {
+    return section ? section->getData() + offset : NULL;
 }
 
 inline unsigned int ElfSize::getValue() {

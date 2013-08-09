@@ -4,28 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsCompatibility.h"
-#include "nsScriptLoader.h"
-#include "nsNetUtil.h"
-#include "nsIStyleSheetLinkingElement.h"
-#include "nsIWebShellServices.h"
-#include "nsIDocShell.h"
-#include "nsEncoderDecoderUtils.h"
 #include "nsContentUtils.h"
-#include "nsICharsetDetector.h"
-#include "nsIScriptElement.h"
-#include "nsIMarkupDocumentViewer.h"
-#include "nsIDocShellTreeItem.h"
-#include "nsIContentViewer.h"
-#include "nsIScriptGlobalObjectOwner.h"
-#include "nsIScriptSecurityManager.h"
-#include "nsHtml5DocumentMode.h"
 #include "nsHtml5Tokenizer.h"
-#include "nsHtml5UTF16Buffer.h"
 #include "nsHtml5TreeBuilder.h"
 #include "nsHtml5Parser.h"
 #include "nsHtml5AtomTable.h"
-#include "nsIDOMDocumentFragment.h"
 #include "nsHtml5DependentUTF16Buffer.h"
 
 NS_INTERFACE_TABLE_HEAD(nsHtml5Parser)
@@ -39,22 +22,20 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(nsHtml5Parser)
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsHtml5Parser)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsHtml5Parser)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR_AMBIGUOUS(mExecutor,
-                                                       nsIContentSink)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR_AMBIGUOUS(mStreamParser,
-                                                       nsIStreamListener)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mExecutor)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mStreamParser)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsHtml5Parser)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mExecutor)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mExecutor)
   tmp->DropStreamParser();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 nsHtml5Parser::nsHtml5Parser()
-  : mFirstBuffer(new nsHtml5OwningUTF16Buffer((void*)nsnull))
+  : mFirstBuffer(new nsHtml5OwningUTF16Buffer((void*)nullptr))
   , mLastBuffer(mFirstBuffer)
   , mExecutor(new nsHtml5TreeOpExecutor())
-  , mTreeBuilder(new nsHtml5TreeBuilder(mExecutor, nsnull))
+  , mTreeBuilder(new nsHtml5TreeBuilder(mExecutor, nullptr))
   , mTokenizer(new nsHtml5Tokenizer(mTreeBuilder, false))
   , mRootContextLineNumber(1)
 {
@@ -109,12 +90,12 @@ nsHtml5Parser::SetCommand(eParserCommands aParserCommand)
 
 NS_IMETHODIMP_(void)
 nsHtml5Parser::SetDocumentCharset(const nsACString& aCharset,
-                                  PRInt32 aCharsetSource)
+                                  int32_t aCharsetSource)
 {
   NS_PRECONDITION(!mExecutor->HasStarted(),
                   "Document charset set too late.");
   NS_PRECONDITION(mStreamParser, "Setting charset on a script-only parser.");
-  nsCAutoString trimmed;
+  nsAutoCString trimmed;
   trimmed.Assign(aCharset);
   trimmed.Trim(" \t\r\n\f");
   mStreamParser->SetDocumentCharset(trimmed, aCharsetSource);
@@ -135,7 +116,7 @@ nsHtml5Parser::GetChannel(nsIChannel** aChannel)
 NS_IMETHODIMP
 nsHtml5Parser::GetDTD(nsIDTD** aDTD)
 {
-  *aDTD = nsnull;
+  *aDTD = nullptr;
   return NS_OK;
 }
 
@@ -215,7 +196,7 @@ nsHtml5Parser::Parse(const nsAString& aSourceBuffer,
   if (NS_FAILED(rv = mExecutor->IsBroken())) {
     return rv;
   }
-  if (aSourceBuffer.Length() > PR_INT32_MAX) {
+  if (aSourceBuffer.Length() > INT32_MAX) {
     return mExecutor->MarkAsBroken(NS_ERROR_OUT_OF_MEMORY);
   }
 
@@ -336,7 +317,7 @@ nsHtml5Parser::Parse(const nsAString& aSourceBuffer,
             new nsHtml5OwningUTF16Buffer(aKey);
           keyHolder->next = mFirstBuffer;
           mFirstBuffer = keyHolder;
-          prevSearchBuf = nsnull;
+          prevSearchBuf = nullptr;
           break;
         }
         if (prevSearchBuf->next->key == aKey) {
@@ -355,7 +336,7 @@ nsHtml5Parser::Parse(const nsAString& aSourceBuffer,
     // and redesignating the previous mLastBuffer as our firstLevelMarker.  We
     // need to put a marker there, because otherwise additional document.writes
     // from nested event loops would insert in the wrong place. Sigh.
-    mLastBuffer->next = new nsHtml5OwningUTF16Buffer((void*)nsnull);
+    mLastBuffer->next = new nsHtml5OwningUTF16Buffer((void*)nullptr);
     firstLevelMarker = mLastBuffer;
     mLastBuffer = mLastBuffer->next;
   }
@@ -366,7 +347,7 @@ nsHtml5Parser::Parse(const nsAString& aSourceBuffer,
     stackBuffer.adjust(mLastWasCR);
     mLastWasCR = false;
     if (stackBuffer.hasMore()) {
-      PRInt32 lineNumberSave;
+      int32_t lineNumberSave;
       bool inRootContext = (!mStreamParser && !aKey);
       if (inRootContext) {
         mTokenizer->setLineNumber(mRootContextLineNumber);
@@ -455,7 +436,7 @@ nsHtml5Parser::Parse(const nsAString& aSourceBuffer,
       if (!mDocWriteSpeculativeTreeBuilder) {
         // Lazily initialize if uninitialized
         mDocWriteSpeculativeTreeBuilder =
-            new nsHtml5TreeBuilder(nsnull, mExecutor->GetStage());
+            new nsHtml5TreeBuilder(nullptr, mExecutor->GetStage());
         mDocWriteSpeculativeTreeBuilder->setScriptingEnabled(
             mTreeBuilder->isScriptingEnabled());
         mDocWriteSpeculativeTokenizer =
@@ -604,7 +585,7 @@ nsHtml5Parser::IsScriptCreated()
 void
 nsHtml5Parser::ParseUntilBlocked()
 {
-  if (mBlocked || mExecutor->IsComplete() || mExecutor->IsBroken()) {
+  if (mBlocked || mExecutor->IsComplete() || NS_FAILED(mExecutor->IsBroken())) {
     return;
   }
   NS_ASSERTION(mExecutor->HasStarted(), "Bad life cycle.");
@@ -695,16 +676,14 @@ nsHtml5Parser::Initialize(nsIDocument* aDoc,
 
 void
 nsHtml5Parser::StartTokenizer(bool aScriptingEnabled) {
-  if (!aScriptingEnabled) {
-    mExecutor->PreventScriptExecution();
-  }
+  mTreeBuilder->SetPreventScriptExecution(!aScriptingEnabled);
   mTreeBuilder->setScriptingEnabled(aScriptingEnabled);
   mTokenizer->start();
 }
 
 void
 nsHtml5Parser::InitializeDocWriteParserState(nsAHtml5TreeBuilderState* aState,
-                                             PRInt32 aLine)
+                                             int32_t aLine)
 {
   mTokenizer->resetToDataState();
   mTokenizer->setLineNumber(aLine);

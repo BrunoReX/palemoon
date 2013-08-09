@@ -11,14 +11,14 @@
   PR_BEGIN_MACRO                                                               \
   if (canFire) {                                                               \
     const nsCOMArray<type> &entries = cache.GetEntries();                      \
-    for (PRInt32 idx = 0; idx < entries.Count(); ++idx)                        \
+    for (int32_t idx = 0; idx < entries.Count(); ++idx)                        \
         entries[idx]->method;                                                  \
     ENUMERATE_WEAKARRAY(array, type, method)                                   \
   }                                                                            \
   PR_END_MACRO;
 
 #define PLACES_FACTORY_SINGLETON_IMPLEMENTATION(_className, _sInstance)        \
-  _className * _className::_sInstance = nsnull;                                \
+  _className * _className::_sInstance = nullptr;                                \
                                                                                \
   _className *                                                                 \
   _className::GetSingleton()                                                   \
@@ -32,8 +32,14 @@
       NS_ADDREF(_sInstance);                                                   \
       if (NS_FAILED(_sInstance->Init())) {                                     \
         NS_RELEASE(_sInstance);                                                \
-        _sInstance = nsnull;                                                   \
+        _sInstance = nullptr;                                                   \
       }                                                                        \
     }                                                                          \
     return _sInstance;                                                         \
   }
+
+#if !defined(MOZ_PER_WINDOW_PRIVATE_BROWSING) || !defined(DEBUG)
+#  define ENSURE_NOT_PRIVATE_BROWSING /* nothing */
+#else
+#  define ENSURE_NOT_PRIVATE_BROWSING EnsureNotGlobalPrivateBrowsing()
+#endif

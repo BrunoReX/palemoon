@@ -1,7 +1,11 @@
+/* Any copyright is dedicated to the Public Domain.
+   http://creativecommons.org/publicdomain/zero/1.0/ */
+
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://services-sync/engines.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/engines/history.js");
+Cu.import("resource://services-sync/service.js");
 Cu.import("resource://services-sync/util.js");
 
 function onScoreUpdated(callback) {
@@ -15,8 +19,9 @@ function onScoreUpdated(callback) {
   });
 }
 
-Engines.register(HistoryEngine);
-let engine = Engines.get("history");
+Service.engineManager.clear();
+Service.engineManager.register(HistoryEngine);
+let engine = Service.engineManager.get("history");
 let tracker = engine._tracker;
 
 let _counter = 0;
@@ -143,6 +148,8 @@ add_test(function test_stop_tracking_twice() {
 add_test(function cleanup() {
    _("Clean up.");
   PlacesUtils.history.removeAllPages();
-  tracker._lazySave.clear();
+  if (tracker._lazySave) {
+    tracker._lazySave.clear();
+  }
   run_next_test();
 });

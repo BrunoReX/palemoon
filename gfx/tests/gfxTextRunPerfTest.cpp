@@ -22,7 +22,7 @@
 #include "gfxTestCocoaHelper.h"
 #endif
 
-#ifdef MOZ_WIDGET_GTK2
+#ifdef MOZ_WIDGET_GTK
 #include "gtk/gtk.h"
 #endif
 
@@ -35,7 +35,7 @@ struct TestEntry {
 
 TestEntry testList[] = {
 #include "per-word-runs.h"
-{ nsnull, nsnull } // terminator
+{ nullptr, nullptr } // terminator
 };
 
 already_AddRefed<gfxContext>
@@ -54,7 +54,7 @@ MakeContext ()
 }
 
 nsRefPtr<gfxFontGroup> fontGroup;
-const char* lastFamilies = nsnull;
+const char* lastFamilies = nullptr;
 
 void
 RunTest (TestEntry *test, gfxContext *ctx) {
@@ -69,11 +69,11 @@ RunTest (TestEntry *test, gfxContext *ctx) {
                                               NS_LITERAL_STRING(""),
                                               NS_LITERAL_STRING(""));
 
-        fontGroup = gfxPlatform::GetPlatform()->CreateFontGroup(NS_ConvertUTF8toUTF16(test->mFamilies), &style_western_normal_16, nsnull);
+        fontGroup = gfxPlatform::GetPlatform()->CreateFontGroup(NS_ConvertUTF8toUTF16(test->mFamilies), &style_western_normal_16, nullptr);
     }
 
     nsAutoPtr<gfxTextRun> textRun;
-    PRUint32 i;
+    uint32_t i;
     bool isASCII = true;
     for (i = 0; test->mString[i]; ++i) {
         if (test->mString[i] & 0x80) {
@@ -81,15 +81,15 @@ RunTest (TestEntry *test, gfxContext *ctx) {
         }
     }
     gfxTextRunFactory::Parameters params = {
-      ctx, nsnull, nsnull, nsnull, 0, 60
+      ctx, nullptr, nullptr, nullptr, 0, 60
     };
-    PRUint32 flags = gfxTextRunFactory::TEXT_IS_PERSISTENT;
-    PRUint32 length;
+    uint32_t flags = gfxTextRunFactory::TEXT_IS_PERSISTENT;
+    uint32_t length;
     if (isASCII) {
         flags |= gfxTextRunFactory::TEXT_IS_ASCII |
                  gfxTextRunFactory::TEXT_IS_8BIT;
         length = strlen(test->mString);
-        textRun = fontGroup->MakeTextRun(reinterpret_cast<const PRUint8*>(test->mString), length, &params, flags);
+        textRun = fontGroup->MakeTextRun(reinterpret_cast<const uint8_t*>(test->mString), length, &params, flags);
     } else {
         NS_ConvertUTF8toUTF16 str(nsDependentCString(test->mString));
         length = str.Length();
@@ -97,16 +97,16 @@ RunTest (TestEntry *test, gfxContext *ctx) {
     }
 
     // Should we test drawing?
-    // textRun->Draw(ctx, gfxPoint(0,0), 0, length, nsnull, nsnull, nsnull);
+    // textRun->Draw(ctx, gfxPoint(0,0), 0, length, nullptr, nullptr, nullptr);
     
-    textRun->GetAdvanceWidth(0, length, nsnull);
+    textRun->GetAdvanceWidth(0, length, nullptr);
 }
 
-PRUint32 iterations = 20;
+uint32_t iterations = 20;
 
 int
 main (int argc, char **argv) {
-#ifdef MOZ_WIDGET_GTK2
+#ifdef MOZ_WIDGET_GTK
     gtk_init(&argc, &argv); 
 #endif
 #ifdef XP_MACOSX
@@ -114,7 +114,7 @@ main (int argc, char **argv) {
 #endif
 
     // Initialize XPCOM
-    nsresult rv = NS_InitXPCOM2(nsnull, nsnull, nsnull);
+    nsresult rv = NS_InitXPCOM2(nullptr, nullptr, nullptr);
     if (NS_FAILED(rv))
         return -1; 
 
@@ -130,7 +130,7 @@ main (int argc, char **argv) {
     // Start timing
     PRIntervalTime start = PR_IntervalNow();
 
-    for (PRUint32 i = 0; i < iterations; ++i) {
+    for (uint32_t i = 0; i < iterations; ++i) {
         for (uint test = 0;
              test < ArrayLength(testList) - 1;
              test++)

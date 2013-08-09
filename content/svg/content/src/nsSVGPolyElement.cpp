@@ -8,7 +8,7 @@
 #include "nsSVGPolyElement.h"
 #include "DOMSVGPointList.h"
 #include "gfxContext.h"
-#include "nsSVGUtils.h"
+#include "SVGContentUtils.h"
 
 using namespace mozilla;
 
@@ -88,7 +88,7 @@ nsSVGPolyElement::GetMarkPoints(nsTArray<nsSVGMark> *aMarks)
 
   float px = 0.0, py = 0.0, prevAngle = 0.0;
 
-  for (PRUint32 i = 0; i < points.Length(); ++i) {
+  for (uint32_t i = 0; i < points.Length(); ++i) {
     float x = points[i].mX;
     float y = points[i].mY;
     float angle = atan2(y-py, x-px);
@@ -96,7 +96,7 @@ nsSVGPolyElement::GetMarkPoints(nsTArray<nsSVGMark> *aMarks)
       aMarks->ElementAt(aMarks->Length() - 1).angle = angle;
     else if (i > 1)
       aMarks->ElementAt(aMarks->Length() - 1).angle =
-        nsSVGUtils::AngleBisect(prevAngle, angle);
+        SVGContentUtils::AngleBisect(prevAngle, angle);
 
     aMarks->AppendElement(nsSVGMark(x, y, 0));
 
@@ -117,7 +117,7 @@ nsSVGPolyElement::ConstructPath(gfxContext *aCtx)
     return;
 
   aCtx->MoveTo(points[0]);
-  for (PRUint32 i = 1; i < points.Length(); ++i) {
+  for (uint32_t i = 1; i < points.Length(); ++i) {
     aCtx->LineTo(points[i]);
   }
 }

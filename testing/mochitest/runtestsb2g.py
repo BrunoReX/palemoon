@@ -4,11 +4,9 @@
 
 import ConfigParser
 import os
-import re
 import sys
 import tempfile
-import time
-import urllib
+import traceback
 
 sys.path.insert(0, os.path.abspath(os.path.realpath(os.path.dirname(sys.argv[0]))))
 
@@ -18,8 +16,8 @@ from runtests import Mochitest
 from runtests import MochitestOptions
 from runtests import MochitestServer
 
+import devicemanager
 import devicemanagerADB
-import manifestparser
 
 from marionette import Marionette
 
@@ -40,10 +38,20 @@ class B2GOptions(MochitestOptions):
                     help = "host:port to use when connecting to Marionette")
         defaults["marionette"] = None
 
-        self.add_option("--emulator", action="store_true",
-                    dest = "emulator",
-                    help = "True if using a b2g emulator")
-        defaults["emulator"] = False
+        self.add_option("--emulator", action="store",
+                    type="string", dest = "emulator",
+                    help = "Architecture of emulator to use: x86 or arm")
+        defaults["emulator"] = None
+
+        self.add_option("--sdcard", action="store", 
+                    type="string", dest = "sdcard", 
+                    help = "Define size of sdcard: 1MB, 50MB...etc")
+        defaults["sdcard"] = None
+
+        self.add_option("--no-window", action="store_true",
+                    dest = "noWindow",
+                    help = "Pass --no-window to the emulator")
+        defaults["noWindow"] = False
 
         self.add_option("--adbpath", action="store",
                     type = "string", dest = "adbPath",
@@ -85,11 +93,26 @@ class B2GOptions(MochitestOptions):
                     help = "name of the pidfile to generate")
         defaults["pidFile"] = ""
 
+        self.add_option("--gecko-path", action="store",
+                        type="string", dest="geckoPath",
+                        help="the path to a gecko distribution that should "
+                        "be installed on the emulator prior to test")
+        defaults["geckoPath"] = None
+        self.add_option("--logcat-dir", action="store",
+                        type="string", dest="logcat_dir",
+                        help="directory to store logcat dump files")
+        defaults["logcat_dir"] = None
+        self.add_option('--busybox', action='store',
+                        type='string', dest='busybox',
+                        help="Path to busybox binary to install on device")
+        defaults['busybox'] = None
+
         defaults["remoteTestRoot"] = None
         defaults["logFile"] = "mochitest.log"
         defaults["autorun"] = True
         defaults["closeWhenDone"] = True
         defaults["testPath"] = ""
+        defaults["extensionsToExclude"] = ["specialpowers"]
 
         self.set_defaults(**defaults)
 
@@ -104,10 +127,14 @@ class B2GOptions(MochitestOptions):
             if os.name != "nt":
                 options.remoteWebServer = automation.getLanIp()
             else:
-                print "ERROR: you must specify a --remote-webserver=<ip address>\n"
-                return None
-
+                self.error("You must specify a --remote-webserver=<ip address>")
         options.webServer = options.remoteWebServer
+
+        if options.geckoPath and not options.emulator:
+            self.error("You must specify --emulator if you specify --gecko-path")
+
+        if options.logcat_dir and not options.emulator:
+            self.error("You must specify --emulator if you specify --logcat-dir")
 
         #if not options.emulator and not options.deviceIP:
         #    print "ERROR: you must provide a device IP"
@@ -143,7 +170,7 @@ class B2GOptions(MochitestOptions):
         options.sslPort = tempSSL
         options.httpPort = tempPort
 
-        return options 
+        return options
 
 
 class ProfileConfigParser(ConfigParser.RawConfigParser):
@@ -177,6 +204,7 @@ class B2GMochitest(Mochitest):
     _automation = None
     _dm = None
     localProfile = None
+    testDir = '/data/local/tests'
 
     def __init__(self, automation, devmgr, options):
         self._automation = automation
@@ -186,20 +214,57 @@ class B2GMochitest(Mochitest):
         self.remoteProfile = options.remoteTestRoot + '/profile'
         self._automation.setRemoteProfile(self.remoteProfile)
         self.remoteLog = options.remoteLogFile
-        self.remoteProfilesIniPath = '/data/b2g/mozilla/profiles.ini'
+        self.localLog = None
+        self.userJS = '/data/local/user.js'
+        self.remoteMozillaPath = '/data/b2g/mozilla'
+        self.bundlesDir = '/system/b2g/distribution/bundles'
+        self.remoteProfilesIniPath = os.path.join(self.remoteMozillaPath, 'profiles.ini')
         self.originalProfilesIni = None
 
-    def cleanup(self, manifest, options):
-        self._dm.getFile(self.remoteLog, self.localLog)
-        self._dm.removeFile(self.remoteLog)
-        self._dm.removeDir(self.remoteProfile)
+    def copyRemoteFile(self, src, dest):
+        if self._dm._useDDCopy:
+            self._dm._checkCmdAs(['shell', 'dd', 'if=%s' % src,'of=%s' % dest])
+        else:
+            self._dm._checkCmdAs(['shell', 'cp', src, dest])
 
-        if self.originalProfilesIni:
-            try:
-                self.restoreProfilesIni()
-                os.remove(self.originalProfilesIni)
-            except:
-                pass
+    def origUserJSExists(self):
+        return self._dm.fileExists('/data/local/user.js.orig')
+
+    def cleanup(self, manifest, options):
+        if self.localLog:
+            self._dm.getFile(self.remoteLog, self.localLog)
+            self._dm.removeFile(self.remoteLog)
+
+        # Delete any bundled extensions
+        extensionDir = os.path.join(options.profilePath, 'extensions', 'staged')
+        if os.access(extensionDir, os.F_OK):
+            for filename in os.listdir(extensionDir):
+                try:
+                    self._dm._checkCmdAs(['shell', 'rm', '-rf',
+                                          os.path.join(self.bundlesDir, filename)])
+                except devicemanager.DMError:
+                    pass
+
+        if not options.emulator:
+            # Remove the test profile
+            self._dm._checkCmdAs(['shell', 'rm', '-r', self.remoteProfile])
+
+            if self.origUserJSExists():
+                # Restore the original user.js
+                self._dm.removeFile(self.userJS)
+                self.copyRemoteFile('%s.orig' % self.userJS, self.userJS)
+                self._dm.removeFile("%s.orig" % self.userJS)
+
+            if self._dm.fileExists('%s.orig' % self.remoteProfilesIniPath):
+                # Restore the original profiles.ini
+                self._dm.removeFile(self.remoteProfilesIniPath)
+                self.copyRemoteFile('%s.orig' % self.remoteProfilesIniPath,
+                                    self.remoteProfilesIniPath)
+                self._dm.removeFile("%s.orig" % self.remoteProfilesIniPath)
+
+            # We've restored the original profile, so reboot the device so that
+            # it gets picked up.
+            self._automation.rebootDevice()
 
         if options.pidFile != "":
             try:
@@ -207,10 +272,6 @@ class B2GMochitest(Mochitest):
                 os.remove(options.pidFile + ".xpcshell.pid")
             except:
                 print "Warning: cleaning up pidfile '%s' was unsuccessful from the test harness" % options.pidFile
-
-        # We've restored the original profile, so reboot the device so that
-        # it gets picked up.
-        self._automation.rebootDevice()
 
     def findPath(self, paths, filename = None):
         for path in paths:
@@ -278,12 +339,12 @@ class B2GMochitest(Mochitest):
         options.profilePath = remoteProfilePath
 
     def stopWebServer(self, options):
-        self.server.stop()
+        if hasattr(self, 'server'):
+            self.server.stop()
 
     def buildProfile(self, options):
         if self.localProfile:
             options.profilePath = self.localProfile
-        print 'buildProfile', repr(options)
         manifest = Mochitest.buildProfile(self, options)
         self.localProfile = options.profilePath
 
@@ -292,14 +353,6 @@ class B2GMochitest(Mochitest):
 
         options.profilePath = self.remoteProfile
         return manifest
-
-    def restoreProfilesIni(self):
-        # restore profiles.ini on the device to its previous state
-        if not self.originalProfilesIni or not os.access(self.originalProfilesIni, os.F_OK):
-            raise DMError('Unable to install original profiles.ini; file not found: %s',
-                          self.originalProfilesIni)
-
-        self._dm.pushFile(self.originalProfilesIni, self.remoteProfilesIniPath)
 
     def updateProfilesIni(self, profilePath):
         # update profiles.ini on the device to point to the test profile
@@ -318,6 +371,13 @@ class B2GMochitest(Mochitest):
             config.write(configfile)
 
         self._dm.pushFile(newProfilesIni, self.remoteProfilesIniPath)
+        self._dm.pushFile(self.originalProfilesIni, '%s.orig' % self.remoteProfilesIniPath)
+
+        try:
+            os.remove(newProfilesIni)
+            os.remove(self.originalProfilesIni)
+        except:
+            pass
 
     def buildURLOptions(self, options, env):
         self.localLog = options.logFile
@@ -331,18 +391,79 @@ class B2GMochitest(Mochitest):
             testURL += "?" + "&".join(self.urlOpts)
         self._automation.testURL = testURL
 
-        # Set the B2G homepage as a static local page, since wi-fi generally
-        # isn't available as soon as the device boots.
+        # execute this script on start up.
+        # loads special powers and sets the test-container
+        # apps's iframe to the mochitest URL.
+        self._automation.test_script = """
+const CHILD_SCRIPT = "chrome://specialpowers/content/specialpowers.js";
+const CHILD_SCRIPT_API = "chrome://specialpowers/content/specialpowersAPI.js";
+const CHILD_LOGGER_SCRIPT = "chrome://specialpowers/content/MozillaLogger.js";
+
+let homescreen = document.getElementById('homescreen');
+let container = homescreen.contentWindow.document.getElementById('test-container');
+
+let specialpowers = {};
+let loader = Cc["@mozilla.org/moz/jssubscript-loader;1"].getService(Ci.mozIJSSubScriptLoader);
+loader.loadSubScript("chrome://specialpowers/content/SpecialPowersObserver.js", specialpowers);
+let specialPowersObserver = new specialpowers.SpecialPowersObserver();
+specialPowersObserver.init();
+
+let mm = container.QueryInterface(Ci.nsIFrameLoaderOwner).frameLoader.messageManager;
+mm.addMessageListener("SPPrefService", specialPowersObserver);
+mm.addMessageListener("SPProcessCrashService", specialPowersObserver);
+mm.addMessageListener("SPPingService", specialPowersObserver);
+mm.addMessageListener("SpecialPowers.Quit", specialPowersObserver);
+mm.addMessageListener("SPPermissionManager", specialPowersObserver);
+
+mm.loadFrameScript(CHILD_LOGGER_SCRIPT, true);
+mm.loadFrameScript(CHILD_SCRIPT_API, true);
+mm.loadFrameScript(CHILD_SCRIPT, true);
+specialPowersObserver._isFrameScriptLoaded = true;
+
+container.src = '%s';
+""" % testURL
+
+        # Set extra prefs for B2G.
         f = open(os.path.join(options.profilePath, "user.js"), "a")
-        f.write('user_pref("browser.homescreenURL", "data:text/html,mochitest-plain should start soon");\n')
+        f.write("""
+user_pref("browser.homescreenURL","app://test-container.gaiamobile.org/index.html");
+user_pref("browser.manifestURL","app://test-container.gaiamobile.org/manifest.webapp");
+user_pref("dom.mozBrowserFramesEnabled", true);
+user_pref("dom.ipc.tabs.disabled", false);
+user_pref("dom.ipc.browser_frames.oop_by_default", false);
+user_pref("dom.mozBrowserFramesWhitelist","app://test-container.gaiamobile.org,http://mochi.test:8888");
+user_pref("network.dns.localDomains","app://test-container.gaiamobile.org");
+user_pref("marionette.loadearly", true);
+""")
         f.close()
 
-        self._dm.removeDir(self.remoteProfile)
-        if self._dm.pushDir(options.profilePath, self.remoteProfile) == None:
-            raise devicemanager.FileError("Unable to copy profile to device.")
+        # Copy the profile to the device.
+        self._dm._checkCmdAs(['shell', 'rm', '-r', self.remoteProfile])
+        try:
+            self._dm.pushDir(options.profilePath, self.remoteProfile)
+        except devicemanager.DMError:
+            print "Automation Error: Unable to copy profile to device."
+            raise
 
+        # Copy the extensions to the B2G bundles dir.
+        extensionDir = os.path.join(options.profilePath, 'extensions', 'staged')
+        # need to write to read-only dir
+        self._dm._checkCmdAs(['remount'])
+        for filename in os.listdir(extensionDir):
+            self._dm._checkCmdAs(['shell', 'rm', '-rf',
+                                  os.path.join(self.bundlesDir, filename)])
+        try:
+            self._dm.pushDir(extensionDir, self.bundlesDir)
+        except devicemanager.DMError:
+            print "Automation Error: Unable to copy extensions to device."
+            raise
+
+        # In B2G, user.js is always read from /data/local, not the profile
+        # directory.  Backup the original user.js first so we can restore it.
+        if not self._dm.fileExists('%s.orig' % self.userJS):
+            self.copyRemoteFile(self.userJS, '%s.orig' % self.userJS)
+        self._dm.pushFile(os.path.join(options.profilePath, "user.js"), self.userJS)
         self.updateProfilesIni(self.remoteProfile)
-
         options.profilePath = self.remoteProfile
         options.logFile = self.localLog
         return retVal
@@ -355,24 +476,39 @@ def main():
     options, args = parser.parse_args()
 
     # create our Marionette instance
-    kwargs = {'emulator': options.emulator}
+    kwargs = {}
+    if options.emulator:
+        kwargs['emulator'] = options.emulator
+        auto.setEmulator(True)
+        if options.noWindow:
+            kwargs['noWindow'] = True
+        if options.geckoPath:
+            kwargs['gecko_path'] = options.geckoPath
+        if options.logcat_dir:
+            kwargs['logcat_dir'] = options.logcat_dir
+        if options.busybox:
+            kwargs['busybox'] = options.busybox
+    # needless to say sdcard is only valid if using an emulator
+    if options.sdcard:
+        kwargs['sdcard'] = options.sdcard
     if options.b2gPath:
         kwargs['homedir'] = options.b2gPath
     if options.marionette:
         host,port = options.marionette.split(':')
         kwargs['host'] = host
         kwargs['port'] = int(port)
-    marionette = Marionette(**kwargs)
+
+    marionette = Marionette.getMarionetteOrExit(**kwargs)
 
     auto.marionette = marionette
 
     # create the DeviceManager
-    kwargs = {'adbPath': options.adbPath}
+    kwargs = {'adbPath': options.adbPath,
+              'deviceRoot': B2GMochitest.testDir}
     if options.deviceIP:
         kwargs.update({'host': options.deviceIP,
                        'port': options.devicePort})
     dm = devicemanagerADB.DeviceManagerADB(**kwargs)
-
     auto.setDeviceManager(dm)
     options = parser.verifyRemoteOptions(options, auto)
     if (options == None):
@@ -388,15 +524,16 @@ def main():
         sys.exit(1)
 
     logParent = os.path.dirname(options.remoteLogFile)
-    dm.mkDir(logParent);
+    dm.mkDir(logParent)
     auto.setRemoteLog(options.remoteLogFile)
     auto.setServerInfo(options.webServer, options.httpPort, options.sslPort)
-
     retVal = 1
     try:
+        mochitest.cleanup(None, options)
         retVal = mochitest.runTests(options)
     except:
-        print "TEST-UNEXPECTED-FAIL | %s | Exception caught while running tests." % sys.exc_info()[1]
+        print "Automation Error: Exception caught while running tests"
+        traceback.print_exc()
         mochitest.stopWebServer(options)
         mochitest.stopWebSocketServer(options)
         try:

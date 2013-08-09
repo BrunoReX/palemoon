@@ -8,17 +8,18 @@
 
 #include "nsIDirectoryService.h"
 #include "nsHashtable.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsISupportsArray.h"
 #include "nsIAtom.h"
+#include "mozilla/Attributes.h"
 
 #define NS_XPCOM_INIT_CURRENT_PROCESS_DIR       "MozBinD"   // Can be used to set NS_XPCOM_CURRENT_PROCESS_DIR
                                                             // CANNOT be used to GET a location
 #define NS_DIRECTORY_SERVICE_CID  {0xf00152d0,0xb40b,0x11d3,{0x8c, 0x9c, 0x00, 0x00, 0x64, 0x65, 0x73, 0x74}}
 
-class nsDirectoryService : public nsIDirectoryService,
-                           public nsIProperties,
-                           public nsIDirectoryServiceProvider2
+class nsDirectoryService MOZ_FINAL : public nsIDirectoryService,
+                                     public nsIProperties,
+                                     public nsIDirectoryServiceProvider2
 {
   public:
 
@@ -36,7 +37,7 @@ class nsDirectoryService : public nsIDirectoryService,
   nsDirectoryService();
    ~nsDirectoryService();
 
-  static nsresult RealInit();
+  static void RealInit();
   void RegisterCategoryProviders();
 
   static nsresult
@@ -45,11 +46,11 @@ class nsDirectoryService : public nsIDirectoryService,
   static nsDirectoryService* gService;
 
 private:
-    nsresult GetCurrentProcessDirectory(nsILocalFile** aFile);
+    nsresult GetCurrentProcessDirectory(nsIFile** aFile);
     
     static bool ReleaseValues(nsHashKey* key, void* data, void* closure);
     nsSupportsHashtable mHashtable;
-    nsCOMPtr<nsISupportsArray> mProviders;
+    nsTArray<nsCOMPtr<nsIDirectoryServiceProvider> > mProviders;
 
 public:
 

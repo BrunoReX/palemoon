@@ -18,6 +18,7 @@
 #include "nsString.h"
 #include "nsTArray.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/Util.h"
 
 using namespace mozilla;
 
@@ -33,7 +34,7 @@ using namespace mozilla;
 // this enables PR_LOG_DEBUG level information and places all output in
 // the file nspr.log
 //
-static PRLogModuleInfo* gLoadGroupLog = nsnull;
+static PRLogModuleInfo* gLoadGroupLog = nullptr;
 #endif
 
 #define LOG(args) PR_LOG(gLoadGroupLog, PR_LOG_DEBUG, args)
@@ -85,7 +86,7 @@ RequestHashInitEntry(PLDHashTable *table, PLDHashEntryHdr *entry,
 
 
 static void
-RescheduleRequest(nsIRequest *aRequest, PRInt32 delta)
+RescheduleRequest(nsIRequest *aRequest, int32_t delta)
 {
     nsCOMPtr<nsISupportsPriority> p = do_QueryInterface(aRequest);
     if (p)
@@ -94,10 +95,10 @@ RescheduleRequest(nsIRequest *aRequest, PRInt32 delta)
 
 static PLDHashOperator
 RescheduleRequests(PLDHashTable *table, PLDHashEntryHdr *hdr,
-                   PRUint32 number, void *arg)
+                   uint32_t number, void *arg)
 {
     RequestMapEntry *e = static_cast<RequestMapEntry *>(hdr);
-    PRInt32 *delta = static_cast<PRInt32 *>(arg);
+    int32_t *delta = static_cast<int32_t *>(arg);
 
     RescheduleRequest(e->mKey, *delta);
     return PL_DHASH_NEXT;
@@ -118,7 +119,7 @@ nsLoadGroup::nsLoadGroup(nsISupports* outer)
 
 #if defined(PR_LOGGING)
     // Initialize the global PRLogModule for nsILoadGroup logging
-    if (nsnull == gLoadGroupLog)
+    if (nullptr == gLoadGroupLog)
         gLoadGroupLog = PR_NewLogModule("LoadGroup");
 #endif
 
@@ -127,14 +128,12 @@ nsLoadGroup::nsLoadGroup(nsISupports* outer)
     // Initialize the ops in the hash to null to make sure we get
     // consistent errors if someone fails to call ::Init() on an
     // nsLoadGroup.
-    mRequests.ops = nsnull;
+    mRequests.ops = nullptr;
 }
 
 nsLoadGroup::~nsLoadGroup()
 {
-    nsresult rv;
-
-    rv = Cancel(NS_BINDING_ABORTED);
+    DebugOnly<nsresult> rv = Cancel(NS_BINDING_ABORTED);
     NS_ASSERTION(NS_SUCCEEDED(rv), "Cancel failed");
 
     if (mRequests.ops) {
@@ -161,9 +160,9 @@ nsresult nsLoadGroup::Init()
         RequestHashInitEntry
     };
 
-    if (!PL_DHashTableInit(&mRequests, &hash_table_ops, nsnull,
+    if (!PL_DHashTableInit(&mRequests, &hash_table_ops, nullptr,
                            sizeof(RequestMapEntry), 16)) {
-        mRequests.ops = nsnull;
+        mRequests.ops = nullptr;
 
         return NS_ERROR_OUT_OF_MEMORY;
     }
@@ -219,7 +218,7 @@ nsLoadGroup::GetStatus(nsresult *status)
 // all nsIRequest to an nsTArray<nsIRequest*>.
 static PLDHashOperator
 AppendRequestsToArray(PLDHashTable *table, PLDHashEntryHdr *hdr,
-                      PRUint32 number, void *arg)
+                      uint32_t number, void *arg)
 {
     RequestMapEntry *e = static_cast<RequestMapEntry *>(hdr);
     nsTArray<nsIRequest*> *array = static_cast<nsTArray<nsIRequest*> *>(arg);
@@ -227,7 +226,7 @@ AppendRequestsToArray(PLDHashTable *table, PLDHashEntryHdr *hdr,
     nsIRequest *request = e->mKey;
     NS_ASSERTION(request, "What? Null key in pldhash entry?");
 
-    bool ok = array->AppendElement(request) != nsnull;
+    bool ok = array->AppendElement(request) != nullptr;
 
     if (!ok) {
         return PL_DHASH_STOP;
@@ -243,7 +242,7 @@ nsLoadGroup::Cancel(nsresult status)
 {
     NS_ASSERTION(NS_FAILED(status), "shouldn't cancel with a success code");
     nsresult rv;
-    PRUint32 count = mRequests.entryCount;
+    uint32_t count = mRequests.entryCount;
 
     nsAutoTArray<nsIRequest*, 8> requests;
 
@@ -251,7 +250,7 @@ nsLoadGroup::Cancel(nsresult status)
                            static_cast<nsTArray<nsIRequest*> *>(&requests));
 
     if (requests.Length() != count) {
-        for (PRUint32 i = 0, len = requests.Length(); i < len; ++i) {
+        for (uint32_t i = 0, len = requests.Length(); i < len; ++i) {
             NS_RELEASE(requests[i]);
         }
 
@@ -289,7 +288,7 @@ nsLoadGroup::Cancel(nsresult status)
         }
 
 #if defined(PR_LOGGING)
-        nsCAutoString nameStr;
+        nsAutoCString nameStr;
         request->GetName(nameStr);
         LOG(("LOADGROUP [%x]: Canceling request %x %s.\n",
              this, request, nameStr.get()));
@@ -301,7 +300,7 @@ nsLoadGroup::Cancel(nsresult status)
         //
         // XXX: What should the context be?
         //
-        (void)RemoveRequest(request, nsnull, status);
+        (void)RemoveRequest(request, nullptr, status);
 
         // Cancel the request...
         rv = request->Cancel(status);
@@ -329,7 +328,7 @@ NS_IMETHODIMP
 nsLoadGroup::Suspend()
 {
     nsresult rv, firstError;
-    PRUint32 count = mRequests.entryCount;
+    uint32_t count = mRequests.entryCount;
 
     nsAutoTArray<nsIRequest*, 8> requests;
 
@@ -337,7 +336,7 @@ nsLoadGroup::Suspend()
                            static_cast<nsTArray<nsIRequest*> *>(&requests));
 
     if (requests.Length() != count) {
-        for (PRUint32 i = 0, len = requests.Length(); i < len; ++i) {
+        for (uint32_t i = 0, len = requests.Length(); i < len; ++i) {
             NS_RELEASE(requests[i]);
         }
 
@@ -357,7 +356,7 @@ nsLoadGroup::Suspend()
             continue;
 
 #if defined(PR_LOGGING)
-        nsCAutoString nameStr;
+        nsAutoCString nameStr;
         request->GetName(nameStr);
         LOG(("LOADGROUP [%x]: Suspending request %x %s.\n",
             this, request, nameStr.get()));
@@ -381,7 +380,7 @@ NS_IMETHODIMP
 nsLoadGroup::Resume()
 {
     nsresult rv, firstError;
-    PRUint32 count = mRequests.entryCount;
+    uint32_t count = mRequests.entryCount;
 
     nsAutoTArray<nsIRequest*, 8> requests;
 
@@ -389,7 +388,7 @@ nsLoadGroup::Resume()
                            static_cast<nsTArray<nsIRequest*> *>(&requests));
 
     if (requests.Length() != count) {
-        for (PRUint32 i = 0, len = requests.Length(); i < len; ++i) {
+        for (uint32_t i = 0, len = requests.Length(); i < len; ++i) {
             NS_RELEASE(requests[i]);
         }
 
@@ -409,7 +408,7 @@ nsLoadGroup::Resume()
             continue;
 
 #if defined(PR_LOGGING)
-        nsCAutoString nameStr;
+        nsAutoCString nameStr;
         request->GetName(nameStr);
         LOG(("LOADGROUP [%x]: Resuming request %x %s.\n",
             this, request, nameStr.get()));
@@ -429,14 +428,14 @@ nsLoadGroup::Resume()
 }
 
 NS_IMETHODIMP
-nsLoadGroup::GetLoadFlags(PRUint32 *aLoadFlags)
+nsLoadGroup::GetLoadFlags(uint32_t *aLoadFlags)
 {
     *aLoadFlags = mLoadFlags;
     return NS_OK;
 }
 
 NS_IMETHODIMP
-nsLoadGroup::SetLoadFlags(PRUint32 aLoadFlags)
+nsLoadGroup::SetLoadFlags(uint32_t aLoadFlags)
 {
     mLoadFlags = aLoadFlags;
     return NS_OK;
@@ -482,7 +481,7 @@ nsLoadGroup::SetDefaultLoadRequest(nsIRequest *aRequest)
         mLoadFlags &= nsIRequest::LOAD_REQUESTMASK;
 
         nsCOMPtr<nsITimedChannel> timedChannel = do_QueryInterface(aRequest);
-        mDefaultLoadIsTimed = timedChannel != nsnull;
+        mDefaultLoadIsTimed = timedChannel != nullptr;
         if (mDefaultLoadIsTimed) {
             timedChannel->GetChannelCreation(&mDefaultRequestCreationTime);
             timedChannel->SetTimingEnabled(true);
@@ -499,7 +498,7 @@ nsLoadGroup::AddRequest(nsIRequest *request, nsISupports* ctxt)
 
 #if defined(PR_LOGGING)
     {
-        nsCAutoString nameStr;
+        nsAutoCString nameStr;
         request->GetName(nameStr);
         LOG(("LOADGROUP [%x]: Adding request %x %s (count=%d).\n",
              this, request, nameStr.get(), mRequests.entryCount));
@@ -595,7 +594,7 @@ nsLoadGroup::AddRequest(nsIRequest *request, nsISupports* ctxt)
 
         // Ensure that we're part of our loadgroup while pending
         if (mForegroundCount == 1 && mLoadGroup) {
-            mLoadGroup->AddRequest(this, nsnull);
+            mLoadGroup->AddRequest(this, nullptr);
         }
 
     }
@@ -612,7 +611,7 @@ nsLoadGroup::RemoveRequest(nsIRequest *request, nsISupports* ctxt,
 
 #if defined(PR_LOGGING)
     {
-        nsCAutoString nameStr;
+        nsAutoCString nameStr;
         request->GetName(nameStr);
         LOG(("LOADGROUP [%x]: Removing request %x %s status %x (count=%d).\n",
             this, request, nameStr.get(), aStatus, mRequests.entryCount-1));
@@ -707,7 +706,7 @@ nsLoadGroup::RemoveRequest(nsIRequest *request, nsISupports* ctxt,
 
         // If that was the last request -> remove ourselves from loadgroup
         if (mForegroundCount == 0 && mLoadGroup) {
-            mLoadGroup->RemoveRequest(this, nsnull, aStatus);
+            mLoadGroup->RemoveRequest(this, nullptr, aStatus);
         }
     }
 
@@ -718,12 +717,13 @@ nsLoadGroup::RemoveRequest(nsIRequest *request, nsISupports* ctxt,
 // hash to an nsISupportsArray.
 static PLDHashOperator
 AppendRequestsToISupportsArray(PLDHashTable *table, PLDHashEntryHdr *hdr,
-                               PRUint32 number, void *arg)
+                               uint32_t number, void *arg)
 {
     RequestMapEntry *e = static_cast<RequestMapEntry *>(hdr);
     nsISupportsArray *array = static_cast<nsISupportsArray *>(arg);
 
-    bool ok = array->AppendElement(e->mKey);
+    // nsISupportsArray::AppendElement returns a bool disguised as nsresult
+    bool ok = array->AppendElement(e->mKey) == NS_OK ? false : true;
 
     if (!ok) {
         return PL_DHASH_STOP;
@@ -742,7 +742,7 @@ nsLoadGroup::GetRequests(nsISimpleEnumerator * *aRequests)
     PL_DHashTableEnumerate(&mRequests, AppendRequestsToISupportsArray,
                            array.get());
 
-    PRUint32 count;
+    uint32_t count;
     array->Count(&count);
 
     if (count != mRequests.entryCount) {
@@ -769,7 +769,7 @@ nsLoadGroup::GetGroupObserver(nsIRequestObserver* *aResult)
 }
 
 NS_IMETHODIMP
-nsLoadGroup::GetActiveCount(PRUint32* aResult)
+nsLoadGroup::GetActiveCount(uint32_t* aResult)
 {
     *aResult = mForegroundCount;
     return NS_OK;
@@ -795,20 +795,20 @@ nsLoadGroup::SetNotificationCallbacks(nsIInterfaceRequestor *aCallbacks)
 // nsISupportsPriority methods:
 
 NS_IMETHODIMP
-nsLoadGroup::GetPriority(PRInt32 *aValue)
+nsLoadGroup::GetPriority(int32_t *aValue)
 {
     *aValue = mPriority;
     return NS_OK;
 }
 
 NS_IMETHODIMP
-nsLoadGroup::SetPriority(PRInt32 aValue)
+nsLoadGroup::SetPriority(int32_t aValue)
 {
     return AdjustPriority(aValue - mPriority);
 }
 
 NS_IMETHODIMP
-nsLoadGroup::AdjustPriority(PRInt32 aDelta)
+nsLoadGroup::AdjustPriority(int32_t aDelta)
 {
     // Update the priority for each request that supports nsISupportsPriority
     if (aDelta != 0) {

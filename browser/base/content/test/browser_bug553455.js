@@ -336,7 +336,6 @@ function test_restartless() {
       wait_for_notification(function(aPanel) {
         let notification = aPanel.childNodes[0];
         is(notification.id, "addon-install-complete-notification", "Should have seen the install complete");
-        is(notification.button.label, "Open Add-ons Manager", "Should have seen the right button");
         is(notification.getAttribute("label"),
            "XPI Test has been installed successfully.",
            "Should have seen the right message");
@@ -727,9 +726,9 @@ function test_cancel_restart() {
 
     // Close the notification
     let anchor = document.getElementById("addons-notification-icon");
-    EventUtils.synthesizeMouseAtCenter(anchor, {});
+    anchor.click();
     // Reopen the notification
-    EventUtils.synthesizeMouseAtCenter(anchor, {});
+    anchor.click();
 
     ok(PopupNotifications.isPanelOpen, "Notification should still be open");
     is(PopupNotifications.panel.childNodes.length, 1, "Should be only one notification");

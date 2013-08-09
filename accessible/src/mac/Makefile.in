@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH = ../../..
+DEPTH = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir = @srcdir@
 VPATH = @srcdir@
@@ -14,10 +14,9 @@ LIBRARY_NAME = accessibility_toolkit_s
 EXPORT_LIBRARY = ..
 LIBXUL_LIBRARY = 1
 
-  
-  
 CMMSRCS = \
           AccessibleWrap.mm \
+          ApplicationAccessibleWrap.mm \
           DocAccessibleWrap.mm \
           nsAccessNodeWrap.mm \
           mozAccessible.mm \
@@ -34,6 +33,13 @@ EXPORTS = \
   mozAccessibleProtocol.h \
   $(NULL)
 
+EXPORTS_NAMESPACES = mozilla/a11y
+
+EXPORTS_mozilla/a11y = \
+  AccessibleWrap.h \
+  HyperTextAccessibleWrap.h \
+  $(null)
+
 # we don't want the shared lib, but we want to force the creation of a static lib.
 FORCE_STATIC_LIB = 1
 
@@ -45,5 +51,12 @@ LOCAL_INCLUDES += \
   -I$(srcdir)/../generic \
   -I$(srcdir)/../html \
   -I$(srcdir)/../xul \
+  -I$(topsrcdir)/widget/cocoa \
+  -I$(topsrcdir)/widget/xpwidgets \
+  -I$(topsrcdir)/layout/xul/base/src \
+  -I$(topsrcdir)/layout/generic \
   $(NULL)
 
+ifneq ($(A11Y_LOG),0)
+  DEFINES += -DA11Y_LOG
+endif

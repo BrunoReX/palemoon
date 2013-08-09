@@ -3,36 +3,19 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+#include "nsError.h"
 #include "nsIDOMHTMLAudioElement.h"
-#include "nsIDOMHTMLSourceElement.h"
 #include "nsHTMLAudioElement.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
-#include "nsSize.h"
-#include "nsIFrame.h"
 #include "nsIDocument.h"
-#include "nsIDOMDocument.h"
-#include "nsDOMError.h"
-#include "nsNodeInfoManager.h"
-#include "plbase64.h"
-#include "nsNetUtil.h"
-#include "prmem.h"
-#include "nsXPCOMStrings.h"
-#include "prlock.h"
-#include "nsThreadUtils.h"
-
-#include "nsIScriptSecurityManager.h"
-#include "nsIXPConnect.h"
-#include "jsapi.h"
 #include "jsfriendapi.h"
-#include "nsJSUtils.h"
-
-#include "nsITimer.h"
-
-#include "nsEventDispatcher.h"
-#include "nsIDOMProgressEvent.h"
 #include "nsContentUtils.h"
+#include "nsJSUtils.h"
+#include "AudioSampleFormat.h"
+#include "AudioChannelCommon.h"
 
+using namespace mozilla;
 using namespace mozilla::dom;
 
 nsGenericHTMLElement*
@@ -48,12 +31,12 @@ NS_NewHTMLAudioElement(already_AddRefed<nsINodeInfo> aNodeInfo,
   if (!nodeInfo) {
     nsCOMPtr<nsIDocument> doc =
       do_QueryInterface(nsContentUtils::GetDocumentFromCaller());
-    NS_ENSURE_TRUE(doc, nsnull);
+    NS_ENSURE_TRUE(doc, nullptr);
 
-    nodeInfo = doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::audio, nsnull,
+    nodeInfo = doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::audio, nullptr,
                                                    kNameSpaceID_XHTML,
                                                    nsIDOMNode::ELEMENT_NODE);
-    NS_ENSURE_TRUE(nodeInfo, nsnull);
+    NS_ENSURE_TRUE(nodeInfo, nullptr);
   }
 
   return new nsHTMLAudioElement(nodeInfo.forget());
@@ -85,7 +68,7 @@ nsHTMLAudioElement::~nsHTMLAudioElement()
 
 NS_IMETHODIMP
 nsHTMLAudioElement::Initialize(nsISupports* aOwner, JSContext* aContext,
-                               JSObject *aObj, PRUint32 argc, jsval *argv)
+                               JSObject *aObj, uint32_t argc, jsval *argv)
 {
   // Audio elements created using "new Audio(...)" should have
   // 'preload' set to 'auto' (since the script must intend to
@@ -100,13 +83,22 @@ nsHTMLAudioElement::Initialize(nsISupports* aOwner, JSContext* aContext,
     return NS_OK;
   }
 
-  // The only (optional) argument is the src of the audio (which can
-  // be a URL string or a MediaStream object)
-  return SetSrc(aContext, argv[0]);
+  // The only (optional) argument is the url of the audio
+  JSString* jsstr = JS_ValueToString(aContext, argv[0]);
+  if (!jsstr)
+    return NS_ERROR_FAILURE;
+
+  nsDependentJSString str;
+  if (!str.init(aContext, jsstr))
+    return NS_ERROR_FAILURE;
+
+  // The only (optional) argument is the src of the audio (which must
+  // be a URL string), used to initialize the 'src' attribute.
+  return SetSrc(str);
 }
 
 NS_IMETHODIMP
-nsHTMLAudioElement::MozSetup(PRUint32 aChannels, PRUint32 aRate)
+nsHTMLAudioElement::MozSetup(uint32_t aChannels, uint32_t aRate)
 {
   // If there is already a src provided, don't setup another stream
   if (mDecoder) {
@@ -122,22 +114,21 @@ nsHTMLAudioElement::MozSetup(PRUint32 aChannels, PRUint32 aRate)
     mAudioStream->Shutdown();
   }
 
-  mAudioStream = nsAudioStream::AllocateStream();
-  nsresult rv = mAudioStream->Init(aChannels, aRate,
-                                   nsAudioStream::FORMAT_FLOAT32);
+  mAudioStream = AudioStream::AllocateStream();
+  nsresult rv = mAudioStream->Init(aChannels, aRate, mAudioChannelType);
   if (NS_FAILED(rv)) {
     mAudioStream->Shutdown();
-    mAudioStream = nsnull;
+    mAudioStream = nullptr;
     return rv;
   }
 
-  MetadataLoaded(aChannels, aRate, true);
+  MetadataLoaded(aChannels, aRate, true, nullptr);
   mAudioStream->SetVolume(mVolume);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsHTMLAudioElement::MozWriteAudio(const JS::Value& aData, JSContext* aCx, PRUint32* aRetVal)
+nsHTMLAudioElement::MozWriteAudio(const JS::Value& aData, JSContext* aCx, uint32_t* aRetVal)
 {
   if (!mAudioStream) {
     return NS_ERROR_DOM_INVALID_STATE_ERR;
@@ -152,7 +143,7 @@ nsHTMLAudioElement::MozWriteAudio(const JS::Value& aData, JSContext* aCx, PRUint
   JSObject* tsrc = NULL;
 
   // Allow either Float32Array or plain JS Array
-  if (JS_IsFloat32Array(darray, aCx)) {
+  if (JS_IsFloat32Array(darray)) {
     tsrc = darray;
   } else if (JS_IsArrayObject(aCx, darray)) {
     JSObject* nobj = JS_NewFloat32ArrayFromArray(aCx, darray);
@@ -165,7 +156,7 @@ nsHTMLAudioElement::MozWriteAudio(const JS::Value& aData, JSContext* aCx, PRUint
   }
   tvr.setObject(tsrc);
 
-  PRUint32 dataLength = JS_GetTypedArrayLength(tsrc, aCx);
+  uint32_t dataLength = JS_GetTypedArrayLength(tsrc);
 
   // Make sure that we are going to write the correct amount of data based
   // on number of channels.
@@ -174,9 +165,17 @@ nsHTMLAudioElement::MozWriteAudio(const JS::Value& aData, JSContext* aCx, PRUint
   }
 
   // Don't write more than can be written without blocking.
-  PRUint32 writeLen = NS_MIN(mAudioStream->Available(), dataLength / mChannels);
+  uint32_t writeLen = NS_MIN(mAudioStream->Available(), dataLength / mChannels);
 
-  nsresult rv = mAudioStream->Write(JS_GetFloat32ArrayData(tsrc, aCx), writeLen);
+  float* frames = JS_GetFloat32ArrayData(tsrc);
+  // Convert the samples back to integers as we are using fixed point audio in
+  // the AudioStream.
+  // This could be optimized to avoid allocation and memcpy when
+  // AudioDataValue is 'float', but it's not worth it for this deprecated API.
+  nsAutoArrayPtr<AudioDataValue> audioData(new AudioDataValue[writeLen * mChannels]);
+  ConvertAudioSamples(frames, audioData.get(), writeLen * mChannels);
+  nsresult rv = mAudioStream->Write(audioData.get(), writeLen);
+
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -187,13 +186,13 @@ nsHTMLAudioElement::MozWriteAudio(const JS::Value& aData, JSContext* aCx, PRUint
 }
 
 NS_IMETHODIMP
-nsHTMLAudioElement::MozCurrentSampleOffset(PRUint64 *aRetVal)
+nsHTMLAudioElement::MozCurrentSampleOffset(uint64_t *aRetVal)
 {
   if (!mAudioStream) {
     return NS_ERROR_DOM_INVALID_STATE_ERR;
   }
 
-  PRInt64 position = mAudioStream->GetPositionInFrames();
+  int64_t position = mAudioStream->GetPositionInFrames();
   if (position < 0) {
     *aRetVal = 0;
   } else {
@@ -204,7 +203,7 @@ nsHTMLAudioElement::MozCurrentSampleOffset(PRUint64 *aRetVal)
 
 nsresult nsHTMLAudioElement::SetAcceptHeader(nsIHttpChannel* aChannel)
 {
-    nsCAutoString value(
+    nsAutoCString value(
 #ifdef MOZ_WEBM
       "audio/webm,"
 #endif

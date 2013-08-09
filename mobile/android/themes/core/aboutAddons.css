@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 html {
-  font-family: "Droid Sans",helvetica,arial,clean,sans-serif;
+  font-family: Roboto,"Droid Sans",helvetica,arial,clean,sans-serif;
   font-size: 18px;
   background-image: url("chrome://browser/skin/images/about-bg-lightblue.png");
   -moz-text-size-adjust: none;
@@ -87,6 +87,15 @@ body {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.status {
+  background-image: url("chrome://browser/skin/images/row-bg-light.png");
+  border-top: 2px solid;
+  -moz-border-top-colors: #bac2ac #ffffff;
+  font-weight: bold;
+  padding: 8px;
+  width: 100%;
 }
 
 .buttons {

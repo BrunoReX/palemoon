@@ -15,6 +15,7 @@
 #include "nsIPrefBranchInternal.h"
 #include "nsIObserver.h"
 #include "nsCOMPtr.h"
+#include "nsTArray.h"
 #include "nsWeakReference.h"
 
 class nsIFile;
@@ -24,11 +25,15 @@ class nsAdoptingString;
 class nsAdoptingCString;
 
 #ifndef have_PrefChangedFunc_typedef
-typedef int (*PR_CALLBACK PrefChangedFunc)(const char *, void *);
+typedef int (*PrefChangedFunc)(const char *, void *);
 #define have_PrefChangedFunc_typedef
 #endif
 
 namespace mozilla {
+
+namespace dom {
+class PrefSetting;
+}
 
 class Preferences : public nsIPrefService,
                     public nsIObserver,
@@ -36,6 +41,8 @@ class Preferences : public nsIPrefService,
                     public nsSupportsWeakReference
 {
 public:
+  typedef mozilla::dom::PrefSetting PrefSetting;
+
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPREFSERVICE
   NS_FORWARD_NSIPREFBRANCH(sRootBranch->)
@@ -67,7 +74,7 @@ public:
    */
   static nsIPrefService* GetService()
   {
-    NS_ENSURE_TRUE(InitStaticMembers(), nsnull);
+    NS_ENSURE_TRUE(InitStaticMembers(), nullptr);
     return sPreferences;
   }
 
@@ -77,7 +84,7 @@ public:
    */
   static nsIPrefBranch* GetRootBranch()
   {
-    NS_ENSURE_TRUE(InitStaticMembers(), nsnull);
+    NS_ENSURE_TRUE(InitStaticMembers(), nullptr);
     return sRootBranch;
   }
 
@@ -87,7 +94,7 @@ public:
    */
   static nsIPrefBranch* GetDefaultRootBranch()
   {
-    NS_ENSURE_TRUE(InitStaticMembers(), nsnull);
+    NS_ENSURE_TRUE(InitStaticMembers(), nullptr);
     return sDefaultRootBranch;
   }
 
@@ -102,16 +109,16 @@ public:
     return result;
   }
 
-  static PRInt32 GetInt(const char* aPref, PRInt32 aDefault = 0)
+  static int32_t GetInt(const char* aPref, int32_t aDefault = 0)
   {
-    PRInt32 result = aDefault;
+    int32_t result = aDefault;
     GetInt(aPref, &result);
     return result;
   }
 
-  static PRUint32 GetUint(const char* aPref, PRUint32 aDefault = 0)
+  static uint32_t GetUint(const char* aPref, uint32_t aDefault = 0)
   {
-    PRUint32 result = aDefault;
+    uint32_t result = aDefault;
     GetUint(aPref, &result);
     return result;
   }
@@ -143,20 +150,22 @@ public:
   static nsAdoptingString GetLocalizedString(const char* aPref);
 
   /**
-   * Gets int or bool type pref value with raw return value of nsIPrefBranch.
+   * Gets int, float, or bool type pref value with raw return value of
+   * nsIPrefBranch.
    *
    * @param aPref       A pref name.
    * @param aResult     Must not be NULL.  The value is never modified when
    *                    these methods fail.
    */
   static nsresult GetBool(const char* aPref, bool* aResult);
-  static nsresult GetInt(const char* aPref, PRInt32* aResult);
-  static nsresult GetUint(const char* aPref, PRUint32* aResult)
+  static nsresult GetInt(const char* aPref, int32_t* aResult);
+  static nsresult GetFloat(const char* aPref, float* aResult);
+  static nsresult GetUint(const char* aPref, uint32_t* aResult)
   {
-    PRInt32 result;
+    int32_t result;
     nsresult rv = GetInt(aPref, &result);
     if (NS_SUCCEEDED(rv)) {
-      *aResult = static_cast<PRUint32>(result);
+      *aResult = static_cast<uint32_t>(result);
     }
     return rv;
   }
@@ -180,10 +189,10 @@ public:
    * Sets various type pref values.
    */
   static nsresult SetBool(const char* aPref, bool aValue);
-  static nsresult SetInt(const char* aPref, PRInt32 aValue);
-  static nsresult SetUint(const char* aPref, PRUint32 aValue)
+  static nsresult SetInt(const char* aPref, int32_t aValue);
+  static nsresult SetUint(const char* aPref, uint32_t aValue)
   {
-    return SetInt(aPref, static_cast<PRInt32>(aValue));
+    return SetInt(aPref, static_cast<int32_t>(aValue));
   }
   static nsresult SetCString(const char* aPref, const char* aValue);
   static nsresult SetCString(const char* aPref, const nsACString &aValue);
@@ -206,13 +215,13 @@ public:
   /**
    * Gets the type of the pref.
    */
-  static PRInt32 GetType(const char* aPref);
+  static int32_t GetType(const char* aPref);
 
   /**
    * Adds/Removes the observer for the root pref branch.
    * The observer is referenced strongly if AddStrongObserver is used.  On the
    * other hand, it is referenced weakly, if AddWeakObserver is used.
-   * See nsIPrefBran2.idl for the detail.
+   * See nsIPrefBranch.idl for details.
    */
   static nsresult AddStrongObserver(nsIObserver* aObserver, const char* aPref);
   static nsresult AddWeakObserver(nsIObserver* aObserver, const char* aPref);
@@ -234,10 +243,10 @@ public:
    */
   static nsresult RegisterCallback(PrefChangedFunc aCallback,
                                    const char* aPref,
-                                   void* aClosure = nsnull);
+                                   void* aClosure = nullptr);
   static nsresult UnregisterCallback(PrefChangedFunc aCallback,
                                      const char* aPref,
-                                     void* aClosure = nsnull);
+                                     void* aClosure = nullptr);
 
   /**
    * Adds the aVariable to cache table.  aVariable must be a pointer for a
@@ -248,12 +257,12 @@ public:
   static nsresult AddBoolVarCache(bool* aVariable,
                                   const char* aPref,
                                   bool aDefault = false);
-  static nsresult AddIntVarCache(PRInt32* aVariable,
+  static nsresult AddIntVarCache(int32_t* aVariable,
                                  const char* aPref,
-                                 PRInt32 aDefault = 0);
-  static nsresult AddUintVarCache(PRUint32* aVariable,
+                                 int32_t aDefault = 0);
+  static nsresult AddUintVarCache(uint32_t* aVariable,
                                   const char* aPref,
-                                  PRUint32 aDefault = 0);
+                                  uint32_t aDefault = 0);
 
   /**
    * Gets the default bool, int or uint value of the pref.
@@ -262,10 +271,10 @@ public:
    * If not so, you could use below methods.
    */
   static nsresult GetDefaultBool(const char* aPref, bool* aResult);
-  static nsresult GetDefaultInt(const char* aPref, PRInt32* aResult);
-  static nsresult GetDefaultUint(const char* aPref, PRUint32* aResult)
+  static nsresult GetDefaultInt(const char* aPref, int32_t* aResult);
+  static nsresult GetDefaultUint(const char* aPref, uint32_t* aResult)
   {
-    return GetDefaultInt(aPref, reinterpret_cast<PRInt32*>(aResult));
+    return GetDefaultInt(aPref, reinterpret_cast<int32_t*>(aResult));
   }
 
   /**
@@ -280,15 +289,15 @@ public:
     return NS_SUCCEEDED(GetDefaultBool(aPref, &result)) ? result :
                                                           aFailedResult;
   }
-  static PRInt32 GetDefaultInt(const char* aPref, PRInt32 aFailedResult)
+  static int32_t GetDefaultInt(const char* aPref, int32_t aFailedResult)
   {
-    PRInt32 result;
+    int32_t result;
     return NS_SUCCEEDED(GetDefaultInt(aPref, &result)) ? result : aFailedResult;
   }
-  static PRUint32 GetDefaultUint(const char* aPref, PRUint32 aFailedResult)
+  static uint32_t GetDefaultUint(const char* aPref, uint32_t aFailedResult)
   {
-   return static_cast<PRUint32>(
-     GetDefaultInt(aPref, static_cast<PRInt32>(aFailedResult)));
+   return static_cast<uint32_t>(
+     GetDefaultInt(aPref, static_cast<int32_t>(aFailedResult)));
   }
 
   /**
@@ -317,14 +326,14 @@ public:
   /**
    * Gets the type of the pref.
    */
-  static PRInt32 GetDefaultType(const char* aPref);
+  static int32_t GetDefaultType(const char* aPref);
 
   // Used to synchronise preferences between chrome and content processes.
-  static void MirrorPreferences(nsTArray<PrefTuple,
-                                nsTArrayInfallibleAllocator> *aArray);
-  static bool MirrorPreference(const char *aPref, PrefTuple *aTuple);
-  static void ClearContentPref(const char *aPref);
-  static void SetPreference(const PrefTuple *aTuple);
+  static void GetPreferences(InfallibleTArray<PrefSetting>* aPrefs);
+  static void GetPreference(PrefSetting* aPref);
+  static void SetPreference(const PrefSetting& aPref);
+
+  static int64_t GetPreferencesMemoryUsed();
 
 protected:
   nsresult NotifyServiceObservers(const char *aSubject);

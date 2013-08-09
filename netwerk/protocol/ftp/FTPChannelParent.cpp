@@ -11,6 +11,11 @@
 #include "nsISupportsPriority.h"
 #include "nsIRedirectChannelRegistrar.h"
 #include "nsFtpProtocolHandler.h"
+#include "mozilla/LoadContext.h"
+#include "mozilla/ipc/InputStreamUtils.h"
+#include "mozilla/ipc/URIUtils.h"
+
+using namespace mozilla::ipc;
 
 #undef LOG
 #define LOG(args) PR_LOG(gFTPLog, PR_LOG_DEBUG, args)
@@ -18,8 +23,10 @@
 namespace mozilla {
 namespace net {
 
-FTPChannelParent::FTPChannelParent()
-: mIPCClosed(false)
+FTPChannelParent::FTPChannelParent(nsILoadContext* aLoadContext, PBOverrideStatus aOverrideStatus)
+  : mIPCClosed(false)
+  , mLoadContext(aLoadContext)
+  , mPBOverride(aOverrideStatus)
 {
   nsIProtocolHandler* handler;
   CallGetService(NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX "ftp", &handler);
@@ -47,19 +54,21 @@ NS_IMPL_ISUPPORTS4(FTPChannelParent,
                    nsIStreamListener,
                    nsIParentChannel,
                    nsIInterfaceRequestor,
-                   nsIRequestObserver);
+                   nsIRequestObserver)
 
 //-----------------------------------------------------------------------------
 // FTPChannelParent::PFTPChannelParent
 //-----------------------------------------------------------------------------
 
 bool
-FTPChannelParent::RecvAsyncOpen(const IPC::URI& aURI,
-                                const PRUint64& aStartPos,
+FTPChannelParent::RecvAsyncOpen(const URIParams& aURI,
+                                const uint64_t& aStartPos,
                                 const nsCString& aEntityID,
-                                const IPC::InputStream& aUploadStream)
+                                const OptionalInputStreamParams& aUploadStream)
 {
-  nsCOMPtr<nsIURI> uri(aURI);
+  nsCOMPtr<nsIURI> uri = DeserializeURI(aURI);
+  if (!uri)
+      return false;
 
 #ifdef DEBUG
   nsCString uriSpec;
@@ -79,8 +88,12 @@ FTPChannelParent::RecvAsyncOpen(const IPC::URI& aURI,
     return SendFailedAsyncOpen(rv);
 
   mChannel = static_cast<nsFtpChannel*>(chan.get());
-  
-  nsCOMPtr<nsIInputStream> upload(aUploadStream);
+
+  if (mPBOverride != kPBOverride_Unset) {
+    mChannel->SetPrivate(mPBOverride == kPBOverride_Private ? true : false);
+  }
+
+  nsCOMPtr<nsIInputStream> upload = DeserializeInputStream(aUploadStream);
   if (upload) {
     // contentType and contentLength are ignored
     rv = mChannel->SetUploadStream(upload, EmptyCString(), 0);
@@ -92,7 +105,7 @@ FTPChannelParent::RecvAsyncOpen(const IPC::URI& aURI,
   if (NS_FAILED(rv))
     return SendFailedAsyncOpen(rv);
 
-  rv = mChannel->AsyncOpen(this, nsnull);
+  rv = mChannel->AsyncOpen(this, nullptr);
   if (NS_FAILED(rv))
     return SendFailedAsyncOpen(rv);
   
@@ -100,7 +113,7 @@ FTPChannelParent::RecvAsyncOpen(const IPC::URI& aURI,
 }
 
 bool
-FTPChannelParent::RecvConnectChannel(const PRUint32& channelId)
+FTPChannelParent::RecvConnectChannel(const uint32_t& channelId)
 {
   nsresult rv;
 
@@ -150,8 +163,8 @@ FTPChannelParent::OnStartRequest(nsIRequest* aRequest, nsISupports* aContext)
   LOG(("FTPChannelParent::OnStartRequest [this=%x]\n", this));
 
   nsFtpChannel* chan = static_cast<nsFtpChannel*>(aRequest);
-  PRInt32 aContentLength;
-  chan->GetContentLength(&aContentLength);
+  int64_t contentLength;
+  chan->GetContentLength(&contentLength);
   nsCString contentType;
   chan->GetContentType(contentType);
   nsCString entityID;
@@ -159,8 +172,11 @@ FTPChannelParent::OnStartRequest(nsIRequest* aRequest, nsISupports* aContext)
   PRTime lastModified;
   chan->GetLastModifiedTime(&lastModified);
 
-  if (mIPCClosed || !SendOnStartRequest(aContentLength, contentType,
-                                       lastModified, entityID, chan->URI())) {
+  URIParams uri;
+  SerializeURI(chan->URI(), uri);
+
+  if (mIPCClosed || !SendOnStartRequest(contentLength, contentType,
+                                       lastModified, entityID, uri)) {
     return NS_ERROR_UNEXPECTED;
   }
 
@@ -190,8 +206,8 @@ NS_IMETHODIMP
 FTPChannelParent::OnDataAvailable(nsIRequest* aRequest,
                                   nsISupports* aContext,
                                   nsIInputStream* aInputStream,
-                                  PRUint32 aOffset,
-                                  PRUint32 aCount)
+                                  uint64_t aOffset,
+                                  uint32_t aCount)
 {
   LOG(("FTPChannelParent::OnDataAvailable [this=%x]\n", this));
   
@@ -226,9 +242,17 @@ FTPChannelParent::Delete()
 NS_IMETHODIMP
 FTPChannelParent::GetInterface(const nsIID& uuid, void** result)
 {
+  // Only support nsILoadContext if child channel's callbacks did too
+  if (uuid.Equals(NS_GET_IID(nsILoadContext)) && mLoadContext) {
+    NS_ADDREF(mLoadContext);
+    *result = static_cast<nsILoadContext*>(mLoadContext);
+    return NS_OK;
+  }
+
   return QueryInterface(uuid, result);
 }
 
+//---------------------
 } // namespace net
 } // namespace mozilla
 

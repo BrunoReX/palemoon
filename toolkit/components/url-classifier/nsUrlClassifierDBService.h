@@ -18,6 +18,9 @@
 #include "nsToolkitCompsCID.h"
 #include "nsICryptoHash.h"
 #include "nsICryptoHMAC.h"
+#include "mozilla/Attributes.h"
+
+#include "LookupCache.h"
 
 // The hash length for a domain key.
 #define DOMAIN_LENGTH 4
@@ -30,12 +33,13 @@
 
 class nsUrlClassifierDBServiceWorker;
 class nsIThread;
+class nsIURI;
 
 // This is a proxy class that just creates a background thread and delagates
 // calls to the background thread.
-class nsUrlClassifierDBService : public nsIUrlClassifierDBService,
-                                 public nsIURIClassifier,
-                                 public nsIObserver
+class nsUrlClassifierDBService MOZ_FINAL : public nsIUrlClassifierDBService,
+                                           public nsIURIClassifier,
+                                           public nsIObserver
 {
 public:
   // This is thread safe. It throws an exception if the thread is busy.
@@ -54,7 +58,8 @@ public:
 
   bool GetCompleter(const nsACString& tableName,
                       nsIUrlClassifierHashCompleter** completer);
-  nsresult CacheCompletions(nsTArray<nsUrlClassifierLookupResult> *results);
+  nsresult CacheCompletions(mozilla::safebrowsing::CacheResultArray *results);
+  nsresult CacheMisses(mozilla::safebrowsing::PrefixArray *results);
 
   static nsIThread* BackgroundThread();
 
@@ -65,7 +70,7 @@ private:
   // Disallow copy constructor
   nsUrlClassifierDBService(nsUrlClassifierDBService&);
 
-  nsresult LookupURI(nsIURI* uri, nsIUrlClassifierCallback* c,
+  nsresult LookupURI(nsIPrincipal* aPrincipal, nsIUrlClassifierCallback* c,
                      bool forceCheck, bool *didCheck);
 
   // Close db connection and join the background thread if it exists.
@@ -88,6 +93,10 @@ private:
   // uris on document loads.
   bool mCheckPhishing;
 
+  // TRUE if we randomize the prefixes/domains per client to prevent
+  // simulatenous collisions for all Firefox users
+  bool mPerClientRandomize;
+
   // TRUE if a BeginUpdate() has been called without an accompanying
   // CancelUpdate()/FinishUpdate().  This is used to prevent competing
   // updates, not to determine whether an update is still being
@@ -96,10 +105,6 @@ private:
 
   // The list of tables that can use the default hash completer object.
   nsTArray<nsCString> mGethashWhitelist;
-
-  // Set of prefixes known to be in the database
-  nsRefPtr<nsUrlClassifierPrefixSet> mPrefixSet;
-  nsCOMPtr<nsICryptoHash> mHash;
 
   // Thread that we do the updates on.
   static nsIThread* gDbBackgroundThread;

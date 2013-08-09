@@ -45,7 +45,7 @@ nsresult
 txFormatNumberFunctionCall::evaluate(txIEvalContext* aContext,
                                      txAExprResult** aResult)
 {
-    *aResult = nsnull;
+    *aResult = nullptr;
     if (!requireParams(2, 3, aContext))
         return NS_ERROR_XPATH_BAD_ARGUMENT_COUNT;
 
@@ -106,8 +106,8 @@ txFormatNumberFunctionCall::evaluate(txIEvalContext* aContext,
     int multiplier=1;
     int groupSize=-1;
 
-    PRUint32 pos = 0;
-    PRUint32 formatLen = formatStr.Length();
+    uint32_t pos = 0;
+    uint32_t formatLen = formatStr.Length();
     bool inQuote;
 
     // Get right subexpression
@@ -277,7 +277,7 @@ txFormatNumberFunctionCall::evaluate(txIEvalContext* aContext,
     char* buf = new char[bufsize];
     NS_ENSURE_TRUE(buf, NS_ERROR_OUT_OF_MEMORY);
 
-    PRIntn bufIntDigits, sign;
+    int bufIntDigits, sign;
     char* endp;
     PR_dtoa(value, 0, 0, &bufIntDigits, &sign, &endp, buf, bufsize-1);
 
@@ -295,11 +295,11 @@ txFormatNumberFunctionCall::evaluate(txIEvalContext* aContext,
                   maxFractionSize +         // fractions
                   (intDigits-1)/groupSize); // group separators
 
-    PRInt32 i = bufIntDigits + maxFractionSize - 1;
+    int32_t i = bufIntDigits + maxFractionSize - 1;
     bool carry = (0 <= i+1) && (i+1 < buflen) && (buf[i+1] >= '5');
     bool hasFraction = false;
 
-    PRUint32 resPos = res.Length()-1;
+    uint32_t resPos = res.Length()-1;
 
     // Fractions
     for (; i >= bufIntDigits; --i) {

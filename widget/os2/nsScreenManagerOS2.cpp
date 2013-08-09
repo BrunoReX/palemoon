@@ -36,7 +36,7 @@ NS_IMPL_ISUPPORTS1(nsScreenManagerOS2, nsIScreenManager)
 nsIScreen* 
 nsScreenManagerOS2 :: CreateNewScreenObject (  )
 {
-  nsIScreen* retval = nsnull;
+  nsIScreen* retval = nullptr;
   if ( !mCachedMainScreen )
     mCachedMainScreen = new nsScreenOS2 ( );
   NS_IF_ADDREF(retval = mCachedMainScreen.get());
@@ -54,8 +54,8 @@ nsScreenManagerOS2 :: CreateNewScreenObject (  )
 // The coordinates are in pixels (not twips) and in screen coordinates.
 //
 NS_IMETHODIMP
-nsScreenManagerOS2 :: ScreenForRect ( PRInt32 /*inLeft*/, PRInt32 /*inTop*/, PRInt32 /*inWidth*/,
-                                       PRInt32 /*inHeight*/, nsIScreen **outScreen )
+nsScreenManagerOS2 :: ScreenForRect ( int32_t /*inLeft*/, int32_t /*inTop*/, int32_t /*inWidth*/,
+                                       int32_t /*inHeight*/, nsIScreen **outScreen )
 {
   GetPrimaryScreen ( outScreen );
   return NS_OK;
@@ -84,7 +84,7 @@ nsScreenManagerOS2 :: GetPrimaryScreen(nsIScreen * *aPrimaryScreen)
 // Returns how many physical screens are available.
 //
 NS_IMETHODIMP
-nsScreenManagerOS2 :: GetNumberOfScreens(PRUint32 *aNumberOfScreens)
+nsScreenManagerOS2 :: GetNumberOfScreens(uint32_t *aNumberOfScreens)
 {
   *aNumberOfScreens = 1;
   return NS_OK;

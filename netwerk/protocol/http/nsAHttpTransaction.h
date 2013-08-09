@@ -37,34 +37,33 @@ public:
 
     // called by the connection to get security callbacks to set on the
     // socket transport.
-    virtual void GetSecurityCallbacks(nsIInterfaceRequestor **,
-                                      nsIEventTarget **) = 0;
+    virtual void GetSecurityCallbacks(nsIInterfaceRequestor **) = 0;
 
     // called to report socket status (see nsITransportEventSink)
     virtual void OnTransportStatus(nsITransport* transport,
-                                   nsresult status, PRUint64 progress) = 0;
+                                   nsresult status, uint64_t progress) = 0;
 
     // called to check the transaction status.
     virtual bool     IsDone() = 0;
     virtual nsresult Status() = 0;
-    virtual PRUint8  Caps() = 0;
+    virtual uint8_t  Caps() = 0;
 
     // called to find out how much request data is available for writing.
-    virtual PRUint32 Available() = 0;
+    virtual uint64_t Available() = 0;
 
     // called to read request data from the transaction.
     virtual nsresult ReadSegments(nsAHttpSegmentReader *reader,
-                                  PRUint32 count, PRUint32 *countRead) = 0;
+                                  uint32_t count, uint32_t *countRead) = 0;
 
     // called to write response data to the transaction.
     virtual nsresult WriteSegments(nsAHttpSegmentWriter *writer,
-                                   PRUint32 count, PRUint32 *countWritten) = 0;
+                                   uint32_t count, uint32_t *countWritten) = 0;
 
     // called to close the transaction
     virtual void Close(nsresult reason) = 0;
 
-    // called to indicate a failure at the SSL setup level
-    virtual void SetSSLConnectFailed() = 0;
+    // called to indicate a failure with proxy CONNECT
+    virtual void SetProxyConnectFailed() = 0;
     
     // called to retrieve the request headers of the transaction
     virtual nsHttpRequestHead *RequestHead() = 0;
@@ -72,7 +71,7 @@ public:
     // determine the number of real http/1.x transactions on this
     // abstract object. Pipelines may have multiple, SPDY has 0,
     // normal http transactions have 1.
-    virtual PRUint32 Http1xTransactionCount() = 0;
+    virtual uint32_t Http1xTransactionCount() = 0;
 
     // called to remove the unused sub transactions from an object that can
     // handle multiple transactions simultaneously (i.e. pipelines or spdy).
@@ -93,23 +92,23 @@ public:
     
     // The total length of the outstanding pipeline comprised of transacations
     // and sub-transactions.
-    virtual PRUint32 PipelineDepth() = 0;
+    virtual uint32_t PipelineDepth() = 0;
 
     // Used to inform the connection that it is being used in a pipelined
     // context. That may influence the handling of some errors.
     // The value is the pipeline position (> 1).
-    virtual nsresult SetPipelinePosition(PRInt32) = 0;
-    virtual PRInt32  PipelinePosition() = 0;
+    virtual nsresult SetPipelinePosition(int32_t) = 0;
+    virtual int32_t  PipelinePosition() = 0;
 
     // If we used rtti this would be the result of doing
-    // dynamic_cast<nsHttpPipeline *>(this).. i.e. it can be nsnull for
+    // dynamic_cast<nsHttpPipeline *>(this).. i.e. it can be nullptr for
     // non pipeline implementations of nsAHttpTransaction
-    virtual nsHttpPipeline *QueryPipeline() { return nsnull; }
+    virtual nsHttpPipeline *QueryPipeline() { return nullptr; }
 
     // equivalent to !!dynamic_cast<NullHttpTransaction *>(this)
     // A null transaction is expected to return BASE_STREAM_CLOSED on all of
     // its IO functions all the time.
-    virtual bool QueryNullTransaction() { return false; }
+    virtual bool IsNullTransaction() { return false; }
     
     // Every transaction is classified into one of the types below. When using
     // HTTP pipelines, only transactions with the same type appear on the same
@@ -138,25 +137,24 @@ public:
 #define NS_DECL_NSAHTTPTRANSACTION \
     void SetConnection(nsAHttpConnection *); \
     nsAHttpConnection *Connection(); \
-    void GetSecurityCallbacks(nsIInterfaceRequestor **, \
-                              nsIEventTarget **);       \
+    void GetSecurityCallbacks(nsIInterfaceRequestor **);       \
     void OnTransportStatus(nsITransport* transport, \
-                           nsresult status, PRUint64 progress); \
+                           nsresult status, uint64_t progress); \
     bool     IsDone(); \
     nsresult Status(); \
-    PRUint8  Caps();   \
-    PRUint32 Available(); \
-    nsresult ReadSegments(nsAHttpSegmentReader *, PRUint32, PRUint32 *); \
-    nsresult WriteSegments(nsAHttpSegmentWriter *, PRUint32, PRUint32 *); \
+    uint8_t  Caps();   \
+    uint64_t Available(); \
+    nsresult ReadSegments(nsAHttpSegmentReader *, uint32_t, uint32_t *); \
+    nsresult WriteSegments(nsAHttpSegmentWriter *, uint32_t, uint32_t *); \
     void     Close(nsresult reason);                                    \
-    void     SetSSLConnectFailed();                                     \
+    void     SetProxyConnectFailed();                                   \
     nsHttpRequestHead *RequestHead();                                   \
-    PRUint32 Http1xTransactionCount();                                  \
+    uint32_t Http1xTransactionCount();                                  \
     nsresult TakeSubTransactions(nsTArray<nsRefPtr<nsAHttpTransaction> > &outTransactions); \
     nsresult AddTransaction(nsAHttpTransaction *);                      \
-    PRUint32 PipelineDepth();                                           \
-    nsresult SetPipelinePosition(PRInt32);                              \
-    PRInt32  PipelinePosition();
+    uint32_t PipelineDepth();                                           \
+    nsresult SetPipelinePosition(int32_t);                              \
+    int32_t  PipelinePosition();
 
 //-----------------------------------------------------------------------------
 // nsAHttpSegmentReader
@@ -167,8 +165,8 @@ class nsAHttpSegmentReader
 public:
     // any returned failure code stops segment iteration
     virtual nsresult OnReadSegment(const char *segment,
-                                   PRUint32 count,
-                                   PRUint32 *countRead) = 0;
+                                   uint32_t count,
+                                   uint32_t *countRead) = 0;
 
     // Ask the segment reader to commit to accepting size bytes of
     // data from subsequent OnReadSegment() calls or throw hard
@@ -179,14 +177,14 @@ public:
     // if they make the commitment.
     //
     // Spdy uses this to make sure frames are atomic.
-    virtual nsresult CommitToSegmentSize(PRUint32 size)
+    virtual nsresult CommitToSegmentSize(uint32_t size)
     {
         return NS_ERROR_FAILURE;
     }
 };
 
 #define NS_DECL_NSAHTTPSEGMENTREADER \
-    nsresult OnReadSegment(const char *, PRUint32, PRUint32 *);
+    nsresult OnReadSegment(const char *, uint32_t, uint32_t *);
 
 //-----------------------------------------------------------------------------
 // nsAHttpSegmentWriter
@@ -197,11 +195,11 @@ class nsAHttpSegmentWriter
 public:
     // any returned failure code stops segment iteration
     virtual nsresult OnWriteSegment(char *segment,
-                                    PRUint32 count,
-                                    PRUint32 *countWritten) = 0;
+                                    uint32_t count,
+                                    uint32_t *countWritten) = 0;
 };
 
 #define NS_DECL_NSAHTTPSEGMENTWRITER \
-    nsresult OnWriteSegment(char *, PRUint32, PRUint32 *);
+    nsresult OnWriteSegment(char *, uint32_t, uint32_t *);
 
 #endif // nsAHttpTransaction_h__

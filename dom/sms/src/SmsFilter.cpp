@@ -80,7 +80,7 @@ SmsFilter::SetStartDate(JSContext* aCx, const jsval& aStartDate)
     return NS_ERROR_INVALID_ARG;
   }
 
-  mData.startDate() = js_DateGetMsecSinceEpoch(aCx, &obj);
+  mData.startDate() = js_DateGetMsecSinceEpoch(&obj);
   return NS_OK;
 }
 
@@ -115,14 +115,14 @@ SmsFilter::SetEndDate(JSContext* aCx, const jsval& aEndDate)
     return NS_ERROR_INVALID_ARG;
   }
 
-  mData.endDate() = js_DateGetMsecSinceEpoch(aCx, &obj);
+  mData.endDate() = js_DateGetMsecSinceEpoch(&obj);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 SmsFilter::GetNumbers(JSContext* aCx, jsval* aNumbers)
 {
-  PRUint32 length = mData.numbers().Length();
+  uint32_t length = mData.numbers().Length();
 
   if (length == 0) {
     *aNumbers = JSVAL_NULL;
@@ -131,7 +131,7 @@ SmsFilter::GetNumbers(JSContext* aCx, jsval* aNumbers)
 
   jsval* numbers = new jsval[length];
 
-  for (PRUint32 i=0; i<length; ++i) {
+  for (uint32_t i=0; i<length; ++i) {
     numbers[i].setString(JS_NewUCStringCopyN(aCx, mData.numbers()[i].get(),
                                              mData.numbers()[i].Length()));
   }

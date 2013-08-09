@@ -13,7 +13,7 @@
 #include "nsXULTemplateResultXML.h"
 #include "nsXMLBinding.h"
 
-static PRUint32 sTemplateId = 0;
+static uint32_t sTemplateId = 0;
 
 NS_IMPL_ISUPPORTS1(nsXULTemplateResultXML, nsIXULTemplateResult)
 
@@ -29,7 +29,7 @@ nsXULTemplateResultXML::nsXULTemplateResultXML(nsXMLQuery* aQuery,
     nsCOMPtr<nsIAtom> id = content->GetID();
     if (id) {
       nsCOMPtr<nsIURI> uri = content->GetBaseURI();
-      nsCAutoString spec;
+      nsAutoCString spec;
       uri->GetSpec(spec);
 
       mId = NS_ConvertUTF8toUTF16(spec);
@@ -96,7 +96,7 @@ nsXULTemplateResultXML::GetId(nsAString& aId)
 NS_IMETHODIMP
 nsXULTemplateResultXML::GetResource(nsIRDFResource** aResource)
 {
-    *aResource = nsnull;
+    *aResource = nullptr;
     return NS_OK;
 }
 
@@ -115,7 +115,7 @@ nsXULTemplateResultXML::GetBindingFor(nsIAtom* aVar, nsAString& aValue)
     // get the position of the atom in the variables table
     nsXMLBinding* binding;
 
-    PRInt32 idx = mRequiredValues.LookupTargetIndex(aVar, &binding);
+    int32_t idx = mRequiredValues.LookupTargetIndex(aVar, &binding);
     if (idx >= 0) {
         mRequiredValues.GetStringAssignmentFor(this, binding, idx, aValue);
         return NS_OK;
@@ -154,7 +154,7 @@ nsXULTemplateResultXML::GetBindingObjectFor(nsIAtom* aVar, nsISupports** aValue)
         node = mNode;
     }
     else {
-        PRInt32 idx = mRequiredValues.LookupTargetIndex(aVar, &binding);
+        int32_t idx = mRequiredValues.LookupTargetIndex(aVar, &binding);
         if (idx > 0) {
             mRequiredValues.GetNodeAssignmentFor(this, binding, idx,
                                                  getter_AddRefs(node));
@@ -179,7 +179,7 @@ nsXULTemplateResultXML::RuleMatched(nsISupports* aQueryNode,
 {
     // when a rule matches, set the bindings that must be used.
     nsXULTemplateQueryProcessorXML* processor = mQuery ? mQuery->Processor() :
-                                                         nsnull;
+                                                         nullptr;
     if (processor) {
         nsXMLBindingSet* bindings =
             processor->GetOptionalBindingsForRule(aRuleNode);

@@ -121,6 +121,21 @@ ProgramProfileOGL::GetProfileFor(gl::ShaderProgramType aType,
     AddCommonTextureArgs(result);
     result.mTextureCount = 1;
     break;
+  case gl::RGBAExternalLayerProgramType:
+    if (aMask == Mask3d) {
+      result.mVertexShaderString = sLayerMask3DVS;
+      result.mFragmentShaderString = sRGBAExternalTextureLayerMask3DFS;
+    } else if (aMask == Mask2d) {
+      result.mVertexShaderString = sLayerMaskVS;
+      result.mFragmentShaderString = sRGBAExternalTextureLayerMaskFS;
+    } else {
+      result.mVertexShaderString = sLayerVS;
+      result.mFragmentShaderString = sRGBAExternalTextureLayerFS;
+    }
+    AddCommonArgs(result);
+    AddCommonTextureArgs(result);
+    result.mTextureCount = 1;
+    break;
   case gl::ColorLayerProgramType:
     if (aMask == Mask2d) {
       result.mVertexShaderString = sLayerMaskVS;
@@ -225,13 +240,13 @@ ShaderProgramOGL::Initialize()
 
   mProgramState = STATE_OK;
 
-  for (PRUint32 i = 0; i < mProfile.mUniforms.Length(); ++i) {
+  for (uint32_t i = 0; i < mProfile.mUniforms.Length(); ++i) {
     mProfile.mUniforms[i].mLocation =
       mGL->fGetUniformLocation(mProgram, mProfile.mUniforms[i].mName);
     NS_ASSERTION(mProfile.mUniforms[i].mLocation >= 0, "Bad uniform location.");
   }
 
-  for (PRUint32 i = 0; i < mProfile.mAttributes.Length(); ++i) {
+  for (uint32_t i = 0; i < mProfile.mAttributes.Length(); ++i) {
     mProfile.mAttributes[i].mLocation =
       mGL->fGetAttribLocation(mProgram, mProfile.mAttributes[i].mName);
     NS_ASSERTION(mProfile.mAttributes[i].mLocation >= 0, "Bad attribute location.");
@@ -264,7 +279,7 @@ ShaderProgramOGL::CreateShader(GLenum aShaderType, const char *aShaderSource)
 #endif
       )
   {
-    nsCAutoString log;
+    nsAutoCString log;
     log.SetCapacity(len);
     mGL->fGetShaderInfoLog(sh, len, (GLint*) &len, (char*) log.BeginWriting());
     log.SetLength(len);
@@ -317,7 +332,7 @@ ShaderProgramOGL::CreateProgram(const char *aVertexShaderString,
 #endif
       )
   {
-    nsCAutoString log;
+    nsAutoCString log;
     log.SetCapacity(len);
     mGL->fGetProgramInfoLog(result, len, (GLint*) &len, (char*) log.BeginWriting());
     log.SetLength(len);
@@ -362,7 +377,8 @@ ShaderProgramOGL::LoadMask(Layer* aMaskLayer)
               (GLint)(mProfile.mTextureCount - 1));
 
   gfxMatrix maskTransform;
-  bool isMask2D = aMaskLayer->GetEffectiveTransform().CanDraw2D(&maskTransform);
+  mozilla::DebugOnly<bool> isMask2D =
+    aMaskLayer->GetEffectiveTransform().CanDraw2D(&maskTransform);
   NS_ASSERTION(isMask2D, "How did we end up with a 3D transform here?!");
   gfxRect bounds = gfxRect(gfxPoint(), size);
   bounds = maskTransform.TransformBounds(bounds);

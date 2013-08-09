@@ -21,7 +21,7 @@
 
 using namespace mozilla;
 
-nsBoxLayout* nsStackLayout::gInstance = nsnull;
+nsBoxLayout* nsStackLayout::gInstance = nullptr;
 
 #define SPECIFIED_LEFT (1 << NS_SIDE_LEFT)
 #define SPECIFIED_RIGHT (1 << NS_SIDE_RIGHT)
@@ -59,11 +59,11 @@ nsStackLayout::nsStackLayout()
  */
 
 nsSize
-nsStackLayout::GetPrefSize(nsIBox* aBox, nsBoxLayoutState& aState)
+nsStackLayout::GetPrefSize(nsIFrame* aBox, nsBoxLayoutState& aState)
 {
   nsSize prefSize (0, 0);
 
-  nsIBox* child = aBox->GetChildBox();
+  nsIFrame* child = aBox->GetChildBox();
   while (child) {
     if (child->GetStyleXUL()->mStretchStack) {
       nsSize pref = child->GetPrefSize(aState);
@@ -85,11 +85,11 @@ nsStackLayout::GetPrefSize(nsIBox* aBox, nsBoxLayoutState& aState)
 }
 
 nsSize
-nsStackLayout::GetMinSize(nsIBox* aBox, nsBoxLayoutState& aState)
+nsStackLayout::GetMinSize(nsIFrame* aBox, nsBoxLayoutState& aState)
 {
   nsSize minSize (0, 0);
 
-  nsIBox* child = aBox->GetChildBox();
+  nsIFrame* child = aBox->GetChildBox();
   while (child) {
     if (child->GetStyleXUL()->mStretchStack) {
       nsSize min = child->GetMinSize(aState);
@@ -111,11 +111,11 @@ nsStackLayout::GetMinSize(nsIBox* aBox, nsBoxLayoutState& aState)
 }
 
 nsSize
-nsStackLayout::GetMaxSize(nsIBox* aBox, nsBoxLayoutState& aState)
+nsStackLayout::GetMaxSize(nsIFrame* aBox, nsBoxLayoutState& aState)
 {
   nsSize maxSize (NS_INTRINSICSIZE, NS_INTRINSICSIZE);
 
-  nsIBox* child = aBox->GetChildBox();
+  nsIFrame* child = aBox->GetChildBox();
   while (child) {
     if (child->GetStyleXUL()->mStretchStack) {
       nsSize min = child->GetMinSize(aState);
@@ -141,11 +141,11 @@ nsStackLayout::GetMaxSize(nsIBox* aBox, nsBoxLayoutState& aState)
 
 
 nscoord
-nsStackLayout::GetAscent(nsIBox* aBox, nsBoxLayoutState& aState)
+nsStackLayout::GetAscent(nsIFrame* aBox, nsBoxLayoutState& aState)
 {
   nscoord vAscent = 0;
 
-  nsIBox* child = aBox->GetChildBox();
+  nsIFrame* child = aBox->GetChildBox();
   while (child) {  
     nscoord ascent = child->GetBoxAscent(aState);
     nsMargin margin;
@@ -160,8 +160,8 @@ nsStackLayout::GetAscent(nsIBox* aBox, nsBoxLayoutState& aState)
   return vAscent;
 }
 
-PRUint8
-nsStackLayout::GetOffset(nsBoxLayoutState& aState, nsIBox* aChild, nsMargin& aOffset)
+uint8_t
+nsStackLayout::GetOffset(nsBoxLayoutState& aState, nsIFrame* aChild, nsMargin& aOffset)
 {
   aOffset = nsMargin(0, 0, 0, 0);
 
@@ -173,12 +173,12 @@ nsStackLayout::GetOffset(nsBoxLayoutState& aState, nsIBox* aChild, nsMargin& aOf
       (aChild->GetStateBits() & NS_STATE_STACK_NOT_POSITIONED))
     return 0;
 
-  PRUint8 offsetSpecified = 0;
+  uint8_t offsetSpecified = 0;
   nsIContent* content = aChild->GetContent();
   if (content) {
     bool ltr = aChild->GetStyleVisibility()->mDirection == NS_STYLE_DIRECTION_LTR;
     nsAutoString value;
-    PRInt32 error;
+    nsresult error;
 
     content->GetAttr(kNameSpaceID_None, nsGkAtoms::start, value);
     if (!value.IsEmpty()) {
@@ -252,7 +252,7 @@ nsStackLayout::GetOffset(nsBoxLayoutState& aState, nsIBox* aChild, nsMargin& aOf
 
 
 NS_IMETHODIMP
-nsStackLayout::Layout(nsIBox* aBox, nsBoxLayoutState& aState)
+nsStackLayout::Layout(nsIFrame* aBox, nsBoxLayoutState& aState)
 {
   nsRect clientRect;
   aBox->GetClientRect(clientRect);
@@ -260,7 +260,7 @@ nsStackLayout::Layout(nsIBox* aBox, nsBoxLayoutState& aState)
   bool grow;
 
   do {
-    nsIBox* child = aBox->GetChildBox();
+    nsIFrame* child = aBox->GetChildBox();
     grow = false;
 
     while (child) 
@@ -287,7 +287,7 @@ nsStackLayout::Layout(nsIBox* aBox, nsBoxLayoutState& aState)
 
           // obtain our offset from the top left border of the stack's content box.
           nsMargin offset;
-          PRUint8 offsetSpecified = GetOffset(aState, child, offset);
+          uint8_t offsetSpecified = GetOffset(aState, child, offset);
 
           // Set the position and size based on which offsets have been specified:
           //   left only - offset from left edge, preferred width
@@ -340,8 +340,7 @@ nsStackLayout::Layout(nsIBox* aBox, nsBoxLayoutState& aState)
           child->Layout(aState);
 
           // Get the child's new rect.
-          nsRect childRectNoMargin;
-          childRectNoMargin = childRect = child->GetRect();
+          childRect = child->GetRect();
           childRect.Inflate(margin);
 
           if (child->GetStyleXUL()->mStretchStack) {
@@ -354,23 +353,6 @@ nsStackLayout::Layout(nsIBox* aBox, nsBoxLayoutState& aState)
             if (offset.TopBottom() + childRect.height > clientRect.height) {
               clientRect.height = childRect.height + offset.TopBottom();
               grow = true;
-            }
-          }
-
-          if (!childRectNoMargin.IsEqualInterior(oldRect))
-          {
-            // redraw the new and old positions if the 
-            // child moved or resized.
-            // if the new and old rect intersect meaning we just moved a little
-            // then just redraw the union. If they don't intersect (meaning
-            // we moved a good distance) redraw both separately.
-            if (childRectNoMargin.Intersects(oldRect)) {
-              nsRect u;
-              u.UnionRect(oldRect, childRectNoMargin);
-              aBox->Redraw(aState, &u);
-            } else {
-              aBox->Redraw(aState, &oldRect);
-              aBox->Redraw(aState, &childRectNoMargin);
             }
           }
        }

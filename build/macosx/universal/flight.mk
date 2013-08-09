@@ -15,6 +15,7 @@ DIST_UNI = $(DIST_ARCH_1)/universal
 OBJDIR = $(OBJDIR_ARCH_1)
 endif
 
+topsrcdir = $(TOPSRCDIR)
 include $(OBJDIR)/config/autoconf.mk
 
 DIST = $(OBJDIR)/dist
@@ -92,9 +93,14 @@ ifdef ENABLE_TESTS
                 -d $(DIST_ARCH_2)/test-package-stage; then              \
            cp $(DIST_ARCH_1)/test-package-stage/mochitest/automation.py \
              $(DIST_ARCH_2)/test-package-stage/mochitest/;              \
+           cp -RL $(DIST_ARCH_1)/test-package-stage/mochitest/extensions/specialpowers \
+             $(DIST_ARCH_2)/test-package-stage/mochitest/extensions/;              \
            cp $(DIST_ARCH_1)/test-package-stage/reftest/automation.py   \
              $(DIST_ARCH_2)/test-package-stage/reftest/;                \
+           cp -RL $(DIST_ARCH_1)/test-package-stage/reftest/specialpowers \
+             $(DIST_ARCH_2)/test-package-stage/reftest/;              \
            $(TOPSRCDIR)/build/macosx/universal/unify                 \
+             --unify-with-sort "\.manifest$$" \
              --unify-with-sort "all-test-dirs\.list$$"               \
              $(DIST_ARCH_1)/test-package-stage                          \
              $(DIST_ARCH_2)/test-package-stage                          \

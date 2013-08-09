@@ -14,24 +14,14 @@
 #include "nsHTMLCanvasElement.h"
 #include "nsDisplayList.h"
 #include "nsLayoutUtils.h"
+#include "Layers.h"
 
 #include "nsTransform2D.h"
 
 #include "gfxContext.h"
 
-#ifdef ACCESSIBILITY
-#include "nsAccessibilityService.h"
-#endif
-
 using namespace mozilla;
 using namespace mozilla::layers;
-
-static nsHTMLCanvasElement *
-CanvasElementFromContent(nsIContent *content)
-{
-  nsCOMPtr<nsIDOMHTMLCanvasElement> domCanvas(do_QueryInterface(content));
-  return domCanvas ? static_cast<nsHTMLCanvasElement*>(domCanvas.get()) : nsnull;
-}
 
 class nsDisplayCanvas : public nsDisplayItem {
 public:
@@ -49,12 +39,11 @@ public:
   NS_DISPLAY_DECL_NAME("nsDisplayCanvas", TYPE_CANVAS)
 
   virtual nsRegion GetOpaqueRegion(nsDisplayListBuilder* aBuilder,
-                                   bool* aSnap,
-                                   bool* aForceTransparentSurface) {
-    *aForceTransparentSurface = false;
+                                   bool* aSnap) {
     *aSnap = false;
     nsIFrame* f = GetUnderlyingFrame();
-    nsHTMLCanvasElement *canvas = CanvasElementFromContent(f->GetContent());
+    nsHTMLCanvasElement *canvas =
+      nsHTMLCanvasElement::FromContent(f->GetContent());
     nsRegion result;
     if (canvas->GetIsOpaque()) {
       result = GetBounds(aBuilder, aSnap);
@@ -63,7 +52,7 @@ public:
   }
 
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap) {
-    *aSnap = false;
+    *aSnap = true;
     nsHTMLCanvasFrame* f = static_cast<nsHTMLCanvasFrame*>(GetUnderlyingFrame());
     return f->GetInnerArea() + ToReferenceFrame();
   }
@@ -73,13 +62,13 @@ public:
                                              const ContainerParameters& aContainerParameters)
   {
     return static_cast<nsHTMLCanvasFrame*>(mFrame)->
-      BuildLayer(aBuilder, aManager, this);
+      BuildLayer(aBuilder, aManager, this, aContainerParameters);
   }
   virtual LayerState GetLayerState(nsDisplayListBuilder* aBuilder,
                                    LayerManager* aManager,
                                    const FrameLayerBuilder::ContainerParameters& aParameters)
   {
-    if (CanvasElementFromContent(mFrame->GetContent())->ShouldForceInactiveLayer(aManager))
+    if (nsHTMLCanvasElement::FromContent(mFrame->GetContent())->ShouldForceInactiveLayer(aManager))
       return LAYER_INACTIVE;
 
     // If compositing is cheap, just do that
@@ -122,7 +111,8 @@ nsIntSize
 nsHTMLCanvasFrame::GetCanvasSize()
 {
   nsIntSize size(0,0);
-  nsHTMLCanvasElement *canvas = CanvasElementFromContent(GetContent());
+  nsHTMLCanvasElement *canvas =
+    nsHTMLCanvasElement::FromContentOrNull(GetContent());
   if (canvas) {
     size = canvas->GetSize();
   } else {
@@ -164,7 +154,7 @@ nsHTMLCanvasFrame::GetIntrinsicRatio()
 nsHTMLCanvasFrame::ComputeSize(nsRenderingContext *aRenderingContext,
                                nsSize aCBSize, nscoord aAvailableWidth,
                                nsSize aMargin, nsSize aBorder, nsSize aPadding,
-                               PRUint32 aFlags)
+                               uint32_t aFlags)
 {
   nsIntSize size = GetCanvasSize();
 
@@ -214,10 +204,6 @@ nsHTMLCanvasFrame::Reflow(nsPresContext*           aPresContext,
   aMetrics.SetOverflowAreasToDesiredBounds();
   FinishAndStoreOverflow(&aMetrics);
 
-  if (mRect.width != aMetrics.width || mRect.height != aMetrics.height) {
-    Invalidate(nsRect(0, 0, mRect.width, mRect.height));
-  }
-
   // Reflow the single anon block child.
   nsReflowStatus childStatus;
   nsSize availSize(aReflowState.ComputedWidth(), NS_UNCONSTRAINEDSIZE);
@@ -227,7 +213,7 @@ nsHTMLCanvasFrame::Reflow(nsPresContext*           aPresContext,
   nsHTMLReflowState childReflowState(aPresContext, aReflowState, childFrame,
                                      availSize);
   ReflowChild(childFrame, aPresContext, childDesiredSize, childReflowState,
-              0, 0, 0, childStatus, nsnull);
+              0, 0, 0, childStatus, nullptr);
   FinishReflowChild(childFrame, aPresContext, &childReflowState,
                     childDesiredSize, 0, 0, 0);
 
@@ -255,22 +241,25 @@ nsHTMLCanvasFrame::GetInnerArea() const
 already_AddRefed<Layer>
 nsHTMLCanvasFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
                               LayerManager* aManager,
-                              nsDisplayItem* aItem)
+                              nsDisplayItem* aItem,
+                              const ContainerParameters& aContainerParameters)
 {
   nsRect area = GetContentRect() - GetPosition() + aItem->ToReferenceFrame();
   nsHTMLCanvasElement* element = static_cast<nsHTMLCanvasElement*>(GetContent());
   nsIntSize canvasSize = GetCanvasSize();
 
+  nsPresContext* presContext = PresContext();
+  element->HandlePrintCallback(presContext->Type());
+
   if (canvasSize.width <= 0 || canvasSize.height <= 0 || area.IsEmpty())
-    return nsnull;
+    return nullptr;
 
   CanvasLayer* oldLayer = static_cast<CanvasLayer*>
-    (aBuilder->LayerBuilder()->GetLeafLayerFor(aBuilder, aManager, aItem));
+    (aManager->GetLayerBuilder()->GetLeafLayerFor(aBuilder, aItem));
   nsRefPtr<CanvasLayer> layer = element->GetCanvasLayer(aBuilder, oldLayer, aManager);
   if (!layer)
-    return nsnull;
+    return nullptr;
 
-  nsPresContext* presContext = PresContext();
   gfxRect r = gfxRect(presContext->AppUnitsToGfxUnits(area.x),
                       presContext->AppUnitsToGfxUnits(area.y),
                       presContext->AppUnitsToGfxUnits(area.width),
@@ -278,9 +267,9 @@ nsHTMLCanvasFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
 
   // Transform the canvas into the right place
   gfxMatrix transform;
-  transform.Translate(r.TopLeft());
+  transform.Translate(r.TopLeft() + aContainerParameters.mOffset);
   transform.Scale(r.Width()/canvasSize.width, r.Height()/canvasSize.height);
-  layer->SetTransform(gfx3DMatrix::From2D(transform));
+  layer->SetBaseTransform(gfx3DMatrix::From2D(transform));
   layer->SetFilter(nsLayoutUtils::GetGraphicsFilterForFrame(this));
   layer->SetVisibleRegion(nsIntRect(0, 0, canvasSize.width, canvasSize.height));
 
@@ -344,14 +333,10 @@ nsHTMLCanvasFrame::GetContinuationOffset(nscoord* aWidth) const
 }
 
 #ifdef ACCESSIBILITY
-already_AddRefed<Accessible>
-nsHTMLCanvasFrame::CreateAccessible()
+a11y::AccType
+nsHTMLCanvasFrame::AccessibleType()
 {
-  nsAccessibilityService* accService = nsIPresShell::AccService();
-  if (accService) {
-    return accService->CreateHTMLCanvasAccessible(mContent, PresContext()->PresShell());
-  }
-  return nsnull;
+  return a11y::eHTMLCanvasAccessible;
 }
 #endif
 

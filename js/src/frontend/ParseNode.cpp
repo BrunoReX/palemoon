@@ -12,8 +12,10 @@
 
 #include "frontend/ParseMaps-inl.h"
 #include "frontend/ParseNode-inl.h"
+#include "frontend/Parser-inl.h"
 
 using namespace js;
+using namespace js::frontend;
 
 /*
  * Asserts to verify assumptions behind pn_ macros.
@@ -52,11 +54,7 @@ ParseNode::become(ParseNode *pn2)
      * If any pointers are pointing to pn2, change them to point to this
      * instead, since pn2 will be cleared and probably recycled.
      */
-    if (this->isKind(PNK_FUNCTION) && isArity(PN_FUNC)) {
-        /* Function node: fix up the pn_funbox->node back-pointer. */
-        JS_ASSERT(pn_funbox->node == pn2);
-        pn_funbox->node = this;
-    } else if (pn_arity == PN_LIST && !pn_head) {
+    if (pn_arity == PN_LIST && !pn_head) {
         /* Empty list: fix up the pn_tail pointer. */
         JS_ASSERT(pn_count == 0);
         JS_ASSERT(pn_tail == &pn2->pn_head);
@@ -76,15 +74,25 @@ ParseNode::clear()
     pn_parens = false;
 }
 
-bool
-FunctionBox::inAnyDynamicScope() const
+#ifdef DEBUG
+void
+ParseNode::checkListConsistency()
 {
-    for (const FunctionBox *funbox = this; funbox; funbox = funbox->parent) {
-        if (funbox->inWith || funbox->funHasExtensibleScope())
-            return true;
+    JS_ASSERT(isArity(PN_LIST));
+    ParseNode **tail;
+    uint32_t count = 0;
+    if (pn_head) {
+        ParseNode *pn, *last;
+        for (pn = last = pn_head; pn; last = pn, pn = pn->pn_next, count++)
+            ;
+        tail = &last->pn_next;
+    } else {
+        tail = &pn_head;
     }
-    return false;
+    JS_ASSERT(pn_tail == tail);
+    JS_ASSERT(pn_count == count);
 }
+#endif
 
 /* Add |node| to |parser|'s free node list. */
 void
@@ -101,9 +109,6 @@ ParseNodeAllocator::freeNode(ParseNode *pn)
      */
     JS_ASSERT(!pn->isUsed());
     JS_ASSERT(!pn->isDefn());
-
-    if (pn->isArity(PN_NAMESET) && pn->pn_names.hasMap())
-        pn->pn_names.releaseMap(cx);
 
 #ifdef DEBUG
     /* Poison the node, to catch attempts to use it without initializing it. */
@@ -202,6 +207,7 @@ PushNodeChildren(ParseNode *pn, NodeStack *stack)
         return !pn->isUsed() && !pn->isDefn();
 
       case PN_LIST:
+        pn->checkListConsistency();
         stack->pushList(pn);
         break;
       case PN_TERNARY:
@@ -239,24 +245,6 @@ void
 ParseNodeAllocator::prepareNodeForMutation(ParseNode *pn)
 {
     if (!pn->isArity(PN_NULLARY)) {
-        if (pn->isArity(PN_FUNC)) {
-            /*
-             * Since this node could be turned into anything, we can't
-             * ensure it won't be subsequently recycled, so we must
-             * disconnect it from the funbox tree entirely.
-             *
-             * Note that pn_funbox may legitimately be NULL. functionDef
-             * applies MakeDefIntoUse to definition nodes, which can come
-             * from prior iterations of the big loop in compileScript. In
-             * such cases, the defn nodes have been visited by the recycler
-             * (but not actually recycled!), and their funbox pointers
-             * cleared. But it's fine to mutate them into uses of some new
-             * definition.
-             */
-            if (pn->pn_funbox)
-                pn->pn_funbox->node = NULL;
-        }
-
         /* Put |pn|'s children (but not |pn| itself) on a work stack. */
         NodeStack stack;
         PushNodeChildren(pn, &stack);
@@ -275,12 +263,6 @@ ParseNodeAllocator::prepareNodeForMutation(ParseNode *pn)
 /*
  * Return the nodes in the subtree |pn| to the parser's free node list, for
  * reallocation.
- *
- * Note that all functions in |pn| that are not enclosed by other functions
- * in |pn| must be direct children of |tc|, because we only clean up |tc|'s
- * function and method lists. You must not reach into a function and
- * recycle some part of it (unless you've updated |tc|->functionList, the
- * way js_FoldConstants does).
  */
 ParseNode *
 ParseNodeAllocator::freeTree(ParseNode *pn)
@@ -402,29 +384,24 @@ ParseNode::newBinaryOrAppend(ParseNodeKind kind, JSOp op, ParseNode *left, Parse
 }
 
 // Nb: unlike most functions that are passed a Parser, this one gets a
-// SharedContext passed in separately, because in this case |sc| may not equal
-// |parser->tc->sc|.
+// SharedContext passed in separately, because in this case |pc| may not equal
+// |parser->pc|.
 NameNode *
-NameNode::create(ParseNodeKind kind, JSAtom *atom, Parser *parser, SharedContext *sc)
+NameNode::create(ParseNodeKind kind, JSAtom *atom, Parser *parser, ParseContext *pc)
 {
     ParseNode *pn = ParseNode::create(kind, PN_NAME, parser);
     if (pn) {
         pn->pn_atom = atom;
-        ((NameNode *)pn)->initCommon(sc);
+        ((NameNode *)pn)->initCommon(pc);
     }
     return (NameNode *)pn;
 }
-
-const char js_argument_str[] = "argument";
-const char js_variable_str[] = "variable";
-const char js_unknown_str[]  = "unknown";
 
 const char *
 Definition::kindString(Kind kind)
 {
     static const char *table[] = {
-        js_var_str, js_const_str, js_let_str,
-        js_function_str, js_argument_str, js_unknown_str
+        js_var_str, js_const_str, js_let_str, js_function_str, "argument", "unknown"
     };
 
     JS_ASSERT(unsigned(kind) <= unsigned(ARG));
@@ -440,9 +417,9 @@ Definition::kindString(Kind kind)
 static ParseNode *
 CloneParseTree(ParseNode *opn, Parser *parser)
 {
-    TreeContext *tc = parser->tc;
+    ParseContext *pc = parser->pc;
 
-    JS_CHECK_RECURSION(tc->sc->context, return NULL);
+    JS_CHECK_RECURSION(pc->sc->context, return NULL);
 
     ParseNode *pn = parser->new_<ParseNode>(opn->getKind(), opn->getOp(), opn->getArity(),
                                             opn->pn_pos);
@@ -457,7 +434,7 @@ CloneParseTree(ParseNode *opn, Parser *parser)
 
       case PN_FUNC:
         NULLCHECK(pn->pn_funbox =
-                  parser->newFunctionBox(opn->pn_funbox->object, pn, tc));
+                  parser->newFunctionBox(opn->pn_funbox->function(), pc, opn->pn_funbox->strictModeState));
         NULLCHECK(pn->pn_body = CloneParseTree(opn->pn_body, parser));
         pn->pn_cookie = opn->pn_cookie;
         pn->pn_dflags = opn->pn_dflags;
@@ -521,11 +498,6 @@ CloneParseTree(ParseNode *opn, Parser *parser)
         }
         break;
 
-      case PN_NAMESET:
-        pn->pn_names = opn->pn_names;
-        NULLCHECK(pn->pn_tree = CloneParseTree(opn->pn_tree, parser));
-        break;
-
       case PN_NULLARY:
         // Even PN_NULLARY may have data (xmlpi for E4X -- what a botch).
         pn->pn_u = opn->pn_u;
@@ -549,7 +521,7 @@ CloneParseTree(ParseNode *opn, Parser *parser)
  * the original tree.
  */
 ParseNode *
-js::CloneLeftHandSide(ParseNode *opn, Parser *parser)
+frontend::CloneLeftHandSide(ParseNode *opn, Parser *parser)
 {
     ParseNode *pn = parser->new_<ParseNode>(opn->getKind(), opn->getOp(), opn->getArity(),
                                             opn->pn_pos);
@@ -561,11 +533,11 @@ js::CloneLeftHandSide(ParseNode *opn, Parser *parser)
 
 #if JS_HAS_DESTRUCTURING
     if (opn->isArity(PN_LIST)) {
-        JS_ASSERT(opn->isKind(PNK_RB) || opn->isKind(PNK_RC));
+        JS_ASSERT(opn->isKind(PNK_ARRAY) || opn->isKind(PNK_OBJECT));
         pn->makeEmpty();
         for (ParseNode *opn2 = opn->pn_head; opn2; opn2 = opn2->pn_next) {
             ParseNode *pn2;
-            if (opn->isKind(PNK_RC)) {
+            if (opn->isKind(PNK_OBJECT)) {
                 JS_ASSERT(opn2->isArity(PN_BINARY));
                 JS_ASSERT(opn2->isKind(PNK_COLON));
 
@@ -619,12 +591,231 @@ js::CloneLeftHandSide(ParseNode *opn, Parser *parser)
 }
 
 #ifdef DEBUG
+
+static const char *parseNodeNames[] = {
+#define STRINGIFY(name) #name,
+    FOR_EACH_PARSE_NODE_KIND(STRINGIFY)
+#undef STRINGIFY
+};
+
 void
-js::DumpParseTree(ParseNode *pn, int indent)
+frontend::DumpParseTree(ParseNode *pn, int indent)
 {
     if (pn == NULL)
-        fprintf(stderr, "()");
+        fprintf(stderr, "#NULL");
     else
         pn->dump(indent);
 }
+
+static void
+IndentNewLine(int indent)
+{
+    fputc('\n', stderr);
+    for (int i = 0; i < indent; ++i)
+        fputc(' ', stderr);
+}
+
+void
+ParseNode::dump()
+{
+    dump(0);
+    fputc('\n', stderr);
+}
+
+void
+ParseNode::dump(int indent)
+{
+    switch (pn_arity) {
+      case PN_NULLARY:
+        ((NullaryNode *) this)->dump();
+        break;
+      case PN_UNARY:
+        ((UnaryNode *) this)->dump(indent);
+        break;
+      case PN_BINARY:
+        ((BinaryNode *) this)->dump(indent);
+        break;
+      case PN_TERNARY:
+        ((TernaryNode *) this)->dump(indent);
+        break;
+      case PN_FUNC:
+        ((FunctionNode *) this)->dump(indent);
+        break;
+      case PN_LIST:
+        ((ListNode *) this)->dump(indent);
+        break;
+      case PN_NAME:
+        ((NameNode *) this)->dump(indent);
+        break;
+      default:
+        fprintf(stderr, "#<BAD NODE %p, kind=%u, arity=%u>",
+                (void *) this, unsigned(getKind()), unsigned(pn_arity));
+        break;
+    }
+}
+
+void
+NullaryNode::dump()
+{
+    switch (getKind()) {
+      case PNK_TRUE:  fprintf(stderr, "#true");  break;
+      case PNK_FALSE: fprintf(stderr, "#false"); break;
+      case PNK_NULL:  fprintf(stderr, "#null");  break;
+
+      case PNK_NUMBER: {
+        ToCStringBuf cbuf;
+        const char *cstr = NumberToCString(NULL, &cbuf, pn_dval);
+        if (!MOZ_DOUBLE_IS_FINITE(pn_dval))
+            fputc('#', stderr);
+        if (cstr)
+            fprintf(stderr, "%s", cstr);
+        else
+            fprintf(stderr, "%g", pn_dval);
+        break;
+      }
+
+      case PNK_STRING:
+        JSString::dumpChars(pn_atom->chars(), pn_atom->length());
+        break;
+
+      default:
+        fprintf(stderr, "(%s)", parseNodeNames[getKind()]);
+    }
+}
+
+void
+UnaryNode::dump(int indent)
+{
+    const char *name = parseNodeNames[getKind()];
+    fprintf(stderr, "(%s ", name);
+    indent += strlen(name) + 2;
+    DumpParseTree(pn_kid, indent);
+    fprintf(stderr, ")");
+}
+
+void
+BinaryNode::dump(int indent)
+{
+    const char *name = parseNodeNames[getKind()];
+    fprintf(stderr, "(%s ", name);
+    indent += strlen(name) + 2;
+    DumpParseTree(pn_left, indent);
+    IndentNewLine(indent);
+    DumpParseTree(pn_right, indent);
+    fprintf(stderr, ")");
+}
+
+void
+TernaryNode::dump(int indent)
+{
+    const char *name = parseNodeNames[getKind()];
+    fprintf(stderr, "(%s ", name);
+    indent += strlen(name) + 2;
+    DumpParseTree(pn_kid1, indent);
+    IndentNewLine(indent);
+    DumpParseTree(pn_kid2, indent);
+    IndentNewLine(indent);
+    DumpParseTree(pn_kid3, indent);
+    fprintf(stderr, ")");
+}
+
+void
+FunctionNode::dump(int indent)
+{
+    const char *name = parseNodeNames[getKind()];
+    fprintf(stderr, "(%s ", name);
+    indent += strlen(name) + 2;
+    DumpParseTree(pn_body, indent);
+    fprintf(stderr, ")");
+}
+
+void
+ListNode::dump(int indent)
+{
+    const char *name = parseNodeNames[getKind()];
+    fprintf(stderr, "(%s [", name);
+    if (pn_head != NULL) {
+        indent += strlen(name) + 3;
+        DumpParseTree(pn_head, indent);
+        ParseNode *pn = pn_head->pn_next;
+        while (pn != NULL) {
+            IndentNewLine(indent);
+            DumpParseTree(pn, indent);
+            pn = pn->pn_next;
+        }
+    }
+    fprintf(stderr, "])");
+}
+
+void
+NameNode::dump(int indent)
+{
+    if (isKind(PNK_NAME) || isKind(PNK_DOT)) {
+        if (isKind(PNK_DOT))
+            fprintf(stderr, "(.");
+
+        if (!pn_atom) {
+            fprintf(stderr, "#<null name>");
+        } else {
+            const jschar *s = pn_atom->chars();
+            size_t len = pn_atom->length();
+            if (len == 0)
+                fprintf(stderr, "#<zero-length name>");
+            for (size_t i = 0; i < len; i++) {
+                if (s[i] > 32 && s[i] < 127)
+                    fputc(s[i], stderr);
+                else if (s[i] <= 255)
+                    fprintf(stderr, "\\x%02x", (unsigned int) s[i]);
+                else
+                    fprintf(stderr, "\\u%04x", (unsigned int) s[i]);
+            }
+        }
+
+        if (isKind(PNK_DOT)) {
+            fputc(' ', stderr);
+            DumpParseTree(expr(), indent + 2);
+            fputc(')', stderr);
+        }
+        return;
+    }
+
+    JS_ASSERT(!isUsed());
+    const char *name = parseNodeNames[getKind()];
+    if (isUsed())
+        fprintf(stderr, "(%s)", name);
+    else {
+        fprintf(stderr, "(%s ", name);
+        indent += strlen(name) + 2;
+        DumpParseTree(expr(), indent);
+        fprintf(stderr, ")");
+    }
+}
 #endif
+
+ObjectBox::ObjectBox(JSObject *object, ObjectBox* traceLink)
+  : object(object),
+    traceLink(traceLink),
+    emitLink(NULL)
+{
+    JS_ASSERT(!object->isFunction());
+}
+
+ObjectBox::ObjectBox(JSFunction *function, ObjectBox* traceLink)
+  : object(function),
+    traceLink(traceLink),
+    emitLink(NULL)
+{
+    JS_ASSERT(object->isFunction());
+}
+
+void
+ObjectBox::trace(JSTracer *trc)
+{
+    ObjectBox *box = this;
+    while (box) {
+        MarkObjectRoot(trc, &box->object, "parser.object");
+        if (box->isFunctionBox())
+            box->asFunctionBox()->bindings.trace(trc);
+        box = box->traceLink;
+    }
+}

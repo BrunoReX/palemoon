@@ -4,12 +4,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsDOMSVGZoomEvent.h"
-#include "nsContentUtils.h"
 #include "nsSVGRect.h"
 #include "DOMSVGPoint.h"
 #include "nsSVGSVGElement.h"
 #include "nsIDOMSVGSVGElement.h"
-#include "nsIContent.h"
 #include "nsIPresShell.h"
 #include "nsIDocument.h"
 #include "mozilla/dom/Element.h"
@@ -109,7 +107,7 @@ NS_IMETHODIMP nsDOMSVGZoomEvent::GetZoomRectScreen(nsIDOMSVGRect **aZoomRectScre
   // Be sure to use NS_NewSVGReadonlyRect and not NS_NewSVGRect if we
   // eventually do implement this!
 
-  *aZoomRectScreen = nsnull;
+  *aZoomRectScreen = nullptr;
   NS_NOTYETIMPLEMENTED("nsDOMSVGZoomEvent::GetZoomRectScreen");
   return NS_ERROR_NOT_IMPLEMENTED;
 }

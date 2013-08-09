@@ -36,7 +36,7 @@
 #  define WIDGET_MODULES MODULE(nsWidgetMacModule)
 #elif defined(XP_OS2)
 #  define WIDGET_MODULES MODULE(nsWidgetOS2Module)
-#elif defined(MOZ_WIDGET_GTK2)
+#elif defined(MOZ_WIDGET_GTK)
 #  define WIDGET_MODULES MODULE(nsWidgetGtk2Module)
 #elif defined(MOZ_WIDGET_QT)
 #  define WIDGET_MODULES MODULE(nsWidgetQtModule)
@@ -67,12 +67,7 @@
 #endif
 
 #ifdef MOZ_PREF_EXTENSIONS
-#ifdef MOZ_ENABLE_GTK2
-#define SYSTEMPREF_MODULES \
-    MODULE(nsAutoConfigModule)
-#else
 #define SYSTEMPREF_MODULES MODULE(nsAutoConfigModule)
-#endif
 #else
 #define SYSTEMPREF_MODULES
 #endif
@@ -125,7 +120,7 @@
 #endif
 
 #ifdef MOZ_XUL
-#ifdef MOZ_ENABLE_GTK2
+#ifdef MOZ_WIDGET_GTK
 #define UNIXPROXY_MODULE MODULE(nsUnixProxyModule)
 #endif
 #if defined(MOZ_WIDGET_QT)
@@ -146,6 +141,12 @@
 #define WINDOWSPROXY_MODULE MODULE(nsWindowsProxyModule)
 #else
 #define WINDOWSPROXY_MODULE
+#endif
+
+#if defined(MOZ_WIDGET_ANDROID)
+#define ANDROIDPROXY_MODULE MODULE(nsAndroidProxyModule)
+#else
+#define ANDROIDPROXY_MODULE
 #endif
 
 #if defined(BUILD_CTYPES)
@@ -169,6 +170,18 @@
 #define PROFILER_MODULE
 #endif
 
+#if defined(MOZ_WEBRTC)
+#define PEERCONNECTION_MODULE MODULE(peerconnection)
+#else
+#define PEERCONNECTION_MODULE
+#endif
+
+#if defined(MOZ_GIO_COMPONENT)
+#define GIO_MODULE MODULE(nsGIOModule)
+#else
+#define GIO_MODULE
+#endif
+
 #define XUL_MODULES                          \
     MODULE(nsUConvModule)                    \
     MODULE(nsI18nModule)                     \
@@ -185,6 +198,7 @@
     MODULE(nsWindowDataSourceModule)         \
     MODULE(nsParserModule)                   \
     MODULE(nsImageLib2Module)                \
+    MODULE(nsMediaSnifferModule)             \
     MODULE(nsGfxModule)                      \
     PROFILER_MODULE                          \
     WIDGET_MODULES                           \
@@ -216,14 +230,18 @@
     UNIXPROXY_MODULE                         \
     OSXPROXY_MODULE                          \
     WINDOWSPROXY_MODULE                      \
+    ANDROIDPROXY_MODULE                      \
     JSCTYPES_MODULE                          \
     MODULE(jsreflect)                        \
     MODULE(jsperf)                           \
+    MODULE(identity)                         \
     MODULE(nsServicesCryptoModule)           \
     MOZ_APP_COMPONENT_MODULES                \
     MODULE(nsTelemetryModule)                \
     MODULE(jsinspector)                      \
     MODULE(jsdebugger)                       \
+    PEERCONNECTION_MODULE                    \
+    GIO_MODULE                               \
     /* end of list */
 
 #define MODULE(_name) \

@@ -9,7 +9,7 @@
 #include <math.h>
 
 static nsCursorManager *gInstance;
-static imgIContainer *sCursorImgContainer = nsnull;
+static imgIContainer *sCursorImgContainer = nullptr;
 static const nsCursor sCustomCursor = eCursorCount;
 
 /*! @category nsCursorManager(PrivateMethods)
@@ -95,9 +95,9 @@ static const nsCursor sCustomCursor = eCursorCount;
     case eCursor_crosshair:
       return [nsMacCursor cursorWithCursor:[NSCursor crosshairCursor] type:aCursor];
     case eCursor_move:
-      return [nsMacCursor cursorWithCursor:[NSCursor openHandCursor] type:aCursor];
+      return [nsMacCursor cursorWithImageNamed:@"move" hotSpot:NSMakePoint(12,12) type:aCursor];
     case eCursor_help:
-      return [nsMacCursor cursorWithImageNamed:@"help" hotSpot:NSMakePoint(1,1) type:aCursor];
+      return [nsMacCursor cursorWithImageNamed:@"help" hotSpot:NSMakePoint(12,12) type:aCursor];
     case eCursor_copy:
       cursorSelector = @selector(dragCopyCursor);
       return [nsMacCursor cursorWithCursor:[NSCursor respondsToSelector:cursorSelector] ?
@@ -114,17 +114,17 @@ static const nsCursor sCustomCursor = eCursorCount;
               [NSCursor performSelector:cursorSelector] :
               [NSCursor arrowCursor] type:aCursor];
     case eCursor_cell:
-      return [nsMacCursor cursorWithCursor:[NSCursor crosshairCursor] type:aCursor];
+      return [nsMacCursor cursorWithImageNamed:@"cell" hotSpot:NSMakePoint(12,12) type:aCursor];
     case eCursor_grab:
       return [nsMacCursor cursorWithCursor:[NSCursor openHandCursor] type:aCursor];
     case eCursor_grabbing:
       return [nsMacCursor cursorWithCursor:[NSCursor closedHandCursor] type:aCursor];
     case eCursor_zoom_in:
-      return [nsMacCursor cursorWithImageNamed:@"zoomIn" hotSpot:NSMakePoint(6,6) type:aCursor];
+      return [nsMacCursor cursorWithImageNamed:@"zoomIn" hotSpot:NSMakePoint(10,10) type:aCursor];
     case eCursor_zoom_out:
-      return [nsMacCursor cursorWithImageNamed:@"zoomOut" hotSpot:NSMakePoint(6,6) type:aCursor];
+      return [nsMacCursor cursorWithImageNamed:@"zoomOut" hotSpot:NSMakePoint(10,10) type:aCursor];
     case eCursor_vertical_text:
-      return [nsMacCursor cursorWithImageNamed:@"vtIBeam" hotSpot:NSMakePoint(7,8) type:aCursor];
+      return [nsMacCursor cursorWithImageNamed:@"vtIBeam" hotSpot:NSMakePoint(12,11) type:aCursor];
     case eCursor_all_scroll:
       return [nsMacCursor cursorWithCursor:[NSCursor openHandCursor] type:aCursor];
     case eCursor_not_allowed:
@@ -139,25 +139,25 @@ static const nsCursor sCustomCursor = eCursorCount;
         return [nsMacCursor cursorWithCursor:[NSCursor resizeUpCursor] type:aCursor];
     // North East
     case eCursor_ne_resize:
-        return [nsMacCursor cursorWithImageNamed:@"sizeNE" hotSpot:NSMakePoint(8,7) type:aCursor];
+        return [nsMacCursor cursorWithImageNamed:@"sizeNE" hotSpot:NSMakePoint(12,11) type:aCursor];
     // East
     case eCursor_e_resize:
         return [nsMacCursor cursorWithCursor:[NSCursor resizeRightCursor] type:aCursor];
     // South East
     case eCursor_se_resize:
-        return [nsMacCursor cursorWithImageNamed:@"sizeSE" hotSpot:NSMakePoint(8,8) type:aCursor];
+        return [nsMacCursor cursorWithImageNamed:@"sizeSE" hotSpot:NSMakePoint(12,12) type:aCursor];
     // South
     case eCursor_s_resize:
         return [nsMacCursor cursorWithCursor:[NSCursor resizeDownCursor] type:aCursor];
     // South West
     case eCursor_sw_resize:
-        return [nsMacCursor cursorWithImageNamed:@"sizeSW" hotSpot:NSMakePoint(6,8) type:aCursor];
+        return [nsMacCursor cursorWithImageNamed:@"sizeSW" hotSpot:NSMakePoint(10,12) type:aCursor];
     // West
     case eCursor_w_resize:
         return [nsMacCursor cursorWithCursor:[NSCursor resizeLeftCursor] type:aCursor];
     // North West
     case eCursor_nw_resize:
-        return [nsMacCursor cursorWithImageNamed:@"sizeNW" hotSpot:NSMakePoint(7,7) type:aCursor];
+        return [nsMacCursor cursorWithImageNamed:@"sizeNW" hotSpot:NSMakePoint(11,11) type:aCursor];
     // North & South
     case eCursor_ns_resize:
         return [nsMacCursor cursorWithCursor:[NSCursor resizeUpDownCursor] type:aCursor];
@@ -166,16 +166,16 @@ static const nsCursor sCustomCursor = eCursorCount;
         return [nsMacCursor cursorWithCursor:[NSCursor resizeLeftRightCursor] type:aCursor];
     // North East & South West
     case eCursor_nesw_resize:
-        return [nsMacCursor cursorWithImageNamed:@"sizeNESW" hotSpot:NSMakePoint(8,8) type:aCursor];
+        return [nsMacCursor cursorWithImageNamed:@"sizeNESW" hotSpot:NSMakePoint(12,12) type:aCursor];
     // North West & South East
     case eCursor_nwse_resize:
-        return [nsMacCursor cursorWithImageNamed:@"sizeNWSE" hotSpot:NSMakePoint(8,8) type:aCursor];
+        return [nsMacCursor cursorWithImageNamed:@"sizeNWSE" hotSpot:NSMakePoint(12,12) type:aCursor];
     // Column Resize
     case eCursor_col_resize:
-        return [nsMacCursor cursorWithImageNamed:@"colResize" hotSpot:NSMakePoint(8,8) type:aCursor];
+        return [nsMacCursor cursorWithImageNamed:@"colResize" hotSpot:NSMakePoint(12,12) type:aCursor];
     // Row Resize
     case eCursor_row_resize:
-        return [nsMacCursor cursorWithImageNamed:@"rowResize" hotSpot:NSMakePoint(8,8) type:aCursor];
+        return [nsMacCursor cursorWithImageNamed:@"rowResize" hotSpot:NSMakePoint(12,12) type:aCursor];
     default:
         return [nsMacCursor cursorWithCursor:[NSCursor arrowCursor] type:aCursor];
   }
@@ -240,7 +240,7 @@ static const nsCursor sCustomCursor = eCursorCount;
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-- (nsresult) setCursorWithImage: (imgIContainer*) aCursorImage hotSpotX: (PRUint32) aHotspotX hotSpotY: (PRUint32) aHotspotY
+- (nsresult) setCursorWithImage: (imgIContainer*) aCursorImage hotSpotX: (uint32_t) aHotspotX hotSpotY: (uint32_t) aHotspotY
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
   // As the user moves the mouse, this gets called repeatedly with the same aCursorImage
@@ -250,7 +250,7 @@ static const nsCursor sCustomCursor = eCursorCount;
   }
   
   [[NSCursor currentCursor] set];
-  PRInt32 width = 0, height = 0;
+  int32_t width = 0, height = 0;
   aCursorImage->GetWidth(&width);
   aCursorImage->GetHeight(&height);
   // prevent DoS attacks
@@ -265,8 +265,8 @@ static const nsCursor sCustomCursor = eCursorCount;
   }
 
   // if the hotspot is nonsensical, make it 0,0
-  aHotspotX = (aHotspotX > (PRUint32)width - 1) ? 0 : aHotspotX;
-  aHotspotY = (aHotspotY > (PRUint32)height - 1) ? 0 : aHotspotY;
+  aHotspotX = (aHotspotX > (uint32_t)width - 1) ? 0 : aHotspotX;
+  aHotspotY = (aHotspotY > (uint32_t)height - 1) ? 0 : aHotspotY;
 
   NSPoint hotSpot = ::NSMakePoint(aHotspotX, aHotspotY);
   [self setMacCursor:[nsMacCursor cursorWithCursor:[[NSCursor alloc] initWithImage:cursorImage hotSpot:hotSpot] type:sCustomCursor]];

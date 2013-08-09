@@ -1,8 +1,8 @@
-# -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
-#
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*** =================== SAVED SIGNONS CODE =================== ***/
 
@@ -88,7 +88,7 @@ function LoadSignons() {
   // disable "remove all signons" button if there are no signons
   var element = document.getElementById("removeAllSignons");
   var toggle = document.getElementById("togglePasswords");
-  if (signons.length == 0 || gSelectUserInUse) {
+  if (signons.length == 0) {
     element.setAttribute("disabled","true");
     toggle.setAttribute("disabled","true");
   } else {
@@ -101,7 +101,7 @@ function LoadSignons() {
 
 function SignonSelected() {
   var selections = GetTreeSelections(signonsTree);
-  if (selections.length && !gSelectUserInUse) {
+  if (selections.length) {
     document.getElementById("removeSignon").removeAttribute("disabled");
   }
 }
@@ -322,16 +322,29 @@ function CopyPassword() {
                   getService(Components.interfaces.nsIClipboardHelper);
   var row = document.getElementById("signonsTree").currentIndex;
   var password = signonsTreeView.getCellText(row, {id : "passwordCol" });
-  clipboard.copyString(password);
+  clipboard.copyString(password, document);
+}
+
+function CopyUsername() {
+  // Copy selected signon's username to clipboard
+  var clipboard = Components.classes["@mozilla.org/widget/clipboardhelper;1"].
+                  getService(Components.interfaces.nsIClipboardHelper);
+  var row = document.getElementById("signonsTree").currentIndex;
+  var username = signonsTreeView.getCellText(row, {id : "userCol" });
+  clipboard.copyString(username);
 }
 
 function UpdateCopyPassword() {
   var singleSelection = (signonsTreeView.selection.count == 1);
-  var menuitem = document.getElementById("context-copypassword");
-  if (singleSelection)
-    menuitem.removeAttribute("disabled");
-  else
-    menuitem.setAttribute("disabled", "true");
+  var passwordMenuitem = document.getElementById("context-copypassword");
+  var usernameMenuitem = document.getElementById("context-copyusername");
+  if (singleSelection) {
+    usernameMenuitem.removeAttribute("disabled");
+    passwordMenuitem.removeAttribute("disabled");
+  } else {
+    usernameMenuitem.setAttribute("disabled", "true");
+    passwordMenuitem.setAttribute("disabled", "true");
+  }
 }
 
 function masterPasswordLogin(noPasswordCallback) {

@@ -4,9 +4,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsCOMPtr.h"
+#include "nsDOMClassInfoID.h"
 #include "nsDOMMutationEvent.h"
 #include "nsMutationEvent.h"
-#include "nsContentUtils.h"
+
 
 class nsPresContext;
 
@@ -15,7 +16,7 @@ nsDOMMutationEvent::nsDOMMutationEvent(nsPresContext* aPresContext,
   : nsDOMEvent(aPresContext, aEvent ? aEvent :
                new nsMutationEvent(false, 0))
 {
-  mEventIsInternal = (aEvent == nsnull);
+  mEventIsInternal = (aEvent == nullptr);
 }
 
 nsDOMMutationEvent::~nsDOMMutationEvent()
@@ -23,7 +24,7 @@ nsDOMMutationEvent::~nsDOMMutationEvent()
   if (mEventIsInternal) {
     nsMutationEvent* mutation = static_cast<nsMutationEvent*>(mEvent);
     delete mutation;
-    mEvent = nsnull;
+    mEvent = nullptr;
   }
 }
 
@@ -40,7 +41,7 @@ NS_IMPL_RELEASE_INHERITED(nsDOMMutationEvent, nsDOMEvent)
 NS_IMETHODIMP
 nsDOMMutationEvent::GetRelatedNode(nsIDOMNode** aRelatedNode)
 {
-  *aRelatedNode = nsnull;
+  *aRelatedNode = nullptr;
   nsMutationEvent* mutation = static_cast<nsMutationEvent*>(mEvent);
   *aRelatedNode = mutation->mRelatedNode;
   NS_IF_ADDREF(*aRelatedNode);
@@ -75,7 +76,7 @@ nsDOMMutationEvent::GetAttrName(nsAString& aAttrName)
 }
 
 NS_IMETHODIMP
-nsDOMMutationEvent::GetAttrChange(PRUint16* aAttrChange)
+nsDOMMutationEvent::GetAttrChange(uint16_t* aAttrChange)
 {
   *aAttrChange = 0;
   nsMutationEvent* mutation = static_cast<nsMutationEvent*>(mEvent);
@@ -85,7 +86,7 @@ nsDOMMutationEvent::GetAttrChange(PRUint16* aAttrChange)
 }
 
 NS_IMETHODIMP
-nsDOMMutationEvent::InitMutationEvent(const nsAString& aTypeArg, bool aCanBubbleArg, bool aCancelableArg, nsIDOMNode* aRelatedNodeArg, const nsAString& aPrevValueArg, const nsAString& aNewValueArg, const nsAString& aAttrNameArg, PRUint16 aAttrChangeArg)
+nsDOMMutationEvent::InitMutationEvent(const nsAString& aTypeArg, bool aCanBubbleArg, bool aCancelableArg, nsIDOMNode* aRelatedNodeArg, const nsAString& aPrevValueArg, const nsAString& aNewValueArg, const nsAString& aAttrNameArg, uint16_t aAttrChangeArg)
 {
   nsresult rv = nsDOMEvent::InitEvent(aTypeArg, aCanBubbleArg, aCancelableArg);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -109,7 +110,7 @@ nsresult NS_NewDOMMutationEvent(nsIDOMEvent** aInstancePtrResult,
                                 nsMutationEvent *aEvent) 
 {
   nsDOMMutationEvent* it = new nsDOMMutationEvent(aPresContext, aEvent);
-  if (nsnull == it) {
+  if (nullptr == it) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 

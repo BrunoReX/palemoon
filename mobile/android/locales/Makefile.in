@@ -2,11 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH     = ../../..
+DEPTH     = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir    = @srcdir@
 VPATH     = @srcdir@
-relativesrcdir = mobile/android/locales
+relativesrcdir = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
 include $(topsrcdir)/config/config.mk
@@ -43,10 +43,10 @@ clobber-stage:
 	$(RM) $(DEPTH)/mobile/android/base/res/values-*/strings.xml
 
 libs-%:
-	@$(MAKE) -C $(DEPTH)/mobile/locales libs-$* BOTH_MANIFESTS=1
-	@$(MAKE) libs AB_CD=$* XPI_NAME=locale-$* PREF_DIR=defaults/pref BOTH_MANIFESTS=1
+	@$(MAKE) -C $(DEPTH)/mobile/locales libs-$*
+	@$(MAKE) libs AB_CD=$* XPI_NAME=locale-$* PREF_DIR=defaults/pref
 ifeq ($(OS_TARGET),Android)
-	@$(MAKE) -C $(DEPTH)/mobile/android/base/locales AB_CD=$* XPI_NAME=locale-$* BOTH_MANIFESTS=1
+	@$(MAKE) -C $(DEPTH)/mobile/android/base/locales AB_CD=$* XPI_NAME=locale-$*
 endif
 
 # Tailored target to just add the chrome processing for multi-locale builds

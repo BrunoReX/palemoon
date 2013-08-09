@@ -373,7 +373,7 @@ function openModalWindow(domWin, uri, args) {
     // domWin may still be null here if there are _no_ windows open.
 
     // Note that we don't need to fire DOMWillOpenModalDialog and
-    // DOMModalDialogClosed events here, wwatcher's OpenWindowJSInternal
+    // DOMModalDialogClosed events here, wwatcher's OpenWindowInternal
     // will do that. Similarly for enterModalState / leaveModalState.
 
     Services.ww.openWindow(domWin, uri, "_blank", "centerscreen,chrome,modal,titlebar", args);
@@ -413,7 +413,7 @@ function openTabPrompt(domWin, tabPrompt, args) {
         newPrompt = tabPrompt.appendPrompt(args, onPromptClose);
 
         // TODO since we don't actually open a window, need to check if
-        // there's other stuff in nsWindowWatcher::OpenWindowJSInternal
+        // there's other stuff in nsWindowWatcher::OpenWindowInternal
         // that we might need to do here as well.
 
         let thread = Services.tm.currentThread;
@@ -855,4 +855,4 @@ EmbedPrompter.prototype = new Prompter();
 EmbedPrompter.prototype.classID          = Components.ID("{7ad1b327-6dfa-46ec-9234-f2a620ea7e00}");
 
 var component = [Prompter, EmbedPrompter, AuthPromptAdapterFactory];
-var NSGetFactory = XPCOMUtils.generateNSGetFactory(component);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory(component);

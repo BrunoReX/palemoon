@@ -151,6 +151,7 @@ interface nsIX509Cert : nsISupports {
   const unsigned long ISSUER_UNKNOWN       = 1 << 5;
   const unsigned long INVALID_CA           = 1 << 6;
   const unsigned long USAGE_NOT_ALLOWED    = 1 << 7;
+  const unsigned long SIGNATURE_ALGORITHM_DISABLED = 1 << 8;
   
   /**
    *  Constants that describe the certified usages of a certificate.
@@ -188,8 +189,8 @@ interface nsIX509Cert : nsISupports {
    *  @param usages The array of human readable usages.
    */
   void getUsagesArray(in boolean localOnly,
-                      out PRUint32 verified,
-                      out PRUint32 count, 
+                      out uint32_t verified,
+                      out uint32_t count, 
                       [array, size_is(count)] out wstring usages);
 
   /**
@@ -201,7 +202,7 @@ interface nsIX509Cert : nsISupports {
    *  @param verified The certificate verification result, see constants.
    *  @param purposes The string listing the usages.
    */
-  void getUsagesString(in boolean localOnly, out PRUint32 verified, out AString usages);
+  void getUsagesString(in boolean localOnly, out uint32_t verified, out AString usages);
 
   /**
    *  Verify the certificate for a particular usage.

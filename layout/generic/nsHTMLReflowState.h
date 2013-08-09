@@ -10,6 +10,7 @@
 
 #include "nsMargin.h"
 #include "nsStyleCoord.h"
+#include "nsStyleStructInlines.h"
 #include "nsIFrame.h"
 #include "mozilla/AutoRestore.h"
 
@@ -50,7 +51,7 @@ NS_CSS_MINMAX(NumericType aValue, NumericType aMinValue, NumericType aMaxValue)
 /**
  * CSS Frame type. Included as part of the reflow state.
  */
-typedef PRUint32  nsCSSFrameType;
+typedef uint32_t  nsCSSFrameType;
 
 #define NS_CSS_FRAME_TYPE_UNKNOWN         0
 #define NS_CSS_FRAME_TYPE_INLINE          1
@@ -174,8 +175,8 @@ protected:
 
   void InitOffsets(nscoord aContainingBlockWidth,
                    nsIAtom* aFrameType,
-                   const nsMargin *aBorder = nsnull,
-                   const nsMargin *aPadding = nsnull);
+                   const nsMargin *aBorder = nullptr,
+                   const nsMargin *aPadding = nullptr);
 
   /*
    * Convert nsStyleCoord to nscoord when percentages depend on the
@@ -189,8 +190,12 @@ protected:
   // same as previous, but using mComputedBorderPadding, mComputedPadding,
   // and mComputedMargin
   nscoord ComputeWidthValue(nscoord aContainingBlockWidth,
-                            PRUint8 aBoxSizing,
+                            uint8_t aBoxSizing,
                             const nsStyleCoord& aCoord);
+
+  nscoord ComputeHeightValue(nscoord aContainingBlockHeight,
+                             uint8_t aBoxSizing,
+                             const nsStyleCoord& aCoord);
 };
 
 /**
@@ -292,6 +297,14 @@ public:
   const nsStylePadding*    mStylePadding;
   const nsStyleText*       mStyleText;
 
+  bool IsFloating() const {
+    return mStyleDisplay->IsFloating(frame);
+  }
+
+  uint8_t GetDisplay() const {
+    return mStyleDisplay->GetDisplay(frame);
+  }
+
   // a frame (e.g. nsTableCellFrame) which may need to generate a special 
   // reflow for percent height calculations 
   nsIPercentHeightObserver* mPercentHeightObserver;
@@ -305,38 +318,41 @@ public:
 
   // This value keeps track of how deeply nested a given reflow state
   // is from the top of the frame tree.
-  PRInt16 mReflowDepth;
+  int16_t mReflowDepth;
 
   struct ReflowStateFlags {
-    PRUint16 mSpecialHeightReflow:1; // used by tables to communicate special reflow (in process) to handle
+    uint16_t mSpecialHeightReflow:1; // used by tables to communicate special reflow (in process) to handle
                                      // percent height frames inside cells which may not have computed heights
-    PRUint16 mNextInFlowUntouched:1; // nothing in the frame's next-in-flow (or its descendants)
+    uint16_t mNextInFlowUntouched:1; // nothing in the frame's next-in-flow (or its descendants)
                                      // is changing
-    PRUint16 mIsTopOfPage:1;         // Is the current context at the top of a
+    uint16_t mIsTopOfPage:1;         // Is the current context at the top of a
                                      // page?  When true, we force something
                                      // that's too tall for a page/column to
                                      // fit anyway to avoid infinite loops.
-    PRUint16 mBlinks:1;              // Keep track of text-decoration: blink
-    PRUint16 mHasClearance:1;        // Block has clearance
-    PRUint16 mAssumingHScrollbar:1;  // parent frame is an nsIScrollableFrame and it
+    uint16_t mBlinks:1;              // Keep track of text-decoration: blink
+    uint16_t mHasClearance:1;        // Block has clearance
+    uint16_t mAssumingHScrollbar:1;  // parent frame is an nsIScrollableFrame and it
                                      // is assuming a horizontal scrollbar
-    PRUint16 mAssumingVScrollbar:1;  // parent frame is an nsIScrollableFrame and it
+    uint16_t mAssumingVScrollbar:1;  // parent frame is an nsIScrollableFrame and it
                                      // is assuming a vertical scrollbar
 
-    PRUint16 mHResize:1;             // Is frame (a) not dirty and (b) a
+    uint16_t mHResize:1;             // Is frame (a) not dirty and (b) a
                                      // different width than before?
 
-    PRUint16 mVResize:1;             // Is frame (a) not dirty and (b) a
+    uint16_t mVResize:1;             // Is frame (a) not dirty and (b) a
                                      // different height than before or
                                      // (potentially) in a context where
                                      // percent heights have a different
                                      // basis?
-    PRUint16 mTableIsSplittable:1;   // tables are splittable, this should happen only inside a page
+    uint16_t mTableIsSplittable:1;   // tables are splittable, this should happen only inside a page
                                      // and never insider a column frame
-    PRUint16 mHeightDependsOnAncestorCell:1;   // Does frame height depend on
+    uint16_t mHeightDependsOnAncestorCell:1;   // Does frame height depend on
                                                // an ancestor table-cell?
-    PRUint16 mIsColumnBalancing:1;   // nsColumnSetFrame is balancing columns
-    PRUint16 mDummyParentReflowState:1; // a "fake" reflow state made
+    uint16_t mIsColumnBalancing:1;   // nsColumnSetFrame is balancing columns
+    uint16_t mIsFlexContainerMeasuringHeight:1; // nsFlexContainerFrame is
+                                                // reflowing this child to
+                                                // measure its intrinsic height.
+    uint16_t mDummyParentReflowState:1; // a "fake" reflow state made
                                         // in order to be the parent
                                         // of a real one
   } mFlags;
@@ -351,7 +367,7 @@ public:
                     nsIFrame*                aFrame,
                     nsRenderingContext*     aRenderingContext,
                     const nsSize&            aAvailableSpace,
-                    PRUint32                 aFlags = 0);
+                    uint32_t                 aFlags = 0);
 
   // Initialize a reflow state for a child frames reflow. Some state
   // is copied from the parent reflow state; the remaining state is
@@ -376,8 +392,8 @@ public:
   void Init(nsPresContext* aPresContext,
             nscoord         aContainingBlockWidth = -1,
             nscoord         aContainingBlockHeight = -1,
-            const nsMargin* aBorder = nsnull,
-            const nsMargin* aPadding = nsnull);
+            const nsMargin* aBorder = nullptr,
+            const nsMargin* aPadding = nullptr);
   /**
    * Find the content width of the containing block of aReflowState
    */
@@ -413,11 +429,25 @@ public:
                                        nscoord&                 aContainingBlockHeight);
 
   /**
-   * Apply the mComputed(Min/Max)(Width/Height) values to the content
-   * size computed so far. If a passed-in pointer is null, we skip
-   * adjusting that dimension.
+   * Apply the mComputed(Min/Max)Width constraints to the content
+   * size computed so far.
    */
-  void ApplyMinMaxConstraints(nscoord* aContentWidth, nscoord* aContentHeight) const;
+  nscoord ApplyMinMaxWidth(nscoord aWidth) const {
+    if (NS_UNCONSTRAINEDSIZE != mComputedMaxWidth) {
+      aWidth = NS_MIN(aWidth, mComputedMaxWidth);
+    }
+    return NS_MAX(aWidth, mComputedMinWidth);
+  }
+  /**
+   * Apply the mComputed(Min/Max)Height constraints to the content
+   * size computed so far.
+   */
+  nscoord ApplyMinMaxHeight(nscoord aHeight) const {
+    if (NS_UNCONSTRAINEDSIZE != mComputedMaxHeight) {
+      aHeight = NS_MIN(aHeight, mComputedMaxHeight);
+    }
+    return NS_MAX(aHeight, mComputedMinHeight);
+  }
 
   bool ShouldReflowAllKids() const {
     // Note that we could make a stronger optimization for mVResize if
@@ -453,6 +483,13 @@ public:
   bool WillReflowAgainForClearance() const {
     return mDiscoveredClearance && *mDiscoveredClearance;
   }
+
+  // Compute the offsets for a relative position element
+  static void ComputeRelativeOffsets(uint8_t aCBDirection,
+                                     nsIFrame* aFrame,
+                                     nscoord aContainingBlockWidth,
+                                     nscoord aContainingBlockHeight,
+                                     nsMargin& aComputedOffsets);
 
 #ifdef DEBUG
   // Reflow trace methods.  Defined in nsFrame.cpp so they have access
@@ -507,11 +544,6 @@ protected:
                                nscoord aContainingBlockWidth,
                                nscoord aContainingBlockHeight,
                                nsIAtom* aFrameType);
-
-  void ComputeRelativeOffsets(const nsHTMLReflowState* cbrs,
-                              nscoord aContainingBlockWidth,
-                              nscoord aContainingBlockHeight,
-                              nsPresContext* aPresContext);
 
   // Calculates the computed values for the 'min-Width', 'max-Width',
   // 'min-Height', and 'max-Height' properties, and stores them in the assorted

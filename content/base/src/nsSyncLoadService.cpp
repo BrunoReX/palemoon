@@ -17,7 +17,7 @@
 #include "nsWeakReference.h"
 #include "nsIDocument.h"
 #include "nsIDOMDocument.h"
-#include "nsIScriptSecurityManager.h"
+#include "nsIPrincipal.h"
 #include "nsContentUtils.h"
 #include "nsThreadUtils.h"
 #include "nsNetUtil.h"
@@ -130,7 +130,7 @@ nsSyncLoader::LoadDocument(nsIChannel* aChannel,
                            nsIDOMDocument **aResult)
 {
     NS_ENSURE_ARG_POINTER(aResult);
-    *aResult = nsnull;
+    *aResult = nullptr;
     nsresult rv = NS_OK;
 
     nsCOMPtr<nsIURI> loaderUri;
@@ -168,7 +168,7 @@ nsSyncLoader::LoadDocument(nsIChannel* aChannel,
     // since we reset the document which drops all observers.
     nsCOMPtr<nsIStreamListener> listener;
     rv = document->StartDocumentLoad(kLoadAsData, mChannel, 
-                                     loadGroup, nsnull, 
+                                     loadGroup, nullptr, 
                                      getter_AddRefs(listener),
                                      true);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -180,9 +180,11 @@ nsSyncLoader::LoadDocument(nsIChannel* aChannel,
     }
 
     if (aLoaderPrincipal) {
-        listener = new nsCORSListenerProxy(listener, aLoaderPrincipal,
-                                           mChannel, false, &rv);
+        nsRefPtr<nsCORSListenerProxy> corsListener =
+          new nsCORSListenerProxy(listener, aLoaderPrincipal, false);
+        rv = corsListener->Init(mChannel);
         NS_ENSURE_SUCCESS(rv, rv);
+        listener = corsListener;
     }
 
     if (aChannelIsSync) {
@@ -199,7 +201,7 @@ nsSyncLoader::LoadDocument(nsIChannel* aChannel,
             rv = NS_ERROR_FAILURE;
         }
     }
-    mChannel = nsnull;
+    mChannel = nullptr;
 
     // check that the load succeeded
     NS_ENSURE_SUCCESS(rv, rv);
@@ -217,7 +219,7 @@ nsSyncLoader::PushAsyncStream(nsIStreamListener* aListener)
     mAsyncLoadStatus = NS_OK;
 
     // Start reading from the channel
-    nsresult rv = mChannel->AsyncOpen(this, nsnull);
+    nsresult rv = mChannel->AsyncOpen(this, nullptr);
 
     if (NS_SUCCEEDED(rv)) {
         // process events until we're finished.
@@ -231,7 +233,7 @@ nsSyncLoader::PushAsyncStream(nsIStreamListener* aListener)
         }
     }
 
-    mListener = nsnull;
+    mListener = nullptr;
 
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -280,7 +282,7 @@ nsSyncLoader::OnStopRequest(nsIRequest *aRequest, nsISupports *aContext,
 NS_IMETHODIMP
 nsSyncLoader::AsyncOnChannelRedirect(nsIChannel *aOldChannel,
                                      nsIChannel *aNewChannel,
-                                     PRUint32 aFlags,
+                                     uint32_t aFlags,
                                      nsIAsyncVerifyRedirectCallback *callback)
 {
     NS_PRECONDITION(aNewChannel, "Redirecting to null channel?");
@@ -305,7 +307,7 @@ nsSyncLoadService::LoadDocument(nsIURI *aURI, nsIPrincipal *aLoaderPrincipal,
                                 nsIDOMDocument** aResult)
 {
     nsCOMPtr<nsIChannel> channel;
-    nsresult rv = NS_NewChannel(getter_AddRefs(channel), aURI, nsnull,
+    nsresult rv = NS_NewChannel(getter_AddRefs(channel), aURI, nullptr,
                                 aLoadGroup);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -335,12 +337,12 @@ nsSyncLoadService::PushSyncStreamToListener(nsIInputStream* aIn,
     nsresult rv;
     nsCOMPtr<nsIInputStream> bufferedStream;
     if (!NS_InputStreamIsBuffered(aIn)) {
-        PRInt32 chunkSize;
+        int64_t chunkSize;
         rv = aChannel->GetContentLength(&chunkSize);
         if (NS_FAILED(rv)) {
             chunkSize = 4096;
         }
-        chunkSize = NS_MIN(PRInt32(PR_UINT16_MAX), chunkSize);
+        chunkSize = NS_MIN(int64_t(UINT16_MAX), chunkSize);
 
         rv = NS_NewBufferedInputStream(getter_AddRefs(bufferedStream), aIn,
                                        chunkSize);
@@ -350,11 +352,11 @@ nsSyncLoadService::PushSyncStreamToListener(nsIInputStream* aIn,
     }
 
     // Load
-    rv = aListener->OnStartRequest(aChannel, nsnull);
+    rv = aListener->OnStartRequest(aChannel, nullptr);
     if (NS_SUCCEEDED(rv)) {
-        PRUint32 sourceOffset = 0;
+        uint64_t sourceOffset = 0;
         while (1) {
-            PRUint32 readCount = 0;
+            uint64_t readCount = 0;
             rv = aIn->Available(&readCount);
             if (NS_FAILED(rv) || !readCount) {
                 if (rv == NS_BASE_STREAM_CLOSED) {
@@ -364,8 +366,12 @@ nsSyncLoadService::PushSyncStreamToListener(nsIInputStream* aIn,
                 break;
             }
 
-            rv = aListener->OnDataAvailable(aChannel, nsnull, aIn,
-                                            sourceOffset, readCount);
+            if (readCount > UINT32_MAX)
+                readCount = UINT32_MAX;
+
+            rv = aListener->OnDataAvailable(aChannel, nullptr, aIn,
+                                            (uint32_t)NS_MIN(sourceOffset, (uint64_t)UINT32_MAX),
+                                            (uint32_t)readCount);
             if (NS_FAILED(rv)) {
                 break;
             }
@@ -375,7 +381,7 @@ nsSyncLoadService::PushSyncStreamToListener(nsIInputStream* aIn,
     if (NS_FAILED(rv)) {
         aChannel->Cancel(rv);
     }
-    aListener->OnStopRequest(aChannel, nsnull, rv);
+    aListener->OnStopRequest(aChannel, nullptr, rv);
 
     return rv;
 }

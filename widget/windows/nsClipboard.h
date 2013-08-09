@@ -13,7 +13,7 @@
 class nsITransferable;
 class nsIClipboardOwner;
 class nsIWidget;
-class nsILocalFile;
+class nsIFile;
 struct IDataObject;
 
 /**
@@ -28,8 +28,8 @@ public:
   virtual ~nsClipboard();
 
   // nsIClipboard
-  NS_IMETHOD HasDataMatchingFlavors(const char** aFlavorList, PRUint32 aLength,
-                                    PRInt32 aWhichClipboard, bool *_retval); 
+  NS_IMETHOD HasDataMatchingFlavors(const char** aFlavorList, uint32_t aLength,
+                                    int32_t aWhichClipboard, bool *_retval); 
 
   // Internal Native Routines
   static nsresult CreateNativeDataObject(nsITransferable * aTransferable, 
@@ -41,23 +41,23 @@ public:
                                         UINT              anIndex,
                                         nsIWidget       * aWindow,
                                         nsITransferable * aTransferable);
-  static nsresult GetNativeDataOffClipboard(nsIWidget * aWindow, UINT aIndex, UINT aFormat, void ** aData, PRUint32 * aLen);
-  static nsresult GetNativeDataOffClipboard(IDataObject * aDataObject, UINT aIndex, UINT aFormat, const char * aMIMEImageFormat, void ** aData, PRUint32 * aLen);
-  static nsresult GetGlobalData(HGLOBAL aHGBL, void ** aData, PRUint32 * aLen);
+  static nsresult GetNativeDataOffClipboard(nsIWidget * aWindow, UINT aIndex, UINT aFormat, void ** aData, uint32_t * aLen);
+  static nsresult GetNativeDataOffClipboard(IDataObject * aDataObject, UINT aIndex, UINT aFormat, const char * aMIMEImageFormat, void ** aData, uint32_t * aLen);
+  static nsresult GetGlobalData(HGLOBAL aHGBL, void ** aData, uint32_t * aLen);
   static UINT     GetFormat(const char* aMimeStr);
 
   static UINT     CF_HTML;
   
 protected:
-  NS_IMETHOD SetNativeClipboardData ( PRInt32 aWhichClipboard );
-  NS_IMETHOD GetNativeClipboardData ( nsITransferable * aTransferable, PRInt32 aWhichClipboard );
+  NS_IMETHOD SetNativeClipboardData ( int32_t aWhichClipboard );
+  NS_IMETHOD GetNativeClipboardData ( nsITransferable * aTransferable, int32_t aWhichClipboard );
   
   static bool IsInternetShortcut ( const nsAString& inFileName ) ;
-  static bool FindURLFromLocalFile ( IDataObject* inDataObject, UINT inIndex, void** outData, PRUint32* outDataLen ) ;
-  static bool FindURLFromNativeURL ( IDataObject* inDataObject, UINT inIndex, void** outData, PRUint32* outDataLen ) ;
-  static bool FindUnicodeFromPlainText ( IDataObject* inDataObject, UINT inIndex, void** outData, PRUint32* outDataLen ) ;
-  static bool FindPlatformHTML ( IDataObject* inDataObject, UINT inIndex, void** outData, PRUint32* outDataLen );
-  static void ResolveShortcut ( nsILocalFile* inFileName, nsACString& outURL ) ;
+  static bool FindURLFromLocalFile ( IDataObject* inDataObject, UINT inIndex, void** outData, uint32_t* outDataLen ) ;
+  static bool FindURLFromNativeURL ( IDataObject* inDataObject, UINT inIndex, void** outData, uint32_t* outDataLen ) ;
+  static bool FindUnicodeFromPlainText ( IDataObject* inDataObject, UINT inIndex, void** outData, uint32_t* outDataLen ) ;
+  static bool FindPlatformHTML ( IDataObject* inDataObject, UINT inIndex, void** outData, uint32_t* outDataLen );
+  static void ResolveShortcut ( nsIFile* inFileName, nsACString& outURL ) ;
 
   nsIWidget         * mWindow;
 

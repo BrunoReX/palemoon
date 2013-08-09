@@ -7,20 +7,19 @@
 
 #include <vector>
 
-#include "ShadowLayersParent.h"
-#include "ShadowLayerParent.h"
-#include "ShadowLayers.h"
-#include "RenderTrace.h"
-
-#include "mozilla/unused.h"
-
-#include "mozilla/layout/RenderFrameParent.h"
+#include "AutoOpenSurface.h"
 #include "CompositorParent.h"
-
 #include "gfxSharedImageSurface.h"
-
-#include "TiledLayerBuffer.h"
 #include "ImageLayers.h"
+#include "mozilla/layout/RenderFrameParent.h"
+#include "mozilla/unused.h"
+#include "RenderTrace.h"
+#include "ShadowLayerParent.h"
+#include "ShadowLayersParent.h"
+#include "ShadowLayers.h"
+#include "ShadowLayerUtils.h"
+#include "TiledLayerBuffer.h"
+#include "gfxPlatform.h" 
 
 typedef std::vector<mozilla::layers::EditReply> EditReplyVector;
 
@@ -89,11 +88,42 @@ ShadowChild(const OpRemoveChild& op)
   return cast(op.childLayerParent());
 }
 
+static ShadowLayerParent*
+ShadowContainer(const OpRepositionChild& op)
+{
+  return cast(op.containerParent());
+}
+static ShadowLayerParent*
+ShadowChild(const OpRepositionChild& op)
+{
+  return cast(op.childLayerParent());
+}
+static ShadowLayerParent*
+ShadowAfter(const OpRepositionChild& op)
+{
+  return cast(op.afterParent());
+}
+
+static ShadowLayerParent*
+ShadowContainer(const OpRaiseToTopChild& op)
+{
+  return cast(op.containerParent());
+}
+static ShadowLayerParent*
+ShadowChild(const OpRaiseToTopChild& op)
+{
+  return cast(op.childLayerParent());
+}
+
 //--------------------------------------------------
 // ShadowLayersParent
 ShadowLayersParent::ShadowLayersParent(ShadowLayerManager* aManager,
-                                       ShadowLayersManager* aLayersManager)
-  : mLayerManager(aManager), mShadowLayersManager(aLayersManager), mDestroyed(false)
+                                       ShadowLayersManager* aLayersManager,
+                                       uint64_t aId)
+  : mLayerManager(aManager)
+  , mShadowLayersManager(aLayersManager)
+  , mId(aId)
+  , mDestroyed(false)
 {
   MOZ_COUNT_CTOR(ShadowLayersParent);
 }
@@ -117,16 +147,18 @@ ShadowLayersParent::Destroy()
 /* virtual */
 bool
 ShadowLayersParent::RecvUpdateNoSwap(const InfallibleTArray<Edit>& cset,
-                 const bool& isFirstPaint)
+                                     const TargetConfig& targetConfig,
+                                     const bool& isFirstPaint)
 {
   InfallibleTArray<EditReply> noReplies;
-  bool success = RecvUpdate(cset, isFirstPaint, &noReplies);
+  bool success = RecvUpdate(cset, targetConfig, isFirstPaint, &noReplies);
   NS_ABORT_IF_FALSE(noReplies.Length() == 0, "RecvUpdateNoSwap requires a sync Update to carry Edits");
   return success;
 }
 
 bool
 ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
+                               const TargetConfig& targetConfig,
                                const bool& isFirstPaint,
                                InfallibleTArray<EditReply>* reply)
 {
@@ -189,6 +221,15 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
       AsShadowLayer(edit.get_OpCreateCanvasLayer())->Bind(layer);
       break;
     }
+    case Edit::TOpCreateRefLayer: {
+      MOZ_LAYERS_LOG(("[ParentSide] CreateRefLayer"));
+
+      nsRefPtr<ShadowRefLayer> layer =
+        layer_manager()->CreateShadowRefLayer();
+      layer->SetAllocator(this);
+      AsShadowLayer(edit.get_OpCreateRefLayer())->Bind(layer);
+      break;
+    }
 
       // Attributes
     case Edit::TOpSetLayerAttributes: {
@@ -203,16 +244,19 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
       layer->SetContentFlags(common.contentFlags());
       layer->SetOpacity(common.opacity());
       layer->SetClipRect(common.useClipRect() ? &common.clipRect() : NULL);
-      layer->SetTransform(common.transform());
+      layer->SetBaseTransform(common.transform().value());
+      layer->SetPostScale(common.postXScale(), common.postYScale());
       static bool fixedPositionLayersEnabled = getenv("MOZ_ENABLE_FIXED_POSITION_LAYERS") != 0;
       if (fixedPositionLayersEnabled) {
         layer->SetIsFixedPosition(common.isFixedPosition());
+        layer->SetFixedPositionAnchor(common.fixedPositionAnchor());
       }
       if (PLayerParent* maskLayer = common.maskLayerParent()) {
         layer->SetMaskLayer(cast(maskLayer)->AsLayer());
       } else {
         layer->SetMaskLayer(NULL);
       }
+      layer->SetAnimations(common.animations());
 
       typedef SpecificLayerAttributes Specific;
       const SpecificLayerAttributes& specific = attrs.specific();
@@ -232,18 +276,22 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
 
         break;
       }
-      case Specific::TContainerLayerAttributes:
+      case Specific::TContainerLayerAttributes: {
         MOZ_LAYERS_LOG(("[ParentSide]   container layer"));
 
-        static_cast<ContainerLayer*>(layer)->SetFrameMetrics(
-          specific.get_ContainerLayerAttributes().metrics());
+        ContainerLayer* containerLayer =
+          static_cast<ContainerLayer*>(layer);
+        const ContainerLayerAttributes& attrs =
+          specific.get_ContainerLayerAttributes();
+        containerLayer->SetFrameMetrics(attrs.metrics());
+        containerLayer->SetPreScale(attrs.preXScale(), attrs.preYScale());
         break;
-
+      }
       case Specific::TColorLayerAttributes:
         MOZ_LAYERS_LOG(("[ParentSide]   color layer"));
 
         static_cast<ColorLayer*>(layer)->SetColor(
-          specific.get_ColorLayerAttributes().color());
+          specific.get_ColorLayerAttributes().color().value());
         break;
 
       case Specific::TCanvasLayerAttributes:
@@ -251,6 +299,13 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
 
         static_cast<CanvasLayer*>(layer)->SetFilter(
           specific.get_CanvasLayerAttributes().filter());
+        break;
+
+      case Specific::TRefLayerAttributes:
+        MOZ_LAYERS_LOG(("[ParentSide]   ref layer"));
+
+        static_cast<RefLayer*>(layer)->SetReferentId(
+          specific.get_RefLayerAttributes().id());
         break;
 
       case Specific::TImageLayerAttributes: {
@@ -297,6 +352,22 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
       const OpRemoveChild& orc = edit.get_OpRemoveChild();
       Layer* childLayer = ShadowChild(orc)->AsLayer();
       ShadowContainer(orc)->AsContainer()->RemoveChild(childLayer);
+      break;
+    }
+    case Edit::TOpRepositionChild: {
+      MOZ_LAYERS_LOG(("[ParentSide] RepositionChild"));
+
+      const OpRepositionChild& orc = edit.get_OpRepositionChild();
+      ShadowContainer(orc)->AsContainer()->RepositionChild(
+        ShadowChild(orc)->AsLayer(), ShadowAfter(orc)->AsLayer());
+      break;
+    }
+    case Edit::TOpRaiseToTopChild: {
+      MOZ_LAYERS_LOG(("[ParentSide] RaiseToTopChild"));
+
+      const OpRaiseToTopChild& rtc = edit.get_OpRaiseToTopChild();
+      ShadowContainer(rtc)->AsContainer()->RepositionChild(
+        ShadowChild(rtc)->AsLayer(), NULL);
       break;
     }
 
@@ -398,7 +469,7 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
   // other's buffer contents.
   ShadowLayerManager::PlatformSyncBeforeReplyUpdate();
 
-  mShadowLayersManager->ShadowLayersUpdated(isFirstPaint);
+  mShadowLayersManager->ShadowLayersUpdated(this, targetConfig, isFirstPaint);
 
 #ifdef COMPOSITOR_PERFORMANCE_WARNING
   int compositeTime = (int)(mozilla::TimeStamp::Now() - updateStart).ToMilliseconds();
@@ -411,27 +482,40 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
 }
 
 bool
-ShadowLayersParent::RecvDrawToSurface(const SurfaceDescriptor& surfaceIn,
-                                      SurfaceDescriptor* surfaceOut)
+ShadowLayersParent::RecvClearCachedResources()
 {
-  *surfaceOut = surfaceIn;
-  if (mDestroyed || layer_manager()->IsDestroyed()) {
-    return true;
+  if (mRoot) {
+    // NB: |mRoot| here is the *child* context's root.  In this parent
+    // context, it's just a subtree root.  We need to scope the clear
+    // of resources to exactly that subtree, so we specify it here.
+    mLayerManager->ClearCachedResources(mRoot);
   }
-
-  nsRefPtr<gfxASurface> sharedSurface = ShadowLayerForwarder::OpenDescriptor(surfaceIn);
-
-  nsRefPtr<gfxASurface> localSurface =
-    gfxPlatform::GetPlatform()->CreateOffscreenSurface(sharedSurface->GetSize(),
-                                                       sharedSurface->GetContentType());
-  nsRefPtr<gfxContext> context = new gfxContext(localSurface);
-
-  layer_manager()->BeginTransactionWithTarget(context);
-  layer_manager()->EndTransaction(NULL, NULL);
-  nsRefPtr<gfxContext> contextForCopy = new gfxContext(sharedSurface);
-  contextForCopy->SetOperator(gfxContext::OPERATOR_SOURCE);
-  contextForCopy->DrawSurface(localSurface, localSurface->GetSize());
   return true;
+}
+
+PGrallocBufferParent*
+ShadowLayersParent::AllocPGrallocBuffer(const gfxIntSize& aSize,
+                                        const gfxContentType& aContent,
+                                        MaybeMagicGrallocBufferHandle* aOutHandle)
+{
+#ifdef MOZ_HAVE_SURFACEDESCRIPTORGRALLOC
+  return GrallocBufferActor::Create(aSize, aContent, aOutHandle);
+#else
+  NS_RUNTIMEABORT("No gralloc buffers for you");
+  return nullptr;
+#endif
+}
+
+bool
+ShadowLayersParent::DeallocPGrallocBuffer(PGrallocBufferParent* actor)
+{
+#ifdef MOZ_HAVE_SURFACEDESCRIPTORGRALLOC
+  delete actor;
+  return true;
+#else
+  NS_RUNTIMEABORT("Um, how did we get here?");
+  return false;
+#endif
 }
 
 PLayerParent*

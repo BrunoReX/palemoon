@@ -15,7 +15,7 @@
 #include "nsXPCOM.h"
 #include "nsCOMPtr.h"
 
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsNetUtil.h"
 
 #include "nsContentCID.h"
@@ -25,12 +25,12 @@
 static already_AddRefed<nsIURI>
 FileToURI(const char *aFilename, nsresult *aRv = 0)
 {
-    nsCOMPtr<nsILocalFile> lf(do_CreateInstance(NS_LOCAL_FILE_CONTRACTID, aRv));
-    NS_ENSURE_TRUE(lf, nsnull);
+    nsCOMPtr<nsIFile> lf(do_CreateInstance(NS_LOCAL_FILE_CONTRACTID, aRv));
+    NS_ENSURE_TRUE(lf, nullptr);
     // XXX Handle relative paths somehow.
     lf->InitWithNativePath(nsDependentCString(aFilename));
 
-    nsIURI *uri = nsnull;
+    nsIURI *uri = nullptr;
     nsresult rv = NS_NewFileURI(&uri, lf);
     if (aRv)
         *aRv = rv;
@@ -62,7 +62,7 @@ int main(int argc, char** argv)
     if (argc < 2) {
         fprintf(stderr, "%s [FILE]...\n", argv[0]);
     }
-    nsresult rv = NS_InitXPCOM2(nsnull, nsnull, nsnull);
+    nsresult rv = NS_InitXPCOM2(nullptr, nullptr, nullptr);
     if (NS_FAILED(rv))
         return (int)rv;
 
@@ -81,7 +81,7 @@ int main(int argc, char** argv)
             res = ParseCSSFile(uri);
     }
 
-    NS_ShutdownXPCOM(nsnull);
+    NS_ShutdownXPCOM(nullptr);
 
     return res;
 }

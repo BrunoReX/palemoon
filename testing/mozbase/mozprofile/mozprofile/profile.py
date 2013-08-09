@@ -1,11 +1,13 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
 
 __all__ = ['Profile', 'FirefoxProfile', 'ThunderbirdProfile']
 
 import os
+import time
 import tempfile
+import uuid
 from addons import AddonManager
 from permissions import Permissions
 from shutil import rmtree
@@ -25,7 +27,7 @@ class Profile(object):
                  addon_manifests=None,  # Manifest for addons, see http://ahal.ca/blog/2011/bulk-installing-fx-addons/
                  preferences=None, # Dictionary or class of preferences
                  locations=None, # locations to proxy
-                 proxy=False, # setup a proxy
+                 proxy=None, # setup a proxy - dict of server-loc,server-port,ssl-port
                  restore=True # If true remove all installed addons preferences when cleaning up
                  ):
 
@@ -36,7 +38,8 @@ class Profile(object):
         self.written_prefs = set()
 
         # our magic markers
-        self.delimeters = ('#MozRunner Prefs Start', '#MozRunner Prefs End')
+        nonce = '%s %s' % (str(time.time()), uuid.uuid4())
+        self.delimeters = ('#MozRunner Prefs Start %s' % nonce,'#MozRunner Prefs End %s' % nonce)
 
         # Handle profile creation
         self.create_new = not profile
@@ -91,8 +94,8 @@ class Profile(object):
         else:
             profile = self.profile
         self.__init__(profile=profile,
-                      addons=self.addon_manager.addons,
-                      addon_manifests=self.addon_manager.manifests,
+                      addons=self.addon_manager.installed_addons,
+                      addon_manifests=self.addon_manager.installed_manifests,
                       preferences=self._preferences,
                       locations=self._locations,
                       proxy = self._proxy)
@@ -170,6 +173,9 @@ class Profile(object):
     def clean_preferences(self):
         """Removed preferences added by mozrunner."""
         for filename in self.written_prefs:
+            if not os.path.exists(os.path.join(self.profile, filename)):
+                # file has been deleted
+                break
             while True:
                 if not self.pop_preferences(filename):
                     break
@@ -181,6 +187,7 @@ class Profile(object):
             process has not yet relinquished handles on files, so we do a wait/try
             construct and timeout if we can't get a clear road to deletion
         """
+
         try:
             from exceptions import WindowsError
             from time import sleep
@@ -201,7 +208,6 @@ class Profile(object):
         except ImportError:
             # We can't re-raise an error, so we'll hope the stuff above us will throw
             pass
-
 
     def cleanup(self):
         """Cleanup operations for the profile."""

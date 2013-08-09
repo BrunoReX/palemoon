@@ -9,15 +9,16 @@
 
 #include "nsIStreamLoader.h"
 #include "nsStringAPI.h"
+#include "mozilla/Attributes.h"
 
-class nsAlertsImageLoadListener : public nsIStreamLoaderObserver
+class nsAlertsImageLoadListener MOZ_FINAL : public nsIStreamLoaderObserver
 {
 public:
   nsAlertsImageLoadListener(const nsAString &aName,
                             const nsAString& aAlertTitle,
                             const nsAString& aAlertText,
                             const nsAString& aAlertCookie,
-                            PRUint32 aAlertListenerKey);
+                            uint32_t aAlertListenerKey);
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSISTREAMLOADEROBSERVER
@@ -26,7 +27,7 @@ private:
   nsString mAlertTitle;
   nsString mAlertText;
   nsString mAlertCookie;
-  PRUint32 mAlertListenerKey;
+  uint32_t mAlertListenerKey;
 };
 
 #endif // nsAlertsImageLoadListener_h_

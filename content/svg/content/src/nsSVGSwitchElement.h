@@ -35,14 +35,14 @@ public:
   NS_DECL_NSIDOMSVGSWITCHELEMENT
 
   // xxx I wish we could use virtual inheritance
-  NS_FORWARD_NSIDOMNODE(nsSVGSwitchElementBase::)
-  NS_FORWARD_NSIDOMELEMENT(nsSVGSwitchElementBase::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
   NS_FORWARD_NSIDOMSVGELEMENT(nsSVGSwitchElementBase::)
 
   // nsINode
-  virtual nsresult InsertChildAt(nsIContent* aKid, PRUint32 aIndex,
+  virtual nsresult InsertChildAt(nsIContent* aKid, uint32_t aIndex,
                                  bool aNotify);
-  virtual void RemoveChildAt(PRUint32 aIndex, bool aNotify);
+  virtual void RemoveChildAt(uint32_t aIndex, bool aNotify);
 
   // nsIContent
   NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const;

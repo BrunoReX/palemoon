@@ -1,7 +1,18 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* Copyright 2012 Mozilla Foundation and Mozilla contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 #ifndef GonkDeviceCaptureProvider_h_
 #define GonkDeviceCaptureProvider_h_
@@ -43,27 +54,27 @@ class GonkCameraInputStream : public nsIAsyncInputStream {
     NS_DECL_NSIINPUTSTREAM
     NS_DECL_NSIASYNCINPUTSTREAM
 
-    void ReceiveFrame(char* frame, PRUint32 length);
+    void ReceiveFrame(char* frame, uint32_t length);
 
     static void  DataCallback(int32_t aMsgType, const sp<IMemory>& aDataPtr, void *aUser);
-    static PRUint32 getNumberOfCameras();
+    static uint32_t getNumberOfCameras();
 
   protected:
     void NotifyListeners();
     void doClose();
 
   private:
-    PRUint32 mAvailable;
+    uint32_t mAvailable;
     nsCString mContentType;
-    PRUint32 mWidth;
-    PRUint32 mHeight;
-    PRUint32 mFps;
-    PRUint32 mCamera;
+    uint32_t mWidth;
+    uint32_t mHeight;
+    uint32_t mFps;
+    uint32_t mCamera;
     bool mHeaderSent;
     bool mClosed;
     bool mIs420p;
     nsDeque mFrameQueue;
-    PRUint32 mFrameSize;
+    uint32_t mFrameSize;
     mozilla::ReentrantMonitor mMonitor;
     nsCOMPtr<nsIInputStreamCallback> mCallback;
     nsCOMPtr<nsIEventTarget> mCallbackTarget;

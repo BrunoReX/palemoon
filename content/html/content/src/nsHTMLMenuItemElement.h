@@ -12,32 +12,25 @@ class nsHTMLMenuItemElement : public nsGenericHTMLElement,
                               public nsIDOMHTMLMenuItemElement
 {
 public:
-  using nsGenericElement::GetText;
+  using mozilla::dom::Element::GetText;
 
   nsHTMLMenuItemElement(already_AddRefed<nsINodeInfo> aNodeInfo,
                         mozilla::dom::FromParser aFromParser);
   virtual ~nsHTMLMenuItemElement();
 
-  /** Typesafe, non-refcounting cast from nsIContent.  Cheaper than QI. **/
-  static nsHTMLMenuItemElement* FromContent(nsIContent* aContent)
-  {
-    if (aContent && aContent->IsHTML(nsGkAtoms::menuitem)) {
-      return static_cast<nsHTMLMenuItemElement*>(aContent);
-    }
-    return nsnull;
-  }
+  NS_IMPL_FROMCONTENT_HTML_WITH_TAG(nsHTMLMenuItemElement, menuitem)
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLCommandElement
   NS_DECL_NSIDOMHTMLCOMMANDELEMENT
@@ -52,7 +45,7 @@ public:
                               nsIContent* aBindingParent,
                               bool aCompileEventHandlers);
 
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
@@ -65,7 +58,7 @@ public:
 
   virtual nsIDOMNode* AsDOMNode() { return this; }
 
-  PRUint8 GetType() const { return mType; }
+  uint8_t GetType() const { return mType; }
 
   /**
    * Syntax sugar to make it easier to check for checked and checked dirty
@@ -76,7 +69,7 @@ public:
   void GetText(nsAString& aText);
 
 protected:
-  virtual nsresult AfterSetAttr(PRInt32 aNamespaceID, nsIAtom* aName,
+  virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsIAtom* aName,
                                 const nsAttrValue* aValue, bool aNotify);
 
   void WalkRadioGroup(Visitor* aVisitor);
@@ -94,7 +87,7 @@ protected:
   void SetCheckedDirty() { mCheckedDirty = true; }
 
 private:
-  PRUint8 mType : 2;
+  uint8_t mType : 2;
   bool mParserCreating : 1;
   bool mShouldInitChecked : 1;
   bool mCheckedDirty : 1;

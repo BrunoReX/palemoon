@@ -23,17 +23,20 @@ include moz-only/reftest.list
 include svg-integration/reftest.list
 
 == altGlyph-01.svg altGlyph-01-ref.svg
+== border-radius-01.html pass.svg
 == cssComment-in-attribute-01.svg cssComment-in-attribute-01-ref.svg
 == clip-01.svg pass.svg
 == clip-02a.svg clip-02-ref.svg
 == clip-02b.svg clip-02-ref.svg
 == clipPath-advanced-01.svg pass.svg
-== clipPath-and-shape-rendering-01.svg clipPath-and-shape-rendering-01-ref.svg
+fuzzy-if(/^Windows\x20NT\x206\.1/.test(http.oscpu),1,2) == clipPath-and-shape-rendering-01.svg clipPath-and-shape-rendering-01-ref.svg # bug 614840
+== clipPath-and-transform-01.svg pass.svg
 == clipPath-basic-01.svg pass.svg
 == clipPath-basic-02.svg pass.svg
 == clipPath-basic-03.svg pass.svg
 == clipPath-basic-04.svg pass.svg
 == clipPath-basic-05.svg pass.svg
+== clipPath-basic-06.svg pass.svg
 == clipPath-winding-01.svg pass.svg
 == clip-surface-clone-01.svg clip-surface-clone-01-ref.svg
 == conditions-01.svg pass.svg
@@ -70,6 +73,7 @@ include svg-integration/reftest.list
 == dynamic-clipPath-02.svg pass.svg
 == dynamic-feFlood-01.svg pass.svg
 == dynamic-feImage-01.svg pass.svg
+== dynamic-fill-01.svg dynamic-fill-01-ref.svg
 == dynamic-filter-contents-01a.svg dynamic-filter-contents-01-ref.svg
 == dynamic-filter-contents-01b.svg dynamic-filter-contents-01-ref.svg
 == dynamic-gradient-contents-01.svg pass.svg
@@ -95,8 +99,8 @@ include svg-integration/reftest.list
 == dynamic-small-object-scaled-up-02.svg pass.svg
 == dynamic-switch-01.svg pass.svg
 == dynamic-text-01.svg dynamic-text-01-ref.svg
-== dynamic-text-02.svg dynamic-text-02-ref.svg
-== dynamic-text-03.svg dynamic-text-03-ref.svg
+fuzzy-if(d2d&&layersGPUAccelerated,2,12739) == dynamic-text-02.svg dynamic-text-02-ref.svg # bug 776038 for Win7
+fuzzy-if(d2d&&layersGPUAccelerated,2,10539) == dynamic-text-03.svg dynamic-text-03-ref.svg # bug 776038 for Win7
 random-if(/^Windows\x20NT\x205\.1/.test(http.oscpu)) == dynamic-text-04.svg dynamic-text-04-ref.svg # bug 421587 for WinXP
 == dynamic-text-05.svg pass.svg
 == dynamic-text-06.svg pass.svg
@@ -109,7 +113,8 @@ random-if(/^Windows\x20NT\x205\.1/.test(http.oscpu)) == dynamic-text-04.svg dyna
 == dynamic-use-04.svg pass.svg
 == dynamic-use-05.svg pass.svg
 == dynamic-use-06.svg pass.svg
-random == dynamic-use-nested-01.svg dynamic-use-nested-01-ref.svg # bug 467498
+random == dynamic-use-nested-01a.svg dynamic-use-nested-01-ref.svg
+random == dynamic-use-nested-01b.svg dynamic-use-nested-01-ref.svg
 == dynamic-use-remove-width.svg dynamic-use-remove-width-ref.svg
 == fragmentIdentifier-01.xhtml pass.svg
 == linked-filter-01.svg pass.svg
@@ -135,6 +140,7 @@ fails-if(Android) == filter-extref-differentOrigin-01.svg pass.svg # Bug 695385
 == filter-in-mask-01.svg pass.svg
 == filter-invalidation-01.svg pass.svg
 == filter-scaled-01.svg pass.svg
+== filter-scaled-02.html filter-scaled-02-ref.html
 == filter-translated-01.svg filter-translated-01-ref.svg
 == filters-and-group-opacity-01.svg filters-and-group-opacity-01-ref.svg
 == foreignObject-01.svg pass.svg
@@ -153,11 +159,11 @@ fails-if(Android) == filter-extref-differentOrigin-01.svg pass.svg # Bug 695385
 == foreignObject-fixedpos-01.html foreignObject-dynamic-abspos-01-ref.html
 == foreignObject-dynamic-fixedpos-01.html foreignObject-dynamic-abspos-01-ref.html
 == getElementById-a-element-01.svg pass.svg
-fails-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)&&!layersGPUAccelerated) == gradient-live-01a.svg gradient-live-01-ref.svg # bug 696674
-fails-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)&&!layersGPUAccelerated) == gradient-live-01b.svg gradient-live-01-ref.svg # bug 696674
-fails-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)&&!layersGPUAccelerated) == gradient-live-01c.svg gradient-live-01-ref.svg # bug 696674
-fails-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)&&!layersGPUAccelerated) == gradient-live-01d.svg gradient-live-01-ref.svg # bug 696674
-fails == inline-in-xul-basic-01.xul pass.svg
+fuzzy-if(Android,9,980) == gradient-live-01a.svg gradient-live-01-ref.svg
+fuzzy-if(Android,9,980) == gradient-live-01b.svg gradient-live-01-ref.svg
+fuzzy-if(Android,9,980) == gradient-live-01c.svg gradient-live-01-ref.svg
+fuzzy-if(Android,9,980) == gradient-live-01d.svg gradient-live-01-ref.svg
+== import-svg-01.html pass.svg
 == invalid-text-01.svg pass.svg
 == lang-attribute-01.svg pass.svg
 == lang-attribute-02.svg pass.svg
@@ -167,15 +173,17 @@ fails == inline-in-xul-basic-01.xul pass.svg
 == markers-and-group-opacity-01.svg markers-and-group-opacity-01-ref.svg
 == marker-attribute-01.svg pass.svg
 == marker-viewBox-01.svg marker-viewBox-01-ref.svg
+== marker-orientation-01.svg marker-orientation-01-ref.svg
 == mask-basic-01.svg pass.svg
 == mask-basic-02.svg mask-basic-02-ref.svg
 == mask-extref-dataURI-01.svg pass.svg
 == mask-containing-masked-content-01.svg pass.svg
 == mask-transformed-01.svg mask-transformed-01-ref.svg
+== mask-transformed-02.svg pass.svg
 == nested-viewBox-01.svg pass.svg
 == nesting-invalid-01.svg nesting-invalid-01-ref.svg
 == non-scaling-stroke-01.svg non-scaling-stroke-01-ref.svg 
-fuzzy-if(Android,9,38) == non-scaling-stroke-02.svg non-scaling-stroke-02-ref.svg 
+fuzzy-if(Android,9,61) fuzzy-if(!contentSameGfxBackendAsCanvas,1,99) == non-scaling-stroke-02.svg non-scaling-stroke-02-ref.svg 
 == objectBoundingBox-and-clipPath.svg pass.svg
 # Bug 588684
 random-if(gtk2Widget) == objectBoundingBox-and-fePointLight-01.svg objectBoundingBox-and-fePointLight-01-ref.svg
@@ -190,12 +198,15 @@ random-if(gtk2Widget) == objectBoundingBox-and-fePointLight-02.svg objectBoundin
 == opacity-and-gradient-01.svg pass.svg
 == opacity-and-gradient-02.svg opacity-and-gradient-02-ref.svg
 == opacity-and-pattern-01.svg pass.svg
+== opacity-and-transform-01.svg opacity-and-transform-01-ref.svg
 == outer-svg-border-and-padding-01.svg outer-svg-border-and-padding-01-ref.svg 
 == path-01.svg path-01-ref.svg
 == path-02.svg pass.svg
 == path-03.svg pass.svg
 == path-04.svg pass.svg
 == path-05.svg pass.svg
+== path-06.svg path-06-ref.svg
+== path-07.svg path-07-ref.svg
 == pathLength-01.svg pass.svg
 == pathLength-02.svg pass.svg
 == pattern-invalid-01.svg pattern-invalid-01-ref.svg
@@ -204,7 +215,9 @@ random-if(gtk2Widget) == objectBoundingBox-and-fePointLight-02.svg objectBoundin
 == pattern-live-01c.svg pattern-live-01-ref.svg
 == pattern-scale-01a.svg pattern-scale-01-ref.svg
 == pattern-scale-01b.svg pattern-scale-01-ref.svg
+== pattern-scale-01c.svg pattern-scale-01-ref.svg
 == pattern-transform-presence-01.svg pattern-transform-presence-01-ref.svg
+== pattern-transformed-01.svg pattern-transformed-01-ref.svg
 == polygon-marker-01.svg pass.svg
 == polygon-points-negative-01.svg pass.svg
 == polyline-points-invalid-01.svg pass.svg
@@ -240,17 +253,19 @@ random-if(gtk2Widget) == objectBoundingBox-and-fePointLight-02.svg objectBoundin
 == suspend-07.svg pass.svg
 == suspend-08.svg pass.svg
 == symbol-01.svg symbol-01-ref.svg
+== text-font-size-01.svg pass.svg
 random-if(gtk2Widget) == text-font-weight-01.svg text-font-weight-01-ref.svg # bug 386713
 == text-gradient-01.svg text-gradient-01-ref.svg
 random-if(winWidget) == text-gradient-02.svg text-gradient-02-ref.svg # see bug 590101
 == text-gradient-03.svg pass.svg
+HTTP(..) == text-gradient-04.svg text-gradient-04-ref.svg
 == text-in-link-01.svg text-in-link-01-ref.svg
 == text-in-link-02.svg text-in-link-02-ref.svg
 == text-in-link-03.svg text-in-link-03-ref.svg
 # Tests for bug 546813: sanity-check using HTML text, then test SVG behavior.
 fails-if(Android) != text-language-00.xhtml text-language-00-ref.xhtml
 fails-if(Android) random-if(gtk2Widget) != text-language-01.xhtml text-language-01-ref.xhtml # Fails on Linux tryserver due to lack of CJK fonts.
-== text-layout-01.svg text-layout-01-ref.svg
+fuzzy-if(OSX==10.8,46,26) == text-layout-01.svg text-layout-01-ref.svg
 == text-layout-02.svg text-layout-02-ref.svg
 == text-layout-03.svg text-layout-03-ref.svg
 == text-layout-04.svg text-layout-04-ref.svg
@@ -272,6 +287,7 @@ fuzzy-if(cocoaWidget&&layersGPUAccelerated,1,3) == text-layout-06.svg text-layou
 == text-style-01d.svg text-style-01-ref.svg
 == text-style-01e.svg text-style-01-ref.svg
 == thin-stroke-01.svg pass.svg
+== zero-stroke-01.svg pass.svg
 == tspan-dxdy-01.svg tspan-dxdy-ref.svg
 == tspan-dxdy-02.svg tspan-dxdy-ref.svg
 == tspan-dxdy-03.svg tspan-dxdy-ref.svg
@@ -296,11 +312,15 @@ random-if(/^Windows\x20NT\x205\.1/.test(http.oscpu)) == tspan-rotate-06.svg tspa
 == tspan-xy-anchor-end-01.svg tspan-xy-anchor-end-ref.svg
 == userSpaceOnUse-and-pattern-01.svg userSpaceOnUse-and-pattern-01-ref.svg
 == viewBox-and-pattern-01.svg pass.svg
+== viewBox-and-pattern-02.svg pass.svg
+== viewBox-and-pattern-03.svg pass.svg
 == viewBox-invalid-01.svg pass.svg
 == viewBox-valid-01.svg pass.svg
+== viewBox-valid-02.xhtml pass.svg
 == viewport-percent-graphic-user-01.svg pass.svg
+== winding-01.svg pass.svg
 
 == svg-effects-area-unzoomed.xhtml svg-effects-area-unzoomed-ref.xhtml
 == svg-effects-area-zoomed-in.xhtml svg-effects-area-zoomed-in-ref.xhtml
-fails == svg-effects-area-zoomed-out.xhtml svg-effects-area-zoomed-out-ref.xhtml # Bug 541270
+== svg-effects-area-zoomed-out.xhtml svg-effects-area-zoomed-out-ref.xhtml
 == href-attr-change-restyles.svg href-attr-change-restyles-ref.svg

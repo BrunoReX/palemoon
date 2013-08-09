@@ -92,29 +92,6 @@ class LayerManagerOGL;
 }
 }
 
-#ifndef NP_NO_CARBON
-enum {
-  // Currently focused ChildView (while this TSM document is active).
-  // Transient (only set while TSMProcessRawKeyEvent() is processing a key
-  // event), and the ChildView will be retained and released around the call
-  // to TSMProcessRawKeyEvent() -- so it can be weak.
-  kFocusedChildViewTSMDocPropertyTag  = 'GKFV', // type ChildView* [WEAK]
-};
-
-// Undocumented HIToolbox function used by WebKit to allow Carbon-based IME
-// to work in a Cocoa-based browser (like Safari or Cocoa-widgets Firefox).
-// (Recent WebKit versions actually use a thin wrapper around this function
-// called WKSendKeyEventToTSM().)
-//
-// Calling TSMProcessRawKeyEvent() from ChildView's keyDown: and keyUp:
-// methods (when the ChildView is a plugin view) bypasses Cocoa's IME
-// infrastructure and (instead) causes Carbon TSM events to be sent on each
-// NSKeyDown event.  We install a Carbon event handler
-// (PluginKeyEventsHandler()) to catch these events and pass them to Gecko
-// (which in turn passes them to the plugin).
-extern "C" long TSMProcessRawKeyEvent(EventRef carbonEvent);
-#endif // NP_NO_CARBON
-
 @interface NSEvent (Undocumented)
 
 // Return Cocoa event's corresponding Carbon event.  Not initialized (on
@@ -127,14 +104,13 @@ extern "C" long TSMProcessRawKeyEvent(EventRef carbonEvent);
 // Support for pixel scroll deltas, not part of NSEvent.h
 // See http://lists.apple.com/archives/cocoa-dev/2007/Feb/msg00050.html
 @interface NSEvent (DeviceDelta)
-  - (CGFloat)deviceDeltaX;
-  - (CGFloat)deviceDeltaY;
-@end
-
-// Undocumented scrollPhase flag that lets us discern between real scrolls and
-// automatically firing momentum scroll events.
-@interface NSEvent (ScrollPhase)
-- (long long)_scrollPhase;
+// Leopard and SnowLeopard
+- (CGFloat)deviceDeltaX;
+- (CGFloat)deviceDeltaY;
+// Lion and above
+- (CGFloat)scrollingDeltaX;
+- (CGFloat)scrollingDeltaY;
+- (BOOL)hasPreciseScrollingDeltas;
 @end
 
 #if !defined(MAC_OS_X_VERSION_10_6) || \
@@ -160,7 +136,6 @@ MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_6
 // friends are defined (in AvailabilityMacros.h) as decimal numbers (not
 // hexadecimal numbers).
 #if !defined(MAC_OS_X_VERSION_10_7) || MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-#ifdef __LP64__
 enum {
   NSEventPhaseNone        = 0,
   NSEventPhaseBegan       = 0x1 << 0,
@@ -171,6 +146,7 @@ enum {
 };
 typedef NSUInteger NSEventPhase;
 
+#ifdef __LP64__
 enum {
   NSEventSwipeTrackingLockDirection = 0x1 << 0,
   NSEventSwipeTrackingClampGestureAmount = 0x1 << 1
@@ -197,6 +173,15 @@ typedef NSInteger NSEventGestureAxis;
 @end
 #endif // #ifdef __LP64__
 #endif // #if !defined(MAC_OS_X_VERSION_10_7) || MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
+
+// Undocumented scrollPhase flag that lets us discern between real scrolls and
+// automatically firing momentum scroll events.
+@interface NSEvent (ScrollPhase)
+// Leopard and SnowLeopard
+- (long long)_scrollPhase;
+// Lion and above
+- (NSEventPhase)momentumPhase;
+@end
 
 @interface ChildView : NSView<
 #ifdef ACCESSIBILITY
@@ -289,7 +274,7 @@ typedef NSInteger NSEventGestureAxis;
 // Stop NSView hierarchy being changed during [ChildView drawRect:]
 - (void)delayedTearDown;
 
-- (void)sendFocusEvent:(PRUint32)eventType;
+- (void)sendFocusEvent:(uint32_t)eventType;
 
 - (void)handleMouseMoved:(NSEvent*)aEvent;
 
@@ -330,7 +315,7 @@ typedef NSInteger NSEventGestureAxis;
 // Support for fluid swipe tracking.
 #ifdef __LP64__
 - (void)maybeTrackScrollEventAsSwipe:(NSEvent *)anEvent
-                      scrollOverflow:(PRInt32)overflow;
+                      scrollOverflow:(double)overflow;
 #endif
 
 - (void)setUsingOMTCompositor:(BOOL)aUseOMTC;
@@ -380,33 +365,46 @@ public:
   NS_IMETHOD              Create(nsIWidget *aParent,
                                  nsNativeWidget aNativeParent,
                                  const nsIntRect &aRect,
-                                 EVENT_CALLBACK aHandleEventFunction,
                                  nsDeviceContext *aContext,
-                                 nsWidgetInitData *aInitData = nsnull);
+                                 nsWidgetInitData *aInitData = nullptr);
 
   NS_IMETHOD              Destroy();
 
   NS_IMETHOD              Show(bool aState);
-  NS_IMETHOD              IsVisible(bool& outState);
+  virtual bool            IsVisible() const;
 
   NS_IMETHOD              SetParent(nsIWidget* aNewParent);
   virtual nsIWidget*      GetParent(void);
   virtual float           GetDPI();
 
   NS_IMETHOD              ConstrainPosition(bool aAllowSlop,
-                                            PRInt32 *aX, PRInt32 *aY);
-  NS_IMETHOD              Move(PRInt32 aX, PRInt32 aY);
-  NS_IMETHOD              Resize(PRInt32 aWidth,PRInt32 aHeight, bool aRepaint);
-  NS_IMETHOD              Resize(PRInt32 aX, PRInt32 aY,PRInt32 aWidth,PRInt32 aHeight, bool aRepaint);
+                                            int32_t *aX, int32_t *aY);
+  NS_IMETHOD              Move(int32_t aX, int32_t aY);
+  NS_IMETHOD              Resize(int32_t aWidth,int32_t aHeight, bool aRepaint);
+  NS_IMETHOD              Resize(int32_t aX, int32_t aY,int32_t aWidth,int32_t aHeight, bool aRepaint);
 
   NS_IMETHOD              Enable(bool aState);
-  NS_IMETHOD              IsEnabled(bool *aState);
+  virtual bool            IsEnabled() const;
   NS_IMETHOD              SetFocus(bool aRaise);
   NS_IMETHOD              GetBounds(nsIntRect &aRect);
 
+  // Returns the "backing scale factor" of the view's window, which is the
+  // ratio of pixels in the window's backing store to Cocoa points. Prior to
+  // HiDPI support in OS X 10.7, this was always 1.0, but in HiDPI mode it
+  // will be 2.0 (and might potentially other values as screen resolutions
+  // evolve). This gives the relationship between what Gecko calls "device
+  // pixels" and the Cocoa "points" coordinate system.
+  CGFloat                 BackingScaleFactor();
+
+  // Call if the window's backing scale factor changes - i.e., it is moved
+  // between HiDPI and non-HiDPI screens
+  void                    BackingScaleFactorChanged();
+
+  virtual double          GetDefaultScaleInternal();
+
   NS_IMETHOD              Invalidate(const nsIntRect &aRect);
 
-  virtual void*           GetNativeData(PRUint32 aDataType);
+  virtual void*           GetNativeData(uint32_t aDataType);
   virtual nsresult        ConfigureChildren(const nsTArray<Configuration>& aConfigurations);
   virtual nsIntPoint      WidgetToScreenOffset();
   virtual bool            ShowsResizeIndicator(nsIntRect* aResizerRect);
@@ -415,15 +413,16 @@ public:
                           { return aStatus == nsEventStatus_eConsumeNoDefault; }
   NS_IMETHOD              DispatchEvent(nsGUIEvent* event, nsEventStatus & aStatus);
 
-  virtual bool            GetShouldAccelerate();
+  virtual bool            ComputeShouldAccelerate(bool aDefault);
+  virtual bool            UseOffMainThreadCompositing();
 
   NS_IMETHOD        SetCursor(nsCursor aCursor);
-  NS_IMETHOD        SetCursor(imgIContainer* aCursor, PRUint32 aHotspotX, PRUint32 aHotspotY);
+  NS_IMETHOD        SetCursor(imgIContainer* aCursor, uint32_t aHotspotX, uint32_t aHotspotY);
 
-  NS_IMETHOD        CaptureRollupEvents(nsIRollupListener * aListener, bool aDoCapture, bool aConsumeRollupEvent);
+  NS_IMETHOD        CaptureRollupEvents(nsIRollupListener * aListener, bool aDoCapture);
   NS_IMETHOD        SetTitle(const nsAString& title);
 
-  NS_IMETHOD        GetAttention(PRInt32 aCycleCount);
+  NS_IMETHOD        GetAttention(int32_t aCycleCount);
 
   virtual bool HasPendingInputEvent();
 
@@ -435,11 +434,12 @@ public:
                                     const InputContextAction& aAction);
   NS_IMETHOD_(InputContext) GetInputContext();
   NS_IMETHOD        CancelIMEComposition();
-  NS_IMETHOD        GetToggledKeyState(PRUint32 aKeyCode,
+  NS_IMETHOD        GetToggledKeyState(uint32_t aKeyCode,
                                        bool* aLEDState);
   NS_IMETHOD        OnIMEFocusChange(bool aFocus);
 
   // nsIPluginWidget
+  // outClipRect and outOrigin are in display pixels (not device pixels)
   NS_IMETHOD        GetPluginClipRect(nsIntRect& outClipRect, nsIntPoint& outOrigin, bool& outWidgetVisible);
   NS_IMETHOD        StartDrawPlugin();
   NS_IMETHOD        EndDrawPlugin();
@@ -454,15 +454,15 @@ public:
   virtual nsTransparencyMode GetTransparencyMode();
   virtual void                SetTransparencyMode(nsTransparencyMode aMode);
 
-  virtual nsresult SynthesizeNativeKeyEvent(PRInt32 aNativeKeyboardLayout,
-                                            PRInt32 aNativeKeyCode,
-                                            PRUint32 aModifierFlags,
+  virtual nsresult SynthesizeNativeKeyEvent(int32_t aNativeKeyboardLayout,
+                                            int32_t aNativeKeyCode,
+                                            uint32_t aModifierFlags,
                                             const nsAString& aCharacters,
                                             const nsAString& aUnmodifiedCharacters);
 
   virtual nsresult SynthesizeNativeMouseEvent(nsIntPoint aPoint,
-                                              PRUint32 aNativeMessage,
-                                              PRUint32 aModifierFlags);
+                                              uint32_t aNativeMessage,
+                                              uint32_t aModifierFlags);
 
   virtual nsresult SynthesizeNativeMouseMove(nsIntPoint aPoint)
   { return SynthesizeNativeMouseEvent(aPoint, NSMouseMoved, 0); }
@@ -470,9 +470,11 @@ public:
   // Mac specific methods
   
   virtual bool      DispatchWindowEvent(nsGUIEvent& event);
-  
+
+  bool PaintWindow(nsIntRegion aRegion, bool aIsAlternate);
+
 #ifdef ACCESSIBILITY
-  already_AddRefed<Accessible> GetDocumentAccessible();
+  already_AddRefed<mozilla::a11y::Accessible> GetDocumentAccessible();
 #endif
 
   virtual void CreateCompositor();
@@ -490,14 +492,12 @@ public:
   void              ResetParent();
 
   static bool DoHasPendingInputEvent();
-  static PRUint32 GetCurrentInputEventCount();
+  static uint32_t GetCurrentInputEventCount();
   static void UpdateCurrentInputEventCount();
 
   NSView<mozView>* GetEditorView();
 
   bool IsPluginView() { return (mWindowType == eWindowType_plugin); }
-
-  void PaintQD();
 
   nsCocoaWindow*    GetXULWindowWidget();
 
@@ -508,11 +508,24 @@ public:
     return mTextInputHandler;
   }
 
+  // unit conversion convenience functions
+  nsIntPoint        CocoaPointsToDevPixels(const NSPoint& aPt) {
+    return nsCocoaUtils::CocoaPointsToDevPixels(aPt, BackingScaleFactor());
+  }
+  nsIntRect         CocoaPointsToDevPixels(const NSRect& aRect) {
+    return nsCocoaUtils::CocoaPointsToDevPixels(aRect, BackingScaleFactor());
+  }
+  CGFloat           DevPixelsToCocoaPoints(int32_t aPixels) {
+    return nsCocoaUtils::DevPixelsToCocoaPoints(aPixels, BackingScaleFactor());
+  }
+  NSRect            DevPixelsToCocoaPoints(const nsIntRect& aRect) {
+    return nsCocoaUtils::DevPixelsToCocoaPoints(aRect, BackingScaleFactor());
+  }
+
 protected:
 
-  bool              ReportDestroyEvent();
-  bool              ReportMoveEvent();
-  bool              ReportSizeEvent();
+  void              ReportMoveEvent();
+  void              ReportSizeEvent();
 
   // override to create different kinds of child views. Autoreleases, so
   // caller must retain.
@@ -545,18 +558,21 @@ protected:
   nsRefPtr<gfxASurface> mTempThebesSurface;
   nsRefPtr<mozilla::gl::TextureImage> mResizerImage;
 
+  // Cached value of [mView backingScaleFactor], to avoid sending two obj-c
+  // messages (respondsToSelector, backingScaleFactor) every time we need to
+  // use it.
+  // ** We'll need to reinitialize this if the backing resolution changes. **
+  CGFloat               mBackingScaleFactor;
+
   bool                  mVisible;
   bool                  mDrawing;
   bool                  mPluginDrawing;
   bool                  mIsDispatchPaint; // Is a paint event being dispatched
 
   NP_CGContext          mPluginCGContext;
-#ifndef NP_NO_QUICKDRAW
-  NP_Port               mPluginQDPort;
-#endif
   nsIPluginInstanceOwner* mPluginInstanceOwner; // [WEAK]
 
-  static PRUint32 sLastInputEventCount;
+  static uint32_t sLastInputEventCount;
 };
 
 void NS_InstallPluginKeyEventsHandler();

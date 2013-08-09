@@ -64,6 +64,37 @@ void EnableSwitchNotifications(hal::SwitchDevice aDevice);
  */
 void DisableSwitchNotifications(hal::SwitchDevice aDevice);
 
+/**
+ * Enable alarm notifications from the backend.
+ */
+bool EnableAlarm();
+
+/**
+ * Disable alarm notifications from the backend.
+ */
+void DisableAlarm();
+
+/**
+ * Enable system clock change notifications from the backend.
+ */
+void EnableSystemClockChangeNotifications();
+
+/**
+ * Disable system clock change notifications from the backend.
+ */
+void DisableSystemClockChangeNotifications();
+
+/**
+ * Enable system timezone change notifications from the backend.
+ */
+void EnableSystemTimezoneChangeNotifications();
+
+/**
+ * Disable system timezone change notifications from the backend.
+ */
+void DisableSystemTimezoneChangeNotifications();
+
+bool IsHalChildLive();
 } // namespace MOZ_HAL_NAMESPACE
 } // namespace mozilla
 

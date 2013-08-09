@@ -22,7 +22,7 @@ class TestLargestRegion {
     const int nTests = 19;
     struct {
       nsRect rect;
-      PRInt64 expectedArea;
+      int64_t expectedArea;
     } tests[nTests] = {
       // Remove a 20x10 chunk from the square
       { nsRect(0, 0, 20, 10), 600 },
@@ -53,7 +53,7 @@ class TestLargestRegion {
     };
 
     bool success = true;
-    for (PRInt32 i = 0; i < nTests; i++) {
+    for (int32_t i = 0; i < nTests; i++) {
       nsRegion r2;
       r2.Sub(r, tests[i].rect);
 
@@ -62,7 +62,7 @@ class TestLargestRegion {
 
       nsRect largest = r2.GetLargestRectangle();
       if (largest.width * largest.height != tests[i].expectedArea) {
-        fail("Did not succesfully find largest rectangle in non-rectangular region on iteration %d", i);
+        fail("Did not successfully find largest rectangle in non-rectangular region on iteration %d", i);
         success = false;
       }
     }
@@ -74,7 +74,7 @@ class TestLargestRegion {
     const int nTests = 4;
     struct {
       nsRect rect1, rect2;
-      PRInt64 expectedArea;
+      int64_t expectedArea;
     } tests[nTests] = {
       { nsRect(0, 0, 75, 40),  nsRect(0, 60, 75, 40),  2500 },
       { nsRect(25, 0, 75, 40), nsRect(25, 60, 75, 40), 2500 },
@@ -82,7 +82,7 @@ class TestLargestRegion {
       { nsRect(0, 0, 75, 40),  nsRect(25, 60, 75, 40), 2000 },
     };
     bool success = true;
-    for (PRInt32 i = 0; i < nTests; i++) {
+    for (int32_t i = 0; i < nTests; i++) {
       nsRegion r2;
 
       r2.Sub(r, tests[i].rect1);
@@ -93,7 +93,7 @@ class TestLargestRegion {
 
       nsRect largest = r2.GetLargestRectangle();
       if (largest.width * largest.height != tests[i].expectedArea) {
-        fail("Did not succesfully find largest rectangle in two-rect-subtract region on iteration %d", i);
+        fail("Did not successfully find largest rectangle in two-rect-subtract region on iteration %d", i);
         success = false;
       }
     }

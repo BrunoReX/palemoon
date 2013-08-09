@@ -19,7 +19,7 @@
 #if defined(OS_POSIX)
 #include "base/message_pump_libevent.h"
 #endif
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_BSD)
 #ifdef MOZ_WIDGET_GTK2
 #include "base/message_pump_glib.h"
 #endif
@@ -90,6 +90,7 @@ MessageLoop::MessageLoop(Type type)
       nestable_tasks_allowed_(true),
       exception_restoration_(false),
       state_(NULL),
+      run_depth_base_(1),
 #ifdef OS_WIN
       os_modal_loop_(false),
 #endif  // OS_WIN
@@ -102,6 +103,12 @@ MessageLoop::MessageLoop(Type type)
   }
   if (type_ == TYPE_MOZILLA_CHILD) {
     pump_ = new mozilla::ipc::MessagePumpForChildProcess();
+    // There is a MessageLoop Run call from XRE_InitChildProcess
+    // and another one from MessagePumpForChildProcess. The one
+    // from MessagePumpForChildProcess becomes the base, so we need
+    // to set run_depth_base_ to 2 or we'll never be able to process
+    // Idle tasks.
+    run_depth_base_ = 2;
     return;
   }
 
@@ -119,7 +126,7 @@ MessageLoop::MessageLoop(Type type)
   if (type_ == TYPE_UI) {
 #if defined(OS_MACOSX)
     pump_ = base::MessagePumpMac::Create();
-#elif defined(OS_LINUX)
+#elif defined(OS_LINUX) || defined(OS_BSD)
     pump_ = new base::MessagePumpForUI();
 #endif  // OS_LINUX
   } else if (type_ == TYPE_IO) {
@@ -212,7 +219,7 @@ void MessageLoop::RunInternal() {
 // Wrapper functions for use in above message loop framework.
 
 bool MessageLoop::ProcessNextDelayedNonNestableTask() {
-  if (state_->run_depth != 1)
+  if (state_->run_depth > run_depth_base_)
     return false;
 
   if (deferred_non_nestable_work_queue_.empty())
@@ -254,6 +261,14 @@ void MessageLoop::PostNonNestableTask(
 void MessageLoop::PostNonNestableDelayedTask(
     const tracked_objects::Location& from_here, Task* task, int delay_ms) {
   PostTask_Helper(from_here, task, delay_ms, false);
+}
+
+void MessageLoop::PostIdleTask(
+    const tracked_objects::Location& from_here, Task* task) {
+  DCHECK(current() == this);
+  task->SetBirthPlace(from_here);
+  PendingTask pending_task(task, false);
+  deferred_non_nestable_work_queue_.push(pending_task);
 }
 
 // Possibly called on a background thread!
@@ -322,7 +337,7 @@ void MessageLoop::RunTask(Task* task) {
 }
 
 bool MessageLoop::DeferOrRunPendingTask(const PendingTask& pending_task) {
-  if (pending_task.nestable || state_->run_depth == 1) {
+  if (pending_task.nestable || state_->run_depth <= run_depth_base_) {
     RunTask(pending_task.task);
     // Show that we ran a task (Note: a new one might arrive as a
     // consequence!).

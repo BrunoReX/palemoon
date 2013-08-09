@@ -20,6 +20,7 @@
 #include "mozAutoDocUpdate.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 //----------------------------------------------------------------------
 // nsISupports methods:
@@ -93,7 +94,7 @@ nsMathMLElement::UnbindFromTree(bool aDeep, bool aNullParent)
 }
 
 bool
-nsMathMLElement::ParseAttribute(PRInt32 aNamespaceID,
+nsMathMLElement::ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult)
@@ -111,31 +112,31 @@ nsMathMLElement::ParseAttribute(PRInt32 aNamespaceID,
                                              aValue, aResult);
 }
 
-static nsGenericElement::MappedAttributeEntry sMtableStyles[] = {
+static Element::MappedAttributeEntry sMtableStyles[] = {
   { &nsGkAtoms::width },
-  { nsnull }
+  { nullptr }
 };
 
-static nsGenericElement::MappedAttributeEntry sTokenStyles[] = {
+static Element::MappedAttributeEntry sTokenStyles[] = {
   { &nsGkAtoms::mathsize_ },
   { &nsGkAtoms::fontsize_ },
   { &nsGkAtoms::color },
   { &nsGkAtoms::fontfamily_ },
-  { nsnull }
+  { nullptr }
 };
 
-static nsGenericElement::MappedAttributeEntry sEnvironmentStyles[] = {
+static Element::MappedAttributeEntry sEnvironmentStyles[] = {
   { &nsGkAtoms::scriptlevel_ },
   { &nsGkAtoms::scriptminsize_ },
   { &nsGkAtoms::scriptsizemultiplier_ },
   { &nsGkAtoms::background },
-  { nsnull }
+  { nullptr }
 };
 
-static nsGenericElement::MappedAttributeEntry sCommonPresStyles[] = {
+static Element::MappedAttributeEntry sCommonPresStyles[] = {
   { &nsGkAtoms::mathcolor_ },
   { &nsGkAtoms::mathbackground_ },
-  { nsnull }
+  { nullptr }
 };
 
 bool
@@ -211,9 +212,9 @@ nsMathMLElement::GetAttributeMappingFunction() const
 /* static */ bool
 nsMathMLElement::ParseNamedSpaceValue(const nsString& aString,
                                       nsCSSValue&     aCSSValue,
-                                      PRUint32        aFlags)
+                                      uint32_t        aFlags)
 {
-   PRInt32 i = 0;
+   int32_t i = 0;
    // See if it is one of the 'namedspace' (ranging -7/18em, -6/18, ... 7/18em)
    if (aString.EqualsLiteral("veryverythinmathspace")) {
      i = 1;
@@ -293,12 +294,12 @@ nsMathMLElement::ParseNamedSpaceValue(const nsString& aString,
 /* static */ bool
 nsMathMLElement::ParseNumericValue(const nsString& aString,
                                    nsCSSValue&     aCSSValue,
-                                   PRUint32        aFlags)
+                                   uint32_t        aFlags)
 {
   nsAutoString str(aString);
   str.CompressWhitespace(); // aString is const in this code...
 
-  PRInt32 stringLength = str.Length();
+  int32_t stringLength = str.Length();
   if (!stringLength)
     return false;
 
@@ -309,7 +310,7 @@ nsMathMLElement::ParseNumericValue(const nsString& aString,
   nsAutoString number, unit;
 
   // see if the negative sign is there
-  PRInt32 i = 0;
+  int32_t i = 0;
   PRUnichar c = str[0];
   if (c == '-') {
     number.Append(c);
@@ -334,7 +335,7 @@ nsMathMLElement::ParseNumericValue(const nsString& aString,
   }
 
   // Convert number to floating point
-  PRInt32 errorCode;
+  nsresult errorCode;
   float floatValue = number.ToFloat(&errorCode);
   if (NS_FAILED(errorCode))
     return false;
@@ -397,7 +398,7 @@ nsMathMLElement::MapMathMLAttributesInto(const nsMappedAttributes* aAttributes,
       str.CompressWhitespace();
       // MathML numbers can't have leading '+'
       if (str.Length() > 0 && str.CharAt(0) != '+') {
-        PRInt32 errorCode;
+        nsresult errorCode;
         float floatValue = str.ToFloat(&errorCode);
         // Negative scriptsizemultipliers are not parsed
         if (NS_SUCCEEDED(errorCode) && floatValue >= 0.0f) {
@@ -443,8 +444,8 @@ nsMathMLElement::MapMathMLAttributesInto(const nsMappedAttributes* aAttributes,
       nsAutoString str(value->GetStringValue());
       str.CompressWhitespace();
       if (str.Length() > 0) {
-        PRInt32 errorCode;
-        PRInt32 intValue = str.ToInteger(&errorCode);
+        nsresult errorCode;
+        int32_t intValue = str.ToInteger(&errorCode);
         if (NS_SUCCEEDED(errorCode)) {
           // This is kind of cheesy ... if the scriptlevel has a sign,
           // then it's a relative value and we store the nsCSSValue as an
@@ -495,12 +496,12 @@ nsMathMLElement::MapMathMLAttributesInto(const nsMappedAttributes* aAttributes,
       if (!ParseNumericValue(str, *fontSize, 0) &&
           parseSizeKeywords) {
         static const char sizes[3][7] = { "small", "normal", "big" };
-        static const PRInt32 values[NS_ARRAY_LENGTH(sizes)] = {
+        static const int32_t values[NS_ARRAY_LENGTH(sizes)] = {
           NS_STYLE_FONT_SIZE_SMALL, NS_STYLE_FONT_SIZE_MEDIUM,
           NS_STYLE_FONT_SIZE_LARGE
         };
         str.CompressWhitespace();
-        for (PRUint32 i = 0; i < ArrayLength(sizes); ++i) {
+        for (uint32_t i = 0; i < ArrayLength(sizes); ++i) {
           if (str.EqualsASCII(sizes[i])) {
             fontSize->SetIntValue(values[i], eCSSUnit_Enumerated);
             break;
@@ -605,7 +606,7 @@ nsMathMLElement::MapMathMLAttributesInto(const nsMappedAttributes* aAttributes,
 nsresult
 nsMathMLElement::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
 {
-  nsresult rv = nsGenericElement::PreHandleEvent(aVisitor);
+  nsresult rv = Element::PreHandleEvent(aVisitor);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return PreHandleEventForLinks(aVisitor);
@@ -627,7 +628,7 @@ nsMathMLElement::IntrinsicState() const
 }
 
 bool
-nsMathMLElement::IsNodeOfType(PRUint32 aFlags) const
+nsMathMLElement::IsNodeOfType(uint32_t aFlags) const
 {
   return !(aFlags & ~eCONTENT);
 }
@@ -646,7 +647,7 @@ nsMathMLElement::SetIncrementScriptLevel(bool aIncrementScriptLevel,
 }
 
 bool
-nsMathMLElement::IsFocusable(PRInt32 *aTabIndex, bool aWithMouse)
+nsMathMLElement::IsFocusable(int32_t *aTabIndex, bool aWithMouse)
 {
   nsCOMPtr<nsIURI> uri;
   if (IsLink(getter_AddRefs(uri))) {
@@ -673,7 +674,7 @@ nsMathMLElement::IsLink(nsIURI** aURI) const
       tag == nsGkAtoms::none         ||
       tag == nsGkAtoms::malignmark_  ||
       tag == nsGkAtoms::maligngroup_) {
-    *aURI = nsnull;
+    *aURI = nullptr;
     return false;
   }
 
@@ -697,13 +698,13 @@ nsMathMLElement::IsLink(nsIURI** aURI) const
     // result is poorly specified. Either way, we return false.
     
     static nsIContent::AttrValuesArray sTypeVals[] =
-      { &nsGkAtoms::_empty, &nsGkAtoms::simple, nsnull };
+      { &nsGkAtoms::_empty, &nsGkAtoms::simple, nullptr };
     
     static nsIContent::AttrValuesArray sShowVals[] =
-      { &nsGkAtoms::_empty, &nsGkAtoms::_new, &nsGkAtoms::replace, nsnull };
+      { &nsGkAtoms::_empty, &nsGkAtoms::_new, &nsGkAtoms::replace, nullptr };
     
     static nsIContent::AttrValuesArray sActuateVals[] =
-      { &nsGkAtoms::_empty, &nsGkAtoms::onRequest, nsnull };
+      { &nsGkAtoms::_empty, &nsGkAtoms::onRequest, nullptr };
     
     // Optimization: check for href first for early return
     href = mAttrsAndChildren.GetAttr(nsGkAtoms::href,
@@ -733,7 +734,7 @@ nsMathMLElement::IsLink(nsIURI** aURI) const
     return !!*aURI;
   }
 
-  *aURI = nsnull;
+  *aURI = nullptr;
   return false;
 }
 
@@ -749,7 +750,7 @@ nsMathMLElement::GetLinkTarget(nsAString& aTarget)
   if (aTarget.IsEmpty()) {
 
     static nsIContent::AttrValuesArray sShowVals[] =
-      { &nsGkAtoms::_new, &nsGkAtoms::replace, nsnull };
+      { &nsGkAtoms::_new, &nsGkAtoms::replace, nullptr };
     
     switch (FindAttrValueIn(kNameSpaceID_XLink, nsGkAtoms::show,
                             sShowVals, eCaseMatters)) {
@@ -773,11 +774,11 @@ already_AddRefed<nsIURI>
 nsMathMLElement::GetHrefURI() const
 {
   nsCOMPtr<nsIURI> hrefURI;
-  return IsLink(getter_AddRefs(hrefURI)) ? hrefURI.forget() : nsnull;
+  return IsLink(getter_AddRefs(hrefURI)) ? hrefURI.forget() : nullptr;
 }
 
 nsresult
-nsMathMLElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+nsMathMLElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                          nsIAtom* aPrefix, const nsAString& aValue,
                          bool aNotify)
 {
@@ -799,7 +800,7 @@ nsMathMLElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
 }
 
 nsresult
-nsMathMLElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttr,
+nsMathMLElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttr,
                            bool aNotify)
 {
   nsresult rv = nsMathMLElementBase::UnsetAttr(aNameSpaceID, aAttr, aNotify);

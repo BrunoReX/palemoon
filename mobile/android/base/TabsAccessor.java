@@ -4,18 +4,24 @@
 
 package org.mozilla.gecko;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
-import org.mozilla.gecko.db.BrowserContract.Clients;
-import org.mozilla.gecko.db.BrowserContract.Tabs;
 import org.mozilla.gecko.db.BrowserContract;
+import org.mozilla.gecko.util.GeckoAsyncTask;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+
+import android.content.ContentResolver;
+import android.content.ContentUris;
+import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.SystemClock;
 import android.util.Log;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 public final class TabsAccessor {
     private static final String LOGTAG = "GeckoTabsAccessor";
@@ -42,6 +48,9 @@ public final class TabsAccessor {
     private static final String CLIENTS_SELECTION = BrowserContract.Clients.GUID + " IS NOT NULL";
     private static final String TABS_SELECTION = BrowserContract.Tabs.CLIENT_GUID + " IS NOT NULL";
 
+    private static final String LOCAL_CLIENT_SELECTION = BrowserContract.Clients.GUID + " IS NULL";
+    private static final String LOCAL_TABS_SELECTION = BrowserContract.Tabs.CLIENT_GUID + " IS NULL";
+
     public static class RemoteTab {
         public String title;
         public String url;
@@ -62,7 +71,7 @@ public final class TabsAccessor {
         if (listener == null)
             return;
 
-        (new GeckoAsyncTask<Void, Void, Boolean> () {
+        (new GeckoAsyncTask<Void, Void, Boolean>(GeckoApp.mAppContext, GeckoAppShell.getHandler()) {
             @Override
             protected Boolean doInBackground(Void... unused) {
                 Uri uri = BrowserContract.Tabs.CONTENT_URI;
@@ -90,7 +99,7 @@ public final class TabsAccessor {
             protected void onPostExecute(Boolean availability) {
                 listener.areAvailable(availability);
             }
-        }).setPriority(GeckoAsyncTask.PRIORITY_HIGH).execute();
+        }).setPriority(GeckoAsyncTask.Priority.HIGH).execute();
     }
 
     // This method returns all tabs from all remote clients, 
@@ -106,7 +115,7 @@ public final class TabsAccessor {
         if (listener == null)
             return;
 
-        (new GeckoAsyncTask<Void, Void, List<RemoteTab>> () {
+        (new GeckoAsyncTask<Void, Void, List<RemoteTab>>(GeckoApp.mAppContext, GeckoAppShell.getHandler()) {
             @Override
             protected List<RemoteTab> doInBackground(Void... unused) {
                 Uri uri = BrowserContract.Tabs.CONTENT_URI;
@@ -150,5 +159,78 @@ public final class TabsAccessor {
                 listener.onQueryTabsComplete(tabs);
             }
         }).execute();
+    }
+
+    // Updates the modified time of the local client with the current time.
+    private static void updateLocalClient(final ContentResolver cr) {
+        ContentValues values = new ContentValues();
+        values.put(BrowserContract.Clients.LAST_MODIFIED, System.currentTimeMillis());
+        cr.update(BrowserContract.Clients.CONTENT_URI, values, LOCAL_CLIENT_SELECTION, null);
+    }
+
+    // Deletes all local tabs.
+    private static void deleteLocalTabs(final ContentResolver cr) {
+        cr.delete(BrowserContract.Tabs.CONTENT_URI, LOCAL_TABS_SELECTION, null);
+    }
+
+    /**
+     * Tabs are positioned in the DB in the same order that they appear in the tabs param.
+     *   - URL should never empty or null. Skip this tab if there's no URL.
+     *   - TITLE should always a string, either a page title or empty.
+     *   - LAST_USED should always be numeric.
+     *   - FAVICON should be a URL or null.
+     *   - HISTORY should be serialized JSON array of URLs.
+     *   - POSITION should always be numeric.
+     *   - CLIENT_GUID should always be null to represent the local client.
+     */
+    private static void insertLocalTabs(final ContentResolver cr, final Iterable<Tab> tabs) {
+        // Reuse this for serializing individual history URLs as JSON.
+        JSONArray history = new JSONArray();
+        ArrayList<ContentValues> valuesToInsert = new ArrayList<ContentValues>();
+
+        int position = 0;
+        for (Tab tab : tabs) {
+            // Skip this tab if it has a null URL.
+            String url = tab.getURL();
+            if (url == null)
+                continue;
+
+            ContentValues values = new ContentValues();
+            values.put(BrowserContract.Tabs.URL, url);
+            values.put(BrowserContract.Tabs.TITLE, tab.getTitle());
+            values.put(BrowserContract.Tabs.LAST_USED, tab.getLastUsed());
+
+            String favicon = tab.getFaviconURL();
+            if (favicon != null)
+                values.put(BrowserContract.Tabs.FAVICON, favicon);
+            else
+                values.putNull(BrowserContract.Tabs.FAVICON);
+
+            // We don't have access to session history in Java, so for now, we'll
+            // just use a JSONArray that holds most recent history item.
+            try {
+                history.put(0, tab.getURL());
+                values.put(BrowserContract.Tabs.HISTORY, history.toString());
+            } catch (JSONException e) {
+                Log.w(LOGTAG, "JSONException adding URL to tab history array.", e);
+            }
+
+            values.put(BrowserContract.Tabs.POSITION, position++);
+
+            // A null client guid corresponds to the local client.
+            values.putNull(BrowserContract.Tabs.CLIENT_GUID);
+
+            valuesToInsert.add(values);
+        }
+
+        ContentValues[] valuesToInsertArray = valuesToInsert.toArray(new ContentValues[valuesToInsert.size()]);
+        cr.bulkInsert(BrowserContract.Tabs.CONTENT_URI, valuesToInsertArray);
+    }
+
+    // Deletes all local tabs and replaces them with a new list of tabs.
+    public static synchronized void persistLocalTabs(final ContentResolver cr, final Iterable<Tab> tabs) {
+        deleteLocalTabs(cr);
+        insertLocalTabs(cr, tabs);
+        updateLocalClient(cr);
     }
 }

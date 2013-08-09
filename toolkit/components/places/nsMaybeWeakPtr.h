@@ -9,6 +9,7 @@
 #include "nsCOMPtr.h"
 #include "nsWeakReference.h"
 #include "nsTArray.h"
+#include "nsCycleCollectionNoteChild.h"
 
 // nsMaybeWeakPtr is a helper object to hold a strong-or-weak reference
 // to the template class.  It's pretty minimal, but sufficient.
@@ -70,11 +71,32 @@ public:
   }
 };
 
+template <typename T>
+inline void
+ImplCycleCollectionUnlink(nsMaybeWeakPtrArray<T>& aField)
+{
+  aField.Clear();
+}
+
+template <typename E>
+inline void
+ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback& aCallback,
+                            nsMaybeWeakPtrArray<E>& aField,
+                            const char* aName,
+                            uint32_t aFlags = 0)
+{
+  aFlags |= CycleCollectionEdgeNameArrayFlag;
+  size_t length = aField.Length();
+  for (size_t i = 0; i < length; ++i) {
+    CycleCollectionNoteChild(aCallback, aField[i].get(), aName, aFlags);
+  }
+}
+
 // Call a method on each element in the array, but only if the element is
 // non-null.
 
 #define ENUMERATE_WEAKARRAY(array, type, method)                           \
-  for (PRUint32 array_idx = 0; array_idx < array.Length(); ++array_idx) {  \
+  for (uint32_t array_idx = 0; array_idx < array.Length(); ++array_idx) {  \
     const nsCOMPtr<type> &e = array.ElementAt(array_idx);                  \
     if (e)                                                                 \
       e->method;                                                           \

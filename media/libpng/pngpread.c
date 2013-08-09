@@ -1,7 +1,7 @@
 
 /* pngpread.c - read a png file in push mode
  *
- * Last changed in libpng 1.5.9 [February 18, 2012]
+ * Last changed in libpng 1.5.11 [June 14, 2012]
  * Copyright (c) 1998-2012 Glenn Randers-Pehrson
  * (Version 0.96 Copyright (c) 1996, 1997 Andreas Dilger)
  * (Version 0.88 Copyright (c) 1995, 1996 Guy Eric Schalnat, Group 42, Inc.)
@@ -385,8 +385,8 @@ png_push_read_chunk(png_structp png_ptr, png_infop info_ptr)
             png_error(png_ptr, "Missing PLTE before IDAT");
       }
    }
-
 #endif
+
    else if (chunk_name == png_PLTE)
    {
       if (png_ptr->push_length + 4 > png_ptr->buffer_size)
@@ -1039,6 +1039,15 @@ png_process_IDAT_data(png_structp png_ptr, png_bytep buffer,
    if (!(buffer_length > 0) || buffer == NULL)
       png_error(png_ptr, "No IDAT data (internal error)");
 
+#ifdef PNG_READ_APNG_SUPPORTED
+   /* If the app is not APNG-aware, decode only the first frame */
+   if (!(png_ptr->apng_flags & PNG_APNG_APP) && png_ptr->num_frames_read > 0)
+   {
+     png_ptr->flags |= PNG_FLAG_ZLIB_FINISHED;
+     return;
+   }
+#endif
+
    /* This routine must process all the data it has been given
     * before returning, calling the row callback as required to
     * handle the uncompressed results.
@@ -1492,6 +1501,7 @@ png_set_progressive_frame_fn(png_structp png_ptr,
 {
    png_ptr->frame_info_fn = frame_info_fn;
    png_ptr->frame_end_fn = frame_end_fn;
+   png_ptr->apng_flags |= PNG_APNG_APP;
 }
 #endif
 

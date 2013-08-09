@@ -10,19 +10,19 @@
 NS_IMPL_ISUPPORTS1(nsPermission, nsIPermission)
 
 nsPermission::nsPermission(const nsACString &aHost,
+                           uint32_t aAppId,
+                           bool aIsInBrowserElement,
                            const nsACString &aType,
-                           PRUint32         aCapability,
-                           PRUint32         aExpireType,
-                           PRInt64          aExpireTime)
+                           uint32_t         aCapability,
+                           uint32_t         aExpireType,
+                           int64_t          aExpireTime)
  : mHost(aHost)
  , mType(aType)
  , mCapability(aCapability)
  , mExpireType(aExpireType)
  , mExpireTime(aExpireTime)
-{
-}
-
-nsPermission::~nsPermission()
+ , mAppId(aAppId)
+ , mIsInBrowserElement(aIsInBrowserElement)
 {
 }
 
@@ -34,6 +34,20 @@ nsPermission::GetHost(nsACString &aHost)
 }
 
 NS_IMETHODIMP
+nsPermission::GetAppId(uint32_t* aAppId)
+{
+  *aAppId = mAppId;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsPermission::GetIsInBrowserElement(bool* aIsInBrowserElement)
+{
+  *aIsInBrowserElement = mIsInBrowserElement;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsPermission::GetType(nsACString &aType)
 {
   aType = mType;
@@ -41,21 +55,21 @@ nsPermission::GetType(nsACString &aType)
 }
 
 NS_IMETHODIMP
-nsPermission::GetCapability(PRUint32 *aCapability)
+nsPermission::GetCapability(uint32_t *aCapability)
 {
   *aCapability = mCapability;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsPermission::GetExpireType(PRUint32 *aExpireType)
+nsPermission::GetExpireType(uint32_t *aExpireType)
 {
   *aExpireType = mExpireType;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsPermission::GetExpireTime(PRInt64 *aExpireTime)
+nsPermission::GetExpireTime(int64_t *aExpireTime)
 {
   *aExpireTime = mExpireTime;
   return NS_OK;

@@ -36,9 +36,9 @@ nsMathMLmunderoverFrame::~nsMathMLmunderoverFrame()
 }
 
 NS_IMETHODIMP
-nsMathMLmunderoverFrame::AttributeChanged(PRInt32         aNameSpaceID,
+nsMathMLmunderoverFrame::AttributeChanged(int32_t         aNameSpaceID,
                                           nsIAtom*        aAttribute,
-                                          PRInt32         aModType)
+                                          int32_t         aModType)
 {
   if (nsGkAtoms::accent_ == aAttribute ||
       nsGkAtoms::accentunder_ == aAttribute) {
@@ -52,8 +52,8 @@ nsMathMLmunderoverFrame::AttributeChanged(PRInt32         aNameSpaceID,
 }
 
 NS_IMETHODIMP
-nsMathMLmunderoverFrame::UpdatePresentationData(PRUint32        aFlagsValues,
-                                                PRUint32        aFlagsToUpdate)
+nsMathMLmunderoverFrame::UpdatePresentationData(uint32_t        aFlagsValues,
+                                                uint32_t        aFlagsToUpdate)
 {
   nsMathMLContainerFrame::UpdatePresentationData(aFlagsValues, aFlagsToUpdate);
   // disable the stretch-all flag if we are going to act like a subscript-superscript pair
@@ -68,10 +68,10 @@ nsMathMLmunderoverFrame::UpdatePresentationData(PRUint32        aFlagsValues,
 }
 
 NS_IMETHODIMP
-nsMathMLmunderoverFrame::UpdatePresentationDataFromChildAt(PRInt32         aFirstIndex,
-                                                           PRInt32         aLastIndex,
-                                                           PRUint32        aFlagsValues,
-                                                           PRUint32        aFlagsToUpdate)
+nsMathMLmunderoverFrame::UpdatePresentationDataFromChildAt(int32_t         aFirstIndex,
+                                                           int32_t         aLastIndex,
+                                                           uint32_t        aFlagsValues,
+                                                           uint32_t        aFlagsToUpdate)
 {
   // munderover is special... The REC says:
   // Within underscript, <munder> always sets displaystyle to "false", 
@@ -88,7 +88,7 @@ nsMathMLmunderoverFrame::UpdatePresentationDataFromChildAt(PRInt32         aFirs
   //    can change in the <mo> deep down the embellished hierarchy
 
   // Do #1 here, prevent displaystyle to be changed in the underscript & overscript
-  PRInt32 index = 0;
+  int32_t index = 0;
   nsIFrame* childFrame = mFrames.FirstChild();
   while (childFrame) {
     if ((index >= aFirstIndex) &&
@@ -154,8 +154,8 @@ XXX The winner is the outermost setting in conflicting settings like these:
   of accentunder depending on underscript.
   */
 
-  nsIFrame* overscriptFrame = nsnull;
-  nsIFrame* underscriptFrame = nsnull;
+  nsIFrame* overscriptFrame = nullptr;
+  nsIFrame* underscriptFrame = nullptr;
   nsIFrame* baseFrame = mFrames.FirstChild();
   nsIAtom* tag = mContent->Tag();
 
@@ -257,7 +257,7 @@ XXX The winner is the outermost setting in conflicting settings like these:
   */
   if (tag == nsGkAtoms::mover_ ||
       tag == nsGkAtoms::munderover_) {
-    PRUint32 compress = NS_MATHML_EMBELLISH_IS_ACCENTOVER(mEmbellishData.flags)
+    uint32_t compress = NS_MATHML_EMBELLISH_IS_ACCENTOVER(mEmbellishData.flags)
       ? NS_MATHML_COMPRESSED : 0;
     SetIncrementScriptLevel(tag == nsGkAtoms::mover_ ? 1 : 2,
                             !NS_MATHML_EMBELLISH_IS_ACCENTOVER(mEmbellishData.flags) || subsupDisplay);
@@ -341,8 +341,8 @@ nsMathMLmunderoverFrame::Place(nsRenderingContext& aRenderingContext,
   nsHTMLReflowMetrics baseSize;
   nsHTMLReflowMetrics underSize;
   nsHTMLReflowMetrics overSize;
-  nsIFrame* overFrame = nsnull;
-  nsIFrame* underFrame = nsnull;
+  nsIFrame* overFrame = nullptr;
+  nsIFrame* underFrame = nullptr;
   nsIFrame* baseFrame = mFrames.FirstChild();
   underSize.ascent = 0; 
   overSize.ascent = 0;
@@ -621,16 +621,16 @@ nsMathMLmunderoverFrame::Place(nsRenderingContext& aRenderingContext,
     if (overFrame) {
       dy = aDesiredSize.ascent - mBoundingMetrics.ascent + bmOver.ascent 
         - overSize.ascent;
-      FinishReflowChild (overFrame, PresContext(), nsnull, overSize, dxOver, dy, 0);
+      FinishReflowChild (overFrame, PresContext(), nullptr, overSize, dxOver, dy, 0);
     }
     // place base
     dy = aDesiredSize.ascent - baseSize.ascent;
-    FinishReflowChild (baseFrame, PresContext(), nsnull, baseSize, dxBase, dy, 0);
+    FinishReflowChild (baseFrame, PresContext(), nullptr, baseSize, dxBase, dy, 0);
     // place underscript
     if (underFrame) {
       dy = aDesiredSize.ascent + mBoundingMetrics.descent - bmUnder.descent 
         - underSize.ascent;
-      FinishReflowChild (underFrame, PresContext(), nsnull, underSize,
+      FinishReflowChild (underFrame, PresContext(), nullptr, underSize,
                          dxUnder, dy, 0);
     }
   }

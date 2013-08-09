@@ -186,6 +186,8 @@ public:
     eIntID_SubmenuDelay,
     // can popups overlap menu/task bar?
     eIntID_MenusCanOverlapOSBar,
+    // show/hide scrollbars based on activity
+    eIntID_ShowHideScrollbars,
     // skip navigating to disabled menu item?
     eIntID_SkipNavigatingDisabledMenuItem,
     // begin a drag if the mouse is moved further than the threshold while the
@@ -451,7 +453,7 @@ public:
    * use a value for the default value, you should use the other method which
    * returns int or float directly.
    */
-  static nsresult GetInt(IntID aID, PRInt32* aResult);
+  static nsresult GetInt(IntID aID, int32_t* aResult);
   static nsresult GetFloat(FloatID aID, float* aResult);
 
   static nscolor GetColor(ColorID aID, nscolor aDefault = NS_RGB(0, 0, 0))
@@ -463,9 +465,9 @@ public:
     return result;
   }
 
-  static PRInt32 GetInt(IntID aID, PRInt32 aDefault = 0)
+  static int32_t GetInt(IntID aID, int32_t aDefault = 0)
   {
-    PRInt32 result;
+    int32_t result;
     if (NS_FAILED(GetInt(aID, &result))) {
       return aDefault;
     }
@@ -489,8 +491,10 @@ public:
    * @param aID    Which system-theme font is wanted.
    * @param aName  The name of the font to use.
    * @param aStyle Styling to apply to the font.
+   * @param aDevPixPerCSSPixel  Ratio of device pixels to CSS pixels
    */
-  static bool GetFont(FontID aID, nsString& aName, gfxFontStyle& aStyle);
+  static bool GetFont(FontID aID, nsString& aName, gfxFontStyle& aStyle,
+                      float aDevPixPerCSSPixel);
 
   /**
    * GetPasswordCharacter() returns a unicode character which should be used
@@ -504,6 +508,12 @@ public:
    * Otherwise, FALSE.
    */
   static bool GetEchoPassword();
+
+  /**
+   * The millisecond to mask password value.
+   * This value is only valid when GetEchoPassword() returns true.
+   */
+  static uint32_t GetPasswordMaskDelay();
 
   /**
    * When system look and feel is changed, Refresh() must be called.  Then,

@@ -22,7 +22,7 @@
  *   The file abstraction provides ways to obtain and access files and 
  *   directories located on the local system. 
  *
- *   This contract supports the nsIFile interface and the nsILocalFile interface.
+ *   This contract supports the nsIFile interface.
  *   This contract may also support platform specific interfaces such as 
  *   nsILocalFileMac on platforms where additional interfaces are required.
  *
@@ -71,9 +71,19 @@
 #define NS_MEMORY_REPORTER_MANAGER_CONTRACTID "@mozilla.org/memory-reporter-manager;1"
 
 /**
+ * Memory info dumper service CID
+ */
+#define NS_MEMORY_INFO_DUMPER_CONTRACTID "@mozilla.org/memory-info-dumper;1"
+
+/**
  * Cycle collector logger contract id
  */
 #define NS_CYCLE_COLLECTOR_LOGGER_CONTRACTID "@mozilla.org/cycle-collector-logger;1"
+
+/**
+ * nsMessageLoop contract id
+ */
+#define NS_MESSAGE_LOOP_CONTRACTID "@mozilla.org/message-loop;1"
 
 /**
  * The following are the CIDs and Contract IDs of the nsISupports wrappers for 

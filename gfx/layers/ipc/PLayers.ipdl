@@ -5,25 +5,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+include LayersSurfaces;
 include protocol PCompositor;
+include protocol PGrallocBuffer;
 include protocol PLayer;
 include protocol PRenderFrame;
 
 include "gfxipc/ShadowLayerUtils.h";
+include "mozilla/WidgetUtils.h";
+include "mozilla/TimeStamp.h";
+include "mozilla/dom/ScreenOrientation.h";
+include "nsCSSProperty.h";
 
-using gfx3DMatrix;
-using gfxRGBA;
-using nsIntPoint;
-using nsIntRect;
-using nsIntRegion;
-using nsIntSize;
-using mozilla::GraphicsFilterType;
-using mozilla::layers::FrameMetrics;
-using mozilla::layers::SurfaceDescriptorX11;
-using mozilla::null_t;
-using mozilla::WindowsHandle;
-using mozilla::gl::SharedTextureHandle;
-using mozilla::gl::TextureImage::TextureShareType;
+using gfxPoint3D;
+using nscoord;
+using nsRect;
+using nsPoint;
+using mozilla::TimeDuration;
+using mozilla::TimeStamp;
+using mozilla::ScreenRotation;
+using nsCSSProperty;
+using mozilla::dom::ScreenOrientation;
 
 /**
  * The layers protocol is spoken between thread contexts that manage
@@ -36,48 +38,25 @@ using mozilla::gl::TextureImage::TextureShareType;
 namespace mozilla {
 namespace layers {
 
+struct TargetConfig {
+  nsIntRect naturalBounds;
+  ScreenRotation rotation;
+  nsIntRect clientBounds;
+  ScreenOrientation orientation;
+};
+
 // Create a shadow layer for |layer|
 struct OpCreateThebesLayer     { PLayer layer; };
 struct OpCreateContainerLayer  { PLayer layer; };
 struct OpCreateImageLayer      { PLayer layer; };
 struct OpCreateColorLayer      { PLayer layer; };
 struct OpCreateCanvasLayer     { PLayer layer; };
-
-struct SurfaceDescriptorD3D10 {
-  WindowsHandle handle;
-};
-
-struct SharedTextureDescriptor {
-  TextureShareType shareType;
-  SharedTextureHandle handle;
-  nsIntSize size;
-  bool inverted;
-};
-
-union SurfaceDescriptor {
-  Shmem;
-  SurfaceDescriptorD3D10;
-  SurfaceDescriptorX11;
-  SharedTextureDescriptor;
-};
-
-struct YUVImage {
-  Shmem Ydata;
-  Shmem Udata;
-  Shmem Vdata;
-  nsIntRect picture;
-};
-
-union SharedImage {
-  SurfaceDescriptor;
-  YUVImage;
-  null_t;
-};
+struct OpCreateRefLayer        { PLayer layer; };
 
 struct ThebesBuffer {
   SurfaceDescriptor buffer;
   nsIntRect rect;
-  nsIntPoint rotation; 
+  nsIntPoint rotation;
 };
 union OptionalThebesBuffer { ThebesBuffer; null_t; };
 
@@ -86,25 +65,136 @@ union CanvasSurface {
   null_t;
 };
 
+struct CubicBezierFunction {
+  float x1;
+  float y1;
+  float x2;
+  float y2;
+};
+
+struct StepFunction {
+  int steps;
+  // 1 = nsTimingFunction::StepStart, 2 = nsTimingFunction::StepEnd
+  int type;
+};
+
+union TimingFunction {
+  CubicBezierFunction;
+  StepFunction;
+};
+
+struct Color { gfxRGBA value; };
+struct Perspective { float value; };
+struct RotationX { float radians; };
+struct RotationY { float radians; };
+struct RotationZ { float radians; };
+struct Rotation { float radians; };
+struct Rotation3D {
+  float x;
+  float y;
+  float z;
+  float radians;
+};
+struct Scale {
+  float x;
+  float y;
+  float z;
+};
+struct SkewX { float x; };
+struct SkewY { float y; };
+struct TransformMatrix { gfx3DMatrix value; };
+struct Translation {
+  float x;
+  float y;
+  float z;
+};
+
+union TransformFunction {
+  Perspective;
+  RotationX;
+  RotationY;
+  RotationZ;
+  Rotation;
+  Rotation3D;
+  Scale;
+  SkewX;
+  SkewY;
+  Translation;
+  TransformMatrix;
+};
+
+union Animatable {
+  float;
+  TransformFunction[];
+};
+
+struct AnimationSegment {
+  Animatable startState;
+  Animatable endState;
+  float startPortion;
+  float endPortion;
+  TimingFunction sampleFn;
+};
+
+// Transforms need extra information to correctly convert the list of transform
+// functions to a gfx3DMatrix that can be applied directly to the layer.
+struct TransformData {
+  nsPoint origin;
+  gfxPoint3D mozOrigin;
+  gfxPoint3D perspectiveOrigin;
+  nsRect bounds;
+  nscoord perspective;
+};
+
+union AnimationData {
+  null_t;
+  TransformData;
+};
+
+struct Animation {
+  TimeStamp startTime;
+  TimeDuration duration;
+  // For each frame, the interpolation point is computed based on the
+  // startTime, the direction, the duration, and the current time.
+  // The segments must uniquely cover the portion from 0.0 to 1.0
+  AnimationSegment[] segments;
+  // How many times to repeat the animation.  < 0 means "forever".
+  float numIterations;
+  // This uses the NS_STYLE_ANIMATION_DIRECTION_* constants.
+  int32_t direction;
+  nsCSSProperty property;
+  AnimationData data;
+};
+
 // Change a layer's attributes
 struct CommonLayerAttributes {
   nsIntRegion visibleRegion;
-  gfx3DMatrix transform;
-  PRUint32 contentFlags;
+  TransformMatrix transform;
+  float postXScale;
+  float postYScale;
+  uint32_t contentFlags;
   float opacity;
   bool useClipRect;
   nsIntRect clipRect;
   bool isFixedPosition;
+  gfxPoint fixedPositionAnchor;
   nullable PLayer maskLayer;
-};
+  // Animated colors will only honored for ColorLayers.
+  Animation[] animations;
+ };
 
 struct ThebesLayerAttributes {
   nsIntRegion validRegion;
 };
-struct ContainerLayerAttributes{ FrameMetrics metrics; };
-struct ColorLayerAttributes    { gfxRGBA color; };
-struct CanvasLayerAttributes   { GraphicsFilterType filter; };
-struct ImageLayerAttributes    {
+struct ContainerLayerAttributes {
+  FrameMetrics metrics;
+  float preXScale;
+  float preYScale;
+};
+struct ColorLayerAttributes     { Color color; };
+struct CanvasLayerAttributes    { GraphicsFilterType filter; };
+struct RefLayerAttributes       { int64_t id; };
+struct ImageLayerAttributes     {
   GraphicsFilterType filter;
   bool forceSingleTile;
 };
@@ -115,6 +205,7 @@ union SpecificLayerAttributes {
   ContainerLayerAttributes;
   ColorLayerAttributes;
   CanvasLayerAttributes;
+  RefLayerAttributes;
   ImageLayerAttributes;
 };
 
@@ -130,10 +221,12 @@ struct OpSetLayerAttributes {
 
 
 // Monkey with the tree structure
-struct OpSetRoot      { PLayer root; };
-struct OpInsertAfter  { PLayer container; PLayer childLayer; PLayer after; };
-struct OpAppendChild  { PLayer container; PLayer childLayer; };
-struct OpRemoveChild  { PLayer container; PLayer childLayer; };
+struct OpSetRoot          { PLayer root; };
+struct OpInsertAfter      { PLayer container; PLayer childLayer; PLayer after; };
+struct OpAppendChild      { PLayer container; PLayer childLayer; };
+struct OpRemoveChild      { PLayer container; PLayer childLayer; };
+struct OpRepositionChild  { PLayer container; PLayer childLayer; PLayer after; };
+struct OpRaiseToTopChild  { PLayer container; PLayer childLayer; };
 
 
 // Paint (buffer update)
@@ -169,6 +262,7 @@ union Edit {
   OpCreateImageLayer;
   OpCreateColorLayer;
   OpCreateCanvasLayer;
+  OpCreateRefLayer;
 
   OpSetLayerAttributes;
 
@@ -176,6 +270,8 @@ union Edit {
   OpInsertAfter;
   OpAppendChild;
   OpRemoveChild;
+  OpRepositionChild;
+  OpRaiseToTopChild;
 
   OpPaintThebesBuffer;
   OpPaintTiledLayerBuffer;
@@ -214,23 +310,31 @@ union EditReply {
 
 sync protocol PLayers {
   manager PRenderFrame or PCompositor;
+  manages PGrallocBuffer;
   manages PLayer;
 
 parent:
+  /**
+   * Only the parent side has privileges to allocate the buffer.
+   * Allocation may fail (pmem is a scarce resource), and if so null_t
+   * is returned.
+   */
+  sync PGrallocBuffer(gfxIntSize size, gfxContentType content)
+    returns (MaybeMagicGrallocBufferHandle handle);
   async PLayer();
 
   // The isFirstPaint flag can be used to indicate that this is the first update
   // for a particular document.
-  sync Update(Edit[] cset, bool isFirstPaint)
+  sync Update(Edit[] cset, TargetConfig targetConfig, bool isFirstPaint)
     returns (EditReply[] reply);
-
-  // Composite the layer tree to the given surface, and return the surface.
-  sync DrawToSurface(SurfaceDescriptor surfaceIn)
-    returns (SurfaceDescriptor surfaceOut);
 
   // We don't need to send a sync transaction if
   // no transaction operate require a swap.
-  async UpdateNoSwap(Edit[] cset, bool isFirstPaint);
+  async UpdateNoSwap(Edit[] cset, TargetConfig targetConfig, bool isFirstPaint);
+
+  // Drop any front buffers that might be retained on the compositor
+  // side.
+  async ClearCachedResources();
 
   async __delete__();
 };

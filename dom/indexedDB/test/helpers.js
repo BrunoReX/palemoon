@@ -4,16 +4,64 @@
  */
 
 var testGenerator = testSteps();
+var archiveReaderEnabled = false;
+
+// The test js is shared between xpcshell (which has no SpecialPowers object)
+// and content mochitests (where the |Components| object is accessible only as
+// SpecialPowers.Components). Expose Components if necessary here to make things
+// work everywhere.
+if (typeof Components === 'undefined')
+  Components = SpecialPowers.Components;
 
 function executeSoon(aFun)
 {
-  SimpleTest.executeSoon(aFun);
+  let comp = SpecialPowers.wrap(Components);
+
+  let thread = comp.classes["@mozilla.org/thread-manager;1"]
+                   .getService(comp.interfaces.nsIThreadManager)
+                   .mainThread;
+
+  thread.dispatch({
+    run: function() {
+      aFun();
+    }
+  }, Components.interfaces.nsIThread.DISPATCH_NORMAL);
+}
+
+function clearAllDatabases(callback) {
+  function runCallback() {
+    SimpleTest.executeSoon(function () { callback(); });
+  }
+
+  if (!SpecialPowers.isMainProcess()) {
+    runCallback();
+    return;
+  }
+
+  let comp = SpecialPowers.wrap(Components);
+
+  let idbManager =
+    comp.classes["@mozilla.org/dom/indexeddb/manager;1"]
+        .getService(comp.interfaces.nsIIndexedDatabaseManager);
+
+  let uri = SpecialPowers.getDocumentURIObject(document);
+
+  idbManager.clearDatabasesForURI(uri);
+  idbManager.getUsageForURI(uri, function(uri, usage, fileUsage) {
+    if (usage) {
+      ok(false,
+         "getUsageForURI returned non-zero usage after clearing all " +
+         "databases!");
+    }
+    runCallback();
+  });
 }
 
 if (!window.runTest) {
   window.runTest = function(limitedQuota)
   {
-    allowIndexedDB();
+    SimpleTest.waitForExplicitFinish();
+
     if (limitedQuota) {
       denyUnlimitedQuota();
     }
@@ -21,18 +69,20 @@ if (!window.runTest) {
       allowUnlimitedQuota();
     }
 
-    SimpleTest.waitForExplicitFinish();
-    testGenerator.next();
+    enableArchiveReader();
+
+    clearAllDatabases(function () { testGenerator.next(); });
   }
 }
 
 function finishTest()
 {
   resetUnlimitedQuota();
-  resetIndexedDB();
+  resetArchiveReader();
 
   SimpleTest.executeSoon(function() {
     testGenerator.close();
+    //clearAllDatabases(function() { SimpleTest.finish(); });
     SimpleTest.finish();
   });
 }
@@ -82,17 +132,20 @@ function unexpectedSuccessHandler()
   finishTest();
 }
 
-function ExpectError(name)
+function ExpectError(name, preventDefault)
 {
   this._name = name;
+  this._preventDefault = preventDefault;
 }
 ExpectError.prototype = {
   handleEvent: function(event)
   {
     is(event.type, "error", "Got an error event");
     is(event.target.error.name, this._name, "Expected error was thrown.");
-    event.preventDefault();
-    event.stopPropagation();
+    if (this._preventDefault) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
     grabEventAndContinueHandler(event);
   }
 };
@@ -114,12 +167,12 @@ function compareKeys(k1, k2) {
     if (!(k2 instanceof Array) ||
         k1.length != k2.length)
       return false;
-    
+
     for (let i = 0; i < k1.length; ++i) {
       if (!compareKeys(k1[i], k2[i]))
         return false;
     }
-    
+
     return true;
   }
 
@@ -147,16 +200,6 @@ function setQuota(quota)
   SpecialPowers.setIntPref("dom.indexedDB.warningQuota", quota);
 }
 
-function allowIndexedDB(url)
-{
-  addPermission("indexedDB", true, url);
-}
-
-function resetIndexedDB(url)
-{
-  removePermission("indexedDB", url);
-}
-
 function allowUnlimitedQuota(url)
 {
   addPermission("indexedDB-unlimited", true, url);
@@ -170,4 +213,21 @@ function denyUnlimitedQuota(url)
 function resetUnlimitedQuota(url)
 {
   removePermission("indexedDB-unlimited", url);
+}
+
+function enableArchiveReader()
+{
+  archiveReaderEnabled = SpecialPowers.getBoolPref("dom.archivereader.enabled");
+  SpecialPowers.setBoolPref("dom.archivereader.enabled", true);
+}
+
+function resetArchiveReader()
+{
+  SpecialPowers.setBoolPref("dom.archivereader.enabled", archiveReaderEnabled);
+}
+
+function gc()
+{
+  SpecialPowers.forceGC();
+  SpecialPowers.forceCC();
 }

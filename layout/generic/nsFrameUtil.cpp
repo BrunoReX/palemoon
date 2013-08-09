@@ -13,7 +13,7 @@
 #include "plstr.h"
 
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
 class nsFrameUtil : public nsIFrameUtil {
 public:
   nsFrameUtil();
@@ -21,7 +21,7 @@ public:
 
   NS_DECL_ISUPPORTS
 
-  NS_IMETHOD CompareRegressionData(FILE* aFile1, FILE* aFile2,PRInt32 aRegressionOutput=0);
+  NS_IMETHOD CompareRegressionData(FILE* aFile1, FILE* aFile2,int32_t aRegressionOutput=0);
   NS_IMETHOD DumpRegressionData(FILE* aInputFile, FILE* aOutputFile);
 
   struct Node;
@@ -50,7 +50,7 @@ public:
 
     Node* next;
     char* type;
-    PRUint32 state;
+    uint32_t state;
     nsRect bbox;
     nsCString styleData;
     NodeList* lists;
@@ -79,15 +79,15 @@ public:
     char* name;
     Type type;
     char** attributes;
-    PRInt32 num;
-    PRInt32 size;
+    int32_t num;
+    int32_t size;
     char** values;
   };
 
   static char* Copy(const char* aString);
 
-  static void DumpNode(Node* aNode, FILE* aOutputFile, PRInt32 aIndent);
-  static void DumpTree(Node* aNode, FILE* aOutputFile, PRInt32 aIndent);
+  static void DumpNode(Node* aNode, FILE* aOutputFile, int32_t aIndent);
+  static void DumpTree(Node* aNode, FILE* aOutputFile, int32_t aIndent);
   static bool CompareTrees(Node* aNode1, Node* aNode2);
 };
 
@@ -98,26 +98,26 @@ nsFrameUtil::Copy(const char* aString)
     int l = ::strlen(aString);
     char* c = new char[l+1];
     if (!c)
-      return nsnull;
+      return nullptr;
     memcpy(c, aString, l+1);
     return c;
   }
-  return nsnull;
+  return nullptr;
 }
 
 //----------------------------------------------------------------------
 
 nsFrameUtil::NodeList::NodeList()
-  : next(nsnull), node(nsnull), name(nsnull)
+  : next(nullptr), node(nullptr), name(nullptr)
 {
 }
 
 nsFrameUtil::NodeList::~NodeList()
 {
-  if (nsnull != name) {
+  if (nullptr != name) {
     delete name;
   }
-  if (nsnull != node) {
+  if (nullptr != node) {
     Node::Destroy(node);
   }
 }
@@ -125,7 +125,7 @@ nsFrameUtil::NodeList::~NodeList()
 void
 nsFrameUtil::NodeList::Destroy(NodeList* aLists)
 {
-  while (nsnull != aLists) {
+  while (nullptr != aLists) {
     NodeList* next = aLists->next;
     delete aLists;
     aLists = next;
@@ -135,16 +135,16 @@ nsFrameUtil::NodeList::Destroy(NodeList* aLists)
 //----------------------------------------------------------------------
 
 nsFrameUtil::Node::Node()
-  : next(nsnull), type(nsnull), state(0), lists(nsnull)
+  : next(nullptr), type(nullptr), state(0), lists(nullptr)
 {
 }
 
 nsFrameUtil::Node::~Node()
 {
-  if (nsnull != type) {
+  if (nullptr != type) {
     delete type;
   }
-  if (nsnull != lists) {
+  if (nullptr != lists) {
     NodeList::Destroy(lists);
   }
 }
@@ -152,18 +152,18 @@ nsFrameUtil::Node::~Node()
 void
 nsFrameUtil::Node::Destroy(Node* aList)
 {
-  while (nsnull != aList) {
+  while (nullptr != aList) {
     Node* next = aList->next;
     delete aList;
     aList = next;
   }
 }
 
-static PRInt32 GetInt(nsFrameUtil::Tag* aTag, const char* aAttr)
+static int32_t GetInt(nsFrameUtil::Tag* aTag, const char* aAttr)
 {
   const char* value = aTag->GetAttr(aAttr);
-  if (nsnull != value) {
-    return PRInt32( atoi(value) );
+  if (nullptr != value) {
+    return int32_t( atoi(value) );
   }
   return 0;
 }
@@ -172,12 +172,12 @@ nsFrameUtil::Node*
 nsFrameUtil::Node::ReadTree(FILE* aFile)
 {
   Tag* tag = Tag::Parse(aFile);
-  if (nsnull == tag) {
-    return nsnull;
+  if (nullptr == tag) {
+    return nullptr;
   }
   if (PL_strcmp(tag->name, "frame") != 0) {
     delete tag;
-    return nsnull;
+    return nullptr;
   }
   Node* result = Read(aFile, tag);
   fclose(aFile);
@@ -197,7 +197,7 @@ nsFrameUtil::Node::Read(FILE* aFile, Tag* tag)
 
   for (;;) {
     tag = Tag::Parse(aFile);
-    if (nsnull == tag) break;
+    if (nullptr == tag) break;
     if (PL_strcmp(tag->name, "frame") == 0) {
       delete tag;
       break;
@@ -222,7 +222,7 @@ nsFrameUtil::Node::Read(FILE* aFile, Tag* tag)
       Node** tailp = &list->node;
       for (;;) {
         tag = Tag::Parse(aFile);
-        if (nsnull == tag) {
+        if (nullptr == tag) {
           break;
         }
         if (PL_strcmp(tag->name, "child-list") == 0) {
@@ -232,7 +232,7 @@ nsFrameUtil::Node::Read(FILE* aFile, Tag* tag)
           break;
         }
         Node* child = Node::Read(aFile, tag);
-        if (nsnull == child) {
+        if (nullptr == child) {
           break;
         }
         *tailp = child;
@@ -263,14 +263,14 @@ nsFrameUtil::Node::Read(FILE* aFile, Tag* tag)
 //----------------------------------------------------------------------
 
 nsFrameUtil::Tag::Tag()
-  : name(nsnull), type(open), attributes(nsnull), num(0), size(0),
-    values(nsnull)
+  : name(nullptr), type(open), attributes(nullptr), num(0), size(0),
+    values(nullptr)
 {
 }
 
 nsFrameUtil::Tag::~Tag()
 {
-  PRInt32 i, n = num;
+  int32_t i, n = num;
   if (0 != n) {
     for (i = 0; i < n; i++) {
       delete attributes[i];
@@ -285,7 +285,7 @@ void
 nsFrameUtil::Tag::AddAttr(char* aAttr, char* aValue)
 {
   if (num == size) {
-    PRInt32 newSize = size * 2 + 4;
+    int32_t newSize = size * 2 + 4;
     char** a = new char*[newSize];
     char** v = new char*[newSize];
     if (0 != num) {
@@ -306,13 +306,13 @@ nsFrameUtil::Tag::AddAttr(char* aAttr, char* aValue)
 const char*
 nsFrameUtil::Tag::GetAttr(const char* aAttr)
 {
-  PRInt32 i, n = num;
+  int32_t i, n = num;
   for (i = 0; i < n; i++) {
     if (PL_strcmp(attributes[i], aAttr) == 0) {
       return values[i];
     }
   }
-  return nsnull;
+  return nullptr;
 }
 
 static inline int IsWhiteSpace(int c) {
@@ -352,7 +352,7 @@ static char* ReadIdent(FILE* aFile)
   char* end = ip + sizeof(id) - 1;
   while (ip < end) {
     int c = fgetc(aFile);
-    if (c < 0) return nsnull;
+    if (c < 0) return nullptr;
     if ((c == '=') || (c == '>') || (c == '/') || IsWhiteSpace(c)) {
       ungetc(c, aFile);
       break;
@@ -367,14 +367,14 @@ static char* ReadIdent(FILE* aFile)
 static char* ReadString(FILE* aFile)
 {
   if (!Expect(aFile, '\"')) {
-    return nsnull;
+    return nullptr;
   }
   char id[1000];
   char* ip = id;
   char* end = ip + sizeof(id) - 1;
   while (ip < end) {
     int c = fgetc(aFile);
-    if (c < 0) return nsnull;
+    if (c < 0) return nullptr;
     if (c == '\"') {
       break;
     }
@@ -408,13 +408,13 @@ nsFrameUtil::Tag::ReadAttrs(FILE* aFile)
     }
     ungetc(c, aFile);
     char* attr = ReadIdent(aFile);
-    if ((nsnull == attr) || !EatWS(aFile)) {
+    if ((nullptr == attr) || !EatWS(aFile)) {
       break;
     }
-    char* value = nsnull;
+    char* value = nullptr;
     if (Expect(aFile, '=')) {
       value = ReadString(aFile);
-      if (nsnull == value) {
+      if (nullptr == value) {
         delete [] attr;
         break;
       }
@@ -427,7 +427,7 @@ nsFrameUtil::Tag*
 nsFrameUtil::Tag::Parse(FILE* aFile)
 {
   if (!EatWS(aFile)) {
-    return nsnull;
+    return nullptr;
   }
   if (Expect(aFile, '<')) {
     Tag* tag = new Tag;
@@ -441,7 +441,7 @@ nsFrameUtil::Tag::Parse(FILE* aFile)
     tag->ReadAttrs(aFile);
     return tag;
   }
-  return nsnull;
+  return nullptr;
 }
 
 void
@@ -454,7 +454,7 @@ nsFrameUtil::Tag::ToString(nsString& aResult)
   }
   aResult.AppendASCII(name);
   if (0 != num) {
-    PRInt32 i, n = num;
+    int32_t i, n = num;
     for (i = 0; i < n; i++) {
       aResult.Append(PRUnichar(' '));
       aResult.AppendASCII(attributes[i]);
@@ -476,8 +476,8 @@ nsFrameUtil::Tag::ToString(nsString& aResult)
 nsresult
 NS_NewFrameUtil(nsIFrameUtil** aResult)
 {
-  NS_PRECONDITION(nsnull != aResult, "null pointer");
-  if (nsnull == aResult) {
+  NS_PRECONDITION(nullptr != aResult, "null pointer");
+  if (nullptr == aResult) {
     return NS_ERROR_NULL_POINTER;
   }
 
@@ -498,7 +498,7 @@ nsFrameUtil::~nsFrameUtil()
 NS_IMPL_ISUPPORTS1(nsFrameUtil, nsIFrameUtil)
 
 void
-nsFrameUtil::DumpNode(Node* aNode, FILE* aOutputFile, PRInt32 aIndent)
+nsFrameUtil::DumpNode(Node* aNode, FILE* aOutputFile, int32_t aIndent)
 {
   nsFrame::IndentBy(aOutputFile, aIndent);
   fprintf(aOutputFile, "%s 0x%x %d,%d,%d,%d, %s\n", aNode->type, aNode->state,
@@ -508,13 +508,13 @@ nsFrameUtil::DumpNode(Node* aNode, FILE* aOutputFile, PRInt32 aIndent)
 }
 
 void
-nsFrameUtil::DumpTree(Node* aNode, FILE* aOutputFile, PRInt32 aIndent)
+nsFrameUtil::DumpTree(Node* aNode, FILE* aOutputFile, int32_t aIndent)
 {
-  while (nsnull != aNode) {
+  while (nullptr != aNode) {
     DumpNode(aNode, aOutputFile, aIndent);
     nsFrameUtil::NodeList* lists = aNode->lists;
-    if (nsnull != lists) {
-      while (nsnull != lists) {
+    if (nullptr != lists) {
+      while (nullptr != lists) {
         nsFrame::IndentBy(aOutputFile, aIndent);
         fprintf(aOutputFile, " list: %s\n",
                 lists->name ? lists->name : "primary");
@@ -532,14 +532,14 @@ nsFrameUtil::CompareTrees(Node* tree1, Node* tree2)
   bool result = true;
   for (;; tree1 = tree1->next, tree2 = tree2->next) {
     // Make sure both nodes are non-null, or at least agree with each other
-    if (nsnull == tree1) {
-      if (nsnull == tree2) {
+    if (nullptr == tree1) {
+      if (nullptr == tree2) {
         break;
       }
       printf("first tree prematurely ends\n");
       return false;
     }
-    else if (nsnull == tree2) {
+    else if (nullptr == tree2) {
       printf("second tree prematurely ends\n");
       return false;
     }
@@ -590,8 +590,8 @@ nsFrameUtil::CompareTrees(Node* tree1, Node* tree2)
     NodeList* list1 = tree1->lists;
     NodeList* list2 = tree2->lists;
     for (;;) {
-      if (nsnull == list1) {
-        if (nsnull != list2) {
+      if (nullptr == list1) {
+        if (nullptr != list2) {
           printf("first tree prematurely ends (no child lists)\n");
           printf("Node 1:\n");
           DumpNode(tree1, stdout, 1);
@@ -603,7 +603,7 @@ nsFrameUtil::CompareTrees(Node* tree1, Node* tree2)
           break;
         }
       }
-      if (nsnull == list2) {
+      if (nullptr == list2) {
         printf("second tree prematurely ends (no child lists)\n");
         printf("Node 1:\n");
         DumpNode(tree1, stdout, 1);
@@ -631,7 +631,7 @@ nsFrameUtil::CompareTrees(Node* tree1, Node* tree2)
 }
 
 NS_IMETHODIMP
-nsFrameUtil::CompareRegressionData(FILE* aFile1, FILE* aFile2,PRInt32 aRegressionOutput)
+nsFrameUtil::CompareRegressionData(FILE* aFile1, FILE* aFile2,int32_t aRegressionOutput)
 {
   Node* tree1 = Node::ReadTree(aFile1);
   Node* tree2 = Node::ReadTree(aFile2);
@@ -658,7 +658,7 @@ NS_IMETHODIMP
 nsFrameUtil::DumpRegressionData(FILE* aInputFile, FILE* aOutputFile)
 {
   Node* tree1 = Node::ReadTree(aInputFile);
-  if (nsnull != tree1) {
+  if (nullptr != tree1) {
     DumpTree(tree1, aOutputFile, 0);
     Node::Destroy(tree1);
     return NS_OK;

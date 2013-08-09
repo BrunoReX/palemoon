@@ -12,15 +12,16 @@
 #include "nsIDOMEventTarget.h"
 #include "nsMappedAttributes.h"
 #include "nsGenericHTMLElement.h"
+#include "nsAttrValueInlines.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
 #include "nsRuleData.h"
 #include "nsRuleWalker.h"
-#include "nsIDocument.h"
 #include "celldata.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 class nsHTMLTableCellElement : public nsGenericHTMLElement,
                                public nsIDOMHTMLTableCellElement
@@ -33,21 +34,21 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLTableCellElement
   NS_DECL_NSIDOMHTMLTABLECELLELEMENT
 
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
-                                nsIAtom* aAttribute,
-                                const nsAString& aValue,
-                                nsAttrValue& aResult);
+  virtual bool ParseAttribute(int32_t aNamespaceID,
+                              nsIAtom* aAttribute,
+                              const nsAString& aValue,
+                              nsAttrValue& aResult);
   virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const;
   NS_IMETHOD WalkContentStyleRules(nsRuleWalker* aRuleWalker);
   NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const;
@@ -77,8 +78,8 @@ nsHTMLTableCellElement::~nsHTMLTableCellElement()
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLTableCellElement, nsGenericElement) 
-NS_IMPL_RELEASE_INHERITED(nsHTMLTableCellElement, nsGenericElement) 
+NS_IMPL_ADDREF_INHERITED(nsHTMLTableCellElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLTableCellElement, Element)
 
 
 DOMCI_NODE_DATA(HTMLTableCellElement, nsHTMLTableCellElement)
@@ -109,13 +110,13 @@ nsHTMLTableCellElement::GetTable() const
 {
   nsIContent *parent = GetParent();
   if (!parent) {
-    return nsnull;
+    return nullptr;
   }
 
   // parent should be a row.
   nsIContent* section = parent->GetParent();
   if (!section) {
-    return nsnull;
+    return nullptr;
   }
 
   if (section->IsHTML(nsGkAtoms::table)) {
@@ -129,11 +130,11 @@ nsHTMLTableCellElement::GetTable() const
     return static_cast<nsHTMLTableElement*>(result);
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 NS_IMETHODIMP
-nsHTMLTableCellElement::GetCellIndex(PRInt32* aCellIndex)
+nsHTMLTableCellElement::GetCellIndex(int32_t* aCellIndex)
 {
   *aCellIndex = -1;
 
@@ -150,10 +151,10 @@ nsHTMLTableCellElement::GetCellIndex(PRInt32* aCellIndex)
     return NS_OK;
   }
 
-  PRUint32 numCells;
+  uint32_t numCells;
   cells->GetLength(&numCells);
 
-  for (PRUint32 i = 0; i < numCells; i++) {
+  for (uint32_t i = 0; i < numCells; i++) {
     nsCOMPtr<nsIDOMNode> node;
     cells->Item(i, getter_AddRefs(node));
 
@@ -229,7 +230,7 @@ static const nsAttrValue::EnumTable kCellScopeTable[] = {
 };
 
 bool
-nsHTMLTableCellElement::ParseAttribute(PRInt32 aNamespaceID,
+nsHTMLTableCellElement::ParseAttribute(int32_t aNamespaceID,
                                        nsIAtom* aAttribute,
                                        const nsAString& aValue,
                                        nsAttrValue& aResult)
@@ -245,7 +246,7 @@ nsHTMLTableCellElement::ParseAttribute(PRInt32 aNamespaceID,
     if (aAttribute == nsGkAtoms::colspan) {
       bool res = aResult.ParseIntWithBounds(aValue, -1);
       if (res) {
-        PRInt32 val = aResult.GetIntegerValue();
+        int32_t val = aResult.GetIntegerValue();
         // reset large colspan values as IE and opera do
         // quirks mode does not honor the special html 4 value of 0
         if (val > MAX_COLSPAN || val < 0 ||
@@ -258,7 +259,7 @@ nsHTMLTableCellElement::ParseAttribute(PRInt32 aNamespaceID,
     if (aAttribute == nsGkAtoms::rowspan) {
       bool res = aResult.ParseIntWithBounds(aValue, -1, MAX_ROWSPAN);
       if (res) {
-        PRInt32 val = aResult.GetIntegerValue();
+        int32_t val = aResult.GetIntegerValue();
         // quirks mode does not honor the special html 4 value of 0
         if (val < 0 || (0 == val && InNavQuirksMode(OwnerDoc()))) {
           aResult.SetTo(1);
@@ -286,7 +287,10 @@ nsHTMLTableCellElement::ParseAttribute(PRInt32 aNamespaceID,
     }
   }
 
-  return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
+  return nsGenericHTMLElement::ParseBackgroundAttribute(aNamespaceID,
+                                                        aAttribute, aValue,
+                                                        aResult) ||
+         nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
                                               aResult);
 }
 
@@ -382,7 +386,7 @@ nsHTMLTableCellElement::IsAttributeMapped(const nsIAtom* aAttribute) const
 #endif
     { &nsGkAtoms::width },
     { &nsGkAtoms::height },
-    { nsnull }
+    { nullptr }
   };
 
   static const MappedAttributeEntry* const map[] = {

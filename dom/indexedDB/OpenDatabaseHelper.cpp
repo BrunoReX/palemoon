@@ -7,12 +7,12 @@
 #include "nsIFile.h"
 
 #include "mozilla/storage.h"
-#include "nsContentUtils.h"
 #include "nsEscape.h"
 #include "nsThreadUtils.h"
 #include "snappy/snappy.h"
 #include "test_quota.h"
 
+#include "nsIBFCacheEntry.h"
 #include "IDBEvents.h"
 #include "IDBFactory.h"
 #include "IndexedDatabaseManager.h"
@@ -24,43 +24,34 @@ namespace {
 
 // If JS_STRUCTURED_CLONE_VERSION changes then we need to update our major
 // schema version.
-PR_STATIC_ASSERT(JS_STRUCTURED_CLONE_VERSION == 1);
+MOZ_STATIC_ASSERT(JS_STRUCTURED_CLONE_VERSION == 1,
+                  "Need to update the major schema version.");
 
 // Major schema version. Bump for almost everything.
-const PRUint32 kMajorSchemaVersion = 12;
+const uint32_t kMajorSchemaVersion = 12;
 
 // Minor schema version. Should almost always be 0 (maybe bump on release
 // branches if we have to).
-const PRUint32 kMinorSchemaVersion = 0;
+const uint32_t kMinorSchemaVersion = 0;
 
 // The schema version we store in the SQLite database is a (signed) 32-bit
 // integer. The major version is left-shifted 4 bits so the max value is
 // 0xFFFFFFF. The minor version occupies the lower 4 bits and its max is 0xF.
-PR_STATIC_ASSERT(kMajorSchemaVersion <= 0xFFFFFFF);
-PR_STATIC_ASSERT(kMajorSchemaVersion <= 0xF);
+MOZ_STATIC_ASSERT(kMajorSchemaVersion <= 0xFFFFFFF,
+                  "Major version needs to fit in 28 bits.");
+MOZ_STATIC_ASSERT(kMinorSchemaVersion <= 0xF,
+                  "Minor version needs to fit in 4 bits.");
 
 inline
-PRInt32
-MakeSchemaVersion(PRUint32 aMajorSchemaVersion,
-                  PRUint32 aMinorSchemaVersion)
+int32_t
+MakeSchemaVersion(uint32_t aMajorSchemaVersion,
+                  uint32_t aMinorSchemaVersion)
 {
-  return PRInt32((aMajorSchemaVersion << 4) + aMinorSchemaVersion);
+  return int32_t((aMajorSchemaVersion << 4) + aMinorSchemaVersion);
 }
 
-const PRInt32 kSQLiteSchemaVersion = PRInt32((kMajorSchemaVersion << 4) +
+const int32_t kSQLiteSchemaVersion = int32_t((kMajorSchemaVersion << 4) +
                                              kMinorSchemaVersion);
-
-inline
-PRUint32 GetMajorSchemaVersion(PRInt32 aSchemaVersion)
-{
-  return PRUint32(aSchemaVersion) >> 4;
-}
-
-inline
-PRUint32 GetMinorSchemaVersion(PRInt32 aSchemaVersion)
-{
-  return PRUint32(aSchemaVersion) & 0xF;
-}
 
 nsresult
 GetDatabaseFilename(const nsAString& aName,
@@ -279,8 +270,8 @@ UpgradeSchemaFrom4To5(mozIStorageConnection* aConnection)
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsString name;
-  PRInt32 intVersion;
-  PRInt64 dataVersion;
+  int32_t intVersion;
+  int64_t dataVersion;
 
   {
     mozStorageStatementScoper scoper(stmt);
@@ -828,7 +819,7 @@ public:
   OnFunctionCall(mozIStorageValueArray* aArguments,
                  nsIVariant** aResult)
   {
-    PRUint32 argc;
+    uint32_t argc;
     nsresult rv = aArguments->GetNumEntries(&argc);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -837,7 +828,7 @@ public:
       return NS_ERROR_UNEXPECTED;
     }
 
-    PRInt32 type;
+    int32_t type;
     rv = aArguments->GetTypeOfIndex(0, &type);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -846,8 +837,8 @@ public:
       return NS_ERROR_UNEXPECTED;
     }
 
-    const PRUint8* uncompressed;
-    PRUint32 uncompressedLength;
+    const uint8_t* uncompressed;
+    uint32_t uncompressedLength;
     rv = aArguments->GetSharedBlob(0, &uncompressedLength, &uncompressed);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1070,7 +1061,7 @@ public:
   OnFunctionCall(mozIStorageValueArray* aArguments,
                  nsIVariant** aResult)
   {
-    PRUint32 argc;
+    uint32_t argc;
     nsresult rv = aArguments->GetNumEntries(&argc);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1079,13 +1070,13 @@ public:
       return NS_ERROR_UNEXPECTED;
     }
 
-    PRInt32 type;
+    int32_t type;
     rv = aArguments->GetTypeOfIndex(0, &type);
     NS_ENSURE_SUCCESS(rv, rv);
 
     Key key;
     if (type == mozIStorageStatement::VALUE_TYPE_INTEGER) {
-      PRInt64 intKey;
+      int64_t intKey;
       aArguments->GetInt64(0, &intKey);
       key.SetFromInteger(intKey);
     }
@@ -1335,8 +1326,8 @@ public:
   SetVersionHelper(IDBTransaction* aTransaction,
                    IDBOpenDBRequest* aRequest,
                    OpenDatabaseHelper* aHelper,
-                   PRUint64 aRequestedVersion,
-                   PRUint64 aCurrentVersion)
+                   uint64_t aRequestedVersion,
+                   uint64_t aCurrentVersion)
   : AsyncConnectionHelper(aTransaction, aRequest),
     mOpenRequest(aRequest), mOpenHelper(aHelper),
     mRequestedVersion(aRequestedVersion),
@@ -1364,11 +1355,13 @@ protected:
   // Need an upgradeneeded event here.
   virtual already_AddRefed<nsDOMEvent> CreateSuccessEvent() MOZ_OVERRIDE;
 
-  virtual nsresult NotifyTransactionComplete(IDBTransaction* aTransaction)
-                                             MOZ_OVERRIDE;
+  virtual nsresult NotifyTransactionPreComplete(IDBTransaction* aTransaction)
+                                                MOZ_OVERRIDE;
+  virtual nsresult NotifyTransactionPostComplete(IDBTransaction* aTransaction)
+                                                 MOZ_OVERRIDE;
 
   virtual ChildProcessSendResult
-  MaybeSendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE
+  SendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE
   {
     return Success_NotSent;
   }
@@ -1381,7 +1374,7 @@ protected:
     return NS_ERROR_UNEXPECTED;
   }
 
-  PRUint64 RequestedVersion() const
+  uint64_t RequestedVersion() const
   {
     return mRequestedVersion;
   }
@@ -1390,8 +1383,8 @@ private:
   // In-params
   nsRefPtr<IDBOpenDBRequest> mOpenRequest;
   nsRefPtr<OpenDatabaseHelper> mOpenHelper;
-  PRUint64 mRequestedVersion;
-  PRUint64 mCurrentVersion;
+  uint64_t mRequestedVersion;
+  uint64_t mCurrentVersion;
 };
 
 class DeleteDatabaseHelper : public AsyncConnectionHelper
@@ -1400,10 +1393,10 @@ class DeleteDatabaseHelper : public AsyncConnectionHelper
 public:
   DeleteDatabaseHelper(IDBOpenDBRequest* aRequest,
                        OpenDatabaseHelper* aHelper,
-                       PRUint64 aCurrentVersion,
+                       uint64_t aCurrentVersion,
                        const nsAString& aName,
                        const nsACString& aASCIIOrigin)
-  : AsyncConnectionHelper(static_cast<IDBDatabase*>(nsnull), aRequest),
+  : AsyncConnectionHelper(static_cast<IDBDatabase*>(nullptr), aRequest),
     mOpenHelper(aHelper), mOpenRequest(aRequest),
     mCurrentVersion(aCurrentVersion), mName(aName),
     mASCIIOrigin(aASCIIOrigin)
@@ -1414,8 +1407,8 @@ public:
 
   void ReleaseMainThreadObjects()
   {
-    mOpenHelper = nsnull;
-    mOpenRequest = nsnull;
+    mOpenHelper = nullptr;
+    mOpenRequest = nullptr;
 
     AsyncConnectionHelper::ReleaseMainThreadObjects();
   }
@@ -1436,13 +1429,13 @@ protected:
     return mOpenHelper->NotifyDeleteFinished();
   }
 
-  PRUint64 RequestedVersion() const
+  uint64_t RequestedVersion() const
   {
     return 0;
   }
 
   virtual ChildProcessSendResult
-  MaybeSendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE
+  SendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE
   {
     return Success_NotSent;
   }
@@ -1459,7 +1452,7 @@ private:
   // In-params
   nsRefPtr<OpenDatabaseHelper> mOpenHelper;
   nsRefPtr<IDBOpenDBRequest> mOpenRequest;
-  PRUint64 mCurrentVersion;
+  uint64_t mCurrentVersion;
   nsString mName;
   nsCString mASCIIOrigin;
 };
@@ -1474,8 +1467,8 @@ public:
                             IDBDatabase* aRequestingDatabase,
                             IDBOpenDBRequest* aRequest,
                             nsTArray<nsRefPtr<IDBDatabase> >& aWaitingDatabases,
-                            PRInt64 aOldVersion,
-                            PRInt64 aNewVersion)
+                            int64_t aOldVersion,
+                            int64_t aNewVersion)
   : mRequestingDatabase(aRequestingDatabase),
     mRequest(aRequest),
     mOldVersion(aOldVersion),
@@ -1496,8 +1489,8 @@ public:
 
     // Fire version change events at all of the databases that are not already
     // closed. Also kick bfcached documents out of bfcache.
-    PRUint32 count = mWaitingDatabases.Length();
-    for (PRUint32 index = 0; index < count; index++) {
+    uint32_t count = mWaitingDatabases.Length();
+    for (uint32_t index = 0; index < count; index++) {
       nsRefPtr<IDBDatabase>& database = mWaitingDatabases[index];
 
       if (database->IsClosed()) {
@@ -1514,6 +1507,22 @@ public:
         continue;
       }
 
+      // Next check if it's in the process of being bfcached.
+      nsPIDOMWindow* owner = database->GetOwner();
+      if (owner && owner->IsFrozen()) {
+        // We can't kick the document out of the bfcache because it's not yet
+        // fully in the bfcache.  Instead we'll abort everything for the window
+        // and mark it as not-bfcacheable.
+        IndexedDatabaseManager* manager = IndexedDatabaseManager::Get();
+        NS_ASSERTION(manager, "Huh?");
+        manager->AbortCloseDatabasesForWindow(owner);
+
+        NS_ASSERTION(database->IsClosed(),
+                   "AbortCloseDatabasesForWindow should have closed database");
+        ownerDoc->DisallowBFCaching();
+        continue;
+      }
+
       // Otherwise fire a versionchange event.
       nsRefPtr<nsDOMEvent> event = 
         IDBVersionChangeEvent::Create(mOldVersion, mNewVersion);
@@ -1525,7 +1534,7 @@ public:
 
     // Now check to see if any didn't close. If there are some running still
     // then fire the blocked event.
-    for (PRUint32 index = 0; index < count; index++) {
+    for (uint32_t index = 0; index < count; index++) {
       if (!mWaitingDatabases[index]->IsClosed()) {
         nsRefPtr<nsDOMEvent> event =
           IDBVersionChangeEvent::CreateBlocked(mOldVersion, mNewVersion);
@@ -1549,8 +1558,8 @@ private:
   nsRefPtr<IDBDatabase> mRequestingDatabase;
   nsRefPtr<IDBOpenDBRequest> mRequest;
   nsTArray<nsRefPtr<IDBDatabase> > mWaitingDatabases;
-  PRInt64 mOldVersion;
-  PRInt64 mNewVersion;
+  int64_t mOldVersion;
+  int64_t mNewVersion;
 };
 
 } // anonymous namespace
@@ -1619,13 +1628,14 @@ OpenDatabaseHelper::DoDatabaseWork()
   NS_ASSERTION(mgr, "This should never be null!");
 
   nsresult rv = mgr->EnsureOriginIsInitialized(mASCIIOrigin,
+                                               mPrivilege,
                                                getter_AddRefs(dbDirectory));
   NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
   nsAutoString filename;
   rv = GetDatabaseFilename(mName, filename);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
-  
+
   nsCOMPtr<nsIFile> dbFile;
   rv = dbDirectory->Clone(getter_AddRefs(dbFile));
   NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
@@ -1646,7 +1656,11 @@ OpenDatabaseHelper::DoDatabaseWork()
   nsCOMPtr<mozIStorageConnection> connection;
   rv = CreateDatabaseConnection(mName, dbFile, fileManagerDirectory,
                                 getter_AddRefs(connection));
-  NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+  if (NS_FAILED(rv) &&
+      NS_ERROR_GET_MODULE(rv) != NS_ERROR_MODULE_DOM_INDEXEDDB) {
+    rv = NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+  }
+  NS_ENSURE_SUCCESS(rv, rv);
 
   rv = IDBFactory::LoadDatabaseInformation(connection, mDatabaseId,
                                            &mCurrentVersion, mObjectStores);
@@ -1657,9 +1671,9 @@ OpenDatabaseHelper::DoDatabaseWork()
     return NS_OK;
   }
 
-  for (PRUint32 i = 0; i < mObjectStores.Length(); i++) {
+  for (uint32_t i = 0; i < mObjectStores.Length(); i++) {
     nsRefPtr<ObjectStoreInfo>& objectStoreInfo = mObjectStores[i];
-    for (PRUint32 j = 0; j < objectStoreInfo->indexes.Length(); j++) {
+    for (uint32_t j = 0; j < objectStoreInfo->indexes.Length(); j++) {
       IndexInfo& indexInfo = objectStoreInfo->indexes[j];
       mLastIndexId = NS_MAX(indexInfo.id, mLastIndexId);
     }
@@ -1689,18 +1703,17 @@ OpenDatabaseHelper::DoDatabaseWork()
     mState = eSetVersionPending;
   }
 
-  mFileManager = mgr->GetOrCreateFileManager(mASCIIOrigin, mName);
-  NS_ENSURE_TRUE(mFileManager, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+  nsRefPtr<FileManager> fileManager = mgr->GetFileManager(mASCIIOrigin, mName);
+  if (!fileManager) {
+    fileManager = new FileManager(mASCIIOrigin, mName);
 
-  if (!mFileManager->Inited()) {
-    rv = mFileManager->Init(fileManagerDirectory, connection);
+    rv = fileManager->Init(fileManagerDirectory, connection);
     NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+
+    mgr->AddFileManager(mASCIIOrigin, mName, fileManager);
   }
 
-  if (!mFileManager->Loaded()) {
-    rv = mFileManager->Load(connection);
-    NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
-  }
+  mFileManager = fileManager.forget();
 
   return NS_OK;
 }
@@ -1760,7 +1773,7 @@ OpenDatabaseHelper::CreateDatabaseConnection(
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Check to make sure that the database schema is correct.
-  PRInt32 schemaVersion;
+  int32_t schemaVersion;
   rv = connection->GetSchemaVersion(&schemaVersion);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1805,7 +1818,8 @@ OpenDatabaseHelper::CreateDatabaseConnection(
     }
     else  {
       // This logic needs to change next time we change the schema!
-      PR_STATIC_ASSERT(kSQLiteSchemaVersion == PRInt32((12 << 4) + 0));
+      MOZ_STATIC_ASSERT(kSQLiteSchemaVersion == int32_t((12 << 4) + 0),
+                        "Need upgrade code from schema version increase.");
 
       while (schemaVersion != kSQLiteSchemaVersion) {
         if (schemaVersion == 4) {
@@ -1847,7 +1861,12 @@ OpenDatabaseHelper::CreateDatabaseConnection(
       NS_ASSERTION(schemaVersion == kSQLiteSchemaVersion, "Huh?!");
     }
 
-    rv = transaction.Commit();
+    rv = transaction.Commit();    
+    if (rv == NS_ERROR_FILE_NO_DEVICE_SPACE) {
+      // mozstorage translates SQLITE_FULL to NS_ERROR_FILE_NO_DEVICE_SPACE,
+      // which we know better as NS_ERROR_DOM_INDEXEDDB_QUOTA_ERR.
+      rv = NS_ERROR_DOM_INDEXEDDB_QUOTA_ERR;
+    }
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -1892,15 +1911,14 @@ OpenDatabaseHelper::StartSetVersion()
   IndexedDatabaseManager* mgr = IndexedDatabaseManager::Get();
   NS_ASSERTION(mgr, "This should never be null!");
 
-  rv = mgr->AcquireExclusiveAccess(mDatabase, helper,
-            &VersionChangeEventsRunnable::QueueVersionChange<SetVersionHelper>,
+  rv = mgr->AcquireExclusiveAccess(mDatabase, mDatabase->Origin(), helper,
+             &VersionChangeEventsRunnable::QueueVersionChange<SetVersionHelper>,
                                    helper);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
   // The SetVersionHelper is responsible for dispatching us back to the
   // main thread again and changing the state to eSetVersionCompleted.
   mState = eSetVersionPending;
-
   return NS_OK;
 }
 
@@ -1922,8 +1940,8 @@ OpenDatabaseHelper::StartDelete()
   IndexedDatabaseManager* mgr = IndexedDatabaseManager::Get();
   NS_ASSERTION(mgr, "This should never be null!");
 
-  rv = mgr->AcquireExclusiveAccess(mDatabase, helper,
-        &VersionChangeEventsRunnable::QueueVersionChange<DeleteDatabaseHelper>,
+  rv = mgr->AcquireExclusiveAccess(mDatabase, mDatabase->Origin(), helper,
+         &VersionChangeEventsRunnable::QueueVersionChange<DeleteDatabaseHelper>,
                                    helper);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
@@ -1969,19 +1987,13 @@ OpenDatabaseHelper::Run()
 
     switch (mState) {
       case eSetVersionCompleted: {
-        // Allow transaction creation/other version change transactions to proceed
-        // before we fire events.  Other version changes will be postd to the end
-        // of the event loop, and will be behind whatever the page does in
-        // its error/success event handlers.
-        mDatabase->ExitSetVersionTransaction();
-
         mState = eFiringEvents;
         break;
       }
 
       case eDeleteCompleted: {
         // Destroy the database now (we should have the only ref).
-        mDatabase = nsnull;
+        mDatabase = nullptr;
 
         DatabaseInfo::Remove(mDatabaseId);
 
@@ -2022,7 +2034,9 @@ OpenDatabaseHelper::Run()
     IndexedDatabaseManager* manager = IndexedDatabaseManager::Get();
     NS_ASSERTION(manager, "This should never be null!");
 
-    manager->AllowNextSynchronizedOp(mASCIIOrigin, mDatabaseId);
+    manager->AllowNextSynchronizedOp(
+                                OriginOrPatternString::FromOrigin(mASCIIOrigin),
+                                mDatabaseId);
 
     ReleaseMainThreadObjects();
 
@@ -2053,8 +2067,8 @@ OpenDatabaseHelper::EnsureSuccessResult()
                    dbInfo->filePath == mDatabaseFilePath,
                    "Metadata mismatch!");
 
-      PRUint32 objectStoreCount = mObjectStores.Length();
-      for (PRUint32 index = 0; index < objectStoreCount; index++) {
+      uint32_t objectStoreCount = mObjectStores.Length();
+      for (uint32_t index = 0; index < objectStoreCount; index++) {
         nsRefPtr<ObjectStoreInfo>& info = mObjectStores[index];
 
         ObjectStoreInfo* otherInfo = dbInfo->GetObjectStore(info->name);
@@ -2069,8 +2083,8 @@ OpenDatabaseHelper::EnsureSuccessResult()
         NS_ASSERTION(info->indexes.Length() == otherInfo->indexes.Length(),
                      "Bad index length!");
 
-        PRUint32 indexCount = info->indexes.Length();
-        for (PRUint32 indexIndex = 0; indexIndex < indexCount; indexIndex++) {
+        uint32_t indexCount = info->indexes.Length();
+        for (uint32_t indexIndex = 0; indexIndex < indexCount; indexIndex++) {
           const IndexInfo& indexInfo = info->indexes[indexIndex];
           const IndexInfo& otherIndexInfo = otherInfo->indexes[indexIndex];
           NS_ASSERTION(indexInfo.id == otherIndexInfo.id,
@@ -2113,10 +2127,9 @@ OpenDatabaseHelper::EnsureSuccessResult()
   dbInfo->nextIndexId = mLastIndexId + 1;
 
   nsRefPtr<IDBDatabase> database =
-    IDBDatabase::Create(mOpenDBRequest,
-                        dbInfo.forget(),
-                        mASCIIOrigin,
-                        mFileManager);
+    IDBDatabase::Create(mOpenDBRequest, mOpenDBRequest->Factory(),
+                        dbInfo.forget(), mASCIIOrigin, mFileManager,
+                        mContentParent);
   if (!database) {
     return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
   }
@@ -2147,8 +2160,11 @@ OpenDatabaseHelper::NotifySetVersionFinished()
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread");
   NS_ASSERTION(mState = eSetVersionPending, "How did we get here?");
 
+  // Allow transaction creation to proceed.
+  mDatabase->ExitSetVersionTransaction();
+
   mState = eSetVersionCompleted;
-  
+
   // Dispatch ourself back to the main thread
   return NS_DispatchToCurrentThread(this);
 }
@@ -2217,9 +2233,9 @@ OpenDatabaseHelper::ReleaseMainThreadObjects()
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
-  mOpenDBRequest = nsnull;
-  mDatabase = nsnull;
-  mDatabaseId = nsnull;
+  mOpenDBRequest = nullptr;
+  mDatabase = nullptr;
+  mDatabaseId = nullptr;
 
   HelperBase::ReleaseMainThreadObjects();
 }
@@ -2305,7 +2321,17 @@ SetVersionHelper::CreateSuccessEvent()
 }
 
 nsresult
-SetVersionHelper::NotifyTransactionComplete(IDBTransaction* aTransaction)
+SetVersionHelper::NotifyTransactionPreComplete(IDBTransaction* aTransaction)
+{
+  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+  NS_ASSERTION(aTransaction, "This is unexpected.");
+  NS_ASSERTION(mOpenRequest, "Why don't we have a request?");
+
+  return mOpenHelper->NotifySetVersionFinished();
+}
+
+nsresult
+SetVersionHelper::NotifyTransactionPostComplete(IDBTransaction* aTransaction)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
   NS_ASSERTION(aTransaction, "This is unexpected.");
@@ -2322,11 +2348,10 @@ SetVersionHelper::NotifyTransactionComplete(IDBTransaction* aTransaction)
     mOpenHelper->SetError(aTransaction->GetAbortCode());
   }
 
-  mOpenRequest->SetTransaction(nsnull);
-  mOpenRequest = nsnull;
+  mOpenRequest->SetTransaction(nullptr);
+  mOpenRequest = nullptr;
 
-  rv = mOpenHelper->NotifySetVersionFinished();
-  mOpenHelper = nsnull;
+  mOpenHelper = nullptr;
 
   return rv;
 }

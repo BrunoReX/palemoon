@@ -21,7 +21,7 @@ const char* const kCSSRawKeywords[] = {
 };
 #undef CSS_KEY
 
-static PRInt32 gTableRefCount;
+static int32_t gTableRefCount;
 static nsStaticCaseInsensitiveNameTable* gKeywordTable;
 
 void
@@ -34,10 +34,10 @@ nsCSSKeywords::AddRefTable(void)
 #ifdef DEBUG
     {
       // let's verify the table...
-      PRInt32 index = 0;
+      int32_t index = 0;
       for (; index < eCSSKeyword_COUNT && kCSSRawKeywords[index]; ++index) {
-        nsCAutoString temp1(kCSSRawKeywords[index]);
-        nsCAutoString temp2(kCSSRawKeywords[index]);
+        nsAutoCString temp1(kCSSRawKeywords[index]);
+        nsAutoCString temp2(kCSSRawKeywords[index]);
         ToLowerCase(temp1);
         NS_ASSERTION(temp1.Equals(temp2), "upper case char in table");
         NS_ASSERTION(-1 == temp1.FindChar('_'), "underscore char in table");
@@ -56,7 +56,7 @@ nsCSSKeywords::ReleaseTable(void)
   if (0 == --gTableRefCount) {
     if (gKeywordTable) {
       delete gKeywordTable;
-      gKeywordTable = nsnull;
+      gKeywordTable = nullptr;
     }
   }
 }
@@ -87,7 +87,7 @@ nsCSSKeywords::GetStringValue(nsCSSKeyword aKeyword)
   NS_ASSERTION(gKeywordTable, "no lookup table, needs addref");
   NS_ASSERTION(0 <= aKeyword && aKeyword < eCSSKeyword_COUNT, "out of range");
   if (gKeywordTable) {
-    return gKeywordTable->GetStringValue(PRInt32(aKeyword));
+    return gKeywordTable->GetStringValue(int32_t(aKeyword));
   } else {
     static nsDependentCString kNullStr("");
     return kNullStr;

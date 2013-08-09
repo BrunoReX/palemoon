@@ -6,20 +6,17 @@
 #include "nsIAtom.h"
 #include "nsString.h"
 #include "jsapi.h"
-#include "nsIContent.h"
 #include "nsUnicharUtils.h"
 #include "nsReadableUtils.h"
-#include "mozilla/FunctionTimer.h"
 #include "nsXBLProtoImplField.h"
 #include "nsIScriptContext.h"
-#include "nsContentUtils.h"
 #include "nsIURI.h"
 #include "nsXBLSerialize.h"
 #include "nsXBLPrototypeBinding.h"
 
 nsXBLProtoImplField::nsXBLProtoImplField(const PRUnichar* aName, const PRUnichar* aReadOnly)
-  : mNext(nsnull),
-    mFieldText(nsnull),
+  : mNext(nullptr),
+    mFieldText(nullptr),
     mFieldTextLength(0),
     mLineNumber(0)
 {
@@ -36,8 +33,8 @@ nsXBLProtoImplField::nsXBLProtoImplField(const PRUnichar* aName, const PRUnichar
 
 
 nsXBLProtoImplField::nsXBLProtoImplField(const bool aIsReadOnly)
-  : mNext(nsnull),
-    mFieldText(nsnull),
+  : mNext(nullptr),
+    mFieldText(nullptr),
     mFieldTextLength(0),
     mLineNumber(0)
 {
@@ -81,14 +78,14 @@ nsXBLProtoImplField::InstallField(nsIScriptContext* aContext,
                                   nsIURI* aBindingDocURI,
                                   bool* aDidInstall) const
 {
-  NS_TIME_FUNCTION_MIN(5);
   NS_PRECONDITION(aBoundNode,
                   "uh-oh, bound node should NOT be null or bad things will "
                   "happen");
 
   *aDidInstall = false;
 
-  if (mFieldTextLength == 0) {
+  // Empty fields are treated as not actually present.
+  if (IsEmpty()) {
     return NS_OK;
   }
 
@@ -98,7 +95,7 @@ nsXBLProtoImplField::InstallField(nsIScriptContext* aContext,
   // protect |result| here.
   nsresult rv;
 
-  nsCAutoString uriSpec;
+  nsAutoCString uriSpec;
   aBindingDocURI->GetSpec(uriSpec);
   
   JSContext* cx = aContext->GetNativeContext();
@@ -129,7 +126,7 @@ nsXBLProtoImplField::InstallField(nsIScriptContext* aContext,
   nsDependentString name(mName);
   if (!::JS_DefineUCProperty(cx, aBoundNode,
                              reinterpret_cast<const jschar*>(mName), 
-                             name.Length(), result, nsnull, nsnull,
+                             name.Length(), result, nullptr, nullptr,
                              mJSAttributes)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }

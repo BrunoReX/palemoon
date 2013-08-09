@@ -7,6 +7,7 @@
 #define MOZILLA_GFX_USERDATA_H_
 
 #include <stdlib.h>
+#include "Types.h"
 #include "mozilla/Assertions.h"
 
 namespace mozilla {
@@ -21,13 +22,21 @@ class UserData
 {
   typedef void (*destroyFunc)(void *data);
 public:
-  UserData() : count(0), entries(NULL) {}
+  UserData() : count(0), entries(nullptr) {}
 
   /* Attaches untyped userData associated with key. destroy is called on destruction */
   void Add(UserDataKey *key, void *userData, destroyFunc destroy)
   {
-    // XXX we should really warn if user data with key has already been added,
-    // since in that case Get() will return the old user data!
+    for (int i=0; i<count; i++) {
+      if (key == entries[i].key) {
+        if (entries[i].destroy) {
+          entries[i].destroy(entries[i].userData);
+        }
+        entries[i].userData = userData;
+        entries[i].destroy = destroy;
+        return;
+      }
+    }
 
     // We could keep entries in a std::vector instead of managing it by hand
     // but that would propagate an stl dependency out which we'd rather not
@@ -60,7 +69,7 @@ public:
         return userData;
       }
     }
-    return NULL;
+    return nullptr;
   }
 
   /* Retrives the userData for the associated key */
@@ -71,15 +80,34 @@ public:
         return entries[i].userData;
       }
     }
-    return NULL;
+    return nullptr;
+  }
+
+  bool Has(UserDataKey *key)
+  {
+    for (int i=0; i<count; i++) {
+      if (key == entries[i].key) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void Destroy()
+  {
+    for (int i=0; i<count; i++) {
+      if (entries[i].destroy) {
+        entries[i].destroy(entries[i].userData);
+      }
+    }
+    free(entries);
+    entries = nullptr;
+    count = 0;
   }
 
   ~UserData()
   {
-    for (int i=0; i<count; i++) {
-      entries[i].destroy(entries[i].userData);
-    }
-    free(entries);
+    Destroy();
   }
 
 private:

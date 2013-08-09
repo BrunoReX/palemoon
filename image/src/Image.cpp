@@ -21,11 +21,11 @@ Image::Image(imgStatusTracker* aStatusTracker) :
     mStatusTracker = aStatusTracker;
     mStatusTracker->SetImage(this);
   } else {
-    mStatusTracker = new imgStatusTracker(this);
+    mStatusTracker = new imgStatusTracker(this, nullptr);
   }
 }
 
-PRUint32
+uint32_t
 Image::SizeOfData()
 {
   if (mError)
@@ -34,7 +34,7 @@ Image::SizeOfData()
   // This is not used by memory reporters, but for sizing the cache, which is
   // why it uses |moz_malloc_size_of| rather than an
   // |NS_MEMORY_REPORTER_MALLOC_SIZEOF_FUN|.
-  return PRUint32(HeapSizeOfSourceWithComputedFallback(moz_malloc_size_of) +
+  return uint32_t(HeapSizeOfSourceWithComputedFallback(moz_malloc_size_of) +
                   HeapSizeOfDecodedWithComputedFallback(moz_malloc_size_of) +
                   NonHeapSizeOfDecoded() +
                   OutOfProcessSizeOfDecoded());
@@ -101,24 +101,20 @@ Image::DecrementAnimationConsumers()
   EvaluateAnimation();
 }
 
-//******************************************************************************
-/* attribute unsigned short animationMode; */
-NS_IMETHODIMP
-Image::GetAnimationMode(PRUint16* aAnimationMode)
+nsresult
+Image::GetAnimationModeInternal(uint16_t* aAnimationMode)
 {
   if (mError)
     return NS_ERROR_FAILURE;
 
   NS_ENSURE_ARG_POINTER(aAnimationMode);
-  
+
   *aAnimationMode = mAnimationMode;
   return NS_OK;
 }
 
-//******************************************************************************
-/* attribute unsigned short animationMode; */
-NS_IMETHODIMP
-Image::SetAnimationMode(PRUint16 aAnimationMode)
+nsresult
+Image::SetAnimationModeInternal(uint16_t aAnimationMode)
 {
   if (mError)
     return NS_ERROR_FAILURE;
@@ -127,7 +123,7 @@ Image::SetAnimationMode(PRUint16 aAnimationMode)
                aAnimationMode == kDontAnimMode ||
                aAnimationMode == kLoopOnceAnimMode,
                "Wrong Animation Mode is being set!");
-  
+
   mAnimationMode = aAnimationMode;
 
   EvaluateAnimation();

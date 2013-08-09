@@ -36,7 +36,7 @@
 #include "nsIObserverService.h"
 #include "nsISupportsPrimitives.h"
 #include "nsFind.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 #include "nsFocusManager.h"
 #include "mozilla/Services.h"
 
@@ -109,7 +109,7 @@ NS_IMETHODIMP nsWebBrowserFind::FindNext(bool *outDidFind)
                                      mFindBackwards? upStr.get(): dnStr.get());
         windowSupportsData->GetData(getter_AddRefs(searchWindowSupports));
         // findnext performed if search window data cleared out
-        *outDidFind = searchWindowSupports == nsnull;
+        *outDidFind = searchWindowSupports == nullptr;
         if (*outDidFind)
             return NS_OK;
     }
@@ -130,7 +130,7 @@ NS_IMETHODIMP nsWebBrowserFind::FindNext(bool *outDidFind)
     nsIDocShell *rootDocShell = GetDocShellFromWindow(rootFrame);
     if (!rootDocShell) return NS_ERROR_FAILURE;
     
-    PRInt32 enumDirection;
+    int32_t enumDirection;
     if (mFindBackwards)
         enumDirection = nsIDocShell::ENUMERATE_BACKWARDS;
     else
@@ -193,7 +193,7 @@ NS_IMETHODIMP nsWebBrowserFind::FindNext(bool *outDidFind)
 
     // because nsISimpleEnumerator is totally lame and isn't resettable, I
     // have to make a new one
-    docShellEnumerator = nsnull;
+    docShellEnumerator = nullptr;
     rv = rootDocShell->GetDocShellEnumerator(nsIDocShellTreeItem::typeAll,
             enumDirection, getter_AddRefs(docShellEnumerator));    
     if (NS_FAILED(rv)) return rv;
@@ -206,6 +206,9 @@ NS_IMETHODIMP nsWebBrowserFind::FindNext(bool *outDidFind)
         curItem = do_QueryInterface(curSupports, &rv);
         if (NS_FAILED(rv)) break;
 
+        searchFrame = do_GetInterface(curItem, &rv);
+        if (NS_FAILED(rv)) break;
+
         if (curItem.get() == startingItem.get())
         {
             // Beware! This may flush notifications via synchronous
@@ -216,9 +219,6 @@ NS_IMETHODIMP nsWebBrowserFind::FindNext(bool *outDidFind)
                 return OnFind(searchFrame);        // we are done
             break;
         }
-
-        searchFrame = do_GetInterface(curItem, &rv);
-        if (NS_FAILED(rv)) break;
 
         OnStartSearchFrame(searchFrame);
 
@@ -373,7 +373,7 @@ void nsWebBrowserFind::SetSelectionAndScroll(nsIDOMWindow* aWindow,
   
   // since the match could be an anonymous textnode inside a
   // <textarea> or text <input>, we need to get the outer frame
-  nsITextControlFrame *tcFrame = nsnull;
+  nsITextControlFrame *tcFrame = nullptr;
   for ( ; content; content = content->GetParent()) {
     if (!IsInNativeAnonymousSubtree(content)) {
       nsIFrame* f = content->GetPrimaryFrame();
@@ -401,7 +401,7 @@ void nsWebBrowserFind::SetSelectionAndScroll(nsIDOMWindow* aWindow,
       }
       else  {
         nsCOMPtr<nsIDOMElement> result;
-        fm->MoveFocus(aWindow, nsnull, nsIFocusManager::MOVEFOCUS_CARET,
+        fm->MoveFocus(aWindow, nullptr, nsIFocusManager::MOVEFOCUS_CARET,
                       nsIFocusManager::FLAG_NOSCROLL,
                       getter_AddRefs(result));
       }
@@ -460,7 +460,7 @@ nsresult nsWebBrowserFind::SetRangeAroundDocument(nsIDOMRange* aSearchRange,
     NS_ENSURE_SUCCESS(rv, rv);
     NS_ENSURE_ARG_POINTER(bodyContent);
 
-    PRUint32 childCount = bodyContent->GetChildCount();
+    uint32_t childCount = bodyContent->GetChildCount();
 
     aSearchRange->SetStart(bodyNode, 0);
     aSearchRange->SetEnd(bodyNode, childCount);
@@ -497,7 +497,7 @@ nsWebBrowserFind::GetSearchLimits(nsIDOMRange* aSearchRange,
     NS_ENSURE_ARG_POINTER(aSel);
 
     // There is a selection.
-    PRInt32 count = -1;
+    int32_t count = -1;
     nsresult rv = aSel->GetRangeCount(&count);
     if (count < 1)
         return SetRangeAroundDocument(aSearchRange, aStartPt, aEndPt, aDoc);
@@ -508,14 +508,14 @@ nsWebBrowserFind::GetSearchLimits(nsIDOMRange* aSearchRange,
     nsCOMPtr<nsIContent> bodyContent (do_QueryInterface(bodyNode));
     NS_ENSURE_ARG_POINTER(bodyContent);
 
-    PRUint32 childCount = bodyContent->GetChildCount();
+    uint32_t childCount = bodyContent->GetChildCount();
 
     // There are four possible range endpoints we might use:
     // DocumentStart, SelectionStart, SelectionEnd, DocumentEnd.
 
     nsCOMPtr<nsIDOMRange> range;
     nsCOMPtr<nsIDOMNode> node;
-    PRInt32 offset;
+    int32_t offset;
 
     // Forward, not wrapping: SelEnd to DocEnd
     if (!mFindBackwards && !aWrap)
@@ -704,11 +704,7 @@ nsresult nsWebBrowserFind::SearchInFrame(nsIDOMWindow* aWindow,
         rv = subject->Subsumes(theDoc->NodePrincipal(), &subsumes);
         NS_ENSURE_SUCCESS(rv, rv);
         if (!subsumes) {
-            bool hasCap = false;
-            secMan->IsCapabilityEnabled("UniversalXPConnect", &hasCap);
-            if (!hasCap) {
-                return NS_ERROR_DOM_PROP_ACCESS_DENIED;
-            }
+            return NS_ERROR_DOM_PROP_ACCESS_DENIED;
         }
     }
 
@@ -787,7 +783,7 @@ void
 nsWebBrowserFind::GetFrameSelection(nsIDOMWindow* aWindow, 
                                     nsISelection** aSel)
 {
-    *aSel = nsnull;
+    *aSel = nullptr;
 
     nsCOMPtr<nsIDOMDocument> domDoc;    
     aWindow->GetDocument(getter_AddRefs(domDoc));
@@ -801,25 +797,20 @@ nsWebBrowserFind::GetFrameSelection(nsIDOMWindow* aWindow,
     // that we must use when they have focus.
     nsPresContext *presContext = presShell->GetPresContext();
 
-    nsIFrame *frame = nsnull;
-    nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
-    if (fm) {
-      nsCOMPtr<nsIDOMElement> focusedElement;
-      fm->GetFocusedElement(getter_AddRefs(focusedElement));
-      nsCOMPtr<nsIContent> focusedContent(do_QueryInterface(focusedElement));
-      if (focusedContent) {
-        frame = focusedContent->GetPrimaryFrame();
-        if (frame && frame->PresContext() != presContext)
-          frame = nsnull;
-      }
-    }
+    nsCOMPtr<nsPIDOMWindow> window(do_QueryInterface(aWindow));
+
+    nsCOMPtr<nsPIDOMWindow> focusedWindow;
+    nsCOMPtr<nsIContent> focusedContent =
+      nsFocusManager::GetFocusedDescendant(window, false, getter_AddRefs(focusedWindow));
+
+    nsIFrame *frame = focusedContent ? focusedContent->GetPrimaryFrame() : nullptr;
 
     nsCOMPtr<nsISelectionController> selCon;
     if (frame) {
         frame->GetSelectionController(presContext, getter_AddRefs(selCon));
         selCon->GetSelection(nsISelectionController::SELECTION_NORMAL, aSel);
         if (*aSel) {
-            PRInt32 count = -1;
+            int32_t count = -1;
             (*aSel)->GetRangeCount(&count);
             if (count > 0) {
                 return;
@@ -873,14 +864,14 @@ nsresult nsWebBrowserFind::OnFind(nsIDOMWindow *aFoundWindow)
 
   GetDocShellFromWindow
 
-  Utility method. This will always return nsnull if no docShell
+  Utility method. This will always return nullptr if no docShell
   is returned. Oh why isn't there a better way to do this?
 ----------------------------------------------------------------------------*/
 nsIDocShell *
 nsWebBrowserFind::GetDocShellFromWindow(nsIDOMWindow *inWindow)
 {
     nsCOMPtr<nsPIDOMWindow> window(do_QueryInterface(inWindow));
-    if (!window) return nsnull;
+    if (!window) return nullptr;
 
     return window->GetDocShell();
 }

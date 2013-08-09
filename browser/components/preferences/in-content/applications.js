@@ -1072,13 +1072,11 @@ var gApplicationsPane = {
    * enabledPlugin property.  But if there's a plugin for a type, we need
    * to know about it even if it isn't enabled, since we're going to give
    * the user an option to enable it.
-   * 
-   * I'll also note that my reading of nsPluginTag::RegisterWithCategoryManager
-   * suggests that enabledPlugin is only determined during registration
-   * and does not get updated when plugin.disable_full_page_plugin_for_types
-   * changes (unless modification of that preference spawns reregistration).
-   * So even if we could use enabledPlugin to get the plugin that would be used,
-   * we'd still need to check the pref ourselves to find out if it's enabled.
+   *
+   * Also note that enabledPlugin does not get updated when
+   * plugin.disable_full_page_plugin_for_types changes, so even if we could use
+   * enabledPlugin to get the plugin that would be used, we'd still need to
+   * check the pref ourselves to find out if it's enabled.
    */
   _loadPluginHandlers: function() {
     for (let i = 0; i < navigator.plugins.length; ++i) {
@@ -1704,6 +1702,28 @@ var gApplicationsPane = {
     aEvent.stopPropagation();
 
     var handlerApp;
+    let chooseAppCallback = function(aHandlerApp) {
+      // Rebuild the actions menu whether the user picked an app or canceled.
+      // If they picked an app, we want to add the app to the menu and select it.
+      // If they canceled, we want to go back to their previous selection.
+      this.rebuildActionsMenu();
+
+      // If the user picked a new app from the menu, select it.
+      if (aHandlerApp) {
+        let typeItem = this._list.selectedItem;
+        let actionsMenu =
+          document.getAnonymousElementByAttribute(typeItem, "class", "actionsMenu");
+        let menuItems = actionsMenu.menupopup.childNodes;
+        for (let i = 0; i < menuItems.length; i++) {
+          let menuItem = menuItems[i];
+          if (menuItem.handlerApp && menuItem.handlerApp.equals(aHandlerApp)) {
+            actionsMenu.selectedIndex = i;
+            this.onSelectAction(menuItem);
+            break;
+          }
+        }
+      }
+    }.bind(this);
 
 #ifdef XP_WIN
     var params = {};
@@ -1732,47 +1752,33 @@ var gApplicationsPane = {
       // Add the app to the type's list of possible handlers.
       handlerInfo.addPossibleApplicationHandler(handlerApp);
     }
+
+    chooseAppCallback(handlerApp);
 #else
-    var fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
-    var winTitle = this._prefsBundle.getString("fpTitleChooseApp");
-    fp.init(window, winTitle, Ci.nsIFilePicker.modeOpen);
-    fp.appendFilters(Ci.nsIFilePicker.filterApps);
+    let winTitle = this._prefsBundle.getString("fpTitleChooseApp");
+    let fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
+    let fpCallback = function fpCallback_done(aResult) {
+      if (aResult == Ci.nsIFilePicker.returnOK && fp.file &&
+          this._isValidHandlerExecutable(fp.file)) {
+        handlerApp = Cc["@mozilla.org/uriloader/local-handler-app;1"].
+                     createInstance(Ci.nsILocalHandlerApp);
+        handlerApp.name = getFileDisplayName(fp.file);
+        handlerApp.executable = fp.file;
+
+        // Add the app to the type's list of possible handlers.
+        let handlerInfo = this._handledTypes[this._list.selectedItem.type];
+        handlerInfo.addPossibleApplicationHandler(handlerApp);
+
+        chooseAppCallback(handlerApp);
+      }
+    }.bind(this);
 
     // Prompt the user to pick an app.  If they pick one, and it's a valid
     // selection, then add it to the list of possible handlers.
-    if (fp.show() == Ci.nsIFilePicker.returnOK && fp.file &&
-        this._isValidHandlerExecutable(fp.file)) {
-      handlerApp = Cc["@mozilla.org/uriloader/local-handler-app;1"].
-                   createInstance(Ci.nsILocalHandlerApp);
-      handlerApp.name = getFileDisplayName(fp.file);
-      handlerApp.executable = fp.file;
-
-      // Add the app to the type's list of possible handlers.
-      let handlerInfo = this._handledTypes[this._list.selectedItem.type];
-      handlerInfo.addPossibleApplicationHandler(handlerApp);
-    }
+    fp.init(window, winTitle, Ci.nsIFilePicker.modeOpen);
+    fp.appendFilters(Ci.nsIFilePicker.filterApps);
+    fp.open(fpCallback);
 #endif
-
-    // Rebuild the actions menu whether the user picked an app or canceled.
-    // If they picked an app, we want to add the app to the menu and select it.
-    // If they canceled, we want to go back to their previous selection.
-    this.rebuildActionsMenu();
-
-    // If the user picked a new app from the menu, select it.
-    if (handlerApp) {
-      let typeItem = this._list.selectedItem;
-      let actionsMenu =
-        document.getAnonymousElementByAttribute(typeItem, "class", "actionsMenu");
-      let menuItems = actionsMenu.menupopup.childNodes;
-      for (let i = 0; i < menuItems.length; i++) {
-        let menuItem = menuItems[i];
-        if (menuItem.handlerApp && menuItem.handlerApp.equals(handlerApp)) {
-          actionsMenu.selectedIndex = i;
-          this.onSelectAction(menuItem);
-          break;
-        }
-      }
-    }
   },
 
   // Mark which item in the list was last selected so we can reselect it
@@ -1868,7 +1874,7 @@ var gApplicationsPane = {
     // they'll only visit URLs derived from that template (i.e. with %s
     // in the template replaced by the URL of the content being handled).
 
-    if (/^https?/.test(uri.scheme) && this._prefSvc.getBoolPref("browser.chrome.favicons"))
+    if (/^https?$/.test(uri.scheme) && this._prefSvc.getBoolPref("browser.chrome.favicons"))
       return uri.prePath + "/favicon.ico";
 
     return "";

@@ -175,7 +175,7 @@ nsDownloadScanner::Init()
   if (mWatchdog) {
     rv = mWatchdog->Init();
     if (FAILED(rv))
-      mWatchdog = nsnull;
+      mWatchdog = nullptr;
   } else {
     rv = NS_ERROR_OUT_OF_MEMORY;
   }
@@ -211,7 +211,7 @@ nsDownloadScanner::CheckPolicy(nsIURI *aSource, nsIURI *aTarget)
   if (!mAESExists || !aSource || !aTarget)
     return AVPOLICY_DOWNLOAD;
 
-  nsCAutoString source;
+  nsAutoCString source;
   rv = aSource->GetSpec(source);
   if (NS_FAILED(rv))
     return AVPOLICY_DOWNLOAD;
@@ -329,7 +329,7 @@ nsDownloadScanner::Scan::Start()
   nsresult rv = NS_OK;
 
   // Get the path to the file on disk
-  nsCOMPtr<nsILocalFile> file;
+  nsCOMPtr<nsIFile> file;
   rv = mDownload->GetTargetFile(getter_AddRefs(file));
   NS_ENSURE_SUCCESS(rv, rv);
   rv = file->GetPath(mPath);
@@ -340,7 +340,7 @@ nsDownloadScanner::Scan::Start()
     do_GetService(XULAPPINFO_SERVICE_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCAutoString name;
+  nsAutoCString name;
   rv = appinfo->GetName(name);
   NS_ENSURE_SUCCESS(rv, rv);
   CopyUTF8toUTF16(name, mName);
@@ -350,7 +350,7 @@ nsDownloadScanner::Scan::Start()
   rv = mDownload->GetSource(getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCAutoString origin;
+  nsAutoCString origin;
   rv = uri->GetSpec(origin);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -417,7 +417,7 @@ nsDownloadScanner::Scan::Run()
 
   // Clean up some other variables
   // In the event of a timeout, our destructor won't be called
-  mDownload = nsnull;
+  mDownload = nullptr;
 
   NS_RELEASE_THIS();
   return NS_OK;

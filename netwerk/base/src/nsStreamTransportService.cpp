@@ -7,7 +7,7 @@
 #include "nsNetSegmentUtils.h"
 #include "nsTransportUtils.h"
 #include "nsStreamUtils.h"
-#include "nsNetError.h"
+#include "nsError.h"
 #include "nsNetCID.h"
 
 #include "nsIServiceManager.h"
@@ -37,8 +37,8 @@ public:
     NS_DECL_NSIINPUTSTREAM
 
     nsInputStreamTransport(nsIInputStream *source,
-                           PRUint64 offset,
-                           PRUint64 limit,
+                           uint64_t offset,
+                           uint64_t limit,
                            bool closeWhenDone)
         : mSource(source)
         , mOffset(offset)
@@ -60,8 +60,8 @@ private:
     // nsIInputStream implementation.
     nsCOMPtr<nsITransportEventSink> mEventSink;
     nsCOMPtr<nsIInputStream>        mSource;
-    PRUint64                        mOffset;
-    PRUint64                        mLimit;
+    uint64_t                        mOffset;
+    uint64_t                        mLimit;
     bool                            mCloseWhenDone;
     bool                            mFirstTime;
 
@@ -77,9 +77,9 @@ NS_IMPL_THREADSAFE_ISUPPORTS2(nsInputStreamTransport,
 /** nsITransport **/
 
 NS_IMETHODIMP
-nsInputStreamTransport::OpenInputStream(PRUint32 flags,
-                                        PRUint32 segsize,
-                                        PRUint32 segcount,
+nsInputStreamTransport::OpenInputStream(uint32_t flags,
+                                        uint32_t segsize,
+                                        uint32_t segcount,
                                         nsIInputStream **result)
 {
     NS_ENSURE_TRUE(!mInProgress, NS_ERROR_IN_PROGRESS);
@@ -116,9 +116,9 @@ nsInputStreamTransport::OpenInputStream(PRUint32 flags,
 }
 
 NS_IMETHODIMP
-nsInputStreamTransport::OpenOutputStream(PRUint32 flags,
-                                         PRUint32 segsize,
-                                         PRUint32 segcount,
+nsInputStreamTransport::OpenOutputStream(uint32_t flags,
+                                         uint32_t segsize,
+                                         uint32_t segcount,
                                          nsIOutputStream **result)
 {
     // this transport only supports reading!
@@ -163,19 +163,19 @@ nsInputStreamTransport::Close()
 }
 
 NS_IMETHODIMP
-nsInputStreamTransport::Available(PRUint32 *result)
+nsInputStreamTransport::Available(uint64_t *result)
 {
     return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-nsInputStreamTransport::Read(char *buf, PRUint32 count, PRUint32 *result)
+nsInputStreamTransport::Read(char *buf, uint32_t count, uint32_t *result)
 {
     if (mFirstTime) {
         mFirstTime = false;
         if (mOffset != 0) {
             // read from current position if offset equal to max
-            if (mOffset != LL_MAXUINT) {
+            if (mOffset != UINT64_MAX) {
                 nsCOMPtr<nsISeekableStream> seekable = do_QueryInterface(mSource);
                 if (seekable)
                     seekable->Seek(nsISeekableStream::NS_SEEK_SET, mOffset);
@@ -186,7 +186,7 @@ nsInputStreamTransport::Read(char *buf, PRUint32 count, PRUint32 *result)
     }
 
     // limit amount read
-    PRUint32 max = mLimit - mOffset;
+    uint32_t max = mLimit - mOffset;
     if (max == 0) {
         *result = 0;
         return NS_OK;
@@ -200,14 +200,15 @@ nsInputStreamTransport::Read(char *buf, PRUint32 count, PRUint32 *result)
     if (NS_SUCCEEDED(rv)) {
         mOffset += *result;
         if (mEventSink)
-            mEventSink->OnTransportStatus(this, STATUS_READING, mOffset, mLimit);
+            mEventSink->OnTransportStatus(this, NS_NET_STATUS_READING, mOffset,
+                                          mLimit);
     }
     return rv;
 }
 
 NS_IMETHODIMP
 nsInputStreamTransport::ReadSegments(nsWriteSegmentFun writer, void *closure,
-                                     PRUint32 count, PRUint32 *result)
+                                     uint32_t count, uint32_t *result)
 {
     return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -236,8 +237,8 @@ public:
     NS_DECL_NSIOUTPUTSTREAM
 
     nsOutputStreamTransport(nsIOutputStream *sink,
-                            PRUint64 offset,
-                            PRUint64 limit,
+                            uint64_t offset,
+                            uint64_t limit,
                             bool closeWhenDone)
         : mSink(sink)
         , mOffset(offset)
@@ -259,8 +260,8 @@ private:
     // nsIOutputStream implementation.
     nsCOMPtr<nsITransportEventSink> mEventSink;
     nsCOMPtr<nsIOutputStream>       mSink;
-    PRUint64                        mOffset;
-    PRUint64                        mLimit;
+    uint64_t                        mOffset;
+    uint64_t                        mLimit;
     bool                            mCloseWhenDone;
     bool                            mFirstTime;
 
@@ -276,9 +277,9 @@ NS_IMPL_THREADSAFE_ISUPPORTS2(nsOutputStreamTransport,
 /** nsITransport **/
 
 NS_IMETHODIMP
-nsOutputStreamTransport::OpenInputStream(PRUint32 flags,
-                                         PRUint32 segsize,
-                                         PRUint32 segcount,
+nsOutputStreamTransport::OpenInputStream(uint32_t flags,
+                                         uint32_t segsize,
+                                         uint32_t segcount,
                                          nsIInputStream **result)
 {
     // this transport only supports writing!
@@ -287,9 +288,9 @@ nsOutputStreamTransport::OpenInputStream(PRUint32 flags,
 }
 
 NS_IMETHODIMP
-nsOutputStreamTransport::OpenOutputStream(PRUint32 flags,
-                                          PRUint32 segsize,
-                                          PRUint32 segcount,
+nsOutputStreamTransport::OpenOutputStream(uint32_t flags,
+                                          uint32_t segsize,
+                                          uint32_t segcount,
                                           nsIOutputStream **result)
 {
     NS_ENSURE_TRUE(!mInProgress, NS_ERROR_IN_PROGRESS);
@@ -368,13 +369,13 @@ nsOutputStreamTransport::Flush()
 }
 
 NS_IMETHODIMP
-nsOutputStreamTransport::Write(const char *buf, PRUint32 count, PRUint32 *result)
+nsOutputStreamTransport::Write(const char *buf, uint32_t count, uint32_t *result)
 {
     if (mFirstTime) {
         mFirstTime = false;
         if (mOffset != 0) {
             // write to current position if offset equal to max
-            if (mOffset != LL_MAXUINT) {
+            if (mOffset != UINT64_MAX) {
                 nsCOMPtr<nsISeekableStream> seekable = do_QueryInterface(mSink);
                 if (seekable)
                     seekable->Seek(nsISeekableStream::NS_SEEK_SET, mOffset);
@@ -385,7 +386,7 @@ nsOutputStreamTransport::Write(const char *buf, PRUint32 count, PRUint32 *result
     }
 
     // limit amount written
-    PRUint32 max = mLimit - mOffset;
+    uint32_t max = mLimit - mOffset;
     if (max == 0) {
         *result = 0;
         return NS_OK;
@@ -399,20 +400,21 @@ nsOutputStreamTransport::Write(const char *buf, PRUint32 count, PRUint32 *result
     if (NS_SUCCEEDED(rv)) {
         mOffset += *result;
         if (mEventSink)
-            mEventSink->OnTransportStatus(this, STATUS_WRITING, mOffset, mLimit);
+            mEventSink->OnTransportStatus(this, NS_NET_STATUS_WRITING, mOffset,
+                                          mLimit);
     }
     return rv;
 }
 
 NS_IMETHODIMP
 nsOutputStreamTransport::WriteSegments(nsReadSegmentFun reader, void *closure,
-                                       PRUint32 count, PRUint32 *result)
+                                       uint32_t count, uint32_t *result)
 {
     return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-nsOutputStreamTransport::WriteFrom(nsIInputStream *in, PRUint32 count, PRUint32 *result)
+nsOutputStreamTransport::WriteFrom(nsIInputStream *in, uint32_t count, uint32_t *result)
 {
     return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -443,6 +445,7 @@ nsStreamTransportService::Init()
     mPool->SetThreadLimit(4);
     mPool->SetIdleThreadLimit(1);
     mPool->SetIdleThreadTimeout(PR_SecondsToInterval(60));
+    mPool->SetName(NS_LITERAL_CSTRING("StreamTrans"));
 
     nsCOMPtr<nsIObserverService> obsSvc =
         mozilla::services::GetObserverService();
@@ -457,7 +460,7 @@ NS_IMPL_THREADSAFE_ISUPPORTS3(nsStreamTransportService,
                               nsIObserver)
 
 NS_IMETHODIMP
-nsStreamTransportService::Dispatch(nsIRunnable *task, PRUint32 flags)
+nsStreamTransportService::Dispatch(nsIRunnable *task, uint32_t flags)
 {
     NS_ENSURE_TRUE(mPool, NS_ERROR_NOT_INITIALIZED);
     return mPool->Dispatch(task, flags);
@@ -472,8 +475,8 @@ nsStreamTransportService::IsOnCurrentThread(bool *result)
 
 NS_IMETHODIMP
 nsStreamTransportService::CreateInputTransport(nsIInputStream *stream,
-                                               PRInt64 offset,
-                                               PRInt64 limit,
+                                               int64_t offset,
+                                               int64_t limit,
                                                bool closeWhenDone,
                                                nsITransport **result)
 {
@@ -487,8 +490,8 @@ nsStreamTransportService::CreateInputTransport(nsIInputStream *stream,
 
 NS_IMETHODIMP
 nsStreamTransportService::CreateOutputTransport(nsIOutputStream *stream,
-                                                PRInt64 offset,
-                                                PRInt64 limit,
+                                                int64_t offset,
+                                                int64_t limit,
                                                 bool closeWhenDone,
                                                 nsITransport **result)
 {
@@ -505,7 +508,7 @@ nsStreamTransportService::RaiseThreadLimit()
 {
     NS_ENSURE_TRUE(mPool, NS_ERROR_NOT_INITIALIZED);
 
-    PRUint32 threadLimit;
+    uint32_t threadLimit;
     nsresult rv = mPool->GetThreadLimit(&threadLimit);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -517,7 +520,7 @@ nsStreamTransportService::LowerThreadLimit()
 {
     NS_ENSURE_TRUE(mPool, NS_ERROR_NOT_INITIALIZED);
 
-    PRUint32 threadLimit;
+    uint32_t threadLimit;
     nsresult rv = mPool->GetThreadLimit(&threadLimit);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -537,7 +540,7 @@ nsStreamTransportService::Observe(nsISupports *subject, const char *topic,
 
   if (mPool) {
     mPool->Shutdown();
-    mPool = nsnull;
+    mPool = nullptr;
   }
   return NS_OK;
 }

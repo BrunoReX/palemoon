@@ -5,7 +5,7 @@
 
 "use strict";
 
-const EXPORTED_SYMBOLS = ["StyleEditorChrome"];
+this.EXPORTED_SYMBOLS = ["StyleEditorChrome"];
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -32,7 +32,7 @@ const STYLE_EDITOR_TEMPLATE = "stylesheet";
  * @param DOMWindow aContentWindow
  *        Content DOMWindow to attach to this chrome.
  */
-function StyleEditorChrome(aRoot, aContentWindow)
+this.StyleEditorChrome = function StyleEditorChrome(aRoot, aContentWindow)
 {
   assert(aRoot, "Argument 'aRoot' is required to initialize StyleEditorChrome.");
 
@@ -350,10 +350,12 @@ StyleEditorChrome.prototype = {
       if (!aEditor.sourceEditor) {
         // If a line or column was specified we move the caret appropriately.
         if (setCaret) {
+          let self = this;
           aEditor.addActionListener({
             onAttach: function SEC_selectSheet_onAttach()
             {
               aEditor.removeActionListener(this);
+              self.selectedStyleSheetIndex = aEditor.styleSheetIndex;
               aEditor.sourceEditor.setCaretPosition(aLine - 1, aCol - 1);
             }
           });
@@ -367,6 +369,7 @@ StyleEditorChrome.prototype = {
           aEditor.sourceEditor.setCaretPosition(aLine - 1, aCol - 1);
         }
       }
+      this.selectedStyleSheetIndex = aEditor.styleSheetIndex;
     }.bind(this);
 
     if (!this.editors.length) {

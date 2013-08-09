@@ -3,21 +3,27 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
-relativesrcdir  = caps/tests/mochitest
+relativesrcdir  = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
-include $(topsrcdir)/config/rules.mk
 
-_TEST_FILES = 	test_bug423375.html \
+MOCHITEST_FILES = 	test_bug423375.html \
                 test_bug246699.html \
                 test_bug292789.html \
                 test_bug470804.html \
                 test_disallowInheritPrincipal.html \
+                test_app_principal_equality.html \
                 $(NULL)
+
+# extendedOrigin test doesn't work on Windows, see bug 776296.
+ifneq ($(OS_ARCH),WINNT)
+MOCHITEST_CHROME_FILES = test_principal_extendedorigin_appid_appstatus.html \
+                         $(NULL)
+endif
 
 test_bug292789.html : % : %.in
 	$(PYTHON) $(topsrcdir)/config/Preprocessor.py \
@@ -25,5 +31,4 @@ test_bug292789.html : % : %.in
 
 GARBAGE += test_bug292789.html
 
-libs:: $(_TEST_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/tests/$(relativesrcdir)
+include $(topsrcdir)/config/rules.mk

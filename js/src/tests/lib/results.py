@@ -1,6 +1,10 @@
 import re
-from subprocess import list2cmdline
-from progressbar import ProgressBar
+from progressbar import NullProgressBar, ProgressBar
+import pipes
+
+# subprocess.list2cmdline does not properly escape for sh-like shells
+def escape_cmdline(args):
+    return ' '.join([ pipes.quote(a) for a in args ])
 
 class TestOutput:
     """Output from a test run."""
@@ -83,29 +87,45 @@ class ResultsSink:
         self.fp = options.output_fp
 
         self.groups = {}
-        self.counts = [ 0, 0, 0 ]
+        self.counts = {'PASS': 0, 'FAIL': 0, 'TIMEOUT': 0, 'SKIP': 0}
         self.n = 0
 
-        self.pb = None
-        if not options.hide_progress:
-            self.pb = ProgressBar('', testcount, 16)
+        if options.hide_progress:
+            self.pb = NullProgressBar()
+        else:
+            fmt = [
+                {'value': 'PASS',    'color': 'green'},
+                {'value': 'FAIL',    'color': 'red'},
+                {'value': 'TIMEOUT', 'color': 'blue'},
+                {'value': 'SKIP',    'color': 'brightgray'},
+            ]
+            self.pb = ProgressBar(testcount, fmt)
 
     def push(self, output):
+        if output.timed_out:
+            self.counts['TIMEOUT'] += 1
         if isinstance(output, NullTestOutput):
             if self.options.tinderbox:
                 self.print_tinderbox_result('TEST-KNOWN-FAIL', output.test.path, time=output.dt, skip=True)
-            self.counts[2] += 1
+            self.counts['SKIP'] += 1
             self.n += 1
         else:
-            if self.options.show_cmd:
-                print >> self.fp, list2cmdline(output.cmd)
+            result = TestResult.from_output(output)
 
-            if self.options.show_output:
-                print >> self.fp, '    rc = %d, run time = %f' % (output.rc, output.dt)
+            show = self.options.show
+            if self.options.failed_only and result.result == 'PASS':
+                show = False
+
+            if show and self.options.show_output:
+                print >> self.fp, '## %s: rc = %d, run time = %f' % (output.test.path, output.rc, output.dt)
+
+            if show and self.options.show_cmd:
+                print >> self.fp, escape_cmdline(output.cmd)
+
+            if show and self.options.show_output:
                 self.fp.write(output.out)
                 self.fp.write(output.err)
 
-            result = TestResult.from_output(output)
             tup = (result.result, result.test.expect, result.test.random)
             dev_label = self.LABELS[tup][1]
             if output.timed_out:
@@ -115,11 +135,11 @@ class ResultsSink:
             self.n += 1
 
             if result.result == TestResult.PASS and not result.test.random:
-                self.counts[0] += 1
+                self.counts['PASS'] += 1
             elif result.test.expect and not result.test.random:
-                self.counts[1] += 1
+                self.counts['FAIL'] += 1
             else:
-                self.counts[2] += 1
+                self.counts['SKIP'] += 1
 
             if self.options.tinderbox:
                 if len(result.results) > 1:
@@ -134,19 +154,14 @@ class ResultsSink:
                 return
 
             if dev_label:
-                if self.pb:
-                    self.fp.write("\n")
                 def singular(label):
                     return "FIXED" if label == "FIXES" else label[:-1]
-                print >> self.fp, "%s - %s" % (singular(dev_label), output.test.path)
+                self.pb.message("%s - %s" % (singular(dev_label), output.test.path))
 
-        if self.pb:
-            self.pb.label = '[%4d|%4d|%4d]'%tuple(self.counts)
-            self.pb.update(self.n)
+        self.pb.update(self.n, self.counts)
 
     def finish(self, completed):
-        if self.pb:
-            self.pb.finish(completed)
+        self.pb.finish(completed)
         if not self.options.tinderbox:
             self.list(completed)
 

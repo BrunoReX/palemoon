@@ -7,15 +7,19 @@
 #define __selectionstate_h__
 
 #include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
-#include "nsTArray.h"
 #include "nsIDOMNode.h"
-#include "nsIDOMRange.h"
-#include "nsCycleCollectionParticipant.h"
+#include "nsINode.h"
+#include "nsTArray.h"
+#include "nscore.h"
 
+class nsCycleCollectionTraversalCallback;
 class nsIDOMCharacterData;
+class nsIDOMRange;
 class nsISelection;
 class nsRange;
+namespace mozilla {
+class Selection;
+}
 
 /***************************************************************************
  * class for recording selection info.  stores selection as collection of
@@ -34,10 +38,10 @@ struct nsRangeStore
   NS_INLINE_DECL_REFCOUNTING(nsRangeStore)
         
   nsCOMPtr<nsIDOMNode> startNode;
-  PRInt32              startOffset;
+  int32_t              startOffset;
   nsCOMPtr<nsIDOMNode> endNode;
-  PRInt32              endOffset;
-  // DEBUG:   static PRInt32 n;
+  int32_t              endOffset;
+  // DEBUG:   static int32_t n;
 };
 
 class nsSelectionState
@@ -50,7 +54,7 @@ class nsSelectionState
     void DoTraverse(nsCycleCollectionTraversalCallback &cb);
     void DoUnlink() { MakeEmpty(); }
   
-    nsresult SaveSelection(nsISelection *aSel);
+    void     SaveSelection(mozilla::Selection *aSel);
     nsresult RestoreSelection(nsISelection *aSel);
     bool     IsCollapsed();
     bool     IsEqual(nsSelectionState *aSelState);
@@ -79,27 +83,27 @@ class nsRangeUpdater
     // if you move a node, that corresponds to deleting it and reinserting it.
     // DOM Range gravity will promote the selection out of the node on deletion,
     // which is not what you want if you know you are reinserting it.
-    nsresult SelAdjCreateNode(nsIDOMNode *aParent, PRInt32 aPosition);
-    nsresult SelAdjInsertNode(nsIDOMNode *aParent, PRInt32 aPosition);
-    nsresult SelAdjDeleteNode(nsIDOMNode *aNode);
-    nsresult SelAdjSplitNode(nsIDOMNode *aOldRightNode, PRInt32 aOffset, nsIDOMNode *aNewLeftNode);
+    nsresult SelAdjCreateNode(nsIDOMNode *aParent, int32_t aPosition);
+    nsresult SelAdjInsertNode(nsIDOMNode *aParent, int32_t aPosition);
+    void     SelAdjDeleteNode(nsIDOMNode *aNode);
+    nsresult SelAdjSplitNode(nsIDOMNode *aOldRightNode, int32_t aOffset, nsIDOMNode *aNewLeftNode);
     nsresult SelAdjJoinNodes(nsIDOMNode *aLeftNode, 
                              nsIDOMNode *aRightNode, 
                              nsIDOMNode *aParent, 
-                             PRInt32 aOffset,
-                             PRInt32 aOldLeftNodeLength);
-    nsresult SelAdjInsertText(nsIDOMCharacterData *aTextNode, PRInt32 aOffset, const nsAString &aString);
-    nsresult SelAdjDeleteText(nsIDOMCharacterData *aTextNode, PRInt32 aOffset, PRInt32 aLength);
+                             int32_t aOffset,
+                             int32_t aOldLeftNodeLength);
+    nsresult SelAdjInsertText(nsIDOMCharacterData *aTextNode, int32_t aOffset, const nsAString &aString);
+    nsresult SelAdjDeleteText(nsIDOMCharacterData *aTextNode, int32_t aOffset, int32_t aLength);
     // the following gravity routines need will/did sandwiches, because the other gravity
     // routines will be called inside of these sandwiches, but should be ignored.
     nsresult WillReplaceContainer();
     nsresult DidReplaceContainer(nsIDOMNode *aOriginalNode, nsIDOMNode *aNewNode);
     nsresult WillRemoveContainer();
-    nsresult DidRemoveContainer(nsIDOMNode *aNode, nsIDOMNode *aParent, PRInt32 aOffset, PRUint32 aNodeOrigLen);
+    nsresult DidRemoveContainer(nsIDOMNode *aNode, nsIDOMNode *aParent, int32_t aOffset, uint32_t aNodeOrigLen);
     nsresult WillInsertContainer();
     nsresult DidInsertContainer();
     nsresult WillMoveNode();
-    nsresult DidMoveNode(nsIDOMNode *aOldParent, PRInt32 aOldOffset, nsIDOMNode *aNewParent, PRInt32 aNewOffset);
+    nsresult DidMoveNode(nsIDOMNode *aOldParent, int32_t aOldOffset, nsIDOMNode *aNewParent, int32_t aNewOffset);
   protected:    
     nsTArray<nsRefPtr<nsRangeStore> > mArray;
     bool mLock;
@@ -116,10 +120,10 @@ class NS_STACK_CLASS nsAutoTrackDOMPoint
   private:
     nsRangeUpdater &mRU;
     nsCOMPtr<nsIDOMNode> *mNode;
-    PRInt32 *mOffset;
+    int32_t *mOffset;
     nsRefPtr<nsRangeStore> mRangeItem;
   public:
-    nsAutoTrackDOMPoint(nsRangeUpdater &aRangeUpdater, nsCOMPtr<nsIDOMNode> *aNode, PRInt32 *aOffset) :
+    nsAutoTrackDOMPoint(nsRangeUpdater &aRangeUpdater, nsCOMPtr<nsIDOMNode> *aNode, int32_t *aOffset) :
     mRU(aRangeUpdater)
     ,mNode(aNode)
     ,mOffset(aOffset)
@@ -181,20 +185,20 @@ class NS_STACK_CLASS nsAutoRemoveContainerSelNotify
     nsRangeUpdater &mRU;
     nsIDOMNode *mNode;
     nsIDOMNode *mParent;
-    PRInt32    mOffset;
-    PRUint32   mNodeOrigLen;
+    int32_t    mOffset;
+    uint32_t   mNodeOrigLen;
 
   public:
-    nsAutoRemoveContainerSelNotify(nsRangeUpdater &aRangeUpdater, 
-                                   nsIDOMNode *aNode, 
-                                   nsIDOMNode *aParent, 
-                                   PRInt32 aOffset, 
-                                   PRUint32 aNodeOrigLen) :
-    mRU(aRangeUpdater)
-    ,mNode(aNode)
-    ,mParent(aParent)
-    ,mOffset(aOffset)
-    ,mNodeOrigLen(aNodeOrigLen)
+    nsAutoRemoveContainerSelNotify(nsRangeUpdater& aRangeUpdater,
+                                   nsINode* aNode,
+                                   nsINode* aParent,
+                                   int32_t aOffset,
+                                   uint32_t aNodeOrigLen)
+      : mRU(aRangeUpdater)
+      , mNode(aNode->AsDOMNode())
+      , mParent(aParent->AsDOMNode())
+      , mOffset(aOffset)
+      , mNodeOrigLen(aNodeOrigLen)
     {
       mRU.WillRemoveContainer();
     }
@@ -240,15 +244,15 @@ class NS_STACK_CLASS nsAutoMoveNodeSelNotify
     nsRangeUpdater &mRU;
     nsIDOMNode *mOldParent;
     nsIDOMNode *mNewParent;
-    PRInt32    mOldOffset;
-    PRInt32    mNewOffset;
+    int32_t    mOldOffset;
+    int32_t    mNewOffset;
 
   public:
     nsAutoMoveNodeSelNotify(nsRangeUpdater &aRangeUpdater, 
                             nsIDOMNode *aOldParent, 
-                            PRInt32 aOldOffset, 
+                            int32_t aOldOffset, 
                             nsIDOMNode *aNewParent, 
-                            PRInt32 aNewOffset) :
+                            int32_t aNewOffset) :
     mRU(aRangeUpdater)
     ,mOldParent(aOldParent)
     ,mNewParent(aNewParent)

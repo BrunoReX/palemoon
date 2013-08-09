@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH       = ../../..
+DEPTH       = @DEPTH@
 topsrcdir   = @top_srcdir@
 srcdir      = @srcdir@
 VPATH       = @srcdir@
@@ -16,6 +16,7 @@ LIBRARY_NAME    = domsystemwindows_s
 LIBXUL_LIBRARY   = 1
 FORCE_STATIC_LIB = 1
 EXPORT_LIBRARY = 1
+FAIL_ON_WARNINGS := 1
 
 # We fire the nsDOMDeviceAcceleration
 LOCAL_INCLUDES += -I$(topsrcdir)/content/events/src

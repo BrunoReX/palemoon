@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH = ../../..
+DEPTH = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir = @srcdir@
 VPATH = @srcdir@
@@ -20,35 +20,37 @@ CPPSRCS = \
   ApplicationAccessibleWrap.cpp \
   ARIAGridAccessibleWrap.cpp \
   DocAccessibleWrap.cpp \
+  HTMLTableAccessibleWrap.cpp \
+  HTMLWin32ObjectAccessible.cpp \
   HyperTextAccessibleWrap.cpp \
   ImageAccessibleWrap.cpp \
   nsAccessNodeWrap.cpp \
-  nsHTMLWin32ObjectAccessible.cpp \
-  nsXULMenuAccessibleWrap.cpp \
-  nsXULListboxAccessibleWrap.cpp \
-  nsXULTreeGridAccessibleWrap.cpp \
-  nsHTMLTableAccessibleWrap.cpp \
   nsWinUtils.cpp \
-  CAccessibleText.cpp \
-  CAccessibleEditableText.cpp \
-  CAccessibleHyperlink.cpp \
-  CAccessibleTable.cpp \
-  CAccessibleTableCell.cpp \
-  CAccessibleValue.cpp \
   Compatibility.cpp \
   EnumVariant.cpp \
-  ia2AccessibleAction.cpp \
-  ia2AccessibleComponent.cpp \
-  ia2AccessibleImage.cpp \
-  ia2AccessibleHypertext.cpp \
-  ia2AccessibleRelation.cpp \
   RootAccessibleWrap.cpp \
   TextLeafAccessibleWrap.cpp \
   $(NULL)
 
+ifdef MOZ_XUL
+CPPSRCS += \
+  XULListboxAccessibleWrap.cpp \
+  XULMenuAccessibleWrap.cpp \
+  XULTreeGridAccessibleWrap.cpp \
+  $(NULL)
+endif
+
 EXPORTS = \
   nsAccessNodeWrap.h \
   $(NULL)
+
+EXPORTS_NAMESPACES = mozilla/a11y \
+
+EXPORTS_mozilla/a11y = \
+  AccessibleWrap.h \
+  Compatibility.h \
+  HyperTextAccessibleWrap.h \
+  $(null)
 
 # we don't want the shared lib, but we want to force the creation of a static lib.
 FORCE_STATIC_LIB = 1
@@ -64,6 +66,12 @@ LOCAL_INCLUDES += \
   -I$(srcdir)/../html \
   -I$(srcdir)/../xpcom \
   -I$(srcdir)/../xul \
+  -I$(srcdir)/../windows/ia2 \
+  -I$(srcdir)/../windows/uia \
   -I$(srcdir)/../../../content/base/src \
   -I$(srcdir)/../../../content/events/src \
   $(NULL)
+
+ifneq ($(A11Y_LOG),0)
+  DEFINES += -DA11Y_LOG
+endif

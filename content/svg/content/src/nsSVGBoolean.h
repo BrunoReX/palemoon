@@ -13,6 +13,7 @@
 #include "nsISMILAttr.h"
 #include "nsISupportsImpl.h"
 #include "nsSVGElement.h"
+#include "mozilla/Attributes.h"
 
 class nsISMILAnimationElement;
 class nsSMILValue;
@@ -21,7 +22,7 @@ class nsSVGBoolean
 {
 
 public:
-  void Init(PRUint8 aAttrEnum = 0xff, bool aValue = false) {
+  void Init(uint8_t aAttrEnum = 0xff, bool aValue = false) {
     mAnimVal = mBaseVal = aValue;
     mAttrEnum = aAttrEnum;
     mIsAnimated = false;
@@ -48,10 +49,10 @@ private:
   bool mAnimVal;
   bool mBaseVal;
   bool mIsAnimated;
-  PRUint8 mAttrEnum; // element specified tracking for attribute
+  uint8_t mAttrEnum; // element specified tracking for attribute
 
 public:
-  struct DOMAnimatedBoolean : public nsIDOMSVGAnimatedBoolean
+  struct DOMAnimatedBoolean MOZ_FINAL : public nsIDOMSVGAnimatedBoolean
   {
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
     NS_DECL_CYCLE_COLLECTION_CLASS(DOMAnimatedBoolean)

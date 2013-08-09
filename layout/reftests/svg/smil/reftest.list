@@ -14,6 +14,9 @@
 #   - Some more "anim-retarget" tests, with attributeType being changed/cleared.
 #     (after we've got support for SVG/SMIL animation of CSS properties)
 
+# animateMotion tests
+include motion/reftest.list
+
 # animation sort-order tests
 include sort/reftest.list
 
@@ -136,6 +139,7 @@ fuzzy-if(/^Windows\x20NT\x205\.1/.test(http.oscpu),2,1) fuzzy-if(cocoaWidget&&la
 # animate some viewBox attributes
 == anim-svg-viewBox-01.svg lime.svg
 == anim-svg-viewBox-02.svg lime.svg
+== anim-view-01.svg#view lime.svg
 
 # animate some preserveAspectRatio attributes
 == anim-feImage-preserveAspectRatio-01.svg lime.svg
@@ -227,7 +231,7 @@ random == anim-text-x-y-dx-dy-01.svg anim-text-x-y-dx-dy-01-ref.svg # bug 579588
 == anim-pattern-attr-presence-01.svg anim-pattern-attr-presence-01-ref.svg
 fails == anim-pattern-attr-presence-02.svg anim-pattern-attr-presence-02-ref.svg
 # ^ bug 621651
-== anim-gradient-attr-presence-01.svg anim-gradient-attr-presence-01-ref.svg
+fuzzy-if(cocoaWidget&&layersGPUAccelerated,1,2) == anim-gradient-attr-presence-01.svg anim-gradient-attr-presence-01-ref.svg
 
 == api-sanity-1.svg lime.svg
 

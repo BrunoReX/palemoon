@@ -58,14 +58,13 @@ DOMSVGAnimatedTransformList::GetAnimVal(nsIDOMSVGTransformList** aAnimVal)
 DOMSVGAnimatedTransformList::GetDOMWrapper(SVGAnimatedTransformList *aList,
                                            nsSVGElement *aElement)
 {
-  DOMSVGAnimatedTransformList *wrapper =
+  nsRefPtr<DOMSVGAnimatedTransformList> wrapper =
     sSVGAnimatedTransformListTearoffTable.GetTearoff(aList);
   if (!wrapper) {
     wrapper = new DOMSVGAnimatedTransformList(aElement);
     sSVGAnimatedTransformListTearoffTable.AddTearoff(aList, wrapper);
   }
-  NS_ADDREF(wrapper);
-  return wrapper;
+  return wrapper.forget();
 }
 
 /* static */ DOMSVGAnimatedTransformList*
@@ -84,7 +83,7 @@ DOMSVGAnimatedTransformList::~DOMSVGAnimatedTransformList()
 
 void
 DOMSVGAnimatedTransformList::InternalBaseValListWillChangeLengthTo(
-  PRUint32 aNewLength)
+  uint32_t aNewLength)
 {
   // When the number of items in our internal counterpart's baseVal changes,
   // we MUST keep our baseVal in sync. If we don't, script will either see a
@@ -95,7 +94,7 @@ DOMSVGAnimatedTransformList::InternalBaseValListWillChangeLengthTo(
 
   nsRefPtr<DOMSVGAnimatedTransformList> kungFuDeathGrip;
   if (mBaseVal) {
-    if (aNewLength < mBaseVal->Length()) {
+    if (aNewLength < mBaseVal->LengthNoFlush()) {
       // InternalListLengthWillChange might clear last reference to |this|.
       // Retain a temporary reference to keep from dying before returning.
       kungFuDeathGrip = this;
@@ -115,7 +114,7 @@ DOMSVGAnimatedTransformList::InternalBaseValListWillChangeLengthTo(
 
 void
 DOMSVGAnimatedTransformList::InternalAnimValListWillChangeLengthTo(
-  PRUint32 aNewLength)
+  uint32_t aNewLength)
 {
   if (mAnimVal) {
     mAnimVal->InternalListLengthWillChange(aNewLength);

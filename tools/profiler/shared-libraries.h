@@ -27,9 +27,9 @@ public:
 #ifdef XP_WIN
                 nsID aPdbSignature,
                 unsigned long aPdbAge,
-                char *aPdbName,
+                const char *aPdbName,
 #endif
-                char *aName)
+                const char *aName)
     : mStart(aStart)
     , mEnd(aEnd)
     , mOffset(aOffset)
@@ -140,7 +140,7 @@ public:
     mEntries.push_back(entry);
   }
 
-  SharedLibrary& GetEntry(size_t i)
+  const SharedLibrary& GetEntry(size_t i) const
   {
     return mEntries[i];
   }

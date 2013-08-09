@@ -13,10 +13,12 @@
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
 #include "nsMappedAttributes.h"
+#include "nsAttrValueInlines.h"
 #include "nsRuleData.h"
 #include "nsCSSProps.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 class nsHTMLHRElement : public nsGenericHTMLElement,
                         public nsIDOMHTMLHRElement
@@ -29,18 +31,18 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLHRElement
   NS_DECL_NSIDOMHTMLHRELEMENT
 
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
@@ -65,8 +67,8 @@ nsHTMLHRElement::~nsHTMLHRElement()
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLHRElement, nsGenericElement) 
-NS_IMPL_RELEASE_INHERITED(nsHTMLHRElement, nsGenericElement) 
+NS_IMPL_ADDREF_INHERITED(nsHTMLHRElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLHRElement, Element)
 
 
 DOMCI_NODE_DATA(HTMLHRElement, nsHTMLHRElement)
@@ -97,7 +99,7 @@ static const nsAttrValue::EnumTable kAlignTable[] = {
 };
 
 bool
-nsHTMLHRElement::ParseAttribute(PRInt32 aNamespaceID,
+nsHTMLHRElement::ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult)
@@ -295,7 +297,7 @@ nsHTMLHRElement::IsAttributeMapped(const nsIAtom* aAttribute) const
     { &nsGkAtoms::size },
     { &nsGkAtoms::color },
     { &nsGkAtoms::noshade },
-    { nsnull },
+    { nullptr },
   };
   
   static const MappedAttributeEntry* const map[] = {

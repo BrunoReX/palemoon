@@ -55,7 +55,7 @@ function onDebugKeyPress(aEvent) {
     let evt = document.createEvent("SimpleGestureEvent");
     evt.initSimpleGestureEvent("MozSwipeGesture", true, true, window, null,
                                0, 0, 0, 0, false, false, false, false, 0, null,
-                               aDirection, 0);
+                               aDirection, 0, 0);
     Browser.selectedTab.inputHandler.dispatchEvent(evt);
   }
 
@@ -79,7 +79,7 @@ function onDebugKeyPress(aEvent) {
       function dispatchMagnifyEvent(aName, aDelta) {
         let evt = document.createEvent("SimpleGestureEvent");
         evt.initSimpleGestureEvent("MozMagnifyGesture" + aName, true, true, window, null,
-                                   0, 0, 0, 0, false, false, false, false, 0, null, 0, aDelta);
+                                   0, 0, 0, 0, false, false, false, false, 0, null, 0, aDelta, 0);
         Browser.selectedTab.inputHandler.dispatchEvent(evt);
       }
       dispatchMagnifyEvent("Start", 0);
@@ -385,6 +385,7 @@ var Browser = {
     messageManager.addMessageListener("Browser:CertException", this);
     messageManager.addMessageListener("Browser:BlockedSite", this);
     messageManager.addMessageListener("Browser:ErrorPage", this);
+    messageManager.addMessageListener("Browser:GoOnline", this);
     messageManager.addMessageListener("Browser:PluginClickToPlayClicked", this);
 
     // Broadcast a UIReady message so add-ons know we are finished with startup
@@ -484,6 +485,7 @@ var Browser = {
     messageManager.removeMessageListener("Browser:CertException", this);
     messageManager.removeMessageListener("Browser:BlockedSite", this);
     messageManager.removeMessageListener("Browser:ErrorPage", this);
+    messageManager.removeMessageListener("Browser:GoOnline", this);
     messageManager.removeMessageListener("Browser:PluginClickToPlayClicked", this);
 
     var os = Services.obs;
@@ -1264,6 +1266,9 @@ var Browser = {
         break;
       case "Browser:ErrorPage":
         this._handleErrorPage(aMessage);
+        break;
+      case "Browser:GoOnline":
+        Services.io.offline = false;
         break;
       case "Browser:PluginClickToPlayClicked": {
         // Save off session history
@@ -2128,7 +2133,7 @@ IdentityHandler.prototype = {
 
     if (state & Ci.nsIWebProgressListener.STATE_IDENTITY_EV_TOPLEVEL)
       this.setMode(this.IDENTITY_MODE_IDENTIFIED);
-    else if (state & Ci.nsIWebProgressListener.STATE_SECURE_HIGH)
+    else if (state & Ci.nsIWebProgressListener.STATE_IS_SECURE)
       this.setMode(this.IDENTITY_MODE_DOMAIN_VERIFIED);
     else
       this.setMode(this.IDENTITY_MODE_UNKNOWN);

@@ -9,25 +9,44 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/PContentChild.h"
+#include "mozilla/dom/TabContext.h"
+#include "mozilla/dom/ipc/Blob.h"
 
 #include "nsTArray.h"
 #include "nsIConsoleListener.h"
 
 struct ChromePackage;
+class nsIDOMBlob;
 class nsIObserver;
 struct ResourceMapping;
 struct OverrideMapping;
 
 namespace mozilla {
+
+namespace ipc {
+class OptionalURIParams;
+class URIParams;
+}// namespace ipc
+
+namespace layers {
+class PCompositorChild;
+} // namespace layers
+
 namespace dom {
 
 class AlertObserver;
 class PrefObserver;
 class ConsoleListener;
 class PStorageChild;
+class ClonedMessageData;
 
 class ContentChild : public PContentChild
+                   , public TabContext
 {
+    typedef mozilla::dom::ClonedMessageData ClonedMessageData;
+    typedef mozilla::ipc::OptionalURIParams OptionalURIParams;
+    typedef mozilla::ipc::URIParams URIParams;
+
 public:
     ContentChild();
     virtual ~ContentChild();
@@ -44,7 +63,6 @@ public:
     void InitXPCOM();
 
     static ContentChild* GetSingleton() {
-        NS_ASSERTION(sSingleton, "not initialized");
         return sSingleton;
     }
 
@@ -52,20 +70,37 @@ public:
         return mAppInfo;
     }
 
-    /* if you remove this, please talk to cjones or dougt */
-    virtual bool RecvDummy(Shmem& foo) { return true; }
+    void SetProcessName(const nsAString& aName);
+    const void GetProcessName(nsAString& aName);
 
-    virtual PBrowserChild* AllocPBrowser(const PRUint32& aChromeFlags);
+    PCompositorChild*
+    AllocPCompositor(mozilla::ipc::Transport* aTransport,
+                     base::ProcessId aOtherProcess) MOZ_OVERRIDE;
+    PImageBridgeChild*
+    AllocPImageBridge(mozilla::ipc::Transport* aTransport,
+                      base::ProcessId aOtherProcess) MOZ_OVERRIDE;
+
+    virtual PBrowserChild* AllocPBrowser(const IPCTabContext &aContext,
+                                         const uint32_t &chromeFlags);
     virtual bool DeallocPBrowser(PBrowserChild*);
+
+    virtual PDeviceStorageRequestChild* AllocPDeviceStorageRequest(const DeviceStorageParams&);
+    virtual bool DeallocPDeviceStorageRequest(PDeviceStorageRequestChild*);
+
+    virtual PBlobChild* AllocPBlob(const BlobConstructorParams& aParams);
+    virtual bool DeallocPBlob(PBlobChild*);
 
     virtual PCrashReporterChild*
     AllocPCrashReporter(const mozilla::dom::NativeThreadId& id,
-                        const PRUint32& processType);
+                        const uint32_t& processType);
     virtual bool
     DeallocPCrashReporter(PCrashReporterChild*);
 
-    NS_OVERRIDE virtual PHalChild* AllocPHal();
-    NS_OVERRIDE virtual bool DeallocPHal(PHalChild*);
+    virtual PHalChild* AllocPHal() MOZ_OVERRIDE;
+    virtual bool DeallocPHal(PHalChild*) MOZ_OVERRIDE;
+
+    virtual PIndexedDBChild* AllocPIndexedDB();
+    virtual bool DeallocPIndexedDB(PIndexedDBChild* aActor);
 
     virtual PMemoryReportRequestChild*
     AllocPMemoryReportRequest();
@@ -76,25 +111,35 @@ public:
     virtual bool
     RecvPMemoryReportRequestConstructor(PMemoryReportRequestChild* child);
 
+    virtual bool
+    RecvAudioChannelNotify();
+
+    virtual bool
+    RecvDumpMemoryReportsToFile(const nsString& aIdentifier,
+                                const bool& aMinimizeMemoryUsage,
+                                const bool& aDumpChildProcesses);
+    virtual bool
+    RecvDumpGCAndCCLogsToFile(const nsString& aIdentifier,
+                              const bool& aDumpChildProcesses);
+
     virtual PTestShellChild* AllocPTestShell();
     virtual bool DeallocPTestShell(PTestShellChild*);
     virtual bool RecvPTestShellConstructor(PTestShellChild*);
 
-    virtual PAudioChild* AllocPAudio(const PRInt32&,
-                                     const PRInt32&,
-                                     const PRInt32&);
+    virtual PAudioChild* AllocPAudio(const int32_t&,
+                                     const int32_t&);
     virtual bool DeallocPAudio(PAudioChild*);
 
     virtual PNeckoChild* AllocPNecko();
     virtual bool DeallocPNecko(PNeckoChild*);
 
     virtual PExternalHelperAppChild *AllocPExternalHelperApp(
-            const IPC::URI& uri,
+            const OptionalURIParams& uri,
             const nsCString& aMimeContentType,
             const nsCString& aContentDisposition,
             const bool& aForceSave,
-            const PRInt64& aContentLength,
-            const IPC::URI& aReferrer);
+            const int64_t& aContentLength,
+            const OptionalURIParams& aReferrer);
     virtual bool DeallocPExternalHelperApp(PExternalHelperAppChild *aService);
 
     virtual PSmsChild* AllocPSms();
@@ -103,6 +148,9 @@ public:
     virtual PStorageChild* AllocPStorage(const StorageConstructData& aData);
     virtual bool DeallocPStorage(PStorageChild* aActor);
 
+    virtual PBluetoothChild* AllocPBluetooth();
+    virtual bool DeallocPBluetooth(PBluetoothChild* aActor);
+
     virtual bool RecvRegisterChrome(const InfallibleTArray<ChromePackage>& packages,
                                     const InfallibleTArray<ResourceMapping>& resources,
                                     const InfallibleTArray<OverrideMapping>& overrides,
@@ -110,16 +158,16 @@ public:
 
     virtual bool RecvSetOffline(const bool& offline);
 
-    virtual bool RecvNotifyVisited(const IPC::URI& aURI);
+    virtual bool RecvNotifyVisited(const URIParams& aURI);
     // auto remove when alertfinished is received.
     nsresult AddRemoteAlertObserver(const nsString& aData, nsIObserver* aObserver);
 
-    virtual bool RecvPreferenceUpdate(const PrefTuple& aPref);
-    virtual bool RecvClearUserPreference(const nsCString& aPrefName);
+    virtual bool RecvPreferenceUpdate(const PrefSetting& aPref);
 
     virtual bool RecvNotifyAlertsObserver(const nsCString& aType, const nsString& aData);
 
-    virtual bool RecvAsyncMessage(const nsString& aMsg, const nsString& aJSON);
+    virtual bool RecvAsyncMessage(const nsString& aMsg,
+                                  const ClonedMessageData& aData);
 
     virtual bool RecvGeolocationUpdate(const GeoPosition& somewhere);
 
@@ -135,9 +183,11 @@ public:
     virtual bool RecvCycleCollect();
 
     virtual bool RecvAppInfo(const nsCString& version, const nsCString& buildID);
-    virtual bool RecvSetID(const PRUint64 &id);
 
     virtual bool RecvLastPrivateDocShellDestroyed();
+
+    virtual bool RecvFilePathUpdate(const nsString& type, const nsString& path, const nsCString& reason);
+    virtual bool RecvFileSystemUpdate(const nsString& aFsName, const nsString& aName, const int32_t& aState);
 
 #ifdef ANDROID
     gfxIntSize GetScreenSize() { return mScreenSize; }
@@ -147,14 +197,14 @@ public:
     // cache the value
     nsString &GetIndexedDBPath();
 
-    PRUint64 GetID() { return mID; }
+    uint64_t GetID() { return mID; }
+
+    BlobChild* GetOrCreateActorForBlob(nsIDOMBlob* aBlob);
 
 private:
-    NS_OVERRIDE
-    virtual void ActorDestroy(ActorDestroyReason why);
+    virtual void ActorDestroy(ActorDestroyReason why) MOZ_OVERRIDE;
 
-    NS_OVERRIDE
-    virtual void ProcessingError(Result what);
+    virtual void ProcessingError(Result what) MOZ_OVERRIDE;
 
     /**
      * Exit *now*.  Do not shut down XPCOM, do not pass Go, do not run
@@ -164,9 +214,6 @@ private:
 
     InfallibleTArray<nsAutoPtr<AlertObserver> > mAlertObservers;
     nsRefPtr<ConsoleListener> mConsoleListener;
-#ifdef ANDROID
-    gfxIntSize mScreenSize;
-#endif
 
     /**
      * An ID unique to the process containing our corresponding
@@ -175,9 +222,17 @@ private:
      * We expect our content parent to set this ID immediately after opening a
      * channel to us.
      */
-    PRUint64 mID;
+    uint64_t mID;
 
     AppInfo mAppInfo;
+
+#ifdef ANDROID
+    gfxIntSize mScreenSize;
+#endif
+
+    bool mIsForApp;
+    bool mIsForBrowser;
+    nsString mProcessName;
 
     static ContentChild* sSingleton;
 

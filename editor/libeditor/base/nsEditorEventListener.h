@@ -6,12 +6,16 @@
 #ifndef nsEditorEventListener_h__
 #define nsEditorEventListener_h__
 
+#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
-
-#include "nsIDOMEvent.h"
+#include "nsError.h"
 #include "nsIDOMEventListener.h"
+#include "nsISupportsImpl.h"
+#include "nscore.h"
 
-#include "nsCaret.h"
+class nsCaret;
+class nsIDOMEvent;
+class nsIPresShell;
 
 // X.h defines KeyPress
 #ifdef KeyPress
@@ -46,7 +50,7 @@ public:
   NS_IMETHOD KeyPress(nsIDOMEvent* aKeyEvent);
   NS_IMETHOD HandleText(nsIDOMEvent* aTextEvent);
   NS_IMETHOD HandleStartComposition(nsIDOMEvent* aCompositionEvent);
-  NS_IMETHOD HandleEndComposition(nsIDOMEvent* aCompositionEvent);
+  void       HandleEndComposition(nsIDOMEvent* aCompositionEvent);
   NS_IMETHOD MouseDown(nsIDOMEvent* aMouseEvent);
   NS_IMETHOD MouseUp(nsIDOMEvent* aMouseEvent) { return NS_OK; }
   NS_IMETHOD MouseClick(nsIDOMEvent* aMouseEvent);

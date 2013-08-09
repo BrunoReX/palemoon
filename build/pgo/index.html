@@ -84,8 +84,7 @@
      throw 'goQuitApplication: no AppStartup/appShell';
    }
  
-   var windowManager = Components.
-     classes['@mozilla.org/appshell/window-mediator;1'].getService();
+   var windowManager = Components.classes['@mozilla.org/appshell/window-mediator;1'].getService();
  
    var windowManagerInterface = windowManager.
      QueryInterface(Components.interfaces.nsIWindowMediator);
@@ -120,13 +119,36 @@
   "blueprint/forms.html",
   "blueprint/grid.html",
   "blueprint/elements.html",
+  "js-input/3d-cube.html",
+  "js-input/3d-morph.html",
+  "js-input/3d-raytrace.html",
   "js-input/3d-thingy.html",
-  "http://www.webkit.org/perf/sunspider-0.9.1/sunspider-0.9.1/driver.html",
-  "http://wolfbeast.deviantart.com",
-  "https://www.fortify.net/sslcheck.html",
-  "http://acid3.acidtests.org"
+  "js-input/access-binary-trees.html",
+  "js-input/access-fannkuch.html",
+  "js-input/access-nbody.html",
+  "js-input/access-nsieve.html",
+  "js-input/bitops-3bit-bits-in-byte.html",
+  "js-input/bitops-bits-in-byte.html",
+  "js-input/bitops-bitwise-and.html",
+  "js-input/bitops-nsieve-bits.html",
+  "js-input/controlflow-recursive.html",
+  "js-input/crypto-aes.html",
+  "js-input/crypto-md5.html",
+  "js-input/crypto-sha1.html",
+  "js-input/crypto-otp.html",
+  "js-input/date-format-tofte.html",
+  "js-input/date-format-xparb.html",
+  "js-input/math-cordic.html",
+  "js-input/math-partial-sums.html",
+  "js-input/math-spectral-norm.html",
+  "js-input/regexp-dna.html",
+  "js-input/string-base64.html",
+  "js-input/string-fasta.html",
+  "js-input/string-tagcloud.html",
+  "js-input/string-unpack-code.html",
+  "js-input/string-validate-input.html"
      ];
- var interval = 25000; // 3000
+ var interval = 3000; // 15000
  var idx = 0;
  var w;
  

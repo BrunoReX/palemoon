@@ -3,13 +3,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "InsertElementTxn.h"
-#include "nsISelection.h"
-#include "nsIContent.h"
-#include "nsIDOMNodeList.h"
-#include "nsReadableUtils.h"
+#include <stdio.h>                      // for printf
 
-#ifdef NS_DEBUG
+#include "InsertElementTxn.h"
+#include "nsAString.h"
+#include "nsDebug.h"                    // for NS_ENSURE_TRUE, etc
+#include "nsError.h"                    // for NS_ERROR_NULL_POINTER, etc
+#include "nsIContent.h"                 // for nsIContent
+#include "nsIEditor.h"                  // for nsIEditor
+#include "nsINode.h"                    // for nsINode
+#include "nsISelection.h"               // for nsISelection
+#include "nsMemory.h"                   // for nsMemory
+#include "nsReadableUtils.h"            // for ToNewCString
+#include "nsString.h"                   // for nsString
+
+#ifdef DEBUG
 static bool gNoisy = false;
 #endif
 
@@ -22,13 +30,13 @@ InsertElementTxn::InsertElementTxn()
 NS_IMPL_CYCLE_COLLECTION_CLASS(InsertElementTxn)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(InsertElementTxn, EditTxn)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mNode)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mParent)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mNode)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mParent)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(InsertElementTxn, EditTxn)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mNode)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mParent)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mNode)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParent)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_ADDREF_INHERITED(InsertElementTxn, EditTxn)
@@ -38,7 +46,7 @@ NS_INTERFACE_MAP_END_INHERITING(EditTxn)
 
 NS_IMETHODIMP InsertElementTxn::Init(nsIDOMNode *aNode,
                                      nsIDOMNode *aParent,
-                                     PRInt32     aOffset,
+                                     int32_t     aOffset,
                                      nsIEditor  *aEditor)
 {
   NS_ASSERTION(aNode && aParent && aEditor, "bad arg");
@@ -55,7 +63,7 @@ NS_IMETHODIMP InsertElementTxn::Init(nsIDOMNode *aNode,
 
 NS_IMETHODIMP InsertElementTxn::DoTransaction(void)
 {
-#ifdef NS_DEBUG
+#ifdef DEBUG
   if (gNoisy) 
   { 
     nsCOMPtr<nsIContent>nodeAsContent = do_QueryInterface(mNode);
@@ -75,26 +83,23 @@ NS_IMETHODIMP InsertElementTxn::DoTransaction(void)
 
   NS_ENSURE_TRUE(mNode && mParent, NS_ERROR_NOT_INITIALIZED);
 
-  nsCOMPtr<nsIDOMNodeList> childNodes;
-  nsresult result = mParent->GetChildNodes(getter_AddRefs(childNodes));
-  NS_ENSURE_SUCCESS(result, result);
-  nsCOMPtr<nsIDOMNode>refNode;
-  if (childNodes)
-  {
-    PRUint32 count;
-    childNodes->GetLength(&count);
-    if (mOffset>(PRInt32)count) mOffset = count;
+  nsCOMPtr<nsINode> parent = do_QueryInterface(mParent);
+  NS_ENSURE_STATE(parent);
+
+  uint32_t count = parent->GetChildCount();
+  if (mOffset > int32_t(count) || mOffset == -1) {
     // -1 is sentinel value meaning "append at end"
-    if (mOffset == -1) mOffset = count;
-    result = childNodes->Item(mOffset, getter_AddRefs(refNode));
-    NS_ENSURE_SUCCESS(result, result); 
-    // note, it's ok for mRefNode to be null.  that means append
+    mOffset = count;
   }
+
+  nsIContent* refContent = parent->GetChildAt(mOffset);
+  // note, it's ok for refNode to be null.  that means append
+  nsCOMPtr<nsIDOMNode> refNode = refContent ? refContent->AsDOMNode() : nullptr;
 
   mEditor->MarkNodeDirty(mNode);
 
   nsCOMPtr<nsIDOMNode> resultNode;
-  result = mParent->InsertBefore(mNode, refNode, getter_AddRefs(resultNode));
+  nsresult result = mParent->InsertBefore(mNode, refNode, getter_AddRefs(resultNode));
   NS_ENSURE_SUCCESS(result, result);
   NS_ENSURE_TRUE(resultNode, NS_ERROR_NULL_POINTER);
 
@@ -119,7 +124,7 @@ NS_IMETHODIMP InsertElementTxn::DoTransaction(void)
 
 NS_IMETHODIMP InsertElementTxn::UndoTransaction(void)
 {
-#ifdef NS_DEBUG
+#ifdef DEBUG
   if (gNoisy)
   {
     printf("%p Undo Insert Element of %p into parent %p at offset %d\n",

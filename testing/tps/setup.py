@@ -5,12 +5,11 @@
 import sys
 from setuptools import setup, find_packages
 
-version = '0.2.40'
+version = '0.4'
 
-deps = ['pulsebuildmonitor >= 0.62', 'MozillaPulse == 0.61', 
-        'mozinfo == 0.3.1', 'mozprofile == 0.1t',
-        'mozprocess == 0.1a', 'mozrunner == 3.0a', 'mozregression == 0.3',
-        'mozautolog >= 0.2.1']
+deps = ['mozinfo >= 0.3.3', 'mozprofile >= 0.4',
+        'mozprocess >= 0.4', 'mozrunner >= 5.8', 'mozinstall >= 1.4',
+        'httplib2 >= 0.7.3']
 
 # we only support python 2.6+ right now
 assert sys.version_info[0] == 2
@@ -27,9 +26,6 @@ setup(name='tps',
       author_email='jgriffin@mozilla.com',
       url='http://hg.mozilla.org/services/services-central',
       license='MPL',
-      dependency_links = [
-         "http://people.mozilla.org/~jgriffin/packages/"
-      ],
       packages=find_packages(exclude=['ez_setup', 'examples', 'tests']),
       include_package_data=True,
       zip_safe=False,

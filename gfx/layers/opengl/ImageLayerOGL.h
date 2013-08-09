@@ -11,11 +11,16 @@
 
 #include "LayerManagerOGL.h"
 #include "ImageLayers.h"
+#include "ImageContainer.h"
 #include "yuv_convert.h"
 #include "mozilla/Mutex.h"
 
 namespace mozilla {
 namespace layers {
+
+class CairoImage;
+class PlanarYCbCrImage;
+class ShmemYCbCrImage;
 
 /**
  * This class wraps a GL texture. It includes a GLContext reference
@@ -168,6 +173,7 @@ public:
   virtual bool LoadAsTexture(GLuint aTextureUnit, gfxIntSize* aSize);
 
   virtual Layer* GetLayer();
+  virtual LayerRenderState GetRenderState() MOZ_OVERRIDE;
 
   virtual void RenderLayer(int aPreviousFrameBuffer,
                            const nsIntPoint& aOffset);
@@ -176,6 +182,13 @@ public:
 
 private:
   bool Init(const SharedImage& aFront);
+  // Will be replaced by UploadSharedYCbCrToTexture after the layers 
+  // refactoring. 
+  void UploadSharedYUVToTexture(const YUVImage& yuv);
+
+  void UploadSharedYCbCrToTexture(ShmemYCbCrImage& aImage,
+                                  nsIntRect aPictureRect);
+
 
   nsRefPtr<TextureImage> mTexImage;
 
@@ -183,7 +196,12 @@ private:
   gl::SharedTextureHandle mSharedHandle;
   gl::TextureImage::TextureShareType mShareType;
   bool mInverted;
-  GLuint mTexture; 
+  GLuint mTexture;
+
+  // For direct texturing with OES_EGL_image_external extension. This
+  // texture is allocated when the image supports binding with
+  // BindExternalBuffer.
+  GLTexture mExternalBufferTexture;
 
   GLTexture mYUVTexture[3];
   gfxIntSize mSize;

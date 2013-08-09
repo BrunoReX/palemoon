@@ -18,9 +18,14 @@
 #include "CodeGenIncludes.h"
 #include "jsobjinlines.h"
 #include "jsscopeinlines.h"
+#include "jstypedarrayinlines.h"
+
+using mozilla::DebugOnly;
 
 namespace js {
 namespace mjit {
+
+class Assembler;
 
 // Represents an int32_t property name in generated code, which must be either
 // a RegisterID or a constant value.
@@ -75,6 +80,9 @@ struct StackMarker {
     { }
 };
 
+typedef SPSInstrumentation<Assembler, JSC::MacroAssembler::RegisterID>
+        MJITInstrumentation;
+
 class Assembler : public ValueAssembler
 {
     struct CallPatch {
@@ -115,15 +123,45 @@ class Assembler : public ValueAssembler
     bool        callIsAligned;
 #endif
 
+    // When instrumentation is enabled, these fields are used to manage the
+    // instrumentation which occurs at call() locations. Each call() has to know
+    // the pc of where the call was invoked from, and this can be changing all
+    // the time in the case of masm from Compiler, or never changing in the case
+    // of ICs.
+    MJITInstrumentation *sps;
+    VMFrame *vmframe; // pc tracker from ICs
+    jsbytecode **pc;  // pc tracker for compilers
+
   public:
-    Assembler()
+    Assembler(MJITInstrumentation *sps = NULL, VMFrame *vmframe = NULL)
       : callPatches(SystemAllocPolicy()),
         availInCall(0),
         extraStackSpace(0),
-        stackAdjust(0)
+        stackAdjust(0),
 #ifdef DEBUG
-        , callIsAligned(false)
+        callIsAligned(false),
 #endif
+        sps(sps),
+        vmframe(vmframe),
+        pc(NULL)
+    {
+        AutoAssertNoGC nogc;
+        startLabel = label();
+        if (vmframe)
+            sps->setPushed(vmframe->script().get(nogc));
+    }
+
+    Assembler(MJITInstrumentation *sps, jsbytecode **pc)
+      : callPatches(SystemAllocPolicy()),
+        availInCall(0),
+        extraStackSpace(0),
+        stackAdjust(0),
+#ifdef DEBUG
+        callIsAligned(false),
+#endif
+        sps(sps),
+        vmframe(NULL),
+        pc(pc)
     {
         startLabel = label();
     }
@@ -159,7 +197,7 @@ static const JSC::MacroAssembler::RegisterID JSParamReg_Argc  = JSC::MIPSRegiste
         loadPtr(Address(obj, JSObject::offsetOfShape()), shape);
     }
 
-    Jump guardShape(RegisterID objReg, const Shape *shape) {
+    Jump guardShape(RegisterID objReg, Shape *shape) {
         return branchPtr(NotEqual, Address(objReg, JSObject::offsetOfShape()), ImmPtr(shape));
     }
 
@@ -402,6 +440,9 @@ static const JSC::MacroAssembler::RegisterID JSParamReg_Argc  = JSC::MIPSRegiste
     // a register, is asking for breaking on some platform or some situation.
     // Be careful to limit to storeArg() during setupABICall.
     void setupABICall(Registers::CallConvention convention, uint32_t generalArgs) {
+        if (sps && sps->enabled())
+            leaveBeforeCall();
+
         JS_ASSERT(!callIsAligned);
 
         uint32_t numArgRegs = Registers::numArgRegs(convention);
@@ -545,6 +586,34 @@ static const JSC::MacroAssembler::RegisterID JSParamReg_Argc  = JSC::MIPSRegiste
         }
     }
 
+  private:
+    // When profiling is enabled, we need to run an epilogue and a prologue to
+    // every call. These two functions manage this code generation and are
+    // called from callWithABI below.
+    void leaveBeforeCall() {
+        jsbytecode *pc = vmframe == NULL ? *this->pc : vmframe->pc();
+        if (availInCall.empty()) {
+            RegisterID reg = Registers(Registers::TempRegs).peekReg().reg();
+            saveReg(reg);
+            sps->leave(pc, *this, reg);
+            restoreReg(reg);
+        } else {
+            sps->leave(pc, *this, availInCall.peekReg().reg());
+        }
+    }
+
+    void reenterAfterCall() {
+        if (availInCall.empty()) {
+            RegisterID reg = Registers(Registers::TempRegs).peekReg().reg();
+            saveReg(reg);
+            sps->reenter(*this, reg);
+            restoreReg(reg);
+        } else {
+            sps->reenter(*this, availInCall.peekReg().reg());
+        }
+    }
+
+  public:
     // High-level call helper, given an optional function pointer and a
     // calling convention. setupABICall() must have been called beforehand,
     // as well as each numbered argument stored with storeArg().
@@ -559,7 +628,7 @@ static const JSC::MacroAssembler::RegisterID JSParamReg_Argc  = JSC::MIPSRegiste
         // that make 12 insufficent.  In case 16 is also insufficent, I've bumped
         // it to 20.
         ensureSpace(20);
-        int initFlushCount = flushCount();
+        DebugOnly<int> initFlushCount = flushCount();
 #endif
         // [Bug 614953]: This can only be made conditional once the ARM back-end
         // is able to distinguish and patch both call sequences. Other
@@ -573,11 +642,13 @@ static const JSC::MacroAssembler::RegisterID JSParamReg_Argc  = JSC::MIPSRegiste
 
         JS_ASSERT(callIsAligned);
 
-        Call cl = call();
-        callPatches.append(CallPatch(cl, fun));
+        Call cl = callAddress(fun);
+
 #ifdef JS_CPU_ARM
         JS_ASSERT(initFlushCount == flushCount());
 #endif
+        if (sps && sps->enabled())
+            reenterAfterCall();
         if (stackAdjust)
             addPtr(Imm32(stackAdjust), stackPointerRegister);
 
@@ -586,6 +657,12 @@ static const JSC::MacroAssembler::RegisterID JSParamReg_Argc  = JSC::MIPSRegiste
 #ifdef DEBUG
         callIsAligned = false;
 #endif
+        return cl;
+    }
+
+    Call callAddress(void *ptr) {
+        Call cl = call();
+        callPatches.append(CallPatch(cl, ptr));
         return cl;
     }
 
@@ -611,10 +688,10 @@ static const JSC::MacroAssembler::RegisterID JSParamReg_Argc  = JSC::MIPSRegiste
                               pc, pinlined, fd);                              \
     }
 
-    STUB_CALL_TYPE(JSObjStub);
-    STUB_CALL_TYPE(VoidPtrStubUInt32);
-    STUB_CALL_TYPE(VoidStubUInt32);
-    STUB_CALL_TYPE(VoidStub);
+    STUB_CALL_TYPE(JSObjStub)
+    STUB_CALL_TYPE(VoidPtrStubUInt32)
+    STUB_CALL_TYPE(VoidStubUInt32)
+    STUB_CALL_TYPE(VoidStub)
 
 #undef STUB_CALL_TYPE
 
@@ -898,7 +975,7 @@ static const JSC::MacroAssembler::RegisterID JSParamReg_Argc  = JSC::MIPSRegiste
     }
 
     void loadObjProp(JSObject *obj, RegisterID objReg,
-                     const js::Shape *shape,
+                     js::Shape *shape,
                      RegisterID typeReg, RegisterID dataReg)
     {
         if (obj->isFixedSlot(shape->slot()))
@@ -1370,11 +1447,56 @@ static const JSC::MacroAssembler::RegisterID JSParamReg_Argc  = JSC::MIPSRegiste
         }
     }
 
+  private:
+    /*
+     * Performs address arithmetic to return the base of the ProfileEntry into
+     * the register provided. The Jump returned is taken if the SPS stack is
+     * overflowing and no data should be written to it.
+     */
+    Jump spsProfileEntryAddress(SPSProfiler *p, int offset, RegisterID reg)
+    {
+        load32(p->sizePointer(), reg);
+        if (offset != 0)
+            add32(Imm32(offset), reg);
+        Jump j = branch32(Assembler::GreaterThanOrEqual, reg, Imm32(p->maxSize()));
+        JS_STATIC_ASSERT(sizeof(ProfileEntry) == 4 * sizeof(void*));
+        // 4 * sizeof(void*) * idx = idx << (2 + log(sizeof(void*)))
+        lshift32(Imm32(2 + (sizeof(void*) == 4 ? 2 : 3)), reg);
+        addPtr(ImmPtr(p->stack()), reg);
+        return j;
+    }
+
+  public:
+    void spsUpdatePCIdx(SPSProfiler *p, int32_t idx, RegisterID reg) {
+        Jump j = spsProfileEntryAddress(p, -1, reg);
+        store32(Imm32(idx), Address(reg, ProfileEntry::offsetOfPCIdx()));
+        j.linkTo(label(), this);
+    }
+
+    void spsPushFrame(SPSProfiler *p, const char *str, JSScript *s, RegisterID reg) {
+        Jump j = spsProfileEntryAddress(p, 0, reg);
+
+        storePtr(ImmPtr(str),  Address(reg, ProfileEntry::offsetOfString()));
+        storePtr(ImmPtr(s),    Address(reg, ProfileEntry::offsetOfScript()));
+        storePtr(ImmPtr(NULL), Address(reg, ProfileEntry::offsetOfStackAddress()));
+        store32(Imm32(ProfileEntry::NullPCIndex),
+                Address(reg, ProfileEntry::offsetOfPCIdx()));
+
+        /* Always increment the stack size, regardless if we actually pushed */
+        j.linkTo(label(), this);
+        add32(Imm32(1), AbsoluteAddress(p->sizePointer()));
+    }
+
+    void spsPopFrame(SPSProfiler *p, RegisterID reg) {
+        move(ImmPtr(p->sizePointer()), reg);
+        sub32(Imm32(1), Address(reg, 0));
+    }
+
     static const double oneDouble;
 };
 
 /* Return f<true> if the script is strict mode code, f<false> otherwise. */
-#define STRICT_VARIANT(f)                                                     \
+#define STRICT_VARIANT(script, f)                                             \
     (FunctionTemplateConditional(script->strictModeCode,                      \
                                  f<true>, f<false>))
 

@@ -5,6 +5,9 @@
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 Components.utils.import("resource://gre/modules/Services.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
+                                  "resource://gre/modules/PrivateBrowsingUtils.jsm");
+
 const nsISupports            = Components.interfaces.nsISupports;
 
 const nsIBrowserDOMWindow    = Components.interfaces.nsIBrowserDOMWindow;
@@ -77,6 +80,8 @@ function resolveURIInternal(aCmdLine, aArgument) {
 
   return uri;
 }
+
+var gFirstWindow = false;
 
 const OVERRIDE_NONE        = 0;
 const OVERRIDE_NEW_PROFILE = 1;
@@ -245,7 +250,7 @@ function openWindow(parent, url, target, features, args, noExternalArgs) {
   }
 
   // Pass these as null to ensure that we always trigger the "single URL"
-  // behavior in browser.js's BrowserStartup (which handles the window
+  // behavior in browser.js's gBrowserInit.onLoad (which handles the window
   // arguments)
   argArray.AppendElement(null); // charset
   argArray.AppendElement(null); // referer
@@ -520,6 +525,16 @@ nsBrowserContentHandler.prototype = {
       cmdLine.preventDefault = true;
     }
 
+    // The global PB Service consumes this flag, so only eat it in per-window
+    // PB builds.
+#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
+    if (cmdLine.handleFlag("private", false)) {
+#else
+    if (cmdLine.findFlag("private", false) >= 0) {
+#endif
+      PrivateBrowsingUtils.enterTemporaryAutoStartMode();
+    }
+
     var fileParam = cmdLine.handleFlagWithParam("file", false);
     if (fileParam) {
       var file = cmdLine.resolveFile(fileParam);
@@ -563,6 +578,13 @@ nsBrowserContentHandler.prototype = {
     var prefb = Components.classes["@mozilla.org/preferences-service;1"]
                           .getService(nsIPrefBranch);
 
+    if (!gFirstWindow) {
+      gFirstWindow = true;
+      if (PrivateBrowsingUtils.isInTemporaryAutoStartMode) {
+        return "about:privatebrowsing";
+      }
+    }
+
     var overridePage = "";
     var haveUpdateSession = false;
     try {
@@ -577,10 +599,6 @@ nsBrowserContentHandler.prototype = {
       } catch (ex) {}
       let override = needHomepageOverride(prefb);
       if (override != OVERRIDE_NONE) {
-        // Setup the default search engine to about:home page.
-        AboutHomeUtils.loadDefaultSearchEngine();
-        AboutHomeUtils.loadSnippetsURL();
-
         switch (override) {
           case OVERRIDE_NEW_PROFILE:
             // New profile.
@@ -601,13 +619,6 @@ nsBrowserContentHandler.prototype = {
 
             overridePage = overridePage.replace("%OLD_VERSION%", old_mstone);
             break;
-        }
-      }
-      else {
-        // No need to override homepage, but update snippets url if the pref has
-        // been manually changed.
-        if (Services.prefs.prefHasUserValue(AboutHomeUtils.SNIPPETS_URL_PREF)) {
-          AboutHomeUtils.loadSnippetsURL();
         }
       }
     } catch (ex) {}
@@ -662,6 +673,12 @@ nsBrowserContentHandler.prototype = {
           this.mFeatures += ",height=" + height;
       }
       catch (e) {
+      }
+
+      // The global PB Service consumes this flag, so only eat it in per-window
+      // PB builds.
+      if (PrivateBrowsingUtils.isInTemporaryAutoStartMode) {
+        this.mFeatures = ",private";
       }
     }
 
@@ -835,41 +852,5 @@ nsDefaultCommandLineHandler.prototype = {
   helpInfo : "",
 };
 
-let AboutHomeUtils = {
-  SNIPPETS_URL_PREF: "browser.aboutHomeSnippets.updateUrl",
-  get _storage() {
-    let aboutHomeURI = Services.io.newURI("moz-safe-about:home", null, null);
-    let principal = Components.classes["@mozilla.org/scriptsecuritymanager;1"].
-                    getService(Components.interfaces.nsIScriptSecurityManager).
-                    getCodebasePrincipal(aboutHomeURI);
-    let dsm = Components.classes["@mozilla.org/dom/storagemanager;1"].
-              getService(Components.interfaces.nsIDOMStorageManager);
-    return dsm.getLocalStorageForPrincipal(principal, "");
-  },
-
-  loadDefaultSearchEngine: function AHU_loadDefaultSearchEngine()
-  {
-    let defaultEngine = Services.search.originalDefaultEngine;
-    let submission = defaultEngine.getSubmission("_searchTerms_");
-    if (submission.postData)
-      throw new Error("Home page does not support POST search engines.");
-    let engine = {
-      name: defaultEngine.name
-    , searchUrl: submission.uri.spec
-    }
-    this._storage.setItem("search-engine", JSON.stringify(engine));
-  },
-
-  loadSnippetsURL: function AHU_loadSnippetsURL()
-  {
-    const STARTPAGE_VERSION = 3;
-    let updateURL = Services.prefs
-                            .getCharPref(this.SNIPPETS_URL_PREF)
-                            .replace("%STARTPAGE_VERSION%", STARTPAGE_VERSION);
-    updateURL = Services.urlFormatter.formatURL(updateURL);
-    this._storage.setItem("snippets-update-url", updateURL);
-  },
-};
-
 var components = [nsBrowserContentHandler, nsDefaultCommandLineHandler];
-var NSGetFactory = XPCOMUtils.generateNSGetFactory(components);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory(components);

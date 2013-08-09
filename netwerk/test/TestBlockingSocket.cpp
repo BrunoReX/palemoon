@@ -10,7 +10,7 @@
 #include "nsIComponentManager.h"
 #include "nsCOMPtr.h"
 #include "nsStringAPI.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsNetUtil.h"
 #include "prlog.h"
 #include "prenv.h"
@@ -23,7 +23,7 @@
 //
 // set NSPR_LOG_MODULES=Test:5
 //
-static PRLogModuleInfo *gTestLog = nsnull;
+static PRLogModuleInfo *gTestLog = nullptr;
 #endif
 #define LOG(args) PR_LOG(gTestLog, PR_LOG_DEBUG, args)
 
@@ -34,7 +34,7 @@ static NS_DEFINE_CID(kSocketTransportServiceCID, NS_SOCKETTRANSPORTSERVICE_CID);
 ////////////////////////////////////////////////////////////////////////////////
 
 static nsresult
-RunBlockingTest(const nsACString &host, PRInt32 port, nsIFile *file)
+RunBlockingTest(const nsACString &host, int32_t port, nsIFile *file)
 {
     nsresult rv;
 
@@ -49,7 +49,7 @@ RunBlockingTest(const nsACString &host, PRInt32 port, nsIFile *file)
     if (NS_FAILED(rv)) return rv;
 
     nsCOMPtr<nsISocketTransport> trans;
-    rv = sts->CreateTransport(nsnull, 0, host, port, nsnull, getter_AddRefs(trans));
+    rv = sts->CreateTransport(nullptr, 0, host, port, nullptr, getter_AddRefs(trans));
     if (NS_FAILED(rv)) return rv;
 
     nsCOMPtr<nsIOutputStream> output;
@@ -57,7 +57,7 @@ RunBlockingTest(const nsACString &host, PRInt32 port, nsIFile *file)
     if (NS_FAILED(rv)) return rv;
 
     char buf[120];
-    PRUint32 nr, nw;
+    uint32_t nr, nw;
     for (;;) {
         rv = input->Read(buf, sizeof(buf), &nr);
         if (NS_FAILED(rv) || (nr == 0)) return rv;
@@ -98,19 +98,19 @@ main(int argc, char* argv[])
         return -1;
     }
     char* hostName = argv[1];
-    PRInt32 port = atoi(argv[2]);
+    int32_t port = atoi(argv[2]);
     char* fileName = argv[3];
     {
         nsCOMPtr<nsIServiceManager> servMan;
-        NS_InitXPCOM2(getter_AddRefs(servMan), nsnull, nsnull);
+        NS_InitXPCOM2(getter_AddRefs(servMan), nullptr, nullptr);
 
 #if defined(PR_LOGGING)
         gTestLog = PR_NewLogModule("Test");
 #endif
 
-        nsCOMPtr<nsILocalFile> file;
+        nsCOMPtr<nsIFile> file;
         rv = NS_NewNativeLocalFile(nsDependentCString(fileName), false, getter_AddRefs(file));
-        if (NS_FAILED(rv)) return rv;
+        if (NS_FAILED(rv)) return -1;
 
         rv = RunBlockingTest(nsDependentCString(hostName), port, file);
 #if defined(PR_LOGGING)
@@ -124,7 +124,7 @@ main(int argc, char* argv[])
         PR_Sleep(PR_SecondsToInterval(5));
     } // this scopes the nsCOMPtrs
     // no nsCOMPtrs are allowed to be alive when you call NS_ShutdownXPCOM
-    rv = NS_ShutdownXPCOM(nsnull);
+    rv = NS_ShutdownXPCOM(nullptr);
     NS_ASSERTION(NS_SUCCEEDED(rv), "NS_ShutdownXPCOM failed");
-    return NS_OK;
+    return 0;
 }

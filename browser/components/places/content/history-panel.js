@@ -1,7 +1,7 @@
-# -*- Mode: Java; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+/* -*- Mode: Java; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 var gHistoryTree;
 var gSearchBox;
@@ -77,6 +77,7 @@ function searchHistory(aInput)
 
   options.sortingMode = sortingMode;
   options.resultType = resultType;
+  options.includeHidden = !!aInput;
 
   // call load() on the tree manually
   // instead of setting the place attribute in history-panel.xul

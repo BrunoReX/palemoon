@@ -9,6 +9,8 @@
 #include "nsIServiceManager.h"
 #include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
+#include "nsIPrincipal.h"
+#include "nsIURI.h"
 
 /**
  * The Popup Window Manager maintains popup window permissions by website.
@@ -48,7 +50,7 @@ nsPopupWindowManager::Init()
     if (NS_FAILED(rv)) {
       permission = true;
     }
-    mPolicy = permission ? (PRUint32) DENY_POPUP : (PRUint32) ALLOW_POPUP;
+    mPolicy = permission ? (uint32_t) DENY_POPUP : (uint32_t) ALLOW_POPUP;
 
     prefBranch->AddObserver(kPopupDisablePref, this, true);
   } 
@@ -61,20 +63,17 @@ nsPopupWindowManager::Init()
 //*****************************************************************************
 
 NS_IMETHODIMP
-nsPopupWindowManager::TestPermission(nsIURI *aURI, PRUint32 *aPermission)
+nsPopupWindowManager::TestPermission(nsIPrincipal* aPrincipal,
+                                     uint32_t *aPermission)
 {
-  NS_ENSURE_ARG_POINTER(aURI);
+  NS_ENSURE_ARG_POINTER(aPrincipal);
   NS_ENSURE_ARG_POINTER(aPermission);
 
-  nsresult rv;
-  PRUint32 permit;
-
+  uint32_t permit;
   *aPermission = mPolicy;
 
   if (mPermissionManager) {
-    rv = mPermissionManager->TestPermission(aURI, "popup", &permit);
-
-    if (NS_SUCCEEDED(rv)) {
+    if (NS_SUCCEEDED(mPermissionManager->TestPermissionFromPrincipal(aPrincipal, "popup", &permit))) {
       // Share some constants between interfaces?
       if (permit == nsIPermissionManager::ALLOW_ACTION) {
         *aPermission = ALLOW_POPUP;
@@ -104,7 +103,7 @@ nsPopupWindowManager::Observe(nsISupports *aSubject,
     bool permission = true;
     prefBranch->GetBoolPref(kPopupDisablePref, &permission);
 
-    mPolicy = permission ? (PRUint32) DENY_POPUP : (PRUint32) ALLOW_POPUP;
+    mPolicy = permission ? (uint32_t) DENY_POPUP : (uint32_t) ALLOW_POPUP;
   }
 
   return NS_OK;

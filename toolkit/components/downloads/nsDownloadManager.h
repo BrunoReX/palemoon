@@ -7,14 +7,14 @@
 #define downloadmanager___h___
 
 #if defined(XP_WIN)
-// #define DOWNLOAD_SCANNER
+/* #define DOWNLOAD_SCANNER */
 #endif
 #undef DOWNLOAD_SCANNER
 
 #include "nsIDownload.h"
 #include "nsIDownloadManager.h"
 #include "nsIDownloadProgressListener.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIMIMEInfo.h"
 #include "nsINavHistoryService.h"
 #include "nsIObserver.h"
@@ -29,8 +29,8 @@
 #include "nsAutoPtr.h"
 #include "nsCOMArray.h"
 
-typedef PRInt16 DownloadState;
-typedef PRInt16 DownloadType;
+typedef int16_t DownloadState;
+typedef int16_t DownloadType;
 
 class nsDownload;
 
@@ -54,30 +54,24 @@ public:
   static nsDownloadManager *GetSingleton();
 
   virtual ~nsDownloadManager();
-  nsDownloadManager() :
-      mDBType(DATABASE_DISK)
-    , mInPrivateBrowsing(false)
+  nsDownloadManager()
 #ifdef DOWNLOAD_SCANNER
-    , mScanner(nsnull)
+    : mScanner(nullptr)
 #endif
   {
   }
 
 protected:
-  enum DatabaseType
-  {
-    DATABASE_DISK = 0, // default
-    DATABASE_MEMORY
-  };
-
   nsresult InitDB();
   nsresult InitFileDB();
-  void CloseDB();
-  nsresult InitMemoryDB();
+  void CloseAllDBs();
+  void CloseDB(mozIStorageConnection* aDBConn,
+               mozIStorageStatement* aUpdateStmt,
+               mozIStorageStatement* aGetIdsStmt);
+  nsresult InitPrivateDB();
   already_AddRefed<mozIStorageConnection> GetFileDBConnection(nsIFile *dbFile) const;
-  already_AddRefed<mozIStorageConnection> GetMemoryDBConnection() const;
-  nsresult SwitchDatabaseTypeTo(enum DatabaseType aType);
-  nsresult CreateTable();
+  already_AddRefed<mozIStorageConnection> GetPrivateDBConnection() const;
+  nsresult CreateTable(mozIStorageConnection* aDBConn);
 
   /**
    * Fix up the database after a crash such as dealing with previously-active
@@ -92,7 +86,11 @@ protected:
    */
   nsresult RestoreActiveDownloads();
 
-  nsresult GetDownloadFromDB(PRUint32 aID, nsDownload **retVal);
+  nsresult GetDownloadFromDB(const nsACString& aGUID, nsDownload **retVal);
+  nsresult GetDownloadFromDB(uint32_t aID, nsDownload **retVal);
+  nsresult GetDownloadFromDB(mozIStorageConnection* aDBConn,
+                             mozIStorageStatement* stmt,
+                             nsDownload **retVal);
 
   /**
    * Specially track the active downloads so that we don't need to check
@@ -107,32 +105,35 @@ protected:
    *
    * @return The id of the download, or 0 if there was an error.
    */
-  PRInt64 AddDownloadToDB(const nsAString &aName,
+  int64_t AddDownloadToDB(const nsAString &aName,
                           const nsACString &aSource,
                           const nsACString &aTarget,
                           const nsAString &aTempPath,
-                          PRInt64 aStartTime,
-                          PRInt64 aEndTime,
+                          int64_t aStartTime,
+                          int64_t aEndTime,
                           const nsACString &aMimeType,
                           const nsACString &aPreferredApp,
-                          nsHandlerInfoAction aPreferredAction);
+                          nsHandlerInfoAction aPreferredAction,
+                          bool aPrivate,
+                          nsACString &aNewGUID);
 
-  void NotifyListenersOnDownloadStateChange(PRInt16 aOldState,
-                                            nsIDownload *aDownload);
+  void NotifyListenersOnDownloadStateChange(int16_t aOldState,
+                                            nsDownload *aDownload);
   void NotifyListenersOnProgressChange(nsIWebProgress *aProgress,
                                        nsIRequest *aRequest,
-                                       PRInt64 aCurSelfProgress,
-                                       PRInt64 aMaxSelfProgress,
-                                       PRInt64 aCurTotalProgress,
-                                       PRInt64 aMaxTotalProgress,
-                                       nsIDownload *aDownload);
+                                       int64_t aCurSelfProgress,
+                                       int64_t aMaxSelfProgress,
+                                       int64_t aCurTotalProgress,
+                                       int64_t aMaxTotalProgress,
+                                       nsDownload *aDownload);
   void NotifyListenersOnStateChange(nsIWebProgress *aProgress,
                                     nsIRequest *aRequest,
-                                    PRUint32 aStateFlags,
+                                    uint32_t aStateFlags,
                                     nsresult aStatus,
-                                    nsIDownload *aDownload);
+                                    nsDownload *aDownload);
 
-  nsDownload *FindDownload(PRUint32 aID);
+  nsDownload *FindDownload(const nsACString& aGUID);
+  nsDownload *FindDownload(uint32_t aID);
 
   /**
    * First try to resume the download, and if that fails, retry it.
@@ -186,14 +187,14 @@ protected:
   static void ResumeOnWakeCallback(nsITimer *aTimer, void *aClosure);
   nsCOMPtr<nsITimer> mResumeOnWakeTimer;
 
-  void ConfirmCancelDownloads(PRInt32 aCount,
+  void ConfirmCancelDownloads(int32_t aCount,
                               nsISupportsPRBool *aCancelDownloads,
                               const PRUnichar *aTitle,
                               const PRUnichar *aCancelMessageMultiple,
                               const PRUnichar *aCancelMessageSingle,
                               const PRUnichar *aDontCancelButton);
 
-  PRInt32 GetRetentionBehavior();
+  int32_t GetRetentionBehavior();
 
   /**
    * Type to indicate possible behaviors for active downloads across sessions.
@@ -219,6 +220,13 @@ protected:
   void OnEnterPrivateBrowsingMode();
   void OnLeavePrivateBrowsingMode();
 
+  nsresult RetryDownload(const nsACString& aGUID);
+  nsresult RetryDownload(nsDownload* dl);
+
+  nsresult RemoveDownload(const nsACString& aGUID);
+
+  nsresult NotifyDownloadRemoval(nsDownload* aRemoved);
+
   // Virus scanner for windows
 #ifdef DOWNLOAD_SCANNER
 private:
@@ -226,17 +234,30 @@ private:
 #endif
 
 private:
+  nsresult CleanUp(mozIStorageConnection* aDBConn);
+  nsresult InitStatements(mozIStorageConnection* aDBConn,
+                          mozIStorageStatement** aUpdateStatement,
+                          mozIStorageStatement** aGetIdsStatement);
+  nsresult RemoveAllDownloads(nsCOMArray<nsDownload>& aDownloads);
+  nsresult PauseAllDownloads(nsCOMArray<nsDownload>& aDownloads, bool aSetResume);
+  nsresult ResumeAllDownloads(nsCOMArray<nsDownload>& aDownloads, bool aResumeAll);
+  nsresult RemoveDownloadsForURI(mozIStorageStatement* aStatement, nsIURI *aURI);
+
+  bool IsInGlobalPrivateBrowsing();
+
   nsCOMArray<nsIDownloadProgressListener> mListeners;
+  nsCOMArray<nsIDownloadProgressListener> mPrivacyAwareListeners;
   nsCOMPtr<nsIStringBundle> mBundle;
   nsCOMPtr<mozIStorageConnection> mDBConn;
+  nsCOMPtr<mozIStorageConnection> mPrivateDBConn;
   nsCOMArray<nsDownload> mCurrentDownloads;
+  nsCOMArray<nsDownload> mCurrentPrivateDownloads;
   nsCOMPtr<nsIObserverService> mObserverService;
   nsCOMPtr<mozIStorageStatement> mUpdateDownloadStatement;
+  nsCOMPtr<mozIStorageStatement> mUpdatePrivateDownloadStatement;
   nsCOMPtr<mozIStorageStatement> mGetIdsForURIStatement;
+  nsCOMPtr<mozIStorageStatement> mGetPrivateIdsForURIStatement;
   nsAutoPtr<mozStorageTransaction> mHistoryTransaction;
-
-  enum DatabaseType mDBType;
-  bool mInPrivateBrowsing;
 
   static nsDownloadManager *gDownloadManagerService;
 
@@ -288,30 +309,19 @@ protected:
   /**
    * Update the start time which also implies the last update time is the same.
    */
-  void SetStartTime(PRInt64 aStartTime);
+  void SetStartTime(int64_t aStartTime);
 
   /**
    * Update the amount of bytes transferred and max bytes; and recalculate the
    * download percent.
    */
-  void SetProgressBytes(PRInt64 aCurrBytes, PRInt64 aMaxBytes);
-
-  /**
-   * Pause the download, but in certain cases it might get fake-paused instead
-   * of real-paused.
-   */
-  nsresult Pause();
+  void SetProgressBytes(int64_t aCurrBytes, int64_t aMaxBytes);
 
   /**
    * All this does is cancel the connection that the download is using. It does
    * not remove it from the download manager.
    */
-  nsresult Cancel();
-
-  /**
-   * Resume the download.
-   */
-  nsresult Resume();
+  nsresult CancelTransfer();
 
   /**
    * Download is not transferring?
@@ -352,7 +362,7 @@ protected:
 
   /**
    * Fail a download because of a failure status and prompt the provided
-   * message or use a generic download failure message if nsnull.
+   * message or use a generic download failure message if nullptr.
    */
   nsresult FailDownload(nsresult aStatus, const PRUnichar *aMessage);
 
@@ -374,34 +384,35 @@ protected:
 private:
   nsString mDisplayName;
   nsCString mEntityID;
+  nsCString mGUID;
 
   nsCOMPtr<nsIURI> mSource;
   nsCOMPtr<nsIURI> mReferrer;
   nsCOMPtr<nsICancelable> mCancelable;
   nsCOMPtr<nsIRequest> mRequest;
-  nsCOMPtr<nsILocalFile> mTempFile;
+  nsCOMPtr<nsIFile> mTempFile;
   nsCOMPtr<nsIMIMEInfo> mMIMEInfo;
 
   DownloadState mDownloadState;
-  DownloadType mDownloadType;
 
-  PRUint32 mID;
-  PRInt32 mPercentComplete;
+  uint32_t mID;
+  int32_t mPercentComplete;
 
   /**
    * These bytes are based on the position of where the request started, so 0
    * doesn't necessarily mean we have nothing. Use GetAmountTransferred and
    * GetSize for the real transferred amount and size.
    */
-  PRInt64 mCurrBytes;
-  PRInt64 mMaxBytes;
+  int64_t mCurrBytes;
+  int64_t mMaxBytes;
 
   PRTime mStartTime;
   PRTime mLastUpdate;
-  PRInt64 mResumedAt;
+  int64_t mResumedAt;
   double mSpeed;
 
   bool mHasMultipleFiles;
+  bool mPrivate;
 
   /**
    * Track various states of the download trying to auto-resume when starting

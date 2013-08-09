@@ -4,13 +4,23 @@
 
 "use strict";
 
-let EXPORTED_SYMBOLS = ["PageThumbs", "PageThumbsCache"];
+this.EXPORTED_SYMBOLS = ["PageThumbs", "PageThumbsStorage"];
 
 const Cu = Components.utils;
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+const PREF_STORAGE_VERSION = "browser.pagethumbnails.storage_version";
+const LATEST_STORAGE_VERSION = 2;
+
+const EXPIRATION_MIN_CHUNK_SIZE = 50;
+const EXPIRATION_INTERVAL_SECS = 3600;
+
+/**
+ * Name of the directory in the profile that contains the thumbnails.
+ */
+const THUMBNAIL_DIRECTORY = "thumbnails";
 
 /**
  * The default background color for page thumbnails.
@@ -25,11 +35,32 @@ XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
 XPCOMUtils.defineLazyModuleGetter(this, "Services",
   "resource://gre/modules/Services.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
+  "resource://gre/modules/FileUtils.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
+  "resource://gre/modules/PlacesUtils.jsm");
+
+XPCOMUtils.defineLazyServiceGetter(this, "gUpdateTimerManager",
+  "@mozilla.org/updates/timer-manager;1", "nsIUpdateTimerManager");
+
+XPCOMUtils.defineLazyGetter(this, "gCryptoHash", function () {
+  return Cc["@mozilla.org/security/hash;1"].createInstance(Ci.nsICryptoHash);
+});
+
+XPCOMUtils.defineLazyGetter(this, "gUnicodeConverter", function () {
+  let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
+                    .createInstance(Ci.nsIScriptableUnicodeConverter);
+  converter.charset = 'utf8';
+  return converter;
+});
+
 /**
  * Singleton providing functionality for capturing web page thumbnails and for
  * accessing them if already cached.
  */
-let PageThumbs = {
+this.PageThumbs = {
+  _initialized: false,
 
   /**
    * The calculated width and height of the thumbnails.
@@ -51,6 +82,24 @@ let PageThumbs = {
    * The thumbnails' image type.
    */
   get contentType() "image/png",
+
+  init: function PageThumbs_init() {
+    if (!this._initialized) {
+      this._initialized = true;
+      PlacesUtils.history.addObserver(PageThumbsHistoryObserver, false);
+
+      // Migrate the underlying storage, if needed.
+      PageThumbsStorageMigrator.migrate();
+      PageThumbsExpiration.init();
+    }
+  },
+
+  uninit: function PageThumbs_uninit() {
+    if (this._initialized) {
+      this._initialized = false;
+      PlacesUtils.history.removeObserver(PageThumbsHistoryObserver);
+    }
+  },
 
   /**
    * Gets the thumbnail image's url for a given web page's url.
@@ -74,11 +123,26 @@ let PageThumbs = {
       return;
     }
 
-    let telemetryCaptureTime = new Date();
-    let [sw, sh, scale] = this._determineCropSize(aWindow);
-
     let canvas = this._createCanvas();
-    let ctx = canvas.getContext("2d");
+    this.captureToCanvas(aWindow, canvas);
+
+    // Fetch the canvas data on the next event loop tick so that we allow
+    // some event processing in between drawing to the canvas and encoding
+    // its data. We want to block the UI as short as possible. See bug 744100.
+    Services.tm.currentThread.dispatch(function () {
+      canvas.mozFetchAsStream(aCallback, this.contentType);
+    }.bind(this), Ci.nsIThread.DISPATCH_NORMAL);
+  },
+
+  /**
+   * Captures a thumbnail from a given window and draws it to the given canvas.
+   * @param aWindow The DOM window to capture a thumbnail from.
+   * @param aCanvas The canvas to draw to.
+   */
+  captureToCanvas: function PageThumbs_captureToCanvas(aWindow, aCanvas) {
+    let telemetryCaptureTime = new Date();
+    let [sw, sh, scale] = this._determineCropSize(aWindow, aCanvas);
+    let ctx = aCanvas.getContext("2d");
 
     // Scale the canvas accordingly.
     ctx.scale(scale, scale);
@@ -94,8 +158,6 @@ let PageThumbs = {
     let telemetry = Services.telemetry;
     telemetry.getHistogramById("FX_THUMBNAILS_CAPTURE_TIME_MS")
       .add(new Date() - telemetryCaptureTime);
-
-    canvas.mozFetchAsStream(aCallback, this.contentType);
   },
 
   /**
@@ -132,46 +194,37 @@ let PageThumbs = {
           //    Sync and therefore also redirect sources appear on the newtab
           //    page. We also want thumbnails for those.
           if (url != originalURL)
-            PageThumbsCache._copy(url, originalURL);
+            PageThumbsStorage.copy(url, originalURL);
         }
 
         if (aCallback)
           aCallback(aSuccessful);
       }
 
-      // Get a writeable cache entry.
-      PageThumbsCache.getWriteEntry(url, function (aEntry) {
-        if (!aEntry) {
-          finish(false);
-          return;
-        }
-
-        let outputStream = aEntry.openOutputStream(0);
-
-        // Write the image data to the cache entry.
-        NetUtil.asyncCopy(aInputStream, outputStream, function (aResult) {
-          let success = Components.isSuccessCode(aResult);
-          if (success)
-            aEntry.markValid();
-
-          aEntry.close();
-          finish(success);
-        });
-      });
+      PageThumbsStorage.write(url, aInputStream, finish);
     });
+  },
+
+  addExpirationFilter: function PageThumbs_addExpirationFilter(aFilter) {
+    PageThumbsExpiration.addFilter(aFilter);
+  },
+
+  removeExpirationFilter: function PageThumbs_removeExpirationFilter(aFilter) {
+    PageThumbsExpiration.removeFilter(aFilter);
   },
 
   /**
    * Determines the crop size for a given content window.
    * @param aWindow The content window.
+   * @param aCanvas The target canvas.
    * @return An array containing width, height and scale.
    */
-  _determineCropSize: function PageThumbs_determineCropSize(aWindow) {
+  _determineCropSize: function PageThumbs_determineCropSize(aWindow, aCanvas) {
     let sw = aWindow.innerWidth;
     let sh = aWindow.innerHeight;
 
-    let [thumbnailWidth, thumbnailHeight] = this._getThumbnailSize();
-    let scale = Math.max(thumbnailWidth / sw, thumbnailHeight / sh);
+    let {width: thumbnailWidth, height: thumbnailHeight} = aCanvas;
+    let scale = Math.min(Math.max(thumbnailWidth / sw, thumbnailHeight / sh), 1);
     let scaledWidth = sw * scale;
     let scaledHeight = sh * scale;
 
@@ -225,120 +278,244 @@ let PageThumbs = {
   },
 };
 
-/**
- * A singleton handling the storage of page thumbnails.
- */
-let PageThumbsCache = {
-  /**
-   * Calls the given callback with a cache entry opened for reading.
-   * @param aKey The key identifying the desired cache entry.
-   * @param aCallback The callback that is called when the cache entry is ready.
-   */
-  getReadEntry: function Cache_getReadEntry(aKey, aCallback) {
-    // Try to open the desired cache entry.
-    this._openCacheEntry(aKey, Ci.nsICache.ACCESS_READ, aCallback);
+this.PageThumbsStorage = {
+  getDirectory: function Storage_getDirectory(aCreate = true) {
+    return FileUtils.getDir("ProfLD", [THUMBNAIL_DIRECTORY], aCreate);
   },
 
-  /**
-   * Calls the given callback with a cache entry opened for writing.
-   * @param aKey The key identifying the desired cache entry.
-   * @param aCallback The callback that is called when the cache entry is ready.
-   */
-  getWriteEntry: function Cache_getWriteEntry(aKey, aCallback) {
-    // Try to open the desired cache entry.
-    this._openCacheEntry(aKey, Ci.nsICache.ACCESS_WRITE, aCallback);
+  getLeafNameForURL: function Storage_getLeafNameForURL(aURL) {
+    let hash = this._calculateMD5Hash(aURL);
+    return hash + ".png";
   },
 
-  /**
-   * Copies an existing cache entry's data to a new cache entry.
-   * @param aSourceKey The key that contains the data to copy.
-   * @param aTargetKey The key that will be the copy of aSourceKey's data.
-   */
-  _copy: function Cache_copy(aSourceKey, aTargetKey) {
-    let sourceEntry, targetEntry, waitingCount = 2;
+  getFileForURL: function Storage_getFileForURL(aURL) {
+    let file = this.getDirectory();
+    file.append(this.getLeafNameForURL(aURL));
+    return file;
+  },
 
-    function finish() {
-      if (sourceEntry)
-        sourceEntry.close();
+  write: function Storage_write(aURL, aDataStream, aCallback) {
+    let file = this.getFileForURL(aURL);
+    let fos = FileUtils.openSafeFileOutputStream(file);
 
-      if (targetEntry)
-        targetEntry.close();
-    }
-
-    function copyDataWhenReady() {
-      if (--waitingCount > 0)
-        return;
-
-      if (!sourceEntry || !targetEntry) {
-        finish();
-        return;
-      }
-
-      let inputStream = sourceEntry.openInputStream(0);
-      let outputStream = targetEntry.openOutputStream(0);
-
-      // Copy the image data to a new entry.
-      NetUtil.asyncCopy(inputStream, outputStream, function (aResult) {
-        if (Components.isSuccessCode(aResult))
-          targetEntry.markValid();
-
-        finish();
-      });
-    }
-
-    this.getReadEntry(aSourceKey, function (aSourceEntry) {
-      sourceEntry = aSourceEntry;
-      copyDataWhenReady();
-    });
-
-    this.getWriteEntry(aTargetKey, function (aTargetEntry) {
-      targetEntry = aTargetEntry;
-      copyDataWhenReady();
+    NetUtil.asyncCopy(aDataStream, fos, function (aResult) {
+      FileUtils.closeSafeFileOutputStream(fos);
+      aCallback(Components.isSuccessCode(aResult));
     });
   },
 
-  /**
-   * Opens the cache entry identified by the given key.
-   * @param aKey The key identifying the desired cache entry.
-   * @param aAccess The desired access mode (see nsICache.ACCESS_* constants).
-   * @param aCallback The function to be called when the cache entry was opened.
-   */
-  _openCacheEntry: function Cache_openCacheEntry(aKey, aAccess, aCallback) {
-    function onCacheEntryAvailable(aEntry, aAccessGranted, aStatus) {
-      let validAccess = aAccess == aAccessGranted;
-      let validStatus = Components.isSuccessCode(aStatus);
+  copy: function Storage_copy(aSourceURL, aTargetURL) {
+    let sourceFile = this.getFileForURL(aSourceURL);
+    let targetFile = this.getFileForURL(aTargetURL);
 
-      // Check if a valid entry was passed and if the
-      // access we requested was actually granted.
-      if (aEntry && !(validAccess && validStatus)) {
-        aEntry.close();
-        aEntry = null;
-      }
-
-      aCallback(aEntry);
+    try {
+      sourceFile.copyTo(targetFile.parent, targetFile.leafName);
+    } catch (e) {
+      /* We might not be permitted to write to the file. */
     }
-
-    let listener = this._createCacheListener(onCacheEntryAvailable);
-    this._cacheSession.asyncOpenCacheEntry(aKey, aAccess, listener);
   },
 
-  /**
-   * Returns a cache listener implementing the nsICacheListener interface.
-   * @param aCallback The callback to be called when the cache entry is available.
-   * @return The new cache listener.
-   */
-  _createCacheListener: function Cache_createCacheListener(aCallback) {
-    return {
-      onCacheEntryAvailable: aCallback,
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsICacheListener])
-    };
+  remove: function Storage_remove(aURL) {
+    let file = this.getFileForURL(aURL);
+    PageThumbsWorker.postMessage({type: "removeFile", path: file.path});
+  },
+
+  wipe: function Storage_wipe() {
+    let dir = this.getDirectory(false);
+    dir.followLinks = false;
+    try {
+      dir.remove(true);
+    } catch (e) {
+      /* The directory might not exist or we're not permitted to remove it. */
+    }
+  },
+
+  _calculateMD5Hash: function Storage_calculateMD5Hash(aValue) {
+    let hash = gCryptoHash;
+    let value = gUnicodeConverter.convertToByteArray(aValue);
+
+    hash.init(hash.MD5);
+    hash.update(value, value.length);
+    return this._convertToHexString(hash.finish(false));
+  },
+
+  _convertToHexString: function Storage_convertToHexString(aData) {
+    let hex = "";
+    for (let i = 0; i < aData.length; i++)
+      hex += ("0" + aData.charCodeAt(i).toString(16)).slice(-2);
+    return hex;
+  }
+};
+
+let PageThumbsStorageMigrator = {
+  get currentVersion() {
+    try {
+      return Services.prefs.getIntPref(PREF_STORAGE_VERSION);
+    } catch (e) {
+      // The pref doesn't exist, yet. Return version 0.
+      return 0;
+    }
+  },
+
+  set currentVersion(aVersion) {
+    Services.prefs.setIntPref(PREF_STORAGE_VERSION, aVersion);
+  },
+
+  migrate: function Migrator_migrate() {
+    let version = this.currentVersion;
+
+    if (version < 1) {
+      this.removeThumbnailsFromRoamingProfile();
+    }
+    if (version < 2) {
+      this.renameThumbnailsFolder();
+    }
+
+    this.currentVersion = LATEST_STORAGE_VERSION;
+  },
+
+  removeThumbnailsFromRoamingProfile:
+  function Migrator_removeThumbnailsFromRoamingProfile() {
+    let local = FileUtils.getDir("ProfLD", [THUMBNAIL_DIRECTORY]);
+    let roaming = FileUtils.getDir("ProfD", [THUMBNAIL_DIRECTORY]);
+
+    if (!roaming.equals(local) && roaming.exists()) {
+      roaming.followLinks = false;
+      try {
+        roaming.remove(true);
+      } catch (e) {
+        // The directory might not exist or we're not permitted to remove it.
+      }
+    }
+  },
+
+  renameThumbnailsFolder: function Migrator_renameThumbnailsFolder() {
+    let dir = FileUtils.getDir("ProfLD", [THUMBNAIL_DIRECTORY]);
+    try {
+      dir.moveTo(null, dir.leafName + "-old");
+    } catch (e) {
+      // The directory might not exist or we're not permitted to rename it.
+    }
+  }
+};
+
+let PageThumbsExpiration = {
+  _filters: [],
+
+  init: function Expiration_init() {
+    gUpdateTimerManager.registerTimer("browser-cleanup-thumbnails", this,
+                                      EXPIRATION_INTERVAL_SECS);
+  },
+
+  addFilter: function Expiration_addFilter(aFilter) {
+    this._filters.push(aFilter);
+  },
+
+  removeFilter: function Expiration_removeFilter(aFilter) {
+    let index = this._filters.indexOf(aFilter);
+    if (index > -1)
+      this._filters.splice(index, 1);
+  },
+
+  notify: function Expiration_notify(aTimer) {
+    let urls = [];
+    let filtersToWaitFor = this._filters.length;
+
+    let expire = function expire() {
+      this.expireThumbnails(urls);
+    }.bind(this);
+
+    // No registered filters.
+    if (!filtersToWaitFor) {
+      expire();
+      return;
+    }
+
+    function filterCallback(aURLs) {
+      urls = urls.concat(aURLs);
+      if (--filtersToWaitFor == 0)
+        expire();
+    }
+
+    for (let filter of this._filters) {
+      if (typeof filter == "function")
+        filter(filterCallback)
+      else
+        filter.filterForThumbnailExpiration(filterCallback);
+    }
+  },
+
+  expireThumbnails: function Expiration_expireThumbnails(aURLsToKeep, aCallback) {
+    PageThumbsWorker.postMessage({
+      type: "expireFilesInDirectory",
+      minChunkSize: EXPIRATION_MIN_CHUNK_SIZE,
+      path: PageThumbsStorage.getDirectory().path,
+      filesToKeep: [PageThumbsStorage.getLeafNameForURL(url) for (url of aURLsToKeep)]
+    }, aCallback);
   }
 };
 
 /**
- * Define a lazy getter for the cache session.
+ * Interface to a dedicated thread handling I/O
  */
-XPCOMUtils.defineLazyGetter(PageThumbsCache, "_cacheSession", function () {
-  return Services.cache.createSession(PageThumbs.scheme,
-                                     Ci.nsICache.STORE_ON_DISK, true);
-});
+let PageThumbsWorker = {
+  /**
+   * A (fifo) queue of callbacks registered for execution
+   * upon completion of calls to the worker.
+   */
+  _callbacks: [],
+
+  /**
+   * Get the worker, spawning it if necessary.
+   * Code of the worker is in companion file PageThumbsWorker.js
+   */
+  get _worker() {
+    delete this._worker;
+    this._worker = new ChromeWorker("resource:///modules/PageThumbsWorker.js");
+    this._worker.addEventListener("message", this);
+    return this._worker;
+  },
+
+  /**
+   * Post a message to the dedicated thread, registering a callback
+   * to be executed once the reply has been received.
+   *
+   * See PageThumbsWorker.js for the format of messages and replies.
+   *
+   * @param {*} message A JSON message.
+   * @param {Function=} callback An optional callback.
+   */
+  postMessage: function Worker_postMessage(message, callback) {
+    this._callbacks.push(callback);
+    this._worker.postMessage(message);
+  },
+
+  /**
+   * Handle a message from the dedicated thread.
+   */
+  handleEvent: function Worker_handleEvent(aEvent) {
+    let callback = this._callbacks.shift();
+    if (callback)
+      callback(aEvent.data);
+  }
+};
+
+let PageThumbsHistoryObserver = {
+  onDeleteURI: function Thumbnails_onDeleteURI(aURI, aGUID) {
+    PageThumbsStorage.remove(aURI.spec);
+  },
+
+  onClearHistory: function Thumbnails_onClearHistory() {
+    PageThumbsStorage.wipe();
+  },
+
+  onTitleChanged: function () {},
+  onBeginUpdateBatch: function () {},
+  onEndUpdateBatch: function () {},
+  onVisit: function () {},
+  onBeforeDeleteURI: function () {},
+  onPageChanged: function () {},
+  onDeleteVisits: function () {},
+
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsINavHistoryObserver])
+};

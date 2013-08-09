@@ -2,15 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifdef NO_NSPR_10_SUPPORT
-#undef NO_NSPR_10_SUPPORT
-#endif
-
 #include "nsAppRunner.h"
 
 #include "prio.h"
 #include "prprf.h"
-#include "prtime.h"
 #include "prenv.h"
 
 #include "nsCRT.h"
@@ -27,7 +22,7 @@ WriteConsoleLog()
 {
   nsresult rv;
 
-  nsCOMPtr<nsILocalFile> lfile;
+  nsCOMPtr<nsIFile> lfile;
 
   char* logFileEnv = PR_GetEnv("XRE_CONSOLE_LOG");
   if (logFileEnv && *logFileEnv) {
@@ -60,9 +55,9 @@ WriteConsoleLog()
   }
 
   nsIConsoleMessage** messages;
-  PRUint32 mcount;
+  uint32_t mcount;
 
-  rv = csrv->GetMessageArray(&messages, &mcount);
+  rv = csrv->GetMessageArray(&mcount, &messages);
   if (NS_FAILED(rv)) {
     PR_Close(file);
     return;
@@ -84,9 +79,9 @@ WriteConsoleLog()
   // the memory allocated for the messages array. XPCOM arrays suck.
 
   nsXPIDLString msg;
-  nsCAutoString nativemsg;
+  nsAutoCString nativemsg;
 
-  for (PRUint32 i = 0; i < mcount; ++i) {
+  for (uint32_t i = 0; i < mcount; ++i) {
     rv = messages[i]->GetMessageMoz(getter_Copies(msg));
     if (NS_SUCCEEDED(rv)) {
       NS_CopyUnicodeToNative(msg, nativemsg);

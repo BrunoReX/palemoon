@@ -51,8 +51,8 @@ root_window_event_filter(GdkXEvent *aGdkXEvent, GdkEvent *aGdkEvent,
 }
 
 nsScreenManagerGtk :: nsScreenManagerGtk ( )
-  : mXineramalib(nsnull)
-  , mRootWindow(nsnull)
+  : mXineramalib(nullptr)
+  , mRootWindow(nullptr)
 {
   // nothing else to do. I guess we could cache a bunch of information
   // here, but we want to ask the device at runtime in case anything
@@ -65,7 +65,7 @@ nsScreenManagerGtk :: ~nsScreenManagerGtk()
   if (mRootWindow) {
     gdk_window_remove_filter(mRootWindow, root_window_event_filter, this);
     g_object_unref(mRootWindow);
-    mRootWindow = nsnull;
+    mRootWindow = nullptr;
   }
 
   /* XineramaIsActive() registers a callback function close_display()
@@ -132,9 +132,9 @@ nsScreenManagerGtk :: Init()
         PR_FindFunctionSymbol(mXineramalib, "XineramaQueryScreens");
         
     // get the number of screens via xinerama
-    if (_XnrmIsActive && _XnrmQueryScreens &&
-        _XnrmIsActive(GDK_DISPLAY())) {
-      screenInfo = _XnrmQueryScreens(GDK_DISPLAY(), &numScreens);
+    Display *display = GDK_DISPLAY_XDISPLAY(gdk_display_get_default());
+    if (_XnrmIsActive && _XnrmQueryScreens && _XnrmIsActive(display)) {
+      screenInfo = _XnrmQueryScreens(display, &numScreens);
     }
   }
 
@@ -202,8 +202,8 @@ nsScreenManagerGtk :: Init()
 // The coordinates are in pixels (not app units) and in screen coordinates.
 //
 NS_IMETHODIMP
-nsScreenManagerGtk :: ScreenForRect ( PRInt32 aX, PRInt32 aY,
-                                      PRInt32 aWidth, PRInt32 aHeight,
+nsScreenManagerGtk :: ScreenForRect ( int32_t aX, int32_t aY,
+                                      int32_t aWidth, int32_t aHeight,
                                       nsIScreen **aOutScreen )
 {
   nsresult rv;
@@ -213,23 +213,23 @@ nsScreenManagerGtk :: ScreenForRect ( PRInt32 aX, PRInt32 aY,
     return rv;
   }
   // which screen ( index from zero ) should we return?
-  PRUint32 which = 0;
+  uint32_t which = 0;
   // Optimize for the common case.  If the number of screens is only
   // one then this will fall through with which == 0 and will get the
   // primary screen.
   if (mCachedScreenArray.Count() > 1) {
     // walk the list of screens and find the one that has the most
     // surface area.
-    PRUint32 area = 0;
+    uint32_t area = 0;
     nsIntRect windowRect(aX, aY, aWidth, aHeight);
-    for (PRInt32 i = 0, i_end = mCachedScreenArray.Count(); i < i_end; ++i) {
-      PRInt32  x, y, width, height;
+    for (int32_t i = 0, i_end = mCachedScreenArray.Count(); i < i_end; ++i) {
+      int32_t  x, y, width, height;
       x = y = width = height = 0;
       mCachedScreenArray[i]->GetRect(&x, &y, &width, &height);
       // calculate the surface area
       nsIntRect screenRect(x, y, width, height);
       screenRect.IntersectRect(screenRect, windowRect);
-      PRUint32 tempArea = screenRect.width * screenRect.height;
+      uint32_t tempArea = screenRect.width * screenRect.height;
       if (tempArea >= area) {
         which = i;
         area = tempArea;
@@ -271,7 +271,7 @@ nsScreenManagerGtk :: GetPrimaryScreen(nsIScreen * *aPrimaryScreen)
 // Returns how many physical screens are available.
 //
 NS_IMETHODIMP
-nsScreenManagerGtk :: GetNumberOfScreens(PRUint32 *aNumberOfScreens)
+nsScreenManagerGtk :: GetNumberOfScreens(uint32_t *aNumberOfScreens)
 {
   nsresult rv;
   rv = EnsureInit();
@@ -297,11 +297,18 @@ nsScreenManagerGtk :: ScreenForNativeWidget (void *aWidget, nsIScreen **outScree
   if (mCachedScreenArray.Count() > 1) {
     // I don't know how to go from GtkWindow to nsIScreen, especially
     // given xinerama and stuff, so let's just do this
-    gint x, y, width, height, depth;
+    gint x, y, width, height;
+#if (MOZ_WIDGET_GTK == 2)
+    gint depth;
+#endif
     x = y = width = height = 0;
 
+#if (MOZ_WIDGET_GTK == 2)
     gdk_window_get_geometry(GDK_WINDOW(aWidget), &x, &y, &width, &height,
                             &depth);
+#else
+    gdk_window_get_geometry(GDK_WINDOW(aWidget), &x, &y, &width, &height);
+#endif
     gdk_window_get_origin(GDK_WINDOW(aWidget), &x, &y);
     rv = ScreenForRect(x, y, width, height, outScreen);
   } else {

@@ -14,12 +14,16 @@ Cu.import("resource:///modules/NewTabUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "Rect",
   "resource://gre/modules/Geometry.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
+  "resource://gre/modules/PrivateBrowsingUtils.jsm");
 
 let {
   links: gLinks,
   allPages: gAllPages,
+  linkChecker: gLinkChecker,
   pinnedLinks: gPinnedLinks,
-  blockedLinks: gBlockedLinks
+  blockedLinks: gBlockedLinks,
+  gridPrefs: gGridPrefs
 } = NewTabUtils;
 
 XPCOMUtils.defineLazyGetter(this, "gStringBundle", function() {
@@ -28,6 +32,10 @@ XPCOMUtils.defineLazyGetter(this, "gStringBundle", function() {
 });
 
 function newTabString(name) gStringBundle.GetStringFromName('newtab.' + name);
+
+function inPrivateBrowsingMode() {
+  return PrivateBrowsingUtils.isWindowPrivate(window);
+}
 
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 
@@ -38,6 +46,7 @@ const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 #include cells.js
 #include sites.js
 #include drag.js
+#include dragDataHelper.js
 #include drop.js
 #include dropTargetShim.js
 #include dropPreview.js

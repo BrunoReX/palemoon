@@ -25,6 +25,11 @@
 #include "nsIScriptGlobalObject.h"
 #include "nsIDocument.h"
 #include "jsfriendapi.h"
+#include "xpcprivate.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/Telemetry.h"
+
+using namespace mozilla;
 
 ///////////////////////
 // nsSecurityNameSet //
@@ -40,75 +45,16 @@ nsSecurityNameSet::~nsSecurityNameSet()
 
 NS_IMPL_ISUPPORTS1(nsSecurityNameSet, nsIScriptExternalNameSet)
 
-static JSString *
-getStringArgument(JSContext *cx, JSObject *obj, PRUint16 argNum, unsigned argc, jsval *argv)
-{
-    if (argc <= argNum || !JSVAL_IS_STRING(argv[argNum])) {
-        JS_ReportError(cx, "String argument expected");
-        return nsnull;
-    }
-
-    /*
-     * We don't want to use JS_ValueToString because we want to be able
-     * to have an object to represent a target in subsequent versions.
-     */
-    return JSVAL_TO_STRING(argv[argNum]);
-}
-
-static bool
-getBytesArgument(JSContext *cx, JSObject *obj, PRUint16 argNum, unsigned argc, jsval *argv,
-                 JSAutoByteString *bytes)
-{
-    JSString *str = getStringArgument(cx, obj, argNum, argc, argv);
-    return str && bytes->encode(cx, str);
-}
-
 static JSBool
 netscape_security_enablePrivilege(JSContext *cx, unsigned argc, jsval *vp)
 {
-    JSObject *obj = JS_THIS_OBJECT(cx, vp);
-    if (!obj)
-        return JS_FALSE;
-
-    JSAutoByteString cap;
-    if (!getBytesArgument(cx, obj, 0, argc, JS_ARGV(cx, vp), &cap))
-        return JS_FALSE;
-
-    // Can't use nsContentUtils::GetDocumentFromCaller because that
-    // depends on various XPConnect stuff that's not set up here.
-    {
-        JSAutoEnterCompartment ac;
-        if (ac.enter(cx, obj)) {
-            nsCOMPtr<nsPIDOMWindow> win =
-                do_QueryInterface(nsJSUtils::GetStaticScriptGlobal(cx, obj));
-            if (win) {
-                nsCOMPtr<nsIDocument> doc =
-                    do_QueryInterface(win->GetExtantDocument());
-                if (doc) {
-                    doc->WarnOnceAbout(nsIDocument::eEnablePrivilege);
-                }
-            }
-        }
-    }
-
-    nsresult rv;
-    nsCOMPtr<nsIScriptSecurityManager> securityManager = 
-             do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID, &rv);
-    if (NS_FAILED(rv)) 
-        return JS_FALSE;
-
-    //    NS_ASSERTION(cx == GetCurrentContext(), "unexpected context");
-
-    rv = securityManager->EnableCapability(cap.ptr());
-    if (NS_FAILED(rv))
-        return JS_FALSE;
-    JS_SET_RVAL(cx, vp, JSVAL_VOID);
-    return JS_TRUE;
+    Telemetry::Accumulate(Telemetry::ENABLE_PRIVILEGE_EVER_CALLED, true);
+    return xpc::EnableUniversalXPConnect(cx);
 }
 
 static JSFunctionSpec PrivilegeManager_static_methods[] = {
-    { "enablePrivilege",    netscape_security_enablePrivilege,      1,0},
-    {nsnull,nsnull,0,0}
+    JS_FS("enablePrivilege", netscape_security_enablePrivilege, 1, 0),
+    JS_FS_END
 };
 
 /*
@@ -128,8 +74,12 @@ nsSecurityNameSet::InitializeNameSet(nsIScriptContext* aScriptContext)
     JSObject *obj = global;
     JSObject *proto;
     JSAutoRequest ar(cx);
-    while ((proto = JS_GetPrototype(obj)) != nsnull)
+    for (;;) {
+        MOZ_ALWAYS_TRUE(JS_GetPrototype(cx, obj, &proto));
+        if (!proto)
+            break;
         obj = proto;
+    }
     JSClass *objectClass = JS_GetClass(obj);
 
     JS::Value v;
@@ -148,19 +98,28 @@ nsSecurityNameSet::InitializeNameSet(nsIScriptContext* aScriptContext)
         securityObj = &v.toObject();
     } else {
         /* define netscape.security object */
-        obj = JS_DefineObject(cx, global, "netscape", objectClass, nsnull, 0);
-        if (obj == nsnull)
+        obj = JS_DefineObject(cx, global, "netscape", objectClass, nullptr, 0);
+        if (obj == nullptr)
             return NS_ERROR_FAILURE;
         securityObj = JS_DefineObject(cx, obj, "security", objectClass,
-                                      nsnull, 0);
-        if (securityObj == nsnull)
+                                      nullptr, 0);
+        if (securityObj == nullptr)
             return NS_ERROR_FAILURE;
     }
 
+    // We hide enablePrivilege behind a pref because it has been altered in a
+    // way that makes it fundamentally insecure to use in production. Mozilla
+    // uses this pref during automated testing to support legacy test code that
+    // uses enablePrivilege. If you're not doing test automation, you _must_ not
+    // flip this pref, or you will be exposing all your users to security
+    // vulnerabilities.
+    if (!Preferences::GetBool("security.turn_off_all_security_so_that_viruses_can_take_over_this_computer"))
+        return NS_OK;
+
     /* Define PrivilegeManager object with the necessary "static" methods. */
     obj = JS_DefineObject(cx, securityObj, "PrivilegeManager", objectClass,
-                          nsnull, 0);
-    if (obj == nsnull)
+                          nullptr, 0);
+    if (obj == nullptr)
         return NS_ERROR_FAILURE;
 
     return JS_DefineFunctions(cx, obj, PrivilegeManager_static_methods)

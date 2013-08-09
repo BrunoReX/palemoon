@@ -30,22 +30,22 @@ class nsIParserService : public nsISupports {
    *
    * @param aAtom The tag to look up.
    *
-   * @return PRInt32 The nsHTMLTag enum value corresponding to the tag in aAtom
+   * @return int32_t The nsHTMLTag enum value corresponding to the tag in aAtom
    *                 or eHTMLTag_userdefined if the tag does not correspond to
    *                 any of the tag nsHTMLTag enum values.
    */
-  virtual PRInt32 HTMLAtomTagToId(nsIAtom* aAtom) const = 0;
+  virtual int32_t HTMLAtomTagToId(nsIAtom* aAtom) const = 0;
 
   /**
    * Looks up the nsHTMLTag enum value corresponding to the tag in aAtom.
    *
    * @param aAtom The tag to look up.
    *
-   * @return PRInt32 The nsHTMLTag enum value corresponding to the tag in aAtom
+   * @return int32_t The nsHTMLTag enum value corresponding to the tag in aAtom
    *                 or eHTMLTag_userdefined if the tag does not correspond to
    *                 any of the tag nsHTMLTag enum values.
    */
-  virtual PRInt32 HTMLCaseSensitiveAtomTagToId(nsIAtom* aAtom) const = 0;
+  virtual int32_t HTMLCaseSensitiveAtomTagToId(nsIAtom* aAtom) const = 0;
 
   /**
    * Looks up the nsHTMLTag enum value corresponding to the tag in aTag. The
@@ -53,11 +53,11 @@ class nsIParserService : public nsISupports {
    *
    * @param aTag The tag to look up.
    *
-   * @return PRInt32 The nsHTMLTag enum value corresponding to the tag in aTag
+   * @return int32_t The nsHTMLTag enum value corresponding to the tag in aTag
    *                 or eHTMLTag_userdefined if the tag does not correspond to
    *                 any of the tag nsHTMLTag enum values.
    */
-  virtual PRInt32 HTMLStringTagToId(const nsAString& aTag) const = 0;
+  virtual int32_t HTMLStringTagToId(const nsAString& aTag) const = 0;
 
   /**
    * Gets the tag corresponding to the nsHTMLTag enum value in aId. The
@@ -66,11 +66,11 @@ class nsIParserService : public nsISupports {
    * @param aId The nsHTMLTag enum value to get the tag for.
    *
    * @return const PRUnichar* The tag corresponding to the nsHTMLTag enum
-   *                          value, or nsnull if the enum value doesn't
+   *                          value, or nullptr if the enum value doesn't
    *                          correspond to a tag (eHTMLTag_unknown,
    *                          eHTMLTag_userdefined, eHTMLTag_text, ...).
    */
-  virtual const PRUnichar *HTMLIdToStringTag(PRInt32 aId) const = 0;
+  virtual const PRUnichar *HTMLIdToStringTag(int32_t aId) const = 0;
 
   /**
    * Gets the tag corresponding to the nsHTMLTag enum value in aId. The
@@ -79,20 +79,20 @@ class nsIParserService : public nsISupports {
    * @param aId The nsHTMLTag enum value to get the tag for.
    *
    * @return nsIAtom* The tag corresponding to the nsHTMLTag enum value, or
-   *                  nsnull if the enum value doesn't correspond to a tag
+   *                  nullptr if the enum value doesn't correspond to a tag
    *                  (eHTMLTag_unknown, eHTMLTag_userdefined, eHTMLTag_text,
    *                  ...).
    */
-  virtual nsIAtom *HTMLIdToAtomTag(PRInt32 aId) const = 0;
+  virtual nsIAtom *HTMLIdToAtomTag(int32_t aId) const = 0;
   
   NS_IMETHOD HTMLConvertEntityToUnicode(const nsAString& aEntity, 
-                                        PRInt32* aUnicode) const = 0;
+                                        int32_t* aUnicode) const = 0;
 
-  NS_IMETHOD HTMLConvertUnicodeToEntity(PRInt32 aUnicode,
+  NS_IMETHOD HTMLConvertUnicodeToEntity(int32_t aUnicode,
                                         nsCString& aEntity) const = 0;
 
-  NS_IMETHOD IsContainer(PRInt32 aId, bool& aIsContainer) const = 0;
-  NS_IMETHOD IsBlock(PRInt32 aId, bool& aIsBlock) const = 0;
+  NS_IMETHOD IsContainer(int32_t aId, bool& aIsContainer) const = 0;
+  NS_IMETHOD IsBlock(int32_t aId, bool& aIsBlock) const = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIParserService, NS_IPARSERSERVICE_IID)

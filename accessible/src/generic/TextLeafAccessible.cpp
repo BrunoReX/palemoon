@@ -17,7 +17,7 @@ using namespace mozilla::a11y;
 
 TextLeafAccessible::
   TextLeafAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-  nsLinkableAccessible(aContent, aDoc)
+  LinkableAccessible(aContent, aDoc)
 {
   mFlags |= eTextLeafAccessible;
 }
@@ -37,8 +37,8 @@ TextLeafAccessible::NativeRole()
 }
 
 void
-TextLeafAccessible::AppendTextTo(nsAString& aText, PRUint32 aStartOffset,
-                                 PRUint32 aLength)
+TextLeafAccessible::AppendTextTo(nsAString& aText, uint32_t aStartOffset,
+                                 uint32_t aLength)
 {
   aText.Append(Substring(mText, aStartOffset, aLength));
 }
@@ -49,18 +49,6 @@ TextLeafAccessible::Name(nsString& aName)
   // Text node, ARIA can't be used.
   aName = mText;
   return eNameOK;
-}
-
-nsresult
-TextLeafAccessible::GetAttributesInternal(nsIPersistentProperties *aAttributes)
-{
-  if (NativeRole() == roles::STATICTEXT) {
-    nsAutoString oldValueUnused;
-    aAttributes->SetStringProperty(NS_LITERAL_CSTRING("auto-generated"),
-                                  NS_LITERAL_STRING("true"), oldValueUnused);
-  }
-
-  return NS_OK;
 }
 
 void

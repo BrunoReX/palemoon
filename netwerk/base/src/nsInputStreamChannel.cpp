@@ -17,9 +17,8 @@ nsInputStreamChannel::OpenContentStream(bool async, nsIInputStream **result,
   // If content length is unknown, then we must guess.  In this case, we assume
   // the stream can tell us.  If the stream is a pipe, then this will not work.
 
-  PRInt64 len = ContentLength64();
-  if (len < 0) {
-    PRUint32 avail;
+  if (mContentLength < 0) {
+    uint64_t avail;
     nsresult rv = mContentStream->Available(&avail);
     if (rv == NS_BASE_STREAM_CLOSED) {
       // This just means there's nothing in the stream
@@ -27,7 +26,7 @@ nsInputStreamChannel::OpenContentStream(bool async, nsIInputStream **result,
     } else if (NS_FAILED(rv)) {
       return rv;
     }
-    SetContentLength64(avail);
+    mContentLength = avail;
   }
 
   EnableSynthesizedProgressEvents(true);

@@ -13,12 +13,14 @@ var fileStorages = [
 
 var utils = SpecialPowers.getDOMWindowUtils(window);
 
+var archiveReaderEnabled = false;
+
 var testGenerator = testSteps();
 
 function runTest()
 {
-  allowIndexedDB();
   allowUnlimitedQuota();
+  enableArchiveReader();
 
   SimpleTest.waitForExplicitFinish();
   testGenerator.next();
@@ -27,7 +29,7 @@ function runTest()
 function finishTest()
 {
   resetUnlimitedQuota();
-  resetIndexedDB();
+  resetArchiveReader();
 
   SimpleTest.executeSoon(function() {
     testGenerator.close();
@@ -76,58 +78,18 @@ ExpectError.prototype = {
 
 function addPermission(type, allow, url)
 {
-  netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
-
-  let uri;
-  if (url) {
-    uri = Components.classes["@mozilla.org/network/io-service;1"]
-                    .getService(Components.interfaces.nsIIOService)
-                    .newURI(url, null, null);
+  if (!url) {
+    url = window.document;
   }
-  else {
-    uri = SpecialPowers.getDocumentURIObject(window.document);
-  }
-
-  let permission;
-  if (allow) {
-    permission = Components.interfaces.nsIPermissionManager.ALLOW_ACTION;
-  }
-  else {
-    permission = Components.interfaces.nsIPermissionManager.DENY_ACTION;
-  }
-
-  Components.classes["@mozilla.org/permissionmanager;1"]
-            .getService(Components.interfaces.nsIPermissionManager)
-            .add(uri, type, permission);
+  SpecialPowers.addPermission(type, allow, url);
 }
 
-function removePermission(permission, url)
+function removePermission(type, url)
 {
-  netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
-
-  let uri;
-  if (url) {
-    uri = Components.classes["@mozilla.org/network/io-service;1"]
-                    .getService(Components.interfaces.nsIIOService)
-                    .newURI(url, null, null);
+  if (!url) {
+    url = window.document;
   }
-  else {
-    uri = SpecialPowers.getDocumentURIObject(window.document);
-  }
-
-  Components.classes["@mozilla.org/permissionmanager;1"]
-            .getService(Components.interfaces.nsIPermissionManager)
-            .remove(uri.host, permission);
-}
-
-function allowIndexedDB(url)
-{
-  addPermission("indexedDB", true, url);
-}
-
-function resetIndexedDB(url)
-{
-  removePermission("indexedDB", url);
+  SpecialPowers.removePermission(type, url);
 }
 
 function allowUnlimitedQuota(url)
@@ -140,6 +102,17 @@ function resetUnlimitedQuota(url)
   removePermission("indexedDB-unlimited", url);
 }
 
+function enableArchiveReader()
+{
+  archiveReaderEnabled = SpecialPowers.getBoolPref("dom.archivereader.enabled");
+  SpecialPowers.setBoolPref("dom.archivereader.enabled", true);
+}
+
+function resetArchiveReader()
+{
+  SpecialPowers.setBoolPref("dom.archivereader.enabled", archiveReaderEnabled);
+}
+
 function getFileHandle(fileStorageKey, name)
 {
   var requestService = SpecialPowers.getDOMRequestService();
@@ -148,7 +121,7 @@ function getFileHandle(fileStorageKey, name)
   switch (fileStorageKey) {
     case IndexedDatabaseKey:
       var dbname = window.location.pathname;
-      mozIndexedDB.open(dbname, 1).onsuccess = function(event) {
+      indexedDB.open(dbname, 1).onsuccess = function(event) {
         var db = event.target.result;
         db.mozCreateFileHandle(name).onsuccess = function(event) {
           var fileHandle = event.target.result;
@@ -159,7 +132,7 @@ function getFileHandle(fileStorageKey, name)
 
     case DeviceStorageKey:
       var dbname = window.location.pathname;
-      mozIndexedDB.open(dbname, 1).onsuccess = function(event) {
+      indexedDB.open(dbname, 1).onsuccess = function(event) {
         var db = event.target.result;
         db.mozCreateFileHandle(name).onsuccess = function(event) {
           var fileHandle = event.target.result;

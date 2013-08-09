@@ -19,14 +19,14 @@
 NS_MEMORY_REPORTER_MALLOC_SIZEOF_FUN(LayoutStyleSheetCacheMallocSizeOf,
                                      "layout/style-sheet-cache")
 
-static PRInt64
+static int64_t
 GetStylesheetCacheSize()
 {
   return nsLayoutStylesheetCache::SizeOfIncludingThis(
            LayoutStyleSheetCacheMallocSizeOf);
 }
 
-NS_MEMORY_REPORTER_IMPLEMENT(Sheets,
+NS_MEMORY_REPORTER_IMPLEMENT(StyleSheetCache,
   "explicit/layout/style-sheet-cache",
   KIND_HEAP,
   nsIMemoryReporter::UNITS_BYTES,
@@ -41,16 +41,16 @@ nsLayoutStylesheetCache::Observe(nsISupports* aSubject,
                             const PRUnichar* aData)
 {
   if (!strcmp(aTopic, "profile-before-change")) {
-    mUserContentSheet = nsnull;
-    mUserChromeSheet  = nsnull;
+    mUserContentSheet = nullptr;
+    mUserChromeSheet  = nullptr;
   }
   else if (!strcmp(aTopic, "profile-do-change")) {
     InitFromProfile();
   }
   else if (strcmp(aTopic, "chrome-flush-skin-caches") == 0 ||
            strcmp(aTopic, "chrome-flush-caches") == 0) {
-    mScrollbarsSheet = nsnull;
-    mFormsSheet = nsnull;
+    mScrollbarsSheet = nullptr;
+    mFormsSheet = nullptr;
   }
   else {
     NS_NOTREACHED("Unexpected observer topic.");
@@ -63,7 +63,7 @@ nsLayoutStylesheetCache::ScrollbarsSheet()
 {
   EnsureGlobal();
   if (!gStyleCache)
-    return nsnull;
+    return nullptr;
 
   if (!gStyleCache->mScrollbarsSheet) {
     nsCOMPtr<nsIURI> sheetURI;
@@ -84,7 +84,7 @@ nsLayoutStylesheetCache::FormsSheet()
 {
   EnsureGlobal();
   if (!gStyleCache)
-    return nsnull;
+    return nullptr;
 
   if (!gStyleCache->mFormsSheet) {
     nsCOMPtr<nsIURI> sheetURI;
@@ -106,7 +106,7 @@ nsLayoutStylesheetCache::UserContentSheet()
 {
   EnsureGlobal();
   if (!gStyleCache)
-    return nsnull;
+    return nullptr;
 
   return gStyleCache->mUserContentSheet;
 }
@@ -116,7 +116,7 @@ nsLayoutStylesheetCache::UserChromeSheet()
 {
   EnsureGlobal();
   if (!gStyleCache)
-    return nsnull;
+    return nullptr;
 
   return gStyleCache->mUserChromeSheet;
 }
@@ -126,7 +126,7 @@ nsLayoutStylesheetCache::UASheet()
 {
   EnsureGlobal();
   if (!gStyleCache)
-    return nsnull;
+    return nullptr;
 
   return gStyleCache->mUASheet;
 }
@@ -136,7 +136,7 @@ nsLayoutStylesheetCache::QuirkSheet()
 {
   EnsureGlobal();
   if (!gStyleCache)
-    return nsnull;
+    return nullptr;
 
   return gStyleCache->mQuirkSheet;
 }
@@ -146,7 +146,7 @@ nsLayoutStylesheetCache::FullScreenOverrideSheet()
 {
   EnsureGlobal();
   if (!gStyleCache)
-    return nsnull;
+    return nullptr;
 
   return gStyleCache->mFullScreenOverrideSheet;
 }
@@ -161,11 +161,12 @@ nsLayoutStylesheetCache::Shutdown()
 size_t
 nsLayoutStylesheetCache::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf)
 {
-  if (nsLayoutStylesheetCache::gStyleCache) {
-    return nsLayoutStylesheetCache::gStyleCache->
-      SizeOfIncludingThisHelper(aMallocSizeOf);
+  if (!nsLayoutStylesheetCache::gStyleCache) {
+    return 0;
   }
-  return 0;
+
+  return nsLayoutStylesheetCache::gStyleCache->
+      SizeOfIncludingThisHelper(aMallocSizeOf);
 }
 
 size_t
@@ -226,14 +227,14 @@ nsLayoutStylesheetCache::nsLayoutStylesheetCache()
   }
   NS_ASSERTION(mFullScreenOverrideSheet, "Could not load full-screen-override.css");
 
-  mSheetsReporter = new NS_MEMORY_REPORTER_NAME(Sheets);
-  (void)::NS_RegisterMemoryReporter(mSheetsReporter);
+  mReporter = new NS_MEMORY_REPORTER_NAME(StyleSheetCache);
+  (void)::NS_RegisterMemoryReporter(mReporter);
 }
 
 nsLayoutStylesheetCache::~nsLayoutStylesheetCache()
 {
-  (void)::NS_UnregisterMemoryReporter(mSheetsReporter);
-  mSheetsReporter = nsnull;
+  (void)::NS_UnregisterMemoryReporter(mReporter);
+  mReporter = nullptr;
 }
 
 void
@@ -313,7 +314,7 @@ nsLayoutStylesheetCache::LoadSheet(nsIURI* aURI,
 }
 
 nsLayoutStylesheetCache*
-nsLayoutStylesheetCache::gStyleCache = nsnull;
+nsLayoutStylesheetCache::gStyleCache = nullptr;
 
 mozilla::css::Loader*
-nsLayoutStylesheetCache::gCSSLoader = nsnull;
+nsLayoutStylesheetCache::gCSSLoader = nullptr;

@@ -54,7 +54,7 @@ private:
 
     nsCOMPtr<nsISimpleEnumerator>   mCurrent;
     nsCOMPtr<nsIRDFNode>            mResult;
-    PRInt32 mNextIndex;
+    int32_t mNextIndex;
 
 public:
     ContainerEnumeratorImpl(nsIRDFDataSource* ds, nsIRDFResource* container);
@@ -85,7 +85,7 @@ ContainerEnumeratorImpl::Init()
     if (gRefCnt++ == 0) {
         nsresult rv;
         nsCOMPtr<nsIRDFService> rdf = do_GetService(kRDFServiceCID);
-        NS_ASSERTION(rdf != nsnull, "unable to acquire resource manager");
+        NS_ASSERTION(rdf != nullptr, "unable to acquire resource manager");
         if (! rdf)
             return NS_ERROR_FAILURE;
 
@@ -115,7 +115,7 @@ NS_IMPL_ISUPPORTS1(ContainerEnumeratorImpl, nsISimpleEnumerator)
 NS_IMETHODIMP
 ContainerEnumeratorImpl::HasMoreElements(bool* aResult)
 {
-    NS_PRECONDITION(aResult != nsnull, "null ptr");
+    NS_PRECONDITION(aResult != nullptr, "null ptr");
     if (! aResult)
         return NS_ERROR_NULL_POINTER;
 
@@ -137,7 +137,7 @@ ContainerEnumeratorImpl::HasMoreElements(bool* aResult)
     // Remember that since nextVal is the next index that we'd assign
     // to an element in a container, it's *one more* than count of
     // elements in the container.
-    PRInt32 max = 0;
+    int32_t max = 0;
 
     nsCOMPtr<nsISimpleEnumerator> targets;
     rv = mDataSource->GetTargets(mContainer, kRDF_nextVal, true, getter_AddRefs(targets));
@@ -159,8 +159,8 @@ ContainerEnumeratorImpl::HasMoreElements(bool* aResult)
          const PRUnichar *nextValStr;
          nextValLiteral->GetValueConst(&nextValStr);
 		 
-         PRInt32 err;
-         PRInt32 nextVal = nsAutoString(nextValStr).ToInteger(&err);
+         nsresult err;
+         int32_t nextVal = nsAutoString(nextValStr).ToInteger(&err);
 
          if (nextVal > max)
              max = nextVal;
@@ -188,7 +188,7 @@ ContainerEnumeratorImpl::HasMoreElements(bool* aResult)
             // Is the current enumerator depleted? If so, iterate to
             // the next index.
             if (! hasMore) {
-                mCurrent = nsnull;
+                mCurrent = nullptr;
                 continue;
             }
 
@@ -224,7 +224,7 @@ ContainerEnumeratorImpl::GetNext(nsISupports** aResult)
         return NS_ERROR_UNEXPECTED;
 
     NS_ADDREF(*aResult = mResult);
-    mResult = nsnull;
+    mResult = nullptr;
 
     return NS_OK;
 }
@@ -237,15 +237,15 @@ NS_NewContainerEnumerator(nsIRDFDataSource* aDataSource,
                           nsIRDFResource* aContainer,
                           nsISimpleEnumerator** aResult)
 {
-    NS_PRECONDITION(aDataSource != nsnull, "null ptr");
+    NS_PRECONDITION(aDataSource != nullptr, "null ptr");
     if (! aDataSource)
         return NS_ERROR_NULL_POINTER;
 
-    NS_PRECONDITION(aContainer != nsnull, "null ptr");
+    NS_PRECONDITION(aContainer != nullptr, "null ptr");
     if (! aContainer)
         return NS_ERROR_NULL_POINTER;
 
-    NS_PRECONDITION(aResult != nsnull, "null ptr");
+    NS_PRECONDITION(aResult != nullptr, "null ptr");
     if (! aResult)
         return NS_ERROR_NULL_POINTER;
 

@@ -11,7 +11,6 @@
 #ifndef nsPresState_h_
 #define nsPresState_h_
 
-#include "prtypes.h"
 #include "nsPoint.h"
 #include "nsAutoPtr.h"
 #include "nsRect.h"
@@ -20,7 +19,7 @@ class nsPresState
 {
 public:
   nsPresState()
-    : mContentData(nsnull)
+    : mContentData(nullptr)
     , mScrollState(0, 0)
     , mDisabledSet(false)
     , mDisabled(false)
@@ -38,7 +37,7 @@ public:
 
   void ClearNonScrollState()
   {
-    mContentData = nsnull;
+    mContentData = nullptr;
     mDisabledSet = false;
   }
 

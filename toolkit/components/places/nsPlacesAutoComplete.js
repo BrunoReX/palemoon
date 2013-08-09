@@ -131,6 +131,19 @@ function initTempTable(aDatabase)
  */
 function fixupSearchText(aURIString)
 {
+  let uri = stripPrefix(aURIString);
+  return gTextURIService.unEscapeURIForUI("UTF-8", uri);
+}
+
+/**
+ * Strip prefixes from the URI that we don't care about for searching.
+ *
+ * @param aURIString
+ *        The text to modify.
+ * @return the modified uri.
+ */
+function stripPrefix(aURIString)
+{
   let uri = aURIString;
 
   if (uri.indexOf("http://") == 0) {
@@ -146,8 +159,7 @@ function fixupSearchText(aURIString)
   if (uri.indexOf("www.") == 0) {
     uri = uri.slice(4);
   }
-
-  return gTextURIService.unEscapeURIForUI("UTF-8", uri);
+  return uri;
 }
 
 /**
@@ -1391,6 +1403,13 @@ urlInlineComplete.prototype = {
 
       if (hasDomainResult) {
         // We got a match for a domain, we can add it immediately.
+        // If the untrimmed value doesn't preserve the user's input just
+        // ignore it and complete to the found domain.
+        if (untrimmedDomain &&
+            !untrimmedDomain.toLowerCase().contains(this._originalSearchString.toLowerCase())) {
+          untrimmedDomain = null;
+        }
+
         // TODO (bug 754265): this is a temporary solution introduced while
         // waiting for a propert dedicated API.
         result.appendMatch(this._strippedPrefix + domain, untrimmedDomain);
@@ -1487,7 +1506,7 @@ urlInlineComplete.prototype = {
     let value = row.getResultByIndex(0);
     let url = fixupSearchText(value);
 
-    let prefix = value.slice(0, value.length - url.length);
+    let prefix = value.slice(0, value.length - stripPrefix(value).length);
 
     // We must complete the URL up to the next separator (which is /, ? or #).
     let separatorIndex = url.slice(this._currentSearchString.length)
@@ -1501,9 +1520,17 @@ urlInlineComplete.prototype = {
     }
 
     // Add the result.
+    // If the untrimmed value doesn't preserve the user's input just
+    // ignore it and complete to the found url.
+    let untrimmedURL = prefix + url;
+    if (untrimmedURL &&
+        !untrimmedURL.toLowerCase().contains(this._originalSearchString.toLowerCase())) {
+      untrimmedURL = null;
+     }
+
     // TODO (bug 754265): this is a temporary solution introduced while
     // waiting for a propert dedicated API.
-    this._result.appendMatch(this._strippedPrefix + url, prefix + url);
+    this._result.appendMatch(this._strippedPrefix + url, untrimmedURL);
 
     // handleCompletion() will cause the result listener to be called, and
     // will display the result in the UI.
@@ -1624,4 +1651,4 @@ urlInlineComplete.prototype = {
 };
 
 let components = [nsPlacesAutoComplete, urlInlineComplete];
-const NSGetFactory = XPCOMUtils.generateNSGetFactory(components);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory(components);

@@ -22,12 +22,9 @@
 const PRUnichar* kAppShellEventId = L"nsAppShell:EventID";
 const PRUnichar* kTaskbarButtonEventId = L"TaskbarButtonCreated";
 
-// The maximum time we allow before forcing a native event callback
-#define NATIVE_EVENT_STARVATION_LIMIT mozilla::TimeDuration::FromSeconds(1)
-
 static UINT sMsgId;
 
-static UINT sTaskbarButtonCreatedMsg;
+UINT sTaskbarButtonCreatedMsg;
 
 /* static */
 UINT nsAppShell::GetTaskbarButtonCreatedMessage() {
@@ -189,7 +186,7 @@ CollectNewLoadedModules()
   while (!done) {
     NS_LossyConvertUTF16toASCII moduleName(module.szModule);
     bool found = false;
-    PRUint32 i;
+    uint32_t i;
     for (i = 0; i < NUM_LOADEDMODULEINFO &&
                 sLoadedModules[i].mStartAddr; ++i) {
       if (sLoadedModules[i].mStartAddr == module.modBaseAddr &&
@@ -211,7 +208,7 @@ CollectNewLoadedModules()
     done = !Module32NextW(hModuleSnap, &module);
   }
 
-  PRUint32 i;
+  uint32_t i;
   for (i = 0; i < NUM_LOADEDMODULEINFO &&
               sLoadedModules[i].mStartAddr; ++i) {}
 
@@ -234,12 +231,18 @@ nsAppShell::Run(void)
   mozilla::widget::StopAudioSession();
 
   // Don't forget to null this out!
-  sLoadedModules = nsnull;
+  sLoadedModules = nullptr;
 
   return rv;
 }
 
 #endif
+
+NS_IMETHODIMP
+nsAppShell::Exit(void)
+{
+  return nsBaseAppShell::Exit();
+}
 
 void
 nsAppShell::DoProcessMoreGeckoEvents()
@@ -268,7 +271,7 @@ nsAppShell::DoProcessMoreGeckoEvents()
   // if we need it, which insures NS_ProcessPendingEvents gets called and all
   // gecko events get processed.
   if (mEventloopNestingLevel < 2) {
-    OnDispatchedEvent(nsnull);
+    OnDispatchedEvent(nullptr);
     mNativeCallbackPending = false;
   } else {
     mNativeCallbackPending = true;

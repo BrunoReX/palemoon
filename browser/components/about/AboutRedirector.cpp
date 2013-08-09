@@ -17,7 +17,7 @@ NS_IMPL_ISUPPORTS1(AboutRedirector, nsIAboutModule)
 struct RedirEntry {
   const char* id;
   const char* url;
-  PRUint32 flags;  // See nsIAboutModule.  The URI_SAFE_FOR_UNTRUSTED_CONTENT
+  uint32_t flags;  // See nsIAboutModule.  The URI_SAFE_FOR_UNTRUSTED_CONTENT
                    // flag does double duty here -- if it's not set, we don't
                    // drop chrome privileges.
 };
@@ -34,13 +34,16 @@ struct RedirEntry {
  */
 static RedirEntry kRedirMap[] = {
 #ifdef MOZ_SAFE_BROWSING
-  { "blocked", "chrome://browser/content/safebrowsing/blockedSite.xhtml",
+  { "blocked", "chrome://browser/content/blockedSite.xhtml",
     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
     nsIAboutModule::ALLOW_SCRIPT |
     nsIAboutModule::HIDE_FROM_ABOUTABOUT },
 #endif
   { "certerror", "chrome://browser/content/certerror/aboutCertError.xhtml",
     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+    nsIAboutModule::ALLOW_SCRIPT |
+    nsIAboutModule::HIDE_FROM_ABOUTABOUT },
+  { "socialerror", "chrome://browser/content/aboutSocialError.xhtml",
     nsIAboutModule::ALLOW_SCRIPT |
     nsIAboutModule::HIDE_FROM_ABOUTABOUT },
   { "feeds", "chrome://browser/content/feeds/subscribe.xhtml",
@@ -80,13 +83,13 @@ static RedirEntry kRedirMap[] = {
 };
 static const int kRedirTotal = NS_ARRAY_LENGTH(kRedirMap);
 
-static nsCAutoString
+static nsAutoCString
 GetAboutModuleName(nsIURI *aURI)
 {
-  nsCAutoString path;
+  nsAutoCString path;
   aURI->GetPath(path);
 
-  PRInt32 f = path.FindChar('#');
+  int32_t f = path.FindChar('#');
   if (f >= 0)
     path.SetLength(f);
 
@@ -104,7 +107,7 @@ AboutRedirector::NewChannel(nsIURI *aURI, nsIChannel **result)
   NS_ENSURE_ARG_POINTER(aURI);
   NS_ASSERTION(result, "must not be null");
 
-  nsCAutoString path = GetAboutModuleName(aURI);
+  nsAutoCString path = GetAboutModuleName(aURI);
 
   nsresult rv;
   nsCOMPtr<nsIIOService> ioService = do_GetIOService(&rv);
@@ -114,23 +117,31 @@ AboutRedirector::NewChannel(nsIURI *aURI, nsIChannel **result)
     if (!strcmp(path.get(), kRedirMap[i].id)) {
       nsCOMPtr<nsIChannel> tempChannel;
       rv = ioService->NewChannel(nsDependentCString(kRedirMap[i].url),
-                                 nsnull, nsnull, getter_AddRefs(tempChannel));
+                                 nullptr, nullptr, getter_AddRefs(tempChannel));
       NS_ENSURE_SUCCESS(rv, rv);
 
       tempChannel->SetOriginalURI(aURI);
 
       // Keep the page from getting unnecessary privileges unless it needs them
       if (kRedirMap[i].flags & nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT) {
-        nsCOMPtr<nsIScriptSecurityManager> securityManager =
-          do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID, &rv);
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        nsCOMPtr<nsIPrincipal> principal;
-        rv = securityManager->GetCodebasePrincipal(aURI, getter_AddRefs(principal));
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        rv = tempChannel->SetOwner(principal);
-        NS_ENSURE_SUCCESS(rv, rv);
+        if (path.EqualsLiteral("feeds")) {
+          nsCOMPtr<nsIScriptSecurityManager> securityManager =
+            do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID, &rv);
+          NS_ENSURE_SUCCESS(rv, rv);
+  
+          nsCOMPtr<nsIPrincipal> principal;
+          rv = securityManager->GetNoAppCodebasePrincipal(aURI, getter_AddRefs(principal));
+          NS_ENSURE_SUCCESS(rv, rv);
+  
+          rv = tempChannel->SetOwner(principal);
+        }
+        else {
+          // Setting the owner to null means that we'll go through the normal
+          // path in GetChannelPrincipal and create a codebase principal based
+          // on the channel's originalURI
+          rv = tempChannel->SetOwner(nullptr);
+          NS_ENSURE_SUCCESS(rv, rv);
+        }
       }
 
       NS_ADDREF(*result = tempChannel);
@@ -142,11 +153,11 @@ AboutRedirector::NewChannel(nsIURI *aURI, nsIChannel **result)
 }
 
 NS_IMETHODIMP
-AboutRedirector::GetURIFlags(nsIURI *aURI, PRUint32 *result)
+AboutRedirector::GetURIFlags(nsIURI *aURI, uint32_t *result)
 {
   NS_ENSURE_ARG_POINTER(aURI);
 
-  nsCAutoString name = GetAboutModuleName(aURI);
+  nsAutoCString name = GetAboutModuleName(aURI);
 
   for (int i = 0; i < kRedirTotal; i++) {
     if (name.Equals(kRedirMap[i].id)) {
@@ -162,7 +173,7 @@ nsresult
 AboutRedirector::Create(nsISupports *aOuter, REFNSIID aIID, void **result)
 {
   AboutRedirector* about = new AboutRedirector();
-  if (about == nsnull)
+  if (about == nullptr)
     return NS_ERROR_OUT_OF_MEMORY;
   NS_ADDREF(about);
   nsresult rv = about->QueryInterface(aIID, result);

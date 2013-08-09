@@ -39,6 +39,7 @@ struct VersionFixture : public JSAPITest
         JS_SetOptions(cx, JS_GetOptions(cx) | JSOPTION_ALLOW_XML);
         callbackData = this;
         captured = JSVERSION_UNKNOWN;
+        js::RootedObject global(cx, JS_GetGlobalObject(cx));
         return JS_DefineFunction(cx, global, "checkVersionHasMoarXML", CheckVersionHasMoarXML, 0, 0) &&
                JS_DefineFunction(cx, global, "disableMoarXMLOption", DisableMoarXMLOption, 0, 0) &&
                JS_DefineFunction(cx, global, "callSetVersion17", CallSetVersion17, 0, 0) &&
@@ -51,6 +52,7 @@ struct VersionFixture : public JSAPITest
     }
 
     JSScript *fakeScript(const char *contents, size_t length) {
+        js::RootedObject global(cx, JS_GetGlobalObject(cx));
         return JS_CompileScript(cx, global, contents, length, "<test>", 1);
     }
 
@@ -98,6 +100,7 @@ struct VersionFixture : public JSAPITest
     bool evalVersion(const jschar *chars, size_t len, JSVersion version) {
         CHECK(JS_GetVersion(cx) != version);
         jsval rval;
+        js::RootedObject global(cx, JS_GetGlobalObject(cx));
         CHECK(JS_EvaluateUCScriptForPrincipalsVersion(
                 cx, global, NULL, chars, len, "<test>", 0, &rval, version));
         return true;
@@ -159,11 +162,9 @@ EvalScriptVersion16(JSContext *cx, unsigned argc, jsval *vp)
     JS_ASSERT(argc == 1);
     jsval *argv = JS_ARGV(cx, vp);
     JS_ASSERT(JSVAL_IS_STRING(argv[0]));
-    JSString *str = JSVAL_TO_STRING(argv[0]);
-    const jschar *chars = str->getChars(cx);
-    JS_ASSERT(chars);
-    size_t len = str->length();
-    return callbackData->evalVersion(chars, len, JSVERSION_1_6);
+    JSStableString *str = JSVAL_TO_STRING(argv[0])->ensureStable(cx);
+    JS_ASSERT(str);
+    return callbackData->evalVersion(str->chars().get(), str->length(), JSVERSION_1_6);
 }
 
 JSBool

@@ -6,7 +6,7 @@
 #include "nsResourceSet.h"
 
 nsResourceSet::nsResourceSet(const nsResourceSet& aResourceSet)
-    : mResources(nsnull),
+    : mResources(nullptr),
       mCount(0),
       mCapacity(0)
 {
@@ -46,7 +46,7 @@ nsResourceSet::Clear()
 nsresult
 nsResourceSet::Add(nsIRDFResource* aResource)
 {
-    NS_PRECONDITION(aResource != nsnull, "null ptr");
+    NS_PRECONDITION(aResource != nullptr, "null ptr");
     if (! aResource)
         return NS_ERROR_NULL_POINTER;
 
@@ -54,12 +54,12 @@ nsResourceSet::Add(nsIRDFResource* aResource)
         return NS_OK;
 
     if (mCount >= mCapacity) {
-        PRInt32 capacity = mCapacity + 4;
+        int32_t capacity = mCapacity + 4;
         nsIRDFResource** resources = new nsIRDFResource*[capacity];
         if (! resources)
             return NS_ERROR_OUT_OF_MEMORY;
 
-        for (PRInt32 i = mCount - 1; i >= 0; --i)
+        for (int32_t i = mCount - 1; i >= 0; --i)
             resources[i] = mResources[i];
 
         delete[] mResources;
@@ -98,7 +98,7 @@ nsResourceSet::Remove(nsIRDFResource* aProperty)
 bool
 nsResourceSet::Contains(nsIRDFResource* aResource) const
 {
-    for (PRInt32 i = mCount - 1; i >= 0; --i) {
+    for (int32_t i = mCount - 1; i >= 0; --i) {
         if (mResources[i] == aResource)
             return true;
     }

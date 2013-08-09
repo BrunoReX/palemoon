@@ -6,8 +6,7 @@
 Cu.import("resource://services-common/rest.js");
 Cu.import("resource://services-common/utils.js");
 
-// TODO enable once build infra supports testing modules.
-//Cu.import("resource://testing-common/services-common/aitcserver.js");
+Cu.import("resource://testing-common/services-common/aitcserver.js");
 
 function run_test() {
   initTestLogging("Trace");
@@ -159,11 +158,33 @@ add_test(function test_invalid_request_method() {
       allowed.add(method);
     }
 
-    do_check_eq(allowed.size(), 3);
+    do_check_eq(allowed.size, 3);
     for (let method of ["GET", "PUT", "DELETE"]) {
       do_check_true(allowed.has(method));
     }
 
-    run_next_test();
+    server.stop(run_next_test);
+  });
+});
+add_test(function test_respond_with_mock_status() {
+  let username = "123"
+  let server = get_server_with_user(username);
+  server.mockStatus = {
+    code: 405,
+    method: "Method Not Allowed"
+  };
+  let request = new RESTRequest(server.url);
+  request.dispatch("GET", null, function onComplete(error){
+    do_check_eq(this.response.status, 405);
+    
+    server.mockStatus = {
+      code: 399,
+      method: "Self Destruct"
+    };
+    let request2 = new RESTRequest(server.url);
+    request2.dispatch("GET", null, function onComplete(error){
+      do_check_eq(this.response.status, 399);
+      server.stop(run_next_test);
+    });
   });
 });

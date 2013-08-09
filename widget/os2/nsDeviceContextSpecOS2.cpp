@@ -20,7 +20,7 @@
 
 #include "nsOS2Uni.h"
 
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsIFileStreams.h"
 #include "gfxPDFSurface.h"
@@ -47,9 +47,9 @@ public:
   void      FreeGlobalPrinters();
   nsresult  InitializeGlobalPrinters();
 
-  bool      PrintersAreAllocated()       { return mGlobalPrinterList != nsnull; }
-  PRUint32  GetNumPrinters()             { return mGlobalNumPrinters; }
-  nsString* GetStringAt(PRInt32 aInx)    { return &mGlobalPrinterList->ElementAt(aInx); }
+  bool      PrintersAreAllocated()       { return mGlobalPrinterList != nullptr; }
+  uint32_t  GetNumPrinters()             { return mGlobalNumPrinters; }
+  nsString* GetStringAt(int32_t aInx)    { return &mGlobalPrinterList->ElementAt(aInx); }
   void      GetDefaultPrinterName(PRUnichar*& aDefaultPrinterName);
 
 protected:
@@ -63,12 +63,12 @@ protected:
 //---------------
 // static members
 GlobalPrinters GlobalPrinters::mGlobalPrinters;
-nsTArray<nsString>* GlobalPrinters::mGlobalPrinterList = nsnull;
+nsTArray<nsString>* GlobalPrinters::mGlobalPrinterList = nullptr;
 ULONG          GlobalPrinters::mGlobalNumPrinters = 0;
 //---------------
 
 nsDeviceContextSpecOS2::nsDeviceContextSpecOS2()
-  : mQueue(nsnull), mPrintDC(nsnull), mPrintingStarted(false)
+  : mQueue(nullptr), mPrintDC(nullptr), mPrintingStarted(false)
 {
 }
 
@@ -92,7 +92,7 @@ void SetupDevModeFromSettings(ULONG printer, nsIPrintSettings* aPrintSettings)
     char* driver = nsDeviceContextSpecOS2::PrnDlg.GetDriverType(printer);
 
     // Setup Orientation
-    PRInt32 orientation;
+    int32_t orientation;
     aPrintSettings->GetOrientation(&orientation);
     if (!strcmp(driver, "LASERJET"))
       pDJP->lType = DJP_ALL;
@@ -105,7 +105,7 @@ void SetupDevModeFromSettings(ULONG printer, nsIPrintSettings* aPrintSettings)
     pDJP++;
 
     // Setup Number of Copies
-    PRInt32 copies;
+    int32_t copies;
     aPrintSettings->GetNumCopies(&copies);
     pDJP->cb = sizeof(DJP_ITEM);
     pDJP->lType = DJP_CURRENT;
@@ -131,7 +131,7 @@ void SetupDevModeFromSettings(ULONG printer, nsIPrintSettings* aPrintSettings)
 
 nsresult nsDeviceContextSpecOS2::SetPrintSettingsFromDevMode(nsIPrintSettings* aPrintSettings, ULONG printer)
 {
-  if (aPrintSettings == nsnull)
+  if (aPrintSettings == nullptr)
     return NS_ERROR_FAILURE;
 
   int bufferSize = 3 * sizeof(DJP_ITEM);
@@ -177,7 +177,7 @@ nsresult nsDeviceContextSpecOS2::SetPrintSettingsFromDevMode(nsIPrintSettings* a
          aPrintSettings->SetOrientation(nsIPrintSettings::kLandscapeOrientation);
       }
       if ((pDJP->ulProperty == DJP_SJ_COPIES) && (pDJP->lType > 0)){
-        aPrintSettings->SetNumCopies(PRInt32(pDJP->ulValue));
+        aPrintSettings->SetNumCopies(int32_t(pDJP->ulValue));
       }
       pDJP = DJP_NEXT_STRUCTP(pDJP);
     }
@@ -204,9 +204,9 @@ NS_IMETHODIMP nsDeviceContextSpecOS2::Init(nsIWidget *aWidget,
  
   if (aPS) {
     bool       tofile         = false;
-    PRInt32    copies         = 1;
-    PRUnichar *printer        = nsnull;
-    PRUnichar *printfile      = nsnull;
+    int32_t    copies         = 1;
+    PRUnichar *printer        = nullptr;
+    PRUnichar *printfile      = nullptr;
 
     mPrintSettings->GetPrinterName(&printer);
     mPrintSettings->GetToFileName(&printfile);
@@ -218,11 +218,11 @@ NS_IMETHODIMP nsDeviceContextSpecOS2::Init(nsIWidget *aWidget,
        return NS_ERROR_FAILURE;
     }
 
-    if (printfile != nsnull) {
+    if (printfile != nullptr) {
       // ToDo: Use LocalEncoding instead of UTF-8 (see bug 73446)
       strcpy(mPrData.path,    NS_ConvertUTF16toUTF8(printfile).get());
     }
-    if (printer != nsnull) 
+    if (printer != nullptr) 
       strcpy(mPrData.printer, NS_ConvertUTF16toUTF8(printer).get());  
 
     if (aIsPrintPreview) 
@@ -248,10 +248,10 @@ NS_IMETHODIMP nsDeviceContextSpecOS2::Init(nsIWidget *aWidget,
        }
     }
 
-    if (printfile != nsnull) 
+    if (printfile != nullptr) 
       nsMemory::Free(printfile);
   
-    if (printer != nsnull) 
+    if (printer != nullptr) 
       nsMemory::Free(printer);
   }
 
@@ -311,7 +311,7 @@ NS_IMETHODIMP nsDeviceContextSpecOS2::GetSurfaceForPrinter(gfxASurface **surface
 
   nsRefPtr<gfxASurface> newSurface;
 
-  PRInt16 outputFormat;
+  int16_t outputFormat;
   mPrintSettings->GetOutputFormat(&outputFormat);
   int printerDest;
   GetDestination(printerDest);
@@ -341,7 +341,7 @@ NS_IMETHODIMP nsDeviceContextSpecOS2::GetSurfaceForPrinter(gfxASurface **surface
                time.tm_hour, time.tm_min, time.tm_sec);
       printName[CCHMAXPATH-1] = '\0';
 
-      nsCAutoString printString(printName);
+      nsAutoCString printString(printName);
       rv = pdfLocation->AppendNative(printString);
       NS_ENSURE_SUCCESS(rv, rv);
       rv = pdfLocation->GetPath(filename);
@@ -358,7 +358,7 @@ NS_IMETHODIMP nsDeviceContextSpecOS2::GetSurfaceForPrinter(gfxASurface **surface
     width  /= TWIPS_PER_POINT_FLOAT;
     height /= TWIPS_PER_POINT_FLOAT;
 
-    nsCOMPtr<nsILocalFile> file = do_CreateInstance("@mozilla.org/file/local;1");
+    nsCOMPtr<nsIFile> file = do_CreateInstance("@mozilla.org/file/local;1");
     rv = file->InitWithPath(filename);
     if (NS_FAILED(rv))
       return rv;
@@ -372,7 +372,7 @@ NS_IMETHODIMP nsDeviceContextSpecOS2::GetSurfaceForPrinter(gfxASurface **surface
   } else {
     int numCopies = 0;
     GetCopies(numCopies);
-    char *filename = nsnull;
+    char *filename = nullptr;
     if (printerDest == printToFile) {
       GetPath(&filename);
     }
@@ -422,7 +422,7 @@ NS_IMETHODIMP nsDeviceContextSpecOS2::GetSurfaceForPrinter(gfxASurface **surface
       gfxOS2Surface(mPrintDC, gfxIntSize(int(ceil(width)), int(ceil(height))));
   }
   if (!newSurface) {
-    *surface = nsnull;
+    *surface = nullptr;
     return NS_ERROR_FAILURE;
   }
   *surface = newSurface;
@@ -436,11 +436,11 @@ char *GetACPString(const PRUnichar* aStr)
 {
    nsString str(aStr);
    if (str.Length() == 0) {
-      return nsnull;
+      return nullptr;
    }
 
    nsAutoCharBuffer buffer;
-   PRInt32 bufLength;
+   int32_t bufLength;
    WideCharToMultiByte(0, PromiseFlatString(str).get(), str.Length(),
                        buffer, bufLength);
    return ToNewCString(nsDependentCString(buffer.Elements()));
@@ -448,8 +448,8 @@ char *GetACPString(const PRUnichar* aStr)
 
 NS_IMETHODIMP nsDeviceContextSpecOS2::BeginDocument(PRUnichar* aTitle,
                                                     PRUnichar* aPrintToFileName,
-                                                    PRInt32 aStartPage,
-                                                    PRInt32 aEndPage)
+                                                    int32_t aStartPage,
+                                                    int32_t aEndPage)
 {
 #ifdef debug_thebes_print
   printf("nsDeviceContextSpecOS2[%#x]::BeginPrinting(%s, %s)\n", (unsigned)this,
@@ -457,7 +457,7 @@ NS_IMETHODIMP nsDeviceContextSpecOS2::BeginDocument(PRUnichar* aTitle,
          NS_LossyConvertUTF16toASCII(nsString(aPrintToFileName)).get());
 #endif
   // don't try to send device escapes for non-native output (like PDF)
-  PRInt16 outputFormat;
+  int16_t outputFormat;
   mPrintSettings->GetOutputFormat(&outputFormat);
   if (outputFormat != nsIPrintSettings::kOutputFormatNative) {
     return NS_OK;
@@ -481,7 +481,7 @@ NS_IMETHODIMP nsDeviceContextSpecOS2::EndDocument()
 {
   // don't try to send device escapes for non-native output (like PDF)
   // but clear the filename to make sure that we don't overwrite it next time
-  PRInt16 outputFormat;
+  int16_t outputFormat;
   mPrintSettings->GetOutputFormat(&outputFormat);
   if (outputFormat != nsIPrintSettings::kOutputFormatNative) {
     mPrintSettings->SetToFileName(NULL);
@@ -500,7 +500,7 @@ NS_IMETHODIMP nsDeviceContextSpecOS2::EndDocument()
 
 NS_IMETHODIMP nsDeviceContextSpecOS2::BeginPage()
 {
-  PRInt16 outputFormat;
+  int16_t outputFormat;
   mPrintSettings->GetOutputFormat(&outputFormat);
   if (outputFormat != nsIPrintSettings::kOutputFormatNative) {
     return NS_OK;
@@ -531,7 +531,7 @@ NS_IMPL_ISUPPORTS1(nsPrinterEnumeratorOS2, nsIPrinterEnumerator)
 NS_IMETHODIMP nsPrinterEnumeratorOS2::GetPrinterNameList(nsIStringEnumerator **aPrinterNameList)
 {
   NS_ENSURE_ARG_POINTER(aPrinterNameList);
-  *aPrinterNameList = nsnull;
+  *aPrinterNameList = nullptr;
 
   nsDeviceContextSpecOS2::PrnDlg.RefreshPrintQueue();
   
@@ -625,26 +625,26 @@ nsresult GlobalPrinters::InitializeGlobalPrinters ()
      return NS_ERROR_OUT_OF_MEMORY;
 
   // don't return on failure, optional feature
-  BOOL prefFailed = (Preferences::GetRootBranch() == nsnull);
+  BOOL prefFailed = (Preferences::GetRootBranch() == nullptr);
 
   for (ULONG i = 0; i < mGlobalNumPrinters; i++) {
     nsXPIDLCString printer;
     nsDeviceContextSpecOS2::PrnDlg.GetPrinter(i, getter_Copies(printer));
 
     nsAutoChar16Buffer printerName;
-    PRInt32 printerNameLength;
+    int32_t printerNameLength;
     nsresult rv = MultiByteToWideChar(0, printer, strlen(printer),
                                       printerName, printerNameLength);
     mGlobalPrinterList->AppendElement(nsDependentString(printerName.Elements()));
 
     // store printer description in prefs for the print dialog
     if (!prefFailed) {
-       nsCAutoString printerDescription;
-       printerDescription = nsCAutoString(nsDeviceContextSpecOS2::PrnDlg.GetPrintDriver(i)->szDeviceName);
+       nsAutoCString printerDescription;
+       printerDescription = nsAutoCString(nsDeviceContextSpecOS2::PrnDlg.GetPrintDriver(i)->szDeviceName);
        printerDescription += " (";
-       printerDescription += nsCAutoString(nsDeviceContextSpecOS2::PrnDlg.GetDriverType(i));
+       printerDescription += nsAutoCString(nsDeviceContextSpecOS2::PrnDlg.GetDriverType(i));
        printerDescription += ")";
-       nsCAutoString prefName("print.printer_");
+       nsAutoCString prefName("print.printer_");
        prefName += printer;
        prefName += ".printer_description";
        Preferences::SetCString(prefName.get(), printerDescription);
@@ -655,7 +655,7 @@ nsresult GlobalPrinters::InitializeGlobalPrinters ()
 
 void GlobalPrinters::GetDefaultPrinterName(PRUnichar*& aDefaultPrinterName)
 {
-  aDefaultPrinterName = nsnull;
+  aDefaultPrinterName = nullptr;
 
   nsresult rv = GlobalPrinters::GetInstance()->InitializeGlobalPrinters();
   if (NS_FAILED(rv)) 
@@ -669,7 +669,7 @@ void GlobalPrinters::GetDefaultPrinterName(PRUnichar*& aDefaultPrinterName)
   nsDeviceContextSpecOS2::PrnDlg.GetPrinter(0, getter_Copies(printer));
 
   nsAutoChar16Buffer printerName;
-  PRInt32 printerNameLength;
+  int32_t printerNameLength;
   MultiByteToWideChar(0, printer, strlen(printer), printerName,
                       printerNameLength);
   aDefaultPrinterName = ToNewUnicode(nsDependentString(printerName.Elements()));
@@ -680,7 +680,7 @@ void GlobalPrinters::GetDefaultPrinterName(PRUnichar*& aDefaultPrinterName)
 void GlobalPrinters::FreeGlobalPrinters()
 {
   delete mGlobalPrinterList;
-  mGlobalPrinterList = nsnull;
+  mGlobalPrinterList = nullptr;
   mGlobalNumPrinters = 0;
 }
 

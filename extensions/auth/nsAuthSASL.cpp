@@ -27,7 +27,7 @@ NS_IMPL_THREADSAFE_ISUPPORTS1(nsAuthSASL, nsIAuthModule)
 
 NS_IMETHODIMP
 nsAuthSASL::Init(const char *serviceName,
-                 PRUint32    serviceFlags,
+                 uint32_t    serviceFlags,
                  const PRUnichar *domain,
                  const PRUnichar *username,
                  const PRUnichar *password)
@@ -57,22 +57,22 @@ nsAuthSASL::Init(const char *serviceName,
     // if we can't create the GSSAPI module, then bail
     NS_ENSURE_SUCCESS(rv, rv);
 
-    mInnerModule->Init(serviceName, serviceFlags, nsnull, nsnull, nsnull);
+    mInnerModule->Init(serviceName, serviceFlags, nullptr, nullptr, nullptr);
 
     return NS_OK;
 }
 
 NS_IMETHODIMP
 nsAuthSASL::GetNextToken(const void *inToken,
-                         PRUint32    inTokenLen,
+                         uint32_t    inTokenLen,
                          void      **outToken,
-                         PRUint32   *outTokenLen)
+                         uint32_t   *outTokenLen)
 {
     nsresult rv;
     void *unwrappedToken;
     char *message;
-    PRUint32 unwrappedTokenLen, messageLen;
-    nsCAutoString userbuf;
+    uint32_t unwrappedTokenLen, messageLen;
+    nsAutoCString userbuf;
     
     if (!mInnerModule) 
         return NS_ERROR_NOT_INITIALIZED;
@@ -133,19 +133,19 @@ nsAuthSASL::GetNextToken(const void *inToken,
 
 NS_IMETHODIMP
 nsAuthSASL::Unwrap(const void *inToken,
-                   PRUint32    inTokenLen,
+                   uint32_t    inTokenLen,
                    void      **outToken,
-                   PRUint32   *outTokenLen)
+                   uint32_t   *outTokenLen)
 {
     return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
 nsAuthSASL::Wrap(const void *inToken,
-                 PRUint32    inTokenLen,
+                 uint32_t    inTokenLen,
                  bool        confidential,
                  void      **outToken,
-                 PRUint32   *outTokenLen)
+                 uint32_t   *outTokenLen)
 {
     return NS_ERROR_NOT_IMPLEMENTED;
 }

@@ -10,9 +10,10 @@
 // Linux headers
 #include <fcntl.h>
 #include <unistd.h>
+#include <dlfcn.h>
 
 // Mozilla headers
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsINIParser.h"
 #include "nsXPCOMGlue.h"
 #include "nsXPCOMPrivate.h"              // for MAXPATHLEN and XPCOM_DLL
@@ -21,6 +22,7 @@
 
 const char kAPP_INI[] = "application.ini";
 const char kWEBAPP_INI[] = "webapp.ini";
+const char kWEBAPP_JSON[] = "webapp.json";
 const char kWEBAPPRT_INI[] = "webapprt.ini";
 const char kWEBAPPRT_PATH[] = "webapprt";
 const char kAPP_ENV_VAR[] = "XUL_APP_FILE";
@@ -28,6 +30,8 @@ const char kAPP_RT[] = "webapprt-stub";
 
 int* pargc;
 char*** pargv;
+char profile[MAXPATHLEN];
+bool isProfileOverridden = false;
 
 XRE_GetFileFromPathType XRE_GetFileFromPath;
 XRE_CreateAppDataType XRE_CreateAppData;
@@ -39,7 +43,7 @@ const nsDynamicFunctionLoad kXULFuncs[] = {
   { "XRE_CreateAppData", (NSFuncPtr*) &XRE_CreateAppData },
   { "XRE_FreeAppData", (NSFuncPtr*) &XRE_FreeAppData },
   { "XRE_main", (NSFuncPtr*) &XRE_main },
-  { nsnull, nsnull }
+  { nullptr, nullptr }
 };
 
 class ScopedLogging
@@ -57,16 +61,16 @@ void SetAllocatedString(const char *&str, const char *newvalue)
     str = NS_strdup(newvalue);
   }
   else {
-    str = nsnull;
+    str = nullptr;
   }
 }
 
 // Function to open a dialog box displaying the message provided
 void ErrorDialog(const char* message)
 {
-  GtkWidget* dialog;
+  gtk_init(pargc, pargv);
 
-  dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE, "%s", message);
+  GtkWidget* dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE, "%s", message);
   gtk_dialog_run(GTK_DIALOG(dialog));
   gtk_widget_destroy(dialog);
 }
@@ -120,10 +124,13 @@ bool CopyFile(const char* inputFile, const char* outputFile)
   return (bytesRead >= 0);
 }
 
-bool GRELoadAndLaunch(const char* firefoxDir, const char* profile)
+bool GRELoadAndLaunch(const char* firefoxDir, bool silentFail)
 {
   char xpcomDllPath[MAXPATHLEN];
   snprintf(xpcomDllPath, MAXPATHLEN, "%s/%s", firefoxDir, XPCOM_DLL);
+
+  if (silentFail && access(xpcomDllPath, F_OK) != 0)
+    return false;
 
   if (NS_FAILED(XPCOMGlueStartup(xpcomDllPath))) {
     ErrorDialog("Couldn't load the XPCOM library");
@@ -148,7 +155,7 @@ bool GRELoadAndLaunch(const char* firefoxDir, const char* profile)
     snprintf(rtIniPath, MAXPATHLEN, "%s/%s", rtPath, kWEBAPPRT_INI);
 
     // Load the runtime's INI from its path
-    nsCOMPtr<nsILocalFile> rtINI;
+    nsCOMPtr<nsIFile> rtINI;
     if (NS_FAILED(XRE_GetFileFromPath(rtIniPath, getter_AddRefs(rtINI)))) {
       ErrorDialog("Couldn't load the runtime INI");
       return false;
@@ -167,16 +174,23 @@ bool GRELoadAndLaunch(const char* firefoxDir, const char* profile)
       return false;
     }
 
-    SetAllocatedString(webShellAppData->profile, profile);
-    SetAllocatedString(webShellAppData->name, profile);
+    if (!isProfileOverridden) {
+      SetAllocatedString(webShellAppData->profile, profile);
+      // nsXREAppData::name is used for the class name part of the WM_CLASS
+      // property. Set it so that the DE can match our window to the correct
+      // launcher.
+      char programClass[MAXPATHLEN];
+      snprintf(programClass, MAXPATHLEN, "owa-%s", profile);
+      SetAllocatedString(webShellAppData->name, programClass);
+    }
 
-    nsCOMPtr<nsILocalFile> directory;
+    nsCOMPtr<nsIFile> directory;
     if (NS_FAILED(XRE_GetFileFromPath(rtPath, getter_AddRefs(directory)))) {
       ErrorDialog("Couldn't open runtime directory");
       return false;
     }
 
-    nsCOMPtr<nsILocalFile> xreDir;
+    nsCOMPtr<nsIFile> xreDir;
     if (NS_FAILED(XRE_GetFileFromPath(firefoxDir, getter_AddRefs(xreDir)))) {
       ErrorDialog("Couldn't open XRE directory");
       return false;
@@ -214,10 +228,84 @@ void CopyAndRelaunch(const char* firefoxDir, const char* curExePath)
   ErrorDialog("Couldn't execute the new webapprt-stub executable");
 }
 
+void RemoveApplication(nsINIParser& parser, const char* curExeDir, const char* profile)  {
+  if (!isProfileOverridden) {
+    // Remove the desktop entry file.
+    char desktopEntryFilePath[MAXPATHLEN];
+
+    char* dataDir = getenv("XDG_DATA_HOME");
+
+    if (dataDir && *dataDir) {
+      snprintf(desktopEntryFilePath, MAXPATHLEN, "%s/applications/owa-%s.desktop", dataDir, profile);
+    } else {
+      char* home = getenv("HOME");
+      snprintf(desktopEntryFilePath, MAXPATHLEN, "%s/.local/share/applications/owa-%s.desktop", home, profile);
+    }
+
+    unlink(desktopEntryFilePath);
+  }
+
+  // Remove the files from the installation directory.
+  char webAppIniPath[MAXPATHLEN];
+  snprintf(webAppIniPath, MAXPATHLEN, "%s/%s", curExeDir, kWEBAPP_INI);
+  unlink(webAppIniPath);
+
+  char curExePath[MAXPATHLEN];
+  snprintf(curExePath, MAXPATHLEN, "%s/%s", curExeDir, kAPP_RT);
+  unlink(curExePath);
+
+  char webAppJsonPath[MAXPATHLEN];
+  snprintf(webAppJsonPath, MAXPATHLEN, "%s/%s", curExeDir, kWEBAPP_JSON);
+  unlink(webAppJsonPath);
+
+  char iconPath[MAXPATHLEN];
+  snprintf(iconPath, MAXPATHLEN, "%s/icon.png", curExeDir);
+  unlink(iconPath);
+
+  char appName[MAXPATHLEN];
+  if (NS_FAILED(parser.GetString("Webapp", "Name", appName, MAXPATHLEN))) {
+    strcpy(appName, profile);
+  }
+
+  char uninstallMsg[MAXPATHLEN];
+  if (NS_SUCCEEDED(parser.GetString("Webapp", "UninstallMsg", uninstallMsg, MAXPATHLEN))) {
+    /**
+     * The only difference between libnotify.so.4 and libnotify.so.1 for these symbols
+     * is that notify_notification_new takes three arguments in libnotify.so.4 and
+     * four in libnotify.so.1.
+     * Passing the fourth argument as NULL is binary compatible.
+     */
+    typedef void  (*notify_init_t)(const char*);
+    typedef void* (*notify_notification_new_t)(const char*, const char*, const char*, const char*);
+    typedef void  (*notify_notification_show_t)(void*, void**);
+
+    void *handle = dlopen("libnotify.so.4", RTLD_LAZY);
+    if (!handle) {
+      handle = dlopen("libnotify.so.1", RTLD_LAZY);
+      if (!handle)
+        return;
+    }
+
+    notify_init_t nn_init = (notify_init_t)(uintptr_t)dlsym(handle, "notify_init");
+    notify_notification_new_t nn_new = (notify_notification_new_t)(uintptr_t)dlsym(handle, "notify_notification_new");
+    notify_notification_show_t nn_show = (notify_notification_show_t)(uintptr_t)dlsym(handle, "notify_notification_show");
+    if (!nn_init || !nn_new || !nn_show) {
+      dlclose(handle);
+      return;
+    }
+
+    nn_init(appName);
+
+    void* n = nn_new(uninstallMsg, NULL, "dialog-information", NULL);
+
+    nn_show(n, NULL);
+
+    dlclose(handle);
+  }
+}
+
 int main(int argc, char *argv[])
 {
-  gtk_init(&argc, &argv);
-
   pargc = &argc;
   pargv = &argv;
 
@@ -227,10 +315,28 @@ int main(int argc, char *argv[])
     ErrorDialog("Couldn't read current executable path");
     return 255;
   }
-
-  // Set up webAppIniPath with path to webapp.ini
   char curExeDir[MAXPATHLEN];
   GetDirFromPath(curExeDir, curExePath);
+
+  bool removeApp = false;
+  for (int i = 1; i < argc; i++) {
+    if (!strcmp(argv[i], "-profile")) {
+      isProfileOverridden = true;
+    }
+    else if (!strcmp(argv[i], "-remove")) {
+      removeApp = true;
+    }
+  }
+
+  char firefoxDir[MAXPATHLEN];
+
+  // Check if Firefox is in the same directory as the webapp runtime.
+  // This is the case for webapprt chrome and content tests.
+  if (GRELoadAndLaunch(curExeDir, true)) {
+    return 0;
+  }
+
+  // Set up webAppIniPath with path to webapp.ini
   char webAppIniPath[MAXPATHLEN];
   snprintf(webAppIniPath, MAXPATHLEN, "%s/%s", curExeDir, kWEBAPP_INI);
 
@@ -248,14 +354,17 @@ int main(int argc, char *argv[])
   }
 
   // Get profile dir from webapp.ini
-  char profile[MAXPATHLEN];
   if (NS_FAILED(parser.GetString("Webapp", "Profile", profile, MAXPATHLEN))) {
     ErrorDialog("Couldn't retrieve profile from web app INI file");
     return 255;
   }
 
+  if (removeApp) {
+    RemoveApplication(parser, curExeDir, profile);
+    return 0;
+  }
+
   // Get the location of Firefox from our webapp.ini
-  char firefoxDir[MAXPATHLEN];
   if (NS_FAILED(parser.GetString("WebappRT", "InstallDir", firefoxDir, MAXPATHLEN))) {
     ErrorDialog("Couldn't find your Firefox install directory.");
     return 255;
@@ -267,7 +376,8 @@ int main(int argc, char *argv[])
   snprintf(appIniPath, MAXPATHLEN, "%s/%s", firefoxDir, kAPP_INI);
 
   if (NS_FAILED(parser.Init(appIniPath))) {
-    ErrorDialog("Couldn't open Firefox application.ini");
+    ErrorDialog("This app requires that Firefox version 16 or above is installed."
+                " Firefox 16+ has not been detected.");
     return 255;
   }
 
@@ -280,7 +390,7 @@ int main(int argc, char *argv[])
 
   // If WebAppRT version == Firefox version, load XUL and execute the application
   if (!strcmp(buildid, NS_STRINGIFY(GRE_BUILDID))) {
-    if (GRELoadAndLaunch(firefoxDir, profile))
+    if (GRELoadAndLaunch(firefoxDir, false))
       return 0;
   }
   // Else, copy WebAppRT from Firefox installation and re-execute the process

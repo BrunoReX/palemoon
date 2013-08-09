@@ -80,7 +80,9 @@ public:
 
   TiledTexture GetPlaceholderTile() const { return TiledTexture(); }
 
-  const gfxSize& GetResolution() { return mResolution; }
+  // Stores the absolute resolution of the containing frame, calculated
+  // by the sum of the resolutions of all parent layers' FrameMetrics.
+  const gfxSize& GetFrameResolution() { return mFrameResolution; }
 
 protected:
   TiledTexture ValidateTile(TiledTexture aTile,
@@ -96,7 +98,7 @@ protected:
 private:
   nsRefPtr<gl::GLContext> mContext;
   const BasicTiledLayerBuffer* mMainMemoryTiledBuffer;
-  gfxSize mResolution;
+  gfxSize mFrameResolution;
 
   void GetFormatAndTileForImageFormat(gfxASurface::gfxImageFormat aFormat,
                                       GLenum& aOutFormat,
@@ -129,21 +131,35 @@ public:
   }
   void PaintedTiledLayerBuffer(const BasicTiledLayerBuffer* mTiledBuffer);
   void ProcessUploadQueue();
+  void ProcessLowPrecisionUploadQueue();
+  const nsIntRegion& GetValidLowPrecisionRegion() const { return mLowPrecisionVideoMemoryTiledBuffer.GetValidRegion(); }
+
+  void MemoryPressure();
 
   // Renders a single given tile.
-  void RenderTile(TiledTexture aTile,
+  void RenderTile(const TiledTexture& aTile,
                   const gfx3DMatrix& aTransform,
                   const nsIntPoint& aOffset,
-                  nsIntRegion aScreenRegion,
-                  nsIntPoint aTextureOffset,
-                  nsIntSize aTextureBounds,
+                  const nsIntRegion& aScreenRegion,
+                  const nsIntPoint& aTextureOffset,
+                  const nsIntSize& aTextureBounds,
                   Layer* aMaskLayer);
 
 private:
+  void RenderLayerBuffer(TiledLayerBufferOGL& aLayerBuffer,
+                         const nsIntRegion& aValidRegion,
+                         const nsIntPoint& aOffset,
+                         const nsIntRegion& aMaskRegion);
+
   nsIntRegion                  mRegionToUpload;
+  nsIntRegion                  mLowPrecisionRegionToUpload;
   BasicTiledLayerBuffer        mMainMemoryTiledBuffer;
+  BasicTiledLayerBuffer        mLowPrecisionMainMemoryTiledBuffer;
   TiledLayerBufferOGL          mVideoMemoryTiledBuffer;
+  TiledLayerBufferOGL          mLowPrecisionVideoMemoryTiledBuffer;
   ReusableTileStoreOGL*        mReusableTileStore;
+  bool                         mPendingUpload : 1;
+  bool                         mPendingLowPrecisionUpload : 1;
 };
 
 } // layers

@@ -14,6 +14,8 @@
 #include "nsIDOMSVGTransformList.h"
 #include "nsTArray.h"
 #include "SVGTransformList.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/ErrorResult.h"
 
 class nsIDOMSVGTransform;
 class nsSVGElement;
@@ -30,8 +32,8 @@ class DOMSVGTransform;
  *
  * See the architecture comment in DOMSVGAnimatedTransformList.h.
  */
-class DOMSVGTransformList : public nsIDOMSVGTransformList,
-                            public nsWrapperCache
+class DOMSVGTransformList MOZ_FINAL : public nsIDOMSVGTransformList,
+                                      public nsWrapperCache
 {
   friend class DOMSVGTransform;
 
@@ -59,7 +61,7 @@ public:
     // unlinked us using the cycle collector code, then that has already
     // happened, and mAList is null.
     if (mAList) {
-      ( IsAnimValList() ? mAList->mAnimVal : mAList->mBaseVal ) = nsnull;
+      ( IsAnimValList() ? mAList->mAnimVal : mAList->mBaseVal ) = nullptr;
     }
   }
 
@@ -75,7 +77,7 @@ public:
    * This will normally be the same as InternalList().Length(), except if we've
    * hit OOM in which case our length will be zero.
    */
-  PRUint32 Length() const {
+  uint32_t LengthNoFlush() const {
     NS_ABORT_IF_FALSE(mItems.IsEmpty() ||
       mItems.Length() == InternalList().Length(),
       "DOM wrapper's list length is out of sync");
@@ -83,7 +85,49 @@ public:
   }
 
   /// Called to notify us to synchronize our length and detach excess items.
-  void InternalListLengthWillChange(PRUint32 aNewLength);
+  void InternalListLengthWillChange(uint32_t aNewLength);
+
+  uint32_t NumberOfItems() const
+  {
+    if (IsAnimValList()) {
+      Element()->FlushAnimations();
+    }
+    return LengthNoFlush();
+  }
+  void Clear(ErrorResult& error);
+  already_AddRefed<nsIDOMSVGTransform> Initialize(nsIDOMSVGTransform *newItem,
+                                                  ErrorResult& error);
+  nsIDOMSVGTransform* GetItem(uint32_t index, ErrorResult& error)
+  {
+    bool found;
+    nsIDOMSVGTransform* item = IndexedGetter(index, found, error);
+    if (!found) {
+      error.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+    }
+    return item;
+  }
+  nsIDOMSVGTransform* IndexedGetter(uint32_t index, bool& found,
+                                    ErrorResult& error);
+  already_AddRefed<nsIDOMSVGTransform> InsertItemBefore(nsIDOMSVGTransform *newItem,
+                                                        uint32_t index,
+                                                        ErrorResult& error);
+  already_AddRefed<nsIDOMSVGTransform> ReplaceItem(nsIDOMSVGTransform *newItem,
+                                                   uint32_t index,
+                                                   ErrorResult& error);
+  already_AddRefed<nsIDOMSVGTransform> RemoveItem(uint32_t index,
+                                                  ErrorResult& error);
+  already_AddRefed<nsIDOMSVGTransform> AppendItem(nsIDOMSVGTransform *newItem,
+                                                  ErrorResult& error)
+  {
+    return InsertItemBefore(newItem, LengthNoFlush(), error);
+  }
+  already_AddRefed<nsIDOMSVGTransform>
+    CreateSVGTransformFromMatrix(nsIDOMSVGMatrix *matrix, ErrorResult& error);
+  already_AddRefed<nsIDOMSVGTransform> Consolidate(ErrorResult& error);
+  uint32_t Length() const
+  {
+    return NumberOfItems();
+  }
 
 private:
 
@@ -109,10 +153,10 @@ private:
   SVGTransformList& InternalList() const;
 
   /// Creates a DOMSVGTransform for aIndex, if it doesn't already exist.
-  void EnsureItemAt(PRUint32 aIndex);
+  void EnsureItemAt(uint32_t aIndex);
 
-  void MaybeInsertNullInAnimValListAt(PRUint32 aIndex);
-  void MaybeRemoveItemFromAnimValListAt(PRUint32 aIndex);
+  void MaybeInsertNullInAnimValListAt(uint32_t aIndex);
+  void MaybeRemoveItemFromAnimValListAt(uint32_t aIndex);
 
   // Weak refs to our DOMSVGTransform items. The items are friends and take care
   // of clearing our pointer to them when they die.

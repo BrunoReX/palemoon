@@ -3,7 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH = ../..
+DEPTH = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir = @srcdir@
 VPATH = @srcdir@
@@ -56,12 +56,14 @@ EXPORTS = \
   nsDocShellLoadTypes.h \
   nsILinkHandler.h \
   nsIWebShellServices.h \
+  SerializedLoadContext.h \
   $(NULL)
 
 EXPORTS_NAMESPACES = mozilla
 
 EXPORTS_mozilla = \
   IHistory.h \
+  LoadContext.h \
   $(NULL)
 
 CPPSRCS = \
@@ -75,6 +77,8 @@ CPPSRCS = \
   nsWebNavigationInfo.cpp \
   nsAboutRedirector.cpp \
   nsDownloadHistory.cpp \
+  SerializedLoadContext.cpp \
+  LoadContext.cpp \
   $(NULL)
 
 # we don't want the shared lib, but we want to force the creation of a
@@ -90,4 +94,7 @@ LOCAL_INCLUDES += \
   -I$(topsrcdir)/dom/base \
   -I$(topsrcdir)/layout/base \
   -I$(topsrcdir)/xpcom/ds \
+  -I$(topsrcdir)/layout/generic \
+  -I$(topsrcdir)/layout/xul/base/src \
+  -I$(topsrcdir)/content/base/src \
   $(NULL)

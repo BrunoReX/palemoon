@@ -84,6 +84,9 @@ public:
    */
   static void StartUp();
 
+  static PImageBridgeChild*
+  StartUpInChildProcess(Transport* aTransport, ProcessId aOtherProcess);
+
   /**
    * Destroys the image bridge by calling DestroyBridge, and destroys the 
    * ImageBridge's thread.
@@ -142,7 +145,7 @@ public:
   MessageLoop * GetMessageLoop() const;
 
   // overriden from PImageBridgeChild
-  PImageContainerChild* AllocPImageContainer(PRUint64*);
+  PImageContainerChild* AllocPImageContainer(uint64_t*);
   // overriden from PImageBridgeChild
   bool DeallocPImageContainer(PImageContainerChild* aImgContainerChild);
 
@@ -159,6 +162,52 @@ public:
    * Must be called from the ImageBridgeChild thread.
    */
   already_AddRefed<ImageContainerChild> CreateImageContainerChildNow();
+
+  virtual PGrallocBufferChild*
+  AllocPGrallocBuffer(const gfxIntSize&, const uint32_t&, const uint32_t&,
+                      MaybeMagicGrallocBufferHandle*) MOZ_OVERRIDE;
+
+  virtual bool
+  DeallocPGrallocBuffer(PGrallocBufferChild* actor) MOZ_OVERRIDE;
+
+  /**
+   * Allocate a gralloc SurfaceDescriptor remotely.
+   */
+  bool
+  AllocSurfaceDescriptorGralloc(const gfxIntSize& aSize,
+                                const uint32_t& aFormat,
+                                const uint32_t& aUsage,
+                                SurfaceDescriptor* aBuffer);
+
+  /**
+   * Part of the allocation of gralloc SurfaceDescriptor that is
+   * executed on the ImageBridgeChild thread after invoking
+   * AllocSurfaceDescriptorGralloc.
+   *
+   * Must be called from the ImageBridgeChild thread.
+   */
+  bool
+  AllocSurfaceDescriptorGrallocNow(const gfxIntSize& aSize,
+                                   const uint32_t& aContent,
+                                   const uint32_t& aUsage,
+                                   SurfaceDescriptor* aBuffer);
+
+  /**
+   * Deallocate a remotely allocated gralloc buffer.
+   */
+  bool
+  DeallocSurfaceDescriptorGralloc(const SurfaceDescriptor& aBuffer);
+
+  /**
+   * Part of the deallocation of gralloc SurfaceDescriptor that is
+   * executed on the ImageBridgeChild thread after invoking
+   * DeallocSurfaceDescriptorGralloc.
+   *
+   * Must be called from the ImageBridgeChild thread.
+   */
+  bool
+  DeallocSurfaceDescriptorGrallocNow(const SurfaceDescriptor& aBuffer);
+
 protected:
   
   ImageBridgeChild() {};

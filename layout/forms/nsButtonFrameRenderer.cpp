@@ -117,10 +117,18 @@ public:
   }
   virtual void Paint(nsDisplayListBuilder* aBuilder,
                      nsRenderingContext* aCtx);
+  virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap);
   NS_DISPLAY_DECL_NAME("ButtonBorderBackground", TYPE_BUTTON_BORDER_BACKGROUND)
 private:
   nsButtonFrameRenderer* mBFR;
 };
+
+nsRect
+nsDisplayButtonBorderBackground::GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap) {
+  *aSnap = false;
+  return aBuilder->IsForEventDelivery() ? nsRect(ToReferenceFrame(), mFrame->GetSize())
+          : mFrame->GetVisualOverflowRectRelativeToSelf() + ToReferenceFrame();
+}
 
 class nsDisplayButtonForeground : public nsDisplayItem {
 public:
@@ -226,7 +234,7 @@ nsButtonFrameRenderer::PaintBorderAndBackground(nsPresContext* aPresContext,
           nsRenderingContext& aRenderingContext,
           const nsRect& aDirtyRect,
           const nsRect& aRect,
-          PRUint32 aBGFlags)
+          uint32_t aBGFlags)
 
 {
   // get the button rect this is inside the focus and outline rects
@@ -352,7 +360,7 @@ nsButtonFrameRenderer::ReResolveStyles(nsPresContext* aPresContext)
 }
 
 nsStyleContext*
-nsButtonFrameRenderer::GetStyleContext(PRInt32 aIndex) const
+nsButtonFrameRenderer::GetStyleContext(int32_t aIndex) const
 {
   switch (aIndex) {
   case NS_BUTTON_RENDERER_FOCUS_INNER_CONTEXT_INDEX:
@@ -360,12 +368,12 @@ nsButtonFrameRenderer::GetStyleContext(PRInt32 aIndex) const
   case NS_BUTTON_RENDERER_FOCUS_OUTER_CONTEXT_INDEX:
     return mOuterFocusStyle;
   default:
-    return nsnull;
+    return nullptr;
   }
 }
 
 void 
-nsButtonFrameRenderer::SetStyleContext(PRInt32 aIndex, nsStyleContext* aStyleContext)
+nsButtonFrameRenderer::SetStyleContext(int32_t aIndex, nsStyleContext* aStyleContext)
 {
   switch (aIndex) {
   case NS_BUTTON_RENDERER_FOCUS_INNER_CONTEXT_INDEX:

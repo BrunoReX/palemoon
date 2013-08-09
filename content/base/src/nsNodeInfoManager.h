@@ -10,25 +10,24 @@
 #ifndef nsNodeInfoManager_h___
 #define nsNodeInfoManager_h___
 
-#include "nsCOMPtr.h" // for already_AddRefed
-#include "plhash.h"
-#include "nsCycleCollectionParticipant.h"
+#include "mozilla/Attributes.h"           // for MOZ_FINAL
+#include "nsCOMPtr.h"                     // for member
+#include "nsCycleCollectionParticipant.h" // for NS_DECL_CYCLE_*
+#include "plhash.h"                       // for typedef PLHashNumber
 
+class nsAString;
+class nsBindingManager;
 class nsIAtom;
 class nsIDocument;
-class nsINodeInfo;
-class nsNodeInfo;
-class nsIPrincipal;
-class nsIURI;
-class nsDocument;
 class nsIDOMDocumentType;
-class nsIDOMDocument;
-class nsAString;
-class nsIDOMNamedNodeMap;
-class nsXULPrototypeDocument;
-class nsBindingManager;
+class nsINodeInfo;
+class nsIPrincipal;
+class nsNodeInfo;
+struct PLHashEntry;
+struct PLHashTable;
+template<class T> struct already_AddRefed;
 
-class nsNodeInfoManager
+class nsNodeInfoManager MOZ_FINAL
 {
 public:
   nsNodeInfoManager();
@@ -36,7 +35,7 @@ public:
 
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(nsNodeInfoManager)
 
-  NS_INLINE_DECL_REFCOUNTING(nsNodeInfoManager)
+  NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(nsNodeInfoManager)
 
   /**
    * Initialize the nodeinfo manager with a document.
@@ -53,14 +52,14 @@ public:
    * Methods for creating nodeinfo's from atoms and/or strings.
    */
   already_AddRefed<nsINodeInfo> GetNodeInfo(nsIAtom *aName, nsIAtom *aPrefix,
-                                            PRInt32 aNamespaceID,
-                                            PRUint16 aNodeType,
-                                            nsIAtom* aExtraName = nsnull);
+                                            int32_t aNamespaceID,
+                                            uint16_t aNodeType,
+                                            nsIAtom* aExtraName = nullptr);
   nsresult GetNodeInfo(const nsAString& aName, nsIAtom *aPrefix,
-                       PRInt32 aNamespaceID, PRUint16 aNodeType,
+                       int32_t aNamespaceID, uint16_t aNodeType,
                        nsINodeInfo** aNodeInfo);
   nsresult GetNodeInfo(const nsAString& aName, nsIAtom *aPrefix,
-                       const nsAString& aNamespaceURI, PRUint16 aNodeType,
+                       const nsAString& aNamespaceURI, uint16_t aNodeType,
                        nsINodeInfo** aNodeInfo);
 
   /**
@@ -118,14 +117,14 @@ protected:
   void SetDocumentPrincipal(nsIPrincipal *aPrincipal);
 
 private:
-  static PRIntn NodeInfoInnerKeyCompare(const void *key1, const void *key2);
+  static int NodeInfoInnerKeyCompare(const void *key1, const void *key2);
   static PLHashNumber GetNodeInfoInnerHashValue(const void *key);
-  static PRIntn DropNodeInfoDocument(PLHashEntry *he, PRIntn hashIndex,
+  static int DropNodeInfoDocument(PLHashEntry *he, int hashIndex,
                                      void *arg);
 
   PLHashTable *mNodeInfoHash;
   nsIDocument *mDocument; // WEAK
-  PRUint32 mNonDocumentNodeInfos;
+  uint32_t mNonDocumentNodeInfos;
   nsIPrincipal *mPrincipal; // STRONG, but not nsCOMPtr to avoid include hell
                             // while inlining DocumentPrincipal().  Never null
                             // after Init() succeeds.

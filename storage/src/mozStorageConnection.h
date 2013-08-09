@@ -19,6 +19,7 @@
 #include "mozStorageService.h"
 
 #include "nsIMutableArray.h"
+#include "mozilla/Attributes.h"
 
 #include "sqlite3.h"
 
@@ -30,8 +31,8 @@ class nsIThread;
 namespace mozilla {
 namespace storage {
 
-class Connection : public mozIStorageConnection
-                 , public nsIInterfaceRequestor
+class Connection MOZ_FINAL : public mozIStorageConnection
+                           , public nsIInterfaceRequestor
 {
 public:
   NS_DECL_ISUPPORTS
@@ -49,7 +50,7 @@ public:
 
     nsCOMPtr<nsISupports> function;
     FunctionType type;
-    PRInt32 numArgs;
+    int32_t numArgs;
   };
 
   /**
@@ -66,7 +67,7 @@ public:
    *
    * @param aDatabaseFile
    *        The nsIFile of the location of the database to open, or create if it
-   *        does not exist.  Passing in nsnull here creates an in-memory
+   *        does not exist.  Passing in nullptr here creates an in-memory
    *        database.
    * @param aVFSName
    *        The VFS that SQLite will use when opening this database. NULL means
@@ -142,7 +143,7 @@ public:
   int stepStatement(sqlite3_stmt* aStatement);
 
   bool ConnectionReady() {
-    return mDBConn != nsnull;
+    return mDBConn != nullptr;
   }
 
   /**

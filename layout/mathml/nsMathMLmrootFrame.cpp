@@ -104,7 +104,7 @@ nsMathMLmrootFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
     rv = DisplayBar(aBuilder, this, mBarRect, aLists);
     NS_ENSURE_SUCCESS(rv, rv);
 
-#if defined(NS_DEBUG) && defined(SHOW_BOUNDING_BOX)
+#if defined(DEBUG) && defined(SHOW_BOUNDING_BOX)
     // for visual debug
     nsRect rect;
     mSqrChar.GetRect(rect);
@@ -173,9 +173,9 @@ nsMathMLmrootFrame::Reflow(nsPresContext*          aPresContext,
   //////////////////
   // Reflow Children
 
-  PRInt32 count = 0;
-  nsIFrame* baseFrame = nsnull;
-  nsIFrame* indexFrame = nsnull;
+  int32_t count = 0;
+  nsIFrame* baseFrame = nullptr;
+  nsIFrame* indexFrame = nullptr;
   nsHTMLReflowMetrics baseSize;
   nsHTMLReflowMetrics indexSize;
   nsIFrame* childFrame = mFrames.FirstChild();
@@ -334,7 +334,7 @@ nsMathMLmrootFrame::Reflow(nsPresContext*          aPresContext,
   // place the index
   nscoord dx = dxIndex;
   nscoord dy = aDesiredSize.ascent - (indexRaisedAscent + indexSize.ascent - bmIndex.ascent);
-  FinishReflowChild(indexFrame, aPresContext, nsnull, indexSize,
+  FinishReflowChild(indexFrame, aPresContext, nullptr, indexSize,
                     MirrorIfRTL(aDesiredSize.width, indexSize.width, dx),
                     dy, 0);
 
@@ -349,7 +349,7 @@ nsMathMLmrootFrame::Reflow(nsPresContext*          aPresContext,
 
   // place the base
   dy = aDesiredSize.ascent - baseSize.ascent;
-  FinishReflowChild(baseFrame, aPresContext, nsnull, baseSize,
+  FinishReflowChild(baseFrame, aPresContext, nullptr, baseSize,
                     MirrorIfRTL(aDesiredSize.width, baseSize.width, dx),
                     dy, 0);
 
@@ -365,7 +365,7 @@ nsMathMLmrootFrame::Reflow(nsPresContext*          aPresContext,
 nsMathMLmrootFrame::GetIntrinsicWidth(nsRenderingContext* aRenderingContext)
 {
   nsIFrame* baseFrame = mFrames.FirstChild();
-  nsIFrame* indexFrame = nsnull;
+  nsIFrame* indexFrame = nullptr;
   if (baseFrame)
     indexFrame = baseFrame->GetNextSibling();
   if (!indexFrame || indexFrame->GetNextSibling()) {
@@ -384,7 +384,7 @@ nsMathMLmrootFrame::GetIntrinsicWidth(nsRenderingContext* aRenderingContext)
 
   nscoord dxSqr;
   GetRadicalXOffsets(indexWidth, sqrWidth, aRenderingContext->FontMetrics(),
-                     nsnull, &dxSqr);
+                     nullptr, &dxSqr);
 
   return dxSqr + sqrWidth + baseWidth;
 }
@@ -392,19 +392,19 @@ nsMathMLmrootFrame::GetIntrinsicWidth(nsRenderingContext* aRenderingContext)
 // ----------------------
 // the Style System will use these to pass the proper style context to our MathMLChar
 nsStyleContext*
-nsMathMLmrootFrame::GetAdditionalStyleContext(PRInt32 aIndex) const
+nsMathMLmrootFrame::GetAdditionalStyleContext(int32_t aIndex) const
 {
   switch (aIndex) {
   case NS_SQR_CHAR_STYLE_CONTEXT_INDEX:
     return mSqrChar.GetStyleContext();
     break;
   default:
-    return nsnull;
+    return nullptr;
   }
 }
 
 void
-nsMathMLmrootFrame::SetAdditionalStyleContext(PRInt32          aIndex, 
+nsMathMLmrootFrame::SetAdditionalStyleContext(int32_t          aIndex, 
                                               nsStyleContext*  aStyleContext)
 {
   switch (aIndex) {

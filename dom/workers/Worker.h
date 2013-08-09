@@ -9,6 +9,7 @@
 #include "Workers.h"
 
 #include "jspubtd.h"
+#include "mozilla/dom/DOMJSClass.h"
 
 BEGIN_WORKERS_NAMESPACE
 

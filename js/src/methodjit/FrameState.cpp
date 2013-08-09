@@ -29,11 +29,12 @@ FrameState::~FrameState()
 {
     while (a) {
         ActiveFrame *parent = a->parent;
-        a->script->analysis()->clearAllocations();
-        cx->free_(a);
+        if (a->script->hasAnalysis())
+            a->script->analysis()->clearAllocations();
+        js_free(a);
         a = parent;
     }
-    cx->free_(entries);
+    js_free(entries);
 }
 
 void
@@ -62,7 +63,7 @@ FrameState::pushActiveFrame(JSScript *script, uint32_t argc)
         size_t totalBytes = sizeof(FrameEntry) * nentries +       // entries[]
                             sizeof(FrameEntry *) * nentries +     // tracker.entries
                             sizeof(StackEntryExtra) * nentries;   // extraArray
-        uint8_t *cursor = (uint8_t *)OffTheBooks::calloc_(totalBytes);
+        uint8_t *cursor = (uint8_t *)js_calloc(totalBytes);
         if (!cursor)
             return false;
 
@@ -88,7 +89,7 @@ FrameState::pushActiveFrame(JSScript *script, uint32_t argc)
     /* We should have already checked that argc == nargs */
     JS_ASSERT_IF(a, argc == script->function()->nargs);
 
-    ActiveFrame *newa = OffTheBooks::new_<ActiveFrame>();
+    ActiveFrame *newa = js_new<ActiveFrame>();
     if (!newa)
         return false;
 
@@ -146,7 +147,7 @@ FrameState::popActiveFrame()
     }
 
     ActiveFrame *parent = a->parent;
-    cx->delete_(a);
+    js_delete(a);
     a = parent;
 }
 
@@ -311,11 +312,11 @@ FrameState::bestEvictReg(uint32_t mask, bool includePinned) const
          */
         Lifetime *lifetime = variableLive(fe, a->PC);
 
+        /* Evict variables whose value is no longer live. */
         if (!lifetime) {
-            JS_ASSERT(isConstructorThis(fe));
             fallback = reg;
             fallbackOffset = a->script->length;
-            JaegerSpew(JSpew_Regalloc, "    %s is 'this' in a constructor\n", reg.name());
+            JaegerSpew(JSpew_Regalloc, "    %s is dead\n", reg.name());
             continue;
         }
 
@@ -352,6 +353,21 @@ FrameState::bestEvictReg(uint32_t mask, bool includePinned) const
     return fallback;
 }
 
+/*
+ * Whether we can pretend the payload for a given entry is synced provided that
+ * the value in the entry is dead. The contents of dead variables can still be
+ * observed during stack scanning, so the payloads of values which might hold
+ * objects or strings must be preserved.
+ */
+static inline bool
+CanFakeSync(FrameEntry *fe)
+{
+    return fe->isNotType(JSVAL_TYPE_OBJECT)
+        && fe->isNotType(JSVAL_TYPE_STRING)
+        && fe->isNotType(JSVAL_TYPE_DOUBLE)
+        && fe->isNotType(JSVAL_TYPE_MAGIC);
+}
+
 void
 FrameState::evictDeadEntries(bool includePinned)
 {
@@ -373,25 +389,17 @@ FrameState::evictDeadEntries(bool includePinned)
         }
 
         Lifetime *lifetime = variableLive(fe, a->PC);
-        if (lifetime)
+        if (lifetime || !CanFakeSync(fe))
             continue;
 
-        /*
-         * If we are about to fake sync for an entry with known type, reset
-         * that type. We don't want to regard it as correctly synced later.
-         */
-        if (!fe->type.synced() && fe->isTypeKnown())
-            fe->type.setMemory();
+        JS_ASSERT(regstate(reg).type() == RematInfo::DATA);
 
         /*
          * Mark the entry as synced to avoid emitting a store, we don't need
          * to keep this value around.
          */
         fakeSync(fe);
-        if (regstate(reg).type() == RematInfo::DATA)
-            fe->data.setMemory();
-        else
-            fe->type.setMemory();
+        fe->data.setMemory();
         forgetReg(reg);
     }
 }
@@ -473,7 +481,7 @@ FrameEntry *
 FrameState::snapshotState()
 {
     /* Everything can be recovered from a copy of the frame entries. */
-    FrameEntry *snapshot = cx->array_new<FrameEntry>(nentries);
+    FrameEntry *snapshot = js_pod_malloc<FrameEntry>(nentries);
     if (!snapshot)
         return NULL;
     PodCopy(snapshot, entries, nentries);
@@ -542,7 +550,7 @@ RegisterAllocation *
 FrameState::computeAllocation(jsbytecode *target)
 {
     JS_ASSERT(cx->typeInferenceEnabled());
-    RegisterAllocation *alloc = cx->typeLifoAlloc().new_<RegisterAllocation>(false);
+    RegisterAllocation *alloc = cx->analysisLifoAlloc().new_<RegisterAllocation>(false);
     if (!alloc) {
         js_ReportOutOfMemory(cx);
         return NULL;
@@ -592,8 +600,8 @@ FrameState::computeAllocation(jsbytecode *target)
                     if (newv->value.kind() == SSAValue::PHI &&
                         newv->value.phiOffset() == uint32_t(target - a->script->code) &&
                         newv->slot == entrySlot(fe)) {
-                        types::TypeSet *types = a->analysis->getValueTypes(newv->value);
-                        if (types->getKnownTypeTag(cx) != JSVAL_TYPE_DOUBLE)
+                        types::StackTypeSet *types = a->analysis->getValueTypes(newv->value);
+                        if (types->getKnownTypeTag() != JSVAL_TYPE_DOUBLE)
                             nonDoubleTarget = true;
                     }
                     newv++;
@@ -718,7 +726,7 @@ FrameState::syncForAllocation(RegisterAllocation *alloc, bool inlineReturn, Uses
         /* Force syncs for locals which are dead at the current PC. */
         if (isLocal(fe) && !fe->copied && !a->analysis->slotEscapes(entrySlot(fe))) {
             Lifetime *lifetime = a->analysis->liveness(entrySlot(fe)).live(a->PC - a->script->code);
-            if (!lifetime)
+            if (!lifetime && CanFakeSync(fe))
                 fakeSync(fe);
         }
 
@@ -728,7 +736,7 @@ FrameState::syncForAllocation(RegisterAllocation *alloc, bool inlineReturn, Uses
             !a->parent->analysis->slotEscapes(frameSlot(a->parent, fe))) {
             const LifetimeVariable &var = a->parent->analysis->liveness(frameSlot(a->parent, fe));
             Lifetime *lifetime = var.live(a->parent->PC - a->parent->script->code);
-            if (!lifetime)
+            if (!lifetime && CanFakeSync(fe))
                 fakeSync(fe);
         }
 
@@ -825,7 +833,7 @@ FrameState::discardForJoin(RegisterAllocation *&alloc, uint32_t stackDepth)
          * This shows up for loop entries which are not reachable from the
          * loop head, and for exception, switch target and trap safe points.
          */
-        alloc = cx->typeLifoAlloc().new_<RegisterAllocation>(false);
+        alloc = cx->analysisLifoAlloc().new_<RegisterAllocation>(false);
         if (!alloc) {
             js_ReportOutOfMemory(cx);
             return false;
@@ -2522,29 +2530,12 @@ FrameState::binaryEntryLive(FrameEntry *fe) const
     /*
      * Compute whether fe is live after the binary operation performed at the current
      * bytecode. This is similar to variableLive except that it returns false for the
-     * top two stack entries and special cases LOCALINC/ARGINC and friends, which fuse
-     * a binary operation before writing over the local/arg.
+     * top two stack entries.
      */
     JS_ASSERT(cx->typeInferenceEnabled());
 
     if (deadEntry(fe, 2))
         return false;
-
-    switch (JSOp(*a->PC)) {
-      case JSOP_INCLOCAL:
-      case JSOP_DECLOCAL:
-      case JSOP_LOCALINC:
-      case JSOP_LOCALDEC:
-        if (fe - a->locals == (int) GET_SLOTNO(a->PC))
-            return false;
-      case JSOP_INCARG:
-      case JSOP_DECARG:
-      case JSOP_ARGINC:
-      case JSOP_ARGDEC:
-        if (fe - a->args == (int) GET_SLOTNO(a->PC))
-            return false;
-      default:;
-    }
 
     JS_ASSERT(fe != a->callee_);
 
@@ -2857,7 +2848,7 @@ FrameState::getTemporaryCopies(Uses uses)
                 FrameEntry *nfe = tracker[i];
                 if (!deadEntry(nfe, uses.nuses) && nfe->isCopy() && nfe->copyOf() == fe) {
                     if (!res)
-                        res = OffTheBooks::new_< Vector<TemporaryCopy> >(cx);
+                        res = js_new< Vector<TemporaryCopy> >(cx);
                     res->append(TemporaryCopy(addressOf(nfe), addressOf(fe)));
                 }
             }

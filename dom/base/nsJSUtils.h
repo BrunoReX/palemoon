@@ -13,6 +13,8 @@
  * the generated code itself.
  */
 
+#include "mozilla/Assertions.h"
+
 #include "nsISupports.h"
 #include "jsapi.h"
 #include "nsString.h"
@@ -26,13 +28,11 @@ class nsJSUtils
 {
 public:
   static JSBool GetCallingLocation(JSContext* aContext, const char* *aFilename,
-                                   PRUint32* aLineno);
+                                   uint32_t* aLineno);
 
-  static nsIScriptGlobalObject *GetStaticScriptGlobal(JSContext* aContext,
-                                                      JSObject* aObj);
+  static nsIScriptGlobalObject *GetStaticScriptGlobal(JSObject* aObj);
 
-  static nsIScriptContext *GetStaticScriptContext(JSContext* aContext,
-                                                  JSObject* aObj);
+  static nsIScriptContext *GetStaticScriptContext(JSObject* aObj);
 
   static nsIScriptGlobalObject *GetDynamicScriptGlobal(JSContext *aContext);
 
@@ -44,9 +44,16 @@ public:
    * @param JSContext aContext
    *        The JSContext from which you want to find the inner window ID.
    *
-   * @returns PRUint64 the inner window ID.
+   * @returns uint64_t the inner window ID.
    */
-  static PRUint64 GetCurrentlyRunningCodeInnerWindowID(JSContext *aContext);
+  static uint64_t GetCurrentlyRunningCodeInnerWindowID(JSContext *aContext);
+
+  /**
+   * Report a pending exception on aContext, if any.  Note that this
+   * can be called when the context has a JS stack.  If that's the
+   * case, the stack will be set aside before reporting the exception.
+   */
+  static void ReportPendingException(JSContext *aContext);
 };
 
 
@@ -64,9 +71,18 @@ public:
   }
 
   /**
+   * Ditto for flat strings.
+   */
+  explicit nsDependentJSString(JSFlatString* fstr)
+    : nsDependentString(JS_GetFlatStringChars(fstr),
+                        JS_GetStringLength(JS_FORGET_STRING_FLATNESS(fstr)))
+  {
+  }
+
+  /**
    * For all other strings, the nsDependentJSString object should be default
    * constructed, which leaves it empty (this->IsEmpty()), and initialized with
-   * one of the fallible init() methods below.
+   * one of the init() methods below.
    */
 
   nsDependentJSString()
@@ -89,6 +105,12 @@ public:
   JSBool init(JSContext* aContext, const jsval &v)
   {
       return init(aContext, JSVAL_TO_STRING(v));
+  }
+
+  void init(JSFlatString* fstr)
+  {
+      MOZ_ASSERT(IsEmpty(), "init() on initialized string");
+      new(this) nsDependentJSString(fstr);
   }
 
   ~nsDependentJSString()

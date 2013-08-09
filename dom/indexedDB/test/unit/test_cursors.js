@@ -8,13 +8,12 @@ var testGenerator = testSteps();
 function testSteps()
 {
   const name = this.window ? window.location.pathname : "Splendid Test";
-  const description = "My Test Database";
   const keys = [1, -1, 0, 10, 2000, "q", "z", "two", "b", "a"];
   const sortedKeys = [-1, 0, 1, 10, 2000, "a", "b", "q", "two", "z"];
 
   is(keys.length, sortedKeys.length, "Good key setup");
 
-  let request = mozIndexedDB.open(name, 1, description);
+  let request = indexedDB.open(name, 1);
   request.onerror = errorHandler;
   request.onupgradeneeded = grabEventAndContinueHandler;
   let event = yield;
@@ -231,6 +230,7 @@ function testSteps()
       keyIndex += keyIndex ? 1 : 7;
     }
     else {
+      ok(cursor === null, "The request result should be null.");
       testGenerator.next();
     }
   }
@@ -242,9 +242,12 @@ function testSteps()
 
   request = objectStore.openCursor();
   request.onerror = errorHandler;
+  let storedCursor = null;
   request.onsuccess = function (event) {
     let cursor = event.target.result;
     if (cursor) {
+      storedCursor = cursor;
+
       is(cursor.key, sortedKeys[keyIndex], "Correct key");
       is(cursor.primaryKey, sortedKeys[keyIndex], "Correct primary key");
       is(cursor.value, "foo", "Correct value");
@@ -263,6 +266,8 @@ function testSteps()
       }
     }
     else {
+      ok(cursor === null, "The request result should be null.");
+      ok(storedCursor.value === undefined, "The cursor's value should be undefined.");
       testGenerator.next();
     }
   }
@@ -289,9 +294,12 @@ function testSteps()
 
   request = objectStore.openCursor(null, "next");
   request.onerror = errorHandler;
+  storedCursor = null;
   request.onsuccess = function (event) {
     let cursor = event.target.result;
     if (cursor) {
+      storedCursor = cursor;
+
       is(cursor.key, sortedKeys[keyIndex], "Correct key");
       is(cursor.primaryKey, sortedKeys[keyIndex], "Correct primary key");
       is(cursor.value, "foo", "Correct value");
@@ -310,6 +318,8 @@ function testSteps()
       cursor.continue();
     }
     else {
+      ok(cursor === null, "The request result should be null.");
+      ok(storedCursor.value === undefined, "The cursor's value should be undefined.");
       testGenerator.next();
     }
   }
@@ -334,9 +344,12 @@ function testSteps()
 
   request = objectStore.openCursor(null, "prev");
   request.onerror = errorHandler;
+  storedCursor = null;
   request.onsuccess = function (event) {
     let cursor = event.target.result;
     if (cursor) {
+      storedCursor = cursor;
+
       is(cursor.key, sortedKeys[keyIndex], "Correct key");
       is(cursor.primaryKey, sortedKeys[keyIndex], "Correct primary key");
       is(cursor.value, "foo", "Correct value");
@@ -350,6 +363,8 @@ function testSteps()
       keyIndex--;
     }
     else {
+      ok(cursor === null, "The request result should be null.");
+      ok(storedCursor.value === undefined, "The cursor's value should be undefined.");
       testGenerator.next();
     }
   }

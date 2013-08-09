@@ -1,8 +1,6 @@
-/*
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
-*/
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
@@ -78,7 +76,7 @@ amContentHandler.prototype = {
   classID: Components.ID("{7beb3ba8-6ec3-41b4-b67c-da89b8518922}"),
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIContentHandler]),
 
-  log : function(aMsg) {
+  log : function XCH_log(aMsg) {
     let msg = "amContentHandler.js: " + (aMsg.join ? aMsg.join("") : aMsg);
     Cc["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService).
       logStringMessage(msg);
@@ -86,4 +84,4 @@ amContentHandler.prototype = {
   }
 };
 
-var NSGetFactory = XPCOMUtils.generateNSGetFactory([amContentHandler]);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory([amContentHandler]);

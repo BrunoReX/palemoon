@@ -13,7 +13,7 @@
  * Gecko with the means to call up to the host to resize the window,
  * hide or show it and set/get its title.
  */
-[scriptable, uuid(3E5432CD-9568-4bd1-8CBE-D50ABA110743)]
+[scriptable, uuid(0b976267-4aaa-4f36-a2d4-27b5ca8d73bb)]
 interface nsIEmbeddingSiteWindow : nsISupports
 {
     /**
@@ -74,13 +74,13 @@ interface nsIEmbeddingSiteWindow : nsISupports
 
     /**
      * Gets the dimensions of the window. The caller may pass
-     * <CODE>nsnull</CODE> for any value it is uninterested in receiving.
+     * <CODE>nullptr</CODE> for any value it is uninterested in receiving.
      *
      * @param flags  Combination of position, inner and outer size flag .
-     * @param x      Left hand corner of the outer area; or <CODE>nsnull</CODE>.
-     * @param y      Top corner of the outer area; or <CODE>nsnull</CODE>.
-     * @param cx     Width of the inner or outer area; or <CODE>nsnull</CODE>.
-     * @param cy     Height of the inner or outer area; or <CODE>nsnull</CODE>.
+     * @param x      Left hand corner of the outer area; or <CODE>nullptr</CODE>.
+     * @param y      Top corner of the outer area; or <CODE>nullptr</CODE>.
+     * @param cx     Width of the inner or outer area; or <CODE>nullptr</CODE>.
+     * @param cy     Height of the inner or outer area; or <CODE>nullptr</CODE>.
      *
      * @see setDimensions
      * @see DIM_FLAGS_POSITION
@@ -117,4 +117,9 @@ interface nsIEmbeddingSiteWindow : nsISupports
      * </ul>
      */
     [noscript] readonly attribute voidPtr siteWindow;
+    
+    /**
+     * Blur the window. This should unfocus the window and send an onblur event.
+     */
+    void blur();
 };

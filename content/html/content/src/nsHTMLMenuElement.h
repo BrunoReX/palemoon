@@ -15,25 +15,19 @@ public:
   nsHTMLMenuElement(already_AddRefed<nsINodeInfo> aNodeInfo);
   virtual ~nsHTMLMenuElement();
 
-  /** Typesafe, non-refcounting cast from nsIContent.  Cheaper than QI. **/
-  static nsHTMLMenuElement* FromContent(nsIContent* aContent)
-  {
-    if (aContent && aContent->IsHTML(nsGkAtoms::menu))
-      return static_cast<nsHTMLMenuElement*>(aContent);
-    return nsnull;
-  }
+  NS_IMPL_FROMCONTENT_HTML_WITH_TAG(nsHTMLMenuElement, menu)
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLMenuElement
   NS_DECL_NSIDOMHTMLMENUELEMENT
@@ -41,7 +35,7 @@ public:
   // nsIHTMLMenu
   NS_DECL_NSIHTMLMENU
 
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
@@ -52,7 +46,7 @@ public:
 
   virtual nsIDOMNode* AsDOMNode() { return this; }
 
-  PRUint8 GetType() const { return mType; }
+  uint8_t GetType() const { return mType; }
 
 protected:
   static bool CanLoadIcon(nsIContent* aContent, const nsAString& aIcon);
@@ -63,9 +57,9 @@ protected:
 
   void TraverseContent(nsIContent* aContent,
                        nsIMenuBuilder* aBuilder,
-                       PRInt8& aSeparator);
+                       int8_t& aSeparator);
 
-  void AddSeparator(nsIMenuBuilder* aBuilder, PRInt8& aSeparator);
+  void AddSeparator(nsIMenuBuilder* aBuilder, int8_t& aSeparator);
 
-  PRUint8 mType;
+  uint8_t mType;
 };

@@ -28,7 +28,7 @@ txExpandedName::init(const nsAString& aQName, txNamespaceMap* aResolver,
 
     if (colon) {
         nsCOMPtr<nsIAtom> prefix = do_GetAtom(Substring(qName.get(), colon));
-        PRInt32 namespaceID = aResolver->lookupNamespace(prefix);
+        int32_t namespaceID = aResolver->lookupNamespace(prefix);
         if (namespaceID == kNameSpaceID_Unknown)
             return NS_ERROR_FAILURE;
         mNamespaceID = namespaceID;
@@ -38,7 +38,7 @@ txExpandedName::init(const nsAString& aQName, txNamespaceMap* aResolver,
         mLocalName = do_GetAtom(Substring(colon + 1, end));
     }
     else {
-        mNamespaceID = aUseDefault ? aResolver->lookupNamespace(nsnull) :
+        mNamespaceID = aUseDefault ? aResolver->lookupNamespace(nullptr) :
                                      kNameSpaceID_None;
         mLocalName = do_GetAtom(aQName);
     }
@@ -52,7 +52,7 @@ txExpandedName::init(const nsAString& aQName, txNamespaceMap* aResolver,
 // static
 nsresult
 XMLUtils::splitExpatName(const PRUnichar *aExpatName, nsIAtom **aPrefix,
-                         nsIAtom **aLocalName, PRInt32* aNameSpaceID)
+                         nsIAtom **aLocalName, int32_t* aNameSpaceID)
 {
     /**
      *  Expat can send the following:
@@ -61,8 +61,8 @@ XMLUtils::splitExpatName(const PRUnichar *aExpatName, nsIAtom **aPrefix,
      *    namespaceURI<separator>localName<separator>prefix
      */
 
-    const PRUnichar *uriEnd = nsnull;
-    const PRUnichar *nameEnd = nsnull;
+    const PRUnichar *uriEnd = nullptr;
+    const PRUnichar *nameEnd = nullptr;
     const PRUnichar *pos;
     for (pos = aExpatName; *pos; ++pos) {
         if (*pos == kExpatSeparatorChar) {
@@ -94,14 +94,14 @@ XMLUtils::splitExpatName(const PRUnichar *aExpatName, nsIAtom **aPrefix,
         }
         else {
             nameEnd = pos;
-            *aPrefix = nsnull;
+            *aPrefix = nullptr;
         }
     }
     else {
         *aNameSpaceID = kNameSpaceID_None;
         nameStart = aExpatName;
         nameEnd = pos;
-        *aPrefix = nsnull;
+        *aPrefix = nullptr;
     }
 
     *aLocalName = NS_NewAtom(Substring(nameStart, nameEnd));
@@ -128,7 +128,7 @@ XMLUtils::splitQName(const nsAString& aName, nsIAtom** aPrefix,
         *aLocalName = NS_NewAtom(Substring(colon + 1, end));
     }
     else {
-        *aPrefix = nsnull;
+        *aPrefix = nullptr;
         *aLocalName = NS_NewAtom(aName);
     }
 
@@ -138,7 +138,7 @@ XMLUtils::splitQName(const nsAString& aName, nsIAtom** aPrefix,
 const nsDependentSubstring XMLUtils::getLocalPart(const nsAString& src)
 {
     // Anything after ':' is the local part of the name
-    PRInt32 idx = src.FindChar(':');
+    int32_t idx = src.FindChar(':');
     if (idx == kNotFound) {
         return Substring(src, 0, src.Length());
     }
@@ -169,8 +169,8 @@ bool XMLUtils::isWhitespace(const nsAFlatString& aText)
 void XMLUtils::normalizePIValue(nsAString& piValue)
 {
     nsAutoString origValue(piValue);
-    PRUint32 origLength = origValue.Length();
-    PRUint32 conversionLoop = 0;
+    uint32_t origLength = origValue.Length();
+    uint32_t conversionLoop = 0;
     PRUnichar prevCh = 0;
     piValue.Truncate();
 

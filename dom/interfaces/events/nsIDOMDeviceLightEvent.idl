@@ -4,7 +4,7 @@
 
 #include "nsIDOMEvent.idl"
 
-[scriptable, uuid(c6f68e93-9eaf-4bba-852b-c9c534a8d079)]
+[scriptable, builtinclass, uuid(9cc7684c-a239-428c-b4f1-34c510c98a1c)]
 interface nsIDOMDeviceLightEvent : nsIDOMEvent
 {
   [noscript] void initDeviceLightEvent(in DOMString eventTypeArg,

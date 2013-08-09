@@ -6,6 +6,7 @@
 #define nsCodingStateMachine_h__
 
 #include "nsPkgInt.h"
+#include "mozilla/Util.h"
 
 typedef enum {
    eStart = 0,
@@ -19,9 +20,12 @@ typedef enum {
 typedef struct 
 {
   nsPkgInt classTable;
-  PRUint32 classFactor;
+  uint32_t classFactor;
   nsPkgInt stateTable;
-  const PRUint32* charLenTable;
+  const uint32_t* charLenTable;
+#ifdef DEBUG
+  const size_t charLenTableLength;
+#endif
   const char* name;
 } SMModel;
 
@@ -30,10 +34,11 @@ public:
   nsCodingStateMachine(const SMModel* sm) : mModel(sm) { mCurrentState = eStart; }
   nsSMState NextState(char c){
     //for each byte we get its class , if it is first byte, we also get byte length
-    PRUint32 byteCls = GETCLASS(c);
+    uint32_t byteCls = GETCLASS(c);
     if (mCurrentState == eStart)
     { 
       mCurrentBytePos = 0; 
+      MOZ_ASSERT(byteCls < mModel->charLenTableLength);
       mCurrentCharLen = mModel->charLenTable[byteCls];
     }
     //from byte's class and stateTable, we get its next state
@@ -42,14 +47,14 @@ public:
     mCurrentBytePos++;
     return mCurrentState;
   }
-  PRUint32  GetCurrentCharLen(void) {return mCurrentCharLen;}
+  uint32_t  GetCurrentCharLen(void) {return mCurrentCharLen;}
   void      Reset(void) {mCurrentState = eStart;}
   const char * GetCodingStateMachine() {return mModel->name;}
 
 protected:
   nsSMState mCurrentState;
-  PRUint32 mCurrentCharLen;
-  PRUint32 mCurrentBytePos;
+  uint32_t mCurrentCharLen;
+  uint32_t mCurrentBytePos;
 
   const SMModel *mModel;
 };
@@ -67,6 +72,13 @@ extern const SMModel HZSMModel;
 extern const SMModel ISO2022CNSMModel;
 extern const SMModel ISO2022JPSMModel;
 extern const SMModel ISO2022KRSMModel;
+
+#undef CHAR_LEN_TABLE
+#ifdef DEBUG
+#define CHAR_LEN_TABLE(x) x, mozilla::ArrayLength(x)
+#else
+#define CHAR_LEN_TABLE(x) x
+#endif
 
 #endif /* nsCodingStateMachine_h__ */
 

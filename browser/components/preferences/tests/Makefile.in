@@ -2,11 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
-relativesrcdir  = browser/components/preferences/tests
+relativesrcdir  = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
 include $(topsrcdir)/config/rules.mk
@@ -23,11 +23,14 @@ _BROWSER_FILES = \
     browser_privacypane_4.js \
     browser_privacypane_5.js \
     browser_privacypane_6.js \
-    browser_privacypane_7.js \
     browser_privacypane_8.js \
     browser_permissions.js \
     browser_chunk_permissions.js \
     $(NULL)
+
+ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
+_BROWSER_FILES += browser_privacypane_7.js
+endif
 
 libs::	$(_BROWSER_FILES)
 	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/browser/$(relativesrcdir)

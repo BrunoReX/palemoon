@@ -44,7 +44,7 @@ Decoder::Init()
 
   // Fire OnStartDecode at init time to support bug 512435
   if (!IsSizeDecode() && mObserver)
-      mObserver->OnStartDecode(nsnull);
+      mObserver->OnStartDecode();
 
   // Implementation-specific initialization
   InitInternal();
@@ -65,7 +65,7 @@ Decoder::InitSharedDecoder()
 }
 
 void
-Decoder::Write(const char* aBuffer, PRUint32 aCount)
+Decoder::Write(const char* aBuffer, uint32_t aCount)
 {
   // We're strict about decoder errors
   NS_ABORT_IF_FALSE(!HasDecoderError(),
@@ -80,7 +80,7 @@ Decoder::Write(const char* aBuffer, PRUint32 aCount)
 }
 
 void
-Decoder::Finish()
+Decoder::Finish(RasterImage::eShutdownIntent aShutdownIntent)
 {
   // Implementation-specific finalization
   if (!HasError())
@@ -105,26 +105,31 @@ Decoder::Finish()
                        NS_ConvertASCIItoUTF16(mImage.GetURIString()));
 
       if (NS_SUCCEEDED(errorObject->InitWithWindowID(
-                         msg.get(),
-                         NS_ConvertUTF8toUTF16(mImage.GetURIString()).get(),
-                         nsnull, 0, 0, nsIScriptError::errorFlag,
+                         msg,
+                         NS_ConvertUTF8toUTF16(mImage.GetURIString()),
+                         EmptyString(), 0, 0, nsIScriptError::errorFlag,
                          "Image", mImage.InnerWindowID()
                        ))) {
         consoleService->LogMessage(errorObject);
       }
     }
 
-    // If we only have a data error, see if things are worth salvaging
-    bool salvage = !HasDecoderError() && mImage.GetNumFrames();
+    bool usable = true;
+    if (aShutdownIntent != RasterImage::eShutdownIntent_Interrupted && !HasDecoderError()) {
+      // If we only have a data error, we're usable if we have at least one frame.
+      if (mImage.GetNumFrames() == 0) {
+        usable = false;
+      }
+    }
 
-    // If we're salvaging, say we finished decoding
-    if (salvage)
-      mImage.DecodingComplete();
-
-    // Fire teardown notifications
-    if (mObserver) {
-      mObserver->OnStopContainer(nsnull, &mImage);
-      mObserver->OnStopDecode(nsnull, salvage ? NS_OK : NS_ERROR_FAILURE, nsnull);
+    // If we're usable, do exactly what we should have when the decoder
+    // completed.
+    if (usable) {
+      PostDecodeDone();
+    } else {
+      if (mObserver) {
+        mObserver->OnStopDecode(NS_ERROR_FAILURE);
+      }
     }
   }
 }
@@ -156,8 +161,8 @@ Decoder::FlushInvalidations()
     // Bug 703231
     // Because of high quality down sampling on mac we show scan lines while decoding.
     // Bypass this problem by redrawing the border.
-    PRInt32 width;
-    PRInt32 height;
+    int32_t width;
+    int32_t height;
 
     mImage.GetWidth(&width);
     mImage.GetHeight(&height);
@@ -166,8 +171,7 @@ Decoder::FlushInvalidations()
     mInvalidRect.Inflate(1);
     mInvalidRect = mInvalidRect.Intersect(mImageBound);
 #endif
-    bool isCurrentFrame = mImage.GetCurrentFrameIndex() == (mFrameCount - 1);
-    mObserver->OnDataAvailable(nsnull, isCurrentFrame, &mInvalidRect);
+    mObserver->OnDataAvailable(&mInvalidRect);
   }
 
   // Clear the invalidation rectangle
@@ -179,7 +183,7 @@ Decoder::FlushInvalidations()
  */
 
 void Decoder::InitInternal() { }
-void Decoder::WriteInternal(const char* aBuffer, PRUint32 aCount) { }
+void Decoder::WriteInternal(const char* aBuffer, uint32_t aCount) { }
 void Decoder::FinishInternal() { }
 
 /*
@@ -187,7 +191,7 @@ void Decoder::FinishInternal() { }
  */
 
 void
-Decoder::PostSize(PRInt32 aWidth, PRInt32 aHeight)
+Decoder::PostSize(int32_t aWidth, int32_t aHeight)
 {
   // Validate
   NS_ABORT_IF_FALSE(aWidth >= 0, "Width can't be negative!");
@@ -198,7 +202,7 @@ Decoder::PostSize(PRInt32 aWidth, PRInt32 aHeight)
 
   // Notify the observer
   if (mObserver)
-    mObserver->OnStartContainer(nsnull, &mImage);
+    mObserver->OnStartContainer();
 }
 
 void
@@ -221,10 +225,6 @@ Decoder::PostFrameStart()
   // reported by the Image.
   NS_ABORT_IF_FALSE(mFrameCount == mImage.GetNumFrames(),
                     "Decoder frame count doesn't match image's!");
-
-  // Fire notification
-  if (mObserver)
-    mObserver->OnStartFrame(nsnull, mFrameCount - 1); // frame # is zero-indexed
 }
 
 void
@@ -241,10 +241,10 @@ Decoder::PostFrameStop()
 
   // Fire notifications
   if (mObserver) {
-    mObserver->OnStopFrame(nsnull, mFrameCount - 1); // frame # is zero-indexed
+    mObserver->OnStopFrame();
     if (mFrameCount > 1 && !mIsAnimated) {
       mIsAnimated = true;
-      mObserver->OnImageIsAnimated(nsnull);
+      mObserver->OnImageIsAnimated();
     }
   }
 }
@@ -277,8 +277,7 @@ Decoder::PostDecodeDone()
   // Notify
   mImage.DecodingComplete();
   if (mObserver) {
-    mObserver->OnStopContainer(nsnull, &mImage);
-    mObserver->OnStopDecode(nsnull, NS_OK, nsnull);
+    mObserver->OnStopDecode(NS_OK);
   }
 }
 

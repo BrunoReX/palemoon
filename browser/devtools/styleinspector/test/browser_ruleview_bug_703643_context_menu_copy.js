@@ -58,7 +58,6 @@ function inspectorUIOpen()
 
   // Make sure the inspector is open.
   ok(InspectorUI.inspecting, "Inspector is highlighting");
-  ok(!InspectorUI.treePanel.isOpen(), "Inspector Tree Panel is not open");
   ok(!InspectorUI.isSidebarOpen, "Inspector Sidebar is not open");
   ok(!InspectorUI.store.isEmpty(), "InspectorUI.store is not empty");
   is(InspectorUI.store.length, 1, "Inspector.store.length = 1");
@@ -89,8 +88,8 @@ function testClip()
     SimpleTest.waitForClipboard(function IUI_boundCopyPropCheck() {
         return checkClipboardData(expectedPattern);
       },
-      checkCopyRule, checkCopyRuleWithEditorSelected, function() {
-        failedClipboard(expectedPattern, checkCopyRuleWithEditorSelected);
+      checkCopyRule, checkCopyProperty, function() {
+        failedClipboard(expectedPattern, checkCopyProperty);
       });
   });
 }
@@ -117,57 +116,6 @@ function checkCopyRule() {
   let menu = contentDoc.querySelector("#rule-view-context-menu");
   ok(menu, "we have the context menu");
   menu.hidePopup();
-}
-
-function checkCopyRuleWithEditorSelected()
-{
-  let contentDoc = ruleViewFrame().contentDocument;
-  let rows = contentDoc.querySelectorAll(".rule-view-row");
-  let propNodes = contentDoc.querySelectorAll(".ruleview-property");
-  let propNode = propNodes[2];
-  let propNameNode = propNode.querySelector(".ruleview-propertyname");
-
-  ok(propNameNode, "we have the property name node");
-
-  info("Checking that _boundCopyRule()  returns the correct clipboard value");
-  let expectedPattern = "element {[\\r\\n]+" +
-    "    margin: 10em;[\\r\\n]+" +
-    "    font-size: 14pt;[\\r\\n]+" +
-    "    font-family: helvetica,sans-serif;[\\r\\n]+" +
-    "    color: rgb\\(170, 170, 170\\);[\\r\\n]+" +
-    "}[\\r\\n]*";
-
-  let elementRuleEditor = rows[0]._ruleEditor;
-  waitForEditorFocus(elementRuleEditor.element, function onNewElement(aEditor) {
-    ok(aEditor, "we have the editor");
-
-    waitForBlur.editor = aEditor;
-
-    // We need the context menu to open in the correct place in order for
-    // popupNode to be propertly set.
-    EventUtils.synthesizeMouse(aEditor.input, 1, 1,
-      { type: "contextmenu", button: 2 }, ruleViewFrame().contentWindow);
-
-    SimpleTest.waitForClipboard(function IUI_boundCopyCheckWithSelection() {
-      let menu = contentDoc.querySelector("#rule-view-context-menu");
-      ok(menu, "we have the context menu");
-      menu.hidePopup();
-
-      return checkClipboardData(expectedPattern);
-    }, ruleView()._boundCopyRule, waitForBlur, function() {
-      failedClipboard(expectedPattern, checkCopyProperty);
-    });
-  });
-  EventUtils.synthesizeMouse(propNameNode, 1, 1, { }, ruleViewFrame().contentWindow);
-}
-
-function waitForBlur()
-{
-  waitForEditorBlur(waitForBlur.editor, function() {
-    waitForBlur.editor = null;
-    checkCopyProperty();
-  });
-  waitForBlur.editor.input.blur();
 }
 
 function checkCopyProperty()
@@ -198,7 +146,7 @@ function checkCopyPropertyName()
 {
   info("Checking that _onCopyProperty() returns " +
        "the correct clipboard value");
-  let expectedPattern = "font-family";
+  let expectedPattern = "margin";
 
   SimpleTest.waitForClipboard(function IUI_boundCopyPropNameCheck() {
     return checkClipboardData(expectedPattern);
@@ -213,7 +161,7 @@ function checkCopyPropertyValue()
 {
   info("Checking that _onCopyPropertyValue() " +
        " returns the correct clipboard value");
-  let expectedPattern = "helvetica,sans-serif";
+  let expectedPattern = "10em";
 
   SimpleTest.waitForClipboard(function IUI_boundCopyPropValueCheck() {
     return checkClipboardData(expectedPattern);
@@ -249,9 +197,59 @@ function checkCopySelection()
 
   SimpleTest.waitForClipboard(function IUI_boundCopyCheck() {
     return checkClipboardData(expectedPattern);
-  },ruleView()._boundCopy, finishup, function() {
-    failedClipboard(expectedPattern, finishup);
+  },ruleView()._boundCopy, testSimpleCopy, function() {
+    failedClipboard(expectedPattern, testSimpleCopy);
   });
+}
+
+function testSimpleCopy()
+{
+  executeSoon(function() {
+    info("Checking that _onCopy() returns the correct clipboard value");
+    let expectedPattern = "element {[\\r\\n]+" +
+      "    margin: 10em;[\\r\\n]+" +
+      "    font-size: 14pt;[\\r\\n]+" +
+      "    font-family: helvetica,sans-serif;[\\r\\n]+" +
+      "    color: rgb\\(170, 170, 170\\);[\\r\\n]+" +
+      "}[\\r\\n]*";
+
+    SimpleTest.waitForClipboard(function IUI_testSimpleCopy() {
+        return checkClipboardData(expectedPattern);
+      },
+      checkSimpleCopy, finishup, function() {
+        failedClipboard(expectedPattern, finishup);
+      });
+  });
+}
+
+function checkSimpleCopy() {
+  let contentDoc = ruleViewFrame().contentDocument;
+  let props = contentDoc.querySelectorAll(".ruleview-code");
+
+  is(props.length, 2, "checking property length");
+
+  let prop = props[0];
+
+  selectNode(prop);
+
+  // We need the context menu to open in the correct place in order for
+  // popupNode to be propertly set.
+  EventUtils.synthesizeMouse(prop, 1, 1, { type: "contextmenu", button: 2 },
+    ruleViewFrame().contentWindow);
+
+  ruleView()._boundCopy();
+  let menu = contentDoc.querySelector("#rule-view-context-menu");
+  ok(menu, "we have the context menu");
+  menu.hidePopup();
+}
+
+function selectNode(aNode) {
+  let doc = aNode.ownerDocument;
+  let win = doc.defaultView;
+  let range = doc.createRange();
+
+  range.selectNode(aNode);
+  win.getSelection().addRange(range);
 }
 
 function checkClipboardData(aExpectedPattern)

@@ -6,10 +6,6 @@
 %include downloads.css
 %undef WINSTRIPE_AERO
 
-#downloadsPanel > .panel-arrowcontainer > .panel-arrowcontent > .panel-inner-arrowcontent {
-  padding: 0;
-}
-
 @media (-moz-windows-default-theme) {
   #downloadsPanel[hasdownloads] > #downloadsHistory {
     background-color: #f1f5fb;
@@ -20,12 +16,7 @@
     border-bottom: 1px solid hsl(213,40%,90%);
   }
 
-  richlistitem[type="download"][state="1"] > .downloadInfo {
-    border: 1px solid transparent;
-    -moz-padding-end: 8px;
-  }
-
-  richlistitem[type="download"][state="1"] > .downloadInfo:hover {
+  richlistitem[type="download"][state="1"]:hover {
     border: 1px solid hsl(213,45%,65%);
     box-shadow: 0 0 0 1px hsla(0,0%,100%,.5) inset,
                 0 1px 0 hsla(0,0%,100%,.3) inset;
@@ -50,4 +41,8 @@
     text-shadow: 0 0 1px rgba(0,0,0,.7),
                  0 1px 1.5px rgba(0,0,0,.5);
   }
+}
+
+#downloads-indicator-counter {
+  margin-bottom: -1px;
 }

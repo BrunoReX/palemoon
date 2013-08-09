@@ -18,12 +18,11 @@
 
 #include "jsapi.h"
 #include "nsChannelPolicy.h"
-#include "nsContentErrors.h"
+#include "nsError.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
 #include "nsDocShellCID.h"
 #include "nsISupportsPrimitives.h"
-#include "nsNetError.h"
 #include "nsNetUtil.h"
 #include "nsScriptLoader.h"
 #include "nsStringGlue.h"
@@ -68,13 +67,13 @@ struct ScriptLoadInfo
 class ScriptExecutorRunnable : public WorkerSyncRunnable
 {
   ScriptLoaderRunnable& mScriptLoader;
-  PRUint32 mFirstIndex;
-  PRUint32 mLastIndex;
+  uint32_t mFirstIndex;
+  uint32_t mLastIndex;
 
 public:
   ScriptExecutorRunnable(ScriptLoaderRunnable& aScriptLoader,
-                         PRUint32 aSyncQueueKey, PRUint32 aFirstIndex,
-                         PRUint32 aLastIndex);
+                         uint32_t aSyncQueueKey, uint32_t aFirstIndex,
+                         uint32_t aLastIndex);
 
   bool
   PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
@@ -104,7 +103,7 @@ class ScriptLoaderRunnable : public WorkerFeature,
   friend class ScriptExecutorRunnable;
 
   WorkerPrivate* mWorkerPrivate;
-  PRUint32 mSyncQueueKey;
+  uint32_t mSyncQueueKey;
   nsTArray<ScriptLoadInfo> mLoadInfos;
   bool mIsWorkerScript;
   bool mCanceled;
@@ -114,7 +113,7 @@ public:
   NS_DECL_ISUPPORTS
 
   ScriptLoaderRunnable(WorkerPrivate* aWorkerPrivate,
-                       PRUint32 aSyncQueueKey,
+                       uint32_t aSyncQueueKey,
                        nsTArray<ScriptLoadInfo>& aLoadInfos,
                        bool aIsWorkerScript)
   : mWorkerPrivate(aWorkerPrivate), mSyncQueueKey(aSyncQueueKey),
@@ -143,15 +142,15 @@ public:
 
   NS_IMETHOD
   OnStreamComplete(nsIStreamLoader* aLoader, nsISupports* aContext,
-                   nsresult aStatus, PRUint32 aStringLen,
-                   const PRUint8* aString)
+                   nsresult aStatus, uint32_t aStringLen,
+                   const uint8_t* aString)
   {
     AssertIsOnMainThread();
 
     nsCOMPtr<nsISupportsPRUint32> indexSupports(do_QueryInterface(aContext));
     NS_ASSERTION(indexSupports, "This should never fail!");
 
-    PRUint32 index = PR_UINT32_MAX;
+    uint32_t index = UINT32_MAX;
     if (NS_FAILED(indexSupports->GetData(&index)) ||
         index >= mLoadInfos.Length()) {
       NS_ERROR("Bad index!");
@@ -201,13 +200,13 @@ public:
     mCanceledMainThread = true;
 
     // Cancel all the channels that were already opened.
-    for (PRUint32 index = 0; index < mLoadInfos.Length(); index++) {
+    for (uint32_t index = 0; index < mLoadInfos.Length(); index++) {
       ScriptLoadInfo& loadInfo = mLoadInfos[index];
 
       if (loadInfo.mChannel &&
           NS_FAILED(loadInfo.mChannel->Cancel(NS_BINDING_ABORTED))) {
         NS_WARNING("Failed to cancel channel!");
-        loadInfo.mChannel = nsnull;
+        loadInfo.mChannel = nullptr;
         loadInfo.mLoadResult = NS_BINDING_ABORTED;
       }
     }
@@ -264,7 +263,7 @@ public:
     nsIScriptSecurityManager* secMan = nsContentUtils::GetSecurityManager();
     NS_ASSERTION(secMan, "This should never be null!");
 
-    for (PRUint32 index = 0; index < mLoadInfos.Length(); index++) {
+    for (uint32_t index = 0; index < mLoadInfos.Length(); index++) {
       ScriptLoadInfo& loadInfo = mLoadInfos[index];
       nsresult& rv = loadInfo.mLoadResult;
 
@@ -278,11 +277,11 @@ public:
 
       // If we're part of a document then check the content load policy.
       if (parentDoc) {
-        PRInt16 shouldLoad = nsIContentPolicy::ACCEPT;
+        int16_t shouldLoad = nsIContentPolicy::ACCEPT;
         rv = NS_CheckContentLoadPolicy(nsIContentPolicy::TYPE_SCRIPT, uri,
                                        principal, parentDoc,
                                        NS_LITERAL_CSTRING("text/javascript"),
-                                       nsnull, &shouldLoad,
+                                       nullptr, &shouldLoad,
                                        nsContentUtils::GetContentPolicy(),
                                        secMan);
         if (NS_FAILED(rv) || NS_CP_REJECTED(shouldLoad)) {
@@ -301,11 +300,12 @@ public:
         rv = uri->GetScheme(scheme);
         NS_ENSURE_SUCCESS(rv, rv);
 
-        // We exempt data URLs from the same origin check.
-        if (!scheme.EqualsLiteral("data")) {
-          rv = principal->CheckMayLoad(uri, false);
-          NS_ENSURE_SUCCESS(rv, rv);
-        }
+        // We pass true as the 3rd argument to checkMayLoad here.
+        // This allows workers in sandboxed documents to load data URLs
+        // (and other URLs that inherit their principal from their
+        // creator.)
+        rv = principal->CheckMayLoad(uri, false, true);
+        NS_ENSURE_SUCCESS(rv, rv);
       }
       else {
         rv = secMan->CheckLoadURIWithPrincipal(principal, uri, 0);
@@ -344,10 +344,10 @@ public:
         NS_ENSURE_SUCCESS(rv, rv);
       }
 
-      PRUint32 flags = nsIRequest::LOAD_NORMAL | nsIChannel::LOAD_CLASSIFY_URI;
+      uint32_t flags = nsIRequest::LOAD_NORMAL | nsIChannel::LOAD_CLASSIFY_URI;
 
       nsCOMPtr<nsIChannel> channel;
-      rv = NS_NewChannel(getter_AddRefs(channel), uri, ios, loadGroup, nsnull,
+      rv = NS_NewChannel(getter_AddRefs(channel), uri, ios, loadGroup, nullptr,
                          flags, channelPolicy);
       NS_ENSURE_SUCCESS(rv, rv);
 
@@ -362,8 +362,8 @@ public:
 
   nsresult
   OnStreamCompleteInternal(nsIStreamLoader* aLoader, nsISupports* aContext,
-                           nsresult aStatus, PRUint32 aStringLen,
-                           const PRUint8* aString, ScriptLoadInfo& aLoadInfo)
+                           nsresult aStatus, uint32_t aStringLen,
+                           const uint8_t* aString, ScriptLoadInfo& aLoadInfo)
   {
     AssertIsOnMainThread();
 
@@ -371,7 +371,7 @@ public:
       return NS_BINDING_ABORTED;
     }
 
-    aLoadInfo.mChannel = nsnull;
+    aLoadInfo.mChannel = nullptr;
 
     if (NS_FAILED(aStatus)) {
       return aStatus;
@@ -488,14 +488,23 @@ public:
         rv = finalURI->GetScheme(scheme);
         NS_ENSURE_SUCCESS(rv, rv);
 
-        // We exempt data urls again.
-        if (!scheme.EqualsLiteral("data") &&
-            NS_FAILED(loadPrincipal->CheckMayLoad(finalURI, false))) {
+        // We exempt data urls and other URI's that inherit their
+        // principal again.
+        if (NS_FAILED(loadPrincipal->CheckMayLoad(finalURI, false, true))) {
           return NS_ERROR_DOM_BAD_URI;
         }
       }
 
       mWorkerPrivate->SetPrincipal(channelPrincipal);
+
+      if (parent) {
+        // XHR Params Allowed
+        mWorkerPrivate->SetXHRParamsAllowed(parent->XHRParamsAllowed());
+
+        // Set Eval and ContentSecurityPolicy
+        mWorkerPrivate->SetCSP(parent->GetCSP());
+        mWorkerPrivate->SetEvalAllowed(parent->IsEvalAllowed());
+      }
     }
 
     return NS_OK;
@@ -504,11 +513,11 @@ public:
   void
   ExecuteFinishedScripts()
   {
-    PRUint32 firstIndex = PR_UINT32_MAX;
-    PRUint32 lastIndex = PR_UINT32_MAX;
+    uint32_t firstIndex = UINT32_MAX;
+    uint32_t lastIndex = UINT32_MAX;
 
     // Find firstIndex based on whether mExecutionScheduled is unset.
-    for (PRUint32 index = 0; index < mLoadInfos.Length(); index++) {
+    for (uint32_t index = 0; index < mLoadInfos.Length(); index++) {
       if (!mLoadInfos[index].mExecutionScheduled) {
         firstIndex = index;
         break;
@@ -517,8 +526,8 @@ public:
 
     // Find lastIndex based on whether mChannel is set, and update
     // mExecutionScheduled on the ones we're about to schedule.
-    if (firstIndex != PR_UINT32_MAX) {
-      for (PRUint32 index = firstIndex; index < mLoadInfos.Length(); index++) {
+    if (firstIndex != UINT32_MAX) {
+      for (uint32_t index = firstIndex; index < mLoadInfos.Length(); index++) {
         ScriptLoadInfo& loadInfo = mLoadInfos[index];
 
         // If we still have a channel then the load is not complete.
@@ -533,10 +542,10 @@ public:
       }
     }
 
-    if (firstIndex != PR_UINT32_MAX && lastIndex != PR_UINT32_MAX) {
+    if (firstIndex != UINT32_MAX && lastIndex != UINT32_MAX) {
       nsRefPtr<ScriptExecutorRunnable> runnable =
         new ScriptExecutorRunnable(*this, mSyncQueueKey, firstIndex, lastIndex);
-      if (!runnable->Dispatch(nsnull)) {
+      if (!runnable->Dispatch(nullptr)) {
         NS_ERROR("This should never fail!");
       }
     }
@@ -548,9 +557,9 @@ NS_IMPL_THREADSAFE_ISUPPORTS2(ScriptLoaderRunnable, nsIRunnable,
 
 ScriptExecutorRunnable::ScriptExecutorRunnable(
                                             ScriptLoaderRunnable& aScriptLoader,
-                                            PRUint32 aSyncQueueKey,
-                                            PRUint32 aFirstIndex,
-                                            PRUint32 aLastIndex)
+                                            uint32_t aSyncQueueKey,
+                                            uint32_t aFirstIndex,
+                                            uint32_t aLastIndex)
 : WorkerSyncRunnable(aScriptLoader.mWorkerPrivate, aSyncQueueKey),
   mScriptLoader(aScriptLoader), mFirstIndex(aFirstIndex), mLastIndex(aLastIndex)
 {
@@ -565,7 +574,7 @@ ScriptExecutorRunnable::WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
   nsTArray<ScriptLoadInfo>& loadInfos = mScriptLoader.mLoadInfos;
 
   // Don't run if something else has already failed.
-  for (PRUint32 index = 0; index < mFirstIndex; index++) {
+  for (uint32_t index = 0; index < mFirstIndex; index++) {
     ScriptLoadInfo& loadInfo = loadInfos.ElementAt(index);
 
     NS_ASSERTION(!loadInfo.mChannel, "Should no longer have a channel!");
@@ -576,13 +585,13 @@ ScriptExecutorRunnable::WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
     }
   }
 
-  JSObject* global = JS_GetGlobalObject(aCx);
+  js::RootedObject global(aCx, JS_GetGlobalObject(aCx));
   NS_ASSERTION(global, "Must have a global by now!");
 
   JSPrincipals* principal = GetWorkerPrincipal();
   NS_ASSERTION(principal, "This should never be null!");
 
-  for (PRUint32 index = mFirstIndex; index <= mLastIndex; index++) {
+  for (uint32_t index = mFirstIndex; index <= mLastIndex; index++) {
     ScriptLoadInfo& loadInfo = loadInfos.ElementAt(index);
 
     NS_ASSERTION(!loadInfo.mChannel, "Should no longer have a channel!");
@@ -615,10 +624,11 @@ ScriptExecutorRunnable::WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
 
     NS_ConvertUTF16toUTF8 filename(loadInfo.mURL);
 
-    if (!JS_EvaluateUCScriptForPrincipals(aCx, global, principal,
-                                          loadInfo.mScriptText.get(),
-                                          loadInfo.mScriptText.Length(),
-                                          filename.get(), 1, nsnull)) {
+    JS::CompileOptions options(aCx);
+    options.setPrincipals(principal)
+           .setFileAndLine(filename.get(), 1);
+    if (!JS::Evaluate(aCx, global, options, loadInfo.mScriptText.get(),
+                      loadInfo.mScriptText.Length(), nullptr)) {
       return true;
     }
 
@@ -637,7 +647,7 @@ ScriptExecutorRunnable::PostRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
   if (mLastIndex == loadInfos.Length() - 1) {
     // All done. If anything failed then return false.
     bool result = true;
-    for (PRUint32 index = 0; index < loadInfos.Length(); index++) {
+    for (uint32_t index = 0; index < loadInfos.Length(); index++) {
       if (!loadInfos[index].mExecutionResult) {
         result = false;
         break;
@@ -656,11 +666,11 @@ LoadAllScripts(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
   aWorkerPrivate->AssertIsOnWorkerThread();
   NS_ASSERTION(!aLoadInfos.IsEmpty(), "Bad arguments!");
 
-  PRUint32 syncQueueKey = aWorkerPrivate->CreateNewSyncLoop();
+  AutoSyncLoopHolder syncLoop(aWorkerPrivate);
 
   nsRefPtr<ScriptLoaderRunnable> loader =
-    new ScriptLoaderRunnable(aWorkerPrivate, syncQueueKey, aLoadInfos,
-                             aIsWorkerScript);
+    new ScriptLoaderRunnable(aWorkerPrivate, syncLoop.SyncQueueKey(),
+                             aLoadInfos, aIsWorkerScript);
 
   NS_ASSERTION(aLoadInfos.IsEmpty(), "Should have swapped!");
 
@@ -675,7 +685,7 @@ LoadAllScripts(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
     return false;
   }
 
-  return aWorkerPrivate->RunSyncLoop(aCx, syncQueueKey);
+  return syncLoop.RunAndForget(aCx);
 }
 
 } /* anonymous namespace */
@@ -715,7 +725,7 @@ Load(JSContext* aCx, unsigned aURLCount, jsval* aURLs)
   }
 
   nsTArray<ScriptLoadInfo> loadInfos;
-  loadInfos.SetLength(PRUint32(aURLCount));
+  loadInfos.SetLength(uint32_t(aURLCount));
 
   for (unsigned index = 0; index < aURLCount; index++) {
     JSString* str = JS_ValueToString(aCx, aURLs[index]);

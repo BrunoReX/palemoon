@@ -31,7 +31,7 @@ FinishRuntimeNumberState(JSRuntime *rt);
 
 /* Initialize the Number class, returning its prototype object. */
 extern JSObject *
-js_InitNumberClass(JSContext *cx, JSObject *obj);
+js_InitNumberClass(JSContext *cx, js::HandleObject obj);
 
 /*
  * String constants for global function names, used in jsapi.c and jsnum.c.
@@ -42,19 +42,18 @@ extern const char js_parseFloat_str[];
 extern const char js_parseInt_str[];
 
 class JSString;
-class JSFixedString;
 
 /*
  * When base == 10, this function implements ToString() as specified by
  * ECMA-262-5 section 9.8.1; but note that it handles integers specially for
  * performance.  See also js::NumberToCString().
  */
-extern JSString * JS_FASTCALL
+extern JSString *
 js_NumberToString(JSContext *cx, double d);
 
 namespace js {
 
-extern JSFixedString *
+extern JSFlatString *
 Int32ToString(JSContext *cx, int32_t i);
 
 /*
@@ -65,10 +64,10 @@ extern bool JS_FASTCALL
 NumberValueToStringBuffer(JSContext *cx, const Value &v, StringBuffer &sb);
 
 /* Same as js_NumberToString, different signature. */
-extern JSFixedString *
+extern JSFlatString *
 NumberToString(JSContext *cx, double d);
 
-extern JSFixedString *
+extern JSFlatString *
 IndexToString(JSContext *cx, uint32_t index);
 
 /*
@@ -126,47 +125,23 @@ GetPrefixInteger(JSContext *cx, const jschar *start, const jschar *end, int base
 JS_ALWAYS_INLINE bool
 ToNumber(JSContext *cx, Value *vp)
 {
+    AssertCanGC();
+#ifdef DEBUG
+    {
+        SkipRoot skip(cx, vp);
+        MaybeCheckStackRoots(cx);
+    }
+#endif
+
     if (vp->isNumber())
         return true;
     double d;
     extern bool ToNumberSlow(JSContext *cx, js::Value v, double *dp);
     if (!ToNumberSlow(cx, *vp, &d))
         return false;
+
     vp->setNumber(d);
     return true;
-}
-
-/*
- * Convert a value to a uint32_t, according to the ECMA rules for
- * ToUint32. Return converted value in *out on success, !ok on
- * failure.
- */
-
-JS_ALWAYS_INLINE bool
-ToUint32(JSContext *cx, const js::Value &v, uint32_t *out)
-{
-    if (v.isInt32()) {
-        *out = (uint32_t)v.toInt32();
-        return true;
-    }
-    extern bool ToUint32Slow(JSContext *cx, const js::Value &v, uint32_t *ip);
-    return ToUint32Slow(cx, v, out);
-}
-
-/*
- * Convert a value to a number, then to a uint16_t according to the ECMA rules
- * for ToUint16. Return converted value on success, !ok on failure. v must be a
- * copy of a rooted value.
- */
-JS_ALWAYS_INLINE bool
-ValueToUint16(JSContext *cx, const js::Value &v, uint16_t *out)
-{
-    if (v.isInt32()) {
-        *out = uint16_t(v.toInt32());
-        return true;
-    }
-    extern bool ValueToUint16Slow(JSContext *cx, const js::Value &v, uint16_t *out);
-    return ValueToUint16Slow(cx, v, out);
 }
 
 JSBool
@@ -233,6 +208,14 @@ IsDefinitelyIndex(const Value &v, uint32_t *indexp)
 static inline bool
 ToInteger(JSContext *cx, const js::Value &v, double *dp)
 {
+    AssertCanGC();
+#ifdef DEBUG
+    {
+        SkipRoot skip(cx, &v);
+        MaybeCheckStackRoots(cx);
+    }
+#endif
+
     if (v.isInt32()) {
         *dp = v.toInt32();
         return true;
@@ -246,6 +229,30 @@ ToInteger(JSContext *cx, const js::Value &v, double *dp)
     }
     *dp = ToInteger(*dp);
     return true;
+}
+
+inline bool
+SafeAdd(int32_t one, int32_t two, int32_t *res)
+{
+    *res = one + two;
+    int64_t ores = (int64_t)one + (int64_t)two;
+    return ores == (int64_t)*res;
+}
+
+inline bool
+SafeSub(int32_t one, int32_t two, int32_t *res)
+{
+    *res = one - two;
+    int64_t ores = (int64_t)one - (int64_t)two;
+    return ores == (int64_t)*res;
+}
+
+inline bool
+SafeMul(int32_t one, int32_t two, int32_t *res)
+{
+    *res = one * two;
+    int64_t ores = (int64_t)one * (int64_t)two;
+    return ores == (int64_t)*res;
 }
 
 } /* namespace js */

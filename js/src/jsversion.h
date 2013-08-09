@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef jsversion_h___
+#define jsversion_h___
+
 /*
  * JS configuration macros.
  */
@@ -166,3 +169,8 @@
 #  define NEW_OBJECT_REPRESENTATION_ONLY() \
      MOZ_NOT_REACHED("don't call this!  to be used in the new object representation")
 #endif
+
+/* ECMAScript Internationalization API isn't fully implemented yet. */
+#define ENABLE_INTL_API 0
+
+#endif /* jsversion_h___ */

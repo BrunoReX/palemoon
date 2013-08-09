@@ -3,6 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// IWYU pragma: private, include "nsHTMLTags.h"
+
 /******
 
   This file contains the list of all HTML tags 
@@ -110,6 +112,7 @@ HTML_TAG(marquee, Div)
 HTML_TAG(menu, Menu)
 HTML_TAG(menuitem, MenuItem)
 HTML_TAG(meta, Meta)
+HTML_TAG(meter, Meter)
 HTML_TAG(multicol, Span)
 HTML_HTMLELEMENT_TAG(nav)
 HTML_HTMLELEMENT_TAG(nobr)

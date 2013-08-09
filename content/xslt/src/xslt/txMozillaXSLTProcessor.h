@@ -15,6 +15,7 @@
 #include "txNamespaceMap.h"
 #include "nsIJSNativeInitializer.h"
 #include "nsCycleCollectionParticipant.h"
+#include "mozilla/Attributes.h"
 
 class nsIDOMNode;
 class nsIPrincipal;
@@ -36,11 +37,11 @@ class txIGlobalParameter;
 /**
  * txMozillaXSLTProcessor is a front-end to the XSLT Processor.
  */
-class txMozillaXSLTProcessor : public nsIXSLTProcessor,
-                               public nsIXSLTProcessorPrivate,
-                               public nsIDocumentTransformer,
-                               public nsStubMutationObserver,
-                               public nsIJSNativeInitializer
+class txMozillaXSLTProcessor MOZ_FINAL : public nsIXSLTProcessor,
+                                         public nsIXSLTProcessorPrivate,
+                                         public nsIDocumentTransformer,
+                                         public nsStubMutationObserver,
+                                         public nsIJSNativeInitializer
 {
 public:
     /**
@@ -95,7 +96,8 @@ public:
         return mSource;
     }
 
-    nsresult TransformToDoc(nsIDOMDocument **aResult);
+    nsresult TransformToDoc(nsIDOMDocument **aResult,
+                            bool aCreateDataDocument);
 
     bool IsLoadDisabled()
     {
@@ -104,7 +106,7 @@ public:
 
     // nsIJSNativeInitializer
     NS_IMETHODIMP Initialize(nsISupports* aOwner, JSContext *cx, JSObject *obj,
-                             PRUint32 argc, jsval *argv);
+                             uint32_t argc, jsval *argv);
 
     static nsresult Startup();
     static void Shutdown();
@@ -128,7 +130,7 @@ private:
     txNamespaceMap mParamNamespaceMap;
     nsRefPtr<txResultRecycler> mRecycler;
 
-    PRUint32 mFlags;
+    uint32_t mFlags;
 };
 
 extern nsresult TX_LoadSheet(nsIURI* aUri, txMozillaXSLTProcessor* aProcessor,

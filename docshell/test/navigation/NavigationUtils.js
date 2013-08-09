@@ -58,7 +58,7 @@ function navigateByHyperlink(name) {
 function isNavigated(wnd, message) {
   var result = null;
   try {
-    result = wnd.document.body.innerHTML;
+    result = SpecialPowers.wrap(wnd).document.body.innerHTML;
   } catch(ex) {
     result = ex;
   }
@@ -98,17 +98,17 @@ function isInaccessible(wnd, message) {
 ///////////////////////////////////////////////////////////////////////////
 
 function xpcEnumerateContentWindows(callback) {
-  netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
-  var Ci = Components.interfaces;
-  var ww = Components.classes["@mozilla.org/embedcomp/window-watcher;1"]
-                     .getService(Ci.nsIWindowWatcher);
+
+  var Ci = SpecialPowers.Ci;
+  var ww = SpecialPowers.Cc["@mozilla.org/embedcomp/window-watcher;1"]
+                        .getService(Ci.nsIWindowWatcher);
   var enumerator = ww.getWindowEnumerator();
 
   var contentWindows = [];
 
   while (enumerator.hasMoreElements()) {
     var win = enumerator.getNext();
-    if (typeof ChromeWindow != "undefined" && win instanceof ChromeWindow) {
+    if (/ChromeWindow/.exec(win)) {
       var docshellTreeNode = win.QueryInterface(Ci.nsIInterfaceRequestor)
                                 .getInterface(Ci.nsIWebNavigation)
                                 .QueryInterface(Ci.nsIDocShellTreeNode);
@@ -117,7 +117,7 @@ function xpcEnumerateContentWindows(callback) {
         var childTreeNode = docshellTreeNode.getChildAt(i);
 
         // we're only interested in content docshells
-        if (childTreeNode.itemType != Ci.nsIDocShellTreeItem.typeContent)
+        if (SpecialPowers.unwrap(childTreeNode.itemType) != Ci.nsIDocShellTreeItem.typeContent)
           continue;
 
         var webNav = childTreeNode.QueryInterface(Ci.nsIWebNavigation);

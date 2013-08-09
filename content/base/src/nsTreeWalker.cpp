@@ -12,10 +12,9 @@
 
 #include "nsIDOMNode.h"
 #include "nsIDOMNodeFilter.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 #include "nsINode.h"
-#include "nsIContent.h"
-
+#include "nsDOMClassInfoID.h"
 #include "nsContentUtils.h"
 
 /*
@@ -23,7 +22,7 @@
  */
 
 nsTreeWalker::nsTreeWalker(nsINode *aRoot,
-                           PRUint32 aWhatToShow,
+                           uint32_t aWhatToShow,
                            nsIDOMNodeFilter *aFilter) :
     nsTraversal(aRoot, aWhatToShow, aFilter),
     mCurrentNode(aRoot)
@@ -66,13 +65,13 @@ NS_IMETHODIMP nsTreeWalker::GetRoot(nsIDOMNode * *aRoot)
         return CallQueryInterface(mRoot, aRoot);
     }
 
-    *aRoot = nsnull;
+    *aRoot = nullptr;
 
     return NS_OK;
 }
 
 /* readonly attribute unsigned long whatToShow; */
-NS_IMETHODIMP nsTreeWalker::GetWhatToShow(PRUint32 *aWhatToShow)
+NS_IMETHODIMP nsTreeWalker::GetWhatToShow(uint32_t *aWhatToShow)
 {
     *aWhatToShow = mWhatToShow;
     return NS_OK;
@@ -103,7 +102,7 @@ NS_IMETHODIMP nsTreeWalker::GetCurrentNode(nsIDOMNode * *aCurrentNode)
         return CallQueryInterface(mCurrentNode, aCurrentNode);
     }
 
-    *aCurrentNode = nsnull;
+    *aCurrentNode = nullptr;
 
     return NS_OK;
 }
@@ -129,17 +128,17 @@ NS_IMETHODIMP nsTreeWalker::SetCurrentNode(nsIDOMNode * aCurrentNode)
 /* nsIDOMNode parentNode (); */
 NS_IMETHODIMP nsTreeWalker::ParentNode(nsIDOMNode **_retval)
 {
-    *_retval = nsnull;
+    *_retval = nullptr;
 
     nsresult rv;
 
     nsCOMPtr<nsINode> node = mCurrentNode;
 
     while (node && node != mRoot) {
-        node = node->GetNodeParent();
+        node = node->GetParentNode();
 
         if (node) {
-            PRInt16 filtered;
+            int16_t filtered;
             rv = TestNode(node, &filtered);
             NS_ENSURE_SUCCESS(rv, rv);
             if (filtered == nsIDOMNodeFilter::FILTER_ACCEPT) {
@@ -180,9 +179,9 @@ NS_IMETHODIMP nsTreeWalker::NextSibling(nsIDOMNode **_retval)
 NS_IMETHODIMP nsTreeWalker::PreviousNode(nsIDOMNode **_retval)
 {
     nsresult rv;
-    PRInt16 filtered;
+    int16_t filtered;
 
-    *_retval = nsnull;
+    *_retval = nullptr;
 
     nsCOMPtr<nsINode> node = mCurrentNode;
 
@@ -210,7 +209,7 @@ NS_IMETHODIMP nsTreeWalker::PreviousNode(nsIDOMNode **_retval)
         if (node == mRoot)
             break;
 
-        node = node->GetNodeParent();
+        node = node->GetParentNode();
         if (!node)
             break;
 
@@ -230,9 +229,9 @@ NS_IMETHODIMP nsTreeWalker::PreviousNode(nsIDOMNode **_retval)
 NS_IMETHODIMP nsTreeWalker::NextNode(nsIDOMNode **_retval)
 {
     nsresult rv;
-    PRInt16 filtered = nsIDOMNodeFilter::FILTER_ACCEPT; // pre-init for inner loop
+    int16_t filtered = nsIDOMNodeFilter::FILTER_ACCEPT; // pre-init for inner loop
 
-    *_retval = nsnull;
+    *_retval = nullptr;
 
     nsCOMPtr<nsINode> node = mCurrentNode;
 
@@ -253,7 +252,7 @@ NS_IMETHODIMP nsTreeWalker::NextNode(nsIDOMNode **_retval)
             }
         }
 
-        nsINode *sibling = nsnull;
+        nsINode *sibling = nullptr;
         nsINode *temp = node;
         do {
             if (temp == mRoot)
@@ -263,7 +262,7 @@ NS_IMETHODIMP nsTreeWalker::NextNode(nsIDOMNode **_retval)
             if (sibling)
                 break;
 
-            temp = temp->GetNodeParent();
+            temp = temp->GetParentNode();
         } while (temp);
 
         if (!sibling)
@@ -299,9 +298,9 @@ NS_IMETHODIMP nsTreeWalker::NextNode(nsIDOMNode **_retval)
 nsresult nsTreeWalker::FirstChildInternal(bool aReversed, nsIDOMNode **_retval)
 {
     nsresult rv;
-    PRInt16 filtered;
+    int16_t filtered;
 
-    *_retval = nsnull;
+    *_retval = nullptr;
 
     nsCOMPtr<nsINode> node = aReversed ? mCurrentNode->GetLastChild()
                                        : mCurrentNode->GetFirstChild();
@@ -337,7 +336,7 @@ nsresult nsTreeWalker::FirstChildInternal(bool aReversed, nsIDOMNode **_retval)
                 break;
             }
 
-            nsINode *parent = node->GetNodeParent();
+            nsINode *parent = node->GetParentNode();
 
             if (!parent || parent == mRoot || parent == mCurrentNode) {
                 return NS_OK;
@@ -361,9 +360,9 @@ nsresult nsTreeWalker::FirstChildInternal(bool aReversed, nsIDOMNode **_retval)
 nsresult nsTreeWalker::NextSiblingInternal(bool aReversed, nsIDOMNode **_retval)
 {
     nsresult rv;
-    PRInt16 filtered;
+    int16_t filtered;
 
-    *_retval = nsnull;
+    *_retval = nullptr;
 
     nsCOMPtr<nsINode> node = mCurrentNode;
 
@@ -395,7 +394,7 @@ nsresult nsTreeWalker::NextSiblingInternal(bool aReversed, nsIDOMNode **_retval)
             }
         }
 
-        node = node->GetNodeParent();
+        node = node->GetParentNode();
 
         if (!node || node == mRoot)
             return NS_OK;

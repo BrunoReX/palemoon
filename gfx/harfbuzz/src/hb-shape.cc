@@ -1,5 +1,6 @@
 /*
  * Copyright © 2009  Red Hat, Inc.
+ * Copyright © 2012  Google, Inc.
  *
  *  This is part of HarfBuzz, a text shaping library.
  *
@@ -22,97 +23,225 @@
  * PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
  *
  * Red Hat Author(s): Behdad Esfahbod
+ * Google Author(s): Behdad Esfahbod
  */
 
 #include "hb-private.hh"
 
-#include "hb-shape.h"
-
+#include "hb-shaper-private.hh"
+#include "hb-shape-plan-private.hh"
 #include "hb-buffer-private.hh"
+#include "hb-font-private.hh"
 
-#ifdef HAVE_GRAPHITE
-#include "hb-graphite2-private.hh"
-#endif
-#ifdef HAVE_UNISCRIBE
-# include "hb-uniscribe-private.hh"
-#endif
-#ifdef HAVE_OT
-# include "hb-ot-shape-private.hh"
-#endif
-#include "hb-fallback-shape-private.hh"
 
-typedef hb_bool_t (*hb_shape_func_t) (hb_font_t          *font,
-				      hb_buffer_t        *buffer,
-				      const hb_feature_t *features,
-				      unsigned int        num_features);
-
-#define HB_SHAPER_IMPLEMENT(name) {#name, _hb_##name##_shape}
-static struct hb_shaper_pair_t {
-  char name[16];
-  hb_shape_func_t func;
-} shapers[] = {
-  /* v--- Add new shapers in the right place here */
-#ifdef HAVE_GRAPHITE
-  HB_SHAPER_IMPLEMENT (graphite2),
-#endif
-#ifdef HAVE_UNISCRIBE
-  HB_SHAPER_IMPLEMENT (uniscribe),
-#endif
-#ifdef HAVE_OT
-  HB_SHAPER_IMPLEMENT (ot),
-#endif
-  HB_SHAPER_IMPLEMENT (fallback) /* should be last */
-};
-#undef HB_SHAPER_IMPLEMENT
-
-static struct static_shaper_list_t
+static void
+parse_space (const char **pp, const char *end)
 {
-  static_shaper_list_t (void)
-  {
-    char *env = getenv ("HB_SHAPER_LIST");
-    if (env && *env)
-    {
-       /* Reorder shaper list to prefer requested shaper list. */
-      unsigned int i = 0;
-      char *end, *p = env;
-      for (;;) {
-        end = strchr (p, ',');
-        if (!end)
-          end = p + strlen (p);
+  char c;
+#define ISSPACE(c) ((c)==' '||(c)=='\f'||(c)=='\n'||(c)=='\r'||(c)=='\t'||(c)=='\v')
+  while (*pp < end && (c = **pp, ISSPACE (c)))
+    (*pp)++;
+#undef ISSPACE
+}
 
-	for (unsigned int j = i; j < ARRAY_LENGTH (shapers); j++)
-	  if (end - p == (int) strlen (shapers[j].name) &&
-	      0 == strncmp (shapers[j].name, p, end - p))
-	  {
-	    /* Reorder this shaper to position i */
-	   struct hb_shaper_pair_t t = shapers[j];
-	   memmove (&shapers[i + 1], &shapers[i], sizeof (shapers[i]) * (j - i));
-	   shapers[i] = t;
-	   i++;
-	  }
+static hb_bool_t
+parse_char (const char **pp, const char *end, char c)
+{
+  parse_space (pp, end);
 
-        if (!*end)
-          break;
-        else
-          p = end + 1;
-      }
-    }
+  if (*pp == end || **pp != c)
+    return false;
 
-    ASSERT_STATIC ((ARRAY_LENGTH (shapers) + 1) * sizeof (*shaper_list) <= sizeof (shaper_list));
-    unsigned int i;
-    for (i = 0; i < ARRAY_LENGTH (shapers); i++)
-      shaper_list[i] = shapers[i].name;
-    shaper_list[i] = NULL;
+  (*pp)++;
+  return true;
+}
+
+static hb_bool_t
+parse_uint (const char **pp, const char *end, unsigned int *pv)
+{
+  char buf[32];
+  strncpy (buf, *pp, end - *pp);
+  buf[ARRAY_LENGTH (buf) - 1] = '\0';
+
+  char *p = buf;
+  char *pend = p;
+  unsigned int v;
+
+  v = strtol (p, &pend, 0);
+
+  if (p == pend)
+    return false;
+
+  *pv = v;
+  *pp += pend - p;
+  return true;
+}
+
+static hb_bool_t
+parse_feature_value_prefix (const char **pp, const char *end, hb_feature_t *feature)
+{
+  if (parse_char (pp, end, '-'))
+    feature->value = 0;
+  else {
+    parse_char (pp, end, '+');
+    feature->value = 1;
   }
 
-  const char *shaper_list[ARRAY_LENGTH (shapers) + 1];
-} static_shaper_list;
+  return true;
+}
+
+static hb_bool_t
+parse_feature_tag (const char **pp, const char *end, hb_feature_t *feature)
+{
+  const char *p = *pp;
+  char c;
+
+  parse_space (pp, end);
+
+#define ISALNUM(c) (('a' <= (c) && (c) <= 'z') || ('A' <= (c) && (c) <= 'Z') || ('0' <= (c) && (c) <= '9'))
+  while (*pp < end && (c = **pp, ISALNUM(c)))
+    (*pp)++;
+#undef ISALNUM
+
+  if (p == *pp)
+    return false;
+
+  feature->tag = hb_tag_from_string (p, *pp - p);
+  return true;
+}
+
+static hb_bool_t
+parse_feature_indices (const char **pp, const char *end, hb_feature_t *feature)
+{
+  parse_space (pp, end);
+
+  hb_bool_t has_start;
+
+  feature->start = 0;
+  feature->end = (unsigned int) -1;
+
+  if (!parse_char (pp, end, '['))
+    return true;
+
+  has_start = parse_uint (pp, end, &feature->start);
+
+  if (parse_char (pp, end, ':')) {
+    parse_uint (pp, end, &feature->end);
+  } else {
+    if (has_start)
+      feature->end = feature->start + 1;
+  }
+
+  return parse_char (pp, end, ']');
+}
+
+static hb_bool_t
+parse_feature_value_postfix (const char **pp, const char *end, hb_feature_t *feature)
+{
+  return !parse_char (pp, end, '=') || parse_uint (pp, end, &feature->value);
+}
+
+
+static hb_bool_t
+parse_one_feature (const char **pp, const char *end, hb_feature_t *feature)
+{
+  return parse_feature_value_prefix (pp, end, feature) &&
+	 parse_feature_tag (pp, end, feature) &&
+	 parse_feature_indices (pp, end, feature) &&
+	 parse_feature_value_postfix (pp, end, feature) &&
+	 *pp == end;
+}
+
+hb_bool_t
+hb_feature_from_string (const char *str, int len,
+			hb_feature_t *feature)
+{
+  if (len < 0)
+    len = strlen (str);
+
+  return parse_one_feature (&str, str + len, feature);
+}
+
+void
+hb_feature_to_string (hb_feature_t *feature,
+		      char *buf, unsigned int size)
+{
+  if (unlikely (!size)) return;
+
+  char s[128];
+  unsigned int len = 0;
+  if (feature->value == 0)
+    s[len++] = '-';
+  hb_tag_to_string (feature->tag, s + len);
+  len += 4;
+  while (len && s[len - 1] == ' ')
+    len--;
+  if (feature->start != 0 || feature->end != (unsigned int) -1)
+  {
+    s[len++] = '[';
+    if (feature->start)
+      len += snprintf (s + len, ARRAY_LENGTH (s) - len, "%d", feature->start);
+    if (feature->end != feature->start + 1) {
+      s[len++] = ':';
+      if (feature->end != (unsigned int) -1)
+	len += snprintf (s + len, ARRAY_LENGTH (s) - len, "%d", feature->end);
+    }
+    s[len++] = ']';
+  }
+  if (feature->value > 1)
+  {
+    s[len++] = '=';
+    len += snprintf (s + len, ARRAY_LENGTH (s) - len, "%d", feature->value);
+  }
+  assert (len < ARRAY_LENGTH (s));
+  len = MIN (len, size - 1);
+  memcpy (buf, s, len);
+  s[len] = '\0';
+}
+
+
+static const char **static_shaper_list;
+
+static
+void free_static_shaper_list (void)
+{
+  free (static_shaper_list);
+}
 
 const char **
 hb_shape_list_shapers (void)
 {
-  return static_shaper_list.shaper_list;
+retry:
+  const char **shaper_list = (const char **) hb_atomic_ptr_get (&static_shaper_list);
+
+  if (unlikely (!shaper_list))
+  {
+    /* Not found; allocate one. */
+    shaper_list = (const char **) calloc (1 + HB_SHAPERS_COUNT, sizeof (const char *));
+    if (unlikely (!shaper_list)) {
+      static const char *nil_shaper_list[] = {NULL};
+      return nil_shaper_list;
+    }
+
+    const hb_shaper_pair_t *shapers = _hb_shapers_get ();
+    unsigned int i;
+    for (i = 0; i < HB_SHAPERS_COUNT; i++)
+      shaper_list[i] = shapers[i].name;
+    shaper_list[i] = NULL;
+
+    if (!hb_atomic_ptr_cmpexch (&static_shaper_list, NULL, shaper_list)) {
+      free (shaper_list);
+      goto retry;
+    }
+
+#ifdef HAVE_ATEXIT
+    atexit (free_static_shaper_list); /* First person registers atexit() callback. */
+#endif
+  }
+
+  return shaper_list;
 }
+
 
 hb_bool_t
 hb_shape_full (hb_font_t          *font,
@@ -121,24 +250,20 @@ hb_shape_full (hb_font_t          *font,
 	       unsigned int        num_features,
 	       const char * const *shaper_list)
 {
-  hb_font_make_immutable (font); /* So we can safely cache stuff on it */
+  if (unlikely (!buffer->len))
+    return true;
 
-  if (likely (!shaper_list)) {
-    for (unsigned int i = 0; i < ARRAY_LENGTH (shapers); i++)
-      if (likely (shapers[i].func (font, buffer, features, num_features)))
-        return TRUE;
-  } else {
-    while (*shaper_list) {
-      for (unsigned int i = 0; i < ARRAY_LENGTH (shapers); i++)
-	if (0 == strcmp (*shaper_list, shapers[i].name)) {
-	  if (likely (shapers[i].func (font, buffer, features, num_features)))
-	    return TRUE;
-	  break;
-	}
-      shaper_list++;
-    }
-  }
-  return FALSE;
+  assert (buffer->content_type == HB_BUFFER_CONTENT_TYPE_UNICODE);
+
+  buffer->guess_segment_properties ();
+
+  hb_shape_plan_t *shape_plan = hb_shape_plan_create_cached (font->face, &buffer->props, features, num_features, shaper_list);
+  hb_bool_t res = hb_shape_plan_execute (shape_plan, font, buffer, features, num_features);
+  hb_shape_plan_destroy (shape_plan);
+
+  if (res)
+    buffer->content_type = HB_BUFFER_CONTENT_TYPE_GLYPHS;
+  return res;
 }
 
 void

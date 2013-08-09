@@ -42,7 +42,7 @@ public:
    */
   void DropDocumentReference()
   {
-    mDocument = nsnull;
+    mDocument = nullptr;
   }
 
   /**
@@ -142,8 +142,8 @@ public:
    *                     null.
    * @param aString      [out] Data as converted to unicode
    */
-  static nsresult ConvertToUTF16(nsIChannel* aChannel, const PRUint8* aData,
-                                 PRUint32 aLength,
+  static nsresult ConvertToUTF16(nsIChannel* aChannel, const uint8_t* aData,
+                                 uint32_t aLength,
                                  const nsAString& aHintCharset,
                                  nsIDocument* aDocument, nsString& aString);
 
@@ -160,13 +160,6 @@ public:
                                    nsISupports* aContext,
                                    nsIURI* aURI,
                                    const nsAString &aType);
-
-  /**
-   * Check whether it's OK to execute a script loaded via aChannel in
-   * aDocument.
-   */
-  static bool ShouldExecuteScript(nsIDocument* aDocument,
-                                    nsIChannel* aChannel);
 
   /**
    * Starts deferring deferred scripts and puts them in the mDeferredRequests
@@ -194,7 +187,7 @@ public:
   /**
    * Returns the number of pending scripts, deferred or not.
    */
-  PRUint32 HasPendingOrCurrentScripts()
+  uint32_t HasPendingOrCurrentScripts()
   {
     return mCurrentScript || mParserBlockingRequest;
   }
@@ -263,7 +256,7 @@ private:
   }
 
   bool AddPendingChildLoader(nsScriptLoader* aChild) {
-    return mPendingChildLoaders.AppendElement(aChild) != nsnull;
+    return mPendingChildLoaders.AppendElement(aChild) != nullptr;
   }
   
   nsresult ProcessRequest(nsScriptLoadRequest* aRequest);
@@ -277,8 +270,8 @@ private:
   nsresult PrepareLoadedRequest(nsScriptLoadRequest* aRequest,
                                 nsIStreamLoader* aLoader,
                                 nsresult aStatus,
-                                PRUint32 aStringLen,
-                                const PRUint8* aString);
+                                uint32_t aStringLen,
+                                const uint8_t* aString);
 
   nsIDocument* mDocument;                   // [WEAK]
   nsCOMArray<nsIScriptLoaderObserver> mObservers;
@@ -310,7 +303,7 @@ private:
   nsCOMPtr<nsIScriptElement> mCurrentParserInsertedScript;
   // XXXbz do we want to cycle-collect these or something?  Not sure.
   nsTArray< nsRefPtr<nsScriptLoader> > mPendingChildLoaders;
-  PRUint32 mBlockerCount;
+  uint32_t mBlockerCount;
   bool mEnabled;
   bool mDeferEnabled;
   bool mDocumentParsingDone;

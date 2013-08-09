@@ -37,7 +37,7 @@ nsresult XPCOMGlueStartup(const char* xpcomFile)
     xpcomFunctions.version = XPCOM_GLUE_VERSION;
     xpcomFunctions.size    = sizeof(XPCOMFunctions);
 
-    GetFrozenFunctionsFunc func = nsnull;
+    GetFrozenFunctionsFunc func = nullptr;
 
     if (!xpcomFile)
         xpcomFile = XPCOM_DLL;
@@ -46,7 +46,7 @@ nsresult XPCOMGlueStartup(const char* xpcomFile)
     if (NS_FAILED(rv))
         return rv;
 
-    rv = (*func)(&xpcomFunctions, nsnull);
+    rv = (*func)(&xpcomFunctions, nullptr);
     if (NS_FAILED(rv)) {
         XPCOMGlueUnload();
         return rv;
@@ -169,7 +169,7 @@ NS_GetMemoryManager(nsIMemory* *result)
 }
 
 XPCOM_API(nsresult)
-NS_NewLocalFile(const nsAString &path, bool followLinks, nsILocalFile* *result)
+NS_NewLocalFile(const nsAString &path, bool followLinks, nsIFile* *result)
 {
     if (!xpcomFunctions.newLocalFile)
         return NS_ERROR_NOT_INITIALIZED;
@@ -177,7 +177,7 @@ NS_NewLocalFile(const nsAString &path, bool followLinks, nsILocalFile* *result)
 }
 
 XPCOM_API(nsresult)
-NS_NewNativeLocalFile(const nsACString &path, bool followLinks, nsILocalFile* *result)
+NS_NewNativeLocalFile(const nsACString &path, bool followLinks, nsIFile* *result)
 {
     if (!xpcomFunctions.newNativeLocalFile)
         return NS_ERROR_NOT_INITIALIZED;
@@ -213,8 +213,8 @@ NS_StringContainerInit(nsStringContainer &aStr)
 XPCOM_API(nsresult)
 NS_StringContainerInit2(nsStringContainer &aStr,
                         const PRUnichar   *aData,
-                        PRUint32           aDataLength,
-                        PRUint32           aFlags)
+                        uint32_t           aDataLength,
+                        uint32_t           aFlags)
 {
     if (!xpcomFunctions.stringContainerInit2)
         return NS_ERROR_NOT_INITIALIZED;
@@ -228,21 +228,21 @@ NS_StringContainerFinish(nsStringContainer &aStr)
         xpcomFunctions.stringContainerFinish(aStr);
 }
 
-XPCOM_API(PRUint32)
+XPCOM_API(uint32_t)
 NS_StringGetData(const nsAString &aStr, const PRUnichar **aBuf, bool *aTerm)
 {
     if (!xpcomFunctions.stringGetData) {
-        *aBuf = nsnull;
+        *aBuf = nullptr;
         return 0;
     }
     return xpcomFunctions.stringGetData(aStr, aBuf, aTerm);
 }
 
-XPCOM_API(PRUint32)
-NS_StringGetMutableData(nsAString &aStr, PRUint32 aLen, PRUnichar **aBuf)
+XPCOM_API(uint32_t)
+NS_StringGetMutableData(nsAString &aStr, uint32_t aLen, PRUnichar **aBuf)
 {
     if (!xpcomFunctions.stringGetMutableData) {
-        *aBuf = nsnull;
+        *aBuf = nullptr;
         return 0;
     }
     return xpcomFunctions.stringGetMutableData(aStr, aLen, aBuf);
@@ -252,12 +252,12 @@ XPCOM_API(PRUnichar*)
 NS_StringCloneData(const nsAString &aStr)
 {
     if (!xpcomFunctions.stringCloneData)
-        return nsnull;
+        return nullptr;
     return xpcomFunctions.stringCloneData(aStr);
 }
 
 XPCOM_API(nsresult)
-NS_StringSetData(nsAString &aStr, const PRUnichar *aBuf, PRUint32 aCount)
+NS_StringSetData(nsAString &aStr, const PRUnichar *aBuf, uint32_t aCount)
 {
     if (!xpcomFunctions.stringSetData)
         return NS_ERROR_NOT_INITIALIZED;
@@ -266,8 +266,8 @@ NS_StringSetData(nsAString &aStr, const PRUnichar *aBuf, PRUint32 aCount)
 }
 
 XPCOM_API(nsresult)
-NS_StringSetDataRange(nsAString &aStr, PRUint32 aCutStart, PRUint32 aCutLength,
-                      const PRUnichar *aBuf, PRUint32 aCount)
+NS_StringSetDataRange(nsAString &aStr, uint32_t aCutStart, uint32_t aCutLength,
+                      const PRUnichar *aBuf, uint32_t aCount)
 {
     if (!xpcomFunctions.stringSetDataRange)
         return NS_ERROR_NOT_INITIALIZED;
@@ -308,8 +308,8 @@ NS_CStringContainerInit(nsCStringContainer &aStr)
 XPCOM_API(nsresult)
 NS_CStringContainerInit2(nsCStringContainer &aStr,
                          const char         *aData,
-                         PRUint32           aDataLength,
-                         PRUint32           aFlags)
+                         uint32_t           aDataLength,
+                         uint32_t           aFlags)
 {
     if (!xpcomFunctions.cstringContainerInit2)
         return NS_ERROR_NOT_INITIALIZED;
@@ -323,21 +323,21 @@ NS_CStringContainerFinish(nsCStringContainer &aStr)
         xpcomFunctions.cstringContainerFinish(aStr);
 }
 
-XPCOM_API(PRUint32)
+XPCOM_API(uint32_t)
 NS_CStringGetData(const nsACString &aStr, const char **aBuf, bool *aTerm)
 {
     if (!xpcomFunctions.cstringGetData) {
-        *aBuf = nsnull;
+        *aBuf = nullptr;
         return 0;
     }
     return xpcomFunctions.cstringGetData(aStr, aBuf, aTerm);
 }
 
-XPCOM_API(PRUint32)
-NS_CStringGetMutableData(nsACString &aStr, PRUint32 aLen, char **aBuf)
+XPCOM_API(uint32_t)
+NS_CStringGetMutableData(nsACString &aStr, uint32_t aLen, char **aBuf)
 {
     if (!xpcomFunctions.cstringGetMutableData) {
-        *aBuf = nsnull;
+        *aBuf = nullptr;
         return 0;
     }
     return xpcomFunctions.cstringGetMutableData(aStr, aLen, aBuf);
@@ -347,12 +347,12 @@ XPCOM_API(char*)
 NS_CStringCloneData(const nsACString &aStr)
 {
     if (!xpcomFunctions.cstringCloneData)
-        return nsnull;
+        return nullptr;
     return xpcomFunctions.cstringCloneData(aStr);
 }
 
 XPCOM_API(nsresult)
-NS_CStringSetData(nsACString &aStr, const char *aBuf, PRUint32 aCount)
+NS_CStringSetData(nsACString &aStr, const char *aBuf, uint32_t aCount)
 {
     if (!xpcomFunctions.cstringSetData)
         return NS_ERROR_NOT_INITIALIZED;
@@ -360,8 +360,8 @@ NS_CStringSetData(nsACString &aStr, const char *aBuf, PRUint32 aCount)
 }
 
 XPCOM_API(nsresult)
-NS_CStringSetDataRange(nsACString &aStr, PRUint32 aCutStart, PRUint32 aCutLength,
-                       const char *aBuf, PRUint32 aCount)
+NS_CStringSetDataRange(nsACString &aStr, uint32_t aCutStart, uint32_t aCutLength,
+                       const char *aBuf, uint32_t aCount)
 {
     if (!xpcomFunctions.cstringSetDataRange)
         return NS_ERROR_NOT_INITIALIZED;
@@ -408,18 +408,18 @@ NS_UTF16ToCString(const nsAString &aSrc, nsCStringEncoding aDestEncoding, nsACSt
 }
 
 XPCOM_API(void*)
-NS_Alloc(PRSize size)
+NS_Alloc(size_t size)
 {
     if (!xpcomFunctions.allocFunc)
-        return nsnull;
+        return nullptr;
     return xpcomFunctions.allocFunc(size);
 }
 
 XPCOM_API(void*)
-NS_Realloc(void* ptr, PRSize size)
+NS_Realloc(void* ptr, size_t size)
 {
     if (!xpcomFunctions.reallocFunc)
-        return nsnull;
+        return nullptr;
     return xpcomFunctions.reallocFunc(ptr, size);
 }
 
@@ -431,8 +431,8 @@ NS_Free(void* ptr)
 }
 
 XPCOM_API(void)
-NS_DebugBreak(PRUint32 aSeverity, const char *aStr, const char *aExpr,
-              const char *aFile, PRInt32 aLine)
+NS_DebugBreak(uint32_t aSeverity, const char *aStr, const char *aExpr,
+              const char *aFile, int32_t aLine)
 {
     if (xpcomFunctions.debugBreakFunc)
         xpcomFunctions.debugBreakFunc(aSeverity, aStr, aExpr, aFile, aLine);
@@ -454,7 +454,7 @@ NS_LogTerm()
 
 XPCOM_API(void)
 NS_LogAddRef(void *aPtr, nsrefcnt aNewRefCnt,
-             const char *aTypeName, PRUint32 aInstanceSize)
+             const char *aTypeName, uint32_t aInstanceSize)
 {
     if (xpcomFunctions.logAddRefFunc)
         xpcomFunctions.logAddRefFunc(aPtr, aNewRefCnt,
@@ -469,14 +469,14 @@ NS_LogRelease(void *aPtr, nsrefcnt aNewRefCnt, const char *aTypeName)
 }
 
 XPCOM_API(void)
-NS_LogCtor(void *aPtr, const char *aTypeName, PRUint32 aInstanceSize)
+NS_LogCtor(void *aPtr, const char *aTypeName, uint32_t aInstanceSize)
 {
     if (xpcomFunctions.logCtorFunc)
         xpcomFunctions.logCtorFunc(aPtr, aTypeName, aInstanceSize);
 }
 
 XPCOM_API(void)
-NS_LogDtor(void *aPtr, const char *aTypeName, PRUint32 aInstanceSize)
+NS_LogDtor(void *aPtr, const char *aTypeName, uint32_t aInstanceSize)
 {
     if (xpcomFunctions.logDtorFunc)
         xpcomFunctions.logDtorFunc(aPtr, aTypeName, aInstanceSize);
@@ -514,8 +514,8 @@ NS_DestroyXPTCallStub(nsISomeInterface* aStub)
 }
 
 XPCOM_API(nsresult)
-NS_InvokeByIndex(nsISupports* that, PRUint32 methodIndex,
-                 PRUint32 paramCount, nsXPTCVariant* params)
+NS_InvokeByIndex(nsISupports* that, uint32_t methodIndex,
+                 uint32_t paramCount, nsXPTCVariant* params)
 {
     if (!xpcomFunctions.invokeByIndexFunc)
         return NS_ERROR_NOT_INITIALIZED;
@@ -543,12 +543,12 @@ NS_CycleCollectorForget(nsISupports* obj)
 }
 
 XPCOM_API(nsPurpleBufferEntry*)
-NS_CycleCollectorSuspect2(nsISupports* obj)
+NS_CycleCollectorSuspect2(void* obj, nsCycleCollectionParticipant *p)
 {
     if (!xpcomFunctions.cycleSuspect2Func)
-        return nsnull;
+        return nullptr;
 
-    return xpcomFunctions.cycleSuspect2Func(obj);
+    return xpcomFunctions.cycleSuspect2Func(obj, p);
 }
 
 XPCOM_API(bool)

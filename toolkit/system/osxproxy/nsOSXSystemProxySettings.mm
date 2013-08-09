@@ -15,8 +15,9 @@
 #include "nsISupportsPrimitives.h"
 #include "nsIURI.h"
 #include "nsObjCExceptions.h"
+#include "mozilla/Attributes.h"
 
-class nsOSXSystemProxySettings : public nsISystemProxySettings {
+class nsOSXSystemProxySettings MOZ_FINAL : public nsISystemProxySettings {
 public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSISYSTEMPROXYSETTINGS
@@ -30,10 +31,10 @@ public:
   // is there a PAC url specified in the system configuration
   bool IsAutoconfigEnabled() const;
   // retrieve the pac url
-  nsresult GetAutoconfigURL(nsCAutoString& aResult) const;
+  nsresult GetAutoconfigURL(nsAutoCString& aResult) const;
 
   // Find the SystemConfiguration proxy & port for a given URI
-  nsresult FindSCProxyPort(nsIURI* aURI, nsACString& aResultHost, PRInt32& aResultPort, bool& aResultSocksProxy);
+  nsresult FindSCProxyPort(const nsACString &aScheme, nsACString& aResultHost, int32_t& aResultPort, bool& aResultSocksProxy);
 
   // is host:port on the proxy exception list?
   bool IsInExceptionList(const nsACString& aHost) const;
@@ -57,7 +58,14 @@ private:
   static const SchemeMapping gSchemeMappingList[];
 };
 
-NS_IMPL_ISUPPORTS1(nsOSXSystemProxySettings, nsISystemProxySettings)
+NS_IMPL_THREADSAFE_ISUPPORTS1(nsOSXSystemProxySettings, nsISystemProxySettings)
+
+NS_IMETHODIMP
+nsOSXSystemProxySettings::GetMainThreadOnly(bool *aMainThreadOnly)
+{
+  *aMainThreadOnly = true;
+  return NS_OK;
+}
 
 // Mapping of URI schemes to SystemConfiguration keys
 const nsOSXSystemProxySettings::SchemeMapping nsOSXSystemProxySettings::gSchemeMappingList[] = {
@@ -155,7 +163,7 @@ nsOSXSystemProxySettings::ProxyHasChanged()
 }
 
 nsresult
-nsOSXSystemProxySettings::FindSCProxyPort(nsIURI* aURI, nsACString& aResultHost, PRInt32& aResultPort, bool& aResultSocksProxy)
+nsOSXSystemProxySettings::FindSCProxyPort(const nsACString &aScheme, nsACString& aResultHost, int32_t& aResultPort, bool& aResultSocksProxy)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
@@ -163,8 +171,8 @@ nsOSXSystemProxySettings::FindSCProxyPort(nsIURI* aURI, nsACString& aResultHost,
 
   for (const SchemeMapping* keys = gSchemeMappingList; keys->mScheme != NULL; ++keys) {
     // Check for matching scheme (when appropriate)
-    bool res;
-    if ((NS_FAILED(aURI->SchemeIs(keys->mScheme, &res)) || !res) && !keys->mIsSocksProxy)
+    if (strcasecmp(keys->mScheme, PromiseFlatCString(aScheme).get()) &&
+        !keys->mIsSocksProxy)
       continue;
 
     // Check the proxy is enabled
@@ -208,7 +216,7 @@ nsOSXSystemProxySettings::IsAutoconfigEnabled() const
 }
 
 nsresult
-nsOSXSystemProxySettings::GetAutoconfigURL(nsCAutoString& aResult) const
+nsOSXSystemProxySettings::GetAutoconfigURL(nsAutoCString& aResult) const
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
@@ -227,16 +235,16 @@ nsOSXSystemProxySettings::GetAutoconfigURL(nsCAutoString& aResult) const
 static bool
 IsHostProxyEntry(const nsACString& aHost, const nsACString& aOverride)
 {
-  nsCAutoString host(aHost);
-  nsCAutoString override(aOverride);
+  nsAutoCString host(aHost);
+  nsAutoCString override(aOverride);
 
-  PRInt32 overrideLength = override.Length();
-  PRInt32 tokenStart = 0;
-  PRInt32 offset = 0;
+  int32_t overrideLength = override.Length();
+  int32_t tokenStart = 0;
+  int32_t offset = 0;
   bool star = false;
 
   while (tokenStart < overrideLength) {
-    PRInt32 tokenEnd = override.FindChar('*', tokenStart);
+    int32_t tokenEnd = override.FindChar('*', tokenStart);
     if (tokenEnd == tokenStart) {
       // Star is the first character in the token.
       star = true;
@@ -248,7 +256,7 @@ IsHostProxyEntry(const nsACString& aHost, const nsACString& aOverride)
     } else {
       if (tokenEnd == -1)
         tokenEnd = overrideLength; // no '*' char, match rest of string
-      nsCAutoString token(Substring(override, tokenStart, tokenEnd - tokenStart));
+      nsAutoCString token(Substring(override, tokenStart, tokenEnd - tokenStart));
       offset = host.Find(token, offset);
       if (offset == -1 || (!star && offset))
         return false;
@@ -258,7 +266,7 @@ IsHostProxyEntry(const nsACString& aHost, const nsACString& aOverride)
     }
   }
 
-  return (star || (offset == static_cast<PRInt32>(host.Length())));
+  return (star || (offset == static_cast<int32_t>(host.Length())));
 }
 
 bool
@@ -275,7 +283,7 @@ nsOSXSystemProxySettings::IsInExceptionList(const nsACString& aHost) const
   NSString* currentValue = NULL;
   while ((currentValue = [exceptionEnumerator nextObject])) {
     NS_ENSURE_TRUE([currentValue isKindOfClass:[NSString class]], false);
-    nsCAutoString overrideStr([currentValue UTF8String]);
+    nsAutoCString overrideStr([currentValue UTF8String]);
     if (IsHostProxyEntry(aHost, overrideStr))
       return true;
   }
@@ -290,7 +298,7 @@ nsOSXSystemProxySettings::GetPACURI(nsACString& aResult)
 
   NS_ENSURE_TRUE(mProxyDict != NULL, NS_ERROR_FAILURE);
 
-  nsCAutoString pacUrl;
+  nsAutoCString pacUrl;
   if (IsAutoconfigEnabled() && NS_SUCCEEDED(GetAutoconfigURL(pacUrl))) {
     aResult.Assign(pacUrl);
     return NS_OK;
@@ -302,20 +310,20 @@ nsOSXSystemProxySettings::GetPACURI(nsACString& aResult)
 }
 
 nsresult
-nsOSXSystemProxySettings::GetProxyForURI(nsIURI* aURI, nsACString& aResult)
+nsOSXSystemProxySettings::GetProxyForURI(const nsACString & aSpec,
+                                         const nsACString & aScheme,
+                                         const nsACString & aHost,
+                                         const int32_t      aPort,
+                                         nsACString & aResult)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  nsCAutoString host;
-  nsresult rv = aURI->GetHost(host);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  PRInt32 proxyPort;
-  nsCAutoString proxyHost;
+  int32_t proxyPort;
+  nsAutoCString proxyHost;
   bool proxySocks;
-  rv = FindSCProxyPort(aURI, proxyHost, proxyPort, proxySocks);
+  nsresult rv = FindSCProxyPort(aScheme, proxyHost, proxyPort, proxySocks);
 
-  if (NS_FAILED(rv) || IsInExceptionList(host)) {
+  if (NS_FAILED(rv) || IsInExceptionList(aHost)) {
     aResult.AssignLiteral("DIRECT");
   } else if (proxySocks) {
     aResult.Assign(NS_LITERAL_CSTRING("SOCKS ") + proxyHost + nsPrintfCString(":%d", proxyPort));

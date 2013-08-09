@@ -11,7 +11,7 @@
 #include <unistd.h>
 #include <ui/GraphicBuffer.h>
 
-#include "IPC/IPCMessageUtils.h"
+#include "ipc/IPCMessageUtils.h"
 #include "mozilla/layers/PGrallocBufferChild.h"
 #include "mozilla/layers/PGrallocBufferParent.h"
 
@@ -60,6 +60,8 @@ class GrallocBufferActor : public PGrallocBufferChild
                          , public PGrallocBufferParent
 {
   friend class ShadowLayerForwarder;
+  friend class ShadowLayerManager;
+  friend class ImageBridgeChild;
   typedef android::GraphicBuffer GraphicBuffer;
 
 public:
@@ -69,16 +71,20 @@ public:
   Create(const gfxIntSize& aSize, const gfxContentType& aContent,
          MaybeMagicGrallocBufferHandle* aOutHandle);
 
+  static PGrallocBufferParent*
+  Create(const gfxIntSize& aSize, const uint32_t& aFormat, const uint32_t& aUsage,
+         MaybeMagicGrallocBufferHandle* aOutHandle);
+
   static PGrallocBufferChild*
   Create();
+
+  static android::sp<GraphicBuffer>
+  GetFrom(const SurfaceDescriptorGralloc& aDescriptor);
 
 private:
   GrallocBufferActor() {}
 
   void InitFromHandle(const MagicGrallocBufferHandle& aHandle);
-
-  static android::sp<GraphicBuffer>
-  GetFrom(const SurfaceDescriptorGralloc& aDescriptor);
 
   android::sp<GraphicBuffer> mGraphicBuffer;
 };

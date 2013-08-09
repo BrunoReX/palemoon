@@ -3,7 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -16,46 +16,57 @@ MODULE		= content
 LIBRARY_NAME	= gkconcvs_s
 LIBXUL_LIBRARY  = 1
 
-EXPORTS = \
-	CustomQS_Canvas.h \
-	CustomQS_Canvas2D.h \
-	CustomQS_WebGL.h \
-	WebGLContext.h \
-	$(NULL)
-
 EXPORTS_NAMESPACES = mozilla/dom
 
 EXPORTS_mozilla/dom = \
+	CanvasUtils.h \
+	CanvasRenderingContext2D.h \
   ImageData.h \
   $(NULL)
 
 CPPSRCS	= \
 	CanvasImageCache.cpp \
+	CanvasRenderingContext2D.cpp \
 	CanvasUtils.cpp \
-	nsCanvasRenderingContext2D.cpp \
-	nsCanvasRenderingContext2DAzure.cpp \
 	DocumentRendererParent.cpp \
 	DocumentRendererChild.cpp \
 	ImageData.cpp \
-	WebGLExtensionCompressedTextureS3TC.cpp \
 	$(NULL)
 
 ifdef MOZ_WEBGL
 
 CPPSRCS += \
+	WebGLActiveInfo.cpp \
+	WebGLBuffer.cpp \
 	WebGLContext.cpp \
 	WebGLContextGL.cpp \
 	WebGLContextUtils.cpp \
 	WebGLContextReporter.cpp \
 	WebGLContextValidate.cpp \
+	WebGLElementArrayCache.cpp \
+	WebGLExtensionBase.cpp \
+	WebGLExtensionCompressedTextureATC.cpp \
+	WebGLExtensionCompressedTexturePVRTC.cpp \
+	WebGLExtensionCompressedTextureS3TC.cpp \
+	WebGLExtensionDebugRendererInfo.cpp \
+	WebGLExtensionDepthTexture.cpp \
+	WebGLExtensionLoseContext.cpp \
 	WebGLExtensionStandardDerivatives.cpp \
 	WebGLExtensionTextureFilterAnisotropic.cpp \
-	WebGLExtensionLoseContext.cpp \
+	WebGLExtensionTextureFloat.cpp \
+	WebGLFramebuffer.cpp \
+	WebGLProgram.cpp \
+	WebGLRenderbuffer.cpp \
+	WebGLShader.cpp \
+	WebGLShaderPrecisionFormat.cpp \
 	WebGLTexelConversions.cpp \
+	WebGLTexture.cpp \
+	WebGLUniformLocation.cpp \
 	$(NULL)
 
-DEFINES += -DUSE_ANGLE
-USE_ANGLE=1
+LOCAL_INCLUDES += \
+	-I$(topsrcdir)/js/xpconnect/wrappers \
+	$(NULL)
 
 else
 
@@ -77,6 +88,7 @@ INCLUDES	+= \
 		-I$(srcdir)/../../../layout/generic \
 		-I$(srcdir)/../../base/src \
 		-I$(srcdir)/../../html/content/src \
+		-I$(srcdir)/../../../js/xpconnect/src \
 		-I$(srcdir)/../../../dom/base \
 		$(NULL)
 

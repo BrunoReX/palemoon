@@ -20,49 +20,20 @@ using namespace mozilla;
 using namespace mozilla::layers;
 using namespace mozilla::gfx;
 
-static PRUint8 sUnpremultiplyTable[256*256];
-static PRUint8 sPremultiplyTable[256*256];
-static bool sTablesInitialized = false;
+const uint8_t gfxUtils::sPremultiplyTable[256*256] = {
+#include "sPremultiplyTable.h"
+};
 
-static const PRUint8 PremultiplyValue(PRUint8 a, PRUint8 v) {
-    return sPremultiplyTable[a*256+v];
+const uint8_t gfxUtils::sUnpremultiplyTable[256*256] = {
+#include "sUnpremultiplyTable.h"
+};
+
+static const uint8_t PremultiplyValue(uint8_t a, uint8_t v) {
+    return gfxUtils::sPremultiplyTable[a*256+v];
 }
 
-static const PRUint8 UnpremultiplyValue(PRUint8 a, PRUint8 v) {
-    return sUnpremultiplyTable[a*256+v];
-}
-
-static void
-CalculateTables()
-{
-    // It's important that the array be indexed first by alpha and then by rgb
-    // value.  When we unpremultiply a pixel, we're guaranteed to do three
-    // lookups with the same alpha; indexing by alpha first makes it likely that
-    // those three lookups will be close to one another in memory, thus
-    // increasing the chance of a cache hit.
-
-    // Unpremultiply table
-
-    // a == 0 case
-    for (PRUint32 c = 0; c <= 255; c++) {
-        sUnpremultiplyTable[c] = c;
-    }
-
-    for (int a = 1; a <= 255; a++) {
-        for (int c = 0; c <= 255; c++) {
-            sUnpremultiplyTable[a*256+c] = (PRUint8)((c * 255) / a);
-        }
-    }
-
-    // Premultiply table
-
-    for (int a = 0; a <= 255; a++) {
-        for (int c = 0; c <= 255; c++) {
-            sPremultiplyTable[a*256+c] = (a * c + 254) / 255;
-        }
-    }
-
-    sTablesInitialized = true;
+static const uint8_t UnpremultiplyValue(uint8_t a, uint8_t v) {
+    return gfxUtils::sUnpremultiplyTable[a*256+v];
 }
 
 void
@@ -90,29 +61,26 @@ gfxUtils::PremultiplyImageSurface(gfxImageSurface *aSourceSurface,
         return;
     }
 
-    if (!sTablesInitialized)
-        CalculateTables();
+    uint8_t *src = aSourceSurface->Data();
+    uint8_t *dst = aDestSurface->Data();
 
-    PRUint8 *src = aSourceSurface->Data();
-    PRUint8 *dst = aDestSurface->Data();
-
-    PRUint32 dim = aSourceSurface->Width() * aSourceSurface->Height();
-    for (PRUint32 i = 0; i < dim; ++i) {
+    uint32_t dim = aSourceSurface->Width() * aSourceSurface->Height();
+    for (uint32_t i = 0; i < dim; ++i) {
 #ifdef IS_LITTLE_ENDIAN
-        PRUint8 b = *src++;
-        PRUint8 g = *src++;
-        PRUint8 r = *src++;
-        PRUint8 a = *src++;
+        uint8_t b = *src++;
+        uint8_t g = *src++;
+        uint8_t r = *src++;
+        uint8_t a = *src++;
 
         *dst++ = PremultiplyValue(a, b);
         *dst++ = PremultiplyValue(a, g);
         *dst++ = PremultiplyValue(a, r);
         *dst++ = a;
 #else
-        PRUint8 a = *src++;
-        PRUint8 r = *src++;
-        PRUint8 g = *src++;
-        PRUint8 b = *src++;
+        uint8_t a = *src++;
+        uint8_t r = *src++;
+        uint8_t g = *src++;
+        uint8_t b = *src++;
 
         *dst++ = a;
         *dst++ = PremultiplyValue(a, r);
@@ -147,29 +115,26 @@ gfxUtils::UnpremultiplyImageSurface(gfxImageSurface *aSourceSurface,
         return;
     }
 
-    if (!sTablesInitialized)
-        CalculateTables();
+    uint8_t *src = aSourceSurface->Data();
+    uint8_t *dst = aDestSurface->Data();
 
-    PRUint8 *src = aSourceSurface->Data();
-    PRUint8 *dst = aDestSurface->Data();
-
-    PRUint32 dim = aSourceSurface->Width() * aSourceSurface->Height();
-    for (PRUint32 i = 0; i < dim; ++i) {
+    uint32_t dim = aSourceSurface->Width() * aSourceSurface->Height();
+    for (uint32_t i = 0; i < dim; ++i) {
 #ifdef IS_LITTLE_ENDIAN
-        PRUint8 b = *src++;
-        PRUint8 g = *src++;
-        PRUint8 r = *src++;
-        PRUint8 a = *src++;
+        uint8_t b = *src++;
+        uint8_t g = *src++;
+        uint8_t r = *src++;
+        uint8_t a = *src++;
 
         *dst++ = UnpremultiplyValue(a, b);
         *dst++ = UnpremultiplyValue(a, g);
         *dst++ = UnpremultiplyValue(a, r);
         *dst++ = a;
 #else
-        PRUint8 a = *src++;
-        PRUint8 r = *src++;
-        PRUint8 g = *src++;
-        PRUint8 b = *src++;
+        uint8_t a = *src++;
+        uint8_t r = *src++;
+        uint8_t g = *src++;
+        uint8_t b = *src++;
 
         *dst++ = a;
         *dst++ = UnpremultiplyValue(a, r);
@@ -197,14 +162,14 @@ gfxUtils::ConvertBGRAtoRGBA(gfxImageSurface *aSourceSurface,
     NS_ABORT_IF_FALSE(aSourceSurface->Format() == gfxASurface::ImageFormatARGB32,
                       "Surfaces must be ARGB32");
 
-    PRUint8 *src = aSourceSurface->Data();
-    PRUint8 *dst = aDestSurface->Data();
+    uint8_t *src = aSourceSurface->Data();
+    uint8_t *dst = aDestSurface->Data();
 
-    PRUint32 dim = aSourceSurface->Width() * aSourceSurface->Height();
-    PRUint8 *srcEnd = src + 4*dim;
+    uint32_t dim = aSourceSurface->Width() * aSourceSurface->Height();
+    uint8_t *srcEnd = src + 4*dim;
 
     if (src == dst) {
-        PRUint8 buffer[4];
+        uint8_t buffer[4];
         for (; src != srcEnd; src += 4) {
             buffer[0] = src[2];
             buffer[1] = src[1];
@@ -283,13 +248,13 @@ CreateSamplingRestrictedDrawable(gfxDrawable* aDrawable,
     // matter what we do here, but we should avoid trying to
     // create a zero-size surface.
     if (needed.IsEmpty())
-        return nsnull;
+        return nullptr;
 
-    gfxIntSize size(PRInt32(needed.Width()), PRInt32(needed.Height()));
+    gfxIntSize size(int32_t(needed.Width()), int32_t(needed.Height()));
     nsRefPtr<gfxASurface> temp =
         gfxPlatform::GetPlatform()->CreateOffscreenSurface(size, gfxASurface::ContentFromFormat(aFormat));
     if (!temp || temp->CairoStatus())
-        return nsnull;
+        return nullptr;
 
     nsRefPtr<gfxContext> tmpCtx = new gfxContext(temp);
     tmpCtx->SetOperator(OptimalFillOperator());
@@ -298,7 +263,7 @@ CreateSamplingRestrictedDrawable(gfxDrawable* aDrawable,
 
     nsRefPtr<gfxPattern> resultPattern = new gfxPattern(temp);
     if (!resultPattern)
-        return nsnull;
+        return nullptr;
 
     nsRefPtr<gfxDrawable> drawable = 
         new gfxSurfaceDrawable(temp, size, gfxMatrix().Translate(-needed.TopLeft()));
@@ -459,7 +424,7 @@ gfxUtils::DrawPixelSnapped(gfxContext*      aContext,
                            const gfxRect&   aFill,
                            const gfxImageSurface::gfxImageFormat aFormat,
                            gfxPattern::GraphicsFilter aFilter,
-                           PRUint32         aImageFlags)
+                           uint32_t         aImageFlags)
 {
     SAMPLE_LABEL("gfxUtils", "DrawPixelSnapped");
     bool doTile = !aImageRect.Contains(aSourceRect) &&
@@ -551,7 +516,7 @@ PathFromRegionInternal(gfxContext* aContext, const nsIntRegion& aRegion,
   aContext->NewPath();
   nsIntRegionRectIterator iter(aRegion);
   const nsIntRect* r;
-  while ((r = iter.Next()) != nsnull) {
+  while ((r = iter.Next()) != nullptr) {
     aContext->Rectangle(gfxRect(r->x, r->y, r->width, r->height), aSnap);
   }
 }
@@ -590,6 +555,12 @@ gfxUtils::ClampToScaleFactor(gfxFloat aVal)
     aVal = -aVal;
   }
 
+  bool inverse = false;
+  if (aVal < 1.0) {
+    inverse = true;
+    aVal = 1 / aVal;
+  }
+
   gfxFloat power = log(aVal)/log(kScaleResolution);
 
   // If power is within 1e-6 of an integer, round to nearest to
@@ -597,13 +568,19 @@ gfxUtils::ClampToScaleFactor(gfxFloat aVal)
   // next integer value.
   if (fabs(power - NS_round(power)) < 1e-6) {
     power = NS_round(power);
+  } else if (inverse) {
+    power = floor(power);
   } else {
     power = ceil(power);
   }
 
   gfxFloat scale = pow(kScaleResolution, power);
 
-  return NS_MAX(scale, 1.0);
+  if (inverse) {
+    scale = 1 / scale;
+  }
+
+  return scale;
 }
 
 
@@ -623,8 +600,8 @@ gfxUtils::PathFromRegionSnapped(gfxContext* aContext, const nsIntRegion& aRegion
 bool
 gfxUtils::GfxRectToIntRect(const gfxRect& aIn, nsIntRect* aOut)
 {
-  *aOut = nsIntRect(PRInt32(aIn.X()), PRInt32(aIn.Y()),
-  PRInt32(aIn.Width()), PRInt32(aIn.Height()));
+  *aOut = nsIntRect(int32_t(aIn.X()), int32_t(aIn.Y()),
+  int32_t(aIn.Width()), int32_t(aIn.Height()));
   return gfxRect(aOut->x, aOut->y, aOut->width, aOut->height).IsEqualEdges(aIn);
 }
 
@@ -687,14 +664,14 @@ gfxUtils::ConvertYCbCrToRGB(const PlanarYCbCrImage::Data& aData,
                             const gfxASurface::gfxImageFormat& aDestFormat,
                             const gfxIntSize& aDestSize,
                             unsigned char* aDestBuffer,
-                            PRInt32 aStride)
+                            int32_t aStride)
 {
   // ConvertYCbCrToRGB et al. assume the chroma planes are rounded up if the
   // luma plane is odd sized.
   MOZ_ASSERT((aData.mCbCrSize.width == aData.mYSize.width ||
               aData.mCbCrSize.width == (aData.mYSize.width + 1) >> 1) &&
              (aData.mCbCrSize.height == aData.mYSize.height ||
-              aData.mCbCrSize.height == (aData.mYSize.height + 1) >> 1)); 
+              aData.mCbCrSize.height == (aData.mYSize.height + 1) >> 1));
   gfx::YUVType yuvtype =
     gfx::TypeFromSize(aData.mYSize.width,
                       aData.mYSize.height,

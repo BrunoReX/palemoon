@@ -35,7 +35,6 @@ class StringBuffer
     CharBuffer cb;
 
     JSContext *context() const { return cb.allocPolicy().context(); }
-    jschar *extractWellSized();
 
     StringBuffer(const StringBuffer &other) MOZ_DELETE;
     void operator=(const StringBuffer &other) MOZ_DELETE;
@@ -47,6 +46,7 @@ class StringBuffer
     inline bool resize(size_t len) { return cb.resize(len); }
     inline bool append(const jschar c) { return cb.append(c); }
     inline bool append(const jschar *chars, size_t len) { return cb.append(chars, len); }
+    inline bool append(const CharPtr chars, size_t len) { return cb.append(chars.get(), len); }
     inline bool append(const jschar *begin, const jschar *end) { return cb.append(begin, end); }
     inline bool append(JSString *str);
     inline bool append(JSLinearString *str);
@@ -64,6 +64,9 @@ class StringBuffer
     }
     void infallibleAppend(const jschar *chars, size_t len) {
         cb.infallibleAppend(chars, len);
+    }
+    void infallibleAppend(const CharPtr chars, size_t len) {
+        cb.infallibleAppend(chars.get(), len);
     }
     void infallibleAppend(const jschar *begin, const jschar *end) {
         cb.infallibleAppend(begin, end);
@@ -83,10 +86,17 @@ class StringBuffer
      * Creates a string from the characters in this buffer, then (regardless
      * whether string creation succeeded or failed) empties the buffer.
      */
-    JSFixedString *finishString();
+    JSFlatString *finishString();
 
     /* Identical to finishString() except that an atom is created. */
     JSAtom *finishAtom();
+
+    /*
+     * Creates a raw string from the characters in this buffer.  The string is
+     * exactly the characters in this buffer: it is *not* null-terminated
+     * unless the last appended character was |(jschar)0|.
+     */
+    jschar *extractWellSized();
 };
 
 inline bool
@@ -111,9 +121,9 @@ StringBuffer::appendInflated(const char *cstr, size_t cstrlen)
     size_t lengthBefore = length();
     if (!cb.growByUninitialized(cstrlen))
         return false;
-    DebugOnly<size_t> oldcstrlen = cstrlen;
-    DebugOnly<bool> ok = InflateStringToBuffer(context(), cstr, cstrlen,
-                                               begin() + lengthBefore, &cstrlen);
+    mozilla::DebugOnly<size_t> oldcstrlen = cstrlen;
+    mozilla::DebugOnly<bool> ok = InflateStringToBuffer(context(), cstr, cstrlen,
+                                                        begin() + lengthBefore, &cstrlen);
     JS_ASSERT(ok && oldcstrlen == cstrlen);
     return true;
 }

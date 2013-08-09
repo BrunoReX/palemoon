@@ -39,7 +39,7 @@ interface nsIWebBrowserPrint;
 interface nsIVariant;
 interface nsIPrivacyTransitionObserver;
 
-[scriptable, uuid(6f60ac96-fa2c-41a5-92b4-29aaadbd7a7b)]
+[scriptable, builtinclass, uuid(318CE516-3F7A-41F6-8F3D-3661650F7A46)]
 interface nsIDocShell : nsISupports
 {
   /**
@@ -127,7 +127,7 @@ interface nsIDocShell : nsISupports
   [noscript]void internalLoad(in nsIURI aURI,
                               in nsIURI aReferrer,
                               in nsISupports aOwner,
-                              in PRUint32 aFlags,
+                              in uint32_t aFlags,
                               in wstring aWindowTarget,
                               in string aTypeHint,
                               in nsIInputStream aPostDataStream,
@@ -403,17 +403,6 @@ interface nsIDocShell : nsISupports
   void historyPurged(in long numEntries);
 
   /*
-   * Retrieves the WebApps session storage object for the supplied domain.
-   * If it doesn't already exist, a new one will be created.
-   *
-   * @param uri the uri of the storage object to retrieve
-   * @param documentURI new storage will be created with reference to this
-   *                    document.documentURI that will appear in storage event
-   */
-  nsIDOMStorage getSessionStorageForURI(in nsIURI uri,
-                                        in DOMString documentURI);
-
-  /*
    * Retrieves the WebApps session storage object for the supplied principal.
    *
    * @param principal returns a storage for this principal
@@ -433,6 +422,19 @@ interface nsIDocShell : nsISupports
    * @param storage the storage object to add
    */
   void addSessionStorage(in nsIPrincipal principal, in nsIDOMStorage storage);
+
+  /**
+   * Clones all session storage objects and attaches them to the given docshell.
+   * Useful when duplicating tabs and their states.
+   *
+   * @param docShell the docshell to clone the sessionstorage objects to
+   */
+  void cloneSessionStoragesTo(in nsIDocShell docShell);
+
+  /**
+   * Removes all WebApps session storage objects attached to the docshell.
+   */
+  void clearSessionStorages();
 
   /**
    * Gets the channel for the currently loaded document, if any. 
@@ -568,7 +570,7 @@ interface nsIDocShell : nsISupports
    * In a child docshell, this is the source of parentCharset
    * @see nsIParser
    */
-  attribute PRInt32 parentCharsetSource;
+  attribute int32_t parentCharsetSource;
 
   /**
    * Add an observer to the list of parties to be notified when this docshell's
@@ -576,21 +578,136 @@ interface nsIDocShell : nsISupports
    */
   void addWeakPrivacyTransitionObserver(in nsIPrivacyTransitionObserver obs);
 
-  /*
-   * Is this docshell a browser frame (i.e., does it correspond to an <iframe
-   * mozbrowser>)?  The frameloader is responsible for setting this property
-   * when it initializes the docshell.
-   *
-   * If so, this docshell should act like a chrome/content boundary for the
-   * purposes of window.top and window.parent.
-   *
-   * See also nsIMozBrowserFrame.
+  /**
+   * Returns true if this docshell corresponds to an <iframe mozbrowser>.
+   * (<iframe mozapp mozbrowser> is not considered a browser.)
    */
-  attribute bool isBrowserFrame;
+  [infallible] readonly attribute boolean isBrowserElement;
 
-  /*
-   * Is this docshell contained in an <iframe mozbrowser>, either directly or
-   * indirectly?
+  /**
+   * Returns true iff the docshell corresponds to an <iframe mozapp>.
    */
-  readonly attribute bool containedInBrowserFrame;
+  [infallible] readonly attribute boolean isApp;
+
+  /**
+   * Returns isBrowserElement || isApp.
+   */
+  [infallible] readonly attribute boolean isBrowserOrApp;
+
+  /**
+   * Returns true if this docshell corresponds to an <iframe mozbrowser> or if
+   * the docshell is contained in an <iframe mozbrowser>.  (<iframe mozapp
+   * mozbrowser> does not count as a browser.)
+   *
+   * Our notion here of "contained in" means: Walk up the docshell hierarchy in
+   * this process until we hit an <iframe mozapp> or <iframe mozbrowser> (or
+   * until the hierarchy ends).  Return true iff the docshell we stopped on has
+   * isBrowserElement == true.
+   */
+  [infallible] readonly attribute boolean isInBrowserElement;
+
+  /**
+   * Returns true if this docshell corresponds to an <iframe mozbrowser> or
+   * <iframe mozap>, or if this docshell is contained in an <iframe mozbrowser>
+   * or <iframe mozapp>.
+   *
+   * To compute this value, we walk up the docshell hierarchy.  If we encounter
+   * a docshell with isBrowserElement or isApp before we hit the end of the
+   * hierarchy, we return true.  Otherwise, we return false.
+   */
+  [infallible] readonly attribute boolean isInBrowserOrApp;
+
+   /**
+    * Indicate that this docshell corresponds to an app with the given app id.
+    *
+    * You may pass NO_APP_ID or UNKNOWN_APP_ID for containingAppId.  If you
+    * pass NO_APP_ID, then this docshell will return NO_APP_ID for appId.  If
+    * you pass UNKNOWN_APP_ID, then this docshell will search its hiearchy for
+    * an app frame and use that frame's appId.
+    *
+    * You can call this method more than once, but there's no guarantee that
+    * other components will update their view of the world if you change a
+    * docshell's app id, so tread lightly.
+    *
+    * If you call this method after calling setIsBrowserInsideApp, this
+    * docshell will forget the fact that it was a browser.
+    */
+   void setIsApp(in unsigned long ownAppId);
+
+   /**
+    * Indicate that this docshell corresponds to a browser inside an app with
+    * the given ID.  As with setIsApp, you may pass NO_APP_ID or
+    * UNKNOWN_APP_ID.
+    *
+    * As with setIsApp, you may call this more than once, but it's kind of a
+    * hack, so be careful.
+    */
+   void setIsBrowserInsideApp(in unsigned long containingAppId);
+
+  /**
+   * Returns the id of the app associated with this docshell.  If this docshell
+   * is an <iframe mozbrowser> inside an <iframe mozapp>, we return the app's
+   * appId.
+   *
+   * We compute this value by walking up the docshell hierarchy until we find a
+   * docshell on which setIsApp(x) or setIsBrowserInsideApp(x) was called
+   * (ignoring those docshells where x == UNKNOWN_APP_ID).  We return the app
+   * id x.
+   *
+   * If we don't find a docshell with an associated app id in our hierarchy, we
+   * return NO_APP_ID.  We never return UNKNOWN_APP_ID.
+   *
+   * Notice that a docshell may have an associated app even if it returns true
+   * for isBrowserElement!
+   */
+  [infallible] readonly attribute unsigned long appId;
+
+  /**
+   * Like nsIDocShellTreeItem::GetSameTypeParent, except this ignores <iframe
+   * mozbrowser> and <iframe mozapp> boundaries.
+   */
+  nsIDocShell getSameTypeParentIgnoreBrowserAndAppBoundaries();
+
+  /** 
+   * True iff asynchronous panning and zooming is enabled for this
+   * docshell.
+   */
+  readonly attribute bool asyncPanZoomEnabled;
+
+  /**
+   * The sandbox flags on the docshell. These reflect the value of the sandbox
+   * attribute of the associated IFRAME or CSP-protectable content, if
+   * existent. See the HTML5 spec for more details.
+   * These flags on the docshell reflect the current state of the sandbox
+   * attribute, which is modifiable. They are only used when loading new
+   * content, sandbox flags are also immutably set on the document when it is
+   * loaded.
+   * The sandbox flags of a document depend on the sandbox flags on its
+   * docshell and of its parent document, if any.
+   * See nsSandboxFlags.h for the possible flags.
+   */
+  attribute unsigned long sandboxFlags;
+
+  /**
+   * Are plugins allowed in the current document loaded in this docshell ?
+   * (if there is one). This depends on whether plugins are allowed by this
+   * docshell itself or if the document is sandboxed and hence plugins should
+   * not be allowed.
+   */
+  [noscript, notxpcom] bool pluginsAllowedInCurrentDoc();
+  
+
+  /**
+   * Attribute that determines whether fullscreen is allowed to be entered for
+   * this subtree of the docshell tree. This is true when all iframes containing
+   * this docshell have their "allowfullscreen" attribute set to "true".
+   * fullscreenAllowed is only writable at content boundaries, where it is used
+   * to propagate the value of the cross process parent's iframe's
+   * "allowfullscreen" attribute to the child process. Setting
+   * fullscreenAllowed on docshells which aren't content boundaries throws an
+   * exception.
+   */
+  [infallible] readonly attribute boolean fullscreenAllowed;
+  
+  void setFullscreenAllowed(in boolean allowed);
 };

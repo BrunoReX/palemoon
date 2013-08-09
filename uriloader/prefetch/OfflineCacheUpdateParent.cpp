@@ -4,8 +4,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "OfflineCacheUpdateParent.h"
+
+#include "mozilla/dom/TabParent.h"
+#include "mozilla/ipc/URIUtils.h"
 #include "nsOfflineCacheUpdate.h"
 #include "nsIApplicationCache.h"
+#include "nsNetUtil.h"
+
+using namespace mozilla::ipc;
+using mozilla::dom::TabParent;
 
 #if defined(PR_LOGGING)
 //
@@ -19,6 +26,7 @@
 //
 extern PRLogModuleInfo *gOfflineCacheUpdateLog;
 #endif
+#undef LOG
 #define LOG(args) PR_LOG(gOfflineCacheUpdateLog, 4, args)
 #define LOG_ENABLED() PR_LOG_TEST(gOfflineCacheUpdateLog, 4)
 
@@ -29,15 +37,19 @@ namespace docshell {
 // OfflineCacheUpdateParent::nsISupports
 //-----------------------------------------------------------------------------
 
-NS_IMPL_ISUPPORTS1(OfflineCacheUpdateParent,
-                   nsIOfflineCacheUpdateObserver)
+NS_IMPL_ISUPPORTS2(OfflineCacheUpdateParent,
+                   nsIOfflineCacheUpdateObserver,
+                   nsILoadContext)
 
 //-----------------------------------------------------------------------------
 // OfflineCacheUpdateParent <public>
 //-----------------------------------------------------------------------------
 
-OfflineCacheUpdateParent::OfflineCacheUpdateParent()
+OfflineCacheUpdateParent::OfflineCacheUpdateParent(uint32_t aAppId,
+                                                   bool aIsInBrowser)
     : mIPCClosed(false)
+    , mIsInBrowserElement(aIsInBrowser)
+    , mAppId(aAppId)
 {
     // Make sure the service has been initialized
     nsOfflineCacheUpdateService* service =
@@ -60,30 +72,46 @@ OfflineCacheUpdateParent::ActorDestroy(ActorDestroyReason why)
 }
 
 nsresult
-OfflineCacheUpdateParent::Schedule(const URI& aManifestURI,
-                                   const URI& aDocumentURI,
-                                   const nsCString& aClientID,
+OfflineCacheUpdateParent::Schedule(const URIParams& aManifestURI,
+                                   const URIParams& aDocumentURI,
                                    const bool& stickDocument)
 {
     LOG(("OfflineCacheUpdateParent::RecvSchedule [%p]", this));
 
     nsRefPtr<nsOfflineCacheUpdate> update;
-    nsCOMPtr<nsIURI> manifestURI(aManifestURI);
-    nsCOMPtr<nsIURI> documentURI(aDocumentURI);
+    nsCOMPtr<nsIURI> manifestURI = DeserializeURI(aManifestURI);
+    if (!manifestURI)
+        return NS_ERROR_FAILURE;
 
     nsOfflineCacheUpdateService* service =
         nsOfflineCacheUpdateService::EnsureService();
     if (!service)
         return NS_ERROR_FAILURE;
 
-    service->FindUpdate(manifestURI, documentURI, getter_AddRefs(update));
+    bool offlinePermissionAllowed = false;
+    nsresult rv = service->OfflineAppAllowedForURI(
+        manifestURI, nullptr, &offlinePermissionAllowed);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    if (!offlinePermissionAllowed)
+        return NS_ERROR_DOM_SECURITY_ERR;
+
+    nsCOMPtr<nsIURI> documentURI = DeserializeURI(aDocumentURI);
+    if (!documentURI)
+        return NS_ERROR_FAILURE;
+
+    if (!NS_SecurityCompareURIs(manifestURI, documentURI, false))
+        return NS_ERROR_DOM_SECURITY_ERR;
+
+    service->FindUpdate(manifestURI, mAppId, mIsInBrowserElement,
+                        getter_AddRefs(update));
     if (!update) {
         update = new nsOfflineCacheUpdate();
 
-        nsresult rv;
         // Leave aDocument argument null. Only glues and children keep 
         // document instances.
-        rv = update->Init(manifestURI, documentURI, nsnull, nsnull);
+        rv = update->Init(manifestURI, documentURI, nullptr, nullptr,
+                          mAppId, mIsInBrowserElement);
         NS_ENSURE_SUCCESS(rv, rv);
 
         rv = update->Schedule();
@@ -102,14 +130,14 @@ OfflineCacheUpdateParent::Schedule(const URI& aManifestURI,
 }
 
 NS_IMETHODIMP
-OfflineCacheUpdateParent::UpdateStateChanged(nsIOfflineCacheUpdate *aUpdate, PRUint32 state)
+OfflineCacheUpdateParent::UpdateStateChanged(nsIOfflineCacheUpdate *aUpdate, uint32_t state)
 {
     if (mIPCClosed)
         return NS_ERROR_UNEXPECTED;
 
     LOG(("OfflineCacheUpdateParent::StateEvent [%p]", this));
 
-    PRUint64 byteProgress;
+    uint64_t byteProgress;
     aUpdate->GetByteProgress(&byteProgress);
     SendNotifyStateEvent(state, byteProgress);
 
@@ -142,6 +170,71 @@ OfflineCacheUpdateParent::ApplicationCacheAvailable(nsIApplicationCache *aApplic
     aApplicationCache->GetGroupID(cacheGroupId);
 
     SendAssociateDocuments(cacheGroupId, cacheClientId);
+    return NS_OK;
+}
+
+//-----------------------------------------------------------------------------
+// OfflineCacheUpdateParent::nsILoadContext
+//-----------------------------------------------------------------------------
+
+NS_IMETHODIMP
+OfflineCacheUpdateParent::GetAssociatedWindow(nsIDOMWindow * *aAssociatedWindow)
+{
+    return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+OfflineCacheUpdateParent::GetTopWindow(nsIDOMWindow * *aTopWindow)
+{
+    return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+OfflineCacheUpdateParent::GetTopFrameElement(nsIDOMElement** aElement)
+{
+    return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+OfflineCacheUpdateParent::IsAppOfType(uint32_t appType, bool *_retval)
+{
+    return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+OfflineCacheUpdateParent::GetIsContent(bool *aIsContent)
+{
+    return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+OfflineCacheUpdateParent::GetUsePrivateBrowsing(bool *aUsePrivateBrowsing)
+{
+    return NS_ERROR_NOT_IMPLEMENTED;
+}
+NS_IMETHODIMP
+OfflineCacheUpdateParent::SetUsePrivateBrowsing(bool aUsePrivateBrowsing)
+{
+    return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+OfflineCacheUpdateParent::SetPrivateBrowsing(bool aUsePrivateBrowsing)
+{
+    return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+OfflineCacheUpdateParent::GetIsInBrowserElement(bool *aIsInBrowserElement)
+{
+    *aIsInBrowserElement = mIsInBrowserElement;
+    return NS_OK;
+}
+
+NS_IMETHODIMP
+OfflineCacheUpdateParent::GetAppId(uint32_t *aAppId)
+{
+    *aAppId = mAppId;
     return NS_OK;
 }
 

@@ -3,11 +3,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH          = ../../../..
+DEPTH          = @DEPTH@
 topsrcdir      = @top_srcdir@
 srcdir         = @srcdir@
 VPATH          = @srcdir@
-relativesrcdir = toolkit/content/tests/browser
+relativesrcdir = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
@@ -16,9 +16,8 @@ DIRS = \
   data \
   $(NULL)
 
-include $(topsrcdir)/config/rules.mk
 
-_BROWSER_TEST_FILES = \
+MOCHITEST_BROWSER_FILES = \
   browser_keyevents_during_autoscrolling.js \
   browser_bug295977_autoscroll_overflow.js \
   browser_bug594509.js \
@@ -27,7 +26,9 @@ _BROWSER_TEST_FILES = \
   browser_save_resend_postdata.js \
   browser_browserDrop.js \
   browser_Services.js \
+  browser_DeferredTask.js \
+  browser_default_image_filename.js \
+  browser_Troubleshoot.js \
   $(NULL)
 
-libs:: $(_BROWSER_TEST_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/browser/$(relativesrcdir)
+include $(topsrcdir)/config/rules.mk

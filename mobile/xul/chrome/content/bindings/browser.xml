@@ -14,7 +14,7 @@
           xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
   <binding id="local-browser" extends="chrome://global/content/bindings/browser.xml#browser">
-    <implementation type="application/javascript" implements="nsIAccessibleProvider, nsIObserver, nsIDOMEventListener, nsIFrameMessageListener">
+    <implementation type="application/javascript" implements="nsIAccessibleProvider, nsIObserver, nsIDOMEventListener, nsIMessageListener">
       <field name="_securityUI">null</field>
       <property name="securityUI">
         <getter><![CDATA[
@@ -129,7 +129,8 @@
               if (gFaviconService.isFailedFavicon(iconURI))
                 return;
 
-              gFaviconService.setAndLoadFaviconForPage(this.currentURI, iconURI, true);
+              gFaviconService.setAndLoadFaviconForPage(this.currentURI, iconURI, true,
+                                                       gFaviconService.FAVICON_LOAD_NON_PRIVATE);
               this.mIconURL = iconURI.spec;
             } catch (e) {
               this.mIconURL = null;
@@ -594,7 +595,7 @@
   </binding>
 
   <binding id="remote-browser" extends="#local-browser">
-    <implementation type="application/javascript" implements="nsIAccessibleProvider, nsIObserver, nsIDOMEventListener, nsIFrameMessageListener">
+    <implementation type="application/javascript" implements="nsIAccessibleProvider, nsIObserver, nsIDOMEventListener, nsIMessageListener">
       <property name="accessibleType" readonly="true">
         <getter>
           <![CDATA[

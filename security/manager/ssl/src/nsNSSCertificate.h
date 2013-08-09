@@ -14,13 +14,14 @@
 #include "nsIASN1Object.h"
 #include "nsISMimeCert.h"
 #include "nsIIdentityInfo.h"
+#include "nsCOMPtr.h"
 #include "nsNSSShutDown.h"
 #include "nsISimpleEnumerator.h"
 #include "nsISerializable.h"
 #include "nsIClassInfo.h"
+#include "certt.h"
 
-#include "nsNSSCertHeader.h"
-
+class nsAutoString;
 class nsINSSComponent;
 class nsIASN1Sequence;
 
@@ -47,7 +48,7 @@ public:
   /* from a request? */
   virtual ~nsNSSCertificate();
   nsresult FormatUIStrings(const nsAutoString &nickname, nsAutoString &nickWithSerial, nsAutoString &details);
-  static nsNSSCertificate* Create(CERTCertificate *cert = nsnull);
+  static nsNSSCertificate* Create(CERTCertificate *cert = nullptr);
   static nsNSSCertificate* ConstructFromDER(char *certDER, int derLen);
 
   // It is the responsibility of the caller of this method to free the returned
@@ -57,7 +58,7 @@ public:
 private:
   CERTCertificate *mCert;
   bool             mPermDelete;
-  PRUint32         mCertType;
+  uint32_t         mCertType;
   nsCOMPtr<nsIASN1Object> mASN1Structure;
   nsresult CreateASN1Struct();
   nsresult CreateTBSCertificateASN1Struct(nsIASN1Sequence **retSequence,
@@ -81,7 +82,7 @@ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIX509CERTLIST
 
-  nsNSSCertList(CERTCertList *certList = nsnull, bool adopt = false);
+  nsNSSCertList(CERTCertList *certList = nullptr, bool adopt = false);
   virtual ~nsNSSCertList();
 
   static CERTCertList *DupCertList(CERTCertList *aCertList);

@@ -2,11 +2,11 @@
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
-<!ENTITY aboutAddons.title                      "Add-ons Manager">
+<!ENTITY aboutAddons.title2                     "Add-ons">
 <!ENTITY aboutAddons.header2                    "Your Add-ons">
 <!ENTITY aboutAddons.options                    "Options">
 
 <!ENTITY addonAction.enable                     "Enable">
 <!ENTITY addonAction.disable                    "Disable">
 <!ENTITY addonAction.uninstall                  "Uninstall">
-<!ENTITY addonAction.cancel                     "Cancel">
+<!ENTITY addonAction.undo                       "Undo">

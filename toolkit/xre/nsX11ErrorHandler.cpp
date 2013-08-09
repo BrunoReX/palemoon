@@ -23,7 +23,7 @@ X11Error(Display *display, XErrorEvent *event) {
   unsigned long age = NextRequest(display) - event->serial;
 
   // Get a string to represent the request that caused the error.
-  nsCAutoString message;
+  nsAutoCString message;
   if (event->request_code < 128) {
     // Core protocol request
     message.AppendInt(event->request_code);
@@ -79,7 +79,7 @@ X11Error(Display *display, XErrorEvent *event) {
                           buffer, sizeof(buffer));
   }
 
-  nsCAutoString notes;
+  nsAutoCString notes;
   if (buffer[0]) {
     notes.Append(buffer);
   } else {
@@ -112,7 +112,7 @@ X11Error(Display *display, XErrorEvent *event) {
       notes.Append("; sync");
     } else {
       notes.Append("; ");
-      notes.AppendInt(PRUint32(age));
+      notes.AppendInt(uint32_t(age));
       notes.Append(" requests ago");
     }
   }
@@ -133,7 +133,7 @@ X11Error(Display *display, XErrorEvent *event) {
   // The resource id is unlikely to be useful in a crash report without
   // context of other ids, but add it to the debug console output.
   notes.Append("; id=0x");
-  notes.AppendInt(PRUint32(event->resourceid), 16);
+  notes.AppendInt(uint32_t(event->resourceid), 16);
 #ifdef MOZ_X11
   // Actually, for requests where Xlib gets the reply synchronously,
   // MOZ_X_SYNC=1 will not be necessary, but we don't have a table to tell us

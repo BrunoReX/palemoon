@@ -9,14 +9,14 @@
 #include "nsIWebNavigationInfo.h"
 #include "nsCOMPtr.h"
 #include "nsICategoryManager.h"
-#include "imgILoader.h"
 #include "nsStringFwd.h"
+#include "mozilla/Attributes.h"
 
 // Class ID for webnavigationinfo
 #define NS_WEBNAVIGATION_INFO_CID \
  { 0xf30bc0a2, 0x958b, 0x4287,{0xbf, 0x62, 0xce, 0x38, 0xba, 0x0c, 0x81, 0x1e}}
 
-class nsWebNavigationInfo : public nsIWebNavigationInfo
+class nsWebNavigationInfo MOZ_FINAL : public nsIWebNavigationInfo
 {
 public:
   nsWebNavigationInfo() {}
@@ -33,13 +33,9 @@ private:
   // Check whether aType is supported.  If this method throws, the
   // value of aIsSupported is not changed.
   nsresult IsTypeSupportedInternal(const nsCString& aType,
-                                   PRUint32* aIsSupported);
+                                   uint32_t* aIsSupported);
   
   nsCOMPtr<nsICategoryManager> mCategoryManager;
-  // XXXbz we only need this because images register for the same
-  // contractid as documents, so we can't tell them apart based on
-  // contractid.
-  nsCOMPtr<imgILoader> mImgLoader;
 };
 
 #endif  // nsWebNavigationInfo_h__

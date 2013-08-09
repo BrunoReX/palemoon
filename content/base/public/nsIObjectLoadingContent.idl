@@ -20,14 +20,47 @@ interface nsIURI;
 /**
  * This interface represents a content node that loads objects.
  */
-[scriptable, uuid(e3e284a3-b4a8-49ef-af6b-c8c4a158db86)]
+
+[scriptable, uuid(a812424b-4820-4e28-96c8-dd2b69e36496)]
 interface nsIObjectLoadingContent : nsISupports
 {
+  /**
+   * See notes in nsObjectLoadingContent.h
+   */
   const unsigned long TYPE_LOADING  = 0;
   const unsigned long TYPE_IMAGE    = 1;
   const unsigned long TYPE_PLUGIN   = 2;
   const unsigned long TYPE_DOCUMENT = 3;
   const unsigned long TYPE_NULL     = 4;
+
+  // The content type is not supported (e.g. plugin not installed)
+  const unsigned long PLUGIN_UNSUPPORTED          = 0;
+  // Showing alternate content
+  const unsigned long PLUGIN_ALTERNATE            = 1;
+  // The plugin exists, but is disabled
+  const unsigned long PLUGIN_DISABLED             = 2;
+  // The plugin is blocklisted and disabled
+  const unsigned long PLUGIN_BLOCKLISTED          = 3;
+  // The plugin is considered outdated, but not disabled
+  const unsigned long PLUGIN_OUTDATED             = 4;
+  // The plugin has crashed
+  const unsigned long PLUGIN_CRASHED              = 5;
+  // Suppressed by security policy
+  const unsigned long PLUGIN_SUPPRESSED           = 6;
+  // Blocked by content policy
+  const unsigned long PLUGIN_USER_DISABLED        = 7;
+  /// ** All values >= PLUGIN_CLICK_TO_PLAY are plugin placeholder types that
+  ///    would be replaced by a real plugin if activated (playPlugin())
+  /// ** Furthermore, values >= PLUGIN_CLICK_TO_PLAY and
+  ///    <= PLUGIN_VULNERABLE_NO_UPDATE are click-to-play types.
+  // The plugin is disabled until the user clicks on it
+  const unsigned long PLUGIN_CLICK_TO_PLAY        = 8;
+  // The plugin is vulnerable (update available)
+  const unsigned long PLUGIN_VULNERABLE_UPDATABLE = 9;
+  // The plugin is vulnerable (no update available)
+  const unsigned long PLUGIN_VULNERABLE_NO_UPDATE = 10;
+  // The plugin is in play preview mode
+  const unsigned long PLUGIN_PLAY_PREVIEW         = 11;
 
   /**
    * The actual mime type (the one we got back from the network
@@ -81,13 +114,14 @@ interface nsIObjectLoadingContent : nsISupports
 
   /**
    * This method will play a plugin that has been stopped by the
-   * click-to-play plugins feature.
+   * click-to-play plugins or play-preview features.
    */
   void playPlugin();
 
   /**
-   * This attribute will return true if the plugin has been activated
-   * and false if the plugin is still in the click-to-play state.
+   * This attribute will return true if the current content type has been
+   * activated, either explicitly or by passing checks that would have it be
+   * click-to-play or play-preview.
    */
   readonly attribute boolean activated;
 
@@ -101,4 +135,11 @@ interface nsIObjectLoadingContent : nsISupports
    * an <embed> with no src).
    */
   readonly attribute nsIURI srcURI;
+
+  readonly attribute unsigned long pluginFallbackType;
+
+  /**
+   * This method will disable the play-preview plugin state.
+   */
+  void cancelPlayPreview();
 };

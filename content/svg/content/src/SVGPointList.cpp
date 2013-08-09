@@ -6,16 +6,16 @@
 #include "mozilla/Util.h"
 
 #include "SVGPointList.h"
-#include "SVGAnimatedPointList.h"
-#include "nsSVGElement.h"
-#include "nsDOMError.h"
-#include "nsString.h"
-#include "nsSVGUtils.h"
-#include "string.h"
-#include "prdtoa.h"
-#include "nsTextFormatter.h"
+#include "nsError.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsMathUtils.h"
+#include "nsString.h"
+#include "nsSVGElement.h"
+#include "nsTextFormatter.h"
+#include "prdtoa.h"
+#include "string.h"
+#include "SVGAnimatedPointList.h"
+#include "SVGContentUtils.h"
 
 namespace mozilla {
 
@@ -35,8 +35,8 @@ SVGPointList::GetValueAsString(nsAString& aValue) const
 {
   aValue.Truncate();
   PRUnichar buf[50];
-  PRUint32 last = mItems.Length() - 1;
-  for (PRUint32 i = 0; i < mItems.Length(); ++i) {
+  uint32_t last = mItems.Length() - 1;
+  for (uint32_t i = 0; i < mItems.Length(); ++i) {
     // Would like to use aValue.AppendPrintf("%f,%f", item.mX, item.mY),
     // but it's not possible to always avoid trailing zeros.
     nsTextFormatter::snprintf(buf, ArrayLength(buf),
@@ -72,7 +72,7 @@ SVGPointList::SetValueFromString(const nsAString& aValue)
   nsCharSeparatedTokenizerTemplate<IsSVGWhitespace>
     tokenizer(aValue, ',', nsCharSeparatedTokenizer::SEPARATOR_OPTIONAL);
 
-  nsCAutoString str1, str2;  // outside loop to minimize memory churn
+  nsAutoCString str1, str2;  // outside loop to minimize memory churn
 
   while (tokenizer.hasMoreTokens()) {
     CopyUTF16toUTF8(tokenizer.nextToken(), str1);

@@ -7,8 +7,6 @@
 
 #include "LifoAlloc.h"
 
-#include <new>
-
 using namespace js;
 
 namespace js {
@@ -23,7 +21,7 @@ BumpChunk::new_(size_t chunkSize)
         return NULL;
     BumpChunk *result = new (mem) BumpChunk(chunkSize - sizeof(BumpChunk));
 
-    /* 
+    /*
      * We assume that the alignment of sAlign is less than that of
      * the underlying memory allocator -- creating a new BumpChunk should
      * always satisfy the sAlign alignment constraint.
@@ -60,41 +58,7 @@ LifoAlloc::freeAll()
         first = first->next();
         BumpChunk::delete_(victim);
     }
-    first = latest = NULL;
-}
-
-void
-LifoAlloc::freeUnused()
-{
-    /* Don't free anything if we have outstanding marks. */
-    if (markCount || !first)
-        return; 
-
-    JS_ASSERT(first && latest);
-
-    /* Rewind through any unused chunks. */
-    if (!latest->used()) {
-        BumpChunk *lastUsed = NULL;
-        for (BumpChunk *it = first; it != latest; it = it->next()) {
-            if (it->used())
-                lastUsed = it;
-        }
-        if (!lastUsed) {
-            freeAll();
-            return;
-        }
-        latest = lastUsed;
-    }
-
-    /* Free all chunks after |latest|. */
-    BumpChunk *it = latest->next();
-    while (it) {
-        BumpChunk *victim = it;
-        it = it->next();
-        BumpChunk::delete_(victim);
-    }
-
-    latest->setNext(NULL);
+    first = latest = last = NULL;
 }
 
 LifoAlloc::BumpChunk *
@@ -131,11 +95,57 @@ LifoAlloc::getOrCreateChunk(size_t n)
     if (!newChunk)
         return NULL;
     if (!first) {
-        latest = first = newChunk;
+        latest = first = last = newChunk;
     } else {
         JS_ASSERT(latest && !latest->next());
         latest->setNext(newChunk);
-        latest = newChunk;
+        latest = last = newChunk;
     }
     return newChunk;
 }
+
+void
+LifoAlloc::transferFrom(LifoAlloc *other)
+{
+    JS_ASSERT(!markCount);
+    JS_ASSERT(latest == first);
+    JS_ASSERT(!other->markCount);
+
+    if (!other->first)
+        return;
+
+    append(other->first, other->last);
+    other->first = other->last = other->latest = NULL;
+}
+
+void
+LifoAlloc::transferUnusedFrom(LifoAlloc *other)
+{
+    JS_ASSERT(!markCount);
+    JS_ASSERT(latest == first);
+
+    if (other->markCount || !other->first)
+        return;
+
+    /*
+     * Because of how getOrCreateChunk works, there may be unused chunks before
+     * |last|. We do not transfer those chunks. In most cases it is expected
+     * that last == first, so this should be a rare situation that, when it
+     * happens, should not recur.
+     */
+
+    if (other->latest->next()) {
+        append(other->latest->next(), other->last);
+        other->latest->setNext(NULL);
+        other->last = other->latest;
+    }
+}
+
+bool
+LifoAlloc::ensureUnusedApproximateSlow(size_t n)
+{
+    // This relies on the behavior that releasing a chunk does not immediately free it.
+    LifoAllocScope scope(this);
+    return !!getOrCreateChunk(n);
+}
+

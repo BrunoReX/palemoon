@@ -20,6 +20,7 @@
 #include "nsBoxLayoutState.h"
 #include "nsIReflowCallback.h"
 #include "nsContentUtils.h"
+#include "mozilla/Attributes.h"
 //
 // NS_NewToolbarFrame
 //
@@ -42,7 +43,7 @@ nsProgressMeterFrame :: ~nsProgressMeterFrame ( )
 {
 }
 
-class nsAsyncProgressMeterInit : public nsIReflowCallback
+class nsAsyncProgressMeterInit MOZ_FINAL : public nsIReflowCallback
 {
 public:
   nsAsyncProgressMeterInit(nsIFrame* aFrame) : mWeakFrame(aFrame) {}
@@ -82,9 +83,9 @@ nsProgressMeterFrame::DoLayout(nsBoxLayoutState& aState)
 }
 
 NS_IMETHODIMP
-nsProgressMeterFrame::AttributeChanged(PRInt32 aNameSpaceID,
+nsProgressMeterFrame::AttributeChanged(int32_t aNameSpaceID,
                                        nsIAtom* aAttribute,
-                                       PRInt32 aModType)
+                                       int32_t aModType)
 {
   NS_ASSERTION(!nsContentUtils::IsSafeToRunScript(),
       "Scripts not blocked in nsProgressMeterFrame::AttributeChanged!");
@@ -107,7 +108,7 @@ nsProgressMeterFrame::AttributeChanged(PRInt32 aNameSpaceID,
     nsCOMPtr<nsIContent> remainderContent = remainderChild->GetContent();
     if (!remainderContent) return NS_OK;
 
-    PRInt32 flex = 1, maxFlex = 1;
+    int32_t flex = 1, maxFlex = 1;
     if (!undetermined) {
       nsAutoString value, maxValue;
       mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::value, value);
@@ -140,7 +141,7 @@ nsProgressMeterFrame::AttributeChanged(PRInt32 aNameSpaceID,
   return NS_OK;
 }
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
 NS_IMETHODIMP
 nsProgressMeterFrame::GetFrameName(nsAString& aResult) const
 {

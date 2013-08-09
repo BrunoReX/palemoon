@@ -9,25 +9,21 @@
 #include "nsIAtom.h"
 #include "nsString.h"
 #include "jsapi.h"
-#include "nsIContent.h"
 #include "nsString.h"
-#include "nsIJSRuntimeService.h"
 #include "nsIServiceManager.h"
-#include "nsReadableUtils.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"
 
+class nsIContent;
 class nsIScriptContext;
-struct JSRuntime;
-class nsIJSRuntimeService;
 
 struct nsXBLTextWithLineNumber
 {
   PRUnichar* mText;
-  PRUint32 mLineNumber;
+  uint32_t mLineNumber;
 
   nsXBLTextWithLineNumber() :
-    mText(nsnull),
+    mText(nullptr),
     mLineNumber(0)
   {
     MOZ_COUNT_CTOR(nsXBLTextWithLineNumber);
@@ -54,11 +50,11 @@ struct nsXBLTextWithLineNumber
     return mText;
   }
 
-  void SetLineNumber(PRUint32 aLineNumber) {
+  void SetLineNumber(uint32_t aLineNumber) {
     mLineNumber = aLineNumber;
   }
 
-  PRUint32 GetLineNumber() {
+  uint32_t GetLineNumber() {
     return mLineNumber;
   }
 };
@@ -66,7 +62,7 @@ struct nsXBLTextWithLineNumber
 class nsXBLProtoImplMember
 {
 public:
-  nsXBLProtoImplMember(const PRUnichar* aName) :mNext(nsnull) { mName = ToNewUnicode(nsDependentString(aName)); }
+  nsXBLProtoImplMember(const PRUnichar* aName) :mNext(nullptr) { mName = ToNewUnicode(nsDependentString(aName)); }
   virtual ~nsXBLProtoImplMember() {
     nsMemory::Free(mName);
     NS_CONTENT_DELETE_LIST_MEMBER(nsXBLProtoImplMember, this, mNext);

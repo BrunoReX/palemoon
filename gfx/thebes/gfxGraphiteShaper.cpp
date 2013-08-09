@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "prtypes.h"
-#include "prmem.h"
 #include "nsString.h"
 #include "nsBidiUtils.h"
 #include "nsMathUtils.h"
@@ -42,8 +40,8 @@ using namespace mozilla; // for AutoSwap_* types
 
 gfxGraphiteShaper::gfxGraphiteShaper(gfxFont *aFont)
     : gfxFontShaper(aFont),
-      mGrFace(nsnull),
-      mGrFont(nsnull),
+      mGrFace(nullptr),
+      mGrFont(nullptr),
       mUseFontGlyphWidths(false)
 {
     mTables.Init();
@@ -52,7 +50,7 @@ gfxGraphiteShaper::gfxGraphiteShaper(gfxFont *aFont)
 }
 
 PLDHashOperator
-ReleaseTableFunc(const PRUint32& /* aKey */,
+ReleaseTableFunc(const uint32_t& /* aKey */,
                  gfxGraphiteShaper::TableRec& aData,
                  void* /* aUserArg */)
 {
@@ -68,7 +66,7 @@ gfxGraphiteShaper::~gfxGraphiteShaper()
     if (mGrFace) {
         gr_face_destroy(mGrFace);
     }
-    mTables.Enumerate(ReleaseTableFunc, nsnull);
+    mTables.Enumerate(ReleaseTableFunc, nullptr);
 }
 
 static const void*
@@ -80,7 +78,7 @@ GrGetTable(const void* appFaceHandle, unsigned int name, size_t *len)
 }
 
 const void*
-gfxGraphiteShaper::GetTable(PRUint32 aTag, size_t *aLength)
+gfxGraphiteShaper::GetTable(uint32_t aTag, size_t *aLength)
 {
     TableRec tableRec;
 
@@ -93,7 +91,7 @@ gfxGraphiteShaper::GetTable(PRUint32 aTag, size_t *aLength)
             tableRec.mData = hb_blob_get_data(blob, &tableRec.mLength);
             mTables.Put(aTag, tableRec);
         } else {
-            return nsnull;
+            return nullptr;
         }
     }
 
@@ -109,12 +107,12 @@ GrGetAdvance(const void* appFontHandle, gr_uint16 glyphid)
     return FixedToFloat(cb->mFont->GetGlyphWidth(cb->mContext, glyphid));
 }
 
-static inline PRUint32
-MakeGraphiteLangTag(PRUint32 aTag)
+static inline uint32_t
+MakeGraphiteLangTag(uint32_t aTag)
 {
-    PRUint32 grLangTag = aTag;
+    uint32_t grLangTag = aTag;
     // replace trailing space-padding with NULs for graphite
-    PRUint32 mask = 0x000000FF;
+    uint32_t mask = 0x000000FF;
     while ((grLangTag & mask) == ' ') {
         grLangTag &= ~mask;
         mask <<= 8;
@@ -128,7 +126,7 @@ struct GrFontFeatures {
 };
 
 static PLDHashOperator
-AddFeature(const PRUint32& aTag, PRUint32& aValue, void *aUserArg)
+AddFeature(const uint32_t& aTag, uint32_t& aValue, void *aUserArg)
 {
     GrFontFeatures *f = static_cast<GrFontFeatures*>(aUserArg);
 
@@ -163,26 +161,26 @@ gfxGraphiteShaper::ShapeWord(gfxContext      *aContext,
             gr_make_font(mFont->GetAdjustedSize(), mGrFace);
         if (!mGrFont) {
             gr_face_destroy(mGrFace);
-            mGrFace = nsnull;
+            mGrFace = nullptr;
             return false;
         }
     }
 
     gfxFontEntry *entry = mFont->GetFontEntry();
     const gfxFontStyle *style = mFont->GetStyle();
-    PRUint32 grLang = 0;
+    uint32_t grLang = 0;
     if (style->languageOverride) {
         grLang = MakeGraphiteLangTag(style->languageOverride);
     } else if (entry->mLanguageOverride) {
         grLang = MakeGraphiteLangTag(entry->mLanguageOverride);
     } else {
-        nsCAutoString langString;
+        nsAutoCString langString;
         style->language->ToUTF8String(langString);
         grLang = GetGraphiteTagForLang(langString);
     }
     gr_feature_val *grFeatures = gr_face_featureval_for_lang(mGrFace, grLang);
 
-    nsDataHashtable<nsUint32HashKey,PRUint32> mergedFeatures;
+    nsDataHashtable<nsUint32HashKey,uint32_t> mergedFeatures;
 
     if (MergeFontFeatures(style->featureSettings, entry->mFeatureSettings,
                           aShapedWord->DisableLigatures(), mergedFeatures)) {
@@ -212,10 +210,10 @@ gfxGraphiteShaper::ShapeWord(gfxContext      *aContext,
                             // for short (typical) runs up to this length
 
 struct Cluster {
-    PRUint32 baseChar;
-    PRUint32 baseGlyph;
-    PRUint32 nChars;
-    PRUint32 nGlyphs;
+    uint32_t baseChar;
+    uint32_t baseGlyph;
+    uint32_t nChars;
+    uint32_t nGlyphs;
     Cluster() : baseChar(0), baseGlyph(0), nChars(0), nGlyphs(0) { }
 };
 
@@ -223,14 +221,14 @@ nsresult
 gfxGraphiteShaper::SetGlyphsFromSegment(gfxShapedWord *aShapedWord,
                                         gr_segment *aSegment)
 {
-    PRInt32 dev2appUnits = aShapedWord->AppUnitsPerDevUnit();
+    int32_t dev2appUnits = aShapedWord->AppUnitsPerDevUnit();
     bool rtl = aShapedWord->IsRightToLeft();
 
-    PRUint32 glyphCount = gr_seg_n_slots(aSegment);
+    uint32_t glyphCount = gr_seg_n_slots(aSegment);
 
     // identify clusters; graphite may have reordered/expanded/ligated glyphs.
     nsAutoTArray<Cluster,SMALL_GLYPH_RUN> clusters;
-    nsAutoTArray<PRUint16,SMALL_GLYPH_RUN> gids;
+    nsAutoTArray<uint16_t,SMALL_GLYPH_RUN> gids;
     nsAutoTArray<float,SMALL_GLYPH_RUN> xLocs;
     nsAutoTArray<float,SMALL_GLYPH_RUN> yLocs;
 
@@ -244,14 +242,14 @@ gfxGraphiteShaper::SetGlyphsFromSegment(gfxShapedWord *aShapedWord,
 
     // walk through the glyph slots and check which original character
     // each is associated with
-    PRUint32 gIndex = 0; // glyph slot index
-    PRUint32 cIndex = 0; // current cluster index
+    uint32_t gIndex = 0; // glyph slot index
+    uint32_t cIndex = 0; // current cluster index
     for (const gr_slot *slot = gr_seg_first_slot(aSegment);
-         slot != nsnull;
+         slot != nullptr;
          slot = gr_slot_next_in_segment(slot), gIndex++)
     {
-        PRUint32 before = gr_slot_before(slot);
-        PRUint32 after = gr_slot_after(slot);
+        uint32_t before = gr_slot_before(slot);
+        uint32_t after = gr_slot_after(slot);
         gids[gIndex] = gr_slot_gid(slot);
         xLocs[gIndex] = gr_slot_origin_X(slot);
         yLocs[gIndex] = gr_slot_origin_Y(slot);
@@ -290,7 +288,7 @@ gfxGraphiteShaper::SetGlyphsFromSegment(gfxShapedWord *aShapedWord,
     }
 
     // now put glyphs into the textrun, one cluster at a time
-    for (PRUint32 i = 0; i <= cIndex; ++i) {
+    for (uint32_t i = 0; i <= cIndex; ++i) {
         const Cluster& c = clusters[i];
 
         float adv; // total advance of the cluster
@@ -310,7 +308,7 @@ gfxGraphiteShaper::SetGlyphsFromSegment(gfxShapedWord *aShapedWord,
 
         // Check for default-ignorable char that didn't get filtered, combined,
         // etc by the shaping process, and skip it.
-        PRUint32 offs = gr_cinfo_base(gr_seg_cinfo(aSegment, c.baseChar));
+        uint32_t offs = gr_cinfo_base(gr_seg_cinfo(aSegment, c.baseChar));
         NS_ASSERTION(offs >= c.baseChar && offs < aShapedWord->Length(),
                      "unexpected offset");
         if (c.nGlyphs == 1 && c.nChars == 1 &&
@@ -319,7 +317,7 @@ gfxGraphiteShaper::SetGlyphsFromSegment(gfxShapedWord *aShapedWord,
             continue;
         }
 
-        PRUint32 appAdvance = adv * dev2appUnits;
+        uint32_t appAdvance = adv * dev2appUnits;
         if (c.nGlyphs == 1 &&
             gfxShapedWord::CompressedGlyph::IsSimpleGlyphID(gids[c.baseGlyph]) &&
             gfxShapedWord::CompressedGlyph::IsSimpleAdvance(appAdvance) &&
@@ -333,7 +331,7 @@ gfxGraphiteShaper::SetGlyphsFromSegment(gfxShapedWord *aShapedWord,
             // not a one-to-one mapping with simple metrics: use DetailedGlyph
             nsAutoTArray<gfxShapedWord::DetailedGlyph,8> details;
             float clusterLoc;
-            for (PRUint32 j = c.baseGlyph; j < c.baseGlyph + c.nGlyphs; ++j) {
+            for (uint32_t j = c.baseGlyph; j < c.baseGlyph + c.nGlyphs; ++j) {
                 gfxShapedWord::DetailedGlyph* d = details.AppendElement();
                 d->mGlyphID = gids[j];
                 d->mYOffset = -yLocs[j] * dev2appUnits;
@@ -342,7 +340,9 @@ gfxGraphiteShaper::SetGlyphsFromSegment(gfxShapedWord *aShapedWord,
                     d->mAdvance = appAdvance;
                     clusterLoc = xLocs[j];
                 } else {
-                    d->mXOffset = (xLocs[j] - clusterLoc - adv) * dev2appUnits;
+                    d->mXOffset = dev2appUnits *
+                        (rtl ? (xLocs[j] - clusterLoc) :
+                               (xLocs[j] - clusterLoc - adv));
                     d->mAdvance = 0;
                 }
             }
@@ -352,13 +352,13 @@ gfxGraphiteShaper::SetGlyphsFromSegment(gfxShapedWord *aShapedWord,
             aShapedWord->SetGlyphs(offs, g, details.Elements());
         }
 
-        for (PRUint32 j = c.baseChar + 1; j < c.baseChar + c.nChars; ++j) {
+        for (uint32_t j = c.baseChar + 1; j < c.baseChar + c.nChars; ++j) {
             offs = gr_cinfo_base(gr_seg_cinfo(aSegment, j));
             NS_ASSERTION(offs >= j && offs < aShapedWord->Length(),
                          "unexpected offset");
             gfxShapedWord::CompressedGlyph g;
             g.SetComplex(aShapedWord->IsClusterStart(offs), false, 0);
-            aShapedWord->SetGlyphs(offs, g, nsnull);
+            aShapedWord->SetGlyphs(offs, g, nullptr);
         }
     }
 
@@ -370,7 +370,7 @@ gfxGraphiteShaper::SetGlyphsFromSegment(gfxShapedWord *aShapedWord,
 
 nsTHashtable<nsUint32HashKey> gfxGraphiteShaper::sLanguageTags;
 
-/*static*/ PRUint32
+/*static*/ uint32_t
 gfxGraphiteShaper::GetGraphiteTagForLang(const nsCString& aLang)
 {
     int len = aLang.Length();
@@ -380,11 +380,11 @@ gfxGraphiteShaper::GetGraphiteTagForLang(const nsCString& aLang)
 
     // convert primary language subtag to a left-packed, NUL-padded integer
     // for the Graphite API
-    PRUint32 grLang = 0;
+    uint32_t grLang = 0;
     for (int i = 0; i < 4; ++i) {
         grLang <<= 8;
         if (i < len) {
-            PRUint8 ch = aLang[i];
+            uint8_t ch = aLang[i];
             if (ch == '-') {
                 // found end of primary language subtag, truncate here
                 len = i;
@@ -406,7 +406,7 @@ gfxGraphiteShaper::GetGraphiteTagForLang(const nsCString& aLang)
     if (!sLanguageTags.IsInitialized()) {
         // store the registered IANA tags in a hash for convenient validation
         sLanguageTags.Init(ArrayLength(sLanguageTagList));
-        for (const PRUint32 *tag = sLanguageTagList; *tag != 0; ++tag) {
+        for (const uint32_t *tag = sLanguageTagList; *tag != 0; ++tag) {
             sLanguageTags.PutEntry(*tag);
         }
     }

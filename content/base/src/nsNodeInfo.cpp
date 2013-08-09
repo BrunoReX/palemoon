@@ -10,6 +10,7 @@
  */
 
 #include "mozilla/Util.h"
+#include "mozilla/Likely.h"
 
 #include "nscore.h"
 #include "nsNodeInfo.h"
@@ -34,28 +35,28 @@ static const size_t kNodeInfoPoolSizes[] = {
   sizeof(nsNodeInfo)
 };
 
-static const PRInt32 kNodeInfoPoolInitialSize = sizeof(nsNodeInfo) * 64;
+static const int32_t kNodeInfoPoolInitialSize = sizeof(nsNodeInfo) * 64;
 
 // static
-nsFixedSizeAllocator* nsNodeInfo::sNodeInfoPool = nsnull;
+nsFixedSizeAllocator* nsNodeInfo::sNodeInfoPool = nullptr;
 
 // static
 nsNodeInfo*
-nsNodeInfo::Create(nsIAtom *aName, nsIAtom *aPrefix, PRInt32 aNamespaceID,
-                   PRUint16 aNodeType, nsIAtom *aExtraName,
+nsNodeInfo::Create(nsIAtom *aName, nsIAtom *aPrefix, int32_t aNamespaceID,
+                   uint16_t aNodeType, nsIAtom *aExtraName,
                    nsNodeInfoManager *aOwnerManager)
 {
   if (!sNodeInfoPool) {
     sNodeInfoPool = new nsFixedSizeAllocator();
     if (!sNodeInfoPool)
-      return nsnull;
+      return nullptr;
 
     nsresult rv = sNodeInfoPool->Init("NodeInfo Pool", kNodeInfoPoolSizes,
                                       1, kNodeInfoPoolInitialSize);
     if (NS_FAILED(rv)) {
       delete sNodeInfoPool;
-      sNodeInfoPool = nsnull;
-      return nsnull;
+      sNodeInfoPool = nullptr;
+      return nullptr;
     }
   }
 
@@ -64,7 +65,7 @@ nsNodeInfo::Create(nsIAtom *aName, nsIAtom *aPrefix, PRInt32 aNamespaceID,
   return place ?
     new (place) nsNodeInfo(aName, aPrefix, aNamespaceID, aNodeType, aExtraName,
                            aOwnerManager) :
-    nsnull;
+    nullptr;
 }
 
 nsNodeInfo::~nsNodeInfo()
@@ -78,11 +79,11 @@ nsNodeInfo::~nsNodeInfo()
 }
 
 
-nsNodeInfo::nsNodeInfo(nsIAtom *aName, nsIAtom *aPrefix, PRInt32 aNamespaceID,
-                       PRUint16 aNodeType, nsIAtom* aExtraName,
+nsNodeInfo::nsNodeInfo(nsIAtom *aName, nsIAtom *aPrefix, int32_t aNamespaceID,
+                       uint16_t aNodeType, nsIAtom* aExtraName,
                        nsNodeInfoManager *aOwnerManager)
 {
-  CHECK_VALID_NODEINFO(aNodeType, aName, aNamespaceID, aExtraName);
+  CheckValidNodeInfo(aNodeType, aName, aNamespaceID, aExtraName);
   NS_ABORT_IF_FALSE(aOwnerManager, "Invalid aOwnerManager");
 
   // Initialize mInner
@@ -106,6 +107,11 @@ nsNodeInfo::nsNodeInfo(nsIAtom *aName, nsIAtom *aPrefix, PRInt32 aNamespaceID,
   } else {
     mInner.mName->ToString(mQualifiedName);
   }
+
+  MOZ_ASSERT_IF(aNodeType != nsIDOMNode::ELEMENT_NODE &&
+                aNodeType != nsIDOMNode::ATTRIBUTE_NODE &&
+                aNodeType != UINT16_MAX,
+                aNamespaceID == kNameSpaceID_None && !aPrefix);
 
   switch (aNodeType) {
     case nsIDOMNode::ELEMENT_NODE:
@@ -134,7 +140,7 @@ nsNodeInfo::nsNodeInfo(nsIAtom *aName, nsIAtom *aPrefix, PRInt32 aNamespaceID,
       SetDOMStringToNull(mLocalName);
       break;
     default:
-      NS_ABORT_IF_FALSE(aNodeType == PR_UINT16_MAX,
+      NS_ABORT_IF_FALSE(aNodeType == UINT16_MAX,
                         "Unknown node type");
   }
 }
@@ -159,9 +165,9 @@ static const char* kNSURIs[] = {
 };
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsNodeInfo)
-  if (NS_UNLIKELY(cb.WantDebugInfo())) {
+  if (MOZ_UNLIKELY(cb.WantDebugInfo())) {
     char name[72];
-    PRUint32 nsid = tmp->NamespaceID();
+    uint32_t nsid = tmp->NamespaceID();
     nsAtomCString localName(tmp->NameAtom());
     if (nsid < ArrayLength(kNSURIs)) {
       PR_snprintf(name, sizeof(name), "nsNodeInfo%s %s", kNSURIs[nsid],
@@ -171,14 +177,13 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsNodeInfo)
       PR_snprintf(name, sizeof(name), "nsNodeInfo %s", localName.get());
     }
 
-    cb.DescribeRefCountedNode(tmp->mRefCnt.get(), sizeof(nsNodeInfo), name);
+    cb.DescribeRefCountedNode(tmp->mRefCnt.get(), name);
   }
   else {
     NS_IMPL_CYCLE_COLLECTION_DESCRIBE(nsNodeInfo, tmp->mRefCnt.get())
   }
 
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_MEMBER(mOwnerManager,
-                                                  nsNodeInfoManager)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_RAWPTR(mOwnerManager)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsNodeInfo)
@@ -209,7 +214,7 @@ nsNodeInfo::GetNamespaceURI(nsAString& aNameSpaceURI) const
 bool
 nsNodeInfo::NamespaceEquals(const nsAString& aNamespaceURI) const
 {
-  PRInt32 nsid =
+  int32_t nsid =
     nsContentUtils::NameSpaceManager()->GetNameSpaceID(aNamespaceURI);
 
   return nsINodeInfo::NamespaceEquals(nsid);
@@ -221,7 +226,7 @@ nsNodeInfo::ClearCache()
 {
   // Clear our cache.
   delete sNodeInfoPool;
-  sNodeInfoPool = nsnull;
+  sNodeInfoPool = nullptr;
 }
 
 void

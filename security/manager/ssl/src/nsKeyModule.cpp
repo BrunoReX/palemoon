@@ -10,8 +10,8 @@
 NS_IMPL_ISUPPORTS1(nsKeyObject, nsIKeyObject)
 
 nsKeyObject::nsKeyObject()
-  : mKeyType(0), mSymKey(nsnull), mPrivateKey(nsnull),
-    mPublicKey(nsnull)
+  : mKeyType(0), mSymKey(nullptr), mPrivateKey(nullptr),
+    mPublicKey(nullptr)
 {
 }
 
@@ -48,7 +48,7 @@ nsKeyObject::CleanUp()
 
 /* [noscript] void initKey (in short aKeyType, in voidPtr aKey); */
 NS_IMETHODIMP
-nsKeyObject::InitKey(PRInt16 aAlgorithm, void * aKey)
+nsKeyObject::InitKey(int16_t aAlgorithm, void * aKey)
 {
   // Clear previous key data if it exists
   CleanUp();
@@ -108,7 +108,7 @@ nsKeyObject::GetKeyObj(void * *_retval)
 
 /* short getType (); */
 NS_IMETHODIMP
-nsKeyObject::GetType(PRInt16 *_retval)
+nsKeyObject::GetType(int16_t *_retval)
 {
   if (mKeyType == 0)
     return NS_ERROR_NOT_INITIALIZED;
@@ -135,14 +135,14 @@ nsKeyObjectFactory::LookupKeyByName(const nsACString & aName,
 }
  
 NS_IMETHODIMP
-nsKeyObjectFactory::UnwrapKey(PRInt16 aAlgorithm, const PRUint8 *aWrappedKey,
-                              PRUint32 aWrappedKeyLen, nsIKeyObject **_retval)
+nsKeyObjectFactory::UnwrapKey(int16_t aAlgorithm, const uint8_t *aWrappedKey,
+                              uint32_t aWrappedKeyLen, nsIKeyObject **_retval)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-nsKeyObjectFactory::KeyFromString(PRInt16 aAlgorithm, const nsACString & aKey,
+nsKeyObjectFactory::KeyFromString(int16_t aAlgorithm, const nsACString & aKey,
                                   nsIKeyObject **_retval)
 {
   CK_MECHANISM_TYPE cipherMech;
@@ -174,15 +174,15 @@ nsKeyObjectFactory::KeyFromString(PRInt16 aAlgorithm, const nsACString & aKey,
   keyItem.data = (unsigned char*)flatKey.get();
   keyItem.len = flatKey.Length();
 
-  PK11SlotInfo *slot = nsnull;
-  slot = PK11_GetBestSlot(cipherMech, nsnull);
+  PK11SlotInfo *slot = nullptr;
+  slot = PK11_GetBestSlot(cipherMech, nullptr);
   if (!slot) {
     NS_ERROR("no slot");
     return NS_ERROR_FAILURE;
   }
 
   PK11SymKey* symKey = PK11_ImportSymKey(slot, cipherMech, PK11_OriginUnwrap,
-                                         cipherOperation, &keyItem, nsnull);
+                                         cipherOperation, &keyItem, nullptr);
   // cleanup code
   if (slot)
     PK11_FreeSlot(slot);

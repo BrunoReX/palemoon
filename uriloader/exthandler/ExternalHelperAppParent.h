@@ -15,6 +15,11 @@ class URI;
 }
 
 namespace mozilla {
+
+namespace ipc {
+class OptionalURIParams;
+} // namespace ipc
+
 namespace dom {
 
 class ContentParent;
@@ -25,6 +30,8 @@ class ExternalHelperAppParent : public PExternalHelperAppParent
                               , public nsIMultiPartChannel
                               , public nsIResumableChannel
 {
+    typedef mozilla::ipc::OptionalURIParams OptionalURIParams;
+
 public:
     NS_DECL_ISUPPORTS
     NS_DECL_NSIREQUEST
@@ -33,15 +40,15 @@ public:
     NS_DECL_NSIRESUMABLECHANNEL
 
     bool RecvOnStartRequest(const nsCString& entityID);
-    bool RecvOnDataAvailable(const nsCString& data, const PRUint32& offset, const PRUint32& count);
+    bool RecvOnDataAvailable(const nsCString& data, const uint64_t& offset, const uint32_t& count);
     bool RecvOnStopRequest(const nsresult& code);
-    
-    ExternalHelperAppParent(const IPC::URI& uri, const PRInt64& contentLength);
+
+    ExternalHelperAppParent(const OptionalURIParams& uri, const int64_t& contentLength);
     void Init(ContentParent *parent,
               const nsCString& aMimeContentType,
               const nsCString& aContentDisposition,
               const bool& aForceSave,
-              const IPC::URI& aReferrer);
+              const OptionalURIParams& aReferrer);
     virtual ~ExternalHelperAppParent();
 
 private:
@@ -50,8 +57,8 @@ private:
   bool mPending;
   nsLoadFlags mLoadFlags;
   nsresult mStatus;
-  PRInt64 mContentLength;
-  PRUint32 mContentDisposition;
+  int64_t mContentLength;
+  uint32_t mContentDisposition;
   nsString mContentDispositionFilename;
   nsCString mContentDispositionHeader;
   nsCString mEntityID;

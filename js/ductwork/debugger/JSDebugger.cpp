@@ -7,7 +7,6 @@
 #include "nsIXPConnect.h"
 #include "nsThreadUtils.h"
 #include "jsapi.h"
-#include "jsgc.h"
 #include "jsfriendapi.h"
 #include "jsdbgapi.h"
 #include "mozilla/ModuleUtils.h"
@@ -51,11 +50,7 @@ JSDebugger::AddClass(const JS::Value &global, JSContext* cx)
     return NS_ERROR_FAILURE;
   }
 
-  JSAutoEnterCompartment aec;
-  if (!aec.enter(cx, obj)) {
-    return NS_ERROR_FAILURE;
-  }
-
+  JSAutoCompartment ac(cx, obj);
   if (JS_GetGlobalForObject(cx, obj) != obj) {
     return NS_ERROR_INVALID_ARG;
   }

@@ -1,7 +1,7 @@
-# -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 Components.utils.import("resource://gre/modules/Services.jsm");
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
@@ -183,7 +183,7 @@ nsSidebar.prototype.classInfo = XPCOMUtils.generateCI({classID: SIDEBAR_CID,
 
 nsSidebar.prototype.QueryInterface = XPCOMUtils.generateQI([nsISidebar, nsISidebarExternal]);
 
-var NSGetFactory = XPCOMUtils.generateNSGetFactory([nsSidebar]);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory([nsSidebar]);
 
 /* static functions */
 if (DEBUG)

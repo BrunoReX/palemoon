@@ -7,7 +7,7 @@ let div;
 function createDocument()
 {
   div = doc.createElement("div");
-  div.setAttribute("style", "width: 100px; height: 100px;");
+  div.setAttribute("style", "width: 100px; height: 100px; background:yellow;");
   doc.body.appendChild(div);
 
   Services.obs.addObserver(runTest,
@@ -23,17 +23,21 @@ function runTest(subject)
   InspectorUI.highlighter.highlight(div);
 
   executeSoon(function() {
-    let veilBoxDims = InspectorUI.highlighter.veilTransparentBox;
-    is(veilBoxDims.style.width, "100px", "selection has the right width");
+    let outline = InspectorUI.highlighter.outline;
+    is(outline.style.width, "100px", "selection has the right width");
 
     div.style.width = "200px";
-    setTimeout(function () {
-      let veilBoxDims = InspectorUI.highlighter.veilTransparentBox;
-      is(veilBoxDims.style.width, "200px", "selection updated");
+    function pollTest() {
+      if (outline.style.width == "100px") {
+    	setTimeout(pollTest, 10);
+    	return;
+      }
+      is(outline.style.width, "200px", "selection updated");
       InspectorUI.closeInspectorUI();
       gBrowser.removeCurrentTab();
       finish();
-    }, 1000);
+    }
+    setTimeout(pollTest, 10);
   });
 }
 

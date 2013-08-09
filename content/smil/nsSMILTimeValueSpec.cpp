@@ -11,7 +11,6 @@
 #include "nsSMILInstanceTime.h"
 #include "nsSMILParserUtils.h"
 #include "nsISMILAnimationElement.h"
-#include "nsContentUtils.h"
 #include "nsEventListenerManager.h"
 #include "nsGUIEvent.h"
 #include "nsIDOMTimeEvent.h"
@@ -60,7 +59,7 @@ nsSMILTimeValueSpec::~nsSMILTimeValueSpec()
   UnregisterFromReferencedElement(mReferencedElement.get());
   if (mEventListener) {
     mEventListener->Disconnect();
-    mEventListener = nsnull;
+    mEventListener = nullptr;
   }
 }
 
@@ -281,11 +280,11 @@ nsSMILTimedElement*
 nsSMILTimeValueSpec::GetTimedElement(Element* aElement)
 {
   if (!aElement)
-    return nsnull;
+    return nullptr;
 
   nsCOMPtr<nsISMILAnimationElement> animElement = do_QueryInterface(aElement);
   if (!animElement)
-    return nsnull;
+    return nullptr;
 
   return &animElement->TimedElement();
 }
@@ -372,16 +371,16 @@ nsSMILTimeValueSpec::GetEventListenerManager(Element* aTarget)
   if (mParams.mType == nsSMILTimeValueSpecParams::ACCESSKEY) {
     nsIDocument* doc = aTarget->GetCurrentDoc();
     if (!doc)
-      return nsnull;
+      return nullptr;
     nsPIDOMWindow* win = doc->GetWindow();
     if (!win)
-      return nsnull;
+      return nullptr;
     target = do_QueryInterface(win);
   } else {
     target = aTarget;
   }
   if (!target)
-    return nsnull;
+    return nullptr;
 
   return target->GetListenerManager(true);
 }
@@ -442,9 +441,9 @@ nsSMILTimeValueSpec::CheckRepeatEventDetail(nsIDOMEvent *aEvent)
     return false;
   }
 
-  PRInt32 detail;
+  int32_t detail;
   timeEvent->GetDetail(&detail);
-  return detail > 0 && (PRUint32)detail == mParams.mRepeatIterationOrAccessKey;
+  return detail > 0 && (uint32_t)detail == mParams.mRepeatIterationOrAccessKey;
 }
 
 bool
@@ -466,7 +465,7 @@ nsSMILTimeValueSpec::CheckAccessKeyEventDetail(nsIDOMEvent *aEvent)
   if (isCtrl || isMeta)
     return false;
 
-  PRUint32 code;
+  uint32_t code;
   keyEvent->GetCharCode(&code);
   if (code)
     return code == mParams.mRepeatIterationOrAccessKey;

@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
+#include "ipc/AutoOpenSurface.h"
 #include "mozilla/layers/PLayers.h"
 #include "mozilla/layers/ShadowLayers.h"
 #include "ShadowBufferD3D9.h"
@@ -27,22 +28,22 @@ CanvasLayerD3D9::~CanvasLayerD3D9()
 void
 CanvasLayerD3D9::Initialize(const Data& aData)
 {
-  NS_ASSERTION(mSurface == nsnull, "BasicCanvasLayer::Initialize called twice!");
+  NS_ASSERTION(mSurface == nullptr, "BasicCanvasLayer::Initialize called twice!");
 
   if (aData.mDrawTarget) {
     mDrawTarget = aData.mDrawTarget;
+    mSurface = gfxPlatform::GetPlatform()->GetThebesSurfaceForDrawTarget(mDrawTarget);
     mNeedsYFlip = false;
     mDataIsPremultiplied = true;
   } else if (aData.mSurface) {
     mSurface = aData.mSurface;
-    NS_ASSERTION(aData.mGLContext == nsnull,
+    NS_ASSERTION(aData.mGLContext == nullptr,
                  "CanvasLayer can't have both surface and GLContext");
     mNeedsYFlip = false;
     mDataIsPremultiplied = true;
   } else if (aData.mGLContext) {
     NS_ASSERTION(aData.mGLContext->IsOffscreen(), "canvas gl context isn't offscreen");
     mGLContext = aData.mGLContext;
-    mCanvasFramebuffer = mGLContext->GetOffscreenFBO();
     mDataIsPremultiplied = aData.mGLBufferIsPremultiplied;
     mNeedsYFlip = true;
   } else {
@@ -57,9 +58,9 @@ CanvasLayerD3D9::Initialize(const Data& aData)
 void
 CanvasLayerD3D9::UpdateSurface()
 {
-  if (!mDirty && mTexture)
+  if (!IsDirty() && mTexture)
     return;
-  mDirty = false;
+  Painted();
 
   if (!mTexture) {
     CreateTexture();
@@ -82,42 +83,27 @@ CanvasLayerD3D9::UpdateSurface()
 
     const bool stridesMatch = r.Pitch == mBounds.width * 4;
 
-    PRUint8 *destination;
+    uint8_t *destination;
     if (!stridesMatch) {
       destination = GetTempBlob(mBounds.width * mBounds.height * 4);
     } else {
       DiscardTempBlob();
-      destination = (PRUint8*)r.pBits;
+      destination = (uint8_t*)r.pBits;
     }
 
     mGLContext->MakeCurrent();
-
-    PRUint32 currentFramebuffer = 0;
-
-    mGLContext->fGetIntegerv(LOCAL_GL_FRAMEBUFFER_BINDING, (GLint*)&currentFramebuffer);
-
-    // Make sure that we read pixels from the correct framebuffer, regardless
-    // of what's currently bound.
-    if (currentFramebuffer != mCanvasFramebuffer)
-      mGLContext->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, mCanvasFramebuffer);
 
     nsRefPtr<gfxImageSurface> tmpSurface =
       new gfxImageSurface(destination,
                           gfxIntSize(mBounds.width, mBounds.height),
                           mBounds.width * 4,
                           gfxASurface::ImageFormatARGB32);
-    mGLContext->ReadPixelsIntoImageSurface(0, 0,
-                                           mBounds.width, mBounds.height,
-                                           tmpSurface);
-    tmpSurface = nsnull;
-
-    // Put back the previous framebuffer binding.
-    if (currentFramebuffer != mCanvasFramebuffer)
-      mGLContext->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, currentFramebuffer);
+    mGLContext->ReadScreenIntoImageSurface(tmpSurface);
+    tmpSurface = nullptr;
 
     if (!stridesMatch) {
       for (int y = 0; y < mBounds.height; y++) {
-        memcpy((PRUint8*)r.pBits + r.Pitch * y,
+        memcpy((uint8_t*)r.pBits + r.Pitch * y,
                destination + mBounds.width * 4 * y,
                mBounds.width * 4);
       }
@@ -138,18 +124,11 @@ CanvasLayerD3D9::UpdateSurface()
     D3DLOCKED_RECT lockedRect = textureLock.GetLockRect();
 
     nsRefPtr<gfxImageSurface> sourceSurface;
-    nsRefPtr<gfxASurface> tempSurface;
-    if (mDrawTarget) {
-      tempSurface = gfxPlatform::GetPlatform()->GetThebesSurfaceForDrawTarget(mDrawTarget);
-    }
-    else {
-      tempSurface = mSurface;
-    }
 
-    if (tempSurface->GetType() == gfxASurface::SurfaceTypeWin32) {
-      sourceSurface = tempSurface->GetAsImageSurface();
-    } else if (tempSurface->GetType() == gfxASurface::SurfaceTypeImage) {
-      sourceSurface = static_cast<gfxImageSurface*>(tempSurface.get());
+    if (mSurface->GetType() == gfxASurface::SurfaceTypeWin32) {
+      sourceSurface = mSurface->GetAsImageSurface();
+    } else if (mSurface->GetType() == gfxASurface::SurfaceTypeImage) {
+      sourceSurface = static_cast<gfxImageSurface*>(mSurface.get());
       if (sourceSurface->Format() != gfxASurface::ImageFormatARGB32 &&
           sourceSurface->Format() != gfxASurface::ImageFormatRGB24)
       {
@@ -160,12 +139,12 @@ CanvasLayerD3D9::UpdateSurface()
                                           gfxASurface::ImageFormatARGB32);
       nsRefPtr<gfxContext> ctx = new gfxContext(sourceSurface);
       ctx->SetOperator(gfxContext::OPERATOR_SOURCE);
-      ctx->SetSource(tempSurface);
+      ctx->SetSource(mSurface);
       ctx->Paint();
     }
 
-    PRUint8 *startBits = sourceSurface->Data();
-    PRUint32 sourceStride = sourceSurface->Stride();
+    uint8_t *startBits = sourceSurface->Data();
+    uint32_t sourceStride = sourceSurface->Stride();
 
     if (sourceSurface->Format() != gfxASurface::ImageFormatARGB32) {
       mHasAlpha = false;
@@ -174,7 +153,7 @@ CanvasLayerD3D9::UpdateSurface()
     }
 
     for (int y = 0; y < mBounds.height; y++) {
-      memcpy((PRUint8*)lockedRect.pBits + lockedRect.Pitch * y,
+      memcpy((uint8_t*)lockedRect.pBits + lockedRect.Pitch * y,
              startBits + sourceStride * y,
              mBounds.width * 4);
     }
@@ -192,6 +171,9 @@ void
 CanvasLayerD3D9::RenderLayer()
 {
   UpdateSurface();
+  if (mD3DManager->CompositingDisabled()) {
+    return;
+  }
   FireDidTransactionCallback();
 
   if (!mTexture)
@@ -243,7 +225,7 @@ CanvasLayerD3D9::CleanResources()
 {
   if (mD3DManager->deviceManager()->HasDynamicTextures()) {
     // In this case we have a texture in POOL_DEFAULT
-    mTexture = nsnull;
+    mTexture = nullptr;
   }
 }
 
@@ -251,7 +233,7 @@ void
 CanvasLayerD3D9::LayerManagerDestroyed()
 {
   mD3DManager->deviceManager()->mLayersWithResources.RemoveElement(this);
-  mD3DManager = nsnull;
+  mD3DManager = nullptr;
 }
 
 void
@@ -277,7 +259,7 @@ CanvasLayerD3D9::CreateTexture()
 }
 
 ShadowCanvasLayerD3D9::ShadowCanvasLayerD3D9(LayerManagerD3D9* aManager)
-  : ShadowCanvasLayer(aManager, nsnull)
+  : ShadowCanvasLayer(aManager, nullptr)
   , LayerD3D9(aManager)
   , mNeedsYFlip(false)
 {
@@ -311,12 +293,11 @@ ShadowCanvasLayerD3D9::Swap(const CanvasSurface& aNewFront,
   NS_ASSERTION(aNewFront.type() == CanvasSurface::TSurfaceDescriptor, 
     "ShadowCanvasLayerD3D9::Swap expected CanvasSurface surface");
 
-  nsRefPtr<gfxASurface> surf = 
-    ShadowLayerForwarder::OpenDescriptor(aNewFront);
+  AutoOpenSurface surf(OPEN_READ_ONLY, aNewFront);
   if (!mBuffer) {
     Init(needYFlip);
   }
-  mBuffer->Upload(surf, GetVisibleRegion().GetBounds());
+  mBuffer->Upload(surf.Get(), GetVisibleRegion().GetBounds());
 
   *aNewBack = aNewFront;
 }
@@ -336,7 +317,7 @@ ShadowCanvasLayerD3D9::Disconnect()
 void
 ShadowCanvasLayerD3D9::Destroy()
 {
-  mBuffer = nsnull;
+  mBuffer = nullptr;
 }
 
 void
@@ -349,7 +330,7 @@ void
 ShadowCanvasLayerD3D9::LayerManagerDestroyed()
 {
   mD3DManager->deviceManager()->mLayersWithResources.RemoveElement(this);
-  mD3DManager = nsnull;
+  mD3DManager = nullptr;
 }
 
 Layer*
@@ -361,7 +342,7 @@ ShadowCanvasLayerD3D9::GetLayer()
 void
 ShadowCanvasLayerD3D9::RenderLayer()
 {
-  if (!mBuffer) {
+  if (!mBuffer || mD3DManager->CompositingDisabled()) {
     return;
   }
 

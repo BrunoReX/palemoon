@@ -33,7 +33,7 @@ SVGAnimatedNumberList::SetBaseValueString(const nsAString& aValue)
   }
 
   // We don't need to call DidChange* here - we're only called by
-  // nsSVGElement::ParseAttribute under nsGenericElement::SetAttr,
+  // nsSVGElement::ParseAttribute under Element::SetAttr,
   // which takes care of notifying.
 
   mIsBaseSet = true;
@@ -47,7 +47,7 @@ SVGAnimatedNumberList::SetBaseValueString(const nsAString& aValue)
 }
 
 void
-SVGAnimatedNumberList::ClearBaseValue(PRUint32 aAttrEnum)
+SVGAnimatedNumberList::ClearBaseValue(uint32_t aAttrEnum)
 {
   DOMSVGAnimatedNumberList *domWrapper =
     DOMSVGAnimatedNumberList::GetDOMWrapperIfExists(this);
@@ -63,7 +63,7 @@ SVGAnimatedNumberList::ClearBaseValue(PRUint32 aAttrEnum)
 nsresult
 SVGAnimatedNumberList::SetAnimValue(const SVGNumberList& aNewAnimValue,
                                     nsSVGElement *aElement,
-                                    PRUint32 aAttrEnum)
+                                    uint32_t aAttrEnum)
 {
   DOMSVGAnimatedNumberList *domWrapper =
     DOMSVGAnimatedNumberList::GetDOMWrapperIfExists(this);
@@ -102,7 +102,7 @@ SVGAnimatedNumberList::SetAnimValue(const SVGNumberList& aNewAnimValue,
 
 void
 SVGAnimatedNumberList::ClearAnimValue(nsSVGElement *aElement,
-                                      PRUint32 aAttrEnum)
+                                      uint32_t aAttrEnum)
 {
   DOMSVGAnimatedNumberList *domWrapper =
     DOMSVGAnimatedNumberList::GetDOMWrapperIfExists(this);
@@ -114,13 +114,13 @@ SVGAnimatedNumberList::ClearAnimValue(nsSVGElement *aElement,
     //
     domWrapper->InternalAnimValListWillChangeTo(mBaseVal);
   }
-  mAnimVal = nsnull;
+  mAnimVal = nullptr;
   aElement->DidAnimateNumberList(aAttrEnum);
 }
 
 nsISMILAttr*
 SVGAnimatedNumberList::ToSMILAttr(nsSVGElement *aSVGElement,
-                                  PRUint8 aAttrEnum)
+                                  uint8_t aAttrEnum)
 {
   return new SMILAnimatedNumberList(this, aSVGElement, aAttrEnum);
 }

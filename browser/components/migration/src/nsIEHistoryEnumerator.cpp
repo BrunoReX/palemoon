@@ -73,7 +73,7 @@ nsIEHistoryEnumerator::EnsureInitialized()
 }
 
 NS_IMETHODIMP
-nsIEHistoryEnumerator::HasMoreElements(bool* _retval NS_OUTPARAM)
+nsIEHistoryEnumerator::HasMoreElements(bool* _retval)
 {
   *_retval = false;
 
@@ -124,16 +124,16 @@ nsIEHistoryEnumerator::HasMoreElements(bool* _retval NS_OUTPARAM)
 }
 
 NS_IMETHODIMP
-nsIEHistoryEnumerator::GetNext(nsISupports** _retval NS_OUTPARAM)
+nsIEHistoryEnumerator::GetNext(nsISupports** _retval)
 {
-  *_retval = nsnull;
+  *_retval = nullptr;
 
   if (!mCachedNextEntry)
     return NS_ERROR_FAILURE;
 
   NS_ADDREF(*_retval = mCachedNextEntry);
   // Release the cached entry, so it can't be returned twice.
-  mCachedNextEntry = nsnull;
+  mCachedNextEntry = nullptr;
 
   return NS_OK;
 }

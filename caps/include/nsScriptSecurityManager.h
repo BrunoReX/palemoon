@@ -34,23 +34,6 @@ struct ClassPolicy;
 class ClassInfoData;
 class DomainPolicy;
 
-#if defined(DEBUG_mstoltz) || defined(DEBUG_caillon)
-#define DEBUG_CAPS_HACKER
-#endif
-
-#ifdef DEBUG_CAPS_HACKER
-#define DEBUG_CAPS_CheckPropertyAccessImpl
-#define DEBUG_CAPS_LookupPolicy
-#define DEBUG_CAPS_CheckComponentPermissions
-#endif
-
-#if 0
-#define DEBUG_CAPS_CanCreateWrapper
-#define DEBUG_CAPS_CanCreateInstance
-#define DEBUG_CAPS_CanGetService
-#define DEBUG_CAPS_DomainPolicyLifeCycle
-#endif
-
 /////////////////////
 // PrincipalKey //
 /////////////////////
@@ -95,7 +78,7 @@ public:
 
     static PLDHashNumber HashKey(KeyTypePointer aKey)
     {
-        PRUint32 hash;
+        uint32_t hash;
         const_cast<nsIPrincipal*>(aKey)->GetHashValue(&hash);
         return PLDHashNumber(hash);
     }
@@ -184,7 +167,7 @@ ClearClassPolicyEntry(PLDHashTable *table, PLDHashEntryHdr *entry)
     if (cp->key)
     {
         PL_strfree(cp->key);
-        cp->key = nsnull;
+        cp->key = nullptr;
     }
     PL_DHashTableDestroy(cp->mPolicy);
 }
@@ -214,15 +197,15 @@ InitClassPolicyEntry(PLDHashTable *table,
     };
 
     ClassPolicy* cp = (ClassPolicy*)entry;
-    cp->mDomainWeAreWildcardFor = nsnull;
+    cp->mDomainWeAreWildcardFor = nullptr;
     cp->key = PL_strdup((const char*)key);
     if (!cp->key)
         return false;
-    cp->mPolicy = PL_NewDHashTable(&classPolicyOps, nsnull,
+    cp->mPolicy = PL_NewDHashTable(&classPolicyOps, nullptr,
                                    sizeof(PropertyPolicy), 16);
     if (!cp->mPolicy) {
         PL_strfree(cp->key);
-        cp->key = nsnull;
+        cp->key = nullptr;
         return false;
     }
     return true;
@@ -232,16 +215,10 @@ InitClassPolicyEntry(PLDHashTable *table,
 class DomainPolicy : public PLDHashTable
 {
 public:
-    DomainPolicy() : mWildcardPolicy(nsnull),
+    DomainPolicy() : mWildcardPolicy(nullptr),
                      mRefCount(0)
     {
         mGeneration = sGeneration;
-
-#ifdef DEBUG_CAPS_DomainPolicyLifeCycle
-        ++sObjects;
-        _printPopulationInfo();
-#endif
-
     }
 
     bool Init()
@@ -258,7 +235,7 @@ public:
             InitClassPolicyEntry
         };
 
-        return PL_DHashTableInit(this, &domainPolicyOps, nsnull,
+        return PL_DHashTableInit(this, &domainPolicyOps, nullptr,
                                  sizeof(ClassPolicy), 16);
     }
 
@@ -266,12 +243,6 @@ public:
     {
         PL_DHashTableFinish(this);
         NS_ASSERTION(mRefCount == 0, "Wrong refcount in DomainPolicy dtor");
-#ifdef DEBUG_CAPS_DomainPolicyLifeCycle
-        printf("DomainPolicy deleted with mRefCount = %d\n", mRefCount);
-        --sObjects;
-        _printPopulationInfo();
-#endif
-
     }
 
     void Hold()
@@ -298,15 +269,9 @@ public:
     ClassPolicy* mWildcardPolicy;
 
 private:
-    PRUint32 mRefCount;
-    PRUint32 mGeneration;
-    static PRUint32 sGeneration;
-    
-#ifdef DEBUG_CAPS_DomainPolicyLifeCycle
-    static PRUint32 sObjects;
-    static void _printPopulationInfo();
-#endif
-
+    uint32_t mRefCount;
+    uint32_t mGeneration;
+    static uint32_t sGeneration;
 };
 
 static void
@@ -365,7 +330,7 @@ public:
      * false otherwise.
      */
     static bool SecurityCompareURIs(nsIURI* aSourceURI, nsIURI* aTargetURI);
-    static PRUint32 SecurityHashURI(nsIURI* aURI);
+    static uint32_t SecurityHashURI(nsIURI* aURI);
 
     static nsresult 
     ReportError(JSContext* cx, const nsAString& messageTag,
@@ -374,7 +339,7 @@ public:
     static nsresult
     CheckSameOriginPrincipal(nsIPrincipal* aSubject,
                              nsIPrincipal* aObject);
-    static PRUint32
+    static uint32_t
     HashPrincipalByOrigin(nsIPrincipal* aPrincipal);
 
     static bool
@@ -383,19 +348,34 @@ public:
         return sStrictFileOriginPolicy;
     }
 
+    /**
+     * Returns true if the two principals share the same app attributes.
+     *
+     * App attributes are appId and the inBrowserElement flag.
+     * Two principals have the same app attributes if those information are
+     * equals.
+     * This method helps keeping principals from different apps isolated from
+     * each other. Also, it helps making sure mozbrowser (web views) and their
+     * parent are isolated from each other. All those entities do not share the
+     * same data (cookies, IndexedDB, localStorage, etc.) so we shouldn't allow
+     * violating that principle.
+     */
+    static bool
+    AppAttributesEqual(nsIPrincipal* aFirst,
+                       nsIPrincipal* aSecond);
+
 private:
 
     // GetScriptSecurityManager is the only call that can make one
     nsScriptSecurityManager();
     virtual ~nsScriptSecurityManager();
 
+    bool SubjectIsPrivileged();
+
     static JSBool
     CheckObjectAccess(JSContext *cx, JSHandleObject obj,
                       JSHandleId id, JSAccessMode mode,
-                      jsval *vp);
-
-    static JSPrincipals *
-    ObjectPrincipalFinder(JSObject *obj);
+                      JSMutableHandleValue vp);
     
     // Decides, based on CSP, whether or not eval() and stuff can be executed.
     static JSBool
@@ -403,12 +383,11 @@ private:
 
     // Returns null if a principal cannot be found; generally callers
     // should error out at that point.
-    static nsIPrincipal*
-    doGetObjectPrincipal(JSObject *obj
+    static nsIPrincipal* doGetObjectPrincipal(JSObject *obj);
 #ifdef DEBUG
-                         , bool aAllowShortCircuit = true
+    static nsIPrincipal*
+    old_doGetObjectPrincipal(JSObject *obj, bool aAllowShortCircuit = true);
 #endif
-                         );
 
     // Returns null if a principal cannot be found.  Note that rv can be NS_OK
     // when this happens -- this means that there was no JS running.
@@ -416,10 +395,10 @@ private:
     doGetSubjectPrincipal(nsresult* rv);
     
     nsresult
-    CheckPropertyAccessImpl(PRUint32 aAction,
+    CheckPropertyAccessImpl(uint32_t aAction,
                             nsAXPCNativeCallContext* aCallContext,
                             JSContext* cx, JSObject* aJSObject,
-                            nsISupports* aObj, nsIURI* aTargetURI,
+                            nsISupports* aObj,
                             nsIClassInfo* aClassInfo,
                             const char* aClassName, jsid aProperty,
                             void** aCachedClassPolicy);
@@ -427,41 +406,29 @@ private:
     nsresult
     CheckSameOriginDOMProp(nsIPrincipal* aSubject, 
                            nsIPrincipal* aObject,
-                           PRUint32 aAction);
+                           uint32_t aAction);
 
     nsresult
     LookupPolicy(nsIPrincipal* principal,
                  ClassInfoData& aClassData, jsid aProperty,
-                 PRUint32 aAction,
+                 uint32_t aAction,
                  ClassPolicy** aCachedClassPolicy,
                  SecurityLevel* result);
 
     nsresult
-    CreateCodebasePrincipal(nsIURI* aURI, nsIPrincipal** result);
+    GetCodebasePrincipalInternal(nsIURI* aURI, uint32_t aAppId,
+                                 bool aInMozBrowser,
+                                 nsIPrincipal** result);
 
-    // This is just like the API method, but it doesn't check that the subject
-    // name is non-empty or aCertificate is non-null, and it doesn't change the
-    // certificate in the table (if any) in any way if aModifyTable is false.
     nsresult
-    DoGetCertificatePrincipal(const nsACString& aCertFingerprint,
-                              const nsACString& aSubjectName,
-                              const nsACString& aPrettyName,
-                              nsISupports* aCertificate,
-                              nsIURI* aURI,
-                              bool aModifyTable,
-                              nsIPrincipal **result);
+    CreateCodebasePrincipal(nsIURI* aURI, uint32_t aAppId, bool aInMozBrowser,
+                            nsIPrincipal** result);
 
     // Returns null if a principal cannot be found.  Note that rv can be NS_OK
     // when this happens -- this means that there was no script for the
     // context.  Callers MUST pass in a non-null rv here.
     nsIPrincipal*
     GetSubjectPrincipal(JSContext* cx, nsresult* rv);
-
-    // Returns null if a principal cannot be found.  Note that rv can be NS_OK
-    // when this happens -- this means that there was no script for the frame.
-    // Callers MUST pass in a non-null rv here.
-    nsIPrincipal*
-    GetFramePrincipal(JSContext* cx, JSStackFrame* fp, nsresult* rv);
 
     // Returns null if a principal cannot be found.  Note that rv can be NS_OK
     // when this happens -- this means that there was no script.  Callers MUST
@@ -478,17 +445,6 @@ private:
     static nsIPrincipal*
     GetFunctionObjectPrincipal(JSContext* cx, JSObject* obj, JSStackFrame *fp,
                                nsresult* rv);
-
-    // Returns null if a principal cannot be found.  Note that rv can be NS_OK
-    // when this happens -- this means that there was no script
-    // running.  Callers MUST pass in a non-null rv here.
-    nsIPrincipal*
-    GetPrincipalAndFrame(JSContext *cx,
-                         JSStackFrame** frameResult,
-                         nsresult* rv);
-
-    static void
-    FormatCapabilityString(nsAString& aCapability);
 
     /**
      * Check capability levels for an |aObj| that implements
@@ -527,17 +483,20 @@ private:
                         nsIPrincipal* aSubjectPrincipal,
                         const char* aObjectSecurityLevel);
 
+    /**
+     * Helper for CanExecuteScripts that allows the caller to specify
+     * whether execution should be allowed if cx has no
+     * nsIScriptContext.
+     */
+    nsresult
+    CanExecuteScripts(JSContext* cx, nsIPrincipal *aPrincipal,
+                      bool aAllowIfNoScriptContext, bool *result);
+
     nsresult
     Init();
 
     nsresult
     InitPrefs();
-
-    static nsresult 
-    GetPrincipalPrefNames(const char* prefBase,
-                          nsCString& grantedPref,
-                          nsCString& deniedPref,
-                          nsCString& subjectNamePref);
 
     nsresult
     InitPolicies();
@@ -545,25 +504,6 @@ private:
     nsresult
     InitDomainPolicy(JSContext* cx, const char* aPolicyName,
                      DomainPolicy* aDomainPolicy);
-
-    nsresult
-    InitPrincipals(PRUint32 prefCount, const char** prefNames);
-
-#ifdef DEBUG_CAPS_HACKER
-    void
-    PrintPolicyDB();
-#endif
-
-    struct ContextPrincipal {
-        ContextPrincipal(ContextPrincipal *next, JSContext *cx,
-                         JSStackFrame *fp, nsIPrincipal *principal)
-            : mNext(next), mCx(cx), mFp(fp), mPrincipal(principal) {}
-
-        ContextPrincipal *mNext;
-        JSContext *mCx;
-        JSStackFrame *mFp;
-        nsCOMPtr<nsIPrincipal> mPrincipal;
-    };
 
     // JS strings we need to clean up on shutdown
     static jsid sEnabledID;
@@ -576,9 +516,6 @@ private:
     nsObjectHashtable* mCapabilities;
 
     nsCOMPtr<nsIPrincipal> mSystemPrincipal;
-    nsCOMPtr<nsIPrincipal> mSystemCertificate;
-    ContextPrincipal *mContextPrincipals;
-    nsInterfaceHashtable<PrincipalKey, nsIPrincipal> mPrincipals;
     bool mPrefInitialized;
     bool mIsJavaScriptEnabled;
     bool mIsWritingPrefs;
@@ -608,5 +545,14 @@ public:
 
     NS_IMETHOD InitializeNameSet(nsIScriptContext* aScriptContext);
 };
+
+namespace mozilla {
+
+void
+GetExtendedOrigin(nsIURI* aURI, uint32_t aAppid,
+                  bool aInMozBrowser,
+                  nsACString& aExtendedOrigin);
+
+} // namespace mozilla
 
 #endif // nsScriptSecurityManager_h__

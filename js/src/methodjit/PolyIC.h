@@ -31,7 +31,8 @@ static const uint32_t MAX_GETELEM_IC_STUBS = 17;
 enum LookupStatus {
     Lookup_Error = 0,
     Lookup_Uncacheable,
-    Lookup_Cacheable
+    Lookup_Cacheable,
+    Lookup_NoProperty
 };
 
 struct BaseIC : public MacroAssemblerTypedefs {
@@ -63,23 +64,23 @@ struct BaseIC : public MacroAssemblerTypedefs {
     // Whether a type barrier is in place for the result of the op.
     bool forcedTypeBarrier : 1;
 
+    // Whether this IC has been disabled.
+    bool disabled : 1;
+
     // Number of stubs generated.
     uint32_t stubsGenerated : 5;
 
-    // Opcode this was compiled for.
-    JSOp op : 9;
-
-    bool shouldUpdate(JSContext *cx);
-    void spew(JSContext *cx, const char *event, const char *reason);
+    bool shouldUpdate(VMFrame &f);
+    void spew(VMFrame &f, const char *event, const char *reason);
     LookupStatus disable(VMFrame &f, const char *reason, void *stub);
     void updatePCCounters(VMFrame &f, Assembler &masm);
-    bool isCallOp();
 
   protected:
     void reset() {
         hit = false;
         slowCallPatched = false;
         forcedTypeBarrier = false;
+        disabled = false;
         stubsGenerated = 0;
         secondShapeGuard = 0;
     }
@@ -132,11 +133,11 @@ class BasePolyIC : public BaseIC {
         if (isOnePool()) {
             JSC::ExecutablePool *oldPool = u.execPool;
             JS_ASSERT(!isTagged(oldPool));
-            ExecPoolVector *execPools = OffTheBooks::new_<ExecPoolVector>(SystemAllocPolicy());
+            ExecPoolVector *execPools = js_new<ExecPoolVector>(SystemAllocPolicy());
             if (!execPools)
                 return false;
             if (!execPools->append(oldPool) || !execPools->append(pool)) {
-                Foreground::delete_(execPools);
+                js_delete(execPools);
                 return false;
             }
             u.taggedExecPools = tag(execPools);
@@ -157,7 +158,7 @@ class BasePolyIC : public BaseIC {
             ExecPoolVector *execPools = multiplePools();
             for (size_t i = 0; i < execPools->length(); i++)
                 (*execPools)[i]->release();
-            Foreground::delete_(execPools);
+            js_delete(execPools);
             u.execPool = NULL;
         }
         JS_ASSERT(areZeroPools());
@@ -243,13 +244,14 @@ struct GetElementIC : public BasePolyIC {
     }
 
     void purge(Repatcher &repatcher);
-    LookupStatus update(VMFrame &f, JSObject *obj, const Value &v, jsid id, Value *vp);
-    LookupStatus attachGetProp(VMFrame &f, JSObject *obj, const Value &v, PropertyName *name,
-                               Value *vp);
-    LookupStatus attachTypedArray(VMFrame &f, JSObject *obj, const Value &v, jsid id, Value *vp);
+    LookupStatus update(VMFrame &f, HandleObject obj, HandleValue v, HandleId id, MutableHandleValue vp);
+    LookupStatus attachGetProp(VMFrame &f, HandleObject obj, HandleValue v, HandlePropertyName name,
+                               MutableHandleValue vp);
+    LookupStatus attachTypedArray(VMFrame &f, HandleObject obj, HandleValue v, HandleId id,
+                                  MutableHandleValue vp);
     LookupStatus disable(VMFrame &f, const char *reason);
     LookupStatus error(JSContext *cx);
-    bool shouldUpdate(JSContext *cx);
+    bool shouldUpdate(VMFrame &f);
 
   protected:
     void reset() {
@@ -311,7 +313,7 @@ struct SetElementIC : public BaseIC {
     LookupStatus update(VMFrame &f, const Value &objval, const Value &idval);
     LookupStatus disable(VMFrame &f, const char *reason);
     LookupStatus error(JSContext *cx);
-    bool shouldUpdate(JSContext *cx);
+    bool shouldUpdate(VMFrame &f);
 
   protected:
     void reset() {
@@ -393,8 +395,8 @@ struct PICInfo : public BasePolyIC {
     // last stub.
     bool shapeRegHasBaseShape : 1;
 
-    // True if can use the property cache.
-    bool usePropCache : 1;
+    // If set, at least one lookup was uncacheable (no stub was generated).
+    bool hadUncacheable : 1;
 
     // State flags.
     bool inlinePathPatched : 1;     // inline path has been patched
@@ -410,9 +412,6 @@ struct PICInfo : public BasePolyIC {
 
     // Offset from start of fast path to initial shape guard.
     uint32_t shapeGuard;
-
-    // Possible types of the RHS, for monitored SETPROP PICs.
-    types::TypeSet *rhsTypes;
 
     inline bool isSet() const {
         return kind == SET;
@@ -484,8 +483,22 @@ struct PICInfo : public BasePolyIC {
     // Index into the script's atom table.
     PropertyName *name;
 
+  private:
+    Shape *inlinePathShape_;
+
   public:
     void purge(Repatcher &repatcher);
+
+    void setInlinePathShape(Shape *shape) {
+        JS_ASSERT(!inlinePathShape_);
+        inlinePathShape_ = shape;
+    }
+
+    Shape *getSingleShape() {
+        if (disabled || hadUncacheable || stubsGenerated > 0)
+            return NULL;
+        return inlinePathShape_;
+    }
 
   protected:
     // Reset the data members to the state of a fresh PIC before any patching
@@ -494,12 +507,14 @@ struct PICInfo : public BasePolyIC {
         BasePolyIC::reset();
         inlinePathPatched = false;
         shapeRegHasBaseShape = true;
+        hadUncacheable = false;
+        inlinePathShape_ = NULL;
     }
 };
 
 #ifdef JS_POLYIC
 void JS_FASTCALL GetProp(VMFrame &f, ic::PICInfo *);
-void JS_FASTCALL SetProp(VMFrame &f, ic::PICInfo *);
+void JS_FASTCALL SetPropOrName(VMFrame &f, ic::PICInfo *);
 void JS_FASTCALL Name(VMFrame &f, ic::PICInfo *);
 void JS_FASTCALL XName(VMFrame &f, ic::PICInfo *);
 void JS_FASTCALL BindName(VMFrame &f, ic::PICInfo *);

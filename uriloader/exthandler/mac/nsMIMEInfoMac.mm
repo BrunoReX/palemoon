@@ -69,7 +69,7 @@ nsMIMEInfoMac::LaunchWithFile(nsIFile *aFile)
     tempFile->GetFSRef(&tempFileRef);
 
     FSRef appFSRef;
-    if (::LSGetApplicationForItem(&tempFileRef, kLSRolesAll, &appFSRef, nsnull) == noErr)
+    if (::LSGetApplicationForItem(&tempFileRef, kLSRolesAll, &appFSRef, nullptr) == noErr)
     {
       app = (do_CreateInstance("@mozilla.org/file/local;1"));
       if (!app) return NS_ERROR_FAILURE;
@@ -78,8 +78,7 @@ nsMIMEInfoMac::LaunchWithFile(nsIFile *aFile)
       return NS_ERROR_FAILURE;
     }
   }
-  nsCOMPtr<nsILocalFile> localFile = do_QueryInterface(aFile);
-  return app->LaunchWithDoc(localFile, false);
+  return app->LaunchWithDoc(aFile, false);
 
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
@@ -93,7 +92,7 @@ nsMIMEInfoMac::LoadUriInternal(nsIURI *aURI)
 
   nsresult rv = NS_ERROR_FAILURE;
 
-  nsCAutoString uri;
+  nsAutoCString uri;
   aURI->GetSpec(uri);
   if (!uri.IsEmpty()) {
     CFURLRef myURLRef = ::CFURLCreateWithBytes(kCFAllocatorDefault,

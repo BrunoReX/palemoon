@@ -9,19 +9,26 @@
 
 #include <stdlib.h>
 
+#include "ImageLogging.h"
 #include "EndianMacros.h"
 #include "nsBMPDecoder.h"
 
 #include "nsIInputStream.h"
 #include "RasterImage.h"
 #include "imgIContainerObserver.h"
-#include "ImageLogging.h"
 
 namespace mozilla {
 namespace image {
 
 #ifdef PR_LOGGING
-PRLogModuleInfo *gBMPLog = PR_NewLogModule("BMPDecoder");
+static PRLogModuleInfo *
+GetBMPLog()
+{
+  static PRLogModuleInfo *sBMPLog;
+  if (!sBMPLog)
+    sBMPLog = PR_NewLogModule("BMPDecoder");
+  return sBMPLog;
+}
 #endif
 
 // Convert from row (1..height) to absolute line (0..height-1)
@@ -31,14 +38,14 @@ PRLogModuleInfo *gBMPLog = PR_NewLogModule("BMPDecoder");
 nsBMPDecoder::nsBMPDecoder(RasterImage &aImage, imgIDecoderObserver* aObserver)
  : Decoder(aImage, aObserver)
 {
-  mColors = nsnull;
-  mRow = nsnull;
-  mImageData = nsnull;
+  mColors = nullptr;
+  mRow = nullptr;
+  mImageData = nullptr;
   mCurPos = mPos = mNumColors = mRowBytes = 0;
   mOldLine = mCurLine = 1; // Otherwise decoder will never start
   mState = eRLEStateInitial;
   mStateData = 0;
-  mLOH = WIN_HEADER_LENGTH;
+  mLOH = WIN_V3_HEADER_LENGTH;
   mUseAlphaData = mHaveAlphaData = false;
 }
 
@@ -58,35 +65,35 @@ nsBMPDecoder::SetUseAlphaData(bool useAlphaData)
 }
 
 // Obtains the bits per pixel from the internal BIH header
-PRInt32 
+int32_t 
 nsBMPDecoder::GetBitsPerPixel() const
 {
   return mBIH.bpp;
 }
 
 // Obtains the width from the internal BIH header
-PRInt32 
+int32_t 
 nsBMPDecoder::GetWidth() const
 {
   return mBIH.width; 
 }
 
 // Obtains the abs-value of the height from the internal BIH header
-PRInt32 
+int32_t 
 nsBMPDecoder::GetHeight() const
 {
   return abs(mBIH.height);
 }
 
 // Obtains the internal output image buffer
-PRUint32* 
+uint32_t* 
 nsBMPDecoder::GetImageData() 
 {
   return mImageData;
 }
 
 // Obtains the size of the compressed image resource
-PRInt32 
+int32_t 
 nsBMPDecoder::GetCompressedImageSize() const
 {
   // For everything except BI_RGB the header field must be defined
@@ -96,7 +103,7 @@ nsBMPDecoder::GetCompressedImageSize() const
 
   // mBIH.image_size isn't always filled for BI_RGB so calculate it manually
   // The pixel array size is calculated based on extra 4 byte boundary padding
-  PRUint32 rowSize = (mBIH.bpp * mBIH.width + 7) / 8; // + 7 to round up
+  uint32_t rowSize = (mBIH.bpp * mBIH.width + 7) / 8; // + 7 to round up
   // Pad to DWORD Boundary
   if (rowSize % 4) {
     rowSize += (4 - (rowSize % 4));
@@ -104,7 +111,7 @@ nsBMPDecoder::GetCompressedImageSize() const
 
   // The height should be the absolute value of what the height is in the BIH.
   // If positive the bitmap is stored bottom to top, otherwise top to bottom
-  PRInt32 pixelArraySize = rowSize * GetHeight();
+  int32_t pixelArraySize = rowSize * GetHeight();
   return pixelArraySize;
 }
 
@@ -142,10 +149,10 @@ nsBMPDecoder::FinishInternal()
 // Actual Data Processing
 // ----------------------------------------
 
-static void calcBitmask(PRUint32 aMask, PRUint8& aBegin, PRUint8& aLength)
+static void calcBitmask(uint32_t aMask, uint8_t& aBegin, uint8_t& aLength)
 {
     // find the rightmost 1
-    PRUint8 pos;
+    uint8_t pos;
     bool started = false;
     aBegin = aLength = 0;
     for (pos = 0; pos <= 31; pos++) {
@@ -162,7 +169,7 @@ static void calcBitmask(PRUint32 aMask, PRUint8& aBegin, PRUint8& aLength)
 
 NS_METHOD nsBMPDecoder::CalcBitShift()
 {
-    PRUint8 begin, length;
+    uint8_t begin, length;
     // red
     calcBitmask(mBitFields.red, begin, length);
     mBitFields.redRightShift = begin;
@@ -179,7 +186,7 @@ NS_METHOD nsBMPDecoder::CalcBitShift()
 }
 
 void
-nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
+nsBMPDecoder::WriteInternal(const char* aBuffer, uint32_t aCount)
 {
     NS_ABORT_IF_FALSE(!HasError(), "Shouldn't call WriteInternal after error!");
 
@@ -189,7 +196,7 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
 
     nsresult rv;
     if (mPos < BFH_INTERNAL_LENGTH) { /* In BITMAPFILEHEADER */
-        PRUint32 toCopy = BFH_INTERNAL_LENGTH - mPos;
+        uint32_t toCopy = BFH_INTERNAL_LENGTH - mPos;
         if (toCopy > aCount)
             toCopy = aCount;
         memcpy(mRawBuf + mPos, aBuffer, toCopy);
@@ -207,7 +214,7 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
             mLOH = OS2_HEADER_LENGTH;
     }
     if (mPos >= BFH_INTERNAL_LENGTH && mPos < mLOH) { /* In BITMAPINFOHEADER */
-        PRUint32 toCopy = mLOH - mPos;
+        uint32_t toCopy = mLOH - mPos;
         if (toCopy > aCount)
             toCopy = aCount;
         memcpy(mRawBuf + (mPos - BFH_INTERNAL_LENGTH), aBuffer, toCopy);
@@ -221,7 +228,7 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
     // we won't enter this condition again.
     if (mPos == mLOH && GetFrameCount() == 0) {
         ProcessInfoHeader();
-        PR_LOG(gBMPLog, PR_LOG_DEBUG, ("BMP is %lix%lix%lu. compression=%lu\n",
+        PR_LOG(GetBMPLog(), PR_LOG_DEBUG, ("BMP is %lix%lix%lu. compression=%lu\n",
                mBIH.width, mBIH.height, mBIH.bpp, mBIH.compression));
         // Verify we support this bit depth
         if (mBIH.bpp != 1 && mBIH.bpp != 4 && mBIH.bpp != 8 &&
@@ -232,13 +239,13 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
 
         // BMPs with negative width are invalid
         // Reject extremely wide images to keep the math sane
-        const PRInt32 k64KWidth = 0x0000FFFF;
+        const int32_t k64KWidth = 0x0000FFFF;
         if (mBIH.width < 0 || mBIH.width > k64KWidth) {
             PostDataError();
             return;
         }
 
-        PRUint32 real_height = GetHeight();
+        uint32_t real_height = GetHeight();
 
         // Post our size to the superclass
         PostSize(mBIH.width, real_height);
@@ -283,34 +290,34 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
         // If we have RLE4 or RLE8 or BI_ALPHABITFIELDS, then ensure we
         // have valid BPP values before adding the frame
         if (mBIH.compression == BI_RLE8 && mBIH.bpp != 8) {
-          PR_LOG(gBMPLog, PR_LOG_DEBUG, 
+          PR_LOG(GetBMPLog(), PR_LOG_DEBUG, 
                  ("BMP RLE8 compression only supports 8 bits per pixel\n"));
           PostDataError();
           return;
         }
         if (mBIH.compression == BI_RLE4 && mBIH.bpp != 4 && mBIH.bpp != 1) {
-          PR_LOG(gBMPLog, PR_LOG_DEBUG, 
+          PR_LOG(GetBMPLog(), PR_LOG_DEBUG, 
                  ("BMP RLE4 compression only supports 4 bits per pixel\n"));
           PostDataError();
           return;
         }
         if (mBIH.compression == BI_ALPHABITFIELDS && 
             mBIH.bpp != 16 && mBIH.bpp != 32) {
-          PR_LOG(gBMPLog, PR_LOG_DEBUG, 
+          PR_LOG(GetBMPLog(), PR_LOG_DEBUG, 
                  ("BMP ALPHABITFIELDS only supports 16 or 32 bits per pixel\n"));
           PostDataError();
           return;
         }
 
-        PRUint32 imageLength;
+        uint32_t imageLength;
         if (mBIH.compression == BI_RLE8 || mBIH.compression == BI_RLE4 || 
             mBIH.compression == BI_ALPHABITFIELDS) {
             rv = mImage.EnsureFrame(0, 0, 0, mBIH.width, real_height, 
                                     gfxASurface::ImageFormatARGB32,
-                                    (PRUint8**)&mImageData, &imageLength);
+                                    (uint8_t**)&mImageData, &imageLength);
         } else {
             // mRow is not used for RLE encoded images
-            mRow = (PRUint8*)moz_malloc((mBIH.width * mBIH.bpp) / 8 + 4);
+            mRow = (uint8_t*)moz_malloc((mBIH.width * mBIH.bpp) / 8 + 4);
             // + 4 because the line is padded to a 4 bit boundary, but I don't want
             // to make exact calculations here, that's unnecessary.
             // Also, it compensates rounding error.
@@ -322,11 +329,11 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
             if (mUseAlphaData) {
               rv = mImage.EnsureFrame(0, 0, 0, mBIH.width, real_height, 
                                       gfxASurface::ImageFormatARGB32,
-                                      (PRUint8**)&mImageData, &imageLength);
+                                      (uint8_t**)&mImageData, &imageLength);
             } else {
               rv = mImage.EnsureFrame(0, 0, 0, mBIH.width, real_height, 
                                       gfxASurface::ImageFormatRGB24,
-                                      (PRUint8**)&mImageData, &imageLength);
+                                      (uint8_t**)&mImageData, &imageLength);
             }
         }
         if (NS_FAILED(rv) || !mImageData) {
@@ -346,13 +353,13 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
 
     if (mColors && mPos >= mLOH) {
       // OS/2 Bitmaps have no padding byte
-      PRUint8 bytesPerColor = (mBFH.bihsize == OS2_BIH_LENGTH) ? 3 : 4;
+      uint8_t bytesPerColor = (mBFH.bihsize == OS2_BIH_LENGTH) ? 3 : 4;
       if (mPos < (mLOH + mNumColors * bytesPerColor)) {
         // Number of bytes already received
-        PRUint32 colorBytes = mPos - mLOH; 
+        uint32_t colorBytes = mPos - mLOH; 
         // Color which is currently received
-        PRUint8 colorNum = colorBytes / bytesPerColor;
-        PRUint8 at = colorBytes % bytesPerColor;
+        uint8_t colorNum = colorBytes / bytesPerColor;
+        uint8_t at = colorBytes % bytesPerColor;
         while (aCount && (mPos < (mLOH + mNumColors * bytesPerColor))) {
             switch (at) {
                 case 0:
@@ -379,22 +386,22 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
         }
       }
     }
-    else if (aCount && mBIH.compression == BI_BITFIELDS && mPos < (WIN_HEADER_LENGTH + BITFIELD_LENGTH)) {
+    else if (aCount && mBIH.compression == BI_BITFIELDS && mPos < (WIN_V3_HEADER_LENGTH + BITFIELD_LENGTH)) {
         // If compression is used, this is a windows bitmap, hence we can
         // use WIN_HEADER_LENGTH instead of mLOH
-        PRUint32 toCopy = (WIN_HEADER_LENGTH + BITFIELD_LENGTH) - mPos;
+        uint32_t toCopy = (WIN_V3_HEADER_LENGTH + BITFIELD_LENGTH) - mPos;
         if (toCopy > aCount)
             toCopy = aCount;
-        memcpy(mRawBuf + (mPos - WIN_HEADER_LENGTH), aBuffer, toCopy);
+        memcpy(mRawBuf + (mPos - WIN_V3_HEADER_LENGTH), aBuffer, toCopy);
         mPos += toCopy;
         aBuffer += toCopy;
         aCount -= toCopy;
     }
-    if (mPos == WIN_HEADER_LENGTH + BITFIELD_LENGTH && 
+    if (mPos == WIN_V3_HEADER_LENGTH + BITFIELD_LENGTH && 
         mBIH.compression == BI_BITFIELDS) {
-        mBitFields.red = LITTLE_TO_NATIVE32(*(PRUint32*)mRawBuf);
-        mBitFields.green = LITTLE_TO_NATIVE32(*(PRUint32*)(mRawBuf + 4));
-        mBitFields.blue = LITTLE_TO_NATIVE32(*(PRUint32*)(mRawBuf + 8));
+        mBitFields.red = LITTLE_TO_NATIVE32(*(uint32_t*)mRawBuf);
+        mBitFields.green = LITTLE_TO_NATIVE32(*(uint32_t*)(mRawBuf + 4));
+        mBitFields.blue = LITTLE_TO_NATIVE32(*(uint32_t*)(mRawBuf + 8));
         CalcBitShift();
     }
     while (aCount && (mPos < mBFH.dataoffset)) { // Skip whatever is between header and data
@@ -404,11 +411,11 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
         // Need to increment mPos, else we might get to mPos==mLOH again
         // From now on, mPos is irrelevant
         if (!mBIH.compression || mBIH.compression == BI_BITFIELDS) {
-            PRUint32 rowSize = (mBIH.bpp * mBIH.width + 7) / 8; // + 7 to round up
+            uint32_t rowSize = (mBIH.bpp * mBIH.width + 7) / 8; // + 7 to round up
             if (rowSize % 4) {
                 rowSize += (4 - (rowSize % 4)); // Pad to DWORD Boundary
             }
-            PRUint32 toCopy;
+            uint32_t toCopy;
             do {
                 toCopy = rowSize - mRowBytes;
                 if (toCopy) {
@@ -421,14 +428,14 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
                 }
                 if (rowSize == mRowBytes) {
                     // Collected a whole row into mRow, process it
-                    PRUint8* p = mRow;
-                    PRUint32* d = mImageData + PIXEL_OFFSET(mCurLine, 0);
-                    PRUint32 lpos = mBIH.width;
+                    uint8_t* p = mRow;
+                    uint32_t* d = mImageData + PIXEL_OFFSET(mCurLine, 0);
+                    uint32_t lpos = mBIH.width;
                     switch (mBIH.bpp) {
                       case 1:
                         while (lpos > 0) {
-                          PRInt8 bit;
-                          PRUint8 idx;
+                          int8_t bit;
+                          uint8_t idx;
                           for (bit = 7; bit >= 0 && lpos > 0; bit--) {
                               idx = (*p >> bit) & 1;
                               SetPixel(d, idx, mColors);
@@ -452,7 +459,7 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
                         break;
                       case 16:
                         while (lpos > 0) {
-                          PRUint16 val = LITTLE_TO_NATIVE16(*(PRUint16*)p);
+                          uint16_t val = LITTLE_TO_NATIVE16(*(uint16_t*)p);
                           SetPixel(d,
                                   (val & mBitFields.red) >> mBitFields.redRightShift << mBitFields.redLeftShift,
                                   (val & mBitFields.green) >> mBitFields.greenRightShift << mBitFields.greenLeftShift,
@@ -480,11 +487,11 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
                               // 4 has been right all along.  And we know it
                               // has been set to 0 the whole time, so that 
                               // means that everything is transparent so far.
-                              PRUint32* start = mImageData + GetWidth() * (mCurLine - 1);
-                              PRUint32 heightDifference = GetHeight() - mCurLine + 1;
-                              PRUint32 pixelCount = GetWidth() * heightDifference;
+                              uint32_t* start = mImageData + GetWidth() * (mCurLine - 1);
+                              uint32_t heightDifference = GetHeight() - mCurLine + 1;
+                              uint32_t pixelCount = GetWidth() * heightDifference;
 
-                              memset(start, 0, pixelCount * sizeof(PRUint32));
+                              memset(start, 0, pixelCount * sizeof(uint32_t));
 
                               mHaveAlphaData = true;
                             }
@@ -511,17 +518,17 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
         else if ((mBIH.compression == BI_RLE8) || (mBIH.compression == BI_RLE4)) {
             if (((mBIH.compression == BI_RLE8) && (mBIH.bpp != 8)) || 
                 ((mBIH.compression == BI_RLE4) && (mBIH.bpp != 4) && (mBIH.bpp != 1))) {
-              PR_LOG(gBMPLog, PR_LOG_DEBUG, ("BMP RLE8/RLE4 compression only supports 8/4 bits per pixel\n"));
+              PR_LOG(GetBMPLog(), PR_LOG_DEBUG, ("BMP RLE8/RLE4 compression only supports 8/4 bits per pixel\n"));
               PostDataError();
               return;
             }
 
             while (aCount > 0) {
-                PRUint8 byte;
+                uint8_t byte;
 
                 switch(mState) {
                     case eRLEStateInitial:
-                        mStateData = (PRUint8)*aBuffer++;
+                        mStateData = (uint8_t)*aBuffer++;
                         aCount--;
 
                         mState = eRLEStateNeedSecondEscapeByte;
@@ -538,9 +545,9 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
                             // the second byte
                             // Work around bitmaps that specify too many pixels
                             mState = eRLEStateInitial;
-                            PRUint32 pixelsNeeded = NS_MIN<PRUint32>(mBIH.width - mCurPos, mStateData);
+                            uint32_t pixelsNeeded = NS_MIN<uint32_t>(mBIH.width - mCurPos, mStateData);
                             if (pixelsNeeded) {
-                                PRUint32* d = mImageData + PIXEL_OFFSET(mCurLine, mCurPos);
+                                uint32_t* d = mImageData + PIXEL_OFFSET(mCurLine, mCurPos);
                                 mCurPos += pixelsNeeded;
                                 if (mBIH.compression == BI_RLE8) {
                                     do {
@@ -575,11 +582,11 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
                             default : // absolute mode
                                 // Save the number of pixels to read
                                 mStateData = byte;
-                                if (mCurPos + mStateData > (PRUint32)mBIH.width) {
+                                if (mCurPos + mStateData > (uint32_t)mBIH.width) {
                                     // We can work around bitmaps that specify one
                                     // pixel too many, but only if their width is odd.
                                     mStateData -= mBIH.width & 1;
-                                    if (mCurPos + mStateData > (PRUint32)mBIH.width) {
+                                    if (mCurPos + mStateData > (uint32_t)mBIH.width) {
                                         PostDataError();
                                         return;
                                     }
@@ -618,7 +625,7 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
                         byte = *aBuffer++;
                         aCount--;
                         mState = eRLEStateInitial;
-                        mCurLine -= NS_MIN<PRInt32>(byte, mCurLine);
+                        mCurLine -= NS_MIN<int32_t>(byte, mCurLine);
                         break;
 
                     case eRLEStateAbsoluteMode: // Absolute Mode
@@ -628,8 +635,8 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
                             // represents the number of pixels 
                             // that follow, each of which contains 
                             // the color index of a single pixel.
-                            PRUint32* d = mImageData + PIXEL_OFFSET(mCurLine, mCurPos);
-                            PRUint32* oldPos = d;
+                            uint32_t* d = mImageData + PIXEL_OFFSET(mCurLine, mCurPos);
+                            uint32_t* oldPos = d;
                             if (mBIH.compression == BI_RLE8) {
                                 while (aCount > 0 && mStateData > 0) {
                                     byte = *aBuffer++;
@@ -678,7 +685,7 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
         }
     }
 
-    const PRUint32 rows = mOldLine - mCurLine;
+    const uint32_t rows = mOldLine - mCurLine;
     if (rows) {
 
         // Invalidate

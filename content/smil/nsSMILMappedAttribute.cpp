@@ -6,11 +6,9 @@
 /* representation of a SMIL-animatable mapped attribute on an element */
 #include "nsSMILMappedAttribute.h"
 #include "nsAttrValue.h"
-#include "nsPropertyTable.h"
-#include "nsContentErrors.h" // For NS_PROPTABLE_PROP_OVERWRITTEN
+#include "nsError.h" // For NS_PROPTABLE_PROP_OVERWRITTEN
 #include "nsSMILValue.h"
 #include "nsSMILCSSValueType.h"
-#include "nsIContent.h"
 #include "nsIDocument.h"
 #include "nsIPresShell.h"
 #include "nsCSSProps.h"
@@ -55,13 +53,13 @@ nsSMILMappedAttribute::GetBaseValue() const
     // the returned (computed) base value and its cached value and determining
     // if an update is required or not.
     nsSMILCSSValueType::ValueFromString(mPropID, mElement,
-                                        baseStringValue, baseValue, nsnull);
+                                        baseStringValue, baseValue, nullptr);
   } else {
     // Attribute is unset -- use computed value.
     // FIRST: Temporarily clear animated value, to make sure it doesn't pollute
     // the computed value. (We want base value, _without_ animations applied.)
     void* buf = mElement->UnsetProperty(SMIL_MAPPED_ATTR_ANIMVAL,
-                                        attrName, nsnull);
+                                        attrName, nullptr);
     FlushChangesToTargetAttr();
 
     // SECOND: we use nsSMILCSSProperty::GetBaseValue to look up the property's

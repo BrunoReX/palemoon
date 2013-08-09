@@ -37,6 +37,8 @@
   // for |NS_COM_GLUE|
 #endif
 
+#include "nsCycleCollectionNoteChild.h"
+
 
 /*
   WARNING:
@@ -58,7 +60,7 @@
 
 #define NSCAP_FEATURE_USE_BASE
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
   #define NSCAP_FEATURE_TEST_DONTQUERY_CASES
   #undef NSCAP_FEATURE_USE_BASE
 //#define NSCAP_FEATURE_TEST_NONNULL_QUERY_SUCCEEDS
@@ -401,7 +403,12 @@ nsCOMPtr_base
           // nothing else to do here
         }
 
-      NS_COM_GLUE NS_CONSTRUCTOR_FASTCALL ~nsCOMPtr_base();
+      NS_COM_GLUE NS_CONSTRUCTOR_FASTCALL ~nsCOMPtr_base()
+        {
+          NSCAP_LOG_RELEASE(this, mRawPtr);
+            if ( mRawPtr )
+              NSCAP_RELEASE(this, mRawPtr);
+        }
 
       NS_COM_GLUE void NS_FASTCALL   assign_with_AddRef( nsISupports* );
       NS_COM_GLUE void NS_FASTCALL   assign_from_qi( const nsQueryInterface, const nsIID& );
@@ -735,13 +742,14 @@ class nsCOMPtr MOZ_FINAL
 
       template <typename I>
       void
-      forget( I** rhs NS_OUTPARAM )
+      forget( I** rhs )
           // Set the target of rhs to the value of mRawPtr and null out mRawPtr.
           // Useful to avoid unnecessary AddRef/Release pairs with "out"
           // parameters where rhs bay be a T** or an I** where I is a base class
           // of T.
         {
           NS_ASSERTION(rhs, "Null pointer passed to forget!");
+          NSCAP_LOG_RELEASE(this, mRawPtr);
           *rhs = get();
           mRawPtr = 0;
         }
@@ -1040,7 +1048,7 @@ class nsCOMPtr<nsISupports>
         }
 
       void
-      forget( nsISupports** rhs NS_OUTPARAM )
+      forget( nsISupports** rhs )
           // Set the target of rhs to the value of mRawPtr and null out mRawPtr.
           // Useful to avoid unnecessary AddRef/Release pairs with "out"
           // parameters.
@@ -1119,6 +1127,23 @@ class nsCOMPtr<nsISupports>
 #endif
         }
   };
+
+template <typename T>
+inline void
+ImplCycleCollectionUnlink(nsCOMPtr<T>& aField)
+{
+  aField = nullptr;
+}
+
+template <typename T>
+inline void
+ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback& aCallback,
+                            nsCOMPtr<T>& aField,
+                            const char* aName,
+                            uint32_t aFlags = 0)
+{
+  CycleCollectionNoteChild(aCallback, aField.get(), aName, aFlags);
+}
 
 #ifndef NSCAP_FEATURE_USE_BASE
 template <class T>
@@ -1415,15 +1440,6 @@ operator!=( const U* lhs, const nsCOMPtr<T>& rhs )
   // better conversion for the other argument, define additional
   // |operator==| without the |const| on the raw pointer.
   // See bug 65664 for details.
-
-// This is defined by an autoconf test, but VC++ also has a bug that
-// prevents us from using these.  (It also, fortunately, has the bug
-// that we don't need them either.)
-#if defined(_MSC_VER) && (_MSC_VER < 1310)
-#ifndef NSCAP_DONT_PROVIDE_NONCONST_OPEQ
-#define NSCAP_DONT_PROVIDE_NONCONST_OPEQ
-#endif
-#endif
 
 #ifndef NSCAP_DONT_PROVIDE_NONCONST_OPEQ
 template <class T, class U>

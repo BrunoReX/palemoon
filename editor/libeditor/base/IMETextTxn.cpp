@@ -4,14 +4,25 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "IMETextTxn.h"
-#include "nsIDOMCharacterData.h"
-#include "nsRange.h"
-#include "nsIPrivateTextRange.h"
-#include "nsISelection.h"
-#include "nsISelectionPrivate.h"
-#include "nsISelectionController.h"
-#include "nsComponentManagerUtils.h"
-#include "nsIEditor.h"
+#include "mozilla/mozalloc.h"           // for operator new
+#include "nsAString.h"                  // for nsAString_internal::Length, etc
+#include "nsAutoPtr.h"                  // for nsRefPtr
+#include "nsDebug.h"                    // for NS_ASSERTION, etc
+#include "nsError.h"                    // for NS_SUCCEEDED, NS_FAILED, etc
+#include "nsGUIEvent.h"                 // for nsTextRangeStyle
+#include "nsIDOMCharacterData.h"        // for nsIDOMCharacterData
+#include "nsIDOMRange.h"                // for nsRange::SetEnd, etc
+#include "nsIEditor.h"                  // for nsIEditor
+#include "nsIPresShell.h"               // for SelectionType
+#include "nsIPrivateTextRange.h"        // for nsIPrivateTextRange, etc
+#include "nsISelection.h"               // for nsISelection
+#include "nsISelectionController.h"     // for nsISelectionController, etc
+#include "nsISelectionPrivate.h"        // for nsISelectionPrivate
+#include "nsISupportsImpl.h"            // for nsRange::AddRef, etc
+#include "nsISupportsUtils.h"           // for NS_ADDREF_THIS, NS_RELEASE
+#include "nsITransaction.h"             // for nsITransaction
+#include "nsRange.h"                    // for nsRange
+#include "nsString.h"                   // for nsString
 
 // #define DEBUG_IMETXN
 
@@ -23,12 +34,12 @@ IMETextTxn::IMETextTxn()
 NS_IMPL_CYCLE_COLLECTION_CLASS(IMETextTxn)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(IMETextTxn, EditTxn)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mElement)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mElement)
   // mRangeList can't lead to cycles
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(IMETextTxn, EditTxn)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mElement)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mElement)
   // mRangeList can't lead to cycles
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
@@ -41,8 +52,8 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(IMETextTxn)
 NS_INTERFACE_MAP_END_INHERITING(EditTxn)
 
 NS_IMETHODIMP IMETextTxn::Init(nsIDOMCharacterData     *aElement,
-                               PRUint32                 aOffset,
-                               PRUint32                 aReplaceLength,
+                               uint32_t                 aOffset,
+                               uint32_t                 aReplaceLength,
                                nsIPrivateTextRangeList *aTextRangeList,
                                const nsAString         &aStringToInsert,
                                nsIEditor               *aEditor)
@@ -129,7 +140,7 @@ NS_IMETHODIMP IMETextTxn::Merge(nsITransaction *aTransaction, bool *aDidMerge)
   //
   // if aTransaction is another IMETextTxn then absorb it
   //
-  IMETextTxn*  otherTxn = nsnull;
+  IMETextTxn*  otherTxn = nullptr;
   nsresult result = aTransaction->QueryInterface(IMETextTxn::GetCID(),(void**)&otherTxn);
   if (otherTxn && NS_SUCCEEDED(result))
   {
@@ -203,10 +214,10 @@ static SelectionType sel[4]=
 NS_IMETHODIMP IMETextTxn::CollapseTextSelection(void)
 {
     nsresult      result;
-    PRUint16      i;
+    uint16_t      i;
 
 #ifdef DEBUG_IMETXN
-    PRUint16 listlen,start,stop,type;
+    uint16_t listlen,start,stop,type;
     result = mRangeList->GetLength(&listlen);
     printf("nsIPrivateTextRangeList[%p]\n",mRangeList);
     nsIPrivateTextRange* rangePtr;
@@ -237,7 +248,7 @@ NS_IMETHODIMP IMETextTxn::CollapseTextSelection(void)
     mEditor->GetSelectionController(getter_AddRefs(selCon));
     NS_ENSURE_TRUE(selCon, NS_ERROR_NOT_INITIALIZED);
 
-    PRUint16      textRangeListLength,selectionStart,selectionEnd,
+    uint16_t      textRangeListLength,selectionStart,selectionEnd,
                   textRangeType;
     
     textRangeListLength = mRangeList->GetLength();
@@ -250,7 +261,7 @@ NS_IMETHODIMP IMETextTxn::CollapseTextSelection(void)
       if (NS_SUCCEEDED(result))
       {
         nsCOMPtr<nsISelection> imeSel;
-        for(PRInt8 selIdx = 0; selIdx < 4;selIdx++)
+        for(int8_t selIdx = 0; selIdx < 4;selIdx++)
         {
           result = selCon->GetSelection(sel[selIdx], getter_AddRefs(imeSel));
           if (NS_SUCCEEDED(result))

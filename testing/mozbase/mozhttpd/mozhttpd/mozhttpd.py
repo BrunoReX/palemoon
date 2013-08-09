@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 # This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import BaseHTTPServer
 import SimpleHTTPServer
@@ -16,6 +16,8 @@ import os
 import urllib
 import urlparse
 import re
+import iface
+import time
 from SocketServer import ThreadingMixIn
 
 class EasyServer(ThreadingMixIn, BaseHTTPServer.HTTPServer):
@@ -62,9 +64,20 @@ class RequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
     docroot = os.getcwd() # current working directory at time of import
     proxy_host_dirs = False
+    request_log = []
+    log_requests = False
     request = None
 
+    def __init__(self, *args, **kwargs):
+        SimpleHTTPServer.SimpleHTTPRequestHandler.__init__(self, *args, **kwargs)
+        self.extensions_map['.svg'] = 'image/svg+xml'
+
     def _try_handler(self, method):
+        if self.log_requests:
+            self.request_log.append({ 'method': method,
+                                      'path': self.request.path,
+                                      'time': time.time() })
+
         handlers = [handler for handler in self.urlhandlers
                     if handler['method'] == method]
         for handler in handlers:
@@ -180,7 +193,7 @@ class MozHttpd(object):
     """
 
     def __init__(self, host="127.0.0.1", port=8888, docroot=None,
-                 urlhandlers=None, proxy_host_dirs=False):
+                 urlhandlers=None, proxy_host_dirs=False, log_requests=False):
         self.host = host
         self.port = int(port)
         self.docroot = docroot
@@ -189,11 +202,15 @@ class MozHttpd(object):
         self.proxy_host_dirs = proxy_host_dirs
         self.httpd = None
         self.urlhandlers = urlhandlers or []
+        self.log_requests = log_requests
+        self.request_log = []
 
         class RequestHandlerInstance(RequestHandler):
             docroot = self.docroot
             urlhandlers = self.urlhandlers
             proxy_host_dirs = self.proxy_host_dirs
+            request_log = self.request_log
+            log_requests = self.log_requests
 
         self.handler_class = RequestHandlerInstance
 
@@ -224,27 +241,33 @@ class MozHttpd(object):
 
 
 def main(args=sys.argv[1:]):
-    
+
     # parse command line options
     from optparse import OptionParser
     parser = OptionParser()
-    parser.add_option('-p', '--port', dest='port', 
+    parser.add_option('-p', '--port', dest='port',
                       type="int", default=8888,
                       help="port to run the server on [DEFAULT: %default]")
     parser.add_option('-H', '--host', dest='host',
                       default='127.0.0.1',
                       help="host [DEFAULT: %default]")
+    parser.add_option('-i', '--external-ip', action="store_true",
+                      dest='external_ip', default=False,
+                      help="find and use external ip for host")
     parser.add_option('-d', '--docroot', dest='docroot',
                       default=os.getcwd(),
                       help="directory to serve files from [DEFAULT: %default]")
     options, args = parser.parse_args(args)
     if args:
-        parser.print_help()
-        parser.exit()
+        parser.error("mozhttpd does not take any arguments")
+
+    if options.external_ip:
+        host = iface.get_lan_ip()
+    else:
+        host = options.host
 
     # create the server
-    kwargs = options.__dict__.copy()
-    server = MozHttpd(**kwargs)
+    server = MozHttpd(host=host, port=options.port, docroot=options.docroot)
 
     print "Serving '%s' at %s:%s" % (server.docroot, server.host, server.port)
     server.start(block=True)

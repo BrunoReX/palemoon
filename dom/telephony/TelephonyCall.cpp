@@ -17,7 +17,7 @@ USING_TELEPHONY_NAMESPACE
 // static
 already_AddRefed<TelephonyCall>
 TelephonyCall::Create(Telephony* aTelephony, const nsAString& aNumber,
-                      PRUint16 aCallState, PRUint32 aCallIndex)
+                      uint16_t aCallState, uint32_t aCallIndex)
 {
   NS_ASSERTION(aTelephony, "Null pointer!");
   NS_ASSERTION(!aNumber.IsEmpty(), "Empty number!");
@@ -30,7 +30,7 @@ TelephonyCall::Create(Telephony* aTelephony, const nsAString& aNumber,
   call->mTelephony = aTelephony;
   call->mNumber = aNumber;
   call->mCallIndex = aCallIndex;
-  call->mError = nsnull;
+  call->mError = nullptr;
 
   call->ChangeStateInternal(aCallState, false);
 
@@ -38,7 +38,7 @@ TelephonyCall::Create(Telephony* aTelephony, const nsAString& aNumber,
 }
 
 void
-TelephonyCall::ChangeStateInternal(PRUint16 aCallState, bool aFireEvents)
+TelephonyCall::ChangeStateInternal(uint16_t aCallState, bool aFireEvents)
 {
   nsRefPtr<TelephonyCall> kungFuDeathGrip(this);
 
@@ -140,42 +140,9 @@ TelephonyCall::NotifyError(const nsAString& aError)
   }
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(TelephonyCall)
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(TelephonyCall,
-                                                  nsDOMEventTargetHelper)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_PTR(tmp->mTelephony->ToISupports(),
-                                               Telephony, "mTelephony")
-  NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(statechange)
-  NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(dialing)
-  NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(alerting)
-  NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(busy)
-  NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(connecting)
-  NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(connected)
-  NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(disconnecting)
-  NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(disconnected)
-  NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(holding)
-  NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(held)
-  NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(resuming)
-  NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(error)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(TelephonyCall,
-                                                nsDOMEventTargetHelper)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mTelephony)
-  NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(statechange)
-  NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(dialing)
-  NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(alerting)
-  NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(busy)
-  NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(connecting)
-  NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(connected)
-  NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(disconnecting)
-  NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(disconnected)
-  NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(holding)
-  NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(held)
-  NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(resuming)
-  NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(error)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_INHERITED_1(TelephonyCall,
+                                     nsDOMEventTargetHelper,
+                                     mTelephony)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(TelephonyCall)
   NS_INTERFACE_MAP_ENTRY(nsIDOMTelephonyCall)
@@ -229,12 +196,6 @@ TelephonyCall::HangUp()
   if (mCallState == nsIRadioInterfaceLayer::CALL_STATE_DISCONNECTING ||
       mCallState == nsIRadioInterfaceLayer::CALL_STATE_DISCONNECTED) {
     NS_WARNING("HangUp on previously disconnected call ignored!");
-    return NS_OK;
-  }
-
-  if (mCallState == nsIRadioInterfaceLayer::CALL_STATE_HOLDING ||
-      mCallState == nsIRadioInterfaceLayer::CALL_STATE_HELD) {
-    NS_WARNING("HangUp on non-active call ignored!");
     return NS_OK;
   }
 

@@ -15,7 +15,6 @@
 #include "nsIDOMElement.h"
 #include "nsIContent.h"
 #include "nsIDocument.h"
-#include "nsIDOMDocument.h"
 #include "nsINameSpaceManager.h"
 #include "nsString.h"
 #include "nsUnicharUtils.h"
@@ -42,7 +41,7 @@
 
 using namespace mozilla::dom;
 
-static const PRInt32 kLongLineLen = 128;
+static const int32_t kLongLineLen = 128;
 
 nsresult NS_NewHTMLContentSerializer(nsIContentSerializer** aSerializer)
 {
@@ -77,10 +76,10 @@ nsHTMLContentSerializer::SerializeHTMLAttributes(nsIContent* aContent,
                                                  nsAString& aTagPrefix,
                                                  const nsAString& aTagNamespaceURI,
                                                  nsIAtom* aTagName,
-                                                 PRInt32 aNamespace,
+                                                 int32_t aNamespace,
                                                  nsAString& aStr)
 {
-  PRInt32 count = aContent->GetAttrCount();
+  int32_t count = aContent->GetAttrCount();
   if (!count)
     return;
 
@@ -88,10 +87,10 @@ nsHTMLContentSerializer::SerializeHTMLAttributes(nsIContent* aContent,
   nsAutoString valueStr;
   NS_NAMED_LITERAL_STRING(_mozStr, "_moz");
 
-  for (PRInt32 index = count; index > 0;) {
+  for (int32_t index = count; index > 0;) {
     --index;
     const nsAttrName* name = aContent->GetAttrNameAt(index);
-    PRInt32 namespaceID = name->NamespaceID();
+    int32_t namespaceID = name->NamespaceID();
     nsIAtom* attrName = name->LocalName();
 
     // Filter out any attribute starting with [-|_]moz
@@ -192,7 +191,7 @@ nsHTMLContentSerializer::AppendElementStart(Element* aElement,
   }
 
   nsIAtom *name = content->Tag();
-  PRInt32 ns = content->GetNameSpaceID();
+  int32_t ns = content->GetNameSpaceID();
 
   bool lineBreakBeforeOpen = LineBreakBeforeOpen(ns, name);
 
@@ -238,11 +237,11 @@ nsHTMLContentSerializer::AppendElementStart(Element* aElement,
     // We are copying and current node is an OL;
     // Store its start attribute value in olState->startVal.
     nsAutoString start;
-    PRInt32 startAttrVal = 0;
+    int32_t startAttrVal = 0;
 
     aElement->GetAttr(kNameSpaceID_None, nsGkAtoms::start, start);
     if (!start.IsEmpty()){
-      PRInt32 rv = 0;
+      nsresult rv = NS_OK;
       startAttrVal = start.ToInteger(&rv);
       //If OL has "start" attribute, first LI element has to start with that value
       //Therefore subtracting 1 as all the LI elements are incrementing it before using it;
@@ -303,7 +302,7 @@ nsHTMLContentSerializer::AppendElementEnd(Element* aElement,
   nsIContent* content = aElement;
 
   nsIAtom *name = content->Tag();
-  PRInt32 ns = content->GetNameSpaceID();
+  int32_t ns = content->GetNameSpaceID();
 
   if (ns == kNameSpaceID_XHTML &&
       (name == nsGkAtoms::script ||
@@ -396,50 +395,50 @@ nsHTMLContentSerializer::AppendElementEnd(Element* aElement,
   return NS_OK;
 }
 
-static const PRUint16 kValNBSP = 160;
+static const uint16_t kValNBSP = 160;
 static const char* kEntities[] = {
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, "&amp;", nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  "&lt;", nsnull, "&gt;", nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, "&amp;", nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  "&lt;", nullptr, "&gt;", nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
   "&nbsp;"
 };
 
 static const char* kAttrEntities[] = {
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, "&quot;", nsnull, nsnull, nsnull, "&amp;", nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  "&lt;", nsnull, "&gt;", nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
-  nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull, nsnull,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, "&quot;", nullptr, nullptr, nullptr, "&amp;", nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  "&lt;", nullptr, "&gt;", nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
   "&nbsp;"
 };
 
-PRUint32 FindNextBasicEntity(const nsAString& aStr,
-                             const PRUint32 aLen,
-                             PRUint32 aIndex,
+uint32_t FindNextBasicEntity(const nsAString& aStr,
+                             const uint32_t aLen,
+                             uint32_t aIndex,
                              const char** aEntityTable,
                              const char** aEntity)
 {
@@ -476,12 +475,12 @@ nsHTMLContentSerializer::AppendAndTranslateEntities(const nsAString& aStr,
   if (!nonBasicEntities &&
       (mFlags & (nsIDocumentEncoder::OutputEncodeBasicEntities))) {
     const char **entityTable = mInAttribute ? kAttrEntities : kEntities;
-    PRUint32 start = 0;
-    const PRUint32 len = aStr.Length();
-    for (PRUint32 i = 0; i < len; ++i) {
-      const char* entity = nsnull;
+    uint32_t start = 0;
+    const uint32_t len = aStr.Length();
+    for (uint32_t i = 0; i < len; ++i) {
+      const char* entity = nullptr;
       i = FindNextBasicEntity(aStr, len, i, entityTable, &entity);
-      PRUint32 normalTextLen = i - start; 
+      uint32_t normalTextLen = i - start; 
       if (normalTextLen) {
         aOutputStr.Append(Substring(aStr, start, normalTextLen));
       }
@@ -503,24 +502,24 @@ nsHTMLContentSerializer::AppendAndTranslateEntities(const nsAString& aStr,
     aStr.EndReading(done_reading);
 
     // for each chunk of |aString|...
-    PRUint32 advanceLength = 0;
+    uint32_t advanceLength = 0;
     nsReadingIterator<PRUnichar> iter;
 
     const char **entityTable = mInAttribute ? kAttrEntities : kEntities;
-    nsCAutoString entityReplacement;
+    nsAutoCString entityReplacement;
 
     for (aStr.BeginReading(iter);
          iter != done_reading;
-         iter.advance(PRInt32(advanceLength))) {
-      PRUint32 fragmentLength = iter.size_forward();
-      PRUint32 lengthReplaced = 0; // the number of UTF-16 codepoints
+         iter.advance(int32_t(advanceLength))) {
+      uint32_t fragmentLength = iter.size_forward();
+      uint32_t lengthReplaced = 0; // the number of UTF-16 codepoints
                                     //  replaced by a particular entity
       const PRUnichar* c = iter.get();
       const PRUnichar* fragmentStart = c;
       const PRUnichar* fragmentEnd = c + fragmentLength;
-      const char* entityText = nsnull;
-      const char* fullConstEntityText = nsnull;
-      char* fullEntityText = nsnull;
+      const char* entityText = nullptr;
+      const char* fullConstEntityText = nullptr;
+      char* fullEntityText = nullptr;
 
       advanceLength = 0;
       // for each character in this chunk, check if it
@@ -548,7 +547,7 @@ nsHTMLContentSerializer::AppendAndTranslateEntities(const nsAString& aStr,
           if (NS_IS_HIGH_SURROGATE(val) &&
               c + 1 < fragmentEnd &&
               NS_IS_LOW_SURROGATE(*(c + 1))) {
-            PRUint32 valUTF32 = SURROGATE_TO_UCS4(val, *(++c));
+            uint32_t valUTF32 = SURROGATE_TO_UCS4(val, *(++c));
             if (NS_SUCCEEDED(mEntityConverter->ConvertUTF32ToEntity(valUTF32,
                               nsIEntityConverter::entityW3C, &fullEntityText))) {
               lengthReplaced = 2;

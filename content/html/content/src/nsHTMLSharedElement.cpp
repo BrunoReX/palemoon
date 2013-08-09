@@ -12,6 +12,7 @@
 #include "nsIDOMHTMLHeadElement.h"
 #include "nsIDOMHTMLHtmlElement.h"
 #include "nsGenericHTMLElement.h"
+#include "nsAttrValueInlines.h"
 
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
@@ -20,6 +21,7 @@
 #include "nsContentUtils.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 // XXX nav4 has type= start= (same as OL/UL)
 extern nsAttrValue::EnumTable kListTypeTable[];
@@ -40,13 +42,13 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLParamElement
   NS_DECL_NSIDOMHTMLPARAMELEMENT
@@ -67,20 +69,20 @@ public:
   NS_DECL_NSIDOMHTMLHTMLELEMENT
 
   // nsIContent
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
-  nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+  nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                    const nsAString& aValue, bool aNotify)
   {
-    return SetAttr(aNameSpaceID, aName, nsnull, aValue, aNotify);
+    return SetAttr(aNameSpaceID, aName, nullptr, aValue, aNotify);
   }
-  virtual nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+  virtual nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                            nsIAtom* aPrefix, const nsAString& aValue,
                            bool aNotify);
 
-  virtual nsresult UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+  virtual nsresult UnsetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                              bool aNotify);
 
   virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
@@ -120,8 +122,8 @@ nsHTMLSharedElement::~nsHTMLSharedElement()
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLSharedElement, nsGenericElement)
-NS_IMPL_RELEASE_INHERITED(nsHTMLSharedElement, nsGenericElement)
+NS_IMPL_ADDREF_INHERITED(nsHTMLSharedElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLSharedElement, Element)
 
 
 DOMCI_DATA(HTMLParamElement, nsHTMLSharedElement)
@@ -155,7 +157,7 @@ nsHTMLSharedElement::GetClassInfoInternal()
   if (mNodeInfo->Equals(nsGkAtoms::html)) {
     return NS_GetDOMClassInfoInstance(eDOMClassInfo_HTMLHtmlElement_id);
   }
-  return nsnull;
+  return nullptr;
 }
 
 // QueryInterface implementation for nsHTMLSharedElement
@@ -216,7 +218,7 @@ nsHTMLSharedElement::GetHref(nsAString& aValue)
     return NS_OK;
   }
   
-  nsCAutoString spec;
+  nsAutoCString spec;
   uri->GetSpec(spec);
   CopyUTF8toUTF16(spec, aValue);
 
@@ -230,7 +232,7 @@ nsHTMLSharedElement::SetHref(const nsAString& aValue)
 
 
 bool
-nsHTMLSharedElement::ParseAttribute(PRInt32 aNamespaceID,
+nsHTMLSharedElement::ParseAttribute(int32_t aNamespaceID,
                                     nsIAtom* aAttribute,
                                     const nsAString& aValue,
                                     nsAttrValue& aResult)
@@ -278,7 +280,7 @@ nsHTMLSharedElement::IsAttributeMapped(const nsIAtom* aAttribute) const
     static const MappedAttributeEntry attributes[] = {
       { &nsGkAtoms::type },
       // { &nsGkAtoms::compact }, // XXX
-      { nsnull} 
+      { nullptr} 
     };
   
     static const MappedAttributeEntry* const map[] = {
@@ -317,13 +319,13 @@ SetBaseURIUsingFirstBaseWithHref(nsIDocument* aDocument, nsIContent* aMustMatch)
       // Try to set our base URI.  If that fails, try to set base URI to null
       nsresult rv = aDocument->SetBaseURI(newBaseURI);
       if (NS_FAILED(rv)) {
-        aDocument->SetBaseURI(nsnull);
+        aDocument->SetBaseURI(nullptr);
       }
       return;
     }
   }
 
-  aDocument->SetBaseURI(nsnull);
+  aDocument->SetBaseURI(nullptr);
 }
 
 static void
@@ -351,7 +353,7 @@ SetBaseTargetUsingFirstBaseWithTarget(nsIDocument* aDocument,
 }
 
 nsresult
-nsHTMLSharedElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+nsHTMLSharedElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                              nsIAtom* aPrefix, const nsAString& aValue,
                              bool aNotify)
 {
@@ -377,7 +379,7 @@ nsHTMLSharedElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
 }
 
 nsresult
-nsHTMLSharedElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+nsHTMLSharedElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                                bool aNotify)
 {
   nsresult rv = nsGenericHTMLElement::UnsetAttr(aNameSpaceID, aName, aNotify);
@@ -390,9 +392,9 @@ nsHTMLSharedElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
       aNameSpaceID == kNameSpaceID_None &&
       IsInDoc()) {
     if (aName == nsGkAtoms::href) {
-      SetBaseURIUsingFirstBaseWithHref(GetCurrentDoc(), nsnull);
+      SetBaseURIUsingFirstBaseWithHref(GetCurrentDoc(), nullptr);
     } else if (aName == nsGkAtoms::target) {
-      SetBaseTargetUsingFirstBaseWithTarget(GetCurrentDoc(), nsnull);
+      SetBaseTargetUsingFirstBaseWithTarget(GetCurrentDoc(), nullptr);
     }
   }
 
@@ -435,10 +437,10 @@ nsHTMLSharedElement::UnbindFromTree(bool aDeep, bool aNullParent)
   // document's base URI and base target
   if (doc && mNodeInfo->Equals(nsGkAtoms::base)) {
     if (HasAttr(kNameSpaceID_None, nsGkAtoms::href)) {
-      SetBaseURIUsingFirstBaseWithHref(doc, nsnull);
+      SetBaseURIUsingFirstBaseWithHref(doc, nullptr);
     }
     if (HasAttr(kNameSpaceID_None, nsGkAtoms::target)) {
-      SetBaseTargetUsingFirstBaseWithTarget(doc, nsnull);
+      SetBaseTargetUsingFirstBaseWithTarget(doc, nullptr);
     }
   }
 }

@@ -9,6 +9,7 @@
 #include "nsSMILNullType.h"
 #include "nsISMILAnimationElement.h"
 #include "nsSMILTimedElement.h"
+#include "nsAttrValueInlines.h"
 #include "nsGkAtoms.h"
 #include "nsCOMPtr.h"
 #include "nsCOMArray.h"
@@ -25,13 +26,13 @@
 nsAttrValue::EnumTable nsSMILAnimationFunction::sAccumulateTable[] = {
       {"none", false},
       {"sum", true},
-      {nsnull, 0}
+      {nullptr, 0}
 };
 
 nsAttrValue::EnumTable nsSMILAnimationFunction::sAdditiveTable[] = {
       {"replace", false},
       {"sum", true},
-      {nsnull, 0}
+      {nullptr, 0}
 };
 
 nsAttrValue::EnumTable nsSMILAnimationFunction::sCalcModeTable[] = {
@@ -39,7 +40,7 @@ nsAttrValue::EnumTable nsSMILAnimationFunction::sCalcModeTable[] = {
       {"discrete", CALC_DISCRETE},
       {"paced", CALC_PACED},
       {"spline", CALC_SPLINE},
-      {nsnull, 0}
+      {nullptr, 0}
 };
 
 // Any negative number should be fine as a sentinel here,
@@ -52,8 +53,8 @@ nsAttrValue::EnumTable nsSMILAnimationFunction::sCalcModeTable[] = {
 nsSMILAnimationFunction::nsSMILAnimationFunction()
   : mSampleTime(-1),
     mRepeatIteration(0),
-    mBeginTime(LL_MININT),
-    mAnimationElement(nsnull),
+    mBeginTime(INT64_MIN),
+    mAnimationElement(nullptr),
     mErrorFlags(0),
     mIsActive(false),
     mIsFrozen(false),
@@ -142,7 +143,7 @@ nsSMILAnimationFunction::UnsetAttr(nsIAtom* aAttribute)
 void
 nsSMILAnimationFunction::SampleAt(nsSMILTime aSampleTime,
                                   const nsSMILTimeValue& aSimpleDuration,
-                                  PRUint32 aRepeatIteration)
+                                  uint32_t aRepeatIteration)
 {
   // * Update mHasChanged ("Might this sample be different from prev one?")
   // Were we previously sampling a fill="freeze" final val? (We're not anymore.)
@@ -165,7 +166,7 @@ nsSMILAnimationFunction::SampleAt(nsSMILTime aSampleTime,
 }
 
 void
-nsSMILAnimationFunction::SampleLastValue(PRUint32 aRepeatIteration)
+nsSMILAnimationFunction::SampleLastValue(uint32_t aRepeatIteration)
 {
   if (mHasChanged || !mLastValue || mRepeatIteration != aRepeatIteration) {
     mHasChanged = true;
@@ -268,7 +269,7 @@ nsSMILAnimationFunction::ComposeResult(const nsISMILAttr& aSMILAttr,
   }
 }
 
-PRInt8
+int8_t
 nsSMILAnimationFunction::CompareTo(const nsSMILAnimationFunction* aOther) const
 {
   NS_ENSURE_TRUE(aOther, 0);
@@ -384,8 +385,8 @@ nsSMILAnimationFunction::InterpolateResult(const nsSMILValueArray& aValues,
   nsSMILCalcMode calcMode = GetCalcMode();
   if (calcMode != CALC_DISCRETE) {
     // Get the normalised progress between adjacent values
-    const nsSMILValue* from = nsnull;
-    const nsSMILValue* to = nsnull;
+    const nsSMILValue* from = nullptr;
+    const nsSMILValue* to = nullptr;
     // Init to -1 to make sure that if we ever forget to set this, the
     // NS_ABORT_IF_FALSE that tests that intervalProgress is in range will fail.
     double intervalProgress = -1.f;
@@ -410,7 +411,7 @@ nsSMILAnimationFunction::InterpolateResult(const nsSMILValueArray& aValues,
     } else { // calcMode == CALC_LINEAR or calcMode == CALC_SPLINE
       double scaledSimpleProgress =
         ScaleSimpleProgress(simpleProgress, calcMode);
-      PRUint32 index = (PRUint32)floor(scaledSimpleProgress *
+      uint32_t index = (uint32_t)floor(scaledSimpleProgress *
                                        (aValues.Length() - 1));
       from = &aValues[index];
       to = &aValues[index + 1];
@@ -454,10 +455,10 @@ nsSMILAnimationFunction::InterpolateResult(const nsSMILValueArray& aValues,
       // are the same as <set> animations.  Instead, we treat it as a
       // discrete animation with two values (the underlying value and
       // the to="" value), and honor keyTimes="" as well.
-      PRUint32 index = (PRUint32)floor(scaledSimpleProgress * 2);
+      uint32_t index = (uint32_t)floor(scaledSimpleProgress * 2);
       aResult = index == 0 ? aBaseValue : aValues[0];
     } else {
-      PRUint32 index = (PRUint32)floor(scaledSimpleProgress * aValues.Length());
+      uint32_t index = (uint32_t)floor(scaledSimpleProgress * aValues.Length());
       aResult = aValues[index];
     }
     rv = NS_OK;
@@ -535,7 +536,7 @@ nsSMILAnimationFunction::ComputePacedPosition(const nsSMILValueArray& aValues,
   // Find where remainingDist puts us in the list of values
   // Note: We could optimize this next loop by caching the
   // interval-distances in an array, but maybe that's excessive.
-  for (PRUint32 i = 0; i < aValues.Length() - 1; i++) {
+  for (uint32_t i = 0; i < aValues.Length() - 1; i++) {
     // Note: The following assertion is valid because remainingDist should
     // start out non-negative, and this loop never shaves off more than its
     // current value.
@@ -594,7 +595,7 @@ nsSMILAnimationFunction::ComputePacedTotalDistance(
                "Calling paced-specific function, but not in paced mode");
 
   double totalDistance = 0.0;
-  for (PRUint32 i = 0; i < aValues.Length() - 1; i++) {
+  for (uint32_t i = 0; i < aValues.Length() - 1; i++) {
     double tmpDist;
     nsresult rv = aValues[i].ComputeDistance(aValues[i+1], tmpDist);
     if (NS_FAILED(rv)) {
@@ -619,12 +620,12 @@ nsSMILAnimationFunction::ScaleSimpleProgress(double aProgress,
   if (!HasAttr(nsGkAtoms::keyTimes))
     return aProgress;
 
-  PRUint32 numTimes = mKeyTimes.Length();
+  uint32_t numTimes = mKeyTimes.Length();
 
   if (numTimes < 2)
     return aProgress;
 
-  PRUint32 i = 0;
+  uint32_t i = 0;
   for (; i < numTimes - 2 && aProgress >= mKeyTimes[i+1]; ++i) { }
 
   if (aCalcMode == CALC_DISCRETE) {
@@ -654,7 +655,7 @@ nsSMILAnimationFunction::ScaleSimpleProgress(double aProgress,
 
 double
 nsSMILAnimationFunction::ScaleIntervalProgress(double aProgress,
-                                               PRUint32 aIntervalIndex)
+                                               uint32_t aIntervalIndex)
 {
   if (GetCalcMode() != CALC_SPLINE)
     return aProgress;
@@ -814,7 +815,7 @@ nsSMILAnimationFunction::GetValues(const nsISMILAttr& aSMILAttr,
 }
 
 void
-nsSMILAnimationFunction::CheckValueListDependentAttrs(PRUint32 aNumValues)
+nsSMILAnimationFunction::CheckValueListDependentAttrs(uint32_t aNumValues)
 {
   CheckKeyTimes(aNumValues);
   CheckKeySplines(aNumValues);
@@ -826,7 +827,7 @@ nsSMILAnimationFunction::CheckValueListDependentAttrs(PRUint32 aNumValues)
  * dependent attributes are set.
  */
 void
-nsSMILAnimationFunction::CheckKeyTimes(PRUint32 aNumValues)
+nsSMILAnimationFunction::CheckKeyTimes(uint32_t aNumValues)
 {
   if (!HasAttr(nsGkAtoms::keyTimes))
     return;
@@ -839,7 +840,7 @@ nsSMILAnimationFunction::CheckKeyTimes(PRUint32 aNumValues)
     return;
   }
 
-  PRUint32 numKeyTimes = mKeyTimes.Length();
+  uint32_t numKeyTimes = mKeyTimes.Length();
   if (numKeyTimes < 1) {
     // keyTimes isn't set or failed preliminary checks
     SetKeyTimesErrorFlag(true);
@@ -872,7 +873,7 @@ nsSMILAnimationFunction::CheckKeyTimes(PRUint32 aNumValues)
 }
 
 void
-nsSMILAnimationFunction::CheckKeySplines(PRUint32 aNumValues)
+nsSMILAnimationFunction::CheckKeySplines(uint32_t aNumValues)
 {
   // attribute is ignored if calc mode is not spline
   if (GetCalcMode() != CALC_SPLINE) {
@@ -899,7 +900,7 @@ nsSMILAnimationFunction::CheckKeySplines(PRUint32 aNumValues)
   }
 
   // no. keySpline specs == no. values - 1
-  PRUint32 splineSpecs = mKeySplines.Length();
+  uint32_t splineSpecs = mKeySplines.Length();
   if ((splineSpecs != aNumValues - 1 && !IsToAnimation()) ||
       (IsToAnimation() && splineSpecs != 1)) {
     SetKeySplinesErrorFlag(true);
@@ -1022,7 +1023,7 @@ nsSMILAnimationFunction::SetKeySplines(const nsAString& aKeySplines,
   if (NS_SUCCEEDED(rv))
   {
     mKeySplines.SetCapacity(keySplines.Length() % 4);
-    for (PRUint32 i = 0; i < keySplines.Length() && NS_SUCCEEDED(rv); i += 4)
+    for (uint32_t i = 0; i < keySplines.Length() && NS_SUCCEEDED(rv); i += 4)
     {
       if (!mKeySplines.AppendElement(nsSMILKeySpline(keySplines[i],
                                                      keySplines[i+1],

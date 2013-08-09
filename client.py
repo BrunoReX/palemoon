@@ -86,6 +86,21 @@ def do_cvs_export(modules, tag, cvsroot, cvs):
                          cwd=os.path.join(topsrcdir, parent))
         print "CVS export end: " + datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
 
+def toggle_trailing_blank_line(depname):
+  """If the trailing line is empty, then we'll delete it.
+  Otherwise we'll add a blank line."""
+  lines = open(depname, "r").readlines()
+  if not lines:
+      print >>sys.stderr, "unexpected short file"
+      return
+
+  if not lines[-1].strip():
+      # trailing line is blank, removing it
+      open(depname, "wb").writelines(lines[:-1])
+  else:
+      # adding blank line
+      open(depname, "ab").write("\n")
+
 o = OptionParser(usage="client.py [options] update_nspr tagname | update_nss tagname | update_libffi tagname | update_webidlparser tagname")
 o.add_option("--skip-mozilla", dest="skip_mozilla",
              action="store_true", default=False,
@@ -113,20 +128,22 @@ elif action in ('update_nspr'):
     if not options.cvsroot:
         options.cvsroot = os.environ.get('CVSROOT', CVSROOT_MOZILLA)
     do_cvs_export(NSPR_DIRS, tag, options.cvsroot, options.cvs)
-    print >>file("nsprpub/TAG-INFO", "w"), tag
+    print >>file("nsprpub/TAG-INFO", "wb"), tag
+    toggle_trailing_blank_line("nsprpub/config/prdepend.h")
 elif action in ('update_nss'):
     tag, = args[1:]
     if not options.cvsroot:
         options.cvsroot = os.environ.get('CVSROOT', CVSROOT_MOZILLA)
     do_cvs_export(NSS_DIRS, tag, options.cvsroot, options.cvs)
-    print >>file("security/nss/TAG-INFO", "w"), tag
-    print >>file("security/nss/TAG-INFO-CKBI", "w"), tag
+    print >>file("security/nss/TAG-INFO", "wb"), tag
+    print >>file("security/nss/TAG-INFO-CKBI", "wb"), tag
+    toggle_trailing_blank_line("security/coreconf/coreconf.dep")
 elif action in ('update_nssckbi'):
     tag, = args[1:]
     if not options.cvsroot:
         options.cvsroot = os.environ.get('CVSROOT', CVSROOT_MOZILLA)
     do_cvs_export(NSSCKBI_DIRS, tag, options.cvsroot, options.cvs)
-    print >>file("security/nss/TAG-INFO-CKBI", "w"), tag
+    print >>file("security/nss/TAG-INFO-CKBI", "wb"), tag
 elif action in ('update_libffi'):
     tag, = args[1:]
     if not options.cvsroot:

@@ -13,6 +13,7 @@
 #include "mozAutoDocUpdate.h"
 #include "nsHTMLFormElement.h"
 
+using namespace mozilla::dom;
 
 class nsHTMLOutputElement : public nsGenericHTMLFormElement,
                             public nsIDOMHTMLOutputElement,
@@ -29,19 +30,19 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLFormElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLFormElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLFormElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLOutputElement
   NS_DECL_NSIDOMHTMLOUTPUTELEMENT
 
   // nsIFormControl
-  NS_IMETHOD_(PRUint32) GetType() const { return NS_FORM_OUTPUT; }
+  NS_IMETHOD_(uint32_t) GetType() const { return NS_FORM_OUTPUT; }
   NS_IMETHOD Reset();
   NS_IMETHOD SubmitNamesValues(nsFormSubmission* aFormSubmission);
 
@@ -49,7 +50,7 @@ public:
 
   nsresult Clone(nsINodeInfo* aNodeInfo, nsINode** aResult) const;
 
-  bool ParseAttribute(PRInt32 aNamespaceID, nsIAtom* aAttribute,
+  bool ParseAttribute(int32_t aNamespaceID, nsIAtom* aAttribute,
                         const nsAString& aValue, nsAttrValue& aResult);
 
   nsEventStates IntrinsicState() const;
@@ -111,17 +112,16 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsHTMLOutputElement,
                                                 nsGenericHTMLFormElement)
   if (tmp->mTokenList) {
     tmp->mTokenList->DropReference();
-    NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mTokenList)
+    NS_IMPL_CYCLE_COLLECTION_UNLINK(mTokenList)
   }
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsHTMLOutputElement,
                                                   nsGenericHTMLFormElement)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR_AMBIGUOUS(mTokenList,
-                                                       nsDOMTokenList)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTokenList)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLOutputElement, nsGenericElement)
-NS_IMPL_RELEASE_INHERITED(nsHTMLOutputElement, nsGenericElement)
+NS_IMPL_ADDREF_INHERITED(nsHTMLOutputElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLOutputElement, Element)
 
 DOMCI_NODE_DATA(HTMLOutputElement, nsHTMLOutputElement)
 
@@ -167,7 +167,7 @@ nsHTMLOutputElement::SubmitNamesValues(nsFormSubmission* aFormSubmission)
 }
 
 bool
-nsHTMLOutputElement::ParseAttribute(PRInt32 aNamespaceID, nsIAtom* aAttribute,
+nsHTMLOutputElement::ParseAttribute(int32_t aNamespaceID, nsIAtom* aAttribute,
                                     const nsAString& aValue, nsAttrValue& aResult)
 {
   if (aNamespaceID == kNameSpaceID_None) {
@@ -299,7 +299,7 @@ void nsHTMLOutputElement::CharacterDataChanged(nsIDocument* aDocument,
 void nsHTMLOutputElement::ContentAppended(nsIDocument* aDocument,
                                           nsIContent* aContainer,
                                           nsIContent* aFirstNewContent,
-                                          PRInt32 aNewIndexInContainer)
+                                          int32_t aNewIndexInContainer)
 {
   DescendantsChanged();
 }
@@ -307,7 +307,7 @@ void nsHTMLOutputElement::ContentAppended(nsIDocument* aDocument,
 void nsHTMLOutputElement::ContentInserted(nsIDocument* aDocument,
                                           nsIContent* aContainer,
                                           nsIContent* aChild,
-                                          PRInt32 aIndexInContainer)
+                                          int32_t aIndexInContainer)
 {
   DescendantsChanged();
 }
@@ -315,7 +315,7 @@ void nsHTMLOutputElement::ContentInserted(nsIDocument* aDocument,
 void nsHTMLOutputElement::ContentRemoved(nsIDocument* aDocument,
                                          nsIContent* aContainer,
                                          nsIContent* aChild,
-                                         PRInt32 aIndexInContainer,
+                                         int32_t aIndexInContainer,
                                          nsIContent* aPreviousSibling)
 {
   DescendantsChanged();

@@ -27,7 +27,7 @@ public:
         return mMetrics;
     }
 
-    virtual PRUint32 GetSpaceGlyph() {
+    virtual uint32_t GetSpaceGlyph() {
         return mSpaceGlyph;
     }
 
@@ -35,16 +35,16 @@ public:
 
     /* override Measure to add padding for antialiasing */
     virtual RunMetrics Measure(gfxTextRun *aTextRun,
-                               PRUint32 aStart, PRUint32 aEnd,
+                               uint32_t aStart, uint32_t aEnd,
                                BoundingBoxType aBoundingBoxType,
                                gfxContext *aContextForTightBoundingBox,
                                Spacing *aSpacing);
 
     // override gfxFont table access function to bypass gfxFontEntry cache,
     // use CGFontRef API to get direct access to system font data
-    virtual hb_blob_t *GetFontTable(PRUint32 aTag);
+    virtual hb_blob_t *GetFontTable(uint32_t aTag);
 
-    mozilla::RefPtr<mozilla::gfx::ScaledFont> GetScaledFont();
+    virtual mozilla::TemporaryRef<mozilla::gfx::ScaledFont> GetScaledFont(mozilla::gfx::DrawTarget *aTarget);
 
     virtual void SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf,
                                      FontCacheSizes*   aSizes) const;
@@ -64,12 +64,11 @@ protected:
 
     void InitMetrics();
     void InitMetricsFromPlatform();
-    void InitMetricsFromATSMetrics(ATSFontRef aFontRef);
 
     // Get width and glyph ID for a character; uses aConvFactor
     // to convert font units as returned by CG to actual dimensions
     gfxFloat GetCharWidth(CFDataRef aCmap, PRUnichar aUniChar,
-                          PRUint32 *aGlyphID, gfxFloat aConvFactor);
+                          uint32_t *aGlyphID, gfxFloat aConvFactor);
 
     static void DestroyBlobFunc(void* aUserData);
 
@@ -80,9 +79,7 @@ protected:
     cairo_font_face_t    *mFontFace;
 
     Metrics               mMetrics;
-    PRUint32              mSpaceGlyph;
-
-    mozilla::RefPtr<mozilla::gfx::ScaledFont> mAzureFont;
+    uint32_t              mSpaceGlyph;
 };
 
 #endif /* GFX_MACFONT_H */

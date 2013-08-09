@@ -4,17 +4,19 @@
  
 #include "nsICharsetConverterManager.h"
 #include "nsServiceManagerUtils.h"
-#include "nsCharsetAlias.h"
 #include "nsEncoderDecoderUtils.h"
 #include "nsTraceRefcnt.h"
 
+#include "mozilla/dom/EncodingUtils.h"
+
+using mozilla::dom::EncodingUtils;
 
 void
 nsHtml5MetaScanner::sniff(nsHtml5ByteReadable* bytes, nsIUnicodeDecoder** decoder, nsACString& charset)
 {
   readable = bytes;
   stateLoop(stateSave);
-  readable = nsnull;
+  readable = nullptr;
   if (mUnicodeDecoder) {
     mUnicodeDecoder.forget(decoder);
     charset.Assign(mCharset);
@@ -33,7 +35,7 @@ nsHtml5MetaScanner::tryCharset(nsString* charset)
     NS_ERROR("Could not get CharsetConverterManager service.");
     return false;
   }
-  nsCAutoString encoding;
+  nsAutoCString encoding;
   CopyUTF16toUTF8(*charset, encoding);
   encoding.Trim(" \t\r\n\f");
   if (encoding.LowerCaseEqualsLiteral("utf-16") ||
@@ -47,19 +49,15 @@ nsHtml5MetaScanner::tryCharset(nsString* charset)
     }
     return true;
   }
-  nsCAutoString preferred;
-  res = nsCharsetAlias::GetPreferred(encoding, preferred);
-  if (NS_FAILED(res)) {
+  nsAutoCString preferred;
+  if (!EncodingUtils::FindEncodingForLabel(encoding, preferred)) {
     return false;
   }
   if (preferred.LowerCaseEqualsLiteral("utf-16") ||
       preferred.LowerCaseEqualsLiteral("utf-16be") ||
       preferred.LowerCaseEqualsLiteral("utf-16le") ||
       preferred.LowerCaseEqualsLiteral("utf-7") ||
-      preferred.LowerCaseEqualsLiteral("jis_x0212-1990") ||
-      preferred.LowerCaseEqualsLiteral("x-jis0208") ||
-      preferred.LowerCaseEqualsLiteral("x-imap4-modified-utf7") ||
-      preferred.LowerCaseEqualsLiteral("x-user-defined")) {
+      preferred.LowerCaseEqualsLiteral("x-imap4-modified-utf7")) {
     return false;
   }
   res = convManager->GetUnicodeDecoderRaw(preferred.get(), getter_AddRefs(mUnicodeDecoder));
@@ -67,7 +65,7 @@ nsHtml5MetaScanner::tryCharset(nsString* charset)
     return false;
   } else if (NS_FAILED(res)) {
     NS_ERROR("Getting an encoding decoder failed in a bad way.");
-    mUnicodeDecoder = nsnull;
+    mUnicodeDecoder = nullptr;
     return false;
   } else {
     NS_ASSERTION(mUnicodeDecoder, "Getter nsresult and object don't match.");

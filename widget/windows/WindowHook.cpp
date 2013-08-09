@@ -18,7 +18,7 @@ WindowHook::AddHook(UINT nMsg, Callback callback, void *context) {
     return NS_ERROR_OUT_OF_MEMORY;
 
   // Ensure we don't overwrite another hook
-  NS_ENSURE_TRUE(nsnull == data->hook.cb, NS_ERROR_UNEXPECTED);
+  NS_ENSURE_TRUE(nullptr == data->hook.cb, NS_ERROR_UNEXPECTED);
 
   data->hook = CallbackData(callback, context);
 
@@ -68,7 +68,7 @@ WindowHook::Lookup(UINT nMsg) {
     if (data.nMsg == nMsg)
       return &data;
   }
-  return nsnull;
+  return nullptr;
 }
 
 WindowHook::MessageData *
@@ -78,7 +78,7 @@ WindowHook::LookupOrCreate(UINT nMsg) {
     data = mMessageData.AppendElement();
 
     if (!data)
-      return nsnull;
+      return nullptr;
 
     data->nMsg = nMsg;
   }
@@ -104,8 +104,8 @@ WindowHook::Notify(HWND hWnd, UINT nMsg, WPARAM wParam, LPARAM lParam,
   if (!data)
     return false;
 
-  PRUint32 length = data->monitors.Length();
-  for (PRUint32 midx = 0; midx < length; midx++) {
+  uint32_t length = data->monitors.Length();
+  for (uint32_t midx = 0; midx < length; midx++) {
     data->monitors[midx].Invoke(hWnd, nMsg, wParam, lParam, aResult);
   }
 

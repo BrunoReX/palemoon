@@ -85,8 +85,8 @@ Sanitizer.prototype = {
           cacheService.evictEntries(Ci.nsICache.STORE_ANYWHERE);
         } catch(er) {}
 
-        var imageCache = Cc["@mozilla.org/image/cache;1"].
-                         getService(Ci.imgICache);
+        var imageCache = Cc["@mozilla.org/image/tools;1"].
+                         getService(Ci.imgITools).getImgCacheForDocument(null);
         try {
           imageCache.clearCache(false); // true=chrome, false=content
         } catch(er) {}
@@ -220,12 +220,16 @@ Sanitizer.prototype = {
                                       .getService(Components.interfaces.nsIWindowMediator);
         var windows = windowManager.getEnumerator("navigator:browser");
         while (windows.hasMoreElements()) {
-          var searchBar = windows.getNext().document.getElementById("searchbar");
+          let currentDocument = windows.getNext().document;
+          let searchBar = currentDocument.getElementById("searchbar");
           if (searchBar)
             searchBar.textbox.reset();
+          let findBar = currentDocument.getElementById("FindToolbar");
+          if (findBar)
+            findBar.clear();
         }
 
-        var formHistory = Components.classes["@mozilla.org/satchel/form-history;1"]
+        let formHistory = Components.classes["@mozilla.org/satchel/form-history;1"]
                                     .getService(Components.interfaces.nsIFormHistory2);
         if (this.range)
           formHistory.removeEntriesByTimeframe(this.range[0], this.range[1]);
@@ -239,17 +243,21 @@ Sanitizer.prototype = {
                                       .getService(Components.interfaces.nsIWindowMediator);
         var windows = windowManager.getEnumerator("navigator:browser");
         while (windows.hasMoreElements()) {
-          var searchBar = windows.getNext().document.getElementById("searchbar");
+          let currentDocument = windows.getNext().document;
+          let searchBar = currentDocument.getElementById("searchbar");
           if (searchBar) {
-            var transactionMgr = searchBar.textbox.editor.transactionManager;
+            let transactionMgr = searchBar.textbox.editor.transactionManager;
             if (searchBar.value ||
                 transactionMgr.numberOfUndoItems ||
                 transactionMgr.numberOfRedoItems)
               return true;
           }
+          let findBar = currentDocument.getElementById("FindToolbar");
+          if (findBar && findBar.canClear)
+            return true;
         }
 
-        var formHistory = Components.classes["@mozilla.org/satchel/form-history;1"]
+        let formHistory = Components.classes["@mozilla.org/satchel/form-history;1"]
                                     .getService(Components.interfaces.nsIFormHistory2);
         return formHistory.hasEntries;
       }
@@ -261,33 +269,36 @@ Sanitizer.prototype = {
         var dlMgr = Components.classes["@mozilla.org/download-manager;1"]
                               .getService(Components.interfaces.nsIDownloadManager);
 
-        var dlIDsToRemove = [];
+        var dlsToRemove = [];
         if (this.range) {
           // First, remove the completed/cancelled downloads
           dlMgr.removeDownloadsByTimeframe(this.range[0], this.range[1]);
-          
+
           // Queue up any active downloads that started in the time span as well
-          var dlsEnum = dlMgr.activeDownloads;
-          while(dlsEnum.hasMoreElements()) {
-            var dl = dlsEnum.next();
-            if(dl.startTime >= this.range[0])
-              dlIDsToRemove.push(dl.id);
+          for (let dlsEnum of [dlMgr.activeDownloads, dlMgr.activePrivateDownloads]) {
+            while (dlsEnum.hasMoreElements()) {
+              var dl = dlsEnum.next();
+              if (dl.startTime >= this.range[0])
+                dlsToRemove.push(dl);
+            }
           }
         }
         else {
           // Clear all completed/cancelled downloads
           dlMgr.cleanUp();
+          dlMgr.cleanUpPrivate();
           
           // Queue up all active ones as well
-          var dlsEnum = dlMgr.activeDownloads;
-          while(dlsEnum.hasMoreElements()) {
-            dlIDsToRemove.push(dlsEnum.next().id);
+          for (let dlsEnum of [dlMgr.activeDownloads, dlMgr.activePrivateDownloads]) {
+            while (dlsEnum.hasMoreElements()) {
+              dlsToRemove.push(dlsEnum.next());
+            }
           }
         }
-        
+
         // Remove any queued up active downloads
-        dlIDsToRemove.forEach(function(id) {
-          dlMgr.removeDownload(id);
+        dlsToRemove.forEach(function (dl) {
+          dl.remove();
         });
       },
 
@@ -295,7 +306,7 @@ Sanitizer.prototype = {
       {
         var dlMgr = Components.classes["@mozilla.org/download-manager;1"]
                               .getService(Components.interfaces.nsIDownloadManager);
-        return dlMgr.canCleanUp;
+        return dlMgr.canCleanUp || dlMgr.canCleanUpPrivate;
       }
     },
     
@@ -348,7 +359,7 @@ Sanitizer.prototype = {
         // Clear site-specific settings like page-zoom level
         var cps = Components.classes["@mozilla.org/content-pref/service;1"]
                             .getService(Components.interfaces.nsIContentPrefService);
-        cps.removeGroupedPrefs();
+        cps.removeGroupedPrefs(null);
         
         // Clear "Never remember passwords for this site", which is not handled by
         // the permission manager

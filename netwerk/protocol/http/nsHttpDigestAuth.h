@@ -11,6 +11,7 @@
 #include "nsICryptoHash.h"
 #include "nsString.h"
 #include "nsCOMPtr.h"
+#include "mozilla/Attributes.h"
 
 #define ALGO_SPECIFIED 0x01
 #define ALGO_MD5 0x02
@@ -26,7 +27,7 @@
 // nsHttpDigestAuth
 //-----------------------------------------------------------------------------
 
-class nsHttpDigestAuth : public nsIHttpAuthenticator
+class nsHttpDigestAuth MOZ_FINAL : public nsIHttpAuthenticator
 {
   public:
     NS_DECL_ISUPPORTS
@@ -41,7 +42,7 @@ class nsHttpDigestAuth : public nsIHttpAuthenticator
     nsresult CalculateResponse(const char * ha1_digest,
                                const char * ha2_digest,
                                const nsAFlatCString & nonce,
-                               PRUint16 qop,
+                               uint16_t qop,
                                const char * nonce_count,
                                const nsAFlatCString & cnonce,
                                char * result);
@@ -49,14 +50,14 @@ class nsHttpDigestAuth : public nsIHttpAuthenticator
     nsresult CalculateHA1(const nsAFlatCString & username,
                           const nsAFlatCString & password,
                           const nsAFlatCString & realm,
-                          PRUint16 algorithm,
+                          uint16_t algorithm,
                           const nsAFlatCString & nonce,
                           const nsAFlatCString & cnonce,
                           char * result);
 
     nsresult CalculateHA2(const nsAFlatCString & http_method,
                           const nsAFlatCString & http_uri_path,
-                          PRUint16 qop,
+                          uint16_t qop,
                           const char * body_digest,
                           char * result);
 
@@ -66,11 +67,11 @@ class nsHttpDigestAuth : public nsIHttpAuthenticator
                             nsACString & nonce,
                             nsACString & opaque,
                             bool * stale,
-                            PRUint16 * algorithm,
-                            PRUint16 * qop);
+                            uint16_t * algorithm,
+                            uint16_t * qop);
 
     // result is in mHashBuf
-    nsresult MD5Hash(const char *buf, PRUint32 len);
+    nsresult MD5Hash(const char *buf, uint32_t len);
 
     nsresult GetMethodAndPath(nsIHttpAuthenticableChannel *,
                               bool, nsCString &, nsCString &);

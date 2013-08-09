@@ -9,6 +9,8 @@
 #include "nsMemory.h"
 #include "nsString.h"
 #include "nsNativeCharsetUtils.h"
+#include "mozilla/Preferences.h"
+#include "mozJSComponentLoader.h"
 
 #define JSCTYPES_CONTRACTID \
   "@mozilla.org/jsctypes;1"
@@ -23,7 +25,7 @@ namespace ctypes {
 static char*
 UnicodeToNative(JSContext *cx, const jschar *source, size_t slen)
 {
-  nsCAutoString native;
+  nsAutoCString native;
   nsDependentString unicode(reinterpret_cast<const PRUnichar*>(source), slen);
   nsresult rv = NS_CopyUnicodeToNative(unicode, native);
   if (NS_FAILED(rv)) {
@@ -68,6 +70,11 @@ SealObjectAndPrototype(JSContext* cx, JSObject* parent, const char* name)
   if (!JS_GetProperty(cx, parent, name, &prop))
     return false;
 
+  if (prop.isUndefined()) {
+    // Pretend we sealed the object.
+    return true;
+  }
+
   JSObject* obj = JSVAL_TO_OBJECT(prop);
   if (!JS_GetProperty(cx, obj, "prototype", &prop))
     return false;
@@ -108,16 +115,19 @@ NS_IMETHODIMP
 Module::Call(nsIXPConnectWrappedNative* wrapper,
              JSContext* cx,
              JSObject* obj,
-             PRUint32 argc,
+             uint32_t argc,
              jsval* argv,
              jsval* vp,
              bool* _retval)
 {
-  JSObject* global = JS_GetGlobalForScopeChain(cx);
-  if (!global)
-    return NS_ERROR_NOT_AVAILABLE;
+  bool reusingGlobal = Preferences::GetBool("jsloader.reuseGlobal");
+  JSObject* targetObj = nullptr;
 
-  *_retval = InitAndSealCTypesClass(cx, global);
+  mozJSComponentLoader* loader = mozJSComponentLoader::Get();
+  nsresult rv = loader->FindTargetObject(cx, &targetObj);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  *_retval = InitAndSealCTypesClass(cx, targetObj);
   return NS_OK;
 }
 

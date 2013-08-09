@@ -78,7 +78,7 @@ SetWindowAppUserModelProp(nsIDOMWindow *aParent,
 
   typedef HRESULT (WINAPI * SHGetPropertyStoreForWindowPtr)
                     (HWND hwnd, REFIID riid, void** ppv);
-  SHGetPropertyStoreForWindowPtr funcGetProStore = nsnull;
+  SHGetPropertyStoreForWindowPtr funcGetProStore = nullptr;
 
   HMODULE hDLL = ::LoadLibraryW(kShellLibraryName);
   funcGetProStore = (SHGetPropertyStoreForWindowPtr)
@@ -119,7 +119,7 @@ SetWindowAppUserModelProp(nsIDOMWindow *aParent,
 ///////////////////////////////////////////////////////////////////////////////
 // default nsITaskbarPreviewController
 
-class DefaultController : public nsITaskbarPreviewController
+class DefaultController MOZ_FINAL : public nsITaskbarPreviewController
 {
   HWND mWnd;
 public:
@@ -133,7 +133,7 @@ public:
 };
 
 NS_IMETHODIMP
-DefaultController::GetWidth(PRUint32 *aWidth)
+DefaultController::GetWidth(uint32_t *aWidth)
 {
   RECT r;
   ::GetClientRect(mWnd, &r);
@@ -142,7 +142,7 @@ DefaultController::GetWidth(PRUint32 *aWidth)
 }
 
 NS_IMETHODIMP
-DefaultController::GetHeight(PRUint32 *aHeight)
+DefaultController::GetHeight(uint32_t *aHeight)
 {
   RECT r;
   ::GetClientRect(mWnd, &r);
@@ -152,7 +152,7 @@ DefaultController::GetHeight(PRUint32 *aHeight)
 
 NS_IMETHODIMP
 DefaultController::GetThumbnailAspectRatio(float *aThumbnailAspectRatio) {
-  PRUint32 width, height;
+  uint32_t width, height;
   GetWidth(&width);
   GetHeight(&height);
   if (!height)
@@ -163,13 +163,13 @@ DefaultController::GetThumbnailAspectRatio(float *aThumbnailAspectRatio) {
 }
 
 NS_IMETHODIMP
-DefaultController::DrawPreview(nsIDOMCanvasRenderingContext2D *ctx, bool *rDrawFrame) {
+DefaultController::DrawPreview(nsISupports *ctx, bool *rDrawFrame) {
   *rDrawFrame = true;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-DefaultController::DrawThumbnail(nsIDOMCanvasRenderingContext2D *ctx, PRUint32 width, PRUint32 height, bool *rDrawFrame) {
+DefaultController::DrawThumbnail(nsISupports *ctx, uint32_t width, uint32_t height, bool *rDrawFrame) {
   *rDrawFrame = false;
   return NS_OK;
 }
@@ -227,7 +227,7 @@ WinTaskbar::Initialize() {
 }
 
 WinTaskbar::WinTaskbar() 
-  : mTaskbar(nsnull) {
+  : mTaskbar(nullptr) {
 }
 
 WinTaskbar::~WinTaskbar() {
@@ -240,6 +240,11 @@ WinTaskbar::~WinTaskbar() {
 // static
 bool
 WinTaskbar::GetAppUserModelID(nsAString & aDefaultGroupId) {
+  // For win8 metro builds, we can't set this. The value is static
+  // for the app.
+  if (XRE_GetWindowsEnvironment() == WindowsEnvironmentType_Metro) {
+    return false;
+  }
   // If marked as such in prefs, use a hash of the profile path for the id
   // instead of the install path hash setup by the installer.
   bool useProfile =
@@ -250,7 +255,7 @@ WinTaskbar::GetAppUserModelID(nsAString & aDefaultGroupId) {
                            getter_AddRefs(profileDir));
     bool exists = false;
     if (profileDir && NS_SUCCEEDED(profileDir->Exists(&exists)) && exists) {
-      nsCAutoString path;
+      nsAutoCString path;
       if (NS_SUCCEEDED(profileDir->GetNativePath(path))) {
         nsAutoString id;
         id.AppendInt(HashString(path));
@@ -328,7 +333,11 @@ WinTaskbar::RegisterAppUserModelID() {
   if (WinUtils::GetWindowsVersion() < WinUtils::WIN7_VERSION)
     return false;
 
-  SetCurrentProcessExplicitAppUserModelIDPtr funcAppUserModelID = nsnull;
+  if (XRE_GetWindowsEnvironment() == WindowsEnvironmentType_Metro) {
+    return false;
+  }
+
+  SetCurrentProcessExplicitAppUserModelIDPtr funcAppUserModelID = nullptr;
   bool retVal = false;
 
   nsAutoString uid;

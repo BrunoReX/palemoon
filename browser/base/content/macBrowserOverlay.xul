@@ -27,15 +27,19 @@
 
 <script type="application/javascript">
   function OpenBrowserWindowFromDockMenu() {
-    let dockSupport = Cc["@mozilla.org/widget/macdocksupport;1"]
-                      .getService(Ci.nsIMacDockSupport);
-    dockSupport.activateApplication(true);
+    let win = OpenBrowserWindow();
+    win.addEventListener("load", function listener() {
+      win.removeEventListener("load", listener);
+      let dockSupport = Cc["@mozilla.org/widget/macdocksupport;1"]
+        .getService(Ci.nsIMacDockSupport);
+      dockSupport.activateApplication(true);
+    });
 
-    return OpenBrowserWindow();
+    return win;
   }
 
-  addEventListener("load", nonBrowserWindowStartup, false);
-  addEventListener("unload", nonBrowserWindowShutdown, false);
+  addEventListener("load",   function() { gBrowserInit.nonBrowserWindowStartup()  }, false);
+  addEventListener("unload", function() { gBrowserInit.nonBrowserWindowShutdown() }, false);
 </script>
 
 # All sets except for popupsets (commands, keys, stringbundles and broadcasters) *must* go into the 

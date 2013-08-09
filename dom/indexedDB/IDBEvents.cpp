@@ -6,9 +6,6 @@
 
 #include "IDBEvents.h"
 
-#include "nsIPrivateDOMEvent.h"
-
-#include "nsContentUtils.h"
 #include "nsDOMClassInfoID.h"
 #include "nsDOMException.h"
 #include "nsJSON.h"
@@ -46,14 +43,14 @@ mozilla::dom::indexedDB::CreateGenericEvent(const nsAString& aType,
                                             Bubbles aBubbles,
                                             Cancelable aCancelable)
 {
-  nsRefPtr<nsDOMEvent> event(new nsDOMEvent(nsnull, nsnull));
+  nsRefPtr<nsDOMEvent> event(new nsDOMEvent(nullptr, nullptr));
   nsresult rv = event->InitEvent(aType,
                                  aBubbles == eDoesBubble ? true : false,
                                  aCancelable == eCancelable ? true : false);
-  NS_ENSURE_SUCCESS(rv, nsnull);
+  NS_ENSURE_SUCCESS(rv, nullptr);
 
   rv = event->SetTrusted(true);
-  NS_ENSURE_SUCCESS(rv, nsnull);
+  NS_ENSURE_SUCCESS(rv, nullptr);
 
   return event.forget();
 }
@@ -61,16 +58,16 @@ mozilla::dom::indexedDB::CreateGenericEvent(const nsAString& aType,
 // static
 already_AddRefed<nsDOMEvent>
 IDBVersionChangeEvent::CreateInternal(const nsAString& aType,
-                                      PRUint64 aOldVersion,
-                                      PRUint64 aNewVersion)
+                                      uint64_t aOldVersion,
+                                      uint64_t aNewVersion)
 {
   nsRefPtr<IDBVersionChangeEvent> event(new IDBVersionChangeEvent());
 
   nsresult rv = event->InitEvent(aType, false, false);
-  NS_ENSURE_SUCCESS(rv, nsnull);
+  NS_ENSURE_SUCCESS(rv, nullptr);
 
   rv = event->SetTrusted(true);
-  NS_ENSURE_SUCCESS(rv, nsnull);
+  NS_ENSURE_SUCCESS(rv, nullptr);
 
   event->mOldVersion = aOldVersion;
   event->mNewVersion = aNewVersion;
@@ -83,13 +80,13 @@ IDBVersionChangeEvent::CreateInternal(const nsAString& aType,
 // static
 already_AddRefed<nsIRunnable>
 IDBVersionChangeEvent::CreateRunnableInternal(const nsAString& aType,
-                                              PRUint64 aOldVersion,
-                                              PRUint64 aNewVersion,
+                                              uint64_t aOldVersion,
+                                              uint64_t aNewVersion,
                                               nsIDOMEventTarget* aTarget)
 {
   nsRefPtr<nsDOMEvent> event =
     CreateInternal(aType, aOldVersion, aNewVersion);
-  NS_ENSURE_TRUE(event, nsnull);
+  NS_ENSURE_TRUE(event, nullptr);
 
   nsCOMPtr<nsIRunnable> runnable(new EventFiringRunnable(aTarget, event));
   return runnable.forget();
@@ -106,7 +103,7 @@ NS_INTERFACE_MAP_END_INHERITING(nsDOMEvent)
 DOMCI_DATA(IDBVersionChangeEvent, IDBVersionChangeEvent)
 
 NS_IMETHODIMP
-IDBVersionChangeEvent::GetOldVersion(PRUint64* aOldVersion)
+IDBVersionChangeEvent::GetOldVersion(uint64_t* aOldVersion)
 {
   NS_ENSURE_ARG_POINTER(aOldVersion);
   *aOldVersion = mOldVersion;
@@ -122,8 +119,8 @@ IDBVersionChangeEvent::GetNewVersion(JSContext* aCx,
   if (!mNewVersion) {
     *aNewVersion = JSVAL_NULL;
   }
-  else if (!JS_NewNumberValue(aCx, double(mNewVersion), aNewVersion)) {
-    return NS_ERROR_FAILURE;
+  else {
+    *aNewVersion = JS_NumberValue(double(mNewVersion));
   }
 
   return NS_OK;

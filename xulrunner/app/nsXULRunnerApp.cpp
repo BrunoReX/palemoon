@@ -13,7 +13,7 @@
 #endif
 
 #include "nsAppRunner.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIXULAppInstall.h"
 #include "nsCOMPtr.h"
 #include "nsMemory.h"
@@ -97,7 +97,7 @@ GetGREVersion(const char *argv0,
   if (aVersion)
     aVersion->Assign("<Error>");
 
-  nsCOMPtr<nsILocalFile> iniFile;
+  nsCOMPtr<nsIFile> iniFile;
   nsresult rv = BinaryPath::GetFile(argv0, getter_AddRefs(iniFile));
   if (NS_FAILED(rv))
     return rv;
@@ -124,8 +124,8 @@ GetGREVersion(const char *argv0,
 
 static void Usage(const char *argv0)
 {
-    nsCAutoString milestone;
-    GetGREVersion(argv0, &milestone, nsnull);
+    nsAutoCString milestone;
+    GetGREVersion(argv0, &milestone, nullptr);
 
     // display additional information (XXX make localizable?)
     Output(false,
@@ -159,7 +159,7 @@ static const nsDynamicFunctionLoad kXULFuncs[] = {
     { "XRE_CreateAppData", (NSFuncPtr*) &XRE_CreateAppData },
     { "XRE_FreeAppData", (NSFuncPtr*) &XRE_FreeAppData },
     { "XRE_main", (NSFuncPtr*) &XRE_main },
-    { nsnull, nsnull }
+    { nullptr, nullptr }
 };
 
 static nsresult
@@ -167,7 +167,7 @@ GetXULRunnerDir(const char *argv0, nsIFile* *aResult)
 {
   nsresult rv;
 
-  nsCOMPtr<nsILocalFile> appFile;
+  nsCOMPtr<nsIFile> appFile;
   rv = BinaryPath::GetFile(argv0, getter_AddRefs(appFile));
   if (NS_FAILED(rv)) {
     Output(true, "Could not find XULRunner application path.\n");
@@ -187,8 +187,8 @@ InstallXULApp(nsIFile* aXULRunnerDir,
               const char *aInstallTo,
               const char *aLeafName)
 {
-  nsCOMPtr<nsILocalFile> appLocation;
-  nsCOMPtr<nsILocalFile> installTo;
+  nsCOMPtr<nsIFile> appLocation;
+  nsCOMPtr<nsIFile> installTo;
   nsString leafName;
 
   nsresult rv = XRE_GetFileFromPath(aAppLocation, getter_AddRefs(appLocation));
@@ -205,7 +205,7 @@ InstallXULApp(nsIFile* aXULRunnerDir,
     NS_CStringToUTF16(nsDependentCString(aLeafName),
                       NS_CSTRING_ENCODING_NATIVE_FILESYSTEM, leafName);
 
-  rv = NS_InitXPCOM2(nsnull, aXULRunnerDir, nsnull);
+  rv = NS_InitXPCOM2(nullptr, aXULRunnerDir, nullptr);
   if (NS_FAILED(rv))
     return 3;
 
@@ -221,7 +221,7 @@ InstallXULApp(nsIFile* aXULRunnerDir,
     }
   }
 
-  NS_ShutdownXPCOM(nsnull);
+  NS_ShutdownXPCOM(nullptr);
 
   if (NS_FAILED(rv))
     return 3;
@@ -232,10 +232,10 @@ InstallXULApp(nsIFile* aXULRunnerDir,
 class AutoAppData
 {
 public:
-  AutoAppData(nsILocalFile* aINIFile) : mAppData(nsnull) {
+  AutoAppData(nsIFile* aINIFile) : mAppData(nullptr) {
     nsresult rv = XRE_CreateAppData(aINIFile, &mAppData);
     if (NS_FAILED(rv))
-      mAppData = nsnull;
+      mAppData = nullptr;
   }
   ~AutoAppData() {
     if (mAppData)
@@ -280,8 +280,8 @@ int main(int argc, char* argv[])
 
   if (argc == 2 && (IsArg(argv[1], "v") || IsArg(argv[1], "version")))
   {
-    nsCAutoString milestone;
-    nsCAutoString version;
+    nsAutoCString milestone;
+    nsAutoCString version;
     GetGREVersion(argv[0], &milestone, &version);
     Output(false, "Mozilla XULRunner %s - %s\n",
            milestone.get(), version.get());
@@ -295,8 +295,8 @@ int main(int argc, char* argv[])
   }
 
   if (argc > 1) {
-    nsCAutoString milestone;
-    rv = GetGREVersion(argv[0], &milestone, nsnull);
+    nsAutoCString milestone;
+    rv = GetGREVersion(argv[0], &milestone, nullptr);
     if (NS_FAILED(rv))
       return 2;
 
@@ -318,18 +318,18 @@ int main(int argc, char* argv[])
 
       char *appLocation = argv[2];
 
-      char *installTo = nsnull;
+      char *installTo = nullptr;
       if (argc > 3) {
         installTo = argv[3];
         if (!*installTo) // left blank?
-          installTo = nsnull;
+          installTo = nullptr;
       }
 
-      char *leafName = nsnull;
+      char *leafName = nullptr;
       if (argc > 4) {
         leafName = argv[4];
         if (!*leafName)
-          leafName = nsnull;
+          leafName = nullptr;
       }
 
       nsCOMPtr<nsIFile> regDir;
@@ -369,7 +369,7 @@ int main(int argc, char* argv[])
     putenv(kAppEnv);
   }
 
-  nsCOMPtr<nsILocalFile> appDataLF;
+  nsCOMPtr<nsIFile> appDataLF;
   rv = XRE_GetFileFromPath(appDataFile, getter_AddRefs(appDataLF));
   if (NS_FAILED(rv)) {
     Output(true, "Error: unrecognized application.ini path.\n");

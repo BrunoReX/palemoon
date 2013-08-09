@@ -37,7 +37,7 @@ PluginScriptableObjectParent::ScriptableAllocate(NPP aInstance,
 {
   if (aClass != GetClass()) {
     NS_ERROR("Huh?! Wrong class!");
-    return nsnull;
+    return nullptr;
   }
 
   return new ParentNPObject();
@@ -399,7 +399,7 @@ PluginScriptableObjectParent::ScriptableEnumerate(NPObject* aObject,
 
   *aCount = identifiers.Length();
   if (!*aCount) {
-    *aIdentifiers = nsnull;
+    *aIdentifiers = nullptr;
     return true;
   }
 
@@ -409,7 +409,7 @@ PluginScriptableObjectParent::ScriptableEnumerate(NPObject* aObject,
     return false;
   }
 
-  for (PRUint32 index = 0; index < *aCount; index++) {
+  for (uint32_t index = 0; index < *aCount; index++) {
     PluginIdentifierParent* id =
       static_cast<PluginIdentifierParent*>(identifiers[index]);
     (*aIdentifiers)[index] = id->ToNPIdentifier();
@@ -484,8 +484,8 @@ const NPClass PluginScriptableObjectParent::sNPClass = {
 
 PluginScriptableObjectParent::PluginScriptableObjectParent(
                                                      ScriptableObjectType aType)
-: mInstance(nsnull),
-  mObject(nsnull),
+: mInstance(nullptr),
+  mObject(nullptr),
   mProtectCount(0),
   mType(aType)
 {
@@ -496,7 +496,7 @@ PluginScriptableObjectParent::~PluginScriptableObjectParent()
   if (mObject) {
     if (mObject->_class == GetClass()) {
       NS_ASSERTION(mType == Proxy, "Wrong type!");
-      static_cast<ParentNPObject*>(mObject)->parent = nsnull;
+      static_cast<ParentNPObject*>(mObject)->parent = nullptr;
     }
     else {
       NS_ASSERTION(mType == LocalObject, "Wrong type!");
@@ -596,7 +596,7 @@ PluginScriptableObjectParent::GetObject(bool aCanResurrect)
 {
   if (!mObject && aCanResurrect && !ResurrectProxyObject()) {
     NS_ERROR("Null object!");
-    return nsnull;
+    return nullptr;
   }
   return mObject;
 }
@@ -638,7 +638,7 @@ PluginScriptableObjectParent::DropNPObject()
   NS_ASSERTION(instance, "Must have an instance!");
 
   instance->UnregisterNPObject(mObject);
-  mObject = nsnull;
+  mObject = nullptr;
 
   unused << SendUnprotect();
 }
@@ -708,7 +708,7 @@ PluginScriptableObjectParent::AnswerInvoke(PPluginIdentifierParent* aId,
   }
 
   nsAutoTArray<NPVariant, 10> convertedArgs;
-  PRUint32 argCount = aArgs.Length();
+  uint32_t argCount = aArgs.Length();
 
   if (!convertedArgs.SetLength(argCount)) {
     *aResult = void_t();
@@ -716,7 +716,7 @@ PluginScriptableObjectParent::AnswerInvoke(PPluginIdentifierParent* aId,
     return true;
   }
 
-  for (PRUint32 index = 0; index < argCount; index++) {
+  for (uint32_t index = 0; index < argCount; index++) {
     if (!ConvertToVariant(aArgs[index], convertedArgs[index], instance)) {
       // Don't leak things we've already converted!
       while (index-- > 0) {
@@ -733,7 +733,7 @@ PluginScriptableObjectParent::AnswerInvoke(PPluginIdentifierParent* aId,
   bool success = npn->invoke(instance->GetNPP(), mObject, id->ToNPIdentifier(),
                              convertedArgs.Elements(), argCount, &result);
 
-  for (PRUint32 index = 0; index < argCount; index++) {
+  for (uint32_t index = 0; index < argCount; index++) {
     ReleaseVariant(convertedArgs[index], instance);
   }
 
@@ -791,7 +791,7 @@ PluginScriptableObjectParent::AnswerInvokeDefault(const InfallibleTArray<Variant
   }
 
   nsAutoTArray<NPVariant, 10> convertedArgs;
-  PRUint32 argCount = aArgs.Length();
+  uint32_t argCount = aArgs.Length();
 
   if (!convertedArgs.SetLength(argCount)) {
     *aResult = void_t();
@@ -799,7 +799,7 @@ PluginScriptableObjectParent::AnswerInvokeDefault(const InfallibleTArray<Variant
     return true;
   }
 
-  for (PRUint32 index = 0; index < argCount; index++) {
+  for (uint32_t index = 0; index < argCount; index++) {
     if (!ConvertToVariant(aArgs[index], convertedArgs[index], instance)) {
       // Don't leak things we've already converted!
       while (index-- > 0) {
@@ -816,7 +816,7 @@ PluginScriptableObjectParent::AnswerInvokeDefault(const InfallibleTArray<Variant
                                     convertedArgs.Elements(), argCount,
                                     &result);
 
-  for (PRUint32 index = 0; index < argCount; index++) {
+  for (uint32_t index = 0; index < argCount; index++) {
     ReleaseVariant(convertedArgs[index], instance);
   }
 
@@ -1099,7 +1099,7 @@ PluginScriptableObjectParent::AnswerConstruct(const InfallibleTArray<Variant>& a
   }
 
   nsAutoTArray<NPVariant, 10> convertedArgs;
-  PRUint32 argCount = aArgs.Length();
+  uint32_t argCount = aArgs.Length();
 
   if (!convertedArgs.SetLength(argCount)) {
     *aResult = void_t();
@@ -1107,7 +1107,7 @@ PluginScriptableObjectParent::AnswerConstruct(const InfallibleTArray<Variant>& a
     return true;
   }
 
-  for (PRUint32 index = 0; index < argCount; index++) {
+  for (uint32_t index = 0; index < argCount; index++) {
     if (!ConvertToVariant(aArgs[index], convertedArgs[index], instance)) {
       // Don't leak things we've already converted!
       while (index-- > 0) {
@@ -1123,7 +1123,7 @@ PluginScriptableObjectParent::AnswerConstruct(const InfallibleTArray<Variant>& a
   bool success = npn->construct(instance->GetNPP(), mObject,
                                 convertedArgs.Elements(), argCount, &result);
 
-  for (PRUint32 index = 0; index < argCount; index++) {
+  for (uint32_t index = 0; index < argCount; index++) {
     ReleaseVariant(convertedArgs[index], instance);
   }
 

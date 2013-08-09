@@ -22,8 +22,15 @@
 
 #ifdef PR_LOGGING
 #define DUMP_LAYOUT_LEVEL 9 // this turns on the dumping of each doucment's layout info
-static PRLogModuleInfo * kPrintingLogMod = PR_NewLogModule("printing");
-#define PR_PL(_p1)  PR_LOG(kPrintingLogMod, PR_LOG_DEBUG, _p1);
+static PRLogModuleInfo *
+GetPrintingLog()
+{
+  static PRLogModuleInfo *sLog;
+  if (!sLog)
+    sLog = PR_NewLogModule("printing");
+  return sLog;
+}
+#define PR_PL(_p1)  PR_LOG(GetPrintingLog(), PR_LOG_DEBUG, _p1);
 #else
 #define PRT_YESNO(_p)
 #define PR_PL(_p1)
@@ -33,14 +40,14 @@ static PRLogModuleInfo * kPrintingLogMod = PR_NewLogModule("printing");
 //-- nsPrintData Class Impl
 //---------------------------------------------------
 nsPrintData::nsPrintData(ePrintDataType aType) :
-  mType(aType), mDebugFilePtr(nsnull), mPrintObject(nsnull), mSelectedPO(nsnull),
-  mPrintDocList(nsnull), mIsIFrameSelected(false),
+  mType(aType), mDebugFilePtr(nullptr), mPrintObject(nullptr), mSelectedPO(nullptr),
+  mPrintDocList(0), mIsIFrameSelected(false),
   mIsParentAFrameSet(false), mOnStartSent(false),
   mIsAborted(false), mPreparingForPrint(false), mDocWasToBeDestroyed(false),
   mShrinkToFit(false), mPrintFrameType(nsIPrintSettings::kFramesAsIs), 
   mNumPrintablePages(0), mNumPagesPrinted(0),
   mShrinkRatio(1.0), mOrigDCScale(1.0), mPPEventListeners(NULL), 
-  mBrandName(nsnull)
+  mBrandName(nullptr)
 {
   MOZ_COUNT_CTOR(nsPrintData);
   nsCOMPtr<nsIStringBundle> brandBundle;
@@ -114,16 +121,16 @@ void nsPrintData::OnEndPrinting()
 }
 
 void
-nsPrintData::DoOnProgressChange(PRInt32      aProgress,
-                                PRInt32      aMaxProgress,
+nsPrintData::DoOnProgressChange(int32_t      aProgress,
+                                int32_t      aMaxProgress,
                                 bool         aDoStartStop,
-                                PRInt32      aFlag)
+                                int32_t      aFlag)
 {
-  for (PRInt32 i=0;i<mPrintProgressListeners.Count();i++) {
+  for (int32_t i=0;i<mPrintProgressListeners.Count();i++) {
     nsIWebProgressListener* wpl = mPrintProgressListeners.ObjectAt(i);
-    wpl->OnProgressChange(nsnull, nsnull, aProgress, aMaxProgress, aProgress, aMaxProgress);
+    wpl->OnProgressChange(nullptr, nullptr, aProgress, aMaxProgress, aProgress, aMaxProgress);
     if (aDoStartStop) {
-      wpl->OnStateChange(nsnull, nsnull, aFlag, 0);
+      wpl->OnStateChange(nullptr, nullptr, aFlag, NS_OK);
     }
   }
 }

@@ -24,12 +24,10 @@
 #include "nsStyleConsts.h"
 #include "nsFont.h"
 #include "nsCOMPtr.h"
-#ifdef ACCESSIBILITY
-#include "nsAccessibilityService.h"
-#endif
 #include "nsIServiceManager.h"
 #include "nsDisplayList.h"
 #include "nsRenderingContext.h"
+#include "mozilla/Likely.h"
 
 using namespace mozilla;
 using namespace mozilla::layout;
@@ -53,9 +51,8 @@ public:
   virtual nsSize ComputeSize(nsRenderingContext *aRenderingContext,
                              nsSize aCBSize, nscoord aAvailableWidth,
                              nsSize aMargin, nsSize aBorder, nsSize aPadding,
-                             PRUint32 aFlags) MOZ_OVERRIDE;
+                             uint32_t aFlags) MOZ_OVERRIDE;
   virtual nscoord GetBaseline() const;
-  virtual void DestroyFrom(nsIFrame* aDestructRoot);
 
   NS_IMETHOD Reflow(nsPresContext*           aPresContext,
                     nsHTMLReflowMetrics&     aDesiredSize,
@@ -67,7 +64,7 @@ public:
                               const nsDisplayListSet& aLists);
 
   void PaintBorderBackground(nsRenderingContext& aRenderingContext,
-    nsPoint aPt, const nsRect& aDirtyRect, PRUint32 aBGFlags);
+    nsPoint aPt, const nsRect& aDirtyRect, uint32_t aBGFlags);
 
   NS_IMETHOD AppendFrames(ChildListID    aListID,
                           nsFrameList&   aFrameList);
@@ -80,7 +77,7 @@ public:
   virtual nsIAtom* GetType() const;
 
 #ifdef ACCESSIBILITY  
-  virtual already_AddRefed<Accessible> CreateAccessible();
+  virtual mozilla::a11y::AccType AccessibleType() MOZ_OVERRIDE;
 #endif
 
 #ifdef DEBUG
@@ -91,7 +88,7 @@ public:
 
 protected:
 
-  virtual PRIntn GetSkipSides() const;
+  virtual int GetSkipSides() const;
   void ReparentFrameList(const nsFrameList& aFrameList);
 
   // mLegendFrame is a nsLegendFrame or a nsHTMLScrollFrame with the
@@ -113,16 +110,9 @@ NS_IMPL_FRAMEARENA_HELPERS(nsFieldSetFrame)
 nsFieldSetFrame::nsFieldSetFrame(nsStyleContext* aContext)
   : nsContainerFrame(aContext)
 {
-  mContentFrame = nsnull;
-  mLegendFrame  = nsnull;
+  mContentFrame = nullptr;
+  mLegendFrame  = nullptr;
   mLegendSpace  = 0;
-}
-
-void
-nsFieldSetFrame::DestroyFrom(nsIFrame* aDestructRoot)
-{
-  DestroyAbsoluteFrames(aDestructRoot);
-  nsContainerFrame::DestroyFrom(aDestructRoot);
 }
 
 nsIAtom*
@@ -142,7 +132,7 @@ nsFieldSetFrame::SetInitialChildList(ChildListID    aListID,
     mLegendFrame  = aChildList.FirstChild();
   } else {
     mContentFrame = aChildList.FirstChild();
-    mLegendFrame  = nsnull;
+    mLegendFrame  = nullptr;
   }
 
   // Queue up the frames for the content frame
@@ -243,9 +233,9 @@ nsFieldSetFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
 
 void
 nsFieldSetFrame::PaintBorderBackground(nsRenderingContext& aRenderingContext,
-    nsPoint aPt, const nsRect& aDirtyRect, PRUint32 aBGFlags)
+    nsPoint aPt, const nsRect& aDirtyRect, uint32_t aBGFlags)
 {
-  PRIntn skipSides = GetSkipSides();
+  int skipSides = GetSkipSides();
   const nsStyleBorder* borderStyle = GetStyleBorder();
        
   nscoord topBorder = borderStyle->GetComputedBorderWidth(NS_SIDE_TOP);
@@ -369,7 +359,7 @@ nsFieldSetFrame::GetPrefWidth(nsRenderingContext* aRenderingContext)
 nsFieldSetFrame::ComputeSize(nsRenderingContext *aRenderingContext,
                              nsSize aCBSize, nscoord aAvailableWidth,
                              nsSize aMargin, nsSize aBorder, nsSize aPadding,
-                             PRUint32 aFlags)
+                             uint32_t aFlags)
 {
   nsSize result =
     nsContainerFrame::ComputeSize(aRenderingContext, aCBSize, aAvailableWidth,
@@ -408,8 +398,8 @@ nsFieldSetFrame::Reflow(nsPresContext*           aPresContext,
   bool reflowLegend;
 
   if (aReflowState.ShouldReflowAllKids()) {
-    reflowContent = mContentFrame != nsnull;
-    reflowLegend = mLegendFrame != nsnull;
+    reflowContent = mContentFrame != nullptr;
+    reflowLegend = mLegendFrame != nullptr;
   } else {
     reflowContent = mContentFrame && NS_SUBTREE_DIRTY(mContentFrame);
     reflowLegend = mLegendFrame && NS_SUBTREE_DIRTY(mLegendFrame);
@@ -530,7 +520,7 @@ nsFieldSetFrame::Reflow(nsPresContext*           aPresContext,
   if (mLegendFrame) {
     // if the content rect is larger then the  legend we can align the legend
     if (contentRect.width > mLegendRect.width) {
-      PRInt32 align = static_cast<nsLegendFrame*>
+      int32_t align = static_cast<nsLegendFrame*>
         (mLegendFrame->GetContentInsertionFrame())->GetAlign();
 
       switch(align) {
@@ -584,13 +574,13 @@ nsFieldSetFrame::Reflow(nsPresContext*           aPresContext,
     ConsiderChildOverflow(aDesiredSize.mOverflowAreas, mContentFrame);
   FinishReflowWithAbsoluteFrames(aPresContext, aDesiredSize, aReflowState, aStatus);
 
-  Invalidate(aDesiredSize.VisualOverflow());
+  InvalidateFrame();
 
   NS_FRAME_SET_TRUNCATION(aStatus, aReflowState, aDesiredSize);
   return NS_OK;
 }
 
-PRIntn
+int
 nsFieldSetFrame::GetSkipSides() const
 {
   return 0;
@@ -616,8 +606,8 @@ nsFieldSetFrame::InsertFrames(ChildListID    aListID,
 
   // aFrameList is not allowed to contain "the legend" for this fieldset
   ReparentFrameList(aFrameList);
-  if (NS_UNLIKELY(aPrevFrame == mLegendFrame)) {
-    aPrevFrame = nsnull;
+  if (MOZ_UNLIKELY(aPrevFrame == mLegendFrame)) {
+    aPrevFrame = nullptr;
   }
   return mContentFrame->InsertFrames(aListID, aPrevFrame, aFrameList);
 }
@@ -632,16 +622,10 @@ nsFieldSetFrame::RemoveFrame(ChildListID    aListID,
 }
 
 #ifdef ACCESSIBILITY
-already_AddRefed<Accessible>
-nsFieldSetFrame::CreateAccessible()
+a11y::AccType
+nsFieldSetFrame::AccessibleType()
 {
-  nsAccessibilityService* accService = nsIPresShell::AccService();
-  if (accService) {
-    return accService->CreateHTMLGroupboxAccessible(mContent,
-                                                    PresContext()->PresShell());
-  }
-
-  return nsnull;
+  return a11y::eHTMLGroupboxAccessible;
 }
 #endif
 

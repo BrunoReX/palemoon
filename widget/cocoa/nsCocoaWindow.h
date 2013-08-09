@@ -151,7 +151,6 @@ typedef struct _nsCocoaWindowList {
 + (void)paintMenubarForWindow:(NSWindow*)aWindow;
 - (id)initWithGeckoWindow:(nsCocoaWindow*)geckoWind;
 - (void)windowDidResize:(NSNotification*)aNotification;
-- (void)sendFocusEvent:(PRUint32)eventType;
 - (nsCocoaWindow*)geckoWidget;
 - (bool)toplevelActiveState;
 - (void)sendToplevelActivateEvents;
@@ -206,66 +205,70 @@ public:
     NS_IMETHOD              Create(nsIWidget* aParent,
                                    nsNativeWidget aNativeParent,
                                    const nsIntRect &aRect,
-                                   EVENT_CALLBACK aHandleEventFunction,
                                    nsDeviceContext *aContext,
-                                   nsWidgetInitData *aInitData = nsnull);
+                                   nsWidgetInitData *aInitData = nullptr);
 
     NS_IMETHOD              Destroy();
 
     NS_IMETHOD              Show(bool aState);
     virtual nsIWidget*      GetSheetWindowParent(void);
     NS_IMETHOD              Enable(bool aState);
-    NS_IMETHOD              IsEnabled(bool *aState);
+    virtual bool            IsEnabled() const;
     NS_IMETHOD              SetModal(bool aState);
-    NS_IMETHOD              IsVisible(bool & aState);
+    virtual bool            IsVisible() const;
     NS_IMETHOD              SetFocus(bool aState=false);
     virtual nsIntPoint WidgetToScreenOffset();
     virtual nsIntPoint GetClientOffset();
     virtual nsIntSize ClientToWindowSize(const nsIntSize& aClientSize);
 
-    virtual void* GetNativeData(PRUint32 aDataType) ;
+    virtual void* GetNativeData(uint32_t aDataType) ;
 
     NS_IMETHOD              ConstrainPosition(bool aAllowSlop,
-                                              PRInt32 *aX, PRInt32 *aY);
-    NS_IMETHOD              Move(PRInt32 aX, PRInt32 aY);
+                                              int32_t *aX, int32_t *aY);
+    virtual void            SetSizeConstraints(const SizeConstraints& aConstraints);
+    NS_IMETHOD              Move(int32_t aX, int32_t aY);
     NS_IMETHOD              PlaceBehind(nsTopLevelWidgetZPlacement aPlacement,
                                         nsIWidget *aWidget, bool aActivate);
-    NS_IMETHOD              SetSizeMode(PRInt32 aMode);
+    NS_IMETHOD              SetSizeMode(int32_t aMode);
     NS_IMETHOD              HideWindowChrome(bool aShouldHide);
     void                    EnteredFullScreen(bool aFullScreen);
     NS_IMETHOD              MakeFullScreen(bool aFullScreen);
-    NS_IMETHOD              Resize(PRInt32 aWidth,PRInt32 aHeight, bool aRepaint);
-    NS_IMETHOD              Resize(PRInt32 aX, PRInt32 aY, PRInt32 aWidth, PRInt32 aHeight, bool aRepaint);
+    NS_IMETHOD              Resize(int32_t aWidth,int32_t aHeight, bool aRepaint);
+    NS_IMETHOD              Resize(int32_t aX, int32_t aY, int32_t aWidth, int32_t aHeight, bool aRepaint);
     NS_IMETHOD              GetClientBounds(nsIntRect &aRect);
     NS_IMETHOD              GetScreenBounds(nsIntRect &aRect);
     void                    ReportMoveEvent();
     void                    ReportSizeEvent();
     NS_IMETHOD              SetCursor(nsCursor aCursor);
-    NS_IMETHOD              SetCursor(imgIContainer* aCursor, PRUint32 aHotspotX, PRUint32 aHotspotY);
+    NS_IMETHOD              SetCursor(imgIContainer* aCursor, uint32_t aHotspotX, uint32_t aHotspotY);
+
+    CGFloat                 BackingScaleFactor();
+    void                    BackingScaleFactorChanged();
+    virtual double          GetDefaultScaleInternal();
 
     NS_IMETHOD              SetTitle(const nsAString& aTitle);
 
     NS_IMETHOD Invalidate(const nsIntRect &aRect);
     virtual nsresult ConfigureChildren(const nsTArray<Configuration>& aConfigurations);
-    virtual LayerManager* GetLayerManager(PLayersChild* aShadowManager = nsnull,
-                                          LayersBackend aBackendHint = LayerManager::LAYERS_NONE,
+    virtual LayerManager* GetLayerManager(PLayersChild* aShadowManager = nullptr,
+                                          LayersBackend aBackendHint = mozilla::layers::LAYERS_NONE,
                                           LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT,
-                                          bool* aAllowRetaining = nsnull);
+                                          bool* aAllowRetaining = nullptr);
     NS_IMETHOD DispatchEvent(nsGUIEvent* event, nsEventStatus & aStatus) ;
-    NS_IMETHOD CaptureRollupEvents(nsIRollupListener * aListener, bool aDoCapture, bool aConsumeRollupEvent);
-    NS_IMETHOD GetAttention(PRInt32 aCycleCount);
+    NS_IMETHOD CaptureRollupEvents(nsIRollupListener * aListener, bool aDoCapture);
+    NS_IMETHOD GetAttention(int32_t aCycleCount);
     virtual bool HasPendingInputEvent();
     virtual nsTransparencyMode GetTransparencyMode();
     virtual void SetTransparencyMode(nsTransparencyMode aMode);
-    NS_IMETHOD SetWindowShadowStyle(PRInt32 aStyle);
+    NS_IMETHOD SetWindowShadowStyle(int32_t aStyle);
     virtual void SetShowsToolbarButton(bool aShow);
     virtual void SetShowsFullScreenButton(bool aShow);
     virtual void SetWindowAnimationType(WindowAnimationType aType);
     NS_IMETHOD SetWindowTitlebarColor(nscolor aColor, bool aActive);
     virtual void SetDrawsInTitlebar(bool aState);
     virtual nsresult SynthesizeNativeMouseEvent(nsIntPoint aPoint,
-                                                PRUint32 aNativeMessage,
-                                                PRUint32 aModifierFlags);
+                                                uint32_t aNativeMessage,
+                                                uint32_t aModifierFlags);
 
     void DispatchSizeModeEvent();
 
@@ -288,6 +291,16 @@ public:
     }
     NS_IMETHOD_(InputContext) GetInputContext()
     {
+      NSView* view = mWindow ? [mWindow contentView] : nil;
+      if (view) {
+        mInputContext.mNativeIMEContext = [view inputContext];
+      }
+      // If inputContext isn't available on this window, returns this window's
+      // pointer since nullptr means the platform has only one context per
+      // process.
+      if (!mInputContext.mNativeIMEContext) {
+        mInputContext.mNativeIMEContext = this;
+      }
       return mInputContext;
     }
     NS_IMETHOD BeginSecureKeyboardInput();
@@ -305,13 +318,15 @@ protected:
                                           nsBorderStyle aBorderStyle,
                                           bool aRectIsFrameRect);
   nsresult             CreatePopupContentView(const nsIntRect &aRect,
-                                              EVENT_CALLBACK aHandleEventFunction,
                                               nsDeviceContext *aContext);
   void                 DestroyNativeWindow();
   void                 AdjustWindowShadow();
   void                 SetUpWindowFilter();
   void                 CleanUpWindowFilter();
   void                 UpdateBounds();
+
+  nsresult             DoResize(int32_t aX, int32_t aY, int32_t aWidth, int32_t aHeight,
+                                bool aRepaint, bool aConstrainToCurrentScreen);
 
   virtual already_AddRefed<nsIWidget>
   AllocateChildPopupWidget()
@@ -327,8 +342,10 @@ protected:
   nsRefPtr<nsMenuBarX> mMenuBar;
   NSWindow*            mSheetWindowParent; // if this is a sheet, this is the NSWindow it's attached to
   nsChildView*         mPopupContentView; // if this is a popup, this is its content widget
-  PRInt32              mShadowStyle;
+  int32_t              mShadowStyle;
   NSUInteger           mWindowFilter;
+
+  CGFloat              mBackingScaleFactor;
 
   WindowAnimationType  mAnimationType;
 
@@ -346,7 +363,7 @@ protected:
 
   bool                 mInReportMoveEvent; // true if in a call to ReportMoveEvent().
 
-  PRInt32              mNumModalDescendents;
+  int32_t              mNumModalDescendents;
   InputContext         mInputContext;
 };
 

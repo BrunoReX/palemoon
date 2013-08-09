@@ -101,7 +101,7 @@ nsIFrame* nsSplittableFrame::GetLastContinuation() const
 #ifdef DEBUG
 bool nsSplittableFrame::IsInPrevContinuationChain(nsIFrame* aFrame1, nsIFrame* aFrame2)
 {
-  PRInt32 iterations = 0;
+  int32_t iterations = 0;
   while (aFrame1 && iterations < 10) {
     // Bail out after 10 iterations so we don't bog down debug builds too much
     if (aFrame1 == aFrame2)
@@ -114,7 +114,7 @@ bool nsSplittableFrame::IsInPrevContinuationChain(nsIFrame* aFrame1, nsIFrame* a
 
 bool nsSplittableFrame::IsInNextContinuationChain(nsIFrame* aFrame1, nsIFrame* aFrame2)
 {
-  PRInt32 iterations = 0;
+  int32_t iterations = 0;
   while (aFrame1 && iterations < 10) {
     // Bail out after 10 iterations so we don't bog down debug builds too much
     if (aFrame1 == aFrame2)
@@ -128,7 +128,7 @@ bool nsSplittableFrame::IsInNextContinuationChain(nsIFrame* aFrame1, nsIFrame* a
 
 nsIFrame* nsSplittableFrame::GetPrevInFlow() const
 {
-  return (GetStateBits() & NS_FRAME_IS_FLUID_CONTINUATION) ? mPrevContinuation : nsnull;
+  return (GetStateBits() & NS_FRAME_IS_FLUID_CONTINUATION) ? mPrevContinuation : nullptr;
 }
 
 NS_METHOD nsSplittableFrame::SetPrevInFlow(nsIFrame* aFrame)
@@ -143,7 +143,7 @@ NS_METHOD nsSplittableFrame::SetPrevInFlow(nsIFrame* aFrame)
 nsIFrame* nsSplittableFrame::GetNextInFlow() const
 {
   return mNextContinuation && (mNextContinuation->GetStateBits() & NS_FRAME_IS_FLUID_CONTINUATION) ? 
-    mNextContinuation : nsnull;
+    mNextContinuation : nullptr;
 }
 
 NS_METHOD nsSplittableFrame::SetNextInFlow(nsIFrame* aFrame)
@@ -201,22 +201,22 @@ nsSplittableFrame::RemoveFromFlow(nsIFrame* aFrame)
     }
   }
 
-  aFrame->SetPrevInFlow(nsnull);
-  aFrame->SetNextInFlow(nsnull);
+  aFrame->SetPrevInFlow(nullptr);
+  aFrame->SetNextInFlow(nullptr);
 }
 
 #ifdef DEBUG
 void
-nsSplittableFrame::DumpBaseRegressionData(nsPresContext* aPresContext, FILE* out, PRInt32 aIndent)
+nsSplittableFrame::DumpBaseRegressionData(nsPresContext* aPresContext, FILE* out, int32_t aIndent)
 {
   nsFrame::DumpBaseRegressionData(aPresContext, out, aIndent);
-  if (nsnull != mNextContinuation) {
+  if (nullptr != mNextContinuation) {
     IndentBy(out, aIndent);
-    fprintf(out, "<next-continuation va=\"%ld\"/>\n", PRUptrdiff(mNextContinuation));
+    fprintf(out, "<next-continuation va=\"%p\"/>\n", (void*)mNextContinuation);
   }
-  if (nsnull != mPrevContinuation) {
+  if (nullptr != mPrevContinuation) {
     IndentBy(out, aIndent);
-    fprintf(out, "<prev-continuation va=\"%ld\"/>\n", PRUptrdiff(mPrevContinuation));
+    fprintf(out, "<prev-continuation va=\"%p\"/>\n", (void*)mPrevContinuation);
   }
 
 }

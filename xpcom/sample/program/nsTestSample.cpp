@@ -26,23 +26,24 @@ main(void)
 {
     nsresult rv;
 
-    XPCOMGlueStartup(nsnull);
+    XPCOMGlueStartup(nullptr);
 
     // Initialize XPCOM
     nsCOMPtr<nsIServiceManager> servMan;
-    rv = NS_InitXPCOM2(getter_AddRefs(servMan), nsnull, nsnull);
+    rv = NS_InitXPCOM2(getter_AddRefs(servMan), nullptr, nullptr);
     if (NS_FAILED(rv))
     {
-        printf("ERROR: XPCOM intialization error [%x].\n", rv);
+        printf("ERROR: XPCOM intialization error [%x].\n",
+               static_cast<uint32_t>(rv));
         return -1;
     }
 
     nsCOMPtr<nsIComponentManager> manager = do_QueryInterface(servMan);
-    
+
     // Create an instance of our component
     nsCOMPtr<nsISample> mysample;
     rv = manager->CreateInstanceByContractID(NS_SAMPLE_CONTRACTID,
-                                             nsnull,
+                                             nullptr,
                                              NS_GET_IID(nsISample),
                                              getter_AddRefs(mysample));
     if (NS_FAILED(rv))
@@ -53,7 +54,7 @@ main(void)
                "\tsetenv NSPR_LOG_FILE xpcom.log\n"
                "\t./nsTestSample\n"
                "\t<check the contents for xpcom.log for possible cause of error>.\n",
-               rv);
+               static_cast<uint32_t>(rv));
         return -2;
     }
 
@@ -61,7 +62,8 @@ main(void)
     rv = mysample->WriteValue("Inital print:");
     if (NS_FAILED(rv))
     {
-        printf("ERROR: Calling nsISample::WriteValue() [%x]\n", rv);
+        printf("ERROR: Calling nsISample::WriteValue() [%x]\n",
+               static_cast<uint32_t>(rv));
         return -3;
     }
 
@@ -69,7 +71,8 @@ main(void)
     rv = mysample->SetValue(testValue);
     if (NS_FAILED(rv))
     {
-        printf("ERROR: Calling nsISample::SetValue() [%x]\n", rv);
+        printf("ERROR: Calling nsISample::SetValue() [%x]\n",
+               static_cast<uint32_t>(rv));
         return -3;
     }
     printf("Set value to: %s\n", testValue);
@@ -78,7 +81,8 @@ main(void)
 
     if (NS_FAILED(rv))
     {
-        printf("ERROR: Calling nsISample::GetValue() [%x]\n", rv);
+        printf("ERROR: Calling nsISample::GetValue() [%x]\n",
+               static_cast<uint32_t>(rv));
         return -3;
     }
     if (strcmp(str, testValue))
@@ -99,7 +103,7 @@ main(void)
     mysample = 0;
     
     // Shutdown XPCOM
-    NS_ShutdownXPCOM(nsnull);
+    NS_ShutdownXPCOM(nullptr);
 
     XPCOMGlueShutdown();
     return 0;

@@ -104,10 +104,12 @@ class RegExpCode
         codeBlock.release();
 #endif
         if (byteCode)
-            Foreground::delete_<BytecodePattern>(byteCode);
+            js_delete<BytecodePattern>(byteCode);
     }
 
-    static bool checkSyntax(JSContext *cx, TokenStream *tokenStream, JSLinearString *source) {
+    static bool checkSyntax(JSContext *cx, frontend::TokenStream *tokenStream,
+                            JSLinearString *source)
+    {
         ErrorCode error = JSC::Yarr::checkSyntax(*source);
         if (error == JSC::Yarr::NoError)
             return true;
@@ -119,7 +121,8 @@ class RegExpCode
 #if ENABLE_YARR_JIT
     static inline bool isJITRuntimeEnabled(JSContext *cx);
 #endif
-    static void reportYarrError(JSContext *cx, TokenStream *ts, JSC::Yarr::ErrorCode error);
+    static void reportYarrError(JSContext *cx, frontend::TokenStream *ts,
+                                JSC::Yarr::ErrorCode error);
 
     static size_t getOutputSize(size_t pairCount) {
         return pairCount * 2;
@@ -137,9 +140,9 @@ class RegExpCode
 
 /*
  * A RegExpShared is the compiled representation of a regexp. A RegExpShared is
- * pointed to by potentially multiple RegExpObjects. Additionally, C++ code may
- * have pointers to RegExpShareds on the stack. The RegExpShareds are tracked in
- * a RegExpCompartment hashtable, and most are destroyed on every GC.
+ * potentially pointed to by multiple RegExpObjects. Additionally, C++ code may
+ * have pointers to RegExpShareds on the stack. The RegExpShareds are kept in a
+ * cache so that they can be reused when compiling the same regex string.
  *
  * During a GC, the trace hook for RegExpObject clears any pointers to
  * RegExpShareds so that there will be no dangling pointers when they are
@@ -157,6 +160,13 @@ class RegExpCode
  *
  * The activeUseCount and gcNumberWhenUsed fields are used to track these
  * conditions.
+ *
+ * There are two tables used to track RegExpShareds. map_ implements the cache
+ * and is cleared on every GC. inUse_ logically owns all RegExpShareds in the
+ * compartment and attempts to delete all RegExpShareds that aren't kept alive
+ * by the above conditions on every GC sweep phase. It is necessary to use two
+ * separate tables since map_ *must* be fully cleared on each GC since the Key
+ * points to a JSAtom that can become garbage.
  */
 class RegExpShared
 {
@@ -164,17 +174,15 @@ class RegExpShared
     friend class RegExpGuard;
 
     detail::RegExpCode code;
-    unsigned              parenCount;
+    unsigned           parenCount;
     RegExpFlag         flags;
     size_t             activeUseCount;   /* See comment above. */
     uint64_t           gcNumberWhenUsed; /* See comment above. */
 
     bool compile(JSContext *cx, JSAtom *source);
 
-    RegExpShared(JSRuntime *rt, RegExpFlag flags);
-    JS_DECLARE_ALLOCATION_FRIENDS_FOR_PRIVATE_CONSTRUCTOR;
-
   public:
+    RegExpShared(JSRuntime *rt, RegExpFlag flags);
 
     /* Called when a RegExpShared is installed into a RegExpObject. */
     inline void prepareForUse(JSContext *cx);
@@ -250,8 +258,20 @@ class RegExpCompartment
         }
     };
 
+    /*
+     * Cache to reuse RegExpShareds with the same source/flags/etc. The cache
+     * is entirely cleared on each GC.
+     */
     typedef HashMap<Key, RegExpShared *, Key, RuntimeAllocPolicy> Map;
     Map map_;
+
+    /*
+     * The set of all RegExpShareds in the compartment. On every GC, every
+     * RegExpShared that is not actively being used is deleted and removed from
+     * the set.
+     */
+    typedef HashSet<RegExpShared *, DefaultHasher<RegExpShared*>, RuntimeAllocPolicy> PendingSet;
+    PendingSet inUse_;
 
     bool get(JSContext *cx, JSAtom *key, JSAtom *source, RegExpFlag flags, Type type,
              RegExpGuard *g);
@@ -289,6 +309,8 @@ class RegExpCompartment
      * mapping property, 'hackedSource' is unambiguous.
      */
     bool lookupHack(JSAtom *source, RegExpFlag flags, JSContext *cx, RegExpGuard *g);
+
+    size_t sizeOfExcludingThis(JSMallocSizeOfFun mallocSizeOf);
 };
 
 class RegExpObject : public JSObject
@@ -312,14 +334,14 @@ class RegExpObject : public JSObject
      */
     static RegExpObject *
     create(JSContext *cx, RegExpStatics *res, const jschar *chars, size_t length,
-           RegExpFlag flags, TokenStream *ts);
+           RegExpFlag flags, frontend::TokenStream *ts);
 
     static RegExpObject *
     createNoStatics(JSContext *cx, const jschar *chars, size_t length, RegExpFlag flags,
-                    TokenStream *ts);
+                    frontend::TokenStream *ts);
 
     static RegExpObject *
-    createNoStatics(JSContext *cx, HandleAtom atom, RegExpFlag flags, TokenStream *ts);
+    createNoStatics(JSContext *cx, HandleAtom atom, RegExpFlag flags, frontend::TokenStream *ts);
 
     /*
      * Run the regular expression over the input text.
@@ -341,7 +363,6 @@ class RegExpObject : public JSObject
     const Value &getLastIndex() const {
         return getSlot(LAST_INDEX_SLOT);
     }
-    inline void setLastIndex(const Value &v);
     inline void setLastIndex(double d);
     inline void zeroLastIndex();
 

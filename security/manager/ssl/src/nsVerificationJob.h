@@ -41,8 +41,8 @@ public:
 
 private:
   nsresult mRV;
-  PRUint32 mVerified;
-  PRUint32 mCount;
+  uint32_t mVerified;
+  uint32_t mCount;
   PRUnichar **mUsages;
 
 friend class nsCertVerificationJob;
@@ -51,14 +51,14 @@ friend class nsCertVerificationJob;
 class nsSMimeVerificationJob : public nsBaseVerificationJob
 {
 public:
-  nsSMimeVerificationJob() { digest_data = nsnull; digest_len = 0; }
+  nsSMimeVerificationJob() { digest_data = nullptr; digest_len = 0; }
   ~nsSMimeVerificationJob() { delete [] digest_data; }
 
   nsCOMPtr<nsICMSMessage> mMessage;
   nsCOMPtr<nsISMimeVerificationListener> mListener;
 
   unsigned char *digest_data;
-  PRUint32 digest_len;
+  uint32_t digest_len;
 
   void Run();
 };

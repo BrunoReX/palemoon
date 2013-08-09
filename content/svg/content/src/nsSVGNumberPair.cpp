@@ -4,12 +4,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsSVGNumberPair.h"
-#include "nsSVGUtils.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "prdtoa.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 #include "nsMathUtils.h"
 #include "nsSMILValue.h"
+#include "SVGContentUtils.h"
 #include "SVGNumberPairSMILType.h"
 
 using namespace mozilla;
@@ -40,7 +40,7 @@ ParseNumberOptionalNumber(const nsAString& aValue,
     return NS_ERROR_DOM_SYNTAX_ERR;
   }
 
-  PRUint32 i;
+  uint32_t i;
   for (i = 0; i < 2 && tokenizer.hasMoreTokens(); ++i) {
     NS_ConvertUTF16toUTF8 utf8Token(tokenizer.nextToken());
     const char *token = utf8Token.get();
@@ -91,7 +91,7 @@ nsSVGNumberPair::SetBaseValueString(const nsAString &aValueAsString,
   }
 
   // We don't need to call Will/DidChange* here - we're only called by
-  // nsSVGElement::ParseAttribute under nsGenericElement::SetAttr,
+  // nsSVGElement::ParseAttribute under Element::SetAttr,
   // which takes care of notifying.
   return NS_OK;
 }
@@ -111,7 +111,7 @@ void
 nsSVGNumberPair::SetBaseValue(float aValue, PairIndex aPairIndex,
                               nsSVGElement *aSVGElement)
 {
-  PRUint32 index = (aPairIndex == eFirst ? 0 : 1);
+  uint32_t index = (aPairIndex == eFirst ? 0 : 1);
   if (mIsBaseSet && mBaseVal[index] == aValue) {
     return;
   }

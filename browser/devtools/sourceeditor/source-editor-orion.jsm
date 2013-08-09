@@ -131,7 +131,16 @@ const DEFAULT_KEYBINDINGS = [
   },
 ];
 
-var EXPORTED_SYMBOLS = ["SourceEditor"];
+if (Services.appinfo.OS == "WINNT" ||
+    Services.appinfo.OS == "Linux") {
+  DEFAULT_KEYBINDINGS.push({
+    action: "redo",
+    code: Ci.nsIDOMKeyEvent.DOM_VK_Y,
+    accel: true,
+  });
+}
+
+this.EXPORTED_SYMBOLS = ["SourceEditor"];
 
 /**
  * The SourceEditor object constructor. The SourceEditor component allows you to
@@ -142,7 +151,7 @@ var EXPORTED_SYMBOLS = ["SourceEditor"];
  *
  * @constructor
  */
-function SourceEditor() {
+this.SourceEditor = function SourceEditor() {
   // Update the SourceEditor defaults from user preferences.
 
   SourceEditor.DEFAULTS.tabSize =
@@ -754,7 +763,8 @@ SourceEditor.prototype = {
     }
 
     clipboardHelper.copyStringToClipboard(text,
-                                          Ci.nsIClipboard.kSelectionClipboard);
+                                          Ci.nsIClipboard.kSelectionClipboard,
+                                          this.parentElement.ownerDocument);
   },
 
   /**
@@ -1221,6 +1231,7 @@ SourceEditor.prototype = {
     // If the caret is not at the closing bracket "}", find the index of the
     // opening bracket "{" for the current code block.
     if (matchingIndex == -1 || matchingIndex > caretOffset) {
+      matchingIndex = -1;
       let text = this.getText();
       let closingOffset = text.indexOf("}", caretOffset);
       while (closingOffset > -1) {
@@ -1231,18 +1242,34 @@ SourceEditor.prototype = {
         }
         closingOffset = text.indexOf("}", closingOffset + 1);
       }
+      // Moving to the previous code block starting bracket if caret not inside
+      // any code block.
+      if (matchingIndex == -1) {
+        let lastClosingOffset = text.lastIndexOf("}", caretOffset);
+        while (lastClosingOffset > -1) {
+          let closingMatchingIndex =
+            this._getMatchingBracketIndex(lastClosingOffset);
+          if (closingMatchingIndex < caretOffset &&
+              closingMatchingIndex != -1) {
+            matchingIndex = closingMatchingIndex;
+            break;
+          }
+          lastClosingOffset = text.lastIndexOf("}", lastClosingOffset - 1);
+        }
+      }
     }
 
     if (matchingIndex > -1) {
-      this.setCaretOffset(matchingIndex);
+      this.setCaretOffset(matchingIndex + 1);
     }
 
     return true;
   },
 
   /**
-   * Moves the cursor to the matching closing bracket if at corresponding opening
-   * bracket, otherwise move to the closing bracket for the current block of code.
+   * Moves the cursor to the matching closing bracket if at corresponding
+   * opening bracket, otherwise move to the closing bracket for the current
+   * block of code.
    *
    * @private
    */
@@ -1261,6 +1288,7 @@ SourceEditor.prototype = {
     // If the caret is not at the opening bracket "{", find the index of the
     // closing bracket "}" for the current code block.
     if (matchingIndex == -1 || matchingIndex < caretOffset) {
+      matchingIndex = -1;
       let text = this.getText();
       let openingOffset = text.lastIndexOf("{", caretOffset);
       while (openingOffset > -1) {
@@ -1270,6 +1298,20 @@ SourceEditor.prototype = {
           break;
         }
         openingOffset = text.lastIndexOf("{", openingOffset - 1);
+      }
+      // Moving to the next code block ending bracket if caret not inside
+      // any code block.
+      if (matchingIndex == -1) {
+        let nextOpeningIndex = text.indexOf("{", caretOffset + 1);
+        while (nextOpeningIndex > -1) {
+          let openingMatchingIndex =
+            this._getMatchingBracketIndex(nextOpeningIndex);
+          if (openingMatchingIndex > caretOffset) {
+            matchingIndex = openingMatchingIndex;
+            break;
+          }
+          nextOpeningIndex = text.indexOf("{", nextOpeningIndex + 1);
+        }
       }
     }
 
@@ -1966,6 +2008,66 @@ SourceEditor.prototype = {
     }, this);
 
     return breakpoints;
+  },
+
+  /**
+   * Convert the given rectangle from one coordinate reference to another.
+   *
+   * Known coordinate references:
+   * - "document" - gives the coordinates relative to the entire document.
+   * - "view" - gives the coordinates relative to the editor viewport.
+   *
+   * @param object aRect
+   *         The rectangle to convert. Object properties: x, y, width and height.
+   * @param string aFrom
+   *         The source coordinate reference.
+   * @param string aTo
+   *         The destination coordinate reference.
+   * @return object aRect
+   *         Returns the rectangle with changed coordinates.
+   */
+  convertCoordinates: function SE_convertCoordinates(aRect, aFrom, aTo)
+  {
+    return this._view.convert(aRect, aFrom, aTo);
+  },
+
+  /**
+   * Get the character offset nearest to the given pixel location.
+   *
+   * @param number aX
+   * @param number aY
+   * @return number
+   *         Returns the character offset at the given location.
+   */
+  getOffsetAtLocation: function SE_getOffsetAtLocation(aX, aY)
+  {
+    return this._view.getOffsetAtLocation(aX, aY);
+  },
+
+  /**
+   * Get the pixel location, relative to the document, at the given character
+   * offset.
+   *
+   * @param number aOffset
+   * @return object
+   *         The pixel location relative to the document being edited. Two
+   *         properties are included: x and y.
+   */
+  getLocationAtOffset: function SE_getLocationAtOffset(aOffset)
+  {
+    return this._view.getLocationAtOffset(aOffset);
+  },
+
+  /**
+   * Get the line location for a given character offset.
+   *
+   * @param number aOffset
+   * @return number
+   *         The line location relative to the give character offset.
+   */
+  getLineAtOffset: function SE_getLineAtOffset(aOffset)
+  {
+    return this._model.getLineAtOffset(aOffset);
   },
 
   /**

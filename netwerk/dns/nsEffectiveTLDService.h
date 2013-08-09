@@ -8,20 +8,25 @@
 #include "nsTHashtable.h"
 #include "nsString.h"
 #include "nsCOMPtr.h"
+#include "mozilla/Attributes.h"
 
 class nsIIDNService;
+class nsIMemoryReporter;
+
+#define ETLD_ENTRY_N_INDEX_BITS 30
 
 // struct for static data generated from effective_tld_names.dat
 struct ETLDEntry {
-  const char* domain;
-  bool exception;
-  bool wild;
+  uint32_t strtab_index : ETLD_ENTRY_N_INDEX_BITS;
+  uint32_t exception : 1;
+  uint32_t wild : 1;
 };
 
 
 // hash entry class
 class nsDomainEntry : public PLDHashEntryHdr
 {
+  friend class nsEffectiveTLDService;
 public:
   // Hash methods
   typedef const char* KeyType;
@@ -44,12 +49,12 @@ public:
 
   KeyType GetKey() const
   {
-    return mData->domain;
+    return GetEffectiveTLDName(mData->strtab_index);
   }
 
   bool KeyEquals(KeyTypePointer aKey) const
   {
-    return !strcmp(mData->domain, aKey);
+    return !strcmp(GetKey(), aKey);
   }
 
   static KeyTypePointer KeyToPointer(KeyType aKey)
@@ -60,8 +65,8 @@ public:
   static PLDHashNumber HashKey(KeyTypePointer aKey)
   {
     // PL_DHashStringKey doesn't use the table parameter, so we can safely
-    // pass nsnull
-    return PL_DHashStringKey(nsnull, aKey);
+    // pass nullptr
+    return PL_DHashStringKey(nullptr, aKey);
   }
 
   enum { ALLOW_MEMMOVE = true };
@@ -72,11 +77,31 @@ public:
   bool IsException() { return mData->exception; }
   bool IsWild() { return mData->wild; }
 
+  static const char *GetEffectiveTLDName(size_t idx)
+  {
+    return strings.strtab + idx;
+  }
+
 private:
   const ETLDEntry* mData;
+#define ETLD_STR_NUM_1(line) str##line
+#define ETLD_STR_NUM(line) ETLD_STR_NUM_1(line)
+  struct etld_string_list {
+#define ETLD_ENTRY(name, ex, wild) char ETLD_STR_NUM(__LINE__)[sizeof(name)];
+#include "etld_data.inc"
+#undef ETLD_ENTRY
+  };
+  static const union etld_strings {
+    struct etld_string_list list;
+    char strtab[1];
+  } strings;
+  static const ETLDEntry entries[];
+  void FuncForStaticAsserts(void);
+#undef ETLD_STR_NUM
+#undef ETLD_STR_NUM1
 };
 
-class nsEffectiveTLDService : public nsIEffectiveTLDService
+class nsEffectiveTLDService MOZ_FINAL : public nsIEffectiveTLDService
 {
 public:
   NS_DECL_ISUPPORTS
@@ -85,11 +110,14 @@ public:
   nsEffectiveTLDService() { }
   nsresult Init();
 
-private:
-  nsresult GetBaseDomainInternal(nsCString &aHostname, PRUint32 aAdditionalParts, nsACString &aBaseDomain);
-  nsresult NormalizeHostname(nsCString &aHostname);
-  ~nsEffectiveTLDService() { }
+  size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf);
 
+private:
+  nsresult GetBaseDomainInternal(nsCString &aHostname, uint32_t aAdditionalParts, nsACString &aBaseDomain);
+  nsresult NormalizeHostname(nsCString &aHostname);
+  ~nsEffectiveTLDService();
+
+  nsIMemoryReporter*          mReporter;
   nsTHashtable<nsDomainEntry> mHash;
   nsCOMPtr<nsIIDNService>     mIDNService;
 };

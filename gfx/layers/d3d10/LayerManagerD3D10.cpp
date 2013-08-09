@@ -20,12 +20,17 @@
 #include "ReadbackLayerD3D10.h"
 #include "ImageLayerD3D10.h"
 #include "mozilla/layers/PLayerChild.h"
+#include "mozilla/WidgetUtils.h"
 
 #include "../d3d9/Nv3DVUtils.h"
 
 #include "gfxCrashReporterUtils.h"
+#ifdef MOZ_METRO
+#include "DXGI1_2.h"
+#endif
 
 using namespace std;
+using namespace mozilla::dom;
 using namespace mozilla::gfx;
 
 namespace mozilla {
@@ -199,59 +204,100 @@ LayerManagerD3D10::Initialize(bool force)
     mInputLayout = attachments->mInputLayout;
   }
 
-  if (HasShadowManager()) {
+  if (ShadowLayerForwarder::HasShadowManager()) {
     reporter.SetSuccessful();
     return true;
   }
 
   nsRefPtr<IDXGIDevice> dxgiDevice;
   nsRefPtr<IDXGIAdapter> dxgiAdapter;
-  nsRefPtr<IDXGIFactory> dxgiFactory;
 
   mDevice->QueryInterface(dxgiDevice.StartAssignment());
   dxgiDevice->GetAdapter(getter_AddRefs(dxgiAdapter));
+  
+#ifdef MOZ_METRO
+  if (gfxWindowsPlatform::IsRunningInWindows8Metro()) {
+    nsRefPtr<IDXGIFactory2> dxgiFactory;
+    dxgiAdapter->GetParent(IID_PPV_ARGS(dxgiFactory.StartAssignment()));
 
-  dxgiAdapter->GetParent(IID_PPV_ARGS(dxgiFactory.StartAssignment()));
+    nsIntRect rect;
+    mWidget->GetClientBounds(rect);
 
-  DXGI_SWAP_CHAIN_DESC swapDesc;
-  ::ZeroMemory(&swapDesc, sizeof(swapDesc));
-
-  swapDesc.BufferDesc.Width = 0;
-  swapDesc.BufferDesc.Height = 0;
-  swapDesc.BufferDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-  swapDesc.BufferDesc.RefreshRate.Numerator = 60;
-  swapDesc.BufferDesc.RefreshRate.Denominator = 1;
-  swapDesc.SampleDesc.Count = 1;
-  swapDesc.SampleDesc.Quality = 0;
-  swapDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-  swapDesc.BufferCount = 1;
-  // We don't really need this flag, however it seems on some NVidia hardware
-  // smaller area windows do not present properly without this flag. This flag
-  // should have no negative consequences by itself. See bug 613790. This flag
-  // is broken on optimus devices. As a temporary solution we don't set it
-  // there, the only way of reliably detecting we're on optimus is looking for
-  // the DLL. See Bug 623807.
-  if (gfxWindowsPlatform::IsOptimus()) {
+    DXGI_SWAP_CHAIN_DESC1 swapDesc = { 0 };
+    // Automatically detect the width and the height from the winrt CoreWindow
+    swapDesc.Width = rect.width;
+    swapDesc.Height = rect.height;
+    // This is the most common swapchain format
+    swapDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    swapDesc.Stereo = false; 
+    // Don't use multi-sampling
+    swapDesc.SampleDesc.Count = 1;
+    swapDesc.SampleDesc.Quality = 0;
+    swapDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    // Use double buffering to enable flip
+    swapDesc.BufferCount = 2;
+    swapDesc.Scaling = DXGI_SCALING_STRETCH;
+    // All Metro style apps must use this SwapEffect
+    swapDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
     swapDesc.Flags = 0;
-  } else {
-    swapDesc.Flags = DXGI_SWAP_CHAIN_FLAG_GDI_COMPATIBLE;
+
+    /**
+     * Create a swap chain, this swap chain will contain the backbuffer for
+     * the window we draw to. The front buffer is the full screen front
+     * buffer.
+    */
+    nsRefPtr<IDXGISwapChain1> swapChain1;
+    hr = dxgiFactory->CreateSwapChainForCoreWindow(
+           dxgiDevice, (IUnknown *)mWidget->GetNativeData(NS_NATIVE_ICOREWINDOW),
+           &swapDesc, nullptr, getter_AddRefs(swapChain1));
+    if (FAILED(hr)) {
+        return false;
+    }
+    mSwapChain = swapChain1;
+  } else
+#endif
+  {
+    nsRefPtr<IDXGIFactory> dxgiFactory;
+    dxgiAdapter->GetParent(IID_PPV_ARGS(dxgiFactory.StartAssignment()));
+
+    DXGI_SWAP_CHAIN_DESC swapDesc;
+    ::ZeroMemory(&swapDesc, sizeof(swapDesc));
+    swapDesc.BufferDesc.Width = 0;
+    swapDesc.BufferDesc.Height = 0;
+    swapDesc.BufferDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    swapDesc.BufferDesc.RefreshRate.Numerator = 60;
+    swapDesc.BufferDesc.RefreshRate.Denominator = 1;
+    swapDesc.SampleDesc.Count = 1;
+    swapDesc.SampleDesc.Quality = 0;
+    swapDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    swapDesc.BufferCount = 1;
+    swapDesc.OutputWindow = (HWND)mWidget->GetNativeData(NS_NATIVE_WINDOW);
+    swapDesc.Windowed = TRUE;
+    // We don't really need this flag, however it seems on some NVidia hardware
+    // smaller area windows do not present properly without this flag. This flag
+    // should have no negative consequences by itself. See bug 613790. This flag
+    // is broken on optimus devices. As a temporary solution we don't set it
+    // there, the only way of reliably detecting we're on optimus is looking for
+    // the DLL. See Bug 623807.
+    if (gfxWindowsPlatform::IsOptimus()) {
+      swapDesc.Flags = 0;
+    } else {
+      swapDesc.Flags = DXGI_SWAP_CHAIN_FLAG_GDI_COMPATIBLE;
+    }
+
+    /**
+     * Create a swap chain, this swap chain will contain the backbuffer for
+     * the window we draw to. The front buffer is the full screen front
+     * buffer.
+    */
+    hr = dxgiFactory->CreateSwapChain(dxgiDevice, &swapDesc, getter_AddRefs(mSwapChain));
+    if (FAILED(hr)) {
+     return false;
+    }
+
+    // We need this because we don't want DXGI to respond to Alt+Enter.
+    dxgiFactory->MakeWindowAssociation(swapDesc.OutputWindow, DXGI_MWA_NO_WINDOW_CHANGES);
   }
-  swapDesc.OutputWindow = (HWND)mWidget->GetNativeData(NS_NATIVE_WINDOW);
-  swapDesc.Windowed = TRUE;
-
-  /**
-   * Create a swap chain, this swap chain will contain the backbuffer for
-   * the window we draw to. The front buffer is the full screen front
-   * buffer.
-   */
-  hr = dxgiFactory->CreateSwapChain(dxgiDevice, &swapDesc, getter_AddRefs(mSwapChain));
-
-  if (FAILED(hr)) {
-    return false;
-  }
-
-  // We need this because we don't want DXGI to respond to Alt+Enter.
-  dxgiFactory->MakeWindowAssociation(swapDesc.OutputWindow, DXGI_MWA_NO_WINDOW_CHANGES);
 
   reporter.SetSuccessful();
   return true;
@@ -264,7 +310,7 @@ LayerManagerD3D10::Destroy()
     if (mRoot) {
       static_cast<LayerD3D10*>(mRoot->ImplData())->LayerManagerDestroyed();
     }
-    mRootForShadowTree = nsnull;
+    mRootForShadowTree = nullptr;
     // XXX need to be careful here about surface destruction
     // racing with share-to-chrome message
   }
@@ -280,6 +326,8 @@ LayerManagerD3D10::SetRoot(Layer *aRoot)
 void
 LayerManagerD3D10::BeginTransaction()
 {
+  mInTransaction = true;
+
 #ifdef MOZ_LAYERS_HAVE_LOG
   MOZ_LAYERS_LOG(("[----- BeginTransaction"));
   Log();
@@ -289,16 +337,19 @@ LayerManagerD3D10::BeginTransaction()
 void
 LayerManagerD3D10::BeginTransactionWithTarget(gfxContext* aTarget)
 {
+  mInTransaction = true;
   mTarget = aTarget;
 }
 
 bool
-LayerManagerD3D10::EndEmptyTransaction()
+LayerManagerD3D10::EndEmptyTransaction(EndTransactionFlags aFlags)
 {
+  mInTransaction = false;
+
   if (!mRoot)
     return false;
 
-  EndTransaction(nsnull, nsnull);
+  EndTransaction(nullptr, nullptr, aFlags);
   return true;
 }
 
@@ -307,9 +358,17 @@ LayerManagerD3D10::EndTransaction(DrawThebesLayerCallback aCallback,
                                   void* aCallbackData,
                                   EndTransactionFlags aFlags)
 {
+  mInTransaction = false;
+
   if (mRoot && !(aFlags & END_NO_IMMEDIATE_REDRAW)) {
     mCurrentCallbackInfo.Callback = aCallback;
     mCurrentCallbackInfo.CallbackData = aCallbackData;
+
+    if (aFlags & END_NO_COMPOSITE) {
+      // Apply pending tree updates before recomputing effective
+      // properties.
+      mRoot->ApplyPendingUpdatesToSubtree();
+    }
 
     // The results of our drawing always go directly into a pixel buffer,
     // so we don't need to pass any global transform here.
@@ -320,9 +379,9 @@ LayerManagerD3D10::EndTransaction(DrawThebesLayerCallback aCallback,
     Log();
 #endif
 
-    Render();
-    mCurrentCallbackInfo.Callback = nsnull;
-    mCurrentCallbackInfo.CallbackData = nsnull;
+    Render(aFlags);
+    mCurrentCallbackInfo.Callback = nullptr;
+    mCurrentCallbackInfo.CallbackData = nullptr;
   }
 
 #ifdef MOZ_LAYERS_HAVE_LOG
@@ -330,7 +389,7 @@ LayerManagerD3D10::EndTransaction(DrawThebesLayerCallback aCallback,
   MOZ_LAYERS_LOG(("]----- EndTransaction"));
 #endif
 
-  mTarget = nsnull;
+  mTarget = nullptr;
 }
 
 already_AddRefed<ThebesLayer>
@@ -444,7 +503,8 @@ LayerManagerD3D10::CreateDrawTarget(const IntSize &aSize,
                                     SurfaceFormat aFormat)
 {
   if ((aFormat != FORMAT_B8G8R8A8 &&
-       aFormat != FORMAT_B8G8R8X8)) {
+       aFormat != FORMAT_B8G8R8X8) ||
+       gfxPlatform::GetPlatform()->GetPreferredCanvasBackend() != BACKEND_DIRECT2D) {
     return LayerManager::CreateDrawTarget(aSize, aFormat);
   }
 
@@ -589,9 +649,13 @@ LayerManagerD3D10::VerifyBufferSize()
       return;
     }
 
-    mRTView = nsnull;
-    if (gfxWindowsPlatform::IsOptimus()) {
+    mRTView = nullptr;
+    if (gfxWindowsPlatform::IsOptimus()) { 
       mSwapChain->ResizeBuffers(1, rect.width, rect.height,
+                                DXGI_FORMAT_B8G8R8A8_UNORM,
+                                0);
+    } else if (gfxWindowsPlatform::IsRunningInWindows8Metro()) {
+      mSwapChain->ResizeBuffers(2, rect.width, rect.height,
                                 DXGI_FORMAT_B8G8R8A8_UNORM,
                                 0);
     } else {
@@ -617,7 +681,7 @@ LayerManagerD3D10::VerifyBufferSize()
     desc.MiscFlags = D3D10_RESOURCE_MISC_SHARED
                      // FIXME/bug 662109: synchronize using KeyedMutex
                      /*D3D10_RESOURCE_MISC_SHARED_KEYEDMUTEX*/;
-    HRESULT hr = device()->CreateTexture2D(&desc, nsnull, getter_AddRefs(mBackBuffer));
+    HRESULT hr = device()->CreateTexture2D(&desc, nullptr, getter_AddRefs(mBackBuffer));
     if (FAILED(hr)) {
       ReportFailure(NS_LITERAL_CSTRING("LayerManagerD3D10::VerifyBufferSize(): Failed to create shared texture"),
                     hr);
@@ -625,7 +689,7 @@ LayerManagerD3D10::VerifyBufferSize()
     }
 
     // XXX resize texture?
-    mRTView = nsnull;
+    mRTView = nullptr;
   }
 }
 
@@ -656,9 +720,13 @@ LayerManagerD3D10::EnsureReadbackManager()
 }
 
 void
-LayerManagerD3D10::Render()
+LayerManagerD3D10::Render(EndTransactionFlags aFlags)
 {
   static_cast<LayerD3D10*>(mRoot->ImplData())->Validate();
+
+  if (aFlags & END_NO_COMPOSITE) {
+    return;
+  }
 
   SetupPipeline();
 
@@ -687,7 +755,10 @@ LayerManagerD3D10::Render()
   if (mTarget) {
     PaintToTarget();
   } else if (mBackBuffer) {
-    ShadowLayerForwarder::BeginTransaction();
+    ShadowLayerForwarder::BeginTransaction(mWidget->GetNaturalBounds(),
+                                           ROTATION_0,
+                                           mWidget->GetNaturalBounds(),
+                                           eScreenOrientation_LandscapePrimary);
     
     nsIntRect contentRect = nsIntRect(0, 0, rect.width, rect.height);
     if (!mRootForShadowTree) {
@@ -703,7 +774,7 @@ LayerManagerD3D10::Render()
         windowLayer = new WindowLayer(this);
         windowLayer->SetShadow(ConstructShadowFor(windowLayer));
         CreatedThebesLayer(windowLayer);
-        mRootForShadowTree->InsertAfter(windowLayer, nsnull);
+        mRootForShadowTree->InsertAfter(windowLayer, nullptr);
         ShadowLayerForwarder::InsertAfter(mRootForShadowTree, windowLayer);
     }
 
@@ -806,7 +877,7 @@ LayerManagerD3D10::ReportFailure(const nsACString &aMsg, HRESULT aCode)
   nsCString msg;
   msg.Append(aMsg);
   msg.AppendLiteral(" Error code: ");
-  msg.AppendInt(PRUint32(aCode));
+  msg.AppendInt(uint32_t(aCode));
   NS_WARNING(msg.BeginReading());
 
   gfx::LogFailure(msg);
@@ -818,7 +889,7 @@ LayerD3D10::LayerD3D10(LayerManagerD3D10 *aManager)
 }
 
 ID3D10EffectTechnique*
-LayerD3D10::SelectShader(PRUint8 aFlags)
+LayerD3D10::SelectShader(uint8_t aFlags)
 {
   switch (aFlags) {
   case (SHADER_RGBA | SHADER_NON_PREMUL | SHADER_LINEAR | SHADER_MASK):
@@ -861,11 +932,11 @@ LayerD3D10::SelectShader(PRUint8 aFlags)
     return effect()->GetTechniqueByName("RenderYCbCrLayer");
   default:
     NS_ERROR("Invalid shader.");
-    return nsnull;
+    return nullptr;
   }
 }
 
-PRUint8
+uint8_t
 LayerD3D10::LoadMaskTexture()
 {
   if (Layer* maskLayer = GetLayer()->GetMaskLayer()) {
@@ -899,7 +970,7 @@ LayerD3D10::LoadMaskTexture()
 }
 
 WindowLayer::WindowLayer(LayerManagerD3D10* aManager)
-  : ThebesLayer(aManager, nsnull)
+  : ThebesLayer(aManager, nullptr)
 {
  }
 
@@ -909,13 +980,13 @@ WindowLayer::~WindowLayer()
 }
 
 DummyRoot::DummyRoot(LayerManagerD3D10* aManager)
-  : ContainerLayer(aManager, nsnull)
+  : ContainerLayer(aManager, nullptr)
 {
 }
 
 DummyRoot::~DummyRoot()
 {
-  RemoveChild(nsnull);
+  RemoveChild(nullptr);
   PLayerChild::Send__delete__(GetShadow());
 }
 
@@ -932,6 +1003,11 @@ DummyRoot::RemoveChild(Layer* aNull)
 {
   NS_ABORT_IF_FALSE(!aNull, "Unused argument should be null");
   NS_IF_RELEASE(mFirstChild);
+}
+
+void
+DummyRoot::RepositionChild(Layer* aUnused1, Layer* aUnused2)
+{
 }
 
 

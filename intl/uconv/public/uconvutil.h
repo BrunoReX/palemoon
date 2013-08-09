@@ -9,7 +9,7 @@
 
 
 /*=====================================*/
-#define PACK(h,l)   (int16)(( (h) << 8) | (l))
+#define PACK(h,l)   (int16_t)(( (h) << 8) | (l))
 
 #if defined(IS_LITTLE_ENDIAN)
 #define ShiftInCell(sub,len,min,max)  \
@@ -59,7 +59,7 @@ typedef struct  {
 } uShiftInCell;
 
 typedef struct  {
-        PRInt16         numOfItem;
+        int16_t         numOfItem;
         uShiftInCell    shiftcell[1];
 } uShiftInTableMutable;
 
@@ -75,7 +75,7 @@ typedef struct  {
 } uShiftOutCell;
 
 typedef struct  {
-        PRInt16         numOfItem;
+        int16_t         numOfItem;
         uShiftOutCell   shiftcell[1];
 } uShiftOutTableMutable;
 
@@ -91,8 +91,8 @@ typedef struct {
 
 /*=====================================*/
 
-typedef PRUint16* uMappingTableMutable; 
-typedef const PRUint16 uMappingTable; 
+typedef uint16_t* uMappingTableMutable; 
+typedef const uint16_t uMappingTable; 
  
 #endif
 

@@ -23,6 +23,7 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsNetUtil.h"
 #include "nsThreadUtils.h"
+#include "mozilla/Attributes.h"
 
 #ifdef XP_WIN
 #include <windows.h>
@@ -158,7 +159,7 @@ public:
   }
 };
 
-class EventListener : public nsIDOMEventListener
+class EventListener MOZ_FINAL : public nsIDOMEventListener
 {
   nsCOMPtr<nsIAppShell> mAppShell;
 
@@ -246,8 +247,8 @@ public:
         passed("StableStateRunnable state correct (false)");
       }
 
-      PRInt32 layout = 0x409; // US
-      PRInt32 keyCode = 0x41; // VK_A
+      int32_t layout = 0x409; // US
+      int32_t keyCode = 0x41; // VK_A
       NS_NAMED_LITERAL_STRING(a, "a");
 
       if (NS_FAILED(utils->SendNativeKeyEvent(layout, keyCode, 0, a, a))) {
@@ -314,7 +315,7 @@ GetAppShell()
   NS_NAMED_LITERAL_CSTRING(contractSuffix, ";1");
 
   for (size_t index = 0; index < ArrayLength(platforms); index++) {
-    nsCAutoString contractID(contractPrefix);
+    nsAutoCString contractID(contractPrefix);
     contractID.AppendASCII(platforms[index]);
     contractID.Append(contractSuffix);
 
@@ -398,12 +399,12 @@ Test4Internal(nsIAppShell* aAppShell)
   }
 
   nsCOMPtr<nsIURI> uri;
-  if (NS_FAILED(NS_NewURI(getter_AddRefs(uri), "about:blank", NULL))) {
+  if (NS_FAILED(NS_NewURI(getter_AddRefs(uri), "about:", NULL))) {
     fail("Failed to create new uri");
     return false;
   }
 
-  PRUint32 flags = nsIWebBrowserChrome::CHROME_DEFAULT;
+  uint32_t flags = nsIWebBrowserChrome::CHROME_DEFAULT;
 
   nsCOMPtr<nsIXULWindow> xulWindow;
   if (NS_FAILED(appService->CreateTopLevelWindow(NULL, uri, flags, 100, 100,

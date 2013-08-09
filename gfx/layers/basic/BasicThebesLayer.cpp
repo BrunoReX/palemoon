@@ -4,11 +4,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BasicThebesLayer.h"
-
+#include "gfxUtils.h"
 #include "nsIWidget.h"
 #include "RenderTrace.h"
 #include "sampler.h"
-#include "gfxUtils.h"
 
 #include "prprf.h"
 
@@ -27,9 +26,7 @@ BasicThebesLayer::CreateBuffer(Buffer::ContentType aType, const nsIntSize& aSize
       referenceSurface = defaultTarget->CurrentSurface();
     } else {
       nsIWidget* widget = BasicManager()->GetRetainerWidget();
-      if (widget) {
-        referenceSurface = widget->GetThebesSurface();
-      } else {
+      if (!widget || !(referenceSurface = widget->GetThebesSurface())) {
         referenceSurface = BasicManager()->GetTarget()->CurrentSurface();
       }
     }
@@ -60,7 +57,7 @@ SetAntialiasingFlags(Layer* aLayer, gfxContext* aTarget)
     }
 
     const nsIntRect& bounds = aLayer->GetVisibleRegion().GetBounds();
-    Rect transformedBounds = dt->GetTransform().TransformBounds(Rect(Float(bounds.x), Float(bounds.y),
+    gfx::Rect transformedBounds = dt->GetTransform().TransformBounds(gfx::Rect(Float(bounds.x), Float(bounds.y),
                                                                      Float(bounds.width), Float(bounds.height)));
     transformedBounds.RoundOut();
     IntRect intTransformedBounds;
@@ -106,10 +103,7 @@ BasicThebesLayer::PaintThebes(gfxContext* aContext,
                           gfxASurface::CONTENT_COLOR_ALPHA;
   float opacity = GetEffectiveOpacity();
   
-  if (!BasicManager()->IsRetained() ||
-      (!canUseOpaqueSurface &&
-       (mContentFlags & CONTENT_COMPONENT_ALPHA) &&
-       !MustRetainContent())) {
+  if (!BasicManager()->IsRetained()) {
     NS_ASSERTION(readbackUpdates.IsEmpty(), "Can't do readback for non-retained layer");
 
     mValidRegion.SetEmpty();
@@ -160,12 +154,15 @@ BasicThebesLayer::PaintThebes(gfxContext* aContext,
   }
 
   {
-    PRUint32 flags = 0;
-#ifndef MOZ_GFX_OPTIMIZE_MOBILE
-    gfxMatrix transform;
-    if (!GetEffectiveTransform().CanDraw2D(&transform) ||
-        transform.HasNonIntegerTranslation()) {
+    uint32_t flags = 0;
+#ifndef MOZ_WIDGET_ANDROID
+    if (BasicManager()->CompositorMightResample()) {
       flags |= ThebesLayerBuffer::PAINT_WILL_RESAMPLE;
+    }
+    if (!(flags & ThebesLayerBuffer::PAINT_WILL_RESAMPLE)) {
+      if (MayResample()) {
+        flags |= ThebesLayerBuffer::PAINT_WILL_RESAMPLE;
+      }
     }
 #endif
     if (mDrawAtomically) {
@@ -213,7 +210,7 @@ BasicThebesLayer::PaintThebes(gfxContext* aContext,
     mBuffer.DrawTo(this, aContext, opacity, aMaskLayer);
   }
 
-  for (PRUint32 i = 0; i < readbackUpdates.Length(); ++i) {
+  for (uint32_t i = 0; i < readbackUpdates.Length(); ++i) {
     ReadbackProcessor::Update& update = readbackUpdates[i];
     nsIntPoint offset = update.mLayer->GetBackgroundLayerOffset();
     nsRefPtr<gfxContext> ctx =
@@ -253,16 +250,18 @@ struct NS_STACK_CLASS AutoBufferTracker {
     mLayer->mBufferTracker = this;
     if (IsSurfaceDescriptorValid(mLayer->mBackBuffer)) {
       mInitialBuffer.construct(OPEN_READ_WRITE, mLayer->mBackBuffer);
-      mLayer->mBuffer.MapBuffer(mInitialBuffer.ref().Get());
+      mLayer->mBuffer.ProvideBuffer(&mInitialBuffer.ref());
     }
   }
 
   ~AutoBufferTracker() {
-    mLayer->mBufferTracker = nsnull;
-    mLayer->mBuffer.UnmapBuffer();
+    mLayer->mBufferTracker = nullptr;
+    mLayer->mBuffer.RevokeBuffer();
     // mInitialBuffer and mNewBuffer will clean up after themselves if
     // they were constructed.
   }
+
+  gfxASurface* GetInitialBuffer() { return mInitialBuffer.ref().Get(); }
 
   gfxASurface*
   CreatedBuffer(const SurfaceDescriptor& aDescriptor) {
@@ -272,13 +271,24 @@ struct NS_STACK_CLASS AutoBufferTracker {
   }
 
   Maybe<AutoOpenSurface> mInitialBuffer;
-  nsAutoTArray<Maybe<AutoOpenSurface>, 2> mNewBuffers;
+  nsAutoTArray<Maybe<AutoOpenSurface>, 3> mNewBuffers;
   BasicShadowableThebesLayer* mLayer;
 
 private:
   AutoBufferTracker(const AutoBufferTracker&) MOZ_DELETE;
   AutoBufferTracker& operator=(const AutoBufferTracker&) MOZ_DELETE;
 };
+
+BasicShadowableThebesLayer::~BasicShadowableThebesLayer()
+{
+  // Finish any use of mROFrontBuffer since the last ForwardTransaction(),
+  // before the Shadow frees the surface.
+  if (OptionalThebesBuffer::Tnull_t != mROFrontBuffer.type()) {
+    ShadowLayerForwarder::PlatformSyncBeforeUpdate();
+  }
+  DestroyBackBuffer();
+  MOZ_COUNT_DTOR(BasicShadowableThebesLayer);
+}
 
 void
 BasicShadowableThebesLayer::PaintThebes(gfxContext* aContext,
@@ -294,10 +304,10 @@ BasicShadowableThebesLayer::PaintThebes(gfxContext* aContext,
 
   AutoBufferTracker tracker(this);
 
-  BasicThebesLayer::PaintThebes(aContext, nsnull, aCallback, aCallbackData, aReadback);
+  BasicThebesLayer::PaintThebes(aContext, nullptr, aCallback, aCallbackData, aReadback);
   if (aMaskLayer) {
     static_cast<BasicImplData*>(aMaskLayer->ImplData())
-      ->Paint(aContext, nsnull);
+      ->Paint(aContext, nullptr);
   }
 }
 
@@ -318,12 +328,13 @@ BasicShadowableThebesLayer::SetBackBufferAndAttrs(const OptionalThebesBuffer& aB
   mFrontAndBackBufferDiffer = true;
   mROFrontBuffer = aReadOnlyFrontBuffer;
   mFrontUpdatedRegion = aFrontUpdatedRegion;
-  mFrontValidRegion = aValidRegion;
+
   if (OptionalThebesBuffer::Tnull_t == mROFrontBuffer.type()) {
-    // For null readonly front, we have single buffer mode
-    // so we can do sync right now, because it does not create new buffer and
-    // don't do any graphic operations
-    SyncFrontBufferToBackBuffer();
+    // We didn't get back a read-only ref to our old back buffer (the
+    // parent's new front buffer).  If the parent is pushing updates
+    // to a texture it owns, then we probably got back the same buffer
+    // we pushed in the update and all is well.  If not, ...
+    mValidRegion = aValidRegion;
   }
 }
 
@@ -334,28 +345,26 @@ BasicShadowableThebesLayer::SyncFrontBufferToBackBuffer()
     return;
   }
 
-  gfxASurface* backBuffer = mBuffer.GetBuffer();
+  // We temporarily map our back buffer here in order to copy from the
+  // front buffer.  We need a live buffer tracker in order to unmap
+  // that buffer when appropriate.
+  MOZ_ASSERT(mBufferTracker);
+
+  nsRefPtr<gfxASurface> backBuffer = mBuffer.GetBuffer();
   if (!IsSurfaceDescriptorValid(mBackBuffer)) {
     MOZ_ASSERT(!backBuffer);
     MOZ_ASSERT(mROFrontBuffer.type() == OptionalThebesBuffer::TThebesBuffer);
     const ThebesBuffer roFront = mROFrontBuffer.get_ThebesBuffer();
     AutoOpenSurface roFrontBuffer(OPEN_READ_ONLY, roFront.buffer());
-    AllocBackBuffer(roFrontBuffer.ContentType(), roFrontBuffer.Size());
+    backBuffer = CreateBuffer(roFrontBuffer.ContentType(), roFrontBuffer.Size());
   }
   mFrontAndBackBufferDiffer = false;
 
-  Maybe<AutoOpenSurface> autoBackBuffer;
   if (!backBuffer) {
-    autoBackBuffer.construct(OPEN_READ_WRITE, mBackBuffer);
-    backBuffer = autoBackBuffer.ref().Get();
+    backBuffer = mBufferTracker->GetInitialBuffer();
   }
 
   if (OptionalThebesBuffer::Tnull_t == mROFrontBuffer.type()) {
-    // We didn't get back a read-only ref to our old back buffer (the
-    // parent's new front buffer).  If the parent is pushing updates
-    // to a texture it owns, then we probably got back the same buffer
-    // we pushed in the update and all is well.  If not, ...
-    mValidRegion = mFrontValidRegion;
     mBuffer.SetBackingBuffer(backBuffer, mBackBufferRect, mBackBufferRectRotation);
     return;
   }
@@ -422,23 +431,6 @@ BasicShadowableThebesLayer::PaintBuffer(gfxContext* aContext,
                                       mBackBuffer);
 }
 
-void
-BasicShadowableThebesLayer::AllocBackBuffer(Buffer::ContentType aType,
-                                            const nsIntSize& aSize)
-{
-  // This function may *not* open the buffer it allocates.
-  if (!BasicManager()->AllocBuffer(gfxIntSize(aSize.width, aSize.height),
-                                   aType,
-                                   &mBackBuffer)) {
-    enum { buflen = 256 };
-    char buf[buflen];
-    PR_snprintf(buf, buflen,
-                "creating ThebesLayer 'back buffer' failed! width=%d, height=%d, type=%x",
-                aSize.width, aSize.height, int(aType));
-    NS_RUNTIMEABORT(buf);
-  }
-}
-
 already_AddRefed<gfxASurface>
 BasicShadowableThebesLayer::CreateBuffer(Buffer::ContentType aType,
                                          const nsIntSize& aSize)
@@ -457,7 +449,16 @@ BasicShadowableThebesLayer::CreateBuffer(Buffer::ContentType aType,
     mBackBuffer = SurfaceDescriptor();
   }
 
-  AllocBackBuffer(aType, aSize);
+  if (!BasicManager()->AllocBuffer(gfxIntSize(aSize.width, aSize.height),
+                                   aType,
+                                   &mBackBuffer)) {
+    enum { buflen = 256 };
+    char buf[buflen];
+    PR_snprintf(buf, buflen,
+                "creating ThebesLayer 'back buffer' failed! width=%d, height=%d, type=%x",
+                aSize.width, aSize.height, int(aType));
+    NS_RUNTIMEABORT(buf);
+  }
 
   NS_ABORT_IF_FALSE(!mIsNewBuffer,
                     "Bad! Did we create a buffer twice without painting?");
@@ -602,11 +603,11 @@ BasicShadowThebesLayer::PaintThebes(gfxContext* aContext,
   }
 
   AutoOpenSurface autoFrontBuffer(OPEN_READ_ONLY, mFrontBufferDescriptor);
-  mFrontBuffer.MapBuffer(autoFrontBuffer.Get());
+  mFrontBuffer.ProvideBuffer(&autoFrontBuffer);
 
   mFrontBuffer.DrawTo(this, aContext, GetEffectiveOpacity(), aMaskLayer);
 
-  mFrontBuffer.UnmapBuffer();
+  mFrontBuffer.RevokeBuffer();
 }
 
 already_AddRefed<ThebesLayer>

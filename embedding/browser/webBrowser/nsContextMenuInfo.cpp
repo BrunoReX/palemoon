@@ -114,7 +114,7 @@ nsContextMenuInfo::GetAssociatedLink(nsAString& aHRef)
             anchor->GetHref(aHRef);
         }
         else
-          linkContent = nsnull; // Links can't be nested.
+          linkContent = nullptr; // Links can't be nested.
         break;
       }
 
@@ -207,7 +207,7 @@ nsContextMenuInfo::HasBackgroundImage(nsIDOMNode * aDOMNode)
   nsCOMPtr<imgIRequest> request;
   GetBackgroundImageRequest(aDOMNode, getter_AddRefs(request));
   
-  return (request != nsnull);
+  return (request != nullptr);
 }
 
 nsresult
@@ -301,13 +301,12 @@ nsContextMenuInfo::GetBackgroundImageRequestInternal(nsIDOMNode *aDOMNode, imgIR
           NS_NewURI(getter_AddRefs(bgUri), bgStringValue);
           NS_ENSURE_TRUE(bgUri, NS_ERROR_FAILURE);
 
-          nsCOMPtr<imgILoader> il(do_GetService(
-                                    "@mozilla.org/image/loader;1"));
+          nsCOMPtr<imgILoader> il(do_CreateInstance("@mozilla.org/image/loader;1"));
           NS_ENSURE_TRUE(il, NS_ERROR_FAILURE);
 
-          return il->LoadImage(bgUri, nsnull, nsnull, principal, nsnull,
-                               nsnull, nsnull, nsIRequest::LOAD_NORMAL, nsnull,
-                               nsnull, channelPolicy, aRequest);
+          return il->LoadImage(bgUri, nullptr, nullptr, principal, nullptr,
+                               nullptr, nullptr, nsIRequest::LOAD_NORMAL,
+                               nullptr, channelPolicy, aRequest);
         }
       }
 

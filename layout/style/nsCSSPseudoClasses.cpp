@@ -42,7 +42,8 @@ nsCSSPseudoClasses::HasStringArg(Type aType)
   return aType == ePseudoClass_lang ||
          aType == ePseudoClass_mozEmptyExceptChildrenWithLocalname ||
          aType == ePseudoClass_mozSystemMetric ||
-         aType == ePseudoClass_mozLocaleDir;
+         aType == ePseudoClass_mozLocaleDir ||
+         aType == ePseudoClass_dir;
 }
 
 bool
@@ -65,7 +66,7 @@ nsCSSPseudoClasses::PseudoTypeToString(Type aType, nsAString& aString)
 nsCSSPseudoClasses::Type
 nsCSSPseudoClasses::GetPseudoType(nsIAtom* aAtom)
 {
-  for (PRUint32 i = 0; i < ArrayLength(CSSPseudoClasses_info); ++i) {
+  for (uint32_t i = 0; i < ArrayLength(CSSPseudoClasses_info); ++i) {
     if (*CSSPseudoClasses_info[i].mAtom == aAtom) {
       return Type(i);
     }

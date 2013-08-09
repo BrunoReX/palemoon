@@ -8,12 +8,13 @@
 
 #include "nsIDOMWindowUtils.h"
 #include "nsEvent.h"
+#include "mozilla/Attributes.h"
 
 class nsGlobalWindow;
 class nsIPresShell;
 
-class nsDOMWindowUtils : public nsIDOMWindowUtils,
-                         public nsSupportsWeakReference
+class nsDOMWindowUtils MOZ_FINAL : public nsIDOMWindowUtils,
+                                   public nsSupportsWeakReference
 {
 public:
   nsDOMWindowUtils(nsGlobalWindow *aWindow);
@@ -28,7 +29,7 @@ protected:
   // frame of our window to the nearest widget in the app units of our window.
   // Add this offset to any event offset we're given to make it relative to the
   // widget returned by GetWidget.
-  nsIWidget* GetWidget(nsPoint* aOffset = nsnull);
+  nsIWidget* GetWidget(nsPoint* aOffset = nullptr);
   nsIWidget* GetWidgetForElement(nsIDOMElement* aElement);
 
   nsIPresShell* GetPresShell();
@@ -37,11 +38,13 @@ protected:
   NS_IMETHOD SendMouseEventCommon(const nsAString& aType,
                                   float aX,
                                   float aY,
-                                  PRInt32 aButton,
-                                  PRInt32 aClickCount,
-                                  PRInt32 aModifiers,
+                                  int32_t aButton,
+                                  int32_t aClickCount,
+                                  int32_t aModifiers,
                                   bool aIgnoreRootScrollFrame,
+                                  float aPressure,
+                                  unsigned short aInputSourceArg,
                                   bool aToWindow);
 
-  static mozilla::widget::Modifiers GetWidgetModifiers(PRInt32 aModifiers);
+  static mozilla::widget::Modifiers GetWidgetModifiers(int32_t aModifiers);
 };

@@ -98,13 +98,13 @@ static char* CFStringRefToUTF8Buffer(CFStringRef cfString)
                                         kCFStringEncodingUTF8) + 1;
   char* newBuffer = static_cast<char*>(NS_Alloc(bufferLength));
   if (!newBuffer) {
-    return nsnull;
+    return nullptr;
   }
 
   if (!::CFStringGetCString(cfString, newBuffer, bufferLength,
                             kCFStringEncodingUTF8)) {
     NS_Free(newBuffer);
-    return nsnull;
+    return nullptr;
   }
 
   newBuffer = static_cast<char*>(NS_Realloc(newBuffer,
@@ -299,7 +299,7 @@ nsresult nsPluginFile::LoadPlugin(PRLibrary **outLibrary)
 #ifdef __LP64__
   char executablePath[PATH_MAX];
   executablePath[0] = '\0';
-  nsCAutoString bundlePath;
+  nsAutoCString bundlePath;
   mPlugin->GetNativePath(bundlePath);
   CFStringRef pathRef = ::CFStringCreateWithCString(NULL, bundlePath.get(), kCFStringEncodingUTF8);
   if (pathRef) {
@@ -320,7 +320,7 @@ nsresult nsPluginFile::LoadPlugin(PRLibrary **outLibrary)
     ::CFRelease(pathRef); 
   }
 #else
-  nsCAutoString bundlePath;
+  nsAutoCString bundlePath;
   mPlugin->GetNativePath(bundlePath);
   const char *executablePath = bundlePath.get();
 #endif
@@ -374,13 +374,13 @@ static bool IsCompatibleArch(nsIFile *file)
         executablePath[0] = '\0';
       }
 
-      uint32 pluginLibArchitectures;
+      uint32_t pluginLibArchitectures;
       nsresult rv = mozilla::ipc::GeckoChildProcessHost::GetArchitecturesForBinary(executablePath, &pluginLibArchitectures);
       if (NS_FAILED(rv)) {
         return false;
       }
 
-      uint32 containerArchitectures = mozilla::ipc::GeckoChildProcessHost::GetSupportedArchitecturesForProcessType(GeckoProcessType_Plugin);
+      uint32_t containerArchitectures = mozilla::ipc::GeckoChildProcessHost::GetSupportedArchitecturesForProcessType(GeckoProcessType_Plugin);
 
       // Consider the plugin architecture valid if there is any overlap in the masks.
       isPluginFile = !!(containerArchitectures & pluginLibArchitectures);
@@ -397,7 +397,7 @@ static bool IsCompatibleArch(nsIFile *file)
  */
 nsresult nsPluginFile::GetPluginInfo(nsPluginInfo& info, PRLibrary **outLibrary)
 {
-  *outLibrary = nsnull;
+  *outLibrary = nullptr;
 
   nsresult rv = NS_OK;
 
@@ -409,7 +409,7 @@ nsresult nsPluginFile::GetPluginInfo(nsPluginInfo& info, PRLibrary **outLibrary)
   memset(&info, 0, sizeof(info));
 
   // Try to get a bundle reference.
-  nsCAutoString path;
+  nsAutoCString path;
   if (NS_FAILED(rv = mPlugin->GetNativePath(path)))
     return rv;
   CFBundleRef bundle = getPluginBundle(path.get());
@@ -418,7 +418,7 @@ nsresult nsPluginFile::GetPluginInfo(nsPluginInfo& info, PRLibrary **outLibrary)
   info.fFullPath = PL_strdup(path.get());
 
   // fill in file name
-  nsCAutoString fileName;
+  nsAutoCString fileName;
   if (NS_FAILED(rv = mPlugin->GetNativeLeafName(fileName)))
     return rv;
   info.fFileName = PL_strdup(fileName.get());

@@ -188,8 +188,8 @@ interface nsIFile : nsISupports
      *  midnight (00:00:00), January 1, 1970 Greenwich Mean
      *  Time (GMT).
      */
-    attribute PRInt64 lastModifiedTime;
-    attribute PRInt64 lastModifiedTimeOfLink;
+    attribute PRTime lastModifiedTime;
+    attribute PRTime lastModifiedTimeOfLink;
 
     /**
      *  WARNING!  On the Mac, getting/setting the file size with nsIFile
@@ -197,8 +197,8 @@ interface nsIFile : nsISupports
      *  know the size of the combined data and resource forks use the
      *  GetFileSizeWithResFork() method defined on nsILocalFileMac.
      */
-    attribute PRInt64 fileSize;
-    readonly attribute PRInt64 fileSizeOfLink;
+    attribute int64_t fileSize;
+    readonly attribute int64_t fileSizeOfLink;
 
     /**
      *  target & path
@@ -311,7 +311,7 @@ interface nsIFile : nsISupports
     /**
      *  initWith[Native]Path
      *
-     *  This function will initialize the nsILocalFile object.  Any
+     *  This function will initialize the nsIFile object.  Any
      *  internal state information will be reset.
      *
      *   @param filePath       
@@ -344,7 +344,17 @@ interface nsIFile : nsISupports
      */
     attribute boolean followLinks;  
 
+    /**
+     * Flag for openNSPRFileDesc(), to hint to the OS that the file will be
+     * read sequentially with agressive readahead.
+     */
     const unsigned long OS_READAHEAD = 0x40000000;
+    
+    /**
+     * Flag for openNSPRFileDesc(). Deprecated and unreliable!
+     * Instead use NS_OpenAnonymousTemporaryFile() to create a temporary
+     * file which will be deleted upon close!
+     */
     const unsigned long DELETE_ON_CLOSE = 0x80000000;
 
     /**
@@ -354,10 +364,9 @@ interface nsIFile : nsISupports
      * @param flags the PR_Open flags from prio.h, plus optionally
      * OS_READAHEAD or DELETE_ON_CLOSE. OS_READAHEAD is a hint to the
      * OS that the file will be read sequentially with agressive
-     * readahead. DELETE_ON_CLOSE may be implemented by removing the
-     * file (by path name) immediately after opening it, so beware of
-     * possible races; the file should be exclusively owned by this
-     * process.
+     * readahead. DELETE_ON_CLOSE is unreliable on Windows and is deprecated.
+     * Instead use NS_OpenAnonymousTemporaryFile() to create a temporary
+     * file which will be deleted upon close.
      */
     [noscript] PRFileDescStar openNSPRFileDesc(in long flags, in long mode);
 
@@ -374,12 +383,12 @@ interface nsIFile : nsISupports
     [noscript] PRLibraryStar  load();
 
     // number of bytes available on disk to non-superuser
-    readonly attribute PRInt64 diskSpaceAvailable;
+    readonly attribute int64_t diskSpaceAvailable;
 
     /**
      *  appendRelative[Native]Path
      *
-     *  Append a relative path to the current path of the nsILocalFile object.
+     *  Append a relative path to the current path of the nsIFile object.
      *
      *   @param relativeFilePath
      *       relativeFilePath is a native relative path. For security reasons,

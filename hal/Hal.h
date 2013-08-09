@@ -42,12 +42,16 @@ class Observer;
 
 namespace hal {
 
+typedef Observer<void_t> AlarmObserver;
 typedef Observer<ScreenConfiguration> ScreenConfigurationObserver;
 
 class WindowIdentifier;
 
-extern PRLogModuleInfo *sHalLog;
-#define HAL_LOG(msg) PR_LOG(mozilla::hal::sHalLog, PR_LOG_DEBUG, msg)
+extern PRLogModuleInfo *GetHalLog();
+#define HAL_LOG(msg) PR_LOG(mozilla::hal::GetHalLog(), PR_LOG_DEBUG, msg)
+
+typedef Observer<int64_t> SystemClockChangeObserver;
+typedef Observer<SystemTimezoneChangeInformation> SystemTimezoneChangeObserver;
 
 } // namespace hal
 
@@ -239,7 +243,7 @@ void NotifyNetworkChange(const hal::NetworkInformation& aNetworkInfo);
  * Adjusting system clock.
  * @param aDeltaMilliseconds The difference compared with current system clock.
  */
-void AdjustSystemClock(int32_t aDeltaMilliseconds);
+void AdjustSystemClock(int64_t aDeltaMilliseconds);
 
 /**
  * Set timezone
@@ -249,12 +253,63 @@ void AdjustSystemClock(int32_t aDeltaMilliseconds);
 void SetTimezone(const nsCString& aTimezoneSpec);
 
 /**
+ * Get timezone
+ * http://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+ */
+nsCString GetTimezone();
+
+/**
+ * Register observer for system clock changed notification.
+ * @param aObserver The observer that should be added.
+ */
+void RegisterSystemClockChangeObserver(
+  hal::SystemClockChangeObserver* aObserver);
+
+/**
+ * Unregister the observer for system clock changed.
+ * @param aObserver The observer that should be removed.
+ */
+void UnregisterSystemClockChangeObserver(
+  hal::SystemClockChangeObserver* aObserver);
+
+/**
+ * Notify of a change in the system clock.
+ * @param aClockDeltaMS
+ */
+void NotifySystemClockChange(const int64_t& aClockDeltaMS);
+
+/**
+ * Register observer for system timezone changed notification.
+ * @param aObserver The observer that should be added.
+ */
+void RegisterSystemTimezoneChangeObserver(
+  hal::SystemTimezoneChangeObserver* aObserver);
+
+/**
+ * Unregister the observer for system timezone changed.
+ * @param aObserver The observer that should be removed.
+ */
+void UnregisterSystemTimezoneChangeObserver(
+  hal::SystemTimezoneChangeObserver* aObserver);
+
+/**
+ * Notify of a change in the system timezone.
+ * @param aSystemTimezoneChangeInfo
+ */
+void NotifySystemTimezoneChange(
+  const hal::SystemTimezoneChangeInformation& aSystemTimezoneChangeInfo);
+
+/**
  * Reboot the device.
+ * 
+ * This API is currently only allowed to be used from the main process.
  */
 void Reboot();
 
 /**
  * Power off the device.
+ * 
+ * This API is currently only allowed to be used from the main process.
  */
 void PowerOff();
 
@@ -285,7 +340,7 @@ void RegisterWakeLockObserver(WakeLockObserver* aObserver);
 void UnregisterWakeLockObserver(WakeLockObserver* aObserver);
 
 /**
- * Adjust the internal wake lock counts.
+ * Adjust the wake lock counts.
  * @param aTopic        lock topic
  * @param aLockAdjust   to increase or decrease active locks
  * @param aHiddenAdjust to increase or decrease hidden locks
@@ -293,6 +348,18 @@ void UnregisterWakeLockObserver(WakeLockObserver* aObserver);
 void ModifyWakeLock(const nsAString &aTopic,
                     hal::WakeLockControl aLockAdjust,
                     hal::WakeLockControl aHiddenAdjust);
+
+/**
+ * Adjust the wake lock counts. Do not call this function directly.
+ * @param aTopic        lock topic
+ * @param aLockAdjust   to increase or decrease active locks
+ * @param aHiddenAdjust to increase or decrease hidden locks
+ * @param aProcessID    unique id per-ContentChild or 0 for chrome
+ */
+void ModifyWakeLockInternal(const nsAString &aTopic,
+                            hal::WakeLockControl aLockAdjust,
+                            hal::WakeLockControl aHiddenAdjust,
+                            uint64_t aProcessID);
 
 /**
  * Query the wake lock numbers of aTopic.
@@ -365,6 +432,131 @@ void NotifySwitchChange(const hal::SwitchEvent& aEvent);
  * Get current switch information.
  */
 hal::SwitchState GetCurrentSwitchState(hal::SwitchDevice aDevice);
+
+/**
+ * Register an observer that is notified when a programmed alarm
+ * expires.
+ *
+ * Currently, there can only be 0 or 1 alarm observers.
+ */
+bool RegisterTheOneAlarmObserver(hal::AlarmObserver* aObserver);
+
+/**
+ * Unregister the alarm observer.  Doing so will implicitly cancel any
+ * programmed alarm.
+ */
+void UnregisterTheOneAlarmObserver();
+
+/**
+ * Notify that the programmed alarm has expired.
+ *
+ * This API is internal to hal; clients shouldn't call it directly.
+ */
+void NotifyAlarmFired();
+
+/**
+ * Program the real-time clock to expire at the time |aSeconds|,
+ * |aNanoseconds|.  These specify a point in real time relative to the
+ * UNIX epoch.  The alarm will fire at this time point even if the
+ * real-time clock is changed; that is, this alarm respects changes to
+ * the real-time clock.  Return true iff the alarm was programmed.
+ *
+ * The alarm can be reprogrammed at any time.
+ *
+ * This API is currently only allowed to be used from non-sandboxed
+ * contexts.
+ */
+bool SetAlarm(int32_t aSeconds, int32_t aNanoseconds);
+
+/**
+ * Set the priority of the given process.
+ *
+ * Exactly what this does will vary between platforms.  On *nix we might give
+ * background processes higher nice values.  On other platforms, we might
+ * ignore this call entirely.
+ */
+void SetProcessPriority(int aPid, hal::ProcessPriority aPriority);
+
+/**
+ * Register an observer for the FM radio.
+ */
+void RegisterFMRadioObserver(hal::FMRadioObserver* aRadioObserver);
+
+/**
+ * Unregister the observer for the FM radio.
+ */
+void UnregisterFMRadioObserver(hal::FMRadioObserver* aRadioObserver);
+
+/**
+ * Notify observers that a call to EnableFMRadio, DisableFMRadio, or FMRadioSeek
+ * has completed, and indicate what the call returned.
+ */
+void NotifyFMRadioStatus(const hal::FMRadioOperationInformation& aRadioState);
+
+/**
+ * Enable the FM radio and configure it according to the settings in aInfo.
+ */
+void EnableFMRadio(const hal::FMRadioSettings& aInfo);
+
+/**
+ * Disable the FM radio.
+ */
+void DisableFMRadio();
+
+/**
+ * Seek to an available FM radio station.
+ *
+ */
+void FMRadioSeek(const hal::FMRadioSeekDirection& aDirection);
+
+/**
+ * Get the current FM radio settings.
+ */
+void GetFMRadioSettings(hal::FMRadioSettings* aInfo);
+
+/**
+ * Set the FM radio's frequency.
+ */
+void SetFMRadioFrequency(const uint32_t frequency);
+
+/**
+ * Get the FM radio's frequency.
+ */
+uint32_t GetFMRadioFrequency();
+
+/**
+ * Get FM radio power state
+ */
+bool IsFMRadioOn();
+
+/**
+ * Get FM radio signal strength
+ */
+uint32_t GetFMRadioSignalStrength();
+
+/**
+ * Cancel FM radio seeking
+ */
+void CancelFMRadioSeek();
+
+/**
+ * Get FM radio band settings by country.
+ */
+hal::FMRadioSettings GetFMBandSettings(hal::FMRadioCountry aCountry);
+
+/**
+ * Start a watchdog to compulsively shutdown the system if it hangs.
+ * @param aMode Specify how to shutdown the system.
+ * @param aTimeoutSecs Specify the delayed seconds to shutdown the system.
+ * 
+ * This API is currently only allowed to be used from the main process.
+ */
+void StartForceQuitWatchdog(hal::ShutdownMode aMode, int32_t aTimeoutSecs);
+
+/**
+ * Perform Factory Reset to wipe out all user data.
+ */
+void FactoryReset();
 
 } // namespace MOZ_HAL_NAMESPACE
 } // namespace mozilla

@@ -4,13 +4,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsHTMLMenuElement.h"
-
+#include "nsAttrValueInlines.h"
 #include "nsIDOMHTMLMenuItemElement.h"
 #include "nsXULContextMenuBuilder.h"
 #include "nsGUIEvent.h"
 #include "nsEventDispatcher.h"
 #include "nsHTMLMenuItemElement.h"
 #include "nsContentUtils.h"
+#include "nsError.h"
+
+using namespace mozilla::dom;
 
 enum MenuType
 {
@@ -49,8 +52,8 @@ nsHTMLMenuElement::~nsHTMLMenuElement()
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLMenuElement, nsGenericElement)
-NS_IMPL_RELEASE_INHERITED(nsHTMLMenuElement, nsGenericElement)
+NS_IMPL_ADDREF_INHERITED(nsHTMLMenuElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLMenuElement, Element)
 
 
 DOMCI_NODE_DATA(HTMLMenuElement, nsHTMLMenuElement)
@@ -93,7 +96,7 @@ nsHTMLMenuElement::SendShowEvent()
   nsRefPtr<nsPresContext> presContext = shell->GetPresContext();
   nsEventStatus status = nsEventStatus_eIgnore;
   nsEventDispatcher::Dispatch(static_cast<nsIContent*>(this), presContext,
-                              &event, nsnull, &status);
+                              &event, nullptr, &status);
 
   return NS_OK;
 }
@@ -103,7 +106,7 @@ nsHTMLMenuElement::CreateBuilder(nsIMenuBuilder** _retval)
 {
   NS_ENSURE_TRUE(nsContentUtils::IsCallerChrome(), NS_ERROR_DOM_SECURITY_ERR);
 
-  *_retval = nsnull;
+  *_retval = nullptr;
 
   if (mType == MENU_TYPE_CONTEXT) {
     NS_ADDREF(*_retval = new nsXULContextMenuBuilder());
@@ -129,7 +132,7 @@ nsHTMLMenuElement::Build(nsIMenuBuilder* aBuilder)
 
 
 bool
-nsHTMLMenuElement::ParseAttribute(PRInt32 aNamespaceID,
+nsHTMLMenuElement::ParseAttribute(int32_t aNamespaceID,
                                   nsIAtom* aAttribute,
                                   const nsAString& aValue,
                                   nsAttrValue& aResult)
@@ -157,7 +160,7 @@ nsHTMLMenuElement::BuildSubmenu(const nsAString& aLabel,
 {
   aBuilder->OpenContainer(aLabel);
 
-  PRInt8 separator = ST_TRUE_INIT;
+  int8_t separator = ST_TRUE_INIT;
   TraverseContent(aContent, aBuilder, separator);
 
   if (separator == ST_TRUE) {
@@ -193,7 +196,7 @@ nsHTMLMenuElement::CanLoadIcon(nsIContent* aContent, const nsAString& aIcon)
 void
 nsHTMLMenuElement::TraverseContent(nsIContent* aContent,
                                    nsIMenuBuilder* aBuilder,
-                                   PRInt8& aSeparator)
+                                   int8_t& aSeparator)
 {
   nsCOMPtr<nsIContent> child;
   for (child = aContent->GetFirstChild(); child;
@@ -245,7 +248,7 @@ nsHTMLMenuElement::TraverseContent(nsIContent* aContent,
 }
 
 inline void
-nsHTMLMenuElement::AddSeparator(nsIMenuBuilder* aBuilder, PRInt8& aSeparator)
+nsHTMLMenuElement::AddSeparator(nsIMenuBuilder* aBuilder, int8_t& aSeparator)
 {
   if (aSeparator) {
     return;

@@ -58,11 +58,14 @@ struct JSContext;
 class DSTOffsetCache {
   public:
     inline DSTOffsetCache();
-    int64_t getDSTOffsetMilliseconds(int64_t localTimeMilliseconds, JSContext *cx);
+    int64_t getDSTOffsetMilliseconds(int64_t localTimeMilliseconds);
 
     inline void purge();
 
   private:
+    void purgeIfTZAIsStale();
+    double localTZA;
+
     int64_t computeDSTOffsetMilliseconds(int64_t localTimeSeconds);
 
     int64_t offsetMilliseconds;
@@ -82,8 +85,6 @@ class DSTOffsetCache {
   private:
     void sanityCheck();
 };
-
-JS_BEGIN_EXTERN_C
 
 typedef struct PRMJTime       PRMJTime;
 
@@ -112,7 +113,7 @@ extern int64_t
 PRMJ_Now(void);
 
 /* Release the resources associated with PRMJ_Now; don't call PRMJ_Now again */
-#if defined(JS_THREADSAFE) && (defined(HAVE_GETSYSTEMTIMEASFILETIME) || defined(HAVE_SYSTEMTIMETOFILETIME))
+#if defined(JS_THREADSAFE) && defined(XP_WIN)
 extern void
 PRMJ_NowShutdown(void);
 #else
@@ -126,8 +127,6 @@ PRMJ_LocalGMTDifference(void);
 /* Format a time value into a buffer. Same semantics as strftime() */
 extern size_t
 PRMJ_FormatTime(char *buf, int buflen, const char *fmt, PRMJTime *tm);
-
-JS_END_EXTERN_C
 
 #endif /* prmjtime_h___ */
 

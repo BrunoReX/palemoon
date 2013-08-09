@@ -87,28 +87,25 @@ SmartCardThreadList::Remove(SECMODModule *aModule)
 nsresult
 SmartCardThreadList::Add(SmartCardMonitoringThread *thread)
 {
-  SmartCardThreadEntry *current = new SmartCardThreadEntry(thread, head, nsnull,
+  SmartCardThreadEntry *current = new SmartCardThreadEntry(thread, head, nullptr,
                                                            &head);
-  if (current) {  
-     // OK to forget current here, it's on the list
-    return thread->Start();
-  }
-  return NS_ERROR_OUT_OF_MEMORY;
+  // OK to forget current here, it's on the list
+  return thread->Start();
 }
 
 
 // We really should have a Unity PL Hash function...
-static PR_CALLBACK PLHashNumber
+static PLHashNumber
 unity(const void *key) { return PLHashNumber(NS_PTR_TO_INT32(key)); }
 
 SmartCardMonitoringThread::SmartCardMonitoringThread(SECMODModule *module_)
-  : mThread(nsnull)
+  : mThread(nullptr)
 {
   mModule = SECMOD_ReferenceModule(module_);
   // simple hash functions, most modules have less than 3 slots, so 10 buckets
   // should be plenty
   mHash = PL_NewHashTable(10, unity, PL_CompareValues, 
-                           PL_CompareStrings, nsnull, 0);
+                           PL_CompareStrings, nullptr, 0);
 }
 
 //
@@ -174,18 +171,18 @@ void SmartCardMonitoringThread::Stop()
 //
 void
 SmartCardMonitoringThread::SetTokenName(CK_SLOT_ID slotid, 
-                                       const char *tokenName, PRUint32 series)
+                                       const char *tokenName, uint32_t series)
 {
   if (mHash) {
     if (tokenName) {
       int len = strlen(tokenName) + 1;
       /* this must match the allocator used in
        * PLHashAllocOps.freeEntry DefaultFreeEntry */
-      char *entry = (char *)PR_Malloc(len+sizeof(PRUint32));
+      char *entry = (char *)PR_Malloc(len+sizeof(uint32_t));
      
       if (entry) {  
-        memcpy(entry,&series,sizeof(PRUint32));
-        memcpy(&entry[sizeof(PRUint32)],tokenName,len);
+        memcpy(entry,&series,sizeof(uint32_t));
+        memcpy(&entry[sizeof(uint32_t)],tokenName,len);
 
         PL_HashTableAdd(mHash,(void *)slotid, entry); /* adopt */
         return;
@@ -202,29 +199,29 @@ SmartCardMonitoringThread::SetTokenName(CK_SLOT_ID slotid,
 const char *
 SmartCardMonitoringThread::GetTokenName(CK_SLOT_ID slotid)
 {
-  const char *tokenName = nsnull;
+  const char *tokenName = nullptr;
   const char *entry;
 
   if (mHash) {
     entry = (const char *)PL_HashTableLookupConst(mHash,(void *)slotid);
     if (entry) {
-      tokenName = &entry[sizeof(PRUint32)];
+      tokenName = &entry[sizeof(uint32_t)];
     }
   }
   return tokenName;
 }
 
 // retrieve the series saved in SetTokenName above
-PRUint32
+uint32_t
 SmartCardMonitoringThread::GetTokenSeries(CK_SLOT_ID slotid)
 {
-  PRUint32 series = 0;
+  uint32_t series = 0;
   const char *entry;
 
   if (mHash) {
     entry = (const char *)PL_HashTableLookupConst(mHash,(void *)slotid);
     if (entry) {
-      memcpy(&series,entry,sizeof(PRUint32));
+      memcpy(&series,entry,sizeof(uint32_t));
     }
   }
   return series;
@@ -254,13 +251,13 @@ SmartCardMonitoringThread::SendEvent(const nsAString &eventType,
 void SmartCardMonitoringThread::Execute()
 {
   PK11SlotInfo *slot;
-  const char *tokenName = nsnull;
+  const char *tokenName = nullptr;
 
   //
   // populate token names for already inserted tokens.
   //
   PK11SlotList *sl =
-            PK11_FindSlotsByNames(mModule->dllName, nsnull, nsnull, true);
+            PK11_FindSlotsByNames(mModule->dllName, nullptr, nullptr, true);
   PK11SlotListElement *sle;
  
   if (sl) {
@@ -275,7 +272,7 @@ void SmartCardMonitoringThread::Execute()
   // loop starts..
   do {
     slot = SECMOD_WaitForAnyTokenEvent(mModule, 0, PR_SecondsToInterval(1)  );
-    if (slot == nsnull) {
+    if (!slot) {
       break;
     }
 
@@ -284,7 +281,7 @@ void SmartCardMonitoringThread::Execute()
     if (PK11_IsPresent(slot)) {
       // insertion
       CK_SLOT_ID slotID = PK11_GetSlotID(slot);
-      PRUint32 series = PK11_GetSlotSeries(slot);
+      uint32_t series = PK11_GetSlotSeries(slot);
 
       // skip spurious insertion events...
       if (series != GetTokenSeries(slotID)) {
@@ -308,7 +305,7 @@ void SmartCardMonitoringThread::Execute()
       if (tokenName) {
         SendEvent(NS_LITERAL_STRING(SMARTCARDEVENT_REMOVE), tokenName);
         // clear the token name (after we send it)
-        SetTokenName(slotID, nsnull, 0);
+        SetTokenName(slotID, nullptr, 0);
       }
     }
     PK11_FreeSlot(slot);
@@ -325,6 +322,8 @@ const SECMODModule * SmartCardMonitoringThread::GetModule()
 // C-like calling sequence to glue into PR_CreateThread.
 void SmartCardMonitoringThread::LaunchExecute(void *arg)
 {
+  PR_SetCurrentThreadName("SmartCard");
+
   ((SmartCardMonitoringThread*)arg)->Execute();
 }
 

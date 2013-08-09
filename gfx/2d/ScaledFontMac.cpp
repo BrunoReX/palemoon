@@ -12,6 +12,7 @@
 #endif
 #include "DrawTargetCG.h"
 #include <vector>
+#include <dlfcn.h>
 
 // prototype for private API
 extern "C" {
@@ -22,15 +23,33 @@ CGPathRef CGFontGetGlyphPath(CGFontRef fontRef, CGAffineTransform *textTransform
 namespace mozilla {
 namespace gfx {
 
+ScaledFontMac::CTFontDrawGlyphsFuncT* ScaledFontMac::CTFontDrawGlyphsPtr = nullptr;
+bool ScaledFontMac::sSymbolLookupDone = false;
+
 ScaledFontMac::ScaledFontMac(CGFontRef aFont, Float aSize)
   : ScaledFontBase(aSize)
 {
+  if (!sSymbolLookupDone) {
+    CTFontDrawGlyphsPtr =
+      (CTFontDrawGlyphsFuncT*)dlsym(RTLD_DEFAULT, "CTFontDrawGlyphs");
+    sSymbolLookupDone = true;
+  }
+
   // XXX: should we be taking a reference
   mFont = CGFontRetain(aFont);
+  if (CTFontDrawGlyphsPtr != nullptr) {
+    // only create mCTFont if we're going to be using the CTFontDrawGlyphs API
+    mCTFont = CTFontCreateWithGraphicsFont(aFont, aSize, nullptr, nullptr);
+  } else {
+    mCTFont = nullptr;
+  }
 }
 
 ScaledFontMac::~ScaledFontMac()
 {
+  if (mCTFont) {
+    CFRelease(mCTFont);
+  }
   CGFontRelease(mFont);
 }
 
@@ -38,9 +57,13 @@ ScaledFontMac::~ScaledFontMac()
 SkTypeface* ScaledFontMac::GetSkTypeface()
 {
   if (!mTypeface) {
-    CTFontRef fontFace = CTFontCreateWithGraphicsFont(mFont, mSize, NULL, NULL);
-    mTypeface = SkCreateTypefaceFromCTFont(fontFace);
-    CFRelease(fontFace);
+    if (mCTFont) {
+      mTypeface = SkCreateTypefaceFromCTFont(mCTFont);
+    } else {
+      CTFontRef fontFace = CTFontCreateWithGraphicsFont(mFont, mSize, nullptr, nullptr);
+      mTypeface = SkCreateTypefaceFromCTFont(fontFace);
+      CFRelease(fontFace);
+    }
   }
   return mTypeface;
 }
@@ -56,7 +79,7 @@ SkTypeface* ScaledFontMac::GetSkTypeface()
 TemporaryRef<Path>
 ScaledFontMac::GetPathForGlyphs(const GlyphBuffer &aBuffer, const DrawTarget *aTarget)
 {
-  if (aTarget->GetType() == BACKEND_COREGRAPHICS) {
+  if (aTarget->GetType() == BACKEND_COREGRAPHICS || aTarget->GetType() == BACKEND_COREGRAPHICS_ACCELERATED) {
       CGMutablePathRef path = CGPathCreateMutable();
 
       for (unsigned int i = 0; i < aBuffer.mNumGlyphs; i++) {

@@ -381,8 +381,6 @@ sa_stream_get_position(sa_stream_t *s, sa_position_t position, int64_t *pos) {
     return SA_ERROR_NO_INIT;
   }
 
-  ALOG("%p - get position", s);
-
   JNIEnv *jenv = GetJNIForThread();
   *pos  = (*jenv)->CallIntMethod(jenv, s->output_unit, at.getpos);
 
@@ -560,6 +558,7 @@ UNSUPPORTED(int sa_stream_pwrite_ni(sa_stream_t *s, unsigned int channel, const 
 UNSUPPORTED(int sa_stream_get_read_size(sa_stream_t *s, size_t *size))
 UNSUPPORTED(int sa_stream_get_volume_abs(sa_stream_t *s, float *vol))
 UNSUPPORTED(int sa_stream_get_min_write(sa_stream_t *s, size_t *size))
+UNSUPPORTED(int sa_stream_set_stream_type(sa_stream_t *s, const sa_stream_type_t stream_type))
 
 const char *sa_strerror(int code) { return NULL; }
 

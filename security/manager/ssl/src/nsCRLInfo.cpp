@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "prmem.h"
 #include "prerror.h"
 #include "prprf.h"
 
@@ -15,7 +14,6 @@
 #include "nsNSSShutDown.h"
 
 #include "nspr.h"
-extern "C" {
 #include "pk11func.h"
 #include "certdb.h"
 #include "cert.h"
@@ -23,7 +21,6 @@ extern "C" {
 #include "nssb64.h"
 #include "secasn1.h"
 #include "secder.h"
-}
 
 NS_IMPL_ISUPPORTS1(nsCRLInfo, nsICRLInfo)
 
@@ -41,7 +38,7 @@ nsCRLInfo::nsCRLInfo(CERTSignedCrl *signedCrl)
   nsAutoString nameInDb;
   nsAutoString nextUpdateLocale;
   nsAutoString lastUpdateLocale;
-  nsCAutoString lastFetchURL;
+  nsAutoCString lastFetchURL;
   PRTime lastUpdate = 0;
   PRTime nextUpdate = 0;
   SECStatus sec_rv;
@@ -68,7 +65,7 @@ nsCRLInfo::nsCRLInfo(CERTSignedCrl *signedCrl)
   if (crl->lastUpdate.len) {
     sec_rv = DER_UTCTimeToTime(&lastUpdate, &(crl->lastUpdate));
     if (sec_rv == SECSuccess && dateFormatter) {
-      dateFormatter->FormatPRTime(nsnull, kDateFormatShort, kTimeFormatNone,
+      dateFormatter->FormatPRTime(nullptr, kDateFormatShort, kTimeFormatNone,
                             lastUpdate, lastUpdateLocale);
     }
   }
@@ -77,7 +74,7 @@ nsCRLInfo::nsCRLInfo(CERTSignedCrl *signedCrl)
     // Next update time
     sec_rv = DER_UTCTimeToTime(&nextUpdate, &(crl->nextUpdate));
     if (sec_rv == SECSuccess && dateFormatter) {
-      dateFormatter->FormatPRTime(nsnull, kDateFormatShort, kTimeFormatNone,
+      dateFormatter->FormatPRTime(nullptr, kDateFormatShort, kTimeFormatNone,
                             nextUpdate, nextUpdateLocale);
     }
   }

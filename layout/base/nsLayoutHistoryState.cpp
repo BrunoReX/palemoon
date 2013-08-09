@@ -12,9 +12,10 @@
 #include "nsWeakReference.h"
 #include "nsClassHashtable.h"
 #include "nsPresState.h"
+#include "mozilla/Attributes.h"
 
-class nsLayoutHistoryState : public nsILayoutHistoryState,
-                             public nsSupportsWeakReference
+class nsLayoutHistoryState MOZ_FINAL : public nsILayoutHistoryState,
+                                       public nsSupportsWeakReference
 {
 public:
   NS_HIDDEN_(nsresult) Init();
@@ -42,7 +43,7 @@ NS_NewLayoutHistoryState(nsILayoutHistoryState** aState)
 {
   nsLayoutHistoryState *state;
 
-  *aState = nsnull;
+  *aState = nullptr;
   state = new nsLayoutHistoryState();
 
   NS_ADDREF(state);

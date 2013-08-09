@@ -117,3 +117,42 @@ def WebIDLTest(parser, harness):
                 "doFloats",
        [("Float",
         [("::TestMethods::doFloats::arg1", "arg1", "Float", False, False)])])
+
+    parser = parser.reset()
+    threw = False
+    try:
+        parser.parse("""
+          interface A {
+            void foo(optional float bar = 1);
+          };
+        """)
+        results = parser.finish()
+    except Exception, x:
+        threw = True
+    harness.ok(not threw, "Should allow integer to float type corecion")
+
+    parser = parser.reset()
+    threw = False
+    try:
+        parser.parse("""
+          interface A {
+            [GetterThrows] void foo();
+          };
+        """)
+        results = parser.finish()
+    except Exception, x:
+        threw = True
+    harness.ok(threw, "Should not allow [GetterThrows] on methods")
+
+    parser = parser.reset()
+    threw = False
+    try:
+        parser.parse("""
+          interface A {
+            [SetterThrows] void foo();
+          };
+        """)
+        results = parser.finish()
+    except Exception, x:
+        threw = True
+    harness.ok(threw, "Should not allow [SetterThrows] on methods")

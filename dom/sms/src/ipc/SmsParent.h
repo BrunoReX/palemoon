@@ -7,40 +7,96 @@
 #define mozilla_dom_sms_SmsParent_h
 
 #include "mozilla/dom/sms/PSmsParent.h"
+#include "mozilla/dom/sms/PSmsRequestParent.h"
 #include "nsIObserver.h"
+
+namespace mozilla {
+namespace dom {
+
+class ContentParent;
+
+} // namespace dom
+} // namespace mozilla
 
 namespace mozilla {
 namespace dom {
 namespace sms {
 
+class SmsRequest;
+
 class SmsParent : public PSmsParent
                 , public nsIObserver
 {
+  friend class mozilla::dom::ContentParent;
+
 public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
 
-  static void GetAll(nsTArray<SmsParent*>& aArray);
+protected:
+  virtual bool
+  RecvHasSupport(bool* aHasSupport) MOZ_OVERRIDE;
+
+  virtual bool
+  RecvGetSegmentInfoForText(const nsString& aText, SmsSegmentInfoData* aResult) MOZ_OVERRIDE;
+
+  virtual bool
+  RecvClearMessageList(const int32_t& aListId) MOZ_OVERRIDE;
 
   SmsParent();
+  virtual ~SmsParent();
 
-  NS_OVERRIDE virtual bool RecvHasSupport(bool* aHasSupport);
-  NS_OVERRIDE virtual bool RecvGetNumberOfMessagesForText(const nsString& aText, PRUint16* aResult);
-  NS_OVERRIDE virtual bool RecvSendMessage(const nsString& aNumber, const nsString& aMessage, const PRInt32& aRequestId, const PRUint64& aProcessId);
-  NS_OVERRIDE virtual bool RecvSaveReceivedMessage(const nsString& aSender, const nsString& aBody, const PRUint64& aDate, PRInt32* aId);
-  NS_OVERRIDE virtual bool RecvSaveSentMessage(const nsString& aRecipient, const nsString& aBody, const PRUint64& aDate, PRInt32* aId);
-  NS_OVERRIDE virtual bool RecvGetMessage(const PRInt32& aMessageId, const PRInt32& aRequestId, const PRUint64& aProcessId);
-  NS_OVERRIDE virtual bool RecvDeleteMessage(const PRInt32& aMessageId, const PRInt32& aRequestId, const PRUint64& aProcessId);
-  NS_OVERRIDE virtual bool RecvCreateMessageList(const SmsFilterData& aFilter, const bool& aReverse, const PRInt32& aRequestId, const PRUint64& aProcessId);
-  NS_OVERRIDE virtual bool RecvGetNextMessageInList(const PRInt32& aListId, const PRInt32& aRequestId, const PRUint64& aProcessId);
-  NS_OVERRIDE virtual bool RecvClearMessageList(const PRInt32& aListId);
-  NS_OVERRIDE virtual bool RecvMarkMessageRead(const PRInt32& aMessageId, const bool& aValue, const PRInt32& aRequestId, const PRUint64& aProcessId);
+  virtual void
+  ActorDestroy(ActorDestroyReason why);
+
+  virtual bool
+  RecvPSmsRequestConstructor(PSmsRequestParent* aActor,
+                             const IPCSmsRequest& aRequest) MOZ_OVERRIDE;
+
+  virtual PSmsRequestParent*
+  AllocPSmsRequest(const IPCSmsRequest& aRequest) MOZ_OVERRIDE;
+
+  virtual bool
+  DeallocPSmsRequest(PSmsRequestParent* aActor) MOZ_OVERRIDE;
+};
+
+class SmsRequestParent : public PSmsRequestParent
+{
+  friend class SmsParent;
+
+  nsRefPtr<SmsRequest> mSmsRequest;
+
+public:
+  void
+  SendReply(const MessageReply& aReply);
 
 protected:
-  virtual void ActorDestroy(ActorDestroyReason why);
+  SmsRequestParent();
+  virtual ~SmsRequestParent();
 
-private:
-  static nsTArray<SmsParent*>* gSmsParents;
+  virtual void
+  ActorDestroy(ActorDestroyReason aWhy) MOZ_OVERRIDE;
+
+  bool
+  DoRequest(const SendMessageRequest& aRequest);
+
+  bool
+  DoRequest(const GetMessageRequest& aRequest);
+
+  bool
+  DoRequest(const DeleteMessageRequest& aRequest);
+
+  bool
+  DoRequest(const CreateMessageListRequest& aRequest);
+
+  bool
+  DoRequest(const GetNextMessageInListRequest& aRequest);
+
+  bool
+  DoRequest(const MarkMessageReadRequest& aRequest);
+
+  bool
+  DoRequest(const GetThreadListRequest& aRequest);
 };
 
 } // namespace sms

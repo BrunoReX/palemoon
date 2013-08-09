@@ -76,6 +76,7 @@ VIAddVersionKey "OriginalFilename" "setup.exe"
 !insertmacro CleanUpdatesDir
 !insertmacro CopyFilesFromDir
 !insertmacro CreateRegKey
+!insertmacro GetLongPath
 !insertmacro GetPathFromString
 !insertmacro GetParent
 !insertmacro InitHashAppModelId
@@ -90,6 +91,9 @@ VIAddVersionKey "OriginalFilename" "setup.exe"
 !insertmacro RegCleanAppHandler
 !insertmacro RegCleanMain
 !insertmacro RegCleanUninstall
+!ifdef MOZ_METRO
+!insertmacro RemoveDEHRegistrationIfMatching
+!endif
 !insertmacro SetAppLSPCategories
 !insertmacro SetBrandNameVars
 !insertmacro UpdateShortcutAppModelIDs
@@ -218,6 +222,8 @@ Section "-Application" APP_IDX
   DetailPrint $(STATUS_INSTALL_APP)
   SetDetailsPrint none
 
+  RmDir /r /REBOOTOK "$INSTDIR\${TO_BE_DELETED}"
+
   ${LogHeader} "Installing Main Files"
   ${CopyFilesFromDir} "$EXEDIR\core" "$INSTDIR" \
                       "$(ERROR_CREATE_DIRECTORY_PREFIX)" \
@@ -324,16 +330,43 @@ Section "-Application" APP_IDX
   ${GetLongPath} "$INSTDIR\${FileMainEXE}" $8
   StrCpy $2 "$\"$8$\" -osint -url $\"%1$\""
 
+  ; In Win8, the delegate execute handler picks up the value in FirefoxURL and
+  ; FirefoxHTML to launch the desktop browser when it needs to.
   ${AddDisabledDDEHandlerValues} "FirefoxHTML" "$2" "$8,1" \
                                  "${AppRegName} Document" ""
   ${AddDisabledDDEHandlerValues} "FirefoxURL" "$2" "$8,1" "${AppRegName} URL" \
                                  "true"
+  ${If} ${AtLeastWin8}
+!ifdef MOZ_METRO
+    ${CleanupMetroBrowserHandlerValues} ${DELEGATE_EXECUTE_HANDLER_ID}
+    ${AddMetroBrowserHandlerValues} ${DELEGATE_EXECUTE_HANDLER_ID} \
+                                    "$INSTDIR\CommandExecuteHandler.exe" \
+                                    $AppUserModelID \
+                                    "FirefoxURL" \
+                                    "FirefoxHTML"
+!endif
+    ; Set the Start Menu Internet and Vista Registered App HKCU registry keys.
+    ${SetStartMenuInternet} "HKCU"
+    ${FixShellIconHandler} "HKCU"
 
-  ; The following keys should only be set if we can write to HKLM
+    ; If we create either the desktop or start menu shortcuts, then
+    ; set IconsVisible to 1 otherwise to 0.
+    ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
+    StrCpy $0 "Software\Clients\StartMenuInternet\$R9\InstallInfo"
+    ${If} $AddDesktopSC == 1
+    ${OrIf} $AddStartMenuSC == 1
+      WriteRegDWORD HKCU "$0" "IconsVisible" 1
+    ${Else}
+      WriteRegDWORD HKCU "$0" "IconsVisible" 0
+    ${EndIf}
+  ${EndIf}
+
+  ; The following keys should only be set if we can write to HKLM for pre win8
+  ; For post win8 we set the keys above in HKCU in addition to below in HKLM.
   ${If} $TmpVal == "HKLM"
     ; Set the Start Menu Internet and Vista Registered App HKLM registry keys.
-    ${SetStartMenuInternet}
-    ${FixShellIconHandler}
+    ${SetStartMenuInternet} "HKLM"
+    ${FixShellIconHandler} "HKLM"
 
     ; If we are writing to HKLM and create either the desktop or start menu
     ; shortcuts set IconsVisible to 1 otherwise to 0.
@@ -444,7 +477,7 @@ Section "-Application" APP_IDX
                                            "$INSTDIR"
       ${If} ${AtLeastWin7}
       ${AndIf} "$AppUserModelID" != ""
-        ApplicationID::Set "$SMPROGRAMS\${BrandFullName}.lnk" "$AppUserModelID"
+        ApplicationID::Set "$SMPROGRAMS\${BrandFullName}.lnk" "$AppUserModelID" "true"
       ${EndIf}
       ${LogMsg} "Added Shortcut: $SMPROGRAMS\${BrandFullName}.lnk"
     ${Else}
@@ -459,7 +492,7 @@ Section "-Application" APP_IDX
                                              "$INSTDIR"
       ${If} ${AtLeastWin7}
       ${AndIf} "$AppUserModelID" != ""
-        ApplicationID::Set "$DESKTOP\${BrandFullName}.lnk" "$AppUserModelID"
+        ApplicationID::Set "$DESKTOP\${BrandFullName}.lnk" "$AppUserModelID"  "true"
       ${EndIf}
       ${LogMsg} "Added Shortcut: $DESKTOP\${BrandFullName}.lnk"
     ${Else}
@@ -516,16 +549,15 @@ Section "-InstallEndCleanup"
         UAC::ExecCodeSegment $0
       ${EndIf}
     ${EndIf}
+    ; Adds a pinned Task Bar shortcut (see MigrateTaskBarShortcut for details).
+    ${MigrateTaskBarShortcut}
   ${EndUnless}
-
-  ; Adds a pinned Task Bar shortcut (see MigrateTaskBarShortcut for details).
-  ${MigrateTaskBarShortcut}
 
   ${GetShortcutsLogPath} $0
   WriteIniStr "$0" "TASKBAR" "Migrated" "true"
 
   ; Refresh desktop icons
-  System::Call "shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)"
+  System::Call "shell32::SHChangeNotify(i ${SHCNE_ASSOCCHANGED}, i ${SHCNF_DWORDFLUSH}, i 0, i 0)"
 
   ${InstallEndCleanupCommon}
 
@@ -692,11 +724,12 @@ Function CheckExistingInstall
 FunctionEnd
 
 Function LaunchApp
+  ${ManualCloseAppPrompt} "${WindowClass}" "$(WARN_MANUALLY_CLOSE_APP_LAUNCH)"
+
   ClearErrors
   ${GetParameters} $0
   ${GetOptions} "$0" "/UAC:" $1
   ${If} ${Errors}
-    ${ManualCloseAppPrompt} "${WindowClass}" "$(WARN_MANUALLY_CLOSE_APP_LAUNCH)"
     Exec "$\"$INSTDIR\${FileMainEXE}$\""
   ${Else}
     GetFunctionAddress $0 LaunchAppFromElevatedProcess
@@ -705,8 +738,6 @@ Function LaunchApp
 FunctionEnd
 
 Function LaunchAppFromElevatedProcess
-  ${ManualCloseAppPrompt} "${WindowClass}" "$(WARN_MANUALLY_CLOSE_APP_LAUNCH)"
-
   ; Find the installation directory when launching using GetFunctionAddress
   ; from an elevated installer since $INSTDIR will not be set in this installer
   ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
@@ -800,7 +831,16 @@ Function leaveShortcuts
     Abort
   ${EndIf}
   ${MUI_INSTALLOPTIONS_READ} $AddDesktopSC "shortcuts.ini" "Field 2" "State"
-  ${MUI_INSTALLOPTIONS_READ} $AddStartMenuSC "shortcuts.ini" "Field 3" "State"
+
+  ; If we have a Metro browser and are Win8, then we don't have a Field 3
+!ifdef MOZ_METRO
+  ${Unless} ${AtLeastWin8}
+!endif
+    ${MUI_INSTALLOPTIONS_READ} $AddStartMenuSC "shortcuts.ini" "Field 3" "State"
+!ifdef MOZ_METRO
+  ${EndIf}
+!endif
+
   ; Don't install the quick launch shortcut on Windows 7
   ${Unless} ${AtLeastWin7}
     ${MUI_INSTALLOPTIONS_READ} $AddQuickLaunchSC "shortcuts.ini" "Field 4" "State"
@@ -920,6 +960,7 @@ Function preSummary
     ; If Firefox isn't the http handler for this user show the option to set
     ; Firefox as the default browser.
     ${If} "$R9" != "true"
+    ${AndIf} ${AtMostWin2008R2}
       WriteINIStr "$PLUGINSDIR\summary.ini" "Settings" NumFields "4"
       WriteINIStr "$PLUGINSDIR\summary.ini" "Field 4" Type   "checkbox"
       WriteINIStr "$PLUGINSDIR\summary.ini" "Field 4" Text   "$(SUMMARY_TAKE_DEFAULTS)"
@@ -990,6 +1031,10 @@ FunctionEnd
 # Initialization Functions
 
 Function .onInit
+  ; Remove the current exe directory from the search order.
+  ; This only effects LoadLibrary calls and not implicitly loaded DLLs.
+  System::Call 'kernel32::SetDllDirectoryW(w "")'
+
   StrCpy $PageName ""
   StrCpy $LANGUAGE 0
   ${SetBrandNameVars} "$EXEDIR\core\distribution\setup.ini"
@@ -1065,13 +1110,21 @@ Function .onInit
   WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 2" State  "1"
   WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 2" Flags  "GROUP"
 
-  WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 3" Type   "checkbox"
-  WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 3" Text   "$(ICONS_STARTMENU)"
-  WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 3" Left   "0"
-  WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 3" Right  "-1"
-  WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 3" Top    "40"
-  WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 3" Bottom "50"
-  WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 3" State  "1"
+  ; Don't offer to install the start menu shortcut on Windows 8
+  ; for Metro builds.
+!ifdef MOZ_METRO
+  ${Unless} ${AtLeastWin8}
+!endif
+    WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 3" Type   "checkbox"
+    WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 3" Text   "$(ICONS_STARTMENU)"
+    WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 3" Left   "0"
+    WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 3" Right  "-1"
+    WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 3" Top    "40"
+    WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 3" Bottom "50"
+    WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 3" State  "1"
+!ifdef MOZ_METRO
+  ${EndIf}
+!endif
 
   ; Don't offer to install the quick launch shortcut on Windows 7
   ${Unless} ${AtLeastWin7}

@@ -7,8 +7,10 @@
 
 #import "MacUtils.h"
 #include "Accessible-inl.h"
-#include "nsXULTabAccessible.h"
+#include "DocAccessible.h"
+#include "XULTabAccessible.h"
 
+#include "nsDeckFrame.h"
 #include "nsObjCExceptions.h"
 
 using namespace mozilla::a11y;
@@ -71,7 +73,7 @@ enum CheckboxValue {
 
 - (BOOL)accessibilityIsIgnored
 {
-  return mIsExpired;
+  return !mGeckoAccessible;
 }
 
 - (NSArray*)accessibilityActionNames
@@ -146,7 +148,7 @@ enum CheckboxValue {
 
 - (int)isChecked
 {
-  PRUint64 state = mGeckoAccessible->NativeState();
+  uint64_t state = mGeckoAccessible->NativeState();
 
   // check if we're checked or in a mixed state
   if (state & states::CHECKED) {
@@ -330,6 +332,46 @@ enum CheckboxValue {
 
   [mTabs release];
   mTabs = nil;
+}
+
+@end
+
+@implementation mozPaneAccessible
+
+- (NSUInteger)accessibilityArrayAttributeCount:(NSString*)attribute
+{
+  if (!mGeckoAccessible)
+    return 0;
+
+  // By default this calls -[[mozAccessible children] count].
+  // Since we don't cache mChildren. This is faster.
+  if ([attribute isEqualToString:NSAccessibilityChildrenAttribute])
+    return mGeckoAccessible->ChildCount() ? 1 : 0;
+
+  return [super accessibilityArrayAttributeCount:attribute];
+}
+
+- (NSArray*)children
+{
+  if (!mGeckoAccessible)
+    return nil;
+
+  nsDeckFrame* deckFrame = do_QueryFrame(mGeckoAccessible->GetFrame());
+  nsIFrame* selectedFrame = deckFrame ? deckFrame->GetSelectedBox() : nullptr;
+
+  Accessible* selectedAcc = nullptr;
+  if (selectedFrame) {
+    nsINode* node = selectedFrame->GetContent();
+    selectedAcc = mGeckoAccessible->Document()->GetAccessible(node);
+  }
+
+  if (selectedAcc) {
+    mozAccessible *curNative = GetNativeFromGeckoAccessible(selectedAcc);
+    if (curNative)
+      return [NSArray arrayWithObjects:GetObjectOrRepresentedView(curNative), nil];
+  }
+
+  return nil;
 }
 
 @end

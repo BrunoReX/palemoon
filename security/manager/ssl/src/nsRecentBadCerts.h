@@ -13,6 +13,7 @@
 #include "nsIRecentBadCertsService.h"
 #include "nsTHashtable.h"
 #include "nsString.h"
+#include "cert.h"
 #include "secitem.h"
 
 class RecentBadCert
@@ -22,7 +23,7 @@ public:
   RecentBadCert()
   {
     mDERCert.len = 0;
-    mDERCert.data = nsnull;
+    mDERCert.data = nullptr;
     isDomainMismatch = false;
     isNotValidAtThisTime = false;
     isUntrusted = false;
@@ -39,7 +40,7 @@ public:
     if (mDERCert.len)
       nsMemory::Free(mDERCert.data);
     mDERCert.len = 0;
-    mDERCert.data = nsnull;
+    mDERCert.data = nullptr;
   }
 
   nsString mHostWithPort;
@@ -53,7 +54,7 @@ private:
   RecentBadCert &operator=(const RecentBadCert &other) MOZ_DELETE;
 };
 
-class nsRecentBadCertsService : public nsIRecentBadCertsService
+class nsRecentBadCertsService MOZ_FINAL : public nsIRecentBadCertsService
 {
 public:
   NS_DECL_ISUPPORTS
@@ -71,7 +72,7 @@ protected:
     RecentBadCert mCerts[const_recently_seen_list_size];
 
     // will be in the range of 0 to list_size-1
-    PRUint32 mNextStorePosition;
+    uint32_t mNextStorePosition;
 };
 
 #define NS_RECENTBADCERTS_CID { /* e7caf8c0-3570-47fe-aa1b-da47539b5d07 */ \

@@ -26,13 +26,13 @@ namespace mozilla {
 
 // These are defined analogously to the HashString overloads in mfbt.
 
-inline PRUint32
+inline uint32_t
 HashString(const nsAString& aStr)
 {
   return HashString(aStr.BeginReading(), aStr.Length());
 }
 
-inline PRUint32
+inline uint32_t
 HashString(const nsACString& aStr)
 {
   return HashString(aStr.BeginReading(), aStr.Length());
@@ -49,6 +49,7 @@ HashString(const nsACString& aStr)
  * nsCStringHashKey
  * nsUint32HashKey
  * nsUint64HashKey
+ * nsFloatHashKey
  * nsPtrHashkey
  * nsClearingPtrHashKey
  * nsVoidPtrHashKey
@@ -165,15 +166,15 @@ private:
 };
 
 /**
- * hashkey wrapper using PRUint32 KeyType
+ * hashkey wrapper using uint32_t KeyType
  *
  * @see nsTHashtable::EntryType for specification
  */
 class nsUint32HashKey : public PLDHashEntryHdr
 {
 public:
-  typedef const PRUint32& KeyType;
-  typedef const PRUint32* KeyTypePointer;
+  typedef const uint32_t& KeyType;
+  typedef const uint32_t* KeyTypePointer;
   
   nsUint32HashKey(KeyTypePointer aKey) : mValue(*aKey) { }
   nsUint32HashKey(const nsUint32HashKey& toCopy) : mValue(toCopy.mValue) { }
@@ -187,19 +188,19 @@ public:
   enum { ALLOW_MEMMOVE = true };
 
 private:
-  const PRUint32 mValue;
+  const uint32_t mValue;
 };
 
 /**
- * hashkey wrapper using PRUint64 KeyType
+ * hashkey wrapper using uint64_t KeyType
  *
  * @see nsTHashtable::EntryType for specification
  */
 class nsUint64HashKey : public PLDHashEntryHdr
 {
 public:
-  typedef const PRUint64& KeyType;
-  typedef const PRUint64* KeyTypePointer;
+  typedef const uint64_t& KeyType;
+  typedef const uint64_t* KeyTypePointer;
   
   nsUint64HashKey(KeyTypePointer aKey) : mValue(*aKey) { }
   nsUint64HashKey(const nsUint64HashKey& toCopy) : mValue(toCopy.mValue) { }
@@ -213,7 +214,33 @@ public:
   enum { ALLOW_MEMMOVE = true };
 
 private:
-  const PRUint64 mValue;
+  const uint64_t mValue;
+};
+
+/**
+ * hashkey wrapper using float KeyType
+ *
+ * @see nsTHashtable::EntryType for specification
+ */
+class nsFloatHashKey : public PLDHashEntryHdr
+{
+public:
+  typedef const float& KeyType;
+  typedef const float* KeyTypePointer;
+
+  nsFloatHashKey(KeyTypePointer aKey) : mValue(*aKey) { }
+  nsFloatHashKey(const nsFloatHashKey& toCopy) : mValue(toCopy.mValue) { }
+  ~nsFloatHashKey() { }
+
+  KeyType GetKey() const { return mValue; }
+  bool KeyEquals(KeyTypePointer aKey) const { return *aKey == mValue; }
+
+  static KeyTypePointer KeyToPointer(KeyType aKey) { return &aKey; }
+  static PLDHashNumber HashKey(KeyTypePointer aKey) { return *reinterpret_cast<const uint32_t*>(aKey); }
+  enum { ALLOW_MEMMOVE = true };
+
+private:
+  const float mValue;
 };
 
 /**
@@ -327,7 +354,7 @@ class nsClearingPtrHashKey : public nsPtrHashKey<T>
   nsClearingPtrHashKey(const T *key) : nsPtrHashKey<T>(key) {}
   nsClearingPtrHashKey(const nsClearingPtrHashKey<T> &toCopy) :
     nsPtrHashKey<T>(toCopy) {}
-  ~nsClearingPtrHashKey() { nsPtrHashKey<T>::mKey = nsnull; }
+  ~nsClearingPtrHashKey() { nsPtrHashKey<T>::mKey = nullptr; }
 };
 
 typedef nsPtrHashKey<const void> nsVoidPtrHashKey; 
@@ -486,8 +513,8 @@ public:
 
     static const nsIHashable* KeyToPointer(nsIHashable* aKey) { return aKey; }
     static PLDHashNumber HashKey(const nsIHashable* aKey) {
-        PRUint32 code = 8888; // magic number if GetHashCode fails :-(
-#ifdef NS_DEBUG
+        uint32_t code = 8888; // magic number if GetHashCode fails :-(
+#ifdef DEBUG
         nsresult rv =
 #endif
         const_cast<nsIHashable*>(aKey)->GetHashCode(&code);

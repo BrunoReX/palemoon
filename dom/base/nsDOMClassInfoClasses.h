@@ -12,9 +12,6 @@ DOMCI_CLASS(MimeType)
 DOMCI_CLASS(MimeTypeArray)
 DOMCI_CLASS(BarProp)
 DOMCI_CLASS(History)
-DOMCI_CLASS(PerformanceTiming)
-DOMCI_CLASS(PerformanceNavigation)
-DOMCI_CLASS(Performance)
 DOMCI_CLASS(Screen)
 DOMCI_CLASS(DOMPrototype)
 DOMCI_CLASS(DOMConstructor)
@@ -22,7 +19,6 @@ DOMCI_CLASS(DOMConstructor)
 // Core classes
 DOMCI_CLASS(XMLDocument)
 DOMCI_CLASS(DocumentType)
-DOMCI_CLASS(DOMImplementation)
 DOMCI_CLASS(DOMException)
 DOMCI_CLASS(DOMTokenList)
 DOMCI_CLASS(DOMSettableTokenList)
@@ -42,14 +38,14 @@ DOMCI_CLASS(MutationEvent)
 DOMCI_CLASS(UIEvent)
 DOMCI_CLASS(MouseEvent)
 DOMCI_CLASS(MouseScrollEvent)
+DOMCI_CLASS(WheelEvent)
 DOMCI_CLASS(DragEvent)
 DOMCI_CLASS(KeyboardEvent)
 DOMCI_CLASS(CompositionEvent)
-DOMCI_CLASS(PopupBlockedEvent)
-DOMCI_CLASS(DeviceLightEvent)
-DOMCI_CLASS(DeviceProximityEvent)
-DOMCI_CLASS(UserProximityEvent)
-DOMCI_CLASS(DeviceOrientationEvent)
+#define MOZ_GENERATED_EVENT_LIST
+#define MOZ_GENERATED_EVENT(_event_interface) DOMCI_CLASS(_event_interface)
+#include "GeneratedEvents.h"
+#undef MOZ_GENERATED_EVENT_LIST
 DOMCI_CLASS(DeviceMotionEvent)
 DOMCI_CLASS(DeviceAcceleration)
 DOMCI_CLASS(DeviceRotationRate)
@@ -58,6 +54,8 @@ DOMCI_CLASS(DeviceRotationRate)
 DOMCI_CLASS(HTMLDocument)
 DOMCI_CLASS(HTMLOptionsCollection)
 DOMCI_CLASS(HTMLCollection)
+DOMCI_CLASS(HTMLPropertiesCollection)
+DOMCI_CLASS(PropertyNodeList)
 
 // HTML element classes
 DOMCI_CLASS(HTMLElement)
@@ -93,6 +91,7 @@ DOMCI_CLASS(HTMLMapElement)
 DOMCI_CLASS(HTMLMenuElement)
 DOMCI_CLASS(HTMLMenuItemElement)
 DOMCI_CLASS(HTMLMetaElement)
+DOMCI_CLASS(HTMLMeterElement)
 DOMCI_CLASS(HTMLModElement)
 DOMCI_CLASS(HTMLOListElement)
 DOMCI_CLASS(HTMLObjectElement)
@@ -131,7 +130,6 @@ DOMCI_CLASS(CSSGroupRuleRuleList)
 DOMCI_CLASS(MediaList)
 DOMCI_CLASS(StyleSheetList)
 DOMCI_CLASS(CSSStyleSheet)
-DOMCI_CLASS(CSSStyleDeclaration)
 DOMCI_CLASS(ROCSSPrimitiveValue)
 
 // Range classes
@@ -193,6 +191,7 @@ DOMCI_CLASS(TreeColumns)
 #endif
 
 DOMCI_CLASS(CSSMozDocumentRule)
+DOMCI_CLASS(CSSSupportsRule)
 
 DOMCI_CLASS(BeforeUnloadEvent)
 
@@ -280,7 +279,6 @@ DOMCI_CLASS(SVGAnimatedRect)
 DOMCI_CLASS(SVGAnimatedString)
 DOMCI_CLASS(SVGAnimatedTransformList)
 DOMCI_CLASS(SVGEvent)
-DOMCI_CLASS(SVGException)
 DOMCI_CLASS(SVGLength)
 DOMCI_CLASS(SVGLengthList)
 DOMCI_CLASS(SVGMatrix)
@@ -317,17 +315,13 @@ DOMCI_CLASS(SVGZoomEvent)
 
 // Canvas
 DOMCI_CLASS(HTMLCanvasElement)
-DOMCI_CLASS(CanvasRenderingContext2D)
 DOMCI_CLASS(CanvasGradient)
 DOMCI_CLASS(CanvasPattern)
 DOMCI_CLASS(TextMetrics)
-DOMCI_CLASS(ImageData)
+DOMCI_CLASS(MozCanvasPrintState)
 
 // SmartCard Events
 DOMCI_CLASS(SmartCardEvent)
-  
-// PageTransition Events
-DOMCI_CLASS(PageTransitionEvent)
 
 // WindowUtils
 DOMCI_CLASS(WindowUtils)
@@ -337,7 +331,6 @@ DOMCI_CLASS(XSLTProcessor)
 
 // DOM Level 3 XPath objects
 DOMCI_CLASS(XPathEvaluator)
-DOMCI_CLASS(XPathException)
 DOMCI_CLASS(XPathExpression)
 DOMCI_CLASS(XPathNSResolver)
 DOMCI_CLASS(XPathResult)
@@ -346,7 +339,6 @@ DOMCI_CLASS(XPathResult)
 DOMCI_CLASS(StorageObsolete)
 DOMCI_CLASS(Storage)
 DOMCI_CLASS(StorageItem)
-DOMCI_CLASS(StorageEvent)
 
 // DOMParser, XMLSerializer
 DOMCI_CLASS(DOMParser)
@@ -372,10 +364,8 @@ DOMCI_CLASS(FileList)
 DOMCI_CLASS(Blob)
 DOMCI_CLASS(File)
 DOMCI_CLASS(FileReader)
-DOMCI_CLASS(MozURLProperty)
-DOMCI_CLASS(MozBlobBuilder)
-
-DOMCI_CLASS(DOMStringMap)
+DOMCI_CLASS(ArchiveReader)
+DOMCI_CLASS(ArchiveRequest)
 
 // DOM modal content window class, almost identical to Window
 DOMCI_CLASS(ModalContentWindow)
@@ -389,6 +379,7 @@ DOMCI_CLASS(MessageEvent)
 
 DOMCI_CLASS(DeviceStorage)
 DOMCI_CLASS(DeviceStorageCursor)
+DOMCI_CLASS(DeviceStorageStat)
 
 // Geolocation
 DOMCI_CLASS(GeoGeolocation)
@@ -396,7 +387,7 @@ DOMCI_CLASS(GeoPosition)
 DOMCI_CLASS(GeoPositionCoords)
 DOMCI_CLASS(GeoPositionError)
 
-DOMCI_CLASS(MozBatteryManager)
+DOMCI_CLASS(BatteryManager)
 
 DOMCI_CLASS(MozPowerManager)
 DOMCI_CLASS(MozWakeLock)
@@ -407,13 +398,20 @@ DOMCI_CLASS(MozSmsEvent)
 DOMCI_CLASS(MozSmsRequest)
 DOMCI_CLASS(MozSmsFilter)
 DOMCI_CLASS(MozSmsCursor)
+DOMCI_CLASS(MozSmsSegmentInfo)
 
 DOMCI_CLASS(MozConnection)
+#ifdef MOZ_B2G_RIL
 DOMCI_CLASS(MozMobileConnection)
+DOMCI_CLASS(MozCellBroadcast)
+#endif
+
+DOMCI_CLASS(USSDReceivedEvent)
+
+DOMCI_CLASS(DataErrorEvent)
 
 // @font-face in CSS
 DOMCI_CLASS(CSSFontFaceRule)
-DOMCI_CLASS(CSSFontFaceStyleDecl)
 
 #if defined(MOZ_MEDIA)
 // WhatWG Video Element
@@ -425,9 +423,8 @@ DOMCI_CLASS(TimeRanges)
 
 // Media streams
 DOMCI_CLASS(MediaStream)
+DOMCI_CLASS(LocalMediaStream)
 #endif
-
-DOMCI_CLASS(ProgressEvent)
 
 DOMCI_CLASS(XMLHttpRequestUpload)
 
@@ -442,33 +439,12 @@ DOMCI_CLASS(NotifyAudioAvailableEvent)
 
 DOMCI_CLASS(SimpleGestureEvent)
 
-DOMCI_CLASS(MozTouchEvent)
-
 DOMCI_CLASS(MathMLElement)
-
-// WebGL
-DOMCI_CLASS(WebGLRenderingContext)
-DOMCI_CLASS(WebGLBuffer)
-DOMCI_CLASS(WebGLTexture)
-DOMCI_CLASS(WebGLProgram)
-DOMCI_CLASS(WebGLShader)
-DOMCI_CLASS(WebGLFramebuffer)
-DOMCI_CLASS(WebGLRenderbuffer)
-DOMCI_CLASS(WebGLUniformLocation)
-DOMCI_CLASS(WebGLShaderPrecisionFormat)
-DOMCI_CLASS(WebGLActiveInfo)
-DOMCI_CLASS(WebGLExtension)
-DOMCI_CLASS(WebGLExtensionStandardDerivatives)
-DOMCI_CLASS(WebGLExtensionTextureFilterAnisotropic)
-DOMCI_CLASS(WebGLExtensionLoseContext)
-DOMCI_CLASS(WebGLExtensionCompressedTextureS3TC)
 
 DOMCI_CLASS(PaintRequest)
 DOMCI_CLASS(PaintRequestList)
 
 DOMCI_CLASS(ScrollAreaEvent)
-DOMCI_CLASS(PopStateEvent)
-DOMCI_CLASS(HashChangeEvent)
 
 DOMCI_CLASS(EventListenerInfo)
 
@@ -476,15 +452,13 @@ DOMCI_CLASS(TransitionEvent)
 DOMCI_CLASS(AnimationEvent)
 
 DOMCI_CLASS(ContentFrameMessageManager)
+DOMCI_CLASS(ChromeMessageBroadcaster)
+DOMCI_CLASS(ChromeMessageSender)
 
 DOMCI_CLASS(FormData)
 
 DOMCI_CLASS(DesktopNotification)
 DOMCI_CLASS(DesktopNotificationCenter)
-
-// WebSocket
-DOMCI_CLASS(WebSocket)
-DOMCI_CLASS(CloseEvent)
 
 DOMCI_CLASS(IDBFactory)
 DOMCI_CLASS(IDBFileHandle)
@@ -506,28 +480,59 @@ DOMCI_CLASS(TouchEvent)
 DOMCI_CLASS(MozCSSKeyframeRule)
 DOMCI_CLASS(MozCSSKeyframesRule)
 
+DOMCI_CLASS(CSSPageRule)
+
 DOMCI_CLASS(MediaQueryList)
-DOMCI_CLASS(CustomEvent)
 
 DOMCI_CLASS(MutationObserver)
 DOMCI_CLASS(MutationRecord)
-
-DOMCI_CLASS(MozSettingsEvent)
 
 #ifdef MOZ_B2G_RIL
 DOMCI_CLASS(Telephony)
 DOMCI_CLASS(TelephonyCall)
 DOMCI_CLASS(CallEvent)
+DOMCI_CLASS(MozVoicemail)
+DOMCI_CLASS(MozVoicemailEvent)
+DOMCI_CLASS(MozIccManager)
+DOMCI_CLASS(MozStkCommandEvent)
+#endif
+
+#ifdef MOZ_B2G_FM
+DOMCI_CLASS(FMRadio)
 #endif
 
 #ifdef MOZ_B2G_BT
 DOMCI_CLASS(BluetoothManager)
 DOMCI_CLASS(BluetoothAdapter)
+DOMCI_CLASS(BluetoothDevice)
+DOMCI_CLASS(BluetoothPropertyEvent)
 #endif
+
+DOMCI_CLASS(CameraManager)
+DOMCI_CLASS(CameraControl)
+DOMCI_CLASS(CameraCapabilities)
 
 DOMCI_CLASS(DOMError)
 DOMCI_CLASS(DOMRequest)
+DOMCI_CLASS(OpenWindowEventDetail)
+DOMCI_CLASS(AsyncScrollEventDetail)
 
 DOMCI_CLASS(DOMFileHandle)
 DOMCI_CLASS(FileRequest)
 DOMCI_CLASS(LockedFile)
+
+#ifdef MOZ_SYS_MSG
+DOMCI_CLASS(MozActivity)
+#endif
+
+#ifdef MOZ_TIME_MANAGER
+DOMCI_CLASS(MozTimeManager)
+#endif
+
+#ifdef MOZ_WEBRTC
+DOMCI_CLASS(DataChannel)
+#endif
+
+#ifdef MOZ_AUDIO_CHANNEL_MANAGER
+DOMCI_CLASS(AudioChannelManager)
+#endif

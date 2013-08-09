@@ -20,6 +20,7 @@
 #include "nsAutoPtr.h"
 #include "nsTHashtable.h"
 #include "nsHashKeys.h"
+#include "mozilla/Attributes.h"
 
 class nsPresContext;
 class nsIPresShell;
@@ -45,7 +46,7 @@ public:
   virtual void WillRefresh(mozilla::TimeStamp aTime) = 0;
 };
 
-class nsRefreshDriver : public nsITimerCallback {
+class nsRefreshDriver MOZ_FINAL : public nsITimerCallback {
 public:
   nsRefreshDriver(nsPresContext *aPresContext);
   ~nsRefreshDriver();
@@ -62,7 +63,7 @@ public:
    * Methods for testing, exposed via nsIDOMWindowUtils.  See
    * nsIDOMWindowUtils.advanceTimeAndRefresh for description.
    */
-  void AdvanceTimeAndRefresh(PRInt64 aMilliseconds);
+  void AdvanceTimeAndRefresh(int64_t aMilliseconds);
   void RestoreNormalRefresh();
 
   /**
@@ -76,7 +77,7 @@ public:
   /**
    * Same thing, but in microseconds since the epoch.
    */
-  PRInt64 MostRecentRefreshEpochTime() const;
+  int64_t MostRecentRefreshEpochTime() const;
 
   /**
    * Add / remove refresh observers.  Returns whether the operation
@@ -123,7 +124,7 @@ public:
   bool AddStyleFlushObserver(nsIPresShell* aShell) {
     NS_ASSERTION(!mStyleFlushObservers.Contains(aShell),
 		 "Double-adding style flush observer");
-    bool appended = mStyleFlushObservers.AppendElement(aShell) != nsnull;
+    bool appended = mStyleFlushObservers.AppendElement(aShell) != nullptr;
     EnsureTimerStarted(false);
     return appended;
   }
@@ -133,7 +134,7 @@ public:
   bool AddLayoutFlushObserver(nsIPresShell* aShell) {
     NS_ASSERTION(!IsLayoutFlushObserver(aShell),
 		 "Double-adding layout flush observer");
-    bool appended = mLayoutFlushObservers.AppendElement(aShell) != nsnull;
+    bool appended = mLayoutFlushObservers.AppendElement(aShell) != nullptr;
     EnsureTimerStarted(false);
     return appended;
   }
@@ -143,16 +144,26 @@ public:
   bool IsLayoutFlushObserver(nsIPresShell* aShell) {
     return mLayoutFlushObservers.Contains(aShell);
   }
+  bool AddPresShellToInvalidateIfHidden(nsIPresShell* aShell) {
+    NS_ASSERTION(!mPresShellsToInvalidateIfHidden.Contains(aShell),
+		 "Double-adding style flush observer");
+    bool appended = mPresShellsToInvalidateIfHidden.AppendElement(aShell) != nullptr;
+    EnsureTimerStarted(false);
+    return appended;
+  }
+  void RemovePresShellToInvalidateIfHidden(nsIPresShell* aShell) {
+    mPresShellsToInvalidateIfHidden.RemoveElement(aShell);
+  }
 
   /**
    * Remember whether our presshell's view manager needs a flush
    */
-  void ScheduleViewManagerFlush() {
-    mViewManagerFlushIsPending = true;
-    EnsureTimerStarted(false);
-  }
+  void ScheduleViewManagerFlush();
   void RevokeViewManagerFlush() {
     mViewManagerFlushIsPending = false;
+  }
+  bool ViewManagerFlushIsPending() {
+    return mViewManagerFlushIsPending;
   }
 
   /**
@@ -172,7 +183,7 @@ public:
    */
   void Disconnect() {
     StopTimer();
-    mPresContext = nsnull;
+    mPresContext = nullptr;
   }
 
   /**
@@ -209,7 +220,7 @@ public:
   /**
    * Default interval the refresh driver uses, in ms.
    */
-  static PRInt32 DefaultInterval();
+  static int32_t DefaultInterval();
 
 private:
   typedef nsTObserverArray<nsARefreshObserver*> ObserverArray;
@@ -218,8 +229,8 @@ private:
   void EnsureTimerStarted(bool aAdjustingTimer);
   void StopTimer();
 
-  PRUint32 ObserverCount() const;
-  PRUint32 ImageRequestCount() const;
+  uint32_t ObserverCount() const;
+  uint32_t ImageRequestCount() const;
   static PLDHashOperator ImageRequestEnumerator(nsISupportsHashKey* aEntry,
                                           void* aUserArg);
   void UpdateMostRecentRefresh();
@@ -227,8 +238,8 @@ private:
   // Trigger a refresh immediately, if haven't been disconnected or frozen.
   void DoRefresh();
 
-  PRInt32 GetRefreshTimerInterval() const;
-  PRInt32 GetRefreshTimerType() const;
+  int32_t GetRefreshTimerInterval() const;
+  int32_t GetRefreshTimerType() const;
 
   bool HaveFrameRequestCallbacks() const {
     return mFrameRequestCallbackDocs.Length() != 0;
@@ -236,7 +247,7 @@ private:
 
   nsCOMPtr<nsITimer> mTimer;
   mozilla::TimeStamp mMostRecentRefresh; // only valid when mTimer non-null
-  PRInt64 mMostRecentRefreshEpochTime;   // same thing as mMostRecentRefresh,
+  int64_t mMostRecentRefreshEpochTime;   // same thing as mMostRecentRefresh,
                                          // but in microseconds since the epoch.
 
   nsPresContext *mPresContext; // weak; pres context passed in constructor
@@ -257,12 +268,13 @@ private:
 
   nsAutoTArray<nsIPresShell*, 16> mStyleFlushObservers;
   nsAutoTArray<nsIPresShell*, 16> mLayoutFlushObservers;
+  nsAutoTArray<nsIPresShell*, 16> mPresShellsToInvalidateIfHidden;
   // nsTArray on purpose, because we want to be able to swap.
   nsTArray<nsIDocument*> mFrameRequestCallbackDocs;
 
   // This is the last interval we used for our timer.  May be 0 if we
   // haven't computed a timer interval yet.
-  mutable PRInt32 mLastTimerInterval;
+  mutable int32_t mLastTimerInterval;
 
   // Helper struct for processing image requests
   struct ImageRequestParameters {

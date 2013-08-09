@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// IWYU pragma: private, include "nsEditProperty.h"
+
 /******
 
   This file contains the list of all editor nsIAtoms and their values
@@ -114,6 +116,7 @@ EDITOR_ATOM(legend, "legend")
 EDITOR_ATOM(li, "li")
 EDITOR_ATOM(map, "map")
 EDITOR_ATOM(mark, "mark")
+EDITOR_ATOM(meter, "meter")
 EDITOR_ATOM(menuitem, "menuitem")
 EDITOR_ATOM(mozdirty, "_moz_dirty")
 EDITOR_ATOM(mozEditorBogusNode, "_moz_editor_bogus_node")

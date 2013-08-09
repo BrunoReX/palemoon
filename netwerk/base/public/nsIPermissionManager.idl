@@ -33,8 +33,10 @@
 
 interface nsIURI;
 interface nsIObserver;
+interface nsIPrincipal;
+interface nsIDOMWindow;
 
-[scriptable, uuid(0b83f9d5-3f96-41b6-91aa-ff3a7e4880d7)]
+[scriptable, uuid(6c68cd87-4569-4695-8bc8-ad609f624b96)]
 interface nsIPermissionManager : nsISupports
 {
   /**
@@ -44,18 +46,19 @@ interface nsIPermissionManager : nsISupports
    * default permission when no entry is found for a host, and
    * should not be used by consumers to indicate otherwise.
    */
-  const PRUint32 UNKNOWN_ACTION = 0;
-  const PRUint32 ALLOW_ACTION = 1;
-  const PRUint32 DENY_ACTION = 2;
+  const uint32_t UNKNOWN_ACTION = 0;
+  const uint32_t ALLOW_ACTION = 1;
+  const uint32_t DENY_ACTION = 2;
+  const uint32_t PROMPT_ACTION = 3;
 
   /**
    * Predefined expiration types for permissions.  Permissions can be permanent
    * (never expire), expire at the end of the session, or expire at a specified
    * time.
    */
-  const PRUint32 EXPIRE_NEVER = 0;
-  const PRUint32 EXPIRE_SESSION = 1;
-  const PRUint32 EXPIRE_TIME = 2;
+  const uint32_t EXPIRE_NEVER = 0;
+  const uint32_t EXPIRE_SESSION = 1;
+  const uint32_t EXPIRE_TIME = 2;
 
   /**
    * Add permission information for a given URI and permission type. This
@@ -84,9 +87,21 @@ interface nsIPermissionManager : nsISupports
    */
   void add(in nsIURI uri,
            in string type,
-           in PRUint32 permission,
-           [optional] in PRUint32 expireType,
-           [optional] in PRInt64 expireTime);
+           in uint32_t permission,
+           [optional] in uint32_t expireType,
+           [optional] in int64_t expireTime);
+
+  /**
+   * Add permission information for a given principal.
+   * It is internally calling the other add() method using the nsIURI from the
+   * principal.
+   * Passing a system principal will be a no-op because they will always be
+   * granted permissions.
+   */
+  void addFromPrincipal(in nsIPrincipal principal, in string typed,
+                        in uint32_t permission,
+                        [optional] in uint32_t expireType,
+                        [optional] in int64_t expireTime);
 
   /**
    * Remove permission information for a given host string and permission type.
@@ -103,6 +118,14 @@ interface nsIPermissionManager : nsISupports
               in string type);
 
   /**
+   * Remove permission information for a given principal.
+   * This is internally calling remove() with the host from the principal's URI.
+   * Passing system principal will be a no-op because we never add them to the
+   * database.
+   */
+  void removeFromPrincipal(in nsIPrincipal principal, in string type);
+
+  /**
    * Clear permission information for all websites.
    */
   void removeAll();
@@ -114,8 +137,23 @@ interface nsIPermissionManager : nsISupports
    * @param return  see add(), param permission. returns UNKNOWN_ACTION when
    *                there is no stored permission for this uri and / or type.
    */
-  PRUint32 testPermission(in nsIURI uri,
+  uint32_t testPermission(in nsIURI uri,
                           in string type);
+
+  /**
+   * Test whether the principal has the permission to perform a given action.
+   * System principals will always have permissions granted.
+   */
+  uint32_t testPermissionFromPrincipal(in nsIPrincipal principal,
+                                       in string type);
+
+  /**
+   * Test whether the principal associated with the window's document has the
+   * permission to perform a given action.  System principals will always
+   * have permissions granted.
+   */
+  uint32_t testPermissionFromWindow(in nsIDOMWindow window,
+                                    in string type);
 
   /**
    * Test whether a website has permission to perform the given action.
@@ -125,8 +163,25 @@ interface nsIPermissionManager : nsISupports
    * @param return  see add(), param permission. returns UNKNOWN_ACTION when
    *                there is no stored permission for this uri and / or type.
    */
-  PRUint32 testExactPermission(in nsIURI uri,
+  uint32_t testExactPermission(in nsIURI uri,
                                in string type);
+
+  /**
+   * See testExactPermission() above.
+   * System principals will always have permissions granted.
+   */
+  uint32_t testExactPermissionFromPrincipal(in nsIPrincipal principal,
+                                            in string type);
+
+   /**
+    * Increment or decrement our "refcount" of an app id.
+    *
+    * We use this refcount to determine an app's lifetime.  When an app's
+    * refcount goes to 0, we clear the permissions given to the app which are
+    * set to expire at the end of its session.
+    */
+   void addrefAppId(in unsigned long appId);
+   void releaseAppId(in unsigned long appId);
 
   /**
    * Allows enumeration of all stored permissions
@@ -134,6 +189,11 @@ interface nsIPermissionManager : nsISupports
    *         nsIPermission objects
    */
   readonly attribute nsISimpleEnumerator enumerator;
+
+  /**
+   * Remove all permissions associated with a given app id.
+   */
+  void removePermissionsForApp(in unsigned long appId);
 };
 
 %{ C++

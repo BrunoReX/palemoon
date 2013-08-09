@@ -11,32 +11,53 @@
 #include "mozilla/layers/PLayers.h"
 #include "ShadowLayers.h"
 
+using namespace mozilla::gl;
+
 namespace mozilla {
 namespace layers {
 
 // Platform-specific shadow-layers interfaces.  See ShadowLayers.h.
 // D3D10 doesn't need all these yet.
 bool
-ShadowLayerForwarder::PlatformAllocDoubleBuffer(const gfxIntSize&,
-                                                gfxASurface::gfxContentType,
-                                                SurfaceDescriptor*,
-                                                SurfaceDescriptor*)
-{
-  return false;
-}
-
-bool
 ShadowLayerForwarder::PlatformAllocBuffer(const gfxIntSize&,
                                           gfxASurface::gfxContentType,
+                                          uint32_t,
                                           SurfaceDescriptor*)
 {
   return false;
 }
 
 /*static*/ already_AddRefed<gfxASurface>
-ShadowLayerForwarder::PlatformOpenDescriptor(const SurfaceDescriptor&)
+ShadowLayerForwarder::PlatformOpenDescriptor(OpenMode,
+                                             const SurfaceDescriptor&)
 {
-  return nsnull;
+  return nullptr;
+}
+
+/*static*/ bool
+ShadowLayerForwarder::PlatformCloseDescriptor(const SurfaceDescriptor&)
+{
+  return false;
+}
+
+/*static*/ bool
+ShadowLayerForwarder::PlatformGetDescriptorSurfaceContentType(
+  const SurfaceDescriptor&,
+  OpenMode,
+  gfxContentType*,
+  gfxASurface**)
+{
+  return false;
+}
+
+/*static*/ bool
+ShadowLayerForwarder::PlatformGetDescriptorSurfaceSize(
+  const SurfaceDescriptor&,
+  OpenMode,
+  gfxIntSize*,
+  gfxASurface**)
+{
+  return false;
 }
 
 bool
@@ -56,6 +77,14 @@ ShadowLayerManager::PlatformDestroySharedSurface(SurfaceDescriptor*)
   return false;
 }
 
+/*static*/ already_AddRefed<TextureImage>
+ShadowLayerManager::OpenDescriptorForDirectTexturing(GLContext*,
+                                                     const SurfaceDescriptor&,
+                                                     GLenum)
+{
+  return nullptr;
+}
+
 /*static*/ void
 ShadowLayerManager::PlatformSyncBeforeReplyUpdate()
 {
@@ -67,7 +96,7 @@ GetDescriptor(ID3D10Texture2D* aTexture, SurfaceDescriptorD3D10* aDescr)
   NS_ABORT_IF_FALSE(aTexture && aDescr, "Params must be nonnull");
 
   HRESULT hr;
-  IDXGIResource* dr = nsnull;
+  IDXGIResource* dr = nullptr;
   hr = aTexture->QueryInterface(__uuidof(IDXGIResource), (void**)&dr);
   if (!SUCCEEDED(hr) || !dr)
     return false;
@@ -80,12 +109,12 @@ already_AddRefed<ID3D10Texture2D>
 OpenForeign(ID3D10Device* aDevice, const SurfaceDescriptorD3D10& aDescr)
 {
   HRESULT hr;
-  ID3D10Texture2D* tex = nsnull;
+  ID3D10Texture2D* tex = nullptr;
   hr = aDevice->OpenSharedResource(reinterpret_cast<HANDLE>(aDescr.handle()),
                                    __uuidof(ID3D10Texture2D),
                                    (void**)&tex);
   if (!SUCCEEDED(hr) || !tex)
-    return nsnull;
+    return nullptr;
 
   // XXX FIXME TODO do we need this???
   return nsRefPtr<ID3D10Texture2D>(tex).forget();

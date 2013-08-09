@@ -3,10 +3,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include protocol PNecko;
+include protocol PBrowser;
+include URIParams;
 
-include "mozilla/net/NeckoMessageUtils.h";
+include "SerializedLoadContext.h";
 
-using IPC::URI;
+using IPC::SerializedLoadContext;
 
 namespace mozilla {
 namespace net {
@@ -19,26 +21,28 @@ protocol PWyciwygChannel
 parent:
   __delete__();
 
-  Init(URI uri);
-  AsyncOpen(URI      originalURI,
-            PRUint32 loadFlags);
+  Init(URIParams uri);
+  AsyncOpen(URIParams             originalURI,
+            uint32_t              loadFlags,
+            SerializedLoadContext loadContext,
+            PBrowser browser);
 
   // methods corresponding to those of nsIWyciwygChannel
   WriteToCacheEntry(nsString data);
   CloseCacheEntry(nsresult reason);
-  SetCharsetAndSource(PRInt32 source, nsCString charset);
+  SetCharsetAndSource(int32_t source, nsCString charset);
   SetSecurityInfo(nsCString securityInfo);
   Cancel(nsresult status);
 
 child:
   OnStartRequest(nsresult  statusCode,
-                 PRInt32   contentLength,
-                 PRInt32   source,
+                 int64_t   contentLength,
+                 int32_t   source,
                  nsCString charset,
                  nsCString securityInfo);
 
   OnDataAvailable(nsCString data,
-                  PRUint32  offset);
+                  uint64_t  offset);
 
   OnStopRequest(nsresult statusCode);
 

@@ -102,7 +102,7 @@ void nsPK11Token::destructorSafeDestroyNSSReference()
 
   if (mSlot) {
     PK11_FreeSlot(mSlot);
-    mSlot = nsnull;
+    mSlot = nullptr;
   }
 }
 
@@ -254,7 +254,7 @@ NS_IMETHODIMP nsPK11Token::Reset()
 }
 
 /* readonly attribute long minimumPasswordLength; */
-NS_IMETHODIMP nsPK11Token::GetMinimumPasswordLength(PRInt32 *aMinimumPasswordLength)
+NS_IMETHODIMP nsPK11Token::GetMinimumPasswordLength(int32_t *aMinimumPasswordLength)
 {
   nsNSSShutDownPreventionLock locker;
   if (isAlreadyShutDown())
@@ -284,7 +284,7 @@ NS_IMETHODIMP nsPK11Token::CheckPassword(const PRUnichar *password, bool *_retva
     return NS_ERROR_NOT_AVAILABLE;
 
   SECStatus srv;
-  PRInt32 prerr;
+  int32_t prerr;
   NS_ConvertUTF16toUTF8 aUtf8Password(password);
   srv = PK11_CheckUserPassword(mSlot, 
                   const_cast<char *>(aUtf8Password.get()));
@@ -321,7 +321,7 @@ done:
 
 /* long getAskPasswordTimes(); */
 NS_IMETHODIMP 
-nsPK11Token::GetAskPasswordTimes(PRInt32 *rvAskTimes)
+nsPK11Token::GetAskPasswordTimes(int32_t *rvAskTimes)
 {
   nsNSSShutDownPreventionLock locker;
   if (isAlreadyShutDown())
@@ -335,7 +335,7 @@ nsPK11Token::GetAskPasswordTimes(PRInt32 *rvAskTimes)
 
 /* long getAskPasswordTimeout(); */
 NS_IMETHODIMP 
-nsPK11Token::GetAskPasswordTimeout(PRInt32 *rvAskTimeout)
+nsPK11Token::GetAskPasswordTimeout(int32_t *rvAskTimeout)
 {
   nsNSSShutDownPreventionLock locker;
   if (isAlreadyShutDown())
@@ -351,8 +351,8 @@ nsPK11Token::GetAskPasswordTimeout(PRInt32 *rvAskTimeout)
  *                             in unsigned long timeout);
  */
 NS_IMETHODIMP 
-nsPK11Token::SetAskPasswordDefaults(const PRInt32 askTimes,
-                                    const PRInt32 askTimeout)
+nsPK11Token::SetAskPasswordDefaults(const int32_t askTimes,
+                                    const int32_t askTimeout)
 {
   nsNSSShutDownPreventionLock locker;
   if (isAlreadyShutDown())
@@ -374,8 +374,8 @@ NS_IMETHODIMP nsPK11Token::ChangePassword(const PRUnichar *oldPassword, const PR
   NS_ConvertUTF16toUTF8 aUtf8NewPassword(newPassword);
 
   rv = PK11_ChangePW(mSlot, 
-         (oldPassword != NULL ? const_cast<char *>(aUtf8OldPassword.get()) : NULL), 
-         (newPassword != NULL ? const_cast<char *>(aUtf8NewPassword.get()) : NULL));
+         (oldPassword ? const_cast<char *>(aUtf8OldPassword.get()) : nullptr),
+         (newPassword ? const_cast<char *>(aUtf8NewPassword.get()) : nullptr));
   return (rv == SECSuccess) ? NS_OK : NS_ERROR_FAILURE;
 }
 
@@ -447,8 +447,6 @@ NS_IMETHODIMP nsPK11TokenDB::GetInternalKeyToken(nsIPK11Token **_retval)
   if (!slot) { rv = NS_ERROR_FAILURE; goto done; }
 
   token = new nsPK11Token(slot);
-  if (!token) { rv = NS_ERROR_OUT_OF_MEMORY; goto done; }
-
   *_retval = token;
   NS_ADDREF(*_retval);
 
@@ -469,8 +467,6 @@ FindTokenByName(const PRUnichar* tokenName, nsIPK11Token **_retval)
   if (!slot) { rv = NS_ERROR_FAILURE; goto done; }
 
   *_retval = new nsPK11Token(slot);
-  if (!*_retval) { rv = NS_ERROR_OUT_OF_MEMORY; goto done; }
-
   NS_ADDREF(*_retval);
 
 done:
@@ -486,7 +482,7 @@ NS_IMETHODIMP nsPK11TokenDB::ListTokens(nsIEnumerator* *_retval)
   PK11SlotList *list = 0;
   PK11SlotListElement *le;
 
-  *_retval = nsnull;
+  *_retval = nullptr;
   nsresult rv = NS_NewISupportsArray(getter_AddRefs(array));
   if (NS_FAILED(rv)) { goto done; }
 
@@ -498,10 +494,7 @@ NS_IMETHODIMP nsPK11TokenDB::ListTokens(nsIEnumerator* *_retval)
 
   for (le = PK11_GetFirstSafe(list); le; le = PK11_GetNextSafe(list, le, false)) {
     nsCOMPtr<nsIPK11Token> token = new nsPK11Token(le->slot);
-    rv = token
-      ? array->AppendElement(token)
-      : NS_ERROR_OUT_OF_MEMORY;
-
+    rv = array->AppendElement(token);
     if (NS_FAILED(rv)) {
       PK11_FreeSlotListElement(list, le);
       rv = NS_ERROR_OUT_OF_MEMORY;

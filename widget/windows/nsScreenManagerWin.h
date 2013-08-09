@@ -11,6 +11,7 @@
 #include <windows.h>
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
+#include "mozilla/Attributes.h"
 
 class nsIScreen;
 
@@ -26,7 +27,7 @@ public:
   nsCOMPtr<nsIScreen> mScreen;
 };
 
-class nsScreenManagerWin : public nsIScreenManager
+class nsScreenManagerWin MOZ_FINAL : public nsIScreenManager
 {
 public:
   nsScreenManagerWin ( );
@@ -39,7 +40,7 @@ private:
 
   nsIScreen* CreateNewScreenObject ( HMONITOR inScreen ) ;
 
-  PRUint32 mNumberOfScreens;
+  uint32_t mNumberOfScreens;
 
     // cache the screens to avoid the memory allocations
   nsAutoTArray<ScreenListItem, 8> mScreenList;

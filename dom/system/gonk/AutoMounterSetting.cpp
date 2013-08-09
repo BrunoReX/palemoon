@@ -16,6 +16,7 @@
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
 #include "xpcpublic.h"
+#include "mozilla/Attributes.h"
 
 #undef LOG
 #define LOG(args...)  __android_log_print(ANDROID_LOG_INFO, "AutoMounterSetting" , ## args)
@@ -27,14 +28,14 @@
 namespace mozilla {
 namespace system {
 
-class SettingsServiceCallback : public nsISettingsServiceCallback
+class SettingsServiceCallback MOZ_FINAL : public nsISettingsServiceCallback
 {
 public:
   NS_DECL_ISUPPORTS
 
   SettingsServiceCallback() {}
 
-  NS_IMETHOD Handle(const nsAString &aName, const JS::Value &aResult, JSContext *aContext) {
+  NS_IMETHOD Handle(const nsAString &aName, const JS::Value &aResult) {
     if (JSVAL_IS_INT(aResult)) {
       int32_t mode = JSVAL_TO_INT(aResult);
       SetAutoMounterMode(mode);
@@ -42,7 +43,7 @@ public:
     return NS_OK;
   }
 
-  NS_IMETHOD HandleError(const nsAString &aName, JSContext *aContext) {
+  NS_IMETHOD HandleError(const nsAString &aName) {
     ERR("SettingsCallback::HandleError: %s\n", NS_LossyConvertUTF16toASCII(aName).get());
     return NS_OK;
   }
@@ -66,7 +67,10 @@ AutoMounterSetting::AutoMounterSetting()
     return;
   }
 
-  // Get the initial value of the setting.
+  // Force ums.mode to be 0 initially. We do this because settings are persisted.
+  // We don't want UMS to be enabled until such time as the phone is unlocked,
+  // and gaia/apps/system/js/storage.js takes care of detecting when the phone
+  // becomes unlocked and changes ums.mode appropriately.
   nsCOMPtr<nsISettingsService> settingsService =
     do_GetService("@mozilla.org/settingsService;1");
   if (!settingsService) {
@@ -74,9 +78,9 @@ AutoMounterSetting::AutoMounterSetting()
     return;
   }
   nsCOMPtr<nsISettingsServiceLock> lock;
-  settingsService->GetLock(getter_AddRefs(lock));
+  settingsService->CreateLock(getter_AddRefs(lock));
   nsCOMPtr<nsISettingsServiceCallback> callback = new SettingsServiceCallback();
-  lock->Get(UMS_MODE, callback);
+  lock->Set(UMS_MODE, INT_TO_JSVAL(AUTOMOUNTER_DISABLE), callback, nullptr);
 }
 
 AutoMounterSetting::~AutoMounterSetting()
@@ -98,8 +102,6 @@ AutoMounterSetting::Observe(nsISupports *aSubject,
   if (strcmp(aTopic, MOZSETTINGS_CHANGED) != 0) {
     return NS_OK;
   }
-  LOG("%s: detected %s data = '%s'", __FUNCTION__, aTopic,
-      NS_LossyConvertUTF16toASCII(aData).get());
 
   // Note that this function gets called for any and all settings changes,
   // so we need to carefully check if we have the one we're interested in.

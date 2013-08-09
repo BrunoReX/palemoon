@@ -15,14 +15,14 @@ interface nsIFile;
 interface nsICacheMetaDataVisitor;
 
 
-[scriptable, uuid(49c1a11d-f5d2-4f09-8262-551e64908ada)]
+[scriptable, uuid(90b17d31-46aa-4fb1-a206-473c966cbc18)]
 interface nsICacheEntryDescriptor : nsICacheEntryInfo
 {
     /**
      * Set the time at which the cache entry should be considered invalid (in
      * seconds since the Epoch).
      */
-    void setExpirationTime(in PRUint32 expirationTime);
+    void setExpirationTime(in uint32_t expirationTime);
 
     /**
      * Set the cache entry data size.  This will fail if the cache entry
@@ -74,7 +74,7 @@ interface nsICacheEntryDescriptor : nsICacheEntryInfo
       * taking up space in the cache for an entry that we know up front 
       * is going to have to be evicted anyway. See bug 588507.
       */
-    attribute PRInt64    predictedDataSize;
+    attribute int64_t    predictedDataSize;
 
     /**
      * Get the access granted to this descriptor.  See nsICache.idl for the
@@ -117,7 +117,14 @@ interface nsICacheEntryDescriptor : nsICacheEntryInfo
      */
     void doom();
     void doomAndFailPendingRequests(in nsresult status);
-    
+
+    /**
+     * Asynchronously doom an entry. Listener will be notified about the status
+     * of the operation. Null may be passed if caller doesn't care about the
+     * result.
+     */
+    void asyncDoom(in nsICacheListener listener);
+
     /**
      * A writer must validate this cache object before any readers are given
      * a descriptor to the object.

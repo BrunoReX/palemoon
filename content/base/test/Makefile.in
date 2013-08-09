@@ -3,11 +3,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
-relativesrcdir  = content/base/test
+relativesrcdir  = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
@@ -33,11 +33,10 @@ ifneq ($(OS_ARCH),Darwin)
 XPCSHELL_TESTS += unit_ipc
 endif
 
-include $(topsrcdir)/config/rules.mk
 
 # Split files arbitrarily in two groups to not run into too-long command lines
 # which break on Windows (see bug 563151)
-_TEST_FILES1 = \
+MOCHITEST_FILES_A = \
 		responseIdentical.sjs \
 		test_bug5141.html \
 		test_bug51034.html \
@@ -189,6 +188,8 @@ _TEST_FILES1 = \
 		file_XHR_binary1.bin \
 		file_XHR_binary1.bin^headers^ \
 		file_XHR_binary2.bin \
+		file_XHR_header.sjs \
+		test_XHR_header.html \
 		test_bug428847.html \
 		file_bug428847-1.xhtml \
 		file_bug428847-2.xhtml \
@@ -251,12 +252,23 @@ _TEST_FILES1 = \
 		file_XHRDocURI.text \
 		file_XHRDocURI.text^headers^ \
 		test_DOMException.html \
+		test_meta_viewport0.html \
+		test_meta_viewport1.html \
+		test_meta_viewport2.html \
+		test_meta_viewport3.html \
+		test_meta_viewport4.html \
+		test_meta_viewport5.html \
+		test_meta_viewport6.html \
 		test_mutationobservers.html \
 		mutationobserver_dialog.html \
 		test_bug744830.html \
+		file_bug782342.txt \
+		test_bug782342.html \
+		test_bug282547.html \
+		bug282547.sjs \
 		$(NULL)
 
-_TEST_FILES2 = \
+MOCHITEST_FILES_B = \
 		test_bug459424.html \
 		bug461735-redirect1.sjs \
 		bug461735-redirect2.sjs \
@@ -359,6 +371,10 @@ _TEST_FILES2 = \
 		file_CSP_evalscript_main.html \
 		file_CSP_evalscript_main.html^headers^ \
 		file_CSP_evalscript_main.js \
+		file_csp_bug768029.html \
+		file_csp_bug768029.sjs \
+		file_csp_bug773891.html \
+		file_csp_bug773891.sjs \
 		test_bug540854.html \
 		bug540854.sjs \
 		test_bug548463.html \
@@ -382,6 +398,8 @@ _TEST_FILES2 = \
 		test_bug562652.html \
 		test_bug562137.html \
 		file_bug562137.txt \
+		test_bug562169-1.html \
+		test_bug562169-2.html \
 		test_bug548193.html \
 		file_bug548193.sjs \
 		test_html_colors_quirks.html \
@@ -447,7 +465,6 @@ _TEST_FILES2 = \
 		bug638112-response.txt \
 		bug638112.sjs \
 		test_bug656283.html \
-		test_blobbuilder.html \
 		test_blobconstructor.html \
 		fileutils.js \
 		test_bug338583.html \
@@ -542,22 +559,67 @@ _TEST_FILES2 = \
 		test_bug650386_redirect_307.html \
 		file_bug650386_content.sjs \
 		file_bug650386_report.sjs \
+		test_bug687859.html \
+		file_bug687859-bom.js \
+		file_bug687859-bom.js^headers^ \
+		file_bug687859-16.js \
+		file_bug687859-16.js^headers^ \
+		file_bug687859-http.js \
+		file_bug687859-http.js^headers^ \
+		file_bug687859-charset.js \
+		file_bug687859-inherit.js \
 		test_bug719533.html \
 		test_bug737087.html \
 		test_bug433662.html \
 		test_bug749367.html \
 		test_bug753278.html \
+		test_bug761120.html \
+		test_bug787778.html \
+		file_bug787778.sjs \
 		test_XHR_onuploadprogress.html \
+		test_XHR_anon.html \
+		file_XHR_anon.sjs \
+		file_XHR_system_redirect.html \
+		file_XHR_system_redirect.html^headers^ \
+		test_XHR_system.html \
+		test_XHR_parameters.html \
+		test_ipc_messagemanager_blob.html \
+		test_mixed_content_blocker.html \
+		file_mixed_content_main.html \
+		file_mixed_content_server.sjs \
+    test_mixed_content_blocker_bug803225.html \
+    file_mixed_content_main_bug803225.html \
+    file_mixed_content_main_bug803225_websocket_wsh.py \
+    bug803225_test_mailto.html \
+		test_bug789856.html \
+		file_bug804395.jar \
+		test_bug804395.html \
+		test_bug809003.html \
+		test_bug814576.html \
 		$(NULL)
 
-_CHROME_FILES =	\
+# OOP tests don't work on Windows (bug 763081) or native-fennec
+# (see Bug 774939)
+ifneq ($(OS_ARCH),WINNT)
+ifndef MOZ_ANDROID_OMTC
+MOCHITEST_FILES_B += \
+		test_messagemanager_assertpermission.html \
+		test_child_process_shutdown_message.html \
+		$(NULL)
+endif
+endif
+
+MOCHITEST_CHROME_FILES =	\
 		test_bug357450.js \
 		$(NULL)
 
+MOCHITEST_FILES_PARTS = $(foreach s,A B,MOCHITEST_FILES_$(s))
+
 # This test fails on the Mac for some reason
 ifneq (,$(filter gtk2 windows,$(MOZ_WIDGET_TOOLKIT)))
-_TEST_FILES2 += 	test_copyimage.html \
+MOCHITEST_FILES_C = 	test_copyimage.html \
 		$(NULL)
+MOCHITEST_FILES_PARTS += MOCHITEST_FILES_C
 endif
 
 # Disabled for now. Mochitest isn't reliable enough for these.
@@ -568,19 +630,9 @@ endif
 #		test_bug503473.html \
 #		file_bug503473-frame.sjs \
 
-_BROWSER_TEST_FILES = \
+MOCHITEST_BROWSER_FILES = \
 		browser_bug593387.js \
 		$(NULL)
 
-libs:: $(_TEST_FILES1)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/tests/$(relativesrcdir)
-
-libs:: $(_TEST_FILES2)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/tests/$(relativesrcdir)
-
-libs:: $(_BROWSER_TEST_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/browser/$(relativesrcdir)
-
-libs:: $(_CHROME_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/chrome/$(relativesrcdir)
+include $(topsrcdir)/config/rules.mk
 

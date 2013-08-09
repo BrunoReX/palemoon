@@ -20,7 +20,9 @@ class SourceSurfaceCairo;
 class GradientStopsCairo : public GradientStops
 {
   public:
-    GradientStopsCairo(GradientStop* aStops, uint32_t aNumStops)
+    GradientStopsCairo(GradientStop* aStops, uint32_t aNumStops,
+                       ExtendMode aExtendMode)
+     : mExtendMode(aExtendMode)
     {
       for (uint32_t i = 0; i < aNumStops; ++i) {
         mStops.push_back(aStops[i]);
@@ -34,10 +36,16 @@ class GradientStopsCairo : public GradientStops
       return mStops;
     }
 
+    ExtendMode GetExtendMode() const
+    {
+      return mExtendMode;
+    }
+
     virtual BackendType GetBackendType() const { return BACKEND_CAIRO; }
 
   private:
     std::vector<GradientStop> mStops;
+    ExtendMode mExtendMode;
 };
 
 class DrawTargetCairo : public DrawTarget
@@ -95,7 +103,7 @@ public:
                           const GlyphBuffer &aBuffer,
                           const Pattern &aPattern,
                           const DrawOptions &aOptions,
-                          const GlyphRenderingOptions *aRenderingOptions = NULL);
+                          const GlyphRenderingOptions *aRenderingOptions = nullptr);
   virtual void Mask(const Pattern &aSource,
                     const Pattern &aMask,
                     const DrawOptions &aOptions = DrawOptions());
@@ -115,6 +123,9 @@ public:
     CreateSourceSurfaceFromNativeSurface(const NativeSurface &aSurface) const;
   virtual TemporaryRef<DrawTarget>
     CreateSimilarDrawTarget(const IntSize &aSize, SurfaceFormat aFormat) const;
+  virtual TemporaryRef<DrawTarget>
+    CreateShadowDrawTarget(const IntSize &aSize, SurfaceFormat aFormat,
+                           float aSigma) const;
 
   virtual TemporaryRef<GradientStops>
     CreateGradientStops(GradientStop *aStops,
@@ -123,7 +134,7 @@ public:
 
   virtual void *GetNativeSurface(NativeSurfaceType aType);
 
-  bool Init(cairo_surface_t* aSurface);
+  bool Init(cairo_surface_t* aSurface, const IntSize& aSize);
 
   void SetPathObserver(CairoPathContext* aPathObserver);
 
@@ -132,33 +143,44 @@ public:
   // Call to set up aContext for drawing (with the current transform, etc).
   // Pass the path you're going to be using if you have one.
   // Implicitly calls WillChange(aPath).
-  void PrepareForDrawing(cairo_t* aContext, const Path* aPath = NULL);
+  void PrepareForDrawing(cairo_t* aContext, const Path* aPath = nullptr);
 
 private: // methods
+  // Init cairo surface without doing a cairo_surface_reference() call.
+  bool InitAlreadyReferenced(cairo_surface_t* aSurface, const IntSize& aSize);
+
   enum DrawPatternType { DRAW_FILL, DRAW_STROKE };
   void DrawPattern(const Pattern& aPattern,
                    const StrokeOptions& aStrokeOptions,
                    const DrawOptions& aOptions,
                    DrawPatternType aDrawType);
 
-  // Copy-on-write support for snapshot surfaces.
-  friend class SourceSurfaceCairo;
-  void AppendSnapshot(SourceSurfaceCairo* aSnapshot);
-  void RemoveSnapshot(SourceSurfaceCairo* aSnapshot);
-
   // Call before you make any changes to the backing surface with which this
   // context is associated. Pass the path you're going to be using if you have
   // one.
-  void WillChange(const Path* aPath = NULL);
+  void WillChange(const Path* aPath = nullptr);
 
-  // Call if there is any reason to disassociate all snapshots from this draw
+  // Call if there is any reason to disassociate the snapshot from this draw
   // target; for example, because we're going to be destroyed.
-  void MarkSnapshotsIndependent();
+  void MarkSnapshotIndependent();
 
+  // If the current operator is "source" then clear the destination before we
+  // draw into it, to simulate the effect of an unbounded source operator.
+  void ClearSurfaceForUnboundedSource(const CompositionOp &aOperator);
 private: // data
   cairo_t* mContext;
-  std::vector<SourceSurfaceCairo*> mSnapshots;
-  mutable RefPtr<CairoPathContext> mPathObserver;
+  cairo_surface_t* mSurface;
+  IntSize mSize;
+
+  // The latest snapshot of this surface. This needs to be told when this
+  // target is modified. We keep it alive as a cache.
+  RefPtr<SourceSurfaceCairo> mSnapshot;
+
+  // It is safe to use a regular pointer here because the CairoPathContext will
+  // deregister itself on destruction. Using a RefPtr would extend the life-
+  // span of the CairoPathContext. This causes a problem when
+  // PathBuilderCairo.Finish()
+  mutable CairoPathContext* mPathObserver;
 };
 
 }

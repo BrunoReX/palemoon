@@ -2,19 +2,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH     = ../../../../..
+DEPTH     = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir    = @srcdir@
 VPATH     = @srcdir@
-relativesrcdir = toolkit/mozapps/update/test/chrome
+relativesrcdir = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-_OTHER_FILES = \
+MOCHITEST_CHROME_FILES = \
   ../unit/data/simple_no_pib.mar \
   $(NULL)
 
-_CHROME_FILES = \
+MOCHITEST_CHROME_FILES += \
   test_0011_check_basic.xul \
   test_0012_check_basic_license.xul \
   test_0013_check_incompat_basic.xul \
@@ -59,6 +59,9 @@ _CHROME_FILES = \
   test_0092_finishedBackground.xul \
   test_0093_stagedBackground.xul \
   test_0094_stagedServiceBackground.xul \
+  test_0095_restartNotification.xul \
+  test_0096_restartNotification_remote.xul \
+  test_0097_restartNotification_remoteInvalidNumber.xul \
   test_0111_neverButton_basic.xul \
   test_0112_neverButton_billboard.xul \
   test_0113_showNeverForVersionRemovedWithPref.xul \
@@ -75,13 +78,8 @@ _CHROME_FILES = \
   test_9999_cleanup.xul \
   $(NULL)
 
+
 include $(topsrcdir)/config/rules.mk
-
-libs:: $(_OTHER_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/chrome/$(relativesrcdir)
-
-libs:: $(_CHROME_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/chrome/$(relativesrcdir)
 
 libs:: 
 	$(PYTHON) $(MOZILLA_DIR)/config/Preprocessor.py -Fsubstitution $(DEFINES) $(ACDEFINES) $(srcdir)/utils.js > \

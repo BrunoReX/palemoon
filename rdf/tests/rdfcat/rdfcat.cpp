@@ -47,8 +47,8 @@ static NS_DEFINE_CID(kRDFXMLDataSourceCID,  NS_RDFXMLDATASOURCE_CID);
 #define RETURN_IF_FAILED(rv, step) \
     PR_BEGIN_MACRO \
     if (NS_FAILED(rv)) { \
-        printf(">>> %s failed: rv=%x\n", step, rv); \
-        return rv;\
+        printf(">>> %s failed: rv=%x\n", step, static_cast<uint32_t>(rv)); \
+        return 1;\
     } \
     PR_END_MACRO
 
@@ -68,20 +68,20 @@ public:
         return NS_OK;
     }
 
-    NS_IMETHOD Write(const char* aBuf, PRUint32 aCount, PRUint32 *aWriteCount) {
+    NS_IMETHOD Write(const char* aBuf, uint32_t aCount, uint32_t *aWriteCount) {
         PR_Write(PR_GetSpecialFD(PR_StandardOutput), aBuf, aCount);
         *aWriteCount = aCount;
         return NS_OK;
     }
 
     NS_IMETHOD
-    WriteFrom(nsIInputStream *inStr, PRUint32 count, PRUint32 *_retval) {
+    WriteFrom(nsIInputStream *inStr, uint32_t count, uint32_t *_retval) {
         NS_NOTREACHED("WriteFrom");
         return NS_ERROR_NOT_IMPLEMENTED;
     }
 
     NS_IMETHOD
-    WriteSegments(nsReadSegmentFun reader, void * closure, PRUint32 count, PRUint32 *_retval) {
+    WriteSegments(nsReadSegmentFun reader, void * closure, uint32_t count, uint32_t *_retval) {
         NS_NOTREACHED("WriteSegments");
         return NS_ERROR_NOT_IMPLEMENTED;
     }
@@ -112,7 +112,7 @@ main(int argc, char** argv)
         return 1;
     }
 
-    NS_InitXPCOM2(nsnull, nsnull, nsnull);
+    NS_InitXPCOM2(nullptr, nullptr, nullptr);
 
     // Create a stream data source and initialize it on argv[1], which
     // is hopefully a "file:" URL.
@@ -134,7 +134,7 @@ main(int argc, char** argv)
     nsCOMPtr<nsIThread> thread = do_GetCurrentThread();
     bool done = false;
     while (!done) {
-        NS_ENSURE_STATE(NS_ProcessNextEvent(thread));
+        NS_ENSURE_TRUE(NS_ProcessNextEvent(thread), 1);
         remote->GetLoaded(&done);
     }
 
@@ -150,5 +150,5 @@ main(int argc, char** argv)
     rv = source->Serialize(out);
     RETURN_IF_FAILED(rv, "datasoure serialization");
 
-    return NS_OK;
+    return 0;
 }

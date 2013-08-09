@@ -14,8 +14,9 @@ BEGIN_TEST(test_BindCallable)
   EVAL("(function() { return this.somename; })", &func);
   CHECK(func.isObject());
 
-  JSObject* newCallable = JS_BindCallable(cx, JSVAL_TO_OBJECT(func),
-                                          JSVAL_TO_OBJECT(v));
+  js::RootedObject funcObj(cx, JSVAL_TO_OBJECT(func));
+  js::RootedObject vObj(cx, JSVAL_TO_OBJECT(v));
+  JSObject* newCallable = JS_BindCallable(cx, funcObj, vObj);
   CHECK(newCallable);
 
   jsval retval;

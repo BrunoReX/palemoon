@@ -7,7 +7,7 @@
 #include "nsIDOMEvent.idl"
 #include "nsIVariant.idl"
 
-[scriptable, uuid(cd362d2f-a9a1-4127-940d-477ba0e82bd6)]
+[scriptable, builtinclass, uuid(34139b4f-ac78-4372-98d3-12d6dcf478ef)]
 interface nsIDOMNotifyAudioAvailableEvent : nsIDOMEvent
 {
   [implicit_jscontext]

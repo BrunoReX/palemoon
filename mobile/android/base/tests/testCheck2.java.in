@@ -4,11 +4,15 @@ package @ANDROID_PACKAGE_NAME@.tests;
 import @ANDROID_PACKAGE_NAME@.*;
 
 public class testCheck2 extends PixelTest {
+    @Override
+    protected int getTestType() {
+        return TEST_TALOS;
+    }
+
     public void testCheck2() {
-        setTestType("talos");
         String url = getAbsoluteUrl("/startup_test/fennecmark/cnn/cnn.com/index.html");
 
-        mActions.expectGeckoEvent("Gecko:Ready").blockForEvent();
+        blockForGeckoReady();
         loadAndPaint(url);
         mDriver.setupScrollHandling();
 
@@ -37,7 +41,7 @@ public class testCheck2 extends PixelTest {
             Thread.sleep(1000);
             completeness = mDriver.stopCheckerboardRecording();
         } catch (Exception e) {
-            mAsserter.dumpLog("Exception while replaying events", e);
+            mAsserter.ok(false, "Exception while replaying events", e.toString());
         }
 
         mAsserter.dumpLog("__start_report" + completeness + "__end_report");

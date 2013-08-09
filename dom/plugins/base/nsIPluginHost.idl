@@ -12,7 +12,7 @@
   "@mozilla.org/plugin/host;1"
 %}
 
-[scriptable, uuid(28F1F9E1-CD23-4FE2-BCC8-BBB0B2D49A4A)]
+[scriptable, uuid(d70af999-cb1f-4429-b85e-f18cdbabc43c)]
 interface nsIPluginHost : nsISupports
 {
   /**
@@ -35,8 +35,8 @@ interface nsIPluginHost : nsISupports
    *                   loss of functionality. To be used out of concern for
    *                   space and not necessarily privacy.
    */
-  const PRUint32 FLAG_CLEAR_ALL = 0;
-  const PRUint32 FLAG_CLEAR_CACHE = 1;
+  const uint32_t FLAG_CLEAR_ALL = 0;
+  const uint32_t FLAG_CLEAR_CACHE = 1;
 
   /*
    * Clear site data for a given plugin.
@@ -59,7 +59,7 @@ interface nsIPluginHost : nsISupports
    *         general or for that particular site and/or flag combination.
    */
   void clearSiteData(in nsIPluginTag plugin, in AUTF8String domain,
-                     in PRUint64 flags, in PRInt64 maxAge);
+                     in uint64_t flags, in int64_t maxAge);
 
   /*
    * Determine if a plugin has stored data for a given site.
@@ -72,5 +72,16 @@ interface nsIPluginHost : nsISupports
    *                subdomains is found, return true.
    */
   boolean siteHasData(in nsIPluginTag plugin, in AUTF8String domain);
+
+  /**
+   * Registers the play preview plugin mode for specific mime type
+   *
+   * @param mimeType - specified mime type
+   */
+  void registerPlayPreviewMimeType(in AUTF8String mimeType);
+
+  void unregisterPlayPreviewMimeType(in AUTF8String mimeType);
+
+  bool isPluginClickToPlayForType(in AUTF8String mimeType);
 };
 

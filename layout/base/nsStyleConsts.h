@@ -27,7 +27,7 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
     return side;
 }
 
-#define NS_FOR_CSS_FULL_CORNERS(var_) for (PRInt32 var_ = 0; var_ < 4; ++var_)
+#define NS_FOR_CSS_FULL_CORNERS(var_) for (int32_t var_ = 0; var_ < 4; ++var_)
 
 // Indices into "half corner" arrays (nsStyleCorners e.g.)
 #define NS_CORNER_TOP_LEFT_X      0
@@ -39,7 +39,7 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_CORNER_BOTTOM_LEFT_X   6
 #define NS_CORNER_BOTTOM_LEFT_Y   7
 
-#define NS_FOR_CSS_HALF_CORNERS(var_) for (PRInt32 var_ = 0; var_ < 8; ++var_)
+#define NS_FOR_CSS_HALF_CORNERS(var_) for (int32_t var_ = 0; var_ < 8; ++var_)
 
 // The results of these conversion macros are exhaustively checked in
 // nsStyleCoord.cpp.
@@ -206,10 +206,15 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_COLOR_MOZ_HYPERLINKTEXT              -4
 #define NS_COLOR_MOZ_VISITEDHYPERLINKTEXT       -5
 #define NS_COLOR_MOZ_ACTIVEHYPERLINKTEXT        -6
+// Only valid as paints in SVG glyphs
+#define NS_COLOR_OBJECTFILL                     -7
+#define NS_COLOR_OBJECTSTROKE                   -8
 
 // See nsStyleDisplay
 #define NS_STYLE_ANIMATION_DIRECTION_NORMAL       0
-#define NS_STYLE_ANIMATION_DIRECTION_ALTERNATE    1
+#define NS_STYLE_ANIMATION_DIRECTION_REVERSE      1
+#define NS_STYLE_ANIMATION_DIRECTION_ALTERNATE    2
+#define NS_STYLE_ANIMATION_DIRECTION_ALTERNATE_REVERSE    3
 
 // See nsStyleDisplay
 #define NS_STYLE_ANIMATION_FILL_MODE_NONE         0
@@ -390,6 +395,46 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_DISPLAY_POPUP                  27
 #define NS_STYLE_DISPLAY_GROUPBOX               28
 #endif
+#ifdef MOZ_FLEXBOX
+#define NS_STYLE_DISPLAY_FLEX                   29
+#define NS_STYLE_DISPLAY_INLINE_FLEX            30
+#endif // MOZ_FLEXBOX
+
+#ifdef MOZ_FLEXBOX
+// See nsStylePosition
+#define NS_STYLE_ALIGN_ITEMS_FLEX_START         0
+#define NS_STYLE_ALIGN_ITEMS_FLEX_END           1
+#define NS_STYLE_ALIGN_ITEMS_CENTER             2
+#define NS_STYLE_ALIGN_ITEMS_BASELINE           3
+#define NS_STYLE_ALIGN_ITEMS_STRETCH            4
+
+// For convenience/clarity (since we use this default value in multiple places)
+#define NS_STYLE_ALIGN_ITEMS_INITIAL_VALUE      NS_STYLE_ALIGN_ITEMS_STRETCH
+
+// The "align-self" property accepts all of the normal "align-items" values
+// (above) plus a special 'auto' value that computes to the parent's
+// "align-items" value. Our computed style code internally represents 'auto'
+// with this enum until we actually evaluate it:
+#define NS_STYLE_ALIGN_SELF_AUTO                5
+
+// See nsStylePosition
+#define NS_STYLE_FLEX_DIRECTION_ROW             0
+#define NS_STYLE_FLEX_DIRECTION_ROW_REVERSE     1
+#define NS_STYLE_FLEX_DIRECTION_COLUMN          2
+#define NS_STYLE_FLEX_DIRECTION_COLUMN_REVERSE  3
+
+// See nsStylePosition
+// NOTE: This is the initial value of the integer-valued 'order' property
+// (rather than an internal numerical representation of some keyword).
+#define NS_STYLE_ORDER_INITIAL                  0
+
+// See nsStylePosition
+#define NS_STYLE_JUSTIFY_CONTENT_FLEX_START     0
+#define NS_STYLE_JUSTIFY_CONTENT_FLEX_END       1
+#define NS_STYLE_JUSTIFY_CONTENT_CENTER         2
+#define NS_STYLE_JUSTIFY_CONTENT_SPACE_BETWEEN  3
+#define NS_STYLE_JUSTIFY_CONTENT_SPACE_AROUND   4
+#endif // MOZ_FLEXBOX
 
 // See nsStyleDisplay
 #define NS_STYLE_FLOAT_NONE                     0
@@ -635,6 +680,7 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_TEXT_TRANSFORM_CAPITALIZE      1
 #define NS_STYLE_TEXT_TRANSFORM_LOWERCASE       2
 #define NS_STYLE_TEXT_TRANSFORM_UPPERCASE       3
+#define NS_STYLE_TEXT_TRANSFORM_FULLWIDTH       4
 
 // See nsStyleDisplay
 #define NS_STYLE_TRANSITION_TIMING_FUNCTION_EASE         0
@@ -668,11 +714,12 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_TABSIZE_INITIAL                8
 
 // See nsStyleText
-#define NS_STYLE_WHITESPACE_NORMAL              0
-#define NS_STYLE_WHITESPACE_PRE                 1
-#define NS_STYLE_WHITESPACE_NOWRAP              2
-#define NS_STYLE_WHITESPACE_PRE_WRAP            3
-#define NS_STYLE_WHITESPACE_PRE_LINE            4
+#define NS_STYLE_WHITESPACE_NORMAL               0
+#define NS_STYLE_WHITESPACE_PRE                  1
+#define NS_STYLE_WHITESPACE_NOWRAP               2
+#define NS_STYLE_WHITESPACE_PRE_WRAP             3
+#define NS_STYLE_WHITESPACE_PRE_LINE             4
+#define NS_STYLE_WHITESPACE_PRE_DISCARD_NEWLINES 5
 
 // See nsStyleText
 #define NS_STYLE_WORDBREAK_NORMAL               0
@@ -700,6 +747,7 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_UNICODE_BIDI_EMBED             0x1
 #define NS_STYLE_UNICODE_BIDI_ISOLATE           0x2
 #define NS_STYLE_UNICODE_BIDI_OVERRIDE          0x4
+#define NS_STYLE_UNICODE_BIDI_ISOLATE_OVERRIDE  0x6
 #define NS_STYLE_UNICODE_BIDI_PLAINTEXT         0x8
 
 // See nsStyleTable (here for HTML 4.0 for now, should probably change to side flags)
@@ -721,7 +769,7 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_TABLE_RULES_ALL                4
 
 #define NS_STYLE_TABLE_COLS_NONE                (-1)
-#define NS_STYLE_TABLE_COLS_ALL                 PRInt32(1 << 30)
+#define NS_STYLE_TABLE_COLS_ALL                 int32_t(1 << 30)
 
 #define NS_STYLE_TABLE_LAYOUT_AUTO              0
 #define NS_STYLE_TABLE_LAYOUT_FIXED             1
@@ -780,6 +828,7 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_GRADIENT_SIZE_CLOSEST_CORNER   1
 #define NS_STYLE_GRADIENT_SIZE_FARTHEST_SIDE    2
 #define NS_STYLE_GRADIENT_SIZE_FARTHEST_CORNER  3
+#define NS_STYLE_GRADIENT_SIZE_EXPLICIT_SIZE    4
 
 // See nsStyleSVG
 
@@ -823,6 +872,9 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_STROKE_LINEJOIN_ROUND          1
 #define NS_STYLE_STROKE_LINEJOIN_BEVEL          2
 
+// stroke-dasharray, stroke-dashoffset, stroke-width
+#define NS_STYLE_STROKE_PROP_OBJECTVALUE        0
+
 // text-anchor
 #define NS_STYLE_TEXT_ANCHOR_START              0
 #define NS_STYLE_TEXT_ANCHOR_MIDDLE             1
@@ -849,6 +901,10 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 
 #define NS_STYLE_TRANSFORM_STYLE_FLAT               0
 #define NS_STYLE_TRANSFORM_STYLE_PRESERVE_3D        1
+
+// object {fill,stroke}-opacity for SVG glyphs
+#define NS_STYLE_OBJECT_FILL_OPACITY                0
+#define NS_STYLE_OBJECT_STROKE_OPACITY              1
 
 /*****************************************************************************
  * Constants for media features.                                             *

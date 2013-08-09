@@ -18,14 +18,19 @@ namespace xpc {
 
 class AccessCheck {
   public:
-    static bool isSameOrigin(JSCompartment *a, JSCompartment *b);
+    static bool subsumes(JSCompartment *a, JSCompartment *b);
+    static bool subsumes(JSObject *a, JSObject *b);
+    static bool wrapperSubsumes(JSObject *wrapper);
+    static bool subsumesIgnoringDomain(JSCompartment *a, JSCompartment *b);
     static bool isChrome(JSCompartment *compartment);
+    static bool isChrome(JSObject *obj);
+    static bool callerIsChrome();
     static nsIPrincipal *getPrincipal(JSCompartment *compartment);
     static bool isCrossOriginAccessPermitted(JSContext *cx, JSObject *obj, jsid id,
                                              js::Wrapper::Action act);
+    static bool callerIsXBL(JSContext *cx);
     static bool isSystemOnlyAccessPermitted(JSContext *cx);
     static bool isLocationObjectSameOrigin(JSContext *cx, JSObject *wrapper);
-    static bool documentDomainMakesSameOrigin(JSContext *cx, JSObject *obj);
 
     static bool needsSystemOnlyWrapper(JSObject *obj);
 
@@ -35,57 +40,40 @@ class AccessCheck {
 };
 
 struct Policy {
-    typedef js::Wrapper::Permission Permission;
-
-    static const Permission PermitObjectAccess = js::Wrapper::PermitObjectAccess;
-    static const Permission PermitPropertyAccess = js::Wrapper::PermitPropertyAccess;
-    static const Permission DenyAccess = js::Wrapper::DenyAccess;
-};
-
-// This policy permits access to all properties.
-struct Permissive : public Policy {
-    static bool check(JSContext *cx, JSObject *wrapper, jsid id, js::Wrapper::Action act,
-                      Permission &perm) {
-        perm = PermitObjectAccess;
-        return true;
-    }
 };
 
 // This policy only permits access to the object if the subject can touch
 // system objects.
 struct OnlyIfSubjectIsSystem : public Policy {
-    static bool check(JSContext *cx, JSObject *wrapper, jsid id, js::Wrapper::Action act,
-                      Permission &perm) {
-        if (AccessCheck::isSystemOnlyAccessPermitted(cx)) {
-            perm = PermitObjectAccess;
-            return true;
-        }
-        perm = DenyAccess;
-        JSAutoEnterCompartment ac;
-        if (!ac.enter(cx, wrapper))
-            return false;
+    static bool check(JSContext *cx, JSObject *wrapper, jsid id, js::Wrapper::Action act) {
+        return AccessCheck::isSystemOnlyAccessPermitted(cx);
+    }
+
+    static bool deny(JSContext *cx, jsid id, js::Wrapper::Action act) {
         AccessCheck::deny(cx, id);
         return false;
+    }
+
+    static bool allowNativeCall(JSContext *cx, JS::IsAcceptableThis test, JS::NativeImpl impl)
+    {
+        return AccessCheck::isSystemOnlyAccessPermitted(cx);
     }
 };
 
 // This policy only permits access to properties that are safe to be used
 // across origins.
 struct CrossOriginAccessiblePropertiesOnly : public Policy {
-    static bool check(JSContext *cx, JSObject *wrapper, jsid id, js::Wrapper::Action act,
-                      Permission &perm) {
+    static bool check(JSContext *cx, JSObject *wrapper, jsid id, js::Wrapper::Action act) {
         // Location objects should always use LocationPolicy.
         MOZ_ASSERT(!WrapperFactory::IsLocationObject(js::UnwrapObject(wrapper)));
-
-        if (AccessCheck::isCrossOriginAccessPermitted(cx, wrapper, id, act)) {
-            perm = PermitPropertyAccess;
-            return true;
-        }
-        perm = DenyAccess;
-        JSAutoEnterCompartment ac;
-        if (!ac.enter(cx, wrapper))
-            return false;
+        return AccessCheck::isCrossOriginAccessPermitted(cx, wrapper, id, act);
+    }
+    static bool deny(JSContext *cx, jsid id, js::Wrapper::Action act) {
         AccessCheck::deny(cx, id);
+        return false;
+    }
+    static bool allowNativeCall(JSContext *cx, JS::IsAcceptableThis test, JS::NativeImpl impl)
+    {
         return false;
     }
 };
@@ -114,27 +102,23 @@ struct CrossOriginAccessiblePropertiesOnly : public Policy {
 // state of the outer window to determine whether we happen to be same-origin
 // at the moment.
 struct LocationPolicy : public Policy {
-    static bool check(JSContext *cx, JSObject *wrapper, jsid id, js::Wrapper::Action act,
-                      Permission &perm) {
+    static bool check(JSContext *cx, JSObject *wrapper, jsid id, js::Wrapper::Action act) {
         // We should only be dealing with Location objects here.
         MOZ_ASSERT(WrapperFactory::IsLocationObject(js::UnwrapObject(wrapper)));
 
-        // Default to deny.
-        perm = DenyAccess;
-
-        // Location object security is complicated enough. Don't allow punctures.
-        if (act == js::Wrapper::PUNCTURE)
-            return false;
-
-        if (AccessCheck::isCrossOriginAccessPermitted(cx, wrapper, id, act) ||
-            AccessCheck::isLocationObjectSameOrigin(cx, wrapper)) {
-            perm = PermitPropertyAccess;
+        if ((AccessCheck::isCrossOriginAccessPermitted(cx, wrapper, id, act) ||
+             AccessCheck::isLocationObjectSameOrigin(cx, wrapper))) {
             return true;
         }
-        JSAutoEnterCompartment ac;
-        if (!ac.enter(cx, wrapper))
-            return false;
+        return false;
+    }
+    static bool deny(JSContext *cx, jsid id, js::Wrapper::Action act) {
         AccessCheck::deny(cx, id);
+        return false;
+    }
+
+    static bool allowNativeCall(JSContext *cx, JS::IsAcceptableThis test, JS::NativeImpl impl)
+    {
         return false;
     }
 };
@@ -142,14 +126,30 @@ struct LocationPolicy : public Policy {
 // This policy only permits access to properties if they appear in the
 // objects exposed properties list.
 struct ExposedPropertiesOnly : public Policy {
-    static bool check(JSContext *cx, JSObject *wrapper, jsid id, js::Wrapper::Action act,
-                      Permission &perm);
+    static bool check(JSContext *cx, JSObject *wrapper, jsid id, js::Wrapper::Action act);
+
+    static bool deny(JSContext *cx, jsid id, js::Wrapper::Action act) {
+        // For gets, silently fail.
+        if (act == js::Wrapper::GET)
+            return true;
+        // For sets,throw an exception.
+        AccessCheck::deny(cx, id);
+        return false;
+    }
+    static bool allowNativeCall(JSContext *cx, JS::IsAcceptableThis test, JS::NativeImpl impl);
 };
 
 // Components specific policy
 struct ComponentsObjectPolicy : public Policy {
-    static bool check(JSContext *cx, JSObject *wrapper, jsid id, js::Wrapper::Action act,
-                      Permission &perm);
+    static bool check(JSContext *cx, JSObject *wrapper, jsid id, js::Wrapper::Action act);
+
+    static bool deny(JSContext *cx, jsid id, js::Wrapper::Action act) {
+        AccessCheck::deny(cx, id);
+        return false;
+    }
+    static bool allowNativeCall(JSContext *cx, JS::IsAcceptableThis test, JS::NativeImpl impl) {
+        return false;
+    }
 };
 
 }

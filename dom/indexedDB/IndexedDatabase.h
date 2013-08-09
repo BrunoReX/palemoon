@@ -14,7 +14,7 @@
 #include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 #include "nsStringGlue.h"
 #include "nsTArray.h"
 
@@ -36,6 +36,11 @@ class FileInfo;
 class IDBDatabase;
 class IDBTransaction;
 
+enum FactoryPrivilege {
+  Content,
+  Chrome
+};
+
 template <class T>
 void SwapData(T& aData1, T& aData2)
 {
@@ -43,6 +48,20 @@ void SwapData(T& aData1, T& aData2)
   aData2 = aData1;
   aData1 = temp;
 }
+
+struct StructuredCloneFile
+{
+  bool operator==(const StructuredCloneFile& aOther) const
+  {
+    return this->mFile == aOther.mFile &&
+           this->mFileInfo == aOther.mFileInfo &&
+           this->mInputStream == aOther.mInputStream;
+  }
+
+  nsCOMPtr<nsIDOMBlob> mFile;
+  nsRefPtr<FileInfo> mFileInfo;
+  nsCOMPtr<nsIInputStream> mInputStream;
+};
 
 struct SerializedStructuredCloneReadInfo;
 
@@ -54,7 +73,7 @@ struct StructuredCloneReadInfo
   void Swap(StructuredCloneReadInfo& aCloneReadInfo)
   {
     mCloneBuffer.swap(aCloneReadInfo.mCloneBuffer);
-    mFileInfos.SwapElements(aCloneReadInfo.mFileInfos);
+    mFiles.SwapElements(aCloneReadInfo.mFiles);
     SwapData(mDatabase, aCloneReadInfo.mDatabase);
   }
 
@@ -63,14 +82,14 @@ struct StructuredCloneReadInfo
   SetFromSerialized(const SerializedStructuredCloneReadInfo& aOther);
 
   JSAutoStructuredCloneBuffer mCloneBuffer;
-  nsTArray<nsRefPtr<FileInfo> > mFileInfos;
+  nsTArray<StructuredCloneFile> mFiles;
   IDBDatabase* mDatabase;
 };
 
 struct SerializedStructuredCloneReadInfo
 {
   SerializedStructuredCloneReadInfo()
-  : data(nsnull), dataLength(0)
+  : data(nullptr), dataLength(0)
   { }
 
   bool
@@ -91,20 +110,6 @@ struct SerializedStructuredCloneReadInfo
   // Make sure to update ipc/SerializationHelpers.h when changing members here!
   uint64_t* data;
   size_t dataLength;
-};
-
-struct StructuredCloneFile
-{
-  bool operator==(const StructuredCloneFile& aOther) const
-  {
-    return this->mFile == aOther.mFile &&
-           this->mFileInfo == aOther.mFileInfo &&
-           this->mInputStream == aOther.mInputStream;
-  }
-
-  nsCOMPtr<nsIDOMBlob> mFile;
-  nsRefPtr<FileInfo> mFileInfo;
-  nsCOMPtr<nsIInputStream> mInputStream;
 };
 
 struct SerializedStructuredCloneWriteInfo;
@@ -138,13 +143,13 @@ struct StructuredCloneWriteInfo
   JSAutoStructuredCloneBuffer mCloneBuffer;
   nsTArray<StructuredCloneFile> mFiles;
   IDBTransaction* mTransaction;
-  PRUint64 mOffsetToKeyProp;
+  uint64_t mOffsetToKeyProp;
 };
 
 struct SerializedStructuredCloneWriteInfo
 {
   SerializedStructuredCloneWriteInfo()
-  : data(nsnull), dataLength(0), offsetToKeyProp(0)
+  : data(nullptr), dataLength(0), offsetToKeyProp(0)
   { }
 
   bool
@@ -168,6 +173,44 @@ struct SerializedStructuredCloneWriteInfo
   uint64_t* data;
   size_t dataLength;
   uint64_t offsetToKeyProp;
+};
+
+class OriginOrPatternString : public nsCString
+{
+public:
+  static OriginOrPatternString
+  FromOrigin(const nsACString& aOrigin)
+  {
+    return OriginOrPatternString(aOrigin, true);
+  }
+
+  static OriginOrPatternString
+  FromPattern(const nsACString& aPattern)
+  {
+    return OriginOrPatternString(aPattern, false);
+  }
+
+  bool
+  IsOrigin() const
+  {
+    return mIsOrigin;
+  }
+
+  bool
+  IsPattern() const
+  {
+    return !mIsOrigin;
+  }
+
+private:
+  OriginOrPatternString(const nsACString& aOriginOrPattern, bool aIsOrigin)
+  : nsCString(aOriginOrPattern), mIsOrigin(aIsOrigin)
+  { }
+
+  bool
+  operator==(const OriginOrPatternString& aOther) MOZ_DELETE;
+
+  bool mIsOrigin;
 };
 
 END_INDEXEDDB_NAMESPACE

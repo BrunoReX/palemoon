@@ -4,7 +4,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsHTMLParts.h"
-#include "nsIDocument.h"
 #include "nsGUIEvent.h"
 #include "nsStyleConsts.h"
 #include "nsGkAtoms.h"
@@ -25,11 +24,11 @@ nsIRootBox*
 nsIRootBox::GetRootBox(nsIPresShell* aShell)
 {
   if (!aShell) {
-    return nsnull;
+    return nullptr;
   }
   nsIFrame* rootFrame = aShell->FrameManager()->GetRootFrame();
   if (!rootFrame) {
-    return nsnull;
+    return nullptr;
   }
 
   if (rootFrame) {
@@ -84,7 +83,7 @@ public:
    */
   virtual nsIAtom* GetType() const;
 
-  virtual bool IsFrameOfType(PRUint32 aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const
   {
     // Override bogus IsFrameOfType in nsBoxFrame.
     if (aFlags & (nsIFrame::eReplacedContainsBlock | nsIFrame::eReplaced))
@@ -115,7 +114,7 @@ NS_IMPL_FRAMEARENA_HELPERS(nsRootBoxFrame)
 nsRootBoxFrame::nsRootBoxFrame(nsIPresShell* aShell, nsStyleContext* aContext):
   nsBoxFrame(aShell, aContext, true)
 {
-  mPopupSetFrame = nsnull;
+  mPopupSetFrame = nullptr;
 
   nsCOMPtr<nsBoxLayout> layout;
   NS_NewStackLayout(aShell, layout);
@@ -182,7 +181,7 @@ nsRootBoxFrame::RemoveFrame(ChildListID     aListID,
 }
 
 #ifdef DEBUG_REFLOW
-PRInt32 gReflows = 0;
+int32_t gReflows = 0;
 #endif
 
 NS_IMETHODIMP
@@ -252,7 +251,7 @@ nsRootBoxFrame::SetPopupSetFrame(nsPopupSetFrame* aPopupSet)
   // if something triggers ReconstructDocElementHierarchy, we will
   // destroy this frame's child (the nsDocElementBoxFrame), but not this
   // frame.  This will cause the popupset to remove itself by calling
-  // |SetPopupSetFrame(nsnull)|, and then we'll be able to accept a new
+  // |SetPopupSetFrame(nullptr)|, and then we'll be able to accept a new
   // popupset.  Since the anonymous content is associated with the
   // nsDocElementBoxFrame, we'll get a new popupset when the new doc
   // element box frame is created.

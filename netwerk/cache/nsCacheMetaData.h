@@ -14,7 +14,7 @@ class nsICacheMetaDataVisitor;
 
 class nsCacheMetaData {
 public:
-    nsCacheMetaData() : mBuffer(nsnull), mBufferSize(0), mMetaSize(0) { }
+    nsCacheMetaData() : mBuffer(nullptr), mBufferSize(0), mMetaSize(0) { }
 
     ~nsCacheMetaData() {
         mBufferSize = mMetaSize = 0;  
@@ -25,20 +25,20 @@ public:
 
     nsresult      SetElement(const char * key, const char * value);
 
-    PRUint32      Size(void) { return mMetaSize; }
+    uint32_t      Size(void) { return mMetaSize; }
 
-    nsresult      FlattenMetaData(char * buffer, PRUint32 bufSize);
+    nsresult      FlattenMetaData(char * buffer, uint32_t bufSize);
 
-    nsresult      UnflattenMetaData(const char * buffer, PRUint32 bufSize);
+    nsresult      UnflattenMetaData(const char * buffer, uint32_t bufSize);
 
     nsresult      VisitElements(nsICacheMetaDataVisitor * visitor);
 
 private:
-    nsresult      EnsureBuffer(PRUint32 size);
+    nsresult      EnsureBuffer(uint32_t size);
 
     char *        mBuffer;
-    PRUint32      mBufferSize;
-    PRUint32      mMetaSize;
+    uint32_t      mBufferSize;
+    uint32_t      mMetaSize;
 };
 
 #endif // _nsCacheMetaData_h

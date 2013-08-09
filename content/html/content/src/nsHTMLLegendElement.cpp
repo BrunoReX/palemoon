@@ -14,6 +14,9 @@
 #include "nsFocusManager.h"
 #include "nsIFrame.h"
 
+using namespace mozilla;
+using namespace mozilla::dom;
+
 NS_IMPL_NS_NEW_HTML_ELEMENT(Legend)
 
 
@@ -27,8 +30,8 @@ nsHTMLLegendElement::~nsHTMLLegendElement()
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLLegendElement, nsGenericElement) 
-NS_IMPL_RELEASE_INHERITED(nsHTMLLegendElement, nsGenericElement) 
+NS_IMPL_ADDREF_INHERITED(nsHTMLLegendElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLLegendElement, Element)
 
 
 DOMCI_NODE_DATA(HTMLLegendElement, nsHTMLLegendElement)
@@ -77,11 +80,11 @@ nsHTMLLegendElement::GetFieldSet()
     return parent;
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 bool
-nsHTMLLegendElement::ParseAttribute(PRInt32 aNamespaceID,
+nsHTMLLegendElement::ParseAttribute(int32_t aNamespaceID,
                                     nsIAtom* aAttribute,
                                     const nsAString& aValue,
                                     nsAttrValue& aResult)
@@ -96,7 +99,7 @@ nsHTMLLegendElement::ParseAttribute(PRInt32 aNamespaceID,
 
 nsChangeHint
 nsHTMLLegendElement::GetAttributeChangeHint(const nsIAtom* aAttribute,
-                                            PRInt32 aModType) const
+                                            int32_t aModType) const
 {
   nsChangeHint retval =
       nsGenericHTMLElement::GetAttributeChangeHint(aAttribute, aModType);
@@ -107,7 +110,7 @@ nsHTMLLegendElement::GetAttributeChangeHint(const nsIAtom* aAttribute,
 }
 
 nsresult
-nsHTMLLegendElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
+nsHTMLLegendElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
                              nsIAtom* aPrefix, const nsAString& aValue,
                              bool aNotify)
 {
@@ -115,7 +118,7 @@ nsHTMLLegendElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
                                        aPrefix, aValue, aNotify);
 }
 nsresult
-nsHTMLLegendElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
+nsHTMLLegendElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
                                bool aNotify)
 {
   return nsGenericHTMLElement::UnsetAttr(aNameSpaceID, aAttribute, aNotify);
@@ -137,27 +140,31 @@ nsHTMLLegendElement::UnbindFromTree(bool aDeep, bool aNullParent)
   nsGenericHTMLElement::UnbindFromTree(aDeep, aNullParent);
 }
 
-NS_IMETHODIMP
-nsHTMLLegendElement::Focus()
+void
+nsHTMLLegendElement::Focus(ErrorResult& aError)
 {
   nsIFrame* frame = GetPrimaryFrame();
-  if (!frame)
-    return NS_OK;
+  if (!frame) {
+    return;
+  }
 
-  PRInt32 tabIndex;
-  if (frame->IsFocusable(&tabIndex, false))
-    return nsGenericHTMLElement::Focus();
+  int32_t tabIndex;
+  if (frame->IsFocusable(&tabIndex, false)) {
+    nsGenericHTMLElement::Focus(aError);
+    return;
+  }
 
   // If the legend isn't focusable, focus whatever is focusable following
   // the legend instead, bug 81481.
   nsIFocusManager* fm = nsFocusManager::GetFocusManager();
-  if (!fm)
-    return NS_OK;
+  if (!fm) {
+    return;
+  }
 
   nsCOMPtr<nsIDOMElement> result;
-  return fm->MoveFocus(nsnull, this, nsIFocusManager::MOVEFOCUS_FORWARD,
-                       nsIFocusManager::FLAG_NOPARENTFRAME,
-                       getter_AddRefs(result));
+  aError = fm->MoveFocus(nullptr, this, nsIFocusManager::MOVEFOCUS_FORWARD,
+                         nsIFocusManager::FLAG_NOPARENTFRAME,
+                         getter_AddRefs(result));
 }
 
 void
@@ -165,6 +172,7 @@ nsHTMLLegendElement::PerformAccesskey(bool aKeyCausesActivation,
                                       bool aIsTrustedEvent)
 {
   // just use the same behaviour as the focus method
-  Focus();
+  mozilla::ErrorResult rv;
+  Focus(rv);
 }
 

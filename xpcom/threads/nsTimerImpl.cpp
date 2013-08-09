@@ -8,7 +8,6 @@
 #include "nsAutoPtr.h"
 #include "nsThreadManager.h"
 #include "nsThreadUtils.h"
-#include "prmem.h"
 #include "sampler.h"
 #include NEW_H
 #include "nsFixedSizeAllocator.h"
@@ -16,10 +15,20 @@
 using mozilla::TimeDuration;
 using mozilla::TimeStamp;
 
-static PRInt32          gGenerator = 0;
-static TimerThread*     gThread = nsnull;
+static int32_t          gGenerator = 0;
+static TimerThread*     gThread = nullptr;
 
 #ifdef DEBUG_TIMERS
+
+PRLogModuleInfo*
+GetTimerLog()
+{
+  static PRLogModuleInfo *sLog;
+  if (!sLog)
+    sLog = PR_NewLogModule("nsTimerImpl");
+  return sLog;
+}
+
 #include <math.h>
 
 double nsTimerImpl::sDeltaSumSquared = 0;
@@ -83,7 +92,7 @@ class nsTimerEvent : public nsRunnable {
 public:
   NS_IMETHOD Run();
 
-  nsTimerEvent(nsTimerImpl *timer, PRInt32 generation)
+  nsTimerEvent(nsTimerImpl *timer, int32_t generation)
     : mTimer(timer), mGeneration(generation) {
     // timer is already addref'd for us
     MOZ_COUNT_CTOR(nsTimerEvent);
@@ -113,12 +122,12 @@ private:
   }
 
   nsTimerImpl *mTimer;
-  PRInt32      mGeneration;
+  int32_t      mGeneration;
 
   static TimerEventAllocator* sAllocator;
 };
 
-TimerEventAllocator* nsTimerEvent::sAllocator = nsnull;
+TimerEventAllocator* nsTimerEvent::sAllocator = nullptr;
 
 NS_IMPL_THREADSAFE_QUERY_INTERFACE1(nsTimerImpl, nsITimer)
 NS_IMPL_THREADSAFE_ADDREF(nsTimerImpl)
@@ -180,7 +189,7 @@ NS_IMETHODIMP_(nsrefcnt) nsTimerImpl::Release(void)
 }
 
 nsTimerImpl::nsTimerImpl() :
-  mClosure(nsnull),
+  mClosure(nullptr),
   mCallbackType(CALLBACK_TYPE_UNKNOWN),
   mFiring(false),
   mArmed(false),
@@ -191,7 +200,7 @@ nsTimerImpl::nsTimerImpl() :
   // XXXbsmedberg: shouldn't this be in Init()?
   mEventTarget = static_cast<nsIEventTarget*>(NS_GetCurrentThread());
 
-  mCallback.c = nsnull;
+  mCallback.c = nullptr;
 }
 
 nsTimerImpl::~nsTimerImpl()
@@ -223,12 +232,12 @@ nsTimerImpl::Startup()
 void nsTimerImpl::Shutdown()
 {
 #ifdef DEBUG_TIMERS
-  if (PR_LOG_TEST(gTimerLog, PR_LOG_DEBUG)) {
+  if (PR_LOG_TEST(GetTimerLog(), PR_LOG_DEBUG)) {
     double mean = 0, stddev = 0;
     myNS_MeanAndStdDev(sDeltaNum, sDeltaSum, sDeltaSumSquared, &mean, &stddev);
 
-    PR_LOG(gTimerLog, PR_LOG_DEBUG, ("sDeltaNum = %f, sDeltaSum = %f, sDeltaSumSquared = %f\n", sDeltaNum, sDeltaSum, sDeltaSumSquared));
-    PR_LOG(gTimerLog, PR_LOG_DEBUG, ("mean: %fms, stddev: %fms\n", mean, stddev));
+    PR_LOG(GetTimerLog(), PR_LOG_DEBUG, ("sDeltaNum = %f, sDeltaSum = %f, sDeltaSumSquared = %f\n", sDeltaNum, sDeltaSum, sDeltaSumSquared));
+    PR_LOG(GetTimerLog(), PR_LOG_DEBUG, ("mean: %fms, stddev: %fms\n", mean, stddev));
   }
 #endif
 
@@ -242,7 +251,7 @@ void nsTimerImpl::Shutdown()
 }
 
 
-nsresult nsTimerImpl::InitCommon(PRUint32 aType, PRUint32 aDelay)
+nsresult nsTimerImpl::InitCommon(uint32_t aType, uint32_t aDelay)
 {
   nsresult rv;
 
@@ -271,7 +280,7 @@ nsresult nsTimerImpl::InitCommon(PRUint32 aType, PRUint32 aDelay)
   mTimeout = TimeStamp();
   mGeneration = PR_ATOMIC_INCREMENT(&gGenerator);
 
-  mType = (PRUint8)aType;
+  mType = (uint8_t)aType;
   SetDelayInternal(aDelay);
 
   return gThread->AddTimer(this);
@@ -279,8 +288,8 @@ nsresult nsTimerImpl::InitCommon(PRUint32 aType, PRUint32 aDelay)
 
 NS_IMETHODIMP nsTimerImpl::InitWithFuncCallback(nsTimerCallbackFunc aFunc,
                                                 void *aClosure,
-                                                PRUint32 aDelay,
-                                                PRUint32 aType)
+                                                uint32_t aDelay,
+                                                uint32_t aType)
 {
   NS_ENSURE_ARG_POINTER(aFunc);
   
@@ -293,8 +302,8 @@ NS_IMETHODIMP nsTimerImpl::InitWithFuncCallback(nsTimerCallbackFunc aFunc,
 }
 
 NS_IMETHODIMP nsTimerImpl::InitWithCallback(nsITimerCallback *aCallback,
-                                            PRUint32 aDelay,
-                                            PRUint32 aType)
+                                            uint32_t aDelay,
+                                            uint32_t aType)
 {
   NS_ENSURE_ARG_POINTER(aCallback);
 
@@ -307,8 +316,8 @@ NS_IMETHODIMP nsTimerImpl::InitWithCallback(nsITimerCallback *aCallback,
 }
 
 NS_IMETHODIMP nsTimerImpl::Init(nsIObserver *aObserver,
-                                PRUint32 aDelay,
-                                PRUint32 aType)
+                                uint32_t aDelay,
+                                uint32_t aType)
 {
   NS_ENSURE_ARG_POINTER(aObserver);
 
@@ -332,7 +341,7 @@ NS_IMETHODIMP nsTimerImpl::Cancel()
   return NS_OK;
 }
 
-NS_IMETHODIMP nsTimerImpl::SetDelay(PRUint32 aDelay)
+NS_IMETHODIMP nsTimerImpl::SetDelay(uint32_t aDelay)
 {
   if (mCallbackType == CALLBACK_TYPE_UNKNOWN && mType == TYPE_ONE_SHOT) {
     // This may happen if someone tries to re-use a one-shot timer
@@ -355,22 +364,22 @@ NS_IMETHODIMP nsTimerImpl::SetDelay(PRUint32 aDelay)
   return NS_OK;
 }
 
-NS_IMETHODIMP nsTimerImpl::GetDelay(PRUint32* aDelay)
+NS_IMETHODIMP nsTimerImpl::GetDelay(uint32_t* aDelay)
 {
   *aDelay = mDelay;
   return NS_OK;
 }
 
-NS_IMETHODIMP nsTimerImpl::SetType(PRUint32 aType)
+NS_IMETHODIMP nsTimerImpl::SetType(uint32_t aType)
 {
-  mType = (PRUint8)aType;
+  mType = (uint8_t)aType;
   // XXX if this is called, we should change the actual type.. this could effect
   // repeating timers.  we need to ensure in Fire() that if mType has changed
   // during the callback that we don't end up with the timer in the queue twice.
   return NS_OK;
 }
 
-NS_IMETHODIMP nsTimerImpl::GetType(PRUint32* aType)
+NS_IMETHODIMP nsTimerImpl::GetType(uint32_t* aType)
 {
   *aType = mType;
   return NS_OK;
@@ -391,7 +400,7 @@ NS_IMETHODIMP nsTimerImpl::GetCallback(nsITimerCallback **aCallback)
   else if (mTimerCallbackWhileFiring)
     NS_ADDREF(*aCallback = mTimerCallbackWhileFiring);
   else
-    *aCallback = nsnull;
+    *aCallback = nullptr;
 
   return NS_OK;
 }
@@ -426,19 +435,19 @@ void nsTimerImpl::Fire()
 
   TimeStamp now = TimeStamp::Now();
 #ifdef DEBUG_TIMERS
-  if (PR_LOG_TEST(gTimerLog, PR_LOG_DEBUG)) {
+  if (PR_LOG_TEST(GetTimerLog(), PR_LOG_DEBUG)) {
     TimeDuration   a = now - mStart; // actual delay in intervals
     TimeDuration   b = TimeDuration::FromMilliseconds(mDelay); // expected delay in intervals
     TimeDuration   delta = (a > b) ? a - b : b - a;
-    PRUint32       d = delta.ToMilliseconds(); // delta in ms
+    uint32_t       d = delta.ToMilliseconds(); // delta in ms
     sDeltaSum += d;
     sDeltaSumSquared += double(d) * double(d);
     sDeltaNum++;
 
-    PR_LOG(gTimerLog, PR_LOG_DEBUG, ("[this=%p] expected delay time %4ums\n", this, mDelay));
-    PR_LOG(gTimerLog, PR_LOG_DEBUG, ("[this=%p] actual delay time   %fms\n", this, a.ToMilliseconds()));
-    PR_LOG(gTimerLog, PR_LOG_DEBUG, ("[this=%p] (mType is %d)       -------\n", this, mType));
-    PR_LOG(gTimerLog, PR_LOG_DEBUG, ("[this=%p]     delta           %4dms\n", this, (a > b) ? (PRInt32)d : -(PRInt32)d));
+    PR_LOG(GetTimerLog(), PR_LOG_DEBUG, ("[this=%p] expected delay time %4ums\n", this, mDelay));
+    PR_LOG(GetTimerLog(), PR_LOG_DEBUG, ("[this=%p] actual delay time   %fms\n", this, a.ToMilliseconds()));
+    PR_LOG(GetTimerLog(), PR_LOG_DEBUG, ("[this=%p] (mType is %d)       -------\n", this, mType));
+    PR_LOG(GetTimerLog(), PR_LOG_DEBUG, ("[this=%p]     delta           %4dms\n", this, (a > b) ? (int32_t)d : -(int32_t)d));
 
     mStart = mStart2;
     mStart2 = TimeStamp();
@@ -461,7 +470,7 @@ void nsTimerImpl::Fire()
   // Handle callbacks that re-init the timer, but avoid leaking.
   // See bug 330128.
   CallbackUnion callback = mCallback;
-  PRUintn callbackType = mCallbackType;
+  unsigned callbackType = mCallbackType;
   if (callbackType == CALLBACK_TYPE_INTERFACE)
     NS_ADDREF(callback.i);
   else if (callbackType == CALLBACK_TYPE_OBSERVER)
@@ -478,7 +487,7 @@ void nsTimerImpl::Fire()
     case CALLBACK_TYPE_OBSERVER:
       callback.o->Observe(static_cast<nsITimer*>(this),
                           NS_TIMER_CALLBACK_TOPIC,
-                          nsnull);
+                          nullptr);
       break;
     default:;
   }
@@ -498,11 +507,11 @@ void nsTimerImpl::Fire()
   }
 
   mFiring = false;
-  mTimerCallbackWhileFiring = nsnull;
+  mTimerCallbackWhileFiring = nullptr;
 
 #ifdef DEBUG_TIMERS
-  if (PR_LOG_TEST(gTimerLog, PR_LOG_DEBUG)) {
-    PR_LOG(gTimerLog, PR_LOG_DEBUG,
+  if (PR_LOG_TEST(GetTimerLog(), PR_LOG_DEBUG)) {
+    PR_LOG(GetTimerLog(), PR_LOG_DEBUG,
            ("[this=%p] Took %fms to fire timer callback\n",
             this, (TimeStamp::Now() - now).ToMilliseconds()));
   }
@@ -525,15 +534,15 @@ void nsTimerEvent::Init()
 {
   sAllocator = new TimerEventAllocator();
   static const size_t kBucketSizes[] = {sizeof(nsTimerEvent)};
-  static const PRInt32 kNumBuckets = mozilla::ArrayLength(kBucketSizes);
-  static const PRInt32 kInitialPoolSize = 1024 * sizeof(nsTimerEvent);
+  static const int32_t kNumBuckets = mozilla::ArrayLength(kBucketSizes);
+  static const int32_t kInitialPoolSize = 1024 * sizeof(nsTimerEvent);
   sAllocator->Init("TimerEventPool", kBucketSizes, kNumBuckets, kInitialPoolSize);
 }
 
 void nsTimerEvent::Shutdown()
 {
   delete sAllocator;
-  sAllocator = nsnull;
+  sAllocator = nullptr;
 }
 
 NS_IMETHODIMP nsTimerEvent::Run()
@@ -545,9 +554,9 @@ NS_IMETHODIMP nsTimerEvent::Run()
     return NS_OK;
 
 #ifdef DEBUG_TIMERS
-  if (PR_LOG_TEST(gTimerLog, PR_LOG_DEBUG)) {
+  if (PR_LOG_TEST(GetTimerLog(), PR_LOG_DEBUG)) {
     TimeStamp now = TimeStamp::Now();
-    PR_LOG(gTimerLog, PR_LOG_DEBUG,
+    PR_LOG(GetTimerLog(), PR_LOG_DEBUG,
            ("[this=%p] time between PostTimerEvent() and Fire(): %fms\n",
             this, (now - mInitTime).ToMilliseconds()));
   }
@@ -572,7 +581,7 @@ nsresult nsTimerImpl::PostTimerEvent()
     return NS_ERROR_OUT_OF_MEMORY;
 
 #ifdef DEBUG_TIMERS
-  if (PR_LOG_TEST(gTimerLog, PR_LOG_DEBUG)) {
+  if (PR_LOG_TEST(GetTimerLog(), PR_LOG_DEBUG)) {
     event->mInitTime = TimeStamp::Now();
   }
 #endif
@@ -596,7 +605,7 @@ nsresult nsTimerImpl::PostTimerEvent()
   return rv;
 }
 
-void nsTimerImpl::SetDelayInternal(PRUint32 aDelay)
+void nsTimerImpl::SetDelayInternal(uint32_t aDelay)
 {
   TimeDuration delayInterval = TimeDuration::FromMilliseconds(aDelay);
 
@@ -609,7 +618,7 @@ void nsTimerImpl::SetDelayInternal(PRUint32 aDelay)
   mTimeout += delayInterval;
 
 #ifdef DEBUG_TIMERS
-  if (PR_LOG_TEST(gTimerLog, PR_LOG_DEBUG)) {
+  if (PR_LOG_TEST(GetTimerLog(), PR_LOG_DEBUG)) {
     if (mStart.IsNull())
       mStart = now;
     else
@@ -621,10 +630,10 @@ void nsTimerImpl::SetDelayInternal(PRUint32 aDelay)
 // NOT FOR PUBLIC CONSUMPTION!
 nsresult
 NS_NewTimer(nsITimer* *aResult, nsTimerCallbackFunc aCallback, void *aClosure,
-            PRUint32 aDelay, PRUint32 aType)
+            uint32_t aDelay, uint32_t aType)
 {
     nsTimerImpl* timer = new nsTimerImpl();
-    if (timer == nsnull)
+    if (timer == nullptr)
         return NS_ERROR_OUT_OF_MEMORY;
     NS_ADDREF(timer);
 

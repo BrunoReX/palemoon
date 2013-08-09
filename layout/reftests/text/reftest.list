@@ -23,11 +23,13 @@ load ligature-with-space-1.html
 == line-editing-1d.html line-editing-1-ref.html
 == line-editing-1e.html line-editing-1-ref.html
 fails-if(cocoaWidget||winWidget) HTTP(..) == lineheight-metrics-1.html lineheight-metrics-1-ref.html # bug 657864
+== lineheight-percentage-1.html lineheight-percentage-1-ref.html
 == long-1.html long-ref.html
 == pre-line-1.html pre-line-1-ref.html
 == pre-line-2.html pre-line-2-ref.html
 == pre-line-3.html pre-line-3-ref.html
 == pre-line-4.html pre-line-4-ref.html
+== pre-discard-newlines-1.html pre-discard-newlines-1-ref.html
 == soft-hyphens-1a.html soft-hyphens-1-ref.html
 == soft-hyphens-1b.html soft-hyphens-1-ref.html
 == soft-hyphens-1c.html soft-hyphens-1-ref.html
@@ -48,7 +50,7 @@ skip-if(!(d2d||cocoaWidget)) random-if(d2d) != subpixel-glyphs-x-2a.html subpixe
 HTTP(..) == subpixel-glyphs-x-3a.html subpixel-glyphs-x-3b.html
 # No platforms do subpixel positioning vertically
 == subpixel-glyphs-y-1a.html subpixel-glyphs-y-1b.html
-== subpixel-lineheight-1a.html subpixel-lineheight-1b.html
+fuzzy-if(Android,9,61) == subpixel-lineheight-1a.html subpixel-lineheight-1b.html
 == swash-1.html swash-1-ref.html
 HTTP(..) != synthetic-bold-metrics-01.html synthetic-bold-metrics-01-notref.html
 == synthetic-bold-papyrus-01.html synthetic-bold-papyrus-01-ref.html
@@ -160,6 +162,11 @@ fails-if(!cocoaWidget) HTTP(..) != arabic-fallback-4.html arabic-fallback-4-notr
 == 745555-1.html 745555-1-ref.html
 == 745555-2.html 745555-2-ref.html
 
+# ensure emoji chars don't render blank (bug 715798, bug 779042);
+# should at least render hexboxes if there's no font support
+!= emoji-01.html emoji-01-notref.html
+!= emoji-02.html emoji-02-notref.html
+
 # tests to compare graphite to opentype (will trivially pass when graphite not enabled)
 HTTP(..) == graphite-05-ot-only.html graphite-05-ref.html
 HTTP(..) != graphite-05-ot-only.html graphite-05-fail.html
@@ -168,6 +175,11 @@ HTTP(..) == graphite-05-multipass.html graphite-05-ref.html
 HTTP(..) == graphite-05-lang.html graphite-05-ref.html
 HTTP(..) == graphite-05-badlang.html graphite-05-ref.html
 HTTP(..) == graphite-05-feat.html graphite-05-ref.html
+
+# comparing composed and decomposed characters that should render identically
+# under both OpenType and Graphite shaping
+pref(gfx.font_rendering.graphite.enabled,false) HTTP(..) == glyph-decomposition-opentype.html glyph-decomposition-opentype-ref.html
+pref(gfx.font_rendering.graphite.enabled,true) HTTP(..) == glyph-decomposition-graphite.html glyph-decomposition-graphite-ref.html
 
 # Tests for hyphenation with -moz-hyphens
 == auto-hyphenation-1.html auto-hyphenation-1-ref.html
@@ -179,6 +191,9 @@ HTTP(..) == graphite-05-feat.html graphite-05-ref.html
 == auto-hyphenation-5.html auto-hyphenation-5-ref.html
 == auto-hyphenation-6.html auto-hyphenation-6-ref.html
 == auto-hyphenation-7.html auto-hyphenation-7-ref.html
+== auto-hyphenation-8.html auto-hyphenation-4-ref.html
+== auto-hyphenation-9.html auto-hyphenation-4-ref.html
+== auto-hyphenation-10.html auto-hyphenation-4-ref.html
 == auto-hyphenation-af-1.html auto-hyphenation-af-1-ref.html
 == auto-hyphenation-bg-1.html auto-hyphenation-bg-1-ref.html
 == auto-hyphenation-ca-1.html auto-hyphenation-ca-1-ref.html
@@ -216,4 +231,3 @@ HTTP(..) == graphite-05-feat.html graphite-05-ref.html
 != auto-hyphenation-sv-1.html auto-hyphenation-sv-1-notref.html # verify swedish != english
 == auto-hyphenation-tr-1.html auto-hyphenation-tr-1-ref.html
 == auto-hyphenation-uk-1.html auto-hyphenation-uk-1-ref.html
-

@@ -1,8 +1,19 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* vim: set ts=4 sw=4 sts=4 tw=80 et: */
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* Copyright 2012 Mozilla Foundation and Mozilla contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 #define _GNU_SOURCE
 
@@ -32,11 +43,14 @@
 #include "nsScreenManagerGonk.h"
 #include "nsWindow.h"
 #include "OrientationObserver.h"
+#include "GonkMemoryPressureMonitoring.h"
 
 #include "android/log.h"
 #include "libui/EventHub.h"
 #include "libui/InputReader.h"
 #include "libui/InputDispatcher.h"
+
+#include "sampler.h"
 
 #define LOG(args...)                                            \
     __android_log_print(ANDROID_LOG_INFO, "Gonk" , ## args)
@@ -51,11 +65,14 @@
 using namespace android;
 using namespace mozilla;
 using namespace mozilla::dom;
+using namespace mozilla::services;
 
 bool gDrawRequest = false;
 static nsAppShell *gAppShell = NULL;
 static int epollfd = 0;
 static int signalfds[2] = {0};
+
+NS_IMPL_ISUPPORTS_INHERITED1(nsAppShell, nsBaseAppShell, nsIObserver)
 
 namespace mozilla {
 
@@ -108,7 +125,7 @@ struct UserInputData {
 };
 
 static void
-sendMouseEvent(PRUint32 msg, uint64_t timeMs, int x, int y)
+sendMouseEvent(uint32_t msg, uint64_t timeMs, int x, int y, bool forwardToChildren)
 {
     nsMouseEvent event(true, msg, NULL,
                        nsMouseEvent::eReal, nsMouseEvent::eNormal);
@@ -119,6 +136,9 @@ sendMouseEvent(PRUint32 msg, uint64_t timeMs, int x, int y)
     event.button = nsMouseEvent::eLeftButton;
     if (msg != NS_MOUSE_MOVE)
         event.clickCount = 1;
+
+    if (!forwardToChildren)
+        event.flags |= NS_EVENT_FLAG_DONT_FORWARD_CROSS_PROCESS;
 
     nsWindow::DispatchInputEvent(event);
 }
@@ -138,9 +158,9 @@ addDOMTouch(UserInputData& data, nsTouchEvent& event, int i)
 }
 
 static nsEventStatus
-sendTouchEvent(UserInputData& data)
+sendTouchEvent(UserInputData& data, bool* captured)
 {
-    PRUint32 msg;
+    uint32_t msg;
     int32_t action = data.action & AMOTION_EVENT_ACTION_MASK;
     switch (action) {
     case AMOTION_EVENT_ACTION_DOWN:
@@ -174,14 +194,14 @@ sendTouchEvent(UserInputData& data)
             addDOMTouch(data, event, i);
     }
 
-    return nsWindow::DispatchInputEvent(event);
+    return nsWindow::DispatchInputEvent(event, captured);
 }
 
 static nsEventStatus
-sendKeyEventWithMsg(PRUint32 keyCode,
-                    PRUint32 msg,
+sendKeyEventWithMsg(uint32_t keyCode,
+                    uint32_t msg,
                     uint64_t timeMs,
-                    PRUint32 flags)
+                    uint32_t flags)
 {
     nsKeyEvent event(true, msg, NULL);
     event.keyCode = keyCode;
@@ -192,7 +212,7 @@ sendKeyEventWithMsg(PRUint32 keyCode,
 }
 
 static void
-sendKeyEvent(PRUint32 keyCode, bool down, uint64_t timeMs)
+sendKeyEvent(uint32_t keyCode, bool down, uint64_t timeMs)
 {
     nsEventStatus status =
         sendKeyEventWithMsg(keyCode, down ? NS_KEY_DOWN : NS_KEY_UP, timeMs, 0);
@@ -203,38 +223,103 @@ sendKeyEvent(PRUint32 keyCode, bool down, uint64_t timeMs)
     }
 }
 
+// Defines kKeyMapping
+#include "GonkKeyMapping.h"
+
 static void
 maybeSendKeyEvent(int keyCode, bool pressed, uint64_t timeMs)
 {
-    switch (keyCode) {
-    case KEY_BACK:
-        sendKeyEvent(NS_VK_ESCAPE, pressed, timeMs);
-        break;
-    case KEY_MENU:
-         sendKeyEvent(NS_VK_CONTEXT_MENU, pressed, timeMs);
-        break;
-    case KEY_SEARCH:
-        sendKeyEvent(NS_VK_F5, pressed, timeMs);
-        break;
-    case KEY_HOME:
-        sendKeyEvent(NS_VK_HOME, pressed, timeMs);
-        break;
-    case KEY_POWER:
-        sendKeyEvent(NS_VK_SLEEP, pressed, timeMs);
-        break;
-    case KEY_VOLUMEUP:
-        sendKeyEvent(NS_VK_PAGE_UP, pressed, timeMs);
-        break;
-    case KEY_VOLUMEDOWN:
-        sendKeyEvent(NS_VK_PAGE_DOWN, pressed, timeMs);
-        break;
-    case KEY_CAMERA:
-        sendKeyEvent(NS_VK_PRINTSCREEN, pressed, timeMs);
-        break;
-    default:
+    if (keyCode < ArrayLength(kKeyMapping) && kKeyMapping[keyCode])
+        sendKeyEvent(kKeyMapping[keyCode], pressed, timeMs);
+    else
         VERBOSE_LOG("Got unknown key event code. type 0x%04x code 0x%04x value %d",
                     keyCode, pressed);
+}
+
+class GeckoPointerController : public PointerControllerInterface {
+    float mX;
+    float mY;
+    int32_t mButtonState;
+    InputReaderConfiguration* mConfig;
+public:
+    GeckoPointerController(InputReaderConfiguration* config)
+        : mX(0)
+        , mY(0)
+        , mButtonState(0)
+        , mConfig(config)
+    {}
+
+    virtual bool getBounds(float* outMinX, float* outMinY,
+            float* outMaxX, float* outMaxY) const;
+    virtual void move(float deltaX, float deltaY);
+    virtual void setButtonState(int32_t buttonState);
+    virtual int32_t getButtonState() const;
+    virtual void setPosition(float x, float y);
+    virtual void getPosition(float* outX, float* outY) const;
+    virtual void fade(Transition transition) {}
+    virtual void unfade(Transition transition) {}
+    virtual void setPresentation(Presentation presentation) {}
+    virtual void setSpots(const PointerCoords* spotCoords, const uint32_t* spotIdToIndex,
+            BitSet32 spotIdBits) {}
+    virtual void clearSpots() {}
+};
+
+bool
+GeckoPointerController::getBounds(float* outMinX,
+                                  float* outMinY,
+                                  float* outMaxX,
+                                  float* outMaxY) const
+{
+    int32_t width, height, orientation;
+
+    mConfig->getDisplayInfo(0, false, &width, &height, &orientation);
+
+    *outMinX = *outMinY = 0;
+    if (orientation == DISPLAY_ORIENTATION_90 ||
+        orientation == DISPLAY_ORIENTATION_270) {
+        *outMaxX = height;
+        *outMaxY = width;
+    } else {
+        *outMaxX = width;
+        *outMaxY = height;
     }
+    return true;
+}
+
+void
+GeckoPointerController::move(float deltaX, float deltaY)
+{
+    float minX, minY, maxX, maxY;
+    getBounds(&minX, &minY, &maxX, &maxY);
+
+    mX = clamped(mX + deltaX, minX, maxX);
+    mY = clamped(mY + deltaY, minY, maxY);
+}
+
+void
+GeckoPointerController::setButtonState(int32_t buttonState)
+{
+    mButtonState = buttonState;
+}
+
+int32_t
+GeckoPointerController::getButtonState() const
+{
+    return mButtonState;
+}
+
+void
+GeckoPointerController::setPosition(float x, float y)
+{
+    mX = x;
+    mY = y;
+}
+
+void
+GeckoPointerController::getPosition(float* outX, float* outY) const
+{
+    *outX = mX;
+    *outY = mY;
 }
 
 class GeckoInputReaderPolicy : public InputReaderPolicyInterface {
@@ -246,8 +331,7 @@ public:
     virtual sp<PointerControllerInterface> obtainPointerController(int32_t
 deviceId)
     {
-        MOZ_NOT_REACHED("Input device configuration failed.");
-        return NULL;
+        return new GeckoPointerController(&mConfig);
     };
     void setDisplayInfo();
 
@@ -352,11 +436,17 @@ GeckoInputDispatcher::dispatchOnce()
 
     switch (data.type) {
     case UserInputData::MOTION_DATA: {
-        nsEventStatus status = sendTouchEvent(data);
-        if (status == nsEventStatus_eConsumeNoDefault)
-            break;
+        nsEventStatus status = nsEventStatus_eIgnore;
+        if ((data.action & AMOTION_EVENT_ACTION_MASK) !=
+            AMOTION_EVENT_ACTION_HOVER_MOVE) {
+            bool captured;
+            status = sendTouchEvent(data, &captured);
+            if (captured) {
+                return;
+            }
+        }
 
-        PRUint32 msg;
+        uint32_t msg;
         switch (data.action & AMOTION_EVENT_ACTION_MASK) {
         case AMOTION_EVENT_ACTION_DOWN:
             msg = NS_MOUSE_BUTTON_DOWN;
@@ -364,6 +454,7 @@ GeckoInputDispatcher::dispatchOnce()
         case AMOTION_EVENT_ACTION_POINTER_DOWN:
         case AMOTION_EVENT_ACTION_POINTER_UP:
         case AMOTION_EVENT_ACTION_MOVE:
+        case AMOTION_EVENT_ACTION_HOVER_MOVE:
             msg = NS_MOUSE_MOVE;
             break;
         case AMOTION_EVENT_ACTION_OUTSIDE:
@@ -375,11 +466,12 @@ GeckoInputDispatcher::dispatchOnce()
         sendMouseEvent(msg,
                        data.timeMs,
                        data.motion.touches[0].coords.getX(),
-                       data.motion.touches[0].coords.getY());
+                       data.motion.touches[0].coords.getY(),
+                       status != nsEventStatus_eConsumeNoDefault);
         break;
     }
     case UserInputData::KEY_DATA:
-        maybeSendKeyEvent(data.key.scanCode,
+        maybeSendKeyEvent(data.key.keyCode,
                           data.action == AKEY_EVENT_ACTION_DOWN,
                           data.timeMs);
         break;
@@ -437,8 +529,10 @@ GeckoInputDispatcher::notifyMotion(const NotifyMotionArgs* args)
         MutexAutoLock lock(mQueueLock);
         if (!mEventQueue.empty() &&
              mEventQueue.back().type == UserInputData::MOTION_DATA &&
+           ((mEventQueue.back().action & AMOTION_EVENT_ACTION_MASK) ==
+             AMOTION_EVENT_ACTION_MOVE ||
             (mEventQueue.back().action & AMOTION_EVENT_ACTION_MASK) ==
-             AMOTION_EVENT_ACTION_MOVE)
+             AMOTION_EVENT_ACTION_HOVER_MOVE))
             mEventQueue.back() = data;
         else
             mEventQueue.push(data);
@@ -495,15 +589,25 @@ GeckoInputDispatcher::unregisterInputChannel(const sp<InputChannel>& inputChanne
 nsAppShell::nsAppShell()
     : mNativeCallbackRequest(false)
     , mHandlers()
+    , mEnableDraw(false)
 {
     gAppShell = this;
 }
 
 nsAppShell::~nsAppShell()
 {
-    status_t result = mReaderThread->requestExitAndWait();
-    if (result)
-        LOG("Could not stop reader thread - %d", result);
+    // mReaderThread and mEventHub will both be null if InitInputDevices
+    // is not called.
+    if (mReaderThread.get()) {
+        // We separate requestExit() and join() here so we can wake the EventHub's
+        // input loop, and stop it from polling for input events
+        mReaderThread->requestExit();
+        mEventHub->wake();
+
+        status_t result = mReaderThread->requestExitAndWait();
+        if (result)
+            LOG("Could not stop reader thread - %d", result);
+    }
     gAppShell = NULL;
 }
 
@@ -522,9 +626,41 @@ nsAppShell::Init()
     rv = AddFdHandler(signalfds[0], pipeHandler, "");
     NS_ENSURE_SUCCESS(rv, rv);
 
+    InitGonkMemoryPressureMonitoring();
+
+    nsCOMPtr<nsIObserverService> obsServ = GetObserverService();
+    if (obsServ) {
+        obsServ->AddObserver(this, "browser-ui-startup-complete", false);
+    }
+
     // Delay initializing input devices until the screen has been
     // initialized (and we know the resolution).
     return rv;
+}
+
+NS_IMETHODIMP
+nsAppShell::Observe(nsISupports* aSubject,
+                    const char* aTopic,
+                    const PRUnichar* aData)
+{
+    if (strcmp(aTopic, "browser-ui-startup-complete")) {
+        return nsBaseAppShell::Observe(aSubject, aTopic, aData);
+    }
+
+    mEnableDraw = true;
+    NotifyEvent();
+    return NS_OK;
+}
+
+NS_IMETHODIMP
+nsAppShell::Exit()
+{
+    OrientationObserver::ShutDown();
+    nsCOMPtr<nsIObserverService> obsServ = GetObserverService();
+    if (obsServ) {
+        obsServ->RemoveObserver(this, "browser-ui-startup-complete");
+    }
+    return nsBaseAppShell::Exit();
 }
 
 void
@@ -572,11 +708,15 @@ nsAppShell::ScheduleNativeEventCallback()
 bool
 nsAppShell::ProcessNextNativeEvent(bool mayWait)
 {
+    SAMPLE_LABEL("nsAppShell", "ProcessNextNativeEvent");
     epoll_event events[16] = {{ 0 }};
 
     int event_count;
-    if ((event_count = epoll_wait(epollfd, events, 16,  mayWait ? -1 : 0)) <= 0)
-        return true;
+    {
+        SAMPLE_LABEL("nsAppShell", "ProcessNextNativeEvent::Wait");
+        if ((event_count = epoll_wait(epollfd, events, 16,  mayWait ? -1 : 0)) <= 0)
+            return true;
+    }
 
     for (int i = 0; i < event_count; i++)
         mHandlers[events[i].data.u32].run();
@@ -592,7 +732,7 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
         NativeEventCallback();
     }
 
-    if (gDrawRequest) {
+    if (gDrawRequest && mEnableDraw) {
         gDrawRequest = false;
         nsWindow::DoDraw();
     }

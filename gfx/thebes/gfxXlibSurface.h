@@ -11,7 +11,7 @@
 #include <X11/extensions/Xrender.h>
 #include <X11/Xlib.h>
 
-#if defined(MOZ_WIDGET_GTK2) && !defined(MOZ_PLATFORM_MAEMO)
+#if !defined(MOZ_PLATFORM_MAEMO)
 #include "GLXLibrary.h"
 #endif
 
@@ -47,6 +47,7 @@ public:
 
     virtual already_AddRefed<gfxASurface>
     CreateSimilarSurface(gfxContentType aType, const gfxIntSize& aSize);
+    virtual void Finish() MOZ_OVERRIDE;
 
     virtual const gfxIntSize GetSize() const { return mSize; }
 
@@ -75,9 +76,21 @@ public:
     // server, not the main application.
     virtual gfxASurface::MemoryLocation GetMemoryLocation() const;
 
-#if defined(MOZ_WIDGET_GTK2) && !defined(MOZ_PLATFORM_MAEMO)
+#if !defined(MOZ_PLATFORM_MAEMO)
     GLXPixmap GetGLXPixmap();
 #endif
+
+    // Return true if cairo will take its slow path when this surface is used
+    // in a pattern with EXTEND_PAD.  As a workaround for XRender's RepeatPad
+    // not being implemented correctly on old X servers, cairo avoids XRender
+    // and instead reads back to perform EXTEND_PAD with pixman.  Cairo does
+    // this for servers older than xorg-server 1.7.
+    bool IsPadSlow() {
+        // The test here matches that for buggy_pad_reflect in
+        // _cairo_xlib_device_create.
+        return VendorRelease(mDisplay) >= 60700000 ||
+            VendorRelease(mDisplay) < 10699000;
+    }
 
 protected:
     // if TakePixmap() has been called on this
@@ -90,7 +103,7 @@ protected:
 
     gfxIntSize mSize;
 
-#if defined(MOZ_WIDGET_GTK2) && !defined(MOZ_PLATFORM_MAEMO)
+#if !defined(MOZ_PLATFORM_MAEMO)
     GLXPixmap mGLXPixmap;
 #endif
 };

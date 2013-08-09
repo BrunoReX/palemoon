@@ -45,7 +45,7 @@ int main(int argc, char** argv)
   nsresult ec;
   nsIInputStream* in;
   ec = NS_OpenURI(&in, url);
-  if (nsnull == in) {
+  if (nullptr == in) {
     printf("open of url('%s') failed: error=%x\n", urlName, ec);
     return -1;
   }
@@ -63,10 +63,10 @@ int main(int argc, char** argv)
 
   // Read the input and write some output
   PRTime start = PR_Now();
-  PRInt32 count = 0;
+  int32_t count = 0;
   for (;;) {
     PRUnichar buf[1000];
-    PRUint32 nb;
+    uint32_t nb;
     ec = uin->Read(buf, 0, 1000, &nb);
     if (NS_FAILED(ec)) {
       printf("i/o error: %d\n", ec);
@@ -76,10 +76,7 @@ int main(int argc, char** argv)
     count += nb;
   }
   PRTime end = PR_Now();
-  PRTime conversion, ustoms;
-  LL_I2L(ustoms, 1000);
-  LL_SUB(conversion, end, start);
-  LL_DIV(conversion, conversion, ustoms);
+  PRTime conversion = (end - start) / 1000;
   char buf[500];
   PR_snprintf(buf, sizeof(buf),
               "converting and discarding %d bytes took %lldms",

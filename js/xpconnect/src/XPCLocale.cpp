@@ -11,7 +11,6 @@
 #include "jsapi.h"
 
 #include "nsCollationCID.h"
-#include "nsDOMClassInfo.h"
 #include "nsJSUtils.h"
 #include "nsICharsetConverterManager.h"
 #include "nsIPlatformCharset.h"
@@ -19,6 +18,8 @@
 #include "nsICollation.h"
 #include "nsIServiceManager.h"
 #include "nsUnicharUtils.h"
+
+#include "xpcpublic.h"
 
 /**
  * JS locale callbacks implemented by XPCOM modules.  This
@@ -53,7 +54,7 @@ struct XPCLocaleCallbacks : public JSLocaleCallbacks
             lc->localeToUpperCase == LocaleToUpperCase &&
             lc->localeToLowerCase == LocaleToLowerCase &&
             lc->localeCompare == LocaleCompare &&
-            lc->localeToUnicode == LocaleToUnicode) ? This(cx) : nsnull;
+            lc->localeToUnicode == LocaleToUnicode) ? This(cx) : nullptr;
   }
 
   static JSBool
@@ -123,7 +124,7 @@ struct XPCLocaleCallbacks : public JSLocaleCallbacks
 
   XPCLocaleCallbacks()
 #ifdef DEBUG
-    : mThread(nsnull)
+    : mThread(nullptr)
 #endif
   {
     MOZ_COUNT_CTOR(XPCLocaleCallbacks);
@@ -132,7 +133,7 @@ struct XPCLocaleCallbacks : public JSLocaleCallbacks
     localeToLowerCase = LocaleToLowerCase;
     localeCompare = LocaleCompare;
     localeToUnicode = LocaleToUnicode;
-    localeGetErrorMessage = nsnull;
+    localeGetErrorMessage = nullptr;
   }
 
   ~XPCLocaleCallbacks()
@@ -163,7 +164,7 @@ struct XPCLocaleCallbacks : public JSLocaleCallbacks
             do_GetService(NS_PLATFORMCHARSET_CONTRACTID, &rv);
 
           if (NS_SUCCEEDED(rv)) {
-            nsCAutoString charset;
+            nsAutoCString charset;
             rv = platformCharset->GetDefaultCharsetForLocale(localeStr, charset);
             if (NS_SUCCEEDED(rv)) {
               // get/create unicode decoder for charset
@@ -177,11 +178,11 @@ struct XPCLocaleCallbacks : public JSLocaleCallbacks
       }
     }
 
-    JSString *str = nsnull;
-    PRInt32 srcLength = PL_strlen(src);
+    JSString *str = nullptr;
+    int32_t srcLength = PL_strlen(src);
 
     if (mDecoder) {
-      PRInt32 unicharLength = srcLength;
+      int32_t unicharLength = srcLength;
       PRUnichar *unichars =
         (PRUnichar *)JS_malloc(cx, (srcLength + 1) * sizeof(PRUnichar));
       if (unichars) {
@@ -208,7 +209,7 @@ struct XPCLocaleCallbacks : public JSLocaleCallbacks
     }
 
     if (!str) {
-      nsDOMClassInfo::ThrowJSException(cx, NS_ERROR_OUT_OF_MEMORY);
+      xpc::Throw(cx, NS_ERROR_OUT_OF_MEMORY);
       return false;
     }
 
@@ -240,7 +241,7 @@ struct XPCLocaleCallbacks : public JSLocaleCallbacks
       }
 
       if (NS_FAILED(rv)) {
-        nsDOMClassInfo::ThrowJSException(cx, rv);
+        xpc::Throw(cx, rv);
 
         return false;
       }
@@ -251,12 +252,12 @@ struct XPCLocaleCallbacks : public JSLocaleCallbacks
       return false;
     }
 
-    PRInt32 result;
+    int32_t result;
     rv = mCollation->CompareString(nsICollation::kCollationStrengthDefault,
                                    depStr1, depStr2, &result);
 
     if (NS_FAILED(rv)) {
-      nsDOMClassInfo::ThrowJSException(cx, rv);
+      xpc::Throw(cx, rv);
 
       return false;
     }
@@ -320,7 +321,7 @@ DelocalizeContextCallback(JSContext *cx, unsigned contextOp)
   if (contextOp == JSCONTEXT_DESTROY) {
     if (XPCLocaleCallbacks* lc = XPCLocaleCallbacks::MaybeThis(cx)) {
       // This is a JSContext for which xpc_LocalizeContext() was called.
-      JS_SetLocaleCallbacks(cx, nsnull);
+      JS_SetLocaleCallbacks(cx, nullptr);
       delete lc;
     }
   }

@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH            = ../..
+DEPTH            = @DEPTH@
 topsrcdir        = @top_srcdir@
 srcdir           = @srcdir@
 VPATH            = @srcdir@
@@ -14,15 +14,7 @@ FORCE_STATIC_LIB = 1
 EXPORT_LIBRARY   = 1
 
 include $(topsrcdir)/config/config.mk
-
-# Define USE_JSOP_ACCESSORS to a nonempty string like "yes" to use them
-USE_JSOP_ACCESSORS = 
-ifdef USE_JSOP_ACCESSORS
-DEFINES += -DUSE_JSOP_ACCESSORS
-ACCESSOR_OPT = --use-jsop-accessors
-else
-ACCESSOR_OPT =
-endif
+include $(topsrcdir)/ipc/chromium/chromium-config.mk
 
 # Need this to find all our DOM source files.
 include $(topsrcdir)/dom/dom-config.mk
@@ -30,7 +22,7 @@ include $(topsrcdir)/dom/dom-config.mk
 include $(topsrcdir)/dom/webidl/WebIDL.mk
 
 binding_include_path := mozilla/dom
-all_webidl_files = $(webidl_files)
+all_webidl_files = $(webidl_files) $(generated_webidl_files)
 # Set exported_binding_headers before adding the test IDL to the mix
 exported_binding_headers := $(subst .webidl,Binding.h,$(all_webidl_files))
 # Set linked_binding_cpp_files before adding the test IDL to the mix
@@ -45,12 +37,17 @@ globalgen_targets := \
   PrototypeList.h \
   RegisterBindings.h \
   RegisterBindings.cpp \
+  UnionTypes.h \
+  UnionTypes.cpp \
+  UnionConversions.h \
   $(NULL)
 
 CPPSRCS = \
   $(linked_binding_cpp_files) \
   $(filter %.cpp, $(globalgen_targets)) \
   BindingUtils.cpp \
+  CallbackFunction.cpp \
+  DOMJSProxyHandler.cpp \
   $(NULL)
 
 EXPORTS_NAMESPACES = $(binding_include_path) mozilla
@@ -60,19 +57,29 @@ EXPORTS_mozilla = \
   $(NULL)
 
 EXPORTS_$(binding_include_path) = \
+  BindingUtils.h \
+  CallbackFunction.h \
   DOMJSClass.h \
-  PrototypeList.h \
-  RegisterBindings.h \
+  DOMJSProxyHandler.h \
+  Errors.msg \
+  NonRefcountedDOMObject.h \
   Nullable.h \
   PrimitiveConversions.h \
+  PrototypeList.h \
+  RegisterBindings.h \
   TypedArray.h \
-  BindingUtils.h \
+  UnionConversions.h \
+  UnionTypes.h \
   $(exported_binding_headers) \
   $(NULL)
 
 LOCAL_INCLUDES += -I$(topsrcdir)/js/xpconnect/src \
   -I$(topsrcdir)/js/xpconnect/wrappers \
-  -I$(topsrcdir)/content/html/content/src
+  -I$(topsrcdir)/content/canvas/src \
+  -I$(topsrcdir)/content/html/content/src \
+  -I$(topsrcdir)/media/webrtc/signaling/src/peerconnection \
+  -I$(topsrcdir)/dom/base \
+  $(NULL)
 
 include $(topsrcdir)/config/rules.mk
 
@@ -83,9 +90,20 @@ bindinggen_dependencies := \
   Bindings.conf \
   Configuration.py \
   Codegen.py \
+  parser/WebIDL.py \
   ParserResults.pkl \
   $(GLOBAL_DEPS) \
   $(NULL)
+
+CSS2Properties.webidl: $(topsrcdir)/layout/style/nsCSSPropList.h \
+                       $(topsrcdir)/layout/style/nsCSSPropAliasList.h \
+                       $(webidl_base)/CSS2Properties.webidl.in \
+                       $(webidl_base)/CSS2PropertiesProps.h \
+                       $(srcdir)/GenerateCSS2PropertiesWebIDL.py \
+                       $(GLOBAL_DEPS)
+	$(CPP) $(DEFINES) $(ACDEFINES) -I$(topsrcdir)/layout/style $(webidl_base)/CSS2PropertiesProps.h | \
+	  PYTHONDONTWRITEBYTECODE=1 $(PYTHON) \
+	  $(srcdir)/GenerateCSS2PropertiesWebIDL.py $(webidl_base)/CSS2Properties.webidl.in > CSS2Properties.webidl
 
 $(webidl_files): %: $(webidl_base)/%
 	$(INSTALL) $(IFLAGS1) $(webidl_base)/$* .
@@ -98,7 +116,7 @@ $(binding_header_files): %Binding.h: $(bindinggen_dependencies) \
                                      $(NULL)
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $(topsrcdir)/config/pythonpath.py \
 	  $(PLY_INCLUDE) -I$(srcdir)/parser \
-	  $(srcdir)/BindingGen.py $(ACCESSOR_OPT) header \
+	  $(srcdir)/BindingGen.py header \
 	  $(srcdir)/Bindings.conf $*Binding \
 	  $*.webidl
 
@@ -107,11 +125,19 @@ $(binding_cpp_files): %Binding.cpp: $(bindinggen_dependencies) \
                                     $(NULL)
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $(topsrcdir)/config/pythonpath.py \
 	  $(PLY_INCLUDE) -I$(srcdir)/parser \
-	  $(srcdir)/BindingGen.py $(ACCESSOR_OPT) cpp \
+	  $(srcdir)/BindingGen.py cpp \
 	  $(srcdir)/Bindings.conf $*Binding \
 	  $*.webidl
 
 $(globalgen_targets): ParserResults.pkl
+
+%-example: $(bindinggen_dependencies) \
+           $(all_webidl_files) \
+           $(NULL)
+	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $(topsrcdir)/config/pythonpath.py \
+	  $(PLY_INCLUDE) -I$(srcdir)/parser \
+	  $(srcdir)/ExampleGen.py \
+	  $(srcdir)/Bindings.conf $*
 
 CACHE_DIR = _cache
 
@@ -120,6 +146,7 @@ globalgen_dependencies := \
   Bindings.conf \
   Configuration.py \
   Codegen.py \
+  parser/WebIDL.py \
   $(CACHE_DIR)/.done \
   $(GLOBAL_DEPS) \
   $(NULL)
@@ -132,7 +159,7 @@ ParserResults.pkl: $(globalgen_dependencies) \
                    $(all_webidl_files)
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $(topsrcdir)/config/pythonpath.py \
     $(PLY_INCLUDE) -I$(srcdir)/parser \
-    $(srcdir)/GlobalGen.py $(ACCESSOR_OPT) $(srcdir)/Bindings.conf . \
+    $(srcdir)/GlobalGen.py $(srcdir)/Bindings.conf . \
     --cachedir=$(CACHE_DIR) \
     $(all_webidl_files)
 
@@ -144,4 +171,12 @@ GARBAGE += \
   ParserResults.pkl \
   webidlyacc.py \
   parser.out \
+  $(wildcard *-example.h) \
+  $(wildcard *-example.cpp) \
   $(NULL)
+
+# Make sure all binding header files are created during the export stage, so we
+# don't have issues with .cpp files being compiled before we've generated the
+# headers they depend on.  This is really only needed for the test files, since
+# the non-test headers are all exported above anyway.
+export:: $(binding_header_files)

@@ -46,7 +46,7 @@
 //
 //-------------------------------------------------------------------------
 nsDragService::nsDragService()
-  : mDataObject(nsnull), mSentLocalDropEvent(false)
+  : mDataObject(nullptr), mSentLocalDropEvent(false)
 {
 }
 
@@ -82,7 +82,7 @@ nsDragService::CreateDragImage(nsIDOMNode *aDOMNode,
   if (!surface)
     return false;
 
-  PRUint32 bmWidth = dragRect.width, bmHeight = dragRect.height;
+  uint32_t bmWidth = dragRect.width, bmHeight = dragRect.height;
 
   if (bmWidth == 0 || bmHeight == 0)
     return false;
@@ -107,7 +107,7 @@ nsDragService::CreateDragImage(nsIDOMNode *aDOMNode,
   memset((void*)&bmih, 0, sizeof(BITMAPV5HEADER));
   bmih.bV5Size        = sizeof(BITMAPV5HEADER);
   bmih.bV5Width       = bmWidth;
-  bmih.bV5Height      = -(PRInt32)bmHeight; // flip vertical
+  bmih.bV5Height      = -(int32_t)bmHeight; // flip vertical
   bmih.bV5Planes      = 1;
   bmih.bV5BitCount    = 32;
   bmih.bV5Compression = BI_BITFIELDS;
@@ -131,10 +131,10 @@ nsDragService::CreateDragImage(nsIDOMNode *aDOMNode,
 
     // Mouse position in center
     if (mScreenX == -1 || mScreenY == -1) {
-      psdi->ptOffset.x = (PRUint32)((float)bmWidth/2.0f);
-      psdi->ptOffset.y = (PRUint32)((float)bmHeight/2.0f);
+      psdi->ptOffset.x = (uint32_t)((float)bmWidth/2.0f);
+      psdi->ptOffset.y = (uint32_t)((float)bmHeight/2.0f);
     } else {
-      PRInt32 sx = mScreenX, sy = mScreenY;
+      int32_t sx = mScreenX, sy = mScreenY;
       ConvertToUnscaledDevPixels(pc, &sx, &sy);
       psdi->ptOffset.x = sx - dragRect.x;
       psdi->ptOffset.y = sy - dragRect.y;
@@ -151,7 +151,7 @@ NS_IMETHODIMP
 nsDragService::InvokeDragSession(nsIDOMNode *aDOMNode,
                                  nsISupportsArray *anArrayTransferables,
                                  nsIScriptableRegion *aRegion,
-                                 PRUint32 aActionType)
+                                 uint32_t aActionType)
 {
   nsresult rv = nsBaseDragService::InvokeDragSession(aDOMNode,
                                                      anArrayTransferables,
@@ -160,14 +160,14 @@ nsDragService::InvokeDragSession(nsIDOMNode *aDOMNode,
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Try and get source URI of the items that are being dragged
-  nsIURI *uri = nsnull;
+  nsIURI *uri = nullptr;
 
   nsCOMPtr<nsIDocument> doc(do_QueryInterface(mSourceDocument));
   if (doc) {
     uri = doc->GetDocumentURI();
   }
 
-  PRUint32 numItemsToDrag = 0;
+  uint32_t numItemsToDrag = 0;
   rv = anArrayTransferables->Count(&numItemsToDrag);
   if (!numItemsToDrag)
     return NS_ERROR_FAILURE;
@@ -185,7 +185,7 @@ nsDragService::InvokeDragSession(nsIDOMNode *aDOMNode,
     if (!dataObjCollection)
       return NS_ERROR_OUT_OF_MEMORY;
     itemToDrag = dataObjCollection;
-    for (PRUint32 i=0; i<numItemsToDrag; ++i) {
+    for (uint32_t i=0; i<numItemsToDrag; ++i) {
       nsCOMPtr<nsISupports> supports;
       anArrayTransferables->GetElementAt(i, getter_AddRefs(supports));
       nsCOMPtr<nsITransferable> trans(do_QueryInterface(supports));
@@ -233,7 +233,7 @@ nsDragService::InvokeDragSession(nsIDOMNode *aDOMNode,
 //-------------------------------------------------------------------------
 NS_IMETHODIMP
 nsDragService::StartInvokingDragSession(IDataObject * aDataObj,
-                                        PRUint32 aActionType)
+                                        uint32_t aActionType)
 {
   // To do the drag we need to create an object that
   // implements the IDataObject interface (for OLE)
@@ -277,7 +277,7 @@ nsDragService::StartInvokingDragSession(IDataObject * aDataObj,
   // In  cases where the drop operation completed outside the application, update
   // the source node's nsIDOMDataTransfer dropEffect value so it is up to date.  
   if (!mSentLocalDropEvent) {
-    PRUint32 dropResult;
+    uint32_t dropResult;
     // Order is important, since multiple flags can be returned.
     if (winDropRes & DROPEFFECT_COPY)
         dropResult = DRAGDROP_ACTION_COPY;
@@ -318,7 +318,7 @@ nsDragService::StartInvokingDragSession(IDataObject * aDataObj,
 nsDataObjCollection*
 nsDragService::GetDataObjCollection(IDataObject* aDataObj)
 {
-  nsDataObjCollection * dataObjCol = nsnull;
+  nsDataObjCollection * dataObjCol = nullptr;
   if (aDataObj) {
     nsIDataObjCollection* dataObj;
     if (aDataObj->QueryInterface(IID_IDataObjCollection,
@@ -333,7 +333,7 @@ nsDragService::GetDataObjCollection(IDataObject* aDataObj)
 
 //-------------------------------------------------------------------------
 NS_IMETHODIMP
-nsDragService::GetNumDropItems(PRUint32 * aNumItems)
+nsDragService::GetNumDropItems(uint32_t * aNumItems)
 {
   if (!mDataObject) {
     *aNumItems = 0;
@@ -367,6 +367,9 @@ nsDragService::GetNumDropItems(PRUint32 * aNumItems)
         *aNumItems = ::DragQueryFileW(hdrop, 0xFFFFFFFF, NULL, 0);
         ::GlobalUnlock(stm.hGlobal);
         ::ReleaseStgMedium(&stm);
+        // Data may be provided later, so assume we have 1 item
+        if (*aNumItems == 0)
+          *aNumItems = 1;
       }
       else
         *aNumItems = 1;
@@ -380,7 +383,7 @@ nsDragService::GetNumDropItems(PRUint32 * aNumItems)
 
 //-------------------------------------------------------------------------
 NS_IMETHODIMP
-nsDragService::GetData(nsITransferable * aTransferable, PRUint32 anItem)
+nsDragService::GetData(nsITransferable * aTransferable, uint32_t anItem)
 {
   // This typcially happens on a drop, the target would be asking
   // for it's transferable to be filled in
@@ -393,10 +396,10 @@ nsDragService::GetData(nsITransferable * aTransferable, PRUint32 anItem)
   if (IsCollectionObject(mDataObject)) {
     // multiple items, use |anItem| as an index into our collection
     nsDataObjCollection * dataObjCol = GetDataObjCollection(mDataObject);
-    PRUint32 cnt = dataObjCol->GetNumDataObjects();
+    uint32_t cnt = dataObjCol->GetNumDataObjects();
     if (anItem >= 0 && anItem < cnt) {
       IDataObject * dataObj = dataObjCol->GetDataObjectAt(anItem);
-      dataFound = nsClipboard::GetDataFromDataObject(dataObj, 0, nsnull,
+      dataFound = nsClipboard::GetDataFromDataObject(dataObj, 0, nullptr,
                                                      aTransferable);
     }
     else
@@ -406,14 +409,14 @@ nsDragService::GetData(nsITransferable * aTransferable, PRUint32 anItem)
     // If they are asking for item "0", we can just get it...
     if (anItem == 0) {
        dataFound = nsClipboard::GetDataFromDataObject(mDataObject, anItem,
-                                                      nsnull, aTransferable);
+                                                      nullptr, aTransferable);
     } else {
       // It better be a file drop, or else non-zero indexes are invalid!
       FORMATETC fe2;
       SET_FORMATETC(fe2, CF_HDROP, 0, DVASPECT_CONTENT, -1, TYMED_HGLOBAL);
       if (mDataObject->QueryGetData(&fe2) == S_OK)
         dataFound = nsClipboard::GetDataFromDataObject(mDataObject, anItem,
-                                                       nsnull, aTransferable);
+                                                       nullptr, aTransferable);
       else
         NS_WARNING("Reqesting non-zero index, but clipboard data is not a collection!");
     }
@@ -451,7 +454,7 @@ nsDragService::IsDataFlavorSupported(const char *aDataFlavor, bool *_retval)
   if (!aDataFlavor || !mDataObject || !_retval)
     return NS_ERROR_FAILURE;
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
   if (strcmp(aDataFlavor, kTextMime) == 0)
     NS_WARNING("DO NOT USE THE text/plain DATA FLAVOR ANY MORE. USE text/unicode INSTEAD");
 #endif
@@ -471,8 +474,8 @@ nsDragService::IsDataFlavorSupported(const char *aDataFlavor, bool *_retval)
     // this data type
     nsDataObjCollection* dataObjCol = GetDataObjCollection(mDataObject);
     if (dataObjCol) {
-      PRUint32 cnt = dataObjCol->GetNumDataObjects();
-      for (PRUint32 i=0;i<cnt;++i) {
+      uint32_t cnt = dataObjCol->GetNumDataObjects();
+      for (uint32_t i=0;i<cnt;++i) {
         IDataObject * dataObj = dataObjCol->GetDataObjectAt(i);
         if (S_OK == dataObj->QueryGetData(&fe))
           *_retval = true;             // found it!

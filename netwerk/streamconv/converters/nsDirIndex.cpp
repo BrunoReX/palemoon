@@ -12,13 +12,13 @@ NS_IMPL_ISUPPORTS1(nsDirIndex,
                    nsIDirIndex)
 
 nsDirIndex::nsDirIndex() : mType(TYPE_UNKNOWN),
-                           mSize(LL_MAXUINT),
+                           mSize(UINT64_MAX),
                            mLastModified(-1) {
 }
 
 nsDirIndex::~nsDirIndex() {}
 
-NS_IMPL_GETSET(nsDirIndex, Type, PRUint32, mType)
+NS_IMPL_GETSET(nsDirIndex, Type, uint32_t, mType)
 
 // GETSET macros for modern strings would be nice...
 
@@ -67,6 +67,6 @@ nsDirIndex::SetDescription(const PRUnichar* aDescription) {
   return NS_OK;
 }
 
-NS_IMPL_GETSET(nsDirIndex, Size, PRInt64, mSize)
-NS_IMPL_GETSET(nsDirIndex, LastModified, PRInt64, mLastModified)
+NS_IMPL_GETSET(nsDirIndex, Size, int64_t, mSize)
+NS_IMPL_GETSET(nsDirIndex, LastModified, PRTime, mLastModified)
 

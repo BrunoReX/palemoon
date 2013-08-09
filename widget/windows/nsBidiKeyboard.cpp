@@ -24,7 +24,7 @@ nsBidiKeyboard::~nsBidiKeyboard()
 {
 }
 
-NS_IMETHODIMP nsBidiKeyboard::SetLangFromBidiLevel(PRUint8 aLevel)
+NS_IMETHODIMP nsBidiKeyboard::SetLangFromBidiLevel(uint8_t aLevel)
 {
   nsresult result = SetupBidiKeyboards();
   if (NS_FAILED(result))
@@ -117,7 +117,7 @@ nsresult nsBidiKeyboard::SetupBidiKeyboards()
   bool isRTLKeyboardSet = false;
   
   // GetKeyboardLayoutList with 0 as first parameter returns the number of keyboard layouts available
-  keyboards = ::GetKeyboardLayoutList(0, nsnull);
+  keyboards = ::GetKeyboardLayoutList(0, nullptr);
   if (!keyboards)
     return NS_ERROR_FAILURE;
 

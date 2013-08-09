@@ -5,16 +5,10 @@
 
 package org.mozilla.gecko;
 
-import org.mozilla.gecko.db.BrowserDB;
-
-import org.json.JSONObject;
 import org.json.JSONException;
+import org.json.JSONObject;
 
-import java.util.Map;
-
-import android.app.AlertDialog.Builder;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.util.AttributeSet;
 import android.util.Log;
 
@@ -52,17 +46,6 @@ class PrivateDataPreference extends MultiChoicePreference {
                 json.put(key, value);
             } catch (JSONException e) {
                 Log.e(LOGTAG, "JSON error", e);
-            }
-
-            // clear private data in java
-            if (key.equals("history_downloads") && value) {
-                GeckoAppShell.getHandler().post(new Runnable() {
-                    public void run() {
-                        BrowserDB.clearHistory(mContext.getContentResolver());
-                        GeckoApp.mAppContext.mFavicons.clearFavicons();
-                        GeckoApp.mAppContext.handleClearHistory();
-                    }
-                });
             }
         }
 

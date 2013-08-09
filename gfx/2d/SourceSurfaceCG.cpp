@@ -6,6 +6,8 @@
 #include "SourceSurfaceCG.h"
 #include "DrawTargetCG.h"
 
+#include "QuartzSupport.h"
+
 namespace mozilla {
 namespace gfx {
 
@@ -51,9 +53,9 @@ SourceSurfaceCG::InitFromData(unsigned char *aData,
                                SurfaceFormat aFormat)
 {
   //XXX: we should avoid creating this colorspace everytime
-  CGColorSpaceRef colorSpace = NULL;
+  CGColorSpaceRef colorSpace = nullptr;
   CGBitmapInfo bitinfo = 0;
-  CGDataProviderRef dataProvider = NULL;
+  CGDataProviderRef dataProvider = nullptr;
   int bitsPerComponent = 0;
   int bitsPerPixel = 0;
 
@@ -108,7 +110,7 @@ SourceSurfaceCG::InitFromData(unsigned char *aData,
 			    colorSpace,
 			    bitinfo,
 			    dataProvider,
-			    NULL,
+			    nullptr,
 			    true,
 			    kCGRenderingIntentDefault);
   }
@@ -116,7 +118,7 @@ SourceSurfaceCG::InitFromData(unsigned char *aData,
   CGDataProviderRelease(dataProvider);
   CGColorSpaceRelease (colorSpace);
 
-  return mImage != NULL;
+  return mImage != nullptr;
 }
 
 DataSourceSurfaceCG::~DataSourceSurfaceCG()
@@ -142,9 +144,9 @@ DataSourceSurfaceCG::InitFromData(unsigned char *aData,
                                SurfaceFormat aFormat)
 {
   //XXX: we should avoid creating this colorspace everytime
-  CGColorSpaceRef colorSpace = NULL;
+  CGColorSpaceRef colorSpace = nullptr;
   CGBitmapInfo bitinfo = 0;
-  CGDataProviderRef dataProvider = NULL;
+  CGDataProviderRef dataProvider = nullptr;
   int bitsPerComponent = 0;
   int bitsPerPixel = 0;
 
@@ -197,7 +199,7 @@ DataSourceSurfaceCG::InitFromData(unsigned char *aData,
 			    colorSpace,
 			    bitinfo,
 			    dataProvider,
-			    NULL,
+			    nullptr,
 			    true,
 			    kCGRenderingIntentDefault);
   }
@@ -223,10 +225,10 @@ CGContextRef CreateBitmapContextForImage(CGImageRef image)
   colorSpace = CGColorSpaceCreateDeviceRGB();
   assert(colorSpace);
 
-  // we'd like to pass NULL as the first parameter
+  // we'd like to pass nullptr as the first parameter
   // to let Quartz manage this memory for us. However,
   // on 10.5 and older CGBitmapContextGetData will return
-  // NULL instead of the associated buffer so we need
+  // nullptr instead of the associated buffer so we need
   // to manage it ourselves.
   CGContextRef cg = CGBitmapContextCreate(data,
                                           width,
@@ -246,7 +248,7 @@ DataSourceSurfaceCG::DataSourceSurfaceCG(CGImageRef aImage)
 {
   mImage = aImage;
   mCg = CreateBitmapContextForImage(aImage);
-  if (mCg == NULL) {
+  if (mCg == nullptr) {
     // error creating context
     return;
   }
@@ -285,18 +287,20 @@ SourceSurfaceCGBitmapContext::SourceSurfaceCGBitmapContext(DrawTargetCG *aDrawTa
 {
   mDrawTarget = aDrawTarget;
   mCg = (CGContextRef)aDrawTarget->GetNativeSurface(NATIVE_SURFACE_CGCONTEXT);
+  if (!mCg)
+    abort();
 
   mSize.width = CGBitmapContextGetWidth(mCg);
   mSize.height = CGBitmapContextGetHeight(mCg);
   mStride = CGBitmapContextGetBytesPerRow(mCg);
   mData = CGBitmapContextGetData(mCg);
 
-  mImage = NULL;
+  mImage = nullptr;
 }
 
 void SourceSurfaceCGBitmapContext::EnsureImage() const
 {
-  // Instaed of using CGBitmapContextCreateImage we create
+  // Instead of using CGBitmapContextCreateImage we create
   // a CGImage around the data associated with the CGBitmapContext
   // we do this to avoid the vm_copy that CGBitmapContextCreateImage.
   // vm_copy tends to cause all sorts of unexpected performance problems
@@ -305,9 +309,9 @@ void SourceSurfaceCGBitmapContext::EnsureImage() const
   // performance characteristics.
   if (!mImage) {
       //XXX: we should avoid creating this colorspace everytime
-      CGColorSpaceRef colorSpace = NULL;
+      CGColorSpaceRef colorSpace = nullptr;
       CGBitmapInfo bitinfo = 0;
-      CGDataProviderRef dataProvider = NULL;
+      CGDataProviderRef dataProvider = nullptr;
       int bitsPerComponent = 8;
       int bitsPerPixel = 32;
 
@@ -319,12 +323,14 @@ void SourceSurfaceCGBitmapContext::EnsureImage() const
           // if we have an mCg than it owns the data
           // and we don't want to tranfer ownership
           // to the CGDataProviderCreateWithData
-          info = NULL;
+          info = nullptr;
       } else {
           // otherwise we transfer ownership to
           // the dataProvider
           info = mData;
       }
+
+      if (!mData) abort();
 
       dataProvider = CGDataProviderCreateWithData (info,
                                                    mData,
@@ -338,7 +344,7 @@ void SourceSurfaceCGBitmapContext::EnsureImage() const
                               colorSpace,
                               bitinfo,
                               dataProvider,
-                              NULL,
+                              nullptr,
                               true,
                               kCGRenderingIntentDefault);
 
@@ -372,10 +378,10 @@ SourceSurfaceCGBitmapContext::DrawTargetWillChange()
     // drop the current image for the data associated with the CGBitmapContext
     if (mImage)
       CGImageRelease(mImage);
-    mImage = NULL;
+    mImage = nullptr;
 
-    mCg = NULL;
-    mDrawTarget = NULL;
+    mCg = nullptr;
+    mDrawTarget = nullptr;
   }
 }
 
@@ -387,6 +393,103 @@ SourceSurfaceCGBitmapContext::~SourceSurfaceCGBitmapContext()
   }
   if (mImage)
     CGImageRelease(mImage);
+}
+
+SourceSurfaceCGIOSurfaceContext::SourceSurfaceCGIOSurfaceContext(DrawTargetCG *aDrawTarget)
+{
+  CGContextRef cg = (CGContextRef)aDrawTarget->GetNativeSurface(NATIVE_SURFACE_CGCONTEXT_ACCELERATED);
+
+  RefPtr<MacIOSurface> surf = MacIOSurface::IOSurfaceContextGetSurface(cg);
+
+  mSize.width = surf->GetWidth();
+  mSize.height = surf->GetHeight();
+
+  // TODO use CreateImageFromIOSurfaceContext instead of reading back the surface
+  //mImage = MacIOSurface::CreateImageFromIOSurfaceContext(cg);
+  mImage = nullptr;
+
+  aDrawTarget->Flush();
+  surf->Lock();
+  size_t bytesPerRow = surf->GetBytesPerRow();
+  size_t ioHeight = surf->GetHeight();
+  void* ioData = surf->GetBaseAddress();
+  // XXX If the width is much less then the stride maybe
+  //     we should repack the image?
+  mData = malloc(ioHeight*bytesPerRow);
+  memcpy(mData, ioData, ioHeight*(bytesPerRow));
+  mStride = bytesPerRow;
+  surf->Unlock();
+}
+
+void SourceSurfaceCGIOSurfaceContext::EnsureImage() const
+{
+  // TODO Use CreateImageFromIOSurfaceContext and remove this
+
+  // Instead of using CGBitmapContextCreateImage we create
+  // a CGImage around the data associated with the CGBitmapContext
+  // we do this to avoid the vm_copy that CGBitmapContextCreateImage.
+  // vm_copy tends to cause all sorts of unexpected performance problems
+  // because of the mm tricks that vm_copy does. Using a regular
+  // memcpy when the bitmap context is modified gives us more predictable
+  // performance characteristics.
+  if (!mImage) {
+      //XXX: we should avoid creating this colorspace everytime
+      CGColorSpaceRef colorSpace = nullptr;
+      CGBitmapInfo bitinfo = 0;
+      CGDataProviderRef dataProvider = nullptr;
+      int bitsPerComponent = 8;
+      int bitsPerPixel = 32;
+
+      colorSpace = CGColorSpaceCreateDeviceRGB();
+      bitinfo = kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host;
+
+      void *info = mData;
+
+      dataProvider = CGDataProviderCreateWithData (info,
+                                                   mData,
+                                                   mSize.height * mStride,
+                                                   releaseCallback);
+
+      mImage = CGImageCreate (mSize.width, mSize.height,
+                              bitsPerComponent,
+                              bitsPerPixel,
+                              mStride,
+                              colorSpace,
+                              bitinfo,
+                              dataProvider,
+                              nullptr,
+                              true,
+                              kCGRenderingIntentDefault);
+
+      CGDataProviderRelease(dataProvider);
+      CGColorSpaceRelease (colorSpace);
+  }
+
+}
+
+IntSize
+SourceSurfaceCGIOSurfaceContext::GetSize() const
+{
+  return mSize;
+}
+
+void
+SourceSurfaceCGIOSurfaceContext::DrawTargetWillChange()
+{
+}
+
+SourceSurfaceCGIOSurfaceContext::~SourceSurfaceCGIOSurfaceContext()
+{
+  if (mImage)
+    CGImageRelease(mImage);
+  else
+    free(mData);
+}
+
+unsigned char*
+SourceSurfaceCGIOSurfaceContext::GetData()
+{
+  return (unsigned char*)mData;
 }
 
 }

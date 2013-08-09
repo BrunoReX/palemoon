@@ -20,7 +20,7 @@ static const char* gQuitApplicationMessage = "quit-application";
 
 // NSPR_LOG_MODULES=UrlClassifierStreamUpdater:5
 #if defined(PR_LOGGING)
-static const PRLogModuleInfo *gUrlClassifierStreamUpdaterLog = nsnull;
+static const PRLogModuleInfo *gUrlClassifierStreamUpdaterLog = nullptr;
 #define LOG(args) PR_LOG(gUrlClassifierStreamUpdaterLog, PR_LOG_DEBUG, args)
 #else
 #define LOG(args)
@@ -33,7 +33,7 @@ static const PRLogModuleInfo *gUrlClassifierStreamUpdaterLog = nsnull;
 
 nsUrlClassifierStreamUpdater::nsUrlClassifierStreamUpdater()
   : mIsUpdating(false), mInitialized(false), mDownloadError(false),
-    mBeganStream(false), mUpdateUrl(nsnull), mChannel(nsnull)
+    mBeganStream(false), mUpdateUrl(nullptr), mChannel(nullptr)
 {
 #if defined(PR_LOGGING)
   if (!gUrlClassifierStreamUpdaterLog)
@@ -64,9 +64,9 @@ nsUrlClassifierStreamUpdater::DownloadDone()
 
   mPendingUpdates.Clear();
   mDownloadError = false;
-  mSuccessCallback = nsnull;
-  mUpdateErrorCallback = nsnull;
-  mDownloadErrorCallback = nsnull;
+  mSuccessCallback = nullptr;
+  mUpdateErrorCallback = nullptr;
+  mDownloadErrorCallback = nullptr;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -101,9 +101,9 @@ nsUrlClassifierStreamUpdater::FetchUpdate(nsIURI *aUpdateUrl,
                                           const nsACString & aServerMAC)
 {
   nsresult rv;
-  PRUint32 loadFlags = nsIChannel::INHIBIT_CACHING |
+  uint32_t loadFlags = nsIChannel::INHIBIT_CACHING |
                        nsIChannel::LOAD_BYPASS_CACHE;
-  rv = NS_NewChannel(getter_AddRefs(mChannel), aUpdateUrl, nsnull, nsnull, this,
+  rv = NS_NewChannel(getter_AddRefs(mChannel), aUpdateUrl, nullptr, nullptr, this,
                      loadFlags);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -123,7 +123,7 @@ nsUrlClassifierStreamUpdater::FetchUpdate(nsIURI *aUpdateUrl,
   }
 
   // Make the request
-  rv = mChannel->AsyncOpen(this, nsnull);
+  rv = mChannel->AsyncOpen(this, nullptr);
   NS_ENSURE_SUCCESS(rv, rv);
 
   mStreamTable = aStreamTable;
@@ -138,11 +138,16 @@ nsUrlClassifierStreamUpdater::FetchUpdate(const nsACString & aUpdateUrl,
                                           const nsACString & aStreamTable,
                                           const nsACString & aServerMAC)
 {
+  LOG(("(pre) Fetching update from %s\n", PromiseFlatCString(aUpdateUrl).get()));
+
   nsCOMPtr<nsIURI> uri;
   nsresult rv = NS_NewURI(getter_AddRefs(uri), aUpdateUrl);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  LOG(("Fetching update from %s\n", PromiseFlatCString(aUpdateUrl).get()));
+  nsAutoCString urlSpec;
+  uri->GetAsciiSpec(urlSpec);
+
+  LOG(("(post) Fetching update from %s\n", urlSpec.get()));
 
   return FetchUpdate(uri, aRequestBody, aStreamTable, aServerMAC);
 }
@@ -207,6 +212,11 @@ nsUrlClassifierStreamUpdater::DownloadUpdates(
   mIsUpdating = true;
   *_retval = true;
 
+  nsAutoCString urlSpec;
+  mUpdateUrl->GetAsciiSpec(urlSpec);
+
+  LOG(("FetchUpdate: %s", urlSpec.get()));
+  //LOG(("requestBody: %s", aRequestBody.get()));
 
   return FetchUpdate(mUpdateUrl, aRequestBody, EmptyCString(), EmptyCString());
 }
@@ -249,7 +259,7 @@ nsUrlClassifierStreamUpdater::RekeyRequested()
 
   return observerService->NotifyObservers(static_cast<nsIUrlClassifierStreamUpdater*>(this),
                                           "url-classifier-rekey-requested",
-                                          nsnull);
+                                          nullptr);
 }
 
 nsresult
@@ -280,7 +290,7 @@ nsUrlClassifierStreamUpdater::FetchNext()
 
 NS_IMETHODIMP
 nsUrlClassifierStreamUpdater::StreamFinished(nsresult status,
-                                             PRUint32 requestedDelay)
+                                             uint32_t requestedDelay)
 {
   LOG(("nsUrlClassifierStreamUpdater::StreamFinished [%x, %d]", status, requestedDelay));
   if (NS_FAILED(status) || mPendingUpdates.Length() == 0) {
@@ -306,7 +316,7 @@ nsUrlClassifierStreamUpdater::StreamFinished(nsresult status,
 }
 
 NS_IMETHODIMP
-nsUrlClassifierStreamUpdater::UpdateSuccess(PRUint32 requestedTimeout)
+nsUrlClassifierStreamUpdater::UpdateSuccess(uint32_t requestedTimeout)
 {
   LOG(("nsUrlClassifierStreamUpdater::UpdateSuccess [this=%p]", this));
   if (mPendingUpdates.Length() != 0) {
@@ -314,10 +324,10 @@ nsUrlClassifierStreamUpdater::UpdateSuccess(PRUint32 requestedTimeout)
   }
 
   // DownloadDone() clears mSuccessCallback, so we save it off here.
-  nsCOMPtr<nsIUrlClassifierCallback> successCallback = mDownloadError ? nsnull : mSuccessCallback.get();
+  nsCOMPtr<nsIUrlClassifierCallback> successCallback = mDownloadError ? nullptr : mSuccessCallback.get();
   DownloadDone();
 
-  nsCAutoString strTimeout;
+  nsAutoCString strTimeout;
   strTimeout.AppendInt(requestedTimeout);
   if (successCallback) {
     successCallback->HandleEvent(strTimeout);
@@ -327,17 +337,17 @@ nsUrlClassifierStreamUpdater::UpdateSuccess(PRUint32 requestedTimeout)
 }
 
 NS_IMETHODIMP
-nsUrlClassifierStreamUpdater::UpdateError(PRUint32 result)
+nsUrlClassifierStreamUpdater::UpdateError(nsresult result)
 {
   LOG(("nsUrlClassifierStreamUpdater::UpdateError [this=%p]", this));
 
   // DownloadDone() clears mUpdateErrorCallback, so we save it off here.
-  nsCOMPtr<nsIUrlClassifierCallback> errorCallback = mDownloadError ? nsnull : mUpdateErrorCallback.get();
+  nsCOMPtr<nsIUrlClassifierCallback> errorCallback = mDownloadError ? nullptr : mUpdateErrorCallback.get();
 
   DownloadDone();
 
-  nsCAutoString strResult;
-  strResult.AppendInt(result);
+  nsAutoCString strResult;
+  strResult.AppendInt(static_cast<uint32_t>(result));
   if (errorCallback) {
     errorCallback->HandleEvent(strResult);
   }
@@ -384,7 +394,7 @@ nsUrlClassifierStreamUpdater::OnStartRequest(nsIRequest *request,
 {
   nsresult rv;
   bool downloadError = false;
-  nsCAutoString strStatus;
+  nsAutoCString strStatus;
   nsresult status = NS_OK;
 
   // Only update if we got http success header
@@ -408,10 +418,11 @@ nsUrlClassifierStreamUpdater::OnStartRequest(nsIRequest *request,
         // 404 or other error, pass error status back
         LOG(("HTTP request returned failure code."));
 
-        rv = httpChannel->GetResponseStatus(&status);
+        uint32_t requestStatus;
+        rv = httpChannel->GetResponseStatus(&requestStatus);
         NS_ENSURE_SUCCESS(rv, rv);
 
-        strStatus.AppendInt(status);
+        strStatus.AppendInt(requestStatus);
         downloadError = true;
       }
     }
@@ -437,8 +448,8 @@ NS_IMETHODIMP
 nsUrlClassifierStreamUpdater::OnDataAvailable(nsIRequest *request,
                                               nsISupports* context,
                                               nsIInputStream *aIStream,
-                                              PRUint32 aSourceOffset,
-                                              PRUint32 aLength)
+                                              uint64_t aSourceOffset,
+                                              uint32_t aLength)
 {
   if (!mDBService)
     return NS_ERROR_NOT_INITIALIZED;
@@ -485,7 +496,7 @@ nsUrlClassifierStreamUpdater::OnStopRequest(nsIRequest *request, nsISupports* co
     rv = mDBService->FinishUpdate();
   }
 
-  mChannel = nsnull;
+  mChannel = nullptr;
 
   return rv;
 }
@@ -504,11 +515,11 @@ nsUrlClassifierStreamUpdater::Observe(nsISupports *aSubject, const char *aTopic,
       rv = mChannel->Cancel(NS_ERROR_ABORT);
       NS_ENSURE_SUCCESS(rv, rv);
       mIsUpdating = false;
-      mChannel = nsnull;
+      mChannel = nullptr;
     }
     if (mTimer) {
       mTimer->Cancel();
-      mTimer = nsnull;
+      mTimer = nullptr;
     }
   }
   return NS_OK;
@@ -532,7 +543,7 @@ nsUrlClassifierStreamUpdater::NotifyCertProblem(nsIInterfaceRequestor *socketInf
 
 NS_IMETHODIMP
 nsUrlClassifierStreamUpdater::NotifySSLError(nsIInterfaceRequestor *socketInfo, 
-                                             PRInt32 error, 
+                                             int32_t error, 
                                              const nsACString &targetSite, 
                                              bool *_retval)
 {
@@ -557,7 +568,7 @@ nsUrlClassifierStreamUpdater::Notify(nsITimer *timer)
 {
   LOG(("nsUrlClassifierStreamUpdater::Notify [%p]", this));
 
-  mTimer = nsnull;
+  mTimer = nullptr;
 
   // Start the update process up again.
   FetchNext();

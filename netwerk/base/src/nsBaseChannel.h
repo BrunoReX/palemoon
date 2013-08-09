@@ -21,7 +21,9 @@
 #include "nsIProgressEventSink.h"
 #include "nsITransport.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
+#include "PrivateBrowsingChannel.h"
 #include "nsThreadUtils.h"
+#include "nsNetUtil.h"
 
 //-----------------------------------------------------------------------------
 // nsBaseChannel is designed to be subclassed.  The subclass is responsible for
@@ -40,6 +42,7 @@ class nsBaseChannel : public nsHashPropertyBag
                     , public nsIInterfaceRequestor
                     , public nsITransportEventSink
                     , public nsIAsyncVerifyRedirectCallback
+                    , public mozilla::net::PrivateBrowsingChannel<nsBaseChannel>
                     , private nsIStreamListener
 {
 public:
@@ -109,7 +112,7 @@ public:
   // redirect could not be performed (no channel was opened; this channel
   // wasn't canceled.)  The redirectFlags parameter consists of the flag values
   // defined on nsIChannelEventSink.
-  nsresult Redirect(nsIChannel *newChannel, PRUint32 redirectFlags,
+  nsresult Redirect(nsIChannel *newChannel, uint32_t redirectFlags,
                     bool openNewChannel);
 
   // Tests whether a type hint was set. Subclasses can use this to decide
@@ -144,7 +147,7 @@ public:
   }
 
   // Test the load flags
-  bool HasLoadFlag(PRUint32 flag) {
+  bool HasLoadFlag(uint32_t flag) {
     return (mLoadFlags & flag) != 0;
   }
 
@@ -152,11 +155,6 @@ public:
   bool IsPending() const {
     return mPump || mWaitingOnAsyncRedirect;
   }
-
-  // Set the content length that should be reported for this channel.  Pass -1
-  // to indicate an unspecified content length.
-  void SetContentLength64(PRInt64 len);
-  PRInt64 ContentLength64();
 
   // Helper function for querying the channel's notification callbacks.
   template <class T> void GetCallback(nsCOMPtr<T> &result) {
@@ -198,7 +196,7 @@ public:
   // This function optionally returns a reference to the new converter.
   nsresult PushStreamConverter(const char *fromType, const char *toType,
                                bool invalidatesContentLength = true,
-                               nsIStreamListener **converter = nsnull);
+                               nsIStreamListener **converter = nullptr);
 
 private:
   NS_DECL_NSISTREAMLISTENER
@@ -209,7 +207,7 @@ private:
 
   // Called when the callbacks available to this channel may have changed.
   void CallbacksChanged() {
-    mProgressSink = nsnull;
+    mProgressSink = nullptr;
     mQueriedProgressSink = false;
     OnCallbacksChanged();
   }
@@ -245,28 +243,33 @@ private:
   friend class RedirectRunnable;
 
   nsRefPtr<nsInputStreamPump>         mPump;
-  nsCOMPtr<nsIInterfaceRequestor>     mCallbacks;
   nsCOMPtr<nsIProgressEventSink>      mProgressSink;
   nsCOMPtr<nsIURI>                    mOriginalURI;
-  nsCOMPtr<nsIURI>                    mURI;
   nsCOMPtr<nsISupports>               mOwner;
   nsCOMPtr<nsISupports>               mSecurityInfo;
   nsCOMPtr<nsIChannel>                mRedirectChannel;
   nsCString                           mContentType;
   nsCString                           mContentCharset;
-  PRUint32                            mLoadFlags;
+  uint32_t                            mLoadFlags;
   bool                                mQueriedProgressSink;
   bool                                mSynthProgressEvents;
   bool                                mWasOpened;
   bool                                mWaitingOnAsyncRedirect;
   bool                                mOpenRedirectChannel;
-  PRUint32                            mRedirectFlags;
+  uint32_t                            mRedirectFlags;
 
 protected:
+  nsCOMPtr<nsIURI>                    mURI;
   nsCOMPtr<nsILoadGroup>              mLoadGroup;
+  nsCOMPtr<nsIInterfaceRequestor>     mCallbacks;
   nsCOMPtr<nsIStreamListener>         mListener;
   nsCOMPtr<nsISupports>               mListenerContext;
   nsresult                            mStatus;
+  uint32_t                            mContentDispositionHint;
+  nsAutoPtr<nsString>                 mContentDispositionFilename;
+  int64_t                             mContentLength;
+
+  friend class mozilla::net::PrivateBrowsingChannel<nsBaseChannel>;
 };
 
 #endif // !nsBaseChannel_h__

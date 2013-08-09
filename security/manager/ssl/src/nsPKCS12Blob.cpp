@@ -9,7 +9,6 @@
 #include "nsISupportsArray.h"
 #include "nsIFile.h"
 #include "nsNetUtil.h"
-#include "nsILocalFile.h"
 #include "nsIDirectoryService.h"
 #include "nsThreadUtils.h"
 
@@ -51,10 +50,10 @@ static NS_DEFINE_CID(kNSSComponentCID, NS_NSSCOMPONENT_CID);
 
 // constructor
 nsPKCS12Blob::nsPKCS12Blob():mCertArray(0),
-                             mTmpFile(nsnull),
-                             mTmpFilePath(nsnull),
-                             mDigest(nsnull),
-                             mDigestIterator(nsnull),
+                             mTmpFile(nullptr),
+                             mTmpFilePath(nullptr),
+                             mDigest(nullptr),
+                             mDigestIterator(nullptr),
                              mTokenSet(false)
 {
   mUIContext = new PipUIContext();
@@ -96,14 +95,14 @@ nsPKCS12Blob::SetToken(nsIPK11Token *token)
 // Given a file handle, read a PKCS#12 blob from that file, decode it,
 // and import the results into the token.
 nsresult
-nsPKCS12Blob::ImportFromFile(nsILocalFile *file)
+nsPKCS12Blob::ImportFromFile(nsIFile *file)
 {
   nsNSSShutDownPreventionLock locker;
   nsresult rv = NS_OK;
 
   if (!mToken) {
     if (!mTokenSet) {
-      rv = SetToken(NULL); // Ask the user to pick a slot
+      rv = SetToken(nullptr); // Ask the user to pick a slot
       if (NS_FAILED(rv)) {
         handleError(PIP_PKCS12_USER_CANCELED);
         return rv;
@@ -136,19 +135,19 @@ nsPKCS12Blob::ImportFromFile(nsILocalFile *file)
 }
 
 nsresult
-nsPKCS12Blob::ImportFromFileHelper(nsILocalFile *file, 
+nsPKCS12Blob::ImportFromFileHelper(nsIFile *file, 
                                    nsPKCS12Blob::ImportMode aImportMode,
                                    nsPKCS12Blob::RetryReason &aWantRetry)
 {
   nsNSSShutDownPreventionLock locker;
   nsresult rv;
   SECStatus srv = SECSuccess;
-  SEC_PKCS12DecoderContext *dcx = NULL;
+  SEC_PKCS12DecoderContext *dcx = nullptr;
   SECItem unicodePw;
 
-  PK11SlotInfo *slot=nsnull;
+  PK11SlotInfo *slot=nullptr;
   nsXPIDLString tokenName;
-  unicodePw.data = NULL;
+  unicodePw.data = nullptr;
   
   aWantRetry = rr_do_not_retry;
 
@@ -161,7 +160,7 @@ nsPKCS12Blob::ImportFromFileHelper(nsILocalFile *file,
     // get file password (unicode)
     rv = getPKCS12FilePassword(&unicodePw);
     if (NS_FAILED(rv)) goto finish;
-    if (unicodePw.data == NULL) {
+    if (!unicodePw.data) {
       handleError(PIP_PKCS12_USER_CANCELED);
       return NS_OK;
     }
@@ -178,7 +177,7 @@ nsPKCS12Blob::ImportFromFileHelper(nsILocalFile *file,
   }
 
   // initialize the decoder
-  dcx = SEC_PKCS12DecoderStart(&unicodePw, slot, NULL,
+  dcx = SEC_PKCS12DecoderStart(&unicodePw, slot, nullptr,
                                digest_open, digest_close,
                                digest_read, digest_write,
                                this);
@@ -261,7 +260,7 @@ nsPKCS12Blob::LoadCerts(const PRUnichar **certNames, int numCerts)
   /* Add the certs */
   for (int i=0; i<numCerts; i++) {
     strcpy(namecpy, NS_ConvertUTF16toUTF8(certNames[i]));
-    CERTCertificate *nssCert = PK11_FindCertFromNickname(namecpy, NULL);
+    CERTCertificate *nssCert = PK11_FindCertFromNickname(namecpy, nullptr);
     if (!nssCert) {
       if (!handleError())
         return NS_ERROR_FAILURE;
@@ -291,7 +290,7 @@ isExtractable(SECKEYPrivateKey *privKey)
   if (rv != SECSuccess) {
     return false;
   }
-  if ((value.len == 1) && (value.data != NULL)) {
+  if ((value.len == 1) && value.data) {
     isExtractable = !!(*(CK_BBOOL*)value.data);
   }
   SECITEM_FreeItem(&value, false);
@@ -309,18 +308,18 @@ isExtractable(SECKEYPrivateKey *privKey)
 //       open output file as nsIFileStream object?
 //       set appropriate error codes
 nsresult
-nsPKCS12Blob::ExportToFile(nsILocalFile *file, 
+nsPKCS12Blob::ExportToFile(nsIFile *file, 
                            nsIX509Cert **certs, int numCerts)
 {
   nsNSSShutDownPreventionLock locker;
   nsresult rv;
   SECStatus srv = SECSuccess;
-  SEC_PKCS12ExportContext *ecx = NULL;
-  SEC_PKCS12SafeInfo *certSafe = NULL, *keySafe = NULL;
+  SEC_PKCS12ExportContext *ecx = nullptr;
+  SEC_PKCS12SafeInfo *certSafe = nullptr, *keySafe = nullptr;
   SECItem unicodePw;
   nsAutoString filePath;
   int i;
-  nsCOMPtr<nsILocalFile> localFileRef;
+  nsCOMPtr<nsIFile> localFileRef;
   NS_ASSERTION(mToken, "Need to set the token before exporting");
   // init slot
 
@@ -330,16 +329,16 @@ nsPKCS12Blob::ExportToFile(nsILocalFile *file,
   rv = mToken->Login(true);
   if (NS_FAILED(rv)) goto finish;
   // get file password (unicode)
-  unicodePw.data = NULL;
+  unicodePw.data = nullptr;
   rv = newPKCS12FilePassword(&unicodePw);
   if (NS_FAILED(rv)) goto finish;
-  if (unicodePw.data == NULL) {
+  if (!unicodePw.data) {
     handleError(PIP_PKCS12_USER_CANCELED);
     return NS_OK;
   }
   // what about slotToUse in psm 1.x ???
   // create export context
-  ecx = SEC_PKCS12CreateExportContext(NULL, NULL, NULL /*slot*/, NULL);
+  ecx = SEC_PKCS12CreateExportContext(nullptr, nullptr, nullptr /*slot*/, nullptr);
   if (!ecx) {
     srv = SECFailure;
     goto finish;
@@ -394,7 +393,7 @@ nsPKCS12Blob::ExportToFile(nsILocalFile *file,
     }
 
     // XXX this is why, to verify the slot is the same
-    // PK11_FindObjectForCert(nssCert, NULL, slot);
+    // PK11_FindObjectForCert(nssCert, nullptr, slot);
     // create the cert and key safes
     keySafe = SEC_PKCS12CreateUnencryptedSafe(ecx);
     if (!SEC_PKCS12IsEncryptionAllowed() || PK11_IsFIPS()) {
@@ -408,9 +407,9 @@ nsPKCS12Blob::ExportToFile(nsILocalFile *file,
       goto finish;
     }
     // add the cert and key to the blob
-    srv = SEC_PKCS12AddCertAndKey(ecx, certSafe, NULL, nssCert,
+    srv = SEC_PKCS12AddCertAndKey(ecx, certSafe, nullptr, nssCert,
                                   CERT_GetDefaultCertDB(), // XXX
-                                  keySafe, NULL, true, &unicodePw,
+                                  keySafe, nullptr, true, &unicodePw,
                       SEC_OID_PKCS12_V2_PBE_WITH_SHA1_AND_3KEY_TRIPLE_DES_CBC);
     if (srv) goto finish;
     // cert was dup'ed, so release it
@@ -420,14 +419,14 @@ nsPKCS12Blob::ExportToFile(nsILocalFile *file,
   if (!numCertsExported) goto finish;
   
   // prepare the instance to write to an export file
-  this->mTmpFile = NULL;
+  this->mTmpFile = nullptr;
   file->GetPath(filePath);
   // Use the nsCOMPtr var localFileRef so that
-  // the reference to the nsILocalFile we create gets released as soon as
+  // the reference to the nsIFile we create gets released as soon as
   // we're out of scope, ie when this function exits.
   if (filePath.RFind(".p12", true, -1, 4) < 0) {
     // We're going to add the .p12 extension to the file name just like
-    // Communicator used to.  We create a new nsILocalFile and initialize
+    // Communicator used to.  We create a new nsIFile and initialize
     // it with the new patch.
     filePath.AppendLiteral(".p12");
     localFileRef = do_CreateInstance(NS_LOCAL_FILE_CONTRACTID, &rv);
@@ -450,7 +449,7 @@ finish:
     SEC_PKCS12DestroyExportContext(ecx);
   if (this->mTmpFile) {
     PR_Close(this->mTmpFile);
-    this->mTmpFile = NULL;
+    this->mTmpFile = nullptr;
   }
   SECITEM_ZfreeItem(&unicodePw, false);
   return rv;
@@ -472,7 +471,7 @@ nsPKCS12Blob::unicodeToItem(const PRUnichar *uni, SECItem *item)
 {
   int len = 0;
   while (uni[len++] != 0);
-  SECITEM_AllocItem(NULL, item, sizeof(PRUnichar) * len);
+  SECITEM_AllocItem(nullptr, item, sizeof(PRUnichar) * len);
 #ifdef IS_LITTLE_ENDIAN
   int i = 0;
   for (i=0; i<len; i++) {
@@ -546,12 +545,12 @@ nsPKCS12Blob::getPKCS12FilePassword(SECItem *unicodePw)
 //
 // Given a decoder, read bytes from file and input them to the decoder.
 nsresult
-nsPKCS12Blob::inputToDecoder(SEC_PKCS12DecoderContext *dcx, nsILocalFile *file)
+nsPKCS12Blob::inputToDecoder(SEC_PKCS12DecoderContext *dcx, nsIFile *file)
 {
   nsNSSShutDownPreventionLock locker;
   nsresult rv;
   SECStatus srv;
-  PRUint32 amount;
+  uint32_t amount;
   char buf[PIP_PKCS12_BUFFER_SIZE];
 
   nsCOMPtr<nsIInputStream> fileStream;
@@ -582,36 +581,13 @@ nsPKCS12Blob::inputToDecoder(SEC_PKCS12DecoderContext *dcx, nsILocalFile *file)
   return NS_OK;
 }
 
-#ifdef XP_MAC
-
-OSErr ConvertMacPathToUnixPath(const char *macPath, char **unixPath)
-{
-  PRIntn len;
-  char *cursor;
-  
-  len = PL_strlen(macPath);
-  cursor = (char*)PR_Malloc(len+2);
-  if (!cursor)
-    return memFullErr;
-    
-  memcpy(cursor+1, macPath, len+1);
-  *unixPath = cursor;
-  *cursor = '/';
-  while ((cursor = PL_strchr(cursor, ':')) != NULL) {
-    *cursor = '/';
-    cursor++;
-  }
-  return noErr;
-}
-#endif
-
 //
 // C callback methods
 //
 
 // digest_open
 // prepare a memory buffer for reading/writing digests
-SECStatus PR_CALLBACK
+SECStatus
 nsPKCS12Blob::digest_open(void *arg, PRBool reading)
 {
   nsPKCS12Blob *cx = reinterpret_cast<nsPKCS12Blob *>(arg);
@@ -646,18 +622,18 @@ nsPKCS12Blob::digest_open(void *arg, PRBool reading)
 // digest_close
 // destroy a possibly active iterator
 // remove the data buffer if requested
-SECStatus PR_CALLBACK
+SECStatus
 nsPKCS12Blob::digest_close(void *arg, PRBool remove_it)
 {
   nsPKCS12Blob *cx = reinterpret_cast<nsPKCS12Blob *>(arg);
   NS_ENSURE_TRUE(cx, SECFailure);
 
   delete cx->mDigestIterator;
-  cx->mDigestIterator = nsnull;
+  cx->mDigestIterator = nullptr;
 
   if (remove_it) {  
     delete cx->mDigest;
-    cx->mDigest = nsnull;
+    cx->mDigest = nullptr;
   }
   
   return SECSuccess;
@@ -665,7 +641,7 @@ nsPKCS12Blob::digest_close(void *arg, PRBool remove_it)
 
 // digest_read
 // read bytes from the memory buffer
-int PR_CALLBACK
+int
 nsPKCS12Blob::digest_read(void *arg, unsigned char *buf, unsigned long len)
 {
   nsPKCS12Blob *cx = reinterpret_cast<nsPKCS12Blob *>(arg);
@@ -688,7 +664,7 @@ nsPKCS12Blob::digest_read(void *arg, unsigned char *buf, unsigned long len)
 
 // digest_write
 // append bytes to the memory buffer
-int PR_CALLBACK
+int
 nsPKCS12Blob::digest_write(void *arg, unsigned char *buf, unsigned long len)
 {
   nsPKCS12Blob *cx = reinterpret_cast<nsPKCS12Blob *>(arg);
@@ -699,7 +675,7 @@ nsPKCS12Blob::digest_write(void *arg, unsigned char *buf, unsigned long len)
   NS_ENSURE_FALSE(cx->mDigestIterator, SECFailure);
   
   cx->mDigest->Append(reinterpret_cast<char *>(buf),
-                     static_cast<PRUint32>(len));
+                     static_cast<uint32_t>(len));
   
   return len;
 }
@@ -707,14 +683,14 @@ nsPKCS12Blob::digest_write(void *arg, unsigned char *buf, unsigned long len)
 // nickname_collision
 // what to do when the nickname collides with one already in the db.
 // TODO: not handled, throw a dialog allowing the nick to be changed?
-SECItem * PR_CALLBACK
+SECItem *
 nsPKCS12Blob::nickname_collision(SECItem *oldNick, PRBool *cancel, void *wincx)
 {
   nsNSSShutDownPreventionLock locker;
   *cancel = false;
   nsresult rv;
   nsCOMPtr<nsINSSComponent> nssComponent(do_GetService(kNSSComponentCID, &rv));
-  if (NS_FAILED(rv)) return nsnull;
+  if (NS_FAILED(rv)) return nullptr;
   int count = 1;
   nsCString nickname;
   nsAutoString nickFromProp;
@@ -759,7 +735,7 @@ nsPKCS12Blob::nickname_collision(SECItem *oldNick, PRBool *cancel, void *wincx)
   }
   SECItem *newNick = new SECItem;
   if (!newNick)
-    return nsnull;
+    return nullptr;
 
   newNick->type = siAsciiString;
   newNick->data = (unsigned char*) nsCRT::strdup(nickname.get());
@@ -769,7 +745,7 @@ nsPKCS12Blob::nickname_collision(SECItem *oldNick, PRBool *cancel, void *wincx)
 
 // write_export_file
 // write bytes to the exported PKCS#12 file
-void PR_CALLBACK
+void
 nsPKCS12Blob::write_export_file(void *arg, const char *buf, unsigned long len)
 {
   nsPKCS12Blob *cx = (nsPKCS12Blob *)arg;
@@ -806,7 +782,7 @@ nsPKCS12Blob::handleError(int myerr)
   PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("PKCS12: NSS/NSPR error(%d)", prerr));
   PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("PKCS12: I called(%d)", myerr));
 
-  const char * msgID = nsnull;
+  const char * msgID = nullptr;
 
   switch (myerr) {
   case PIP_PKCS12_RESTORE_OK:       msgID = "SuccessfulP12Restore"; break;

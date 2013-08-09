@@ -24,6 +24,8 @@
 #include "nsThreadUtils.h"
 #include "mozilla/LazyIdleThread.h"
 
+#include "WinUtils.h"
+
 // The amount of time, in milliseconds, that our IO thread will stay alive after the last event it processes.
 #define DEFAULT_THREAD_TIMEOUT_MS 30000
 
@@ -41,10 +43,6 @@ bool JumpListBuilder::sBuildingList = false;
 const char kPrefTaskbarEnabled[] = "browser.taskbar.lists.enabled";
 
 NS_IMPL_ISUPPORTS2(JumpListBuilder, nsIJumpListBuilder, nsIObserver)
-NS_IMPL_ISUPPORTS1(AsyncFaviconDataReady, nsIFaviconDataCallback)
-NS_IMPL_THREADSAFE_ISUPPORTS1(AsyncWriteIconToDisk, nsIRunnable)
-NS_IMPL_THREADSAFE_ISUPPORTS1(AsyncDeleteIconFromDisk, nsIRunnable)
-NS_IMPL_THREADSAFE_ISUPPORTS1(AsyncDeleteAllFaviconsFromDisk, nsIRunnable)
 
 JumpListBuilder::JumpListBuilder() :
   mMaxItems(0),
@@ -56,7 +54,9 @@ JumpListBuilder::JumpListBuilder() :
                    IID_ICustomDestinationList, getter_AddRefs(mJumpListMgr));
 
   // Make a lazy thread for any IO
-  mIOThread = new LazyIdleThread(DEFAULT_THREAD_TIMEOUT_MS, LazyIdleThread::ManualShutdown);
+  mIOThread = new LazyIdleThread(DEFAULT_THREAD_TIMEOUT_MS,
+                                 NS_LITERAL_CSTRING("Jump List"),
+                                 LazyIdleThread::ManualShutdown);
   Preferences::AddStrongObserver(this, kPrefTaskbarEnabled);
 }
 
@@ -64,12 +64,12 @@ JumpListBuilder::~JumpListBuilder()
 {
   mIOThread->Shutdown();
   Preferences::RemoveObserver(this, kPrefTaskbarEnabled);
-  mJumpListMgr = nsnull;
+  mJumpListMgr = nullptr;
   ::CoUninitialize();
 }
 
 /* readonly attribute short available; */
-NS_IMETHODIMP JumpListBuilder::GetAvailable(PRInt16 *aAvailable)
+NS_IMETHODIMP JumpListBuilder::GetAvailable(int16_t *aAvailable)
 {
   *aAvailable = false;
 
@@ -88,7 +88,7 @@ NS_IMETHODIMP JumpListBuilder::GetIsListCommitted(bool *aCommit)
 }
 
 /* readonly attribute short maxItems; */
-NS_IMETHODIMP JumpListBuilder::GetMaxListItems(PRInt16 *aMaxItems)
+NS_IMETHODIMP JumpListBuilder::GetMaxListItems(int16_t *aMaxItems)
 {
   if (!mJumpListMgr)
     return NS_ERROR_NOT_AVAILABLE;
@@ -151,16 +151,16 @@ nsresult JumpListBuilder::RemoveIconCacheForItems(nsIMutableArray *items)
   NS_ENSURE_ARG_POINTER(items);
   
   nsresult rv;
-  PRUint32 length;
+  uint32_t length;
   items->GetLength(&length);
-  for (PRUint32 i = 0; i < length; ++i) {
+  for (uint32_t i = 0; i < length; ++i) {
 
     //Obtain an IJumpListItem and get the type
     nsCOMPtr<nsIJumpListItem> item = do_QueryElementAt(items, i);
     if (!item) {
       continue;
     }
-    PRInt16 type;
+    int16_t type;
     if (NS_FAILED(item->GetType(&type))) {
       continue;
     }
@@ -175,19 +175,19 @@ nsresult JumpListBuilder::RemoveIconCacheForItems(nsIMutableArray *items)
           
           // The local file path is stored inside the nsIURI
           // Get the nsIURI spec which stores the local path for the icon to remove
-          nsCAutoString spec;
+          nsAutoCString spec;
           nsresult rv = uri->GetSpec(spec);
           NS_ENSURE_SUCCESS(rv, rv);
 
           nsCOMPtr<nsIRunnable> event 
-            = new AsyncDeleteIconFromDisk(NS_ConvertUTF8toUTF16(spec));
+            = new mozilla::widget::AsyncDeleteIconFromDisk(NS_ConvertUTF8toUTF16(spec));
           mIOThread->Dispatch(event, NS_DISPATCH_NORMAL);
 
           // The shortcut was generated from an IShellLinkW so IShellLinkW can
           // only tell us what the original icon is and not the URI.
           // So this field was used only temporarily as the actual icon file
           // path.  It should be cleared.
-          shortcut->SetFaviconPageUri(nsnull);
+          shortcut->SetFaviconPageUri(nullptr);
         }
       }
     }
@@ -205,7 +205,8 @@ nsresult JumpListBuilder::RemoveIconCacheForAllItems()
   nsresult rv = NS_GetSpecialDirectory("ProfLDS", 
                                        getter_AddRefs(jumpListCacheDir));
   NS_ENSURE_SUCCESS(rv, rv);
-  rv = jumpListCacheDir->AppendNative(nsDependentCString(JumpListItem::kJumpListCacheDir));
+  rv = jumpListCacheDir->AppendNative(nsDependentCString(
+                         mozilla::widget::FaviconHelper::kJumpListCacheDir));
   NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsISimpleEnumerator> entries;
   rv = jumpListCacheDir->GetDirectoryEntries(getter_AddRefs(entries));
@@ -226,7 +227,7 @@ nsresult JumpListBuilder::RemoveIconCacheForAllItems()
     if (NS_FAILED(currFile->GetPath(path)))
       continue;
 
-    PRInt32 len = path.Length();
+    int32_t len = path.Length();
     if (StringTail(path, 4).LowerCaseEqualsASCII(".ico")) {
       // Check if the cached ICO file exists
       bool exists;
@@ -242,7 +243,7 @@ nsresult JumpListBuilder::RemoveIconCacheForAllItems()
 }
 
 /* boolean addListToBuild(in short aCatType, [optional] in nsIArray items, [optional] in AString catName); */
-NS_IMETHODIMP JumpListBuilder::AddListToBuild(PRInt16 aCatType, nsIArray *items, const nsAString &catName, bool *_retval)
+NS_IMETHODIMP JumpListBuilder::AddListToBuild(int16_t aCatType, nsIArray *items, const nsAString &catName, bool *_retval)
 {
   nsresult rv;
 
@@ -264,9 +265,9 @@ NS_IMETHODIMP JumpListBuilder::AddListToBuild(PRInt16 aCatType, nsIArray *items,
         return NS_ERROR_UNEXPECTED;
 
       // Build the list
-      PRUint32 length;
+      uint32_t length;
       items->GetLength(&length);
-      for (PRUint32 i = 0; i < length; ++i) {
+      for (uint32_t i = 0; i < length; ++i) {
         nsCOMPtr<nsIJumpListItem> item = do_QueryElementAt(items, i);
         if (!item)
           continue;
@@ -328,13 +329,13 @@ NS_IMETHODIMP JumpListBuilder::AddListToBuild(PRInt16 aCatType, nsIArray *items,
       if (FAILED(hr))
         return NS_ERROR_UNEXPECTED;
 
-      PRUint32 length;
+      uint32_t length;
       items->GetLength(&length);
-      for (PRUint32 i = 0; i < length; ++i) {
+      for (uint32_t i = 0; i < length; ++i) {
         nsCOMPtr<nsIJumpListItem> item = do_QueryElementAt(items, i);
         if (!item)
           continue;
-        PRInt16 type;
+        int16_t type;
         if (NS_FAILED(item->GetType(&type)))
           continue;
         switch(type) {
@@ -442,7 +443,7 @@ NS_IMETHODIMP JumpListBuilder::DeleteActiveList(bool *_retval)
 
 bool JumpListBuilder::IsSeparator(nsCOMPtr<nsIJumpListItem>& item)
 {
-  PRInt16 type;
+  int16_t type;
   item->GetType(&type);
   if (NS_FAILED(item->GetType(&type)))
     return false;
@@ -461,14 +462,14 @@ nsresult JumpListBuilder::TransferIObjectArrayToIMutableArray(IObjectArray *objA
 
   nsresult rv;
 
-  PRUint32 count = 0;
+  uint32_t count = 0;
   objArray->GetCount(&count);
 
   nsCOMPtr<nsIJumpListItem> item;
 
-  for (PRUint32 idx = 0; idx < count; idx++) {
-    IShellLinkW * pLink = nsnull;
-    IShellItem * pItem = nsnull;
+  for (uint32_t idx = 0; idx < count; idx++) {
+    IShellLinkW * pLink = nullptr;
+    IShellItem * pItem = nullptr;
 
     if (SUCCEEDED(objArray->GetAt(idx, IID_IShellLinkW, (LPVOID*)&pLink))) {
       nsCOMPtr<nsIJumpListShortcut> shortcut = 
@@ -507,233 +508,13 @@ NS_IMETHODIMP JumpListBuilder::Observe(nsISupports* aSubject,
     bool enabled = Preferences::GetBool(kPrefTaskbarEnabled, true);
     if (!enabled) {
       
-      nsCOMPtr<nsIRunnable> event = new AsyncDeleteAllFaviconsFromDisk();
+      nsCOMPtr<nsIRunnable> event = 
+        new mozilla::widget::AsyncDeleteAllFaviconsFromDisk();
       mIOThread->Dispatch(event, NS_DISPATCH_NORMAL);
     }
   }
   return NS_OK;
 }
-
-
-AsyncFaviconDataReady::AsyncFaviconDataReady(nsIURI *aNewURI, 
-                                             nsCOMPtr<nsIThread> &aIOThread) 
-                      : mNewURI(aNewURI), 
-                        mIOThread(aIOThread)
-{
-}
-
-NS_IMETHODIMP
-AsyncFaviconDataReady::OnComplete(nsIURI *aFaviconURI,
-                                  PRUint32 aDataLen,
-                                  const PRUint8 *aData, 
-                                  const nsACString &aMimeType)
-{
-  if (!aDataLen || !aData) {
-    return NS_OK;
-  }
-
-  nsCOMPtr<nsIFile> icoFile;
-  nsresult rv = JumpListShortcut::GetOutputIconPath(mNewURI, icoFile);
-  NS_ENSURE_SUCCESS(rv, rv);
-  nsAutoString path;
-  rv = icoFile->GetPath(path);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Allocate a new buffer that we own and can use out of line in 
-  // another thread.  Copy the favicon raw data into it.
-  const fallible_t fallible = fallible_t();
-  PRUint8 *data = new (fallible) PRUint8[aDataLen];
-  if (!data) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  memcpy(data, aData, aDataLen);
-
-  //AsyncWriteIconToDisk takes ownership of the heap allocated buffer.
-  nsCOMPtr<nsIRunnable> event = new AsyncWriteIconToDisk(path, aMimeType, 
-                                                         data, 
-                                                         aDataLen);
-  mIOThread->Dispatch(event, NS_DISPATCH_NORMAL);
-
-  return NS_OK;
-}
-
-// Warning: AsyncWriteIconToDisk assumes ownership of the aData buffer passed in
-AsyncWriteIconToDisk::AsyncWriteIconToDisk(const nsAString &aIconPath,
-                                           const nsACString &aMimeTypeOfInputData,
-                                           PRUint8 *aBuffer, 
-                                           PRUint32 aBufferLength)
-                     : mIconPath(aIconPath),
-                       mMimeTypeOfInputData(aMimeTypeOfInputData),
-                       mBuffer(aBuffer),
-                       mBufferLength(aBufferLength)
-
-{
-}
-
-NS_IMETHODIMP AsyncWriteIconToDisk::Run()
-{
-  NS_PRECONDITION(!NS_IsMainThread(), "Should not be called on the main thread.");
-
-  // Convert the obtained favicon data to an input stream
-  nsCOMPtr<nsIInputStream> stream;
-  nsresult rv = NS_NewByteInputStream(getter_AddRefs(stream),
-                                      reinterpret_cast<const char*>(mBuffer.get()), 
-                                      mBufferLength,
-                                      NS_ASSIGNMENT_DEPEND);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Decode the image from the format it was returned to us in (probably PNG)
-  nsCOMPtr<imgIContainer> container;
-  nsCOMPtr<imgITools> imgtool = do_CreateInstance("@mozilla.org/image/tools;1");
-  rv = imgtool->DecodeImageData(stream, mMimeTypeOfInputData, 
-                                getter_AddRefs(container));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Get the recommended icon width and height, or if failure to obtain 
-  // these settings, fall back to 16x16 ICOs.  These values can be different
-  // if the user has a different DPI setting other than 100%.
-  // Windows would scale the 16x16 icon themselves, but it's better
-  // we let our ICO encoder do it.
-  PRInt32 systemIconWidth = GetSystemMetrics(SM_CXSMICON);
-  PRInt32 systemIconHeight = GetSystemMetrics(SM_CYSMICON);
-  if (systemIconWidth == 0 || systemIconHeight == 0) {
-    systemIconWidth = 16;
-    systemIconHeight = 16;
-  }
-  // Scale the image to the needed size and in ICO format
-  mMimeTypeOfInputData.AssignLiteral("image/vnd.microsoft.icon");
-  nsCOMPtr<nsIInputStream> iconStream;
-  rv = imgtool->EncodeScaledImage(container, mMimeTypeOfInputData,
-                                  systemIconWidth,
-                                  systemIconHeight,
-                                  EmptyString(),
-                                  getter_AddRefs(iconStream));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsILocalFile> icoFile
-    = do_CreateInstance("@mozilla.org/file/local;1");
-  NS_ENSURE_TRUE(icoFile, NS_ERROR_FAILURE);
-  rv = icoFile->InitWithPath(mIconPath);
-
-  // Setup the output stream for the ICO file on disk
-  nsCOMPtr<nsIOutputStream> outputStream;
-  rv = NS_NewLocalFileOutputStream(getter_AddRefs(outputStream), icoFile);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Obtain the ICO buffer size from the re-encoded ICO stream
-  PRUint32 bufSize;
-  rv = iconStream->Available(&bufSize);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Setup a buffered output stream from the stream object
-  // so that we can simply use WriteFrom with the stream object
-  nsCOMPtr<nsIOutputStream> bufferedOutputStream;
-  rv = NS_NewBufferedOutputStream(getter_AddRefs(bufferedOutputStream),
-                                  outputStream, bufSize);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Write out the icon stream to disk and make sure we wrote everything
-  PRUint32 wrote;
-  rv = bufferedOutputStream->WriteFrom(iconStream, bufSize, &wrote);
-  NS_ASSERTION(bufSize == wrote, "Icon wrote size should be equal to requested write size");
-
-  // Cleanup
-  bufferedOutputStream->Close();
-  outputStream->Close();
-  return rv;
-}
-
-AsyncWriteIconToDisk::~AsyncWriteIconToDisk()
-{
-}
-
-AsyncDeleteIconFromDisk::AsyncDeleteIconFromDisk(const nsAString &aIconPath)
-                        : mIconPath(aIconPath)
-{
-}
-
-NS_IMETHODIMP AsyncDeleteIconFromDisk::Run()
-{
-  // Construct the parent path of the passed in path
-  nsCOMPtr<nsILocalFile> icoFile = do_CreateInstance("@mozilla.org/file/local;1");
-  NS_ENSURE_TRUE(icoFile, NS_ERROR_FAILURE);
-  nsresult rv = icoFile->InitWithPath(mIconPath);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Check if the cached ICO file exists
-  bool exists;
-  rv = icoFile->Exists(&exists);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Check that we aren't deleting some arbitrary file that is not an icon
-  if (StringTail(mIconPath, 4).LowerCaseEqualsASCII(".ico")) {
-    // Check if the cached ICO file exists
-    bool exists;
-    if (NS_FAILED(icoFile->Exists(&exists)) || !exists)
-      return NS_ERROR_FAILURE;
-
-    // We found an ICO file that exists, so we should remove it
-    icoFile->Remove(false);
-  }
-
-  return NS_OK;
-}
-
-AsyncDeleteIconFromDisk::~AsyncDeleteIconFromDisk()
-{
-}
-
-AsyncDeleteAllFaviconsFromDisk::AsyncDeleteAllFaviconsFromDisk()
-{
-}
-
-NS_IMETHODIMP AsyncDeleteAllFaviconsFromDisk::Run()
-{
-  // Construct the path of our jump list cache
-  nsCOMPtr<nsIFile> jumpListCacheDir;
-  nsresult rv = NS_GetSpecialDirectory("ProfLDS", 
-    getter_AddRefs(jumpListCacheDir));
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = jumpListCacheDir->AppendNative(nsDependentCString(JumpListItem::kJumpListCacheDir));
-  NS_ENSURE_SUCCESS(rv, rv);
-  nsCOMPtr<nsISimpleEnumerator> entries;
-  rv = jumpListCacheDir->GetDirectoryEntries(getter_AddRefs(entries));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Loop through each directory entry and remove all ICO files found
-  do {
-    bool hasMore = false;
-    if (NS_FAILED(entries->HasMoreElements(&hasMore)) || !hasMore)
-      break;
-
-    nsCOMPtr<nsISupports> supp;
-    if (NS_FAILED(entries->GetNext(getter_AddRefs(supp))))
-      break;
-
-    nsCOMPtr<nsIFile> currFile(do_QueryInterface(supp));
-    nsAutoString path;
-    if (NS_FAILED(currFile->GetPath(path)))
-      continue;
-
-    PRInt32 len = path.Length();
-    if (StringTail(path, 4).LowerCaseEqualsASCII(".ico")) {
-      // Check if the cached ICO file exists
-      bool exists;
-      if (NS_FAILED(currFile->Exists(&exists)) || !exists)
-        continue;
-
-      // We found an ICO file that exists, so we should remove it
-      currFile->Remove(false);
-    }
-  } while(true);
-
-  return NS_OK;
-}
-
-AsyncDeleteAllFaviconsFromDisk::~AsyncDeleteAllFaviconsFromDisk()
-{
-}
-
 
 } // namespace widget
 } // namespace mozilla

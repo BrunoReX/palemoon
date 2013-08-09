@@ -9,10 +9,12 @@
 
 #include "LayerManagerOGL.h"
 #include "gfxASurface.h"
-#if defined(MOZ_WIDGET_GTK2) && !defined(MOZ_PLATFORM_MAEMO)
+#if defined(MOZ_X11) && !defined(MOZ_PLATFORM_MAEMO)
 #include "GLXLibrary.h"
 #include "mozilla/X11Util.h"
 #endif
+
+#include "mozilla/Preferences.h"
 
 namespace mozilla {
 namespace layers {
@@ -25,13 +27,16 @@ public:
   CanvasLayerOGL(LayerManagerOGL *aManager)
     : CanvasLayer(aManager, NULL),
       LayerOGL(aManager),
+      mLayerProgram(gl::RGBALayerProgramType),
       mTexture(0),
+      mTextureTarget(LOCAL_GL_TEXTURE_2D),
       mDelayedUpdates(false)
-#if defined(MOZ_WIDGET_GTK2) && !defined(MOZ_PLATFORM_MAEMO)
+#if defined(MOZ_X11) && !defined(MOZ_PLATFORM_MAEMO)
       ,mPixmap(0)
 #endif
   { 
       mImplData = static_cast<LayerOGL*>(this);
+      mForceReadback = Preferences::GetBool("webgl.force-layers-readback", false);
   }
   ~CanvasLayerOGL() { Destroy(); }
 
@@ -53,21 +58,23 @@ protected:
   gl::ShaderProgramType mLayerProgram;
   RefPtr<gfx::DrawTarget> mDrawTarget;
 
-  void MakeTexture();
   GLuint mTexture;
+  GLenum mTextureTarget;
 
   bool mDelayedUpdates;
   bool mGLBufferIsPremultiplied;
   bool mNeedsYFlip;
-#if defined(MOZ_WIDGET_GTK2) && !defined(MOZ_PLATFORM_MAEMO)
+  bool mForceReadback;
+#if defined(MOZ_X11) && !defined(MOZ_PLATFORM_MAEMO)
   GLXPixmap mPixmap;
 #endif
 
   nsRefPtr<gfxImageSurface> mCachedTempSurface;
   gfxIntSize mCachedSize;
-  gfxImageFormat mCachedFormat;
+  gfxASurface::gfxImageFormat mCachedFormat;
 
-  gfxImageSurface* GetTempSurface(const gfxIntSize& aSize, const gfxImageFormat aFormat)
+  gfxImageSurface* GetTempSurface(const gfxIntSize& aSize,
+                                  const gfxASurface::gfxImageFormat aFormat)
   {
     if (!mCachedTempSurface ||
         aSize.width != mCachedSize.width ||
@@ -84,7 +91,7 @@ protected:
 
   void DiscardTempSurface()
   {
-    mCachedTempSurface = nsnull;
+    mCachedTempSurface = nullptr;
   }
 };
 
@@ -119,6 +126,7 @@ public:
   // LayerOGL impl
   void Destroy();
   Layer* GetLayer();
+  virtual LayerRenderState GetRenderState() MOZ_OVERRIDE;
   virtual void RenderLayer(int aPreviousFrameBuffer,
                            const nsIntPoint& aOffset);
   virtual void CleanupResources();
@@ -127,6 +135,8 @@ private:
   nsRefPtr<TextureImage> mTexImage;
 
   bool mNeedsYFlip;
+  SurfaceDescriptor mFrontBufferDescriptor;
+  GLuint mTexture;
 };
 
 } /* layers */

@@ -3,10 +3,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/mozalloc.h"
+#include "nsCOMPtr.h"
+#include "nsDebug.h"
+#include "nsError.h"
+#include "nsID.h"
+#include "nsISupportsUtils.h"
 #include "nsITransactionManager.h"
 #include "nsTransactionItem.h"
 #include "nsTransactionList.h"
 #include "nsTransactionStack.h"
+#include "nscore.h"
 
 NS_IMPL_ISUPPORTS1(nsTransactionList, nsITransactionList)
 
@@ -33,7 +40,7 @@ nsTransactionList::~nsTransactionList()
 }
 
 /* readonly attribute long numItems; */
-NS_IMETHODIMP nsTransactionList::GetNumItems(PRInt32 *aNumItems)
+NS_IMETHODIMP nsTransactionList::GetNumItems(int32_t *aNumItems)
 {
   NS_ENSURE_TRUE(aNumItems, NS_ERROR_NULL_POINTER);
 
@@ -54,7 +61,7 @@ NS_IMETHODIMP nsTransactionList::GetNumItems(PRInt32 *aNumItems)
 }
 
 /* boolean itemIsBatch (in long aIndex); */
-NS_IMETHODIMP nsTransactionList::ItemIsBatch(PRInt32 aIndex, bool *aIsBatch)
+NS_IMETHODIMP nsTransactionList::ItemIsBatch(int32_t aIndex, bool *aIsBatch)
 {
   NS_ENSURE_TRUE(aIsBatch, NS_ERROR_NULL_POINTER);
 
@@ -81,7 +88,7 @@ NS_IMETHODIMP nsTransactionList::ItemIsBatch(PRInt32 aIndex, bool *aIsBatch)
 }
 
 /* nsITransaction getItem (in long aIndex); */
-NS_IMETHODIMP nsTransactionList::GetItem(PRInt32 aIndex, nsITransaction **aItem)
+NS_IMETHODIMP nsTransactionList::GetItem(int32_t aIndex, nsITransaction **aItem)
 {
   NS_ENSURE_TRUE(aItem, NS_ERROR_NULL_POINTER);
 
@@ -104,11 +111,13 @@ NS_IMETHODIMP nsTransactionList::GetItem(PRInt32 aIndex, nsITransaction **aItem)
 
   NS_ENSURE_TRUE(item, NS_ERROR_FAILURE);
 
-  return item->GetTransaction(aItem);
+  *aItem = item->GetTransaction().get();
+
+  return NS_OK;
 }
 
 /* long getNumChildrenForItem (in long aIndex); */
-NS_IMETHODIMP nsTransactionList::GetNumChildrenForItem(PRInt32 aIndex, PRInt32 *aNumChildren)
+NS_IMETHODIMP nsTransactionList::GetNumChildrenForItem(int32_t aIndex, int32_t *aNumChildren)
 {
   NS_ENSURE_TRUE(aNumChildren, NS_ERROR_NULL_POINTER);
 
@@ -135,7 +144,7 @@ NS_IMETHODIMP nsTransactionList::GetNumChildrenForItem(PRInt32 aIndex, PRInt32 *
 }
 
 /* nsITransactionList getChildListForItem (in long aIndex); */
-NS_IMETHODIMP nsTransactionList::GetChildListForItem(PRInt32 aIndex, nsITransactionList **aTxnList)
+NS_IMETHODIMP nsTransactionList::GetChildListForItem(int32_t aIndex, nsITransactionList **aTxnList)
 {
   NS_ENSURE_TRUE(aTxnList, NS_ERROR_NULL_POINTER);
 

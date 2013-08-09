@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH            = ../..
+DEPTH            = @DEPTH@
 topsrcdir        = @top_srcdir@
 srcdir           = @srcdir@
 VPATH            = @srcdir@
@@ -13,6 +13,7 @@ LIBRARY_NAME     = dom_power_s
 XPIDL_MODULE     = dom_power
 LIBXUL_LIBRARY   = 1
 FORCE_STATIC_LIB = 1
+FAIL_ON_WARNINGS := 1
 
 include $(topsrcdir)/dom/dom-config.mk
 
@@ -36,9 +37,7 @@ XPIDLSRCS = \
   nsIPowerManagerService.idl \
   $(NULL)
 
-ifdef ENABLE_TESTS
-DIRS += test
-endif
+TEST_DIRS += test
 
 include $(topsrcdir)/config/config.mk
 include $(topsrcdir)/ipc/chromium/chromium-config.mk

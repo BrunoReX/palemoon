@@ -10,7 +10,7 @@
 #include "SVGAnimatedLengthList.h"
 #include "nsSVGElement.h"
 #include "nsIDOMSVGLength.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 #include "nsMathUtils.h"
 
 // See the architecture comment in DOMSVGAnimatedLengthList.h.
@@ -25,12 +25,12 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(DOMSVGLength)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(DOMSVGLength)
   // We may not belong to a list, so we must null check tmp->mList.
   if (tmp->mList) {
-    tmp->mList->mItems[tmp->mListIndex] = nsnull;
+    tmp->mList->mItems[tmp->mListIndex] = nullptr;
   }
-NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mList)
+NS_IMPL_CYCLE_COLLECTION_UNLINK(mList)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(DOMSVGLength)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mList)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mList)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(DOMSVGLength)
@@ -48,9 +48,9 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMSVGLength)
 NS_INTERFACE_MAP_END
 
 DOMSVGLength::DOMSVGLength(DOMSVGLengthList *aList,
-                           PRUint8 aAttrEnum,
-                           PRUint32 aListIndex,
-                           PRUint8 aIsAnimValItem)
+                           uint8_t aAttrEnum,
+                           uint32_t aListIndex,
+                           bool aIsAnimValItem)
   : mList(aList)
   , mListIndex(aListIndex)
   , mAttrEnum(aAttrEnum)
@@ -61,14 +61,13 @@ DOMSVGLength::DOMSVGLength(DOMSVGLengthList *aList,
   // These shifts are in sync with the members in the header.
   NS_ABORT_IF_FALSE(aList &&
                     aAttrEnum < (1 << 4) &&
-                    aListIndex <= MaxListIndex() &&
-                    aIsAnimValItem < (1 << 1), "bad arg");
+                    aListIndex <= MaxListIndex(), "bad arg");
 
   NS_ABORT_IF_FALSE(IndexIsValid(), "Bad index for DOMSVGNumber!");
 }
 
 DOMSVGLength::DOMSVGLength()
-  : mList(nsnull)
+  : mList(nullptr)
   , mListIndex(0)
   , mAttrEnum(0)
   , mIsAnimValItem(false)
@@ -78,7 +77,7 @@ DOMSVGLength::DOMSVGLength()
 }
 
 NS_IMETHODIMP
-DOMSVGLength::GetUnitType(PRUint16* aUnit)
+DOMSVGLength::GetUnitType(uint16_t* aUnit)
 {
   if (mIsAnimValItem && HasOwner()) {
     Element()->FlushAnimations(); // May make HasOwner() == false
@@ -228,7 +227,7 @@ DOMSVGLength::GetValueAsString(nsAString& aValue)
 }
 
 NS_IMETHODIMP
-DOMSVGLength::NewValueSpecifiedUnits(PRUint16 aUnit, float aValue)
+DOMSVGLength::NewValueSpecifiedUnits(uint16_t aUnit, float aValue)
 {
   if (mIsAnimValItem) {
     return NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR;
@@ -247,20 +246,20 @@ DOMSVGLength::NewValueSpecifiedUnits(PRUint16 aUnit, float aValue)
       return NS_OK;
     }
     nsAttrValue emptyOrOldValue = Element()->WillChangeLengthList(mAttrEnum);
-    InternalItem().SetValueAndUnit(aValue, PRUint8(aUnit));
+    InternalItem().SetValueAndUnit(aValue, uint8_t(aUnit));
     Element()->DidChangeLengthList(mAttrEnum, emptyOrOldValue);
     if (mList->mAList->IsAnimating()) {
       Element()->AnimationNeedsResample();
     }
     return NS_OK;
   }
-  mUnit = PRUint8(aUnit);
+  mUnit = uint8_t(aUnit);
   mValue = aValue;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-DOMSVGLength::ConvertToSpecifiedUnits(PRUint16 aUnit)
+DOMSVGLength::ConvertToSpecifiedUnits(uint16_t aUnit)
 {
   if (mIsAnimValItem) {
     return NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR;
@@ -274,13 +273,13 @@ DOMSVGLength::ConvertToSpecifiedUnits(PRUint16 aUnit)
       return NS_OK;
     }
     nsAttrValue emptyOrOldValue = Element()->WillChangeLengthList(mAttrEnum);
-    if (InternalItem().ConvertToUnit(PRUint8(aUnit), Element(), Axis())) {
+    if (InternalItem().ConvertToUnit(uint8_t(aUnit), Element(), Axis())) {
       Element()->DidChangeLengthList(mAttrEnum, emptyOrOldValue);
       return NS_OK;
     }
   } else {
     SVGLength len(mValue, mUnit);
-    if (len.ConvertToUnit(PRUint8(aUnit), nsnull, 0)) {
+    if (len.ConvertToUnit(uint8_t(aUnit), nullptr, 0)) {
       mValue = len.GetValueInCurrentUnits();
       mUnit = aUnit;
       return NS_OK;
@@ -293,9 +292,9 @@ DOMSVGLength::ConvertToSpecifiedUnits(PRUint16 aUnit)
 
 void
 DOMSVGLength::InsertingIntoList(DOMSVGLengthList *aList,
-                                PRUint8 aAttrEnum,
-                                PRUint32 aListIndex,
-                                PRUint8 aIsAnimValItem)
+                                uint8_t aAttrEnum,
+                                uint32_t aListIndex,
+                                bool aIsAnimValItem)
 {
   NS_ASSERTION(!HasOwner(), "Inserting item that is already in a list");
 
@@ -312,7 +311,7 @@ DOMSVGLength::RemovingFromList()
 {
   mValue = InternalItem().GetValueInCurrentUnits();
   mUnit  = InternalItem().GetUnit();
-  mList = nsnull;
+  mList = nullptr;
   mIsAnimValItem = false;
 }
 

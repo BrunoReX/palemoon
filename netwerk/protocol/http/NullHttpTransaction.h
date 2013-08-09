@@ -10,18 +10,18 @@
 #include "nsAHttpTransaction.h"
 #include "nsAHttpConnection.h"
 #include "nsIInterfaceRequestor.h"
-#include "nsIEventTarget.h"
 #include "nsHttpConnectionInfo.h"
 #include "nsHttpRequestHead.h"
+#include "mozilla/Attributes.h"
 
 // This is the minimal nsAHttpTransaction implementation. A NullHttpTransaction
 // can be used to drive connection level semantics (such as SSL handshakes
 // tunnels) so that a nsHttpConnection becomes fully established in
-// anticiation of a real transaction needing to use it soon.
+// anticipation of a real transaction needing to use it soon.
 
 namespace mozilla { namespace net {
 
-class NullHttpTransaction : public nsAHttpTransaction
+class NullHttpTransaction MOZ_FINAL : public nsAHttpTransaction
 {
 public:
   NS_DECL_ISUPPORTS
@@ -29,22 +29,20 @@ public:
 
   NullHttpTransaction(nsHttpConnectionInfo *ci,
                       nsIInterfaceRequestor *callbacks,
-                      nsIEventTarget *target,
-                      PRUint8 caps);
+                      uint8_t caps);
   ~NullHttpTransaction();
 
   nsHttpConnectionInfo *ConnectionInfo() { return mConnectionInfo; }
 
-  // An overload of nsAHttpTransaction::QueryNullTransaction()
-  bool QueryNullTransaction() { return true; }
+  // An overload of nsAHttpTransaction::IsNullTransaction()
+  bool IsNullTransaction() { return true; }
 
 private:
 
   nsresult mStatus;
-  PRUint8  mCaps;
+  uint8_t  mCaps;
   nsRefPtr<nsAHttpConnection> mConnection;
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
-  nsCOMPtr<nsIEventTarget> mEventTarget;
   nsRefPtr<nsHttpConnectionInfo> mConnectionInfo;
   nsHttpRequestHead *mRequestHead;
   bool mIsDone;

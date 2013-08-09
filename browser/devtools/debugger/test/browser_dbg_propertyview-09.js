@@ -12,6 +12,8 @@ var gPane = null;
 var gTab = null;
 var gDebugger = null;
 
+requestLongerTimeout(2);
+
 function test()
 {
   debug_tab_pane(TAB_URL, function(aTab, aDebuggee, aPane) {
@@ -19,6 +21,8 @@ function test()
     gPane = aPane;
     gDebugger = gPane.contentWindow;
 
+    gDebugger.DebuggerController.StackFrames.autoScopeExpand = true;
+    gDebugger.DebuggerView.Variables.nonEnumVisible = false;
     testFrameParameters();
   });
 }
@@ -29,18 +33,16 @@ function testFrameParameters()
   gDebugger.addEventListener("Debugger:FetchedVariables", function test() {
     // We expect 2 Debugger:FetchedVariables events, one from the global object
     // scope and the regular one.
-    if (++count <2) {
+    if (++count < 2) {
       info("Number of received Debugger:FetchedVariables events: " + count);
       return;
     }
     gDebugger.removeEventListener("Debugger:FetchedVariables", test, false);
     Services.tm.currentThread.dispatch({ run: function() {
 
-      var frames = gDebugger.DebuggerView.StackFrames._frames,
-          globalScope = gDebugger.DebuggerView.Properties._vars.lastChild,
+      var frames = gDebugger.DebuggerView.StackFrames._container._list,
+          globalScope = gDebugger.DebuggerView.Variables._list.querySelectorAll(".scope")[2],
           globalNodes = globalScope.querySelector(".details").childNodes;
-
-      globalScope.expand();
 
       is(gDebugger.DebuggerController.activeThread.state, "paused",
         "Should only be getting stack frames while paused.");
@@ -48,11 +50,17 @@ function testFrameParameters()
       is(frames.querySelectorAll(".dbg-stackframe").length, 3,
         "Should have three frames.");
 
-      is(globalNodes[0].querySelector(".name").getAttribute("value"), "Array",
-        "Should have the right property name for |Array|.");
+      is(globalNodes[0].querySelector(".name").getAttribute("value"), "InstallTrigger",
+        "Should have the right property name for |InstallTrigger|.");
 
-      is(globalNodes[0].querySelector(".value").getAttribute("value"), "[object Function]",
-        "Should have the right property value for |Array|.");
+      is(globalNodes[0].querySelector(".value").getAttribute("value"), "undefined",
+        "Should have the right property value for |InstallTrigger|.");
+
+      is(globalNodes[1].querySelector(".name").getAttribute("value"), "SpecialPowers",
+        "Should have the right property name for |SpecialPowers|.");
+
+      is(globalNodes[1].querySelector(".value").getAttribute("value"), "[object Proxy]",
+        "Should have the right property value for |SpecialPowers|.");
 
       let len = globalNodes.length - 1;
       is(globalNodes[len].querySelector(".name").getAttribute("value"), "window",
@@ -74,7 +82,7 @@ function resumeAndFinish() {
   gDebugger.addEventListener("Debugger:AfterFramesCleared", function listener() {
     gDebugger.removeEventListener("Debugger:AfterFramesCleared", listener, true);
     Services.tm.currentThread.dispatch({ run: function() {
-      var frames = gDebugger.DebuggerView.StackFrames._frames;
+      var frames = gDebugger.DebuggerView.StackFrames._container._list;
 
       is(frames.querySelectorAll(".dbg-stackframe").length, 0,
         "Should have no frames.");

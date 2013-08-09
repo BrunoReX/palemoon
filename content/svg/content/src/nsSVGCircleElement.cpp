@@ -9,7 +9,6 @@
 #include "nsIDOMSVGCircleElement.h"
 #include "nsSVGLength2.h"
 #include "nsGkAtoms.h"
-#include "nsSVGUtils.h"
 #include "gfxContext.h"
 
 using namespace mozilla;
@@ -30,8 +29,8 @@ public:
   NS_DECL_NSIDOMSVGCIRCLEELEMENT
 
   // xxx I wish we could use virtual inheritance
-  NS_FORWARD_NSIDOMNODE(nsSVGCircleElementBase::)
-  NS_FORWARD_NSIDOMELEMENT(nsSVGCircleElementBase::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
   NS_FORWARD_NSIDOMSVGELEMENT(nsSVGCircleElementBase::)
 
   // nsSVGSVGElement methods:
@@ -56,9 +55,9 @@ protected:
 
 nsSVGElement::LengthInfo nsSVGCircleElement::sLengthInfo[3] =
 {
-  { &nsGkAtoms::cx, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, nsSVGUtils::X },
-  { &nsGkAtoms::cy, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, nsSVGUtils::Y },
-  { &nsGkAtoms::r, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, nsSVGUtils::XY }
+  { &nsGkAtoms::cx, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::X },
+  { &nsGkAtoms::cy, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::Y },
+  { &nsGkAtoms::r, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::XY }
 };
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Circle)
@@ -137,7 +136,7 @@ nsSVGCircleElement::ConstructPath(gfxContext *aCtx)
 {
   float x, y, r;
 
-  GetAnimatedLengthValues(&x, &y, &r, nsnull);
+  GetAnimatedLengthValues(&x, &y, &r, nullptr);
 
   if (r > 0.0f)
     aCtx->Arc(gfxPoint(x, y), r, 0, 2*M_PI);

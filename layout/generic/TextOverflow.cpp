@@ -17,7 +17,9 @@
 #include "nsRect.h"
 #include "nsRenderingContext.h"
 #include "nsTextFrame.h"
+#include "nsStyleStructInlines.h"
 #include "mozilla/Util.h"
+#include "mozilla/Likely.h"
 
 namespace mozilla {
 namespace css {
@@ -53,7 +55,7 @@ static bool
 IsAtomicElement(nsIFrame* aFrame, const nsIAtom* aFrameType)
 {
   NS_PRECONDITION(!nsLayoutUtils::GetAsBlock(aFrame) ||
-                  !aFrame->GetStyleDisplay()->IsBlockOutside(),
+                  !aFrame->IsBlockOutside(),
                   "unexpected block frame");
   NS_PRECONDITION(aFrameType != nsGkAtoms::placeholderFrame,
                   "unexpected placeholder frame");
@@ -76,7 +78,7 @@ IsFullyClipped(nsTextFrame* aFrame, nscoord aLeft, nscoord aRight,
 static bool
 IsHorizontalOverflowVisible(nsIFrame* aFrame)
 {
-  NS_PRECONDITION(nsLayoutUtils::GetAsBlock(aFrame) != nsnull,
+  NS_PRECONDITION(nsLayoutUtils::GetAsBlock(aFrame) != nullptr,
                   "expected a block frame");
 
   nsIFrame* f = aFrame;
@@ -147,7 +149,7 @@ public:
   nsDisplayTextOverflowMarker(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
                               const nsRect& aRect, nscoord aAscent,
                               const nsString& aString,
-                              PRUint32 aIndex)
+                              uint32_t aIndex)
     : nsDisplayItem(aBuilder, aFrame), mRect(aRect), mString(aString),
       mAscent(aAscent), mIndex(aIndex) {
     MOZ_COUNT_CTOR(nsDisplayTextOverflowMarker);
@@ -166,7 +168,7 @@ public:
   virtual void Paint(nsDisplayListBuilder* aBuilder,
                      nsRenderingContext* aCtx);
 
-  virtual PRUint32 GetPerFrameKey() { 
+  virtual uint32_t GetPerFrameKey() { 
     return (mIndex << nsDisplayItem::TYPE_BITS) | nsDisplayItem::GetPerFrameKey(); 
   }
   void PaintTextToContext(nsRenderingContext* aCtx,
@@ -176,7 +178,7 @@ private:
   nsRect          mRect;   // in reference frame coordinates
   const nsString  mString; // the marker text
   nscoord         mAscent; // baseline for the marker text in mRect
-  PRUint32        mIndex;
+  uint32_t        mIndex;
 };
 
 static void
@@ -221,15 +223,13 @@ nsDisplayTextOverflowMarker::PaintTextToContext(nsRenderingContext* aCtx,
 
 void
 TextOverflow::Init(nsDisplayListBuilder*   aBuilder,
-                   const nsDisplayListSet& aLists,
                    nsIFrame*               aBlockFrame)
 {
   mBuilder = aBuilder;
   mBlock = aBlockFrame;
-  mMarkerList = aLists.PositionedDescendants();
   mContentArea = aBlockFrame->GetContentRectRelativeToSelf();
   mScrollableFrame = nsLayoutUtils::GetScrollableFrameFor(aBlockFrame);
-  PRUint8 direction = aBlockFrame->GetStyleVisibility()->mDirection;
+  uint8_t direction = aBlockFrame->GetStyleVisibility()->mDirection;
   mBlockIsRTL = direction == NS_STYLE_DIRECTION_RTL;
   mAdjustForPixelSnapping = false;
 #ifdef MOZ_XUL
@@ -268,14 +268,13 @@ TextOverflow::Init(nsDisplayListBuilder*   aBuilder,
 
 /* static */ TextOverflow*
 TextOverflow::WillProcessLines(nsDisplayListBuilder*   aBuilder,
-                               const nsDisplayListSet& aLists,
                                nsIFrame*               aBlockFrame)
 {
   if (!CanHaveTextOverflow(aBuilder, aBlockFrame)) {
-    return nsnull;
+    return nullptr;
   }
   nsAutoPtr<TextOverflow> textOverflow(new TextOverflow);
-  textOverflow->Init(aBuilder, aLists, aBlockFrame);
+  textOverflow->Init(aBuilder, aBlockFrame);
   return textOverflow.forget();
 }
 
@@ -475,7 +474,7 @@ TextOverflow::ExamineLineFrames(nsLineBox*      aLine,
     // Analyze the frames on aLine for the overflow situation at the content
     // edges and at the edges of the area between the markers.
     bool foundVisibleTextOrAtomic = false;
-    PRInt32 n = aLine->GetChildCount();
+    int32_t n = aLine->GetChildCount();
     nsIFrame* child = aLine->mFirstChild;
     InnerClipEdges clippedMarkerEdges;
     for (; n-- > 0; child = child->GetNextSibling()) {
@@ -592,7 +591,7 @@ TextOverflow::ProcessLine(const nsDisplayListSet& aLists,
 
   // Clip and remove display items as needed at the final marker edges.
   nsDisplayList* lists[] = { aLists.Content(), aLists.PositionedDescendants() };
-  for (PRUint32 i = 0; i < ArrayLength(lists); ++i) {
+  for (uint32_t i = 0; i < ArrayLength(lists); ++i) {
     PruneDisplayListContents(lists[i], framesToHide, insideMarkersArea);
   }
   CreateMarkers(aLine, needLeft, needRight, insideMarkersArea);
@@ -612,7 +611,7 @@ TextOverflow::PruneDisplayListContents(nsDisplayList*        aList,
       continue;
     }
 
-    nsDisplayList* wrapper = item->GetList();
+    nsDisplayList* wrapper = item->GetSameCoordinateSystemChildren();
     if (wrapper) {
       if (!itemFrame || GetSelfOrNearestBlock(itemFrame) == mBlock) {
         PruneDisplayListContents(wrapper, aFramesToHide, aInsideMarkersArea);
@@ -620,13 +619,13 @@ TextOverflow::PruneDisplayListContents(nsDisplayList*        aList,
     }
 
     nsCharClipDisplayItem* charClip = itemFrame ? 
-      nsCharClipDisplayItem::CheckCast(item) : nsnull;
+      nsCharClipDisplayItem::CheckCast(item) : nullptr;
     if (charClip && GetSelfOrNearestBlock(itemFrame) == mBlock) {
       nsRect rect = itemFrame->GetScrollableOverflowRect() +
                     itemFrame->GetOffsetTo(mBlock);
       if (mLeft.IsNeeded() && rect.x < aInsideMarkersArea.x) {
         nscoord left = aInsideMarkersArea.x - rect.x;
-        if (NS_UNLIKELY(left < 0)) {
+        if (MOZ_UNLIKELY(left < 0)) {
           item->~nsDisplayItem();
           continue;
         }
@@ -634,7 +633,7 @@ TextOverflow::PruneDisplayListContents(nsDisplayList*        aList,
       }
       if (mRight.IsNeeded() && rect.XMost() > aInsideMarkersArea.XMost()) {
         nscoord right = rect.XMost() - aInsideMarkersArea.XMost();
-        if (NS_UNLIKELY(right < 0)) {
+        if (MOZ_UNLIKELY(right < 0)) {
           item->~nsDisplayItem();
           continue;
         }
@@ -683,7 +682,7 @@ void
 TextOverflow::CreateMarkers(const nsLineBox* aLine,
                             bool             aCreateLeft,
                             bool             aCreateRight,
-                            const nsRect&    aInsideMarkersArea) const
+                            const nsRect&    aInsideMarkersArea)
 {
   if (aCreateLeft) {
     nsRect markerRect = nsRect(aInsideMarkersArea.x - mLeft.mIntrinsicWidth,
@@ -698,7 +697,7 @@ TextOverflow::CreateMarkers(const nsLineBox* aLine,
                           mContentArea + mBuilder->ToReferenceFrame(mBlock),
                           &markerRect);
     }
-    mMarkerList->AppendNewToTop(marker);
+    mMarkerList.AppendNewToTop(marker);
   }
 
   if (aCreateRight) {
@@ -714,7 +713,7 @@ TextOverflow::CreateMarkers(const nsLineBox* aLine,
                           mContentArea + mBuilder->ToReferenceFrame(mBlock),
                           &markerRect);
     }
-    mMarkerList->AppendNewToTop(marker);
+    mMarkerList.AppendNewToTop(marker);
   }
 }
 

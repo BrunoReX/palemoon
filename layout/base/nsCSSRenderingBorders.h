@@ -11,6 +11,7 @@
 #include "nsStyleStruct.h"
 
 #include "gfxContext.h"
+#include "mozilla/gfx/2D.h"
 
 // define this to enable a bunch of debug dump info
 #undef DEBUG_NEW_BORDERS
@@ -52,7 +53,7 @@
  * backgroundColor -- the background color of the element.
  *    Used in calculating colors for 2-tone borders, such as inset and outset
  * gapRect - a rectangle that should be clipped out to leave a gap in a border,
- *    or nsnull if none.
+ *    or nullptr if none.
  */
 
 typedef enum {
@@ -63,16 +64,19 @@ typedef enum {
 } BorderColorStyle;
 
 struct nsCSSBorderRenderer {
-  nsCSSBorderRenderer(PRInt32 aAppUnitsPerPixel,
+  nsCSSBorderRenderer(int32_t aAppUnitsPerPixel,
                       gfxContext* aDestContext,
                       gfxRect& aOuterRect,
-                      const PRUint8* aBorderStyles,
+                      const uint8_t* aBorderStyles,
                       const gfxFloat* aBorderWidths,
                       gfxCornerSizes& aBorderRadii,
                       const nscolor* aBorderColors,
                       nsBorderColors* const* aCompositeColors,
-                      PRIntn aSkipSides,
+                      int aSkipSides,
                       nscolor aBackgroundColor);
+
+  static void Init();
+  static void Shutdown();
 
   gfxCornerSizes mBorderCornerDimensions;
 
@@ -84,9 +88,9 @@ struct nsCSSBorderRenderer {
   gfxRect mInnerRect;
 
   // the style and size of the border
-  const PRUint8* mBorderStyles;
+  const uint8_t* mBorderStyles;
   const gfxFloat* mBorderWidths;
-  PRUint8* mSanitizedStyles;
+  uint8_t* mSanitizedStyles;
   gfxFloat* mSanitizedWidths;
   gfxCornerSizes mBorderRadii;
 
@@ -95,10 +99,10 @@ struct nsCSSBorderRenderer {
   nsBorderColors* const* mCompositeColors;
 
   // core app units per pixel
-  PRInt32 mAUPP;
+  int32_t mAUPP;
 
   // misc -- which sides to skip, the background color
-  PRIntn mSkipSides;
+  int mSkipSides;
   nscolor mBackgroundColor;
 
   // calculated values
@@ -108,13 +112,13 @@ struct nsCSSBorderRenderer {
 
   // For all the sides in the bitmask, would they be rendered
   // in an identical color and style?
-  bool AreBorderSideFinalStylesSame(PRUint8 aSides);
+  bool AreBorderSideFinalStylesSame(uint8_t aSides);
 
   // For the given style, is the given corner a solid color?
-  bool IsSolidCornerStyle(PRUint8 aStyle, mozilla::css::Corner aCorner);
+  bool IsSolidCornerStyle(uint8_t aStyle, mozilla::css::Corner aCorner);
 
   // For the given solid corner, what color style should be used?
-  BorderColorStyle BorderColorStyleForSolidCorner(PRUint8 aStyle, mozilla::css::Corner aCorner);
+  BorderColorStyle BorderColorStyleForSolidCorner(uint8_t aStyle, mozilla::css::Corner aCorner);
 
   //
   // Path generation functions
@@ -151,7 +155,7 @@ struct nsCSSBorderRenderer {
                        const gfxRect& aInnerRect,
                        const gfxCornerSizes& aBorderRadii,
                        const gfxFloat *aBorderSizes,
-                       PRIntn aSides,
+                       int aSides,
                        const gfxRGBA& aColor);
 
   //
@@ -160,10 +164,10 @@ struct nsCSSBorderRenderer {
 
   // draw the border for the given sides, using the style of the first side
   // present in the bitmask
-  void DrawBorderSides (PRIntn aSides);
+  void DrawBorderSides (int aSides);
 
   // function used by the above to handle -moz-border-colors
-  void DrawBorderSidesCompositeColors(PRIntn aSides, const nsBorderColors *compositeColors);
+  void DrawBorderSidesCompositeColors(int aSides, const nsBorderColors *compositeColors);
 
   // draw the given dashed side
   void DrawDashedSide (mozilla::css::Side aSide);
@@ -185,12 +189,21 @@ struct nsCSSBorderRenderer {
                                                     const gfxRGBA &aFirstColor,
                                                     const gfxRGBA &aSecondColor);
 
+  // Azure variant of CreateCornerGradient.
+  mozilla::TemporaryRef<mozilla::gfx::GradientStops>
+  CreateCornerGradient(mozilla::css::Corner aCorner, const gfxRGBA &aFirstColor,
+                       const gfxRGBA &aSecondColor, mozilla::gfx::DrawTarget *aDT,
+                       mozilla::gfx::Point &aPoint1, mozilla::gfx::Point &aPoint2);
+
   // Draw a solid color border that is uniformly the same width.
   void DrawSingleWidthSolidBorder();
 
   // Draw any border which is solid on all sides and does not use
   // CompositeColors.
   void DrawNoCompositeColorSolidBorder();
+  // Draw any border which is solid on all sides and does not use
+  // CompositeColors. Using Azure.
+  void DrawNoCompositeColorSolidBorderAzure();
 
   // Draw a solid border that has no border radius (i.e. is rectangular) and
   // uses CompositeColors.
@@ -236,7 +249,7 @@ static inline void S(const char *s) {
   fprintf (stderr, "%s", s);
 }
 
-static inline void SN(const char *s = nsnull) {
+static inline void SN(const char *s = nullptr) {
   if (s)
     fprintf (stderr, "%s", s);
   fprintf (stderr, "\n");
@@ -266,7 +279,7 @@ static inline void S(const gfxSize& s) {}
 static inline void S(const gfxRect& r) {}
 static inline void S(const gfxFloat f) {}
 static inline void S(const char *s) {}
-static inline void SN(const char *s = nsnull) {}
+static inline void SN(const char *s = nullptr) {}
 static inline void SF(const char *fmt, ...) {}
 static inline void SX(gfxContext *ctx) {}
 #endif

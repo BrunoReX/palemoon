@@ -33,6 +33,7 @@
 
 #include "nsBoxLayoutState.h"
 #include "nsBoxFrame.h"
+#include "nsDOMTouchEvent.h"
 #include "nsStyleContext.h"
 #include "nsPresContext.h"
 #include "nsCOMPtr.h"
@@ -47,19 +48,16 @@
 #include "nsIServiceManager.h"
 #include "nsBoxLayout.h"
 #include "nsSprocketLayout.h"
-#include "nsIDocument.h"
 #include "nsIScrollableFrame.h"
 #include "nsWidgetsCID.h"
 #include "nsCSSAnonBoxes.h"
 #include "nsContainerFrame.h"
-#include "nsIDOMDocument.h"
 #include "nsIDOMElement.h"
 #include "nsITheme.h"
 #include "nsTransform2D.h"
 #include "nsEventStateManager.h"
 #include "nsEventDispatcher.h"
 #include "nsIDOMEvent.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsDisplayList.h"
 #include "mozilla/Preferences.h"
 
@@ -82,7 +80,7 @@ using namespace mozilla;
 
 #ifdef DEBUG_LAYOUT
 bool nsBoxFrame::gDebug = false;
-nsIBox* nsBoxFrame::mDebugChild = nsnull;
+nsIFrame* nsBoxFrame::mDebugChild = nullptr;
 #endif
 
 nsIFrame*
@@ -117,7 +115,7 @@ nsBoxFrame::nsBoxFrame(nsIPresShell* aPresShell,
   // if no layout manager specified us the static sprocket layout
   nsCOMPtr<nsBoxLayout> layout = aLayoutManager;
 
-  if (layout == nsnull) {
+  if (layout == nullptr) {
     NS_NewSprocketLayout(aPresShell, layout);
   }
 
@@ -193,7 +191,7 @@ void nsBoxFrame::UpdateMouseThrough()
 {
   if (mContent) {
     static nsIContent::AttrValuesArray strings[] =
-      {&nsGkAtoms::never, &nsGkAtoms::always, nsnull};
+      {&nsGkAtoms::never, &nsGkAtoms::always, nullptr};
     switch (mContent->FindAttrValueIn(kNameSpaceID_None,
               nsGkAtoms::mousethrough, strings, eCaseMatters)) {
       case 0: AddStateBits(NS_FRAME_MOUSE_THROUGH_NEVER); break;
@@ -274,8 +272,8 @@ nsBoxFrame::GetInitialDebug(bool& aDebug)
     return false;
 
   static nsIContent::AttrValuesArray strings[] =
-    {&nsGkAtoms::_false, &nsGkAtoms::_true, nsnull};
-  PRInt32 index = GetContent()->FindAttrValueIn(kNameSpaceID_None,
+    {&nsGkAtoms::_false, &nsGkAtoms::_true, nullptr};
+  int32_t index = GetContent()->FindAttrValueIn(kNameSpaceID_None,
       nsGkAtoms::debug, strings, eCaseMatters);
   if (index >= 0) {
     aDebug = index == 1;
@@ -294,9 +292,9 @@ nsBoxFrame::GetInitialHAlignment(nsBoxFrame::Halignment& aHalign)
 
   // XXXdwh Everything inside this if statement is deprecated code.
   static nsIContent::AttrValuesArray alignStrings[] =
-    {&nsGkAtoms::left, &nsGkAtoms::right, nsnull};
+    {&nsGkAtoms::left, &nsGkAtoms::right, nullptr};
   static const Halignment alignValues[] = {hAlign_Left, hAlign_Right};
-  PRInt32 index = GetContent()->FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::align,
+  int32_t index = GetContent()->FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::align,
       alignStrings, eCaseMatters);
   if (index >= 0) {
     aHalign = alignValues[index];
@@ -308,7 +306,7 @@ nsBoxFrame::GetInitialHAlignment(nsBoxFrame::Halignment& aHalign)
   // we are checking the ALIGN attribute.
   nsIAtom* attrName = IsHorizontal() ? nsGkAtoms::pack : nsGkAtoms::align;
   static nsIContent::AttrValuesArray strings[] =
-    {&nsGkAtoms::_empty, &nsGkAtoms::start, &nsGkAtoms::center, &nsGkAtoms::end, nsnull};
+    {&nsGkAtoms::_empty, &nsGkAtoms::start, &nsGkAtoms::center, &nsGkAtoms::end, nullptr};
   static const Halignment values[] =
     {hAlign_Left/*not used*/, hAlign_Left, hAlign_Center, hAlign_Right};
   index = GetContent()->FindAttrValueIn(kNameSpaceID_None, attrName,
@@ -368,10 +366,10 @@ nsBoxFrame::GetInitialVAlignment(nsBoxFrame::Valignment& aValign)
     return false;
 
   static nsIContent::AttrValuesArray valignStrings[] =
-    {&nsGkAtoms::top, &nsGkAtoms::baseline, &nsGkAtoms::middle, &nsGkAtoms::bottom, nsnull};
+    {&nsGkAtoms::top, &nsGkAtoms::baseline, &nsGkAtoms::middle, &nsGkAtoms::bottom, nullptr};
   static const Valignment valignValues[] =
     {vAlign_Top, vAlign_BaseLine, vAlign_Middle, vAlign_Bottom};
-  PRInt32 index = GetContent()->FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::valign,
+  int32_t index = GetContent()->FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::valign,
       valignStrings, eCaseMatters);
   if (index >= 0) {
     aValign = valignValues[index];
@@ -384,7 +382,7 @@ nsBoxFrame::GetInitialVAlignment(nsBoxFrame::Valignment& aValign)
   nsIAtom* attrName = IsHorizontal() ? nsGkAtoms::align : nsGkAtoms::pack;
   static nsIContent::AttrValuesArray strings[] =
     {&nsGkAtoms::_empty, &nsGkAtoms::start, &nsGkAtoms::center,
-     &nsGkAtoms::baseline, &nsGkAtoms::end, nsnull};
+     &nsGkAtoms::baseline, &nsGkAtoms::end, nullptr};
   static const Valignment values[] =
     {vAlign_Top/*not used*/, vAlign_Top, vAlign_Middle, vAlign_BaseLine, vAlign_Bottom};
   index = GetContent()->FindAttrValueIn(kNameSpaceID_None, attrName,
@@ -456,8 +454,8 @@ nsBoxFrame::GetInitialOrientation(bool& aIsHorizontal)
   // Now see if we have an attribute.  The attribute overrides
   // the style system value.
   static nsIContent::AttrValuesArray strings[] =
-    {&nsGkAtoms::vertical, &nsGkAtoms::horizontal, nsnull};
-  PRInt32 index = GetContent()->FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::orient,
+    {&nsGkAtoms::vertical, &nsGkAtoms::horizontal, nullptr};
+  int32_t index = GetContent()->FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::orient,
       strings, eCaseMatters);
   if (index >= 0) {
     aIsHorizontal = index == 1;
@@ -487,8 +485,8 @@ nsBoxFrame::GetInitialDirection(bool& aIsNormal)
   // the style system value.
   if (IsHorizontal()) {
     static nsIContent::AttrValuesArray strings[] =
-      {&nsGkAtoms::reverse, &nsGkAtoms::ltr, &nsGkAtoms::rtl, nsnull};
-    PRInt32 index = GetContent()->FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::dir,
+      {&nsGkAtoms::reverse, &nsGkAtoms::ltr, &nsGkAtoms::rtl, nullptr};
+    int32_t index = GetContent()->FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::dir,
         strings, eCaseMatters);
     if (index >= 0) {
       bool values[] = {!aIsNormal, true, false};
@@ -528,8 +526,8 @@ nsBoxFrame::GetInitialAutoStretch(bool& aStretch)
   
   // Check the align attribute.
   static nsIContent::AttrValuesArray strings[] =
-    {&nsGkAtoms::_empty, &nsGkAtoms::stretch, nsnull};
-  PRInt32 index = GetContent()->FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::align,
+    {&nsGkAtoms::_empty, &nsGkAtoms::stretch, nullptr};
+  int32_t index = GetContent()->FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::align,
       strings, eCaseMatters);
   if (index != nsIContent::ATTR_MISSING && index != 0) {
     aStretch = index == 1;
@@ -677,22 +675,14 @@ nsBoxFrame::Reflow(nsPresContext*          aPresContext,
 
   if (aReflowState.ComputedHeight() == NS_INTRINSICSIZE) {
     computedSize.height = prefSize.height;
-    // prefSize is border-box, so we need to figure out the right
-    // length to apply our min/max constraints to.
-    nscoord outsideBoxSizing = 0;
-    switch (GetStylePosition()->mBoxSizing) {
-      case NS_STYLE_BOX_SIZING_CONTENT:
-        outsideBoxSizing = aReflowState.mComputedBorderPadding.TopBottom();
-        // fall through
-      case NS_STYLE_BOX_SIZING_PADDING:
-        outsideBoxSizing -= aReflowState.mComputedPadding.TopBottom();
-        break;
-    }
-    computedSize.height -= outsideBoxSizing;
-    // Note: might be negative now, but that's OK because min-width is
-    // never negative.
-    aReflowState.ApplyMinMaxConstraints(nsnull, &computedSize.height);
-    computedSize.height += outsideBoxSizing;
+    // prefSize is border-box but min/max constraints are content-box.
+    nscoord verticalBorderPadding =
+      aReflowState.mComputedBorderPadding.TopBottom();
+    nscoord contentHeight = computedSize.height - verticalBorderPadding;
+    // Note: contentHeight might be negative, but that's OK because min-height
+    // is never negative.
+    computedSize.height = aReflowState.ApplyMinMaxHeight(contentHeight) +
+                          verticalBorderPadding;
   } else {
     computedSize.height += m.top + m.bottom;
   }
@@ -761,7 +751,7 @@ nsBoxFrame::GetPrefSize(nsBoxLayoutState& aBoxLayoutState)
 
   // if the size was not completely redefined in CSS then ask our children
   bool widthSet, heightSet;
-  if (!nsIBox::AddCSSPrefSize(this, size, widthSet, heightSet))
+  if (!nsIFrame::AddCSSPrefSize(this, size, widthSet, heightSet))
   {
     if (mLayoutManager) {
       nsSize layoutSize = mLayoutManager->GetPrefSize(this, aBoxLayoutState);
@@ -824,7 +814,7 @@ nsBoxFrame::GetMinSize(nsBoxLayoutState& aBoxLayoutState)
 
   // if the size was not completely redefined in CSS then ask our children
   bool widthSet, heightSet;
-  if (!nsIBox::AddCSSMinSize(aBoxLayoutState, this, size, widthSet, heightSet))
+  if (!nsIFrame::AddCSSMinSize(aBoxLayoutState, this, size, widthSet, heightSet))
   {
     if (mLayoutManager) {
       nsSize layoutSize = mLayoutManager->GetMinSize(this, aBoxLayoutState);
@@ -864,7 +854,7 @@ nsBoxFrame::GetMaxSize(nsBoxLayoutState& aBoxLayoutState)
 
   // if the size was not completely redefined in CSS then ask our children
   bool widthSet, heightSet;
-  if (!nsIBox::AddCSSMaxSize(this, size, widthSet, heightSet))
+  if (!nsIFrame::AddCSSMaxSize(this, size, widthSet, heightSet))
   {
     if (mLayoutManager) {
       nsSize layoutSize = mLayoutManager->GetMaxSize(this, aBoxLayoutState);
@@ -901,7 +891,7 @@ nsBoxFrame::GetFlex(nsBoxLayoutState& aBoxLayoutState)
 NS_IMETHODIMP
 nsBoxFrame::DoLayout(nsBoxLayoutState& aState)
 {
-  PRUint32 oldFlags = aState.LayoutFlags();
+  uint32_t oldFlags = aState.LayoutFlags();
   aState.SetLayoutFlags(0);
 
   nsresult rv = NS_OK;
@@ -951,9 +941,7 @@ nsBoxFrame::DestroyFrom(nsIFrame* aDestructRoot)
   RegUnregAccessKey(false);
 
   // clean up the container box's layout manager and child boxes
-  SetLayoutManager(nsnull);
-
-  DestroyAbsoluteFrames(aDestructRoot);
+  SetLayoutManager(nullptr);
 
   nsContainerFrame::DestroyFrom(aDestructRoot);
 } 
@@ -1110,9 +1098,9 @@ nsBoxFrame::GetContentInsertionFrame()
 }
 
 NS_IMETHODIMP
-nsBoxFrame::AttributeChanged(PRInt32 aNameSpaceID,
+nsBoxFrame::AttributeChanged(int32_t aNameSpaceID,
                              nsIAtom* aAttribute,
-                             PRInt32 aModType)
+                             int32_t aModType)
 {
   nsresult rv = nsContainerFrame::AttributeChanged(aNameSpaceID, aAttribute,
                                                    aModType);
@@ -1228,7 +1216,7 @@ nsBoxFrame::AttributeChanged(PRInt32 aNameSpaceID,
   }
   else if (aAttribute == nsGkAtoms::ordinal) {
     nsBoxLayoutState state(PresContext());
-    nsIBox* parent = GetParentBox();
+    nsIFrame* parent = GetParentBox();
     // If our parent is not a box, there's not much we can do... but in that
     // case our ordinal doesn't matter anyway, so that's ok.
     // Also don't bother with popup frames since they are kept on the 
@@ -1484,7 +1472,7 @@ nsBoxFrame::PaintXULDebugOverlay(nsRenderingContext& aRenderingContext,
   nscoord onePixel = GetPresContext()->IntScaledPixelsToTwips(1);
 
   kid = GetChildBox();
-  while (nsnull != kid) {
+  while (nullptr != kid) {
     bool isHorizontal = IsHorizontal();
 
     nscoord x, y, borderSize, spacerSize;
@@ -1611,7 +1599,7 @@ nsBoxFrame::FillRect(nsRenderingContext& aRenderingContext, bool aHorizontal, ns
 }
 
 void 
-nsBoxFrame::DrawSpacer(nsPresContext* aPresContext, nsRenderingContext& aRenderingContext, bool aHorizontal, PRInt32 flex, nscoord x, nscoord y, nscoord size, nscoord spacerSize)
+nsBoxFrame::DrawSpacer(nsPresContext* aPresContext, nsRenderingContext& aRenderingContext, bool aHorizontal, int32_t flex, nscoord x, nscoord y, nscoord size, nscoord spacerSize)
 {    
          nscoord onePixel = aPresContext->IntScaledPixelsToTwips(1);
 
@@ -1706,7 +1694,7 @@ nsBoxFrame::GetValue(nsPresContext* aPresContext, const nsSize& a, const nsSize&
 }
 
 void
-nsBoxFrame::GetValue(nsPresContext* aPresContext, PRInt32 a, PRInt32 b, char* ch) 
+nsBoxFrame::GetValue(nsPresContext* aPresContext, int32_t a, int32_t b, char* ch) 
 {
     if (a == NS_INTRINSICSIZE)
       sprintf(ch, "%d[SET]", b);             
@@ -1715,7 +1703,7 @@ nsBoxFrame::GetValue(nsPresContext* aPresContext, PRInt32 a, PRInt32 b, char* ch
 }
 
 nsresult
-nsBoxFrame::DisplayDebugInfoFor(nsIBox*  aBox,
+nsBoxFrame::DisplayDebugInfoFor(nsIFrame*  aBox,
                                 nsPoint& aPoint)
 {
     nsBoxLayoutState state(GetPresContext());
@@ -1738,7 +1726,7 @@ nsBoxFrame::DisplayDebugInfoFor(nsIBox*  aBox,
     //printf("%%%%%% inside box %%%%%%%\n");
 
     int count = 0;
-    nsIBox* child = aBox->GetChildBox();
+    nsIFrame* child = aBox->GetChildBox();
 
     nsMargin m;
     nsMargin m2;
@@ -1785,10 +1773,10 @@ nsBoxFrame::DisplayDebugInfoFor(nsIBox*  aBox,
                     nscoord flexCSS = NS_INTRINSICSIZE;
 
                     bool widthSet, heightSet;
-                    nsIBox::AddCSSPrefSize(child, prefSizeCSS, widthSet, heightSet);
-                    nsIBox::AddCSSMinSize (state, child, minSizeCSS, widthSet, heightSet);
-                    nsIBox::AddCSSMaxSize (child, maxSizeCSS, widthSet, heightSet);
-                    nsIBox::AddCSSFlex    (state, child, flexCSS);
+                    nsIFrame::AddCSSPrefSize(child, prefSizeCSS, widthSet, heightSet);
+                    nsIFrame::AddCSSMinSize (state, child, minSizeCSS, widthSet, heightSet);
+                    nsIFrame::AddCSSMaxSize (child, maxSizeCSS, widthSet, heightSet);
+                    nsIFrame::AddCSSFlex    (state, child, flexCSS);
 
                     nsSize prefSize = child->GetPrefSize(state);
                     nsSize minSize = child->GetMinSize(state);
@@ -1833,15 +1821,15 @@ nsBoxFrame::DisplayDebugInfoFor(nsIBox*  aBox,
     } else {
     }
 
-    mDebugChild = nsnull;
+    mDebugChild = nullptr;
 
     return NS_OK;
 }
 
 void
-nsBoxFrame::SetDebugOnChildList(nsBoxLayoutState& aState, nsIBox* aChild, bool aDebug)
+nsBoxFrame::SetDebugOnChildList(nsBoxLayoutState& aState, nsIFrame* aChild, bool aDebug)
 {
-    nsIBox* child = GetChildBox();
+    nsIFrame* child = GetChildBox();
      while (child)
      {
         child->SetDebug(aState, aDebug);
@@ -1850,7 +1838,7 @@ nsBoxFrame::SetDebugOnChildList(nsBoxLayoutState& aState, nsIBox* aChild, bool a
 }
 
 nsresult
-nsBoxFrame::GetFrameSizeWithMargin(nsIBox* aBox, nsSize& aSize)
+nsBoxFrame::GetFrameSizeWithMargin(nsIFrame* aBox, nsSize& aSize)
 {
   nsRect rect(aBox->GetRect());
   nsMargin margin(0,0,0,0);
@@ -1894,7 +1882,7 @@ nsBoxFrame::RegUnregAccessKey(bool aDoReg)
   // and register the access key
   nsEventStateManager *esm = PresContext()->EventStateManager();
 
-  PRUint32 key = accessKey.First();
+  uint32_t key = accessKey.First();
   if (aDoReg)
     esm->RegisterAccessKey(mContent, key);
   else
@@ -1961,7 +1949,7 @@ MergeSort(nsBoxLayoutState& aState, nsIFrame *aSource)
 {
   NS_PRECONDITION(aSource, "MergeSort null arg");
 
-  nsIFrame *sorted[32] = { nsnull };
+  nsIFrame *sorted[32] = { nullptr };
   nsIFrame **fill = &sorted[0];
   nsIFrame **left;
   nsIFrame *rest = aSource;
@@ -1969,15 +1957,15 @@ MergeSort(nsBoxLayoutState& aState, nsIFrame *aSource)
   do {
     nsIFrame *current = rest;
     rest = rest->GetNextSibling();
-    current->SetNextSibling(nsnull);
+    current->SetNextSibling(nullptr);
 
     // Merge it with sorted[0] if present; then merge the result with sorted[1] etc.
-    // sorted[0] is a list of length 1 (or nsnull).
-    // sorted[1] is a list of length 2 (or nsnull).
-    // sorted[2] is a list of length 4 (or nsnull). etc.
+    // sorted[0] is a list of length 1 (or nullptr).
+    // sorted[1] is a list of length 2 (or nullptr).
+    // sorted[2] is a list of length 4 (or nullptr). etc.
     for (left = &sorted[0]; left != fill && *left; ++left) {
       current = SortedMerge(aState, *left, current);
-      *left = nsnull;
+      *left = nullptr;
     }
 
     // Fill the empty slot that we couldn't merge with the last result.
@@ -1988,7 +1976,7 @@ MergeSort(nsBoxLayoutState& aState, nsIFrame *aSource)
   } while (rest);
 
   // Collect and merge the results.
-  nsIFrame *result = nsnull;
+  nsIFrame *result = nullptr;
   for (left = &sorted[0]; left != fill; ++left) {
     if (*left) {
       result = result ? SortedMerge(aState, *left, result) : *left;
@@ -2009,10 +1997,10 @@ nsBoxFrame::CheckBoxOrder(nsBoxLayoutState& aState)
 
   // Run through our list of children and check whether we
   // need to sort them.
-  PRUint32 maxOrdinal = child->GetOrdinal(aState);
+  uint32_t maxOrdinal = child->GetOrdinal(aState);
   child = child->GetNextSibling();
   for ( ; child; child = child->GetNextSibling()) {
-    PRUint32 ordinal = child->GetOrdinal(aState);
+    uint32_t ordinal = child->GetOrdinal(aState);
     if (ordinal < maxOrdinal)
       break;
     maxOrdinal = ordinal;
@@ -2026,7 +2014,7 @@ nsBoxFrame::CheckBoxOrder(nsBoxLayoutState& aState)
 }
 
 nsresult
-nsBoxFrame::LayoutChildAt(nsBoxLayoutState& aState, nsIBox* aBox, const nsRect& aRect)
+nsBoxFrame::LayoutChildAt(nsBoxLayoutState& aState, nsIFrame* aBox, const nsRect& aRect)
 {
   // get the current rect
   nsRect oldRect(aBox->GetRect());
@@ -2042,15 +2030,15 @@ nsBoxFrame::LayoutChildAt(nsBoxLayoutState& aState, nsIBox* aBox, const nsRect& 
 }
 
 NS_IMETHODIMP
-nsBoxFrame::RelayoutChildAtOrdinal(nsBoxLayoutState& aState, nsIBox* aChild)
+nsBoxFrame::RelayoutChildAtOrdinal(nsBoxLayoutState& aState, nsIFrame* aChild)
 {
   if (!SupportsOrdinalsInChildren())
     return NS_OK;
 
-  PRUint32 ord = aChild->GetOrdinal(aState);
+  uint32_t ord = aChild->GetOrdinal(aState);
   
   nsIFrame* child = mFrames.FirstChild();
-  nsIFrame* newPrevSib = nsnull;
+  nsIFrame* newPrevSib = nullptr;
 
   while (child) {
     if (ord < child->GetOrdinal(aState)) {
@@ -2073,7 +2061,7 @@ nsBoxFrame::RelayoutChildAtOrdinal(nsBoxLayoutState& aState, nsIBox* aChild)
   mFrames.RemoveFrame(aChild);
 
   // Insert it after |newPrevSib| or at the start if it's null.
-  mFrames.InsertFrame(nsnull, newPrevSib, aChild);
+  mFrames.InsertFrame(nullptr, newPrevSib, aChild);
 
   return NS_OK;
 }
@@ -2088,7 +2076,7 @@ nsBoxFrame::RelayoutChildAtOrdinal(nsBoxLayoutState& aState, nsIBox* aChild)
  * 
  * This is used by nsMenuFrame and nsTreeColFrame.
  * 
- * Note that turning a hit on a descendant element into nsnull, so events
+ * Note that turning a hit on a descendant element into nullptr, so events
  * could fall through to the menu background, might be an appealing simplification
  * but it would mean slightly strange behaviour in some cases, because grabber
  * wrappers can be created for many individual lists and items, so the exact
@@ -2124,9 +2112,9 @@ void nsDisplayXULEventRedirector::HitTest(nsDisplayListBuilder* aBuilder,
   mList.HitTest(aBuilder, aRect, aState, &outFrames);
 
   bool topMostAdded = false;
-  PRUint32 localLength = outFrames.Length();
+  uint32_t localLength = outFrames.Length();
 
-  for (PRUint32 i = 0; i < localLength; i++) {
+  for (uint32_t i = 0; i < localLength; i++) {
 
     for (nsIContent* content = outFrames.ElementAt(i)->GetContent();
          content && content != mTargetFrame->GetContent();
@@ -2175,4 +2163,36 @@ nsBoxFrame::WrapListsInRedirector(nsDisplayListBuilder*   aBuilder,
 {
   nsXULEventRedirectorWrapper wrapper(this);
   return wrapper.WrapLists(aBuilder, this, aIn, aOut);
+}
+
+bool
+nsBoxFrame::GetEventPoint(nsGUIEvent* aEvent, nsPoint &aPoint) {
+  nsIntPoint refPoint;
+  bool res = GetEventPoint(aEvent, refPoint);
+  aPoint = nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, refPoint, this);
+  return res;
+}
+
+bool
+nsBoxFrame::GetEventPoint(nsGUIEvent* aEvent, nsIntPoint &aPoint) {
+  NS_ENSURE_TRUE(aEvent, false);
+
+  if (aEvent->eventStructType == NS_TOUCH_EVENT) {
+    nsTouchEvent* touchEvent = static_cast<nsTouchEvent*>(aEvent);
+    // return false if there is more than one touch on the page, or if
+    // we can't find a touch point
+    if (touchEvent->touches.Length() != 1) {
+      return false;
+    }
+  
+    nsIDOMTouch *touch = touchEvent->touches.SafeElementAt(0);
+    if (!touch) {
+      return false;
+    }
+    nsDOMTouch* domtouch = static_cast<nsDOMTouch*>(touch);
+    aPoint = domtouch->mRefPoint;
+  } else {
+    aPoint = aEvent->refPoint;
+  }
+  return true;
 }

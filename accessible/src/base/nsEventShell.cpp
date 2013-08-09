@@ -7,6 +7,8 @@
 
 #include "nsAccUtils.h"
 
+using namespace mozilla::a11y;
+
 ////////////////////////////////////////////////////////////////////////////////
 // nsEventShell
 ////////////////////////////////////////////////////////////////////////////////
@@ -18,7 +20,7 @@ nsEventShell::FireEvent(AccEvent* aEvent)
     return;
 
   Accessible* accessible = aEvent->GetAccessible();
-  NS_ENSURE_TRUE(accessible,);
+  NS_ENSURE_TRUE_VOID(accessible);
 
   nsINode* node = aEvent->GetNode();
   if (node) {
@@ -28,14 +30,14 @@ nsEventShell::FireEvent(AccEvent* aEvent)
 
   accessible->HandleAccEvent(aEvent);
 
-  sEventTargetNode = nsnull;
+  sEventTargetNode = nullptr;
 }
 
 void
-nsEventShell::FireEvent(PRUint32 aEventType, Accessible* aAccessible,
+nsEventShell::FireEvent(uint32_t aEventType, Accessible* aAccessible,
                         EIsFromUserInput aIsFromUserInput)
 {
-  NS_ENSURE_TRUE(aAccessible,);
+  NS_ENSURE_TRUE_VOID(aAccessible);
 
   nsRefPtr<AccEvent> event = new AccEvent(aEventType, aAccessible,
                                           aIsFromUserInput);

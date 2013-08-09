@@ -20,7 +20,7 @@ native PRNetAddr(union PRNetAddr);
  * NOTE: This is a free-threaded interface, meaning that the methods on
  * this interface may be called from any thread.
  */
-[scriptable, uuid(704c0859-cb64-43bd-bfdf-c8b28427f812)]
+[scriptable, uuid(91ca3523-fc52-4dea-b167-ef8f56473dde)]
 interface nsISocketTransport : nsITransport 
 {
     /**
@@ -80,7 +80,7 @@ interface nsISocketTransport : nsITransport
     boolean isAlive();
 
     /**
-     * Socket timeouts in seconds.  To specify no timeout, pass PR_UINT32_MAX
+     * Socket timeouts in seconds.  To specify no timeout, pass UINT32_MAX
      * as aValue to setTimeout.  The implementation may truncate timeout values
      * to a smaller range of values (e.g., 0 to 0xFFFF).
      */
@@ -108,6 +108,10 @@ interface nsISocketTransport : nsITransport
      * order).  STATUS_RESOLVING may be skipped if the host does not need to be
      * resolved.  STATUS_WAITING_FOR is an optional status code, which the impl
      * of this interface may choose not to generate.
+     *
+     * In C++, these constants have a type of uint32_t, so C++ callers must use
+     * the NS_NET_STATUS_* constants defined below, which have a type of
+     * nsresult.
      */
     const unsigned long STATUS_RESOLVING      = 0x804b0003;
     const unsigned long STATUS_RESOLVED       = 0x804b000b;
@@ -147,6 +151,16 @@ interface nsISocketTransport : nsITransport
     const unsigned long DISABLE_IPV6 = (1 << 2);
 
     /**
+     * If set, indicates that the connection was initiated from a source
+     * defined as being private in the sense of Private Browsing. Generally,
+     * there should be no state shared between connections that are private
+     * and those that are not; it is OK for multiple private connections
+     * to share state with each other, and it is OK for multiple non-private
+     * connections to share state with each other.
+     */
+    const unsigned long NO_PERMANENT_STORAGE = (1 << 3);
+
+    /**
      * Socket QoS/ToS markings. Valid values are IPTOS_DSCP_AFxx or
      * IPTOS_CLASS_CSx (or IPTOS_DSCP_EF, but currently no supported
      * services require expedited-forwarding).
@@ -156,17 +170,10 @@ interface nsISocketTransport : nsITransport
      */
     attribute octet QoSBits;
 
+    /**
+     * TCP send and receive buffer sizes. A value of 0 means OS level
+     * auto-tuning is in effect.
+     */
+    attribute unsigned long recvBufferSize;
+    attribute unsigned long sendBufferSize;
 };
-
-%{C++
-/**
- * #define's for compatibility
- */
-#define NS_NET_STATUS_RESOLVING_HOST nsISocketTransport::STATUS_RESOLVING
-#define NS_NET_STATUS_RESOLVED_HOST  nsISocketTransport::STATUS_RESOLVED
-#define NS_NET_STATUS_CONNECTED_TO   nsISocketTransport::STATUS_CONNECTED_TO
-#define NS_NET_STATUS_SENDING_TO     nsISocketTransport::STATUS_SENDING_TO
-#define NS_NET_STATUS_RECEIVING_FROM nsISocketTransport::STATUS_RECEIVING_FROM
-#define NS_NET_STATUS_CONNECTING_TO  nsISocketTransport::STATUS_CONNECTING_TO
-#define NS_NET_STATUS_WAITING_FOR    nsISocketTransport::STATUS_WAITING_FOR
-%}

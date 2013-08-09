@@ -9,13 +9,11 @@
 #include "nsGUIEvent.h"
 #include "nsIDOMNode.h"
 #include "nsIAtom.h"
-#include "nsIDOMEventTarget.h"
-#include "nsIContent.h"
 
 class nsMutationEvent : public nsEvent
 {
 public:
-  nsMutationEvent(bool isTrusted, PRUint32 msg)
+  nsMutationEvent(bool isTrusted, uint32_t msg)
     : nsEvent(isTrusted, msg, NS_MUTATION_EVENT),
       mAttrChange(0)
   {

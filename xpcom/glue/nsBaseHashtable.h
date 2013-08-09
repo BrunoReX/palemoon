@@ -42,9 +42,9 @@ private:
  * @param KeyClass a wrapper-class for the hashtable key, see nsHashKeys.h
  *   for a complete specification.
  * @param DataType the datatype stored in the hashtable,
- *   for example, PRUint32 or nsCOMPtr.  If UserDataType is not the same,
+ *   for example, uint32_t or nsCOMPtr.  If UserDataType is not the same,
  *   DataType must implicitly cast to UserDataType
- * @param UserDataType the user sees, for example PRUint32 or nsISupports*
+ * @param UserDataType the user sees, for example uint32_t or nsISupports*
  */
 template<class KeyClass,class DataType,class UserDataType>
 class nsBaseHashtable :
@@ -65,13 +65,13 @@ public:
    * locking on all class methods
    * @return    true if the object was initialized properly.
    */
-  void Init(PRUint32 initSize = PL_DHASH_MIN_SIZE)
+  void Init(uint32_t initSize = PL_DHASH_MIN_SIZE)
   { nsTHashtable<EntryType>::Init(initSize); }
 
   bool Init(const fallible_t&) NS_WARN_UNUSED_RESULT
   { return Init(PL_DHASH_MIN_SIZE, fallible_t()); }
 
-  bool Init(PRUint32 initSize, const fallible_t&) NS_WARN_UNUSED_RESULT
+  bool Init(uint32_t initSize, const fallible_t&) NS_WARN_UNUSED_RESULT
   { return nsTHashtable<EntryType>::Init(initSize, fallible_t()); }
 
 
@@ -87,7 +87,7 @@ public:
    * Return the number of entries in the table.
    * @return    number of entries
    */
-  PRUint32 Count() const
+  uint32_t Count() const
   { return nsTHashtable<EntryType>::Count(); }
 
   /**
@@ -99,7 +99,7 @@ public:
    * @return true if the key exists. If key does not exist, pData is not
    *   modified.
    */
-  bool Get(KeyType aKey, UserDataType* pData NS_OUTPARAM) const
+  bool Get(KeyType aKey, UserDataType* pData) const
   {
     EntryType* ent = this->GetEntry(aKey);
 
@@ -113,19 +113,19 @@ public:
   }
 
   /**
-   * For pointer types, get the value, returning nsnull if the entry is not
+   * For pointer types, get the value, returning nullptr if the entry is not
    * present in the table.
    *
    * @param aKey the key to retrieve
-   * @return The found value, or nsnull if no entry was found with the given key.
-   * @note If nsnull values are stored in the table, it is not possible to
-   *       distinguish between a nsnull value and a missing entry.
+   * @return The found value, or nullptr if no entry was found with the given key.
+   * @note If nullptr values are stored in the table, it is not possible to
+   *       distinguish between a nullptr value and a missing entry.
    */
   UserDataType Get(KeyType aKey) const
   {
     EntryType* ent = this->GetEntry(aKey);
     if (!ent)
-      return nsnull;
+      return 0;
 
     return ent->mData;
   }
@@ -179,7 +179,7 @@ public:
    * @param enumFunc enumeration callback
    * @param userArg passed unchanged to the EnumReadFunction
    */
-  PRUint32 EnumerateRead(EnumReadFunction enumFunc, void* userArg) const
+  uint32_t EnumerateRead(EnumReadFunction enumFunc, void* userArg) const
   {
     NS_ASSERTION(this->mTable.entrySize,
                  "nsBaseHashtable was not initialized properly.");
@@ -212,7 +212,7 @@ public:
    * @param enumFunc enumeration callback
    * @param userArg passed unchanged to the EnumFunction
    */
-  PRUint32 Enumerate(EnumFunction enumFunc, void* userArg)
+  uint32_t Enumerate(EnumFunction enumFunc, void* userArg)
   {
     NS_ASSERTION(this->mTable.entrySize,
                  "nsBaseHashtable was not initialized properly.");
@@ -244,8 +244,27 @@ public:
                                     void*             userArg);
 
   /**
+   * Measure the size of the table's entry storage and the table itself.
+   * If |sizeOfEntryExcludingThis| is non-nullptr, measure the size of things
+   * pointed to by entries.
+   *
+   * @param    sizeOfEntryExcludingThis
+   *           the <code>SizeOfEntryExcludingThisFun</code> function to call
+   * @param    mallocSizeOf the function used to meeasure heap-allocated blocks
+   * @param    userArg a point to pass to the
+   *           <code>SizeOfEntryExcludingThisFun</code> function
+   * @return   the summed size of the entries, the table, and the table's storage
+   */
+  size_t SizeOfIncludingThis(SizeOfEntryExcludingThisFun sizeOfEntryExcludingThis,
+                             nsMallocSizeOfFun mallocSizeOf, void *userArg = nullptr)
+  {
+    return mallocSizeOf(this) + this->SizeOfExcludingThis(sizeOfEntryExcludingThis,
+                                                          mallocSizeOf, userArg);
+  }
+
+  /**
    * Measure the size of the table's entry storage, and if
-   * |sizeOfEntryExcludingThis| is non-nsnull, measure the size of things pointed
+   * |sizeOfEntryExcludingThis| is non-nullptr, measure the size of things pointed
    * to by entries.
    * 
    * @param     sizeOfEntryExcludingThis the
@@ -256,7 +275,7 @@ public:
    * @return    the summed size of all the entries
    */
   size_t SizeOfExcludingThis(SizeOfEntryExcludingThisFun sizeOfEntryExcludingThis,
-                             nsMallocSizeOfFun mallocSizeOf, void *userArg = nsnull) const
+                             nsMallocSizeOfFun mallocSizeOf, void *userArg = nullptr) const
   {
     if (!IsInitialized()) {
       return 0;
@@ -283,7 +302,7 @@ protected:
 
   static PLDHashOperator s_EnumReadStub(PLDHashTable    *table,
                                         PLDHashEntryHdr *hdr,
-                                        PRUint32         number,
+                                        uint32_t         number,
                                         void            *arg);
 
   struct s_EnumArgs
@@ -294,7 +313,7 @@ protected:
 
   static PLDHashOperator s_EnumStub(PLDHashTable      *table,
                                     PLDHashEntryHdr   *hdr,
-                                    PRUint32           number,
+                                    uint32_t           number,
                                     void              *arg);
 
   struct s_SizeOfArgs
@@ -326,18 +345,18 @@ public:
   typedef typename
     nsBaseHashtable<KeyClass,DataType,UserDataType>::EnumReadFunction EnumReadFunction;
 
-  nsBaseHashtableMT() : mLock(nsnull) { }
+  nsBaseHashtableMT() : mLock(nullptr) { }
   ~nsBaseHashtableMT();
 
-  void Init(PRUint32 initSize = PL_DHASH_MIN_SIZE);
-  bool IsInitialized() const { return mLock != nsnull; }
-  PRUint32 Count() const;
+  void Init(uint32_t initSize = PL_DHASH_MIN_SIZE);
+  bool IsInitialized() const { return mLock != nullptr; }
+  uint32_t Count() const;
   bool Get(KeyType aKey, UserDataType* pData) const;
   void Put(KeyType aKey, UserDataType aData);
   void Remove(KeyType aKey);
 
-  PRUint32 EnumerateRead(EnumReadFunction enumFunc, void* userArg) const;
-  PRUint32 Enumerate(EnumFunction enumFunc, void* userArg);
+  uint32_t EnumerateRead(EnumReadFunction enumFunc, void* userArg) const;
+  uint32_t Enumerate(EnumFunction enumFunc, void* userArg);
   void Clear();
 
 protected:
@@ -373,7 +392,7 @@ nsBaseHashtableET<KeyClass,DataType>::~nsBaseHashtableET()
 template<class KeyClass,class DataType,class UserDataType>
 PLDHashOperator
 nsBaseHashtable<KeyClass,DataType,UserDataType>::s_EnumReadStub
-  (PLDHashTable *table, PLDHashEntryHdr *hdr, PRUint32 number, void* arg)
+  (PLDHashTable *table, PLDHashEntryHdr *hdr, uint32_t number, void* arg)
 {
   EntryType* ent = static_cast<EntryType*>(hdr);
   s_EnumReadArgs* eargs = (s_EnumReadArgs*) arg;
@@ -392,7 +411,7 @@ nsBaseHashtable<KeyClass,DataType,UserDataType>::s_EnumReadStub
 template<class KeyClass,class DataType,class UserDataType>
 PLDHashOperator
 nsBaseHashtable<KeyClass,DataType,UserDataType>::s_EnumStub
-  (PLDHashTable *table, PLDHashEntryHdr *hdr, PRUint32 number, void* arg)
+  (PLDHashTable *table, PLDHashEntryHdr *hdr, uint32_t number, void* arg)
 {
   EntryType* ent = static_cast<EntryType*>(hdr);
   s_EnumArgs* eargs = (s_EnumArgs*) arg;
@@ -424,7 +443,7 @@ nsBaseHashtableMT<KeyClass,DataType,UserDataType>::~nsBaseHashtableMT()
 
 template<class KeyClass,class DataType,class UserDataType>
 void
-nsBaseHashtableMT<KeyClass,DataType,UserDataType>::Init(PRUint32 initSize)
+nsBaseHashtableMT<KeyClass,DataType,UserDataType>::Init(uint32_t initSize)
 {
   if (!nsTHashtable<EntryType>::IsInitialized())
     nsTHashtable<EntryType>::Init(initSize);
@@ -435,11 +454,11 @@ nsBaseHashtableMT<KeyClass,DataType,UserDataType>::Init(PRUint32 initSize)
 }
 
 template<class KeyClass,class DataType,class UserDataType>
-PRUint32
+uint32_t
 nsBaseHashtableMT<KeyClass,DataType,UserDataType>::Count() const
 {
   PR_Lock(this->mLock);
-  PRUint32 count = nsTHashtable<EntryType>::Count();
+  uint32_t count = nsTHashtable<EntryType>::Count();
   PR_Unlock(this->mLock);
 
   return count;
@@ -478,12 +497,12 @@ nsBaseHashtableMT<KeyClass,DataType,UserDataType>::Remove(KeyType aKey)
 }
 
 template<class KeyClass,class DataType,class UserDataType>
-PRUint32
+uint32_t
 nsBaseHashtableMT<KeyClass,DataType,UserDataType>::EnumerateRead
   (EnumReadFunction fEnumCall, void* userArg) const
 {
   PR_Lock(this->mLock);
-  PRUint32 count =
+  uint32_t count =
     nsBaseHashtable<KeyClass,DataType,UserDataType>::EnumerateRead(fEnumCall, userArg);
   PR_Unlock(this->mLock);
 
@@ -491,12 +510,12 @@ nsBaseHashtableMT<KeyClass,DataType,UserDataType>::EnumerateRead
 }
 
 template<class KeyClass,class DataType,class UserDataType>
-PRUint32
+uint32_t
 nsBaseHashtableMT<KeyClass,DataType,UserDataType>::Enumerate
   (EnumFunction fEnumCall, void* userArg)
 {
   PR_Lock(this->mLock);
-  PRUint32 count =
+  uint32_t count =
     nsBaseHashtable<KeyClass,DataType,UserDataType>::Enumerate(fEnumCall, userArg);
   PR_Unlock(this->mLock);
 

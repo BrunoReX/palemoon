@@ -117,7 +117,7 @@ private:
   }
 
   static JSBool
-  GetProperty(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, jsval* aVp)
+  GetProperty(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, JSMutableHandleValue aVp)
   {
     JSClass* classPtr = JS_GetClass(aObj);
     if (classPtr != &sClass) {
@@ -130,7 +130,7 @@ private:
     JS_ASSERT(JSID_IS_INT(aIdval));
     JS_ASSERT(JSID_TO_INT(aIdval) >= 0 && JSID_TO_INT(aIdval) < SLOT_COUNT);
 
-    *aVp = JS_GetReservedSlot(aObj, JSID_TO_INT(aIdval));
+    aVp.set(JS_GetReservedSlot(aObj, JSID_TO_INT(aIdval)));
     return true;
   }
 };
@@ -143,15 +143,15 @@ JSClass Navigator::sClass = {
 };
 
 JSPropertySpec Navigator::sProperties[] = {
-  { "appName", SLOT_appName, PROPERTY_FLAGS, GetProperty, 
-    js_GetterOnlyPropertyStub },
-  { "appVersion", SLOT_appVersion, PROPERTY_FLAGS, GetProperty, 
-    js_GetterOnlyPropertyStub },
-  { "platform", SLOT_platform, PROPERTY_FLAGS, GetProperty, 
-    js_GetterOnlyPropertyStub },
-  { "userAgent", SLOT_userAgent, PROPERTY_FLAGS, GetProperty, 
-    js_GetterOnlyPropertyStub },
-  { 0, 0, 0, NULL, NULL }
+  { "appName", SLOT_appName, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
+    JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
+  { "appVersion", SLOT_appVersion, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
+    JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
+  { "platform", SLOT_platform, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
+    JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
+  { "userAgent", SLOT_userAgent, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
+    JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
+  { 0, 0, 0, JSOP_NULLWRAPPER, JSOP_NULLWRAPPER }
 };
 
 } // anonymous namespace

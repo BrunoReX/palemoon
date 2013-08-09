@@ -11,10 +11,10 @@
 #include "nsTHashtable.h"
 #include "nsIObserver.h"
 #include "nsIX509Cert.h"
-#include "nsAutoPtr.h"
 #include "nsNSSCertificate.h"
 #include "nsString.h"
 #include "nsWeakReference.h"
+#include "mozilla/Attributes.h"
 
 class nsClientAuthRemember
 {
@@ -44,7 +44,7 @@ public:
 
 
 // hash entry class
-class nsClientAuthRememberEntry : public PLDHashEntryHdr
+class nsClientAuthRememberEntry MOZ_FINAL : public PLDHashEntryHdr
 {
   public:
     // Hash methods
@@ -88,8 +88,8 @@ class nsClientAuthRememberEntry : public PLDHashEntryHdr
     static PLDHashNumber HashKey(KeyTypePointer aKey)
     {
       // PL_DHashStringKey doesn't use the table parameter, so we can safely
-      // pass nsnull
-      return PL_DHashStringKey(nsnull, aKey);
+      // pass nullptr
+      return PL_DHashStringKey(nullptr, aKey);
     }
 
     enum { ALLOW_MEMMOVE = false };
@@ -106,8 +106,8 @@ class nsClientAuthRememberEntry : public PLDHashEntryHdr
     nsCString mHostWithCert;
 };
 
-class nsClientAuthRememberService : public nsIObserver,
-                                    public nsSupportsWeakReference
+class nsClientAuthRememberService MOZ_FINAL : public nsIObserver,
+                                              public nsSupportsWeakReference
 {
 public:
   NS_DECL_ISUPPORTS

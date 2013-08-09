@@ -13,7 +13,6 @@
 #include "nsIDOMWindow.h"
 #include "nsPIDOMWindow.h"
 #include "nsJSUtils.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsIJSContextStack.h"
 #include "nsGUIEvent.h"
 #include "nsEventDispatcher.h"
@@ -21,6 +20,7 @@
 #ifdef MOZ_JSDEBUGGER
 #include "jsdIDebuggerService.h"
 #endif
+#include "nsDOMClassInfoID.h"
 
 NS_IMPL_CYCLE_COLLECTION_1(nsEventListenerInfo, mListener)
 
@@ -67,26 +67,25 @@ NS_IMPL_ISUPPORTS1(nsEventListenerService, nsIEventListenerService)
 
 // Caller must root *aJSVal!
 bool
-nsEventListenerInfo::GetJSVal(JSContext* aCx, JSAutoEnterCompartment& aAc, jsval* aJSVal)
+nsEventListenerInfo::GetJSVal(JSContext* aCx, mozilla::Maybe<JSAutoCompartment>& aAc, jsval* aJSVal)
 {
   *aJSVal = JSVAL_NULL;
   nsCOMPtr<nsIXPConnectWrappedJS> wrappedJS = do_QueryInterface(mListener);
   if (wrappedJS) {
-    JSObject* object = nsnull;
-    if (NS_FAILED(wrappedJS->GetJSObject(&object)) || !aAc.enter(aCx, object)) {
+    JSObject* object = nullptr;
+    if (NS_FAILED(wrappedJS->GetJSObject(&object))) {
       return false;
     }
+    aAc.construct(aCx, object);
     *aJSVal = OBJECT_TO_JSVAL(object);
     return true;
   }
 
   nsCOMPtr<nsIJSEventListener> jsl = do_QueryInterface(mListener);
   if (jsl) {
-    JSObject *handler = jsl->GetHandler();
+    JSObject *handler = jsl->GetHandler().Ptr()->Callable();
     if (handler) {
-      if (!aAc.enter(aCx, handler)) {
-        return false;
-      }
+      aAc.construct(aCx, handler);
       *aJSVal = OBJECT_TO_JSVAL(handler);
       return true;
     }
@@ -107,7 +106,7 @@ nsEventListenerInfo::ToSource(nsAString& aResult)
       {
         // Extra block to finish the auto request before calling pop
         JSAutoRequest ar(cx);
-        JSAutoEnterCompartment ac;
+        mozilla::Maybe<JSAutoCompartment> ac;
         jsval v = JSVAL_NULL;
         if (GetJSVal(cx, ac, &v)) {
           JSString* str = JS_ValueToSource(cx, v);
@@ -129,7 +128,7 @@ nsEventListenerInfo::ToSource(nsAString& aResult)
 NS_IMETHODIMP
 nsEventListenerInfo::GetDebugObject(nsISupports** aRetVal)
 {
-  *aRetVal = nsnull;
+  *aRetVal = nullptr;
 
 #ifdef MOZ_JSDEBUGGER
   nsresult rv = NS_OK;
@@ -149,7 +148,7 @@ nsEventListenerInfo::GetDebugObject(nsISupports** aRetVal)
       {
         // Extra block to finish the auto request before calling pop
         JSAutoRequest ar(cx);
-        JSAutoEnterCompartment ac;
+        mozilla::Maybe<JSAutoCompartment> ac;
         jsval v = JSVAL_NULL;
         if (GetJSVal(cx, ac, &v)) {
           nsCOMPtr<jsdIValue> jsdValue;
@@ -168,12 +167,12 @@ nsEventListenerInfo::GetDebugObject(nsISupports** aRetVal)
 
 NS_IMETHODIMP
 nsEventListenerService::GetListenerInfoFor(nsIDOMEventTarget* aEventTarget,
-                                           PRUint32* aCount,
+                                           uint32_t* aCount,
                                            nsIEventListenerInfo*** aOutArray)
 {
   NS_ENSURE_ARG_POINTER(aEventTarget);
   *aCount = 0;
-  *aOutArray = nsnull;
+  *aOutArray = nullptr;
   nsCOMArray<nsIEventListenerInfo> listenerInfos;
   nsEventListenerManager* elm =
     aEventTarget->GetListenerManager(false);
@@ -181,7 +180,7 @@ nsEventListenerService::GetListenerInfoFor(nsIDOMEventTarget* aEventTarget,
     elm->GetListenerInfo(&listenerInfos);
   }
 
-  PRInt32 count = listenerInfos.Count();
+  int32_t count = listenerInfos.Count();
   if (count == 0) {
     return NS_OK;
   }
@@ -191,7 +190,7 @@ nsEventListenerService::GetListenerInfoFor(nsIDOMEventTarget* aEventTarget,
       nsMemory::Alloc(sizeof(nsIEventListenerInfo*) * count));
   NS_ENSURE_TRUE(*aOutArray, NS_ERROR_OUT_OF_MEMORY);
 
-  for (PRInt32 i = 0; i < count; ++i) {
+  for (int32_t i = 0; i < count; ++i) {
     NS_ADDREF((*aOutArray)[i] = listenerInfos[i]);
   }
   *aCount = count;
@@ -200,18 +199,18 @@ nsEventListenerService::GetListenerInfoFor(nsIDOMEventTarget* aEventTarget,
 
 NS_IMETHODIMP
 nsEventListenerService::GetEventTargetChainFor(nsIDOMEventTarget* aEventTarget,
-                                               PRUint32* aCount,
+                                               uint32_t* aCount,
                                                nsIDOMEventTarget*** aOutArray)
 {
   *aCount = 0;
-  *aOutArray = nsnull;
+  *aOutArray = nullptr;
   NS_ENSURE_ARG(aEventTarget);
   nsEvent event(true, NS_EVENT_TYPE_NULL);
   nsCOMArray<nsIDOMEventTarget> targets;
-  nsresult rv = nsEventDispatcher::Dispatch(aEventTarget, nsnull, &event,
-                                            nsnull, nsnull, nsnull, &targets);
+  nsresult rv = nsEventDispatcher::Dispatch(aEventTarget, nullptr, &event,
+                                            nullptr, nullptr, nullptr, &targets);
   NS_ENSURE_SUCCESS(rv, rv);
-  PRInt32 count = targets.Count();
+  int32_t count = targets.Count();
   if (count == 0) {
     return NS_OK;
   }
@@ -221,7 +220,7 @@ nsEventListenerService::GetEventTargetChainFor(nsIDOMEventTarget* aEventTarget,
       nsMemory::Alloc(sizeof(nsIDOMEventTarget*) * count));
   NS_ENSURE_TRUE(*aOutArray, NS_ERROR_OUT_OF_MEMORY);
 
-  for (PRInt32 i = 0; i < count; ++i) {
+  for (int32_t i = 0; i < count; ++i) {
     NS_ADDREF((*aOutArray)[i] = targets[i]);
   }
   *aCount = count;
@@ -251,7 +250,7 @@ nsEventListenerService::AddSystemEventListener(nsIDOMEventTarget *aTarget,
   nsEventListenerManager* manager = aTarget->GetListenerManager(true);
   NS_ENSURE_STATE(manager);
 
-  PRInt32 flags = aUseCapture ? NS_EVENT_FLAG_CAPTURE |
+  int32_t flags = aUseCapture ? NS_EVENT_FLAG_CAPTURE |
                                 NS_EVENT_FLAG_SYSTEM_EVENT :
                                 NS_EVENT_FLAG_BUBBLE |
                                 NS_EVENT_FLAG_SYSTEM_EVENT;
@@ -270,13 +269,42 @@ nsEventListenerService::RemoveSystemEventListener(nsIDOMEventTarget *aTarget,
 
   nsEventListenerManager* manager = aTarget->GetListenerManager(false);
   if (manager) {
-    PRInt32 flags = aUseCapture ? NS_EVENT_FLAG_CAPTURE |
+    int32_t flags = aUseCapture ? NS_EVENT_FLAG_CAPTURE |
                                   NS_EVENT_FLAG_SYSTEM_EVENT :
                                   NS_EVENT_FLAG_BUBBLE |
                                   NS_EVENT_FLAG_SYSTEM_EVENT;
     manager->RemoveEventListenerByType(aListener, aType, flags);
   }
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsEventListenerService::AddListenerForAllEvents(nsIDOMEventTarget* aTarget,
+                                                nsIDOMEventListener* aListener,
+                                                bool aUseCapture,
+                                                bool aWantsUntrusted,
+                                                bool aSystemEventGroup)
+{
+  NS_ENSURE_STATE(aTarget && aListener);
+  nsEventListenerManager* manager = aTarget->GetListenerManager(true);
+  NS_ENSURE_STATE(manager);
+  manager->AddListenerForAllEvents(aListener, aUseCapture, aWantsUntrusted,
+                               aSystemEventGroup);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsEventListenerService::RemoveListenerForAllEvents(nsIDOMEventTarget* aTarget,
+                                                   nsIDOMEventListener* aListener,
+                                                   bool aUseCapture,
+                                                   bool aSystemEventGroup)
+{
+  NS_ENSURE_STATE(aTarget && aListener);
+  nsEventListenerManager* manager = aTarget->GetListenerManager(false);
+  if (manager) {
+    manager->RemoveListenerForAllEvents(aListener, aUseCapture, aSystemEventGroup);
+  }
   return NS_OK;
 }
 

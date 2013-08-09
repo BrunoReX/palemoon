@@ -7,13 +7,16 @@
 #define TypeInState_h__
 
 #include "nsCOMPtr.h"
-#include "nsIDOMNode.h"
-#include "nsISelection.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsISelectionListener.h"
-#include "nsEditProperty.h"
+#include "nsISupportsImpl.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "nsCycleCollectionParticipant.h"
+#include "nscore.h"
+
+class nsIAtom;
+class nsIDOMNode;
+class nsISelection;
 
 struct PropItem
 {
@@ -60,28 +63,28 @@ public:
   //**************************************************************************
   //    TakeRelativeFontSize: hands back relative font value, which is then
   //                          cleared out.
-  PRInt32 TakeRelativeFontSize();
+  int32_t TakeRelativeFontSize();
 
-  nsresult GetTypingState(bool &isSet, bool &theSetting, nsIAtom *aProp);
-  nsresult GetTypingState(bool &isSet, bool &theSetting, nsIAtom *aProp, 
-                          const nsString &aAttr, nsString* outValue);
+  void GetTypingState(bool &isSet, bool &theSetting, nsIAtom *aProp);
+  void GetTypingState(bool &isSet, bool &theSetting, nsIAtom *aProp,
+                      const nsString &aAttr, nsString* outValue);
 
-  static   bool FindPropInList(nsIAtom *aProp, const nsAString &aAttr, nsAString *outValue, nsTArray<PropItem*> &aList, PRInt32 &outIndex);
+  static   bool FindPropInList(nsIAtom *aProp, const nsAString &aAttr, nsAString *outValue, nsTArray<PropItem*> &aList, int32_t &outIndex);
 
 protected:
 
-  nsresult RemovePropFromSetList(nsIAtom* aProp, const nsAString& aAttr);
-  nsresult RemovePropFromClearedList(nsIAtom* aProp, const nsAString& aAttr);
+  void RemovePropFromSetList(nsIAtom* aProp, const nsAString& aAttr);
+  void RemovePropFromClearedList(nsIAtom* aProp, const nsAString& aAttr);
   bool IsPropSet(nsIAtom* aProp, const nsAString& aAttr, nsAString* outValue);
-  bool IsPropSet(nsIAtom* aProp, const nsAString& aAttr, nsAString* outValue, PRInt32& outIndex);
+  bool IsPropSet(nsIAtom* aProp, const nsAString& aAttr, nsAString* outValue, int32_t& outIndex);
   bool IsPropCleared(nsIAtom* aProp, const nsAString& aAttr);
-  bool IsPropCleared(nsIAtom* aProp, const nsAString& aAttr, PRInt32& outIndex);
+  bool IsPropCleared(nsIAtom* aProp, const nsAString& aAttr, int32_t& outIndex);
 
   nsTArray<PropItem*> mSetArray;
   nsTArray<PropItem*> mClearedArray;
-  PRInt32 mRelativeFontSize;
+  int32_t mRelativeFontSize;
   nsCOMPtr<nsIDOMNode> mLastSelectionContainer;
-  PRInt32 mLastSelectionOffset;
+  int32_t mLastSelectionOffset;
   
   friend class nsHTMLEditRules;
 };

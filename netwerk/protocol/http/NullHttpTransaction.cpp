@@ -12,29 +12,23 @@
 namespace mozilla {
 namespace net {
 
-NS_IMPL_THREADSAFE_ISUPPORTS0(NullHttpTransaction);
+NS_IMPL_THREADSAFE_ISUPPORTS0(NullHttpTransaction)
 
 NullHttpTransaction::NullHttpTransaction(nsHttpConnectionInfo *ci,
                                          nsIInterfaceRequestor *callbacks,
-                                         nsIEventTarget *target,
-                                         PRUint8 caps)
+                                         uint8_t caps)
   : mStatus(NS_OK)
   , mCaps(caps | NS_HTTP_ALLOW_KEEPALIVE)
   , mCallbacks(callbacks)
-  , mEventTarget(target)
   , mConnectionInfo(ci)
-  , mRequestHead(nsnull)
+  , mRequestHead(nullptr)
   , mIsDone(false)
 {
 }
 
 NullHttpTransaction::~NullHttpTransaction()
 {
-  if (mCallbacks) {
-    nsIInterfaceRequestor *cbs = nsnull;
-    mCallbacks.swap(cbs);
-    NS_ProxyRelease(mEventTarget, cbs);
-  }
+  mCallbacks = nullptr;
   delete mRequestHead;
 }
 
@@ -51,23 +45,16 @@ NullHttpTransaction::Connection()
 }
 
 void
-NullHttpTransaction::GetSecurityCallbacks(nsIInterfaceRequestor **outCB,
-                                           nsIEventTarget **outTarget)
+NullHttpTransaction::GetSecurityCallbacks(nsIInterfaceRequestor **outCB)
 {
   nsCOMPtr<nsIInterfaceRequestor> copyCB(mCallbacks);
   *outCB = copyCB;
   copyCB.forget();
-
-  if (outTarget) {
-    nsCOMPtr<nsIEventTarget> copyET(mEventTarget);
-    *outTarget = copyET;
-    copyET.forget();
-  }
 }
 
 void
 NullHttpTransaction::OnTransportStatus(nsITransport* transport,
-                                       nsresult status, PRUint64 progress)
+                                       nsresult status, uint64_t progress)
 {
 }
 
@@ -83,13 +70,13 @@ NullHttpTransaction::Status()
   return mStatus;
 }
 
-PRUint8
+uint8_t
 NullHttpTransaction::Caps()
 {
   return mCaps;
 }
 
-PRUint32
+uint64_t
 NullHttpTransaction::Available()
 {
   return 0;
@@ -97,7 +84,7 @@ NullHttpTransaction::Available()
 
 nsresult
 NullHttpTransaction::ReadSegments(nsAHttpSegmentReader *reader,
-                                  PRUint32 count, PRUint32 *countRead)
+                                  uint32_t count, uint32_t *countRead)
 {
   *countRead = 0;
   mIsDone = true;
@@ -106,13 +93,13 @@ NullHttpTransaction::ReadSegments(nsAHttpSegmentReader *reader,
 
 nsresult
 NullHttpTransaction::WriteSegments(nsAHttpSegmentWriter *writer,
-                                   PRUint32 count, PRUint32 *countWritten)
+                                   uint32_t count, uint32_t *countWritten)
 {
   *countWritten = 0;
   return NS_BASE_STREAM_CLOSED;
 }
 
-PRUint32
+uint32_t
 NullHttpTransaction::Http1xTransactionCount()
 {
   return 0;
@@ -127,7 +114,7 @@ NullHttpTransaction::RequestHead()
   if (!mRequestHead) {
     mRequestHead = new nsHttpRequestHead();
 
-    nsCAutoString hostHeader;
+    nsAutoCString hostHeader;
     nsCString host(mConnectionInfo->GetHost());
     nsresult rv = nsHttpHandler::GenerateHostPort(host,
                                                   mConnectionInfo->Port(),
@@ -152,7 +139,7 @@ NullHttpTransaction::TakeSubTransactions(
 }
 
 void
-NullHttpTransaction::SetSSLConnectFailed()
+NullHttpTransaction::SetProxyConnectFailed()
 {
 }
 
@@ -160,7 +147,7 @@ void
 NullHttpTransaction::Close(nsresult reason)
 {
   mStatus = reason;
-  mConnection = nsnull;
+  mConnection = nullptr;
   mIsDone = true;
 }
 
@@ -170,19 +157,19 @@ NullHttpTransaction::AddTransaction(nsAHttpTransaction *trans)
     return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-PRUint32
+uint32_t
 NullHttpTransaction::PipelineDepth()
 {
   return 0;
 }
 
 nsresult
-NullHttpTransaction::SetPipelinePosition(PRInt32 position)
+NullHttpTransaction::SetPipelinePosition(int32_t position)
 {
     return NS_OK;
 }
  
-PRInt32
+int32_t
 NullHttpTransaction::PipelinePosition()
 {
   return 1;

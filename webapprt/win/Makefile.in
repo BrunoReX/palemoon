@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH     = ../..
+DEPTH     = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir    = @srcdir@
 VPATH     = @srcdir@
@@ -19,11 +19,6 @@ USE_STATIC_LIBS = 1
 # Don't create a dependency on mozglue, which is impossible (difficult?)
 # to dynamically link into our executable, as we copy it to arbitrary locations.
 MOZ_GLUE_LDFLAGS =
-
-# mozglue uses mfbt's Assertions.cpp, which provides MOZ_ASSERT, which lots
-# of code in libxpcom uses, so we have to do the same.
-VPATH += $(topsrcdir)/mfbt
-CPPSRCS += Assertions.cpp
 
 LOCAL_INCLUDES += -I$(topsrcdir)/toolkit/xre
 LOCAL_INCLUDES += -I$(topsrcdir)/xpcom/base

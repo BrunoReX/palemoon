@@ -2,21 +2,21 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
-relativesrcdir  = browser/components/sessionstore/test
+relativesrcdir  = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
-include $(topsrcdir)/config/rules.mk
 
 # browser_506482.js is disabled because of frequent failures (bug 538672)
 # browser_526613.js is disabled because of frequent failures (bug 534489)
 # browser_589246.js is disabled for leaking browser windows (bug 752467)
 # browser_580512.js is disabled for leaking browser windows (bug 752467)
+# browser_586068-reload.js is disabled due to generally being broken (bug 809123, 797263)
 
-_BROWSER_TEST_FILES = \
+MOCHITEST_BROWSER_FILES = \
 	head.js \
 	browser_form_restore_events.js \
 	browser_form_restore_events_sample.html \
@@ -49,23 +49,13 @@ _BROWSER_TEST_FILES = \
 	browser_454908_sample.html \
 	browser_456342.js \
 	browser_456342_sample.xhtml \
-	browser_459906.js \
-	browser_459906_empty.html \
-	browser_459906_sample.html \
 	browser_461634.js \
-	browser_461743.js \
-	browser_461743_sample.html \
 	browser_463205.js \
 	browser_463205_helper.html \
 	browser_463205_sample.html \
 	browser_463206.js \
 	browser_463206_sample.html \
 	browser_464199.js \
-	browser_464620_a.js \
-	browser_464620_a.html \
-	browser_464620_b.js \
-	browser_464620_b.html \
-	browser_464620_xd.html \
 	browser_465215.js \
 	browser_465223.js \
 	browser_466937.js \
@@ -94,7 +84,14 @@ _BROWSER_TEST_FILES = \
 	browser_581593.js \
 	browser_581937.js \
 	browser_586147.js \
-	browser_586068-cascaded_restore.js \
+	browser_586068-apptabs.js \
+	browser_586068-apptabs_ondemand.js \
+	browser_586068-browser_state_interrupted.js \
+	browser_586068-cascade.js \
+	browser_586068-multi_window.js \
+	browser_586068-select.js \
+	browser_586068-window_state.js \
+	browser_586068-window_state_override.js \
 	browser_588426.js \
 	browser_590268.js \
 	browser_590563.js \
@@ -137,12 +134,31 @@ _BROWSER_TEST_FILES = \
 	browser_739805.js \
 	$(NULL)
 
+$(warning browser_459906.js is disabled for intermittent failures. Bug 766044)
+#	browser_459906_empty.html \
+#	browser_459906_sample.html \
+$(warning browser_461743.js is disabled for intermittent failures. Bug 765389)
+#	browser_461743_sample.html \
+
+# Disabled on Windows for frequent intermittent failures
+ifneq ($(OS_ARCH), WINNT)
+MOCHITEST_FILES += \
+	browser_464620_a.js \
+	browser_464620_a.html \
+	browser_464620_b.js \
+	browser_464620_b.html \
+	browser_464620_xd.html \
+	$(NULL)
+else
+$(warning browser_464620_a.js is disabled on Windows for intermittent failures. Bug 552424)
+$(warning browser_464620_b.js is disabled on Windows for intermittent failures. Bug 552424)
+endif
+
 ifneq ($(OS_ARCH),Darwin)
-_BROWSER_TEST_FILES += \
+MOCHITEST_BROWSER_FILES += \
 	browser_597071.js \
 	browser_625016.js \
 	$(NULL)
 endif
 
-libs:: $(_BROWSER_TEST_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/browser/$(relativesrcdir)
+include $(topsrcdir)/config/rules.mk

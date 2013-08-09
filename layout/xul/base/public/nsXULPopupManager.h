@@ -22,6 +22,7 @@
 #include "nsIReflowCallback.h"
 #include "nsThreadUtils.h"
 #include "nsStyleConsts.h"
+#include "mozilla/Attributes.h"
 
 // X.h defines KeyPress
 #ifdef KeyPress
@@ -141,8 +142,8 @@ public:
       mIsContext(aIsContext),
       mOnMenuBar(false),
       mIgnoreKeys(false),
-      mParent(nsnull),
-      mChild(nsnull)
+      mParent(nullptr),
+      mChild(nullptr)
   {
     NS_ASSERTION(aFrame, "null frame passed to nsMenuChainItem constructor");
     MOZ_COUNT_CTOR(nsMenuChainItem);
@@ -268,10 +269,10 @@ private:
   CloseMenuMode mCloseMenuMode;
 };
 
-class nsXULPopupManager : public nsIDOMEventListener,
-                          public nsIRollupListener,
-                          public nsITimerCallback,
-                          public nsIObserver
+class nsXULPopupManager MOZ_FINAL : public nsIDOMEventListener,
+                                    public nsIRollupListener,
+                                    public nsITimerCallback,
+                                    public nsIObserver
 {
 
 public:
@@ -285,10 +286,12 @@ public:
   NS_DECL_NSIDOMEVENTLISTENER
 
   // nsIRollupListener
-  virtual nsIContent* Rollup(PRUint32 aCount, bool aGetLastRolledUp = false);
+  virtual bool Rollup(uint32_t aCount, nsIContent** aLastRolledUp);
   virtual bool ShouldRollupOnMouseWheelEvent();
   virtual bool ShouldRollupOnMouseActivate();
-  virtual PRUint32 GetSubmenuWidgetChain(nsTArray<nsIWidget*> *aWidgetChain);
+  virtual uint32_t GetSubmenuWidgetChain(nsTArray<nsIWidget*> *aWidgetChain);
+  virtual void NotifyGeometryChange() {}
+  virtual nsIWidget* GetRollupWidget();
 
   static nsXULPopupManager* sInstance;
 
@@ -301,13 +304,6 @@ public:
   static nsXULPopupManager* GetInstance();
 
   void AdjustPopupsOnWindowChange(nsPIDOMWindow* aWindow);
-
-  // get the frame for a content node aContent if the frame's type
-  // matches aFrameType. Otherwise, return null. If aShouldFlush is true,
-  // then the frames are flushed before retrieving the frame.
-  nsIFrame* GetFrameOfTypeForContent(nsIContent* aContent,
-                                     nsIAtom* aFrameType,
-                                     bool aShouldFlush);
 
   // given a menu frame, find the prevous or next menu frame. If aPopup is
   // true then navigate a menupopup, from one item on the menu to the previous
@@ -356,7 +352,7 @@ public:
   // the rangeOffset of the event supplied to ShowPopup or ShowPopupAtScreen.
   // This is used by the implementation of nsIDOMXULDocument::GetPopupRangeParent
   // and nsIDOMXULDocument::GetPopupRangeOffset.
-  void GetMouseLocation(nsIDOMNode** aNode, PRInt32* aOffset);
+  void GetMouseLocation(nsIDOMNode** aNode, int32_t* aOffset);
 
   /**
    * Open a <menu> given its content node. If aSelectFirstItem is
@@ -380,7 +376,7 @@ public:
   void ShowPopup(nsIContent* aPopup,
                  nsIContent* aAnchorContent,
                  const nsAString& aPosition,
-                 PRInt32 aXPos, PRInt32 aYPos,
+                 int32_t aXPos, int32_t aYPos,
                  bool aIsContextMenu,
                  bool aAttributesOverride,
                  bool aSelectFirstItem,
@@ -397,7 +393,7 @@ public:
    * cursor.
    */
   void ShowPopupAtScreen(nsIContent* aPopup,
-                         PRInt32 aXPos, PRInt32 aYPos,
+                         int32_t aXPos, int32_t aYPos,
                          bool aIsContextMenu,
                          nsIDOMEvent* aTriggerEvent);
 
@@ -409,7 +405,7 @@ public:
    */
   void ShowTooltipAtScreen(nsIContent* aPopup,
                            nsIContent* aTriggerContent,
-                           PRInt32 aXPos, PRInt32 aYPos);
+                           int32_t aXPos, int32_t aYPos);
 
   /**
    * This method is provided only for compatibility with an older popup API.
@@ -421,7 +417,7 @@ public:
                                 nsIContent* aAnchorContent,
                                 nsAString& aAnchor,
                                 nsAString& aAlign,
-                                PRInt32 aXPos, PRInt32 aYPos,
+                                int32_t aXPos, int32_t aYPos,
                                 bool aIsContextMenu);
 
   /*
@@ -443,7 +439,7 @@ public:
                  bool aHideChain,
                  bool aDeselectMenu,
                  bool aAsynchronous,
-                 nsIContent* aLastPopup = nsnull);
+                 nsIContent* aLastPopup = nullptr);
 
   /**
    * Hide the popup aFrame. This method is called by the view manager when the
@@ -582,7 +578,7 @@ public:
    * Handles cursor navigation within a menu. Returns true if the key has
    * been handled.
    */
-  bool HandleKeyboardNavigation(PRUint32 aKeyCode);
+  bool HandleKeyboardNavigation(uint32_t aKeyCode);
 
   /**
    * Handle keyboard navigation within a menu popup specified by aFrame.
@@ -592,7 +588,7 @@ public:
   bool HandleKeyboardNavigationInPopup(nsMenuPopupFrame* aFrame,
                                          nsNavigationDirection aDir)
   {
-    return HandleKeyboardNavigationInPopup(nsnull, aFrame, aDir);
+    return HandleKeyboardNavigationInPopup(nullptr, aFrame, aDir);
   }
 
   nsresult KeyUp(nsIDOMKeyEvent* aKeyEvent);
@@ -602,9 +598,6 @@ public:
 protected:
   nsXULPopupManager();
   ~nsXULPopupManager();
-
-  // get the nsMenuFrame, if any, for the given content node
-  nsMenuFrame* GetMenuFrameForContent(nsIContent* aContent);
 
   // get the nsMenuPopupFrame, if any, for the given content node
   nsMenuPopupFrame* GetPopupFrameForContent(nsIContent* aContent, bool aShouldFlush);
@@ -729,7 +722,7 @@ protected:
 
   // range parent and offset set in SetTriggerEvent
   nsCOMPtr<nsIDOMNode> mRangeParent;
-  PRInt32 mRangeOffset;
+  int32_t mRangeOffset;
   // Device pixels relative to the showing popup's presshell's
   // root prescontext's root frame.
   nsIntPoint mCachedMousePoint;

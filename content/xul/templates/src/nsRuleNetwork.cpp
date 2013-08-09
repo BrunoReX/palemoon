@@ -20,11 +20,7 @@
 
 #include "nscore.h"
 #include "nsCOMPtr.h"
-#include "nsCRT.h"
-#include "nsIComponentManager.h"
-#include "nsIContent.h"
 #include "plhash.h"
-#include "nsReadableUtils.h"
 
 #include "prlog.h"
 #ifdef PR_LOGGING
@@ -121,10 +117,10 @@ nsAssignmentSet::Add(const nsAssignment& aAssignment)
     return NS_OK;
 }
 
-PRInt32
+int32_t
 nsAssignmentSet::Count() const
 {
-    PRInt32 count = 0;
+    int32_t count = 0;
     for (ConstIterator assignment = First(); assignment != Last(); ++assignment)
         ++count;
 
@@ -164,7 +160,7 @@ nsAssignmentSet::GetAssignmentFor(nsIAtom* aVariable, nsIRDFNode** aValue) const
         }
     }
 
-    *aValue = nsnull;
+    *aValue = nullptr;
     return false;
 }
 
@@ -209,7 +205,7 @@ Instantiation::Hash(const void* aKey)
 }
 
 
-PRIntn
+int
 Instantiation::Compare(const void* aLeft, const void* aRight)
 {
     const Instantiation* left  = static_cast<const Instantiation*>(aLeft);
@@ -331,7 +327,7 @@ TestNode::Propagate(InstantiationSet& aInstantiations,
 
     aTakenInstantiations = false;
 
-    nsresult rv = FilterInstantiations(aInstantiations, nsnull);
+    nsresult rv = FilterInstantiations(aInstantiations, nullptr);
     if (NS_FAILED(rv))
         return rv;
 
@@ -404,7 +400,7 @@ TestNode::Constrain(InstantiationSet& aInstantiations)
         rv = mParent->Constrain(aInstantiations);
 
         if (NS_SUCCEEDED(rv) && cantHandleYet)
-            rv = FilterInstantiations(aInstantiations, nsnull);
+            rv = FilterInstantiations(aInstantiations, nullptr);
     }
     else {
         PR_LOG(gXULTemplateLog, PR_LOG_DEBUG,
@@ -423,7 +419,7 @@ TestNode::Constrain(InstantiationSet& aInstantiations)
 //----------------------------------------------------------------------
 
 ReteNodeSet::ReteNodeSet()
-    : mNodes(nsnull), mCount(0), mCapacity(0)
+    : mNodes(nullptr), mCount(0), mCapacity(0)
 {
 }
 
@@ -435,17 +431,17 @@ ReteNodeSet::~ReteNodeSet()
 nsresult
 ReteNodeSet::Add(ReteNode* aNode)
 {
-    NS_PRECONDITION(aNode != nsnull, "null ptr");
+    NS_PRECONDITION(aNode != nullptr, "null ptr");
     if (! aNode)
         return NS_ERROR_NULL_POINTER;
 
     if (mCount >= mCapacity) {
-        PRInt32 capacity = mCapacity + 4;
+        int32_t capacity = mCapacity + 4;
         ReteNode** nodes = new ReteNode*[capacity];
         if (! nodes)
             return NS_ERROR_OUT_OF_MEMORY;
 
-        for (PRInt32 i = mCount - 1; i >= 0; --i)
+        for (int32_t i = mCount - 1; i >= 0; --i)
             nodes[i] = mNodes[i];
 
         delete[] mNodes;
@@ -462,7 +458,7 @@ nsresult
 ReteNodeSet::Clear()
 {
     delete[] mNodes;
-    mNodes = nsnull;
+    mNodes = nullptr;
     mCount = mCapacity = 0;
     return NS_OK;
 }

@@ -8,12 +8,14 @@
 #include "nsIDOMHTMLLIElement.h"
 #include "nsIDOMEventTarget.h"
 #include "nsGenericHTMLElement.h"
+#include "nsAttrValueInlines.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsMappedAttributes.h"
 #include "nsRuleData.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 class nsHTMLLIElement : public nsGenericHTMLElement,
                         public nsIDOMHTMLLIElement
@@ -26,18 +28,18 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLLIElement
   NS_DECL_NSIDOMHTMLLIELEMENT
 
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
@@ -62,8 +64,8 @@ nsHTMLLIElement::~nsHTMLLIElement()
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLLIElement, nsGenericElement)
-NS_IMPL_RELEASE_INHERITED(nsHTMLLIElement, nsGenericElement)
+NS_IMPL_ADDREF_INHERITED(nsHTMLLIElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLLIElement, Element)
 
 
 DOMCI_NODE_DATA(HTMLLIElement, nsHTMLLIElement)
@@ -102,7 +104,7 @@ static const nsAttrValue::EnumTable kOrderedListItemTypeTable[] = {
 };
 
 bool
-nsHTMLLIElement::ParseAttribute(PRInt32 aNamespaceID,
+nsHTMLLIElement::ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult)
@@ -144,7 +146,7 @@ nsHTMLLIElement::IsAttributeMapped(const nsIAtom* aAttribute) const
 {
   static const MappedAttributeEntry attributes[] = {
     { &nsGkAtoms::type },
-    { nsnull },
+    { nullptr },
   };
 
   static const MappedAttributeEntry* const map[] = {

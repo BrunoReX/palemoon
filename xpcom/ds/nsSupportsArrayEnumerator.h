@@ -7,10 +7,11 @@
 #define nsSupportsArrayEnumerator_h___
 
 #include "nsIEnumerator.h"
+#include "mozilla/Attributes.h"
 
 class nsISupportsArray;
 
-class nsSupportsArrayEnumerator : public nsIBidirectionalEnumerator {
+class nsSupportsArrayEnumerator MOZ_FINAL : public nsIBidirectionalEnumerator {
 public:
   NS_DECL_ISUPPORTS
 
@@ -27,7 +28,7 @@ private:
 
 protected:
   nsISupportsArray*     mArray;
-  PRInt32               mCursor;
+  int32_t               mCursor;
 
 };
 

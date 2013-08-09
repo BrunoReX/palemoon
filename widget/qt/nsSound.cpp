@@ -5,9 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <QApplication>
-#include <QSound>
 
 #include <string.h>
+#include <unistd.h>
 
 #include "nscore.h"
 #include "plstr.h"
@@ -25,7 +25,7 @@
 
 /* used with esd_open_sound */
 static int esdref = -1;
-static PRLibrary *elib = nsnull;
+static PRLibrary *elib = nullptr;
 
 // the following from esd.h
 
@@ -74,7 +74,7 @@ nsSound::Shutdown()
 {
     if (elib) {
         PR_UnloadLibrary(elib);
-        elib = nsnull;
+        elib = nullptr;
     }
 }
 
@@ -128,8 +128,8 @@ NS_METHOD nsSound::Beep()
 NS_IMETHODIMP nsSound::OnStreamComplete(nsIStreamLoader *aLoader,
                                         nsISupports *context,
                                         nsresult aStatus,
-                                        PRUint32 dataLen,
-                                        const PRUint8 *data)
+                                        uint32_t dataLen,
+                                        const uint8_t *data)
 {
 
 #define GET_WORD(s, i) (s[i+1] << 8) | s[i]
@@ -147,7 +147,7 @@ NS_IMETHODIMP nsSound::OnStreamComplete(nsIStreamLoader *aLoader,
                 if (channel) {
                       channel->GetURI(getter_AddRefs(uri));
                       if (uri) {
-                            nsCAutoString uriSpec;
+                            nsAutoCString uriSpec;
                             uri->GetSpec(uriSpec);
                             printf("Failed to load %s\n", uriSpec.get());
                       }
@@ -159,9 +159,9 @@ NS_IMETHODIMP nsSound::OnStreamComplete(nsIStreamLoader *aLoader,
     }
 
     int fd, mask = 0;
-    PRUint32 samples_per_sec = 0, avg_bytes_per_sec = 0, chunk_len = 0;
-    PRUint16 format, channels = 1, bits_per_sample = 0;
-    const PRUint8 *audio = nsnull;
+    uint32_t samples_per_sec = 0, avg_bytes_per_sec = 0, chunk_len = 0;
+    uint16_t format, channels = 1, bits_per_sample = 0;
+    const uint8_t *audio = nullptr;
     size_t audio_len = 0;
 
     if (dataLen < 4) {
@@ -181,7 +181,7 @@ NS_IMETHODIMP nsSound::OnStreamComplete(nsIStreamLoader *aLoader,
         return NS_ERROR_FAILURE;
     }
 
-    PRUint32 i = 12;
+    uint32_t i = 12;
     while (i + 7 < dataLen) {
         if (!memcmp(data + i, "fmt ", 4) && !chunk_len) {
             i += 4;
@@ -274,16 +274,16 @@ NS_IMETHODIMP nsSound::OnStreamComplete(nsIStreamLoader *aLoader,
     else 
         mask |= ESD_STEREO;
 
-    nsAutoArrayPtr<PRUint8> buf;
+    nsAutoArrayPtr<uint8_t> buf;
 
     // ESD only handle little-endian data. 
     // Swap the byte order if we're on a big-endian architecture.
 #ifdef IS_BIG_ENDIAN
     if (bits_per_sample != 8) {
-        buf = new PRUint8[audio_len];
+        buf = new uint8_t[audio_len];
         if (!buf)
             return NS_ERROR_OUT_OF_MEMORY;
-        for (PRUint32 j = 0; j + 2 < audio_len; j += 2) {
+        for (uint32_t j = 0; j + 2 < audio_len; j += 2) {
             buf[j]     = audio[j + 1];
             buf[j + 1] = audio[j];
         }
@@ -356,8 +356,8 @@ NS_IMETHODIMP nsSound::PlaySystemSound(const nsAString &aSoundAlias)
     nsresult rv;
     nsCOMPtr <nsIURI> fileURI;
 
-    // create a nsILocalFile and then a nsIFileURL from that
-    nsCOMPtr <nsILocalFile> soundFile;
+    // create a nsIFile and then a nsIFileURL from that
+    nsCOMPtr <nsIFile> soundFile;
     rv = NS_NewLocalFile(aSoundAlias, true, 
                          getter_AddRefs(soundFile));
     NS_ENSURE_SUCCESS(rv,rv);
@@ -373,7 +373,7 @@ NS_IMETHODIMP nsSound::PlaySystemSound(const nsAString &aSoundAlias)
 
 }
 
-NS_IMETHODIMP nsSound::PlayEventSound(PRUint32 aEventId)
+NS_IMETHODIMP nsSound::PlayEventSound(uint32_t aEventId)
 {
     return aEventId == EVENT_NEW_MAIL_RECEIVED ? Beep() : NS_OK;
 }

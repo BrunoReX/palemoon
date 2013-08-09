@@ -74,7 +74,7 @@ nsMozIconURI::GetSpec(nsACString &aSpec)
 
   if (mIconURL)
   {
-    nsCAutoString fileIconSpec;
+    nsAutoCString fileIconSpec;
     nsresult rv = mIconURL->GetSpec(fileIconSpec);
     NS_ENSURE_SUCCESS(rv, rv);
     aSpec += fileIconSpec;
@@ -142,7 +142,7 @@ void extractAttributeValue(const char * searchString, const char * attributeName
   if (searchString && attributeName)
   {
     // search the string for attributeName
-    PRUint32 attributeNameSize = strlen(attributeName);
+    uint32_t attributeNameSize = strlen(attributeName);
     const char * startOfAttribute = PL_strcasestr(searchString, attributeName);
     if (startOfAttribute &&
        ( *(startOfAttribute-1) == '?' || *(startOfAttribute-1) == '&') )
@@ -164,7 +164,7 @@ NS_IMETHODIMP
 nsMozIconURI::SetSpec(const nsACString &aSpec)
 {
   // Reset everything to default values.
-  mIconURL = nsnull;
+  mIconURL = nullptr;
   mSize = DEFAULT_IMAGE_SIZE;
   mContentType.Truncate();
   mFileName.Truncate();
@@ -172,21 +172,21 @@ nsMozIconURI::SetSpec(const nsACString &aSpec)
   mIconSize = -1;
   mIconState = -1;
 
-  nsCAutoString iconSpec(aSpec);
+  nsAutoCString iconSpec(aSpec);
   if (!Substring(iconSpec, 0, MOZICON_SCHEME_LEN).EqualsLiteral(MOZICON_SCHEME))
     return NS_ERROR_MALFORMED_URI;
 
-  PRInt32 questionMarkPos = iconSpec.Find("?");
-  if (questionMarkPos != -1 && static_cast<PRInt32>(iconSpec.Length()) > (questionMarkPos + 1))
+  int32_t questionMarkPos = iconSpec.Find("?");
+  if (questionMarkPos != -1 && static_cast<int32_t>(iconSpec.Length()) > (questionMarkPos + 1))
   {
     extractAttributeValue(iconSpec.get(), "contentType=", mContentType);
 
-    nsCAutoString sizeString;
+    nsAutoCString sizeString;
     extractAttributeValue(iconSpec.get(), "size=", sizeString);
     if (!sizeString.IsEmpty())
     {      
       const char *sizeStr = sizeString.get();
-      for (PRUint32 i = 0; i < ArrayLength(kSizeStrings); i++)
+      for (uint32_t i = 0; i < ArrayLength(kSizeStrings); i++)
       {
         if (PL_strcasecmp(sizeStr, kSizeStrings[i]) == 0)
         {
@@ -195,17 +195,17 @@ nsMozIconURI::SetSpec(const nsACString &aSpec)
         }
       }
 
-      PRInt32 sizeValue = atoi(sizeString.get());
+      int32_t sizeValue = atoi(sizeString.get());
       if (sizeValue)
         mSize = sizeValue;
     }
 
-    nsCAutoString stateString;
+    nsAutoCString stateString;
     extractAttributeValue(iconSpec.get(), "state=", stateString);
     if (!stateString.IsEmpty())
     {
       const char *stateStr = stateString.get();
-      for (PRUint32 i = 0; i < ArrayLength(kStateStrings); i++)
+      for (uint32_t i = 0; i < ArrayLength(kStateStrings); i++)
       {
         if (PL_strcasecmp(stateStr, kStateStrings[i]) == 0)
         {
@@ -216,13 +216,13 @@ nsMozIconURI::SetSpec(const nsACString &aSpec)
     }
   }
 
-  PRInt32 pathLength = iconSpec.Length() - MOZICON_SCHEME_LEN;
+  int32_t pathLength = iconSpec.Length() - MOZICON_SCHEME_LEN;
   if (questionMarkPos != -1)
     pathLength = questionMarkPos - MOZICON_SCHEME_LEN;
   if (pathLength < 3)
     return NS_ERROR_MALFORMED_URI;
 
-  nsCAutoString iconPath(Substring(iconSpec, MOZICON_SCHEME_LEN, pathLength));
+  nsAutoCString iconPath(Substring(iconSpec, MOZICON_SCHEME_LEN, pathLength));
 
   // Icon URI path can have three forms:
   // (1) //stock/<icon-identifier>
@@ -252,7 +252,7 @@ nsMozIconURI::SetSpec(const nsACString &aSpec)
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIURI> uri;
-  ioService->NewURI(iconPath, nsnull, nsnull, getter_AddRefs(uri));
+  ioService->NewURI(iconPath, nullptr, nullptr, getter_AddRefs(uri));
   mIconURL = do_QueryInterface(uri);
   if (mIconURL)
     mFileName.Truncate();
@@ -344,13 +344,13 @@ nsMozIconURI::SetHost(const nsACString &aHost)
 }
 
 NS_IMETHODIMP
-nsMozIconURI::GetPort(PRInt32 *aPort)
+nsMozIconURI::GetPort(int32_t *aPort)
 {
   return NS_ERROR_FAILURE;
 }
  
 NS_IMETHODIMP
-nsMozIconURI::SetPort(PRInt32 aPort)
+nsMozIconURI::SetPort(int32_t aPort)
 {
   return NS_ERROR_FAILURE;
 }
@@ -387,8 +387,8 @@ nsMozIconURI::Equals(nsIURI *other, bool *result)
   NS_ENSURE_ARG_POINTER(other);
   NS_PRECONDITION(result, "null pointer");
 
-  nsCAutoString spec1;
-  nsCAutoString spec2;
+  nsAutoCString spec1;
+  nsAutoCString spec2;
 
   other->GetSpec(spec2);
   GetSpec(spec1);
@@ -497,14 +497,14 @@ nsMozIconURI::SetIconURL(nsIURL* aFileUrl)
 }
 
 NS_IMETHODIMP
-nsMozIconURI::GetImageSize(PRUint32 * aImageSize)  // measured by # of pixels in a row. defaults to 16.
+nsMozIconURI::GetImageSize(uint32_t * aImageSize)  // measured by # of pixels in a row. defaults to 16.
 {
   *aImageSize = mSize;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsMozIconURI::SetImageSize(PRUint32 aImageSize)  // measured by # of pixels in a row. defaults to 16.
+nsMozIconURI::SetImageSize(uint32_t aImageSize)  // measured by # of pixels in a row. defaults to 16.
 {
   mSize = aImageSize;
   return NS_OK;
@@ -530,7 +530,7 @@ nsMozIconURI::GetFileExtension(nsACString &aFileExtension)
   // First, try to get the extension from mIconURL if we have one
   if (mIconURL)
   {
-    nsCAutoString fileExt;
+    nsAutoCString fileExt;
     if (NS_SUCCEEDED(mIconURL->GetFileExtension(fileExt)))
     {
       if (!fileExt.IsEmpty())

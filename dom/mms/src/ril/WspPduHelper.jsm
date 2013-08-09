@@ -6,7 +6,7 @@
 
 const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
-Cu.import("resource://gre/modules/wap_consts.js");
+Cu.import("resource://gre/modules/wap_consts.js", this);
 
 let DEBUG; // set to true to see debug messages
 
@@ -26,7 +26,7 @@ const ASCIIS = 128;
 /**
  * Error class for generic encoding/decoding failures.
  */
-function CodeError(message) {
+this.CodeError = function CodeError(message) {
   this.name = "CodeError";
   this.message = message || "Invalid format";
 }
@@ -56,7 +56,7 @@ NullCharError.prototype.constructor = NullCharError;
  * @param message [optional]
  *        A short description for the error.
  */
-function FatalCodeError(message) {
+this.FatalCodeError = function FatalCodeError(message) {
   this.name = "FatalCodeError";
   this.message = message || "Decoding fails";
 }
@@ -76,7 +76,7 @@ FatalCodeError.prototype.constructor = FatalCodeError;
  * @param message [optional]
  *        A short description for the error.
  */
-function NotWellKnownEncodingError(message) {
+this.NotWellKnownEncodingError = function NotWellKnownEncodingError(message) {
   this.name = "NotWellKnownEncodingError";
   this.message = message || "Not well known encoding";
 }
@@ -96,7 +96,7 @@ NotWellKnownEncodingError.prototype.constructor = NotWellKnownEncodingError;
  *
  * @throws FatalCodeError if headers[name] is undefined.
  */
-function ensureHeader(headers, name) {
+this.ensureHeader = function ensureHeader(headers, name) {
   let value = headers[name];
   // Header field might have a null value as NoValue
   if (value === undefined) {
@@ -130,7 +130,7 @@ function ensureHeader(headers, name) {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.1.2
  */
-function skipValue(data) {
+this.skipValue = function skipValue(data) {
   let begin = data.offset;
   let value = Octet.decode(data);
   if (value <= 31) {
@@ -165,7 +165,7 @@ function skipValue(data) {
  *
  * @return Decoded value.
  */
-function decodeAlternatives(data, options) {
+this.decodeAlternatives = function decodeAlternatives(data, options) {
   let begin = data.offset;
   for (let i = 2; i < arguments.length; i++) {
     try {
@@ -191,7 +191,7 @@ function decodeAlternatives(data, options) {
  * @param options
  *        Extra context for encoding.
  */
-function encodeAlternatives(data, value, options) {
+this.encodeAlternatives = function encodeAlternatives(data, value, options) {
   let begin = data.offset;
   for (let i = 3; i < arguments.length; i++) {
     try {
@@ -208,7 +208,7 @@ function encodeAlternatives(data, value, options) {
   }
 }
 
-let Octet = {
+this.Octet = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -289,6 +289,18 @@ let Octet = {
       data.array[data.offset++] = octet;
     }
   },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param octet
+   *        An octet array object.
+   */
+  encodeMultiple: function encodeMultiple(data, array) {
+    for (let i = 0; i < array.length; i++) {
+      this.encode(data, array[i]);
+    }
+  },
 };
 
 /**
@@ -303,7 +315,7 @@ let Octet = {
  *
  * @see RFC 2616 clause 2.2 Basic Rules
  */
-let Text = {
+this.Text = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -387,7 +399,7 @@ let Text = {
   },
 };
 
-let NullTerminatedTexts = {
+this.NullTerminatedTexts = {
   /**
    * Decode internal referenced null terminated text string.
    *
@@ -431,7 +443,7 @@ let NullTerminatedTexts = {
  *
  * @see RFC 2616 clause 2.2 Basic Rules
  */
-let Token = {
+this.Token = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -487,7 +499,7 @@ let Token = {
         // Fallback to throw CodeError
       } else {
         Octet.encode(data, token.charCodeAt(0));
-	return;
+        return;
       }
     }
 
@@ -507,7 +519,7 @@ let Token = {
  *
  * @see RFC 2396 Uniform Resource Indentifiers (URI)
  */
-let URIC = {
+this.URIC = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -543,7 +555,7 @@ let URIC = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.1
  */
-let TextString = {
+this.TextString = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -599,7 +611,7 @@ let TextString = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.1
  */
-let TokenText = {
+this.TokenText = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -642,7 +654,7 @@ let TokenText = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.1
  */
-let QuotedString = {
+this.QuotedString = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -659,6 +671,17 @@ let QuotedString = {
 
     return NullTerminatedTexts.decode(data);
   },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param str
+   *        A String to be encoded.
+   */
+  encode: function encode(data, str) {
+    Octet.encode(data, 34);
+    NullTerminatedTexts.encode(data, str);
+  },
 };
 
 /**
@@ -670,7 +693,7 @@ let QuotedString = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.1
  */
-let ShortInteger = {
+this.ShortInteger = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -697,7 +720,7 @@ let ShortInteger = {
    * @throws CodeError if the octet read is larger-equal than 0x80.
    */
   encode: function encode(data, value) {
-    if (value & 0x80) {
+    if (value >= 0x80) {
       throw new CodeError("Short-integer: invalid value " + value);
     }
 
@@ -716,7 +739,7 @@ let ShortInteger = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.1
  */
-let LongInteger = {
+this.LongInteger = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -757,12 +780,48 @@ let LongInteger = {
 
     return this.decodeMultiOctetInteger(data, length);
   },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param numOrArray
+   *        An octet array of less-equal than 30 elements or an integer
+   *        greater-equal than 128.
+   */
+  encode: function encode(data, numOrArray) {
+    if (typeof numOrArray === "number") {
+      let num = numOrArray;
+      if (num >= 0x1000000000000) {
+        throw new CodeError("Long-integer: number too large " + num);
+      }
+
+      let stack = [];
+      do {
+        stack.push(Math.floor(num % 256));
+        num = Math.floor(num / 256);
+      } while (num);
+
+      Octet.encode(data, stack.length);
+      while (stack.length) {
+        Octet.encode(data, stack.pop());
+      }
+      return;
+    }
+
+    let array = numOrArray;
+    if ((array.length < 1) || (array.length > 30)) {
+      throw new CodeError("Long-integer: invalid length " + array.length);
+    }
+
+    Octet.encode(data, array.length);
+    Octet.encodeMultiple(data, array);
+  },
 };
 
 /**
  * @see WAP-230-WSP-20010705-a clause 8.4.2.1
  */
-let UintVar = {
+this.UintVar = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -779,6 +838,30 @@ let UintVar = {
 
     return result;
   },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param value
+   *        An integer value.
+   */
+  encode: function encode(data, value) {
+    if (value < 0) {
+      throw new CodeError("UintVar: invalid value " + value);
+    }
+
+    let stack = [];
+    while (value >= 128) {
+      stack.push(Math.floor(value % 128));
+      value = Math.floor(value / 128);
+    }
+
+    while (stack.length) {
+      Octet.encode(data, value | 0x80);
+      value = stack.pop();
+    }
+    Octet.encode(data, value);
+  },
 };
 
 /**
@@ -791,7 +874,7 @@ let UintVar = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.1
  */
-let ConstrainedEncoding = {
+this.ConstrainedEncoding = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -800,6 +883,20 @@ let ConstrainedEncoding = {
    */
   decode: function decode(data) {
     return decodeAlternatives(data, null, NullTerminatedTexts, ShortInteger);
+  },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param value
+   *        An integer or a string value.
+   */
+  encode: function encode(data, value) {
+    if (typeof value == "number") {
+      ShortInteger.encode(data, value);
+    } else {
+      NullTerminatedTexts.encode(data, value);
+    }
   },
 };
 
@@ -811,7 +908,7 @@ let ConstrainedEncoding = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.2
  */
-let ValueLength = {
+this.ValueLength = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -832,6 +929,20 @@ let ValueLength = {
 
     throw new CodeError("Value-length: invalid value " + value);
   },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param value
+   */
+  encode: function encode(data, value) {
+    if (value <= 30) {
+      Octet.encode(data, value);
+    } else {
+      Octet.encode(data, 31);
+      UintVar.encode(data, value);
+    }
+  },
 };
 
 /**
@@ -839,7 +950,7 @@ let ValueLength = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.3
  */
-let NoValue = {
+this.NoValue = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -850,6 +961,19 @@ let NoValue = {
     Octet.decodeEqualTo(data, 0);
     return null;
   },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param value
+   *        A null or undefined value.
+   */
+  encode: function encode(data, value) {
+    if (value != null) {
+      throw new CodeError("No-value: invalid value " + value);
+    }
+    Octet.encode(data, 0);
+  },
 };
 
 /**
@@ -857,7 +981,7 @@ let NoValue = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.3
  */
-let TextValue = {
+this.TextValue = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -867,6 +991,16 @@ let TextValue = {
   decode: function decode(data) {
     return decodeAlternatives(data, null, NoValue, TokenText, QuotedString);
   },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param text
+   *        A null or undefined or text string.
+   */
+  encode: function encode(data, text) {
+    encodeAlternatives(data, text, null, NoValue, TokenText, QuotedString);
+  },
 };
 
 /**
@@ -874,7 +1008,7 @@ let TextValue = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.3
  */
-let IntegerValue = {
+this.IntegerValue = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -883,6 +1017,22 @@ let IntegerValue = {
    */
   decode: function decode(data) {
     return decodeAlternatives(data, null, ShortInteger, LongInteger);
+  },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param value
+   *        An integer value or an octet array of less-equal than 31 elements.
+   */
+  encode: function encode(data, value) {
+    if (typeof value === "number") {
+      encodeAlternatives(data, value, null, ShortInteger, LongInteger);
+    } else if (Array.isArray(value) || (value instanceof Uint8Array)) {
+      LongInteger.encode(data, value);
+    } else {
+      throw new CodeError("Integer-Value: invalid value type");
+    }
   },
 };
 
@@ -894,7 +1044,7 @@ let IntegerValue = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.3
  */
-let DateValue = {
+this.DateValue = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -915,6 +1065,21 @@ let DateValue = {
 
     return new Date(seconds * 1000);
   },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param date
+   *        A Date object.
+   */
+  encode: function encode(data, date) {
+    let seconds = date.getTime() / 1000;
+    if (seconds < 0) {
+      throw new CodeError("Date-value: negative seconds " + seconds);
+    }
+
+    LongInteger.encode(data, seconds);
+  },
 };
 
 /**
@@ -922,7 +1087,7 @@ let DateValue = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.3
  */
-let DeltaSecondsValue = IntegerValue;
+this.DeltaSecondsValue = IntegerValue;
 
 /**
  * Quality factor 0 and quality factors with one or two decimal digits are
@@ -932,7 +1097,7 @@ let DeltaSecondsValue = IntegerValue;
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.3
  */
-let QValue = {
+this.QValue = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -954,6 +1119,27 @@ let QValue = {
 
     throw new CodeError("Q-value: invalid value " + value);
   },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param value
+   *        An integer within the range 1..1099.
+   */
+  encode: function encode(data, value) {
+    if ((value < 0) || (value >= 1)) {
+      throw new CodeError("Q-value: invalid value " + value);
+    }
+
+    value *= 1000;
+    if ((value % 10) == 0) {
+      // Two digits only.
+      UintVar.encode(data, Math.floor(value / 10 + 1));
+    } else {
+      // Three digits.
+      UintVar.encode(data, Math.floor(value + 100));
+    }
+  },
 };
 
 /**
@@ -967,7 +1153,7 @@ let QValue = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.3
  */
-let VersionValue = {
+this.VersionValue = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -1007,6 +1193,20 @@ let VersionValue = {
 
     return major << 4 | minor;
   },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param version
+   *        A binary encoded version number.
+   */
+  encode: function encode(data, version) {
+    if ((version < 0x10) || (version >= 0x80)) {
+      throw new CodeError("Version-value: invalid version " + version);
+    }
+
+    ShortInteger.encode(data, version);
+  },
 };
 
 /**
@@ -1018,7 +1218,7 @@ let VersionValue = {
  * @see WAP-230-WSP-20010705-a clause 8.4.2.3
  * @see RFC 2616 clause 2.2 Basic Rules
  */
-let UriValue = {
+this.UriValue = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -1034,6 +1234,52 @@ let UriValue = {
       }
     } catch (e if e instanceof NullCharError) {
       return str;
+    }
+  },
+};
+
+/**
+ * Internal coder for "type" parameter.
+ *
+ *   Type-value = Constrained-encoding
+ *
+ * @see WAP-230-WSP-20010705-a table 38
+ */
+this.TypeValue = {
+  /**
+   * @param data
+   *        A wrapped object containing raw PDU data.
+   *
+   * @return Decoded content type string.
+   */
+  decode: function decode(data) {
+    let numOrStr = ConstrainedEncoding.decode(data);
+    if (typeof numOrStr == "string") {
+      return numOrStr.toLowerCase();
+    }
+
+    let number = numOrStr;
+    let entry = WSP_WELL_KNOWN_CONTENT_TYPES[number];
+    if (!entry) {
+      throw new NotWellKnownEncodingError(
+        "Constrained-media: not well known media " + number);
+    }
+
+    return entry.type;
+  },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param type
+   *        A content type string.
+   */
+  encode: function encode(data, type) {
+    let entry = WSP_WELL_KNOWN_CONTENT_TYPES[type.toLowerCase()];
+    if (entry) {
+      ShortInteger.encode(data, entry.number);
+    } else {
+      NullTerminatedTexts.encode(data, type);
     }
   },
 };
@@ -1060,7 +1306,7 @@ let UriValue = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.4
  */
-let Parameter = {
+this.Parameter = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -1189,6 +1435,63 @@ let Parameter = {
 
     return params;
   },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param param
+   *        An object containing `name` and `value` properties.
+   */
+  encodeTypedParameter: function decodeTypedParameter(data, param) {
+    let entry = WSP_WELL_KNOWN_PARAMS[param.name.toLowerCase()];
+    if (!entry) {
+      throw new NotWellKnownEncodingError(
+        "Typed-parameter: not well known parameter " + param.name);
+    }
+
+    IntegerValue.encode(data, entry.number);
+    encodeAlternatives(data, param.value, null,
+                       entry.coder, TextValue, TextString);
+  },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param param
+   *        An object containing `name` and `value` properties.
+   */
+  encodeUntypedParameter: function encodeUntypedParameter(data, param) {
+    TokenText.encode(data, param.name);
+    encodeAlternatives(data, param.value, null, IntegerValue, TextValue);
+  },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param param
+   *        An array of parameter objects.
+   */
+  encodeMultiple: function encodeMultiple(data, params) {
+    for (let name in params) {
+      this.encode(data, {name: name, value: params[name]});
+    }
+  },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param param
+   *        An object containing `name` and `value` properties.
+   */
+  encode: function encode(data, param) {
+    let begin = data.offset;
+    try {
+      this.encodeTypedParameter(data, param);
+    } catch (e) {
+      data.offset = begin;
+      this.encodeUntypedParameter(data, param);
+    }
+  },
 };
 
 /**
@@ -1197,7 +1500,7 @@ let Parameter = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.6
  */
-let Header = {
+this.Header = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -1224,6 +1527,22 @@ let Header = {
     // TODO: support header code page shift-sequence
     return this.decodeMessageHeader(data);
   },
+
+  encodeMessageHeader: function encodeMessageHeader(data, header) {
+    encodeAlternatives(data, header, null, WellKnownHeader, ApplicationHeader);
+  },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param header
+   *        An object containing two attributes: a string-typed `name` and a
+   *        `value` of arbitrary type.
+   */
+  encode: function encode(data, header) {
+    // TODO: support header code page shift-sequence
+    this.encodeMessageHeader(data, header);
+  },
 };
 
 /**
@@ -1232,7 +1551,7 @@ let Header = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.6
  */
-let WellKnownHeader = {
+this.WellKnownHeader = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -1272,6 +1591,24 @@ let WellKnownHeader = {
       value: value,
     };
   },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param header
+   *        An object containing two attributes: a string-typed `name` and a
+   *        `value` of arbitrary type.
+   */
+  encode: function encode(data, header) {
+    let entry = WSP_HEADER_FIELDS[header.name.toLowerCase()];
+    if (!entry) {
+      throw new NotWellKnownEncodingError(
+        "Well-known-header: not well known header " + header.name);
+    }
+
+    ShortInteger.encode(data, entry.number);
+    encodeAlternatives(data, header.value, null, entry.coder, TextValue);
+  },
 };
 
 /**
@@ -1280,7 +1617,7 @@ let WellKnownHeader = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.6
  */
-let ApplicationHeader = {
+this.ApplicationHeader = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -1337,7 +1674,7 @@ let ApplicationHeader = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.6
  */
-let FieldName = {
+this.FieldName = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -1364,6 +1701,21 @@ let FieldName = {
 
     return entry.name;
   },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param name
+   *        A field name string.
+   */
+  encode: function encode(data, name) {
+    let entry = WSP_HEADER_FIELDS[name.toLowerCase()];
+    if (entry) {
+      ShortInteger.encode(data, entry.number);
+    } else {
+      TokenText.encode(data, name);
+    }
+  },
 };
 
 /**
@@ -1374,7 +1726,7 @@ let FieldName = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.8
  */
-let AcceptCharsetValue = {
+this.AcceptCharsetValue = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -1467,6 +1819,21 @@ let AcceptCharsetValue = {
       return this.decodeAcceptCharsetGeneralForm(data);
     }
   },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param value
+   *        An object with a string property `charset`.
+   */
+  encodeAnyCharset: function encodeAnyCharset(data, value) {
+    if (!value || !value.charset || (value.charset === "*")) {
+      Octet.encode(data, 128);
+      return;
+    }
+
+    throw new CodeError("Any-charset: invalid value " + value);
+  },
 };
 
 /**
@@ -1474,7 +1841,7 @@ let AcceptCharsetValue = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.8
  */
-let WellKnownCharset = {
+this.WellKnownCharset = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -1509,6 +1876,28 @@ let WellKnownCharset = {
 
     return {charset: entry.name};
   },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param value
+   */
+  encode: function encode(data, value) {
+    let begin = data.offset;
+    try {
+      AcceptCharsetValue.encodeAnyCharset(data, value);
+      return;
+    } catch (e) {}
+
+    data.offset = begin;
+    let entry = WSP_WELL_KNOWN_CHARSETS[value.charset.toLowerCase()];
+    if (!entry) {
+      throw new NotWellKnownEncodingError(
+        "Well-known-charset: not well known charset " + value.charset);
+    }
+
+    IntegerValue.encode(data, entry.number);
+  },
 };
 
 /**
@@ -1526,7 +1915,7 @@ let WellKnownCharset = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.24
  */
-let ContentTypeValue = {
+this.ContentTypeValue = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -1539,23 +1928,8 @@ let ContentTypeValue = {
    *         is not registered or supported.
    */
   decodeConstrainedMedia: function decodeConstrainedMedia(data) {
-    let numOrStr = ConstrainedEncoding.decode(data);
-    if (typeof numOrStr == "string") {
-      return {
-        media: numOrStr.toLowerCase(),
-        params: null,
-      };
-    }
-
-    let number = numOrStr;
-    let entry = WSP_WELL_KNOWN_CONTENT_TYPES[number];
-    if (!entry) {
-      throw new NotWellKnownEncodingError(
-        "Constrained-media: not well known media " + number);
-    }
-
     return {
-      media: entry.type,
+      media: TypeValue.decode(data),
       params: null,
     };
   },
@@ -1654,6 +2028,73 @@ let ContentTypeValue = {
       return this.decodeContentGeneralForm(data);
     }
   },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param value
+   *        An object containing `media` and `params` properties.
+   */
+  encodeConstrainedMedia: function encodeConstrainedMedia(data, value) {
+    if (value.params) {
+      throw new CodeError("Constrained-media: should use general form instread");
+    }
+
+    TypeValue.encode(data, value.media);
+  },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param value
+   *        An object containing `media` and `params` properties.
+   */
+  encodeMediaType: function encodeMediaType(data, value) {
+    let entry = WSP_WELL_KNOWN_CONTENT_TYPES[value.media.toLowerCase()];
+    if (entry) {
+      IntegerValue.encode(data, entry.number);
+    } else {
+      NullTerminatedTexts.encode(data, value.media);
+    }
+
+    Parameter.encodeMultiple(data, value.params);
+  },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param value
+   *        An object containing `media` and `params` properties.
+   */
+  encodeContentGeneralForm: function encodeContentGeneralForm(data, value) {
+    let begin = data.offset;
+    this.encodeMediaType(data, value);
+
+    // Calculate how much octets will be written and seek back.
+    // TODO: use memmove, see bug 730873
+    let len = data.offset - begin;
+    data.offset = begin;
+
+    ValueLength.encode(data, len);
+    this.encodeMediaType(data, value);
+  },
+
+  /**
+   * @param data
+   *        A wrapped object to store encoded raw data.
+   * @param value
+   *        An object containing `media` and `params` properties.
+   */
+  encode: function encode(data, value) {
+    let begin = data.offset;
+
+    try {
+      this.encodeConstrainedMedia(data, value);
+    } catch (e) {
+      data.offset = begin;
+      this.encodeContentGeneralForm(data, value);
+    }
+  },
 };
 
 /**
@@ -1662,7 +2103,7 @@ let ContentTypeValue = {
  *
  * @see WAP-230-WSP-20010705-a clause 8.4.2.54
  */
-let ApplicationIdValue = {
+this.ApplicationIdValue = {
   /**
    * @param data
    *        A wrapped object containing raw PDU data.
@@ -1698,7 +2139,7 @@ let ApplicationIdValue = {
   },
 };
 
-let PduHelper = {
+this.PduHelper = {
   /**
    * Parse multiple header fields with end mark.
    *
@@ -1853,6 +2294,85 @@ let PduHelper = {
 
     return msg;
   },
+
+  /**
+   * @param multiStream
+   *        An exsiting nsIMultiplexInputStream.
+   * @param array
+   *        An octet array.
+   * @param length
+   *        Max number of octets to be coverted into an input stream.
+   */
+  appendArrayToMultiStream: function appendArrayToMultiStream(multiStream, array, length) {
+    let storageStream = Cc["@mozilla.org/storagestream;1"]
+                        .createInstance(Ci.nsIStorageStream);
+    storageStream.init(4096, length, null);
+
+    let boStream = Cc["@mozilla.org/binaryoutputstream;1"]
+                   .createInstance(Ci.nsIBinaryOutputStream);
+    boStream.setOutputStream(storageStream.getOutputStream(0));
+    boStream.writeByteArray(array, length);
+    boStream.close();
+
+    multiStream.appendStream(storageStream.newInputStream(0));
+  },
+
+  /**
+   * @param multiStream
+   *        An exsiting nsIMultiplexInputStream.
+   * @param parts
+   *        An array of objects representing multipart entries.
+   *
+   * @see WAP-230-WSP-20010705-a section 8.5
+   */
+  composeMultiPart: function composeMultiPart(multiStream, parts) {
+    // Encode multipart header
+    {
+      let data = {array: [], offset: 0};
+      UintVar.encode(data, parts.length);
+      debug("Encoded multipart header: " + JSON.stringify(data.array));
+      this.appendArrayToMultiStream(multiStream, data.array, data.offset);
+    }
+
+    // Encode each part
+    for (let i = 0; i < parts.length; i++) {
+      let part = parts[i];
+      let data = {array: [], offset: 0};
+
+      // Encode Content-Type
+      let contentType = part.headers["content-type"];
+      ContentTypeValue.encode(data, contentType);
+
+      // Encode other headers
+      if (Object.keys(part).length > 1) {
+        // Remove Content-Type temporarily
+        delete part.headers["content-type"];
+
+        for (let name in part.headers) {
+          Header.encode(data, {name: name, value: part.headers[name]});
+        }
+
+        // Restore Content-Type back
+        part.headers["content-type"] = contentType;
+      }
+
+      // Encode headersLen, DataLen
+      let headersLen = data.offset;
+      UintVar.encode(data, headersLen);
+      UintVar.encode(data, part.content.length);
+
+      // Move them to the beginning of encoded octet array.
+      let slice1 = data.array.slice(headersLen);
+      let slice2 = data.array.slice(0, headersLen);
+      data.array = slice1.concat(slice2);
+      debug("Encoded per-part header: " + JSON.stringify(data.array));
+
+      // Append per-part header
+      this.appendArrayToMultiStream(multiStream, data.array, data.offset);
+      // Append part content
+      this.appendArrayToMultiStream(multiStream, part.content, part.content.length);
+    }
+  },
 };
 
 // WSP Header Field Name Assignments
@@ -1860,7 +2380,7 @@ let PduHelper = {
 //       Deprecated items should only be supported for backward compatibility
 //       purpose.
 // @see WAP-230-WSP-20010705-a Appendix A. Assigned Numbers.
-const WSP_HEADER_FIELDS = (function () {
+this.WSP_HEADER_FIELDS = (function () {
   let names = {};
   function add(name, number, coder) {
     let entry = {
@@ -1871,6 +2391,7 @@ const WSP_HEADER_FIELDS = (function () {
     names[name] = names[number] = entry;
   }
 
+  // Encoding Version: 1.1
   //add("accept",               0x00);
   //add("accept-charset",       0x01); Deprecated
   //add("accept-encoding",      0x02); Deprecated
@@ -1918,6 +2439,8 @@ const WSP_HEADER_FIELDS = (function () {
   //add("warning",              0x2C);
   //add("www-authenticate",     0x2D);
   //add("content-disposition",  0x2E); Deprecated
+
+  // Encoding Version: 1.2
   add("x-wap-application-id",   0x2F, ApplicationIdValue);
   add("x-wap-content-uri",      0x30, UriValue);
   add("x-wap-initiator-uri",    0x31, UriValue);
@@ -1927,6 +2450,8 @@ const WSP_HEADER_FIELDS = (function () {
   add("profile",                0x35, UriValue);
   //add("profile-diff",         0x36);
   //add("profile-warning",      0x37); Deprecated
+
+  // Encoding Version: 1.3
   //add("expect",               0x38);
   //add("te",                   0x39);
   //add("trailer",              0x3A);
@@ -1939,6 +2464,8 @@ const WSP_HEADER_FIELDS = (function () {
   //add("set-cookie",           0x41);
   //add("cookie",               0x42);
   //add("encoding-version",     0x43);
+
+  // Encoding Version: 1.4
   //add("profile-warning",      0x44);
   //add("content-disposition",  0x45);
   //add("x-wap-security",       0x46);
@@ -1949,7 +2476,7 @@ const WSP_HEADER_FIELDS = (function () {
 
 // WSP Content Type Assignments
 // @see http://www.wapforum.org/wina
-const WSP_WELL_KNOWN_CONTENT_TYPES = (function () {
+this.WSP_WELL_KNOWN_CONTENT_TYPES = (function () {
   let types = {};
 
   function add(type, number) {
@@ -1961,7 +2488,13 @@ const WSP_WELL_KNOWN_CONTENT_TYPES = (function () {
   }
 
   // Well Known Values
+  // Encoding Version: 1.1
+  add("application/vnd.wap.multipart.mixed", 0x23);
+
+  // Encoding Version: 1.2
   add("application/vnd.wap.multipart.related", 0x33);
+
+  // Encoding Version: 1.4
   add("application/vnd.wap.mms-message", 0x3E);
 
   return types;
@@ -1971,7 +2504,7 @@ const WSP_WELL_KNOWN_CONTENT_TYPES = (function () {
 // Note: Items commented out are either deprecated or not implemented.
 //       Deprecated items should not be used.
 // @see WAP-230-WSP-20010705-a Appendix A. Assigned Numbers.
-const WSP_WELL_KNOWN_PARAMS = (function () {
+this.WSP_WELL_KNOWN_PARAMS = (function () {
   let params = {};
 
   function add(name, number, coder) {
@@ -1983,6 +2516,7 @@ const WSP_WELL_KNOWN_PARAMS = (function () {
     params[name] = params[number] = entry;
   }
 
+  // Encoding Version: 1.1
   add("q",                 0x00, QValue);
   add("charset",           0x01, WellKnownCharset);
   add("level",             0x02, VersionValue);
@@ -1991,23 +2525,29 @@ const WSP_WELL_KNOWN_PARAMS = (function () {
   //add("filename",        0x06); Deprecated
   add("differences",       0x07, FieldName);
   add("padding",           0x08, ShortInteger);
-  add("type",              0x09, ConstrainedEncoding);
+
+  // Encoding Version: 1.2
+  add("type",              0x09, TypeValue);
   add("start",             0x0A, TextValue); // Deprecated, but used in some carriers, eg. T-Mobile.
   //add("start-info",      0x0B); Deprecated
+
+  // Encoding Version: 1.3
   //add("comment",         0x0C); Deprecated
   //add("domain",          0x0D); Deprecated
   add("max-age",           0x0E, DeltaSecondsValue);
   //add("path",            0x0F); Deprecated
   add("secure",            0x10, NoValue);
+
+  // Encoding Version: 1.4
   add("sec",               0x11, ShortInteger);
   add("mac",               0x12, TextValue);
   add("creation-date",     0x13, DateValue);
   add("modification-date", 0x14, DateValue);
   add("read-date",         0x15, DateValue);
   add("size",              0x16, IntegerValue);
-  add("name",              0x17, TextValue);
+  //add("name",            0x17, TextValue); // Not supported in some carriers, eg. Hinet.
   add("filename",          0x18, TextValue);
-  add("start",             0x19, TextValue);
+  //add("start",           0x19, TextValue); // Not supported in some carriers, eg. Hinet.
   add("start-info",        0x1A, TextValue);
   add("comment",           0x1B, TextValue);
   add("domain",            0x1C, TextValue);
@@ -2019,7 +2559,7 @@ const WSP_WELL_KNOWN_PARAMS = (function () {
 // WSP Character Set Assignments
 // @see WAP-230-WSP-20010705-a Appendix A. Assigned Numbers.
 // @see http://www.iana.org/assignments/character-sets
-const WSP_WELL_KNOWN_CHARSETS = (function () {
+this.WSP_WELL_KNOWN_CHARSETS = (function () {
   let charsets = {};
 
   function add(name, number, converter) {
@@ -2042,7 +2582,7 @@ const WSP_WELL_KNOWN_CHARSETS = (function () {
 
 // OMNA PUSH Application ID
 // @see http://www.openmobilealliance.org/tech/omna/omna-push-app-id.aspx
-const OMNA_PUSH_APPLICATION_IDS = (function () {
+this.OMNA_PUSH_APPLICATION_IDS = (function () {
   let ids = {};
 
   function add(urn, number) {
@@ -2068,7 +2608,7 @@ if (DEBUG) {
   debug = function (s) {};
 }
 
-const EXPORTED_SYMBOLS = ALL_CONST_SYMBOLS.concat([
+this.EXPORTED_SYMBOLS = ALL_CONST_SYMBOLS.concat([
   // Constant values
   "WSP_HEADER_FIELDS",
   "WSP_WELL_KNOWN_CONTENT_TYPES",
@@ -2109,6 +2649,7 @@ const EXPORTED_SYMBOLS = ALL_CONST_SYMBOLS.concat([
   "QValue",
   "VersionValue",
   "UriValue",
+  "TypeValue",
   "Parameter",
   "Header",
   "WellKnownHeader",
@@ -2122,4 +2663,3 @@ const EXPORTED_SYMBOLS = ALL_CONST_SYMBOLS.concat([
   // Parser
   "PduHelper",
 ]);
-

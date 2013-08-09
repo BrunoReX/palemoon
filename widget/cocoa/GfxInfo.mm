@@ -10,7 +10,6 @@
 
 #include "GfxInfo.h"
 #include "nsUnicharUtils.h"
-#include "mozilla/FunctionTimer.h"
 #include "nsCocoaFeatures.h"
 #include "mozilla/Preferences.h"
 
@@ -30,6 +29,7 @@
 #define MAC_OS_X_VERSION_10_5_HEX   0x00001050
 #define MAC_OS_X_VERSION_10_6_HEX   0x00001060
 #define MAC_OS_X_VERSION_10_7_HEX   0x00001070
+#define MAC_OS_X_VERSION_10_8_HEX   0x00001080
 
 using namespace mozilla;
 using namespace mozilla::widget;
@@ -43,7 +43,7 @@ GfxInfo::GfxInfo()
 }
 
 static OperatingSystem
-OSXVersionToOperatingSystem(PRUint32 aOSXVersion)
+OSXVersionToOperatingSystem(uint32_t aOSXVersion)
 {
   switch (aOSXVersion & MAC_OS_X_VERSION_MAJOR_MASK) {
     case MAC_OS_X_VERSION_10_5_HEX:
@@ -52,6 +52,8 @@ OSXVersionToOperatingSystem(PRUint32 aOSXVersion)
       return DRIVER_OS_OS_X_10_6;
     case MAC_OS_X_VERSION_10_7_HEX:
       return DRIVER_OS_OS_X_10_7;
+    case MAC_OS_X_VERSION_10_8_HEX:
+      return DRIVER_OS_OS_X_10_8;
   }
 
   return DRIVER_OS_UNKNOWN;
@@ -68,12 +70,12 @@ static CFTypeRef SearchPortForProperty(io_registry_entry_t dspPort,
                                          kIORegistryIterateParents);
 }
 
-static PRUint32 IntValueOfCFData(CFDataRef d)
+static uint32_t IntValueOfCFData(CFDataRef d)
 {
-  PRUint32 value = 0;
+  uint32_t value = 0;
 
   if (d) {
-    const PRUint32 *vp = reinterpret_cast<const PRUint32*>(CFDataGetBytePtr(d));
+    const uint32_t *vp = reinterpret_cast<const uint32_t*>(CFDataGetBytePtr(d));
     if (vp != NULL)
       value = *vp;
   }
@@ -100,8 +102,6 @@ GfxInfo::GetDeviceInfo()
 nsresult
 GfxInfo::Init()
 {
-  NS_TIME_FUNCTION;
-
   nsresult rv = GfxInfoBase::Init();
 
   // Calling CGLQueryRendererInfo causes us to switch to the discrete GPU
@@ -152,20 +152,6 @@ NS_IMETHODIMP
 GfxInfo::GetD2DEnabled(bool *aEnabled)
 {
   return NS_ERROR_FAILURE;
-}
-
-NS_IMETHODIMP
-GfxInfo::GetAzureEnabled(bool *aEnabled)
-{
-  bool azure = false;
-  nsresult rv = mozilla::Preferences::GetBool("gfx.canvas.azure.enabled", &azure);
-  
-  if (NS_SUCCEEDED(rv) && azure) {
-    *aEnabled = true;
-  } else {
-    *aEnabled = false;
-  }
-  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -305,7 +291,7 @@ GfxInfo::AddCrashReportAnnotations()
 {
 #if defined(MOZ_CRASHREPORTER)
   nsString deviceID, vendorID;
-  nsCAutoString narrowDeviceID, narrowVendorID;
+  nsAutoCString narrowDeviceID, narrowVendorID;
 
   GetAdapterDeviceID(deviceID);
   CopyUTF16toUTF8(deviceID, narrowDeviceID);
@@ -318,7 +304,7 @@ GfxInfo::AddCrashReportAnnotations()
                                      narrowDeviceID);
   /* Add an App Note for now so that we get the data immediately. These
    * can go away after we store the above in the socorro db */
-  nsCAutoString note;
+  nsAutoCString note;
   /* AppendPrintf only supports 32 character strings, mrghh. */
   note.Append("AdapterVendorID: ");
   note.Append(narrowVendorID);
@@ -352,11 +338,11 @@ GfxInfo::GetGfxDriverInfo()
 }
 
 nsresult
-GfxInfo::GetFeatureStatusImpl(PRInt32 aFeature, 
-                              PRInt32* aStatus,
+GfxInfo::GetFeatureStatusImpl(int32_t aFeature, 
+                              int32_t* aStatus,
                               nsAString& aSuggestedDriverVersion,
                               const nsTArray<GfxDriverInfo>& aDriverInfo,
-                              OperatingSystem* aOS /* = nsnull */)
+                              OperatingSystem* aOS /* = nullptr */)
 {
   NS_ENSURE_ARG_POINTER(aStatus);
   aSuggestedDriverVersion.SetIsVoid(true);
@@ -367,15 +353,6 @@ GfxInfo::GetFeatureStatusImpl(PRInt32 aFeature,
 
   // Don't evaluate special cases when we're evaluating the downloaded blocklist.
   if (!aDriverInfo.Length()) {
-    // Many WebGL issues on 10.5, especially:
-    //   * bug 631258: WebGL shader paints using textures belonging to other processes on Mac OS 10.5
-    //   * bug 618848: Post process shaders and texture mapping crash OS X 10.5
-    if (aFeature == nsIGfxInfo::FEATURE_WEBGL_OPENGL &&
-        !nsCocoaFeatures::OnSnowLeopardOrLater()) {
-      *aStatus = nsIGfxInfo::FEATURE_BLOCKED_OS_VERSION;
-      return NS_OK;
-    }
-
     // The code around the following has been moved into the global blocklist.
 #if 0
       // CGL reports a list of renderers, some renderers are slow (e.g. software)
@@ -387,7 +364,7 @@ GfxInfo::GetFeatureStatusImpl(PRInt32 aFeature,
       // Therefore we need to explicitly blacklist non-OpenGL2 hardware, which could result in a software renderer
       // being used.
 
-      for (PRUint32 i = 0; i < ArrayLength(mRendererIDs); ++i) {
+      for (uint32_t i = 0; i < ArrayLength(mRendererIDs); ++i) {
         switch (mRendererIDs[i]) {
           case kCGLRendererATIRage128ID: // non-programmable
           case kCGLRendererATIRadeonID: // non-programmable
@@ -455,7 +432,7 @@ NS_IMETHODIMP GfxInfo::SpoofDriverVersion(const nsAString & aDriverVersion)
 }
 
 /* void spoofOSVersion (in unsigned long aVersion); */
-NS_IMETHODIMP GfxInfo::SpoofOSVersion(PRUint32 aVersion)
+NS_IMETHODIMP GfxInfo::SpoofOSVersion(uint32_t aVersion)
 {
   mOSXVersion = aVersion;
   return NS_OK;

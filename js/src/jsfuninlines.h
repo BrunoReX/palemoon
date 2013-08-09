@@ -14,11 +14,28 @@
 #include "vm/GlobalObject.h"
 
 #include "vm/ScopeObject-inl.h"
+#include "vm/String-inl.h"
 
 inline bool
 JSFunction::inStrictMode() const
 {
     return script()->strictModeCode;
+}
+
+inline void
+JSFunction::initAtom(JSAtom *atom)
+{
+    atom_.init(atom);
+}
+
+inline void
+JSFunction::setGuessedAtom(JSAtom *atom)
+{
+    JS_ASSERT(atom_ == NULL);
+    JS_ASSERT(atom != NULL);
+    JS_ASSERT(!hasGuessedAtom());
+    atom_ = atom;
+    flags |= HAS_GUESSED_ATOM;
 }
 
 inline JSObject *
@@ -43,11 +60,33 @@ JSFunction::initEnvironment(JSObject *obj)
 }
 
 inline void
+JSFunction::initNative(js::Native native, const JSJitInfo *data)
+{
+    JS_ASSERT(native);
+    u.n.native = native;
+    u.n.jitinfo = data;
+}
+
+inline const JSJitInfo *
+JSFunction::jitInfo() const
+{
+    JS_ASSERT(isNative());
+    return u.n.jitinfo;
+}
+
+inline void
+JSFunction::setJitInfo(const JSJitInfo *data)
+{
+    JS_ASSERT(isNative());
+    u.n.jitinfo = data;
+}
+
+inline void
 JSFunction::initializeExtended()
 {
     JS_ASSERT(isExtended());
 
-    JS_ASSERT(js::ArrayLength(toExtended()->extendedSlots) == 2);
+    JS_ASSERT(mozilla::ArrayLength(toExtended()->extendedSlots) == 2);
     toExtended()->extendedSlots[0].init(js::UndefinedValue());
     toExtended()->extendedSlots[1].init(js::UndefinedValue());
 }
@@ -55,14 +94,14 @@ JSFunction::initializeExtended()
 inline void
 JSFunction::setExtendedSlot(size_t which, const js::Value &val)
 {
-    JS_ASSERT(which < js::ArrayLength(toExtended()->extendedSlots));
+    JS_ASSERT(which < mozilla::ArrayLength(toExtended()->extendedSlots));
     toExtended()->extendedSlots[which] = val;
 }
 
 inline const js::Value &
 JSFunction::getExtendedSlot(size_t which) const
 {
-    JS_ASSERT(which < js::ArrayLength(toExtended()->extendedSlots));
+    JS_ASSERT(which < mozilla::ArrayLength(toExtended()->extendedSlots));
     return toExtended()->extendedSlots[which];
 }
 
@@ -115,6 +154,7 @@ IsNativeFunction(const js::Value &v, JSNative native)
 static JS_ALWAYS_INLINE bool
 ClassMethodIsNative(JSContext *cx, HandleObject obj, Class *clasp, HandleId methodid, JSNative native)
 {
+    JS_ASSERT(!obj->isProxy());
     JS_ASSERT(obj->getClass() == clasp);
 
     Value v;
@@ -143,7 +183,7 @@ IsConstructing(const Value *vp)
     JSObject *callee = &JS_CALLEE(cx, vp).toObject();
     if (callee->isFunction()) {
         JSFunction *fun = callee->toFunction();
-        JS_ASSERT((fun->flags & JSFUN_CONSTRUCTOR) != 0);
+        JS_ASSERT(fun->isNativeConstructor());
     } else {
         JS_ASSERT(callee->getClass()->construct != NULL);
     }
@@ -160,8 +200,9 @@ IsConstructing(CallReceiver call)
 inline const char *
 GetFunctionNameBytes(JSContext *cx, JSFunction *fun, JSAutoByteString *bytes)
 {
-    if (fun->atom)
-        return bytes->encode(cx, fun->atom);
+    JSAtom *atom = fun->atom();
+    if (atom)
+        return bytes->encode(cx, atom);
     return js_anonymous_str;
 }
 
@@ -206,34 +247,14 @@ CloneFunctionObjectIfNotSingleton(JSContext *cx, HandleFunction fun, HandleObjec
      * with its type in existence.
      */
     if (fun->hasSingletonType()) {
-        if (!JSObject::setParent(cx, fun, RootedObject(cx, SkipScopeParent(parent))))
+        Rooted<JSObject*> obj(cx, SkipScopeParent(parent));
+        if (!JSObject::setParent(cx, fun, obj))
             return NULL;
         fun->setEnvironment(parent);
         return fun;
     }
 
     return CloneFunctionObject(cx, fun, parent);
-}
-
-inline JSFunction *
-CloneFunctionObject(JSContext *cx, HandleFunction fun)
-{
-    /*
-     * Variant which makes an exact clone of fun, preserving parent and proto.
-     * Calling the above version CloneFunctionObject(cx, fun, fun->getParent())
-     * is not equivalent: API clients, including XPConnect, can reparent
-     * objects so that fun->global() != fun->getProto()->global().
-     * See ReparentWrapperIfFound.
-     */
-    JS_ASSERT(fun->getParent() && fun->getProto());
-
-    if (fun->hasSingletonType())
-        return fun;
-
-    return js_CloneFunctionObject(cx, fun,
-                                  RootedObject(cx, fun->environment()),
-                                  RootedObject(cx, fun->getProto()),
-                                  JSFunction::ExtendedFinalizeKind);
 }
 
 } /* namespace js */

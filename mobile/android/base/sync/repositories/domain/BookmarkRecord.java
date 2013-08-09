@@ -15,8 +15,6 @@ import org.mozilla.gecko.sync.NonArrayJSONException;
 import org.mozilla.gecko.sync.Utils;
 import org.mozilla.gecko.sync.repositories.android.RepoUtils;
 
-import android.util.Log;
-
 /**
  * Covers the fields used by all bookmark objects.
  * @author rnewman
@@ -180,7 +178,7 @@ public class BookmarkRecord extends Record {
       try {
         this.children = payload.getArray("children");
       } catch (NonArrayJSONException e) {
-        Log.e(LOG_TAG, "Got non-array children in bookmark record " + this.guid, e);
+        Logger.error(LOG_TAG, "Got non-array children in bookmark record " + this.guid, e);
         // Let's see if we can recover later by using the parentid pointers.
         this.children = new JSONArray();
       }
@@ -271,8 +269,9 @@ public class BookmarkRecord extends Record {
 
       if (isQuery()) {
         Map<String, String> parts = Utils.extractURIComponents(PLACES_URI_PREFIX, this.bookmarkURI);
-        putPayload(payload, "queryId", parts.get("queryId"));
-        putPayload(payload, "folderName", parts.get("folderName"));
+        putPayload(payload, "queryId", parts.get("queryId"), true);
+        putPayload(payload, "folderName", parts.get("folderName"), true);
+        putPayload(payload, "bmkUri", parts.get("uri"));
         return;
       }
 
@@ -422,7 +421,7 @@ public class BookmarkRecord extends Record {
       b.append(encode(originalURI));
       previous = true;
     }
-    if (p1 != null) {
+    if (p1 != null && v1 != null) {
       if (previous) {
         b.append("&");
       }
@@ -431,7 +430,7 @@ public class BookmarkRecord extends Record {
       b.append(encode(v1));
       previous = true;
     }
-    if (p2 != null) {
+    if (p2 != null && v2 != null) {
       if (previous) {
         b.append("&");
       }

@@ -7,12 +7,12 @@
 #ifndef COMPATIBILITY_MANAGER_H
 #define COMPATIBILITY_MANAGER_H
 
-#include "prtypes.h"
-
-class nsAccessNodeWrap;
+#include "mozilla/StandardInteger.h"
 
 namespace mozilla {
 namespace a11y {
+
+class nsAccessNodeWrap;
 
 /**
  * Used to get compatibility modes. Note, modes are computed at accessibility
@@ -72,7 +72,7 @@ private:
   };
 
 private:
-  static PRUint32 sConsumers;
+  static uint32_t sConsumers;
 };
 
 } // a11y namespace

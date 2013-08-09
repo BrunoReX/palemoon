@@ -27,6 +27,7 @@
 #include "nsINetworkLinkService.h"
 #include "nsAsyncRedirectVerifyHelper.h"
 #include "nsISpeculativeConnect.h"
+#include "mozilla/Attributes.h"
 
 #define NS_N(x) (sizeof(x)/sizeof(*x))
 
@@ -40,11 +41,11 @@ static const char gScheme[][sizeof("resource")] =
 
 class nsIPrefBranch;
 
-class nsIOService : public nsIIOService2
-                  , public nsIObserver
-                  , public nsINetUtil
-                  , public nsISpeculativeConnect
-                  , public nsSupportsWeakReference
+class nsIOService MOZ_FINAL : public nsIIOService2
+                            , public nsIObserver
+                            , public nsINetUtil
+                            , public nsISpeculativeConnect
+                            , public nsSupportsWeakReference
 {
 public:
     NS_DECL_ISUPPORTS
@@ -55,7 +56,7 @@ public:
     NS_DECL_NSISPECULATIVECONNECT
 
     // Gets the singleton instance of the IO Service, creating it as needed
-    // Returns nsnull on out of memory or failure to initialize.
+    // Returns nullptr on out of memory or failure to initialize.
     // Returns an addrefed pointer.
     static nsIOService* GetInstance();
 
@@ -67,7 +68,7 @@ public:
     // Called by channels before a redirect happens. This notifies the global
     // redirect observers.
     nsresult AsyncOnChannelRedirect(nsIChannel* oldChan, nsIChannel* newChan,
-                                    PRUint32 flags,
+                                    uint32_t flags,
                                     nsAsyncRedirectVerifyHelper *helper);
 
     // Gets the array of registered content sniffers
@@ -93,13 +94,13 @@ private:
 
     NS_HIDDEN_(nsresult) GetCachedProtocolHandler(const char *scheme,
                                                   nsIProtocolHandler* *hdlrResult,
-                                                  PRUint32 start=0,
-                                                  PRUint32 end=0);
+                                                  uint32_t start=0,
+                                                  uint32_t end=0);
     NS_HIDDEN_(nsresult) CacheProtocolHandler(const char *scheme,
                                               nsIProtocolHandler* hdlr);
 
     // Prefs wrangling
-    NS_HIDDEN_(void) PrefsChanged(nsIPrefBranch *prefs, const char *pref = nsnull);
+    NS_HIDDEN_(void) PrefsChanged(nsIPrefBranch *prefs, const char *pref = nullptr);
     NS_HIDDEN_(void) GetPrefBranch(nsIPrefBranch **);
     NS_HIDDEN_(void) ParsePortList(nsIPrefBranch *prefBranch, const char *pref, bool remove);
 
@@ -107,7 +108,7 @@ private:
     nsresult InitializeNetworkLinkService();
 
     // consolidated helper function
-    void LookupProxyInfo(nsIURI *aURI, nsIURI *aProxyURI, PRUint32 aProxyFlags,
+    void LookupProxyInfo(nsIURI *aURI, nsIURI *aProxyURI, uint32_t aProxyFlags,
                          nsCString *aScheme, nsIProxyInfo **outPI);
 
 private:
@@ -135,13 +136,13 @@ private:
     nsCategoryCache<nsIChannelEventSink> mChannelEventSinks;
     nsCategoryCache<nsIContentSniffer>   mContentSniffers;
 
-    nsTArray<PRInt32>                    mRestrictedPortList;
+    nsTArray<int32_t>                    mRestrictedPortList;
 
     bool                                 mAutoDialEnabled;
 public:
     // Used for all default buffer sizes that necko allocates.
-    static PRUint32   gDefaultSegmentSize;
-    static PRUint32   gDefaultSegmentCount;
+    static uint32_t   gDefaultSegmentSize;
+    static uint32_t   gDefaultSegmentCount;
 };
 
 /**

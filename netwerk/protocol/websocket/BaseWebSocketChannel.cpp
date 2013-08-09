@@ -13,7 +13,7 @@
 #include "nsStandardURL.h"
 
 #if defined(PR_LOGGING)
-PRLogModuleInfo *webSocketLog = nsnull;
+PRLogModuleInfo *webSocketLog = nullptr;
 #endif
 
 namespace mozilla {
@@ -133,7 +133,7 @@ BaseWebSocketChannel::GetScheme(nsACString &aScheme)
 }
 
 NS_IMETHODIMP
-BaseWebSocketChannel::GetDefaultPort(PRInt32 *aDefaultPort)
+BaseWebSocketChannel::GetDefaultPort(int32_t *aDefaultPort)
 {
   LOG(("BaseWebSocketChannel::GetDefaultPort() %p\n", this));
 
@@ -145,7 +145,7 @@ BaseWebSocketChannel::GetDefaultPort(PRInt32 *aDefaultPort)
 }
 
 NS_IMETHODIMP
-BaseWebSocketChannel::GetProtocolFlags(PRUint32 *aProtocolFlags)
+BaseWebSocketChannel::GetProtocolFlags(uint32_t *aProtocolFlags)
 {
   LOG(("BaseWebSocketChannel::GetProtocolFlags() %p\n", this));
 
@@ -156,11 +156,11 @@ BaseWebSocketChannel::GetProtocolFlags(PRUint32 *aProtocolFlags)
 
 NS_IMETHODIMP
 BaseWebSocketChannel::NewURI(const nsACString & aSpec, const char *aOriginCharset,
-                             nsIURI *aBaseURI, nsIURI **_retval NS_OUTPARAM)
+                             nsIURI *aBaseURI, nsIURI **_retval)
 {
   LOG(("BaseWebSocketChannel::NewURI() %p\n", this));
 
-  PRInt32 port;
+  int32_t port;
   nsresult rv = GetDefaultPort(&port);
   if (NS_FAILED(rv))
     return rv;
@@ -175,15 +175,15 @@ BaseWebSocketChannel::NewURI(const nsACString & aSpec, const char *aOriginCharse
 }
 
 NS_IMETHODIMP
-BaseWebSocketChannel::NewChannel(nsIURI *aURI, nsIChannel **_retval NS_OUTPARAM)
+BaseWebSocketChannel::NewChannel(nsIURI *aURI, nsIChannel **_retval)
 {
   LOG(("BaseWebSocketChannel::NewChannel() %p\n", this));
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-BaseWebSocketChannel::AllowPort(PRInt32 port, const char *scheme,
-                                bool *_retval NS_OUTPARAM)
+BaseWebSocketChannel::AllowPort(int32_t port, const char *scheme,
+                                bool *_retval)
 {
   LOG(("BaseWebSocketChannel::AllowPort() %p\n", this));
 

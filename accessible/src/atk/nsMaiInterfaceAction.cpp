@@ -9,6 +9,7 @@
 #include "Accessible-inl.h"
 #include "nsMai.h"
 #include "Role.h"
+#include "mozilla/Likely.h"
 
 #include "nsString.h"
 
@@ -39,11 +40,11 @@ getActionDescriptionCB(AtkAction *aAction, gint aActionIndex)
 {
   AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aAction));
   if (!accWrap)
-    return nsnull;
+    return nullptr;
 
   nsAutoString description;
   nsresult rv = accWrap->GetActionDescription(aActionIndex, description);
-  NS_ENSURE_SUCCESS(rv, nsnull);
+  NS_ENSURE_SUCCESS(rv, nullptr);
   return AccessibleWrap::ReturnString(description);
 }
 
@@ -52,11 +53,11 @@ getActionNameCB(AtkAction *aAction, gint aActionIndex)
 {
     AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aAction));
     if (!accWrap)
-        return nsnull;
+        return nullptr;
 
     nsAutoString autoStr;
     nsresult rv = accWrap->GetActionName(aActionIndex, autoStr);
-    NS_ENSURE_SUCCESS(rv, nsnull);
+    NS_ENSURE_SUCCESS(rv, nullptr);
     return AccessibleWrap::ReturnString(autoStr);
 }
 
@@ -65,7 +66,7 @@ getKeyBindingCB(AtkAction *aAction, gint aActionIndex)
 {
   AccessibleWrap* acc = GetAccessibleWrap(ATK_OBJECT(aAction));
   if (!acc)
-    return nsnull;
+    return nullptr;
 
   // Return all key bindings including access key and keyboard shortcut.
   nsAutoString keyBindingsStr;
@@ -116,7 +117,7 @@ void
 actionInterfaceInitCB(AtkActionIface* aIface)
 {
   NS_ASSERTION(aIface, "Invalid aIface");
-  if (NS_UNLIKELY(!aIface))
+  if (MOZ_UNLIKELY(!aIface))
     return;
 
   aIface->do_action = doActionCB;

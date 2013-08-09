@@ -11,6 +11,10 @@
 #include "nsCharsetSource.h"
 #include "nsISerializable.h"
 #include "nsSerializationHelper.h"
+#include "mozilla/ipc/URIUtils.h"
+#include "mozilla/net/NeckoParent.h"
+
+using namespace mozilla::ipc;
 
 namespace mozilla {
 namespace net {
@@ -40,20 +44,23 @@ WyciwygChannelParent::ActorDestroy(ActorDestroyReason why)
 // WyciwygChannelParent::nsISupports
 //-----------------------------------------------------------------------------
 
-NS_IMPL_ISUPPORTS2(WyciwygChannelParent,
+NS_IMPL_ISUPPORTS3(WyciwygChannelParent,
                    nsIStreamListener,
-                   nsIRequestObserver);
+                   nsIInterfaceRequestor,
+                   nsIRequestObserver)
 
 //-----------------------------------------------------------------------------
 // WyciwygChannelParent::PWyciwygChannelParent
 //-----------------------------------------------------------------------------
 
 bool
-WyciwygChannelParent::RecvInit(const IPC::URI& aURI)
+WyciwygChannelParent::RecvInit(const URIParams& aURI)
 {
   nsresult rv;
 
-  nsCOMPtr<nsIURI> uri(aURI);
+  nsCOMPtr<nsIURI> uri = DeserializeURI(aURI);
+  if (!uri)
+    return false;
 
   nsCString uriSpec;
   uri->GetSpec(uriSpec);
@@ -77,10 +84,14 @@ WyciwygChannelParent::RecvInit(const IPC::URI& aURI)
 }
 
 bool
-WyciwygChannelParent::RecvAsyncOpen(const IPC::URI& aOriginal,
-                                    const PRUint32& aLoadFlags)
+WyciwygChannelParent::RecvAsyncOpen(const URIParams& aOriginal,
+                                    const uint32_t& aLoadFlags,
+                                    const IPC::SerializedLoadContext& loadContext,
+                                    PBrowserParent* aParent)
 {
-  nsCOMPtr<nsIURI> original(aOriginal);
+  nsCOMPtr<nsIURI> original = DeserializeURI(aOriginal);
+  if (!original)
+    return false;
 
   LOG(("WyciwygChannelParent RecvAsyncOpen [this=%x]\n", this));
 
@@ -97,7 +108,21 @@ WyciwygChannelParent::RecvAsyncOpen(const IPC::URI& aOriginal,
   if (NS_FAILED(rv))
     return SendCancelEarly(rv);
 
-  rv = mChannel->AsyncOpen(this, nsnull);
+  const char* error = NeckoParent::CreateChannelLoadContext(aParent, loadContext,
+                                                            mLoadContext);
+  if (error) {
+    NS_WARNING(nsPrintfCString("WyciwygChannelParent::RecvAsyncOpen: error: %s\n",
+                               error).get());
+    return false;
+  }
+
+  if (!mLoadContext && loadContext.IsPrivateBitValid()) {
+    nsCOMPtr<nsIPrivateBrowsingChannel> pbChannel = do_QueryInterface(mChannel);
+    if (pbChannel)
+      pbChannel->SetPrivate(loadContext.mUsePrivateBrowsing);
+  }
+
+  rv = mChannel->AsyncOpen(this, nullptr);
   if (NS_FAILED(rv))
     return SendCancelEarly(rv);
 
@@ -123,7 +148,7 @@ WyciwygChannelParent::RecvCloseCacheEntry(const nsresult& reason)
 }
 
 bool
-WyciwygChannelParent::RecvSetCharsetAndSource(const PRInt32& aCharsetSource,
+WyciwygChannelParent::RecvSetCharsetAndSource(const int32_t& aCharsetSource,
                                               const nsCString& aCharset)
 {
   if (mChannel)
@@ -169,11 +194,11 @@ WyciwygChannelParent::OnStartRequest(nsIRequest *aRequest, nsISupports *aContext
   nsresult status;
   chan->GetStatus(&status);
 
-  PRInt32 contentLength = -1;
+  int64_t contentLength = -1;
   chan->GetContentLength(&contentLength);
 
-  PRInt32 charsetSource = kCharsetUninitialized;
-  nsCAutoString charset;
+  int32_t charsetSource = kCharsetUninitialized;
+  nsAutoCString charset;
   chan->GetCharsetAndSource(&charsetSource, charset);
 
   nsCOMPtr<nsISupports> securityInfo;
@@ -220,8 +245,8 @@ NS_IMETHODIMP
 WyciwygChannelParent::OnDataAvailable(nsIRequest *aRequest,
                                       nsISupports *aContext,
                                       nsIInputStream *aInputStream,
-                                      PRUint32 aOffset,
-                                      PRUint32 aCount)
+                                      uint64_t aOffset,
+                                      uint32_t aCount)
 {
   LOG(("WyciwygChannelParent::OnDataAvailable [this=%x]\n", this));
 
@@ -236,5 +261,23 @@ WyciwygChannelParent::OnDataAvailable(nsIRequest *aRequest,
 
   return NS_OK;
 }
+
+//-----------------------------------------------------------------------------
+// WyciwygChannelParent::nsIInterfaceRequestor
+//-----------------------------------------------------------------------------
+
+NS_IMETHODIMP
+WyciwygChannelParent::GetInterface(const nsIID& uuid, void** result)
+{
+  // Only support nsILoadContext if child channel's callbacks did too
+  if (uuid.Equals(NS_GET_IID(nsILoadContext)) && mLoadContext) {
+    NS_ADDREF(mLoadContext);
+    *result = static_cast<nsILoadContext*>(mLoadContext);
+    return NS_OK;
+  }
+
+  return QueryInterface(uuid, result);
+}
+
 
 }} // mozilla::net

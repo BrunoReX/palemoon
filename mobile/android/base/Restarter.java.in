@@ -6,11 +6,11 @@
 #filter substitution
 package @ANDROID_PACKAGE_NAME@;
 
-import android.app.*;
-import android.content.*;
-import android.util.*;
-import android.os.*;
-import java.io.*;
+import android.app.Activity;
+import android.content.Intent;
+import android.os.Bundle;
+import android.util.Log;
+
 import org.mozilla.gecko.GeckoAppShell;
 
 public class Restarter extends Activity {
@@ -43,10 +43,7 @@ public class Restarter extends Activity {
             Log.i(LOGTAG, e.toString());
         }
         try {
-            String action = "org.mozilla.gecko.restart_update".equals(getIntent().getAction()) ?
-                            App.ACTION_UPDATE : Intent.ACTION_MAIN;
-
-            Intent intent = new Intent(action);
+            Intent intent = new Intent(Intent.ACTION_MAIN);
             intent.setClassName("@ANDROID_PACKAGE_NAME@",
                                 "@ANDROID_PACKAGE_NAME@.App");
             Bundle b = getIntent().getExtras();
@@ -63,4 +60,4 @@ public class Restarter extends Activity {
         GeckoAppShell.waitForAnotherGeckoProc();
         System.exit(0);
     }
-};
+}

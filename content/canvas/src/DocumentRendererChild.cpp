@@ -10,10 +10,9 @@
 #include "gfxPattern.h"
 #include "nsPIDOMWindow.h"
 #include "nsIDOMWindow.h"
-#include "nsIDOMDocument.h"
+#include "nsIDocShell.h"
 #include "nsIDocShellTreeNode.h"
 #include "nsIDocShellTreeItem.h"
-#include "nsIDocument.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsComponentManagerUtils.h"
 #include "nsCSSParser.h"
@@ -36,8 +35,8 @@ bool
 DocumentRendererChild::RenderDocument(nsIDOMWindow *window,
                                       const nsRect& documentRect,
                                       const gfxMatrix& transform,
-                                      const nsString& bgcolor,
-                                      PRUint32 renderFlags,
+                                      const nsString& aBGColor,
+                                      uint32_t renderFlags,
                                       bool flushLayout, 
                                       const nsIntSize& renderSize,
                                       nsCString& data)
@@ -56,13 +55,16 @@ DocumentRendererChild::RenderDocument(nsIDOMWindow *window,
     if (!presContext)
         return false;
 
-    nscolor bgColor;
     nsCSSParser parser;
-    nsresult rv = parser.ParseColorString(bgcolor, nsnull, 0, &bgColor);
-    if (NS_FAILED(rv))
+    nsCSSValue bgColorValue;
+    if (!parser.ParseColorString(aBGColor, nullptr, 0, bgColorValue)) {
         return false;
+    }
 
-    nsIPresShell* presShell = presContext->PresShell();
+    nscolor bgColor;
+    if (!nsRuleNode::ComputeColor(bgColorValue, presContext, nullptr, bgColor)) {
+        return false;
+    }
 
     // Draw directly into the output array.
     data.SetLength(renderSize.width * renderSize.height * 4);
@@ -75,7 +77,8 @@ DocumentRendererChild::RenderDocument(nsIDOMWindow *window,
     nsRefPtr<gfxContext> ctx = new gfxContext(surf);
     ctx->SetMatrix(transform);
 
-    presShell->RenderDocument(documentRect, renderFlags, bgColor, ctx);
+    nsCOMPtr<nsIPresShell> shell = presContext->PresShell();
+    shell->RenderDocument(documentRect, renderFlags, bgColor, ctx);
 
     return true;
 }

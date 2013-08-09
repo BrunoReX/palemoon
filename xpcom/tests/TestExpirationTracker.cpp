@@ -15,7 +15,7 @@
 #include "nsDirectoryServiceUtils.h"
 #include "nsComponentManagerUtils.h"
 #include "nsXPCOM.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "prinrval.h"
 #include "nsThreadUtils.h"
 
@@ -33,19 +33,19 @@ struct Object {
 };
 
 static bool error;
-static PRUint32 periodMS = 100;
-static PRUint32 ops = 1000;
-static PRUint32 iterations = 2;
+static uint32_t periodMS = 100;
+static uint32_t ops = 1000;
+static uint32_t iterations = 2;
 static bool logging = 0;
-static PRUint32 sleepPeriodMS = 50;
-static PRUint32 slackMS = 20; // allow this much error
+static uint32_t sleepPeriodMS = 50;
+static uint32_t slackMS = 20; // allow this much error
 
 static void SignalError() {
   printf("ERROR!\n");
   error = true;
 }
 
-template <PRUint32 K> class Tracker : public nsExpirationTracker<Object,K> {
+template <uint32_t K> class Tracker : public nsExpirationTracker<Object,K> {
 public:
   Tracker() : nsExpirationTracker<Object,K>(periodMS) {
     Object* obj = new Object();
@@ -83,7 +83,7 @@ public:
       break;
     }
     case 1: {
-      obj = mUniverse[PRUint32(rand())%mUniverse.Length()];
+      obj = mUniverse[uint32_t(rand())%mUniverse.Length()];
       if (obj->mExpiration.IsTracked()) {
         nsExpirationTracker<Object,K>::RemoveObject(obj);
         LogAction(obj, "Removed");
@@ -91,7 +91,7 @@ public:
       break;
     }
     case 2: {
-      obj = mUniverse[PRUint32(rand())%mUniverse.Length()];
+      obj = mUniverse[uint32_t(rand())%mUniverse.Length()];
       if (!obj->mExpiration.IsTracked()) {
         obj->Touch();
         nsExpirationTracker<Object,K>::AddObject(obj);
@@ -100,7 +100,7 @@ public:
       break;
     }
     case 3: {
-      obj = mUniverse[PRUint32(rand())%mUniverse.Length()];
+      obj = mUniverse[uint32_t(rand())%mUniverse.Length()];
       if (obj->mExpiration.IsTracked()) {
         obj->Touch();
         nsExpirationTracker<Object,K>::MarkUsed(obj);
@@ -115,11 +115,11 @@ protected:
   void NotifyExpired(Object* aObj) {
     LogAction(aObj, "Expired");
     PRIntervalTime now = PR_IntervalNow();
-    PRUint32 timeDiffMS = (now - aObj->mLastUsed)*1000/PR_TicksPerSecond();
+    uint32_t timeDiffMS = (now - aObj->mLastUsed)*1000/PR_TicksPerSecond();
     // See the comment for NotifyExpired in nsExpirationTracker.h for these
     // bounds
-    PRUint32 lowerBoundMS = (K-1)*periodMS - slackMS;
-    PRUint32 upperBoundMS = K*(periodMS + sleepPeriodMS) + slackMS;
+    uint32_t lowerBoundMS = (K-1)*periodMS - slackMS;
+    uint32_t upperBoundMS = K*(periodMS + sleepPeriodMS) + slackMS;
     if (logging) {
       printf("Checking: %d-%d = %d [%d,%d]\n",
              now, aObj->mLastUsed, timeDiffMS, lowerBoundMS, upperBoundMS);
@@ -139,14 +139,14 @@ protected:
   }
 };
 
-template <PRUint32 K> static bool test_random() {
+template <uint32_t K> static bool test_random() {
   srand(K);
   error = false;
  
-  for (PRUint32 j = 0; j < iterations; ++j) {
+  for (uint32_t j = 0; j < iterations; ++j) {
     Tracker<K> tracker;
 
-    PRUint32 i = 0;
+    uint32_t i = 0;
     for (i = 0; i < ops; ++i) {
       if ((rand() & 0xF) == 0) {
         // Simulate work that takes time
@@ -155,7 +155,7 @@ template <PRUint32 K> static bool test_random() {
         }
         PR_Sleep(PR_MillisecondsToInterval(sleepPeriodMS));
         // Process pending timer events
-        NS_ProcessPendingEvents(nsnull);
+        NS_ProcessPendingEvents(nullptr);
       }
       tracker.DoRandomOperation();
     }
@@ -178,7 +178,7 @@ static const struct Test {
   DECL_TEST(test_random3),
   DECL_TEST(test_random4),
   DECL_TEST(test_random8),
-  { nsnull, nsnull }
+  { nullptr, nullptr }
 };
 
 }
@@ -190,15 +190,15 @@ int main(int argc, char **argv) {
   if (argc > 1)
     count = atoi(argv[1]);
 
-  if (NS_FAILED(NS_InitXPCOM2(nsnull, nsnull, nsnull)))
+  if (NS_FAILED(NS_InitXPCOM2(nullptr, nullptr, nullptr)))
     return -1;
 
   while (count--) {
-    for (const Test* t = tests; t->name != nsnull; ++t) {
+    for (const Test* t = tests; t->name != nullptr; ++t) {
       printf("%25s : %s\n", t->name, t->func() ? "SUCCESS" : "FAILURE");
     }
   }
   
-  NS_ShutdownXPCOM(nsnull);
+  NS_ShutdownXPCOM(nullptr);
   return 0;
 }

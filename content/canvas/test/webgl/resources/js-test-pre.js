@@ -469,26 +469,7 @@ function gc() {
 }
 
 function finishTest() {
-  successfullyParsed = true;
-  var epilogue = document.createElement("script");
-  epilogue.onload = function() {
-    if (window.nonKhronosFrameworkNotifyDone) {
-      window.nonKhronosFrameworkNotifyDone();
-    }
-  };
-
-  var basePath = "";
-  var expectedBase = "js-test-pre.js";
-  var scripts = document.getElementsByTagName('script');
-  for (var script, i = 0; script = scripts[i]; i++) {
-    var src = script.src;
-    var l = src.length;
-    if (src.substr(l - expectedBase.length) == expectedBase) {
-      basePath = src.substr(0, l - expectedBase.length);
-      break;
-    }
-  }
-  epilogue.src = basePath + "js-test-post.js";
-  document.body.appendChild(epilogue);
+    debug('<br /><span class="pass">TEST COMPLETE</span>');
+    notifyFinishedToHarness();
 }
 

@@ -203,49 +203,71 @@ public abstract class TreeBuilder<T> implements TokenHandler,
 
     // start insertion modes
 
-    private static final int INITIAL = 0;
+    private static final int IN_ROW = 0;
 
-    private static final int BEFORE_HTML = 1;
+    private static final int IN_TABLE_BODY = 1;
 
-    private static final int BEFORE_HEAD = 2;
+    private static final int IN_TABLE = 2;
 
-    private static final int IN_HEAD = 3;
+    private static final int IN_CAPTION = 3;
 
-    private static final int IN_HEAD_NOSCRIPT = 4;
+    private static final int IN_CELL = 4;
 
-    private static final int AFTER_HEAD = 5;
+    private static final int FRAMESET_OK = 5;
 
     private static final int IN_BODY = 6;
 
-    private static final int IN_TABLE = 7;
+    private static final int IN_HEAD = 7;
 
-    private static final int IN_CAPTION = 8;
+    private static final int IN_HEAD_NOSCRIPT = 8;
 
+    // no fall-through
+    
     private static final int IN_COLUMN_GROUP = 9;
 
-    private static final int IN_TABLE_BODY = 10;
+    // no fall-through
+    
+    private static final int IN_SELECT_IN_TABLE = 10;
 
-    private static final int IN_ROW = 11;
+    private static final int IN_SELECT = 11;
 
-    private static final int IN_CELL = 12;
+    // no fall-through
+    
+    private static final int AFTER_BODY = 12;
 
-    private static final int IN_SELECT = 13;
+    // no fall-through
+    
+    private static final int IN_FRAMESET = 13;
 
-    private static final int IN_SELECT_IN_TABLE = 14;
+    private static final int AFTER_FRAMESET = 14;
 
-    private static final int AFTER_BODY = 15;
+    // no fall-through    
+    
+    private static final int INITIAL = 15;
+    
+    // could add fall-through
 
-    private static final int IN_FRAMESET = 16;
+    private static final int BEFORE_HTML = 16;
 
-    private static final int AFTER_FRAMESET = 17;
+    // could add fall-through
 
-    private static final int AFTER_AFTER_BODY = 18;
+    private static final int BEFORE_HEAD = 17;
 
-    private static final int AFTER_AFTER_FRAMESET = 19;
+    // no fall-through    
+    
+    private static final int AFTER_HEAD = 18;
 
-    private static final int TEXT = 20;
+    // no fall-through    
+    
+    private static final int AFTER_AFTER_BODY = 19;
 
-    private static final int FRAMESET_OK = 21;
+    // no fall-through    
+    
+    private static final int AFTER_AFTER_FRAMESET = 20;
+
+    // no fall-through    
+    
+    private static final int TEXT = 21;
 
     // start charset states
 
@@ -614,233 +636,214 @@ public abstract class TreeBuilder<T> implements TokenHandler,
     public final void doctype(@Local String name, String publicIdentifier,
             String systemIdentifier, boolean forceQuirks) throws SAXException {
         needToDropLF = false;
-        if (!isInForeign()) {
-            switch (mode) {
-                case INITIAL:
-                    // [NOCPP[
-                    if (reportingDoctype) {
-                        // ]NOCPP]
-                        String emptyString = Portability.newEmptyString();
-                        appendDoctypeToDocument(name == null ? "" : name,
-                                publicIdentifier == null ? emptyString
-                                        : publicIdentifier,
-                                systemIdentifier == null ? emptyString
-                                        : systemIdentifier);
-                        Portability.releaseString(emptyString);
-                        // [NOCPP[
-                    }
-                    switch (doctypeExpectation) {
-                        case HTML:
-                            // ]NOCPP]
-                            if (isQuirky(name, publicIdentifier,
-                                    systemIdentifier, forceQuirks)) {
-                                errQuirkyDoctype();
-                                documentModeInternal(DocumentMode.QUIRKS_MODE,
-                                        publicIdentifier, systemIdentifier,
-                                        false);
-                            } else if (isAlmostStandards(publicIdentifier,
-                                    systemIdentifier)) {
-                                // [NOCPP[
-                                if (firstCommentLocation != null) {
-                                    warn("Comments seen before doctype. Internet Explorer will go into the quirks mode.", firstCommentLocation);
-                                }
-                                // ]NOCPP]
-                                errAlmostStandardsDoctype();
-                                documentModeInternal(
-                                        DocumentMode.ALMOST_STANDARDS_MODE,
-                                        publicIdentifier, systemIdentifier,
-                                        false);
-                            } else {
-                                // [NOCPP[
-                                if (firstCommentLocation != null) {
-                                    warn("Comments seen before doctype. Internet Explorer will go into the quirks mode.", firstCommentLocation);
-                                }
-                                if ((Portability.literalEqualsString(
-                                        "-//W3C//DTD HTML 4.0//EN",
-                                        publicIdentifier) && (systemIdentifier == null || Portability.literalEqualsString(
-                                        "http://www.w3.org/TR/REC-html40/strict.dtd",
-                                        systemIdentifier)))
-                                        || (Portability.literalEqualsString(
-                                                "-//W3C//DTD HTML 4.01//EN",
-                                                publicIdentifier) && (systemIdentifier == null || Portability.literalEqualsString(
-                                                "http://www.w3.org/TR/html4/strict.dtd",
-                                                systemIdentifier)))
-                                        || (Portability.literalEqualsString(
-                                                "-//W3C//DTD XHTML 1.0 Strict//EN",
-                                                publicIdentifier) && Portability.literalEqualsString(
-                                                "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd",
-                                                systemIdentifier))
-                                        || (Portability.literalEqualsString(
-                                                "-//W3C//DTD XHTML 1.1//EN",
-                                                publicIdentifier) && Portability.literalEqualsString(
-                                                "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd",
-                                                systemIdentifier))
-
-                                ) {
-                                    warn("Obsolete doctype. Expected \u201C<!DOCTYPE html>\u201D.");
-                                } else if (!((systemIdentifier == null || Portability.literalEqualsString(
-                                        "about:legacy-compat", systemIdentifier)) && publicIdentifier == null)) {
-                                    err("Legacy doctype. Expected \u201C<!DOCTYPE html>\u201D.");
-                                }
-                                // ]NOCPP]
-                                documentModeInternal(
-                                        DocumentMode.STANDARDS_MODE,
-                                        publicIdentifier, systemIdentifier,
-                                        false);
-                            }
-                            // [NOCPP[
-                            break;
-                        case HTML401_STRICT:
-                            html4 = true;
-                            tokenizer.turnOnAdditionalHtml4Errors();
-                            if (isQuirky(name, publicIdentifier,
-                                    systemIdentifier, forceQuirks)) {
-                                err("Quirky doctype. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\u201D.");
-                                documentModeInternal(DocumentMode.QUIRKS_MODE,
-                                        publicIdentifier, systemIdentifier,
-                                        true);
-                            } else if (isAlmostStandards(publicIdentifier,
-                                    systemIdentifier)) {
-                                if (firstCommentLocation != null) {
-                                    warn("Comments seen before doctype. Internet Explorer will go into the quirks mode.", firstCommentLocation);
-                                }
-                                err("Almost standards mode doctype. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\u201D.");
-                                documentModeInternal(
-                                        DocumentMode.ALMOST_STANDARDS_MODE,
-                                        publicIdentifier, systemIdentifier,
-                                        true);
-                            } else {
-                                if (firstCommentLocation != null) {
-                                    warn("Comments seen before doctype. Internet Explorer will go into the quirks mode.", firstCommentLocation);
-                                }
-                                if ("-//W3C//DTD HTML 4.01//EN".equals(publicIdentifier)) {
-                                    if (!"http://www.w3.org/TR/html4/strict.dtd".equals(systemIdentifier)) {
-                                        warn("The doctype did not contain the system identifier prescribed by the HTML 4.01 specification. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\u201D.");
-                                    }
-                                } else {
-                                    err("The doctype was not the HTML 4.01 Strict doctype. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\u201D.");
-                                }
-                                documentModeInternal(
-                                        DocumentMode.STANDARDS_MODE,
-                                        publicIdentifier, systemIdentifier,
-                                        true);
-                            }
-                            break;
-                        case HTML401_TRANSITIONAL:
-                            html4 = true;
-                            tokenizer.turnOnAdditionalHtml4Errors();
-                            if (isQuirky(name, publicIdentifier,
-                                    systemIdentifier, forceQuirks)) {
-                                err("Quirky doctype. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\u201D.");
-                                documentModeInternal(DocumentMode.QUIRKS_MODE,
-                                        publicIdentifier, systemIdentifier,
-                                        true);
-                            } else if (isAlmostStandards(publicIdentifier,
-                                    systemIdentifier)) {
-                                if (firstCommentLocation != null) {
-                                    warn("Comments seen before doctype. Internet Explorer will go into the quirks mode.", firstCommentLocation);
-                                }
-                                if ("-//W3C//DTD HTML 4.01 Transitional//EN".equals(publicIdentifier)
-                                        && systemIdentifier != null) {
-                                    if (!"http://www.w3.org/TR/html4/loose.dtd".equals(systemIdentifier)) {
-                                        warn("The doctype did not contain the system identifier prescribed by the HTML 4.01 specification. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\u201D.");
-                                    }
-                                } else {
-                                    err("The doctype was not a non-quirky HTML 4.01 Transitional doctype. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\u201D.");
-                                }
-                                documentModeInternal(
-                                        DocumentMode.ALMOST_STANDARDS_MODE,
-                                        publicIdentifier, systemIdentifier,
-                                        true);
-                            } else {
-                                if (firstCommentLocation != null) {
-                                    warn("Comments seen before doctype. Internet Explorer will go into the quirks mode.", firstCommentLocation);
-                                }
-                                err("The doctype was not the HTML 4.01 Transitional doctype. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\u201D.");
-                                documentModeInternal(
-                                        DocumentMode.STANDARDS_MODE,
-                                        publicIdentifier, systemIdentifier,
-                                        true);
-                            }
-                            break;
-                        case AUTO:
-                            html4 = isHtml4Doctype(publicIdentifier);
-                            if (html4) {
-                                tokenizer.turnOnAdditionalHtml4Errors();
-                            }
-                            if (isQuirky(name, publicIdentifier,
-                                    systemIdentifier, forceQuirks)) {
-                                err("Quirky doctype. Expected e.g. \u201C<!DOCTYPE html>\u201D.");
-                                documentModeInternal(DocumentMode.QUIRKS_MODE,
-                                        publicIdentifier, systemIdentifier,
-                                        html4);
-                            } else if (isAlmostStandards(publicIdentifier,
-                                    systemIdentifier)) {
-                                if (firstCommentLocation != null) {
-                                    warn("Comments seen before doctype. Internet Explorer will go into the quirks mode.", firstCommentLocation);
-                                }
-                                if ("-//W3C//DTD HTML 4.01 Transitional//EN".equals(publicIdentifier)) {
-                                    if (!"http://www.w3.org/TR/html4/loose.dtd".equals(systemIdentifier)) {
-                                        warn("The doctype did not contain the system identifier prescribed by the HTML 4.01 specification. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\u201D.");
-                                    }
-                                } else {
-                                    err("Almost standards mode doctype. Expected e.g. \u201C<!DOCTYPE html>\u201D.");
-                                }
-                                documentModeInternal(
-                                        DocumentMode.ALMOST_STANDARDS_MODE,
-                                        publicIdentifier, systemIdentifier,
-                                        html4);
-                            } else {
-                                if (firstCommentLocation != null) {
-                                    warn("Comments seen before doctype. Internet Explorer will go into the quirks mode.", firstCommentLocation);
-                                }
-                                if ("-//W3C//DTD HTML 4.01//EN".equals(publicIdentifier)) {
-                                    if (!"http://www.w3.org/TR/html4/strict.dtd".equals(systemIdentifier)) {
-                                        warn("The doctype did not contain the system identifier prescribed by the HTML 4.01 specification. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\u201D.");
-                                    }
-                                } else {
-                                    if (!(publicIdentifier == null && systemIdentifier == null)) {
-                                        err("Legacy doctype. Expected e.g. \u201C<!DOCTYPE html>\u201D.");
-                                    }
-                                }
-                                documentModeInternal(
-                                        DocumentMode.STANDARDS_MODE,
-                                        publicIdentifier, systemIdentifier,
-                                        html4);
-                            }
-                            break;
-                        case NO_DOCTYPE_ERRORS:
-                            if (isQuirky(name, publicIdentifier,
-                                    systemIdentifier, forceQuirks)) {
-                                documentModeInternal(DocumentMode.QUIRKS_MODE,
-                                        publicIdentifier, systemIdentifier,
-                                        false);
-                            } else if (isAlmostStandards(publicIdentifier,
-                                    systemIdentifier)) {
-                                documentModeInternal(
-                                        DocumentMode.ALMOST_STANDARDS_MODE,
-                                        publicIdentifier, systemIdentifier,
-                                        false);
-                            } else {
-                                documentModeInternal(
-                                        DocumentMode.STANDARDS_MODE,
-                                        publicIdentifier, systemIdentifier,
-                                        false);
-                            }
-                            break;
-                    }
+        if (!isInForeign() && mode == INITIAL) {
+            // [NOCPP[
+            if (reportingDoctype) {
+                // ]NOCPP]
+                String emptyString = Portability.newEmptyString();
+                appendDoctypeToDocument(name == null ? "" : name,
+                        publicIdentifier == null ? emptyString
+                                : publicIdentifier,
+                        systemIdentifier == null ? emptyString
+                                : systemIdentifier);
+                Portability.releaseString(emptyString);
+                // [NOCPP[
+            }
+            switch (doctypeExpectation) {
+                case HTML:
                     // ]NOCPP]
+                    if (isQuirky(name, publicIdentifier, systemIdentifier,
+                            forceQuirks)) {
+                        errQuirkyDoctype();
+                        documentModeInternal(DocumentMode.QUIRKS_MODE,
+                                publicIdentifier, systemIdentifier, false);
+                    } else if (isAlmostStandards(publicIdentifier,
+                            systemIdentifier)) {
+                        // [NOCPP[
+                        if (firstCommentLocation != null) {
+                            warn("Comments seen before doctype. Internet Explorer will go into the quirks mode.",
+                                    firstCommentLocation);
+                        }
+                        // ]NOCPP]
+                        errAlmostStandardsDoctype();
+                        documentModeInternal(
+                                DocumentMode.ALMOST_STANDARDS_MODE,
+                                publicIdentifier, systemIdentifier, false);
+                    } else {
+                        // [NOCPP[
+                        if (firstCommentLocation != null) {
+                            warn("Comments seen before doctype. Internet Explorer will go into the quirks mode.",
+                                    firstCommentLocation);
+                        }
+                        if ((Portability.literalEqualsString(
+                                "-//W3C//DTD HTML 4.0//EN", publicIdentifier) && (systemIdentifier == null || Portability.literalEqualsString(
+                                "http://www.w3.org/TR/REC-html40/strict.dtd",
+                                systemIdentifier)))
+                                || (Portability.literalEqualsString(
+                                        "-//W3C//DTD HTML 4.01//EN",
+                                        publicIdentifier) && (systemIdentifier == null || Portability.literalEqualsString(
+                                        "http://www.w3.org/TR/html4/strict.dtd",
+                                        systemIdentifier)))
+                                || (Portability.literalEqualsString(
+                                        "-//W3C//DTD XHTML 1.0 Strict//EN",
+                                        publicIdentifier) && Portability.literalEqualsString(
+                                        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd",
+                                        systemIdentifier))
+                                || (Portability.literalEqualsString(
+                                        "-//W3C//DTD XHTML 1.1//EN",
+                                        publicIdentifier) && Portability.literalEqualsString(
+                                        "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd",
+                                        systemIdentifier))
 
-                    /*
-                     * 
-                     * Then, switch to the root element mode of the tree
-                     * construction stage.
-                     */
-                    mode = BEFORE_HTML;
-                    return;
-                default:
+                        ) {
+                            warn("Obsolete doctype. Expected \u201C<!DOCTYPE html>\u201D.");
+                        } else if (!((systemIdentifier == null || Portability.literalEqualsString(
+                                "about:legacy-compat", systemIdentifier)) && publicIdentifier == null)) {
+                            err("Legacy doctype. Expected \u201C<!DOCTYPE html>\u201D.");
+                        }
+                        // ]NOCPP]
+                        documentModeInternal(DocumentMode.STANDARDS_MODE,
+                                publicIdentifier, systemIdentifier, false);
+                    }
+                    // [NOCPP[
+                    break;
+                case HTML401_STRICT:
+                    html4 = true;
+                    tokenizer.turnOnAdditionalHtml4Errors();
+                    if (isQuirky(name, publicIdentifier, systemIdentifier,
+                            forceQuirks)) {
+                        err("Quirky doctype. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\u201D.");
+                        documentModeInternal(DocumentMode.QUIRKS_MODE,
+                                publicIdentifier, systemIdentifier, true);
+                    } else if (isAlmostStandards(publicIdentifier,
+                            systemIdentifier)) {
+                        if (firstCommentLocation != null) {
+                            warn("Comments seen before doctype. Internet Explorer will go into the quirks mode.",
+                                    firstCommentLocation);
+                        }
+                        err("Almost standards mode doctype. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\u201D.");
+                        documentModeInternal(
+                                DocumentMode.ALMOST_STANDARDS_MODE,
+                                publicIdentifier, systemIdentifier, true);
+                    } else {
+                        if (firstCommentLocation != null) {
+                            warn("Comments seen before doctype. Internet Explorer will go into the quirks mode.",
+                                    firstCommentLocation);
+                        }
+                        if ("-//W3C//DTD HTML 4.01//EN".equals(publicIdentifier)) {
+                            if (!"http://www.w3.org/TR/html4/strict.dtd".equals(systemIdentifier)) {
+                                warn("The doctype did not contain the system identifier prescribed by the HTML 4.01 specification. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\u201D.");
+                            }
+                        } else {
+                            err("The doctype was not the HTML 4.01 Strict doctype. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\u201D.");
+                        }
+                        documentModeInternal(DocumentMode.STANDARDS_MODE,
+                                publicIdentifier, systemIdentifier, true);
+                    }
+                    break;
+                case HTML401_TRANSITIONAL:
+                    html4 = true;
+                    tokenizer.turnOnAdditionalHtml4Errors();
+                    if (isQuirky(name, publicIdentifier, systemIdentifier,
+                            forceQuirks)) {
+                        err("Quirky doctype. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\u201D.");
+                        documentModeInternal(DocumentMode.QUIRKS_MODE,
+                                publicIdentifier, systemIdentifier, true);
+                    } else if (isAlmostStandards(publicIdentifier,
+                            systemIdentifier)) {
+                        if (firstCommentLocation != null) {
+                            warn("Comments seen before doctype. Internet Explorer will go into the quirks mode.",
+                                    firstCommentLocation);
+                        }
+                        if ("-//W3C//DTD HTML 4.01 Transitional//EN".equals(publicIdentifier)
+                                && systemIdentifier != null) {
+                            if (!"http://www.w3.org/TR/html4/loose.dtd".equals(systemIdentifier)) {
+                                warn("The doctype did not contain the system identifier prescribed by the HTML 4.01 specification. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\u201D.");
+                            }
+                        } else {
+                            err("The doctype was not a non-quirky HTML 4.01 Transitional doctype. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\u201D.");
+                        }
+                        documentModeInternal(
+                                DocumentMode.ALMOST_STANDARDS_MODE,
+                                publicIdentifier, systemIdentifier, true);
+                    } else {
+                        if (firstCommentLocation != null) {
+                            warn("Comments seen before doctype. Internet Explorer will go into the quirks mode.",
+                                    firstCommentLocation);
+                        }
+                        err("The doctype was not the HTML 4.01 Transitional doctype. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\u201D.");
+                        documentModeInternal(DocumentMode.STANDARDS_MODE,
+                                publicIdentifier, systemIdentifier, true);
+                    }
+                    break;
+                case AUTO:
+                    html4 = isHtml4Doctype(publicIdentifier);
+                    if (html4) {
+                        tokenizer.turnOnAdditionalHtml4Errors();
+                    }
+                    if (isQuirky(name, publicIdentifier, systemIdentifier,
+                            forceQuirks)) {
+                        err("Quirky doctype. Expected e.g. \u201C<!DOCTYPE html>\u201D.");
+                        documentModeInternal(DocumentMode.QUIRKS_MODE,
+                                publicIdentifier, systemIdentifier, html4);
+                    } else if (isAlmostStandards(publicIdentifier,
+                            systemIdentifier)) {
+                        if (firstCommentLocation != null) {
+                            warn("Comments seen before doctype. Internet Explorer will go into the quirks mode.",
+                                    firstCommentLocation);
+                        }
+                        if ("-//W3C//DTD HTML 4.01 Transitional//EN".equals(publicIdentifier)) {
+                            if (!"http://www.w3.org/TR/html4/loose.dtd".equals(systemIdentifier)) {
+                                warn("The doctype did not contain the system identifier prescribed by the HTML 4.01 specification. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\u201D.");
+                            }
+                        } else {
+                            err("Almost standards mode doctype. Expected e.g. \u201C<!DOCTYPE html>\u201D.");
+                        }
+                        documentModeInternal(
+                                DocumentMode.ALMOST_STANDARDS_MODE,
+                                publicIdentifier, systemIdentifier, html4);
+                    } else {
+                        if (firstCommentLocation != null) {
+                            warn("Comments seen before doctype. Internet Explorer will go into the quirks mode.",
+                                    firstCommentLocation);
+                        }
+                        if ("-//W3C//DTD HTML 4.01//EN".equals(publicIdentifier)) {
+                            if (!"http://www.w3.org/TR/html4/strict.dtd".equals(systemIdentifier)) {
+                                warn("The doctype did not contain the system identifier prescribed by the HTML 4.01 specification. Expected \u201C<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\u201D.");
+                            }
+                        } else if (!((systemIdentifier == null || Portability.literalEqualsString(
+                                "about:legacy-compat", systemIdentifier)) && publicIdentifier == null)) {
+                            err("Legacy doctype. Expected e.g. \u201C<!DOCTYPE html>\u201D.");
+                        }
+                        documentModeInternal(DocumentMode.STANDARDS_MODE,
+                                publicIdentifier, systemIdentifier, html4);
+                    }
+                    break;
+                case NO_DOCTYPE_ERRORS:
+                    if (isQuirky(name, publicIdentifier, systemIdentifier,
+                            forceQuirks)) {
+                        documentModeInternal(DocumentMode.QUIRKS_MODE,
+                                publicIdentifier, systemIdentifier, false);
+                    } else if (isAlmostStandards(publicIdentifier,
+                            systemIdentifier)) {
+                        documentModeInternal(
+                                DocumentMode.ALMOST_STANDARDS_MODE,
+                                publicIdentifier, systemIdentifier, false);
+                    } else {
+                        documentModeInternal(DocumentMode.STANDARDS_MODE,
+                                publicIdentifier, systemIdentifier, false);
+                    }
                     break;
             }
+            // ]NOCPP]
+
+            /*
+             * 
+             * Then, switch to the root element mode of the tree construction
+             * stage.
+             */
+            mode = BEFORE_HTML;
+            return;
         }
         /*
          * A DOCTYPE token Parse error.
@@ -1612,6 +1615,35 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                 } // foreignObject / annotation-xml
             }
             switch (mode) {
+                case IN_ROW:
+                    switch (group) {
+                        case TD_OR_TH:
+                            clearStackBackTo(findLastOrRoot(TreeBuilder.TR));
+                            appendToCurrentNodeAndPushElement(
+                                    elementName,
+                                    attributes);
+                            mode = IN_CELL;
+                            insertMarker();
+                            attributes = null; // CPP
+                            break starttagloop;
+                        case CAPTION:
+                        case COL:
+                        case COLGROUP:
+                        case TBODY_OR_THEAD_OR_TFOOT:
+                        case TR:
+                            eltPos = findLastOrRoot(TreeBuilder.TR);
+                            if (eltPos == 0) {
+                                assert fragment;
+                                errNoTableRowToClose();
+                                break starttagloop;
+                            }
+                            clearStackBackTo(eltPos);
+                            pop();
+                            mode = IN_TABLE_BODY;
+                            continue;
+                        default:
+                            // fall through to IN_TABLE
+                    }
                 case IN_TABLE_BODY:
                     switch (group) {
                         case TR:
@@ -1644,35 +1676,6 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                                 mode = IN_TABLE;
                                 continue;
                             }
-                        default:
-                            // fall through to IN_TABLE
-                    }
-                case IN_ROW:
-                    switch (group) {
-                        case TD_OR_TH:
-                            clearStackBackTo(findLastOrRoot(TreeBuilder.TR));
-                            appendToCurrentNodeAndPushElement(
-                                    elementName,
-                                    attributes);
-                            mode = IN_CELL;
-                            insertMarker();
-                            attributes = null; // CPP
-                            break starttagloop;
-                        case CAPTION:
-                        case COL:
-                        case COLGROUP:
-                        case TBODY_OR_THEAD_OR_TFOOT:
-                        case TR:
-                            eltPos = findLastOrRoot(TreeBuilder.TR);
-                            if (eltPos == 0) {
-                                assert fragment;
-                                errNoTableRowToClose();
-                                break starttagloop;
-                            }
-                            clearStackBackTo(eltPos);
-                            pop();
-                            mode = IN_TABLE_BODY;
-                            continue;
                         default:
                             // fall through to IN_TABLE
                     }
@@ -1985,10 +1988,10 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                                             pop();
                                         }
                                         break;
-                                    } else if (node.isScoping()
-                                            || (node.isSpecial()
-                                                    && node.name != "p"
-                                                    && node.name != "address" && node.name != "div")) {
+                                    } else if (node.isSpecial()
+                                            && node.name != "p"
+                                            && node.name != "address"
+                                            && node.name != "div") {
                                         break;
                                     }
                                     eltPos--;
@@ -2143,7 +2146,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                                 if (actionIndex > -1) {
                                     formAttrs.addAttribute(
                                             AttributeName.ACTION,
-                                            attributes.getValue(actionIndex)
+                                            attributes.getValueNoBoundsCheck(actionIndex)
                                             // [NOCPP[
                                             , XmlViolationPolicy.ALLOW
                                     // ]NOCPP]
@@ -2158,7 +2161,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                                         HtmlAttributes.EMPTY_ATTRIBUTES);
                                 int promptIndex = attributes.getIndex(AttributeName.PROMPT);
                                 if (promptIndex > -1) {
-                                    @Auto char[] prompt = Portability.newCharArrayFromString(attributes.getValue(promptIndex));
+                                    @Auto char[] prompt = Portability.newCharArrayFromString(attributes.getValueNoBoundsCheck(promptIndex));
                                     appendCharacters(stack[currentPtr].node,
                                             prompt, 0, prompt.length);
                                 } else {
@@ -2174,14 +2177,14 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                                 // ]NOCPP]
                                 );
                                 for (int i = 0; i < attributes.getLength(); i++) {
-                                    AttributeName attributeQName = attributes.getAttributeName(i);
+                                    AttributeName attributeQName = attributes.getAttributeNameNoBoundsCheck(i);
                                     if (AttributeName.NAME == attributeQName
                                             || AttributeName.PROMPT == attributeQName) {
                                         attributes.releaseValue(i);
                                     } else if (AttributeName.ACTION != attributeQName) {
                                         inputAttributes.addAttribute(
                                                 attributeQName,
-                                                attributes.getValue(i)
+                                                attributes.getValueNoBoundsCheck(i)
                                                 // [NOCPP[
                                                 , XmlViolationPolicy.ALLOW
                                         // ]NOCPP]
@@ -3607,6 +3610,37 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                                 eltPos--;
                             }
                     }
+                case IN_HEAD:
+                    switch (group) {
+                        case HEAD:
+                            pop();
+                            mode = AFTER_HEAD;
+                            break endtagloop;
+                        case BR:
+                        case HTML:
+                        case BODY:
+                            pop();
+                            mode = AFTER_HEAD;
+                            continue;
+                        default:
+                            errStrayEndTag(name);
+                            break endtagloop;
+                    }
+                case IN_HEAD_NOSCRIPT:
+                    switch (group) {
+                        case NOSCRIPT:
+                            pop();
+                            mode = IN_HEAD;
+                            break endtagloop;
+                        case BR:
+                            errStrayEndTag(name);
+                            pop();
+                            mode = IN_HEAD;
+                            continue;
+                        default:
+                            errStrayEndTag(name);
+                            break endtagloop;
+                    }
                 case IN_COLUMN_GROUP:
                     switch (group) {
                         case COLGROUP:
@@ -3801,37 +3835,6 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                         case HTML:
                         case BODY:
                             appendToCurrentNodeAndPushHeadElement(HtmlAttributes.EMPTY_ATTRIBUTES);
-                            mode = IN_HEAD;
-                            continue;
-                        default:
-                            errStrayEndTag(name);
-                            break endtagloop;
-                    }
-                case IN_HEAD:
-                    switch (group) {
-                        case HEAD:
-                            pop();
-                            mode = AFTER_HEAD;
-                            break endtagloop;
-                        case BR:
-                        case HTML:
-                        case BODY:
-                            pop();
-                            mode = AFTER_HEAD;
-                            continue;
-                        default:
-                            errStrayEndTag(name);
-                            break endtagloop;
-                    }
-                case IN_HEAD_NOSCRIPT:
-                    switch (group) {
-                        case NOSCRIPT:
-                            pop();
-                            mode = IN_HEAD;
-                            break endtagloop;
-                        case BR:
-                            errStrayEndTag(name);
-                            pop();
                             mode = IN_HEAD;
                             continue;
                         default:
@@ -4182,12 +4185,12 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         }
     }
 
-    private boolean clearLastStackSlot() {
+    private boolean debugOnlyClearLastStackSlot() {
         stack[currentPtr] = null;
         return true;
     }
 
-    private boolean clearLastListSlot() {
+    private boolean debugOnlyClearLastListSlot() {
         listOfActiveFormattingElements[listPtr] = null;
         return true;
     }
@@ -4250,7 +4253,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
             fatal();
             stack[pos].release();
             System.arraycopy(stack, pos + 1, stack, pos, currentPtr - pos);
-            assert clearLastStackSlot();
+            assert debugOnlyClearLastStackSlot();
             currentPtr--;
         }
     }
@@ -4278,14 +4281,14 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         assert listOfActiveFormattingElements[pos] != null;
         listOfActiveFormattingElements[pos].release();
         if (pos == listPtr) {
-            assert clearLastListSlot();
+            assert debugOnlyClearLastListSlot();
             listPtr--;
             return;
         }
         assert pos < listPtr;
         System.arraycopy(listOfActiveFormattingElements, pos + 1,
                 listOfActiveFormattingElements, pos, listPtr - pos);
-        assert clearLastListSlot();
+        assert debugOnlyClearLastListSlot();
         listPtr--;
     }
 
@@ -4655,7 +4658,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
 
     private void pop() throws SAXException {
         StackNode<T> node = stack[currentPtr];
-        assert clearLastStackSlot();
+        assert debugOnlyClearLastStackSlot();
         currentPtr--;
         elementPopped(node.ns, node.popName, node.node);
         node.release();
@@ -4663,14 +4666,14 @@ public abstract class TreeBuilder<T> implements TokenHandler,
 
     private void silentPop() throws SAXException {
         StackNode<T> node = stack[currentPtr];
-        assert clearLastStackSlot();
+        assert debugOnlyClearLastStackSlot();
         currentPtr--;
         node.release();
     }
 
     private void popOnEof() throws SAXException {
         StackNode<T> node = stack[currentPtr];
-        assert clearLastStackSlot();
+        assert debugOnlyClearLastStackSlot();
         currentPtr--;
         markMalformedIfScript(node.node);
         elementPopped(node.ns, node.popName, node.node);

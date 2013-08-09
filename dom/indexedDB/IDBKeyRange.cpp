@@ -10,11 +10,10 @@
 
 #include "nsIXPConnect.h"
 
-#include "nsDOMClassInfo.h"
 #include "nsJSUtils.h"
 #include "nsThreadUtils.h"
 #include "nsContentUtils.h"
-
+#include "nsDOMClassInfoID.h"
 #include "Key.h"
 
 #include "mozilla/dom/indexedDB/PIndexedDBIndex.h"
@@ -90,9 +89,7 @@ ThrowException(JSContext* aCx,
                nsresult aErrorCode)
 {
   NS_ASSERTION(NS_FAILED(aErrorCode), "Not an error code!");
-  if (!JS_IsExceptionPending(aCx)) {
-    nsDOMClassInfo::ThrowJSException(aCx, aErrorCode);
-  }
+  xpc::Throw(aCx, aErrorCode);
 }
 
 inline
@@ -316,14 +313,8 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(IDBKeyRange)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(IDBKeyRange)
-  if (JSVAL_IS_GCTHING(tmp->mCachedLowerVal)) {
-    void *gcThing = JSVAL_TO_GCTHING(tmp->mCachedLowerVal);
-    NS_IMPL_CYCLE_COLLECTION_TRACE_JS_CALLBACK(gcThing, "mCachedLowerVal")
-  }
-  if (JSVAL_IS_GCTHING(tmp->mCachedUpperVal)) {
-    void *gcThing = JSVAL_TO_GCTHING(tmp->mCachedUpperVal);
-    NS_IMPL_CYCLE_COLLECTION_TRACE_JS_CALLBACK(gcThing, "mCachedUpperVal")
-  }
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(mCachedLowerVal)
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(mCachedUpperVal)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(IDBKeyRange)

@@ -120,7 +120,7 @@ public:
     void RunnableLoadAndRebuild() {
       Uninit(false);  // Reset results
 
-      nsCOMPtr<nsIDocument> doc = mRoot ? mRoot->GetDocument() : nsnull;
+      nsCOMPtr<nsIDocument> doc = mRoot ? mRoot->GetDocument() : nullptr;
       if (doc) {
         bool shouldDelay;
         LoadDataSources(doc, &shouldDelay);
@@ -132,8 +132,8 @@ public:
 
     // mRoot should not be cleared until after Uninit is finished so that
     // generated content can be removed during uninitialization.
-    void UninitFalse() { Uninit(false); mRoot = nsnull; }
-    void UninitTrue() { Uninit(true); mRoot = nsnull; }
+    void UninitFalse() { Uninit(false); mRoot = nullptr; }
+    void UninitTrue() { Uninit(true); mRoot = nullptr; }
 
     /**
      * Find the <template> tag that applies for this builder
@@ -167,7 +167,7 @@ public:
     CompileTemplate(nsIContent* aTemplate,
                     nsTemplateQuerySet* aQuerySet,
                     bool aIsQuerySet,
-                    PRInt32* aPriority,
+                    int32_t* aPriority,
                     bool* aCanUseTemplate);
 
     /**
@@ -302,7 +302,7 @@ public:
                          nsIXULTemplateResult* aResult,
                          nsTemplateQuerySet* aQuerySet,
                          nsTemplateRule** aMatchedRule,
-                         PRInt16 *aRuleIndex);
+                         int16_t *aRuleIndex);
 
     // XXX sigh, the string template foo doesn't mix with
     // operator->*() on egcs-1.1.2, so we'll need to explicitly pass
@@ -406,7 +406,7 @@ protected:
         eLoggingEnabled = (1 << 2)
     };
 
-    PRInt32 mFlags;
+    int32_t mFlags;
 
     /**
      * Stack-based helper class to maintain a list of ``activated''

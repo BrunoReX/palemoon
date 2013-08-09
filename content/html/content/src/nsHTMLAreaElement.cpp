@@ -4,14 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "nsIDOMHTMLAreaElement.h"
-#include "nsIDOMEventTarget.h"
 #include "nsGenericHTMLElement.h"
 #include "nsILink.h"
 #include "nsGkAtoms.h"
-#include "nsStyleConsts.h"
 #include "nsIURL.h"
-#include "nsNetUtil.h"
-#include "nsReadableUtils.h"
 #include "nsIDocument.h"
 
 #include "Link.h"
@@ -33,30 +29,15 @@ public:
   NS_DECL_SIZEOF_EXCLUDING_THIS
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT_BASIC(nsGenericHTMLElement::)
-  NS_SCRIPTABLE NS_IMETHOD Click() {
-    return nsGenericHTMLElement::Click();
-  }
-  NS_SCRIPTABLE NS_IMETHOD GetTabIndex(PRInt32* aTabIndex);
-  NS_SCRIPTABLE NS_IMETHOD SetTabIndex(PRInt32 aTabIndex);
-  NS_SCRIPTABLE NS_IMETHOD Focus() {
-    return nsGenericHTMLElement::Focus();
-  }
-  NS_SCRIPTABLE NS_IMETHOD GetDraggable(bool* aDraggable) {
-    return nsGenericHTMLElement::GetDraggable(aDraggable);
-  }
-  NS_SCRIPTABLE NS_IMETHOD GetInnerHTML(nsAString& aInnerHTML) {
-    return nsGenericHTMLElement::GetInnerHTML(aInnerHTML);
-  }
-  NS_SCRIPTABLE NS_IMETHOD SetInnerHTML(const nsAString& aInnerHTML) {
-    return nsGenericHTMLElement::SetInnerHTML(aInnerHTML);
-  }
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
+
+  virtual int32_t TabIndexDefault() MOZ_OVERRIDE;
 
   // nsIDOMHTMLAreaElement
   NS_DECL_NSIDOMHTMLAREAELEMENT
@@ -77,15 +58,15 @@ public:
                               bool aCompileEventHandlers);
   virtual void UnbindFromTree(bool aDeep = true,
                               bool aNullParent = true);
-  nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+  nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                    const nsAString& aValue, bool aNotify)
   {
-    return SetAttr(aNameSpaceID, aName, nsnull, aValue, aNotify);
+    return SetAttr(aNameSpaceID, aName, nullptr, aValue, aNotify);
   }
-  virtual nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+  virtual nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                            nsIAtom* aPrefix, const nsAString& aValue,
                            bool aNotify);
-  virtual nsresult UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
+  virtual nsresult UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
                              bool aNotify);
 
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
@@ -95,6 +76,10 @@ public:
   virtual nsXPCClassInfo* GetClassInfo();
 
   virtual nsIDOMNode* AsDOMNode() { return this; }
+
+protected:
+  virtual void GetItemValueText(nsAString& text);
+  virtual void SetItemValueText(const nsAString& text);
 };
 
 
@@ -111,8 +96,8 @@ nsHTMLAreaElement::~nsHTMLAreaElement()
 {
 }
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLAreaElement, nsGenericElement) 
-NS_IMPL_RELEASE_INHERITED(nsHTMLAreaElement, nsGenericElement) 
+NS_IMPL_ADDREF_INHERITED(nsHTMLAreaElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLAreaElement, Element)
 
 DOMCI_NODE_DATA(HTMLAreaElement, nsHTMLAreaElement)
 
@@ -135,7 +120,24 @@ NS_IMPL_STRING_ATTR(nsHTMLAreaElement, Coords, coords)
 NS_IMPL_URI_ATTR(nsHTMLAreaElement, Href, href)
 NS_IMPL_BOOL_ATTR(nsHTMLAreaElement, NoHref, nohref)
 NS_IMPL_STRING_ATTR(nsHTMLAreaElement, Shape, shape)
-NS_IMPL_INT_ATTR(nsHTMLAreaElement, TabIndex, tabindex)
+
+int32_t
+nsHTMLAreaElement::TabIndexDefault()
+{
+  return 0;
+}
+
+void
+nsHTMLAreaElement::GetItemValueText(nsAString& aValue)
+{
+  GetHref(aValue);
+}
+
+void
+nsHTMLAreaElement::SetItemValueText(const nsAString& aValue)
+{
+  SetHref(aValue);
+}
 
 NS_IMETHODIMP
 nsHTMLAreaElement::GetTarget(nsAString& aValue)
@@ -210,7 +212,7 @@ nsHTMLAreaElement::UnbindFromTree(bool aDeep, bool aNullParent)
 }
 
 nsresult
-nsHTMLAreaElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+nsHTMLAreaElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                            nsIAtom* aPrefix, const nsAString& aValue,
                            bool aNotify)
 {
@@ -230,7 +232,7 @@ nsHTMLAreaElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
 }
 
 nsresult
-nsHTMLAreaElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
+nsHTMLAreaElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
                              bool aNotify)
 {
   nsresult rv = nsGenericHTMLElement::UnsetAttr(aNameSpaceID, aAttribute,

@@ -42,6 +42,8 @@ GfxInfo::Init()
     mIsNVIDIA = false;
     mIsFGLRX = false;
     mIsNouveau = false;
+    mIsIntel = false;
+    mIsLlvmpipe = false;
     mHasTextureFromPixmap = false;
     return GfxInfoBase::Init();
 }
@@ -104,7 +106,7 @@ GfxInfo::GetData()
     bool error = waiting_for_glxtest_process_failed || exited_with_error_code || received_signal;
 
     nsCString textureFromPixmap; 
-    nsCString *stringToFill = nsnull;
+    nsCString *stringToFill = nullptr;
     char *bufptr = buf;
     if (!error) {
         while(true) {
@@ -113,7 +115,7 @@ GfxInfo::GetData()
                 break;
             if (stringToFill) {
                 stringToFill->Assign(line);
-                stringToFill = nsnull;
+                stringToFill = nullptr;
             }
             else if(!strcmp(line, "VENDOR"))
                 stringToFill = &mVendor;
@@ -183,7 +185,7 @@ GfxInfo::GetData()
     mAdapterDescription.AppendLiteral(" -- ");
     mAdapterDescription.Append(mRenderer);
 
-    nsCAutoString note;
+    nsAutoCString note;
     note.Append("OpenGL: ");
     note.Append(mAdapterDescription);
     note.Append(" -- ");
@@ -200,7 +202,7 @@ GfxInfo::GetData()
 
     // determine driver type (vendor) and where in the version string
     // the actual driver version numbers should be expected to be found (whereToReadVersionNumbers)
-    const char *whereToReadVersionNumbers = nsnull;
+    const char *whereToReadVersionNumbers = nullptr;
     const char *Mesa_in_version_string = strstr(mVersion.get(), "Mesa");
     if (Mesa_in_version_string) {
         mIsMesa = true;
@@ -209,6 +211,10 @@ GfxInfo::GetData()
         whereToReadVersionNumbers = Mesa_in_version_string + strlen("Mesa");
         if (strcasestr(mVendor.get(), "nouveau"))
             mIsNouveau = true;
+        if (strcasestr(mRenderer.get(), "intel")) // yes, intel is in the renderer string
+            mIsIntel = true;
+        if (strcasestr(mRenderer.get(), "llvmpipe"))
+            mIsLlvmpipe = true;
     } else if (strstr(mVendor.get(), "NVIDIA Corporation")) {
         mIsNVIDIA = true;
         // with the NVIDIA driver, the version string contains "NVIDIA major.minor"
@@ -246,9 +252,9 @@ GfxInfo::GetData()
     }
 }
 
-static inline PRUint64 version(PRUint32 major, PRUint32 minor, PRUint32 revision = 0)
+static inline uint64_t version(uint32_t major, uint32_t minor, uint32_t revision = 0)
 {
-    return (PRUint64(major) << 32) + (PRUint64(minor) << 16) + PRUint64(revision);
+    return (uint64_t(major) << 32) + (uint64_t(minor) << 16) + uint64_t(revision);
 }
 
 const nsTArray<GfxDriverInfo>&
@@ -262,11 +268,11 @@ GfxInfo::GetGfxDriverInfo()
 }
 
 nsresult
-GfxInfo::GetFeatureStatusImpl(PRInt32 aFeature, 
-                              PRInt32 *aStatus, 
+GfxInfo::GetFeatureStatusImpl(int32_t aFeature, 
+                              int32_t *aStatus, 
                               nsAString & aSuggestedDriverVersion, 
                               const nsTArray<GfxDriverInfo>& aDriverInfo, 
-                              OperatingSystem* aOS /* = nsnull */)
+                              OperatingSystem* aOS /* = nullptr */)
 
 {
   GetData();
@@ -326,7 +332,16 @@ GfxInfo::GetFeatureStatusImpl(PRInt32 aFeature,
         } else if (version(mMajorVersion, mMinorVersion, mRevisionVersion) < version(7,10,3)) {
           *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION;
           aSuggestedDriverVersion.AssignLiteral("Mesa 7.10.3");
+        } else if (mIsLlvmpipe) {
+          *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION;
         }
+        if (aFeature == nsIGfxInfo::FEATURE_WEBGL_MSAA)
+        {
+          if (mIsIntel && version(mMajorVersion, mMinorVersion) < version(8,1))
+            *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION;
+            aSuggestedDriverVersion.AssignLiteral("Mesa 8.1");
+        }
+
       } else if (mIsNVIDIA) {
         if (version(mMajorVersion, mMinorVersion, mRevisionVersion) < version(257,21)) {
           *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION;
@@ -366,12 +381,6 @@ GfxInfo::GetD2DEnabled(bool *aEnabled)
 
 NS_IMETHODIMP
 GfxInfo::GetDWriteEnabled(bool *aEnabled)
-{
-  return NS_ERROR_FAILURE;
-}
-
-NS_IMETHODIMP
-GfxInfo::GetAzureEnabled(bool *aEnabled)
 {
   return NS_ERROR_FAILURE;
 }
@@ -533,7 +542,7 @@ NS_IMETHODIMP GfxInfo::SpoofDriverVersion(const nsAString & aDriverVersion)
 }
 
 /* void spoofOSVersion (in unsigned long aVersion); */
-NS_IMETHODIMP GfxInfo::SpoofOSVersion(PRUint32 aVersion)
+NS_IMETHODIMP GfxInfo::SpoofOSVersion(uint32_t aVersion)
 {
   // We don't support OS versioning on Linux. There's just "Linux".
   return NS_OK;

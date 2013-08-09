@@ -5,30 +5,36 @@
 // handlerApp.xhtml grabs this for verification purposes via window.opener
 var testURI = "webcal://127.0.0.1/rheeeeet.html";
 
+const Cc = SpecialPowers.Cc;
+
 function test() {
 
-  netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect'); 
+  const isOSXMtnLion = navigator.userAgent.indexOf("Mac OS X 10.8") != -1;
+  if (isOSXMtnLion) {
+    todo(false, "This test fails on OS X 10.8, see bug 786938");
+    SimpleTest.finish();
+    return;
+  }
 
   // set up the web handler object
-  var webHandler = 
-    Components.classes["@mozilla.org/uriloader/web-handler-app;1"].
-    createInstance(Components.interfaces.nsIWebHandlerApp);
+  var webHandler = Cc["@mozilla.org/uriloader/web-handler-app;1"].
+    createInstance(SpecialPowers.Ci.nsIWebHandlerApp);
   webHandler.name = "Test Web Handler App";
   webHandler.uriTemplate =
       "http://mochi.test:8888/tests/uriloader/exthandler/tests/mochitest/" + 
       "handlerApp.xhtml?uri=%s";
   
   // set up the uri to test with
-  var ioService = Components.classes["@mozilla.org/network/io-service;1"].
-    getService(Components.interfaces.nsIIOService);
+  var ioService = Cc["@mozilla.org/network/io-service;1"].
+    getService(SpecialPowers.Ci.nsIIOService);
   var uri = ioService.newURI(testURI, null, null);
 
   // create a window, and launch the handler in it
   var newWindow = window.open("", "handlerWindow", "height=300,width=300");
   var windowContext = 
-    newWindow.QueryInterface(Components.interfaces.nsIInterfaceRequestor). 
-    getInterface(Components.interfaces.nsIWebNavigation).
-    QueryInterface(Components.interfaces.nsIDocShell);
+    SpecialPowers.wrap(newWindow).QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor).
+    getInterface(SpecialPowers.Ci.nsIWebNavigation).
+    QueryInterface(SpecialPowers.Ci.nsIDocShell);
  
   webHandler.launchWithURI(uri, windowContext); 
 
@@ -43,20 +49,19 @@ function test() {
   ok(true, "webHandler launchWithURI (new window/tab) test started");
 
   // set up the local handler object
-  var localHandler = 
-    Components.classes["@mozilla.org/uriloader/local-handler-app;1"].
-    createInstance(Components.interfaces.nsILocalHandlerApp);
+  var localHandler = Cc["@mozilla.org/uriloader/local-handler-app;1"].
+    createInstance(SpecialPowers.Ci.nsILocalHandlerApp);
   localHandler.name = "Test Local Handler App";
   
   // get a local app that we know will be there and do something sane
-  var osString = Components.classes["@mozilla.org/xre/app-info;1"].
-                 getService(Components.interfaces.nsIXULRuntime).OS;
+  var osString = Cc["@mozilla.org/xre/app-info;1"].
+                 getService(SpecialPowers.Ci.nsIXULRuntime).OS;
 
-  var dirSvc = Components.classes["@mozilla.org/file/directory_service;1"].
-               getService(Components.interfaces.nsIDirectoryServiceProvider);
+  var dirSvc = Cc["@mozilla.org/file/directory_service;1"].
+               getService(SpecialPowers.Ci.nsIDirectoryServiceProvider);
   if (osString == "WINNT") {
     var windowsDir = dirSvc.getFile("WinD", {});
-    var exe = windowsDir.clone().QueryInterface(Components.interfaces.nsILocalFile);
+    var exe = windowsDir.clone().QueryInterface(SpecialPowers.Ci.nsILocalFile);
     exe.appendRelativePath("SYSTEM32\\HOSTNAME.EXE");
 
   } else if (osString == "Darwin") { 
@@ -73,14 +78,14 @@ function test() {
       todo(false, "On SeaMonkey, testing OS X as generic Unix. (Bug 749872)");
 
       // assume a generic UNIX variant
-      exe = Components.classes["@mozilla.org/file/local;1"].
-            createInstance(Components.interfaces.nsILocalFile);
+      exe = Cc["@mozilla.org/file/local;1"].
+            createInstance(SpecialPowers.Ci.nsILocalFile);
       exe.initWithPath("/bin/echo");
     }
   } else {
     // assume a generic UNIX variant
-    exe = Components.classes["@mozilla.org/file/local;1"].
-          createInstance(Components.interfaces.nsILocalFile);
+    exe = Cc["@mozilla.org/file/local;1"].
+          createInstance(SpecialPowers.Ci.nsILocalFile);
     exe.initWithPath("/bin/echo");
   }
 
@@ -94,12 +99,12 @@ function test() {
   // the if statement below from "NOTDarwin" to "Darwin"
   if (osString == "NOTDarwin") {
 
-    var killall = Components.classes["@mozilla.org/file/local;1"].
-                  createInstance(Components.interfaces.nsILocalFile);
+    var killall = Cc["@mozilla.org/file/local;1"].
+                  createInstance(SpecialPowers.Ci.nsILocalFile);
     killall.initWithPath("/usr/bin/killall");
   
-    var process = Components.classes["@mozilla.org/process/util;1"].
-                  createInstance(Components.interfaces.nsIProcess);
+    var process = Cc["@mozilla.org/process/util;1"].
+                  createInstance(SpecialPowers.Ci.nsIProcess);
     process.init(killall);
     
     var args = ['iCal'];

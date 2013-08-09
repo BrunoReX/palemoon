@@ -5,7 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-DEPTH		= ../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -46,7 +46,6 @@ XPIDLSRCS	= \
 		nsIDOMSVGElement.idl \
 		nsIDOMSVGEllipseElement.idl \
 		nsIDOMSVGEvent.idl \
-		nsIDOMSVGException.idl \
 		nsIDOMSVGFilterElement.idl \
 		nsIDOMSVGFilters.idl \
 		nsIDOMSVGFitToViewBox.idl \
@@ -105,3 +104,9 @@ XPIDLSRCS	= \
 		$(NULL)
 
 include $(topsrcdir)/config/rules.mk
+
+XPIDL_FLAGS += \
+  -I$(topsrcdir)/dom/interfaces/base \
+  -I$(topsrcdir)/dom/interfaces/core \
+  -I$(topsrcdir)/dom/interfaces/events \
+  $(NULL)

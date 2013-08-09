@@ -53,7 +53,7 @@ nsCommandParams::Init()
 #endif
 
 /* short getValueType (in string name); */
-NS_IMETHODIMP nsCommandParams::GetValueType(const char * name, PRInt16 *_retval)
+NS_IMETHODIMP nsCommandParams::GetValueType(const char * name, int16_t *_retval)
 {
   NS_ENSURE_ARG_POINTER(_retval);
   *_retval = eNoType;
@@ -84,7 +84,7 @@ NS_IMETHODIMP nsCommandParams::GetBooleanValue(const char * name, bool *_retval)
 }
 
 /* long getLongValue (in AString name); */
-NS_IMETHODIMP nsCommandParams::GetLongValue(const char * name, PRInt32 *_retval)
+NS_IMETHODIMP nsCommandParams::GetLongValue(const char * name, int32_t *_retval)
 {
   NS_ENSURE_ARG_POINTER(_retval);
   *_retval = false;
@@ -148,7 +148,7 @@ NS_IMETHODIMP nsCommandParams::GetCStringValue(const char * name, char **_retval
 NS_IMETHODIMP nsCommandParams::GetISupportsValue(const char * name, nsISupports **_retval)
 {
   NS_ENSURE_ARG_POINTER(_retval);
-  *_retval = nsnull;
+  *_retval = nullptr;
 
   HashEntry*  foundEntry = GetNamedEntry(name);
   if (foundEntry && foundEntry->mEntryType == eISupportsType)
@@ -177,7 +177,7 @@ NS_IMETHODIMP nsCommandParams::SetBooleanValue(const char * name, bool value)
 }
 
 /* void setLongValue (in AString name, in long value); */
-NS_IMETHODIMP nsCommandParams::SetLongValue(const char * name, PRInt32 value)
+NS_IMETHODIMP nsCommandParams::SetLongValue(const char * name, int32_t value)
 {
   HashEntry*  foundEntry;
   GetOrMakeEntry(name, eLongType, foundEntry);
@@ -256,38 +256,38 @@ nsCommandParams::GetNamedEntry(const char * name)
   if (PL_DHASH_ENTRY_IS_BUSY(foundEntry))
     return foundEntry;
    
-  return nsnull;
+  return nullptr;
 }
 
 
 nsCommandParams::HashEntry*
-nsCommandParams::GetIndexedEntry(PRInt32 index)
+nsCommandParams::GetIndexedEntry(int32_t index)
 {
   HashEntry*  entry = reinterpret_cast<HashEntry*>(mValuesHash.entryStore);
   HashEntry*  limit = entry + PL_DHASH_TABLE_SIZE(&mValuesHash);
-  PRUint32    entryCount = 0;
+  uint32_t    entryCount = 0;
   
   do
   {  
     if (!PL_DHASH_ENTRY_IS_LIVE(entry))
       continue;
 
-    if ((PRInt32)entryCount == index)
+    if ((int32_t)entryCount == index)
       return entry;
     
     entryCount ++;
   } while (++entry < limit);
 
-  return nsnull;
+  return nullptr;
 }
 
 
-PRUint32
+uint32_t
 nsCommandParams::GetNumEntries()
 {
   HashEntry*  entry = reinterpret_cast<HashEntry*>(mValuesHash.entryStore);
   HashEntry*  limit = entry + PL_DHASH_TABLE_SIZE(&mValuesHash);
-  PRUint32    entryCount = 0;
+  uint32_t    entryCount = 0;
   
   do
   {  
@@ -299,7 +299,7 @@ nsCommandParams::GetNumEntries()
 }
 
 nsresult
-nsCommandParams::GetOrMakeEntry(const char * name, PRUint8 entryType, HashEntry*& outEntry)
+nsCommandParams::GetOrMakeEntry(const char * name, uint8_t entryType, HashEntry*& outEntry)
 {
 
   HashEntry *foundEntry = (HashEntry *)PL_DHashTableOperate(&mValuesHash, (void *)name, PL_DHASH_LOOKUP);

@@ -10,16 +10,16 @@ const Cu = Components.utils;
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 
-let EXPORTED_SYMBOLS = ["DOMRequestIpcHelper"];
+this.EXPORTED_SYMBOLS = ["DOMRequestIpcHelper"];
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyGetter(this, "cpmm", function() {
-  return Cc["@mozilla.org/childprocessmessagemanager;1"].getService(Ci.nsIFrameMessageManager);
-});
+XPCOMUtils.defineLazyServiceGetter(this, "cpmm",
+                                   "@mozilla.org/childprocessmessagemanager;1",
+                                   "nsIMessageListenerManager");
 
-function DOMRequestIpcHelper() {
+this.DOMRequestIpcHelper = function DOMRequestIpcHelper() {
 }
 
 DOMRequestIpcHelper.prototype = {
@@ -52,6 +52,10 @@ DOMRequestIpcHelper.prototype = {
   },
 
   observe: function(aSubject, aTopic, aData) {
+    if (aTopic !== "inner-window-destroyed") {
+      return;
+    }
+
     let wId = aSubject.QueryInterface(Ci.nsISupportsPRUint64).data;
     if (wId == this.innerWindowID) {
       Services.obs.removeObserver(this, "inner-window-destroyed");

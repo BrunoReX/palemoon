@@ -8,6 +8,7 @@
 
 /* rendering object for CSS :first-letter pseudo-element */
 
+#include "mozilla/Attributes.h"
 #include "nsContainerFrame.h"
 
 class nsFirstLetterFrame : public nsContainerFrame {
@@ -20,21 +21,21 @@ public:
 
   NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                               const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists);
+                              const nsDisplayListSet& aLists) MOZ_OVERRIDE;
 
   NS_IMETHOD Init(nsIContent*      aContent,
                   nsIFrame*        aParent,
-                  nsIFrame*        aPrevInFlow);
+                  nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
   NS_IMETHOD SetInitialChildList(ChildListID     aListID,
-                                 nsFrameList&    aChildList);
-#ifdef NS_DEBUG
-  NS_IMETHOD GetFrameName(nsAString& aResult) const;
+                                 nsFrameList&    aChildList) MOZ_OVERRIDE;
+#ifdef DEBUG
+  NS_IMETHOD GetFrameName(nsAString& aResult) const MOZ_OVERRIDE;
 #endif
-  virtual nsIAtom* GetType() const;
+  virtual nsIAtom* GetType() const MOZ_OVERRIDE;
 
   bool IsFloating() const { return GetStateBits() & NS_FRAME_OUT_OF_FLOW; }
 
-  virtual bool IsFrameOfType(PRUint32 aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const
   {
     if (!IsFloating())
       aFlags = aFlags & ~(nsIFrame::eLineParticipant);
@@ -42,29 +43,29 @@ public:
       ~(nsIFrame::eBidiInlineContainer));
   }
 
-  virtual nscoord GetMinWidth(nsRenderingContext *aRenderingContext);
-  virtual nscoord GetPrefWidth(nsRenderingContext *aRenderingContext);
+  virtual nscoord GetMinWidth(nsRenderingContext *aRenderingContext) MOZ_OVERRIDE;
+  virtual nscoord GetPrefWidth(nsRenderingContext *aRenderingContext) MOZ_OVERRIDE;
   virtual void AddInlineMinWidth(nsRenderingContext *aRenderingContext,
-                                 InlineMinWidthData *aData);
+                                 InlineMinWidthData *aData) MOZ_OVERRIDE;
   virtual void AddInlinePrefWidth(nsRenderingContext *aRenderingContext,
-                                  InlinePrefWidthData *aData);
+                                  InlinePrefWidthData *aData) MOZ_OVERRIDE;
   virtual nsSize ComputeSize(nsRenderingContext *aRenderingContext,
                              nsSize aCBSize, nscoord aAvailableWidth,
                              nsSize aMargin, nsSize aBorder, nsSize aPadding,
-                             PRUint32 aFlags) MOZ_OVERRIDE;
+                             uint32_t aFlags) MOZ_OVERRIDE;
   NS_IMETHOD Reflow(nsPresContext*          aPresContext,
                     nsHTMLReflowMetrics&     aDesiredSize,
                     const nsHTMLReflowState& aReflowState,
-                    nsReflowStatus&          aStatus);
+                    nsReflowStatus&          aStatus) MOZ_OVERRIDE;
 
-  virtual bool CanContinueTextRun() const;
+  virtual bool CanContinueTextRun() const MOZ_OVERRIDE;
   virtual nscoord GetBaseline() const;
 
 //override of nsFrame method
-  NS_IMETHOD GetChildFrameContainingOffset(PRInt32 inContentOffset,
+  NS_IMETHOD GetChildFrameContainingOffset(int32_t inContentOffset,
                                            bool inHint,
-                                           PRInt32* outFrameContentOffset,
-                                           nsIFrame **outChildFrame);
+                                           int32_t* outFrameContentOffset,
+                                           nsIFrame **outChildFrame) MOZ_OVERRIDE;
 
   nscoord GetFirstLetterBaseline() const { return mBaseline; }
 
@@ -80,7 +81,7 @@ public:
 protected:
   nscoord mBaseline;
 
-  virtual PRIntn GetSkipSides() const;
+  virtual int GetSkipSides() const;
 
   void DrainOverflowFrames(nsPresContext* aPresContext);
 };

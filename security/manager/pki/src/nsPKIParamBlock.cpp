@@ -20,7 +20,7 @@ nsresult
 nsPKIParamBlock::Init()
 {
   mDialogParamBlock = do_CreateInstance(NS_DIALOGPARAMBLOCK_CONTRACTID);
-  return (mDialogParamBlock == nsnull) ? NS_ERROR_OUT_OF_MEMORY : NS_OK;
+  return !mDialogParamBlock ? NS_ERROR_OUT_OF_MEMORY : NS_OK;
 }
 
 nsPKIParamBlock::~nsPKIParamBlock()
@@ -29,32 +29,32 @@ nsPKIParamBlock::~nsPKIParamBlock()
 
 
 NS_IMETHODIMP 
-nsPKIParamBlock::SetNumberStrings( PRInt32 inNumStrings )
+nsPKIParamBlock::SetNumberStrings( int32_t inNumStrings )
 {
   return mDialogParamBlock->SetNumberStrings(inNumStrings);
 }
 
 NS_IMETHODIMP 
-nsPKIParamBlock::SetInt(PRInt32 inIndex, PRInt32 inInt)
+nsPKIParamBlock::SetInt(int32_t inIndex, int32_t inInt)
 {
   return mDialogParamBlock->SetInt(inIndex, inInt);
 }
 
 NS_IMETHODIMP 
-nsPKIParamBlock::GetInt(PRInt32 inIndex, PRInt32 *outInt)
+nsPKIParamBlock::GetInt(int32_t inIndex, int32_t *outInt)
 {
   return mDialogParamBlock->GetInt(inIndex, outInt);
 }
 
 
 NS_IMETHODIMP 
-nsPKIParamBlock::GetString(PRInt32 inIndex, PRUnichar **_retval)
+nsPKIParamBlock::GetString(int32_t inIndex, PRUnichar **_retval)
 {
   return mDialogParamBlock->GetString(inIndex, _retval);
 }
 
 NS_IMETHODIMP 
-nsPKIParamBlock::SetString(PRInt32 inIndex, const PRUnichar *inString)
+nsPKIParamBlock::SetString(int32_t inIndex, const PRUnichar *inString)
 {
   return mDialogParamBlock->SetString(inIndex, inString);
 }
@@ -73,22 +73,24 @@ nsPKIParamBlock::SetObjects(nsIMutableArray * aObjects)
 
 
 
-/* void setISupportAtIndex (in PRInt32 index, in nsISupports object); */
+/* void setISupportAtIndex (in int32_t index, in nsISupports object); */
 NS_IMETHODIMP 
-nsPKIParamBlock::SetISupportAtIndex(PRInt32 index, nsISupports *object)
+nsPKIParamBlock::SetISupportAtIndex(int32_t index, nsISupports *object)
 {
   if (!mSupports) {
     mSupports = do_CreateInstance(NS_SUPPORTSARRAY_CONTRACTID);
-    if (mSupports == nsnull) {
+    if (!mSupports) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
   }
-  return mSupports->InsertElementAt(object, index-1);
+  // Ignore any InsertElementAt error, because this function always did that
+  mSupports->InsertElementAt(object, index-1);
+  return NS_OK;
 }
 
-/* nsISupports getISupportAtIndex (in PRInt32 index); */
+/* nsISupports getISupportAtIndex (in int32_t index); */
 NS_IMETHODIMP 
-nsPKIParamBlock::GetISupportAtIndex(PRInt32 index, nsISupports **_retval)
+nsPKIParamBlock::GetISupportAtIndex(int32_t index, nsISupports **_retval)
 {
   NS_ENSURE_ARG(_retval);
 

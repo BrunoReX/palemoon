@@ -41,7 +41,7 @@ nsGTKRemoteService::Startup(const char* aAppName, const char* aProfileName)
 
   mServerWindow = gtk_invisible_new();
   gtk_widget_realize(mServerWindow);
-  HandleCommandsFor(mServerWindow, nsnull);
+  HandleCommandsFor(mServerWindow, nullptr);
 
   if (!mWindows.IsInitialized())
     mWindows.Init();
@@ -67,11 +67,11 @@ static nsIWidget* GetMainWidget(nsIDOMWindow* aWindow)
 {
   // get the native window for this instance
   nsCOMPtr<nsPIDOMWindow> window(do_QueryInterface(aWindow));
-  NS_ENSURE_TRUE(window, nsnull);
+  NS_ENSURE_TRUE(window, nullptr);
 
   nsCOMPtr<nsIBaseWindow> baseWindow
     (do_QueryInterface(window->GetDocShell()));
-  NS_ENSURE_TRUE(baseWindow, nsnull);
+  NS_ENSURE_TRUE(baseWindow, nullptr);
 
   nsCOMPtr<nsIWidget> mainWidget;
   baseWindow->GetMainWidget(getter_AddRefs(mainWidget));
@@ -83,17 +83,6 @@ nsGTKRemoteService::RegisterWindow(nsIDOMWindow* aWindow)
 {
   nsIWidget* mainWidget = GetMainWidget(aWindow);
   NS_ENSURE_TRUE(mainWidget, NS_ERROR_FAILURE);
-
-  // walk up the widget tree and find the toplevel window in the
-  // hierarchy
-
-  nsIWidget* tempWidget = mainWidget->GetParent();
-
-  while (tempWidget) {
-    tempWidget = tempWidget->GetParent();
-    if (tempWidget)
-      mainWidget = tempWidget;
-  }
 
   GtkWidget* widget =
     (GtkWidget*) mainWidget->GetNativeData(NS_NATIVE_SHELLWIDGET);
@@ -122,7 +111,7 @@ nsGTKRemoteService::Shutdown()
     return NS_ERROR_NOT_INITIALIZED;
 
   gtk_widget_destroy(mServerWindow);
-  mServerWindow = nsnull;
+  mServerWindow = nullptr;
   return NS_OK;
 }
 
@@ -133,7 +122,7 @@ nsGTKRemoteService::Shutdown()
 // raising an existing window rather than showing a new window for the first time.
 void
 nsGTKRemoteService::SetDesktopStartupIDOrTimestamp(const nsACString& aDesktopStartupID,
-                                                   PRUint32 aTimestamp) {
+                                                   uint32_t aTimestamp) {
   nsGTKToolkit* toolkit = nsGTKToolkit::GetToolkit();
   if (!toolkit)
     return;
@@ -155,7 +144,11 @@ nsGTKRemoteService::HandleCommandsFor(GtkWidget* widget,
 
   gtk_widget_add_events(widget, GDK_PROPERTY_CHANGE_MASK);
 
+#if (MOZ_WIDGET_GTK == 2)
   Window window = GDK_WINDOW_XWINDOW(widget->window);
+#else
+  Window window = gdk_x11_window_get_xid(gtk_widget_get_window(widget));
+#endif
   nsXRemoteService::HandleCommandsFor(window);
 
 }
@@ -168,8 +161,13 @@ nsGTKRemoteService::HandlePropertyChange(GtkWidget *aWidget,
   if (pevent->state == GDK_PROPERTY_NEW_VALUE) {
     Atom changedAtom = gdk_x11_atom_to_xatom(pevent->atom);
 
-    return HandleNewProperty(GDK_WINDOW_XWINDOW(pevent->window),
-                             GDK_DISPLAY(),
+#if (MOZ_WIDGET_GTK == 2)
+    XID window = GDK_WINDOW_XWINDOW(pevent->window);
+#else
+    XID window = gdk_x11_window_get_xid(gtk_widget_get_window(aWidget));
+#endif
+    return HandleNewProperty(window,
+                             GDK_DISPLAY_XDISPLAY(gdk_display_get_default()),
                              pevent->time, changedAtom, aThis);
   }
   return FALSE;

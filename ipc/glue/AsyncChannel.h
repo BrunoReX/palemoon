@@ -71,7 +71,10 @@ public:
         virtual void OnChannelError() = 0;
         virtual Result OnMessageReceived(const Message& aMessage) = 0;
         virtual void OnProcessingError(Result aError) = 0;
-        virtual void OnChannelConnected(int32 peer_pid) {};
+        // FIXME/bug 792652: this doesn't really belong here, but a
+        // large refactoring is needed to put it where it belongs.
+        virtual int32_t GetProtocolTypeId() = 0;
+        virtual void OnChannelConnected(int32_t peer_pid) {}
     };
 
     enum Side { Parent, Child, Unknown };
@@ -115,7 +118,7 @@ public:
     virtual bool Echo(Message* msg);
 
     // Send OnChannelConnected notification to listeners.
-    void DispatchOnChannelConnected(int32 peer_pid);
+    void DispatchOnChannelConnected(int32_t peer_pid);
 
     //
     // Each AsyncChannel is associated with either a ProcessLink or a
@@ -150,6 +153,7 @@ public:
     
         void OnCloseChannel();
         void OnChannelOpened();
+        void OnTakeConnectedChannel();
         void OnEchoMessage(Message* msg);
 
         void AssertIOThread() const
@@ -167,13 +171,13 @@ public:
         // These methods acquire the monitor and forward to the
         // similarly named methods in AsyncChannel below
         // (OnMessageReceivedFromLink(), etc)
-        NS_OVERRIDE virtual void OnMessageReceived(const Message& msg);
-        NS_OVERRIDE virtual void OnChannelConnected(int32 peer_pid);
-        NS_OVERRIDE virtual void OnChannelError();
+        virtual void OnMessageReceived(const Message& msg) MOZ_OVERRIDE;
+        virtual void OnChannelConnected(int32_t peer_pid) MOZ_OVERRIDE;
+        virtual void OnChannelError() MOZ_OVERRIDE;
 
-        NS_OVERRIDE virtual void EchoMessage(Message *msg);
-        NS_OVERRIDE virtual void SendMessage(Message *msg);
-        NS_OVERRIDE virtual void SendClose();
+        virtual void EchoMessage(Message *msg) MOZ_OVERRIDE;
+        virtual void SendMessage(Message *msg) MOZ_OVERRIDE;
+        virtual void SendClose() MOZ_OVERRIDE;
     };
     
     class ThreadLink : public Link {
@@ -184,9 +188,9 @@ public:
         ThreadLink(AsyncChannel *aChan, AsyncChannel *aTargetChan);
         virtual ~ThreadLink();
 
-        NS_OVERRIDE virtual void EchoMessage(Message *msg);
-        NS_OVERRIDE virtual void SendMessage(Message *msg);
-        NS_OVERRIDE virtual void SendClose();
+        virtual void EchoMessage(Message *msg) MOZ_OVERRIDE;
+        virtual void SendMessage(Message *msg) MOZ_OVERRIDE;
+        virtual void SendClose() MOZ_OVERRIDE;
     };
 
 protected:
@@ -208,7 +212,10 @@ protected:
 
     bool Connected() const {
         mMonitor->AssertCurrentThreadOwns();
-        return ChannelConnected == mChannelState;
+        // The transport layer allows us to send messages before
+        // receiving the "connected" ack from the remote side.
+        return (ChannelOpening == mChannelState ||
+                ChannelConnected == mChannelState);
     }
 
     // Return true if |msg| is a special message targeted at the IO
@@ -229,7 +236,7 @@ protected:
 
     // Run on the worker thread
     void OnDispatchMessage(const Message& aMsg);
-    virtual bool OnSpecialMessage(uint16 id, const Message& msg);
+    virtual bool OnSpecialMessage(uint16_t id, const Message& msg);
     void SendSpecialMessage(Message* msg) const;
 
     // Tell the IO thread to close the channel and wait for it to ACK.

@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -6,6 +6,7 @@
 
 /* Various JS utility functions. */
 
+#include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 
 #include <stdio.h>
@@ -20,8 +21,125 @@
 #endif
 
 #include "js/TemplateLib.h"
+#include "js/Utility.h"
+
+#if USE_ZLIB
+#include "zlib.h"
+#endif
 
 using namespace js;
+
+#if USE_ZLIB
+static void *
+zlib_alloc(void *cx, uInt items, uInt size)
+{
+    return js_malloc(items * size);
+}
+
+static void
+zlib_free(void *cx, void *addr)
+{
+    js_free(addr);
+}
+
+Compressor::Compressor(const unsigned char *inp, size_t inplen)
+    : inp(inp),
+      inplen(inplen),
+      outbytes(0)
+{
+    JS_ASSERT(inplen > 0);
+    zs.opaque = NULL;
+    zs.next_in = (Bytef *)inp;
+    zs.avail_in = 0;
+    zs.next_out = NULL;
+    zs.avail_out = 0;
+    zs.zalloc = zlib_alloc;
+    zs.zfree = zlib_free;
+}
+
+
+Compressor::~Compressor()
+{
+    int ret = deflateEnd(&zs);
+    if (ret != Z_OK) {
+        // If we finished early, we can get a Z_DATA_ERROR.
+        JS_ASSERT(ret == Z_DATA_ERROR);
+        JS_ASSERT(uInt(zs.next_in - inp) < inplen || !zs.avail_out);
+    }
+}
+
+bool
+Compressor::init()
+{
+    if (inplen >= UINT32_MAX)
+        return false;
+    int ret = deflateInit(&zs, Z_DEFAULT_COMPRESSION);
+    if (ret != Z_OK) {
+        JS_ASSERT(ret == Z_MEM_ERROR);
+        return false;
+    }
+    return true;
+}
+
+void
+Compressor::setOutput(unsigned char *out, size_t outlen)
+{
+    JS_ASSERT(outlen > outbytes);
+    zs.next_out = out + outbytes;
+    zs.avail_out = outlen - outbytes;
+}
+
+Compressor::Status
+Compressor::compressMore()
+{
+    JS_ASSERT(zs.next_out);
+    uInt left = inplen - (zs.next_in - inp);
+    bool done = left <= CHUNKSIZE;
+    if (done)
+        zs.avail_in = left;
+    else if (zs.avail_in == 0)
+        zs.avail_in = CHUNKSIZE;
+    Bytef *oldout = zs.next_out;
+    int ret = deflate(&zs, done ? Z_FINISH : Z_NO_FLUSH);
+    outbytes += zs.next_out - oldout;
+    if (ret == Z_MEM_ERROR) {
+        zs.avail_out = 0;
+        return OOM;
+    }
+    if (ret == Z_BUF_ERROR || (done && ret == Z_OK)) {
+        JS_ASSERT(zs.avail_out == 0);
+        return MOREOUTPUT;
+    }
+    JS_ASSERT_IF(!done, ret == Z_OK);
+    JS_ASSERT_IF(done, ret == Z_STREAM_END);
+    return done ? DONE : CONTINUE;
+}
+
+bool
+js::DecompressString(const unsigned char *inp, size_t inplen, unsigned char *out, size_t outlen)
+{
+    JS_ASSERT(inplen <= UINT32_MAX);
+    z_stream zs;
+    zs.zalloc = zlib_alloc;
+    zs.zfree = zlib_free;
+    zs.opaque = NULL;
+    zs.next_in = (Bytef *)inp;
+    zs.avail_in = inplen;
+    zs.next_out = out;
+    JS_ASSERT(outlen);
+    zs.avail_out = outlen;
+    int ret = inflateInit(&zs);
+    if (ret != Z_OK) {
+        JS_ASSERT(ret == Z_MEM_ERROR);
+        return false;
+    }
+    ret = inflate(&zs, Z_FINISH);
+    JS_ASSERT(ret == Z_STREAM_END);
+    ret = inflateEnd(&zs);
+    JS_ASSERT(ret == Z_OK);
+    return true;
+}
+#endif
 
 #ifdef DEBUG
 /* For JS_OOM_POSSIBLY_FAIL in jsutil.h. */
@@ -35,41 +153,11 @@ JS_PUBLIC_DATA(uint32_t) OOM_counter = 0;
  */
 JS_STATIC_ASSERT(sizeof(void *) == sizeof(void (*)()));
 
-static JS_NEVER_INLINE void
-CrashInJS()
-{
-    /*
-     * We write 123 here so that the machine code for this function is
-     * unique. Otherwise the linker, trying to be smart, might use the
-     * same code for CrashInJS and for some other function. That
-     * messes up the signature in minidumps.
-     */
-
-#if defined(WIN32)
-    /*
-     * We used to call DebugBreak() on Windows, but amazingly, it causes
-     * the MSVS 2010 debugger not to be able to recover a call stack.
-     */
-    *((volatile int *) NULL) = 123;
-    exit(3);
-#elif defined(__APPLE__)
-    /*
-     * On Mac OS X, Breakpad ignores signals. Only real Mach exceptions are
-     * trapped.
-     */
-    *((volatile int *) NULL) = 123;  /* To continue from here in GDB: "return" then "continue". */
-    raise(SIGABRT);  /* In case above statement gets nixed by the optimizer. */
-#else
-    raise(SIGABRT);  /* To continue from here in GDB: "signal 0". */
-#endif
-}
-
 JS_PUBLIC_API(void)
 JS_Assert(const char *s, const char *file, int ln)
 {
-    fprintf(stderr, "Assertion failure: %s, at %s:%d\n", s, file, ln);
-    fflush(stderr);
-    CrashInJS();
+    MOZ_ReportAssertionFailure(s, file, ln);
+    MOZ_CRASH();
 }
 
 #ifdef JS_BASIC_STATS
@@ -107,11 +195,11 @@ ValToBin(unsigned logscale, uint32_t val)
     if (val <= 1)
         return val;
     bin = (logscale == 10)
-          ? (unsigned) ceil(log10((double) val))
-          : (logscale == 2)
-          ? (unsigned) JS_CEILING_LOG2W(val)
-          : val;
-    return JS_MIN(bin, 10);
+        ? (unsigned) ceil(log10((double) val))
+        : (logscale == 2)
+        ? (unsigned) JS_CEILING_LOG2W(val)
+        : val;
+    return Min(bin, 10U);
 }
 
 void

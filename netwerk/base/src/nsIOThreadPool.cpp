@@ -15,7 +15,7 @@
 //
 // NSPR_LOG_MODULES=nsIOThreadPool:5
 //
-static PRLogModuleInfo *gIOThreadPoolLog = nsnull;
+static PRLogModuleInfo *gIOThreadPoolLog = nullptr;
 #endif
 #define LOG(args) PR_LOG(gIOThreadPoolLog, PR_LOG_DEBUG, args)
 
@@ -59,10 +59,11 @@ private:
     PRLock    *mLock;
     PRCondVar *mIdleThreadCV;   // notified to wake up an idle thread
     PRCondVar *mExitThreadCV;   // notified when a thread exits
-    PRUint32   mNumThreads;     // number of active + idle threads
-    PRUint32   mNumIdleThreads; // number of idle threads
+    uint32_t   mNumThreads;     // number of active + idle threads
+    uint32_t   mNumIdleThreads; // number of idle threads
     PRCList    mEventQ;         // queue of PLEvent structs
     bool       mShutdown;       // set to true if shutting down
+    nsThreadPoolNaming mNaming; // thread name numbering
 };
 
 NS_IMPL_THREADSAFE_ISUPPORTS2(nsIOThreadPool, nsIEventTarget, nsIObserver)
@@ -201,6 +202,8 @@ void
 nsIOThreadPool::ThreadFunc(void *arg)
 {
     nsIOThreadPool *pool = (nsIOThreadPool *) arg;
+
+    pool->mNaming.SetThreadPoolName("IO Thread");
 
     LOG(("entering ThreadFunc\n"));
 

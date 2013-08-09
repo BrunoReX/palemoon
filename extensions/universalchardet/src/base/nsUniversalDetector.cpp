@@ -12,28 +12,28 @@
 #include "nsEscCharsetProber.h"
 #include "nsLatin1Prober.h"
 
-nsUniversalDetector::nsUniversalDetector(PRUint32 aLanguageFilter)
+nsUniversalDetector::nsUniversalDetector(uint32_t aLanguageFilter)
 {
   mDone = false;
   mBestGuess = -1;   //illegal value as signal
   mInTag = false;
-  mEscCharSetProber = nsnull;
+  mEscCharSetProber = nullptr;
 
   mStart = true;
-  mDetectedCharset = nsnull;
+  mDetectedCharset = nullptr;
   mGotData = false;
   mInputState = ePureAscii;
   mLastChar = '\0';
   mLanguageFilter = aLanguageFilter;
 
-  PRUint32 i;
+  uint32_t i;
   for (i = 0; i < NUM_OF_CHARSET_PROBERS; i++)
-    mCharSetProbers[i] = nsnull;
+    mCharSetProbers[i] = nullptr;
 }
 
 nsUniversalDetector::~nsUniversalDetector() 
 {
-  for (PRInt32 i = 0; i < NUM_OF_CHARSET_PROBERS; i++)
+  for (int32_t i = 0; i < NUM_OF_CHARSET_PROBERS; i++)
     delete mCharSetProbers[i];
 
   delete mEscCharSetProber;
@@ -47,7 +47,7 @@ nsUniversalDetector::Reset()
   mInTag = false;
 
   mStart = true;
-  mDetectedCharset = nsnull;
+  mDetectedCharset = nullptr;
   mGotData = false;
   mInputState = ePureAscii;
   mLastChar = '\0';
@@ -55,7 +55,7 @@ nsUniversalDetector::Reset()
   if (mEscCharSetProber)
     mEscCharSetProber->Reset();
 
-  PRUint32 i;
+  uint32_t i;
   for (i = 0; i < NUM_OF_CHARSET_PROBERS; i++)
     if (mCharSetProbers[i])
       mCharSetProbers[i]->Reset();
@@ -65,7 +65,7 @@ nsUniversalDetector::Reset()
 #define SHORTCUT_THRESHOLD      (float)0.95
 #define MINIMUM_THRESHOLD      (float)0.20
 
-nsresult nsUniversalDetector::HandleData(const char* aBuf, PRUint32 aLen)
+nsresult nsUniversalDetector::HandleData(const char* aBuf, uint32_t aLen)
 {
   if(mDone) 
     return NS_OK;
@@ -104,7 +104,7 @@ nsresult nsUniversalDetector::HandleData(const char* aBuf, PRUint32 aLen)
       }
   }
   
-  PRUint32 i;
+  uint32_t i;
   for (i = 0; i < aLen; i++)
   {
     //other than 0xa0, if every othe character is ascii, the page is ascii
@@ -119,27 +119,27 @@ nsresult nsUniversalDetector::HandleData(const char* aBuf, PRUint32 aLen)
         //kill mEscCharSetProber if it is active
         if (mEscCharSetProber) {
           delete mEscCharSetProber;
-          mEscCharSetProber = nsnull;
+          mEscCharSetProber = nullptr;
         }
 
         //start multibyte and singlebyte charset prober
-        if (nsnull == mCharSetProbers[0])
+        if (nullptr == mCharSetProbers[0])
         {
           mCharSetProbers[0] = new nsMBCSGroupProber(mLanguageFilter);
-          if (nsnull == mCharSetProbers[0])
+          if (nullptr == mCharSetProbers[0])
             return NS_ERROR_OUT_OF_MEMORY;
         }
-        if (nsnull == mCharSetProbers[1] &&
+        if (nullptr == mCharSetProbers[1] &&
             (mLanguageFilter & NS_FILTER_NON_CJK))
         {
           mCharSetProbers[1] = new nsSBCSGroupProber;
-          if (nsnull == mCharSetProbers[1])
+          if (nullptr == mCharSetProbers[1])
             return NS_ERROR_OUT_OF_MEMORY;
         }
-        if (nsnull == mCharSetProbers[2])
+        if (nullptr == mCharSetProbers[2])
         {
           mCharSetProbers[2] = new nsLatin1Prober; 
-          if (nsnull == mCharSetProbers[2])
+          if (nullptr == mCharSetProbers[2])
             return NS_ERROR_OUT_OF_MEMORY;
         }
       }
@@ -161,9 +161,9 @@ nsresult nsUniversalDetector::HandleData(const char* aBuf, PRUint32 aLen)
   switch (mInputState)
   {
   case eEscAscii:
-    if (nsnull == mEscCharSetProber) {
+    if (nullptr == mEscCharSetProber) {
       mEscCharSetProber = new nsEscCharSetProber(mLanguageFilter);
-      if (nsnull == mEscCharSetProber)
+      if (nullptr == mEscCharSetProber)
         return NS_ERROR_OUT_OF_MEMORY;
     }
     st = mEscCharSetProber->HandleData(aBuf, aLen);
@@ -219,9 +219,9 @@ void nsUniversalDetector::DataEnd()
     {
       float proberConfidence;
       float maxProberConfidence = (float)0.0;
-      PRInt32 maxProber = 0;
+      int32_t maxProber = 0;
 
-      for (PRInt32 i = 0; i < NUM_OF_CHARSET_PROBERS; i++)
+      for (int32_t i = 0; i < NUM_OF_CHARSET_PROBERS; i++)
       {
         if (mCharSetProbers[i])
         {

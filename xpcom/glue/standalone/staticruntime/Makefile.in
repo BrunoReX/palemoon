@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -63,7 +63,7 @@ USE_STATIC_LIBS = 1
 # Don't use STL wrappers here (i.e. wrapped <new>); they require mozalloc
 STL_FLAGS	=
 
-GARBAGE         += $(XPCOM_GLUE_SRC_LCPPSRCS) $(wildcard *.$(OBJ_SUFFIX))
+GARBAGE         += $(XPCOM_GLUE_SRC_LCPPSRCS)
 
 SRCS_IN_OBJDIR	= 1
 

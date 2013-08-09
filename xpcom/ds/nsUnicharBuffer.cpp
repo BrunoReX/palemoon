@@ -20,7 +20,7 @@ UnicharBufferImpl::Create(nsISupports *aOuter, REFNSIID aIID, void **aResult)
     return NS_ERROR_NO_AGGREGATION;
 
   UnicharBufferImpl* it = new UnicharBufferImpl();
-  if (it == nsnull) 
+  if (it == nullptr) 
     return NS_ERROR_OUT_OF_MEMORY;
 
   NS_ADDREF(it);
@@ -30,7 +30,7 @@ UnicharBufferImpl::Create(nsISupports *aOuter, REFNSIID aIID, void **aResult)
 }
 
 NS_IMETHODIMP
-UnicharBufferImpl::Init(PRUint32 aBufferSize)
+UnicharBufferImpl::Init(uint32_t aBufferSize)
 {
   if (aBufferSize < MIN_BUFFER_SIZE) {
     aBufferSize = MIN_BUFFER_SIZE;
@@ -45,20 +45,20 @@ NS_IMPL_ISUPPORTS1(UnicharBufferImpl, nsIUnicharBuffer)
 
 UnicharBufferImpl::~UnicharBufferImpl()
 {
-  if (nsnull != mBuffer) {
+  if (nullptr != mBuffer) {
     delete[] mBuffer;
-    mBuffer = nsnull;
+    mBuffer = nullptr;
   }
   mLength = 0;
 }
 
-NS_IMETHODIMP_(PRInt32)
+NS_IMETHODIMP_(int32_t)
 UnicharBufferImpl::GetLength() const
 {
   return mLength;
 }
 
-NS_IMETHODIMP_(PRInt32)
+NS_IMETHODIMP_(int32_t)
 UnicharBufferImpl::GetBufferSize() const
 {
   return mSpace;
@@ -71,13 +71,13 @@ UnicharBufferImpl::GetBuffer() const
 }
 
 NS_IMETHODIMP_(bool)
-UnicharBufferImpl::Grow(PRInt32 aNewSize)
+UnicharBufferImpl::Grow(int32_t aNewSize)
 {
-  if (PRUint32(aNewSize) < MIN_BUFFER_SIZE) {
+  if (uint32_t(aNewSize) < MIN_BUFFER_SIZE) {
     aNewSize = MIN_BUFFER_SIZE;
   }
   PRUnichar* newbuf = new PRUnichar[aNewSize];
-  if (nsnull != newbuf) {
+  if (nullptr != newbuf) {
     if (0 != mLength) {
       memcpy(newbuf, mBuffer, mLength * sizeof(PRUnichar));
     }
@@ -91,7 +91,7 @@ UnicharBufferImpl::Grow(PRInt32 aNewSize)
 nsresult
 NS_NewUnicharBuffer(nsIUnicharBuffer** aInstancePtrResult,
                     nsISupports* aOuter,
-                    PRUint32 aBufferSize)
+                    uint32_t aBufferSize)
 {
   nsresult rv;
   nsIUnicharBuffer* buf;

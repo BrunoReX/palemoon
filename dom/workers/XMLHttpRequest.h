@@ -12,6 +12,7 @@
 // Need this for XMLHttpRequestResponseType.
 #include "mozilla/dom/XMLHttpRequestBinding.h"
 
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/TypedArray.h"
 
 BEGIN_WORKERS_NAMESPACE
@@ -58,6 +59,9 @@ private:
   bool mWithCredentials;
   bool mCanceled;
 
+  bool mMozAnon;
+  bool mMozSystem;
+
 protected:
   XMLHttpRequest(JSContext* aCx, WorkerPrivate* aWorkerPrivate);
   virtual ~XMLHttpRequest();
@@ -70,7 +74,23 @@ public:
   _finalize(JSFreeOp* aFop) MOZ_OVERRIDE;
 
   static XMLHttpRequest*
-  Constructor(JSContext* aCx, JSObject* aGlobal, ErrorResult& aRv);
+  Constructor(JSContext* aCx, JSObject* aGlobal,
+              const MozXMLHttpRequestParametersWorkers& aParams,
+              ErrorResult& aRv);
+
+  static XMLHttpRequest*
+  Constructor(JSContext* aCx, JSObject* aGlobal,
+              const nsAString& ignored, ErrorResult& aRv)
+  {
+    // Pretend like someone passed null, so we can pick up the default values
+    MozXMLHttpRequestParametersWorkers params;
+    if (!params.Init(aCx, nullptr, JS::NullValue())) {
+      aRv.Throw(NS_ERROR_UNEXPECTED);
+      return nullptr;
+    }
+
+    return Constructor(aCx, aGlobal, params, aRv);
+  }
 
   void
   Unpin();
@@ -95,20 +115,8 @@ public:
 
 #undef IMPL_GETTER_AND_SETTER
 
-  JSObject*
-  GetOnuploadprogress(JSContext* /* unused */, ErrorResult& aRv)
-  {
-    aRv = NS_ERROR_NOT_IMPLEMENTED;
-    return NULL;
-  }
-  void
-  SetOnuploadprogress(JSContext* /* unused */, JSObject* aListener, ErrorResult& aRv)
-  {
-    aRv = NS_ERROR_NOT_IMPLEMENTED;
-  }
-
   uint16_t
-  GetReadyState() const
+  ReadyState() const
   {
     return mStateData.mReadyState;
   }
@@ -123,7 +131,7 @@ public:
                    ErrorResult& aRv);
 
   uint32_t
-  GetTimeout() const
+  Timeout() const
   {
     return mTimeout;
   }
@@ -132,7 +140,7 @@ public:
   SetTimeout(uint32_t aTimeout, ErrorResult& aRv);
 
   bool
-  GetWithCredentials() const
+  WithCredentials() const
   {
     return mWithCredentials;
   }
@@ -141,7 +149,7 @@ public:
   SetWithCredentials(bool aWithCredentials, ErrorResult& aRv);
 
   bool
-  GetMultipart() const
+  Multipart() const
   {
     return mMultipart;
   }
@@ -150,7 +158,7 @@ public:
   SetMultipart(bool aMultipart, ErrorResult& aRv);
 
   bool
-  GetMozBackgroundRequest() const
+  MozBackgroundRequest() const
   {
     return mBackgroundRequest;
   }
@@ -172,7 +180,7 @@ public:
 
   void
   Send(ArrayBuffer& aBody, ErrorResult& aRv) {
-    return Send(aBody.mObj, aRv);
+    return Send(aBody.Obj(), aRv);
   }
 
   void
@@ -205,7 +213,7 @@ public:
   OverrideMimeType(const nsAString& aMimeType, ErrorResult& aRv);
 
   XMLHttpRequestResponseType
-  GetResponseType() const
+  ResponseType() const
   {
     return mResponseType;
   }
@@ -255,6 +263,16 @@ public:
   {
     mStateData.mResponseText.SetIsVoid(true);
     mStateData.mResponse = JSVAL_NULL;
+  }
+
+  bool MozAnon() const
+  {
+    return mMozAnon;
+  }
+
+  bool MozSystem() const
+  {
+    return mMozSystem;
   }
 
 private:

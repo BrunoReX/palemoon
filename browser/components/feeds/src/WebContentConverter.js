@@ -1,9 +1,10 @@
-# -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+Components.utils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -368,7 +369,7 @@ WebContentConverterRegistrar.prototype = {
     LOG("registerProtocolHandler(" + aProtocol + "," + aURIString + "," + aTitle + ")");
 
     var browserWindow = this._getBrowserWindowForContentWindow(aContentWindow);    
-    if (browserWindow.gPrivateBrowsingUI.privateWindow) {
+    if (PrivateBrowsingUtils.isWindowPrivate(browserWindow)) {
       // Inside the private browsing mode, we don't want to alert the user to save
       // a protocol handler.  We log it to the error console so that web developers
       // would have some way to tell what's going wrong.
@@ -898,4 +899,4 @@ WebContentConverterRegistrar.prototype = {
   }]
 };
 
-var NSGetFactory = XPCOMUtils.generateNSGetFactory([WebContentConverterRegistrar]);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory([WebContentConverterRegistrar]);

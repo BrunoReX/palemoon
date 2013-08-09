@@ -28,7 +28,7 @@ public:
 
   void Refresh();
 
-  nsIDOMMimeType* GetItemAt(PRUint32 aIndex, nsresult* aResult);
+  nsIDOMMimeType* GetItemAt(uint32_t aIndex, nsresult* aResult);
   nsIDOMMimeType* GetNamedItem(const nsAString& aName, nsresult* aResult);
 
   static nsMimeTypeArray* FromSupports(nsISupports* aSupports)
@@ -51,7 +51,7 @@ public:
   void Invalidate()
   {
     // NB: This will cause GetMimeTypes to fail from now on.
-    mNavigator = nsnull;
+    mNavigator = nullptr;
     Clear();
   }
 
@@ -62,7 +62,7 @@ private:
 protected:
   nsIDOMNavigator* mNavigator;
   // Number of mimetypes handled by plugins.
-  PRUint32 mPluginMimeTypeCount;
+  uint32_t mPluginMimeTypeCount;
   // mMimeTypeArray contains all mimetypes handled by plugins
   // (mPluginMimeTypeCount) and any mimetypes that we handle internally and
   // have been looked up before. The number of items in mMimeTypeArray should
@@ -80,7 +80,7 @@ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIDOMMIMETYPE
 
-  void DetachPlugin() { mPlugin = nsnull; }
+  void DetachPlugin() { mPlugin = nullptr; }
 
 protected:
   nsIDOMPlugin* mPlugin;

@@ -21,6 +21,8 @@
 #include "nsIInputStream.h"
 #include "nsISeekableStream.h"
 #include "prlog.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/Likely.h"
 
 #if defined(PR_LOGGING)
 //
@@ -34,9 +36,16 @@
 // this enables PR_LOG_DEBUG level information and places all output in
 // the file nspr.log
 //
-static PRLogModuleInfo* sLog = PR_NewLogModule("nsStorageStream");
+static PRLogModuleInfo*
+GetStorageStreamLog()
+{
+    static PRLogModuleInfo *sLog;
+    if (!sLog)
+        sLog = PR_NewLogModule("nsStorageStream");
+    return sLog;
+}
 #endif
-#define LOG(args) PR_LOG(sLog, PR_LOG_DEBUG, args)
+#define LOG(args) PR_LOG(GetStorageStreamLog(), PR_LOG_DEBUG, args)
 
 nsStorageStream::nsStorageStream()
     : mSegmentedBuffer(0), mSegmentSize(0), mWriteInProgress(false),
@@ -55,7 +64,7 @@ NS_IMPL_THREADSAFE_ISUPPORTS2(nsStorageStream,
                               nsIOutputStream)
 
 NS_IMETHODIMP
-nsStorageStream::Init(PRUint32 segmentSize, PRUint32 maxSize,
+nsStorageStream::Init(uint32_t segmentSize, uint32_t maxSize,
                       nsIMemory *segmentAllocator)
 {
     mSegmentedBuffer = new nsSegmentedBuffer();
@@ -66,14 +75,14 @@ nsStorageStream::Init(PRUint32 segmentSize, PRUint32 maxSize,
     mSegmentSizeLog2 = PR_FloorLog2(segmentSize);
 
     // Segment size must be a power of two
-    if (mSegmentSize != ((PRUint32)1 << mSegmentSizeLog2))
+    if (mSegmentSize != ((uint32_t)1 << mSegmentSizeLog2))
         return NS_ERROR_INVALID_ARG;
 
     return mSegmentedBuffer->Init(segmentSize, maxSize, segmentAllocator);
 }
 
 NS_IMETHODIMP
-nsStorageStream::GetOutputStream(PRInt32 aStartingOffset, 
+nsStorageStream::GetOutputStream(int32_t aStartingOffset, 
                                  nsIOutputStream * *aOutputStream)
 {
     NS_ENSURE_ARG(aOutputStream);
@@ -108,7 +117,7 @@ nsStorageStream::Close()
     
     mWriteInProgress = false;
     
-    PRInt32 segmentOffset = SegOffset(mLogicalLength);
+    int32_t segmentOffset = SegOffset(mLogicalLength);
 
     // Shrink the final segment in the segmented buffer to the minimum size
     // needed to contain the data, so as to conserve memory.
@@ -131,12 +140,12 @@ nsStorageStream::Flush()
 }
 
 NS_IMETHODIMP
-nsStorageStream::Write(const char *aBuffer, PRUint32 aCount, PRUint32 *aNumWritten)
+nsStorageStream::Write(const char *aBuffer, uint32_t aCount, uint32_t *aNumWritten)
 {
     NS_ENSURE_TRUE(mSegmentedBuffer, NS_ERROR_NOT_INITIALIZED);
     
     const char* readCursor;
-    PRUint32 count, availableInSegment, remaining;
+    uint32_t count, availableInSegment, remaining;
     nsresult rv = NS_OK;
 
     NS_ENSURE_ARG_POINTER(aNumWritten);
@@ -154,7 +163,7 @@ nsStorageStream::Write(const char *aBuffer, PRUint32 aCount, PRUint32 *aNumWritt
     // even for N=0 (with the caveat that we require .write("", 0) be called to
     // initialize internal buffers).
     bool firstTime = mSegmentedBuffer->GetSegmentCount() == 0;
-    while (remaining || NS_UNLIKELY(firstTime)) {
+    while (remaining || MOZ_UNLIKELY(firstTime)) {
         firstTime = false;
         availableInSegment = mSegmentEnd - mWriteCursor;
         if (!availableInSegment) {
@@ -190,13 +199,13 @@ nsStorageStream::Write(const char *aBuffer, PRUint32 aCount, PRUint32 *aNumWritt
 }
 
 NS_IMETHODIMP 
-nsStorageStream::WriteFrom(nsIInputStream *inStr, PRUint32 count, PRUint32 *_retval)
+nsStorageStream::WriteFrom(nsIInputStream *inStr, uint32_t count, uint32_t *_retval)
 {
     return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP 
-nsStorageStream::WriteSegments(nsReadSegmentFun reader, void * closure, PRUint32 count, PRUint32 *_retval)
+nsStorageStream::WriteSegments(nsReadSegmentFun reader, void * closure, uint32_t count, uint32_t *_retval)
 {
     return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -209,7 +218,7 @@ nsStorageStream::IsNonBlocking(bool *aNonBlocking)
 }
 
 NS_IMETHODIMP
-nsStorageStream::GetLength(PRUint32 *aLength)
+nsStorageStream::GetLength(uint32_t *aLength)
 {
     NS_ENSURE_ARG(aLength);
     *aLength = mLogicalLength;
@@ -218,7 +227,7 @@ nsStorageStream::GetLength(PRUint32 *aLength)
 
 // Truncate the buffer by deleting the end segments
 NS_IMETHODIMP
-nsStorageStream::SetLength(PRUint32 aLength)
+nsStorageStream::SetLength(uint32_t aLength)
 {
     NS_ENSURE_TRUE(mSegmentedBuffer, NS_ERROR_NOT_INITIALIZED);
     
@@ -228,8 +237,8 @@ nsStorageStream::SetLength(PRUint32 aLength)
     if (aLength > mLogicalLength)
         return NS_ERROR_INVALID_ARG;
 
-    PRInt32 newLastSegmentNum = SegNum(aLength);
-    PRInt32 segmentOffset = SegOffset(aLength);
+    int32_t newLastSegmentNum = SegNum(aLength);
+    int32_t segmentOffset = SegOffset(aLength);
     if (segmentOffset == 0)
         newLastSegmentNum--;
 
@@ -252,7 +261,7 @@ nsStorageStream::GetWriteInProgress(bool *aWriteInProgress)
 }
 
 NS_METHOD
-nsStorageStream::Seek(PRInt32 aPosition)
+nsStorageStream::Seek(int32_t aPosition)
 {
     NS_ENSURE_TRUE(mSegmentedBuffer, NS_ERROR_NOT_INITIALIZED);
     
@@ -261,7 +270,7 @@ nsStorageStream::Seek(PRInt32 aPosition)
         aPosition = mLogicalLength;
 
     // Seeking beyond the buffer end is illegal
-    if ((PRUint32)aPosition > mLogicalLength)
+    if ((uint32_t)aPosition > mLogicalLength)
         return NS_ERROR_INVALID_ARG;
 
     // Seeking backwards in the write stream results in truncation
@@ -284,8 +293,8 @@ nsStorageStream::Seek(PRInt32 aPosition)
     // Adjust write cursor for current segment offset.  This test is necessary
     // because SegNum may reference the next-to-be-allocated segment, in which
     // case we need to be pointing at the end of the last segment.
-    PRInt32 segmentOffset = SegOffset(aPosition);
-    if (segmentOffset == 0 && (SegNum(aPosition) > (PRUint32) mLastSegmentNum))
+    int32_t segmentOffset = SegOffset(aPosition);
+    if (segmentOffset == 0 && (SegNum(aPosition) > (uint32_t) mLastSegmentNum))
         mWriteCursor = mSegmentEnd;
     else
         mWriteCursor += segmentOffset;
@@ -298,11 +307,11 @@ nsStorageStream::Seek(PRInt32 aPosition)
 ////////////////////////////////////////////////////////////////////////////////
 
 // There can be many nsStorageInputStreams for a single nsStorageStream
-class nsStorageInputStream : public nsIInputStream
-                           , public nsISeekableStream
+class nsStorageInputStream MOZ_FINAL : public nsIInputStream
+                                     , public nsISeekableStream
 {
 public:
-    nsStorageInputStream(nsStorageStream *aStorageStream, PRUint32 aSegmentSize)
+    nsStorageInputStream(nsStorageStream *aStorageStream, uint32_t aSegmentSize)
         : mStorageStream(aStorageStream), mReadCursor(0),
           mSegmentEnd(0), mSegmentNum(0),
           mSegmentSize(aSegmentSize), mLogicalCursor(0),
@@ -322,21 +331,21 @@ private:
     }
 
 protected:
-    NS_METHOD Seek(PRUint32 aPosition);
+    NS_METHOD Seek(uint32_t aPosition);
 
     friend class nsStorageStream;
 
 private:
     nsStorageStream* mStorageStream;
-    PRUint32         mReadCursor;    // Next memory location to read byte, or NULL
-    PRUint32         mSegmentEnd;    // One byte past end of current buffer segment
-    PRUint32         mSegmentNum;    // Segment number containing read cursor
-    PRUint32         mSegmentSize;   // All segments, except the last, are of this size
-    PRUint32         mLogicalCursor; // Logical offset into stream
+    uint32_t         mReadCursor;    // Next memory location to read byte, or NULL
+    uint32_t         mSegmentEnd;    // One byte past end of current buffer segment
+    uint32_t         mSegmentNum;    // Segment number containing read cursor
+    uint32_t         mSegmentSize;   // All segments, except the last, are of this size
+    uint32_t         mLogicalCursor; // Logical offset into stream
     nsresult         mStatus;
 
-    PRUint32 SegNum(PRUint32 aPosition)    {return aPosition >> mStorageStream->mSegmentSizeLog2;}
-    PRUint32 SegOffset(PRUint32 aPosition) {return aPosition & (mSegmentSize - 1);}
+    uint32_t SegNum(uint32_t aPosition)    {return aPosition >> mStorageStream->mSegmentSizeLog2;}
+    uint32_t SegOffset(uint32_t aPosition) {return aPosition & (mSegmentSize - 1);}
 };
 
 NS_IMPL_THREADSAFE_ISUPPORTS2(nsStorageInputStream,
@@ -344,7 +353,7 @@ NS_IMPL_THREADSAFE_ISUPPORTS2(nsStorageInputStream,
                               nsISeekableStream)
 
 NS_IMETHODIMP
-nsStorageStream::NewInputStream(PRInt32 aStartingOffset, nsIInputStream* *aInputStream)
+nsStorageStream::NewInputStream(int32_t aStartingOffset, nsIInputStream* *aInputStream)
 {
     NS_ENSURE_TRUE(mSegmentedBuffer, NS_ERROR_NOT_INITIALIZED);
 
@@ -372,7 +381,7 @@ nsStorageInputStream::Close()
 }
 
 NS_IMETHODIMP
-nsStorageInputStream::Available(PRUint32 *aAvailable)
+nsStorageInputStream::Available(uint64_t *aAvailable)
 {
     if (NS_FAILED(mStatus))
         return mStatus;
@@ -382,13 +391,13 @@ nsStorageInputStream::Available(PRUint32 *aAvailable)
 }
 
 NS_IMETHODIMP
-nsStorageInputStream::Read(char* aBuffer, PRUint32 aCount, PRUint32 *aNumRead)
+nsStorageInputStream::Read(char* aBuffer, uint32_t aCount, uint32_t *aNumRead)
 {
     return ReadSegments(NS_CopySegmentToBuffer, aBuffer, aCount, aNumRead);
 }
 
 NS_IMETHODIMP 
-nsStorageInputStream::ReadSegments(nsWriteSegmentFun writer, void * closure, PRUint32 aCount, PRUint32 *aNumRead)
+nsStorageInputStream::ReadSegments(nsWriteSegmentFun writer, void * closure, uint32_t aCount, uint32_t *aNumRead)
 {
     *aNumRead = 0;
     if (mStatus == NS_BASE_STREAM_CLOSED)
@@ -396,14 +405,14 @@ nsStorageInputStream::ReadSegments(nsWriteSegmentFun writer, void * closure, PRU
     if (NS_FAILED(mStatus))
         return mStatus;
 
-    PRUint32 count, availableInSegment, remainingCapacity, bytesConsumed;
+    uint32_t count, availableInSegment, remainingCapacity, bytesConsumed;
     nsresult rv;
 
     remainingCapacity = aCount;
     while (remainingCapacity) {
         availableInSegment = mSegmentEnd - mReadCursor;
         if (!availableInSegment) {
-            PRUint32 available = mStorageStream->mLogicalLength - mLogicalCursor;
+            uint32_t available = mStorageStream->mLogicalLength - mLogicalCursor;
             if (!available)
                 goto out;
 
@@ -448,12 +457,12 @@ nsStorageInputStream::IsNonBlocking(bool *aNonBlocking)
 }
 
 NS_IMETHODIMP
-nsStorageInputStream::Seek(PRInt32 aWhence, PRInt64 aOffset)
+nsStorageInputStream::Seek(int32_t aWhence, int64_t aOffset)
 {
     if (NS_FAILED(mStatus))
         return mStatus;
 
-    PRInt64 pos = aOffset;
+    int64_t pos = aOffset;
 
     switch (aWhence) {
     case NS_SEEK_SET:
@@ -468,19 +477,19 @@ nsStorageInputStream::Seek(PRInt32 aWhence, PRInt64 aOffset)
         NS_NOTREACHED("unexpected whence value");
         return NS_ERROR_UNEXPECTED;
     }
-    if (pos == PRInt64(mLogicalCursor))
+    if (pos == int64_t(mLogicalCursor))
         return NS_OK;
 
     return Seek(pos);
 }
 
 NS_IMETHODIMP
-nsStorageInputStream::Tell(PRInt64 *aResult)
+nsStorageInputStream::Tell(int64_t *aResult)
 {
     if (NS_FAILED(mStatus))
         return mStatus;
 
-    LL_UI2L(*aResult, mLogicalCursor);
+    *aResult = mLogicalCursor;
     return NS_OK;
 }
 
@@ -492,9 +501,9 @@ nsStorageInputStream::SetEOF()
 }
 
 NS_METHOD
-nsStorageInputStream::Seek(PRUint32 aPosition)
+nsStorageInputStream::Seek(uint32_t aPosition)
 {
-    PRUint32 length = mStorageStream->mLogicalLength;
+    uint32_t length = mStorageStream->mLogicalLength;
     if (aPosition > length)
         return NS_ERROR_INVALID_ARG;
 
@@ -503,14 +512,14 @@ nsStorageInputStream::Seek(PRUint32 aPosition)
 
     mSegmentNum = SegNum(aPosition);
     mReadCursor = SegOffset(aPosition);
-    PRUint32 available = length - aPosition;
+    uint32_t available = length - aPosition;
     mSegmentEnd = mReadCursor + NS_MIN(mSegmentSize - mReadCursor, available);
     mLogicalCursor = aPosition;
     return NS_OK;
 }
 
 nsresult
-NS_NewStorageStream(PRUint32 segmentSize, PRUint32 maxSize, nsIStorageStream **result)
+NS_NewStorageStream(uint32_t segmentSize, uint32_t maxSize, nsIStorageStream **result)
 {
     NS_ENSURE_ARG(result);
 
@@ -518,7 +527,7 @@ NS_NewStorageStream(PRUint32 segmentSize, PRUint32 maxSize, nsIStorageStream **r
     if (!storageStream) return NS_ERROR_OUT_OF_MEMORY;
     
     NS_ADDREF(storageStream);
-    nsresult rv = storageStream->Init(segmentSize, maxSize, nsnull);
+    nsresult rv = storageStream->Init(segmentSize, maxSize, nullptr);
     if (NS_FAILED(rv)) {
         NS_RELEASE(storageStream);
         return rv;

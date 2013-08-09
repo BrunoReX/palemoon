@@ -47,18 +47,18 @@ PRUnichar nsHtml5Highlighter::sPi[] =
 
 nsHtml5Highlighter::nsHtml5Highlighter(nsAHtml5TreeOpSink* aOpSink)
  : mState(NS_HTML5TOKENIZER_DATA)
- , mCStart(PR_INT32_MAX)
+ , mCStart(INT32_MAX)
  , mPos(0)
  , mLineNumber(1)
  , mInlinesOpen(0)
  , mInCharacters(false)
- , mBuffer(nsnull)
+ , mBuffer(nullptr)
  , mSyntaxHighlight(Preferences::GetBool("view_source.syntax_highlight",
                                          true))
  , mOpSink(aOpSink)
- , mCurrentRun(nsnull)
- , mAmpersand(nsnull)
- , mSlash(nsnull)
+ , mCurrentRun(nullptr)
+ , mAmpersand(nullptr)
+ , mSlash(nullptr)
  , mHandles(new nsIContent*[NS_HTML5_HIGHLIGHTER_HANDLE_ARRAY_LENGTH])
  , mHandlesUsed(0)
 {
@@ -78,19 +78,19 @@ nsHtml5Highlighter::Start(const nsAutoString& aTitle)
 
   mOpQueue.AppendElement()->Init(STANDARDS_MODE);
 
-  nsIContent** root = CreateElement(nsHtml5Atoms::html, nsnull);
+  nsIContent** root = CreateElement(nsHtml5Atoms::html, nullptr);
   mOpQueue.AppendElement()->Init(eTreeOpAppendToDocument, root);
   mStack.AppendElement(root);
 
-  Push(nsGkAtoms::head, nsnull);
+  Push(nsGkAtoms::head, nullptr);
 
-  Push(nsGkAtoms::title, nsnull);
+  Push(nsGkAtoms::title, nullptr);
   // XUL will add the "Source of: " prefix.
-  PRUint32 length = aTitle.Length();
-  if (length > PR_INT32_MAX) {
-    length = PR_INT32_MAX;
+  uint32_t length = aTitle.Length();
+  if (length > INT32_MAX) {
+    length = INT32_MAX;
   }
-  AppendCharacters(aTitle.get(), 0, (PRInt32)length);
+  AppendCharacters(aTitle.get(), 0, (int32_t)length);
   Pop(); // title
 
   Push(nsGkAtoms::link, nsHtml5ViewSourceUtils::NewLinkAttributes());
@@ -113,8 +113,8 @@ nsHtml5Highlighter::Start(const nsAutoString& aTitle)
   mOpQueue.AppendElement()->Init(eTreeOpStartLayout);
 }
 
-PRInt32
-nsHtml5Highlighter::Transition(PRInt32 aState, bool aReconsume, PRInt32 aPos)
+int32_t
+nsHtml5Highlighter::Transition(int32_t aState, bool aReconsume, int32_t aPos)
 {
   mPos = aPos;
   switch (mState) {
@@ -479,19 +479,19 @@ nsHtml5Highlighter::SetBuffer(nsHtml5UTF16Buffer* aBuffer)
 }
 
 void
-nsHtml5Highlighter::DropBuffer(PRInt32 aPos)
+nsHtml5Highlighter::DropBuffer(int32_t aPos)
 {
   NS_PRECONDITION(mBuffer, "No buffer to drop!");
   mPos = aPos;
   FlushChars();
-  mBuffer = nsnull;
+  mBuffer = nullptr;
 }
 
 void
 nsHtml5Highlighter::StartSpan()
 {
   FlushChars();
-  Push(nsGkAtoms::span, nsnull);
+  Push(nsGkAtoms::span, nullptr);
   ++mInlinesOpen;
 }
 
@@ -515,7 +515,7 @@ nsHtml5Highlighter::StartCharacters()
 {
   NS_PRECONDITION(!mInCharacters, "Already in characters!");
   FlushChars();
-  Push(nsGkAtoms::span, nsnull);
+  Push(nsGkAtoms::span, nullptr);
   mCurrentRun = CurrentNode();
   mInCharacters = true;
 }
@@ -536,7 +536,7 @@ void
 nsHtml5Highlighter::StartA()
 {
   FlushChars();
-  Push(nsGkAtoms::a, nsnull);
+  Push(nsGkAtoms::a, nullptr);
   AddClass(sAttributeValue);
   ++mInlinesOpen;
 }
@@ -558,7 +558,7 @@ nsHtml5Highlighter::FlushChars()
 {
   if (mCStart < mPos) {
     PRUnichar* buf = mBuffer->getBuffer();
-    PRInt32 i = mCStart;
+    int32_t i = mCStart;
     while (i < mPos) {
       PRUnichar c = buf[i];
       switch (c) {
@@ -573,12 +573,12 @@ nsHtml5Highlighter::FlushChars()
         case '\n': {
           ++i;
           if (mCStart < i) {
-            PRInt32 len = i - mCStart;
+            int32_t len = i - mCStart;
             AppendCharacters(buf, mCStart, len);
             mCStart = i;
           }
           ++mLineNumber;
-          Push(nsGkAtoms::span, nsnull);
+          Push(nsGkAtoms::span, nullptr);
           nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement();
           NS_ASSERTION(treeOp, "Tree op allocation failed.");
           treeOp->InitAddLineNumberId(CurrentNode(), mLineNumber);
@@ -591,7 +591,7 @@ nsHtml5Highlighter::FlushChars()
       }
     }
     if (mCStart < mPos) {
-      PRInt32 len = mPos - mCStart;
+      int32_t len = mPos - mCStart;
       AppendCharacters(buf, mCStart, len);
       mCStart = mPos;
     }
@@ -692,8 +692,8 @@ nsHtml5Highlighter::Pop()
 
 void
 nsHtml5Highlighter::AppendCharacters(const PRUnichar* aBuffer,
-                                     PRInt32 aStart,
-                                     PRInt32 aLength)
+                                     int32_t aStart,
+                                     int32_t aLength)
 {
   NS_PRECONDITION(aBuffer, "Null buffer");
 

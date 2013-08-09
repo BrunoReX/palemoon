@@ -25,7 +25,17 @@ public:
 
   bool Add(const nsAString& aName)
   {
-    return mNames.AppendElement(aName) != nsnull;
+    return mNames.AppendElement(aName) != nullptr;
+  }
+
+  void Clear()
+  {
+    mNames.Clear();
+  }
+
+  void CopyList(nsTArray<nsString>& aNames)
+  {
+    aNames = mNames;
   }
 
 private:

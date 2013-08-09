@@ -20,3 +20,9 @@
 == columnrule-complex.html columnrule-complex-ref.html
 != columnrule-linestyles.html columnrule-linestyles-notref.html
 == columnrule-padding.html columnrule-padding-ref.html
+== margin-collapsing-bug616722-1.html margin-collapsing-bug616722-1-ref.html
+== margin-collapsing-bug616722-2.html margin-collapsing-bug616722-2-ref.html
+== column-balancing-nested-000.html column-balancing-nested-000-ref.html
+
+# Disabled due to bug 810726.
+# == column-balancing-nested-001.html column-balancing-nested-001-ref.html

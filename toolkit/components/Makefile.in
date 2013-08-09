@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH     = ../..
+DEPTH     = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir    = @srcdir@
 VPATH     = @srcdir@
@@ -17,6 +17,7 @@ endif
 
 PARALLEL_DIRS += \
   aboutmemory \
+  alerts \
   apppicker \
   commandlines \
   console \
@@ -27,13 +28,16 @@ PARALLEL_DIRS += \
   filepicker \
   find \
   intl \
+  mediasniffer \
   microformats \
+  osfile \
   parentalcontrols \
   passwordmgr \
   perf \
   places \
   prompts \
   reflect \
+  social \
   startup \
   statusfilter \
   telemetry \
@@ -47,12 +51,6 @@ ifdef BUILD_CTYPES
 PARALLEL_DIRS += \
   ctypes \
   $(NULL)
-endif
-
-ifneq (,$(filter cocoa, $(MOZ_WIDGET_TOOLKIT)))
-TOOL_DIRS += alerts
-else
-PARALLEL_DIRS += alerts
 endif
 
 ifdef MOZ_FEEDS
@@ -86,7 +84,9 @@ DIRS += \
   build \
   $(NULL)
 
-EXTRA_PP_COMPONENTS = nsDefaultCLH.js
-EXTRA_COMPONENTS = nsDefaultCLH.manifest
+EXTRA_COMPONENTS = \
+  nsDefaultCLH.manifest \
+  nsDefaultCLH.js \
+  $(NULL)
 
 include $(topsrcdir)/config/rules.mk

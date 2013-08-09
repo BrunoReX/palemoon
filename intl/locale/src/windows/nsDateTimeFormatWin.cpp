@@ -12,7 +12,6 @@
 #include "nsUnicharUtils.h"
 #include "nsCRT.h"
 #include "nsCOMPtr.h"
-#include "prmem.h"
 
 
 #define NSDATETIMEFORMAT_BUFFER_LEN  80
@@ -27,7 +26,7 @@ nsresult nsDateTimeFormatWin::Initialize(nsILocale* locale)
   nsresult res = NS_OK;
 
   // use cached info if match with stored locale
-  if (NULL == locale) {
+  if (!locale) {
     if (!mLocale.IsEmpty() && 
         mLocale.Equals(mAppLocale, nsCaseInsensitiveStringComparator())) {
       return NS_OK;
@@ -47,7 +46,7 @@ nsresult nsDateTimeFormatWin::Initialize(nsILocale* locale)
   mLCID = 1033;
 
   // get locale string, use app default if no locale specified
-  if (NULL == locale) {
+  if (!locale) {
     nsCOMPtr<nsILocaleService> localeService = 
              do_GetService(NS_LOCALESERVICE_CONTRACTID);
     if (localeService) {
@@ -176,8 +175,8 @@ nsresult nsDateTimeFormatWin::FormatTMTime(nsILocale* locale,
     }
   }
 
-  NS_ASSERTION(NSDATETIMEFORMAT_BUFFER_LEN >= (PRUint32) (dateLen + 1), "internal date buffer is not large enough");
-  NS_ASSERTION(NSDATETIMEFORMAT_BUFFER_LEN >= (PRUint32) (timeLen + 1), "internal time buffer is not large enough");
+  NS_ASSERTION(NSDATETIMEFORMAT_BUFFER_LEN >= (uint32_t) (dateLen + 1), "internal date buffer is not large enough");
+  NS_ASSERTION(NSDATETIMEFORMAT_BUFFER_LEN >= (uint32_t) (timeLen + 1), "internal time buffer is not large enough");
 
   // Copy the result
   stringOut.Truncate();

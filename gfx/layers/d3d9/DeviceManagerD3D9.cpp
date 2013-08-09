@@ -107,7 +107,7 @@ SwapChainD3D9::PrepareForRendering()
       return true;
     }
 
-    mSwapChain = nsnull;
+    mSwapChain = nullptr;
     
     Init(mWnd);
     
@@ -141,7 +141,7 @@ SwapChainD3D9::Present(const nsIntRect &aRect)
 void
 SwapChainD3D9::Reset()
 {
-  mSwapChain = nsnull;
+  mSwapChain = nullptr;
 }
 
 #define HAS_CAP(a, b) (((a) & (b)) == (b))
@@ -274,8 +274,8 @@ DeviceManagerD3D9::Init()
         // supports static D3DPOOL_DEFAULT textures.
         NS_WARNING("D3D9Ex device not used because of lack of support for \
                    dynamic textures. This is unexpected.");
-        mDevice = nsnull;
-        mDeviceEx = nsnull;
+        mDevice = nullptr;
+        mDeviceEx = nullptr;
       }
     }
   }
@@ -456,7 +456,7 @@ DeviceManagerD3D9::Init()
   if (console) {
     nsString msg;
     msg +=
-      NS_LITERAL_STRING("Direct3D 9 DeviceManager Initialized Succesfully.\nDriver: ");
+      NS_LITERAL_STRING("Direct3D 9 DeviceManager Initialized Successfully.\nDriver: ");
     msg += NS_ConvertUTF8toUTF16(
       nsDependentCString((const char*)identifier.Driver));
     msg += NS_LITERAL_STRING("\nDescription: ");
@@ -514,11 +514,11 @@ DeviceManagerD3D9::CreateSwapChain(HWND hWnd)
   // though and the need for a low-risk fix for this bug outweighs the
   // downside.
   if (!VerifyReadyForRendering()) {
-    return nsnull;
+    return nullptr;
   }
 
   if (!swapChain->Init(hWnd)) {
-    return nsnull;
+    return nullptr;
   }
 
   return swapChain.forget();
@@ -532,7 +532,7 @@ DeviceManagerD3D9::CreateSwapChain(HWND hWnd)
   */
 bool
 LoadMaskTexture(Layer* aMask, IDirect3DDevice9* aDevice,
-                PRUint32 aMaskQuadTexture, PRUint32 aMaskTexRegister)
+                uint32_t aMaskQuadTexture, uint32_t aMaskTexRegister)
 {
   gfxIntSize size;
   nsRefPtr<IDirect3DTexture9> texture =
@@ -565,8 +565,8 @@ DeviceManagerD3D9::SetShaderMode(ShaderMode aMode, Layer* aMask, bool aIs2D)
   if (aMask) {
     // register allocations are taken from LayerManagerD3D9Shaders.h after
     // the shaders are compiled (genshaders.sh)
-    const PRUint32 maskQuadRegister = 11;
-    PRUint32 maskTexRegister;
+    const uint32_t maskQuadRegister = 11;
+    uint32_t maskTexRegister;
     switch (aMode) {
       case RGBLAYER:
         mDevice->SetVertexShader(mLayerVSMask);
@@ -607,7 +607,7 @@ DeviceManagerD3D9::SetShaderMode(ShaderMode aMode, Layer* aMask, bool aIs2D)
     if (!LoadMaskTexture(aMask, mDevice, maskQuadRegister, maskTexRegister)) {
       // if we can't load the mask, fall back to unmasked rendering
       NS_WARNING("Could not load texture for mask layer.");
-      SetShaderMode(aMode, nsnull, true);
+      SetShaderMode(aMode, nullptr, true);
     }
   } else {
     switch (aMode) {
@@ -665,7 +665,7 @@ DeviceManagerD3D9::VerifyReadyForRendering()
     mSwapChains[i]->Reset();
   }
 
-  mVB = nsnull;
+  mVB = nullptr;
   
   D3DPRESENT_PARAMETERS pp;
   memset(&pp, 0, sizeof(D3DPRESENT_PARAMETERS));

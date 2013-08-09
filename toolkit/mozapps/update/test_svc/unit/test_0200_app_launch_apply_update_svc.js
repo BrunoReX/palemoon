@@ -21,10 +21,6 @@ const CHECK_TIMEOUT_MILLI = 1000;
 // How many of CHECK_TIMEOUT_MILLI to wait before we abort the test.
 const MAX_TIMEOUT_RUNS = 300;
 
-// Maximum number of milliseconds the process that is launched can run before
-// the test will try to kill it.
-const APP_TIMER_TIMEOUT = 15000;
-
 let gTimeoutRuns = 0;
 
 function run_test() {
@@ -154,14 +150,6 @@ function end_test() {
   let updaterIni = processDir.clone();
   updaterIni.append(FILE_UPDATER_INI_BAK);
   updaterIni.moveTo(processDir, FILE_UPDATER_INI);
-
-  // Remove the copy of the application executable used for the test on
-  // Windows if it exists.
-  let appBinCopy = processDir.clone();
-  appBinCopy.append(FILE_WIN_TEST_EXE);
-  if (appBinCopy.exists()) {
-    appBinCopy.remove(false);
-  }
 
   // Remove the files added by the update.
   let updateTestDir = getUpdateTestDir();

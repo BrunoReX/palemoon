@@ -16,115 +16,146 @@
 #include "nsTArray.h"
 #include "nsString.h"
 #include "nsPermission.h"
+#include "nsHashKeys.h"
+#include "nsAutoPtr.h"
+#include "nsCOMArray.h"
+#include "nsDataHashtable.h"
 
 class nsIPermission;
 class nsIIDNService;
 class mozIStorageConnection;
-class mozIStorageStatement;
+class mozIStorageAsyncStatement;
 
 ////////////////////////////////////////////////////////////////////////////////
-
-class nsPermissionEntry
-{
-public:
-  nsPermissionEntry(PRUint32 aType, PRUint32 aPermission, PRInt64 aID, 
-                    PRUint32 aExpireType, PRInt64 aExpireTime)
-   : mType(aType)
-   , mPermission(aPermission)
-   , mID(aID)
-   , mExpireType(aExpireType)
-   , mExpireTime(aExpireTime) {}
-
-  PRUint32 mType;
-  PRUint32 mPermission;
-  PRInt64  mID;
-  PRUint32 mExpireType;
-  PRInt64  mExpireTime;
-};
-
-class nsHostEntry : public PLDHashEntryHdr
-{
-public:
-  // Hash methods
-  typedef const char* KeyType;
-  typedef const char* KeyTypePointer;
-
-  nsHostEntry(const char* aHost);
-  nsHostEntry(const nsHostEntry& toCopy);
-
-  ~nsHostEntry()
-  {
-  }
-
-  KeyType GetKey() const
-  {
-    return mHost;
-  }
-
-  bool KeyEquals(KeyTypePointer aKey) const
-  {
-    return !strcmp(mHost, aKey);
-  }
-
-  static KeyTypePointer KeyToPointer(KeyType aKey)
-  {
-    return aKey;
-  }
-
-  static PLDHashNumber HashKey(KeyTypePointer aKey)
-  {
-    // PL_DHashStringKey doesn't use the table parameter, so we can safely
-    // pass nsnull
-    return PL_DHashStringKey(nsnull, aKey);
-  }
-
-  // force the hashtable to use the copy constructor when shuffling entries
-  // around, otherwise the Auto part of our nsAutoTArray won't be happy!
-  enum { ALLOW_MEMMOVE = false };
-
-  // Permissions methods
-  inline const nsDependentCString GetHost() const
-  {
-    return nsDependentCString(mHost);
-  }
-
-  inline nsTArray<nsPermissionEntry> & GetPermissions()
-  {
-    return mPermissions;
-  }
-
-  inline PRInt32 GetPermissionIndex(PRUint32 aType) const
-  {
-    for (PRUint32 i = 0; i < mPermissions.Length(); ++i)
-      if (mPermissions[i].mType == aType)
-        return i;
-
-    return -1;
-  }
-
-  inline nsPermissionEntry GetPermission(PRUint32 aType) const
-  {
-    for (PRUint32 i = 0; i < mPermissions.Length(); ++i)
-      if (mPermissions[i].mType == aType)
-        return mPermissions[i];
-
-    // unknown permission... return relevant data 
-    nsPermissionEntry unk = nsPermissionEntry(aType, nsIPermissionManager::UNKNOWN_ACTION,
-                                              -1, nsIPermissionManager::EXPIRE_NEVER, 0);
-    return unk;
-  }
-
-private:
-  const char *mHost;
-  nsAutoTArray<nsPermissionEntry, 1> mPermissions;
-};
-
 
 class nsPermissionManager : public nsIPermissionManager,
                             public nsIObserver,
                             public nsSupportsWeakReference
 {
 public:
+  class PermissionEntry
+  {
+  public:
+    PermissionEntry(int64_t aID, uint32_t aType, uint32_t aPermission,
+                    uint32_t aExpireType, int64_t aExpireTime)
+     : mID(aID)
+     , mType(aType)
+     , mPermission(aPermission)
+     , mExpireType(aExpireType)
+     , mExpireTime(aExpireTime)
+     , mNonSessionPermission(aPermission)
+    {}
+
+    int64_t  mID;
+    uint32_t mType;
+    uint32_t mPermission;
+    uint32_t mExpireType;
+    int64_t  mExpireTime;
+    uint32_t mNonSessionPermission;
+  };
+
+  /**
+   * PermissionKey is the key used by PermissionHashKey hash table.
+   *
+   * NOTE: It could be implementing nsIHashable but there is no reason to worry
+   * with XPCOM interfaces while we don't need to.
+   */
+  class PermissionKey
+  {
+  public:
+    PermissionKey(nsIPrincipal* aPrincipal);
+    PermissionKey(const nsACString& aHost,
+                  uint32_t aAppId,
+                  bool aIsInBrowserElement)
+      : mHost(aHost)
+      , mAppId(aAppId)
+      , mIsInBrowserElement(aIsInBrowserElement)
+    {
+    }
+
+    bool operator==(const PermissionKey& aKey) const {
+      return mHost.Equals(aKey.mHost) &&
+             mAppId == aKey.mAppId &&
+             mIsInBrowserElement == aKey.mIsInBrowserElement;
+    }
+
+    PLDHashNumber GetHashCode() const {
+      nsAutoCString str;
+      str.Assign(mHost);
+      str.AppendInt(mAppId);
+      str.AppendInt(static_cast<int32_t>(mIsInBrowserElement));
+
+      return mozilla::HashString(str);
+    }
+
+    NS_INLINE_DECL_THREADSAFE_REFCOUNTING(PermissionKey);
+
+    nsCString mHost;
+    uint32_t  mAppId;
+    bool      mIsInBrowserElement;
+
+  private:
+    // Default ctor shouldn't be used.
+    PermissionKey() MOZ_DELETE;
+
+    // Dtor shouldn't be used outside of the class.
+    ~PermissionKey() {};
+  };
+
+  class PermissionHashKey : public nsRefPtrHashKey<PermissionKey>
+  {
+  public:
+    PermissionHashKey(const PermissionKey* aPermissionKey)
+      : nsRefPtrHashKey<PermissionKey>(aPermissionKey)
+    {}
+
+    PermissionHashKey(const PermissionHashKey& toCopy)
+      : nsRefPtrHashKey<PermissionKey>(toCopy)
+      , mPermissions(toCopy.mPermissions)
+    {}
+
+    bool KeyEquals(const PermissionKey* aKey) const
+    {
+      return *aKey == *GetKey();
+    }
+
+    static PLDHashNumber HashKey(const PermissionKey* aKey)
+    {
+      return aKey->GetHashCode();
+    }
+
+    // Force the hashtable to use the copy constructor when shuffling entries
+    // around, otherwise the Auto part of our nsAutoTArray won't be happy!
+    enum { ALLOW_MEMMOVE = false };
+
+    inline nsTArray<PermissionEntry> & GetPermissions()
+    {
+      return mPermissions;
+    }
+
+    inline int32_t GetPermissionIndex(uint32_t aType) const
+    {
+      for (uint32_t i = 0; i < mPermissions.Length(); ++i)
+        if (mPermissions[i].mType == aType)
+          return i;
+
+      return -1;
+    }
+
+    inline PermissionEntry GetPermission(uint32_t aType) const
+    {
+      for (uint32_t i = 0; i < mPermissions.Length(); ++i)
+        if (mPermissions[i].mType == aType)
+          return mPermissions[i];
+
+      // unknown permission... return relevant data 
+      return PermissionEntry(-1, aType, nsIPermissionManager::UNKNOWN_ACTION,
+                             nsIPermissionManager::EXPIRE_NEVER, 0);
+    }
+
+  private:
+    nsAutoTArray<PermissionEntry, 1> mPermissions;
+  };
 
   // nsISupports
   NS_DECL_ISUPPORTS
@@ -154,27 +185,36 @@ public:
     eNotify
   };
 
-  nsresult AddInternal(const nsAFlatCString &aHost,
+  nsresult AddInternal(nsIPrincipal* aPrincipal,
                        const nsAFlatCString &aType,
-                       PRUint32 aPermission,
-                       PRInt64 aID,
-                       PRUint32 aExpireType,
-                       PRInt64  aExpireTime,
+                       uint32_t aPermission,
+                       int64_t aID,
+                       uint32_t aExpireType,
+                       int64_t  aExpireTime,
                        NotifyOperationType aNotifyOperation,
                        DBOperationType aDBOperation);
 
-private:
+  /**
+   * Initialize the "webapp-uninstall" observing.
+   * Will create a nsPermissionManager instance if needed.
+   * That way, we can prevent have nsPermissionManager created at startup just
+   * to be able to clear data when an application is uninstalled.
+   */
+  static void AppUninstallObserverInit();
 
-  PRInt32 GetTypeIndex(const char *aTypeString,
+private:
+  int32_t GetTypeIndex(const char *aTypeString,
                        bool        aAdd);
 
-  nsHostEntry *GetHostEntry(const nsAFlatCString &aHost,
-                            PRUint32              aType,
-                            bool                  aExactHostMatch);
+  PermissionHashKey* GetPermissionHashKey(const nsACString& aHost,
+                                          uint32_t aAppId,
+                                          bool aIsInBrowserElement,
+                                          uint32_t          aType,
+                                          bool              aExactHostMatch);
 
-  nsresult CommonTestPermission(nsIURI     *aURI,
+  nsresult CommonTestPermission(nsIPrincipal* aPrincipal,
                                 const char *aType,
-                                PRUint32   *aPermission,
+                                uint32_t   *aPermission,
                                 bool        aExactHostMatch);
 
   nsresult InitDB(bool aRemoveFile);
@@ -182,43 +222,93 @@ private:
   nsresult Import();
   nsresult Read();
   void     NotifyObserversWithPermission(const nsACString &aHost,
+                                         uint32_t          aAppId,
+                                         bool              aIsInBrowserElement,
                                          const nsCString  &aType,
-                                         PRUint32          aPermission,
-                                         PRUint32          aExpireType,
-                                         PRInt64           aExpireTime,
+                                         uint32_t          aPermission,
+                                         uint32_t          aExpireType,
+                                         int64_t           aExpireTime,
                                          const PRUnichar  *aData);
   void     NotifyObservers(nsIPermission *aPermission, const PRUnichar *aData);
 
   // Finalize all statements, close the DB and null it.
-  void     CloseDB();
+  // if aRebuildOnSuccess, reinitialize database
+  void     CloseDB(bool aRebuildOnSuccess = false);
 
-  nsresult RemoveAllInternal();
+  nsresult RemoveAllInternal(bool aNotifyObservers);
   nsresult RemoveAllFromMemory();
   nsresult NormalizeToACE(nsCString &aHost);
-  nsresult GetHost(nsIURI *aURI, nsACString &aResult);
-  static void UpdateDB(OperationType         aOp,
-                       mozIStorageStatement* aStmt,
-                       PRInt64               aID,
-                       const nsACString     &aHost,
-                       const nsACString     &aType,
-                       PRUint32              aPermission,
-                       PRUint32              aExpireType,
-                       PRInt64               aExpireTime);
+  static void UpdateDB(OperationType aOp,
+                       mozIStorageAsyncStatement* aStmt,
+                       int64_t aID,
+                       const nsACString& aHost,
+                       const nsACString& aType,
+                       uint32_t aPermission,
+                       uint32_t aExpireType,
+                       int64_t aExpireTime,
+                       uint32_t aAppId,
+                       bool aIsInBrowserElement);
+
+  nsresult RemoveExpiredPermissionsForApp(uint32_t aAppId);
+
+  /**
+   * This struct has to be passed as an argument to GetPermissionsForApp.
+   * |appId| has to be defined.
+   * |permissions| will be filed with permissions that are related to the app.
+   */
+  struct GetPermissionsForAppStruct {
+    uint32_t                  appId;
+    nsCOMArray<nsIPermission> permissions;
+
+    GetPermissionsForAppStruct() MOZ_DELETE;
+    GetPermissionsForAppStruct(uint32_t aAppId)
+      : appId(aAppId)
+    {}
+  };
+
+  /**
+   * This method will return the list of all permissions that are related to a
+   * specific app.
+   * @param arg has to be an instance of GetPermissionsForAppStruct.
+   */
+  static PLDHashOperator
+  GetPermissionsForApp(PermissionHashKey* entry, void* arg);
+
+  /**
+   * This method restores an app's permissions when its session ends.
+   */
+  static PLDHashOperator
+  RemoveExpiredPermissionsForAppEnumerator(PermissionHashKey* entry,
+                                           void* nonused);
 
   nsCOMPtr<nsIObserverService> mObserverService;
   nsCOMPtr<nsIIDNService>      mIDNService;
 
   nsCOMPtr<mozIStorageConnection> mDBConn;
-  nsCOMPtr<mozIStorageStatement> mStmtInsert;
-  nsCOMPtr<mozIStorageStatement> mStmtDelete;
-  nsCOMPtr<mozIStorageStatement> mStmtUpdate;
+  nsCOMPtr<mozIStorageAsyncStatement> mStmtInsert;
+  nsCOMPtr<mozIStorageAsyncStatement> mStmtDelete;
+  nsCOMPtr<mozIStorageAsyncStatement> mStmtUpdate;
 
-  nsTHashtable<nsHostEntry>    mHostTable;
+  nsTHashtable<PermissionHashKey> mPermissionTable;
   // a unique, monotonically increasing id used to identify each database entry
-  PRInt64                      mLargestID;
+  int64_t                      mLargestID;
 
   // An array to store the strings identifying the different types.
   nsTArray<nsCString>          mTypeArray;
+
+  // A list of struct for counting applications
+  struct ApplicationCounter {
+    uint32_t mAppId;
+    uint32_t mCounter;
+  };
+  nsTArray<ApplicationCounter> mAppIdRefcounts;
+
+  // Initially, |false|. Set to |true| once shutdown has started, to avoid
+  // reopening the database.
+  bool mIsShuttingDown;
+
+  friend class DeleteFromMozHostListener;
+  friend class CloseDatabaseListener;
 };
 
 // {4F6B5E00-0C36-11d5-A535-0010A401EB10}

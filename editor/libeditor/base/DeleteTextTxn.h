@@ -7,14 +7,18 @@
 #define DeleteTextTxn_h__
 
 #include "EditTxn.h"
-#include "nsIEditor.h"
-#include "nsIDOMCharacterData.h"
 #include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsID.h"
+#include "nsIDOMCharacterData.h"
+#include "nsString.h"
+#include "nscore.h"
 
+class nsEditor;
 class nsRangeUpdater;
 
 /**
- * A transaction that removes text from a content node. 
+ * A transaction that removes text from a content node.
  */
 class DeleteTextTxn : public EditTxn
 {
@@ -25,11 +29,11 @@ public:
     * @param aOffset  the location in aElement to begin the deletion
     * @param aNumCharsToDelete  the number of characters to delete.  Not the number of bytes!
     */
-  NS_IMETHOD Init(nsIEditor *aEditor,
-                  nsIDOMCharacterData *aElement,
-                  PRUint32 aOffset,
-                  PRUint32 aNumCharsToDelete,
-                  nsRangeUpdater *aRangeUpdater);
+  NS_IMETHOD Init(nsEditor* aEditor,
+                  nsIDOMCharacterData* aCharData,
+                  uint32_t aOffset,
+                  uint32_t aNumCharsToDelete,
+                  nsRangeUpdater* aRangeUpdater);
 
   DeleteTextTxn();
 
@@ -38,29 +42,29 @@ public:
 
   NS_DECL_EDITTXN
 
-  PRUint32 GetOffset() { return mOffset; }
+  uint32_t GetOffset() { return mOffset; }
 
-  PRUint32 GetNumCharsToDelete() { return mNumCharsToDelete; }
+  uint32_t GetNumCharsToDelete() { return mNumCharsToDelete; }
 
 protected:
 
   /** the provider of basic editing operations */
-  nsIEditor* mEditor;
+  nsEditor* mEditor;
 
-  /** the text element to operate upon */
-  nsCOMPtr<nsIDOMCharacterData> mElement;
-  
-  /** the offset into mElement where the deletion is to take place */
-  PRUint32 mOffset;
+  /** the CharacterData node to operate upon */
+  nsCOMPtr<nsIDOMCharacterData> mCharData;
+
+  /** the offset into mCharData where the deletion is to take place */
+  uint32_t mOffset;
 
   /** the number of characters to delete */
-  PRUint32 mNumCharsToDelete;
+  uint32_t mNumCharsToDelete;
 
   /** the text that was deleted */
   nsString mDeletedText;
 
   /** range updater object */
-  nsRangeUpdater *mRangeUpdater;
+  nsRangeUpdater* mRangeUpdater;
 };
 
 #endif

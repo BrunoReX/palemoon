@@ -27,8 +27,10 @@
 #include "nsIApplicationCache.h"
 #include "nsIResumableChannel.h"
 #include "nsITraceableChannel.h"
+#include "nsILoadContext.h"
 #include "mozilla/net/NeckoCommon.h"
 #include "nsThreadUtils.h"
+#include "PrivateBrowsingChannel.h"
 
 namespace mozilla {
 namespace net {
@@ -49,6 +51,7 @@ class HttpBaseChannel : public nsHashPropertyBag
                       , public nsISupportsPriority
                       , public nsIResumableChannel
                       , public nsITraceableChannel
+                      , public PrivateBrowsingChannel<HttpBaseChannel>
 {
 public:
   NS_DECL_ISUPPORTS_INHERITED
@@ -59,7 +62,9 @@ public:
   HttpBaseChannel();
   virtual ~HttpBaseChannel();
 
-  virtual nsresult Init(nsIURI *aURI, PRUint8 aCaps, nsProxyInfo *aProxyInfo);
+  virtual nsresult Init(nsIURI *aURI, uint8_t aCaps, nsProxyInfo *aProxyInfo,
+                        uint32_t aProxyResolveFlags,
+                        nsIURI *aProxyURI);
 
   // nsIRequest
   NS_IMETHOD GetName(nsACString& aName);
@@ -82,11 +87,13 @@ public:
   NS_IMETHOD SetContentType(const nsACString& aContentType);
   NS_IMETHOD GetContentCharset(nsACString& aContentCharset);
   NS_IMETHOD SetContentCharset(const nsACString& aContentCharset);
-  NS_IMETHOD GetContentDisposition(PRUint32 *aContentDisposition);
+  NS_IMETHOD GetContentDisposition(uint32_t *aContentDisposition);
+  NS_IMETHOD SetContentDisposition(uint32_t aContentDisposition);
   NS_IMETHOD GetContentDispositionFilename(nsAString& aContentDispositionFilename);
+  NS_IMETHOD SetContentDispositionFilename(const nsAString& aContentDispositionFilename);
   NS_IMETHOD GetContentDispositionHeader(nsACString& aContentDispositionHeader);
-  NS_IMETHOD GetContentLength(PRInt32 *aContentLength);
-  NS_IMETHOD SetContentLength(PRInt32 aContentLength);
+  NS_IMETHOD GetContentLength(int64_t *aContentLength);
+  NS_IMETHOD SetContentLength(int64_t aContentLength);
   NS_IMETHOD Open(nsIInputStream **aResult);
 
   // nsIEncodedChannel
@@ -109,19 +116,19 @@ public:
   NS_IMETHOD VisitResponseHeaders(nsIHttpHeaderVisitor *visitor);
   NS_IMETHOD GetAllowPipelining(bool *value);
   NS_IMETHOD SetAllowPipelining(bool value);
-  NS_IMETHOD GetRedirectionLimit(PRUint32 *value);
-  NS_IMETHOD SetRedirectionLimit(PRUint32 value);
+  NS_IMETHOD GetRedirectionLimit(uint32_t *value);
+  NS_IMETHOD SetRedirectionLimit(uint32_t value);
   NS_IMETHOD IsNoStoreResponse(bool *value);
   NS_IMETHOD IsNoCacheResponse(bool *value);
-  NS_IMETHOD GetResponseStatus(PRUint32 *aValue);
+  NS_IMETHOD GetResponseStatus(uint32_t *aValue);
   NS_IMETHOD GetResponseStatusText(nsACString& aValue);
   NS_IMETHOD GetRequestSucceeded(bool *aValue);
 
   // nsIHttpChannelInternal
   NS_IMETHOD GetDocumentURI(nsIURI **aDocumentURI);
   NS_IMETHOD SetDocumentURI(nsIURI *aDocumentURI);
-  NS_IMETHOD GetRequestVersion(PRUint32 *major, PRUint32 *minor);
-  NS_IMETHOD GetResponseVersion(PRUint32 *major, PRUint32 *minor);
+  NS_IMETHOD GetRequestVersion(uint32_t *major, uint32_t *minor);
+  NS_IMETHOD GetResponseVersion(uint32_t *major, uint32_t *minor);
   NS_IMETHOD SetCookie(const char *aCookieHeader);
   NS_IMETHOD GetForceAllowThirdPartyCookie(bool *aForce);
   NS_IMETHOD SetForceAllowThirdPartyCookie(bool aForce);
@@ -130,25 +137,22 @@ public:
   NS_IMETHOD SetChannelIsForDownload(bool aChannelIsForDownload);
   NS_IMETHOD SetCacheKeysRedirectChain(nsTArray<nsCString> *cacheKeys);
   NS_IMETHOD GetLocalAddress(nsACString& addr);
-  NS_IMETHOD GetLocalPort(PRInt32* port);
+  NS_IMETHOD GetLocalPort(int32_t* port);
   NS_IMETHOD GetRemoteAddress(nsACString& addr);
-  NS_IMETHOD GetRemotePort(PRInt32* port);
+  NS_IMETHOD GetRemotePort(int32_t* port);
   NS_IMETHOD GetAllowSpdy(bool *aAllowSpdy);
   NS_IMETHOD SetAllowSpdy(bool aAllowSpdy);
   
   inline void CleanRedirectCacheChainIfNecessary()
   {
-      if (mRedirectedCachekeys) {
-          delete mRedirectedCachekeys;
-          mRedirectedCachekeys = nsnull;
-      }
+      mRedirectedCachekeys = nullptr;
   }
   NS_IMETHOD HTTPUpgrade(const nsACString & aProtocolName,
                          nsIHttpUpgradeListener *aListener); 
 
   // nsISupportsPriority
-  NS_IMETHOD GetPriority(PRInt32 *value);
-  NS_IMETHOD AdjustPriority(PRInt32 delta);
+  NS_IMETHOD GetPriority(int32_t *value);
+  NS_IMETHOD AdjustPriority(int32_t delta);
 
   // nsIResumableChannel
   NS_IMETHOD GetEntityID(nsACString& aEntityID);
@@ -185,14 +189,14 @@ public:
 
 public: /* Necko internal use only... */
 
-  bool ShouldRewriteRedirectToGET(PRUint32 httpStatus, nsHttpAtom method);
-  bool IsSafeMethod(nsHttpAtom method);
-  
 protected:
 
   // Handle notifying listener, removing from loadgroup if request failed.
   void     DoNotifyListener();
   virtual void DoNotifyListenerCleanup() = 0;
+
+  // drop reference to listener, its callbacks, and the progress sink
+  void ReleaseListeners();
 
   nsresult ApplyContentConversions();
 
@@ -210,6 +214,8 @@ protected:
                                   getter_AddRefs(aResult));
   }
 
+  friend class PrivateBrowsingChannel<HttpBaseChannel>;
+
   nsCOMPtr<nsIURI>                  mURI;
   nsCOMPtr<nsIURI>                  mOriginalURI;
   nsCOMPtr<nsIURI>                  mDocumentURI;
@@ -226,6 +232,7 @@ protected:
   nsCOMPtr<nsIInputStream>          mUploadStream;
   nsAutoPtr<nsHttpResponseHead>     mResponseHead;
   nsRefPtr<nsHttpConnectionInfo>    mConnectionInfo;
+  nsCOMPtr<nsIProxyInfo>            mProxyInfo;
 
   nsCString                         mSpec; // ASCII encoded URL spec
   nsCString                         mContentTypeHint;
@@ -241,35 +248,43 @@ protected:
 
   // Resumable channel specific data
   nsCString                         mEntityID;
-  PRUint64                          mStartPos;
+  uint64_t                          mStartPos;
 
   nsresult                          mStatus;
-  PRUint32                          mLoadFlags;
-  PRInt16                           mPriority;
-  PRUint8                           mCaps;
-  PRUint8                           mRedirectionLimit;
+  uint32_t                          mLoadFlags;
+  int16_t                           mPriority;
+  uint8_t                           mCaps;
+  uint8_t                           mRedirectionLimit;
 
-  PRUint32                          mApplyConversion            : 1;
-  PRUint32                          mCanceled                   : 1;
-  PRUint32                          mIsPending                  : 1;
-  PRUint32                          mWasOpened                  : 1;
-  PRUint32                          mResponseHeadersModified    : 1;
-  PRUint32                          mAllowPipelining            : 1;
-  PRUint32                          mForceAllowThirdPartyCookie : 1;
-  PRUint32                          mUploadStreamHasHeaders     : 1;
-  PRUint32                          mInheritApplicationCache    : 1;
-  PRUint32                          mChooseApplicationCache     : 1;
-  PRUint32                          mLoadedFromApplicationCache : 1;
-  PRUint32                          mChannelIsForDownload       : 1;
-  PRUint32                          mTracingEnabled             : 1;
+  uint32_t                          mApplyConversion            : 1;
+  uint32_t                          mCanceled                   : 1;
+  uint32_t                          mIsPending                  : 1;
+  uint32_t                          mWasOpened                  : 1;
+  // if 1 all "http-on-{opening|modify|etc}-request" observers have been called
+  uint32_t                          mRequestObserversCalled     : 1;
+  uint32_t                          mResponseHeadersModified    : 1;
+  uint32_t                          mAllowPipelining            : 1;
+  uint32_t                          mForceAllowThirdPartyCookie : 1;
+  uint32_t                          mUploadStreamHasHeaders     : 1;
+  uint32_t                          mInheritApplicationCache    : 1;
+  uint32_t                          mChooseApplicationCache     : 1;
+  uint32_t                          mLoadedFromApplicationCache : 1;
+  uint32_t                          mChannelIsForDownload       : 1;
+  uint32_t                          mTracingEnabled             : 1;
   // True if timing collection is enabled
-  PRUint32                          mTimingEnabled              : 1;
-  PRUint32                          mAllowSpdy                  : 1;
+  uint32_t                          mTimingEnabled              : 1;
+  uint32_t                          mAllowSpdy                  : 1;
 
   // Current suspension depth for this channel object
-  PRUint32                          mSuspendCount;
+  uint32_t                          mSuspendCount;
 
-  nsTArray<nsCString>              *mRedirectedCachekeys;
+  nsAutoPtr<nsTArray<nsCString> >   mRedirectedCachekeys;
+
+  uint32_t                          mProxyResolveFlags;
+  nsCOMPtr<nsIURI>                  mProxyURI;
+
+  uint32_t                          mContentDispositionHint;
+  nsAutoPtr<nsString>               mContentDispositionFilename;
 };
 
 // Share some code while working around C++'s absurd inability to handle casting
@@ -296,7 +311,7 @@ public:
   // retval isn't refcounted and is set only when event was successfully
   // posted, the event is returned for the purpose of cancelling when needed
   nsresult AsyncCall(void (T::*funcPtr)(),
-                     nsRunnableMethod<T> **retval = nsnull);
+                     nsRunnableMethod<T> **retval = nullptr);
 private:
   T *mThis;
 
@@ -335,7 +350,7 @@ inline void HttpAsyncAborter<T>::HandleAsyncAbort()
 
   // finally remove ourselves from the load group.
   if (mThis->mLoadGroup)
-    mThis->mLoadGroup->RemoveRequest(mThis, nsnull, mThis->mStatus);
+    mThis->mLoadGroup->RemoveRequest(mThis, nullptr, mThis->mStatus);
 }
 
 template <class T>

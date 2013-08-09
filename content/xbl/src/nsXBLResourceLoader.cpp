@@ -31,10 +31,10 @@
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsXBLResourceLoader)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsXBLResourceLoader)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMARRAY(mBoundElements)
+NS_IMPL_CYCLE_COLLECTION_UNLINK(mBoundElements)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsXBLResourceLoader)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMARRAY(mBoundElements)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mBoundElements)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsXBLResourceLoader)
@@ -49,8 +49,8 @@ nsXBLResourceLoader::nsXBLResourceLoader(nsXBLPrototypeBinding* aBinding,
                                          nsXBLPrototypeResources* aResources)
 :mBinding(aBinding),
  mResources(aResources),
- mResourceList(nsnull),
- mLastResource(nsnull),
+ mResourceList(nullptr),
+ mLastResource(nullptr),
  mLoadingResources(false),
  mInLoadResourcesFunc(false),
  mPendingSheets(0)
@@ -103,7 +103,7 @@ nsXBLResourceLoader::LoadResources(bool* aResult)
       // Passing NULL for pretty much everything -- cause we don't care!
       // XXX: initialDocumentURI is NULL! 
       nsCOMPtr<imgIRequest> req;
-      nsContentUtils::LoadImage(url, doc, docPrincipal, docURL, nsnull,
+      nsContentUtils::LoadImage(url, doc, docPrincipal, docURL, nullptr,
                                 nsIRequest::LOAD_BACKGROUND,
                                 getter_AddRefs(req));
     }
@@ -144,7 +144,7 @@ nsXBLResourceLoader::LoadResources(bool* aResult)
   
   // Destroy our resource list.
   delete mResourceList;
-  mResourceList = nsnull;
+  mResourceList = nullptr;
 }
 
 // nsICSSLoaderObserver
@@ -208,8 +208,8 @@ nsXBLResourceLoader::NotifyBoundElements()
 
   nsIURI* bindingURI = mBinding->BindingURI();
 
-  PRUint32 eltCount = mBoundElements.Count();
-  for (PRUint32 j = 0; j < eltCount; j++) {
+  uint32_t eltCount = mBoundElements.Count();
+  for (uint32_t j = 0; j < eltCount; j++) {
     nsCOMPtr<nsIContent> content = mBoundElements.ObjectAt(j);
     
     bool ready = false;

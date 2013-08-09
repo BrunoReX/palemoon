@@ -72,12 +72,13 @@ class NS_CYCLE_COLLECTION_INNERCLASS                                        \
  : public nsXPCOMCycleCollectionParticipant                                 \
 {                                                                           \
 public:                                                                     \
-  NS_IMETHOD Unlink(void *p);                                               \
-  NS_IMETHOD Traverse(void *p,                                              \
-                      nsCycleCollectionTraversalCallback &cb);              \
-  NS_IMETHOD_(void) UnmarkIfPurple(nsISupports *p)                          \
+  static NS_METHOD UnlinkImpl(void *p);                                     \
+  static NS_METHOD TraverseImpl(NS_CYCLE_COLLECTION_INNERCLASS *that,       \
+                                void *p,                                    \
+                                nsCycleCollectionTraversalCallback &cb);    \
+  static NS_METHOD_(void) UnmarkIfPurpleImpl(void *p)                       \
   {                                                                         \
-    Downcast(p)->UnmarkIfPurple();                                          \
+    Downcast(static_cast<nsISupports *>(p))->UnmarkIfPurple();              \
   }                                                                         \
   static _class* Downcast(nsISupports* s)                                   \
   {                                                                         \
@@ -106,7 +107,7 @@ NS_IMETHODIMP_(nsrefcnt)                                                    \
 _class::Internal::AddRef(void)                                              \
 {                                                                           \
     _class* agg = (_class*)((char*)(this) - offsetof(_class, fAggregated)); \
-    NS_PRECONDITION(PRInt32(agg->mRefCnt) >= 0, "illegal refcnt");          \
+    NS_PRECONDITION(int32_t(agg->mRefCnt) >= 0, "illegal refcnt");          \
     NS_ASSERT_OWNINGTHREAD(_class);                                         \
     ++agg->mRefCnt;                                                         \
     NS_LOG_ADDREF(this, agg->mRefCnt, #_class, sizeof(*this));              \
@@ -137,7 +138,7 @@ NS_IMETHODIMP_(nsrefcnt)                                                    \
 _class::Internal::AddRef(void)                                              \
 {                                                                           \
     _class* agg = NS_CYCLE_COLLECTION_CLASSNAME(_class)::Downcast(this);    \
-    NS_PRECONDITION(PRInt32(agg->mRefCnt) >= 0, "illegal refcnt");          \
+    NS_PRECONDITION(int32_t(agg->mRefCnt) >= 0, "illegal refcnt");          \
     NS_CheckThreadSafe(agg->_mOwningThread.GetThread(),                     \
                        #_class " not thread-safe");                         \
     nsrefcnt count = agg->mRefCnt.incr(this);                               \
@@ -155,7 +156,7 @@ _class::Internal::Release(void)                                             \
     nsrefcnt count = agg->mRefCnt.decr(this);                               \
     NS_LOG_RELEASE(this, count, #_class);                                   \
     if (count == 0) {                                                       \
-        agg->mRefCnt.stabilizeForDeletion(this);                            \
+        agg->mRefCnt.stabilizeForDeletion();                                \
         delete agg;                                                         \
         return 0;                                                           \
     }                                                                       \
@@ -263,14 +264,14 @@ _class::AggregatedQueryInterface(REFNSIID aIID, void** aInstancePtr)        \
   if (aIID.Equals(IsPartOfAggregated() ?                                    \
                   NS_GET_IID(nsCycleCollectionParticipant) :                \
                   NS_GET_IID(nsAggregatedCycleCollectionParticipant)))      \
-    foundInterface = & NS_CYCLE_COLLECTION_NAME(_class);                    \
+    foundInterface = NS_CYCLE_COLLECTION_PARTICIPANT(_class);               \
   else
 
 #define NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_AGGREGATED(_class)          \
-  NS_IMETHODIMP                                                             \
-  NS_CYCLE_COLLECTION_CLASSNAME(_class)::Traverse                           \
-                         (void *p,                                          \
-                          nsCycleCollectionTraversalCallback &cb)           \
+  NS_METHOD                                                                 \
+  NS_CYCLE_COLLECTION_CLASSNAME(_class)::TraverseImpl                       \
+                         (NS_CYCLE_COLLECTION_CLASSNAME(_class) *that,      \
+                          void *p, nsCycleCollectionTraversalCallback &cb)  \
   {                                                                         \
     nsISupports *s = static_cast<nsISupports*>(p);                          \
     NS_ASSERTION(CheckForRightISupports(s),                                 \
@@ -284,7 +285,7 @@ static nsresult                                                             \
 _InstanceClass##Constructor(nsISupports *aOuter, REFNSIID aIID,             \
                             void **aResult)                                 \
 {                                                                           \
-    *aResult = nsnull;                                                      \
+    *aResult = nullptr;                                                      \
                                                                             \
     NS_ENSURE_PROPER_AGGREGATION(aOuter, aIID);                             \
                                                                             \
@@ -307,7 +308,7 @@ static nsresult                                                             \
 _InstanceClass##Constructor(nsISupports *aOuter, REFNSIID aIID,             \
                             void **aResult)                                 \
 {                                                                           \
-    *aResult = nsnull;                                                      \
+    *aResult = nullptr;                                                      \
                                                                             \
     NS_ENSURE_PROPER_AGGREGATION(aOuter, aIID);                             \
                                                                             \

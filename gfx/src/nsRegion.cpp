@@ -6,6 +6,7 @@
 #include "nsISupportsImpl.h"
 #include "nsTArray.h"
 #include "mozilla/ThreadLocal.h"
+#include "nsPrintfCString.h"
 
 /*
  * The SENTINEL values below guaranties that a < or >
@@ -19,8 +20,8 @@
 #define NS_COORD_LESS_SENTINEL nscoord_MIN
 #define NS_COORD_GREATER_SENTINEL nscoord_MAX
 #else
-#define NS_COORD_LESS_SENTINEL PR_INT32_MIN
-#define NS_COORD_GREATER_SENTINEL PR_INT32_MAX
+#define NS_COORD_LESS_SENTINEL INT32_MIN
+#define NS_COORD_GREATER_SENTINEL INT32_MAX
 #endif
 
 // Fast inline analogues of nsRect methods for nsRegion::nsRectFast.
@@ -75,7 +76,7 @@ inline void nsRegion::nsRectFast::UnionRect (const nsRect& aRect1, const nsRect&
 class RgnRectMemoryAllocator
 {
   nsRegion::RgnRect*  mFreeListHead;
-  PRUint32  mFreeEntries;
+  uint32_t  mFreeEntries;
   void*     mChunkListHead;
 #if defined (DEBUG)
   NS_DECL_OWNINGTHREAD
@@ -91,13 +92,13 @@ class RgnRectMemoryAllocator
   void Unlock ()      { }
 #endif
 
-  void* AllocChunk (PRUint32 aEntries, void* aNextChunk, nsRegion::RgnRect* aTailDest)
+  void* AllocChunk (uint32_t aEntries, void* aNextChunk, nsRegion::RgnRect* aTailDest)
   {
-    PRUint8* pBuf = new PRUint8 [aEntries * sizeof (nsRegion::RgnRect) + sizeof (void*)];
+    uint8_t* pBuf = new uint8_t [aEntries * sizeof (nsRegion::RgnRect) + sizeof (void*)];
     *reinterpret_cast<void**>(pBuf) = aNextChunk;
     nsRegion::RgnRect* pRect = reinterpret_cast<nsRegion::RgnRect*>(pBuf + sizeof (void*));
 
-    for (PRUint32 cnt = 0 ; cnt < aEntries - 1 ; cnt++)
+    for (uint32_t cnt = 0 ; cnt < aEntries - 1 ; cnt++)
       pRect [cnt].next = &pRect [cnt + 1];
 
     pRect [aEntries - 1].next = aTailDest;
@@ -105,14 +106,14 @@ class RgnRectMemoryAllocator
     return pBuf;
   }
 
-  void FreeChunk (void* aChunk) {  delete [] (PRUint8 *) aChunk;  }
+  void FreeChunk (void* aChunk) {  delete [] (uint8_t *) aChunk;  }
   void* NextChunk (void* aThisChunk) const { return *static_cast<void**>(aThisChunk); }
 
   nsRegion::RgnRect* ChunkHead (void* aThisChunk) const
-  {   return reinterpret_cast<nsRegion::RgnRect*>(static_cast<PRUint8*>(aThisChunk) + sizeof (void*));  }
+  {   return reinterpret_cast<nsRegion::RgnRect*>(static_cast<uint8_t*>(aThisChunk) + sizeof (void*));  }
 
 public:
-  RgnRectMemoryAllocator (PRUint32 aNumOfEntries);
+  RgnRectMemoryAllocator (uint32_t aNumOfEntries);
  ~RgnRectMemoryAllocator ();
 
   nsRegion::RgnRect* Alloc ();
@@ -120,10 +121,10 @@ public:
 };
 
 
-RgnRectMemoryAllocator::RgnRectMemoryAllocator (PRUint32 aNumOfEntries)
+RgnRectMemoryAllocator::RgnRectMemoryAllocator (uint32_t aNumOfEntries)
 {
   InitLock ();
-  mChunkListHead = AllocChunk (aNumOfEntries, nsnull, nsnull);
+  mChunkListHead = AllocChunk (aNumOfEntries, nullptr, nullptr);
   mFreeEntries   = aNumOfEntries;
   mFreeListHead  = ChunkHead (mChunkListHead);
 }
@@ -205,7 +206,7 @@ void nsRegion::ShutdownStatic()
 
   delete allocator;
 
-  gRectPoolTlsIndex.set(nsnull);
+  gRectPoolTlsIndex.set(nullptr);
 }
 
 void* nsRegion::RgnRect::operator new (size_t) CPP_THROW_NEW
@@ -262,11 +263,11 @@ inline void nsRegion::InsertAfter (RgnRect* aNewRect, RgnRect* aRelativeRect)
 // Adjust the number of rectangles in region.
 // Content of rectangles should be changed by caller.
 
-void nsRegion::SetToElements (PRUint32 aCount)
+void nsRegion::SetToElements (uint32_t aCount)
 {
   if (mRectCount < aCount)        // Add missing rectangles
   {
-    PRUint32 InsertCount = aCount - mRectCount;
+    uint32_t InsertCount = aCount - mRectCount;
     mRectCount = aCount;
     RgnRect* pPrev = &mRectListHead;
     RgnRect* pNext = mRectListHead.next;
@@ -284,7 +285,7 @@ void nsRegion::SetToElements (PRUint32 aCount)
   } else
   if (mRectCount > aCount)        // Remove unnecessary rectangles
   {
-    PRUint32 RemoveCount = mRectCount - aCount;
+    uint32_t RemoveCount = mRectCount - aCount;
     mRectCount = aCount;
     mCurRect = mRectListHead.next;
 
@@ -449,8 +450,8 @@ void nsRegion::Optimize ()
   else
   {
     RgnRect* pRect = mRectListHead.next;
-    PRInt32 xmost = mRectListHead.prev->XMost ();
-    PRInt32 ymost = mRectListHead.prev->YMost ();
+    int32_t xmost = mRectListHead.prev->XMost ();
+    int32_t ymost = mRectListHead.prev->YMost ();
     mBoundRect.x = mRectListHead.next->x;
     mBoundRect.y = mRectListHead.next->y;
 
@@ -1315,7 +1316,7 @@ nsRegion& nsRegion::ScaleInverseRoundOut (float aXScale, float aYScale)
   return *this;
 }
 
-nsRegion nsRegion::ConvertAppUnitsRoundOut (PRInt32 aFromAPP, PRInt32 aToAPP) const
+nsRegion nsRegion::ConvertAppUnitsRoundOut (int32_t aFromAPP, int32_t aToAPP) const
 {
   if (aFromAPP == aToAPP) {
     return *this;
@@ -1334,7 +1335,7 @@ nsRegion nsRegion::ConvertAppUnitsRoundOut (PRInt32 aFromAPP, PRInt32 aToAPP) co
   return region;
 }
 
-nsRegion nsRegion::ConvertAppUnitsRoundIn (PRInt32 aFromAPP, PRInt32 aToAPP) const
+nsRegion nsRegion::ConvertAppUnitsRoundIn (int32_t aFromAPP, int32_t aToAPP) const
 {
   if (aFromAPP == aToAPP) {
     return *this;
@@ -1379,6 +1380,20 @@ nsIntRegion nsRegion::ToNearestPixels (nscoord aAppUnitsPerPixel) const
   return ToPixels(aAppUnitsPerPixel, false);
 }
 
+nsIntRegion nsRegion::ScaleToNearestPixels (float aScaleX, float aScaleY,
+                                            nscoord aAppUnitsPerPixel) const
+{
+  nsIntRegion result;
+  nsRegionRectIterator rgnIter(*this);
+  const nsRect* currentRect;
+  while ((currentRect = rgnIter.Next())) {
+    nsIntRect deviceRect =
+      currentRect->ScaleToNearestPixels(aScaleX, aScaleY, aAppUnitsPerPixel);
+    result.Or(result, deviceRect);
+  }
+  return result;
+}
+
 nsIntRegion nsRegion::ScaleToOutsidePixels (float aScaleX, float aScaleY,
                                             nscoord aAppUnitsPerPixel) const
 {
@@ -1390,6 +1405,67 @@ nsIntRegion nsRegion::ScaleToOutsidePixels (float aScaleX, float aScaleY,
       currentRect->ScaleToOutsidePixels(aScaleX, aScaleY, aAppUnitsPerPixel);
     result.Or(result, deviceRect);
   }
+  return result;
+}
+
+nsIntRegion nsRegion::ScaleToInsidePixels (float aScaleX, float aScaleY,
+                                           nscoord aAppUnitsPerPixel) const
+{
+  /* When scaling a rect, walk forward through the rect list up until the y value is greater
+   * than the current rect's YMost() value.
+   *
+   * For each rect found, check if the rects have a touching edge (in unscaled coordinates),
+   * and if one edge is entirely contained within the other.
+   *
+   * If it is, then the contained edge can be moved (in scaled pixels) to ensure that no
+   * gap exists.
+   *
+   * Since this could be potentially expensive - O(n^2), we only attempt this algorithm
+   * for the first rect.
+   */
+
+  nsIntRegion result;
+  RgnRect* pRect = mRectListHead.next;
+  RgnRect* first = pRect;
+
+  nsIntRect firstDeviceRect;
+  if (pRect != &mRectListHead) {
+    firstDeviceRect =
+      pRect->ScaleToInsidePixels(aScaleX, aScaleY, aAppUnitsPerPixel);
+    pRect = pRect->next;
+  }
+
+  while (pRect != &mRectListHead)
+  {
+    nsIntRect deviceRect =
+      pRect->ScaleToInsidePixels(aScaleX, aScaleY, aAppUnitsPerPixel);
+
+    if (pRect->y <= first->YMost()) {
+      if (pRect->XMost() == first->x && pRect->YMost() <= first->YMost()) {
+        // pRect is touching on the left edge of the first rect and contained within
+        // the length of its left edge
+        deviceRect.SetRightEdge(firstDeviceRect.x);
+      } else if (pRect->x == first->XMost() && pRect->YMost() <= first->YMost()) {
+        // pRect is touching on the right edge of the first rect and contained within
+        // the length of its right edge
+        deviceRect.SetLeftEdge(firstDeviceRect.XMost());
+      } else if (pRect->y == first->YMost()) {
+        // The bottom of the first rect is on the same line as the top of pRect, but 
+        // they aren't necessarily contained.
+        if (pRect->x <= first->x && pRect->XMost() >= first->XMost()) {
+          // The top of pRect contains the bottom of the first rect
+          firstDeviceRect.SetBottomEdge(deviceRect.y);
+        } else if (pRect->x >= first->x && pRect->XMost() <= first->XMost()) {
+          // The bottom of the first contains the top of pRect
+          deviceRect.SetTopEdge(firstDeviceRect.YMost());
+        }
+      }
+    }
+    pRect = pRect->next;
+    result.Or(result, deviceRect);
+  }
+
+  result.Or(result, firstDeviceRect);
   return result;
 }
 
@@ -1482,7 +1558,7 @@ namespace {
     // Adds a new partition at the given coordinate to this partitioning. If
     // the coordinate is already present in the partitioning, this does nothing.
     void InsertCoord(nscoord c) {
-      PRUint32 i;
+      uint32_t i;
       if (!mStops.GreatestIndexLtEq(c, i)) {
         mStops.InsertElementAt(i, c);
       }
@@ -1490,35 +1566,35 @@ namespace {
 
     // Returns the array index of the given partition point. The partition
     // point must already be present in the partitioning.
-    PRInt32 IndexOf(nscoord p) const {
+    int32_t IndexOf(nscoord p) const {
       return mStops.BinaryIndexOf(p);
     }
 
     // Returns the partition at the given index which must be non-zero and
     // less than the number of partitions in this partitioning.
-    nscoord StopAt(PRInt32 index) const {
+    nscoord StopAt(int32_t index) const {
       return mStops[index];
     }
 
     // Returns the size of the gap between the partition at the given index and
     // the next partition in this partitioning. If the index is the last index
     // in the partitioning, the result is undefined.
-    nscoord StopSize(PRInt32 index) const {
+    nscoord StopSize(int32_t index) const {
       return mStops[index+1] - mStops[index];
     }
 
     // Returns the number of partitions in this partitioning.
-    PRInt32 GetNumStops() const { return mStops.Length(); }
+    int32_t GetNumStops() const { return mStops.Length(); }
 
   private:
     nsTArray<nscoord> mStops;
   };
 
-  const PRInt64 kVeryLargeNegativeNumber = 0xffff000000000000ll;
+  const int64_t kVeryLargeNegativeNumber = 0xffff000000000000ll;
 
   struct SizePair {
-    PRInt64 mSizeContainingRect;
-    PRInt64 mSize;
+    int64_t mSizeContainingRect;
+    int64_t mSize;
 
     SizePair() : mSizeContainingRect(0), mSize(0) {}
 
@@ -1558,18 +1634,18 @@ namespace {
 
   // Returns the sum and indices of the subarray with the maximum sum of the
   // given array (A,n), assuming the array is already in prefix sum form.
-  SizePair MaxSum1D(const nsTArray<SizePair> &A, PRInt32 n,
-                    PRInt32 *minIdx, PRInt32 *maxIdx) {
+  SizePair MaxSum1D(const nsTArray<SizePair> &A, int32_t n,
+                    int32_t *minIdx, int32_t *maxIdx) {
     // The min/max indicies of the largest subarray found so far
     SizePair min, max;
-    PRInt32 currentMinIdx = 0;
+    int32_t currentMinIdx = 0;
 
     *minIdx = 0;
     *maxIdx = 0;
 
     // Because we're given the array in prefix sum form, we know the first
     // element is 0
-    for(PRInt32 i = 1; i < n; i++) {
+    for(int32_t i = 1; i < n; i++) {
       SizePair cand = A[i] - min;
       if (cand > max) {
         max = cand;
@@ -1615,24 +1691,24 @@ nsRect nsRegion::GetLargestRectangle (const nsRect& aContainingRect) const {
   // Step 2: Fill out the grid with the areas
   // Note: due to the ordering of rectangles in the region, it is not always
   // possible to combine steps 2 and 3 so we don't try to be clever.
-  PRInt32 matrixHeight = yaxis.GetNumStops() - 1;
-  PRInt32 matrixWidth = xaxis.GetNumStops() - 1;
-  PRInt32 matrixSize = matrixHeight * matrixWidth;
+  int32_t matrixHeight = yaxis.GetNumStops() - 1;
+  int32_t matrixWidth = xaxis.GetNumStops() - 1;
+  int32_t matrixSize = matrixHeight * matrixWidth;
   nsTArray<SizePair> areas(matrixSize);
   areas.SetLength(matrixSize);
 
   iter.Reset();
   while ((currentRect = iter.Next())) {
-    PRInt32 xstart = xaxis.IndexOf(currentRect->x);
-    PRInt32 xend = xaxis.IndexOf(currentRect->XMost());
-    PRInt32 y = yaxis.IndexOf(currentRect->y);
-    PRInt32 yend = yaxis.IndexOf(currentRect->YMost());
+    int32_t xstart = xaxis.IndexOf(currentRect->x);
+    int32_t xend = xaxis.IndexOf(currentRect->XMost());
+    int32_t y = yaxis.IndexOf(currentRect->y);
+    int32_t yend = yaxis.IndexOf(currentRect->YMost());
 
     for (; y < yend; y++) {
       nscoord height = yaxis.StopSize(y);
-      for (PRInt32 x = xstart; x < xend; x++) {
+      for (int32_t x = xstart; x < xend; x++) {
         nscoord width = xaxis.StopSize(x);
-        PRInt64 size = width*PRInt64(height);
+        int64_t size = width*int64_t(height);
         if (currentRect->Intersects(aContainingRect)) {
           areas[y*matrixWidth+x].mSizeContainingRect = size;
         }
@@ -1644,12 +1720,12 @@ nsRect nsRegion::GetLargestRectangle (const nsRect& aContainingRect) const {
   // Step 3: Find the maximum submatrix sum that does not contain a rectangle
   {
     // First get the prefix sum array
-    PRInt32 m = matrixHeight + 1;
-    PRInt32 n = matrixWidth + 1;
+    int32_t m = matrixHeight + 1;
+    int32_t n = matrixWidth + 1;
     nsTArray<SizePair> pareas(m*n);
     pareas.SetLength(m*n);
-    for (PRInt32 y = 1; y < m; y++) {
-      for (PRInt32 x = 1; x < n; x++) {
+    for (int32_t y = 1; y < m; y++) {
+      for (int32_t x = 1; x < n; x++) {
         SizePair area = areas[(y-1)*matrixWidth+x-1];
         if (!area.mSize) {
           area = SizePair::VeryLargeNegative();
@@ -1666,16 +1742,16 @@ nsRect nsRegion::GetLargestRectangle (const nsRect& aContainingRect) const {
 
     SizePair bestArea;
     struct {
-      PRInt32 left, top, right, bottom;
+      int32_t left, top, right, bottom;
     } bestRectIndices = { 0, 0, 0, 0 };
-    for (PRInt32 m1 = 0; m1 < m; m1++) {
-      for (PRInt32 m2 = m1+1; m2 < m; m2++) {
+    for (int32_t m1 = 0; m1 < m; m1++) {
+      for (int32_t m2 = m1+1; m2 < m; m2++) {
         nsTArray<SizePair> B;
         B.SetLength(n);
-        for (PRInt32 i = 0; i < n; i++) {
+        for (int32_t i = 0; i < n; i++) {
           B[i] = pareas[m2*n+i] - pareas[m1*n+i];
         }
-        PRInt32 minIdx, maxIdx;
+        int32_t minIdx, maxIdx;
         SizePair area = MaxSum1D(B, n, &minIdx, &maxIdx);
         if (area > bestArea) {
           bestRectIndices.left = minIdx;
@@ -1696,7 +1772,7 @@ nsRect nsRegion::GetLargestRectangle (const nsRect& aContainingRect) const {
   return bestRect;
 }
 
-void nsRegion::SimplifyOutward (PRUint32 aMaxRects)
+void nsRegion::SimplifyOutward (uint32_t aMaxRects)
 {
   NS_ASSERTION(aMaxRects >= 1, "Invalid max rect count");
   
@@ -1732,7 +1808,7 @@ void nsRegion::SimplifyOutward (PRUint32 aMaxRects)
   *this = GetBounds();
 }
 
-void nsRegion::SimplifyInward (PRUint32 aMaxRects)
+void nsRegion::SimplifyInward (uint32_t aMaxRects)
 {
   NS_ASSERTION(aMaxRects >= 1, "Invalid max rect count");
 
@@ -1780,6 +1856,25 @@ void nsRegion::SimpleSubtract (const nsRegion& aRegion)
   }
 
   Optimize();
+}
+
+nsCString
+nsRegion::ToString() const
+{
+  nsCString result;
+  result.AppendLiteral("[");
+  const RgnRect* r = mRectListHead.next;
+  while (r != &mRectListHead)
+  {
+    if (r != mRectListHead.next) {
+      result.AppendLiteral("; ");
+    }
+    result.Append(nsPrintfCString("%d,%d,%d,%d", r->x, r->y, r->XMost(), r->YMost()));
+    r = r->next;
+  }
+  result.AppendLiteral("]");
+
+  return result;
 }
 
 nsRegion nsIntRegion::ToAppUnits (nscoord aAppUnitsPerPixel) const

@@ -100,14 +100,7 @@ function ContentPrefService() {
   // was due to a temporary condition (like being out of disk space).
   this._dbInit();
 
-  // detect if we are in private browsing mode
-  this._inPrivateBrowsing = false;
-  try { // The Private Browsing service might not be available.
-    var pbs = Cc["@mozilla.org/privatebrowsing;1"].
-                getService(Ci.nsIPrivateBrowsingService);
-    this._inPrivateBrowsing = pbs.privateBrowsingEnabled;
-  } catch (e) {}
-  this._observerSvc.addObserver(this, "private-browsing", false);
+  this._observerSvc.addObserver(this, "last-pb-context-exited", false);
 
   // Observe shutdown so we can shut down the database connection.
   this._observerSvc.addObserver(this, "xpcom-shutdown", false);
@@ -117,8 +110,8 @@ var inMemoryPrefsProto = {
   getPref: function(aName, aGroup) {
     aGroup = aGroup || "__GlobalPrefs__";
 
-    if (this._prefCache[aGroup] && this._prefCache[aGroup].hasOwnProperty(aName)) {
-      let value = this._prefCache[aGroup][aName];
+    if (this._prefCache[aGroup] && this._prefCache[aGroup].has(aName)) {
+      let value = this._prefCache[aGroup].get(aName);
       return [true, value];
     }
     return [false, undefined];
@@ -136,9 +129,9 @@ var inMemoryPrefsProto = {
   removePref: function(aName, aGroup) {
     aGroup = aGroup || "__GlobalPrefs__";
 
-    if (this._prefCache[aGroup].hasOwnProperty(aName)) {
-      delete this._prefCache[aGroup][aName];
-      if (Object.keys(this._prefCache[aGroup]).length == 0) {
+    if (this._prefCache[aGroup].has(aName)) {
+      this._prefCache[aGroup].delete(aName);
+      if (this._prefCache[aGroup].size == 0) {
         // remove empty group
         delete this._prefCache[aGroup];
       }
@@ -164,9 +157,9 @@ ContentPrefService.prototype = {
   //**************************************************************************//
   // XPCOM Plumbing
 
-  classID:          Components.ID("{e6a3f533-4ffa-4615-8eb4-d4e72d883fa7}"),
+  classID:          Components.ID("{e3f772f3-023f-4b32-b074-36cf0fd5d414}"),
   QueryInterface:   XPCOMUtils.generateQI([Ci.nsIContentPrefService,
-                                           Ci.nsIFrameMessageListener]),
+                                           Ci.nsIMessageListener]),
 
 
   //**************************************************************************//
@@ -205,7 +198,7 @@ ContentPrefService.prototype = {
 
   _destroy: function ContentPrefService__destroy() {
     this._observerSvc.removeObserver(this, "xpcom-shutdown");
-    this._observerSvc.removeObserver(this, "private-browsing");
+    this._observerSvc.removeObserver(this, "last-pb-context-exited");
 
     // Finalize statements which may have been used asynchronously.
     // FIXME(696499): put them in an object cache like other components.
@@ -292,16 +285,8 @@ ContentPrefService.prototype = {
       case "xpcom-shutdown":
         this._destroy();
         break;
-      case "private-browsing":
-        switch (data) {
-          case "enter":
-            this._inPrivateBrowsing = true;
-            break;
-          case "exit":
-            this._inPrivateBrowsing = false;
-            this._privModeStorage.invalidate();
-            break;
-        }
+      case "last-pb-context-exited":
+        this._privModeStorage.invalidate();
         break;
     }
   },
@@ -309,7 +294,6 @@ ContentPrefService.prototype = {
 
   //**************************************************************************//
   // Prefs cache
-
   _cache: Object.create(inMemoryPrefsProto, {
     _prefCache: { 
       value: {}, configurable: true, writable: true, enumerable: true
@@ -321,11 +305,11 @@ ContentPrefService.prototype = {
 
         if (!this._prefCache[aGroup]) {
           this._possiblyCleanCache();
-          this._prefCache[aGroup] = {};
+          this._prefCache[aGroup] = new Map();
         }
 
-        this._prefCache[aGroup][aName] = aValue;
-      },
+        this._prefCache[aGroup].set(aName, aValue);
+      }
     },
 
     _possiblyCleanCache: { value:
@@ -358,10 +342,10 @@ ContentPrefService.prototype = {
         aGroup = aGroup || "__GlobalPrefs__";
 
         if (!this._prefCache[aGroup]) {
-          this._prefCache[aGroup] = {};
+          this._prefCache[aGroup] = new Map();
         }
 
-        this._prefCache[aGroup][aName] = aValue;
+        this._prefCache[aGroup].set(aName, aValue);
       }
     },
 
@@ -394,14 +378,14 @@ ContentPrefService.prototype = {
   //**************************************************************************//
   // nsIContentPrefService
 
-  getPref: function ContentPrefService_getPref(aGroup, aName, aCallback) {
+  getPref: function ContentPrefService_getPref(aGroup, aName, aContext, aCallback) {
     if (!aName)
       throw Components.Exception("aName cannot be null or an empty string",
                                  Cr.NS_ERROR_ILLEGAL_VALUE);
 
     var group = this._parseGroupParam(aGroup);
 
-    if (this._inPrivateBrowsing) {
+    if (aContext && aContext.usePrivateBrowsing) {
       let [haspref, value] = this._privModeStorage.getPref(aName, group);
       if (haspref) {
         if (aCallback) {
@@ -419,9 +403,9 @@ ContentPrefService.prototype = {
     return this._selectPref(group, aName, aCallback);
   },
 
-  setPref: function ContentPrefService_setPref(aGroup, aName, aValue) {
+  setPref: function ContentPrefService_setPref(aGroup, aName, aValue, aContext) {
     // If the pref is already set to the value, there's nothing more to do.
-    var currentValue = this.getPref(aGroup, aName);
+    var currentValue = this.getPref(aGroup, aName, aContext);
     if (typeof currentValue != "undefined") {
       if (currentValue == aValue)
         return;
@@ -429,7 +413,7 @@ ContentPrefService.prototype = {
 
     var group = this._parseGroupParam(aGroup);
 
-    if (this._inPrivateBrowsing) {
+    if (aContext && aContext.usePrivateBrowsing) {
       this._privModeStorage.setPref(aName, aValue, group);
       this._notifyPrefSet(group, aName, aValue);
       return;
@@ -457,31 +441,31 @@ ContentPrefService.prototype = {
     this._notifyPrefSet(group, aName, aValue);
   },
 
-  hasPref: function ContentPrefService_hasPref(aGroup, aName) {
+  hasPref: function ContentPrefService_hasPref(aGroup, aName, aContext) {
     // XXX If consumers end up calling this method regularly, then we should
     // optimize this to query the database directly.
-    return (typeof this.getPref(aGroup, aName) != "undefined");
+    return (typeof this.getPref(aGroup, aName, aContext) != "undefined");
   },
 
-  hasCachedPref: function ContentPrefService_hasCachedPref(aGroup, aName) {
+  hasCachedPref: function ContentPrefService_hasCachedPref(aGroup, aName, aContext) {
     if (!aName)
       throw Components.Exception("aName cannot be null or an empty string",
                                  Cr.NS_ERROR_ILLEGAL_VALUE);
 
     let group = this._parseGroupParam(aGroup);
-    let storage = this._inPrivateBrowsing? this._privModeStorage: this._cache;
+    let storage = aContext && aContext.usePrivateBrowsing ? this._privModeStorage: this._cache;
     let [cached,] = storage.getPref(aName, group);
     return cached;
   },
 
-  removePref: function ContentPrefService_removePref(aGroup, aName) {
+  removePref: function ContentPrefService_removePref(aGroup, aName, aContext) {
     // If there's no old value, then there's nothing to remove.
-    if (!this.hasPref(aGroup, aName))
+    if (!this.hasPref(aGroup, aName, aContext))
       return;
 
     var group = this._parseGroupParam(aGroup);
 
-    if (this._inPrivateBrowsing) {
+    if (aContext && aContext.usePrivateBrowsing) {
       this._privModeStorage.removePref(aName, group);
       this._notifyPrefRemoved(group, aName);
       return;
@@ -509,9 +493,9 @@ ContentPrefService.prototype = {
     this._notifyPrefRemoved(group, aName);
   },
 
-  removeGroupedPrefs: function ContentPrefService_removeGroupedPrefs() {
+  removeGroupedPrefs: function ContentPrefService_removeGroupedPrefs(aContext) {
     // will not delete global preferences
-    if (this._inPrivateBrowsing) {
+    if (aContext && aContext.usePrivateBrowsing) {
         // keep only global prefs
         this._privModeStorage.invalidate(true);
     }
@@ -532,12 +516,12 @@ ContentPrefService.prototype = {
     }
   },
 
-  removePrefsByName: function ContentPrefService_removePrefsByName(aName) {
+  removePrefsByName: function ContentPrefService_removePrefsByName(aName, aContext) {
     if (!aName)
       throw Components.Exception("aName cannot be null or an empty string",
                                  Cr.NS_ERROR_ILLEGAL_VALUE);
 
-    if (this._inPrivateBrowsing) {
+    if (aContext && aContext.usePrivateBrowsing) {
       let groupNames = this._privModeStorage.groupsForName(aName);
       for (var i = 0; i < groupNames.length; i++) {
         let groupName = groupNames[i];
@@ -582,22 +566,20 @@ ContentPrefService.prototype = {
       this._cache.removePref(aName, groupNames[i]);
       if (groupNames[i]) // ie. not null, which will be last (and i == groupIDs.length)
         this._deleteGroupIfUnused(groupIDs[i]);
-      if (!this._inPrivateBrowsing) {
+      if (!aContext || !aContext.usePrivateBrowsing) {
         this._notifyPrefRemoved(groupNames[i], aName);
       }
     }
   },
 
-  getPrefs: function ContentPrefService_getPrefs(aGroup) {
+  getPrefs: function ContentPrefService_getPrefs(aGroup, aContext) {
     var group = this._parseGroupParam(aGroup);
-    if (this._inPrivateBrowsing) {
+    if (aContext && aContext.usePrivateBrowsing) {
         let prefs = Cc["@mozilla.org/hash-property-bag;1"].
                     createInstance(Ci.nsIWritablePropertyBag);
         let [hasbranch,properties] = this._privModeStorage.getPrefs(group);
-        for (let entry in properties) {
-          if (properties.hasOwnProperty(entry)) {
-            prefs.setProperty(entry, properties[entry]);
-          }
+        for (let [entry, value] of properties) {
+          prefs.setProperty(entry, value);
         }
         return prefs;
     }
@@ -607,12 +589,12 @@ ContentPrefService.prototype = {
     return this._selectPrefs(group);
   },
 
-  getPrefsByName: function ContentPrefService_getPrefsByName(aName) {
+  getPrefsByName: function ContentPrefService_getPrefsByName(aName, aContext) {
     if (!aName)
       throw Components.Exception("aName cannot be null or an empty string",
                                  Cr.NS_ERROR_ILLEGAL_VALUE);
 
-    if (this._inPrivateBrowsing) {
+    if (aContext && aContext.usePrivateBrowsing) {
       let prefs = Cc["@mozilla.org/hash-property-bag;1"].
                   createInstance(Ci.nsIWritablePropertyBag);
       let groupNames = this._privModeStorage.groupsForName(aName);
@@ -626,9 +608,6 @@ ContentPrefService.prototype = {
 
     return this._selectPrefsByName(aName);
   },
-
-  // boolean to indicate if we are in private browsing mode
-  _inPrivateBrowsing: false,
 
   // A hash of arrays of observers, indexed by setting name.
   _observers: {},
@@ -1453,4 +1432,4 @@ AsyncStatement.prototype = {
 // XPCOM Plumbing
 
 var components = [ContentPrefService, HostnameGrouper];
-var NSGetFactory = XPCOMUtils.generateNSGetFactory(components);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory(components);

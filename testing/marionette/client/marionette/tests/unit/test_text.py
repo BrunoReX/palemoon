@@ -10,7 +10,7 @@ class TestText(MarionetteTestCase):
         test_html = self.marionette.absolute_url("test.html")
         self.marionette.navigate(test_html)
         l = self.marionette.find_element("id", "mozLink")
-        self.assertEqual("Click me!", l.text())
+        self.assertEqual("Click me!", l.text)
 
     def test_clearText(self):
         test_html = self.marionette.absolute_url("test.html")
@@ -32,43 +32,41 @@ class TestTextChrome(MarionetteTestCase):
     def setUp(self):
         MarionetteTestCase.setUp(self)
         self.marionette.set_context("chrome")
-        self.win = self.marionette.get_window()
-        #need to get the file:// path for xul
-        unit = os.path.abspath(os.path.join(os.path.realpath(__file__), os.path.pardir))
-        tests = os.path.abspath(os.path.join(unit, os.path.pardir))
-        mpath = os.path.abspath(os.path.join(tests, os.path.pardir))
-        xul = "file://" + os.path.join(mpath, "www", "test.xul")
-        self.marionette.execute_script("window.open('" + xul +"', '_blank', 'chrome,centerscreen');")
+        self.win = self.marionette.current_window_handle
+        self.marionette.execute_script("window.open('chrome://marionette/content/test.xul', 'foo', 'chrome,centerscreen');")
+        self.marionette.switch_to_window('foo')
+        self.assertNotEqual(self.win, self.marionette.current_window_handle)
 
     def tearDown(self):
+        self.assertNotEqual(self.win, self.marionette.current_window_handle)
         self.marionette.execute_script("window.close();")
         self.marionette.switch_to_window(self.win)
         MarionetteTestCase.tearDown(self)
 
     def test_getText(self):
-        wins = self.marionette.get_windows()
+        wins = self.marionette.window_handles
         wins.remove(self.win)
         newWin = wins.pop()
         self.marionette.switch_to_window(newWin)
         box = self.marionette.find_element("id", "textInput")
-        self.assertEqual("test", box.text())
+        self.assertEqual("test", box.text)
 
     def test_clearText(self):
-        wins = self.marionette.get_windows()
+        wins = self.marionette.window_handles
         wins.remove(self.win)
         newWin = wins.pop()
         self.marionette.switch_to_window(newWin)
         box = self.marionette.find_element("id", "textInput")
-        self.assertEqual("test", box.text())
+        self.assertEqual("test", box.text)
         box.clear()
-        self.assertEqual("", box.text())
+        self.assertEqual("", box.text)
 
     def test_sendKeys(self):
-        wins = self.marionette.get_windows()
+        wins = self.marionette.window_handles
         wins.remove(self.win)
         newWin = wins.pop()
         self.marionette.switch_to_window(newWin)
         box = self.marionette.find_element("id", "textInput")
-        self.assertEqual("test", box.text())
+        self.assertEqual("test", box.text)
         box.send_keys("at")
-        self.assertEqual("attest", box.text())
+        self.assertEqual("attest", box.text)

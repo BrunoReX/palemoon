@@ -19,6 +19,7 @@
 #include "nsITimer.h"
 #include "Database.h"
 #include "mozilla/storage.h"
+#include "mozilla/Attributes.h"
 
 #include "AsyncFaviconHelpers.h"
 
@@ -29,7 +30,7 @@
 
 // Most icons will be smaller than this rough estimate of the size of an
 // uncompressed 16x16 RGBA image of the same dimensions.
-#define MAX_ICON_FILESIZE(s) ((PRUint32) s*s*4)
+#define MAX_ICON_FILESIZE(s) ((uint32_t) s*s*4)
 
 // forward class definitions
 class mozIStorageStatementCallback;
@@ -50,9 +51,9 @@ public:
   PRTime created;
 };
 
-class nsFaviconService : public nsIFaviconService
-                       , public mozIAsyncFavicons
-                       , public nsITimerCallback
+class nsFaviconService MOZ_FINAL : public nsIFaviconService
+                                 , public mozIAsyncFavicons
+                                 , public nsITimerCallback
 {
 public:
   nsFaviconService();
@@ -80,7 +81,7 @@ public:
     if (!gFaviconService) {
       nsCOMPtr<nsIFaviconService> serv =
         do_GetService(NS_FAVICONSERVICE_CONTRACTID);
-      NS_ENSURE_TRUE(serv, nsnull);
+      NS_ENSURE_TRUE(serv, nullptr);
       NS_ASSERTION(gFaviconService, "Should have static instance pointer now");
     }
     return gFaviconService;
@@ -90,10 +91,10 @@ public:
   nsresult GetFaviconLinkForIconString(const nsCString& aIcon, nsIURI** aOutput);
   void GetFaviconSpecForIconString(const nsCString& aIcon, nsACString& aOutput);
 
-  nsresult OptimizeFaviconImage(const PRUint8* aData, PRUint32 aDataLen,
+  nsresult OptimizeFaviconImage(const uint8_t* aData, uint32_t aDataLen,
                                 const nsACString& aMimeType,
                                 nsACString& aNewData, nsACString& aNewMimeType);
-  PRInt32 GetOptimizedIconDimension() { return mOptimizedIconDimension; }
+  int32_t GetOptimizedIconDimension() { return mOptimizedIconDimension; }
 
   /**
    * Obtains the favicon data asynchronously.
@@ -151,10 +152,10 @@ private:
   // If we find images that are as large or larger than an uncompressed RGBA
   // image of this size (mOptimizedIconDimension*mOptimizedIconDimension*4),
   // we will try to optimize it.
-  PRInt32 mOptimizedIconDimension;
+  int32_t mOptimizedIconDimension;
 
-  PRUint32 mFailedFaviconSerial;
-  nsDataHashtable<nsCStringHashKey, PRUint32> mFailedFavicons;
+  uint32_t mFailedFaviconSerial;
+  nsDataHashtable<nsCStringHashKey, uint32_t> mFailedFavicons;
 
   // AsyncFetchAndSetIconForPage needs access to the icon cache
   friend class mozilla::places::AsyncFetchAndSetIconForPage;

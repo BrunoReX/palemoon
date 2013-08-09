@@ -49,15 +49,15 @@ public:
 private:
   nsThreadManager()
     : mCurThreadIndex(0)
-    , mMainPRThread(nsnull)
-    , mLock(nsnull)
+    , mMainPRThread(nullptr)
+    , mLock(nullptr)
     , mInitialized(false) {
   }
   
   static nsThreadManager sInstance;
 
   nsRefPtrHashtable<nsPtrHashKey<PRThread>, nsThread> mThreadsByPRThread;
-  PRUintn             mCurThreadIndex;  // thread-local-storage index
+  unsigned             mCurThreadIndex;  // thread-local-storage index
   nsRefPtr<nsThread>  mMainThread;
   PRThread           *mMainPRThread;
   // This is a pointer in order to allow creating nsThreadManager from

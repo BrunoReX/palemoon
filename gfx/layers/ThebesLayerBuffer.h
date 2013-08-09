@@ -13,6 +13,7 @@
 namespace mozilla {
 namespace layers {
 
+class AutoOpenSurface;
 class ThebesLayer;
 
 /**
@@ -50,7 +51,8 @@ public:
   };
 
   ThebesLayerBuffer(BufferSizePolicy aBufferSizePolicy)
-    : mBufferRotation(0,0)
+    : mBufferProvider(nullptr)
+    , mBufferRotation(0,0)
     , mBufferSizePolicy(aBufferSizePolicy)
   {
     MOZ_COUNT_CTOR(ThebesLayerBuffer);
@@ -66,7 +68,8 @@ public:
    */
   void Clear()
   {
-    mBuffer = nsnull;
+    mBuffer = nullptr;
+    mBufferProvider = nullptr;
     mBufferRect.SetEmpty();
   }
 
@@ -111,7 +114,7 @@ public:
    * fill the buffer bounds).
    */
   PaintState BeginPaint(ThebesLayer* aLayer, ContentType aContentType,
-                        PRUint32 aFlags);
+                        uint32_t aFlags);
 
   enum {
     ALLOW_REPEAT = 0x01
@@ -122,7 +125,7 @@ public:
    * to allow repeat-mode, otherwise it should be in pad (clamp) mode
    */
   virtual already_AddRefed<gfxASurface>
-  CreateBuffer(ContentType aType, const nsIntSize& aSize, PRUint32 aFlags) = 0;
+  CreateBuffer(ContentType aType, const nsIntSize& aSize, uint32_t aFlags) = 0;
 
   /**
    * Get the underlying buffer, if any. This is useful because we can pass
@@ -149,8 +152,8 @@ protected:
                           gfxASurface* aMask,
                           const gfxMatrix* aMaskTransform);
   void DrawBufferWithRotation(gfxContext* aTarget, float aOpacity,
-                              gfxASurface* aMask = nsnull,
-                              const gfxMatrix* aMaskTransform = nsnull);
+                              gfxASurface* aMask = nullptr,
+                              const gfxMatrix* aMaskTransform = nullptr);
 
   /**
    * |BufferRect()| is the rect of device pixels that this
@@ -172,6 +175,29 @@ protected:
   }
 
   /**
+   * Set the buffer provider only.  This is used with surfaces that
+   * require explicit map/unmap, which |aProvider| is used to do on
+   * demand in this code.
+   *
+   * It's the caller's responsibility to ensure |aProvider| is valid
+   * for the duration of operations it requests of this
+   * ThebesLayerBuffer.  It's also the caller's responsibility to
+   * unset the provider when inactive, by calling
+   * SetBufferProvider(nullptr).
+   */
+  void SetBufferProvider(AutoOpenSurface* aProvider)
+  {
+    mBufferProvider = aProvider;
+    if (!mBufferProvider) {
+      mBuffer = nullptr;
+    } else {
+      // Only this buffer provider can give us a buffer.  If we
+      // already have one, something has gone wrong.
+      MOZ_ASSERT(!mBuffer);
+    }
+  }
+
+  /**
    * Get a context at the specified resolution for updating |aBounds|,
    * which must be contained within a single quadrant.
    */
@@ -179,14 +205,31 @@ protected:
   GetContextForQuadrantUpdate(const nsIntRect& aBounds);
 
 private:
-  bool BufferSizeOkFor(const nsIntSize& aSize)
-  {
-    return (aSize == mBufferRect.Size() ||
-            (SizedToVisibleBounds != mBufferSizePolicy &&
-             aSize < mBufferRect.Size()));
-  }
+  // Buffer helpers.  Don't use mBuffer directly; instead use one of
+  // these helpers.
+
+  /**
+   * Return the buffer's content type.  Requires a valid buffer or
+   * buffer provider.
+   */
+  gfxASurface::gfxContentType BufferContentType();
+  bool BufferSizeOkFor(const nsIntSize& aSize);
+  /**
+   * If the buffer hasn't been mapped, map it and return it.
+   */
+  gfxASurface* EnsureBuffer();
+  /**
+   * True if we have a buffer where we can get it (but not necessarily
+   * mapped currently).
+   */
+  bool HaveBuffer();
 
   nsRefPtr<gfxASurface> mBuffer;
+  /**
+   * This member is only set transiently.  It's used to map mBuffer
+   * when we're using surfaces that require explicit map/unmap.
+   */
+  AutoOpenSurface* mBufferProvider;
   /** The area of the ThebesLayer that is covered by the buffer as a whole */
   nsIntRect             mBufferRect;
   /**

@@ -28,7 +28,7 @@ namespace a11y {
  */
 
 class ApplicationAccessible : public AccessibleWrap,
-                             public nsIAccessibleApplication
+                              public nsIAccessibleApplication
 {
 public:
 
@@ -38,60 +38,57 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIAccessible
-  NS_SCRIPTABLE NS_IMETHOD GetDOMNode(nsIDOMNode** aDOMNode);
-  NS_SCRIPTABLE NS_IMETHOD GetDocument(nsIAccessibleDocument** aDocument);
-  NS_SCRIPTABLE NS_IMETHOD GetRootDocument(nsIAccessibleDocument** aRootDocument);
-  NS_SCRIPTABLE NS_IMETHOD ScrollTo(PRUint32 aScrollType);
-  NS_SCRIPTABLE NS_IMETHOD ScrollToPoint(PRUint32 aCoordinateType, PRInt32 aX, PRInt32 aY);
-  NS_SCRIPTABLE NS_IMETHOD GetLanguage(nsAString& aLanguage);
+  NS_IMETHOD GetRootDocument(nsIAccessibleDocument** aRootDocument);
+  NS_IMETHOD ScrollTo(uint32_t aScrollType);
+  NS_IMETHOD ScrollToPoint(uint32_t aCoordinateType, int32_t aX, int32_t aY);
+  NS_IMETHOD GetLanguage(nsAString& aLanguage);
   NS_IMETHOD GetParent(nsIAccessible **aParent);
   NS_IMETHOD GetNextSibling(nsIAccessible **aNextSibling);
   NS_IMETHOD GetPreviousSibling(nsIAccessible **aPreviousSibling);
-  NS_IMETHOD GetAttributes(nsIPersistentProperties **aAttributes);
-  NS_IMETHOD GetBounds(PRInt32 *aX, PRInt32 *aY,
-                       PRInt32 *aWidth, PRInt32 *aHeight);
+  NS_IMETHOD GetBounds(int32_t *aX, int32_t *aY,
+                       int32_t *aWidth, int32_t *aHeight);
   NS_IMETHOD SetSelected(bool aIsSelected);
   NS_IMETHOD TakeSelection();
   NS_IMETHOD TakeFocus();
-  NS_IMETHOD GetActionName(PRUint8 aIndex, nsAString &aName);
-  NS_IMETHOD GetActionDescription(PRUint8 aIndex, nsAString &aDescription);
-  NS_IMETHOD DoAction(PRUint8 aIndex);
+  NS_IMETHOD GetActionName(uint8_t aIndex, nsAString &aName);
+  NS_IMETHOD GetActionDescription(uint8_t aIndex, nsAString &aDescription);
+  NS_IMETHOD DoAction(uint8_t aIndex);
 
   // nsIAccessibleApplication
   NS_DECL_NSIACCESSIBLEAPPLICATION
 
   // nsAccessNode
-  virtual bool Init();
+  virtual void Init();
   virtual void Shutdown();
-  virtual bool IsPrimaryForNode() const;
 
   // Accessible
+  virtual already_AddRefed<nsIPersistentProperties> NativeAttributes() MOZ_OVERRIDE;
   virtual GroupPos GroupPosition();
   virtual ENameValueFlag Name(nsString& aName);
-  virtual void ApplyARIAState(PRUint64* aState) const;
+  virtual void ApplyARIAState(uint64_t* aState) const;
   virtual void Description(nsString& aDescription);
   virtual void Value(nsString& aValue);
   virtual mozilla::a11y::role NativeRole();
-  virtual PRUint64 State();
-  virtual PRUint64 NativeState();
-  virtual Relation RelationByType(PRUint32 aRelType);
+  virtual uint64_t State();
+  virtual uint64_t NativeState();
+  virtual Relation RelationByType(uint32_t aRelType);
 
-  virtual Accessible* ChildAtPoint(PRInt32 aX, PRInt32 aY,
+  virtual Accessible* ChildAtPoint(int32_t aX, int32_t aY,
                                    EWhichChildAtPoint aWhichChild);
   virtual Accessible* FocusedChild();
 
   virtual void InvalidateChildren();
 
   // ActionAccessible
-  virtual PRUint8 ActionCount();
+  virtual uint8_t ActionCount();
   virtual KeyBinding AccessKey() const;
 
 protected:
 
   // Accessible
   virtual void CacheChildren();
-  virtual Accessible* GetSiblingAtOffset(PRInt32 aOffset,
-                                         nsresult *aError = nsnull) const;
+  virtual Accessible* GetSiblingAtOffset(int32_t aOffset,
+                                         nsresult *aError = nullptr) const;
 
 private:
   nsCOMPtr<nsIXULAppInfo> mAppInfo;

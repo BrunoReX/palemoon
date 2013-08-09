@@ -18,13 +18,14 @@
 #include "nsNetUtil.h"
 #include "nsIDocument.h"
 #include "nsIDOMEvent.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsIDOMEventTarget.h"
 #include "nsContentUtils.h"
 #include "nsPIDOMWindow.h"
 #include "nsAsyncDOMEvent.h"
 
 #include "Link.h"
+
+using namespace mozilla;
 using namespace mozilla::dom;
 
 class nsHTMLLinkElement : public nsGenericHTMLElement,
@@ -40,14 +41,18 @@ public:
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
+  // CC
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsHTMLLinkElement,
+                                           nsGenericHTMLElement)
+
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLLinkElement
   NS_DECL_NSIDOMHTMLLINKELEMENT
@@ -64,16 +69,20 @@ public:
                               bool aCompileEventHandlers);
   virtual void UnbindFromTree(bool aDeep = true,
                               bool aNullParent = true);
+  virtual bool ParseAttribute(int32_t aNamespaceID,
+                              nsIAtom* aAttribute,
+                              const nsAString& aValue,
+                              nsAttrValue& aResult);
   void CreateAndDispatchEvent(nsIDocument* aDoc, const nsAString& aEventName);
-  nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+  nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                    const nsAString& aValue, bool aNotify)
   {
-    return SetAttr(aNameSpaceID, aName, nsnull, aValue, aNotify);
+    return SetAttr(aNameSpaceID, aName, nullptr, aValue, aNotify);
   }
-  virtual nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+  virtual nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                            nsIAtom* aPrefix, const nsAString& aValue,
                            bool aNotify);
-  virtual nsresult UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
+  virtual nsresult UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
                              bool aNotify);
 
   virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor);
@@ -95,6 +104,10 @@ protected:
                                  nsAString& aType,
                                  nsAString& aMedia,
                                  bool* aIsAlternate);
+  virtual CORSMode GetCORSMode() const;
+protected:
+  virtual void GetItemValueText(nsAString& text);
+  virtual void SetItemValueText(const nsAString& text);
 };
 
 
@@ -111,15 +124,24 @@ nsHTMLLinkElement::~nsHTMLLinkElement()
 {
 }
 
+NS_IMPL_CYCLE_COLLECTION_CLASS(nsHTMLLinkElement)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsHTMLLinkElement,
+                                                  nsGenericHTMLElement)
+  tmp->nsStyleLinkElement::Traverse(cb);
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsHTMLLinkElement,
+                                                nsGenericHTMLElement)
+  tmp->nsStyleLinkElement::Unlink();
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLLinkElement, nsGenericElement) 
-NS_IMPL_RELEASE_INHERITED(nsHTMLLinkElement, nsGenericElement) 
+NS_IMPL_ADDREF_INHERITED(nsHTMLLinkElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLLinkElement, Element)
 
 
 DOMCI_NODE_DATA(HTMLLinkElement, nsHTMLLinkElement)
 
 // QueryInterface implementation for nsHTMLLinkElement
-NS_INTERFACE_TABLE_HEAD(nsHTMLLinkElement)
+NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(nsHTMLLinkElement)
   NS_HTML_CONTENT_INTERFACE_TABLE5(nsHTMLLinkElement,
                                    nsIDOMHTMLLinkElement,
                                    nsIDOMLinkStyle,
@@ -171,6 +193,19 @@ NS_IMPL_STRING_ATTR(nsHTMLLinkElement, Rel, rel)
 NS_IMPL_STRING_ATTR(nsHTMLLinkElement, Rev, rev)
 NS_IMPL_STRING_ATTR(nsHTMLLinkElement, Target, target)
 NS_IMPL_STRING_ATTR(nsHTMLLinkElement, Type, type)
+NS_IMPL_STRING_ATTR(nsHTMLLinkElement, CrossOrigin, crossorigin)
+
+void
+nsHTMLLinkElement::GetItemValueText(nsAString& aValue)
+{
+  GetHref(aValue);
+}
+
+void
+nsHTMLLinkElement::SetItemValueText(const nsAString& aValue)
+{
+  SetHref(aValue);
+}
 
 nsresult
 nsHTMLLinkElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
@@ -228,6 +263,22 @@ nsHTMLLinkElement::UnbindFromTree(bool aDeep, bool aNullParent)
   UpdateStyleSheetInternal(oldDoc);
 }
 
+bool
+nsHTMLLinkElement::ParseAttribute(int32_t aNamespaceID,
+                                  nsIAtom* aAttribute,
+                                  const nsAString& aValue,
+                                  nsAttrValue& aResult)
+{
+  if (aNamespaceID == kNameSpaceID_None &&
+      aAttribute == nsGkAtoms::crossorigin) {
+    ParseCORSValue(aValue, aResult);
+    return true;
+  }
+
+  return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
+                                              aResult);
+}
+
 void
 nsHTMLLinkElement::CreateAndDispatchEvent(nsIDocument* aDoc,
                                           const nsAString& aEventName)
@@ -242,7 +293,7 @@ nsHTMLLinkElement::CreateAndDispatchEvent(nsIDocument* aDoc,
   // doing the "right" thing costs virtually nothing here, even if it doesn't
   // make much sense.
   static nsIContent::AttrValuesArray strings[] =
-    {&nsGkAtoms::_empty, &nsGkAtoms::stylesheet, nsnull};
+    {&nsGkAtoms::_empty, &nsGkAtoms::stylesheet, nullptr};
 
   if (!nsContentUtils::HasNonEmptyAttr(this, kNameSpaceID_None,
                                        nsGkAtoms::rev) &&
@@ -258,7 +309,7 @@ nsHTMLLinkElement::CreateAndDispatchEvent(nsIDocument* aDoc,
 }
 
 nsresult
-nsHTMLLinkElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+nsHTMLLinkElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                            nsIAtom* aPrefix, const nsAString& aValue,
                            bool aNotify)
 {
@@ -282,11 +333,11 @@ nsHTMLLinkElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
        aName == nsGkAtoms::type)) {
     bool dropSheet = false;
     if (aName == nsGkAtoms::rel && GetStyleSheet()) {
-      PRUint32 linkTypes = nsStyleLinkElement::ParseLinkTypes(aValue);
+      uint32_t linkTypes = nsStyleLinkElement::ParseLinkTypes(aValue);
       dropSheet = !(linkTypes & STYLESHEET);          
     }
     
-    UpdateStyleSheetInternal(nsnull,
+    UpdateStyleSheetInternal(nullptr,
                              dropSheet ||
                              (aName == nsGkAtoms::title ||
                               aName == nsGkAtoms::media ||
@@ -297,7 +348,7 @@ nsHTMLLinkElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
 }
 
 nsresult
-nsHTMLLinkElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
+nsHTMLLinkElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
                              bool aNotify)
 {
   nsresult rv = nsGenericHTMLElement::UnsetAttr(aNameSpaceID, aAttribute,
@@ -310,7 +361,7 @@ nsHTMLLinkElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
        aAttribute == nsGkAtoms::title ||
        aAttribute == nsGkAtoms::media ||
        aAttribute == nsGkAtoms::type)) {
-    UpdateStyleSheetInternal(nsnull, true);
+    UpdateStyleSheetInternal(nullptr, true);
   }
 
   // The ordering of the parent class's UnsetAttr call and Link::ResetLinkState
@@ -371,7 +422,7 @@ nsHTMLLinkElement::GetStyleSheetURL(bool* aIsInline)
   nsAutoString href;
   GetAttr(kNameSpaceID_None, nsGkAtoms::href, href);
   if (href.IsEmpty()) {
-    return nsnull;
+    return nullptr;
   }
   return Link::GetURI();
 }
@@ -389,7 +440,7 @@ nsHTMLLinkElement::GetStyleSheetInfo(nsAString& aTitle,
 
   nsAutoString rel;
   GetAttr(kNameSpaceID_None, nsGkAtoms::rel, rel);
-  PRUint32 linkTypes = nsStyleLinkElement::ParseLinkTypes(rel);
+  uint32_t linkTypes = nsStyleLinkElement::ParseLinkTypes(rel);
   // Is it a stylesheet link?
   if (!(linkTypes & STYLESHEET)) {
     return;
@@ -427,6 +478,12 @@ nsHTMLLinkElement::GetStyleSheetInfo(nsAString& aTitle,
   aType.AssignLiteral("text/css");
 
   return;
+}
+
+CORSMode
+nsHTMLLinkElement::GetCORSMode() const
+{
+  return AttrValueToCORSMode(GetParsedAttr(nsGkAtoms::crossorigin)); 
 }
 
 nsEventStates

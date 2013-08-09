@@ -31,10 +31,11 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource:///modules/devtools/CssLogic.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
-var EXPORTED_SYMBOLS = ["CssRuleView",
-                        "_ElementStyle",
-                        "_editableField",
-                        "_getInplaceEditorForSpan"];
+this.EXPORTED_SYMBOLS = ["CssRuleView",
+                         "_ElementStyle",
+                         "editableItem",
+                         "_editableField",
+                         "_getInplaceEditorForSpan"];
 
 /**
  * Our model looks like this:
@@ -58,9 +59,9 @@ var EXPORTED_SYMBOLS = ["CssRuleView",
 /**
  * ElementStyle maintains a list of Rule objects for a given element.
  *
- * @param Element aElement
+ * @param {Element} aElement
  *        The element whose style we are viewing.
- * @param object aStore
+ * @param {object} aStore
  *        The ElementStyle can use this object to store metadata
  *        that might outlast the rule view, particularly the current
  *        set of disabled properties.
@@ -81,7 +82,9 @@ function ElementStyle(aElement, aStore)
   if (this.store.disabled) {
     this.store.disabled = aStore.disabled;
   } else {
-    this.store.disabled = WeakMap();
+    // FIXME: This should be a WeakMap once bug 753517 is fixed.
+    // See Bug 777373 for details.
+    this.store.disabled = new Map();
   }
 
   let doc = aElement.ownerDocument;
@@ -94,7 +97,7 @@ function ElementStyle(aElement, aStore)
   this.populate();
 }
 // We're exporting _ElementStyle for unit tests.
-var _ElementStyle = ElementStyle;
+this._ElementStyle = ElementStyle;
 
 ElementStyle.prototype = {
 
@@ -186,7 +189,7 @@ ElementStyle.prototype = {
    * @param {object} aOptions
    *        Options for creating the Rule, see the Rule constructor.
    *
-   * @return true if we added the rule.
+   * @return {bool} true if we added the rule.
    */
   _maybeAddRule: function ElementStyle_maybeAddRule(aOptions)
   {
@@ -302,7 +305,7 @@ ElementStyle.prototype = {
    * @param {TextProperty} aProp
    *        The text property to update.
    *
-   * @return True if the TextProperty's overridden state (or any of its
+   * @return {bool} true if the TextProperty's overridden state (or any of its
    *         computed properties overridden state) changed.
    */
   _updatePropertyOverridden: function ElementStyle_updatePropertyOverridden(aProp)
@@ -373,17 +376,24 @@ Rule.prototype = {
       this._title += ":" + this.ruleLine;
     }
 
+    return this._title + (this.mediaText ? " @media " + this.mediaText : "");
+  },
+
+  get inheritedSource()
+  {
+    if (this._inheritedSource) {
+      return this._inheritedSource;
+    }
+    this._inheritedSource = "";
     if (this.inherited) {
       let eltText = this.inherited.tagName.toLowerCase();
       if (this.inherited.id) {
         eltText += "#" + this.inherited.id;
       }
-      let args = [eltText, this._title];
-      this._title = CssLogic._strings.formatStringFromName("rule.inheritedSource",
-                                                           args, args.length);
+      this._inheritedSource =
+        CssLogic._strings.formatStringFromName("rule.inheritedFrom", [eltText], 1);
     }
-
-    return this._title + (this.mediaText ? " @media " + this.mediaText : "");
+    return this._inheritedSource;
   },
 
   /**
@@ -410,9 +420,8 @@ Rule.prototype = {
    * Returns true if the rule matches the creation options
    * specified.
    *
-   * @param object aOptions
-   *        Creation options.  See the Rule constructor for
-   *        documentation.
+   * @param {object} aOptions
+   *        Creation options.  See the Rule constructor for documentation.
    */
   matches: function Rule_matches(aOptions)
   {
@@ -480,7 +489,11 @@ Rule.prototype = {
 
     // Store disabled properties in the disabled store.
     let disabled = this.elementStyle.store.disabled;
-    disabled.set(this.style, disabledProps);
+    if (disabledProps.length > 0) {
+      disabled.set(this.style, disabledProps);
+    } else {
+      disabled.delete(this.style);
+    }
 
     this.elementStyle.markOverridden();
   },
@@ -659,12 +672,12 @@ Rule.prototype = {
    *
    * If no existing properties match the property, nothing happens.
    *
-   * @param TextProperty aNewProp
+   * @param {TextProperty} aNewProp
    *        The current version of the property, as parsed from the
    *        cssText in Rule._getTextProperties().
    *
-   * @returns true if a property was updated, false if no properties
-   *          were updated.
+   * @return {bool} true if a property was updated, false if no properties
+   *         were updated.
    */
   _updateTextProperty: function Rule__updateTextProperty(aNewProp) {
     let match = { rank: 0, prop: null };
@@ -787,7 +800,7 @@ TextProperty.prototype = {
    * Set all the values from another TextProperty instance into
    * this TextProperty instance.
    *
-   * @param TextProperty aOther
+   * @param {TextProperty} aOther
    *        The other TextProperty instance.
    */
   set: function TextProperty_set(aOther)
@@ -852,15 +865,15 @@ TextProperty.prototype = {
  * apply to a given element.  After construction, the 'element'
  * property will be available with the user interface.
  *
- * @param Document aDoc
+ * @param {Document} aDoc
  *        The document that will contain the rule view.
- * @param object aStore
+ * @param {object} aStore
  *        The CSS rule view can use this object to store metadata
  *        that might outlast the rule view, particularly the current
  *        set of disabled properties.
  * @constructor
  */
-function CssRuleView(aDoc, aStore)
+this.CssRuleView = function CssRuleView(aDoc, aStore)
 {
   this.doc = aDoc;
   this.store = aStore;
@@ -881,7 +894,7 @@ CssRuleView.prototype = {
   _viewedElement: null,
 
   /**
-   * Returns true if the rule view currently has an input editor visible.
+   * Return {bool} true if the rule view currently has an input editor visible.
    */
   get isEditing() {
     return this.element.querySelectorAll(".styleinspector-propertyeditor").length > 0;
@@ -958,6 +971,8 @@ CssRuleView.prototype = {
       return;
     }
 
+    this._clearRules();
+
     // Repopulate the element style.
     this._elementStyle.populate();
 
@@ -1023,23 +1038,23 @@ CssRuleView.prototype = {
   {
     // Run through the current list of rules, attaching
     // their editors in order.  Create editors if needed.
-    let last = null;
+    let lastInheritedSource = "";
     for each (let rule in this._elementStyle.rules) {
+
+      let inheritedSource = rule.inheritedSource;
+      if (inheritedSource != lastInheritedSource) {
+        let h2 = this.doc.createElementNS(HTML_NS, "div");
+        h2.className = "ruleview-rule-inheritance";
+        h2.textContent = inheritedSource;
+        lastInheritedSource = inheritedSource;
+        this.element.appendChild(h2);
+      }
+
       if (!rule.editor) {
         new RuleEditor(this, rule);
       }
 
-      let target = last ? last.nextSibling : this.element.firstChild;
-      this.element.insertBefore(rule.editor.element, target);
-      last = rule.editor.element;
-    }
-
-    // ... and now editors for rules that don't exist anymore
-    // have been pushed to the end of the list, go ahead and
-    // delete their nodes.  The rules they edit have already been
-    // forgotten.
-    while (last && last.nextSibling) {
-      this.element.removeChild(last.nextSibling);
+      this.element.appendChild(rule.editor.element);
     }
   },
 
@@ -1104,16 +1119,21 @@ CssRuleView.prototype = {
    * Update the rule view's context menu by disabling irrelevant menuitems and
    * enabling relevant ones.
    *
-   * @param aEvent The event object
+   * @param {Event} aEvent
+   *        The event object.
    */
   _onMenuUpdate: function CssRuleView_onMenuUpdate(aEvent)
   {
+    let node = this.doc.popupNode;
+
     // Copy selection.
-    let disable = this.doc.defaultView.getSelection().isCollapsed;
+    let editorSelection = node.className == "styleinspector-propertyeditor" &&
+                          node.selectionEnd - node.selectionStart != 0;
+    let disable = this.doc.defaultView.getSelection().isCollapsed &&
+                  !editorSelection;
     this._copyItem.disabled = disable;
 
     // Copy property, copy property name & copy property value.
-    let node = this.doc.popupNode;
     if (!node) {
       return;
     }
@@ -1139,32 +1159,33 @@ CssRuleView.prototype = {
   /**
    * Copy selected text from the rule view.
    *
-   * @param aEvent The event object
+   * @param {Event} aEvent
+   *        The event object.
    */
   _onCopy: function CssRuleView_onCopy(aEvent)
   {
-    let win = this.doc.defaultView;
-    let text = win.getSelection().toString();
+    let target = this.doc.popupNode || aEvent.target;
+    let text;
 
-    // Remove any double newlines.
-    text = text.replace(/(\r?\n)\r?\n/g, "$1");
+    if (target.nodeName == "input") {
+      let start = Math.min(target.selectionStart, target.selectionEnd);
+      let end = Math.max(target.selectionStart, target.selectionEnd);
+      let count = end - start;
+      text = target.value.substr(start, count);
+    } else {
+      let win = this.doc.defaultView;
+      text = win.getSelection().toString();
 
-    // Remove "inline"
-    let inline = _strings.GetStringFromName("rule.sourceInline");
-    let rx = new RegExp("^" + inline + "\\r?\\n?", "g");
-    text = text.replace(rx, "");
+      // Remove any double newlines.
+      text = text.replace(/(\r?\n)\r?\n/g, "$1");
 
-    // Remove file:line
-    text = text.replace(/[\w\.]+:\d+(\r?\n)/g, "$1");
+      // Remove "inline"
+      let inline = _strings.GetStringFromName("rule.sourceInline");
+      let rx = new RegExp("^" + inline + "\\r?\\n?", "g");
+      text = text.replace(rx, "");
+    }
 
-    // Remove inherited from: line
-    let inheritedFrom = _strings.
-      GetStringFromName("rule.inheritedSource");
-    inheritedFrom = inheritedFrom.replace(/\s%S\s\(%S\)/g, "");
-    rx = new RegExp("(\r?\n)" + inheritedFrom + ".*", "g");
-    text = text.replace(rx, "$1");
-
-    clipboardHelper.copyString(text);
+    clipboardHelper.copyString(text, this.doc);
 
     if (aEvent) {
       aEvent.preventDefault();
@@ -1174,7 +1195,8 @@ CssRuleView.prototype = {
   /**
    * Copy a rule from the rule view.
    *
-   * @param aEvent The event object
+   * @param {Event} aEvent
+   *        The event object.
    */
   _onCopyRule: function CssRuleView_onCopyRule(aEvent)
   {
@@ -1184,9 +1206,9 @@ CssRuleView.prototype = {
       return;
     }
 
-    if (node.className != "rule-view-row") {
+    if (node.className != "ruleview-rule") {
       while (node = node.parentElement) {
-        if (node.className == "rule-view-row") {
+        if (node.className == "ruleview-rule") {
           break;
         }
       }
@@ -1221,13 +1243,14 @@ CssRuleView.prototype = {
     }
     out += "}" + terminator;
 
-    clipboardHelper.copyString(out);
+    clipboardHelper.copyString(out, this.doc);
   },
 
   /**
    * Copy a declaration from the rule view.
    *
-   * @param aEvent The event object
+   * @param {Event} aEvent
+   *        The event object.
    */
   _onCopyDeclaration: function CssRuleView_onCopyDeclaration(aEvent)
   {
@@ -1260,34 +1283,37 @@ CssRuleView.prototype = {
     let propertyValue = node.querySelector(".ruleview-propertyvalue").textContent;
     let out = propertyName + ": " + propertyValue + ";";
 
-    clipboardHelper.copyString(out);
+    clipboardHelper.copyString(out, this.doc);
   },
 
   /**
    * Copy a property name from the rule view.
    *
-   * @param aEvent The event object
+   * @param {Event} aEvent
+   *        The event object.
    */
   _onCopyProperty: function CssRuleView_onCopyProperty(aEvent)
   {
     let node = this.doc.popupNode;
+
     if (!node) {
       return;
     }
 
     if (!node.classList.contains("ruleview-propertyname")) {
-      node = node.querySelector(".ruleview-propertyname");
+      node = node.parentNode.parentNode.querySelector(".ruleview-propertyname");
     }
 
     if (node) {
-      clipboardHelper.copyString(node.textContent);
+      clipboardHelper.copyString(node.textContent, this.doc);
     }
   },
 
  /**
    * Copy a property value from the rule view.
    *
-   * @param aEvent The event object
+   * @param {Event} aEvent
+   *        The event object.
    */
   _onCopyPropertyValue: function CssRuleView_onCopyPropertyValue(aEvent)
   {
@@ -1297,11 +1323,11 @@ CssRuleView.prototype = {
     }
 
     if (!node.classList.contains("ruleview-propertyvalue")) {
-      node = node.querySelector(".ruleview-propertyvalue");
+      node = node.parentNode.parentNode.querySelector(".ruleview-propertyvalue");
     }
 
     if (node) {
-      clipboardHelper.copyString(node.textContent);
+      clipboardHelper.copyString(node.textContent, this.doc);
     }
   }
 };
@@ -1309,9 +1335,9 @@ CssRuleView.prototype = {
 /**
  * Create a RuleEditor.
  *
- * @param CssRuleView aRuleView
+ * @param {CssRuleView} aRuleView
  *        The CssRuleView containg the document holding this rule editor.
- * @param Rule aRule
+ * @param {Rule} aRule
  *        The Rule object we're editing.
  * @constructor
  */
@@ -1332,7 +1358,7 @@ RuleEditor.prototype = {
   _create: function RuleEditor_create()
   {
     this.element = this.doc.createElementNS(HTML_NS, "div");
-    this.element.className = "rule-view-row";
+    this.element.className = "ruleview-rule";
     this.element._ruleEditor = this;
 
     // Give a relative position for the inplace editor's measurement
@@ -1375,6 +1401,19 @@ RuleEditor.prototype = {
       }
     }.bind(this), false);
 
+    this.element.addEventListener("mousedown", function() {
+      let editorNodes =
+        this.doc.querySelectorAll(".styleinspector-propertyeditor");
+
+      if (editorNodes) {
+        for (let node of editorNodes) {
+          if (node.inplaceEditor) {
+            node.inplaceEditor._clear();
+          }
+        }
+      }
+    }.bind(this), false);
+
     this.propertyList = createChild(code, "ul", {
       class: "ruleview-propertylist"
     });
@@ -1388,7 +1427,7 @@ RuleEditor.prototype = {
     });
 
     // Create a property editor when the close brace is clicked.
-    editableItem(this.closeBrace, function(aElement) {
+    editableItem({ element: this.closeBrace }, function(aElement) {
       this.newProperty();
     }.bind(this));
   },
@@ -1398,7 +1437,35 @@ RuleEditor.prototype = {
    */
   populate: function RuleEditor_populate()
   {
-    this.selectorText.textContent = this.rule.selectorText;
+    // Clear out existing viewers.
+    while (this.selectorText.hasChildNodes()) {
+      this.selectorText.removeChild(this.selectorText.lastChild);
+    }
+
+    // If selector text comes from a css rule, highlight selectors that
+    // actually match.  For custom selector text (such as for the 'element'
+    // style, just show the text directly.
+    if (this.rule.domRule && this.rule.domRule.selectorText) {
+      let selectors = CssLogic.getSelectors(this.rule.selectorText);
+      let element = this.rule.inherited || this.ruleView._viewedElement;
+      for (let i = 0; i < selectors.length; i++) {
+        let selector = selectors[i];
+        if (i != 0) {
+          createChild(this.selectorText, "span", {
+            class: "ruleview-selector-separator",
+            textContent: ", "
+          });
+        }
+        let cls = element.mozMatchesSelector(selector) ? "ruleview-selector-matched" :
+                                                         "ruleview-selector-unmatched";
+        createChild(this.selectorText, "span", {
+          class: cls,
+          textContent: selector
+        });
+      }
+    } else {
+      this.selectorText.textContent = this.rule.selectorText;
+    }
 
     for (let prop of this.rule.textProps) {
       if (!prop.editor) {
@@ -1411,11 +1478,11 @@ RuleEditor.prototype = {
   /**
    * Programatically add a new property to the rule.
    *
-   * @param string aName
+   * @param {string} aName
    *        Property name.
-   * @param string aValue
+   * @param {string} aValue
    *        Property value.
-   * @param string aPriority
+   * @param {string} aPriority
    *        Property priority.
    */
   addProperty: function RuleEditor_addProperty(aName, aValue, aPriority)
@@ -1463,9 +1530,9 @@ RuleEditor.prototype = {
    * Called when the new property input has been dismissed.
    * Will create a new TextProperty if necessary.
    *
-   * @param string aValue
+   * @param {string} aValue
    *        The value in the editor.
-   * @param bool aCommit
+   * @param {bool} aCommit
    *        True if the value should be committed.
    */
   _onNewProperty: function RuleEditor__onNewProperty(aValue, aCommit)
@@ -1596,13 +1663,6 @@ TextPropertyEditor.prototype = {
       tabindex: "0",
     });
 
-    editableField({
-      start: this._onStartEditing,
-      element: this.valueSpan,
-      done: this._onValueDone,
-      advanceChars: ';'
-    });
-
     // Save the initial value as the last committed value,
     // for restoring after pressing escape.
     this.committed = { name: this.prop.name,
@@ -1621,6 +1681,15 @@ TextPropertyEditor.prototype = {
     // will be populated in |_updateComputed|.
     this.computed = createChild(this.element, "ul", {
       class: "ruleview-computedlist",
+    });
+
+    editableField({
+      start: this._onStartEditing,
+      element: this.valueSpan,
+      done: this._onValueDone,
+      validate: this._validate.bind(this),
+      warning: this.warning,
+      advanceChars: ';'
     });
   },
 
@@ -1705,6 +1774,7 @@ TextPropertyEditor.prototype = {
         textContent: computed.name
       });
       appendText(li, ": ");
+
       createChild(li, "span", {
         class: "ruleview-propertyvalue",
         textContent: computed.value
@@ -1772,7 +1842,7 @@ TextPropertyEditor.prototype = {
    *
    * @param {string} aValue
    *        The value from the text editor.
-   * @return an object with 'value' and 'priority' properties.
+   * @return {object} an object with 'value' and 'priority' properties.
    */
   _parseValue: function TextPropertyEditor_parseValue(aValue)
   {
@@ -1789,7 +1859,7 @@ TextPropertyEditor.prototype = {
    *
    * @param {string} aValue
    *        The value contained in the editor.
-   * @param {boolean} aCommit
+   * @param {bool} aCommit
    *        True if the change should be applied.
    */
    _onValueDone: function PropertyEditor_onValueDone(aValue, aCommit)
@@ -1807,17 +1877,29 @@ TextPropertyEditor.prototype = {
   /**
    * Validate this property.
    *
-   * @returns {Boolean}
-   *          True if the property value is valid, false otherwise.
+   * @param {string} [aValue]
+   *        Override the actual property value used for validation without
+   *        applying property values e.g. validate as you type.
+   *
+   * @return {bool} true if the property value is valid, false otherwise.
    */
-  _validate: function TextPropertyEditor_validate()
+  _validate: function TextPropertyEditor_validate(aValue)
   {
     let name = this.prop.name;
-    let value = this.prop.value;
+    let value = typeof aValue == "undefined" ? this.prop.value : aValue;
+    let val = this._parseValue(value);
     let style = this.doc.createElementNS(HTML_NS, "div").style;
+    let prefs = Services.prefs;
 
-    style.setProperty(name, value, null);
+    // We toggle output of errors whilst the user is typing a property value.
+    let prefVal = Services.prefs.getBoolPref("layout.css.report_errors");
+    prefs.setBoolPref("layout.css.report_errors", false);
 
+    try {
+      style.setProperty(name, val.value, val.priority);
+    } finally {
+      prefs.setBoolPref("layout.css.report_errors", prefVal);
+    }
     return !!style.getPropertyValue(name);
   },
 };
@@ -1832,6 +1914,9 @@ TextPropertyEditor.prototype = {
  *    Options for the editable field, including:
  *    {Element} element:
  *      (required) The span to be edited on focus.
+ *    {function} canEdit:
+ *       Will be called before creating the inplace editor.  Editor
+ *       won't be created if canEdit returns false.
  *    {function} start:
  *       Will be called when the inplace editor is initialized.
  *    {function} change:
@@ -1847,11 +1932,16 @@ TextPropertyEditor.prototype = {
  *    {string} advanceChars:
  *       If any characters in advanceChars are typed, focus will advance
  *       to the next element.
+ *    {boolean} stopOnReturn:
+ *       If true, the return key will not advance the editor to the next
+ *       focusable element.
+ *    {string} trigger: The DOM event that should trigger editing,
+ *      defaults to "click"
  */
 function editableField(aOptions)
 {
-  editableItem(aOptions.element, function(aElement) {
-    new InplaceEditor(aOptions);
+  return editableItem(aOptions, function(aElement, aEvent) {
+    new InplaceEditor(aOptions, aEvent);
   });
 }
 
@@ -1860,29 +1950,33 @@ function editableField(aOptions)
  * clicks and sit in the editing tab order, and call
  * a callback when it is activated.
  *
- * @param DOMElement aElement
- *        The DOM element.
- * @param function aCallback
+ * @param {object} aOptions
+ *    The options for this editor, including:
+ *    {Element} element: The DOM element.
+ *    {string} trigger: The DOM event that should trigger editing,
+ *      defaults to "click"
+ * @param {function} aCallback
  *        Called when the editor is activated.
  */
-
-function editableItem(aElement, aCallback)
+this.editableItem = function editableItem(aOptions, aCallback)
 {
-  aElement.addEventListener("click", function(evt) {
+  let trigger = aOptions.trigger || "click"
+  let element = aOptions.element;
+  element.addEventListener(trigger, function(evt) {
     let win = this.ownerDocument.defaultView;
     let selection = win.getSelection();
-    if (selection.isCollapsed) {
-      aCallback(aElement);
+    if (trigger != "click" || selection.isCollapsed) {
+      aCallback(element, evt);
     }
     evt.stopPropagation();
   }, false);
 
   // If focused by means other than a click, start editing by
   // pressing enter or space.
-  aElement.addEventListener("keypress", function(evt) {
+  element.addEventListener("keypress", function(evt) {
     if (evt.keyCode === Ci.nsIDOMKeyEvent.DOM_VK_RETURN ||
         evt.charCode === Ci.nsIDOMKeyEvent.DOM_VK_SPACE) {
-      aCallback(aElement);
+      aCallback(element);
     }
   }, true);
 
@@ -1890,25 +1984,25 @@ function editableItem(aElement, aCallback)
   // the editor is activated on click/mouseup.  This leads
   // to an ugly flash of the focus ring before showing the editor.
   // So hide the focus ring while the mouse is down.
-  aElement.addEventListener("mousedown", function(evt) {
+  element.addEventListener("mousedown", function(evt) {
     let cleanup = function() {
-      aElement.style.removeProperty("outline-style");
-      aElement.removeEventListener("mouseup", cleanup, false);
-      aElement.removeEventListener("mouseout", cleanup, false);
+      element.style.removeProperty("outline-style");
+      element.removeEventListener("mouseup", cleanup, false);
+      element.removeEventListener("mouseout", cleanup, false);
     };
-    aElement.style.setProperty("outline-style", "none");
-    aElement.addEventListener("mouseup", cleanup, false);
-    aElement.addEventListener("mouseout", cleanup, false);
+    element.style.setProperty("outline-style", "none");
+    element.addEventListener("mouseup", cleanup, false);
+    element.addEventListener("mouseout", cleanup, false);
   }, false);
 
   // Mark the element editable field for tab
   // navigation while editing.
-  aElement._editable = true;
+  element._editable = true;
 }
 
-var _editableField = editableField;
+this._editableField = editableField;
 
-function InplaceEditor(aOptions)
+function InplaceEditor(aOptions, aEvent)
 {
   this.elt = aOptions.element;
   let doc = this.elt.ownerDocument;
@@ -1919,10 +2013,13 @@ function InplaceEditor(aOptions)
   this.done = aOptions.done;
   this.destroy = aOptions.destroy;
   this.initial = aOptions.initial ? aOptions.initial : this.elt.textContent;
+  this.multiline = aOptions.multiline || false;
+  this.stopOnReturn = !!aOptions.stopOnReturn;
 
   this._onBlur = this._onBlur.bind(this);
   this._onKeyPress = this._onKeyPress.bind(this);
   this._onInput = this._onInput.bind(this);
+  this._onKeyup = this._onKeyup.bind(this);
 
   this._createInput();
   this._autosize();
@@ -1940,22 +2037,32 @@ function InplaceEditor(aOptions)
   this.elt.style.display = "none";
   this.elt.parentNode.insertBefore(this.input, this.elt);
 
-  this.input.select();
+  if (typeof(aOptions.selectAll) == "undefined" || aOptions.selectAll) {
+    this.input.select();
+  }
   this.input.focus();
 
   this.input.addEventListener("blur", this._onBlur, false);
   this.input.addEventListener("keypress", this._onKeyPress, false);
   this.input.addEventListener("input", this._onInput, false);
+  this.input.addEventListener("mousedown", function(aEvt) { aEvt.stopPropagation(); }, false);
+
+  this.warning = aOptions.warning;
+  this.validate = aOptions.validate;
+
+  if (this.warning && this.validate) {
+    this.input.addEventListener("keyup", this._onKeyup, false);
+  }
 
   if (aOptions.start) {
-    aOptions.start();
+    aOptions.start(this, aEvent);
   }
 }
 
 InplaceEditor.prototype = {
   _createInput: function InplaceEditor_createEditor()
   {
-    this.input = this.doc.createElementNS(HTML_NS, "input");
+    this.input = this.doc.createElementNS(HTML_NS, this.multiline ? "textarea" : "input");
     this.input.inplaceEditor = this;
     this.input.classList.add("styleinspector-propertyeditor");
     this.input.value = this.initial;
@@ -1975,6 +2082,7 @@ InplaceEditor.prototype = {
 
     this.input.removeEventListener("blur", this._onBlur, false);
     this.input.removeEventListener("keypress", this._onKeyPress, false);
+    this.input.removeEventListener("keyup", this._onKeyup, false);
     this.input.removeEventListener("oninput", this._onInput, false);
     this._stopAutosize();
 
@@ -2005,7 +2113,7 @@ InplaceEditor.prototype = {
     // change the underlying element's text ourselves (we leave that
     // up to the client), and b) without tweaking the style of the
     // original element, it might wrap differently or something.
-    this._measurement = this.doc.createElementNS(HTML_NS, "span");
+    this._measurement = this.doc.createElementNS(HTML_NS, this.multiline ? "pre" : "span");
     this._measurement.className = "autosizer";
     this.elt.parentNode.appendChild(this._measurement);
     let style = this._measurement.style;
@@ -2044,7 +2152,365 @@ InplaceEditor.prototype = {
     // we get a chance to resize.  Yuck.
     let width = this._measurement.offsetWidth + 10;
 
+    if (this.multiline) {
+      // Make sure there's some content in the current line.  This is a hack to account
+      // for the fact that after adding a newline the <pre> doesn't grow unless there's
+      // text content on the line.
+      width += 15;
+      this._measurement.textContent += "M";
+      this.input.style.height = this._measurement.offsetHeight + "px";
+    }
+
     this.input.style.width = width + "px";
+  },
+
+   /**
+   * Increment property values in rule view.
+   *
+   * @param {number} increment 
+   *        The amount to increase/decrease the property value.
+   * @return {bool} true if value has been incremented.
+   */
+  _incrementValue: function InplaceEditor_incrementValue(increment)
+  {
+    let value = this.input.value;
+    let selectionStart = this.input.selectionStart;
+    let selectionEnd = this.input.selectionEnd;
+
+    let newValue = this._incrementCSSValue(value, increment, selectionStart, selectionEnd);
+
+    if (!newValue) {
+      return false;
+    }
+
+    this.input.value = newValue.value;
+    this.input.setSelectionRange(newValue.start, newValue.end);
+
+    return true;
+  },
+
+  /**
+   * Increment the property value based on the property type.
+   *
+   * @param {string} value
+   *        Property value.
+   * @param {number} increment
+   *        Amount to increase/decrease the property value.
+   * @param {number} selStart
+   *        Starting index of the value.
+   * @param {number} selEnd
+   *        Ending index of the value.
+   * @return {object} object with properties 'value', 'start', and 'end'.
+   */
+  _incrementCSSValue: function InplaceEditor_incrementCSSValue(value, increment, selStart, 
+                                                               selEnd)
+  {
+    let range = this._parseCSSValue(value, selStart);
+    let type = (range && range.type) || "";
+    let rawValue = (range ? value.substring(range.start, range.end) : "");
+    let incrementedValue = null, selection;
+
+    if (type === "num") {
+      let newValue = this._incrementRawValue(rawValue, increment);
+      if (newValue !== null) {
+        incrementedValue = newValue;
+        selection = [0, incrementedValue.length];
+      }
+    } else if (type === "hex") {
+      let exprOffset = selStart - range.start;
+      let exprOffsetEnd = selEnd - range.start;
+      let newValue = this._incHexColor(rawValue, increment, exprOffset, exprOffsetEnd);
+      if (newValue) {
+        incrementedValue = newValue.value;
+        selection = newValue.selection;
+      }
+    } else {
+      let info;
+      if (type === "rgb" || type === "hsl") {
+        info = {};
+        let part = value.substring(range.start, selStart).split(",").length - 1;
+        if (part === 3) { // alpha
+          info.minValue = 0;
+          info.maxValue = 1;
+        } else if (type === "rgb") {
+          info.minValue = 0;
+          info.maxValue = 255;
+        } else if (part !== 0) { // hsl percentage
+          info.minValue = 0;
+          info.maxValue = 100;
+
+          // select the previous number if the selection is at the end of a percentage sign
+          if (value.charAt(selStart - 1) === "%") {
+            --selStart;
+          }
+        }
+      }
+      return this._incrementGenericValue(value, increment, selStart, selEnd, info);
+    }
+
+    if (incrementedValue === null) {
+      return;
+    }
+
+    let preRawValue = value.substr(0, range.start);
+    let postRawValue = value.substr(range.end);
+
+    return {
+      value: preRawValue + incrementedValue + postRawValue,
+      start: range.start + selection[0],
+      end: range.start + selection[1]
+    };
+  },
+
+  /**
+   * Parses the property value and type.
+   *
+   * @param {string} value 
+   *        Property value.
+   * @param {number} offset 
+   *        Starting index of value.
+   * @return {object} object with properties 'value', 'start', 'end', and 'type'.
+   */
+   _parseCSSValue: function InplaceEditor_parseCSSValue(value, offset)
+  {
+    const reSplitCSS = /(url\("?[^"\)]+"?\)?)|(rgba?\([^)]*\)?)|(hsla?\([^)]*\)?)|(#[\dA-Fa-f]+)|(-?\d+(\.\d+)?(%|[a-z]{1,4})?)|"([^"]*)"?|'([^']*)'?|([^,\s\/!\(\)]+)|(!(.*)?)/;
+    let start = 0;
+    let m;
+
+    // retreive values from left to right until we find the one at our offset
+    while ((m = reSplitCSS.exec(value)) &&
+          (m.index + m[0].length < offset)) {
+      value = value.substr(m.index + m[0].length);
+      start += m.index + m[0].length;
+      offset -= m.index + m[0].length;
+    }
+
+    if (!m) {
+      return;
+    }
+
+    let type;
+    if (m[1]) {
+      type = "url";
+    } else if (m[2]) {
+      type = "rgb";
+    } else if (m[3]) {
+      type = "hsl";
+    } else if (m[4]) {
+      type = "hex";
+    } else if (m[5]) {
+      type = "num";
+    }
+
+    return {
+      value: m[0],
+      start: start + m.index,
+      end: start + m.index + m[0].length,
+      type: type
+    };
+  },
+
+  /**
+   * Increment the property value for types other than
+   * number or hex, such as rgb, hsl, and file names.
+   *
+   * @param {string} value 
+   *        Property value.
+   * @param {number} increment 
+   *        Amount to increment/decrement.
+   * @param {number} offset 
+   *        Starting index of the property value.
+   * @param {number} offsetEnd 
+   *        Ending index of the property value.
+   * @param {object} info 
+   *        Object with details about the property value.
+   * @return {object} object with properties 'value', 'start', and 'end'.
+   */
+  _incrementGenericValue: function InplaceEditor_incrementGenericValue(value, increment, offset,
+                                                                       offsetEnd, info)
+  {
+    // Try to find a number around the cursor to increment.
+    let start, end;
+    // Check if we are incrementing in a non-number context (such as a URL)
+    if (/^-?[0-9.]/.test(value.substring(offset, offsetEnd)) &&
+      !(/\d/.test(value.charAt(offset - 1) + value.charAt(offsetEnd)))) {
+      // We have a number selected, possibly with a suffix, and we are not in
+      // the disallowed case of just part of a known number being selected.
+      // Use that number.
+      start = offset;
+      end = offsetEnd;
+    } else {
+      // Parse periods as belonging to the number only if we are in a known number
+      // context. (This makes incrementing the 1 in 'image1.gif' work.)
+      let pattern = "[" + (info ? "0-9." : "0-9") + "]*";
+      let before = new RegExp(pattern + "$").exec(value.substr(0, offset))[0].length;
+      let after = new RegExp("^" + pattern).exec(value.substr(offset))[0].length;
+
+      start = offset - before;
+      end = offset + after;
+
+      // Expand the number to contain an initial minus sign if it seems
+      // free-standing.
+      if (value.charAt(start - 1) === "-" &&
+         (start - 1 === 0 || /[ (:,='"]/.test(value.charAt(start - 2)))) {
+        --start;
+      }
+    }
+
+    if (start !== end)
+    {
+      // Include percentages as part of the incremented number (they are
+      // common enough).
+      if (value.charAt(end) === "%") {
+        ++end;
+      }
+
+      let first = value.substr(0, start);
+      let mid = value.substring(start, end);
+      let last = value.substr(end);
+
+      mid = this._incrementRawValue(mid, increment, info);
+
+      if (mid !== null) {
+        return {
+          value: first + mid + last,
+          start: start,
+          end: start + mid.length
+        };
+      }
+    }
+  },
+
+  /**
+   * Increment the property value for numbers.
+   *
+   * @param {string} rawValue 
+   *        Raw value to increment.
+   * @param {number} increment 
+   *        Amount to increase/decrease the raw value.
+   * @param {object} info 
+   *        Object with info about the property value.
+   * @return {string} the incremented value.
+   */
+  _incrementRawValue: function InplaceEditor_incrementRawValue(rawValue, increment, info)
+  {
+    let num = parseFloat(rawValue);
+
+    if (isNaN(num)) {
+      return null;
+    }
+
+    let number = /\d+(\.\d+)?/.exec(rawValue);
+    let units = rawValue.substr(number.index + number[0].length);
+
+    // avoid rounding errors
+    let newValue = Math.round((num + increment) * 1000) / 1000;
+
+    if (info && "minValue" in info) {
+      newValue = Math.max(newValue, info.minValue);
+    }
+    if (info && "maxValue" in info) {
+      newValue = Math.min(newValue, info.maxValue);
+    }
+
+    newValue = newValue.toString();
+
+    return newValue + units;
+  },
+
+  /**
+   * Increment the property value for hex.
+   *
+   * @param {string} value 
+   *        Property value.
+   * @param {number} increment 
+   *        Amount to increase/decrease the property value.
+   * @param {number} offset 
+   *        Starting index of the property value.
+   * @param {number} offsetEnd 
+   *        Ending index of the property value.
+   * @return {object} object with properties 'value' and 'selection'.
+   */
+  _incHexColor: function InplaceEditor_incHexColor(rawValue, increment, offset, offsetEnd)
+  {
+    // Return early if no part of the rawValue is selected.
+    if (offsetEnd > rawValue.length && offset >= rawValue.length) {
+      return;
+    }
+    if (offset < 1 && offsetEnd <= 1) {
+      return;
+    }
+    // Ignore the leading #.
+    rawValue = rawValue.substr(1);
+    --offset;
+    --offsetEnd;
+
+    // Clamp the selection to within the actual value.
+    offset = Math.max(offset, 0);
+    offsetEnd = Math.min(offsetEnd, rawValue.length);
+    offsetEnd = Math.max(offsetEnd, offset);
+
+    // Normalize #ABC -> #AABBCC.
+    if (rawValue.length === 3) {
+      rawValue = rawValue.charAt(0) + rawValue.charAt(0) +
+                 rawValue.charAt(1) + rawValue.charAt(1) +
+                 rawValue.charAt(2) + rawValue.charAt(2);
+      offset *= 2;
+      offsetEnd *= 2;
+    }
+
+    if (rawValue.length !== 6) {
+      return;
+    }
+
+    // If no selection, increment an adjacent color, preferably one to the left.
+    if (offset === offsetEnd) {
+      if (offset === 0) {
+        offsetEnd = 1;
+      } else {
+        offset = offsetEnd - 1;
+      }
+    }
+
+    // Make the selection cover entire parts.
+    offset -= offset % 2;
+    offsetEnd += offsetEnd % 2;
+
+    // Remap the increments from [0.1, 1, 10] to [1, 1, 16].
+    if (-1 < increment && increment < 1) {
+      increment = (increment < 0 ? -1 : 1);
+    }
+    if (Math.abs(increment) === 10) {
+      increment = (increment < 0 ? -16 : 16);
+    }
+
+    let isUpper = (rawValue.toUpperCase() === rawValue);
+
+    for (let pos = offset; pos < offsetEnd; pos += 2) {
+      // Increment the part in [pos, pos+2).
+      let mid = rawValue.substr(pos, 2);
+      let value = parseInt(mid, 16);
+
+      if (isNaN(value)) {
+        return;
+      }
+
+      mid = Math.min(Math.max(value + increment, 0), 255).toString(16);
+
+      while (mid.length < 2) {
+        mid = "0" + mid;
+      }
+      if (isUpper) {
+        mid = mid.toUpperCase();
+      }
+
+      rawValue = rawValue.substr(0, pos) + mid + rawValue.substr(pos + 2);
+    }
+
+    return {
+      value: "#" + rawValue,
+      selection: [offset + 1, offsetEnd + 1]
+    };
   },
 
   /**
@@ -2062,22 +2528,63 @@ InplaceEditor.prototype = {
       let val = this.input.value.trim();
       return this.done(this.cancelled ? this.initial : val, !this.cancelled);
     }
+
     return null;
   },
 
   /**
    * Handle loss of focus by calling done if it hasn't been called yet.
    */
-  _onBlur: function InplaceEditor_onBlur(aEvent)
+  _onBlur: function InplaceEditor_onBlur(aEvent, aDoNotClear)
   {
     this._apply();
-    this._clear();
+    if (!aDoNotClear) {
+      this._clear();
+    }
   },
 
+  /**
+   * Handle the input field's keypress event.
+   */
   _onKeyPress: function InplaceEditor_onKeyPress(aEvent)
   {
     let prevent = false;
-    if (aEvent.charCode in this._advanceCharCodes
+
+    const largeIncrement = 100;
+    const mediumIncrement = 10;
+    const smallIncrement = 0.1;
+
+    let increment = 0;
+
+    if (aEvent.keyCode === Ci.nsIDOMKeyEvent.DOM_VK_UP
+       || aEvent.keyCode === Ci.nsIDOMKeyEvent.DOM_VK_PAGE_UP) {
+      increment = 1;
+    } else if (aEvent.keyCode === Ci.nsIDOMKeyEvent.DOM_VK_DOWN
+       || aEvent.keyCode === Ci.nsIDOMKeyEvent.DOM_VK_PAGE_DOWN) {
+      increment = -1;
+    }
+
+    if (aEvent.shiftKey && !aEvent.altKey) {
+      if (aEvent.keyCode === Ci.nsIDOMKeyEvent.DOM_VK_PAGE_UP
+           ||  aEvent.keyCode === Ci.nsIDOMKeyEvent.DOM_VK_PAGE_DOWN) {
+        increment *= largeIncrement;
+      } else {
+        increment *= mediumIncrement;
+      }
+    } else if (aEvent.altKey && !aEvent.shiftKey) {
+      increment *= smallIncrement;
+    }
+
+    if (increment && this._incrementValue(increment) ) {
+      this._updateSize();
+      prevent = true;
+    }
+
+    if (this.multiline &&
+        aEvent.keyCode === Ci.nsIDOMKeyEvent.DOM_VK_RETURN &&
+        aEvent.shiftKey) {
+      prevent = false;
+    } else if (aEvent.charCode in this._advanceCharCodes
        || aEvent.keyCode === Ci.nsIDOMKeyEvent.DOM_VK_RETURN
        || aEvent.keyCode === Ci.nsIDOMKeyEvent.DOM_VK_TAB) {
       prevent = true;
@@ -2088,13 +2595,16 @@ InplaceEditor.prototype = {
         this.cancelled = true;
         direction = FOCUS_BACKWARD;
       }
+      if (this.stopOnReturn && aEvent.keyCode === Ci.nsIDOMKeyEvent.DOM_VK_RETURN) {
+        direction = null;
+      }
 
       let input = this.input;
 
       this._apply();
 
       let fm = Cc["@mozilla.org/focus-manager;1"].getService(Ci.nsIFocusManager);
-      if (fm.focusedElement === input) {
+      if (direction !== null && fm.focusedElement === input) {
         // If the focused element wasn't changed by the done callback,
         // move the focus as requested.
         let next = moveFocus(this.doc.defaultView, direction);
@@ -2127,10 +2637,25 @@ InplaceEditor.prototype = {
   },
 
   /**
-   * Handle changes the input text.
+   * Handle the input field's keyup event.
+   */
+  _onKeyup: function(aEvent) {
+    // Validate the entered value.
+    this.warning.hidden = this.validate(this.input.value);
+    this._applied = false;
+    this._onBlur(null, true);
+  },
+
+  /**
+   * Handle changes to the input text.
    */
   _onInput: function InplaceEditor_onInput(aEvent)
   {
+    // Validate the entered value.
+    if (this.warning && this.validate) {
+      this.warning.hidden = this.validate(this.input.value);
+    }
+
     // Update size if we're autosizing.
     if (this._measurement) {
       this._updateSize();
@@ -2149,7 +2674,10 @@ InplaceEditor.prototype = {
  * own compartment, those expandos live on Xray wrappers that are only visible
  * within this JSM. So we provide a little workaround here.
  */
-function _getInplaceEditorForSpan(aSpan) { return aSpan.inplaceEditor; };
+this._getInplaceEditorForSpan = function _getInplaceEditorForSpan(aSpan)
+{
+  return aSpan.inplaceEditor;
+};
 
 /**
  * Store of CSSStyleDeclarations mapped to properties that have been changed by
@@ -2157,7 +2685,9 @@ function _getInplaceEditorForSpan(aSpan) { return aSpan.inplaceEditor; };
  */
 function UserProperties()
 {
-  this.weakMap = new WeakMap();
+  // FIXME: This should be a WeakMap once bug 753517 is fixed.
+  // See Bug 777373 for details.
+  this.map = new Map();
 }
 
 UserProperties.prototype = {
@@ -2166,18 +2696,18 @@ UserProperties.prototype = {
    *
    * @param {CSSStyleDeclaration} aStyle
    *        The CSSStyleDeclaration against which the property is mapped.
-   * @param {String} aName
+   * @param {string} aName
    *        The name of the property to get.
-   * @param {String} aComputedValue
+   * @param {string} aComputedValue
    *        The computed value of the property.  The user value will only be
    *        returned if the computed value hasn't changed since, and this will
    *        be returned as the default if no user value is available.
-   * @returns {String}
+   * @return {string}
    *          The property value if it has previously been set by the user, null
    *          otherwise.
    */
   getProperty: function UP_getProperty(aStyle, aName, aComputedValue) {
-    let entry = this.weakMap.get(aStyle, null);
+    let entry = this.map.get(aStyle, null);
 
     if (entry && aName in entry) {
       let item = entry[aName];
@@ -2206,13 +2736,13 @@ UserProperties.prototype = {
    *        The value of the property to set.
    */
   setProperty: function UP_setProperty(aStyle, aName, aComputedValue, aUserValue) {
-    let entry = this.weakMap.get(aStyle, null);
+    let entry = this.map.get(aStyle, null);
     if (entry) {
       entry[aName] = { computed: aComputedValue, user: aUserValue };
     } else {
       let props = {};
       props[aName] = { computed: aComputedValue, user: aUserValue };
-      this.weakMap.set(aStyle, props);
+      this.map.set(aStyle, props);
     }
   },
 
@@ -2225,7 +2755,7 @@ UserProperties.prototype = {
    *        The name of the property to check.
    */
   contains: function UP_contains(aStyle, aName) {
-    let entry = this.weakMap.get(aStyle, null);
+    let entry = this.map.get(aStyle, null);
     return !!entry && aName in entry;
   },
 };

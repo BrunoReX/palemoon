@@ -14,6 +14,8 @@ class DOMStorageImpl;
 class nsDOMStorageBaseDB
 {
 public:
+  static void Init();
+
   nsDOMStorageBaseDB();
   virtual ~nsDOMStorageBaseDB() {}
 
@@ -34,17 +36,23 @@ public:
    */
   bool IsScopeDirty(DOMStorageImpl* aStorage);
 
-protected:
-  nsDataHashtable<nsCStringHashKey, PRUint64> mScopesVersion;
+  int32_t GetQuota() {
+    return gQuotaLimit * 1024;
+  }
 
-  static PRUint64 NextGlobalVersion();
-  PRUint64 CachedScopeVersion(DOMStorageImpl* aStorage);
+protected:
+  nsDataHashtable<nsCStringHashKey, uint64_t> mScopesVersion;
+
+  static uint64_t NextGlobalVersion();
+  uint64_t CachedScopeVersion(DOMStorageImpl* aStorage);
 
   void MarkScopeDirty(DOMStorageImpl* aStorage);
   void MarkAllScopesDirty();
 
 private:
-  static PRUint64 sGlobalVersion;
+  static uint64_t sGlobalVersion;
+
+  static int32_t gQuotaLimit;
 };
 
 #endif /* nsDOMStorageDB_h___ */

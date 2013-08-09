@@ -9,20 +9,20 @@
 
 package org.mozilla.gecko;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.nio.channels.FileChannel;
-import java.util.HashMap;
-import java.util.Enumeration;
+import org.mozilla.gecko.util.INIParser;
+import org.mozilla.gecko.util.INISection;
+
 import android.content.Context;
-import android.os.Build;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.Log;
+
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.Hashtable;
 
 public final class GeckoProfile {
     private static final String LOGTAG = "GeckoProfile";
@@ -34,9 +34,6 @@ public final class GeckoProfile {
     private File mMozDir;
     private File mDir;
 
-    // this short timeout is a temporary fix until bug 735399 is implemented
-    private static final long SESSION_TIMEOUT = 30 * 1000; // 30 seconds
-
     static private INIParser getProfilesINI(Context context) {
       File filesDir = context.getFilesDir();
       File mozillaDir = new File(filesDir, "mozilla");
@@ -45,17 +42,24 @@ public final class GeckoProfile {
     }
 
     public static GeckoProfile get(Context context) {
+        if (context instanceof GeckoApp)
+            return get(context, ((GeckoApp)context).getDefaultProfileName());
+
         return get(context, "");
     }
 
     public static GeckoProfile get(Context context, String profileName) {
+        return get(context, profileName, null);
+    }
+
+    public static GeckoProfile get(Context context, String profileName, String profilePath) {
         if (context == null) {
             throw new IllegalArgumentException("context must be non-null");
         }
 
         // if no profile was passed in, look for the default profile listed in profiles.ini
         // if that doesn't exist, look for a profile called 'default'
-        if (TextUtils.isEmpty(profileName)) {
+        if (TextUtils.isEmpty(profileName) && TextUtils.isEmpty(profilePath)) {
             profileName = "default";
 
             INIParser parser = getProfilesINI(context);
@@ -78,8 +82,10 @@ public final class GeckoProfile {
         synchronized (sProfileCache) {
             GeckoProfile profile = sProfileCache.get(profileName);
             if (profile == null) {
-                profile = new GeckoProfile(context, profileName);
+                profile = new GeckoProfile(context, profileName, profilePath);
                 sProfileCache.put(profileName, profile);
+            } else {
+                profile.setDir(profilePath);
             }
             return profile;
         }
@@ -98,9 +104,33 @@ public final class GeckoProfile {
         }
     }
 
+    public static boolean removeProfile(Context context, String profileName) {
+        return new GeckoProfile(context, profileName).remove();
+    }
+
     private GeckoProfile(Context context, String profileName) {
         mContext = context;
         mName = profileName;
+    }
+
+    private GeckoProfile(Context context, String profileName, String profilePath) {
+        mContext = context;
+        mName = profileName;
+        setDir(profilePath);
+    }
+
+    private void setDir(String profilePath) {
+        if (!TextUtils.isEmpty(profilePath)) {
+            File dir = new File(profilePath);
+            if (dir.exists() && dir.isDirectory()) {
+                if (mDir != null) {
+                    Log.i(LOGTAG, "profile dir changed from "+mDir+" to "+dir);
+                }
+                mDir = dir;
+            } else {
+                Log.w(LOGTAG, "requested profile directory missing: "+profilePath);
+            }
+        }
     }
 
     public String getName() {
@@ -115,7 +145,8 @@ public final class GeckoProfile {
         try {
             // Check for old profiles that may need migration.
             ProfileMigrator profileMigrator = new ProfileMigrator(mContext);
-            if (!profileMigrator.isProfileMoved()) {
+            if (!GeckoApp.sIsUsingCustomProfile &&
+                !profileMigrator.isProfileMoved()) {
                 Log.i(LOGTAG, "New installation or update, checking for old profiles.");
                 profileMigrator.launchMoveProfile();
             }
@@ -135,54 +166,76 @@ public final class GeckoProfile {
         return mDir;
     }
 
+    public File getFile(String aFile) {
+        File f = getDir();
+        if (f == null)
+            return null;
+
+        return new File(f, aFile);
+    }
+
     public File getFilesDir() {
         return mContext.getFilesDir();
     }
 
+    /**
+     * Determines whether the tabs from the previous session should be
+     * automatically restored.
+     *
+     * sessionstore.js is moved to sessionstore.bak on a clean quit, so if we
+     * still have sessionstore.js at startup, that means we were killed
+     * uncleanly. This is caused by either 1) a crash, or 2) being killed by
+     * android because of memory constraints. Either way, the existence of this
+     * file indicates that we'll want to restore the previous session.
+     *
+     * @return whether the previous session should be restored
+     */
     public boolean shouldRestoreSession() {
-        Log.w(LOGTAG, "zerdatime " + SystemClock.uptimeMillis() + " - start check sessionstore.js exists");
-        File dir = getDir();
-        if (dir == null)
-            return false;
-
-        File sessionFile = new File(dir, "sessionstore.js");
-        if (!sessionFile.exists())
-            return false;
-
-        boolean shouldRestore = (System.currentTimeMillis() - sessionFile.lastModified() < SESSION_TIMEOUT);
-        Log.w(LOGTAG, "zerdatime " + SystemClock.uptimeMillis() + " - finish check sessionstore.js exists");
-        return shouldRestore;
+        File sessionFile = getFile("sessionstore.js");
+        return sessionFile != null && sessionFile.exists();
     }
 
-    public String readSessionFile(boolean geckoReady) {
-        File dir = getDir();
-        if (dir == null) {
-            return null;
+    /**
+     * Moves the session file to the backup session file.
+     *
+     * sessionstore.js should hold the current session, and sessionstore.bak
+     * should hold the previous session (where it is used to read the "tabs
+     * from last time"). Normally, sessionstore.js is moved to sessionstore.bak
+     * on a clean quit, but this doesn't happen if Fennec crashed. Thus, this
+     * method should be called after a crash so sessionstore.bak correctly
+     * holds the previous session.
+     */
+    public void moveSessionFile() {
+        File sessionFile = getFile("sessionstore.js");
+        if (sessionFile != null && sessionFile.exists()) {
+            File sessionFileBackup = getFile("sessionstore.bak");
+            sessionFile.renameTo(sessionFileBackup);
         }
+    }
 
-        File sessionFile = null;
-        if (! geckoReady) {
-            // we might have crashed, in which case sessionstore.js has tabs from last time
-            sessionFile = new File(dir, "sessionstore.js");
-            if (! sessionFile.exists()) {
-                sessionFile = null;
-            }
-        }
-        if (sessionFile == null) {
-            // either we did not crash, so previous session was moved to sessionstore.bak on quit,
-            // or sessionstore init has occurred, so previous session will always
-            // be in sessionstore.bak
-            sessionFile = new File(dir, "sessionstore.bak");
-            // no need to check if the session file exists here; readFile will throw
-            // an IOException if it does not
-        }
+    /**
+     * Get the string from a session file.
+     *
+     * The session can either be read from sessionstore.js or sessionstore.bak.
+     * In general, sessionstore.js holds the current session, and
+     * sessionstore.bak holds the previous session.
+     *
+     * @param readBackup if true, the session is read from sessionstore.bak;
+     *                   otherwise, the session is read from sessionstore.js
+     *
+     * @return the session string
+     */
+    public String readSessionFile(boolean readBackup) {
+        File sessionFile = getFile(readBackup ? "sessionstore.bak" : "sessionstore.js");
 
         try {
-            return readFile(sessionFile);
+            if (sessionFile != null && sessionFile.exists()) {
+                return readFile(sessionFile);
+            }
         } catch (IOException ioe) {
-            Log.i(LOGTAG, "Unable to read session file " + sessionFile.getAbsolutePath());
-            return null;
+            Log.e(LOGTAG, "Unable to read session file", ioe);
         }
+        return null;
     }
 
     public String readFile(String filename) throws IOException {
@@ -207,6 +260,59 @@ public final class GeckoProfile {
             return sb.toString();
         } finally {
             fr.close();
+        }
+    }
+
+    private boolean remove() {
+        try {
+            File mozillaDir = ensureMozillaDirectory(mContext);
+            mDir = findProfileDir(mozillaDir);
+            if (mDir == null)
+                return false;
+
+            INIParser parser = getProfilesINI(mContext);
+
+            Hashtable<String, INISection> sections = parser.getSections();
+            for (Enumeration<INISection> e = sections.elements(); e.hasMoreElements();) {
+                INISection section = e.nextElement();
+                String name = section.getStringProperty("Name");
+
+                if (name == null || !name.equals(mName))
+                    continue;
+
+                if (section.getName().startsWith("Profile")) {
+                    // ok, we have stupid Profile#-named things.  Rename backwards.
+                    try {
+                        int sectionNumber = Integer.parseInt(section.getName().substring("Profile".length()));
+                        String curSection = "Profile" + sectionNumber;
+                        String nextSection = "Profile" + (sectionNumber+1);
+
+                        sections.remove(curSection);
+
+                        while (sections.containsKey(nextSection)) {
+                            parser.renameSection(nextSection, curSection);
+                            sectionNumber++;
+                            
+                            curSection = nextSection;
+                            nextSection = "Profile" + (sectionNumber+1);
+                        }
+                    } catch (NumberFormatException nex) {
+                        // uhm, malformed Profile thing; we can't do much.
+                        Log.e(LOGTAG, "Malformed section name in profiles.ini: " + section.getName());
+                        return false;
+                    }
+                } else {
+                    // this really shouldn't be the case, but handle it anyway
+                    parser.removeSection(mName);
+                    return true;
+                }
+            }
+
+            parser.write();
+            return true;
+        } catch (IOException ex) {
+            Log.w(LOGTAG, "Failed to remove profile " + mName + ":\n" + ex);
+            return false;
         }
     }
 
@@ -275,7 +381,6 @@ public final class GeckoProfile {
             parser.addSection(generalSection);
 
             // only set as default if this is the first profile we're creating
-            Log.i(LOGTAG, "WESJ - SET DEFAULT");
             profileSection.setProperty("Default", 1);
         }
 

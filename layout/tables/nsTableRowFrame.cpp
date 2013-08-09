@@ -18,9 +18,6 @@
 #include "nsTableColFrame.h"
 #include "nsCOMPtr.h"
 #include "nsDisplayList.h"
-#ifdef ACCESSIBILITY
-#include "nsAccessibilityService.h"
-#endif
 
 using namespace mozilla;
 
@@ -68,7 +65,7 @@ nsTableRowFrame::InitChildReflowState(nsPresContext&         aPresContext,
                                       nsTableCellReflowState& aReflowState)
 {
   nsMargin collapseBorder;
-  nsMargin* pCollapseBorder = nsnull;
+  nsMargin* pCollapseBorder = nullptr;
   if (aBorderCollapse) {
     // we only reflow cells, so don't need to check frame type
     nsBCTableCellFrame* bcCellFrame = (nsBCTableCellFrame*)aReflowState.frame;
@@ -158,6 +155,8 @@ nsTableRowFrame::Init(nsIContent*      aContent,
 /* virtual */ void
 nsTableRowFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
 {
+  nsContainerFrame::DidSetStyleContext(aOldStyleContext);
+
   if (!aOldStyleContext) //avoid this on init
     return;
      
@@ -175,7 +174,7 @@ nsTableRowFrame::AppendFrames(ChildListID     aListID,
 {
   NS_ASSERTION(aListID == kPrincipalList, "unexpected child list");
 
-  const nsFrameList::Slice& newCells = mFrames.AppendFrames(nsnull, aFrameList);
+  const nsFrameList::Slice& newCells = mFrames.AppendFrames(nullptr, aFrameList);
 
   // Add the new cell frames to the table
   nsTableFrame* tableFrame = nsTableFrame::GetTableFrame(this);
@@ -202,7 +201,7 @@ nsTableRowFrame::InsertFrames(ChildListID     aListID,
   NS_ASSERTION(!aPrevFrame || aPrevFrame->GetParent() == this,
                "inserting after sibling frame with different parent");
   //Insert Frames in the frame list
-  const nsFrameList::Slice& newCells = mFrames.InsertFrames(nsnull, aPrevFrame, aFrameList);
+  const nsFrameList::Slice& newCells = mFrames.InsertFrames(nullptr, aPrevFrame, aFrameList);
 
   // Get the table frame
   nsTableFrame* tableFrame = nsTableFrame::GetTableFrame(this);
@@ -215,7 +214,7 @@ nsTableRowFrame::InsertFrames(ChildListID     aListID,
     cellChildren.AppendElement(static_cast<nsTableCellFrame*>(childFrame));
   }
   // insert the cells into the cell map
-  PRInt32 colIndex = -1;
+  int32_t colIndex = -1;
   if (prevCellFrame) {
     prevCellFrame->GetColIndex(colIndex);
   }
@@ -237,7 +236,7 @@ nsTableRowFrame::RemoveFrame(ChildListID     aListID,
   nsTableFrame* tableFrame = nsTableFrame::GetTableFrame(this);
   nsTableCellFrame *cellFrame = do_QueryFrame(aOldFrame);
   if (cellFrame) {
-    PRInt32 colIndex;
+    int32_t colIndex;
     cellFrame->GetColIndex(colIndex);
     // remove the cell from the cell map
     tableFrame->RemoveCell(cellFrame, GetRowIndex());
@@ -282,10 +281,10 @@ GetHeightOfRowsSpannedBelowFirst(nsTableCellFrame& aTableCellFrame,
 {
   nscoord height = 0;
   nscoord cellSpacingY = aTableFrame.GetCellSpacingY();
-  PRInt32 rowSpan = aTableFrame.GetEffectiveRowSpan(aTableCellFrame);
+  int32_t rowSpan = aTableFrame.GetEffectiveRowSpan(aTableCellFrame);
   // add in height of rows spanned beyond the 1st one
   nsIFrame* nextRow = aTableCellFrame.GetParent()->GetNextSibling();
-  for (PRInt32 rowX = 1; ((rowX < rowSpan) && nextRow);) {
+  for (int32_t rowX = 1; ((rowX < rowSpan) && nextRow);) {
     if (nsGkAtoms::tableRowFrame == nextRow->GetType()) {
       height += nextRow->GetSize().height;
       rowX++;
@@ -307,7 +306,7 @@ nsTableRowFrame::GetFirstCell()
     }
     childFrame = childFrame->GetNextSibling();
   }
-  return nsnull;
+  return nullptr;
 }
 
 /**
@@ -337,9 +336,9 @@ nsTableRowFrame::DidResize()
       if (cellRect.height != cellHeight)
       {
         cellFrame->SetSize(nsSize(cellRect.width, cellHeight));
-        nsTableFrame::InvalidateFrame(cellFrame, cellRect,
-                                      cellVisualOverflow,
-                                      false);
+        nsTableFrame::InvalidateTableFrame(cellFrame, cellRect,
+                                           cellVisualOverflow,
+                                           false);
       }
 
       // realign cell content based on the new height.  We might be able to
@@ -453,7 +452,7 @@ nsTableRowFrame::UpdateHeight(nscoord           aHeight,
   if (aHeight != NS_UNCONSTRAINEDSIZE) {
     if (!(aCellFrame->HasVerticalAlignBaseline())) { // only the cell's height matters
       if (GetHeight() < aHeight) {
-        PRInt32 rowSpan = aTableFrame->GetEffectiveRowSpan(*aCellFrame);
+        int32_t rowSpan = aTableFrame->GetEffectiveRowSpan(*aCellFrame);
         if (rowSpan == 1) {
           SetContentHeight(aHeight);
         }
@@ -467,7 +466,7 @@ nsTableRowFrame::UpdateHeight(nscoord           aHeight,
       }
       // see if this is a long descender and without rowspan
       if (mMaxCellDescent < aDescent) {
-        PRInt32 rowSpan = aTableFrame->GetEffectiveRowSpan(*aCellFrame);
+        int32_t rowSpan = aTableFrame->GetEffectiveRowSpan(*aCellFrame);
         if (rowSpan == 1) {
           mMaxCellDescent = aDescent;
         }
@@ -560,7 +559,7 @@ nsTableRowFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                                   const nsRect&           aDirtyRect,
                                   const nsDisplayListSet& aLists)
 {
-  nsDisplayTableItem* item = nsnull;
+  nsDisplayTableItem* item = nullptr;
   if (IsVisibleInSelection(aBuilder)) {
     bool isRoot = aBuilder->IsAtRootOfPseudoStackingContext();
     if (isRoot) {
@@ -578,14 +577,14 @@ nsTableRowFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
   return nsTableFrame::DisplayGenericTablePart(aBuilder, this, aDirtyRect, aLists, item);
 }
 
-PRIntn
+int
 nsTableRowFrame::GetSkipSides() const
 {
-  PRIntn skip = 0;
-  if (nsnull != GetPrevInFlow()) {
+  int skip = 0;
+  if (nullptr != GetPrevInFlow()) {
     skip |= 1 << NS_SIDE_TOP;
   }
-  if (nsnull != GetNextInFlow()) {
+  if (nullptr != GetNextInFlow()) {
     skip |= 1 << NS_SIDE_BOTTOM;
   }
   return skip;
@@ -604,14 +603,36 @@ nsTableRowFrame::CalculateCellActualHeight(nsTableCellFrame* aCellFrame,
   const nsStylePosition* position = aCellFrame->GetStylePosition();
 
   nsTableFrame* tableFrame = nsTableFrame::GetTableFrame(this);
-  PRInt32 rowSpan = tableFrame->GetEffectiveRowSpan(*aCellFrame);
+  int32_t rowSpan = tableFrame->GetEffectiveRowSpan(*aCellFrame);
   
   switch (position->mHeight.GetUnit()) {
-    case eStyleUnit_Coord:
-      specifiedHeight = position->mHeight.GetCoordValue();
+    case eStyleUnit_Coord: {
+      nscoord outsideBoxSizing = 0;
+      // In quirks mode, table cell width should be content-box, but height
+      // should be border-box.
+      // Because of this historic anomaly, we do not use quirk.css
+      // (since we can't specify one value of box-sizing for width and another
+      // for height)
+      if (PresContext()->CompatibilityMode() != eCompatibility_NavQuirks) {
+        switch (position->mBoxSizing) {
+          case NS_STYLE_BOX_SIZING_CONTENT:
+            outsideBoxSizing = aCellFrame->GetUsedBorderAndPadding().TopBottom();
+            break;
+          case NS_STYLE_BOX_SIZING_PADDING:
+            outsideBoxSizing = aCellFrame->GetUsedBorder().TopBottom();
+            break;
+          default:
+            // NS_STYLE_BOX_SIZING_BORDER
+            break;
+        }
+      }
+
+      specifiedHeight = position->mHeight.GetCoordValue() + outsideBoxSizing;
+
       if (1 == rowSpan) 
         SetFixedHeight(specifiedHeight);
       break;
+    }
     case eStyleUnit_Percent: {
       if (1 == rowSpan) 
         SetPctHeight(position->mHeight.GetPercentValue());
@@ -638,12 +659,12 @@ CalcAvailWidth(nsTableFrame&     aTableFrame,
                nscoord           aCellSpacingX)
 {
   nscoord cellAvailWidth = 0;
-  PRInt32 colIndex;
+  int32_t colIndex;
   aCellFrame.GetColIndex(colIndex);
-  PRInt32 colspan = aTableFrame.GetEffectiveColSpan(aCellFrame);
+  int32_t colspan = aTableFrame.GetEffectiveColSpan(aCellFrame);
   NS_ASSERTION(colspan > 0, "effective colspan should be positive");
 
-  for (PRInt32 spanX = 0; spanX < colspan; spanX++) {
+  for (int32_t spanX = 0; spanX < colspan; spanX++) {
     cellAvailWidth += aTableFrame.GetColumnWidth(colIndex + spanX);
     if (spanX > 0 &&
         aTableFrame.ColumnHasCellSpacingBefore(colIndex + spanX)) {
@@ -654,16 +675,16 @@ CalcAvailWidth(nsTableFrame&     aTableFrame,
 }
 
 nscoord
-GetSpaceBetween(PRInt32       aPrevColIndex,
-                PRInt32       aColIndex,
-                PRInt32       aColSpan,
+GetSpaceBetween(int32_t       aPrevColIndex,
+                int32_t       aColIndex,
+                int32_t       aColSpan,
                 nsTableFrame& aTableFrame,
                 nscoord       aCellSpacingX,
                 bool          aIsLeftToRight,
                 bool          aCheckVisibility)
 {
   nscoord space = 0;
-  PRInt32 colX;
+  int32_t colX;
   if (aIsLeftToRight) {
     for (colX = aPrevColIndex + 1; aColIndex > colX; colX++) {
       bool isCollapsed = false;
@@ -688,7 +709,7 @@ GetSpaceBetween(PRInt32       aPrevColIndex,
     }
   } 
   else {
-    PRInt32 lastCol = aColIndex + aColSpan - 1;
+    int32_t lastCol = aColIndex + aColSpan - 1;
     for (colX = aPrevColIndex - 1; colX > lastCol; colX--) {
       bool isCollapsed = false;
       if (!aCheckVisibility) {
@@ -746,12 +767,12 @@ nsTableRowFrame::ReflowChildren(nsPresContext*          aPresContext,
   const bool borderCollapse = aTableFrame.IsBorderCollapse();
   nsresult rv = NS_OK;
   nscoord cellSpacingX = aTableFrame.GetCellSpacingX();
-  PRInt32 cellColSpan = 1;  // must be defined here so it's set properly for non-cell kids
+  int32_t cellColSpan = 1;  // must be defined here so it's set properly for non-cell kids
   
   nsTableIterator iter(*this);
   // remember the col index of the previous cell to handle rowspans into this row
-  PRInt32 firstPrevColIndex = (iter.IsLeftToRight()) ? -1 : aTableFrame.GetColCount();
-  PRInt32 prevColIndex  = firstPrevColIndex;
+  int32_t firstPrevColIndex = (iter.IsLeftToRight()) ? -1 : aTableFrame.GetColCount();
+  int32_t prevColIndex  = firstPrevColIndex;
   nscoord x = 0; // running total of children x offset
 
   // This computes the max of all cell heights
@@ -771,7 +792,7 @@ nsTableRowFrame::ReflowChildren(nsPresContext*          aPresContext,
       nsHTMLReflowMetrics desiredSize;
       nsReflowStatus  status;
       ReflowChild(kidFrame, aPresContext, desiredSize, kidReflowState, 0, 0, 0, status);
-      kidFrame->DidReflow(aPresContext, nsnull, NS_FRAME_REFLOW_FINISHED);
+      kidFrame->DidReflow(aPresContext, nullptr, nsDidReflowStatus::FINISHED);
 
       continue;
     }
@@ -798,7 +819,7 @@ nsTableRowFrame::ReflowChildren(nsPresContext*          aPresContext,
       }
     }
 
-    PRInt32 cellColIndex;
+    int32_t cellColIndex;
     cellFrame->GetColIndex(cellColIndex);
     cellColSpan = aTableFrame.GetEffectiveColSpan(*cellFrame);
 
@@ -870,7 +891,7 @@ nsTableRowFrame::ReflowChildren(nsPresContext*          aPresContext,
 
         // if we are in a floated table, our position is not yet established, so we cannot reposition our views
         // the containing block will do this for us after positioning the table
-        if (!aTableFrame.GetStyleDisplay()->IsFloating()) {
+        if (!aTableFrame.IsFloating()) {
           // Because we may have moved the frame we need to make sure any views are
           // positioned properly. We have to do this, because any one of our parent
           // frames could have moved and we have no way of knowing...
@@ -895,7 +916,7 @@ nsTableRowFrame::ReflowChildren(nsPresContext*          aPresContext,
       }
       else {
         cellMaxHeight = NS_MAX(cellMaxHeight, desiredSize.height);
-        PRInt32 rowSpan = aTableFrame.GetEffectiveRowSpan((nsTableCellFrame&)*kidFrame);
+        int32_t rowSpan = aTableFrame.GetEffectiveRowSpan((nsTableCellFrame&)*kidFrame);
         if (1 == rowSpan) {
           SetContentHeight(cellMaxHeight);
         }
@@ -904,10 +925,10 @@ nsTableRowFrame::ReflowChildren(nsPresContext*          aPresContext,
       // Place the child
       desiredSize.width = availCellWidth;
 
-      FinishReflowChild(kidFrame, aPresContext, nsnull, desiredSize, x, 0, 0);
+      FinishReflowChild(kidFrame, aPresContext, nullptr, desiredSize, x, 0, 0);
 
-      nsTableFrame::InvalidateFrame(kidFrame, kidRect, kidVisualOverflow,
-                                    firstReflow);
+      nsTableFrame::InvalidateTableFrame(kidFrame, kidRect, kidVisualOverflow,
+                                         firstReflow);
       
       x += desiredSize.width;  
     }
@@ -999,13 +1020,19 @@ nsTableRowFrame::Reflow(nsPresContext*          aPresContext,
   rv = ReflowChildren(aPresContext, aDesiredSize, aReflowState, *tableFrame,
                       aStatus);
 
+  if (aPresContext->IsPaginated() && !NS_FRAME_IS_FULLY_COMPLETE(aStatus) &&
+      ShouldAvoidBreakInside(aReflowState)) {
+    aStatus = NS_INLINE_LINE_BREAK_BEFORE();
+  }
+
   // just set our width to what was available. The table will calculate the width and not use our value.
   aDesiredSize.width = aReflowState.availableWidth;
 
   // If our parent is in initial reflow, it'll handle invalidating our
   // entire overflow rect.
-  if (!(GetParent()->GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
-    CheckInvalidateSizeChange(aDesiredSize);
+  if (!(GetParent()->GetStateBits() & NS_FRAME_FIRST_REFLOW) &&
+      nsSize(aDesiredSize.width, aDesiredSize.height) != mRect.Size()) {
+    InvalidateFrame();
   }
 
   NS_FRAME_SET_TRUNCATION(aStatus, aReflowState, aDesiredSize);
@@ -1054,12 +1081,12 @@ nsTableRowFrame::ReflowCellFrame(nsPresContext*          aPresContext,
     aCellFrame->VerticallyAlignChild(mMaxCellAscent);
   }
   
-  nsTableFrame::InvalidateFrame(aCellFrame, cellRect,
-                                cellVisualOverflow,
-                                (aCellFrame->GetStateBits() &
-                                   NS_FRAME_FIRST_REFLOW) != 0);
+  nsTableFrame::InvalidateTableFrame(aCellFrame, cellRect,
+                                     cellVisualOverflow,
+                                     (aCellFrame->GetStateBits() &
+                                      NS_FRAME_FIRST_REFLOW) != 0);
   
-  aCellFrame->DidReflow(aPresContext, nsnull, NS_FRAME_REFLOW_FINISHED);
+  aCellFrame->DidReflow(aPresContext, nullptr, nsDidReflowStatus::FINISHED);
 
   return desiredSize.height;
 }
@@ -1105,7 +1132,7 @@ nsTableRowFrame::CollapseRowIfNecessary(nscoord aRowOffset,
       // need to invalidate if our row is not moving, because the cell might
       // span out of this row, so invalidating our row rect won't do enough.
       if (aRowOffset == 0) {
-        Invalidate(cRect);
+        InvalidateFrame();
       }
       cRect.height = 0;
       cellFrame->SetRect(cRect);
@@ -1117,12 +1144,12 @@ nsTableRowFrame::CollapseRowIfNecessary(nscoord aRowOffset,
     nsTableIterator iter(*this);
     // remember the col index of the previous cell to handle rowspans into this
     // row
-    PRInt32 firstPrevColIndex = (iter.IsLeftToRight()) ? -1 :
+    int32_t firstPrevColIndex = (iter.IsLeftToRight()) ? -1 :
                                 tableFrame->GetColCount();
-    PRInt32 prevColIndex  = firstPrevColIndex;
+    int32_t prevColIndex  = firstPrevColIndex;
     nscoord x = 0; // running total of children x offset
 
-    PRInt32 colIncrement = iter.IsLeftToRight() ? 1 : -1;
+    int32_t colIncrement = iter.IsLeftToRight() ? 1 : -1;
 
     //nscoord x = cellSpacingX;
 
@@ -1130,9 +1157,9 @@ nsTableRowFrame::CollapseRowIfNecessary(nscoord aRowOffset,
     while (kidFrame) {
       nsTableCellFrame *cellFrame = do_QueryFrame(kidFrame);
       if (cellFrame) {
-        PRInt32 cellColIndex;
+        int32_t cellColIndex;
         cellFrame->GetColIndex(cellColIndex);
-        PRInt32 cellColSpan = tableFrame->GetEffectiveColSpan(*cellFrame);
+        int32_t cellColSpan = tableFrame->GetEffectiveColSpan(*cellFrame);
 
         // If the adjacent cell is in a prior row (because of a rowspan) add in
         // the space
@@ -1149,11 +1176,11 @@ nsTableRowFrame::CollapseRowIfNecessary(nscoord aRowOffset,
         // spans into
         prevColIndex = (iter.IsLeftToRight()) ?
                        cellColIndex + (cellColSpan - 1) : cellColIndex;
-        PRInt32 startIndex = (iter.IsLeftToRight()) ?
+        int32_t startIndex = (iter.IsLeftToRight()) ?
                              cellColIndex : cellColIndex + (cellColSpan - 1);
-        PRInt32 actualColSpan = cellColSpan;
+        int32_t actualColSpan = cellColSpan;
         bool isVisible = false;
-        for (PRInt32 colX = startIndex; actualColSpan > 0;
+        for (int32_t colX = startIndex; actualColSpan > 0;
              colX += colIncrement, actualColSpan--) {
 
           nsTableColFrame* colFrame = tableFrame->GetColFrame(colX);
@@ -1183,7 +1210,7 @@ nsTableRowFrame::CollapseRowIfNecessary(nscoord aRowOffset,
         x += cRect.width;
         if (isVisible)
           x += cellSpacingX;
-        PRInt32 actualRowSpan = tableFrame->GetEffectiveRowSpan(*cellFrame);
+        int32_t actualRowSpan = tableFrame->GetEffectiveRowSpan(*cellFrame);
         nsTableRowFrame* rowFrame = GetNextRow();
         for (actualRowSpan--; actualRowSpan > 0 && rowFrame; actualRowSpan--) {
           const nsStyleVisibility* nextRowVis = rowFrame->GetStyleVisibility();
@@ -1216,9 +1243,9 @@ nsTableRowFrame::CollapseRowIfNecessary(nscoord aRowOffset,
         ConsiderChildOverflow(overflow, cellFrame);
                 
         if (aRowOffset == 0) {
-          nsTableFrame::InvalidateFrame(cellFrame, oldCellRect,
-                                        oldCellVisualOverflow,
-                                        false);
+          nsTableFrame::InvalidateTableFrame(cellFrame, oldCellRect,
+                                             oldCellVisualOverflow,
+                                             false);
         }
       }
       kidFrame = iter.Next(); // Get the next child
@@ -1230,7 +1257,7 @@ nsTableRowFrame::CollapseRowIfNecessary(nscoord aRowOffset,
   FinishAndStoreOverflow(overflow, nsSize(rowRect.width, rowRect.height));
 
   nsTableFrame::RePositionViews(this);
-  nsTableFrame::InvalidateFrame(this, oldRect, oldVisualOverflow, false);
+  nsTableFrame::InvalidateTableFrame(this, oldRect, oldVisualOverflow, false);
   return shift;
 }
 
@@ -1241,15 +1268,15 @@ nsTableRowFrame::CollapseRowIfNecessary(nscoord aRowOffset,
  */
 void 
 nsTableRowFrame::InsertCellFrame(nsTableCellFrame* aFrame,
-                                 PRInt32           aColIndex)
+                                 int32_t           aColIndex)
 {
   // Find the cell frame where col index < aColIndex
-  nsTableCellFrame* priorCell = nsnull;
+  nsTableCellFrame* priorCell = nullptr;
   for (nsIFrame* child = mFrames.FirstChild(); child;
        child = child->GetNextSibling()) {
     nsTableCellFrame *cellFrame = do_QueryFrame(child);
     if (cellFrame) {
-      PRInt32 colIndex;
+      int32_t colIndex;
       cellFrame->GetColIndex(colIndex);
       if (colIndex < aColIndex) {
         priorCell = cellFrame;
@@ -1278,10 +1305,10 @@ nsTableRowFrame::GetNextRow() const
     }
     childFrame = childFrame->GetNextSibling();
   }
-  return nsnull;
+  return nullptr;
 }
 
-NS_DECLARE_FRAME_PROPERTY(RowUnpaginatedHeightProperty, nsnull)
+NS_DECLARE_FRAME_PROPERTY(RowUnpaginatedHeightProperty, nullptr)
 
 void 
 nsTableRowFrame::SetUnpaginatedHeight(nsPresContext* aPresContext,
@@ -1300,7 +1327,7 @@ nsTableRowFrame::GetUnpaginatedHeight(nsPresContext* aPresContext)
   return NS_PTR_TO_INT32(props.Get(RowUnpaginatedHeightProperty()));
 }
 
-void nsTableRowFrame::SetContinuousBCBorderWidth(PRUint8     aForSide,
+void nsTableRowFrame::SetContinuousBCBorderWidth(uint8_t     aForSide,
                                                  BCPixelSize aPixelValue)
 {
   switch (aForSide) {
@@ -1318,16 +1345,10 @@ void nsTableRowFrame::SetContinuousBCBorderWidth(PRUint8     aForSide,
   }
 }
 #ifdef ACCESSIBILITY
-already_AddRefed<Accessible>
-nsTableRowFrame::CreateAccessible()
+a11y::AccType
+nsTableRowFrame::AccessibleType()
 {
-  nsAccessibilityService* accService = nsIPresShell::AccService();
-  if (accService) {
-    return accService->CreateHTMLTableRowAccessible(mContent,
-                                                    PresContext()->PresShell());
-  }
-
-  return nsnull;
+  return a11y::eHTMLTableRowAccessible;
 }
 #endif
 /**
@@ -1355,6 +1376,23 @@ void nsTableRowFrame::InitHasCellWithStyleHeight(nsTableFrame* aTableFrame)
     }
   }
   RemoveStateBits(NS_ROW_HAS_CELL_WITH_STYLE_HEIGHT);
+}
+  
+void 
+nsTableRowFrame::InvalidateFrame(uint32_t aDisplayItemKey)
+{
+  nsIFrame::InvalidateFrame(aDisplayItemKey);
+  GetParent()->InvalidateFrameWithRect(GetVisualOverflowRect() + GetPosition(), aDisplayItemKey);
+}
+
+void
+nsTableRowFrame::InvalidateFrameWithRect(const nsRect& aRect, uint32_t aDisplayItemKey)
+{
+  nsIFrame::InvalidateFrameWithRect(aRect, aDisplayItemKey);
+  // If we have filters applied that would affects our bounds, then
+  // we get an inactive layer created and this is computed
+  // within FrameLayerBuilder
+  GetParent()->InvalidateFrameWithRect(aRect + GetPosition(), aDisplayItemKey);
 }
 
 /* ----- global methods ----- */

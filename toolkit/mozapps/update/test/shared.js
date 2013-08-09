@@ -10,9 +10,10 @@ const AUS_Cc = Components.classes;
 const AUS_Ci = Components.interfaces;
 const AUS_Cr = Components.results;
 const AUS_Cu = Components.utils;
+const AUS_Cm = Components.manager;
 
 const PREF_APP_UPDATE_AUTO                = "app.update.auto";
-const PREF_APP_UPDATE_BACKGROUND          = "app.update.stage.enabled";
+const PREF_APP_UPDATE_STAGE_ENABLED       = "app.update.staging.enabled";
 const PREF_APP_UPDATE_BACKGROUNDERRORS    = "app.update.backgroundErrors";
 const PREF_APP_UPDATE_BACKGROUNDMAXERRORS = "app.update.backgroundMaxErrors";
 const PREF_APP_UPDATE_CERTS_BRANCH        = "app.update.certs.";
@@ -31,6 +32,8 @@ const PREF_APP_UPDATE_SILENT              = "app.update.silent";
 const PREF_APP_UPDATE_URL                 = "app.update.url";
 const PREF_APP_UPDATE_URL_DETAILS         = "app.update.url.details";
 const PREF_APP_UPDATE_URL_OVERRIDE        = "app.update.url.override";
+const PREF_APP_UPDATE_SOCKET_ERRORS       = "app.update.socket.maxErrors";
+const PREF_APP_UPDATE_RETRY_TIMEOUT       = "app.update.socket.retryTimeout";
 
 const PREF_APP_UPDATE_CERT_INVALID_ATTR_NAME = PREF_APP_UPDATE_CERTS_BRANCH +
                                                "1.invalidName";
@@ -79,6 +82,8 @@ const PERMS_DIRECTORY = 0755;
 
 const DEFAULT_UPDATE_VERSION = "999999.0";
 
+var gChannel;
+
 #include sharedUpdateXML.js
 
 AUS_Cu.import("resource://gre/modules/Services.jsm");
@@ -91,7 +96,8 @@ XPCOMUtils.defineLazyGetter(this, "gAUS", function test_gAUS() {
   return AUS_Cc["@mozilla.org/updates/update-service;1"].
          getService(AUS_Ci.nsIApplicationUpdateService).
          QueryInterface(AUS_Ci.nsITimerCallback).
-         QueryInterface(AUS_Ci.nsIObserver);
+         QueryInterface(AUS_Ci.nsIObserver).
+         QueryInterface(AUS_Ci.nsIUpdateCheckListener);
 });
 
 XPCOMUtils.defineLazyServiceGetter(this, "gUpdateManager",
@@ -110,6 +116,10 @@ XPCOMUtils.defineLazyGetter(this, "gUP", function test_gUP() {
 
 XPCOMUtils.defineLazyGetter(this, "gDefaultPrefBranch", function test_gDPB() {
   return Services.prefs.getDefaultBranch(null);
+});
+
+XPCOMUtils.defineLazyGetter(this, "gPrefRoot", function test_gPR() {
+  return Services.prefs.getBranch(null);
 });
 
 XPCOMUtils.defineLazyGetter(this, "gZipW", function test_gZipW() {
@@ -133,13 +143,27 @@ function reloadUpdateManagerData() {
  * Sets the app.update.channel preference.
  *
  * @param  aChannel
- *         The update channel. If not specified 'test_channel' will be used.
+ *         The update channel.
  */
 function setUpdateChannel(aChannel) {
-  let channel = aChannel ? aChannel : "test_channel";
-  debugDump("setting default pref " + PREF_APP_UPDATE_CHANNEL + " to " + channel);
-  gDefaultPrefBranch.setCharPref(PREF_APP_UPDATE_CHANNEL, channel);
+  gChannel = aChannel;
+  debugDump("setting default pref " + PREF_APP_UPDATE_CHANNEL + " to " + gChannel);
+  gDefaultPrefBranch.setCharPref(PREF_APP_UPDATE_CHANNEL, gChannel);
+  gPrefRoot.addObserver(PREF_APP_UPDATE_CHANNEL, observer, false);
 }
+
+var observer = {
+  observe: function(aSubject, aTopic, aData) {
+    if (aTopic == "nsPref:changed" && aData == PREF_APP_UPDATE_CHANNEL) {
+      var channel = gDefaultPrefBranch.getCharPref(PREF_APP_UPDATE_CHANNEL);
+      if (channel != gChannel) {
+        debugDump("Changing channel from " + channel + " to " + gChannel);
+        gDefaultPrefBranch.setCharPref(PREF_APP_UPDATE_CHANNEL, gChannel);
+      }
+    }
+  },
+  QueryInterface: XPCOMUtils.generateQI([AUS_Ci.nsIObserver])
+};
 
 /**
  * Sets the app.update.url.override preference.
@@ -423,12 +447,26 @@ function cleanUpdatesDir(aDir) {
         }
         cleanUpdatesDir(entry);
         entry.permissions = PERMS_DIRECTORY;
-        entry.remove(true);
+        try {
+          entry.remove(true);
+        }
+        catch (e) {
+          dump("cleanUpdatesDir: unable to remove directory\npath: " +
+               entry.path + "\nException: " + e + "\n");
+          throw(e);
+        }
       }
     }
     else {
       entry.permissions = PERMS_FILE;
-      entry.remove(false);
+      try {
+        entry.remove(false);
+      }
+      catch (e) {
+        dump("cleanUpdatesDir: unable to remove file\npath: " + entry.path +
+             "\nException: " + e + "\n");
+        throw(e);
+      }
     }
   }
 }
@@ -460,11 +498,26 @@ function removeDirRecursive(aDir) {
     }
     else {
       entry.permissions = PERMS_FILE;
-      entry.remove(false);
+      try {
+        entry.remove(false);
+      }
+      catch (e) {
+        dump("removeDirRecursive: unable to remove file\npath: " + entry.path +
+             "\nException: " + e + "\n");
+        throw(e);
+      }
     }
   }
+
   aDir.permissions = PERMS_DIRECTORY;
-  aDir.remove(true);
+  try {
+    aDir.remove(true);
+  }
+  catch (e) {
+    dump("removeDirRecursive: unable to remove directory\npath: " + entry.path +
+         "\nException: " + e + "\n");
+    throw(e);
+  }
 }
 
 /**

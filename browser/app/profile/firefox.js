@@ -1,4 +1,4 @@
-# -*- Mode: Java; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+# -*- Mode: JavaScript; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -57,7 +57,7 @@ pref("extensions.update.autoUpdateDefault", true);
 
 pref("extensions.hotfix.id", "firefox-hotfix@mozilla.org");
 pref("extensions.hotfix.cert.checkAttributes", true);
-pref("extensions.hotfix.certs.1.sha1Fingerprint", "F1:DB:F9:6A:7B:B8:04:FA:48:3C:16:95:C7:2F:17:C6:5B:C2:9F:45");
+pref("extensions.hotfix.certs.1.sha1Fingerprint", "CA:C4:7D:BF:63:4D:24:E9:DC:93:07:2F:E3:C8:EA:6D:C3:94:6E:89");
 
 // Disable add-ons that are not installed by the user in all scopes by default.
 // See the SCOPE constants in AddonManager.jsm for values to use here.
@@ -115,8 +115,10 @@ pref("app.update.cert.maxErrors", 5);
 //    the value for the name must be the same as the value for the attribute name
 //    on the certificate.
 // If these conditions aren't met it will be treated the same as when there is
-// no update available. This validation will not be performed when using the
-// |app.update.url.override| preference for update checking.
+// no update available. This validation will not be performed when the
+// |app.update.url.override| user preference has been set for testing updates or
+// when the |app.update.cert.checkAttributes| preference is set to false. Also,
+// the |app.update.url.override| preference should ONLY be used for testing.
 pref("app.update.certs.1.issuerName", "OU=Equifax Secure Certificate Authority,O=Equifax,C=US");
 pref("app.update.certs.1.commonName", "aus3.mozilla.org");
 
@@ -147,7 +149,7 @@ pref("app.update.silent", false);
 
 // If set to true, the Update Service will apply updates in the background
 // when it finishes downloading them.
-pref("app.update.stage.enabled", true);
+pref("app.update.staging.enabled", true);
 
 // Update service URL:
 pref("app.update.url", "https://aus3.mozilla.org/update/3/%PRODUCT%/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml");
@@ -194,7 +196,6 @@ pref("extensions.update.background.url", "https://versioncheck-bg.addons.mozilla
 pref("extensions.update.interval", 86400);  // Check for updates to Extensions and 
                                             // Themes every day
 // Non-symmetric (not shared by extensions) extension-specific [update] preferences
-pref("extensions.getMoreThemesURL", "https://addons.mozilla.org/%LOCALE%/firefox/getpersonas");
 pref("extensions.dss.enabled", false);          // Dynamic Skin Switching                                               
 pref("extensions.dss.switchPending", false);    // Non-dynamic switch pending after next
                                                 // restart.
@@ -204,6 +205,7 @@ pref("extensions.{972ce4c6-7e08-4474-a285-3208198ce6fd}.description", "chrome://
 
 pref("xpinstall.whitelist.add", "addons.mozilla.org");
 pref("xpinstall.whitelist.add.36", "getpersonas.com");
+pref("xpinstall.whitelist.add.180", "marketplace.firefox.com");
 
 pref("lightweightThemes.update.enabled", true);
 
@@ -221,6 +223,8 @@ pref("general.autoScroll", false);
 #else
 pref("general.autoScroll", true);
 #endif
+
+pref("general.useragent.complexOverride.moodle", false); // bug 797703
 
 // At startup, check if we're the default browser and prompt user if not.
 pref("browser.shell.checkDefaultBrowser", true);
@@ -326,6 +330,13 @@ pref("browser.download.useToolkitUI", true);
 // This controls retention behavior in the Downloads Panel only.
 pref("browser.download.panel.removeFinishedDownloads", false);
 
+// This records whether or not the panel has been shown at least once.
+pref("browser.download.panel.shown", false);
+
+// This records whether or not at least one session with the Downloads Panel
+// enabled has been completed already.
+pref("browser.download.panel.firstSessionCompleted", false);
+
 // search engines URL
 pref("browser.search.searchEnginesURL",      "https://addons.mozilla.org/%LOCALE%/firefox/search-engines/");
 
@@ -379,6 +390,7 @@ pref("browser.tabs.autoHide", false);
 pref("browser.tabs.closeWindowWithLastTab", true);
 pref("browser.tabs.insertRelatedAfterCurrent", true);
 pref("browser.tabs.warnOnClose", true);
+pref("browser.tabs.warnOnCloseOtherTabs", true);
 pref("browser.tabs.warnOnOpen", true);
 pref("browser.tabs.maxOpenBeforeWarn", 15);
 pref("browser.tabs.loadInBackground", true);
@@ -510,39 +522,23 @@ pref("browser.gesture.twist.right", "");
 pref("browser.gesture.twist.left", "");
 pref("browser.gesture.tap", "cmd_fullZoomReset");
 
-// 0=lines, 1=pages, 2=history , 3=text size
+// 0: Nothing happens
+// 1: Scrolling contents
+// 2: Go back or go forward, in your history
+// 3: Zoom in or out.
 #ifdef XP_MACOSX
 // On OS X, if the wheel has one axis only, shift+wheel comes through as a
 // horizontal scroll event. Thus, we can't assign anything other than normal
 // scrolling to shift+wheel.
-pref("mousewheel.withshiftkey.action",0);
-pref("mousewheel.withshiftkey.sysnumlines",true);
-pref("mousewheel.withshiftkey.numlines",1);
-pref("mousewheel.withaltkey.action",2);
-pref("mousewheel.withaltkey.sysnumlines",false);
-pref("mousewheel.withaltkey.numlines",1);
-pref("mousewheel.withmetakey.action",0);
-pref("mousewheel.withmetakey.sysnumlines",false);
-pref("mousewheel.withmetakey.numlines",1);
+pref("mousewheel.with_alt.action", 2);
+pref("mousewheel.with_shift.action", 1);
 #else
-pref("mousewheel.withshiftkey.action",2);
-pref("mousewheel.withshiftkey.sysnumlines",false);
-pref("mousewheel.withshiftkey.numlines",1);
-pref("mousewheel.withaltkey.action",0);
-pref("mousewheel.withaltkey.sysnumlines",false);
-pref("mousewheel.withaltkey.numlines",1);
-pref("mousewheel.withmetakey.action",0);
-pref("mousewheel.withmetakey.sysnumlines",true);
-pref("mousewheel.withmetakey.numlines",1);
+pref("mousewheel.with_alt.action", 1);
+pref("mousewheel.with_shift.action", 2);
 #endif
-pref("mousewheel.withcontrolkey.action",3);
-pref("mousewheel.withcontrolkey.sysnumlines",false);
-pref("mousewheel.withcontrolkey.numlines",1);
-
-// pref to control the alert notification 
-pref("alerts.slideIncrement", 1);
-pref("alerts.slideIncrementTime", 10);
-pref("alerts.totalOpenTime", 4000);
+pref("mousewheel.with_control.action",3);
+pref("mousewheel.with_meta.action", 1);  // command key on Mac
+pref("mousewheel.with_win.action", 1);
 
 pref("browser.xul.error_pages.enabled", true);
 pref("browser.xul.error_pages.expert_bad_cert", false);
@@ -571,13 +567,6 @@ pref("network.protocol-handler.expose.news", false);
 pref("network.protocol-handler.expose.snews", false);
 pref("network.protocol-handler.expose.nntp", false);
 
-// Default security warning dialogs to show once.
-pref("security.warn_entering_secure.show_once", false);
-pref("security.warn_entering_weak.show_once", true);
-pref("security.warn_leaving_secure.show_once", false);
-pref("security.warn_viewing_mixed.show_once", true);
-pref("security.warn_submit_insecure.show_once", false);
-
 pref("accessibility.typeaheadfind", false);
 pref("accessibility.typeaheadfind.timeout", 5000);
 pref("accessibility.typeaheadfind.linksonly", false);
@@ -591,7 +580,6 @@ pref("plugins.hide_infobar_for_missing_plugin", false);
 pref("plugins.hide_infobar_for_outdated_plugin", false);
 
 #ifdef XP_MACOSX
-pref("plugins.use_layers", true);
 pref("plugins.hide_infobar_for_carbon_failure_plugin", false);
 #endif
 
@@ -715,33 +703,22 @@ pref("gecko.handlerService.schemes.ircs.3.uriTemplate", "chrome://browser-region
 pref("gecko.handlerService.allowRegisterFromDifferentHost", false);
 
 #ifdef MOZ_SAFE_BROWSING
-// Safe browsing does nothing unless this pref is set
 pref("browser.safebrowsing.enabled", true);
-
-// Prevent loading of pages identified as malware
 pref("browser.safebrowsing.malware.enabled", true);
+pref("browser.safebrowsing.debug", false);
 
-// Non-enhanced mode (local url lists) URL list to check for updates
-pref("browser.safebrowsing.provider.0.updateURL", "http://safebrowsing.clients.google.com/safebrowsing/downloads?client={moz:client}&appver={moz:version}&pver=2.2");
+pref("browser.safebrowsing.updateURL", "http://safebrowsing.clients.google.com/safebrowsing/downloads?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2");
+pref("browser.safebrowsing.keyURL", "https://sb-ssl.google.com/safebrowsing/newkey?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2");
+pref("browser.safebrowsing.gethashURL", "http://safebrowsing.clients.google.com/safebrowsing/gethash?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2");
+pref("browser.safebrowsing.reportURL", "http://safebrowsing.clients.google.com/safebrowsing/report?");
+pref("browser.safebrowsing.reportGenericURL", "http://%LOCALE%.phish-generic.mozilla.com/?hl=%LOCALE%");
+pref("browser.safebrowsing.reportErrorURL", "http://%LOCALE%.phish-error.mozilla.com/?hl=%LOCALE%");
+pref("browser.safebrowsing.reportPhishURL", "http://%LOCALE%.phish-report.mozilla.com/?hl=%LOCALE%");
+pref("browser.safebrowsing.reportMalwareURL", "http://%LOCALE%.malware-report.mozilla.com/?hl=%LOCALE%");
+pref("browser.safebrowsing.reportMalwareErrorURL", "http://%LOCALE%.malware-error.mozilla.com/?hl=%LOCALE%");
 
-pref("browser.safebrowsing.dataProvider", 0);
-
-// Does the provider name need to be localizable?
-pref("browser.safebrowsing.provider.0.name", "Google");
-pref("browser.safebrowsing.provider.0.keyURL", "https://sb-ssl.google.com/safebrowsing/newkey?client={moz:client}&appver={moz:version}&pver=2.2");
-pref("browser.safebrowsing.provider.0.reportURL", "http://safebrowsing.clients.google.com/safebrowsing/report?");
-pref("browser.safebrowsing.provider.0.gethashURL", "http://safebrowsing.clients.google.com/safebrowsing/gethash?client={moz:client}&appver={moz:version}&pver=2.2");
-
-// HTML report pages
-pref("browser.safebrowsing.provider.0.reportGenericURL", "http://{moz:locale}.phish-generic.mozilla.com/?hl={moz:locale}");
-pref("browser.safebrowsing.provider.0.reportErrorURL", "http://{moz:locale}.phish-error.mozilla.com/?hl={moz:locale}");
-pref("browser.safebrowsing.provider.0.reportPhishURL", "http://{moz:locale}.phish-report.mozilla.com/?hl={moz:locale}");
-pref("browser.safebrowsing.provider.0.reportMalwareURL", "http://{moz:locale}.malware-report.mozilla.com/?hl={moz:locale}");
-pref("browser.safebrowsing.provider.0.reportMalwareErrorURL", "http://{moz:locale}.malware-error.mozilla.com/?hl={moz:locale}");
-
-// FAQ URLs
 pref("browser.safebrowsing.warning.infoURL", "http://www.mozilla.com/%LOCALE%/firefox/phishing-protection/");
-pref("browser.geolocation.warning.infoURL", "http://www.mozilla.com/%LOCALE%/firefox/geolocation/");
+pref("browser.safebrowsing.malware.reportURL", "http://safebrowsing.clients.google.com/safebrowsing/diagnostic?client=%NAME%&hl=%LOCALE%&site=");
 
 // Name of the about: page contributed by safebrowsing to handle display of error
 // pages on phishing/malware hits.  (bug 399233)
@@ -750,24 +727,19 @@ pref("urlclassifier.alternate_error_page", "blocked");
 // The number of random entries to send with a gethash request.
 pref("urlclassifier.gethashnoise", 4);
 
+// Randomize all UrlClassifier data with a per-client key.
+pref("urlclassifier.randomizeclient", false);
+
 // The list of tables that use the gethash request to confirm partial results.
 pref("urlclassifier.gethashtables", "goog-phish-shavar,goog-malware-shavar");
 
 // If an urlclassifier table has not been updated in this number of seconds,
 // a gethash request will be forced to check that the result is still in
 // the database.
-pref("urlclassifier.confirm-age", 2700);
-
-// Maximum size of the sqlite3 cache during an update, in bytes
-pref("urlclassifier.updatecachemax", 41943040);
-
-// Maximum size of the sqlite3 cache for lookups, in bytes
-pref("urlclassifier.lookupcachemax", 1048576);
-
-// URL for checking the reason for a malware warning.
-pref("browser.safebrowsing.malware.reportURL", "http://safebrowsing.clients.google.com/safebrowsing/diagnostic?client=%NAME%&hl=%LOCALE%&site=");
-
+pref("urlclassifier.max-complete-age", 2700);
 #endif
+
+pref("browser.geolocation.warning.infoURL", "http://www.mozilla.com/%LOCALE%/firefox/geolocation/");
 
 pref("browser.EULA.version", 3);
 pref("browser.rights.version", 3);
@@ -1009,11 +981,6 @@ pref("services.sync.prefs.sync.security.OCSP.require", true);
 pref("services.sync.prefs.sync.security.default_personal_cert", true);
 pref("services.sync.prefs.sync.security.enable_ssl3", true);
 pref("services.sync.prefs.sync.security.enable_tls", true);
-pref("services.sync.prefs.sync.security.warn_entering_secure", true);
-pref("services.sync.prefs.sync.security.warn_entering_weak", true);
-pref("services.sync.prefs.sync.security.warn_leaving_secure", true);
-pref("services.sync.prefs.sync.security.warn_submit_insecure", true);
-pref("services.sync.prefs.sync.security.warn_viewing_mixed", true);
 pref("services.sync.prefs.sync.signon.rememberSignons", true);
 pref("services.sync.prefs.sync.spellchecker.dictionary", true);
 pref("services.sync.prefs.sync.xpinstall.whitelist.required", true);
@@ -1023,8 +990,10 @@ pref("services.sync.prefs.sync.xpinstall.whitelist.required", true);
 pref("devtools.errorconsole.enabled", false);
 
 // Developer toolbar and GCLI preferences
-pref("devtools.toolbar.enabled", false);
+pref("devtools.toolbar.enabled", true);
+pref("devtools.toolbar.visible", false);
 pref("devtools.gcli.allowSet", false);
+pref("devtools.commands.dir", "");
 
 // Enable the Inspector
 pref("devtools.inspector.enabled", true);
@@ -1032,8 +1001,7 @@ pref("devtools.inspector.htmlHeight", 112);
 pref("devtools.inspector.htmlPanelOpen", false);
 pref("devtools.inspector.sidebarOpen", false);
 pref("devtools.inspector.activeSidebar", "ruleview");
-pref("devtools.inspector.highlighterShowVeil", true);
-pref("devtools.inspector.highlighterShowInfobar", true);
+pref("devtools.inspector.markupPreview", false);
 
 // Enable the Layout View
 pref("devtools.layoutview.enabled", true);
@@ -1044,18 +1012,24 @@ pref("devtools.responsiveUI.enabled", true);
 
 // Enable the Debugger
 pref("devtools.debugger.enabled", true);
-pref("devtools.debugger.chrome-enabled", false);
+pref("devtools.debugger.chrome-enabled", true);
 pref("devtools.debugger.remote-host", "localhost");
 pref("devtools.debugger.remote-autoconnect", false);
 pref("devtools.debugger.remote-connection-retries", 3);
-pref("devtools.debugger.remote-timeout", 3000);
+pref("devtools.debugger.remote-timeout", 20000);
 
 // The default Debugger UI settings
 pref("devtools.debugger.ui.height", 250);
-pref("devtools.debugger.ui.remote-win.width", 900);
-pref("devtools.debugger.ui.remote-win.height", 400);
+pref("devtools.debugger.ui.win-x", 0);
+pref("devtools.debugger.ui.win-y", 0);
+pref("devtools.debugger.ui.win-width", 900);
+pref("devtools.debugger.ui.win-height", 400);
 pref("devtools.debugger.ui.stackframes-width", 200);
 pref("devtools.debugger.ui.variables-width", 300);
+pref("devtools.debugger.ui.panes-visible-on-startup", false);
+pref("devtools.debugger.ui.variables-sorting-enabled", true);
+pref("devtools.debugger.ui.variables-non-enum-visible", true);
+pref("devtools.debugger.ui.variables-searchbox-visible", false);
 
 // Enable the style inspector
 pref("devtools.styleinspector.enabled", true);
@@ -1070,6 +1044,11 @@ pref("devtools.ruleview.enabled", true);
 
 // Enable the Scratchpad tool.
 pref("devtools.scratchpad.enabled", true);
+
+// The maximum number of recently-opened files stored.
+// Setting this preference to 0 will not clear any recent files, but rather hide
+// the 'Open Recent'-menu.
+pref("devtools.scratchpad.recentFilesMax", 10);
 
 // Enable the Style Editor.
 pref("devtools.styleeditor.enabled", true);
@@ -1096,7 +1075,7 @@ pref("devtools.hud.height", 0);
 //   above - above the web page,
 //   below - below the web page,
 //   window - in a separate window/popup panel.
-pref("devtools.webconsole.position", "above");
+pref("devtools.webconsole.position", "below");
 
 // Remember the Web Console filters
 pref("devtools.webconsole.filter.network", true);
@@ -1109,6 +1088,9 @@ pref("devtools.webconsole.filter.error", true);
 pref("devtools.webconsole.filter.warn", true);
 pref("devtools.webconsole.filter.info", true);
 pref("devtools.webconsole.filter.log", true);
+
+// Text size in the Web Console. Use 0 for the system default size.
+pref("devtools.webconsole.fontSize", 0);
 
 // The number of lines that are displayed in the web console for the Net,
 // CSS, JS and Web Developer categories.
@@ -1142,9 +1124,17 @@ pref("browser.panorama.animate_zoom", true);
 
 // Defines the url to be used for new tabs.
 pref("browser.newtab.url", "about:blank");
+// Activates preloading of the new tab url.
+pref("browser.newtab.preload", false);
 
 // Toggles the content of 'about:newtab'. Shows the grid when enabled.
 pref("browser.newtabpage.enabled", true);
+
+// number of rows of newtab grid
+pref("browser.newtabpage.rows", 5);
+
+// number of columns of newtab grid
+pref("browser.newtabpage.columns", 4);
 
 // Enable the DOM fullscreen API.
 pref("full-screen-api.enabled", true);
@@ -1159,13 +1149,13 @@ pref("full-screen-api.approval-required", true);
 // (this pref has no effect if more than 6 hours have passed since the last crash)
 pref("toolkit.startup.max_resumed_crashes", 3);
 
-// Completely disable pdf.js as an option to preview pdfs within Pale Moon.
+// Completely disable pdf.js as an option to preview pdfs within firefox.
 // Note: if this is not disabled it does not necessarily mean pdf.js is the pdf
 // handler just that it is an option.
 pref("pdfjs.disabled", true);
 // Used by pdf.js to know the first time firefox is run with it installed so it
 // can become the default pdf viewer.
-pref("pdfjs.firstRun", false);
+pref("pdfjs.firstRun", true);
 // The values of preferredAction and alwaysAskBeforeHandling before pdf.js
 // became the default.
 pref("pdfjs.previousHandler.preferredAction", 0);
@@ -1175,6 +1165,18 @@ pref("pdfjs.previousHandler.alwaysAskBeforeHandling", false);
 // might keep around more than this, but we'll try to get down to this value).
 // (This is intentionally on the high side; see bug 746055.)
 pref("image.mem.max_decoded_image_kb", 256000);
+
+// Example social provider
+pref("social.manifest.facebook", "{\"origin\":\"https://www.facebook.com\",\"name\":\"Facebook Messenger\",\"workerURL\":\"https://www.facebook.com/desktop/fbdesktop2/socialfox/fbworker.js.php\",\"iconURL\":\"data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8%2F9hAAAAX0lEQVQ4jWP4%2F%2F8%2FAyUYTFhHzjgDxP9JxGeQDSBVMxgTbUBCxer%2Fr999%2BQ8DJBuArJksA9A10s8AXIBoA0B%2BR%2FY%2FjD%2BEwoBoA1yT5v3PbdmCE8MAshhID%2FUMoDgzUYIBj0Cgi7ar4coAAAAASUVORK5CYII%3D\",\"sidebarURL\":\"https://www.facebook.com/desktop/fbdesktop2/?socialfox=true\"}");
+// Comma-separated list of nsIURI::prePaths that are allowed to activate
+// built-in social functionality.
+pref("social.activation.whitelist", "https://www.facebook.com");
+pref("social.sidebar.open", true);
+pref("social.sidebar.unload_timeout_ms", 10000);
+pref("social.active", false);
+pref("social.toast-notifications.enabled", true);
+
+pref("dom.identity.enabled", false);
 
 //Pale Moon padlock overlay preferences
 pref("browser.padlock.shown", true);
@@ -1187,3 +1189,6 @@ pref("browser.padlock.shown", true);
 pref("browser.padlock.style", 1);
 // address bar border, 0 = no border, 1 = border
 pref("browser.padlock.urlbar_background", 1);
+
+//Pale Moon standalone image background color
+pref("browser.display.standalone_images.background_color", "#2E3B41");

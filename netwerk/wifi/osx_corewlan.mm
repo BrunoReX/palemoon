@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #import <Cocoa/Cocoa.h>
+#import <CoreWLAN/CoreWLAN.h>
 
 #include <mach-o/dyld.h>
 #include <dlfcn.h>
@@ -18,7 +19,7 @@
 #include "nsWifiAccessPoint.h"
 
 BOOL UsingSnowLeopard() {
-  static PRInt32 gOSXVersion = 0x0;
+  static int32_t gOSXVersion = 0x0;
   if (gOSXVersion == 0x0) {
     Gestalt(gestaltSystemVersion, (SInt32*)&gOSXVersion);
   }

@@ -1,13 +1,14 @@
-# -*- Mode: Java; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 var args
 
 var XPInstallConfirm = {};
 
-XPInstallConfirm.init = function ()
+XPInstallConfirm.init = function XPInstallConfirm_init()
 {
   var _installCountdown;
   var _installCountdownInterval;
@@ -29,25 +30,25 @@ XPInstallConfirm.init = function ()
   var itemList = document.getElementById("itemList");
   
   var numItemsToInstall = args.installs.length;
-  for (var i = 0; i < numItemsToInstall; ++i) {
+  for (let install of args.installs) {
     var installItem = document.createElement("installitem");
     itemList.appendChild(installItem);
 
-    installItem.name = args.installs[i].addon.name;
-    installItem.url = args.installs[i].sourceURI.spec;
-    var icon = args.installs[i].iconURL;
+    installItem.name = install.addon.name;
+    installItem.url = install.sourceURI.spec;
+    var icon = install.iconURL;
     if (icon)
       installItem.icon = icon;
-    var type = args.installs[i].type;
+    var type = install.type;
     if (type)
       installItem.type = type;
-    if (args.installs[i].certName) {
-      installItem.cert = bundle.getFormattedString("signed", [args.installs[i].certName]);
+    if (install.certName) {
+      installItem.cert = bundle.getFormattedString("signed", [install.certName]);
     }
     else {
       installItem.cert = bundle.getString("unverified");
     }
-    installItem.signed = args.installs[i].certName ? "true" : "false";
+    installItem.signed = install.certName ? "true" : "false";
   }
   
   var introString = bundle.getString("itemWarnIntroSingle");
@@ -135,18 +136,20 @@ XPInstallConfirm.init = function ()
     okButton.label = bundle.getString("installButtonLabel");
 }
 
-XPInstallConfirm.onOK = function ()
+XPInstallConfirm.onOK = function XPInstallConfirm_onOk()
 {
-  args.installs.forEach(function(install) {
+  Components.classes["@mozilla.org/base/telemetry;1"].
+    getService(Components.interfaces.nsITelemetry).
+    getHistogramById("SECURITY_UI").
+    add(Components.interfaces.nsISecurityUITelemetry.WARNING_CONFIRM_ADDON_INSTALL_CLICK_THROUGH);
+  for (let install of args.installs)
     install.install();
-  });
   return true;
 }
 
-XPInstallConfirm.onCancel = function ()
+XPInstallConfirm.onCancel = function XPInstallConfirm_onCancel()
 {
-  args.installs.forEach(function(install) {
+  for (let install of args.installs)
     install.cancel();
-  });
   return true;
 }

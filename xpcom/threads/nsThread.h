@@ -14,9 +14,11 @@
 #include "nsThreadUtils.h"
 #include "nsString.h"
 #include "nsTObserverArray.h"
+#include "mozilla/Attributes.h"
 
 // A native thread
-class nsThread : public nsIThreadInternal, public nsISupportsPriority
+class nsThread MOZ_FINAL : public nsIThreadInternal,
+                           public nsISupportsPriority
 {
 public:
   NS_DECL_ISUPPORTS
@@ -30,7 +32,7 @@ public:
     NOT_MAIN_THREAD
   };
 
-  nsThread(MainThreadFlag aMainThread, PRUint32 aStackSize);
+  nsThread(MainThreadFlag aMainThread, uint32_t aStackSize);
 
   // Initialize this as a wrapper for a new PRThread.
   nsresult Init();
@@ -48,12 +50,17 @@ public:
   // Clear the observer list.
   void ClearObservers() { mEventObservers.Clear(); }
 
+  static nsresult
+  SetMainThreadObserver(nsIThreadObserver* aObserver);
+
 private:
+  static nsIThreadObserver* sMainThreadObserver;
+
   friend class nsThreadShutdownEvent;
 
   ~nsThread();
 
-  bool ShuttingDown() { return mShutdownContext != nsnull; }
+  bool ShuttingDown() { return mShutdownContext != nullptr; }
 
   static void ThreadFunc(void *arg);
 
@@ -84,15 +91,14 @@ private:
 
   nsEventQueue  mEvents;
 
-  PRInt32   mPriority;
+  int32_t   mPriority;
   PRThread *mThread;
-  PRUint32  mRunningEvent;  // counter
-  PRUint32  mStackSize;
+  uint32_t  mRunningEvent;  // counter
+  uint32_t  mStackSize;
 
   struct nsThreadShutdownContext *mShutdownContext;
 
   bool mShutdownRequired;
-  bool mShutdownPending;
   // Set to true when events posted to this thread will never run.
   bool mEventsAreDoomed;
   MainThreadFlag mIsMainThread;
@@ -107,7 +113,7 @@ public:
   }
 
   bool IsPending() {
-    return mSyncTask != nsnull;
+    return mSyncTask != nullptr;
   }
 
   nsresult Result() {

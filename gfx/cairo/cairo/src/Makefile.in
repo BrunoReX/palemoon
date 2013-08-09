@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH           = ../../../..
+DEPTH           = @DEPTH@
 topsrcdir       = @top_srcdir@
 srcdir          = @srcdir@
 VPATH           = @srcdir@
@@ -14,6 +14,7 @@ LIBRARY_NAME    = mozcairo
 LIBXUL_LIBRARY = 1
 
 ifdef GNU_CC
+OS_CFLAGS := $(filter-out -pedantic,$(OS_CFLAGS))
 OS_CXXFLAGS := $(filter-out -pedantic,$(OS_CXXFLAGS))
 ifeq ($(OS_TARGET),Android)
 MODULE_OPTIMIZE_FLAGS = -O2
@@ -210,9 +211,12 @@ FORCE_STATIC_LIB = 1
 
 include $(topsrcdir)/config/rules.mk
 
-# Disable spammy "missing initializer" GCC warning
 ifdef GNU_CC
+# Disable spammy "missing initializer" GCC warning
 CFLAGS += -Wno-missing-field-initializers
+
+# Disable spammy "implicit conversion from enumeration type 'cairo_" warnings.
+CFLAGS += -Wno-conversion
 endif # GNU_CC
 
 DEFINES += -DPACKAGE_VERSION="\"moz\"" -DPACKAGE_BUGREPORT="\"http://bugzilla.mozilla.org/\""
@@ -237,4 +241,4 @@ DEFINES += -DHAVE_FT_LIBRARY_SETLCDFILTER -DFT_LCD_FILTER_H="$(topsrcdir)/module
 endif
 
 cairo-features.h: $(srcdir)/cairo-features.h.in $(GLOBAL_DEPS)
-	$(PERL) $(AUTOCONF_TOOLS)/make-makefile -t $(topsrcdir) -d $(DEPTH) ./$@
+	$(PYTHON) $(DEPTH)/config.status -n --file=$@

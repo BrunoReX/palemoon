@@ -25,7 +25,7 @@ namespace js {
  * and saved versions. If deserialization fails, the data should be
  * invalidated if possible.
  */
-static const uint32_t XDR_BYTECODE_VERSION = uint32_t(0xb973c0de - 117);
+static const uint32_t XDR_BYTECODE_VERSION = uint32_t(0xb973c0de - 133);
 
 class XDRBuffer {
   public:
@@ -256,8 +256,8 @@ class XDRState {
 
     bool codeChars(jschar *chars, size_t nchars);
 
-    bool codeFunction(JSObject **objp);
-    bool codeScript(JSScript **scriptp);
+    bool codeFunction(JSMutableHandleObject objp);
+    bool codeScript(JSMutableHandleScript scriptp);
 
     void initScriptPrincipals(JSScript *script) {
         JS_ASSERT(mode == XDR_DECODE);

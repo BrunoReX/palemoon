@@ -19,6 +19,7 @@
 #include "prlog.h"
 
 #include "nsWindowsDllInterceptor.h"
+#include "nsWindowsHelpers.h"
 
 using namespace mozilla;
 
@@ -53,6 +54,11 @@ struct DllBlockInfo {
   // encoded as 0x AAAA BBBB CCCC DDDD ULL (spaces added for clarity),
   // but it's not required to be of that format.
   unsigned long long maxVersion;
+
+  enum {
+    FLAGS_DEFAULT = 0,
+    BLOCK_WIN8PLUS_ONLY = 1
+  } flags;
 };
 
 static DllBlockInfo sWindowsDllBlocklist[] = {
@@ -104,6 +110,14 @@ static DllBlockInfo sWindowsDllBlocklist[] = {
   {"rf-firefox.dll", MAKE_VERSION(7,6,1,0)},
   {"roboform.dll", MAKE_VERSION(7,6,1,0)},
 
+  // Topcrash with Babylon Toolbar on FF16+ (bug 721264)
+  {"babyfox.dll", ALL_VERSIONS},
+
+  {"sprotector.dll", ALL_VERSIONS, DllBlockInfo::BLOCK_WIN8PLUS_ONLY },
+
+  // Topcrash with Websense Endpoint, bug 828184
+  {"qipcap.dll", MAKE_VERSION(7, 6, 815, 1)},
+
   // leave these two in always for tests
   { "mozdllblockingtest.dll", ALL_VERSIONS },
   { "mozdllblockingtest_versioned.dll", 0x0000000400000000ULL },
@@ -141,7 +155,7 @@ struct RVAMap {
                                 sizeof(T) + (offset - alignedOffset));
 
     mMappedView = mRealView ? reinterpret_cast<T*>((char*)mRealView + (offset - alignedOffset)) :
-                              nsnull;
+                              nullptr;
   }
   ~RVAMap() {
     if (mRealView) {
@@ -154,18 +168,6 @@ private:
   const T* mMappedView;
   void* mRealView;
 };
-
-bool
-IsVistaOrLater()
-{
-  OSVERSIONINFO info;
-
-  ZeroMemory(&info, sizeof(OSVERSIONINFO));
-  info.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-  GetVersionEx(&info);
-
-  return info.dwMajorVersion >= 6;
-}
 
 bool
 CheckASLR(const wchar_t* path)
@@ -269,18 +271,28 @@ wchar_t* getFullPath (PWCHAR filePath, wchar_t* fname)
   // figure out the length of the string that we need
   DWORD pathlen = SearchPathW(sanitizedFilePath, fname, L".dll", 0, NULL, NULL);
   if (pathlen == 0) {
-    return nsnull;
+    return nullptr;
   }
 
   wchar_t* full_fname = new wchar_t[pathlen+1];
   if (!full_fname) {
     // couldn't allocate memory?
-    return nsnull;
+    return nullptr;
   }
 
   // now actually grab it
   SearchPathW(sanitizedFilePath, fname, L".dll", pathlen+1, full_fname, NULL);
   return full_fname;
+}
+
+static bool
+IsWin8OrLater()
+{
+  OSVERSIONINFOW osInfo;
+  osInfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFOW);
+  GetVersionExW(&osInfo);
+  return (osInfo.dwMajorVersion > 6) ||
+    (osInfo.dwMajorVersion >= 6 && osInfo.dwMinorVersion >= 2);
 }
 
 static NTSTATUS NTAPI
@@ -369,6 +381,11 @@ patched_LdrLoadDll (PWCHAR filePath, PULONG flags, PUNICODE_STRING moduleFileNam
 #ifdef DEBUG_very_verbose
     printf_stderr("LdrLoadDll: info->name: '%s'\n", info->name);
 #endif
+
+    if ((info->flags == DllBlockInfo::BLOCK_WIN8PLUS_ONLY) &&
+        !IsWin8OrLater()) {
+      goto continue_loading;
+    }
 
     if (info->maxVersion != ALL_VERSIONS) {
       ReentrancySentinel sentinel(dllName);

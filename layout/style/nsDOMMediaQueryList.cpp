@@ -20,7 +20,7 @@ nsDOMMediaQueryList::nsDOMMediaQueryList(nsPresContext *aPresContext,
   PR_INIT_CLIST(this);
 
   nsCSSParser parser;
-  parser.ParseMediaList(aMediaQueryList, nsnull, 0, mMediaList, false);
+  parser.ParseMediaList(aMediaQueryList, nullptr, 0, mMediaList, false);
 }
 
 nsDOMMediaQueryList::~nsDOMMediaQueryList()
@@ -33,14 +33,14 @@ nsDOMMediaQueryList::~nsDOMMediaQueryList()
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsDOMMediaQueryList)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsDOMMediaQueryList)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mPresContext)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSTARRAY_OF_NSCOMPTR(mListeners)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPresContext)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mListeners)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsDOMMediaQueryList)
 if (tmp->mPresContext) {
   PR_REMOVE_LINK(tmp);
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mPresContext)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mPresContext)
 }
 tmp->RemoveAllListeners();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
@@ -140,7 +140,7 @@ nsDOMMediaQueryList::RecomputeMatches()
     return;
   }
 
-  mMatches = mMediaList->Matches(mPresContext, nsnull);
+  mMatches = mMediaList->Matches(mPresContext, nullptr);
   mMatchesValid = true;
 }
 
@@ -153,7 +153,7 @@ nsDOMMediaQueryList::MediumFeaturesChanged(NotifyList &aListenersToNotify)
     bool oldMatches = mMatches;
     RecomputeMatches();
     if (mMatches != oldMatches) {
-      for (PRUint32 i = 0, i_end = mListeners.Length(); i != i_end; ++i) {
+      for (uint32_t i = 0, i_end = mListeners.Length(); i != i_end; ++i) {
         HandleChangeData *d = aListenersToNotify.AppendElement();
         if (d) {
           d->mql = this;

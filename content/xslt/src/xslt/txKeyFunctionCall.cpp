@@ -69,7 +69,7 @@ txKeyFunctionCall::evaluate(txIEvalContext* aContext, txAExprResult** aResult)
         rv = aContext->recycler()->getNodeSet(getter_AddRefs(res));
         NS_ENSURE_SUCCESS(rv, rv);
 
-        PRInt32 i;
+        int32_t i;
         for (i = 0; i < nodeSet->size(); ++i) {
             nsAutoString val;
             txXPathNodeUtils::appendNodeValue(nodeSet->get(i), val);
@@ -171,9 +171,9 @@ txKeyHash::getKeyNodes(const txExpandedName& aKeyName,
                        txExecutionState& aEs,
                        txNodeSet** aResult)
 {
-    *aResult = nsnull;
+    *aResult = nullptr;
 
-    PRInt32 identifier = txXPathNodeUtils::getUniqueIdentifier(aRoot);
+    int32_t identifier = txXPathNodeUtils::getUniqueIdentifier(aRoot);
 
     txKeyValueHashKey valueKey(aKeyName, identifier, aKeyValue);
     txKeyValueHashEntry* valueEntry = mKeyValues.GetEntry(valueKey);
@@ -241,7 +241,7 @@ txKeyHash::init()
 {
     mKeyValues.Init(8);
     mIndexedKeys.Init(1);
-    mEmptyNodeSet = new txNodeSet(nsnull);
+    mEmptyNodeSet = new txNodeSet(nullptr);
 
     return NS_OK;
 }
@@ -337,7 +337,7 @@ nsresult txXSLKey::testNode(const txXPathNode& aNode,
                             txExecutionState& aEs)
 {
     nsAutoString val;
-    PRUint32 currKey, numKeys = mKeys.Length();
+    uint32_t currKey, numKeys = mKeys.Length();
     for (currKey = 0; currKey < numKeys; ++currKey) {
         if (mKeys[currKey].matchPattern->matches(aNode, &aEs)) {
             txSingleNodeContext *evalContext =
@@ -358,7 +358,7 @@ nsresult txXSLKey::testNode(const txXPathNode& aNode,
                 txNodeSet* res = static_cast<txNodeSet*>
                                             (static_cast<txAExprResult*>
                                                         (exprResult));
-                PRInt32 i;
+                int32_t i;
                 for (i = 0; i < res->size(); ++i) {
                     val.Truncate();
                     txXPathNodeUtils::appendNodeValue(res->get(i), val);

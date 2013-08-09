@@ -2,14 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
-relativesrcdir	= content/media/test
+relativesrcdir	= @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
-include $(topsrcdir)/config/rules.mk
 
 # Media tests should be backend independent, i.e., not conditioned on
 # MOZ_OGG, MOZ_WAVE etc. (The only exception is the can_play_type tests,
@@ -34,7 +33,7 @@ include $(topsrcdir)/config/rules.mk
 # make the test first check canPlayType for the type, and if it's not
 # supported, just do ok(true, "Type not supported") and stop the test.
 
-_TEST_FILES = \
+MOCHITEST_FILES = \
 		allowed.sjs \
 		can_play_type_ogg.js \
 		can_play_type_wave.js \
@@ -67,10 +66,6 @@ _TEST_FILES = \
 		test_audio1.html \
 		test_audio2.html \
 		test_autoplay.html \
-		test_autoplay_contentEditable.html \
-		test_buffered.html \
-		test_bug448534.html \
-		test_bug463162.xhtml \
 		test_bug465498.html \
 		test_bug493187.html \
 		test_bug495145.html \
@@ -82,18 +77,16 @@ _TEST_FILES = \
 		test_controls.html \
 		test_currentTime.html \
 		test_decode_error.html \
-		test_decoder_disable.html \
 		test_defaultMuted.html \
 		test_delay_load.html \
 		test_error_on_404.html \
-		test_error_in_video_document.html \
 		test_info_leak.html \
 		test_load.html \
 		test_load_candidates.html \
 		test_load_same_resource.html \
 		test_load_source.html \
 		test_loop.html \
-		test_media_selection.html \
+		test_metadata.html \
 		test_mozLoadFrom.html \
 		test_no_load_event.html \
 		test_networkState.html \
@@ -103,7 +96,6 @@ _TEST_FILES = \
 		test_play_events.html \
 		test_play_events_2.html \
 		test_played.html \
-		test_playback.html \
 		test_playback_errors.html \
 		test_seekable1.html \
 		test_preload_actions.html \
@@ -114,15 +106,11 @@ _TEST_FILES = \
 		test_replay_metadata.html \
 		test_seek.html \
 		test_seek2.html \
-		test_seekLies.html \
 		test_seek_out_of_range.html \
 		test_source.html \
 		test_source_write.html \
 	        test_source_null.html \
 		test_standalone.html \
-		test_streams_element_capture.html \
-		test_streams_element_capture_reset.html \
-		test_timeupdate_small_files.html \
 		test_too_many_elements.html \
 		test_volume.html \
 		test_video_to_canvas.html \
@@ -130,11 +118,37 @@ _TEST_FILES = \
 		test_audiowrite.html \
 		test_mozHasAudio.html \
 		test_source_media.html \
+		test_autoplay_contentEditable.html \
+		test_buffered.html \
+		test_bug448534.html \
+		test_bug463162.xhtml \
+		test_decoder_disable.html \
+		test_media_selection.html \
+		test_playback.html \
+		test_seekLies.html \
+		test_media_sniffer.html \
+		contentType.sjs \
+		test_streams_srcObject.html \
 		$(NULL)
+
+$(warning test_error_in_video_document.html is disabled for intermittent failures. Bug 608634)
+
+# Disabled on Windows for frequent intermittent failures
+ifneq ($(OS_ARCH), WINNT)
+MOCHITEST_FILES += \
+		test_streams_element_capture.html \
+		test_streams_element_capture_reset.html \
+		test_streams_element_capture_createObjectURL.html \
+		test_timeupdate_small_files.html \
+		$(NULL)
+else
+$(warning test_streams_element_capture{,_reset}.html is disabled on Windows for timeouts. Bug 752796)
+$(warning test_timeupdate_small_files.html is disabled on Windows for timeouts. Bug 786539)
+endif
 
 # Don't run in suite
 ifndef MOZ_SUITE
-_TEST_FILES += test_play_twice.html
+MOCHITEST_FILES += test_play_twice.html
 else
 $(warning test_play_twice.html is disabled pending investigation. Bug 598252)
 endif
@@ -152,11 +166,12 @@ endif
 #		test_audioDocumentTitle.html
 
 # sample files
-_TEST_FILES += \
+MOCHITEST_FILES += \
 		320x240.ogv \
 		448636.ogv \
 		audio-overhang.ogg \
 		audio-gaps.ogg \
+		badtags.ogg \
 		beta-phrasebook.ogg \
 		bogus.ogv \
 		bug495129.ogv \
@@ -203,10 +218,13 @@ _TEST_FILES += \
 		video-overhang.ogg \
 		file_a4_tone.ogg \
 		detodos.opus \
+		short.mp4 \
+		notags.mp3 \
+		id3tags.mp3 \
 		$(NULL)
 
 # Wave sample files
-_TEST_FILES += \
+MOCHITEST_FILES += \
 		big.wav \
 		bogus.wav \
 		r11025_msadpcm_c1.wav \
@@ -220,16 +238,33 @@ _TEST_FILES += \
 		audio.wav \
 		$(NULL)
 
+# Media plugin sample files
+MOCHITEST_FILES += \
+		gizmo.mp4 \
+		$(NULL)
+
 # Other files
-_TEST_FILES += \
+MOCHITEST_FILES += \
 		bogus.duh \
 		$(NULL)
 
 # These tests contain backend-specific tests. Try to write backend
 # independent tests rather than adding to this list.
 ifdef MOZ_OGG
-_TEST_FILES += \
+MOCHITEST_FILES += \
 		test_can_play_type_ogg.html \
+		noContentLength.sjs \
+		test_seekable3.html \
+		test_a4_tone.html \
+		file_audio_event_adopt_iframe.html \
+		test_audio_event_adopt.html \
+		test_referer.html \
+		test_bug726904.html \
+		$(NULL)
+
+# Bug 759221
+MOCHITEST_FILES += \
+		test_bug686137.html \
 		test_contentDuration1.html \
 		test_contentDuration2.html \
 		test_contentDuration3.html \
@@ -244,46 +279,42 @@ _TEST_FILES += \
 		contentDuration5.sjs \
 		contentDuration6.sjs \
 		contentDuration7.sjs \
-		noContentLength.sjs \
-		test_seekable2.html \
-		test_seekable3.html \
-		test_a4_tone.html \
-		file_audio_event_adopt_iframe.html \
-		test_audio_event_adopt.html \
 		test_framebuffer.html \
-		test_referer.html \
-		test_bug726904.html \
-		test_bug686137.html \
+		test_seekable2.html \
 		$(NULL)
 else
-_TEST_FILES += \
+MOCHITEST_FILES += \
 		test_can_play_type_no_ogg.html \
 		$(NULL)
 endif
 
 ifdef MOZ_WEBM
-_TEST_FILES += \
+MOCHITEST_FILES += \
 		test_can_play_type_webm.html \
 		$(NULL)
 else
-_TEST_FILES += \
+MOCHITEST_FILES += \
 		test_can_play_type_no_webm.html \
 		$(NULL)
 endif
 
 ifdef MOZ_WAVE
-_TEST_FILES += \
+MOCHITEST_FILES += \
 		test_can_play_type_wave.html \
+		$(NULL)
+
+
+# Bug 759221
+MOCHITEST_FILES += \
 		test_fragment_play.html \
 		test_fragment_noplay.html \
 		test_wave_data_u8.html \
 		test_wave_data_s16.html \
 		$(NULL)
 else
-_TEST_FILES += \
+MOCHITEST_FILES += \
 		test_can_play_type_no_wave.html \
 		$(NULL)
 endif
 
-libs:: $(_TEST_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/tests/$(relativesrcdir)
+include $(topsrcdir)/config/rules.mk

@@ -9,7 +9,6 @@
 #include "nsIDOMSVGEllipseElement.h"
 #include "nsSVGLength2.h"
 #include "nsGkAtoms.h"
-#include "nsSVGUtils.h"
 #include "gfxContext.h"
 
 using namespace mozilla;
@@ -30,8 +29,8 @@ public:
   NS_DECL_NSIDOMSVGELLIPSEELEMENT
 
   // xxx I wish we could use virtual inheritance
-  NS_FORWARD_NSIDOMNODE(nsSVGEllipseElementBase::)
-  NS_FORWARD_NSIDOMELEMENT(nsSVGEllipseElementBase::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
   NS_FORWARD_NSIDOMSVGELEMENT(nsSVGEllipseElementBase::)
 
   // nsSVGSVGElement methods:
@@ -56,10 +55,10 @@ protected:
 
 nsSVGElement::LengthInfo nsSVGEllipseElement::sLengthInfo[4] =
 {
-  { &nsGkAtoms::cx, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, nsSVGUtils::X },
-  { &nsGkAtoms::cy, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, nsSVGUtils::Y },
-  { &nsGkAtoms::rx, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, nsSVGUtils::X },
-  { &nsGkAtoms::ry, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, nsSVGUtils::Y },
+  { &nsGkAtoms::cx, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::X },
+  { &nsGkAtoms::cy, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::Y },
+  { &nsGkAtoms::rx, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::X },
+  { &nsGkAtoms::ry, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::Y },
 };
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Ellipse)
@@ -146,7 +145,7 @@ nsSVGEllipseElement::ConstructPath(gfxContext *aCtx)
 {
   float x, y, rx, ry;
 
-  GetAnimatedLengthValues(&x, &y, &rx, &ry, nsnull);
+  GetAnimatedLengthValues(&x, &y, &rx, &ry, nullptr);
 
   if (rx > 0.0f && ry > 0.0f) {
     aCtx->Save();

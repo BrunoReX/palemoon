@@ -19,7 +19,7 @@ function testOnLoad() {
   window.removeEventListener("load", testOnLoad, false);
 
   gConfig = readConfig();
-  if (gConfig.testRoot == "browser") {
+  if (gConfig.testRoot == "browser" || gConfig.testRoot == "webapprtChrome") {
     // Make sure to launch the test harness for the first opened window only
     var prefs = Services.prefs;
     if (prefs.prefHasUserValue("testing.browserTestHarness.running"))
@@ -96,8 +96,11 @@ Tester.prototype = {
     Services.obs.addObserver(this, "chrome-document-global-created", false);
     Services.obs.addObserver(this, "content-document-global-created", false);
     this._globalProperties = Object.keys(window);
-    this._globalPropertyWhitelist = ["navigator", "constructor", "Application",
-      "__SS_tabsToRestore", "__SSi", "webConsoleCommandController",
+    this._globalPropertyWhitelist = [
+      "navigator", "constructor", "top",
+      "Application",
+      "__SS_tabsToRestore", "__SSi",
+      "webConsoleCommandController",
     ];
 
     if (this.tests.length)
@@ -342,7 +345,14 @@ Tester.prototype = {
     var headPath = currentTestDirPath + "/head.js";
     try {
       this._scriptLoader.loadSubScript(headPath, this.currentTest.scope);
-    } catch (ex) { /* no head */ }
+    } catch (ex) {
+      // Ignore if no head.js exists, but report all other errors.  Note this
+      // will also ignore an existing head.js attempting to import a missing
+      // module - see bug 755558 for why this strategy is preferred anyway.
+      if (ex.toString() != 'Error opening input stream (invalid filename?)') {
+       this.currentTest.addResult(new testResult(false, "head.js import threw an exception", ex, false));
+      }
+    }
 
     // Import the test script.
     try {

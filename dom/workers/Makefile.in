@@ -1,11 +1,12 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
-# # License, v. 2.0. If a copy of the MPL was not distributed with this file,
-# # You can obtain one at http://mozilla.org/MPL/2.0/.
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH            = ../..
+DEPTH            = @DEPTH@
 topsrcdir        = @top_srcdir@
 srcdir           = @srcdir@
 VPATH            = @srcdir@
+FAIL_ON_WARNINGS := 1
 
 include $(DEPTH)/config/autoconf.mk
 
@@ -23,7 +24,6 @@ CPPSRCS = \
   Exceptions.cpp \
   File.cpp \
   FileReaderSync.cpp \
-  FileReaderSyncPrivate.cpp \
   ImageData.cpp \
   Location.cpp \
   Navigator.cpp \
@@ -51,6 +51,7 @@ EXPORTS_mozilla/dom/workers/bindings = \
   DOMBindingBase.h \
   EventListenerManager.h \
   EventTarget.h \
+  FileReaderSync.h \
   WorkerFeature.h \
   XMLHttpRequestEventTarget.h \
   XMLHttpRequestUpload.h \

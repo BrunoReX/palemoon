@@ -54,14 +54,14 @@ nsChromeProtocolHandler::GetScheme(nsACString &result)
 }
 
 NS_IMETHODIMP
-nsChromeProtocolHandler::GetDefaultPort(PRInt32 *result)
+nsChromeProtocolHandler::GetDefaultPort(int32_t *result)
 {
     *result = -1;        // no port for chrome: URLs
     return NS_OK;
 }
 
 NS_IMETHODIMP
-nsChromeProtocolHandler::AllowPort(PRInt32 port, const char *scheme, bool *_retval)
+nsChromeProtocolHandler::AllowPort(int32_t port, const char *scheme, bool *_retval)
 {
     // don't override anything.
     *_retval = false;
@@ -69,7 +69,7 @@ nsChromeProtocolHandler::AllowPort(PRInt32 port, const char *scheme, bool *_retv
 }
 
 NS_IMETHODIMP
-nsChromeProtocolHandler::GetProtocolFlags(PRUint32 *result)
+nsChromeProtocolHandler::GetProtocolFlags(uint32_t *result)
 {
     *result = URI_STD | URI_IS_UI_RESOURCE | URI_IS_LOCAL_RESOURCE;
     return NS_OK;
@@ -151,7 +151,7 @@ nsChromeProtocolHandler::NewChannel(nsIURI* aURI,
     rv = nsChromeRegistry::gChromeRegistry->ConvertChromeURL(aURI, getter_AddRefs(resolvedURI));
     if (NS_FAILED(rv)) {
 #ifdef DEBUG
-        nsCAutoString spec;
+        nsAutoCString spec;
         aURI->GetSpec(spec);
         printf("Couldn't convert chrome URL: %s\n", spec.get());
 #endif
@@ -173,7 +173,7 @@ nsChromeProtocolHandler::NewChannel(nsIURI* aURI,
         bool exists = false;
         file->Exists(&exists);
         if (!exists) {
-            nsCAutoString path;
+            nsAutoCString path;
             file->GetNativePath(path);
             printf("Chrome file doesn't exist: %s\n", path.get());
         }
@@ -191,7 +191,7 @@ nsChromeProtocolHandler::NewChannel(nsIURI* aURI,
     // Get a system principal for content files and set the owner
     // property of the result
     nsCOMPtr<nsIURL> url = do_QueryInterface(aURI);
-    nsCAutoString path;
+    nsAutoCString path;
     rv = url->GetPath(path);
     if (StringBeginsWith(path, NS_LITERAL_CSTRING("/content/")))
     {

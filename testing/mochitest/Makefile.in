@@ -3,11 +3,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
-relativesrcdir  = testing/mochitest
+relativesrcdir  = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
@@ -18,7 +18,6 @@ DIRS = \
   tests \
   chrome \
   ssltunnel \
-  specialpowers \
   $(NULL)
 
 ifeq ($(MOZ_BUILD_APP),mobile/android)
@@ -50,9 +49,10 @@ _SERV_FILES = 	\
 		runtestsb2g.py \
 		runtestsremote.py \
 		runtestsvmware.py \
-		$(topsrcdir)/build/mobile/devicemanager.py \
-		$(topsrcdir)/build/mobile/devicemanagerADB.py \
-		$(topsrcdir)/build/mobile/devicemanagerSUT.py \
+		$(topsrcdir)/testing/mozbase/mozdevice/mozdevice/devicemanager.py \
+		$(topsrcdir)/testing/mozbase/mozdevice/mozdevice/devicemanagerADB.py \
+		$(topsrcdir)/testing/mozbase/mozdevice/mozdevice/devicemanagerSUT.py \
+		$(topsrcdir)/testing/mozbase/mozdevice/mozdevice/Zeroconf.py \
 		$(topsrcdir)/build/automationutils.py \
 		$(topsrcdir)/build/manifestparser.py \
 		$(topsrcdir)/build/mobile/remoteautomation.py \
@@ -69,10 +69,10 @@ _SERV_FILES = 	\
 		redirect.html \
 		$(topsrcdir)/build/pgo/server-locations.txt \
 		$(topsrcdir)/netwerk/test/httpserver/httpd.js \
-		mozprefs.js \
 		pywebsocket_wrapper.py \
  	 	plain-loop.html \
 		android.json \
+		b2g.json \
 		$(NULL)	
 
 ifeq ($(MOZ_BUILD_APP),mobile/android)
@@ -167,10 +167,12 @@ TEST_HARNESS_COMPONENTS := \
 # We need the test plugin as some tests rely on it
 ifeq (Darwin,$(OS_TARGET))
 TEST_HARNESS_PLUGINS := \
-  Test.plugin/
+  Test.plugin/ \
+  SecondTest.plugin/
 else
 TEST_HARNESS_PLUGINS := \
-  $(DLL_PREFIX)nptest$(DLL_SUFFIX)
+  $(DLL_PREFIX)nptest$(DLL_SUFFIX) \
+  $(DLL_PREFIX)npsecondtest$(DLL_SUFFIX)
 endif
 
 # Rules for staging the necessary harness bits for a test package

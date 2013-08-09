@@ -11,6 +11,7 @@
 
 #include "nsIDOMFileHandle.h"
 #include "nsIFile.h"
+#include "nsIFileStorage.h"
 
 #include "nsDOMEventTargetHelper.h"
 
@@ -60,7 +61,7 @@ public:
   CreateStream(nsIFile* aFile, bool aReadOnly) = 0;
 
   virtual already_AddRefed<nsIDOMFile>
-  CreateFileObject(LockedFile* aLockedFile, PRUint32 aFileSize) = 0;
+  CreateFileObject(LockedFile* aLockedFile, uint32_t aFileSize) = 0;
 
 protected:
   FileHandle()
@@ -76,9 +77,6 @@ protected:
 
   nsCOMPtr<nsIFile> mFile;
   nsString mFileName;
-
-  NS_DECL_EVENT_HANDLER(abort)
-  NS_DECL_EVENT_HANDLER(error)
 };
 
 END_FILE_NAMESPACE

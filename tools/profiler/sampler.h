@@ -42,8 +42,8 @@
  *         this tag will describe the last 'c' tag.
  * 'r' - Responsiveness tag following an 's' tag. Gives an indication on how well the
  *          application is responding to the event loop. Lower is better.
+ * 't' - Elapse time since recording started.
  *
- * NOTE: File format is planned to be extended to include a dictionary to reduce size.
  */
 
 #ifndef SAMPLER_H
@@ -68,9 +68,15 @@
 #define SAMPLER_GET_PROFILE() NULL
 #define SAMPLER_GET_PROFILE_DATA(ctx) NULL
 #define SAMPLER_RESPONSIVENESS(time) NULL
+#define SAMPLER_FRAME_NUMBER(frameNumber)
 #define SAMPLER_GET_RESPONSIVENESS() NULL
 #define SAMPLER_GET_FEATURES() NULL
 #define SAMPLE_LABEL(name_space, info)
+// Provide a default literal string to use if profiling is disabled
+// and a printf argument to be computed if profiling is enabled.
+// NOTE: This will store the formated string on the stack and consume
+//       over 128 bytes on the stack.
+#define SAMPLE_LABEL_PRINTF(name_space, info, format, ...)
 #define SAMPLE_LABEL_FN(name_space, info)
 #define SAMPLE_MARKER(info)
 

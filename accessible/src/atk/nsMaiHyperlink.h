@@ -13,6 +13,9 @@
 struct _AtkHyperlink;
 typedef struct _AtkHyperlink                      AtkHyperlink;
 
+namespace mozilla {
+namespace a11y {
+
 /*
  * MaiHyperlink is a auxiliary class for MaiInterfaceHyperText.
  */
@@ -26,7 +29,7 @@ public:
 public:
   AtkHyperlink *GetAtkHyperlink(void);
   Accessible* GetAccHyperlink()
-    { return mHyperlink && mHyperlink->IsLink() ? mHyperlink : nsnull; }
+    { return mHyperlink && mHyperlink->IsLink() ? mHyperlink : nullptr; }
 
 protected:
   Accessible* mHyperlink;
@@ -34,4 +37,8 @@ protected:
 public:
   static nsresult Initialize(AtkHyperlink *aObj, MaiHyperlink *aClass);
 };
+
+} // namespace a11y
+} // namespace mozilla
+
 #endif /* __MAI_HYPERLINK_H__ */

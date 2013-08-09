@@ -32,7 +32,7 @@ NS_QUERYFRAME_HEAD(nsFirstLetterFrame)
   NS_QUERYFRAME_ENTRY(nsFirstLetterFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
 NS_IMETHODIMP
 nsFirstLetterFrame::GetFrameName(nsAString& aResult) const
 {
@@ -46,7 +46,7 @@ nsFirstLetterFrame::GetType() const
   return nsGkAtoms::letterFrame;
 }
 
-PRIntn
+int
 nsFirstLetterFrame::GetSkipSides() const
 {
   return 0;
@@ -98,9 +98,9 @@ nsFirstLetterFrame::SetInitialChildList(ChildListID  aListID,
 }
 
 NS_IMETHODIMP
-nsFirstLetterFrame::GetChildFrameContainingOffset(PRInt32 inContentOffset,
+nsFirstLetterFrame::GetChildFrameContainingOffset(int32_t inContentOffset,
                                                   bool inHint,
-                                                  PRInt32* outFrameContentOffset,
+                                                  int32_t* outFrameContentOffset,
                                                   nsIFrame **outChildFrame)
 {
   nsIFrame *kid = mFrames.FirstChild();
@@ -148,7 +148,7 @@ nsFirstLetterFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
 nsFirstLetterFrame::ComputeSize(nsRenderingContext *aRenderingContext,
                                 nsSize aCBSize, nscoord aAvailableWidth,
                                 nsSize aMargin, nsSize aBorder, nsSize aPadding,
-                                PRUint32 aFlags)
+                                uint32_t aFlags)
 {
   if (GetPrevInFlow()) {
     // We're wrapping the text *after* the first letter, so behave like an
@@ -192,13 +192,13 @@ nsFirstLetterFrame::Reflow(nsPresContext*          aPresContext,
     // only time that the first-letter-frame is not reflowing in a
     // line context is when its floating.
     nsHTMLReflowState rs(aPresContext, aReflowState, kid, availSize);
-    nsLineLayout ll(aPresContext, nsnull, &aReflowState, nsnull);
+    nsLineLayout ll(aPresContext, nullptr, &aReflowState, nullptr);
 
     // For unicode-bidi: plaintext, we need to get the direction of the line
     // from the resolved paragraph level of the child, not the block frame,
     // because the block frame could be split by hard line breaks into
     // multiple paragraphs with different base direction
-    PRUint8 direction;
+    uint8_t direction;
     nsIFrame* containerFrame = ll.GetLineContainerFrame();
     if (containerFrame->GetStyleTextReset()->mUnicodeBidi &
         NS_STYLE_UNICODE_BIDI_PLAINTEXT) {
@@ -239,7 +239,7 @@ nsFirstLetterFrame::Reflow(nsPresContext*          aPresContext,
   // Place and size the child and update the output metrics
   kid->SetRect(nsRect(bp.left, bp.top, aMetrics.width, aMetrics.height));
   kid->FinishAndStoreOverflow(&aMetrics);
-  kid->DidReflow(aPresContext, nsnull, NS_FRAME_REFLOW_FINISHED);
+  kid->DidReflow(aPresContext, nullptr, nsDidReflowStatus::FINISHED);
 
   aMetrics.width += lr;
   aMetrics.height += tb;
@@ -314,7 +314,7 @@ nsFirstLetterFrame::CreateContinuationForFloatingParent(nsPresContext* aPresCont
                "can only call this on floating first letter frames");
   NS_PRECONDITION(aContinuation, "bad args");
 
-  *aContinuation = nsnull;
+  *aContinuation = nullptr;
   nsresult rv = NS_OK;
 
   nsIPresShell* presShell = aPresContext->PresShell();
@@ -359,7 +359,7 @@ nsFirstLetterFrame::DrainOverflowFrames(nsPresContext* aPresContext)
 
   // Check for an overflow list with our prev-in-flow
   nsFirstLetterFrame* prevInFlow = (nsFirstLetterFrame*)GetPrevInFlow();
-  if (nsnull != prevInFlow) {
+  if (nullptr != prevInFlow) {
     overflowFrames = prevInFlow->StealOverflowFrames();
     if (overflowFrames) {
       NS_ASSERTION(mFrames.IsEmpty(), "bad overflow list");
@@ -368,7 +368,7 @@ nsFirstLetterFrame::DrainOverflowFrames(nsPresContext* aPresContext)
       // views need to be reparented.
       nsContainerFrame::ReparentFrameViewList(aPresContext, *overflowFrames,
                                               prevInFlow, this);
-      mFrames.InsertFrames(this, nsnull, *overflowFrames);
+      mFrames.InsertFrames(this, nullptr, *overflowFrames);
     }
   }
 
@@ -376,7 +376,7 @@ nsFirstLetterFrame::DrainOverflowFrames(nsPresContext* aPresContext)
   overflowFrames = StealOverflowFrames();
   if (overflowFrames) {
     NS_ASSERTION(mFrames.NotEmpty(), "overflow list w/o frames");
-    mFrames.AppendFrames(nsnull, *overflowFrames);
+    mFrames.AppendFrames(nullptr, *overflowFrames);
   }
 
   // Now repair our first frames style context (since we only reflow

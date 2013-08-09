@@ -10,6 +10,8 @@
 /*
  * JS public API typedefs.
  */
+
+#include "jsprototypes.h"
 #include "jstypes.h"
 
 /*
@@ -58,8 +60,6 @@ typedef ptrdiff_t jsid;
 # define JSID_BITS(id) (id)
 #endif
 
-JS_BEGIN_EXTERN_C
-
 #ifdef WIN32
 typedef wchar_t   jschar;
 #else
@@ -106,8 +106,8 @@ typedef enum JSType {
 
 /* Dense index into cached prototypes and class atoms for standard objects. */
 typedef enum JSProtoKey {
-#define JS_PROTO(name,code,init) JSProto_##name = code,
-#include "jsproto.tbl"
+#define PROTOKEY_AND_INITIALIZER(name,code,init) JSProto_##name = code,
+    JS_FOR_EACH_PROTOTYPE(PROTOKEY_AND_INITIALIZER)
 #undef JS_PROTO
     JSProto_LIMIT
 } JSProtoKey;
@@ -115,7 +115,11 @@ typedef enum JSProtoKey {
 /* js_CheckAccess mode enumeration. */
 typedef enum JSAccessMode {
     JSACC_PROTO  = 0,           /* XXXbe redundant w.r.t. id */
-    JSACC_PARENT = 1,           /* XXXbe redundant w.r.t. id */
+
+                                /*
+                                 * enum value #1 formerly called JSACC_PARENT,
+                                 * gap preserved for ABI compatibility.
+                                 */
 
                                 /*
                                  * enum value #2 formerly called JSACC_IMPORT,
@@ -158,6 +162,7 @@ typedef enum {
      * Trace kinds internal to the engine. The embedding can only them if it
      * implements JSTraceCallback.
      */
+    JSTRACE_IONCODE,
 #if JS_HAS_XML_SUPPORT
     JSTRACE_XML,
 #endif
@@ -196,6 +201,7 @@ typedef struct JSTracer                     JSTracer;
 
 #ifdef __cplusplus
 class                                       JSFlatString;
+class                                       JSStableString;  // long story
 class                                       JSString;
 #else
 typedef struct JSFlatString                 JSFlatString;
@@ -209,11 +215,9 @@ typedef JSBool                   JSCallOnceType;
 #endif
 typedef JSBool                 (*JSInitCallback)(void);
 
-JS_END_EXTERN_C
-
 #ifdef __cplusplus
 
-namespace JS {
+namespace js {
 
 template <typename T>
 class Rooted;
@@ -230,9 +234,33 @@ enum ThingRootKind
     THING_ROOT_SCRIPT,
     THING_ROOT_XML,
     THING_ROOT_ID,
+    THING_ROOT_PROPERTY_ID,
     THING_ROOT_VALUE,
+    THING_ROOT_TYPE,
+    THING_ROOT_BINDINGS,
     THING_ROOT_LIMIT
 };
+
+template <typename T>
+struct RootKind;
+
+/*
+ * Specifically mark the ThingRootKind of externally visible types, so that
+ * JSAPI users may use JSRooted... types without having the class definition
+ * available.
+ */
+template<typename T, ThingRootKind Kind>
+struct SpecificRootKind
+{
+    static ThingRootKind rootKind() { return Kind; }
+};
+
+template <> struct RootKind<JSObject *> : SpecificRootKind<JSObject *, THING_ROOT_OBJECT> {};
+template <> struct RootKind<JSFunction *> : SpecificRootKind<JSFunction *, THING_ROOT_OBJECT> {};
+template <> struct RootKind<JSString *> : SpecificRootKind<JSString *, THING_ROOT_STRING> {};
+template <> struct RootKind<JSScript *> : SpecificRootKind<JSScript *, THING_ROOT_SCRIPT> {};
+template <> struct RootKind<jsid> : SpecificRootKind<jsid, THING_ROOT_ID> {};
+template <> struct RootKind<JS::Value> : SpecificRootKind<JS::Value, THING_ROOT_VALUE> {};
 
 struct ContextFriendFields {
     JSRuntime *const    runtime;
@@ -248,15 +276,15 @@ struct ContextFriendFields {
         return reinterpret_cast<ContextFriendFields *>(cx);
     }
 
-#ifdef JSGC_ROOT_ANALYSIS
-
+#if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING)
     /*
      * Stack allocated GC roots for stack GC heap pointers, which may be
      * overwritten if moved during a GC.
      */
     Rooted<void*> *thingGCRooters[THING_ROOT_LIMIT];
+#endif
 
-#ifdef DEBUG
+#if defined(DEBUG) && defined(JS_GC_ZEAL) && defined(JSGC_ROOT_ANALYSIS) && !defined(JS_THREADSAFE)
     /*
      * Stack allocated list of stack locations which hold non-relocatable
      * GC heap pointers (where the target is rooted somewhere else) or integer
@@ -267,11 +295,54 @@ struct ContextFriendFields {
      */
     SkipRoot *skipGCRooters;
 #endif
-
-#endif /* JSGC_ROOT_ANALYSIS */
 };
 
-} /* namespace JS */
+struct RuntimeFriendFields {
+    /*
+     * If non-zero, we were been asked to call the operation callback as soon
+     * as possible.
+     */
+    volatile int32_t    interrupt;
+
+    /* Limit pointer for checking native stack consumption. */
+    uintptr_t           nativeStackLimit;
+
+    RuntimeFriendFields()
+      : interrupt(0),
+        nativeStackLimit(0) { }
+
+    static const RuntimeFriendFields *get(const JSRuntime *rt) {
+        return reinterpret_cast<const RuntimeFriendFields *>(rt);
+    }
+};
+
+class PerThreadData;
+
+struct PerThreadDataFriendFields
+{
+    PerThreadDataFriendFields();
+
+#if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING)
+    /*
+     * Stack allocated GC roots for stack GC heap pointers, which may be
+     * overwritten if moved during a GC.
+     */
+    Rooted<void*> *thingGCRooters[THING_ROOT_LIMIT];
+#endif
+
+    static PerThreadDataFriendFields *get(js::PerThreadData *pt) {
+        return reinterpret_cast<PerThreadDataFriendFields *>(pt);
+    }
+
+    static PerThreadDataFriendFields *getMainThread(JSRuntime *rt) {
+        // mainThread must always appear directly after |RuntimeFriendFields|.
+        // Tested by a JS_STATIC_ASSERT in |jsfriendapi.cpp|
+        return reinterpret_cast<PerThreadDataFriendFields *>(
+            reinterpret_cast<char*>(rt) + sizeof(RuntimeFriendFields));
+    }
+};
+
+} /* namespace js */
 
 #endif /* __cplusplus */
 

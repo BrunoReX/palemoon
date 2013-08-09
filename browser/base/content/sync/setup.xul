@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
 <?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/syncSetup.css" type="text/css"?>
@@ -363,8 +363,8 @@
       </columns>
       <rows>
         <row align="center">
-          <label value="&syncComputerName.label;"
-                 accesskey="&syncComputerName.accesskey;"
+          <label value="&syncDeviceName.label;"
+                 accesskey="&syncDeviceName.accesskey;"
                  control="syncComputerName"/>
           <textbox id="syncComputerName" flex="1"
                    onchange="gSyncUtils.changeName(this)"/>
@@ -416,7 +416,7 @@
                      aria-labelledby="resetClientLabel"/>
               <label id="resetClientLabel" control="resetClient">
                 <html:strong>&choice2.merge.recommended.label;</html:strong>
-                &choice2.merge.main.label;
+                &choice2a.merge.main.label;
               </label>
             </row>
             <row align="center">
@@ -425,7 +425,7 @@
                      aria-labelledby="wipeClientLabel"/>
               <label id="wipeClientLabel"
                      control="wipeClient">
-                &choice2.client.main.label;
+                &choice2a.client.main.label;
               </label>
             </row>
             <row align="center">
@@ -434,7 +434,7 @@
                      aria-labelledby="wipeRemoteLabel"/>
               <label id="wipeRemoteLabel"
                      control="wipeRemote">
-                &choice2.server.main.label;
+                &choice2a.server.main.label;
               </label>
             </row>
           </rows>
@@ -449,24 +449,25 @@
       <deck id="chosenActionDeck">
         <vbox id="chosenActionMerge" class="confirm">
           <description class="normal">
-            &confirm.merge.label;
+            &confirm.merge2.label;
           </description>
         </vbox>
         <vbox id="chosenActionWipeClient" class="confirm">
           <description class="normal">
-            &confirm.client2.label;
+            &confirm.client3.label;
           </description>
           <separator class="thin"/>
           <vbox id="dataList">
             <label class="data indent" id="bookmarkCount"/>
             <label class="data indent" id="historyCount"/>
             <label class="data indent" id="passwordCount"/>
+            <label class="data indent" id="addonCount"/>
             <label class="data indent" id="prefsWipe"
                    value="&engine.prefs.label;"/>
           </vbox>
           <separator class="thin"/>
           <description class="normal">
-            &confirm.client.moreinfo.label;
+            &confirm.client2.moreinfo.label;
           </description>
         </vbox>
         <vbox id="chosenActionWipeServer" class="confirm">
@@ -479,10 +480,10 @@
         </vbox>
       </deck>
   </wizardpage>
-# In terms of the wizard flow shown to the user, the 'syncOptionsConfirm'
-# page above is not the last wizard page. To prevent the wizard binding from
-# assuming that it is, we're inserting this dummy page here. This also means
-# that the wizard needs to always be closed manually via wizardFinish().
+  <!-- In terms of the wizard flow shown to the user, the 'syncOptionsConfirm'
+       page above is not the last wizard page. To prevent the wizard binding from
+       assuming that it is, we're inserting this dummy page here. This also means
+      that the wizard needs to always be closed manually via wizardFinish(). -->
   <wizardpage>
   </wizardpage>
 </wizard>

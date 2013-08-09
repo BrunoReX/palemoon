@@ -8,6 +8,9 @@
 #include "Accessible-inl.h"
 #include "nsAccUtils.h"
 
+namespace mozilla {
+namespace a11y {
+
 /**
  * Calculate and store group information.
  */
@@ -17,8 +20,8 @@ public:
   AccGroupInfo(Accessible* aItem, mozilla::a11y::role aRole);
   ~AccGroupInfo() { MOZ_COUNT_DTOR(AccGroupInfo); }
 
-  PRInt32 PosInSet() const { return mPosInSet; }
-  PRUint32 SetSize() const { return mSetSize; }
+  int32_t PosInSet() const { return mPosInSet; }
+  uint32_t SetSize() const { return mSetSize; }
   Accessible* ConceptualParent() const { return mParent; }
 
   /**
@@ -41,7 +44,7 @@ public:
         role != mozilla::a11y::roles::RADIO_MENU_ITEM &&
         role != mozilla::a11y::roles::RADIOBUTTON &&
         role != mozilla::a11y::roles::PAGETAB)
-      return nsnull;
+      return nullptr;
 
     AccGroupInfo* info = new AccGroupInfo(aAccessible, BaseRole(role));
     return info;
@@ -71,9 +74,12 @@ private:
   static bool IsConceptualParent(mozilla::a11y::role aRole,
 				 mozilla::a11y::role aParentRole);
 
-  PRUint32 mPosInSet;
-  PRUint32 mSetSize;
+  uint32_t mPosInSet;
+  uint32_t mSetSize;
   Accessible* mParent;
 };
+
+} // namespace mozilla
+} // namespace a11y
 
 #endif

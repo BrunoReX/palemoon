@@ -16,11 +16,14 @@ namespace layers {
 template<typename Deallocator>
 void DeallocSharedImageData(Deallocator* protocol, const SharedImage& aImage)
 {
-  if (aImage.type() == SharedImage::TYUVImage) {
+  if (aImage.type() == SharedImage::TYCbCrImage) {
+    protocol->DeallocShmem(aImage.get_YCbCrImage().data());
+  } else if (aImage.type() == SharedImage::TYUVImage) {
     protocol->DeallocShmem(aImage.get_YUVImage().Ydata());
     protocol->DeallocShmem(aImage.get_YUVImage().Udata());
     protocol->DeallocShmem(aImage.get_YUVImage().Vdata());
-  } else if (aImage.type() == SharedImage::TSurfaceDescriptor) {
+  } else if (aImage.type() == SharedImage::TSurfaceDescriptor &&
+             aImage.get_SurfaceDescriptor().type() == SurfaceDescriptor::TShmem) {
     protocol->DeallocShmem(aImage.get_SurfaceDescriptor().get_Shmem());
   }
 }
@@ -39,7 +42,7 @@ bool AllocateSharedBuffer(Allocator* protocol,
   if (!back)
     return false;
 
-  *aBuffer = nsnull;
+  *aBuffer = nullptr;
   back.swap(*aBuffer);
   return true;
 }

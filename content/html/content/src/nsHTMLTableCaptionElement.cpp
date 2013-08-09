@@ -8,12 +8,14 @@
 #include "nsIDOMHTMLTableCaptionElem.h"
 #include "nsIDOMEventTarget.h"
 #include "nsGenericHTMLElement.h"
+#include "nsAttrValueInlines.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsMappedAttributes.h"
 #include "nsRuleData.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 class nsHTMLTableCaptionElement :  public nsGenericHTMLElement,
                                    public nsIDOMHTMLTableCaptionElement
@@ -26,18 +28,18 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLTableCaptionElement
   NS_DECL_NSIDOMHTMLTABLECAPTIONELEMENT
 
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
@@ -65,8 +67,8 @@ nsHTMLTableCaptionElement::~nsHTMLTableCaptionElement()
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLTableCaptionElement, nsGenericElement)
-NS_IMPL_RELEASE_INHERITED(nsHTMLTableCaptionElement, nsGenericElement)
+NS_IMPL_ADDREF_INHERITED(nsHTMLTableCaptionElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLTableCaptionElement, Element)
 
 
 DOMCI_NODE_DATA(HTMLTableCaptionElement, nsHTMLTableCaptionElement)
@@ -95,7 +97,7 @@ static const nsAttrValue::EnumTable kCaptionAlignTable[] = {
 };
 
 bool
-nsHTMLTableCaptionElement::ParseAttribute(PRInt32 aNamespaceID,
+nsHTMLTableCaptionElement::ParseAttribute(int32_t aNamespaceID,
                                           nsIAtom* aAttribute,
                                           const nsAString& aValue,
                                           nsAttrValue& aResult)
@@ -128,7 +130,7 @@ nsHTMLTableCaptionElement::IsAttributeMapped(const nsIAtom* aAttribute) const
 {
   static const MappedAttributeEntry attributes[] = {
     { &nsGkAtoms::align },
-    { nsnull }
+    { nullptr }
   };
 
   static const MappedAttributeEntry* const map[] = {

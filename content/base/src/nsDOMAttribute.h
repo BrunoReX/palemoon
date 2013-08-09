@@ -36,7 +36,13 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
   // nsIDOMNode interface
-  NS_DECL_NSIDOMNODE
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
+  virtual void GetTextContentInternal(nsAString& aTextContent);
+  virtual void SetTextContentInternal(const nsAString& aTextContent,
+                                      mozilla::ErrorResult& aError);
+  virtual void GetNodeValueInternal(nsAString& aNodeValue);
+  virtual void SetNodeValueInternal(const nsAString& aNodeValue,
+                                    mozilla::ErrorResult& aError);
 
   // nsIDOMAttr interface
   NS_DECL_NSIDOMATTR
@@ -49,15 +55,15 @@ public:
   nsresult SetOwnerDocument(nsIDocument* aDocument);
 
   // nsINode interface
-  virtual bool IsNodeOfType(PRUint32 aFlags) const;
-  virtual PRUint32 GetChildCount() const;
-  virtual nsIContent *GetChildAt(PRUint32 aIndex) const;
-  virtual nsIContent * const * GetChildArray(PRUint32* aChildCount) const;
-  virtual PRInt32 IndexOf(nsINode* aPossibleChild) const;
-  virtual nsresult InsertChildAt(nsIContent* aKid, PRUint32 aIndex,
+  virtual bool IsNodeOfType(uint32_t aFlags) const;
+  virtual uint32_t GetChildCount() const;
+  virtual nsIContent *GetChildAt(uint32_t aIndex) const;
+  virtual nsIContent * const * GetChildArray(uint32_t* aChildCount) const;
+  virtual int32_t IndexOf(const nsINode* aPossibleChild) const MOZ_OVERRIDE;
+  virtual nsresult InsertChildAt(nsIContent* aKid, uint32_t aIndex,
                                  bool aNotify);
   virtual nsresult AppendChildTo(nsIContent* aKid, bool aNotify);
-  virtual void RemoveChildAt(PRUint32 aIndex, bool aNotify);
+  virtual void RemoveChildAt(uint32_t aIndex, bool aNotify);
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
   virtual already_AddRefed<nsIURI> GetBaseURI() const;
 
@@ -82,7 +88,7 @@ private:
   already_AddRefed<nsIAtom> GetNameAtom(nsIContent* aContent);
   mozilla::dom::Element *GetContentInternal() const
   {
-    return mAttrMap ? mAttrMap->GetContent() : nsnull;
+    return mAttrMap ? mAttrMap->GetContent() : nullptr;
   }
 
   nsString mValue;

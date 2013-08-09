@@ -14,15 +14,10 @@
 #include "nsIContent.h"
 #include "nsGkAtoms.h"
 #include "nsINodeInfo.h"
-#include "nsNodeInfoManager.h"
-#include "nsNullPrincipal.h"
 #include "nsContentCreatorFunctions.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 #include "nsIConsoleService.h"
 #include "nsIScriptError.h"
-#include "nsServiceManagerUtils.h"
-#include "nsContentUtils.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsNetUtil.h"
 #include "nsTHashtable.h"
 #include "nsHashKeys.h"
@@ -58,7 +53,7 @@ public:
                                          const PRUnichar *aData);
   NS_IMETHOD HandleXMLDeclaration(const PRUnichar *aVersion,
                                   const PRUnichar *aEncoding,
-                                  PRInt32 aStandalone);
+                                  int32_t aStandalone);
   NS_IMETHOD ReportError(const PRUnichar* aErrorText, 
                          const PRUnichar* aSourceText,
                          nsIScriptError *aError,
@@ -82,11 +77,11 @@ public:
   NS_IMETHOD SetPreventScriptExecution(bool aPreventScriptExecution);
 
 protected:
-  virtual bool SetDocElement(PRInt32 aNameSpaceID, 
+  virtual bool SetDocElement(int32_t aNameSpaceID, 
                                nsIAtom *aTagName,
                                nsIContent *aContent);
-  virtual nsresult CreateElement(const PRUnichar** aAtts, PRUint32 aAttsCount,
-                                 nsINodeInfo* aNodeInfo, PRUint32 aLineNumber,
+  virtual nsresult CreateElement(const PRUnichar** aAtts, uint32_t aAttsCount,
+                                 nsINodeInfo* aNodeInfo, uint32_t aLineNumber,
                                  nsIContent** aResult, bool* aAppendContent,
                                  mozilla::dom::FromParser aFromParser);
   virtual nsresult CloseElement(nsIContent* aContent);
@@ -149,8 +144,8 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(nsXMLFragmentContentSink)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsXMLFragmentContentSink,
                                                   nsXMLContentSink)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mTargetDocument)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mRoot)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTargetDocument)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRoot)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMETHODIMP 
@@ -180,7 +175,7 @@ nsXMLFragmentContentSink::DidBuildModel(bool aTerminated)
 
   // Drop our reference to the parser to get rid of a circular
   // reference.
-  mParser = nsnull;
+  mParser = nullptr;
 
   return NS_OK;
 }
@@ -201,7 +196,7 @@ nsXMLFragmentContentSink::GetTarget()
 ////////////////////////////////////////////////////////////////////////
 
 bool
-nsXMLFragmentContentSink::SetDocElement(PRInt32 aNameSpaceID,
+nsXMLFragmentContentSink::SetDocElement(int32_t aNameSpaceID,
                                         nsIAtom* aTagName,
                                         nsIContent *aContent)
 {
@@ -210,8 +205,8 @@ nsXMLFragmentContentSink::SetDocElement(PRInt32 aNameSpaceID,
 }
 
 nsresult
-nsXMLFragmentContentSink::CreateElement(const PRUnichar** aAtts, PRUint32 aAttsCount,
-                                        nsINodeInfo* aNodeInfo, PRUint32 aLineNumber,
+nsXMLFragmentContentSink::CreateElement(const PRUnichar** aAtts, uint32_t aAttsCount,
+                                        nsINodeInfo* aNodeInfo, uint32_t aLineNumber,
                                         nsIContent** aResult, bool* aAppendContent,
                                         FromParser /*aFromParser*/)
 {
@@ -289,7 +284,7 @@ nsXMLFragmentContentSink::HandleProcessingInstruction(const PRUnichar *aTarget,
 NS_IMETHODIMP
 nsXMLFragmentContentSink::HandleXMLDeclaration(const PRUnichar *aVersion,
                                                const PRUnichar *aEncoding,
-                                               PRInt32 aStandalone)
+                                               int32_t aStandalone)
 {
   NS_NOTREACHED("fragments shouldn't have XML declarations");
   return NS_OK;
@@ -369,22 +364,22 @@ nsXMLFragmentContentSink::StartLayout()
 NS_IMETHODIMP 
 nsXMLFragmentContentSink::FinishFragmentParsing(nsIDOMDocumentFragment** aFragment)
 {
-  *aFragment = nsnull;
-  mTargetDocument = nsnull;
-  mNodeInfoManager = nsnull;
-  mScriptLoader = nsnull;
-  mCSSLoader = nsnull;
+  *aFragment = nullptr;
+  mTargetDocument = nullptr;
+  mNodeInfoManager = nullptr;
+  mScriptLoader = nullptr;
+  mCSSLoader = nullptr;
   mContentStack.Clear();
-  mDocumentURI = nsnull;
-  mDocShell = nsnull;
+  mDocumentURI = nullptr;
+  mDocShell = nullptr;
   if (mParseError) {
     //XXX PARSE_ERR from DOM3 Load and Save would be more appropriate
-    mRoot = nsnull;
+    mRoot = nullptr;
     mParseError = false;
     return NS_ERROR_DOM_SYNTAX_ERR;
   } else if (mRoot) {
     nsresult rv = CallQueryInterface(mRoot, aFragment);
-    mRoot = nsnull;
+    mRoot = nullptr;
     return rv;
   } else {
     return NS_OK;

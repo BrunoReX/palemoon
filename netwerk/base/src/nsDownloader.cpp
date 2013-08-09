@@ -18,7 +18,7 @@ nsDownloader::~nsDownloader()
         // file can be removed otherwise the Remove call will fail.
         if (mSink) {
             mSink->Close();
-            mSink = nsnull;
+            mSink = nullptr;
         }
 
         nsresult rv = mLocation->Remove(false);
@@ -98,11 +98,11 @@ nsDownloader::OnStopRequest(nsIRequest  *request,
     }
     else if (mSink) {
         mSink->Close();
-        mSink = nsnull;
+        mSink = nullptr;
     }
 
     mObserver->OnDownloadComplete(this, request, ctxt, status, mLocation);
-    mObserver = nsnull;
+    mObserver = nullptr;
 
     return NS_OK;
 }
@@ -111,9 +111,9 @@ NS_METHOD
 nsDownloader::ConsumeData(nsIInputStream* in,
                           void* closure,
                           const char* fromRawSegment,
-                          PRUint32 toOffset,
-                          PRUint32 count,
-                          PRUint32 *writeCount)
+                          uint32_t toOffset,
+                          uint32_t count,
+                          uint32_t *writeCount)
 {
     nsDownloader *self = (nsDownloader *) closure;
     if (self->mSink)
@@ -126,8 +126,8 @@ nsDownloader::ConsumeData(nsIInputStream* in,
 NS_IMETHODIMP 
 nsDownloader::OnDataAvailable(nsIRequest *request, nsISupports *ctxt, 
                               nsIInputStream *inStr, 
-                              PRUint32 sourceOffset, PRUint32 count)
+                              uint64_t sourceOffset, uint32_t count)
 {
-    PRUint32 n;  
+    uint32_t n;  
     return inStr->ReadSegments(ConsumeData, this, count, &n);
 }

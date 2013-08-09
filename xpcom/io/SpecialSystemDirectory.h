@@ -7,7 +7,7 @@
 #define _SPECIALSYSTEMDIRECTORY_H_
 
 #include "nscore.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 
 #ifdef MOZ_WIDGET_COCOA
 #include <Carbon/Carbon.h>
@@ -74,6 +74,9 @@ enum SystemDirectories {
   Win_ProgramFiles          =   229,
   Win_Downloads             =   230,
   Win_Common_AppData        =   231,
+  Win_Pictures              =   232,
+  Win_Music                 =   233,
+  Win_Videos                =   234,
   
   Unix_LocalDirectory       =   301,   
   Unix_LibDirectory         =   302,   
@@ -95,10 +98,10 @@ enum SystemDirectories {
 
 nsresult
 GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
-                          nsILocalFile** aFile);
+                          nsIFile** aFile);
 #ifdef MOZ_WIDGET_COCOA
 nsresult
-GetOSXFolderType(short aDomain, OSType aFolderType, nsILocalFile **localFile);
+GetOSXFolderType(short aDomain, OSType aFolderType, nsIFile **localFile);
 #endif
 
 #endif

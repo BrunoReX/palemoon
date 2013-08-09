@@ -19,7 +19,7 @@
 NS_IMPL_ISUPPORTS2(nsStandaloneNativeMenu, nsIMutationObserver, nsIStandaloneNativeMenu)
 
 nsStandaloneNativeMenu::nsStandaloneNativeMenu()
-: mMenu(nsnull)
+: mMenu(nullptr)
 {
 }
 
@@ -31,7 +31,7 @@ nsStandaloneNativeMenu::~nsStandaloneNativeMenu()
 NS_IMETHODIMP
 nsStandaloneNativeMenu::Init(nsIDOMElement * aDOMElement)
 {
-  NS_ASSERTION(mMenu == nsnull, "nsNativeMenu::Init - mMenu not null!");
+  NS_ASSERTION(mMenu == nullptr, "nsNativeMenu::Init - mMenu not null!");
 
   nsresult rv;
 
@@ -51,7 +51,7 @@ nsStandaloneNativeMenu::Init(nsIDOMElement * aDOMElement)
   rv = mMenu->Create(this, this, content);
   if (NS_FAILED(rv)) {
     delete mMenu;
-    mMenu = nsnull;
+    mMenu = nullptr;
     return rv;
   }
 
@@ -64,8 +64,8 @@ UpdateMenu(nsMenuX * aMenu)
   aMenu->MenuOpened();
   aMenu->MenuClosed();
 
-  PRUint32 itemCount = aMenu->GetItemCount();
-  for (PRUint32 i = 0; i < itemCount; i++) {
+  uint32_t itemCount = aMenu->GetItemCount();
+  for (uint32_t i = 0; i < itemCount; i++) {
     nsMenuObjectX * menuObject = aMenu->GetItemAt(i);
     if (menuObject->MenuObjectType() == eSubmenuObjectType) {
       UpdateMenu(static_cast<nsMenuX*>(menuObject));
@@ -76,7 +76,7 @@ UpdateMenu(nsMenuX * aMenu)
 NS_IMETHODIMP
 nsStandaloneNativeMenu::MenuWillOpen(bool * aResult)
 {
-  NS_ASSERTION(mMenu != nsnull, "nsStandaloneNativeMenu::OnOpen - mMenu is null!");
+  NS_ASSERTION(mMenu != nullptr, "nsStandaloneNativeMenu::OnOpen - mMenu is null!");
 
   // Force an update on the mMenu by faking an open/close on all of
   // its submenus.
@@ -94,7 +94,7 @@ nsStandaloneNativeMenu::GetNativeMenu(void ** aVoidPointer)
     [[(NSObject *)(*aVoidPointer) retain] autorelease];
     return NS_OK;
   }  else {
-    *aVoidPointer = nsnull;
+    *aVoidPointer = nullptr;
     return NS_ERROR_NOT_INITIALIZED;
   }
 }
@@ -175,7 +175,7 @@ nsStandaloneNativeMenu::ForceUpdateNativeMenuAt(const nsAString& indexString)
   for (unsigned int i = 1; currentMenu && i < indexCount; i++) {
     int targetIndex = [[indexes objectAtIndex:i] intValue];
     int visible = 0;
-    PRUint32 length = currentMenu->GetItemCount();
+    uint32_t length = currentMenu->GetItemCount();
     for (unsigned int j = 0; j < length; j++) {
       nsMenuObjectX* targetMenu = currentMenu->GetItemAt(j);
       if (!targetMenu)

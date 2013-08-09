@@ -8,9 +8,7 @@
 #endif
 #include <math.h>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include "mozilla/Constants.h"
 
 #include "cairo.h"
 
@@ -41,7 +39,7 @@ public:
     gfxContext::AzureState &state = mContext->CurrentState();
 
     if (state.pattern) {
-      return *state.pattern->GetPattern(mContext->mDT, state.patternTransformChanged ? &state.patternTransform : nsnull);
+      return *state.pattern->GetPattern(mContext->mDT, state.patternTransformChanged ? &state.patternTransform : nullptr);
     } else if (state.sourceSurface) {
       Matrix transform = state.surfTransform;
 
@@ -209,18 +207,9 @@ gfxContext::Restore()
 
     mStateStack.RemoveElementAt(mStateStack.Length() - 1);
 
-    if ((mPathBuilder || mPath || mPathIsRect) && !mTransformChanged) {
-      // Support here isn't fully correct if the path is continued -after-
-      // the restore. We don't currently have users that do this and we should
-      // make sure there will not be any. Sadly we can't assert this easily.
-      mTransformChanged = true;
-      mPathTransform = mTransform;
-    }
-
     mDT = CurrentState().drawTarget;
 
-    mTransform = CurrentState().transform;
-    mDT->SetTransform(GetDTTransform());
+    ChangeTransform(CurrentState().transform, false);
   }
 }
 
@@ -292,6 +281,8 @@ gfxContext::Stroke()
   } else {
     AzureState &state = CurrentState();
     if (mPathIsRect) {
+      MOZ_ASSERT(!mTransformChanged);
+
       mDT->StrokeRect(mRect, GeneralPattern(this),
                       state.strokeOptions,
                       DrawOptions(1.0f, GetOp(), state.aaMode));
@@ -476,10 +467,10 @@ gfxContext::Rectangle(const gfxRect& rect, bool snapToPixels)
       mPathIsRect = true;
       mRect = rec;
       return;
-    } else if (!mPathBuilder) {
-      EnsurePathBuilder();
     }
-    
+
+    EnsurePathBuilder();
+
     mPathBuilder->MoveTo(rec.TopLeft());
     mPathBuilder->LineTo(rec.TopRight());
     mPathBuilder->LineTo(rec.BottomRight());
@@ -499,14 +490,14 @@ gfxContext::Ellipse(const gfxPoint& center, const gfxSize& dimensions)
 }
 
 void
-gfxContext::Polygon(const gfxPoint *points, PRUint32 numPoints)
+gfxContext::Polygon(const gfxPoint *points, uint32_t numPoints)
 {
   if (mCairo) {
     if (numPoints == 0)
         return;
 
     cairo_move_to(mCairo, points[0].x, points[0].y);
-    for (PRUint32 i = 1; i < numPoints; ++i) {
+    for (uint32_t i = 1; i < numPoints; ++i) {
         cairo_line_to(mCairo, points[i].x, points[i].y);
     }
   } else {
@@ -517,7 +508,7 @@ gfxContext::Polygon(const gfxPoint *points, PRUint32 numPoints)
     EnsurePathBuilder();
 
     mPathBuilder->MoveTo(ToPoint(points[0]));
-    for (PRUint32 i = 1; i < numPoints; i++) {
+    for (uint32_t i = 1; i < numPoints; i++) {
       mPathBuilder->LineTo(ToPoint(points[i]));
     }
   }
@@ -556,7 +547,7 @@ gfxContext::Translate(const gfxPoint& pt)
   if (mCairo) {
     cairo_translate(mCairo, pt.x, pt.y);
   } else {
-    Matrix newMatrix = mTransform; 
+    Matrix newMatrix = mTransform;
 
     ChangeTransform(newMatrix.Translate(Float(pt.x), Float(pt.y)));
   }
@@ -568,7 +559,7 @@ gfxContext::Scale(gfxFloat x, gfxFloat y)
   if (mCairo) {
     cairo_scale(mCairo, x, y);
   } else {
-    Matrix newMatrix = mTransform; 
+    Matrix newMatrix = mTransform;
 
     ChangeTransform(newMatrix.Scale(Float(x), Float(y)));
   }
@@ -581,7 +572,7 @@ gfxContext::Rotate(gfxFloat angle)
     cairo_rotate(mCairo, angle);
   } else {
     Matrix rotation = Matrix::Rotation(Float(angle));
-    ChangeTransform(rotation * mTransform); 
+    ChangeTransform(rotation * mTransform);
   }
 }
 
@@ -593,6 +584,20 @@ gfxContext::Multiply(const gfxMatrix& matrix)
     cairo_transform(mCairo, &mat);
   } else {
     ChangeTransform(ToMatrix(matrix) * mTransform);
+  }
+}
+
+void
+gfxContext::MultiplyAndNudgeToIntegers(const gfxMatrix& matrix)
+{
+  if (mCairo) {
+    const cairo_matrix_t& mat = reinterpret_cast<const cairo_matrix_t&>(matrix);
+    cairo_transform(mCairo, &mat);
+    // XXX nudging to integers not currently supported for Thebes
+  } else {
+    Matrix transform = ToMatrix(matrix) * mTransform;
+    transform.NudgeToIntegers();
+    ChangeTransform(transform);
   }
 }
 
@@ -906,7 +911,7 @@ gfxContext::SetDash(gfxLineType ltype)
           break;
       case gfxLineSolid:
       default:
-          SetDash(nsnull, 0, 0.0);
+          SetDash(nullptr, 0, 0.0);
           break;
   }
 }
@@ -1126,7 +1131,9 @@ gfxContext::Clip()
   if (mCairo) {
     cairo_clip_preserve(mCairo);
   } else {
-    if (mPathIsRect && !mTransformChanged) {
+    if (mPathIsRect) {
+      MOZ_ASSERT(!mTransformChanged);
+
       AzureState::PushedClip clip = { NULL, mRect, mTransform };
       CurrentState().pushedClips.AppendElement(clip);
       mDT->PushClipRect(mRect);
@@ -1358,7 +1365,7 @@ gfxContext::GetPattern()
     cairo_pattern_t *pat = cairo_get_source(mCairo);
     NS_ASSERTION(pat, "I was told this couldn't be null");
 
-    gfxPattern *wrapper = nsnull;
+    gfxPattern *wrapper = nullptr;
     if (pat)
         wrapper = new gfxPattern(pat);
     else
@@ -1494,7 +1501,7 @@ gfxContext::PushGroupAndCopyBackground(gfxASurface::gfxContentType content)
           static_cast<gfxTeeSurface*>(d.get())->GetSurfaces(&ds);
           NS_ASSERTION(ss.Length() == ds.Length(), "Mismatched lengths");
           gfxPoint translation = d->GetDeviceOffset() - s->GetDeviceOffset();
-          for (PRUint32 i = 0; i < ss.Length(); ++i) {
+          for (uint32_t i = 0; i < ss.Length(); ++i) {
               CopySurface(ss[i], ds[i], translation);
           }
         } else {
@@ -1514,13 +1521,22 @@ gfxContext::PushGroupAndCopyBackground(gfxASurface::gfxContentType content)
         mDT->GetOpaqueRect().Contains(clipExtents)) {
       DrawTarget *oldDT = mDT;
       RefPtr<SourceSurface> source = mDT->Snapshot();
-      PushGroup(content);
+      Point oldDeviceOffset = CurrentState().deviceOffset;
+
+      PushNewDT(gfxASurface::CONTENT_COLOR);
+
+      Point offset = CurrentState().deviceOffset - oldDeviceOffset;
       Rect surfRect(0, 0, Float(mDT->GetSize().width), Float(mDT->GetSize().height));
-      Matrix oldTransform = mDT->GetTransform();
-      mDT->SetTransform(GetDeviceTransform());
-      mDT->DrawSurface(source, surfRect, surfRect); 
-      mDT->SetTransform(oldTransform);
+      Rect sourceRect = surfRect;
+      sourceRect.x += offset.x;
+      sourceRect.y += offset.y;
+
+      mDT->SetTransform(Matrix());
+      mDT->DrawSurface(source, surfRect, sourceRect);
       mDT->SetOpaqueRect(oldDT->GetOpaqueRect());
+
+      PushClipsToDT(mDT);
+      mDT->SetTransform(GetDTTransform());
       return;
     }
   }
@@ -1593,8 +1609,9 @@ gfxContext::PointInStroke(const gfxPoint& pt)
   if (mCairo) {
     return cairo_in_stroke(mCairo, pt.x, pt.y);
   } else {
-    // XXX - Used by SVG, needs fixing.
-    return false;
+    return mPath->StrokeContainsPoint(CurrentState().strokeOptions,
+                                      ToPoint(pt),
+                                      mTransform);
   }
 }
 
@@ -1928,33 +1945,50 @@ gfxContext::EnsurePath()
 void
 gfxContext::EnsurePathBuilder()
 {
-  if (mPathBuilder) {
+  if (mPathBuilder && !mTransformChanged) {
     return;
   }
 
   if (mPath) {
-    mPathBuilder = mPath->CopyToBuilder(CurrentState().fillRule);
-    mPath = NULL;
+    if (!mTransformChanged) {
+      mPathBuilder = mPath->CopyToBuilder(CurrentState().fillRule);
+      mPath = NULL;
+    } else {
+      Matrix invTransform = mTransform;
+      invTransform.Invert();
+      Matrix toNewUS = mPathTransform * invTransform;
+      mPathBuilder = mPath->TransformedCopyToBuilder(toNewUS, CurrentState().fillRule);
+    }
+    return;
   }
 
-  mPathBuilder = mDT->CreatePathBuilder(CurrentState().fillRule);
+  DebugOnly<PathBuilder*> oldPath = mPathBuilder.get();
 
-  if (mPathIsRect && !mTransformChanged) {
-    mPathBuilder->MoveTo(mRect.TopLeft());
-    mPathBuilder->LineTo(mRect.TopRight());
-    mPathBuilder->LineTo(mRect.BottomRight());
-    mPathBuilder->LineTo(mRect.BottomLeft());
-    mPathBuilder->Close();
-  } else if (mPathIsRect) {
-    mTransformChanged = false;
-    Matrix mat = mTransform;
-    mat.Invert();
-    mat = mPathTransform * mat;
-    mPathBuilder->MoveTo(mat * mRect.TopLeft());
-    mPathBuilder->LineTo(mat * mRect.TopRight());
-    mPathBuilder->LineTo(mat * mRect.BottomRight());
-    mPathBuilder->LineTo(mat * mRect.BottomLeft());
-    mPathBuilder->Close();
+  if (!mPathBuilder) {
+    mPathBuilder = mDT->CreatePathBuilder(CurrentState().fillRule);
+
+    if (mPathIsRect) {
+      mPathBuilder->MoveTo(mRect.TopLeft());
+      mPathBuilder->LineTo(mRect.TopRight());
+      mPathBuilder->LineTo(mRect.BottomRight());
+      mPathBuilder->LineTo(mRect.BottomLeft());
+      mPathBuilder->Close();
+    }
+  }
+
+  if (mTransformChanged) {
+    // This could be an else if since this should never happen when
+    // mPathBuilder is NULL and mPath is NULL. But this way we can assert
+    // if all the state is as expected.
+    MOZ_ASSERT(oldPath);
+    MOZ_ASSERT(!mPathIsRect);
+
+    Matrix invTransform = mTransform;
+    invTransform.Invert();
+    Matrix toNewUS = mPathTransform * invTransform;
+
+    RefPtr<Path> path = mPathBuilder->Finish();
+    mPathBuilder = path->TransformedCopyToBuilder(toNewUS, CurrentState().fillRule);
   }
 
   mPathIsRect = false;
@@ -1967,7 +2001,9 @@ gfxContext::FillAzure(Float aOpacity)
 
   CompositionOp op = GetOp();
 
-  if (mPathIsRect && !mTransformChanged) {
+  if (mPathIsRect) {
+    MOZ_ASSERT(!mTransformChanged);
+
     if (state.opIsClear) {
       mDT->ClearRect(mRect);
     } else if (op == OP_SOURCE) {
@@ -2047,30 +2083,36 @@ gfxContext::GetOp()
 /* SVG font code can change the transform after having set the pattern on the
  * context. When the pattern is set it is in user space, if the transform is
  * changed after doing so the pattern needs to be converted back into userspace.
- * We just store the old pattern here so that we only do the work needed here
- * if the pattern is actually used.
+ * We just store the old pattern transform here so that we only do the work
+ * needed here if the pattern is actually used.
+ * We need to avoid doing this when this ChangeTransform comes from a restore,
+ * since the current pattern and the current transform are both part of the
+ * state we know the new CurrentState()'s values are valid. But if we assume
+ * a change they might become invalid since patternTransformChanged is part of
+ * the state and might be false for the restored AzureState.
  */
 void
-gfxContext::ChangeTransform(const Matrix &aNewMatrix)
+gfxContext::ChangeTransform(const Matrix &aNewMatrix, bool aUpdatePatternTransform)
 {
   AzureState &state = CurrentState();
 
-  if ((state.pattern || state.sourceSurface)
+  if (aUpdatePatternTransform && (state.pattern || state.sourceSurface)
       && !state.patternTransformChanged) {
     state.patternTransform = mTransform;
     state.patternTransformChanged = true;
   }
 
-  if (mPathBuilder || mPathIsRect) {
+  if (mPathIsRect) {
     Matrix invMatrix = aNewMatrix;
     
     invMatrix.Invert();
 
     Matrix toNewUS = mTransform * invMatrix;
 
-    if (toNewUS.IsRectilinear() && mPathIsRect) {
+    if (toNewUS.IsRectilinear()) {
       mRect = toNewUS.TransformBounds(mRect);
-    } else if (mPathIsRect) {
+      mRect.NudgeToIntegers();
+    } else {
       mPathBuilder = mDT->CreatePathBuilder(CurrentState().fillRule);
       
       mPathBuilder->MoveTo(toNewUS * mRect.TopLeft());
@@ -2078,20 +2120,22 @@ gfxContext::ChangeTransform(const Matrix &aNewMatrix)
       mPathBuilder->LineTo(toNewUS * mRect.BottomRight());
       mPathBuilder->LineTo(toNewUS * mRect.BottomLeft());
       mPathBuilder->Close();
-    } else {
-      RefPtr<Path> path = mPathBuilder->Finish();
-      // Create path in device space.
-      mPathBuilder = path->TransformedCopyToBuilder(toNewUS);
+
+      mPathIsRect = false;
     }
+
     // No need to consider the transform changed now!
     mTransformChanged = false;
+  } else if ((mPath || mPathBuilder) && !mTransformChanged) {
+    mTransformChanged = true;
+    mPathTransform = mTransform;
   }
 
   mTransform = aNewMatrix;
-  
-  mDT->SetTransform(GetDTTransform()); 
+
+  mDT->SetTransform(GetDTTransform());
 }
- 
+
 Rect
 gfxContext::GetAzureDeviceSpaceClipBounds()
 {

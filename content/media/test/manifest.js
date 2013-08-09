@@ -7,9 +7,10 @@
 var gSmallTests = [
   { name:"small-shot.ogg", type:"audio/ogg", duration:0.276 },
   { name:"r11025_s16_c1.wav", type:"audio/x-wav", duration:1.0 },
-  { name:"320x240.ogv", type:"video/ogg", width:320, height:240, duration:0.233 },
+  { name:"320x240.ogv", type:"video/ogg", width:320, height:240, duration:0.266 },
   { name:"seek.webm", type:"video/webm", width:320, height:240, duration:3.966 },
   { name:"detodos.opus", type:"audio/ogg; codecs=opus", duration:2.9135 },
+  { name:"gizmo.mp4", type:"video/mp4", duration:5.56 },
   { name:"bogus.duh", type:"bogus/duh" }
 ];
 
@@ -19,8 +20,9 @@ var gProgressTests = [
   { name:"r11025_u8_c1.wav", type:"audio/x-wav", duration:1.0, size:11069 },
   { name:"big.wav", type:"audio/x-wav", duration:9.278981, size:102444 },
   { name:"seek.ogv", type:"video/ogg", duration:3.966, size:285310 },
-  { name:"320x240.ogv", type:"video/ogg", width:320, height:240, duration:0.233, size:28942 },
+  { name:"320x240.ogv", type:"video/ogg", width:320, height:240, duration:0.266, size:28942 },
   { name:"seek.webm", type:"video/webm", duration:3.966, size:215529 },
+  { name:"gizmo.mp4", type:"video/mp4", duration:5.56, size:383631 },
   { name:"bogus.duh", type:"bogus/duh" }
 ];
 
@@ -30,6 +32,7 @@ var gPlayedTests = [
   { name:"sound.ogg", type:"audio/ogg", duration:4.0 },
   { name:"seek.ogv", type:"video/ogg", duration:3.966 },
   { name:"seek.webm", type:"video/webm", duration:3.966 },
+  { name:"gizmo.mp4", type:"video/mp4", duration:5.56 },
 ];
 
 // Used by test_mozLoadFrom.  Need one test file per decoder backend, plus
@@ -40,7 +43,7 @@ var gCloneTests = gSmallTests.concat([
   { name:"bug520908.ogv", type:"video/ogg", duration:9000 },
   // short-video is more like 1s, so if you load this twice you'll get an unexpected duration
   { name:"dynamic_resource.sjs?key=" + cloneKey + "&res1=320x240.ogv&res2=short-video.ogv",
-    type:"video/ogg", duration:0.233 },
+    type:"video/ogg", duration:0.266 },
 ]);
 
 // Used by test_play_twice.  Need one test file per decoder backend, plus
@@ -59,7 +62,7 @@ var gPausedAfterEndedTests = gSmallTests.concat([
 // Test the mozHasAudio property
 var gMozHasAudioTests = [
   { name:"big.wav", type:"audio/x-wav", duration:9.278981, size:102444, hasAudio:undefined },
-  { name:"320x240.ogv", type:"video/ogg", width:320, height:240, duration:0.233, size:28942, hasAudio:false },
+  { name:"320x240.ogv", type:"video/ogg", width:320, height:240, duration:0.266, size:28942, hasAudio:false },
   { name:"short-video.ogv", type:"video/ogg", duration:1.081, hasAudio:true },
   { name:"seek.webm", type:"video/webm", duration:3.966, size:215529, hasAudio:false },
   { name:"bogus.duh", type:"bogus/duh" }
@@ -128,7 +131,7 @@ var gPlayTests = [
 
   // Test playback/metadata work after a redirect
   { name:"redirect.sjs?domain=mochi.test:8888&file=320x240.ogv",
-    type:"video/ogg", duration:0.233 },
+    type:"video/ogg", duration:0.266 },
 
   // Test playback of a webm file
   { name:"seek.webm", type:"video/webm", duration:3.966 },
@@ -147,18 +150,34 @@ var gPlayTests = [
   // Opus data in an ogg container
   { name:"detodos.opus", type:"audio/ogg; codecs=opus", duration:2.9135 },
 
+  { name:"gizmo.mp4", type:"video/mp4", duration:5.56 },
+
   // Invalid file
   { name:"bogus.duh", type:"bogus/duh", duration:Number.NaN }
+];
+
+// A file for each type we can support.
+var gSnifferTests = [
+  { name:"big.wav", type:"audio/x-wav", duration:9.278981, size:102444 },
+  { name:"320x240.ogv", type:"video/ogg", width:320, height:240, duration:0.233, size:28942 },
+  { name:"seek.webm", type:"video/webm", duration:3.966, size:215529 },
+  { name:"short.mp4", type:"video/mp4", duration:0.2, size:29435},
+  // A mp3 file with id3 tags.
+  { name:"id3tags.mp3", type:"audio/mpeg", duration:0.28, size:3530},
+  { name:"bogus.duh", type:"bogus/duh" }
 ];
 
 // Converts a path/filename to a file:// URI which we can load from disk.
 // Optionally checks whether the file actually exists on disk at the location
 // we've specified.
 function fileUriToSrc(path, mustExist) {
-  netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
-  const Ci = Components.interfaces;
-  const Cc = Components.classes;
-  const Cr = Components.results;
+  // android mochitest doesn't support file://
+  if (navigator.appVersion.indexOf("Android") != -1)
+    return path;
+
+  const Ci = SpecialPowers.Ci;
+  const Cc = SpecialPowers.Cc;
+  const Cr = SpecialPowers.Cr;
   var dirSvc = Cc["@mozilla.org/file/directory_service;1"].
                getService(Ci.nsIProperties);
   var f = dirSvc.get("CurWorkD", Ci.nsILocalFile);
@@ -254,7 +273,7 @@ var gSeekTests = [
   { name:"r11025_s16_c1.wav", type:"audio/x-wav", duration:1.0 },
   { name:"audio.wav", type:"audio/x-wav", duration:0.031247 },
   { name:"seek.ogv", type:"video/ogg", duration:3.966 },
-  { name:"320x240.ogv", type:"video/ogg", duration:0.233 },
+  { name:"320x240.ogv", type:"video/ogg", duration:0.266 },
   { name:"seek.webm", type:"video/webm", duration:3.966 },
   { name:"bug516323.indexed.ogv", type:"video/ogg", duration:4.208 },
   { name:"split.webm", type:"video/webm", duration:1.967 },
@@ -298,6 +317,61 @@ var gFragmentTests = [
   { name:"big.wav", type:"audio/x-wav", duration:9.278981, size:102444 }
 ];
 
+
+// These are files with non-trivial tag sets.
+// Used by test_metadata.html.
+var gMetadataTests = [
+  // Ogg Vorbis files
+  { name:"short-video.ogv", tags: {
+      TITLE:"Lepidoptera",
+      ARTIST:"Epoq",
+      ALBUM:"Kahvi Collective",
+      DATE:"2002",
+      COMMENT:"http://www.kahvi.org",
+    }
+  },
+  { name:"bug516323.ogv", tags: {
+      GENRE:"Open Movie",
+      ENCODER:"Audacity",
+      TITLE:"Elephants Dream",
+      ARTIST:"Silvia Pfeiffer",
+      COMMENTS:"Audio Description"
+    }
+  },
+  { name:"bug516323.indexed.ogv", tags: {
+      GENRE:"Open Movie",
+      ENCODER:"Audacity",
+      TITLE:"Elephants Dream",
+      ARTIST:"Silvia Pfeiffer",
+      COMMENTS:"Audio Description"
+    }
+  },
+  { name:"detodos.opus", tags: {
+      title:"De todos. Para todos.",
+      artist:"Mozilla.org"
+    }
+  },
+  { name:"sound.ogg", tags: { } },
+  { name:"small-shot.ogg", tags: {
+      title:"Pew SFX"
+    }
+  },
+  { name:"badtags.ogg", tags: {
+      // We list only the valid tags here, and verify
+      // the invalid ones are filtered out.
+      title:"Invalid comments test file",
+      empty:"",
+      "":"empty",
+      "{- [(`!@\"#$%^&')] -}":"valid tag name, surprisingly"
+      // The file also includes the following invalid tags.
+      // "A description with no separator is a common problem.",
+      // "雨":"Likely, but an invalid key (non-ascii).",
+      // "not\nval\x1fid":"invalid tag name",
+      // "not~valid":"this isn't a valid name either",
+      // "not-utf-8":"invalid sequences: \xff\xfe\xfa\xfb\0eol"
+    }
+  }
+];
 
 function checkMetadata(msg, e, test) {
   if (test.width) {
@@ -409,8 +483,7 @@ function MediaTestManager() {
     // Force a GC after every completed testcase. This ensures that any decoders
     // with live threads waiting for the GC are killed promptly, to free up the
     // thread stacks' address space.
-    netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
-    Components.utils.forceGC();
+    SpecialPowers.forceGC();
     
     while (this.testNum < this.tests.length && this.tokens.length < PARALLEL_TESTS) {
       var test = this.tests[this.testNum];
@@ -462,15 +535,14 @@ function mediaTestCleanup() {
       A[i].parentNode.removeChild(A[i]);
       A[i] = null;
     }
-    netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
-    Components.utils.forceGC();
+    SpecialPowers.forceGC();
 }
 
 (function() {
-  netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
   // Ensure that preload preferences are comsistent
-  var prefService = Components.classes["@mozilla.org/preferences-service;1"]
-                               .getService(Components.interfaces.nsIPrefService);
+  var prefService = SpecialPowers.wrap(SpecialPowers.Components)
+                                 .classes["@mozilla.org/preferences-service;1"]
+                                 .getService(SpecialPowers.Ci.nsIPrefService);
   var branch = prefService.getBranch("media.");
   var oldDefault = 2;
   var oldAuto = 3;
@@ -487,7 +559,6 @@ function mediaTestCleanup() {
     branch.setBoolPref("opus.enabled", true);
 
   window.addEventListener("unload", function() {
-    netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
     branch.setIntPref("preload.default", oldDefault);
     branch.setIntPref("preload.auto", oldAuto);
     if (oldOpus !== undefined)

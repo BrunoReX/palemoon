@@ -81,18 +81,17 @@ const wchar_t kOldWndProcProp[] = L"MozillaIPCOldWndProc";
 enum { WM_XP_THEMECHANGED = 0x031A };
 
 PRUnichar gAppMessageWindowName[256] = { 0 };
-PRInt32 gAppMessageWindowNameLength = 0;
+int32_t gAppMessageWindowNameLength = 0;
 
-nsTArray<HWND>* gNeuteredWindows = nsnull;
+nsTArray<HWND>* gNeuteredWindows = nullptr;
 
 typedef nsTArray<nsAutoPtr<DeferredMessage> > DeferredMessageArray;
-DeferredMessageArray* gDeferredMessages = nsnull;
+DeferredMessageArray* gDeferredMessages = nullptr;
 
 HHOOK gDeferredGetMsgHook = NULL;
 HHOOK gDeferredCallWndProcHook = NULL;
 
 DWORD gUIThreadId = 0;
-int gEventLoopDepth = 0;
 static UINT sAppShellGeckoMsgId;
 
 LRESULT CALLBACK
@@ -123,11 +122,11 @@ DeferredMessageHook(int nCode,
 
     // Unset the global and make sure we delete it when we're done here.
     nsAutoPtr<DeferredMessageArray> messages(gDeferredMessages);
-    gDeferredMessages = nsnull;
+    gDeferredMessages = nullptr;
 
     // Run all the deferred messages in order.
-    PRUint32 count = messages->Length();
-    for (PRUint32 index = 0; index < count; index++) {
+    uint32_t count = messages->Length();
+    for (uint32_t index = 0; index < count; index++) {
       messages->ElementAt(index)->Run();
     }
   }
@@ -159,7 +158,7 @@ ProcessOrDeferMessage(HWND hwnd,
                       WPARAM wParam,
                       LPARAM lParam)
 {
-  DeferredMessage* deferred = nsnull;
+  DeferredMessage* deferred = nullptr;
 
   // Most messages ask for 0 to be returned if the message is processed.
   LRESULT res = 0;
@@ -279,10 +278,10 @@ ProcessOrDeferMessage(HWND hwnd,
       } else {
         // Unknown messages only
 #ifdef DEBUG
-        nsCAutoString log("Received \"nonqueued\" message ");
+        nsAutoCString log("Received \"nonqueued\" message ");
         log.AppendInt(uMsg);
         log.AppendLiteral(" during a synchronous IPC message for window ");
-        log.AppendInt((PRInt64)hwnd);
+        log.AppendInt((int64_t)hwnd);
 
         wchar_t className[256] = { 0 };
         if (GetClassNameW(hwnd, className, sizeof(className) - 1) > 0) {
@@ -390,7 +389,7 @@ WindowIsDeferredWindow(HWND hWnd)
     nsCOMPtr<nsIXULAppInfo> appInfo =
       do_GetService("@mozilla.org/xre/app-info;1");
     if (appInfo) {
-      nsCAutoString appName;
+      nsAutoCString appName;
       if (NS_SUCCEEDED(appInfo->GetName(appName))) {
         appName.Append("MessageWindow");
         nsDependentString windowName(gAppMessageWindowName);
@@ -463,7 +462,7 @@ RestoreWindowProcedure(HWND hWnd)
     NS_ASSERTION(oldWndProc != (LONG_PTR)NeuteredWindowProc,
                  "This shouldn't be possible!");
 
-    LONG_PTR currentWndProc =
+    DebugOnly<LONG_PTR> currentWndProc =
       SetWindowLongPtr(hWnd, GWLP_WNDPROC, oldWndProc);
     NS_ASSERTION(currentWndProc == (LONG_PTR)NeuteredWindowProc,
                  "This should never be switched out from under us!");
@@ -506,8 +505,8 @@ UnhookNeuteredWindows()
 {
   if (!gNeuteredWindows)
     return;
-  PRUint32 count = gNeuteredWindows->Length();
-  for (PRUint32 index = 0; index < count; index++) {
+  uint32_t count = gNeuteredWindows->Length();
+  for (uint32_t index = 0; index < count; index++) {
     RestoreWindowProcedure(gNeuteredWindows->ElementAt(index));
   }
   gNeuteredWindows->Clear();
@@ -539,7 +538,7 @@ struct TimeoutData
 
 void
 InitTimeoutData(TimeoutData* aData,
-                int32 aTimeoutMs)
+                int32_t aTimeoutMs)
 {
   aData->startTicks = GetTickCount();
   if (!aData->startTicks) {
@@ -710,7 +709,7 @@ SyncChannel::WaitForNotify()
 
   bool timedout = false;
 
-  UINT_PTR timerId = NULL;
+  UINT_PTR timerId = 0;
   TimeoutData timeoutData = { 0 };
 
   if (mTimeoutMs != kNoTimeout) {
@@ -837,7 +836,7 @@ RPCChannel::WaitForNotify()
 
   bool timedout = false;
 
-  UINT_PTR timerId = NULL;
+  UINT_PTR timerId = 0;
   TimeoutData timeoutData = { 0 };
 
   // windowHook is used as a flag variable for the loop below: if it is set
@@ -857,7 +856,7 @@ RPCChannel::WaitForNotify()
 
         if (timerId) {
           KillTimer(NULL, timerId);
-          timerId = NULL;
+          timerId = 0;
         }
 
         // Used by widget to assert on incoming native events
@@ -1042,7 +1041,7 @@ DeferredSettingChangeMessage::DeferredSettingChangeMessage(HWND aHWnd,
   }
   else {
     lParamString = NULL;
-    lParam = NULL;
+    lParam = 0;
   }
 }
 

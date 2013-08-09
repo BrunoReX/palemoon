@@ -8,7 +8,7 @@
 #ifndef mozilla_ipc_SharedMemorySysV_h
 #define mozilla_ipc_SharedMemorySysV_h
 
-#if defined(OS_LINUX) && !defined(ANDROID)
+#if (defined(OS_LINUX) && !defined(ANDROID)) || defined(OS_BSD)
 
 // SysV shared memory isn't available on Windows, but we define the
 // following macro so that #ifdefs are clearer (compared to #ifdef
@@ -42,13 +42,13 @@ public:
 
   SharedMemorySysV() :
     mHandle(-1),
-    mData(nsnull)
+    mData(nullptr)
   {
   }
 
   SharedMemorySysV(Handle aHandle) :
     mHandle(aHandle),
-    mData(nsnull)
+    mData(nullptr)
   {
   }
 
@@ -56,11 +56,10 @@ public:
   {
     shmdt(mData);
     mHandle = -1;
-    mData = nsnull;
+    mData = nullptr;
   }
 
-  NS_OVERRIDE
-  virtual bool Create(size_t aNbytes)
+  virtual bool Create(size_t aNbytes) MOZ_OVERRIDE
   {
     int id = shmget(IPC_PRIVATE, aNbytes, IPC_CREAT | 0600);
     if (id == -1)
@@ -73,8 +72,7 @@ public:
     return Map(aNbytes);
   }
 
-  NS_OVERRIDE
-  virtual bool Map(size_t nBytes)
+  virtual bool Map(size_t nBytes) MOZ_OVERRIDE
   {
     // already mapped
     if (mData)
@@ -83,7 +81,7 @@ public:
     if (!IsHandleValid(mHandle))
       return false;
 
-    void* mem = shmat(mHandle, nsnull, 0);
+    void* mem = shmat(mHandle, nullptr, 0);
     if (mem == (void*) -1) {
       char warning[256];
       snprintf(warning, sizeof(warning)-1,
@@ -100,7 +98,7 @@ public:
 
     mData = mem;
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
     struct shmid_ds info;
     if (shmctl(mHandle, IPC_STAT, &info) < 0)
       return false;
@@ -113,14 +111,12 @@ public:
     return true;
   }
 
-  NS_OVERRIDE
-  virtual void* memory() const
+  virtual void* memory() const MOZ_OVERRIDE
   {
     return mData;
   }
 
-  NS_OVERRIDE
-  virtual SharedMemoryType Type() const
+  virtual SharedMemoryType Type() const MOZ_OVERRIDE
   {
     return TYPE_SYSV;
   }

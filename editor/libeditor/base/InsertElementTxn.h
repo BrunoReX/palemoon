@@ -6,10 +6,14 @@
 #ifndef InsertElementTxn_h__
 #define InsertElementTxn_h__
 
-#include "EditTxn.h"
-#include "nsIEditor.h"
-#include "nsIDOMNode.h"
-#include "nsCOMPtr.h"
+#include "EditTxn.h"                    // for EditTxn, NS_DECL_EDITTXN
+#include "nsCOMPtr.h"                   // for nsCOMPtr
+#include "nsCycleCollectionParticipant.h"
+#include "nsIDOMNode.h"                 // for nsIDOMNode
+#include "nsISupportsImpl.h"            // for NS_DECL_ISUPPORTS_INHERITED
+#include "nscore.h"                     // for NS_IMETHOD
+
+class nsIEditor;
 
 /**
  * A transaction that inserts a single element
@@ -24,7 +28,7 @@ public:
     */
   NS_IMETHOD Init(nsIDOMNode *aNode,
                   nsIDOMNode *aParent,
-                  PRInt32     aOffset,
+                  int32_t     aOffset,
                   nsIEditor  *aEditor);
 
   InsertElementTxn();
@@ -46,7 +50,7 @@ protected:
   nsIEditor*           mEditor;
 
   /** the index in mParent for the new node */
-  PRInt32 mOffset;
+  int32_t mOffset;
 };
 
 #endif

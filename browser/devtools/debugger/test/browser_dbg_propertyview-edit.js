@@ -3,12 +3,19 @@
  * Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
+
+/**
+ * Make sure that the editing variables or properties values works properly.
+ */
+
+const TAB_URL = EXAMPLE_URL + "browser_dbg_frame-parameters.html";
+
 var gPane = null;
 var gTab = null;
 var gDebuggee = null;
 var gDebugger = null;
 
-const TAB_URL = EXAMPLE_URL + "browser_dbg_frame-parameters.html";
+requestLongerTimeout(2);
 
 function test() {
   debug_tab_pane(TAB_URL, function(aTab, aDebuggee, aPane) {
@@ -17,6 +24,8 @@ function test() {
     gPane = aPane;
     gDebugger = gPane.contentWindow;
 
+    gDebugger.DebuggerController.StackFrames.autoScopeExpand = true;
+    gDebugger.DebuggerView.Variables.nonEnumVisible = false;
     testFrameEval();
   });
 }
@@ -29,7 +38,7 @@ function testFrameEval() {
       is(gDebugger.DebuggerController.activeThread.state, "paused",
         "Should only be getting stack frames while paused.");
 
-      var localScope = gDebugger.DebuggerView.Properties._vars.firstChild,
+      var localScope = gDebugger.DebuggerView.Variables._list.querySelector(".scope"),
           localNodes = localScope.querySelector(".details").childNodes,
           varA = localNodes[7];
 
@@ -65,21 +74,21 @@ function testModification(aVar, aCallback, aNewValue, aNewResult) {
     gDebugger);
 
   executeSoon(function() {
-    ok(aVar.querySelector(".element-input"),
+    ok(aVar.querySelector(".element-value-input"),
       "There should be an input element created.");
 
     let count = 0;
     gDebugger.addEventListener("Debugger:FetchedVariables", function test() {
       // We expect 2 Debugger:FetchedVariables events, one from the global
       // object scope and the regular one.
-      if (++count <2) {
+      if (++count < 2) {
         info("Number of received Debugger:FetchedVariables events: " + count);
         return;
       }
       gDebugger.removeEventListener("Debugger:FetchedVariables", test, false);
       // Get the variable reference anew, since the old ones were discarded when
       // we resumed.
-      var localScope = gDebugger.DebuggerView.Properties._vars.firstChild,
+      var localScope = gDebugger.DebuggerView.Variables._list.querySelector(".scope"),
           localNodes = localScope.querySelector(".details").childNodes,
           varA = localNodes[7];
 

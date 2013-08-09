@@ -24,7 +24,7 @@
 nsresult
 FilterExpr::evaluate(txIEvalContext* aContext, txAExprResult** aResult)
 {
-    *aResult = nsnull;
+    *aResult = nullptr;
 
     nsRefPtr<txAExprResult> exprRes;
     nsresult rv = expr->evaluate(aContext, getter_AddRefs(exprRes));
@@ -36,7 +36,7 @@ FilterExpr::evaluate(txIEvalContext* aContext, txAExprResult** aResult)
     nsRefPtr<txNodeSet> nodes =
         static_cast<txNodeSet*>(static_cast<txAExprResult*>(exprRes));
     // null out exprRes so that we can test for shared-ness
-    exprRes = nsnull;
+    exprRes = nullptr;
 
     nsRefPtr<txNodeSet> nonShared;
     rv = aContext->recycler()->getNonSharedNodeSet(nodes,
@@ -55,7 +55,7 @@ FilterExpr::evaluate(txIEvalContext* aContext, txAExprResult** aResult)
 TX_IMPL_EXPR_STUBS_BASE(FilterExpr, NODESET_RESULT)
 
 Expr*
-FilterExpr::getSubExprAt(PRUint32 aPos)
+FilterExpr::getSubExprAt(uint32_t aPos)
 {
     if (aPos == 0) {
       return expr;
@@ -64,7 +64,7 @@ FilterExpr::getSubExprAt(PRUint32 aPos)
 }
 
 void
-FilterExpr::setSubExprAt(PRUint32 aPos, Expr* aExpr)
+FilterExpr::setSubExprAt(uint32_t aPos, Expr* aExpr)
 {
     if (aPos == 0) {
       expr.forget();

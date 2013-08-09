@@ -6,6 +6,7 @@
 #ifndef nsMathMLmtableFrame_h___
 #define nsMathMLmtableFrame_h___
 
+#include "mozilla/Attributes.h"
 #include "nsCOMPtr.h"
 #include "nsMathMLContainerFrame.h"
 
@@ -25,17 +26,17 @@ public:
   // Overloaded nsIMathMLFrame methods
 
   NS_IMETHOD
-  InheritAutomaticData(nsIFrame* aParent);
+  InheritAutomaticData(nsIFrame* aParent) MOZ_OVERRIDE;
 
   NS_IMETHOD
-  UpdatePresentationData(PRUint32 aFlagsValues,
-                         PRUint32 aWhichFlags);
+  UpdatePresentationData(uint32_t aFlagsValues,
+                         uint32_t aWhichFlags);
 
   NS_IMETHOD
-  UpdatePresentationDataFromChildAt(PRInt32         aFirstIndex,
-                                    PRInt32         aLastIndex,
-                                    PRUint32        aFlagsValues,
-                                    PRUint32        aWhichFlags);
+  UpdatePresentationDataFromChildAt(int32_t         aFirstIndex,
+                                    int32_t         aLastIndex,
+                                    uint32_t        aFlagsValues,
+                                    uint32_t        aWhichFlags) MOZ_OVERRIDE;
 
   // overloaded nsTableOuterFrame methods
 
@@ -43,14 +44,14 @@ public:
   Reflow(nsPresContext*          aPresContext,
          nsHTMLReflowMetrics&     aDesiredSize,
          const nsHTMLReflowState& aReflowState,
-         nsReflowStatus&          aStatus);
+         nsReflowStatus&          aStatus) MOZ_OVERRIDE;
 
   NS_IMETHOD
-  AttributeChanged(PRInt32  aNameSpaceID,
+  AttributeChanged(int32_t  aNameSpaceID,
                    nsIAtom* aAttribute,
-                   PRInt32  aModType);
+                   int32_t  aModType);
 
-  virtual bool IsFrameOfType(PRUint32 aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const
   {
     return nsTableOuterFrame::IsFrameOfType(aFlags & ~(nsIFrame::eMathML));
   }
@@ -64,7 +65,7 @@ protected:
   // up to the first row. Used for alignments that are relative to a given row
   nsIFrame*
   GetRowFrameAt(nsPresContext* aPresContext,
-                PRInt32         aRowIndex);
+                int32_t         aRowIndex);
 }; // class nsMathMLmtableOuterFrame
 
 // --------------
@@ -110,7 +111,7 @@ public:
     return rv;
   }
 
-  virtual bool IsFrameOfType(PRUint32 aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const
   {
     return nsTableFrame::IsFrameOfType(aFlags & ~(nsIFrame::eMathML));
   }
@@ -137,13 +138,13 @@ public:
   // overloaded nsTableRowFrame methods
 
   NS_IMETHOD
-  AttributeChanged(PRInt32  aNameSpaceID,
+  AttributeChanged(int32_t  aNameSpaceID,
                    nsIAtom* aAttribute,
-                   PRInt32  aModType);
+                   int32_t  aModType);
 
   NS_IMETHOD
   AppendFrames(ChildListID  aListID,
-               nsFrameList& aFrameList)
+               nsFrameList& aFrameList) MOZ_OVERRIDE
   {
     nsresult rv = nsTableRowFrame::AppendFrames(aListID, aFrameList);
     RestyleTable();
@@ -153,7 +154,7 @@ public:
   NS_IMETHOD
   InsertFrames(ChildListID aListID,
                nsIFrame* aPrevFrame,
-               nsFrameList& aFrameList)
+               nsFrameList& aFrameList) MOZ_OVERRIDE
   {
     nsresult rv = nsTableRowFrame::InsertFrames(aListID, aPrevFrame, aFrameList);
     RestyleTable();
@@ -162,14 +163,14 @@ public:
 
   NS_IMETHOD
   RemoveFrame(ChildListID aListID,
-              nsIFrame* aOldFrame)
+              nsIFrame* aOldFrame) MOZ_OVERRIDE
   {
     nsresult rv = nsTableRowFrame::RemoveFrame(aListID, aOldFrame);
     RestyleTable();
     return rv;
   }
 
-  virtual bool IsFrameOfType(PRUint32 aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const
   {
     return nsTableRowFrame::IsFrameOfType(aFlags & ~(nsIFrame::eMathML));
   }
@@ -201,13 +202,13 @@ public:
   // overloaded nsTableCellFrame methods
 
   NS_IMETHOD
-  AttributeChanged(PRInt32  aNameSpaceID,
+  AttributeChanged(int32_t  aNameSpaceID,
                    nsIAtom* aAttribute,
-                   PRInt32  aModType);
+                   int32_t  aModType);
 
-  virtual PRInt32 GetRowSpan();
-  virtual PRInt32 GetColSpan();
-  virtual bool IsFrameOfType(PRUint32 aFlags) const
+  virtual int32_t GetRowSpan() MOZ_OVERRIDE;
+  virtual int32_t GetColSpan() MOZ_OVERRIDE;
+  virtual bool IsFrameOfType(uint32_t aFlags) const
   {
     return nsTableCellFrame::IsFrameOfType(aFlags & ~(nsIFrame::eMathML));
   }
@@ -230,10 +231,10 @@ public:
   // Overloaded nsIMathMLFrame methods
 
   NS_IMETHOD
-  UpdatePresentationDataFromChildAt(PRInt32         aFirstIndex,
-                                    PRInt32         aLastIndex,
-                                    PRUint32        aFlagsValues,
-                                    PRUint32        aFlagsToUpdate)
+  UpdatePresentationDataFromChildAt(int32_t         aFirstIndex,
+                                    int32_t         aLastIndex,
+                                    uint32_t        aFlagsValues,
+                                    uint32_t        aFlagsToUpdate) MOZ_OVERRIDE
   {
     nsMathMLContainerFrame::PropagatePresentationDataFromChildAt(this,
       aFirstIndex, aLastIndex, aFlagsValues, aFlagsToUpdate);
@@ -246,7 +247,7 @@ public:
          const nsHTMLReflowState& aReflowState,
          nsReflowStatus&          aStatus);
 
-  virtual bool IsFrameOfType(PRUint32 aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const
   {
     return nsBlockFrame::IsFrameOfType(aFlags &
       ~(nsIFrame::eMathML | nsIFrame::eExcludesIgnorableWhitespace));
@@ -256,7 +257,7 @@ protected:
   nsMathMLmtdInnerFrame(nsStyleContext* aContext) : nsBlockFrame(aContext) {}
   virtual ~nsMathMLmtdInnerFrame();
 
-  virtual PRIntn GetSkipSides() const { return 0; }
+  virtual int GetSkipSides() const MOZ_OVERRIDE { return 0; }
 };  // class nsMathMLmtdInnerFrame
 
 #endif /* nsMathMLmtableFrame_h___ */

@@ -4,22 +4,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGPathData.h"
-#include "SVGAnimatedPathSegList.h"
-#include "SVGPathSegUtils.h"
-#include "nsSVGElement.h"
-#include "nsDOMError.h"
-#include "nsContentUtils.h"
+#include "gfxPlatform.h"
+#include "nsError.h"
 #include "nsString.h"
-#include "nsSVGUtils.h"
-#include "string.h"
+#include "nsSVGElement.h"
 #include "nsSVGPathDataParser.h"
 #include "nsSVGPathGeometryElement.h" // for nsSVGMark
-#include "gfxPlatform.h"
 #include <stdarg.h>
+#include "string.h"
+#include "SVGContentUtils.h"
+#include "SVGPathSegUtils.h"
 
 using namespace mozilla;
 
-static bool IsMoveto(PRUint16 aSegType)
+static bool IsMoveto(uint16_t aSegType)
 {
   return aSegType == nsIDOMSVGPathSeg::PATHSEG_MOVETO_ABS ||
          aSegType == nsIDOMSVGPathSeg::PATHSEG_MOVETO_REL;
@@ -44,7 +42,7 @@ SVGPathData::GetValueAsString(nsAString& aValue) const
   if (!Length()) {
     return;
   }
-  PRUint32 i = 0;
+  uint32_t i = 0;
   for (;;) {
     nsAutoString segAsString;
     SVGPathSegUtils::GetValueAsString(&mData[i], segAsString);
@@ -71,17 +69,17 @@ SVGPathData::SetValueFromString(const nsAString& aValue)
 }
 
 nsresult
-SVGPathData::AppendSeg(PRUint32 aType, ...)
+SVGPathData::AppendSeg(uint32_t aType, ...)
 {
-  PRUint32 oldLength = mData.Length();
-  PRUint32 newLength = oldLength + 1 + SVGPathSegUtils::ArgCountForType(aType);
+  uint32_t oldLength = mData.Length();
+  uint32_t newLength = oldLength + 1 + SVGPathSegUtils::ArgCountForType(aType);
   if (!mData.SetLength(newLength)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
   mData[oldLength] = SVGPathSegUtils::EncodeType(aType);
   va_list args;
   va_start(args, aType);
-  for (PRUint32 i = oldLength + 1; i < newLength; ++i) {
+  for (uint32_t i = oldLength + 1; i < newLength; ++i) {
     // NOTE! 'float' is promoted to 'double' when passed through '...'!
     mData[i] = float(va_arg(args, double));
   }
@@ -94,7 +92,7 @@ SVGPathData::GetPathLength() const
 {
   SVGPathTraversalState state;
 
-  PRUint32 i = 0;
+  uint32_t i = 0;
   while (i < mData.Length()) {
     SVGPathSegUtils::TraversePathSegment(&mData[i], state);
     i += 1 + SVGPathSegUtils::ArgCountForType(mData[i]);
@@ -106,10 +104,10 @@ SVGPathData::GetPathLength() const
 }
 
 #ifdef DEBUG
-PRUint32
+uint32_t
 SVGPathData::CountItems() const
 {
-  PRUint32 i = 0, count = 0;
+  uint32_t i = 0, count = 0;
 
   while (i < mData.Length()) {
     i += 1 + SVGPathSegUtils::ArgCountForType(mData[i]);
@@ -128,7 +126,7 @@ SVGPathData::GetSegmentLengths(nsTArray<double> *aLengths) const
   aLengths->Clear();
   SVGPathTraversalState state;
 
-  PRUint32 i = 0;
+  uint32_t i = 0;
   while (i < mData.Length()) {
     state.length = 0.0;
     SVGPathSegUtils::TraversePathSegment(&mData[i], state);
@@ -151,9 +149,9 @@ SVGPathData::GetDistancesFromOriginToEndsOfVisibleSegments(nsTArray<double> *aOu
 
   aOutput->Clear();
 
-  PRUint32 i = 0;
+  uint32_t i = 0;
   while (i < mData.Length()) {
-    PRUint32 segType = SVGPathSegUtils::DecodeType(mData[i]);
+    uint32_t segType = SVGPathSegUtils::DecodeType(mData[i]);
     SVGPathSegUtils::TraversePathSegment(&mData[i], state);
 
     // We skip all moveto commands except an initial moveto. See the text 'A
@@ -180,7 +178,7 @@ SVGPathData::GetDistancesFromOriginToEndsOfVisibleSegments(nsTArray<double> *aOu
   return true;
 }
 
-PRUint32
+uint32_t
 SVGPathData::GetPathSegAtLength(float aDistance) const
 {
   // TODO [SVGWG issue] get specified what happen if 'aDistance' < 0, or
@@ -188,7 +186,7 @@ SVGPathData::GetPathSegAtLength(float aDistance) const
   // Return -1? Throwing would better help authors avoid tricky bugs (DOM
   // could do that if we return -1).
 
-  PRUint32 i = 0, segIndex = 0;
+  uint32_t i = 0, segIndex = 0;
   SVGPathTraversalState state;
 
   while (i < mData.Length()) {
@@ -252,7 +250,7 @@ ApproximateZeroLengthSubpathSquareCaps(const gfxPoint &aPoint, gfxContext *aCtx)
 void
 SVGPathData::ConstructPath(gfxContext *aCtx) const
 {
-  if (!mData.Length() || !IsMoveto(SVGPathSegUtils::DecodeType(mData[0]))) {
+  if (mData.IsEmpty() || !IsMoveto(SVGPathSegUtils::DecodeType(mData[0]))) {
     return; // paths without an initial moveto are invalid
   }
 
@@ -260,7 +258,8 @@ SVGPathData::ConstructPath(gfxContext *aCtx) const
   bool subpathHasLength = false;  // visual length
   bool subpathContainsNonArc = false;
 
-  PRUint32 segType, prevSegType = nsIDOMSVGPathSeg::PATHSEG_UNKNOWN;
+  uint32_t segType     = nsIDOMSVGPathSeg::PATHSEG_UNKNOWN;
+  uint32_t prevSegType = nsIDOMSVGPathSeg::PATHSEG_UNKNOWN;
   gfxPoint pathStart(0.0, 0.0); // start point of [sub]path
   gfxPoint segStart(0.0, 0.0);
   gfxPoint segEnd;
@@ -271,10 +270,10 @@ SVGPathData::ConstructPath(gfxContext *aCtx) const
   // then cp2 is its second control point. If the previous segment was a
   // quadratic curve, then cp1 is its (only) control point.
 
-  PRUint32 i = 0;
+  uint32_t i = 0;
   while (i < mData.Length()) {
     segType = SVGPathSegUtils::DecodeType(mData[i++]);
-    PRUint32 argCount = SVGPathSegUtils::ArgCountForType(segType);
+    uint32_t argCount = SVGPathSegUtils::ArgCountForType(segType);
 
     switch (segType)
     {
@@ -487,6 +486,8 @@ SVGPathData::ConstructPath(gfxContext *aCtx) const
   }
 
   NS_ABORT_IF_FALSE(i == mData.Length(), "Very, very bad - mData corrupt");
+  NS_ABORT_IF_FALSE(prevSegType == segType,
+                    "prevSegType should be left at the final segType");
 
   MAYBE_APPROXIMATE_ZERO_LENGTH_SUBPATH_SQUARE_CAPS;
 }
@@ -494,14 +495,14 @@ SVGPathData::ConstructPath(gfxContext *aCtx) const
 already_AddRefed<gfxFlattenedPath>
 SVGPathData::ToFlattenedPath(const gfxMatrix& aMatrix) const
 {
-  nsRefPtr<gfxContext> ctx =
+  nsRefPtr<gfxContext> tmpCtx =
     new gfxContext(gfxPlatform::GetPlatform()->ScreenReferenceSurface());
 
-  ctx->SetMatrix(aMatrix);
-  ConstructPath(ctx);
-  ctx->IdentityMatrix();
+  tmpCtx->SetMatrix(aMatrix);
+  ConstructPath(tmpCtx);
+  tmpCtx->IdentityMatrix();
 
-  return ctx->GetFlattenedPath();
+  return tmpCtx->GetFlattenedPath();
 }
 
 static double
@@ -534,16 +535,16 @@ SVGPathData::GetMarkerPositioningData(nsTArray<nsSVGMark> *aMarks) const
   float pathStartAngle = 0.0f;
 
   // info on previous segment:
-  PRUint16 prevSegType = nsIDOMSVGPathSeg::PATHSEG_UNKNOWN;
+  uint16_t prevSegType = nsIDOMSVGPathSeg::PATHSEG_UNKNOWN;
   gfxPoint prevSegEnd(0.0, 0.0);
   float prevSegEndAngle = 0.0f;
   gfxPoint prevCP; // if prev seg was a bezier, this was its last control point
 
-  PRUint32 i = 0;
+  uint32_t i = 0;
   while (i < mData.Length()) {
 
     // info on current segment:
-    PRUint16 segType =
+    uint16_t segType =
       SVGPathSegUtils::DecodeType(mData[i++]); // advances i to args
     gfxPoint &segStart = prevSegEnd;
     gfxPoint segEnd;
@@ -812,7 +813,7 @@ SVGPathData::GetMarkerPositioningData(nsTArray<nsSVGMark> *aMarks) const
       } else {
         if (!(segType == nsIDOMSVGPathSeg::PATHSEG_CLOSEPATH &&
               prevSegType == nsIDOMSVGPathSeg::PATHSEG_CLOSEPATH))
-          mark.angle = nsSVGUtils::AngleBisect(prevSegEndAngle, segStartAngle);
+          mark.angle = SVGContentUtils::AngleBisect(prevSegEndAngle, segStartAngle);
       }
     }
 
@@ -827,7 +828,7 @@ SVGPathData::GetMarkerPositioningData(nsTArray<nsSVGMark> *aMarks) const
         prevSegType != nsIDOMSVGPathSeg::PATHSEG_CLOSEPATH) {
       aMarks->ElementAt(aMarks->Length() - 1).angle =
         //aMarks->ElementAt(pathStartIndex).angle =
-        nsSVGUtils::AngleBisect(segEndAngle, pathStartAngle);
+        SVGContentUtils::AngleBisect(segEndAngle, pathStartAngle);
     }
 
     prevSegType = segType;

@@ -28,8 +28,8 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIDOMSVGANIMATEMOTIONELEMENT
 
-  NS_FORWARD_NSIDOMNODE(nsSVGAnimateMotionElementBase::)
-  NS_FORWARD_NSIDOMELEMENT(nsSVGAnimateMotionElementBase::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
   NS_FORWARD_NSIDOMSVGELEMENT(nsSVGAnimateMotionElementBase::)
   NS_FORWARD_NSIDOMSVGANIMATIONELEMENT(nsSVGAnimateMotionElementBase::)
 
@@ -38,7 +38,7 @@ public:
 
   // nsISMILAnimationElement
   virtual nsSMILAnimationFunction& AnimationFunction();
-  virtual bool GetTargetAttributeName(PRInt32 *aNamespaceID,
+  virtual bool GetTargetAttributeName(int32_t *aNamespaceID,
                                         nsIAtom **aLocalName) const;
   virtual nsSMILTargetAttrType GetTargetAttributeType() const;
 

@@ -10,6 +10,34 @@
  * httpd.js.
  */
 
+this.EXPORTED_SYMBOLS = [
+  "HTTP_400",
+  "HTTP_401",
+  "HTTP_402",
+  "HTTP_403",
+  "HTTP_404",
+  "HTTP_405",
+  "HTTP_406",
+  "HTTP_407",
+  "HTTP_408",
+  "HTTP_409",
+  "HTTP_410",
+  "HTTP_411",
+  "HTTP_412",
+  "HTTP_413",
+  "HTTP_414",
+  "HTTP_415",
+  "HTTP_417",
+  "HTTP_500",
+  "HTTP_501",
+  "HTTP_502",
+  "HTTP_503",
+  "HTTP_504",
+  "HTTP_505",
+  "HttpError",
+  "HttpServer",
+];
+
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const Cc = Components.classes;
@@ -50,7 +78,7 @@ function NS_ASSERT(cond, msg)
 }
 
 /** Constructs an HTTP error object. */
-function HttpError(code, description)
+this.HttpError = function HttpError(code, description)
 {
   this.code = code;
   this.description = description;
@@ -66,30 +94,30 @@ HttpError.prototype =
 /**
  * Errors thrown to trigger specific HTTP server responses.
  */
-const HTTP_400 = new HttpError(400, "Bad Request");
-const HTTP_401 = new HttpError(401, "Unauthorized");
-const HTTP_402 = new HttpError(402, "Payment Required");
-const HTTP_403 = new HttpError(403, "Forbidden");
-const HTTP_404 = new HttpError(404, "Not Found");
-const HTTP_405 = new HttpError(405, "Method Not Allowed");
-const HTTP_406 = new HttpError(406, "Not Acceptable");
-const HTTP_407 = new HttpError(407, "Proxy Authentication Required");
-const HTTP_408 = new HttpError(408, "Request Timeout");
-const HTTP_409 = new HttpError(409, "Conflict");
-const HTTP_410 = new HttpError(410, "Gone");
-const HTTP_411 = new HttpError(411, "Length Required");
-const HTTP_412 = new HttpError(412, "Precondition Failed");
-const HTTP_413 = new HttpError(413, "Request Entity Too Large");
-const HTTP_414 = new HttpError(414, "Request-URI Too Long");
-const HTTP_415 = new HttpError(415, "Unsupported Media Type");
-const HTTP_417 = new HttpError(417, "Expectation Failed");
+this.HTTP_400 = new HttpError(400, "Bad Request");
+this.HTTP_401 = new HttpError(401, "Unauthorized");
+this.HTTP_402 = new HttpError(402, "Payment Required");
+this.HTTP_403 = new HttpError(403, "Forbidden");
+this.HTTP_404 = new HttpError(404, "Not Found");
+this.HTTP_405 = new HttpError(405, "Method Not Allowed");
+this.HTTP_406 = new HttpError(406, "Not Acceptable");
+this.HTTP_407 = new HttpError(407, "Proxy Authentication Required");
+this.HTTP_408 = new HttpError(408, "Request Timeout");
+this.HTTP_409 = new HttpError(409, "Conflict");
+this.HTTP_410 = new HttpError(410, "Gone");
+this.HTTP_411 = new HttpError(411, "Length Required");
+this.HTTP_412 = new HttpError(412, "Precondition Failed");
+this.HTTP_413 = new HttpError(413, "Request Entity Too Large");
+this.HTTP_414 = new HttpError(414, "Request-URI Too Long");
+this.HTTP_415 = new HttpError(415, "Unsupported Media Type");
+this.HTTP_417 = new HttpError(417, "Expectation Failed");
 
-const HTTP_500 = new HttpError(500, "Internal Server Error");
-const HTTP_501 = new HttpError(501, "Not Implemented");
-const HTTP_502 = new HttpError(502, "Bad Gateway");
-const HTTP_503 = new HttpError(503, "Service Unavailable");
-const HTTP_504 = new HttpError(504, "Gateway Timeout");
-const HTTP_505 = new HttpError(505, "HTTP Version Not Supported");
+this.HTTP_500 = new HttpError(500, "Internal Server Error");
+this.HTTP_501 = new HttpError(501, "Not Implemented");
+this.HTTP_502 = new HttpError(502, "Bad Gateway");
+this.HTTP_503 = new HttpError(503, "Service Unavailable");
+this.HTTP_504 = new HttpError(504, "Gateway Timeout");
+this.HTTP_505 = new HttpError(505, "HTTP Version Not Supported");
 
 /** Creates a hash with fields corresponding to the values in arr. */
 function array2obj(arr)
@@ -485,12 +513,14 @@ nsHttpServer.prototype =
     this._host = host;
 
     // The listen queue needs to be long enough to handle
-    // network.http.max-connections-per-server concurrent connections,
-    // plus a safety margin in case some other process is talking to
-    // the server as well.
+    // network.http.max-persistent-connections-per-server or
+    // network.http.max-persistent-connections-per-proxy concurrent
+    // connections, plus a safety margin in case some other process is
+    // talking to the server as well.
     var prefs = getRootPrefBranch();
-    var maxConnections =
-      prefs.getIntPref("network.http.max-connections-per-server") + 5;
+    var maxConnections = 5 + Math.max(
+      prefs.getIntPref("network.http.max-persistent-connections-per-server"),
+      prefs.getIntPref("network.http.max-persistent-connections-per-proxy"));
 
     try
     {
@@ -762,7 +792,7 @@ nsHttpServer.prototype =
     // Bug 508125: Add a GC here else we'll use gigabytes of memory running
     // mochitests. We can't rely on xpcshell doing an automated GC, as that
     // would interfere with testing GC stuff...
-    gc();
+    Components.utils.forceGC();
   },
 
   /**
@@ -776,6 +806,7 @@ nsHttpServer.prototype =
   }
 };
 
+this.HttpServer = nsHttpServer;
 
 //
 // RFC 2396 section 3.2.2:
@@ -1609,7 +1640,8 @@ RequestReader.prototype =
     // clients and servers SHOULD accept any amount of SP or HT characters
     // between fields, even though only a single SP is required (section 19.3)
     var request = line.split(/[ \t]+/);
-    if (!request || request.length != 3) {
+    if (!request || request.length != 3)
+    {
       dumpn("*** No request in line");
       throw HTTP_400;
     }
@@ -1619,7 +1651,8 @@ RequestReader.prototype =
     // get the HTTP version
     var ver = request[2];
     var match = ver.match(/^HTTP\/(\d+\.\d+)$/);
-    if (!match) {
+    if (!match)
+    {
       dumpn("*** No HTTP version in line");
       throw HTTP_400;
     }
@@ -1646,7 +1679,8 @@ RequestReader.prototype =
     if (fullPath.charAt(0) != "/")
     {
       // No absolute paths in the request line in HTTP prior to 1.1
-      if (!metadata._httpVersion.atLeast(nsHttpVersion.HTTP_1_1)) {
+      if (!metadata._httpVersion.atLeast(nsHttpVersion.HTTP_1_1))
+      {
         dumpn("*** Metadata version too low");
         throw HTTP_400;
       }
@@ -1663,10 +1697,15 @@ RequestReader.prototype =
         if (port === -1)
         {
           if (scheme === "http")
+          {
             port = 80;
+          }
           else if (scheme === "https")
+          {
             port = 443;
-          else {
+          }
+          else
+          {
             dumpn("*** Unknown scheme: " + scheme);
             throw HTTP_400;
           }
@@ -1681,7 +1720,8 @@ RequestReader.prototype =
         throw HTTP_400;
       }
 
-      if (!serverIdentity.has(scheme, host, port) || fullPath.charAt(0) != "/") {
+      if (!serverIdentity.has(scheme, host, port) || fullPath.charAt(0) != "/")
+      {
         dumpn("*** serverIdentity unknown or path does not start with '/'");
         throw HTTP_400;
       }
@@ -1777,8 +1817,7 @@ RequestReader.prototype =
         // multi-line header if we've already seen a header line
         if (!lastName)
         {
-          // we don't have a header to continue!
-          dumpn("No header to continue");
+          dumpn("We don't have a header to continue!");
           throw HTTP_400;
         }
 
@@ -1805,8 +1844,7 @@ RequestReader.prototype =
         var colon = lineText.indexOf(":"); // first colon must be splitter
         if (colon < 1)
         {
-          // no colon or missing header field-name
-          dumpn("*** No colon in header");
+          dumpn("*** No colon or missing header field-name");
           throw HTTP_400;
         }
 
@@ -1904,12 +1942,13 @@ LineData.prototype =
     if (length < 0)
     {
       this._start = data.length;
+
       // But if our data ends in a CR, we have to back up one, because
       // the first byte in the next packet might be an LF and if we
       // start looking at data.length we won't find it.
-      if (data[data.length - 1] == CR) {
+      if (data.length > 0 && data[data.length - 1] === CR)
         --this._start;
-      }
+
       return false;
     }
 
@@ -2072,6 +2111,7 @@ function toInternalPath(path, encoded)
   return comps.join("/");
 }
 
+const PERMS_READONLY = (4 << 6) | (4 << 3) | 4;
 
 /**
  * Adds custom-specified headers for the given file to the given response, if
@@ -2099,7 +2139,7 @@ function maybeAddHeaders(file, metadata, response)
     return;
 
   const PR_RDONLY = 0x01;
-  var fis = new FileInputStream(headerFile, PR_RDONLY, 0444,
+  var fis = new FileInputStream(headerFile, PR_RDONLY, PERMS_READONLY,
                                 Ci.nsIFileInputStream.CLOSE_ON_EOF);
 
   try
@@ -2548,7 +2588,8 @@ ServerHandler.prototype =
         this._getTypeFromFile(file) !== SJS_TYPE)
     {
       var rangeMatch = metadata.getHeader("Range").match(/^bytes=(\d+)?-(\d+)?$/);
-      if (!rangeMatch) {
+      if (!rangeMatch)
+      {
         dumpn("*** Range header bogosity: '" + metadata.getHeader("Range") + "'");
         throw HTTP_400;
       }
@@ -2559,7 +2600,8 @@ ServerHandler.prototype =
       if (rangeMatch[2] !== undefined)
         end = parseInt(rangeMatch[2], 10);
 
-      if (start === undefined && end === undefined) {
+      if (start === undefined && end === undefined)
+      {
         dumpn("*** More Range header bogosity: '" + metadata.getHeader("Range") + "'");
         throw HTTP_400;
       }
@@ -2632,7 +2674,7 @@ ServerHandler.prototype =
     var type = this._getTypeFromFile(file);
     if (type === SJS_TYPE)
     {
-      var fis = new FileInputStream(file, PR_RDONLY, 0444,
+      var fis = new FileInputStream(file, PR_RDONLY, PERMS_READONLY,
                                     Ci.nsIFileInputStream.CLOSE_ON_EOF);
 
       try
@@ -2726,7 +2768,7 @@ ServerHandler.prototype =
       maybeAddHeaders(file, metadata, response);
       response.setHeader("Content-Length", "" + count, false);
 
-      var fis = new FileInputStream(file, PR_RDONLY, 0444,
+      var fis = new FileInputStream(file, PR_RDONLY, PERMS_READONLY,
                                     Ci.nsIFileInputStream.CLOSE_ON_EOF);
 
       offset = offset || 0;
@@ -4668,7 +4710,8 @@ const headerUtils =
    */
   normalizeFieldName: function(fieldName)
   {
-    if (fieldName == "") {
+    if (fieldName == "")
+    {
       dumpn("*** Empty fieldName");
       throw Cr.NS_ERROR_INVALID_ARG;
     }
@@ -4724,7 +4767,8 @@ const headerUtils =
     // that should have taken care of all CTLs, so val should contain no CTLs
     dumpn("*** Normalized value: '" + val + "'");
     for (var i = 0, len = val.length; i < len; i++)
-      if (isCTL(val.charCodeAt(i))) {
+      if (isCTL(val.charCodeAt(i)))
+      {
         dump("*** Char " + i + " has charcode " + val.charCodeAt(i));
         throw Cr.NS_ERROR_INVALID_ARG;
       }
@@ -5192,7 +5236,7 @@ Request.prototype =
 
 // XPCOM trappings
 
-var NSGetFactory = XPCOMUtils.generateNSGetFactory([nsHttpServer]);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory([nsHttpServer]);
 
 /**
  * Creates a new HTTP server listening for loopback traffic on the given port,

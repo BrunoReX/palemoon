@@ -8,7 +8,7 @@
 #include "nsXPCOMPrivate.h" // for XP MAXPATHLEN
 #include "nsMemory.h" // for NS_ARRAY_LENGTH
 #include "nsXULAppAPI.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 
 #include <stdarg.h>
 
@@ -137,10 +137,10 @@ static nsresult GetRealPath(const char* appDataFile, char* *aResult)
 class AutoAppData
 {
 public:
-  AutoAppData(nsILocalFile* aINIFile) : mAppData(nsnull) {
+  AutoAppData(nsIFile* aINIFile) : mAppData(nullptr) {
     nsresult rv = XRE_CreateAppData(aINIFile, &mAppData);
     if (NS_FAILED(rv))
-      mAppData = nsnull;
+      mAppData = nullptr;
   }
   ~AutoAppData() {
     if (mAppData)
@@ -353,7 +353,7 @@ main(int argc, char **argv)
 #ifdef XP_MACOSX
     // Check for <bundle>/Contents/Frameworks/XUL.framework/libxpcom.dylib
     CFURLRef fwurl = CFBundleCopyPrivateFrameworksURL(appBundle);
-    CFURLRef absfwurl = nsnull;
+    CFURLRef absfwurl = nullptr;
     if (fwurl) {
       absfwurl = CFURLCopyAbsoluteURL(fwurl);
       CFRelease(fwurl);
@@ -428,7 +428,7 @@ main(int argc, char **argv)
     { "XRE_CreateAppData", (NSFuncPtr*) &XRE_CreateAppData },
     { "XRE_FreeAppData", (NSFuncPtr*) &XRE_FreeAppData },
     { "XRE_main", (NSFuncPtr*) &XRE_main },
-    { nsnull, nsnull }
+    { nullptr, nullptr }
   };
 
   rv = XPCOMGlueLoadXULFunctions(kXULFuncs);
@@ -442,7 +442,7 @@ main(int argc, char **argv)
   int retval;
 
   { // Scope COMPtr and AutoAppData
-    nsCOMPtr<nsILocalFile> iniFile;
+    nsCOMPtr<nsIFile> iniFile;
 #ifdef XP_WIN
     // On Windows iniPath is UTF-8 encoded so we need to convert it.
     rv = NS_NewLocalFile(NS_ConvertUTF8toUTF16(iniPath), false,

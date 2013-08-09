@@ -6,6 +6,7 @@
 #ifndef nsMathMLmstyleFrame_h___
 #define nsMathMLmstyleFrame_h___
 
+#include "mozilla/Attributes.h"
 #include "nsCOMPtr.h"
 #include "nsMathMLContainerFrame.h"
 
@@ -20,31 +21,31 @@ public:
   friend nsIFrame* NS_NewMathMLmstyleFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
 
   NS_IMETHOD
-  AttributeChanged(PRInt32         aNameSpaceID,
+  AttributeChanged(int32_t         aNameSpaceID,
                    nsIAtom*        aAttribute,
-                   PRInt32         aModType);
+                   int32_t         aModType);
 
   NS_IMETHOD
   InheritAutomaticData(nsIFrame* aParent);
 
   NS_IMETHOD
-  TransmitAutomaticData();
+  TransmitAutomaticData() MOZ_OVERRIDE;
 
   NS_IMETHOD
-  UpdatePresentationData(PRUint32        aFlagsValues,
-                         PRUint32        aFlagsToUpdate);
+  UpdatePresentationData(uint32_t        aFlagsValues,
+                         uint32_t        aFlagsToUpdate) MOZ_OVERRIDE;
 
   NS_IMETHOD
-  UpdatePresentationDataFromChildAt(PRInt32         aFirstIndex,
-                                    PRInt32         aLastIndex,
-                                    PRUint32        aFlagsValues,
-                                    PRUint32        aFlagsToUpdate);
+  UpdatePresentationDataFromChildAt(int32_t         aFirstIndex,
+                                    int32_t         aLastIndex,
+                                    uint32_t        aFlagsValues,
+                                    uint32_t        aFlagsToUpdate) MOZ_OVERRIDE;
 
 protected:
   nsMathMLmstyleFrame(nsStyleContext* aContext) : nsMathMLContainerFrame(aContext) {}
   virtual ~nsMathMLmstyleFrame();
 
-  virtual PRIntn GetSkipSides() const { return 0; }
+  virtual int GetSkipSides() const { return 0; }
 };
 
 #endif /* nsMathMLmstyleFrame_h___ */

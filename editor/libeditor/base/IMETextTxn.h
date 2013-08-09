@@ -7,11 +7,15 @@
 #define IMETextTxn_h__
 
 #include "EditTxn.h"
+#include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsID.h"
 #include "nsIDOMCharacterData.h"
 #include "nsIPrivateTextRange.h"
-#include "nsCOMPtr.h"
-#include "nsWeakPtr.h"
-#include "nsIAtom.h"
+#include "nsString.h"
+#include "nscore.h"
+
+class nsITransaction;
 
 // {D4D25721-2813-11d3-9EA3-0060089FE59B}
 #define IME_TEXT_TXN_CID							\
@@ -38,8 +42,8 @@ public:
     * @param aSelCon used to get and set the selection
     */
   NS_IMETHOD Init(nsIDOMCharacterData *aElement,
-                  PRUint32 aOffset,
-                  PRUint32 aReplaceLength,
+                  uint32_t aOffset,
+                  uint32_t aReplaceLength,
                   nsIPrivateTextRangeList* aTextRangeList,
                   const nsAString& aString,
                   nsIEditor* aEditor);
@@ -70,9 +74,9 @@ protected:
   nsCOMPtr<nsIDOMCharacterData> mElement;
   
   /** the offsets into mElement where the insertion should be placed*/
-  PRUint32 mOffset;
+  uint32_t mOffset;
 
-  PRUint32 mReplaceLength;
+  uint32_t mReplaceLength;
 
   /** the text to insert into mElement at mOffset */
   nsString mStringToInsert;

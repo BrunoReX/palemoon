@@ -58,12 +58,7 @@ public:
   /**
    * Method for the listbox to set and get the recent index
    */
-  virtual PRInt32 UpdateRecentIndex(PRInt32 aIndex) = 0;
-
-  /**
-   *
-   */
-  virtual void AbsolutelyPositionDropDown() = 0;
+  virtual int32_t UpdateRecentIndex(int32_t aIndex) = 0;
 
   /**
    * Notification that the content has been reset
@@ -86,7 +81,7 @@ public:
    * and that way it knows whether to "cancel" the current selection residing in the 
    * dropdown. Or whether to leave the selection alone.
    */
-  virtual PRInt32 GetIndexOfDisplayArea() = 0;
+  virtual int32_t GetIndexOfDisplayArea() = 0;
 };
 
 #endif

@@ -108,7 +108,7 @@ add_test(function setup() {
   try {
     BookmarkHTMLUtils.importFromFile(gBookmarksFileOld, true, function(success) {
       if (success) {
-        waitForAsyncUpdates(function () {
+        promiseAsyncUpdates().then(function () {
           testImportedBookmarks();
 
           // Prepare for next tests.
@@ -116,7 +116,7 @@ add_test(function setup() {
             exporter.exportHTMLToFile(gBookmarksFileNew);
           } catch(ex) { do_throw("couldn't export to file: " + ex); }
 
-          waitForAsyncUpdates(function () {
+          promiseAsyncUpdates().then(function () {
             remove_all_bookmarks();
             run_next_test();
           });
@@ -137,10 +137,10 @@ add_test(function test_import_new()
   try {
     BookmarkHTMLUtils.importFromFile(gBookmarksFileNew, true, function(success) {
       if (success) {
-        waitForAsyncUpdates(function () {
+        promiseAsyncUpdates().then(function () {
           testImportedBookmarks();
 
-          waitForAsyncUpdates(function () {
+          promiseAsyncUpdates().then(function () {
             remove_all_bookmarks();
             run_next_test();
           });
@@ -184,7 +184,7 @@ add_test(function test_emptytitle_export()
         try {
           BookmarkHTMLUtils.importFromFile(gBookmarksFileNew, true, function(success) {
            if (success) {
-              waitForAsyncUpdates(function () {
+              promiseAsyncUpdates().then(function () {
                 testImportedBookmarks();
 
                 // Cleanup.
@@ -195,7 +195,7 @@ add_test(function test_emptytitle_export()
                   exporter.exportHTMLToFile(gBookmarksFileNew);
                 } catch(ex) { do_throw("couldn't export to file: " + ex); }
 
-                waitForAsyncUpdates(function () {
+                promiseAsyncUpdates().then(function () {
                   remove_all_bookmarks();
                   run_next_test();
                 });
@@ -240,7 +240,9 @@ add_test(function test_import_chromefavicon()
                                                     "Test");
 
       PlacesUtils.favicons.setAndFetchFaviconForPage(
-        PAGE_URI, CHROME_FAVICON_URI, true, function () {
+        PAGE_URI, CHROME_FAVICON_URI, true,
+          PlacesUtils.favicons.FAVICON_LOAD_NON_PRIVATE,
+          function () {
           PlacesUtils.favicons.getFaviconDataForPage(
             PAGE_URI, function (aURI, aDataLen, aData, aMimeType) {
               let base64Icon = "data:image/png;base64," +
@@ -255,7 +257,9 @@ add_test(function test_import_chromefavicon()
 
               // Change the favicon to check it's really imported again later.
               PlacesUtils.favicons.setAndFetchFaviconForPage(
-                PAGE_URI, CHROME_FAVICON_URI_2, true, function () {
+                PAGE_URI, CHROME_FAVICON_URI_2, true,
+                PlacesUtils.favicons.FAVICON_LOAD_NON_PRIVATE,
+                function () {
 
                   remove_all_bookmarks();
 
@@ -264,7 +268,7 @@ add_test(function test_import_chromefavicon()
                      if (!success) {
                         do_throw("couldn't import the exported file.");
                       }
-                      waitForAsyncUpdates(function () {
+                      promiseAsyncUpdates().then(function () {
                         testImportedBookmarks();
 
                         // Cleanup.
@@ -275,7 +279,7 @@ add_test(function test_import_chromefavicon()
                           exporter.exportHTMLToFile(gBookmarksFileNew);
                         } catch(ex) { do_throw("couldn't export to file: " + ex); }
 
-                        waitForAsyncUpdates(function () {
+                        promiseAsyncUpdates().then(function () {
                           remove_all_bookmarks();
                           run_next_test();
                         });
@@ -308,10 +312,10 @@ add_test(function test_import_ontop()
         try {
           BookmarkHTMLUtils.importFromFile(gBookmarksFileNew, true, function(success) {
             if (success) {
-              waitForAsyncUpdates(function () {
+              promiseAsyncUpdates().then(function () {
                 testImportedBookmarks();
 
-                waitForAsyncUpdates(function () {
+                promiseAsyncUpdates().then(function () {
                   remove_all_bookmarks();
                   run_next_test();
                 });

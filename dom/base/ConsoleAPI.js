@@ -21,11 +21,15 @@ const DEFAULT_MAX_STACKTRACE_DEPTH = 200;
 
 // The console API methods are async and their action is executed later. This
 // delay tells how much later.
-const CALL_DELAY = 30; // milliseconds
+const CALL_DELAY = 15; // milliseconds
+
+// This constant tells how many messages to process in a single timer execution.
+const MESSAGES_IN_INTERVAL = 1500;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/ConsoleAPIStorage.jsm");
+Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
 
 /**
  * The window.console API implementation. One instance is lazily created for
@@ -52,8 +56,6 @@ ConsoleAPI.prototype = {
   init: function CA_init(aWindow) {
     Services.obs.addObserver(this, "inner-window-destroyed", true);
 
-    let outerID;
-    let innerID;
     try {
       let windowUtils = aWindow.QueryInterface(Ci.nsIInterfaceRequestor)
                           .getInterface(Ci.nsIDOMWindowUtils);
@@ -105,6 +107,28 @@ ConsoleAPI.prototype = {
       timeEnd: function CA_timeEnd() {
         self.queueCall("timeEnd", arguments);
       },
+      profile: function CA_profile() {
+        // Send a notification picked up by the profiler if installed.
+        // This must happen right away otherwise we will miss samples
+        let consoleEvent = {
+          action: "profile",
+          arguments: arguments
+        };
+        consoleEvent.wrappedJSObject = consoleEvent;
+        Services.obs.notifyObservers(consoleEvent, "console-api-profiler",
+                                     null);  
+      },
+      profileEnd: function CA_profileEnd() {
+        // Send a notification picked up by the profiler if installed.
+        // This must happen right away otherwise we will miss samples
+        let consoleEvent = {
+          action: "profileEnd",
+          arguments: arguments
+        };
+        consoleEvent.wrappedJSObject = consoleEvent;
+        Services.obs.notifyObservers(consoleEvent, "console-api-profiler",
+                                     null);  
+      },
       __exposedProps__: {
         log: "r",
         info: "r",
@@ -117,7 +141,9 @@ ConsoleAPI.prototype = {
         groupCollapsed: "r",
         groupEnd: "r",
         time: "r",
-        timeEnd: "r"
+        timeEnd: "r",
+        profile: "r",
+        profileEnd: "r"
       }
     };
 
@@ -141,6 +167,8 @@ ConsoleAPI.prototype = {
       groupEnd: genPropDesc('groupEnd'),
       time: genPropDesc('time'),
       timeEnd: genPropDesc('timeEnd'),
+      profile: genPropDesc('profile'),
+      profileEnd: genPropDesc('profileEnd'),
       __noSuchMethod__: { enumerable: true, configurable: true, writable: true,
                           value: function() {} },
       __mozillaConsole__: { value: true }
@@ -182,6 +210,7 @@ ConsoleAPI.prototype = {
   queueCall: function CA_queueCall(aMethod, aArguments)
   {
     let metaForCall = {
+      isPrivate: PrivateBrowsingUtils.isWindowPrivate(this._window.get()),
       timeStamp: Date.now(),
       stack: this.getStackTrace(aMethod != "trace" ? 1 : null),
     };
@@ -190,7 +219,7 @@ ConsoleAPI.prototype = {
 
     if (!this._timerInitialized) {
       this._timer.initWithCallback(this._timerCallback.bind(this), CALL_DELAY,
-                                   Ci.nsITimer.TYPE_ONE_SHOT);
+                                   Ci.nsITimer.TYPE_REPEATING_SLACK);
       this._timerInitialized = true;
     }
   },
@@ -201,12 +230,17 @@ ConsoleAPI.prototype = {
    */
   _timerCallback: function CA__timerCallback()
   {
-    this._timerInitialized = false;
-    this._queuedCalls.splice(0).forEach(this._processQueuedCall, this);
+    this._queuedCalls.splice(0, MESSAGES_IN_INTERVAL)
+      .forEach(this._processQueuedCall, this);
 
-    if (this._windowDestroyed) {
-      ConsoleAPIStorage.clearEvents(this._innerID);
-      this.timerRegistry = {};
+    if (!this._queuedCalls.length) {
+      this._timerInitialized = false;
+      this._timer.cancel();
+
+      if (this._windowDestroyed) {
+        ConsoleAPIStorage.clearEvents(this._innerID);
+        this.timerRegistry = {};
+      }
     }
   },
 
@@ -222,6 +256,7 @@ ConsoleAPI.prototype = {
     let [method, args, meta] = aCall;
 
     let notifyMeta = {
+      isPrivate: meta.isPrivate,
       timeStamp: meta.timeStamp,
       frame: meta.stack[0],
     };
@@ -270,6 +305,7 @@ ConsoleAPI.prototype = {
    *        The arguments given to the console API call.
    * @param object aMeta
    *        Object that holds metadata about the console API call:
+   *        - isPrivate - Whether the window is in private browsing mode.
    *        - frame - the youngest content frame in the call stack.
    *        - timeStamp - when the console API call occurred.
    */
@@ -287,7 +323,10 @@ ConsoleAPI.prototype = {
 
     consoleEvent.wrappedJSObject = consoleEvent;
 
-    ConsoleAPIStorage.recordEvent(this._innerID, consoleEvent);
+    // Store non-private messages for which the inner window was not destroyed.
+    if (!aMeta.isPrivate) {
+      ConsoleAPIStorage.recordEvent(this._innerID, consoleEvent);
+    }
 
     Services.obs.notifyObservers(consoleEvent, "console-api-log-event",
                                  this._outerID);
@@ -296,9 +335,9 @@ ConsoleAPI.prototype = {
   /**
    * Process the console API call arguments in order to perform printf-like
    * string substitution.
-   * TODO: object substitution should display an interactive property list (bug
-   * 685815) and width and precision qualifiers should be taken into account
-   * (bug 685813).
+   *
+   * TODO: object substitution should take into account width and precision
+   * qualifiers (bug 685813).
    *
    * @param mixed aArguments
    *        The arguments given to the console API call.
@@ -307,12 +346,18 @@ ConsoleAPI.prototype = {
     if (aArguments.length < 2 || typeof aArguments[0] != "string") {
       return aArguments;
     }
+
     let args = Array.prototype.slice.call(aArguments);
     let format = args.shift();
+    let splitter = "%" + format.length + Date.now() + "%";
+    let objects = [];
+
     // Format specification regular expression.
     let processed = format.replace(ARGUMENT_PATTERN, function CA_PA_substitute(match, submatch) {
       switch (submatch) {
         case "o":
+          objects.push(args.shift());
+          return splitter;
         case "s":
           return String(args.shift());
         case "d":
@@ -324,8 +369,19 @@ ConsoleAPI.prototype = {
           return submatch;
       };
     });
-    args.unshift(processed);
-    return args;
+
+    let result = [];
+    let processedArray = processed.split(splitter);
+    processedArray.forEach(function(aValue, aIndex) {
+      if (aValue !== "") {
+        result.push(aValue);
+      }
+      if (objects[aIndex]) {
+        result.push(objects[aIndex]);
+      }
+    });
+
+    return result.concat(args);
   },
 
   /**
@@ -429,4 +485,4 @@ ConsoleAPI.prototype = {
   }
 };
 
-let NSGetFactory = XPCOMUtils.generateNSGetFactory([ConsoleAPI]);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory([ConsoleAPI]);

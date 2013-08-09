@@ -25,6 +25,7 @@
 namespace mozilla {
 
 using namespace dom;
+using namespace layers;
 
 namespace image {
 
@@ -97,7 +98,7 @@ class SVGDrawingCallback : public gfxDrawingCallback {
 public:
   SVGDrawingCallback(SVGDocumentWrapper* aSVGDocumentWrapper,
                      const nsIntRect& aViewport,
-                     PRUint32 aImageFlags) :
+                     uint32_t aImageFlags) :
     mSVGDocumentWrapper(aSVGDocumentWrapper),
     mViewport(aViewport),
     mImageFlags(aImageFlags)
@@ -109,7 +110,7 @@ public:
 private:
   nsRefPtr<SVGDocumentWrapper> mSVGDocumentWrapper;
   const nsIntRect mViewport;
-  PRUint32        mImageFlags;
+  uint32_t        mImageFlags;
 };
 
 // Based loosely on nsSVGIntegrationUtils' PaintFrameCallback::operator()
@@ -147,7 +148,7 @@ SVGDrawingCallback::operator()(gfxContext* aContext,
                  presContext->DevPixelsToAppUnits(mViewport.width),
                  presContext->DevPixelsToAppUnits(mViewport.height));
 
-  PRUint32 renderDocFlags = nsIPresShell::RENDER_IGNORE_VIEWPORT_SCROLLING;
+  uint32_t renderDocFlags = nsIPresShell::RENDER_IGNORE_VIEWPORT_SCROLLING;
   if (!(mImageFlags & imgIContainer::FLAG_SYNC_DECODE)) {
     renderDocFlags |= nsIPresShell::RENDER_ASYNC_DECODE_IMAGES;
   }
@@ -171,7 +172,6 @@ NS_IMPL_ISUPPORTS3(VectorImage,
 VectorImage::VectorImage(imgStatusTracker* aStatusTracker) :
   Image(aStatusTracker), // invoke superclass's constructor
   mRestrictedRegion(0, 0, 0, 0),
-  mLastRenderedSize(0, 0),
   mIsInitialized(false),
   mIsFullyLoaded(false),
   mIsDrawing(false),
@@ -191,7 +191,7 @@ nsresult
 VectorImage::Init(imgIDecoderObserver* aObserver,
                   const char* aMimeType,
                   const char* aURIString,
-                  PRUint32 aFlags)
+                  uint32_t aFlags)
 {
   // We don't support re-initialization
   if (mIsInitialized)
@@ -278,9 +278,9 @@ VectorImage::ShouldAnimate()
 // imgIContainer methods
 
 //******************************************************************************
-/* readonly attribute PRInt32 width; */
+/* readonly attribute int32_t width; */
 NS_IMETHODIMP
-VectorImage::GetWidth(PRInt32* aWidth)
+VectorImage::GetWidth(int32_t* aWidth)
 {
   if (mError || !mIsFullyLoaded) {
     *aWidth = 0;
@@ -305,9 +305,9 @@ VectorImage::RequestRefresh(const mozilla::TimeStamp& aTime)
 }
 
 //******************************************************************************
-/* readonly attribute PRInt32 height; */
+/* readonly attribute int32_t height; */
 NS_IMETHODIMP
-VectorImage::GetHeight(PRInt32* aHeight)
+VectorImage::GetHeight(int32_t* aHeight)
 {
   if (mError || !mIsFullyLoaded) {
     *aHeight = 0;
@@ -326,7 +326,7 @@ VectorImage::GetHeight(PRInt32* aHeight)
 //******************************************************************************
 /* readonly attribute unsigned short type; */
 NS_IMETHODIMP
-VectorImage::GetType(PRUint16* aType)
+VectorImage::GetType(uint16_t* aType)
 {
   NS_ENSURE_ARG_POINTER(aType);
 
@@ -335,8 +335,8 @@ VectorImage::GetType(PRUint16* aType)
 }
 
 //******************************************************************************
-/* [noscript, notxpcom] PRUint16 GetType(); */
-NS_IMETHODIMP_(PRUint16)
+/* [noscript, notxpcom] uint16_t GetType(); */
+NS_IMETHODIMP_(uint16_t)
 VectorImage::GetType()
 {
   return imgIContainer::TYPE_VECTOR;
@@ -365,11 +365,11 @@ VectorImage::GetCurrentFrameIsOpaque(bool* aIsOpaque)
 }
 
 //******************************************************************************
-/* [noscript] gfxASurface getFrame(in PRUint32 aWhichFrame,
- *                                 in PRUint32 aFlags; */
+/* [noscript] gfxASurface getFrame(in uint32_t aWhichFrame,
+ *                                 in uint32_t aFlags; */
 NS_IMETHODIMP
-VectorImage::GetFrame(PRUint32 aWhichFrame,
-                      PRUint32 aFlags,
+VectorImage::GetFrame(uint32_t aWhichFrame,
+                      uint32_t aFlags,
                       gfxASurface** _retval)
 {
   NS_ENSURE_ARG_POINTER(_retval);
@@ -382,11 +382,21 @@ VectorImage::GetFrame(PRUint32 aWhichFrame,
 }
 
 //******************************************************************************
-/* [noscript] gfxImageSurface copyFrame(in PRUint32 aWhichFrame,
- *                                      in PRUint32 aFlags); */
+/* [noscript] ImageContainer getImageContainer(); */
 NS_IMETHODIMP
-VectorImage::CopyFrame(PRUint32 aWhichFrame,
-                       PRUint32 aFlags,
+VectorImage::GetImageContainer(LayerManager* aManager,
+                               mozilla::layers::ImageContainer** _retval)
+{
+  *_retval = nullptr;
+  return NS_OK;
+}
+
+//******************************************************************************
+/* [noscript] gfxImageSurface copyFrame(in uint32_t aWhichFrame,
+ *                                      in uint32_t aFlags); */
+NS_IMETHODIMP
+VectorImage::CopyFrame(uint32_t aWhichFrame,
+                       uint32_t aFlags,
                        gfxImageSurface** _retval)
 {
   NS_ENSURE_ARG_POINTER(_retval);
@@ -442,13 +452,13 @@ VectorImage::CopyFrame(PRUint32 aWhichFrame,
 }
 
 //******************************************************************************
-/* [noscript] imgIContainer extractFrame(PRUint32 aWhichFrame,
+/* [noscript] imgIContainer extractFrame(uint32_t aWhichFrame,
  *                                       [const] in nsIntRect aRegion,
- *                                       in PRUint32 aFlags); */
+ *                                       in uint32_t aFlags); */
 NS_IMETHODIMP
-VectorImage::ExtractFrame(PRUint32 aWhichFrame,
+VectorImage::ExtractFrame(uint32_t aWhichFrame,
                           const nsIntRect& aRegion,
-                          PRUint32 aFlags,
+                          uint32_t aFlags,
                           imgIContainer** _retval)
 {
   NS_ENSURE_ARG_POINTER(_retval);
@@ -497,7 +507,7 @@ VectorImage::ExtractFrame(PRUint32 aWhichFrame,
  *                      [const] in gfxRect aFill,
  *                      [const] in nsIntRect aSubimage,
  *                      [const] in nsIntSize aViewportSize,
- *                      in PRUint32 aFlags); */
+ *                      in uint32_t aFlags); */
 NS_IMETHODIMP
 VectorImage::Draw(gfxContext* aContext,
                   gfxPattern::GraphicsFilter aFilter,
@@ -505,7 +515,7 @@ VectorImage::Draw(gfxContext* aContext,
                   const gfxRect& aFill,
                   const nsIntRect& aSubimage,
                   const nsIntSize& aViewportSize,
-                  PRUint32 aFlags)
+                  uint32_t aFlags)
 {
   NS_ENSURE_ARG_POINTER(aContext);
   if (mError || !mIsFullyLoaded)
@@ -517,10 +527,7 @@ VectorImage::Draw(gfxContext* aContext,
   }
   mIsDrawing = true;
 
-  if (aViewportSize != mLastRenderedSize) {
-    mSVGDocumentWrapper->UpdateViewportBounds(aViewportSize);
-    mLastRenderedSize = aViewportSize;
-  }
+  mSVGDocumentWrapper->UpdateViewportBounds(aViewportSize);
   mSVGDocumentWrapper->FlushImageTransformInvalidation();
 
   nsIntSize imageSize = mHaveRestrictedRegion ?
@@ -561,7 +568,7 @@ nsIFrame*
 VectorImage::GetRootLayoutFrame()
 {
   if (mError)
-    return nsnull;
+    return nullptr;
 
   return mSVGDocumentWrapper->GetRootLayoutFrame();
 }
@@ -574,6 +581,14 @@ VectorImage::RequestDecode()
   // Nothing to do for SVG images
   return NS_OK;
 }
+
+NS_IMETHODIMP
+VectorImage::StartDecoding()
+{
+  // Nothing to do for SVG images
+  return NS_OK;
+}
+
 
 //******************************************************************************
 /* void lockImage() */
@@ -633,7 +648,7 @@ VectorImage::OnStartRequest(nsIRequest* aRequest, nsISupports* aCtxt)
   mSVGDocumentWrapper = new SVGDocumentWrapper();
   nsresult rv = mSVGDocumentWrapper->OnStartRequest(aRequest, aCtxt);
   if (NS_FAILED(rv)) {
-    mSVGDocumentWrapper = nsnull;
+    mSVGDocumentWrapper = nullptr;
     mError = true;
   }
 
@@ -673,11 +688,11 @@ VectorImage::OnStopRequest(nsIRequest* aRequest, nsISupports* aCtxt,
   nsCOMPtr<imgIDecoderObserver> observer = do_QueryReferent(mObserver);
   if (observer) {
     // NOTE: This signals that width/height are available.
-    observer->OnStartContainer(nsnull, this);
+    observer->OnStartContainer();
 
-    observer->FrameChanged(nsnull, this, &nsIntRect::GetMaxSizedIntRect());
-    observer->OnStopFrame(nsnull, 0);
-    observer->OnStopDecode(nsnull, NS_OK, nsnull);
+    observer->FrameChanged(&nsIntRect::GetMaxSizedIntRect());
+    observer->OnStopFrame();
+    observer->OnStopDecode(NS_OK);
   }
   EvaluateAnimation();
 
@@ -693,8 +708,8 @@ VectorImage::OnStopRequest(nsIRequest* aRequest, nsISupports* aCtxt,
                         in unsigned long count); */
 NS_IMETHODIMP
 VectorImage::OnDataAvailable(nsIRequest* aRequest, nsISupports* aCtxt,
-                             nsIInputStream* aInStr, PRUint32 aSourceOffset,
-                             PRUint32 aCount)
+                             nsIInputStream* aInStr, uint64_t aSourceOffset,
+                             uint32_t aCount)
 {
   if (mError)
     return NS_ERROR_FAILURE;
@@ -714,12 +729,12 @@ VectorImage::InvalidateObserver()
 
   nsCOMPtr<imgIContainerObserver> containerObs(do_QueryReferent(mObserver));
   if (containerObs) {
-    containerObs->FrameChanged(nsnull, this, &nsIntRect::GetMaxSizedIntRect());
+    containerObs->FrameChanged(&nsIntRect::GetMaxSizedIntRect());
   }
 
   nsCOMPtr<imgIDecoderObserver> decoderObs(do_QueryReferent(mObserver));
   if (decoderObs) {
-    decoderObs->OnStopFrame(nsnull, imgIContainer::FRAME_CURRENT);
+    decoderObs->OnStopFrame();
   }
 }
 

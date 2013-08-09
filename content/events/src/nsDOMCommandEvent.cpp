@@ -3,13 +3,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsDOMClassInfoID.h"
 #include "nsDOMCommandEvent.h"
-#include "nsContentUtils.h"
 
 nsDOMCommandEvent::nsDOMCommandEvent(nsPresContext* aPresContext,
                                      nsCommandEvent* aEvent)
   : nsDOMEvent(aPresContext, aEvent ? aEvent :
-               new nsCommandEvent(false, nsnull, nsnull, nsnull))
+               new nsCommandEvent(false, nullptr, nullptr, nullptr))
 {
   mEvent->time = PR_Now();
   if (aEvent) {
@@ -23,7 +23,7 @@ nsDOMCommandEvent::~nsDOMCommandEvent()
 {
   if (mEventIsInternal && mEvent->eventStructType == NS_COMMAND_EVENT) {
     delete static_cast<nsCommandEvent*>(mEvent);
-    mEvent = nsnull;
+    mEvent = nullptr;
   }
 }
 
@@ -67,7 +67,7 @@ nsresult NS_NewDOMCommandEvent(nsIDOMEvent** aInstancePtrResult,
                                nsCommandEvent* aEvent)
 {
   nsDOMCommandEvent* it = new nsDOMCommandEvent(aPresContext, aEvent);
-  if (nsnull == it) {
+  if (nullptr == it) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 

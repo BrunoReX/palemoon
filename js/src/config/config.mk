@@ -27,6 +27,20 @@ ifndef INCLUDED_AUTOCONF_MK
 include $(DEPTH)/config/autoconf.mk
 endif
 
+space = $(NULL) $(NULL)
+
+# Include defs.mk files that can be found in $(srcdir)/$(DEPTH),
+# $(srcdir)/$(DEPTH-1), $(srcdir)/$(DEPTH-2), etc., and $(srcdir)
+# where $(DEPTH-1) is one level less of depth, $(DEPTH-2), two, etc.
+# i.e. for DEPTH=../../.., DEPTH-1 is ../.. and DEPTH-2 is ..
+# These defs.mk files are used to define variables in a directory
+# and all its subdirectories, recursively.
+__depth := $(subst /, ,$(DEPTH))
+ifeq (.,$(__depth))
+__depth :=
+endif
+$(foreach __d,$(__depth) .,$(eval __depth = $(wordlist 2,$(words $(__depth)),$(__depth))$(eval -include $(subst $(space),/,$(strip $(srcdir) $(__depth) defs.mk)))))
+
 COMMA = ,
 
 # Sanity check some variables
@@ -51,10 +65,9 @@ $(foreach x,$(CHECK_VARS),$(check-variable))
 core_abspath = $(if $(findstring :,$(1)),$(1),$(if $(filter /%,$(1)),$(1),$(CURDIR)/$(1)))
 core_realpath = $(if $(realpath $(1)),$(realpath $(1)),$(call core_abspath,$(1)))
 
-nullstr :=
-space :=$(nullstr) # EOL
-
 core_winabspath = $(firstword $(subst /, ,$(call core_abspath,$(1)))):$(subst $(space),,$(patsubst %,\\%,$(wordlist 2,$(words $(subst /, ,$(call core_abspath,$(1)))), $(strip $(subst /, ,$(call core_abspath,$(1)))))))
+
+RM = rm -f
 
 # LIBXUL_DIST is not defined under js/src, thus we make it mean DIST there.
 LIBXUL_DIST ?= $(DIST)
@@ -62,9 +75,10 @@ LIBXUL_DIST ?= $(DIST)
 # FINAL_TARGET specifies the location into which we copy end-user-shipped
 # build products (typelibs, components, chrome).
 #
-# It will usually be the well-loved $(DIST)/bin, today, but can also be an
-# XPI-contents staging directory for ambitious and right-thinking extensions.
-FINAL_TARGET = $(if $(XPI_NAME),$(DIST)/xpi-stage/$(XPI_NAME),$(DIST)/bin)
+# If XPI_NAME is set, the files will be shipped to $(DIST)/xpi-stage/$(XPI_NAME)
+# If DIST_SUBDIR is set, the files will be shipped to $(DIST)/$(DIST_SUBDIR)
+# Otherwise, the default $(DIST)/bin will be used.
+FINAL_TARGET = $(if $(XPI_NAME),$(DIST)/xpi-stage/$(XPI_NAME),$(if $(DIST_SUBDIR),$(DIST)/bin/$(DIST_SUBDIR),$(DIST)/bin))
 
 ifdef XPI_NAME
 DEFINES += -DXPI_NAME=$(XPI_NAME)
@@ -84,20 +98,12 @@ endif
 CONFIG_TOOLS	= $(MOZ_BUILD_ROOT)/config
 AUTOCONF_TOOLS	= $(topsrcdir)/build/autoconf
 
-ifeq ($(OS_ARCH),QNX)
-ifeq ($(OS_TARGET),NTO)
-LD		:= qcc -Vgcc_ntox86 -nostdlib
-else
-LD		:= $(CC)
-endif
-endif
-
 #
 # Strip off the excessively long version numbers on these platforms,
 # but save the version to allow multiple versions of the same base
 # platform to be built in the same tree.
 #
-ifneq (,$(filter FreeBSD HP-UX Linux NetBSD OpenBSD OSF1 SunOS,$(OS_ARCH)))
+ifneq (,$(filter FreeBSD HP-UX Linux NetBSD OpenBSD SunOS,$(OS_ARCH)))
 OS_RELEASE	:= $(basename $(OS_RELEASE))
 
 # Allow the user to ignore the OS_VERSION, which is usually irrelevant.
@@ -117,18 +123,22 @@ FINAL_LINK_COMP_NAMES = $(DEPTH)/config/final-link-comp-names
 MOZ_UNICHARUTIL_LIBS = $(LIBXUL_DIST)/lib/$(LIB_PREFIX)unicharutil_s.$(LIB_SUFFIX)
 MOZ_WIDGET_SUPPORT_LIBS    = $(DIST)/lib/$(LIB_PREFIX)widgetsupport_s.$(LIB_SUFFIX)
 
+ifdef _MSC_VER
+CC_WRAPPER ?= $(PYTHON) -O $(topsrcdir)/build/cl.py
+CXX_WRAPPER ?= $(PYTHON) -O $(topsrcdir)/build/cl.py
+endif # _MSC_VER
+
 CC := $(CC_WRAPPER) $(CC)
 CXX := $(CXX_WRAPPER) $(CXX)
 MKDIR ?= mkdir
 SLEEP ?= sleep
 TOUCH ?= touch
 
-ifndef .PYMAKE
-PYTHON_PATH = $(PYTHON) $(topsrcdir)/config/pythonpath.py
-else
+ifdef .PYMAKE
 PYCOMMANDPATH += $(topsrcdir)/config
-PYTHON_PATH = %pythonpath main
 endif
+
+PYTHON_PATH = $(PYTHON) $(topsrcdir)/config/pythonpath.py
 
 # determine debug-related options
 _DEBUG_ASFLAGS :=
@@ -189,17 +199,17 @@ endif
 endif
 
 #
-# Handle trace-malloc in optimized builds.
+# Handle trace-malloc and DMD in optimized builds.
 # No opt to give sane callstacks.
 #
-ifdef NS_TRACE_MALLOC
+ifneq (,$(NS_TRACE_MALLOC)$(MOZ_DMD))
 MOZ_OPTIMIZE_FLAGS=-Zi -Od -UDEBUG -DNDEBUG
 ifdef HAVE_64BIT_OS
 OS_LDFLAGS = -DEBUG -PDB:NONE -OPT:REF,ICF
 else
 OS_LDFLAGS = -DEBUG -PDB:NONE -OPT:REF
 endif
-endif # NS_TRACE_MALLOC
+endif # NS_TRACE_MALLOC || MOZ_DMD
 
 endif # MOZ_DEBUG
 
@@ -342,11 +352,6 @@ endif
 TAR_CREATE_FLAGS = -cvhf
 TAR_CREATE_FLAGS_QUIET = -chf
 
-ifeq ($(OS_ARCH),BSD_OS)
-TAR_CREATE_FLAGS = -cvLf
-TAR_CREATE_FLAGS_QUIET = -cLf
-endif
-
 ifeq ($(OS_ARCH),OS2)
 TAR_CREATE_FLAGS = -cvf
 TAR_CREATE_FLAGS_QUIET = -cf
@@ -369,19 +374,24 @@ JAVA_GEN_DIR  = _javagen
 JAVA_DIST_DIR = $(DEPTH)/$(JAVA_GEN_DIR)
 JAVA_IFACES_PKG_NAME = org/mozilla/interfaces
 
+OS_INCLUDES += $(MOZ_JPEG_CFLAGS) $(MOZ_PNG_CFLAGS) $(MOZ_ZLIB_CFLAGS)
+
+# NSPR_CFLAGS and NSS_CFLAGS must appear ahead of OS_INCLUDES to avoid Linux
+# builds wrongly picking up system NSPR/NSS header files.
 INCLUDES = \
   $(LOCAL_INCLUDES) \
   -I$(srcdir) \
   -I. \
-  -I$(DIST)/include -I$(DIST)/include/nsprpub \
-  $(if $(LIBXUL_SDK),-I$(LIBXUL_SDK)/include -I$(LIBXUL_SDK)/include/nsprpub) \
+  -I$(DIST)/include \
+  $(if $(LIBXUL_SDK),-I$(LIBXUL_SDK)/include) \
+  $(NSPR_CFLAGS) $(NSS_CFLAGS) \
   $(OS_INCLUDES) \
   $(NULL)
 
 include $(topsrcdir)/config/static-checking-config.mk
 
-CFLAGS		= $(OS_CFLAGS)
-CXXFLAGS	= $(OS_CXXFLAGS)
+CFLAGS		= $(OS_CPPFLAGS) $(OS_CFLAGS)
+CXXFLAGS	= $(OS_CPPFLAGS) $(OS_CXXFLAGS)
 LDFLAGS		= $(OS_LDFLAGS) $(MOZ_FIX_LINK_PATHS)
 
 # Allow each module to override the *default* optimization settings
@@ -458,20 +468,20 @@ ifeq ($(OS_ARCH)_$(GNU_CC),WINNT_)
 #//------------------------------------------------------------------------
 ifdef USE_STATIC_LIBS
 RTL_FLAGS=-MT          # Statically linked multithreaded RTL
-ifneq (,$(MOZ_DEBUG)$(NS_TRACE_MALLOC))
+ifneq (,$(MOZ_DEBUG)$(NS_TRACE_MALLOC)$(MOZ_DMD))
 ifndef MOZ_NO_DEBUG_RTL
 RTL_FLAGS=-MTd         # Statically linked multithreaded MSVC4.0 debug RTL
 endif
-endif # MOZ_DEBUG || NS_TRACE_MALLOC
+endif # MOZ_DEBUG || NS_TRACE_MALLOC || MOZ_DMD
 
 else # !USE_STATIC_LIBS
 
 RTL_FLAGS=-MD          # Dynamically linked, multithreaded RTL
-ifneq (,$(MOZ_DEBUG)$(NS_TRACE_MALLOC))
+ifneq (,$(MOZ_DEBUG)$(NS_TRACE_MALLOC)$(MOZ_DMD))
 ifndef MOZ_NO_DEBUG_RTL
 RTL_FLAGS=-MDd         # Dynamically linked, multithreaded MSVC4.0 debug RTL
 endif
-endif # MOZ_DEBUG || NS_TRACE_MALLOC
+endif # MOZ_DEBUG || NS_TRACE_MALLOC || MOZ_DMD
 endif # USE_STATIC_LIBS
 endif # WINNT && !GNU_CC
 
@@ -488,8 +498,8 @@ OS_COMPILE_CMMFLAGS += -fobjc-abi-version=2 -fobjc-legacy-dispatch
 endif
 endif
 
-COMPILE_CFLAGS	= $(VISIBILITY_FLAGS) $(DEFINES) $(INCLUDES) $(DSO_CFLAGS) $(DSO_PIC_CFLAGS) $(CFLAGS) $(RTL_FLAGS) $(OS_COMPILE_CFLAGS)
-COMPILE_CXXFLAGS = $(STL_FLAGS) $(VISIBILITY_FLAGS) $(DEFINES) $(INCLUDES) $(DSO_CFLAGS) $(DSO_PIC_CFLAGS) $(CXXFLAGS) $(RTL_FLAGS) $(OS_COMPILE_CXXFLAGS)
+COMPILE_CFLAGS	= $(VISIBILITY_FLAGS) $(DEFINES) $(INCLUDES) $(DSO_CFLAGS) $(DSO_PIC_CFLAGS) $(CFLAGS) $(RTL_FLAGS) $(OS_CPPFLAGS) $(OS_COMPILE_CFLAGS)
+COMPILE_CXXFLAGS = $(STL_FLAGS) $(VISIBILITY_FLAGS) $(DEFINES) $(INCLUDES) $(DSO_CFLAGS) $(DSO_PIC_CFLAGS) $(CXXFLAGS) $(RTL_FLAGS) $(OS_CPPFLAGS) $(OS_COMPILE_CXXFLAGS)
 COMPILE_CMFLAGS = $(OS_COMPILE_CMFLAGS)
 COMPILE_CMMFLAGS = $(OS_COMPILE_CMMFLAGS)
 
@@ -557,6 +567,7 @@ ifdef MACOSX_DEPLOYMENT_TARGET
 export MACOSX_DEPLOYMENT_TARGET
 PBBUILD_SETTINGS += MACOSX_DEPLOYMENT_TARGET="$(MACOSX_DEPLOYMENT_TARGET)"
 endif # MACOSX_DEPLOYMENT_TARGET
+
 ifdef MOZ_OPTIMIZE
 ifeq (2,$(MOZ_OPTIMIZE))
 # Only override project defaults if the config specified explicit settings
@@ -565,13 +576,10 @@ endif # MOZ_OPTIMIZE=2
 endif # MOZ_OPTIMIZE
 endif # OS_ARCH=Darwin
 
-
-ifdef MOZ_NATIVE_MAKEDEPEND
-MKDEPEND_DIR =
-MKDEPEND = $(MOZ_NATIVE_MAKEDEPEND)
-else
-MKDEPEND_DIR = $(CONFIG_TOOLS)/mkdepend
-MKDEPEND = $(MKDEPEND_DIR)/mkdepend$(BIN_SUFFIX)
+ifdef MOZ_USING_CCACHE
+ifdef CLANG_CXX
+export CCACHE_CPP2=1
+endif
 endif
 
 # Set link flags according to whether we want a console.
@@ -584,7 +592,7 @@ ifeq ($(OS_ARCH),WINNT)
 ifdef GNU_CC
 WIN32_EXE_LDFLAGS	+= -mconsole
 else
-WIN32_EXE_LDFLAGS	+= -SUBSYSTEM:CONSOLE
+WIN32_EXE_LDFLAGS	+= -SUBSYSTEM:CONSOLE,5.01
 endif
 endif
 else # MOZ_WINCONSOLE
@@ -599,6 +607,8 @@ WIN32_EXE_LDFLAGS	+= -SUBSYSTEM:WINDOWS,5.01
 endif
 endif
 endif
+else
+LDFLAGS += -SUBSYSTEM:CONSOLE,5.01
 endif
 
 # If we're building a component on MSVC, we don't want to generate an
@@ -619,7 +629,7 @@ endif
 
 ######################################################################
 
-GARBAGE		+= $(DEPENDENCIES) $(MKDEPENDENCIES) $(MKDEPENDENCIES).bak core $(wildcard core.[0-9]*) $(wildcard *.err) $(wildcard *.pure) $(wildcard *_pure_*.o) Templates.DB
+GARBAGE		+= $(DEPENDENCIES) core $(wildcard core.[0-9]*) $(wildcard *.err) $(wildcard *.pure) $(wildcard *_pure_*.o) Templates.DB
 
 ifeq ($(OS_ARCH),Darwin)
 ifndef NSDISTMODE
@@ -628,19 +638,34 @@ endif
 PWD := $(CURDIR)
 endif
 
+NSINSTALL_PY := $(PYTHON) $(call core_abspath,$(topsrcdir)/config/nsinstall.py)
+# For Pymake, wherever we use nsinstall.py we're also going to try to make it
+# a native command where possible. Since native commands can't be used outside
+# of single-line commands, we continue to provide INSTALL for general use.
+# Single-line commands should be switched over to install_cmd.
+NSINSTALL_NATIVECMD := %nsinstall nsinstall
+
 ifdef NSINSTALL_BIN
 NSINSTALL = $(NSINSTALL_BIN)
 else
 ifeq (OS2,$(CROSS_COMPILE)$(OS_ARCH))
 NSINSTALL = $(MOZ_TOOLS_DIR)/nsinstall
 else
+ifeq ($(HOST_OS_ARCH),WINNT)
+NSINSTALL = $(NSINSTALL_PY)
+else
 NSINSTALL = $(CONFIG_TOOLS)/nsinstall$(HOST_BIN_SUFFIX)
+endif # WINNT
 endif # OS2
 endif # NSINSTALL_BIN
 
 
 ifeq (,$(CROSS_COMPILE)$(filter-out WINNT OS2, $(OS_ARCH)))
-INSTALL		= $(NSINSTALL)
+INSTALL = $(NSINSTALL) -t
+ifdef .PYMAKE
+install_cmd = $(NSINSTALL_NATIVECMD) -t $(1)
+endif # .PYMAKE
+
 else
 
 # This isn't laid out as conditional directives so that NSDISTMODE can be
@@ -649,16 +674,13 @@ INSTALL         = $(if $(filter copy, $(NSDISTMODE)), $(NSINSTALL) -t, $(if $(fi
 
 endif # WINNT/OS2
 
+# The default for install_cmd is simply INSTALL
+install_cmd ?= $(INSTALL) $(1)
+
 # Use nsinstall in copy mode to install files on the system
 SYSINSTALL	= $(NSINSTALL) -t
-
-# Directory nsinstall. Windows and OS/2 nsinstall can't recursively copy
-# directories.
-ifneq (,$(filter WINNT os2-emx,$(HOST_OS_ARCH)))
-DIR_INSTALL = $(PYTHON) $(topsrcdir)/config/nsinstall.py
-else
-DIR_INSTALL = $(INSTALL)
-endif # WINNT/OS2
+# This isn't necessarily true, just here
+sysinstall_cmd = install_cmd
 
 #
 # Localization build automation
@@ -681,17 +703,21 @@ ifdef relativesrcdir
 LOCALE_SRCDIR = $(call EXPAND_LOCALE_SRCDIR,$(relativesrcdir))
 endif
 
-ifdef LOCALE_SRCDIR
-# if LOCALE_MERGEDIR is set, use mergedir first, then the localization,
-# and finally en-US
+ifdef relativesrcdir
+MAKE_JARS_FLAGS += --relativesrcdir=$(relativesrcdir)
+ifneq (en-US,$(AB_CD))
 ifdef LOCALE_MERGEDIR
-MAKE_JARS_FLAGS += -c $(LOCALE_MERGEDIR)/$(subst /locales,,$(relativesrcdir))
+MAKE_JARS_FLAGS += --locale-mergedir=$(LOCALE_MERGEDIR)
 endif
+ifdef IS_LANGUAGE_REPACK
+MAKE_JARS_FLAGS += --l10n-base=$(L10NBASEDIR)/$(AB_CD)
+endif
+else
 MAKE_JARS_FLAGS += -c $(LOCALE_SRCDIR)
-ifdef LOCALE_MERGEDIR
-MAKE_JARS_FLAGS += -c $(topsrcdir)/$(relativesrcdir)/en-US
-endif
-endif
+endif # en-US
+else
+MAKE_JARS_FLAGS += -c $(LOCALE_SRCDIR)
+endif # ! relativesrcdir
 
 ifdef LOCALE_MERGEDIR
 MERGE_FILE = $(firstword \
@@ -731,9 +757,11 @@ OPTIMIZE_JARS_CMD = $(PYTHON) $(call core_abspath,$(topsrcdir)/config/optimizeja
 
 CREATE_PRECOMPLETE_CMD = $(PYTHON) $(call core_abspath,$(topsrcdir)/config/createprecomplete.py)
 
-EXPAND_LIBS_DEPS = $(PYTHON) $(topsrcdir)/config/pythonpath.py -I$(DEPTH)/config $(topsrcdir)/config/expandlibs_deps.py
-EXPAND_LIBS_EXEC = $(PYTHON) $(topsrcdir)/config/pythonpath.py -I$(DEPTH)/config $(topsrcdir)/config/expandlibs_exec.py
-EXPAND_LIBS_GEN = $(PYTHON) $(topsrcdir)/config/pythonpath.py -I$(DEPTH)/config $(topsrcdir)/config/expandlibs_gen.py
+# MDDEPDIR is the subdirectory where dependency files are stored
+MDDEPDIR := .deps
+
+EXPAND_LIBS_EXEC = $(PYTHON) $(topsrcdir)/config/pythonpath.py -I$(DEPTH)/config $(topsrcdir)/config/expandlibs_exec.py $(if $@,--depend $(MDDEPDIR)/$(@F).pp --target $@)
+EXPAND_LIBS_GEN = $(PYTHON) $(topsrcdir)/config/pythonpath.py -I$(DEPTH)/config $(topsrcdir)/config/expandlibs_gen.py $(if $@,--depend $(MDDEPDIR)/$(@F).pp)
 EXPAND_AR = $(EXPAND_LIBS_EXEC) --extract -- $(AR)
 EXPAND_CC = $(EXPAND_LIBS_EXEC) --uselist -- $(CC)
 EXPAND_CCC = $(EXPAND_LIBS_EXEC) --uselist -- $(CCC)
@@ -793,3 +821,11 @@ EXPAND_MOZLIBNAME = $(foreach lib,$(1),$(DIST)/lib/$(LIB_PREFIX)$(lib).$(LIB_SUF
 ifndef MOZ_SYSTEM_PLY
 PLY_INCLUDE = -I$(topsrcdir)/other-licenses/ply
 endif
+
+export CL_INCLUDES_PREFIX
+
+ifeq ($(MOZ_WIDGET_GTK),2)
+MOZ_GTK2_CFLAGS := -I$(topsrcdir)/widget/gtk2/compat $(MOZ_GTK2_CFLAGS)
+endif
+
+DEFINES += -DNO_NSPR_10_SUPPORT

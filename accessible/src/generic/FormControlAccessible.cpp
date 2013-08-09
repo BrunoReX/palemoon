@@ -9,7 +9,6 @@
 #include "Role.h"
 
 #include "nsIDOMHTMLFormElement.h"
-#include "nsIDOMHTMLInputElement.h"
 #include "nsIDOMXULElement.h"
 #include "nsIDOMXULControlElement.h"
 
@@ -26,14 +25,14 @@ template class mozilla::a11y::ProgressMeterAccessible<100>;
 // nsISupports
 
 template<int Max>
-NS_IMPL_ADDREF_INHERITED(ProgressMeterAccessible<Max>, nsLeafAccessible)
+NS_IMPL_ADDREF_INHERITED(ProgressMeterAccessible<Max>, LeafAccessible)
 
 template<int Max>
-NS_IMPL_RELEASE_INHERITED(ProgressMeterAccessible<Max>, nsLeafAccessible)
+NS_IMPL_RELEASE_INHERITED(ProgressMeterAccessible<Max>, LeafAccessible)
 
 template<int Max>
 NS_IMPL_QUERY_INTERFACE_INHERITED1(ProgressMeterAccessible<Max>,
-                                   nsLeafAccessible,
+                                   LeafAccessible,
                                    nsIAccessibleValue)
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -47,10 +46,10 @@ ProgressMeterAccessible<Max>::NativeRole()
 }
 
 template<int Max>
-PRUint64
+uint64_t
 ProgressMeterAccessible<Max>::NativeState()
 {
-  PRUint64 state = nsLeafAccessible::NativeState();
+  uint64_t state = LeafAccessible::NativeState();
 
   // An undetermined progressbar (i.e. without a value) has a mixed state.
   nsAutoString attrValue;
@@ -79,7 +78,7 @@ template<int Max>
 void
 ProgressMeterAccessible<Max>::Value(nsString& aValue)
 {
-  nsLeafAccessible::Value(aValue);
+  LeafAccessible::Value(aValue);
   if (!aValue.IsEmpty())
     return;
 
@@ -105,13 +104,13 @@ template<int Max>
 NS_IMETHODIMP
 ProgressMeterAccessible<Max>::GetMaximumValue(double* aMaximumValue)
 {
-  nsresult rv = nsLeafAccessible::GetMaximumValue(aMaximumValue);
+  nsresult rv = LeafAccessible::GetMaximumValue(aMaximumValue);
   if (rv != NS_OK_NO_ARIA_VALUE)
     return rv;
 
   nsAutoString value;
   if (mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::max, value)) {
-    PRInt32 result = NS_OK;
+    nsresult result = NS_OK;
     *aMaximumValue = value.ToDouble(&result);
     return result;
   }
@@ -124,7 +123,7 @@ template<int Max>
 NS_IMETHODIMP
 ProgressMeterAccessible<Max>::GetMinimumValue(double* aMinimumValue)
 {
-  nsresult rv = nsLeafAccessible::GetMinimumValue(aMinimumValue);
+  nsresult rv = LeafAccessible::GetMinimumValue(aMinimumValue);
   if (rv != NS_OK_NO_ARIA_VALUE)
     return rv;
 
@@ -136,7 +135,7 @@ template<int Max>
 NS_IMETHODIMP
 ProgressMeterAccessible<Max>::GetMinimumIncrement(double* aMinimumIncrement)
 {
-  nsresult rv = nsLeafAccessible::GetMinimumIncrement(aMinimumIncrement);
+  nsresult rv = LeafAccessible::GetMinimumIncrement(aMinimumIncrement);
   if (rv != NS_OK_NO_ARIA_VALUE)
     return rv;
 
@@ -148,7 +147,7 @@ template<int Max>
 NS_IMETHODIMP
 ProgressMeterAccessible<Max>::GetCurrentValue(double* aCurrentValue)
 {
-  nsresult rv = nsLeafAccessible::GetCurrentValue(aCurrentValue);
+  nsresult rv = LeafAccessible::GetCurrentValue(aCurrentValue);
   if (rv != NS_OK_NO_ARIA_VALUE)
     return rv;
 
@@ -159,7 +158,7 @@ ProgressMeterAccessible<Max>::GetCurrentValue(double* aCurrentValue)
   if (attrValue.IsEmpty())
     return NS_OK;
 
-  PRInt32 error = NS_OK;
+  nsresult error = NS_OK;
   double value = attrValue.ToDouble(&error);
   if (NS_FAILED(error))
     return NS_OK; // Zero value because of wrong markup.
@@ -181,18 +180,18 @@ ProgressMeterAccessible<Max>::SetCurrentValue(double aValue)
 
 RadioButtonAccessible::
   RadioButtonAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-  nsLeafAccessible(aContent, aDoc)
+  LeafAccessible(aContent, aDoc)
 {
 }
 
-PRUint8
+uint8_t
 RadioButtonAccessible::ActionCount()
 {
   return 1;
 }
 
 NS_IMETHODIMP
-RadioButtonAccessible::GetActionName(PRUint8 aIndex, nsAString& aName)
+RadioButtonAccessible::GetActionName(uint8_t aIndex, nsAString& aName)
 {
   if (aIndex == eAction_Click) {
     aName.AssignLiteral("select"); 
@@ -202,7 +201,7 @@ RadioButtonAccessible::GetActionName(PRUint8 aIndex, nsAString& aName)
 }
 
 NS_IMETHODIMP
-RadioButtonAccessible::DoAction(PRUint8 aIndex)
+RadioButtonAccessible::DoAction(uint8_t aIndex)
 {
   if (aIndex != eAction_Click)
     return NS_ERROR_INVALID_ARG;

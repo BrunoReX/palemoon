@@ -10,7 +10,19 @@
 == rotatex-perspective-1c.html rotatex-1-ref.html
 fails-if(Android) == rotatex-perspective-3a.html rotatex-perspective-3-ref.html # bug 755543
 == scalez-1a.html scalez-1-ref.html
-fails-if(cocoaWidget) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == preserve3d-1a.html preserve3d-1-ref.html
+== rotatey-1a.html rotatey-1-ref.html 
+== rotatex-1a.html rotatex-1-ref.html 
+# Check that scaleZ(-1) rotateX(180deg) is the same as rotateY(180deg)
+== scalezrotatex-1.html scalezrotatex-1-ref.html
+# Check that the perspectve() transform function results in some visual changes
+!= rotatex-perspective-1a.html rotatex-1-ref.html
+# Check that -moz-perspective results in visual changes to child transformed elements
+!= rotatex-perspective-1b.html rotatex-1-ref.html
+# -moz-perspective should only apply to child elements
+== rotatex-perspective-1c.html rotatex-1-ref.html
+fails-if(Android) == rotatex-perspective-3a.html rotatex-perspective-3-ref.html # bug 755543
+== scalez-1a.html scalez-1-ref.html
+== preserve3d-1a.html preserve3d-1-ref.html
 == preserve3d-1b.html about:blank
 == preserve3d-clipped.html about:blank 
 == preserve3d-2a.html preserve3d-2-ref.html
@@ -21,8 +33,8 @@ fails-if(cocoaWidget) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == pr
 == preserve3d-4a.html green-rect.html
 == preserve3d-5a.html preserve3d-5-ref.html
 == scale3d-z.html scalez-1-ref.html
-fuzzy-if(d2d&&layersGPUAccelerated,52,680) fails-if(Android) == scale3d-all.html scale3d-1-ref.html # subpixel AA
-fuzzy-if(d2d&&layersGPUAccelerated,52,680) fails-if(Android) == scale3d-all-separate.html scale3d-1-ref.html # subpixel AA
+fuzzy-if(d2d&&layersGPUAccelerated,52,680) fails-if(Android) fuzzy-if(OSX==10.8,145,752) == scale3d-all.html scale3d-1-ref.html # subpixel AA
+fuzzy-if(d2d&&layersGPUAccelerated,52,680) fails-if(Android) fuzzy-if(OSX==10.8,145,752) == scale3d-all-separate.html scale3d-1-ref.html # subpixel AA
 == scale3d-xz.html scale3d-1-ref.html
 == translatez-1a.html translatez-1-ref.html
 != translatez-1b.html translatez-1-ref.html
@@ -39,6 +51,7 @@ fuzzy-if(d2d&&layersGPUAccelerated,52,680) fails-if(Android) == scale3d-all-sepa
 == perspective-origin-1b.html perspective-origin-1a.html
 random-if(Android&&!browserIsRemote) == perspective-origin-2a.html perspective-origin-2-ref.html # bug 732568
 == perspective-origin-3a.html perspective-origin-3-ref.html
+== perspective-origin-4a.html perspective-origin-4-ref.html
 != sorting-1a.html sorting-1-ref.html
 # Parallel planes, different z depth
 == sorting-2a.html sorting-2-ref.html

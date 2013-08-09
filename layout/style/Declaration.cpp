@@ -16,10 +16,10 @@
 namespace mozilla {
 namespace css {
 
-// check that we can fit all the CSS properties into a PRUint8
-// for the mOrder array - if not, might need to use PRUint16!
-MOZ_STATIC_ASSERT(eCSSProperty_COUNT_no_shorthands - 1 <= PR_UINT8_MAX,
-                  "CSS longhand property numbers no longer fit in a PRUint8");
+// check that we can fit all the CSS properties into a uint8_t
+// for the mOrder array - if not, might need to use uint16_t!
+MOZ_STATIC_ASSERT(eCSSProperty_COUNT_no_shorthands - 1 <= UINT8_MAX,
+                  "CSS longhand property numbers no longer fit in a uint8_t");
 
 Declaration::Declaration()
   : mImmutable(false)
@@ -29,9 +29,9 @@ Declaration::Declaration()
 
 Declaration::Declaration(const Declaration& aCopy)
   : mOrder(aCopy.mOrder),
-    mData(aCopy.mData ? aCopy.mData->Clone() : nsnull),
+    mData(aCopy.mData ? aCopy.mData->Clone() : nullptr),
     mImportantData(aCopy.mImportantData
-                   ? aCopy.mImportantData->Clone() : nsnull),
+                   ? aCopy.mImportantData->Clone() : nullptr),
     mImmutable(false)
 {
   MOZ_COUNT_CTOR(mozilla::css::Declaration);
@@ -138,7 +138,7 @@ Declaration::GetValue(nsCSSProperty aProperty, nsAString& aValue) const
   // Since we're doing this check for 'inherit' and 'initial' up front,
   // we can also simplify the property serialization code by serializing
   // those values up front as well.
-  PRUint32 totalCount = 0, importantCount = 0,
+  uint32_t totalCount = 0, importantCount = 0,
            initialCount = 0, inheritCount = 0;
   CSSPROPS_FOR_SHORTHAND_SUBPROPERTIES(p, aProperty) {
     if (*p == eCSSProperty__x_system_font ||
@@ -331,7 +331,7 @@ Declaration::GetValue(nsCSSProperty aProperty, nsAString& aValue) const
         // Check only the first four subprops in each table, since the
         // others are extras for dimensional box properties.
         const nsCSSValue *firstSide = data->ValueFor((*subprops)[0]);
-        for (PRInt32 side = 1; side < 4; ++side) {
+        for (int32_t side = 1; side < 4; ++side) {
           const nsCSSValue *otherSide =
             data->ValueFor((*subprops)[side]);
           if (*firstSide != *otherSide)
@@ -432,12 +432,6 @@ Declaration::GetValue(nsCSSProperty aProperty, nsAString& aValue) const
         data->ValueFor(eCSSProperty_background_size)->
         GetPairListValue();
       for (;;) {
-        if (size->mXValue.GetUnit() != eCSSUnit_Auto ||
-            size->mYValue.GetUnit() != eCSSUnit_Auto) {
-          // Non-default background-size, so can't be serialized as shorthand.
-          aValue.Truncate();
-          return;
-        }
         image->mValue.AppendToString(eCSSProperty_background_image, aValue);
         aValue.Append(PRUnichar(' '));
         repeat->mXValue.AppendToString(eCSSProperty_background_repeat, aValue);
@@ -450,6 +444,16 @@ Declaration::GetValue(nsCSSProperty aProperty, nsAString& aValue) const
         aValue.Append(PRUnichar(' '));
         position->mValue.AppendToString(eCSSProperty_background_position,
                                         aValue);
+        
+        if (size->mXValue.GetUnit() != eCSSUnit_Auto ||
+            size->mYValue.GetUnit() != eCSSUnit_Auto) {
+          aValue.Append(PRUnichar(' '));
+          aValue.Append(PRUnichar('/'));
+          aValue.Append(PRUnichar(' '));
+          size->mXValue.AppendToString(eCSSProperty_background_size, aValue);
+          aValue.Append(PRUnichar(' '));
+          size->mYValue.AppendToString(eCSSProperty_background_size, aValue);
+        }
 
         NS_ABORT_IF_FALSE(clip->mValue.GetUnit() == eCSSUnit_Enumerated &&
                           origin->mValue.GetUnit() == eCSSUnit_Enumerated,
@@ -739,7 +743,7 @@ Declaration::GetValue(nsCSSProperty aProperty, nsAString& aValue) const
       const nsCSSValue* values[numProps];
       const nsCSSValueList* lists[numProps];
 
-      for (PRUint32 i = 0; i < numProps; ++i) {
+      for (uint32_t i = 0; i < numProps; ++i) {
         values[i] = data->ValueFor(subprops[i]);
         NS_ABORT_IF_FALSE(values[i]->GetUnit() == eCSSUnit_List ||
                           values[i]->GetUnit() == eCSSUnit_ListDep,
@@ -755,7 +759,7 @@ Declaration::GetValue(nsCSSProperty aProperty, nsAString& aValue) const
                             eCSSProperty_animation_name,
                           "animation-name must be last");
         bool done = false;
-        for (PRUint32 i = 0;;) {
+        for (uint32_t i = 0;;) {
           lists[i]->mValue.AppendToString(subprops[i], aValue);
           lists[i] = lists[i]->mNext;
           if (!lists[i]) {
@@ -771,7 +775,7 @@ Declaration::GetValue(nsCSSProperty aProperty, nsAString& aValue) const
         }
         aValue.AppendLiteral(", ");
       }
-      for (PRUint32 i = 0; i < numProps; ++i) {
+      for (uint32_t i = 0; i < numProps; ++i) {
         if (lists[i]) {
           // Lists not all the same length, can't use shorthand.
           aValue.Truncate();
@@ -800,6 +804,29 @@ Declaration::GetValue(nsCSSProperty aProperty, nsAString& aValue) const
       AppendValueToString(subprops[1], aValue);
       break;
     }
+#ifdef MOZ_FLEXBOX
+    case eCSSProperty_flex: {
+      // flex-grow, flex-shrink, flex-basis, separated by single space
+      const nsCSSProperty* subprops =
+        nsCSSProps::SubpropertyEntryFor(aProperty);
+
+      AppendValueToString(subprops[0], aValue);
+      aValue.Append(PRUnichar(' '));
+      AppendValueToString(subprops[1], aValue);
+      aValue.Append(PRUnichar(' '));
+      AppendValueToString(subprops[2], aValue);
+      break;
+    }
+#endif // MOZ_FLEXBOX
+    case eCSSProperty__moz_transform: {
+      // shorthands that are just aliases with different parsing rules
+      const nsCSSProperty* subprops =
+        nsCSSProps::SubpropertyEntryFor(aProperty);
+      NS_ABORT_IF_FALSE(subprops[1] == eCSSProperty_UNKNOWN,
+                        "must have exactly one subproperty");
+      AppendValueToString(subprops[0], aValue);
+      break;
+    }
     default:
       NS_ABORT_IF_FALSE(false, "no other shorthands");
       break;
@@ -809,7 +836,7 @@ Declaration::GetValue(nsCSSProperty aProperty, nsAString& aValue) const
 bool
 Declaration::GetValueIsImportant(const nsAString& aProperty) const
 {
-  nsCSSProperty propID = nsCSSProps::LookupProperty(aProperty);
+  nsCSSProperty propID = nsCSSProps::LookupProperty(aProperty, nsCSSProps::eAny);
   if (propID == eCSSProperty_UNKNOWN) {
     return false;
   }
@@ -825,7 +852,7 @@ Declaration::GetValueIsImportant(nsCSSProperty aProperty) const
   // Calling ValueFor is inefficient, but we can assume '!important' is rare.
 
   if (!nsCSSProps::IsShorthand(aProperty)) {
-    return mImportantData->ValueFor(aProperty) != nsnull;
+    return mImportantData->ValueFor(aProperty) != nullptr;
   }
 
   CSSPROPS_FOR_SHORTHAND_SUBPROPERTIES(p, aProperty) {
@@ -878,8 +905,8 @@ Declaration::ToString(nsAString& aString) const
                                 systemFont->GetUnit() != eCSSUnit_Null;
   bool didSystemFont = false;
 
-  PRInt32 count = mOrder.Length();
-  PRInt32 index;
+  int32_t count = mOrder.Length();
+  int32_t index;
   nsAutoTArray<nsCSSProperty, 16> shorthandsUsed;
   for (index = 0; index < count; index++) {
     nsCSSProperty property = OrderValueAt(index);
@@ -961,9 +988,9 @@ Declaration::ToString(nsAString& aString) const
 
 #ifdef DEBUG
 void
-Declaration::List(FILE* out, PRInt32 aIndent) const
+Declaration::List(FILE* out, int32_t aIndent) const
 {
-  for (PRInt32 index = aIndent; --index >= 0; ) fputs("  ", out);
+  for (int32_t index = aIndent; --index >= 0; ) fputs("  ", out);
 
   fputs("{ ", out);
   nsAutoString s;
@@ -973,16 +1000,18 @@ Declaration::List(FILE* out, PRInt32 aIndent) const
 }
 #endif
 
-void
-Declaration::GetNthProperty(PRUint32 aIndex, nsAString& aReturn) const
+bool
+Declaration::GetNthProperty(uint32_t aIndex, nsAString& aReturn) const
 {
   aReturn.Truncate();
   if (aIndex < mOrder.Length()) {
     nsCSSProperty property = OrderValueAt(aIndex);
     if (0 <= property) {
       AppendASCIItoUTF16(nsCSSProps::GetStringValue(property), aReturn);
+      return true;
     }
   }
+  return false;
 }
 
 void

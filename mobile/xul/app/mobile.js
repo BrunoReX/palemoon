@@ -70,7 +70,6 @@ pref("image.cache.size", 1048576); // bytes
 pref("browser.offline-apps.notify", true);
 pref("browser.cache.offline.enable", true);
 pref("browser.cache.offline.capacity", 5120); // kilobytes
-pref("offline-apps.quota.max", 2048); // kilobytes
 pref("offline-apps.quota.warn", 1024); // kilobytes
 
 // cache compression turned off for now - see bug #715198
@@ -87,10 +86,9 @@ pref("network.http.pipelining.ssl", true);
 pref("network.http.proxy.pipelining", true);
 pref("network.http.pipelining.maxrequests" , 6);
 pref("network.http.keep-alive.timeout", 600);
-pref("network.http.max-connections", 6);
-pref("network.http.max-connections-per-server", 4);
-pref("network.http.max-persistent-connections-per-server", 4);
-pref("network.http.max-persistent-connections-per-proxy", 4);
+pref("network.http.max-connections", 20);
+pref("network.http.max-persistent-connections-per-server", 6);
+pref("network.http.max-persistent-connections-per-proxy", 20);
 #ifdef MOZ_PLATFORM_MAEMO
 pref("network.autodial-helper.enabled", true);
 #endif
@@ -136,10 +134,7 @@ pref("browser.download.manager.flashCount", 2);
 pref("browser.download.manager.displayedHistoryDays", 7);
 
 /* download alerts (disabled above) */
-pref("alerts.slideIncrement", 1);
-pref("alerts.slideIncrementTime", 10);
 pref("alerts.totalOpenTime", 6000);
-pref("alerts.height", 50);
 
 /* download helper */
 pref("browser.helperApps.deleteTempFileOnExit", false);
@@ -584,7 +579,7 @@ pref("content.image.allow_locking", false);
 pref("image.mem.min_discard_timeout_ms", 10000);
 
 // enable touch events interfaces
-pref("dom.w3c_touch_events.enabled", true);
+pref("dom.w3c_touch_events.enabled", 1);
 pref("dom.w3c_touch_events.safetyX", 5); // escape borders in units of 1/240"
 pref("dom.w3c_touch_events.safetyY", 20); // escape borders in units of 1/240"
 
@@ -630,10 +625,7 @@ pref("urlclassifier.gethashtables", "goog-phish-shavar,goog-malware-shavar");
 // If an urlclassifier table has not been updated in this number of seconds,
 // a gethash request will be forced to check that the result is still in
 // the database.
-pref("urlclassifier.confirm-age", 2700);
-
-// Maximum size of the sqlite3 cache during an update, in bytes
-pref("urlclassifier.updatecachemax", 4194304);
+pref("urlclassifier.max-complete-age", 2700);
 
 // URL for checking the reason for a malware warning.
 pref("browser.safebrowsing.malware.reportURL", "http://safebrowsing.clients.google.com/safebrowsing/diagnostic?client=%NAME%&hl=%LOCALE%&site=");

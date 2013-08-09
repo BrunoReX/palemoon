@@ -7,6 +7,7 @@
 #define nsTObserverArray_h___
 
 #include "nsTArray.h"
+#include "nsCycleCollectionNoteChild.h"
 
 /**
  * An array of observers. Like a normal array, but supports iterators that are
@@ -20,9 +21,9 @@
 
 class NS_COM_GLUE nsTObserverArray_base {
   public:
-    typedef PRUint32 index_type;
-    typedef PRUint32 size_type;
-    typedef PRInt32  diff_type;
+    typedef uint32_t index_type;
+    typedef uint32_t size_type;
+    typedef int32_t  diff_type;
 
   protected:
     class Iterator_base {
@@ -43,11 +44,11 @@ class NS_COM_GLUE nsTObserverArray_base {
     };
 
     nsTObserverArray_base()
-      : mIterators(nsnull) {
+      : mIterators(nullptr) {
     }
 
     ~nsTObserverArray_base() {
-      NS_ASSERTION(mIterators == nsnull, "iterators outlasting array");
+      NS_ASSERTION(mIterators == nullptr, "iterators outlasting array");
     }
 
     /**
@@ -67,7 +68,7 @@ class NS_COM_GLUE nsTObserverArray_base {
     mutable Iterator_base* mIterators;
 };
 
-template<class T, PRUint32 N>
+template<class T, uint32_t N>
 class nsAutoTObserverArray : protected nsTObserverArray_base {
   public:
     typedef T           elem_type;
@@ -91,7 +92,8 @@ class nsAutoTObserverArray : protected nsTObserverArray_base {
     }
 
     // This method provides direct access to the i'th element of the array.
-    // The given index must be within the array bounds.
+    // The given index must be within the array bounds. If the underlying array
+    // may change during iteration, use an iterator instead of this function.
     // @param i  The index of an element in the array.
     // @return   A reference to the i'th element of the array.
     elem_type& ElementAt(index_type i) {
@@ -116,6 +118,10 @@ class nsAutoTObserverArray : protected nsTObserverArray_base {
     const elem_type& SafeElementAt(index_type i, const elem_type& def) const {
       return mArray.SafeElementAt(i, def);
     }
+
+    // No operator[] is provided because the point of this class is to support
+    // allow modifying the array during iteration, and ElementAt() is not safe
+    // in those conditions.
 
     //
     // Search methods
@@ -145,6 +151,25 @@ class nsAutoTObserverArray : protected nsTObserverArray_base {
     //
     // Mutation methods
     //
+  
+    // Insert a given element at the given index.
+    // @param index  The index at which to insert item.
+    // @param item   The item to insert,
+    // @return       A pointer to the newly inserted element, or a null on DOM
+    template<class Item>
+    elem_type *InsertElementAt(index_type aIndex, const Item& aItem) {
+      elem_type* item = mArray.InsertElementAt(aIndex, aItem);
+      AdjustIterators(aIndex, 1);
+      return item;
+    }
+
+    // Same as above but without copy constructing.
+    // This is useful to avoid temporaries.
+    elem_type* InsertElementAt(index_type aIndex) {
+      elem_type* item = mArray.InsertElementAt(aIndex);
+      AdjustIterators(aIndex, 1);
+      return item;
+    }
 
     // Prepend an element to the array unless it already exists in the array.
     // 'operator==' must be defined for elem_type.
@@ -152,7 +177,13 @@ class nsAutoTObserverArray : protected nsTObserverArray_base {
     // @return       true if the element was found, or inserted successfully.
     template<class Item>
     bool PrependElementUnlessExists(const Item& item) {
-      return Contains(item) || mArray.InsertElementAt(0, item) != nsnull;
+      if (Contains(item)) {
+        return true;
+      }
+      
+      bool inserted = mArray.InsertElementAt(0, item) != nullptr;
+      AdjustIterators(0, 1);
+      return inserted;
     }
 
     // Append an element to the array.
@@ -175,7 +206,7 @@ class nsAutoTObserverArray : protected nsTObserverArray_base {
     // @return       true if the element was found, or inserted successfully.
     template<class Item>
     bool AppendElementUnlessExists(const Item& item) {
-      return Contains(item) || AppendElement(item) != nsnull;
+      return Contains(item) || AppendElement(item) != nullptr;
     }
 
     // Remove an element from the array.
@@ -338,6 +369,27 @@ class nsTObserverArray : public nsAutoTObserverArray<T, 0> {
       base_type::mArray.SetCapacity(capacity);
     }
 };
+
+template <typename T>
+inline void
+ImplCycleCollectionUnlink(nsTObserverArray<T>& aField)
+{
+  aField.Clear();
+}
+
+template <typename T>
+inline void
+ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback& aCallback,
+                            nsTObserverArray<T>& aField,
+                            const char* aName,
+                            uint32_t aFlags = 0)
+{
+  aFlags |= CycleCollectionEdgeNameArrayFlag;
+  size_t length = aField.Length();
+  for (size_t i = 0; i < length; ++i) {
+    ImplCycleCollectionTraverse(aCallback, aField.ElementAt(i), aName, aFlags);
+  }
+}
 
 // XXXbz I wish I didn't have to pass in the observer type, but I
 // don't see a way to get it out of array_.

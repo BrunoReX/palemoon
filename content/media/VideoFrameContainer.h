@@ -7,15 +7,21 @@
 #ifndef VIDEOFRAMECONTAINER_H_
 #define VIDEOFRAMECONTAINER_H_
 
-#include "ImageLayers.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/TimeStamp.h"
 #include "nsISupportsImpl.h"
 #include "gfxPoint.h"
+#include "nsCOMPtr.h"
+#include "nsAutoPtr.h"
 
 class nsHTMLMediaElement;
 
 namespace mozilla {
+
+namespace layers {
+class Image;
+class ImageContainer;
+}
 
 /**
  * This object is used in the decoder backend threads and the main thread
@@ -34,25 +40,21 @@ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(VideoFrameContainer)
 
   VideoFrameContainer(nsHTMLMediaElement* aElement,
-                      already_AddRefed<ImageContainer> aContainer)
-    : mElement(aElement),
-      mImageContainer(aContainer), mMutex("nsVideoFrameContainer"),
-      mIntrinsicSizeChanged(false), mImageSizeChanged(false)
-  {
-    NS_ASSERTION(aElement, "aElement must not be null");
-    NS_ASSERTION(mImageContainer, "aContainer must not be null");
-  }
+                      already_AddRefed<ImageContainer> aContainer);
+  ~VideoFrameContainer();
+
   // Call on any thread
   void SetCurrentFrame(const gfxIntSize& aIntrinsicSize, Image* aImage,
                        TimeStamp aTargetTime);
+  void ClearCurrentFrame();
   // Time in seconds by which the last painted video frame was late by.
   // E.g. if the last painted frame should have been painted at time t,
   // but was actually painted at t+n, this returns n in seconds. Threadsafe.
   double GetFrameDelay();
   // Call on main thread
   void Invalidate();
-  ImageContainer* GetImageContainer() { return mImageContainer; }
-  void ForgetElement() { mElement = nsnull; }
+  ImageContainer* GetImageContainer();
+  void ForgetElement() { mElement = nullptr; }
 
 protected:
   // Non-addreffed pointer to the element. The element calls ForgetElement
@@ -86,6 +88,8 @@ protected:
   // frame is fully invalidated instead of just invalidating for the image change
   // in the ImageLayer.
   bool mImageSizeChanged;
+
+  bool mNeedInvalidation;
 };
 
 }

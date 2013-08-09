@@ -102,10 +102,10 @@
  */
 
 TableBackgroundPainter::TableBackgroundData::TableBackgroundData()
-  : mFrame(nsnull),
+  : mFrame(nullptr),
     mVisible(false),
-    mBorder(nsnull),
-    mSynthBorder(nsnull)
+    mBorder(nullptr),
+    mSynthBorder(nullptr)
 {
   MOZ_COUNT_CTOR(TableBackgroundData);
 }
@@ -122,7 +122,7 @@ TableBackgroundPainter::TableBackgroundData::Destroy(nsPresContext* aPresContext
   NS_PRECONDITION(aPresContext, "null prescontext");
   if (mSynthBorder) {
     mSynthBorder->Destroy(aPresContext);
-    mSynthBorder = nsnull;
+    mSynthBorder = nullptr;
   }
 }
 
@@ -130,8 +130,8 @@ void
 TableBackgroundPainter::TableBackgroundData::Clear()
 {
   mRect.SetEmpty();
-  mFrame = nsnull;
-  mBorder = nsnull;
+  mFrame = nullptr;
+  mBorder = nullptr;
   mVisible = false;
 }
 
@@ -202,13 +202,13 @@ TableBackgroundPainter::TableBackgroundPainter(nsTableFrame*        aTableFrame,
                                                nsRenderingContext& aRenderingContext,
                                                const nsRect&        aDirtyRect,
                                                const nsPoint&       aRenderPt,
-                                               PRUint32             aBGPaintFlags)
+                                               uint32_t             aBGPaintFlags)
   : mPresContext(aPresContext),
     mRenderingContext(aRenderingContext),
     mRenderPt(aRenderPt),
     mDirtyRect(aDirtyRect),
     mOrigin(aOrigin),
-    mCols(nsnull),
+    mCols(nullptr),
     mZeroBorder(aPresContext),
     mBGPaintFlags(aBGPaintFlags)
 {
@@ -229,8 +229,8 @@ TableBackgroundPainter::TableBackgroundPainter(nsTableFrame*        aTableFrame,
 TableBackgroundPainter::~TableBackgroundPainter()
 {
   if (mCols) {
-    TableBackgroundData* lastColGroup = nsnull;
-    for (PRUint32 i = 0; i < mNumCols; i++) {
+    TableBackgroundData* lastColGroup = nullptr;
+    for (uint32_t i = 0; i < mNumCols; i++) {
       if (mCols[i].mColGroup != lastColGroup) {
         lastColGroup = mCols[i].mColGroup;
         NS_ASSERTION(mCols[i].mColGroup, "colgroup data should not be null - bug 237421");
@@ -239,7 +239,7 @@ TableBackgroundPainter::~TableBackgroundPainter()
           lastColGroup->Destroy(mPresContext);
         delete lastColGroup;
       }
-      mCols[i].mColGroup = nsnull;
+      mCols[i].mColGroup = nullptr;
       mCols[i].mCol.Destroy(mPresContext);
     }
     delete [] mCols;
@@ -307,8 +307,8 @@ TableBackgroundPainter::TranslateContext(nscoord aDX,
 {
   mRenderPt += nsPoint(aDX, aDY);
   if (mCols) {
-    TableBackgroundData* lastColGroup = nsnull;
-    for (PRUint32 i = 0; i < mNumCols; i++) {
+    TableBackgroundData* lastColGroup = nullptr;
+    for (uint32_t i = 0; i < mNumCols; i++) {
       mCols[i].mCol.mRect.MoveBy(-aDX, -aDY);
       if (lastColGroup != mCols[i].mColGroup) {
         NS_ASSERTION(mCols[i].mColGroup, "colgroup data should not be null - bug 237421");
@@ -334,7 +334,7 @@ TableBackgroundPainter::PaintTable(nsTableFrame*   aTableFrame,
 
   if (rowGroups.Length() < 1) { //degenerate case
     if (aPaintTableBackground) {
-      PaintTableFrame(aTableFrame, nsnull, nsnull, nsMargin(0,0,0,0));
+      PaintTableFrame(aTableFrame, nullptr, nullptr, nsMargin(0,0,0,0));
     }
     /* No cells; nothing else to paint */
     return NS_OK;
@@ -353,7 +353,7 @@ TableBackgroundPainter::PaintTable(nsTableFrame*   aTableFrame,
     mCols = new ColData[mNumCols];
     if (!mCols) return NS_ERROR_OUT_OF_MEMORY;
 
-    TableBackgroundData* cgData = nsnull;
+    TableBackgroundData* cgData = nullptr;
     nsMargin border;
     /* BC left borders aren't stored on cols, but the previous column's
        right border is the next one's left border.*/
@@ -389,7 +389,7 @@ TableBackgroundPainter::PaintTable(nsTableFrame*   aTableFrame,
       for (nsTableColFrame* col = cgFrame->GetFirstColumn(); col;
            col = static_cast<nsTableColFrame*>(col->GetNextSibling())) {
         /*Create data struct for column*/
-        PRUint32 colIndex = col->GetColIndex();
+        uint32_t colIndex = col->GetColIndex();
         NS_ASSERTION(colIndex < mNumCols, "prevent array boundary violation");
         if (mNumCols <= colIndex)
           break;
@@ -416,7 +416,7 @@ TableBackgroundPainter::PaintTable(nsTableFrame*   aTableFrame,
     }
   }
 
-  for (PRUint32 i = 0; i < rowGroups.Length(); i++) {
+  for (uint32_t i = 0; i < rowGroups.Length(); i++) {
     nsTableRowGroupFrame* rg = rowGroups[i];
     mRowGroup.SetFrame(rg);
     // Need to compute the right rect via GetOffsetTo, since the row
@@ -591,10 +591,10 @@ TableBackgroundPainter::PaintCell(nsTableCellFrame* aCell,
     return NS_OK;
   }
 
-  PRInt32 colIndex;
+  int32_t colIndex;
   aCell->GetColIndex(colIndex);
-  NS_ASSERTION(colIndex < PRInt32(mNumCols), "prevent array boundary violation");
-  if (PRInt32(mNumCols) <= colIndex)
+  NS_ASSERTION(colIndex < int32_t(mNumCols), "prevent array boundary violation");
+  if (int32_t(mNumCols) <= colIndex)
     return NS_OK;
 
   //Paint column group background

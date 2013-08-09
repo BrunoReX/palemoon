@@ -7,19 +7,20 @@
 #define nsCoreUtils_h_
 
 
-#include "nsIDOMNode.h"
 #include "nsIContent.h"
 #include "nsIBoxObject.h"
-#include "nsITreeBoxObject.h"
-#include "nsITreeColumns.h"
+#include "nsIPresShell.h"
 
-#include "nsIFrame.h"
-#include "nsIDocShellTreeItem.h"
-#include "nsIDOMCSSStyleDeclaration.h"
 #include "nsIDOMDOMStringList.h"
-#include "nsIMutableArray.h"
 #include "nsPoint.h"
 #include "nsTArray.h"
+
+class nsRange;
+class nsIFrame;
+class nsIDocShellTreeItem;
+class nsITreeColumn;
+class nsITreeBoxObject;
+class nsIWidget;
 
 /**
  * Core utils.
@@ -43,7 +44,7 @@ public:
    *                       nsITreeBoxObject for available values
    */
   static void DispatchClickEvent(nsITreeBoxObject *aTreeBoxObj,
-                                 PRInt32 aRowIndex, nsITreeColumn *aColumn,
+                                 int32_t aRowIndex, nsITreeColumn *aColumn,
                                  const nsCString& aPseudoElt = EmptyCString());
 
   /**
@@ -53,7 +54,7 @@ public:
    * @param  aPresShell  [in] the presshell for the given element
    * @param  aContent    [in] the element
    */
-  static bool DispatchMouseEvent(PRUint32 aEventType,
+  static bool DispatchMouseEvent(uint32_t aEventType,
                                    nsIPresShell *aPresShell,
                                    nsIContent *aContent);
 
@@ -68,7 +69,7 @@ public:
    * @param aPresShell   [in] the presshell for the element
    * @param aRootWidget  [in] the root widget of the element
    */
-  static void DispatchMouseEvent(PRUint32 aEventType, PRInt32 aX, PRInt32 aY,
+  static void DispatchMouseEvent(uint32_t aEventType, int32_t aX, int32_t aY,
                                  nsIContent *aContent, nsIFrame *aFrame,
                                  nsIPresShell *aPresShell,
                                  nsIWidget *aRootWidget);
@@ -79,13 +80,13 @@ public:
    *
    * @param aContent - the given element.
    */
-  static PRUint32 GetAccessKeyFor(nsIContent *aContent);
+  static uint32_t GetAccessKeyFor(nsIContent *aContent);
 
   /**
    * Return DOM element related with the given node, i.e.
    * a) itself if it is DOM element
    * b) parent element if it is text node
-   * c) otherwise nsnull
+   * c) otherwise nullptr
    *
    * @param aNode  [in] the given DOM node
    */
@@ -94,7 +95,7 @@ public:
   /**
    * Return DOM node for the given DOM point.
    */
-  static nsINode *GetDOMNodeFromDOMPoint(nsINode *aNode, PRUint32 aOffset);
+  static nsINode *GetDOMNodeFromDOMPoint(nsINode *aNode, uint32_t aOffset);
 
   /**
    * Return the nsIContent* to check for ARIA attributes on -- this may not
@@ -122,38 +123,28 @@ public:
    */
    static bool IsAncestorOf(nsINode *aPossibleAncestorNode,
                               nsINode *aPossibleDescendantNode,
-                              nsINode *aRootNode = nsnull);
+                              nsINode *aRootNode = nullptr);
 
   /**
    * Helper method to scroll range into view, used for implementation of
    * nsIAccessibleText::scrollSubstringTo().
    *
    * @param aFrame        the frame for accessible the range belongs to.
-   * @param aStartNode    start node of a range
-   * @param aStartOffset  an offset inside the start node
-   * @param aEndNode      end node of a range
-   * @param aEndOffset    an offset inside the end node
+   * @param aRange    the range to scroll to
    * @param aScrollType   the place a range should be scrolled to
    */
-  static nsresult ScrollSubstringTo(nsIFrame *aFrame,
-                                    nsIDOMNode *aStartNode, PRInt32 aStartIndex,
-                                    nsIDOMNode *aEndNode, PRInt32 aEndIndex,
-                                    PRUint32 aScrollType);
+  static nsresult ScrollSubstringTo(nsIFrame* aFrame, nsRange* aRange,
+                                    uint32_t aScrollType);
 
   /** Helper method to scroll range into view, used for implementation of
    * nsIAccessibleText::scrollSubstringTo[Point]().
    *
    * @param aFrame        the frame for accessible the range belongs to.
-   * @param aStartNode    start node of a range
-   * @param aStartOffset  an offset inside the start node
-   * @param aEndNode      end node of a range
-   * @param aEndOffset    an offset inside the end node
+   * @param aRange    the range to scroll to
    * @param aVertical     how to align vertically, specified in percents, and when.
    * @param aHorizontal     how to align horizontally, specified in percents, and when.
    */
-  static nsresult ScrollSubstringTo(nsIFrame *aFrame,
-                                    nsIDOMNode *aStartNode, PRInt32 aStartIndex,
-                                    nsIDOMNode *aEndNode, PRInt32 aEndIndex,
+  static nsresult ScrollSubstringTo(nsIFrame* aFrame, nsRange* aRange,
                                     nsIPresShell::ScrollAxis aVertical,
                                     nsIPresShell::ScrollAxis aHorizontal);
 
@@ -172,12 +163,13 @@ public:
    * Converts scroll type constant defined in nsIAccessibleScrollType to
    * vertical and horizontal parameters.
    */
-  static void ConvertScrollTypeToPercents(PRUint32 aScrollType,
+  static void ConvertScrollTypeToPercents(uint32_t aScrollType,
                                           nsIPresShell::ScrollAxis *aVertical,
                                           nsIPresShell::ScrollAxis *aHorizontal);
 
   /**
-   * Returns coordinates relative screen for the top level window.
+   * Returns coordinates in device pixels relative screen for the top level
+   * window.
    *
    * @param aNode  the DOM node hosted in the window.
    */
@@ -218,12 +210,6 @@ public:
   }
 
   /**
-   * Return document node for the given document shell tree item.
-   */
-  static already_AddRefed<nsIDOMNode>
-    GetDOMNodeForContainer(nsIDocShellTreeItem *aContainer);
-
-  /**
    * Get the ID for an element, in some types of XML this may not be the ID attribute
    * @param aContent  Node to get the ID for
    * @param aID       Where to put ID string
@@ -236,15 +222,7 @@ public:
    * attribute or wrong value then false is returned.
    */
   static bool GetUIntAttr(nsIContent *aContent, nsIAtom *aAttr,
-                            PRInt32 *aUInt);
-
-  /**
-   * Check if the given element is XLink.
-   *
-   * @param aContent  the given element
-   * @return          true if the given element is XLink
-   */
-  static bool IsXLink(nsIContent *aContent);
+                            int32_t *aUInt);
 
   /**
    * Returns language for the given node.
@@ -277,13 +255,13 @@ public:
   /**
    * Return sensible columns count for the given tree box object.
    */
-  static PRUint32 GetSensibleColumnCount(nsITreeBoxObject *aTree);
+  static uint32_t GetSensibleColumnCount(nsITreeBoxObject *aTree);
 
   /**
    * Return sensible column at the given index for the given tree box object.
    */
   static already_AddRefed<nsITreeColumn>
-    GetSensibleColumnAt(nsITreeBoxObject *aTree, PRUint32 aIndex);
+    GetSensibleColumnAt(nsITreeBoxObject *aTree, uint32_t aIndex);
 
   /**
    * Return next sensible column for the given column.
@@ -306,7 +284,7 @@ public:
    * Scroll content into view.
    */
   static void ScrollTo(nsIPresShell* aPresShell, nsIContent* aContent,
-                       PRUint32 aScrollType);
+                       uint32_t aScrollType);
 
   /**
    * Return true if the given node is table header element.
@@ -333,7 +311,7 @@ public:
   NS_DECL_NSIDOMDOMSTRINGLIST
 
   bool Add(const nsAString& aName) {
-    return mNames.AppendElement(aName) != nsnull;
+    return mNames.AppendElement(aName) != nullptr;
   }
 
 private:

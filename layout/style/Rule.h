@@ -10,11 +10,13 @@
 
 #include "nsIStyleRule.h"
 #include "nsIDOMCSSRule.h"
+#include "nsCSSStyleSheet.h"
 
 class nsIStyleSheet;
-class nsCSSStyleSheet;
+class nsIDocument;
 struct nsRuleData;
 template<class T> struct already_AddRefed;
+class nsHTMLCSSStyleSheet;
 
 namespace mozilla {
 namespace css {
@@ -23,15 +25,16 @@ class GroupRule;
 #define DECL_STYLE_RULE_INHERIT_NO_DOMRULE  \
 virtual void MapRuleInfoInto(nsRuleData* aRuleData);
 
-#define DECL_STYLE_RULE_INHERIT  \
-DECL_STYLE_RULE_INHERIT_NO_DOMRULE \
-virtual nsIDOMCSSRule* GetDOMRule();
+#define DECL_STYLE_RULE_INHERIT                   \
+  DECL_STYLE_RULE_INHERIT_NO_DOMRULE              \
+  virtual nsIDOMCSSRule* GetDOMRule();            \
+  virtual nsIDOMCSSRule* GetExistingDOMRule();
 
 class Rule : public nsIStyleRule {
 protected:
   Rule()
-    : mSheet(nsnull),
-      mParentRule(nsnull)
+    : mSheet(0),
+      mParentRule(nullptr)
   {
   }
 
@@ -43,13 +46,6 @@ protected:
 
   virtual ~Rule() {}
 
-public:
-  // for implementing nsISupports
-  NS_IMETHOD_(nsrefcnt) AddRef();
-  NS_IMETHOD_(nsrefcnt) Release();
-protected:
-  nsAutoRefCnt mRefCnt;
-  NS_DECL_OWNINGTHREAD
 public:
 
   // The constants in this list must maintain the following invariants:
@@ -68,14 +64,26 @@ public:
     PAGE_RULE,
     KEYFRAME_RULE,
     KEYFRAMES_RULE,
-    DOCUMENT_RULE
+    DOCUMENT_RULE,
+    SUPPORTS_RULE
   };
 
-  virtual PRInt32 GetType() const = 0;
+  virtual int32_t GetType() const = 0;
 
-  nsCSSStyleSheet* GetStyleSheet() const { return mSheet; }
+  nsCSSStyleSheet* GetStyleSheet() const;
+  nsHTMLCSSStyleSheet* GetHTMLCSSStyleSheet() const;
+
+  // Return the document the rule lives in, if any
+  nsIDocument* GetDocument() const
+  {
+    nsCSSStyleSheet* sheet = GetStyleSheet();
+    return sheet ? sheet->GetDocument() : nullptr;
+  }
 
   virtual void SetStyleSheet(nsCSSStyleSheet* aSheet);
+  // This does not need to be virtual, because GroupRule and MediaRule are not
+  // used for inline style.
+  void SetHTMLCSSStyleSheet(nsHTMLCSSStyleSheet* aSheet);
 
   void SetParentRule(GroupRule* aRule) {
     // We don't reference count this up reference. The group rule
@@ -93,6 +101,9 @@ public:
   // supposed to have a DOM rule representation (and our code wouldn't work).
   virtual nsIDOMCSSRule* GetDOMRule() = 0;
 
+  // Like GetDOMRule(), but won't create one if we don't have one yet
+  virtual nsIDOMCSSRule* GetExistingDOMRule() = 0;
+
   // to implement methods on nsIDOMCSSRule
   nsresult GetParentRule(nsIDOMCSSRule** aParentRule);
   nsresult GetParentStyleSheet(nsIDOMCSSStyleSheet** aSheet);
@@ -108,7 +119,9 @@ public:
                                                    void* aData);
 
 protected:
-  nsCSSStyleSheet*  mSheet;
+  // This is either an nsCSSStyleSheet* or a nsHTMLStyleSheet*.  The former
+  // if the low bit is 0, the latter if the low bit is 1.
+  uintptr_t         mSheet;
   GroupRule*        mParentRule;
 };
 

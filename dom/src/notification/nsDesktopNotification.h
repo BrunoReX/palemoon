@@ -25,7 +25,7 @@
 #include "nsThreadUtils.h"
 
 #include "nsDOMEventTargetHelper.h"
-#include "nsIPrivateDOMEvent.h"
+#include "nsIDOMEvent.h"
 #include "nsIDocument.h"
 
 class AlertServiceObserver;
@@ -48,7 +48,7 @@ public:
     nsCOMPtr<nsIDOMDocument> domdoc;
     mOwner->GetDocument(getter_AddRefs(domdoc));
     nsCOMPtr<nsIDocument> doc = do_QueryInterface(domdoc);
-    doc->NodePrincipal()->GetURI(getter_AddRefs(mURI));
+    mPrincipal = doc->NodePrincipal();
   }
 
   virtual ~nsDesktopNotificationCenter()
@@ -56,12 +56,12 @@ public:
   }
 
   void Shutdown() {
-    mOwner = nsnull;
+    mOwner = nullptr;
   }
 
 private:
   nsCOMPtr<nsPIDOMWindow> mOwner;
-  nsCOMPtr<nsIURI> mURI;
+  nsCOMPtr<nsIPrincipal> mPrincipal;
 };
 
 
@@ -72,24 +72,25 @@ class nsDOMDesktopNotification : public nsDOMEventTargetHelper,
 
 public:
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsDOMDesktopNotification,nsDOMEventTargetHelper)
   NS_DECL_NSIDOMDESKTOPNOTIFICATION
 
   nsDOMDesktopNotification(const nsAString & title,
                            const nsAString & description,
                            const nsAString & iconURL,
                            nsPIDOMWindow *aWindow,
-                           nsIURI* uri);
+                           nsIPrincipal* principal);
 
   virtual ~nsDOMDesktopNotification();
+
+  void Init();
 
   /*
    * PostDesktopNotification
    * Uses alert service to display a notification
    */
-  void PostDesktopNotification();
+  nsresult PostDesktopNotification();
 
-  void SetAllow(bool aAllow);
+  nsresult SetAllow(bool aAllow);
 
   /*
    * Creates and dispatches a dom event of type aName
@@ -104,11 +105,8 @@ protected:
   nsString mDescription;
   nsString mIconURL;
 
-  nsRefPtr<nsDOMEventListenerWrapper> mOnClickCallback;
-  nsRefPtr<nsDOMEventListenerWrapper> mOnCloseCallback;
-
   nsRefPtr<AlertServiceObserver> mObserver;
-  nsCOMPtr<nsIURI> mURI;
+  nsCOMPtr<nsIPrincipal> mPrincipal;
   bool mAllow;
   bool mShowHasBeenCalled;
 };
@@ -131,7 +129,7 @@ class nsDesktopNotificationRequest : public nsIContentPermissionRequest,
   NS_IMETHOD Run()
   {
     nsCOMPtr<nsIContentPermissionPrompt> prompt =
-      do_GetService(NS_CONTENT_PERMISSION_PROMPT_CONTRACTID);
+      do_CreateInstance(NS_CONTENT_PERMISSION_PROMPT_CONTRACTID);
     if (prompt) {
       prompt->Prompt(this);
     }
@@ -165,19 +163,25 @@ class AlertServiceObserver: public nsIObserver
   
   virtual ~AlertServiceObserver() {}
 
-  void Disconnect() { mNotification = nsnull; }
+  void Disconnect() { mNotification = nullptr; }
 
   NS_IMETHODIMP
   Observe(nsISupports *aSubject,
           const char *aTopic,
           const PRUnichar *aData)
   {
+
     // forward to parent
-    if (mNotification)
+    if (mNotification) {
+#ifdef MOZ_B2G
+    if (NS_FAILED(mNotification->CheckInnerWindowCorrectness()))
+      return NS_ERROR_NOT_AVAILABLE;
+#endif
       mNotification->HandleAlertServiceNotification(aTopic);
+    }
     return NS_OK;
   };
-  
+
  private:
   nsDOMDesktopNotification* mNotification;
 };

@@ -12,11 +12,9 @@
 #include "nsNSSCertificate.h"
 
 #include "nspr.h"
-#include "nsNSSCertHeader.h"
-
-extern "C" {
 #include "secerr.h"
-}
+
+using namespace mozilla;
 
 static NS_DEFINE_CID(kNSSComponentCID, NS_NSSCOMPONENT_CID);
 
@@ -31,11 +29,11 @@ nsUsageArrayHelper::nsUsageArrayHelper(CERTCertificate *aCert)
 void
 nsUsageArrayHelper::check(const char *suffix,
                         SECCertificateUsage aCertUsage,
-                        PRUint32 &aCounter,
+                        uint32_t &aCounter,
                         PRUnichar **outUsages)
 {
   if (!aCertUsage) return;
-  nsCAutoString typestr;
+  nsAutoCString typestr;
   switch (aCertUsage) {
   case certificateUsageSSLClient:
     typestr = "VerifySSLClient";
@@ -87,7 +85,7 @@ nsUsageArrayHelper::check(const char *suffix,
 }
 
 void
-nsUsageArrayHelper::verifyFailed(PRUint32 *_verified, int err)
+nsUsageArrayHelper::verifyFailed(uint32_t *_verified, int err)
 {
   switch (err) {
   /* For these cases, verify only failed for the particular usage */
@@ -108,6 +106,8 @@ nsUsageArrayHelper::verifyFailed(PRUint32 *_verified, int err)
   case SEC_ERROR_EXPIRED_ISSUER_CERTIFICATE:
     // XXX are there other error for this?
     *_verified = nsNSSCertificate::INVALID_CA; break;
+  case SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED:
+    *_verified = nsNSSCertificate::SIGNATURE_ALGORITHM_DISABLED; break;
   case SEC_ERROR_CERT_USAGES_INVALID: // XXX what is this?
   // there are some OCSP errors from PSM 1.x to add here
   case SECSuccess:
@@ -120,9 +120,9 @@ nsUsageArrayHelper::verifyFailed(PRUint32 *_verified, int err)
 nsresult
 nsUsageArrayHelper::GetUsagesArray(const char *suffix,
                       bool localOnly,
-                      PRUint32 outArraySize,
-                      PRUint32 *_verified,
-                      PRUint32 *_count,
+                      uint32_t outArraySize,
+                      uint32_t *_verified,
+                      uint32_t *_count,
                       PRUnichar **outUsages)
 {
   nsNSSShutDownPreventionLock locker;
@@ -145,7 +145,7 @@ nsUsageArrayHelper::GetUsagesArray(const char *suffix,
     }
   }
   
-  PRUint32 &count = *_count;
+  uint32_t &count = *_count;
   count = 0;
   SECCertificateUsage usages = 0;
   int err = 0;
@@ -164,7 +164,7 @@ if (!nsNSSComponent::globalConstFlagUsePKIXVerification) {
 			    certificateUsageObjectSigner |
 			    certificateUsageSSLCA |
 			    certificateUsageStatusResponder,
-			    NULL, &usages);
+			    nullptr, &usages);
   err = PR_GetError();
 }
 else {
@@ -172,7 +172,7 @@ else {
   nsCOMPtr<nsINSSComponent> inss = do_GetService(kNSSComponentCID, &nsrv);
   if (!inss)
     return nsrv;
-  nsRefPtr<nsCERTValInParamWrapper> survivingParams;
+  RefPtr<nsCERTValInParamWrapper> survivingParams;
   if (localOnly)
     nsrv = inss->GetDefaultCERTValInParamLocalOnly(survivingParams);
   else
@@ -188,7 +188,7 @@ else {
   
   CERT_PKIXVerifyCert(mCert, certificateUsageCheckAllUsages,
                       survivingParams->GetRawPointerForNSS(),
-                      cvout, NULL);
+                      cvout, nullptr);
   err = PR_GetError();
   usages = cvout[0].value.scalar.usages;
 }

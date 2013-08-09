@@ -22,19 +22,19 @@
 
 using namespace mozilla;
 
-/* static */ gfxFontconfigUtils* gfxFontconfigUtils::sUtils = nsnull;
-static nsILanguageAtomService* gLangService = nsnull;
+/* static */ gfxFontconfigUtils* gfxFontconfigUtils::sUtils = nullptr;
+static nsILanguageAtomService* gLangService = nullptr;
 
 /* static */ void
 gfxFontconfigUtils::Shutdown() {
     if (sUtils) {
         delete sUtils;
-        sUtils = nsnull;
+        sUtils = nullptr;
     }
     NS_IF_RELEASE(gLangService);
 }
 
-/* static */ PRUint8
+/* static */ uint8_t
 gfxFontconfigUtils::FcSlantToThebesStyle(int aFcSlant)
 {
     switch (aFcSlant) {
@@ -47,7 +47,7 @@ gfxFontconfigUtils::FcSlantToThebesStyle(int aFcSlant)
     }
 }
 
-/* static */ PRUint8
+/* static */ uint8_t
 gfxFontconfigUtils::GetThebesStyle(FcPattern *aPattern)
 {
     int slant;
@@ -85,7 +85,7 @@ gfxFontconfigUtils::GetFcSlant(const gfxFontStyle& aFontStyle)
 #define FC_WEIGHT_EXTRABLACK        215
 #endif
 
-/* static */ PRUint16
+/* static */ uint16_t
 gfxFontconfigUtils::GetThebesWeight(FcPattern *aPattern)
 {
     int weight;
@@ -117,7 +117,7 @@ gfxFontconfigUtils::GetThebesWeight(FcPattern *aPattern)
 }
 
 /* static */ int
-gfxFontconfigUtils::FcWeightForBaseWeight(PRInt8 aBaseWeight)
+gfxFontconfigUtils::FcWeightForBaseWeight(int8_t aBaseWeight)
 {
     NS_PRECONDITION(aBaseWeight >= 0 && aBaseWeight <= 10,
                     "base weight out of range");
@@ -145,7 +145,7 @@ gfxFontconfigUtils::FcWeightForBaseWeight(PRInt8 aBaseWeight)
     return aBaseWeight < 2 ? FC_WEIGHT_THIN : FC_WEIGHT_EXTRABLACK;
 }
 
-/* static */ PRInt16
+/* static */ int16_t
 gfxFontconfigUtils::GetThebesStretch(FcPattern *aPattern)
 {
     int width;
@@ -181,7 +181,7 @@ gfxFontconfigUtils::GetThebesStretch(FcPattern *aPattern)
 }
 
 /* static */ int
-gfxFontconfigUtils::FcWidthForThebesStretch(PRInt16 aStretch)
+gfxFontconfigUtils::FcWidthForThebesStretch(int16_t aStretch)
 {
     switch (aStretch) {
         default: // this will catch "normal" (0) as well as out-of-range values
@@ -219,7 +219,7 @@ GuessFcWeight(const gfxFontStyle& aFontStyle)
      * the weight in the list of supported font weights,
      * this value can be negative or positive.
      */
-    PRInt8 weight = aFontStyle.ComputeWeight();
+    int8_t weight = aFontStyle.ComputeWeight();
 
     // ComputeWeight trimmed the range of weights for us
     NS_ASSERTION(weight >= 0 && weight <= 10,
@@ -249,7 +249,7 @@ static void
 AddLangGroup(FcPattern *aPattern, nsIAtom *aLangGroup)
 {
     // Translate from mozilla's internal mapping into fontconfig's
-    nsCAutoString lang;
+    nsAutoCString lang;
     gfxFontconfigUtils::GetSampleLangForGroup(aLangGroup, &lang);
 
     if (!lang.IsEmpty()) {
@@ -279,7 +279,7 @@ gfxFontconfigUtils::NewPattern(const nsTArray<nsString>& aFamilies,
     }
 
     bool useWeakBinding = false;
-    for (PRUint32 i = 0; i < aFamilies.Length(); ++i) {
+    for (uint32_t i = 0; i < aFamilies.Length(); ++i) {
         NS_ConvertUTF16toUTF8 family(aFamilies[i]);
         if (!useWeakBinding) {
             AddString(pattern, FC_FAMILY, family.get());
@@ -290,7 +290,7 @@ gfxFontconfigUtils::NewPattern(const nsTArray<nsString>& aFamilies,
             // non-generic families in the list.  To ensure that subsequent
             // families do not have a higher priority, they are given weak
             // bindings.
-            for (PRUint32 g = 0;
+            for (uint32_t g = 0;
                  g < ArrayLength(sFontconfigGenerics);
                  ++g) {
                 if (0 == FcStrCmpIgnoreCase(ToFcChar8(sFontconfigGenerics[g]),
@@ -328,13 +328,13 @@ gfxFontconfigUtils::GetFontList(nsIAtom *aLangGroup,
     if (NS_FAILED(rv))
         return rv;
 
-    for (PRUint32 i = 0; i < fonts.Length(); ++i) {
+    for (uint32_t i = 0; i < fonts.Length(); ++i) {
         aListOfFonts.AppendElement(NS_ConvertUTF8toUTF16(fonts[i]));
     }
 
     aListOfFonts.Sort();
 
-    PRInt32 serif = 0, sansSerif = 0, monospace = 0;
+    int32_t serif = 0, sansSerif = 0, monospace = 0;
 
     // Fontconfig supports 3 generic fonts, "serif", "sans-serif", and
     // "monospace", slightly different from CSS's 5.
@@ -434,9 +434,9 @@ TryLangForGroup(const nsACString& aOSLang, nsIAtom *aLangGroup,
 gfxFontconfigUtils::GetSampleLangForGroup(nsIAtom *aLangGroup,
                                           nsACString *aFcLang)
 {
-    NS_PRECONDITION(aFcLang != nsnull, "aFcLang must not be NULL");
+    NS_PRECONDITION(aFcLang != nullptr, "aFcLang must not be NULL");
 
-    const MozLangGroupData *langGroup = nsnull;
+    const MozLangGroupData *langGroup = nullptr;
 
     for (unsigned int i = 0; i < ArrayLength(MozLangGroups); ++i) {
         if (aLangGroup == MozLangGroups[i].mozLangGroup) {
@@ -528,7 +528,7 @@ gfxFontconfigUtils::GetFontListInternal(nsTArray<nsCString>& aListOfFonts,
         }
 
         // Remove duplicates...
-        nsCAutoString strFamily(family);
+        nsAutoCString strFamily(family);
         if (aListOfFonts.Contains(strFamily))
             continue;
 
@@ -635,7 +635,7 @@ gfxFontconfigUtils::UpdateFontListInternal(bool aForce)
             const char *start = p;
             while (++p != p_end && *p != kComma)
                 /* nothing */ ;
-            nsCAutoString name(Substring(start, p));
+            nsAutoCString name(Substring(start, p));
             name.CompressWhitespace(false, true);
             mAliasForMultiFonts.AppendElement(name);
             p++;
@@ -714,7 +714,7 @@ gfxFontconfigUtils::GetStandardFamilyName(const nsAString& aFontName, nsAString&
 
     // See if any of the first family names represent the same set of font
     // faces as the given family.
-    for (PRUint32 j = 0; j < candidates.Length(); ++j) {
+    for (uint32_t j = 0; j < candidates.Length(); ++j) {
         FcPatternDel(pat, FC_FAMILY);
         FcPatternAddString(pat, FC_FAMILY, (FcChar8 *)candidates[j].get());
 
@@ -790,7 +790,7 @@ gfxFontconfigUtils::ResolveFontName(const nsAString& aFontName,
 bool
 gfxFontconfigUtils::IsExistingFamily(const nsCString& aFamilyName)
 {
-    return mFontsByFamily.GetEntry(ToFcChar8(aFamilyName)) != nsnull;
+    return mFontsByFamily.GetEntry(ToFcChar8(aFamilyName)) != nullptr;
 }
 
 const nsTArray< nsCountedRef<FcPattern> >&
@@ -835,7 +835,7 @@ gfxFontconfigUtils::FontsByFullnameEntry::KeyEquals(KeyTypePointer aKey) const
 {
     const FcChar8 *key = mKey;
     // If mKey is NULL, key comes from the style and family of the first font.
-    nsCAutoString fullname;
+    nsAutoCString fullname;
     if (!key) {
         NS_ASSERTION(mFonts.Length(), "No font in FontsByFullnameEntry!");
         GetFullnameFromFamilyAndStyle(mFonts[0], &fullname);
@@ -881,7 +881,7 @@ gfxFontconfigUtils::AddFullnameEntries()
 
         // Fontconfig does not provide a fullname property for all fonts.
         if (v == 0) {
-            nsCAutoString name;
+            nsAutoCString name;
             if (!GetFullnameFromFamilyAndStyle(font, &name))
                 continue;
 
@@ -915,7 +915,7 @@ gfxFontconfigUtils::GetFontsForFullname(const FcChar8 *aFullname)
 static FcLangResult
 CompareLangString(const FcChar8 *aLangA, const FcChar8 *aLangB) {
     FcLangResult result = FcLangDifferentLang;
-    for (PRUint32 i = 0; ; ++i) {
+    for (uint32_t i = 0; ; ++i) {
         FcChar8 a = FcToLower(aLangA[i]);
         FcChar8 b = FcToLower(aLangB[i]);
 
@@ -989,7 +989,7 @@ gfxFontconfigUtils::GetLangSupportEntry(const FcChar8 *aLang, bool aWithFonts)
 
     LangSupportEntry *entry = mLangSupportTable.PutEntry(aLang);
     if (!entry)
-        return nsnull;
+        return nullptr;
 
     FcLangResult best = FcLangDifferentLang;
 
@@ -1079,7 +1079,7 @@ gfxFontconfigUtils::GetFontsForLang(const FcChar8 *aLang)
 
 bool
 gfxFontNameList::Exists(nsAString& aName) {
-    for (PRUint32 i = 0; i < Length(); i++) {
+    for (uint32_t i = 0; i < Length(); i++) {
         if (aName.Equals(ElementAt(i)))
             return true;
     }

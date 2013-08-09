@@ -16,8 +16,8 @@
 namespace mozilla {
 namespace net {
 
-const static PRInt32 kDefaultWSPort     = 80;
-const static PRInt32 kDefaultWSSPort    = 443;
+const static int32_t kDefaultWSPort     = 80;
+const static int32_t kDefaultWSSPort    = 443;
 
 class BaseWebSocketChannel : public nsIWebSocketChannel,
                              public nsIProtocolHandler
@@ -27,7 +27,7 @@ class BaseWebSocketChannel : public nsIWebSocketChannel,
 
   NS_DECL_NSIPROTOCOLHANDLER
 
-  NS_IMETHOD QueryInterface(const nsIID & uuid, void **result NS_OUTPARAM) = 0;
+  NS_IMETHOD QueryInterface(const nsIID & uuid, void **result) = 0;
   NS_IMETHOD_(nsrefcnt ) AddRef(void) = 0;
   NS_IMETHOD_(nsrefcnt ) Release(void) = 0;
 

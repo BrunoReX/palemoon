@@ -8,6 +8,7 @@
 
 #include "2D.h"
 #include "cairo.h"
+#include "Logging.h"
 
 namespace mozilla {
 namespace gfx {
@@ -87,7 +88,10 @@ GfxFormatToCairoFormat(SurfaceFormat format)
       return CAIRO_FORMAT_RGB24;
     case FORMAT_A8:
       return CAIRO_FORMAT_A8;
+    case FORMAT_R5G6B5:
+      return CAIRO_FORMAT_RGB16_565;
     default:
+      gfxWarning() << "Unknown image format";
       return CAIRO_FORMAT_ARGB32;
   }
 }
@@ -100,10 +104,12 @@ GfxFormatToCairoContent(SurfaceFormat format)
     case FORMAT_B8G8R8A8:
       return CAIRO_CONTENT_COLOR_ALPHA;
     case FORMAT_B8G8R8X8:
+    case FORMAT_R5G6B5:  //fall through
       return CAIRO_CONTENT_COLOR;
     case FORMAT_A8:
       return CAIRO_CONTENT_ALPHA;
     default:
+      gfxWarning() << "Unknown image format";
       return CAIRO_CONTENT_COLOR_ALPHA;
   }
 }
@@ -150,6 +156,7 @@ CairoContentToGfxFormat(cairo_content_t content)
     case CAIRO_CONTENT_COLOR_ALPHA:
       return FORMAT_B8G8R8A8;
     case CAIRO_CONTENT_COLOR:
+      // BEWARE! format may be 565
       return FORMAT_B8G8R8X8;
     case CAIRO_CONTENT_ALPHA:
       return FORMAT_A8;
@@ -199,6 +206,32 @@ GfxFillRuleToCairoFillRule(FillRule rule)
 
   return CAIRO_FILL_RULE_WINDING;
 }
+
+// RAII class for temporarily changing the cairo matrix transform. It will use
+// the given matrix transform while it is in scope. When it goes out of scope
+// it will put the cairo context back the way it was.
+
+class CairoTempMatrix
+{
+public:
+  CairoTempMatrix(cairo_t* aCtx, const Matrix& aMatrix)
+    : mCtx(aCtx)
+  {
+    cairo_get_matrix(aCtx, &mSaveMatrix);
+    cairo_matrix_t matrix;
+    GfxMatrixToCairoMatrix(aMatrix, matrix);
+    cairo_set_matrix(aCtx, &matrix);
+  }
+
+  ~CairoTempMatrix()
+  {
+    cairo_set_matrix(mCtx, &mSaveMatrix);
+  }
+
+private:
+  cairo_t* mCtx;
+  cairo_matrix_t mSaveMatrix;
+};
 
 }
 }

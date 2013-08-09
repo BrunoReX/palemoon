@@ -95,21 +95,21 @@ rdf_WriteOp(const char* aOp,
     printf("%.8s [%s]\n", aOp, source.get());
     printf("       --[%s]--\n", property.get());
 
-    if ((resource = do_QueryInterface(aTarget)) != nsnull) {
+    if ((resource = do_QueryInterface(aTarget)) != nullptr) {
         nsCString target;
         rv = resource->GetValue(getter_Copies(target));
         if (NS_FAILED(rv)) return rv;
 
         printf("       ->[%s]\n", target.get());
     }
-    else if ((literal = do_QueryInterface(aTarget)) != nsnull) {
+    else if ((literal = do_QueryInterface(aTarget)) != nullptr) {
         nsString target;
         rv = literal->GetValue(getter_Copies(target));
         if (NS_FAILED(rv)) return rv;
 
         printf("       ->\"%s\"\n", NS_ConvertUTF16toUTF8(target).get());
     }
-    else if ((date = do_QueryInterface(aTarget)) != nsnull) {
+    else if ((date = do_QueryInterface(aTarget)) != nullptr) {
         PRTime value;
         date->GetValue(&value);
 
@@ -125,8 +125,8 @@ rdf_WriteOp(const char* aOp,
                t.tm_sec,
                t.tm_usec);
     }
-    else if ((number = do_QueryInterface(aTarget)) != nsnull) {
-        PRInt32 value;
+    else if ((number = do_QueryInterface(aTarget)) != nullptr) {
+        int32_t value;
         number->GetValue(&value);
 
         printf("       -> %d\n", value);
@@ -217,7 +217,7 @@ main(int argc, char** argv)
         return 1;
     }
 
-    rv = NS_InitXPCOM2(nsnull, nsnull, nsnull);
+    rv = NS_InitXPCOM2(nullptr, nullptr, nullptr);
     if (NS_FAILED(rv)) {
         fprintf(stderr, "NS_InitXPCOM2 failed\n");
         return 1;
@@ -229,41 +229,41 @@ main(int argc, char** argv)
     nsCOMPtr<nsIRDFDataSource> ds = do_CreateInstance(kRDFXMLDataSourceCID, &rv);
     if (NS_FAILED(rv)) {
         NS_ERROR("unable to create RDF/XML data source");
-        return rv;
+        return 1;
     }
 
     nsCOMPtr<nsIRDFRemoteDataSource> remote = do_QueryInterface(ds);
     if (! remote)
-        return NS_ERROR_UNEXPECTED;
+        return 1;
 
     rv = remote->Init(argv[1]);
     NS_ASSERTION(NS_SUCCEEDED(rv), "unable to initialize data source");
-    if (NS_FAILED(rv)) return rv;
+    if (NS_FAILED(rv)) return 1;
 
     // The do_QI() on the pointer is a hack to make sure that the new
     // object gets AddRef()-ed.
     nsCOMPtr<nsIRDFObserver> observer = do_QueryInterface(new Observer);
     if (! observer)
-        return NS_ERROR_OUT_OF_MEMORY;
+        return 1;
 
     rv = ds->AddObserver(observer);
-    if (NS_FAILED(rv)) return rv;
+    if (NS_FAILED(rv)) return 1;
 
     while (1) {
         // Okay, this should load the XML file...
         rv = remote->Refresh(true);
         NS_ASSERTION(NS_SUCCEEDED(rv), "unable to open datasource");
-        if (NS_FAILED(rv)) return rv;
+        if (NS_FAILED(rv)) return 1;
 
         if (argc <= 2)
             break;
 
-        PRInt32 pollinterval = atol(argv[2]);
+        int32_t pollinterval = atol(argv[2]);
         if (! pollinterval)
             break;
 
         PR_Sleep(PR_SecondsToInterval(pollinterval));
     }
 
-    return NS_OK;
+    return 0;
 }

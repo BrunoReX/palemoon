@@ -11,28 +11,38 @@
  * server uses maps this reference to the actual element when it executes the command.
  */
 
-let EXPORTED_SYMBOLS = ["ElementManager", "CLASS_NAME", "SELECTOR", "ID", "NAME", "LINK_TEXT", "PARTIAL_LINK_TEXT", "TAG", "XPATH"];
+this.EXPORTED_SYMBOLS = [
+  "ElementManager",
+  "CLASS_NAME",
+  "SELECTOR",
+  "ID",
+  "NAME",
+  "LINK_TEXT",
+  "PARTIAL_LINK_TEXT",
+  "TAG",
+  "XPATH"
+];
 
 let uuidGen = Components.classes["@mozilla.org/uuid-generator;1"]
              .getService(Components.interfaces.nsIUUIDGenerator);
 
-let CLASS_NAME = "class name";
-let SELECTOR = "css selector";
-let ID = "id";
-let NAME = "name";
-let LINK_TEXT = "link text";
-let PARTIAL_LINK_TEXT = "partial link text";
-let TAG = "tag name";
-let XPATH = "xpath";
+this.CLASS_NAME = "class name";
+this.SELECTOR = "css selector";
+this.ID = "id";
+this.NAME = "name";
+this.LINK_TEXT = "link text";
+this.PARTIAL_LINK_TEXT = "partial link text";
+this.TAG = "tag name";
+this.XPATH = "xpath";
 
 function ElementException(msg, num, stack) {
   this.message = msg;
-  this.num = num;
+  this.code = num;
   this.stack = stack;
 }
 
 /* NOTE: Bug 736592 has been created to replace seenItems with a weakRef map */
-function ElementManager(notSupported) {
+this.ElementManager = function ElementManager(notSupported) {
   this.searchTimeout = 0;
   this.seenItems = {};
   this.timer = Components.classes["@mozilla.org/timer;1"].createInstance(Components.interfaces.nsITimer);
@@ -62,7 +72,7 @@ ElementManager.prototype = {
   */
   addToKnownElements: function EM_addToKnownElements(element) {
     for (let i in this.seenItems) {
-      if (this.seenItems[i] == element) {
+      if (XPCNativeWrapper(this.seenItems[i]) == XPCNativeWrapper(element)) {
         return i;
       }
     }
@@ -235,16 +245,18 @@ ElementManager.prototype = {
    *        as the start node instead of the document root
    *        If this object has a 'time' member, this number will be
    *        used to see if we have hit the search timelimit.
-   * @param function notify
-   *        The notification callback used when we are returning
+   * @param function on_success
+   *        The notification callback used when we are returning successfully.
+   * @param function on_error
+            The callback to invoke when an error occurs.
    * @param boolean all
    *        If true, all found elements will be returned.
    *        If false, only the first element will be returned.
    *
    * @return nsIDOMElement or list of nsIDOMElements
-   *        Returns the element(s) by calling the notify function.
+   *        Returns the element(s) by calling the on_success function.
    */
-  find: function EM_find(win, values, notify, all) {
+  find: function EM_find(win, values, on_success, on_error, all, command_id) {
     let startTime = values.time ? values.time : new Date().getTime();
     let startNode = (values.element != undefined) ? this.getKnownElement(values.element, win) : win.document;
     if (this.elementStrategies.indexOf(values.using) < 0) {
@@ -253,24 +265,28 @@ ElementManager.prototype = {
     let found = all ? this.findElements(values.using, values.value, win.document, startNode) : this.findElement(values.using, values.value, win.document, startNode);
     if (found) {
       let type = Object.prototype.toString.call(found);
-      if ((type == '[object Array]') || (type == '[object HTMLCollection]')) {
+      if ((type == '[object Array]') || (type == '[object HTMLCollection]') || (type == '[object NodeList]')) {
         let ids = []
         for (let i = 0 ; i < found.length ; i++) {
           ids.push(this.addToKnownElements(found[i]));
         }
-        notify(ids);
+        on_success(ids, command_id);
       }
       else {
         let id = this.addToKnownElements(found);
-        notify(id);
+        on_success(id, command_id);
       }
       return;
     } else {
       if (this.searchTimeout == 0 || new Date().getTime() - startTime > this.searchTimeout) {
-        throw new ElementException("Unable to locate element: " + values.value, 7, null);
+        on_error("Unable to locate element: " + values.value, 7, null, command_id);
       } else {
         values.time = startTime;
-        this.timer.initWithCallback(this.find.bind(this, win, values, notify, all), 100, Components.interfaces.nsITimer.TYPE_ONE_SHOT);
+        this.timer.initWithCallback(this.find.bind(this, win, values,
+                                                   on_success, on_error, all,
+                                                   command_id),
+                                    100,
+                                    Components.interfaces.nsITimer.TYPE_ONE_SHOT);
       }
     }
   },
@@ -427,7 +443,7 @@ ElementManager.prototype = {
         }
         break;
       case SELECTOR:
-        elements = Array.slice(rootNode.querySelectorAll(value));
+        elements = Array.slice(startNode.querySelectorAll(value));
         break;
       default:
         throw new ElementException("No such strategy", 500, null);

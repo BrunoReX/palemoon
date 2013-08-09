@@ -5,7 +5,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH     = ../..
+DEPTH     = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir    = @srcdir@
 VPATH     = @srcdir@
@@ -33,7 +33,7 @@ CPPSRCS = \
   nsConsoleWriter.cpp \
   nsXREDirProvider.cpp \
   nsNativeAppSupportBase.cpp \
-  nsAppData.cpp \
+  CreateAppData.cpp \
   nsSigHandlers.cpp \
   nsEmbedFunctions.cpp \
   ProfileReset.cpp \
@@ -168,16 +168,11 @@ include $(topsrcdir)/ipc/chromium/chromium-config.mk
 include $(topsrcdir)/config/rules.mk
 
 LOCAL_INCLUDES += \
+  -I$(srcdir)/../profile \
   -I$(topsrcdir)/dom/ipc \
   -I$(topsrcdir)/toolkit/crashreporter \
   -I$(topsrcdir)/dom/base \
   -I$(topsrcdir)/xpcom/build \
-  -I$(topsrcdir)/xpcom/io \
-  $(NULL)
-
-LOCAL_INCLUDES += \
-  -I$(srcdir) \
-  -I$(srcdir)/../profile \
   -I$(topsrcdir)/config \
   $(NULL)
 
@@ -250,7 +245,7 @@ endif
 
 DEFINES += -DAPP_VERSION=$(MOZ_APP_VERSION)
 
-DEFINES += -DAPP_ID=$(MOZ_APP_ID)
+DEFINES += -DAPP_ID="$(MOZ_APP_ID)"
 
 $(srcdir)/nsAppRunner.cpp: $(DEPTH)/config/buildid $(milestone_txt)
 

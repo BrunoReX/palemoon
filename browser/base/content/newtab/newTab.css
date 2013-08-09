@@ -2,10 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-:root {
-  -moz-user-focus: normal;
-}
-
 input[type=button] {
   cursor: pointer;
 }
@@ -15,6 +11,7 @@ input[type=button] {
   display: -moz-box;
   position: relative;
   -moz-box-flex: 1;
+  -moz-user-focus: normal;
 }
 
 #newtab-scrollbox:not([page-disabled]) {
@@ -71,8 +68,8 @@ input[type=button] {
   -moz-box-orient: vertical;
   min-width: 600px;
   min-height: 400px;
-  -moz-transition: 100ms ease-out;
-  -moz-transition-property: opacity;
+  transition: 100ms ease-out;
+  transition-property: opacity;
 }
 
 #newtab-grid[page-disabled] {
@@ -102,8 +99,8 @@ input[type=button] {
 .newtab-site {
   position: relative;
   -moz-box-flex: 1;
-  -moz-transition: 100ms ease-out;
-  -moz-transition-property: top, left, opacity;
+  transition: 100ms ease-out;
+  transition-property: top, left, opacity;
 }
 
 .newtab-site[frozen] {
@@ -112,7 +109,7 @@ input[type=button] {
 }
 
 .newtab-site[dragged] {
-  -moz-transition-property: none;
+  transition-property: none;
   z-index: 10;
 }
 
@@ -128,7 +125,7 @@ input[type=button] {
 
 .newtab-thumbnail {
   opacity: .8;
-  -moz-transition: opacity 100ms ease-out;
+  transition: opacity 100ms ease-out;
 }
 
 .newtab-thumbnail[dragged],
@@ -153,7 +150,7 @@ input[type=button] {
   position: absolute;
   top: 4px;
   opacity: 0;
-  -moz-transition: opacity 100ms ease-out;
+  transition: opacity 100ms ease-out;
 }
 
 .newtab-control:-moz-focusring,

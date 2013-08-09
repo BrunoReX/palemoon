@@ -8,6 +8,7 @@
 
 #include "cairo-ft.h"
 #include "gfxFT2FontBase.h"
+#include "mozilla/Likely.h"
 
 // Rounding and truncation functions for a FreeType fixed point number 
 // (FT26Dot6) stored in a 32bit integer with high 26 bits for the integer
@@ -39,21 +40,21 @@ public:
      * glyph, or return zero if there is no such glyph.  This does no caching,
      * so you probably want gfxFcFont::GetGlyph.
      */
-    PRUint32 GetGlyph(PRUint32 aCharCode);
+    uint32_t GetGlyph(uint32_t aCharCode);
     /**
      * Returns 0 if there is no variation selector cmap subtable.
      */
-    PRUint32 GetUVSGlyph(PRUint32 aCharCode, PRUint32 aVariantSelector);
+    uint32_t GetUVSGlyph(uint32_t aCharCode, uint32_t aVariantSelector);
 
-    void GetMetrics(gfxFont::Metrics* aMetrics, PRUint32* aSpaceGlyph);
+    void GetMetrics(gfxFont::Metrics* aMetrics, uint32_t* aSpaceGlyph);
 
-    bool GetFontTable(PRUint32 aTag, FallibleTArray<PRUint8>& aBuffer);
+    bool GetFontTable(uint32_t aTag, FallibleTArray<uint8_t>& aBuffer);
 
     // A scale factor for use in converting horizontal metrics from font units
     // to pixels.
     gfxFloat XScale()
     {
-        if (NS_UNLIKELY(!mFace))
+        if (MOZ_UNLIKELY(!mFace))
             return 0.0;
 
         const FT_Size_Metrics& ftMetrics = mFace->size->metrics;
@@ -81,7 +82,7 @@ protected:
      * The return value is the glyph id of that glyph or zero if no such glyph
      * exists.  aExtents is only set when this returns a non-zero glyph id.
      */
-    PRUint32 GetCharExtents(char aChar, cairo_text_extents_t* aExtents);
+    uint32_t GetCharExtents(char aChar, cairo_text_extents_t* aExtents);
 
     typedef FT_UInt (*CharVariantFunction)(FT_Face  face,
                                            FT_ULong charcode,

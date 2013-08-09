@@ -14,7 +14,7 @@
 
 namespace mozilla {
 namespace layers {
-  
+
 static already_AddRefed<ID3D10Texture2D>
 DataToTexture(ID3D10Device *aDevice,
               unsigned char *data,
@@ -22,13 +22,13 @@ DataToTexture(ID3D10Device *aDevice,
               const gfxIntSize &aSize)
 {
   D3D10_SUBRESOURCE_DATA srdata;
-  
+
   CD3D10_TEXTURE2D_DESC desc(DXGI_FORMAT_B8G8R8A8_UNORM,
                              aSize.width,
                              aSize.height,
                              1, 1);
   desc.Usage = D3D10_USAGE_IMMUTABLE;
-  
+
   srdata.pSysMem = data;
   srdata.SysMemPitch = stride;
 
@@ -87,7 +87,7 @@ ImageLayerD3D10::GetLayer()
 
 /**
  * Returns a shader resource view for a Cairo or remote image.
- * Returns nsnull if unsuccessful.
+ * Returns nullptr if unsuccessful.
  * If successful, aHasAlpha will be true iff the resulting texture 
  * has an alpha component.
  */
@@ -96,71 +96,71 @@ ImageLayerD3D10::GetImageSRView(Image* aImage, bool& aHasAlpha, IDXGIKeyedMutex 
 {
   NS_ASSERTION(aImage, "Null image.");
 
-  if (aImage->GetFormat() == Image::REMOTE_IMAGE_BITMAP) {
+  if (aImage->GetFormat() == ImageFormat::REMOTE_IMAGE_BITMAP) {
     RemoteBitmapImage *remoteImage =
       static_cast<RemoteBitmapImage*>(aImage);
-      
-    if (!aImage->GetBackendData(LayerManager::LAYERS_D3D10)) {
+
+    if (!aImage->GetBackendData(mozilla::layers::LAYERS_D3D10)) {
       nsAutoPtr<TextureD3D10BackendData> dat(new TextureD3D10BackendData());
       dat->mTexture = DataToTexture(device(), remoteImage->mData, remoteImage->mStride, remoteImage->mSize);
 
       if (dat->mTexture) {
         device()->CreateShaderResourceView(dat->mTexture, NULL, getter_AddRefs(dat->mSRView));
-        aImage->SetBackendData(LayerManager::LAYERS_D3D10, dat.forget());
+        aImage->SetBackendData(mozilla::layers::LAYERS_D3D10, dat.forget());
       }
     }
 
     aHasAlpha = remoteImage->mFormat == RemoteImageData::BGRA32;
-  } else if (aImage->GetFormat() == Image::REMOTE_IMAGE_DXGI_TEXTURE) {
+  } else if (aImage->GetFormat() == ImageFormat::REMOTE_IMAGE_DXGI_TEXTURE) {
     RemoteDXGITextureImage *remoteImage =
       static_cast<RemoteDXGITextureImage*>(aImage);
 
     remoteImage->GetD3D10TextureBackendData(device());
 
     aHasAlpha = remoteImage->mFormat == RemoteImageData::BGRA32;
-  } else if (aImage->GetFormat() == Image::CAIRO_SURFACE) {
+  } else if (aImage->GetFormat() == ImageFormat::CAIRO_SURFACE) {
     CairoImage *cairoImage =
       static_cast<CairoImage*>(aImage);
 
     if (!cairoImage->mSurface) {
-      return nsnull;
+      return nullptr;
     }
 
-    if (!aImage->GetBackendData(LayerManager::LAYERS_D3D10)) {
+    if (!aImage->GetBackendData(mozilla::layers::LAYERS_D3D10)) {
       nsAutoPtr<TextureD3D10BackendData> dat(new TextureD3D10BackendData());
       dat->mTexture = SurfaceToTexture(device(), cairoImage->mSurface, cairoImage->mSize);
 
       if (dat->mTexture) {
         device()->CreateShaderResourceView(dat->mTexture, NULL, getter_AddRefs(dat->mSRView));
-        aImage->SetBackendData(LayerManager::LAYERS_D3D10, dat.forget());
+        aImage->SetBackendData(mozilla::layers::LAYERS_D3D10, dat.forget());
       }
     }
 
     aHasAlpha = cairoImage->mSurface->GetContentType() == gfxASurface::CONTENT_COLOR_ALPHA;
   } else {
     NS_WARNING("Incorrect image type.");
-    return nsnull;
+    return nullptr;
   }
 
   TextureD3D10BackendData *data =
-    static_cast<TextureD3D10BackendData*>(aImage->GetBackendData(LayerManager::LAYERS_D3D10));
+    static_cast<TextureD3D10BackendData*>(aImage->GetBackendData(mozilla::layers::LAYERS_D3D10));
 
   if (!data) {
-    return nsnull;
+    return nullptr;
   }
 
   if (aMutex &&
       SUCCEEDED(data->mTexture->QueryInterface(IID_IDXGIKeyedMutex, (void**)aMutex))) {
     if (FAILED((*aMutex)->AcquireSync(0, 0))) {
       NS_WARNING("Failed to acquire sync on keyed mutex, plugin forgot to release?");
-      return nsnull;
+      return nullptr;
     }
   }
 
   nsRefPtr<ID3D10Device> dev;
   data->mTexture->GetDevice(getter_AddRefs(dev));
   if (dev != device()) {
-    return nsnull;
+    return nullptr;
   }
 
   return data->mSRView;
@@ -181,17 +181,17 @@ ImageLayerD3D10::RenderLayer()
     return;
   }
 
-  gfxIntSize size = mScaleMode == SCALE_NONE ? image->GetSize() : mScaleToSize;
+  gfxIntSize size = image->GetSize();
 
   SetEffectTransformAndOpacity();
 
   ID3D10EffectTechnique *technique;
   nsRefPtr<IDXGIKeyedMutex> keyedMutex;
 
-  if (image->GetFormat() == Image::CAIRO_SURFACE || image->GetFormat() == Image::REMOTE_IMAGE_BITMAP ||
-      image->GetFormat() == Image::REMOTE_IMAGE_DXGI_TEXTURE)
+  if (image->GetFormat() == ImageFormat::CAIRO_SURFACE || image->GetFormat() == ImageFormat::REMOTE_IMAGE_BITMAP ||
+      image->GetFormat() == ImageFormat::REMOTE_IMAGE_DXGI_TEXTURE)
   {
-    NS_ASSERTION(image->GetFormat() != Image::CAIRO_SURFACE ||
+    NS_ASSERTION(image->GetFormat() != ImageFormat::CAIRO_SURFACE ||
                  !static_cast<CairoImage*>(image)->mSurface ||
                  static_cast<CairoImage*>(image)->mSurface->GetContentType() != gfxASurface::CONTENT_ALPHA,
                  "Image layer has alpha image");
@@ -201,8 +201,8 @@ ImageLayerD3D10::RenderLayer()
     if (!srView) {
       return;
     }
-    
-    PRUint8 shaderFlags = SHADER_PREMUL;
+
+    uint8_t shaderFlags = SHADER_PREMUL;
     shaderFlags |= LoadMaskTexture();
     shaderFlags |= hasAlpha
                   ? SHADER_RGBA : SHADER_RGB;
@@ -220,20 +220,20 @@ ImageLayerD3D10::RenderLayer()
         (float)size.width,
         (float)size.height)
       );
-  } else if (image->GetFormat() == Image::PLANAR_YCBCR) {
+  } else if (image->GetFormat() == ImageFormat::PLANAR_YCBCR) {
     PlanarYCbCrImage *yuvImage =
       static_cast<PlanarYCbCrImage*>(image);
 
-    if (!yuvImage->mBufferSize) {
+    if (!yuvImage->IsValid()) {
       return;
     }
 
-    if (!yuvImage->GetBackendData(LayerManager::LAYERS_D3D10)) {
+    if (!yuvImage->GetBackendData(mozilla::layers::LAYERS_D3D10)) {
       AllocateTexturesYCbCr(yuvImage);
     }
 
     PlanarYCbCrD3D10BackendData *data =
-      static_cast<PlanarYCbCrD3D10BackendData*>(yuvImage->GetBackendData(LayerManager::LAYERS_D3D10));
+      static_cast<PlanarYCbCrD3D10BackendData*>(yuvImage->GetBackendData(mozilla::layers::LAYERS_D3D10));
 
     if (!data) {
       return;
@@ -261,7 +261,7 @@ ImageLayerD3D10::RenderLayer()
      */
     if (GetNv3DVUtils()) {
       Nv_Stereo_Mode mode;
-      switch (yuvImage->mData.mStereoMode) {
+      switch (yuvImage->GetData()->mStereoMode) {
       case STEREO_MODE_LEFT_RIGHT:
         mode = NV_STEREO_MODE_LEFT_RIGHT;
         break;
@@ -282,10 +282,10 @@ ImageLayerD3D10::RenderLayer()
       // Send control data even in mono case so driver knows to leave stereo mode.
       GetNv3DVUtils()->SendNv3DVControl(mode, true, FIREFOX_3DV_APP_HANDLE);
 
-      if (yuvImage->mData.mStereoMode != STEREO_MODE_MONO) {
+      if (yuvImage->GetData()->mStereoMode != STEREO_MODE_MONO) {
         // Dst resource is optional
-        GetNv3DVUtils()->SendNv3DVMetaData((unsigned int)yuvImage->mData.mYSize.width, 
-                                           (unsigned int)yuvImage->mData.mYSize.height, (HANDLE)(data->mYTexture), (HANDLE)(NULL));
+        GetNv3DVUtils()->SendNv3DVMetaData((unsigned int)yuvImage->GetData()->mYSize.width,
+                                           (unsigned int)yuvImage->GetData()->mYSize.height, (HANDLE)(data->mYTexture), (HANDLE)(NULL));
       }
     }
 
@@ -299,15 +299,15 @@ ImageLayerD3D10::RenderLayer()
 
     effect()->GetVariableByName("vTextureCoords")->AsVector()->SetFloatVector(
       ShaderConstantRectD3D10(
-        (float)yuvImage->mData.mPicX / yuvImage->mData.mYSize.width,
-        (float)yuvImage->mData.mPicY / yuvImage->mData.mYSize.height,
-        (float)yuvImage->mData.mPicSize.width / yuvImage->mData.mYSize.width,
-        (float)yuvImage->mData.mPicSize.height / yuvImage->mData.mYSize.height)
+        (float)yuvImage->GetData()->mPicX / yuvImage->GetData()->mYSize.width,
+        (float)yuvImage->GetData()->mPicY / yuvImage->GetData()->mYSize.height,
+        (float)yuvImage->GetData()->mPicSize.width / yuvImage->GetData()->mYSize.width,
+        (float)yuvImage->GetData()->mPicSize.height / yuvImage->GetData()->mYSize.height)
        );
   }
   
-  bool resetTexCoords = image->GetFormat() == Image::PLANAR_YCBCR;
-  image = nsnull;
+  bool resetTexCoords = image->GetFormat() == ImageFormat::PLANAR_YCBCR;
+  image = nullptr;
   autoLock.Unlock();
 
   technique->GetPassByIndex(0)->Apply(0);
@@ -330,26 +330,26 @@ void ImageLayerD3D10::AllocateTexturesYCbCr(PlanarYCbCrImage *aImage)
   nsAutoPtr<PlanarYCbCrD3D10BackendData> backendData(
     new PlanarYCbCrD3D10BackendData);
 
-  PlanarYCbCrImage::Data &data = aImage->mData;
+  const PlanarYCbCrImage::Data *data = aImage->GetData();
 
   D3D10_SUBRESOURCE_DATA dataY;
   D3D10_SUBRESOURCE_DATA dataCb;
   D3D10_SUBRESOURCE_DATA dataCr;
   CD3D10_TEXTURE2D_DESC descY(DXGI_FORMAT_R8_UNORM,
-                              data.mYSize.width,
-                              data.mYSize.height, 1, 1);
+                              data->mYSize.width,
+                              data->mYSize.height, 1, 1);
   CD3D10_TEXTURE2D_DESC descCbCr(DXGI_FORMAT_R8_UNORM,
-                                 data.mCbCrSize.width,
-                                 data.mCbCrSize.height, 1, 1);
+                                 data->mCbCrSize.width,
+                                 data->mCbCrSize.height, 1, 1);
 
   descY.Usage = descCbCr.Usage = D3D10_USAGE_IMMUTABLE;
 
-  dataY.pSysMem = data.mYChannel;
-  dataY.SysMemPitch = data.mYStride;
-  dataCb.pSysMem = data.mCbChannel;
-  dataCb.SysMemPitch = data.mCbCrStride;
-  dataCr.pSysMem = data.mCrChannel;
-  dataCr.SysMemPitch = data.mCbCrStride;
+  dataY.pSysMem = data->mYChannel;
+  dataY.SysMemPitch = data->mYStride;
+  dataCb.pSysMem = data->mCbChannel;
+  dataCb.SysMemPitch = data->mCbCrStride;
+  dataCr.pSysMem = data->mCrChannel;
+  dataCr.SysMemPitch = data->mCbCrStride;
 
   HRESULT hr = device()->CreateTexture2D(&descY, &dataY, getter_AddRefs(backendData->mYTexture));
   if (!FAILED(hr)) {
@@ -367,25 +367,25 @@ void ImageLayerD3D10::AllocateTexturesYCbCr(PlanarYCbCrImage *aImage)
   device()->CreateShaderResourceView(backendData->mCbTexture, NULL, getter_AddRefs(backendData->mCbView));
   device()->CreateShaderResourceView(backendData->mCrTexture, NULL, getter_AddRefs(backendData->mCrView));
 
-  aImage->SetBackendData(LayerManager::LAYERS_D3D10, backendData.forget());
+  aImage->SetBackendData(mozilla::layers::LAYERS_D3D10, backendData.forget());
 }
 
 already_AddRefed<ID3D10ShaderResourceView>
 ImageLayerD3D10::GetAsTexture(gfxIntSize* aSize)
 {
   if (!GetContainer()) {
-    return nsnull;
+    return nullptr;
   }
 
   AutoLockImage autoLock(GetContainer());
 
   Image *image = autoLock.GetImage();
   if (!image) {
-    return nsnull;
+    return nullptr;
   }
 
-  if (image->GetFormat() != Image::CAIRO_SURFACE) {
-    return nsnull;
+  if (image->GetFormat() != ImageFormat::CAIRO_SURFACE) {
+    return nullptr;
   }
   
   *aSize = image->GetSize();
@@ -401,25 +401,25 @@ RemoteDXGITextureImage::GetAsSurface()
     gfxWindowsPlatform::GetPlatform()->GetD3D10Device();
   if (!device) {
     NS_WARNING("Cannot readback from shared texture because no D3D10 device is available.");
-    return nsnull;
+    return nullptr;
   }
 
   TextureD3D10BackendData* data = GetD3D10TextureBackendData(device);
 
   if (!data) {
-    return nsnull;
+    return nullptr;
   }
 
   nsRefPtr<IDXGIKeyedMutex> keyedMutex;
 
   if (FAILED(data->mTexture->QueryInterface(IID_IDXGIKeyedMutex, getter_AddRefs(keyedMutex)))) {
     NS_WARNING("Failed to QueryInterface for IDXGIKeyedMutex, strange.");
-    return nsnull;
+    return nullptr;
   }
 
   if (FAILED(keyedMutex->AcquireSync(0, 0))) {
     NS_WARNING("Failed to acquire sync for keyedMutex, plugin failed to release?");
-    return nsnull;
+    return nullptr;
   }
 
   D3D10_TEXTURE2D_DESC desc;
@@ -436,7 +436,7 @@ RemoteDXGITextureImage::GetAsSurface()
 
   if (FAILED(hr)) {
     NS_WARNING("Failed to create 2D staging texture.");
-    return nsnull;
+    return nullptr;
   }
 
   device->CopyResource(softTexture, data->mTexture);
@@ -449,7 +449,7 @@ RemoteDXGITextureImage::GetAsSurface()
 
   if (!surface->CairoSurface() || surface->CairoStatus()) {
     NS_WARNING("Failed to created image surface for DXGI texture.");
-    return nsnull;
+    return nullptr;
   }
 
   D3D10_MAPPED_TEXTURE2D mapped;
@@ -469,9 +469,9 @@ RemoteDXGITextureImage::GetAsSurface()
 TextureD3D10BackendData*
 RemoteDXGITextureImage::GetD3D10TextureBackendData(ID3D10Device *aDevice)
 {
-  if (GetBackendData(LayerManager::LAYERS_D3D10)) {
+  if (GetBackendData(mozilla::layers::LAYERS_D3D10)) {
     TextureD3D10BackendData *data =
-      static_cast<TextureD3D10BackendData*>(GetBackendData(LayerManager::LAYERS_D3D10));
+      static_cast<TextureD3D10BackendData*>(GetBackendData(mozilla::layers::LAYERS_D3D10));
     
     nsRefPtr<ID3D10Device> device;
     data->mTexture->GetDevice(getter_AddRefs(device));
@@ -485,7 +485,7 @@ RemoteDXGITextureImage::GetD3D10TextureBackendData(ID3D10Device *aDevice)
 
   if (!texture) {
     NS_WARNING("Failed to get texture for shared texture handle.");
-    return nsnull;
+    return nullptr;
   }
 
   nsAutoPtr<TextureD3D10BackendData> data(new TextureD3D10BackendData());
@@ -494,7 +494,7 @@ RemoteDXGITextureImage::GetD3D10TextureBackendData(ID3D10Device *aDevice)
 
   aDevice->CreateShaderResourceView(texture, NULL, getter_AddRefs(data->mSRView));
 
-  SetBackendData(LayerManager::LAYERS_D3D10, data);
+  SetBackendData(mozilla::layers::LAYERS_D3D10, data);
 
   return data.forget();
 }

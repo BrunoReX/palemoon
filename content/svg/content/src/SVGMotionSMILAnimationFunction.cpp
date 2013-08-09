@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGMotionSMILAnimationFunction.h"
+#include "nsISMILAnimationElement.h"
 #include "nsSMILParserUtils.h"
 #include "nsSVGAngle.h"
 #include "SVGMotionSMILType.h"
@@ -11,6 +12,7 @@
 #include "nsSVGPathDataParser.h"
 #include "nsSVGPathElement.h" // for nsSVGPathList
 #include "nsSVGMpathElement.h"
+#include "nsAttrValueInlines.h"
 
 namespace mozilla {
 
@@ -133,7 +135,7 @@ GetFirstMpathChild(nsIContent* aElem)
     }
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 void
@@ -250,7 +252,7 @@ SVGMotionSMILAnimationFunction::RebuildPathAndVerticesFromPathAttr()
   mPath = path.ToFlattenedPath(gfxMatrix());
   bool ok = path.GetDistancesFromOriginToEndsOfVisibleSegments(&mPathVertices);
   if (!ok || !mPathVertices.Length()) {
-    mPath = nsnull;
+    mPath = nullptr;
   }
 }
 
@@ -262,7 +264,7 @@ SVGMotionSMILAnimationFunction::
   NS_ABORT_IF_FALSE(mIsPathStale, "rebuilding path when it isn't stale");
 
   // Clear stale data
-  mPath = nsnull;
+  mPath = nullptr;
   mPathVertices.Clear();
   mPathSourceType = ePathSourceType_None;
 
@@ -298,8 +300,8 @@ SVGMotionSMILAnimationFunction::
   // If we're using "keyPoints" as our list of input distances, then we need
   // to de-normalize from the [0, 1] scale to the [0, totalPathLen] scale.
   double distanceMultiplier = aIsKeyPoints ? aPath->GetLength() : 1.0;
-  const PRUint32 numPoints = aPointDistances.Length();
-  for (PRUint32 i = 0; i < numPoints; ++i) {
+  const uint32_t numPoints = aPointDistances.Length();
+  for (uint32_t i = 0; i < numPoints; ++i) {
     double curDist = aPointDistances[i] * distanceMultiplier;
     if (!aResult.AppendElement(
           SVGMotionSMILType::ConstructSMILValue(aPath, curDist,
@@ -341,7 +343,7 @@ SVGMotionSMILAnimationFunction::GetValues(const nsISMILAttr& aSMILAttr,
 
 void
 SVGMotionSMILAnimationFunction::
-  CheckValueListDependentAttrs(PRUint32 aNumValues)
+  CheckValueListDependentAttrs(uint32_t aNumValues)
 {
   // Call superclass method.
   nsSMILAnimationFunction::CheckValueListDependentAttrs(aNumValues);
@@ -437,7 +439,7 @@ SVGMotionSMILAnimationFunction::SetRotate(const nsAString& aRotate,
     // Parse numeric angle string, with the help of a temp nsSVGAngle.
     nsSVGAngle svgAngle;
     svgAngle.Init();
-    nsresult rv = svgAngle.SetBaseValueString(aRotate, nsnull, false);
+    nsresult rv = svgAngle.SetBaseValueString(aRotate, nullptr, false);
     if (NS_FAILED(rv)) { // Parse error
       mRotateAngle = 0.0f; // set default rotate angle
       // XXX report to console?
@@ -447,7 +449,7 @@ SVGMotionSMILAnimationFunction::SetRotate(const nsAString& aRotate,
     mRotateAngle = svgAngle.GetBaseValInSpecifiedUnits();
 
     // Convert to radian units, if we're not already in radians.
-    PRUint8 angleUnit = svgAngle.GetBaseValueUnit();
+    uint8_t angleUnit = svgAngle.GetBaseValueUnit();
     if (angleUnit != nsIDOMSVGAngle::SVG_ANGLETYPE_RAD) {
       mRotateAngle *= nsSVGAngle::GetDegreesPerUnit(angleUnit) /
         nsSVGAngle::GetDegreesPerUnit(nsIDOMSVGAngle::SVG_ANGLETYPE_RAD);

@@ -8,7 +8,7 @@
 #ifndef nsIdleService_h__
 #define nsIdleService_h__
 
-#include "nsIIdleService.h"
+#include "nsIIdleServiceInternal.h"
 #include "nsCOMPtr.h"
 #include "nsITimer.h"
 #include "nsTArray.h"
@@ -16,6 +16,7 @@
 #include "nsIIdleService.h"
 #include "nsCategoryCache.h"
 #include "nsWeakReference.h"
+#include "mozilla/TimeStamp.h"
 
 /**
  * Class we can use to store an observer with its associated idle time
@@ -24,10 +25,10 @@
 class IdleListener {
 public:
   nsCOMPtr<nsIObserver> observer;
-  PRUint32 reqIdleTime;
+  uint32_t reqIdleTime;
   bool isIdle;
 
-  IdleListener(nsIObserver* obs, PRUint32 reqIT, bool aIsIdle = false) :
+  IdleListener(nsIObserver* obs, uint32_t reqIT, bool aIsIdle = false) :
     observer(obs), reqIdleTime(reqIT), isIdle(aIsIdle) {}
   ~IdleListener() {}
 };
@@ -58,16 +59,23 @@ public:
 
 private:
   /**
+   * StageIdleDaily is the interim call made when an idle-daily event is due.
+   * However we don't want to fire idle-daily until the user is idle for this
+   * session, so this sets up a short wait for an idle event which triggers
+   * the actual idle-daily event.
+   *
+   * @param aHasBeenLongWait Pass true indicating nsIdleServiceDaily is having
+   * trouble getting the idle-daily event fired. If true StageIdleDaily will
+   * use a shorter idle wait time before firing idle-daily.
+   */
+  void StageIdleDaily(bool aHasBeenLongWait);
+
+  /**
    * @note This is a normal pointer, part to avoid creating a cycle with the
    * idle service, part to avoid potential pointer corruption due to this class
    * being instantiated in the constructor of the service itself.
    */
   nsIIdleService* mIdleService;
-
-  /**
-   * Set to true when the instantiated object has a idle observer.
-   */
-  bool mObservesIdle;
 
   /**
    * Place to hold the timer used by this class to determine when a day has
@@ -91,32 +99,30 @@ private:
   bool mShutdownInProgress;
 
   /**
-   * Real time we fired off the one-day timer, in case timers aren't
-   * very reliable.
+   * Next time we expect an idle-daily timer to fire, in case timers aren't
+   * very reliable on the platform. Value is in PR_Now microsecond units.
    */
-  PRTime mDailyTimerStart;
-};
-
-class nsIdleService : public nsIIdleService
-{
-public:
-  nsIdleService();
-
-  // Implement nsIIdleService methods.
-  NS_IMETHOD AddIdleObserver(nsIObserver* aObserver, PRUint32 aIdleTime);
-  NS_IMETHOD RemoveIdleObserver(nsIObserver* aObserver, PRUint32 aIdleTime);
-  NS_IMETHOD GetIdleTime(PRUint32* idleTime);
+  PRTime mExpectedTriggerTime;
 
   /**
-   * Function that resets the idle time in the service, in other words it
-   * sets the time for the last user interaction to now, or now-idleDelta
-   *
-   * @param idleDelta the time (in milliseconds) since the last user inter
-   *                  action
-   **/
-  void ResetIdleTimeOut(PRUint32 idleDeltaInMS = 0);
+   * Tracks which idle daily observer callback we ask for. There are two: a
+   * regular long idle wait and a shorter wait if we've been waiting to fire
+   * idle daily for an extended period. Set by StageIdleDaily.
+   */
+  int32_t mIdleDailyTriggerWait;
+};
+
+class nsIdleService : public nsIIdleServiceInternal
+{
+public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIIDLESERVICE
+  NS_DECL_NSIIDLESERVICEINTERNAL
 
 protected:
+  static already_AddRefed<nsIdleService> GetInstance();
+
+  nsIdleService();
   virtual ~nsIdleService();
 
   /**
@@ -135,7 +141,7 @@ protected:
    *       returned by GetIdleTime, as that is corrected by any calls to
    *       ResetIdleTimeOut(), unless you overwrite that function too...
    */
-  virtual bool PollIdleTime(PRUint32* aIdleTime);
+  virtual bool PollIdleTime(uint32_t* aIdleTime);
 
   /**
    * Function that determines if we are in poll mode or not.
@@ -150,15 +156,15 @@ private:
    *
    * The function might not restart the timer if there is one running currently
    *
-   * @param aNextTimeoutInPR
+   * @param aNextTimeout
    *        The last absolute time the timer should expire
    */
-  void SetTimerExpiryIfBefore(PRTime aNextTimeoutInPR);
+  void SetTimerExpiryIfBefore(mozilla::TimeStamp aNextTimeout);
 
   /**
    * Stores the next timeout time, 0 means timer not running
    */
-  PRTime mCurrentlySetToTimeoutAtInPR;
+  mozilla::TimeStamp mCurrentlySetToTimeoutAt;
 
   /**
    * mTimer holds the internal timer used by this class to detect when to poll
@@ -189,12 +195,12 @@ private:
    *
    * If this value is 0 it means there are no active observers
    */
-  PRUint32 mDeltaToNextIdleSwitchInS;
+  uint32_t mDeltaToNextIdleSwitchInS;
 
   /**
    * Absolute value for when the last user interaction took place.
    */
-  PRTime mLastUserInteractionInPR;
+  mozilla::TimeStamp mLastUserInteraction;
 
 
   /**

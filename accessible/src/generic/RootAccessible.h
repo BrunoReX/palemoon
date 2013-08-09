@@ -9,14 +9,10 @@
 #include "nsCaretAccessible.h"
 #include "DocAccessibleWrap.h"
 
-
 #include "nsHashtable.h"
 #include "nsCaretAccessible.h"
 #include "nsIDocument.h"
 #include "nsIDOMEventListener.h"
-
-class nsXULTreeAccessible;
-class Relation;
 
 namespace mozilla {
 namespace a11y {
@@ -39,9 +35,9 @@ public:
 
   // Accessible
   virtual mozilla::a11y::ENameValueFlag Name(nsString& aName);
-  virtual Relation RelationByType(PRUint32 aType);
+  virtual Relation RelationByType(uint32_t aType);
   virtual mozilla::a11y::role NativeRole();
-  virtual PRUint64 NativeState();
+  virtual uint64_t NativeState();
 
   // RootAccessible
   nsCaretAccessible* GetCaretAccessible();
@@ -76,24 +72,24 @@ protected:
 
 #ifdef MOZ_XUL
     void HandleTreeRowCountChangedEvent(nsIDOMEvent* aEvent,
-                                        nsXULTreeAccessible* aAccessible);
+                                        XULTreeAccessible* aAccessible);
     void HandleTreeInvalidatedEvent(nsIDOMEvent* aEvent,
-                                    nsXULTreeAccessible* aAccessible);
+                                    XULTreeAccessible* aAccessible);
 
-    PRUint32 GetChromeFlags();
+    uint32_t GetChromeFlags();
 #endif
 
     nsRefPtr<nsCaretAccessible> mCaretAccessible;
 };
 
-} // namespace a11y
-} // namespace mozilla
-
-inline mozilla::a11y::RootAccessible*
+inline RootAccessible*
 Accessible::AsRoot()
 {
   return mFlags & eRootAccessible ?
-    static_cast<mozilla::a11y::RootAccessible*>(this) : nsnull;
+    static_cast<mozilla::a11y::RootAccessible*>(this) : nullptr;
 }
+
+} // namespace a11y
+} // namespace mozilla
 
 #endif

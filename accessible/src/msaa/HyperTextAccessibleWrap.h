@@ -9,13 +9,15 @@
 #define mozilla_a11y_HyperTextAccessibleWrap_h__
 
 #include "HyperTextAccessible.h"
-#include "CAccessibleText.h"
-#include "CAccessibleEditableText.h"
+#include "ia2AccessibleEditableText.h"
 #include "ia2AccessibleHyperText.h"
+
+namespace mozilla {
+namespace a11y {
 
 class HyperTextAccessibleWrap : public HyperTextAccessible,
                                 public ia2AccessibleHypertext,
-                                public CAccessibleEditableText
+                                public ia2AccessibleEditableText
 {
 public:
   HyperTextAccessibleWrap(nsIContent* aContent, DocAccessible* aDoc) :
@@ -32,9 +34,11 @@ public:
 
 protected:
   virtual nsresult GetModifiedText(bool aGetInsertedText, nsAString& aText,
-                                   PRUint32 *aStartOffset,
-                                   PRUint32 *aEndOffset);
+                                   uint32_t *aStartOffset,
+                                   uint32_t *aEndOffset);
 };
 
-#endif
+} // namespace a11y
+} // namespace mozilla
 
+#endif

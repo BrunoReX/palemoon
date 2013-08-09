@@ -12,6 +12,7 @@
 #include "txResultRecycler.h"
 #include "nsAutoPtr.h"
 #include "nsCycleCollectionParticipant.h"
+#include "mozilla/Attributes.h"
 
 class Expr;
 class txXPathNode;
@@ -19,8 +20,8 @@ class txXPathNode;
 /**
  * A class for evaluating an XPath expression string
  */
-class nsXPathExpression : public nsIDOMXPathExpression,
-                          public nsIDOMNSXPathExpression
+class nsXPathExpression MOZ_FINAL : public nsIDOMXPathExpression,
+                                    public nsIDOMNSXPathExpression
 {
 public:
     nsXPathExpression(nsAutoPtr<Expr>& aExpression, txResultRecycler* aRecycler,
@@ -46,7 +47,7 @@ private:
     {
     public:
         EvalContextImpl(const txXPathNode& aContextNode,
-                        PRUint32 aContextPosition, PRUint32 aContextSize,
+                        uint32_t aContextPosition, uint32_t aContextSize,
                         txResultRecycler* aRecycler)
             : mContextNode(aContextNode),
               mContextPosition(aContextPosition),
@@ -65,8 +66,8 @@ private:
 
     private:
         const txXPathNode& mContextNode;
-        PRUint32 mContextPosition;
-        PRUint32 mContextSize;
+        uint32_t mContextPosition;
+        uint32_t mContextSize;
         nsresult mLastError;
         nsRefPtr<txResultRecycler> mRecycler;
     };

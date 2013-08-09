@@ -37,7 +37,9 @@ public:
   {
     NS_ASSERTION(BasicManager()->InConstruction(),
                  "Can only set properties in construction phase");
-    mValidRegion.Sub(mValidRegion, aRegion);
+    mInvalidRegion.Or(mInvalidRegion, aRegion);
+    mInvalidRegion.SimplifyOutward(10);
+    mValidRegion.Sub(mValidRegion, mInvalidRegion);
   }
 
   virtual void PaintThebes(gfxContext* aContext,
@@ -115,23 +117,28 @@ class BasicShadowableThebesLayer : public BasicThebesLayer,
 public:
   BasicShadowableThebesLayer(BasicShadowLayerManager* aManager)
     : BasicThebesLayer(aManager)
-    , mBufferTracker(nsnull)
+    , mBufferTracker(nullptr)
     , mIsNewBuffer(false)
     , mFrontAndBackBufferDiffer(false)
   {
     MOZ_COUNT_CTOR(BasicShadowableThebesLayer);
   }
-  virtual ~BasicShadowableThebesLayer()
-  {
-    DestroyBackBuffer();
-    MOZ_COUNT_DTOR(BasicShadowableThebesLayer);
-  }
+  virtual ~BasicShadowableThebesLayer();
 
   virtual void PaintThebes(gfxContext* aContext,
                            Layer* aMaskLayer,
                            LayerManager::DrawThebesLayerCallback aCallback,
                            void* aCallbackData,
                            ReadbackProcessor* aReadback);
+
+  virtual void ClearCachedResources() MOZ_OVERRIDE
+  {
+    BasicThebesLayer::ClearCachedResources();
+    DestroyBackBuffer();
+    // Don't try to read back from this, it soon may be invalid.
+    mROFrontBuffer = null_t();
+    mFrontAndBackBufferDiffer = false;
+  }
 
   virtual void FillSpecificAttributes(SpecificLayerAttributes& aAttrs)
   {
@@ -140,7 +147,6 @@ public:
 
   virtual Layer* AsLayer() { return this; }
   virtual ShadowableLayer* AsShadowableLayer() { return this; }
-  virtual bool MustRetainContent() { return HasShadow(); }
 
   void SetBackBufferAndAttrs(const OptionalThebesBuffer& aBuffer,
                              const nsIntRegion& aValidRegion,
@@ -168,10 +174,6 @@ private:
               LayerManager::DrawThebesLayerCallback aCallback,
               void* aCallbackData) MOZ_OVERRIDE;
 
-  // This function may *not* open the buffer it allocates.
-  void
-  AllocBackBuffer(Buffer::ContentType aType, const nsIntSize& aSize);
-
   virtual already_AddRefed<gfxASurface>
   CreateBuffer(Buffer::ContentType aType, const nsIntSize& aSize) MOZ_OVERRIDE;
 
@@ -198,8 +200,7 @@ private:
   bool mIsNewBuffer;
   OptionalThebesBuffer mROFrontBuffer;
   nsIntRegion mFrontUpdatedRegion;
-  nsIntRegion mFrontValidRegion;
-  PRPackedBool mFrontAndBackBufferDiffer;
+  bool mFrontAndBackBufferDiffer;
 };
 
 }

@@ -17,7 +17,7 @@ inline nsIScriptContext *
 GetScriptContextFromJSContext(JSContext *cx)
 {
   if (!(::JS_GetOptions(cx) & JSOPTION_PRIVATE_IS_NSISUPPORTS)) {
-    return nsnull;
+    return nullptr;
   }
 
   nsCOMPtr<nsIScriptContext> scx =
@@ -33,7 +33,7 @@ inline nsIScriptContextPrincipal*
 GetScriptContextPrincipalFromJSContext(JSContext *cx)
 {
   if (!(::JS_GetOptions(cx) & JSOPTION_PRIVATE_IS_NSISUPPORTS)) {
-    return nsnull;
+    return nullptr;
   }
 
   nsCOMPtr<nsIScriptContextPrincipal> scx =
@@ -55,7 +55,7 @@ GetScriptContextPrincipalFromJSContext(JSContext *cx)
 // Optionally, aArgv may be NULL, in which case the array is allocated and
 // rooted, but all items remain NULL.  This presumably means the caller will
 // then QI us for nsIJSArgArray, and set our array elements.
-nsresult NS_CreateJSArgv(JSContext *aContext, PRUint32 aArgc, void *aArgv,
+nsresult NS_CreateJSArgv(JSContext *aContext, uint32_t aArgc, void *aArgv,
                          nsIJSArgArray **aArray);
 
 #endif // nsDOMJSUtils_h__

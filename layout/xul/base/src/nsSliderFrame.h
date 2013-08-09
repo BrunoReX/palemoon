@@ -6,9 +6,9 @@
 #ifndef nsSliderFrame_h__
 #define nsSliderFrame_h__
 
+#include "mozilla/Attributes.h"
 #include "nsRepeatService.h"
 #include "nsBoxFrame.h"
-#include "prtypes.h"
 #include "nsIAtom.h"
 #include "nsCOMPtr.h"
 #include "nsITimer.h"
@@ -47,97 +47,97 @@ public:
   virtual ~nsSliderFrame();
 
 #ifdef DEBUG
-  NS_IMETHOD GetFrameName(nsAString& aResult) const {
+  NS_IMETHOD GetFrameName(nsAString& aResult) const MOZ_OVERRIDE {
     return MakeFrameName(NS_LITERAL_STRING("SliderFrame"), aResult);
   }
 #endif
 
-  // nsIBox
-  virtual nsSize GetPrefSize(nsBoxLayoutState& aBoxLayoutState);
-  virtual nsSize GetMinSize(nsBoxLayoutState& aBoxLayoutState);
-  virtual nsSize GetMaxSize(nsBoxLayoutState& aBoxLayoutState);
-  NS_IMETHOD DoLayout(nsBoxLayoutState& aBoxLayoutState);
+  virtual nsSize GetPrefSize(nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
+  virtual nsSize GetMinSize(nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
+  virtual nsSize GetMaxSize(nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
+  NS_IMETHOD DoLayout(nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
 
   // nsIFrame overrides
   NS_IMETHOD  AppendFrames(ChildListID     aListID,
-                           nsFrameList&    aFrameList);
+                           nsFrameList&    aFrameList) MOZ_OVERRIDE;
 
   NS_IMETHOD  InsertFrames(ChildListID     aListID,
                            nsIFrame*       aPrevFrame,
-                           nsFrameList&    aFrameList);
+                           nsFrameList&    aFrameList) MOZ_OVERRIDE;
 
   NS_IMETHOD  RemoveFrame(ChildListID     aListID,
-                          nsIFrame*       aOldFrame);
+                          nsIFrame*       aOldFrame) MOZ_OVERRIDE;
 
-  virtual void DestroyFrom(nsIFrame* aDestructRoot);
+  virtual void DestroyFrom(nsIFrame* aDestructRoot) MOZ_OVERRIDE;
 
   NS_IMETHOD BuildDisplayListForChildren(nsDisplayListBuilder*   aBuilder,
                                          const nsRect&           aDirtyRect,
-                                         const nsDisplayListSet& aLists);
+                                         const nsDisplayListSet& aLists) MOZ_OVERRIDE;
 
   NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                               const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists);
+                              const nsDisplayListSet& aLists) MOZ_OVERRIDE;
  
-  NS_IMETHOD AttributeChanged(PRInt32 aNameSpaceID,
+  NS_IMETHOD AttributeChanged(int32_t aNameSpaceID,
                               nsIAtom* aAttribute,
-                              PRInt32 aModType);
+                              int32_t aModType) MOZ_OVERRIDE;
 
   NS_IMETHOD  Init(nsIContent*      aContent,
                    nsIFrame*        aParent,
-                   nsIFrame*        asPrevInFlow);
+                   nsIFrame*        asPrevInFlow) MOZ_OVERRIDE;
 
 
   NS_IMETHOD HandleEvent(nsPresContext* aPresContext, 
                          nsGUIEvent* aEvent,
-                         nsEventStatus* aEventStatus);
+                         nsEventStatus* aEventStatus) MOZ_OVERRIDE;
 
   NS_IMETHOD SetInitialChildList(ChildListID     aListID,
-                                 nsFrameList&    aChildList);
+                                 nsFrameList&    aChildList) MOZ_OVERRIDE;
 
-  virtual nsIAtom* GetType() const;
+  virtual nsIAtom* GetType() const MOZ_OVERRIDE;
 
-  nsresult MouseDown(nsIDOMEvent* aMouseEvent);
+  nsresult StartDrag(nsIDOMEvent* aEvent);
 
-  static PRInt32 GetCurrentPosition(nsIContent* content);
-  static PRInt32 GetMinPosition(nsIContent* content);
-  static PRInt32 GetMaxPosition(nsIContent* content);
-  static PRInt32 GetIncrement(nsIContent* content);
-  static PRInt32 GetPageIncrement(nsIContent* content);
-  static PRInt32 GetIntegerAttribute(nsIContent* content, nsIAtom* atom, PRInt32 defaultValue);
+  static int32_t GetCurrentPosition(nsIContent* content);
+  static int32_t GetMinPosition(nsIContent* content);
+  static int32_t GetMaxPosition(nsIContent* content);
+  static int32_t GetIncrement(nsIContent* content);
+  static int32_t GetPageIncrement(nsIContent* content);
+  static int32_t GetIntegerAttribute(nsIContent* content, nsIAtom* atom, int32_t defaultValue);
   void EnsureOrient();
 
   NS_IMETHOD HandlePress(nsPresContext* aPresContext,
                          nsGUIEvent *    aEvent,
-                         nsEventStatus*  aEventStatus);
+                         nsEventStatus*  aEventStatus) MOZ_OVERRIDE;
 
   NS_IMETHOD HandleMultiplePress(nsPresContext* aPresContext,
                                  nsGUIEvent *    aEvent,
                                  nsEventStatus*  aEventStatus,
-                                 bool aControlHeld)  { return NS_OK; }
+                                 bool aControlHeld) MOZ_OVERRIDE { return NS_OK; }
 
   NS_IMETHOD HandleDrag(nsPresContext* aPresContext,
                         nsGUIEvent *    aEvent,
-                        nsEventStatus*  aEventStatus)  { return NS_OK; }
+                        nsEventStatus*  aEventStatus) MOZ_OVERRIDE { return NS_OK; }
 
   NS_IMETHOD HandleRelease(nsPresContext* aPresContext,
                            nsGUIEvent *    aEvent,
-                           nsEventStatus*  aEventStatus);
+                           nsEventStatus*  aEventStatus) MOZ_OVERRIDE;
 
 private:
 
   bool GetScrollToClick();
-  nsIBox* GetScrollbar();
+  nsIFrame* GetScrollbar();
 
   void PageUpDown(nscoord change);
   void SetCurrentThumbPosition(nsIContent* aScrollbar, nscoord aNewPos, bool aIsSmooth,
                                bool aImmediateRedraw, bool aMaySnap);
-  void SetCurrentPosition(nsIContent* aScrollbar, PRInt32 aNewPos, bool aIsSmooth,
+  void SetCurrentPosition(nsIContent* aScrollbar, int32_t aNewPos, bool aIsSmooth,
                           bool aImmediateRedraw);
-  void SetCurrentPositionInternal(nsIContent* aScrollbar, PRInt32 pos,
+  void SetCurrentPositionInternal(nsIContent* aScrollbar, int32_t pos,
                                   bool aIsSmooth, bool aImmediateRedraw);
   nsresult CurrentPositionChanged(nsPresContext* aPresContext,
                                   bool aImmediateRedraw);
+
   void DragThumb(bool aGrabMouseEvents);
   void AddListener();
   void RemoveListener();
@@ -162,7 +162,7 @@ private:
   nscoord mDragStart;
   nscoord mThumbStart;
 
-  PRInt32 mCurPos;
+  int32_t mCurPos;
 
   nscoord mChange;
 
@@ -172,7 +172,7 @@ private:
   bool mUserChanged;
 
   static bool gMiddlePref;
-  static PRInt32 gSnapMultiplier;
+  static int32_t gSnapMultiplier;
 }; // class nsSliderFrame
 
 #endif

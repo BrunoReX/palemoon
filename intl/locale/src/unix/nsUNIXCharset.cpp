@@ -48,7 +48,7 @@ ConvertLocaleToCharsetUsingDeprecatedConfig(const nsACString& locale,
                                             nsACString& oResult)
 {
   if (!(locale.IsEmpty())) {
-    nsCAutoString localeKey;
+    nsAutoCString localeKey;
     localeKey.AssignLiteral("locale.all.");
     localeKey.Append(locale);
     if (NS_SUCCEEDED(nsUConvPropertySearch::SearchPropertyValue(kUnixCharsets,
@@ -123,7 +123,7 @@ nsPlatformCharset::GetDefaultCharsetForLocale(const nsAString& localeName, nsACS
 nsresult
 nsPlatformCharset::InitGetCharset(nsACString &oString)
 {
-  char* nl_langinfo_codeset = nsnull;
+  char* nl_langinfo_codeset = nullptr;
   nsCString aCharset;
   nsresult res;
 
@@ -149,8 +149,8 @@ nsPlatformCharset::InitGetCharset(nsACString &oString)
   //
   // try falling back on a deprecated (locale based) name
   //
-  char* locale = setlocale(LC_CTYPE, nsnull);
-  nsCAutoString localeStr;
+  char* locale = setlocale(LC_CTYPE, nullptr);
+  nsAutoCString localeStr;
   localeStr.Assign(locale);
   return ConvertLocaleToCharsetUsingDeprecatedConfig(localeStr, oString);
 }
@@ -158,13 +158,11 @@ nsPlatformCharset::InitGetCharset(nsACString &oString)
 NS_IMETHODIMP 
 nsPlatformCharset::Init()
 {
-  nsresult res = NS_OK;
-
   //
   // remember default locale so we can use the
   // same charset when asked for the same locale
   //
-  char* locale = setlocale(LC_CTYPE, nsnull);
+  char* locale = setlocale(LC_CTYPE, nullptr);
   NS_ASSERTION(locale, "cannot setlocale");
   if (locale) {
     CopyASCIItoUTF16(locale, mLocale); 
@@ -217,7 +215,7 @@ nsPlatformCharset::VerifyCharset(nsCString &aCharset)
   // check if we recognize the charset string
   //
 
-  nsCAutoString result;
+  nsAutoCString result;
   res = charsetConverterManager->GetCharsetAlias(aCharset.get(), result);
   if (NS_FAILED(res)) {
     return res;

@@ -7,10 +7,17 @@
 
 <script class="testbody" type="application/javascript">
 
-  netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
-  var utils = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor).getInterface(Components.interfaces.nsIDOMWindowUtils);
-  var Cc = Components.classes;
-  var Ci = Components.interfaces;
+  var utils = SpecialPowers.wrap(window)
+                .QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor).getInterface(SpecialPowers.Ci.nsIDOMWindowUtils);
+  var Cc = SpecialPowers.Cc;
+  var Ci = SpecialPowers.Ci;
+
+function getLoadContext() {
+  return SpecialPowers.wrap(window)
+               .QueryInterface(Ci.nsIInterfaceRequestor)
+               .getInterface(Ci.nsIWebNavigation)
+               .QueryInterface(Ci.nsILoadContext);
+}
 
 function runTest() {
   var pasteCount = 0;
@@ -23,7 +30,6 @@ function runTest() {
   }
 
   function pasteInto(trans, html, target_id) {
-    netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
     var e = document.getElementById('i1');
     var doc = e.contentDocument;
     doc.designMode = "on";
@@ -47,8 +53,8 @@ function runTest() {
   }
 
   function getTransferableFromClipboard(asHTML) {
-    netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
     var trans = Cc["@mozilla.org/widget/transferable;1"].createInstance(Ci.nsITransferable);
+    trans.init(getLoadContext());
     if (asHTML) {
       trans.addDataFlavor("text/html");
     } else {
@@ -60,8 +66,6 @@ function runTest() {
   }
 
   function makeTransferable(s,asHTML,target_id) {
-    netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
-
     var e = document.getElementById('i2');
     var doc = e.contentDocument;
     if (asHTML) {
@@ -83,11 +87,12 @@ function runTest() {
     }
 
     // We cannot use plain strings, we have to use nsSupportsString.
-    var supportsStringClass = Components.classes["@mozilla.org/supports-string;1"];
+    var supportsStringClass = SpecialPowers.Components.classes["@mozilla.org/supports-string;1"];
     var ssData = supportsStringClass.createInstance(Ci.nsISupportsString);
 
     // Create the transferable.
     var trans = Cc["@mozilla.org/widget/transferable;1"].createInstance(Ci.nsITransferable);  
+    trans.init(getLoadContext());
 
     // Add the data to the transferable.
     if (asHTML) {
@@ -104,7 +109,6 @@ function runTest() {
   }
 
   function copyToClipBoard(s,asHTML,target_id) {
-    netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
     var e = document.getElementById('i2');
     var doc = e.contentDocument;
     if (asHTML) {
@@ -124,7 +128,7 @@ function runTest() {
       range.selectNode(doc.getElementById(target_id));
       selection.addRange(range);
     }
-    doc.execCommand("copy", false, null);
+    SpecialPowers.wrap(doc).execCommand("copy", false, null);
     return e;
   }
 

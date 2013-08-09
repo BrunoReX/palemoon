@@ -42,18 +42,18 @@ tabbrowser {
   max-width: 250px;
   min-width: 100px;
   width: 0;
-  -moz-transition: min-width 150ms ease-out,
-                   max-width 200ms ease-out,
-                   opacity 80ms ease-out;
+  transition: min-width 150ms ease-out,
+              max-width 200ms ease-out,
+              opacity 80ms ease-out 20ms /* hide the tab for the first 20ms of the max-width transition */;
 }
 
 .tabbrowser-tab:not([pinned]):not([fadein]) {
   max-width: 0.1px;
   min-width: 0.1px;
   opacity: 0 !important;
-  -moz-transition: min-width 150ms ease-out,
-                   max-width 200ms ease-out,
-                   opacity 80ms ease-out;
+  transition: min-width 150ms ease-out,
+              max-width 200ms ease-out,
+              opacity 80ms ease-out 100ms /* hide the tab for the last 20ms of the max-width transition */;
 }
 
 .tab-throbber:not([fadein]):not([pinned]),
@@ -66,6 +66,16 @@ tabbrowser {
 .tabbrowser-tabs[positionpinnedtabs] > .tabbrowser-tab[pinned] {
   position: fixed !important;
   display: block; /* position:fixed already does this (bug 579776), but let's be explicit */
+}
+
+.tabbrowser-tabs[movingtab] > .tabbrowser-tab[selected] {
+  position: relative;
+  z-index: 2;
+  pointer-events: none; /* avoid blocking dragover events on scroll buttons */
+}
+
+.tabbrowser-tabs[movingtab] > .tabbrowser-tab[fadein]:not([selected]) {
+  transition: transform 200ms ease-out;
 }
 
 #alltabs-popup {
@@ -215,8 +225,6 @@ splitmenu {
   -moz-binding: url(chrome://browser/content/urlbarBindings.xml#urlbar);
 }
 
-.uri-element-right-align:-moz-locale-dir(rtl),
-html|input.uri-element-right-align:-moz-locale-dir(rtl),
 .ac-url-text:-moz-locale-dir(rtl),
 .ac-title:-moz-locale-dir(rtl) > description {
   direction: ltr !important;
@@ -263,7 +271,7 @@ panel[noactions] > richlistbox > richlistitem[type~="action"] > .ac-url-box > .a
   visibility: collapse;
 }
 
-#urlbar[pageproxystate="invalid"] > #identity-box > #identity-box-inner > #identity-icon-labels {
+#urlbar[pageproxystate="invalid"] > #identity-box > #identity-icon-labels {
   visibility: collapse;
 }
 
@@ -279,7 +287,7 @@ panel[noactions] > richlistbox > richlistitem[type~="action"] > .ac-url-box > .a
   direction: ltr;
 }
 
-#identity-box.verifiedIdentity > #identity-box-inner > #identity-icon-labels > #identity-icon-label {
+#identity-box.verifiedIdentity > #identity-icon-labels > #identity-icon-label {
   -moz-margin-end: 0.25em !important;
 }
 
@@ -372,7 +380,6 @@ window[chromehidden~="toolbar"] toolbar:not(.toolbar-primary):not(.chromeclass-m
 }
 
 #full-screen-warning-container {
-  pointer-events: none;
   position: fixed;
   top: 0;
   left: 0;
@@ -381,16 +388,15 @@ window[chromehidden~="toolbar"] toolbar:not(.toolbar-primary):not(.chromeclass-m
 }
 
 #full-screen-warning-container[fade-warning-out] {
-  -moz-transition-property: opacity !important;
-  -moz-transition-duration: 500ms !important;
+  transition-property: opacity !important;
+  transition-duration: 500ms !important;
   opacity: 0.0;
 }
 
 #full-screen-warning-message {
-  pointer-events: auto;
   /* We must specify a max-width, otherwise word-wrap:break-word doesn't
      work in descendant <description> and <label> elements. Bug 630864. */
-  max-width: 800px;  
+  max-width: 800px;
 }
 
 #full-screen-domain-text,
@@ -413,8 +419,8 @@ window[chromehidden~="toolbar"] toolbar:not(.toolbar-primary):not(.chromeclass-m
   -moz-binding: url("chrome://global/content/bindings/toolbarbutton.xml#toolbarbutton-image");
 }
 
-.ctrlTab-preview > html|canvas,
-.allTabs-preview > html|canvas {
+:-moz-any(.ctrlTab-preview, .allTabs-preview) > html|img,
+:-moz-any(.ctrlTab-preview, .allTabs-preview) > html|canvas {
   min-width: inherit;
   max-width: inherit;
   min-height: inherit;
@@ -463,6 +469,11 @@ window[chromehidden~="toolbar"] toolbar:not(.toolbar-primary):not(.chromeclass-m
   display: none;
 }
 
+#notification-popup .text-link.custom-link {
+  -moz-binding: url("chrome://global/content/bindings/text.xml#text-label");
+  text-decoration: none;
+}
+
 #invalid-form-popup > description {
   max-width: 280px;
 }
@@ -473,6 +484,18 @@ window[chromehidden~="toolbar"] toolbar:not(.toolbar-primary):not(.chromeclass-m
 
 #addon-progress-notification {
   -moz-binding: url("chrome://browser/content/urlbarBindings.xml#addon-progress-notification");
+}
+
+#identity-request-notification {
+  -moz-binding: url("chrome://browser/content/urlbarBindings.xml#identity-request-notification");
+}
+
+#click-to-play-plugins-notification {
+  -moz-binding: url("chrome://browser/content/urlbarBindings.xml#click-to-play-plugins-notification");
+}
+
+popupnotification-centeritem {
+  -moz-binding: url("chrome://browser/content/urlbarBindings.xml#center-item");
 }
 
 /* override hidden="true" for the status bar compatibility shim
@@ -497,7 +520,7 @@ statuspanel {
   position: fixed;
   margin-top: -3em;
   left: 0;
-  max-width: -moz-calc(100% - 5px);
+  max-width: calc(100% - 5px);
   pointer-events: none;
 }
 
@@ -522,17 +545,17 @@ statuspanel[type=status] {
 }
 
 statuspanel[type=overLink] {
-  -moz-transition: opacity 120ms ease-out;
+  transition: opacity 120ms ease-out;
   direction: ltr;
 }
 
 statuspanel[inactive] {
-  -moz-transition: none;
+  transition: none;
   opacity: 0;
 }
 
 statuspanel[inactive][previoustype=overLink] {
-  -moz-transition: opacity 200ms ease-out;
+  transition: opacity 200ms ease-out;
 }
 
 .statuspanel-inner {
@@ -572,9 +595,25 @@ html|*#gcli-output-frame,
   direction: ltr;
 }
 
+#developer-toolbar-webconsole[error-count] > .toolbarbutton-icon {
+  display: none;
+}
+
+#developer-toolbar-webconsole[error-count]:before {
+  content: attr(error-count);
+  display: -moz-box;
+  -moz-box-pack: center;
+}
+
+/* We don't show the Style Editor button in the developer toolbar for now.
+   See bug 771203 */
+#developer-toolbar-styleeditor {
+  display: none;
+}
+
 /* Responsive Mode */
 
-vbox[anonid=browserContainer][responsivemode] {
+.browserContainer[responsivemode] {
   overflow: auto;
 }
 
@@ -582,15 +621,24 @@ vbox[anonid=browserContainer][responsivemode] {
   -moz-box-pack: end;
 }
 
-stack[anonid=browserStack][responsivemode] {
-  -moz-transition-duration: 200ms;
-  -moz-transition-timing-function: linear;
+.browserStack[responsivemode] {
+  transition-duration: 200ms;
+  transition-timing-function: linear;
 }
 
-stack[anonid=browserStack][responsivemode] {
-  -moz-transition-property: min-width, max-width, min-height, max-height;
+.browserStack[responsivemode] {
+  transition-property: min-width, max-width, min-height, max-height;
 }
 
-stack[anonid=browserStack][responsivemode][notransition] {
-  -moz-transition: none;
+.browserStack[responsivemode][notransition] {
+  transition: none;
+}
+
+chatbox {
+  -moz-binding: url("chrome://browser/content/socialchat.xml#chatbox");
+}
+
+chatbar {
+  -moz-binding: url("chrome://browser/content/socialchat.xml#chatbar");
+  height: 0;
 }

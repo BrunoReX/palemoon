@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH     = ../..
+DEPTH     = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir    = @srcdir@
 VPATH     = @srcdir@
@@ -66,6 +66,10 @@ REDIST_FILES = \
   msvcp110.dll \
   msvcr110.dll \
   $(NULL)
+endif
+
+ifdef MOZ_METRO
+REDIST_FILES += vccorlib110.dll
 endif
 
 ifdef REDIST_FILES

@@ -274,3 +274,26 @@ void qcms_transform_data_rgba_out_lut_sse1(qcms_transform *transform,
                                           size_t length);
 
 extern qcms_bool qcms_supports_iccv4;
+
+#ifdef NATIVE_OUTPUT
+# define RGB_OUTPUT_COMPONENTS 4
+# define RGBA_OUTPUT_COMPONENTS 4
+# ifdef IS_LITTLE_ENDIAN
+#  define OUTPUT_A_INDEX 3
+#  define OUTPUT_R_INDEX 2
+#  define OUTPUT_G_INDEX 1
+#  define OUTPUT_B_INDEX 0
+# else
+#  define OUTPUT_A_INDEX 0
+#  define OUTPUT_R_INDEX 1
+#  define OUTPUT_G_INDEX 2
+#  define OUTPUT_B_INDEX 3
+# endif
+#else
+# define RGB_OUTPUT_COMPONENTS 3
+# define RGBA_OUTPUT_COMPONENTS 4
+# define OUTPUT_R_INDEX 0
+# define OUTPUT_G_INDEX 1
+# define OUTPUT_B_INDEX 2
+# define OUTPUT_A_INDEX 3
+#endif

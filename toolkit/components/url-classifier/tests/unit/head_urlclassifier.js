@@ -6,14 +6,21 @@ function dumpn(s) {
 const NS_APP_USER_PROFILE_50_DIR = "ProfD";
 const NS_APP_USER_PROFILE_LOCAL_50_DIR = "ProfLD";
 
-// This loads Ci, Cc, Cr and Cu.
-do_load_httpd_js();
+const Cc = Components.classes;
+const Ci = Components.interfaces;
+const Cu = Components.utils;
+const Cr = Components.results;
+
+Cu.import("resource://testing-common/httpd.js");
 
 do_get_profile();
 
 var dirSvc = Cc["@mozilla.org/file/directory_service;1"].getService(Ci.nsIProperties);
 
 var iosvc = Cc["@mozilla.org/network/io-service;1"].getService(Ci.nsIIOService);
+
+var secMan = Cc["@mozilla.org/scriptsecuritymanager;1"]
+               .getService(Ci.nsIScriptSecurityManager);
 
 // Disable hashcompleter noise for tests
 var prefBranch = Cc["@mozilla.org/preferences-service;1"].
@@ -24,14 +31,26 @@ prefBranch.setIntPref("urlclassifier.gethashnoise", 0);
 prefBranch.setBoolPref("browser.safebrowsing.malware.enabled", true);
 prefBranch.setBoolPref("browser.safebrowsing.enabled", true);
 
-function cleanUp() {
+function delFile(name) {
   try {
     // Delete a previously created sqlite file
     var file = dirSvc.get('ProfLD', Ci.nsIFile);
-    file.append("urlclassifier3.sqlite");
+    file.append(name);
     if (file.exists())
       file.remove(false);
-  } catch (e) {}
+  } catch(e) {
+  }
+}
+
+function cleanUp() {
+  delFile("urlclassifier3.sqlite");
+  delFile("safebrowsing/classifier.hashkey");
+  delFile("safebrowsing/test-phish-simple.sbstore");
+  delFile("safebrowsing/test-malware-simple.sbstore");
+  delFile("safebrowsing/test-phish-simple.cache");
+  delFile("safebrowsing/test-malware-simple.cache");
+  delFile("safebrowsing/test-phish-simple.pset");
+  delFile("safebrowsing/test-malware-simple.pset");
 }
 
 var dbservice = Cc["@mozilla.org/url-classifier/dbservice;1"].getService(Ci.nsIUrlClassifierDBService);
@@ -181,7 +200,8 @@ checkUrls: function(urls, expected, cb)
   var doLookup = function() {
     if (urls.length > 0) {
       var fragment = urls.shift();
-      dbservice.lookup("http://" + fragment,
+      var principal = secMan.getNoAppCodebasePrincipal(iosvc.newURI("http://" + fragment, null, null));
+      dbservice.lookup(principal,
                        function(arg) {
                          do_check_eq(expected, arg);
                          doLookup();
@@ -276,11 +296,10 @@ function runNextTest()
 
   dbservice.resetDatabase();
   dbservice.setHashCompleter('test-phish-simple', null);
-  dumpn("running " + gTests[gNextTest]);
 
-  dump("running " + gTests[gNextTest]);
-
-  gTests[gNextTest++]();
+  let test = gTests[gNextTest++];
+  dump("running " + test.name + "\n");
+  test();
 }
 
 function runTests(tests)

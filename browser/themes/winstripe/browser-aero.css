@@ -89,7 +89,7 @@
     border-color: hsla(206,100%,60%,.65) hsla(206,100%,55%,.65) hsla(206,100%,50%,.65);
   }
 
-  #sidebar-splitter {
+  .sidebar-splitter {
     border: 0;
     -moz-border-end: 1px solid #A9B7C9;
     min-width: 0;
@@ -99,10 +99,23 @@
     position: relative;
   }
 
+  #appcontent ~ .sidebar-splitter {
+    -moz-border-start: 1px solid #A9B7C9;
+    -moz-border-end: none;
+    -moz-margin-start: 0;
+    -moz-margin-end: -3px;
+  }
+
   .menu-accel,
   .menu-iconic-accel {
     color: graytext;
   }
+
+  .chatbar-button,
+  chatbar > chatbox {
+    border-color: #A9B7C9;
+  }
+  
 }
 
 @media (-moz-windows-compositor) {
@@ -166,13 +179,6 @@
     border-right-style: none !important;
   }
 
-/*  :-moz-any(#toolbar-menubar, #nav-bar[tabsontop=false]) :-moz-any(@primaryToolbarButtons@):not(:-moz-any(#alltabs-button,#tabview-button,#sync-button[status])) > .toolbarbutton-icon:not(:-moz-lwtheme),
-  #TabsToolbar[tabsontop=true] :-moz-any(@primaryToolbarButtons@):not(:-moz-any(#alltabs-button,#tabview-button,#new-tab-button,#sync-button[status])) > .toolbarbutton-icon:not(:-moz-lwtheme),
-  #nav-bar + #customToolbars + #PersonalToolbar[collapsed=true] + #TabsToolbar[tabsontop=false]:last-child :-moz-any(@primaryToolbarButtons@):not(:-moz-any(#alltabs-button,#tabview-button,#new-tab-button,#sync-button[status])) > .toolbarbutton-icon:not(:-moz-lwtheme) {
-    list-style-image: url("chrome://browser/skin/Toolbar-inverted.png");
-  }
-*/
-/* Pale Moon: revert to colored buttons on glass. */
   :-moz-any(#toolbar-menubar, #nav-bar[tabsontop=false]) :-moz-any(@primaryToolbarButtons@):not(:-moz-any(#alltabs-button,#tabview-button,#sync-button[status])) > .toolbarbutton-icon:not(:-moz-lwtheme),
   #TabsToolbar[tabsontop=true] :-moz-any(@primaryToolbarButtons@):not(:-moz-any(#alltabs-button,#tabview-button,#new-tab-button,#sync-button[status])) > .toolbarbutton-icon:not(:-moz-lwtheme),
   #nav-bar + #customToolbars + #PersonalToolbar[collapsed=true] + #TabsToolbar[tabsontop=false]:last-child :-moz-any(@primaryToolbarButtons@):not(:-moz-any(#alltabs-button,#tabview-button,#new-tab-button,#sync-button[status])) > .toolbarbutton-icon:not(:-moz-lwtheme) {
@@ -286,8 +292,9 @@
     color: black;
   }
 
-  #navigator-toolbox[tabsontop=false] html|*.urlbar-input:not(:-moz-lwtheme):-moz-placeholder,
-  #navigator-toolbox[tabsontop=false] .searchbar-textbox > .autocomplete-textbox-container > .textbox-input-box > html|*.textbox-input:not(:-moz-lwtheme):-moz-placeholder {
+  #navigator-toolbox[tabsontop=false] html|*.urlbar-input:not(:-moz-lwtheme)::-moz-placeholder,
+  #navigator-toolbox[tabsontop=false] .searchbar-textbox > .autocomplete-textbox-container > .textbox-input-box > html|*.textbox-input:not(:-moz-lwtheme)::-moz-placeholder {
+    opacity: 1.0;
     color: #777;
   }
 
@@ -380,7 +387,7 @@
 #minimize-button:-moz-locale-dir(rtl),
 #restore-button:-moz-locale-dir(rtl),
 #close-button:-moz-locale-dir(rtl) {
-  -moz-transform: scaleX(-1);
+  transform: scaleX(-1);
 }
 
 /* ::::: splitmenu highlight style that imitates Windows 7 start menu ::::: */

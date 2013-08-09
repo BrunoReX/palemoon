@@ -24,9 +24,9 @@
 #define nsPropertyTable_h_
 
 #include "nscore.h"
+#include "prtypes.h"
 
 class nsIAtom;
-typedef PRUptrdiff PtrBits;
 
 typedef void
 (*NSPropertyFunc)(void           *aObject,
@@ -71,7 +71,7 @@ class nsPropertyTable
    **/
   void* GetProperty(nsPropertyOwner aObject,
                     nsIAtom    *aPropertyName,
-                    nsresult   *aResult = nsnull)
+                    nsresult   *aResult = nullptr)
   {
     return GetPropertyInternal(aObject, aPropertyName, false, aResult);
   }
@@ -99,7 +99,7 @@ class nsPropertyTable
                                    NSPropertyDtorFunc  aDtor,
                                    void               *aDtorData,
                                    bool                aTransfer = false,
-                                   void              **aOldValue = nsnull)
+                                   void              **aOldValue = nullptr)
   {
     return SetPropertyInternal(aObject, aPropertyName, aPropertyValue,
                                aDtor, aDtorData, aTransfer, aOldValue);
@@ -119,7 +119,7 @@ class nsPropertyTable
    */
   void* UnsetProperty(nsPropertyOwner aObject,
                       nsIAtom    *aPropertyName,
-                      nsresult   *aStatus = nsnull)
+                      nsresult   *aStatus = nullptr)
   {
     return GetPropertyInternal(aObject, aPropertyName, true, aStatus);
   }
@@ -162,7 +162,7 @@ class nsPropertyTable
    */
   NS_HIDDEN_(void) DeleteAllProperties();
 
-  nsPropertyTable() : mPropertyList(nsnull) {}  
+  nsPropertyTable() : mPropertyList(nullptr) {}  
   ~nsPropertyTable() {
     DeleteAllProperties();
   }
@@ -176,6 +176,8 @@ class nsPropertyTable
                                void *aPropertyValue, void *aData);
 
   class PropertyList;
+
+  size_t SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
 
  private:
   NS_HIDDEN_(void) DestroyPropertyList();

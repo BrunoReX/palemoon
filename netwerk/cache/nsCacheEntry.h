@@ -31,7 +31,7 @@ class nsCacheEntry : public PRCList
 {
 public:
 
-    nsCacheEntry(nsCString *          key,
+    nsCacheEntry(const nsACString &   key,
                  bool                 streamBased,
                  nsCacheStoragePolicy storagePolicy);
     ~nsCacheEntry();
@@ -43,23 +43,23 @@ public:
                              nsCacheDevice *       device,
                              nsCacheEntry **       result);
                                       
-    nsCString *  Key()  { return mKey; }
+    nsCString *  Key()  { return &mKey; }
 
-    PRInt32  FetchCount()                              { return mFetchCount; }
-    void     SetFetchCount( PRInt32   count)           { mFetchCount = count; }
+    int32_t  FetchCount()                              { return mFetchCount; }
+    void     SetFetchCount( int32_t   count)           { mFetchCount = count; }
     void     Fetched();
 
-    PRUint32 LastFetched()                             { return mLastFetched; }
-    void     SetLastFetched( PRUint32  lastFetched)    { mLastFetched = lastFetched; }
+    uint32_t LastFetched()                             { return mLastFetched; }
+    void     SetLastFetched( uint32_t  lastFetched)    { mLastFetched = lastFetched; }
 
-    PRUint32 LastModified()                            { return mLastModified; }
-    void     SetLastModified( PRUint32 lastModified)   { mLastModified = lastModified; }
+    uint32_t LastModified()                            { return mLastModified; }
+    void     SetLastModified( uint32_t lastModified)   { mLastModified = lastModified; }
 
-    PRUint32 ExpirationTime()                     { return mExpirationTime; }
-    void     SetExpirationTime( PRUint32 expires) { mExpirationTime = expires; }
+    uint32_t ExpirationTime()                     { return mExpirationTime; }
+    void     SetExpirationTime( uint32_t expires) { mExpirationTime = expires; }
 
-    PRUint32 Size()                               
-        { return mDataSize + mMetaData.Size() + (mKey ? mKey->Length() : 0); }
+    uint32_t Size()                               
+        { return mDataSize + mMetaData.Size() + mKey.Length() ; }
 
     nsCacheDevice * CacheDevice()                            { return mCacheDevice; }
     void            SetCacheDevice( nsCacheDevice * device)  { mCacheDevice = device; }
@@ -74,11 +74,11 @@ public:
     nsISupports *Data()                           { return mData; }
     void         SetData( nsISupports * data);
 
-    PRInt64  PredictedDataSize()                  { return mPredictedDataSize; }
-    void     SetPredictedDataSize(PRInt64 size)   { mPredictedDataSize = size; }
+    int64_t  PredictedDataSize()                  { return mPredictedDataSize; }
+    void     SetPredictedDataSize(int64_t size)   { mPredictedDataSize = size; }
 
-    PRUint32 DataSize()                           { return mDataSize; }
-    void     SetDataSize( PRUint32  size)         { mDataSize = size; }
+    uint32_t DataSize()                           { return mDataSize; }
+    void     SetDataSize( uint32_t  size)         { mDataSize = size; }
 
     void     TouchData();
     
@@ -89,9 +89,9 @@ public:
     nsresult     SetMetaDataElement( const char *  key,
                                      const char *  value) { return mMetaData.SetElement(key, value); }
     nsresult VisitMetaDataElements( nsICacheMetaDataVisitor * visitor) { return mMetaData.VisitElements(visitor); }
-    nsresult FlattenMetaData(char * buffer, PRUint32 bufSize) { return mMetaData.FlattenMetaData(buffer, bufSize); }
-    nsresult UnflattenMetaData(const char * buffer, PRUint32 bufSize) { return mMetaData.UnflattenMetaData(buffer, bufSize); }
-    PRUint32 MetaDataSize() { return mMetaData.Size(); }  
+    nsresult FlattenMetaData(char * buffer, uint32_t bufSize) { return mMetaData.FlattenMetaData(buffer, bufSize); }
+    nsresult UnflattenMetaData(const char * buffer, uint32_t bufSize) { return mMetaData.UnflattenMetaData(buffer, bufSize); }
+    uint32_t MetaDataSize() { return mMetaData.Size(); }  
 
     void     TouchMetaData();
 
@@ -116,7 +116,8 @@ public:
         eActiveMask          = 0x00002000,
         eInitializedMask     = 0x00004000,
         eValidMask           = 0x00008000,
-        eBindingMask         = 0x00010000
+        eBindingMask         = 0x00010000,
+        ePrivateMask         = 0x00020000
     };
     
     void MarkBinding()         { mFlags |=  eBindingMask; }
@@ -132,6 +133,8 @@ public:
     void MarkStreamData()      { mFlags |=  eStreamDataMask; }
     void MarkValid()           { mFlags |=  eValidMask; }
     void MarkInvalid()         { mFlags &= ~eValidMask; }
+    void MarkPrivate()         { mFlags |=  ePrivateMask; }
+    void MarkPublic()          { mFlags &= ~ePrivateMask; }
     //    void MarkAllowedInMemory() { mFlags |=  eAllowedInMemoryMask; }
     //    void MarkAllowedOnDisk()   { mFlags |=  eAllowedOnDiskMask; }
 
@@ -148,6 +151,7 @@ public:
                                         !(PR_CLIST_IS_EMPTY(&mRequestQ) &&
                                           PR_CLIST_IS_EMPTY(&mDescriptorQ)); }
     bool IsNotInUse()        { return !IsInUse(); }
+    bool IsPrivate()         { return (mFlags & ePrivateMask) != 0; }
 
 
     bool IsAllowedInMemory()
@@ -158,9 +162,9 @@ public:
 
     bool IsAllowedOnDisk()
     {
-        return (StoragePolicy() == nsICache::STORE_ANYWHERE) ||
+        return !IsPrivate() && ((StoragePolicy() == nsICache::STORE_ANYWHERE) ||
             (StoragePolicy() == nsICache::STORE_ON_DISK) ||
-            (StoragePolicy() == nsICache::STORE_ON_DISK_AS_FILE);
+            (StoragePolicy() == nsICache::STORE_ON_DISK_AS_FILE));
     }
 
     bool IsAllowedOffline()
@@ -205,15 +209,15 @@ private:
     void MarkActive()          { mFlags |=  eActiveMask; }
     void MarkInactive()        { mFlags &= ~eActiveMask; }
 
-    nsCString *             mKey;            // 4  // XXX ask scc about const'ness
-    PRUint32                mFetchCount;     // 4
-    PRUint32                mLastFetched;    // 4
-    PRUint32                mLastModified;   // 4
-    PRUint32                mLastValidated;  // 4
-    PRUint32                mExpirationTime; // 4
-    PRUint32                mFlags;          // 4
-    PRInt64                 mPredictedDataSize;  // Size given by ContentLength.
-    PRUint32                mDataSize;       // 4
+    nsCString               mKey;
+    uint32_t                mFetchCount;     // 4
+    uint32_t                mLastFetched;    // 4
+    uint32_t                mLastModified;   // 4
+    uint32_t                mLastValidated;  // 4
+    uint32_t                mExpirationTime; // 4
+    uint32_t                mFlags;          // 4
+    int64_t                 mPredictedDataSize;  // Size given by ContentLength.
+    uint32_t                mDataSize;       // 4
     nsCacheDevice *         mCacheDevice;    // 4
     nsCacheDevice *         mCustomDevice;   // 4
     nsCOMPtr<nsISupports>   mSecurityInfo;   // 
@@ -239,7 +243,7 @@ public:
     }
 
     virtual ~nsCacheEntryInfo() {}
-    void    DetachEntry() { mCacheEntry = nsnull; }
+    void    DetachEntry() { mCacheEntry = nullptr; }
     
 private:
     nsCacheEntry * mCacheEntry;
@@ -289,12 +293,12 @@ private:
     static
     PLDHashOperator       FreeCacheEntries(PLDHashTable *    table,
                                            PLDHashEntryHdr * hdr,
-                                           PRUint32          number,
+                                           uint32_t          number,
                                            void *            arg);
     static
     PLDHashOperator       VisitEntry(PLDHashTable *         table,
                                      PLDHashEntryHdr *      hdr,
-                                     PRUint32               number,
+                                     uint32_t               number,
                                      void *                 arg);
                                      
     // member variables

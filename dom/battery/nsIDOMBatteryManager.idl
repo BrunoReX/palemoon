@@ -6,16 +6,16 @@
 
 interface nsIDOMEventListener;
 
-[scriptable, uuid(41e88f87-42cb-4db1-8724-f5456a16c410)]
-interface nsIDOMMozBatteryManager : nsIDOMEventTarget
+[scriptable, builtinclass, uuid(3d95d773-3c19-4944-8152-ec6ca01a8bde)]
+interface nsIDOMBatteryManager : nsIDOMEventTarget
 {
   readonly attribute double     level;
   readonly attribute boolean    charging;
   readonly attribute double     dischargingTime;
   readonly attribute double     chargingTime;
 
-  attribute nsIDOMEventListener onlevelchange;
-  attribute nsIDOMEventListener onchargingchange;
-  attribute nsIDOMEventListener ondischargingtimechange;
-  attribute nsIDOMEventListener onchargingtimechange;
+  [implicit_jscontext] attribute jsval onlevelchange;
+  [implicit_jscontext] attribute jsval onchargingchange;
+  [implicit_jscontext] attribute jsval ondischargingtimechange;
+  [implicit_jscontext] attribute jsval onchargingtimechange;
 };

@@ -11,6 +11,7 @@
 #include "nsLineBox.h"
 #include "nsStyleStruct.h"
 #include "nsTHashtable.h"
+#include "mozilla/Likely.h"
 class nsIScrollableFrame;
 
 namespace mozilla {
@@ -26,10 +27,9 @@ class TextOverflow {
  public:
   /**
    * Allocate an object for text-overflow processing.
-   * @return nsnull if no processing is necessary.  The caller owns the object.
+   * @return nullptr if no processing is necessary.  The caller owns the object.
    */
   static TextOverflow* WillProcessLines(nsDisplayListBuilder*   aBuilder,
-                                        const nsDisplayListSet& aLists,
                                         nsIFrame*               aBlockFrame);
   /**
    * Analyze the display lists for text overflow and what kind of item is at
@@ -37,6 +37,12 @@ class TextOverflow {
    * and remove or clip items that would overlap a marker.
    */
   void ProcessLine(const nsDisplayListSet& aLists, nsLineBox* aLine);
+
+  /**
+   * Get the resulting text-overflow markers (the list may be empty).
+   * @return a DisplayList containing any text-overflow markers.
+   */
+  nsDisplayList& GetMarkers() { return mMarkerList; }
 
   /**
    * @return true if aBlockFrame needs analysis for text overflow.
@@ -49,13 +55,12 @@ class TextOverflow {
  protected:
   TextOverflow() {}
   void Init(nsDisplayListBuilder*   aBuilder,
-            const nsDisplayListSet& aLists,
             nsIFrame*               aBlockFrame);
 
   struct AlignmentEdges {
     AlignmentEdges() : mAssigned(false) {}
     void Accumulate(const nsRect& aRect) {
-      if (NS_LIKELY(mAssigned)) {
+      if (MOZ_LIKELY(mAssigned)) {
         x = NS_MIN(x, aRect.X());
         xmost = NS_MAX(xmost, aRect.XMost());
       } else {
@@ -73,7 +78,7 @@ class TextOverflow {
   struct InnerClipEdges {
     InnerClipEdges() : mAssignedLeft(false), mAssignedRight(false) {}
     void AccumulateLeft(const nsRect& aRect) {
-      if (NS_LIKELY(mAssignedLeft)) {
+      if (MOZ_LIKELY(mAssignedLeft)) {
         mLeft = NS_MAX(mLeft, aRect.X());
       } else {
         mLeft = aRect.X();
@@ -81,7 +86,7 @@ class TextOverflow {
       }
     }
     void AccumulateRight(const nsRect& aRect) {
-      if (NS_LIKELY(mAssignedRight)) {
+      if (MOZ_LIKELY(mAssignedRight)) {
         mRight = NS_MIN(mRight, aRect.XMost());
       } else {
         mRight = aRect.XMost();
@@ -169,7 +174,7 @@ class TextOverflow {
 
   /**
    * ProcessLine calls this to create display items for the markers and insert
-   * them into a display list for the block.
+   * them into mMarkerList.
    * @param aLine the line we're processing
    * @param aCreateLeft if true, create a marker on the left side
    * @param aCreateRight if true, create a marker on the right side
@@ -178,13 +183,13 @@ class TextOverflow {
   void CreateMarkers(const nsLineBox* aLine,
                      bool             aCreateLeft,
                      bool             aCreateRight,
-                     const nsRect&    aInsideMarkersArea) const;
+                     const nsRect&    aInsideMarkersArea);
 
   nsRect                 mContentArea;
   nsDisplayListBuilder*  mBuilder;
   nsIFrame*              mBlock;
   nsIScrollableFrame*    mScrollableFrame;
-  nsDisplayList*         mMarkerList;
+  nsDisplayList          mMarkerList;
   bool                   mBlockIsRTL;
   bool                   mCanHaveHorizontalScrollbar;
   bool                   mAdjustForPixelSnapping;

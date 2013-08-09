@@ -9,6 +9,9 @@
 #include "gfxUtils.h"
 #include "gfxSharedImageSurface.h"
 #include "mozilla/layers/ImageContainerChild.h"
+#ifdef MOZ_X11
+#include "gfxXlibSurface.h"
+#endif
 
 using namespace mozilla::gfx;
 
@@ -76,9 +79,9 @@ BasicImageLayer::GetAndPaintCurrentImage(gfxContext* aContext,
                                          Layer* aMaskLayer)
 {
   if (!mContainer)
-    return nsnull;
+    return nullptr;
 
-  mContainer->SetImageFactory(mManager->IsCompositingCheap() ? nsnull : BasicManager()->GetImageFactory());
+  mContainer->SetImageFactory(mManager->IsCompositingCheap() ? nullptr : BasicManager()->GetImageFactory());
 
   nsRefPtr<gfxASurface> surface;
   AutoLockImage autoLock(mContainer, getter_AddRefs(surface));
@@ -86,24 +89,15 @@ BasicImageLayer::GetAndPaintCurrentImage(gfxContext* aContext,
   gfxIntSize size = mSize = autoLock.GetSize();
 
   if (!surface || surface->CairoStatus()) {
-    return nsnull;
+    return nullptr;
   }
 
   nsRefPtr<gfxPattern> pat = new gfxPattern(surface);
   if (!pat) {
-    return nsnull;
+    return nullptr;
   }
 
   pat->SetFilter(mFilter);
-  gfxIntSize sourceSize = surface->GetSize();
-  if (mScaleMode != SCALE_NONE) {
-    NS_ASSERTION(mScaleMode == SCALE_STRETCH,
-      "No other scalemodes than stretch and none supported yet.");
-    gfxMatrix mat = pat->GetMatrix();
-    mat.Scale(float(sourceSize.width) / mScaleToSize.width, float(sourceSize.height) / mScaleToSize.height);
-    pat->SetMatrix(mat);
-    size = mScaleToSize;
-  }
 
   // The visible region can extend outside the image, so just draw
   // within the image bounds.
@@ -130,17 +124,17 @@ BasicImageLayer::PaintContext(gfxPattern* aPattern,
   // outside the bounds of the video image.
   gfxPattern::GraphicsExtend extend = gfxPattern::EXTEND_PAD;
 
+#ifdef MOZ_X11
+  // PAD is slow with cairo and old X11 servers, so prefer speed over
+  // correctness and use NONE.
   if (aContext->IsCairo()) {
-    // PAD is slow with X11 and Quartz surfaces, so prefer speed over correctness
-    // and use NONE.
     nsRefPtr<gfxASurface> target = aContext->CurrentSurface();
-    gfxASurface::gfxSurfaceType type = target->GetType();
-    if (type == gfxASurface::SurfaceTypeXlib ||
-        type == gfxASurface::SurfaceTypeXcb ||
-        type == gfxASurface::SurfaceTypeQuartz) {
+    if (target->GetType() == gfxASurface::SurfaceTypeXlib &&
+        static_cast<gfxXlibSurface*>(target.get())->IsPadSlow()) {
       extend = gfxPattern::EXTEND_NONE;
     }
   }
+#endif
 
   aContext->NewPath();
   // No need to snap here; our transform has already taken care of it.
@@ -174,7 +168,8 @@ class BasicShadowableImageLayer : public BasicImageLayer,
 public:
   BasicShadowableImageLayer(BasicShadowLayerManager* aManager) :
     BasicImageLayer(aManager),
-    mBufferIsOpaque(false)
+    mBufferIsOpaque(false),
+    mLastPaintedImageSerial(0)
   {
     MOZ_COUNT_CTOR(BasicShadowableImageLayer);
   }
@@ -185,6 +180,11 @@ public:
   }
 
   virtual void Paint(gfxContext* aContext, Layer* aMaskLayer);
+
+  virtual void ClearCachedResources() MOZ_OVERRIDE
+  {
+    DestroyBackBuffer();
+  }
 
   virtual void FillSpecificAttributes(SpecificLayerAttributes& aAttrs)
   {
@@ -243,6 +243,7 @@ private:
   SurfaceDescriptor mBackBufferU;
   SurfaceDescriptor mBackBufferV;
   gfxIntSize mCbCrSize;
+  int32_t mLastPaintedImageSerial;
 };
  
 void
@@ -258,7 +259,7 @@ BasicShadowableImageLayer::Paint(gfxContext* aContext, Layer* aMaskLayer)
   }
 
   if (mContainer->IsAsync()) {
-    PRUint32 containerID = mContainer->GetAsyncContainerID();
+    uint32_t containerID = mContainer->GetAsyncContainerID();
     BasicManager()->PaintedImage(BasicManager()->Hold(this), 
                                  SharedImageID(containerID));
     return;
@@ -275,11 +276,11 @@ BasicShadowableImageLayer::Paint(gfxContext* aContext, Layer* aMaskLayer)
 
   if (aMaskLayer) {
     static_cast<BasicImplData*>(aMaskLayer->ImplData())
-      ->Paint(aContext, nsnull);
+      ->Paint(aContext, nullptr);
   }
 
-  if (image->GetFormat() == Image::SHARED_TEXTURE &&
-      BasicManager()->GetParentBackendType() == LayerManager::LAYERS_OPENGL) {
+  if (image->GetFormat() == SHARED_TEXTURE &&
+      BasicManager()->GetParentBackendType() == mozilla::layers::LAYERS_OPENGL) {
     SharedTextureImage *sharedImage = static_cast<SharedTextureImage*>(image);
     const SharedTextureImage::Data *data = sharedImage->GetData();
 
@@ -289,7 +290,7 @@ BasicShadowableImageLayer::Paint(gfxContext* aContext, Layer* aMaskLayer)
     return;
   }
 
-  if (image->GetFormat() == Image::PLANAR_YCBCR && BasicManager()->IsCompositingCheap()) {
+  if (image->GetFormat() == PLANAR_YCBCR && BasicManager()->IsCompositingCheap()) {
     PlanarYCbCrImage *YCbCrImage = static_cast<PlanarYCbCrImage*>(image);
     const PlanarYCbCrImage::Data *data = YCbCrImage->GetData();
     NS_ASSERTION(data, "Must be able to retrieve yuv data from image!");
@@ -349,7 +350,7 @@ BasicShadowableImageLayer::Paint(gfxContext* aContext, Layer* aMaskLayer)
 
   gfxIntSize oldSize = mSize;
   nsRefPtr<gfxPattern> pat = GetAndPaintCurrentImage
-    (aContext, GetEffectiveOpacity(), nsnull);
+    (aContext, GetEffectiveOpacity(), nullptr);
   if (!pat)
     return;
 
@@ -371,6 +372,8 @@ BasicShadowableImageLayer::Paint(gfxContext* aContext, Layer* aMaskLayer)
 
     if (!BasicManager()->AllocBuffer(mSize, type, &mBackBuffer))
       NS_RUNTIMEABORT("creating ImageLayer 'front buffer' failed!");
+  } else if (mLastPaintedImageSerial == image->GetSerial()) {
+    return;
   }
 
   AutoOpenSurface backSurface(OPEN_READ_WRITE, mBackBuffer);
@@ -378,10 +381,11 @@ BasicShadowableImageLayer::Paint(gfxContext* aContext, Layer* aMaskLayer)
   tmpCtx->SetOperator(gfxContext::OPERATOR_SOURCE);
   PaintContext(pat,
                nsIntRegion(nsIntRect(0, 0, mSize.width, mSize.height)),
-               1.0, tmpCtx, nsnull);
+               1.0, tmpCtx, nullptr);
 
   BasicManager()->PaintedImage(BasicManager()->Hold(this),
                                mBackBuffer);
+  mLastPaintedImageSerial = image->GetSerial();
 }
 
 class BasicShadowImageLayer : public ShadowImageLayer, public BasicImplData {

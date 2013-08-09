@@ -56,7 +56,7 @@ class JSObjectBuilder
     if (!mOk)
       return;
 
-    JSString *string = JS_NewStringCopyN(mCx, value, valueLength);
+    JSString *string = JS_InternStringN(mCx, value, valueLength);
     if (!string) {
       mOk = JS_FALSE;
       return;
@@ -85,6 +85,26 @@ class JSObjectBuilder
     mOk = JS_SetElement(mCx, aArray, length, &objval);
   }
 
+  void ArrayPush(JSObject *aArray, const char *value)
+  {
+    if (!mOk)
+      return;
+
+    JSString *string = JS_NewStringCopyN(mCx, value, strlen(value));
+    if (!string) {
+      mOk = JS_FALSE;
+      return;
+    }
+
+    jsval objval = STRING_TO_JSVAL(string);
+    uint32_t length;
+    mOk = JS_GetArrayLength(mCx, aArray, &length);
+
+    if (!mOk)
+      return;
+
+    mOk = JS_SetElement(mCx, aArray, length, &objval);
+  }
 
   void ArrayPush(JSObject *aArray, JSObject *aObject)
   {

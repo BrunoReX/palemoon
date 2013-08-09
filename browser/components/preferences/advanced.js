@@ -30,7 +30,16 @@ var gAdvancedPane = {
 
 #ifdef HAVE_SHELL_SERVICE
     this.updateSetDefaultBrowser();
+#ifdef XP_WIN
+    // In Windows 8 we launch the control panel since it's the only
+    // way to get all file type association prefs. So we don't know
+    // when the user will select the default.  We refresh here periodically
+    // in case the default changes.  On other Windows OS's defaults can also
+    // be set while the prefs are open.
+    window.setInterval(this.updateSetDefaultBrowser, 1000);
 #endif
+#endif
+
 #ifdef MOZ_UPDATER
     this.updateReadPrefs();
 #endif
@@ -316,10 +325,6 @@ var gAdvancedPane = {
       }
     }
 
-    var storageManager = Components.classes["@mozilla.org/dom/storagemanager;1"].
-                         getService(Components.interfaces.nsIDOMStorageManager);
-    usage += storageManager.getUsage(host);
-
     return usage;
   },
 
@@ -406,12 +411,6 @@ var gAdvancedPane = {
             cache.discard();
         }
     }
-
-    // send out an offline-app-removed signal.  The nsDOMStorage
-    // service will clear DOM storage for this host.
-    var obs = Components.classes["@mozilla.org/observer-service;1"]
-                        .getService(Components.interfaces.nsIObserverService);
-    obs.notifyObservers(null, "offline-app-removed", host);
 
     // remove the permission
     var pm = Components.classes["@mozilla.org/permissionmanager;1"]
@@ -707,7 +706,8 @@ var gAdvancedPane = {
       document.getElementById("alwaysCheckDefault").disabled = true;
       return;
     }
-    let selectedIndex = shellSvc.isDefaultBrowser(false) ? 1 : 0;
+    let selectedIndex =
+      shellSvc.isDefaultBrowser(false, true) ? 1 : 0;
     setDefaultPane.selectedIndex = selectedIndex;
   },
 
@@ -720,7 +720,9 @@ var gAdvancedPane = {
     if (!shellSvc)
       return;
     shellSvc.setDefaultBrowser(true, false);
-    document.getElementById("setDefaultPane").selectedIndex = 1;
+    let selectedIndex =
+      shellSvc.isDefaultBrowser(false, true) ? 1 : 0;
+    document.getElementById("setDefaultPane").selectedIndex = selectedIndex;
   }
 #endif
 };

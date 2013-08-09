@@ -13,6 +13,7 @@
 #include "mozilla/Observer.h"
 #include "mozilla/RefPtr.h"
 #include "nsString.h"
+#include "nsTArray.h"
 
 #include "Volume.h"
 #include "VolumeCommand.h"
@@ -72,12 +73,12 @@ namespace system {
 *
 ***************************************************************************/
 
-class VolumeManager : public MessageLoopForIO::Watcher,
+class VolumeManager : public MessageLoopForIO::LineWatcher,
                       public RefCounted<VolumeManager>
 {
 public:
 
-  typedef std::vector<RefPtr<Volume> > VolumeArray;
+  typedef nsTArray<RefPtr<Volume> > VolumeArray;
 
   VolumeManager();
   virtual ~VolumeManager();
@@ -102,7 +103,8 @@ public:
   };
 
   static STATE State();
-  static const char *StateStr();
+  static const char *StateStr(STATE aState);
+  static const char *StateStr() { return StateStr(State()); }
 
   class StateChangedEvent
   {
@@ -120,6 +122,8 @@ public:
 
   static void Start();
 
+  static VolumeArray::size_type NumVolumes();
+  static TemporaryRef<Volume> GetVolume(VolumeArray::index_type aIndex);
   static TemporaryRef<Volume> FindVolumeByName(const nsCSubstring &aName);
   static TemporaryRef<Volume> FindAddVolumeByName(const nsCSubstring &aName);
 
@@ -127,8 +131,9 @@ public:
 
 protected:
 
-  virtual void OnFileCanReadWithoutBlocking(int aFd);
+  virtual void OnLineRead(int aFd, nsDependentCSubstring& aMessage);
   virtual void OnFileCanWriteWithoutBlocking(int aFd);
+  virtual void OnError();
 
 private:
   bool OpenSocket();
@@ -143,16 +148,14 @@ private:
 
   typedef std::queue<RefPtr<VolumeCommand> > CommandQueue;
 
+  static STATE              mState;
+  static StateObserverList  mStateObserverList;
+
   static const int    kRcvBufSize = 1024;
-  STATE               mState;
   ScopedClose         mSocket;
   VolumeArray         mVolumeArray;
   CommandQueue        mCommands;
   bool                mCommandPending;
-  char                mRcvBuf[kRcvBufSize];
-  size_t              mRcvIdx;
-  StateObserverList   mStateObserverList;
-  MessageLoopForIO                       *mIOLoop;
   MessageLoopForIO::FileDescriptorWatcher mReadWatcher;
   MessageLoopForIO::FileDescriptorWatcher mWriteWatcher;
   RefPtr<VolumeResponseCallback>          mBroadcastCallback;

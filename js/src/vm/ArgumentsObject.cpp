@@ -10,163 +10,225 @@
 #include "jsinterp.h"
 
 #include "vm/GlobalObject.h"
-#include "vm/MethodGuard.h"
 #include "vm/Stack.h"
 #include "vm/Xdr.h"
 
 #include "jsobjinlines.h"
 
 #include "gc/Barrier-inl.h"
+#include "vm/Stack-inl.h"
 #include "vm/ArgumentsObject-inl.h"
 
 using namespace js;
 using namespace js::gc;
 
-struct PutArg
+static void
+CopyStackFrameArguments(const StackFrame *fp, HeapValue *dst)
 {
-    PutArg(JSCompartment *comp, ArgumentsObject &argsobj)
-      : compartment(comp), argsobj(argsobj), dst(argsobj.data()->slots) {}
-    JSCompartment *compartment;
-    ArgumentsObject &argsobj;
-    HeapValue *dst;
-    bool operator()(unsigned i, Value *src) {
-        JS_ASSERT(dst->isUndefined());
-        if (!argsobj.isElementDeleted(i))
-            dst->set(compartment, *src);
-        ++dst;
-        return true;
-    }
-};
+    JS_ASSERT(!fp->runningInIon());
 
-void
-js_PutArgsObject(StackFrame *fp)
-{
-    ArgumentsObject &argsobj = fp->argsObj();
-    if (argsobj.isNormalArguments()) {
-        JS_ASSERT(argsobj.maybeStackFrame() == fp);
-        JSCompartment *comp = fp->compartment();
-        fp->forEachCanonicalActualArg(PutArg(comp, argsobj));
-        argsobj.setStackFrame(NULL);
-    } else {
-        JS_ASSERT(!argsobj.maybeStackFrame());
+    unsigned numActuals = fp->numActualArgs();
+    unsigned numFormals = fp->callee().nargs;
+
+    /* Copy formal arguments. */
+    Value *src = fp->formals();
+    Value *end = src + numFormals;
+    while (src != end)
+        (dst++)->init(*src++);
+
+    /* Copy actual argument which are not contignous. */
+    if (numFormals < numActuals) {
+        src = fp->actuals() + numFormals;
+        end = src + (numActuals - numFormals);
+        while (src != end)
+            (dst++)->init(*src++);
     }
 }
 
-ArgumentsObject *
-ArgumentsObject::create(JSContext *cx, uint32_t argc, HandleObject callee)
+/* static */ void
+ArgumentsObject::MaybeForwardToCallObject(StackFrame *fp, JSObject *obj, ArgumentsData *data)
 {
-    JS_ASSERT(argc <= StackSpace::ARGS_LENGTH_MAX);
-    JS_ASSERT(!callee->toFunction()->hasRest());
+    AutoAssertNoGC nogc;
+    RawScript script = fp->script().get(nogc);
+    if (fp->fun()->isHeavyweight() && script->argsObjAliasesFormals()) {
+        obj->initFixedSlot(MAYBE_CALL_SLOT, ObjectValue(fp->callObj()));
+        for (AliasedFormalIter fi(script); fi; fi++)
+            data->args[fi.frameIndex()] = MagicValue(JS_FORWARD_TO_CALL_OBJECT);
+    }
+}
+
+struct CopyStackFrameArgs
+{
+    StackFrame *fp_;
+
+    CopyStackFrameArgs(StackFrame *fp)
+      : fp_(fp)
+    { }
+
+    void copyArgs(HeapValue *dst) const {
+        CopyStackFrameArguments(fp_, dst);
+    }
+
+    /*
+     * If a call object exists and the arguments object aliases formals, the
+     * call object is the canonical location for formals.
+     */
+    void maybeForwardToCallObject(JSObject *obj, ArgumentsData *data) {
+        ArgumentsObject::MaybeForwardToCallObject(fp_, obj, data);
+    }
+};
+
+struct CopyStackIterArgs
+{
+    StackIter &iter_;
+
+    CopyStackIterArgs(StackIter &iter)
+      : iter_(iter)
+    { }
+
+    void copyArgs(HeapValue *dstBase) const {
+        if (!iter_.isIon()) {
+            CopyStackFrameArguments(iter_.interpFrame(), dstBase);
+            return;
+        }
+
+        /* Copy actual arguments. */
+        iter_.ionForEachCanonicalActualArg(CopyToHeap(dstBase));
+
+        /* Define formals which are not part of the actuals. */
+        unsigned numActuals = iter_.numActualArgs();
+        unsigned numFormals = iter_.callee()->nargs;
+       if (numActuals < numFormals) {
+            HeapValue *dst = dstBase + numActuals, *dstEnd = dstBase + numFormals;
+            while (dst != dstEnd)
+                (dst++)->init(UndefinedValue());
+        }
+    }
+
+    /*
+     * Ion frames are copying every argument onto the stack, other locations are
+     * invalid.
+     */
+    void maybeForwardToCallObject(JSObject *obj, ArgumentsData *data) {
+        if (!iter_.isIon())
+            ArgumentsObject::MaybeForwardToCallObject(iter_.interpFrame(), obj, data);
+    }
+};
+
+template <typename CopyArgs>
+/* static */ ArgumentsObject *
+ArgumentsObject::create(JSContext *cx, HandleScript script, HandleFunction callee, unsigned numActuals,
+                        CopyArgs &copy)
+{
+    AssertCanGC();
 
     RootedObject proto(cx, callee->global().getOrCreateObjectPrototype(cx));
     if (!proto)
         return NULL;
 
-    RootedTypeObject type(cx);
-
-    type = proto->getNewType(cx);
+    RootedTypeObject type(cx, proto->getNewType(cx));
     if (!type)
         return NULL;
 
-    bool strict = callee->toFunction()->inStrictMode();
+    bool strict = callee->inStrictMode();
     Class *clasp = strict ? &StrictArgumentsObjectClass : &NormalArgumentsObjectClass;
 
-    RootedShape emptyArgumentsShape(cx);
-    emptyArgumentsShape =
-        EmptyShape::getInitialShape(cx, clasp, proto,
-                                    proto->getParent(), FINALIZE_KIND,
-                                    BaseShape::INDEXED);
-    if (!emptyArgumentsShape)
+    RootedShape shape(cx, EmptyShape::getInitialShape(cx, clasp, TaggedProto(proto),
+                                                      proto->getParent(), FINALIZE_KIND,
+                                                      BaseShape::INDEXED));
+    if (!shape)
         return NULL;
 
-    unsigned numDeletedWords = NumWordsForBitArrayOfLength(argc);
-    unsigned numBytes = offsetof(ArgumentsData, slots) +
+    unsigned numFormals = callee->nargs;
+    unsigned numDeletedWords = NumWordsForBitArrayOfLength(numActuals);
+    unsigned numArgs = Max(numActuals, numFormals);
+    unsigned numBytes = offsetof(ArgumentsData, args) +
                         numDeletedWords * sizeof(size_t) +
-                        argc * sizeof(Value);
+                        numArgs * sizeof(Value);
 
     ArgumentsData *data = (ArgumentsData *)cx->malloc_(numBytes);
     if (!data)
         return NULL;
 
-    data->callee.init(ObjectValue(*callee));
-    for (HeapValue *vp = data->slots; vp != data->slots + argc; vp++)
-        vp->init(UndefinedValue());
-    data->deletedBits = (size_t *)(data->slots + argc);
+    data->numArgs = numArgs;
+    data->callee.init(ObjectValue(*callee.get()));
+    data->script = script;
+
+    /* Copy [0, numArgs) into data->slots. */
+    HeapValue *dst = data->args, *dstEnd = data->args + numArgs;
+    copy.copyArgs(dst);
+
+    data->deletedBits = reinterpret_cast<size_t *>(dstEnd);
     ClearAllBitArrayElements(data->deletedBits, numDeletedWords);
 
-    /* We have everything needed to fill in the object, so make the object. */
-    JSObject *obj = JSObject::create(cx, FINALIZE_KIND, emptyArgumentsShape, type, NULL);
-    if (!obj)
+    RawObject obj = JSObject::create(cx, FINALIZE_KIND, shape, type, NULL);
+    if (!obj) {
+        js_free(data);
         return NULL;
+    }
+
+    obj->initFixedSlot(INITIAL_LENGTH_SLOT, Int32Value(numActuals << PACKED_BITS_COUNT));
+    obj->initFixedSlot(DATA_SLOT, PrivateValue(data));
+
+    copy.maybeForwardToCallObject(obj, data);
 
     ArgumentsObject &argsobj = obj->asArguments();
-
-    JS_ASSERT(UINT32_MAX > (uint64_t(argc) << PACKED_BITS_COUNT));
-    argsobj.initInitialLength(argc);
-    argsobj.initData(data);
-    argsobj.setStackFrame(NULL);
-
-    JS_ASSERT(argsobj.numFixedSlots() >= NormalArgumentsObject::RESERVED_SLOTS);
-    JS_ASSERT(argsobj.numFixedSlots() >= StrictArgumentsObject::RESERVED_SLOTS);
-
+    JS_ASSERT(argsobj.initialLength() == numActuals);
+    JS_ASSERT(!argsobj.hasOverriddenLength());
     return &argsobj;
 }
 
 ArgumentsObject *
-ArgumentsObject::create(JSContext *cx, StackFrame *fp)
+ArgumentsObject::createExpected(JSContext *cx, StackFrame *fp)
 {
     JS_ASSERT(fp->script()->needsArgsObj());
-
-    ArgumentsObject *argsobj = ArgumentsObject::create(cx, fp->numActualArgs(),
-                                                       RootedObject(cx, &fp->callee()));
+    RootedScript script(cx, fp->script());
+    RootedFunction callee(cx, &fp->callee());
+    CopyStackFrameArgs copy(fp);
+    ArgumentsObject *argsobj = create(cx, script, callee, fp->numActualArgs(), copy);
     if (!argsobj)
         return NULL;
-
-    /*
-     * Strict mode functions have arguments objects that copy the initial
-     * actual parameter values. Non-strict mode arguments use the frame pointer
-     * to retrieve up-to-date parameter values.
-     */
-    if (argsobj->isStrictArguments())
-        fp->forEachCanonicalActualArg(PutArg(cx->compartment, *argsobj));
-    else
-        argsobj->setStackFrame(fp);
 
     fp->initArgsObj(*argsobj);
     return argsobj;
 }
 
 ArgumentsObject *
+ArgumentsObject::createUnexpected(JSContext *cx, StackIter &iter)
+{
+    RootedScript script(cx, iter.script());
+    RootedFunction callee(cx, iter.callee());
+    CopyStackIterArgs copy(iter);
+    return create(cx, script, callee, iter.numActualArgs(), copy);
+}
+
+ArgumentsObject *
 ArgumentsObject::createUnexpected(JSContext *cx, StackFrame *fp)
 {
-    ArgumentsObject *argsobj = create(cx, fp->numActualArgs(), RootedObject(cx, &fp->callee()));
-    if (!argsobj)
-        return NULL;
-
-    fp->forEachCanonicalActualArg(PutArg(cx->compartment, *argsobj));
-    return argsobj;
+    RootedScript script(cx, fp->script());
+    RootedFunction callee(cx, &fp->callee());
+    CopyStackFrameArgs copy(fp);
+    return create(cx, script, callee, fp->numActualArgs(), copy);
 }
 
 static JSBool
-args_delProperty(JSContext *cx, HandleObject obj, HandleId id, Value *vp)
+args_delProperty(JSContext *cx, HandleObject obj, HandleId id, MutableHandleValue vp)
 {
     ArgumentsObject &argsobj = obj->asArguments();
     if (JSID_IS_INT(id)) {
         unsigned arg = unsigned(JSID_TO_INT(id));
-        if (arg < argsobj.initialLength() && !argsobj.isElementDeleted(arg)) {
-            argsobj.setElement(arg, UndefinedValue());
+        if (arg < argsobj.initialLength() && !argsobj.isElementDeleted(arg))
             argsobj.markElementDeleted(arg);
-        }
-    } else if (JSID_IS_ATOM(id, cx->runtime->atomState.lengthAtom)) {
+    } else if (JSID_IS_ATOM(id, cx->names().length)) {
         argsobj.markLengthOverridden();
-    } else if (JSID_IS_ATOM(id, cx->runtime->atomState.calleeAtom)) {
+    } else if (JSID_IS_ATOM(id, cx->names().callee)) {
         argsobj.asNormalArguments().clearCallee();
     }
     return true;
 }
 
 static JSBool
-ArgGetter(JSContext *cx, HandleObject obj, HandleId id, Value *vp)
+ArgGetter(JSContext *cx, HandleObject obj, HandleId id, MutableHandleValue vp)
 {
     if (!obj->isNormalArguments())
         return true;
@@ -178,51 +240,47 @@ ArgGetter(JSContext *cx, HandleObject obj, HandleId id, Value *vp)
          * prototype to point to another Arguments object with a bigger argc.
          */
         unsigned arg = unsigned(JSID_TO_INT(id));
-        if (arg < argsobj.initialLength() && !argsobj.isElementDeleted(arg)) {
-            if (StackFrame *fp = argsobj.maybeStackFrame()) {
-                JS_ASSERT_IF(arg < fp->numFormalArgs(), fp->script()->formalIsAliased(arg));
-                *vp = fp->canonicalActualArg(arg);
-            } else {
-                *vp = argsobj.element(arg);
-            }
-        }
-    } else if (JSID_IS_ATOM(id, cx->runtime->atomState.lengthAtom)) {
+        if (arg < argsobj.initialLength() && !argsobj.isElementDeleted(arg))
+            vp.set(argsobj.element(arg));
+    } else if (JSID_IS_ATOM(id, cx->names().length)) {
         if (!argsobj.hasOverriddenLength())
-            vp->setInt32(argsobj.initialLength());
+            vp.setInt32(argsobj.initialLength());
     } else {
-        JS_ASSERT(JSID_IS_ATOM(id, cx->runtime->atomState.calleeAtom));
-        const Value &v = argsobj.callee();
-        if (!v.isMagic(JS_OVERWRITTEN_CALLEE))
-            *vp = v;
+        JS_ASSERT(JSID_IS_ATOM(id, cx->names().callee));
+        if (!argsobj.callee().isMagic(JS_OVERWRITTEN_CALLEE))
+            vp.set(argsobj.callee());
     }
     return true;
 }
 
 static JSBool
-ArgSetter(JSContext *cx, HandleObject obj, HandleId id, JSBool strict, Value *vp)
+ArgSetter(JSContext *cx, HandleObject obj, HandleId id, JSBool strict, MutableHandleValue vp)
 {
     if (!obj->isNormalArguments())
         return true;
 
+    unsigned attrs;
+    if (!baseops::GetAttributes(cx, obj, id, &attrs))
+        return false;
+    JS_ASSERT(!(attrs & JSPROP_READONLY));
+    attrs &= (JSPROP_ENUMERATE | JSPROP_PERMANENT); /* only valid attributes */
+
     NormalArgumentsObject &argsobj = obj->asNormalArguments();
+    RootedScript script(cx, argsobj.containingScript());
 
     if (JSID_IS_INT(id)) {
         unsigned arg = unsigned(JSID_TO_INT(id));
-        if (arg < argsobj.initialLength()) {
-            if (StackFrame *fp = argsobj.maybeStackFrame()) {
-                JSScript *script = fp->functionScript();
-                JS_ASSERT(script->needsArgsObj());
-                if (arg < fp->numFormalArgs()) {
-                    JS_ASSERT(fp->script()->formalIsAliased(arg));
-                    types::TypeScript::SetArgument(cx, script, arg, *vp);
-                }
-                fp->canonicalActualArg(arg) = *vp;
-                return true;
+        if (arg < argsobj.initialLength() && !argsobj.isElementDeleted(arg)) {
+            argsobj.setElement(arg, vp);
+            if (arg < script->function()->nargs) {
+                if (!script->ensureHasTypes(cx))
+                    return false;
+                types::TypeScript::SetArgument(cx, script, arg, vp);
             }
+            return true;
         }
     } else {
-        JS_ASSERT(JSID_IS_ATOM(id, cx->runtime->atomState.lengthAtom) ||
-                  JSID_IS_ATOM(id, cx->runtime->atomState.calleeAtom));
+        JS_ASSERT(JSID_IS_ATOM(id, cx->names().length) || JSID_IS_ATOM(id, cx->names().callee));
     }
 
     /*
@@ -234,15 +292,15 @@ ArgSetter(JSContext *cx, HandleObject obj, HandleId id, JSBool strict, Value *vp
      * that has a setter for this id.
      */
     RootedValue value(cx);
-    return baseops::DeleteGeneric(cx, obj, id, value.address(), false) &&
-           baseops::DefineProperty(cx, obj, id, vp, NULL, NULL, JSPROP_ENUMERATE);
+    return baseops::DeleteGeneric(cx, obj, id, &value, false) &&
+           baseops::DefineGeneric(cx, obj, id, vp, NULL, NULL, attrs);
 }
 
 static JSBool
 args_resolve(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
-             JSObject **objp)
+             MutableHandleObject objp)
 {
-    *objp = NULL;
+    objp.set(NULL);
 
     Rooted<NormalArgumentsObject*> argsobj(cx, &obj->asNormalArguments());
 
@@ -253,68 +311,23 @@ args_resolve(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
             return true;
 
         attrs |= JSPROP_ENUMERATE;
-    } else if (JSID_IS_ATOM(id, cx->runtime->atomState.lengthAtom)) {
+    } else if (JSID_IS_ATOM(id, cx->names().length)) {
         if (argsobj->hasOverriddenLength())
             return true;
     } else {
-        if (!JSID_IS_ATOM(id, cx->runtime->atomState.calleeAtom))
+        if (!JSID_IS_ATOM(id, cx->names().callee))
             return true;
 
         if (argsobj->callee().isMagic(JS_OVERWRITTEN_CALLEE))
             return true;
     }
 
-    Value undef = UndefinedValue();
-    if (!baseops::DefineProperty(cx, argsobj, id, &undef, ArgGetter, ArgSetter, attrs))
+    RootedValue undef(cx, UndefinedValue());
+    if (!baseops::DefineGeneric(cx, argsobj, id, undef, ArgGetter, ArgSetter, attrs))
         return JS_FALSE;
 
-    *objp = argsobj;
+    objp.set(argsobj);
     return true;
-}
-
-bool
-NormalArgumentsObject::optimizedGetElem(JSContext *cx, StackFrame *fp, const Value &elem, Value *vp)
-{
-    JS_ASSERT(!fp->hasArgsObj());
-
-    /* Fast path: no need to convert to id when elem is already an int in range. */
-    if (elem.isInt32()) {
-        int32_t i = elem.toInt32();
-        if (i >= 0 && uint32_t(i) < fp->numActualArgs()) {
-            *vp = fp->canonicalActualArg(i);
-            return true;
-        }
-    }
-
-    /* Slow path: create and canonicalize an id, then emulate args_resolve. */
-
-    jsid id;
-    if (!ValueToId(cx, elem, &id))
-        return false;
-
-    if (JSID_IS_INT(id)) {
-        int32_t i = JSID_TO_INT(id);
-        if (i >= 0 && uint32_t(i) < fp->numActualArgs()) {
-            *vp = fp->canonicalActualArg(i);
-            return true;
-        }
-    }
-
-    if (id == NameToId(cx->runtime->atomState.lengthAtom)) {
-        *vp = Int32Value(fp->numActualArgs());
-        return true;
-    }
-
-    if (id == NameToId(cx->runtime->atomState.calleeAtom)) {
-        *vp = ObjectValue(fp->callee());
-        return true;
-    }
-
-    JSObject *proto = fp->global().getOrCreateObjectPrototype(cx);
-    if (!proto)
-        return false;
-
-    return proto->getGeneric(cx, RootedId(cx, id), vp);
 }
 
 static JSBool
@@ -330,13 +343,13 @@ args_enumerate(JSContext *cx, HandleObject obj)
     int argc = int(argsobj->initialLength());
     for (int i = -2; i != argc; i++) {
         id = (i == -2)
-             ? NameToId(cx->runtime->atomState.lengthAtom)
+             ? NameToId(cx->names().length)
              : (i == -1)
-             ? NameToId(cx->runtime->atomState.calleeAtom)
+             ? NameToId(cx->names().callee)
              : INT_TO_JSID(i);
 
-        JSObject *pobj;
-        JSProperty *prop;
+        RootedObject pobj(cx);
+        RootedShape prop(cx);
         if (!baseops::LookupProperty(cx, argsobj, id, &pobj, &prop))
             return false;
     }
@@ -344,7 +357,7 @@ args_enumerate(JSContext *cx, HandleObject obj)
 }
 
 static JSBool
-StrictArgGetter(JSContext *cx, HandleObject obj, HandleId id, Value *vp)
+StrictArgGetter(JSContext *cx, HandleObject obj, HandleId id, MutableHandleValue vp)
 {
     if (!obj->isStrictArguments())
         return true;
@@ -358,48 +371,55 @@ StrictArgGetter(JSContext *cx, HandleObject obj, HandleId id, Value *vp)
          */
         unsigned arg = unsigned(JSID_TO_INT(id));
         if (arg < argsobj.initialLength() && !argsobj.isElementDeleted(arg))
-            *vp = argsobj.element(arg);
+            vp.set(argsobj.element(arg));
     } else {
-        JS_ASSERT(JSID_IS_ATOM(id, cx->runtime->atomState.lengthAtom));
+        JS_ASSERT(JSID_IS_ATOM(id, cx->names().length));
         if (!argsobj.hasOverriddenLength())
-            vp->setInt32(argsobj.initialLength());
+            vp.setInt32(argsobj.initialLength());
     }
     return true;
 }
 
 static JSBool
-StrictArgSetter(JSContext *cx, HandleObject obj, HandleId id, JSBool strict, Value *vp)
+StrictArgSetter(JSContext *cx, HandleObject obj, HandleId id, JSBool strict, MutableHandleValue vp)
 {
     if (!obj->isStrictArguments())
         return true;
+
+    unsigned attrs;
+    if (!baseops::GetAttributes(cx, obj, id, &attrs))
+        return false;
+    JS_ASSERT(!(attrs & JSPROP_READONLY));
+    attrs &= (JSPROP_ENUMERATE | JSPROP_PERMANENT); /* only valid attributes */
 
     Rooted<StrictArgumentsObject*> argsobj(cx, &obj->asStrictArguments());
 
     if (JSID_IS_INT(id)) {
         unsigned arg = unsigned(JSID_TO_INT(id));
         if (arg < argsobj->initialLength()) {
-            argsobj->setElement(arg, *vp);
+            argsobj->setElement(arg, vp);
             return true;
         }
     } else {
-        JS_ASSERT(JSID_IS_ATOM(id, cx->runtime->atomState.lengthAtom));
+        JS_ASSERT(JSID_IS_ATOM(id, cx->names().length));
     }
 
     /*
-     * For simplicity we use delete/set to replace the property with one
+     * For simplicity we use delete/define to replace the property with one
      * backed by the default Object getter and setter. Note that we rely on
      * args_delProperty to clear the corresponding reserved slot so the GC can
      * collect its value.
      */
     RootedValue value(cx);
-    return baseops::DeleteGeneric(cx, argsobj, id, value.address(), strict) &&
-           baseops::SetPropertyHelper(cx, argsobj, id, 0, vp, strict);
+    return baseops::DeleteGeneric(cx, argsobj, id, &value, strict) &&
+           baseops::DefineGeneric(cx, argsobj, id, vp, NULL, NULL, attrs);
 }
 
 static JSBool
-strictargs_resolve(JSContext *cx, HandleObject obj, HandleId id, unsigned flags, JSObject **objp)
+strictargs_resolve(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
+                   MutableHandleObject objp)
 {
-    *objp = NULL;
+    objp.set(NULL);
 
     Rooted<StrictArgumentsObject*> argsobj(cx, &obj->asStrictArguments());
 
@@ -413,25 +433,23 @@ strictargs_resolve(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
             return true;
 
         attrs |= JSPROP_ENUMERATE;
-    } else if (JSID_IS_ATOM(id, cx->runtime->atomState.lengthAtom)) {
+    } else if (JSID_IS_ATOM(id, cx->names().length)) {
         if (argsobj->hasOverriddenLength())
             return true;
     } else {
-        if (!JSID_IS_ATOM(id, cx->runtime->atomState.calleeAtom) &&
-            !JSID_IS_ATOM(id, cx->runtime->atomState.callerAtom)) {
+        if (!JSID_IS_ATOM(id, cx->names().callee) && !JSID_IS_ATOM(id, cx->names().caller))
             return true;
-        }
 
         attrs = JSPROP_PERMANENT | JSPROP_GETTER | JSPROP_SETTER | JSPROP_SHARED;
         getter = CastAsPropertyOp(argsobj->global().getThrowTypeError());
         setter = CastAsStrictPropertyOp(argsobj->global().getThrowTypeError());
     }
 
-    Value undef = UndefinedValue();
-    if (!baseops::DefineProperty(cx, argsobj, id, &undef, getter, setter, attrs))
+    RootedValue undef(cx, UndefinedValue());
+    if (!baseops::DefineGeneric(cx, argsobj, id, undef, getter, setter, attrs))
         return false;
 
-    *objp = argsobj;
+    objp.set(argsobj);
     return true;
 }
 
@@ -444,22 +462,22 @@ strictargs_enumerate(JSContext *cx, HandleObject obj)
      * Trigger reflection in strictargs_resolve using a series of
      * js_LookupProperty calls.
      */
-    JSObject *pobj;
-    JSProperty *prop;
+    RootedObject pobj(cx);
+    RootedShape prop(cx);
     RootedId id(cx);
 
     // length
-    id = NameToId(cx->runtime->atomState.lengthAtom);
+    id = NameToId(cx->names().length);
     if (!baseops::LookupProperty(cx, argsobj, id, &pobj, &prop))
         return false;
 
     // callee
-    id = NameToId(cx->runtime->atomState.calleeAtom);
+    id = NameToId(cx->names().callee);
     if (!baseops::LookupProperty(cx, argsobj, id, &pobj, &prop))
         return false;
 
     // caller
-    id = NameToId(cx->runtime->atomState.callerAtom);
+    id = NameToId(cx->names().caller);
     if (!baseops::LookupProperty(cx, argsobj, id, &pobj, &prop))
         return false;
 
@@ -472,34 +490,20 @@ strictargs_enumerate(JSContext *cx, HandleObject obj)
     return true;
 }
 
-static void
-args_finalize(FreeOp *fop, JSObject *obj)
+void
+ArgumentsObject::finalize(FreeOp *fop, RawObject obj)
 {
     fop->free_(reinterpret_cast<void *>(obj->asArguments().data()));
 }
 
-static void
-args_trace(JSTracer *trc, JSObject *obj)
+void
+ArgumentsObject::trace(JSTracer *trc, RawObject obj)
 {
     ArgumentsObject &argsobj = obj->asArguments();
     ArgumentsData *data = argsobj.data();
     MarkValue(trc, &data->callee, js_callee_str);
-    MarkValueRange(trc, argsobj.initialLength(), data->slots, js_arguments_str);
-
-    /*
-     * If a generator's arguments or call object escapes, and the generator
-     * frame is not executing, the generator object needs to be marked because
-     * it is not otherwise reachable. An executing generator is rooted by its
-     * invocation.  To distinguish the two cases (which imply different access
-     * paths to the generator object), we use the JSFRAME_FLOATING_GENERATOR
-     * flag, which is only set on the StackFrame kept in the generator object's
-     * JSGenerator.
-     */
-#if JS_HAS_GENERATORS
-    StackFrame *fp = argsobj.maybeStackFrame();
-    if (fp && fp->isFloatingGenerator())
-        MarkObject(trc, &js_FloatingFrameToGenerator(fp)->obj, "generator object");
-#endif
+    MarkValueRange(trc, data->numArgs, data->args, js_arguments_str);
+    MarkScriptUnbarriered(trc, &data->script, "script");
 }
 
 /*
@@ -512,8 +516,7 @@ Class js::NormalArgumentsObjectClass = {
     "Arguments",
     JSCLASS_NEW_RESOLVE | JSCLASS_IMPLEMENTS_BARRIERS |
     JSCLASS_HAS_RESERVED_SLOTS(NormalArgumentsObject::RESERVED_SLOTS) |
-    JSCLASS_HAS_CACHED_PROTO(JSProto_Object) |
-    JSCLASS_FOR_OF_ITERATION,
+    JSCLASS_HAS_CACHED_PROTO(JSProto_Object),
     JS_PropertyStub,         /* addProperty */
     args_delProperty,
     JS_PropertyStub,         /* getProperty */
@@ -521,17 +524,17 @@ Class js::NormalArgumentsObjectClass = {
     args_enumerate,
     reinterpret_cast<JSResolveOp>(args_resolve),
     JS_ConvertStub,
-    args_finalize,           /* finalize   */
+    ArgumentsObject::finalize,
     NULL,                    /* checkAccess */
     NULL,                    /* call        */
     NULL,                    /* construct   */
     NULL,                    /* hasInstance */
-    args_trace,
+    ArgumentsObject::trace,
     {
         NULL,       /* equality    */
         NULL,       /* outerObject */
         NULL,       /* innerObject */
-        JS_ElementIteratorStub,
+        NULL,       /* iteratorObject  */
         NULL,       /* unused      */
         false,      /* isWrappedNative */
     }
@@ -546,8 +549,7 @@ Class js::StrictArgumentsObjectClass = {
     "Arguments",
     JSCLASS_NEW_RESOLVE | JSCLASS_IMPLEMENTS_BARRIERS |
     JSCLASS_HAS_RESERVED_SLOTS(StrictArgumentsObject::RESERVED_SLOTS) |
-    JSCLASS_HAS_CACHED_PROTO(JSProto_Object) |
-    JSCLASS_FOR_OF_ITERATION,
+    JSCLASS_HAS_CACHED_PROTO(JSProto_Object),
     JS_PropertyStub,         /* addProperty */
     args_delProperty,
     JS_PropertyStub,         /* getProperty */
@@ -555,17 +557,17 @@ Class js::StrictArgumentsObjectClass = {
     strictargs_enumerate,
     reinterpret_cast<JSResolveOp>(strictargs_resolve),
     JS_ConvertStub,
-    args_finalize,           /* finalize   */
+    ArgumentsObject::finalize,
     NULL,                    /* checkAccess */
     NULL,                    /* call        */
     NULL,                    /* construct   */
     NULL,                    /* hasInstance */
-    args_trace,
+    ArgumentsObject::trace,
     {
         NULL,       /* equality    */
         NULL,       /* outerObject */
         NULL,       /* innerObject */
-        JS_ElementIteratorStub,
+        NULL,       /* iteratorObject  */
         NULL,       /* unused      */
         false,      /* isWrappedNative */
     }

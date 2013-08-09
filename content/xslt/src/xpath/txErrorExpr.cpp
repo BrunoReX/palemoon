@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "txError.h"
+#include "nsError.h"
 #include "txExpr.h"
 #include "nsString.h"
 #include "txIXPathContext.h"
@@ -11,7 +11,7 @@
 nsresult
 txErrorExpr::evaluate(txIEvalContext* aContext, txAExprResult** aResult)
 {
-    *aResult = nsnull;
+    *aResult = nullptr;
 
     nsAutoString err(NS_LITERAL_STRING("Invalid expression evaluated"));
 #ifdef TX_TO_STRING

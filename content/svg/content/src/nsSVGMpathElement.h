@@ -41,8 +41,8 @@ public:
   NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
 
   // Forward interface implementations to base class
-  NS_FORWARD_NSIDOMNODE(nsSVGMpathElementBase::)
-  NS_FORWARD_NSIDOMELEMENT(nsSVGMpathElementBase::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
   NS_FORWARD_NSIDOMSVGELEMENT(nsSVGMpathElementBase::)
 
   // nsIContent interface
@@ -52,17 +52,17 @@ public:
                               bool aCompileEventHandlers);
   virtual void UnbindFromTree(bool aDeep, bool aNullParent);
 
-  virtual nsresult UnsetAttr(PRInt32 aNamespaceID, nsIAtom* aAttribute,
+  virtual nsresult UnsetAttr(int32_t aNamespaceID, nsIAtom* aAttribute,
                              bool aNotify);
-  // nsGenericElement specializations
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
+  // Element specializations
+  virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
 
   // Public helper method: If our xlink:href attribute links to a <path>
   // element, this method returns a pointer to that element. Otherwise,
-  // this returns nsnull.
+  // this returns nullptr.
   nsSVGPathElement* GetReferencedPath();
 
   virtual nsXPCClassInfo* GetClassInfo();

@@ -5,13 +5,20 @@
 
 package org.mozilla.gecko.gfx;
 
-import android.graphics.Color;
 import android.graphics.Bitmap;
-import java.lang.Math;
+import android.graphics.BitmapFactory;
+import android.graphics.Color;
+import android.util.Base64;
 import android.util.Log;
 
 public final class BitmapUtils {
+    private static final String LOGTAG = "GeckoBitmapUtils";
+
     public static int getDominantColor(Bitmap source) {
+        return getDominantColor(source, true);
+    }
+
+    public static int getDominantColor(Bitmap source, boolean applyThreshold) {
       int[] colors = new int[37];
       int[] sat = new int[11];
       int[] val = new int[11];
@@ -31,20 +38,22 @@ public final class BitmapUtils {
           Color.colorToHSV(c, hsv);
 
           // arbitrarily chosen values for "white" and "black"
-          if (hsv[1] > 0.35f && hsv[2] > 0.35f) {
-            int h = Math.round(hsv[0] / 10.0f);
-            int s = Math.round(hsv[1] * 10.0f);
-            int v = Math.round(hsv[2] * 10.0f);
-            colors[h]++;
-            sat[s]++;
-            val[v]++;
-            // we only care about the most unique non white or black hue, but also
-            // store its saturation and value params to match the color better
-            if (colors[h] > colors[maxH]) {
-              maxH = h;
-              maxS = s;
-              maxV = v;
-            }
+          if (applyThreshold && hsv[1] <= 0.35f && hsv[2] <= 0.35f)
+            continue;
+
+          int h = Math.round(hsv[0] / 10.0f);
+          int s = Math.round(hsv[1] * 10.0f);
+          int v = Math.round(hsv[2] * 10.0f);
+          colors[h]++;
+          sat[s]++;
+          val[v]++;
+
+          // we only care about the most unique non white or black hue - if threshold is applied
+          // we also store its saturation and value params to match the color better
+          if (colors[h] > colors[maxH]) {
+            maxH = h;
+            maxS = s;
+            maxV = v;
           }
         }
       }
@@ -53,6 +62,23 @@ public final class BitmapUtils {
       hsv[1] = (float)maxS/10.0f;
       hsv[2] = (float)maxV/10.0f;
       return Color.HSVToColor(hsv);
+    }
+
+    /**
+     * Decodes a bitmap from a Base64 data URI.
+     *
+     * @param dataURI a Base64-encoded data URI string
+     * @return        the decoded bitmap, or null if the data URI is invalid
+     */
+    public static Bitmap getBitmapFromDataURI(String dataURI) {
+        String base64 = dataURI.substring(dataURI.indexOf(',') + 1);
+        try {
+            byte[] raw = Base64.decode(base64, Base64.DEFAULT);
+            return BitmapFactory.decodeByteArray(raw, 0, raw.length);
+        } catch (Exception e) {
+            Log.e(LOGTAG, "exception decoding bitmap from data URI: " + dataURI, e);
+        }
+        return null;
     }
 }
 

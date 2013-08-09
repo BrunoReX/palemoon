@@ -6,15 +6,15 @@
 
 nsHtml5OwningUTF16Buffer::nsHtml5OwningUTF16Buffer(PRUnichar* aBuffer)
   : nsHtml5UTF16Buffer(aBuffer, 0),
-    next(nsnull),
-    key(nsnull)
+    next(nullptr),
+    key(nullptr)
 {
   MOZ_COUNT_CTOR(nsHtml5OwningUTF16Buffer);
 }
 
 nsHtml5OwningUTF16Buffer::nsHtml5OwningUTF16Buffer(void* aKey)
-  : nsHtml5UTF16Buffer(nsnull, 0),
-    next(nsnull),
+  : nsHtml5UTF16Buffer(nullptr, 0),
+    next(nullptr),
     key(aKey)
 {
   MOZ_COUNT_CTOR(nsHtml5OwningUTF16Buffer);
@@ -37,18 +37,18 @@ nsHtml5OwningUTF16Buffer::~nsHtml5OwningUTF16Buffer()
 
 // static
 already_AddRefed<nsHtml5OwningUTF16Buffer>
-nsHtml5OwningUTF16Buffer::FalliblyCreate(PRInt32 aLength)
+nsHtml5OwningUTF16Buffer::FalliblyCreate(int32_t aLength)
 {
   const mozilla::fallible_t fallible = mozilla::fallible_t();
   PRUnichar* newBuf = new (fallible) PRUnichar[aLength];
   if (!newBuf) {
-    return nsnull;
+    return nullptr;
   }
   nsRefPtr<nsHtml5OwningUTF16Buffer> newObj =
     new (fallible) nsHtml5OwningUTF16Buffer(newBuf);
   if (!newObj) {
     delete[] newBuf;
-    return nsnull;
+    return nullptr;
   }
   return newObj.forget();
 }
@@ -66,7 +66,7 @@ nsHtml5OwningUTF16Buffer::Swap(nsHtml5OwningUTF16Buffer* aOther)
 nsrefcnt
 nsHtml5OwningUTF16Buffer::AddRef()
 {
-  NS_PRECONDITION(PRInt32(mRefCnt) >= 0, "Illegal refcount.");
+  NS_PRECONDITION(int32_t(mRefCnt) >= 0, "Illegal refcount.");
   ++mRefCnt;
   NS_LOG_ADDREF(this, mRefCnt, "nsHtml5OwningUTF16Buffer", sizeof(*this));
   return mRefCnt;

@@ -1615,7 +1615,7 @@ function test() {
     // alien.TypeError.
     var av = Object.create(alien_view);
     checkThrowTODO(function () av.getUint8(4), alien.TypeError);
-    checkThrow(function () av.buffer, alien.TypeError);
+    checkThrowTODO(function () av.buffer, alien.TypeError);
 
     // view of object whose proto is buffer. This should not work per dherman.
     // Note that DataView throws a TypeError while TypedArrays create a
@@ -1638,6 +1638,12 @@ function test() {
     var local_buffer = (new Int8Array(3)).buffer;
     var foreign_exchange_student_1 = alien_constructor(local_buffer);
     var foreign_exchange_student_2 = new alien_constructor(local_buffer);
+
+    // gc bug 787775
+    var ab = new ArrayBuffer(4);
+    var dv = new DataView(ab);
+    dv = 1;
+    gc();
 
     reportCompare(0, 0, 'done.');
     exitFunc ('test');

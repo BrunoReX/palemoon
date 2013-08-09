@@ -301,7 +301,7 @@ HeapReverser::getEdgeDescription()
 {
     if (!debugPrinter && debugPrintIndex == (size_t) -1) {
         const char *arg = static_cast<const char *>(debugPrintArg);
-        char *name = static_cast<char *>(js_malloc(strlen(arg) + 1));
+        char *name = js_pod_malloc<char>(strlen(arg) + 1);
         if (!name)
             return NULL;
         strcpy(name, arg);
@@ -310,7 +310,7 @@ HeapReverser::getEdgeDescription()
 
     /* Lovely; but a fixed size is required by JSTraceNamePrinter. */
     static const int nameSize = 200;
-    char *name = static_cast<char *>(js_malloc(nameSize));
+    char *name = js_pod_malloc<char>(nameSize);
     if (!name)
         return NULL;
     if (debugPrinter)
@@ -455,7 +455,7 @@ ReferenceFinder::Path::computeName(JSContext *cx)
         size += strlen(l->edge.name) + (l->next ? 2 : 0);
     size += 1;
 
-    char *path = static_cast<char *>(cx->malloc_(size));
+    char *path = cx->pod_malloc<char>(size);
     if (!path)
         return NULL;
 
@@ -486,15 +486,17 @@ ReferenceFinder::addReferrer(jsval referrer_, Path *path)
     Rooted<jsval> referrer(context, referrer_);
 
     if (!context->compartment->wrap(context, referrer.address()))
-        return NULL;
+        return false;
 
     char *pathName = path->computeName(context);
     if (!pathName)
         return false;
-    AutoReleasePtr releasePathName(context, pathName);
+    AutoReleasePtr releasePathName(pathName);
 
     /* Find the property of the results object named |pathName|. */
-    JS::Value v;
+    RootedValue valRoot(context);
+    Value &v = valRoot.get();
+
     if (!JS_GetProperty(context, result, pathName, &v))
         return false;
     if (v.isUndefined()) {
@@ -552,7 +554,8 @@ FindReferences(JSContext *cx, unsigned argc, jsval *vp)
 
     /* Given the reversed map, find the referents of target. */
     ReferenceFinder finder(cx, reverser);
-    JSObject *references = finder.findReferences(RootedObject(cx, &target.toObject()));
+    Rooted<JSObject*> targetObj(cx, &target.toObject());
+    JSObject *references = finder.findReferences(targetObj);
     if (!references)
         return false;
 

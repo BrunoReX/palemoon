@@ -1,11 +1,12 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:ts=2:sw=2:et: */
+/* vim: set ts=2 sw=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-
 #include "nsCookiePermission.h"
+
+#include "mozIThirdPartyUtil.h"
 #include "nsICookie2.h"
 #include "nsIServiceManager.h"
 #include "nsICookiePromptService.h"
@@ -17,7 +18,6 @@
 #include "nsIChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIDOMWindow.h"
-#include "nsIDOMDocument.h"
 #include "nsIPrincipal.h"
 #include "nsString.h"
 #include "nsCRT.h"
@@ -34,10 +34,10 @@
 // 1 == ask before accepting
 // 2 == downgrade to session
 // 3 == limit lifetime to N days
-static const PRUint32 ACCEPT_NORMALLY = 0;
-static const PRUint32 ASK_BEFORE_ACCEPT = 1;
-static const PRUint32 ACCEPT_SESSION = 2;
-static const PRUint32 ACCEPT_FOR_N_DAYS = 3;
+static const uint32_t ACCEPT_NORMALLY = 0;
+static const uint32_t ASK_BEFORE_ACCEPT = 1;
+static const uint32_t ACCEPT_SESSION = 2;
+static const uint32_t ACCEPT_FOR_N_DAYS = 3;
 
 static const bool kDefaultPolicy = true;
 static const char kCookiesLifetimePolicy[] = "network.cookie.lifetimePolicy";
@@ -65,6 +65,8 @@ nsCookiePermission::Init()
   nsresult rv;
   mPermMgr = do_GetService(NS_PERMISSIONMANAGER_CONTRACTID, &rv);
   if (NS_FAILED(rv)) return false;
+  mThirdPartyUtil = do_GetService(THIRDPARTYUTIL_CONTRACTID, &rv);
+  if (NS_FAILED(rv)) return false;
 
   // failure to access the pref service is non-fatal...
   nsCOMPtr<nsIPrefBranch> prefBranch =
@@ -73,7 +75,7 @@ nsCookiePermission::Init()
     prefBranch->AddObserver(kCookiesLifetimePolicy, this, false);
     prefBranch->AddObserver(kCookiesLifetimeDays, this, false);
     prefBranch->AddObserver(kCookiesAlwaysAcceptSession, this, false);
-    PrefChanged(prefBranch, nsnull);
+    PrefChanged(prefBranch, nullptr);
 
     // migration code for original cookie prefs
     bool migrated;
@@ -92,7 +94,7 @@ nsCookiePermission::Init()
       // if they're limiting lifetime and not using the prompts, use the 
       // appropriate limited lifetime pref
       if (lifetimeEnabled && !warnAboutCookies) {
-        PRInt32 lifetimeBehavior;
+        int32_t lifetimeBehavior;
         prefBranch->GetIntPref(kCookiesLifetimeBehavior, &lifetimeBehavior);
         if (lifetimeBehavior)
           prefBranch->SetIntPref(kCookiesLifetimePolicy, ACCEPT_FOR_N_DAYS);
@@ -110,7 +112,7 @@ void
 nsCookiePermission::PrefChanged(nsIPrefBranch *aPrefBranch,
                                 const char    *aPref)
 {
-  PRInt32 val;
+  int32_t val;
 
 #define PREF_CHANGED(_P) (!aPref || !strcmp(aPref, _P))
 
@@ -166,36 +168,22 @@ nsCookiePermission::CanAccess(nsIURI         *aURI,
     return NS_ERROR_UNEXPECTED;
 
   // finally, check with permission manager...
-  rv = mPermMgr->TestPermission(aURI, kPermissionType, (PRUint32 *) aResult);
+  rv = mPermMgr->TestPermission(aURI, kPermissionType, (uint32_t *) aResult);
   if (NS_SUCCEEDED(rv)) {
-    switch (*aResult) {
-    // if we have one of the publicly-available values, just return it
-    case nsIPermissionManager::UNKNOWN_ACTION: // ACCESS_DEFAULT
-    case nsIPermissionManager::ALLOW_ACTION:   // ACCESS_ALLOW
-    case nsIPermissionManager::DENY_ACTION:    // ACCESS_DENY
-      break;
-
-    // ACCESS_SESSION means the cookie can be accepted; the session 
-    // downgrade will occur in CanSetCookie().
-    case nsICookiePermission::ACCESS_SESSION:
-      *aResult = ACCESS_ALLOW;
-      break;
-
-    // ack, an unknown type! just use the defaults.
-    default:
-      *aResult = ACCESS_DEFAULT;
+    if (*aResult == nsICookiePermission::ACCESS_SESSION) {
+      *aResult = nsICookiePermission::ACCESS_ALLOW;
     }
   }
 
   return rv;
 }
 
-NS_IMETHODIMP 
+NS_IMETHODIMP
 nsCookiePermission::CanSetCookie(nsIURI     *aURI,
                                  nsIChannel *aChannel,
                                  nsICookie2 *aCookie,
                                  bool       *aIsSession,
-                                 PRInt64    *aExpiry,
+                                 int64_t    *aExpiry,
                                  bool       *aResult)
 {
   NS_ASSERTION(aURI, "null uri");
@@ -206,51 +194,59 @@ nsCookiePermission::CanSetCookie(nsIURI     *aURI,
   if (!EnsureInitialized())
     return NS_ERROR_UNEXPECTED;
 
-  PRUint32 perm;
+  uint32_t perm;
   mPermMgr->TestPermission(aURI, kPermissionType, &perm);
+  bool isThirdParty = false;
   switch (perm) {
   case nsICookiePermission::ACCESS_SESSION:
     *aIsSession = true;
 
-  case nsIPermissionManager::ALLOW_ACTION: // ACCESS_ALLOW
+  case nsICookiePermission::ACCESS_ALLOW:
     *aResult = true;
     break;
 
-  case nsIPermissionManager::DENY_ACTION:  // ACCESS_DENY
+  case nsICookiePermission::ACCESS_DENY:
     *aResult = false;
+    break;
+
+  case nsICookiePermission::ACCESS_ALLOW_FIRST_PARTY_ONLY:
+    mThirdPartyUtil->IsThirdPartyChannel(aChannel, aURI, &isThirdParty);
+    // If it's third party, we can't set the cookie
+    if (isThirdParty)
+      *aResult = false;
     break;
 
   default:
     // the permission manager has nothing to say about this cookie -
     // so, we apply the default prefs to it.
     NS_ASSERTION(perm == nsIPermissionManager::UNKNOWN_ACTION, "unknown permission");
-    
+
     // now we need to figure out what type of accept policy we're dealing with
     // if we accept cookies normally, just bail and return
     if (mCookiesLifetimePolicy == ACCEPT_NORMALLY) {
       *aResult = true;
       return NS_OK;
     }
-    
+
     // declare this here since it'll be used in all of the remaining cases
-    PRInt64 currentTime = PR_Now() / PR_USEC_PER_SEC;
-    PRInt64 delta = *aExpiry - currentTime;
-    
+    int64_t currentTime = PR_Now() / PR_USEC_PER_SEC;
+    int64_t delta = *aExpiry - currentTime;
+
     // check whether the user wants to be prompted
     if (mCookiesLifetimePolicy == ASK_BEFORE_ACCEPT) {
       // if it's a session cookie and the user wants to accept these 
       // without asking, or if we are in private browsing mode, just
       // accept the cookie and return
       if ((*aIsSession && mCookiesAlwaysAcceptSession) ||
-          InPrivateBrowsing()) {
+          (aChannel && NS_UsePrivateBrowsing(aChannel))) {
         *aResult = true;
         return NS_OK;
       }
-      
+
       // default to rejecting, in case the prompting process fails
       *aResult = false;
 
-      nsCAutoString hostPort;
+      nsAutoCString hostPort;
       aURI->GetHostPort(hostPort);
 
       if (!aCookie) {
@@ -276,24 +272,14 @@ nsCookiePermission::CanSetCookie(nsIURI     *aURI,
           do_GetService(NS_COOKIEPROMPTSERVICE_CONTRACTID, &rv);
       if (NS_FAILED(rv)) return rv;
 
-      // try to get a nsIDOMWindow from the channel...
-      nsCOMPtr<nsIDOMWindow> parent;
-      if (aChannel) {
-        nsCOMPtr<nsILoadContext> ctx;
-        NS_QueryNotificationCallbacks(aChannel, ctx);
-        if (ctx) {
-          ctx->GetAssociatedWindow(getter_AddRefs(parent));
-        }
-      }
-
       // get some useful information to present to the user:
       // whether a previous cookie already exists, and how many cookies this host
       // has set
       bool foundCookie = false;
-      PRUint32 countFromHost;
+      uint32_t countFromHost;
       nsCOMPtr<nsICookieManager2> cookieManager = do_GetService(NS_COOKIEMANAGER_CONTRACTID, &rv);
       if (NS_SUCCEEDED(rv)) {
-        nsCAutoString rawHost;
+        nsAutoCString rawHost;
         aCookie->GetRawHost(rawHost);
         rv = cookieManager->CountCookiesFromHost(rawHost, &countFromHost);
 
@@ -313,8 +299,8 @@ nsCookiePermission::CanSetCookie(nsIURI     *aURI,
       }
 
       bool rememberDecision = false;
-      PRInt32 dialogRes = nsICookiePromptService::DENY_COOKIE;
-      rv = cookiePromptService->CookieDialog(parent, aCookie, hostPort, 
+      int32_t dialogRes = nsICookiePromptService::DENY_COOKIE;
+      rv = cookiePromptService->CookieDialog(nullptr, aCookie, hostPort, 
                                              countFromHost, foundCookie,
                                              &rememberDecision, &dialogRes);
       if (NS_FAILED(rv)) return rv;
@@ -326,11 +312,11 @@ nsCookiePermission::CanSetCookie(nsIURI     *aURI,
       if (rememberDecision) {
         switch (dialogRes) {
           case nsICookiePromptService::DENY_COOKIE:
-            mPermMgr->Add(aURI, kPermissionType, (PRUint32) nsIPermissionManager::DENY_ACTION,
+            mPermMgr->Add(aURI, kPermissionType, (uint32_t) nsIPermissionManager::DENY_ACTION,
                           nsIPermissionManager::EXPIRE_NEVER, 0);
             break;
           case nsICookiePromptService::ACCEPT_COOKIE:
-            mPermMgr->Add(aURI, kPermissionType, (PRUint32) nsIPermissionManager::ALLOW_ACTION,
+            mPermMgr->Add(aURI, kPermissionType, (uint32_t) nsIPermissionManager::ALLOW_ACTION,
                           nsIPermissionManager::EXPIRE_NEVER, 0);
             break;
           case nsICookiePromptService::ACCEPT_SESSION_COOKIE:
@@ -359,104 +345,6 @@ nsCookiePermission::CanSetCookie(nsIURI     *aURI,
   return NS_OK;
 }
 
-NS_IMETHODIMP 
-nsCookiePermission::GetOriginatingURI(nsIChannel  *aChannel,
-                                      nsIURI     **aURI)
-{
-  /* to find the originating URI, we use the loadgroup of the channel to obtain
-   * the window owning the load, and from there, we find the top same-type
-   * window and its URI. there are several possible cases:
-   *
-   * 1) no channel.
-   *
-   * 2) a channel with the "force allow third party cookies" option set.
-   *    since we may not have a window, we return the channel URI in this case.
-   *
-   * 3) a channel, but no window. this can occur when the consumer kicking
-   *    off the load doesn't provide one to the channel, and should be limited
-   *    to loads of certain types of resources.
-   *
-   * 4) a window equal to the top window of same type, with the channel its
-   *    document channel. this covers the case of a freshly kicked-off load
-   *    (e.g. the user typing something in the location bar, or clicking on a
-   *    bookmark), where the window's URI hasn't yet been set, and will be
-   *    bogus. we return the channel URI in this case.
-   *
-   * 5) Anything else. this covers most cases for an ordinary page load from
-   *    the location bar, and will catch nested frames within a page, image
-   *    loads, etc. we return the URI of the root window's document's principal
-   *    in this case.
-   */
-
-  *aURI = nsnull;
-
-  // case 1)
-  if (!aChannel)
-    return NS_ERROR_NULL_POINTER;
-
-  // case 2)
-  nsCOMPtr<nsIHttpChannelInternal> httpChannelInternal = do_QueryInterface(aChannel);
-  if (httpChannelInternal)
-  {
-    bool doForce = false;
-    if (NS_SUCCEEDED(httpChannelInternal->GetForceAllowThirdPartyCookie(&doForce)) && doForce)
-    {
-      // return the channel's URI (we may not have a window)
-      aChannel->GetURI(aURI);
-      if (!*aURI)
-        return NS_ERROR_NULL_POINTER;
-
-      return NS_OK;
-    }
-  }
-
-  // find the associated window and its top window
-  nsCOMPtr<nsILoadContext> ctx;
-  NS_QueryNotificationCallbacks(aChannel, ctx);
-  nsCOMPtr<nsIDOMWindow> topWin, ourWin;
-  if (ctx) {
-    ctx->GetTopWindow(getter_AddRefs(topWin));
-    ctx->GetAssociatedWindow(getter_AddRefs(ourWin));
-  }
-
-  // case 3)
-  if (!topWin)
-    return NS_ERROR_INVALID_ARG;
-
-  // case 4)
-  if (ourWin == topWin) {
-    // Check whether this is the document channel for this window (representing
-    // a load of a new page).  This is a bit of a nasty hack, but we will
-    // hopefully flag these channels better later.
-    nsLoadFlags flags;
-    aChannel->GetLoadFlags(&flags);
-
-    if (flags & nsIChannel::LOAD_DOCUMENT_URI) {
-      // get the channel URI - the window's will be bogus
-      aChannel->GetURI(aURI);
-      if (!*aURI)
-        return NS_ERROR_NULL_POINTER;
-
-      return NS_OK;
-    }
-  }
-
-  // case 5) - get the originating URI from the top window's principal
-  nsCOMPtr<nsIScriptObjectPrincipal> scriptObjPrin = do_QueryInterface(topWin);
-  NS_ENSURE_TRUE(scriptObjPrin, NS_ERROR_UNEXPECTED);
-
-  nsIPrincipal* prin = scriptObjPrin->GetPrincipal();
-  NS_ENSURE_TRUE(prin, NS_ERROR_UNEXPECTED);
-  
-  prin->GetURI(aURI);
-
-  if (!*aURI)
-    return NS_ERROR_NULL_POINTER;
-
-  // all done!
-  return NS_OK;
-}
-
 NS_IMETHODIMP
 nsCookiePermission::Observe(nsISupports     *aSubject,
                             const char      *aTopic,
@@ -469,15 +357,4 @@ nsCookiePermission::Observe(nsISupports     *aSubject,
   if (prefBranch)
     PrefChanged(prefBranch, NS_LossyConvertUTF16toASCII(aData).get());
   return NS_OK;
-}
-
-bool
-nsCookiePermission::InPrivateBrowsing()
-{
-  bool inPrivateBrowsingMode = false;
-  if (!mPBService)
-    mPBService = do_GetService(NS_PRIVATE_BROWSING_SERVICE_CONTRACTID);
-  if (mPBService)
-    mPBService->GetPrivateBrowsingEnabled(&inPrivateBrowsingMode);
-  return inPrivateBrowsingMode;
 }

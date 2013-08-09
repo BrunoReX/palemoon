@@ -15,6 +15,7 @@
 #include "nsDeque.h"
 #include "nsHashKeys.h"
 #include "zlib.h"
+#include "mozilla/Attributes.h"
 
 class nsHttpConnection;
 class nsISocketTransport;
@@ -23,10 +24,10 @@ namespace mozilla { namespace net {
 
 class SpdyStream3;
 
-class SpdySession3 : public ASpdySession
-                   , public nsAHttpConnection
-                   , public nsAHttpSegmentReader
-                   , public nsAHttpSegmentWriter
+class SpdySession3 MOZ_FINAL : public ASpdySession
+                             , public nsAHttpConnection
+                             , public nsAHttpSegmentReader
+                             , public nsAHttpSegmentWriter
 {
 public:
   NS_DECL_ISUPPORTS
@@ -35,10 +36,10 @@ public:
   NS_DECL_NSAHTTPSEGMENTREADER
   NS_DECL_NSAHTTPSEGMENTWRITER
 
-  SpdySession3(nsAHttpTransaction *, nsISocketTransport *, PRInt32);
+  SpdySession3(nsAHttpTransaction *, nsISocketTransport *, int32_t);
   ~SpdySession3();
 
-  bool AddStream(nsAHttpTransaction *, PRInt32);
+  bool AddStream(nsAHttpTransaction *, int32_t);
   bool CanReuse() { return !mShouldGoAway && !mClosed; }
   bool RoomForMoreStreams();
 
@@ -48,14 +49,14 @@ public:
   // Idle time represents time since "goodput".. e.g. a data or header frame
   PRIntervalTime IdleTime();
 
-  PRUint32 RegisterStreamID(SpdyStream3 *);
+  uint32_t RegisterStreamID(SpdyStream3 *);
 
-  const static PRUint8 kVersion        = 3;
+  const static uint8_t kVersion        = 3;
 
-  const static PRUint8 kFlag_Control   = 0x80;
+  const static uint8_t kFlag_Control   = 0x80;
 
-  const static PRUint8 kFlag_Data_FIN  = 0x01;
-  const static PRUint8 kFlag_Data_UNI  = 0x02;
+  const static uint8_t kFlag_Data_FIN  = 0x01;
+  const static uint8_t kFlag_Data_UNI  = 0x02;
   
   enum
   {
@@ -88,6 +89,14 @@ public:
     RST_FRAME_TOO_LARGE = 11
   };
 
+  enum goawayReason
+  {
+    OK = 0,
+    PROTOCOL_ERROR = 1,
+    INTERNAL_ERROR = 2,    // sometimes misdocumented as 11
+    NUM_STATUS_CODES = 3   // reserved by chromium but undocumented
+  };
+
   enum
   {
     SETTINGS_TYPE_UPLOAD_BW = 1, // kb/s
@@ -104,30 +113,30 @@ public:
   // but if it needs to grow for huge headers it can do so dynamically.
   // About 1% of requests to SPDY google services seem to be > 1000
   // with all less than 2000.
-  const static PRUint32 kDefaultBufferSize = 2048;
+  const static uint32_t kDefaultBufferSize = 2048;
 
   // kDefaultQueueSize must be >= other queue size constants
-  const static PRUint32 kDefaultQueueSize =  16384;
-  const static PRUint32 kQueueMinimumCleanup = 8192;
-  const static PRUint32 kQueueTailRoom    =  4096;
-  const static PRUint32 kQueueReserved    =  1024;
+  const static uint32_t kDefaultQueueSize =  32768;
+  const static uint32_t kQueueMinimumCleanup = 24576;
+  const static uint32_t kQueueTailRoom    =  4096;
+  const static uint32_t kQueueReserved    =  1024;
 
-  const static PRUint32 kDefaultMaxConcurrent = 100;
-  const static PRUint32 kMaxStreamID = 0x7800000;
+  const static uint32_t kDefaultMaxConcurrent = 100;
+  const static uint32_t kMaxStreamID = 0x7800000;
 
   // This is a sentinel for a deleted stream. It is not a valid
   // 31 bit stream ID.
-  const static PRUint32 kDeadStreamID = 0xffffdead;
+  const static uint32_t kDeadStreamID = 0xffffdead;
 
   // until we have an API that can push back on receiving data (right now
   // WriteSegments is obligated to accept data and buffer) there is no
   // reason to throttle with the rwin other than in server push
   // scenarios.
-  const static PRUint32 kInitialRwin = 256 * 1024 * 1024;
-  const static PRUint32 kMinimumToAck = 64 * 1024;
+  const static uint32_t kInitialRwin = 256 * 1024 * 1024;
+  const static uint32_t kMinimumToAck = 64 * 1024;
 
   // The default peer rwin is 64KB unless updated by a settings frame
-  const static PRUint32 kDefaultServerRwin = 64 * 1024;
+  const static uint32_t kDefaultServerRwin = 64 * 1024;
 
   static nsresult HandleSynStream(SpdySession3 *);
   static nsresult HandleSynReply(SpdySession3 *);
@@ -140,11 +149,11 @@ public:
   static nsresult HandleWindowUpdate(SpdySession3 *);
 
   static void EnsureBuffer(nsAutoArrayPtr<char> &,
-                           PRUint32, PRUint32, PRUint32 &);
+                           uint32_t, uint32_t, uint32_t &);
 
   // For writing the SPDY data stream to LOG4
   static void LogIO(SpdySession3 *, SpdyStream3 *, const char *,
-                    const char *, PRUint32);
+                    const char *, uint32_t);
 
   // an overload of nsAHttpConnection
   void TransactionHasDataToWrite(nsAHttpTransaction *);
@@ -153,9 +162,9 @@ public:
   void TransactionHasDataToWrite(SpdyStream3 *);
 
   // an overload of nsAHttpSegementReader
-  virtual nsresult CommitToSegmentSize(PRUint32 size);
+  virtual nsresult CommitToSegmentSize(uint32_t size);
   
-  PRUint32 GetServerInitialWindow() { return mServerInitialWindow; }
+  uint32_t GetServerInitialWindow() { return mServerInitialWindow; }
 
   void     PrintDiagnostics (nsCString &log);
 
@@ -170,17 +179,15 @@ private:
     PROCESSING_CONTROL_RST_STREAM
   };
 
-  void        DeterminePingThreshold();
   nsresult    ResponseHeadersComplete();
-  PRUint32    GetWriteQueueSize();
+  uint32_t    GetWriteQueueSize();
   void        ChangeDownstreamState(enum stateType);
   void        ResetDownstreamState();
-  nsresult    UncompressAndDiscard(PRUint32, PRUint32);
+  nsresult    UncompressAndDiscard(uint32_t, uint32_t);
   void        zlibInit();
-  void        GeneratePing(PRUint32);
-  void        ClearPing(bool);
-  void        GenerateRstStream(PRUint32, PRUint32);
-  void        GenerateGoAway();
+  void        GeneratePing(uint32_t);
+  void        GenerateRstStream(uint32_t, uint32_t);
+  void        GenerateGoAway(uint32_t);
   void        CleanupStream(SpdyStream3 *, nsresult, rstReason);
   void        CloseStream(SpdyStream3 *, nsresult);
   void        GenerateSettings();
@@ -191,15 +198,15 @@ private:
   bool        RoomForMoreConcurrent();
   void        ActivateStream(SpdyStream3 *);
   void        ProcessPending();
-  nsresult    SetInputFrameDataStream(PRUint32);
-  bool        VerifyStream(SpdyStream3 *, PRUint32);
+  nsresult    SetInputFrameDataStream(uint32_t);
+  bool        VerifyStream(SpdyStream3 *, uint32_t);
   void        SetNeedsCleanup();
 
-  void        UpdateLocalRwin(SpdyStream3 *stream, PRUint32 bytes);
+  void        UpdateLocalRwin(SpdyStream3 *stream, uint32_t bytes);
 
   // a wrapper for all calls to the nshttpconnection level segment writer. Used
   // to track network I/O for timeout purposes
-  nsresult   NetworkRead(nsAHttpSegmentWriter *, char *, PRUint32, PRUint32 *);
+  nsresult   NetworkRead(nsAHttpSegmentWriter *, char *, uint32_t, uint32_t *);
   
   static PLDHashOperator ShutdownEnumerator(nsAHttpTransaction *,
                                             nsAutoPtr<SpdyStream3> &,
@@ -223,9 +230,9 @@ private:
   nsAHttpSegmentReader       *mSegmentReader;
   nsAHttpSegmentWriter       *mSegmentWriter;
 
-  PRUint32          mSendingChunkSize;        /* the transmission chunk size */
-  PRUint32          mNextStreamID;            /* 24 bits */
-  PRUint32          mConcurrentHighWater;     /* max parallelism on session */
+  uint32_t          mSendingChunkSize;        /* the transmission chunk size */
+  uint32_t          mNextStreamID;            /* 24 bits */
+  uint32_t          mConcurrentHighWater;     /* max parallelism on session */
 
   stateType         mDownstreamState; /* in frame, between frames, etc..  */
 
@@ -251,15 +258,15 @@ private:
 
   // mInputFrameBuffer is used to store received control packets and the 8 bytes
   // of header on data packets
-  PRUint32             mInputFrameBufferSize;
-  PRUint32             mInputFrameBufferUsed;
+  uint32_t             mInputFrameBufferSize;
+  uint32_t             mInputFrameBufferUsed;
   nsAutoArrayPtr<char> mInputFrameBuffer;
   
   // mInputFrameDataSize/Read are used for tracking the amount of data consumed
   // in a data frame. the data itself is not buffered in spdy
   // The frame size is mInputFrameDataSize + the constant 8 byte header
-  PRUint32             mInputFrameDataSize;
-  PRUint32             mInputFrameDataRead;
+  uint32_t             mInputFrameDataSize;
+  uint32_t             mInputFrameDataRead;
   bool                 mInputFrameDataLast; // This frame was marked FIN
 
   // When a frame has been received that is addressed to a particular stream
@@ -275,15 +282,15 @@ private:
   SpdyStream3          *mNeedsCleanup;
 
   // The CONTROL_TYPE value for a control frame
-  PRUint32             mFrameControlType;
+  uint32_t             mFrameControlType;
 
   // This reason code in the last processed RESET frame
-  PRUint32             mDownstreamRstReason;
+  uint32_t             mDownstreamRstReason;
 
   // for the conversion of downstream http headers into spdy formatted headers
   // The data here does not persist between frames
   nsCString            mFlatHTTPResponseHeaders;
-  PRUint32             mFlatHTTPResponseHeadersOut;
+  uint32_t             mFlatHTTPResponseHeadersOut;
 
   // when set, the session will go away when it reaches 0 streams. This flag
   // is set when: the stream IDs are running out (at either the client or the
@@ -305,40 +312,39 @@ private:
 
   // If a GoAway message was received this is the ID of the last valid
   // stream. 0 otherwise. (0 is never a valid stream id.)
-  PRUint32             mGoAwayID;
+  uint32_t             mGoAwayID;
 
   // The limit on number of concurrent streams for this session. Normally it
   // is basically unlimited, but the SETTINGS control message from the
   // server might bring it down.
-  PRUint32             mMaxConcurrent;
+  uint32_t             mMaxConcurrent;
 
   // The actual number of concurrent streams at this moment. Generally below
   // mMaxConcurrent, but the max can be lowered in real time to a value
   // below the current value
-  PRUint32             mConcurrent;
+  uint32_t             mConcurrent;
 
   // The number of server initiated SYN-STREAMS, tracked for telemetry
-  PRUint32             mServerPushedResources;
+  uint32_t             mServerPushedResources;
 
   // The server rwin for new streams as determined from a SETTINGS frame
-  PRUint32             mServerInitialWindow;
+  uint32_t             mServerInitialWindow;
 
   // This is a output queue of bytes ready to be written to the SSL stream.
   // When that streams returns WOULD_BLOCK on direct write the bytes get
   // coalesced together here. This results in larger writes to the SSL layer.
   // The buffer is not dynamically grown to accomodate stream writes, but
   // does expand to accept infallible session wide frames like GoAway and RST.
-  PRUint32             mOutputQueueSize;
-  PRUint32             mOutputQueueUsed;
-  PRUint32             mOutputQueueSent;
+  uint32_t             mOutputQueueSize;
+  uint32_t             mOutputQueueUsed;
+  uint32_t             mOutputQueueSent;
   nsAutoArrayPtr<char> mOutputQueueBuffer;
 
   PRIntervalTime       mPingThreshold;
   PRIntervalTime       mLastReadEpoch;     // used for ping timeouts
   PRIntervalTime       mLastDataReadEpoch; // used for IdleTime()
   PRIntervalTime       mPingSentEpoch;
-  PRUint32             mNextPingID;
-  bool                 mPingThresholdExperiment;
+  uint32_t             mNextPingID;
 };
 
 }} // namespace mozilla::net

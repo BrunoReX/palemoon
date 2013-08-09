@@ -20,20 +20,19 @@
 const Cu = Components.utils;
 
 Cu.import("resource://services-common/log4moz.js");
-Cu.import("resource://services-sync/engines.js");
 Cu.import("resource://services-sync/util.js");
 Cu.import("resource://gre/modules/AddonManager.jsm");
 
 const DEFAULT_STATE_FILE = "addonsreconciler";
 
-const CHANGE_INSTALLED   = 1;
-const CHANGE_UNINSTALLED = 2;
-const CHANGE_ENABLED     = 3;
-const CHANGE_DISABLED    = 4;
+this.CHANGE_INSTALLED   = 1;
+this.CHANGE_UNINSTALLED = 2;
+this.CHANGE_ENABLED     = 3;
+this.CHANGE_DISABLED    = 4;
 
-const EXPORTED_SYMBOLS = ["AddonsReconciler", "CHANGE_INSTALLED",
-                          "CHANGE_UNINSTALLED", "CHANGE_ENABLED",
-                          "CHANGE_DISABLED"];
+this.EXPORTED_SYMBOLS = ["AddonsReconciler", "CHANGE_INSTALLED",
+                         "CHANGE_UNINSTALLED", "CHANGE_ENABLED",
+                         "CHANGE_DISABLED"];
 /**
  * Maintains state of add-ons.
  *
@@ -114,13 +113,11 @@ const EXPORTED_SYMBOLS = ["AddonsReconciler", "CHANGE_INSTALLED",
  * events will occur immediately. However, we still see disabling events and
  * heed them like they were normal. In the end, the state is proper.
  */
-function AddonsReconciler() {
+this.AddonsReconciler = function AddonsReconciler() {
   this._log = Log4Moz.repository.getLogger("Sync.AddonsReconciler");
   let level = Svc.Prefs.get("log.logger.addonsreconciler", "Debug");
   this._log.level = Log4Moz.Level[level];
 
-  Svc.Obs.add("weave:engine:start-tracking", this.startListening, this);
-  Svc.Obs.add("weave:engine:stop-tracking", this.stopListening, this);
   Svc.Obs.add("xpcom-shutdown", this.stopListening, this);
 };
 AddonsReconciler.prototype = {
@@ -301,8 +298,7 @@ AddonsReconciler.prototype = {
    * This is typically called automatically when Sync is loaded.
    */
   startListening: function startListening() {
-    let engine = Engines.get("addons");
-    if (!engine || !engine.enabled || this._listening) {
+    if (this._listening) {
       return;
     }
 

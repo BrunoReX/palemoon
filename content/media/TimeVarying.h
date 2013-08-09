@@ -57,8 +57,8 @@ public:
    */
   void SetAtAndAfter(Time aTime, const T& aValue)
   {
-    for (PRInt32 i = mChanges.Length() - 1; i >= 0; --i) {
-      NS_ASSERTION(i == PRInt32(mChanges.Length() - 1),
+    for (int32_t i = mChanges.Length() - 1; i >= 0; --i) {
+      NS_ASSERTION(i == int32_t(mChanges.Length() - 1),
                    "Always considering last element of array");
       if (aTime > mChanges[i].mTime) {
         if (mChanges[i].mValue != aValue) {
@@ -81,13 +81,13 @@ public:
   /**
    * Returns the final value of the function. If aTime is non-null,
    * sets aTime to the time at which the function changes to that final value.
-   * If there are no changes after the current time, returns PR_INT64_MIN in aTime.
+   * If there are no changes after the current time, returns INT64_MIN in aTime.
    */
-  const T& GetLast(Time* aTime = nsnull) const
+  const T& GetLast(Time* aTime = nullptr) const
   {
     if (mChanges.IsEmpty()) {
       if (aTime) {
-        *aTime = PR_INT64_MIN;
+        *aTime = INT64_MIN;
       }
       return mCurrent;
     }
@@ -104,11 +104,11 @@ public:
     if (mChanges.IsEmpty() || aTime <= mChanges[0].mTime) {
       return mCurrent;
     }
-    PRInt32 changesLength = mChanges.Length();
+    int32_t changesLength = mChanges.Length();
     if (mChanges[changesLength - 1].mTime < aTime) {
       return mChanges[changesLength - 1].mValue;
     }
-    for (PRUint32 i = 1; ; ++i) {
+    for (uint32_t i = 1; ; ++i) {
       if (aTime <= mChanges[i].mTime) {
         NS_ASSERTION(mChanges[i].mValue != mChanges[i - 1].mValue,
                      "Only changed values appear in array");
@@ -119,29 +119,29 @@ public:
   /**
    * Returns the value of the function at time aTime.
    * If aEnd is non-null, sets *aEnd to the time at which the function will
-   * change from the returned value to a new value, or PR_INT64_MAX if that
+   * change from the returned value to a new value, or INT64_MAX if that
    * never happens.
    * If aStart is non-null, sets *aStart to the time at which the function
-   * changed to the returned value, or PR_INT64_MIN if that happened at or
+   * changed to the returned value, or INT64_MIN if that happened at or
    * before the current time.
    *
    * Currently uses a linear search, but could use a binary search.
    */
-  const T& GetAt(Time aTime, Time* aEnd = nsnull, Time* aStart = nsnull) const
+  const T& GetAt(Time aTime, Time* aEnd = nullptr, Time* aStart = nullptr) const
   {
     if (mChanges.IsEmpty() || aTime < mChanges[0].mTime) {
       if (aStart) {
-        *aStart = PR_INT64_MIN;
+        *aStart = INT64_MIN;
       }
       if (aEnd) {
-        *aEnd = mChanges.IsEmpty() ? PR_INT64_MAX : mChanges[0].mTime;
+        *aEnd = mChanges.IsEmpty() ? INT64_MAX : mChanges[0].mTime;
       }
       return mCurrent;
     }
-    PRInt32 changesLength = mChanges.Length();
+    int32_t changesLength = mChanges.Length();
     if (mChanges[changesLength - 1].mTime <= aTime) {
       if (aEnd) {
-        *aEnd = PR_INT64_MAX;
+        *aEnd = INT64_MAX;
       }
       if (aStart) {
         *aStart = mChanges[changesLength - 1].mTime;
@@ -149,7 +149,7 @@ public:
       return mChanges[changesLength - 1].mValue;
     }
 
-    for (PRUint32 i = 1; ; ++i) {
+    for (uint32_t i = 1; ; ++i) {
       if (aTime < mChanges[i].mTime) {
         if (aEnd) {
           *aEnd = mChanges[i].mTime;
@@ -168,7 +168,7 @@ public:
    */
   void AdvanceCurrentTime(Time aTime)
   {
-    for (PRUint32 i = 0; i < mChanges.Length(); ++i) {
+    for (uint32_t i = 0; i < mChanges.Length(); ++i) {
       if (aTime < mChanges[i].mTime) {
         mChanges.RemoveElementsAt(0, i);
         return;
@@ -183,7 +183,7 @@ public:
    */
   void InsertTimeAtStart(Time aDelta)
   {
-    for (PRUint32 i = 0; i < mChanges.Length(); ++i) {
+    for (uint32_t i = 0; i < mChanges.Length(); ++i) {
       mChanges[i].mTime += aDelta;
     }
   }
@@ -200,7 +200,7 @@ public:
                  "Negative time not allowed here");
     NS_ASSERTION(&aOther != this, "Can't self-append");
     SetAtAndAfter(aTimeOffset, aOther.mCurrent);
-    for (PRUint32 i = 0; i < aOther.mChanges.Length(); ++i) {
+    for (uint32_t i = 0; i < aOther.mChanges.Length(); ++i) {
       const Entry& e = aOther.mChanges[i];
       SetAtAndAfter(aTimeOffset + e.mTime, e.mValue);
     }

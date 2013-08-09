@@ -16,13 +16,14 @@
 #include "nsIServiceManager.h"
 #include "mozilla/Services.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Attributes.h"
 
 using namespace mozilla;
 
 // static
 bool nsHtml5Module::sOffMainThread = true;
-nsIThread* nsHtml5Module::sStreamParserThread = nsnull;
-nsIThread* nsHtml5Module::sMainThread = nsnull;
+nsIThread* nsHtml5Module::sStreamParserThread = nullptr;
+nsIThread* nsHtml5Module::sMainThread = nullptr;
 
 // static
 void
@@ -85,7 +86,7 @@ nsHtml5Module::Initialize(nsIParser* aParser, nsIDocument* aDoc, nsIURI* aURI, n
   return parser->Initialize(aDoc, aURI, aContainer, aChannel);
 }
 
-class nsHtml5ParserThreadTerminator : public nsIObserver
+class nsHtml5ParserThreadTerminator MOZ_FINAL : public nsIObserver
 {
   public:
     NS_DECL_ISUPPORTS
@@ -98,7 +99,7 @@ class nsHtml5ParserThreadTerminator : public nsIObserver
                    "Unexpected topic");
       if (mThread) {
         mThread->Shutdown();
-        mThread = nsnull;
+        mThread = nullptr;
       }
       return NS_OK;
     }
@@ -114,7 +115,7 @@ nsHtml5Module::GetStreamParserThread()
 {
   if (sOffMainThread) {
     if (!sStreamParserThread) {
-      NS_NewThread(&sStreamParserThread);
+      NS_NewNamedThread("HTML5 Parser", &sStreamParserThread);
       NS_ASSERTION(sStreamParserThread, "Thread creation failed!");
       nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
       NS_ASSERTION(os, "do_GetService failed");

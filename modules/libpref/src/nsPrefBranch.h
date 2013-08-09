@@ -11,7 +11,7 @@
 #include "nsXPCOM.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIRelativeFilePref.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsString.h"
 #include "nsVoidArray.h"
 #include "nsTArray.h"
@@ -37,7 +37,7 @@ class PrefCallback : public PLDHashEntryHdr {
 
     static PLDHashNumber HashKey(const PrefCallback *aKey)
     {
-      PRUint32 hash = mozilla::HashString(aKey->mDomain);
+      uint32_t hash = mozilla::HashString(aKey->mDomain);
       return mozilla::AddToHash(hash, aKey->mCanonical);
     }
 
@@ -48,7 +48,7 @@ class PrefCallback : public PLDHashEntryHdr {
                  nsPrefBranch *aBranch)
       : mDomain(aDomain),
         mBranch(aBranch),
-        mWeakRef(nsnull),
+        mWeakRef(nullptr),
         mStrongRef(aObserver)
     {
       MOZ_COUNT_CTOR(PrefCallback);
@@ -63,7 +63,7 @@ class PrefCallback : public PLDHashEntryHdr {
       : mDomain(aDomain),
         mBranch(aBranch),
         mWeakRef(do_GetWeakReference(aObserver)),
-        mStrongRef(nsnull)
+        mStrongRef(nullptr)
     {
       MOZ_COUNT_CTOR(PrefCallback);
       nsCOMPtr<nsISupports> canonical = do_QueryInterface(aObserver);
@@ -181,11 +181,13 @@ public:
   nsPrefBranch(const char *aPrefRoot, bool aDefaultBranch);
   virtual ~nsPrefBranch();
 
-  PRInt32 GetRootLength() { return mPrefRootLength; }
+  int32_t GetRootLength() { return mPrefRootLength; }
 
   nsresult RemoveObserverFromMap(const char *aDomain, nsISupports *aObserver);
 
   static nsresult NotifyObserver(const char *newpref, void *data);
+
+  size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf);
 
 protected:
   nsPrefBranch()    /* disallow use of this constructer */
@@ -202,7 +204,7 @@ protected:
                      void *aArgs);
 
 private:
-  PRInt32               mPrefRootLength;
+  int32_t               mPrefRootLength;
   nsCString             mPrefRoot;
   bool                  mIsDefault;
 
@@ -227,7 +229,7 @@ public:
 private:
   NS_IMETHOD GetData(PRUnichar**);
   NS_IMETHOD SetData(const PRUnichar* aData);
-  NS_IMETHOD SetDataWithLength(PRUint32 aLength, const PRUnichar *aData);
+  NS_IMETHOD SetDataWithLength(uint32_t aLength, const PRUnichar *aData);
 
   nsCOMPtr<nsISupportsString> mUnicodeString;
 };
@@ -243,6 +245,6 @@ public:
   virtual       ~nsRelativeFilePref();
   
 private:
-  nsCOMPtr<nsILocalFile> mFile;
+  nsCOMPtr<nsIFile> mFile;
   nsCString mRelativeToKey;
 };

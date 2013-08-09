@@ -10,23 +10,40 @@
 #include "mozilla/dom/sms/SmsChild.h"
 #include "mozilla/dom/sms/SmsMessage.h"
 #include "SmsFilter.h"
+#include "SmsRequest.h"
+#include "SmsSegmentInfo.h"
 
 namespace mozilla {
 namespace dom {
 namespace sms {
 
-PSmsChild* SmsIPCService::sSmsChild = nsnull;
+PSmsChild* gSmsChild;
 
 NS_IMPL_ISUPPORTS2(SmsIPCService, nsISmsService, nsISmsDatabaseService)
 
-/* static */ PSmsChild*
+void
+SendRequest(const IPCSmsRequest& aRequest, nsISmsRequest* aRequestReply)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  NS_WARN_IF_FALSE(gSmsChild,
+                   "Calling methods on SmsIPCService during "
+                   "shutdown!");
+
+  if (gSmsChild) {
+    SmsRequestChild* actor = new SmsRequestChild(aRequestReply);
+    gSmsChild->SendPSmsRequestConstructor(actor, aRequest);
+  }
+}
+
+PSmsChild*
 SmsIPCService::GetSmsChild()
 {
-  if (!sSmsChild) {
-    sSmsChild = ContentChild::GetSingleton()->SendPSmsConstructor();
+  if (!gSmsChild) {
+    gSmsChild = ContentChild::GetSingleton()->SendPSmsConstructor();
   }
 
-  return sSmsChild;
+  return gSmsChild;
 }
 
 /*
@@ -41,114 +58,115 @@ SmsIPCService::HasSupport(bool* aHasSupport)
 }
 
 NS_IMETHODIMP
-SmsIPCService::GetNumberOfMessagesForText(const nsAString& aText, PRUint16* aResult)
+SmsIPCService::GetSegmentInfoForText(const nsAString & aText,
+                                     nsIDOMMozSmsSegmentInfo** aResult)
 {
-  GetSmsChild()->SendGetNumberOfMessagesForText(nsString(aText), aResult);
+  SmsSegmentInfoData data;
+  bool ok = GetSmsChild()->SendGetSegmentInfoForText(nsString(aText), &data);
+  NS_ENSURE_TRUE(ok, NS_ERROR_FAILURE);
 
+  nsCOMPtr<nsIDOMMozSmsSegmentInfo> info = new SmsSegmentInfo(data);
+  info.forget(aResult);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-SmsIPCService::Send(const nsAString& aNumber, const nsAString& aMessage,
-                    PRInt32 aRequestId, PRUint64 aProcessId)
+SmsIPCService::Send(const nsAString& aNumber,
+                    const nsAString& aMessage,
+                    nsISmsRequest* aRequest)
 {
-  GetSmsChild()->SendSendMessage(nsString(aNumber), nsString(aMessage),
-                                 aRequestId, ContentChild::GetSingleton()->GetID());
-
+  SendRequest(SendMessageRequest(nsString(aNumber), nsString(aMessage)), aRequest);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-SmsIPCService::CreateSmsMessage(PRInt32 aId,
+SmsIPCService::CreateSmsMessage(int32_t aId,
                                 const nsAString& aDelivery,
+                                const nsAString& aDeliveryStatus,
                                 const nsAString& aSender,
                                 const nsAString& aReceiver,
                                 const nsAString& aBody,
+                                const nsAString& aMessageClass,
                                 const jsval& aTimestamp,
                                 const bool aRead,
                                 JSContext* aCx,
                                 nsIDOMMozSmsMessage** aMessage)
 {
-  return SmsMessage::Create(aId, aDelivery, aSender, aReceiver, aBody,
-                            aTimestamp, aRead, aCx, aMessage);
+  return SmsMessage::Create(aId, aDelivery, aDeliveryStatus,
+                            aSender, aReceiver,
+                            aBody, aMessageClass, aTimestamp, aRead,
+                            aCx, aMessage);
+}
+
+NS_IMETHODIMP
+SmsIPCService::CreateSmsSegmentInfo(int32_t aSegments,
+                                    int32_t aCharsPerSegment,
+                                    int32_t aCharsAvailableInLastSegment,
+                                    nsIDOMMozSmsSegmentInfo** aSegmentInfo)
+{
+  nsCOMPtr<nsIDOMMozSmsSegmentInfo> info =
+      new SmsSegmentInfo(aSegments, aCharsPerSegment, aCharsAvailableInLastSegment);
+  info.forget(aSegmentInfo);
+  return NS_OK;
 }
 
 /*
  * Implementation of nsISmsDatabaseService.
  */
 NS_IMETHODIMP
-SmsIPCService::SaveReceivedMessage(const nsAString& aSender,
-                                   const nsAString& aBody,
-                                   PRUint64 aDate, PRInt32* aId)
+SmsIPCService::GetMessageMoz(int32_t aMessageId,
+                             nsISmsRequest* aRequest)
 {
-  GetSmsChild()->SendSaveReceivedMessage(nsString(aSender), nsString(aBody),
-                                         aDate, aId);
-
+  SendRequest(GetMessageRequest(aMessageId), aRequest);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-SmsIPCService::SaveSentMessage(const nsAString& aReceiver,
-                               const nsAString& aBody,
-                               PRUint64 aDate, PRInt32* aId)
+SmsIPCService::DeleteMessage(int32_t aMessageId,
+                             nsISmsRequest* aRequest)
 {
-  GetSmsChild()->SendSaveSentMessage(nsString(aReceiver), nsString(aBody),
-                                     aDate, aId);
-
+  SendRequest(DeleteMessageRequest(aMessageId), aRequest);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-SmsIPCService::GetMessageMoz(PRInt32 aMessageId, PRInt32 aRequestId,
-                             PRUint64 aProcessId)
+SmsIPCService::CreateMessageList(nsIDOMMozSmsFilter* aFilter,
+                                 bool aReverse,
+                                 nsISmsRequest* aRequest)
 {
-  GetSmsChild()->SendGetMessage(aMessageId, aRequestId,
-                                ContentChild::GetSingleton()->GetID());
+  SmsFilterData data = SmsFilterData(static_cast<SmsFilter*>(aFilter)->GetData());
+  SendRequest(CreateMessageListRequest(data, aReverse), aRequest);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-SmsIPCService::DeleteMessage(PRInt32 aMessageId, PRInt32 aRequestId,
-                             PRUint64 aProcessId)
+SmsIPCService::GetNextMessageInList(int32_t aListId,
+                                    nsISmsRequest* aRequest)
 {
-  GetSmsChild()->SendDeleteMessage(aMessageId, aRequestId,
-                                   ContentChild::GetSingleton()->GetID());
+  SendRequest(GetNextMessageInListRequest(aListId), aRequest);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-SmsIPCService::CreateMessageList(nsIDOMMozSmsFilter* aFilter, bool aReverse,
-                                 PRInt32 aRequestId, PRUint64 aProcessId)
-{
-  SmsFilter* filter = static_cast<SmsFilter*>(aFilter);
-  GetSmsChild()->SendCreateMessageList(filter->GetData(), aReverse, aRequestId,
-                                       ContentChild::GetSingleton()->GetID());
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-SmsIPCService::GetNextMessageInList(PRInt32 aListId, PRInt32 aRequestId,
-                                    PRUint64 aProcessId)
-{
-  GetSmsChild()->SendGetNextMessageInList(aListId, aRequestId,
-                                          ContentChild::GetSingleton()->GetID());
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-SmsIPCService::ClearMessageList(PRInt32 aListId)
+SmsIPCService::ClearMessageList(int32_t aListId)
 {
   GetSmsChild()->SendClearMessageList(aListId);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-SmsIPCService::MarkMessageRead(PRInt32 aMessageId, bool aValue,
-                               PRInt32 aRequestId, PRUint64 aProcessId)
+SmsIPCService::MarkMessageRead(int32_t aMessageId,
+                               bool aValue,
+                               nsISmsRequest* aRequest)
 {
-  GetSmsChild()->SendMarkMessageRead(aMessageId, aValue, aRequestId,
-                                     ContentChild::GetSingleton()->GetID());
+  SendRequest(MarkMessageReadRequest(aMessageId, aValue), aRequest);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+SmsIPCService::GetThreadList(nsISmsRequest* aRequest)
+{
+  SendRequest(GetThreadListRequest(), aRequest);
   return NS_OK;
 }
 

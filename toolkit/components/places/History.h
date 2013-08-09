@@ -48,14 +48,6 @@ public:
   History();
 
   /**
-   * Notifies about the visited status of a given URI.
-   *
-   * @param aURI
-   *        The URI to notify about.
-   */
-  void NotifyVisited(nsIURI* aURI);
-
-  /**
    * Obtains the statement to use to check if a URI is visited or not.
    */
   mozIStorageAsyncStatement* GetIsVisitedStatement();
@@ -107,7 +99,7 @@ public:
   GetStatement(const char (&aQuery)[N])
   {
     mozIStorageConnection* dbConn = GetDBConn();
-    NS_ENSURE_TRUE(dbConn, nsnull);
+    NS_ENSURE_TRUE(dbConn, nullptr);
     return mDB->GetStatement(aQuery);
   }
 

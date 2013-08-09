@@ -7,22 +7,25 @@
 
 using namespace mozilla;
 
-void PR_CALLBACK nsPSMBackgroundThread::nsThreadRunner(void *arg)
+void nsPSMBackgroundThread::nsThreadRunner(void *arg)
 {
   nsPSMBackgroundThread *self = static_cast<nsPSMBackgroundThread *>(arg);
+  PR_SetCurrentThreadName(self->mName.BeginReading());
   self->Run();
 }
 
 nsPSMBackgroundThread::nsPSMBackgroundThread()
-: mThreadHandle(nsnull),
+: mThreadHandle(nullptr),
   mMutex("nsPSMBackgroundThread.mMutex"),
   mCond(mMutex, "nsPSMBackgroundThread.mCond"),
   mExitState(ePSMThreadRunning)
 {
 }
 
-nsresult nsPSMBackgroundThread::startThread()
+nsresult nsPSMBackgroundThread::startThread(const nsCSubstring & name)
 {
+  mName = name;
+
   mThreadHandle = PR_CreateThread(PR_USER_THREAD, nsThreadRunner, static_cast<void*>(this), 
     PR_PRIORITY_NORMAL, PR_LOCAL_THREAD, PR_JOINABLE_THREAD, 0);
 
@@ -83,5 +86,5 @@ void nsPSMBackgroundThread::requestExit()
   }
 
   PR_JoinThread(mThreadHandle);
-  mThreadHandle = nsnull;
+  mThreadHandle = nullptr;
 }

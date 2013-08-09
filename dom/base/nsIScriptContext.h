@@ -45,8 +45,8 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsIScriptContextPrincipal,
                               NS_ISCRIPTCONTEXTPRINCIPAL_IID)
 
 #define NS_ISCRIPTCONTEXT_IID \
-  { 0xec47ccd4, 0x5f6a, 0x40d6, \
-    { 0xbc, 0x2f, 0x5a, 0x1e, 0xd3, 0xe4, 0xb4, 0xff } }
+{ 0x95870c91, 0xe21d, 0x4499, \
+  { 0x9b, 0x61, 0x45, 0x79, 0x5f, 0x12, 0x0c, 0x98 } }
 
 /* This MUST match JSVERSION_DEFAULT.  This version stuff if we don't
    know what language we have is a little silly... */
@@ -61,14 +61,12 @@ class nsIScriptContext : public nsIScriptContextPrincipal
 public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_ISCRIPTCONTEXT_IID)
 
-  virtual void SetGlobalObject(nsIScriptGlobalObject* aGlobalObject) = 0;
-
   /**
    * Compile and execute a script.
    *
    * @param aScript a string representing the script to be executed
    * @param aScopeObject a script object for the scope to execute in, or
-   *                     nsnull to use a default scope
+   *                     nullptr to use a default scope
    * @param aPrincipal the principal the script should be evaluated with
    * @param aOriginPrincipal the principal the script originates from.  If null,
    *                         aPrincipal is used.
@@ -89,7 +87,7 @@ public:
                                   nsIPrincipal *aPrincipal,
                                   nsIPrincipal *aOriginPrincipal,
                                   const char *aURL,
-                                  PRUint32 aLineNo,
+                                  uint32_t aLineNo,
                                   JSVersion aVersion,
                                   nsAString *aRetValue,
                                   bool* aIsUndefined) = 0;
@@ -98,8 +96,8 @@ public:
                                            JSObject* aScopeObject,
                                            nsIPrincipal *aPrincipal,
                                            const char *aURL,
-                                           PRUint32 aLineNo,
-                                           PRUint32 aVersion,
+                                           uint32_t aLineNo,
+                                           uint32_t aVersion,
                                            JS::Value* aRetValue,
                                            bool* aIsUndefined) = 0;
 
@@ -114,24 +112,26 @@ public:
    * @param aVersion the script language version to use when executing
    * @param aScriptObject an executable object that's the result of compiling
    *                      the script.
+   * @param aSaveSource force the source code to be saved by the JS engine in memory
    *
    * @return NS_OK if the script source was valid and got compiled.
    *
    **/
   virtual nsresult CompileScript(const PRUnichar* aText,
-                                 PRInt32 aTextLength,
+                                 int32_t aTextLength,
                                  nsIPrincipal* aPrincipal,
                                  const char* aURL,
-                                 PRUint32 aLineNo,
-                                 PRUint32 aVersion,
-                                 nsScriptObjectHolder<JSScript>& aScriptObject) = 0;
+                                 uint32_t aLineNo,
+                                 uint32_t aVersion,
+                                 nsScriptObjectHolder<JSScript>& aScriptObject,
+                                 bool aSaveSource = false) = 0;
 
   /**
    * Execute a precompiled script object.
    *
    * @param aScriptObject an object representing the script to be executed
    * @param aScopeObject an object telling the scope in which to execute,
-   *                     or nsnull to use a default scope
+   *                     or nullptr to use a default scope
    * @param aRetValue the result of executing the script, may be null in
    *                  which case no result string is computed
    * @param aIsUndefined true if the result of executing the script is the
@@ -173,12 +173,13 @@ public:
    * @return NS_OK if the function body was valid and got compiled
    */
   virtual nsresult CompileEventHandler(nsIAtom* aName,
-                                       PRUint32 aArgCount,
+                                       uint32_t aArgCount,
                                        const char** aArgNames,
                                        const nsAString& aBody,
                                        const char* aURL,
-                                       PRUint32 aLineNo,
-                                       PRUint32 aVersion,
+                                       uint32_t aLineNo,
+                                       uint32_t aVersion,
+                                       bool aIsXBL,
                                        nsScriptObjectHolder<JSObject>& aHandler) = 0;
 
   /**
@@ -232,13 +233,14 @@ public:
    **/
   virtual nsresult CompileFunction(JSObject* aTarget,
                                    const nsACString& aName,
-                                   PRUint32 aArgCount,
+                                   uint32_t aArgCount,
                                    const char** aArgArray,
                                    const nsAString& aBody,
                                    const char* aURL,
-                                   PRUint32 aLineNo,
-                                   PRUint32 aVersion,
+                                   uint32_t aLineNo,
+                                   uint32_t aVersion,
                                    bool aShared,
+                                   bool aIsXBL,
                                    JSObject** aFunctionObject) = 0;
 
   /**
@@ -260,28 +262,9 @@ public:
   virtual JSObject* GetNativeGlobal() = 0;
 
   /**
-   * Create a new global object that will be used for an inner window.
-   * Return the native global and an nsISupports 'holder' that can be used
-   * to manage the lifetime of it.
-   */
-  virtual nsresult CreateNativeGlobalForInner(
-                                      nsIScriptGlobalObject *aNewInner,
-                                      nsIURI *aURI,
-                                      bool aIsChrome,
-                                      nsIPrincipal *aPrincipal,
-                                      JSObject** aNativeGlobal,
-                                      nsISupports **aHolder) = 0;
-
-  /**
    * Initialize the context generally. Does not create a global object.
    **/
   virtual nsresult InitContext() = 0;
-
-  /**
-   * Prepares this context for use with the current inner window for the
-   * context's global object. This must be called after CreateOuterObject.
-   */
-  virtual nsresult InitOuterWindow() = 0;
 
   /**
    * Check to see if context is as yet intialized. Used to prevent
@@ -344,23 +327,11 @@ public:
   // SetProperty is suspect and jst believes should not be needed.  Currenly
   // used only for "arguments".
   virtual nsresult SetProperty(JSObject* aTarget, const char* aPropName, nsISupports* aVal) = 0;
-  /** 
-   * Called to set/get information if the script context is
-   * currently processing a script tag
-   */
-  virtual bool GetProcessingScriptTag() = 0;
-  virtual void SetProcessingScriptTag(bool aResult) = 0;
 
   /**
    * Called to find out if this script context might be executing script.
    */
   virtual bool GetExecutingScript() = 0;
-
-  /**
-   * Tell the context whether or not to GC when destroyed.  An optimization
-   * used when the window is a [i]frame, so GC will happen anyway.
-   */
-  virtual void SetGCOnDestruction(bool aGCOnDestruction) = 0;
 
   /**
    * Initialize DOM classes on aGlobalObj, always call
@@ -395,6 +366,24 @@ public:
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIScriptContext, NS_ISCRIPTCONTEXT_IID)
+
+#define NS_ISCRIPTCONTEXT_19_IID \
+{ 0xea6cec57, 0x009f, 0x4950, \
+  { 0xa5, 0x24, 0x7c, 0x74, 0xfb, 0x4f, 0x38, 0x41 } }
+
+class nsIScriptContext_19 : public nsIScriptContext
+{
+public:
+  NS_DECLARE_STATIC_IID_ACCESSOR(NS_ISCRIPTCONTEXT_19_IID)
+  /** 
+   * Called to set/get information if the script context is
+   * currently processing a script tag
+   */
+  virtual bool GetProcessingScriptTag() = 0;
+  virtual void SetProcessingScriptTag(bool aResult) = 0;
+};
+
+NS_DEFINE_STATIC_IID_ACCESSOR(nsIScriptContext_19, NS_ISCRIPTCONTEXT_19_IID)
 
 #endif // nsIScriptContext_h__
 

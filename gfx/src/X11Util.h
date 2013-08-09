@@ -10,7 +10,8 @@
 
 // Utilities common to all X clients, regardless of UI toolkit.
 
-#if defined(MOZ_WIDGET_GTK2)
+#if defined(MOZ_WIDGET_GTK)
+#  include <gdk/gdk.h>
 #  include <gdk/gdkx.h>
 #elif defined(MOZ_WIDGET_QT)
 #include "gfxQtPlatform.h"
@@ -33,8 +34,8 @@ namespace mozilla {
 inline Display*
 DefaultXDisplay()
 {
-#if defined(MOZ_WIDGET_GTK2)
-  return GDK_DISPLAY();
+#if defined(MOZ_WIDGET_GTK)
+  return GDK_DISPLAY_XDISPLAY(gdk_display_get_default());
 #elif defined(MOZ_WIDGET_QT)
   return gfxQtPlatform::GetXDisplay();
 #endif
@@ -44,12 +45,24 @@ DefaultXDisplay()
  * Sets *aVisual to point to aDisplay's Visual struct corresponding to
  * aVisualID, and *aDepth to its depth.  When aVisualID is None, these are set
  * to NULL and 0 respectively.  Both out-parameter pointers are assumed
- * non-NULL.  Returns true in both of these situations, but false if aVisualID
- * is not None and not found on the Display.
+ * non-NULL.
  */
-bool
-XVisualIDToInfo(Display* aDisplay, VisualID aVisualID,
-                Visual** aVisual, unsigned int* aDepth);
+void
+FindVisualAndDepth(Display* aDisplay, VisualID aVisualID,
+                   Visual** aVisual, int* aDepth);
+
+
+/**
+ * Ensure that all X requests have been processed.
+ *
+ * This is similar to XSync, but doesn't need a round trip if the previous
+ * request was synchronous or if events have been received since the last
+ * request.  Subsequent FinishX calls will be noops if there have been no
+ * intermediate requests.
+ */
+
+void
+FinishX(Display* aDisplay);
 
 /**
  * Invoke XFree() on a pointer to memory allocated by Xlib (if the
@@ -122,14 +135,7 @@ public:
      * \param ev this optional parameter, if set, will be filled with the XErrorEvent object. If multiple errors occurred,
      *           the first one will be returned.
      */
-    bool SyncAndGetError(Display *dpy, XErrorEvent *ev = nsnull);
-
-    /** Like SyncAndGetError, but does not sync. Faster, but only reliably catches errors in synchronous calls.
-     *
-     * \param ev this optional parameter, if set, will be filled with the XErrorEvent object. If multiple errors occurred,
-     *           the first one will be returned.
-     */
-    bool GetError(XErrorEvent *ev = nsnull);
+    bool SyncAndGetError(Display *dpy, XErrorEvent *ev = nullptr);
 };
 
 } // namespace mozilla

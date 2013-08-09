@@ -6,6 +6,7 @@
 #include "nsGUIEvent.h"
 #include "nsEventDispatcher.h"
 #include "nsHTMLMenuItemElement.h"
+#include "nsAttrValueInlines.h"
 #include "nsContentUtils.h"
 
 using namespace mozilla::dom;
@@ -167,8 +168,8 @@ nsHTMLMenuItemElement::~nsHTMLMenuItemElement()
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLMenuItemElement, nsGenericElement)
-NS_IMPL_RELEASE_INHERITED(nsHTMLMenuItemElement, nsGenericElement)
+NS_IMPL_ADDREF_INHERITED(nsHTMLMenuItemElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLMenuItemElement, Element)
 
 
 DOMCI_NODE_DATA(HTMLMenuItemElement, nsHTMLMenuItemElement)
@@ -186,11 +187,11 @@ NS_HTML_CONTENT_INTERFACE_TABLE_TAIL_CLASSINFO(HTMLMenuItemElement)
 nsresult
 nsHTMLMenuItemElement::Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const
 {
-  *aResult = nsnull;
+  *aResult = nullptr;
   nsCOMPtr<nsINodeInfo> ni = aNodeInfo;
   nsRefPtr<nsHTMLMenuItemElement> it =
     new nsHTMLMenuItemElement(ni.forget(), NOT_FROM_PARSER);
-  nsresult rv = CopyInnerTo(it);
+  nsresult rv = const_cast<nsHTMLMenuItemElement*>(this)->CopyInnerTo(it);
   if (NS_SUCCEEDED(rv)) {
     switch (mType) {
       case CMD_TYPE_CHECKBOX:
@@ -301,7 +302,7 @@ nsHTMLMenuItemElement::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
       aVisitor.mEventStatus == nsEventStatus_eConsumeNoDefault) {
     bool originalCheckedValue =
       !!(aVisitor.mItemFlags & NS_ORIGINAL_CHECKED_VALUE);
-    PRUint8 oldType = NS_MENUITEM_TYPE(aVisitor.mItemFlags);
+    uint8_t oldType = NS_MENUITEM_TYPE(aVisitor.mItemFlags);
 
     nsCOMPtr<nsIDOMHTMLMenuItemElement> selectedRadio =
       do_QueryInterface(aVisitor.mItemData);
@@ -335,7 +336,7 @@ nsHTMLMenuItemElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
 }
 
 bool
-nsHTMLMenuItemElement::ParseAttribute(PRInt32 aNamespaceID,
+nsHTMLMenuItemElement::ParseAttribute(int32_t aNamespaceID,
                                       nsIAtom* aAttribute,
                                       const nsAString& aValue,
                                       nsAttrValue& aResult)
@@ -385,7 +386,7 @@ nsHTMLMenuItemElement::GetText(nsAString& aText)
 }
 
 nsresult
-nsHTMLMenuItemElement::AfterSetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+nsHTMLMenuItemElement::AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                                     const nsAttrValue* aValue, bool aNotify)
 {
   if (aNameSpaceID == kNameSpaceID_None) {
@@ -453,7 +454,7 @@ nsHTMLMenuItemElement::WalkRadioGroup(Visitor* aVisitor)
 nsHTMLMenuItemElement*
 nsHTMLMenuItemElement::GetSelectedRadio()
 {
-  nsHTMLMenuItemElement* result = nsnull;
+  nsHTMLMenuItemElement* result = nullptr;
 
   GetCheckedVisitor visitor(&result);
   WalkRadioGroup(&visitor);

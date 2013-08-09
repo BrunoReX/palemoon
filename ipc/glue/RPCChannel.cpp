@@ -195,7 +195,7 @@ RPCChannel::Call(Message* _msg, Message* reply)
         }
         else if (!mPending.empty()) {
             recvd = mPending.front();
-            mPending.pop();
+            mPending.pop_front();
         }
         else {
             // because of subtleties with nested event loops, it's
@@ -310,7 +310,7 @@ RPCChannel::MaybeUndeferIncall()
     RPC_ASSERT(0 < mRemoteStackDepthGuess, "fatal logic error");
     --mRemoteStackDepthGuess;
 
-    mPending.push(call);
+    mPending.push_back(call);
 }
 
 void
@@ -382,7 +382,7 @@ RPCChannel::OnMaybeDequeueOne()
             return false;
 
         recvd = mPending.front();
-        mPending.pop();
+        mPending.pop_front();
     }
 
     if (IsOnCxxStack() && recvd.is_rpc() && recvd.is_reply()) {
@@ -446,8 +446,9 @@ RPCChannel::Incall(const Message& call, size_t stackDepth)
         }
 
         if (LoggingEnabled()) {
-            fprintf(stderr, "  (%s: %s won, so we're%sdeferring)\n",
-                    mChild ? "child" : "parent", winner, defer ? " " : " not ");
+            printf_stderr("  (%s: %s won, so we're%sdeferring)\n",
+                          mChild ? "child" : "parent", winner,
+                          defer ? " " : " not ");
         }
 
         if (defer) {
@@ -479,7 +480,7 @@ RPCChannel::DispatchIncall(const Message& call)
     RPC_ASSERT(call.is_rpc() && !call.is_reply(),
                "wrong message type");
 
-    Message* reply = nsnull;
+    Message* reply = nullptr;
 
     ++mRemoteStackDepthGuess;
     Result rv = Listener()->OnCallReceived(call, reply);
@@ -529,7 +530,7 @@ RPCChannel::UnblockChild()
 }
 
 bool
-RPCChannel::OnSpecialMessage(uint16 id, const Message& msg)
+RPCChannel::OnSpecialMessage(uint16_t id, const Message& msg)
 {
     AssertWorkerThread();
 
@@ -577,7 +578,7 @@ RPCChannel::BlockOnParent()
 
         if (!mPending.empty()) {
             Message recvd = mPending.front();
-            mPending.pop();
+            mPending.pop_front();
 
             MonitorAutoUnlock unlock(*mMonitor);
 
@@ -626,55 +627,51 @@ RPCChannel::DebugAbort(const char* file, int line, const char* cond,
                        const char* why,
                        const char* type, bool reply) const
 {
-    fprintf(stderr,
-            "###!!! [RPCChannel][%s][%s:%d] "
-            "Assertion (%s) failed.  %s (triggered by %s%s)\n",
-            mChild ? "Child" : "Parent",
-            file, line, cond,
-            why,
-            type, reply ? "reply" : "");
+    printf_stderr("###!!! [RPCChannel][%s][%s:%d] "
+                  "Assertion (%s) failed.  %s (triggered by %s%s)\n",
+                  mChild ? "Child" : "Parent",
+                  file, line, cond,
+                  why,
+                  type, reply ? "reply" : "");
     // technically we need the mutex for this, but we're dying anyway
-    DumpRPCStack(stderr, "  ");
-    fprintf(stderr, "  remote RPC stack guess: %lu\n",
-            mRemoteStackDepthGuess);
-    fprintf(stderr, "  deferred stack size: %lu\n",
-            mDeferred.size());
-    fprintf(stderr, "  out-of-turn RPC replies stack size: %lu\n",
-            mOutOfTurnReplies.size());
-    fprintf(stderr, "  Pending queue size: %lu, front to back:\n",
-            mPending.size());
+    DumpRPCStack("  ");
+    printf_stderr("  remote RPC stack guess: %lu\n",
+                  mRemoteStackDepthGuess);
+    printf_stderr("  deferred stack size: %lu\n",
+                  mDeferred.size());
+    printf_stderr("  out-of-turn RPC replies stack size: %lu\n",
+                  mOutOfTurnReplies.size());
+    printf_stderr("  Pending queue size: %lu, front to back:\n",
+                  mPending.size());
 
     MessageQueue pending = mPending;
     while (!pending.empty()) {
-        fprintf(stderr, "    [ %s%s ]\n",
-                pending.front().is_rpc() ? "rpc" :
-                (pending.front().is_sync() ? "sync" : "async"),
-                pending.front().is_reply() ? "reply" : "");
-        pending.pop();
+        printf_stderr("    [ %s%s ]\n",
+                      pending.front().is_rpc() ? "rpc" :
+                      (pending.front().is_sync() ? "sync" : "async"),
+                      pending.front().is_reply() ? "reply" : "");
+        pending.pop_front();
     }
 
     NS_RUNTIMEABORT(why);
 }
 
 void
-RPCChannel::DumpRPCStack(FILE* outfile, const char* const pfx) const
+RPCChannel::DumpRPCStack(const char* const pfx) const
 {
     NS_WARN_IF_FALSE(MessageLoop::current() != mWorkerLoop,
                      "The worker thread had better be paused in a debugger!");
 
-    if (!outfile)
-        outfile = stdout;
-
-    fprintf(outfile, "%sRPCChannel 'backtrace':\n", pfx);
+    printf_stderr("%sRPCChannel 'backtrace':\n", pfx);
 
     // print a python-style backtrace, first frame to last
-    for (PRUint32 i = 0; i < mCxxStackFrames.size(); ++i) {
-        int32 id;
+    for (uint32_t i = 0; i < mCxxStackFrames.size(); ++i) {
+        int32_t id;
         const char* dir, *sems, *name;
         mCxxStackFrames[i].Describe(&id, &dir, &sems, &name);
 
-        fprintf(outfile, "%s[(%u) %s %s %s(actor=%d) ]\n", pfx,
-                i, dir, sems, name, id);
+        printf_stderr("%s[(%u) %s %s %s(actor=%d) ]\n", pfx,
+                      i, dir, sems, name, id);
     }
 }
 
@@ -701,12 +698,26 @@ RPCChannel::OnMessageReceivedFromLink(const Message& msg)
         return;
     }
 
-    mPending.push(msg);
+    bool compressMessage = (msg.compress() && !mPending.empty() &&
+                            mPending.back().type() == msg.type() &&
+                            mPending.back().routing_id() == msg.routing_id());
+    if (compressMessage) {
+        // This message type has compression enabled, and the back of
+        // the queue was the same message type and routed to the same
+        // destination.  Replace it with the newer message.
+        MOZ_ASSERT(mPending.back().compress());
+        mPending.pop_back();
+    }
+
+    mPending.push_back(msg);
 
     if (0 == StackDepth() && !mBlockedOnParent) {
         // the worker thread might be idle, make sure it wakes up
-        mWorkerLoop->PostTask(FROM_HERE,
-                                     new DequeueTask(mDequeueOneTask));
+        if (!compressMessage) {
+            // If we compressed away the previous message, we'll reuse
+            // its pending task.
+            mWorkerLoop->PostTask(FROM_HERE, new DequeueTask(mDequeueOneTask));
+        }
     }
     else if (!AwaitingSyncReply())
         NotifyWorkerThread();

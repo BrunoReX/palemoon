@@ -4,15 +4,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGLengthList.h"
-#include "SVGAnimatedLengthList.h"
-#include "SVGLength.h"
-#include "nsSVGElement.h"
-#include "nsDOMError.h"
-#include "nsContentUtils.h"
-#include "nsString.h"
-#include "nsSVGUtils.h"
 #include "nsCharSeparatedTokenizer.h"
+#include "nsError.h"
+#include "nsString.h"
+#include "nsSVGElement.h"
 #include "string.h"
+#include "SVGAnimatedLengthList.h"
+#include "SVGContentUtils.h"
+#include "SVGLength.h"
 
 namespace mozilla {
 
@@ -31,8 +30,8 @@ void
 SVGLengthList::GetValueAsString(nsAString& aValue) const
 {
   aValue.Truncate();
-  PRUint32 last = mLengths.Length() - 1;
-  for (PRUint32 i = 0; i < mLengths.Length(); ++i) {
+  uint32_t last = mLengths.Length() - 1;
+  for (uint32_t i = 0; i < mLengths.Length(); ++i) {
     nsAutoString length;
     mLengths[i].GetValueAsString(length);
     // We ignore OOM, since it's not useful for us to return an error.
@@ -58,7 +57,7 @@ SVGLengthList::SetValueFromString(const nsAString& aValue)
   nsCharSeparatedTokenizerTemplate<IsSVGWhitespace>
     tokenizer(aValue, ',', nsCharSeparatedTokenizer::SEPARATOR_OPTIONAL);
 
-  nsCAutoString str;  // outside loop to minimize memory churn
+  nsAutoCString str;  // outside loop to minimize memory churn
 
   while (tokenizer.hasMoreTokens()) {
     SVGLength length;
@@ -81,7 +80,7 @@ SVGLengthList::operator==(const SVGLengthList& rhs) const
   if (Length() != rhs.Length()) {
     return false;
   }
-  for (PRUint32 i = 0; i < Length(); ++i) {
+  for (uint32_t i = 0; i < Length(); ++i) {
     if (!(mLengths[i] == rhs.mLengths[i])) {
       return false;
     }

@@ -52,8 +52,8 @@ public:
 
   nsSMILInstanceTime(const nsSMILTimeValue& aTime,
                      nsSMILInstanceTimeSource aSource = SOURCE_NONE,
-                     nsSMILTimeValueSpec* aCreator = nsnull,
-                     nsSMILInterval* aBaseInterval = nsnull);
+                     nsSMILTimeValueSpec* aCreator = nullptr,
+                     nsSMILInterval* aBaseInterval = nullptr);
   ~nsSMILInstanceTime();
   void Unlink();
   void HandleChangedInterval(const nsSMILTimeContainer* aSrcContainer,
@@ -94,8 +94,8 @@ public:
 
   // Get and set a serial number which may be used by a containing class to
   // control the sort order of otherwise similar instance times.
-  PRUint32 Serial() const { return mSerial; }
-  void SetSerial(PRUint32 aIndex) { mSerial = aIndex; }
+  uint32_t Serial() const { return mSerial; }
+  void SetSerial(uint32_t aIndex) { mSerial = aIndex; }
 
   NS_INLINE_DECL_REFCOUNTING(nsSMILInstanceTime)
 
@@ -131,8 +131,8 @@ protected:
     // should be preserved and not filtered.
     kWasDynamicEndpoint = 8
   };
-  PRUint8       mFlags;   // Combination of kDynamic, kMayUpdate, etc.
-  bool          mVisited; // (mutable) Cycle tracking
+  uint8_t       mFlags;   // Combination of kDynamic, kMayUpdate, etc.
+  mutable bool  mVisited; // Cycle tracking
 
   // Additional reference count to determine if this instance time is currently
   // used as a fixed endpoint in any intervals. Instance times that are used in
@@ -146,10 +146,10 @@ protected:
   // c) momentarily whilst establishing new intervals and updating the current
   //    interval, and
   // d) trimmed intervals
-  // Hence the limited range of a PRUint16 should be more than adequate.
-  PRUint16      mFixedEndpointRefCnt;
+  // Hence the limited range of a uint16_t should be more than adequate.
+  uint16_t      mFixedEndpointRefCnt;
 
-  PRUint32      mSerial; // A serial number used by the containing class to
+  uint32_t      mSerial; // A serial number used by the containing class to
                          // specify the sort order for instance times with the
                          // same mTime.
 

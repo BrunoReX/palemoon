@@ -4,29 +4,25 @@
 
 "use strict";
 
-const EXPORTED_SYMBOLS = ['ContactDB'];
+this.EXPORTED_SYMBOLS = ['ContactDB'];
 
-let DEBUG = 0;
-/* static functions */
-if (DEBUG) {
-  debug = function (s) { dump("-*- ContactDB component: " + s + "\n"); }
-} else {
-  debug = function (s) {}
-}
+const DEBUG = false;
+function debug(s) { dump("-*- ContactDB component: " + s + "\n"); }
 
-const Cu = Components.utils; 
+const Cu = Components.utils;
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/IndexedDBHelper.jsm");
+Cu.import("resource://gre/modules/PhoneNumberUtils.jsm");
 
 const DB_NAME = "contacts";
-const DB_VERSION = 2;
+const DB_VERSION = 5;
 const STORE_NAME = "contacts";
 
-function ContactDB(aGlobal) {
-  debug("Constructor");
+this.ContactDB = function ContactDB(aGlobal) {
+  if (DEBUG) debug("Constructor");
   this._global = aGlobal;
 }
 
@@ -34,7 +30,7 @@ ContactDB.prototype = {
   __proto__: IndexedDBHelper.prototype,
 
   upgradeSchema: function upgradeSchema(aTransaction, aDb, aOldVersion, aNewVersion) {
-    debug("upgrade schema from: " + aOldVersion + " to " + aNewVersion + " called!");
+    if (DEBUG) debug("upgrade schema from: " + aOldVersion + " to " + aNewVersion + " called!");
     let db = aDb;
     let objectStore;
     for (let currVersion = aOldVersion; currVersion < aNewVersion; currVersion++) {
@@ -50,7 +46,7 @@ ContactDB.prototype = {
          *  properties:    {...}        // Object holding the ContactProperties
          * }
          */
-        debug("create schema");
+        if (DEBUG) debug("create schema");
         objectStore = db.createObjectStore(this.dbStoreName, {keyPath: "id"});
 
         // Metadata indexes
@@ -74,9 +70,9 @@ ContactDB.prototype = {
         objectStore.createIndex("emailLowerCase",      "search.email",      { unique: false, multiEntry: true });
         objectStore.createIndex("noteLowerCase",       "search.note",       { unique: false, multiEntry: true });
       } else if (currVersion == 1) {
-        debug("upgrade 1");
+        if (DEBUG) debug("upgrade 1");
 
-        // Create a new scheme for the tel field. We move from an array of tel-numbers to an array of 
+        // Create a new scheme for the tel field. We move from an array of tel-numbers to an array of
         // ContactTelephone.
         if (!objectStore) {
           objectStore = aTransaction.objectStore(STORE_NAME);
@@ -85,22 +81,117 @@ ContactDB.prototype = {
         objectStore.deleteIndex("tel");
 
         // Upgrade existing tel field in the DB.
-        objectStore.openCursor().onsuccess = function(event) {  
+        objectStore.openCursor().onsuccess = function(event) {
           let cursor = event.target.result;
           if (cursor) {
-            debug("upgrade tel1: " + JSON.stringify(cursor.value));
+            if (DEBUG) debug("upgrade tel1: " + JSON.stringify(cursor.value));
             for (let number in cursor.value.properties.tel) {
               cursor.value.properties.tel[number] = {number: number};
             }
             cursor.update(cursor.value);
-            debug("upgrade tel2: " + JSON.stringify(cursor.value));
+            if (DEBUG) debug("upgrade tel2: " + JSON.stringify(cursor.value));
             cursor.continue();
-          } 
+          }
         };
 
         // Create new searchable indexes.
         objectStore.createIndex("tel", "search.tel", { unique: false, multiEntry: true });
         objectStore.createIndex("category", "properties.category", { unique: false, multiEntry: true });
+      } else if (currVersion == 2) {
+        if (DEBUG) debug("upgrade 2");
+        // Create a new scheme for the email field. We move from an array of emailaddresses to an array of 
+        // ContactEmail.
+        if (!objectStore) {
+          objectStore = aTransaction.objectStore(STORE_NAME);
+        }
+        // Delete old email index.
+        objectStore.deleteIndex("email");
+
+        // Upgrade existing email field in the DB.
+        objectStore.openCursor().onsuccess = function(event) {
+          let cursor = event.target.result;
+          if (cursor) {
+            if (cursor.value.properties.email) {
+              if (DEBUG) debug("upgrade email1: " + JSON.stringify(cursor.value));
+              cursor.value.properties.email =
+                cursor.value.properties.email.map(function(address) { return { address: address }; });
+              cursor.update(cursor.value);
+              if (DEBUG) debug("upgrade email2: " + JSON.stringify(cursor.value));
+            }
+            cursor.continue();
+          }
+        };
+
+        // Create new searchable indexes.
+        objectStore.createIndex("email", "search.email", { unique: false, multiEntry: true });
+      } else if (currVersion == 3) {
+        if (DEBUG) debug("upgrade 3");
+
+        if (!objectStore) {
+          objectStore = aTransaction.objectStore(STORE_NAME);
+        }
+
+        // Upgrade existing impp field in the DB.
+        objectStore.openCursor().onsuccess = function(event) {
+          let cursor = event.target.result;
+          if (cursor) {
+            if (cursor.value.properties.impp) {
+              if (DEBUG) debug("upgrade impp1: " + JSON.stringify(cursor.value));
+              cursor.value.properties.impp =
+                cursor.value.properties.impp.map(function(value) { return { value: value }; });
+              cursor.update(cursor.value);
+              if (DEBUG) debug("upgrade impp2: " + JSON.stringify(cursor.value));
+            }
+            cursor.continue();
+          }
+        };
+        // Upgrade existing url field in the DB.
+        objectStore.openCursor().onsuccess = function(event) {
+          let cursor = event.target.result;
+          if (cursor) {
+            if (cursor.value.properties.url) {
+              if (DEBUG) debug("upgrade url1: " + JSON.stringify(cursor.value));
+              cursor.value.properties.url =
+                cursor.value.properties.url.map(function(value) { return { value: value }; });
+              cursor.update(cursor.value);
+              if (DEBUG) debug("upgrade impp2: " + JSON.stringify(cursor.value));
+            }
+            cursor.continue();
+          }
+        };
+      } else if (currVersion == 4) {
+        if (DEBUG) debug("Add international phone numbers upgrade");
+        if (!objectStore) {
+          objectStore = aTransaction.objectStore(STORE_NAME);
+        }
+
+        objectStore.openCursor().onsuccess = function(event) {
+          let cursor = event.target.result;
+          if (cursor) {
+            if (cursor.value.properties.tel) {
+              if (DEBUG) debug("upgrade : " + JSON.stringify(cursor.value));
+              cursor.value.properties.tel.forEach(
+                function(duple) {
+                  let parsedNumber = PhoneNumberUtils.parse(duple.value.toString());
+                  if (parsedNumber) {
+                    debug("InternationalFormat: " + parsedNumber.internationalFormat);
+                    debug("InternationalNumber: " + parsedNumber.internationalNumber);
+                    debug("NationalNumber: " + parsedNumber.nationalNumber);
+                    debug("NationalFormat: " + parsedNumber.nationalFormat);
+                    if (duple.value.toString() !== parsedNumber.internationalNumber) {
+                      cursor.value.search.tel.push(parsedNumber.internationalNumber);
+                    }
+                  } else {
+                    dump("Warning: No international number found for " + duple.value + "\n");
+                  }
+                }
+              )
+              cursor.update(cursor.value);
+            }
+            if (DEBUG) debug("upgrade2 : " + JSON.stringify(cursor.value));
+            cursor.continue();
+          }
+        };
       }
     }
   },
@@ -155,31 +246,69 @@ ContactDB.prototype = {
         for (let i = 0; i <= aContact.properties[field].length; i++) {
           if (aContact.properties[field][i]) {
             if (field == "tel") {
-              // Special case telephone number. 
+              // Special case telephone number.
               // "+1-234-567" should also be found with 1234, 234-56, 23456
 
               // Chop off the first characters
-              let number = aContact.properties[field][i].number;
-              for(let i = 0; i < number.length; i++) {
-                contact.search[field].push(number.substring(i, number.length));
-              }
-              // Store +1-234-567 as ["1234567", "234567"...]
-              let digits = number.match(/\d/g);
-              if (digits && number.length != digits.length) {
-                digits = digits.join('');
-                for(let i = 0; i < digits.length; i++) {
-                  contact.search[field].push(digits.substring(i, digits.length));
+              let number = aContact.properties[field][i].value;
+              let search = {};
+              if (number) {
+                for (let i = 0; i < number.length; i++) {
+                  search[number.substring(i, number.length)] = 1;
+                }
+                // Store +1-234-567 as ["1234567", "234567"...]
+                let digits = number.match(/\d/g);
+                if (digits && number.length != digits.length) {
+                  digits = digits.join('');
+                  for(let i = 0; i < digits.length; i++) {
+                    search[digits.substring(i, digits.length)] = 1;
+                  }
+                }
+                if (DEBUG) debug("lookup: " + JSON.stringify(contact.search[field]));
+                let parsedNumber = PhoneNumberUtils.parse(number.toString());
+                if (parsedNumber) {
+                  debug("InternationalFormat: " + parsedNumber.internationalFormat);
+                  debug("InternationalNumber: " + parsedNumber.internationalNumber);
+                  debug("NationalNumber: " + parsedNumber.nationalNumber);
+                  debug("NationalFormat: " + parsedNumber.nationalFormat);
+                  if (parsedNumber.internationalNumber &&
+                      number.toString() !== parsedNumber.internationalNumber) {
+                    let digits = parsedNumber.internationalNumber.match(/\d/g);
+                    if (digits) {
+                      digits = digits.join('');
+                      for(let i = 0; i < digits.length; i++) {
+                        search[digits.substring(i, digits.length)] = 1;
+                      }
+                    }
+                  }
+                } else {
+                  dump("Warning: No international number found for " + number + "\n");
                 }
               }
-              debug("lookup: " + JSON.stringify(contact.search[field]));
+              for (let num in search) {
+                contact.search[field].push(num);
+              }
+            } else if (field == "email") {
+              let address = aContact.properties[field][i].value;
+              if (address && typeof address == "string") {
+                contact.search[field].push(address.toLowerCase());
+              }
+            } else if (field == "impp") {
+              let value = aContact.properties[field][i].value;
+              if (value && typeof value == "string") {
+                contact.search[field].push(value.toLowerCase());
+              }
             } else {
-              contact.search[field].push(aContact.properties[field][i].toLowerCase());
+              let val = aContact.properties[field][i];
+              if (typeof val == "string") {
+                contact.search[field].push(val.toLowerCase());
+              }
             }
           }
         }
       }
     }
-    debug("contact:" + JSON.stringify(contact));
+    if (DEBUG) debug("contact:" + JSON.stringify(contact));
 
     contact.updated = aContact.updated;
     contact.published = aContact.published;
@@ -214,24 +343,24 @@ ContactDB.prototype = {
   saveContact: function saveContact(aContact, successCb, errorCb) {
     let contact = this.makeImport(aContact);
     this.newTxn("readwrite", function (txn, store) {
-      debug("Going to update" + JSON.stringify(contact));
+      if (DEBUG) debug("Going to update" + JSON.stringify(contact));
 
       // Look up the existing record and compare the update timestamp.
       // If no record exists, just add the new entry.
       let newRequest = store.get(contact.id);
       newRequest.onsuccess = function (event) {
         if (!event.target.result) {
-          debug("new record!")
+          if (DEBUG) debug("new record!")
           this.updateRecordMetadata(contact);
           store.put(contact);
         } else {
-          debug("old record!")
+          if (DEBUG) debug("old record!")
           if (new Date(typeof contact.updated === "undefined" ? 0 : contact.updated) < new Date(event.target.result.updated)) {
-            debug("rev check fail!");
+            if (DEBUG) debug("rev check fail!");
             txn.abort();
             return;
           } else {
-            debug("rev check OK");
+            if (DEBUG) debug("rev check OK");
             contact.published = event.target.result.published;
             contact.updated = new Date();
             store.put(contact);
@@ -243,14 +372,14 @@ ContactDB.prototype = {
 
   removeContact: function removeContact(aId, aSuccessCb, aErrorCb) {
     this.newTxn("readwrite", function (txn, store) {
-      debug("Going to delete" + aId);
+      if (DEBUG) debug("Going to delete" + aId);
       store.delete(aId);
     }, aSuccessCb, aErrorCb);
   },
 
   clear: function clear(aSuccessCb, aErrorCb) {
     this.newTxn("readwrite", function (txn, store) {
-      debug("Going to clear all!");
+      if (DEBUG) debug("Going to clear all!");
       store.clear();
     }, aSuccessCb, aErrorCb);
   },
@@ -268,8 +397,7 @@ ContactDB.prototype = {
    *        - count
    */
   find: function find(aSuccessCb, aFailureCb, aOptions) {
-    debug("ContactDB:find val:" + aOptions.filterValue + " by: " + aOptions.filterBy + " op: " + aOptions.filterOp + "\n");
-
+    if (DEBUG) debug("ContactDB:find val:" + aOptions.filterValue + " by: " + aOptions.filterBy + " op: " + aOptions.filterOp + "\n");
     let self = this;
     this.newTxn("readonly", function (txn, store) {
       if (aOptions && (aOptions.filterOp == "equals" || aOptions.filterOp == "contains")) {
@@ -281,12 +409,12 @@ ContactDB.prototype = {
   },
 
   _findWithIndex: function _findWithIndex(txn, store, options) {
-    debug("_findWithIndex: " + options.filterValue +" " + options.filterOp + " " + options.filterBy + " ");
+    if (DEBUG) debug("_findWithIndex: " + options.filterValue +" " + options.filterOp + " " + options.filterBy + " ");
     let fields = options.filterBy;
     for (let key in fields) {
-      debug("key: " + fields[key]);
+      if (DEBUG) debug("key: " + fields[key]);
       if (!store.indexNames.contains(fields[key]) && !fields[key] == "id") {
-        debug("Key not valid!" + fields[key] + ", " + store.indexNames);
+        if (DEBUG) debug("Key not valid!" + fields[key] + ", " + store.indexNames);
         txn.abort();
         return;
       }
@@ -294,7 +422,7 @@ ContactDB.prototype = {
 
     // lookup for all keys
     if (options.filterBy.length == 0) {
-      debug("search in all fields!" + JSON.stringify(store.indexNames));
+      if (DEBUG) debug("search in all fields!" + JSON.stringify(store.indexNames));
       for(let myIndex = 0; myIndex < store.indexNames.length; myIndex++) {
         fields = Array.concat(fields, store.indexNames[myIndex])
       }
@@ -308,27 +436,35 @@ ContactDB.prototype = {
       let request;
       if (key == "id") {
         // store.get would return an object and not an array
-        request = store.getAll(options.filterValue);
+        request = store.mozGetAll(options.filterValue);
       } else if (key == "category") {
         let index = store.index(key);
-        request = index.getAll(options.filterValue, limit);
+        request = index.mozGetAll(options.filterValue, limit);
       } else if (options.filterOp == "equals") {
-        debug("Getting index: " + key);
+        if (DEBUG) debug("Getting index: " + key);
         // case sensitive
         let index = store.index(key);
-        request = index.getAll(options.filterValue, limit);
+        request = index.mozGetAll(options.filterValue, limit);
       } else {
         // not case sensitive
-        let tmp = options.filterValue.toLowerCase();
+        let tmp = typeof options.filterValue == "string"
+                  ? options.filterValue.toLowerCase()
+                  : options.filterValue.toString().toLowerCase();
+        if (key === 'tel') {
+          let digits = tmp.match(/\d/g);
+          if (digits) {
+            tmp = digits.join('');
+          }
+        }
         let range = this._global.IDBKeyRange.bound(tmp, tmp + "\uFFFF");
         let index = store.index(key + "LowerCase");
-        request = index.getAll(range, limit);
+        request = index.mozGetAll(range, limit);
       }
       if (!txn.result)
         txn.result = {};
 
       request.onsuccess = function (event) {
-        debug("Request successful. Record count:" + event.target.result.length);
+        if (DEBUG) debug("Request successful. Record count:" + event.target.result.length);
         for (let i in event.target.result)
           txn.result[event.target.result[i].id] = this.makeExport(event.target.result[i]);
       }.bind(this);
@@ -336,13 +472,13 @@ ContactDB.prototype = {
   },
 
   _findAll: function _findAll(txn, store, options) {
-    debug("ContactDB:_findAll:  " + JSON.stringify(options));
+    if (DEBUG) debug("ContactDB:_findAll:  " + JSON.stringify(options));
     if (!txn.result)
       txn.result = {};
     // Sorting functions takes care of limit if set.
     let limit = options.sortBy === 'undefined' ? options.filterLimit : null;
-    store.getAll(null, limit).onsuccess = function (event) {
-      debug("Request successful. Record count:", event.target.result.length);
+    store.mozGetAll(null, limit).onsuccess = function (event) {
+      if (DEBUG) debug("Request successful. Record count:", event.target.result.length);
       for (let i in event.target.result)
         txn.result[event.target.result[i].id] = this.makeExport(event.target.result[i]);
     }.bind(this);

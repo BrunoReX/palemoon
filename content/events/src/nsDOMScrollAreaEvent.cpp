@@ -4,7 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "base/basictypes.h"
-#include "IPC/IPCMessageUtils.h"
+#include "ipc/IPCMessageUtils.h"
 
 #include "nsDOMScrollAreaEvent.h"
 #include "nsGUIEvent.h"
@@ -25,7 +25,7 @@ nsDOMScrollAreaEvent::~nsDOMScrollAreaEvent()
   if (mEventIsInternal && mEvent) {
     if (mEvent->eventStructType == NS_SCROLLAREA_EVENT) {
       delete static_cast<nsScrollAreaEvent *>(mEvent);
-      mEvent = nsnull;
+      mEvent = nullptr;
     }
   }
 }
@@ -70,7 +70,7 @@ nsDOMScrollAreaEvent::InitScrollAreaEvent(const nsAString &aEventType,
                                           bool aCanBubble,
                                           bool aCancelable,
                                           nsIDOMWindow *aView,
-                                          PRInt32 aDetail,
+                                          int32_t aDetail,
                                           float aX, float aY,
                                           float aWidth, float aHeight)
 {
@@ -82,7 +82,7 @@ nsDOMScrollAreaEvent::InitScrollAreaEvent(const nsAString &aEventType,
   return NS_OK;
 }
 
-void
+NS_IMETHODIMP_(void)
 nsDOMScrollAreaEvent::Serialize(IPC::Message* aMsg,
                                 bool aSerializeInterfaceType)
 {
@@ -103,7 +103,7 @@ nsDOMScrollAreaEvent::Serialize(IPC::Message* aMsg,
   IPC::WriteParam(aMsg, val);
 }
 
-bool
+NS_IMETHODIMP_(bool)
 nsDOMScrollAreaEvent::Deserialize(const IPC::Message* aMsg, void** aIter)
 {
   NS_ENSURE_TRUE(nsDOMEvent::Deserialize(aMsg, aIter), false);

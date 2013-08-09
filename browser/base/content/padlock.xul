@@ -7,8 +7,8 @@
 
 <script type="application/x-javascript" src="chrome://browser/content/padlock.js"/>
 
-  <hbox id="identity-box-inner">
-    <image id="padlock-ib"
+  <hbox id="identity-box">
+    <image id="padlock-ib" insertafter="identity-icon-labels"
            class="urlbar-icon"
            style="-moz-user-focus: none;"
            hidden="false"
@@ -16,7 +16,7 @@
            onclick="return padlock_PadLock.onButtonClick(event);"/>
   </hbox>
 
-  <hbox id="identity-box-inner">
+  <hbox id="identity-box">
     <image id="padlock-ib-left" insertbefore="identity-icon-labels"
            class="urlbar-icon"
            style="-moz-user-focus: none;"

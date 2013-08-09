@@ -8,6 +8,7 @@
 #define mozilla_ClearOnShutdown_h
 
 #include "mozilla/LinkedList.h"
+#include "mozilla/StaticPtr.h"
 #include "nsThreadUtils.h"
 
 /*
@@ -16,14 +17,18 @@
  *   template<class SmartPtr>
  *   void ClearOnShutdown(SmartPtr *aPtr)
  *
- * This function takes a pointer to a smart pointer (i.e., nsCOMPtr<T>*,
- * nsRefPtr<T>*, or nsAutoPtr<T>*) and nulls the smart pointer on shutdown.
+ * This function takes a pointer to a smart pointer and nulls the smart pointer
+ * on shutdown.
  *
  * This is useful if you have a global smart pointer object which you don't
  * want to "leak" on shutdown.
  *
- * There is no way to undo a call to ClearOnShutdown, so you can call it only
- * on smart pointers which you know will live until the program shuts down.
+ * Although ClearOnShutdown will work with any smart pointer (i.e., nsCOMPtr,
+ * nsRefPtr, nsAutoPtr, StaticRefPtr, and StaticAutoPtr), you probably want to
+ * use it only with StaticRefPtr and StaticAutoPtr.  There is no way to undo a
+ * call to ClearOnShutdown, so you can call it only on smart pointers which you
+ * know will live until the program shuts down.  In practice, these are likely
+ * global variables, which should be Static{Ref,Auto}Ptr.
  *
  * ClearOnShutdown is currently main-thread only because we don't want to
  * accidentally free an object from a different thread than the one it was
@@ -37,6 +42,7 @@ class ShutdownObserver : public LinkedListElement<ShutdownObserver>
 {
 public:
   virtual void Shutdown() = 0;
+  virtual ~ShutdownObserver() {}
 };
 
 template<class SmartPtr>
@@ -59,7 +65,7 @@ private:
 };
 
 extern bool sHasShutDown;
-extern LinkedList<ShutdownObserver> sShutdownObservers;
+extern StaticAutoPtr<LinkedList<ShutdownObserver> > sShutdownObservers;
 
 } // namespace ClearOnShutdown_Internal
 
@@ -69,10 +75,12 @@ inline void ClearOnShutdown(SmartPtr *aPtr)
   using namespace ClearOnShutdown_Internal;
 
   MOZ_ASSERT(NS_IsMainThread());
-
   MOZ_ASSERT(!sHasShutDown);
-  ShutdownObserver *observer = new PointerClearer<SmartPtr>(aPtr);
-  sShutdownObservers.insertBack(observer);
+
+  if (!sShutdownObservers) {
+    sShutdownObservers = new LinkedList<ShutdownObserver>();
+  }
+  sShutdownObservers->insertBack(new PointerClearer<SmartPtr>(aPtr));
 }
 
 // Called when XPCOM is shutting down, after all shutdown notifications have
@@ -83,12 +91,15 @@ inline void KillClearOnShutdown()
 
   MOZ_ASSERT(NS_IsMainThread());
 
-  ShutdownObserver *observer;
-  while ((observer = sShutdownObservers.popFirst())) {
-    observer->Shutdown();
-    delete observer;
+  if (sShutdownObservers) {
+    ShutdownObserver *observer;
+    while ((observer = sShutdownObservers->popFirst())) {
+      observer->Shutdown();
+      delete observer;
+    }
   }
 
+  sShutdownObservers = nullptr;
   sHasShutDown = true;
 }
 

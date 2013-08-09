@@ -7,8 +7,10 @@
 #include "nsIContentSniffer.h"
 #include "nsIStreamListener.h"
 #include "nsStringAPI.h"
+#include "mozilla/Attributes.h"
 
-class nsFeedSniffer : public nsIContentSniffer, nsIStreamListener
+class nsFeedSniffer MOZ_FINAL : public nsIContentSniffer,
+                                       nsIStreamListener
 {
 public:
   NS_DECL_ISUPPORTS
@@ -19,13 +21,13 @@ public:
   static NS_METHOD AppendSegmentToString(nsIInputStream* inputStream,
                                          void* closure,
                                          const char* rawSegment,
-                                         PRUint32 toOffset,
-                                         PRUint32 count,
-                                         PRUint32* writeCount);
+                                         uint32_t toOffset,
+                                         uint32_t count,
+                                         uint32_t* writeCount);
 
 protected:
-  nsresult ConvertEncodedData(nsIRequest* request, const PRUint8* data,
-                              PRUint32 length);
+  nsresult ConvertEncodedData(nsIRequest* request, const uint8_t* data,
+                              uint32_t length);
 
 private:
   nsCString mDecodedData;

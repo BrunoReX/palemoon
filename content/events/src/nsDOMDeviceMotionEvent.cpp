@@ -2,23 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsDOMClassInfoID.h"
 #include "nsDOMDeviceMotionEvent.h"
-#include "nsContentUtils.h"
-
-
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsDOMDeviceMotionEvent)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsDOMDeviceMotionEvent, nsDOMEvent)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mAcceleration)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mAccelerationIncludingGravity)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mRotationRate)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mAcceleration)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mAccelerationIncludingGravity)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mRotationRate)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsDOMDeviceMotionEvent, nsDOMEvent)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mAcceleration)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mAccelerationIncludingGravity)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mRotationRate)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAcceleration)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAccelerationIncludingGravity)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRotationRate)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_ADDREF_INHERITED(nsDOMDeviceMotionEvent, nsDOMEvent)

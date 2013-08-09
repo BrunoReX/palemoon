@@ -12,6 +12,7 @@
 #include "nsIPowerManagerService.h"
 #include "mozilla/Observer.h"
 #include "Types.h"
+#include "mozilla/StaticPtr.h"
 
 namespace mozilla {
 namespace dom {
@@ -25,7 +26,7 @@ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPOWERMANAGERSERVICE
 
-  static already_AddRefed<nsIPowerManagerService> GetInstance();
+  static already_AddRefed<PowerManagerService> GetInstance();
 
   void Init();
 
@@ -39,9 +40,13 @@ private:
   void ComputeWakeLockState(const hal::WakeLockInformation& aWakeLockInfo,
                             nsAString &aState);
 
-  static nsRefPtr<PowerManagerService> sSingleton;
+  void SyncProfile();
+
+  static StaticRefPtr<PowerManagerService> sSingleton;
 
   nsTArray<nsCOMPtr<nsIDOMMozWakeLockListener> > mWakeLockListeners;
+  
+  int32_t mWatchdogTimeoutSecs;
 };
 
 } // namespace power

@@ -6,34 +6,35 @@
 #ifndef nsTransactionItem_h__
 #define nsTransactionItem_h__
 
-#include "nsITransaction.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsISupportsImpl.h"
+#include "nscore.h"
 
-class nsTransactionStack;
+class nsITransaction;
 class nsTransactionManager;
+class nsTransactionStack;
 
 class nsTransactionItem
 {
   nsCOMPtr<nsITransaction> mTransaction;
   nsTransactionStack      *mUndoStack;
   nsTransactionStack      *mRedoStack;
-  nsAutoRefCnt             mRefCnt;
 
 public:
 
   nsTransactionItem(nsITransaction *aTransaction);
   virtual ~nsTransactionItem();
-  nsrefcnt AddRef();
-  nsrefcnt Release();
+  NS_METHOD_(nsrefcnt) AddRef();
+  NS_METHOD_(nsrefcnt) Release();
 
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(nsTransactionItem)
 
   virtual nsresult AddChild(nsTransactionItem *aTransactionItem);
-  virtual nsresult GetTransaction(nsITransaction **aTransaction);
+  already_AddRefed<nsITransaction> GetTransaction();
   virtual nsresult GetIsBatch(bool *aIsBatch);
-  virtual nsresult GetNumberOfChildren(PRInt32 *aNumChildren);
-  virtual nsresult GetChild(PRInt32 aIndex, nsTransactionItem **aChild);
+  virtual nsresult GetNumberOfChildren(int32_t *aNumChildren);
+  virtual nsresult GetChild(int32_t aIndex, nsTransactionItem **aChild);
 
   virtual nsresult DoTransaction(void);
   virtual nsresult UndoTransaction(nsTransactionManager *aTxMgr);
@@ -47,8 +48,12 @@ private:
   virtual nsresult RecoverFromUndoError(nsTransactionManager *aTxMgr);
   virtual nsresult RecoverFromRedoError(nsTransactionManager *aTxMgr);
 
-  virtual nsresult GetNumberOfUndoItems(PRInt32 *aNumItems);
-  virtual nsresult GetNumberOfRedoItems(PRInt32 *aNumItems);
+  virtual nsresult GetNumberOfUndoItems(int32_t *aNumItems);
+  virtual nsresult GetNumberOfRedoItems(int32_t *aNumItems);
+
+protected:
+  nsCycleCollectingAutoRefCnt mRefCnt;
+  NS_DECL_OWNINGTHREAD
 };
 
 #endif // nsTransactionItem_h__

@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH = ../../..
+DEPTH = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir = @srcdir@
 VPATH = @srcdir@
@@ -22,6 +22,13 @@ WINDOWS_BRANDING_FILES = \
 	firefox.ico \
 	document.ico \
 	branding.nsi \
+	appname.bmp \
+	bgintro.bmp \
+	bgplain.bmp \
+	clock.bmp \
+	particles.bmp \
+	pencil.bmp \
+	pencil-rtl.bmp \
 	wizHeader.bmp \
 	wizHeaderRTL.bmp \
 	wizWatermark.bmp \

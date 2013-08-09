@@ -108,7 +108,7 @@ char* strtok2(char* string, const char* delims, char* *newStr)
   PR_ASSERT(string);
   
   char delimTable[DELIM_TABLE_SIZE];
-  PRUint32 i;
+  uint32_t i;
   char* result;
   char* str = string;
   
@@ -116,18 +116,18 @@ char* strtok2(char* string, const char* delims, char* *newStr)
     delimTable[i] = '\0';
   
   for (i = 0; delims[i]; i++) {
-    SET_DELIM(delimTable, static_cast<PRUint8>(delims[i]));
+    SET_DELIM(delimTable, static_cast<uint8_t>(delims[i]));
   }
   
   // skip to beginning
-  while (*str && IS_DELIM(delimTable, static_cast<PRUint8>(*str))) {
+  while (*str && IS_DELIM(delimTable, static_cast<uint8_t>(*str))) {
     str++;
   }
   result = str;
   
   // fix up the end of the token
   while (*str) {
-    if (IS_DELIM(delimTable, static_cast<PRUint8>(*str))) {
+    if (IS_DELIM(delimTable, static_cast<uint8_t>(*str))) {
       *str++ = '\0';
       break;
     }
@@ -148,7 +148,7 @@ enum client_auth_option {
 
 // Structs for passing data into jobs on the thread pool
 typedef struct {
-  PRInt32 listen_port;
+  int32_t listen_port;
   string cert_nickname;
   PLHashTable* host_cert_table;
   PLHashTable* host_clientauth_table;
@@ -173,9 +173,9 @@ typedef struct {
   bool matched;
 } server_match_t;
 
-const PRInt32 BUF_SIZE = 16384;
-const PRInt32 BUF_MARGIN = 1024;
-const PRInt32 BUF_TOTAL = BUF_SIZE + BUF_MARGIN;
+const int32_t BUF_SIZE = 16384;
+const int32_t BUF_MARGIN = 1024;
+const int32_t BUF_TOTAL = BUF_SIZE + BUF_MARGIN;
 
 struct relayBuffer
 {
@@ -248,9 +248,9 @@ private:
 // dynamically and stored in a linked list.  Initial number of 2 is chosen
 // to allocate a thread for socket accept and preallocate one for the first
 // connection that is with high probability expected to come.
-const PRUint32 INITIAL_THREADS = 2;
-const PRUint32 MAX_THREADS = 100;
-const PRUint32 DEFAULT_STACKSIZE = (512 * 1024);
+const uint32_t INITIAL_THREADS = 2;
+const uint32_t MAX_THREADS = 100;
+const uint32_t DEFAULT_STACKSIZE = (512 * 1024);
 
 // global data
 string nssconfigdir;
@@ -265,7 +265,7 @@ bool shutdown_server = false;
 bool do_http_proxy = false;
 bool any_host_spec_config = false;
 
-PR_CALLBACK PRIntn ClientAuthValueComparator(const void *v1, const void *v2)
+int ClientAuthValueComparator(const void *v1, const void *v2)
 {
   int a = *static_cast<const client_auth_option*>(v1) -
           *static_cast<const client_auth_option*>(v2);
@@ -277,7 +277,7 @@ PR_CALLBACK PRIntn ClientAuthValueComparator(const void *v1, const void *v2)
     return -1;
 }
 
-static PRIntn match_hostname(PLHashEntry *he, PRIntn index, void* arg)
+static int match_hostname(PLHashEntry *he, int index, void* arg)
 {
   server_match_t *match = (server_match_t*)arg;
   if (match->fullHost.find((char*)he->key) != string::npos)
@@ -296,7 +296,7 @@ void SignalShutdown()
 }
 
 bool ReadConnectRequest(server_info_t* server_info, 
-    relayBuffer& buffer, PRInt32* result, string& certificate,
+    relayBuffer& buffer, int32_t* result, string& certificate,
     client_auth_option* clientauth, string& host, string& location)
 {
   if (buffer.present() < 4) {
@@ -594,14 +594,13 @@ void HandleConnection(void* data)
          static_cast<void*>(other_sock)));
   if (other_sock) 
   {
-    PRInt32 numberOfSockets = 1;
+    int32_t numberOfSockets = 1;
 
     relayBuffer buffers[2];
 
     if (!do_http_proxy)
     {
-      if (!ci->http_proxy_only && 
-          !ConfigureSSLServerSocket(ci->client_sock, ci->server_info, certificateToUse, caNone))
+      if (!ConfigureSSLServerSocket(ci->client_sock, ci->server_info, certificateToUse, caNone))
         client_error = true;
       else if (!ConnectSocket(other_sock, &remote_addr, connect_timeout))
         client_error = true;
@@ -626,7 +625,7 @@ void HandleConnection(void* data)
                  sockets[0].in_flags & PR_POLL_WRITE ? 'W' : '-',
                  sockets[1].in_flags & PR_POLL_READ  ? 'R' : '-',
                  sockets[1].in_flags & PR_POLL_WRITE ? 'W' : '-'));
-      PRInt32 pollStatus = PR_Poll(sockets, numberOfSockets, PR_MillisecondsToInterval(1000));
+      int32_t pollStatus = PR_Poll(sockets, numberOfSockets, PR_MillisecondsToInterval(1000));
       if (pollStatus < 0)
       {
         LOG_DEBUG(("SSLTUNNEL(%p)): pollStatus=%d, exiting\n",
@@ -643,12 +642,12 @@ void HandleConnection(void* data)
         continue;
       }
 
-      for (PRInt32 s = 0; s < numberOfSockets; ++s)
+      for (int32_t s = 0; s < numberOfSockets; ++s)
       {
-        PRInt32 s2 = s == 1 ? 0 : 1;
-        PRInt16 out_flags = sockets[s].out_flags;
-        PRInt16 &in_flags = sockets[s].in_flags;
-        PRInt16 &in_flags2 = sockets[s2].in_flags;
+        int32_t s2 = s == 1 ? 0 : 1;
+        int16_t out_flags = sockets[s].out_flags;
+        int16_t &in_flags = sockets[s].in_flags;
+        int16_t &in_flags2 = sockets[s2].in_flags;
         sockets[s].out_flags = 0;
 
         LOG_BEGIN_BLOCK();
@@ -679,7 +678,7 @@ void HandleConnection(void* data)
         if (out_flags & PR_POLL_READ && buffers[s].areafree())
         {
           LOG_DEBUG((" :reading"));
-          PRInt32 bytesRead = PR_Recv(sockets[s].fd, buffers[s].buffertail, 
+          int32_t bytesRead = PR_Recv(sockets[s].fd, buffers[s].buffertail, 
               buffers[s].areafree(), 0, PR_INTERVAL_NO_TIMEOUT);
 
           if (bytesRead == 0)
@@ -717,7 +716,7 @@ void HandleConnection(void* data)
             LOG_DEBUG((", read %d bytes", bytesRead));
 
             // We have to accept and handle the initial CONNECT request here
-            PRInt32 response;
+            int32_t response;
             if (!connect_accepted && ReadConnectRequest(ci->server_info, buffers[s],
                 &response, certificateToUse, &clientAuth, fullHost, locationHeader))
             {
@@ -830,7 +829,7 @@ void HandleConnection(void* data)
         if (out_flags & PR_POLL_WRITE)
         {
           LOG_DEBUG((" :writing"));
-          PRInt32 bytesWrite = PR_Send(sockets[s].fd, buffers[s2].bufferhead, 
+          int32_t bytesWrite = PR_Send(sockets[s].fd, buffers[s2].bufferhead, 
               buffers[s2].present(), 0, PR_INTERVAL_NO_TIMEOUT);
 
           if (bytesWrite < 0)
@@ -865,15 +864,21 @@ void HandleConnection(void* data)
                 LOG_DEBUG((" proxy response sent to the client"));
                 // Proxy response has just been writen, update to ssl
                 ssl_updated = true;
-                if (!ci->http_proxy_only && 
-                    !ConfigureSSLServerSocket(ci->client_sock, ci->server_info, certificateToUse, clientAuth))
+                if (ci->http_proxy_only)
+                {
+                  LOG_DEBUG((" not updating to SSL based on http_proxy_only for this socket"));
+                }
+                else if (!ConfigureSSLServerSocket(ci->client_sock, ci->server_info, 
+                                                   certificateToUse, clientAuth))
                 {
                   LOG_ERRORD((" failed to config server socket\n"));
                   client_error = true;
                   break;
                 }
-
-                LOG_DEBUG((" client socket updated to SSL"));
+                else
+                {
+                  LOG_DEBUG((" client socket updated to SSL"));
+                }
               } // sslUpdate
 
               LOG_DEBUG((" dropping our write flag and setting other socket read flag"));
@@ -946,6 +951,7 @@ void StartServer(void* data)
   while (!shutdown_server) {
     connection_info_t* ci = new connection_info_t();
     ci->server_info = si;
+    ci->http_proxy_only = do_http_proxy;
     // block waiting for connections
     ci->client_sock = PR_Accept(listen_socket, &ci->client_addr,
                                 PR_INTERVAL_NO_TIMEOUT);
@@ -1262,21 +1268,21 @@ int parseConfigFile(const char* filePath)
   return 0;
 }
 
-PRIntn freeHostCertHashItems(PLHashEntry *he, PRIntn i, void *arg)
+int freeHostCertHashItems(PLHashEntry *he, int i, void *arg)
 {
   delete [] (char*)he->key;
   delete [] (char*)he->value;
   return HT_ENUMERATE_REMOVE;
 }
 
-PRIntn freeHostRedirHashItems(PLHashEntry *he, PRIntn i, void *arg)
+int freeHostRedirHashItems(PLHashEntry *he, int i, void *arg)
 {
   delete [] (char*)he->key;
   delete [] (char*)he->value;
   return HT_ENUMERATE_REMOVE;
 }
 
-PRIntn freeClientAuthHashItems(PLHashEntry *he, PRIntn i, void *arg)
+int freeClientAuthHashItems(PLHashEntry *he, int i, void *arg)
 {
   delete [] (char*)he->key;
   delete (client_auth_option*)he->value;
@@ -1358,7 +1364,7 @@ int main(int argc, char** argv)
 
   // Initialize NSS
   if (NSS_Init(nssconfigdir.c_str()) != SECSuccess) {
-    PRInt32 errorlen = PR_GetErrorTextLength();
+    int32_t errorlen = PR_GetErrorTextLength();
     char* err = new char[errorlen+1];
     PR_GetErrorText(err);
     LOG_ERROR(("Failed to init NSS: %s", err));

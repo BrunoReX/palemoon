@@ -18,22 +18,21 @@ class PluginPRLibrary : public PluginLibrary
 public:
     PluginPRLibrary(const char* aFilePath, PRLibrary* aLibrary) :
 #if defined(XP_UNIX) && !defined(XP_MACOSX)
-        mNP_Initialize(nsnull),
+        mNP_Initialize(nullptr),
 #else
-        mNP_Initialize(nsnull),
+        mNP_Initialize(nullptr),
 #endif
-        mNP_Shutdown(nsnull),
-        mNP_GetMIMEDescription(nsnull),
+        mNP_Shutdown(nullptr),
+        mNP_GetMIMEDescription(nullptr),
 #if defined(XP_UNIX) && !defined(XP_MACOSX)
-        mNP_GetValue(nsnull),
+        mNP_GetValue(nullptr),
 #endif
 #if defined(XP_WIN) || defined(XP_MACOSX) || defined(XP_OS2)
-        mNP_GetEntryPoints(nsnull),
+        mNP_GetEntryPoints(nullptr),
 #endif
-        mNPP_New(nsnull),
-        mNPP_GetValue(nsnull),
-        mNPP_ClearSiteData(nsnull),
-        mNPP_GetSitesWithData(nsnull),
+        mNPP_New(nullptr),
+        mNPP_ClearSiteData(nullptr),
+        mNPP_GetSitesWithData(nullptr),
         mLibrary(aLibrary),
         mFilePath(aFilePath)
     {
@@ -110,20 +109,18 @@ public:
     virtual nsresult NPP_GetSitesWithData(InfallibleTArray<nsCString>& result);
 
     virtual nsresult AsyncSetWindow(NPP instance, NPWindow* window);
-    virtual nsresult GetImageContainer(NPP instance, ImageContainer** aContainer);
+    virtual nsresult GetImageContainer(NPP instance, mozilla::layers::ImageContainer** aContainer);
     virtual nsresult GetImageSize(NPP instance, nsIntSize* aSize);
-    NS_OVERRIDE virtual bool UseAsyncPainting() { return false; }
+    virtual bool IsOOP() MOZ_OVERRIDE { return false; }
 #if defined(XP_MACOSX)
     virtual nsresult IsRemoteDrawingCoreAnimation(NPP instance, bool *aDrawing);
+    virtual nsresult ContentsScaleFactorChanged(NPP instance, double aContentsScaleFactor);
 #endif
-    NS_OVERRIDE
-    virtual nsresult SetBackgroundUnknown(NPP instance);
-    NS_OVERRIDE
+    virtual nsresult SetBackgroundUnknown(NPP instance) MOZ_OVERRIDE;
     virtual nsresult BeginUpdateBackground(NPP instance,
-                                           const nsIntRect&, gfxContext** aCtx);
-    NS_OVERRIDE
+                                           const nsIntRect&, gfxContext** aCtx) MOZ_OVERRIDE;
     virtual nsresult EndUpdateBackground(NPP instance,
-                                         gfxContext* aCtx, const nsIntRect&);
+                                         gfxContext* aCtx, const nsIntRect&) MOZ_OVERRIDE;
 #if defined(MOZ_WIDGET_QT) && (MOZ_PLATFORM_MAEMO == 6)
     virtual nsresult HandleGUIEvent(NPP instance,
                                     const nsGUIEvent& anEvent, bool* handled);
@@ -142,7 +139,6 @@ private:
     NP_GetEntryPointsFunc mNP_GetEntryPoints;
 #endif
     NPP_NewProcPtr mNPP_New;
-    NPP_GetValueProcPtr mNPP_GetValue;
     NPP_ClearSiteDataPtr mNPP_ClearSiteData;
     NPP_GetSitesWithDataPtr mNPP_GetSitesWithData;
     PRLibrary* mLibrary;

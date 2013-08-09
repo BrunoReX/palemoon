@@ -3,20 +3,22 @@
 
 "use strict";
 
-Cu.import("resource://services-sync/engines/addons.js");
 Cu.import("resource://services-common/preferences.js");
+Cu.import("resource://services-sync/addonutils.js");
+Cu.import("resource://services-sync/engines/addons.js");
+Cu.import("resource://services-sync/service.js");
+Cu.import("resource://services-sync/util.js");
 
 const HTTP_PORT = 8888;
 
 let prefs = new Preferences();
 
-Svc.Prefs.set("addons.ignoreRepositoryChecking", true);
 prefs.set("extensions.getAddons.get.url", "http://localhost:8888/search/guid:%IDS%");
 loadAddonTestFunctions();
 startupManager();
 
-Engines.register(AddonsEngine);
-let engine     = Engines.get("addons");
+Service.engineManager.register(AddonsEngine);
+let engine     = Service.engineManager.get("addons");
 let tracker    = engine._tracker;
 let store      = engine._store;
 let reconciler = engine._reconciler;
@@ -42,7 +44,7 @@ function createRecordForThisApp(id, addonId, enabled, deleted) {
 
 function createAndStartHTTPServer(port) {
   try {
-    let server = new nsHttpServer();
+    let server = new HttpServer();
 
     let bootstrap1XPI = ExtensionsTestPath("/addons/test_bootstrap1_1.xpi");
 
@@ -52,12 +54,6 @@ function createAndStartHTTPServer(port) {
 
     server.registerFile("/search/guid:missing-xpi%40tests.mozilla.org",
                         do_get_file("missing-xpi-search.xml"));
-
-    server.registerFile("/search/guid:rewrite%40tests.mozilla.org",
-                        do_get_file("rewrite-search.xml"));
-
-    server.registerFile("/search/guid:missing-sourceuri%40tests.mozilla.org",
-                        do_get_file("missing-sourceuri.xml"));
 
     server.start(port);
 
@@ -79,110 +75,6 @@ function run_test() {
 
   run_next_test();
 }
-
-add_test(function test_get_all_ids() {
-  _("Ensures that getAllIDs() returns an appropriate set.");
-
-  engine._refreshReconcilerState();
-
-  let addon1 = installAddon("test_install1");
-  let addon2 = installAddon("test_bootstrap1_1");
-
-  let ids = store.getAllIDs();
-  do_check_eq("object", typeof(ids));
-  do_check_eq(2, Object.keys(ids).length);
-  do_check_true(addon1.syncGUID in ids);
-  do_check_true(addon2.syncGUID in ids);
-
-  addon1.install.cancel();
-  uninstallAddon(addon2);
-
-  run_next_test();
-});
-
-add_test(function test_change_item_id() {
-  _("Ensures that changeItemID() works properly.");
-
-  let addon = installAddon("test_bootstrap1_1");
-
-  let oldID = addon.syncGUID;
-  let newID = Utils.makeGUID();
-
-  store.changeItemID(oldID, newID);
-
-  let newAddon = getAddonFromAddonManagerByID(addon.id);
-  do_check_neq(null, newAddon);
-  do_check_eq(newID, newAddon.syncGUID);
-
-  uninstallAddon(newAddon);
-
-  run_next_test();
-});
-
-add_test(function test_create() {
-  _("Ensure creating/installing an add-on from a record works.");
-
-  let server = createAndStartHTTPServer(HTTP_PORT);
-
-  let addon = installAddon("test_bootstrap1_1");
-  let id = addon.id;
-  uninstallAddon(addon);
-
-  let guid = Utils.makeGUID();
-  let record = createRecordForThisApp(guid, id, true, false);
-
-  let failed = store.applyIncomingBatch([record]);
-  do_check_eq(0, failed.length);
-
-  let newAddon = getAddonFromAddonManagerByID(id);
-  do_check_neq(null, newAddon);
-  do_check_eq(guid, newAddon.syncGUID);
-  do_check_false(newAddon.userDisabled);
-
-  uninstallAddon(newAddon);
-
-  server.stop(run_next_test);
-});
-
-add_test(function test_create_missing_search() {
-  _("Ensures that failed add-on searches are handled gracefully.");
-
-  let server = createAndStartHTTPServer(HTTP_PORT);
-
-  // The handler for this ID is not installed, so a search should 404.
-  const id = "missing@tests.mozilla.org";
-  let guid = Utils.makeGUID();
-  let record = createRecordForThisApp(guid, id, true, false);
-
-  let failed = store.applyIncomingBatch([record]);
-  do_check_eq(1, failed.length);
-  do_check_eq(guid, failed[0]);
-
-  let addon = getAddonFromAddonManagerByID(id);
-  do_check_eq(null, addon);
-
-  server.stop(run_next_test);
-});
-
-add_test(function test_create_bad_install() {
-  _("Ensures that add-ons without a valid install are handled gracefully.");
-
-  let server = createAndStartHTTPServer(HTTP_PORT);
-
-  // The handler returns a search result but the XPI will 404.
-  const id = "missing-xpi@tests.mozilla.org";
-  let guid = Utils.makeGUID();
-  let record = createRecordForThisApp(guid, id, true, false);
-
-  let failed = store.applyIncomingBatch([record]);
-  do_check_eq(1, failed.length);
-  do_check_eq(guid, failed[0]);
-
-  let addon = getAddonFromAddonManagerByID(id);
-  do_check_eq(null, addon);
-
-  server.stop(run_next_test);
-});
 
 add_test(function test_remove() {
   _("Ensure removing add-ons from deleted records works.");
@@ -409,62 +301,120 @@ add_test(function test_ignore_hotfixes() {
   run_next_test();
 });
 
-add_test(function test_ignore_untrusted_source_uris() {
-  _("Ensures that source URIs from insecure schemes are rejected.");
 
-  Svc.Prefs.set("addons.ignoreRepositoryChecking", false);
+add_test(function test_get_all_ids() {
+  _("Ensures that getAllIDs() returns an appropriate set.");
 
-  let ioService = Cc["@mozilla.org/network/io-service;1"]
-                  .getService(Ci.nsIIOService);
+  Svc.Prefs.set("addons.ignoreRepositoryChecking", true);
 
-  const bad = ["http://example.com/foo.xpi",
-               "ftp://example.com/foo.xpi",
-               "silly://example.com/foo.xpi"];
+  _("Installing two addons.");
+  let addon1 = installAddon("test_install1");
+  let addon2 = installAddon("test_bootstrap1_1");
 
-  const good = ["https://example.com/foo.xpi"];
+  _("Ensure they're syncable.");
+  do_check_true(store.isAddonSyncable(addon1));
+  do_check_true(store.isAddonSyncable(addon2));
 
-  for each (let s in bad) {
-    let sourceURI = ioService.newURI(s, null, null);
-    let addon = {sourceURI: sourceURI, name: "foo"};
+  let ids = store.getAllIDs();
 
-    try {
-      let cb = Async.makeSpinningCallback();
-      store.getInstallFromSearchResult(addon, cb);
-      cb.wait();
-    } catch (ex) {
-      do_check_neq(null, ex);
-      do_check_eq(0, ex.message.indexOf("Insecure source URI"));
-      continue;
-    }
+  do_check_eq("object", typeof(ids));
+  do_check_eq(2, Object.keys(ids).length);
+  do_check_true(addon1.syncGUID in ids);
+  do_check_true(addon2.syncGUID in ids);
 
-    // We should never get here if an exception is thrown.
-    do_check_true(false);
-  }
+  addon1.install.cancel();
+  uninstallAddon(addon2);
 
-  let count = 0;
-  for each (let s in good) {
-    let sourceURI = ioService.newURI(s, null, null);
-    let addon = {sourceURI: sourceURI, name: "foo", id: "foo"};
+  Svc.Prefs.reset("addons.ignoreRepositoryChecking");
+  run_next_test();
+});
 
-    // Despite what you might think, we don't get an error in the callback.
-    // The install won't work because the underlying Addon instance wasn't
-    // proper. But, that just results in an AddonInstall that is missing
-    // certain values. We really just care that the callback is being invoked
-    // anyway.
-    let callback = function(error, install) {
-      do_check_eq(null, error);
-      do_check_neq(null, install);
-      do_check_eq(sourceURI.spec, install.sourceURI.spec);
+add_test(function test_change_item_id() {
+  _("Ensures that changeItemID() works properly.");
 
-      count += 1;
+  let addon = installAddon("test_bootstrap1_1");
 
-      if (count >= good.length) {
-        run_next_test();
-      }
-    };
+  let oldID = addon.syncGUID;
+  let newID = Utils.makeGUID();
 
-    store.getInstallFromSearchResult(addon, callback);
-  }
+  store.changeItemID(oldID, newID);
+
+  let newAddon = getAddonFromAddonManagerByID(addon.id);
+  do_check_neq(null, newAddon);
+  do_check_eq(newID, newAddon.syncGUID);
+
+  uninstallAddon(newAddon);
+
+  run_next_test();
+});
+
+add_test(function test_create() {
+  _("Ensure creating/installing an add-on from a record works.");
+
+  // Set this so that getInstallFromSearchResult doesn't end up
+  // failing the install due to an insecure source URI scheme.
+  Svc.Prefs.set("addons.ignoreRepositoryChecking", true);
+  let server = createAndStartHTTPServer(HTTP_PORT);
+
+  let addon = installAddon("test_bootstrap1_1");
+  let id = addon.id;
+  uninstallAddon(addon);
+
+  let guid = Utils.makeGUID();
+  let record = createRecordForThisApp(guid, id, true, false);
+
+  let failed = store.applyIncomingBatch([record]);
+  do_check_eq(0, failed.length);
+
+  let newAddon = getAddonFromAddonManagerByID(id);
+  do_check_neq(null, newAddon);
+  do_check_eq(guid, newAddon.syncGUID);
+  do_check_false(newAddon.userDisabled);
+
+  uninstallAddon(newAddon);
+
+  Svc.Prefs.reset("addons.ignoreRepositoryChecking");
+  server.stop(run_next_test);
+});
+
+add_test(function test_create_missing_search() {
+  _("Ensures that failed add-on searches are handled gracefully.");
+
+  let server = createAndStartHTTPServer(HTTP_PORT);
+
+  // The handler for this ID is not installed, so a search should 404.
+  const id = "missing@tests.mozilla.org";
+  let guid = Utils.makeGUID();
+  let record = createRecordForThisApp(guid, id, true, false);
+
+  let failed = store.applyIncomingBatch([record]);
+  do_check_eq(1, failed.length);
+  do_check_eq(guid, failed[0]);
+
+  let addon = getAddonFromAddonManagerByID(id);
+  do_check_eq(null, addon);
+
+  server.stop(run_next_test);
+});
+
+add_test(function test_create_bad_install() {
+  _("Ensures that add-ons without a valid install are handled gracefully.");
+
+  let server = createAndStartHTTPServer(HTTP_PORT);
+
+  // The handler returns a search result but the XPI will 404.
+  const id = "missing-xpi@tests.mozilla.org";
+  let guid = Utils.makeGUID();
+  let record = createRecordForThisApp(guid, id, true, false);
+
+  let failed = store.applyIncomingBatch([record]);
+  do_check_eq(1, failed.length);
+  do_check_eq(guid, failed[0]);
+
+  let addon = getAddonFromAddonManagerByID(id);
+  do_check_eq(null, addon);
+
+  server.stop(run_next_test);
 });
 
 add_test(function test_wipe() {
@@ -483,62 +433,30 @@ add_test(function test_wipe() {
   run_next_test();
 });
 
-add_test(function test_source_uri_rewrite() {
-  _("Ensure that a 'src=api' query string is rewritten to 'src=sync'");
+add_test(function test_wipe_and_install() {
+  _("Ensure wipe followed by install works.");
 
-  // This tests for conformance with bug 708134 so server-side metrics aren't
-  // skewed.
+  // This tests the reset sync flow where remote data is replaced by local. The
+  // receiving client will see a wipe followed by a record which should undo
+  // the wipe.
+  let installed = installAddon("test_bootstrap1_1");
 
-  Svc.Prefs.set("addons.ignoreRepositoryChecking", true);
-
-  // We resort to monkeypatching because of the API design.
-  let oldFunction = store.__proto__.installAddonFromSearchResult;
-
-  let installCalled = false;
-  store.__proto__.installAddonFromSearchResult =
-    function testInstallAddon(addon, metadata, cb) {
-
-    do_check_eq("http://127.0.0.1:8888/require.xpi?src=sync",
-                addon.sourceURI.spec);
-
-    installCalled = true;
-
-    store.getInstallFromSearchResult(addon, function (error, install) {
-      do_check_eq("http://127.0.0.1:8888/require.xpi?src=sync",
-                  install.sourceURI.spec);
-
-      cb(null, {id: addon.id, addon: addon, install: install});
-    });
-  };
-
-  let server = createAndStartHTTPServer(HTTP_PORT);
-
-  let installCallback = Async.makeSpinningCallback();
-  store.installAddons([{id: "rewrite@tests.mozilla.org"}], installCallback);
-
-  installCallback.wait();
-  do_check_true(installCalled);
-  store.__proto__.installAddonFromSearchResult = oldFunction;
-
-  Svc.Prefs.reset("addons.ignoreRepositoryChecking");
-  server.stop(run_next_test);
-});
-
-add_test(function test_handle_empty_source_uri() {
-  _("Ensure that search results without a sourceURI are properly ignored.");
+  let record = createRecordForThisApp(installed.syncGUID, installed.id, true,
+                                      false);
 
   Svc.Prefs.set("addons.ignoreRepositoryChecking", true);
+  store.wipe();
 
+  let deleted = getAddonFromAddonManagerByID(installed.id);
+  do_check_null(deleted);
+
+  // Re-applying the record can require re-fetching the XPI.
   let server = createAndStartHTTPServer(HTTP_PORT);
 
-  const ID = "missing-sourceuri@tests.mozilla.org";
+  store.applyIncoming(record);
 
-  let cb = Async.makeSpinningCallback();
-  store.installAddons([{id: ID}], cb);
-  let result = cb.wait();
-
-  do_check_true("installedIDs" in result);
-  do_check_eq(0, result.installedIDs.length);
+  let fetched = getAddonFromAddonManagerByID(record.addonID);
+  do_check_true(!!fetched);
 
   Svc.Prefs.reset("addons.ignoreRepositoryChecking");
   server.stop(run_next_test);

@@ -40,11 +40,7 @@
  * itself), to ensure that the function has the
  * right calling conventions on OS/2.
  */
-#ifdef XP_OS2
-#define NP_CALLBACK _System
-#else
-#define NP_CALLBACK
-#endif
+#define NP_CALLBACK NP_LOADDS
 
 #if defined(XP_WIN)
 #define NS_NPAPIPLUGIN_CALLBACK(_type, _name) _type (__stdcall * _name)
@@ -78,15 +74,13 @@ class PluginModuleChild : public PPluginModuleChild
 {
     typedef mozilla::dom::PCrashReporterChild PCrashReporterChild;
 protected:
-    NS_OVERRIDE
     virtual mozilla::ipc::RPCChannel::RacyRPCPolicy
-    MediateRPCRace(const Message& parent, const Message& child)
+    MediateRPCRace(const Message& parent, const Message& child) MOZ_OVERRIDE
     {
         return MediateRace(parent, child);
     }
 
-    NS_OVERRIDE
-    virtual bool ShouldContinueFromReplyTimeout();
+    virtual bool ShouldContinueFromReplyTimeout() MOZ_OVERRIDE;
 
     // Implement the PPluginModuleChild interface
     virtual bool AnswerNP_GetEntryPoints(NPError* rv);
@@ -150,21 +144,21 @@ protected:
 
     virtual PCrashReporterChild*
     AllocPCrashReporter(mozilla::dom::NativeThreadId* id,
-                        PRUint32* processType);
+                        uint32_t* processType);
     virtual bool
     DeallocPCrashReporter(PCrashReporterChild* actor);
     virtual bool
     AnswerPCrashReporterConstructor(PCrashReporterChild* actor,
                                     mozilla::dom::NativeThreadId* id,
-                                    PRUint32* processType);
+                                    uint32_t* processType);
 
     virtual void
     ActorDestroy(ActorDestroyReason why);
 
     MOZ_NORETURN void QuickExit();
 
-    NS_OVERRIDE virtual bool
-    RecvProcessNativeEventsInRPCCall();
+    virtual bool
+    RecvProcessNativeEventsInRPCCall() MOZ_OVERRIDE;
 
 public:
     PluginModuleChild();
@@ -293,6 +287,11 @@ public:
         // Mac: Allow the plugin to use offline renderer mode.
         // Use this only if the plugin is certified the support the offline renderer.
         QUIRK_ALLOW_OFFLINE_RENDERER                    = 1 << 9,
+        // Mac: Work around a Flash bug that can cause plugin process crashes
+        // in CoreGraphics mode:  The Flash plugin sometimes accesses the
+        // CGContextRef we pass to it in NPP_HandleEvent(NPCocoaEventDrawRect)
+        // outside of that call.  See bug 804606.
+        QUIRK_FLASH_AVOID_CGMODE_CRASHES                = 1 << 10,
     };
 
     int GetQuirks() { return mQuirks; }
@@ -306,20 +305,16 @@ private:
     void InitQuirksModes(const nsCString& aMimeType);
     bool InitGraphics();
     void DeinitGraphics();
-#if defined(MOZ_WIDGET_GTK2)
+#if defined(MOZ_WIDGET_GTK)
     static gboolean DetectNestedEventLoop(gpointer data);
     static gboolean ProcessBrowserEvents(gpointer data);
 
-    NS_OVERRIDE
-    virtual void EnteredCxxStack();
-    NS_OVERRIDE
-    virtual void ExitedCxxStack();
+    virtual void EnteredCxxStack() MOZ_OVERRIDE;
+    virtual void ExitedCxxStack() MOZ_OVERRIDE;
 #elif defined(MOZ_WIDGET_QT)
 
-    NS_OVERRIDE
-    virtual void EnteredCxxStack();
-    NS_OVERRIDE
-    virtual void ExitedCxxStack();
+    virtual void EnteredCxxStack() MOZ_OVERRIDE;
+    virtual void ExitedCxxStack() MOZ_OVERRIDE;
 #endif
 
     PRLibrary* mLibrary;
@@ -330,7 +325,7 @@ private:
 
     // we get this from the plugin
     NP_PLUGINSHUTDOWN mShutdownFunc;
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_BSD)
     NP_PLUGINUNIXINIT mInitializeFunc;
 #elif defined(OS_WIN) || defined(OS_MACOSX)
     NP_PLUGININIT mInitializeFunc;
@@ -340,7 +335,7 @@ private:
     NPPluginFuncs mFunctions;
     NPSavedData mSavedData;
 
-#if defined(MOZ_WIDGET_GTK2)
+#if defined(MOZ_WIDGET_GTK)
     // If a plugin spins a nested glib event loop in response to a
     // synchronous IPC message from the browser, the loop might break
     // only after the browser responds to a request sent by the
@@ -429,10 +424,8 @@ private:
     static PLDHashOperator CollectForInstance(NPObjectData* d, void* userArg);
 
 #if defined(OS_WIN)
-    NS_OVERRIDE
-    virtual void EnteredCall();
-    NS_OVERRIDE
-    virtual void ExitedCall();
+    virtual void EnteredCall() MOZ_OVERRIDE;
+    virtual void ExitedCall() MOZ_OVERRIDE;
 
     // Entered/ExitedCall notifications keep track of whether the plugin has
     // entered a nested event loop within this RPC call.

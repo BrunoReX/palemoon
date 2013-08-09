@@ -4,12 +4,12 @@
 
 package org.mozilla.gecko.sync.synchronizer;
 
+import org.mozilla.gecko.sync.Logger;
 import org.mozilla.gecko.sync.SynchronizerConfiguration;
 import org.mozilla.gecko.sync.repositories.Repository;
 import org.mozilla.gecko.sync.repositories.RepositorySessionBundle;
 
 import android.content.Context;
-import android.util.Log;
 
 /**
  * I perform a sync.
@@ -34,6 +34,12 @@ public class Synchronizer implements SynchronizerSessionDelegate {
 
   protected SynchronizerDelegate synchronizerDelegate;
 
+  protected SynchronizerSession session = null;
+
+  public SynchronizerSession getSynchronizerSession() {
+    return session;
+  }
+
   @Override
   public void onInitialized(SynchronizerSession session) {
     session.synchronize();
@@ -41,15 +47,15 @@ public class Synchronizer implements SynchronizerSessionDelegate {
 
   @Override
   public void onSynchronized(SynchronizerSession synchronizerSession) {
-    Log.d(LOG_TAG, "Got onSynchronized.");
-    Log.d(LOG_TAG, "Notifying SynchronizerDelegate.");
+    Logger.debug(LOG_TAG, "Got onSynchronized.");
+    Logger.debug(LOG_TAG, "Notifying SynchronizerDelegate.");
     this.synchronizerDelegate.onSynchronized(synchronizerSession.getSynchronizer());
   }
 
   @Override
   public void onSynchronizeSkipped(SynchronizerSession synchronizerSession) {
-    Log.d(LOG_TAG, "Got onSynchronizeSkipped.");
-    Log.d(LOG_TAG, "Notifying SynchronizerDelegate as if on success.");
+    Logger.debug(LOG_TAG, "Got onSynchronizeSkipped.");
+    Logger.debug(LOG_TAG, "Notifying SynchronizerDelegate as if on success.");
     this.synchronizerDelegate.onSynchronized(synchronizerSession.getSynchronizer());
   }
 
@@ -67,7 +73,7 @@ public class Synchronizer implements SynchronizerSessionDelegate {
   /**
    * Fetch a synchronizer session appropriate for this <code>Synchronizer</code>
    */
-  public SynchronizerSession getSynchronizerSession() {
+  protected SynchronizerSession newSynchronizerSession() {
     return new SynchronizerSession(this, this);
   }
 
@@ -76,8 +82,8 @@ public class Synchronizer implements SynchronizerSessionDelegate {
    */
   public void synchronize(Context context, SynchronizerDelegate delegate) {
     this.synchronizerDelegate = delegate;
-    SynchronizerSession session = getSynchronizerSession();
-    session.init(context, bundleA, bundleB);
+    this.session = newSynchronizerSession();
+    this.session.init(context, bundleA, bundleB);
   }
 
   public SynchronizerConfiguration save() {

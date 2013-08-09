@@ -8,7 +8,7 @@
 #include "nsDOMClassInfoID.h"
 
 #include "nsPresContext.h"
-#include "dombindings.h"
+#include "mozilla/dom/ClientRectListBinding.h"
 
 DOMCI_DATA(ClientRect, nsClientRect)
 
@@ -84,30 +84,24 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(nsClientRectList)
 
 
 NS_IMETHODIMP    
-nsClientRectList::GetLength(PRUint32* aLength)
+nsClientRectList::GetLength(uint32_t* aLength)
 {
-  *aLength = mArray.Count();
+  *aLength = Length();
   return NS_OK;
 }
 
 NS_IMETHODIMP    
-nsClientRectList::Item(PRUint32 aIndex, nsIDOMClientRect** aReturn)
+nsClientRectList::Item(uint32_t aIndex, nsIDOMClientRect** aReturn)
 {
-  NS_IF_ADDREF(*aReturn = nsClientRectList::GetItemAt(aIndex));
+  NS_IF_ADDREF(*aReturn = Item(aIndex));
   return NS_OK;
-}
-
-nsIDOMClientRect*
-nsClientRectList::GetItemAt(PRUint32 aIndex)
-{
-  return mArray.SafeObjectAt(aIndex);
 }
 
 JSObject*
 nsClientRectList::WrapObject(JSContext *cx, JSObject *scope, bool *triedToWrap)
 {
-  return mozilla::dom::binding::ClientRectList::create(cx, scope, this,
-                                                       triedToWrap);
+  return mozilla::dom::ClientRectListBinding::Wrap(cx, scope, this,
+                                                   triedToWrap);
 }
 
 static double

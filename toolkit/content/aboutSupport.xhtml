@@ -44,8 +44,12 @@
     </div>
 
     <div>
-      <button onclick="copyContentsToClipboard()">
-        &aboutSupport.copyToClipboard.label;
+      <button id="copy-raw-data-to-clipboard"
+              onclick="copyRawDataToClipboard(this);">
+        &aboutSupport.copyRawDataToClipboard.label;
+      </button>
+      <button id="copy-to-clipboard" onclick="copyContentsToClipboard()">
+        &aboutSupport.copyTextToClipboard.label;
       </button>
     </div>
 
@@ -86,7 +90,7 @@
             </td>
           </tr>
 
-          <tr>
+          <tr id="profile-row" class="no-copy">
             <th class="column">
 #ifdef XP_WIN
               &aboutSupport.appBasicsProfileDirWinMac;
@@ -114,7 +118,7 @@
             </td>
           </tr>
 
-          <tr>
+          <tr class="no-copy">
             <th class="column">
               &aboutSupport.appBasicsEnabledPlugins;
             </th>
@@ -134,7 +138,7 @@
             </td>
           </tr>
 
-          <tr>
+          <tr class="no-copy">
             <th class="column">
               &aboutSupport.appBasicsCrashIDs;
             </th>
@@ -144,7 +148,7 @@
             </td>
           </tr>
 
-          <tr>
+          <tr class="no-copy">
             <th class="column">
               &aboutSupport.appBasicsMemoryUse;
             </th>
@@ -205,6 +209,11 @@
         </tbody>
       </table>
 
+      <section id="prefs-user-js-section" class="no-copy" style="display:none">
+        <h3>&aboutSupport.userJSTitle;</h3>
+        <p>&aboutSupport.userJSDescription;</p>
+      </section>
+
       <!-- - - - - - - - - - - - - - - - - - - - - -->
       <h2 class="major-section">
         &aboutSupport.graphicsTitle;
@@ -236,7 +245,33 @@
             <td id="javascript-incremental-gc">
             </td>
           </tr>
-	</tbody>
+        </tbody>
+      </table>
+
+      <!-- - - - - - - - - - - - - - - - - - - - - -->
+      <h2 class="major-section">
+        &aboutSupport.a11yTitle;
+      </h2>
+
+      <table>
+        <tbody>
+          <tr>
+            <th class="column">
+              &aboutSupport.a11yActivated;
+            </th>
+
+            <td id="a11y-activated">
+            </td>
+          </tr>
+          <tr>
+            <th class="column">
+              &aboutSupport.a11yForceDisabled;
+            </th>
+
+            <td id="a11y-force-disabled">
+            </td>
+          </tr>
+        </tbody>
       </table>
 
       <!-- - - - - - - - - - - - - - - - - - - - - -->

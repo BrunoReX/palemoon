@@ -16,7 +16,7 @@
 static bool
 ServerIsNES3x(nsIHttpChannel *httpChannel)
 {
-    nsCAutoString server;
+    nsAutoCString server;
     httpChannel->GetResponseHeader(NS_LITERAL_CSTRING("Server"), server);
     // case sensitive string comparison is OK here.  the server string
     // is a well-known value, so we should not have to worry about it
@@ -51,8 +51,8 @@ nsURIChecker::SetStatusAndCallBack(nsresult aStatus)
     if (mObserver) {
         mObserver->OnStartRequest(this, mObserverContext);
         mObserver->OnStopRequest(this, mObserverContext, mStatus);
-        mObserver = nsnull;
-        mObserverContext = nsnull;
+        mObserver = nullptr;
+        mObserverContext = nullptr;
     }
 }
 
@@ -73,7 +73,7 @@ nsURIChecker::CheckStatus()
     if (!httpChannel)
         return NS_BINDING_SUCCEEDED;
 
-    PRUint32 responseStatus;
+    uint32_t responseStatus;
     rv = httpChannel->GetResponseStatus(&responseStatus);
     if (NS_FAILED(rv))
         return NS_BINDING_FAILED;
@@ -95,10 +95,13 @@ nsURIChecker::CheckStatus()
             nsCOMPtr<nsIChannel> lastChannel = mChannel;
 
             nsCOMPtr<nsIURI> uri;
-            PRUint32 loadFlags;
+            uint32_t loadFlags;
 
             rv  = lastChannel->GetOriginalURI(getter_AddRefs(uri));
-            rv |= lastChannel->GetLoadFlags(&loadFlags);
+            nsresult tmp = lastChannel->GetLoadFlags(&loadFlags);
+            if (NS_FAILED(tmp)) {
+              rv = tmp;
+            }
 
             // XXX we are carrying over the load flags, but what about other
             // parameters that may have been set on lastChannel??
@@ -176,9 +179,9 @@ nsURIChecker::AsyncCheck(nsIRequestObserver *aObserver,
     mChannel->SetNotificationCallbacks(this);
     
     // and start the request:
-    nsresult rv = mChannel->AsyncOpen(this, nsnull);
+    nsresult rv = mChannel->AsyncOpen(this, nullptr);
     if (NS_FAILED(rv))
-        mChannel = nsnull;
+        mChannel = nullptr;
     else {
         // ok, wait for OnStartRequest to fire.
         mIsPending = true;
@@ -296,7 +299,7 @@ nsURIChecker::OnStopRequest(nsIRequest *request, nsISupports *ctxt,
     if (mChannel == request) {
         // break reference cycle between us and the channel (see comment in
         // AsyncCheckURI)
-        mChannel = nsnull;
+        mChannel = nullptr;
     }
     return NS_OK;
 }
@@ -307,8 +310,8 @@ nsURIChecker::OnStopRequest(nsIRequest *request, nsISupports *ctxt,
 
 NS_IMETHODIMP
 nsURIChecker::OnDataAvailable(nsIRequest *aRequest, nsISupports *aCtxt,
-                               nsIInputStream *aInput, PRUint32 aOffset,
-                               PRUint32 aCount)
+                               nsIInputStream *aInput, uint64_t aOffset,
+                               uint32_t aCount)
 {
     NS_NOTREACHED("nsURIChecker::OnDataAvailable");
     return NS_BINDING_ABORTED;
@@ -336,7 +339,7 @@ nsURIChecker::GetInterface(const nsIID & aIID, void **aResult)
 NS_IMETHODIMP
 nsURIChecker::AsyncOnChannelRedirect(nsIChannel *aOldChannel,
                                      nsIChannel *aNewChannel,
-                                     PRUint32 aFlags,
+                                     uint32_t aFlags,
                                      nsIAsyncVerifyRedirectCallback *callback)
 {
     // We have a new channel

@@ -1,5 +1,5 @@
 /* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 40 -*- */
-/* vim: set ts=2 et sw=2 tw=40: */
+/* vim: set ts=2 et sw=2 tw=80: */
 /*
 ** Copyright 2006, The Android Open Source Project
 **
@@ -75,6 +75,8 @@ RegisterBluetoothEventHandler(const nsCString& aNodeName,
 {
   MOZ_ASSERT(NS_IsMainThread());
   BluetoothEventObserverList *ol;
+
+  NS_ENSURE_TRUE(sBluetoothEventObserverTable, NS_ERROR_FAILURE);
   if (!sBluetoothEventObserverTable->Get(aNodeName, &ol)) {
     sBluetoothEventObserverTable->Put(aNodeName,
                                       new BluetoothEventObserverList());
@@ -90,6 +92,8 @@ UnregisterBluetoothEventHandler(const nsCString& aNodeName,
 {
   MOZ_ASSERT(NS_IsMainThread());
   BluetoothEventObserverList *ol;
+
+  NS_ENSURE_TRUE(sBluetoothEventObserverTable, NS_ERROR_FAILURE);
   if (!sBluetoothEventObserverTable->Get(aNodeName, &ol)) {
     NS_WARNING("Node does not exist to remove BluetoothEventListener from!");
     return NS_ERROR_FAILURE;
@@ -166,7 +170,7 @@ EventFilter(DBusConnection *aConn, DBusMessage *aMsg,
 nsresult
 StartBluetoothConnection()
 {
-  if(sDBusConnection) {
+  if (sDBusConnection) {
     NS_WARNING("DBusConnection already established, skipping");
     return NS_OK;    
   }
@@ -189,7 +193,7 @@ StartBluetoothConnection()
 nsresult
 StopBluetoothConnection()
 {
-  if(!sDBusConnection) {
+  if (!sDBusConnection) {
     NS_WARNING("DBusConnection does not exist, nothing to stop, skipping.");
     return NS_OK;
   }

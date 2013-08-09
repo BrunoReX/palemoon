@@ -25,7 +25,7 @@ SimpleTest.waitForExplicitFinish();
 
 var iframe;
 
-function getZoomRatio() {
+function getScreenPixelsPerCSSPixel() {
   return SpecialPowers.DOMWindowUtils.screenPixelsPerCSSPixel;
 }
 
@@ -197,7 +197,7 @@ function run() {
   }
 
   var content_div = document.getElementById("content");
-  content_div.style.font = "-moz-initial";
+  content_div.style.font = "initial";
   var em_size =
     getComputedStyle(content_div, "").fontSize.match(/^(\d+)px$/)[1];
 
@@ -357,9 +357,9 @@ function run() {
   should_apply("not all and (max-device-aspect-ratio: " + low_dar_2 + ")");
   expression_should_not_be_parseable("max-device-aspect-ratio");
 
-  var real_dpr = 1.0 * getZoomRatio();
-  var high_dpr = 1.1 * getZoomRatio();
-  var low_dpr = 0.9 * getZoomRatio();
+  var real_dpr = 1.0 * getScreenPixelsPerCSSPixel();
+  var high_dpr = 1.1 * getScreenPixelsPerCSSPixel();
+  var low_dpr = 0.9 * getScreenPixelsPerCSSPixel();
   should_apply("all and (max--moz-device-pixel-ratio: " + real_dpr + ")");
   should_apply("all and (min--moz-device-pixel-ratio: " + real_dpr + ")");
   should_not_apply("not all and (max--moz-device-pixel-ratio: " + real_dpr + ")");
@@ -464,8 +464,12 @@ function run() {
     expression_should_be_parseable(feature + ": 3.0dpi");
     expression_should_be_parseable(feature + ": 3.4dpi");
     expression_should_be_parseable(feature + "\t: 120dpcm");
+    expression_should_be_parseable(feature + ": 1dppx");
+    expression_should_be_parseable(feature + ": 1.5dppx");
+    expression_should_be_parseable(feature + ": 2.0dppx");
     expression_should_not_be_parseable(feature + ": 0dpi");
     expression_should_not_be_parseable(feature + ": -3dpi");
+    expression_should_not_be_parseable(feature + ": 0dppx");
   }
 
   // Find the resolution using max-resolution
@@ -484,6 +488,7 @@ function run() {
   if (query_applies("(min-resolution: " + resolution + "dpi)")) {
     // It's exact!
     should_apply("(resolution: " + resolution + "dpi)");
+    should_apply("(resolution: " + Math.floor(resolution/96) + "dppx)");
     should_not_apply("(resolution: " + (resolution + 1) + "dpi)");
     should_not_apply("(resolution: " + (resolution - 1) + "dpi)");
     dpi_high = resolution + 1;
@@ -627,6 +632,42 @@ function run() {
   expression_should_be_parseable("-moz-windows-theme: garbage");
   expression_should_not_be_parseable("-moz-windows-theme: ''");
   expression_should_not_be_parseable("-moz-windows-theme: ");
+
+  // OpenType SVG media features
+  query_should_be_parseable("(-moz-is-glyph)");
+  query_should_not_be_parseable("not (-moz-is-glyph)");
+  query_should_not_be_parseable("only (-moz-is-glyph)");
+  query_should_be_parseable("all and (-moz-is-glyph)");
+  query_should_be_parseable("not all and (-moz-is-glyph)");
+  query_should_be_parseable("only all and (-moz-is-glyph)");
+
+  query_should_be_parseable("(-moz-is-glyph:0)");
+  query_should_not_be_parseable("not (-moz-is-glyph:0)");
+  query_should_not_be_parseable("only (-moz-is-glyph:0)");
+  query_should_be_parseable("all and (-moz-is-glyph:0)");
+  query_should_be_parseable("not all and (-moz-is-glyph:0)");
+  query_should_be_parseable("only all and (-moz-is-glyph:0)");
+
+  query_should_be_parseable("(-moz-is-glyph:1)");
+  query_should_not_be_parseable("not (-moz-is-glyph:1)");
+  query_should_not_be_parseable("only (-moz-is-glyph:1)");
+  query_should_be_parseable("all and (-moz-is-glyph:1)");
+  query_should_be_parseable("not all and (-moz-is-glyph:1)");
+  query_should_be_parseable("only all and (-moz-is-glyph:1)");
+
+  query_should_not_be_parseable("(min--moz-is-glyph:0)");
+  query_should_not_be_parseable("(max--moz-is-glyph:0)");
+  query_should_not_be_parseable("(min--moz-is-glyph:1)");
+  query_should_not_be_parseable("(max--moz-is-glyph:1)");
+
+  should_apply("not all and (-moz-is-glyph)");
+  should_apply("(-moz-is-glyph:0)");
+  should_apply("not all and (-moz-is-glyph:1)");
+  should_apply("only all and (-moz-is-glyph:0)");
+  should_not_apply("(-moz-is-glyph)");
+  should_not_apply("(-moz-is-glyph:1)");
+  should_not_apply("not all and (-moz-is-glyph:0)");
+  should_not_apply("only all and (-moz-is-glyph:1)");
 
   // Parsing tests
   // bug 454227

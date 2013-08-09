@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const EXPORTED_SYMBOLS = ['FormEngine', 'FormRec'];
+this.EXPORTED_SYMBOLS = ['FormEngine', 'FormRec'];
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -18,7 +18,7 @@ Cu.import("resource://services-common/log4moz.js");
 
 const FORMS_TTL = 5184000; // 60 days
 
-function FormRec(collection, id) {
+this.FormRec = function FormRec(collection, id) {
   CryptoWrapper.call(this, collection, id);
 }
 FormRec.prototype = {
@@ -151,8 +151,8 @@ let FormWrapper = {
 
 };
 
-function FormEngine() {
-  SyncEngine.call(this, "Forms");
+this.FormEngine = function FormEngine(service) {
+  SyncEngine.call(this, "Forms", service);
 }
 FormEngine.prototype = {
   __proto__: SyncEngine.prototype,
@@ -170,8 +170,8 @@ FormEngine.prototype = {
   }
 };
 
-function FormStore(name) {
-  Store.call(this, name);
+function FormStore(name, engine) {
+  Store.call(this, name, engine);
 }
 FormStore.prototype = {
   __proto__: Store.prototype,
@@ -241,8 +241,8 @@ FormStore.prototype = {
   }
 };
 
-function FormTracker(name) {
-  Tracker.call(this, name);
+function FormTracker(name, engine) {
+  Tracker.call(this, name, engine);
   Svc.Obs.add("weave:engine:start-tracking", this);
   Svc.Obs.add("weave:engine:stop-tracking", this);
   Svc.Obs.add("profile-change-teardown", this);

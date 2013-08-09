@@ -5,21 +5,21 @@
 
 #include "nsSMILTimeValue.h"
 
-nsSMILTime nsSMILTimeValue::kUnresolvedMillis = LL_MAXINT;
+nsSMILTime nsSMILTimeValue::kUnresolvedMillis = INT64_MAX;
 
 //----------------------------------------------------------------------
 // nsSMILTimeValue methods:
 
-static inline PRInt8
-Cmp(PRInt64 aA, PRInt64 aB)
+static inline int8_t
+Cmp(int64_t aA, int64_t aB)
 {
   return aA == aB ? 0 : (aA > aB ? 1 : -1);
 }
 
-PRInt8
+int8_t
 nsSMILTimeValue::CompareTo(const nsSMILTimeValue& aOther) const
 {
-  PRInt8 result;
+  int8_t result;
 
   if (mState == STATE_DEFINITE) {
     result = (aOther.mState == STATE_DEFINITE)

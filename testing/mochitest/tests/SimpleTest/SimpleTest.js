@@ -240,15 +240,13 @@ SimpleTest.ok = function (condition, name, diag) {
 **/
 SimpleTest.is = function (a, b, name) {
     var pass = (a == b);
-    var diag = pass ? repr(a) + " should equal " + repr(b)
-                    : "got " + repr(a) + ", expected " + repr(b)
+    var diag = pass ? "" : "got " + repr(a) + ", expected " + repr(b)
     SimpleTest.ok(pass, name, diag);
 };
 
 SimpleTest.isnot = function (a, b, name) {
     var pass = (a != b);
-    var diag = pass ? repr(a) + " should not equal " + repr(b)
-                    : "didn't expect " + repr(a) + ", but got it";
+    var diag = pass ? "" : "didn't expect " + repr(a) + ", but got it";
     SimpleTest.ok(pass, name, diag);
 };
 
@@ -257,8 +255,7 @@ SimpleTest.isnot = function (a, b, name) {
 **/
 SimpleTest.ise = function (a, b, name) {
     var pass = (a === b);
-    var diag = pass ? repr(a) + " should strictly equal " + repr(b)
-                    : "got " + repr(a) + ", strictly expected " + repr(b)
+    var diag = pass ? "" : "got " + repr(a) + ", strictly expected " + repr(b)
     SimpleTest.ok(pass, name, diag);
 };
 
@@ -652,25 +649,8 @@ SimpleTest.waitForClipboard = function(aExpectedStringOrValidatorFn, aSetupFn,
  * working (or finish).
  */
 SimpleTest.executeSoon = function(aFunc) {
-    // Once SpecialPowers is available in chrome mochitests, we can replace the
-    // body of this function with a call to SpecialPowers.executeSoon().
-    if ("Components" in window && "classes" in window.Components) {
-        try {
-            netscape.security.PrivilegeManager
-              .enablePrivilege("UniversalXPConnect");
-            var tm = Components.classes["@mozilla.org/thread-manager;1"]
-                       .getService(Components.interfaces.nsIThreadManager);
-
-            tm.mainThread.dispatch({
-                run: function() {
-                    aFunc();
-                }
-            }, Components.interfaces.nsIThread.DISPATCH_NORMAL);
-            return;
-        } catch (ex) {
-            // If the above fails (most likely because of enablePrivilege
-            // failing), fall through to the setTimeout path.
-        }
+    if ("SpecialPowers" in window) {
+        return SpecialPowers.executeSoon(aFunc, window);
     }
     setTimeout(aFunc, 0);
 }
@@ -680,6 +660,12 @@ SimpleTest.executeSoon = function(aFunc) {
  * SimpleTest.waitForExplicitFinish() has been invoked.
 **/
 SimpleTest.finish = function () {
+    if (SimpleTest._alreadyFinished) {
+        SimpleTest.ok(false, "[SimpleTest.finish()] this test already called finish!");
+    }
+
+    SimpleTest._alreadyFinished = true;
+
     if (SimpleTest._expectingUncaughtException) {
         SimpleTest.ok(false, "expectUncaughtException was called but no uncaught exception was detected!");
     }
@@ -705,6 +691,89 @@ SimpleTest.finish = function () {
     } else {
         SimpleTest.showReport();
     }
+};
+
+/**
+ * Monitor console output from now until endMonitorConsole is called.
+ *
+ * Expect to receive as many console messages as there are elements of
+ * |msgs|, an array; each element is an object which may have any
+ * number of the following properties:
+ *   message, errorMessage, sourceName, sourceLine, category:
+ *     string or regexp
+ *   lineNumber, columnNumber: number
+ *   isScriptError, isWarning, isException, isStrict: boolean
+ * Strings, numbers, and booleans must compare equal to the named
+ * property of the Nth console message.  Regexps must match.  Any
+ * fields present in the message but not in the pattern object are ignored.
+ *
+ * After endMonitorConsole is called, |continuation| will be called
+ * asynchronously.  (Normally, you will want to pass |SimpleTest.finish| here.)
+ *
+ * It is incorrect to use this function in a test which has not called
+ * SimpleTest.waitForExplicitFinish.
+ */
+SimpleTest.monitorConsole = function (continuation, msgs) {
+  if (SimpleTest._stopOnLoad) {
+    ok(false, "Console monitoring requires use of waitForExplicitFinish.");
+  }
+
+  var counter = 0;
+  function listener(msg) {
+    if (msg.message === "SENTINEL" && !msg.isScriptError) {
+      is(counter, msgs.length, "monitorConsole | number of messages");
+      SimpleTest.executeSoon(continuation);
+    } else if (counter >= msgs.length) {
+      ok(false, "monitorConsole | extra message | " + JSON.stringify(msg));
+    } else {
+      var pat = msgs[counter];
+      for (k in pat) {
+        ok(k in msg, "monitorConsole | [" + counter + "]." + k + " present");
+        if (k in msg) {
+          if (pat[k] instanceof RegExp && typeof(msg[k]) === 'string') {
+            ok(pat[k].test(msg[k]),
+               "monitorConsole | [" + counter + "]." + k + " value - " +
+               msg[k].quote() + " contains /" + pat[k].source + "/");
+          } else {
+            ise(msg[k], pat[k],
+                "monitorConsole | [" + counter + "]." + k + " value");
+          }
+        }
+      }
+      counter++;
+    }
+  }
+  SpecialPowers.registerConsoleListener(listener);
+};
+
+/**
+ * Stop monitoring console output.
+ */
+SimpleTest.endMonitorConsole = function () {
+  SpecialPowers.postConsoleSentinel();
+};
+
+/**
+ * Run |testfn| synchronously, and monitor its console output.
+ *
+ * |msgs| is handled as described above for monitorConsole.
+ *
+ * After |testfn| returns, console monitoring will stop, and
+ * |continuation| will be called asynchronously.
+ */
+SimpleTest.expectConsoleMessages = function (testfn, msgs, continuation) {
+  SimpleTest.monitorConsole(continuation, msgs);
+  testfn();
+  SimpleTest.executeSoon(SimpleTest.endMonitorConsole);
+};
+
+/**
+ * Wrapper around |expectConsoleMessages| for the case where the test has
+ * only one |testfn| to run.
+ */
+SimpleTest.runTestExpectingConsoleMessages = function(testfn, msgs) {
+  SimpleTest.waitForExplicitFinish();
+  SimpleTest.expectConsoleMessages(testfn, msgs, SimpleTest.finish);
 };
 
 /**
@@ -798,6 +867,9 @@ SimpleTest._deepCheck = function (e1, e2, stack, seen) {
         ok = SimpleTest._eqArray(e1, e2, stack, seen);
     } else if (typeof e1 == "object" && typeof e2 == "object") {
         ok = SimpleTest._eqAssoc(e1, e2, stack, seen);
+    } else if (typeof e1 == "number" && typeof e2 == "number"
+               && isNaN(e1) && isNaN(e2)) {
+        ok = true;
     } else {
         // If we get here, they're not the same (function references must
         // always simply reference the same function).
@@ -986,9 +1058,8 @@ window.onerror = function simpletestOnerror(errorMsg, url, lineNumber) {
     // For now, for tests that self identify as having unintentional uncaught
     // exceptions, just dump it so that the error is visible but doesn't cause
     // a test failure.  See bug 652494.
-    var href = SpecialPowers.getPrivilegedProps(window, 'location.href');
     var isExpected = !!SimpleTest._expectingUncaughtException;
-    var message = "an " + (isExpected ? "" : "un") + "expected uncaught JS exception reported through window.onerror";
+    var message = (isExpected ? "expected " : "") + "uncaught exception";
     var error = errorMsg + " at " + url + ":" + lineNumber;
     if (!SimpleTest._ignoringAllUncaughtExceptions) {
         SimpleTest.ok(isExpected, message, error);

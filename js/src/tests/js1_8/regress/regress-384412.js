@@ -1,3 +1,4 @@
+// |reftest| pref(javascript.options.xml.content,true)
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -142,17 +143,17 @@ function test()
   } catch (e) {
     s = e + "";
   }
-  expect("TypeError: o.hello() is not a function", s);
+  expect("TypeError: ({}) is not a function", s);
   s = "no exception";
   try {
     eval("o.hello()");
   } catch (e) {
     s = e + "";
   }
-  expect("TypeError: o.hello() is not a function", s);
+  expect("TypeError: ({}) is not a function", s);
   s = "no exception";
   try { [2, 3, 0].sort({}); } catch (e) { s = e + ""; }
-  expect("TypeError: [2, 3, 0].sort({}) is not a function", s);
+  expect("TypeError: ({}) is not a function", s);
 
 /*
  * Generator expressions.

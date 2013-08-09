@@ -4,11 +4,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsXBLInsertionPoint.h"
-#include "nsContentUtils.h"
 #include "nsXBLBinding.h"
 
 nsXBLInsertionPoint::nsXBLInsertionPoint(nsIContent* aParentElement,
-                                         PRUint32 aIndex,
+                                         uint32_t aIndex,
                                          nsIContent* aDefaultContent)
   : mParentElement(aParentElement),
     mIndex(aIndex),
@@ -24,20 +23,20 @@ nsXBLInsertionPoint::~nsXBLInsertionPoint()
   }
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsXBLInsertionPoint)
+NS_IMPL_CYCLE_COLLECTION_NATIVE_CLASS(nsXBLInsertionPoint)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_NATIVE(nsXBLInsertionPoint)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMARRAY(mElements)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mDefaultContentTemplate)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mElements)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDefaultContentTemplate)
   if (tmp->mDefaultContent) {
     nsXBLBinding::UninstallAnonymousContent(tmp->mDefaultContent->OwnerDoc(),
                                             tmp->mDefaultContent);
   }
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mDefaultContent)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDefaultContent)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_BEGIN(nsXBLInsertionPoint)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMARRAY(mElements)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mDefaultContentTemplate)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mDefaultContent)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mElements)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDefaultContentTemplate)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDefaultContent)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(nsXBLInsertionPoint, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(nsXBLInsertionPoint, Release)
@@ -61,15 +60,15 @@ nsXBLInsertionPoint::GetDefaultContentTemplate()
 }
 
 nsIContent*
-nsXBLInsertionPoint::ChildAt(PRUint32 aIndex)
+nsXBLInsertionPoint::ChildAt(uint32_t aIndex)
 {
   return mElements.ObjectAt(aIndex);
 }
 
 bool
-nsXBLInsertionPoint::Matches(nsIContent* aContent, PRUint32 aIndex)
+nsXBLInsertionPoint::Matches(nsIContent* aContent, uint32_t aIndex)
 {
-  return (aContent == mParentElement && mIndex != -1 && ((PRInt32)aIndex) == mIndex);
+  return (aContent == mParentElement && mIndex != -1 && ((int32_t)aIndex) == mIndex);
 }
 
 void

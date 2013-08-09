@@ -78,7 +78,7 @@ private:
 
   // Requests the controller to draw into a canvas of the given width and
   // height. The resulting bitmap is sent to the DWM to display.
-  void DrawBitmap(PRUint32 width, PRUint32 height, bool isPreview);
+  void DrawBitmap(uint32_t width, uint32_t height, bool isPreview);
 
   // WindowHook procedure for hooking mWnd
   static bool MainWindowHook(void *aContext,
@@ -90,7 +90,7 @@ private:
   nsWeakPtr               mDocShell;
   nsString                mTooltip;
 
-  // The preview currently marked as active in the taskbar. nsnull if no
+  // The preview currently marked as active in the taskbar. nullptr if no
   // preview is active (some other window is).
   static TaskbarPreview  *sActivePreview;
 };

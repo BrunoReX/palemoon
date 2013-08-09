@@ -9,7 +9,7 @@
 #include "txExpr.h"
 #include "txXPathTreeWalker.h"
 
-txNamedAttributeStep::txNamedAttributeStep(PRInt32 aNsID,
+txNamedAttributeStep::txNamedAttributeStep(int32_t aNsID,
                                            nsIAtom* aPrefix,
                                            nsIAtom* aLocalName)
     : mNamespace(aNsID),
@@ -22,7 +22,7 @@ nsresult
 txNamedAttributeStep::evaluate(txIEvalContext* aContext,
                                txAExprResult** aResult)
 {
-    *aResult = nsnull;
+    *aResult = nullptr;
 
     nsRefPtr<txNodeSet> nodes;
     nsresult rv = aContext->recycler()->getNodeSet(getter_AddRefs(nodes));

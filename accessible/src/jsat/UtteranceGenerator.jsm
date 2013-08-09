@@ -17,10 +17,10 @@ var gStringBundle = Cc['@mozilla.org/intl/stringbundle;1'].
   getService(Ci.nsIStringBundleService).
   createBundle('chrome://global/locale/AccessFu.properties');
 
-var gAccRetrieval = Cc['@mozilla.org/accessibleRetrieval;1'].
-  getService(Ci.nsIAccessibleRetrieval);
 
-var EXPORTED_SYMBOLS = ['UtteranceGenerator'];
+this.EXPORTED_SYMBOLS = ['UtteranceGenerator'];
+
+Cu.import('resource://gre/modules/accessibility/Utils.jsm');
 
 /**
  * Generates speech utterances from objects, actions and state changes.
@@ -38,7 +38,7 @@ var EXPORTED_SYMBOLS = ['UtteranceGenerator'];
  * clicked event. Speaking only 'clicked' makes sense. Speaking 'button' does
  * not.
  */
-var UtteranceGenerator = {
+this.UtteranceGenerator = {
   gActionMap: {
     jump: 'jumpAction',
     press: 'pressAction',
@@ -66,7 +66,7 @@ var UtteranceGenerator = {
    *    {@link verbosityRoleMap}.
    */
   genForObject: function genForObject(aAccessible) {
-    let roleString = gAccRetrieval.getStringRole(aAccessible.role);
+    let roleString = Utils.AccRetrieval.getStringRole(aAccessible.role);
 
     let func = this.objectUtteranceFunctions[roleString] ||
       this.objectUtteranceFunctions.defaultFunc;
@@ -123,6 +123,16 @@ var UtteranceGenerator = {
     }
   },
 
+  /**
+   * Generates an utterance for announcing entering and leaving editing mode.
+   * @param {aIsEditing} boolean true if we are in editing mode
+   * @return {Array} The mode utterance
+   */
+  genForEditingMode: function genForEditingMode(aIsEditing) {
+    return [gStringBundle.GetStringFromName(
+              aIsEditing ? 'editingMode' : 'navigationMode')];
+  },
+
   verbosityRoleMap: {
     'menubar': INCLUDE_DESC,
     'scrollbar': INCLUDE_DESC,
@@ -137,7 +147,7 @@ var UtteranceGenerator = {
     'toolbar': INCLUDE_DESC,
     'table': INCLUDE_DESC | INCLUDE_NAME,
     'link': INCLUDE_DESC,
-    'list': INCLUDE_DESC,
+    'list': INCLUDE_DESC | INCLUDE_NAME,
     'listitem': INCLUDE_DESC,
     'outline': INCLUDE_DESC,
     'outlineitem': INCLUDE_DESC,
@@ -174,7 +184,8 @@ var UtteranceGenerator = {
     'combobox option': INCLUDE_DESC,
     'image map': INCLUDE_DESC,
     'option': INCLUDE_DESC,
-    'listbox': INCLUDE_DESC},
+    'listbox': INCLUDE_DESC,
+    'definitionlist': INCLUDE_DESC | INCLUDE_NAME},
 
   objectUtteranceFunctions: {
     defaultFunc: function defaultFunc(aAccessible, aRoleStr, aStates, aFlags) {
@@ -226,18 +237,38 @@ var UtteranceGenerator = {
 
     listitem: function listitem(aAccessible, aRoleStr, aStates, aFlags) {
       let name = (aFlags & INCLUDE_NAME) ? (aAccessible.name || '') : '';
-      let localizedRole = this._getLocalizedRole(aRoleStr);
       let itemno = {};
       let itemof = {};
       aAccessible.groupPosition({}, itemof, itemno);
-      let utterance =
-        [gStringBundle.formatStringFromName(
-           'objItemOf', [localizedRole, itemno.value, itemof.value], 3)];
+      let utterance = [];
+      if (itemno.value == 1) // Start of list
+        utterance.push(gStringBundle.GetStringFromName('listStart'));
+      else if (itemno.value == itemof.value) // last item
+        utterance.push(gStringBundle.GetStringFromName('listEnd'));
 
       if (name)
         utterance.push(name);
 
       return utterance;
+    },
+
+    list: function list(aAccessible, aRoleStr, aStates, aFlags) {
+      return this._getListUtterance
+        (aAccessible, aRoleStr, aFlags, aAccessible.childCount);
+    },
+
+    definitionlist: function definitionlist(aAccessible, aRoleStr, aStates, aFlags) {
+      return this._getListUtterance
+        (aAccessible, aRoleStr, aFlags, aAccessible.childCount / 2);
+    },
+
+    application: function application(aAccessible, aRoleStr, aStates, aFlags) {
+      // Don't utter location of applications, it gets tiring.
+      if (aAccessible.name != aAccessible.DOMNode.location)
+        return this.objectUtteranceFunctions.defaultFunc(
+          aAccessible, aRoleStr, aStates, aFlags);
+
+      return [];
     }
   },
 
@@ -277,5 +308,21 @@ var UtteranceGenerator = {
     }
 
     return stateUtterances;
+  },
+  
+  _getListUtterance: function _getListUtterance(aAccessible, aRoleStr, aFlags, aItemCount) {
+    let name = (aFlags & INCLUDE_NAME) ? (aAccessible.name || '') : '';
+    let desc = [];
+    let roleStr = this._getLocalizedRole(aRoleStr);
+    if (roleStr)
+      desc.push(roleStr);
+    desc.push
+      (gStringBundle.formatStringFromName('listItemCount', [aItemCount], 1));
+    let utterance = [desc.join(' ')];
+
+    if (name)
+      utterance.push(name);
+
+    return utterance;
   }
 };

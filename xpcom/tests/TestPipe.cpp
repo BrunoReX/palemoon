@@ -7,14 +7,15 @@
 
 #include "nsIPipe.h"
 #include "nsIMemory.h"
+#include "mozilla/Attributes.h"
 
 /** NS_NewPipe2 reimplemented, because it's not exported by XPCOM */
 nsresult TP_NewPipe2(nsIAsyncInputStream** input,
                      nsIAsyncOutputStream** output,
                      bool nonBlockingInput,
                      bool nonBlockingOutput,
-                     PRUint32 segmentSize,
-                     PRUint32 segmentCount,
+                     uint32_t segmentSize,
+                     uint32_t segmentCount,
                      nsIMemory* segmentAlloc)
 {
   nsCOMPtr<nsIPipe> pipe = do_CreateInstance("@mozilla.org/pipe;1");
@@ -41,7 +42,7 @@ nsresult TP_NewPipe2(nsIAsyncInputStream** input,
  * which <size>-byte locations in mMemory are empty and which are filled.
  * Pretty stupid, but enough to test bug 394692.
  */
-class BackwardsAllocator : public nsIMemory
+class BackwardsAllocator MOZ_FINAL : public nsIMemory
 {
   public:
     BackwardsAllocator()
@@ -55,13 +56,13 @@ class BackwardsAllocator : public nsIMemory
       delete [] mMemory;
     }
 
-    nsresult Init(PRUint32 count, size_t size);
+    nsresult Init(uint32_t count, size_t size);
 
     NS_DECL_ISUPPORTS
     NS_DECL_NSIMEMORY
 
   private:
-    PRUint32 previous(PRUint32 i)
+    uint32_t previous(uint32_t i)
     {
       if (i == 0)
         return mCount - 1;
@@ -69,15 +70,15 @@ class BackwardsAllocator : public nsIMemory
     }
 
   private:
-    PRUint8* mMemory;
-    PRUint32 mIndex;
-    PRUint32 mCount;
+    uint8_t* mMemory;
+    uint32_t mIndex;
+    uint32_t mCount;
     size_t mSize;
 };
 
 NS_IMPL_ISUPPORTS1(BackwardsAllocator, nsIMemory)
 
-nsresult BackwardsAllocator::Init(PRUint32 count, size_t size)
+nsresult BackwardsAllocator::Init(uint32_t count, size_t size)
 {
   if (mMemory)
   {
@@ -85,7 +86,7 @@ nsresult BackwardsAllocator::Init(PRUint32 count, size_t size)
     return NS_ERROR_ALREADY_INITIALIZED;
   }
 
-  mMemory = new PRUint8[count * size + count];
+  mMemory = new uint8_t[count * size + count];
   if (!mMemory)
   {
     fail("failed to allocate mMemory!");
@@ -108,7 +109,7 @@ NS_IMETHODIMP_(void*) BackwardsAllocator::Alloc(size_t size)
     return NULL;
   }
 
-  PRUint32 index = mIndex;
+  uint32_t index = mIndex;
 
   while ((index = previous(index)) != mIndex)
   {
@@ -131,7 +132,7 @@ NS_IMETHODIMP_(void*) BackwardsAllocator::Realloc(void* ptr, size_t newSize)
 
 NS_IMETHODIMP_(void) BackwardsAllocator::Free(void* ptr)
 {
-  PRUint8* p = static_cast<PRUint8*>(ptr);
+  uint8_t* p = static_cast<uint8_t*>(ptr);
   if (p)
     mMemory[mCount * mSize + (p - mMemory) / mSize] = 0;
 }
@@ -147,11 +148,16 @@ NS_IMETHODIMP BackwardsAllocator::IsLowMemory(bool* retval)
   return NS_OK;
 }
 
+NS_IMETHODIMP BackwardsAllocator::IsLowMemoryPlatform(bool* retval)
+{
+  *retval = false;
+  return NS_OK;
+}
 
 nsresult TestBackwardsAllocator()
 {
-  const PRUint32 SEGMENT_COUNT = 10;
-  const PRUint32 SEGMENT_SIZE = 10;
+  const uint32_t SEGMENT_COUNT = 10;
+  const uint32_t SEGMENT_SIZE = 10;
 
   nsRefPtr<BackwardsAllocator> allocator = new BackwardsAllocator();
   if (!allocator)
@@ -176,7 +182,7 @@ nsresult TestBackwardsAllocator()
     return rv;
   }
 
-  const PRUint32 BUFFER_LENGTH = 100;
+  const uint32_t BUFFER_LENGTH = 100;
   const char written[] =
     "0123456789"
     "1123456789"
@@ -194,7 +200,7 @@ nsresult TestBackwardsAllocator()
     return NS_ERROR_FAILURE;
   }
 
-  PRUint32 writeCount;
+  uint32_t writeCount;
   rv = output->Write(written, BUFFER_LENGTH, &writeCount);
   if (NS_FAILED(rv) || writeCount != BUFFER_LENGTH)
   {
@@ -204,7 +210,7 @@ nsresult TestBackwardsAllocator()
   }
 
   char read[BUFFER_LENGTH];
-  PRUint32 readCount;
+  uint32_t readCount;
   rv = input->Read(read, BUFFER_LENGTH, &readCount);
   if (NS_FAILED(rv) || readCount != BUFFER_LENGTH)
   {

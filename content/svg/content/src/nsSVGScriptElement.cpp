@@ -44,8 +44,8 @@ public:
 
   // xxx If xpcom allowed virtual inheritance we wouldn't need to
   // forward here :-(
-  NS_FORWARD_NSIDOMNODE(nsSVGScriptElementBase::)
-  NS_FORWARD_NSIDOMELEMENT(nsSVGScriptElementBase::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
   NS_FORWARD_NSIDOMSVGELEMENT(nsSVGScriptElementBase::)
 
   // nsIScriptElement
@@ -62,9 +62,9 @@ public:
   virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                               nsIContent* aBindingParent,
                               bool aCompileEventHandlers);
-  virtual nsresult AfterSetAttr(PRInt32 aNamespaceID, nsIAtom* aName,
+  virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsIAtom* aName,
                                 const nsAttrValue* aValue, bool aNotify);
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(int32_t aNamespaceID,
                               nsIAtom* aAttribute,
                               const nsAString& aValue,
                               nsAttrValue& aResult);
@@ -122,15 +122,16 @@ nsSVGScriptElement::nsSVGScriptElement(already_AddRefed<nsINodeInfo> aNodeInfo,
 nsresult
 nsSVGScriptElement::Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const
 {
-  *aResult = nsnull;
+  *aResult = nullptr;
 
   nsCOMPtr<nsINodeInfo> ni = aNodeInfo;
   nsSVGScriptElement* it = new nsSVGScriptElement(ni.forget(), NOT_FROM_PARSER);
 
   nsCOMPtr<nsINode> kungFuDeathGrip = it;
-  nsresult rv = it->Init();
-  rv |= CopyInnerTo(it);
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsresult rv1 = it->Init();
+  nsresult rv2 = const_cast<nsSVGScriptElement*>(this)->CopyInnerTo(it);
+  NS_ENSURE_SUCCESS(rv1, rv1);
+  NS_ENSURE_SUCCESS(rv2, rv2);
 
   // The clone should be marked evaluated if we are.
   it->mAlreadyStarted = mAlreadyStarted;
@@ -195,7 +196,7 @@ nsSVGScriptElement::FreezeUriAsyncDefer()
     mStringAttributes[HREF].GetAnimValue(src, this);
 
     nsCOMPtr<nsIURI> baseURI = GetBaseURI();
-    NS_NewURI(getter_AddRefs(mUri), src, nsnull, baseURI);
+    NS_NewURI(getter_AddRefs(mUri), src, nullptr, baseURI);
     // At this point mUri will be null for invalid URLs.
     mExternal = true;
   }
@@ -244,7 +245,7 @@ nsSVGScriptElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
 }
 
 nsresult
-nsSVGScriptElement::AfterSetAttr(PRInt32 aNamespaceID, nsIAtom* aName,
+nsSVGScriptElement::AfterSetAttr(int32_t aNamespaceID, nsIAtom* aName,
                                  const nsAttrValue* aValue, bool aNotify)
 {
   if (aNamespaceID == kNameSpaceID_XLink && aName == nsGkAtoms::href) {
@@ -255,7 +256,7 @@ nsSVGScriptElement::AfterSetAttr(PRInt32 aNamespaceID, nsIAtom* aName,
 }
 
 bool
-nsSVGScriptElement::ParseAttribute(PRInt32 aNamespaceID,
+nsSVGScriptElement::ParseAttribute(int32_t aNamespaceID,
                                    nsIAtom* aAttribute,
                                    const nsAString& aValue,
                                    nsAttrValue& aResult)

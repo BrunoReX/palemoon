@@ -32,10 +32,10 @@ GetInstance(NPObject* aObject)
   ParentNPObject* object = reinterpret_cast<ParentNPObject*>(aObject);
   if (object->invalidated) {
     NS_WARNING("Calling method on an invalidated object!");
-    return nsnull;
+    return nullptr;
   }
   if (!object->parent) {
-    return nsnull;
+    return nullptr;
   }
   return object->parent->GetInstance();
 }
@@ -62,7 +62,7 @@ NPObjectFromVariant(const Variant& aRemoteVariant)
 
     default:
       NS_NOTREACHED("Shouldn't get here!");
-      return nsnull;
+      return nullptr;
   }
 }
 
@@ -79,7 +79,7 @@ GetNetscapeFuncs(PluginInstanceParent* aInstance)
   PluginModuleParent* module = aInstance->Module();
   if (!module) {
     NS_WARNING("Null module?!");
-    return nsnull;
+    return nullptr;
   }
   return module->GetNetscapeFuncs();
 }
@@ -92,7 +92,7 @@ GetNetscapeFuncs(NPObject* aObject)
 
   PluginInstanceParent* instance = GetInstance(aObject);
   if (!instance) {
-    return nsnull;
+    return nullptr;
   }
 
   return GetNetscapeFuncs(instance);
@@ -132,7 +132,7 @@ ReleaseRemoteVariant(Variant& aVariant)
 bool
 ConvertToVariant(const Variant& aRemoteVariant,
                  NPVariant& aVariant,
-                 PluginInstanceParent* aInstance = nsnull);
+                 PluginInstanceParent* aInstance = nullptr);
 
 template <class InstanceType>
 bool
@@ -177,11 +177,11 @@ class ProtectedVariantArray
 {
 public:
   ProtectedVariantArray(const NPVariant* aArgs,
-                        PRUint32 aCount,
+                        uint32_t aCount,
                         PluginInstanceParent* aInstance)
     : mUsingShadowArray(false)
   {
-    for (PRUint32 index = 0; index < aCount; index++) {
+    for (uint32_t index = 0; index < aCount; index++) {
       Variant* remoteVariant = mArray.AppendElement();
       if (!(remoteVariant && 
             ConvertToRemoteVariant(aArgs[index], *remoteVariant, aInstance,
@@ -194,11 +194,11 @@ public:
   }
 
   ProtectedVariantArray(const NPVariant* aArgs,
-                        PRUint32 aCount,
+                        uint32_t aCount,
                         PluginInstanceChild* aInstance)
     : mUsingShadowArray(false)
   {
-    for (PRUint32 index = 0; index < aCount; index++) {
+    for (uint32_t index = 0; index < aCount; index++) {
       Variant* remoteVariant = mArray.AppendElement();
       if (!(remoteVariant && 
             ConvertToRemoteVariant(aArgs[index], *remoteVariant, aInstance,
@@ -213,8 +213,8 @@ public:
   ~ProtectedVariantArray()
   {
     InfallibleTArray<Variant>& vars = EnsureAndGetShadowArray();
-    PRUint32 count = vars.Length();
-    for (PRUint32 index = 0; index < count; index++) {
+    uint32_t count = vars.Length();
+    for (uint32_t index = 0; index < count; index++) {
       ReleaseRemoteVariant(vars[index]);
     }
   }

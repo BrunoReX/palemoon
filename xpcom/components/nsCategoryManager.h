@@ -12,8 +12,9 @@
 #include "nsClassHashtable.h"
 #include "nsICategoryManager.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/Attributes.h"
 
-#define NS_CATEGORYMANAGER_CLASSNAME     "Category Manager"
+class nsIMemoryReporter;
 
 /* 16d222a6-1dd2-11b2-b693-f38b02c021b2 */
 #define NS_CATEGORYMANAGER_CID \
@@ -62,9 +63,9 @@ public:
     mTable.Clear();
   }
 
-  PRUint32 Count() {
+  uint32_t Count() {
     mozilla::MutexAutoLock lock(mLock);
-    PRUint32 tCount = mTable.Count();
+    uint32_t tCount = mTable.Count();
     return tCount;
   }
 
@@ -74,6 +75,8 @@ public:
   static CategoryNode* Create(PLArenaPool* aArena);
   ~CategoryNode();
   void operator delete(void*) { }
+
+  size_t SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf);
 
 private:
   CategoryNode()
@@ -92,7 +95,7 @@ private:
  *
  * This implementation is thread-safe.
  */
-class nsCategoryManager
+class nsCategoryManager MOZ_FINAL
   : public nsICategoryManager
 {
 public:
@@ -113,9 +116,13 @@ public:
                         char** aOldValue = NULL);
 
   static nsresult Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
+  void InitMemoryReporter();
 
   static nsCategoryManager* GetSingleton();
   static void Destroy();
+
+  static int64_t GetCategoryManagerSize();
+  size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf);
 
 private:
   static nsCategoryManager* gCategoryManager;
@@ -132,6 +139,8 @@ private:
   nsClassHashtable<nsDepCharHashKey, CategoryNode> mTable;
   mozilla::Mutex mLock;
   bool mSuppressNotifications;
+
+  nsIMemoryReporter* mReporter;
 };
 
 #endif

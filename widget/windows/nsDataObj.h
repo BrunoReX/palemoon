@@ -11,13 +11,15 @@
 
 #include "nsCOMPtr.h"
 #include "nsString.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIURI.h"
 #include "nsIInputStream.h"
 #include "nsIStreamListener.h"
 #include "nsIChannel.h"
 #include "nsCOMArray.h"
 #include "nsITimer.h"
+
+class nsIThread;
 
 // The SDK shipping with VC11 has renamed IAsyncOperation to
 // IDataObjectAsyncCapability.  We try to detect this, and rename this in our
@@ -85,9 +87,13 @@ class nsITransferable;
 class nsDataObj : public IDataObject,
                   public IAsyncOperation
 {
+
+protected:
+  nsCOMPtr<nsIThread> mIOThread;
+
   public: // construction, destruction
-    nsDataObj(nsIURI *uri = nsnull);
-    ~nsDataObj();
+    nsDataObj(nsIURI *uri = nullptr);
+    virtual ~nsDataObj();
 
 	public: // IUnknown methods - see iunknown.h for documentation
 		STDMETHODIMP_(ULONG) AddRef        ();
@@ -158,8 +164,8 @@ class nsDataObj : public IDataObject,
 	public: // other methods
 
     // Gets the filename from the kFilePromiseURLMime flavour
-    nsresult GetDownloadDetails(nsIURI **aSourceURI,
-                                nsAString &aFilename);
+    HRESULT GetDownloadDetails(nsIURI **aSourceURI,
+                               nsAString &aFilename);
 
 	protected:
     // help determine the kind of drag
@@ -231,10 +237,10 @@ class nsDataObj : public IDataObject,
     class CStream : public IStream, public nsIStreamListener
     {
       nsCOMPtr<nsIChannel> mChannel;
-      nsTArray<PRUint8> mChannelData;
+      nsTArray<uint8_t> mChannelData;
       bool mChannelRead;
       nsresult mChannelResult;
-      PRUint32 mStreamRead;
+      uint32_t mStreamRead;
 
     protected:
       virtual ~CStream();

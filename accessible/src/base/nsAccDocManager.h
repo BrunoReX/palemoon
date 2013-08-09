@@ -13,8 +13,14 @@
 #include "nsWeakReference.h"
 #include "nsIPresShell.h"
 
+namespace mozilla {
+namespace a11y {
+
 class Accessible;
 class DocAccessible;
+
+} // namespace a11y
+} // namespace mozilla
 
 /**
  * Manage the document accessible life cycle.
@@ -24,7 +30,10 @@ class nsAccDocManager : public nsIWebProgressListener,
                         public nsSupportsWeakReference
 {
 public:
-  virtual ~nsAccDocManager() { };
+  typedef mozilla::a11y::Accessible Accessible;
+  typedef mozilla::a11y::DocAccessible DocAccessible;
+
+  virtual ~nsAccDocManager() { }
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIWEBPROGRESSLISTENER
@@ -40,7 +49,14 @@ public:
    */
   DocAccessible* GetDocAccessible(const nsIPresShell* aPresShell)
   {
-    return aPresShell ? GetDocAccessible(aPresShell->GetDocument()) : nsnull;
+    if (!aPresShell)
+      return nullptr;
+
+    DocAccessible* doc = aPresShell->GetDocAccessible();
+    if (doc)
+      return doc;
+
+    return GetDocAccessible(aPresShell->GetDocument());
   }
 
   /**
@@ -70,7 +86,7 @@ public:
 #endif
 
 protected:
-  nsAccDocManager() { };
+  nsAccDocManager() { }
 
   /**
    * Initialize the manager.
@@ -96,7 +112,7 @@ private:
    *                           if 0 then no event is fired
    */
   void HandleDOMDocumentLoad(nsIDocument* aDocument,
-                             PRUint32 aLoadEventType);
+                             uint32_t aLoadEventType);
 
   /**
    * Add 'pagehide' and 'DOMContentLoaded' event listeners.

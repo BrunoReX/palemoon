@@ -23,7 +23,7 @@ typedef ProgressMeterAccessible<100> XULProgressMeterAccessible;
 /**
  * Used for XUL button.
  *
- * @note  Don't inherit from nsLeafAccessible - it doesn't allow children
+ * @note  Don't inherit from LeafAccessible - it doesn't allow children
  *         and a button can have a dropmarker child.
  */
 class XULButtonAccessible : public AccessibleWrap
@@ -36,15 +36,15 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIAccessible
-  NS_IMETHOD GetActionName(PRUint8 aIndex, nsAString& aName);
-  NS_IMETHOD DoAction(PRUint8 index);
+  NS_IMETHOD GetActionName(uint8_t aIndex, nsAString& aName);
+  NS_IMETHOD DoAction(uint8_t index);
 
   // Accessible
   virtual mozilla::a11y::role NativeRole();
-  virtual PRUint64 NativeState();
+  virtual uint64_t NativeState();
 
   // ActionAccessible
-  virtual PRUint8 ActionCount();
+  virtual uint8_t ActionCount();
 
   // Widgets
   virtual bool IsWidget() const;
@@ -65,43 +65,43 @@ protected:
 /**
  * Used for XUL checkbox element.
  */
-class XULCheckboxAccessible : public nsLeafAccessible
+class XULCheckboxAccessible : public LeafAccessible
 {
 public:
   enum { eAction_Click = 0 };
   XULCheckboxAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   // nsIAccessible
-  NS_IMETHOD GetActionName(PRUint8 aIndex, nsAString& aName);
-  NS_IMETHOD DoAction(PRUint8 index);
+  NS_IMETHOD GetActionName(uint8_t aIndex, nsAString& aName);
+  NS_IMETHOD DoAction(uint8_t index);
 
   // Accessible
   virtual mozilla::a11y::role NativeRole();
-  virtual PRUint64 NativeState();
+  virtual uint64_t NativeState();
 
   // ActionAccessible
-  virtual PRUint8 ActionCount();
+  virtual uint8_t ActionCount();
 };
 
 /**
  * Used for XUL dropmarker element.
  */
-class XULDropmarkerAccessible : public nsLeafAccessible
+class XULDropmarkerAccessible : public LeafAccessible
 {
 public:
   enum { eAction_Click = 0 };
   XULDropmarkerAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   // nsIAccessible
-  NS_IMETHOD GetActionName(PRUint8 aIndex, nsAString& aName);
-  NS_IMETHOD DoAction(PRUint8 index);
+  NS_IMETHOD GetActionName(uint8_t aIndex, nsAString& aName);
+  NS_IMETHOD DoAction(uint8_t index);
 
   // Accessible
   virtual mozilla::a11y::role NativeRole();
-  virtual PRUint64 NativeState();
+  virtual uint64_t NativeState();
 
   // ActionAccessible
-  virtual PRUint8 ActionCount();
+  virtual uint8_t ActionCount();
 
 private:
   bool DropmarkerOpen(bool aToggleOpen);
@@ -117,8 +117,11 @@ public:
 
   // Accessible
   virtual mozilla::a11y::role NativeRole();
-  virtual nsresult GetNameInternal(nsAString& aName);
-  virtual Relation RelationByType(PRUint32 aRelationType);
+  virtual Relation RelationByType(uint32_t aRelationType);
+
+protected:
+  // Accessible
+  virtual ENameValueFlag NativeName(nsString& aName) MOZ_OVERRIDE;
 };
 
 /**
@@ -131,8 +134,8 @@ public:
   XULRadioButtonAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   // Accessible
-  virtual PRUint64 NativeState();
-  virtual PRUint64 NativeInteractiveState() const;
+  virtual uint64_t NativeState();
+  virtual uint64_t NativeInteractiveState() const;
 
   // Widgets
   virtual Accessible* ContainerWidget() const;
@@ -148,7 +151,7 @@ public:
 
   // Accessible
   virtual mozilla::a11y::role NativeRole();
-  virtual PRUint64 NativeInteractiveState() const;
+  virtual uint64_t NativeInteractiveState() const;
 
   // Widgets
   virtual bool IsWidget() const;
@@ -177,8 +180,8 @@ public:
   XULToolbarButtonAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   // Accessible
-  virtual void GetPositionAndSizeInternal(PRInt32 *aPosInSet,
-                                          PRInt32 *aSetSize);
+  virtual void GetPositionAndSizeInternal(int32_t *aPosInSet,
+                                          int32_t *aSetSize);
 
   // nsXULToolbarButtonAccessible
   static bool IsSeparator(Accessible* aAccessible);
@@ -194,13 +197,16 @@ public:
 
   // Accessible
   virtual mozilla::a11y::role NativeRole();
-  virtual nsresult GetNameInternal(nsAString& aName);
+
+protected:
+  // Accessible
+  virtual ENameValueFlag NativeName(nsString& aName) MOZ_OVERRIDE;
 };
 
 /**
  * Used for XUL toolbarseparator element.
  */
-class XULToolbarSeparatorAccessible : public nsLeafAccessible
+class XULToolbarSeparatorAccessible : public LeafAccessible
 {
 public:
   XULToolbarSeparatorAccessible(nsIContent* aContent,
@@ -208,7 +214,7 @@ public:
 
   // Accessible
   virtual mozilla::a11y::role NativeRole();
-  virtual PRUint64 NativeState();
+  virtual uint64_t NativeState();
 };
 
 /**
@@ -224,21 +230,21 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIAccessible
-  NS_IMETHOD GetActionName(PRUint8 aIndex, nsAString& aName);
-  NS_IMETHOD DoAction(PRUint8 index);
+  NS_IMETHOD GetActionName(uint8_t aIndex, nsAString& aName);
+  NS_IMETHOD DoAction(uint8_t index);
 
   // HyperTextAccessible
   virtual already_AddRefed<nsIEditor> GetEditor() const;
 
   // Accessible
   virtual void Value(nsString& aValue);
-  virtual void ApplyARIAState(PRUint64* aState) const;
+  virtual void ApplyARIAState(uint64_t* aState) const;
   virtual mozilla::a11y::role NativeRole();
-  virtual PRUint64 NativeState();
+  virtual uint64_t NativeState();
   virtual bool CanHaveAnonChildren();
 
   // ActionAccessible
-  virtual PRUint8 ActionCount();
+  virtual uint8_t ActionCount();
 
 protected:
   // Accessible

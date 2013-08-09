@@ -26,7 +26,6 @@
 #include "nsString.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsILocalFile.h"
 #include "nsIChannel.h"
 #include "nsITimer.h"
 
@@ -37,6 +36,7 @@
 #include "nsWeakReference.h"
 #include "nsIPrompt.h"
 #include "nsAutoPtr.h"
+#include "mozilla/Attributes.h"
 
 class nsExternalAppHandler;
 class nsIMIMEInfo;
@@ -111,12 +111,6 @@ public:
   virtual NS_HIDDEN_(nsresult) OSProtocolHandlerExists(const char *aScheme,
                                                        bool *aExists) = 0;
 
-  /**
-   * Simple accessor to let nsExternalAppHandler know if we are currently
-   * inside the private browsing mode.
-   */
-  bool InPrivateBrowsing() const { return mInPrivateBrowsing; }
-
 protected:
   /**
    * Searches the "extra" array of MIMEInfo objects for an object
@@ -153,7 +147,7 @@ protected:
    * implementation, subclasses can use this to correctly inherit ACLs from the
    * parent directory, to make the permissions obey the umask, etc.
    */
-  virtual void FixFilePermissions(nsILocalFile* aFile);
+  virtual void FixFilePermissions(nsIFile* aFile);
 
 #ifdef PR_LOGGING
   /**
@@ -171,7 +165,12 @@ protected:
   /**
    * Helper function for ExpungeTemporaryFiles and ExpungeTemporaryPrivateFiles
    */
-  static void ExpungeTemporaryFilesHelper(nsCOMArray<nsILocalFile> &fileList);
+  static void ExpungeTemporaryFilesHelper(nsCOMArray<nsIFile> &fileList);
+  /**
+   * Helper function for DeleteTemporaryFileOnExit and DeleteTemporaryPrivateFileWhenPossible
+   */
+  static nsresult DeleteTemporaryFileHelper(nsIFile* aTemporaryFile,
+                                            nsCOMArray<nsIFile> &aFileList);
   /**
    * Functions related to the tempory file cleanup service provided by
    * nsExternalHelperAppService
@@ -186,16 +185,12 @@ protected:
   /**
    * Array for the files that should be deleted
    */
-  nsCOMArray<nsILocalFile> mTemporaryFilesList;
+  nsCOMArray<nsIFile> mTemporaryFilesList;
   /**
    * Array for the files that should be deleted (for the temporary files
    * added during the private browsing mode)
    */
-  nsCOMArray<nsILocalFile> mTemporaryPrivateFilesList;
-  /**
-   * Whether we are in private browsing mode
-   */
-  bool mInPrivateBrowsing;
+  nsCOMArray<nsIFile> mTemporaryPrivateFilesList;
 };
 
 /**
@@ -206,9 +201,9 @@ protected:
  * stored the data into.  We create a handler every time we have to process
  * data using a helper app.
  */
-class nsExternalAppHandler : public nsIStreamListener,
-                             public nsIHelperAppLauncher,
-                             public nsITimerCallback
+class nsExternalAppHandler MOZ_FINAL : public nsIStreamListener,
+                                       public nsIHelperAppLauncher,
+                                       public nsITimerCallback
 {
 public:
   NS_DECL_ISUPPORTS
@@ -233,7 +228,7 @@ public:
                        nsIInterfaceRequestor * aWindowContext,
                        nsExternalHelperAppService * aExtProtSvc,
                        const nsAString& aFilename,
-                       PRUint32 aReason, bool aForceSave);
+                       uint32_t aReason, bool aForceSave);
 
   ~nsExternalAppHandler();
 
@@ -297,7 +292,7 @@ protected:
    * reason the dialog was shown (unknown content type, server requested it,
    * etc).
    */
-  PRUint32 mReason;
+  uint32_t mReason;
 
   /**
    * Track the executable-ness of the temporary file.
@@ -305,8 +300,8 @@ protected:
   bool mTempFileIsExecutable;
 
   PRTime mTimeDownloadStarted;
-  PRInt64 mContentLength;
-  PRInt64 mProgress; /**< Number of bytes received (for sending progress notifications). */
+  int64_t mContentLength;
+  int64_t mProgress; /**< Number of bytes received (for sending progress notifications). */
 
   /**
    * When we are told to save the temp file to disk (in a more permament
@@ -315,7 +310,7 @@ protected:
    */
   nsCOMPtr<nsIFile> mFinalFileDestination;
 
-  PRUint32 mBufferSize;
+  uint32_t mBufferSize;
   char    *mDataBuffer;
 
   /**
@@ -337,7 +332,7 @@ protected:
    * what's going on...
    */
   nsresult CreateProgressListener();
-  nsresult PromptForSaveToFile(nsILocalFile ** aNewFile,
+  nsresult PromptForSaveToFile(nsIFile ** aNewFile,
                                const nsAFlatString &aDefaultFile,
                                const nsAFlatString &aDefaultFileExt);
 

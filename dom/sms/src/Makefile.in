@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH            = ../../..
+DEPTH            = @DEPTH@
 topsrcdir        = @top_srcdir@
 srcdir           = @srcdir@
 VPATH            = \
@@ -23,6 +23,7 @@ endif
 LIBRARY_NAME     = dom_sms_s
 LIBXUL_LIBRARY   = 1
 FORCE_STATIC_LIB = 1
+FAIL_ON_WARNINGS := 1
 
 include $(topsrcdir)/dom/dom-config.mk
 
@@ -35,8 +36,8 @@ EXPORTS_mozilla/dom/sms = \
   Constants.h \
   Types.h \
   SmsMessage.h \
-  SmsRequestManager.h \
   SmsRequest.h \
+  SmsSegmentInfo.h \
   $(NULL)
 
 CPPSRCS = \
@@ -50,8 +51,8 @@ CPPSRCS = \
   Constants.cpp \
   SmsChild.cpp \
   SmsRequest.cpp \
-  SmsRequestManager.cpp \
   SmsFilter.cpp \
+  SmsSegmentInfo.cpp \
   SmsCursor.cpp \
   $(NULL)
 

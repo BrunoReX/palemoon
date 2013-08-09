@@ -4,7 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "txInstructions.h"
-#include "txError.h"
+#include "nsError.h"
 #include "txExpr.h"
 #include "txStylesheet.h"
 #include "txNodeSetContext.h"
@@ -26,7 +26,7 @@ txApplyDefaultElementTemplate::execute(txExecutionState& aEs)
     txStylesheet::ImportFrame* frame = 0;
     txInstruction* templ =
         aEs.mStylesheet->findTemplate(aEs.getEvalContext()->getContextNode(),
-                                      mode, &aEs, nsnull, &frame);
+                                      mode, &aEs, nullptr, &frame);
 
     aEs.pushTemplateRule(frame, mode, aEs.mTemplateParams);
 
@@ -79,7 +79,7 @@ txApplyTemplates::execute(txExecutionState& aEs)
     txStylesheet::ImportFrame* frame = 0;
     txInstruction* templ =
         aEs.mStylesheet->findTemplate(aEs.getEvalContext()->getContextNode(),
-                                      mMode, &aEs, nsnull, &frame);
+                                      mMode, &aEs, nullptr, &frame);
 
     aEs.pushTemplateRule(frame, mMode, aEs.mTemplateParams);
 
@@ -108,13 +108,13 @@ txAttribute::execute(txExecutionState& aEs)
     }
 
     nsCOMPtr<nsIAtom> prefix;
-    PRUint32 lnameStart = 0;
+    uint32_t lnameStart = 0;
     if (colon) {
         prefix = do_GetAtom(Substring(name.get(), colon));
         lnameStart = colon - name.get() + 1;
     }
 
-    PRInt32 nsId = kNameSpaceID_None;
+    int32_t nsId = kNameSpaceID_None;
     if (mNamespace) {
         nsAutoString nspace;
         rv = mNamespace->evaluateToString(aEs.getEvalContext(),
@@ -157,7 +157,7 @@ txCallTemplate::execute(txExecutionState& aEs)
 }
 
 txCheckParam::txCheckParam(const txExpandedName& aName)
-    : mName(aName), mBailTarget(nsnull)
+    : mName(aName), mBailTarget(nullptr)
 {
 }
 
@@ -205,11 +205,11 @@ txComment::execute(txExecutionState& aEs)
 {
     nsAutoPtr<txTextHandler> handler(
         static_cast<txTextHandler*>(aEs.popResultHandler()));
-    PRUint32 length = handler->mValue.Length();
-    PRInt32 pos = 0;
-    while ((pos = handler->mValue.FindChar('-', (PRUint32)pos)) != kNotFound) {
+    uint32_t length = handler->mValue.Length();
+    int32_t pos = 0;
+    while ((pos = handler->mValue.FindChar('-', (uint32_t)pos)) != kNotFound) {
         ++pos;
-        if ((PRUint32)pos == length || handler->mValue.CharAt(pos) == '-') {
+        if ((uint32_t)pos == length || handler->mValue.CharAt(pos) == '-') {
             handler->mValue.Insert(PRUnichar(' '), pos++);
             ++length;
         }
@@ -231,7 +231,7 @@ txCopyBase::copyNode(const txXPathNode& aNode, txExecutionState& aEs)
                 txXPathNodeUtils::getLocalName(aNode);
             return aEs.mResultHandler->
                 attribute(txXPathNodeUtils::getPrefix(aNode),
-                          localName, nsnull,
+                          localName, nullptr,
                           txXPathNodeUtils::getNamespaceID(aNode),
                           nodeValue);
         }
@@ -259,7 +259,7 @@ txCopyBase::copyNode(const txXPathNode& aNode, txExecutionState& aEs)
                 txXPathNodeUtils::getLocalName(aNode);
             nsresult rv = aEs.mResultHandler->
                 startElement(txXPathNodeUtils::getPrefix(aNode),
-                             localName, nsnull,
+                             localName, nullptr,
                              txXPathNodeUtils::getNamespaceID(aNode));
             NS_ENSURE_SUCCESS(rv, rv);
 
@@ -274,7 +274,7 @@ txCopyBase::copyNode(const txXPathNode& aNode, txExecutionState& aEs)
                     localName = txXPathNodeUtils::getLocalName(attr);
                     rv = aEs.mResultHandler->
                         attribute(txXPathNodeUtils::getPrefix(attr),
-                                  localName, nsnull,
+                                  localName, nullptr,
                                   txXPathNodeUtils::getNamespaceID(attr),
                                   nodeValue);
                     NS_ENSURE_SUCCESS(rv, rv);
@@ -311,7 +311,7 @@ txCopyBase::copyNode(const txXPathNode& aNode, txExecutionState& aEs)
 }
 
 txCopy::txCopy()
-    : mBailTarget(nsnull)
+    : mBailTarget(nullptr)
 {
 }
 
@@ -342,7 +342,7 @@ txCopy::execute(txExecutionState& aEs)
                 txXPathNodeUtils::getLocalName(node);
             rv = aEs.mResultHandler->
                 startElement(txXPathNodeUtils::getPrefix(node),
-                             localName, nsnull,
+                             localName, nullptr,
                              txXPathNodeUtils::getNamespaceID(node));
             NS_ENSURE_SUCCESS(rv, rv);
 
@@ -384,7 +384,7 @@ txCopyOf::execute(txExecutionState& aEs)
             txNodeSet* nodes = static_cast<txNodeSet*>
                                           (static_cast<txAExprResult*>
                                                       (exprRes));
-            PRInt32 i;
+            int32_t i;
             for (i = 0; i < nodes->size(); ++i) {
                 rv = copyNode(nodes->get(i), aEs);
                 NS_ENSURE_SUCCESS(rv, rv);
@@ -485,7 +485,7 @@ txLoopNodeSet::execute(txExecutionState& aEs)
     return NS_OK;
 }
 
-txLREAttribute::txLREAttribute(PRInt32 aNamespaceID, nsIAtom* aLocalName,
+txLREAttribute::txLREAttribute(int32_t aNamespaceID, nsIAtom* aLocalName,
                                nsIAtom* aPrefix, nsAutoPtr<Expr> aValue)
     : mNamespaceID(aNamespaceID),
       mLocalName(aLocalName),
@@ -600,7 +600,7 @@ txProcessingInstruction::execute(txExecutionState& aEs)
 }
 
 txPushNewContext::txPushNewContext(nsAutoPtr<Expr> aSelect)
-    : mSelect(aSelect), mBailTarget(nsnull)
+    : mSelect(aSelect), mBailTarget(nullptr)
 {
 }
 
@@ -632,7 +632,7 @@ txPushNewContext::execute(txExecutionState& aEs)
     }
 
     txNodeSorter sorter;
-    PRUint32 i, count = mSortKeys.Length();
+    uint32_t i, count = mSortKeys.Length();
     for (i = 0; i < count; ++i) {
         SortKey& sort = mSortKeys[i];
         rv = sorter.addSortElement(sort.mSelectExpr, sort.mLangExpr,
@@ -681,14 +681,14 @@ txPushNewContext::addSort(nsAutoPtr<Expr> aSelectExpr,
 nsresult
 txPushNullTemplateRule::execute(txExecutionState& aEs)
 {
-    aEs.pushTemplateRule(nsnull, txExpandedName(), nsnull);
+    aEs.pushTemplateRule(nullptr, txExpandedName(), nullptr);
     return NS_OK;
 }
 
 nsresult
 txPushParams::execute(txExecutionState& aEs)
 {
-    return aEs.pushParamMap(nsnull);
+    return aEs.pushParamMap(nullptr);
 }
 
 nsresult
@@ -823,9 +823,9 @@ txStartElement::execute(txExecutionState& aEs)
     NS_ENSURE_SUCCESS(rv, rv);
 
 
-    PRInt32 nsId = kNameSpaceID_None;
+    int32_t nsId = kNameSpaceID_None;
     nsCOMPtr<nsIAtom> prefix;
-    PRUint32 lnameStart = 0;
+    uint32_t lnameStart = 0;
 
     const PRUnichar* colon;
     if (XMLUtils::isValidQName(name, &colon)) {
@@ -878,7 +878,7 @@ txStartElement::execute(txExecutionState& aEs)
 }
 
 
-txStartLREElement::txStartLREElement(PRInt32 aNamespaceID,
+txStartLREElement::txStartLREElement(int32_t aNamespaceID,
                                      nsIAtom* aLocalName,
                                      nsIAtom* aPrefix)
     : mNamespaceID(aNamespaceID),

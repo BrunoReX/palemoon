@@ -10,19 +10,15 @@
 
 using namespace mozilla::a11y;
 
-NativeRootAccessibleWrap::NativeRootAccessibleWrap(AtkObject* aAccessible):
-  RootAccessible(nsnull, nsnull, nsnull)
+GtkWindowAccessible::GtkWindowAccessible(AtkObject* aAccessible) :
+  DummyAccessible()
 {
-  // XXX: mark the object as defunct to ensure no single internal method is
-  // running on it.
-  mFlags |= eIsDefunct;
-
   g_object_ref(aAccessible);
   mAtkObject = aAccessible;
 }
 
-NativeRootAccessibleWrap::~NativeRootAccessibleWrap()
+GtkWindowAccessible::~GtkWindowAccessible()
 {
   g_object_unref(mAtkObject);
-  mAtkObject = nsnull;
+  mAtkObject = nullptr;
 }

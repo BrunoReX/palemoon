@@ -10,6 +10,7 @@
 #include "nsICachingChannel.h"
 #include "nsICacheEntryDescriptor.h"
 #include "prlog.h"
+#include "nsIScriptSecurityManager.h"
 
 #if defined(PR_LOGGING)
 //
@@ -35,7 +36,7 @@ nsChannelClassifier::Start(nsIChannel *aChannel)
 {
     // Don't bother to run the classifier on a load that has already failed.
     // (this might happen after a redirect)
-    PRUint32 status;
+    nsresult status;
     aChannel->GetStatus(&status);
     if (NS_FAILED(status))
         return NS_OK;
@@ -85,8 +86,17 @@ nsChannelClassifier::Start(nsIChannel *aChannel)
     }
     NS_ENSURE_SUCCESS(rv, rv);
 
+    nsCOMPtr<nsIScriptSecurityManager> securityManager =
+        do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsCOMPtr<nsIPrincipal> principal;
+    rv = securityManager->GetChannelPrincipal(aChannel,
+                                              getter_AddRefs(principal));
+    NS_ENSURE_SUCCESS(rv, rv);
+
     bool expectCallback;
-    rv = uriClassifier->Classify(uri, this, &expectCallback);
+    rv = uriClassifier->Classify(principal, this, &expectCallback);
     if (NS_FAILED(rv)) return rv;
 
     if (expectCallback) {
@@ -134,7 +144,7 @@ nsChannelClassifier::MarkEntryClassified(nsresult status)
     }
 
     cacheEntry->SetMetaDataElement("necko:classified",
-                                   NS_SUCCEEDED(status) ? "1" : nsnull);
+                                   NS_SUCCEEDED(status) ? "1" : nullptr);
 }
 
 bool
@@ -188,7 +198,7 @@ nsChannelClassifier::OnClassifyComplete(nsresult aErrorCode)
              "OnClassifyComplete", this, mSuspendedChannel.get()));
 #endif
         mSuspendedChannel->Resume();
-        mSuspendedChannel = nsnull;
+        mSuspendedChannel = nullptr;
     }
 
     return NS_OK;

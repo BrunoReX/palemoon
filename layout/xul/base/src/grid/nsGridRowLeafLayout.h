@@ -13,6 +13,7 @@
 #ifndef nsGridRowLeafLayout_h___
 #define nsGridRowLeafLayout_h___
 
+#include "mozilla/Attributes.h"
 #include "nsGridRowLayout.h"
 #include "nsCOMPtr.h"
 
@@ -27,29 +28,31 @@ public:
 
   friend already_AddRefed<nsBoxLayout> NS_NewGridRowLeafLayout();
 
-  virtual nsSize GetPrefSize(nsIBox* aBox, nsBoxLayoutState& aBoxLayoutState);
-  virtual nsSize GetMinSize(nsIBox* aBox, nsBoxLayoutState& aBoxLayoutState);
-  virtual nsSize GetMaxSize(nsIBox* aBox, nsBoxLayoutState& aBoxLayoutState);
-  virtual void ChildAddedOrRemoved(nsIBox* aBox, nsBoxLayoutState& aState);
-  NS_IMETHOD Layout(nsIBox* aBox, nsBoxLayoutState& aBoxLayoutState);
-  virtual void CountRowsColumns(nsIBox* aBox, PRInt32& aRowCount, PRInt32& aComputedColumnCount);
-  virtual void DirtyRows(nsIBox* aBox, nsBoxLayoutState& aState);
-  virtual PRInt32 BuildRows(nsIBox* aBox, nsGridRow* aRows);
-  virtual Type GetType() { return eRowLeaf; }
+  virtual nsSize GetPrefSize(nsIFrame* aBox, nsBoxLayoutState& aBoxLayoutState);
+  virtual nsSize GetMinSize(nsIFrame* aBox, nsBoxLayoutState& aBoxLayoutState);
+  virtual nsSize GetMaxSize(nsIFrame* aBox, nsBoxLayoutState& aBoxLayoutState);
+  virtual void ChildAddedOrRemoved(nsIFrame* aBox, nsBoxLayoutState& aState);
+  NS_IMETHOD Layout(nsIFrame* aBox, nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
+  virtual void CountRowsColumns(nsIFrame* aBox, int32_t& aRowCount, int32_t& aComputedColumnCount) MOZ_OVERRIDE;
+  virtual void DirtyRows(nsIFrame* aBox, nsBoxLayoutState& aState) MOZ_OVERRIDE;
+  virtual int32_t BuildRows(nsIFrame* aBox, nsGridRow* aRows) MOZ_OVERRIDE;
+  virtual Type GetType() MOZ_OVERRIDE { return eRowLeaf; }
 
 protected:
 
-  virtual void PopulateBoxSizes(nsIBox* aBox, nsBoxLayoutState& aBoxLayoutState, nsBoxSize*& aBoxSizes, nscoord& aMinSize, nscoord& aMaxSize, PRInt32& aFlexes);
-  virtual void ComputeChildSizes(nsIBox* aBox, 
-                         nsBoxLayoutState& aState, 
-                         nscoord& aGivenSize, 
-                         nsBoxSize* aBoxSizes, 
-                         nsComputedBoxSize*& aComputedBoxSizes);
+  virtual void PopulateBoxSizes(nsIFrame* aBox, nsBoxLayoutState& aBoxLayoutState,
+                                nsBoxSize*& aBoxSizes, nscoord& aMinSize,
+                                nscoord& aMaxSize, int32_t& aFlexes) MOZ_OVERRIDE;
+  virtual void ComputeChildSizes(nsIFrame* aBox,
+                                 nsBoxLayoutState& aState,
+                                 nscoord& aGivenSize,
+                                 nsBoxSize* aBoxSizes,
+                                 nsComputedBoxSize*& aComputedBoxSizes) MOZ_OVERRIDE;
 
 
   nsGridRowLeafLayout();
   virtual ~nsGridRowLeafLayout();
-  //virtual void AddBorderAndPadding(nsIBox* aBox, nsSize& aSize);
+  //virtual void AddBorderAndPadding(nsIFrame* aBox, nsSize& aSize);
 
 private:
 

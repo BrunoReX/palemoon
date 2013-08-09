@@ -38,23 +38,23 @@ public:
 
     virtual nsresult OpenInputStreamForEntry(nsCacheEntry *     entry,
                                              nsCacheAccessMode  mode,
-                                             PRUint32           offset,
+                                             uint32_t           offset,
                                              nsIInputStream **  result) = 0;
 
     virtual nsresult OpenOutputStreamForEntry(nsCacheEntry *     entry,
                                               nsCacheAccessMode  mode,
-                                              PRUint32           offset,
+                                              uint32_t           offset,
                                               nsIOutputStream ** result) = 0;
 
     virtual nsresult GetFileForEntry( nsCacheEntry *    entry,
                                       nsIFile **        result ) = 0;
 
-    virtual nsresult OnDataSizeChange( nsCacheEntry * entry, PRInt32 deltaSize ) = 0;
+    virtual nsresult OnDataSizeChange( nsCacheEntry * entry, int32_t deltaSize ) = 0;
 
     virtual nsresult Visit(nsICacheVisitor * visitor) = 0;
 
     /**
-     * Device must evict entries associated with clientID.  If clientID == nsnull, all
+     * Device must evict entries associated with clientID.  If clientID == nullptr, all
      * entries must be evicted.  Active entries must be doomed, rather than evicted.
      */
     virtual nsresult EvictEntries(const char * clientID) = 0;

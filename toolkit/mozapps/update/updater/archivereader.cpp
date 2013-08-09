@@ -10,8 +10,8 @@
 #include "bzlib.h"
 #include "archivereader.h"
 #include "errors.h"
-#include "nsAlgorithm.h"
 #ifdef XP_WIN
+#include "nsAlgorithm.h" // Needed by nsVersionComparator.cpp
 #include "updatehelper.h"
 #endif
 
@@ -44,7 +44,7 @@ static char *outbuf = NULL;
  * @return TRUE on success
 */
 BOOL
-LoadFileInResource(int name, int type, const char *&data, DWORD& size)
+LoadFileInResource(int name, int type, const uint8_t *&data, uint32_t& size)
 {
   HMODULE handle = GetModuleHandle(NULL);
   if (!handle) {
@@ -66,7 +66,7 @@ LoadFileInResource(int name, int type, const char *&data, DWORD& size)
   }
 
   size = SizeofResource(handle, resourceInfoBlockHandle);
-  data = static_cast<const char*>(::LockResource(resourceHandle));
+  data = static_cast<const uint8_t*>(::LockResource(resourceHandle));
   FreeLibrary(handle);
   return TRUE;
 }
@@ -83,13 +83,13 @@ LoadFileInResource(int name, int type, const char *&data, DWORD& size)
 int
 VerifyLoadedCert(MarFile *archive, int name, int type)
 {
-  DWORD size = 0;
-  const char *data = NULL;
+  uint32_t size = 0;
+  const uint8_t *data = NULL;
   if (!LoadFileInResource(name, type, data, size) || !data || !size) {
     return CERT_LOAD_ERROR;
   }
 
-  if (mar_verify_signatureW(archive, data, size)) {
+  if (mar_verify_signaturesW(archive, &data, &size, 1)) {
     return CERT_VERIFY_ERROR;
   }
 
@@ -312,12 +312,12 @@ ArchiveReader::ExtractItemToStream(const MarItem *item, FILE *fp)
 
   memset(&strm, 0, sizeof(strm));
   if (BZ2_bzDecompressInit(&strm, 0, 0) != BZ_OK)
-    return UNEXPECTED_ERROR;
+    return UNEXPECTED_BZIP_ERROR;
 
   offset = 0;
   for (;;) {
     if (!item->length) {
-      ret = UNEXPECTED_ERROR;
+      ret = UNEXPECTED_MAR_ERROR;
       break;
     }
 
@@ -335,7 +335,7 @@ ArchiveReader::ExtractItemToStream(const MarItem *item, FILE *fp)
 
     ret = BZ2_bzDecompress(&strm);
     if (ret != BZ_OK && ret != BZ_STREAM_END) {
-      ret = UNEXPECTED_ERROR;
+      ret = UNEXPECTED_BZIP_ERROR;
       break;
     }
 

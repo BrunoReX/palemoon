@@ -23,6 +23,7 @@
 #include "nsIXMLContentSink.h"
 #include "nsNetCID.h"
 #include "nsComponentManagerUtils.h"
+#include "nsSMILAnimationController.h"
 #include "nsServiceManagerUtils.h"
 #include "nsSize.h"
 #include "gfxRect.h"
@@ -59,16 +60,16 @@ void
 SVGDocumentWrapper::DestroyViewer()
 {
   if (mViewer) {
-    mViewer->GetDocument()->OnPageHide(false, nsnull);
-    mViewer->Close(nsnull);
+    mViewer->GetDocument()->OnPageHide(false, nullptr);
+    mViewer->Close(nullptr);
     mViewer->Destroy();
-    mViewer = nsnull;
+    mViewer = nullptr;
   }
 }
 
 bool
 SVGDocumentWrapper::GetWidthOrHeight(Dimension aDimension,
-                                     PRInt32& aResult)
+                                     int32_t& aResult)
 {
   nsSVGSVGElement* rootElem = GetRootSVGElem();
   NS_ABORT_IF_FALSE(rootElem, "root elem missing or of wrong type");
@@ -92,7 +93,7 @@ SVGDocumentWrapper::GetWidthOrHeight(Dimension aDimension,
   NS_ENSURE_TRUE(domLength, false);
 
   // Check if it's a percent value (and fail if so)
-  PRUint16 unitType;
+  uint16_t unitType;
   rv = domLength->GetUnitType(&unitType);
   NS_ENSURE_SUCCESS(rv, false);
   if (unitType == nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE) {
@@ -113,7 +114,7 @@ nsIFrame*
 SVGDocumentWrapper::GetRootLayoutFrame()
 {
   Element* rootElem = GetRootSVGElem();
-  return rootElem ? rootElem->GetPrimaryFrame() : nsnull;
+  return rootElem ? rootElem->GetPrimaryFrame() : nullptr;
 }
 
 void
@@ -121,8 +122,16 @@ SVGDocumentWrapper::UpdateViewportBounds(const nsIntSize& aViewportSize)
 {
   NS_ABORT_IF_FALSE(!mIgnoreInvalidation, "shouldn't be reentrant");
   mIgnoreInvalidation = true;
-  mViewer->SetBounds(nsIntRect(nsIntPoint(0, 0), aViewportSize));
-  FlushLayout();
+
+  nsIntRect currentBounds;
+  mViewer->GetBounds(currentBounds);
+  
+  // If the bounds have changed, we need to do a layout flush.
+  if (currentBounds.Size() != aViewportSize) {
+    mViewer->SetBounds(nsIntRect(nsIntPoint(0, 0), aViewportSize));
+    FlushLayout();
+  }
+
   mIgnoreInvalidation = false;
 }
 
@@ -208,8 +217,8 @@ SVGDocumentWrapper::ResetAnimation()
 NS_IMETHODIMP
 SVGDocumentWrapper::OnDataAvailable(nsIRequest* aRequest, nsISupports* ctxt,
                                     nsIInputStream* inStr,
-                                    PRUint32 sourceOffset,
-                                    PRUint32 count)
+                                    uint64_t sourceOffset,
+                                    uint32_t count)
 {
   return mListener->OnDataAvailable(aRequest, ctxt, inStr,
                                     sourceOffset, count);
@@ -226,13 +235,13 @@ SVGDocumentWrapper::OnStartRequest(nsIRequest* aRequest, nsISupports* ctxt)
                             getter_AddRefs(mLoadGroup));
 
   if (NS_SUCCEEDED(rv) &&
-      NS_SUCCEEDED(mListener->OnStartRequest(aRequest, nsnull))) {
+      NS_SUCCEEDED(mListener->OnStartRequest(aRequest, nullptr))) {
     mViewer->GetDocument()->SetIsBeingUsedAsImage();
     StopAnimation(); // otherwise animations start automatically in helper doc
 
-    rv = mViewer->Init(nsnull, nsIntRect(0, 0, 0, 0));
+    rv = mViewer->Init(nullptr, nsIntRect(0, 0, 0, 0));
     if (NS_SUCCEEDED(rv)) {
-      rv = mViewer->Open(nsnull, nsnull);
+      rv = mViewer->Open(nullptr, nullptr);
     }
   }
   return rv;
@@ -258,7 +267,7 @@ SVGDocumentWrapper::OnStopRequest(nsIRequest* aRequest, nsISupports* ctxt,
       parser->ContinueInterruptedParsing();
     }
     FlushLayout();
-    mListener = nsnull;
+    mListener = nullptr;
 
     // In a normal document, this would be called by nsDocShell - but we don't
     // have a nsDocShell. So we do it ourselves. (If we don't, painting will
@@ -285,9 +294,9 @@ SVGDocumentWrapper::Observe(nsISupports* aSubject,
     // Clean up at XPCOM shutdown time.
     DestroyViewer();
     if (mListener)
-      mListener = nsnull;
+      mListener = nullptr;
     if (mLoadGroup)
-      mLoadGroup = nsnull;
+      mLoadGroup = nullptr;
 
     // Turn off "registered" flag, or else we'll try to unregister when we die.
     // (No need for that now, and the try would fail anyway -- it's too late.)
@@ -344,7 +353,7 @@ SVGDocumentWrapper::SetupViewer(nsIRequest* aRequest,
   nsCOMPtr<nsIStreamListener> listener;
   rv = docLoaderFactory->CreateInstance("external-resource", chan,
                                         newLoadGroup,
-                                        SVG_MIMETYPE, nsnull, nsnull,
+                                        SVG_MIMETYPE, nullptr, nullptr,
                                         getter_AddRefs(listener),
                                         getter_AddRefs(viewer));
   NS_ENSURE_SUCCESS(rv, rv);
@@ -417,15 +426,15 @@ nsSVGSVGElement*
 SVGDocumentWrapper::GetRootSVGElem()
 {
   if (!mViewer)
-    return nsnull; // Can happen during destruction
+    return nullptr; // Can happen during destruction
 
   nsIDocument* doc = mViewer->GetDocument();
   if (!doc)
-    return nsnull; // Can happen during destruction
+    return nullptr; // Can happen during destruction
 
   Element* rootElem = mViewer->GetDocument()->GetRootElement();
   if (!rootElem || !rootElem->IsSVG(nsGkAtoms::svg)) {
-    return nsnull;
+    return nullptr;
   }
 
   return static_cast<nsSVGSVGElement*>(rootElem);

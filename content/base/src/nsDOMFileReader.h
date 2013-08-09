@@ -47,13 +47,9 @@ public:
   // nsIInterfaceRequestor 
   NS_DECL_NSIINTERFACEREQUESTOR
 
-  NS_DECL_EVENT_HANDLER(load)
-  NS_DECL_EVENT_HANDLER(loadend)
-  NS_DECL_EVENT_HANDLER(loadstart)
-
   // nsIJSNativeInitializer
   NS_IMETHOD Initialize(nsISupports* aOwner, JSContext* cx, JSObject* obj,
-                        PRUint32 argc, jsval* argv);
+                        uint32_t argc, jsval* argv);
 
   // FileIOObject overrides
   NS_IMETHOD DoAbort(nsAString& aEvent);
@@ -61,8 +57,8 @@ public:
                              nsresult aStatus, nsAString& aSuccessEvent,
                              nsAString& aTerminationEvent);
   NS_IMETHOD DoOnDataAvailable(nsIRequest* aRequest, nsISupports* aContext,
-                               nsIInputStream* aInputStream, PRUint32 aOffset,
-                               PRUint32 aCount);
+                               nsIInputStream* aInputStream, uint64_t aOffset,
+                               uint32_t aCount);
 
   nsresult Init();
 
@@ -80,20 +76,20 @@ protected:
 
   nsresult ReadFileContent(JSContext* aCx, nsIDOMBlob *aFile, const nsAString &aCharset, eDataFormat aDataFormat); 
   nsresult GetAsText(const nsACString &aCharset,
-                     const char *aFileData, PRUint32 aDataLen, nsAString &aResult);
-  nsresult GetAsDataURL(nsIDOMBlob *aFile, const char *aFileData, PRUint32 aDataLen, nsAString &aResult); 
-  nsresult ConvertStream(const char *aFileData, PRUint32 aDataLen, const char *aCharset, nsAString &aResult); 
+                     const char *aFileData, uint32_t aDataLen, nsAString &aResult);
+  nsresult GetAsDataURL(nsIDOMBlob *aFile, const char *aFileData, uint32_t aDataLen, nsAString &aResult); 
+  nsresult ConvertStream(const char *aFileData, uint32_t aDataLen, const char *aCharset, nsAString &aResult); 
 
   void FreeFileData() {
     PR_Free(mFileData);
-    mFileData = nsnull;
+    mFileData = nullptr;
     mDataLen = 0;
   }
 
   char *mFileData;
   nsCOMPtr<nsIDOMBlob> mFile;
   nsCString mCharset;
-  PRUint32 mDataLen;
+  uint32_t mDataLen;
 
   eDataFormat mDataFormat;
 

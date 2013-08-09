@@ -3,10 +3,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsIControllerCommandTable.h"
+#include "mozilla/mozalloc.h"           // for operator new
+#include "nsComposerCommands.h"         // for nsStyleUpdatingCommand, etc
 #include "nsComposerController.h"
-#include "nsComposerCommands.h"
-#include "nsGkAtoms.h"
+#include "nsError.h"                    // for NS_OK
+#include "nsGkAtoms.h"                  // for nsGkAtoms, nsGkAtoms::a, etc
+#include "nsIControllerCommandTable.h"  // for nsIControllerCommandTable
+
+class nsIControllerCommand;
 
 #define NS_REGISTER_ONE_COMMAND(_cmdClass, _cmdName)                    \
   {                                                                     \
@@ -124,9 +128,9 @@ nsComposerController::RegisterHTMLEditorCommands(
 
   // Insert content
   NS_REGISTER_ONE_COMMAND(nsInsertHTMLCommand, "cmd_insertHTML");
-  NS_REGISTER_TAG_COMMAND(nsInsertTagCommand, "cmd_insertLinkNoUI", "a");
-  NS_REGISTER_TAG_COMMAND(nsInsertTagCommand, "cmd_insertImageNoUI", "img");
-  NS_REGISTER_TAG_COMMAND(nsInsertTagCommand, "cmd_insertHR", "hr");
+  NS_REGISTER_TAG_COMMAND(nsInsertTagCommand, "cmd_insertLinkNoUI", nsGkAtoms::a);
+  NS_REGISTER_TAG_COMMAND(nsInsertTagCommand, "cmd_insertImageNoUI", nsGkAtoms::img);
+  NS_REGISTER_TAG_COMMAND(nsInsertTagCommand, "cmd_insertHR", nsGkAtoms::hr);
 
   NS_REGISTER_ONE_COMMAND(nsAbsolutePositioningCommand, "cmd_absPos");
   NS_REGISTER_ONE_COMMAND(nsDecreaseZIndexCommand, "cmd_decreaseZIndex");

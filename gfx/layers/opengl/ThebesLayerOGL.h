@@ -67,19 +67,18 @@ public:
     MOZ_COUNT_DTOR(ShadowThebesLayerBufferOGL);
   }
 
-  void Swap(gfxASurface* aNewBuffer,
+  void Swap(const SurfaceDescriptor& aDescriptor,
             const nsIntRect& aNewRect, const nsIntPoint& aNewRotation,
-            gfxASurface** aOldBuffer,
+            SurfaceDescriptor* aOldDescriptor,
             nsIntRect* aOldRect, nsIntPoint* aOldRotation)
   {
+    *aOldDescriptor = mBuffer;
     *aOldRect = mBufferRect;
     *aOldRotation = mBufferRotation;
-    nsRefPtr<gfxASurface> oldBuffer = mBuffer;
 
+    mBuffer = aDescriptor;
     mBufferRect = aNewRect;
     mBufferRotation = aNewRotation;
-    mBuffer = aNewBuffer;
-    oldBuffer.forget(aOldBuffer);
   }
 
   nsIntRect Rect() {
@@ -90,7 +89,7 @@ public:
     return mBufferRotation;
   }
 
-  gfxASurface* Buffer() {
+  SurfaceDescriptor Buffer() {
     return mBuffer;
   }
 
@@ -100,12 +99,11 @@ public:
    */
   void Clear()
   {
-    mBuffer = nsnull;
     mBufferRect.SetEmpty();
   }
 
 protected:
-  nsRefPtr<gfxASurface> mBuffer;
+  SurfaceDescriptor mBuffer;
   nsIntRect mBufferRect;
   nsIntPoint mBufferRotation;
 };
@@ -117,27 +115,23 @@ public:
   ShadowThebesLayerOGL(LayerManagerOGL *aManager);
   virtual ~ShadowThebesLayerOGL();
 
-  virtual bool ShouldDoubleBuffer();
   virtual void
   Swap(const ThebesBuffer& aNewFront, const nsIntRegion& aUpdatedRegion,
        OptionalThebesBuffer* aNewBack, nsIntRegion* aNewBackValidRegion,
        OptionalThebesBuffer* aReadOnlyFront, nsIntRegion* aFrontUpdatedRegion);
-  virtual void EnsureTextureUpdated();
-  virtual void EnsureTextureUpdated(nsIntRegion& aRegion);
-  virtual void ProgressiveUpload();
   virtual void DestroyFrontBuffer();
 
   virtual void Disconnect();
 
   virtual void SetValidRegion(const nsIntRegion& aRegion)
   {
-    mOldValidRegion = mValidRegion;
     ShadowThebesLayer::SetValidRegion(aRegion);
   }
 
   // LayerOGL impl
   void Destroy();
   Layer* GetLayer();
+  virtual LayerRenderState GetRenderState() MOZ_OVERRIDE;
   virtual bool IsEmpty();
   virtual void RenderLayer(int aPreviousFrameBuffer,
                            const nsIntPoint& aOffset);
@@ -145,27 +139,8 @@ public:
 
 private:
   nsRefPtr<ShadowBufferOGL> mBuffer;
-
-  // When doing delayed texture upload, this is the region of the buffer that
-  // still requires uploading.
-  nsIntRegion mRegionPendingUpload;
-
-  // Task used for progressive texture upload. When double-buffering, rather
-  // than synchronously uploading texture data, we immediately return and
-  // upload only what is necessary when rendering the layer. We also upload
-  // other parts of the layer that aren't necessary to render progressively,
-  // over time.
-  CancelableTask* mUploadTask;
-
-  // Following used for double-buffering
-  ShadowThebesLayerBufferOGL mFrontBuffer;
-  // Describes the gfxASurface we hand out to |mFrontBuffer|.
-  SurfaceDescriptor mFrontBufferDescriptor;
-  // When we receive an update from our remote partner, we stow away
-  // our previous parameters that described our previous front buffer.
-  // Then when we Swap() back/front buffers, we can return these
-  // parameters to our partner (adjusted as needed).
-  nsIntRegion mOldValidRegion;
+  SurfaceDescriptor mBufferDescriptor;
+  nsIntRegion mValidRegionForNextBackBuffer;
 };
 
 } /* layers */

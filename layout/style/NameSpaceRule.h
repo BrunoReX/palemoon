@@ -35,17 +35,17 @@ private:
 public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_CSS_NAMESPACE_RULE_IMPL_CID)
 
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_ISUPPORTS
 
   DECL_STYLE_RULE_INHERIT
 
   // nsIStyleRule methods
 #ifdef DEBUG
-  virtual void List(FILE* out = stdout, PRInt32 aIndent = 0) const;
+  virtual void List(FILE* out = stdout, int32_t aIndent = 0) const;
 #endif
 
   // Rule methods
-  virtual PRInt32 GetType() const;
+  virtual int32_t GetType() const;
   virtual already_AddRefed<Rule> Clone() const;
 
   nsIAtom* GetPrefix() const { return mPrefix; }

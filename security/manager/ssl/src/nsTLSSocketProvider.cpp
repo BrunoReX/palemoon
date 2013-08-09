@@ -6,7 +6,7 @@
 
 #include "nsTLSSocketProvider.h"
 #include "nsNSSIOLayer.h"
-#include "nsNetError.h"
+#include "nsError.h"
 
 nsTLSSocketProvider::nsTLSSocketProvider()
 {
@@ -19,12 +19,12 @@ nsTLSSocketProvider::~nsTLSSocketProvider()
 NS_IMPL_THREADSAFE_ISUPPORTS1(nsTLSSocketProvider, nsISocketProvider)
 
 NS_IMETHODIMP
-nsTLSSocketProvider::NewSocket(PRInt32 family,
+nsTLSSocketProvider::NewSocket(int32_t family,
                                const char *host,
-                               PRInt32 port,
+                               int32_t port,
                                const char *proxyHost,
-                               PRInt32 proxyPort,
-                               PRUint32 flags,
+                               int32_t proxyPort,
+                               uint32_t flags,
                                PRFileDesc **_result,
                                nsISupports **securityInfo)
 {
@@ -36,19 +36,19 @@ nsTLSSocketProvider::NewSocket(PRInt32 family,
                                       _result,
                                       securityInfo,
                                       true,
-                                      flags & ANONYMOUS_CONNECT);
+                                      flags);
   
   return (NS_FAILED(rv)) ? NS_ERROR_SOCKET_CREATE_FAILED : NS_OK;
 }
 
 // Add the SSL IO layer to an existing socket
 NS_IMETHODIMP
-nsTLSSocketProvider::AddToSocket(PRInt32 family,
+nsTLSSocketProvider::AddToSocket(int32_t family,
                                  const char *host,
-                                 PRInt32 port,
+                                 int32_t port,
                                  const char *proxyHost,
-                                 PRInt32 proxyPort,
-                                 PRUint32 flags,
+                                 int32_t proxyPort,
+                                 uint32_t flags,
                                  PRFileDesc *aSocket,
                                  nsISupports **securityInfo)
 {
@@ -60,7 +60,7 @@ nsTLSSocketProvider::AddToSocket(PRInt32 family,
                                         aSocket,
                                         securityInfo,
                                         true,
-                                        flags & ANONYMOUS_CONNECT);
+                                        flags);
   
   return (NS_FAILED(rv)) ? NS_ERROR_SOCKET_CREATE_FAILED : NS_OK;
 }

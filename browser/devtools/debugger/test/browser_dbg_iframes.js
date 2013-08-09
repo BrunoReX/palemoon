@@ -25,7 +25,7 @@ function test() {
     gDebugger.DebuggerController.activeThread.addOneTimeListener("framesadded", function() {
       Services.tm.currentThread.dispatch({ run: function() {
 
-        let frames = gDebugger.DebuggerView.StackFrames._frames;
+        let frames = gDebugger.DebuggerView.StackFrames._container._list;
         let childNodes = frames.childNodes;
 
         is(gDebugger.DebuggerController.activeThread.paused, true,
@@ -40,17 +40,24 @@ function test() {
           }}, 0);
         });
 
-        EventUtils.sendMouseEvent({ type: "click" },
+        EventUtils.sendMouseEvent({ type: "mousedown" },
           gDebugger.document.getElementById("resume"),
           gDebugger);
       }}, 0);
     });
 
     let iframe = gTab.linkedBrowser.contentWindow.wrappedJSObject.frames[0];
-
     is(iframe.document.title, "Browser Debugger Test Tab", "Found the iframe");
 
-    iframe.runDebuggerStatement();
+    function handler() {
+      if (iframe.document.readyState != "complete") {
+        return;
+      }
+      iframe.window.removeEventListener("load", handler, false);
+      executeSoon(iframe.runDebuggerStatement);
+    };
+    iframe.window.addEventListener("load", handler, false);
+    handler();
   });
 }
 

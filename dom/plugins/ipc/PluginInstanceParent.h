@@ -14,7 +14,7 @@
 #include <d3d10_1.h>
 #include "nsRefPtrHashtable.h"
 #elif defined(MOZ_WIDGET_COCOA)
-#include "nsCoreAnimationSupport.h"
+#include "mozilla/gfx/QuartzSupport.h"
 #endif
 
 #include "npfunctions.h"
@@ -23,13 +23,18 @@
 #include "nsHashKeys.h"
 #include "nsRect.h"
 #include "gfxASurface.h"
-#include "ImageLayers.h"
+
 #ifdef MOZ_X11
 class gfxXlibSurface;
 #endif
 #include "nsGUIEvent.h"
+#include "mozilla/unused.h"
 
 namespace mozilla {
+namespace layers {
+class ImageContainer;
+class CompositionNotifySink;
+}
 namespace plugins {
 
 class PBrowserStreamParent;
@@ -53,13 +58,13 @@ public:
     bool Init();
     NPError Destroy();
 
-    NS_OVERRIDE virtual void ActorDestroy(ActorDestroyReason why);
+    virtual void ActorDestroy(ActorDestroyReason why) MOZ_OVERRIDE;
 
     virtual PPluginScriptableObjectParent*
     AllocPPluginScriptableObject();
 
-    NS_OVERRIDE virtual bool
-    RecvPPluginScriptableObjectConstructor(PPluginScriptableObjectParent* aActor);
+    virtual bool
+    RecvPPluginScriptableObjectConstructor(PPluginScriptableObjectParent* aActor) MOZ_OVERRIDE;
 
     virtual bool
     DeallocPPluginScriptableObject(PPluginScriptableObjectParent* aObject);
@@ -83,10 +88,6 @@ public:
     virtual bool
     DeallocPPluginStream(PPluginStreamParent* stream);
 
-    virtual bool
-    AnswerNPN_GetValue_NPNVjavascriptEnabledBool(bool* value, NPError* result);
-    virtual bool
-    AnswerNPN_GetValue_NPNVisOfflineBool(bool* value, NPError* result);
     virtual bool
     AnswerNPN_GetValue_NPNVnetscapeWindow(NativeWindowHandle* value,
                                           NPError* result);
@@ -139,13 +140,13 @@ public:
                        const bool& file,
                        NPError* result);
 
-    NS_OVERRIDE virtual bool
+    virtual bool
     AnswerPStreamNotifyConstructor(PStreamNotifyParent* actor,
                                    const nsCString& url,
                                    const nsCString& target,
                                    const bool& post, const nsCString& buffer,
                                    const bool& file,
-                                   NPError* result);
+                                   NPError* result) MOZ_OVERRIDE;
 
     virtual bool
     DeallocPStreamNotify(PStreamNotifyParent* notifyData);
@@ -173,17 +174,17 @@ public:
     virtual bool
     AnswerNPN_PopPopupsEnabledState();
 
-    NS_OVERRIDE virtual bool
+    virtual bool
     AnswerNPN_GetValueForURL(const NPNURLVariable& variable,
                              const nsCString& url,
-                             nsCString* value, NPError* result);
+                             nsCString* value, NPError* result) MOZ_OVERRIDE;
 
-    NS_OVERRIDE virtual bool
+    virtual bool
     AnswerNPN_SetValueForURL(const NPNURLVariable& variable,
                              const nsCString& url,
-                             const nsCString& value, NPError* result);
+                             const nsCString& value, NPError* result) MOZ_OVERRIDE;
 
-    NS_OVERRIDE virtual bool
+    virtual bool
     AnswerNPN_GetAuthenticationInfo(const nsCString& protocol,
                                     const nsCString& host,
                                     const int32_t& port,
@@ -191,9 +192,9 @@ public:
                                     const nsCString& realm,
                                     nsCString* username,
                                     nsCString* password,
-                                    NPError* result);
+                                    NPError* result) MOZ_OVERRIDE;
 
-    NS_OVERRIDE virtual bool
+    virtual bool
     AnswerNPN_ConvertPoint(const double& sourceX,
                            const bool&   ignoreDestX,
                            const double& sourceY,
@@ -202,7 +203,7 @@ public:
                            const NPCoordinateSpace& destSpace,
                            double *destX,
                            double *destY,
-                           bool *result);
+                           bool *result) MOZ_OVERRIDE;
 
     virtual bool
     AnswerNPN_InitAsyncSurface(const gfxIntSize& size,
@@ -213,8 +214,8 @@ public:
     virtual bool
     RecvRedrawPlugin();
 
-    NS_OVERRIDE virtual bool
-    RecvNegotiatedCarbon();
+    virtual bool
+    RecvNegotiatedCarbon() MOZ_OVERRIDE;
 
     virtual bool RecvReleaseDXGISharedSurface(const DXGISharedSurfaceHandle &aHandle);
 
@@ -270,6 +271,7 @@ public:
     nsresult GetImageSize(nsIntSize* aSize);
 #ifdef XP_MACOSX
     nsresult IsRemoteDrawingCoreAnimation(bool *aDrawing);
+    nsresult ContentsScaleFactorChanged(double aContentsScaleFactor);
 #endif
     nsresult SetBackgroundUnknown();
     nsresult BeginUpdateBackground(const nsIntRect& aRect,
@@ -280,7 +282,7 @@ public:
     nsresult HandleGUIEvent(const nsGUIEvent& anEvent, bool* handled);
 #endif
 
-    void DidComposite() { SendNPP_DidComposite(); }
+    void DidComposite() { unused << SendNPP_DidComposite(); }
 
 private:
     // Create an appropriate platform surface for a background of size
@@ -292,13 +294,11 @@ private:
     typedef mozilla::layers::ImageContainer ImageContainer;
     ImageContainer *GetImageContainer();
 
-    NS_OVERRIDE
     virtual PPluginBackgroundDestroyerParent*
-    AllocPPluginBackgroundDestroyer();
+    AllocPPluginBackgroundDestroyer() MOZ_OVERRIDE;
 
-    NS_OVERRIDE
     virtual bool
-    DeallocPPluginBackgroundDestroyer(PPluginBackgroundDestroyerParent* aActor);
+    DeallocPPluginBackgroundDestroyer(PPluginBackgroundDestroyerParent* aActor) MOZ_OVERRIDE;
 
     bool InternalGetValueForNPObject(NPNVariable aVariable,
                                      PPluginScriptableObjectParent** aValue,
@@ -348,8 +348,8 @@ private:
     uint16_t               mShWidth;
     uint16_t               mShHeight;
     CGColorSpaceRef        mShColorSpace;
-    nsRefPtr<nsIOSurface> mIOSurface;
-    nsRefPtr<nsIOSurface> mFrontIOSurface;
+    RefPtr<MacIOSurface> mIOSurface;
+    RefPtr<MacIOSurface> mFrontIOSurface;
 #endif // definied(MOZ_WIDGET_COCOA)
 
     // ObjectFrame layer wrapper
@@ -364,7 +364,7 @@ private:
     // the consistency of the pixels in |mBackground|.  A plugin may
     // be able to observe partial updates to the background.
     nsRefPtr<gfxASurface>    mBackground;
-    
+
     nsRefPtr<ImageContainer> mImageContainer;
 };
 

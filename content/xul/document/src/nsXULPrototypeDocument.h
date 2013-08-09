@@ -12,7 +12,6 @@
 #include "nsTArray.h"
 #include "nsIScriptGlobalObjectOwner.h"
 #include "nsISerializable.h"
-#include "nsIDocument.h"
 #include "nsCycleCollectionParticipant.h"
 
 class nsIAtom;
@@ -111,7 +110,7 @@ public:
     // nsIScriptGlobalObjectOwner methods
     virtual nsIScriptGlobalObject* GetScriptGlobalObject();
 
-    void MarkInCCGeneration(PRUint32 aCCGeneration)
+    void MarkInCCGeneration(uint32_t aCCGeneration)
     {
         mCCGeneration = aCCGeneration;
     }
@@ -132,7 +131,7 @@ protected:
 
     nsRefPtr<nsNodeInfoManager> mNodeInfoManager;
 
-    PRUint32 mCCGeneration;
+    uint32_t mCCGeneration;
 
     nsXULPrototypeDocument();
     virtual ~nsXULPrototypeDocument();
@@ -145,7 +144,7 @@ protected:
 
     static nsIPrincipal* gSystemPrincipal;
     static nsXULPDGlobalObject* gSystemGlobal;
-    static PRUint32 gRefCnt;
+    static uint32_t gRefCnt;
 
     friend class nsXULPDGlobalObject;
 };

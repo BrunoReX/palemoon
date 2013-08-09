@@ -3,29 +3,44 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <stdlib.h>                     // for getenv
+
+#include "mozilla/Attributes.h"         // for MOZ_FINAL
+#include "mozilla/Preferences.h"        // for Preferences
+#include "mozilla/Services.h"           // for GetXULChromeRegistryService
+#include "mozilla/dom/Element.h"        // for Element
+#include "mozilla/mozalloc.h"           // for operator delete, etc
+#include "nsAString.h"                  // for nsAString_internal::IsEmpty, etc
+#include "nsComponentManagerUtils.h"    // for do_CreateInstance
+#include "nsDebug.h"                    // for NS_ENSURE_TRUE, etc
+#include "nsDependentSubstring.h"       // for Substring
 #include "nsEditorSpellCheck.h"
-
-#include "nsStyleUtil.h"
-#include "nsIContent.h"
-#include "nsIDOMElement.h"
-#include "nsITextServicesDocument.h"
-#include "nsISpellChecker.h"
-#include "nsISelection.h"
-#include "nsIDOMRange.h"
-#include "nsIEditor.h"
-#include "nsIHTMLEditor.h"
-
-#include "nsIComponentManager.h"
-#include "nsIContentPrefService.h"
-#include "nsServiceManagerUtils.h"
-#include "nsIChromeRegistry.h"
-#include "nsString.h"
-#include "nsReadableUtils.h"
-#include "nsITextServicesFilter.h"
-#include "nsUnicharUtils.h"
-#include "mozilla/Services.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/dom/Element.h"
+#include "nsError.h"                    // for NS_ERROR_NOT_INITIALIZED, etc
+#include "nsIChromeRegistry.h"          // for nsIXULChromeRegistry
+#include "nsIContent.h"                 // for nsIContent
+#include "nsIContentPrefService.h"      // for nsIContentPrefService, etc
+#include "nsIDOMDocument.h"             // for nsIDOMDocument
+#include "nsIDOMElement.h"              // for nsIDOMElement
+#include "nsIDOMRange.h"                // for nsIDOMRange
+#include "nsIDocument.h"                // for nsIDocument
+#include "nsIEditor.h"                  // for nsIEditor
+#include "nsIHTMLEditor.h"              // for nsIHTMLEditor
+#include "nsILoadContext.h"
+#include "nsISelection.h"               // for nsISelection
+#include "nsISpellChecker.h"            // for nsISpellChecker, etc
+#include "nsISupportsBase.h"            // for nsISupports
+#include "nsISupportsUtils.h"           // for NS_ADDREF
+#include "nsITextServicesDocument.h"    // for nsITextServicesDocument
+#include "nsITextServicesFilter.h"      // for nsITextServicesFilter
+#include "nsIURI.h"                     // for nsIURI
+#include "nsIVariant.h"                 // for nsIWritableVariant, etc
+#include "nsLiteralString.h"            // for NS_LITERAL_STRING, etc
+#include "nsMemory.h"                   // for nsMemory
+#include "nsReadableUtils.h"            // for ToNewUnicode, EmptyString, etc
+#include "nsServiceManagerUtils.h"      // for do_GetService
+#include "nsString.h"                   // for nsAutoString, nsString, etc
+#include "nsStringFwd.h"                // for nsAFlatString
+#include "nsStyleUtil.h"                // for nsStyleUtil
 
 using namespace mozilla;
 
@@ -94,6 +109,21 @@ LastDictionary::GetDocumentURI(nsIEditor* aEditor, nsIURI * *aURI)
   return NS_OK;
 }
 
+static already_AddRefed<nsILoadContext>
+GetLoadContext(nsIEditor* aEditor)
+{
+  nsCOMPtr<nsIDOMDocument> domDoc;
+  aEditor->GetDocument(getter_AddRefs(domDoc));
+  NS_ENSURE_TRUE(domDoc, nullptr);
+
+  nsCOMPtr<nsIDocument> doc = do_QueryInterface(domDoc);
+  NS_ENSURE_TRUE(doc, nullptr);
+
+  nsCOMPtr<nsISupports> container = doc->GetContainer();
+  nsCOMPtr<nsILoadContext> loadContext = do_QueryInterface(container);
+  return loadContext.forget();
+}
+
 NS_IMETHODIMP
 LastDictionary::FetchLastDictionary(nsIEditor* aEditor, nsAString& aDictionary)
 {
@@ -113,10 +143,11 @@ LastDictionary::FetchLastDictionary(nsIEditor* aEditor, nsAString& aDictionary)
   NS_ENSURE_TRUE(uri, NS_ERROR_OUT_OF_MEMORY);
   uri->SetAsISupports(docUri);
 
+  nsCOMPtr<nsILoadContext> loadContext = GetLoadContext(aEditor);
   bool hasPref;
-  if (NS_SUCCEEDED(contentPrefService->HasPref(uri, CPS_PREF_NAME, &hasPref)) && hasPref) {
+  if (NS_SUCCEEDED(contentPrefService->HasPref(uri, CPS_PREF_NAME, loadContext, &hasPref)) && hasPref) {
     nsCOMPtr<nsIVariant> pref;
-    contentPrefService->GetPref(uri, CPS_PREF_NAME, nsnull, getter_AddRefs(pref));
+    contentPrefService->GetPref(uri, CPS_PREF_NAME, loadContext, nullptr, getter_AddRefs(pref));
     pref->GetAsAString(aDictionary);
   } else {
     aDictionary.Truncate();
@@ -148,7 +179,8 @@ LastDictionary::StoreCurrentDictionary(nsIEditor* aEditor, const nsAString& aDic
     do_GetService(NS_CONTENT_PREF_SERVICE_CONTRACTID);
   NS_ENSURE_TRUE(contentPrefService, NS_ERROR_NOT_INITIALIZED);
 
-  return contentPrefService->SetPref(uri, CPS_PREF_NAME, prefValue);
+  nsCOMPtr<nsILoadContext> loadContext = GetLoadContext(aEditor);
+  return contentPrefService->SetPref(uri, CPS_PREF_NAME, prefValue, loadContext);
 }
 
 NS_IMETHODIMP
@@ -170,10 +202,11 @@ LastDictionary::ClearCurrentDictionary(nsIEditor* aEditor)
     do_GetService(NS_CONTENT_PREF_SERVICE_CONTRACTID);
   NS_ENSURE_TRUE(contentPrefService, NS_ERROR_NOT_INITIALIZED);
 
-  return contentPrefService->RemovePref(uri, CPS_PREF_NAME);
+  nsCOMPtr<nsILoadContext> loadContext = GetLoadContext(aEditor);
+  return contentPrefService->RemovePref(uri, CPS_PREF_NAME, loadContext);
 }
 
-LastDictionary* nsEditorSpellCheck::gDictionaryStore = nsnull;
+LastDictionary* nsEditorSpellCheck::gDictionaryStore = nullptr;
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsEditorSpellCheck)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsEditorSpellCheck)
@@ -192,7 +225,7 @@ NS_IMPL_CYCLE_COLLECTION_3(nsEditorSpellCheck,
 nsEditorSpellCheck::nsEditorSpellCheck()
   : mSuggestedWordIndex(0)
   , mDictionaryIndex(0)
-  , mEditor(nsnull)
+  , mEditor(nullptr)
   , mUpdateDictionaryRunning(false)
 {
 }
@@ -201,7 +234,7 @@ nsEditorSpellCheck::~nsEditorSpellCheck()
 {
   // Make sure we blow the spellchecker away, just in
   // case it hasn't been destroyed already.
-  mSpellChecker = nsnull;
+  mSpellChecker = nullptr;
 }
 
 // The problem is that if the spell checker does not exist, we can not tell
@@ -264,7 +297,7 @@ nsEditorSpellCheck::InitSpellChecker(nsIEditor* aEditor, bool aEnableSelectionCh
     NS_ENSURE_SUCCESS(rv, rv);
     NS_ENSURE_TRUE(selection, NS_ERROR_FAILURE);
 
-    PRInt32 count = 0;
+    int32_t count = 0;
 
     rv = selection->GetRangeCount(&count);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -337,7 +370,7 @@ NS_IMETHODIMP
 nsEditorSpellCheck::GetSuggestedWord(PRUnichar **aSuggestedWord)
 {
   nsAutoString word;
-  if ( mSuggestedWordIndex < PRInt32(mSuggestedWordList.Length()))
+  if ( mSuggestedWordIndex < int32_t(mSuggestedWordList.Length()))
   {
     *aSuggestedWord = ToNewUnicode(mSuggestedWordList[mSuggestedWordIndex]);
     mSuggestedWordIndex++;
@@ -366,7 +399,7 @@ nsEditorSpellCheck::CheckCurrentWordNoSuggest(const PRUnichar *aSuggestedWord,
   NS_ENSURE_TRUE(mSpellChecker, NS_ERROR_NOT_INITIALIZED);
 
   return mSpellChecker->CheckWord(nsDependentString(aSuggestedWord),
-                                  aIsMisspelled, nsnull);
+                                  aIsMisspelled, nullptr);
 }
 
 NS_IMETHODIMP    
@@ -402,7 +435,7 @@ nsEditorSpellCheck::GetPersonalDictionary()
 NS_IMETHODIMP    
 nsEditorSpellCheck::GetPersonalDictionaryWord(PRUnichar **aDictionaryWord)
 {
-  if ( mDictionaryIndex < PRInt32( mDictionaryList.Length()))
+  if ( mDictionaryIndex < int32_t( mDictionaryList.Length()))
   {
     *aDictionaryWord = ToNewUnicode(mDictionaryList[mDictionaryIndex]);
     mDictionaryIndex++;
@@ -431,7 +464,7 @@ nsEditorSpellCheck::RemoveWordFromDictionary(const PRUnichar *aWord)
 }
 
 NS_IMETHODIMP    
-nsEditorSpellCheck::GetDictionaryList(PRUnichar ***aDictionaryList, PRUint32 *aCount)
+nsEditorSpellCheck::GetDictionaryList(PRUnichar ***aDictionaryList, uint32_t *aCount)
 {
   NS_ENSURE_TRUE(mSpellChecker, NS_ERROR_NOT_INITIALIZED);
 
@@ -471,7 +504,7 @@ nsEditorSpellCheck::GetDictionaryList(PRUnichar ***aDictionaryList, PRUint32 *aC
   *aDictionaryList = tmpPtr;
   *aCount          = dictList.Length();
 
-  PRUint32 i;
+  uint32_t i;
 
   for (i = 0; i < *aCount; i++)
   {
@@ -500,7 +533,7 @@ nsEditorSpellCheck::SetCurrentDictionary(const nsAString& aDictionary)
 
     nsDefaultStringComparator comparator;
     nsAutoString langCode;
-    PRInt32 dashIdx = aDictionary.FindChar('-');
+    int32_t dashIdx = aDictionary.FindChar('-');
     if (dashIdx != -1) {
       langCode.Assign(Substring(aDictionary, 0, dashIdx));
     } else {
@@ -644,7 +677,7 @@ nsEditorSpellCheck::UpdateCurrentDictionary()
       mozilla::services::GetXULChromeRegistryService();
 
     if (packageRegistry) {
-      nsCAutoString utf8DictName;
+      nsAutoCString utf8DictName;
       rv = packageRegistry->GetSelectedLocale(NS_LITERAL_CSTRING("global"),
                                               utf8DictName);
       AppendUTF8toUTF16(utf8DictName, dictName);
@@ -658,7 +691,7 @@ nsEditorSpellCheck::UpdateCurrentDictionary()
       // matching at least language part of dictName: 
 
       nsAutoString langCode;
-      PRInt32 dashIdx = dictName.FindChar('-');
+      int32_t dashIdx = dictName.FindChar('-');
       if (dashIdx != -1) {
         langCode.Assign(Substring(dictName, 0, dashIdx));
       } else {
@@ -688,7 +721,7 @@ nsEditorSpellCheck::UpdateCurrentDictionary()
         nsTArray<nsString> dictList;
         rv = mSpellChecker->GetDictionaryList(&dictList);
         NS_ENSURE_SUCCESS(rv, rv);
-        PRInt32 i, count = dictList.Length();
+        int32_t i, count = dictList.Length();
         for (i = 0; i < count; i++) {
           nsAutoString dictStr(dictList.ElementAt(i));
 
@@ -717,10 +750,10 @@ nsEditorSpellCheck::UpdateCurrentDictionary()
     if (NS_FAILED(rv) || currentDictionary.IsEmpty()) {
       // Try to get current dictionary from environment variable LANG
       char* env_lang = getenv("LANG");
-      if (env_lang != nsnull) {
+      if (env_lang != nullptr) {
         nsString lang = NS_ConvertUTF8toUTF16(env_lang);
         // Strip trailing charset if there is any
-        PRInt32 dot_pos = lang.FindChar('.');
+        int32_t dot_pos = lang.FindChar('.');
         if (dot_pos != -1) {
           lang = Substring(lang, 0, dot_pos - 1);
         }

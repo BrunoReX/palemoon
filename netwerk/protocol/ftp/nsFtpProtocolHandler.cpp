@@ -53,7 +53,7 @@ using namespace mozilla::net;
 // this enables PR_LOG_DEBUG level information and places all output in
 // the file nspr.log
 //
-PRLogModuleInfo* gFTPLog = nsnull;
+PRLogModuleInfo* gFTPLog = nullptr;
 #endif
 #undef LOG
 #define LOG(args) PR_LOG(gFTPLog, PR_LOG_DEBUG, args)
@@ -66,7 +66,7 @@ PRLogModuleInfo* gFTPLog = nsnull;
 #define QOS_DATA_PREF         "network.ftp.data.qos"
 #define QOS_CONTROL_PREF      "network.ftp.control.qos"
 
-nsFtpProtocolHandler *gFtpHandler = nsnull;
+nsFtpProtocolHandler *gFtpHandler = nullptr;
 
 //-----------------------------------------------------------------------------
 
@@ -91,7 +91,7 @@ nsFtpProtocolHandler::~nsFtpProtocolHandler()
 
     NS_ASSERTION(mRootConnectionList.Length() == 0, "why wasn't Observe called?");
 
-    gFtpHandler = nsnull;
+    gFtpHandler = nullptr;
 }
 
 NS_IMPL_THREADSAFE_ISUPPORTS4(nsFtpProtocolHandler,
@@ -118,17 +118,17 @@ nsFtpProtocolHandler::Init()
         rv = branch->AddObserver(IDLE_TIMEOUT_PREF, this, true);
         if (NS_FAILED(rv)) return rv;
 
-	PRInt32 val;
+	int32_t val;
 	rv = branch->GetIntPref(QOS_DATA_PREF, &val);
 	if (NS_SUCCEEDED(rv))
-	    mDataQoSBits = (PRUint8) clamped(val, 0, 0xff);
+	    mDataQoSBits = (uint8_t) clamped(val, 0, 0xff);
 
 	rv = branch->AddObserver(QOS_DATA_PREF, this, true);
 	if (NS_FAILED(rv)) return rv;
 
 	rv = branch->GetIntPref(QOS_CONTROL_PREF, &val);
 	if (NS_SUCCEEDED(rv))
-	    mControlQoSBits = (PRUint8) clamped(val, 0, 0xff);
+	    mControlQoSBits = (uint8_t) clamped(val, 0, 0xff);
 
 	rv = branch->AddObserver(QOS_CONTROL_PREF, this, true);
 	if (NS_FAILED(rv)) return rv;
@@ -161,14 +161,14 @@ nsFtpProtocolHandler::GetScheme(nsACString &result)
 }
 
 NS_IMETHODIMP
-nsFtpProtocolHandler::GetDefaultPort(PRInt32 *result)
+nsFtpProtocolHandler::GetDefaultPort(int32_t *result)
 {
     *result = 21; 
     return NS_OK;
 }
 
 NS_IMETHODIMP
-nsFtpProtocolHandler::GetProtocolFlags(PRUint32 *result)
+nsFtpProtocolHandler::GetProtocolFlags(uint32_t *result)
 {
     *result = URI_STD | ALLOWS_PROXY | ALLOWS_PROXY_HTTP |
         URI_LOADABLE_BY_ANYONE; 
@@ -181,14 +181,14 @@ nsFtpProtocolHandler::NewURI(const nsACString &aSpec,
                              nsIURI *aBaseURI,
                              nsIURI **result)
 {
-    nsCAutoString spec(aSpec);
+    nsAutoCString spec(aSpec);
     spec.Trim(" \t\n\r"); // Match NS_IsAsciiWhitespace instead of HTML5
 
     char *fwdPtr = spec.BeginWriting();
 
     // now unescape it... %xx reduced inline to resulting character
 
-    PRInt32 len = NS_UnescapeURL(fwdPtr);
+    int32_t len = NS_UnescapeURL(fwdPtr);
 
     // NS_UnescapeURL() modified spec's buffer, truncate to ensure
     // spec knows its new length.
@@ -211,11 +211,13 @@ nsFtpProtocolHandler::NewURI(const nsACString &aSpec,
 NS_IMETHODIMP
 nsFtpProtocolHandler::NewChannel(nsIURI* url, nsIChannel* *result)
 {
-    return NewProxiedChannel(url, nsnull, result);
+    return NewProxiedChannel(url, nullptr, 0, nullptr, result);
 }
 
 NS_IMETHODIMP
 nsFtpProtocolHandler::NewProxiedChannel(nsIURI* uri, nsIProxyInfo* proxyInfo,
+                                        uint32_t proxyResolveFlags,
+                                        nsIURI *proxyURI,
                                         nsIChannel* *result)
 {
     NS_ENSURE_ARG_POINTER(uri);
@@ -235,7 +237,7 @@ nsFtpProtocolHandler::NewProxiedChannel(nsIURI* uri, nsIProxyInfo* proxyInfo,
 }
 
 NS_IMETHODIMP 
-nsFtpProtocolHandler::AllowPort(PRInt32 port, const char *scheme, bool *_retval)
+nsFtpProtocolHandler::AllowPort(int32_t port, const char *scheme, bool *_retval)
 {
     *_retval = (port == 21 || port == 22);
     return NS_OK;
@@ -264,15 +266,15 @@ nsFtpProtocolHandler::RemoveConnection(nsIURI *aKey, nsFtpControlConnection* *_r
     NS_ASSERTION(_retval, "null pointer");
     NS_ASSERTION(aKey, "null pointer");
     
-    *_retval = nsnull;
+    *_retval = nullptr;
 
-    nsCAutoString spec;
+    nsAutoCString spec;
     aKey->GetPrePath(spec);
     
     LOG(("FTP:removing connection for %s\n", spec.get()));
    
-    timerStruct* ts = nsnull;
-    PRUint32 i;
+    timerStruct* ts = nullptr;
+    uint32_t i;
     bool found = false;
     
     for (i=0;i<mRootConnectionList.Length();++i) {
@@ -289,7 +291,7 @@ nsFtpProtocolHandler::RemoveConnection(nsIURI *aKey, nsFtpControlConnection* *_r
 
     // swap connection ownership
     *_retval = ts->conn;
-    ts->conn = nsnull;
+    ts->conn = nullptr;
     delete ts;
 
     return NS_OK;
@@ -304,7 +306,7 @@ nsFtpProtocolHandler::InsertConnection(nsIURI *aKey, nsFtpControlConnection *aCo
     if (aConn->mSessionId != mSessionId)
         return NS_ERROR_FAILURE;
 
-    nsCAutoString spec;
+    nsAutoCString spec;
     aKey->GetPrePath(spec);
 
     LOG(("FTP:inserting connection for %s\n", spec.get()));
@@ -342,7 +344,7 @@ nsFtpProtocolHandler::InsertConnection(nsIURI *aKey, nsFtpControlConnection *aCo
     // eldest connection.
     //
     if (mRootConnectionList.Length() == IDLE_CONNECTION_LIMIT) {
-        PRUint32 i;
+        uint32_t i;
         for (i=0;i<mRootConnectionList.Length();++i) {
             timerStruct *candidate = mRootConnectionList[i];
             if (strcmp(candidate->key, ts->key) == 0) {
@@ -378,18 +380,18 @@ nsFtpProtocolHandler::Observe(nsISupports *aSubject,
             NS_ERROR("no prefbranch");
             return NS_ERROR_UNEXPECTED;
         }
-        PRInt32 val;
+        int32_t val;
         nsresult rv = branch->GetIntPref(IDLE_TIMEOUT_PREF, &val);
         if (NS_SUCCEEDED(rv))
             mIdleTimeout = val;
 
 	rv = branch->GetIntPref(QOS_DATA_PREF, &val);
 	if (NS_SUCCEEDED(rv))
-	    mDataQoSBits = (PRUint8) clamped(val, 0, 0xff);
+	    mDataQoSBits = (uint8_t) clamped(val, 0, 0xff);
 
 	rv = branch->GetIntPref(QOS_CONTROL_PREF, &val);
 	if (NS_SUCCEEDED(rv))
-	    mControlQoSBits = (PRUint8) clamped(val, 0, 0xff);
+	    mControlQoSBits = (uint8_t) clamped(val, 0, 0xff);
     } else if (!strcmp(aTopic, "network:offline-about-to-go-offline")) {
         ClearAllConnections();
     } else if (!strcmp(aTopic, "net:clear-active-logins")) {
@@ -405,7 +407,7 @@ nsFtpProtocolHandler::Observe(nsISupports *aSubject,
 void
 nsFtpProtocolHandler::ClearAllConnections()
 {
-    PRUint32 i;
+    uint32_t i;
     for (i=0;i<mRootConnectionList.Length();++i)
         delete mRootConnectionList[i];
     mRootConnectionList.Clear();

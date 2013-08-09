@@ -5,6 +5,19 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /**
+ * Sources searching
+ */
+
+#globalsearch {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.dbg-results-container:not([open]) {
+  display: none;
+}
+
+/**
  * Stack frames
  */
 
@@ -13,23 +26,49 @@
 }
 
 /**
- * Properties elements
+ * Breakpoints view
+ */
+
+#breakpoints {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.dbg-breakpoint > .state,
+.dbg-breakpoint > .content {
+  overflow: hidden;
+}
+
+/**
+ * Variables view
  */
 
 #variables {
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 /**
  * Scope, variable and property elements
  */
 
-.details {
+#variables .details:not([open]) {
   display: none;
 }
 
-.details[open] {
-  display: -moz-box;
+.scope[non-header] > .title,
+.variable[non-header] > .title,
+.property[non-header] > .title {
+  display: none;
+}
+
+/**
+ * Variables and properties searching
+ */
+
+.variable[non-match] > .title,
+.property[non-match] > .title {
+  display: none;
 }
 
 /**

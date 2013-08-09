@@ -23,7 +23,7 @@ public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_ISCRIPTTIMEOUTHANDLER_IID)
 
   // Get a script object for the language suitable for passing back to
-  // the language's context as an event handler.  If this returns nsnull,
+  // the language's context as an event handler.  If this returns nullptr,
   // GetHandlerText() will be called to get the string.
   virtual JSObject *GetScriptObject() = 0;
 
@@ -33,7 +33,7 @@ public:
   // Get the location of the script.
   // Note: The memory pointed to by aFileName is owned by the
   // nsIScriptTimeoutHandler and should not be freed by the caller.
-  virtual void GetLocation(const char **aFileName, PRUint32 *aLineNo) = 0;
+  virtual void GetLocation(const char **aFileName, uint32_t *aLineNo) = 0;
 
   // If a script object, get the argv suitable for passing back to the
   // script context.

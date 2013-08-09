@@ -13,42 +13,34 @@
 #include "SmsMessage.h"
 #include "nsISmsDatabaseService.h"
 #include "SmsFilter.h"
+#include "SmsRequest.h"
+#include "SmsSegmentInfo.h"
 
 namespace mozilla {
 namespace dom {
 namespace sms {
 
-nsTArray<SmsParent*>* SmsParent::gSmsParents = nsnull;
-
 NS_IMPL_ISUPPORTS1(SmsParent, nsIObserver)
-
-/* static */ void
-SmsParent::GetAll(nsTArray<SmsParent*>& aArray)
-{
-  if (!gSmsParents) {
-    aArray.Clear();
-    return;
-  }
-
-  aArray = *gSmsParents;
-}
 
 SmsParent::SmsParent()
 {
-  if (!gSmsParents) {
-    gSmsParents = new nsTArray<SmsParent*>();
-  }
-
-  gSmsParents->AppendElement(this);
-
+  MOZ_COUNT_CTOR(SmsParent);
   nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
   if (!obs) {
     return;
   }
 
   obs->AddObserver(this, kSmsReceivedObserverTopic, false);
+  obs->AddObserver(this, kSmsSendingObserverTopic, false);
   obs->AddObserver(this, kSmsSentObserverTopic, false);
-  obs->AddObserver(this, kSmsDeliveredObserverTopic, false);
+  obs->AddObserver(this, kSmsFailedObserverTopic, false);
+  obs->AddObserver(this, kSmsDeliverySuccessObserverTopic, false);
+  obs->AddObserver(this, kSmsDeliveryErrorObserverTopic, false);
+}
+
+SmsParent::~SmsParent()
+{
+  MOZ_COUNT_DTOR(SmsParent);
 }
 
 void
@@ -60,15 +52,11 @@ SmsParent::ActorDestroy(ActorDestroyReason why)
   }
 
   obs->RemoveObserver(this, kSmsReceivedObserverTopic);
+  obs->RemoveObserver(this, kSmsSendingObserverTopic);
   obs->RemoveObserver(this, kSmsSentObserverTopic);
-  obs->RemoveObserver(this, kSmsDeliveredObserverTopic);
-
-  NS_ASSERTION(gSmsParents, "gSmsParents can't be null at that point!");
-  gSmsParents->RemoveElement(this);
-  if (gSmsParents->Length() == 0) {
-    delete gSmsParents;
-    gSmsParents = nsnull;
-  }
+  obs->RemoveObserver(this, kSmsFailedObserverTopic);
+  obs->RemoveObserver(this, kSmsDeliverySuccessObserverTopic);
+  obs->RemoveObserver(this, kSmsDeliveryErrorObserverTopic);
 }
 
 NS_IMETHODIMP
@@ -86,6 +74,17 @@ SmsParent::Observe(nsISupports* aSubject, const char* aTopic,
     return NS_OK;
   }
 
+  if (!strcmp(aTopic, kSmsSendingObserverTopic)) {
+    nsCOMPtr<nsIDOMMozSmsMessage> message = do_QueryInterface(aSubject);
+    if (!message) {
+      NS_ERROR("Got a 'sms-sending' topic without a valid message!");
+      return NS_OK;
+    }
+
+    unused << SendNotifySendingMessage(static_cast<SmsMessage*>(message.get())->GetData());
+    return NS_OK;
+  }
+
   if (!strcmp(aTopic, kSmsSentObserverTopic)) {
     nsCOMPtr<nsIDOMMozSmsMessage> message = do_QueryInterface(aSubject);
     if (!message) {
@@ -97,14 +96,36 @@ SmsParent::Observe(nsISupports* aSubject, const char* aTopic,
     return NS_OK;
   }
 
-  if (!strcmp(aTopic, kSmsDeliveredObserverTopic)) {
+  if (!strcmp(aTopic, kSmsFailedObserverTopic)) {
     nsCOMPtr<nsIDOMMozSmsMessage> message = do_QueryInterface(aSubject);
     if (!message) {
-      NS_ERROR("Got a 'sms-delivered' topic without a valid message!");
+      NS_ERROR("Got a 'sms-failed' topic without a valid message!");
       return NS_OK;
     }
 
-    unused << SendNotifyDeliveredMessage(static_cast<SmsMessage*>(message.get())->GetData());
+    unused << SendNotifyFailedMessage(static_cast<SmsMessage*>(message.get())->GetData());
+    return NS_OK;
+  }
+
+  if (!strcmp(aTopic, kSmsDeliverySuccessObserverTopic)) {
+    nsCOMPtr<nsIDOMMozSmsMessage> message = do_QueryInterface(aSubject);
+    if (!message) {
+      NS_ERROR("Got a 'sms-delivery-success' topic without a valid message!");
+      return NS_OK;
+    }
+
+    unused << SendNotifyDeliverySuccessMessage(static_cast<SmsMessage*>(message.get())->GetData());
+    return NS_OK;
+  }
+
+  if (!strcmp(aTopic, kSmsDeliveryErrorObserverTopic)) {
+    nsCOMPtr<nsIDOMMozSmsMessage> message = do_QueryInterface(aSubject);
+    if (!message) {
+      NS_ERROR("Got a 'sms-delivery-error' topic without a valid message!");
+      return NS_OK;
+    }
+
+    unused << SendNotifyDeliveryErrorMessage(static_cast<SmsMessage*>(message.get())->GetData());
     return NS_OK;
   }
 
@@ -124,135 +145,222 @@ SmsParent::RecvHasSupport(bool* aHasSupport)
 }
 
 bool
-SmsParent::RecvGetNumberOfMessagesForText(const nsString& aText, PRUint16* aResult)
+SmsParent::RecvGetSegmentInfoForText(const nsString& aText,
+                                     SmsSegmentInfoData* aResult)
 {
-  *aResult = 0;
+  aResult->segments() = 0;
+  aResult->charsPerSegment() = 0;
+  aResult->charsAvailableInLastSegment() = 0;
 
   nsCOMPtr<nsISmsService> smsService = do_GetService(SMS_SERVICE_CONTRACTID);
   NS_ENSURE_TRUE(smsService, true);
 
-  smsService->GetNumberOfMessagesForText(aText, aResult);
+  nsCOMPtr<nsIDOMMozSmsSegmentInfo> info;
+  nsresult rv = smsService->GetSegmentInfoForText(aText, getter_AddRefs(info));
+  NS_ENSURE_SUCCESS(rv, true);
+
+  int segments, charsPerSegment, charsAvailableInLastSegment;
+  if (NS_FAILED(info->GetSegments(&segments)) ||
+      NS_FAILED(info->GetCharsPerSegment(&charsPerSegment)) ||
+      NS_FAILED(info->GetCharsAvailableInLastSegment(&charsAvailableInLastSegment))) {
+    NS_ERROR("Can't get attribute values from nsIDOMMozSmsSegmentInfo");
+    return true;
+  }
+
+  aResult->segments() = segments;
+  aResult->charsPerSegment() = charsPerSegment;
+  aResult->charsAvailableInLastSegment() = charsAvailableInLastSegment;
   return true;
 }
 
 bool
-SmsParent::RecvSendMessage(const nsString& aNumber, const nsString& aMessage,
-                           const PRInt32& aRequestId, const PRUint64& aProcessId)
-{
-  nsCOMPtr<nsISmsService> smsService = do_GetService(SMS_SERVICE_CONTRACTID);
-  NS_ENSURE_TRUE(smsService, true);
-
-  smsService->Send(aNumber, aMessage, aRequestId, aProcessId);
-  return true;
-}
-
-bool
-SmsParent::RecvSaveReceivedMessage(const nsString& aSender,
-                                   const nsString& aBody,
-                                   const PRUint64& aDate, PRInt32* aId)
-{
-  *aId = -1;
-
-  nsCOMPtr<nsISmsDatabaseService> smsDBService =
-    do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
-  NS_ENSURE_TRUE(smsDBService, true);
-
-  smsDBService->SaveReceivedMessage(aSender, aBody, aDate, aId);
-  return true;
-}
-
-bool
-SmsParent::RecvSaveSentMessage(const nsString& aRecipient,
-                               const nsString& aBody,
-                               const PRUint64& aDate, PRInt32* aId)
-{
-  *aId = -1;
-
-  nsCOMPtr<nsISmsDatabaseService> smsDBService =
-    do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
-  NS_ENSURE_TRUE(smsDBService, true);
-
-  smsDBService->SaveSentMessage(aRecipient, aBody, aDate, aId);
-  return true;
-}
-
-bool
-SmsParent::RecvGetMessage(const PRInt32& aMessageId, const PRInt32& aRequestId,
-                          const PRUint64& aProcessId)
-{
-  nsCOMPtr<nsISmsDatabaseService> smsDBService =
-    do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
-  NS_ENSURE_TRUE(smsDBService, true);
-
-  smsDBService->GetMessageMoz(aMessageId, aRequestId, aProcessId);
-  return true;
-}
-
-bool
-SmsParent::RecvDeleteMessage(const PRInt32& aMessageId, const PRInt32& aRequestId,
-                             const PRUint64& aProcessId)
-{
-  nsCOMPtr<nsISmsDatabaseService> smsDBService =
-    do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
-  NS_ENSURE_TRUE(smsDBService, true);
-
-  smsDBService->DeleteMessage(aMessageId, aRequestId, aProcessId);
-  return true;
-}
-
-bool
-SmsParent::RecvCreateMessageList(const SmsFilterData& aFilter,
-                                 const bool& aReverse,
-                                 const PRInt32& aRequestId,
-                                 const PRUint64& aProcessId)
-{
-  nsCOMPtr<nsISmsDatabaseService> smsDBService =
-    do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
-  NS_ENSURE_TRUE(smsDBService, true);
-
-  nsCOMPtr<nsIDOMMozSmsFilter> filter = new SmsFilter(aFilter);
-  smsDBService->CreateMessageList(filter, aReverse, aRequestId, aProcessId);
-
-  return true;
-}
-
-bool
-SmsParent::RecvGetNextMessageInList(const PRInt32& aListId,
-                                    const PRInt32& aRequestId,
-                                    const PRUint64& aProcessId)
-{
-  nsCOMPtr<nsISmsDatabaseService> smsDBService =
-    do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
-  NS_ENSURE_TRUE(smsDBService, true);
-
-  smsDBService->GetNextMessageInList(aListId, aRequestId, aProcessId);
-
-  return true;
-}
-
-bool
-SmsParent::RecvClearMessageList(const PRInt32& aListId)
+SmsParent::RecvClearMessageList(const int32_t& aListId)
 {
   nsCOMPtr<nsISmsDatabaseService> smsDBService =
     do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
   NS_ENSURE_TRUE(smsDBService, true);
 
   smsDBService->ClearMessageList(aListId);
+  return true;
+}
+
+bool
+SmsParent::RecvPSmsRequestConstructor(PSmsRequestParent* aActor,
+                                      const IPCSmsRequest& aRequest)
+{
+  SmsRequestParent* actor = static_cast<SmsRequestParent*>(aActor);
+
+  switch (aRequest.type()) {
+    case IPCSmsRequest::TCreateMessageListRequest:
+      return actor->DoRequest(aRequest.get_CreateMessageListRequest());
+    case IPCSmsRequest::TSendMessageRequest:
+      return actor->DoRequest(aRequest.get_SendMessageRequest());
+    case IPCSmsRequest::TGetMessageRequest:
+      return actor->DoRequest(aRequest.get_GetMessageRequest());
+    case IPCSmsRequest::TDeleteMessageRequest:
+      return actor->DoRequest(aRequest.get_DeleteMessageRequest());
+    case IPCSmsRequest::TGetNextMessageInListRequest:
+      return actor->DoRequest(aRequest.get_GetNextMessageInListRequest());
+    case IPCSmsRequest::TMarkMessageReadRequest:
+      return actor->DoRequest(aRequest.get_MarkMessageReadRequest());
+    case IPCSmsRequest::TGetThreadListRequest:
+      return actor->DoRequest(aRequest.get_GetThreadListRequest());
+    default:
+      MOZ_NOT_REACHED("Unknown type!");
+      return false;
+  }
+
+  MOZ_NOT_REACHED("Should never get here!");
+  return false;
+}
+
+PSmsRequestParent*
+SmsParent::AllocPSmsRequest(const IPCSmsRequest& aRequest)
+{
+  return new SmsRequestParent();
+}
+
+bool
+SmsParent::DeallocPSmsRequest(PSmsRequestParent* aActor)
+{
+  delete aActor;
+  return true;
+}
+
+
+/*******************************************************************************
+ * SmsRequestParent
+ ******************************************************************************/
+SmsRequestParent::SmsRequestParent()
+{
+  MOZ_COUNT_CTOR(SmsRequestParent);
+}
+
+SmsRequestParent::~SmsRequestParent()
+{
+  MOZ_COUNT_DTOR(SmsRequestParent);
+}
+
+void
+SmsRequestParent::ActorDestroy(ActorDestroyReason aWhy)
+{
+  if (mSmsRequest) {
+    mSmsRequest->SetActorDied();
+    mSmsRequest = nullptr;
+  }
+}
+
+void
+SmsRequestParent::SendReply(const MessageReply& aReply) {
+  nsRefPtr<SmsRequest> request;
+  mSmsRequest.swap(request);
+  if (!Send__delete__(this, aReply)) {
+    NS_WARNING("Failed to send response to child process!");
+  }
+}
+
+bool
+SmsRequestParent::DoRequest(const SendMessageRequest& aRequest)
+{
+  nsCOMPtr<nsISmsService> smsService = do_GetService(SMS_SERVICE_CONTRACTID);
+  NS_ENSURE_TRUE(smsService, true);
+
+  mSmsRequest = SmsRequest::Create(this);
+  nsCOMPtr<nsISmsRequest> forwarder = new SmsRequestForwarder(mSmsRequest);
+  nsresult rv = smsService->Send(aRequest.number(), aRequest.message(), forwarder);
+  NS_ENSURE_SUCCESS(rv, false);
 
   return true;
 }
 
 bool
-SmsParent::RecvMarkMessageRead(const PRInt32& aMessageId,
-                               const bool& aValue,
-                               const PRInt32& aRequestId,
-                               const PRUint64& aProcessId)
+SmsRequestParent::DoRequest(const GetMessageRequest& aRequest)
 {
   nsCOMPtr<nsISmsDatabaseService> smsDBService =
     do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
   NS_ENSURE_TRUE(smsDBService, true);
 
-  smsDBService->MarkMessageRead(aMessageId, aValue, aRequestId, aProcessId);
+  mSmsRequest = SmsRequest::Create(this);
+  nsCOMPtr<nsISmsRequest> forwarder = new SmsRequestForwarder(mSmsRequest);
+  nsresult rv = smsDBService->GetMessageMoz(aRequest.messageId(), forwarder);
+  NS_ENSURE_SUCCESS(rv, false);
+
+  return true;
+}
+
+bool
+SmsRequestParent::DoRequest(const DeleteMessageRequest& aRequest)
+{
+  nsCOMPtr<nsISmsDatabaseService> smsDBService =
+    do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
+  NS_ENSURE_TRUE(smsDBService, true);
+
+  mSmsRequest = SmsRequest::Create(this);
+  nsCOMPtr<nsISmsRequest> forwarder = new SmsRequestForwarder(mSmsRequest);
+  nsresult rv = smsDBService->DeleteMessage(aRequest.messageId(), forwarder);
+  NS_ENSURE_SUCCESS(rv, false);
+
+  return true;
+}
+
+bool
+SmsRequestParent::DoRequest(const CreateMessageListRequest& aRequest)
+{
+  nsCOMPtr<nsISmsDatabaseService> smsDBService =
+    do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
+
+  NS_ENSURE_TRUE(smsDBService, true);
+  mSmsRequest = SmsRequest::Create(this);
+  nsCOMPtr<nsISmsRequest> forwarder = new SmsRequestForwarder(mSmsRequest);
+  SmsFilter *filter = new SmsFilter(aRequest.filter());
+  nsresult rv = smsDBService->CreateMessageList(filter, aRequest.reverse(), forwarder);
+  NS_ENSURE_SUCCESS(rv, false);
+
+  return true;
+}
+
+bool
+SmsRequestParent::DoRequest(const GetNextMessageInListRequest& aRequest)
+{
+  nsCOMPtr<nsISmsDatabaseService> smsDBService =
+    do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
+
+  NS_ENSURE_TRUE(smsDBService, true);
+  mSmsRequest = SmsRequest::Create(this);
+  nsCOMPtr<nsISmsRequest> forwarder = new SmsRequestForwarder(mSmsRequest);
+  nsresult rv = smsDBService->GetNextMessageInList(aRequest.aListId(), forwarder);
+  NS_ENSURE_SUCCESS(rv, false);
+
+  return true;
+}
+
+bool
+SmsRequestParent::DoRequest(const MarkMessageReadRequest& aRequest)
+{
+  nsCOMPtr<nsISmsDatabaseService> smsDBService =
+    do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
+
+  NS_ENSURE_TRUE(smsDBService, true);
+  mSmsRequest = SmsRequest::Create(this);
+  nsCOMPtr<nsISmsRequest> forwarder = new SmsRequestForwarder(mSmsRequest);
+  nsresult rv = smsDBService->MarkMessageRead(aRequest.messageId(), aRequest.value(), forwarder);
+  NS_ENSURE_SUCCESS(rv, false);
+
+  return true;
+}
+
+bool
+SmsRequestParent::DoRequest(const GetThreadListRequest& aRequest)
+{
+  nsCOMPtr<nsISmsDatabaseService> smsDBService =
+    do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
+
+  NS_ENSURE_TRUE(smsDBService, true);
+  mSmsRequest = SmsRequest::Create(this);
+  nsCOMPtr<nsISmsRequest> forwarder = new SmsRequestForwarder(mSmsRequest);
+  nsresult rv = smsDBService->GetThreadList(forwarder);
+  NS_ENSURE_SUCCESS(rv, false);
+
   return true;
 }
 

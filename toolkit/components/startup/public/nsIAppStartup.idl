@@ -7,7 +7,7 @@
 
 interface nsICmdLineService;
 
-[scriptable, uuid(50c4194b-61c6-4292-963f-6e1a8e11c9d3)]
+[scriptable, uuid(5016bc45-54d9-4f97-935c-df4cef4b999f)]
 interface nsIAppStartup : nsISupports
 {
     /**
@@ -43,6 +43,12 @@ interface nsIAppStartup : nsISupports
     void exitLastWindowClosingSurvivalArea();
 
     /**
+     * The amount of time, in milliseconds, that the last session took
+     * to shutdown.  Reads as 0 to indicate failure.
+     */
+    readonly attribute uint32_t lastShutdownDuration;
+
+    /**
      * Startup Crash Detection
      *
      * Keeps track of application startup begining and success using flags to
@@ -65,7 +71,7 @@ interface nsIAppStartup : nsISupports
      *        This parameter modifies how the app is shutdown.
      * @see nsIAppStartup::quit
      */
-    void restartInSafeMode(in PRUint32 aQuitMode);
+    void restartInSafeMode(in uint32_t aQuitMode);
 
     /**
      * If the last startup crashed then increment a counter.
@@ -91,35 +97,35 @@ interface nsIAppStartup : nsISupports
     /**
      * Attempt to quit if all windows are closed.
      */
-    const PRUint32 eConsiderQuit = 0x01;
+    const uint32_t eConsiderQuit = 0x01;
 
     /**
      * Try to close all windows, then quit if successful.
      */
-    const PRUint32 eAttemptQuit = 0x02;
+    const uint32_t eAttemptQuit = 0x02;
 
     /**
      * Quit, damnit!
      */
-    const PRUint32 eForceQuit = 0x03;
+    const uint32_t eForceQuit = 0x03;
 
     /**
      * Restart the application after quitting.  The application will be
      * restarted with the same profile and an empty command line.
      */
-    const PRUint32 eRestart = 0x10; 
+    const uint32_t eRestart = 0x10; 
 
     /**
      * When restarting attempt to start in the i386 architecture. Only supported
      * on OSX.
      */
-    const PRUint32 eRestarti386 = 0x20;
+    const uint32_t eRestarti386 = 0x20;
 
     /**
      * When restarting attempt to start in the x86_64 architecture. Only
      * supported on OSX.
      */
-    const PRUint32 eRestartx86_64 = 0x40;
+    const uint32_t eRestartx86_64 = 0x40;
 
     /**
      * Exit the event loop, and shut down the app.
@@ -128,7 +134,7 @@ interface nsIAppStartup : nsISupports
      *        This parameter modifies how the app is shutdown, and it is
      *        constructed from the constants defined above.
      */
-    void quit(in PRUint32 aMode);
+    void quit(in uint32_t aMode);
 
     /**
      * True if the application is in the process of shutting down.
@@ -146,13 +152,3 @@ interface nsIAppStartup : nsISupports
      */
     attribute boolean interrupted;
 };
-
-%{C++
-/**
- * This success code may be returned by nsIAppStartup::Run to indicate that the
- * application should be restarted.  This condition corresponds to the case in
- * which nsIAppStartup::Quit was called with the eRestart flag.
- */
-#define NS_SUCCESS_RESTART_APP \
-    NS_ERROR_GENERATE_SUCCESS(NS_ERROR_MODULE_GENERAL, 1)
-%}

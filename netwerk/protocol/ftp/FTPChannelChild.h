@@ -18,6 +18,7 @@
 #include "nsIChildChannel.h"
 
 #include "nsIStreamListener.h"
+#include "PrivateBrowsingChannel.h"
 
 namespace mozilla {
 namespace net {
@@ -61,33 +62,33 @@ public:
   // default behavior, in order to be e10s-friendly.
   NS_IMETHOD IsPending(bool* result);
 
-  NS_OVERRIDE nsresult OpenContentStream(bool async,
-                                         nsIInputStream** stream,
-                                         nsIChannel** channel);
+  nsresult OpenContentStream(bool async,
+                             nsIInputStream** stream,
+                             nsIChannel** channel) MOZ_OVERRIDE;
 
   bool IsSuspended();
 
 protected:
-  NS_OVERRIDE bool RecvOnStartRequest(const PRInt32& aContentLength,
-                                      const nsCString& aContentType,
-                                      const PRTime& aLastModified,
-                                      const nsCString& aEntityID,
-                                      const IPC::URI& aURI);
-  NS_OVERRIDE bool RecvOnDataAvailable(const nsCString& data,
-                                       const PRUint32& offset,
-                                       const PRUint32& count);
-  NS_OVERRIDE bool RecvOnStopRequest(const nsresult& statusCode);
-  NS_OVERRIDE bool RecvFailedAsyncOpen(const nsresult& statusCode);
-  NS_OVERRIDE bool RecvDeleteSelf();
+  bool RecvOnStartRequest(const int64_t& aContentLength,
+                          const nsCString& aContentType,
+                          const PRTime& aLastModified,
+                          const nsCString& aEntityID,
+                          const URIParams& aURI) MOZ_OVERRIDE;
+  bool RecvOnDataAvailable(const nsCString& data,
+                           const uint64_t& offset,
+                           const uint32_t& count) MOZ_OVERRIDE;
+  bool RecvOnStopRequest(const nsresult& statusCode) MOZ_OVERRIDE;
+  bool RecvFailedAsyncOpen(const nsresult& statusCode) MOZ_OVERRIDE;
+  bool RecvDeleteSelf() MOZ_OVERRIDE;
 
-  void DoOnStartRequest(const PRInt32& aContentLength,
+  void DoOnStartRequest(const int64_t& aContentLength,
                         const nsCString& aContentType,
                         const PRTime& aLastModified,
                         const nsCString& aEntityID,
-                        const IPC::URI& aURI);
+                        const URIParams& aURI);
   void DoOnDataAvailable(const nsCString& data,
-                         const PRUint32& offset,
-                         const PRUint32& count);
+                         const uint64_t& offset,
+                         const uint32_t& count);
   void DoOnStopRequest(const nsresult& statusCode);
   void DoFailedAsyncOpen(const nsresult& statusCode);
   void DoDeleteSelf();
@@ -102,19 +103,19 @@ private:
   // Called asynchronously from Resume: continues any pending calls into client.
   void CompleteResume();
   nsresult AsyncCall(void (FTPChannelChild::*funcPtr)(),
-                     nsRunnableMethod<FTPChannelChild> **retval = nsnull);
+                     nsRunnableMethod<FTPChannelChild> **retval = nullptr);
 
   nsCOMPtr<nsIInputStream> mUploadStream;
 
   bool mIPCOpen;
   ChannelEventQueue mEventQ;
   bool mCanceled;
-  PRUint32 mSuspendCount;
+  uint32_t mSuspendCount;
   bool mIsPending;
   bool mWasOpened;
   
   PRTime mLastModifiedTime;
-  PRUint64 mStartPos;
+  uint64_t mStartPos;
   nsCString mEntityID;
 };
 

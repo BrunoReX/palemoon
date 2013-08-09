@@ -32,7 +32,7 @@ private:
 
 protected:
     nsCOMPtr<nsIArray> mValueArray;
-    PRUint32 mIndex;
+    uint32_t mIndex;
 };
 
 NS_IMPL_ISUPPORTS1(nsSimpleArrayEnumerator, nsISimpleEnumerator)
@@ -49,7 +49,7 @@ nsSimpleArrayEnumerator::HasMoreElements(bool* aResult)
         return NS_OK;
     }
 
-    PRUint32 cnt;
+    uint32_t cnt;
     nsresult rv = mValueArray->GetLength(&cnt);
     if (NS_FAILED(rv)) return rv;
     *aResult = (mIndex < cnt);
@@ -64,11 +64,11 @@ nsSimpleArrayEnumerator::GetNext(nsISupports** aResult)
         return NS_ERROR_NULL_POINTER;
 
     if (!mValueArray) {
-        *aResult = nsnull;
+        *aResult = nullptr;
         return NS_OK;
     }
 
-    PRUint32 cnt;
+    uint32_t cnt;
     nsresult rv = mValueArray->GetLength(&cnt);
     if (NS_FAILED(rv)) return rv;
     if (mIndex >= cnt)
@@ -82,7 +82,7 @@ NS_NewArrayEnumerator(nsISimpleEnumerator* *result,
                       nsIArray* array)
 {
     nsSimpleArrayEnumerator* enumer = new nsSimpleArrayEnumerator(array);
-    if (enumer == nsnull)
+    if (enumer == nullptr)
         return NS_ERROR_OUT_OF_MEMORY;
 
     NS_ADDREF(*result = enumer);
@@ -118,8 +118,8 @@ private:
     ~nsCOMArrayEnumerator(void);
 
 protected:
-    PRUint32 mIndex;            // current position
-    PRUint32 mArraySize;        // size of the array
+    uint32_t mIndex;            // current position
+    uint32_t mArraySize;        // size of the array
     
     // this is actually bigger
     nsISupports* mValueArray[1];
@@ -163,7 +163,7 @@ nsCOMArrayEnumerator::GetNext(nsISupports** aResult)
 
     // this really isn't necessary. just pretend this happens, since
     // we'll never visit this value again!
-    // mValueArray[(mIndex-1)] = nsnull;
+    // mValueArray[(mIndex-1)] = nullptr;
     
     return NS_OK;
 }
@@ -180,14 +180,14 @@ nsCOMArrayEnumerator::operator new (size_t size, const nsCOMArray_base& aArray)
     // do the actual allocation
     nsCOMArrayEnumerator * result =
         static_cast<nsCOMArrayEnumerator*>(::operator new(size));
-    NS_ENSURE_TRUE(result, nsnull);
+    NS_ENSURE_TRUE(result, nullptr);
 
     // now need to copy over the values, and addref each one
     // now this might seem like a lot of work, but we're actually just
     // doing all our AddRef's ahead of time since GetNext() doesn't
     // need to AddRef() on the way out
-    PRUint32 i;
-    PRUint32 max = result->mArraySize = aArray.Count();
+    uint32_t i;
+    uint32_t max = result->mArraySize = aArray.Count();
     for (i = 0; i<max; i++) {
         result->mValueArray[i] = aArray[i];
         NS_IF_ADDREF(result->mValueArray[i]);

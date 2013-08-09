@@ -3,8 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "IPCMessageUtils.h"
-#include "mozilla/net/NeckoMessageUtils.h"
+#include "base/basictypes.h"
 
 #include "nsSimpleNestedURI.h"
 #include "nsIObjectInputStream.h"
@@ -53,32 +52,6 @@ nsSimpleNestedURI::Write(nsIObjectOutputStream* aStream)
     rv = aStream->WriteCompoundObject(mInnerURI, NS_GET_IID(nsIURI),
                                       true);
     return rv;
-}
-
-// nsIIPCSerializable
-
-bool
-nsSimpleNestedURI::Read(const IPC::Message *aMsg, void **aIter)
-{
-    if (!nsSimpleURI::Read(aMsg, aIter))
-        return false;
-
-    IPC::URI uri;
-    if (!ReadParam(aMsg, aIter, &uri))
-        return false;
-
-    mInnerURI = uri;
-
-    return true;
-}
-
-void
-nsSimpleNestedURI::Write(IPC::Message *aMsg)
-{
-    nsSimpleURI::Write(aMsg);
-
-    IPC::URI uri(mInnerURI);
-    WriteParam(aMsg, uri);
 }
 
 // nsINestedURI
@@ -131,7 +104,7 @@ nsSimpleNestedURI::EqualsInternal(nsIURI* other,
 /* virtual */ nsSimpleURI*
 nsSimpleNestedURI::StartClone(nsSimpleURI::RefHandlingEnum refHandlingMode)
 {
-    NS_ENSURE_TRUE(mInnerURI, nsnull);
+    NS_ENSURE_TRUE(mInnerURI, nullptr);
     
     nsCOMPtr<nsIURI> innerClone;
     nsresult rv = refHandlingMode == eHonorRef ?
@@ -139,7 +112,7 @@ nsSimpleNestedURI::StartClone(nsSimpleURI::RefHandlingEnum refHandlingMode)
         mInnerURI->CloneIgnoringRef(getter_AddRefs(innerClone));
 
     if (NS_FAILED(rv)) {
-        return nsnull;
+        return nullptr;
     }
 
     nsSimpleNestedURI* url = new nsSimpleNestedURI(innerClone);

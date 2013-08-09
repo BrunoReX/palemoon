@@ -22,11 +22,11 @@ class nsIPresShell;
  */
 class NS_STACK_CLASS SpanningCellSorter {
 public:
-    SpanningCellSorter(nsIPresShell *aPresShell);
+    SpanningCellSorter();
     ~SpanningCellSorter();
 
     struct Item {
-        PRInt32 row, col;
+        int32_t row, col;
         Item *next;
     };
 
@@ -35,16 +35,15 @@ public:
      * aColSpan is the number of columns spanned, and aRow/aCol are the
      * position of the cell in the table (for GetCellInfoAt).
      */
-    bool AddCell(PRInt32 aColSpan, PRInt32 aRow, PRInt32 aCol);
+    bool AddCell(int32_t aColSpan, int32_t aRow, int32_t aCol);
 
     /**
      * Get the next *list* of cells.  Each list contains all the cells
      * for a colspan value, and the lists are given in order from lowest
      * to highest colspan.  The colspan value is filled in to *aColSpan.
      */
-    Item* GetNext(PRInt32 *aColSpan);
+    Item* GetNext(int32_t *aColSpan);
 private:
-    nsIPresShell *mPresShell;
 
     enum State { ADDING, ENUMERATING_ARRAY, ENUMERATING_HASH, DONE };
     State mState;
@@ -55,16 +54,16 @@ private:
     enum { ARRAY_BASE = 2 };
     enum { ARRAY_SIZE = 8 };
     Item *mArray[ARRAY_SIZE];
-    PRInt32 SpanToIndex(PRInt32 aSpan) { return aSpan - ARRAY_BASE; }
-    PRInt32 IndexToSpan(PRInt32 aIndex) { return aIndex + ARRAY_BASE; }
-    bool UseArrayForSpan(PRInt32 aSpan) {
+    int32_t SpanToIndex(int32_t aSpan) { return aSpan - ARRAY_BASE; }
+    int32_t IndexToSpan(int32_t aIndex) { return aIndex + ARRAY_BASE; }
+    bool UseArrayForSpan(int32_t aSpan) {
         NS_ASSERTION(SpanToIndex(aSpan) >= 0, "cell without colspan");
         return SpanToIndex(aSpan) < ARRAY_SIZE;
     }
 
     PLDHashTable mHashTable;
     struct HashTableEntry : public PLDHashEntryHdr {
-        PRInt32 mColSpan;
+        int32_t mColSpan;
         Item *mItems;
     };
 
@@ -78,12 +77,12 @@ private:
 
     static PLDHashOperator
         FillSortedArray(PLDHashTable *table, PLDHashEntryHdr *hdr,
-                        PRUint32 number, void *arg);
+                        uint32_t number, void *arg);
 
     static int SortArray(const void *a, const void *b, void *closure);
 
     /* state used only during enumeration */
-    PRUint32 mEnumerationIndex; // into mArray or mSortedHashTable
+    uint32_t mEnumerationIndex; // into mArray or mSortedHashTable
     HashTableEntry **mSortedHashTable;
 
     /*
@@ -91,6 +90,6 @@ private:
      * memory, which much be pushed and popped at points matching a
      * push/pop on the C++ stack.
      */
-    void* operator new(size_t sz) CPP_THROW_NEW { return nsnull; }
+    void* operator new(size_t sz) CPP_THROW_NEW { return nullptr; }
 };
 

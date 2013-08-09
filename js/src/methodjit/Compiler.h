@@ -128,6 +128,7 @@ class Compiler : public BaseCompiler
         Label        slowJoinPoint;
         Label        slowPathStart;
         Label        hotPathLabel;
+        Label        ionJoinPoint;
         DataLabelPtr addrLabel1;
         DataLabelPtr addrLabel2;
         Jump         oolJump;
@@ -155,14 +156,13 @@ class Compiler : public BaseCompiler
     };
 
     struct BaseICInfo {
-        BaseICInfo(JSOp op) : op(op), canCallHook(false), forcedTypeBarrier(false)
+        BaseICInfo() : canCallHook(false), forcedTypeBarrier(false)
         { }
         Label fastPathStart;
         Label fastPathRejoin;
         Label slowPathStart;
         Call slowPathCall;
         DataLabelPtr paramAddr;
-        JSOp op;
         bool canCallHook;
         bool forcedTypeBarrier;
 
@@ -173,14 +173,10 @@ class Compiler : public BaseCompiler
             to.slowPathCall = stub.locationOf(slowPathCall);
             to.canCallHook = canCallHook;
             to.forcedTypeBarrier = forcedTypeBarrier;
-            to.op = op;
-            JS_ASSERT(to.op == op);
         }
     };
 
     struct GetElementICInfo : public BaseICInfo {
-        GetElementICInfo(JSOp op) : BaseICInfo(op)
-        { }
         RegisterID  typeReg;
         RegisterID  objReg;
         ValueRemat  id;
@@ -189,8 +185,6 @@ class Compiler : public BaseCompiler
     };
 
     struct SetElementICInfo : public BaseICInfo {
-        SetElementICInfo(JSOp op) : BaseICInfo(op)
-        { }
         RegisterID  objReg;
         StateRemat  objRemat;
         ValueRemat  vr;
@@ -202,8 +196,8 @@ class Compiler : public BaseCompiler
     };
 
     struct PICGenInfo : public BaseICInfo {
-        PICGenInfo(ic::PICInfo::Kind kind, JSOp op)
-          : BaseICInfo(op), kind(kind), typeMonitored(false)
+        PICGenInfo(ic::PICInfo::Kind kind, jsbytecode *pc)
+          : kind(kind), pc(pc), typeMonitored(false)
         { }
         ic::PICInfo::Kind kind;
         Label typeCheck;
@@ -216,7 +210,6 @@ class Compiler : public BaseCompiler
         bool hasTypeCheck;
         bool typeMonitored;
         bool cached;
-        types::TypeSet *rhsTypes;
         ValueRemat vr;
         union {
             ic::GetPropLabels getPropLabels_;
@@ -256,7 +249,6 @@ class Compiler : public BaseCompiler
             }
             ic.typeMonitored = typeMonitored;
             ic.cached = cached;
-            ic.rhsTypes = rhsTypes;
             if (ic.isGet())
                 ic.setLabels(getPropLabels());
             else if (ic.isSet())
@@ -295,6 +287,12 @@ class Compiler : public BaseCompiler
         { }
     };
 
+    struct InternalCompileTrigger {
+        jsbytecode *pc;
+        Jump inlineJump;
+        Label stubLabel;
+    };
+
     struct DoublePatch {
         double d;
         DataLabelPtr label;
@@ -328,19 +326,19 @@ class Compiler : public BaseCompiler
      */
     class VarType {
         JSValueType type;
-        types::TypeSet *types;
+        types::StackTypeSet *types;
 
       public:
-        void setTypes(types::TypeSet *types) {
+        void setTypes(types::StackTypeSet *types) {
             this->types = types;
             this->type = JSVAL_TYPE_MISSING;
         }
 
         types::TypeSet *getTypes() { return types; }
 
-        JSValueType getTypeTag(JSContext *cx) {
+        JSValueType getTypeTag() {
             if (type == JSVAL_TYPE_MISSING)
-                type = types ? types->getKnownTypeTag(cx) : JSVAL_TYPE_UNKNOWN;
+                type = types ? types->getKnownTypeTag() : JSVAL_TYPE_UNKNOWN;
             return type;
         }
     };
@@ -364,7 +362,7 @@ class Compiler : public BaseCompiler
         SlotType(uint32_t slot, VarType vt) : slot(slot), vt(vt) {}
     };
 
-    JSScript *outerScript;
+    RootedScript outerScript;
     unsigned chunkIndex;
     bool isConstructing;
     ChunkDescriptor outerChunk;
@@ -375,6 +373,7 @@ class Compiler : public BaseCompiler
     Rooted<GlobalObject*> globalObj;
     const HeapSlot *globalSlots;  /* Original slots pointer. */
 
+    MJITInstrumentation sps;
     Assembler masm;
     FrameState frame;
 
@@ -413,7 +412,7 @@ private:
     ActiveFrame *a;
     ActiveFrame *outer;
 
-    JSScript *script;
+    RootedScript script_;
     analyze::ScriptAnalysis *analysis;
     jsbytecode *PC;
 
@@ -436,9 +435,12 @@ private:
 #endif
     js::Vector<CallPatchInfo, 64, CompilerAllocPolicy> callPatches;
     js::Vector<InternalCallSite, 64, CompilerAllocPolicy> callSites;
+    js::Vector<InternalCompileTrigger, 4, CompilerAllocPolicy> compileTriggers;
     js::Vector<DoublePatch, 16, CompilerAllocPolicy> doubleList;
     js::Vector<JSObject*, 0, CompilerAllocPolicy> rootedTemplates;
     js::Vector<RegExpShared*, 0, CompilerAllocPolicy> rootedRegExps;
+    js::Vector<uint32_t> monitoredBytecodes;
+    js::Vector<uint32_t> typeBarrierBytecodes;
     js::Vector<uint32_t> fixedIntToDoubleEntries;
     js::Vector<uint32_t> fixedDoubleToAnyEntries;
     js::Vector<JumpTable, 16> jumpTables;
@@ -492,7 +494,7 @@ private:
     }
 
     JITScript *outerJIT() {
-        return outerScript->getJIT(isConstructing, cx->compartment->needsBarrier());
+        return outerScript->getJIT(isConstructing, cx->compartment->compileBarriers());
     }
 
     ChunkDescriptor &outerChunkRef() {
@@ -534,7 +536,7 @@ private:
     CompileStatus finishThisUp();
     CompileStatus pushActiveFrame(JSScript *script, uint32_t argc);
     void popActiveFrame();
-    void updatePCCounts(jsbytecode *pc, Label *start, bool *updated);
+    void updatePCCounts(jsbytecode *pc, bool *updated);
     void updatePCTypes(jsbytecode *pc, FrameEntry *fe);
     void updateArithCounts(jsbytecode *pc, FrameEntry *fe,
                              JSValueType firstUseType, JSValueType secondUseType);
@@ -553,14 +555,14 @@ private:
     void restoreVarType();
     JSValueType knownPushedType(uint32_t pushed);
     bool mayPushUndefined(uint32_t pushed);
-    types::TypeSet *pushedTypeSet(uint32_t which);
+    types::StackTypeSet *pushedTypeSet(uint32_t which);
     bool monitored(jsbytecode *pc);
     bool hasTypeBarriers(jsbytecode *pc);
     bool testSingletonProperty(HandleObject obj, HandleId id);
     bool testSingletonPropertyTypes(FrameEntry *top, HandleId id, bool *testObject);
-    CompileStatus addInlineFrame(JSScript *script, uint32_t depth, uint32_t parent, jsbytecode *parentpc);
+    CompileStatus addInlineFrame(HandleScript script, uint32_t depth, uint32_t parent, jsbytecode *parentpc);
     CompileStatus scanInlineCalls(uint32_t index, uint32_t depth);
-    CompileStatus checkAnalysis(JSScript *script);
+    CompileStatus checkAnalysis(HandleScript script);
 
     struct BarrierState {
         MaybeJump jump;
@@ -568,8 +570,8 @@ private:
         RegisterID dataReg;
     };
 
-    MaybeJump trySingleTypeTest(types::TypeSet *types, RegisterID typeReg);
-    Jump addTypeTest(types::TypeSet *types, RegisterID typeReg, RegisterID dataReg);
+    MaybeJump trySingleTypeTest(types::StackTypeSet *types, RegisterID typeReg);
+    Jump addTypeTest(types::StackTypeSet *types, RegisterID typeReg, RegisterID dataReg);
     BarrierState pushAddressMaybeBarrier(Address address, JSValueType type, bool reuseBase,
                                          bool testUndefined = false);
     BarrierState testBarrier(RegisterID typeReg, RegisterID dataReg,
@@ -588,7 +590,7 @@ private:
     bool constantFoldBranch(jsbytecode *target, bool taken);
     bool emitStubCmpOp(BoolStub stub, jsbytecode *target, JSOp fused);
     bool iter(unsigned flags);
-    void iterNext(ptrdiff_t offset);
+    void iterNext();
     bool iterMore(jsbytecode *target);
     void iterEnd();
     MaybeJump loadDouble(FrameEntry *fe, FPRegisterID *fpReg, bool *allocated);
@@ -626,8 +628,8 @@ private:
     void jsop_bindname(PropertyName *name);
     void jsop_setglobal(uint32_t index);
     void jsop_getprop_slow(PropertyName *name, bool forPrototype = false);
-    void jsop_getarg(uint32_t slot);
-    void jsop_setarg(uint32_t slot, bool popped);
+    void jsop_aliasedArg(unsigned i, bool get, bool poppedAfter = false);
+    void jsop_aliasedVar(ScopeCoordinate sc, bool get, bool poppedAfter = false);
     void jsop_this();
     void emitReturn(FrameEntry *fe);
     void emitFinalReturn(Assembler &masm);
@@ -636,7 +638,11 @@ private:
     void emitInlineReturnValue(FrameEntry *fe);
     void dispatchCall(VoidPtrStubUInt32 stub, uint32_t argc);
     void interruptCheckHelper();
-    void recompileCheckHelper();
+    void ionCompileHelper();
+    void inliningCompileHelper();
+    CompileStatus methodEntryHelper();
+    CompileStatus profilingPushHelper();
+    void profilingPopHelper();
     void emitUncachedCall(uint32_t argc, bool callingNew);
     void checkCallApplySpeculation(uint32_t argc, FrameEntry *origCallee, FrameEntry *origThis,
                                    MaybeRegisterID origCalleeType, RegisterID origCalleeData,
@@ -657,6 +663,7 @@ private:
     bool jsop_setprop(PropertyName *name, bool popGuaranteed);
     void jsop_setprop_slow(PropertyName *name);
     bool jsop_instanceof();
+    void jsop_intrinsicname(PropertyName *name, JSValueType type);
     void jsop_name(PropertyName *name, JSValueType type);
     bool jsop_xname(PropertyName *name);
     void enterBlock(StaticBlockObject *block);
@@ -703,8 +710,6 @@ private:
     bool booleanJumpScript(JSOp op, jsbytecode *target);
     bool jsop_ifneq(JSOp op, jsbytecode *target);
     bool jsop_andor(JSOp op, jsbytecode *target);
-    bool jsop_arginc(JSOp op, uint32_t slot);
-    bool jsop_localinc(JSOp op, uint32_t slot);
     bool jsop_newinit();
     bool jsop_regexp();
     void jsop_initmethod();

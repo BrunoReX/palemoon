@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -22,6 +22,7 @@ INSTALLER_FILES = \
 	app.tag \
 	nsis/installer.nsi \
 	nsis/uninstaller.nsi \
+	nsis/stub.nsi \
 	nsis/shared.nsh \
 	$(NULL)
 
@@ -31,9 +32,15 @@ INSTALLER_FILES += \
 	$(NULL)
 endif
 
-
 BRANDING_FILES = \
 	branding.nsi \
+	appname.bmp \
+	bgintro.bmp \
+	bgplain.bmp \
+	clock.bmp \
+	particles.bmp \
+	pencil.bmp \
+	pencil-rtl.bmp \
 	wizHeader.bmp \
 	wizHeaderRTL.bmp \
 	wizWatermark.bmp \
@@ -58,6 +65,7 @@ else
 PPL_LOCALE_ARGS=$(call EXPAND_LOCALE_SRCDIR,browser/locales)/installer
 endif
 
+.DEFAULT_GOAL := installer
 installer::
 	$(MAKE) -C .. installer-stage
 	$(MAKE) $(CONFIG_DIR)/setup.exe
@@ -96,6 +104,10 @@ $(CONFIG_DIR)/setup.exe::
 	$(PYTHON) $(topsrcdir)/toolkit/mozapps/installer/windows/nsis/preprocess-locale.py \
 	  --preprocess-locale $(topsrcdir) \
 	  $(PPL_LOCALE_ARGS) $(AB_CD) $(CONFIG_DIR)
+	$(PYTHON) $(topsrcdir)/toolkit/mozapps/installer/windows/nsis/preprocess-locale.py \
+	  --preprocess-single-file $(topsrcdir) \
+	  $(PPL_LOCALE_ARGS) $(CONFIG_DIR) \
+	  nsisstrings.properties nsisstrings.nlf
 
 GARBARGE_DIRS += instgen
 

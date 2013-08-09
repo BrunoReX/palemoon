@@ -5,7 +5,7 @@
 
 
 chrome.jar:
-% content browser %content/
+% content browser %content/ contentaccessible=yes
 
 * content/about.xhtml                  (content/about.xhtml)
   content/config.xhtml                 (content/config.xhtml)
@@ -14,6 +14,12 @@ chrome.jar:
   content/aboutCertError.xhtml         (content/aboutCertError.xhtml)
   content/aboutDownloads.xhtml         (content/aboutDownloads.xhtml)
   content/aboutDownloads.js            (content/aboutDownloads.js)
+  content/aboutFeedback.xhtml          (content/aboutFeedback.xhtml)
+  content/aboutReader.html             (content/aboutReader.html)
+  content/aboutReader.js               (content/aboutReader.js)
+  content/Readability.js               (content/Readability.js)
+  content/JSDOMParser.js               (content/JSDOMParser.js)
+  content/readerWorker.js              (content/readerWorker.js)
   content/aboutHome.xhtml              (content/aboutHome.xhtml)
 * content/aboutRights.xhtml            (content/aboutRights.xhtml)
 * content/aboutApps.xhtml              (content/aboutApps.xhtml)
@@ -22,17 +28,18 @@ chrome.jar:
   content/languages.properties         (content/languages.properties)
 * content/browser.xul                  (content/browser.xul)
 * content/browser.js                   (content/browser.js)
-* content/bindings.xml                 (content/bindings.xml)
   content/bindings/checkbox.xml        (content/bindings/checkbox.xml)
+  content/bindings/menulist.xml        (content/bindings/menulist.xml)
   content/bindings/settings.xml        (content/bindings/settings.xml)
-  content/bindings/dialog.xml          (content/bindings/dialog.xml)
-  content/browser.css                  (content/browser.css)
   content/sanitize.js                  (content/sanitize.js)
   content/exceptions.js                (content/exceptions.js)
 * content/downloads.js                 (content/downloads.js)
   content/netError.xhtml               (content/netError.xhtml)
   content/SelectHelper.js              (content/SelectHelper.js)
+  content/HelperApps.js                (content/HelperApps.js)
   content/dbg-browser-actors.js        (content/dbg-browser-actors.js)
+  content/WebAppRT.js                  (content/WebAppRT.js)
+  content/InputWidgetHelper.js         (content/InputWidgetHelper.js)
 
 % content branding %content/branding/
 

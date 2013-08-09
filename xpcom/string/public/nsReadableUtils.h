@@ -25,17 +25,17 @@ inline size_t Distance( const nsReadingIterator<char>& start, const nsReadingIte
     return end.get() - start.get();
   }
 
-void LossyCopyUTF16toASCII( const nsAString& aSource, nsACString& aDest NS_OUTPARAM );
-void CopyASCIItoUTF16( const nsACString& aSource, nsAString& aDest NS_OUTPARAM );
+void LossyCopyUTF16toASCII( const nsAString& aSource, nsACString& aDest );
+void CopyASCIItoUTF16( const nsACString& aSource, nsAString& aDest );
 
-void LossyCopyUTF16toASCII( const PRUnichar* aSource, nsACString& aDest NS_OUTPARAM );
-void CopyASCIItoUTF16( const char* aSource, nsAString& aDest NS_OUTPARAM );
+void LossyCopyUTF16toASCII( const PRUnichar* aSource, nsACString& aDest );
+void CopyASCIItoUTF16( const char* aSource, nsAString& aDest );
 
-void CopyUTF16toUTF8( const nsAString& aSource, nsACString& aDest NS_OUTPARAM );
-void CopyUTF8toUTF16( const nsACString& aSource, nsAString& aDest NS_OUTPARAM );
+void CopyUTF16toUTF8( const nsAString& aSource, nsACString& aDest );
+void CopyUTF8toUTF16( const nsACString& aSource, nsAString& aDest );
 
-void CopyUTF16toUTF8( const PRUnichar* aSource, nsACString& aDest NS_OUTPARAM );
-void CopyUTF8toUTF16( const char* aSource, nsAString& aDest NS_OUTPARAM );
+void CopyUTF16toUTF8( const PRUnichar* aSource, nsACString& aDest );
+void CopyUTF8toUTF16( const char* aSource, nsAString& aDest );
 
 void LossyAppendUTF16toASCII( const nsAString& aSource, nsACString& aDest );
 void AppendASCIItoUTF16( const nsACString& aSource, nsAString& aDest );
@@ -89,7 +89,7 @@ char* ToNewCString( const nsACString& aSource );
    * @return a new |char| buffer you must free with |nsMemory::Free|.
    */
 
-char* ToNewUTF8String( const nsAString& aSource, PRUint32 *aUTF8Count = nsnull );
+char* ToNewUTF8String( const nsAString& aSource, uint32_t *aUTF8Count = nullptr );
 
 
   /**
@@ -135,7 +135,7 @@ PRUnichar* ToNewUnicode( const nsACString& aSource );
    * @return a new |PRUnichar| buffer you must free with |nsMemory::Free|.
    *         (UTF-16 encoded)
    */
-PRUnichar* UTF8ToNewUnicode( const nsACString& aSource, PRUint32 *aUTF16Count = nsnull );
+PRUnichar* UTF8ToNewUnicode( const nsACString& aSource, uint32_t *aUTF16Count = nullptr );
 
   /**
    * Copies |aLength| 16-bit code units from the start of |aSource| to the
@@ -150,9 +150,9 @@ PRUnichar* UTF8ToNewUnicode( const nsACString& aSource, PRUint32 *aUTF16Count = 
    * @return pointer to destination buffer - identical to |aDest|
    */
 PRUnichar* CopyUnicodeTo( const nsAString& aSource,
-                                 PRUint32 aSrcOffset,
+                                 uint32_t aSrcOffset,
                                  PRUnichar* aDest,
-                                 PRUint32 aLength );
+                                 uint32_t aLength );
 
 
   /**
@@ -309,9 +309,9 @@ bool FindCharInReadable( char aChar, nsACString::const_iterator& aSearchStart, c
     /**
     * Finds the number of occurences of |aChar| in the string |aStr|
     */
-PRUint32 CountCharInReadable( const nsAString& aStr,
+uint32_t CountCharInReadable( const nsAString& aStr,
                                      PRUnichar aChar );
-PRUint32 CountCharInReadable( const nsACString& aStr,
+uint32_t CountCharInReadable( const nsACString& aStr,
                                      char aChar );
 
 bool
@@ -343,17 +343,17 @@ const nsAFlatCString& NullCString();
    * Returns 0 if the strings are equal, -1 if aUTF8String is less
    * than aUTF16Count, and 1 in the reverse case.  In case of fatal
    * error (eg the strings are not valid UTF8 and UTF16 respectively),
-   * this method will return PR_INT32_MIN.
+   * this method will return INT32_MIN.
    */
-PRInt32
+int32_t
 CompareUTF8toUTF16(const nsASingleFragmentCString& aUTF8String,
                    const nsASingleFragmentString& aUTF16String);
 
 void
-AppendUCS4ToUTF16(const PRUint32 aSource, nsAString& aDest);
+AppendUCS4ToUTF16(const uint32_t aSource, nsAString& aDest);
 
 template<class T>
-inline bool EnsureStringLength(T& aStr, PRUint32 aLen)
+inline bool EnsureStringLength(T& aStr, uint32_t aLen)
 {
     aStr.SetLength(aLen);
     return (aStr.Length() == aLen);

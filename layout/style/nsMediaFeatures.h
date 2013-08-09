@@ -34,7 +34,8 @@ struct nsMediaFeature {
         eFloat,      // values are eCSSUnit_Number
         eBoolInteger,// values are eCSSUnit_Integer (0, -0, or 1 only)
         eIntRatio,   // values are eCSSUnit_Array of two eCSSUnit_Integer
-        eResolution, // values are in eCSSUnit_Inch (for dpi) or
+        eResolution, // values are in eCSSUnit_Inch (for dpi),
+                     //   eCSSUnit_Pixel (for dppx), or
                      //   eCSSUnit_Centimeter (for dpcm)
         eEnumerated, // values are eCSSUnit_Enumerated (uses keyword table)
         eIdent       // values are eCSSUnit_Ident
@@ -50,9 +51,9 @@ struct nsMediaFeature {
       // need that to be void* so we can initialize both other types.
       // This member should never be accessed by name.
       const void* mInitializer_;
-      // If mValueType == eEnumerated:  const PRInt32*: keyword table in
+      // If mValueType == eEnumerated:  const int32_t*: keyword table in
       //   the same format as the keyword tables in nsCSSProps.
-      const PRInt32* mKeywordTable;
+      const int32_t* mKeywordTable;
       // If mGetter == GetSystemMetric (which implies mValueType ==
       //   eBoolInteger): nsIAtom * const *, for the system metric.
       nsIAtom * const * mMetric;

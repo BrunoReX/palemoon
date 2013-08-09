@@ -31,31 +31,41 @@ class ShadowLayersParent : public PLayersParent,
   typedef InfallibleTArray<EditReply> EditReplyArray;
 
 public:
-  ShadowLayersParent(ShadowLayerManager* aManager, ShadowLayersManager* aLayersManager);
+  ShadowLayersParent(ShadowLayerManager* aManager,
+                     ShadowLayersManager* aLayersManager,
+                     uint64_t aId);
   ~ShadowLayersParent();
 
   void Destroy();
 
   ShadowLayerManager* layer_manager() const { return mLayerManager; }
 
+  uint64_t GetId() const { return mId; }
   ContainerLayer* GetRoot() const { return mRoot; }
 
   virtual void DestroySharedSurface(gfxSharedImageSurface* aSurface);
   virtual void DestroySharedSurface(SurfaceDescriptor* aSurface);
 
 protected:
-  NS_OVERRIDE virtual bool RecvUpdate(const EditArray& cset,
-                                      const bool& isFirstPaint,
-                                      EditReplyArray* reply);
+  virtual bool RecvUpdate(const EditArray& cset,
+                          const TargetConfig& targetConfig,
+                          const bool& isFirstPaint,
+                          EditReplyArray* reply) MOZ_OVERRIDE;
 
-  NS_OVERRIDE virtual bool RecvDrawToSurface(const SurfaceDescriptor& surfaceIn,
-                                             SurfaceDescriptor* surfaceOut);
+  virtual bool RecvUpdateNoSwap(const EditArray& cset,
+                                const TargetConfig& targetConfig,
+                                const bool& isFirstPaint) MOZ_OVERRIDE;
 
-  NS_OVERRIDE virtual bool RecvUpdateNoSwap(const EditArray& cset,
-                                            const bool& isFirstPaint);
+  virtual bool RecvClearCachedResources() MOZ_OVERRIDE;
 
-  NS_OVERRIDE virtual PLayerParent* AllocPLayer();
-  NS_OVERRIDE virtual bool DeallocPLayer(PLayerParent* actor);
+  virtual PGrallocBufferParent*
+  AllocPGrallocBuffer(const gfxIntSize& aSize, const gfxContentType& aContent,
+                      MaybeMagicGrallocBufferHandle* aOutHandle) MOZ_OVERRIDE;
+  virtual bool
+  DeallocPGrallocBuffer(PGrallocBufferParent* actor) MOZ_OVERRIDE;
+
+  virtual PLayerParent* AllocPLayer() MOZ_OVERRIDE;
+  virtual bool DeallocPLayer(PLayerParent* actor) MOZ_OVERRIDE;
 
 private:
   nsRefPtr<ShadowLayerManager> mLayerManager;
@@ -63,6 +73,11 @@ private:
   // Hold the root because it might be grafted under various
   // containers in the "real" layer tree
   nsRefPtr<ContainerLayer> mRoot;
+  // When this is nonzero, it refers to a layer tree owned by the
+  // compositor thread.  It is always true that
+  //   mId != 0 => mRoot == null
+  // because the "real tree" is owned by the compositor.
+  uint64_t mId;
   // When the widget/frame/browser stuff in this process begins its
   // destruction process, we need to Disconnect() all the currently
   // live shadow layers, because some of them might be orphaned from

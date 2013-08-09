@@ -38,8 +38,9 @@ interface nsIDOMFile;
 interface nsIFile;
 interface nsIDOMTouch;
 interface nsIDOMClientRect;
+interface nsIURI;
 
-[scriptable, uuid(5fc61d7b-a303-4f34-adfe-b7828675ba45)]
+[scriptable, uuid(C98B7275-93C4-4EAD-B7CF-573D872C1071)]
 interface nsIDOMWindowUtils : nsISupports {
 
   /**
@@ -103,6 +104,16 @@ interface nsIDOMWindowUtils : nsISupports {
   void setCSSViewport(in float aWidthPx, in float aHeightPx);
 
   /**
+   * Information retrieved from the <meta name="viewport"> tag.
+   * See nsContentUtils::GetViewportInfo for more information.
+   */
+  void getViewportInfo(in uint32_t aDisplayWidth, in uint32_t aDisplayHeight,
+                       out double aDefaultZoom, out boolean aAllowZoom,
+                       out double aMinZoom, out double aMaxZoom,
+                       out uint32_t aWidth, out uint32_t aHeight,
+                       out boolean aAutoSize);
+
+  /**
    * For any scrollable element, this allows you to override the
    * visible region and draw more than what is visible, which is
    * useful for asynchronous drawing. The "displayport" will be
@@ -121,16 +132,33 @@ interface nsIDOMWindowUtils : nsISupports {
    *
    * It's legal to set a displayport that extends beyond the overflow
    * area in any direction (left/right/top/bottom).
-   * 
+   *
    * It's also legal to set a displayport that extends beyond the
    * area's bounds.  No pixels are rendered outside the area bounds.
    *
    * The caller of this method must have UniversalXPConnect
    * privileges.
+   *
+   * Calling this will always force a recomposite, so it should be
+   * avoided if at all possible. Client code should do checks before
+   * calling this so that duplicate sets are not made with the same
+   * displayport.
    */
   void setDisplayPortForElement(in float aXPx, in float aYPx,
                                 in float aWidthPx, in float aHeightPx,
                                 in nsIDOMElement aElement);
+
+  /**
+   * When a display port is set, this allows a sub-section of that
+   * display port to be marked as 'critical'. In this scenario, the
+   * area outside of this rectangle may be rendered at a lower
+   * detail (for example, by reducing its resolution), or not rendered
+   * at all under some circumstances.
+   * This call will have no effect if a display port has not been set.
+   */
+  void setCriticalDisplayPortForElement(in float aXPx, in float aYPx,
+                                        in float aWidthPx, in float aHeightPx,
+                                        in nsIDOMElement aElement);
 
   /**
    * Get/set the resolution at which rescalable web content is drawn.
@@ -157,6 +185,8 @@ interface nsIDOMWindowUtils : nsISupports {
    * privileges.
    */
   void setResolution(in float aXResolution, in float aYResolution);
+
+  void getResolution(out float aXResolution, out float aYResolution);
 
   /**
    * Whether the next paint should be flagged as the first paint for a document.
@@ -215,6 +245,9 @@ interface nsIDOMWindowUtils : nsISupports {
    * @param aModifiers modifiers pressed, using constants defined as MODIFIER_*
    * @param aIgnoreRootScrollFrame whether the event should ignore viewport bounds
    *                           during dispatch
+   * @param aPressure touch input pressure: 0.0 -> 1.0
+   * @param aInputSourceArg input source, see nsIDOMMouseEvent for values,
+   *        defaults to mouse input.
    */
   void sendMouseEvent(in AString aType,
                       in float aX,
@@ -222,7 +255,9 @@ interface nsIDOMWindowUtils : nsISupports {
                       in long aButton,
                       in long aClickCount,
                       in long aModifiers,
-                      [optional] in boolean aIgnoreRootScrollFrame);
+                      [optional] in boolean aIgnoreRootScrollFrame,
+                      [optional] in float aPressure,
+                      [optional] in unsigned short aInputSourceArg);
 
   /** Synthesize a touch event. The event types supported are:
    *    touchstart, touchend, touchmove, and touchcancel
@@ -252,14 +287,14 @@ interface nsIDOMWindowUtils : nsISupports {
    * returns true if the page called prevent default on this touch event
    */
   boolean sendTouchEvent(in AString aType,
-                         [array, size_is(count)] in PRUint32 aIdentifiers,
-                         [array, size_is(count)] in PRInt32 aXs,
-                         [array, size_is(count)] in PRInt32 aYs,
-                         [array, size_is(count)] in PRUint32 aRxs,
-                         [array, size_is(count)] in PRUint32 aRys,
+                         [array, size_is(count)] in uint32_t aIdentifiers,
+                         [array, size_is(count)] in int32_t aXs,
+                         [array, size_is(count)] in int32_t aYs,
+                         [array, size_is(count)] in uint32_t aRxs,
+                         [array, size_is(count)] in uint32_t aRys,
                          [array, size_is(count)] in float aRotationAngles,
                          [array, size_is(count)] in float aForces,
-                         in PRUint32 count,
+                         in uint32_t count,
                          in long aModifiers,
                          [optional] in boolean aIgnoreRootScrollFrame);
 
@@ -272,12 +307,12 @@ interface nsIDOMWindowUtils : nsISupports {
                               in long aButton,
                               in long aClickCount,
                               in long aModifiers,
-                              [optional] in boolean aIgnoreRootScrollFrame);
+                              [optional] in boolean aIgnoreRootScrollFrame,
+                              [optional] in float aPressure,
+                              [optional] in unsigned short aInputSourceArg);
 
-  /** Synthesize a mouse scroll event for a window. The event types supported
-   *  are: 
-   *    DOMMouseScroll
-   *    MozMousePixelScroll
+  /** Synthesize a wheel event for a window. The event types supported is only
+   *  wheel.
    *
    * Events are sent in coordinates offset by aX and aY from the window.
    *
@@ -285,22 +320,46 @@ interface nsIDOMWindowUtils : nsISupports {
    * Will throw a DOM security error if called without UniversalXPConnect
    * privileges.
    *
-   * @param aType event type
-   * @param aX x offset in CSS pixels
-   * @param aY y offset in CSS pixels
-   * @param aButton button to synthesize
-   * @param aScrollFlags flag bits --- see nsMouseScrollFlags in nsGUIEvent.h
-   * @param aDelta the direction and amount to scroll (in lines or pixels,
-   * depending on the event type)
-   * @param aModifiers modifiers pressed, using constants defined as MODIFIER_*
+   * @param aX                 x offset in CSS pixels
+   * @param aY                 y offset in CSS pixels
+   * @param aDeltaX            deltaX value.
+   * @param aDeltaY            deltaY value.
+   * @param aDeltaZ            deltaZ value.
+   * @param aDeltaMode         deltaMode value which must be one of
+   *                           nsIDOMWheelEvent::DOM_DELTA_*.
+   * @param aModifiers         modifiers pressed, using constants defined as
+   *                           MODIFIER_*
+   * @param aLineOrPageDeltaX  If you set this value non-zero for
+   *                           DOM_DELTA_PIXEL event, nsEventStateManager will
+   *                           dispatch NS_MOUSE_SCROLL event for horizontal
+   *                           scroll.
+   * @param aLineOrPageDeltaY  If you set this value non-zero for
+   *                           DOM_DELTA_PIXEL event, nsEventStateManager will
+   *                           dispatch NS_MOUSE_SCROLL event for vertical
+   *                           scroll.
+   * @param aOptions           Set following flags.
    */
-  void sendMouseScrollEvent(in AString aType,
-                            in float aX,
-                            in float aY,
-                            in long aButton,
-                            in long aScrollFlags,
-                            in long aDelta,
-                            in long aModifiers);
+   const unsigned long WHEEL_EVENT_CAUSED_BY_PIXEL_ONLY_DEVICE = 0x0001;
+   const unsigned long WHEEL_EVENT_CAUSED_BY_MOMENTUM          = 0x0002;
+   const unsigned long WHEEL_EVENT_CUSTOMIZED_BY_USER_PREFS    = 0x0004;
+   // If any of the following flags is specified this method will throw an
+   // exception in case the relevant overflowDelta has an unexpected value.
+   const unsigned long WHEEL_EVENT_EXPECTED_OVERFLOW_DELTA_X_ZERO      = 0x0010;
+   const unsigned long WHEEL_EVENT_EXPECTED_OVERFLOW_DELTA_X_POSITIVE  = 0x0020;
+   const unsigned long WHEEL_EVENT_EXPECTED_OVERFLOW_DELTA_X_NEGATIVE  = 0x0040;
+   const unsigned long WHEEL_EVENT_EXPECTED_OVERFLOW_DELTA_Y_ZERO      = 0x0100;
+   const unsigned long WHEEL_EVENT_EXPECTED_OVERFLOW_DELTA_Y_POSITIVE  = 0x0200;
+   const unsigned long WHEEL_EVENT_EXPECTED_OVERFLOW_DELTA_Y_NEGATIVE  = 0x0400;
+   void sendWheelEvent(in float aX,
+                       in float aY,
+                       in double aDeltaX,
+                       in double aDeltaY,
+                       in double aDeltaZ,
+                       in unsigned long aDeltaMode,
+                       in long aModifiers,
+                       in long aLineOrPageDeltaX,
+                       in long aLineOrPageDeltaY,
+                       in unsigned long aOptions);
 
   /**
    * Synthesize a key event to the window. The event types supported are:
@@ -347,6 +406,8 @@ interface nsIDOMWindowUtils : nsISupports {
    * Cannot be accessed from unprivileged context (not content-accessible)
    * Will throw a DOM security error if called without UniversalXPConnect
    * privileges.
+   *
+   * When you use this for tests, use the constants defined in NativeKeyCodes.js
    */
   void sendNativeKeyEvent(in long aNativeKeyboardLayout,
                           in long aNativeKeyCode,
@@ -490,8 +551,8 @@ interface nsIDOMWindowUtils : nsISupports {
   /** Synthesize a simple gesture event for a window. The event types
    *  supported are: MozSwipeGesture, MozMagnifyGestureStart,
    *  MozMagnifyGestureUpdate, MozMagnifyGesture, MozRotateGestureStart,
-   *  MozRotateGestureUpdate, MozRotateGesture, MozPressTapGesture, and
-   *  MozTapGesture.
+   *  MozRotateGestureUpdate, MozRotateGesture, MozPressTapGesture,
+   *  MozTapGesture, and MozEdgeUIGesture.
    *
    * Cannot be accessed from unprivileged context (not
    * content-accessible) Will throw a DOM security error if called
@@ -503,13 +564,15 @@ interface nsIDOMWindowUtils : nsISupports {
    * @param aDirection direction, using constants defined in nsIDOMSimpleGestureEvent
    * @param aDelta  amount of magnification or rotation for magnify and rotation events
    * @param aModifiers modifiers pressed, using constants defined in nsIDOMNSEvent
+   * @param aClickCount For tap gestures, the number of taps.
    */
   void sendSimpleGestureEvent(in AString aType,
                               in float aX,
                               in float aY,
                               in unsigned long aDirection,
                               in double aDelta,
-                              in long aModifiers);
+                              in long aModifiers,
+                              [optional] in unsigned long aClickCount);
 
   /**
    * Retrieve the element at point aX, aY in the window's document.
@@ -554,7 +617,7 @@ interface nsIDOMWindowUtils : nsISupports {
    *
    * This method requires UniversalXPConnect privileges.
    */
-  PRUint32 compareCanvases(in nsIDOMHTMLCanvasElement aCanvas1,
+  uint32_t compareCanvases(in nsIDOMHTMLCanvasElement aCanvas1,
                            in nsIDOMHTMLCanvasElement aCanvas2,
                            out unsigned long aMaxDifference);
 
@@ -647,6 +710,14 @@ interface nsIDOMWindowUtils : nsISupports {
    * Get the number of screen pixels per CSS pixel.
    */
   readonly attribute float screenPixelsPerCSSPixel;
+
+  /**
+   * Get the current zoom factor.
+   * This is _approximately_ the same as nsIMarkupDocumentViewer.fullZoom,
+   * but takes into account Gecko's quantization of the zoom factor, which is
+   * implemented by adjusting the (integer) number of appUnits per devPixel.
+   */
+  readonly attribute float fullZoom;
 
   /**
    * Dispatches aEvent via the nsIPresShell object of the window's document.
@@ -747,7 +818,7 @@ interface nsIDOMWindowUtils : nsISupports {
   /**
    * Synthesize a query content event.
    *
-   * @param aType  On of the following const values.  And see also each comment
+   * @param aType  One of the following const values.  And see also each comment
    *               for the other parameters and the result.
    */
   nsIQueryContentEventResult sendQueryContentEvent(in unsigned long aType,
@@ -845,6 +916,28 @@ interface nsIDOMWindowUtils : nsISupports {
   const unsigned long QUERY_CHARACTER_AT_POINT                  = 3208;
 
   /**
+   * Called when the remote child frame has changed its fullscreen state,
+   * when entering fullscreen, and when the origin which is fullscreen changes.
+   * aFrameElement is the iframe element which contains the child-process
+   * fullscreen document, and aNewOrigin is the origin of the new fullscreen
+   * document.
+   */
+  void remoteFrameFullscreenChanged(in nsIDOMElement aFrameElement,
+                                    in AString aNewOrigin);
+
+  /**
+   * Called when the remote frame has popped all fullscreen elements off its
+   * stack, so that the operation can complete on the parent side.
+   */
+  void remoteFrameFullscreenReverted();
+
+  /**
+   * Called when the child frame has fully exit fullscreen, so that the parent
+   * process can also fully exit.
+   */
+  void exitFullscreen();
+
+  /**
    * Synthesize a selection set event to the window.
    *
    * This sets the selection as the specified information.
@@ -860,6 +953,33 @@ interface nsIDOMWindowUtils : nsISupports {
   boolean sendSelectionSetEvent(in unsigned long aOffset,
                                 in unsigned long aLength,
                                 in boolean aReverse);
+
+  /* Selection behaviors - mirror nsIFrame's nsSelectionAmount constants */
+  const unsigned long SELECT_CHARACTER   = 0;
+  const unsigned long SELECT_CLUSTER     = 1;
+  const unsigned long SELECT_WORD        = 2;
+  const unsigned long SELECT_LINE        = 3;
+  const unsigned long SELECT_BEGINLINE   = 4;
+  const unsigned long SELECT_ENDLINE     = 5;
+  const unsigned long SELECT_PARAGRAPH   = 6;
+  const unsigned long SELECT_WORDNOSPACE = 7;
+
+  /**
+   * Select content at a client point based on a selection behavior if the
+   * underlying content is selectable. Selection will accumulate with any
+   * existing selection, callers should clear selection prior if needed.
+   * May fire selection changed events. Calls nsFrame's SelectByTypeAtPoint.
+   *
+   * @param aX, aY The selection point in client coordinates.
+   * @param aSelectType The selection behavior requested.
+   * @return True if a selection occured, false otherwise.
+   * @throw NS_ERROR_DOM_SECURITY_ERR, NS_ERROR_UNEXPECTED for utils
+   * issues, and NS_ERROR_INVALID_ARG for coordinates that are outside
+   * this window.
+   */
+  boolean selectAtPoint(in float aX,
+                        in float aY,
+                        in unsigned long aSelectBehavior);
 
   /**
    * Perform the equivalent of:
@@ -935,13 +1055,6 @@ interface nsIDOMWindowUtils : nsISupports {
   void resumeTimeouts();
 
   /**
-   * Set the network status to online from the Offline mode error page.
-   *
-   * The caller of this method must be about:neterror.
-   */
-  void goOnline();
-
-  /**
    * What type of layer manager the widget associated with this window is
    * using. "Basic" is unaccelerated; other types are accelerated. Throws an
    * error if there is no widget associated with this window.
@@ -951,6 +1064,12 @@ interface nsIDOMWindowUtils : nsISupports {
   void startFrameTimeRecording();
   void stopFrameTimeRecording([optional] out unsigned long frameCount,
                               [retval, array, size_is(frameCount)] out float frameTime);
+  /**
+   * Signals that we're begining to tab switch. This is used by painting code to
+   * determine total tab switch time.
+   */
+  void beginTabSwitch();
+
   /**
    * The DPI of the display
    */
@@ -962,7 +1081,7 @@ interface nsIDOMWindowUtils : nsISupports {
   nsIDOMWindow getOuterWindowWithId(in unsigned long long aOuterWindowID);
 
   [noscript] void RenderDocument(in nsConstRect aRect,
-                                 in PRUint32 aFlags,
+                                 in uint32_t aFlags,
                                  in nscolor aBackgroundColor,
                                  in gfxContext aThebesContext);
 
@@ -1145,26 +1264,44 @@ interface nsIDOMWindowUtils : nsISupports {
   void setScrollPositionClampingScrollPortSize(in float aWidth, in float aHeight);
 
   /**
-   * Mark if the window is an application window or not.
-   * This should only be set for top-level mozApp or mozBrowser frames.
-   * It should not be set for other frames unless you want a frame (and its
-   * children) to have a different value for IsPartOfApp than the frame's
-   * parent.
-   */
-  void setIsApp(in boolean value);
-
-  /**
-   * Associate the window with an application by passing the URL of the
-   * application's manifest.
-   *
-   * This method will throw an exception if the manifest URL isn't a valid URL
-   * or isn't the manifest URL of an installed application.
-   */
-  void setApp(in DOMString manifestURL);
-
-  /**
    * Prevent this window (and any child windows) from displaying any further
    * dialogs (e.g. window.alert()).
    */
-  void preventFurtherDialogs(); 
+  void preventFurtherDialogs();
+
+  const unsigned long AGENT_SHEET = 0;
+  const unsigned long USER_SHEET = 1;
+  const unsigned long AUTHOR_SHEET = 2;
+  /**
+   * Synchronously loads a style sheet from |sheetURI| and adds it to the list
+   * of additional style sheets of the document.
+   *
+   * These additional style sheets are very much like user/agent sheets loaded 
+   * with loadAndRegisterSheet. The only difference is that they are applied only
+   * on the document owned by this window.
+   *
+   * Sheets added via this API take effect immediately on the document.
+   */
+  void loadSheet(in nsIURI sheetURI,
+                           in unsigned long type);
+
+  /**
+   * Remove the document style sheet at |sheetURI| from the list of additional 
+   * style sheets of the document.  The removal takes effect immediately.
+   */
+  void removeSheet(in nsIURI sheetURI,
+                                in unsigned long type);
+
+  /**
+   * Returns true if a user input is being handled.
+   *
+   * This calls nsEventStateManager::IsHandlingUserInput().
+   */
+  readonly attribute boolean isHandlingUserInput;
+
+  /**
+   * After calling the method, the window for which this DOMWindowUtils
+   * was created can be closed using scripts.
+   */
+   void allowScriptsToClose();
 };

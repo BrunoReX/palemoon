@@ -53,30 +53,6 @@ const DownloadsButton = {
   },
 
   /**
-   * This function is called synchronously at window initialization.  It only
-   * sets the visibility of user interface elements to avoid flickering.
-   *
-   * NOTE: To keep startup time to a minimum, this function should not perform
-   *       any expensive operations or input/output, and should not cause the
-   *       Download Manager service to start.
-   */
-  initializePlaceholder: function DB_initializePlaceholder()
-  {
-    // Exit now if the feature is disabled.  To improve startup time, we don't
-    // load the DownloadsCommon module yet, but check the preference directly.
-    if (gPrefService.getBoolPref("browser.download.useToolkitUI")) {
-      return;
-    }
-
-    // We must hide the placeholder used for toolbar customization, unless it
-    // has been removed from the toolbars and is now located in the palette.
-    let placeholder = this._placeholder;
-    if (placeholder) {
-      placeholder.collapsed = true;
-    }
-  },
-
-  /**
    * This function is called asynchronously just after window initialization.
    *
    * NOTE: This function should limit the input/output it performs to improve
@@ -141,12 +117,8 @@ const DownloadsButton = {
   _update: function DB_update() {
     this._updatePositionInternal();
 
-    let placeholder = this._placeholder;
     if (!DownloadsCommon.useToolkitUI) {
       DownloadsIndicatorView.ensureInitialized();
-      if (placeholder) {
-        placeholder.collapsed = true;
-      }
     } else {
       DownloadsIndicatorView.ensureTerminated();
     }
@@ -181,47 +153,52 @@ const DownloadsButton = {
     }
 
     let placeholder = this._placeholder;
-
-    // Firstly, determine if we should always hide the indicator.
-    if (!placeholder && !this._anchorRequested &&
-        !DownloadsIndicatorView.hasDownloads) {
+    if (!placeholder) {
+      // The placeholder has been removed from the browser window.
       indicator.collapsed = true;
+      // Move the indicator to a safe position on the toolbar, since otherwise
+      // it may break the merge of adjacent items, like back/forward + urlbar.
+      indicator.parentNode.appendChild(indicator);
       return null;
     }
+
+    // Position the indicator where the placeholder is located.  We should
+    // update the position even if the placeholder is located on an invisible
+    // toolbar, because the toolbar may be displayed later.
+    placeholder.parentNode.insertBefore(indicator, placeholder);
+    placeholder.collapsed = true;
     indicator.collapsed = false;
 
     indicator.open = this._anchorRequested;
 
-    // Determine if we should display the indicator in a known position.
-    if (placeholder) {
-      placeholder.parentNode.insertBefore(indicator, placeholder);
-      // Determine if the placeholder is located on a visible toolbar.
-      if (isElementVisible(placeholder.parentNode)) {
-        return DownloadsIndicatorView.indicatorAnchor;
-      }
-    }
-
-    // If not customized, the indicator is normally in the navigation bar.
-    // Always place it in the default position, unless we need an anchor.
-    if (!this._anchorRequested) {
-      this._navBar.appendChild(indicator);
+    // Determine if the placeholder is located on an invisible toolbar.
+    if (!isElementVisible(placeholder.parentNode)) {
       return null;
     }
 
-    // Show the indicator temporarily in the navigation bar, if visible.
-    if (isElementVisible(this._navBar)) {
-      this._navBar.appendChild(indicator);
-      return DownloadsIndicatorView.indicatorAnchor;
-    }
+    return DownloadsIndicatorView.indicatorAnchor;
+  },
 
-    // Show the indicator temporarily in the tab bar, if visible.
-    if (!this._tabsToolbar.collapsed) {
-      this._tabsToolbar.appendChild(indicator);
-      return DownloadsIndicatorView.indicatorAnchor;
+  /**
+   * Checks whether the indicator is, or will soon be visible in the browser
+   * window.
+   *
+   * @param aCallback
+   *        Called once the indicator overlay has loaded. Gets a boolean
+   *        argument representing the indicator visibility.
+   */
+  checkIsVisible: function DB_checkIsVisible(aCallback)
+  {
+    function DB_CEV_callback() {
+      if (!this._placeholder) {
+        aCallback(false);
+      } else {
+        let element = DownloadsIndicatorView.indicator || this._placeholder;
+        aCallback(isElementVisible(element.parentNode));
+      }
     }
-
-    // The temporary anchor cannot be shown.
-    return null;
+    DownloadsOverlayLoader.ensureOverlayLoaded(this.kIndicatorOverlay,
+                                               DB_CEV_callback.bind(this));
   },
 
   /**
@@ -384,6 +361,10 @@ const DownloadsIndicatorView = {
         clearTimeout(this._notificationTimeout);
       }
 
+      // Now that the overlay is loaded, place the indicator in its final
+      // position.
+      DownloadsButton.updatePosition();
+
       let indicator = this.indicator;
       indicator.setAttribute("notification", "true");
       this._notificationTimeout = setTimeout(
@@ -528,9 +509,10 @@ const DownloadsIndicatorView = {
     if (DownloadsCommon.useToolkitUI) {
       // The panel won't suppress attention for us, we need to clear now.
       DownloadsCommon.indicatorData.attention = false;
+      BrowserDownloadsUI();
+    } else {
+      DownloadsPanel.showPanel();
     }
-
-    BrowserDownloadsUI();
 
     aEvent.stopPropagation();
   },
@@ -544,10 +526,17 @@ const DownloadsIndicatorView = {
 
   onDrop: function DIV_onDrop(aEvent)
   {
+    let dt = aEvent.dataTransfer;
+    // If dragged item is from our source, do not try to
+    // redownload already downloaded file.
+    if (dt.mozGetDataAt("application/x-moz-file", 0))
+      return;
+
     let name = {};
     let url = browserDragAndDrop.drop(aEvent, name);
     if (url) {
-      saveURL(url, name.value, null, true, true);
+      let sourceDoc = dt.mozSourceNode ? dt.mozSourceNode.ownerDocument : document;
+      saveURL(url, name.value, null, true, true, null, sourceDoc);
       aEvent.preventDefault();
     }
   },

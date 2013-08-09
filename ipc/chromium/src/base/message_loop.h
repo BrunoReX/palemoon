@@ -121,6 +121,10 @@ public:
   void PostNonNestableDelayedTask(
       const tracked_objects::Location& from_here, Task* task, int delay_ms);
 
+  // PostIdleTask is not thread safe and should be called on this thread
+  void PostIdleTask(
+      const tracked_objects::Location& from_here, Task* task);
+
   // A variant on PostTask that deletes the given object.  This is useful
   // if the object needs to live until the next run of the MessageLoop (for
   // example, deleting a RenderProcessHost from within an IPC callback is not
@@ -404,6 +408,7 @@ public:
   Lock incoming_queue_lock_;
 
   RunState* state_;
+  int run_depth_base_;
 
 #if defined(OS_WIN)
   // Should be set to true before calling Windows APIs like TrackPopupMenu, etc
@@ -504,6 +509,7 @@ class MessageLoopForIO : public MessageLoop {
   typedef base::MessagePumpLibevent::Watcher Watcher;
   typedef base::MessagePumpLibevent::FileDescriptorWatcher
       FileDescriptorWatcher;
+  typedef base::LineWatcher LineWatcher;
 
   enum Mode {
     WATCH_READ = base::MessagePumpLibevent::WATCH_READ,

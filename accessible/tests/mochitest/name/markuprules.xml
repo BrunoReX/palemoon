@@ -125,7 +125,7 @@
     <!-- specific -->
     <ruleset id="htmlinputbutton">
       <ruleset ref="htmlelm_start"/>
-      <rule attr="value" type="string"/>
+      <rule attr="value" type="string" explict-name="false"/>
       <rule attr="alt" type="string"/>
       <rule attr="src" type="string"/>
       <rule attr="data" type="string"/>
@@ -202,8 +202,8 @@
       </html:select>
     </markup>
 
-<!-- Temporarily disabled for causing bug 733848
-    <markup ref="html:img" ruleset="htmlimage">
+    <markup ref="html:img" ruleset="htmlimage"
+            id="markupHTMLImageTest">
       <html:span id="l1" a11yname="test2">test2</html:span>
       <html:span id="l2" a11yname="test3">test3</html:span>
       <html:img id="img"
@@ -215,16 +215,16 @@
     </markup>
 
     <markup ref="html:img" ruleset="htmlimageemptyalt">
+            id="markupHTMLImageEmptyAltTest"
       <html:span id="l1" a11yname="test2">test2</html:span>
       <html:span id="l2" a11yname="test3">test3</html:span>
-      <html:img id="img"
+      <html:img id="imgemptyalt"
                  aria-label="Logo of Mozilla"
                  aria-labelledby="l1 l2"
                  title="This is a logo"
                  alt=""
                  src="../moz.png"/>
     </markup>
--->
 
     <markup ref="html:table/html:tr/html:td" ruleset="htmlelm"
             id="markup4test">
@@ -290,6 +290,6 @@
         </html:tr>
       </html:table>
     </markup>
-  </rulesample>
 
+  </rulesample>
 </rules>

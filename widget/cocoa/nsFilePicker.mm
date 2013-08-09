@@ -11,7 +11,7 @@
 #include "nsReadableUtils.h"
 #include "nsNetUtil.h"
 #include "nsIComponentManager.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsILocalFileMac.h"
 #include "nsIURL.h"
 #include "nsArrayEnumerator.h"
@@ -101,7 +101,7 @@ nsFilePicker::~nsFilePicker()
 
 void
 nsFilePicker::InitNative(nsIWidget *aParent, const nsAString& aTitle,
-                         PRInt16 aMode)
+                         int16_t aMode)
 {
   mTitle = aTitle;
   mMode = aMode;
@@ -143,8 +143,8 @@ NSView* nsFilePicker::GetAccessoryView()
 
   // set up popup button
   NSPopUpButton* popupButton = [[[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 0, 0) pullsDown:NO] autorelease];
-  PRUint32 numMenuItems = mTitles.Length();
-  for (PRUint32 i = 0; i < numMenuItems; i++) {
+  uint32_t numMenuItems = mTitles.Length();
+  for (uint32_t i = 0; i < numMenuItems; i++) {
     const nsString& currentTitle = mTitles[i];
     NSString *titleString;
     if (currentTitle.IsEmpty()) {
@@ -159,7 +159,7 @@ NSView* nsFilePicker::GetAccessoryView()
     [popupButton addItemWithTitle:titleString];
     [titleString release];
   }
-  if (mSelectedTypeIndex >= 0 && (PRUint32)mSelectedTypeIndex < numMenuItems)
+  if (mSelectedTypeIndex >= 0 && (uint32_t)mSelectedTypeIndex < numMenuItems)
     [popupButton selectItemAtIndex:mSelectedTypeIndex];
   [popupButton setTag:kSaveTypeControlTag];
   [popupButton sizeToFit]; // we have to do sizeToFit to get the height calculated for us
@@ -191,13 +191,13 @@ NSView* nsFilePicker::GetAccessoryView()
 }
 
 // Display the file dialog
-NS_IMETHODIMP nsFilePicker::Show(PRInt16 *retval)
+NS_IMETHODIMP nsFilePicker::Show(int16_t *retval)
 {
   NS_ENSURE_ARG_POINTER(retval);
 
   *retval = returnCancel;
 
-  PRInt16 userClicksOK = returnCancel;
+  int16_t userClicksOK = returnCancel;
 
 // Random questions from DHH:
 //
@@ -210,7 +210,7 @@ NS_IMETHODIMP nsFilePicker::Show(PRInt16 *retval)
 // make this look as much like Carbon nsFilePicker as possible.  
 
   mFiles.Clear();
-  nsCOMPtr<nsILocalFile> theFile;
+  nsCOMPtr<nsIFile> theFile;
 
   switch (mMode)
   {
@@ -270,7 +270,7 @@ void UpdatePanelFileTypes(NSOpenPanel* aPanel, NSArray* aFilters)
 - (void) menuChangedItem:(NSNotification *)aSender
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
-  PRInt32 selectedItem = [mPopUpButton indexOfSelectedItem];
+  int32_t selectedItem = [mPopUpButton indexOfSelectedItem];
   if (selectedItem < 0) {
     return;
   }
@@ -283,12 +283,12 @@ void UpdatePanelFileTypes(NSOpenPanel* aPanel, NSArray* aFilters)
 @end
 
 // Use OpenPanel to do a GetFile. Returns |returnOK| if the user presses OK in the dialog. 
-PRInt16
-nsFilePicker::GetLocalFiles(const nsString& inTitle, bool inAllowMultiple, nsCOMArray<nsILocalFile>& outFiles)
+int16_t
+nsFilePicker::GetLocalFiles(const nsString& inTitle, bool inAllowMultiple, nsCOMArray<nsIFile>& outFiles)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
 
-  PRInt16 retVal = (PRInt16)returnCancel;
+  int16_t retVal = (int16_t)returnCancel;
   NSOpenPanel *thePanel = [NSOpenPanel openPanel];
 
   SetShowHiddenFileState(thePanel);
@@ -315,11 +315,9 @@ nsFilePicker::GetLocalFiles(const nsString& inTitle, bool inAllowMultiple, nsCOM
     theDir = @"/Applications/";
   }
 
-  // On 10.6+, we let users change the filters. Unfortunately, some methods
-  // are not available on 10.5 and without using them it happens to be buggy.
   int result;
   nsCocoaUtils::PrepareForNativeAppModalDialog();
-  if (mFilters.Length() > 1 && nsCocoaFeatures::OnSnowLeopardOrLater()) {
+  if (mFilters.Length() > 1) {
     // [NSURL initWithString:] (below) throws an exception if URLString is nil.
     if (!theDir) {
       theDir = @"";
@@ -367,7 +365,7 @@ nsFilePicker::GetLocalFiles(const nsString& inTitle, bool inAllowMultiple, nsCOM
       continue;
     }
 
-    nsCOMPtr<nsILocalFile> localFile;
+    nsCOMPtr<nsIFile> localFile;
     NS_NewLocalFile(EmptyString(), true, getter_AddRefs(localFile));
     nsCOMPtr<nsILocalFileMac> macLocalFile = do_QueryInterface(localFile);
     if (macLocalFile && NS_SUCCEEDED(macLocalFile->InitWithCFURL((CFURLRef)url))) {
@@ -384,13 +382,13 @@ nsFilePicker::GetLocalFiles(const nsString& inTitle, bool inAllowMultiple, nsCOM
 }
 
 // Use OpenPanel to do a GetFolder. Returns |returnOK| if the user presses OK in the dialog.
-PRInt16
-nsFilePicker::GetLocalFolder(const nsString& inTitle, nsILocalFile** outFile)
+int16_t
+nsFilePicker::GetLocalFolder(const nsString& inTitle, nsIFile** outFile)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
   NS_ASSERTION(outFile, "this protected member function expects a null initialized out pointer");
   
-  PRInt16 retVal = (PRInt16)returnCancel;
+  int16_t retVal = (int16_t)returnCancel;
   NSOpenPanel *thePanel = [NSOpenPanel openPanel];
 
   SetShowHiddenFileState(thePanel);
@@ -419,7 +417,7 @@ nsFilePicker::GetLocalFolder(const nsString& inTitle, nsILocalFile** outFile)
   // get the path for the folder (we allow just 1, so that's all we get)
   NSURL *theURL = [[thePanel URLs] objectAtIndex:0];
   if (theURL) {
-    nsCOMPtr<nsILocalFile> localFile;
+    nsCOMPtr<nsIFile> localFile;
     NS_NewLocalFile(EmptyString(), true, getter_AddRefs(localFile));
     nsCOMPtr<nsILocalFileMac> macLocalFile = do_QueryInterface(localFile);
     if (macLocalFile && NS_SUCCEEDED(macLocalFile->InitWithCFURL((CFURLRef)theURL))) {
@@ -435,13 +433,13 @@ nsFilePicker::GetLocalFolder(const nsString& inTitle, nsILocalFile** outFile)
 }
 
 // Returns |returnOK| if the user presses OK in the dialog.
-PRInt16
-nsFilePicker::PutLocalFile(const nsString& inTitle, const nsString& inDefaultName, nsILocalFile** outFile)
+int16_t
+nsFilePicker::PutLocalFile(const nsString& inTitle, const nsString& inDefaultName, nsIFile** outFile)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
   NS_ASSERTION(outFile, "this protected member function expects a null initialized out pointer");
 
-  PRInt16 retVal = returnCancel;
+  int16_t retVal = returnCancel;
   NSSavePanel *thePanel = [NSSavePanel savePanel];
 
   SetShowHiddenFileState(thePanel);
@@ -473,7 +471,7 @@ nsFilePicker::PutLocalFile(const nsString& inTitle, const nsString& inDefaultNam
 
   NSURL* fileURL = [thePanel URL];
   if (fileURL) { 
-    nsCOMPtr<nsILocalFile> localFile;
+    nsCOMPtr<nsIFile> localFile;
     NS_NewLocalFile(EmptyString(), true, getter_AddRefs(localFile));
     nsCOMPtr<nsILocalFileMac> macLocalFile = do_QueryInterface(localFile);
     if (macLocalFile && NS_SUCCEEDED(macLocalFile->InitWithCFURL((CFURLRef)fileURL))) {
@@ -502,7 +500,7 @@ nsFilePicker::GetFilterList()
     return nil;
   }
 
-  if (mFilters.Length() <= (PRUint32)mSelectedTypeIndex) {
+  if (mFilters.Length() <= (uint32_t)mSelectedTypeIndex) {
     NS_WARNING("An out of range index has been selected. Using the first index instead.");
     mSelectedTypeIndex = 0;
   }
@@ -521,8 +519,7 @@ nsFilePicker::GetFilterList()
   NSMutableString* filterString = [[[NSMutableString alloc] initWithString:
                                     [NSString stringWithCharacters:filterWide.get()
 				              length:filterWide.Length()]] autorelease];
-  NSCharacterSet *set = [NSCharacterSet characterSetWithCharactersInString:
-                          [NSString stringWithString:@". *"]];
+  NSCharacterSet *set = [NSCharacterSet characterSetWithCharactersInString:@". *"];
   NSRange range = [filterString rangeOfCharacterFromSet:set];
   while (range.length) {
     [filterString replaceCharactersInRange:range withString:@""];
@@ -547,7 +544,7 @@ nsFilePicker::SetDialogTitle(const nsString& inTitle, id aPanel)
   NS_OBJC_END_TRY_ABORT_BLOCK;
 } 
 
-// Converts path from an nsILocalFile into a NSString path
+// Converts path from an nsIFile into a NSString path
 // If it fails, returns an empty string.
 NSString *
 nsFilePicker::PanelDefaultDirectory()
@@ -565,10 +562,10 @@ nsFilePicker::PanelDefaultDirectory()
   NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
 }
 
-NS_IMETHODIMP nsFilePicker::GetFile(nsILocalFile **aFile)
+NS_IMETHODIMP nsFilePicker::GetFile(nsIFile **aFile)
 {
   NS_ENSURE_ARG_POINTER(aFile);
-  *aFile = nsnull;
+  *aFile = nullptr;
   
   // just return the first file
   if (mFiles.Count() > 0) {
@@ -582,7 +579,7 @@ NS_IMETHODIMP nsFilePicker::GetFile(nsILocalFile **aFile)
 NS_IMETHODIMP nsFilePicker::GetFileURL(nsIURI **aFileURL)
 {
   NS_ENSURE_ARG_POINTER(aFileURL);
-  *aFileURL = nsnull;
+  *aFileURL = nullptr;
 
   if (mFiles.Count() == 0)
     return NS_OK;
@@ -634,14 +631,14 @@ nsFilePicker::AppendFilter(const nsAString& aTitle, const nsAString& aFilter)
 }
 
 // Get the filter index - do we still need this?
-NS_IMETHODIMP nsFilePicker::GetFilterIndex(PRInt32 *aFilterIndex)
+NS_IMETHODIMP nsFilePicker::GetFilterIndex(int32_t *aFilterIndex)
 {
   *aFilterIndex = mSelectedTypeIndex;
   return NS_OK;
 }
 
 // Set the filter index - do we still need this?
-NS_IMETHODIMP nsFilePicker::SetFilterIndex(PRInt32 aFilterIndex)
+NS_IMETHODIMP nsFilePicker::SetFilterIndex(int32_t aFilterIndex)
 {
   mSelectedTypeIndex = aFilterIndex;
   return NS_OK;

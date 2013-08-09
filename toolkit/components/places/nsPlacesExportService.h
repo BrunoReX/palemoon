@@ -8,7 +8,7 @@
 #include "nsIPlacesImportExportService.h"
 
 #include "nsCOMPtr.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIOutputStream.h"
 #include "nsIFaviconService.h"
 #include "nsIAnnotationService.h"
@@ -52,7 +52,7 @@ class nsPlacesExportService : public nsIPlacesImportExportService
     nsresult WriteLivemark(nsINavHistoryResultNode* aFolder, const nsACString& aIndent, nsIOutputStream* aOutput);
     nsresult WriteContainerContents(nsINavHistoryResultNode* aFolder, const nsACString& aIndent, nsIOutputStream* aOutput);
     nsresult WriteSeparator(nsINavHistoryResultNode* aItem, const nsACString& aIndent, nsIOutputStream* aOutput);
-    nsresult WriteDescription(PRInt64 aId, PRInt32 aType, nsIOutputStream* aOutput);
+    nsresult WriteDescription(int64_t aId, int32_t aType, nsIOutputStream* aOutput);
 
     inline nsresult EnsureServiceState() {
       NS_ENSURE_STATE(mHistoryService);

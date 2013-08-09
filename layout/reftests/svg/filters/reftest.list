@@ -2,6 +2,8 @@
 # subregion. The fe*-2 tests test with no clipping (which stresses
 # the automatic optimal surface-size computation a bit more).
 
+== dynamic-filtered-foreignObject-01.svg pass.svg
+
 == feBlend-1.svg feBlend-1-ref.svg
 == feBlend-2.svg feBlend-2-ref.svg
 
@@ -70,6 +72,7 @@ fails == filter-marked-line-01.svg pass.svg # bug 477704
 
 == feComponentTransfer-03.svg pass.svg
 == feComposite-arguments-01.svg pass.svg
+== feComposite-paint-01.svg feComposite-paint-01-ref.svg
 == feConvolveMatrix-bias-01.svg feConvolveMatrix-bias-01-ref.svg
 == feConvolveMatrix-order-01.svg feConvolveMatrix-order-01-ref.svg
 
@@ -77,7 +80,7 @@ fails == filter-marked-line-01.svg pass.svg # bug 477704
 == feDisplacementMap-colour-01.svg feDisplacementMap-colour-01-ref.svg
 == feDisplacementMap-scale-01.svg pass.svg
 
-== feDistantLight-filterRes-01.svg feDistantLight-filterRes-01-ref.svg
+fuzzy-if(cocoaWidget&&layersGPUAccelerated,2,93) == feDistantLight-filterRes-01.svg feDistantLight-filterRes-01-ref.svg
 
 == feMorphology-radius-negative-01.svg pass.svg
 == feMorphology-radius-negative-02.svg pass.svg

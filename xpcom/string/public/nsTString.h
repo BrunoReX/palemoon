@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// IWYU pragma: private, include "nsString.h"
 
   /**
    * This is the canonical null-terminated string class.  All subclasses
@@ -109,12 +110,12 @@ class nsTString_CharT : public nsTSubstring_CharT
          *  @return  offset in string, or kNotFound
          */
 
-      PRInt32 Find( const nsCString& aString, bool aIgnoreCase=false, PRInt32 aOffset=0, PRInt32 aCount=-1 ) const;
-      PRInt32 Find( const char* aString, bool aIgnoreCase=false, PRInt32 aOffset=0, PRInt32 aCount=-1 ) const;
+      int32_t Find( const nsCString& aString, bool aIgnoreCase=false, int32_t aOffset=0, int32_t aCount=-1 ) const;
+      int32_t Find( const char* aString, bool aIgnoreCase=false, int32_t aOffset=0, int32_t aCount=-1 ) const;
 
 #ifdef CharT_is_PRUnichar
-      PRInt32 Find( const nsAFlatString& aString, PRInt32 aOffset=0, PRInt32 aCount=-1 ) const;
-      PRInt32 Find( const PRUnichar* aString, PRInt32 aOffset=0, PRInt32 aCount=-1 ) const;
+      int32_t Find( const nsAFlatString& aString, int32_t aOffset=0, int32_t aCount=-1 ) const;
+      int32_t Find( const PRUnichar* aString, int32_t aOffset=0, int32_t aCount=-1 ) const;
 #endif
 
         
@@ -130,12 +131,12 @@ class nsTString_CharT : public nsTSubstring_CharT
          * @return  offset in string, or kNotFound
          */
 
-      PRInt32 RFind( const nsCString& aString, bool aIgnoreCase=false, PRInt32 aOffset=-1, PRInt32 aCount=-1 ) const;
-      PRInt32 RFind( const char* aCString, bool aIgnoreCase=false, PRInt32 aOffset=-1, PRInt32 aCount=-1 ) const;
+      int32_t RFind( const nsCString& aString, bool aIgnoreCase=false, int32_t aOffset=-1, int32_t aCount=-1 ) const;
+      int32_t RFind( const char* aCString, bool aIgnoreCase=false, int32_t aOffset=-1, int32_t aCount=-1 ) const;
 
 #ifdef CharT_is_PRUnichar
-      PRInt32 RFind( const nsAFlatString& aString, PRInt32 aOffset=-1, PRInt32 aCount=-1 ) const;
-      PRInt32 RFind( const PRUnichar* aString, PRInt32 aOffset=-1, PRInt32 aCount=-1 ) const;
+      int32_t RFind( const nsAFlatString& aString, int32_t aOffset=-1, int32_t aCount=-1 ) const;
+      int32_t RFind( const PRUnichar* aString, int32_t aOffset=-1, int32_t aCount=-1 ) const;
 #endif
 
 
@@ -149,8 +150,8 @@ class nsTString_CharT : public nsTSubstring_CharT
          *  @return  offset in string, or kNotFound
          */
 
-      // PRInt32 FindChar( PRUnichar aChar, PRInt32 aOffset=0, PRInt32 aCount=-1 ) const;
-      PRInt32 RFindChar( PRUnichar aChar, PRInt32 aOffset=-1, PRInt32 aCount=-1 ) const;
+      // int32_t FindChar( PRUnichar aChar, int32_t aOffset=0, int32_t aCount=-1 ) const;
+      int32_t RFindChar( PRUnichar aChar, int32_t aOffset=-1, int32_t aCount=-1 ) const;
 
 
         /**
@@ -163,14 +164,14 @@ class nsTString_CharT : public nsTSubstring_CharT
          * @return offset in string, or kNotFound
          */
 
-      PRInt32 FindCharInSet( const char* aString, PRInt32 aOffset=0 ) const;
-      PRInt32 FindCharInSet( const self_type& aString, PRInt32 aOffset=0 ) const
+      int32_t FindCharInSet( const char* aString, int32_t aOffset=0 ) const;
+      int32_t FindCharInSet( const self_type& aString, int32_t aOffset=0 ) const
         {
           return FindCharInSet(aString.get(), aOffset);
         }
 
 #ifdef CharT_is_PRUnichar
-      PRInt32 FindCharInSet( const PRUnichar* aString, PRInt32 aOffset=0 ) const;
+      int32_t FindCharInSet( const PRUnichar* aString, int32_t aOffset=0 ) const;
 #endif
 
 
@@ -184,8 +185,8 @@ class nsTString_CharT : public nsTSubstring_CharT
          * @return offset in string, or kNotFound
          */
 
-      PRInt32 RFindCharInSet( const char_type* aString, PRInt32 aOffset=-1 ) const;
-      PRInt32 RFindCharInSet( const self_type& aString, PRInt32 aOffset=-1 ) const
+      int32_t RFindCharInSet( const char_type* aString, int32_t aOffset=-1 ) const;
+      int32_t RFindCharInSet( const self_type& aString, int32_t aOffset=-1 ) const
         {
           return RFindCharInSet(aString.get(), aOffset);
         }
@@ -201,7 +202,7 @@ class nsTString_CharT : public nsTSubstring_CharT
          */
 
 #ifdef CharT_is_char
-      PRInt32 Compare( const char* aString, bool aIgnoreCase=false, PRInt32 aCount=-1 ) const;
+      int32_t Compare( const char* aString, bool aIgnoreCase=false, int32_t aCount=-1 ) const;
 #endif
 
 
@@ -214,11 +215,11 @@ class nsTString_CharT : public nsTSubstring_CharT
          * @return  boolean
          */
 #ifdef CharT_is_char
-      bool EqualsIgnoreCase( const char* aString, PRInt32 aCount=-1 ) const {
+      bool EqualsIgnoreCase( const char* aString, int32_t aCount=-1 ) const {
         return Compare(aString, true, aCount) == 0;
       }
 #else
-      bool EqualsIgnoreCase( const char* aString, PRInt32 aCount=-1 ) const;
+      bool EqualsIgnoreCase( const char* aString, int32_t aCount=-1 ) const;
 
 
 #endif // !CharT_is_PRUnichar
@@ -229,7 +230,7 @@ class nsTString_CharT : public nsTSubstring_CharT
          * @param   aErrorCode will contain error if one occurs
          * @return  double-precision float rep of string value
          */
-      double ToDouble( PRInt32* aErrorCode ) const;
+      double ToDouble( nsresult* aErrorCode ) const;
 
         /**
          * Perform string to single-precision float conversion.
@@ -237,7 +238,7 @@ class nsTString_CharT : public nsTSubstring_CharT
          * @param   aErrorCode will contain error if one occurs
          * @return  single-precision float rep of string value
          */
-      float ToFloat( PRInt32* aErrorCode ) const {
+      float ToFloat( nsresult* aErrorCode ) const {
         return (float)ToDouble(aErrorCode);
       }
 
@@ -248,10 +249,16 @@ class nsTString_CharT : public nsTSubstring_CharT
          * @param   aRadix tells us which radix to assume; kAutoDetect tells us to determine the radix for you.
          * @return  int rep of string value, and possible (out) error code
          */
-      PRInt32 ToInteger( PRInt32* aErrorCode, PRUint32 aRadix=kRadix10 ) const;
-      PRInt32 ToInteger( nsresult* aErrorCode, PRUint32 aRadix=kRadix10 ) const {
-        return ToInteger(reinterpret_cast<PRInt32*>(aErrorCode), aRadix);
-      }
+      int32_t ToInteger( nsresult* aErrorCode, uint32_t aRadix=kRadix10 ) const;
+
+        /**
+         * Perform string to 64-bit int conversion.
+         * @param   aErrorCode will contain error if one occurs
+         * @param   aRadix tells us which radix to assume; kAutoDetect tells us to determine the radix for you.
+         * @return  64-bit int rep of string value, and possible (out) error code
+         */
+      int64_t ToInteger64( nsresult* aErrorCode, uint32_t aRadix=kRadix10 ) const;
+
 
         /**
          * |Left|, |Mid|, and |Right| are annoying signatures that seem better almost
@@ -270,7 +277,7 @@ class nsTString_CharT : public nsTSubstring_CharT
          * aWritable = Substring(aReadable, 0, 17);
          */
 
-      size_type Mid( self_type& aResult, PRUint32 aStartPos, PRUint32 aCount ) const;
+      size_type Mid( self_type& aResult, uint32_t aStartPos, uint32_t aCount ) const;
 
       size_type Left( self_type& aResult, size_type aCount ) const
         {
@@ -292,7 +299,7 @@ class nsTString_CharT : public nsTSubstring_CharT
          * @return TRUE if successful
          */
 
-      bool SetCharAt( PRUnichar aChar, PRUint32 aIndex );
+      bool SetCharAt( PRUnichar aChar, uint32_t aIndex );
 
 
         /**
@@ -348,10 +355,7 @@ class nsTString_CharT : public nsTSubstring_CharT
          */
 
       void AssignWithConversion( const nsTAString_IncompatibleCharT& aString );
-      void AssignWithConversion( const incompatible_char_type* aData, PRInt32 aLength=-1 );
-
-      void AppendWithConversion( const nsTAString_IncompatibleCharT& aString );
-      void AppendWithConversion( const incompatible_char_type* aData, PRInt32 aLength=-1 );
+      void AssignWithConversion( const incompatible_char_type* aData, int32_t aLength=-1 );
 
 #endif // !MOZ_STRING_WITH_OBSOLETE_API
 
@@ -359,11 +363,11 @@ class nsTString_CharT : public nsTSubstring_CharT
     protected:
 
       explicit
-      nsTString_CharT( PRUint32 flags )
+      nsTString_CharT( uint32_t flags )
         : substring_type(flags) {}
 
         // allow subclasses to initialize fields directly
-      nsTString_CharT( char_type* data, size_type length, PRUint32 flags )
+      nsTString_CharT( char_type* data, size_type length, uint32_t flags )
         : substring_type(data, length, flags) {}
   };
 
@@ -388,7 +392,7 @@ class nsTFixedString_CharT : public nsTString_CharT
          */
 
       nsTFixedString_CharT( char_type* data, size_type storageSize )
-        : string_type(data, PRUint32(char_traits::length(data)), F_TERMINATED | F_FIXED | F_CLASS_FIXED)
+        : string_type(data, uint32_t(char_traits::length(data)), F_TERMINATED | F_FIXED | F_CLASS_FIXED)
         , mFixedCapacity(storageSize - 1)
         , mFixedBuf(data)
         {}
@@ -427,7 +431,7 @@ class nsTFixedString_CharT : public nsTString_CharT
    *
    * NAMES:
    *   nsAutoString for wide characters
-   *   nsCAutoString for narrow characters
+   *   nsAutoCString for narrow characters
    */
 class NS_STACK_CLASS nsTAutoString_CharT : public nsTFixedString_CharT
   {
@@ -551,10 +555,10 @@ class nsTXPIDLString_CharT : public nsTString_CharT
           Assign(str);
         }
 
-        // return nsnull if we are voided
+        // return nullptr if we are voided
       const char_type* get() const
         {
-          return (mFlags & F_VOIDED) ? nsnull : mData;
+          return (mFlags & F_VOIDED) ? nullptr : mData;
         }
 
         // this case operator is the reason why this class cannot just be a
@@ -565,7 +569,7 @@ class nsTXPIDLString_CharT : public nsTString_CharT
         }
 
         // need this to diambiguous operator[int]
-      char_type operator[]( PRInt32 i ) const
+      char_type operator[]( int32_t i ) const
         {
           return CharAt(index_type(i));
         }
@@ -597,7 +601,7 @@ class NS_STACK_CLASS nsTGetterCopies_CharT
       typedef CharT char_type;
 
       nsTGetterCopies_CharT(nsTSubstring_CharT& str)
-        : mString(str), mData(nsnull) {}
+        : mString(str), mData(nullptr) {}
 
       ~nsTGetterCopies_CharT()
         {

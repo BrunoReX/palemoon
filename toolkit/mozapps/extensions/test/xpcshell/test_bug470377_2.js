@@ -5,21 +5,6 @@
 
 // Disables security checking our updates which haven't been signed
 Services.prefs.setBoolPref("extensions.checkUpdateSecurity", false);
-// Disables compatibility checking
-var channel = "default";
-try {
-  channel = Services.prefs.getCharPref("app.update.channel");
-}
-catch (e) { }
-
-if (channel != "aurora" &&
-    channel != "beta" &&
-    channel != "release") {
-  Services.prefs.setBoolPref("extensions.checkCompatibility.nightly", false);
-}
-else {
-  Services.prefs.setBoolPref("extensions.checkCompatibility.2", false);
-}
 
 var ADDONS = [
   "test_bug470377_1",
@@ -29,18 +14,19 @@ var ADDONS = [
   "test_bug470377_5",
 ];
 
-do_load_httpd_js();
+Components.utils.import("resource://testing-common/httpd.js");
 var server;
 
 function run_test() {
   do_test_pending();
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "2", "2");
 
-  server = new nsHttpServer();
+  server = new HttpServer();
   server.registerDirectory("/", do_get_file("data/test_bug470377"));
   server.start(4444);
 
   startupManager();
+  AddonManager.checkCompatibility = false;
 
   installAllFiles([do_get_addon(a) for each (a in ADDONS)], function() {
     restartManager();

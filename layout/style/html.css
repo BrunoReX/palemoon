@@ -59,7 +59,6 @@ html, html[dir],
 legend, legend[dir],
 li, li[dir],
 listing, listing[dir],
-map, map[dir],
 marquee, marquee[dir],
 menu, menu[dir],
 nav, nav[dir],
@@ -89,7 +88,7 @@ bdo, bdo[dir] {
   unicode-bidi: bidi-override;
 }
 bdo[dir="auto"] {
-  unicode-bidi: bidi-override -moz-isolate;
+  unicode-bidi: -moz-isolate-override;
 }
 textarea[dir="auto"], pre[dir="auto"] { unicode-bidi: -moz-plaintext; }
 
@@ -105,7 +104,6 @@ form,
 header,
 hgroup,
 html,
-map,
 nav,
 section {
   display: block;
@@ -393,7 +391,6 @@ table[rules][rules="groups"] > tbody {
 caption {
   display: table-caption;
   text-align: center;
-  -moz-box-sizing: border-box;
 }
 
 table[align="center"] > caption {

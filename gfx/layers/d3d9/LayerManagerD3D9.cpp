@@ -22,7 +22,7 @@
 namespace mozilla {
 namespace layers {
 
-DeviceManagerD3D9 *LayerManagerD3D9::mDefaultDeviceManager = nsnull;
+DeviceManagerD3D9 *LayerManagerD3D9::mDefaultDeviceManager = nullptr;
 
 LayerManagerD3D9::LayerManagerD3D9(nsIWidget *aWidget)
   : mWidget(aWidget)
@@ -48,7 +48,7 @@ LayerManagerD3D9::Initialize(bool force)
 
   nsCOMPtr<nsIGfxInfo> gfxInfo = do_GetService("@mozilla.org/gfx/info;1");
   if (gfxInfo) {
-    PRInt32 status;
+    int32_t status;
     if (NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_DIRECT3D_9_LAYERS, &status))) {
       if (status != nsIGfxInfo::FEATURE_NO_INFO && !forceAccelerate)
       {
@@ -62,7 +62,7 @@ LayerManagerD3D9::Initialize(bool force)
     mDeviceManager = new DeviceManagerD3D9;
 
     if (!mDeviceManager->Init()) {
-      mDeviceManager = nsnull;
+      mDeviceManager = nullptr;
       return false;
     }
 
@@ -98,8 +98,8 @@ LayerManagerD3D9::Destroy()
     /* Important to release this first since it also holds a reference to the
      * device manager
      */
-    mSwapChain = nsnull;
-    mDeviceManager = nsnull;
+    mSwapChain = nullptr;
+    mDeviceManager = nullptr;
   }
   LayerManager::Destroy();
 }
@@ -107,11 +107,13 @@ LayerManagerD3D9::Destroy()
 void
 LayerManagerD3D9::BeginTransaction()
 {
+  mInTransaction = true;
 }
 
 void
 LayerManagerD3D9::BeginTransactionWithTarget(gfxContext *aTarget)
 {
+  mInTransaction = true;
   mTarget = aTarget;
 }
 
@@ -121,8 +123,10 @@ LayerManagerD3D9::EndConstruction()
 }
 
 bool
-LayerManagerD3D9::EndEmptyTransaction()
+LayerManagerD3D9::EndEmptyTransaction(EndTransactionFlags aFlags)
 {
+  mInTransaction = false;
+
   // If the device reset count from our last EndTransaction doesn't match
   // the current device reset count, the device must have been reset one or
   // more times since our last transaction. In that case, an empty transaction
@@ -130,7 +134,7 @@ LayerManagerD3D9::EndEmptyTransaction()
   if (!mRoot || mDeviceResetCount != mDeviceManager->GetDeviceResetCount())
     return false;
 
-  EndTransaction(nsnull, nsnull);
+  EndTransaction(nullptr, nullptr, aFlags);
   return true;
 }
 
@@ -139,16 +143,25 @@ LayerManagerD3D9::EndTransaction(DrawThebesLayerCallback aCallback,
                                  void* aCallbackData,
                                  EndTransactionFlags aFlags)
 {
+  mInTransaction = false;
+
   mDeviceResetCount = mDeviceManager->GetDeviceResetCount();
 
   if (mRoot && !(aFlags & END_NO_IMMEDIATE_REDRAW)) {
     mCurrentCallbackInfo.Callback = aCallback;
     mCurrentCallbackInfo.CallbackData = aCallbackData;
 
+    if (aFlags & END_NO_COMPOSITE) {
+      // Apply pending tree updates before recomputing effective
+      // properties.
+      mRoot->ApplyPendingUpdatesToSubtree();
+    }
+
     // The results of our drawing always go directly into a pixel buffer,
     // so we don't need to pass any global transform here.
     mRoot->ComputeEffectiveTransforms(gfx3DMatrix());
 
+    SetCompositingDisabled(aFlags & END_NO_COMPOSITE);
     Render();
     /* Clean this out for sanity */
     mCurrentCallbackInfo.Callback = NULL;
@@ -212,7 +225,7 @@ LayerManagerD3D9::CreateShadowThebesLayer()
 {
   if (LayerManagerD3D9::mDestroyed) {
     NS_WARNING("Call on destroyed layer manager");
-    return nsnull;
+    return nullptr;
   }
   return nsRefPtr<ShadowThebesLayerD3D9>(new ShadowThebesLayerD3D9(this)).forget();
 }
@@ -222,7 +235,7 @@ LayerManagerD3D9::CreateShadowContainerLayer()
 {
   if (LayerManagerD3D9::mDestroyed) {
     NS_WARNING("Call on destroyed layer manager");
-    return nsnull;
+    return nullptr;
   }
   return nsRefPtr<ShadowContainerLayerD3D9>(new ShadowContainerLayerD3D9(this)).forget();
 }
@@ -232,7 +245,7 @@ LayerManagerD3D9::CreateShadowImageLayer()
 {
   if (LayerManagerD3D9::mDestroyed) {
     NS_WARNING("Call on destroyed layer manager");
-    return nsnull;
+    return nullptr;
   }
   return nsRefPtr<ShadowImageLayerD3D9>(new ShadowImageLayerD3D9(this)).forget();
 }
@@ -242,7 +255,7 @@ LayerManagerD3D9::CreateShadowColorLayer()
 {
   if (LayerManagerD3D9::mDestroyed) {
     NS_WARNING("Call on destroyed layer manager");
-    return nsnull;
+    return nullptr;
   }
   return nsRefPtr<ShadowColorLayerD3D9>(new ShadowColorLayerD3D9(this)).forget();
 }
@@ -252,7 +265,7 @@ LayerManagerD3D9::CreateShadowCanvasLayer()
 {
   if (LayerManagerD3D9::mDestroyed) {
     NS_WARNING("Call on destroyed layer manager");
-    return nsnull;
+    return nullptr;
   }
   return nsRefPtr<ShadowCanvasLayerD3D9>(new ShadowCanvasLayerD3D9(this)).forget();
 }
@@ -269,7 +282,7 @@ LayerManagerD3D9::ReportFailure(const nsACString &aMsg, HRESULT aCode)
   nsCString msg;
   msg.Append(aMsg);
   msg.AppendLiteral(" Error code: ");
-  msg.AppendInt(PRUint32(aCode));
+  msg.AppendInt(uint32_t(aCode));
   NS_WARNING(msg.BeginReading());
 
   gfx::LogFailure(msg);
@@ -284,6 +297,12 @@ LayerManagerD3D9::Render()
   deviceManager()->SetupRenderState();
 
   SetupPipeline();
+
+  if (CompositingDisabled()) {
+    static_cast<LayerD3D9*>(mRoot->ImplData())->RenderLayer();
+    return;
+  }
+
   nsIntRect rect;
   mWidget->GetClientBounds(rect);
 
@@ -312,7 +331,7 @@ LayerManagerD3D9::Render()
   if (!mTarget) {
     const nsIntRect *r;
     for (nsIntRegionRectIterator iter(mClippingRegion);
-         (r = iter.Next()) != nsnull;) {
+         (r = iter.Next()) != nullptr;) {
       mSwapChain->Present(*r);
     }
     LayerManager::PostPresent();

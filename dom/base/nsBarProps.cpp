@@ -15,6 +15,7 @@
 #include "nsIWebBrowserChrome.h"
 #include "nsIDOMWindow.h"
 #include "nsDOMClassInfoID.h"
+#include "nsContentUtils.h"
 
 //
 //  Basic (virtual) BarProp class implementation
@@ -45,14 +46,14 @@ NS_IMPL_ADDREF(nsBarProp)
 NS_IMPL_RELEASE(nsBarProp)
 
 NS_IMETHODIMP
-nsBarProp::GetVisibleByFlag(bool *aVisible, PRUint32 aChromeFlag)
+nsBarProp::GetVisibleByFlag(bool *aVisible, uint32_t aChromeFlag)
 {
   *aVisible = false;
 
   nsCOMPtr<nsIWebBrowserChrome> browserChrome = GetBrowserChrome();
   NS_ENSURE_TRUE(browserChrome, NS_OK);
 
-  PRUint32 chromeFlags;
+  uint32_t chromeFlags;
 
   NS_ENSURE_SUCCESS(browserChrome->GetChromeFlags(&chromeFlags),
                     NS_ERROR_FAILURE);
@@ -63,21 +64,15 @@ nsBarProp::GetVisibleByFlag(bool *aVisible, PRUint32 aChromeFlag)
 }
 
 NS_IMETHODIMP
-nsBarProp::SetVisibleByFlag(bool aVisible, PRUint32 aChromeFlag)
+nsBarProp::SetVisibleByFlag(bool aVisible, uint32_t aChromeFlag)
 {
   nsCOMPtr<nsIWebBrowserChrome> browserChrome = GetBrowserChrome();
   NS_ENSURE_TRUE(browserChrome, NS_OK);
 
-  bool enabled = false;
-
-  nsCOMPtr<nsIScriptSecurityManager>
-           securityManager(do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID));
-  if (securityManager)
-    securityManager->IsCapabilityEnabled("UniversalXPConnect", &enabled);
-  if (!enabled)
+  if (!nsContentUtils::IsCallerChrome())
     return NS_OK;
 
-  PRUint32 chromeFlags;
+  uint32_t chromeFlags;
 
   NS_ENSURE_SUCCESS(browserChrome->GetChromeFlags(&chromeFlags),
                     NS_ERROR_FAILURE);
@@ -97,9 +92,9 @@ nsBarProp::GetBrowserChrome()
   // Check that the window is still alive.
   nsCOMPtr<nsIDOMWindow> domwin(do_QueryReferent(mDOMWindowWeakref));
   if (!domwin)
-    return nsnull;
+    return nullptr;
 
-  nsIWebBrowserChrome *browserChrome = nsnull;
+  nsIWebBrowserChrome *browserChrome = nullptr;
   mDOMWindow->GetWebBrowserChrome(&browserChrome);
   return browserChrome;
 }
@@ -267,7 +262,7 @@ nsScrollbarsProp::GetVisible(bool *aVisible)
       do_QueryInterface(mDOMWindow->GetDocShell());
 
     if (scroller) {
-      PRInt32 prefValue;
+      int32_t prefValue;
       scroller->GetDefaultScrollbarPreferences(
                   nsIScrollable::ScrollOrientation_Y, &prefValue);
       if (prefValue == nsIScrollable::Scrollbar_Never) // try the other way
@@ -285,13 +280,7 @@ nsScrollbarsProp::GetVisible(bool *aVisible)
 NS_IMETHODIMP
 nsScrollbarsProp::SetVisible(bool aVisible)
 {
-  bool     enabled = false;
-
-  nsCOMPtr<nsIScriptSecurityManager>
-           securityManager(do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID));
-  if (securityManager)
-    securityManager->IsCapabilityEnabled("UniversalXPConnect", &enabled);
-  if (!enabled)
+  if (!nsContentUtils::IsCallerChrome())
     return NS_OK;
 
   /* Scrollbars, unlike the other barprops, implement visibility directly
@@ -307,7 +296,7 @@ nsScrollbarsProp::SetVisible(bool aVisible)
       do_QueryInterface(mDOMWindow->GetDocShell());
 
     if (scroller) {
-      PRInt32 prefValue;
+      int32_t prefValue;
 
       if (aVisible) {
         prefValue = nsIScrollable::Scrollbar_Auto;

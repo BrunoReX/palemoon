@@ -11,9 +11,11 @@
 
 #include "WinMouseScrollHandler.h"
 #include "nsWindow.h"
+#include "KeyboardLayout.h"
 #include "WinUtils.h"
 #include "nsGkAtoms.h"
 #include "nsIDOMWindowUtils.h"
+#include "nsIDOMWheelEvent.h"
 
 #include "mozilla/Preferences.h"
 
@@ -23,7 +25,7 @@ namespace mozilla {
 namespace widget {
 
 #ifdef PR_LOGGING
-PRLogModuleInfo* gMouseScrollLog = nsnull;
+PRLogModuleInfo* gMouseScrollLog = nullptr;
 
 static const char* GetBoolName(bool aBool)
 {
@@ -59,7 +61,7 @@ static void LogKeyStateImpl()
 #define LOG_KEYSTATE()
 #endif
 
-MouseScrollHandler* MouseScrollHandler::sInstance = nsnull;
+MouseScrollHandler* MouseScrollHandler::sInstance = nullptr;
 
 bool MouseScrollHandler::Device::sFakeScrollableWindowNeeded = false;
 
@@ -111,7 +113,7 @@ void
 MouseScrollHandler::Shutdown()
 {
   delete sInstance;
-  sInstance = nsnull;
+  sInstance = nullptr;
 }
 
 /* static */
@@ -126,7 +128,7 @@ MouseScrollHandler::GetInstance()
 
 MouseScrollHandler::MouseScrollHandler() :
   mIsWaitingInternalMessage(false),
-  mSynthesizingEvent(nsnull)
+  mSynthesizingEvent(nullptr)
 {
   PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
     ("MouseScroll: Creating an instance, this=%p, sInstance=%p",
@@ -224,10 +226,10 @@ MouseScrollHandler::ProcessMessage(nsWindow* aWindow, UINT msg,
 nsresult
 MouseScrollHandler::SynthesizeNativeMouseScrollEvent(nsWindow* aWindow,
                                                      const nsIntPoint& aPoint,
-                                                     PRUint32 aNativeMessage,
-                                                     PRInt32 aDelta,
-                                                     PRUint32 aModifierFlags,
-                                                     PRUint32 aAdditionalFlags)
+                                                     uint32_t aNativeMessage,
+                                                     int32_t aDelta,
+                                                     uint32_t aModifierFlags,
+                                                     uint32_t aAdditionalFlags)
 {
   bool useFocusedWindow =
     !(aAdditionalFlags & nsIDOMWindowUtils::MOUSESCROLL_PREFER_WIDGET_AT_POINT);
@@ -259,7 +261,7 @@ MouseScrollHandler::SynthesizeNativeMouseScrollEvent(nsWindow* aWindow,
     case WM_HSCROLL:
       lParam = (aAdditionalFlags &
                   nsIDOMWindowUtils::MOUSESCROLL_WIN_SCROLL_LPARAM_NOT_NULL) ?
-        reinterpret_cast<LPARAM>(target) : NULL;
+        reinterpret_cast<LPARAM>(target) : 0;
       wParam = aDelta;
       break;
     default:
@@ -275,9 +277,9 @@ MouseScrollHandler::SynthesizeNativeMouseScrollEvent(nsWindow* aWindow,
   nsAutoTArray<KeyPair,10> keySequence;
   nsWindow::SetupKeyModifiersSequence(&keySequence, aModifierFlags);
 
-  for (PRUint32 i = 0; i < keySequence.Length(); ++i) {
-    PRUint8 key = keySequence[i].mGeneral;
-    PRUint8 keySpecific = keySequence[i].mSpecific;
+  for (uint32_t i = 0; i < keySequence.Length(); ++i) {
+    uint8_t key = keySequence[i].mGeneral;
+    uint8_t keySpecific = keySequence[i].mSpecific;
     kbdState[key] = 0x81; // key is down and toggled on if appropriate
     if (keySpecific) {
       kbdState[keySpecific] = 0x81;
@@ -308,7 +310,7 @@ MouseScrollHandler::InitEvent(nsWindow* aWindow,
                               nsGUIEvent& aEvent,
                               nsIntPoint* aPoint)
 {
-  NS_ENSURE_TRUE(aWindow, );
+  NS_ENSURE_TRUE_VOID(aWindow);
   nsIntPoint point;
   if (aPoint) {
     point = *aPoint;
@@ -325,16 +327,16 @@ MouseScrollHandler::InitEvent(nsWindow* aWindow,
 }
 
 /* static */
-nsModifierKeyState
+ModifierKeyState
 MouseScrollHandler::GetModifierKeyState(UINT aMessage)
 {
-  nsModifierKeyState result;
+  ModifierKeyState result;
   // Assume the Control key is down if the Elantech touchpad has sent the
   // mis-ordered WM_KEYDOWN/WM_MOUSEWHEEL messages.  (See the comment in
   // MouseScrollHandler::Device::Elantech::HandleKeyMessage().)
   if ((aMessage == MOZ_WM_MOUSEVWHEEL || aMessage == WM_MOUSEWHEEL) &&
-      !result.mIsControlDown) {
-    result.mIsControlDown = Device::Elantech::IsZooming();
+      !result.IsControl() && Device::Elantech::IsZooming()) {
+    result.Set(MODIFIER_CONTROL);
   }
   return result;
 }
@@ -356,91 +358,6 @@ MouseScrollHandler::ComputeMessagePos(UINT aMessage,
     point.y = pts.y;
   }
   return point;
-}
-
-MouseScrollHandler::ScrollTargetInfo
-MouseScrollHandler::GetScrollTargetInfo(
-                      nsWindow* aWindow,
-                      const EventInfo& aEventInfo,
-                      const nsModifierKeyState& aModifierKeyState)
-{
-  ScrollTargetInfo result;
-  result.dispatchPixelScrollEvent = false;
-  result.reversePixelScrollDirection = false;
-  result.actualScrollAmount = aEventInfo.GetScrollAmount();
-  result.actualScrollAction = nsQueryContentEvent::SCROLL_ACTION_NONE;
-  result.pixelsPerUnit = 0;
-  if (!mUserPrefs.IsPixelScrollingEnabled()) {
-    PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
-      ("MouseScroll::GetPixelScrollInfo: Succeeded, aWindow=%p, "
-       "result: { dispatchPixelScrollEvent: %s, actualScrollAmount: %d }",
-       aWindow, GetBoolName(result.dispatchPixelScrollEvent),
-       result.actualScrollAmount));
-    return result;
-  }
-
-  nsMouseScrollEvent testEvent(true, NS_MOUSE_SCROLL, aWindow);
-  InitEvent(aWindow, testEvent);
-  aModifierKeyState.InitInputEvent(testEvent);
-
-  testEvent.scrollFlags = aEventInfo.GetScrollFlags();
-  testEvent.delta       = result.actualScrollAmount;
-  if ((aEventInfo.IsVertical() && aEventInfo.IsPositive()) ||
-      (!aEventInfo.IsVertical() && !aEventInfo.IsPositive())) {
-    testEvent.delta *= -1;
-  }
-
-  nsQueryContentEvent queryEvent(true, NS_QUERY_SCROLL_TARGET_INFO, aWindow);
-  InitEvent(aWindow, queryEvent);
-  queryEvent.InitForQueryScrollTargetInfo(&testEvent);
-  DispatchEvent(aWindow, queryEvent);
-
-  // If the necessary interger isn't larger than 0, we should assume that
-  // the event failed for us.
-  if (!queryEvent.mSucceeded) {
-    PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
-      ("MouseScroll::GetPixelScrollInfo: Failed to query the "
-       "scroll target information, aWindow=%p"
-       "result: { dispatchPixelScrollEvent: %s, actualScrollAmount: %d }",
-       aWindow, GetBoolName(result.dispatchPixelScrollEvent),
-       result.actualScrollAmount));
-    return result;
-  }
-
-  result.actualScrollAction = queryEvent.mReply.mComputedScrollAction;
-
-  if (result.actualScrollAction == nsQueryContentEvent::SCROLL_ACTION_PAGE) {
-    result.pixelsPerUnit =
-      aEventInfo.IsVertical() ? queryEvent.mReply.mPageHeight :
-                                queryEvent.mReply.mPageWidth;
-  } else {
-    result.pixelsPerUnit = queryEvent.mReply.mLineHeight;
-  }
-
-  result.actualScrollAmount = queryEvent.mReply.mComputedScrollAmount;
-
-  if (result.pixelsPerUnit > 0 && result.actualScrollAmount != 0 &&
-      result.actualScrollAction != nsQueryContentEvent::SCROLL_ACTION_NONE) {
-    result.dispatchPixelScrollEvent = true;
-    // If original delta's sign and computed delta's one are different,
-    // we need to reverse the pixel scroll direction at dispatching it.
-    result.reversePixelScrollDirection =
-      (testEvent.delta > 0 && result.actualScrollAmount < 0) ||
-      (testEvent.delta < 0 && result.actualScrollAmount > 0);
-    // scroll amount must be positive.
-    result.actualScrollAmount = NS_ABS(result.actualScrollAmount);
-  }
-
-  PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
-    ("MouseScroll::GetPixelScrollInfo: Succeeded, aWindow=%p, "
-     "result: { dispatchPixelScrollEvent: %s, reversePixelScrollDirection: %s, "
-     "actualScrollAmount: %d, actualScrollAction: 0x%01X, "
-     "pixelsPerUnit: %d }",
-     aWindow, GetBoolName(result.dispatchPixelScrollEvent),
-     GetBoolName(result.reversePixelScrollDirection), result.actualScrollAmount,
-     result.actualScrollAction, result.pixelsPerUnit));
-
-  return result;
 }
 
 void
@@ -672,7 +589,7 @@ MouseScrollHandler::HandleMouseWheelMessage(nsWindow* aWindow,
 
   EventInfo eventInfo(aWindow, WinUtils::GetNativeMessage(aMessage),
                       aWParam, aLParam);
-  if (!eventInfo.CanDispatchMouseScrollEvent()) {
+  if (!eventInfo.CanDispatchWheelEvent()) {
     PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
       ("MouseScroll::HandleMouseWheelMessage: Cannot dispatch the events"));
     mLastEventInfo.ResetTransaction();
@@ -688,29 +605,21 @@ MouseScrollHandler::HandleMouseWheelMessage(nsWindow* aWindow,
 
   mLastEventInfo.RecordEvent(eventInfo);
 
-  nsModifierKeyState modKeyState = GetModifierKeyState(aMessage);
-
-  // Before dispatching line scroll event, we should get the current scroll
-  // event target information for pixel scroll.
-  ScrollTargetInfo scrollTargetInfo =
-    GetScrollTargetInfo(aWindow, eventInfo, modKeyState);
+  ModifierKeyState modKeyState = GetModifierKeyState(aMessage);
 
   // Grab the widget, it might be destroyed by a DOM event handler.
   nsRefPtr<nsWindow> kungFuDethGrip(aWindow);
 
-  bool fromLines = false;
-  nsMouseScrollEvent scrollEvent(true, NS_MOUSE_SCROLL, aWindow);
-  if (mLastEventInfo.InitMouseScrollEvent(aWindow, scrollEvent,
-                                          scrollTargetInfo, modKeyState)) {
+  WheelEvent wheelEvent(true, NS_WHEEL_WHEEL, aWindow);
+  if (mLastEventInfo.InitWheelEvent(aWindow, wheelEvent, modKeyState)) {
     PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
       ("MouseScroll::HandleMouseWheelMessage: dispatching "
-       "NS_MOUSE_SCROLL event"));
-    fromLines = true;
-    DispatchEvent(aWindow, scrollEvent);
+       "NS_WHEEL_WHEEL event"));
+    DispatchEvent(aWindow, wheelEvent);
     if (aWindow->Destroyed()) {
       PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
         ("MouseScroll::HandleMouseWheelMessage: The window was destroyed "
-         "by NS_MOUSE_SCROLL event"));
+         "by NS_WHEEL_WHEEL event"));
       mLastEventInfo.ResetTransaction();
       return;
     }
@@ -718,32 +627,8 @@ MouseScrollHandler::HandleMouseWheelMessage(nsWindow* aWindow,
 #ifdef PR_LOGGING
   else {
     PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
-      ("MouseScroll::HandleMouseWheelMessage: NS_MOUSE_SCROLL event is not "
+      ("MouseScroll::HandleMouseWheelMessage: NS_WHEEL_WHEEL event is not "
        "dispatched"));
-  }
-#endif
-
-  nsMouseScrollEvent pixelEvent(true, NS_MOUSE_PIXEL_SCROLL, aWindow);
-  if (mLastEventInfo.InitMousePixelScrollEvent(aWindow, pixelEvent,
-                                               scrollTargetInfo, modKeyState)) {
-    PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
-      ("MouseScroll::HandleMouseWheelMessage: dispatching "
-       "NS_MOUSE_PIXEL_SCROLL event"));
-    pixelEvent.scrollFlags |= fromLines ? nsMouseScrollEvent::kFromLines : 0;
-    DispatchEvent(aWindow, pixelEvent);
-    if (aWindow->Destroyed()) {
-      PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
-        ("MouseScroll::HandleMouseWheelMessage: The window was destroyed "
-         "by NS_MOUSE_PIXEL_SCROLL event"));
-      mLastEventInfo.ResetTransaction();
-      return;
-    }
-  }
-#ifdef PR_LOGGING
-  else {
-    PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
-      ("MouseScroll::HandleMouseWheelMessage: NS_MOUSE_PIXEL_SCROLL event is "
-       "not dispatched"));
   }
 #endif
 }
@@ -761,46 +646,58 @@ MouseScrollHandler::HandleScrollMessageAsMouseWheelMessage(nsWindow* aWindow,
 
   mIsWaitingInternalMessage = false;
 
-  nsModifierKeyState modKeyState = GetModifierKeyState(aMessage);
+  ModifierKeyState modKeyState = GetModifierKeyState(aMessage);
 
-  nsMouseScrollEvent scrollEvent(true, NS_MOUSE_SCROLL, aWindow);
-  scrollEvent.scrollFlags =
-    (aMessage == MOZ_WM_VSCROLL) ? nsMouseScrollEvent::kIsVertical :
-                                   nsMouseScrollEvent::kIsHorizontal;
+  WheelEvent wheelEvent(true, NS_WHEEL_WHEEL, aWindow);
+  double& delta =
+   (aMessage == MOZ_WM_VSCROLL) ? wheelEvent.deltaY : wheelEvent.deltaX;
+  int32_t& lineOrPageDelta =
+   (aMessage == MOZ_WM_VSCROLL) ? wheelEvent.lineOrPageDeltaY :
+                                  wheelEvent.lineOrPageDeltaX;
+
+  delta = 1.0;
+  lineOrPageDelta = 1;
+
   switch (LOWORD(aWParam)) {
-    case SB_PAGEDOWN:
-      scrollEvent.scrollFlags |= nsMouseScrollEvent::kIsFullPage;
-    case SB_LINEDOWN:
-      scrollEvent.delta = 1;
-      break;
     case SB_PAGEUP:
-      scrollEvent.scrollFlags |= nsMouseScrollEvent::kIsFullPage;
-    case SB_LINEUP:
-      scrollEvent.delta = -1;
+      delta = -1.0;
+      lineOrPageDelta = -1;
+    case SB_PAGEDOWN:
+      wheelEvent.deltaMode = nsIDOMWheelEvent::DOM_DELTA_PAGE;
       break;
+
+    case SB_LINEUP:
+      delta = -1.0;
+      lineOrPageDelta = -1;
+    case SB_LINEDOWN:
+      wheelEvent.deltaMode = nsIDOMWheelEvent::DOM_DELTA_LINE;
+      break;
+
     default:
       return;
   }
-  modKeyState.InitInputEvent(scrollEvent);
+  modKeyState.InitInputEvent(wheelEvent);
   // XXX Current mouse position may not be same as when the original message
   //     is received.  We need to know the actual mouse cursor position when
   //     the original message was received.
-  InitEvent(aWindow, scrollEvent);
+  InitEvent(aWindow, wheelEvent);
 
   PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
     ("MouseScroll::HandleScrollMessageAsMouseWheelMessage: aWindow=%p, "
      "aMessage=MOZ_WM_%sSCROLL, aWParam=0x%08X, aLParam=0x%08X, "
-     "scrollEvent { refPoint: { x: %d, y: %d }, delta: %d, "
-     "scrollFlags: 0x%04X, isShift: %s, isControl: %s, isAlt: %s, isMeta: %s }",
-     aWindow, (aMessage == MOZ_WM_VSCROLL) ? "V" : "H",
-     aWParam, aLParam, scrollEvent.refPoint.x, scrollEvent.refPoint.y,
-     scrollEvent.delta, scrollEvent.scrollFlags,
-     GetBoolName(scrollEvent.IsShift()),
-     GetBoolName(scrollEvent.IsControl()),
-     GetBoolName(scrollEvent.IsAlt()),
-     GetBoolName(scrollEvent.IsMeta())));
+     "wheelEvent { refPoint: { x: %d, y: %d }, deltaX: %f, deltaY: %f, "
+     "lineOrPageDeltaX: %d, lineOrPageDeltaY: %d, "
+     "isShift: %s, isControl: %s, isAlt: %s, isMeta: %s }",
+     aWindow, (aMessage == MOZ_WM_VSCROLL) ? "V" : "H", aWParam, aLParam,
+     wheelEvent.refPoint.x, wheelEvent.refPoint.y,
+     wheelEvent.deltaX, wheelEvent.deltaY,
+     wheelEvent.lineOrPageDeltaX, wheelEvent.lineOrPageDeltaY,
+     GetBoolName(wheelEvent.IsShift()),
+     GetBoolName(wheelEvent.IsControl()),
+     GetBoolName(wheelEvent.IsAlt()),
+     GetBoolName(wheelEvent.IsMeta())));
 
-  DispatchEvent(aWindow, scrollEvent);
+  DispatchEvent(aWindow, wheelEvent);
 }
 
 /******************************************************************************
@@ -827,7 +724,7 @@ MouseScrollHandler::EventInfo::EventInfo(nsWindow* aWindow,
 }
 
 bool
-MouseScrollHandler::EventInfo::CanDispatchMouseScrollEvent() const
+MouseScrollHandler::EventInfo::CanDispatchWheelEvent() const
 {
   if (!GetScrollAmount()) {
     // XXX I think that we should dispatch mouse wheel events even if the
@@ -839,7 +736,7 @@ MouseScrollHandler::EventInfo::CanDispatchMouseScrollEvent() const
   return (mDelta != 0);
 }
 
-PRInt32
+int32_t
 MouseScrollHandler::EventInfo::GetScrollAmount() const
 {
   if (mIsPage) {
@@ -847,15 +744,6 @@ MouseScrollHandler::EventInfo::GetScrollAmount() const
   }
   return MouseScrollHandler::sInstance->
            mSystemSettings.GetScrollAmount(mIsVertical);
-}
-
-PRInt32
-MouseScrollHandler::EventInfo::GetScrollFlags() const
-{
-  PRInt32 result = mIsPage ? nsMouseScrollEvent::kIsFullPage : 0;
-  result |= mIsVertical ? nsMouseScrollEvent::kIsVertical :
-                          nsMouseScrollEvent::kIsHorizontal;
-  return result;
 }
 
 /******************************************************************************
@@ -868,7 +756,7 @@ bool
 MouseScrollHandler::LastEventInfo::CanContinueTransaction(
                                      const EventInfo& aNewEvent)
 {
-  PRInt32 timeout = MouseScrollHandler::sInstance->
+  int32_t timeout = MouseScrollHandler::sInstance->
                       mUserPrefs.GetMouseScrollTransactionTimeout();
   return !mWnd ||
            (mWnd == aNewEvent.GetWindowHandle() &&
@@ -890,9 +778,8 @@ MouseScrollHandler::LastEventInfo::ResetTransaction()
   PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
     ("MouseScroll::LastEventInfo::ResetTransaction()"));
 
-  mWnd = nsnull;
-  mRemainingDeltaForScroll = 0;
-  mRemainingDeltaForPixel = 0;
+  mWnd = nullptr;
+  mAccumulatedDelta = 0;
 }
 
 void
@@ -906,142 +793,65 @@ MouseScrollHandler::LastEventInfo::RecordEvent(const EventInfo& aEvent)
 }
 
 /* static */
-PRInt32
+int32_t
 MouseScrollHandler::LastEventInfo::RoundDelta(double aDelta)
 {
-  return (aDelta >= 0) ? (PRInt32)floor(aDelta) : (PRInt32)ceil(aDelta);
+  return (aDelta >= 0) ? (int32_t)floor(aDelta) : (int32_t)ceil(aDelta);
 }
 
 bool
-MouseScrollHandler::LastEventInfo::InitMouseScrollEvent(
+MouseScrollHandler::LastEventInfo::InitWheelEvent(
                                      nsWindow* aWindow,
-                                     nsMouseScrollEvent& aMouseScrollEvent,
-                                     const ScrollTargetInfo& aScrollTargetInfo,
-                                     const nsModifierKeyState& aModKeyState)
+                                     WheelEvent& aWheelEvent,
+                                     const ModifierKeyState& aModKeyState)
 {
-  NS_ABORT_IF_FALSE(aMouseScrollEvent.message == NS_MOUSE_SCROLL,
-    "aMouseScrollEvent must be NS_MOUSE_SCROLL");
+  MOZ_ASSERT(aWheelEvent.message == NS_WHEEL_WHEEL);
 
   // XXX Why don't we use lParam value? We should use lParam value because
   //     our internal message is always posted by original message handler.
   //     So, GetMessagePos() may return different cursor position.
-  InitEvent(aWindow, aMouseScrollEvent);
+  InitEvent(aWindow, aWheelEvent);
 
-  aModKeyState.InitInputEvent(aMouseScrollEvent);
-
-  // If we dispatch pixel scroll event after the line scroll event,
-  // we should set kHasPixels flag to the line scroll event.
-  aMouseScrollEvent.scrollFlags =
-    aScrollTargetInfo.dispatchPixelScrollEvent ?
-      nsMouseScrollEvent::kHasPixels : 0;
-  aMouseScrollEvent.scrollFlags |= GetScrollFlags();
+  aModKeyState.InitInputEvent(aWheelEvent);
 
   // Our positive delta value means to bottom or right.
   // But positive native delta value means to top or right.
   // Use orienter for computing our delta value with native delta value.
-  PRInt32 orienter = mIsVertical ? -1 : 1;
+  int32_t orienter = mIsVertical ? -1 : 1;
 
-  // NOTE: Don't use aScrollTargetInfo.actualScrollAmount for computing the
-  //       delta value of line/page scroll event.  The value will be recomputed
-  //       in ESM.
-  PRInt32 nativeDelta = mDelta + mRemainingDeltaForScroll;
-  if (IsPage()) {
-    aMouseScrollEvent.delta = nativeDelta * orienter / WHEEL_DELTA;
-    PRInt32 recomputedNativeDelta =
-      aMouseScrollEvent.delta * orienter / WHEEL_DELTA;
-    mRemainingDeltaForScroll = nativeDelta - recomputedNativeDelta;
-  } else {
-    double deltaPerUnit = (double)WHEEL_DELTA / GetScrollAmount();
-    aMouseScrollEvent.delta = 
-      RoundDelta((double)nativeDelta * orienter / deltaPerUnit);
-    PRInt32 recomputedNativeDelta =
-      (PRInt32)(aMouseScrollEvent.delta * orienter * deltaPerUnit);
-    mRemainingDeltaForScroll = nativeDelta - recomputedNativeDelta;
-  }
+  aWheelEvent.deltaMode = mIsPage ? nsIDOMWheelEvent::DOM_DELTA_PAGE :
+                                    nsIDOMWheelEvent::DOM_DELTA_LINE;
 
-  PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
-    ("MouseScroll::LastEventInfo::InitMouseScrollEvent: aWindow=%p, "
-     "aMouseScrollEvent { refPoint: { x: %d, y: %d }, delta: %d, "
-     "scrollFlags: 0x%04X, isShift: %s, isControl: %s, isAlt: %s, "
-     "isMeta: %s }, mRemainingDeltaForScroll: %d",
-     aWindow, aMouseScrollEvent.refPoint.x, aMouseScrollEvent.refPoint.y,
-     aMouseScrollEvent.delta, aMouseScrollEvent.scrollFlags,
-     GetBoolName(aMouseScrollEvent.IsShift()),
-     GetBoolName(aMouseScrollEvent.IsControl()),
-     GetBoolName(aMouseScrollEvent.IsAlt()),
-     GetBoolName(aMouseScrollEvent.IsMeta()), mRemainingDeltaForScroll));
+  double& delta = mIsVertical ? aWheelEvent.deltaY : aWheelEvent.deltaX;
+  int32_t& lineOrPageDelta = mIsVertical ? aWheelEvent.lineOrPageDeltaY :
+                                           aWheelEvent.lineOrPageDeltaX;
 
-  return (aMouseScrollEvent.delta != 0);
-}
+  double nativeDeltaPerUnit =
+    mIsPage ? static_cast<double>(WHEEL_DELTA) :
+              static_cast<double>(WHEEL_DELTA) / GetScrollAmount();
 
-bool
-MouseScrollHandler::LastEventInfo::InitMousePixelScrollEvent(
-                                     nsWindow* aWindow,
-                                     nsMouseScrollEvent& aPixelScrollEvent,
-                                     const ScrollTargetInfo& aScrollTargetInfo,
-                                     const nsModifierKeyState& aModKeyState)
-{
-  NS_ABORT_IF_FALSE(aPixelScrollEvent.message == NS_MOUSE_PIXEL_SCROLL,
-    "aPixelScrollEvent must be NS_MOUSE_PIXEL_SCROLL");
-
-  if (!aScrollTargetInfo.dispatchPixelScrollEvent) {
-    PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
-      ("MouseScroll::LastEventInfo::InitMousePixelScrollEvent: aWindow=%p, "
-       "PixelScroll is disabled",
-       aWindow, mRemainingDeltaForPixel));
-
-    mRemainingDeltaForPixel = 0;
-    return false;
-  }
-
-  // XXX Why don't we use lParam value? We should use lParam value because
-  //     our internal message is always posted by original message handler.
-  //     So, GetMessagePos() may return different cursor position.
-  InitEvent(aWindow, aPixelScrollEvent);
-
-  aModKeyState.InitInputEvent(aPixelScrollEvent);
-
-  aPixelScrollEvent.scrollFlags = nsMouseScrollEvent::kAllowSmoothScroll;
-  aPixelScrollEvent.scrollFlags |= mIsVertical ?
-    nsMouseScrollEvent::kIsVertical : nsMouseScrollEvent::kIsHorizontal;
-  if (aScrollTargetInfo.actualScrollAction ==
-        nsQueryContentEvent::SCROLL_ACTION_PAGE) {
-    aPixelScrollEvent.scrollFlags |= nsMouseScrollEvent::kIsFullPage;
-  }
-
-  // Our positive delta value means to bottom or right.
-  // But positive native delta value means to top or right.
-  // Use orienter for computing our delta value with native delta value.
-  PRInt32 orienter = mIsVertical ? -1 : 1;
-  // However, pixel scroll event won't be recomputed the scroll amout and
-  // direction by ESM.  Therefore, we need to set the computed amout and
-  // direction here.
-  if (aScrollTargetInfo.reversePixelScrollDirection) {
-    orienter *= -1;
-  }
-
-  PRInt32 nativeDelta = mDelta + mRemainingDeltaForPixel;
-  double deltaPerPixel = (double)WHEEL_DELTA /
-    aScrollTargetInfo.actualScrollAmount / aScrollTargetInfo.pixelsPerUnit;
-  aPixelScrollEvent.delta =
-    RoundDelta((double)nativeDelta * orienter / deltaPerPixel);
-  PRInt32 recomputedNativeDelta =
-    (PRInt32)(aPixelScrollEvent.delta * orienter * deltaPerPixel);
-  mRemainingDeltaForPixel = nativeDelta - recomputedNativeDelta;
+  delta = static_cast<double>(mDelta) * orienter / nativeDeltaPerUnit;
+  mAccumulatedDelta += mDelta;
+  lineOrPageDelta =
+    mAccumulatedDelta * orienter / RoundDelta(nativeDeltaPerUnit);
+  mAccumulatedDelta -=
+    lineOrPageDelta * orienter * RoundDelta(nativeDeltaPerUnit);
 
   PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
-    ("MouseScroll::LastEventInfo::InitMousePixelScrollEvent: aWindow=%p, "
-     "aPixelScrollEvent { refPoint: { x: %d, y: %d }, delta: %d, "
-     "scrollFlags: 0x%04X, isShift: %s, isControl: %s, isAlt: %s, "
-     "isMeta: %s }, mRemainingDeltaForScroll: %d",
-     aWindow, aPixelScrollEvent.refPoint.x, aPixelScrollEvent.refPoint.y,
-     aPixelScrollEvent.delta, aPixelScrollEvent.scrollFlags,
-     GetBoolName(aPixelScrollEvent.IsShift()),
-     GetBoolName(aPixelScrollEvent.IsControl()),
-     GetBoolName(aPixelScrollEvent.IsAlt()),
-     GetBoolName(aPixelScrollEvent.IsMeta()), mRemainingDeltaForPixel));
+    ("MouseScroll::LastEventInfo::InitWheelEvent: aWindow=%p, "
+     "aWheelEvent { refPoint: { x: %d, y: %d }, deltaX: %f, deltaY: %f, "
+     "lineOrPageDeltaX: %d, lineOrPageDeltaY: %d, "
+     "isShift: %s, isControl: %s, isAlt: %s, isMeta: %s }, "
+     "mAccumulatedDelta: %d",
+     aWindow, aWheelEvent.refPoint.x, aWheelEvent.refPoint.y,
+     aWheelEvent.deltaX, aWheelEvent.deltaY,
+     aWheelEvent.lineOrPageDeltaX, aWheelEvent.lineOrPageDeltaY,
+     GetBoolName(aWheelEvent.IsShift()),
+     GetBoolName(aWheelEvent.IsControl()),
+     GetBoolName(aWheelEvent.IsAlt()),
+     GetBoolName(aWheelEvent.IsMeta()), mAccumulatedDelta));
 
-  return (aPixelScrollEvent.delta != 0);
+  return (delta != 0);
 }
 
 /******************************************************************************
@@ -1171,8 +981,6 @@ MouseScrollHandler::UserPrefs::Init()
 
   mInitialized = true;
 
-  mPixelScrollingEnabled =
-    Preferences::GetBool("mousewheel.enable_pixel_scrolling", true);
   mScrollMessageHandledAsWheelMessage =
     Preferences::GetBool("mousewheel.emulate_at_wm_scroll", false);
   mOverriddenVerticalScrollAmount =
@@ -1185,11 +993,10 @@ MouseScrollHandler::UserPrefs::Init()
 
   PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
     ("MouseScroll::UserPrefs::Init(): initialized, "
-       "mPixelScrollingEnabled=%s, mScrollMessageHandledAsWheelMessage=%s, "
+       "mScrollMessageHandledAsWheelMessage=%s, "
        "mOverriddenVerticalScrollAmount=%d, "
        "mOverriddenHorizontalScrollAmount=%d, "
        "mMouseScrollTransactionTimeout=%d",
-     GetBoolName(mPixelScrollingEnabled),
      GetBoolName(mScrollMessageHandledAsWheelMessage),
      mOverriddenVerticalScrollAmount, mOverriddenHorizontalScrollAmount,
      mMouseScrollTransactionTimeout));
@@ -1227,7 +1034,7 @@ MouseScrollHandler::Device::GetWorkaroundPref(const char* aPrefName,
     return aValueIfAutomatic;
   }
 
-  PRInt32 lHackValue = 0;
+  int32_t lHackValue = 0;
   if (NS_FAILED(Preferences::GetInt(aPrefName, &lHackValue))) {
     PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
       ("MouseScroll::Device::GetWorkaroundPref(): Preferences::GetInt() failed,"
@@ -1277,7 +1084,7 @@ MouseScrollHandler::Device::Init()
 void
 MouseScrollHandler::Device::Elantech::Init()
 {
-  PRInt32 version = GetDriverMajorVersion();
+  int32_t version = GetDriverMajorVersion();
   bool needsHack =
     Device::GetWorkaroundPref("ui.elantech_gesture_hacks.enabled",
                               version != 0);
@@ -1291,7 +1098,7 @@ MouseScrollHandler::Device::Elantech::Init()
 }
 
 /* static */
-PRInt32
+int32_t
 MouseScrollHandler::Device::Elantech::GetDriverMajorVersion()
 {
   PRUnichar buf[40];
@@ -1564,7 +1371,7 @@ MouseScrollHandler::Device::UltraNav::IsObsoleteDriverInstalled()
     ("MouseScroll::Device::UltraNav::IsObsoleteDriverInstalled(): "
      "found driver version = %d.%d",
      majorVersion, minorVersion));
-  return majorVersion < 15 || majorVersion == 15 && minorVersion == 0;
+  return majorVersion < 15 || (majorVersion == 15 && minorVersion == 0);
 }
 
 /******************************************************************************

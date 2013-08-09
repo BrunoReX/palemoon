@@ -120,7 +120,7 @@ protected:
       parent->AssertIsOnWorkerThread();
     }
 
-    JSObject* obj = JS_NewObject(aCx, aClass, nsnull, nsnull);
+    JSObject* obj = JS_NewObject(aCx, aClass, nullptr, nullptr);
     if (!obj) {
       return false;
     }
@@ -154,7 +154,7 @@ private:
   ~Worker();
 
   static JSBool
-  GetEventListener(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, jsval* aVp)
+  GetEventListener(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, JSMutableHandleValue aVp)
   {
     JS_ASSERT(JSID_IS_INT(aIdval));
     JS_ASSERT(JSID_TO_INT(aIdval) >= 0 && JSID_TO_INT(aIdval) < STRING_COUNT);
@@ -173,13 +173,13 @@ private:
       JS_ReportError(aCx, "Failed to get listener!");
     }
 
-    *aVp = listener ? OBJECT_TO_JSVAL(listener) : JSVAL_NULL;
+    aVp.set(listener ? OBJECT_TO_JSVAL(listener) : JSVAL_NULL);
     return true;
   }
 
   static JSBool
   SetEventListener(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, JSBool aStrict,
-                   jsval* aVp)
+                   JSMutableHandleValue aVp)
   {
     JS_ASSERT(JSID_IS_INT(aIdval));
     JS_ASSERT(JSID_TO_INT(aIdval) >= 0 && JSID_TO_INT(aIdval) < STRING_COUNT);
@@ -191,7 +191,7 @@ private:
     }
 
     JSObject* listener;
-    if (!JS_ValueToObject(aCx, *aVp, &listener)) {
+    if (!JS_ValueToObject(aCx, aVp, &listener)) {
       return false;
     }
 
@@ -217,7 +217,8 @@ private:
   Finalize(JSFreeOp* aFop, JSObject* aObj)
   {
     JS_ASSERT(JS_GetClass(aObj) == Class());
-    WorkerPrivate* worker = UnwrapDOMObject<WorkerPrivate>(aObj, Class());
+    WorkerPrivate* worker =
+      UnwrapDOMObject<WorkerPrivate>(aObj, eRegularDOMObject);
     if (worker) {
       worker->_finalize(aFop);
     }
@@ -227,7 +228,8 @@ private:
   Trace(JSTracer* aTrc, JSObject* aObj)
   {
     JS_ASSERT(JS_GetClass(aObj) == Class());
-    WorkerPrivate* worker = UnwrapDOMObject<WorkerPrivate>(aObj, Class());
+    WorkerPrivate* worker =
+      UnwrapDOMObject<WorkerPrivate>(aObj, eRegularDOMObject);
     if (worker) {
       worker->_trace(aTrc);
     }
@@ -265,11 +267,13 @@ private:
     }
 
     jsval message;
-    if (!JS_ConvertArguments(aCx, aArgc, JS_ARGV(aCx, aVp), "v", &message)) {
+    jsval transferable = JSVAL_VOID;
+    if (!JS_ConvertArguments(aCx, aArgc, JS_ARGV(aCx, aVp), "v/v",
+                             &message, &transferable)) {
       return false;
     }
 
-    return worker->PostMessage(aCx, message);
+    return worker->PostMessage(aCx, message, transferable);
   }
 };
 
@@ -279,23 +283,26 @@ MOZ_STATIC_ASSERT(prototypes::MaxProtoChainLength == 3,
 DOMJSClass Worker::sClass = {
   {
     "Worker",
-    JSCLASS_IS_DOMJSCLASS | JSCLASS_HAS_RESERVED_SLOTS(1) |
+    JSCLASS_IS_DOMJSCLASS | JSCLASS_HAS_RESERVED_SLOTS(2) |
     JSCLASS_IMPLEMENTS_BARRIERS,
     JS_PropertyStub, JS_PropertyStub, JS_PropertyStub, JS_StrictPropertyStub,
     JS_EnumerateStub, JS_ResolveStub, JS_ConvertStub, Finalize,
     NULL, NULL, NULL, NULL, Trace
   },
-  { prototypes::id::EventTarget_workers, prototypes::id::_ID_Count,
-    prototypes::id::_ID_Count },
-  -1, false, DOM_OBJECT_SLOT
+  {
+    { prototypes::id::EventTarget_workers, prototypes::id::_ID_Count,
+      prototypes::id::_ID_Count },
+    false,
+    &sWorkerNativePropertyHooks
+  }
 };
 
 JSPropertySpec Worker::sProperties[] = {
   { sEventStrings[STRING_onerror], STRING_onerror, PROPERTY_FLAGS,
-    GetEventListener, SetEventListener },
+    JSOP_WRAPPER(GetEventListener), JSOP_WRAPPER(SetEventListener) },
   { sEventStrings[STRING_onmessage], STRING_onmessage, PROPERTY_FLAGS,
-    GetEventListener, SetEventListener },
-  { 0, 0, 0, NULL, NULL }
+    JSOP_WRAPPER(GetEventListener), JSOP_WRAPPER(SetEventListener) },
+  { 0, 0, 0, JSOP_NULLWRAPPER, JSOP_NULLWRAPPER }
 };
 
 JSFunctionSpec Worker::sFunctions[] = {
@@ -358,7 +365,7 @@ private:
     if (aObj) {
       JSClass* classPtr = JS_GetClass(aObj);
       if (classPtr == Class()) {
-        return UnwrapDOMObject<WorkerPrivate>(aObj, Class());
+        return UnwrapDOMObject<WorkerPrivate>(aObj, eRegularDOMObject);
       }
     }
 
@@ -375,7 +382,8 @@ private:
   Finalize(JSFreeOp* aFop, JSObject* aObj)
   {
     JS_ASSERT(JS_GetClass(aObj) == Class());
-    WorkerPrivate* worker = UnwrapDOMObject<WorkerPrivate>(aObj, Class());
+    WorkerPrivate* worker =
+      UnwrapDOMObject<WorkerPrivate>(aObj, eRegularDOMObject);
     if (worker) {
       worker->_finalize(aFop);
     }
@@ -385,7 +393,8 @@ private:
   Trace(JSTracer* aTrc, JSObject* aObj)
   {
     JS_ASSERT(JS_GetClass(aObj) == Class());
-    WorkerPrivate* worker = UnwrapDOMObject<WorkerPrivate>(aObj, Class());
+    WorkerPrivate* worker =
+      UnwrapDOMObject<WorkerPrivate>(aObj, eRegularDOMObject);
     if (worker) {
       worker->_trace(aTrc);
     }
@@ -397,15 +406,18 @@ MOZ_STATIC_ASSERT(prototypes::MaxProtoChainLength == 3,
 
 DOMJSClass ChromeWorker::sClass = {
   { "ChromeWorker",
-    JSCLASS_IS_DOMJSCLASS | JSCLASS_HAS_RESERVED_SLOTS(1) |
+    JSCLASS_IS_DOMJSCLASS | JSCLASS_HAS_RESERVED_SLOTS(2) |
     JSCLASS_IMPLEMENTS_BARRIERS,
     JS_PropertyStub, JS_PropertyStub, JS_PropertyStub, JS_StrictPropertyStub,
     JS_EnumerateStub, JS_ResolveStub, JS_ConvertStub, Finalize,
     NULL, NULL, NULL, NULL, Trace,
   },
-  { prototypes::id::EventTarget_workers, prototypes::id::_ID_Count,
-    prototypes::id::_ID_Count },
-  -1, false, DOM_OBJECT_SLOT
+  {
+    { prototypes::id::EventTarget_workers, prototypes::id::_ID_Count,
+      prototypes::id::_ID_Count },
+    false,
+    &sWorkerNativePropertyHooks
+  }
 };
 
 WorkerPrivate*
@@ -414,7 +426,7 @@ Worker::GetInstancePrivate(JSContext* aCx, JSObject* aObj,
 {
   JSClass* classPtr = JS_GetClass(aObj);
   if (classPtr == Class() || classPtr == ChromeWorker::Class()) {
-    return UnwrapDOMObject<WorkerPrivate>(aObj, classPtr);
+    return UnwrapDOMObject<WorkerPrivate>(aObj, eRegularDOMObject);
   }
 
   JS_ReportErrorNumber(aCx, js_GetErrorMessage, NULL, JSMSG_INCOMPATIBLE_PROTO,

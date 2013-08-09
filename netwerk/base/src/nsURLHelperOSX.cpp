@@ -7,12 +7,12 @@
 /* Mac OS X-specific local file uri parsing */
 #include "nsURLHelper.h"
 #include "nsEscape.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsTArray.h"
 #include "nsReadableUtils.h"
 #include <Carbon/Carbon.h>
 
-static nsTArray<nsCString> *gVolumeList = nsnull;
+static nsTArray<nsCString> *gVolumeList = nullptr;
 
 static bool pathBeginsWithVolName(const nsACString& path, nsACString& firstPathComponent)
 {
@@ -55,9 +55,9 @@ static bool pathBeginsWithVolName(const nsACString& path, nsACString& firstPathC
   nsACString::const_iterator component_end(start);
   FindCharInReadable('/', component_end, directory_end);
   
-  nsCAutoString flatComponent((Substring(start, component_end)));
+  nsAutoCString flatComponent((Substring(start, component_end)));
   NS_UnescapeURL(flatComponent);
-  PRInt32 foundIndex = gVolumeList->IndexOf(flatComponent);
+  int32_t foundIndex = gVolumeList->IndexOf(flatComponent);
   firstPathComponent = flatComponent;
   return (foundIndex != -1);
 }
@@ -66,7 +66,7 @@ void
 net_ShutdownURLHelperOSX()
 {
   delete gVolumeList;
-  gVolumeList = nsnull;
+  gVolumeList = nullptr;
 }
 
 static nsresult convertHFSPathtoPOSIX(const nsACString& hfsPath, nsACString& posixPath)
@@ -115,14 +115,14 @@ net_GetURLSpecFromActualFile(nsIFile *aFile, nsACString &result)
   // NOTE: This is identical to the implementation in nsURLHelperUnix.cpp
   
   nsresult rv;
-  nsCAutoString ePath;
+  nsAutoCString ePath;
 
   // construct URL spec from native file path
   rv = aFile->GetNativePath(ePath);
   if (NS_FAILED(rv))
     return rv;
 
-  nsCAutoString escPath;
+  nsAutoCString escPath;
   NS_NAMED_LITERAL_CSTRING(prefix, "file://");
       
   // Escape the path with the directory mask
@@ -148,12 +148,12 @@ net_GetFileFromURLSpec(const nsACString &aURL, nsIFile **result)
 
   nsresult rv;
 
-  nsCOMPtr<nsILocalFile> localFile;
+  nsCOMPtr<nsIFile> localFile;
   rv = NS_NewNativeLocalFile(EmptyCString(), true, getter_AddRefs(localFile));
   if (NS_FAILED(rv))
     return rv;
   
-  nsCAutoString directory, fileBaseName, fileExtension, path;
+  nsAutoCString directory, fileBaseName, fileExtension, path;
   bool bHFSPath = false;
 
   rv = net_ParseFileURL(aURL, directory, fileBaseName, fileExtension);
@@ -168,7 +168,7 @@ net_GetFileFromURLSpec(const nsACString &aURL, nsIFile **result)
     // But, we still encounter file URLs that use HFS paths:
     //   file:///volume-name/path-name
     // Determine that here and normalize HFS paths to POSIX.
-    nsCAutoString possibleVolName;
+    nsAutoCString possibleVolName;
     if (pathBeginsWithVolName(directory, possibleVolName)) {        
       // Though we know it begins with a volume name, it could still
       // be a valid POSIX path if the boot drive is named "Mac HD"
@@ -176,7 +176,7 @@ net_GetFileFromURLSpec(const nsACString &aURL, nsIFile **result)
       // directory doesn't exist, we'll assume this is an HFS path.
       FSRef testRef;
       possibleVolName.Insert("/", 0);
-      if (::FSPathMakeRef((UInt8*)possibleVolName.get(), &testRef, nsnull) != noErr)
+      if (::FSPathMakeRef((UInt8*)possibleVolName.get(), &testRef, nullptr) != noErr)
         bHFSPath = true;
     }
 

@@ -6,7 +6,7 @@
 #ifndef mozilla_FileUtils_h
 #define mozilla_FileUtils_h
 
-#include "nscore.h" // nsnull
+#include "nscore.h" // nullptr
 
 #if defined(XP_UNIX) || defined(XP_OS2)
 # include <unistd.h>
@@ -62,7 +62,7 @@ typedef Scoped<ScopedCloseFDTraits> ScopedClose;
  * @param aLength length of file to grow to.
  * @return true on success.
  */
-NS_COM_GLUE bool fallocate(PRFileDesc *aFD, PRInt64 aLength);
+NS_COM_GLUE bool fallocate(PRFileDesc *aFD, int64_t aLength);
 
 } // namespace mozilla
 #endif

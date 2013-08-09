@@ -3,13 +3,41 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "gfxPlatform.h"
 #include "AnimationCommon.h"
 #include "nsRuleData.h"
+#include "nsCSSFrameConstructor.h"
 #include "nsCSSValue.h"
 #include "nsStyleContext.h"
+#include "nsIFrame.h"
+#include "nsAnimationManager.h"
+#include "nsLayoutUtils.h"
+#include "mozilla/LookAndFeel.h"
+#include "Layers.h"
+#include "FrameLayerBuilder.h"
+#include "nsDisplayList.h"
+#include "mozilla/Preferences.h"
+
+using namespace mozilla::layers;
 
 namespace mozilla {
 namespace css {
+
+/* static */ bool
+IsGeometricProperty(nsCSSProperty aProperty)
+{
+  switch (aProperty) {
+    case eCSSProperty_bottom:
+    case eCSSProperty_height:
+    case eCSSProperty_left:
+    case eCSSProperty_right:
+    case eCSSProperty_top:
+    case eCSSProperty_width:
+      return true;
+    default:
+      return false;
+  }
+}
 
 CommonAnimationManager::CommonAnimationManager(nsPresContext *aPresContext)
   : mPresContext(aPresContext)
@@ -28,7 +56,7 @@ CommonAnimationManager::Disconnect()
   // Content nodes might outlive the transition or animation manager.
   RemoveAllElementData();
 
-  mPresContext = nsnull;
+  mPresContext = nullptr;
 }
 
 void
@@ -131,6 +159,22 @@ CommonAnimationManager::ExtractComputedValueForTransition(
   return result;
 }
 
+/* static */ bool
+CommonAnimationManager::ThrottlingEnabled()
+{
+  static bool sThrottlePref = false;
+  static bool sThrottlePrefCached = false;
+
+  if (!sThrottlePrefCached) {
+    Preferences::AddBoolVarCache(&sThrottlePref,
+      "layers.offmainthreadcomposition.throttle-animations", false);
+    sThrottlePrefCached = true;
+  }
+
+  return sThrottlePref;
+}
+
+
 NS_IMPL_ISUPPORTS1(AnimValuesStyleRule, nsIStyleRule)
 
 /* virtual */ void
@@ -144,7 +188,7 @@ AnimValuesStyleRule::MapRuleInfoInto(nsRuleData* aRuleData)
     return;
   }
 
-  for (PRUint32 i = 0, i_end = mPropertyValuePairs.Length(); i < i_end; ++i) {
+  for (uint32_t i = 0, i_end = mPropertyValuePairs.Length(); i < i_end; ++i) {
     PropertyValuePair &cv = mPropertyValuePairs[i];
     if (aRuleData->mSIDs & nsCachedStyleData::GetBitForSID(
                              nsCSSProps::kSIDTable[cv.mProperty]))
@@ -165,7 +209,7 @@ AnimValuesStyleRule::MapRuleInfoInto(nsRuleData* aRuleData)
 
 #ifdef DEBUG
 /* virtual */ void
-AnimValuesStyleRule::List(FILE* out, PRInt32 aIndent) const
+AnimValuesStyleRule::List(FILE* out, int32_t aIndent) const
 {
   // WRITE ME?
 }
@@ -184,10 +228,10 @@ ComputedTimingFunction::Init(const nsTimingFunction &aFunction)
 }
 
 static inline double
-StepEnd(PRUint32 aSteps, double aPortion)
+StepEnd(uint32_t aSteps, double aPortion)
 {
   NS_ABORT_IF_FALSE(0.0 <= aPortion && aPortion <= 1.0, "out of range");
-  PRUint32 step = PRUint32(aPortion * aSteps); // floor
+  uint32_t step = uint32_t(aPortion * aSteps); // floor
   return double(step) / double(aSteps);
 }
 
@@ -211,6 +255,171 @@ ComputedTimingFunction::GetValue(double aPortion) const
     case nsTimingFunction::StepEnd:
       return StepEnd(mSteps, aPortion);
   }
+}
+
+bool
+CommonElementAnimationData::CanAnimatePropertyOnCompositor(const dom::Element *aElement,
+                                                           nsCSSProperty aProperty,
+                                                           CanAnimateFlags aFlags)
+{
+  bool shouldLog = nsLayoutUtils::IsAnimationLoggingEnabled();
+  if (shouldLog && !gfxPlatform::OffMainThreadCompositingEnabled()) {
+    nsCString message;
+    message.AppendLiteral("Performance warning: Compositor disabled");
+    LogAsyncAnimationFailure(message);
+    return false;
+  }
+
+  nsIFrame* frame = aElement->GetPrimaryFrame();
+  if (IsGeometricProperty(aProperty)) {
+    if (shouldLog) {
+      nsCString message;
+      message.AppendLiteral("Performance warning: Async animation of geometric property '");
+      message.Append(aProperty);
+      message.AppendLiteral(" is disabled");
+      LogAsyncAnimationFailure(message, aElement);
+    }
+    return false;
+  }
+  if (aProperty == eCSSProperty_opacity) {
+    bool enabled = nsLayoutUtils::AreOpacityAnimationsEnabled();
+    if (!enabled && shouldLog) {
+      nsCString message;
+      message.AppendLiteral("Performance warning: Async animation of 'opacity' is disabled");
+      LogAsyncAnimationFailure(message);
+    }
+    return enabled;
+  }
+  if (aProperty == eCSSProperty_transform) {
+    if (frame->Preserves3D() &&
+        frame->Preserves3DChildren()) {
+      if (shouldLog) {
+        nsCString message;
+        message.AppendLiteral("Gecko bug: Async animation of 'preserve-3d' transforms is not supported.  See bug 779598");
+        LogAsyncAnimationFailure(message, aElement);
+      }
+      return false;
+    }
+    if (frame->IsSVGTransformed()) {
+      if (shouldLog) {
+        nsCString message;
+        message.AppendLiteral("Gecko bug: Async 'transform' animations of frames with SVG transforms is not supported.  See bug 779599");
+        LogAsyncAnimationFailure(message, aElement);
+      }
+      return false;
+    }
+    if (aFlags & CanAnimate_HasGeometricProperty) {
+      if (shouldLog) {
+        nsCString message;
+        message.AppendLiteral("Performance warning: Async animation of 'transform' not possible due to presence of geometric properties");
+        LogAsyncAnimationFailure(message, aElement);
+      }
+      return false;
+    }
+    bool enabled = nsLayoutUtils::AreTransformAnimationsEnabled();
+    if (!enabled && shouldLog) {
+      nsCString message;
+      message.AppendLiteral("Performance warning: Async animation of 'transform' is disabled");
+      LogAsyncAnimationFailure(message);
+    }
+    return enabled;
+  }
+  return aFlags & CanAnimate_AllowPartial;
+}
+
+/* static */ void
+CommonElementAnimationData::LogAsyncAnimationFailure(nsCString& aMessage,
+                                                     const nsIContent* aContent)
+{
+  if (aContent) {
+    aMessage.AppendLiteral(" [");
+    aMessage.Append(nsAtomCString(aContent->Tag()));
+
+    nsIAtom* id = aContent->GetID();
+    if (id) {
+      aMessage.AppendLiteral(" with id '");
+      aMessage.Append(nsAtomCString(aContent->GetID()));
+      aMessage.AppendLiteral("'");
+    }
+    aMessage.AppendLiteral("]");
+  }
+  printf_stderr(aMessage.get());
+}
+
+bool
+CommonElementAnimationData::CanThrottleTransformChanges(TimeStamp aTime)
+{
+  if (!CommonAnimationManager::ThrottlingEnabled()) {
+    return false;
+  }
+
+  // If we know that the animation cannot cause overflow,
+  // we can just disable flushes for this animation.
+
+  // If we don't show scrollbars, we don't care about overflow.
+  if (LookAndFeel::GetInt(LookAndFeel::eIntID_ShowHideScrollbars) == 0) {
+    return true;
+  }
+
+  // If this animation can cause overflow, we can throttle some of the ticks.
+  if ((aTime - mStyleRuleRefreshTime) < TimeDuration::FromMilliseconds(200)) {
+    return true;
+  }
+
+  // If the nearest scrollable ancestor has overflow:hidden,
+  // we don't care about overflow.
+  nsIScrollableFrame* scrollable =
+    nsLayoutUtils::GetNearestScrollableFrame(mElement->GetPrimaryFrame());
+  if (!scrollable) {
+    return true;
+  }
+
+  nsPresContext::ScrollbarStyles ss = scrollable->GetScrollbarStyles();
+  if (ss.mVertical == NS_STYLE_OVERFLOW_HIDDEN &&
+      ss.mHorizontal == NS_STYLE_OVERFLOW_HIDDEN &&
+      scrollable->GetLogicalScrollPosition() == nsPoint(0, 0)) {
+    return true;
+  }
+
+  return false;
+}
+
+bool
+CommonElementAnimationData::CanThrottleAnimation(TimeStamp aTime)
+{
+  nsIFrame* frame = mElement->GetPrimaryFrame();
+  if (!frame) {
+    return false;
+  }
+
+  bool hasTransform = HasAnimationOfProperty(eCSSProperty_transform);
+  bool hasOpacity = HasAnimationOfProperty(eCSSProperty_opacity);
+  if (hasOpacity) {
+    Layer* layer = FrameLayerBuilder::GetDedicatedLayer(
+                     frame, nsDisplayItem::TYPE_OPACITY);
+    if (!layer || mAnimationGeneration > layer->GetAnimationGeneration()) {
+      return false;
+    }
+  }
+
+  if (!hasTransform) {
+    return true;
+  }
+
+  Layer* layer = FrameLayerBuilder::GetDedicatedLayer(
+                   frame, nsDisplayItem::TYPE_TRANSFORM);
+  if (!layer || mAnimationGeneration > layer->GetAnimationGeneration()) {
+    return false;
+  }
+
+  return CanThrottleTransformChanges(aTime);
+}
+
+void 
+CommonElementAnimationData::UpdateAnimationGeneration(nsPresContext* aPresContext)
+{
+  mAnimationGeneration =
+    aPresContext->PresShell()->FrameConstructor()->GetAnimationGeneration();
 }
 
 }

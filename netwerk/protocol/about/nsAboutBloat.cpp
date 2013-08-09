@@ -14,12 +14,11 @@
 #include "nsStringStream.h"
 #include "nsXPIDLString.h"
 #include "nsIURI.h"
-#include "prtime.h"
 #include "nsCOMPtr.h"
 #include "nsIFileStreams.h"
 #include "nsNetUtil.h"
 #include "nsDirectoryServiceDefs.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 
 static void GC_gcollect() {}
 
@@ -30,7 +29,7 @@ nsAboutBloat::NewChannel(nsIURI *aURI, nsIChannel **result)
 {
     NS_ENSURE_ARG_POINTER(aURI);
     nsresult rv;
-    nsCAutoString path;
+    nsAutoCString path;
     rv = aURI->GetPath(path);
     if (NS_FAILED(rv)) return rv;
 
@@ -38,9 +37,9 @@ nsAboutBloat::NewChannel(nsIURI *aURI, nsIChannel **result)
     bool clear = false;
     bool leaks = false;
 
-    PRInt32 pos = path.Find("?");
+    int32_t pos = path.Find("?");
     if (pos > 0) {
-        nsCAutoString param;
+        nsAutoCString param;
         (void)path.Right(param, path.Length() - (pos+1));
         if (param.EqualsLiteral("new"))
             statType = nsTraceRefcntImpl::NEW_STATS;
@@ -87,7 +86,7 @@ nsAboutBloat::NewChannel(nsIURI *aURI, nsIChannel **result)
             if (NS_FAILED(rv)) return rv;
         }
 
-        nsCAutoString dumpFileName;
+        nsAutoCString dumpFileName;
         if (statType == nsTraceRefcntImpl::ALL_STATS)
             dumpFileName.AssignLiteral("all-");
         else
@@ -101,10 +100,7 @@ nsAboutBloat::NewChannel(nsIURI *aURI, nsIChannel **result)
         if (NS_FAILED(rv)) return rv;
 
         FILE* out;
-        nsCOMPtr<nsILocalFile> lfile = do_QueryInterface(file);
-        if (lfile == nsnull)
-            return NS_ERROR_FAILURE;
-        rv = lfile->OpenANSIFileDesc("w", &out);
+        rv = file->OpenANSIFileDesc("w", &out);
         if (NS_FAILED(rv)) return rv;
 
         rv = nsTraceRefcntImpl::DumpStatistics(statType, out);
@@ -126,7 +122,7 @@ nsAboutBloat::NewChannel(nsIURI *aURI, nsIChannel **result)
 }
 
 NS_IMETHODIMP
-nsAboutBloat::GetURIFlags(nsIURI *aURI, PRUint32 *result)
+nsAboutBloat::GetURIFlags(nsIURI *aURI, uint32_t *result)
 {
     *result = 0;
     return NS_OK;
@@ -136,7 +132,7 @@ nsresult
 nsAboutBloat::Create(nsISupports *aOuter, REFNSIID aIID, void **aResult)
 {
     nsAboutBloat* about = new nsAboutBloat();
-    if (about == nsnull)
+    if (about == nullptr)
         return NS_ERROR_OUT_OF_MEMORY;
     NS_ADDREF(about);
     nsresult rv = about->QueryInterface(aIID, aResult);

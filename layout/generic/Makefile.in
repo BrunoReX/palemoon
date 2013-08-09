@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -14,11 +14,11 @@ TEST_DIRS += test
 MODULE		= layout
 LIBRARY_NAME	= gkgeneric_s
 LIBXUL_LIBRARY	= 1
-
-
+FAIL_ON_WARNINGS = 1
 
 EXPORTS		= \
 		nsQueryFrame.h \
+		nsFrameIdList.h \
 		nsFrameList.h \
 		nsCanvasFrame.h \
 		nsHTMLParts.h \
@@ -31,17 +31,22 @@ EXPORTS		= \
 		nsIObjectFrame.h \
 		nsIPageSequenceFrame.h \
 		nsIScrollableFrame.h \
+		ScrollbarActivity.h \
 		nsIStatefulFrame.h \
 		nsFrameSelection.h \
 		nsSubDocumentFrame.h \
-		nsTypedSelection.h \
+		Selection.h \
 		nsObjectFrame.h \
 		$(NULL)
 
-EXPORTS_NAMESPACES = mozilla/layout
+EXPORTS_NAMESPACES = mozilla/layout mozilla
 
 EXPORTS_mozilla/layout = \
 		FrameChildList.h \
+		$(NULL)
+
+EXPORTS_mozilla = \
+		Selection.h \
 		$(NULL)
 
 CPPSRCS		= \
@@ -77,6 +82,7 @@ CPPSRCS		= \
 		nsPageContentFrame.cpp \
 		nsPageFrame.cpp \
 		nsPlaceholderFrame.cpp \
+		ScrollbarActivity.cpp \
 		nsSelection.cpp \
 		nsSimplePageSequence.cpp \
 		nsSplittableFrame.cpp \
@@ -87,6 +93,12 @@ CPPSRCS		= \
 		nsTextRunTransformations.cpp \
 		nsViewportFrame.cpp \
 		$(NULL)
+
+ifdef MOZ_FLEXBOX
+CPPSRCS		+= \
+		nsFlexContainerFrame.cpp \
+		$(NULL)
+endif
 
 ifdef MOZ_MEDIA
 CPPSRCS		+= \
@@ -122,7 +134,7 @@ LOCAL_INCLUDES += \
 		-I$(srcdir)/../../content/html/content/src \
 		-I$(srcdir)/../../dom/base \
 		-I$(srcdir)/../../dom/plugins/base \
-		-I$(srcdir)/../svg/base/src \
+		-I$(srcdir)/../svg \
 		$(MOZ_CAIRO_CFLAGS) \
 		$(MOZ_PIXMAN_CFLAGS) \
 		$(NULL)

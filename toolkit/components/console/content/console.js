@@ -1,9 +1,13 @@
-# -*- Mode: Java; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+Components.utils.import("resource://gre/modules/Services.jsm");
 
 var gConsole, gConsoleBundle, gTextBoxEval, gEvaluator, gCodeToEvaluate;
+var gFilter;
 
 /* :::::::: Console Initialization ::::::::::::::: */
 
@@ -11,8 +15,9 @@ window.onload = function()
 {
   gConsole = document.getElementById("ConsoleBox");
   gConsoleBundle = document.getElementById("ConsoleBundle");
-  gTextBoxEval = document.getElementById("TextboxEval")  
+  gTextBoxEval = document.getElementById("TextboxEval");
   gEvaluator = document.getElementById("Evaluator");
+  gFilter = document.getElementById("Filter");
   
   updateSortCommand(gConsole.sortOrder);
   updateModeCommand(gConsole.mode);
@@ -21,6 +26,13 @@ window.onload = function()
 }
 
 /* :::::::: Console UI Functions ::::::::::::::: */
+
+function changeFilter()
+{
+  gConsole.filter = gFilter.value;
+
+  document.persist("ConsoleBox", "filter");
+}
 
 function changeMode(aMode)
 {
@@ -94,14 +106,6 @@ function loadOrDisplayResult()
   resultRange.selectNode(gEvaluator.contentDocument.documentElement);
   var result = resultRange.toString();
   if (result)
-    gConsole.mCService.logStringMessage(result);
+    Services.console.logStringMessage(result);
     // or could use appendMessage which doesn't persist
-}
-
-// XXX DEBUG
-function debug(aText)
-{
-  var csClass = Components.classes['@mozilla.org/consoleservice;1'];
-  var cs = csClass.getService(Components.interfaces.nsIConsoleService);
-  cs.logStringMessage(aText);
 }

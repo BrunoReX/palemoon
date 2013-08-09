@@ -8,6 +8,22 @@
 @namespace url("http://www.w3.org/1999/xhtml");
 @namespace xul url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 
+@-moz-document url-prefix(about:reader) {
+  @font-face {
+    font-family: 'OpenSansRegular';
+    src: url('chrome://browser/skin/fonts/opensans-regular.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+  }
+
+  @font-face {
+    font-family: 'OpenSansLight';
+    src: url('chrome://browser/skin/fonts/opensans-light.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+  }
+}
+
 ::-moz-selection {
   background-color: @color_background_highlight@;
   color: @color_text_highlight@;
@@ -22,7 +38,7 @@ xul|window xul|scrollbar {
   display: block;
 }
 
-xul|scrollbar[orient="vertical"] {
+xul|window xul|scrollbar[orient="vertical"] {
   -moz-appearance: none !important;
   opacity: 0;
   position: relative;
@@ -33,17 +49,17 @@ xul|scrollbar[orient="vertical"] {
   border: 0px solid transparent !important;
 }
 
-xul|scrollbar[orient="vertical"]:-moz-locale-dir(rtl) {
+xul|window xul|scrollbar[orient="vertical"]:-moz-locale-dir(rtl) {
   margin-left: 2px;
   margin-right: -10px;
 }
 
-xul|scrollbar[orient="vertical"] xul|thumb {
+xul|window xul|scrollbar[orient="vertical"] xul|thumb {
   max-width: 6px !important;
   min-width: 6px !important;
 }
 
-xul|scrollbar[orient="horizontal"] {
+xul|window xul|scrollbar[orient="horizontal"] {
   -moz-appearance: none !important;
   opacity: 0;
   position: relative;
@@ -54,7 +70,7 @@ xul|scrollbar[orient="horizontal"] {
   border: 0px solid transparent !important;
 }
 
-xul|scrollbar[orient="horizontal"] xul|thumb {
+xul|window xul|scrollbar[orient="horizontal"] xul|thumb {
   max-height: 6px !important;
   min-height: 6px !important;
 }
@@ -63,24 +79,24 @@ xul|*[panning="true"] xul|scrollbar {
   opacity: 1;
 }
 
-xul|scrollbox {
+xul|window xul|scrollbox {
   overflow-y: scroll;
   overflow-x: scroll;
 }
 
-xul|scrollbarbutton {
+xul|window xul|scrollbarbutton {
   min-height: 8px !important;
   min-width: 8px !important;
   -moz-appearance: none !important;
   visibility: hidden;
 }
 
-xul|scrollbarbutton[sbattr="scrollbar-up-top"],
-xul|scrollbarbutton[sbattr="scrollbar-bottom-top"] {
+xul|window xul|scrollbarbutton[sbattr="scrollbar-up-top"],
+xul|window xul|scrollbarbutton[sbattr="scrollbar-bottom-top"] {
   display: none;
 }
 
-xul|scrollbar xul|thumb {
+xul|window xul|scrollbar xul|thumb {
   background-color: @color_background_scroller@ !important;
   -moz-border-top-colors: none !important;
   -moz-border-bottom-colors: none !important;
@@ -123,11 +139,6 @@ textarea,
 /* Selects are handled by the form helper, see bug 685197 */
 select option, select optgroup {
   pointer-events: none;
-}
-
-input:-moz-placeholder,
-textarea:-moz-placeholder {
-  color: GrayText;
 }
 
 select:not([size]):not([multiple]),
@@ -307,23 +318,6 @@ textarea:active {
   background-color: @color_background_highlight_overlay@ !important;
 }
 
-/* 
- * Generate an additional space after the anonymous div to make it easier to
- * to position the caret at the end of the text
- */
-input > .anonymous-div:after {
-  content: "";
-  margin: 16px;
-}
-
-/*
- * Enforce nearest scaling for video in order not to lose too much performance
- * after fixing bug 598736 ("Use higher-quality imageinterpolation on mobile")
- */
-video {
-    image-rendering: -moz-crisp-edges;
-}
-
 xul|menulist {
-  -moz-binding: url("chrome://browser/content/bindings.xml#menulist");
+  -moz-binding: url("chrome://browser/content/bindings/menulist.xml#menulist");
 }

@@ -6,26 +6,14 @@
 
 Components.utils.import("resource://gre/modules/AddonUpdateChecker.jsm");
 
-var COMPATIBILITY_PREF;
-
-do_load_httpd_js();
+Components.utils.import("resource://testing-common/httpd.js");
 var testserver;
 
 function run_test() {
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
 
-  var channel = "default";
-  try {
-    channel = Services.prefs.getCharPref("app.update.channel");
-  } catch (e) { }
-  if (channel != "aurora" && channel != "beta" && channel != "release")
-    var version = "nightly";
-  else
-    version = Services.appinfo.version.replace(/^([^\.]+\.[0-9]+[a-z]*).*/gi, "$1");
-  COMPATIBILITY_PREF = "extensions.checkCompatibility." + version;
-
   // Create and configure the HTTP server.
-  testserver = new nsHttpServer();
+  testserver = new HttpServer();
   testserver.registerDirectory("/data/", do_get_file("data"));
   testserver.start(4444);
 
@@ -39,7 +27,7 @@ function end_test() {
 
 // Test that a basic update check returns the expected available updates
 function run_test_1() {
-  AddonUpdateChecker.checkForUpdates("updatecheck1@tests.mozilla.org", "extension", null,
+  AddonUpdateChecker.checkForUpdates("updatecheck1@tests.mozilla.org", null,
                                      "http://localhost:4444/data/test_updatecheck.rdf", {
     onUpdateCheckComplete: function(updates) {
       check_test_1(updates);
@@ -87,7 +75,7 @@ let updateKey = "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDK426erD/H3XtsjvaB5+PJqbh
 
 function run_test_2() {
   AddonUpdateChecker.checkForUpdates("test_bug378216_5@tests.mozilla.org",
-                                     "extension", updateKey,
+                                     updateKey,
                                      "http://localhost:4444/data/test_updatecheck.rdf", {
     onUpdateCheckComplete: function(updates) {
       do_throw("Expected the update check to fail");
@@ -101,7 +89,7 @@ function run_test_2() {
 
 function run_test_3() {
   AddonUpdateChecker.checkForUpdates("test_bug378216_7@tests.mozilla.org",
-                                     "extension", updateKey,
+                                     updateKey,
                                      "http://localhost:4444/data/test_updatecheck.rdf", {
     onUpdateCheckComplete: function(updates) {
       do_throw("Expected the update check to fail");
@@ -115,7 +103,7 @@ function run_test_3() {
 
 function run_test_4() {
   AddonUpdateChecker.checkForUpdates("test_bug378216_8@tests.mozilla.org",
-                                     "extension", updateKey,
+                                     updateKey,
                                      "http://localhost:4444/data/test_updatecheck.rdf", {
     onUpdateCheckComplete: function(updates) {
       do_check_eq(updates.length, 1);
@@ -131,7 +119,7 @@ function run_test_4() {
 
 function run_test_5() {
   AddonUpdateChecker.checkForUpdates("test_bug378216_9@tests.mozilla.org",
-                                     "extension", updateKey,
+                                     updateKey,
                                      "http://localhost:4444/data/test_updatecheck.rdf", {
     onUpdateCheckComplete: function(updates) {
       do_check_eq(updates.length, 1);
@@ -148,7 +136,7 @@ function run_test_5() {
 
 function run_test_6() {
   AddonUpdateChecker.checkForUpdates("test_bug378216_10@tests.mozilla.org",
-                                     "extension", updateKey,
+                                     updateKey,
                                      "http://localhost:4444/data/test_updatecheck.rdf", {
     onUpdateCheckComplete: function(updates) {
       do_check_eq(updates.length, 1);
@@ -165,7 +153,7 @@ function run_test_6() {
 
 function run_test_7() {
   AddonUpdateChecker.checkForUpdates("test_bug378216_11@tests.mozilla.org",
-                                     "extension", updateKey,
+                                     updateKey,
                                      "http://localhost:4444/data/test_updatecheck.rdf", {
     onUpdateCheckComplete: function(updates) {
       do_check_eq(updates.length, 1);
@@ -182,7 +170,7 @@ function run_test_7() {
 
 function run_test_8() {
   AddonUpdateChecker.checkForUpdates("test_bug378216_12@tests.mozilla.org",
-                                     "extension", updateKey,
+                                     updateKey,
                                      "http://localhost:4444/data/test_updatecheck.rdf", {
     onUpdateCheckComplete: function(updates) {
       do_check_eq(updates.length, 1);
@@ -198,7 +186,7 @@ function run_test_8() {
 
 function run_test_9() {
   AddonUpdateChecker.checkForUpdates("test_bug378216_13@tests.mozilla.org",
-                                     "extension", updateKey,
+                                     updateKey,
                                      "http://localhost:4444/data/test_updatecheck.rdf", {
     onUpdateCheckComplete: function(updates) {
       do_check_eq(updates.length, 1);
@@ -215,7 +203,7 @@ function run_test_9() {
 
 function run_test_10() {
   AddonUpdateChecker.checkForUpdates("test_bug378216_14@tests.mozilla.org",
-                                     "extension", null,
+                                     null,
                                      "http://localhost:4444/data/test_updatecheck.rdf", {
     onUpdateCheckComplete: function(updates) {
       do_check_eq(updates.length, 0);
@@ -230,7 +218,7 @@ function run_test_10() {
 
 function run_test_11() {
   AddonUpdateChecker.checkForUpdates("test_bug378216_15@tests.mozilla.org",
-                                     "extension", null,
+                                     null,
                                      "http://localhost:4444/data/test_updatecheck.rdf", {
     onUpdateCheckComplete: function(updates) {
       do_throw("Update check should have failed");
@@ -245,7 +233,7 @@ function run_test_11() {
 
 function run_test_12() {
   AddonUpdateChecker.checkForUpdates("ignore-compat@tests.mozilla.org",
-                                     "extension", null,
+                                     null,
                                      "http://localhost:4444/data/test_updatecheck.rdf", {
     onUpdateCheckComplete: function(updates) {
       do_check_eq(updates.length, 3);
@@ -266,7 +254,7 @@ function run_test_12() {
 
 function run_test_13() {
   AddonUpdateChecker.checkForUpdates("compat-override@tests.mozilla.org",
-                                     "extension", null,
+                                     null,
                                      "http://localhost:4444/data/test_updatecheck.rdf", {
     onUpdateCheckComplete: function(updates) {
       do_check_eq(updates.length, 3);
@@ -304,7 +292,7 @@ function run_test_13() {
 
 function run_test_14() {
   AddonUpdateChecker.checkForUpdates("compat-strict-optin@tests.mozilla.org",
-                                     "extension", null,
+                                     null,
                                      "http://localhost:4444/data/test_updatecheck.rdf", {
     onUpdateCheckComplete: function(updates) {
       do_check_eq(updates.length, 1);

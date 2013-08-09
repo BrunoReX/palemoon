@@ -20,9 +20,10 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <time.h>
 
 #include "nsCOMPtr.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsStringGlue.h"
 
 #ifdef XP_WIN
@@ -42,12 +43,26 @@ static void Output(const char *fmt, ... )
   va_list ap;
   va_start(ap, fmt);
 
-#if defined(XP_WIN) && !MOZ_WINCONSOLE
-  PRUnichar msg[2048];
-  _vsnwprintf(msg, sizeof(msg)/sizeof(msg[0]), NS_ConvertUTF8toUTF16(fmt).get(), ap);
-  MessageBoxW(NULL, msg, L"XULRunner", MB_OK | MB_ICONERROR);
-#else
+#ifndef XP_WIN
   vfprintf(stderr, fmt, ap);
+#else
+  char msg[2048];
+  vsnprintf_s(msg, _countof(msg), _TRUNCATE, fmt, ap);
+
+  wchar_t wide_msg[2048];
+  MultiByteToWideChar(CP_UTF8,
+                      0,
+                      msg,
+                      -1,
+                      wide_msg,
+                      _countof(wide_msg));
+#if MOZ_WINCONSOLE
+  fwprintf_s(stderr, wide_msg);
+#else
+  MessageBoxW(NULL, wide_msg, L"Firefox", MB_OK
+                                        | MB_ICONERROR
+                                        | MB_SETFOREGROUND);
+#endif
 #endif
 
   va_end(ap);
@@ -90,6 +105,7 @@ XRE_FreeAppDataType XRE_FreeAppData;
 XRE_SetupDllBlocklistType XRE_SetupDllBlocklist;
 #endif
 XRE_TelemetryAccumulateType XRE_TelemetryAccumulate;
+XRE_StartupTimelineRecordType XRE_StartupTimelineRecord;
 XRE_mainType XRE_main;
 
 static const nsDynamicFunctionLoad kXULFuncs[] = {
@@ -100,13 +116,14 @@ static const nsDynamicFunctionLoad kXULFuncs[] = {
     { "XRE_SetupDllBlocklist", (NSFuncPtr*) &XRE_SetupDllBlocklist },
 #endif
     { "XRE_TelemetryAccumulate", (NSFuncPtr*) &XRE_TelemetryAccumulate },
+    { "XRE_StartupTimelineRecord", (NSFuncPtr*) &XRE_StartupTimelineRecord },
     { "XRE_main", (NSFuncPtr*) &XRE_main },
-    { nsnull, nsnull }
+    { nullptr, nullptr }
 };
 
 static int do_main(int argc, char* argv[])
 {
-  nsCOMPtr<nsILocalFile> appini;
+  nsCOMPtr<nsIFile> appini;
   nsresult rv;
 
   // Allow firefox.exe to launch XULRunner apps via -app <application.ini>
@@ -157,40 +174,31 @@ static int do_main(int argc, char* argv[])
   return XRE_main(argc, argv, &sAppData, 0);
 }
 
-#ifdef XP_WIN
-/**
- * Determines if the registry is disabled via the service or not.
- * 
- * @return true if prefetch is disabled
- *         false if prefetch is not disabled or an error occurred.
-*/
-bool IsPrefetchDisabledViaService()
+/* Local implementation of PR_Now, since the executable can't depend on NSPR */
+static PRTime _PR_Now()
 {
-  // We don't need to return false when we don't have MOZ_MAINTENANCE_SERVICE
-  // defined.  The reason is because another product installed that has it
-  // defined may have cleared our prefetch for us.  There is no known way
-  // to figure out which prefetch files are associated with which apps
-  // because of the prefetch hash.  So we disable all of them that start
-  // with FIREFOX.
-  HKEY baseKey;
-  LONG retCode = RegOpenKeyExW(HKEY_LOCAL_MACHINE, 
-                               L"SOFTWARE\\Mozilla\\MaintenanceService", 0,
-                               KEY_READ | KEY_WOW64_64KEY, &baseKey);
-  if (retCode != ERROR_SUCCESS) {
-    return false;
-  }
-  DWORD disabledValue = 0;
-  DWORD disabledValueSize = sizeof(DWORD);
-  RegQueryValueExW(baseKey, L"FFPrefetchDisabled", 0, NULL,
-                   reinterpret_cast<LPBYTE>(&disabledValue),
-                   &disabledValueSize);
-  RegCloseKey(baseKey);
-  return disabledValue == 1;
-}
+#ifdef XP_WIN
+  MOZ_STATIC_ASSERT(sizeof(PRTime) == sizeof(FILETIME), "PRTime must have the same size as FILETIME");
+  FILETIME ft;
+  GetSystemTimeAsFileTime(&ft);
+  PRTime now;
+  CopyMemory(&now, &ft, sizeof(PRTime));
+#ifdef __GNUC__
+  return (now - 116444736000000000LL) / 10LL;
+#else
+  return (now - 116444736000000000i64) / 10i64;
 #endif
+
+#else
+  struct timeval tm;
+  gettimeofday(&tm, 0);
+  return (((PRTime)tm.tv_sec * 1000000LL) + (PRTime)tm.tv_usec);
+#endif
+}
 
 int main(int argc, char* argv[])
 {
+  PRTime start = _PR_Now();
   char exePath[MAXPATHLEN];
 
 #ifdef XP_MACOSX
@@ -214,34 +222,12 @@ int main(int argc, char* argv[])
   struct rusage initialRUsage;
   gotCounters = !getrusage(RUSAGE_SELF, &initialRUsage);
 #elif defined(XP_WIN)
-  // Don't change the order of these enumeration constants, the order matters
-  // for reporting telemetry data.  If new values are added adjust the
-  // STARTUP_USING_PRELOAD histogram.
-  enum PreloadReason { PRELOAD_NONE, PRELOAD_SERVICE, PRELOAD_IOCOUNT };
-  PreloadReason preloadReason = PRELOAD_NONE;
-
-  // GetProcessIoCounters().ReadOperationCount seems to have little to
-  // do with actual read operations. It reports 0 or 1 at this stage
-  // in the program. Luckily 1 coincides with when prefetch is
-  // enabled. If Windows prefetch didn't happen we can do our own
-  // faster dll preloading.
-  // The MozillaMaintenance service issues a command to disable the
-  // prefetch by replacing all found .pf files with 0 byte read only
-  // files.
   IO_COUNTERS ioCounters;
   gotCounters = GetProcessIoCounters(GetCurrentProcess(), &ioCounters);
-
-  if (IsPrefetchDisabledViaService()) {
-    preloadReason = PRELOAD_SERVICE;
-  } else if ((gotCounters && !ioCounters.ReadOperationCount)) {
-    preloadReason = PRELOAD_IOCOUNT;
-  }
-
-  if (preloadReason != PRELOAD_NONE)
 #endif
-  {
-      XPCOMGlueEnablePreload();
-  }
+
+  // We do this because of data in bug 771745
+  XPCOMGlueEnablePreload();
 
   rv = XPCOMGlueStartup(exePath);
   if (NS_FAILED(rv)) {
@@ -257,13 +243,10 @@ int main(int argc, char* argv[])
     return 255;
   }
 
+  XRE_StartupTimelineRecord(mozilla::StartupTimeline::START, start);
+
 #ifdef XRE_HAS_DLL_BLOCKLIST
   XRE_SetupDllBlocklist();
-#endif
-
-#if defined(XP_WIN)
-  XRE_TelemetryAccumulate(mozilla::Telemetry::STARTUP_USING_PRELOAD,
-                          preloadReason);
 #endif
 
   if (gotCounters) {

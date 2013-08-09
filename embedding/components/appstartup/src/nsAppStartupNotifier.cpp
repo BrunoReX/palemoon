@@ -12,7 +12,6 @@
 #include "nsISupportsPrimitives.h"
 #include "nsAppStartupNotifier.h"
 
-#include "mozilla/FunctionTimer.h"
 
 NS_IMPL_ISUPPORTS1(nsAppStartupNotifier, nsIObserver)
 
@@ -26,8 +25,6 @@ nsAppStartupNotifier::~nsAppStartupNotifier()
 
 NS_IMETHODIMP nsAppStartupNotifier::Observe(nsISupports *aSubject, const char *aTopic, const PRUnichar *someData)
 {
-    NS_TIME_FUNCTION;
-
     NS_ENSURE_ARG(aTopic);
     nsresult rv;
 
@@ -41,14 +38,12 @@ NS_IMETHODIMP nsAppStartupNotifier::Observe(nsISupports *aSubject, const char *a
                                getter_AddRefs(enumerator));
     if (NS_FAILED(rv)) return rv;
 
-    NS_TIME_FUNCTION_MARK("EnumerateCategory");
-
     nsCOMPtr<nsISupports> entry;
     while (NS_SUCCEEDED(enumerator->GetNext(getter_AddRefs(entry)))) {
         nsCOMPtr<nsISupportsCString> category = do_QueryInterface(entry, &rv);
 
         if (NS_SUCCEEDED(rv)) {
-            nsCAutoString categoryEntry;
+            nsAutoCString categoryEntry;
             rv = category->GetData(categoryEntry);
 
             nsXPIDLCString contractId;
@@ -73,21 +68,19 @@ NS_IMETHODIMP nsAppStartupNotifier::Observe(nsISupports *aSubject, const char *a
                     nsCOMPtr<nsIObserver> startupObserver =
                         do_QueryInterface(startupInstance, &rv);
                     if (NS_SUCCEEDED(rv)) {
-                        rv = startupObserver->Observe(nsnull, aTopic, nsnull);
+                        rv = startupObserver->Observe(nullptr, aTopic, nullptr);
      
                         // mainly for debugging if you want to know if your observer worked.
                         NS_ASSERTION(NS_SUCCEEDED(rv), "Startup Observer failed!\n");
                     }
                 }
                 else {
-                  #ifdef NS_DEBUG
-                    nsCAutoString warnStr("Cannot create startup observer : ");
+                  #ifdef DEBUG
+                    nsAutoCString warnStr("Cannot create startup observer : ");
                     warnStr += contractId.get();
                     NS_WARNING(warnStr.get());
                   #endif
                 }
-
-                NS_TIME_FUNCTION_MARK("observer: category: %s cid: %s", categoryEntry.get(), nsPromiseFlatCString(contractId).get());
 
             }
         }

@@ -26,10 +26,10 @@ nsProfiler::nsProfiler()
 
 
 NS_IMETHODIMP
-nsProfiler::StartProfiler(PRUint32 aInterval, PRUint32 aEntries,
-                          const char** aFeatures, PRUint32 aFeatureCount)
+nsProfiler::StartProfiler(uint32_t aEntries, uint32_t aInterval,
+                          const char** aFeatures, uint32_t aFeatureCount)
 {
-  SAMPLER_START(aInterval, aEntries, aFeatures, aFeatureCount);
+  SAMPLER_START(aEntries, aInterval, aFeatures, aFeatureCount);
 #ifdef MOZ_INSTRUMENT_EVENT_LOOP
   mozilla::InitEventTracing();
 #endif
@@ -48,7 +48,7 @@ nsProfiler::GetProfile(char **aProfile)
 {
   char *profile = SAMPLER_GET_PROFILE();
   if (profile) {
-    PRUint32 len = strlen(profile);
+    uint32_t len = strlen(profile);
     char *profileStr = static_cast<char *>
                          (nsMemory::Clone(profile, (len + 1) * sizeof(char)));
     profileStr[len] = '\0';
@@ -59,7 +59,7 @@ nsProfiler::GetProfile(char **aProfile)
 }
 
 static void
-AddSharedLibraryInfoToStream(std::ostream& aStream, SharedLibrary& aLib)
+AddSharedLibraryInfoToStream(std::ostream& aStream, const SharedLibrary& aLib)
 {
   aStream << "{";
   aStream << "\"start\":" << aLib.GetStart();
@@ -121,13 +121,13 @@ nsProfiler::IsActive(bool *aIsActive)
 }
 
 NS_IMETHODIMP
-nsProfiler::GetResponsivenessTimes(PRUint32 *aCount, double **aResult)
+nsProfiler::GetResponsivenessTimes(uint32_t *aCount, double **aResult)
 {
   unsigned int len = 100;
   const double* times = SAMPLER_GET_RESPONSIVENESS();
   if (!times) {
     *aCount = 0;
-    *aResult = nsnull;
+    *aResult = nullptr;
     return NS_OK;
   }
 
@@ -141,14 +141,14 @@ nsProfiler::GetResponsivenessTimes(PRUint32 *aCount, double **aResult)
 }
 
 NS_IMETHODIMP
-nsProfiler::GetFeatures(PRUint32 *aCount, char ***aFeatures)
+nsProfiler::GetFeatures(uint32_t *aCount, char ***aFeatures)
 {
-  PRUint32 len = 0;
+  uint32_t len = 0;
 
   const char **features = SAMPLER_GET_FEATURES();
   if (!features) {
     *aCount = 0;
-    *aFeatures = nsnull;
+    *aFeatures = nullptr;
     return NS_OK;
   }
 
@@ -160,7 +160,7 @@ nsProfiler::GetFeatures(PRUint32 *aCount, char ***aFeatures)
                        (nsMemory::Alloc(len * sizeof(char*)));
 
   for (size_t i = 0; i < len; i++) {
-    PRUint32 strLen = strlen(features[i]);
+    uint32_t strLen = strlen(features[i]);
     featureList[i] = static_cast<char *>
                          (nsMemory::Clone(features[i], (strLen + 1) * sizeof(char)));
   }

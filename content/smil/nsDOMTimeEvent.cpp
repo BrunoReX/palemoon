@@ -42,11 +42,11 @@ nsDOMTimeEvent::nsDOMTimeEvent(nsPresContext* aPresContext, nsEvent* aEvent)
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsDOMTimeEvent)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsDOMTimeEvent, nsDOMEvent)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mView)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mView)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsDOMTimeEvent, nsDOMEvent)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mView)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mView)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_ADDREF_INHERITED(nsDOMTimeEvent, nsDOMEvent)
@@ -68,7 +68,7 @@ nsDOMTimeEvent::GetView(nsIDOMWindow** aView)
 }
 
 NS_IMETHODIMP
-nsDOMTimeEvent::GetDetail(PRInt32* aDetail)
+nsDOMTimeEvent::GetDetail(int32_t* aDetail)
 {
   *aDetail = mDetail;
   return NS_OK;
@@ -77,7 +77,7 @@ nsDOMTimeEvent::GetDetail(PRInt32* aDetail)
 NS_IMETHODIMP
 nsDOMTimeEvent::InitTimeEvent(const nsAString& aTypeArg,
                               nsIDOMWindow* aViewArg,
-                              PRInt32 aDetailArg)
+                              int32_t aDetailArg)
 {
   nsresult rv = nsDOMEvent::InitEvent(aTypeArg, false /*doesn't bubble*/,
                                                 false /*can't cancel*/);

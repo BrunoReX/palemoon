@@ -49,7 +49,7 @@ GCONF_FUNCTIONS
 #define gconf_client_set_float _gconf_client_set_float
 #define gconf_client_unset _gconf_client_unset
 
-static PRLibrary *gconfLib = nsnull;
+static PRLibrary *gconfLib = nullptr;
 
 typedef void (*nsGConfFunc)();
 struct nsGConfDynamicFunction {
@@ -82,7 +82,7 @@ nsGConfService::Init()
       return NS_ERROR_FAILURE;
   }
 
-  for (PRUint32 i = 0; i < ArrayLength(kGConfSymbols); i++) {
+  for (uint32_t i = 0; i < ArrayLength(kGConfSymbols); i++) {
     *kGConfSymbols[i].function =
       PR_FindFunctionSymbol(gconfLib, kGConfSymbols[i].functionName);
     if (!*kGConfSymbols[i].function) {
@@ -99,7 +99,7 @@ NS_IMPL_ISUPPORTS1(nsGConfService, nsIGConfService)
 NS_IMETHODIMP
 nsGConfService::GetBool(const nsACString &aKey, bool *aResult)
 {
-  GError* error = nsnull;
+  GError* error = nullptr;
   *aResult = gconf_client_get_bool(mClient, PromiseFlatCString(aKey).get(),
                                    &error);
 
@@ -114,7 +114,7 @@ nsGConfService::GetBool(const nsACString &aKey, bool *aResult)
 NS_IMETHODIMP
 nsGConfService::GetString(const nsACString &aKey, nsACString &aResult)
 {
-  GError* error = nsnull;
+  GError* error = nullptr;
   gchar *result = gconf_client_get_string(mClient,
                                           PromiseFlatCString(aKey).get(),
                                           &error);
@@ -134,9 +134,9 @@ nsGConfService::GetString(const nsACString &aKey, nsACString &aResult)
 }
 
 NS_IMETHODIMP
-nsGConfService::GetInt(const nsACString &aKey, PRInt32* aResult)
+nsGConfService::GetInt(const nsACString &aKey, int32_t* aResult)
 {
-  GError* error = nsnull;
+  GError* error = nullptr;
   *aResult = gconf_client_get_int(mClient, PromiseFlatCString(aKey).get(),
                                   &error);
 
@@ -151,7 +151,7 @@ nsGConfService::GetInt(const nsACString &aKey, PRInt32* aResult)
 NS_IMETHODIMP
 nsGConfService::GetFloat(const nsACString &aKey, float* aResult)
 {
-  GError* error = nsnull;
+  GError* error = nullptr;
   *aResult = gconf_client_get_float(mClient, PromiseFlatCString(aKey).get(),
                                     &error);
 
@@ -170,7 +170,7 @@ nsGConfService::GetStringList(const nsACString &aKey, nsIArray** aResult)
   if (!items)
     return NS_ERROR_OUT_OF_MEMORY;
     
-  GError* error = nsnull;
+  GError* error = nullptr;
   GSList* list = gconf_client_get_list(mClient, PromiseFlatCString(aKey).get(),
                                        GCONF_VALUE_STRING, &error);
   if (error) {
@@ -198,7 +198,7 @@ NS_IMETHODIMP
 nsGConfService::SetBool(const nsACString &aKey, bool aValue)
 {
   bool res = gconf_client_set_bool(mClient, PromiseFlatCString(aKey).get(),
-                                     aValue, nsnull);
+                                     aValue, nullptr);
 
   return res ? NS_OK : NS_ERROR_FAILURE;
 }
@@ -208,16 +208,16 @@ nsGConfService::SetString(const nsACString &aKey, const nsACString &aValue)
 {
   bool res = gconf_client_set_string(mClient, PromiseFlatCString(aKey).get(),
                                        PromiseFlatCString(aValue).get(),
-                                       nsnull);
+                                       nullptr);
 
   return res ? NS_OK : NS_ERROR_FAILURE;
 }
 
 NS_IMETHODIMP
-nsGConfService::SetInt(const nsACString &aKey, PRInt32 aValue)
+nsGConfService::SetInt(const nsACString &aKey, int32_t aValue)
 {
   bool res = gconf_client_set_int(mClient, PromiseFlatCString(aKey).get(),
-                                    aValue, nsnull);
+                                    aValue, nullptr);
 
   return res ? NS_OK : NS_ERROR_FAILURE;
 }
@@ -226,7 +226,7 @@ NS_IMETHODIMP
 nsGConfService::SetFloat(const nsACString &aKey, float aValue)
 {
   bool res = gconf_client_set_float(mClient, PromiseFlatCString(aKey).get(),
-                                      aValue, nsnull);
+                                      aValue, nullptr);
 
   return res ? NS_OK : NS_ERROR_FAILURE;
 }
@@ -235,11 +235,11 @@ NS_IMETHODIMP
 nsGConfService::GetAppForProtocol(const nsACString &aScheme, bool *aEnabled,
                                   nsACString &aHandler)
 {
-  nsCAutoString key("/desktop/gnome/url-handlers/");
+  nsAutoCString key("/desktop/gnome/url-handlers/");
   key.Append(aScheme);
   key.Append("/command");
 
-  GError *err = nsnull;
+  GError *err = nullptr;
   gchar *command = gconf_client_get_string(mClient, key.get(), &err);
   if (!err && command) {
     key.Replace(key.Length() - 7, 7, NS_LITERAL_CSTRING("enabled"));
@@ -263,11 +263,11 @@ NS_IMETHODIMP
 nsGConfService::HandlerRequiresTerminal(const nsACString &aScheme,
                                         bool *aResult)
 {
-  nsCAutoString key("/desktop/gnome/url-handlers/");
+  nsAutoCString key("/desktop/gnome/url-handlers/");
   key.Append(aScheme);
   key.Append("/requires_terminal");
 
-  GError *err = nsnull;
+  GError *err = nullptr;
   *aResult = gconf_client_get_bool(mClient, key.get(), &err);
   if (err) {
     g_error_free(err);
@@ -281,22 +281,22 @@ NS_IMETHODIMP
 nsGConfService::SetAppForProtocol(const nsACString &aScheme,
                                   const nsACString &aCommand)
 {
-  nsCAutoString key("/desktop/gnome/url-handlers/");
+  nsAutoCString key("/desktop/gnome/url-handlers/");
   key.Append(aScheme);
   key.Append("/command");
 
   bool res = gconf_client_set_string(mClient, key.get(),
                                        PromiseFlatCString(aCommand).get(),
-                                       nsnull);
+                                       nullptr);
   if (res) {
     key.Replace(key.Length() - 7, 7, NS_LITERAL_CSTRING("enabled"));
-    res = gconf_client_set_bool(mClient, key.get(), true, nsnull);
+    res = gconf_client_set_bool(mClient, key.get(), true, nullptr);
     if (res) {
       key.Replace(key.Length() - 7, 7, NS_LITERAL_CSTRING("needs_terminal"));
-      res = gconf_client_set_bool(mClient, key.get(), false, nsnull);
+      res = gconf_client_set_bool(mClient, key.get(), false, nullptr);
       if (res) {
         key.Replace(key.Length() - 14, 14, NS_LITERAL_CSTRING("command-id"));
-        res = gconf_client_unset(mClient, key.get(), nsnull);
+        res = gconf_client_unset(mClient, key.get(), nullptr);
       }
     }
   }

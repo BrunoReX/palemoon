@@ -39,7 +39,7 @@
 #include "npapi.h"
 #include "npfunctions.h"
 #include "npruntime.h"
-#include "prtypes.h"
+#include "mozilla/StandardInteger.h"
 #include <string>
 #include <sstream>
 
@@ -86,7 +86,7 @@ typedef enum {
 typedef struct TestNPObject : NPObject {
   NPP npp;
   DrawMode drawMode;
-  PRUint32 drawColor; // 0xAARRGGBB
+  uint32_t drawColor; // 0xAARRGGBB
 } TestNPObject;
 
 typedef struct _PlatformData PlatformData;
@@ -110,6 +110,7 @@ typedef struct InstanceData {
   bool timerTestResult;
   bool asyncCallbackResult;
   bool invalidateDuringPaint;
+  bool slowPaint;
   int32_t winX;
   int32_t winY;
   int32_t lastMouseX;
@@ -149,6 +150,7 @@ typedef struct InstanceData {
   AsyncDrawing asyncDrawing;
   NPAsyncSurface *frontBuffer;
   NPAsyncSurface *backBuffer;
+  int32_t mouseUpEventCount;
 } InstanceData;
 
 void notifyDidPaint(InstanceData* instanceData);

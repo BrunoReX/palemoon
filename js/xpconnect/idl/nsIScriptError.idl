@@ -11,7 +11,7 @@
 #include "nsISupports.idl"
 #include "nsIConsoleMessage.idl"
 
-[scriptable, uuid(c6dd877a-87b6-47cc-968d-90f4514ec65f)]
+[scriptable, uuid(ec640482-be5f-49a0-a9cb-c87eacce9291)]
 interface nsIScriptError : nsIConsoleMessage
 {
     /** pseudo-flag for default case */
@@ -37,9 +37,9 @@ interface nsIScriptError : nsIConsoleMessage
 
     readonly attribute AString sourceName;
     readonly attribute AString sourceLine;
-    readonly attribute PRUint32 lineNumber;
-    readonly attribute PRUint32 columnNumber;
-    readonly attribute PRUint32 flags;
+    readonly attribute uint32_t lineNumber;
+    readonly attribute uint32_t columnNumber;
+    readonly attribute uint32_t flags;
 
     /**
      * Categories I know about -
@@ -66,23 +66,25 @@ interface nsIScriptError : nsIConsoleMessage
        returned if init() was used instead of initWithWindowID(). */
     readonly attribute unsigned long long innerWindowID;
 
-    void init(in wstring message,
-              in wstring sourceName,
-              in wstring sourceLine,
-              in PRUint32 lineNumber,
-              in PRUint32 columnNumber,
-              in PRUint32 flags,
+    readonly attribute boolean isFromPrivateWindow;
+
+    void init(in AString message,
+              in AString sourceName,
+              in AString sourceLine,
+              in uint32_t lineNumber,
+              in uint32_t columnNumber,
+              in uint32_t flags,
               in string category);
 
     /* This should be called instead of nsIScriptError.init to
        initialize with a window id.  The window id should be for the
        inner window associated with this error. */
-    void initWithWindowID(in wstring message,
-                          in wstring sourceName,
-                          in wstring sourceLine,
-                          in PRUint32 lineNumber,
-                          in PRUint32 columnNumber,
-                          in PRUint32 flags,
+    void initWithWindowID(in AString message,
+                          in AString sourceName,
+                          in AString sourceLine,
+                          in uint32_t lineNumber,
+                          in uint32_t columnNumber,
+                          in uint32_t flags,
                           in string category,
                           in unsigned long long innerWindowID);
 

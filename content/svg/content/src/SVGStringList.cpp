@@ -6,14 +6,14 @@
 #include "mozilla/Util.h"
 
 #include "SVGStringList.h"
-#include "nsSVGElement.h"
-#include "nsDOMError.h"
-#include "nsString.h"
-#include "nsSVGUtils.h"
-#include "nsTextFormatter.h"
-#include "nsWhitespaceTokenizer.h"
+#include "nsError.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsMathUtils.h"
+#include "nsString.h"
+#include "nsSVGElement.h"
+#include "nsTextFormatter.h"
+#include "nsWhitespaceTokenizer.h"
+#include "SVGContentUtils.h"
 
 namespace mozilla {
 
@@ -33,8 +33,8 @@ void
 SVGStringList::GetValue(nsAString& aValue) const
 {
   aValue.Truncate();
-  PRUint32 last = mStrings.Length() - 1;
-  for (PRUint32 i = 0; i < mStrings.Length(); ++i) {
+  uint32_t last = mStrings.Length() - 1;
+  for (uint32_t i = 0; i < mStrings.Length(); ++i) {
     aValue.Append(mStrings[i]);
     if (i != last) {
       if (mIsCommaSeparated) {

@@ -4,6 +4,7 @@
 
 #ifdef mozilla_StartupTimeline_Event
 mozilla_StartupTimeline_Event(PROCESS_CREATION, "process")
+mozilla_StartupTimeline_Event(START, "start")
 mozilla_StartupTimeline_Event(MAIN, "main")
 // Record the beginning and end of startup crash detection to compare with crash stats to know whether
 // detection should be improved to start or end sooner.
@@ -22,6 +23,7 @@ mozilla_StartupTimeline_Event(FIRST_LOAD_URI, "firstLoadURI")
 
 #include "prtime.h"
 #include "nscore.h"
+#include "sampler.h"
 
 #ifdef MOZ_LINKER
 extern "C" {
@@ -36,6 +38,8 @@ NS_VISIBILITY_DEFAULT __attribute__((weak));
 #endif
 
 namespace mozilla {
+
+void RecordShutdownEndTimeStamp();
 
 class StartupTimeline {
 public:
@@ -54,7 +58,12 @@ public:
     return sStartupTimelineDesc[ev];
   }
 
-  static void Record(Event ev, PRTime when = PR_Now()) {
+  static void Record(Event ev) {
+    SAMPLE_MARKER(Describe(ev));
+    Record(ev, PR_Now());
+  }
+
+  static void Record(Event ev, PRTime when) {
     sStartupTimeline[ev] = when;
 #ifdef MOZ_LINKER
     if (__moz_linker_stats)

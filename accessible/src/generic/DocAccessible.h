@@ -10,8 +10,8 @@
 #include "nsIAccessibleDocument.h"
 #include "nsIAccessiblePivot.h"
 
+#include "AccEvent.h"
 #include "HyperTextAccessibleWrap.h"
-#include "nsEventShell.h"
 
 #include "nsClassHashtable.h"
 #include "nsDataHashtable.h"
@@ -22,17 +22,22 @@
 #include "nsIScrollPositionListener.h"
 #include "nsITimer.h"
 #include "nsIWeakReference.h"
-#include "nsCOMArray.h"
 #include "nsIDocShellTreeNode.h"
 
-template<class Class, class Arg>
-class TNotification;
-class NotificationController;
-
-class nsIScrollableView;
+class nsAccDocManager;
 class nsAccessiblePivot;
 
-const PRUint32 kDefaultCacheSize = 256;
+class nsIScrollableView;
+
+const uint32_t kDefaultCacheSize = 256;
+
+namespace mozilla {
+namespace a11y {
+
+class NotificationController;
+class RelatedAccIterator;
+template<class Class, class Arg>
+class TNotification;
 
 class DocAccessible : public HyperTextAccessibleWrap,
                       public nsIAccessibleDocument,
@@ -61,7 +66,6 @@ public:
   virtual ~DocAccessible();
 
   // nsIAccessible
-  NS_IMETHOD GetAttributes(nsIPersistentProperties** aAttributes);
   NS_IMETHOD TakeFocus(void);
 
   // nsIScrollPositionListener
@@ -72,25 +76,24 @@ public:
   NS_DECL_NSIDOCUMENTOBSERVER
 
   // nsAccessNode
-  virtual bool Init();
+  virtual void Init();
   virtual void Shutdown();
   virtual nsIFrame* GetFrame() const;
   virtual nsINode* GetNode() const { return mDocument; }
-  virtual nsIDocument* GetDocumentNode() const { return mDocument; }
+  nsIDocument* DocumentNode() const { return mDocument; }
 
   // Accessible
   virtual mozilla::a11y::ENameValueFlag Name(nsString& aName);
   virtual void Description(nsString& aDescription);
   virtual Accessible* FocusedChild();
   virtual mozilla::a11y::role NativeRole();
-  virtual PRUint64 NativeState();
-  virtual PRUint64 NativeInteractiveState() const;
+  virtual uint64_t NativeState();
+  virtual uint64_t NativeInteractiveState() const;
   virtual bool NativelyUnavailable() const;
-  virtual void ApplyARIAState(PRUint64* aState) const;
+  virtual void ApplyARIAState(uint64_t* aState) const;
+  virtual already_AddRefed<nsIPersistentProperties> Attributes();
 
-  virtual void SetRoleMapEntry(nsRoleMapEntry* aRoleMapEntry);
-
-#ifdef DEBUG
+#ifdef A11Y_LOG
   virtual nsresult HandleAccEvent(AccEvent* aEvent);
 #endif
 
@@ -143,8 +146,8 @@ public:
    * Return true if the document has given document state.
    */
   bool HasLoadState(LoadState aState) const
-    { return (mLoadState & static_cast<PRUint32>(aState)) == 
-        static_cast<PRUint32>(aState); }
+    { return (mLoadState & static_cast<uint32_t>(aState)) == 
+        static_cast<uint32_t>(aState); }
 
   /**
    * Return a native window handler or pointer depending on platform.
@@ -155,19 +158,19 @@ public:
    * Return the parent document.
    */
   DocAccessible* ParentDocument() const
-    { return mParent ? mParent->Document() : nsnull; }
+    { return mParent ? mParent->Document() : nullptr; }
 
   /**
    * Return the child document count.
    */
-  PRUint32 ChildDocumentCount() const
+  uint32_t ChildDocumentCount() const
     { return mChildDocuments.Length(); }
 
   /**
    * Return the child document at the given index.
    */
-  DocAccessible* GetChildDocumentAt(PRUint32 aIndex) const
-    { return mChildDocuments.SafeElementAt(aIndex, nsnull); }
+  DocAccessible* GetChildDocumentAt(uint32_t aIndex) const
+    { return mChildDocuments.SafeElementAt(aIndex, nullptr); }
 
   /**
    * Non-virtual method to fire a delayed event after a 0 length timeout.
@@ -176,7 +179,7 @@ public:
    * @param aDOMNode     [in] DOM node the accesible event should be fired for
    * @param aAllowDupes  [in] rule to process an event (see EEventRule constants)
    */
-  nsresult FireDelayedAccessibleEvent(PRUint32 aEventType, nsINode *aNode,
+  nsresult FireDelayedAccessibleEvent(uint32_t aEventType, nsINode *aNode,
                                       AccEvent::EEventRule aAllowDupes = AccEvent::eRemoveDupes,
                                       EIsFromUserInput aIsFromUserInput = eAutoDetect);
 
@@ -190,17 +193,7 @@ public:
   /**
    * Fire value change event on the given accessible if applicable.
    */
-  void MaybeNotifyOfValueChange(Accessible* aAccessible)
-  {
-    mozilla::a11y::role role = aAccessible->Role();
-    if (role == mozilla::a11y::roles::ENTRY ||
-        role == mozilla::a11y::roles::COMBOBOX) {
-      nsRefPtr<AccEvent> valueChangeEvent =
-        new AccEvent(nsIAccessibleEvent::EVENT_VALUE_CHANGE, aAccessible,
-                     eAutoDetect, AccEvent::eRemoveDupes);
-      FireDelayedAccessibleEvent(valueChangeEvent);
-    }
-  }
+  void MaybeNotifyOfValueChange(Accessible* aAccessible);
 
   /**
    * Get/set the anchor jump.
@@ -243,18 +236,6 @@ public:
     { return GetAccessible(aNode); }
 
   /**
-   * Return true if the given accessible is in document.
-   */
-  bool IsInDocument(Accessible* aAccessible) const
-  {
-    Accessible* acc = aAccessible;
-    while (acc && !acc->IsPrimaryForNode())
-      acc = acc->Parent();
-
-    return acc ? mNodeToAccessibleMap.Get(acc->GetNode()) : false;
-  }
-
-  /**
    * Return the cached accessible by the given unique ID within this document.
    *
    * @note   the unique ID matches with the uniqueID() of nsAccessNode
@@ -284,7 +265,7 @@ public:
    */
   Accessible* GetContainerAccessible(nsINode* aNode)
   {
-    return aNode ? GetAccessibleOrContainer(aNode->GetNodeParent()) : nsnull;
+    return aNode ? GetAccessibleOrContainer(aNode->GetParentNode()) : nullptr;
   }
 
   /**
@@ -295,13 +276,13 @@ public:
    *       while it's called for XUL elements (where XBL is used widely).
    */
   bool IsDependentID(const nsAString& aID) const
-    { return mDependentIDsHash.Get(aID, nsnull); }
+    { return mDependentIDsHash.Get(aID, nullptr); }
 
   /**
    * Initialize the newly created accessible and put it into document caches.
    *
    * @param  aAccessible    [in] created accessible
-   * @param  aRoleMapEntry  [in] the role map entry role the ARIA role or nsnull
+   * @param  aRoleMapEntry  [in] the role map entry role the ARIA role or nullptr
    *                          if none
    */
   bool BindToDocument(Accessible* aAccessible, nsRoleMapEntry* aRoleMapEntry);
@@ -347,15 +328,10 @@ protected:
   /**
    * Marks this document as loaded or loading.
    */
-  void NotifyOfLoad(PRUint32 aLoadEventType)
-  {
-    mLoadState |= eDOMLoaded;
-    mLoadEventType = aLoadEventType;
-  }
-
+  void NotifyOfLoad(uint32_t aLoadEventType);
   void NotifyOfLoading(bool aIsReloading);
 
-  friend class nsAccDocManager;
+  friend class ::nsAccDocManager;
 
   /**
    * Perform initial update (create accessible tree).
@@ -399,7 +375,7 @@ protected:
    * @param aRelAttr     [in, optional] relation attribute
    */
   void AddDependentIDsFor(Accessible* aRelProvider,
-                          nsIAtom* aRelAttr = nsnull);
+                          nsIAtom* aRelAttr = nullptr);
 
   /**
    * Remove dependent IDs pointed by accessible element by relation attribute
@@ -410,7 +386,7 @@ protected:
    * @param aRelAttr     [in, optional] relation attribute
    */
   void RemoveDependentIDsFor(Accessible* aRelProvider,
-                             nsIAtom* aRelAttr = nsnull);
+                             nsIAtom* aRelAttr = nullptr);
 
   /**
    * Update or recreate an accessible depending on a changed attribute.
@@ -429,7 +405,7 @@ protected:
      * @param aNameSpaceID - namespace of changed attribute
      * @param aAttribute - changed attribute
      */
-    void AttributeChangedImpl(nsIContent* aContent, PRInt32 aNameSpaceID, nsIAtom* aAttribute);
+    void AttributeChangedImpl(nsIContent* aContent, int32_t aNameSpaceID, nsIAtom* aAttribute);
 
     /**
      * Fires accessible events when ARIA attribute is changed.
@@ -443,12 +419,6 @@ protected:
    * Process ARIA active-descendant attribute change.
    */
   void ARIAActiveDescendantChanged(nsIContent* aElm);
-
-  /**
-   * Process the event when the queue of pending events is untwisted. Fire
-   * accessible events as result of the processing.
-   */
-  void ProcessPendingEvent(AccEvent* aEvent);
 
   /**
    * Update the accessible tree for inserted content.
@@ -481,7 +451,8 @@ protected:
     eAlertAccessible = 2
   };
 
-  PRUint32 UpdateTreeInternal(Accessible* aChild, bool aIsInsert);
+  uint32_t UpdateTreeInternal(Accessible* aChild, bool aIsInsert,
+                              AccReorderEvent* aReorderEvent);
 
   /**
    * Create accessible tree.
@@ -531,17 +502,17 @@ protected:
 
     nsCOMPtr<nsIDocument> mDocument;
     nsCOMPtr<nsITimer> mScrollWatchTimer;
-    PRUint16 mScrollPositionChangedTicks; // Used for tracking scroll events
+    uint16_t mScrollPositionChangedTicks; // Used for tracking scroll events
 
   /**
    * Bit mask of document load states (@see LoadState).
    */
-  PRUint32 mLoadState;
+  uint32_t mLoadState;
 
   /**
    * Type of document load event fired after the document is loaded completely.
    */
-  PRUint32 mLoadEventType;
+  uint32_t mLoadEventType;
 
   /**
    * Reference to anchor jump element.
@@ -615,7 +586,10 @@ inline DocAccessible*
 Accessible::AsDoc()
 {
   return mFlags & eDocAccessible ?
-    static_cast<DocAccessible*>(this) : nsnull;
+    static_cast<DocAccessible*>(this) : nullptr;
 }
+
+} // namespace a11y
+} // namespace mozilla
 
 #endif

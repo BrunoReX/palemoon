@@ -17,7 +17,7 @@
 #include "nsStringAPI.h"
 #include "nsIFileStreams.h"
 #include "nsIStreamListener.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsNetUtil.h"
 #include "nsAutoLock.h"
 #include "prlog.h"
@@ -28,7 +28,7 @@
 //
 // set NSPR_LOG_MODULES=Test:5
 //
-static PRLogModuleInfo *gTestLog = nsnull;
+static PRLogModuleInfo *gTestLog = nullptr;
 #define LOG(args) PR_LOG(gTestLog, PR_LOG_DEBUG, args)
 #else
 #define LOG(args)
@@ -56,7 +56,7 @@ public:
 
     NS_IMETHOD OnDataAvailable(nsIRequest *req, nsISupports *ctx,
                                nsIInputStream *stream,
-                               PRUint32 offset, PRUint32 count)
+                               uint32_t offset, uint32_t count)
     {
         LOG(("MyListener::OnDataAvailable [offset=%u count=%u]\n", offset, count));
 
@@ -64,7 +64,7 @@ public:
         nsresult rv;
 
         while (count) {
-            PRUint32 n, amt = NS_MIN<PRUint32>(count, sizeof(buf));
+            uint32_t n, amt = NS_MIN<uint32_t>(count, sizeof(buf));
 
             rv = stream->Read(buf, amt, &n);
             if (NS_FAILED(rv)) {
@@ -115,7 +115,7 @@ public:
     }
 
     NS_IMETHOD OnProgress(nsIRequest *req, nsISupports *ctx,
-                          PRUint64 progress, PRUint64 progressMax)
+                          uint64_t progress, uint64_t progressMax)
     {
         LOG(("MyCallbacks::OnProgress [progress=%llu/%llu]\n", progress, progressMax));
         return NS_OK;
@@ -153,7 +153,7 @@ RunTest(nsIFile *file)
     rv = chan->SetNotificationCallbacks(new MyCallbacks());
     if (NS_FAILED(rv)) return rv;
 
-    rv = chan->AsyncOpen(new MyListener(), nsnull);
+    rv = chan->AsyncOpen(new MyListener(), nullptr);
     if (NS_FAILED(rv)) return rv;
 
     PumpEvents();
@@ -177,17 +177,17 @@ main(int argc, char* argv[])
     char* fileName = argv[1];
     {
         nsCOMPtr<nsIServiceManager> servMan;
-        NS_InitXPCOM2(getter_AddRefs(servMan), nsnull, nsnull);
+        NS_InitXPCOM2(getter_AddRefs(servMan), nullptr, nullptr);
         nsCOMPtr<nsIComponentRegistrar> registrar = do_QueryInterface(servMan);
         NS_ASSERTION(registrar, "Null nsIComponentRegistrar");
         if (registrar)
-            registrar->AutoRegister(nsnull);
+            registrar->AutoRegister(nullptr);
 
 #if defined(PR_LOGGING)
         gTestLog = PR_NewLogModule("Test");
 #endif
 
-        nsCOMPtr<nsILocalFile> file;
+        nsCOMPtr<nsIFile> file;
         rv = NS_NewNativeLocalFile(nsDependentCString(fileName), false, getter_AddRefs(file));
         if (NS_FAILED(rv)) return rv;
 
@@ -199,7 +199,7 @@ main(int argc, char* argv[])
         PR_Sleep(PR_SecondsToInterval(1));
     } // this scopes the nsCOMPtrs
     // no nsCOMPtrs are allowed to be alive when you call NS_ShutdownXPCOM
-    rv = NS_ShutdownXPCOM(nsnull);
+    rv = NS_ShutdownXPCOM(nullptr);
     NS_ASSERTION(NS_SUCCEEDED(rv), "NS_ShutdownXPCOM failed");
     return NS_OK;
 }

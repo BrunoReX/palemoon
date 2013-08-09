@@ -93,7 +93,7 @@ public:
 
     // We do not allow favicons without a MIME type, so we'll return the default
     // icon.
-    nsCAutoString mimeType;
+    nsAutoCString mimeType;
     (void)row->GetUTF8String(1, mimeType);
     NS_ENSURE_FALSE(mimeType.IsEmpty(), NS_OK);
 
@@ -102,14 +102,14 @@ public:
     NS_ENSURE_SUCCESS(rv, rv);
 
     // Obtain the binary blob that contains our favicon data.
-    PRUint8 *favicon;
-    PRUint32 size = 0;
+    uint8_t *favicon;
+    uint32_t size = 0;
     rv = row->GetBlob(0, &size, &favicon);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    PRUint32 totalWritten = 0;
+    uint32_t totalWritten = 0;
     do {
-      PRUint32 bytesWritten;
+      uint32_t bytesWritten;
       rv = mOutputStream->Write(
         &(reinterpret_cast<const char *>(favicon)[totalWritten]),
         size - totalWritten,
@@ -135,7 +135,7 @@ public:
     return NS_OK;
   }
 
-  NS_IMETHOD HandleCompletion(PRUint16 aReason)
+  NS_IMETHOD HandleCompletion(uint16_t aReason)
   {
     if (!mReturnDefaultIcon)
       return mOutputStream->Close();
@@ -152,7 +152,7 @@ public:
     rv = GetDefaultIcon(getter_AddRefs(newChannel));
     NS_ENSURE_SUCCESS(rv, mOutputStream->Close());
 
-    rv = newChannel->AsyncOpen(listener, nsnull);
+    rv = newChannel->AsyncOpen(listener, nullptr);
     NS_ENSURE_SUCCESS(rv, mOutputStream->Close());
 
     return NS_OK;
@@ -212,7 +212,7 @@ nsAnnoProtocolHandler::GetScheme(nsACString& aScheme)
 //    There is no default port for annotation URLs
 
 NS_IMETHODIMP
-nsAnnoProtocolHandler::GetDefaultPort(PRInt32 *aDefaultPort)
+nsAnnoProtocolHandler::GetDefaultPort(int32_t *aDefaultPort)
 {
   *aDefaultPort = -1;
   return NS_OK;
@@ -222,7 +222,7 @@ nsAnnoProtocolHandler::GetDefaultPort(PRInt32 *aDefaultPort)
 // nsAnnoProtocolHandler::GetProtocolFlags
 
 NS_IMETHODIMP
-nsAnnoProtocolHandler::GetProtocolFlags(PRUint32 *aProtocolFlags)
+nsAnnoProtocolHandler::GetProtocolFlags(uint32_t *aProtocolFlags)
 {
   *aProtocolFlags = (URI_NORELATIVE | URI_NOAUTH | URI_DANGEROUS_TO_LOAD |
                      URI_IS_LOCAL_RESOURCE);
@@ -243,7 +243,7 @@ nsAnnoProtocolHandler::NewURI(const nsACString& aSpec,
   nsresult rv = uri->SetSpec(aSpec);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  *_retval = nsnull;
+  *_retval = nullptr;
   uri.swap(*_retval);
   return NS_OK;
 }
@@ -258,7 +258,7 @@ nsAnnoProtocolHandler::NewChannel(nsIURI *aURI, nsIChannel **_retval)
   NS_ENSURE_ARG_POINTER(aURI);
   nsresult rv;
 
-  nsCAutoString path;
+  nsAutoCString path;
   rv = aURI->GetPath(path);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -268,7 +268,7 @@ nsAnnoProtocolHandler::NewChannel(nsIURI *aURI, nsIChannel **_retval)
 
   // annotation info
   nsCOMPtr<nsIURI> annoURI;
-  nsCAutoString annoName;
+  nsAutoCString annoName;
   rv = ParseAnnoURI(aURI, getter_AddRefs(annoURI), annoName);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -278,9 +278,9 @@ nsAnnoProtocolHandler::NewChannel(nsIURI *aURI, nsIChannel **_retval)
     return NewFaviconChannel(aURI, annoURI, _retval);
 
   // normal handling for annotations
-  PRUint8* data;
-  PRUint32 dataLen;
-  nsCAutoString mimeType;
+  uint8_t* data;
+  uint32_t dataLen;
+  nsAutoCString mimeType;
 
   // get the data from the annotation service and hand it off to the stream
   rv = annotationService->GetPageAnnotationBinary(annoURI, annoName, &data,
@@ -320,7 +320,7 @@ nsAnnoProtocolHandler::NewChannel(nsIURI *aURI, nsIChannel **_retval)
 //    Don't override any bans on bad ports.
 
 NS_IMETHODIMP
-nsAnnoProtocolHandler::AllowPort(PRInt32 port, const char *scheme,
+nsAnnoProtocolHandler::AllowPort(int32_t port, const char *scheme,
                                  bool *_retval)
 {
   *_retval = false;
@@ -337,11 +337,11 @@ nsAnnoProtocolHandler::ParseAnnoURI(nsIURI* aURI,
                                     nsIURI** aResultURI, nsCString& aName)
 {
   nsresult rv;
-  nsCAutoString path;
+  nsAutoCString path;
   rv = aURI->GetPath(path);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  PRInt32 firstColon = path.FindChar(':');
+  int32_t firstColon = path.FindChar(':');
   if (firstColon <= 0)
     return NS_ERROR_MALFORMED_URI;
 

@@ -28,7 +28,7 @@ private:
     friend class nsCacheEntry;
     friend class nsProcessRequestEvent;
 
-    nsCacheRequest( nsCString *           key, 
+    nsCacheRequest( const nsACString &    key,
                     nsICacheListener *    listener,
                     nsCacheAccessMode     accessRequested,
                     bool                  blockingMode,
@@ -46,6 +46,7 @@ private:
         SetStoragePolicy(session->StoragePolicy());
         if (session->IsStreamBased())             MarkStreamBased();
         if (session->WillDoomEntriesIfExpired())  MarkDoomEntriesIfExpired();
+        if (session->IsPrivate())                 MarkPrivate();
         if (blockingMode == nsICache::BLOCKING)    MarkBlockingMode();
         MarkWaitingForValidation();
         NS_IF_ADDREF(mListener);
@@ -54,7 +55,6 @@ private:
     ~nsCacheRequest()
     {
         MOZ_COUNT_DTOR(nsCacheRequest);
-        delete mKey;
         NS_ASSERTION(PR_CLIST_IS_EMPTY(this), "request still on a list");
 
         if (mListener)
@@ -67,6 +67,7 @@ private:
     enum CacheRequestInfo {
         eStoragePolicyMask         = 0x000000FF,
         eStreamBasedMask           = 0x00000100,
+        ePrivateMask               = 0x00000200,
         eDoomEntriesIfExpiredMask  = 0x00001000,
         eBlockingModeMask          = 0x00010000,
         eWaitingForValidationMask  = 0x00100000,
@@ -105,8 +106,12 @@ private:
 
     nsCacheStoragePolicy StoragePolicy()
     {
-        return (nsCacheStoragePolicy)(mInfo & 0xFF);
+        return (nsCacheStoragePolicy)(mInfo & eStoragePolicyMask);
     }
+
+    void   MarkPrivate() { mInfo |= ePrivateMask; }
+    void   MarkPublic() { mInfo &= ~ePrivateMask; }
+    bool   IsPrivate() { return (mInfo & ePrivateMask) != 0; }
 
     void   MarkWaitingForValidation() { mInfo |=  eWaitingForValidationMask; }
     void   DoneWaitingForValidation() { mInfo &= ~eWaitingForValidationMask; }
@@ -141,13 +146,13 @@ private:
     /**
      * Data members
      */
-    nsCString *                mKey;
-    PRUint32                   mInfo;
+    nsCString                  mKey;
+    uint32_t                   mInfo;
     nsICacheListener *         mListener;  // strong ref
     nsCOMPtr<nsIThread>        mThread;
     Mutex                      mLock;
     CondVar                    mCondVar;
-    nsCOMPtr<nsILocalFile>     mProfileDir;
+    nsCOMPtr<nsIFile>          mProfileDir;
 };
 
 #endif // _nsCacheRequest_h_

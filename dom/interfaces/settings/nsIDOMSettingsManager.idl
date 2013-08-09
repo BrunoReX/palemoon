@@ -4,7 +4,6 @@
 
 #include "domstubs.idl"
 #include "nsIDOMEventTarget.idl"
-#include "nsIDOMEvent.idl"
 
 interface nsIDOMDOMRequest;
 interface nsIVariant;
@@ -21,29 +20,13 @@ interface nsIDOMSettingsLock : nsISupports
   nsIDOMDOMRequest clear();
 };
 
-[scriptable, uuid(5609d0a0-52a9-11e1-b86c-0800200c9a66)]
+[scriptable, uuid(c40b1c70-00fb-11e2-a21f-0800200c9a66)]
 interface nsIDOMSettingsManager : nsISupports
 {
-  nsIDOMSettingsLock getLock();
+  nsIDOMSettingsLock createLock();
+
+  void addObserver(in DOMString name, in jsval callback);
+  void removeObserver(in DOMString name, in jsval callback);
 
   attribute nsIDOMEventListener onsettingchange;
-};
-
-[scriptable, uuid(5ce02690-52a9-11e1-b86c-0800200c9a66)]
-interface nsIDOMMozSettingsEvent : nsIDOMEvent
-{
-  readonly attribute DOMString  settingName;
-  readonly attribute nsIVariant settingValue;
-
-  [noscript] void initMozSettingsEvent(in DOMString aType,
-                                       in boolean aCanBubble,
-                                       in boolean aCancelable,
-                                       in DOMString aSettingName,
-                                       in nsIVariant aSettingValue);
-};
-
-dictionary MozSettingsEventInit : EventInit
-{
-  DOMString  settingName;
-  nsIVariant settingValue;
 };

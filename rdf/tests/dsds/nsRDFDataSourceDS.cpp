@@ -19,7 +19,7 @@
 
 #include "nsXPIDLString.h"
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
 #include <stdio.h>
 #endif
 
@@ -80,9 +80,9 @@ private:
   
 };
 
-nsIRDFResource* nsRDFDataSourceDataSource::kNC_Name=nsnull;
-nsIRDFResource* nsRDFDataSourceDataSource::kNC_Value=nsnull;
-nsIRDFResource* nsRDFDataSourceDataSource::kNC_Child=nsnull;
+nsIRDFResource* nsRDFDataSourceDataSource::kNC_Name=nullptr;
+nsIRDFResource* nsRDFDataSourceDataSource::kNC_Value=nullptr;
+nsIRDFResource* nsRDFDataSourceDataSource::kNC_Child=nullptr;
 
 
 nsRDFDataSourceDataSource::nsRDFDataSourceDataSource()
@@ -124,7 +124,7 @@ nsRDFDataSourceDataSource::Init(const char *uri)
 
   // cut off "rdf:datasource?"
   NS_NAMED_LITERAL_CSTRING(prefix, "rdf:datasource");
-  nsCAutoString mInnerURI;
+  nsAutoCString mInnerURI;
   mInnerURI = Substring(mURI, prefix.Length() + 1);
   // bail if datasorce is empty or we're trying to inspect ourself
   if (mInnerURI.IsEmpty() || mInnerURI == prefix) {

@@ -28,7 +28,7 @@ const int DISPLAY_DIM_TIMEOUT = 10620; /*3 * 59 * 60 seconds*/
 nsScreenQt::nsScreenQt(int aScreen)
     : mScreen(aScreen)
 #ifdef MOZ_ENABLE_QMSYSTEM2
-    , mDisplayState(nsnull)
+    , mDisplayState(nullptr)
 #endif
 {
     // nothing else to do. I guess we could cache a bunch of information
@@ -40,13 +40,13 @@ nsScreenQt::~nsScreenQt()
 {
 #ifdef MOZ_ENABLE_QMSYSTEM2
     delete mDisplayState;
-    mDisplayState = nsnull;
+    mDisplayState = nullptr;
 #endif
 }
 
 NS_IMETHODIMP
-nsScreenQt::GetRect(PRInt32 *outLeft,PRInt32 *outTop,
-                    PRInt32 *outWidth,PRInt32 *outHeight)
+nsScreenQt::GetRect(int32_t *outLeft,int32_t *outTop,
+                    int32_t *outWidth,int32_t *outHeight)
 {
     QRect r = QApplication::desktop()->screenGeometry(mScreen);
 #ifdef MOZ_ENABLE_QTMOBILITY
@@ -65,8 +65,8 @@ nsScreenQt::GetRect(PRInt32 *outLeft,PRInt32 *outTop,
 }
 
 NS_IMETHODIMP
-nsScreenQt::GetAvailRect(PRInt32 *outLeft,PRInt32 *outTop,
-                         PRInt32 *outWidth,PRInt32 *outHeight)
+nsScreenQt::GetAvailRect(int32_t *outLeft,int32_t *outTop,
+                         int32_t *outWidth,int32_t *outHeight)
 {
     QRect r = QApplication::desktop()->screenGeometry(mScreen);
 #ifdef MOZ_ENABLE_QTMOBILITY
@@ -82,15 +82,15 @@ nsScreenQt::GetAvailRect(PRInt32 *outLeft,PRInt32 *outTop,
 }
 
 NS_IMETHODIMP
-nsScreenQt::GetPixelDepth(PRInt32 *aPixelDepth)
+nsScreenQt::GetPixelDepth(int32_t *aPixelDepth)
 {
     // #############
-    *aPixelDepth = (PRInt32)QColormap::instance().depth();
+    *aPixelDepth = (int32_t)QColormap::instance().depth();
     return NS_OK;
 }
 
 NS_IMETHODIMP
-nsScreenQt::GetColorDepth(PRInt32 *aColorDepth)
+nsScreenQt::GetColorDepth(int32_t *aColorDepth)
 {
     // ###############
     return GetPixelDepth(aColorDepth);
@@ -98,14 +98,14 @@ nsScreenQt::GetColorDepth(PRInt32 *aColorDepth)
 
 #ifdef MOZ_ENABLE_QMSYSTEM2
 void
-nsScreenQt::ApplyMinimumBrightness(PRUint32 aType)
+nsScreenQt::ApplyMinimumBrightness(uint32_t aType)
 {
     // resets all we did before,
     // 1) there is no interface to get default values
     // 2) user might have changed system settings while fennec is running
     //    there is no notification about that.
     delete mDisplayState;
-    mDisplayState = nsnull;
+    mDisplayState = nullptr;
 
     if( aType == BRIGHTNESS_FULL) {
         mDisplayState = new MeeGo::QmDisplayState();

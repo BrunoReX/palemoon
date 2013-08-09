@@ -11,26 +11,26 @@
 #include "nsIDOMSVGURIReference.h"
 #include "nsIFrame.h"
 #include "nsSVGTextPathElement.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 #include "nsContentUtils.h"
 
 using namespace mozilla;
 
 nsSVGElement::LengthInfo nsSVGTextPathElement::sLengthInfo[1] =
 {
-  { &nsGkAtoms::startOffset, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, nsSVGUtils::X },
+  { &nsGkAtoms::startOffset, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::X },
 };
 
 nsSVGEnumMapping nsSVGTextPathElement::sMethodMap[] = {
   {&nsGkAtoms::align, nsIDOMSVGTextPathElement::TEXTPATH_METHODTYPE_ALIGN},
   {&nsGkAtoms::stretch, nsIDOMSVGTextPathElement::TEXTPATH_METHODTYPE_STRETCH},
-  {nsnull, 0}
+  {nullptr, 0}
 };
 
 nsSVGEnumMapping nsSVGTextPathElement::sSpacingMap[] = {
   {&nsGkAtoms::_auto, nsIDOMSVGTextPathElement::TEXTPATH_SPACINGTYPE_AUTO},
   {&nsGkAtoms::exact, nsIDOMSVGTextPathElement::TEXTPATH_SPACINGTYPE_EXACT},
-  {nsnull, 0}
+  {nullptr, 0}
 };
 
 nsSVGElement::EnumInfo nsSVGTextPathElement::sEnumInfo[2] =

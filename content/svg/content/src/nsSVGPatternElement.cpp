@@ -10,7 +10,6 @@
 #include "nsCOMPtr.h"
 #include "nsGkAtoms.h"
 #include "nsSVGPatternElement.h"
-#include "nsIFrame.h"
 
 using namespace mozilla;
 
@@ -18,10 +17,10 @@ using namespace mozilla;
 
 nsSVGElement::LengthInfo nsSVGPatternElement::sLengthInfo[4] =
 {
-  { &nsGkAtoms::x, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE, nsSVGUtils::X },
-  { &nsGkAtoms::y, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE, nsSVGUtils::Y },
-  { &nsGkAtoms::width, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE, nsSVGUtils::X },
-  { &nsGkAtoms::height, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE, nsSVGUtils::Y },
+  { &nsGkAtoms::x, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE, SVGContentUtils::X },
+  { &nsGkAtoms::y, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE, SVGContentUtils::Y },
+  { &nsGkAtoms::width, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE, SVGContentUtils::X },
+  { &nsGkAtoms::height, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE, SVGContentUtils::Y },
 };
 
 nsSVGElement::EnumInfo nsSVGPatternElement::sEnumInfo[2] =
@@ -107,9 +106,10 @@ NS_IMETHODIMP nsSVGPatternElement::GetPatternContentUnits(nsIDOMSVGAnimatedEnume
 /* readonly attribute nsIDOMSVGAnimatedTransformList patternTransform; */
 NS_IMETHODIMP nsSVGPatternElement::GetPatternTransform(nsIDOMSVGAnimatedTransformList * *aPatternTransform)
 {
-  *aPatternTransform =
-    DOMSVGAnimatedTransformList::GetDOMWrapper(GetAnimatedTransformList(), this)
-    .get();
+  // We're creating a DOM wrapper, so we must tell GetAnimatedTransformList
+  // to allocate the SVGAnimatedTransformList if it hasn't already done so:
+  *aPatternTransform = DOMSVGAnimatedTransformList::GetDOMWrapper(
+                         GetAnimatedTransformList(DO_ALLOCATE), this).get();
   return NS_OK;
 }
 
@@ -173,9 +173,9 @@ nsSVGPatternElement::IsAttributeMapped(const nsIAtom* name) const
 // nsSVGElement methods
 
 SVGAnimatedTransformList*
-nsSVGPatternElement::GetAnimatedTransformList()
+nsSVGPatternElement::GetAnimatedTransformList(uint32_t aFlags)
 {
-  if (!mPatternTransform) {
+  if (!mPatternTransform && (aFlags & DO_ALLOCATE)) {
     mPatternTransform = new SVGAnimatedTransformList();
   }
   return mPatternTransform;

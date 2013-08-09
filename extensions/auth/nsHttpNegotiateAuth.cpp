@@ -36,6 +36,7 @@
 #include "prlog.h"
 #include "prmem.h"
 #include "prnetdb.h"
+#include "mozilla/Likely.h"
 
 //-----------------------------------------------------------------------------
 
@@ -51,7 +52,7 @@ static const char kNegotiateAuthSSPI[] = "network.auth.use-sspi";
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-nsHttpNegotiateAuth::GetAuthFlags(PRUint32 *flags)
+nsHttpNegotiateAuth::GetAuthFlags(uint32_t *flags)
 {
     //
     // Negotiate Auth creds should not be reused across multiple requests.
@@ -94,8 +95,8 @@ nsHttpNegotiateAuth::ChallengeReceived(nsIHttpAuthenticableChannel *authChannel,
     if (NS_FAILED(rv))
         return rv;
 
-    PRUint32 req_flags = nsIAuthModule::REQ_DEFAULT;
-    nsCAutoString service;
+    uint32_t req_flags = nsIAuthModule::REQ_DEFAULT;
+    nsAutoCString service;
 
     if (isProxyAuth) {
         if (!TestBoolPref(kNegotiateAuthAllowProxies)) {
@@ -157,7 +158,7 @@ nsHttpNegotiateAuth::ChallengeReceived(nsIHttpAuthenticableChannel *authChannel,
         return rv;
     }
 
-    rv = module->Init(service.get(), req_flags, nsnull, nsnull, nsnull);
+    rv = module->Init(service.get(), req_flags, nullptr, nullptr, nullptr);
 
     if (NS_FAILED(rv)) {
         NS_RELEASE(module);
@@ -185,7 +186,7 @@ nsHttpNegotiateAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChanne
                                          const PRUnichar *password,
                                          nsISupports **sessionState,
                                          nsISupports **continuationState,
-                                         PRUint32 *flags,
+                                         uint32_t *flags,
                                          char **creds)
 {
     // ChallengeReceived must have been called previously.
@@ -216,7 +217,7 @@ nsHttpNegotiateAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChanne
     unsigned int len = strlen(challenge);
 
     void *inToken, *outToken;
-    PRUint32 inTokenLen, outTokenLen;
+    uint32_t inTokenLen, outTokenLen;
 
     if (len > kNegotiateLen) {
         challenge += kNegotiateLen;
@@ -245,7 +246,7 @@ nsHttpNegotiateAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChanne
         //
         // Initializing, don't use an input token.
         //
-        inToken = nsnull;
+        inToken = nullptr;
         inTokenLen = 0;
     }
 
@@ -264,7 +265,7 @@ nsHttpNegotiateAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChanne
     //
     // base64 encode the output token.
     //
-    char *encoded_token = PL_Base64Encode((char *)outToken, outTokenLen, nsnull);
+    char *encoded_token = PL_Base64Encode((char *)outToken, outTokenLen, nullptr);
 
     nsMemory::Free(outToken);
 
@@ -275,7 +276,7 @@ nsHttpNegotiateAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChanne
 
     // allocate a buffer sizeof("Negotiate" + " " + b64output_token + "\0")
     *creds = (char *) nsMemory::Alloc(kNegotiateLen + 1 + strlen(encoded_token) + 1);
-    if (NS_UNLIKELY(!*creds))
+    if (MOZ_UNLIKELY(!*creds))
         rv = NS_ERROR_OUT_OF_MEMORY;
     else
         sprintf(*creds, "%s %s", kNegotiate, encoded_token);
@@ -302,7 +303,7 @@ nsHttpNegotiateAuth::TestBoolPref(const char *pref)
 bool
 nsHttpNegotiateAuth::TestNonFqdn(nsIURI *uri)
 {
-    nsCAutoString host;
+    nsAutoCString host;
     PRNetAddr addr;
 
     if (!TestBoolPref(kNegotiateAuthAllowNonFqdn))
@@ -323,8 +324,8 @@ nsHttpNegotiateAuth::TestPref(nsIURI *uri, const char *pref)
     if (!prefs)
         return false;
 
-    nsCAutoString scheme, host;
-    PRInt32 port;
+    nsAutoCString scheme, host;
+    int32_t port;
 
     if (NS_FAILED(uri->GetScheme(scheme)))
         return false;
@@ -373,7 +374,7 @@ nsHttpNegotiateAuth::TestPref(nsIURI *uri, const char *pref)
 bool
 nsHttpNegotiateAuth::MatchesBaseURI(const nsCSubstring &matchScheme,
                                     const nsCSubstring &matchHost,
-                                    PRInt32             matchPort,
+                                    int32_t             matchPort,
                                     const char         *baseStart,
                                     const char         *baseEnd)
 {
@@ -395,7 +396,7 @@ nsHttpNegotiateAuth::MatchesBaseURI(const nsCSubstring &matchScheme,
     if (hostEnd && hostEnd < baseEnd) {
         // the given port must match the parsed port exactly
         int port = atoi(hostEnd + 1);
-        if (matchPort != (PRInt32) port)
+        if (matchPort != (int32_t) port)
             return false;
     }
     else
@@ -406,7 +407,7 @@ nsHttpNegotiateAuth::MatchesBaseURI(const nsCSubstring &matchScheme,
     if (hostStart == hostEnd)
         return true;
 
-    PRUint32 hostLen = hostEnd - hostStart;
+    uint32_t hostLen = hostEnd - hostStart;
 
     // matchHost must either equal host or be a subdomain of host
     if (matchHost.Length() < hostLen)

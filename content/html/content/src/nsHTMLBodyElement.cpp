@@ -8,28 +8,26 @@
 #include "nscore.h"
 #include "nsCOMPtr.h"
 #include "nsIDOMHTMLBodyElement.h"
-#include "nsIDOMEventTarget.h"
 #include "nsGenericHTMLElement.h"
+#include "nsAttrValueInlines.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
 #include "nsIPresShell.h"
 #include "nsIDocument.h"
-#include "nsIHTMLDocument.h"
 #include "nsHTMLStyleSheet.h"
-#include "nsIContentViewer.h"
 #include "nsIMarkupDocumentViewer.h"
 #include "nsMappedAttributes.h"
 #include "nsRuleData.h"
-#include "nsIFrame.h"
 #include "nsIDocShell.h"
 #include "nsIEditorDocShell.h"
 #include "nsRuleWalker.h"
-#include "jsapi.h"
+#include "jspubtd.h"
 
 //----------------------------------------------------------------------
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 class nsHTMLBodyElement;
 
@@ -43,7 +41,7 @@ public:
   // nsIStyleRule interface
   virtual void MapRuleInfoInto(nsRuleData* aRuleData);
 #ifdef DEBUG
-  virtual void List(FILE* out = stdout, PRInt32 aIndent = 0) const;
+  virtual void List(FILE* out = stdout, int32_t aIndent = 0) const;
 #endif
 
   nsHTMLBodyElement*  mPart;  // not ref-counted, cleared by content 
@@ -55,8 +53,8 @@ class nsHTMLBodyElement : public nsGenericHTMLElement,
                           public nsIDOMHTMLBodyElement
 {
 public:
-  using nsGenericElement::GetText;
-  using nsGenericElement::SetText;
+  using Element::GetText;
+  using Element::SetText;
 
   nsHTMLBodyElement(already_AddRefed<nsINodeInfo> aNodeInfo);
   virtual ~nsHTMLBodyElement();
@@ -65,13 +63,13 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLBodyElement
   NS_DECL_NSIDOMHTMLBODYELEMENT
@@ -86,10 +84,10 @@ public:
 #undef FORWARDED_EVENT
 #undef EVENT
 
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
-                                nsIAtom* aAttribute,
-                                const nsAString& aValue,
-                                nsAttrValue& aResult);
+  virtual bool ParseAttribute(int32_t aNamespaceID,
+                              nsIAtom* aAttribute,
+                              const nsAString& aValue,
+                              nsAttrValue& aResult);
   virtual void UnbindFromTree(bool aDeep = true,
                               bool aNullParent = true);
   virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const;
@@ -125,12 +123,12 @@ BodyRule::MapRuleInfoInto(nsRuleData* aData)
   if (!(aData->mSIDs & NS_STYLE_INHERIT_BIT(Margin)) || !mPart)
     return; // We only care about margins.
 
-  PRInt32 bodyMarginWidth  = -1;
-  PRInt32 bodyMarginHeight = -1;
-  PRInt32 bodyTopMargin = -1;
-  PRInt32 bodyBottomMargin = -1;
-  PRInt32 bodyLeftMargin = -1;
-  PRInt32 bodyRightMargin = -1;
+  int32_t bodyMarginWidth  = -1;
+  int32_t bodyMarginHeight = -1;
+  int32_t bodyTopMargin = -1;
+  int32_t bodyBottomMargin = -1;
+  int32_t bodyLeftMargin = -1;
+  int32_t bodyRightMargin = -1;
 
   // check the mode (fortunately, the ruleData has a presContext for us to use!)
   NS_ASSERTION(aData->mPresContext, "null presContext in ruleNode was unexpected");
@@ -256,7 +254,7 @@ BodyRule::MapRuleInfoInto(nsRuleData* aData)
 
 #ifdef DEBUG
 /* virtual */ void
-BodyRule::List(FILE* out, PRInt32 aIndent) const
+BodyRule::List(FILE* out, int32_t aIndent) const
 {
 }
 #endif
@@ -269,21 +267,21 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(Body)
 
 nsHTMLBodyElement::nsHTMLBodyElement(already_AddRefed<nsINodeInfo> aNodeInfo)
   : nsGenericHTMLElement(aNodeInfo),
-    mContentStyleRule(nsnull)
+    mContentStyleRule(nullptr)
 {
 }
 
 nsHTMLBodyElement::~nsHTMLBodyElement()
 {
   if (mContentStyleRule) {
-    mContentStyleRule->mPart = nsnull;
+    mContentStyleRule->mPart = nullptr;
     NS_RELEASE(mContentStyleRule);
   }
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLBodyElement, nsGenericElement) 
-NS_IMPL_RELEASE_INHERITED(nsHTMLBodyElement, nsGenericElement) 
+NS_IMPL_ADDREF_INHERITED(nsHTMLBodyElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLBodyElement, Element)
 
 DOMCI_NODE_DATA(HTMLBodyElement, nsHTMLBodyElement)
 
@@ -305,7 +303,7 @@ NS_IMPL_STRING_ATTR(nsHTMLBodyElement, Text, text)
 NS_IMPL_STRING_ATTR(nsHTMLBodyElement, BgColor, bgcolor)
 
 bool
-nsHTMLBodyElement::ParseAttribute(PRInt32 aNamespaceID,
+nsHTMLBodyElement::ParseAttribute(int32_t aNamespaceID,
                                   nsIAtom* aAttribute,
                                   const nsAString& aValue,
                                   nsAttrValue& aResult)
@@ -328,7 +326,10 @@ nsHTMLBodyElement::ParseAttribute(PRInt32 aNamespaceID,
     }
   }
 
-  return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
+  return nsGenericHTMLElement::ParseBackgroundAttribute(aNamespaceID,
+                                                        aAttribute, aValue,
+                                                        aResult) ||
+         nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
                                               aResult);
 }
 
@@ -336,7 +337,7 @@ void
 nsHTMLBodyElement::UnbindFromTree(bool aDeep, bool aNullParent)
 {
   if (mContentStyleRule) {
-    mContentStyleRule->mPart = nsnull;
+    mContentStyleRule->mPart = nullptr;
 
     // destroy old style rule
     NS_RELEASE(mContentStyleRule);
@@ -430,7 +431,7 @@ nsHTMLBodyElement::IsAttributeMapped(const nsIAtom* aAttribute) const
     // dynamic changes...
     { &nsGkAtoms::marginwidth },
     { &nsGkAtoms::marginheight },
-    { nsnull },
+    { nullptr },
   };
 
   static const MappedAttributeEntry* const map[] = {
@@ -445,26 +446,26 @@ nsHTMLBodyElement::IsAttributeMapped(const nsIAtom* aAttribute) const
 already_AddRefed<nsIEditor>
 nsHTMLBodyElement::GetAssociatedEditor()
 {
-  nsIEditor* editor = nsnull;
+  nsIEditor* editor = nullptr;
   if (NS_SUCCEEDED(GetEditorInternal(&editor)) && editor) {
     return editor;
   }
 
   // Make sure this is the actual body of the document
   if (!IsCurrentBodyElement()) {
-    return nsnull;
+    return nullptr;
   }
 
   // For designmode, try to get document's editor
   nsPresContext* presContext = GetPresContext();
   if (!presContext) {
-    return nsnull;
+    return nullptr;
   }
 
   nsCOMPtr<nsISupports> container = presContext->GetContainer();
   nsCOMPtr<nsIEditorDocShell> editorDocShell = do_QueryInterface(container);
   if (!editorDocShell) {
-    return nsnull;
+    return nullptr;
   }
 
   editorDocShell->GetEditor(&editor);

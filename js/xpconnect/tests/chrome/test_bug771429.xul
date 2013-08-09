@@ -20,12 +20,17 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=771429
       /** Test for Bug 771429 **/
       function f() {}
       function g() { return this; }
+      function h() { "use strict"; return this; }
       function ctor() { this.x = 1; }
       f.x = 2;
       f.g = g;
       var Cu = Components.utils;
       var s = new Cu.Sandbox(window, { sandboxPrototype: window } );
       try {
+        is(Cu.evalInSandbox('g()', s), window,
+           "Should get window as this object of non-strict global function");
+        is(Cu.evalInSandbox('h()', s), undefined,
+           "Should get undefined as this object of strict global function");
         is(Cu.evalInSandbox('f.x', s), 2,
            "Should have gotten the right thing back");
         is(Cu.evalInSandbox('f.g()', s), f,

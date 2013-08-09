@@ -1,16 +1,12 @@
-<!-- This Source Code Form is subject to the terms of the Mozilla Public
-   - License, v. 2.0. If a copy of the MPL was not distributed with this
-   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-
 [Mozlog](https://github.com/mozilla/mozbase/tree/master/mozlog)
-is a python package intended to simplify and standardize logs in the Mozilla universe. 
-It wraps around python's [logging](http://docs.python.org/library/logging.html) 
+is a python package intended to simplify and standardize logs in the Mozilla universe.
+It wraps around python's [logging](http://docs.python.org/library/logging.html)
 module and adds some additional functionality.
 
 # Usage
 
-Import mozlog instead of [logging](http://docs.python.org/library/logging.html) 
-(all functionality in the logging module is also available from the mozlog module). 
+Import mozlog instead of [logging](http://docs.python.org/library/logging.html)
+(all functionality in the logging module is also available from the mozlog module).
 To get a logger, call mozlog.getLogger passing in a name and the path to a log file.
 If no log file is specified, the logger will log to stdout.
 

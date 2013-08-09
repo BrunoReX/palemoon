@@ -15,12 +15,13 @@
 
 class nsWindow;
 class nsGUIEvent;
-class nsMouseScrollEvent;
 struct nsIntPoint;
-struct nsModifierKeyState;
 
 namespace mozilla {
 namespace widget {
+
+class ModifierKeyState;
+class WheelEvent;
 
 class MouseScrollHandler {
 public:
@@ -42,10 +43,10 @@ public:
    */
   static nsresult SynthesizeNativeMouseScrollEvent(nsWindow* aWindow,
                                                    const nsIntPoint& aPoint,
-                                                   PRUint32 aNativeMessage,
-                                                   PRInt32 aDelta,
-                                                   PRUint32 aModifierFlags,
-                                                   PRUint32 aAdditionalFlags);
+                                                   uint32_t aNativeMessage,
+                                                   int32_t aDelta,
+                                                   uint32_t aModifierFlags,
+                                                   uint32_t aAdditionalFlags);
 
   /**
    * IsWaitingInternalMessage() returns true if MouseScrollHandler posted
@@ -78,7 +79,7 @@ private:
    */
   static void InitEvent(nsWindow* aWindow,
                         nsGUIEvent& aEvent,
-                        nsIntPoint* aPoint = nsnull);
+                        nsIntPoint* aPoint = nullptr);
 
   /**
    * GetModifierKeyState() returns current modifier key state.
@@ -87,7 +88,7 @@ private:
    *
    * @param aMessage    Handling message.
    */
-  static nsModifierKeyState GetModifierKeyState(UINT aMessage);
+  static ModifierKeyState GetModifierKeyState(UINT aMessage);
 
   /**
    * MozGetMessagePos() returns the mouse cursor position when GetMessage()
@@ -179,34 +180,6 @@ private:
                           WPARAM aWParam,
                           LPARAM aLParam);
 
-  class EventInfo;
-  /**
-   * GetScrollTargetInfo() returns scroll target information which is
-   * computed from the result of NS_QUERY_SCROLL_TARGET_INFO event.
-   *
-   * @param aWindow           An nsWindow which is handling the event.
-   * @param aEventInfo        The EventInfo which is being handled.
-   * @param aModifierKeyState The modifier key state.
-   */
-  struct ScrollTargetInfo {
-    // TRUE if pixel scroll event is needed.  Otherwise, FALSE.
-    bool dispatchPixelScrollEvent;
-    // TRUE if pixel scroll event's delta value should be reversed.
-    // Otherwise, FALSE.
-    bool reversePixelScrollDirection;
-    // Actual scroll amount.  It might be computed with user prefs.
-    PRInt32 actualScrollAmount;
-    // Actual scroll action.  It might be computed with user prefs.
-    // The value is one of nsQueryContentEvent::SCROLL_ACTION_*.
-    PRInt32 actualScrollAction;
-    // Pixels per unit (line or page, depends on the action).
-    PRInt32 pixelsPerUnit;
-  };
-  ScrollTargetInfo GetScrollTargetInfo(
-                     nsWindow* aWindow,
-                     const EventInfo& aEvent,
-                     const nsModifierKeyState& aModiferKeyState);
-
   class EventInfo {
   public:
     /**
@@ -215,9 +188,9 @@ private:
      */
     EventInfo(nsWindow* aWindow, UINT aMessage, WPARAM aWParam, LPARAM aLParam);
 
-    bool CanDispatchMouseScrollEvent() const;
+    bool CanDispatchWheelEvent() const;
 
-    PRInt32 GetNativeDelta() const { return mDelta; }
+    int32_t GetNativeDelta() const { return mDelta; }
     HWND GetWindowHandle() const { return mWnd; }
     const TimeStamp& GetTimeStamp() const { return mTimeStamp; }
     bool IsVertical() const { return mIsVertical; }
@@ -227,17 +200,11 @@ private:
     /**
      * @return          Number of lines or pages scrolled per WHEEL_DELTA.
      */
-    PRInt32 GetScrollAmount() const;
-
-    /**
-     * @return          One or more values of
-     *                  nsMouseScrollEvent::nsMouseScrollFlags.
-     */
-    PRInt32 GetScrollFlags() const;
+    int32_t GetScrollAmount() const;
 
   protected:
     EventInfo() :
-      mIsVertical(false), mIsPage(false), mDelta(0), mWnd(nsnull)
+      mIsVertical(false), mIsPage(false), mDelta(0), mWnd(nullptr)
     {
     }
 
@@ -246,7 +213,7 @@ private:
     // TRUE if event scrolls per page, otherwise, FALSE.
     bool mIsPage;
     // The native delta value.
-    PRInt32 mDelta;
+    int32_t mDelta;
     // The window handle which is handling the event.
     HWND mWnd;
     // Timestamp of the event.
@@ -256,7 +223,7 @@ private:
   class LastEventInfo : public EventInfo {
   public:
     LastEventInfo() :
-      EventInfo(), mRemainingDeltaForScroll(0), mRemainingDeltaForPixel(0)
+      EventInfo(), mAccumulatedDelta(0)
     {
     }
 
@@ -279,50 +246,26 @@ private:
     void RecordEvent(const EventInfo& aEvent);
 
     /**
-     * InitMouseScrollEvent() initializes NS_MOUSE_SCROLL event and
+     * InitWheelEvent() initializes NS_WHEEL_WHEEL event and
      * recomputes the remaning detla for the event.
      * This must be called only once during handling a message and after
      * RecordEvent() is called.
      *
      * @param aWindow           A window which will dispatch the event.
-     * @param aMouseScrollEvent An NS_MOUSE_SCROLL event, this will be
+     * @param aWheelEvent       An NS_WHEEL_WHEEL event, this will be
      *                          initialized.
-     * @param aScrollTargetInfo The result of GetScrollTargetInfo().
      * @param aModKeyState      Current modifier key state.
      * @return                  TRUE if the event is ready to dispatch.
      *                          Otherwise, FALSE.
      */
-    bool InitMouseScrollEvent(nsWindow* aWindow,
-                              nsMouseScrollEvent& aMouseScrollEvent,
-                              const ScrollTargetInfo& aScrollTargetInfo,
-                              const nsModifierKeyState& aModKeyState);
-
-    /**
-     * InitMousePixelScrollEvent() initializes NS_MOUSE_PIXEL_SCROLL event and
-     * recomputes the remaning detla for the event.
-     * This must be called only once during handling a message and after
-     * RecordEvent() is called.
-     *
-     * @param aWindow           A window which will dispatch the event.
-     * @param aMouseScrollEvent An NS_MOUSE_PIXEL_SCROLL event, this will be
-     *                          initialized.
-     * @param aScrollTargetInfo The result of GetScrollTargetInfo().
-     * @param aModKeyState      Current modifier key state.
-     * @return                  TRUE if the event is ready to dispatch.
-     *                          Otherwise, FALSE.
-     */
-    bool InitMousePixelScrollEvent(nsWindow* aWindow,
-                                   nsMouseScrollEvent& aPixelScrollEvent,
-                                   const ScrollTargetInfo& aScrollTargetInfo,
-                                   const nsModifierKeyState& aModKeyState);
+    bool InitWheelEvent(nsWindow* aWindow,
+                        WheelEvent& aWheelEvent,
+                        const ModifierKeyState& aModKeyState);
 
   private:
-    static PRInt32 RoundDelta(double aDelta);
+    static int32_t RoundDelta(double aDelta);
 
-    // The remaining native delta value (i.e., not handled by previous
-    // message handler).
-    PRInt32 mRemainingDeltaForScroll;
-    PRInt32 mRemainingDeltaForPixel;
+    int32_t mAccumulatedDelta;
   };
 
   LastEventInfo mLastEventInfo;
@@ -335,7 +278,7 @@ private:
     void MarkDirty();
     void NotifyUserPrefsMayOverrideSystemSettings();
 
-    PRInt32 GetScrollAmount(bool aForVertical) const
+    int32_t GetScrollAmount(bool aForVertical) const
     {
       MOZ_ASSERT(mInitialized, "SystemSettings must be initialized");
       return aForVertical ? mScrollLines : mScrollChars;
@@ -350,8 +293,8 @@ private:
 
   private:
     bool mInitialized;
-    PRInt32 mScrollLines;
-    PRInt32 mScrollChars;
+    int32_t mScrollLines;
+    int32_t mScrollChars;
   };
 
   SystemSettings mSystemSettings;
@@ -363,31 +306,25 @@ private:
 
     void MarkDirty();
 
-    bool IsPixelScrollingEnabled()
-    {
-      Init();
-      return mPixelScrollingEnabled;
-    }
-
     bool IsScrollMessageHandledAsWheelMessage()
     {
       Init();
       return mScrollMessageHandledAsWheelMessage;
     }
 
-    PRInt32 GetOverriddenVerticalScrollAmout()
+    int32_t GetOverriddenVerticalScrollAmout()
     {
       Init();
       return mOverriddenVerticalScrollAmount;
     }
 
-    PRInt32 GetOverriddenHorizontalScrollAmout()
+    int32_t GetOverriddenHorizontalScrollAmout()
     {
       Init();
       return mOverriddenHorizontalScrollAmount;
     }
 
-    PRInt32 GetMouseScrollTransactionTimeout()
+    int32_t GetMouseScrollTransactionTimeout()
     {
       Init();
       return mMouseScrollTransactionTimeout;
@@ -403,11 +340,10 @@ private:
     }
 
     bool mInitialized;
-    bool mPixelScrollingEnabled;
     bool mScrollMessageHandledAsWheelMessage;
-    PRInt32 mOverriddenVerticalScrollAmount;
-    PRInt32 mOverriddenHorizontalScrollAmount;
-    PRInt32 mMouseScrollTransactionTimeout;
+    int32_t mOverriddenVerticalScrollAmount;
+    int32_t mOverriddenHorizontalScrollAmount;
+    int32_t mMouseScrollTransactionTimeout;
   };
 
   UserPrefs mUserPrefs;
@@ -486,7 +422,7 @@ public:
        * GetDriverMajorVersion() returns the installed driver's major version.
        * If Elantech's driver was installed, returns 0.
        */
-      static PRInt32 GetDriverMajorVersion();
+      static int32_t GetDriverMajorVersion();
 
       /**
        * IsHelperWindow() checks whether aWnd is a helper window of Elantech's

@@ -183,6 +183,21 @@ nsFilePicker.prototype = {
     this.mFilters.push(extensions);
   },
 
+  open: function(aFilePickerShownCallback) {
+    var tm = Components.classes["@mozilla.org/thread-manager;1"]
+                       .getService(Components.interfaces.nsIThreadManager);
+    tm.mainThread.dispatch(function() {
+      let result = Components.interfaces.nsIFilePicker.returnCancel;
+      try {
+        result = this.show();
+      } catch(ex) {
+      }
+      if (aFilePickerShownCallback) {
+        aFilePickerShownCallback.done(result);
+      }
+    }.bind(this), Components.interfaces.nsIThread.DISPATCH_NORMAL);
+  },
+
   show: function() {
     var o = new Object();
     o.title = this.mTitle;
@@ -244,7 +259,7 @@ if (DEBUG)
 else
   debug = function (s) {};
 
-var NSGetFactory = XPCOMUtils.generateNSGetFactory([nsFilePicker]);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory([nsFilePicker]);
 
 /* crap from strres.js that I want to use for string bundles since I can't include another .js file.... */
 

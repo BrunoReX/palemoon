@@ -11,8 +11,9 @@
 #include "ARIAStateMap.h"
 #include "mozilla/a11y/Role.h"
 
-class nsIAtom;
-class nsIContent;
+#include "nsIAtom.h"
+#include "nsIContent.h"
+
 class nsINode;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -91,17 +92,23 @@ const bool kUseNativeRole = false;
 
 /**
  * This mask indicates the attribute should not be exposed as an object
- * attribute via the catch-all logic in Accessible::GetAttributes.
+ * attribute via the catch-all logic in Accessible::Attributes().
  * This means it either isn't mean't to be exposed as an object attribute, or
  * that it should, but is already handled in other code.
  */
-const PRUint8 ATTR_BYPASSOBJ  = 0x0001;
+const uint8_t ATTR_BYPASSOBJ = 0x1 << 0;
 
 /**
  * This mask indicates the attribute is expected to have an NMTOKEN or bool value.
- * (See for example usage in Accessible::GetAttributes)
+ * (See for example usage in Accessible::Attributes())
  */
-const PRUint8 ATTR_VALTOKEN   = 0x0010;
+const uint8_t ATTR_VALTOKEN = 0x1 << 1;
+
+/**
+ * Indicate the attribute is global state or property (refer to
+ * http://www.w3.org/TR/wai-aria/states_and_properties#global_states).
+ */
+const uint8_t ATTR_GLOBAL = 0x1 << 2;
 
 /**
  * Small footprint storage of persistent aria attribute characteristics.
@@ -109,7 +116,7 @@ const PRUint8 ATTR_VALTOKEN   = 0x0010;
 struct nsAttributeCharacteristics
 {
   nsIAtom** attributeName;
-  const PRUint8 characteristics;
+  const uint8_t characteristics;
 };
 
 
@@ -136,9 +143,21 @@ enum EDefaultStateRule
  */
 struct nsRoleMapEntry
 {
+  /**
+   * Return true if matches to the given ARIA role.
+   */
+  bool Is(nsIAtom* aARIARole) const
+    { return *roleAtom == aARIARole; }
+
+  /**
+   * Return ARIA role.
+   */
+  const nsDependentAtomString ARIARoleString() const
+    { return nsDependentAtomString(*roleAtom); }
+
   // ARIA role: string representation such as "button"
-  const char *roleString;
-  
+  nsIAtom** roleAtom;
+
   // Role mapping rule: maps to this nsIAccessibleRole
   mozilla::a11y::role role;
   
@@ -155,8 +174,11 @@ struct nsRoleMapEntry
   // these object attributes if ARIA 'live' attribute is missed.
   ELiveAttrRule liveAttRule;
 
+  // Accessible types this role belongs to.
+  uint32_t accTypes;
+
   // Automatic state mapping rule: always include in nsIAccessibleStates
-  PRUint64 state;   // or kNoReqStates if no nsIAccessibleStates are automatic for this role.
+  uint64_t state;   // or kNoReqStates if no nsIAccessibleStates are automatic for this role.
 
   // ARIA properties supported for this role
   // (in other words, the aria-foo attribute to nsIAccessibleStates mapping rules)
@@ -187,31 +209,10 @@ struct nsARIAMap
   static nsRoleMapEntry gEmptyRoleMap;
 
   /**
-   * State map of ARIA states applied to any accessible not depending on
-   * the role.
-   */
-  static mozilla::a11y::aria::EStateRule gWAIUnivStateMap[];
-
-  /**
    * Map of attribute to attribute characteristics.
    */
   static nsAttributeCharacteristics gWAIUnivAttrMap[];
-  static PRUint32 gWAIUnivAttrMapLength;
-
-  /**
-   * Return accessible state from ARIA universal states applied to the given
-   * element.
-   */
-  static PRUint64 UniversalStatesFor(mozilla::dom::Element* aElement)
-  {
-    PRUint64 state = 0;
-    PRUint32 index = 0;
-    while (mozilla::a11y::aria::MapToState(gWAIUnivStateMap[index],
-                                           aElement, &state))
-      index++;
-
-    return state;
-  }
+  static uint32_t gWAIUnivAttrMapLength;
 };
 
 namespace mozilla {
@@ -223,10 +224,41 @@ namespace aria {
  * ARIA role if the role attribute provides a space delimited list of roles.
  *
  * @param aNode  [in] the DOM node to get the role map entry for
- * @return        a pointer to the role map entry for the ARIA role, or nsnull
+ * @return        a pointer to the role map entry for the ARIA role, or nullptr
  *                if none
  */
 nsRoleMapEntry* GetRoleMap(nsINode* aNode);
+
+/**
+ * Return accessible state from ARIA universal states applied to the given
+ * element.
+ */
+uint64_t UniversalStatesFor(mozilla::dom::Element* aElement);
+
+ /**
+  * Represents a simple enumerator for iterating through ARIA attributes 
+  * exposed as object attributes on a given accessible. 
+  */
+class AttrIterator
+{
+public:
+  AttrIterator(nsIContent* aContent) : 
+    mContent(aContent), mAttrIdx(0) 
+  { 
+    mAttrCount = mContent->GetAttrCount();
+  }
+
+  bool Next(nsAString& aAttrName, nsAString& aAttrValue);
+
+private:
+  AttrIterator() MOZ_DELETE;
+  AttrIterator(const AttrIterator&) MOZ_DELETE;
+  AttrIterator& operator= (const AttrIterator&) MOZ_DELETE;
+
+  nsIContent* mContent;
+  uint32_t mAttrIdx;
+  uint32_t mAttrCount;
+};
 
 } // namespace aria
 } // namespace a11y

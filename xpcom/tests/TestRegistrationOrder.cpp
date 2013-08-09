@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "TestHarness.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIDirectoryService.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsCOMArray.h"
@@ -130,10 +130,10 @@ bool TestContractFirst()
   return true;
 }
 
-static already_AddRefed<nsILocalFile>
+static already_AddRefed<nsIFile>
 GetRegDirectory(const char* basename, const char* dirname, const char* leafname)
 {
-    nsCOMPtr<nsILocalFile> f;
+    nsCOMPtr<nsIFile> f;
     nsresult rv = NS_NewNativeLocalFile(nsDependentCString(basename), true,
                                         getter_AddRefs(f));
     if (NS_FAILED(rv))
@@ -156,14 +156,26 @@ int main(int argc, char** argv)
   }
 
   ScopedLogging logging;
-  
+
+#ifdef XP_WIN
+  // On Windows, convert to backslashes
+  size_t regPathLen = strlen(argv[1]);
+  char* regPath = new char[regPathLen + 1];
+  for (size_t i = 0; i < regPathLen; i++) {
+    char curr = argv[1][i];
+    regPath[i] = (curr == '/') ? '\\' : curr;
+  }
+  regPath[regPathLen] = '\0';
+#else
   const char *regPath = argv[1];
+#endif
+
   XRE_AddManifestLocation(NS_COMPONENT_LOCATION,
-                          nsCOMPtr<nsILocalFile>(GetRegDirectory(regPath, "core", "component.manifest")));
+                          nsCOMPtr<nsIFile>(GetRegDirectory(regPath, "core", "component.manifest")));
   XRE_AddManifestLocation(NS_COMPONENT_LOCATION,
-                          nsCOMPtr<nsILocalFile>(GetRegDirectory(regPath, "extension", "extComponent.manifest")));
+                          nsCOMPtr<nsIFile>(GetRegDirectory(regPath, "extension", "extComponent.manifest")));
   XRE_AddJarManifestLocation(NS_COMPONENT_LOCATION,
-                          nsCOMPtr<nsILocalFile>(GetRegDirectory(regPath, "extension2.jar", NULL)));
+                          nsCOMPtr<nsIFile>(GetRegDirectory(regPath, "extension2.jar", NULL)));
   ScopedXPCOM xpcom("RegistrationOrder");
   if (xpcom.failed())
     return 1;

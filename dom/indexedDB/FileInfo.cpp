@@ -4,22 +4,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "IndexedDatabaseManager.h"
 #include "FileInfo.h"
 
 USING_INDEXEDDB_NAMESPACE
 
 // static
 FileInfo*
-FileInfo::Create(FileManager* aFileManager, PRInt64 aId)
+FileInfo::Create(FileManager* aFileManager, int64_t aId)
 {
   NS_ASSERTION(aId > 0, "Wrong id!");
 
-  if (aId <= PR_INT16_MAX) {
+  if (aId <= INT16_MAX) {
     return new FileInfo16(aFileManager, aId);
   }
 
-  if (aId <= PR_INT32_MAX) {
+  if (aId <= INT32_MAX) {
     return new FileInfo32(aFileManager, aId);
   }
 
@@ -27,8 +26,8 @@ FileInfo::Create(FileManager* aFileManager, PRInt64 aId)
 }
 
 void
-FileInfo::GetReferences(PRInt32* aRefCnt, PRInt32* aDBRefCnt,
-                        PRInt32* aSliceRefCnt)
+FileInfo::GetReferences(int32_t* aRefCnt, int32_t* aDBRefCnt,
+                        int32_t* aSliceRefCnt)
 {
   if (IndexedDatabaseManager::IsClosed()) {
     NS_ERROR("Shouldn't be called after shutdown!");
@@ -64,7 +63,7 @@ FileInfo::GetReferences(PRInt32* aRefCnt, PRInt32* aDBRefCnt,
 }
 
 void
-FileInfo::UpdateReferences(nsAutoRefCnt& aRefCount, PRInt32 aDelta,
+FileInfo::UpdateReferences(nsAutoRefCnt& aRefCount, int32_t aDelta,
                            bool aClear)
 {
   if (IndexedDatabaseManager::IsClosed()) {

@@ -29,15 +29,15 @@ public:
    */
   nsGBKToUnicode() : nsBufferDecoderSupport(1)
   {
-    mExtensionDecoder = nsnull;
-    m4BytesDecoder = nsnull;
+    mExtensionDecoder = nullptr;
+    m4BytesDecoder = nullptr;
   }
 
 protected:
 
   //--------------------------------------------------------------------
   // Subclassing of nsDecoderSupport class [declaration]
-  NS_IMETHOD ConvertNoBuff(const char* aSrc, PRInt32 * aSrcLength, PRUnichar *aDest, PRInt32 * aDestLength);
+  NS_IMETHOD ConvertNoBuff(const char* aSrc, int32_t * aSrcLength, PRUnichar *aDest, int32_t * aDestLength);
 
 protected:
   nsGBKConvUtil mUtil;

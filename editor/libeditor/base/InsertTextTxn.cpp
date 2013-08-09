@@ -3,12 +3,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "InsertTextTxn.h"
-#include "nsIDOMCharacterData.h"
-#include "nsISelection.h"
-#include "EditAggregateTxn.h"
+#include <stdio.h>                      // for printf
 
-#ifdef NS_DEBUG
+#include "InsertTextTxn.h"
+#include "nsAString.h"
+#include "nsDebug.h"                    // for NS_ASSERTION, etc
+#include "nsError.h"                    // for NS_OK, etc
+#include "nsIDOMCharacterData.h"        // for nsIDOMCharacterData
+#include "nsIEditor.h"                  // for nsIEditor
+#include "nsISelection.h"               // for nsISelection
+#include "nsISupportsUtils.h"           // for NS_ADDREF_THIS, NS_RELEASE
+#include "nsITransaction.h"             // for nsITransaction
+
+#ifdef DEBUG
 static bool gNoisy = false;
 #endif
 
@@ -20,11 +27,11 @@ InsertTextTxn::InsertTextTxn()
 NS_IMPL_CYCLE_COLLECTION_CLASS(InsertTextTxn)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(InsertTextTxn, EditTxn)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mElement)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mElement)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(InsertTextTxn, EditTxn)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mElement)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mElement)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_ADDREF_INHERITED(InsertTextTxn, EditTxn)
@@ -38,7 +45,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(InsertTextTxn)
 NS_INTERFACE_MAP_END_INHERITING(EditTxn)
 
 NS_IMETHODIMP InsertTextTxn::Init(nsIDOMCharacterData *aElement,
-                                  PRUint32             aOffset,
+                                  uint32_t             aOffset,
                                   const nsAString     &aStringToInsert,
                                   nsIEditor           *aEditor)
 {
@@ -62,7 +69,7 @@ NS_IMETHODIMP InsertTextTxn::Init(nsIDOMCharacterData *aElement,
 
 NS_IMETHODIMP InsertTextTxn::DoTransaction(void)
 {
-#ifdef NS_DEBUG
+#ifdef DEBUG
   if (gNoisy)
   {
     printf("Do Insert Text element = %p\n",
@@ -98,7 +105,7 @@ NS_IMETHODIMP InsertTextTxn::DoTransaction(void)
 
 NS_IMETHODIMP InsertTextTxn::UndoTransaction(void)
 {
-#ifdef NS_DEBUG
+#ifdef DEBUG
   if (gNoisy)
   {
     printf("Undo Insert Text element = %p\n",
@@ -109,7 +116,7 @@ NS_IMETHODIMP InsertTextTxn::UndoTransaction(void)
   NS_ASSERTION(mElement && mEditor, "bad state");
   if (!mElement || !mEditor) { return NS_ERROR_NOT_INITIALIZED; }
 
-  PRUint32 length = mStringToInsert.Length();
+  uint32_t length = mStringToInsert.Length();
   return mElement->DeleteData(mOffset, length);
 }
 
@@ -123,7 +130,7 @@ NS_IMETHODIMP InsertTextTxn::Merge(nsITransaction *aTransaction, bool *aDidMerge
   {
     // if aTransaction is a InsertTextTxn, and if the selection hasn't changed, 
     // then absorb it
-    InsertTextTxn *otherInsTxn = nsnull;
+    InsertTextTxn *otherInsTxn = nullptr;
     aTransaction->QueryInterface(InsertTextTxn::GetCID(), (void **)&otherInsTxn);
     if (otherInsTxn)
     {
@@ -133,7 +140,7 @@ NS_IMETHODIMP InsertTextTxn::Merge(nsITransaction *aTransaction, bool *aDidMerge
         otherInsTxn->GetData(otherData);
         mStringToInsert += otherData;
         *aDidMerge = true;
-#ifdef NS_DEBUG
+#ifdef DEBUG
         if (gNoisy)
         {
           printf("InsertTextTxn assimilated %p\n",
@@ -168,7 +175,7 @@ bool InsertTextTxn::IsSequentialInsert(InsertTextTxn *aOtherTxn)
   if (aOtherTxn && aOtherTxn->mElement == mElement)
   {
     // here, we need to compare offsets.
-    PRInt32 length = mStringToInsert.Length();
+    int32_t length = mStringToInsert.Length();
     if (aOtherTxn->mOffset == (mOffset + length))
       return true;
   }

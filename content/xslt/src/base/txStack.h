@@ -20,7 +20,7 @@ public:
     inline void* peek()
     {
         NS_ASSERTION(!isEmpty(), "peeking at empty stack");
-        return !isEmpty() ? ElementAt(Length() - 1) : nsnull;
+        return !isEmpty() ? ElementAt(Length() - 1) : nullptr;
     }
 
     /**
@@ -42,11 +42,11 @@ public:
      */
     inline void* pop()
     {
-        void* object = nsnull;
+        void* object = nullptr;
         NS_ASSERTION(!isEmpty(), "popping from empty stack");
         if (!isEmpty())
         {
-            const PRUint32 count = Length() - 1;
+            const uint32_t count = Length() - 1;
             object = ElementAt(count);
             RemoveElementAt(count);
         }
@@ -68,7 +68,7 @@ public:
      *
      * @return the number of elements in the Stack.
      */
-    inline PRInt32 size()
+    inline int32_t size()
     {
         return Length();
     }
@@ -109,14 +109,14 @@ public:
     inline void* next()
     {
         if (mPosition == mStack->Length()) {
-            return nsnull;
+            return nullptr;
         }
         return mStack->ElementAt(mPosition++);
     }
 
 private:
     txStack* mStack;
-    PRUint32 mPosition;
+    uint32_t mPosition;
 };
 
 #endif /* txStack_h___ */

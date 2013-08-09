@@ -20,34 +20,17 @@ namespace ctypes {
 ** Utility classes
 *******************************************************************************/
 
-template<class T>
-class OperatorDelete
-{
-public:
-  static void destroy(T* ptr) { UnwantedForeground::delete_(ptr); }
-};
-
-template<class T>
-class OperatorArrayDelete
-{
-public:
-  static void destroy(T* ptr) { UnwantedForeground::array_delete(ptr); }
-};
-
 // Class that takes ownership of a pointer T*, and calls cx->delete_() or
 // cx->array_delete() upon destruction.
-template<class T, class DeleteTraits = OperatorDelete<T> >
+template<class T>
 class AutoPtr {
 private:
-  typedef AutoPtr<T, DeleteTraits> self_type;
+  typedef AutoPtr<T> self_type;
 
 public:
-  // An AutoPtr variant that calls js_array_delete() instead.
-  typedef AutoPtr<T, OperatorArrayDelete<T> > Array;
-
   AutoPtr() : mPtr(NULL) { }
   explicit AutoPtr(T* ptr) : mPtr(ptr) { }
-  ~AutoPtr() { DeleteTraits::destroy(mPtr); }
+  ~AutoPtr() { js_delete(mPtr); }
 
   T*   operator->()         { return mPtr; }
   bool operator!()          { return mPtr == NULL; }
@@ -64,8 +47,8 @@ public:
 
 private:
   // Do not allow copy construction or assignment from another AutoPtr.
-  template<class U> AutoPtr(AutoPtr<T, U>&);
-  template<class U> self_type& operator=(AutoPtr<T, U>& rhs);
+  AutoPtr(AutoPtr<T>&);
+  self_type& operator=(AutoPtr<T>& rhs);
 
   T* mPtr;
 };
@@ -172,6 +155,15 @@ PrependString(Vector<jschar, N, AP> &v, JSString* str)
   memcpy(v.begin(), chars, alen * sizeof(jschar));
 }
 
+extern size_t
+GetDeflatedUTF8StringLength(JSContext *maybecx, const jschar *chars,
+                            size_t charsLength);
+
+bool
+DeflateStringToUTF8Buffer(JSContext *maybecx, const jschar *src, size_t srclen,
+                          char *dst, size_t *dstlenp);
+
+
 /*******************************************************************************
 ** Function and struct API definitions
 *******************************************************************************/
@@ -267,7 +259,7 @@ struct FunctionInfo
 
   // Calling convention of the function. Convert to ffi_abi using GetABI
   // and OBJECT_TO_JSVAL. Stored as a JSObject* for ease of tracing.
-  JSObject* mABI;                
+  JSObject* mABI;
 
   // The CType of the value returned by the function.
   JSObject* mReturnType;
@@ -311,7 +303,7 @@ struct ClosureInfo
     if (closure)
       ffi_closure_free(closure);
     if (errResult)
-      rt->free_(errResult);
+      js_free(errResult);
   };
 };
 
@@ -319,15 +311,15 @@ bool IsCTypesGlobal(JSObject* obj);
 
 JSCTypesCallbacks* GetCallbacks(JSObject* obj);
 
-JSBool InitTypeClasses(JSContext* cx, JSObject* parent);
+JSBool InitTypeClasses(JSContext* cx, JSHandleObject parent);
 
-JSBool ConvertToJS(JSContext* cx, JSObject* typeObj, JSObject* dataObj,
+JSBool ConvertToJS(JSContext* cx, JSHandleObject typeObj, JSHandleObject dataObj,
   void* data, bool wantPrimitive, bool ownResult, jsval* result);
 
 JSBool ImplicitConvert(JSContext* cx, jsval val, JSObject* targetType,
   void* buffer, bool isArgument, bool* freePointer);
 
-JSBool ExplicitConvert(JSContext* cx, jsval val, JSObject* targetType,
+JSBool ExplicitConvert(JSContext* cx, jsval val, JSHandleObject targetType,
   void* buffer);
 
 /*******************************************************************************
@@ -427,7 +419,7 @@ enum Int64FunctionSlot {
 *******************************************************************************/
 
 namespace CType {
-  JSObject* Create(JSContext* cx, JSObject* typeProto, JSObject* dataProto,
+  JSObject* Create(JSContext* cx, JSHandleObject typeProto, JSHandleObject dataProto,
     TypeCode type, JSString* name, jsval size, jsval align, ffi_type* ffiType);
 
   JSObject* DefineBuiltin(JSContext* cx, JSObject* parent, const char* propName,
@@ -443,20 +435,20 @@ namespace CType {
   bool IsSizeDefined(JSObject* obj);
   size_t GetAlignment(JSObject* obj);
   ffi_type* GetFFIType(JSContext* cx, JSObject* obj);
-  JSString* GetName(JSContext* cx, JSObject* obj);
+  JSString* GetName(JSContext* cx, JSHandleObject obj);
   JSObject* GetProtoFromCtor(JSObject* obj, CTypeProtoSlot slot);
-  JSObject* GetProtoFromType(JSObject* obj, CTypeProtoSlot slot);
+  JSObject* GetProtoFromType(JSContext* cx, JSObject* obj, CTypeProtoSlot slot);
   JSCTypesCallbacks* GetCallbacksFromType(JSObject* obj);
 }
 
 namespace PointerType {
-  JSObject* CreateInternal(JSContext* cx, JSObject* baseType);
+  JSObject* CreateInternal(JSContext* cx, JSHandleObject baseType);
 
   JSObject* GetBaseType(JSObject* obj);
 }
 
 namespace ArrayType {
-  JSObject* CreateInternal(JSContext* cx, JSObject* baseType, size_t length,
+  JSObject* CreateInternal(JSContext* cx, JSHandleObject baseType, size_t length,
     bool lengthDefined);
 
   JSObject* GetBaseType(JSObject* obj);
@@ -487,12 +479,12 @@ namespace FunctionType {
 }
 
 namespace CClosure {
-  JSObject* Create(JSContext* cx, JSObject* typeObj, JSObject* fnObj,
-    JSObject* thisObj, jsval errVal, PRFuncPtr* fnptr);
+  JSObject* Create(JSContext* cx, JSHandleObject typeObj, JSHandleObject fnObj,
+    JSHandleObject thisObj, jsval errVal, PRFuncPtr* fnptr);
 }
 
 namespace CData {
-  JSObject* Create(JSContext* cx, JSObject* typeObj, JSObject* refObj,
+  JSObject* Create(JSContext* cx, JSHandleObject typeObj, JSHandleObject refObj,
     void* data, bool ownResult);
 
   JSObject* GetCType(JSObject* dataObj);

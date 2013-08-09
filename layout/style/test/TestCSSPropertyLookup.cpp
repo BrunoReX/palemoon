@@ -10,7 +10,7 @@
 #include "nsXPCOM.h"
 
 static const char* const kJunkNames[] = {
-  nsnull,
+  nullptr,
   "",
   "123",
   "backgroundz",
@@ -38,9 +38,9 @@ TestProps()
   while (et < end) {
     char tagName[100];
     PL_strcpy(tagName, *et);
-    index = nsCSSProperty(PRInt32(index) + 1);
+    index = nsCSSProperty(int32_t(index) + 1);
 
-    id = nsCSSProps::LookupProperty(nsCString(tagName));
+    id = nsCSSProps::LookupProperty(nsCString(tagName), nsCSSProps::eAny);
     if (id == eCSSProperty_UNKNOWN) {
       printf("bug: can't find '%s'\n", tagName);
       success = false;
@@ -54,7 +54,8 @@ TestProps()
     if (('a' <= tagName[0]) && (tagName[0] <= 'z')) {
       tagName[0] = tagName[0] - 32;
     }
-    id = nsCSSProps::LookupProperty(NS_ConvertASCIItoUTF16(tagName));
+    id = nsCSSProps::LookupProperty(NS_ConvertASCIItoUTF16(tagName),
+                                    nsCSSProps::eAny);
     if (id < 0) {
       printf("bug: can't find '%s'\n", tagName);
       success = false;
@@ -69,7 +70,7 @@ TestProps()
   // Now make sure we don't find some garbage
   for (int i = 0; i < (int) (sizeof(kJunkNames) / sizeof(const char*)); i++) {
     const char* const tag = kJunkNames[i];
-    id = nsCSSProps::LookupProperty(nsCAutoString(tag));
+    id = nsCSSProps::LookupProperty(nsAutoCString(tag), nsCSSProps::eAny);
     if (id >= 0) {
       printf("bug: found '%s'\n", tag ? tag : "(null)");
       success = false;
@@ -108,7 +109,7 @@ TestKeywords()
       }
       underscore++;
     }
-    index = nsCSSKeyword(PRInt32(index) + 1);
+    index = nsCSSKeyword(int32_t(index) + 1);
 
     id = nsCSSKeywords::LookupKeyword(nsCString(tagName));
     if (id <= eCSSKeyword_UNKNOWN) {
@@ -139,7 +140,7 @@ TestKeywords()
   // Now make sure we don't find some garbage
   for (int i = 0; i < (int) (sizeof(kJunkNames) / sizeof(const char*)); i++) {
     const char* const tag = kJunkNames[i];
-    id = nsCSSKeywords::LookupKeyword(nsCAutoString(tag));
+    id = nsCSSKeywords::LookupKeyword(nsAutoCString(tag));
     if (eCSSKeyword_UNKNOWN < id) {
       printf("bug: found '%s'\n", tag ? tag : "(null)");
       success = false;
@@ -153,14 +154,14 @@ TestKeywords()
 int
 main(void)
 {
-  nsresult rv = NS_InitXPCOM2(nsnull, nsnull, nsnull);
+  nsresult rv = NS_InitXPCOM2(nullptr, nullptr, nullptr);
   NS_ENSURE_SUCCESS(rv, 2);
 
   bool testOK = true;
   testOK &= TestProps();
   testOK &= TestKeywords();
 
-  rv = NS_ShutdownXPCOM(nsnull);
+  rv = NS_ShutdownXPCOM(nullptr);
   NS_ENSURE_SUCCESS(rv, 2);
 
   return testOK ? 0 : 1;

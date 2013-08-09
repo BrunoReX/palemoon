@@ -2,16 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
-relativesrcdir  = testing/mochitest/tests/browser
+relativesrcdir  = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
-include $(topsrcdir)/config/rules.mk
 
-_BROWSER_TEST_FILES = \
+MOCHITEST_BROWSER_FILES = \
 	                  head.js \
 	                  browser_head.js \
 	                  browser_pass.js \
@@ -33,5 +32,4 @@ _BROWSER_TEST_FILES = \
 # Disabled because it would take too long, useful to check functionality though.
 #	                  browser_requestLongerTimeout.js \
 
-libs:: $(_BROWSER_TEST_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/browser/$(relativesrcdir)
+include $(topsrcdir)/config/rules.mk

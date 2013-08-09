@@ -9,21 +9,26 @@
       android:sharedUserId="@MOZ_ANDROID_SHARED_ID@"
 #endif
       >
+    <supports-screens android:smallScreens="false" />
     <uses-sdk android:minSdkVersion="8"
               android:targetSdkVersion="14"/>
 
-#include ../sync/manifests/SyncAndroidManifest_permissions.xml.in
+#include ../services/manifests/AnnouncementsAndroidManifest_permissions.xml.in
+#include ../services/manifests/SyncAndroidManifest_permissions.xml.in
 
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT"/>
+    <uses-permission android:name="com.android.launcher.permission.UNINSTALL_SHORTCUT"/>
     <uses-permission android:name="com.android.browser.permission.READ_HISTORY_BOOKMARKS"/>
 
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="@ANDROID_PACKAGE_NAME@.permissions.PASSWORD_PROVIDER"/>
+    <uses-permission android:name="@ANDROID_PACKAGE_NAME@.permissions.BROWSER_PROVIDER"/>
+    <uses-permission android:name="@ANDROID_PACKAGE_NAME@.permissions.FORMHISTORY_PROVIDER"/>
 
 #ifdef MOZ_WEBSMS_BACKEND
     <!-- WebSMS -->
@@ -47,6 +52,7 @@
     <application android:label="@MOZ_APP_DISPLAYNAME@"
 		 android:icon="@drawable/icon"
                  android:name="org.mozilla.gecko.GeckoApplication"
+		 android:hardwareAccelerated="true"
 #if MOZILLA_OFFICIAL
 		 android:debuggable="false">
 #else
@@ -62,7 +68,12 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.MULTIWINDOW_LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="org.mozilla.gecko.ACTION_ALERT_CALLBACK" />
+            </intent-filter>
+
             <intent-filter>
                 <action android:name="org.mozilla.gecko.UPDATE"/>
                 <category android:name="android.intent.category.DEFAULT" />
@@ -89,6 +100,7 @@
                 <data android:mimeType="text/plain"/>
                 <data android:mimeType="application/xhtml+xml"/>
             </intent-filter>
+
             <intent-filter>
                 <action android:name="android.intent.action.WEB_SEARCH" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -98,12 +110,21 @@
                 <data android:scheme="https" />
             </intent-filter>
 
+            <intent-filter>
+                <action android:name="android.intent.action.SEARCH" />
+            </intent-filter>
+
+            <meta-data android:name="android.app.searchable"
+                       android:resource="@xml/searchable" />
+
             <!-- For debugging -->
             <intent-filter>
                 <action android:name="org.mozilla.gecko.DEBUG" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+#include @OBJDIR@/WebAppManifestFragment.xml.in
 
         <!-- Masquerade as the Resolver so that we can be opened from the Marketplace. -->
         <activity-alias
@@ -118,10 +139,22 @@
             </intent-filter>
         </receiver>
 
+        <receiver android:name="org.mozilla.gecko.GeckoUpdateReceiver">
+            <intent-filter>
+                <action android:name="@ANDROID_PACKAGE_NAME@.CHECK_UPDATE_RESULT" />
+            </intent-filter>
+        </receiver>
+
         <receiver android:name="org.mozilla.gecko.GeckoMessageReceiver"
                   android:permission="@ANDROID_PACKAGE_NAME@.permissions.PASSWORD_PROVIDER">
             <intent-filter>
                   <action android:name="org.mozilla.gecko.INIT_PW"></action>
+            </intent-filter>
+        </receiver>
+
+        <receiver android:name="org.mozilla.gecko.ReferrerReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="com.android.vending.INSTALL_REFERRER" />
             </intent-filter>
         </receiver>
 
@@ -134,7 +167,8 @@
           </intent-filter>
         </activity>
 
-#include ../sync/manifests/SyncAndroidManifest_activities.xml.in
+#include ../services/manifests/AnnouncementsAndroidManifest_activities.xml.in
+#include ../services/manifests/SyncAndroidManifest_activities.xml.in
 
 #if MOZ_CRASHREPORTER
   <activity android:name="CrashReporter"
@@ -172,7 +206,12 @@
 
         <provider android:name="@ANDROID_PACKAGE_NAME@.db.BrowserProvider"
                   android:authorities="@ANDROID_PACKAGE_NAME@.db.browser"
-                  android:permission="@ANDROID_PACKAGE_NAME@.permissions.BROWSER_PROVIDER"/>
+                  android:permission="@ANDROID_PACKAGE_NAME@.permissions.BROWSER_PROVIDER">
+
+            <path-permission android:pathPrefix="/search_suggest_query"
+                             android:readPermission="android.permission.GLOBAL_SEARCH" />
+
+        </provider>
 
         <!--
           Ensure that passwords provider runs in its own process. (Bug 718760.)
@@ -194,7 +233,22 @@
                   android:authorities="@ANDROID_PACKAGE_NAME@.db.tabs"
                   android:permission="@ANDROID_PACKAGE_NAME@.permissions.BROWSER_PROVIDER"/>
 
-#include ../sync/manifests/SyncAndroidManifest_services.xml.in
+        <service
+            android:exported="false"
+            android:name="org.mozilla.gecko.updater.UpdateService"
+            android:process="@MANGLED_ANDROID_PACKAGE_NAME@.UpdateService">
+        </service>
+
+
+#include ../services/manifests/AnnouncementsAndroidManifest_services.xml.in
+#include ../services/manifests/SyncAndroidManifest_services.xml.in
+
+        <uses-library required="false" name="com.sec.android.app.multiwindow"> </uses-library>
+        <meta-data android:name="com.sec.android.support.multiwindow" android:value="true" />
+        <meta-data android:name="com.sec.android.multiwindow.DEFAULT_SIZE_W" android:resource="@dimen/app_defaultsize_w" />
+        <meta-data android:name="com.sec.android.multiwindow.DEFAULT_SIZE_H" android:resource="@dimen/app_defaultsize_h" />
+        <meta-data android:name="com.sec.android.multiwindow.MINIMUM_SIZE_W" android:resource="@dimen/app_minimumsize_w" />
+        <meta-data android:name="com.sec.android.multiwindow.MINIMUM_SIZE_H" android:resource="@dimen/app_minimumsize_h" />
     </application>
 
     <permission android:name="@ANDROID_PACKAGE_NAME@.permissions.BROWSER_PROVIDER"

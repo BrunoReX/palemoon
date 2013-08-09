@@ -13,8 +13,6 @@
 #include "nsIPopupWindowManager.h"
 #include "nsWeakReference.h"
 
-class nsIURI;
-
 class nsPopupWindowManager : public nsIPopupWindowManager,
                              public nsIObserver,
                              public nsSupportsWeakReference {
@@ -29,7 +27,7 @@ public:
   nsresult Init();
 
 private:
-  PRUint32                       mPolicy;
+  uint32_t                       mPolicy;
   nsCOMPtr<nsIPermissionManager> mPermissionManager;
 };
 

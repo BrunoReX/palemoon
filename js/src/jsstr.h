@@ -10,12 +10,14 @@
 #include <ctype.h>
 #include "jsapi.h"
 #include "jsatom.h"
-#include "jsprvtd.h"
 #include "jslock.h"
 #include "jsutil.h"
 
 #include "js/HashTable.h"
 #include "vm/Unicode.h"
+
+class JSFlatString;
+class JSStableString;
 
 namespace js {
 
@@ -39,7 +41,7 @@ class RopeBuilder;
 
 }  /* namespace js */
 
-extern JSString * JS_FASTCALL
+extern JSString *
 js_ConcatStrings(JSContext *cx, js::HandleString s1, js::HandleString s2);
 
 extern JSString * JS_FASTCALL
@@ -68,7 +70,7 @@ extern JSSubString js_EmptySubString;
 
 /* Initialize the String class, returning its prototype object. */
 extern JSObject *
-js_InitStringClass(JSContext *cx, JSObject *obj);
+js_InitStringClass(JSContext *cx, js::HandleObject obj);
 
 extern const char js_escape_str[];
 extern const char js_unescape_str[];
@@ -79,24 +81,24 @@ extern const char js_decodeURIComponent_str[];
 extern const char js_encodeURIComponent_str[];
 
 /* GC-allocate a string descriptor for the given malloc-allocated chars. */
-extern JSFixedString *
+extern JSStableString *
 js_NewString(JSContext *cx, jschar *chars, size_t length);
 
 extern JSLinearString *
 js_NewDependentString(JSContext *cx, JSString *base, size_t start, size_t length);
 
 /* Copy a counted string and GC-allocate a descriptor for it. */
-extern JSFixedString *
+extern JSFlatString *
 js_NewStringCopyN(JSContext *cx, const jschar *s, size_t n);
 
-extern JSFixedString *
+extern JSFlatString *
 js_NewStringCopyN(JSContext *cx, const char *s, size_t n);
 
 /* Copy a C string and GC-allocate a descriptor for it. */
-extern JSFixedString *
+extern JSFlatString *
 js_NewStringCopyZ(JSContext *cx, const jschar *s);
 
-extern JSFixedString *
+extern JSFlatString *
 js_NewStringCopyZ(JSContext *cx, const char *s);
 
 /*
@@ -123,6 +125,14 @@ ToStringSlow(JSContext *cx, const Value &v);
 static JS_ALWAYS_INLINE JSString *
 ToString(JSContext *cx, const js::Value &v)
 {
+    AssertCanGC();
+#ifdef DEBUG
+    {
+        SkipRoot skip(cx, &v);
+        MaybeCheckStackRoots(cx);
+    }
+#endif
+
     if (v.isString())
         return v.toString();
     return ToStringSlow(cx, v);
@@ -192,16 +202,26 @@ js_strncpy(jschar *dst, const jschar *src, size_t nelem)
     return js::PodCopy(dst, src, nelem);
 }
 
+extern jschar *
+js_strdup(JSContext *cx, const jschar *s);
+
 namespace js {
 
 /*
- * Inflate bytes to jschars. Return null on error, otherwise return the jschar
- * or byte vector that was malloc'ed. length is updated to the length of the
+ * Inflate bytes in ASCII encoding to jschars. Return null on error, otherwise
+ * return the jschar that was malloc'ed. length is updated to the length of the
  * new string (in jschars).
  */
 extern jschar *
-InflateString(JSContext *cx, const char *bytes, size_t *length,
-              FlationCoding fc = NormalEncoding);
+InflateString(JSContext *cx, const char *bytes, size_t *length);
+
+/*
+ * Inflate bytes in UTF-8 encoding to jschars. Return null on error, otherwise
+ * return the jschar vector that was malloc'ed. length is updated to the length
+ * of the new string (in jschars).
+ */
+extern jschar *
+InflateUTF8String(JSContext *cx, const char *bytes, size_t *length);
 
 extern char *
 DeflateString(JSContext *cx, const jschar *chars, size_t length);
@@ -219,36 +239,21 @@ InflateStringToBuffer(JSContext *cx, const char *bytes, size_t length,
 
 extern bool
 InflateUTF8StringToBuffer(JSContext *cx, const char *bytes, size_t length,
-                          jschar *chars, size_t *charsLength,
-                          FlationCoding fc = NormalEncoding);
+                          jschar *chars, size_t *charsLength);
 
 /* Get number of bytes in the deflated sequence of characters. */
 extern size_t
 GetDeflatedStringLength(JSContext *cx, const jschar *chars, size_t charsLength);
 
-/* This function will never fail (return -1) in CESU-8 mode. */
-extern size_t
-GetDeflatedUTF8StringLength(JSContext *cx, const jschar *chars,
-                            size_t charsLength,
-                            FlationCoding fc = NormalEncoding);
-
 /*
  * Deflate JS chars to bytes into a buffer. 'bytes' must be large enough for
  * 'length chars. The buffer is NOT null-terminated. The destination length
  * must to be initialized with the buffer size and will contain on return the
- * number of copied bytes. Conversion behavior depends on js_CStringsAreUTF8.
+ * number of copied bytes.
  */
 extern bool
 DeflateStringToBuffer(JSContext *cx, const jschar *chars,
                       size_t charsLength, char *bytes, size_t *length);
-
-/*
- * Same as DeflateStringToBuffer, but treats 'bytes' as UTF-8 or CESU-8.
- */
-extern bool
-DeflateStringToUTF8Buffer(JSContext *cx, const jschar *chars,
-                          size_t charsLength, char *bytes, size_t *length,
-                          FlationCoding fc = NormalEncoding);
 
 /*
  * The String.prototype.replace fast-native entry point is exported for joined

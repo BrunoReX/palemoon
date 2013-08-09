@@ -14,11 +14,12 @@
 #include "nsAutoPtr.h"
 #include "prprf.h"
 #include "prenv.h"
+#include "mozilla/Attributes.h"
 
 //-----------------------------------------------------------------------------
 
-class FetchObserver : public nsIRequestObserver
-                    , public nsIProgressEventSink
+class FetchObserver MOZ_FINAL : public nsIRequestObserver
+                              , public nsIProgressEventSink
 {
 public:
   NS_DECL_ISUPPORTS
@@ -38,7 +39,7 @@ FetchObserver::OnStartRequest(nsIRequest *request, nsISupports *context)
 
 NS_IMETHODIMP
 FetchObserver::OnProgress(nsIRequest *request, nsISupports *context,
-                          PRUint64 progress, PRUint64 progressMax)
+                          uint64_t progress, uint64_t progressMax)
 {
   printf("FetchObserver::OnProgress [%lu/%lu]\n",
          (unsigned long)progress, (unsigned long)progressMax);
@@ -56,7 +57,8 @@ NS_IMETHODIMP
 FetchObserver::OnStopRequest(nsIRequest *request, nsISupports *context,
                              nsresult status)
 {
-  printf("FetchObserver::OnStopRequest [status=%x]\n", status);
+  printf("FetchObserver::OnStopRequest [status=%x]\n",
+         static_cast<uint32_t>(status));
 
   QuitPumpingEvents();
   return NS_OK;
@@ -65,10 +67,10 @@ FetchObserver::OnStopRequest(nsIRequest *request, nsISupports *context,
 //-----------------------------------------------------------------------------
 
 static nsresult
-DoIncrementalFetch(const char *uriSpec, const char *resultPath, PRInt32 chunkSize,
-                   PRInt32 interval)
+DoIncrementalFetch(const char *uriSpec, const char *resultPath, int32_t chunkSize,
+                   int32_t interval)
 {
-  nsCOMPtr<nsILocalFile> resultFile;
+  nsCOMPtr<nsIFile> resultFile;
   nsresult rv = NS_NewNativeLocalFile(nsDependentCString(resultPath),
                                       false, getter_AddRefs(resultFile));
   if (NS_FAILED(rv))
@@ -92,7 +94,7 @@ DoIncrementalFetch(const char *uriSpec, const char *resultPath, PRInt32 chunkSiz
   if (NS_FAILED(rv))
     return rv;
 
-  rv = download->Start(observer, nsnull);
+  rv = download->Start(observer, nullptr);
   if (NS_FAILED(rv))
     return rv;
 
@@ -111,17 +113,18 @@ main(int argc, char **argv)
     return -1;
   }
 
-  nsresult rv = NS_InitXPCOM2(nsnull, nsnull, nsnull);
+  nsresult rv = NS_InitXPCOM2(nullptr, nullptr, nullptr);
   if (NS_FAILED(rv))
     return -1;
 
-  PRInt32 chunkSize = atoi(argv[3]);
-  PRInt32 interval = atoi(argv[4]);
+  int32_t chunkSize = atoi(argv[3]);
+  int32_t interval = atoi(argv[4]);
 
   rv = DoIncrementalFetch(argv[1], argv[2], chunkSize, interval);
   if (NS_FAILED(rv))
-    fprintf(stderr, "ERROR: DoIncrementalFetch failed [%x]\n", rv);
+    fprintf(stderr, "ERROR: DoIncrementalFetch failed [%x]\n",
+            static_cast<uint32_t>(rv));
 
-  NS_ShutdownXPCOM(nsnull);
+  NS_ShutdownXPCOM(nullptr);
   return 0;
 }

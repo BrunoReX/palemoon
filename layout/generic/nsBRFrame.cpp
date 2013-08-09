@@ -15,15 +15,12 @@
 #include "nsRenderingContext.h"
 #include "nsLayoutUtils.h"
 
-#ifdef ACCESSIBILITY
-#include "nsIServiceManager.h"
-#include "nsAccessibilityService.h"
-#endif
-
 //FOR SELECTION
 #include "nsIContent.h"
 #include "nsFrameSelection.h"
 //END INCLUDES FOR SELECTION
+
+using namespace mozilla;
 
 class BRFrame : public nsFrame {
 public:
@@ -33,11 +30,11 @@ public:
 
   virtual ContentOffsets CalcContentOffsetsFromFramePoint(nsPoint aPoint);
 
-  virtual bool PeekOffsetNoAmount(bool aForward, PRInt32* aOffset);
-  virtual bool PeekOffsetCharacter(bool aForward, PRInt32* aOffset,
+  virtual bool PeekOffsetNoAmount(bool aForward, int32_t* aOffset);
+  virtual bool PeekOffsetCharacter(bool aForward, int32_t* aOffset,
                                      bool aRespectClusters = true);
   virtual bool PeekOffsetWord(bool aForward, bool aWordSelectEatSpace, bool aIsKeyboardSelect,
-                                PRInt32* aOffset, PeekWordState* aState);
+                                int32_t* aOffset, PeekWordState* aState);
 
   NS_IMETHOD Reflow(nsPresContext* aPresContext,
                     nsHTMLReflowMetrics& aDesiredSize,
@@ -52,14 +49,14 @@ public:
   virtual nsIAtom* GetType() const;
   virtual nscoord GetBaseline() const;
 
-  virtual bool IsFrameOfType(PRUint32 aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const
   {
     return nsFrame::IsFrameOfType(aFlags & ~(nsIFrame::eReplaced |
                                              nsIFrame::eLineParticipant));
   }
 
 #ifdef ACCESSIBILITY
-  virtual already_AddRefed<Accessible> CreateAccessible();
+  virtual mozilla::a11y::AccType AccessibleType() MOZ_OVERRIDE;
 #endif
 
 protected:
@@ -141,7 +138,7 @@ BRFrame::Reflow(nsPresContext* aPresContext,
     }
 
     // Return our reflow status
-    PRUint32 breakType = aReflowState.mStyleDisplay->mBreakType;
+    uint32_t breakType = aReflowState.mStyleDisplay->mBreakType;
     if (NS_STYLE_CLEAR_NONE == breakType) {
       breakType = NS_STYLE_CLEAR_LINE;
     }
@@ -217,10 +214,10 @@ nsIFrame::ContentOffsets BRFrame::CalcContentOffsetsFromFramePoint(nsPoint aPoin
 }
 
 bool
-BRFrame::PeekOffsetNoAmount(bool aForward, PRInt32* aOffset)
+BRFrame::PeekOffsetNoAmount(bool aForward, int32_t* aOffset)
 {
   NS_ASSERTION (aOffset && *aOffset <= 1, "aOffset out of range");
-  PRInt32 startOffset = *aOffset;
+  int32_t startOffset = *aOffset;
   // If we hit the end of a BR going backwards, go to its beginning and stay there.
   if (!aForward && startOffset != 0) {
     *aOffset = 0;
@@ -231,7 +228,7 @@ BRFrame::PeekOffsetNoAmount(bool aForward, PRInt32* aOffset)
 }
 
 bool
-BRFrame::PeekOffsetCharacter(bool aForward, PRInt32* aOffset,
+BRFrame::PeekOffsetCharacter(bool aForward, int32_t* aOffset,
                              bool aRespectClusters)
 {
   NS_ASSERTION (aOffset && *aOffset <= 1, "aOffset out of range");
@@ -241,7 +238,7 @@ BRFrame::PeekOffsetCharacter(bool aForward, PRInt32* aOffset,
 
 bool
 BRFrame::PeekOffsetWord(bool aForward, bool aWordSelectEatSpace, bool aIsKeyboardSelect,
-                        PRInt32* aOffset, PeekWordState* aState)
+                        int32_t* aOffset, PeekWordState* aState)
 {
   NS_ASSERTION (aOffset && *aOffset <= 1, "aOffset out of range");
   // Keep going. The actual line jumping will stop us.
@@ -249,23 +246,18 @@ BRFrame::PeekOffsetWord(bool aForward, bool aWordSelectEatSpace, bool aIsKeyboar
 }
 
 #ifdef ACCESSIBILITY
-already_AddRefed<Accessible>
-BRFrame::CreateAccessible()
+a11y::AccType
+BRFrame::AccessibleType()
 {
-  nsAccessibilityService* accService = nsIPresShell::AccService();
-  if (!accService) {
-    return nsnull;
-  }
   nsIContent *parent = mContent->GetParent();
-  if (parent &&
-      parent->IsRootOfNativeAnonymousSubtree() &&
+  if (parent && parent->IsRootOfNativeAnonymousSubtree() &&
       parent->GetChildCount() == 1) {
     // This <br> is the only node in a text control, therefore it is the hacky
     // "bogus node" used when there is no text in the control
-    return nsnull;
+    return a11y::eNoAccessible;
   }
-  return accService->CreateHTMLBRAccessible(mContent,
-                                            PresContext()->PresShell());
+
+  return a11y::eHTMLBRAccessible;
 }
 #endif
 

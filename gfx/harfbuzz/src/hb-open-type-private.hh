@@ -34,6 +34,8 @@
 #include "hb-blob.h"
 
 
+namespace OT {
+
 
 /*
  * Casts
@@ -80,17 +82,25 @@ inline Type& StructAfter(TObject &X)
  */
 
 /* Check _assertion in a method environment */
-#define _DEFINE_SIZE_ASSERTION(_assertion) \
-  inline void _size_assertion (void) const \
-  { ASSERT_STATIC (_assertion); }
+#define _DEFINE_INSTANCE_ASSERTION1(_line, _assertion) \
+  inline void _instance_assertion_on_line_##_line (void) const \
+  { \
+    ASSERT_STATIC (_assertion); \
+    ASSERT_INSTANCE_POD (*this); /* Make sure it's POD. */ \
+  }
+# define _DEFINE_INSTANCE_ASSERTION0(_line, _assertion) _DEFINE_INSTANCE_ASSERTION1 (_line, _assertion)
+# define DEFINE_INSTANCE_ASSERTION(_assertion) _DEFINE_INSTANCE_ASSERTION0 (__LINE__, _assertion)
+
 /* Check that _code compiles in a method environment */
-#define _DEFINE_COMPILES_ASSERTION(_code) \
-  inline void _compiles_assertion (void) const \
+#define _DEFINE_COMPILES_ASSERTION1(_line, _code) \
+  inline void _compiles_assertion_on_line_##_line (void) const \
   { _code; }
+# define _DEFINE_COMPILES_ASSERTION0(_line, _code) _DEFINE_COMPILES_ASSERTION1 (_line, _code)
+# define DEFINE_COMPILES_ASSERTION(_code) _DEFINE_COMPILES_ASSERTION0 (__LINE__, _code)
 
 
 #define DEFINE_SIZE_STATIC(size) \
-  _DEFINE_SIZE_ASSERTION (sizeof (*this) == (size)); \
+  DEFINE_INSTANCE_ASSERTION (sizeof (*this) == (size)); \
   static const unsigned int static_size = (size); \
   static const unsigned int min_size = (size)
 
@@ -98,21 +108,21 @@ inline Type& StructAfter(TObject &X)
 #define VAR 1
 
 #define DEFINE_SIZE_UNION(size, _member) \
-  _DEFINE_SIZE_ASSERTION (this->u._member.static_size == (size)); \
+  DEFINE_INSTANCE_ASSERTION (this->u._member.static_size == (size)); \
   static const unsigned int min_size = (size)
 
 #define DEFINE_SIZE_MIN(size) \
-  _DEFINE_SIZE_ASSERTION (sizeof (*this) >= (size)); \
+  DEFINE_INSTANCE_ASSERTION (sizeof (*this) >= (size)); \
   static const unsigned int min_size = (size)
 
 #define DEFINE_SIZE_ARRAY(size, array) \
-  _DEFINE_SIZE_ASSERTION (sizeof (*this) == (size) + sizeof (array[0])); \
-  _DEFINE_COMPILES_ASSERTION ((void) array[0].static_size) \
+  DEFINE_INSTANCE_ASSERTION (sizeof (*this) == (size) + sizeof (array[0])); \
+  DEFINE_COMPILES_ASSERTION ((void) array[0].static_size) \
   static const unsigned int min_size = (size)
 
 #define DEFINE_SIZE_ARRAY2(size, array1, array2) \
-  _DEFINE_SIZE_ASSERTION (sizeof (*this) == (size) + sizeof (this->array1[0]) + sizeof (this->array2[0])); \
-  _DEFINE_COMPILES_ASSERTION ((void) array1[0].static_size; (void) array2[0].static_size) \
+  DEFINE_INSTANCE_ASSERTION (sizeof (*this) == (size) + sizeof (this->array1[0]) + sizeof (this->array2[0])); \
+  DEFINE_COMPILES_ASSERTION ((void) array1[0].static_size; (void) array2[0].static_size) \
   static const unsigned int min_size = (size)
 
 
@@ -122,18 +132,19 @@ inline Type& StructAfter(TObject &X)
  */
 
 /* Global nul-content Null pool.  Enlarge as necessary. */
+/* TODO This really should be a extern HB_INTERNAL and defined somewhere... */
 static const void *_NullPool[64 / sizeof (void *)];
 
 /* Generic nul-content Null objects. */
 template <typename Type>
 static inline const Type& Null (void) {
-  ASSERT_STATIC (Type::min_size <= sizeof (_NullPool));
+  ASSERT_STATIC (sizeof (Type) <= sizeof (_NullPool));
   return *CastP<Type> (_NullPool);
 }
 
 /* Specializaiton for arbitrary-content arbitrary-sized Null objects. */
 #define DEFINE_NULL_DATA(Type, data) \
-static const char _Null##Type[Type::min_size + 1] = data; /* +1 is for nul-termination in data */ \
+static const char _Null##Type[sizeof (Type) + 1] = data; /* +1 is for nul-termination in data */ \
 template <> \
 inline const Type& Null<Type> (void) { \
   return *CastP<Type> (_Null##Type); \
@@ -316,6 +327,160 @@ struct Sanitizer
 
 
 
+/*
+ * Serialize
+ */
+
+#ifndef HB_DEBUG_SERIALIZE
+#define HB_DEBUG_SERIALIZE (HB_DEBUG+0)
+#endif
+
+
+#define TRACE_SERIALIZE() \
+	hb_auto_trace_t<HB_DEBUG_SERIALIZE> trace (&c->debug_depth, "SERIALIZE", c, HB_FUNC, "");
+
+
+struct hb_serialize_context_t
+{
+  inline hb_serialize_context_t (void *start, unsigned int size)
+  {
+    this->start = (char *) start;
+    this->end = this->start + size;
+
+    this->ran_out_of_room = false;
+    this->head = this->start;
+    this->debug_depth = 0;
+  }
+
+  template <typename Type>
+  inline Type *start_serialize (void)
+  {
+    DEBUG_MSG_LEVEL (SERIALIZE, this->start, 0, +1,
+		     "start [%p..%p] (%lu bytes)",
+		     this->start, this->end,
+		     (unsigned long) (this->end - this->start));
+
+    return start_embed<Type> ();
+  }
+
+  inline void end_serialize (void)
+  {
+    DEBUG_MSG_LEVEL (SERIALIZE, this->start, 0, -1,
+		     "end [%p..%p] serialized %d bytes; %s",
+		     this->start, this->end,
+		     (int) (this->head - this->start),
+		     this->ran_out_of_room ? "RAN OUT OF ROOM" : "did not ran out of room");
+
+  }
+
+  template <typename Type>
+  inline Type *copy (void)
+  {
+    assert (!this->ran_out_of_room);
+    unsigned int len = this->head - this->start;
+    void *p = malloc (len);
+    if (p)
+      memcpy (p, this->start, len);
+    return reinterpret_cast<Type *> (p);
+  }
+
+  template <typename Type>
+  inline Type *allocate_size (unsigned int size)
+  {
+    if (unlikely (this->ran_out_of_room || this->end - this->head < size)) {
+      this->ran_out_of_room = true;
+      return NULL;
+    }
+    memset (this->head, 0, size);
+    char *ret = this->head;
+    this->head += size;
+    return reinterpret_cast<Type *> (ret);
+  }
+
+  template <typename Type>
+  inline Type *allocate_min (void)
+  {
+    return this->allocate_size<Type> (Type::min_size);
+  }
+
+  template <typename Type>
+  inline Type *start_embed (void)
+  {
+    Type *ret = reinterpret_cast<Type *> (this->head);
+    return ret;
+  }
+
+  template <typename Type>
+  inline Type *embed (const Type &obj)
+  {
+    unsigned int size = obj.get_size ();
+    Type *ret = this->allocate_size<Type> (size);
+    if (unlikely (!ret)) return NULL;
+    memcpy (ret, obj, size);
+    return ret;
+  }
+
+  template <typename Type>
+  inline Type *extend_min (Type &obj)
+  {
+    unsigned int size = obj.min_size;
+    assert (this->start <= (char *) &obj && (char *) &obj <= this->head && (char *) &obj + size >= this->head);
+    if (unlikely (!this->allocate_size<Type> (((char *) &obj) + size - this->head))) return NULL;
+    return reinterpret_cast<Type *> (&obj);
+  }
+
+  template <typename Type>
+  inline Type *extend (Type &obj)
+  {
+    unsigned int size = obj.get_size ();
+    assert (this->start < (char *) &obj && (char *) &obj <= this->head && (char *) &obj + size >= this->head);
+    if (unlikely (!this->allocate_size<Type> (((char *) &obj) + size - this->head))) return NULL;
+    return reinterpret_cast<Type *> (&obj);
+  }
+
+  inline void truncate (void *head)
+  {
+    assert (this->start < head && head <= this->head);
+    this->head = (char *) head;
+  }
+
+  unsigned int debug_depth;
+  char *start, *end, *head;
+  bool ran_out_of_room;
+};
+
+template <typename Type>
+struct Supplier
+{
+  inline Supplier (const Type *array, unsigned int len_)
+  {
+    head = array;
+    len = len_;
+  }
+  inline const Type operator [] (unsigned int i) const
+  {
+    if (unlikely (i >= len)) return Type ();
+    return head[i];
+  }
+
+  inline void advance (unsigned int count)
+  {
+    if (unlikely (count > len))
+      count = len;
+    len -= count;
+    head += count;
+  }
+
+  private:
+  inline Supplier (const Supplier<Type> &); /* Disallow copy */
+  inline Supplier<Type>& operator= (const Supplier<Type> &); /* Disallow copy */
+
+  unsigned int len;
+  const Type *head;
+};
+
+
+
 
 /*
  *
@@ -333,8 +498,6 @@ struct Sanitizer
 
 template <typename Type, int Bytes> struct BEInt;
 
-/* LONGTERMTODO: On machines allowing unaligned access, we can make the
- * following tighter by using byteswap instructions on ints directly. */
 template <typename Type>
 struct BEInt<Type, 2>
 {
@@ -364,6 +527,8 @@ struct IntType
   inline operator Type(void) const { return v; }
   inline bool operator == (const IntType<Type> &o) const { return v == o.v; }
   inline bool operator != (const IntType<Type> &o) const { return v != o.v; }
+  static inline int cmp (const IntType<Type> *a, const IntType<Type> *b) { return b->cmp (*a); }
+  inline int cmp (IntType<Type> va) const { Type a = va; Type b = v; return a < b ? -1 : a == b ? 0 : +1; }
   inline int cmp (Type a) const { Type b = v; return a < b ? -1 : a == b ? 0 : +1; }
   inline bool sanitize (hb_sanitize_context_t *c) {
     TRACE_SANITIZE ();
@@ -375,11 +540,6 @@ struct IntType
   DEFINE_SIZE_STATIC (sizeof (Type));
 };
 
-/* Typedef these to avoid clash with windows.h */
-#define USHORT	HB_USHORT
-#define SHORT	HB_SHORT
-#define ULONG	HB_ULONG
-#define LONG	HB_LONG
 typedef IntType<uint16_t> USHORT;	/* 16-bit unsigned integer. */
 typedef IntType<int16_t>  SHORT;	/* 16-bit signed integer. */
 typedef IntType<uint32_t> ULONG;	/* 32-bit unsigned integer. */
@@ -486,6 +646,18 @@ struct GenericOffsetTo : OffsetType
     if (unlikely (!offset)) return Null(Type);
     return StructAtOffset<Type> (base, offset);
   }
+  inline Type& operator () (void *base)
+  {
+    unsigned int offset = *this;
+    return StructAtOffset<Type> (base, offset);
+  }
+
+  inline Type& serialize (hb_serialize_context_t *c, void *base)
+  {
+    Type *t = c->start_embed<Type> ();
+    this->set ((char *) t - (char *) base); /* TODO(serialize) Overflow? */
+    return *t;
+  }
 
   inline bool sanitize (hb_sanitize_context_t *c, void *base) {
     TRACE_SANITIZE ();
@@ -516,7 +688,9 @@ struct GenericOffsetTo : OffsetType
   }
 };
 template <typename Base, typename OffsetType, typename Type>
-inline const Type& operator + (const Base &base, GenericOffsetTo<OffsetType, Type> offset) { return offset (base); }
+inline const Type& operator + (const Base &base, const GenericOffsetTo<OffsetType, Type> &offset) { return offset (base); }
+template <typename Base, typename OffsetType, typename Type>
+inline Type& operator + (Base &base, GenericOffsetTo<OffsetType, Type> &offset) { return offset (base); }
 
 template <typename Type>
 struct OffsetTo : GenericOffsetTo<Offset, Type> {};
@@ -549,8 +723,34 @@ struct GenericArrayOf
     if (unlikely (i >= len)) return Null(Type);
     return array[i];
   }
+  inline Type& operator [] (unsigned int i)
+  {
+    return array[i];
+  }
   inline unsigned int get_size (void) const
   { return len.static_size + len * Type::static_size; }
+
+  inline bool serialize (hb_serialize_context_t *c,
+			 unsigned int items_len)
+  {
+    TRACE_SERIALIZE ();
+    if (unlikely (!c->extend_min (*this))) return TRACE_RETURN (false);
+    len.set (items_len); /* TODO(serialize) Overflow? */
+    if (unlikely (!c->extend (*this))) return TRACE_RETURN (false);
+    return TRACE_RETURN (true);
+  }
+
+  inline bool serialize (hb_serialize_context_t *c,
+			 Supplier<Type> &items,
+			 unsigned int items_len)
+  {
+    TRACE_SERIALIZE ();
+    if (unlikely (!serialize (c, items_len))) return TRACE_RETURN (false);
+    for (unsigned int i = 0; i < items_len; i++)
+      array[i] = items[i];
+    items.advance (items_len);
+    return TRACE_RETURN (true);
+  }
 
   inline bool sanitize (hb_sanitize_context_t *c) {
     TRACE_SANITIZE ();
@@ -655,6 +855,21 @@ struct HeadlessArrayOf
   inline unsigned int get_size (void) const
   { return len.static_size + (len ? len - 1 : 0) * Type::static_size; }
 
+  inline bool serialize (hb_serialize_context_t *c,
+			 Supplier<Type> &items,
+			 unsigned int items_len)
+  {
+    TRACE_SERIALIZE ();
+    if (unlikely (!c->extend_min (*this))) return TRACE_RETURN (false);
+    len.set (items_len); /* TODO(serialize) Overflow? */
+    if (unlikely (!items_len)) return TRACE_RETURN (true);
+    if (unlikely (!c->extend (*this))) return TRACE_RETURN (false);
+    for (unsigned int i = 0; i < items_len - 1; i++)
+      array[i] = items[i];
+    items.advance (items_len - 1);
+    return TRACE_RETURN (true);
+  }
+
   inline bool sanitize_shallow (hb_sanitize_context_t *c) {
     return c->check_struct (this)
 	&& c->check_array (this, Type::static_size, len);
@@ -689,14 +904,25 @@ struct SortedArrayOf : ArrayOf<Type> {
 
   template <typename SearchType>
   inline int search (const SearchType &x) const {
-    struct Cmp {
-      static int cmp (const SearchType *a, const Type *b) { return b->cmp (*a); }
-    };
-    const Type *p = (const Type *) bsearch (&x, this->array, this->len, sizeof (this->array[0]), (hb_compare_func_t) Cmp::cmp);
-    return p ? p - this->array : -1;
+    unsigned int count = this->len;
+    /* Linear search is *much* faster for small counts. */
+    if (likely (count < 32)) {
+      for (unsigned int i = 0; i < count; i++)
+	if (this->array[i].cmp (x) == 0)
+	  return i;
+      return -1;
+    } else {
+      struct Cmp {
+	static int cmp (const SearchType *a, const Type *b) { return b->cmp (*a); }
+      };
+      const Type *p = (const Type *) bsearch (&x, this->array, this->len, sizeof (this->array[0]), (hb_compare_func_t) Cmp::cmp);
+      return p ? p - this->array : -1;
+    }
   }
 };
 
+
+} // namespace OT
 
 
 #endif /* HB_OPEN_TYPE_PRIVATE_HH */

@@ -1,12 +1,13 @@
-# -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
-#
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 var browser;
 var dialog = {};
 var pref = null;
+let openLocationModule = {};
 try {
   pref = Components.classes["@mozilla.org/preferences-service;1"]
                    .getService(Components.interfaces.nsIPrefBranch);
@@ -14,7 +15,8 @@ try {
   // not critical, remain silent
 }
 
-Components.utils.import("resource:///modules/openLocationLastURL.jsm");
+Components.utils.import("resource:///modules/openLocationLastURL.jsm", openLocationModule);
+let gOpenLocationLastURL = new openLocationModule.OpenLocationLastURL(window.opener);
 
 function onLoad()
 {
@@ -110,15 +112,22 @@ const nsIFilePicker = Components.interfaces.nsIFilePicker;
 function onChooseFile()
 {
   try {
-    var fp = Components.classes["@mozilla.org/filepicker;1"].createInstance(nsIFilePicker);
-    fp.init(window, dialog.bundle.getString("chooseFileDialogTitle"), nsIFilePicker.modeOpen);
-    fp.appendFilters(nsIFilePicker.filterHTML | nsIFilePicker.filterText |
-                     nsIFilePicker.filterAll | nsIFilePicker.filterImages | nsIFilePicker.filterXML);
+    let fp = Components.classes["@mozilla.org/filepicker;1"].
+             createInstance(nsIFilePicker);
+    let fpCallback = function fpCallback_done(aResult) {
+      if (aResult == nsIFilePicker.returnOK && fp.fileURL.spec &&
+          fp.fileURL.spec.length > 0) {
+        dialog.input.value = fp.fileURL.spec;
+      }
+      doEnabling();
+    };
 
-    if (fp.show() == nsIFilePicker.returnOK && fp.fileURL.spec && fp.fileURL.spec.length > 0)
-      dialog.input.value = fp.fileURL.spec;
+    fp.init(window, dialog.bundle.getString("chooseFileDialogTitle"),
+            nsIFilePicker.modeOpen);
+    fp.appendFilters(nsIFilePicker.filterAll | nsIFilePicker.filterText |
+                     nsIFilePicker.filterImages | nsIFilePicker.filterXML |
+                     nsIFilePicker.filterHTML);
+    fp.open(fpCallback);
+  } catch (ex) {
   }
-  catch(ex) {
-  }
-  doEnabling();
 }

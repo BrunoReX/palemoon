@@ -44,7 +44,7 @@ class nsHtml5Highlighter
      * @param aReconsume whether this is a reconsuming transition
      * @param aPos the tokenizer's current position into the buffer
      */
-    PRInt32 Transition(PRInt32 aState, bool aReconsume, PRInt32 aPos);
+    int32_t Transition(int32_t aState, bool aReconsume, int32_t aPos);
 
     /**
      * Report end of file.
@@ -61,7 +61,7 @@ class nsHtml5Highlighter
      *
      * @param aPos the first UTF-16 code unit not to flush
      */
-    void DropBuffer(PRInt32 aPos);
+    void DropBuffer(int32_t aPos);
 
     /**
      * Flush the tree ops into the sink.
@@ -219,7 +219,7 @@ class nsHtml5Highlighter
      *
      * @param aName the name of the element
      * @param aAttributes the attribute holder (ownership will be taken) or
-     *        nsnull for no attributes
+     *        nullptr for no attributes
      * @return the handle for the element that will be created
      */
     nsIContent** CreateElement(nsIAtom* aName,
@@ -238,7 +238,7 @@ class nsHtml5Highlighter
      *
      * @param aName the name of the element
      * @param aAttributes the attribute holder (ownership will be taken) or
-     *        nsnull for no attributes
+     *        nullptr for no attributes
      */
     void Push(nsIAtom* aName, nsHtml5HtmlAttributes* aAttributes);
 
@@ -255,8 +255,8 @@ class nsHtml5Highlighter
      * @param aLength the number of code units to copy
      */
     void AppendCharacters(const PRUnichar* aBuffer,
-                          PRInt32 aStart,
-                          PRInt32 aLength);
+                          int32_t aStart,
+                          int32_t aLength);
 
     /**
      * Enqueues a tree op for adding an href attribute with the view-source:
@@ -269,30 +269,30 @@ class nsHtml5Highlighter
     /**
      * The state we are transitioning away from.
      */
-    PRInt32 mState;
+    int32_t mState;
 
     /**
      * The index of the first UTF-16 code unit in mBuffer that hasn't been
      * flushed yet.
      */
-    PRInt32 mCStart;
+    int32_t mCStart;
 
     /**
      * The position of the code unit in mBuffer that caused the current
      * transition.
      */
-    PRInt32 mPos;
+    int32_t mPos;
 
     /**
      * The current line number.
      */
-    PRInt32 mLineNumber;
+    int32_t mLineNumber;
 
     /**
      * The number of inline elements open inside the <pre> excluding the
      * span potentially wrapping a run of characters.
      */
-    PRInt32 mInlinesOpen;
+    int32_t mInlinesOpen;
 
     /**
      * Whether there's a span wrapping a run of characters (excluding CDATA
@@ -344,7 +344,7 @@ class nsHtml5Highlighter
     /**
      * Number of handles used in mHandles
      */
-    PRInt32 mHandlesUsed;
+    int32_t mHandlesUsed;
 
     /**
      * A holder for old contents of mHandles

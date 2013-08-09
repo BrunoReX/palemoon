@@ -5,6 +5,7 @@
 #ifndef CHROME_COMMON_IPC_CHANNEL_H_
 #define CHROME_COMMON_IPC_CHANNEL_H_
 
+#include <queue>
 #include "chrome/common/ipc_message.h"
 
 namespace IPC {
@@ -26,11 +27,15 @@ class Channel : public Message::Sender {
 
     // Called when the channel is connected and we have received the internal
     // Hello message from the peer.
-    virtual void OnChannelConnected(int32 peer_pid) {}
+    virtual void OnChannelConnected(int32_t peer_pid) {}
 
     // Called when an error is detected that causes the channel to close.
     // This method is not called when a channel is closed normally.
     virtual void OnChannelError() {}
+
+    // If the listener has queued messages, swap them for |queue| like so
+    //   swap(impl->my_queued_messages, queue);
+    virtual void GetQueuedMessages(std::queue<Message>& queue) {}
   };
 
   enum Mode {
@@ -125,7 +130,7 @@ class Channel : public Message::Sender {
   // just the process id (pid).  The message has a special routing_id
   // (MSG_ROUTING_NONE) and type (HELLO_MESSAGE_TYPE).
   enum {
-    HELLO_MESSAGE_TYPE = kuint16max  // Maximum value of message type (uint16),
+    HELLO_MESSAGE_TYPE = kuint16max  // Maximum value of message type (uint16_t),
                                      // to avoid conflicting with normal
                                      // message types, which are enumeration
                                      // constants starting from 0.

@@ -10,7 +10,7 @@
 #include <os2.h>
 #include "nsURLHelper.h"
 #include "nsEscape.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 
 nsresult
 net_GetURLSpecFromActualFile(nsIFile *aFile, nsACString &result)
@@ -25,7 +25,7 @@ net_GetURLSpecFromActualFile(nsIFile *aFile, nsACString &result)
     // Replace \ with / to convert to an url
     path.ReplaceChar(PRUnichar(0x5Cu), PRUnichar(0x2Fu));
 
-    nsCAutoString escPath;
+    nsAutoCString escPath;
     NS_NAMED_LITERAL_CSTRING(prefix, "file:///");
   
     // Escape the path with the directory mask
@@ -49,27 +49,27 @@ net_GetFileFromURLSpec(const nsACString &aURL, nsIFile **result)
 {
     nsresult rv;
     
-    nsCOMPtr<nsILocalFile> localFile(
+    nsCOMPtr<nsIFile> localFile(
             do_CreateInstance(NS_LOCAL_FILE_CONTRACTID, &rv));
     if (NS_FAILED(rv)) {
-        NS_ERROR("Only nsILocalFile supported right now");
+        NS_ERROR("Only nsIFile supported right now");
         return rv;
     }
 
     const nsACString *specPtr;
 
-    nsCAutoString buf;
+    nsAutoCString buf;
     if (net_NormalizeFileURL(aURL, buf))
         specPtr = &buf;
     else
         specPtr = &aURL;
     
-    nsCAutoString directory, fileBaseName, fileExtension;
+    nsAutoCString directory, fileBaseName, fileExtension;
     
     rv = net_ParseFileURL(*specPtr, directory, fileBaseName, fileExtension);
     if (NS_FAILED(rv)) return rv;
 
-    nsCAutoString path;
+    nsAutoCString path;
 
     if (!directory.IsEmpty()) {
         NS_EscapeURL(directory, esc_Directory|esc_AlwaysCopy, path);

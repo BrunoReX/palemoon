@@ -137,9 +137,15 @@ public:
     return mActorChild;
   }
 
+  IndexedDBCursorParent*
+  GetActorParent() const
+  {
+    return mActorParent;
+  }
+
   nsresult
   ContinueInternal(const Key& aKey,
-                   PRInt32 aCount);
+                   int32_t aCount);
 
 protected:
   IDBCursor();

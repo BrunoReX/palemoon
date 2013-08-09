@@ -14,9 +14,11 @@
 
 #include "frontend/ParseMaps.h"
 #include "frontend/TokenStream.h"
-#include "frontend/TreeContext.h"
 
 namespace js {
+namespace frontend {
+
+struct ParseContext;
 
 /*
  * Indicates a location in the stack that an upvar value can be retrieved from
@@ -28,39 +30,167 @@ namespace js {
  */
 class UpvarCookie
 {
-    uint32_t value;
-
-    static const uint32_t FREE_VALUE = 0xfffffffful;
+    uint16_t level_;
+    uint16_t slot_;
 
     void checkInvariants() {
         JS_STATIC_ASSERT(sizeof(UpvarCookie) == sizeof(uint32_t));
-        JS_STATIC_ASSERT(UPVAR_LEVEL_LIMIT < FREE_LEVEL);
     }
 
   public:
-    /*
-     * All levels above-and-including FREE_LEVEL are reserved so that
-     * FREE_VALUE can be used as a special value.
-     */
-    static const uint16_t FREE_LEVEL = 0x3fff;
+    // FREE_LEVEL is a distinguished value used to indicate the cookie is free.
+    static const uint16_t FREE_LEVEL = 0xffff;
 
-    /*
-     * If a function has a higher static level than this limit, we will not
-     * optimize it using UPVAR opcodes.
-     */
-    static const uint16_t UPVAR_LEVEL_LIMIT = 16;
     static const uint16_t CALLEE_SLOT = 0xffff;
-    static bool isLevelReserved(uint16_t level) { return level >= FREE_LEVEL; }
 
-    bool isFree() const { return value == FREE_VALUE; }
-    /* isFree check should be performed before using these accessors. */
-    uint16_t level() const { JS_ASSERT(!isFree()); return uint16_t(value >> 16); }
-    uint16_t slot() const { JS_ASSERT(!isFree()); return uint16_t(value); }
+    static bool isLevelReserved(uint16_t level) { return level == FREE_LEVEL; }
 
-    void set(const UpvarCookie &other) { set(other.level(), other.slot()); }
-    void set(uint16_t newLevel, uint16_t newSlot) { value = (uint32_t(newLevel) << 16) | newSlot; }
-    void makeFree() { set(0xffff, 0xffff); JS_ASSERT(isFree()); }
+    bool isFree() const { return level_ == FREE_LEVEL; }
+    uint16_t level() const { JS_ASSERT(!isFree()); return level_; }
+    uint16_t slot()  const { JS_ASSERT(!isFree()); return slot_; }
+
+    // This fails and issues an error message if newLevel is too large.
+    bool set(JSContext *cx, unsigned newLevel, uint16_t newSlot);
+
+    void makeFree() {
+        level_ = FREE_LEVEL;
+        slot_ = 0;      // value doesn't matter, won't be used
+        JS_ASSERT(isFree());
+    }
 };
+
+#define FOR_EACH_PARSE_NODE_KIND(F) \
+    F(NOP) \
+    F(SEMI) \
+    F(COMMA) \
+    F(CONDITIONAL) \
+    F(COLON) \
+    F(OR) \
+    F(AND) \
+    F(BITOR) \
+    F(BITXOR) \
+    F(BITAND) \
+    F(POS) \
+    F(NEG) \
+    F(ADD) \
+    F(SUB) \
+    F(STAR) \
+    F(DIV) \
+    F(MOD) \
+    F(PREINCREMENT) \
+    F(POSTINCREMENT) \
+    F(PREDECREMENT) \
+    F(POSTDECREMENT) \
+    F(DOT) \
+    F(ELEM) \
+    F(ARRAY) \
+    F(STATEMENTLIST) \
+    F(XMLCURLYEXPR) \
+    F(OBJECT) \
+    F(CALL) \
+    F(NAME) \
+    F(INTRINSICNAME) \
+    F(NUMBER) \
+    F(STRING) \
+    F(REGEXP) \
+    F(TRUE) \
+    F(FALSE) \
+    F(NULL) \
+    F(THIS) \
+    F(FUNCTION) \
+    F(IF) \
+    F(ELSE) \
+    F(SWITCH) \
+    F(CASE) \
+    F(DEFAULT) \
+    F(WHILE) \
+    F(DOWHILE) \
+    F(FOR) \
+    F(BREAK) \
+    F(CONTINUE) \
+    F(IN) \
+    F(VAR) \
+    F(CONST) \
+    F(WITH) \
+    F(RETURN) \
+    F(NEW) \
+    F(DELETE) \
+    F(TRY) \
+    F(CATCH) \
+    F(CATCHLIST) \
+    F(FINALLY) \
+    F(THROW) \
+    F(INSTANCEOF) \
+    F(DEBUGGER) \
+    F(DEFXMLNS) \
+    F(XMLSTAGO) \
+    F(XMLETAGO) \
+    F(XMLPTAGC) \
+    F(XMLTAGC) \
+    F(XMLNAME) \
+    F(XMLATTR) \
+    F(XMLSPACE) \
+    F(XMLTEXT) \
+    F(XMLCOMMENT) \
+    F(XMLCDATA) \
+    F(XMLPI) \
+    F(XMLUNARY) \
+    F(AT) \
+    F(FUNCTIONNS) \
+    F(DBLCOLON) \
+    F(ANYNAME) \
+    F(DBLDOT) \
+    F(FILTER) \
+    F(XMLELEM) \
+    F(XMLLIST) \
+    F(YIELD) \
+    F(ARRAYCOMP) \
+    F(ARRAYPUSH) \
+    F(LEXICALSCOPE) \
+    F(LET) \
+    F(SEQ) \
+    F(FORIN) \
+    F(FORHEAD) \
+    F(ARGSBODY) \
+    F(SPREAD) \
+    \
+    /* Equality operators. */ \
+    F(STRICTEQ) \
+    F(EQ) \
+    F(STRICTNE) \
+    F(NE) \
+    \
+    /* Unary operators. */ \
+    F(TYPEOF) \
+    F(VOID) \
+    F(NOT) \
+    F(BITNOT) \
+    \
+    /* Relational operators (< <= > >=). */ \
+    F(LT) \
+    F(LE) \
+    F(GT) \
+    F(GE) \
+    \
+    /* Shift operators (<< >> >>>). */ \
+    F(LSH) \
+    F(RSH) \
+    F(URSH) \
+    \
+    /* Assignment operators (= += -= etc.). */ \
+    /* ParseNode::isAssignment assumes all these are consecutive. */ \
+    F(ASSIGN) \
+    F(ADDASSIGN) \
+    F(SUBASSIGN) \
+    F(BITORASSIGN) \
+    F(BITXORASSIGN) \
+    F(BITANDASSIGN) \
+    F(LSHASSIGN) \
+    F(RSHASSIGN) \
+    F(URSHASSIGN) \
+    F(MULASSIGN) \
+    F(DIVASSIGN) \
+    F(MODASSIGN)
 
 /*
  * Parsing builds a tree of nodes that directs code generation.  This tree is
@@ -73,143 +203,12 @@ class UpvarCookie
  * The long comment after this enum block describes the kinds in detail.
  */
 enum ParseNodeKind {
-    PNK_SEMI,
-    PNK_COMMA,
-    PNK_CONDITIONAL,
-    PNK_COLON,
-    PNK_OR,
-    PNK_AND,
-    PNK_BITOR,
-    PNK_BITXOR,
-    PNK_BITAND,
-    PNK_POS,
-    PNK_NEG,
-    PNK_ADD,
-    PNK_SUB,
-    PNK_STAR,
-    PNK_DIV,
-    PNK_MOD,
-    PNK_PREINCREMENT,
-    PNK_POSTINCREMENT,
-    PNK_PREDECREMENT,
-    PNK_POSTDECREMENT,
-    PNK_DOT,
-    PNK_LB,
-    PNK_RB,
-    PNK_STATEMENTLIST,
-    PNK_XMLCURLYEXPR,
-    PNK_RC,
-    PNK_LP,
-    PNK_RP,
-    PNK_NAME,
-    PNK_NUMBER,
-    PNK_STRING,
-    PNK_REGEXP,
-    PNK_TRUE,
-    PNK_FALSE,
-    PNK_NULL,
-    PNK_THIS,
-    PNK_FUNCTION,
-    PNK_IF,
-    PNK_ELSE,
-    PNK_SWITCH,
-    PNK_CASE,
-    PNK_DEFAULT,
-    PNK_WHILE,
-    PNK_DOWHILE,
-    PNK_FOR,
-    PNK_BREAK,
-    PNK_CONTINUE,
-    PNK_IN,
-    PNK_VAR,
-    PNK_CONST,
-    PNK_WITH,
-    PNK_RETURN,
-    PNK_NEW,
-    PNK_DELETE,
-    PNK_TRY,
-    PNK_CATCH,
-    PNK_CATCHLIST,
-    PNK_FINALLY,
-    PNK_THROW,
-    PNK_INSTANCEOF,
-    PNK_DEBUGGER,
-    PNK_DEFXMLNS,
-    PNK_XMLSTAGO,
-    PNK_XMLETAGO,
-    PNK_XMLPTAGC,
-    PNK_XMLTAGC,
-    PNK_XMLNAME,
-    PNK_XMLATTR,
-    PNK_XMLSPACE,
-    PNK_XMLTEXT,
-    PNK_XMLCOMMENT,
-    PNK_XMLCDATA,
-    PNK_XMLPI,
-    PNK_XMLUNARY,
-    PNK_AT,
-    PNK_DBLCOLON,
-    PNK_ANYNAME,
-    PNK_DBLDOT,
-    PNK_FILTER,
-    PNK_XMLELEM,
-    PNK_XMLLIST,
-    PNK_YIELD,
-    PNK_ARRAYCOMP,
-    PNK_ARRAYPUSH,
-    PNK_LEXICALSCOPE,
-    PNK_LET,
-    PNK_SEQ,
-    PNK_FORIN,
-    PNK_FORHEAD,
-    PNK_ARGSBODY,
-    PNK_UPVARS,
-
-    /*
-     * The following parse node kinds occupy contiguous ranges to enable easy
-     * range-testing.
-     */
-
-    /* Equality operators. */
-    PNK_STRICTEQ,
-    PNK_EQ,
-    PNK_STRICTNE,
-    PNK_NE,
-
-    /* Unary operators. */
-    PNK_TYPEOF,
-    PNK_VOID,
-    PNK_NOT,
-    PNK_BITNOT,
-
-    /* Relational operators (< <= > >=). */
-    PNK_LT,
-    PNK_LE,
-    PNK_GT,
-    PNK_GE,
-
-    /* Shift operators (<< >> >>>). */
-    PNK_LSH,
-    PNK_RSH,
-    PNK_URSH,
-
-    /* Assignment operators (= += -= etc.). */
-    PNK_ASSIGN,
+#define EMIT_ENUM(name) PNK_##name,
+    FOR_EACH_PARSE_NODE_KIND(EMIT_ENUM)
+#undef EMIT_ENUM
+    PNK_LIMIT, /* domain size */
     PNK_ASSIGNMENT_START = PNK_ASSIGN,
-    PNK_ADDASSIGN,
-    PNK_SUBASSIGN,
-    PNK_BITORASSIGN,
-    PNK_BITXORASSIGN,
-    PNK_BITANDASSIGN,
-    PNK_LSHASSIGN,
-    PNK_RSHASSIGN,
-    PNK_URSHASSIGN,
-    PNK_MULASSIGN,
-    PNK_DIVASSIGN,
-    PNK_MODASSIGN,
-    PNK_ASSIGNMENT_LAST = PNK_MODASSIGN,
-
-    PNK_LIMIT /* domain size */
+    PNK_ASSIGNMENT_LAST = PNK_MODASSIGN
 };
 
 /*
@@ -220,14 +219,13 @@ enum ParseNodeKind {
  *                            object containing arg and var properties.  We
  *                            create the function object at parse (not emit)
  *                            time to specialize arg and var bytecodes early.
- *                          pn_body: PNK_UPVARS if the function's source body
- *                                     depends on outer names,
- *                                   PNK_ARGSBODY if formal parameters,
+ *                          pn_body: PNK_ARGSBODY if formal parameters,
  *                                   PNK_STATEMENTLIST node for function body
  *                                     statements,
  *                                   PNK_RETURN for expression closure, or
  *                                   PNK_SEQ for expression closure with
  *                                     destructured formal parameters
+ *                                   PNK_CALL see isGeneratorExpr def below
  *                          pn_cookie: static level and var index for function
  *                          pn_dflags: PND_* definition/use flags (see below)
  *                          pn_blockid: block id number
@@ -235,11 +233,8 @@ enum ParseNodeKind {
  *                            PNK_STATEMENTLIST node for function body
  *                            statements as final element
  *                          pn_count: 1 + number of formal parameters
- * PNK_UPVARS   nameset     pn_names: lexical dependencies (js::Definitions)
- *                            defined in enclosing scopes, or ultimately not
- *                            defined (free variables, either global property
- *                            references or reference errors).
  *                          pn_tree: PNK_ARGSBODY or PNK_STATEMENTLIST node
+ * PNK_SPREAD   unary       pn_kid: expression being spread
  *
  * <Statements>
  * PNK_STATEMENTLIST list   pn_head: list of pn_count statements
@@ -282,8 +277,8 @@ enum ParseNodeKind {
  *                          PNK_LEXICALSCOPE nodes, each with pn_expr pointing
  *                          to a PNK_CATCH node
  *                          pn_kid3: null or finally block
- * PNK_CATCH    ternary     pn_kid1: PNK_NAME, PNK_RB, or PNK_RC catch var node
- *                                   (PNK_RB or PNK_RC if destructuring)
+ * PNK_CATCH    ternary     pn_kid1: PNK_NAME, PNK_ARRAY, or PNK_OBJECT catch var node
+ *                                   (PNK_ARRAY or PNK_OBJECT if destructuring)
  *                          pn_kid2: null or the catch guard expression
  *                          pn_kid3: catch block statements
  * PNK_BREAK    name        pn_atom: label or null
@@ -372,21 +367,21 @@ enum ParseNodeKind {
  * PNK_DELETE   unary       pn_kid: MEMBER expr
  * PNK_DOT,     name        pn_expr: MEMBER expr to left of .
  * PNK_DBLDOT               pn_atom: name to right of .
- * PNK_LB       binary      pn_left: MEMBER expr to left of [
+ * PNK_ELEM     binary      pn_left: MEMBER expr to left of [
  *                          pn_right: expr between [ and ]
- * PNK_LP       list        pn_head: list of call, arg1, arg2, ... argN
+ * PNK_CALL     list        pn_head: list of call, arg1, arg2, ... argN
  *                          pn_count: 1 + N (where N is number of args)
  *                          call is a MEMBER expr naming a callable object
- * PNK_RB       list        pn_head: list of pn_count array element exprs
+ * PNK_ARRAY    list        pn_head: list of pn_count array element exprs
  *                          [,,] holes are represented by PNK_COMMA nodes
  *                          pn_xflags: PN_ENDCOMMA if extra comma at end
- * PNK_RC       list        pn_head: list of pn_count binary PNK_COLON nodes
+ * PNK_OBJECT   list        pn_head: list of pn_count binary PNK_COLON nodes
  * PNK_COLON    binary      key-value pair in object initializer or
  *                          destructuring lhs
  *                          pn_left: property id, pn_right: value
  *                          var {x} = object destructuring shorthand shares
  *                          PN_NAME node for x on left and right of PNK_COLON
- *                          node in PNK_RC's list, has PNX_DESTRUCT flag
+ *                          node in PNK_OBJECT's list, has PNX_DESTRUCT flag
  * PNK_NAME,    name        pn_atom: name, string, or object atom
  * PNK_STRING,              pn_op: JSOP_NAME, JSOP_STRING, or JSOP_OBJECT, or
  *                                 JSOP_REGEXP
@@ -412,6 +407,7 @@ enum ParseNodeKind {
  * PNK_ANYNAME  nullary     pn_op: JSOP_ANYNAME
  *                          pn_atom: cx->runtime->atomState.starAtom
  * PNK_AT       unary       pn_op: JSOP_TOATTRNAME; pn_kid attribute id/expr
+ * PNK_FUNCTIONNS nullary   special E4X "function::" namespace
  * PNK_DBLCOLON binary      pn_op: JSOP_QNAME
  *                          pn_left: PNK_ANYNAME or PNK_NAME node
  *                          pn_right: PNK_STRING "*" node, or expr within []
@@ -477,6 +473,7 @@ enum ParseNodeKind {
  *                                if-guarded PNK_ARRAYPUSH
  * PNK_ARRAYPUSH      unary     pn_op: JSOP_ARRAYCOMP
  *                              pn_kid: array comprehension expression
+ * PNK_NOP            nullary
  */
 enum ParseNodeArity {
     PN_NULLARY,                         /* 0 kids, only pn_atom/pn_dval/etc. */
@@ -485,8 +482,7 @@ enum ParseNodeArity {
     PN_TERNARY,                         /* three kids */
     PN_FUNC,                            /* function definition node */
     PN_LIST,                            /* generic singly linked list */
-    PN_NAME,                            /* name use or definition node */
-    PN_NAMESET                          /* AtomDefnMapPtr + ParseNode ptr */
+    PN_NAME                             /* name use or definition node */
 };
 
 struct Definition;
@@ -603,7 +599,7 @@ struct ParseNode {
         } binary;
         struct {                        /* one kid if unary */
             ParseNode   *kid;
-            JSBool      hidden;         /* hidden genexp-induced JSOP_YIELD
+            bool        hidden;         /* hidden genexp-induced JSOP_YIELD
                                            or directive prologue member (as
                                            pn_prologue) */
         } unary;
@@ -625,10 +621,6 @@ struct ParseNode {
                         blockid:20;     /* block number, for subset dominance
                                            computation */
         } name;
-        struct {                        /* lexical dependencies + sub-tree */
-            AtomDefnMapPtr   defnMap;
-            ParseNode        *tree;     /* sub-tree containing name uses */
-        } nameset;
         double        dval;             /* aligned numeric literal value */
         class {
             friend class LoopControlStatement;
@@ -665,8 +657,6 @@ struct ParseNode {
 #define pn_objbox       pn_u.name.objbox
 #define pn_expr         pn_u.name.expr
 #define pn_lexdef       pn_u.name.lexdef
-#define pn_names        pn_u.nameset.defnMap
-#define pn_tree         pn_u.nameset.tree
 #define pn_dval         pn_u.dval
 
   protected:
@@ -677,7 +667,6 @@ struct ParseNode {
         pn_parens = false;
         JS_ASSERT(!pn_used);
         JS_ASSERT(!pn_defn);
-        pn_names.init();
         pn_next = pn_link = NULL;
     }
 
@@ -700,7 +689,7 @@ struct ParseNode {
     newBinaryOrAppend(ParseNodeKind kind, JSOp op, ParseNode *left, ParseNode *right,
                       Parser *parser);
 
-    inline PropertyName *atom() const;
+    inline PropertyName *name() const;
 
     /*
      * The pn_expr and lexdef members are arms of an unsafe union. Unless you
@@ -726,19 +715,21 @@ struct ParseNode {
     Definition *resolve();
 
 /* PN_FUNC and PN_NAME pn_dflags bits. */
-#define PND_LET         0x01            /* let (block-scoped) binding */
-#define PND_CONST       0x02            /* const binding (orthogonal to let) */
-#define PND_INITIALIZED 0x04            /* initialized declaration */
-#define PND_ASSIGNED    0x08            /* set if ever LHS of assignment */
-#define PND_TOPLEVEL    0x10            /* see isTopLevel() below */
-#define PND_BLOCKCHILD  0x20            /* use or def is direct block child */
-#define PND_PLACEHOLDER 0x40            /* placeholder definition for lexdep */
-#define PND_BOUND       0x80            /* bound to a stack or global slot */
-#define PND_DEOPTIMIZED 0x100           /* former pn_used name node, pn_lexdef
+#define PND_LET                 0x01    /* let (block-scoped) binding */
+#define PND_CONST               0x02    /* const binding (orthogonal to let) */
+#define PND_ASSIGNED            0x04    /* set if ever LHS of assignment */
+#define PND_BLOCKCHILD          0x08    /* use or def is direct block child */
+#define PND_PLACEHOLDER         0x10    /* placeholder definition for lexdep */
+#define PND_BOUND               0x20    /* bound to a stack or global slot */
+#define PND_DEOPTIMIZED         0x40    /* former pn_used name node, pn_lexdef
                                            still valid, but this use no longer
                                            optimizable via an upvar opcode */
-#define PND_CLOSED      0x200           /* variable is closed over */
-#define PND_DEFAULT     0x400           /* definition is an arg with a default */
+#define PND_CLOSED              0x80    /* variable is closed over */
+#define PND_DEFAULT            0x100    /* definition is an arg with a default */
+#define PND_IMPLICITARGUMENTS  0x200    /* the definition is a placeholder for
+                                           'arguments' that has been converted
+                                           into a definition after the function
+                                           body has been parsed. */
 
 /* Flags to propagate from uses to definition. */
 #define PND_USE2DEF_FLAGS (PND_ASSIGNED | PND_CLOSED)
@@ -775,30 +766,27 @@ struct ParseNode {
         return pn_cookie.slot();
     }
 
+    bool functionIsHoisted() const {
+        JS_ASSERT(pn_arity == PN_FUNC);
+        JS_ASSERT(isOp(JSOP_LAMBDA) ||    // lambda, genexpr
+                  isOp(JSOP_DEFFUN) ||    // non-body-level function statement
+                  isOp(JSOP_NOP) ||       // body-level function stmt in global code
+                  isOp(JSOP_GETLOCAL) ||  // body-level function stmt in function code
+                  isOp(JSOP_GETARG));     // body-level function redeclaring formal
+        return !(isOp(JSOP_LAMBDA) || isOp(JSOP_DEFFUN));
+    }
+
     inline bool test(unsigned flag) const;
 
     bool isLet() const          { return test(PND_LET); }
     bool isConst() const        { return test(PND_CONST); }
-    bool isInitialized() const  { return test(PND_INITIALIZED); }
     bool isBlockChild() const   { return test(PND_BLOCKCHILD); }
     bool isPlaceholder() const  { return test(PND_PLACEHOLDER); }
     bool isDeoptimized() const  { return test(PND_DEOPTIMIZED); }
     bool isAssigned() const     { return test(PND_ASSIGNED); }
     bool isClosed() const       { return test(PND_CLOSED); }
-
-    /*
-     * True iff this definition creates a top-level binding in the overall
-     * script being compiled -- that is, it affects the whole program's
-     * bindings, not bindings for a specific function (unless this definition
-     * is in the outermost scope in eval code, executed within a function) or
-     * the properties of a specific object (through the with statement).
-     *
-     * NB: Function sub-statements found in overall program code and not nested
-     *     within other functions are not currently top level, even though (if
-     *     executed) they do create top-level bindings; there is no particular
-     *     rationale for this behavior.
-     */
-    bool isTopLevel() const     { return test(PND_TOPLEVEL); }
+    bool isBound() const        { return test(PND_BOUND); }
+    bool isImplicitArguments() const { return test(PND_IMPLICITARGUMENTS); }
 
     void become(ParseNode *pn2);
     void clear();
@@ -810,48 +798,6 @@ struct ParseNode {
                isKind(PNK_TRUE) ||
                isKind(PNK_FALSE) ||
                isKind(PNK_NULL);
-    }
-
-    /*
-     * True if this statement node could be a member of a Directive Prologue: an
-     * expression statement consisting of a single string literal.
-     *
-     * This considers only the node and its children, not its context. After
-     * parsing, check the node's pn_prologue flag to see if it is indeed part of
-     * a directive prologue.
-     *
-     * Note that a Directive Prologue can contain statements that cannot
-     * themselves be directives (string literals that include escape sequences
-     * or escaped newlines, say). This member function returns true for such
-     * nodes; we use it to determine the extent of the prologue.
-     * isEscapeFreeStringLiteral, below, checks whether the node itself could be
-     * a directive.
-     */
-    bool isStringExprStatement() const {
-        if (getKind() == PNK_SEMI) {
-            JS_ASSERT(pn_arity == PN_UNARY);
-            ParseNode *kid = pn_kid;
-            return kid && kid->getKind() == PNK_STRING && !kid->pn_parens;
-        }
-        return false;
-    }
-
-    /*
-     * Return true if this node, known to be an unparenthesized string literal,
-     * could be the string of a directive in a Directive Prologue. Directive
-     * strings never contain escape sequences or line continuations.
-     */
-    bool isEscapeFreeStringLiteral() const {
-        JS_ASSERT(isKind(PNK_STRING) && !pn_parens);
-
-        /*
-         * If the string's length in the source code is its length as a value,
-         * accounting for the quotes, then it must not contain any escape
-         * sequences or line continuations.
-         */
-        JSString *str = pn_atom;
-        return (pn_pos.begin.lineno == pn_pos.end.lineno &&
-                pn_pos.begin.index + str->length() + 2 == pn_pos.end.index);
     }
 
     /* Return true if this node appears in a Directive Prologue. */
@@ -867,15 +813,10 @@ struct ParseNode {
      * True if this node is a desugared generator expression.
      */
     bool isGeneratorExpr() const {
-        if (getKind() == PNK_LP) {
+        if (isKind(PNK_CALL)) {
             ParseNode *callee = this->pn_head;
-            if (callee->getKind() == PNK_FUNCTION) {
-                ParseNode *body = (callee->pn_body->getKind() == PNK_UPVARS)
-                                  ? callee->pn_body->pn_tree
-                                  : callee->pn_body;
-                if (body->getKind() == PNK_LEXICALSCOPE)
-                    return true;
-            }
+            if (callee->getKind() == PNK_FUNCTION && callee->pn_body->getKind() == PNK_LEXICALSCOPE)
+                return true;
         }
         return false;
     }
@@ -883,10 +824,8 @@ struct ParseNode {
     ParseNode *generatorExpr() const {
         JS_ASSERT(isGeneratorExpr());
         ParseNode *callee = this->pn_head;
-        ParseNode *body = callee->pn_body->getKind() == PNK_UPVARS
-                          ? callee->pn_body->pn_tree
-                          : callee->pn_body;
-        JS_ASSERT(body->getKind() == PNK_LEXICALSCOPE);
+        ParseNode *body = callee->pn_body;
+        JS_ASSERT(body->isKind(PNK_LEXICALSCOPE));
         return body->pn_expr;
     }
 #endif
@@ -912,6 +851,9 @@ struct ParseNode {
 
     void initList(ParseNode *pn) {
         JS_ASSERT(pn_arity == PN_LIST);
+        if (pn->pn_pos.begin < pn_pos.begin)
+            pn_pos.begin = pn->pn_pos.begin;
+        pn_pos.end = pn->pn_pos.end;
         pn_head = pn;
         pn_tail = &pn->pn_next;
         pn_count = 1;
@@ -921,35 +863,52 @@ struct ParseNode {
 
     void append(ParseNode *pn) {
         JS_ASSERT(pn_arity == PN_LIST);
+        JS_ASSERT(pn->pn_pos.begin >= pn_pos.begin);
+        pn_pos.end = pn->pn_pos.end;
         *pn_tail = pn;
         pn_tail = &pn->pn_next;
         pn_count++;
     }
 
+    void checkListConsistency()
+#ifndef DEBUG
+    {}
+#endif
+    ;
+
     bool getConstantValue(JSContext *cx, bool strictChecks, Value *vp);
     inline bool isConstant();
 
     /* Casting operations. */
-    inline BreakStatement &asBreakStatement();
-    inline ContinueStatement &asContinueStatement();
-#if JS_HAS_XML_SUPPORT
-    inline XMLProcessingInstruction &asXMLProcessingInstruction();
-#endif
-    inline ConditionalExpression &asConditionalExpression();
-    inline PropertyAccess &asPropertyAccess();
+    template <class NodeType>
+    inline NodeType &as() {
+        JS_ASSERT(NodeType::test(*this));
+        return *static_cast<NodeType *>(this);
+    }
+
+    template <class NodeType>
+    inline const NodeType &as() const {
+        JS_ASSERT(NodeType::test(*this));
+        return *static_cast<const NodeType *>(this);
+    }
 
 #ifdef DEBUG
-    inline void dump(int indent);
+    void dump();
+    void dump(int indent);
 #endif
 };
 
 struct NullaryNode : public ParseNode {
     static inline NullaryNode *create(ParseNodeKind kind, Parser *parser) {
-        return (NullaryNode *)ParseNode::create(kind, PN_NULLARY, parser);
+        return (NullaryNode *) ParseNode::create(kind, PN_NULLARY, parser);
+    }
+
+    static bool test(const ParseNode &node) {
+        return node.isArity(PN_NULLARY);
     }
 
 #ifdef DEBUG
-    inline void dump();
+    void dump();
 #endif
 };
 
@@ -961,11 +920,15 @@ struct UnaryNode : public ParseNode {
     }
 
     static inline UnaryNode *create(ParseNodeKind kind, Parser *parser) {
-        return (UnaryNode *)ParseNode::create(kind, PN_UNARY, parser);
+        return (UnaryNode *) ParseNode::create(kind, PN_UNARY, parser);
+    }
+
+    static bool test(const ParseNode &node) {
+        return node.isArity(PN_UNARY);
     }
 
 #ifdef DEBUG
-    inline void dump(int indent);
+    void dump(int indent);
 #endif
 };
 
@@ -985,11 +948,15 @@ struct BinaryNode : public ParseNode {
     }
 
     static inline BinaryNode *create(ParseNodeKind kind, Parser *parser) {
-        return (BinaryNode *)ParseNode::create(kind, PN_BINARY, parser);
+        return (BinaryNode *) ParseNode::create(kind, PN_BINARY, parser);
+    }
+
+    static bool test(const ParseNode &node) {
+        return node.isArity(PN_BINARY);
     }
 
 #ifdef DEBUG
-    inline void dump(int indent);
+    void dump(int indent);
 #endif
 };
 
@@ -1005,53 +972,63 @@ struct TernaryNode : public ParseNode {
     }
 
     static inline TernaryNode *create(ParseNodeKind kind, Parser *parser) {
-        return (TernaryNode *)ParseNode::create(kind, PN_TERNARY, parser);
+        return (TernaryNode *) ParseNode::create(kind, PN_TERNARY, parser);
+    }
+
+    static bool test(const ParseNode &node) {
+        return node.isArity(PN_TERNARY);
     }
 
 #ifdef DEBUG
-    inline void dump(int indent);
+    void dump(int indent);
 #endif
 };
 
 struct ListNode : public ParseNode {
     static inline ListNode *create(ParseNodeKind kind, Parser *parser) {
-        return (ListNode *)ParseNode::create(kind, PN_LIST, parser);
+        return (ListNode *) ParseNode::create(kind, PN_LIST, parser);
+    }
+
+    static bool test(const ParseNode &node) {
+        return node.isArity(PN_LIST);
     }
 
 #ifdef DEBUG
-    inline void dump(int indent);
+    void dump(int indent);
 #endif
 };
 
 struct FunctionNode : public ParseNode {
     static inline FunctionNode *create(ParseNodeKind kind, Parser *parser) {
-        return (FunctionNode *)ParseNode::create(kind, PN_FUNC, parser);
+        return (FunctionNode *) ParseNode::create(kind, PN_FUNC, parser);
+    }
+
+    static bool test(const ParseNode &node) {
+        return node.isArity(PN_FUNC);
     }
 
 #ifdef DEBUG
-    inline void dump(int indent);
+    void dump(int indent);
 #endif
 };
 
 struct NameNode : public ParseNode {
-    static NameNode *create(ParseNodeKind kind, JSAtom *atom, Parser *parser, SharedContext *sc);
+    static NameNode *create(ParseNodeKind kind, JSAtom *atom, Parser *parser, ParseContext *pc);
 
-    inline void initCommon(SharedContext *sc);
+    inline void initCommon(ParseContext *pc);
+
+    static bool test(const ParseNode &node) {
+        return node.isArity(PN_NAME);
+    }
 
 #ifdef DEBUG
-    inline void dump(int indent);
+    void dump(int indent);
 #endif
-};
-
-struct NameSetNode : public ParseNode {
-    static inline NameSetNode *create(ParseNodeKind kind, Parser *parser) {
-        return (NameSetNode *)ParseNode::create(kind, PN_NAMESET, parser);
-    }
 };
 
 struct LexicalScopeNode : public ParseNode {
     static inline LexicalScopeNode *create(ParseNodeKind kind, Parser *parser) {
-        return (LexicalScopeNode *)ParseNode::create(kind, PN_NAME, parser);
+        return (LexicalScopeNode *) ParseNode::create(kind, PN_NAME, parser);
     }
 };
 
@@ -1070,6 +1047,13 @@ class LoopControlStatement : public ParseNode {
     PropertyName *label() const {
         return pn_u.loopControl.label;
     }
+
+    static bool test(const ParseNode &node) {
+        bool match = node.isKind(PNK_BREAK) || node.isKind(PNK_CONTINUE);
+        JS_ASSERT_IF(match, node.isArity(PN_NULLARY));
+        JS_ASSERT_IF(match, node.isOp(JSOP_NOP));
+        return match;
+    }
 };
 
 class BreakStatement : public LoopControlStatement {
@@ -1077,32 +1061,28 @@ class BreakStatement : public LoopControlStatement {
     BreakStatement(PropertyName *label, const TokenPtr &begin, const TokenPtr &end)
       : LoopControlStatement(PNK_BREAK, label, begin, end)
     { }
-};
 
-inline BreakStatement &
-ParseNode::asBreakStatement()
-{
-    JS_ASSERT(isKind(PNK_BREAK));
-    JS_ASSERT(isOp(JSOP_NOP));
-    JS_ASSERT(pn_arity == PN_NULLARY);
-    return *static_cast<BreakStatement *>(this);
-}
+    static bool test(const ParseNode &node) {
+        bool match = node.isKind(PNK_BREAK);
+        JS_ASSERT_IF(match, node.isArity(PN_NULLARY));
+        JS_ASSERT_IF(match, node.isOp(JSOP_NOP));
+        return match;
+    }
+};
 
 class ContinueStatement : public LoopControlStatement {
   public:
     ContinueStatement(PropertyName *label, TokenPtr &begin, TokenPtr &end)
       : LoopControlStatement(PNK_CONTINUE, label, begin, end)
     { }
-};
 
-inline ContinueStatement &
-ParseNode::asContinueStatement()
-{
-    JS_ASSERT(isKind(PNK_CONTINUE));
-    JS_ASSERT(isOp(JSOP_NOP));
-    JS_ASSERT(pn_arity == PN_NULLARY);
-    return *static_cast<ContinueStatement *>(this);
-}
+    static bool test(const ParseNode &node) {
+        bool match = node.isKind(PNK_CONTINUE);
+        JS_ASSERT_IF(match, node.isArity(PN_NULLARY));
+        JS_ASSERT_IF(match, node.isOp(JSOP_NOP));
+        return match;
+    }
+};
 
 class DebuggerStatement : public ParseNode {
   public:
@@ -1121,6 +1101,13 @@ class XMLProcessingInstruction : public ParseNode {
         pn_u.xmlpi.data = data;
     }
 
+    static bool test(const ParseNode &node) {
+        bool match = node.isKind(PNK_XMLPI);
+        JS_ASSERT_IF(match, node.isArity(PN_NULLARY));
+        JS_ASSERT_IF(match, node.isOp(JSOP_NOP));
+        return match;
+    }
+
     PropertyName *target() const {
         return pn_u.xmlpi.target;
     }
@@ -1129,15 +1116,6 @@ class XMLProcessingInstruction : public ParseNode {
         return pn_u.xmlpi.data;
     }
 };
-
-inline XMLProcessingInstruction &
-ParseNode::asXMLProcessingInstruction()
-{
-    JS_ASSERT(isKind(PNK_XMLPI));
-    JS_ASSERT(isOp(JSOP_NOP));
-    JS_ASSERT(pn_arity == PN_NULLARY);
-    return *static_cast<XMLProcessingInstruction *>(this);
-}
 #endif
 
 class ConditionalExpression : public ParseNode {
@@ -1165,16 +1143,14 @@ class ConditionalExpression : public ParseNode {
     ParseNode &elseExpression() const {
         return *pn_u.ternary.kid3;
     }
-};
 
-inline ConditionalExpression &
-ParseNode::asConditionalExpression()
-{
-    JS_ASSERT(isKind(PNK_CONDITIONAL));
-    JS_ASSERT(isOp(JSOP_NOP));
-    JS_ASSERT(pn_arity == PN_TERNARY);
-    return *static_cast<ConditionalExpression *>(this);
-}
+    static bool test(const ParseNode &node) {
+        bool match = node.isKind(PNK_CONDITIONAL);
+        JS_ASSERT_IF(match, node.isArity(PN_TERNARY));
+        JS_ASSERT_IF(match, node.isOp(JSOP_NOP));
+        return match;
+    }
+};
 
 class ThisLiteral : public ParseNode {
   public:
@@ -1197,7 +1173,7 @@ class XMLDoubleColonProperty : public ParseNode {
   public:
     XMLDoubleColonProperty(ParseNode *lhs, ParseNode *rhs,
                            const TokenPtr &begin, const TokenPtr &end)
-      : ParseNode(PNK_LB, JSOP_GETELEM, PN_BINARY, TokenPos::make(begin, end))
+      : ParseNode(PNK_ELEM, JSOP_GETELEM, PN_BINARY, TokenPos::make(begin, end))
     {
         JS_ASSERT(rhs->isKind(PNK_DBLCOLON));
         pn_u.binary.left = lhs;
@@ -1236,7 +1212,7 @@ class XMLProperty : public ParseNode {
   public:
     XMLProperty(ParseNode *lhs, ParseNode *propertyId,
                 const TokenPtr &begin, const TokenPtr &end)
-      : ParseNode(PNK_LB, JSOP_GETELEM, PN_BINARY, TokenPos::make(begin, end))
+      : ParseNode(PNK_ELEM, JSOP_GETELEM, PN_BINARY, TokenPos::make(begin, end))
     {
         pn_u.binary.left = lhs;
         pn_u.binary.right = propertyId;
@@ -1263,6 +1239,12 @@ class PropertyAccess : public ParseNode {
         pn_u.name.atom = name;
     }
 
+    static bool test(const ParseNode &node) {
+        bool match = node.isKind(PNK_DOT);
+        JS_ASSERT_IF(match, node.isArity(PN_NAME));
+        return match;
+    }
+
     ParseNode &expression() const {
         return *pn_u.name.expr;
     }
@@ -1272,19 +1254,11 @@ class PropertyAccess : public ParseNode {
     }
 };
 
-inline PropertyAccess &
-ParseNode::asPropertyAccess()
-{
-    JS_ASSERT(isKind(PNK_DOT));
-    JS_ASSERT(pn_arity == PN_NAME);
-    return *static_cast<PropertyAccess *>(this);
-}
-
 class PropertyByValue : public ParseNode {
   public:
     PropertyByValue(ParseNode *lhs, ParseNode *propExpr,
                     const TokenPtr &begin, const TokenPtr &end)
-      : ParseNode(PNK_LB, JSOP_GETELEM, PN_BINARY, TokenPos::make(begin, end))
+      : ParseNode(PNK_ELEM, JSOP_GETELEM, PN_BINARY, TokenPos::make(begin, end))
     {
         pn_u.binary.left = lhs;
         pn_u.binary.right = propExpr;
@@ -1335,33 +1309,33 @@ void DumpParseTree(ParseNode *pn, int indent = 0);
  *
  *   for (each use of unqualified name x in parse order) {
  *       if (this use of x is a declaration) {
- *           if (x in tc->decls) {                          // redeclaring
+ *           if (x in pc->decls) {                          // redeclaring
  *               pn = allocate a PN_NAME ParseNode;
  *           } else {                                       // defining
- *               dn = lookup x in tc->lexdeps;
+ *               dn = lookup x in pc->lexdeps;
  *               if (dn)                                    // use before def
- *                   remove x from tc->lexdeps;
+ *                   remove x from pc->lexdeps;
  *               else                                       // def before use
  *                   dn = allocate a PN_NAME Definition;
- *               map x to dn via tc->decls;
+ *               map x to dn via pc->decls;
  *               pn = dn;
  *           }
  *           insert pn into its parent PNK_VAR/PNK_CONST list;
  *       } else {
  *           pn = allocate a ParseNode for this reference to x;
- *           dn = lookup x in tc's lexical scope chain;
+ *           dn = lookup x in pc's lexical scope chain;
  *           if (!dn) {
- *               dn = lookup x in tc->lexdeps;
+ *               dn = lookup x in pc->lexdeps;
  *               if (!dn) {
  *                   dn = pre-allocate a Definition for x;
- *                   map x to dn in tc->lexdeps;
+ *                   map x to dn in pc->lexdeps;
  *               }
  *           }
  *           append pn to dn's use chain;
  *       }
  *   }
  *
- * See frontend/BytecodeEmitter.h for js::TreeContext and its top*Stmt,
+ * See frontend/BytecodeEmitter.h for js::ParseContext and its top*Stmt,
  * decls, and lexdeps members.
  *
  * Notes:
@@ -1373,9 +1347,9 @@ void DumpParseTree(ParseNode *pn, int indent = 0);
  *     statement" (ECMA-262 12.2) can be proven to be dead code. RecycleTree in
  *     ParseNode.cpp will not recycle a node whose pn_defn bit is set.
  *
- *  2. "lookup x in tc's lexical scope chain" gives up on def/use chaining if a
- *     with statement is found along the the scope chain, which includes tc,
- *     tc->parent, etc. Thus we eagerly connect an inner function's use of an
+ *  2. "lookup x in pc's lexical scope chain" gives up on def/use chaining if a
+ *     with statement is found along the the scope chain, which includes pc,
+ *     pc->parent, etc. Thus we eagerly connect an inner function's use of an
  *     outer's var x if the var x was parsed before the inner function.
  *
  *  3. A use may be eliminated as dead by the constant folder, which therefore
@@ -1384,15 +1358,15 @@ void DumpParseTree(ParseNode *pn, int indent = 0);
  *     the pn_link pointing at the use to be removed. This is costly, so as for
  *     dead definitions, we do not recycle dead pn_used nodes.
  *
- * At the end of parsing a function body or global or eval program, tc->lexdeps
+ * At the end of parsing a function body or global or eval program, pc->lexdeps
  * holds the lexical dependencies of the parsed unit. The name to def/use chain
- * mappings are then merged into the parent tc->lexdeps.
+ * mappings are then merged into the parent pc->lexdeps.
  *
  * Thus if a later var x is parsed in the outer function satisfying an earlier
- * inner function's use of x, we will remove dn from tc->lexdeps and re-use it
+ * inner function's use of x, we will remove dn from pc->lexdeps and re-use it
  * as the new definition node in the outer function's parse tree.
  *
- * When the compiler unwinds from the outermost tc, tc->lexdeps contains the
+ * When the compiler unwinds from the outermost pc, pc->lexdeps contains the
  * definition nodes with use chains for all free variables. These are either
  * global variables or reference errors.
  */
@@ -1405,18 +1379,23 @@ struct Definition : public ParseNode
         return pn_cookie.isFree();
     }
 
-    enum Kind { VAR, CONST, LET, FUNCTION, ARG, UNKNOWN };
+    enum Kind { VAR, CONST, LET, ARG, NAMED_LAMBDA, PLACEHOLDER };
 
-    bool canHaveInitializer() { return int(kind()) <= int(LET) || kind() == ARG; }
+    bool canHaveInitializer() { return int(kind()) <= int(ARG); }
 
     static const char *kindString(Kind kind);
 
     Kind kind() {
-        if (getKind() == PNK_FUNCTION)
-            return FUNCTION;
+        if (getKind() == PNK_FUNCTION) {
+            if (isOp(JSOP_GETARG))
+                return ARG;
+            return VAR;
+        }
         JS_ASSERT(getKind() == PNK_NAME);
-        if (isOp(JSOP_NOP))
-            return UNKNOWN;
+        if (isOp(JSOP_CALLEE))
+            return NAMED_LAMBDA;
+        if (isPlaceholder())
+            return PLACEHOLDER;
         if (isOp(JSOP_GETARG))
             return ARG;
         if (isConst())
@@ -1456,27 +1435,13 @@ ParseNode::test(unsigned flag) const
     return !!(pn_dflags & flag);
 }
 
-/*
- * We store definition pointers in PN_NAMESET AtomDefnMapPtrs in the AST,
- * but due to redefinition these nodes may become uses of other
- * definitions.  This is unusual, so we simply chase the pn_lexdef link to
- * find the final definition node. See functions called from
- * js::frontend::AnalyzeFunctions.
- *
- * FIXME: MakeAssignment mutates for want of a parent link...
- */
 inline Definition *
 ParseNode::resolve()
 {
-    ParseNode *pn = this;
-    while (!pn->isDefn()) {
-        if (pn->isAssignment()) {
-            pn = pn->pn_left;
-            continue;
-        }
-        pn = pn->lexdef();
-    }
-    return (Definition *) pn;
+    if (isDefn())
+        return (Definition *)this;
+    JS_ASSERT(lexdef()->isDefn());
+    return (Definition *)lexdef();
 }
 
 inline void
@@ -1492,88 +1457,25 @@ LinkUseToDef(ParseNode *pn, Definition *dn)
     pn->pn_lexdef = dn;
 }
 
-struct ObjectBox {
-    ObjectBox           *traceLink;
-    ObjectBox           *emitLink;
-    JSObject            *object;
-    bool                isFunctionBox;
+class ObjectBox {
+  public:
+    JSObject *object;
 
-    ObjectBox(ObjectBox *traceLink, JSObject *obj);
+    ObjectBox(JSObject *object, ObjectBox *traceLink);
+    bool isFunctionBox() { return object->isFunction(); }
+    FunctionBox *asFunctionBox() { JS_ASSERT(isFunctionBox()); return (FunctionBox *)(this); }
+    void trace(JSTracer *trc);
+
+  protected:
+    friend struct CGObjectList;
+
+    ObjectBox *traceLink;
+    ObjectBox *emitLink;
+
+    ObjectBox(JSFunction *function, ObjectBox *traceLink);
 };
 
-#define JSFB_LEVEL_BITS 14
-
-struct FunctionBox : public ObjectBox
-{
-    ParseNode       *node;
-    FunctionBox     *siblings;
-    FunctionBox     *kids;
-    FunctionBox     *parent;
-    Bindings        bindings;               /* bindings for this function */
-    uint32_t        level:JSFB_LEVEL_BITS;
-    uint16_t        ndefaults;
-    bool            queued:1;
-    bool            inLoop:1;               /* in a loop in parent function */
-    bool            inWith:1;               /* some enclosing scope is a with-statement
-                                               or E4X filter-expression */
-    bool            inGenexpLambda:1;       /* lambda from generator expression */
-
-    ContextFlags    cxFlags;
-
-    FunctionBox(ObjectBox* traceListHead, JSObject *obj, ParseNode *fn, TreeContext *tc);
-
-    bool funIsHeavyweight()      const { return cxFlags.funIsHeavyweight; }
-    bool funIsGenerator()        const { return cxFlags.funIsGenerator; }
-    bool funHasExtensibleScope() const { return cxFlags.funHasExtensibleScope; }
-
-    void setFunIsHeavyweight()         { cxFlags.funIsHeavyweight = true; }
-
-    JSFunction *function() const { return (JSFunction *) object; }
-
-    /*
-     * True if this function is inside the scope of a with-statement, an E4X
-     * filter-expression, or a function that uses direct eval.
-     */
-    bool inAnyDynamicScope() const;
-};
-
-struct FunctionBoxQueue {
-    FunctionBox         **vector;
-    size_t              head, tail;
-    size_t              lengthMask;
-
-    size_t count()  { return head - tail; }
-    size_t length() { return lengthMask + 1; }
-
-    FunctionBoxQueue()
-      : vector(NULL), head(0), tail(0), lengthMask(0) { }
-
-    bool init(uint32_t count) {
-        lengthMask = JS_BITMASK(JS_CEILING_LOG2W(count));
-        vector = (FunctionBox **) OffTheBooks::malloc_(sizeof(FunctionBox) * length());
-        return !!vector;
-    }
-
-    ~FunctionBoxQueue() { UnwantedForeground::free_(vector); }
-
-    void push(FunctionBox *funbox) {
-        if (!funbox->queued) {
-            JS_ASSERT(count() < length());
-            vector[head++ & lengthMask] = funbox;
-            funbox->queued = true;
-        }
-    }
-
-    FunctionBox *pull() {
-        if (tail == head)
-            return NULL;
-        JS_ASSERT(tail < head);
-        FunctionBox *funbox = vector[tail++ & lengthMask];
-        funbox->queued = false;
-        return funbox;
-    }
-};
-
+} /* namespace frontend */
 } /* namespace js */
 
 #endif /* ParseNode_h__ */

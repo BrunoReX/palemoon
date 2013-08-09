@@ -10,7 +10,7 @@
 NS_IMPL_ISUPPORTS1(nsExternalSharingAppService, nsIExternalSharingAppService)
 
 nsExternalSharingAppService::nsExternalSharingAppService()
-  : mShareUi(nsnull)
+  : mShareUi(nullptr)
 {
 }
 
@@ -44,8 +44,8 @@ nsExternalSharingAppService::ShareWithDefault(const nsAString & aData,
 
 NS_IMETHODIMP
 nsExternalSharingAppService::GetSharingApps(const nsAString & aMIMEType,
-                                            PRUint32 *aLen NS_OUTPARAM,
-                                            nsISharingHandlerApp ***aHandlers NS_OUTPARAM)
+                                            uint32_t *aLen,
+                                            nsISharingHandlerApp ***aHandlers)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }

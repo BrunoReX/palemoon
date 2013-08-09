@@ -16,12 +16,10 @@
 #include "jsdbgapi.h"
 #include "prprf.h"
 #include "nsIScriptContext.h"
-#include "nsIScriptObjectOwner.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIServiceManager.h"
 #include "nsIXPConnect.h"
 #include "nsCOMPtr.h"
-#include "nsContentUtils.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsPIDOMWindow.h"
 
@@ -31,9 +29,9 @@
 
 JSBool
 nsJSUtils::GetCallingLocation(JSContext* aContext, const char* *aFilename,
-                              PRUint32* aLineno)
+                              uint32_t* aLineno)
 {
-  JSScript* script = nsnull;
+  JSScript* script = nullptr;
   unsigned lineno = 0;
 
   if (!JS_DescribeScriptedCaller(aContext, &script, &lineno)) {
@@ -47,15 +45,15 @@ nsJSUtils::GetCallingLocation(JSContext* aContext, const char* *aFilename,
 }
 
 nsIScriptGlobalObject *
-nsJSUtils::GetStaticScriptGlobal(JSContext* aContext, JSObject* aObj)
+nsJSUtils::GetStaticScriptGlobal(JSObject* aObj)
 {
   JSClass* clazz;
   JSObject* glob = aObj; // starting point for search
 
   if (!glob)
-    return nsnull;
+    return nullptr;
 
-  glob = JS_GetGlobalForObject(aContext, glob);
+  glob = js::GetGlobalForObjectCrossCompartment(glob);
   NS_ABORT_IF_FALSE(glob, "Infallible returns null");
 
   clazz = JS_GetClass(glob);
@@ -68,7 +66,7 @@ nsJSUtils::GetStaticScriptGlobal(JSContext* aContext, JSObject* aObj)
   if (!(clazz->flags & JSCLASS_HAS_PRIVATE) ||
       !(clazz->flags & JSCLASS_PRIVATE_IS_NSISUPPORTS) ||
       !(supports = (nsISupports*)::JS_GetPrivate(glob))) {
-    return nsnull;
+    return nullptr;
   }
 
   // We might either have a window directly (e.g. if the global is a
@@ -80,7 +78,7 @@ nsJSUtils::GetStaticScriptGlobal(JSContext* aContext, JSObject* aObj)
   nsCOMPtr<nsIScriptGlobalObject> sgo(do_QueryInterface(supports));
   if (!sgo) {
     nsCOMPtr<nsIXPConnectWrappedNative> wrapper(do_QueryInterface(supports));
-    NS_ENSURE_TRUE(wrapper, nsnull);
+    NS_ENSURE_TRUE(wrapper, nullptr);
     sgo = do_QueryWrappedNative(wrapper);
   }
 
@@ -90,11 +88,11 @@ nsJSUtils::GetStaticScriptGlobal(JSContext* aContext, JSObject* aObj)
 }
 
 nsIScriptContext *
-nsJSUtils::GetStaticScriptContext(JSContext* aContext, JSObject* aObj)
+nsJSUtils::GetStaticScriptContext(JSObject* aObj)
 {
-  nsIScriptGlobalObject *nativeGlobal = GetStaticScriptGlobal(aContext, aObj);
+  nsIScriptGlobalObject *nativeGlobal = GetStaticScriptGlobal(aObj);
   if (!nativeGlobal)
-    return nsnull;
+    return nullptr;
 
   return nativeGlobal->GetScriptContext();
 }
@@ -104,7 +102,7 @@ nsJSUtils::GetDynamicScriptGlobal(JSContext* aContext)
 {
   nsIScriptContext *scriptCX = GetDynamicScriptContext(aContext);
   if (!scriptCX)
-    return nsnull;
+    return nullptr;
   return scriptCX->GetGlobalObject();
 }
 
@@ -114,18 +112,17 @@ nsJSUtils::GetDynamicScriptContext(JSContext *aContext)
   return GetScriptContextFromJSContext(aContext);
 }
 
-PRUint64
+uint64_t
 nsJSUtils::GetCurrentlyRunningCodeInnerWindowID(JSContext *aContext)
 {
   if (!aContext)
     return 0;
 
-  PRUint64 innerWindowID = 0;
+  uint64_t innerWindowID = 0;
 
   JSObject *jsGlobal = JS_GetGlobalForScopeChain(aContext);
   if (jsGlobal) {
-    nsIScriptGlobalObject *scriptGlobal = GetStaticScriptGlobal(aContext,
-                                                                jsGlobal);
+    nsIScriptGlobalObject *scriptGlobal = GetStaticScriptGlobal(jsGlobal);
     if (scriptGlobal) {
       nsCOMPtr<nsPIDOMWindow> win = do_QueryInterface(scriptGlobal);
       if (win)
@@ -136,3 +133,14 @@ nsJSUtils::GetCurrentlyRunningCodeInnerWindowID(JSContext *aContext)
   return innerWindowID;
 }
 
+void
+nsJSUtils::ReportPendingException(JSContext *aContext)
+{
+  if (JS_IsExceptionPending(aContext)) {
+    bool saved = JS_SaveFrameChain(aContext);
+    JS_ReportPendingException(aContext);
+    if (saved) {
+      JS_RestoreFrameChain(aContext);
+    }
+  }
+}

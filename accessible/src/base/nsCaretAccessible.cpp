@@ -15,7 +15,6 @@
 #include "nsCaret.h"
 #include "nsIDOMDocument.h"
 #include "nsIDOMHTMLAnchorElement.h"
-#include "nsIDOMHTMLInputElement.h"
 #include "nsIDOMHTMLTextAreaElement.h"
 #include "nsIFrame.h"
 #include "nsIPresShell.h"
@@ -44,9 +43,9 @@ void nsCaretAccessible::Shutdown()
   // doc selection listeners they registered in this nsCaretAccessible
 
   ClearControlSelectionListener(); // Clear the selection listener for the currently focused control
-  mLastTextAccessible = nsnull;
-  mLastUsedSelection = nsnull;
-  mRootAccessible = nsnull;
+  mLastTextAccessible = nullptr;
+  mLastUsedSelection = nullptr;
+  mRootAccessible = nullptr;
 }
 
 nsresult nsCaretAccessible::ClearControlSelectionListener()
@@ -54,7 +53,7 @@ nsresult nsCaretAccessible::ClearControlSelectionListener()
   nsCOMPtr<nsISelectionController> controller =
     GetSelectionControllerForNode(mCurrentControl);
 
-  mCurrentControl = nsnull;
+  mCurrentControl = nullptr;
 
   if (!controller)
     return NS_OK;
@@ -88,7 +87,7 @@ nsCaretAccessible::SetControlSelectionListener(nsIContent *aCurrentNode)
   ClearControlSelectionListener();
 
   mCurrentControl = aCurrentNode;
-  mLastTextAccessible = nsnull;
+  mLastTextAccessible = nullptr;
 
   // When focus moves such that the caret is part of a new frame selection
   // this removes the old selection listener and attaches a new one for
@@ -96,10 +95,8 @@ nsCaretAccessible::SetControlSelectionListener(nsIContent *aCurrentNode)
 
   nsCOMPtr<nsISelectionController> controller =
     GetSelectionControllerForNode(mCurrentControl);
-#ifdef DEBUG
   NS_ASSERTION(controller || aCurrentNode->IsNodeOfType(nsINode::eDOCUMENT),
                "No selection controller for non document node!");
-#endif
   if (!controller)
     return NS_OK;
 
@@ -173,7 +170,7 @@ nsCaretAccessible::RemoveDocSelectionListener(nsIPresShell *aShell)
 NS_IMETHODIMP
 nsCaretAccessible::NotifySelectionChanged(nsIDOMDocument* aDOMDocument,
                                           nsISelection* aSelection,
-                                          PRInt16 aReason)
+                                          int16_t aReason)
 {
   NS_ENSURE_ARG(aDOMDocument);
   NS_ENSURE_STATE(mRootAccessible);
@@ -181,7 +178,7 @@ nsCaretAccessible::NotifySelectionChanged(nsIDOMDocument* aDOMDocument,
   nsCOMPtr<nsIDocument> documentNode(do_QueryInterface(aDOMDocument));
   DocAccessible* document = GetAccService()->GetDocAccessible(documentNode);
 
-#ifdef DEBUG
+#ifdef A11Y_LOG
   if (logging::IsEnabled(logging::eSelection))
     logging::SelChange(aSelection, document);
 #endif
@@ -204,7 +201,7 @@ nsCaretAccessible::ProcessSelectionChanged(nsISelection* aSelection)
 {
   nsCOMPtr<nsISelectionPrivate> privSel(do_QueryInterface(aSelection));
 
-  PRInt16 type = 0;
+  int16_t type = 0;
   privSel->GetType(&type);
 
   if (type == nsISelectionController::SELECTION_NORMAL)
@@ -219,10 +216,10 @@ nsCaretAccessible::NormalSelectionChanged(nsISelection* aSelection)
 {
   mLastUsedSelection = do_GetWeakReference(aSelection);
 
-  PRInt32 rangeCount = 0;
+  int32_t rangeCount = 0;
   aSelection->GetRangeCount(&rangeCount);
   if (rangeCount == 0) {
-    mLastTextAccessible = nsnull;
+    mLastTextAccessible = nullptr;
     return; // No selection
   }
 
@@ -231,13 +228,13 @@ nsCaretAccessible::NormalSelectionChanged(nsISelection* aSelection)
   if (!textAcc)
     return;
 
-  PRInt32 caretOffset = -1;
+  int32_t caretOffset = -1;
   nsresult rv = textAcc->GetCaretOffset(&caretOffset);
   if (NS_FAILED(rv))
     return;
 
   if (textAcc == mLastTextAccessible && caretOffset == mLastCaretOffset) {
-    PRInt32 selectionCount = 0;
+    int32_t selectionCount = 0;
     textAcc->GetSelectionCount(&selectionCount);   // Don't swallow similar events when selecting text
     if (!selectionCount)
       return;  // Swallow duplicate caret event
@@ -277,7 +274,7 @@ nsCaretAccessible::GetCaretRect(nsIWidget **aOutWidget)
 {
   nsIntRect caretRect;
   NS_ENSURE_TRUE(aOutWidget, caretRect);
-  *aOutWidget = nsnull;
+  *aOutWidget = nullptr;
   NS_ENSURE_TRUE(mRootAccessible, caretRect);
 
   if (!mLastTextAccessible) {
@@ -322,7 +319,7 @@ nsCaretAccessible::GetCaretRect(nsIWidget **aOutWidget)
   // Correct for character size, so that caret always matches the size of the character
   // This is important for font size transitions, and is necessary because the Gecko caret uses the
   // previous character's size as the user moves forward in the text by character.
-  PRInt32 charX, charY, charWidth, charHeight;
+  int32_t charX, charY, charWidth, charHeight;
   if (NS_SUCCEEDED(mLastTextAccessible->GetCharacterExtents(mLastCaretOffset, &charX, &charY,
                                                             &charWidth, &charHeight,
                                                             nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE))) {
@@ -337,21 +334,21 @@ already_AddRefed<nsISelectionController>
 nsCaretAccessible::GetSelectionControllerForNode(nsIContent *aContent)
 {
   if (!aContent)
-    return nsnull;
+    return nullptr;
 
   nsIPresShell *presShell = aContent->OwnerDoc()->GetShell();
   if (!presShell)
-    return nsnull;
+    return nullptr;
 
   nsIFrame *frame = aContent->GetPrimaryFrame();
   if (!frame)
-    return nsnull;
+    return nullptr;
 
   nsPresContext *presContext = presShell->GetPresContext();
   if (!presContext)
-    return nsnull;
+    return nullptr;
 
-  nsISelectionController *controller = nsnull;
+  nsISelectionController *controller = nullptr;
   frame->GetSelectionController(presContext, &controller);
   return controller;
 }

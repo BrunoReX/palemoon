@@ -4,8 +4,10 @@
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
 <svg xmlns="http://www.w3.org/2000/svg"
-     width="34"
-     height="17">
-  <path d="M 0,17 L 17,0 34,17 z"
+     width="20"
+     height="10">
+  <path d="M -0.2,10 L 10,-0.2 20.2,10 z"
+        fill="ThreeDShadow"/>
+  <path d="M 1.2,10 L 10,1.2 18.8,10 z"
         fill="-moz-Dialog"/>
 </svg>

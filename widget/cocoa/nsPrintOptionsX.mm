@@ -17,7 +17,7 @@ nsPrintOptionsX::~nsPrintOptionsX()
 }
 
 nsresult
-nsPrintOptionsX::ReadPrefs(nsIPrintSettings* aPS, const nsAString& aPrinterName, PRUint32 aFlags)
+nsPrintOptionsX::ReadPrefs(nsIPrintSettings* aPS, const nsAString& aPrinterName, uint32_t aFlags)
 {
   nsresult rv;
   
@@ -35,7 +35,7 @@ nsPrintOptionsX::ReadPrefs(nsIPrintSettings* aPS, const nsAString& aPrinterName,
 nsresult nsPrintOptionsX::_CreatePrintSettings(nsIPrintSettings **_retval)
 {
   nsresult rv;
-  *_retval = nsnull;
+  *_retval = nullptr;
 
   nsPrintSettingsX* printSettings = new nsPrintSettingsX; // does not initially ref count
   NS_ENSURE_TRUE(printSettings, NS_ERROR_OUT_OF_MEMORY);
@@ -52,7 +52,7 @@ nsresult nsPrintOptionsX::_CreatePrintSettings(nsIPrintSettings **_retval)
 }
 
 nsresult
-nsPrintOptionsX::WritePrefs(nsIPrintSettings* aPS, const nsAString& aPrinterName, PRUint32 aFlags)
+nsPrintOptionsX::WritePrefs(nsIPrintSettings* aPS, const nsAString& aPrinterName, uint32_t aFlags)
 {
   nsresult rv;
 

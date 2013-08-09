@@ -9,7 +9,6 @@
 #include "nsICharsetConverterManager.h"
 #include "nsReadableUtils.h"
 #include "nsIServiceManager.h"
-#include "prmem.h"
 #include "nsUTF8ConverterService.h"
 #include "nsEscape.h"
 #include "nsAutoPtr.h"
@@ -37,8 +36,8 @@ ToUTF8(const nsACString &aString, const char *aCharset,
   if (!aAllowSubstitution)
     unicodeDecoder->SetInputErrorBehavior(nsIUnicodeDecoder::kOnError_Signal);
 
-  PRInt32 srcLen = aString.Length();
-  PRInt32 dstLen;
+  int32_t srcLen = aString.Length();
+  int32_t dstLen;
   const nsAFlatCString& inStr = PromiseFlatCString(aString);
   rv = unicodeDecoder->GetMaxLength(inStr.get(), srcLen, &dstLen);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -59,7 +58,7 @@ nsUTF8ConverterService::ConvertStringToUTF8(const nsACString &aString,
                                             const char *aCharset, 
                                             bool aSkipCheck, 
                                             bool aAllowSubstitution,
-                                            PRUint8 aOptionalArgc,
+                                            uint8_t aOptionalArgc,
                                             nsACString &aUTF8String)
 {
   bool allowSubstitution = (aOptionalArgc == 1) ? aAllowSubstitution : true;
@@ -103,7 +102,7 @@ nsUTF8ConverterService::ConvertURISpecToUTF8(const nsACString &aSpec,
 
   aUTF8Spec.Truncate();
 
-  nsCAutoString unescapedSpec; 
+  nsAutoCString unescapedSpec; 
   // NS_UnescapeURL does not fill up unescapedSpec unless there's at least 
   // one character to unescape.
   bool written = NS_UnescapeURL(PromiseFlatCString(aSpec).get(), aSpec.Length(), 

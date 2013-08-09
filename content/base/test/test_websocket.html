@@ -30,7 +30,7 @@
  *  9. client closes the connection before the ws connection is established;
  * 10. client sends a message before the ws connection is established;
  * 11. a simple hello echo;
- * 12. client sends a message with bad bytes;
+ * 12. client sends a message containing unpaired surrogates
  * 13. server sends an invalid message;
  * 14. server sends the close frame, it doesn't close the tcp connection and
  *     it keeps sending normal ws messages;
@@ -69,10 +69,11 @@
  * 44. Test sending/receving binary ArrayBuffer 
  * 45. Test sending/receving binary Blob 
  * 46. Test that we don't dispatch incoming msgs once in CLOSING state
+ * 47. Make sure onerror/onclose aren't called during close()
  */
 
 var first_test = 1;
-var last_test = 46;
+var last_test = 47;
 
 
 // Set this to >1 if you want to run the suite multiple times to probe for
@@ -282,6 +283,7 @@ function test3()
   {
     shouldCloseNotCleanly(e);
     ok(hasError, "rcvd onerror event");
+    ok(e.code == 1006, "test-3 close code should be 1006 but is:" + e.code);
     doTest(4);
   };
 }
@@ -483,29 +485,37 @@ function test11()
 
 function test12()
 {
- ok(true,"test 12");
-
   var ws = CreateTestWS("ws://mochi.test:8888/tests/content/base/test/file_websocket", "test-12");
   ws.onopen = function()
   {
     try {
       // send an unpaired surrogate
-      ws.send(String.fromCharCode(0xD800));
-      ok(false, "couldn't send an unpaired surrogate!");
+      ws._gotMessage = false;
+      ws.send("a\ud800b");
+      ok(true, "ok to send an unpaired surrogate");
     }
     catch (e) {
-      ok(true, "couldn't send an unpaired surrogate!");
+      ok(false, "shouldn't fail any more when sending an unpaired surrogate!");
     }
-    ws.close();
+  }
 
-// there isnt really a server implementation of test-12, so just
-// ignore an error
-    ws.onerror = function()
-    {
-    }
+  ws.onmessage = function(msg)
+  {
+    ok(msg.data == "SUCCESS", "Unpaired surrogate in UTF-16 not converted in test-12");
+    ws._gotMessage = true;
+    // Must support unpaired surrogates in close reason, too
+    ws.close(1000, "a\ud800b");
+  }
 
+  ws.onclose = function(e)
+  {
+    ok(ws.readyState == 3, "onclose bad readyState in test-12!");
+    ok(ws._gotMessage, "didn't receive message!");
+    shouldCloseCleanly(e);
+    ok(e.code == 1000, "test 12 got wrong close code: " + e.code);
+    ok(e.reason == "a\ufffdb", "test 11 didn't get replacement char in close reason: " + e.reason);
     doTest(13);
-  };
+  }
 }
 
 function test13()
@@ -1223,7 +1233,13 @@ function test41()
         var ios = Cc["@mozilla.org/network/io-service;1"].getService(Ci.nsIIOService);
         var thehost = ios.newURI("http://example.com", null, null);
         var stss = Cc["@mozilla.org/stsservice;1"].getService(Ci.nsIStrictTransportSecurityService);
-        stss.removeStsState(thehost);
+        var loadContext = window.QueryInterface(Ci.nsIInterfaceRequestor)
+                                .getInterface(Ci.nsIWebNavigation)
+                                .QueryInterface(Ci.nsILoadContext);
+        var flags = 0;
+        if (loadContext.usePrivateBrowsing)
+          flags |= Ci.nsISocketProvider.NO_PERMANENT_STORAGE;
+        stss.removeStsState(thehost, flags);
         doTest(42);
        }
      }
@@ -1235,9 +1251,9 @@ function test42()
 // test some utf-8 non-characters. They should be allowed in the
 // websockets context. Test via round trip echo.
   var ws = CreateTestWS("ws://mochi.test:8888/tests/content/base/test/file_websocket", "test-42");
-  var data = ["U+FFFE ￾",
-              "U+FFFF ￿",
-              "U+10FFFF 􏿿"];
+  var data = ["U+FFFE \ufffe",
+		"U+FFFF \uffff",
+		"U+10FFFF \udbff\udfff"];
   var index = 0;
 
   ws.onopen = function()
@@ -1272,30 +1288,14 @@ function test43()
     // Test binaryType setting
     ws.binaryType = "arraybuffer";
     ws.binaryType = "blob";
-    try {
-        ws.binaryType = "";  // illegal
-        ok(false, "allowed ws.binaryType to be set to empty string"); 
-    } catch(e) {
-        ok(true, "prevented ws.binaryType to be set to empty string: " + e); 
-    }
-    try {
-        ws.binaryType = "ArrayBuffer";  // illegal
-        ok(false, "allowed ws.binaryType to be set to 'ArrayBuffer'"); 
-    } catch(e) {
-        ok(true, "prevented ws.binaryType to be set to 'ArrayBuffer' " + e); 
-    }
-    try {
-        ws.binaryType = "Blob";  // illegal
-        ok(false, "allowed ws.binaryType to be set to 'Blob'"); 
-    } catch(e) {
-        ok(true, "prevented ws.binaryType to be set to 'Blob' " + e); 
-    }
-    try {
-        ws.binaryType = "mcfoofluu";  // illegal
-        ok(false, "allowed ws.binaryType to be set to 'mcfoofluu'"); 
-    } catch(e) {
-        ok(true, "prevented ws.binaryType to be set to 'mcfoofluu'"); 
-    }
+    ws.binaryType = "";  // illegal
+    is(ws.binaryType, "blob");
+    ws.binaryType = "ArrayBuffer";  // illegal
+    is(ws.binaryType, "blob");
+    ws.binaryType = "Blob";  // illegal
+    is(ws.binaryType, "blob");
+    ws.binaryType = "mcfoofluu";  // illegal
+    is(ws.binaryType, "blob");
     ws.close();
   };
 
@@ -1434,6 +1434,41 @@ function test46()
     doTest(47);
   }
 }
+
+function test47()
+{
+  var hasError = false;
+  var ws = CreateTestWS("ws://another.websocket.server.that.probably.does.not.exist");
+  ws.onopen = shouldNotOpen;
+
+  ws.onerror = function (e)
+  {
+    ok(ws.readyState == 3, "test-47: readyState should be CLOSED(3) in onerror: got " 
+       + ws.readyState);
+    ok(!ws._withinClose, "onerror() called during close()!");
+    hasError = true;
+  }
+
+  ws.onclose = function(e)
+  {
+    shouldCloseNotCleanly(e);
+    ok(hasError, "test-47: should have called onerror before onclose");
+    ok(ws.readyState == 3, "test-47: readyState should be CLOSED(3) in onclose: got " 
+       + ws.readyState);
+    ok(!ws._withinClose, "onclose() called during close()!");
+    ok(e.code == 1006, "test-47 close code should be 1006 but is:" + e.code);
+    doTest(48);
+  };
+
+  // Call close before we're connected: throws error
+  // Make sure we call onerror/onclose asynchronously
+  ws._withinClose = 1;
+  ws.close(3333, "Closed before we were open: error");
+  ws._withinClose = 0;
+  ok(ws.readyState == 2, "test-47: readyState should be CLOSING(2) after close(): got "
+     + ws.readyState);
+}
+
 
 var ranAllTests = false;
 

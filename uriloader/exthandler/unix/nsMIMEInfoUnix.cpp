@@ -38,11 +38,11 @@ nsMIMEInfoUnix::LoadUriInternal(nsIURI * aURI)
 
 #if (MOZ_PLATFORM_MAEMO == 5) && defined (MOZ_ENABLE_GNOMEVFS)
   if (NS_FAILED(rv)){
-    HildonURIAction *action = hildon_uri_get_default_action(mSchemeOrType.get(), nsnull);
+    HildonURIAction *action = hildon_uri_get_default_action(mSchemeOrType.get(), nullptr);
     if (action) {
-      nsCAutoString spec;
+      nsAutoCString spec;
       aURI->GetAsciiSpec(spec);
-      if (hildon_uri_open(spec.get(), action, nsnull))
+      if (hildon_uri_open(spec.get(), action, nullptr))
         rv = NS_OK;
       hildon_uri_action_unref(action);
     }
@@ -51,7 +51,7 @@ nsMIMEInfoUnix::LoadUriInternal(nsIURI * aURI)
 
 #ifdef MOZ_WIDGET_QT
   if (NS_FAILED(rv)) {
-    nsCAutoString spec;
+    nsAutoCString spec;
     aURI->GetAsciiSpec(spec);
     if (QDesktopServices::openUrl(QUrl(spec.get()))) {
       rv = NS_OK;
@@ -68,7 +68,7 @@ nsMIMEInfoUnix::GetHasDefaultHandler(bool *_retval)
   *_retval = false;
   nsRefPtr<nsMIMEInfoBase> mimeInfo = nsGNOMERegistry::GetFromType(mSchemeOrType);
   if (!mimeInfo) {
-    nsCAutoString ext;
+    nsAutoCString ext;
     nsresult rv = GetPrimaryExtension(ext);
     if (NS_SUCCEEDED(rv)) {
       mimeInfo = nsGNOMERegistry::GetFromExtension(ext);
@@ -81,7 +81,7 @@ nsMIMEInfoUnix::GetHasDefaultHandler(bool *_retval)
     return NS_OK;
 
 #if (MOZ_PLATFORM_MAEMO == 5) && defined (MOZ_ENABLE_GNOMEVFS)
-  HildonURIAction *action = hildon_uri_get_default_action(mSchemeOrType.get(), nsnull);
+  HildonURIAction *action = hildon_uri_get_default_action(mSchemeOrType.get(), nullptr);
   if (action) {
     *_retval = true;
     hildon_uri_action_unref(action);
@@ -105,7 +105,7 @@ nsMIMEInfoUnix::GetHasDefaultHandler(bool *_retval)
 nsresult
 nsMIMEInfoUnix::LaunchDefaultWithFile(nsIFile *aFile)
 {
-  nsCAutoString nativePath;
+  nsAutoCString nativePath;
   aFile->GetNativePath(nativePath);
 
 #if (MOZ_PLATFORM_MAEMO == 5) && defined (MOZ_ENABLE_GNOMEVFS)
@@ -125,7 +125,7 @@ nsMIMEInfoUnix::LaunchDefaultWithFile(nsIFile *aFile)
 #endif
 
   nsCOMPtr<nsIGIOService> giovfs = do_GetService(NS_GIOSERVICE_CONTRACTID);
-  nsCAutoString uriSpec;
+  nsAutoCString uriSpec;
   if (giovfs) {
     // nsGIOMimeApp->Launch wants a URI string instead of local file
     nsresult rv;
@@ -153,7 +153,7 @@ nsMIMEInfoUnix::LaunchDefaultWithFile(nsIFile *aFile)
   // extension mapped type
   nsRefPtr<nsMIMEInfoBase> mimeInfo = nsGNOMERegistry::GetFromExtension(nativePath);
   if (mimeInfo) {
-    nsCAutoString type;
+    nsAutoCString type;
     mimeInfo->GetType(type);
     if (giovfs) {
       nsCOMPtr<nsIGIOMimeApp> app;
@@ -182,8 +182,8 @@ nsMIMEInfoUnix::LaunchDefaultWithFile(nsIFile *aFile)
 nsresult
 nsMIMEInfoUnix::LaunchDefaultWithDBus(const char *aFilePath)
 {
-  const PRInt32 kHILDON_SUCCESS = 1;
-  PRInt32 result = 0;
+  const int32_t kHILDON_SUCCESS = 1;
+  int32_t result = 0;
   DBusError err;
   dbus_error_init(&err);
   
@@ -193,7 +193,7 @@ nsMIMEInfoUnix::LaunchDefaultWithDBus(const char *aFilePath)
     return NS_ERROR_FAILURE;
   }
 
-  if (nsnull == connection)
+  if (nullptr == connection)
     return NS_ERROR_FAILURE;
 
   result = hildon_mime_open_file_with_mime_type(connection,
@@ -210,7 +210,7 @@ nsMIMEInfoUnix::LaunchDefaultWithDBus(const char *aFilePath)
 nsMIMEInfoUnix::HandlerExists(const char *aProtocolScheme)
 {
   bool isEnabled = false;
-  HildonURIAction *action = hildon_uri_get_default_action(aProtocolScheme, nsnull);
+  HildonURIAction *action = hildon_uri_get_default_action(aProtocolScheme, nullptr);
   if (action) {
     isEnabled = true;
     hildon_uri_action_unref(action);
@@ -227,7 +227,7 @@ nsMIMEInfoUnix::GetPossibleApplicationHandlers(nsIMutableArray ** aPossibleAppHa
     if (!mPossibleApplications)
       return NS_ERROR_OUT_OF_MEMORY;
 
-    GSList *actions = hildon_uri_get_actions(mSchemeOrType.get(), nsnull);
+    GSList *actions = hildon_uri_get_actions(mSchemeOrType.get(), nullptr);
     GSList *actionsPtr = actions;
     while (actionsPtr) {
       HildonURIAction *action = (HildonURIAction*)actionsPtr->data;

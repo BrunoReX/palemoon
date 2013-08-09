@@ -46,20 +46,20 @@ function test()
     executeSoon(startTest);
   }
 
-  window.addEventListener("Debugger:ScriptShown", onScriptShown);
+  window.addEventListener("Debugger:SourceShown", onScriptShown);
 
   function startTest()
   {
     if (scriptShown && framesAdded && resumed && !testStarted) {
       testStarted = true;
-      window.removeEventListener("Debugger:ScriptShown", onScriptShown);
+      window.removeEventListener("Debugger:SourceShown", onScriptShown);
       Services.tm.currentThread.dispatch({ run: performTest }, 0);
     }
   }
 
   function performTest()
   {
-    let scripts = gDebugger.DebuggerView.Scripts._scripts;
+    let scripts = gDebugger.DebuggerView.Sources._container;
 
     is(gDebugger.DebuggerController.activeThread.state, "paused",
       "Should only be getting stack frames while paused.");
@@ -70,6 +70,8 @@ function test()
 
     isnot(editor.getText().indexOf("debugger"), -1,
           "The correct script was loaded initially.");
+    isnot(editor.getText().indexOf("\u263a"), -1,
+      "Unicode characters are converted correctly.");
 
     contextMenu = gDebugger.document.getElementById("sourceEditorContextMenu");
     ok(contextMenu, "source editor context menupopup");
@@ -113,7 +115,7 @@ function test()
 
     executeSoon(function() {
       contextMenu.hidePopup();
-      gDebugger.DebuggerController.activeThread.resume(finish);
+      closeDebuggerAndFinish();
     });
   }
 

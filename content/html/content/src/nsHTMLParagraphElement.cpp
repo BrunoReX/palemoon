@@ -14,6 +14,7 @@
 #include "nsRuleData.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 // XXX missing nav attributes
 
@@ -28,18 +29,18 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLParagraphElement
   NS_DECL_NSIDOMHTMLPARAGRAPHELEMENT
 
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
@@ -67,8 +68,8 @@ nsHTMLParagraphElement::~nsHTMLParagraphElement()
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLParagraphElement, nsGenericElement)
-NS_IMPL_RELEASE_INHERITED(nsHTMLParagraphElement, nsGenericElement)
+NS_IMPL_ADDREF_INHERITED(nsHTMLParagraphElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLParagraphElement, Element)
 
 DOMCI_NODE_DATA(HTMLParagraphElement, nsHTMLParagraphElement)
 
@@ -88,7 +89,7 @@ NS_IMPL_STRING_ATTR(nsHTMLParagraphElement, Align, align)
 
 
 bool
-nsHTMLParagraphElement::ParseAttribute(PRInt32 aNamespaceID,
+nsHTMLParagraphElement::ParseAttribute(int32_t aNamespaceID,
                                        nsIAtom* aAttribute,
                                        const nsAString& aValue,
                                        nsAttrValue& aResult)

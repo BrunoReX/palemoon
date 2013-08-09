@@ -8,7 +8,9 @@
 #include "nsIDOMEventTarget.h"
 #include "nsGkAtoms.h"
 #include "nsIDOMHTMLOptionElement.h"
+#include "nsContentList.h"
 
+using namespace mozilla::dom;
 
 class nsHTMLDataListElement : public nsGenericHTMLElement,
                               public nsIDOMHTMLDataListElement
@@ -21,13 +23,13 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLDataListElement
   NS_DECL_NSIDOMHTMLDATALISTELEMENT
@@ -35,7 +37,7 @@ public:
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
 
   // This function is used to generate the nsContentList (option elements).
-  static bool MatchOptions(nsIContent* aContent, PRInt32 aNamespaceID,
+  static bool MatchOptions(nsIContent* aContent, int32_t aNamespaceID,
                              nsIAtom* aAtom, void* aData);
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsHTMLDataListElement,
@@ -65,17 +67,17 @@ nsHTMLDataListElement::~nsHTMLDataListElement()
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsHTMLDataListElement,
                                                 nsGenericHTMLElement)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mOptions)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mOptions)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsHTMLDataListElement)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsHTMLDataListElement,
                                                   nsGenericHTMLElement)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR_AMBIGUOUS(mOptions, nsIDOMNodeList)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOptions)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLDataListElement, nsGenericElement)
-NS_IMPL_RELEASE_INHERITED(nsHTMLDataListElement, nsGenericElement)
+NS_IMPL_ADDREF_INHERITED(nsHTMLDataListElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLDataListElement, Element)
 
 DOMCI_NODE_DATA(HTMLDataListElement, nsHTMLDataListElement)
 
@@ -89,7 +91,7 @@ NS_HTML_CONTENT_INTERFACE_TABLE_TAIL_CLASSINFO(HTMLDataListElement)
 NS_IMPL_ELEMENT_CLONE(nsHTMLDataListElement)
 
 bool
-nsHTMLDataListElement::MatchOptions(nsIContent* aContent, PRInt32 aNamespaceID,
+nsHTMLDataListElement::MatchOptions(nsIContent* aContent, int32_t aNamespaceID,
                                     nsIAtom* aAtom, void* aData)
 {
   return aContent->NodeInfo()->Equals(nsGkAtoms::option, kNameSpaceID_XHTML) &&
@@ -100,7 +102,7 @@ NS_IMETHODIMP
 nsHTMLDataListElement::GetOptions(nsIDOMHTMLCollection** aOptions)
 {
   if (!mOptions) {
-    mOptions = new nsContentList(this, MatchOptions, nsnull, nsnull, true);
+    mOptions = new nsContentList(this, MatchOptions, nullptr, nullptr, true);
   }
 
   NS_ADDREF(*aOptions = mOptions);

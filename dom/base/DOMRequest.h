@@ -10,7 +10,7 @@
 #include "nsIDOMDOMRequest.h"
 #include "nsIDOMDOMError.h"
 #include "nsDOMEventTargetHelper.h"
-#include "nsContentUtils.h"
+#include "mozilla/Attributes.h"
 
 #include "nsCOMPtr.h"
 
@@ -26,9 +26,6 @@ protected:
   bool mDone;
   bool mRooted;
 
-  NS_DECL_EVENT_HANDLER(success)
-  NS_DECL_EVENT_HANDLER(error)
-
 public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIDOMDOMREQUEST
@@ -42,6 +39,7 @@ public:
   void FireError(nsresult aError);
 
   DOMRequest(nsIDOMWindow* aWindow);
+  DOMRequest();
 
   virtual ~DOMRequest()
   {
@@ -53,11 +51,13 @@ public:
 protected:
   void FireEvent(const nsAString& aType, bool aBubble, bool aCancelable);
 
-  virtual void RootResultVal();
-  virtual void UnrootResultVal();
+  void RootResultVal();
+  void UnrootResultVal();
+
+  void Init(nsIDOMWindow* aWindow);
 };
 
-class DOMRequestService : public nsIDOMRequestService
+class DOMRequestService MOZ_FINAL : public nsIDOMRequestService
 {
 public:
   NS_DECL_ISUPPORTS

@@ -12,7 +12,7 @@
 #include "nsXPIDLString.h"
 #include "nsReadableUtils.h"
 #include "nsIWebBrowserPersist.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIURI.h"
 #include "nsIURL.h"
 #include "nsNetUtil.h"
@@ -63,7 +63,7 @@ nsresult GetAtom( ATOM aAtom, char** outText);
 nsresult GetFileName(PDRAGITEM pditem, char** outText);
 nsresult GetFileContents(PCSZ pszPath, char** outText);
 nsresult GetTempFileName(char** outText);
-void     SaveTypeAndSource(nsILocalFile *file, nsIDOMDocument *domDoc,
+void     SaveTypeAndSource(nsIFile *file, nsIDOMDocument *domDoc,
                            PCSZ pszType);
 int      UnicodeToCodepage( const nsAString& inString, char **outText);
 int      CodepageToUnicode( const nsACString& inString, PRUnichar **outText);
@@ -112,7 +112,7 @@ NS_IMPL_ISUPPORTS_INHERITED1(nsDragService, nsBaseDragService, nsIDragSessionOS2
 NS_IMETHODIMP nsDragService::InvokeDragSession(nsIDOMNode *aDOMNode,
                                             nsISupportsArray *aTransferables, 
                                             nsIScriptableRegion *aRegion,
-                                            PRUint32 aActionType)
+                                            uint32_t aActionType)
 {
   if (mDoingDrag)
     return NS_ERROR_UNEXPECTED;
@@ -153,7 +153,7 @@ NS_IMETHODIMP nsDragService::InvokeDragSession(nsIDOMNode *aDOMNode,
     nsCOMPtr<nsITransferable> transItem (do_QueryInterface(genericItem));
 
     nsCOMPtr<nsISupports> genericData;
-    PRUint32 len = 0;
+    uint32_t len = 0;
 
       // see if we have a URL or text;  if so, the title method
       // will save the data and mimetype for use with a native drop
@@ -232,13 +232,13 @@ NS_IMETHODIMP nsDragService::InvokeDragSession(nsIDOMNode *aDOMNode,
   mMimeType = 0;
 
     // reset nsBaseDragService's members
-  mSourceDocument = nsnull;
-  mSourceNode = nsnull;
-  mSelection = nsnull;
-  mDataTransfer = nsnull;
+  mSourceDocument = nullptr;
+  mSourceNode = nullptr;
+  mSelection = nullptr;
+  mDataTransfer = nullptr;
   mUserCancelled = false;
   mHasImage = false;
-  mImage = nsnull;
+  mImage = nullptr;
   mImageX = 0;
   mImageY = 0;
   mScreenX = -1;
@@ -266,7 +266,7 @@ MRESULT EXPENTRY nsDragWindowProc(HWND hWnd, ULONG msg, MPARAM mp1, MPARAM mp2)
           // QI'ing nsIURL will fail for mailto: and the like
         nsCOMPtr<nsIURL> urlObject(do_QueryInterface(dragservice->mSourceData));
         if (urlObject) {
-          nsCAutoString filename;
+          nsAutoCString filename;
           urlObject->GetFileName(filename);
           if (filename.IsEmpty()) {
             urlObject->GetHost(filename);
@@ -353,7 +353,7 @@ NS_IMETHODIMP nsDragService::EndDragSession(bool aDragDone)
 
 // --------------------------------------------------------------------------
 
-NS_IMETHODIMP nsDragService::GetNumDropItems(PRUint32 *aNumDropItems)
+NS_IMETHODIMP nsDragService::GetNumDropItems(uint32_t *aNumDropItems)
 {
   if (mSourceDataItems)
     mSourceDataItems->Count(aNumDropItems);
@@ -366,7 +366,7 @@ NS_IMETHODIMP nsDragService::GetNumDropItems(PRUint32 *aNumDropItems)
 // --------------------------------------------------------------------------
 
 NS_IMETHODIMP nsDragService::GetData(nsITransferable *aTransferable,
-                                     PRUint32 aItemIndex)
+                                     uint32_t aItemIndex)
 {
     // make sure that we have a transferable
   if (!aTransferable)
@@ -382,7 +382,7 @@ NS_IMETHODIMP nsDragService::GetData(nsITransferable *aTransferable,
     return rv;
 
     // count the number of flavors
-  PRUint32 cnt;
+  uint32_t cnt;
   flavorList->Count (&cnt);
 
   for (unsigned int i= 0; i < cnt; ++i ) {
@@ -400,7 +400,7 @@ NS_IMETHODIMP nsDragService::GetData(nsITransferable *aTransferable,
       nsCOMPtr<nsITransferable> item (do_QueryInterface(genericItem));
       if (item) {
         nsCOMPtr<nsISupports> data;
-        PRUint32 tmpDataLen = 0;
+        uint32_t tmpDataLen = 0;
         rv = item->GetTransferData(flavorStr, getter_AddRefs(data),
                                    &tmpDataLen);
         if (NS_SUCCEEDED(rv)) {
@@ -430,19 +430,19 @@ NS_IMETHODIMP nsDragService::IsDataFlavorSupported(const char *aDataFlavor,
 
   *_retval = false;
 
-  PRUint32 numDragItems = 0;
+  uint32_t numDragItems = 0;
   if (mSourceDataItems)
     mSourceDataItems->Count(&numDragItems);
   if (!numDragItems)
     return NS_OK;
 
 // return true if all items support this flavor
-//  for (PRUint32 itemIndex = 0, *_retval = true;
+//  for (uint32_t itemIndex = 0, *_retval = true;
 //       itemIndex < numDragItems && *_retval; ++itemIndex) {
 //    *_retval = false;
 
 // return true if any item supports this flavor
-  for (PRUint32 itemIndex = 0;
+  for (uint32_t itemIndex = 0;
        itemIndex < numDragItems && !(*_retval); ++itemIndex) {
 
     nsCOMPtr<nsISupports> genericItem;
@@ -454,10 +454,10 @@ NS_IMETHODIMP nsDragService::IsDataFlavorSupported(const char *aDataFlavor,
       currItem->FlavorsTransferableCanExport(getter_AddRefs(flavorList));
 
       if (flavorList) {
-        PRUint32 numFlavors;
+        uint32_t numFlavors;
         flavorList->Count( &numFlavors );
 
-        for (PRUint32 flavorIndex=0; flavorIndex < numFlavors; ++flavorIndex) {
+        for (uint32_t flavorIndex=0; flavorIndex < numFlavors; ++flavorIndex) {
           nsCOMPtr<nsISupports> genericWrapper;
           flavorList->GetElementAt(flavorIndex, getter_AddRefs(genericWrapper));
           nsCOMPtr<nsISupportsCString> currentFlavor;
@@ -494,7 +494,7 @@ nsresult nsDragService::SaveAsContents(PCSZ pszDest, nsIURL* aURL)
   if (!webPersist)
     return NS_ERROR_FAILURE;
 
-  nsCOMPtr<nsILocalFile> file;
+  nsCOMPtr<nsIFile> file;
   NS_NewNativeLocalFile(nsDependentCString(pszDest), true,
                         getter_AddRefs(file));
   if (!file)
@@ -504,9 +504,14 @@ nsresult nsDragService::SaveAsContents(PCSZ pszDest, nsIURL* aURL)
   if (NS_FAILED(file->OpenANSIFileDesc("wb+", &fp)))
     return NS_ERROR_FAILURE;
 
+  nsCOMPtr<nsIDOMDocument> domDoc;
+  GetSourceDocument(getter_AddRefs(domDoc));
+  nsCOMPtr<nsIDocument> document = do_QueryInterface(domDoc);
+
   fwrite("", 0, 1, fp);
   fclose(fp);
-  webPersist->SaveURI(linkURI, nsnull, nsnull, nsnull, nsnull, file);
+  webPersist->SaveURI(linkURI, nullptr, nullptr, nullptr, nullptr, file,
+                     document->GetLoadContext());
 
   return NS_OK;
 }
@@ -517,13 +522,13 @@ nsresult nsDragService::SaveAsContents(PCSZ pszDest, nsIURL* aURL)
 
 nsresult nsDragService::SaveAsURL(PCSZ pszDest, nsIURI* aURI)
 {
-  nsCAutoString strUri;
+  nsAutoCString strUri;
   aURI->GetSpec(strUri);
 
   if (strUri.IsEmpty())
     return NS_ERROR_FAILURE;
 
-  nsCOMPtr<nsILocalFile> file;
+  nsCOMPtr<nsIFile> file;
   NS_NewNativeLocalFile(nsDependentCString(pszDest), true,
                         getter_AddRefs(file));
   if (!file)
@@ -555,7 +560,7 @@ nsresult nsDragService::SaveAsText(PCSZ pszDest, nsISupportsString* aString)
   if (strData.IsEmpty())
     return NS_ERROR_FAILURE;
 
-  nsCOMPtr<nsILocalFile> file;
+  nsCOMPtr<nsIFile> file;
   NS_NewNativeLocalFile(nsDependentCString(pszDest), true,
                         getter_AddRefs(file));
   if (!file)
@@ -597,7 +602,7 @@ nsresult  nsDragService::GetUrlAndTitle(nsISupports *aGenericData,
 
     // split string into URL and Title - 
     // if there's a title but no URL, there's no reason to continue
-  PRInt32 lineIndex = strData.FindChar ('\n');
+  int32_t lineIndex = strData.FindChar ('\n');
   if (lineIndex == 0)
     return NS_ERROR_FAILURE;
 
@@ -619,7 +624,7 @@ nsresult  nsDragService::GetUrlAndTitle(nsISupports *aGenericData,
 
   if (++lineIndex && lineIndex != (int)strData.Length() &&
       !strUrl.Equals(Substring(strData, lineIndex, strData.Length()))) {
-    PRUint32 strLth = NS_MIN((int)strData.Length()-lineIndex, MAXTITLELTH);
+    uint32_t strLth = NS_MIN((int)strData.Length()-lineIndex, MAXTITLELTH);
     nsAutoString strTitle;
     strData.Mid(strTitle, lineIndex, strLth);
     if (!UnicodeToCodepage(strTitle, aTargetName))
@@ -634,11 +639,11 @@ nsresult  nsDragService::GetUrlAndTitle(nsISupports *aGenericData,
     // the hostname & filename;  if not, use the first MAXTITLELTH
     // characters that appear after the scheme name
 
-  nsCAutoString strTitle;
+  nsAutoCString strTitle;
 
   nsCOMPtr<nsIURL> urlObj( do_QueryInterface(saveURI));
   if (urlObj) {
-    nsCAutoString strFile;
+    nsAutoCString strFile;
 
     urlObj->GetHost(strTitle);
     urlObj->GetFileName(strFile);
@@ -649,7 +654,7 @@ nsresult  nsDragService::GetUrlAndTitle(nsISupports *aGenericData,
     else {
       urlObj->GetDirectory(strFile);
       if (strFile.Length() > 1) {
-        nsCAutoString::const_iterator start, end, curr;
+        nsAutoCString::const_iterator start, end, curr;
         strFile.BeginReading(start);
         strFile.EndReading(end);
         strFile.EndReading(curr);
@@ -662,7 +667,7 @@ nsresult  nsDragService::GetUrlAndTitle(nsISupports *aGenericData,
   }
   else {
     saveURI->GetSpec(strTitle);
-    PRInt32 index = strTitle.FindChar (':');
+    int32_t index = strTitle.FindChar (':');
     if (index != -1) {
       if ((strTitle.get())[++index] == '/')
         if ((strTitle.get())[++index] == '/')
@@ -764,7 +769,7 @@ nsresult  nsDragService::GetUniTextTitle(nsISupports *aGenericData,
 // entered the window and calls NativeDragEnter() to start a session.
 
 NS_IMETHODIMP nsDragService::DragOverMsg(PDRAGINFO pdinfo, MRESULT &mr,
-                                         PRUint32* dragFlags)
+                                         uint32_t* dragFlags)
 {
   nsresult  rv = NS_ERROR_FAILURE;
 
@@ -844,6 +849,7 @@ NS_IMETHODIMP nsDragService::NativeDragEnter(PDRAGINFO pdinfo)
     nsCOMPtr<nsITransferable> trans(
             do_CreateInstance("@mozilla.org/widget/transferable;1", &rv));
     if (trans) {
+      trans->Init(nullptr);
 
       bool isUrl = DrgVerifyType(pditem, "UniformResourceLocator");
       bool isAlt = (WinGetKeyState(HWND_DESKTOP, VK_ALT) & 0x8000);
@@ -876,10 +882,10 @@ NS_IMETHODIMP nsDragService::NativeDragEnter(PDRAGINFO pdinfo)
         else
         if (isFQFile && !isAlt &&
             NS_SUCCEEDED(GetFileName(pditem, getter_Copies(someText)))) {
-          nsCOMPtr<nsILocalFile> file;
+          nsCOMPtr<nsIFile> file;
           if (NS_SUCCEEDED(NS_NewNativeLocalFile(someText, true,
                                                  getter_AddRefs(file)))) {
-            nsCAutoString textStr;
+            nsAutoCString textStr;
             NS_GetURLSpecFromFile(file, textStr);
             if (!textStr.IsEmpty()) {
               someText.Assign(ToNewCString(textStr));
@@ -920,7 +926,7 @@ NS_IMETHODIMP nsDragService::GetDragoverResult(MRESULT& mr)
     else
       usDrop = DOR_NODROP;
 
-    PRUint32 action;
+    uint32_t action;
     USHORT   usOp;
     GetDragAction(&action);
     if (action & DRAGDROP_ACTION_COPY)
@@ -950,7 +956,7 @@ NS_IMETHODIMP nsDragService::GetDragoverResult(MRESULT& mr)
 
 // have the client dispatch the event, then call ExitSession()
 
-NS_IMETHODIMP nsDragService::DragLeaveMsg(PDRAGINFO pdinfo, PRUint32* dragFlags)
+NS_IMETHODIMP nsDragService::DragLeaveMsg(PDRAGINFO pdinfo, uint32_t* dragFlags)
 {
   if (!mDoingDrag || !dragFlags)
     return NS_ERROR_FAILURE;
@@ -968,7 +974,7 @@ NS_IMETHODIMP nsDragService::DragLeaveMsg(PDRAGINFO pdinfo, PRUint32* dragFlags)
 // DropHelp occurs when you press F1 during a drag;  apparently,
 // it's like a regular drop in that the target has to do clean up
 
-NS_IMETHODIMP nsDragService::DropHelpMsg(PDRAGINFO pdinfo, PRUint32* dragFlags)
+NS_IMETHODIMP nsDragService::DropHelpMsg(PDRAGINFO pdinfo, uint32_t* dragFlags)
 {
   if (!mDoingDrag)
     return NS_ERROR_FAILURE;
@@ -994,7 +1000,7 @@ NS_IMETHODIMP nsDragService::DropHelpMsg(PDRAGINFO pdinfo, PRUint32* dragFlags)
 // for native drags, clean up;
 // for all drags, signal that Moz is no longer in d&d mode
 
-NS_IMETHODIMP nsDragService::ExitSession(PRUint32* dragFlags)
+NS_IMETHODIMP nsDragService::ExitSession(uint32_t* dragFlags)
 {
   if (!mDoingDrag)
     return NS_ERROR_FAILURE;
@@ -1026,7 +1032,7 @@ NS_IMETHODIMP nsDragService::ExitSession(PRUint32* dragFlags)
 // has received a render-complete msg.
 
 NS_IMETHODIMP nsDragService::DropMsg(PDRAGINFO pdinfo, HWND hwnd,
-                                     PRUint32* dragFlags)
+                                     uint32_t* dragFlags)
 {
   if (!mDoingDrag || !dragFlags || !pdinfo || !DrgAccessDraginfo(pdinfo))
     return NS_ERROR_FAILURE;
@@ -1137,10 +1143,10 @@ NS_IMETHODIMP nsDragService::NativeDrop(PDRAGINFO pdinfo, HWND hwnd,
           rv = GetFileContents(fileName.get(), getter_Copies(dropText));
         else {
           isUrl = true;
-          nsCOMPtr<nsILocalFile> file;
+          nsCOMPtr<nsIFile> file;
           if (NS_SUCCEEDED(NS_NewNativeLocalFile(fileName,
                                          true, getter_AddRefs(file)))) {
-            nsCAutoString textStr;
+            nsAutoCString textStr;
             NS_GetURLSpecFromFile(file, textStr);
             if (!textStr.IsEmpty()) {
               dropText.Assign(ToNewCString(textStr));
@@ -1185,7 +1191,7 @@ NS_IMETHODIMP nsDragService::NativeDrop(PDRAGINFO pdinfo, HWND hwnd,
 // nsIDataFlavorProvider which expects data to be rendered synchronously
 
 NS_IMETHODIMP nsDragService::RenderCompleteMsg(PDRAGTRANSFER pdxfer,
-                                        USHORT usResult, PRUint32* dragFlags)
+                                        USHORT usResult, uint32_t* dragFlags)
 {
   nsresult rv = NS_ERROR_FAILURE;
   if (!mDoingDrag || !pdxfer)
@@ -1315,7 +1321,7 @@ NS_IMETHODIMP nsDragService::NativeDataToTransferable( PCSZ pszText,
         return rv;
     }
     else {
-      PRUint32 len;
+      uint32_t len;
       nsCOMPtr<nsISupports> genericData;
       if (NS_SUCCEEDED(trans->GetTransferData(kURLDescriptionMime,
                                    getter_AddRefs(genericData), &len))) {
@@ -1353,7 +1359,7 @@ NS_IMETHODIMP nsDragService::NativeDataToTransferable( PCSZ pszText,
       if (NS_SUCCEEDED(NS_NewURI(getter_AddRefs(uri), pszText))) {
         nsCOMPtr<nsIURL> url (do_QueryInterface(uri));
         if (url) {
-          nsCAutoString extension;
+          nsAutoCString extension;
           url->GetFileExtension(extension);
           if (!extension.IsEmpty()) {
             if (extension.LowerCaseEqualsLiteral("gif") ||
@@ -1439,10 +1445,10 @@ nsresult RenderToOS2FileComplete(PDRAGTRANSFER pdxfer, USHORT usResult,
       if (content)
         rv = GetFileContents(gTempFile, outText);
       else {
-        nsCOMPtr<nsILocalFile> file;
+        nsCOMPtr<nsIFile> file;
         if (NS_SUCCEEDED(NS_NewNativeLocalFile(nsDependentCString(gTempFile),
                                          true, getter_AddRefs(file)))) {
-          nsCAutoString textStr;
+          nsAutoCString textStr;
           NS_GetURLSpecFromFile(file, textStr);
           if (!textStr.IsEmpty()) {
             *outText = ToNewCString(textStr);
@@ -1676,7 +1682,7 @@ nsresult GetTempFileName(char** outText)
 // set the file's .TYPE and .SUBJECT EAs;  since this is non-critical
 // (though highly desirable), errors aren't reported
 
-void SaveTypeAndSource(nsILocalFile *file, nsIDOMDocument *domDoc,
+void SaveTypeAndSource(nsIFile *file, nsIDOMDocument *domDoc,
                        PCSZ pszType)
 {
   if (!file)
@@ -1720,7 +1726,7 @@ void SaveTypeAndSource(nsILocalFile *file, nsIDOMDocument *domDoc,
   if (ignore)
     return;
 
-  nsCAutoString url;
+  nsAutoCString url;
   srcUri->GetSpec(url);
   os2file->SetFileSource(url);
 
@@ -1735,7 +1741,7 @@ void SaveTypeAndSource(nsILocalFile *file, nsIDOMDocument *domDoc,
 int UnicodeToCodepage(const nsAString& aString, char **aResult)
 {
   nsAutoCharBuffer buffer;
-  PRInt32 bufLength;
+  int32_t bufLength;
   WideCharToMultiByte(0, PromiseFlatString(aString).get(), aString.Length(),
                       buffer, bufLength);
   *aResult = ToNewCString(nsDependentCString(buffer.Elements()));
@@ -1747,7 +1753,7 @@ int UnicodeToCodepage(const nsAString& aString, char **aResult)
 int CodepageToUnicode(const nsACString& aString, PRUnichar **aResult)
 {
   nsAutoChar16Buffer buffer;
-  PRInt32 bufLength;
+  int32_t bufLength;
   MultiByteToWideChar(0, PromiseFlatCString(aString).get(),
                       aString.Length(), buffer, bufLength);
   *aResult = ToNewUnicode(nsDependentString(buffer.Elements()));

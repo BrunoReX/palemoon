@@ -75,6 +75,7 @@
 #define AUDIO_OGG                           "audio/ogg"
 #define AUDIO_WAV                           "audio/x-wav"
 #define AUDIO_WEBM                          "audio/webm"
+#define AUDIO_MP3                           "audio/mpeg"
 
 #define BINARY_OCTET_STREAM                 "binary/octet-stream"
 
@@ -127,13 +128,18 @@
 #define TEXT_JAVASCRIPT                     "text/javascript"
 #define TEXT_XSL                            "text/xsl"
 #define TEXT_EVENT_STREAM                   "text/event-stream"
+#define TEXT_CACHE_MANIFEST                 "text/cache-manifest"
 
 #define VIDEO_MPEG                          "video/mpeg"
 #define VIDEO_MP4                           "video/mp4"
 #define VIDEO_RAW                           "video/x-raw-yuv"
 #define VIDEO_OGG                           "video/ogg"
 #define VIDEO_WEBM                          "video/webm"
+#define VIDEO_3GPP                          "video/3gpp"
 #define APPLICATION_OGG                     "application/ogg"
+#ifdef MOZ_DASH
+#define APPLICATION_DASH                    "application/dash+xml"
+#endif
 
 /* x-uuencode-apple-single. QuickMail made me do this. */
 #define UUENCODE_APPLE_SINGLE               "x-uuencode-apple-single"

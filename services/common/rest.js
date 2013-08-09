@@ -4,7 +4,7 @@
 
 const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
-const EXPORTED_SYMBOLS = [
+this.EXPORTED_SYMBOLS = [
   "RESTRequest",
   "RESTResponse",
   "TokenAuthenticatedRESTRequest"
@@ -74,7 +74,7 @@ const Prefs = new Preferences("services.common.rest.");
  *   });
  *   request.get();
  */
-function RESTRequest(uri) {
+this.RESTRequest = function RESTRequest(uri) {
   this.status = this.NOT_SENT;
 
   // If we don't have an nsIURI object yet, make one. This will throw if
@@ -117,9 +117,10 @@ RESTRequest.prototype = {
   response: null,
 
   /**
-   * nsIRequest load flags. Don't do any caching by default.
+   * nsIRequest load flags. Don't do any caching by default. Don't send user
+   * cookies and such over the wire (Bug 644734).
    */
-  loadFlags: Ci.nsIRequest.LOAD_BYPASS_CACHE | Ci.nsIRequest.INHIBIT_CACHING,
+  loadFlags: Ci.nsIRequest.LOAD_BYPASS_CACHE | Ci.nsIRequest.INHIBIT_CACHING | Ci.nsIRequest.LOAD_ANONYMOUS,
 
   /**
    * nsIHttpChannel
@@ -146,6 +147,14 @@ RESTRequest.prototype = {
    * 0 for no timeout.
    */
   timeout: null,
+
+  /**
+   * The encoding with which the response to this request must be treated.
+   * If a charset parameter is available in the HTTP Content-Type header for
+   * this response, that will always be used, and this value is ignored. We
+   * default to UTF-8 because that is a reasonable default.
+   */
+  charset: "utf-8",
 
   /**
    * Called when the request has been completed, including failures and
@@ -310,6 +319,10 @@ RESTRequest.prototype = {
     // will always be 'PUT'. Yeah, I know.
     channel.requestMethod = method;
 
+    // Before opening the channel, set the charset that serves as a hint
+    // as to what the response might be encoded as.
+    channel.contentCharset = this.charset;
+
     // Blast off!
     channel.asyncOpen(this, null);
     this.status = this.SENT;
@@ -368,11 +381,6 @@ RESTRequest.prototype = {
     let response = this.response = new RESTResponse();
     response.request = this;
     response.body = "";
-
-    // Define this here so that we don't have make a new one each time
-    // onDataAvailable() gets called.
-    this._inputStream = Cc["@mozilla.org/scriptableinputstream;1"]
-                          .createInstance(Ci.nsIScriptableInputStream);
 
     this.delayTimeout();
   },
@@ -434,22 +442,63 @@ RESTRequest.prototype = {
     this.onComplete = this.onProgress = null;
   },
 
-  onDataAvailable: function onDataAvailable(req, cb, stream, off, count) {
-    this._inputStream.init(stream);
+  onDataAvailable: function onDataAvailable(channel, cb, stream, off, count) {
+    // We get an nsIRequest, which doesn't have contentCharset.
     try {
-      this.response.body += this._inputStream.read(count);
+      channel.QueryInterface(Ci.nsIHttpChannel);
     } catch (ex) {
-      this._log.warn("Exception thrown reading " + count +
-                     " bytes from the channel.");
-      this._log.debug(CommonUtils.exceptionStr(ex));
-      throw ex;
+      this._log.error("Unexpected error: channel not nsIHttpChannel!");
+      this.abort();
+
+      if (this.onComplete) {
+        this.onComplete(ex);
+      }
+
+      this.onComplete = this.onProgress = null;
+      return;
+    }
+
+    if (channel.contentCharset) {
+      this.response.charset = channel.contentCharset;
+
+      if (!this._converterStream) {
+        this._converterStream = Cc["@mozilla.org/intl/converter-input-stream;1"]
+                                   .createInstance(Ci.nsIConverterInputStream);
+      }
+
+      this._converterStream.init(stream, channel.contentCharset, 0,
+                                 this._converterStream.DEFAULT_REPLACEMENT_CHARACTER);
+
+      try {
+        let str = {};
+        let num = this._converterStream.readString(count, str);
+        if (num != 0) {
+          this.response.body += str.value;
+        }
+      } catch (ex) {
+        this._log.warn("Exception thrown reading " + count + " bytes from " +
+                       "the channel.");
+        this._log.warn(CommonUtils.exceptionStr(ex));
+        throw ex;
+      }
+    } else {
+      this.response.charset = null;
+
+      if (!this._inputStream) {
+        this._inputStream = Cc["@mozilla.org/scriptableinputstream;1"]
+                              .createInstance(Ci.nsIScriptableInputStream);
+      }
+
+      this._inputStream.init(stream);
+
+      this.response.body += this._inputStream.read(count);
     }
 
     try {
       this.onProgress();
     } catch (ex) {
       this._log.warn("Got exception calling onProgress handler, aborting " +
-                     this.method + " " + req.URI.spec);
+                     this.method + " " + channel.URI.spec);
       this._log.debug("Exception: " + CommonUtils.exceptionStr(ex));
       this.abort();
 
@@ -483,6 +532,19 @@ RESTRequest.prototype = {
     return true;
   },
 
+  /**
+   * Returns true if headers from the old channel should be
+   * copied to the new channel. Invoked when a channel redirect
+   * is in progress.
+   */
+  shouldCopyOnRedirect: function shouldCopyOnRedirect(oldChannel, newChannel, flags) {
+    let isInternal = !!(flags & Ci.nsIChannelEventSink.REDIRECT_INTERNAL);
+    let isSameURI  = newChannel.URI.equals(oldChannel.URI);
+    this._log.debug("Channel redirect: " + oldChannel.URI.spec + ", " +
+                    newChannel.URI.spec + ", internal = " + isInternal);
+    return isInternal && isSameURI;
+  },
+
   /*** nsIChannelEventSink ***/
   asyncOnChannelRedirect:
     function asyncOnChannelRedirect(oldChannel, newChannel, flags, callback) {
@@ -493,6 +555,18 @@ RESTRequest.prototype = {
       this._log.error("Unexpected error: channel not nsIHttpChannel!");
       callback.onRedirectVerifyCallback(Cr.NS_ERROR_NO_INTERFACE);
       return;
+    }
+
+    // For internal redirects, copy the headers that our caller set.
+    try {
+      if (this.shouldCopyOnRedirect(oldChannel, newChannel, flags)) {
+        this._log.trace("Copying headers for safe internal redirect.");
+        for (let key in this._headers) {
+          newChannel.setRequestHeader(key, this._headers[key], false);
+        }
+      }
+    } catch (ex) {
+      this._log.error("Error copying headers: " + CommonUtils.exceptionStr(ex));
     }
 
     this.channel = newChannel;
@@ -506,7 +580,7 @@ RESTRequest.prototype = {
  * Response object for a RESTRequest. This will be created automatically by
  * the RESTRequest.
  */
-function RESTResponse() {
+this.RESTResponse = function RESTResponse() {
   this._log = Log4Moz.repository.getLogger(this._logName);
   this._log.level =
     Log4Moz.Level[Prefs.get("log.logger.rest.response")];
@@ -597,7 +671,8 @@ RESTResponse.prototype = {
  *        nonce, and ext. See CrytoUtils.computeHTTPMACSHA1 for information on
  *        the purpose of these values.
  */
-function TokenAuthenticatedRESTRequest(uri, authToken, extra) {
+this.TokenAuthenticatedRESTRequest =
+ function TokenAuthenticatedRESTRequest(uri, authToken, extra) {
   RESTRequest.call(this, uri);
   this.authToken = authToken;
   this.extra = extra || {};

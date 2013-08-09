@@ -6,13 +6,15 @@
 #include "mozilla/Hal.h"
 #include "PowerManager.h"
 #include "WakeLock.h"
-#include "nsContentUtils.h"
 #include "nsDOMClassInfoID.h"
 #include "nsIDOMWakeLockListener.h"
+#include "nsIDocument.h"
+#include "nsIPermissionManager.h"
 #include "nsIPowerManagerService.h"
 #include "nsIPrincipal.h"
 #include "nsPIDOMWindow.h"
 #include "nsServiceManagerUtils.h"
+#include "nsError.h"
 
 DOMCI_DATA(MozPowerManager, mozilla::dom::power::PowerManager)
 
@@ -56,33 +58,9 @@ PowerManager::Shutdown()
   return NS_OK;
 }
 
-bool
-PowerManager::CheckPermission()
-{
-  if (nsContentUtils::IsCallerChrome()) {
-    return true;
-  }
-
-  nsCOMPtr<nsPIDOMWindow> win = do_QueryReferent(mWindow);
-  NS_ENSURE_TRUE(win, false);
-  nsCOMPtr<nsIDocument> doc = do_QueryInterface(win->GetExtantDocument());
-  NS_ENSURE_TRUE(doc, false);
-
-  nsCOMPtr<nsIURI> uri;
-  doc->NodePrincipal()->GetURI(getter_AddRefs(uri));
-
-  if (!nsContentUtils::URIIsChromeOrInPref(uri, "dom.power.whitelist")) {
-    return false;
-  }
-
-  return true;
-}
-
 NS_IMETHODIMP
 PowerManager::Reboot()
 {
-  NS_ENSURE_TRUE(CheckPermission(), NS_ERROR_DOM_SECURITY_ERR);
-
   nsCOMPtr<nsIPowerManagerService> pmService =
     do_GetService(POWERMANAGERSERVICE_CONTRACTID);
   NS_ENSURE_STATE(pmService);
@@ -93,10 +71,15 @@ PowerManager::Reboot()
 }
 
 NS_IMETHODIMP
+PowerManager::FactoryReset()
+{
+  hal::FactoryReset();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 PowerManager::PowerOff()
 {
-  NS_ENSURE_TRUE(CheckPermission(), NS_ERROR_DOM_SECURITY_ERR);
-
   nsCOMPtr<nsIPowerManagerService> pmService =
     do_GetService(POWERMANAGERSERVICE_CONTRACTID);
   NS_ENSURE_STATE(pmService);
@@ -109,8 +92,6 @@ PowerManager::PowerOff()
 NS_IMETHODIMP
 PowerManager::AddWakeLockListener(nsIDOMMozWakeLockListener *aListener)
 {
-  NS_ENSURE_TRUE(CheckPermission(), NS_ERROR_DOM_SECURITY_ERR);
-
   // already added? bail out.
   if (mListeners.Contains(aListener))
     return NS_OK;
@@ -122,8 +103,6 @@ PowerManager::AddWakeLockListener(nsIDOMMozWakeLockListener *aListener)
 NS_IMETHODIMP
 PowerManager::RemoveWakeLockListener(nsIDOMMozWakeLockListener *aListener)
 {
-  NS_ENSURE_TRUE(CheckPermission(), NS_ERROR_DOM_SECURITY_ERR);
-
   mListeners.RemoveElement(aListener);
   return NS_OK;
 }
@@ -131,8 +110,6 @@ PowerManager::RemoveWakeLockListener(nsIDOMMozWakeLockListener *aListener)
 NS_IMETHODIMP
 PowerManager::GetWakeLockState(const nsAString &aTopic, nsAString &aState)
 {
-  NS_ENSURE_TRUE(CheckPermission(), NS_ERROR_DOM_SECURITY_ERR);
-
   nsCOMPtr<nsIPowerManagerService> pmService =
     do_GetService(POWERMANAGERSERVICE_CONTRACTID);
   NS_ENSURE_STATE(pmService);
@@ -152,7 +129,7 @@ PowerManager::Callback(const nsAString &aTopic, const nsAString &aState)
    * more than one listener per window, so it shouldn't be too long.
    */
   nsAutoTArray<nsCOMPtr<nsIDOMMozWakeLockListener>, 2> listeners(mListeners);
-  for (PRUint32 i = 0; i < listeners.Length(); ++i) {
+  for (uint32_t i = 0; i < listeners.Length(); ++i) {
     listeners[i]->Callback(aTopic, aState);
   }
 
@@ -162,11 +139,6 @@ PowerManager::Callback(const nsAString &aTopic, const nsAString &aState)
 NS_IMETHODIMP
 PowerManager::GetScreenEnabled(bool *aEnabled)
 {
-  if (!CheckPermission()) {
-    *aEnabled = true;
-    return NS_OK;
-  }
-
   *aEnabled = hal::GetScreenEnabled();
   return NS_OK;
 }
@@ -174,10 +146,6 @@ PowerManager::GetScreenEnabled(bool *aEnabled)
 NS_IMETHODIMP
 PowerManager::SetScreenEnabled(bool aEnabled)
 {
-  NS_ENSURE_TRUE(CheckPermission(), NS_ERROR_DOM_SECURITY_ERR);
-
-  // TODO bug 707589: When the screen's state changes, all visible windows
-  // should fire a visibility change event.
   hal::SetScreenEnabled(aEnabled);
   return NS_OK;
 }
@@ -185,11 +153,6 @@ PowerManager::SetScreenEnabled(bool aEnabled)
 NS_IMETHODIMP
 PowerManager::GetScreenBrightness(double *aBrightness)
 {
-  if (!CheckPermission()) {
-    *aBrightness = 1;
-    return NS_OK;
-  }
-
   *aBrightness = hal::GetScreenBrightness();
   return NS_OK;
 }
@@ -197,8 +160,6 @@ PowerManager::GetScreenBrightness(double *aBrightness)
 NS_IMETHODIMP
 PowerManager::SetScreenBrightness(double aBrightness)
 {
-  NS_ENSURE_TRUE(CheckPermission(), NS_ERROR_DOM_SECURITY_ERR);
-
   NS_ENSURE_TRUE(0 <= aBrightness && aBrightness <= 1, NS_ERROR_INVALID_ARG);
   hal::SetScreenBrightness(aBrightness);
   return NS_OK;
@@ -207,11 +168,6 @@ PowerManager::SetScreenBrightness(double aBrightness)
 NS_IMETHODIMP
 PowerManager::GetCpuSleepAllowed(bool *aAllowed)
 {
-  if (!CheckPermission()) {
-    *aAllowed = true;
-    return NS_OK;
-  }
-
   *aAllowed = hal::GetCpuSleepAllowed();
   return NS_OK;
 }
@@ -219,10 +175,28 @@ PowerManager::GetCpuSleepAllowed(bool *aAllowed)
 NS_IMETHODIMP
 PowerManager::SetCpuSleepAllowed(bool aAllowed)
 {
-  NS_ENSURE_TRUE(CheckPermission(), NS_ERROR_DOM_SECURITY_ERR);
-
   hal::SetCpuSleepAllowed(aAllowed);
   return NS_OK;
+}
+
+already_AddRefed<PowerManager>
+PowerManager::CheckPermissionAndCreateInstance(nsPIDOMWindow* aWindow)
+{
+  nsCOMPtr<nsIPermissionManager> permMgr =
+    do_GetService(NS_PERMISSIONMANAGER_CONTRACTID);
+  NS_ENSURE_TRUE(permMgr, nullptr);
+
+  uint32_t permission = nsIPermissionManager::DENY_ACTION;
+  permMgr->TestPermissionFromWindow(aWindow, "power", &permission);
+
+  if (permission != nsIPermissionManager::ALLOW_ACTION) {
+    return nullptr;
+  }
+
+  nsRefPtr<PowerManager> powerManager = new PowerManager();
+  powerManager->Init(aWindow);
+
+  return powerManager.forget();
 }
 
 } // power

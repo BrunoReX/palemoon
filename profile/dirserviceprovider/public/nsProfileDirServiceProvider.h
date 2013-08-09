@@ -5,7 +5,7 @@
 
 // Interfaces Needed
 #include "nsIDirectoryService.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 
 #include "nsCOMPtr.h"
 #include "nsDirectoryServiceUtils.h"
@@ -48,7 +48,7 @@ public:
     */
 
    virtual nsresult        SetProfileDir(nsIFile* aProfileDir,
-                                         nsIFile* aLocalProfileDir = nsnull);
+                                         nsIFile* aLocalProfileDir = nullptr);
 
   /**
    * Register

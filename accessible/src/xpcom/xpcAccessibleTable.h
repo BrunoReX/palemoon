@@ -11,11 +11,12 @@
 #include "nscore.h"
 
 class nsIAccessible;
+class nsIArray;
+
 namespace mozilla {
 namespace a11y {
+
 class TableAccessible;
-}
-}
 
 class xpcAccessibleTable
 {
@@ -24,63 +25,46 @@ public:
 
   nsresult GetCaption(nsIAccessible** aCaption);
   nsresult GetSummary(nsAString& aSummary);
-  nsresult GetColumnCount(PRInt32* aColumnCount);
-  nsresult GetRowCount(PRInt32* aRowCount);
-  nsresult GetCellAt(PRInt32 aRowIndex, PRInt32 aColumnIndex,
+  nsresult GetColumnCount(int32_t* aColumnCount);
+  nsresult GetRowCount(int32_t* aRowCount);
+  nsresult GetCellAt(int32_t aRowIndex, int32_t aColumnIndex,
                      nsIAccessible** aCell);
-  nsresult GetCellIndexAt(PRInt32 aRowIndex, PRInt32 aColumnIndex,
-                          PRInt32* aCellIndex);
-  nsresult GetColumnExtentAt(PRInt32 row, PRInt32 column,
-                             PRInt32* aColumnExtent);
-  nsresult GetRowExtentAt(PRInt32 row, PRInt32 column,
-                          PRInt32* aRowExtent);
-  nsresult UnselectColumn(PRInt32 aColIdx);
-  nsresult UnselectRow(PRInt32 aRowIdx);
+  nsresult GetCellIndexAt(int32_t aRowIndex, int32_t aColumnIndex,
+                          int32_t* aCellIndex);
+  nsresult GetColumnIndexAt(int32_t aCellIndex, int32_t* aColumnIndex);
+  nsresult GetRowIndexAt(int32_t aCellIndex, int32_t* aRowIndex);
+  nsresult GetRowAndColumnIndicesAt(int32_t aCellIndex, int32_t* aRowIndex,
+                                    int32_t* aColumnIndex);
+  nsresult GetColumnExtentAt(int32_t row, int32_t column,
+                             int32_t* aColumnExtent);
+  nsresult GetRowExtentAt(int32_t row, int32_t column,
+                          int32_t* aRowExtent);
+  nsresult GetColumnDescription(int32_t aColIdx, nsAString& aDescription);
+  nsresult GetRowDescription(int32_t aRowIdx, nsAString& aDescription);
+  nsresult IsColumnSelected(int32_t aColIdx, bool* _retval);
+  nsresult IsRowSelected(int32_t aRowIdx, bool* _retval);
+  nsresult IsCellSelected(int32_t aRowIdx, int32_t aColIdx, bool* _retval);
+  nsresult GetSelectedCellCount(uint32_t* aSelectedCellCount);
+  nsresult GetSelectedColumnCount(uint32_t* aSelectedColumnCount);
+  nsresult GetSelectedRowCount(uint32_t* aSelectedRowCount);
+  nsresult GetSelectedCells(nsIArray** aSelectedCell);
+  nsresult GetSelectedCellIndices(uint32_t* aCellsArraySize,
+                                  int32_t** aCellsArray);
+  nsresult GetSelectedColumnIndices(uint32_t* aColsArraySize,
+                                    int32_t** aColsArray);
+  nsresult GetSelectedRowIndices(uint32_t* aRowsArraySize,
+                                 int32_t** aRowsArray);
+  nsresult SelectColumn(int32_t aColIdx);
+  nsresult SelectRow(int32_t aRowIdx);
+  nsresult UnselectColumn(int32_t aColIdx);
+  nsresult UnselectRow(int32_t aRowIdx);
   nsresult IsProbablyForLayout(bool* aIsForLayout);
 
 protected:
   mozilla::a11y::TableAccessible* mTable;
 };
 
-#define NS_DECL_OR_FORWARD_NSIACCESSIBLETABLE_WITH_XPCACCESSIBLETABLE \
-  NS_IMETHOD GetCaption(nsIAccessible** aCaption) \
-    { return xpcAccessibleTable::GetCaption(aCaption); } \
-  NS_SCRIPTABLE NS_IMETHOD GetSummary(nsAString & aSummary) \
-    { return xpcAccessibleTable::GetSummary(aSummary); } \
-  NS_SCRIPTABLE NS_IMETHOD GetColumnCount(PRInt32* aColumnCount) \
-    { return xpcAccessibleTable::GetColumnCount(aColumnCount); } \
-  NS_SCRIPTABLE NS_IMETHOD GetRowCount(PRInt32* aRowCount) \
-    { return xpcAccessibleTable::GetRowCount(aRowCount); } \
-  NS_SCRIPTABLE NS_IMETHOD GetCellAt(PRInt32 rowIndex, PRInt32 columnIndex, nsIAccessible** _retval NS_OUTPARAM) \
-    { return xpcAccessibleTable::GetCellAt(rowIndex, columnIndex, _retval); } \
-  NS_SCRIPTABLE NS_IMETHOD GetCellIndexAt(PRInt32 rowIndex, PRInt32 columnIndex, PRInt32 *_retval NS_OUTPARAM) \
-    { return xpcAccessibleTable::GetCellIndexAt(rowIndex, columnIndex, _retval); } \
-  NS_SCRIPTABLE NS_IMETHOD GetColumnIndexAt(PRInt32 cellIndex, PRInt32 *_retval NS_OUTPARAM); \
-  NS_SCRIPTABLE NS_IMETHOD GetRowIndexAt(PRInt32 cellIndex, PRInt32 *_retval NS_OUTPARAM); \
-  NS_SCRIPTABLE NS_IMETHOD GetRowAndColumnIndicesAt(PRInt32 cellIndex, PRInt32 *rowIndex NS_OUTPARAM, PRInt32 *columnIndex NS_OUTPARAM); \
-  NS_SCRIPTABLE NS_IMETHOD GetColumnExtentAt(PRInt32 row, PRInt32 column, PRInt32* _retval NS_OUTPARAM) \
-    { return xpcAccessibleTable::GetColumnExtentAt(row, column, _retval); } \
-  NS_SCRIPTABLE NS_IMETHOD GetRowExtentAt(PRInt32 row, PRInt32 column, PRInt32* _retval NS_OUTPARAM) \
-    { return xpcAccessibleTable::GetRowExtentAt(row, column, _retval); } \
-  NS_SCRIPTABLE NS_IMETHOD GetColumnDescription(PRInt32 columnIndex, nsAString & _retval NS_OUTPARAM); \
-  NS_SCRIPTABLE NS_IMETHOD GetRowDescription(PRInt32 rowIndex, nsAString & _retval NS_OUTPARAM); \
-  NS_SCRIPTABLE NS_IMETHOD IsColumnSelected(PRInt32 columnIndex, bool *_retval NS_OUTPARAM); \
-  NS_SCRIPTABLE NS_IMETHOD IsRowSelected(PRInt32 rowIndex, bool *_retval NS_OUTPARAM); \
-  NS_SCRIPTABLE NS_IMETHOD IsCellSelected(PRInt32 rowIndex, PRInt32 columnIndex, bool *_retval NS_OUTPARAM); \
-  NS_SCRIPTABLE NS_IMETHOD GetSelectedCellCount(PRUint32 *aSelectedCellCount); \
-  NS_SCRIPTABLE NS_IMETHOD GetSelectedColumnCount(PRUint32 *aSelectedColumnCount); \
-  NS_SCRIPTABLE NS_IMETHOD GetSelectedRowCount(PRUint32 *aSelectedRowCount); \
-  NS_SCRIPTABLE NS_IMETHOD GetSelectedCells(nsIArray * *aSelectedCells); \
-  NS_SCRIPTABLE NS_IMETHOD GetSelectedCellIndices(PRUint32 *cellsArraySize NS_OUTPARAM, PRInt32 **cellsArray NS_OUTPARAM); \
-  NS_SCRIPTABLE NS_IMETHOD GetSelectedColumnIndices(PRUint32 *rowsArraySize NS_OUTPARAM, PRInt32 **rowsArray NS_OUTPARAM); \
-  NS_SCRIPTABLE NS_IMETHOD GetSelectedRowIndices(PRUint32 *rowsArraySize NS_OUTPARAM, PRInt32 **rowsArray NS_OUTPARAM); \
-  NS_SCRIPTABLE NS_IMETHOD SelectRow(PRInt32 rowIndex); \
-  NS_SCRIPTABLE NS_IMETHOD SelectColumn(PRInt32 columnIndex); \
-  NS_SCRIPTABLE NS_IMETHOD UnselectColumn(PRInt32 aColIdx) \
-    { return xpcAccessibleTable::UnselectColumn(aColIdx); } \
-  NS_IMETHOD UnselectRow(PRInt32 aRowIdx) \
-    { return xpcAccessibleTable::UnselectRow(aRowIdx); } \
-  NS_IMETHOD IsProbablyForLayout(bool* aResult) \
-  { return xpcAccessibleTable::IsProbablyForLayout(aResult); } \
+} // namespace a11y
+} // namespace mozilla
 
 #endif // MOZILLA_A11Y_XPCOM_XPACCESSIBLETABLE_H_

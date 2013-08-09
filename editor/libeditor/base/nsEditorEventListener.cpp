@@ -3,47 +3,62 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+#include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
+#include "mozilla/Preferences.h"        // for Preferences
+#include "mozilla/dom/Element.h"        // for Element
+#include "nsAString.h"
+#include "nsCaret.h"                    // for nsCaret
+#include "nsDebug.h"                    // for NS_ENSURE_TRUE, etc
+#include "nsEditor.h"                   // for nsEditor, etc
 #include "nsEditorEventListener.h"
-#include "nsEditor.h"
+#include "nsEventListenerManager.h"     // for nsEventListenerManager
+#include "nsFocusManager.h"             // for nsFocusManager
+#include "nsGUIEvent.h"                 // for NS_EVENT_FLAG_BUBBLE, etc
+#include "nsGkAtoms.h"                  // for nsGkAtoms, nsGkAtoms::input
+#include "nsIClipboard.h"               // for nsIClipboard, etc
+#include "nsIContent.h"                 // for nsIContent
+#include "nsID.h"
+#include "nsIDOMDOMStringList.h"        // for nsIDOMDOMStringList
+#include "nsIDOMDataTransfer.h"         // for nsIDOMDataTransfer
+#include "nsIDOMDocument.h"             // for nsIDOMDocument
+#include "nsIDOMDragEvent.h"            // for nsIDOMDragEvent
+#include "nsIDOMElement.h"              // for nsIDOMElement
+#include "nsIDOMEvent.h"                // for nsIDOMEvent
+#include "nsIDOMEventTarget.h"          // for nsIDOMEventTarget
+#include "nsIDOMKeyEvent.h"             // for nsIDOMKeyEvent
+#include "nsIDOMMouseEvent.h"           // for nsIDOMMouseEvent
+#include "nsIDOMNode.h"                 // for nsIDOMNode
+#include "nsIDOMRange.h"                // for nsIDOMRange
+#include "nsIDocument.h"                // for nsIDocument
+#include "nsIEditor.h"                  // for nsEditor::GetSelection, etc
+#include "nsIEditorIMESupport.h"
+#include "nsIEditorMailSupport.h"       // for nsIEditorMailSupport
+#include "nsIFocusManager.h"            // for nsIFocusManager
+#include "nsIFormControl.h"             // for nsIFormControl, etc
+#include "nsIMEStateManager.h"          // for nsIMEStateManager
+#include "nsINode.h"                    // for nsINode, ::NODE_IS_EDITABLE, etc
+#include "nsIPlaintextEditor.h"         // for nsIPlaintextEditor, etc
+#include "nsIPresShell.h"               // for nsIPresShell
+#include "nsIPrivateTextEvent.h"        // for nsIPrivateTextEvent
+#include "nsIPrivateTextRange.h"        // for nsIPrivateTextRangeList
+#include "nsISelection.h"               // for nsISelection
+#include "nsISelectionController.h"     // for nsISelectionController, etc
+#include "nsISelectionPrivate.h"        // for nsISelectionPrivate
+#include "nsITransferable.h"            // for kFileMime, kHTMLMime, etc
+#include "nsLiteralString.h"            // for NS_LITERAL_STRING
+#include "nsServiceManagerUtils.h"      // for do_GetService
+#include "nsString.h"                   // for nsAutoString
+#ifdef HANDLE_NATIVE_TEXT_DIRECTION_SWITCH
+#include "nsContentUtils.h"             // for nsContentUtils, etc
+#include "nsIBidiKeyboard.h"            // for nsIBidiKeyboard
+#endif
 
-#include "nsIDOMDOMStringList.h"
-#include "nsIDOMEvent.h"
-#include "nsIDOMNSEvent.h"
-#include "nsIDOMDocument.h"
-#include "nsIDOMEventTarget.h"
-#include "nsIDocument.h"
-#include "nsIPresShell.h"
-#include "nsISelection.h"
-#include "nsISelectionController.h"
-#include "nsIDOMKeyEvent.h"
-#include "nsIDOMMouseEvent.h"
-#include "nsIPrivateTextEvent.h"
-#include "nsIEditorMailSupport.h"
-#include "nsFocusManager.h"
-#include "nsEventListenerManager.h"
-#include "nsIMEStateManager.h"
-#include "mozilla/Preferences.h"
-
-// Drag & Drop, Clipboard
-#include "nsIServiceManager.h"
-#include "nsIClipboard.h"
-#include "nsIContent.h"
-#include "nsISupportsPrimitives.h"
-#include "nsIDOMRange.h"
-#include "nsEditorUtils.h"
-#include "nsISelectionPrivate.h"
-#include "nsIDOMDragEvent.h"
-#include "nsIFocusManager.h"
-#include "nsIDOMWindow.h"
-#include "nsContentUtils.h"
-#include "nsIBidiKeyboard.h"
-#include "mozilla/dom/Element.h"
-#include "nsIFormControl.h"
+class nsPresContext;
 
 using namespace mozilla;
 
 nsEditorEventListener::nsEditorEventListener() :
-  mEditor(nsnull), mCommitText(false),
+  mEditor(nullptr), mCommitText(false),
   mInTransaction(false)
 #ifdef HANDLE_NATIVE_TEXT_DIRECTION_SWITCH
   , mHaveBidiKeyboards(false)
@@ -171,7 +186,7 @@ nsEditorEventListener::Disconnect()
     return;
   }
   UninstallFromEditor();
-  mEditor = nsnull;
+  mEditor = nullptr;
 }
 
 void
@@ -308,8 +323,10 @@ nsEditorEventListener::HandleEvent(nsIDOMEvent* aEvent)
     return HandleText(aEvent);
   if (eventType.EqualsLiteral("compositionstart"))
     return HandleStartComposition(aEvent);
-  if (eventType.EqualsLiteral("compositionend"))
-    return HandleEndComposition(aEvent);
+  if (eventType.EqualsLiteral("compositionend")) {
+    HandleEndComposition(aEvent);
+    return NS_OK;
+  }
 
   return NS_OK;
 }
@@ -381,7 +398,7 @@ nsEditorEventListener::KeyUp(nsIDOMEvent* aKeyEvent)
       return NS_OK;
     }
 
-    PRUint32 keyCode = 0;
+    uint32_t keyCode = 0;
     keyEvent->GetKeyCode(&keyCode);
     if (keyCode == nsIDOMKeyEvent::DOM_VK_SHIFT ||
         keyCode == nsIDOMKeyEvent::DOM_VK_CONTROL) {
@@ -407,7 +424,7 @@ nsEditorEventListener::KeyDown(nsIDOMEvent* aKeyEvent)
       return NS_OK;
     }
 
-    PRUint32 keyCode = 0;
+    uint32_t keyCode = 0;
     keyEvent->GetKeyCode(&keyCode);
     if (keyCode == nsIDOMKeyEvent::DOM_VK_SHIFT) {
       bool switchToRTL;
@@ -435,8 +452,7 @@ nsEditorEventListener::KeyPress(nsIDOMEvent* aKeyEvent)
   }
 
   // Transfer the event's trusted-ness to our editor
-  nsCOMPtr<nsIDOMNSEvent> NSEvent = do_QueryInterface(aKeyEvent);
-  nsEditor::HandlingTrustedAction operation(mEditor, NSEvent);
+  nsEditor::HandlingTrustedAction operation(mEditor, aKeyEvent);
 
   // DOM event handling happens in two passes, the client pass and the system
   // pass.  We do all of our processing in the system pass, to allow client
@@ -480,10 +496,10 @@ nsEditorEventListener::MouseClick(nsIDOMEvent* aMouseEvent)
     nsIDocument* currentDoc = focusedContent->GetCurrentDoc();
     nsCOMPtr<nsIPresShell> presShell = GetPresShell();
     nsPresContext* presContext =
-      presShell ? presShell->GetPresContext() : nsnull;
+      presShell ? presShell->GetPresContext() : nullptr;
     if (presContext && currentDoc) {
       nsIMEStateManager::OnClickInEditor(presContext,
-        currentDoc->HasFlag(NODE_IS_EDITABLE) ? nsnull : focusedContent,
+        currentDoc->HasFlag(NODE_IS_EDITABLE) ? nullptr : focusedContent,
         mouseEvent);
     }
   }
@@ -499,7 +515,7 @@ nsEditorEventListener::MouseClick(nsIDOMEvent* aMouseEvent)
   // IME to commit before we change the cursor position
   mEditor->ForceCompositionEnd();
 
-  PRUint16 button = (PRUint16)-1;
+  uint16_t button = (uint16_t)-1;
   mouseEvent->GetButton(&button);
   // middle-mouse click (paste);
   if (button == 1)
@@ -510,7 +526,7 @@ nsEditorEventListener::MouseClick(nsIDOMEvent* aMouseEvent)
       nsCOMPtr<nsIDOMNode> parent;
       if (NS_FAILED(mouseEvent->GetRangeParent(getter_AddRefs(parent))))
         return NS_ERROR_NULL_POINTER;
-      PRInt32 offset = 0;
+      int32_t offset = 0;
       if (NS_FAILED(mouseEvent->GetRangeOffset(&offset)))
         return NS_ERROR_NULL_POINTER;
 
@@ -527,7 +543,7 @@ nsEditorEventListener::MouseClick(nsIDOMEvent* aMouseEvent)
       if (ctrlKey)
         mailEditor = do_QueryObject(mEditor);
 
-      PRInt32 clipboard = nsIClipboard::kGlobalClipboard;
+      int32_t clipboard = nsIClipboard::kGlobalClipboard;
       nsCOMPtr<nsIClipboard> clipboardService =
         do_GetService("@mozilla.org/widget/clipboard;1", &rv);
       if (NS_SUCCEEDED(rv)) {
@@ -590,8 +606,7 @@ nsEditorEventListener::HandleText(nsIDOMEvent* aTextEvent)
   }
 
   // Transfer the event's trusted-ness to our editor
-  nsCOMPtr<nsIDOMNSEvent> NSEvent = do_QueryInterface(aTextEvent);
-  nsEditor::HandlingTrustedAction operation(mEditor, NSEvent);
+  nsEditor::HandlingTrustedAction operation(mEditor, aTextEvent);
 
   return mEditor->UpdateIMEComposition(composedText, textRangeList);
 }
@@ -635,7 +650,7 @@ nsEditorEventListener::DragOver(nsIDOMDragEvent* aDragEvent)
     aDragEvent->PreventDefault(); // consumed
 
     if (mCaret) {
-      PRInt32 offset = 0;
+      int32_t offset = 0;
       nsresult rv = aDragEvent->GetRangeOffset(&offset);
       NS_ENSURE_SUCCESS(rv, rv);
 
@@ -679,7 +694,7 @@ nsEditorEventListener::CleanupDragDropCaret()
     }
 
     mCaret->Terminate();
-    mCaret = nsnull;
+    mCaret = nullptr;
   }
 }
 
@@ -787,15 +802,15 @@ nsEditorEventListener::CanDrop(nsIDOMDragEvent* aEvent)
       rv = aEvent->GetRangeParent(getter_AddRefs(parent));
       if (NS_FAILED(rv) || !parent) return false;
 
-      PRInt32 offset = 0;
+      int32_t offset = 0;
       rv = aEvent->GetRangeOffset(&offset);
       NS_ENSURE_SUCCESS(rv, false);
 
-      PRInt32 rangeCount;
+      int32_t rangeCount;
       rv = selection->GetRangeCount(&rangeCount);
       NS_ENSURE_SUCCESS(rv, false);
 
-      for (PRInt32 i = 0; i < rangeCount; i++)
+      for (int32_t i = 0; i < rangeCount; i++)
       {
         nsCOMPtr<nsIDOMRange> range;
         rv = selection->GetRangeAt(i, getter_AddRefs(range));
@@ -823,19 +838,18 @@ nsEditorEventListener::HandleStartComposition(nsIDOMEvent* aCompositionEvent)
   return mEditor->BeginIMEComposition();
 }
 
-NS_IMETHODIMP
+void
 nsEditorEventListener::HandleEndComposition(nsIDOMEvent* aCompositionEvent)
 {
-  NS_ENSURE_TRUE(mEditor, NS_ERROR_NOT_AVAILABLE);
+  MOZ_ASSERT(mEditor);
   if (!mEditor->IsAcceptableInputEvent(aCompositionEvent)) {
-    return NS_OK;
+    return;
   }
 
   // Transfer the event's trusted-ness to our editor
-  nsCOMPtr<nsIDOMNSEvent> NSEvent = do_QueryInterface(aCompositionEvent);
-  nsEditor::HandlingTrustedAction operation(mEditor, NSEvent);
+  nsEditor::HandlingTrustedAction operation(mEditor, aCompositionEvent);
 
-  return mEditor->EndIMEComposition();
+  mEditor->EndIMEComposition();
 }
 
 NS_IMETHODIMP
@@ -887,6 +901,12 @@ nsEditorEventListener::Focus(nsIDOMEvent* aEvent)
   }
 
   mEditor->OnFocus(target);
+
+  nsCOMPtr<nsIPresShell> ps = GetPresShell();
+  NS_ENSURE_TRUE(ps, NS_OK);
+  nsCOMPtr<nsIContent> focusedContent = mEditor->GetFocusedContentForIME();
+  nsIMEStateManager::OnFocusInEditor(ps->GetPresContext(), focusedContent);
+
   return NS_OK;
 }
 
@@ -918,7 +938,7 @@ nsEditorEventListener::Blur(nsIDOMEvent* aEvent)
     nsCOMPtr<nsISelectionPrivate> selectionPrivate =
       do_QueryInterface(selection);
     if (selectionPrivate) {
-      selectionPrivate->SetAncestorLimiter(nsnull);
+      selectionPrivate->SetAncestorLimiter(nullptr);
     }
 
     nsCOMPtr<nsIPresShell> presShell = GetPresShell();
@@ -952,7 +972,7 @@ void
 nsEditorEventListener::SpellCheckIfNeeded() {
   // If the spell check skip flag is still enabled from creation time,
   // disable it because focused editors are allowed to spell check.
-  PRUint32 currentFlags = 0;
+  uint32_t currentFlags = 0;
   mEditor->GetFlags(&currentFlags);
   if(currentFlags & nsIPlaintextEditor::eEditorSkipSpellCheck)
   {
@@ -965,8 +985,8 @@ bool
 nsEditorEventListener::IsFileControlTextBox()
 {
   dom::Element* root = mEditor->GetRoot();
-  if (root && root->IsInNativeAnonymousSubtree()) {
-    nsIContent* parent = root->FindFirstNonNativeAnonymous();
+  if (root && root->ChromeOnlyAccess()) {
+    nsIContent* parent = root->FindFirstNonChromeOnlyAccessContent();
     if (parent && parent->IsHTML(nsGkAtoms::input)) {
       nsCOMPtr<nsIFormControl> formControl = do_QueryInterface(parent);
       MOZ_ASSERT(formControl);

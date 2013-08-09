@@ -204,7 +204,7 @@ AsyncExecuteStatements::AsyncExecuteStatements(StatementDataArray &aStatements,
                                                Connection *aConnection,
                                                mozIStorageStatementCallback *aCallback)
 : mConnection(aConnection)
-, mTransactionManager(nsnull)
+, mTransactionManager(nullptr)
 , mCallback(aCallback)
 , mCallingThread(::do_GetCurrentThread())
 , mMaxWait(TimeDuration::FromMilliseconds(MAX_MILLISECONDS_BETWEEN_RESULTS))
@@ -243,7 +243,7 @@ AsyncExecuteStatements::bindExecuteAndProcessStatement(StatementData &aData,
 {
   mMutex.AssertNotCurrentThreadOwns();
 
-  sqlite3_stmt *aStatement = nsnull;
+  sqlite3_stmt *aStatement = nullptr;
   // This cannot fail; we are only called if it's available.
   (void)aData.getSqliteStatement(&aStatement);
   NS_ASSERTION(aStatement, "You broke the code; do not call here like that!");
@@ -431,7 +431,7 @@ AsyncExecuteStatements::notifyComplete()
   // Finalize our statements before we try to commit or rollback.  If we are
   // canceling and have statements that think they have pending work, the
   // rollback will fail.
-  for (PRUint32 i = 0; i < mStatements.Length(); i++)
+  for (uint32_t i = 0; i < mStatements.Length(); i++)
     mStatements[i].finalize();
 
   // Handle our transaction, if we have one
@@ -448,7 +448,7 @@ AsyncExecuteStatements::notifyComplete()
       (void)mTransactionManager->Rollback();
     }
     delete mTransactionManager;
-    mTransactionManager = nsnull;
+    mTransactionManager = nullptr;
   }
 
   // Always generate a completion notification; it is what guarantees that our
@@ -459,7 +459,7 @@ AsyncExecuteStatements::notifyComplete()
                "Should have given up ownership of mStatements!");
 
   // We no longer own mCallback (the CompletionNotifier takes ownership).
-  mCallback = nsnull;
+  mCallback = nullptr;
 
   (void)mCallingThread->Dispatch(completionEvent, NS_DISPATCH_NORMAL);
 
@@ -467,7 +467,7 @@ AsyncExecuteStatements::notifyComplete()
 }
 
 nsresult
-AsyncExecuteStatements::notifyError(PRInt32 aErrorCode,
+AsyncExecuteStatements::notifyError(int32_t aErrorCode,
                                     const char *aMessage)
 {
   mMutex.AssertNotCurrentThreadOwns();
@@ -510,7 +510,7 @@ AsyncExecuteStatements::notifyResults()
 
   nsresult rv = mCallingThread->Dispatch(notifier, NS_DISPATCH_NORMAL);
   if (NS_SUCCEEDED(rv))
-    mResultSet = nsnull; // we no longer own it on success
+    mResultSet = nullptr; // we no longer own it on success
   return rv;
 }
 
@@ -526,7 +526,7 @@ AsyncExecuteStatements::statementsNeedTransaction()
   // If there is more than one write statement, run in a transaction.
   // Additionally, if we have only one statement but it needs a transaction, due
   // to multiple BindingParams, we will wrap it in one.
-  for (PRUint32 i = 0, transactionsCount = 0; i < mStatements.Length(); ++i) {
+  for (uint32_t i = 0, transactionsCount = 0; i < mStatements.Length(); ++i) {
     transactionsCount += mStatements[i].needsTransaction();
     if (transactionsCount > 1) {
       return true;
@@ -582,7 +582,7 @@ AsyncExecuteStatements::Run()
   }
 
   // Execute each statement, giving the callback results if it returns any.
-  for (PRUint32 i = 0; i < mStatements.Length(); i++) {
+  for (uint32_t i = 0; i < mStatements.Length(); i++) {
     bool finished = (i == (mStatements.Length() - 1));
 
     sqlite3_stmt *stmt;

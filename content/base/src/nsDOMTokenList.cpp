@@ -10,12 +10,15 @@
 
 #include "nsAttrValue.h"
 #include "nsContentUtils.h"
-#include "nsDOMError.h"
-#include "nsGenericElement.h"
-#include "dombindings.h"
+#include "nsError.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/DOMTokenListBinding.h"
+#include "mozilla/ErrorResult.h"
 
+using namespace mozilla;
+using namespace mozilla::dom;
 
-nsDOMTokenList::nsDOMTokenList(nsGenericElement *aElement, nsIAtom* aAttrAtom)
+nsDOMTokenList::nsDOMTokenList(Element* aElement, nsIAtom* aAttrAtom)
   : mElement(aElement),
     mAttrAtom(aAttrAtom)
 {
@@ -44,34 +47,54 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(nsDOMTokenList)
 void
 nsDOMTokenList::DropReference()
 {
-  mElement = nsnull;
+  mElement = nullptr;
 }
 
-NS_IMETHODIMP
-nsDOMTokenList::GetLength(PRUint32 *aLength)
+const nsAttrValue*
+nsDOMTokenList::GetParsedAttr()
+{
+  if (!mElement) {
+    return nullptr;
+  }
+  return mElement->GetAttrInfo(kNameSpaceID_None, mAttrAtom).mValue;
+}
+
+uint32_t
+nsDOMTokenList::Length()
 {
   const nsAttrValue* attr = GetParsedAttr();
   if (!attr) {
-    *aLength = 0;
-    return NS_OK;
+    return 0;
   }
 
-  *aLength = attr->GetAtomCount();
+  return attr->GetAtomCount();
+}
+
+NS_IMETHODIMP
+nsDOMTokenList::GetLength(uint32_t *aLength)
+{
+  *aLength = Length();
 
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsDOMTokenList::Item(PRUint32 aIndex, nsAString& aResult)
+void
+nsDOMTokenList::IndexedGetter(uint32_t aIndex, bool& aFound, nsAString& aResult)
 {
   const nsAttrValue* attr = GetParsedAttr();
 
-  if (!attr || aIndex >= static_cast<PRUint32>(attr->GetAtomCount())) {
-    SetDOMStringToNull(aResult);
-    return NS_OK;
+  if (attr && aIndex < static_cast<uint32_t>(attr->GetAtomCount())) {
+    aFound = true;
+    attr->AtomAt(aIndex)->ToString(aResult);
+  } else {
+    aFound = false;
   }
-  attr->AtomAt(aIndex)->ToString(aResult);
+}
 
+NS_IMETHODIMP
+nsDOMTokenList::MozItem(uint32_t aIndex, nsAString& aResult)
+{
+  Item(aIndex, aResult);
   return NS_OK;
 }
 
@@ -95,21 +118,24 @@ nsDOMTokenList::CheckToken(const nsAString& aStr)
   return NS_OK;
 }
 
+bool
+nsDOMTokenList::Contains(const nsAString& aToken, ErrorResult& aError)
+{
+  aError = CheckToken(aToken);
+  if (aError.Failed()) {
+    return false;
+  }
+
+  const nsAttrValue* attr = GetParsedAttr();
+  return attr && attr->Contains(aToken);
+}
+
 NS_IMETHODIMP
 nsDOMTokenList::Contains(const nsAString& aToken, bool* aResult)
 {
-  nsresult rv = CheckToken(aToken);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  const nsAttrValue* attr = GetParsedAttr();
-  if (!attr) {
-    *aResult = false;
-    return NS_OK;
-  }
-
-  *aResult = attr->Contains(aToken);
-
-  return NS_OK;
+  ErrorResult rv;
+  *aResult = Contains(aToken, rv);
+  return rv.ErrorCode();
 }
 
 void
@@ -136,21 +162,29 @@ nsDOMTokenList::AddInternal(const nsAttrValue* aAttr,
   mElement->SetAttr(kNameSpaceID_None, mAttrAtom, resultStr, true);
 }
 
-NS_IMETHODIMP
-nsDOMTokenList::Add(const nsAString& aToken)
+void
+nsDOMTokenList::Add(const nsAString& aToken, ErrorResult& aError)
 {
-  nsresult rv = CheckToken(aToken);
-  NS_ENSURE_SUCCESS(rv, rv);
+  aError = CheckToken(aToken);
+  if (aError.Failed()) {
+    return;
+  }
 
   const nsAttrValue* attr = GetParsedAttr();
 
   if (attr && attr->Contains(aToken)) {
-    return NS_OK;
+    return;
   }
 
   AddInternal(attr, aToken);
+}
 
-  return NS_OK;
+NS_IMETHODIMP
+nsDOMTokenList::Add(const nsAString& aToken)
+{
+  ErrorResult rv;
+  Add(aToken, rv);
+  return rv.ErrorCode();
 }
 
 void
@@ -215,62 +249,78 @@ nsDOMTokenList::RemoveInternal(const nsAttrValue* aAttr,
   mElement->SetAttr(kNameSpaceID_None, mAttrAtom, output, true);
 }
 
-NS_IMETHODIMP
-nsDOMTokenList::Remove(const nsAString& aToken)
+void
+nsDOMTokenList::Remove(const nsAString& aToken, ErrorResult& aError)
 {
-  nsresult rv = CheckToken(aToken);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  const nsAttrValue* attr = GetParsedAttr();
-  if (!attr) {
-    return NS_OK;
+  aError = CheckToken(aToken);
+  if (aError.Failed()) {
+    return;
   }
 
-  if (!attr->Contains(aToken)) {
-    return NS_OK;
+  const nsAttrValue* attr = GetParsedAttr();
+  if (!attr || !attr->Contains(aToken)) {
+    return;
   }
 
   RemoveInternal(attr, aToken);
-
-  return NS_OK;
 }
 
 NS_IMETHODIMP
-nsDOMTokenList::Toggle(const nsAString& aToken, bool* aResult)
+nsDOMTokenList::Remove(const nsAString& aToken)
 {
-  nsresult rv = CheckToken(aToken);
-  NS_ENSURE_SUCCESS(rv, rv);
+  ErrorResult rv;
+  Remove(aToken, rv);
+  return rv.ErrorCode();
+}
+
+bool
+nsDOMTokenList::Toggle(const nsAString& aToken, ErrorResult& aError)
+{
+  aError = CheckToken(aToken);
+  if (aError.Failed()) {
+    return false;
+  }
 
   const nsAttrValue* attr = GetParsedAttr();
 
   if (attr && attr->Contains(aToken)) {
     RemoveInternal(attr, aToken);
-    *aResult = false;
-  } else {
-    AddInternal(attr, aToken);
-    *aResult = true;
+    return false;
   }
 
-  return NS_OK;
+  AddInternal(attr, aToken);
+  return true;
+}
+
+NS_IMETHODIMP
+nsDOMTokenList::Toggle(const nsAString& aToken, bool* aResult)
+{
+  ErrorResult rv;
+  *aResult = Toggle(aToken, rv);
+  return rv.ErrorCode();
+}
+
+void
+nsDOMTokenList::Stringify(nsAString& aResult)
+{
+  if (!mElement) {
+    aResult.Truncate();
+    return;
+  }
+
+  mElement->GetAttr(kNameSpaceID_None, mAttrAtom, aResult);
 }
 
 NS_IMETHODIMP
 nsDOMTokenList::ToString(nsAString& aResult)
 {
-  if (!mElement) {
-    aResult.Truncate();
-    return NS_OK;
-  }
-
-  mElement->GetAttr(kNameSpaceID_None, mAttrAtom, aResult);
-
+  Stringify(aResult);
   return NS_OK;
 }
 
 JSObject*
 nsDOMTokenList::WrapObject(JSContext *cx, JSObject *scope, bool *triedToWrap)
 {
-  return mozilla::dom::binding::DOMTokenList::create(cx, scope, this,
-                                                     triedToWrap);
+  return DOMTokenListBinding::Wrap(cx, scope, this, triedToWrap);
 }
 

@@ -3,8 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "IPCMessageUtils.h"
-#include "mozilla/net/NeckoMessageUtils.h"
+#include "base/basictypes.h"
 
 #include "nsAboutProtocolHandler.h"
 #include "nsIURI.h"
@@ -17,7 +16,7 @@
 #include "nsReadableUtils.h"
 #include "nsNetCID.h"
 #include "nsAboutProtocolUtils.h"
-#include "nsNetError.h"
+#include "nsError.h"
 #include "nsNetUtil.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
@@ -42,14 +41,14 @@ nsAboutProtocolHandler::GetScheme(nsACString &result)
 }
 
 NS_IMETHODIMP
-nsAboutProtocolHandler::GetDefaultPort(PRInt32 *result)
+nsAboutProtocolHandler::GetDefaultPort(int32_t *result)
 {
     *result = -1;        // no port for about: URLs
     return NS_OK;
 }
 
 NS_IMETHODIMP
-nsAboutProtocolHandler::GetProtocolFlags(PRUint32 *result)
+nsAboutProtocolHandler::GetProtocolFlags(uint32_t *result)
 {
     *result = URI_NORELATIVE | URI_NOAUTH | URI_DANGEROUS_TO_LOAD;
     return NS_OK;
@@ -61,7 +60,7 @@ nsAboutProtocolHandler::NewURI(const nsACString &aSpec,
                                nsIURI *aBaseURI,
                                nsIURI **result)
 {
-    *result = nsnull;
+    *result = nullptr;
     nsresult rv;
 
     // Use a simple URI to parse out some stuff first
@@ -82,7 +81,7 @@ nsAboutProtocolHandler::NewURI(const nsACString &aSpec,
     rv = NS_GetAboutModule(url, getter_AddRefs(aboutMod));
     if (NS_SUCCEEDED(rv)) {
         // The standard return case
-        PRUint32 flags;
+        uint32_t flags;
         rv = aboutMod->GetURIFlags(url, &flags);
         NS_ENSURE_SUCCESS(rv, rv);
 
@@ -95,7 +94,7 @@ nsAboutProtocolHandler::NewURI(const nsACString &aSpec,
         // no one but the security manager will see.  Make sure to preserve our
         // path, in case someone decides to hardcode checks for particular
         // about: URIs somewhere.
-        nsCAutoString spec;
+        nsAutoCString spec;
         rv = url->GetPath(spec);
         NS_ENSURE_SUCCESS(rv, rv);
         
@@ -162,7 +161,7 @@ nsAboutProtocolHandler::NewChannel(nsIURI* uri, nsIChannel* *result)
 }
 
 NS_IMETHODIMP 
-nsAboutProtocolHandler::AllowPort(PRInt32 port, const char *scheme, bool *_retval)
+nsAboutProtocolHandler::AllowPort(int32_t port, const char *scheme, bool *_retval)
 {
     // don't override anything.  
     *_retval = false;
@@ -184,16 +183,16 @@ nsSafeAboutProtocolHandler::GetScheme(nsACString &result)
 }
 
 NS_IMETHODIMP
-nsSafeAboutProtocolHandler::GetDefaultPort(PRInt32 *result)
+nsSafeAboutProtocolHandler::GetDefaultPort(int32_t *result)
 {
     *result = -1;        // no port for moz-safe-about: URLs
     return NS_OK;
 }
 
 NS_IMETHODIMP
-nsSafeAboutProtocolHandler::GetProtocolFlags(PRUint32 *result)
+nsSafeAboutProtocolHandler::GetProtocolFlags(uint32_t *result)
 {
-    *result = URI_NORELATIVE | URI_NOAUTH | URI_LOADABLE_BY_ANYONE;
+    *result = URI_NORELATIVE | URI_NOAUTH | URI_LOADABLE_BY_ANYONE | URI_SAFE_TO_LOAD_IN_SECURE_CONTEXT;
     return NS_OK;
 }
 
@@ -215,7 +214,7 @@ nsSafeAboutProtocolHandler::NewURI(const nsACString &aSpec,
 
     NS_TryToSetImmutable(url);
     
-    *result = nsnull;
+    *result = nullptr;
     url.swap(*result);
     return rv;
 }
@@ -223,12 +222,12 @@ nsSafeAboutProtocolHandler::NewURI(const nsACString &aSpec,
 NS_IMETHODIMP
 nsSafeAboutProtocolHandler::NewChannel(nsIURI* uri, nsIChannel* *result)
 {
-    *result = nsnull;
+    *result = nullptr;
     return NS_ERROR_NOT_AVAILABLE;
 }
 
 NS_IMETHODIMP 
-nsSafeAboutProtocolHandler::AllowPort(PRInt32 port, const char *scheme, bool *_retval)
+nsSafeAboutProtocolHandler::AllowPort(int32_t port, const char *scheme, bool *_retval)
 {
     // don't override anything.  
     *_retval = false;
@@ -272,7 +271,7 @@ nsNestedAboutURI::Write(nsIObjectOutputStream* aStream)
     nsresult rv = nsSimpleNestedURI::Write(aStream);
     if (NS_FAILED(rv)) return rv;
 
-    rv = aStream->WriteBoolean(mBaseURI != nsnull);
+    rv = aStream->WriteBoolean(mBaseURI != nullptr);
     if (NS_FAILED(rv)) return rv;
 
     if (mBaseURI) {
@@ -292,31 +291,6 @@ nsNestedAboutURI::Write(nsIObjectOutputStream* aStream)
     return NS_OK;
 }
 
-// nsIIPCSerializable
-bool
-nsNestedAboutURI::Read(const IPC::Message *aMsg, void **aIter)
-{
-    if (!nsSimpleNestedURI::Read(aMsg, aIter))
-        return false;
-
-    IPC::URI uri;
-    if (!ReadParam(aMsg, aIter, &uri))
-        return false;
-
-    mBaseURI = uri;
-
-    return true;
-}
-
-void
-nsNestedAboutURI::Write(IPC::Message *aMsg)
-{
-    nsSimpleNestedURI::Write(aMsg);
-
-    IPC::URI uri(mBaseURI);
-    WriteParam(aMsg, uri);
-}
-
 // nsSimpleURI
 /* virtual */ nsSimpleURI*
 nsNestedAboutURI::StartClone(nsSimpleURI::RefHandlingEnum aRefHandlingMode)
@@ -324,7 +298,7 @@ nsNestedAboutURI::StartClone(nsSimpleURI::RefHandlingEnum aRefHandlingMode)
     // Sadly, we can't make use of nsSimpleNestedURI::StartClone here.
     // However, this function is expected to exactly match that function,
     // aside from the "new ns***URI()" call.
-    NS_ENSURE_TRUE(mInnerURI, nsnull);
+    NS_ENSURE_TRUE(mInnerURI, nullptr);
 
     nsCOMPtr<nsIURI> innerClone;
     nsresult rv = aRefHandlingMode == eHonorRef ?
@@ -332,7 +306,7 @@ nsNestedAboutURI::StartClone(nsSimpleURI::RefHandlingEnum aRefHandlingMode)
         mInnerURI->CloneIgnoringRef(getter_AddRefs(innerClone));
 
     if (NS_FAILED(rv)) {
-        return nsnull;
+        return nullptr;
     }
 
     nsNestedAboutURI* url = new nsNestedAboutURI(innerClone, mBaseURI);

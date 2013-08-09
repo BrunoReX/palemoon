@@ -10,13 +10,14 @@
 #include "nsIInputStream.h"
 #include "nsJAR.h"
 #include "nsTArray.h"
+#include "mozilla/Attributes.h"
 
 /*-------------------------------------------------------------------------
  * Class nsJARInputStream declaration. This class defines the type of the
  * object returned by calls to nsJAR::GetInputStream(filename) for the
  * purpose of reading a file item out of a JAR file. 
  *------------------------------------------------------------------------*/
-class nsJARInputStream : public nsIInputStream
+class nsJARInputStream MOZ_FINAL : public nsIInputStream
 {
   public:
     nsJARInputStream() : 
@@ -40,17 +41,17 @@ class nsJARInputStream : public nsIInputStream
   
   private:
     nsRefPtr<nsZipHandle>  mFd;         // handle for reading
-    PRUint32               mOutSize;    // inflated size 
-    PRUint32               mInCrc;      // CRC as provided by the zipentry
-    PRUint32               mOutCrc;     // CRC as calculated by me
+    uint32_t               mOutSize;    // inflated size 
+    uint32_t               mInCrc;      // CRC as provided by the zipentry
+    uint32_t               mOutCrc;     // CRC as calculated by me
     z_stream               mZs;         // zip data structure
 
     /* For directory reading */
     nsRefPtr<nsJAR>        mJar;        // string reference to zipreader
-    PRUint32               mNameLen;    // length of dirname
+    uint32_t               mNameLen;    // length of dirname
     nsCString              mBuffer;     // storage for generated text of stream
-    PRUint32               mCurPos;     // Current position in buffer
-    PRUint32               mArrPos;     // current position within mArray
+    uint32_t               mCurPos;     // Current position in buffer
+    uint32_t               mArrPos;     // current position within mArray
     nsTArray<nsCString>    mArray;      // array of names in (zip) directory
 
 	typedef enum {
@@ -63,9 +64,9 @@ class nsJARInputStream : public nsIInputStream
 
     JISMode                mMode;		// Modus of the stream
 
-    nsresult ContinueInflate(char* aBuf, PRUint32 aCount, PRUint32* aBytesRead);
-    nsresult ReadDirectory(char* aBuf, PRUint32 aCount, PRUint32* aBytesRead);
-    PRUint32 CopyDataToBuffer(char* &aBuffer, PRUint32 &aCount);
+    nsresult ContinueInflate(char* aBuf, uint32_t aCount, uint32_t* aBytesRead);
+    nsresult ReadDirectory(char* aBuf, uint32_t aCount, uint32_t* aBytesRead);
+    uint32_t CopyDataToBuffer(char* &aBuffer, uint32_t &aCount);
 };
 
 #endif /* nsJARINPUTSTREAM_h__ */

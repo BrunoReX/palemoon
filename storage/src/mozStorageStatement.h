@@ -17,6 +17,7 @@
 #include "mozIStorageStatement.h"
 #include "mozIStorageValueArray.h"
 #include "StorageBaseStatementInternal.h"
+#include "mozilla/Attributes.h"
 
 class nsIXPConnectJSObjectHolder;
 struct sqlite3_stmt;
@@ -26,9 +27,9 @@ namespace storage {
 class StatementJSHelper;
 class Connection;
 
-class Statement : public mozIStorageStatement
-                , public mozIStorageValueArray
-                , public StorageBaseStatementInternal
+class Statement MOZ_FINAL : public mozIStorageStatement
+                          , public mozIStorageValueArray
+                          , public StorageBaseStatementInternal
 {
 public:
   NS_DECL_ISUPPORTS
@@ -71,8 +72,8 @@ private:
     ~Statement();
 
     sqlite3_stmt *mDBStatement;
-    PRUint32 mParamCount;
-    PRUint32 mResultColumnCount;
+    uint32_t mParamCount;
+    uint32_t mResultColumnCount;
     nsTArray<nsCString> mColumnNames;
     bool mExecuting;
 

@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
  
-const EXPORTED_SYMBOLS = [ "BookmarkHTMLUtils" ];
+this.EXPORTED_SYMBOLS = [ "BookmarkHTMLUtils" ];
 
 const Ci = Components.interfaces;
 const Cc = Components.classes;
@@ -30,7 +30,7 @@ const POST_DATA_ANNO = "bookmarkProperties/POSTData";
 
 let serialNumber = 0; // for favicons
 
-let BookmarkHTMLUtils = Object.freeze({
+this.BookmarkHTMLUtils = Object.freeze({
   importFromURL: function importFromFile(aUrlString,
                                          aInitialImport,
                                          aCallback) {
@@ -642,7 +642,8 @@ BookmarkImporter.prototype = {
     if (aIconURI) {
       if (aIconURI.scheme == "chrome") {
         PlacesUtils.favicons.setAndFetchFaviconForPage(aPageURI, aIconURI,
-                                                       false);
+                                                       false,
+                                                       PlacesUtils.favicons.FAVICON_LOAD_NON_PRIVATE);
         return;
       }
     }
@@ -672,7 +673,7 @@ BookmarkImporter.prototype = {
     // case neither the favicon URI nor the favicon data will be saved.  If the
     // bookmark is visited again later, the URI and data will be fetched.
     PlacesUtils.favicons.replaceFaviconDataFromDataURL(faviconURI, aData);
-    PlacesUtils.favicons.setAndFetchFaviconForPage(aPageURI, faviconURI, false);
+    PlacesUtils.favicons.setAndFetchFaviconForPage(aPageURI, faviconURI, false, PlacesUtils.favicons.FAVICON_LOAD_NON_PRIVATE);
   },
 
   /**

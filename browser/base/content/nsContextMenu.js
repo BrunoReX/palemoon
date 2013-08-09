@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+Components.utils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
+
 function nsContextMenu(aXulMenu, aBrowser, aIsShift) {
   this.shouldDisplay = true;
   this.initMenu(aBrowser, aXulMenu, aIsShift);
@@ -148,8 +150,9 @@ nsContextMenu.prototype = {
                        this.onTextInput);
     this.showItem("context-back", shouldShow);
     this.showItem("context-forward", shouldShow);
-    this.showItem("context-reload", shouldShow);
-    this.showItem("context-stop", shouldShow);
+    var shouldShowReload = XULBrowserWindow.stopCommand.getAttribute("disabled") == "true";
+    this.showItem("context-reload", shouldShow && shouldShowReload);
+    this.showItem("context-stop", shouldShow && !shouldShowReload);
     this.showItem("context-sep-stop", shouldShow);
 
     // XXX: Stop is determined in browser.js; the canStop broadcaster is broken
@@ -821,7 +824,7 @@ nsContextMenu.prototype = {
     canvas.height = video.videoHeight;
     var ctxDraw = canvas.getContext("2d");
     ctxDraw.drawImage(video, 0, 0);
-    saveImageURL(canvas.toDataURL("image/jpeg", ""), name, "SaveImageTitle", true, false, document.documentURIObject);
+    saveImageURL(canvas.toDataURL("image/jpeg", ""), name, "SaveImageTitle", true, false, document.documentURIObject, this.target.ownerDocument);
   },
 
   fullScreenVideo: function () {
@@ -962,7 +965,7 @@ nsContextMenu.prototype = {
         if (aStatusCode == NS_ERROR_SAVE_LINK_AS_TIMEOUT) {
           // do it the old fashioned way, which will pick the best filename
           // it can without waiting.
-          saveURL(linkURL, linkText, dialogTitle, bypassCache, false, doc.documentURIObject);
+          saveURL(linkURL, linkText, dialogTitle, bypassCache, false, doc.documentURIObject, doc);
         }
         if (this.extListener)
           this.extListener.onStopRequest(aRequest, aContext, aStatusCode);
@@ -1007,6 +1010,10 @@ nsContextMenu.prototype = {
     var ioService = Cc["@mozilla.org/network/io-service;1"].
                     getService(Ci.nsIIOService);
     var channel = ioService.newChannelFromURI(makeURI(linkURL));
+    if (channel instanceof Ci.nsIPrivateBrowsingChannel) {
+      let docIsPrivate = PrivateBrowsingUtils.isWindowPrivate(doc.defaultView);
+      channel.setPrivate(docIsPrivate);
+    }
     channel.notificationCallbacks = new callbacks();
 
     let flags = Ci.nsIChannel.LOAD_CALL_CONTENT_SNIFFERS;
@@ -1067,12 +1074,12 @@ nsContextMenu.prototype = {
     if (this.onCanvas) {
       // Bypass cache, since it's a data: URL.
       saveImageURL(this.target.toDataURL(), "canvas.png", "SaveImageTitle",
-                   true, false, doc.documentURIObject);
+                   true, false, doc.documentURIObject, doc);
     }
     else if (this.onImage) {
       urlSecurityCheck(this.mediaURL, doc.nodePrincipal);
       saveImageURL(this.mediaURL, null, "SaveImageTitle", false,
-                   false, doc.documentURIObject);
+                   false, doc.documentURIObject, doc);
     }
     else if (this.onVideo || this.onAudio) {
       urlSecurityCheck(this.mediaURL, doc.nodePrincipal);
@@ -1117,7 +1124,7 @@ nsContextMenu.prototype = {
 
     var clipboard = Cc["@mozilla.org/widget/clipboardhelper;1"].
                     getService(Ci.nsIClipboardHelper);
-    clipboard.copyString(addresses);
+    clipboard.copyString(addresses, document);
   },
 
   ///////////////
@@ -1249,12 +1256,12 @@ nsContextMenu.prototype = {
       engineName = ss.defaultEngine.name;
 
     // format "Search <engine> for <selection>" string to show in menu
-    var menuLabel = gNavigatorBundle.getFormattedString("contextMenuSearchText",
+    var menuLabel = gNavigatorBundle.getFormattedString("contextMenuSearch",
                                                         [engineName,
                                                          selectedText]);
     document.getElementById("context-searchselect").label = menuLabel;
     document.getElementById("context-searchselect").accessKey =
-             gNavigatorBundle.getString("contextMenuSearchText.accesskey"); 
+             gNavigatorBundle.getString("contextMenuSearch.accesskey"); 
 
     return true;
   },
@@ -1453,7 +1460,7 @@ nsContextMenu.prototype = {
   copyMediaLocation : function () {
     var clipboard = Cc["@mozilla.org/widget/clipboardhelper;1"].
                     getService(Ci.nsIClipboardHelper);
-    clipboard.copyString(this.mediaURL);
+    clipboard.copyString(this.mediaURL, document);
   },
 
   get imageURL() {

@@ -1,8 +1,10 @@
-# -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
-#
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+Components.utils.import("resource://gre/modules/Services.jsm");
 
 var dialog;     // Quick access to document/form elements.
 var gFindInst;   // nsIWebBrowserFind that we're going to use
@@ -112,7 +114,8 @@ function onAccept()
   {
     if (!dialog.bundle)
       dialog.bundle = document.getElementById("findBundle");
-    window.alert(dialog.bundle.getString("notFoundWarning"));
+    Services.prompt.alert(window, dialog.bundle.getString("notFoundTitle"),
+                                  dialog.bundle.getString("notFoundWarning"));
     dialog.findKey.select();
     dialog.findKey.focus();
   } 

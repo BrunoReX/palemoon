@@ -64,7 +64,7 @@ using namespace mozilla::gfx;
 #endif
 
 static QPaintEngine::Type sDefaultQtPaintEngineType = QPaintEngine::Raster;
-gfxFontconfigUtils *gfxQtPlatform::sFontconfigUtils = nsnull;
+gfxFontconfigUtils *gfxQtPlatform::sFontconfigUtils = nullptr;
 static cairo_user_data_key_t cairo_qt_pixmap_key;
 static void do_qt_pixmap_unref (void *data)
 {
@@ -109,7 +109,7 @@ gfxQtPlatform::gfxQtPlatform()
     nsresult rv;
     // 0 - default gfxQPainterSurface
     // 1 - gfxImageSurface
-    PRInt32 ival = Preferences::GetInt("mozilla.widget-qt.render-mode", DEFAULT_RENDER_MODE);
+    int32_t ival = Preferences::GetInt("mozilla.widget-qt.render-mode", DEFAULT_RENDER_MODE);
 
     const char *envTypeOverride = getenv("MOZ_QT_RENDER_TYPE");
     if (envTypeOverride)
@@ -135,6 +135,7 @@ gfxQtPlatform::gfxQtPlatform()
     if (pixmap.depth() == 16) {
         sOffscreenFormat = gfxASurface::ImageFormatRGB16_565;
     }
+    mScreenDepth = pixmap.depth();
 #if (QT_VERSION < QT_VERSION_CHECK(4,8,0))
     if (pixmap.paintEngine())
         sDefaultQtPaintEngineType = pixmap.paintEngine()->type();
@@ -144,7 +145,7 @@ gfxQtPlatform::gfxQtPlatform()
 gfxQtPlatform::~gfxQtPlatform()
 {
     gfxFontconfigUtils::Shutdown();
-    sFontconfigUtils = nsnull;
+    sFontconfigUtils = nullptr;
 
 #ifdef MOZ_PANGO
     gfxPangoFontGroup::Shutdown();
@@ -181,11 +182,11 @@ gfxQtPlatform::GetXDisplay(QWidget* aWindow)
 #ifdef Q_WS_X11
   return aWindow ? aWindow->x11Info().display() : QX11Info::display();
 #else
-  return nsnull;
+  return nullptr;
 #endif
 #else
   return (Display*)(qApp->platformNativeInterface()->
-    nativeResourceForWindow("display", aWindow ? aWindow->windowHandle() : nsnull));
+    nativeResourceForWindow("display", aWindow ? aWindow->windowHandle() : nullptr));
 #endif
 }
 
@@ -196,13 +197,13 @@ gfxQtPlatform::GetXScreen(QWidget* aWindow)
 #ifdef Q_WS_X11
   return ScreenOfDisplay(GetXDisplay(aWindow), aWindow ? aWindow->x11Info().screen() : QX11Info().screen());
 #else
-  return nsnull;
+  return nullptr;
 #endif
 #else
   return ScreenOfDisplay(GetXDisplay(aWindow),
                          (int)qApp->platformNativeInterface()->
                            nativeResourceForWindow("screen",
-                             aWindow ? aWindow->windowHandle() : nsnull));
+                             aWindow ? aWindow->windowHandle() : nullptr));
 #endif
 }
 #endif
@@ -211,7 +212,7 @@ already_AddRefed<gfxASurface>
 gfxQtPlatform::CreateOffscreenSurface(const gfxIntSize& size,
                                       gfxASurface::gfxContentType contentType)
 {
-    nsRefPtr<gfxASurface> newSurface = nsnull;
+    nsRefPtr<gfxASurface> newSurface = nullptr;
 
     gfxASurface::gfxImageFormat imageFormat = OptimalFormatForContent(contentType);
 
@@ -377,7 +378,7 @@ gfxQtPlatform::ResolveFontName(const nsAString& aFontName,
         return NS_OK;
     }
 
-    nsCAutoString utf8Name = NS_ConvertUTF16toUTF8(aFontName);
+    nsAutoCString utf8Name = NS_ConvertUTF16toUTF8(aFontName);
 
     FcPattern *npat = FcPatternCreate();
     FcPatternAddString(npat, FC_FAMILY, (FcChar8*)utf8Name.get());
@@ -467,7 +468,7 @@ gfxQtPlatform::LookupLocalFont(const gfxProxyFontEntry *aProxyEntry,
 
 gfxFontEntry*
 gfxQtPlatform::MakePlatformFont(const gfxProxyFontEntry *aProxyEntry,
-                                 const PRUint8 *aFontData, PRUint32 aLength)
+                                 const uint8_t *aFontData, uint32_t aLength)
 {
     // passing ownership of the font data to the new font entry
     return gfxPangoFontGroup::NewFontEntry(*aProxyEntry,
@@ -475,7 +476,7 @@ gfxQtPlatform::MakePlatformFont(const gfxProxyFontEntry *aProxyEntry,
 }
 
 bool
-gfxQtPlatform::IsFontFormatSupported(nsIURI *aFontURI, PRUint32 aFormatFlags)
+gfxQtPlatform::IsFontFormatSupported(nsIURI *aFontURI, uint32_t aFormatFlags)
 {
     // check for strange format flags
     NS_ASSERTION(!(aFormatFlags & gfxUserFontSet::FLAG_FORMAT_NOT_USED),
@@ -504,7 +505,7 @@ gfxQtPlatform::IsFontFormatSupported(nsIURI *aFontURI, PRUint32 aFormatFlags)
 qcms_profile*
 gfxQtPlatform::GetPlatformCMSOutputProfile()
 {
-    return nsnull;
+    return nullptr;
 }
 
 #ifndef MOZ_PANGO
@@ -522,7 +523,7 @@ gfxQtPlatform::FindFontFamily(const nsAString& aName)
 
     nsRefPtr<FontFamily> ff;
     if (!gPlatformFonts->Get(name, &ff)) {
-        return nsnull;
+        return nullptr;
     }
     return ff.get();
 }
@@ -532,7 +533,7 @@ gfxQtPlatform::FindFontEntry(const nsAString& aName, const gfxFontStyle& aFontSt
 {
     nsRefPtr<FontFamily> ff = FindFontFamily(aName);
     if (!ff)
-        return nsnull;
+        return nullptr;
 
     return ff->FindFontEntry(aFontStyle);
 }
@@ -548,18 +549,18 @@ FindFontForCharProc(nsStringHashKey::KeyType aKey,
 }
 
 already_AddRefed<gfxFont>
-gfxQtPlatform::FindFontForChar(PRUint32 aCh, gfxFont *aFont)
+gfxQtPlatform::FindFontForChar(uint32_t aCh, gfxFont *aFont)
 {
     if (!gPlatformFonts || !gCodepointsWithNoFonts)
-        return nsnull;
+        return nullptr;
 
     // is codepoint with no matching font? return null immediately
     if (gCodepointsWithNoFonts->test(aCh)) {
-        return nsnull;
+        return nullptr;
     }
 
     GlobalFontMatch data(aCh, GetScriptCode(aCh),
-                         (aFont ? aFont->GetStyle() : nsnull));
+                         (aFont ? aFont->GetStyle() : nullptr));
 
     // find fonts that support the character
     gPlatformFonts->Enumerate(FindFontForCharProc, &data);
@@ -575,7 +576,7 @@ gfxQtPlatform::FindFontForChar(PRUint32 aCh, gfxFont *aFont)
     // no match? add to set of non-matching codepoints
     gCodepointsWithNoFonts->set(aCh);
 
-    return nsnull;
+    return nullptr;
 }
 
 bool
@@ -592,11 +593,11 @@ gfxQtPlatform::SetPrefFontEntries(const nsCString& aKey, nsTArray<nsRefPtr<gfxFo
 
 #endif
 
-PRInt32
+int32_t
 gfxQtPlatform::GetDPI()
 {
     QDesktopWidget* rootWindow = qApp->desktop();
-    PRInt32 dpi = rootWindow->logicalDpiY(); // y-axis DPI for fonts
+    int32_t dpi = rootWindow->logicalDpiY(); // y-axis DPI for fonts
     return dpi <= 0 ? 96 : dpi;
 }
 
@@ -606,10 +607,9 @@ gfxQtPlatform::GetOffscreenFormat()
     return sOffscreenFormat;
 }
 
-bool
-gfxQtPlatform::SupportsAzure(BackendType& aBackend)
+int
+gfxQtPlatform::GetScreenDepth() const
 {
-  aBackend = BACKEND_SKIA;
-  return true;
+    return mScreenDepth;
 }
 

@@ -15,6 +15,7 @@
 #include "mozAutoDocUpdate.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 class nsHTMLHeadingElement : public nsGenericHTMLElement,
                              public nsIDOMHTMLHeadingElement
@@ -27,18 +28,18 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLHeadingElement
   NS_DECL_NSIDOMHTMLHEADINGELEMENT
 
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
@@ -63,8 +64,8 @@ nsHTMLHeadingElement::~nsHTMLHeadingElement()
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLHeadingElement, nsGenericElement) 
-NS_IMPL_RELEASE_INHERITED(nsHTMLHeadingElement, nsGenericElement) 
+NS_IMPL_ADDREF_INHERITED(nsHTMLHeadingElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLHeadingElement, Element)
 
 
 DOMCI_NODE_DATA(HTMLHeadingElement, nsHTMLHeadingElement)
@@ -85,7 +86,7 @@ NS_IMPL_STRING_ATTR(nsHTMLHeadingElement, Align, align)
 
 
 bool
-nsHTMLHeadingElement::ParseAttribute(PRInt32 aNamespaceID,
+nsHTMLHeadingElement::ParseAttribute(int32_t aNamespaceID,
                                      nsIAtom* aAttribute,
                                      const nsAString& aValue,
                                      nsAttrValue& aResult)

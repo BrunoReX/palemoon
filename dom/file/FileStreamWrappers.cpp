@@ -9,6 +9,7 @@
 #include "nsIFileStorage.h"
 #include "nsISeekableStream.h"
 #include "nsIStandardFileStream.h"
+#include "mozilla/Attributes.h"
 
 #include "FileHelper.h"
 
@@ -16,15 +17,15 @@ USING_FILE_NAMESPACE
 
 namespace {
 
-class ProgressRunnable : public nsIRunnable
+class ProgressRunnable MOZ_FINAL : public nsIRunnable
 {
 public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIRUNNABLE
 
   ProgressRunnable(FileHelper* aFileHelper,
-                   PRUint64 aProgress,
-                   PRUint64 aProgressMax)
+                   uint64_t aProgress,
+                   uint64_t aProgressMax)
   : mFileHelper(aFileHelper),
     mProgress(aProgress),
     mProgressMax(aProgressMax)
@@ -33,11 +34,11 @@ public:
 
 private:
   nsRefPtr<FileHelper> mFileHelper;
-  PRUint64 mProgress;
-  PRUint64 mProgressMax;
+  uint64_t mProgress;
+  uint64_t mProgressMax;
 };
 
-class CloseRunnable : public nsIRunnable
+class CloseRunnable MOZ_FINAL : public nsIRunnable
 {
 public:
   NS_DECL_ISUPPORTS
@@ -51,7 +52,7 @@ private:
   nsRefPtr<FileHelper> mFileHelper;
 };
 
-class DestroyRunnable : public nsIRunnable
+class DestroyRunnable MOZ_FINAL : public nsIRunnable
 {
 public:
   NS_DECL_ISUPPORTS
@@ -69,9 +70,9 @@ private:
 
 FileStreamWrapper::FileStreamWrapper(nsISupports* aFileStream,
                                      FileHelper* aFileHelper,
-                                     PRUint64 aOffset,
-                                     PRUint64 aLimit,
-                                     PRUint32 aFlags)
+                                     uint64_t aOffset,
+                                     uint64_t aLimit,
+                                     uint32_t aFlags)
 : mFileStream(aFileStream),
   mFileHelper(aFileHelper),
   mOffset(aOffset),
@@ -105,9 +106,9 @@ NS_IMPL_THREADSAFE_ISUPPORTS0(FileStreamWrapper)
 
 FileInputStreamWrapper::FileInputStreamWrapper(nsISupports* aFileStream,
                                                FileHelper* aFileHelper,
-                                               PRUint64 aOffset,
-                                               PRUint64 aLimit,
-                                               PRUint32 aFlags)
+                                               uint64_t aOffset,
+                                               uint64_t aLimit,
+                                               uint32_t aFlags)
 : FileStreamWrapper(aFileStream, aFileHelper, aOffset, aLimit, aFlags)
 {
   mInputStream = do_QueryInterface(mFileStream);
@@ -138,7 +139,7 @@ FileInputStreamWrapper::Close()
 }
 
 NS_IMETHODIMP
-FileInputStreamWrapper::Available(PRUint32* _retval)
+FileInputStreamWrapper::Available(uint64_t* _retval)
 {
   // Performing sync IO on the main thread is generally not allowed.
   // However, the input stream wrapper is also used to track reads performed by
@@ -157,7 +158,7 @@ FileInputStreamWrapper::Available(PRUint32* _retval)
 }
 
 NS_IMETHODIMP
-FileInputStreamWrapper::Read(char* aBuf, PRUint32 aCount, PRUint32* _retval)
+FileInputStreamWrapper::Read(char* aBuf, uint32_t aCount, uint32_t* _retval)
 {
   NS_ASSERTION(!NS_IsMainThread(), "Wrong thread!");
 
@@ -166,7 +167,7 @@ FileInputStreamWrapper::Read(char* aBuf, PRUint32 aCount, PRUint32* _retval)
   if (mFirstTime) {
     mFirstTime = false;
 
-    if (mOffset != LL_MAXUINT) {
+    if (mOffset != UINT64_MAX) {
       nsCOMPtr<nsISeekableStream> seekable = do_QueryInterface(mInputStream);
       if (seekable) {
         rv = seekable->Seek(nsISeekableStream::NS_SEEK_SET, mOffset);
@@ -177,7 +178,7 @@ FileInputStreamWrapper::Read(char* aBuf, PRUint32 aCount, PRUint32* _retval)
     mOffset = 0;
   }
 
-  PRUint64 max = mLimit - mOffset;
+  uint64_t max = mLimit - mOffset;
   if (max == 0) {
     *_retval = 0;
     return NS_OK;
@@ -207,7 +208,7 @@ FileInputStreamWrapper::Read(char* aBuf, PRUint32 aCount, PRUint32* _retval)
 
 NS_IMETHODIMP
 FileInputStreamWrapper::ReadSegments(nsWriteSegmentFun aWriter, void* aClosure,
-                                     PRUint32 aCount, PRUint32* _retval)
+                                     uint32_t aCount, uint32_t* _retval)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -221,12 +222,12 @@ FileInputStreamWrapper::IsNonBlocking(bool* _retval)
 
 FileOutputStreamWrapper::FileOutputStreamWrapper(nsISupports* aFileStream,
                                                  FileHelper* aFileHelper,
-                                                 PRUint64 aOffset,
-                                                 PRUint64 aLimit,
-                                                 PRUint32 aFlags)
+                                                 uint64_t aOffset,
+                                                 uint64_t aLimit,
+                                                 uint32_t aFlags)
 : FileStreamWrapper(aFileStream, aFileHelper, aOffset, aLimit, aFlags)
 #ifdef DEBUG
-, mWriteThread(nsnull)
+, mWriteThread(nullptr)
 #endif
 {
   mOutputStream = do_QueryInterface(mFileStream);
@@ -275,8 +276,8 @@ FileOutputStreamWrapper::Close()
 }
 
 NS_IMETHODIMP
-FileOutputStreamWrapper::Write(const char* aBuf, PRUint32 aCount,
-                               PRUint32* _retval)
+FileOutputStreamWrapper::Write(const char* aBuf, uint32_t aCount,
+                               uint32_t* _retval)
 {
   NS_ASSERTION(!NS_IsMainThread(), "Wrong thread!");
 
@@ -292,7 +293,7 @@ FileOutputStreamWrapper::Write(const char* aBuf, PRUint32 aCount,
 
     nsCOMPtr<nsISeekableStream> seekable = do_QueryInterface(mOutputStream);
     if (seekable) {
-      if (mOffset == LL_MAXUINT) {
+      if (mOffset == UINT64_MAX) {
         rv = seekable->Seek(nsISeekableStream::NS_SEEK_END, 0);
       }
       else {
@@ -304,7 +305,7 @@ FileOutputStreamWrapper::Write(const char* aBuf, PRUint32 aCount,
     mOffset = 0;
   }
 
-  PRUint64 max = mLimit - mOffset;
+  uint64_t max = mLimit - mOffset;
   if (max == 0) {
     *_retval = 0;
     return NS_OK;
@@ -337,15 +338,15 @@ FileOutputStreamWrapper::Flush()
 
 NS_IMETHODIMP
 FileOutputStreamWrapper::WriteFrom(nsIInputStream* aFromStream,
-                                   PRUint32 aCount, PRUint32* _retval)
+                                   uint32_t aCount, uint32_t* _retval)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
 FileOutputStreamWrapper::WriteSegments(nsReadSegmentFun aReader,
-                                       void* aClosure, PRUint32 aCount,
-                                       PRUint32* _retval)
+                                       void* aClosure, uint32_t aCount,
+                                       uint32_t* _retval)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -365,7 +366,7 @@ ProgressRunnable::Run()
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
   mFileHelper->OnStreamProgress(mProgress, mProgressMax);
-  mFileHelper = nsnull;
+  mFileHelper = nullptr;
 
   return NS_OK;
 }
@@ -378,7 +379,7 @@ CloseRunnable::Run()
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
   mFileHelper->OnStreamClose();
-  mFileHelper = nsnull;
+  mFileHelper = nullptr;
 
   return NS_OK;
 }
@@ -391,7 +392,7 @@ DestroyRunnable::Run()
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
   mFileHelper->OnStreamDestroy();
-  mFileHelper = nsnull;
+  mFileHelper = nullptr;
 
   return NS_OK;
 }

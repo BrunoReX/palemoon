@@ -51,11 +51,11 @@ gfxDWriteShaper::ShapeWord(gfxContext *aContext,
         return false;
     }
 
-    PRUint32 appUnitsPerDevPixel = aShapedWord->AppUnitsPerDevUnit();
+    uint32_t appUnitsPerDevPixel = aShapedWord->AppUnitsPerDevUnit();
 
     UINT32 maxGlyphs = 0;
 trymoreglyphs:
-    if ((PR_UINT32_MAX - 3 * length / 2 + 16) < maxGlyphs) {
+    if ((UINT32_MAX - 3 * length / 2 + 16) < maxGlyphs) {
         // This isn't going to work, we're going to cross the UINT32 upper
         // limit. Give up.
         NS_WARNING("Shaper needs to generate more than 2^32 glyphs?!");
@@ -114,7 +114,7 @@ trymoreglyphs:
                                           font->GetFontFace(),
                                           font->GetAdjustedSize(),
                                           1.0,
-                                          nsnull,
+                                          nullptr,
                                           FALSE,
                                           FALSE,
                                           FALSE,
@@ -153,19 +153,19 @@ trymoreglyphs:
     nsAutoTArray<gfxTextRun::DetailedGlyph,1> detailedGlyphs;
 
     for (unsigned int c = 0; c < length; c++) {
-        PRUint32 k = clusters[c];
-        PRUint32 absC = c;
+        uint32_t k = clusters[c];
+        uint32_t absC = c;
 
         if (c > 0 && k == clusters[c - 1]) {
             g.SetComplex(aShapedWord->IsClusterStart(absC), false, 0);
-            aShapedWord->SetGlyphs(absC, g, nsnull);
+            aShapedWord->SetGlyphs(absC, g, nullptr);
             // This is a cluster continuation. No glyph here.
             continue;
         }
 
         // Count glyphs for this character
-        PRUint32 glyphCount = actualGlyphs - k;
-        PRUint32 nextClusterOffset;
+        uint32_t glyphCount = actualGlyphs - k;
+        uint32_t nextClusterOffset;
         for (nextClusterOffset = c + 1; 
             nextClusterOffset < length; ++nextClusterOffset) {
             if (clusters[nextClusterOffset] > k) {
@@ -173,7 +173,7 @@ trymoreglyphs:
                 break;
             }
         }
-        PRInt32 advance = (PRInt32)(advances[k] * appUnitsPerDevPixel);
+        int32_t advance = (int32_t)(advances[k] * appUnitsPerDevPixel);
         if (glyphCount == 1 && advance >= 0 &&
             glyphOffsets[k].advanceOffset == 0 &&
             glyphOffsets[k].ascenderOffset == 0 &&
@@ -194,7 +194,7 @@ trymoreglyphs:
             for (unsigned int z = 0; z < glyphCount; z++) {
                 detailedGlyphs[z].mGlyphID = indices[k + z];
                 detailedGlyphs[z].mAdvance = 
-                    (PRInt32)(advances[k + z]
+                    (int32_t)(advances[k + z]
                        * appUnitsPerDevPixel);
                 if (readingDirection == 
                     DWRITE_READING_DIRECTION_RIGHT_TO_LEFT) {

@@ -12,6 +12,7 @@
 #include "nsIPrintSettings.h"
 #include "nsISupportsPrimitives.h"
 #include <windows.h>
+#include "mozilla/Attributes.h"
 
 class nsIWidget;
 
@@ -25,8 +26,8 @@ public:
   NS_IMETHOD GetSurfaceForPrinter(gfxASurface **surface);
   NS_IMETHOD BeginDocument(PRUnichar*  aTitle, 
                            PRUnichar*  aPrintToFileName,
-                           PRInt32     aStartPage, 
-                           PRInt32     aEndPage) { return NS_OK; }
+                           int32_t     aStartPage, 
+                           int32_t     aEndPage) { return NS_OK; }
   NS_IMETHOD EndDocument() { return NS_OK; }
   NS_IMETHOD BeginPage() { return NS_OK; }
   NS_IMETHOD EndPage() { return NS_OK; }
@@ -43,7 +44,7 @@ public:
   void GetDevMode(LPDEVMODEW &aDevMode);
 
   // helper functions
-  nsresult GetDataFromPrinter(const PRUnichar * aName, nsIPrintSettings* aPS = nsnull);
+  nsresult GetDataFromPrinter(const PRUnichar * aName, nsIPrintSettings* aPS = nullptr);
 
   static nsresult SetPrintSettingsFromDevMode(nsIPrintSettings* aPrintSettings, 
                                               LPDEVMODEW         aDevMode);
@@ -69,7 +70,7 @@ protected:
 //-------------------------------------------------------------------------
 // Printer Enumerator
 //-------------------------------------------------------------------------
-class nsPrinterEnumeratorWin : public nsIPrinterEnumerator
+class nsPrinterEnumeratorWin MOZ_FINAL : public nsIPrinterEnumerator
 {
 public:
   nsPrinterEnumeratorWin();

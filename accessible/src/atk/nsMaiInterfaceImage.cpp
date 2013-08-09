@@ -8,6 +8,7 @@
 
 #include "AccessibleWrap.h"
 #include "ImageAccessible.h"
+#include "mozilla/Likely.h"
 #include "nsMai.h"
 
 using namespace mozilla;
@@ -25,7 +26,7 @@ getImagePositionCB(AtkImage* aImage, gint* aAccX, gint* aAccY,
     return;
 
   ImageAccessible* image = accWrap->AsImage();
-  PRUint32 geckoCoordType = (aCoordType == ATK_XY_WINDOW) ?
+  uint32_t geckoCoordType = (aCoordType == ATK_XY_WINDOW) ?
     nsIAccessibleCoordinateType::COORDTYPE_WINDOW_RELATIVE :
     nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE;
   // Returned in screen coordinates
@@ -53,7 +54,7 @@ void
 imageInterfaceInitCB(AtkImageIface* aIface)
 {
   NS_ASSERTION(aIface, "no interface!");
-  if (NS_UNLIKELY(!aIface))
+  if (MOZ_UNLIKELY(!aIface))
     return;
 
   aIface->get_image_position = getImagePositionCB;

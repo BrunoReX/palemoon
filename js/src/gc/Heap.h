@@ -16,6 +16,7 @@
 #include "jsutil.h"
 
 #include "ds/BitArray.h"
+#include "js/HeapAPI.h"
 
 struct JSCompartment;
 
@@ -66,7 +67,8 @@ enum AllocKind {
     FINALIZE_SHORT_STRING,
     FINALIZE_STRING,
     FINALIZE_EXTERNAL_STRING,
-    FINALIZE_LAST = FINALIZE_EXTERNAL_STRING
+    FINALIZE_IONCODE,
+    FINALIZE_LAST = FINALIZE_IONCODE
 };
 
 static const unsigned FINALIZE_LIMIT = FINALIZE_LAST + 1;
@@ -101,27 +103,6 @@ struct Cell
     inline bool isAligned() const;
 #endif
 };
-
-/*
- * Page size is 4096 by default, except for SPARC, where it is 8192.
- * Note: Do not use JS_CPU_SPARC here, this header is used outside JS.
- * Bug 692267: Move page size definition to gc/Memory.h and include it
- *             directly once jsgc.h is no longer an installed header.
- */
-#if defined(SOLARIS) && (defined(__sparc) || defined(__sparcv9))
-const size_t PageShift = 13;
-#else
-const size_t PageShift = 12;
-#endif
-const size_t PageSize = size_t(1) << PageShift;
-
-const size_t ChunkShift = 20;
-const size_t ChunkSize = size_t(1) << ChunkShift;
-const size_t ChunkMask = ChunkSize - 1;
-
-const size_t ArenaShift = PageShift;
-const size_t ArenaSize = PageSize;
-const size_t ArenaMask = ArenaSize - 1;
 
 /*
  * This is the maximum number of arenas we allow in the FreeCommitted state
@@ -184,7 +165,7 @@ struct FreeSpan
      * there as offsets from the arena start.
      */
     static size_t encodeOffsets(size_t firstOffset, size_t lastOffset) {
-        /* Check that we can pack the offsets into uint16. */
+        /* Check that we can pack the offsets into uint16_t. */
         JS_STATIC_ASSERT(ArenaShift < 16);
         JS_ASSERT(firstOffset <= ArenaSize);
         JS_ASSERT(lastOffset < ArenaSize);
@@ -396,11 +377,9 @@ struct FreeSpan
 };
 
 /* Every arena has a header. */
-struct ArenaHeader
+struct ArenaHeader : public JS::shadow::ArenaHeader
 {
     friend struct FreeLists;
-
-    JSCompartment   *compartment;
 
     /*
      * ArenaHeader::next has two purposes: when unallocated, it points to the
@@ -423,38 +402,47 @@ struct ArenaHeader
      * chunk. The latter allows to quickly check if the arena is allocated
      * during the conservative GC scanning without searching the arena in the
      * list.
+     *
+     * We use 8 bits for the allocKind so the compiler can use byte-level memory
+     * instructions to access it.
      */
     size_t       allocKind          : 8;
 
     /*
-     * When recursive marking uses too much stack the marking is delayed and
-     * the corresponding arenas are put into a stack using the following field
-     * as a linkage. To distinguish the bottom of the stack from the arenas
-     * not present in the stack we use an extra flag to tag arenas on the
-     * stack.
+     * When collecting we sometimes need to keep an auxillary list of arenas,
+     * for which we use the following fields.  This happens for several reasons:
+     *
+     * When recursive marking uses too much stack the marking is delayed and the
+     * corresponding arenas are put into a stack. To distinguish the bottom of
+     * the stack from the arenas not present in the stack we use the
+     * markOverflow flag to tag arenas on the stack.
      *
      * Delayed marking is also used for arenas that we allocate into during an
      * incremental GC. In this case, we intend to mark all the objects in the
      * arena, and it's faster to do this marking in bulk.
      *
-     * To minimize the ArenaHeader size we record the next delayed marking
-     * linkage as arenaAddress() >> ArenaShift and pack it with the allocKind
-     * field and hasDelayedMarking flag. We use 8 bits for the allocKind, not
-     * ArenaShift - 1, so the compiler can use byte-level memory instructions
-     * to access it.
+     * When sweeping we keep track of which arenas have been allocated since the
+     * end of the mark phase.  This allows us to tell whether a pointer to an
+     * unmarked object is yet to be finalized or has already been reallocated.
+     * We set the allocatedDuringIncremental flag for this and clear it at the
+     * end of the sweep phase.
+     *
+     * To minimize the ArenaHeader size we record the next linkage as
+     * arenaAddress() >> ArenaShift and pack it with the allocKind field and the
+     * flags.
      */
   public:
     size_t       hasDelayedMarking  : 1;
     size_t       allocatedDuringIncremental : 1;
     size_t       markOverflow : 1;
-    size_t       nextDelayedMarking : JS_BITS_PER_WORD - 8 - 1 - 1 - 1;
+    size_t       auxNextLink : JS_BITS_PER_WORD - 8 - 1 - 1 - 1;
 
     static void staticAsserts() {
         /* We must be able to fit the allockind into uint8_t. */
         JS_STATIC_ASSERT(FINALIZE_LIMIT <= 255);
 
         /*
-         * nextDelayedMarkingpacking assumes that ArenaShift has enough bits
+         * auxNextLink packing assumes that ArenaShift has enough bits
          * to cover allocKind and hasDelayedMarking.
          */
         JS_STATIC_ASSERT(ArenaShift >= 8 + 1 + 1 + 1);
@@ -487,7 +475,7 @@ struct ArenaHeader
         markOverflow = 0;
         allocatedDuringIncremental = 0;
         hasDelayedMarking = 0;
-        nextDelayedMarking = 0;
+        auxNextLink = 0;
     }
 
     inline uintptr_t arenaAddress() const;
@@ -519,6 +507,11 @@ struct ArenaHeader
 
     inline ArenaHeader *getNextDelayedMarking() const;
     inline void setNextDelayedMarking(ArenaHeader *aheader);
+    inline void unsetDelayedMarking();
+
+    inline ArenaHeader *getNextAllocDuringSweep() const;
+    inline void setNextAllocDuringSweep(ArenaHeader *aheader);
+    inline void unsetAllocDuringSweep();
 };
 
 struct Arena
@@ -700,8 +693,7 @@ struct ChunkBitmap
         PodArrayZero(bitmap);
     }
 
-#ifdef DEBUG
-    bool noBitsSet(ArenaHeader *aheader) {
+    uintptr_t *arenaBits(ArenaHeader *aheader) {
         /*
          * We assume that the part of the bitmap corresponding to the arena
          * has the exact number of words so we do not need to deal with a word
@@ -711,13 +703,8 @@ struct ChunkBitmap
 
         uintptr_t *word, unused;
         getMarkWordAndMask(reinterpret_cast<Cell *>(aheader->address()), BLACK, &word, &unused);
-        for (size_t i = 0; i != ArenaBitmapWords; i++) {
-            if (word[i])
-                return false;
-        }
-        return true;
+        return word;
     }
-#endif
 };
 
 JS_STATIC_ASSERT(ArenaBitmapBytes * ArenasPerChunk == sizeof(ChunkBitmap));
@@ -888,15 +875,48 @@ ArenaHeader::setFirstFreeSpan(const FreeSpan *span)
 inline ArenaHeader *
 ArenaHeader::getNextDelayedMarking() const
 {
-    return &reinterpret_cast<Arena *>(nextDelayedMarking << ArenaShift)->aheader;
+    JS_ASSERT(hasDelayedMarking);
+    return &reinterpret_cast<Arena *>(auxNextLink << ArenaShift)->aheader;
 }
 
 inline void
 ArenaHeader::setNextDelayedMarking(ArenaHeader *aheader)
 {
     JS_ASSERT(!(uintptr_t(aheader) & ArenaMask));
+    JS_ASSERT(!auxNextLink && !hasDelayedMarking);
     hasDelayedMarking = 1;
-    nextDelayedMarking = aheader->arenaAddress() >> ArenaShift;
+    auxNextLink = aheader->arenaAddress() >> ArenaShift;
+}
+
+inline void
+ArenaHeader::unsetDelayedMarking()
+{
+    JS_ASSERT(hasDelayedMarking);
+    hasDelayedMarking = 0;
+    auxNextLink = 0;
+}
+
+inline ArenaHeader *
+ArenaHeader::getNextAllocDuringSweep() const
+{
+    JS_ASSERT(allocatedDuringIncremental);
+    return &reinterpret_cast<Arena *>(auxNextLink << ArenaShift)->aheader;
+}
+
+inline void
+ArenaHeader::setNextAllocDuringSweep(ArenaHeader *aheader)
+{
+    JS_ASSERT(!auxNextLink && !allocatedDuringIncremental);
+    allocatedDuringIncremental = 1;
+    auxNextLink = aheader->arenaAddress() >> ArenaShift;
+}
+
+inline void
+ArenaHeader::unsetAllocDuringSweep()
+{
+    JS_ASSERT(allocatedDuringIncremental);
+    allocatedDuringIncremental = 0;
+    auxNextLink = 0;
 }
 
 JS_ALWAYS_INLINE void
@@ -978,7 +998,6 @@ Cell::isAligned() const
 #endif
 
 } /* namespace gc */
-
 } /* namespace js */
 
 #endif /* gc_heap_h___ */

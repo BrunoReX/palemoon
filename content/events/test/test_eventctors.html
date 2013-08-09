@@ -69,6 +69,36 @@ document.dispatchEvent(e);
 is(e.eventPhase, Event.NONE, "Wrong event phase");
 is(receivedEvent, e, "Wrong event!");
 
+e = new Event("hello", null);
+ok(e.type, "hello", "Wrong event type!");
+ok(!e.isTrusted, "Event shouldn't be trusted!");
+ok(!e.bubbles, "Event shouldn't bubble!");
+ok(!e.cancelable, "Event shouldn't be cancelable!");
+is(e.eventPhase, Event.NONE, "Wrong event phase");
+document.dispatchEvent(e);
+is(e.eventPhase, Event.NONE, "Wrong event phase");
+is(receivedEvent, e, "Wrong event!");
+
+e = new Event("hello", undefined);
+ok(e.type, "hello", "Wrong event type!");
+ok(!e.isTrusted, "Event shouldn't be trusted!");
+ok(!e.bubbles, "Event shouldn't bubble!");
+ok(!e.cancelable, "Event shouldn't be cancelable!");
+is(e.eventPhase, Event.NONE, "Wrong event phase");
+document.dispatchEvent(e);
+is(e.eventPhase, Event.NONE, "Wrong event phase");
+is(receivedEvent, e, "Wrong event!");
+
+e = new Event("hello", {});
+ok(e.type, "hello", "Wrong event type!");
+ok(!e.isTrusted, "Event shouldn't be trusted!");
+ok(!e.bubbles, "Event shouldn't bubble!");
+ok(!e.cancelable, "Event shouldn't be cancelable!");
+is(e.eventPhase, Event.NONE, "Wrong event phase");
+document.dispatchEvent(e);
+is(e.eventPhase, Event.NONE, "Wrong event phase");
+is(receivedEvent, e, "Wrong event!");
+
 e = new Event("hello", { bubbles: true, cancelable: true });
 ok(e.type, "hello", "Wrong event type!");
 ok(!e.isTrusted, "Event shouldn't be trusted!");
@@ -307,6 +337,24 @@ try {
 ok(ex, "First parameter is required!");
 ex = false;
 
+try {
+  e = new UIEvent("foo", { view: {} });
+  e.view.onunload;
+} catch(exp) {
+  ex = true;
+}
+ok(ex, "{} isn't a valid value.");
+ex = false;
+
+try {
+  e = new UIEvent("foo", { view: null });
+} catch(exp) {
+  ex = true;
+}
+ok(!ex, "null is a valid value.");
+is(e.view, null);
+ex = false;
+
 e = new UIEvent("hello");
 ok(e.type, "hello", "Wrong event type!");
 ok(!e.isTrusted, "Event shouldn't be trusted!");
@@ -395,6 +443,24 @@ is(e.value, 1, "value should be 1");
 document.dispatchEvent(e);
 is(receivedEvent, e, "Wrong event!");
 
+// DeviceOrientationEvent
+e = new DeviceOrientationEvent("hello");
+ok(e.type, "hello", "Wrong event type!");
+ok(!e.isTrusted, "Event should not be trusted");
+is(e.alpha, 0);
+is(e.beta, 0);
+is(e.gamma, 0);
+is(e.absolute, false);
+
+e = new DeviceOrientationEvent("hello", { alpha: 1, beta: 2, gamma: 3, absolute: true } );
+ok(e.type, "hello", "Wrong event type!");
+ok(!e.isTrusted, "Event should not be trusted");
+is(e.alpha, 1);
+is(e.beta, 2);
+is(e.gamma, 3);
+is(e.absolute, true);
+document.dispatchEvent(e);
+is(receivedEvent, e, "Wrong event!");
 
 // MouseEvent
 
@@ -403,16 +469,16 @@ try {
 } catch(exp) {
   ex = true;
 }
-ok(ex, "First parameter is required!");
+ok(ex, "MouseEvent: First parameter is required!");
 ex = false;
 
 e = new MouseEvent("hello");
-ok(e.type, "hello", "Wrong event type!");
-ok(!e.isTrusted, "Event shouldn't be trusted!");
-ok(!e.bubbles, "Event shouldn't bubble!");
-ok(!e.cancelable, "Event shouldn't be cancelable!");
+ok(e.type, "hello", "MouseEvent: Wrong event type!");
+ok(!e.isTrusted, "MouseEvent: Event shouldn't be trusted!");
+ok(!e.bubbles, "MouseEvent: Event shouldn't bubble!");
+ok(!e.cancelable, "MouseEvent: Event shouldn't be cancelable!");
 document.dispatchEvent(e);
-is(receivedEvent, e, "Wrong event!");
+is(receivedEvent, e, "MouseEvent: Wrong event!");
 
 var mouseEventProps =
 [ { screenX: 0 },
@@ -446,7 +512,7 @@ var testProps =
 var defaultMouseEventValues = {};
 for (var i = 0; i < mouseEventProps.length; ++i) {
   for (prop in mouseEventProps[i]) {
-    ok(prop in e, "MouseEvent doesn't have property " + prop + "!");
+    ok(prop in e, "MouseEvent: MouseEvent doesn't have property " + prop + "!");
     defaultMouseEventValues[prop] = mouseEventProps[i][prop]; 
   }
 }
@@ -456,9 +522,113 @@ while (testProps.length) {
   e = new MouseEvent("foo", p);
   for (var def in defaultMouseEventValues) {
     if (!(def in p)) {
-      is(e[def], defaultMouseEventValues[def], "Wrong default value for " + def + "!");
+      is(e[def], defaultMouseEventValues[def],
+         "MouseEvent: Wrong default value for " + def + "!");
     } else {
-      is(e[def], p[def], "Wrong event init value for " + def + "!");
+      is(e[def], p[def], "MouseEvent: Wrong event init value for " + def + "!");
+    }
+  }
+}
+
+// PopupBlockedEvent
+
+try {
+  e = new PopupBlockedEvent();
+} catch(exp) {
+  ex = true;
+}
+ok(ex, "PopupBlockedEvent: First parameter is required!");
+ex = false;
+
+e = new PopupBlockedEvent("hello");
+ok(e.type, "hello", "PopupBlockedEvent: Wrong event type!");
+ok(!e.isTrusted, "PopupBlockedEvent: Event shouldn't be trusted!");
+ok(!e.bubbles, "PopupBlockedEvent: Event shouldn't bubble!");
+ok(!e.cancelable, "PopupBlockedEvent: Event shouldn't be cancelable!");
+document.dispatchEvent(e);
+is(receivedEvent, e, "PopupBlockedEvent: Wrong event!");
+
+e = new PopupBlockedEvent("hello",
+                          { requestingWindow: window,
+                            popupWindowFeatures: "features",
+                            popupWindowName: "name"
+                          });
+is(e.requestingWindow, window);
+is(e.popupWindowFeatures, "features");
+is(e.popupWindowName, "name");
+
+// WheelEvent
+
+try {
+  e = new WheelEvent();
+} catch(exp) {
+  ex = true;
+}
+ok(ex, "WheelEvent: First parameter is required!");
+ex = false;
+
+e = new WheelEvent("hello");
+ok(e.type, "hello", "WheelEvent: Wrong event type!");
+ok(!e.isTrusted, "WheelEvent: Event shouldn't be trusted!");
+ok(!e.bubbles, "WheelEvent: Event shouldn't bubble!");
+ok(!e.cancelable, "WheelEvent: Event shouldn't be cancelable!");
+document.dispatchEvent(e);
+is(receivedEvent, e, "WheelEvent: Wrong event!");
+
+var wheelEventProps =
+[ { screenX: 0 },
+  { screenY: 0 },
+  { clientX: 0 },
+  { clientY: 0 },
+  { ctrlKey: false },
+  { shiftKey: false },
+  { altKey: false },
+  { metaKey: false },
+  { button: 0 },
+  { buttons: 0 },
+  { relatedTarget: null },
+  { deltaX: 0.0 },
+  { deltaY: 0.0 },
+  { deltaZ: 0.0 },
+  { deltaMode: 0 }
+];
+
+var testWheelProps =
+[
+  { screenX: 1 },
+  { screenY: 2 },
+  { clientX: 3 },
+  { clientY: 4 },
+  { ctrlKey: true },
+  { shiftKey: true },
+  { altKey: true },
+  { metaKey: true },
+  { button: 5 },
+  { buttons: 6 },
+  { relatedTarget: window },
+  { deltaX: 7.8 },
+  { deltaY: 9.1 },
+  { deltaZ: 2.3 },
+  { deltaMode: 4 }
+];
+
+var defaultWheelEventValues = {};
+for (var i = 0; i < wheelEventProps.length; ++i) {
+  for (prop in wheelEventProps[i]) {
+    ok(prop in e, "WheelEvent: WheelEvent doesn't have property " + prop + "!");
+    defaultWheelEventValues[prop] = wheelEventProps[i][prop]; 
+  }
+}
+
+while (testWheelProps.length) {
+  var p = testWheelProps.shift();
+  e = new WheelEvent("foo", p);
+  for (var def in defaultWheelEventValues) {
+    if (!(def in p)) {
+      is(e[def], defaultWheelEventValues[def],
+         "WheelEvent: Wrong default value for " + def + "!");
+    } else {
+      is(e[def], p[def], "WheelEvent: Wrong event init value for " + def + "!");
     }
   }
 }

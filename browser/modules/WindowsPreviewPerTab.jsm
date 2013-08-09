@@ -41,7 +41,7 @@
  * buttons appear on the taskbar, so a magic pref-controlled number determines
  * when this threshold has been crossed.
  */
-var EXPORTED_SYMBOLS = ["AeroPeek"];
+this.EXPORTED_SYMBOLS = ["AeroPeek"];
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -49,6 +49,7 @@ const Cu = Components.utils;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/NetUtil.jsm");
+Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
 
 // Pref to enable/disable preview-per-tab
 const TOGGLE_PREF_NAME = "browser.taskbar.previews.enable";
@@ -72,8 +73,14 @@ XPCOMUtils.defineLazyServiceGetter(this, "faviconSvc",
                                    "nsIFaviconService");
 
 // nsIURI -> imgIContainer
-function _imageFromURI(uri, callback) {
+function _imageFromURI(uri, privateMode, callback) {
   let channel = ioSvc.newChannelFromURI(uri);
+  try {
+    channel.QueryInterface(Ci.nsIPrivateBrowsingChannel);
+    channel.setPrivate(privateMode);
+  } catch (e) {
+    // Ignore channels which do not support nsIPrivateBrowsingChannel
+  }
   NetUtil.asyncFetch(channel, function(inputStream, resultCode) {
     if (!Components.isSuccessCode(resultCode))
       return;
@@ -92,11 +99,11 @@ function _imageFromURI(uri, callback) {
 }
 
 // string? -> imgIContainer
-function getFaviconAsImage(iconurl, callback) {
+function getFaviconAsImage(iconurl, privateMode, callback) {
   if (iconurl)
-    _imageFromURI(NetUtil.newURI(iconurl), callback);
+    _imageFromURI(NetUtil.newURI(iconurl), privateMode, callback);
   else
-    _imageFromURI(faviconSvc.defaultFavicon, callback);
+    _imageFromURI(faviconSvc.defaultFavicon, privateMode, callback);
 }
 
 // Snaps the given rectangle to be pixel-aligned at the given scale
@@ -436,7 +443,7 @@ TabWindow.prototype = {
     preview.visible = AeroPeek.enabled;
     preview.active = this.tabbrowser.selectedTab == tab;
     // Grab the default favicon
-    getFaviconAsImage(null, function (img) {
+    getFaviconAsImage(null, PrivateBrowsingUtils.isWindowPrivate(this.win), function (img) {
       // It is possible that we've already gotten the real favicon, so make sure
       // we have not set one before setting this default one.
       if (!preview.icon)
@@ -535,7 +542,7 @@ TabWindow.prototype = {
   //// Browser progress listener
   onLinkIconAvailable: function (aBrowser, aIconURL) {
     let self = this;
-    getFaviconAsImage(aIconURL, function (img) {
+    getFaviconAsImage(aIconURL, PrivateBrowsingUtils.isWindowPrivate(this.win), function (img) {
       let index = self.tabbrowser.browsers.indexOf(aBrowser);
       // Only add it if we've found the index.  The tab could have closed!
       if (index != -1)
@@ -551,7 +558,7 @@ TabWindow.prototype = {
  * This object acts as global storage and external interface for this feature.
  * It maintains the values of the prefs.
  */
-var AeroPeek = {
+this.AeroPeek = {
   available: false,
   // Does the pref say we're enabled?
   _prefenabled: true,

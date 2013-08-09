@@ -6,6 +6,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include protocol PNecko;
+include InputStreamParams;
+include URIParams;
+
+include protocol PBlob; //FIXME: bug #792908
 
 include "mozilla/net/PHttpChannelParams.h";
 include "mozilla/net/NeckoMessageUtils.h";
@@ -15,8 +19,6 @@ using RequestHeaderTuples;
 using nsHttpHeaderArray;
 using nsHttpResponseHead;
 using nsHttpAtom;
-using IPC::URI;
-using IPC::InputStream;
 using PRNetAddr;
 
 namespace mozilla {
@@ -28,24 +30,24 @@ protocol PHttpChannel
   manager PNecko;
 
 parent:
-  AsyncOpen(URI                 uri,
+  AsyncOpen(URIParams           uri,
             // - TODO: bug 571161: unclear if any HTTP channel clients ever
             // set originalURI != uri (about:credits?); also not clear if
             // chrome channel would ever need to know.  Get rid of next arg?
-            URI                 original,
-            URI                 doc,
-            URI                 referrer,
-            PRUint32            loadFlags,
+            OptionalURIParams   original,
+            OptionalURIParams   doc,
+            OptionalURIParams   referrer,
+            uint32_t            loadFlags,
             RequestHeaderTuples requestHeaders,
             nsHttpAtom          requestMethod,
-            InputStream         uploadStream,
+            OptionalInputStreamParams uploadStream,
             bool                uploadStreamHasHeaders,
-            PRUint16            priority,
-            PRUint8             redirectionLimit,
+            uint16_t            priority,
+            uint8_t             redirectionLimit,
             bool                allowPipelining,
             bool                forceAllowThirdPartyCookie,
             bool                resumeAt,
-            PRUint64            startPos,
+            uint64_t            startPos,
             nsCString           entityID,
             bool                chooseApplicationCache,
             nsCString           appCacheClientID,
@@ -53,16 +55,14 @@ parent:
 
   // Used to connect redirected-to channel on the parent with redirected-to
   // channel on the child.
-  ConnectChannel(PRUint32 channelId);
+  ConnectChannel(uint32_t channelId);
 
-  SetPriority(PRUint16 priority);
+  SetPriority(uint16_t priority);
 
   SetCacheTokenCachedCharset(nsCString charset);
 
-  UpdateAssociatedContentSecurity(PRInt32 high,
-                                  PRInt32 low,
-                                  PRInt32 broken,
-                                  PRInt32 no);
+  UpdateAssociatedContentSecurity(int32_t broken,
+                                  int32_t no);
   Suspend();
   Resume();
 
@@ -99,7 +99,7 @@ child:
                  nsHttpHeaderArray   requestHeaders,
                  bool                isFromCache,
                  bool                cacheEntryAvailable,
-                 PRUint32            cacheExpirationTime,
+                 uint32_t            cacheExpirationTime,
                  nsCString           cachedCharset,
                  nsCString           securityInfoSerialization,
                  PRNetAddr           selfAddr,
@@ -108,15 +108,15 @@ child:
   // Combines a single OnDataAvailable and its associated OnProgress &
   // OnStatus calls into one IPDL message
   OnTransportAndData(nsresult  status,
-                     PRUint64  progress,
-                     PRUint64  progressMax,
+                     uint64_t  progress,
+                     uint64_t  progressMax,
                      nsCString data,
-                     PRUint32  offset,
-                     PRUint32  count);
+                     uint64_t  offset,
+                     uint32_t  count);
 
   OnStopRequest(nsresult statusCode);
 
-  OnProgress(PRUint64 progress, PRUint64 progressMax);
+  OnProgress(uint64_t progress, uint64_t progressMax);
 
   OnStatus(nsresult status);
 
@@ -126,9 +126,9 @@ child:
 
   // Called to initiate content channel redirect, starts talking to sinks
   // on the content process and reports result via Redirect2Verify above
-  Redirect1Begin(PRUint32           newChannelId,
-                 URI                newUri,
-                 PRUint32           redirectFlags,
+  Redirect1Begin(uint32_t           newChannelId,
+                 URIParams          newUri,
+                 uint32_t           redirectFlags,
                  nsHttpResponseHead responseHead);
 
   // Called if redirect successful so that child can complete setup.

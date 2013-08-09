@@ -12,7 +12,7 @@
 #include "nsDiskCacheBlockFile.h"
 #include "nsDiskCacheEntry.h"
 
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIObserver.h"
 #include "nsCOMArray.h"
 
@@ -35,52 +35,55 @@ public:
 
     virtual nsresult OpenInputStreamForEntry(nsCacheEntry *    entry,
                                              nsCacheAccessMode mode,
-                                             PRUint32          offset,
+                                             uint32_t          offset,
                                              nsIInputStream ** result);
 
     virtual nsresult OpenOutputStreamForEntry(nsCacheEntry *     entry,
                                               nsCacheAccessMode  mode,
-                                              PRUint32           offset,
+                                              uint32_t           offset,
                                               nsIOutputStream ** result);
 
     virtual nsresult        GetFileForEntry(nsCacheEntry *    entry,
                                             nsIFile **        result);
 
-    virtual nsresult        OnDataSizeChange(nsCacheEntry * entry, PRInt32 deltaSize);
+    virtual nsresult        OnDataSizeChange(nsCacheEntry * entry, int32_t deltaSize);
     
     virtual nsresult        Visit(nsICacheVisitor * visitor);
 
     virtual nsresult        EvictEntries(const char * clientID);
 
-    bool                    EntryIsTooBig(PRInt64 entrySize);
+    bool                    EntryIsTooBig(int64_t entrySize);
+
+    size_t                 SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf);
 
     /**
      * Preference accessors
      */
-    void                    SetCacheParentDirectory(nsILocalFile * parentDir);
-    void                    SetCapacity(PRUint32  capacity);
-    void                    SetMaxEntrySize(PRInt32  maxSizeInKilobytes);
+    void                    SetCacheParentDirectory(nsIFile * parentDir);
+    void                    SetCapacity(uint32_t  capacity);
+    void                    SetMaxEntrySize(int32_t  maxSizeInKilobytes);
 
 /* private: */
 
-    void                    getCacheDirectory(nsILocalFile ** result);
-    PRUint32                getCacheCapacity();
-    PRUint32                getCacheSize();
-    PRUint32                getEntryCount();
+    void                    getCacheDirectory(nsIFile ** result);
+    uint32_t                getCacheCapacity();
+    uint32_t                getCacheSize();
+    uint32_t                getEntryCount();
     
     nsDiskCacheMap *        CacheMap()    { return &mCacheMap; }
     
 private:    
     friend class nsDiskCacheDeviceDeactivateEntryEvent;
     friend class nsEvictDiskCacheEntriesEvent;
+    friend class nsDiskCacheMap;
     /**
      *  Private methods
      */
 
     inline bool IsValidBinding(nsDiskCacheBinding *binding)
     {
-        NS_ASSERTION(binding, "  binding == nsnull");
-        NS_ASSERTION(binding->mDeactivateEvent == nsnull,
+        NS_ASSERTION(binding, "  binding == nullptr");
+        NS_ASSERTION(binding->mDeactivateEvent == nullptr,
                      "  entry in process of deactivation");
         return (binding && !binding->mDeactivateEvent);
     }
@@ -94,15 +97,15 @@ private:
     nsresult                OpenDiskCache();
     nsresult                ClearDiskCache();
 
-    nsresult                EvictDiskCacheEntries(PRUint32  targetCapacity);
+    nsresult                EvictDiskCacheEntries(uint32_t  targetCapacity);
     
     /**
      *  Member variables
      */
-    nsCOMPtr<nsILocalFile>  mCacheDirectory;
+    nsCOMPtr<nsIFile>       mCacheDirectory;
     nsDiskCacheBindery      mBindery;
-    PRUint32                mCacheCapacity;     // Unit is KiB's
-    PRInt32                 mMaxEntrySize;      // Unit is bytes internally
+    uint32_t                mCacheCapacity;     // Unit is KiB's
+    int32_t                 mMaxEntrySize;      // Unit is bytes internally
     // XXX need soft/hard limits, currentTotal
     nsDiskCacheMap          mCacheMap;
     bool                    mInitialized;

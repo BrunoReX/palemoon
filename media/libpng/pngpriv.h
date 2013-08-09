@@ -673,6 +673,7 @@ PNG_EXTERN png_fixed_point png_fixed PNGARG((png_structp png_ptr, double fp,
 
 /* For png_struct.apng_flags: */
 #define PNG_FIRST_FRAME_HIDDEN       0x0001
+#define PNG_APNG_APP                 0x0002
 #endif
 
 /* The following will work on (signed char*) strings, whereas the get_uint_32
@@ -1006,8 +1007,8 @@ PNG_EXTERN void png_do_write_interlace PNGARG((png_row_infop row_info,
 /* Unfilter a row: check the filter value before calling this, there is no point
  * calling it for PNG_FILTER_VALUE_NONE.
  */
-PNG_EXTERN void png_read_filter_row PNGARG((png_structp pp, png_row_infop row_info,
-    png_bytep row, png_const_bytep prev_row, int filter));
+PNG_EXTERN void png_read_filter_row PNGARG((png_structp pp, png_row_infop
+    row_info, png_bytep row, png_const_bytep prev_row, int filter));
 
 PNG_EXTERN void png_read_filter_row_up_neon PNGARG((png_row_infop row_info,
     png_bytep row, png_const_bytep prev_row));
@@ -1634,7 +1635,7 @@ PNG_EXTERN void png_ascii_from_fixed PNGARG((png_structp png_ptr,
 #define PNG_FP_IS_ZERO(state) (((state) & PNG_FP_Z_MASK) == PNG_FP_SAW_DIGIT)
 #define PNG_FP_IS_POSITIVE(state) (((state) & PNG_FP_NZ_MASK) == PNG_FP_Z_MASK)
 #define PNG_FP_IS_NEGATIVE(state) (((state) & PNG_FP_NZ_MASK) == PNG_FP_NZ_MASK)
- 
+
 /* The actual parser.  This can be called repeatedly, it updates
  * the index into the string and the state variable (which must
  * be initialzed to 0).  It returns a result code, as above.  There

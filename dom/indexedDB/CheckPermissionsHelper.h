@@ -31,11 +31,9 @@ public:
 
   CheckPermissionsHelper(OpenDatabaseHelper* aHelper,
                          nsIDOMWindow* aWindow,
-                         const nsACString& aASCIIOrigin,
                          bool aForDeletion)
   : mHelper(aHelper),
     mWindow(aWindow),
-    mASCIIOrigin(aASCIIOrigin),
     // If we're trying to delete the database, we should never prompt the user.
     // Anything that would prompt is translated to denied.
     mPromptAllowed(!aForDeletion),
@@ -43,16 +41,14 @@ public:
     mPromptResult(0)
   {
     NS_ASSERTION(aHelper, "Null pointer!");
-    NS_ASSERTION(!aASCIIOrigin.IsEmpty(), "Empty origin!");
   }
 
 private:
   nsRefPtr<OpenDatabaseHelper> mHelper;
   nsCOMPtr<nsIDOMWindow> mWindow;
-  nsCString mASCIIOrigin;
   bool mPromptAllowed;
   bool mHasPrompted;
-  PRUint32 mPromptResult;
+  uint32_t mPromptResult;
 };
 
 END_INDEXEDDB_NAMESPACE

@@ -4,13 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsDOMClassInfoID.h"
 #include "nsDOMXULCommandEvent.h"
-#include "nsContentUtils.h"
 
 nsDOMXULCommandEvent::nsDOMXULCommandEvent(nsPresContext* aPresContext,
                                            nsInputEvent* aEvent)
   : nsDOMUIEvent(aPresContext,
-                 aEvent ? aEvent : new nsInputEvent(false, 0, nsnull))
+                 aEvent ? aEvent : new nsInputEvent(false, 0, nullptr))
 {
   if (aEvent) {
     mEventIsInternal = false;
@@ -28,12 +28,12 @@ NS_IMPL_RELEASE_INHERITED(nsDOMXULCommandEvent, nsDOMUIEvent)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsDOMXULCommandEvent,
                                                 nsDOMUIEvent)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mSourceEvent)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mSourceEvent)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsDOMXULCommandEvent,
                                                   nsDOMUIEvent)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mSourceEvent)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSourceEvent)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 DOMCI_DATA(XULCommandEvent, nsDOMXULCommandEvent)
@@ -87,7 +87,7 @@ NS_IMETHODIMP
 nsDOMXULCommandEvent::InitCommandEvent(const nsAString& aType,
                                        bool aCanBubble, bool aCancelable,
                                        nsIDOMWindow* aView,
-                                       PRInt32 aDetail,
+                                       int32_t aDetail,
                                        bool aCtrlKey, bool aAltKey,
                                        bool aShiftKey, bool aMetaKey,
                                        nsIDOMEvent* aSourceEvent)

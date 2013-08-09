@@ -6,16 +6,17 @@
 #ifndef __NS_SVGSTRING_H__
 #define __NS_SVGSTRING_H__
 
-#include "nsDOMError.h"
+#include "nsError.h"
 #include "nsIDOMSVGAnimatedString.h"
 #include "nsSVGElement.h"
+#include "mozilla/Attributes.h"
 
 class nsSVGString
 {
 
 public:
-  void Init(PRUint8 aAttrEnum) {
-    mAnimVal = nsnull;
+  void Init(uint8_t aAttrEnum) {
+    mAnimVal = nullptr;
     mAttrEnum = aAttrEnum;
     mIsBaseSet = false;
   }
@@ -45,11 +46,11 @@ public:
 private:
 
   nsAutoPtr<nsString> mAnimVal;
-  PRUint8 mAttrEnum; // element specified tracking for attribute
+  uint8_t mAttrEnum; // element specified tracking for attribute
   bool mIsBaseSet;
 
 public:
-  struct DOMAnimatedString : public nsIDOMSVGAnimatedString
+  struct DOMAnimatedString MOZ_FINAL : public nsIDOMSVGAnimatedString
   {
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
     NS_DECL_CYCLE_COLLECTION_CLASS(DOMAnimatedString)

@@ -39,8 +39,8 @@ gfxGDIFont::gfxGDIFont(GDIFontEntry *aFontEntry,
                        AntialiasOption anAAOption)
     : gfxFont(aFontEntry, aFontStyle, anAAOption),
       mFont(NULL),
-      mFontFace(nsnull),
-      mMetrics(nsnull),
+      mFontFace(nullptr),
+      mMetrics(nullptr),
       mSpaceGlyph(0),
       mNeedsBold(aNeedsBold)
 {
@@ -85,7 +85,7 @@ static bool
 UseUniscribe(gfxShapedWord *aShapedWord,
              const PRUnichar *aString)
 {
-    PRUint32 flags = aShapedWord->Flags();
+    uint32_t flags = aShapedWord->Flags();
     bool useGDI;
 
     bool isXP = (gfxWindowsPlatform::WindowsOSVersion() 
@@ -214,7 +214,7 @@ gfxGDIFont::GetMetrics()
     return *mMetrics;
 }
 
-PRUint32
+uint32_t
 gfxGDIFont::GetSpaceGlyph()
 {
     if (!mMetrics) {
@@ -241,7 +241,7 @@ gfxGDIFont::SetupCairoFont(gfxContext *aContext)
 
 gfxFont::RunMetrics
 gfxGDIFont::Measure(gfxTextRun *aTextRun,
-                    PRUint32 aStart, PRUint32 aEnd,
+                    uint32_t aStart, uint32_t aEnd,
                     BoundingBoxType aBoundingBoxType,
                     gfxContext *aRefContext,
                     Spacing *aSpacing)
@@ -310,9 +310,9 @@ gfxGDIFont::Initialize()
 
             // delete the temporary font and metrics
             ::DeleteObject(mFont);
-            mFont = nsnull;
+            mFont = nullptr;
             delete mMetrics;
-            mMetrics = nsnull;
+            mMetrics = nullptr;
         }
     }
 
@@ -352,7 +352,7 @@ gfxGDIFont::Initialize()
 
             const MAT2 kIdentityMatrix = { {0, 1}, {0, 0}, {0, 0}, {0, 1} };
             GLYPHMETRICS gm;
-            DWORD len = GetGlyphOutlineW(dc.GetDC(), PRUnichar('x'), GGO_METRICS, &gm, 0, nsnull, &kIdentityMatrix);
+            DWORD len = GetGlyphOutlineW(dc.GetDC(), PRUnichar('x'), GGO_METRICS, &gm, 0, nullptr, &kIdentityMatrix);
             if (len == GDI_ERROR || gm.gmptGlyphOrigin.y <= 0) {
                 // 56% of ascent, best guess for true type
                 mMetrics->xHeight =
@@ -504,7 +504,7 @@ gfxGDIFont::FillLogFont(LOGFONTW& aLogFont, gfxFloat aSize,
 {
     GDIFontEntry *fe = static_cast<GDIFontEntry*>(GetFontEntry());
 
-    PRUint16 weight;
+    uint16_t weight;
     if (fe->IsUserFont()) {
         if (fe->IsLocalUserFont()) {
             // for local user fonts, don't change the original weight
@@ -529,14 +529,14 @@ gfxGDIFont::FillLogFont(LOGFONTW& aLogFont, gfxFloat aSize,
     }
 }
 
-PRInt32
-gfxGDIFont::GetGlyphWidth(gfxContext *aCtx, PRUint16 aGID)
+int32_t
+gfxGDIFont::GetGlyphWidth(gfxContext *aCtx, uint16_t aGID)
 {
     if (!mGlyphWidths.IsInitialized()) {
         mGlyphWidths.Init(200);
     }
 
-    PRInt32 width;
+    int32_t width;
     if (mGlyphWidths.Get(aGID, &width)) {
         return width;
     }
@@ -561,7 +561,7 @@ gfxGDIFont::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf,
 {
     gfxFont::SizeOfExcludingThis(aMallocSizeOf, aSizes);
     aSizes->mFontInstances += aMallocSizeOf(mMetrics) +
-        mGlyphWidths.SizeOfExcludingThis(nsnull, aMallocSizeOf);
+        mGlyphWidths.SizeOfExcludingThis(nullptr, aMallocSizeOf);
 }
 
 void

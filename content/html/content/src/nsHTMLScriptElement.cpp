@@ -19,8 +19,7 @@
 #include "nsIScriptGlobalObject.h"
 #include "nsIXPConnect.h"
 #include "nsServiceManagerUtils.h"
-#include "nsIDOMDocument.h"
-#include "nsContentErrors.h"
+#include "nsError.h"
 #include "nsIArray.h"
 #include "nsTArray.h"
 #include "nsDOMJSUtils.h"
@@ -33,8 +32,8 @@ class nsHTMLScriptElement : public nsGenericHTMLElement,
                             public nsScriptElement
 {
 public:
-  using nsGenericElement::GetText;
-  using nsGenericElement::SetText;
+  using Element::GetText;
+  using Element::SetText;
 
   nsHTMLScriptElement(already_AddRefed<nsINodeInfo> aNodeInfo,
                       FromParser aFromParser);
@@ -44,30 +43,18 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT_BASIC(nsGenericHTMLElement::)
-  NS_SCRIPTABLE NS_IMETHOD Click() {
-    return nsGenericHTMLElement::Click();
-  }
-  NS_SCRIPTABLE NS_IMETHOD GetTabIndex(PRInt32* aTabIndex) {
-    return nsGenericHTMLElement::GetTabIndex(aTabIndex);
-  }
-  NS_SCRIPTABLE NS_IMETHOD SetTabIndex(PRInt32 aTabIndex) {
-    return nsGenericHTMLElement::SetTabIndex(aTabIndex);
-  }
-  NS_SCRIPTABLE NS_IMETHOD Focus() {
-    return nsGenericHTMLElement::Focus();
-  }
-  NS_SCRIPTABLE NS_IMETHOD GetDraggable(bool* aDraggable) {
-    return nsGenericHTMLElement::GetDraggable(aDraggable);
-  }
-  NS_SCRIPTABLE NS_IMETHOD GetInnerHTML(nsAString& aInnerHTML);
-  NS_SCRIPTABLE NS_IMETHOD SetInnerHTML(const nsAString& aInnerHTML);
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
+
+  virtual void GetInnerHTML(nsAString& aInnerHTML,
+                            mozilla::ErrorResult& aError) MOZ_OVERRIDE;
+  virtual void SetInnerHTML(const nsAString& aInnerHTML,
+                            mozilla::ErrorResult& aError) MOZ_OVERRIDE;
 
   // nsIDOMHTMLScriptElement
   NS_DECL_NSIDOMHTMLSCRIPTELEMENT
@@ -83,15 +70,15 @@ public:
   virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                               nsIContent* aBindingParent,
                               bool aCompileEventHandlers);
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(int32_t aNamespaceID,
                               nsIAtom* aAttribute,
                               const nsAString& aValue,
                               nsAttrValue& aResult);
 
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
 
-  // nsGenericElement
-  virtual nsresult AfterSetAttr(PRInt32 aNamespaceID, nsIAtom* aName,
+  // Element
+  virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsIAtom* aName,
                                 const nsAttrValue* aValue, bool aNotify);
 
   virtual nsXPCClassInfo* GetClassInfo();
@@ -119,8 +106,8 @@ nsHTMLScriptElement::~nsHTMLScriptElement()
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLScriptElement, nsGenericElement)
-NS_IMPL_RELEASE_INHERITED(nsHTMLScriptElement, nsGenericElement)
+NS_IMPL_ADDREF_INHERITED(nsHTMLScriptElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLScriptElement, Element)
 
 DOMCI_NODE_DATA(HTMLScriptElement, nsHTMLScriptElement)
 
@@ -155,7 +142,7 @@ nsHTMLScriptElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
 }
 
 bool
-nsHTMLScriptElement::ParseAttribute(PRInt32 aNamespaceID,
+nsHTMLScriptElement::ParseAttribute(int32_t aNamespaceID,
                                     nsIAtom* aAttribute,
                                     const nsAString& aValue,
                                     nsAttrValue& aResult)
@@ -173,14 +160,14 @@ nsHTMLScriptElement::ParseAttribute(PRInt32 aNamespaceID,
 nsresult
 nsHTMLScriptElement::Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const
 {
-  *aResult = nsnull;
+  *aResult = nullptr;
 
   nsCOMPtr<nsINodeInfo> ni = aNodeInfo;
   nsHTMLScriptElement* it =
     new nsHTMLScriptElement(ni.forget(), NOT_FROM_PARSER);
 
   nsCOMPtr<nsINode> kungFuDeathGrip = it;
-  nsresult rv = CopyInnerTo(it);
+  nsresult rv = const_cast<nsHTMLScriptElement*>(this)->CopyInnerTo(it);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // The clone should be marked evaluated if we are.
@@ -218,11 +205,8 @@ NS_IMPL_STRING_ATTR(nsHTMLScriptElement, CrossOrigin, crossorigin)
 nsresult
 nsHTMLScriptElement::GetAsync(bool* aValue)
 {
-  if (mForceAsync) {
-    *aValue = true;
-    return NS_OK;
-  }
-  return GetBoolAttr(nsGkAtoms::async, aValue);
+  *aValue = mForceAsync || GetBoolAttr(nsGkAtoms::async);
+  return NS_OK;
 }
 
 nsresult
@@ -233,7 +217,7 @@ nsHTMLScriptElement::SetAsync(bool aValue)
 }
 
 nsresult
-nsHTMLScriptElement::AfterSetAttr(PRInt32 aNamespaceID, nsIAtom* aName,
+nsHTMLScriptElement::AfterSetAttr(int32_t aNamespaceID, nsIAtom* aName,
                                   const nsAttrValue* aValue, bool aNotify)
 {
   if (nsGkAtoms::async == aName && kNameSpaceID_None == aNamespaceID) {
@@ -243,17 +227,17 @@ nsHTMLScriptElement::AfterSetAttr(PRInt32 aNamespaceID, nsIAtom* aName,
                                             aNotify);
 }
 
-nsresult
-nsHTMLScriptElement::GetInnerHTML(nsAString& aInnerHTML)
+void
+nsHTMLScriptElement::GetInnerHTML(nsAString& aInnerHTML, ErrorResult& aError)
 {
   nsContentUtils::GetNodeTextContent(this, false, aInnerHTML);
-  return NS_OK;
 }
 
-nsresult
-nsHTMLScriptElement::SetInnerHTML(const nsAString& aInnerHTML)
+void
+nsHTMLScriptElement::SetInnerHTML(const nsAString& aInnerHTML,
+                                  ErrorResult& aError)
 {
-  return nsContentUtils::SetNodeTextContent(this, aInnerHTML, true);
+  aError = nsContentUtils::SetNodeTextContent(this, aInnerHTML, true);
 }
 
 // variation of this code in nsSVGScriptElement - check if changes

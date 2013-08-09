@@ -15,7 +15,7 @@ NS_IMPL_ISUPPORTS1(nsAboutRedirector, nsIAboutModule)
 struct RedirEntry {
     const char* id;
     const char* url;
-    PRUint32 flags;  // See nsIAboutModule.  The URI_SAFE_FOR_UNTRUSTED_CONTENT
+    uint32_t flags;  // See nsIAboutModule.  The URI_SAFE_FOR_UNTRUSTED_CONTENT
                      // flag does double duty here -- if it's not set, we don't
                      // drop chrome privileges.
 };
@@ -64,6 +64,8 @@ static RedirEntry kRedirMap[] = {
       nsIAboutModule::ALLOW_SCRIPT |
       nsIAboutModule::HIDE_FROM_ABOUTABOUT },
     { "support", "chrome://global/content/aboutSupport.xhtml",
+      nsIAboutModule::ALLOW_SCRIPT },
+    { "telemetry", "chrome://global/content/aboutTelemetry.xhtml",
       nsIAboutModule::ALLOW_SCRIPT }
 };
 static const int kRedirTotal = NS_ARRAY_LENGTH(kRedirMap);
@@ -76,7 +78,7 @@ nsAboutRedirector::NewChannel(nsIURI *aURI, nsIChannel **result)
 
     nsresult rv;
 
-    nsCAutoString path;
+    nsAutoCString path;
     rv = NS_GetAboutModuleName(aURI, path);
     if (NS_FAILED(rv))
         return rv;
@@ -91,7 +93,7 @@ nsAboutRedirector::NewChannel(nsIURI *aURI, nsIChannel **result)
         {
             nsCOMPtr<nsIChannel> tempChannel;
             rv = ioService->NewChannel(nsDependentCString(kRedirMap[i].url),
-                                       nsnull, nsnull, getter_AddRefs(tempChannel));
+                                       nullptr, nullptr, getter_AddRefs(tempChannel));
             if (NS_FAILED(rv))
                 return rv;
 
@@ -101,17 +103,10 @@ nsAboutRedirector::NewChannel(nsIURI *aURI, nsIChannel **result)
             if (kRedirMap[i].flags &
                 nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT)
             {
-                nsCOMPtr<nsIScriptSecurityManager> securityManager = 
-                         do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID, &rv);
-                if (NS_FAILED(rv))
-                    return rv;
-            
-                nsCOMPtr<nsIPrincipal> principal;
-                rv = securityManager->GetCodebasePrincipal(aURI, getter_AddRefs(principal));
-                if (NS_FAILED(rv))
-                    return rv;
-            
-                rv = tempChannel->SetOwner(principal);
+                // Setting the owner to null means that we'll go through the normal
+                // path in GetChannelPrincipal and create a codebase principal based
+                // on the channel's originalURI
+                rv = tempChannel->SetOwner(nullptr);
                 if (NS_FAILED(rv))
                     return rv;
             }
@@ -126,11 +121,11 @@ nsAboutRedirector::NewChannel(nsIURI *aURI, nsIChannel **result)
 }
 
 NS_IMETHODIMP
-nsAboutRedirector::GetURIFlags(nsIURI *aURI, PRUint32 *result)
+nsAboutRedirector::GetURIFlags(nsIURI *aURI, uint32_t *result)
 {
     NS_ENSURE_ARG_POINTER(aURI);
 
-    nsCAutoString name;
+    nsAutoCString name;
     nsresult rv = NS_GetAboutModuleName(aURI, name);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -151,7 +146,7 @@ nsresult
 nsAboutRedirector::Create(nsISupports *aOuter, REFNSIID aIID, void **aResult)
 {
     nsAboutRedirector* about = new nsAboutRedirector();
-    if (about == nsnull)
+    if (about == nullptr)
         return NS_ERROR_OUT_OF_MEMORY;
     NS_ADDREF(about);
     nsresult rv = about->QueryInterface(aIID, aResult);

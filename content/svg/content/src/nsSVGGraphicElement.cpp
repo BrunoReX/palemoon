@@ -16,7 +16,7 @@
 #include "nsISVGChildFrame.h"
 #include "nsIDOMSVGPoint.h"
 #include "nsSVGUtils.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 #include "nsSVGRect.h"
 #include "nsContentUtils.h"
 
@@ -47,21 +47,21 @@ nsSVGGraphicElement::nsSVGGraphicElement(already_AddRefed<nsINodeInfo> aNodeInfo
 /* readonly attribute nsIDOMSVGElement nearestViewportElement; */
 NS_IMETHODIMP nsSVGGraphicElement::GetNearestViewportElement(nsIDOMSVGElement * *aNearestViewportElement)
 {
-  *aNearestViewportElement = nsSVGUtils::GetNearestViewportElement(this).get();
+  *aNearestViewportElement = SVGContentUtils::GetNearestViewportElement(this).get();
   return NS_OK;
 }
 
 /* readonly attribute nsIDOMSVGElement farthestViewportElement; */
 NS_IMETHODIMP nsSVGGraphicElement::GetFarthestViewportElement(nsIDOMSVGElement * *aFarthestViewportElement)
 {
-  NS_IF_ADDREF(*aFarthestViewportElement = nsSVGUtils::GetOuterSVGElement(this));
+  NS_IF_ADDREF(*aFarthestViewportElement = SVGContentUtils::GetOuterSVGElement(this));
   return NS_OK;
 }
 
 /* nsIDOMSVGRect getBBox (); */
 NS_IMETHODIMP nsSVGGraphicElement::GetBBox(nsIDOMSVGRect **_retval)
 {
-  *_retval = nsnull;
+  *_retval = nullptr;
 
   nsIFrame* frame = GetPrimaryFrame(Flush_Layout);
 
@@ -78,8 +78,8 @@ NS_IMETHODIMP nsSVGGraphicElement::GetBBox(nsIDOMSVGRect **_retval)
 /* nsIDOMSVGMatrix getCTM (); */
 NS_IMETHODIMP nsSVGGraphicElement::GetCTM(nsIDOMSVGMatrix * *aCTM)
 {
-  gfxMatrix m = nsSVGUtils::GetCTM(this, false);
-  *aCTM = m.IsSingular() ? nsnull : new DOMSVGMatrix(m);
+  gfxMatrix m = SVGContentUtils::GetCTM(this, false);
+  *aCTM = m.IsSingular() ? nullptr : new DOMSVGMatrix(m);
   NS_IF_ADDREF(*aCTM);
   return NS_OK;
 }
@@ -87,8 +87,8 @@ NS_IMETHODIMP nsSVGGraphicElement::GetCTM(nsIDOMSVGMatrix * *aCTM)
 /* nsIDOMSVGMatrix getScreenCTM (); */
 NS_IMETHODIMP nsSVGGraphicElement::GetScreenCTM(nsIDOMSVGMatrix * *aCTM)
 {
-  gfxMatrix m = nsSVGUtils::GetCTM(this, true);
-  *aCTM = m.IsSingular() ? nsnull : new DOMSVGMatrix(m);
+  gfxMatrix m = SVGContentUtils::GetCTM(this, true);
+  *aCTM = m.IsSingular() ? nullptr : new DOMSVGMatrix(m);
   NS_IF_ADDREF(*aCTM);
   return NS_OK;
 }
@@ -100,7 +100,7 @@ NS_IMETHODIMP nsSVGGraphicElement::GetTransformToElement(nsIDOMSVGElement *eleme
     return NS_ERROR_DOM_SVG_WRONG_TYPE_ERR;
 
   nsresult rv;
-  *_retval = nsnull;
+  *_retval = nullptr;
   nsCOMPtr<nsIDOMSVGMatrix> ourScreenCTM;
   nsCOMPtr<nsIDOMSVGMatrix> targetScreenCTM;
   nsCOMPtr<nsIDOMSVGMatrix> tmp;
@@ -124,9 +124,10 @@ NS_IMETHODIMP nsSVGGraphicElement::GetTransformToElement(nsIDOMSVGElement *eleme
 NS_IMETHODIMP nsSVGGraphicElement::GetTransform(
     nsIDOMSVGAnimatedTransformList **aTransform)
 {
-  *aTransform =
-    DOMSVGAnimatedTransformList::GetDOMWrapper(GetAnimatedTransformList(), this)
-    .get();
+  // We're creating a DOM wrapper, so we must tell GetAnimatedTransformList
+  // to allocate the SVGAnimatedTransformList if it hasn't already done so:
+  *aTransform = DOMSVGAnimatedTransformList::GetDOMWrapper(
+                  GetAnimatedTransformList(DO_ALLOCATE), this).get();
   return NS_OK;
 }
 
@@ -148,7 +149,7 @@ nsSVGGraphicElement::IsAttributeMapped(const nsIAtom* name) const
 
 nsChangeHint
 nsSVGGraphicElement::GetAttributeChangeHint(const nsIAtom* aAttribute,
-                                            PRInt32 aModType) const
+                                            int32_t aModType) const
 {
   nsChangeHint retval =
     nsSVGGraphicElementBase::GetAttributeChangeHint(aAttribute, aModType);
@@ -158,27 +159,19 @@ nsSVGGraphicElement::GetAttributeChangeHint(const nsIAtom* aAttribute,
     // will be called on us and our ancestors.
     nsIFrame* frame =
       const_cast<nsSVGGraphicElement*>(this)->GetPrimaryFrame();
-    if (frame && frame->GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD) {
-      // No need to do anything.
-    } else if (aModType == nsIDOMMutationEvent::ADDITION ||
-               aModType == nsIDOMMutationEvent::REMOVAL) {
-      // In order to handle view creation/destruction and stacking context
-      // changes, the code in nsStyleDisplay::CalcDifference uses
-      // nsChangeHint_ReconstructFrame if the transform was added/removed.
-      // XXXSDL Currently we don't need to reconstruct SVG frames when their
-      // transform is set/unset since we don't currently create GFX layers for
-      // SVG transforms, but we will after bug 614732 is fixed. Also change the
-      // assertion in ApplyRenderingChangeToTree when we do that.
-      NS_UpdateHint(retval, nsChangeHint_UpdateOverflow);
+    if (!frame || (frame->GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD)) {
+      return retval; // no change
+    }
+    if (aModType == nsIDOMMutationEvent::ADDITION ||
+        aModType == nsIDOMMutationEvent::REMOVAL) {
+      // Reconstruct the frame tree to handle stacking context changes:
+      NS_UpdateHint(retval, nsChangeHint_ReconstructFrame);
     } else {
       NS_ABORT_IF_FALSE(aModType == nsIDOMMutationEvent::MODIFICATION,
                         "Unknown modification type.");
       // We just assume the old and new transforms are different.
-      // XXXSDL Once we use GFX layers for SVG transforms, we will need to pass
-      // the nsChangeHint_UpdateTransformLayer hint too. Note that the
-      // assertion in ApplyRenderingChangeToTree will fail if that hint is
-      // passed on nsIDOMMutationEvent::REMOVAL though.
-      NS_UpdateHint(retval, nsChangeHint_UpdateOverflow);
+      NS_UpdateHint(retval, NS_CombineHint(nsChangeHint_UpdateOverflow,
+                                           nsChangeHint_UpdateTransformLayer));
     }
   }
   return retval;
@@ -237,17 +230,17 @@ void
 nsSVGGraphicElement::SetAnimateMotionTransform(const gfxMatrix* aMatrix)
 {
   if ((!aMatrix && !mAnimateMotionTransform) ||
-      aMatrix && mAnimateMotionTransform && *aMatrix == *mAnimateMotionTransform) {
+      (aMatrix && mAnimateMotionTransform && *aMatrix == *mAnimateMotionTransform)) {
     return;
   }
-  mAnimateMotionTransform = aMatrix ? new gfxMatrix(*aMatrix) : nsnull;
+  mAnimateMotionTransform = aMatrix ? new gfxMatrix(*aMatrix) : nullptr;
   DidAnimateTransformList();
 }
 
 SVGAnimatedTransformList*
-nsSVGGraphicElement::GetAnimatedTransformList()
+nsSVGGraphicElement::GetAnimatedTransformList(uint32_t aFlags)
 {
-  if (!mTransforms) {
+  if (!mTransforms && (aFlags & DO_ALLOCATE)) {
     mTransforms = new SVGAnimatedTransformList();
   }
   return mTransforms;

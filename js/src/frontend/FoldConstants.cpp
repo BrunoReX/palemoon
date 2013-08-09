@@ -15,15 +15,14 @@
 #include "frontend/FoldConstants.h"
 #include "frontend/ParseNode.h"
 #include "frontend/Parser.h"
-#include "frontend/TreeContext.h"
 #include "vm/NumericConversions.h"
 
 #include "jsatominlines.h"
 
-#include "frontend/TreeContext-inl.h"
 #include "vm/String-inl.h"
 
 using namespace js;
+using namespace js::frontend;
 
 static ParseNode *
 ContainsVarOrConst(ParseNode *pn)
@@ -61,8 +60,6 @@ ContainsVarOrConst(ParseNode *pn)
         return ContainsVarOrConst(pn->pn_kid);
       case PN_NAME:
         return ContainsVarOrConst(pn->maybeExpr());
-      case PN_NAMESET:
-        return ContainsVarOrConst(pn->pn_tree);
       default:;
     }
     return NULL;
@@ -72,7 +69,7 @@ ContainsVarOrConst(ParseNode *pn)
  * Fold from one constant type to another.
  * XXX handles only strings and numbers for now
  */
-static JSBool
+static bool
 FoldType(JSContext *cx, ParseNode *pn, ParseNodeKind kind)
 {
     if (!pn->isKind(kind)) {
@@ -81,7 +78,7 @@ FoldType(JSContext *cx, ParseNode *pn, ParseNodeKind kind)
             if (pn->isKind(PNK_STRING)) {
                 double d;
                 if (!ToNumber(cx, StringValue(pn->pn_atom), &d))
-                    return JS_FALSE;
+                    return false;
                 pn->pn_dval = d;
                 pn->setKind(PNK_NUMBER);
                 pn->setOp(JSOP_DOUBLE);
@@ -92,10 +89,10 @@ FoldType(JSContext *cx, ParseNode *pn, ParseNodeKind kind)
             if (pn->isKind(PNK_NUMBER)) {
                 JSString *str = js_NumberToString(cx, pn->pn_dval);
                 if (!str)
-                    return JS_FALSE;
-                pn->pn_atom = js_AtomizeString(cx, str);
+                    return false;
+                pn->pn_atom = AtomizeString(cx, str);
                 if (!pn->pn_atom)
-                    return JS_FALSE;
+                    return false;
                 pn->setKind(PNK_STRING);
                 pn->setOp(JSOP_STRING);
             }
@@ -104,7 +101,7 @@ FoldType(JSContext *cx, ParseNode *pn, ParseNodeKind kind)
           default:;
         }
     }
-    return JS_TRUE;
+    return true;
 }
 
 /*
@@ -112,7 +109,7 @@ FoldType(JSContext *cx, ParseNode *pn, ParseNodeKind kind)
  * one of them aliases pn, so you can't safely fetch pn2->pn_next, e.g., after
  * a successful call to this function.
  */
-static JSBool
+static bool
 FoldBinaryNumeric(JSContext *cx, JSOp op, ParseNode *pn1, ParseNode *pn2,
                   ParseNode *pn, Parser *parser)
 {
@@ -188,12 +185,12 @@ FoldBinaryNumeric(JSContext *cx, JSOp op, ParseNode *pn1, ParseNode *pn2,
     pn->setOp(JSOP_DOUBLE);
     pn->setArity(PN_NULLARY);
     pn->pn_dval = d;
-    return JS_TRUE;
+    return true;
 }
 
 #if JS_HAS_XML_SUPPORT
 
-static JSBool
+static bool
 FoldXMLConstants(JSContext *cx, ParseNode *pn, Parser *parser)
 {
     JS_ASSERT(pn->isArity(PN_LIST));
@@ -204,9 +201,9 @@ FoldXMLConstants(JSContext *cx, ParseNode *pn, Parser *parser)
     RootedString str(cx);
     if ((pn->pn_xflags & PNX_CANTFOLD) == 0) {
         if (kind == PNK_XMLETAGO)
-            accum = cx->runtime->atomState.etagoAtom;
+            accum = cx->names().etago;
         else if (kind == PNK_XMLSTAGO || kind == PNK_XMLPTAGC)
-            accum = cx->runtime->atomState.stagoAtom;
+            accum = cx->names().stago;
     }
 
     /*
@@ -238,20 +235,20 @@ FoldXMLConstants(JSContext *cx, ParseNode *pn, Parser *parser)
           case PNK_XMLCDATA:
             str = js_MakeXMLCDATAString(cx, pn2->pn_atom);
             if (!str)
-                return JS_FALSE;
+                return false;
             break;
 
           case PNK_XMLCOMMENT:
             str = js_MakeXMLCommentString(cx, pn2->pn_atom);
             if (!str)
-                return JS_FALSE;
+                return false;
             break;
 
           case PNK_XMLPI: {
-            XMLProcessingInstruction &pi = pn2->asXMLProcessingInstruction();
+            XMLProcessingInstruction &pi = pn2->as<XMLProcessingInstruction>();
             str = js_MakeXMLPIString(cx, pi.target(), pi.data());
             if (!str)
-                return JS_FALSE;
+                return false;
             break;
           }
 
@@ -276,9 +273,9 @@ FoldXMLConstants(JSContext *cx, ParseNode *pn, Parser *parser)
                 pn1->setKind(PNK_XMLTEXT);
                 pn1->setOp(JSOP_STRING);
                 pn1->setArity(PN_NULLARY);
-                pn1->pn_atom = js_AtomizeString(cx, accum);
+                pn1->pn_atom = AtomizeString(cx, accum);
                 if (!pn1->pn_atom)
-                    return JS_FALSE;
+                    return false;
                 JS_ASSERT(pnp != &pn1->pn_next);
                 *pnp = pn1;
             }
@@ -295,7 +292,7 @@ FoldXMLConstants(JSContext *cx, ParseNode *pn, Parser *parser)
                       : js_ConcatStrings(cx, accum, str);
             }
             if (!str)
-                return JS_FALSE;
+                return false;
 #ifdef DEBUG_brendanXXX
             printf("2: %d, %d => ", i, j);
             FileEscapedString(stdout, str, 0);
@@ -310,14 +307,14 @@ FoldXMLConstants(JSContext *cx, ParseNode *pn, Parser *parser)
         str = NULL;
         if ((pn->pn_xflags & PNX_CANTFOLD) == 0) {
             if (kind == PNK_XMLPTAGC)
-                str = cx->runtime->atomState.ptagcAtom;
+                str = cx->names().ptagc;
             else if (kind == PNK_XMLSTAGO || kind == PNK_XMLETAGO)
-                str = cx->runtime->atomState.tagcAtom;
+                str = cx->names().tagc;
         }
         if (str) {
             accum = js_ConcatStrings(cx, accum, str);
             if (!accum)
-                return JS_FALSE;
+                return false;
         }
 
         JS_ASSERT(*pnp == pn1);
@@ -328,9 +325,9 @@ FoldXMLConstants(JSContext *cx, ParseNode *pn, Parser *parser)
         pn1->setKind(PNK_XMLTEXT);
         pn1->setOp(JSOP_STRING);
         pn1->setArity(PN_NULLARY);
-        pn1->pn_atom = js_AtomizeString(cx, accum);
+        pn1->pn_atom = AtomizeString(cx, accum);
         if (!pn1->pn_atom)
-            return JS_FALSE;
+            return false;
         JS_ASSERT(pnp != &pn1->pn_next);
         *pnp = pn1;
     }
@@ -350,7 +347,7 @@ FoldXMLConstants(JSContext *cx, ParseNode *pn, Parser *parser)
             pn->setOp(JSOP_TOXML);
         }
     }
-    return JS_TRUE;
+    return true;
 }
 
 #endif /* JS_HAS_XML_SUPPORT */
@@ -401,7 +398,8 @@ Boolish(ParseNode *pn)
 }
 
 bool
-js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inGenexpLambda, bool inCond)
+frontend::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inGenexpLambda,
+                        bool inCond)
 {
     ParseNode *pn1 = NULL, *pn2 = NULL, *pn3 = NULL;
 
@@ -420,7 +418,7 @@ js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inGenexpLam
 
         /* Don't fold a parenthesized call expression. See bug 537673. */
         pn1 = pn2 = pn->pn_head;
-        if ((pn->isKind(PNK_LP) || pn->isKind(PNK_NEW)) && pn2->isInParens())
+        if ((pn->isKind(PNK_CALL) || pn->isKind(PNK_NEW)) && pn2->isInParens())
             pn2 = pn2->pn_next;
 
         /* Save the list head in pn1 for later use. */
@@ -505,12 +503,6 @@ js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inGenexpLam
         }
         break;
 
-      case PN_NAMESET:
-        pn1 = pn->pn_tree;
-        if (!FoldConstants(cx, pn1, parser, inGenexpLambda))
-            return false;
-        break;
-
       case PN_NULLARY:
         break;
     }
@@ -574,6 +566,7 @@ js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inGenexpLam
             if (pn->isArity(PN_LIST)) {
                 ParseNode **pnp = &pn->pn_head;
                 JS_ASSERT(*pnp == pn1);
+                uint32_t orig = pn->pn_count;
                 do {
                     Truthiness t = Boolish(pn1);
                     if (t == Unknown) {
@@ -609,6 +602,12 @@ js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inGenexpLam
                 } else if (pn->pn_count == 1) {
                     pn->become(pn1);
                     parser->freeTree(pn1);
+                } else if (orig != pn->pn_count) {
+                    // Adjust list tail.
+                    pn2 = pn1->pn_next;
+                    for (; pn1; pn2 = pn1, pn1 = pn1->pn_next)
+                        ;
+                    pn->pn_tail = &pn2->pn_next;
                 }
             } else {
                 Truthiness t = Boolish(pn1);
@@ -673,13 +672,13 @@ js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inGenexpLam
             }
 
             /* Allocate a new buffer and string descriptor for the result. */
-            jschar *chars = (jschar *) cx->malloc_((length + 1) * sizeof(jschar));
+            jschar *chars = cx->pod_malloc<jschar>(length + 1);
             if (!chars)
                 return false;
             chars[length] = 0;
             JSString *str = js_NewString(cx, chars, length);
             if (!str) {
-                cx->free_(chars);
+                js_free(chars);
                 return false;
             }
 
@@ -693,7 +692,7 @@ js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inGenexpLam
             JS_ASSERT(*chars == 0);
 
             /* Atomize the result string and mutate pn to refer to it. */
-            pn->pn_atom = js_AtomizeString(cx, str);
+            pn->pn_atom = AtomizeString(cx, str);
             if (!pn->pn_atom)
                 return false;
             pn->setKind(PNK_STRING);
@@ -714,7 +713,7 @@ js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inGenexpLam
             RootedString str(cx, js_ConcatStrings(cx, left, right));
             if (!str)
                 return false;
-            pn->pn_atom = js_AtomizeString(cx, str);
+            pn->pn_atom = AtomizeString(cx, str);
             if (!pn->pn_atom)
                 return false;
             pn->setKind(PNK_STRING);

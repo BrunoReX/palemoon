@@ -6,8 +6,10 @@
 #include "nsIDOMHTMLProgressElement.h"
 #include "nsGenericHTMLElement.h"
 #include "nsAttrValue.h"
+#include "nsAttrValueInlines.h"
 #include "nsEventStateManager.h"
 
+using namespace mozilla::dom;
 
 class nsHTMLProgressElement : public nsGenericHTMLElement,
                               public nsIDOMHTMLProgressElement
@@ -20,13 +22,13 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLProgressElement
   NS_DECL_NSIDOMHTMLPROGRESSELEMENT
@@ -35,7 +37,7 @@ public:
 
   nsresult Clone(nsINodeInfo* aNodeInfo, nsINode** aResult) const;
 
-  bool ParseAttribute(PRInt32 aNamespaceID, nsIAtom* aAttribute,
+  bool ParseAttribute(int32_t aNamespaceID, nsIAtom* aAttribute,
                         const nsAString& aValue, nsAttrValue& aResult);
 
   virtual nsXPCClassInfo* GetClassInfo();
@@ -75,8 +77,8 @@ nsHTMLProgressElement::~nsHTMLProgressElement()
 {
 }
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLProgressElement, nsGenericElement)
-NS_IMPL_RELEASE_INHERITED(nsHTMLProgressElement, nsGenericElement)
+NS_IMPL_ADDREF_INHERITED(nsHTMLProgressElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLProgressElement, Element)
 
 DOMCI_NODE_DATA(HTMLProgressElement, nsHTMLProgressElement)
 
@@ -103,7 +105,7 @@ nsHTMLProgressElement::IntrinsicState() const
 }
 
 bool
-nsHTMLProgressElement::ParseAttribute(PRInt32 aNamespaceID, nsIAtom* aAttribute,
+nsHTMLProgressElement::ParseAttribute(int32_t aNamespaceID, nsIAtom* aAttribute,
                                       const nsAString& aValue, nsAttrValue& aResult)
 {
   if (aNamespaceID == kNameSpaceID_None) {

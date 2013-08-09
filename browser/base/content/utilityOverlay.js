@@ -1,4 +1,4 @@
-# -*- Mode: Java; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+# -*- Mode: javascript; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -6,11 +6,18 @@
 // Services = object with smart getters for common XPCOM services
 Components.utils.import("resource://gre/modules/Services.jsm");
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+Components.utils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "BROWSER_NEW_TAB_URL", function () {
   const PREF = "browser.newtab.url";
+  const TOPIC = "private-browsing-transition-complete";
 
   function getNewTabPageURL() {
+    if (!Services.prefs.prefHasUserValue(PREF)) {
+      if (PrivateBrowsingUtils.isWindowPrivate(window) &&
+          !PrivateBrowsingUtils.permanentPrivateBrowsing)
+        return "about:privatebrowsing";
+    }
     return Services.prefs.getCharPref(PREF) || "about:blank";
   }
 
@@ -19,9 +26,12 @@ XPCOMUtils.defineLazyGetter(this, "BROWSER_NEW_TAB_URL", function () {
   }
 
   Services.prefs.addObserver(PREF, update, false);
+  Services.obs.addObserver(update, TOPIC, false);
+
   addEventListener("unload", function onUnload() {
     removeEventListener("unload", onUnload);
     Services.prefs.removeObserver(PREF, update);
+    Services.obs.removeObserver(update, TOPIC);
   });
 
   return getNewTabPageURL();
@@ -95,7 +105,8 @@ function openUILink(url, event, aIgnoreButton, aIgnoreAlt, aAllowThirdPartyFixup
     params = {
       allowThirdPartyFixup: aAllowThirdPartyFixup,
       postData: aPostData,
-      referrerURI: aReferrerURI
+      referrerURI: aReferrerURI,
+      initiatingDoc: event ? event.target.ownerDocument : null
     };
   }
 
@@ -210,9 +221,15 @@ function openLinkIn(url, where, params) {
   var aDisallowInheritPrincipal = params.disallowInheritPrincipal;
   // Currently, this parameter works only for where=="tab" or "current"
   var aIsUTF8               = params.isUTF8;
+  var aInitiatingDoc        = params.initiatingDoc;
 
   if (where == "save") {
-    saveURL(url, null, null, true, null, aReferrerURI);
+    if (!aInitiatingDoc) {
+      Components.utils.reportError("openUILink/openLinkIn was called with " +
+        "where == 'save' but without initiatingDoc.  See bug 814264.");
+      return;
+    }
+    saveURL(url, null, null, true, null, aReferrerURI, aInitiatingDoc);
     return;
   }
   const Cc = Components.classes;
@@ -309,9 +326,8 @@ function openLinkIn(url, where, params) {
   var fm = Components.classes["@mozilla.org/focus-manager;1"].
              getService(Components.interfaces.nsIFocusManager);
   if (window == fm.activeWindow)
-    w.content.focus();
-  else
-    w.gBrowser.selectedBrowser.focus();
+    w.focus();
+  w.gBrowser.selectedBrowser.focus();
 
   if (!loadInBackground && isBlankPageURL(url))
     w.focusAndSelectUrlBar();
@@ -459,7 +475,7 @@ function openAboutDialog() {
 
 function openPreferences(paneID, extraArgs)
 {
-  if (Services.prefs.getBoolPref("browser.preferences.inContent")) {  
+  if (Services.prefs.getBoolPref("browser.preferences.inContent")) {
     openUILinkIn("about:preferences", "tab");
   } else {
     var instantApply = getBoolPref("browser.preferences.instantApply", false);
@@ -478,17 +494,17 @@ function openPreferences(paneID, extraArgs)
         advancedPaneTabs.selectedTab = win.document.getElementById(extraArgs["advancedTab"]);
       }
 
-     return win;
+     return;
     }
 
-    return openDialog("chrome://browser/content/preferences/preferences.xul",
-                      "Preferences", features, paneID, extraArgs);
+    openDialog("chrome://browser/content/preferences/preferences.xul",
+               "Preferences", features, paneID, extraArgs);
   }
 }
 
 function openAdvancedPreferences(tabID)
 {
-  return openPreferences("paneAdvanced", { "advancedTab" : tabID });
+  openPreferences("paneAdvanced", { "advancedTab" : tabID });
 }
 
 /**
@@ -510,10 +526,9 @@ function openFeedbackPage()
 
 function buildHelpMenu()
 {
-  // Enable/disable the "Report Web Forgery" menu item.  safebrowsing object
-  // may not exist in OSX
-  if (typeof safebrowsing != "undefined")
-    safebrowsing.setReportPhishingMenu();
+  // Enable/disable the "Report Web Forgery" menu item.
+  if (typeof gSafeBrowsing != "undefined")
+    gSafeBrowsing.setReportPhishingMenu();
 }
 
 function isElementVisible(aElement)

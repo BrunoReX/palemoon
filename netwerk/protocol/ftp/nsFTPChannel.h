@@ -28,6 +28,8 @@
 #include "nsIResumableChannel.h"
 #include "nsHashPropertyBag.h"
 #include "nsFtpProtocolHandler.h"
+#include "nsNetUtil.h"
+#include "PrivateBrowsingChannel.h"
 
 class nsFtpChannel : public nsBaseChannel,
                      public nsIFTPChannel,
@@ -40,7 +42,7 @@ public:
     NS_DECL_NSIUPLOADCHANNEL
     NS_DECL_NSIRESUMABLECHANNEL
     NS_DECL_NSIPROXIEDCHANNEL
-    
+
     nsFtpChannel(nsIURI *uri, nsIProxyInfo *pi)
         : mProxyInfo(pi)
         , mStartPos(0)
@@ -54,11 +56,16 @@ public:
         return mProxyInfo;
     }
 
+    void SetProxyInfo(nsIProxyInfo *pi)
+    {
+        mProxyInfo = pi;
+    }
+
     // Were we asked to resume a download?
     bool ResumeRequested() { return mResumeRequested; }
 
     // Download from this byte offset
-    PRUint64 StartPos() { return mStartPos; }
+    uint64_t StartPos() { return mStartPos; }
 
     // ID of the entity to resume downloading
     const nsCString &EntityID() {
@@ -97,7 +104,7 @@ private:
     nsCOMPtr<nsIProxyInfo>    mProxyInfo; 
     nsCOMPtr<nsIFTPEventSink> mFTPEventSink;
     nsCOMPtr<nsIInputStream>  mUploadStream;
-    PRUint64                  mStartPos;
+    uint64_t                  mStartPos;
     nsCString                 mEntityID;
     bool                      mResumeRequested;
     PRTime                    mLastModifiedTime;

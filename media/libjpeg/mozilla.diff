@@ -9,7 +9,7 @@
   * optimizations.  Most users will not need to touch this file.
   */
  
-+#include "prtypes.h"
++#include "mozilla/StandardInteger.h"
  
  /*
   * Define BITS_IN_JSAMPLE as either
@@ -36,7 +36,7 @@
 -typedef short UINT8;
 -#endif /* __CHAR_UNSIGNED__ */
 -#endif /* HAVE_UNSIGNED_CHAR */
-+typedef PRUint8 UINT8;
++typedef uint8_t UINT8;
  
  /* UINT16 must hold at least the values 0..65535. */
  
@@ -45,21 +45,21 @@
 -#else /* not HAVE_UNSIGNED_SHORT */
 -typedef unsigned int UINT16;
 -#endif /* HAVE_UNSIGNED_SHORT */
-+typedef PRUint16 UINT16;
++typedef uint16_t UINT16;
  
  /* INT16 must hold at least the values -32768..32767. */
  
 -#ifndef XMD_H			/* X11/xmd.h correctly defines INT16 */
 -typedef short INT16;
 -#endif
-+typedef PRInt16 INT16;
++typedef int16_t INT16;
  
  /* INT32 must hold at least signed 32-bit values. */
  
 -#ifndef XMD_H			/* X11/xmd.h correctly defines INT32 */
 -typedef long INT32;
 -#endif
-+typedef PRInt32 INT32;
++typedef int32_t INT32;
  
  /* Datatype used for image dimensions.  The JPEG standard only supports
   * images up to 64K*64K due to 16-bit fields in SOF markers.  Therefore
@@ -68,3 +68,54 @@
   * can change this datatype.
   */
  
+--- jchuff.c
++++ jchuff.c
+@@ -16,18 +16,20 @@
+  */
+ 
+ #define JPEG_INTERNALS
+ #include "jinclude.h"
+ #include "jpeglib.h"
+ #include "jchuff.h"		/* Declarations shared with jcphuff.c */
+ #include <limits.h>
+ 
+-static unsigned char jpeg_nbits_table[65536];
+-static int jpeg_nbits_table_init = 0;
++static const unsigned char jpeg_nbits_table[65536] = {
++/* Number i needs jpeg_nbits_table[i] bits to be represented. */
++#include "jpeg_nbits_table.h"
++};
+ 
+ #ifndef min
+  #define min(a,b) ((a)<(b)?(a):(b))
+ #endif
+ 
+ 
+ /* Expanded entropy encoder object for Huffman encoding.
+  *
+@@ -265,25 +267,16 @@ jpeg_make_c_derived_tbl (j_compress_ptr 
+ 
+   for (p = 0; p < lastp; p++) {
+     i = htbl->huffval[p];
+     if (i < 0 || i > maxsymbol || dtbl->ehufsi[i])
+       ERREXIT(cinfo, JERR_BAD_HUFF_TABLE);
+     dtbl->ehufco[i] = huffcode[p];
+     dtbl->ehufsi[i] = huffsize[p];
+   }
+-
+-  if(!jpeg_nbits_table_init) {
+-    for(i = 0; i < 65536; i++) {
+-      int nbits = 0, temp = i;
+-      while (temp) {temp >>= 1;  nbits++;}
+-      jpeg_nbits_table[i] = nbits;
+-    }
+-    jpeg_nbits_table_init = 1;
+-  }
+ }
+ 
+ 
+ /* Outputting bytes to the file */
+ 
+ /* Emit a byte, taking 'action' if must suspend. */
+ #define emit_byte(state,val,action)  \
+ 	{ *(state)->next_output_byte++ = (JOCTET) (val);  \

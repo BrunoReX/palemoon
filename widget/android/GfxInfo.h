@@ -19,65 +19,76 @@ namespace widget {
 class GfxInfo : public GfxInfoBase
 {
 public:
+  GfxInfo();
+
   // We only declare the subset of nsIGfxInfo that we actually implement. The
   // rest is brought forward from GfxInfoBase.
-  NS_SCRIPTABLE NS_IMETHOD GetD2DEnabled(bool *aD2DEnabled);
-  NS_SCRIPTABLE NS_IMETHOD GetDWriteEnabled(bool *aDWriteEnabled);
-  NS_SCRIPTABLE NS_IMETHOD GetAzureEnabled(bool *aAzureEnabled);
-  NS_SCRIPTABLE NS_IMETHOD GetDWriteVersion(nsAString & aDwriteVersion);
-  NS_SCRIPTABLE NS_IMETHOD GetCleartypeParameters(nsAString & aCleartypeParams);
-  NS_SCRIPTABLE NS_IMETHOD GetAdapterDescription(nsAString & aAdapterDescription);
-  NS_SCRIPTABLE NS_IMETHOD GetAdapterDriver(nsAString & aAdapterDriver);
-  NS_SCRIPTABLE NS_IMETHOD GetAdapterVendorID(nsAString & aAdapterVendorID);
-  NS_SCRIPTABLE NS_IMETHOD GetAdapterDeviceID(nsAString & aAdapterDeviceID);
-  NS_SCRIPTABLE NS_IMETHOD GetAdapterRAM(nsAString & aAdapterRAM);
-  NS_SCRIPTABLE NS_IMETHOD GetAdapterDriverVersion(nsAString & aAdapterDriverVersion);
-  NS_SCRIPTABLE NS_IMETHOD GetAdapterDriverDate(nsAString & aAdapterDriverDate);
-  NS_SCRIPTABLE NS_IMETHOD GetAdapterDescription2(nsAString & aAdapterDescription);
-  NS_SCRIPTABLE NS_IMETHOD GetAdapterDriver2(nsAString & aAdapterDriver);
-  NS_SCRIPTABLE NS_IMETHOD GetAdapterVendorID2(nsAString & aAdapterVendorID);
-  NS_SCRIPTABLE NS_IMETHOD GetAdapterDeviceID2(nsAString & aAdapterDeviceID);
-  NS_SCRIPTABLE NS_IMETHOD GetAdapterRAM2(nsAString & aAdapterRAM);
-  NS_SCRIPTABLE NS_IMETHOD GetAdapterDriverVersion2(nsAString & aAdapterDriverVersion);
-  NS_SCRIPTABLE NS_IMETHOD GetAdapterDriverDate2(nsAString & aAdapterDriverDate);
-  NS_SCRIPTABLE NS_IMETHOD GetIsGPU2Active(bool *aIsGPU2Active);
+  NS_IMETHOD GetD2DEnabled(bool *aD2DEnabled);
+  NS_IMETHOD GetDWriteEnabled(bool *aDWriteEnabled);
+  NS_IMETHOD GetDWriteVersion(nsAString & aDwriteVersion);
+  NS_IMETHOD GetCleartypeParameters(nsAString & aCleartypeParams);
+  NS_IMETHOD GetAdapterDescription(nsAString & aAdapterDescription);
+  NS_IMETHOD GetAdapterDriver(nsAString & aAdapterDriver);
+  NS_IMETHOD GetAdapterVendorID(nsAString & aAdapterVendorID);
+  NS_IMETHOD GetAdapterDeviceID(nsAString & aAdapterDeviceID);
+  NS_IMETHOD GetAdapterRAM(nsAString & aAdapterRAM);
+  NS_IMETHOD GetAdapterDriverVersion(nsAString & aAdapterDriverVersion);
+  NS_IMETHOD GetAdapterDriverDate(nsAString & aAdapterDriverDate);
+  NS_IMETHOD GetAdapterDescription2(nsAString & aAdapterDescription);
+  NS_IMETHOD GetAdapterDriver2(nsAString & aAdapterDriver);
+  NS_IMETHOD GetAdapterVendorID2(nsAString & aAdapterVendorID);
+  NS_IMETHOD GetAdapterDeviceID2(nsAString & aAdapterDeviceID);
+  NS_IMETHOD GetAdapterRAM2(nsAString & aAdapterRAM);
+  NS_IMETHOD GetAdapterDriverVersion2(nsAString & aAdapterDriverVersion);
+  NS_IMETHOD GetAdapterDriverDate2(nsAString & aAdapterDriverDate);
+  NS_IMETHOD GetIsGPU2Active(bool *aIsGPU2Active);
   using GfxInfoBase::GetFeatureStatus;
   using GfxInfoBase::GetFeatureSuggestedDriverVersion;
   using GfxInfoBase::GetWebGLParameter;
 
-  virtual nsresult Init();
+  void EnsureInitializedFromGfxInfoData();
+
+  virtual const nsAString& Model() const;
+  virtual const nsAString& Hardware() const;
+  virtual const nsAString& Product() const;
+  virtual const nsAString& Manufacturer() const;
 
 #ifdef DEBUG
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIGFXINFODEBUG
 #endif
 
+  virtual uint32_t OperatingSystemVersion() const;
+
 protected:
 
-  virtual nsresult GetFeatureStatusImpl(PRInt32 aFeature, 
-                                        PRInt32 *aStatus, 
+  virtual nsresult GetFeatureStatusImpl(int32_t aFeature, 
+                                        int32_t *aStatus, 
                                         nsAString & aSuggestedDriverVersion, 
                                         const nsTArray<GfxDriverInfo>& aDriverInfo,
-                                        OperatingSystem* aOS = nsnull);
+                                        OperatingSystem* aOS = nullptr);
   virtual const nsTArray<GfxDriverInfo>& GetGfxDriverInfo();
 
 private:
 
-  void     AddOpenGLCrashReportAnnotations();
-  nsString mRendererIDsString;
-  nsString mAdapterRAMString;
+  void AddCrashReportAnnotations();
 
-  nsString mDeviceID;
-  nsString mDriverVersion;
-  nsString mDriverDate;
-  nsString mDeviceKey;
+  bool mInitializedFromJavaData;
 
-  nsString mAdapterDeviceID;
-  nsString mAdapterVendorID;
-  nsString mAdapterDescription;
-  PRInt32 mAndroidSDKVersion;
+  // the GL strings
+  nsCString mVendor;
+  nsCString mRenderer;
+  nsCString mVersion;
+  // a possible error message produced by the data source (e.g. if EGL initialization failed)
+  nsCString mError;
 
-  PRUint32 mRendererIDs[16];
+  nsCString mAdapterDescription;
+
+  OperatingSystem mOS;
+
+  nsString mModel, mHardware, mManufacturer, mProduct;
+  nsCString mOSVersion;
+  uint32_t mOSVersionInteger;
 };
 
 } // namespace widget

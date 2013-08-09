@@ -12,11 +12,15 @@
  * definitions for use by Yarr.
  */
 
+#include <stdio.h>
+#include <stdarg.h>
 #include "jsstr.h"
 #include "jsprvtd.h"
 #include "vm/String.h"
 #include "assembler/wtf/Platform.h"
 #include "assembler/jit/ExecutableAllocator.h"
+#include "CheckedArithmetic.h"
+#include "js/TemplateLib.h"
 
 namespace JSC { namespace Yarr {
 
@@ -24,15 +28,16 @@ namespace JSC { namespace Yarr {
  * Basic type definitions.
  */
 
+typedef char LChar;
 typedef jschar UChar;
 typedef JSLinearString UString;
+typedef JSLinearString String;
 
-using namespace js::unicode;
 
 class Unicode {
   public:
-    static UChar toUpper(UChar c) { return ToUpperCase(c); }
-    static UChar toLower(UChar c) { return ToLowerCase(c); }
+    static UChar toUpper(UChar c) { return js::unicode::ToUpperCase(c); }
+    static UChar toLower(UChar c) { return js::unicode::ToLowerCase(c); }
 };
 
 /*
@@ -80,7 +85,7 @@ class OwnPtr {
 
     ~OwnPtr() {
         if (ptr)
-            js::Foreground::delete_(ptr);
+            js_delete(ptr);
     }
 
     OwnPtr<T> &operator=(PassOwnPtr<T> p) {
@@ -105,7 +110,8 @@ PassRefPtr<T> adoptRef(T *p) { return PassRefPtr<T>(p); }
 template<typename T>
 PassOwnPtr<T> adoptPtr(T *p) { return PassOwnPtr<T>(p); }
 
-#define WTF_MAKE_FAST_ALLOCATED
+// Dummy wrapper.
+#define WTF_MAKE_FAST_ALLOCATED void make_fast_allocated_()
 
 template<typename T>
 class Ref {
@@ -190,9 +196,13 @@ class Vector {
         (void) impl.resize(newLength);
     }
 
+    void swap(Vector &other) {
+        impl.swap(other.impl);
+    }
+
     void deleteAllValues() {
         for (T *p = impl.begin(); p != impl.end(); ++p)
-            js::Foreground::delete_(*p);
+            js_delete(*p);
     }
 };
 
@@ -218,7 +228,7 @@ class Vector<OwnPtr<T> > {
 
     void clear() {
         for (T **p = impl.begin(); p != impl.end(); ++p)
-            js::Foreground::delete_(*p);
+            delete_(*p);
         return impl.clear();
     }
 };
@@ -227,6 +237,15 @@ template <typename T, size_t N>
 inline void
 deleteAllValues(Vector<T, N> &v) {
     v.deleteAllValues();
+}
+
+static inline void
+dataLog(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
 }
 
 #if ENABLE_YARR_JIT
@@ -243,11 +262,6 @@ class JSGlobalData {
 };
 
 #endif
-
-/*
- * Sentinel value used in Yarr.
- */
-const size_t notFound = size_t(-1);
 
  /*
   * Do-nothing version of a macro used by WTF to avoid unused
@@ -273,18 +287,20 @@ namespace std {
 # undef max
 #endif
 
+#define NO_RETURN_DUE_TO_ASSERT
+
 template<typename T>
 inline T
 min(T t1, T t2)
 {
-    return JS_MIN(t1, t2);
+    return js::Min(t1, t2);
 }
 
 template<typename T>
 inline T
 max(T t1, T t2)
 {
-    return JS_MAX(t1, t2);
+    return js::Max(t1, t2);
 }
 
 template<typename T>
@@ -298,5 +314,16 @@ swap(T &t1, T &t2)
 } /* namespace std */
 
 } /* namespace JSC */
+
+namespace WTF {
+
+/*
+ * Sentinel value used in Yarr.
+ */
+const size_t notFound = size_t(-1);
+
+}
+
+#define JS_EXPORT_PRIVATE
 
 #endif

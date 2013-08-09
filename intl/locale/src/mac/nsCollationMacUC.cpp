@@ -16,7 +16,7 @@ nsCollationMacUC::nsCollationMacUC()
   , mLocale(NULL)
   , mLastStrength(-1)
   , mCollator(NULL)
-  , mBuffer(NULL)
+  , mBuffer(nullptr)
   , mBufferLen(1)
 {
 }
@@ -34,7 +34,7 @@ nsCollationMacUC::~nsCollationMacUC()
   PR_FREEIF(mBuffer);
 }
 
-nsresult nsCollationMacUC::StrengthToOptions(const PRInt32 aStrength,
+nsresult nsCollationMacUC::StrengthToOptions(const int32_t aStrength,
                                              UCCollateOptions* aOptions)
 {
   NS_ENSURE_ARG_POINTER(aOptions);
@@ -56,7 +56,8 @@ nsresult nsCollationMacUC::ConvertLocale(nsILocale* aNSLocale, LocaleRef* aMacLo
 
   nsAutoString localeString;
   nsresult res = aNSLocale->GetCategory(NS_LITERAL_STRING("NSILOCALE_COLLATE"), localeString);
-  NS_ENSURE_TRUE(res == noErr && !localeString.IsEmpty(), NS_ERROR_FAILURE);
+  NS_ENSURE_TRUE(NS_SUCCEEDED(res) && !localeString.IsEmpty(),
+                 NS_ERROR_FAILURE);
   NS_LossyConvertUTF16toASCII tmp(localeString);
   tmp.ReplaceChar('-', '_');
   OSStatus err;
@@ -66,7 +67,7 @@ nsresult nsCollationMacUC::ConvertLocale(nsILocale* aNSLocale, LocaleRef* aMacLo
   return NS_OK;
 }
 
-nsresult nsCollationMacUC::EnsureCollator(const PRInt32 newStrength) 
+nsresult nsCollationMacUC::EnsureCollator(const int32_t newStrength) 
 {
   NS_ENSURE_TRUE(mInit, NS_ERROR_NOT_INITIALIZED);
   if (mHasCollator && (mLastStrength == newStrength))
@@ -113,8 +114,8 @@ NS_IMETHODIMP nsCollationMacUC::Initialize(nsILocale* locale)
   return NS_OK;
 }
 
-NS_IMETHODIMP nsCollationMacUC::AllocateRawSortKey(PRInt32 strength, const nsAString& stringIn,
-                                                   PRUint8** key, PRUint32* outLen)
+NS_IMETHODIMP nsCollationMacUC::AllocateRawSortKey(int32_t strength, const nsAString& stringIn,
+                                                   uint8_t** key, uint32_t* outLen)
 {
   NS_ENSURE_TRUE(mInit, NS_ERROR_NOT_INITIALIZED);
   NS_ENSURE_ARG_POINTER(key);
@@ -123,10 +124,10 @@ NS_IMETHODIMP nsCollationMacUC::AllocateRawSortKey(PRInt32 strength, const nsASt
   nsresult res = EnsureCollator(strength);
   NS_ENSURE_SUCCESS(res, res);
 
-  PRUint32 stringInLen = stringIn.Length();
-  PRUint32 maxKeyLen = (1 + stringInLen) * kCollationValueSizeFactor * sizeof(UCCollationValue);
+  uint32_t stringInLen = stringIn.Length();
+  uint32_t maxKeyLen = (1 + stringInLen) * kCollationValueSizeFactor * sizeof(UCCollationValue);
   if (maxKeyLen > mBufferLen) {
-    PRUint32 newBufferLen = mBufferLen;
+    uint32_t newBufferLen = mBufferLen;
     do {
       newBufferLen *= 2;
     } while (newBufferLen < maxKeyLen);
@@ -146,20 +147,20 @@ NS_IMETHODIMP nsCollationMacUC::AllocateRawSortKey(PRInt32 strength, const nsASt
                                      &actual, (UCCollationValue *)mBuffer);
   NS_ENSURE_TRUE((err == noErr), NS_ERROR_FAILURE);
 
-  PRUint32 keyLength = actual * sizeof(UCCollationValue);
+  uint32_t keyLength = actual * sizeof(UCCollationValue);
   void *newKey = PR_Malloc(keyLength);
   if (!newKey)
     return NS_ERROR_OUT_OF_MEMORY;
 
   memcpy(newKey, mBuffer, keyLength);
-  *key = (PRUint8 *)newKey;
+  *key = (uint8_t *)newKey;
   *outLen = keyLength;
 
   return NS_OK;
 }
 
-NS_IMETHODIMP nsCollationMacUC::CompareString(PRInt32 strength, const nsAString& string1,
-                                              const nsAString& string2, PRInt32* result) 
+NS_IMETHODIMP nsCollationMacUC::CompareString(int32_t strength, const nsAString& string1,
+                                              const nsAString& string2, int32_t* result) 
 {
   NS_ENSURE_TRUE(mInit, NS_ERROR_NOT_INITIALIZED);
   NS_ENSURE_ARG_POINTER(result);
@@ -179,9 +180,9 @@ NS_IMETHODIMP nsCollationMacUC::CompareString(PRInt32 strength, const nsAString&
   return NS_OK;
 }
 
-NS_IMETHODIMP nsCollationMacUC::CompareRawSortKey(const PRUint8* key1, PRUint32 len1,
-                                                  const PRUint8* key2, PRUint32 len2,
-                                                  PRInt32* result)
+NS_IMETHODIMP nsCollationMacUC::CompareRawSortKey(const uint8_t* key1, uint32_t len1,
+                                                  const uint8_t* key2, uint32_t len2,
+                                                  int32_t* result)
 {
   NS_ENSURE_TRUE(mInit, NS_ERROR_NOT_INITIALIZED);
   NS_ENSURE_ARG_POINTER(key1);

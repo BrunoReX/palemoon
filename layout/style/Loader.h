@@ -18,6 +18,8 @@
 #include "nsTArray.h"
 #include "nsTObserverArray.h"
 #include "nsURIHashKey.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/CORSMode.h"
 
 class nsIAtom;
 class nsICSSLoaderObserver;
@@ -27,41 +29,45 @@ class nsIDocument;
 class nsCSSParser;
 class nsMediaList;
 class nsIStyleSheetLinkingElement;
+class nsCycleCollectionTraversalCallback;
 
 namespace mozilla {
 
-class URIAndPrincipalHashKey : public nsURIHashKey
+class URIPrincipalAndCORSModeHashKey : public nsURIHashKey
 {
 public:
-  typedef URIAndPrincipalHashKey* KeyType;
-  typedef const URIAndPrincipalHashKey* KeyTypePointer;
+  typedef URIPrincipalAndCORSModeHashKey* KeyType;
+  typedef const URIPrincipalAndCORSModeHashKey* KeyTypePointer;
 
-  URIAndPrincipalHashKey(const URIAndPrincipalHashKey* aKey)
-    : nsURIHashKey(aKey->mKey), mPrincipal(aKey->mPrincipal)
+  URIPrincipalAndCORSModeHashKey(const URIPrincipalAndCORSModeHashKey* aKey)
+    : nsURIHashKey(aKey->mKey), mPrincipal(aKey->mPrincipal),
+      mCORSMode(aKey->mCORSMode)
   {
-    MOZ_COUNT_CTOR(URIAndPrincipalHashKey);
+    MOZ_COUNT_CTOR(URIPrincipalAndCORSModeHashKey);
   }
-  URIAndPrincipalHashKey(nsIURI* aURI, nsIPrincipal* aPrincipal)
-    : nsURIHashKey(aURI), mPrincipal(aPrincipal)
+  URIPrincipalAndCORSModeHashKey(nsIURI* aURI, nsIPrincipal* aPrincipal,
+                                 CORSMode aCORSMode)
+    : nsURIHashKey(aURI), mPrincipal(aPrincipal), mCORSMode(aCORSMode)
   {
-    MOZ_COUNT_CTOR(URIAndPrincipalHashKey);
+    MOZ_COUNT_CTOR(URIPrincipalAndCORSModeHashKey);
   }
-  URIAndPrincipalHashKey(const URIAndPrincipalHashKey& toCopy)
-    : nsURIHashKey(toCopy), mPrincipal(toCopy.mPrincipal)
+  URIPrincipalAndCORSModeHashKey(const URIPrincipalAndCORSModeHashKey& toCopy)
+    : nsURIHashKey(toCopy), mPrincipal(toCopy.mPrincipal),
+      mCORSMode(toCopy.mCORSMode)
   {
-    MOZ_COUNT_CTOR(URIAndPrincipalHashKey);
+    MOZ_COUNT_CTOR(URIPrincipalAndCORSModeHashKey);
   }
-  ~URIAndPrincipalHashKey()
+  ~URIPrincipalAndCORSModeHashKey()
   {
-    MOZ_COUNT_DTOR(URIAndPrincipalHashKey);
+    MOZ_COUNT_DTOR(URIPrincipalAndCORSModeHashKey);
   }
 
-  URIAndPrincipalHashKey* GetKey() const {
-    return const_cast<URIAndPrincipalHashKey*>(this);
+  URIPrincipalAndCORSModeHashKey* GetKey() const {
+    return const_cast<URIPrincipalAndCORSModeHashKey*>(this);
   }
-  const URIAndPrincipalHashKey* GetKeyPointer() const { return this; }
+  const URIPrincipalAndCORSModeHashKey* GetKeyPointer() const { return this; }
 
-  bool KeyEquals(const URIAndPrincipalHashKey* aKey) const {
+  bool KeyEquals(const URIPrincipalAndCORSModeHashKey* aKey) const {
     if (!nsURIHashKey::KeyEquals(aKey->mKey)) {
       return false;
     }
@@ -71,14 +77,19 @@ public:
       return false;
     }
 
+    if (mCORSMode != aKey->mCORSMode) {
+      // Different CORS modes; we don't match
+      return false;
+    }
+
     bool eq;
     return !mPrincipal ||
       (NS_SUCCEEDED(mPrincipal->Equals(aKey->mPrincipal, &eq)) && eq);
   }
 
-  static const URIAndPrincipalHashKey*
-  KeyToPointer(URIAndPrincipalHashKey* aKey) { return aKey; }
-  static PLDHashNumber HashKey(const URIAndPrincipalHashKey* aKey) {
+  static const URIPrincipalAndCORSModeHashKey*
+  KeyToPointer(URIPrincipalAndCORSModeHashKey* aKey) { return aKey; }
+  static PLDHashNumber HashKey(const URIPrincipalAndCORSModeHashKey* aKey) {
     return nsURIHashKey::HashKey(aKey->mKey);
   }
 
@@ -86,6 +97,7 @@ public:
 
 protected:
   nsCOMPtr<nsIPrincipal> mPrincipal;
+  CORSMode mCORSMode;
 };
 
 
@@ -106,15 +118,13 @@ enum StyleSheetState {
   eSheetComplete
 };
 
-class Loader {
+class Loader MOZ_FINAL {
 public:
   Loader();
   Loader(nsIDocument*);
   ~Loader();
 
-  // This isn't a COM class but it's reference-counted like one.
-  NS_IMETHOD_(nsrefcnt) AddRef();
-  NS_IMETHOD_(nsrefcnt) Release();
+  NS_INLINE_DECL_REFCOUNTING(Loader)
 
   void DropDocumentReference(); // notification that doc is going away
 
@@ -147,7 +157,7 @@ public:
    */
   nsresult LoadInlineStyle(nsIContent* aElement,
                            const nsAString& aBuffer,
-                           PRUint32 aLineNumber,
+                           uint32_t aLineNumber,
                            const nsAString& aTitle,
                            const nsAString& aMedia,
                            nsICSSLoaderObserver* aObserver,
@@ -167,6 +177,7 @@ public:
    * @param aMedia the media string for the sheet.
    * @param aHasAlternateRel whether the rel for this link included
    *        "alternate".
+   * @param aCORSMode the CORS mode for this load.
    * @param aObserver the observer to notify when the load completes.
    *                  May be null.
    * @param [out] aIsAlternate whether the stylesheet actually ended up beinga
@@ -178,6 +189,7 @@ public:
                          const nsAString& aTitle,
                          const nsAString& aMedia,
                          bool aHasAlternateRel,
+                         CORSMode aCORSMode,
                          nsICSSLoaderObserver* aObserver,
                          bool* aIsAlternate);
 
@@ -273,7 +285,8 @@ public:
   nsresult LoadSheet(nsIURI* aURL,
                      nsIPrincipal* aOriginPrincipal,
                      const nsCString& aCharset,
-                     nsICSSLoaderObserver* aObserver);
+                     nsICSSLoaderObserver* aObserver,
+                     CORSMode aCORSMode = CORS_NONE);
 
   /**
    * Stop loading all sheets.  All nsICSSLoaderObservers involved will be
@@ -339,6 +352,17 @@ public:
 
   typedef nsTArray<nsRefPtr<SheetLoadData> > LoadDataArray;
 
+  // Traverse the cached stylesheets we're holding on to.  This should
+  // only be called from the document that owns this loader.
+  void TraverseCachedSheets(nsCycleCollectionTraversalCallback& cb);
+
+  // Unlink the cached stylesheets we're holding on to.  Again, this
+  // should only be called from the document that owns this loader.
+  void UnlinkCachedSheets();
+
+  // Measure our size.
+  size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
+
 private:
   friend class SheetLoadData;
 
@@ -356,6 +380,7 @@ private:
   nsresult CreateSheet(nsIURI* aURI,
                        nsIContent* aLinkingContent,
                        nsIPrincipal* aLoaderPrincipal,
+                       CORSMode aCORSMode,
                        bool aSyncLoad,
                        bool aHasAlternateRel,
                        const nsAString& aTitle,
@@ -386,7 +411,8 @@ private:
                                         nsIPrincipal* aOriginPrincipal,
                                         const nsCString& aCharset,
                                         nsCSSStyleSheet** aSheet,
-                                        nsICSSLoaderObserver* aObserver);
+                                        nsICSSLoaderObserver* aObserver,
+                                        CORSMode aCORSMode = CORS_NONE);
 
   // Post a load event for aObserver to be notified about aSheet.  The
   // notification will be sent with status NS_OK unless the load event is
@@ -429,11 +455,11 @@ private:
   void DoSheetComplete(SheetLoadData* aLoadData, nsresult aStatus,
                        LoadDataArray& aDatasToNotify);
 
-  nsRefPtrHashtable<URIAndPrincipalHashKey, nsCSSStyleSheet>
+  nsRefPtrHashtable<URIPrincipalAndCORSModeHashKey, nsCSSStyleSheet>
                     mCompleteSheets;
-  nsDataHashtable<URIAndPrincipalHashKey, SheetLoadData*>
+  nsDataHashtable<URIPrincipalAndCORSModeHashKey, SheetLoadData*>
                     mLoadingDatas; // weak refs
-  nsDataHashtable<URIAndPrincipalHashKey, SheetLoadData*>
+  nsDataHashtable<URIPrincipalAndCORSModeHashKey, SheetLoadData*>
                     mPendingDatas; // weak refs
 
   // We're not likely to have many levels of @import...  But likely to have
@@ -451,15 +477,12 @@ private:
   // the load data needs access to the document...
   nsIDocument*      mDocument;  // the document we live for
 
-  // Refcounting
-  nsAutoRefCnt      mRefCnt;
-  NS_DECL_OWNINGTHREAD
 
   // Number of datas still waiting to be notified on if we're notifying on a
   // whole bunch at once (e.g. in one of the stop methods).  This is used to
   // make sure that HasPendingLoads() won't return false until we're notifying
   // on the last data we're working with.
-  PRUint32          mDatasToNotifyOn;
+  uint32_t          mDatasToNotifyOn;
 
   nsCompatibility   mCompatMode;
   nsString          mPreferredSheet;  // title of preferred sheet

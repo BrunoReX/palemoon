@@ -2,16 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH          = ../../../../..
+DEPTH          = @DEPTH@
 topsrcdir      = @top_srcdir@
 srcdir         = @srcdir@
 VPATH          = @srcdir@
-relativesrcdir = content/html/content/test/forms
+relativesrcdir = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
-include $(topsrcdir)/config/rules.mk
 
-_TEST_FILES = \
+MOCHITEST_FILES = \
 		save_restore_radio_groups.sjs \
 		test_save_restore_radio_groups.html \
 		test_change_event.html \
@@ -33,15 +32,24 @@ _TEST_FILES = \
 		test_maxlength_attribute.html \
 		test_datalist_element.html \
 		test_form_attributes_reflection.html \
+		test_option_disabled.html \
 		test_option_index_attribute.html \
+		test_option_text.html \
 		test_progress_element.html \
 		test_form_attribute-1.html \
 		test_form_attribute-2.html \
 		test_form_attribute-3.html \
 		test_form_attribute-4.html \
-		test_option_disabled.html \
+		test_meter_element.html \
+		test_meter_pseudo-classes.html \
+		test_max_attribute.html \
+		test_min_attribute.html \
+		test_step_attribute.html \
+		test_stepup_stepdown.html \
+		test_valueasnumber_attribute.html \
+		test_experimental_forms_pref.html \
+		test_input_number_value.html \
 		$(NULL)
 
-libs:: $(_TEST_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/tests/$(relativesrcdir)
+include $(topsrcdir)/config/rules.mk
 

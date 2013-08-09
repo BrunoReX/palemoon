@@ -7,10 +7,10 @@
 #include "nsEscCharsetProber.h"
 #include "nsUniversalDetector.h"
 
-nsEscCharSetProber::nsEscCharSetProber(PRUint32 aLanguageFilter)
+nsEscCharSetProber::nsEscCharSetProber(uint32_t aLanguageFilter)
 {
-  for (PRUint32 i = 0; i < NUM_OF_ESC_CHARSETS; i++)
-    mCodingSM[i] = nsnull;
+  for (uint32_t i = 0; i < NUM_OF_ESC_CHARSETS; i++)
+    mCodingSM[i] = nullptr;
   if (aLanguageFilter & NS_FILTER_CHINESE_SIMPLIFIED) 
   {
     mCodingSM[0] = new nsCodingStateMachine(&HZSMModel);
@@ -22,30 +22,30 @@ nsEscCharSetProber::nsEscCharSetProber(PRUint32 aLanguageFilter)
     mCodingSM[3] = new nsCodingStateMachine(&ISO2022KRSMModel);
   mActiveSM = NUM_OF_ESC_CHARSETS;
   mState = eDetecting;
-  mDetectedCharset = nsnull;
+  mDetectedCharset = nullptr;
 }
 
 nsEscCharSetProber::~nsEscCharSetProber(void)
 {
-  for (PRUint32 i = 0; i < NUM_OF_ESC_CHARSETS; i++)
+  for (uint32_t i = 0; i < NUM_OF_ESC_CHARSETS; i++)
     delete mCodingSM[i];
 }
 
 void nsEscCharSetProber::Reset(void)
 {
   mState = eDetecting;
-  for (PRUint32 i = 0; i < NUM_OF_ESC_CHARSETS; i++)
+  for (uint32_t i = 0; i < NUM_OF_ESC_CHARSETS; i++)
     if (mCodingSM[i])
       mCodingSM[i]->Reset();
   mActiveSM = NUM_OF_ESC_CHARSETS;
-  mDetectedCharset = nsnull;
+  mDetectedCharset = nullptr;
 }
 
-nsProbingState nsEscCharSetProber::HandleData(const char* aBuf, PRUint32 aLen)
+nsProbingState nsEscCharSetProber::HandleData(const char* aBuf, uint32_t aLen)
 {
   nsSMState codingState;
-  PRInt32 j;
-  PRUint32 i;
+  int32_t j;
+  uint32_t i;
 
   for ( i = 0; i < aLen && mState == eDetecting; i++)
   {

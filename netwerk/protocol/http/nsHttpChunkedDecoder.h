@@ -14,7 +14,7 @@
 class nsHttpChunkedDecoder
 {
 public:
-    nsHttpChunkedDecoder() : mTrailers(nsnull)
+    nsHttpChunkedDecoder() : mTrailers(nullptr)
                            , mChunkRemaining(0)
                            , mReachedEOF(false)
                            , mWaitEOF(false) {}
@@ -24,26 +24,26 @@ public:
 
     // called by the transaction to handle chunked content.
     nsresult HandleChunkedContent(char *buf,
-                                  PRUint32 count,
-                                  PRUint32 *contentRead,
-                                  PRUint32 *contentRemaining);
+                                  uint32_t count,
+                                  uint32_t *contentRead,
+                                  uint32_t *contentRemaining);
 
     nsHttpHeaderArray *Trailers() { return mTrailers; }
 
     nsHttpHeaderArray *TakeTrailers() { nsHttpHeaderArray *h = mTrailers;
-                                        mTrailers = nsnull;
+                                        mTrailers = nullptr;
                                         return h; }
 
-    PRUint32 GetChunkRemaining() { return mChunkRemaining; }
+    uint32_t GetChunkRemaining() { return mChunkRemaining; }
 
 private:
     nsresult ParseChunkRemaining(char *buf,
-                                 PRUint32 count,
-                                 PRUint32 *countRead);
+                                 uint32_t count,
+                                 uint32_t *countRead);
 
 private:
     nsHttpHeaderArray *mTrailers;
-    PRUint32           mChunkRemaining;
+    uint32_t           mChunkRemaining;
     nsCString          mLineBuf; // may hold a partial line
     bool               mReachedEOF;
     bool               mWaitEOF;

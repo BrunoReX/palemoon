@@ -7,14 +7,14 @@
 #define nsXMLElement_h___
 
 #include "nsIDOMElement.h"
-#include "nsGenericElement.h"
+#include "mozilla/dom/Element.h"
 
-class nsXMLElement : public nsGenericElement,
+class nsXMLElement : public mozilla::dom::Element,
                      public nsIDOMElement
 {
 public:
   nsXMLElement(already_AddRefed<nsINodeInfo> aNodeInfo)
-    : nsGenericElement(aNodeInfo)
+    : mozilla::dom::Element(aNodeInfo)
   {
   }
 
@@ -22,10 +22,10 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsINode interface methods
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
@@ -41,14 +41,14 @@ public:
                               nsIContent* aBindingParent,
                               bool aCompileEventHandlers);
   virtual void UnbindFromTree(bool aDeep, bool aNullParent);
-  virtual nsresult UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
+  virtual nsresult UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
                              bool aNotify);
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
 
-  // nsGenericElement overrides
+  // Element overrides
   virtual void NodeInfoChanged(nsINodeInfo* aOldNodeInfo);
 
 

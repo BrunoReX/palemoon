@@ -11,6 +11,7 @@
 #ifndef nsStyleStructInlines_h_
 #define nsStyleStructInlines_h_
 
+#include "nsIFrame.h"
 #include "nsStyleStruct.h"
 #include "imgIRequest.h"
 #include "imgIContainer.h"
@@ -32,7 +33,7 @@ nsStyleBorder::GetBorderImage() const
 
 inline bool nsStyleBorder::IsBorderImageLoaded() const
 {
-  PRUint32 status;
+  uint32_t status;
   return mBorderImageSource &&
          NS_SUCCEEDED(mBorderImageSource->GetImageStatus(&status)) &&
          (status & imgIRequest::STATUS_LOAD_COMPLETE) &&
@@ -40,18 +41,130 @@ inline bool nsStyleBorder::IsBorderImageLoaded() const
 }
 
 inline void
-nsStyleBorder::SetSubImage(PRUint8 aIndex, imgIContainer* aSubImage) const
+nsStyleBorder::SetSubImage(uint8_t aIndex, imgIContainer* aSubImage) const
 {
   const_cast<nsStyleBorder*>(this)->mSubImages.ReplaceObjectAt(aSubImage, aIndex);
 }
 
 inline imgIContainer*
-nsStyleBorder::GetSubImage(PRUint8 aIndex) const
+nsStyleBorder::GetSubImage(uint8_t aIndex) const
 {
-  imgIContainer* subImage = nsnull;
+  imgIContainer* subImage = nullptr;
   if (aIndex < mSubImages.Count())
     subImage = mSubImages[aIndex];
   return subImage;
+}
+
+bool
+nsStyleText::HasTextShadow(const nsIFrame* aFrame) const
+{
+  return mTextShadow && !aFrame->IsSVGText();
+}
+
+nsCSSShadowArray*
+nsStyleText::GetTextShadow(const nsIFrame* aFrame) const
+{
+  if (aFrame->IsSVGText()) {
+    return nullptr;
+  }
+  return mTextShadow;
+}
+
+bool
+nsStyleDisplay::IsBlockInside(const nsIFrame* aFrame) const
+{
+  if (aFrame->GetStateBits() & NS_FRAME_IS_SVG_TEXT) {
+    return aFrame->GetType() == nsGkAtoms::blockFrame;
+  }
+  return IsBlockInsideStyle();
+}
+
+bool
+nsStyleDisplay::IsBlockOutside(const nsIFrame* aFrame) const
+{
+  if (aFrame->GetStateBits() & NS_FRAME_IS_SVG_TEXT) {
+    return aFrame->GetType() == nsGkAtoms::blockFrame;
+  }
+  return IsBlockOutsideStyle();
+}
+
+bool
+nsStyleDisplay::IsInlineOutside(const nsIFrame* aFrame) const
+{
+  if (aFrame->GetStateBits() & NS_FRAME_IS_SVG_TEXT) {
+    return aFrame->GetType() != nsGkAtoms::blockFrame;
+  }
+  return IsInlineOutsideStyle();
+}
+
+bool
+nsStyleDisplay::IsOriginalDisplayInlineOutside(const nsIFrame* aFrame) const
+{
+  if (aFrame->GetStateBits() & NS_FRAME_IS_SVG_TEXT) {
+    return aFrame->GetType() != nsGkAtoms::blockFrame;
+  }
+  return IsOriginalDisplayInlineOutsideStyle();
+}
+
+uint8_t
+nsStyleDisplay::GetDisplay(const nsIFrame* aFrame) const
+{
+  if ((aFrame->GetStateBits() & NS_FRAME_IS_SVG_TEXT) &&
+      mDisplay != NS_STYLE_DISPLAY_NONE) {
+    return aFrame->GetType() == nsGkAtoms::blockFrame ?
+             NS_STYLE_DISPLAY_BLOCK :
+             NS_STYLE_DISPLAY_INLINE;
+  }
+  return mDisplay;
+}
+
+bool
+nsStyleDisplay::IsFloating(const nsIFrame* aFrame) const
+{
+  return IsFloatingStyle() && !aFrame->IsSVGText();
+}
+
+bool
+nsStyleDisplay::HasTransform(const nsIFrame* aFrame) const
+{
+  return HasTransformStyle() && aFrame->IsFrameOfType(nsIFrame::eSupportsCSSTransforms);
+}
+
+bool
+nsStyleDisplay::IsPositioned(const nsIFrame* aFrame) const
+{
+  return (IsAbsolutelyPositionedStyle() ||
+          IsRelativelyPositionedStyle() ||
+          HasTransform(aFrame)) &&
+         !aFrame->IsSVGText();
+}
+
+bool
+nsStyleDisplay::IsRelativelyPositioned(const nsIFrame* aFrame) const
+{
+  return IsRelativelyPositionedStyle() && !aFrame->IsSVGText();
+}
+
+bool
+nsStyleDisplay::IsAbsolutelyPositioned(const nsIFrame* aFrame) const
+{
+  return IsAbsolutelyPositionedStyle() && !aFrame->IsSVGText();
+}
+
+uint8_t
+nsStyleVisibility::GetEffectivePointerEvents(nsIFrame* aFrame) const
+{
+  if (aFrame->GetContent() && !aFrame->GetContent()->GetParent()) {
+    // The root element has a cluster of frames associated with it
+    // (root scroll frame, canvas frame, the actual primary frame). Make
+    // those take their pointer-events value from the root element's primary
+    // frame.
+    nsIFrame* f = aFrame->GetContent()->GetPrimaryFrame();
+    if (f) {
+      return f->GetStyleVisibility()->mPointerEvents;
+    }
+  }
+  return mPointerEvents;
 }
 
 #endif /* !defined(nsStyleStructInlines_h_) */

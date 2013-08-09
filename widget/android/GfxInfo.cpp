@@ -5,10 +5,10 @@
 
 #include "GfxInfo.h"
 #include "nsUnicharUtils.h"
-#include "mozilla/FunctionTimer.h"
 #include "prenv.h"
 #include "prprf.h"
 #include "nsHashKeys.h"
+#include "nsVersionComparator.h"
 
 #include "AndroidBridge.h"
 
@@ -24,6 +24,11 @@ using namespace mozilla::widget;
 NS_IMPL_ISUPPORTS_INHERITED1(GfxInfo, GfxInfoBase, nsIGfxInfoDebug)
 #endif
 
+GfxInfo::GfxInfo()
+  : mInitializedFromJavaData(false)
+{
+}
+
 /* GetD2DEnabled and GetDwriteEnabled shouldn't be called until after gfxPlatform initialization
  * has occurred because they depend on it for information. (See bug 591561) */
 nsresult
@@ -34,12 +39,6 @@ GfxInfo::GetD2DEnabled(bool *aEnabled)
 
 nsresult
 GfxInfo::GetDWriteEnabled(bool *aEnabled)
-{
-  return NS_ERROR_FAILURE;
-}
-
-nsresult
-GfxInfo::GetAzureEnabled(bool *aEnabled)
 {
   return NS_ERROR_FAILURE;
 }
@@ -58,53 +57,119 @@ GfxInfo::GetCleartypeParameters(nsAString & aCleartypeParams)
   return NS_ERROR_FAILURE;
 }
 
-nsresult
-GfxInfo::Init()
+void
+GfxInfo::EnsureInitializedFromGfxInfoData()
 {
-  mAdapterDescription.AssignLiteral(""); // we may append to it below
-  if (mozilla::AndroidBridge::Bridge()) {
-    nsAutoString str;
+  if (mInitializedFromJavaData)
+    return;
+  mInitializedFromJavaData = true;
 
-    mAdapterDescription.Append(NS_LITERAL_STRING("Model: '"));
-    if (mozilla::AndroidBridge::Bridge()->GetStaticStringField("android/os/Build", "MODEL", str)) {
-      mAdapterDeviceID = str;
-      mAdapterDescription.Append(str);
-    }
+  {
+    nsCString gfxInfoData;
+    mozilla::AndroidBridge::Bridge()->GetGfxInfoData(gfxInfoData);
 
-    mAdapterDescription.Append(NS_LITERAL_STRING("', Product: '"));
-    if (mozilla::AndroidBridge::Bridge()->GetStaticStringField("android/os/Build", "PRODUCT", str))
-      mAdapterDescription.Append(str);
+    // the code here is a mini-parser for the text that GfxInfoThread.java produces.
+    // Here, |stringToFill| is the parser state. If it's null, we are expecting
+    // the next line to tell us what is the next string we'll read, e.g. "VENDOR"
+    // means that the next string we'll read is |mVendor|. We record that knowledge
+    // in the |stringToFill| pointer. So when it's not null, we just copy the next
+    // input line into the string pointed to by |stringToFill|.
+    nsCString *stringToFill = nullptr;
+    char *bufptr = gfxInfoData.BeginWriting();
 
-    mAdapterDescription.Append(NS_LITERAL_STRING("', Manufacturer: '"));
-    if (mozilla::AndroidBridge::Bridge()->GetStaticStringField("android/os/Build", "MANUFACTURER", str))
-      mAdapterDescription.Append(str);
-
-    mAdapterDescription.Append(NS_LITERAL_STRING("', Hardware: '"));
-    PRInt32 version; // the HARDWARE field isn't available on Android SDK < 8
-    if (!mozilla::AndroidBridge::Bridge()->GetStaticIntField("android/os/Build$VERSION", "SDK_INT", &version))
-      version = 0;
-
-    if (version >= 8 && mozilla::AndroidBridge::Bridge()->GetStaticStringField("android/os/Build", "HARDWARE", str)) {
-      if (mozilla::AndroidBridge::Bridge()->GetStaticStringField("android/os/Build", "HARDWARE", str)) {
-        mAdapterVendorID = str;
-        mAdapterDescription.Append(str);
+    while(true) {
+      char *line = NS_strtok("\n", &bufptr);
+      if (!line)
+        break;
+      if (stringToFill) {
+        stringToFill->Assign(line);
+        stringToFill = nullptr;
+      } else if(!strcmp(line, "VENDOR")) {
+        stringToFill = &mVendor;
+      } else if(!strcmp(line, "RENDERER")) {
+        stringToFill = &mRenderer;
+      } else if(!strcmp(line, "VERSION")) {
+        stringToFill = &mVersion;
+      } else if(!strcmp(line, "ERROR")) {
+        stringToFill = &mError;
       }
     }
-
-    mAdapterDescription.Append(NS_LITERAL_STRING("'"));
-    mAndroidSDKVersion = version;
   }
 
-  AddOpenGLCrashReportAnnotations();
 
-  return GfxInfoBase::Init();
+  if (!mError.IsEmpty()) {
+    mAdapterDescription.AppendPrintf("An error occurred earlier while querying gfx info: %s. ",
+                                     mError.get());
+    printf_stderr("%s\n", mAdapterDescription.get());
+  }
+
+  const char *spoofedVendor = PR_GetEnv("MOZ_GFX_SPOOF_GL_VENDOR");
+  if (spoofedVendor)
+      mVendor.Assign(spoofedVendor);
+  const char *spoofedRenderer = PR_GetEnv("MOZ_GFX_SPOOF_GL_RENDERER");
+  if (spoofedRenderer)
+      mRenderer.Assign(spoofedRenderer);
+  const char *spoofedVersion = PR_GetEnv("MOZ_GFX_SPOOF_GL_VERSION");
+  if (spoofedVersion)
+      mVersion.Assign(spoofedVersion);
+
+  mAdapterDescription.AppendPrintf("%s -- %s -- %s",
+                                   mVendor.get(),
+                                   mRenderer.get(),
+                                   mVersion.get());
+
+  // Now we append general (non-gfx) device information. The only reason why this code is still here
+  // is that this used to be all we had in GfxInfo on Android, and we can't trivially remove it
+  // as it's useful information that isn't given anywhere else in about:support of in crash reports.
+  // But we should really move this out of GfxInfo.
+  if (mozilla::AndroidBridge::Bridge()) {
+    if (mozilla::AndroidBridge::Bridge()->GetStaticStringField("android/os/Build", "MODEL", mModel)) {
+      mAdapterDescription.AppendPrintf(" -- Model: %s",  NS_LossyConvertUTF16toASCII(mModel).get());
+    }
+
+    if (mozilla::AndroidBridge::Bridge()->GetStaticStringField("android/os/Build", "PRODUCT", mProduct)) {
+      mAdapterDescription.AppendPrintf(", Product: %s", NS_LossyConvertUTF16toASCII(mProduct).get());
+    }
+
+    if (mozilla::AndroidBridge::Bridge()->GetStaticStringField("android/os/Build", "MANUFACTURER", mManufacturer)) {
+      mAdapterDescription.AppendPrintf(", Manufacturer: %s", NS_LossyConvertUTF16toASCII(mManufacturer).get());
+    }
+
+    int32_t sdkVersion;
+    if (!mozilla::AndroidBridge::Bridge()->GetStaticIntField("android/os/Build$VERSION", "SDK_INT", &sdkVersion))
+      sdkVersion = 0;
+
+    // the HARDWARE field isn't available on Android SDK < 8
+    if (sdkVersion >= 8 && mozilla::AndroidBridge::Bridge()->GetStaticStringField("android/os/Build", "HARDWARE", mHardware)) {
+      mAdapterDescription.AppendPrintf(", Hardware: %s", NS_LossyConvertUTF16toASCII(mHardware).get());
+    }
+
+    nsString release;
+    mozilla::AndroidBridge::Bridge()->GetStaticStringField("android/os/Build$VERSION", "RELEASE", release);
+    mOSVersion = NS_LossyConvertUTF16toASCII(release);
+
+    mOSVersionInteger = 0;
+    char a[5], b[5], c[5], d[5];
+    SplitDriverVersion(mOSVersion.get(), a, b, c, d);
+    uint8_t na = atoi(a);
+    uint8_t nb = atoi(b);
+    uint8_t nc = atoi(c);
+    uint8_t nd = atoi(d);
+
+    mOSVersionInteger = (uint32_t(na) << 24) |
+                        (uint32_t(nb) << 16) |
+                        (uint32_t(nc) << 8)  |
+                        uint32_t(nd);
+  }
+
+  AddCrashReportAnnotations();
 }
 
 /* readonly attribute DOMString adapterDescription; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDescription(nsAString & aAdapterDescription)
 {
-  aAdapterDescription = mAdapterDescription;
+  aAdapterDescription = NS_ConvertASCIItoUTF16(mAdapterDescription);
   return NS_OK;
 }
 
@@ -149,8 +214,7 @@ GfxInfo::GetAdapterDriver2(nsAString & aAdapterDriver)
 NS_IMETHODIMP
 GfxInfo::GetAdapterDriverVersion(nsAString & aAdapterDriverVersion)
 {
-  aAdapterDriverVersion.Truncate(0);
-  aAdapterDriverVersion.AppendInt(mAndroidSDKVersion);
+  aAdapterDriverVersion = NS_ConvertASCIItoUTF16(mVersion);
   return NS_OK;
 }
 
@@ -180,7 +244,7 @@ GfxInfo::GetAdapterDriverDate2(nsAString & aAdapterDriverDate)
 NS_IMETHODIMP
 GfxInfo::GetAdapterVendorID(nsAString & aAdapterVendorID)
 {
-  aAdapterVendorID = mAdapterVendorID;
+  aAdapterVendorID = NS_ConvertASCIItoUTF16(mVendor);
   return NS_OK;
 }
 
@@ -195,7 +259,7 @@ GfxInfo::GetAdapterVendorID2(nsAString & aAdapterVendorID)
 NS_IMETHODIMP
 GfxInfo::GetAdapterDeviceID(nsAString & aAdapterDeviceID)
 {
-  aAdapterDeviceID = mAdapterDeviceID;
+  aAdapterDeviceID = NS_ConvertASCIItoUTF16(mRenderer);
   return NS_OK;
 }
 
@@ -214,35 +278,18 @@ GfxInfo::GetIsGPU2Active(bool* aIsGPU2Active)
 }
 
 void
-GfxInfo::AddOpenGLCrashReportAnnotations()
+GfxInfo::AddCrashReportAnnotations()
 {
 #if defined(MOZ_CRASHREPORTER)
-  nsAutoString adapterDescriptionString, deviceID, vendorID;
-  nsCAutoString narrowDeviceID, narrowVendorID;
-
-  GetAdapterDeviceID(deviceID);
-  GetAdapterVendorID(vendorID);
-  GetAdapterDescription(adapterDescriptionString);
-
-  narrowDeviceID = NS_ConvertUTF16toUTF8(deviceID);
-  narrowVendorID = NS_ConvertUTF16toUTF8(vendorID);
-
   CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("AdapterVendorID"),
-                                     narrowVendorID);
+                                     mVendor);
   CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("AdapterDeviceID"),
-                                     narrowDeviceID);
+                                     mRenderer);
 
   /* Add an App Note for now so that we get the data immediately. These
    * can go away after we store the above in the socorro db */
-  nsCAutoString note;
-  /* AppendPrintf only supports 32 character strings, mrghh. */
-  note.Append("AdapterVendorID: ");
-  note.Append(narrowVendorID);
-  note.Append(", AdapterDeviceID: ");
-  note.Append(narrowDeviceID);
-  note.Append(".\n");
-  note.AppendPrintf("AdapterDescription: '%s'.", NS_ConvertUTF16toUTF8(adapterDescriptionString).get());
-  note.Append("\n");
+  nsAutoCString note;
+  note.AppendPrintf("AdapterDescription: '%s'\n", mAdapterDescription.get());
 
   CrashReporter::AppendAppNotesToCrashReport(note);
 #endif
@@ -251,11 +298,8 @@ GfxInfo::AddOpenGLCrashReportAnnotations()
 const nsTArray<GfxDriverInfo>&
 GfxInfo::GetGfxDriverInfo()
 {
-  if (!mDriverInfo->Length()) {
-    /* The following entry, when uncommented, will allow us to whitelist a
-     * specific device. See the long comment in GetFeatureStatusImpl for more
-     * info. */
-#ifdef MOZ_JAVA_COMPOSITOR
+  if (mDriverInfo->IsEmpty()) {
+#ifdef MOZ_ANDROID_OMTC
     APPEND_TO_DRIVER_BLOCKLIST2( DRIVER_OS_ALL,
       (nsAString&) GfxDriverInfo::GetDeviceVendor(VendorAll), GfxDriverInfo::allDevices,
       nsIGfxInfo::FEATURE_OPENGL_LAYERS, nsIGfxInfo::FEATURE_NO_INFO,
@@ -264,42 +308,64 @@ GfxInfo::GetGfxDriverInfo()
     APPEND_TO_DRIVER_BLOCKLIST2( DRIVER_OS_ALL,
       (nsAString&) GfxDriverInfo::GetDeviceVendor(VendorAll), GfxDriverInfo::allDevices,
       nsIGfxInfo::FEATURE_OPENGL_LAYERS, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
-      DRIVER_LESS_THAN, GfxDriverInfo::allDriverVersions );
+      DRIVER_COMPARISON_IGNORED, GfxDriverInfo::allDriverVersions );
 #endif
   }
+
   return *mDriverInfo;
 }
 
 nsresult
-GfxInfo::GetFeatureStatusImpl(PRInt32 aFeature, 
-                              PRInt32 *aStatus, 
+GfxInfo::GetFeatureStatusImpl(int32_t aFeature, 
+                              int32_t *aStatus, 
                               nsAString & aSuggestedDriverVersion,
                               const nsTArray<GfxDriverInfo>& aDriverInfo, 
-                              OperatingSystem* aOS /* = nsnull */)
+                              OperatingSystem* aOS /* = nullptr */)
 {
   NS_ENSURE_ARG_POINTER(aStatus);
   aSuggestedDriverVersion.SetIsVoid(true);
   *aStatus = nsIGfxInfo::FEATURE_STATUS_UNKNOWN;
-  OperatingSystem os = DRIVER_OS_ANDROID;
+  OperatingSystem os = mOS;
   if (aOS)
     *aOS = os;
 
+  EnsureInitializedFromGfxInfoData();
+
+  if (!mError.IsEmpty()) {
+    *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+    return NS_OK;
+  }
+
   // Don't evaluate special cases when evaluating the downloaded blocklist.
-  if (!aDriverInfo.Length()) {
-    if (aFeature == FEATURE_OPENGL_LAYERS) {
-      /* The following code is an old way to whitelist devices when we're ready.
-       * It is staying here for reference. The best way to do this now is to add
-       * an entry in the list above. There is a dummy entry which will whitelist a
-       * device when uncommented and device/vendor IDs are inserted. It is
-       * preferred that we stop whitelisting and instead go to blocklisting, where
-       * everything is assumed to be okay as long as it's not in the blocklist. */
-      // nsAutoString str;
-      // /* Whitelist Galaxy S phones */
-      // if (mozilla::AndroidBridge::Bridge()->GetStaticStringField("android/os/Build", "HARDWARE", str)) {
-      //   if (str != NS_LITERAL_STRING("smdkc110")) {
-      //     status = FEATURE_BLOCKED_DEVICE;
-      //   }
-      // }
+  if (aDriverInfo.IsEmpty()) {
+    if (aFeature == FEATURE_WEBGL_OPENGL) {
+      if (mRenderer.Find("Adreno 200") != -1 ||
+          mRenderer.Find("Adreno 205") != -1)
+      {
+        *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+        return NS_OK;
+      }
+    }
+
+    if (aFeature == FEATURE_STAGEFRIGHT) {
+      NS_LossyConvertUTF16toASCII cManufacturer(mManufacturer);
+      NS_LossyConvertUTF16toASCII cModel(mModel);
+      if (CompareVersions(mOSVersion.get(), "4.0.0") < 0)
+      {
+        *aStatus = nsIGfxInfo::FEATURE_BLOCKED_OS_VERSION;
+        return NS_OK;
+      }
+      else if (CompareVersions(mOSVersion.get(), "4.1.0") < 0)
+      {
+        bool isWhitelisted =
+          cManufacturer.Equals("samsung", nsCaseInsensitiveCStringComparator()) ||
+          cModel.Equals("galaxy nexus", nsCaseInsensitiveCStringComparator()); // some Galaxy Nexus have manufacturer=amazon
+
+        if (!isWhitelisted) {
+          *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+          return NS_OK;
+        }
+      }
     }
   }
 
@@ -313,28 +379,58 @@ GfxInfo::GetFeatureStatusImpl(PRInt32 aFeature,
 /* void spoofVendorID (in DOMString aVendorID); */
 NS_IMETHODIMP GfxInfo::SpoofVendorID(const nsAString & aVendorID)
 {
-  mAdapterVendorID = aVendorID;
+  EnsureInitializedFromGfxInfoData(); // initialization from GfxInfo data overwrites mVendor
+  mVendor = NS_LossyConvertUTF16toASCII(aVendorID);
   return NS_OK;
 }
 
 /* void spoofDeviceID (in unsigned long aDeviceID); */
 NS_IMETHODIMP GfxInfo::SpoofDeviceID(const nsAString & aDeviceID)
 {
-  mAdapterDeviceID = aDeviceID;
+  EnsureInitializedFromGfxInfoData(); // initialization from GfxInfo data overwrites mRenderer
+  mRenderer = NS_LossyConvertUTF16toASCII(aDeviceID);
   return NS_OK;
 }
 
 /* void spoofDriverVersion (in DOMString aDriverVersion); */
 NS_IMETHODIMP GfxInfo::SpoofDriverVersion(const nsAString & aDriverVersion)
 {
-  mDriverVersion = aDriverVersion;
+  EnsureInitializedFromGfxInfoData(); // initialization from GfxInfo data overwrites mVersion
+  mVersion = NS_LossyConvertUTF16toASCII(aDriverVersion);
   return NS_OK;
 }
 
 /* void spoofOSVersion (in unsigned long aVersion); */
-NS_IMETHODIMP GfxInfo::SpoofOSVersion(PRUint32 aVersion)
+NS_IMETHODIMP GfxInfo::SpoofOSVersion(uint32_t aVersion)
 {
+  EnsureInitializedFromGfxInfoData(); // initialization from GfxInfo data overwrites mOSVersion
+  mOSVersion = aVersion;
   return NS_OK;
 }
 
 #endif
+
+const nsAString& GfxInfo::Model() const
+{
+  return mModel;
+}
+
+const nsAString& GfxInfo::Hardware() const
+{
+  return mHardware;
+}
+
+const nsAString& GfxInfo::Product() const
+{
+  return mProduct;
+}
+
+const nsAString& GfxInfo::Manufacturer() const
+{
+  return mManufacturer;
+}
+
+uint32_t GfxInfo::OperatingSystemVersion() const
+{
+  return mOSVersionInteger;
+}

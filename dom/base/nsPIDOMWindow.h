@@ -16,13 +16,13 @@
 #include "nsIDOMEventTarget.h"
 #include "nsIDOMDocument.h"
 #include "nsCOMPtr.h"
-#include "nsEvent.h"
 #include "nsIURI.h"
 
 #define DOM_WINDOW_DESTROYED_TOPIC "dom-window-destroyed"
 #define DOM_WINDOW_FROZEN_TOPIC "dom-window-frozen"
 #define DOM_WINDOW_THAWED_TOPIC "dom-window-thawed"
 
+class nsIIdleObserver;
 class nsIPrincipal;
 
 // Popup control state enum. The values in this enum must go from most
@@ -48,8 +48,8 @@ class nsIArray;
 class nsPIWindowRoot;
 
 #define NS_PIDOMWINDOW_IID \
-{ 0x41dd6a62, 0xda59, 0x46e5, \
-      { 0x9d, 0x74, 0x45, 0xf4, 0x49, 0x4e, 0x1a, 0x70 } }
+{ 0x7b18e421, 0x2179, 0x4e24, \
+  { 0x96, 0x58, 0x26, 0x75, 0xa4, 0x37, 0xf3, 0x8f } }
 
 class nsPIDOMWindow : public nsIDOMWindowInternal
 {
@@ -69,6 +69,9 @@ public:
                     "active state is only maintained on outer windows");
     mIsActive = aActive;
   }
+
+  virtual nsresult RegisterIdleObserver(nsIIdleObserver* aIdleObserver) = 0;
+  virtual nsresult UnregisterIdleObserver(nsIIdleObserver* aIdleObserver) = 0;
 
   bool IsActive()
   {
@@ -106,7 +109,7 @@ public:
     return mParentTarget;
   }
 
-  bool HasMutationListeners(PRUint32 aMutationEventType) const
+  bool HasMutationListeners(uint32_t aMutationEventType) const
   {
     const nsPIDOMWindow *win;
 
@@ -131,7 +134,7 @@ public:
     return (win->mMutationBits & aMutationEventType) != 0;
   }
 
-  void SetMutationListeners(PRUint32 aType)
+  void SetMutationListeners(uint32_t aType)
   {
     nsPIDOMWindow *win;
 
@@ -169,6 +172,20 @@ public:
     return mDoc;
   }
 
+  nsIDocument* GetDoc()
+  {
+    if (!mDoc) {
+      MaybeCreateDoc();
+    }
+    return mDoc;
+  }
+
+protected:
+  // Lazily instantiate an about:blank document if necessary, and if
+  // we have what it takes to do so.
+  void MaybeCreateDoc();
+
+public:
   // Internal getter/setter for the frame element, this version of the
   // getter crosses chrome boundaries whereas the public scriptable
   // one doesn't for security reasons.
@@ -263,14 +280,9 @@ public:
     return win->mIsHandlingResizeEvent;
   }
 
-  // Tell this window who opened it.  This only has an effect if there is
-  // either no document currently in the window or if the document is the
-  // original document this window came with (an about:blank document either
-  // preloaded into it when it was created, or created by
-  // CreateAboutBlankContentViewer()).
-  virtual void SetOpenerScriptPrincipal(nsIPrincipal* aPrincipal) = 0;
-  // Ask this window who opened it.
-  virtual nsIPrincipal* GetOpenerScriptPrincipal() = 0;
+  // Set the window up with an about:blank document with the current subject
+  // principal.
+  virtual void SetInitialPrincipalToSubject() = 0;
 
   virtual PopupControlState PushPopupControlState(PopupControlState aState,
                                                   bool aForce) const = 0;
@@ -279,19 +291,19 @@ public:
 
   // Returns an object containing the window's state.  This also suspends
   // all running timeouts in the window.
-  virtual nsresult SaveWindowState(nsISupports **aState) = 0;
+  virtual already_AddRefed<nsISupports> SaveWindowState() = 0;
 
   // Restore the window state from aState.
   virtual nsresult RestoreWindowState(nsISupports *aState) = 0;
 
   // Suspend timeouts in this window and in child windows.
-  virtual void SuspendTimeouts(PRUint32 aIncrease = 1,
+  virtual void SuspendTimeouts(uint32_t aIncrease = 1,
                                bool aFreezeChildren = true) = 0;
 
   // Resume suspended timeouts in this window and in child windows.
   virtual nsresult ResumeTimeouts(bool aThawChildren = true) = 0;
 
-  virtual PRUint32 TimeoutSuspendCount() = 0;
+  virtual uint32_t TimeoutSuspendCount() = 0;
 
   // Fire any DOM notification events related to things that happened while
   // the window was frozen.
@@ -301,11 +313,11 @@ public:
 
   // Add a timeout to this window.
   virtual nsresult SetTimeoutOrInterval(nsIScriptTimeoutHandler *aHandler,
-                                        PRInt32 interval,
-                                        bool aIsInterval, PRInt32 *aReturn) = 0;
+                                        int32_t interval,
+                                        bool aIsInterval, int32_t *aReturn) = 0;
 
   // Clear a timeout from this window.
-  virtual nsresult ClearTimeoutOrInterval(PRInt32 aTimerID) = 0;
+  virtual nsresult ClearTimeoutOrInterval(int32_t aTimerID) = 0;
 
   nsPIDOMWindow *GetOuterWindow()
   {
@@ -370,6 +382,8 @@ public:
    * called with a pointer to the current document, in that case the
    * document remains unchanged, but a new inner window will be
    * created.
+   *
+   * aDocument must not be null.
    */
   virtual nsresult SetNewDocument(nsIDocument *aDocument,
                                   nsISupports *aState,
@@ -464,12 +478,7 @@ public:
   void SetHasMouseEnterLeaveEventListeners()
   {
     mMayHaveMouseEnterLeaveEventListener = true;
-  }  
-
-  /**
-   * Initialize window.java and window.Packages.
-   */
-  virtual void InitJavaProperties() = 0;
+  }
 
   virtual JSObject* GetCachedXBLPrototypeHandler(nsXBLPrototypeHandler* aKey) = 0;
   virtual void CacheXBLPrototypeHandler(nsXBLPrototypeHandler* aKey,
@@ -486,18 +495,18 @@ public:
   nsIContent* GetFocusedNode()
   {
     if (IsOuterWindow()) {
-      return mInnerWindow ? mInnerWindow->mFocusedNode.get() : nsnull;
+      return mInnerWindow ? mInnerWindow->mFocusedNode.get() : nullptr;
     }
     return mFocusedNode;
   }
   virtual void SetFocusedNode(nsIContent* aNode,
-                              PRUint32 aFocusMethod = 0,
+                              uint32_t aFocusMethod = 0,
                               bool aNeedsFocus = false) = 0;
 
   /**
    * Retrieves the method that was used to focus the current node.
    */
-  virtual PRUint32 GetFocusMethod() = 0;
+  virtual uint32_t GetFocusMethod() = 0;
 
   /*
    * Tells the window that it now has focus or has lost focus, based on the
@@ -509,7 +518,7 @@ public:
    * aFocusMethod may be set to one of the focus method constants in
    * nsIFocusManager to indicate how focus was set.
    */
-  virtual bool TakeFocus(bool aFocus, PRUint32 aFocusMethod) = 0;
+  virtual bool TakeFocus(bool aFocus, uint32_t aFocusMethod) = 0;
 
   /**
    * Indicates that the window may now accept a document focus event. This
@@ -555,12 +564,29 @@ public:
   /**
    * Tell this window that it should listen for sensor changes of the given type.
    */
-  virtual void EnableDeviceSensor(PRUint32 aType) = 0;
+  virtual void EnableDeviceSensor(uint32_t aType) = 0;
 
   /**
    * Tell this window that it should remove itself from sensor change notifications.
    */
-  virtual void DisableDeviceSensor(PRUint32 aType) = 0;
+  virtual void DisableDeviceSensor(uint32_t aType) = 0;
+
+  virtual void EnableTimeChangeNotifications() = 0;
+  virtual void DisableTimeChangeNotifications() = 0;
+
+#ifdef MOZ_B2G
+  /**
+   * Tell the window that it should start to listen to the network event of the
+   * given aType.
+   */
+  virtual void EnableNetworkEvent(uint32_t aType) = 0;
+
+  /**
+   * Tell the window that it should stop to listen to the network event of the
+   * given aType.
+   */
+  virtual void DisableNetworkEvent(uint32_t aType) = 0;
+#endif // MOZ_B2G
 
   /**
    * Set a arguments for this window. This will be set on the window
@@ -576,12 +602,12 @@ public:
    * implementation must not do any AddRef/Release or other actions that will
    * mutate internal state.
    */
-  virtual PRUint32 GetSerial() = 0;
+  virtual uint32_t GetSerial() = 0;
 
   /**
    * Return the window id of this window
    */
-  PRUint64 WindowID() const { return mWindowID; }
+  uint64_t WindowID() const { return mWindowID; }
 
   /**
    * Dispatch a custom event with name aEventName targeted at this window.
@@ -595,6 +621,13 @@ public:
    */
   virtual void RefreshCompartmentPrincipal() = 0;
 
+  /**
+   * Like nsIDOMWindow::Open, except that we don't navigate to the given URL.
+   */
+  virtual nsresult
+  OpenNoNavigate(const nsAString& aUrl, const nsAString& aName,
+                 const nsAString& aOptions, nsIDOMWindow **_retval) = 0;
+
 protected:
   // The nsPIDOMWindow constructor. The aOuterWindow argument should
   // be null if and only if the created window itself is an outer
@@ -607,7 +640,7 @@ protected:
   void SetChromeEventHandlerInternal(nsIDOMEventTarget* aChromeEventHandler) {
     mChromeEventHandler = aChromeEventHandler;
     // mParentTarget will be set when the next event is dispatched.
-    mParentTarget = nsnull;
+    mParentTarget = nullptr;
   }
 
   virtual void UpdateParentTarget() = 0;
@@ -625,12 +658,12 @@ protected:
   nsCOMPtr<nsIDOMElement> mFrameElement;
   nsIDocShell           *mDocShell;  // Weak Reference
 
-  PRUint32               mModalStateDepth;
+  uint32_t               mModalStateDepth;
 
   // These variables are only used on inner windows.
   nsTimeout             *mRunningTimeout;
 
-  PRUint32               mMutationBits;
+  uint32_t               mMutationBits;
 
   bool                   mIsDocumentLoaded;
   bool                   mIsHandlingResizeEvent;
@@ -662,7 +695,7 @@ protected:
 
   // A unique (as long as our 64-bit counter doesn't roll over) id for
   // this window.
-  PRUint64 mWindowID;
+  uint64_t mWindowID;
 
   // This is only used by the inner window. Set to true once we've sent
   // the (chrome|content)-document-global-created notification.
@@ -728,7 +761,7 @@ protected:
 
 private:
   // Hide so that this class can only be stack-allocated
-  static void* operator new(size_t /*size*/) CPP_THROW_NEW { return nsnull; }
+  static void* operator new(size_t /*size*/) CPP_THROW_NEW { return nullptr; }
   static void operator delete(void* /*memory*/) {}
 };
 

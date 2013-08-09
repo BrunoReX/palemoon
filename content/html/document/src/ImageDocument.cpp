@@ -18,7 +18,7 @@
 #include "imgIRequest.h"
 #include "imgILoader.h"
 #include "imgIContainer.h"
-#include "nsStubImageDecoderObserver.h"
+#include "imgINotificationObserver.h"
 #include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "nsStyleContext.h"
@@ -30,7 +30,7 @@
 #include "nsPIDOMWindow.h"
 #include "nsIDOMElement.h"
 #include "nsIDOMHTMLElement.h"
-#include "nsContentErrors.h"
+#include "nsError.h"
 #include "nsURILoader.h"
 #include "nsIDocShell.h"
 #include "nsIContentViewer.h"
@@ -66,7 +66,7 @@ public:
 
 class ImageDocument : public MediaDocument
                     , public nsIImageDocument
-                    , public nsStubImageDecoderObserver
+                    , public imgINotificationObserver
                     , public nsIDOMEventListener
 {
 public:
@@ -83,7 +83,7 @@ public:
                                      nsISupports*        aContainer,
                                      nsIStreamListener** aDocListener,
                                      bool                aReset = true,
-                                     nsIContentSink*     aSink = nsnull);
+                                     nsIContentSink*     aSink = nullptr);
 
   virtual void SetScriptGlobalObject(nsIScriptGlobalObject* aScriptGlobalObject);
   virtual void Destroy();
@@ -91,12 +91,7 @@ public:
                           nsIDOMEventTarget* aDispatchStartTarget);
 
   NS_DECL_NSIIMAGEDOCUMENT
-
-  // imgIDecoderObserver (override nsStubImageDecoderObserver)
-  NS_IMETHOD OnStartContainer(imgIRequest* aRequest, imgIContainer* aImage);
-  NS_IMETHOD OnStopContainer(imgIRequest* aRequest, imgIContainer* aImage);
-  NS_IMETHOD OnStopDecode(imgIRequest *aRequest, nsresult aStatus, const PRUnichar *aStatusArg);
-  NS_IMETHOD OnDiscard(imgIRequest *aRequest);
+  NS_DECL_IMGINOTIFICATIONOBSERVER
 
   // nsIDOMEventListener
   NS_IMETHOD HandleEvent(nsIDOMEvent* aEvent);
@@ -115,7 +110,7 @@ protected:
 
   void UpdateTitleAndCharset();
 
-  nsresult ScrollImageTo(PRInt32 aX, PRInt32 aY, bool restoreImage);
+  nsresult ScrollImageTo(int32_t aX, int32_t aY, bool restoreImage);
 
   float GetRatio() {
     return NS_MIN((float)mVisibleWidth / mImageWidth,
@@ -125,12 +120,15 @@ protected:
   void ResetZoomLevel();
   float GetZoomLevel();
 
+  nsresult OnStartContainer(imgIRequest* aRequest, imgIContainer* aImage);
+  nsresult OnStopRequest(imgIRequest *aRequest, nsresult aStatus);
+
   nsCOMPtr<nsIContent>          mImageContent;
 
-  PRInt32                       mVisibleWidth;
-  PRInt32                       mVisibleHeight;
-  PRInt32                       mImageWidth;
-  PRInt32                       mImageHeight;
+  int32_t                       mVisibleWidth;
+  int32_t                       mVisibleHeight;
+  int32_t                       mImageWidth;
+  int32_t                       mImageHeight;
 
   nsAutoString                  mBackgroundColor;
 
@@ -178,7 +176,7 @@ ImageListener::OnStartRequest(nsIRequest* request, nsISupports *ctxt)
   nsCOMPtr<nsIURI> channelURI;
   channel->GetURI(getter_AddRefs(channelURI));
 
-  nsCAutoString mimeType;
+  nsAutoCString mimeType;
   channel->GetContentType(mimeType);
 
   nsIScriptSecurityManager* secMan = nsContentUtils::GetSecurityManager();
@@ -187,13 +185,13 @@ ImageListener::OnStartRequest(nsIRequest* request, nsISupports *ctxt)
     secMan->GetChannelPrincipal(channel, getter_AddRefs(channelPrincipal));
   }
   
-  PRInt16 decision = nsIContentPolicy::ACCEPT;
+  int16_t decision = nsIContentPolicy::ACCEPT;
   nsresult rv = NS_CheckContentProcessPolicy(nsIContentPolicy::TYPE_IMAGE,
                                              channelURI,
                                              channelPrincipal,
                                              domWindow->GetFrameElementInternal(),
                                              mimeType,
-                                             nsnull,
+                                             nullptr,
                                              &decision,
                                              nsContentUtils::GetContentPolicy(),
                                              secMan);
@@ -227,11 +225,11 @@ ImageDocument::~ImageDocument()
 NS_IMPL_CYCLE_COLLECTION_CLASS(ImageDocument)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(ImageDocument, MediaDocument)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mImageContent)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mImageContent)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(ImageDocument, MediaDocument)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mImageContent)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mImageContent)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_ADDREF_INHERITED(ImageDocument, MediaDocument)
@@ -242,8 +240,7 @@ DOMCI_NODE_DATA(ImageDocument, ImageDocument)
 NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(ImageDocument)
   NS_HTML_DOCUMENT_INTERFACE_TABLE_BEGIN(ImageDocument)
     NS_INTERFACE_TABLE_ENTRY(ImageDocument, nsIImageDocument)
-    NS_INTERFACE_TABLE_ENTRY(ImageDocument, imgIDecoderObserver)
-    NS_INTERFACE_TABLE_ENTRY(ImageDocument, imgIContainerObserver)
+    NS_INTERFACE_TABLE_ENTRY(ImageDocument, imgINotificationObserver)
     NS_INTERFACE_TABLE_ENTRY(ImageDocument, nsIDOMEventListener)
   NS_OFFSET_AND_INTERFACE_TABLE_END
   NS_OFFSET_AND_INTERFACE_TABLE_TO_MAP_SEGUE
@@ -313,7 +310,7 @@ ImageDocument::Destroy()
       }
     }
 
-    mImageContent = nsnull;
+    mImageContent = nullptr;
   }
 
   MediaDocument::Destroy();
@@ -354,10 +351,12 @@ ImageDocument::SetScriptGlobalObject(nsIScriptGlobalObject* aScriptGlobalObject)
     target->AddEventListener(NS_LITERAL_STRING("resize"), this, false);
     target->AddEventListener(NS_LITERAL_STRING("keypress"), this, false);
 
-    if (!nsContentUtils::IsChildOfSameType(this)) {
+    if (!nsContentUtils::IsChildOfSameType(this) &&
+        GetReadyStateEnum() != nsIDocument::READYSTATE_COMPLETE) {
       LinkStylesheet(NS_LITERAL_STRING("resource://gre/res/TopLevelImageDocument.css"));
-      LinkStylesheet(NS_LITERAL_STRING("chrome://global/skin/TopLevelImageDocument.css"));
+      LinkStylesheet(NS_LITERAL_STRING("chrome://global/skin/media/TopLevelImageDocument.css"));
     }
+    BecomeInteractive();
   }
 }
 
@@ -402,7 +401,7 @@ ImageDocument::GetImageRequest(imgIRequest** aImageRequest)
                                    aImageRequest);
   }
 
-  *aImageRequest = nsnull;
+  *aImageRequest = nullptr;
   return NS_OK;
 }
 
@@ -438,13 +437,13 @@ ImageDocument::ShrinkToFit()
 }
 
 NS_IMETHODIMP
-ImageDocument::RestoreImageTo(PRInt32 aX, PRInt32 aY)
+ImageDocument::RestoreImageTo(int32_t aX, int32_t aY)
 {
   return ScrollImageTo(aX, aY, true);
 }
 
 nsresult
-ImageDocument::ScrollImageTo(PRInt32 aX, PRInt32 aY, bool restoreImage)
+ImageDocument::ScrollImageTo(int32_t aX, int32_t aY, bool restoreImage)
 {
   float ratio = GetRatio();
 
@@ -512,6 +511,45 @@ ImageDocument::ToggleImageSize()
 }
 
 NS_IMETHODIMP
+ImageDocument::Notify(imgIRequest* aRequest, int32_t aType, const nsIntRect* aData)
+{
+  if (aType == imgINotificationObserver::SIZE_AVAILABLE) {
+    nsCOMPtr<imgIContainer> image;
+    aRequest->GetImage(getter_AddRefs(image));
+    return OnStartContainer(aRequest, image);
+  }
+
+  if (aType == imgINotificationObserver::DECODE_COMPLETE) {
+    if (mImageContent) {
+      // Update the background-color of the image only after the
+      // image has been decoded to prevent flashes of just the
+      // background-color.
+      mImageContent->SetAttr(kNameSpaceID_None, nsGkAtoms::_class,
+                             NS_LITERAL_STRING("decoded"), true);
+    }
+  }
+
+  if (aType == imgINotificationObserver::DISCARD) {
+    // mImageContent can be null if the document is already destroyed
+    if (mImageContent) {
+      // Remove any decoded-related styling when the image is unloaded.
+      mImageContent->UnsetAttr(kNameSpaceID_None, nsGkAtoms::_class,
+                               true);
+    }
+  }
+
+  if (aType == imgINotificationObserver::LOAD_COMPLETE) {
+    uint32_t reqStatus;
+    aRequest->GetImageStatus(&reqStatus);
+    nsresult status =
+        reqStatus & imgIRequest::STATUS_ERROR ? NS_ERROR_FAILURE : NS_OK;
+    return OnStopRequest(aRequest, status);
+  }
+
+  return NS_OK;
+}
+
+nsresult
 ImageDocument::OnStartContainer(imgIRequest* aRequest, imgIContainer* aImage)
 {
   aImage->GetWidth(&mImageWidth);
@@ -524,30 +562,15 @@ ImageDocument::OnStartContainer(imgIRequest* aRequest, imgIContainer* aImage)
   return NS_OK;
 }
 
-NS_IMETHODIMP
-ImageDocument::OnStopContainer(imgIRequest* aRequest, imgIContainer* aImage)
-{
-  if (mImageContent) {
-    // Update the background-color of the image only after the
-    // image has been decoded to prevent flashes of just the
-    // background-color.
-    mImageContent->SetAttr(kNameSpaceID_None, nsGkAtoms::_class,
-                           NS_LITERAL_STRING("decoded"), true);
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-ImageDocument::OnStopDecode(imgIRequest *aRequest,
-                            nsresult aStatus,
-                            const PRUnichar *aStatusArg)
+nsresult
+ImageDocument::OnStopRequest(imgIRequest *aRequest,
+                             nsresult aStatus)
 {
   UpdateTitleAndCharset();
 
   // mImageContent can be null if the document is already destroyed
   if (NS_FAILED(aStatus) && mStringBundle && mImageContent) {
-    nsCAutoString src;
+    nsAutoCString src;
     mDocumentURI->GetSpec(src);
     NS_ConvertUTF8toUTF16 srcString(src);
     const PRUnichar* formatString[] = { srcString.get() };
@@ -563,18 +586,6 @@ ImageDocument::OnStopDecode(imgIRequest *aRequest,
 }
 
 NS_IMETHODIMP
-ImageDocument::OnDiscard(imgIRequest *aRequest)
-{
-  // mImageContent can be null if the document is already destroyed
-  if (mImageContent) {
-    // Remove any decoded-related styling when the image is unloaded.
-    mImageContent->UnsetAttr(kNameSpaceID_None, nsGkAtoms::_class,
-                             true);
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 ImageDocument::HandleEvent(nsIDOMEvent* aEvent)
 {
   nsAutoString eventType;
@@ -586,12 +597,12 @@ ImageDocument::HandleEvent(nsIDOMEvent* aEvent)
     ResetZoomLevel();
     mShouldResize = true;
     if (mImageIsResized) {
-      PRInt32 x = 0, y = 0;
+      int32_t x = 0, y = 0;
       nsCOMPtr<nsIDOMMouseEvent> event(do_QueryInterface(aEvent));
       if (event) {
         event->GetClientX(&x);
         event->GetClientY(&y);
-        PRInt32 left = 0, top = 0;
+        int32_t left = 0, top = 0;
         nsCOMPtr<nsIDOMHTMLElement> htmlElement =
           do_QueryInterface(mImageContent);
         htmlElement->GetOffsetLeft(&left);
@@ -626,38 +637,42 @@ ImageDocument::CreateSyntheticDocument()
   Element* head = GetHeadElement();
   NS_ENSURE_TRUE(head, NS_ERROR_FAILURE);
 
-  nsCOMPtr<nsINodeInfo> nodeInfo;
-  if (nsContentUtils::IsChildOfSameType(this)) {
-    nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::style, nsnull,
-                                             kNameSpaceID_XHTML,
-                                             nsIDOMNode::ELEMENT_NODE);
-    NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
-    nsRefPtr<nsGenericHTMLElement> styleContent = NS_NewHTMLStyleElement(nodeInfo.forget());
-    NS_ENSURE_TRUE(styleContent, NS_ERROR_OUT_OF_MEMORY);
-
-    styleContent->SetTextContent(NS_LITERAL_STRING("img { display: block; }"));
-    head->AppendChildTo(styleContent, false);
-  }
-
-  // Add the image element
   Element* body = GetBodyElement();
   if (!body) {
     NS_WARNING("no body on image document!");
     return NS_ERROR_FAILURE;
   }
 
+  //Pale Moon: implement mechanism for custom background color.
+
   if (!mBackgroundColor.IsEmpty()) {
-    nscolor color;
+    nsCSSValue color;
     nsCSSParser parser;
-    rv = parser.ParseColorString(mBackgroundColor, nsnull, 0, &color);
-    if (NS_SUCCEEDED(rv)) {
+    if (parser.ParseColorString(mBackgroundColor, nullptr, 0, color)) {
       nsAutoString styleAttr(NS_LITERAL_STRING("background-color: "));
       styleAttr.Append(mBackgroundColor);
       body->SetAttr(kNameSpaceID_None, nsGkAtoms::style, styleAttr, false);
     }
   }
 
-  nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::img, nsnull,
+  // Add the image element
+  nsCOMPtr<nsINodeInfo> nodeInfo;
+  if (nsContentUtils::IsChildOfSameType(this)) {
+    nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::style, nullptr,
+                                             kNameSpaceID_XHTML,
+                                             nsIDOMNode::ELEMENT_NODE);
+    NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
+    nsRefPtr<nsGenericHTMLElement> styleContent = NS_NewHTMLStyleElement(nodeInfo.forget());
+    NS_ENSURE_TRUE(styleContent, NS_ERROR_OUT_OF_MEMORY);
+
+    ErrorResult error;
+    styleContent->SetTextContent(NS_LITERAL_STRING("img { display: block; }"),
+                                 error);
+    head->AppendChildTo(styleContent, false);
+  }
+
+
+  nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::img, nullptr,
                                            kNameSpaceID_XHTML,
                                            nsIDOMNode::ELEMENT_NODE);
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
@@ -669,7 +684,7 @@ ImageDocument::CreateSyntheticDocument()
   nsCOMPtr<nsIImageLoadingContent> imageLoader = do_QueryInterface(mImageContent);
   NS_ENSURE_TRUE(imageLoader, NS_ERROR_UNEXPECTED);
 
-  nsCAutoString src;
+  nsAutoCString src;
   mDocumentURI->GetSpec(src);
 
   // Push a null JSContext on the stack so that code that runs within
@@ -732,7 +747,7 @@ ImageDocument::CheckOverflowing(bool changeState)
 void 
 ImageDocument::UpdateTitleAndCharset()
 {
-  nsCAutoString typeStr;
+  nsAutoCString typeStr;
   nsCOMPtr<imgIRequest> imageRequest;
   nsCOMPtr<nsIImageLoadingContent> imageLoader = do_QueryInterface(mImageContent);
   if (imageLoader) {

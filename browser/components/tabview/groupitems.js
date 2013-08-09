@@ -34,7 +34,6 @@ function GroupItem(listOfEls, options) {
   this._inited = false;
   this._uninited = false;
   this._children = []; // an array of Items
-  this.defaultSize = new Point(TabItems.tabWidth * 1.5, TabItems.tabHeight * 1.5);
   this.isAGroupItem = true;
   this.id = options.id || GroupItems.getNextID();
   this._isStacked = false;
@@ -94,7 +93,7 @@ function GroupItem(listOfEls, options) {
   // ___ Titlebar
   var html =
     "<div class='title-container'>" +
-      "<input class='name' placeholder='" + this.defaultName + "'/>" +
+      "<input class='name' />" +
       "<div class='title-shield' />" +
     "</div>";
 
@@ -113,7 +112,7 @@ function GroupItem(listOfEls, options) {
 
   // ___ Title
   this.$titleContainer = iQ('.title-container', this.$titlebar);
-  this.$title = iQ('.name', this.$titlebar);
+  this.$title = iQ('.name', this.$titlebar).attr('placeholder', this.defaultName);
   this.$titleShield = iQ('.title-shield', this.$titlebar);
   this.setTitle(options.title);
 
@@ -619,7 +618,7 @@ GroupItem.prototype = Utils.extend(new Item(), new Subscribable(), {
     } else {
       iQ(this.container).animate({
         opacity: 0,
-        "-moz-transform": "scale(.3)",
+        "transform": "scale(.3)",
       }, {
         duration: 170,
         complete: destroyGroup
@@ -641,7 +640,7 @@ GroupItem.prototype = Utils.extend(new Item(), new Subscribable(), {
 
       iQ(this.container).animate({
          opacity: 0,
-         "-moz-transform": "scale(.3)",
+         "transform": "scale(.3)",
       }, {
         duration: 170,
         complete: function() {
@@ -727,14 +726,14 @@ GroupItem.prototype = Utils.extend(new Item(), new Subscribable(), {
 
     if (!options || !options.immediately) {
       $container.animate({
-        "-moz-transform": "scale(1)",
+        "transform": "scale(1)",
         "opacity": 1
       }, {
         duration: 170,
         complete: finalize
       });
     } else {
-      $container.css({"-moz-transform": "none", opacity: 1});
+      $container.css({"transform": "none", opacity: 1});
       finalize();
     }
 
@@ -875,7 +874,7 @@ GroupItem.prototype = Utils.extend(new Item(), new Subscribable(), {
     this.$undoContainer.css({
       left: this.bounds.left + this.bounds.width/2 - iQ(self.$undoContainer).width()/2,
       top:  this.bounds.top + this.bounds.height/2 - iQ(self.$undoContainer).height()/2,
-      "-moz-transform": "scale(.1)",
+      "transform": "scale(.1)",
       opacity: 0
     });
     this.hidden = true;
@@ -883,7 +882,7 @@ GroupItem.prototype = Utils.extend(new Item(), new Subscribable(), {
     // hide group item and show undo container.
     setTimeout(function() {
       self.$undoContainer.animate({
-        "-moz-transform": "scale(1)",
+        "transform": "scale(1)",
         "opacity": 1
       }, {
         easing: "tabviewBounce",
@@ -2109,18 +2108,6 @@ let GroupItems = {
     this.nextID++;
     this._save();
     return result;
-  },
-
-  // ----------
-  // Function: getStorageData
-  // Returns an object for saving GroupItems state to persistent storage.
-  getStorageData: function GroupItems_getStorageData() {
-    var data = {nextID: this.nextID, groupItems: []};
-    this.groupItems.forEach(function(groupItem) {
-      data.groupItems.push(groupItem.getStorageData());
-    });
-
-    return data;
   },
 
   // ----------

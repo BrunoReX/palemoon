@@ -13,6 +13,7 @@
 
 #include "nsINativeAppSupport.h"
 #include "nsIAppShell.h"
+#include "mozilla/Attributes.h"
 
 #if defined(XP_WIN)
 //XPerf-backed probes
@@ -28,10 +29,10 @@ struct PLEvent;
 { 0x7dd4d320, 0xc84b, 0x4624, { 0x8d, 0x45, 0x7b, 0xb9, 0xb2, 0x35, 0x69, 0x77 } }
 
 
-class nsAppStartup : public nsIAppStartup,
-                     public nsIWindowCreator2,
-                     public nsIObserver,
-                     public nsSupportsWeakReference
+class nsAppStartup MOZ_FINAL : public nsIAppStartup,
+                               public nsIWindowCreator2,
+                               public nsIObserver,
+                               public nsSupportsWeakReference
 {
 public:
   NS_DECL_ISUPPORTS
@@ -52,7 +53,7 @@ private:
 
   nsCOMPtr<nsIAppShell> mAppShell;
 
-  PRInt32      mConsiderQuitStopper; // if > 0, Quit(eConsiderQuit) fails
+  int32_t      mConsiderQuitStopper; // if > 0, Quit(eConsiderQuit) fails
   bool mRunning;        // Have we started the main event loop?
   bool mShuttingDown;   // Quit method reentrancy check
   bool mAttemptingQuit; // Quit(eAttemptQuit) still trying
@@ -60,6 +61,8 @@ private:
   bool mInterrupted;    // Was startup interrupted by an interactive prompt?
   bool mIsSafeModeNecessary;       // Whether safe mode is necessary
   bool mStartupCrashTrackingEnded; // Whether startup crash tracking has already ended
+  bool mCachedShutdownTime;
+  uint32_t mLastShutdownTime;
 
 #if defined(XP_WIN)
   //Interaction with OS-provided profiling probes
@@ -68,6 +71,7 @@ private:
   nsRefPtr<ProbeManager> mProbesManager;
   nsRefPtr<Probe> mPlacesInitCompleteProbe;
   nsRefPtr<Probe> mSessionWindowRestoredProbe;
+  nsRefPtr<Probe> mXPCOMShutdownProbe;
 #endif
 };
 

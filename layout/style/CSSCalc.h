@@ -22,8 +22,8 @@ namespace css {
  *   // expectations (which happen to be met by two classes (nsCSSValue
  *   // and nsStyleCoord).  There must be methods (roughly):
  *   //   input_array_type* input_type::GetArrayValue();
- *   //   PRUint32 input_array_type::Count() const;
- *   //   input_type& input_array_type::Item(PRUint32);
+ *   //   uint32_t input_array_type::Count() const;
+ *   //   input_type& input_array_type::Item(uint32_t);
  *   typedef ... input_type;
  *   typedef ... input_array_type;
  *
@@ -231,8 +231,8 @@ struct NumbersAlreadyNormalizedOps : public CSSValueInputCalcOps
  *   // expectations (which happen to be met by two classes (nsCSSValue
  *   // and nsStyleCoord).  There must be methods (roughly):
  *   //   input_array_type* input_type::GetArrayValue();
- *   //   PRUint32 input_array_type::Count() const;
- *   //   input_type& input_array_type::Item(PRUint32);
+ *   //   uint32_t input_array_type::Count() const;
+ *   //   input_type& input_array_type::Item(uint32_t);
  *   typedef ... input_type;
  *   typedef ... input_array_type;
  *
@@ -256,7 +256,7 @@ template <class CalcOps>
 static void
 SerializeCalc(const typename CalcOps::input_type& aValue, CalcOps &aOps)
 {
-  aOps.Append("-moz-calc(");
+  aOps.Append("calc(");
   nsCSSUnit unit = CalcOps::GetUnit(aValue);
   if (unit == eCSSUnit_Calc) {
     const typename CalcOps::input_array_type *array = aValue.GetArrayValue();

@@ -63,14 +63,6 @@ inDOMUtils::IsIgnorableWhitespace(nsIDOMCharacterData *aDataNode,
 
   // Okay.  We have only white space.  Let's check the white-space
   // property now and make sure that this isn't preformatted text...
-
-  nsCOMPtr<nsIDOMWindow> win = inLayoutUtils::GetWindowFor(aDataNode);
-  if (!win) {
-    // Hmm.  Things are screwy if we have no window...
-    NS_ERROR("No window!");
-    return NS_OK;
-  }
-
   nsIFrame* frame = content->GetPrimaryFrame();
   if (frame) {
     const nsStyleText* text = frame->GetStyleText();
@@ -100,7 +92,7 @@ inDOMUtils::GetParentForNode(nsIDOMNode* aNode,
   } else if (aShowingAnonymousContent) {
     nsCOMPtr<nsIContent> content = do_QueryInterface(aNode);
     if (content) {
-      nsIContent* bparent = nsnull;
+      nsIContent* bparent = nullptr;
       nsRefPtr<nsBindingManager> bindingManager = inLayoutUtils::GetBindingManagerFor(aNode);
       if (bindingManager) {
         bparent = bindingManager->GetInsertionParent(content);
@@ -158,14 +150,14 @@ inDOMUtils::GetCSSStyleRules(nsIDOMElement *aElement,
 {
   NS_ENSURE_ARG_POINTER(aElement);
 
-  *_retval = nsnull;
+  *_retval = nullptr;
 
   nsCOMPtr<nsIAtom> pseudoElt;
   if (!aPseudo.IsEmpty()) {
     pseudoElt = do_GetAtom(aPseudo);
   }
 
-  nsRuleNode* ruleNode = nsnull;
+  nsRuleNode* ruleNode = nullptr;
   nsCOMPtr<nsIContent> content = do_QueryInterface(aElement);
   NS_ENSURE_STATE(content);
   nsRefPtr<nsStyleContext> styleContext;
@@ -197,7 +189,7 @@ inDOMUtils::GetCSSStyleRules(nsIDOMElement *aElement,
 }
 
 NS_IMETHODIMP
-inDOMUtils::GetRuleLine(nsIDOMCSSStyleRule *aRule, PRUint32 *_retval)
+inDOMUtils::GetRuleLine(nsIDOMCSSStyleRule *aRule, uint32_t *_retval)
 {
   *_retval = 0;
 
@@ -207,7 +199,7 @@ inDOMUtils::GetRuleLine(nsIDOMCSSStyleRule *aRule, PRUint32 *_retval)
   nsRefPtr<mozilla::css::StyleRule> cssrule;
   nsresult rv = rule->GetCSSStyleRule(getter_AddRefs(cssrule));
   NS_ENSURE_SUCCESS(rv, rv);
-  NS_ENSURE_TRUE(cssrule != nsnull, NS_ERROR_FAILURE);
+  NS_ENSURE_TRUE(cssrule != nullptr, NS_ERROR_FAILURE);
   *_retval = cssrule->GetLineNumber();
   return NS_OK;
 }
@@ -215,7 +207,8 @@ inDOMUtils::GetRuleLine(nsIDOMCSSStyleRule *aRule, PRUint32 *_retval)
 NS_IMETHODIMP
 inDOMUtils::IsInheritedProperty(const nsAString &aPropertyName, bool *_retval)
 {
-  nsCSSProperty prop = nsCSSProps::LookupProperty(aPropertyName);
+  nsCSSProperty prop = nsCSSProps::LookupProperty(aPropertyName,
+                                                  nsCSSProps::eAny);
   if (prop == eCSSProperty_UNKNOWN) {
     *_retval = false;
     return NS_OK;
@@ -235,14 +228,14 @@ inDOMUtils::GetBindingURLs(nsIDOMElement *aElement, nsIArray **_retval)
 {
   NS_ENSURE_ARG_POINTER(aElement);
 
-  *_retval = nsnull;
+  *_retval = nullptr;
 
   nsCOMPtr<nsIMutableArray> urls = do_CreateInstance(NS_ARRAY_CONTRACTID);
   if (!urls)
     return NS_ERROR_FAILURE;
 
   nsCOMPtr<nsIContent> content = do_QueryInterface(aElement);
-  NS_ASSERTION(content, "elements must implement nsIContent");
+  NS_ENSURE_ARG_POINTER(content);
 
   nsIDocument *ownerDoc = content->OwnerDoc();
   nsXBLBinding *binding = ownerDoc->BindingManager()->GetBinding(content);
@@ -266,7 +259,8 @@ inDOMUtils::SetContentState(nsIDOMElement *aElement, nsEventStates::InternalType
     nsCOMPtr<nsIContent> content;
     content = do_QueryInterface(aElement);
 
-    return esm->SetContentState(content, nsEventStates(aState));
+    // XXX Invalid cast of bool to nsresult (bug 778108)
+    return (nsresult)esm->SetContentState(content, nsEventStates(aState));
   }
 
   return NS_ERROR_FAILURE;
@@ -291,8 +285,8 @@ inDOMUtils::GetRuleNodeForContent(nsIContent* aContent,
                                   nsStyleContext** aStyleContext,
                                   nsRuleNode** aRuleNode)
 {
-  *aRuleNode = nsnull;
-  *aStyleContext = nsnull;
+  *aRuleNode = nullptr;
+  *aStyleContext = nullptr;
 
   if (!aContent->IsElement()) {
     return NS_ERROR_UNEXPECTED;

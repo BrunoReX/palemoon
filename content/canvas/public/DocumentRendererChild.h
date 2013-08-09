@@ -6,7 +6,6 @@
 #define mozilla_dom_DocumentRendererChild
 
 #include "mozilla/ipc/PDocumentRendererChild.h"
-#include "nsICanvasRenderingContextInternal.h"
 #include "nsString.h"
 #include "gfxContext.h"
 
@@ -24,7 +23,7 @@ public:
     bool RenderDocument(nsIDOMWindow *window,
                         const nsRect& documentRect, const gfxMatrix& transform,
                         const nsString& bgcolor,
-                        PRUint32 renderFlags, bool flushLayout, 
+                        uint32_t renderFlags, bool flushLayout, 
                         const nsIntSize& renderSize, nsCString& data);
 
 private:

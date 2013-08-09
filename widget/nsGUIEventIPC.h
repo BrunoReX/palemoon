@@ -6,7 +6,8 @@
 #ifndef nsGUIEventIPC_h__
 #define nsGUIEventIPC_h__
 
-#include "IPC/IPCMessageUtils.h"
+#include "ipc/IPCMessageUtils.h"
+#include "nsDOMTouchEvent.h"
 #include "nsGUIEvent.h"
 
 namespace IPC
@@ -95,27 +96,49 @@ struct ParamTraits<nsMouseEvent_base>
 };
 
 template<>
-struct ParamTraits<nsMouseScrollEvent>
+struct ParamTraits<mozilla::widget::WheelEvent>
 {
-  typedef nsMouseScrollEvent paramType;
+  typedef mozilla::widget::WheelEvent paramType;
 
   static void Write(Message* aMsg, const paramType& aParam)
   {
     WriteParam(aMsg, static_cast<nsMouseEvent_base>(aParam));
-    WriteParam(aMsg, aParam.scrollFlags);
-    WriteParam(aMsg, aParam.delta);
-    WriteParam(aMsg, aParam.scrollOverflow);
+    WriteParam(aMsg, aParam.deltaX);
+    WriteParam(aMsg, aParam.deltaY);
+    WriteParam(aMsg, aParam.deltaZ);
+    WriteParam(aMsg, aParam.deltaMode);
+    WriteParam(aMsg, aParam.customizedByUserPrefs);
+    WriteParam(aMsg, aParam.isMomentum);
+    WriteParam(aMsg, aParam.isPixelOnlyDevice);
+    WriteParam(aMsg, aParam.lineOrPageDeltaX);
+    WriteParam(aMsg, aParam.lineOrPageDeltaY);
+    WriteParam(aMsg, static_cast<int32_t>(aParam.scrollType));
+    WriteParam(aMsg, aParam.overflowDeltaX);
+    WriteParam(aMsg, aParam.overflowDeltaY);
   }
 
   static bool Read(const Message* aMsg, void** aIter, paramType* aResult)
   {
-    return ReadParam(aMsg, aIter, static_cast<nsMouseEvent_base*>(aResult)) &&
-           ReadParam(aMsg, aIter, &aResult->scrollFlags) &&
-           ReadParam(aMsg, aIter, &aResult->delta) &&
-           ReadParam(aMsg, aIter, &aResult->scrollOverflow);
+    int32_t scrollType = 0;
+    bool rv =
+      ReadParam(aMsg, aIter, static_cast<nsMouseEvent_base*>(aResult)) &&
+      ReadParam(aMsg, aIter, &aResult->deltaX) &&
+      ReadParam(aMsg, aIter, &aResult->deltaY) &&
+      ReadParam(aMsg, aIter, &aResult->deltaZ) &&
+      ReadParam(aMsg, aIter, &aResult->deltaMode) &&
+      ReadParam(aMsg, aIter, &aResult->customizedByUserPrefs) &&
+      ReadParam(aMsg, aIter, &aResult->isMomentum) &&
+      ReadParam(aMsg, aIter, &aResult->isPixelOnlyDevice) &&
+      ReadParam(aMsg, aIter, &aResult->lineOrPageDeltaX) &&
+      ReadParam(aMsg, aIter, &aResult->lineOrPageDeltaY) &&
+      ReadParam(aMsg, aIter, &scrollType) &&
+      ReadParam(aMsg, aIter, &aResult->overflowDeltaX) &&
+      ReadParam(aMsg, aIter, &aResult->overflowDeltaY);
+    aResult->scrollType =
+      static_cast<mozilla::widget::WheelEvent::ScrollType>(scrollType);
+    return rv;
   }
 };
-
 
 template<>
 struct ParamTraits<nsMouseEvent>
@@ -126,16 +149,16 @@ struct ParamTraits<nsMouseEvent>
   {
     WriteParam(aMsg, static_cast<nsMouseEvent_base>(aParam));
     WriteParam(aMsg, aParam.ignoreRootScrollFrame);
-    WriteParam(aMsg, (PRUint8) aParam.reason);
-    WriteParam(aMsg, (PRUint8) aParam.context);
-    WriteParam(aMsg, (PRUint8) aParam.exit);
+    WriteParam(aMsg, (uint8_t) aParam.reason);
+    WriteParam(aMsg, (uint8_t) aParam.context);
+    WriteParam(aMsg, (uint8_t) aParam.exit);
     WriteParam(aMsg, aParam.clickCount);
   }
 
   static bool Read(const Message* aMsg, void** aIter, paramType* aResult)
   {
     bool rv;
-    PRUint8 reason, context, exit;
+    uint8_t reason = 0, context = 0, exit = 0;
     rv = ReadParam(aMsg, aIter, static_cast<nsMouseEvent_base*>(aResult)) &&
          ReadParam(aMsg, aIter, &aResult->ignoreRootScrollFrame) &&
          ReadParam(aMsg, aIter, &reason) &&
@@ -146,6 +169,55 @@ struct ParamTraits<nsMouseEvent>
     aResult->context = static_cast<nsMouseEvent::contextType>(context);
     aResult->exit = static_cast<nsMouseEvent::exitType>(exit);
     return rv;
+  }
+};
+
+template<>
+struct ParamTraits<nsTouchEvent>
+{
+  typedef nsTouchEvent paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam)
+  {
+    WriteParam(aMsg, static_cast<const nsInputEvent&>(aParam));
+    // Sigh, nsDOMTouch bites us again!  We want to be able to do
+    //   WriteParam(aMsg, aParam.touches);
+    const nsTArray<nsCOMPtr<nsIDOMTouch> >& touches = aParam.touches;
+    WriteParam(aMsg, touches.Length());
+    for (uint32_t i = 0; i < touches.Length(); ++i) {
+      nsDOMTouch* touch = static_cast<nsDOMTouch*>(touches[i].get());
+      WriteParam(aMsg, touch->mIdentifier);
+      WriteParam(aMsg, touch->mRefPoint);
+      WriteParam(aMsg, touch->mRadius);
+      WriteParam(aMsg, touch->mRotationAngle);
+      WriteParam(aMsg, touch->mForce);
+    }
+  }
+
+  static bool Read(const Message* aMsg, void** aIter, paramType* aResult)
+  {
+    uint32_t numTouches;
+    if (!ReadParam(aMsg, aIter, static_cast<nsInputEvent*>(aResult)) ||
+        !ReadParam(aMsg, aIter, &numTouches)) {
+      return false;
+    }
+    for (uint32_t i = 0; i < numTouches; ++i) {
+        int32_t identifier;
+        nsIntPoint refPoint;
+        nsIntPoint radius;
+        float rotationAngle;
+        float force;
+        if (!ReadParam(aMsg, aIter, &identifier) ||
+            !ReadParam(aMsg, aIter, &refPoint) ||
+            !ReadParam(aMsg, aIter, &radius) ||
+            !ReadParam(aMsg, aIter, &rotationAngle) ||
+            !ReadParam(aMsg, aIter, &force)) {
+          return false;
+        }
+        aResult->touches.AppendElement(
+          new nsDOMTouch(identifier, refPoint, radius, rotationAngle, force));
+    }
+    return true;
   }
 };
 
@@ -233,7 +305,7 @@ struct ParamTraits<nsTextEvent>
     WriteParam(aMsg, aParam.theText);
     WriteParam(aMsg, aParam.isChar);
     WriteParam(aMsg, aParam.rangeCount);
-    for (PRUint32 index = 0; index < aParam.rangeCount; index++)
+    for (uint32_t index = 0; index < aParam.rangeCount; index++)
       WriteParam(aMsg, aParam.rangeArray[index]);
   }
 
@@ -247,7 +319,7 @@ struct ParamTraits<nsTextEvent>
       return false;
 
     if (!aResult->rangeCount) {
-      aResult->rangeArray = nsnull;
+      aResult->rangeArray = nullptr;
       return true;
     }
 
@@ -255,7 +327,7 @@ struct ParamTraits<nsTextEvent>
     if (!aResult->rangeArray)
       return false;
 
-    for (PRUint32 index = 0; index < aResult->rangeCount; index++)
+    for (uint32_t index = 0; index < aResult->rangeCount; index++)
       if (!ReadParam(aMsg, aIter, &aResult->rangeArray[index])) {
         Free(*aResult);
         return false;
@@ -301,18 +373,12 @@ struct ParamTraits<nsQueryContentEvent>
     WriteParam(aMsg, aParam.mSucceeded);
     WriteParam(aMsg, aParam.mInput.mOffset);
     WriteParam(aMsg, aParam.mInput.mLength);
-    WriteParam(aMsg, *aParam.mInput.mMouseScrollEvent);
     WriteParam(aMsg, aParam.mReply.mOffset);
     WriteParam(aMsg, aParam.mReply.mString);
     WriteParam(aMsg, aParam.mReply.mRect);
     WriteParam(aMsg, aParam.mReply.mReversed);
     WriteParam(aMsg, aParam.mReply.mHasSelection);
     WriteParam(aMsg, aParam.mReply.mWidgetIsHit);
-    WriteParam(aMsg, aParam.mReply.mLineHeight);
-    WriteParam(aMsg, aParam.mReply.mPageHeight);
-    WriteParam(aMsg, aParam.mReply.mPageWidth);
-    WriteParam(aMsg, aParam.mReply.mComputedScrollAmount);
-    WriteParam(aMsg, aParam.mReply.mComputedScrollAction);
   }
 
   static bool Read(const Message* aMsg, void** aIter, paramType* aResult)
@@ -322,18 +388,12 @@ struct ParamTraits<nsQueryContentEvent>
            ReadParam(aMsg, aIter, &aResult->mSucceeded) &&
            ReadParam(aMsg, aIter, &aResult->mInput.mOffset) &&
            ReadParam(aMsg, aIter, &aResult->mInput.mLength) &&
-           ReadParam(aMsg, aIter, aResult->mInput.mMouseScrollEvent) &&
            ReadParam(aMsg, aIter, &aResult->mReply.mOffset) &&
            ReadParam(aMsg, aIter, &aResult->mReply.mString) &&
            ReadParam(aMsg, aIter, &aResult->mReply.mRect) &&
            ReadParam(aMsg, aIter, &aResult->mReply.mReversed) &&
            ReadParam(aMsg, aIter, &aResult->mReply.mHasSelection) &&
-           ReadParam(aMsg, aIter, &aResult->mReply.mWidgetIsHit) &&
-           ReadParam(aMsg, aIter, &aResult->mReply.mLineHeight) &&
-           ReadParam(aMsg, aIter, &aResult->mReply.mPageHeight) &&
-           ReadParam(aMsg, aIter, &aResult->mReply.mPageWidth) &&
-           ReadParam(aMsg, aIter, &aResult->mReply.mComputedScrollAmount) &&
-           ReadParam(aMsg, aIter, &aResult->mReply.mComputedScrollAction);
+           ReadParam(aMsg, aIter, &aResult->mReply.mWidgetIsHit);
   }
 };
 

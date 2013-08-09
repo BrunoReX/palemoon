@@ -6,7 +6,7 @@
 #ifndef mozilla_a11y_ImageAccessible_h__
 #define mozilla_a11y_ImageAccessible_h__
 
-#include "nsBaseWidgetAccessible.h"
+#include "BaseAccessibles.h"
 #include "nsIAccessibleImage.h"
 
 class nsGenericHTMLElement;
@@ -19,7 +19,7 @@ namespace a11y {
  * - gets name, role
  * - support basic state
  */
-class ImageAccessible : public nsLinkableAccessible,
+class ImageAccessible : public LinkableAccessible,
                         public nsIAccessibleImage
 {
 public:
@@ -29,20 +29,23 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIAccessible
-  NS_IMETHOD GetActionName(PRUint8 aIndex, nsAString& aName);
-  NS_IMETHOD DoAction(PRUint8 index);
+  NS_IMETHOD GetActionName(uint8_t aIndex, nsAString& aName);
+  NS_IMETHOD DoAction(uint8_t index);
 
   // nsIAccessibleImage
   NS_DECL_NSIACCESSIBLEIMAGE
 
   // Accessible
-  virtual nsresult GetNameInternal(nsAString& aName);
   virtual a11y::role NativeRole();
-  virtual PRUint64 NativeState();
-  virtual nsresult GetAttributesInternal(nsIPersistentProperties *aAttributes);
+  virtual uint64_t NativeState();
+  virtual already_AddRefed<nsIPersistentProperties> NativeAttributes() MOZ_OVERRIDE;
 
   // ActionAccessible
-  virtual PRUint8 ActionCount();
+  virtual uint8_t ActionCount();
+
+protected:
+  // Accessible
+  virtual ENameValueFlag NativeName(nsString& aName) MOZ_OVERRIDE;
 
 private:
   /**
@@ -70,22 +73,21 @@ private:
    *
    * @returns  true if index is valid for longdesc action.
    */
-  inline bool IsLongDescIndex(PRUint8 aIndex);
+  inline bool IsLongDescIndex(uint8_t aIndex);
 
 };
-
-} // namespace a11y
-} // namespace mozilla
 
 ////////////////////////////////////////////////////////////////////////////////
 // Accessible downcasting method
 
-inline mozilla::a11y::ImageAccessible*
+inline ImageAccessible*
 Accessible::AsImage()
 {
-  return IsImage() ?
-    static_cast<mozilla::a11y::ImageAccessible*>(this) : nsnull;
+  return IsImage() ? static_cast<ImageAccessible*>(this) : nullptr;
 }
+
+} // namespace a11y
+} // namespace mozilla
 
 #endif
 

@@ -45,7 +45,7 @@
 #include "hyphen.h"
 
 nsHyphenator::nsHyphenator(nsIURI *aURI)
-  : mDict(nsnull)
+  : mDict(nullptr)
 {
   nsCString uriSpec;
   nsresult rv = aURI->GetSpec(uriSpec);
@@ -62,16 +62,16 @@ nsHyphenator::nsHyphenator(nsIURI *aURI)
 
 nsHyphenator::~nsHyphenator()
 {
-  if (mDict != nsnull) {
+  if (mDict != nullptr) {
     hnj_hyphen_free((HyphenDict*)mDict);
-    mDict = nsnull;
+    mDict = nullptr;
   }
 }
 
 bool
 nsHyphenator::IsValid()
 {
-  return (mDict != nsnull);
+  return (mDict != nullptr);
 }
 
 nsresult
@@ -84,10 +84,10 @@ nsHyphenator::Hyphenate(const nsAString& aString,
   memset(aHyphens.Elements(), false, aHyphens.Length());
 
   bool inWord = false;
-  PRUint32 wordStart = 0, wordLimit = 0;
-  PRUint32 chLen;
-  for (PRUint32 i = 0; i < aString.Length(); i += chLen) {
-    PRUint32 ch = aString[i];
+  uint32_t wordStart = 0, wordLimit = 0;
+  uint32_t chLen;
+  for (uint32_t i = 0; i < aString.Length(); i += chLen) {
+    uint32_t ch = aString[i];
     chLen = 1;
 
     if (NS_IS_HIGH_SURROGATE(ch)) {
@@ -117,12 +117,12 @@ nsHyphenator::Hyphenate(const nsAString& aString,
                                  wordLimit - wordStart);
       nsAutoTArray<char,200> utf8hyphens;
       utf8hyphens.SetLength(utf8.Length() + 5);
-      char **rep = nsnull;
-      int *pos = nsnull;
-      int *cut = nsnull;
+      char **rep = nullptr;
+      int *pos = nullptr;
+      int *cut = nullptr;
       int err = hnj_hyphen_hyphenate2((HyphenDict*)mDict,
                                       utf8.BeginReading(), utf8.Length(),
-                                      utf8hyphens.Elements(), nsnull,
+                                      utf8hyphens.Elements(), nullptr,
                                       &rep, &pos, &cut);
       if (!err) {
         // Surprisingly, hnj_hyphen_hyphenate2 converts the 'hyphens' buffer

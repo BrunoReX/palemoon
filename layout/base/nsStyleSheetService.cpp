@@ -19,21 +19,45 @@
 #include "nsNetUtil.h"
 #include "nsIObserverService.h"
 #include "nsLayoutStatics.h"
+#include "nsIMemoryReporter.h"
 
-nsStyleSheetService *nsStyleSheetService::gInstance = nsnull;
+NS_MEMORY_REPORTER_MALLOC_SIZEOF_FUN(LayoutStyleSheetServiceMallocSizeOf,
+                                     "layout/style-sheet-service")
+
+static int64_t
+GetStyleSheetServiceSize()
+{
+  return nsStyleSheetService::SizeOfIncludingThis(
+           LayoutStyleSheetServiceMallocSizeOf);
+}
+
+NS_MEMORY_REPORTER_IMPLEMENT(StyleSheetService,
+  "explicit/layout/style-sheet-service",
+  KIND_HEAP,
+  nsIMemoryReporter::UNITS_BYTES,
+  GetStyleSheetServiceSize,
+  "Memory used for style sheets held by the style sheet service.")
+
+nsStyleSheetService *nsStyleSheetService::gInstance = nullptr;
 
 nsStyleSheetService::nsStyleSheetService()
 {
-  PR_STATIC_ASSERT(0 == AGENT_SHEET && 1 == USER_SHEET);
+  PR_STATIC_ASSERT(0 == AGENT_SHEET && 1 == USER_SHEET && 2 == AUTHOR_SHEET);
   NS_ASSERTION(!gInstance, "Someone is using CreateInstance instead of GetService");
   gInstance = this;
   nsLayoutStatics::AddRef();
+
+  mReporter = new NS_MEMORY_REPORTER_NAME(StyleSheetService);
+  (void)::NS_RegisterMemoryReporter(mReporter);
 }
 
 nsStyleSheetService::~nsStyleSheetService()
 {
-  gInstance = nsnull;
+  gInstance = nullptr;
   nsLayoutStatics::Release();
+
+  (void)::NS_UnregisterMemoryReporter(mReporter);
+  mReporter = nullptr;
 }
 
 NS_IMPL_ISUPPORTS1(nsStyleSheetService, nsIStyleSheetService)
@@ -42,7 +66,7 @@ void
 nsStyleSheetService::RegisterFromEnumerator(nsICategoryManager  *aManager,
                                             const char          *aCategory,
                                             nsISimpleEnumerator *aEnumerator,
-                                            PRUint32             aSheetType)
+                                            uint32_t             aSheetType)
 {
   if (!aEnumerator)
     return;
@@ -57,7 +81,7 @@ nsStyleSheetService::RegisterFromEnumerator(nsICategoryManager  *aManager,
     NS_ASSERTION(icStr,
                  "category manager entries must be nsISupportsCStrings");
 
-    nsCAutoString name;
+    nsAutoCString name;
     icStr->GetData(name);
 
     nsXPIDLCString spec;
@@ -70,11 +94,11 @@ nsStyleSheetService::RegisterFromEnumerator(nsICategoryManager  *aManager,
   }
 }
 
-PRInt32
+int32_t
 nsStyleSheetService::FindSheetByURI(const nsCOMArray<nsIStyleSheet> &sheets,
                                     nsIURI *sheetURI)
 {
-  for (PRInt32 i = sheets.Count() - 1; i >= 0; i-- ) {
+  for (int32_t i = sheets.Count() - 1; i >= 0; i-- ) {
     bool bEqual;
     nsIURI* uri = sheets[i]->GetSheetURI();
     if (uri
@@ -105,24 +129,39 @@ nsStyleSheetService::Init()
   catMan->EnumerateCategory("user-style-sheets", getter_AddRefs(sheets));
   RegisterFromEnumerator(catMan, "user-style-sheets", sheets, USER_SHEET);
 
+  catMan->EnumerateCategory("author-style-sheets", getter_AddRefs(sheets));
+  RegisterFromEnumerator(catMan, "author-style-sheets", sheets, AUTHOR_SHEET);
+
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsStyleSheetService::LoadAndRegisterSheet(nsIURI *aSheetURI,
-                                          PRUint32 aSheetType)
+                                          uint32_t aSheetType)
 {
   nsresult rv = LoadAndRegisterSheetInternal(aSheetURI, aSheetType);
   if (NS_SUCCEEDED(rv)) {
-    const char* message = (aSheetType == AGENT_SHEET) ?
-      "agent-sheet-added" : "user-sheet-added";
+    const char* message;
+    switch (aSheetType) {
+      case AGENT_SHEET:
+        message = "agent-sheet-added";
+        break;
+      case USER_SHEET:
+        message = "user-sheet-added";
+        break;
+      case AUTHOR_SHEET:
+        message = "author-sheet-added";
+        break;
+      default:
+        return NS_ERROR_INVALID_ARG;
+    }
     nsCOMPtr<nsIObserverService> serv =
       mozilla::services::GetObserverService();
     if (serv) {
       // We're guaranteed that the new sheet is the last sheet in
       // mSheets[aSheetType]
       const nsCOMArray<nsIStyleSheet> & sheets = mSheets[aSheetType];
-      serv->NotifyObservers(sheets[sheets.Count() - 1], message, nsnull);
+      serv->NotifyObservers(sheets[sheets.Count() - 1], message, nullptr);
     }
   }
   return rv;
@@ -130,9 +169,11 @@ nsStyleSheetService::LoadAndRegisterSheet(nsIURI *aSheetURI,
 
 nsresult
 nsStyleSheetService::LoadAndRegisterSheetInternal(nsIURI *aSheetURI,
-                                                  PRUint32 aSheetType)
+                                                  uint32_t aSheetType)
 {
-  NS_ENSURE_ARG(aSheetType == AGENT_SHEET || aSheetType == USER_SHEET);
+  NS_ENSURE_ARG(aSheetType == AGENT_SHEET ||
+                aSheetType == USER_SHEET ||
+                aSheetType == AUTHOR_SHEET);
   NS_ENSURE_ARG_POINTER(aSheetURI);
 
   nsRefPtr<mozilla::css::Loader> loader = new mozilla::css::Loader();
@@ -152,9 +193,11 @@ nsStyleSheetService::LoadAndRegisterSheetInternal(nsIURI *aSheetURI,
 
 NS_IMETHODIMP
 nsStyleSheetService::SheetRegistered(nsIURI *sheetURI,
-                                     PRUint32 aSheetType, bool *_retval)
+                                     uint32_t aSheetType, bool *_retval)
 {
-  NS_ENSURE_ARG(aSheetType == AGENT_SHEET || aSheetType == USER_SHEET);
+  NS_ENSURE_ARG(aSheetType == AGENT_SHEET ||
+                aSheetType == USER_SHEET ||
+                aSheetType == AUTHOR_SHEET);
   NS_ENSURE_ARG_POINTER(sheetURI);
   NS_PRECONDITION(_retval, "Null out param");
 
@@ -164,22 +207,83 @@ nsStyleSheetService::SheetRegistered(nsIURI *sheetURI,
 }
 
 NS_IMETHODIMP
-nsStyleSheetService::UnregisterSheet(nsIURI *sheetURI, PRUint32 aSheetType)
+nsStyleSheetService::UnregisterSheet(nsIURI *sheetURI, uint32_t aSheetType)
 {
-  NS_ENSURE_ARG(aSheetType == AGENT_SHEET || aSheetType == USER_SHEET);
+  NS_ENSURE_ARG(aSheetType == AGENT_SHEET ||
+                aSheetType == USER_SHEET ||
+                aSheetType == AUTHOR_SHEET);
   NS_ENSURE_ARG_POINTER(sheetURI);
 
-  PRInt32 foundIndex = FindSheetByURI(mSheets[aSheetType], sheetURI);
+  int32_t foundIndex = FindSheetByURI(mSheets[aSheetType], sheetURI);
   NS_ENSURE_TRUE(foundIndex >= 0, NS_ERROR_INVALID_ARG);
   nsCOMPtr<nsIStyleSheet> sheet = mSheets[aSheetType][foundIndex];
   mSheets[aSheetType].RemoveObjectAt(foundIndex);
-  
-  const char* message = (aSheetType == AGENT_SHEET) ?
-      "agent-sheet-removed" : "user-sheet-removed";
+
+  const char* message;
+  switch (aSheetType) {
+    case AGENT_SHEET:
+      message = "agent-sheet-removed";
+      break;
+    case USER_SHEET:
+      message = "user-sheet-removed";
+      break;
+    case AUTHOR_SHEET:
+      message = "author-sheet-removed";
+      break;
+  }
+
   nsCOMPtr<nsIObserverService> serv =
     mozilla::services::GetObserverService();
   if (serv)
-    serv->NotifyObservers(sheet, message, nsnull);
+    serv->NotifyObservers(sheet, message, nullptr);
 
   return NS_OK;
 }
+
+//static
+nsStyleSheetService *
+nsStyleSheetService::GetInstance()
+{
+  static bool first = true;
+  if (first) {
+    // make sure at first call that it's inited
+    nsCOMPtr<nsIStyleSheetService> dummy =
+      do_GetService(NS_STYLESHEETSERVICE_CONTRACTID);
+    first = false;
+  }
+
+  return gInstance;
+}
+
+size_t
+nsStyleSheetService::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf)
+{
+  if (!nsStyleSheetService::gInstance) {
+    return 0;
+  }
+
+  return nsStyleSheetService::gInstance->
+      SizeOfIncludingThisHelper(aMallocSizeOf);
+}
+
+static size_t
+SizeOfElementIncludingThis(nsIStyleSheet* aElement,
+                           nsMallocSizeOfFun aMallocSizeOf, void *aData)
+{
+    return aElement->SizeOfIncludingThis(aMallocSizeOf);
+}
+
+size_t
+nsStyleSheetService::SizeOfIncludingThisHelper(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = aMallocSizeOf(this);
+  n += mSheets[AGENT_SHEET].SizeOfExcludingThis(SizeOfElementIncludingThis,
+                                                aMallocSizeOf);
+  n += mSheets[USER_SHEET].SizeOfExcludingThis(SizeOfElementIncludingThis,
+                                               aMallocSizeOf);
+  n += mSheets[AUTHOR_SHEET].SizeOfExcludingThis(SizeOfElementIncludingThis,
+                                                 aMallocSizeOf);
+  return n;
+}
+
+

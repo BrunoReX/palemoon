@@ -6,6 +6,7 @@
 #ifndef nsMathMLFrame_h___
 #define nsMathMLFrame_h___
 
+#include "mozilla/Attributes.h"
 #include "nsCOMPtr.h"
 #include "nsPresContext.h"
 #include "nsFontMetrics.h"
@@ -32,64 +33,64 @@ public:
   }
 
   NS_IMETHOD
-  GetBoundingMetrics(nsBoundingMetrics& aBoundingMetrics) {
+  GetBoundingMetrics(nsBoundingMetrics& aBoundingMetrics) MOZ_OVERRIDE {
     aBoundingMetrics = mBoundingMetrics;
     return NS_OK;
   }
 
   NS_IMETHOD
-  SetBoundingMetrics(const nsBoundingMetrics& aBoundingMetrics) {
+  SetBoundingMetrics(const nsBoundingMetrics& aBoundingMetrics) MOZ_OVERRIDE {
     mBoundingMetrics = aBoundingMetrics;
     return NS_OK;
   }
 
   NS_IMETHOD
-  SetReference(const nsPoint& aReference) {
+  SetReference(const nsPoint& aReference) MOZ_OVERRIDE {
     mReference = aReference;
     return NS_OK;
   }
 
-  virtual eMathMLFrameType GetMathMLFrameType();
+  virtual eMathMLFrameType GetMathMLFrameType() MOZ_OVERRIDE;
 
   NS_IMETHOD
   Stretch(nsRenderingContext& aRenderingContext,
           nsStretchDirection   aStretchDirection,
           nsBoundingMetrics&   aContainerSize,
-          nsHTMLReflowMetrics& aDesiredStretchSize)
+          nsHTMLReflowMetrics& aDesiredStretchSize) MOZ_OVERRIDE
   {
     return NS_OK;
   }
 
   NS_IMETHOD
-  GetEmbellishData(nsEmbellishData& aEmbellishData) {
+  GetEmbellishData(nsEmbellishData& aEmbellishData) MOZ_OVERRIDE {
     aEmbellishData = mEmbellishData;
     return NS_OK;
   }
 
   NS_IMETHOD
-  GetPresentationData(nsPresentationData& aPresentationData) {
+  GetPresentationData(nsPresentationData& aPresentationData) MOZ_OVERRIDE {
     aPresentationData = mPresentationData;
     return NS_OK;
   }
 
   NS_IMETHOD
-  InheritAutomaticData(nsIFrame* aParent);
+  InheritAutomaticData(nsIFrame* aParent) MOZ_OVERRIDE;
 
   NS_IMETHOD
-  TransmitAutomaticData()
+  TransmitAutomaticData() MOZ_OVERRIDE
   {
     return NS_OK;
   }
 
   NS_IMETHOD
-  UpdatePresentationData(PRUint32        aFlagsValues,
-                         PRUint32        aFlagsToUpdate);
+  UpdatePresentationData(uint32_t        aFlagsValues,
+                         uint32_t        aFlagsToUpdate) MOZ_OVERRIDE;
 
   NS_IMETHOD
-  UpdatePresentationDataFromChildAt(PRInt32         aFirstIndex,
-                                    PRInt32         aLastIndex,
-                                    PRUint32        aFlagsValues,
-                                    PRUint32        aFlagsToUpdate)
+  UpdatePresentationDataFromChildAt(int32_t         aFirstIndex,
+                                    int32_t         aLastIndex,
+                                    uint32_t        aFlagsValues,
+                                    uint32_t        aFlagsToUpdate) MOZ_OVERRIDE
   {
     return NS_OK;
   }
@@ -140,7 +141,7 @@ public:
   FindAttrDirectionality(nsIContent*         aContent,
                          nsPresentationData& aPresentationData);
 
-  // helper to check if a content has an attribute. If content is nsnull or if
+  // helper to check if a content has an attribute. If content is nullptr or if
   // the attribute is not there, check if the attribute is on the mstyle hierarchy
   // @return true     --if attribute exists
   //         false --if attribute doesn't exist
@@ -156,7 +157,7 @@ public:
   // @post aLengthValue is the length value computed from the attribute.
   static void ParseNumericValue(const nsString&   aString,
                                 nscoord*          aLengthValue,
-                                PRUint32          aFlags,
+                                uint32_t          aFlags,
                                 nsPresContext*    aPresContext,
                                 nsStyleContext*   aStyleContext);
 
@@ -351,7 +352,7 @@ public:
                 nscoord&             aAxisHeight);
 
 protected:
-#if defined(NS_DEBUG) && defined(SHOW_BOUNDING_BOX)
+#if defined(DEBUG) && defined(SHOW_BOUNDING_BOX)
   nsresult DisplayBoundingMetrics(nsDisplayListBuilder* aBuilder,
                                   nsIFrame* aFrame, const nsPoint& aPt,
                                   const nsBoundingMetrics& aMetrics,

@@ -6,7 +6,7 @@
 #ifndef mozilla_a11y_TextLeafAccessible_h__
 #define mozilla_a11y_TextLeafAccessible_h__
 
-#include "nsBaseWidgetAccessible.h"
+#include "BaseAccessibles.h"
 
 namespace mozilla {
 namespace a11y {
@@ -14,7 +14,7 @@ namespace a11y {
 /**
  * Generic class used for text nodes.
  */
-class TextLeafAccessible : public nsLinkableAccessible
+class TextLeafAccessible : public LinkableAccessible
 {
 public:
   TextLeafAccessible(nsIContent* aContent, DocAccessible* aDoc);
@@ -22,10 +22,9 @@ public:
 
   // Accessible
   virtual mozilla::a11y::role NativeRole();
-  virtual void AppendTextTo(nsAString& aText, PRUint32 aStartOffset = 0,
-                            PRUint32 aLength = PR_UINT32_MAX);
+  virtual void AppendTextTo(nsAString& aText, uint32_t aStartOffset = 0,
+                            uint32_t aLength = UINT32_MAX);
   virtual ENameValueFlag Name(nsString& aName);
-  virtual nsresult GetAttributesInternal(nsIPersistentProperties* aAttributes);
 
   // TextLeafAccessible
   void SetText(const nsAString& aText) { mText = aText; }
@@ -39,18 +38,19 @@ protected:
   nsString mText;
 };
 
-} // namespace a11y
-} // namespace mozilla
 
 ////////////////////////////////////////////////////////////////////////////////
 // Accessible downcast method
 
-inline mozilla::a11y::TextLeafAccessible*
+inline TextLeafAccessible*
 Accessible::AsTextLeaf()
 {
   return mFlags & eTextLeafAccessible ?
-    static_cast<mozilla::a11y::TextLeafAccessible*>(this) : nsnull;
+    static_cast<TextLeafAccessible*>(this) : nullptr;
 }
+
+} // namespace a11y
+} // namespace mozilla
 
 #endif
 

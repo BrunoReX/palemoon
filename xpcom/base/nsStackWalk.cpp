@@ -51,7 +51,7 @@ malloc_logger_t(uint32_t type, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
 extern malloc_logger_t *malloc_logger;
 
 static void
-stack_callback(void *pc, void *closure)
+stack_callback(void *pc, void *sp, void *closure)
 {
   const char *name = reinterpret_cast<char *>(closure);
   Dl_info info;
@@ -69,9 +69,9 @@ stack_callback(void *pc, void *closure)
 #define MAC_OS_X_VERSION_10_7_HEX 0x00001070
 #define MAC_OS_X_VERSION_10_6_HEX 0x00001060
 
-static PRInt32 OSXVersion()
+static int32_t OSXVersion()
 {
-  static PRInt32 gOSXVersion = 0x0;
+  static int32_t gOSXVersion = 0x0;
   if (gOSXVersion == 0x0) {
     OSErr err = ::Gestalt(gestaltSystemVersion, (SInt32*)&gOSXVersion);
     MOZ_ASSERT(err == noErr);
@@ -105,6 +105,13 @@ my_malloc_logger(uint32_t type, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
   NS_StackWalk(stack_callback, 0, const_cast<char*>(name), 0);
 }
 
+// This is called from NS_LogInit() and from the stack walking functions, but
+// only the first call has any effect.  We need to call this function from both
+// places because it must run before any mutexes are created, and also before
+// any objects whose refcounts we're logging are created.  Running this
+// function during NS_LogInit() ensures that we meet the first criterion, and
+// running this function during the stack walking functions ensures we meet the
+// second criterion.
 void
 StackWalkInitCriticalAddress()
 {
@@ -173,8 +180,8 @@ StackWalkInitCriticalAddress()
 #include <windows.h>
 #include <process.h>
 #include <stdio.h>
+#include <malloc.h>
 #include "plstr.h"
-#include "mozilla/FunctionTimer.h"
 
 #include "nspr.h"
 #include <imagehlp.h>
@@ -191,7 +198,7 @@ StackWalkInitCriticalAddress()
 //
 //   http://msdn.microsoft.com/library/periodic/period97/F1/D3/S245C6.htm
 //
-PR_BEGIN_EXTERN_C
+extern "C" {
 
 extern HANDLE hStackWalkMutex; 
 
@@ -200,15 +207,18 @@ bool EnsureSymInitialized();
 bool EnsureImageHlpInitialized();
 
 struct WalkStackData {
-  PRUint32 skipFrames;
+  uint32_t skipFrames;
   HANDLE thread;
   bool walkCallingThread;
   HANDLE process;
   HANDLE eventStart;
   HANDLE eventEnd;
   void **pcs;
-  PRUint32 pc_size;
-  PRUint32 pc_count;
+  uint32_t pc_size;
+  uint32_t pc_count;
+  void **sps;
+  uint32_t sp_size;
+  uint32_t sp_count;
 };
 
 void PrintError(char *prefix, WalkStackData* data);
@@ -219,7 +229,7 @@ void WalkStackMain64(struct WalkStackData* data);
 DWORD gStackWalkThread;
 CRITICAL_SECTION gDbgHelpCS;
 
-PR_END_EXTERN_C
+}
 
 // Routine to print an error message to standard error.
 // Will also call callback with error, if data supplied.
@@ -287,6 +297,7 @@ WalkStackMain64(struct WalkStackData* data)
     HANDLE myProcess = data->process;
     HANDLE myThread = data->thread;
     DWORD64 addr;
+    DWORD64 spaddr;
     STACKFRAME64 frame64;
     // skip our own stack walking frames
     int skip = (data->walkCallingThread ? 3 : 0) + data->skipFrames;
@@ -296,7 +307,9 @@ WalkStackMain64(struct WalkStackData* data)
     memset(&context, 0, sizeof(CONTEXT));
     context.ContextFlags = CONTEXT_FULL;
     if (!GetThreadContext(myThread, &context)) {
-        PrintError("GetThreadContext");
+        if (data->walkCallingThread) {
+            PrintError("GetThreadContext");
+        }
         return;
     }
 
@@ -348,11 +361,15 @@ WalkStackMain64(struct WalkStackData* data)
         );
         LeaveCriticalSection(&gDbgHelpCS);
 
-        if (ok)
+        if (ok) {
             addr = frame64.AddrPC.Offset;
-        else {
+            spaddr = frame64.AddrStack.Offset;
+         } else {
             addr = 0;
-            PrintError("WalkStack64");
+            spaddr = 0;
+            if (data->walkCallingThread) {
+                PrintError("WalkStack64");
+            }
         }
 
         if (!ok || (addr == 0)) {
@@ -366,6 +383,10 @@ WalkStackMain64(struct WalkStackData* data)
         if (data->pc_count < data->pc_size)
             data->pcs[data->pc_count] = (void*)addr;
         ++data->pc_count;
+
+        if (data->sp_count < data->sp_size)
+            data->sps[data->sp_count] = (void*)spaddr;
+        ++data->sp_count;
 
         if (frame64.AddrReturn.Offset == 0)
             break;
@@ -435,16 +456,17 @@ WalkStackThread(void* aData)
  */
 
 EXPORT_XPCOM_API(nsresult)
-NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
+NS_StackWalk(NS_WalkStackCallback aCallback, uint32_t aSkipFrames,
              void *aClosure, uintptr_t aThread)
 {
-    MOZ_ASSERT(gCriticalAddress.mInit);
-    HANDLE myProcess, myThread;
+    StackWalkInitCriticalAddress();
+    static HANDLE myProcess = NULL;
+    HANDLE myThread;
     DWORD walkerReturn;
     struct WalkStackData data;
 
     if (!EnsureImageHlpInitialized())
-        return false;
+        return NS_OK;
 
     HANDLE targetThread = ::GetCurrentThread();
     data.walkCallingThread = true;
@@ -455,22 +477,31 @@ NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
         targetThread = threadToWalk;
     }
 
+    // We need to avoid calling fprintf and friends if we're walking the stack of
+    // another thread, in order to avoid deadlocks.
+    const bool shouldBeThreadSafe = !!aThread;
+
     // Have to duplicate handle to get a real handle.
-    if (!::DuplicateHandle(::GetCurrentProcess(),
-                           ::GetCurrentProcess(),
-                           ::GetCurrentProcess(),
-                           &myProcess,
-                           PROCESS_ALL_ACCESS, FALSE, 0)) {
-        PrintError("DuplicateHandle (process)");
-        return NS_ERROR_FAILURE;
+    if (!myProcess) {
+        if (!::DuplicateHandle(::GetCurrentProcess(),
+                               ::GetCurrentProcess(),
+                               ::GetCurrentProcess(),
+                               &myProcess,
+                               PROCESS_ALL_ACCESS, FALSE, 0)) {
+            if (!shouldBeThreadSafe) {
+                PrintError("DuplicateHandle (process)");
+            }
+            return NS_ERROR_FAILURE;
+        }
     }
     if (!::DuplicateHandle(::GetCurrentProcess(),
                            targetThread,
                            ::GetCurrentProcess(),
                            &myThread,
                            THREAD_ALL_ACCESS, FALSE, 0)) {
-        PrintError("DuplicateHandle (thread)");
-        ::CloseHandle(myProcess);
+        if (!shouldBeThreadSafe) {
+            PrintError("DuplicateHandle (thread)");
+        }
         return NS_ERROR_FAILURE;
     }
 
@@ -481,11 +512,25 @@ NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
     data.pcs = local_pcs;
     data.pc_count = 0;
     data.pc_size = ArrayLength(local_pcs);
+    void *local_sps[1024];
+    data.sps = local_sps;
+    data.sp_count = 0;
+    data.sp_size = ArrayLength(local_pcs);
 
     if (aThread) {
         // If we're walking the stack of another thread, we don't need to
         // use a separate walker thread.
         WalkStackMain64(&data);
+
+        if (data.pc_count > data.pc_size) {
+            data.pcs = (void**) _alloca(data.pc_count * sizeof(void*));
+            data.pc_size = data.pc_count;
+            data.pc_count = 0;
+            data.sps = (void**) _alloca(data.sp_count * sizeof(void*));
+            data.sp_size = data.sp_count;
+            data.sp_count = 0;
+            WalkStackMain64(&data);
+        }
     } else {
         data.eventStart = ::CreateEvent(NULL, FALSE /* auto-reset*/,
                               FALSE /* initially non-signaled */, NULL);
@@ -496,16 +541,19 @@ NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
 
         walkerReturn = ::SignalObjectAndWait(data.eventStart,
                            data.eventEnd, INFINITE, FALSE);
-        if (walkerReturn != WAIT_OBJECT_0)
+        if (walkerReturn != WAIT_OBJECT_0 && !shouldBeThreadSafe)
             PrintError("SignalObjectAndWait (1)");
         if (data.pc_count > data.pc_size) {
-            data.pcs = (void**) malloc(data.pc_count * sizeof(void*));
+            data.pcs = (void**) _alloca(data.pc_count * sizeof(void*));
             data.pc_size = data.pc_count;
             data.pc_count = 0;
+            data.sps = (void**) _alloca(data.sp_count * sizeof(void*));
+            data.sp_size = data.sp_count;
+            data.sp_count = 0;
             ::PostThreadMessage(gStackWalkThread, WM_USER, 0, (LPARAM)&data);
             walkerReturn = ::SignalObjectAndWait(data.eventStart,
                                data.eventEnd, INFINITE, FALSE);
-            if (walkerReturn != WAIT_OBJECT_0)
+            if (walkerReturn != WAIT_OBJECT_0 && !shouldBeThreadSafe)
                 PrintError("SignalObjectAndWait (2)");
         }
 
@@ -514,13 +562,9 @@ NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
     }
 
     ::CloseHandle(myThread);
-    ::CloseHandle(myProcess);
 
-    for (PRUint32 i = 0; i < data.pc_count; ++i)
-        (*aCallback)(data.pcs[i], aClosure);
-
-    if (data.pc_size > ArrayLength(local_pcs))
-        free(data.pcs);
+    for (uint32_t i = 0; i < data.pc_count; ++i)
+        (*aCallback)(data.pcs[i], data.sps[i], aClosure);
 
     return NS_OK;
 }
@@ -590,7 +634,7 @@ BOOL SymGetModuleInfoEspecial64(HANDLE aProcess, DWORD64 aAddr, PIMAGEHLP_MODULE
      * Init the vars if we have em.
      */
     aModuleInfo->SizeOfStruct = NS_IMAGEHLP_MODULE64_SIZE;
-    if (nsnull != aLineInfo) {
+    if (nullptr != aLineInfo) {
         aLineInfo->SizeOfStruct = sizeof(IMAGEHLP_LINE64);
     }
 
@@ -620,8 +664,6 @@ BOOL SymGetModuleInfoEspecial64(HANDLE aProcess, DWORD64 aAddr, PIMAGEHLP_MODULE
              * If it fails, then well, we have other problems.
              */
             retval = SymGetModuleInfo64(aProcess, aAddr, aModuleInfo);
-            if (!retval)
-                PrintError("SymGetModuleInfo64");
         }
     }
 
@@ -629,7 +671,7 @@ BOOL SymGetModuleInfoEspecial64(HANDLE aProcess, DWORD64 aAddr, PIMAGEHLP_MODULE
      * If we got module info, we may attempt line info as well.
      * We will not report failure if this does not work.
      */
-    if (FALSE != retval && nsnull != aLineInfo) {
+    if (FALSE != retval && nullptr != aLineInfo) {
         DWORD displacement = 0;
         BOOL lineRes = FALSE;
         lineRes = SymGetLineFromAddr64(aProcess, aAddr, &displacement, aLineInfo);
@@ -650,8 +692,6 @@ EnsureSymInitialized()
 
     if (gInitialized)
         return gInitialized;
-
-    NS_TIME_FUNCTION;
 
     if (!EnsureImageHlpInitialized())
         return false;
@@ -731,7 +771,7 @@ NS_DescribeCodeAddress(void *aPC, nsCodeAddressDetails *aDetails)
 
 EXPORT_XPCOM_API(nsresult)
 NS_FormatCodeAddressDetails(void *aPC, const nsCodeAddressDetails *aDetails,
-                            char *aBuffer, PRUint32 aBufferSize)
+                            char *aBuffer, uint32_t aBufferSize)
 {
     if (aDetails->function[0])
         _snprintf(aBuffer, aBufferSize, "%s!%s+0x%016lX",
@@ -741,7 +781,7 @@ NS_FormatCodeAddressDetails(void *aPC, const nsCodeAddressDetails *aDetails,
 
     aBuffer[aBufferSize - 1] = '\0';
 
-    PRUint32 len = strlen(aBuffer);
+    uint32_t len = strlen(aBuffer);
     if (aDetails->filename[0]) {
         _snprintf(aBuffer + len, aBufferSize - len, " (%s, line %d)\n",
                   aDetails->filename, aDetails->lineno);
@@ -817,9 +857,9 @@ static struct bucket * newbucket ( void * pc );
 static struct frame * cs_getmyframeptr ( void );
 static void   cs_walk_stack ( void * (*read_func)(char * address),
                               struct frame * fp,
-                              int (*operate_func)(void *, void *),
+                              int (*operate_func)(void *, void *, void *),
                               void * usrarg );
-static void   cs_operate ( void (*operate_func)(void *, void *),
+static void   cs_operate ( void (*operate_func)(void *, void *, void *),
                            void * usrarg );
 
 #ifndef STACK_BIAS
@@ -851,7 +891,7 @@ struct bucket {
 
 struct my_user_args {
     NS_WalkStackCallback callback;
-    PRUint32 skipFrames;
+    uint32_t skipFrames;
     void *closure;
 };
 
@@ -947,13 +987,13 @@ csgetframeptr()
 
 
 static void
-cswalkstack(struct frame *fp, int (*operate_func)(void *, void *),
+cswalkstack(struct frame *fp, int (*operate_func)(void *, void *, void *),
     void *usrarg)
 {
 
     while (fp != 0 && fp->fr_savpc != 0) {
 
-        if (operate_func((void *)fp->fr_savpc, usrarg) != 0)
+        if (operate_func((void *)fp->fr_savpc, NULL, usrarg) != 0)
             break;
         /*
          * watch out - libthread stacks look funny at the top
@@ -967,18 +1007,19 @@ cswalkstack(struct frame *fp, int (*operate_func)(void *, void *),
 
 
 static void
-cs_operate(int (*operate_func)(void *, void *), void * usrarg)
+cs_operate(int (*operate_func)(void *, void *, void *), void * usrarg)
 {
     cswalkstack(csgetframeptr(), operate_func, usrarg);
 }
 
 EXPORT_XPCOM_API(nsresult)
-NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
+NS_StackWalk(NS_WalkStackCallback aCallback, uint32_t aSkipFrames,
              void *aClosure, uintptr_t aThread)
 {
-    MOZ_ASSERT(gCriticalAddress.mInit);
     MOZ_ASSERT(!aThread);
     struct my_user_args args;
+
+    StackWalkInitCriticalAddress();
 
     if (!initialized)
         myinit();
@@ -1028,7 +1069,7 @@ NS_DescribeCodeAddress(void *aPC, nsCodeAddressDetails *aDetails)
 
 EXPORT_XPCOM_API(nsresult)
 NS_FormatCodeAddressDetails(void *aPC, const nsCodeAddressDetails *aDetails,
-                            char *aBuffer, PRUint32 aBufferSize)
+                            char *aBuffer, uint32_t aBufferSize)
 {
     snprintf(aBuffer, aBufferSize, "%p %s:%s+0x%lx\n",
              aPC,
@@ -1051,7 +1092,7 @@ extern void *__libc_stack_end; // from ld-linux.so
 #endif
 namespace mozilla {
 nsresult
-FramePointerStackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
+FramePointerStackWalk(NS_WalkStackCallback aCallback, uint32_t aSkipFrames,
                       void *aClosure, void **bp, void *aStackEnd)
 {
   // Stack walking code courtesy Kipp's "leaky".
@@ -1073,15 +1114,21 @@ FramePointerStackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
 #if (defined(__ppc__) && defined(XP_MACOSX)) || defined(__powerpc64__)
     // ppc mac or powerpc64 linux
     void *pc = *(bp+2);
+    bp += 3;
 #else // i386 or powerpc32 linux
     void *pc = *(bp+1);
+    bp += 2;
 #endif
     if (IsCriticalAddress(pc)) {
       printf("Aborting stack trace, PC is critical\n");
       return NS_ERROR_UNEXPECTED;
     }
     if (--skip < 0) {
-      (*aCallback)(pc, aClosure);
+      // Assume that the SP points to the BP of the function
+      // it called. We can't know the exact location of the SP
+      // but this should be sufficient for our use the SP
+      // to order elements on the stack.
+      (*aCallback)(pc, bp, aClosure);
     }
     bp = next;
   }
@@ -1094,11 +1141,11 @@ FramePointerStackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
 #if X86_OR_PPC && (NSSTACKWALK_SUPPORTS_MACOSX || NSSTACKWALK_SUPPORTS_LINUX) // i386 or PPC Linux or Mac stackwalking code
 
 EXPORT_XPCOM_API(nsresult)
-NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
+NS_StackWalk(NS_WalkStackCallback aCallback, uint32_t aSkipFrames,
              void *aClosure, uintptr_t aThread)
 {
-  MOZ_ASSERT(gCriticalAddress.mInit);
   MOZ_ASSERT(!aThread);
+  StackWalkInitCriticalAddress();
 
   // Get the frame pointer
   void **bp;
@@ -1125,6 +1172,9 @@ NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
 #elif defined(HAVE__UNWIND_BACKTRACE)
 
 // libgcc_s.so symbols _Unwind_Backtrace@@GCC_3.3 and _Unwind_GetIP@@GCC_3.0
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #include <unwind.h>
 
 struct unwind_info {
@@ -1138,6 +1188,7 @@ unwind_callback (struct _Unwind_Context *context, void *closure)
 {
     unwind_info *info = static_cast<unwind_info *>(closure);
     void *pc = reinterpret_cast<void *>(_Unwind_GetIP(context));
+    // TODO Use something like '_Unwind_GetGR()' to get the stack pointer.
     if (IsCriticalAddress(pc)) {
         printf("Aborting stack trace, PC is critical\n");
         /* We just want to stop the walk, so any error code will do.
@@ -1146,24 +1197,33 @@ unwind_callback (struct _Unwind_Context *context, void *closure)
         return _URC_FOREIGN_EXCEPTION_CAUGHT;
     }
     if (--info->skip < 0)
-        (*info->callback)(pc, info->closure);
+        (*info->callback)(pc, NULL, info->closure);
     return _URC_NO_REASON;
 }
 
 EXPORT_XPCOM_API(nsresult)
-NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
+NS_StackWalk(NS_WalkStackCallback aCallback, uint32_t aSkipFrames,
              void *aClosure, uintptr_t aThread)
 {
-    MOZ_ASSERT(gCriticalAddress.mInit);
     MOZ_ASSERT(!aThread);
+    StackWalkInitCriticalAddress();
     unwind_info info;
     info.callback = aCallback;
     info.skip = aSkipFrames + 1;
     info.closure = aClosure;
 
     _Unwind_Reason_Code t = _Unwind_Backtrace(unwind_callback, &info);
+#if defined(ANDROID) && defined(__arm__)
+    // Ignore the _Unwind_Reason_Code on Android + ARM, because bionic's
+    // _Unwind_Backtrace usually (always?) returns _URC_FAILURE.  See
+    // https://bugzilla.mozilla.org/show_bug.cgi?id=717853#c110.
+    //
+    // (Ideally, the #if above would be specifically for bionic, not for
+    // Android + ARM, but we don't have a define specifically for bionic.)
+#else
     if (t != _URC_END_OF_STACK)
         return NS_ERROR_UNEXPECTED;
+#endif
     return NS_OK;
 }
 
@@ -1210,7 +1270,7 @@ NS_DescribeCodeAddress(void *aPC, nsCodeAddressDetails *aDetails)
 
 EXPORT_XPCOM_API(nsresult)
 NS_FormatCodeAddressDetails(void *aPC, const nsCodeAddressDetails *aDetails,
-                            char *aBuffer, PRUint32 aBufferSize)
+                            char *aBuffer, uint32_t aBufferSize)
 {
   if (!aDetails->library[0]) {
     snprintf(aBuffer, aBufferSize, "UNKNOWN %p\n", aPC);
@@ -1230,17 +1290,16 @@ NS_FormatCodeAddressDetails(void *aPC, const nsCodeAddressDetails *aDetails,
 #else // unsupported platform.
 
 EXPORT_XPCOM_API(nsresult)
-NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
+NS_StackWalk(NS_WalkStackCallback aCallback, uint32_t aSkipFrames,
              void *aClosure, uintptr_t aThread)
 {
-    MOZ_ASSERT(gCriticalAddress.mInit);
     MOZ_ASSERT(!aThread);
     return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 namespace mozilla {
 nsresult
-FramePointerStackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
+FramePointerStackWalk(NS_WalkStackCallback aCallback, uint32_t aSkipFrames,
                       void *aClosure, void **bp)
 {
     return NS_ERROR_NOT_IMPLEMENTED;
@@ -1261,7 +1320,7 @@ NS_DescribeCodeAddress(void *aPC, nsCodeAddressDetails *aDetails)
 
 EXPORT_XPCOM_API(nsresult)
 NS_FormatCodeAddressDetails(void *aPC, const nsCodeAddressDetails *aDetails,
-                            char *aBuffer, PRUint32 aBufferSize)
+                            char *aBuffer, uint32_t aBufferSize)
 {
     aBuffer[0] = '\0';
     return NS_ERROR_NOT_IMPLEMENTED;

@@ -38,8 +38,8 @@ static already_AddRefed<nsIContentViewer>
 doc_viewer(nsIDocShell *aDocShell)
 {
     if (!aDocShell)
-        return nsnull;
-    nsIContentViewer *result = nsnull;
+        return nullptr;
+    nsIContentViewer *result = nullptr;
     aDocShell->GetContentViewer(&result);
     return result;
 }
@@ -49,7 +49,7 @@ pres_shell(nsIDocShell *aDocShell)
 {
     nsCOMPtr<nsIContentViewer> cv = doc_viewer(aDocShell);
     if (!cv)
-        return nsnull;
+        return nullptr;
     nsCOMPtr<nsIPresShell> result;
     cv->GetPresShell(getter_AddRefs(result));
     return result.forget();
@@ -60,7 +60,7 @@ view_manager(nsIDocShell *aDocShell)
 {
     nsCOMPtr<nsIPresShell> shell(pres_shell(aDocShell));
     if (!shell)
-        return nsnull;
+        return nullptr;
     return shell->GetViewManager();
 }
 
@@ -70,12 +70,12 @@ document(nsIDocShell *aDocShell)
 {
     nsCOMPtr<nsIContentViewer> cv(doc_viewer(aDocShell));
     if (!cv)
-        return nsnull;
+        return nullptr;
     nsCOMPtr<nsIDOMDocument> domDoc;
     cv->GetDOMDocument(getter_AddRefs(domDoc));
     if (!domDoc)
-        return nsnull;
-    nsIDocument *result = nsnull;
+        return nullptr;
+    nsIDocument *result = nullptr;
     CallQueryInterface(domDoc, &result);
     return result;
 }
@@ -307,11 +307,11 @@ nsLayoutDebuggingTools::SetReflowCounts(bool aShow)
     return NS_OK;
 }
 
-static void DumpAWebShell(nsIDocShellTreeItem* aShellItem, FILE* out, PRInt32 aIndent)
+static void DumpAWebShell(nsIDocShellTreeItem* aShellItem, FILE* out, int32_t aIndent)
 {
     nsXPIDLString name;
     nsCOMPtr<nsIDocShellTreeItem> parent;
-    PRInt32 i, n;
+    int32_t i, n;
 
     for (i = aIndent; --i >= 0; )
         fprintf(out, "  ");
@@ -352,7 +352,7 @@ void
 DumpContentRecur(nsIDocShell* aDocShell, FILE* out)
 {
 #ifdef DEBUG
-    if (nsnull != aDocShell) {
+    if (nullptr != aDocShell) {
         fprintf(out, "docshell=%p \n", static_cast<void*>(aDocShell));
         nsCOMPtr<nsIDocument> doc(document(aDocShell));
         if (doc) {
@@ -365,7 +365,7 @@ DumpContentRecur(nsIDocShell* aDocShell, FILE* out)
             fputs("no document\n", out);
         }
         // dump the frames of the sub documents
-        PRInt32 i, n;
+        int32_t i, n;
         nsCOMPtr<nsIDocShellTreeNode> docShellAsNode(do_QueryInterface(aDocShell));
         docShellAsNode->GetChildCount(&n);
         for (i = 0; i < n; ++i) {
@@ -405,7 +405,7 @@ DumpFramesRecur(nsIDocShell* aDocShell, FILE* out)
     }
 
     // dump the frames of the sub documents
-    PRInt32 i, n;
+    int32_t i, n;
     nsCOMPtr<nsIDocShellTreeNode> docShellAsNode(do_QueryInterface(aDocShell));
     docShellAsNode->GetChildCount(&n);
     for (i = 0; i < n; ++i) {
@@ -445,7 +445,7 @@ DumpViewsRecur(nsIDocShell* aDocShell, FILE* out)
     }
 
     // dump the views of the sub documents
-    PRInt32 i, n;
+    int32_t i, n;
     nsCOMPtr<nsIDocShellTreeNode> docShellAsNode(do_QueryInterface(aDocShell));
     docShellAsNode->GetChildCount(&n);
     for (i = 0; i < n; i++) {
@@ -543,7 +543,7 @@ nsLayoutDebuggingTools::SetBoolPrefAndRefresh(const char * aPrefName,
     NS_ENSURE_TRUE(prefService && aPrefName, NS_OK);
 
     Preferences::SetBool(aPrefName, aNewVal);
-    prefService->SavePrefFile(nsnull);
+    prefService->SavePrefFile(nullptr);
 
     ForceRefresh();
 

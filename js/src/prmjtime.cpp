@@ -126,31 +126,11 @@ PRMJ_LocalGMTDifference()
 #define G2037GMTMICROHI        0x00e45fab /* micro secs to 2037 high */
 #define G2037GMTMICROLOW       0x7a238000 /* micro secs to 2037 low */
 
-#ifdef HAVE_SYSTEMTIMETOFILETIME
+#if defined(XP_WIN)
 
 static const int64_t win2un = 0x19DB1DED53E8000;
 
 #define FILETIME2INT64(ft) (((int64_t)ft.dwHighDateTime) << 32LL | (int64_t)ft.dwLowDateTime)
-
-#endif
-
-#if defined(HAVE_GETSYSTEMTIMEASFILETIME) || defined(HAVE_SYSTEMTIMETOFILETIME)
-
-#if defined(HAVE_GETSYSTEMTIMEASFILETIME)
-inline void
-LowResTime(LPFILETIME lpft)
-{
-    GetSystemTimeAsFileTime(lpft);
-}
-#elif defined(HAVE_SYSTEMTIMETOFILETIME)
-inline void
-LowResTime(LPFILETIME lpft)
-{
-    GetCurrentFT(lpft);
-}
-#else
-#error "No implementation of PRMJ_Now was selected."
-#endif
 
 typedef struct CalibrationData {
     long double freq;         /* The performance counter frequency */
@@ -160,7 +140,7 @@ typedef struct CalibrationData {
     /* The last high res time that we returned since recalibrating */
     int64_t last;
 
-    JSBool calibrated;
+    bool calibrated;
 
 #ifdef JS_THREADSAFE
     CRITICAL_SECTION data_lock;
@@ -190,9 +170,9 @@ NowCalibrate()
         /* By wrapping a timeBegin/EndPeriod pair of calls around this loop,
            the loop seems to take much less time (1 ms vs 15ms) on Vista. */
         timeBeginPeriod(1);
-        LowResTime(&ftStart);
+        GetSystemTimeAsFileTime(&ftStart);
         do {
-            LowResTime(&ft);
+            GetSystemTimeAsFileTime(&ft);
         } while (memcmp(&ftStart,&ft, sizeof(ft)) == 0);
         timeEndPeriod(1);
 
@@ -213,7 +193,7 @@ NowCalibrate()
         calibration.offset *= 0.1;
         calibration.last = 0;
 
-        calibration.calibrated = JS_TRUE;
+        calibration.calibrated = true;
     }
 }
 
@@ -255,7 +235,7 @@ static PRCallOnceType calibrationOnce = { 0 };
 
 #endif
 
-#endif /* HAVE_GETSYSTEMTIMEASFILETIME */
+#endif /* XP_WIN */
 
 
 #if defined(XP_OS2)
@@ -346,11 +326,6 @@ def PRMJ_Now():
 
 */
 
-// We parameterize the delay count just so that shell builds can
-// set it to 0 in order to get high-resolution benchmarking.
-// 10 seems to be the number of calls to load with a blank homepage.
-int CALIBRATION_DELAY_COUNT = 10;
-
 int64_t
 PRMJ_Now(void)
 {
@@ -358,20 +333,10 @@ PRMJ_Now(void)
     long double lowresTime, highresTimerValue;
     FILETIME ft;
     LARGE_INTEGER now;
-    JSBool calibrated = JS_FALSE;
-    JSBool needsCalibration = JS_FALSE;
+    bool calibrated = false;
+    bool needsCalibration = false;
     int64_t returnedTime;
     long double cachedOffset = 0.0;
-
-    /* To avoid regressing startup time (where high resolution is likely
-       not needed), give the old behavior for the first few calls.
-       This does not appear to be needed on Vista as the timeBegin/timeEndPeriod
-       calls seem to immediately take effect. */
-    int thiscall = JS_ATOMIC_INCREMENT(&nCalls);
-    if (thiscall <= CALIBRATION_DELAY_COUNT) {
-        LowResTime(&ft);
-        return (FILETIME2INT64(ft)-win2un)/10L;
-    }
 
     /* For non threadsafe platforms, NowInit is not necessary */
 #ifdef JS_THREADSAFE
@@ -390,7 +355,7 @@ PRMJ_Now(void)
 
                 NowCalibrate();
 
-                calibrated = JS_TRUE;
+                calibrated = true;
 
                 /* Restore spin count */
                 MUTEX_SETSPINCOUNT(&calibration.data_lock, DATALOCK_SPINCOUNT);
@@ -401,7 +366,7 @@ PRMJ_Now(void)
 
 
         /* Calculate a low resolution time */
-        LowResTime(&ft);
+        GetSystemTimeAsFileTime(&ft);
         lowresTime = 0.1*(long double)(FILETIME2INT64(ft) - win2un);
 
         if (calibration.freq > 0.0) {
@@ -423,7 +388,7 @@ PRMJ_Now(void)
 
             /* On some dual processor/core systems, we might get an earlier time
                so we cache the last time that we returned */
-            calibration.last = JS_MAX(calibration.last, int64_t(highresTime));
+            calibration.last = js::Max(calibration.last, int64_t(highresTime));
             returnedTime = calibration.last;
             MUTEX_UNLOCK(&calibration.data_lock);
 
@@ -462,7 +427,7 @@ PRMJ_Now(void)
                        future, the user will want the high resolution timer, so
                        we don't disable it entirely. */
                     returnedTime = int64_t(lowresTime);
-                    needsCalibration = JS_FALSE;
+                    needsCalibration = false;
                 } else {
                     /* It is possible that when we recalibrate, we will return a
                        value less than what we have returned before; this is
@@ -473,12 +438,12 @@ PRMJ_Now(void)
                        cannot maintain the invariant that Date.now() never
                        decreases; the old implementation has this behavior as
                        well. */
-                    needsCalibration = JS_TRUE;
+                    needsCalibration = true;
                 }
             } else {
                 /* No detectable clock skew */
                 returnedTime = int64_t(highresTime);
-                needsCalibration = JS_FALSE;
+                needsCalibration = false;
             }
         } else {
             /* No high resolution timer is available, so fall back */
@@ -658,8 +623,9 @@ DSTOffsetCache::computeDSTOffsetMilliseconds(int64_t localTimeSeconds)
 }
 
 int64_t
-DSTOffsetCache::getDSTOffsetMilliseconds(int64_t localTimeMilliseconds, JSContext *cx)
+DSTOffsetCache::getDSTOffsetMilliseconds(int64_t localTimeMilliseconds)
 {
+    purgeIfTZAIsStale();
     sanityCheck();
 
     int64_t localTimeSeconds = localTimeMilliseconds / MILLISECONDS_PER_SECOND;
@@ -692,7 +658,7 @@ DSTOffsetCache::getDSTOffsetMilliseconds(int64_t localTimeMilliseconds, JSContex
     oldRangeEndSeconds = rangeEndSeconds;
 
     if (rangeStartSeconds <= localTimeSeconds) {
-        int64_t newEndSeconds = JS_MIN(rangeEndSeconds + RANGE_EXPANSION_AMOUNT, MAX_UNIX_TIMET);
+        int64_t newEndSeconds = js::Min(rangeEndSeconds + RANGE_EXPANSION_AMOUNT, MAX_UNIX_TIMET);
         if (newEndSeconds >= localTimeSeconds) {
             int64_t endOffsetMilliseconds = computeDSTOffsetMilliseconds(newEndSeconds);
             if (endOffsetMilliseconds == offsetMilliseconds) {
@@ -715,7 +681,7 @@ DSTOffsetCache::getDSTOffsetMilliseconds(int64_t localTimeMilliseconds, JSContex
         return offsetMilliseconds;
     }
 
-    int64_t newStartSeconds = JS_MAX(rangeStartSeconds - RANGE_EXPANSION_AMOUNT, 0);
+    int64_t newStartSeconds = js::Max(rangeStartSeconds - RANGE_EXPANSION_AMOUNT, int64_t(0));
     if (newStartSeconds <= localTimeSeconds) {
         int64_t startOffsetMilliseconds = computeDSTOffsetMilliseconds(newStartSeconds);
         if (startOffsetMilliseconds == offsetMilliseconds) {

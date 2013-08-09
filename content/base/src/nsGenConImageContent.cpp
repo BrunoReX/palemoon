@@ -15,6 +15,7 @@
 #include "nsImageLoadingContent.h"
 #include "imgIRequest.h"
 #include "nsEventStates.h"
+#include "nsEventDispatcher.h"
 
 class nsGenConImageContent : public nsXMLElement,
                              public nsImageLoadingContent
@@ -35,7 +36,22 @@ public:
   }
 
   // nsIContent overrides
+  virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
+                              nsIContent* aBindingParent,
+                              bool aCompileEventHandlers);
+  virtual void UnbindFromTree(bool aDeep, bool aNullParent);
   virtual nsEventStates IntrinsicState() const;
+
+  virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor)
+  {
+    MOZ_ASSERT(IsInNativeAnonymousSubtree());
+    if (aVisitor.mEvent->message == NS_LOAD ||
+        aVisitor.mEvent->message == NS_LOAD_ERROR) {
+      // Don't propagate the events to the parent.
+      return NS_OK;
+    }
+    return nsXMLElement::PreHandleEvent(aVisitor);
+  }
   
 private:
   virtual ~nsGenConImageContent();
@@ -44,8 +60,11 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 };
 
-NS_IMPL_ISUPPORTS_INHERITED3(nsGenConImageContent, nsXMLElement,
-                             nsIImageLoadingContent, imgIContainerObserver, imgIDecoderObserver)
+NS_IMPL_ISUPPORTS_INHERITED3(nsGenConImageContent,
+                             nsXMLElement,
+                             nsIImageLoadingContent,
+                             imgINotificationObserver,
+                             imgIOnloadBlocker)
 
 nsresult
 NS_NewGenConImageContent(nsIContent** aResult, already_AddRefed<nsINodeInfo> aNodeInfo,
@@ -65,6 +84,28 @@ NS_NewGenConImageContent(nsIContent** aResult, already_AddRefed<nsINodeInfo> aNo
 nsGenConImageContent::~nsGenConImageContent()
 {
   DestroyImageLoadingContent();
+}
+
+nsresult
+nsGenConImageContent::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
+                                 nsIContent* aBindingParent,
+                                 bool aCompileEventHandlers)
+{
+  nsresult rv;
+  rv = nsXMLElement::BindToTree(aDocument, aParent, aBindingParent,
+                                aCompileEventHandlers);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsImageLoadingContent::BindToTree(aDocument, aParent, aBindingParent,
+                                    aCompileEventHandlers);
+  return NS_OK;
+}
+
+void
+nsGenConImageContent::UnbindFromTree(bool aDeep, bool aNullParent)
+{
+  nsImageLoadingContent::UnbindFromTree(aDeep, aNullParent);
+  nsXMLElement::UnbindFromTree(aDeep, aNullParent);
 }
 
 nsEventStates

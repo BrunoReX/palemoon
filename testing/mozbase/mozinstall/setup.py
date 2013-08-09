@@ -1,9 +1,9 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import os
-from setuptools import setup, find_packages
+from setuptools import setup
 
 try:
     here = os.path.dirname(os.path.abspath(__file__))
@@ -11,34 +11,39 @@ try:
 except IOError:
     description = None
 
-version = '0.3'
+PACKAGE_VERSION = '1.4'
 
-deps = ['mozinfo']
+deps = ['mozinfo == 0.4',
+        'mozfile'
+       ]
 
 setup(name='mozInstall',
-      version=version,
-      description="This is a utility package for installing Mozilla applications on various platforms.",
+      version=PACKAGE_VERSION,
+      description="This is a utility package for installing and uninstalling "
+                  "Mozilla applications on various platforms.",
       long_description=description,
+      # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
       classifiers=['Environment :: Console',
                    'Intended Audience :: Developers',
-                   'License :: OSI Approved :: Mozilla Public License 1.1 (MPL 1.1)',
+                   'License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)',
                    'Natural Language :: English',
                    'Operating System :: OS Independent',
                    'Programming Language :: Python',
                    'Topic :: Software Development :: Libraries :: Python Modules',
-                  ], # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
+                  ],
       keywords='mozilla',
-      author='mdas',
-      author_email='mdas@mozilla.com',
-      url='https://github.com/mozilla/mozbase',
-      license='MPL',
-      packages=find_packages(exclude=['legacy']),
+      author='Mozilla Automation and Tools team',
+      author_email='tools@lists.mozilla.org',
+      url='https://wiki.mozilla.org/Auto-tools/Projects/MozBase',
+      license='MPL 2.0',
+      packages=['mozinstall'],
       include_package_data=True,
       zip_safe=False,
       install_requires=deps,
       entry_points="""
       # -*- Entry points: -*-
       [console_scripts]
-      mozinstall = mozinstall:cli
+      mozinstall = mozinstall:install_cli
+      mozuninstall = mozinstall:uninstall_cli
       """,
       )

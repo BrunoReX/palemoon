@@ -62,20 +62,22 @@ extern "C" {
 }
 
 typedef int mozglueresult;
+typedef int64_t MOZTime;
 
 enum StartupEvent {
 #define mozilla_StartupTimeline_Event(ev, z) ev,
 #include "StartupTimeline.h"
 #undef mozilla_StartupTimeline_Event
+  MAX_STARTUP_EVENT_ID
 };
 
 using namespace mozilla;
 
-static uint64_t *sStartupTimeline;
-
-void StartupTimeline_Record(StartupEvent ev, struct timeval *tm)
+static MOZTime MOZ_Now()
 {
-  sStartupTimeline[ev] = (((uint64_t)tm->tv_sec * 1000000LL) + (uint64_t)tm->tv_usec);
+  struct timeval tm;
+  gettimeofday(&tm, 0);
+  return (((MOZTime)tm.tv_sec * 1000000LL) + (MOZTime)tm.tv_usec);
 }
 
 static struct mapping_info * lib_mapping = NULL;
@@ -286,6 +288,24 @@ Java_org_mozilla_gecko_GeckoAppShell_ ## name(JNIEnv *jenv, jclass jc, type1 one
   return f_ ## name(jenv, jc, one, two, three, four, five, six, seven, eight); \
 }
 
+#define SHELL_WRAPPER9_WITH_RETURN(name, return_type, type1, type2, type3, type4, type5, type6, type7, type8, type9) \
+typedef return_type (*name ## _t)(JNIEnv *, jclass, type1 one, type2 two, type3 three, type4 four, type5 five, type6 six, type7 seven, type8 eight, type9 nine); \
+static name ## _t f_ ## name; \
+extern "C" NS_EXPORT return_type JNICALL \
+Java_org_mozilla_gecko_GeckoAppShell_ ## name(JNIEnv *jenv, jclass jc, type1 one, type2 two, type3 three, type4 four, type5 five, type6 six, type7 seven, type8 eight, type9 nine) \
+{ \
+  return f_ ## name(jenv, jc, one, two, three, four, five, six, seven, eight, nine); \
+}
+
+#define SHELL_WRAPPER9(name,type1,type2,type3,type4,type5,type6,type7,type8, type9) \
+typedef void (*name ## _t)(JNIEnv *, jclass, type1 one, type2 two, type3 three, type4 four, type5 five, type6 six, type7 seven, type8 eight, type9 nine); \
+static name ## _t f_ ## name; \
+extern "C" NS_EXPORT void JNICALL \
+Java_org_mozilla_gecko_GeckoAppShell_ ## name(JNIEnv *jenv, jclass jc, type1 one, type2 two, type3 three, type4 four, type5 five, type6 six, type7 seven, type8 eight, type9 nine) \
+{ \
+  f_ ## name(jenv, jc, one, two, three, four, five, six, seven, eight, nine); \
+}
+
 SHELL_WRAPPER0(nativeInit)
 SHELL_WRAPPER1(notifyGeckoOfEvent, jobject)
 SHELL_WRAPPER0(processNextNativeEvent)
@@ -297,7 +317,6 @@ SHELL_WRAPPER3(callObserver, jstring, jstring, jstring)
 SHELL_WRAPPER1(removeObserver, jstring)
 SHELL_WRAPPER1(onChangeNetworkLinkStatus, jstring)
 SHELL_WRAPPER1(reportJavaCrash, jstring)
-SHELL_WRAPPER0(executeNextRunnable)
 SHELL_WRAPPER1(cameraCallbackBridge, jbyteArray)
 SHELL_WRAPPER3(notifyBatteryChange, jdouble, jboolean, jdouble)
 SHELL_WRAPPER3(notifySmsReceived, jstring, jstring, jlong)
@@ -305,32 +324,33 @@ SHELL_WRAPPER0(bindWidgetTexture)
 SHELL_WRAPPER0(scheduleComposite)
 SHELL_WRAPPER0(schedulePauseComposition)
 SHELL_WRAPPER2(scheduleResumeComposition, jint, jint)
+SHELL_WRAPPER0_WITH_RETURN(computeRenderIntegrity, jfloat)
 SHELL_WRAPPER3_WITH_RETURN(saveMessageInSentbox, jint, jstring, jstring, jlong)
-SHELL_WRAPPER6(notifySmsSent, jint, jstring, jstring, jlong, jint, jlong)
-SHELL_WRAPPER4(notifySmsDelivered, jint, jstring, jstring, jlong)
-SHELL_WRAPPER3(notifySmsSendFailed, jint, jint, jlong)
-SHELL_WRAPPER7(notifyGetSms, jint, jstring, jstring, jstring, jlong, jint, jlong)
-SHELL_WRAPPER3(notifyGetSmsFailed, jint, jint, jlong)
-SHELL_WRAPPER3(notifySmsDeleted, jboolean, jint, jlong)
-SHELL_WRAPPER3(notifySmsDeleteFailed, jint, jint, jlong)
-SHELL_WRAPPER2(notifyNoMessageInList, jint, jlong)
-SHELL_WRAPPER8(notifyListCreated, jint, jint, jstring, jstring, jstring, jlong, jint, jlong)
-SHELL_WRAPPER7(notifyGotNextMessage, jint, jstring, jstring, jstring, jlong, jint, jlong)
-SHELL_WRAPPER3(notifyReadingMessageListFailed, jint, jint, jlong)
+SHELL_WRAPPER5(notifySmsSent, jint, jstring, jstring, jlong, jint)
+SHELL_WRAPPER5(notifySmsDelivery, jint, jint, jstring, jstring, jlong)
+SHELL_WRAPPER2(notifySmsSendFailed, jint, jint)
+SHELL_WRAPPER7(notifyGetSms, jint, jint, jstring, jstring, jstring, jlong, jint)
+SHELL_WRAPPER2(notifyGetSmsFailed, jint, jint)
+SHELL_WRAPPER2(notifySmsDeleted, jboolean, jint)
+SHELL_WRAPPER2(notifySmsDeleteFailed, jint, jint)
+SHELL_WRAPPER1(notifyNoMessageInList, jint)
+SHELL_WRAPPER8(notifyListCreated, jint, jint, jint, jstring, jstring, jstring, jlong, jint)
+SHELL_WRAPPER7(notifyGotNextMessage, jint, jint, jstring, jstring, jstring, jlong, jint)
+SHELL_WRAPPER2(notifyReadingMessageListFailed, jint, jint)
 SHELL_WRAPPER2(notifyFilePickerResult, jstring, jlong)
 SHELL_WRAPPER1_WITH_RETURN(getSurfaceBits, jobject, jobject)
 SHELL_WRAPPER1(onFullScreenPluginHidden, jobject)
 SHELL_WRAPPER1_WITH_RETURN(getNextMessageFromQueue, jobject, jobject)
-SHELL_WRAPPER2(onSurfaceTextureFrameAvailable, jobject, jint);
+SHELL_WRAPPER2(onSurfaceTextureFrameAvailable, jobject, jint)
 
 static void * xul_handle = NULL;
 static void * sqlite_handle = NULL;
 static void * nss_handle = NULL;
 static void * nspr_handle = NULL;
 static void * plc_handle = NULL;
-static bool simple_linker_initialized = false;
 
 #ifdef MOZ_OLD_LINKER
+static bool simple_linker_initialized = false;
 static time_t apk_mtime = 0;
 #ifdef DEBUG
 extern "C" int extractLibs = 1;
@@ -403,6 +423,12 @@ extractFile(const char * path, Zip::Stream &s)
   munmap(buf, size);
 }
 #endif
+
+template <typename T> inline void
+xul_dlsym(const char *symbolName, T *value)
+{
+  *value = (T) (uintptr_t) __wrap_dlsym(xul_handle, symbolName);
+}
 
 #if defined(MOZ_CRASHREPORTER) || defined(MOZ_OLD_LINKER)
 static void
@@ -546,7 +572,6 @@ static void * mozload(const char * path, Zip *zip)
     return handle;
   }
 
-  bool skipLibCache = false;
   int fd;
   void * buf = NULL;
   uint32_t lib_size = s.GetUncompressedSize();
@@ -618,7 +643,8 @@ extractBuf(const char * path, Zip *zip)
   if (!zip->GetStream(path, &s))
     return NULL;
 
-  void * buf = malloc(s.GetUncompressedSize());
+  // allocate space for a trailing null byte
+  void * buf = malloc(s.GetUncompressedSize() + 1);
   if (buf == (void *)-1) {
     __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "Couldn't alloc decompression buffer for %s", path);
     return NULL;
@@ -627,6 +653,9 @@ extractBuf(const char * path, Zip *zip)
     extractLib(s, buf);
   else
     memcpy(buf, s.GetBuffer(), s.GetUncompressedSize());
+
+  // null terminate it
+  ((unsigned char*) buf)[s.GetUncompressedSize()] = 0;
 
   return buf;
 }
@@ -669,8 +698,7 @@ loadGeckoLibs(const char *apkName)
     apk_mtime = status.st_mtime;
 #endif
 
-  struct timeval t0, t1;
-  gettimeofday(&t0, 0);
+  MOZTime t0 = MOZ_Now();
   struct rusage usage1;
   getrusage(RUSAGE_THREAD, &usage1);
   
@@ -705,7 +733,7 @@ loadGeckoLibs(const char *apkName)
     return FAILURE;
   }
 
-#define GETFUNC(name) f_ ## name = (name ## _t) __wrap_dlsym(xul_handle, "Java_org_mozilla_gecko_GeckoAppShell_" #name)
+#define GETFUNC(name) xul_dlsym("Java_org_mozilla_gecko_GeckoAppShell_" #name, &f_ ## name)
   GETFUNC(nativeInit);
   GETFUNC(notifyGeckoOfEvent);
   GETFUNC(processNextNativeEvent);
@@ -717,7 +745,6 @@ loadGeckoLibs(const char *apkName)
   GETFUNC(removeObserver);
   GETFUNC(onChangeNetworkLinkStatus);
   GETFUNC(reportJavaCrash);
-  GETFUNC(executeNextRunnable);
   GETFUNC(cameraCallbackBridge);
   GETFUNC(notifyBatteryChange);
   GETFUNC(notifySmsReceived);
@@ -725,9 +752,10 @@ loadGeckoLibs(const char *apkName)
   GETFUNC(scheduleComposite);
   GETFUNC(schedulePauseComposition);
   GETFUNC(scheduleResumeComposition);
+  GETFUNC(computeRenderIntegrity);
   GETFUNC(saveMessageInSentbox);
   GETFUNC(notifySmsSent);
-  GETFUNC(notifySmsDelivered);
+  GETFUNC(notifySmsDelivery);
   GETFUNC(notifySmsSendFailed);
   GETFUNC(notifyGetSms);
   GETFUNC(notifyGetSmsFailed);
@@ -743,18 +771,22 @@ loadGeckoLibs(const char *apkName)
   GETFUNC(getNextMessageFromQueue);
   GETFUNC(onSurfaceTextureFrameAvailable);
 #undef GETFUNC
-  sStartupTimeline = (uint64_t *)__wrap_dlsym(xul_handle, "_ZN7mozilla15StartupTimeline16sStartupTimelineE");
-  gettimeofday(&t1, 0);
+
+  void (*XRE_StartupTimelineRecord)(int, MOZTime);
+  xul_dlsym("XRE_StartupTimelineRecord", &XRE_StartupTimelineRecord);
+
+  MOZTime t1 = MOZ_Now();
   struct rusage usage2;
   getrusage(RUSAGE_THREAD, &usage2);
-  __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "Loaded libs in %ldms total, %ldms user, %ldms system, %ld faults",
-                      (t1.tv_sec - t0.tv_sec)*1000 + (t1.tv_usec - t0.tv_usec)/1000, 
+
+  __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "Loaded libs in %lldms total, %ldms user, %ldms system, %ld faults",
+                      (t1 - t0) / 1000,
                       (usage2.ru_utime.tv_sec - usage1.ru_utime.tv_sec)*1000 + (usage2.ru_utime.tv_usec - usage1.ru_utime.tv_usec)/1000,
                       (usage2.ru_stime.tv_sec - usage1.ru_stime.tv_sec)*1000 + (usage2.ru_stime.tv_usec - usage1.ru_stime.tv_usec)/1000,
                       usage2.ru_majflt-usage1.ru_majflt);
 
-  StartupTimeline_Record(LINKER_INITIALIZED, &t0);
-  StartupTimeline_Record(LIBRARIES_LOADED, &t1);
+  XRE_StartupTimelineRecord(LINKER_INITIALIZED, t0);
+  XRE_StartupTimelineRecord(LIBRARIES_LOADED, t1);
   return SUCCESS;
 }
 
@@ -959,7 +991,8 @@ typedef void (*GeckoStart_t)(void *, const nsXREAppData *);
 extern "C" NS_EXPORT void JNICALL
 Java_org_mozilla_gecko_GeckoAppShell_nativeRun(JNIEnv *jenv, jclass jc, jstring jargs)
 {
-  GeckoStart_t GeckoStart = (GeckoStart_t) __wrap_dlsym(xul_handle, "GeckoStart");
+  GeckoStart_t GeckoStart;
+  xul_dlsym("GeckoStart", &GeckoStart);
   if (GeckoStart == NULL)
     return;
   // XXX: java doesn't give us true UTF8, we should figure out something
@@ -1003,12 +1036,11 @@ ChildProcessInit(int argc, char* argv[])
   // don't pass the last arg - it's only recognized by the lib cache
   argc--;
 
-  typedef GeckoProcessType (*XRE_StringToChildProcessType_t)(char*);
-  typedef mozglueresult (*XRE_InitChildProcess_t)(int, char**, GeckoProcessType);
-  XRE_StringToChildProcessType_t fXRE_StringToChildProcessType =
-    (XRE_StringToChildProcessType_t)__wrap_dlsym(xul_handle, "XRE_StringToChildProcessType");
-  XRE_InitChildProcess_t fXRE_InitChildProcess =
-    (XRE_InitChildProcess_t)__wrap_dlsym(xul_handle, "XRE_InitChildProcess");
+  GeckoProcessType (*fXRE_StringToChildProcessType)(char*);
+  xul_dlsym("XRE_StringToChildProcessType", &fXRE_StringToChildProcessType);
+
+  mozglueresult (*fXRE_InitChildProcess)(int, char**, GeckoProcessType);
+  xul_dlsym("XRE_InitChildProcess", &fXRE_InitChildProcess);
 
   GeckoProcessType proctype = fXRE_StringToChildProcessType(argv[--argc]);
 

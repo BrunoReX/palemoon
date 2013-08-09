@@ -72,14 +72,15 @@ protected:
 
   // Just like OpenWindowJS, but knows whether it got called via OpenWindowJS
   // (which means called from script) or called via OpenWindow.
-  nsresult OpenWindowJSInternal(nsIDOMWindow *aParent,
-                                const char *aUrl,
-                                const char *aName,
-                                const char *aFeatures,
-                                bool aDialog,
-                                nsIArray *argv,
-                                bool aCalledFromJS,
-                                nsIDOMWindow **_retval);
+  nsresult OpenWindowInternal(nsIDOMWindow *aParent,
+                              const char *aUrl,
+                              const char *aName,
+                              const char *aFeatures,
+                              bool aCalledFromJS,
+                              bool aDialog,
+                              bool aNavigate,
+                              nsIArray *argv,
+                              nsIDOMWindow **_retval);
 
   static JSContext *GetJSContextFromWindow(nsIDOMWindow *aWindow);
   static JSContext *GetJSContextFromCallStack();
@@ -87,13 +88,14 @@ protected:
                                nsIDOMWindow *aParent,
                                nsIURI **aURI);
   
-  static PRUint32   CalculateChromeFlags(const char *aFeatures,
+  static uint32_t   CalculateChromeFlags(nsIDOMWindow *aParent,
+                                         const char *aFeatures,
                                          bool aFeaturesSpecified,
                                          bool aDialog,
                                          bool aChromeURL,
                                          bool aHasChromeParent);
-  static PRInt32    WinHasOption(const char *aOptions, const char *aName,
-                                 PRInt32 aDefault, bool *aPresenceFlag);
+  static int32_t    WinHasOption(const char *aOptions, const char *aName,
+                                 int32_t aDefault, bool *aPresenceFlag);
   /* Compute the right SizeSpec based on aFeatures */
   static void       CalcSizeSpec(const char* aFeatures, SizeSpec& aResult);
   static nsresult   ReadyOpenedDocShellItem(nsIDocShellTreeItem *aOpenedItem,

@@ -3,7 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH     = ../../../..
+DEPTH     = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir    = @srcdir@
 VPATH     = @srcdir@
@@ -35,7 +35,7 @@ LOCAL_INCLUDES += \
 LIBS += \
   ../common/$(LIB_PREFIX)updatecommon.$(LIB_SUFFIX) \
   $(DEPTH)/modules/libmar/src/$(LIB_PREFIX)mar.$(LIB_SUFFIX) \
-  $(BZ2_LIBS) \
+  $(MOZ_BZ2_LIBS) \
   $(NULL)
 
 ifeq ($(OS_ARCH),WINNT)
@@ -75,7 +75,10 @@ endif
 ifeq (gonk,$(MOZ_WIDGET_TOOLKIT)) #{
 HAVE_PROGRESSUI = 1
 STL_FLAGS =
-CPPSRCS += progressui_gonk.cpp
+CPPSRCS += progressui_gonk.cpp automounter_gonk.cpp
+OS_LIBS += -lcutils -lsysutils
+# clear out all the --wrap flags and remove dependency on mozglue for Gonk
+WRAP_LDFLAGS :=
 endif #}
 
 ifndef HAVE_PROGRESSUI
@@ -129,7 +132,7 @@ EXTRA_LIBS += $(call EXPAND_LIBNAME,crypt32)
 EXTRA_LIBS += $(call EXPAND_LIBNAME,advapi32)
 endif
 
-CXXFLAGS += $(BZ2_CFLAGS)
+CXXFLAGS += $(MOZ_BZ2_CFLAGS)
 
 ifneq (,$(filter beta release esr,$(MOZ_UPDATE_CHANNEL)))
 RCFLAGS += -DMAR_SIGNING_RELEASE_BETA=1

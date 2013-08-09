@@ -11,7 +11,7 @@ StreamTime
 StreamBuffer::GetEnd() const
 {
   StreamTime t = mTracksKnownTime;
-  for (PRUint32 i = 0; i < mTracks.Length(); ++i) {
+  for (uint32_t i = 0; i < mTracks.Length(); ++i) {
     Track* track = mTracks[i];
     if (!track->IsEnded()) {
       t = NS_MIN(t, track->GetEndTimeRoundDown());
@@ -24,28 +24,28 @@ StreamBuffer::Track*
 StreamBuffer::FindTrack(TrackID aID)
 {
   if (aID == TRACK_NONE)
-    return nsnull;
-  for (PRUint32 i = 0; i < mTracks.Length(); ++i) {
+    return nullptr;
+  for (uint32_t i = 0; i < mTracks.Length(); ++i) {
     Track* track = mTracks[i];
     if (track->GetID() == aID) {
       return track;
     }
   }
-  return nsnull;
+  return nullptr;
 }
 
 void
 StreamBuffer::ForgetUpTo(StreamTime aTime)
 {
   // Round to nearest 50ms so we don't spend too much time pruning segments.
-  const int roundTo = MillisecondsToMediaTime(50);
+  const MediaTime roundTo = MillisecondsToMediaTime(50);
   StreamTime forget = (aTime/roundTo)*roundTo;
   if (forget <= mForgottenTime) {
     return;
   }
   mForgottenTime = forget;
 
-  for (PRUint32 i = 0; i < mTracks.Length(); ++i) {
+  for (uint32_t i = 0; i < mTracks.Length(); ++i) {
     Track* track = mTracks[i];
     if (track->IsEnded() && track->GetEndTimeRoundDown() <= forget) {
       mTracks.RemoveElementAt(i);

@@ -108,23 +108,23 @@ html[dir=rtl] .close {
   width: 16px;
   height: 16px;
   background: url(chrome://global/skin/icons/resizer.png) no-repeat;
-  -moz-transition-property: opacity;
-  -moz-transition-duration: 0.5s;
-  -moz-transition-timing-function: ease-out;
+  transition-property: opacity;
+  transition-duration: 0.5s;
+  transition-timing-function: ease-out;
   opacity: 0.2;
 }
 
 html[dir=rtl] .expander {
   right: auto;
   left: 6px;
-  -moz-transform: scaleX(-1);
+  transform: scaleX(-1);
 }
 
 .expander:hover,
 .appTabIcon:hover {
-  -moz-transition-property: opacity;
-  -moz-transition-duration: 0.5s;
-  -moz-transition-timing-function: ease-out;
+  transition-property: opacity;
+  transition-duration: 0.5s;
+  transition-timing-function: ease-out;
   opacity: 1.0;
 }
 
@@ -442,7 +442,8 @@ input.name:focus {
   color: #555;
 }
 
-input.name:-moz-placeholder {
+input.name::-moz-placeholder {
+  opacity: 1.0;
   font-style: italic !important;
   color: transparent;
   background-image: url(chrome://browser/skin/tabview/edit-light.png);
@@ -450,7 +451,7 @@ input.name:-moz-placeholder {
   -moz-padding-start: 20px;
 }
 
-.title-container:hover input.name:-moz-placeholder {
+.title-container:hover input.name::-moz-placeholder {
   color: #CCC;
 }
 
@@ -502,7 +503,7 @@ html[dir=rtl] .title-shield {
 html[dir=rtl] .resizer {
   right: auto;
   left: 0;
-  -moz-transform: scaleX(-1);
+  transform: scaleX(-1);
 }
 
 .iq-resizable-handle {
@@ -569,6 +570,8 @@ html[dir=rtl] .iq-resizable-se {
 
 #searchbox{
   width: 270px;
+  max-width: -moz-available;
+  -moz-margin-start: 20px;
   height: 30px;
   box-shadow: 0px 1px 0px rgba(255,255,255,.5), 0px -1px 0px rgba(0,0,0,1), 0px 0px 9px rgba(0,0,0,.8);
   color: white;

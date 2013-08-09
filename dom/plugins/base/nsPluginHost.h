@@ -38,20 +38,16 @@ class nsPluginNativeWindow;
 class nsObjectLoadingContent;
 class nsPluginInstanceOwner;
 
-#if defined(XP_MACOSX) && !defined(NP_NO_CARBON)
-#define MAC_CARBON_PLUGINS
-#endif
-
 class nsInvalidPluginTag : public nsISupports
 {
 public:
-  nsInvalidPluginTag(const char* aFullPath, PRInt64 aLastModifiedTime = 0);
+  nsInvalidPluginTag(const char* aFullPath, int64_t aLastModifiedTime = 0);
   virtual ~nsInvalidPluginTag();
   
   NS_DECL_ISUPPORTS
   
   nsCString   mFullPath;
-  PRInt64     mLastModifiedTime;
+  int64_t     mLastModifiedTime;
   bool        mSeen;
   
   nsRefPtr<nsInvalidPluginTag> mPrev;
@@ -82,12 +78,14 @@ public:
 
   nsresult SetUpPluginInstance(const char *aMimeType,
                                nsIURI *aURL,
-                               nsIPluginInstanceOwner *aOwner);
+                               nsPluginInstanceOwner *aOwner);
   nsresult IsPluginEnabledForType(const char* aMimeType);
   nsresult IsPluginEnabledForExtension(const char* aExtension, const char* &aMimeType);
+  bool     IsPluginPlayPreviewForType(const char *aMimeType);
+  nsresult GetBlocklistStateForType(const char *aMimeType, uint32_t *state);
 
-  nsresult GetPluginCount(PRUint32* aPluginCount);
-  nsresult GetPlugins(PRUint32 aPluginCount, nsIDOMPlugin** aPluginArray);
+  nsresult GetPluginCount(uint32_t* aPluginCount);
+  nsresult GetPlugins(uint32_t aPluginCount, nsIDOMPlugin** aPluginArray);
 
   nsresult GetURL(nsISupports* pluginInst,
                   const char* url,
@@ -98,7 +96,7 @@ public:
                   bool forceJSEnabled);
   nsresult PostURL(nsISupports* pluginInst,
                    const char* url,
-                   PRUint32 postDataLen,
+                   uint32_t postDataLen,
                    const char* postData,
                    bool isFile,
                    const char* target,
@@ -106,16 +104,15 @@ public:
                    const char* altHost,
                    const char* referrer,
                    bool forceJSEnabled,
-                   PRUint32 postHeadersLength,
+                   uint32_t postHeadersLength,
                    const char* postHeaders);
 
   nsresult FindProxyForURL(const char* url, char* *result);
   nsresult UserAgent(const char **retstring);
-  nsresult ParsePostBufferToFixHeaders(const char *inPostData, PRUint32 inPostDataLen,
-                                       char **outPostData, PRUint32 *outPostDataLen);
+  nsresult ParsePostBufferToFixHeaders(const char *inPostData, uint32_t inPostDataLen,
+                                       char **outPostData, uint32_t *outPostDataLen);
   nsresult CreateTempFileToPost(const char *aPostDataURL, nsIFile **aTmpFile);
   nsresult NewPluginNativeWindow(nsPluginNativeWindow ** aPluginNativeWindow);
-  nsresult InstantiateDummyJavaPlugin(nsIPluginInstanceOwner *aOwner);
 
   void AddIdleTimeTarget(nsIPluginInstanceOwner* objectFrame, bool isVisible);
   void RemoveIdleTimeTarget(nsIPluginInstanceOwner* objectFrame);
@@ -129,9 +126,9 @@ public:
   NewPluginURLStream(const nsString& aURL, 
                      nsNPAPIPluginInstance *aInstance, 
                      nsNPAPIPluginStreamListener *aListener,
-                     nsIInputStream *aPostStream = nsnull,
-                     const char *aHeadersData = nsnull, 
-                     PRUint32 aHeadersDataLen = 0);
+                     nsIInputStream *aPostStream = nullptr,
+                     const char *aHeadersData = nullptr, 
+                     uint32_t aHeadersDataLen = 0);
 
   nsresult
   GetURLWithHeaders(nsNPAPIPluginInstance *pluginInst, 
@@ -141,7 +138,7 @@ public:
                     const char* altHost = NULL,
                     const char* referrer = NULL,
                     bool forceJSEnabled = false,
-                    PRUint32 getHeadersLength = 0, 
+                    uint32_t getHeadersLength = 0, 
                     const char* getHeaders = NULL);
 
   nsresult
@@ -149,7 +146,7 @@ public:
                          const char* aURL);
 
   nsresult
-  AddHeadersToChannel(const char *aHeadersData, PRUint32 aHeadersDataLen, 
+  AddHeadersToChannel(const char *aHeadersData, uint32_t aHeadersDataLen, 
                       nsIChannel *aGenericChannel);
 
   static nsresult GetPluginTempDir(nsIFile **aDir);
@@ -157,6 +154,10 @@ public:
   // Writes updated plugins settings to disk and unloads the plugin
   // if it is now disabled
   nsresult UpdatePluginInfo(nsPluginTag* aPluginTag);
+  
+  // Helper that checks if a type is whitelisted in plugin.allowed_types.
+  // Always returns true if plugin.allowed_types is not set
+  static bool IsTypeWhitelisted(const char *aType);
 
   // checks whether aTag is a "java" plugin tag (a tag for a plugin
   // that does Java)
@@ -172,13 +173,13 @@ public:
 
   nsNPAPIPluginInstance *FindInstance(const char *mimetype);
   nsNPAPIPluginInstance *FindOldestStoppedInstance();
-  PRUint32 StoppedInstanceCount();
+  uint32_t StoppedInstanceCount();
 
   nsTArray< nsRefPtr<nsNPAPIPluginInstance> > *InstanceArray();
 
   void DestroyRunningInstances(nsISupportsArray* aReloadDocs, nsPluginTag* aPluginTag);
 
-  // Return the tag for |aLibrary| if found, nsnull if not.
+  // Return the tag for |aLibrary| if found, nullptr if not.
   nsPluginTag* FindTagForLibrary(PRLibrary* aLibrary);
 
   // The last argument should be false if we already have an in-flight stream
@@ -208,10 +209,13 @@ public:
 
 private:
   nsresult
-  TrySetUpPluginInstance(const char *aMimeType, nsIURI *aURL, nsIPluginInstanceOwner *aOwner);
+  TrySetUpPluginInstance(const char *aMimeType, nsIURI *aURL, nsPluginInstanceOwner *aOwner);
 
   nsresult
   NewEmbeddedPluginStream(nsIURI* aURL, nsObjectLoadingContent *aContent, nsNPAPIPluginInstance* aInstance);
+
+  nsPluginTag*
+  FindPreferredPlugin(const InfallibleTArray<nsPluginTag*>& matches);
 
   // Return an nsPluginTag for this type, if any.  If aCheckEnabled is
   // true, only enabled plugins will be returned.
@@ -226,6 +230,11 @@ private:
 
   nsresult
   FindPlugins(bool aCreatePluginList, bool * aPluginsChanged);
+
+  // Registers or unregisters the given mime type with the category manager
+  // (performs no checks - see UpdateCategoryManager)
+  enum nsRegisterType { ePluginRegister, ePluginUnregister };
+  void RegisterWithCategoryManager(nsCString &aMimeType, nsRegisterType aType);
 
   nsresult
   ScanPluginsDirectory(nsIFile *pluginsDir,
@@ -254,13 +263,12 @@ private:
 
   // Checks to see if a tag object is in our list of live tags.
   bool IsLiveTag(nsIPluginTag* tag);
-
+  
   // Checks our list of live tags for an equivalent tag.
-  nsPluginTag* HaveSamePlugin(nsPluginTag * aPluginTag);
-
-  // checks if given plugin is a duplicate of what we already have
-  // in the plugin list but found in some different place
-  bool IsDuplicatePlugin(nsPluginTag * aPluginTag);
+  nsPluginTag* HaveSamePlugin(const nsPluginTag * aPluginTag);
+    
+  // Returns the first plugin at |path|
+  nsPluginTag* FirstPluginWithPath(const nsCString& path);
 
   nsresult EnsurePrivateDirServiceProvider();
 
@@ -269,6 +277,7 @@ private:
   nsRefPtr<nsPluginTag> mPlugins;
   nsRefPtr<nsPluginTag> mCachedPlugins;
   nsRefPtr<nsInvalidPluginTag> mInvalidPlugins;
+  nsTArray<nsCString> mPlayPreviewMimeTypes;
   bool mPluginsLoaded;
   bool mDontShowBadPluginMessage;
 
@@ -277,6 +286,8 @@ private:
 
   // set by pref plugin.disable
   bool mPluginsDisabled;
+  // set by pref plugins.click_to_play
+  bool mPluginsClickToPlay;
 
   // Any instances in this array will have valid plugin objects via GetPlugin().
   // When removing an instance it might not die - be sure to null out it's plugin.
@@ -304,13 +315,6 @@ private:
   // We need to hold a global ptr to ourselves because we register for
   // two different CIDs for some reason...
   static nsPluginHost* sInst;
-
-#ifdef MAC_CARBON_PLUGINS
-  nsCOMPtr<nsITimer> mVisiblePluginTimer;
-  nsTObserverArray<nsIPluginInstanceOwner*> mVisibleTimerTargets;
-  nsCOMPtr<nsITimer> mHiddenPluginTimer;
-  nsTObserverArray<nsIPluginInstanceOwner*> mHiddenTimerTargets;
-#endif
 };
 
 class NS_STACK_CLASS PluginDestructionGuard : protected PRCList
@@ -323,7 +327,7 @@ public:
   }
 
   PluginDestructionGuard(NPP npp)
-    : mInstance(npp ? static_cast<nsNPAPIPluginInstance*>(npp->ndata) : nsnull)
+    : mInstance(npp ? static_cast<nsNPAPIPluginInstance*>(npp->ndata) : nullptr)
   {
     Init();
   }

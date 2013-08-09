@@ -27,14 +27,14 @@ protected:
   // index into mNodes for our current position.  Otherwise, mChild is
   // our current child (which might be null if we're done iterating).
   union {
-    PRUint32 mIndex;
+    uint32_t mIndex;
     nsIContent* mChild;
   };
   nsINodeList* mNodes;
 
 public:
   ChildIterator()
-    : mContent(nsnull), mChild(0), mNodes(nsnull) {}
+    : mContent(nullptr), mChild(0), mNodes(nullptr) {}
 
   ChildIterator(const ChildIterator& aOther)
     : mContent(aOther.mContent),
@@ -94,7 +94,7 @@ public:
 
   nsIContent* get() const {
     if (XBLInvolved()) {
-      return mNodes->GetNodeAt(mIndex);
+      return mNodes->Item(mIndex);
     }
 
     return mChild;
@@ -116,7 +116,7 @@ public:
 
   void seek(nsIContent* aContent) {
     if (XBLInvolved()) {
-      PRInt32 index = mNodes->IndexOf(aContent);
+      int32_t index = mNodes->IndexOf(aContent);
       // XXXbz I wish we could assert that index != -1, but it seems to not be
       // the case in some XBL cases with filtered insertion points and no
       // default insertion point.  I will now claim that XBL's management of
@@ -136,11 +136,11 @@ public:
       // XXXbz I wish we could assert this doesn't happen, but I think that's
       // not necessarily the case when called from ContentInserted if
       // first-letter frames are about.
-      mChild = nsnull;
+      mChild = nullptr;
     }
   }
 
-  bool XBLInvolved() const { return mNodes != nsnull; }
+  bool XBLInvolved() const { return mNodes != nullptr; }
 
   /**
    * Create a pair of ChildIterators for a content node. aFirst will
@@ -152,9 +152,9 @@ public:
                        ChildIterator* aLast);
 
 private:
-  PRUint32 length() {
+  uint32_t length() {
     NS_PRECONDITION(XBLInvolved(), "Don't call me");
-    PRUint32 l;
+    uint32_t l;
     mNodes->GetLength(&l);
     return l;
   }

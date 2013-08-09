@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: javascript; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=2 et sw=2 tw=80: */
 /*
 # This Source Code Form is subject to the terms of the Mozilla Public
@@ -97,8 +97,9 @@ nsUnknownContentTypeDialogProgressListener.prototype = {
 const PREF_BD_USEDOWNLOADDIR = "browser.download.useDownloadDir";
 const nsITimer = Components.interfaces.nsITimer;
 
+let downloadModule = {};
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-Components.utils.import("resource://gre/modules/DownloadLastDir.jsm");
+Components.utils.import("resource://gre/modules/DownloadLastDir.jsm", downloadModule);
 Components.utils.import("resource://gre/modules/DownloadPaths.jsm");
 Components.utils.import("resource://gre/modules/DownloadUtils.jsm");
 
@@ -162,8 +163,7 @@ nsUnknownContentTypeDialog.prototype = {
     } catch (ex) {
       // The containing window may have gone away.  Break reference
       // cycles and stop doing the download.
-      const NS_BINDING_ABORTED = 0x804b0002;
-      this.mLauncher.cancel(NS_BINDING_ABORTED);
+      this.mLauncher.cancel(Components.results.NS_BINDING_ABORTED);
       return;
     }
 
@@ -244,6 +244,8 @@ nsUnknownContentTypeDialog.prototype = {
     var parent = aContext.QueryInterface(Components.interfaces.nsIInterfaceRequestor).getInterface(Components.interfaces.nsIDOMWindow);
     picker.init(parent, windowTitle, nsIFilePicker.modeSave);
     picker.defaultString = aDefaultFile;
+
+    let gDownloadLastDir = new downloadModule.DownloadLastDir(parent);
 
     if (aSuggestedFileExtension) {
       // aSuggestedFileExtension includes the period, so strip it
@@ -455,7 +457,8 @@ nsUnknownContentTypeDialog.prototype = {
         rememberChoice.disabled = true;
       }
       else {
-        rememberChoice.checked = !this.mLauncher.MIMEInfo.alwaysAskBeforeHandling;
+        rememberChoice.checked = !this.mLauncher.MIMEInfo.alwaysAskBeforeHandling &&
+                                 this.mLauncher.MIMEInfo.preferredAction != this.nsIMIMEInfo.handleInternally;
       }
       this.toggleRememberChoice(rememberChoice);
 
@@ -778,6 +781,12 @@ nsUnknownContentTypeDialog.prototype = {
   },
 
   updateMIMEInfo: function() {
+    // Don't update mime type preferences when the preferred action is set to
+    // the internal handler -- this dialog is the result of the handler fallback
+    // (e.g. Content-Disposition was set as attachment)
+    var discardUpdate = this.mLauncher.MIMEInfo.preferredAction == this.nsIMIMEInfo.handleInternally &&
+                        !this.dialogElement("rememberChoice").checked;
+
     var needUpdate = false;
     // If current selection differs from what's in the mime info object,
     // then we need to update.
@@ -816,7 +825,7 @@ nsUnknownContentTypeDialog.prototype = {
     // Make sure mime info has updated setting for the "always ask" flag.
     this.mLauncher.MIMEInfo.alwaysAskBeforeHandling = !this.dialogElement("rememberChoice").checked;
 
-    return needUpdate;
+    return needUpdate && !discardUpdate;
   },
 
   // See if the user changed things, and if so, update the
@@ -916,8 +925,7 @@ nsUnknownContentTypeDialog.prototype = {
 
     // Cancel app launcher.
     try {
-      const NS_BINDING_ABORTED = 0x804b0002;
-      this.mLauncher.cancel(NS_BINDING_ABORTED);
+      this.mLauncher.cancel(Components.results.NS_BINDING_ABORTED);
     } catch(exception) {
     }
 
@@ -1073,4 +1081,4 @@ nsUnknownContentTypeDialog.prototype = {
   }
 }
 
-var NSGetFactory = XPCOMUtils.generateNSGetFactory([nsUnknownContentTypeDialog]);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory([nsUnknownContentTypeDialog]);

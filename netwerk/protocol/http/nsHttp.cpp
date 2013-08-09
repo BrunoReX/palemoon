@@ -14,7 +14,7 @@
 using namespace mozilla;
 
 #if defined(PR_LOGGING)
-PRLogModuleInfo *gHttpLog = nsnull;
+PRLogModuleInfo *gHttpLog = nullptr;
 #endif
 
 // define storage for all atoms
@@ -42,8 +42,8 @@ struct HttpHeapAtom {
 };
 
 static struct PLDHashTable  sAtomTable = {0};
-static struct HttpHeapAtom *sHeapAtoms = nsnull;
-static Mutex               *sLock = nsnull;
+static struct HttpHeapAtom *sHeapAtoms = nullptr;
+static Mutex               *sLock = nullptr;
 
 HttpHeapAtom *
 NewHeapAtom(const char *value) {
@@ -52,7 +52,7 @@ NewHeapAtom(const char *value) {
     HttpHeapAtom *a =
         reinterpret_cast<HttpHeapAtom *>(malloc(sizeof(*a) + len));
     if (!a)
-        return nsnull;
+        return nullptr;
     memcpy(a->value, value, len + 1);
 
     // add this heap atom to the list of all heap atoms
@@ -91,7 +91,7 @@ static const PLDHashTableOps ops = {
     PL_DHashMoveEntryStub,
     PL_DHashClearEntryStub,
     PL_DHashFinalizeStub,
-    nsnull
+    nullptr
 };
 
 // We put the atoms in a hash table for speedy lookup.. see ResolveAtom.
@@ -107,9 +107,9 @@ nsHttp::CreateAtomTable()
     // The capacity for this table is initialized to a value greater than the
     // number of known atoms (NUM_HTTP_ATOMS) because we expect to encounter a
     // few random headers right off the bat.
-    if (!PL_DHashTableInit(&sAtomTable, &ops, nsnull, sizeof(PLDHashEntryStub),
+    if (!PL_DHashTableInit(&sAtomTable, &ops, nullptr, sizeof(PLDHashEntryStub),
                            NUM_HTTP_ATOMS + 10)) {
-        sAtomTable.ops = nsnull;
+        sAtomTable.ops = nullptr;
         return NS_ERROR_OUT_OF_MEMORY;
     }
 
@@ -118,7 +118,7 @@ nsHttp::CreateAtomTable()
 #define HTTP_ATOM(_name, _value) nsHttp::_name._val,
 #include "nsHttpAtomList.h"
 #undef HTTP_ATOM
-        nsnull
+        nullptr
     };
 
     for (int i = 0; atoms[i]; ++i) {
@@ -139,7 +139,7 @@ nsHttp::DestroyAtomTable()
 {
     if (sAtomTable.ops) {
         PL_DHashTableFinish(&sAtomTable);
-        sAtomTable.ops = nsnull;
+        sAtomTable.ops = nullptr;
     }
 
     while (sHeapAtoms) {
@@ -150,7 +150,7 @@ nsHttp::DestroyAtomTable()
 
     if (sLock) {
         delete sLock;
-        sLock = nsnull;
+        sLock = nullptr;
     }
 }
 
@@ -164,7 +164,7 @@ nsHttp::GetLock()
 nsHttpAtom
 nsHttp::ResolveAtom(const char *str)
 {
-    nsHttpAtom atom = { nsnull };
+    nsHttpAtom atom = { nullptr };
 
     if (!str || !sAtomTable.ops)
         return atom;
@@ -245,13 +245,13 @@ const char *
 nsHttp::FindToken(const char *input, const char *token, const char *seps)
 {
     if (!input)
-        return nsnull;
+        return nullptr;
 
     int inputLen = strlen(input);
     int tokenLen = strlen(token);
 
     if (inputLen < tokenLen)
-        return nsnull;
+        return nullptr;
 
     const char *inputTop = input;
     const char *inputEnd = input + inputLen - tokenLen;
@@ -265,16 +265,16 @@ nsHttp::FindToken(const char *input, const char *token, const char *seps)
         }
     }
 
-    return nsnull;
+    return nullptr;
 }
 
 bool
-nsHttp::ParseInt64(const char *input, const char **next, PRInt64 *r)
+nsHttp::ParseInt64(const char *input, const char **next, int64_t *r)
 {
     const char *start = input;
     *r = 0;
     while (*input >= '0' && *input <= '9') {
-        PRInt64 next = 10 * (*r) + (*input - '0');
+        int64_t next = 10 * (*r) + (*input - '0');
         if (next < *r) // overflow?
             return false;
         *r = next;
@@ -286,3 +286,39 @@ nsHttp::ParseInt64(const char *input, const char **next, PRInt64 *r)
         *next = input;
     return true;
 }
+
+bool
+nsHttp::IsPermanentRedirect(uint32_t httpStatus)
+{
+  return httpStatus == 301 || httpStatus == 308;
+}
+
+bool
+nsHttp::ShouldRewriteRedirectToGET(uint32_t httpStatus, nsHttpAtom method)
+{
+  // for 301 and 302, only rewrite POST
+  if (httpStatus == 301 || httpStatus == 302)
+    return method == nsHttp::Post;
+
+  // rewrite for 303 unless it was HEAD
+  if (httpStatus == 303)
+    return method != nsHttp::Head;
+
+  // otherwise, such as for 307, do not rewrite
+  return false;
+}
+
+bool
+nsHttp::IsSafeMethod(nsHttpAtom method)
+{
+  // This code will need to be extended for new safe methods, otherwise
+  // they'll default to "not safe".
+  return method == nsHttp::Get ||
+         method == nsHttp::Head ||
+         method == nsHttp::Options ||
+         method == nsHttp::Propfind ||
+         method == nsHttp::Report ||
+         method == nsHttp::Search ||
+         method == nsHttp::Trace;
+}
+

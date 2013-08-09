@@ -9,11 +9,13 @@
 #include "nsIDOMEventTarget.h"
 #include "nsMappedAttributes.h"
 #include "nsGenericHTMLElement.h"
+#include "nsAttrValueInlines.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsRuleData.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 // use the same protection as ancient code did 
 // http://lxr.mozilla.org/classic/source/lib/layout/laytable.c#46
@@ -30,18 +32,18 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLTableColElement
   NS_DECL_NSIDOMHTMLTABLECOLELEMENT
 
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
@@ -69,8 +71,8 @@ nsHTMLTableColElement::~nsHTMLTableColElement()
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLTableColElement, nsGenericElement) 
-NS_IMPL_RELEASE_INHERITED(nsHTMLTableColElement, nsGenericElement) 
+NS_IMPL_ADDREF_INHERITED(nsHTMLTableColElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLTableColElement, Element)
 
 
 DOMCI_NODE_DATA(HTMLTableColElement, nsHTMLTableColElement)
@@ -95,7 +97,7 @@ NS_IMPL_STRING_ATTR(nsHTMLTableColElement, Width, width)
 
 
 bool
-nsHTMLTableColElement::ParseAttribute(PRInt32 aNamespaceID,
+nsHTMLTableColElement::ParseAttribute(int32_t aNamespaceID,
                                       nsIAtom* aAttribute,
                                       const nsAString& aValue,
                                       nsAttrValue& aResult)
@@ -133,7 +135,7 @@ void MapAttributesIntoRule(const nsMappedAttributes* aAttributes, nsRuleData* aD
       // span: int
       const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::span);
       if (value && value->Type() == nsAttrValue::eInteger) {
-        PRInt32 val = value->GetIntegerValue();
+        int32_t val = value->GetIntegerValue();
         // Note: Do NOT use this code for table cells!  The value "0"
         // means something special for colspan and rowspan, but for <col
         // span> and <colgroup span> it's just disallowed.
@@ -194,7 +196,7 @@ nsHTMLTableColElement::IsAttributeMapped(const nsIAtom* aAttribute) const
     { &nsGkAtoms::align },
     { &nsGkAtoms::valign },
     { &nsGkAtoms::span },
-    { nsnull }
+    { nullptr }
   };
 
   static const MappedAttributeEntry* const map[] = {

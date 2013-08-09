@@ -13,6 +13,7 @@
 #ifndef nsGridRowLayout_h___
 #define nsGridRowLayout_h___
 
+#include "mozilla/Attributes.h"
 #include "nsSprocketLayout.h"
 #include "nsIGridPart.h"
 class nsGridRowGroupLayout;
@@ -33,23 +34,23 @@ class nsGridRowLayout : public nsSprocketLayout,
 public:
   NS_DECL_ISUPPORTS_INHERITED
 
-  virtual nsGridRowGroupLayout* CastToRowGroupLayout() { return nsnull; }
-  virtual nsGridLayout2* CastToGridLayout() { return nsnull; }
-  virtual nsGrid* GetGrid(nsIBox* aBox, PRInt32* aIndex, nsGridRowLayout* aRequestor=nsnull);
-  virtual nsIGridPart* GetParentGridPart(nsIBox* aBox, nsIBox** aParentBox);
-  virtual void ChildrenInserted(nsIBox* aBox, nsBoxLayoutState& aState,
-                                nsIBox* aPrevBox,
+  virtual nsGridRowGroupLayout* CastToRowGroupLayout() { return nullptr; }
+  virtual nsGridLayout2* CastToGridLayout() MOZ_OVERRIDE { return nullptr; }
+  virtual nsGrid* GetGrid(nsIFrame* aBox, int32_t* aIndex, nsGridRowLayout* aRequestor=nullptr) MOZ_OVERRIDE;
+  virtual nsIGridPart* GetParentGridPart(nsIFrame* aBox, nsIFrame** aParentBox) MOZ_OVERRIDE;
+  virtual void ChildrenInserted(nsIFrame* aBox, nsBoxLayoutState& aState,
+                                nsIFrame* aPrevBox,
                                 const nsFrameList::Slice& aNewChildren);
-  virtual void ChildrenAppended(nsIBox* aBox, nsBoxLayoutState& aState,
+  virtual void ChildrenAppended(nsIFrame* aBox, nsBoxLayoutState& aState,
                                 const nsFrameList::Slice& aNewChildren);
-  virtual void ChildrenRemoved(nsIBox* aBox, nsBoxLayoutState& aState, nsIBox* aChildList);
-  virtual void ChildrenSet(nsIBox* aBox, nsBoxLayoutState& aState, nsIBox* aChildList);
-  virtual nsMargin GetTotalMargin(nsIBox* aBox, bool aIsHorizontal);
+  virtual void ChildrenRemoved(nsIFrame* aBox, nsBoxLayoutState& aState, nsIFrame* aChildList);
+  virtual void ChildrenSet(nsIFrame* aBox, nsBoxLayoutState& aState, nsIFrame* aChildList);
+  virtual nsMargin GetTotalMargin(nsIFrame* aBox, bool aIsHorizontal) MOZ_OVERRIDE;
 
   virtual nsIGridPart* AsGridPart() { return this; }
 
 protected:
-  virtual void ChildAddedOrRemoved(nsIBox* aBox, nsBoxLayoutState& aState)=0;
+  virtual void ChildAddedOrRemoved(nsIFrame* aBox, nsBoxLayoutState& aState)=0;
 
   nsGridRowLayout();
 };

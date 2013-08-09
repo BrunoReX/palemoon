@@ -91,7 +91,7 @@ public:
         PR_AtomicIncrement(&gNum);
     }
 
-    static PRInt32 GetGlobalCount() {return gNum;}
+    static int32_t GetGlobalCount() {return gNum;}
 
 private:
     ~nsStressRunner() {
@@ -99,12 +99,12 @@ private:
     }
 
 protected:
-    static PRInt32 gNum;
-    PRInt32 mNum;
+    static int32_t gNum;
+    int32_t mNum;
     bool mWasRun;
 };
 
-PRInt32 nsStressRunner::gNum = 0;
+int32_t nsStressRunner::gNum = 0;
 
 NS_IMPL_THREADSAFE_ISUPPORTS1(nsStressRunner, nsIRunnable)
 
@@ -185,7 +185,7 @@ main(int argc, char** argv)
     int retval = 0;
     nsresult rv;
     
-    rv = NS_InitXPCOM2(nsnull, nsnull, nsnull);
+    rv = NS_InitXPCOM2(nullptr, nullptr, nullptr);
     if (NS_FAILED(rv)) return -1;
 
     if (argc > 1 && !strcmp(argv[1], "-stress")) {
@@ -217,7 +217,7 @@ main(int argc, char** argv)
         if (NS_FAILED(rv)) return -1;
     }
 
-    rv = NS_ShutdownXPCOM(nsnull);
+    rv = NS_ShutdownXPCOM(nullptr);
     if (NS_FAILED(rv)) return -1;
     return retval;
 }

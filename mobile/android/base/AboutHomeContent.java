@@ -5,67 +5,75 @@
 
 package org.mozilla.gecko;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.InputStream;
-import java.io.IOException;
-import java.net.URL;
-import java.net.MalformedURLException;
-import java.util.ArrayList;
-import java.util.EnumSet;
-import java.util.List;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
-
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
+import org.mozilla.gecko.db.BrowserContract.Thumbnails;
 import org.mozilla.gecko.db.BrowserDB;
 import org.mozilla.gecko.db.BrowserDB.URLColumns;
 import org.mozilla.gecko.sync.setup.SyncAccounts;
 import org.mozilla.gecko.sync.setup.activities.SetupSyncActivity;
+import org.mozilla.gecko.util.GeckoAsyncTask;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import android.accounts.Account;
 import android.accounts.AccountManager;
 import android.accounts.OnAccountsUpdateListener;
-import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
+import android.content.res.Resources;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.drawable.BitmapDrawable;
-import android.graphics.drawable.Drawable;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Path;
+import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
+import android.graphics.RectF;
 import android.os.SystemClock;
 import android.text.SpannableString;
+import android.text.TextUtils;
 import android.text.style.StyleSpan;
-import android.text.style.UnderlineSpan;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
-import android.widget.FrameLayout;
+import android.widget.AbsListView;
 import android.widget.GridView;
 import android.widget.ImageView;
-import android.widget.ListView;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.ScrollView;
 import android.widget.SimpleCursorAdapter;
 import android.widget.TextView;
-import android.text.TextUtils;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 public class AboutHomeContent extends ScrollView
-       implements TabsAccessor.OnQueryTabsCompleteListener {
+                              implements TabsAccessor.OnQueryTabsCompleteListener,
+                                         LightweightTheme.OnChangeListener {
     private static final String LOGTAG = "GeckoAboutHome";
 
     private static final int NUMBER_OF_REMOTE_TABS = 5;
+
     private static int mNumberOfTopSites;
     private static int mNumberOfCols;
 
@@ -78,83 +86,73 @@ public class AboutHomeContent extends ScrollView
         public static final EnumSet<UpdateFlags> ALL = EnumSet.allOf(UpdateFlags.class);
     }
 
+    private Context mContext;
+    private BrowserApp mActivity;
     private Cursor mCursor;
     UriLoadCallback mUriLoadCallback = null;
+    VoidCallback mLoadCompleteCallback = null;
     private LayoutInflater mInflater;
 
     private AccountManager mAccountManager;
     private OnAccountsUpdateListener mAccountListener = null;
 
     protected SimpleCursorAdapter mTopSitesAdapter;
-    protected GridView mTopSitesGrid;
+    protected TopSitesGridView mTopSitesGrid;
 
+    private AboutHomePromoBox mPromoBox;
+    private AboutHomePromoBox.Type mPrelimPromoBoxType;
     protected AboutHomeSection mAddons;
     protected AboutHomeSection mLastTabs;
     protected AboutHomeSection mRemoteTabs;
 
     private View.OnClickListener mRemoteTabClickListener;
-    private OnInterceptTouchListener mOnInterceptTouchListener;
 
     public interface UriLoadCallback {
         public void callback(String uriSpec);
     }
 
+    public interface VoidCallback {
+        public void callback();
+    }
+
     public AboutHomeContent(Context context) {
         super(context);
+        mContext = context;
     }
 
     public AboutHomeContent(Context context, AttributeSet attrs) {
         super(context, attrs);
+        mContext = context;
+        mActivity = (BrowserApp) context;
     }
 
     public void init() {
-        final Context context = getContext();
         inflate();
 
-        mAccountManager = AccountManager.get(context);
+        mAccountManager = AccountManager.get(mContext);
 
         // The listener will run on the background thread (see 2nd argument)
         mAccountManager.addOnAccountsUpdatedListener(mAccountListener = new OnAccountsUpdateListener() {
             public void onAccountsUpdated(Account[] accounts) {
-                final GeckoApp.StartupMode startupMode = GeckoApp.mAppContext.getStartupMode();
-                final boolean syncIsSetup = SyncAccounts.syncAccountsExist(context);
-
-                GeckoApp.mAppContext.mMainHandler.post(new Runnable() {
-                    public void run() {
-                        // The listener might run before the UI is initially updated.
-                        // In this case, we should simply wait for the initial setup
-                        // to happen.
-                        if (mTopSitesAdapter != null)
-                            updateLayout(startupMode, syncIsSetup);
-                    }
-                });
+                updateLayoutForSync();
             }
         }, GeckoAppShell.getHandler(), false);
 
         mRemoteTabClickListener = new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                String url = ((String) v.getTag());
-                JSONObject args = new JSONObject();
-                try {
-                    args.put("url", url);
-                    args.put("engine", null);
-                    args.put("userEntered", false);
-                } catch (Exception e) {
-                    Log.e(LOGTAG, "error building JSON arguments");
-                }
-    
-                Log.d(LOGTAG, "Sending message to Gecko: " + SystemClock.uptimeMillis() + " - Tab:Add");
-                GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Tab:Add", args.toString()));
+                Tabs.getInstance().loadUrl((String) v.getTag(), Tabs.LOADURL_NEW_TAB);
             }
         };
+
+        mPrelimPromoBoxType = AboutHomePromoBox.Type.SYNC;
     }
 
     private void inflate() {
-        mInflater = (LayoutInflater) getContext().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+        mInflater = (LayoutInflater) mContext.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
         mInflater.inflate(R.layout.abouthome_content, this);
 
-        mTopSitesGrid = (GridView)findViewById(R.id.top_sites_grid);
+        mTopSitesGrid = (TopSitesGridView)findViewById(R.id.top_sites_grid);
         mTopSitesGrid.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             public void onItemClick(AdapterView<?> parent, View v, int position, long id) {
                 Cursor c = (Cursor) parent.getItemAtPosition(position);
@@ -167,16 +165,10 @@ public class AboutHomeContent extends ScrollView
             }
         });
 
+        mPromoBox = (AboutHomePromoBox) findViewById(R.id.promo_box);
         mAddons = (AboutHomeSection) findViewById(R.id.recommended_addons);
         mLastTabs = (AboutHomeSection) findViewById(R.id.last_tabs);
         mRemoteTabs = (AboutHomeSection) findViewById(R.id.remote_tabs);
-
-        TextView allTopSitesText = (TextView) findViewById(R.id.all_top_sites_text);
-        allTopSitesText.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                GeckoApp.mAppContext.showAwesomebar(AwesomeBar.Target.CURRENT_TAB);
-            }
-        });
 
         mAddons.setOnMoreTextClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -187,33 +179,23 @@ public class AboutHomeContent extends ScrollView
 
         mRemoteTabs.setOnMoreTextClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                GeckoApp.mAppContext.showRemoteTabs();
-            }
-        });
-
-        TextView syncTextView = (TextView) findViewById(R.id.sync_text);
-        String syncText = syncTextView.getText().toString() + " \u00BB";
-        String boldName = getContext().getResources().getString(R.string.abouthome_sync_bold_name);
-        int styleIndex = syncText.indexOf(boldName);
-
-        // Highlight any occurrence of "Firefox Sync" in the string
-        // with a bold style.
-        if (styleIndex >= 0) {
-            SpannableString spannableText = new SpannableString(syncText);
-            spannableText.setSpan(new StyleSpan(android.graphics.Typeface.BOLD), styleIndex, styleIndex + 12, 0);
-            syncTextView.setText(spannableText, TextView.BufferType.SPANNABLE);
-        }
-
-        LinearLayout syncBox = (LinearLayout) findViewById(R.id.sync_box);
-        syncBox.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                Context context = v.getContext();
-                Intent intent = new Intent(context, SetupSyncActivity.class);
-                context.startActivity(intent);
+                mActivity.showRemoteTabs();
             }
         });
 
         setTopSitesConstants();
+    }
+
+    @Override
+    public void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        mActivity.getLightweightTheme().addListener(this);
+    }
+
+    @Override
+    public void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        mActivity.getLightweightTheme().removeListener(this);
     }
 
     public void onDestroy() {
@@ -233,58 +215,57 @@ public class AboutHomeContent extends ScrollView
             mLastTabs.hide();
     }
 
-    private void setTopSitesVisibility(boolean visible, boolean hasTopSites) {
-        int visibility = visible ? View.VISIBLE : View.GONE;
-        int visibilityWithTopSites = visible && hasTopSites ? View.VISIBLE : View.GONE;
-        int visibilityWithoutTopSites = visible && !hasTopSites ? View.VISIBLE : View.GONE;
+    private void setTopSitesVisibility(boolean hasTopSites) {
+        int visibility = hasTopSites ? View.VISIBLE : View.GONE;
 
-        findViewById(R.id.top_sites_grid).setVisibility(visibilityWithTopSites);
         findViewById(R.id.top_sites_title).setVisibility(visibility);
-        findViewById(R.id.all_top_sites_text).setVisibility(visibilityWithTopSites);
-        findViewById(R.id.no_top_sites_text).setVisibility(visibilityWithoutTopSites);
+        findViewById(R.id.top_sites_grid).setVisibility(visibility);
     }
 
-    private void setSyncVisibility(boolean visible) {
-        int visibility = visible ? View.VISIBLE : View.GONE;
-        findViewById(R.id.sync_box).setVisibility(visibility);
-    }
-
-    private void updateLayout(GeckoApp.StartupMode startupMode, boolean syncIsSetup) {
-        // The idea here is that we only show the sync invitation
-        // on the very first run. Show sync banner below the top
-        // sites section in all other cases.
-
+    private void updateLayout(boolean syncIsSetup) {
         boolean hasTopSites = mTopSitesAdapter.getCount() > 0;
-        boolean isFirstRun = (startupMode == GeckoApp.StartupMode.NEW_PROFILE);
+        setTopSitesVisibility(hasTopSites);
 
-        setTopSitesVisibility(!isFirstRun || hasTopSites, hasTopSites);
-        setSyncVisibility(!syncIsSetup);
+        AboutHomePromoBox.Type type = mPrelimPromoBoxType;
+        if (syncIsSetup && type == AboutHomePromoBox.Type.SYNC)
+            type = AboutHomePromoBox.Type.NONE;
+
+        mPromoBox.show(type);
     }
 
-    private void loadTopSites(final Activity activity) {
-        // Ensure we initialize GeckoApp's startup mode in
-        // background thread before we use it when updating
-        // the top sites section layout in main thread.
-        final GeckoApp.StartupMode startupMode = GeckoApp.mAppContext.getStartupMode();
+    private void updateLayoutForSync() {
+        final GeckoApp.StartupMode startupMode = mActivity.getStartupMode();
+        final boolean syncIsSetup = SyncAccounts.syncAccountsExist(mContext);
 
+        post(new Runnable() {
+            public void run() {
+                // The listener might run before the UI is initially updated.
+                // In this case, we should simply wait for the initial setup
+                // to happen.
+                if (mTopSitesAdapter != null)
+                    updateLayout(syncIsSetup);
+            }
+        });
+    }
+
+    private void loadTopSites() {
         // The SyncAccounts.syncAccountsExist method should not be called on
         // UI thread as it touches disk to access a sqlite DB.
-        final boolean syncIsSetup = SyncAccounts.syncAccountsExist(activity);
+        final boolean syncIsSetup = SyncAccounts.syncAccountsExist(mActivity);
 
-        final ContentResolver resolver = GeckoApp.mAppContext.getContentResolver();
+        final ContentResolver resolver = mActivity.getContentResolver();
         final Cursor oldCursor = mCursor;
         // Swap in the new cursor.
         mCursor = BrowserDB.getTopSites(resolver, mNumberOfTopSites);
 
-        GeckoApp.mAppContext.mMainHandler.post(new Runnable() {
+        post(new Runnable() {
             public void run() {
                 if (mTopSitesAdapter == null) {
-                    mTopSitesAdapter = new TopSitesCursorAdapter(activity,
+                    mTopSitesAdapter = new TopSitesCursorAdapter(mActivity,
                                                                  R.layout.abouthome_topsite_item,
                                                                  mCursor,
-                                                                 new String[] { URLColumns.TITLE,
-                                                                                URLColumns.THUMBNAIL },
-                                                                 new int[] { R.id.title, R.id.thumbnail });
+                                                                 new String[] { URLColumns.TITLE },
+                                                                 new int[] { R.id.title });
 
                     mTopSitesAdapter.setViewBinder(new TopSitesViewBinder());
                     mTopSitesGrid.setAdapter(mTopSitesAdapter);
@@ -292,29 +273,134 @@ public class AboutHomeContent extends ScrollView
                     mTopSitesAdapter.changeCursor(mCursor);
                 }
 
-                updateLayout(startupMode, syncIsSetup);
+                if (mTopSitesAdapter.getCount() > 0)
+                    loadTopSitesThumbnails(resolver);
+
+                updateLayout(syncIsSetup);
 
                 // Free the old Cursor in the right thread now.
                 if (oldCursor != null && !oldCursor.isClosed())
                     oldCursor.close();
+
+                // Even if AboutHome isn't necessarily entirely loaded if we
+                // get here, for phones this is the part the user initially sees,
+                // so it's the one we will care about for now.
+                if (mLoadCompleteCallback != null)
+                    mLoadCompleteCallback.callback();
             }
         });
     }
 
-    void update(final Activity activity, final EnumSet<UpdateFlags> flags) {
+    private List<String> getTopSitesUrls() {
+        List<String> urls = new ArrayList<String>();
+
+        Cursor c = mTopSitesAdapter.getCursor();
+        if (c == null || !c.moveToFirst())
+            return urls;
+
+        do {
+            final String url = c.getString(c.getColumnIndexOrThrow(URLColumns.URL));
+            urls.add(url);
+        } while (c.moveToNext());
+
+        return urls;
+    }
+
+    private void displayThumbnail(View view, Bitmap thumbnail) {
+        ImageView thumbnailView = (ImageView) view.findViewById(R.id.thumbnail);
+
+        if (thumbnail == null) {
+            thumbnailView.setImageResource(R.drawable.abouthome_thumbnail_bg);
+            thumbnailView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        } else {
+            try {
+                thumbnailView.setImageBitmap(thumbnail);
+                thumbnailView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            } catch (OutOfMemoryError oom) {
+                Log.e(LOGTAG, "Unable to load thumbnail bitmap", oom);
+                thumbnailView.setImageResource(R.drawable.abouthome_thumbnail_bg);
+                thumbnailView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            }
+        }
+    }
+
+    private void updateTopSitesThumbnails(Map<String, Bitmap> thumbnails) {
+        for (int i = 0; i < mTopSitesAdapter.getCount(); i++) {
+            final View view = mTopSitesGrid.getChildAt(i);
+
+            // The grid view might get temporarily out of sync with the
+            // adapter refreshes (e.g. on device rotation)
+            if (view == null)
+                continue;
+
+            Cursor c = (Cursor) mTopSitesAdapter.getItem(i);
+            final String url = c.getString(c.getColumnIndex(URLColumns.URL));
+
+            displayThumbnail(view, thumbnails.get(url));
+        }
+
+        mTopSitesGrid.invalidate();
+    }
+
+    public Map<String, Bitmap> getTopSitesThumbnails(Cursor c) {
+        Map<String, Bitmap> thumbnails = new HashMap<String, Bitmap>();
+
+        try {
+            if (c == null || !c.moveToFirst())
+                return thumbnails;
+
+            do {
+                final String url = c.getString(c.getColumnIndexOrThrow(Thumbnails.URL));
+                final byte[] b = c.getBlob(c.getColumnIndexOrThrow(Thumbnails.DATA));
+                if (b == null)
+                    continue;
+
+                Bitmap thumbnail = BitmapFactory.decodeByteArray(b, 0, b.length);
+                if (thumbnail == null)
+                    continue;
+
+                thumbnails.put(url, thumbnail);
+            } while (c.moveToNext());
+        } finally {
+            if (c != null)
+                c.close();
+        }
+
+        return thumbnails;
+    }
+
+    private void loadTopSitesThumbnails(final ContentResolver cr) {
+        final List<String> urls = getTopSitesUrls();
+        if (urls.size() == 0)
+            return;
+
+        (new GeckoAsyncTask<Void, Void, Cursor>(GeckoApp.mAppContext, GeckoAppShell.getHandler()) {
+            @Override
+            public Cursor doInBackground(Void... params) {
+                return BrowserDB.getThumbnailsForUrls(cr, urls);
+            }
+
+            @Override
+            public void onPostExecute(Cursor c) {
+                updateTopSitesThumbnails(getTopSitesThumbnails(c));
+            }
+        }).execute();
+    }
+
+    void update(final EnumSet<UpdateFlags> flags) {
         GeckoAppShell.getHandler().post(new Runnable() {
             public void run() {
                 if (flags.contains(UpdateFlags.TOP_SITES))
-                    loadTopSites(activity);
+                    loadTopSites();
 
                 if (flags.contains(UpdateFlags.PREVIOUS_TABS))
-                    readLastTabs(activity);
+                    readLastTabs();
 
                 if (flags.contains(UpdateFlags.RECOMMENDED_ADDONS))
-                    readRecommendedAddons(activity);
+                    readRecommendedAddons();
 
                 if (flags.contains(UpdateFlags.REMOTE_TABS))
-                    loadRemoteTabs(activity);
+                    loadRemoteTabs();
             }
         });
     }
@@ -323,8 +409,12 @@ public class AboutHomeContent extends ScrollView
         mUriLoadCallback = uriLoadCallback;
     }
 
-    public void onActivityContentChanged(Activity activity) {
-        update(activity, EnumSet.of(UpdateFlags.TOP_SITES));
+    public void setLoadCompleteCallback(VoidCallback callback) {
+        mLoadCompleteCallback = callback;
+    }
+
+    public void onActivityContentChanged() {
+        update(EnumSet.of(UpdateFlags.TOP_SITES));
     }
 
     private void setTopSitesConstants() {
@@ -342,33 +432,15 @@ public class AboutHomeContent extends ScrollView
         removeAllViews(); // We must remove the currently inflated view to allow for reinflation.
         inflate();
         mTopSitesGrid.setAdapter(mTopSitesAdapter); // mTopSitesGrid is a new instance (from loadTopSites()).
-        update(GeckoApp.mAppContext, AboutHomeContent.UpdateFlags.ALL); // Refresh all elements.
+        update(AboutHomeContent.UpdateFlags.ALL); // Refresh all elements.
     }
 
-    @Override
-    public boolean onInterceptTouchEvent(MotionEvent event) {
-        if (mOnInterceptTouchListener != null && mOnInterceptTouchListener.onInterceptTouchEvent(this, event))
-            return true;
-        return super.onInterceptTouchEvent(event);
-    }
-
-    @Override
-    public boolean onTouchEvent(MotionEvent event) {
-        if (mOnInterceptTouchListener != null && mOnInterceptTouchListener.onTouch(this, event))
-            return true;
-        return super.onTouchEvent(event);
-    }
-
-    public void setOnInterceptTouchListener(OnInterceptTouchListener listener) {
-        mOnInterceptTouchListener = listener;
-    }
-
-    private String readFromZipFile(Activity activity, String filename) {
+    private String readFromZipFile(String filename) {
         ZipFile zip = null;
         String str = null;
         try {
             InputStream fileStream = null;
-            File applicationPackage = new File(activity.getApplication().getPackageResourcePath());
+            File applicationPackage = new File(mActivity.getApplication().getPackageResourcePath());
             zip = new ZipFile(applicationPackage);
             if (zip == null)
                 return null;
@@ -434,14 +506,14 @@ public class AboutHomeContent extends ScrollView
         return pageUrl;
     }
 
-    private void readRecommendedAddons(final Activity activity) {
+    private void readRecommendedAddons() {
         final String addonsFilename = "recommended-addons.json";
         String jsonString;
         try {
-            jsonString = GeckoApp.mAppContext.getProfile().readFile(addonsFilename);
+            jsonString = mActivity.getProfile().readFile(addonsFilename);
         } catch (IOException ioe) {
             Log.i(LOGTAG, "filestream is null");
-            jsonString = readFromZipFile(activity, addonsFilename);
+            jsonString = readFromZipFile(addonsFilename);
         }
 
         JSONArray addonsArray = null;
@@ -454,7 +526,7 @@ public class AboutHomeContent extends ScrollView
         }
 
         final JSONArray array = addonsArray;
-        GeckoApp.mAppContext.mMainHandler.post(new Runnable() {
+        post(new Runnable() {
             public void run() {
                 try {
                     if (array == null || array.length() == 0) {
@@ -480,13 +552,13 @@ public class AboutHomeContent extends ScrollView
                             }
                         });
 
-                        Favicons favicons = GeckoApp.mAppContext.mFavicons;
-                        favicons.loadFavicon(pageUrl, iconUrl,
+                        Favicons favicons = mActivity.getFavicons();
+                        favicons.loadFavicon(pageUrl, iconUrl, true,
                                     new Favicons.OnFaviconLoadedListener() {
-                            public void onFaviconLoaded(String url, Drawable favicon) {
+                            public void onFaviconLoaded(String url, Bitmap favicon) {
                                 if (favicon != null) {
                                     ImageView icon = (ImageView) row.findViewById(R.id.addon_icon);
-                                    icon.setImageDrawable(favicon);
+                                    icon.setImageBitmap(favicon);
                                 }
                             }
                         });
@@ -502,95 +574,73 @@ public class AboutHomeContent extends ScrollView
         });
     }
 
-    private void readLastTabs(final Activity activity) {
-        String jsonString = GeckoApp.mAppContext.getProfile().readSessionFile(GeckoApp.sIsGeckoReady);
+    private void readLastTabs() {
+        String jsonString = mActivity.getProfile().readSessionFile(true);
         if (jsonString == null) {
             // no previous session data
             return;
         }
 
-        final JSONArray tabs;
-        try {
-            tabs = new JSONObject(jsonString).getJSONArray("windows")
-                                             .getJSONObject(0)
-                                             .getJSONArray("tabs");
-        } catch (JSONException e) {
-            Log.i(LOGTAG, "error reading json file", e);
-            return;
-        }
-
         final ArrayList<String> lastTabUrlsList = new ArrayList<String>();
+        new SessionParser() {
+            @Override
+            public void onTabRead(final SessionTab tab) {
+                final String url = tab.getSelectedUrl();
+                // don't show last tabs for about:home
+                if (url.equals("about:home")) {
+                    return;
+                }
 
-        for (int i = 0; i < tabs.length(); i++) {
-            final String title;
-            final String url;
-            try {
-                JSONObject tab = tabs.getJSONObject(i);
-                int index = tab.getInt("index");
-                JSONArray entries = tab.getJSONArray("entries");
-                JSONObject entry = entries.getJSONObject(index - 1);
-                url = entry.getString("url");
+                ContentResolver resolver = mActivity.getContentResolver();
+                final Bitmap favicon = BrowserDB.getFaviconForUrl(resolver, url);
+                lastTabUrlsList.add(url);
 
-                String optTitle = entry.optString("title");
-                if (optTitle.length() == 0)
-                    title = url;
-                else
-                    title = optTitle;
-            } catch (JSONException e) {
-                Log.e(LOGTAG, "error reading json file", e);
-                continue;
-            }
-
-            // don't show last tabs for about pages
-            if (url.startsWith("about:"))
-                continue;
-
-            ContentResolver resolver = GeckoApp.mAppContext.getContentResolver();
-            final BitmapDrawable favicon = BrowserDB.getFaviconForUrl(resolver, url);
-            lastTabUrlsList.add(url);
-
-            GeckoApp.mAppContext.mMainHandler.post(new Runnable() {
-                public void run() {
-                    View container = mInflater.inflate(R.layout.abouthome_last_tabs_row, mLastTabs.getItemsContainer(), false);
-                    ((TextView) container.findViewById(R.id.last_tab_title)).setText(title);
-                    ((TextView) container.findViewById(R.id.last_tab_url)).setText(url);
-                    if (favicon != null)
-                        ((ImageView) container.findViewById(R.id.last_tab_favicon)).setImageDrawable(favicon);
-
-                    container.setOnClickListener(new View.OnClickListener() {
-                        public void onClick(View v) {
-                            GeckoApp.mAppContext.loadUrlInTab(url);
+                AboutHomeContent.this.post(new Runnable() {
+                    public void run() {
+                        View container = mInflater.inflate(R.layout.abouthome_last_tabs_row, mLastTabs.getItemsContainer(), false);
+                        ((TextView) container.findViewById(R.id.last_tab_title)).setText(tab.getSelectedTitle());
+                        ((TextView) container.findViewById(R.id.last_tab_url)).setText(tab.getSelectedUrl());
+                        if (favicon != null) {
+                            ((ImageView) container.findViewById(R.id.last_tab_favicon)).setImageBitmap(favicon);
                         }
-                    });
 
-                    mLastTabs.addItem(container);
+                        container.setOnClickListener(new View.OnClickListener() {
+                            public void onClick(View v) {
+                                Tabs.getInstance().loadUrlInTab(url);
+                            }
+                        });
+
+                        mLastTabs.addItem(container);
+                    }
+                });
+            }
+        }.parse(jsonString);
+
+        final int numLastTabs = lastTabUrlsList.size();
+        if (numLastTabs >= 1) {
+            post(new Runnable() {
+                public void run() {
+                    if (numLastTabs > 1) {
+                        mLastTabs.showMoreText();
+                        mLastTabs.setOnMoreTextClickListener(new View.OnClickListener() {
+                            public void onClick(View v) {
+                                for (String url : lastTabUrlsList) {
+                                    Tabs.getInstance().loadUrlInTab(url);
+                                }
+                            }
+                        });
+                    } else if (numLastTabs == 1) {
+                        mLastTabs.hideMoreText();
+                    }
+                    mLastTabs.show();
                 }
             });
         }
-
-        final int numLastTabs = lastTabUrlsList.size();
-        GeckoApp.mAppContext.mMainHandler.post(new Runnable() {
-            public void run() {
-                if (numLastTabs > 1) {
-                    mLastTabs.showMoreText();
-                    mLastTabs.setOnMoreTextClickListener(new View.OnClickListener() {
-                        public void onClick(View v) {
-                            for (String url : lastTabUrlsList)
-                                GeckoApp.mAppContext.loadUrlInTab(url);
-                        }
-                    });
-                    mLastTabs.show();
-                } else if (numLastTabs == 1) {
-                    mLastTabs.hideMoreText();
-                    mLastTabs.show();
-                }
-            }
-        });
     }
 
-    private void loadRemoteTabs(final Activity activity) {
-        if (!SyncAccounts.syncAccountsExist(activity)) {
-            GeckoApp.mAppContext.mMainHandler.post(new Runnable() {
+    private void loadRemoteTabs() {
+        if (!SyncAccounts.syncAccountsExist(mActivity)) {
+            post(new Runnable() {
                 public void run() {
                     mRemoteTabs.hide();
                 }
@@ -630,13 +680,67 @@ public class AboutHomeContent extends ScrollView
         mRemoteTabs.show();
     }
 
+    @Override
+    public void onLightweightThemeChanged() {
+        LightweightThemeDrawable drawable = mActivity.getLightweightTheme().getColorDrawable(this);
+        if (drawable == null)
+            return;
+
+         drawable.setAlpha(255, 0);
+         setBackgroundDrawable(drawable);
+
+         boolean isLight = mActivity.getLightweightTheme().isLightTheme();
+
+         if (mAddons != null) {
+             mAddons.setTheme(isLight);
+             mLastTabs.setTheme(isLight);
+             mRemoteTabs.setTheme(isLight);
+             ((GeckoImageView) findViewById(R.id.abouthome_logo)).setTheme(isLight);
+             ((GeckoTextView) findViewById(R.id.top_sites_title)).setTheme(isLight);
+         }
+    }
+
+    @Override
+    public void onLightweightThemeReset() {
+        setBackgroundResource(R.drawable.abouthome_bg_repeat);
+
+        if (mAddons != null) {
+            mAddons.resetTheme();
+            mLastTabs.resetTheme();
+            mRemoteTabs.resetTheme();
+            ((GeckoImageView) findViewById(R.id.abouthome_logo)).resetTheme();
+            ((GeckoTextView) findViewById(R.id.top_sites_title)).resetTheme();
+        }
+    }
+
+    @Override
+    protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+        super.onLayout(changed, left, top, right, bottom);
+        onLightweightThemeChanged();
+    }
+
     public static class TopSitesGridView extends GridView {
         public TopSitesGridView(Context context, AttributeSet attrs) {
             super(context, attrs);
         }
 
+        public int getColumnWidth() {
+            return getColumnWidth(getWidth());
+        }
+
+        public int getColumnWidth(int width) {
+            int s = -1;
+            if (android.os.Build.VERSION.SDK_INT >= 16)
+                s= super.getColumnWidth();
+            else
+                s = (width - getPaddingLeft() - getPaddingRight()) / mNumberOfCols;
+
+            return s;
+        }
+
         @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            int measuredWidth = View.MeasureSpec.getSize(widthMeasureSpec);
             int numRows;
 
             SimpleCursorAdapter adapter = (SimpleCursorAdapter) getAdapter();
@@ -652,11 +756,13 @@ public class AboutHomeContent extends ScrollView
             numRows = (int) Math.round((double) nSites / mNumberOfCols);
             setNumColumns(mNumberOfCols);
 
-            int expandedHeightSpec = MeasureSpec.makeMeasureSpec(numRows * getResources().
-                    getDimensionPixelSize(R.dimen.abouthome_content_top_sites_item_height),
-                    MeasureSpec.EXACTLY);
-
-            super.onMeasure(widthMeasureSpec, expandedHeightSpec);
+            // Just using getWidth() will use incorrect values during onMeasure when rotating the device
+            // Instead we pass in the measuredWidth, which is correct
+            int w = getColumnWidth(measuredWidth);
+            ThumbnailHelper.getInstance().setThumbnailWidth(w);
+            heightMeasureSpec = MeasureSpec.makeMeasureSpec((int)(w*ThumbnailHelper.THUMBNAIL_ASPECT_RATIO*numRows) + getPaddingTop() + getPaddingBottom(),
+                                                                 MeasureSpec.EXACTLY);
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec);
         }
     }
 
@@ -677,28 +783,16 @@ public class AboutHomeContent extends ScrollView
             // our history database is updated.
             return;
         }
+
+        @Override
+        public void bindView(View view, Context context, Cursor cursor) {
+            super.bindView(view, context, cursor);
+            view.setLayoutParams(new AbsListView.LayoutParams(mTopSitesGrid.getColumnWidth(),
+                                                            Math.round(mTopSitesGrid.getColumnWidth()*ThumbnailHelper.THUMBNAIL_ASPECT_RATIO)));
+        }
     }
 
     class TopSitesViewBinder implements SimpleCursorAdapter.ViewBinder {
-        private boolean updateThumbnail(View view, Cursor cursor, int thumbIndex) {
-            byte[] b = cursor.getBlob(thumbIndex);
-            ImageView thumbnail = (ImageView) view;
-
-            if (b == null) {
-                thumbnail.setImageResource(R.drawable.tab_thumbnail_default);
-            } else {
-                try {
-                    Bitmap bitmap = BitmapFactory.decodeByteArray(b, 0, b.length);
-                    thumbnail.setImageBitmap(bitmap);
-                } catch (OutOfMemoryError oom) {
-                    Log.e(LOGTAG, "Unable to load thumbnail bitmap", oom);
-                    thumbnail.setImageResource(R.drawable.tab_thumbnail_default);
-                }
-            }
-
-            return true;
-        }
-
         private boolean updateTitle(View view, Cursor cursor, int titleIndex) {
             String title = cursor.getString(titleIndex);
             TextView titleView = (TextView) view;
@@ -719,11 +813,6 @@ public class AboutHomeContent extends ScrollView
             int titleIndex = cursor.getColumnIndexOrThrow(URLColumns.TITLE);
             if (columnIndex == titleIndex) {
                 return updateTitle(view, cursor, titleIndex);
-            }
-
-            int thumbIndex = cursor.getColumnIndexOrThrow(URLColumns.THUMBNAIL);
-            if (columnIndex == thumbIndex) {
-                return updateThumbnail(view, cursor, thumbIndex);
             }
 
             // Other columns are handled automatically

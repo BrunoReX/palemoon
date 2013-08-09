@@ -14,8 +14,12 @@
 #ifndef nsStackLayout_h___
 #define nsStackLayout_h___
 
+#include "mozilla/Attributes.h"
 #include "nsBoxLayout.h"
 #include "nsCOMPtr.h"
+#include "nsCoord.h"
+
+class nsIPresShell;
 
 nsresult NS_NewStackLayout(nsIPresShell* aPresShell, nsCOMPtr<nsBoxLayout>& aNewLayout);
 
@@ -28,18 +32,18 @@ public:
 
   nsStackLayout();
 
-  NS_IMETHOD Layout(nsIBox* aBox, nsBoxLayoutState& aState);
+  NS_IMETHOD Layout(nsIFrame* aBox, nsBoxLayoutState& aState);
 
-  virtual nsSize GetPrefSize(nsIBox* aBox, nsBoxLayoutState& aBoxLayoutState);
-  virtual nsSize GetMinSize(nsIBox* aBox, nsBoxLayoutState& aBoxLayoutState);
-  virtual nsSize GetMaxSize(nsIBox* aBox, nsBoxLayoutState& aBoxLayoutState);
-  virtual nscoord GetAscent(nsIBox* aBox, nsBoxLayoutState& aBoxLayoutState);
+  virtual nsSize GetPrefSize(nsIFrame* aBox, nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
+  virtual nsSize GetMinSize(nsIFrame* aBox, nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
+  virtual nsSize GetMaxSize(nsIFrame* aBox, nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
+  virtual nscoord GetAscent(nsIFrame* aBox, nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
 
   // get the child offsets for aChild and set them in aMargin. Returns a
   // bitfield mask of the SPECIFIED_LEFT, SPECIFIED_RIGHT, SPECIFIED_TOP and
   // SPECIFIED_BOTTOM offsets indicating which sides have been specified by
-  // attributes. 
-  static PRUint8 GetOffset(nsBoxLayoutState& aState, nsIBox* aChild, nsMargin& aMargin);
+  // attributes.
+  static uint8_t GetOffset(nsBoxLayoutState& aState, nsIFrame* aChild, nsMargin& aMargin);
 
 private:
   static nsBoxLayout* gInstance;

@@ -2,11 +2,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-let EXPORTED_SYMBOLS = ["LightweightThemeConsumer"];
+this.EXPORTED_SYMBOLS = ["LightweightThemeConsumer"];
 
-function LightweightThemeConsumer(aDocument) {
+Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "LightweightThemeImageOptimizer",
+  "resource://gre/modules/LightweightThemeImageOptimizer.jsm");
+
+this.LightweightThemeConsumer =
+ function LightweightThemeConsumer(aDocument) {
   this._doc = aDocument;
+  this._win = aDocument.defaultView;
   this._footerId = aDocument.documentElement.getAttribute("lightweightthemesfooter");
+
+  let screen = this._win.screen;
+  this._lastScreenWidth = screen.width;
+  this._lastScreenHeight = screen.height;
 
   Components.classes["@mozilla.org/observer-service;1"]
             .getService(Components.interfaces.nsIObserverService)
@@ -15,9 +26,14 @@ function LightweightThemeConsumer(aDocument) {
   var temp = {};
   Components.utils.import("resource://gre/modules/LightweightThemeManager.jsm", temp);
   this._update(temp.LightweightThemeManager.currentThemeForDisplay);
+  this._win.addEventListener("resize", this);
 }
 
 LightweightThemeConsumer.prototype = {
+  _lastData: null,
+  _lastScreenWidth: null,
+  _lastScreenHeight: null,
+
   observe: function (aSubject, aTopic, aData) {
     if (aTopic != "lightweight-theme-styling-update")
       return;
@@ -25,17 +41,31 @@ LightweightThemeConsumer.prototype = {
     this._update(JSON.parse(aData));
   },
 
+  handleEvent: function (aEvent) {
+    let {width, height} = this._win.screen;
+
+    if (this._lastScreenWidth != width || this._lastScreenHeight != height) {
+      this._lastScreenWidth = width;
+      this._lastScreenHeight = height;
+      this._update(this._lastData);
+    }
+  },
+
   destroy: function () {
     Components.classes["@mozilla.org/observer-service;1"]
               .getService(Components.interfaces.nsIObserverService)
               .removeObserver(this, "lightweight-theme-styling-update");
 
-    this._doc = null;
+    this._win.removeEventListener("resize", this);
+    this._win = this._doc = null;
   },
 
   _update: function (aData) {
     if (!aData)
       aData = { headerURL: "", footerURL: "", textcolor: "", accentcolor: "" };
+
+    this._lastData = aData;
+    aData = LightweightThemeImageOptimizer.optimize(aData, this._win.screen);
 
     var root = this._doc.documentElement;
     var active = !!aData.headerURL;

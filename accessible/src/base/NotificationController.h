@@ -10,13 +10,17 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsRefreshDriver.h"
 
-#ifdef DEBUG
+#ifdef A11Y_LOG
 #include "Logging.h"
 #endif
 
+class nsIContent;
+
+namespace mozilla {
+namespace a11y {
+
 class Accessible;
 class DocAccessible;
-class nsIContent;
 
 /**
  * Notification interface.
@@ -57,15 +61,15 @@ public:
 
   TNotification(Class* aInstance, Callback aCallback, Arg* aArg) :
     mInstance(aInstance), mCallback(aCallback), mArg(aArg) { }
-  virtual ~TNotification() { mInstance = nsnull; }
+  virtual ~TNotification() { mInstance = nullptr; }
 
   virtual void Process()
   {
     (mInstance->*mCallback)(mArg);
 
-    mInstance = nsnull;
-    mCallback = nsnull;
-    mArg = nsnull;
+    mInstance = nullptr;
+    mCallback = nullptr;
+    mArg = nullptr;
   }
 
 private:
@@ -136,7 +140,7 @@ public:
                                  Arg* aArg)
   {
     if (!IsUpdatePending()) {
-#ifdef DEBUG
+#ifdef A11Y_LOG
       if (mozilla::a11y::logging::IsEnabled(mozilla::a11y::logging::eNotifications))
         mozilla::a11y::logging::Text("sync notification processing");
 #endif
@@ -173,7 +177,7 @@ public:
 #endif
 
 protected:
-  nsAutoRefCnt mRefCnt;
+  nsCycleCollectingAutoRefCnt mRefCnt;
   NS_DECL_OWNINGTHREAD
 
   /**
@@ -201,25 +205,16 @@ private:
   void CoalesceEvents();
 
   /**
-   * Apply aEventRule to same type event that from sibling nodes of aDOMNode.
-   * @param aEventsToFire    array of pending events
-   * @param aStart           start index of pending events to be scanned
-   * @param aEnd             end index to be scanned (not included)
-   * @param aEventType       target event type
-   * @param aDOMNode         target are siblings of this node
-   * @param aEventRule       the event rule to be applied
-   *                         (should be eDoNotEmit or eAllowDupes)
+   * Coalesce events from the same subtree.
    */
-  void ApplyToSiblings(PRUint32 aStart, PRUint32 aEnd,
-                       PRUint32 aEventType, nsINode* aNode,
-                       AccEvent::EEventRule aEventRule);
+  void CoalesceReorderEvents(AccEvent* aTailEvent);
 
   /**
    * Coalesce two selection change events within the same select control.
    */
   void CoalesceSelChangeEvents(AccSelChangeEvent* aTailEvent,
                                AccSelChangeEvent* aThisEvent,
-                               PRInt32 aThisIndex);
+                               int32_t aThisIndex);
 
   /**
    * Coalesce text change events caused by sibling hide events.
@@ -230,11 +225,18 @@ private:
                                    AccShowEvent* aThisEvent);
 
   /**
-   * Create text change event caused by hide or show event. When a node is
-   * hidden/removed or shown/appended, the text in an ancestor hyper text will
-   * lose or get new characters.
+    * Create text change event caused by hide or show event. When a node is
+    * hidden/removed or shown/appended, the text in an ancestor hyper text will
+    * lose or get new characters.
+    */
+   void CreateTextChangeEventFor(AccMutationEvent* aEvent);
+
+  // Event queue processing
+
+  /**
+   * Process events from the queue and fires events.
    */
-  void CreateTextChangeEventFor(AccMutationEvent* aEvent);
+  void ProcessEventQueue();
 
 private:
   /**
@@ -270,9 +272,9 @@ private:
   {
   public:
     ContentInsertion(DocAccessible* aDocument, Accessible* aContainer);
-    virtual ~ContentInsertion() { mDocument = nsnull; }
+    virtual ~ContentInsertion() { mDocument = nullptr; }
 
-    NS_INLINE_DECL_REFCOUNTING(ContentInsertion)
+    NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(ContentInsertion)
     NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(ContentInsertion)
 
     bool InitChildList(nsIContent* aStartChildNode, nsIContent* aEndChildNode);
@@ -348,5 +350,8 @@ private:
    */
   nsTArray<nsRefPtr<AccEvent> > mEvents;
 };
+
+} // namespace a11y
+} // namespace mozilla
 
 #endif

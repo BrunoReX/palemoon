@@ -58,6 +58,10 @@
 #define WM_MOUSEHWHEEL                    0x020E
 #endif
 
+#ifndef MOUSEEVENTF_HWHEEL
+#define MOUSEEVENTF_HWHEEL                0x01000
+#endif
+
 #ifndef WM_MOUSELEAVE
 #define WM_MOUSELEAVE                     0x02A3
 #endif
@@ -186,14 +190,14 @@ typedef enum
  * For example, changing the window classes could break
  * touchpad scrolling or screen readers.
  */
-const PRUint32 kMaxClassNameLength   = 40;
+const uint32_t kMaxClassNameLength   = 40;
 const char kClassNameHidden[]        = "MozillaHiddenWindowClass";
 const char kClassNameGeneral[]       = "MozillaWindowClass";
 const char kClassNameDialog[]        = "MozillaDialogClass";
 const char kClassNameDropShadow[]    = "MozillaDropShadowWindowClass";
 const char kClassNameTemp[]          = "MozillaTempWindowClass";
 
-static const PRUint32 sModifierKeyMap[][3] = {
+static const uint32_t sModifierKeyMap[][3] = {
   { nsIWidget::CAPS_LOCK, VK_CAPITAL, 0 },
   { nsIWidget::NUM_LOCK,  VK_NUMLOCK, 0 },
   { nsIWidget::SHIFT_L,   VK_SHIFT,   VK_LSHIFT },
@@ -215,12 +219,13 @@ struct nsAlternativeCharCode; // defined in nsGUIEvent.h
 struct nsFakeCharMessage {
   UINT mCharCode;
   UINT mScanCode;
+  bool mIsDeadKey;
 
   MSG GetCharMessage(HWND aWnd)
   {
     MSG msg;
     msg.hwnd = aWnd;
-    msg.message = WM_CHAR;
+    msg.message = mIsDeadKey ? WM_DEADCHAR : WM_CHAR;
     msg.wParam = static_cast<WPARAM>(mCharCode);
     msg.lParam = static_cast<LPARAM>(mScanCode);
     msg.time = 0;
@@ -229,41 +234,12 @@ struct nsFakeCharMessage {
   }
 };
 
-// Used in char processing
-struct nsModifierKeyState {
-  bool mIsShiftDown;
-  bool mIsControlDown;
-  bool mIsAltDown;
-  bool mIsWinDown;
-
-  bool mIsCapsLocked;
-  bool mIsNumLocked;
-  bool mIsScrollLocked;
-
-  nsModifierKeyState()
-  {
-    Update();
-  }
-  nsModifierKeyState(bool aIsShiftDown, bool aIsControlDown,
-                     bool aIsAltDown)
-  {
-    Update();
-    mIsShiftDown = aIsShiftDown;
-    mIsControlDown = aIsControlDown;
-    mIsAltDown = aIsAltDown;
-  }
-
-  void Update();
-
-  void InitInputEvent(nsInputEvent& aInputEvent) const;
-};
-
 // Used for synthesizing events
 struct KeyPair {
-  PRUint8 mGeneral;
-  PRUint8 mSpecific;
-  KeyPair(PRUint32 aGeneral, PRUint32 aSpecific)
-    : mGeneral(PRUint8(aGeneral)), mSpecific(PRUint8(aSpecific)) {}
+  uint8_t mGeneral;
+  uint8_t mSpecific;
+  KeyPair(uint32_t aGeneral, uint32_t aSpecific)
+    : mGeneral(uint8_t(aGeneral)), mSpecific(uint8_t(aSpecific)) {}
 };
 
 #if (WINVER < 0x0600)

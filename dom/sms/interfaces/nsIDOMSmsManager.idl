@@ -7,11 +7,12 @@
 interface nsIDOMEventListener;
 interface nsIDOMMozSmsRequest;
 interface nsIDOMMozSmsFilter;
+interface nsIDOMMozSmsSegmentInfo;
 
-[scriptable, uuid(6363c0ff-b58f-4fb3-9707-0ba27f120b2c)]
+[scriptable, builtinclass, uuid(2bdb02e7-ec3a-47a9-885c-0ab514566801)]
 interface nsIDOMMozSmsManager : nsIDOMEventTarget
 {
-  unsigned short      getNumberOfMessagesForText(in DOMString text);
+  nsIDOMMozSmsSegmentInfo getSegmentInfoForText(in DOMString text);
 
   // The first parameter can be either a DOMString (only one number) or an array
   // of DOMStrings.
@@ -19,7 +20,8 @@ interface nsIDOMMozSmsManager : nsIDOMEventTarget
   // An array of SmsRequest objects otherwise.
   jsval send(in jsval number, in DOMString message);
 
-  [binaryname(GetMessageMoz)] nsIDOMMozSmsRequest getMessage(in long id);
+  [binaryname(GetMessageMoz)]
+  nsIDOMMozSmsRequest getMessage(in long id);
 
   // The parameter can be either a message id or a SmsMessage.
   nsIDOMMozSmsRequest delete(in jsval param);
@@ -28,7 +30,12 @@ interface nsIDOMMozSmsManager : nsIDOMEventTarget
 
   nsIDOMMozSmsRequest markMessageRead(in long id, in boolean aValue);
 
-  attribute nsIDOMEventListener onreceived;
-  attribute nsIDOMEventListener onsent;
-  attribute nsIDOMEventListener ondelivered;
+  nsIDOMMozSmsRequest getThreadList();
+
+  [implicit_jscontext] attribute jsval onreceived;
+  [implicit_jscontext] attribute jsval onsending;
+  [implicit_jscontext] attribute jsval onsent;
+  [implicit_jscontext] attribute jsval onfailed;
+  [implicit_jscontext] attribute jsval ondeliverysuccess;
+  [implicit_jscontext] attribute jsval ondeliveryerror;
 };

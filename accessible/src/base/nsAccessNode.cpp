@@ -5,7 +5,6 @@
 
 #include "nsAccessNode.h"
 
-#include "ApplicationAccessibleWrap.h"
 #include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
 #include "nsCoreUtils.h"
@@ -24,16 +23,14 @@
 
 using namespace mozilla::a11y;
 
-/* For documentation of the accessibility architecture, 
+/* For documentation of the accessibility architecture,
  * see http://lxr.mozilla.org/seamonkey/source/accessible/accessible-docs.html
  */
-
-ApplicationAccessible* nsAccessNode::gApplicationAccessible = nsnull;
 
 /*
  * Class nsAccessNode
  */
- 
+
 ////////////////////////////////////////////////////////////////////////////////
 // AccessNode. nsISupports
 
@@ -74,90 +71,44 @@ void nsAccessNode::LastRelease()
 ////////////////////////////////////////////////////////////////////////////////
 // nsAccessNode public
 
-bool
-nsAccessNode::Init()
-{
-  return true;
-}
-
 
 void
 nsAccessNode::Shutdown()
 {
-  mContent = nsnull;
-  mDoc = nsnull;
-}
-
-ApplicationAccessible*
-nsAccessNode::GetApplicationAccessible()
-{
-  NS_ASSERTION(!nsAccessibilityService::IsShutdown(),
-               "Accessibility wasn't initialized!");
-
-  if (!gApplicationAccessible) {
-    ApplicationAccessibleWrap::PreCreate();
-
-    gApplicationAccessible = new ApplicationAccessibleWrap();
-
-    // Addref on create. Will Release in ShutdownXPAccessibility()
-    NS_ADDREF(gApplicationAccessible);
-
-    nsresult rv = gApplicationAccessible->Init();
-    if (NS_FAILED(rv)) {
-      gApplicationAccessible->Shutdown();
-      NS_RELEASE(gApplicationAccessible);
-      return nsnull;
-    }
-  }
-
-  return gApplicationAccessible;
-}
-
-void nsAccessNode::ShutdownXPAccessibility()
-{
-  // Called by nsAccessibilityService::Shutdown()
-  // which happens when xpcom is shutting down
-  // at exit of program
-
-  // Release gApplicationAccessible after everything else is shutdown
-  // so we don't accidently create it again while tearing down root accessibles
-  ApplicationAccessibleWrap::Unload();
-  if (gApplicationAccessible) {
-    gApplicationAccessible->Shutdown();
-    NS_RELEASE(gApplicationAccessible);
-  }
+  mContent = nullptr;
+  mDoc = nullptr;
 }
 
 RootAccessible*
 nsAccessNode::RootAccessible() const
 {
   nsCOMPtr<nsIDocShellTreeItem> docShellTreeItem =
-    nsCoreUtils::GetDocShellTreeItemFor(mContent);
+    nsCoreUtils::GetDocShellTreeItemFor(GetNode());
   NS_ASSERTION(docShellTreeItem, "No docshell tree item for mContent");
   if (!docShellTreeItem) {
-    return nsnull;
+    return nullptr;
   }
   nsCOMPtr<nsIDocShellTreeItem> root;
   docShellTreeItem->GetRootTreeItem(getter_AddRefs(root));
   NS_ASSERTION(root, "No root content tree item");
   if (!root) {
-    return nsnull;
+    return nullptr;
   }
 
   DocAccessible* docAcc = nsAccUtils::GetDocAccessibleFor(root);
-  return docAcc ? docAcc->AsRoot() : nsnull;
+  return docAcc ? docAcc->AsRoot() : nullptr;
 }
 
 nsIFrame*
 nsAccessNode::GetFrame() const
 {
-  return mContent ? mContent->GetPrimaryFrame() : nsnull;
+  return mContent ? mContent->GetPrimaryFrame() : nullptr;
 }
 
-bool
-nsAccessNode::IsPrimaryForNode() const
+nsINode*
+nsAccessNode::GetNode() const
 {
-  return true;
+  return mContent;
 }
 
 void
@@ -168,9 +119,9 @@ nsAccessNode::Language(nsAString& aLanguage)
   if (!mDoc)
     return;
 
-  nsCoreUtils::GetLanguageFor(mContent, nsnull, aLanguage);
+  nsCoreUtils::GetLanguageFor(mContent, nullptr, aLanguage);
   if (aLanguage.IsEmpty()) { // Nothing found, so use document's language
-    mContent->OwnerDoc()->GetHeaderData(nsGkAtoms::headerContentLanguage,
+    mDoc->DocumentNode()->GetHeaderData(nsGkAtoms::headerContentLanguage,
                                         aLanguage);
   }
 }

@@ -33,6 +33,13 @@ static inline bool IS_TABLE_CELL(nsIAtom* frameType) {
     nsGkAtoms::bcTableCellFrame == frameType;
 }
 
+static inline bool FrameHasBorderOrBackground(nsIFrame* f) {
+  return (f->GetStyleVisibility()->IsVisible() &&
+          (!f->GetStyleBackground()->IsTransparent() ||
+           f->GetStyleDisplay()->mAppearance ||
+           f->GetStyleBorder()->HasBorder()));
+}
+
 class nsDisplayTableItem : public nsDisplayItem
 {
 public:
@@ -57,7 +64,7 @@ private:
 class nsAutoPushCurrentTableItem
 {
 public:
-  nsAutoPushCurrentTableItem() : mBuilder(nsnull) {}
+  nsAutoPushCurrentTableItem() : mBuilder(nullptr) {}
   
   void Push(nsDisplayListBuilder* aBuilder, nsDisplayTableItem* aPushItem)
   {
@@ -204,7 +211,7 @@ public:
   /** @return true if aDisplayType represents a rowgroup of any sort
     * (header, footer, or body)
     */
-  bool IsRowGroup(PRInt32 aDisplayType) const;
+  bool IsRowGroup(int32_t aDisplayType) const;
 
   /** Initialize the table frame with a set of children.
     * @see nsIFrame::SetInitialChildList 
@@ -226,7 +233,7 @@ public:
    */
   void PaintTableBorderBackground(nsRenderingContext& aRenderingContext,
                                   const nsRect& aDirtyRect,
-                                  nsPoint aPt, PRUint32 aBGPaintFlags);
+                                  nsPoint aPt, uint32_t aBGPaintFlags);
 
   /** Get the outer half (i.e., the part outside the height and width of
    *  the table) of the largest segment (?) of border-collapsed border on
@@ -277,7 +284,7 @@ public:
   virtual nsSize ComputeSize(nsRenderingContext *aRenderingContext,
                              nsSize aCBSize, nscoord aAvailableWidth,
                              nsSize aMargin, nsSize aBorder, nsSize aPadding,
-                             PRUint32 aFlags) MOZ_OVERRIDE;
+                             uint32_t aFlags) MOZ_OVERRIDE;
   virtual nsSize ComputeAutoSize(nsRenderingContext *aRenderingContext,
                                  nsSize aCBSize, nscoord aAvailableWidth,
                                  nsSize aMargin, nsSize aBorder,
@@ -326,13 +333,21 @@ public:
    */
   virtual nsIAtom* GetType() const;
 
+  virtual bool IsFrameOfType(uint32_t aFlags) const
+  {
+    if (aFlags & eSupportsCSSTransforms) {
+      return false;
+    }
+    return nsContainerFrame::IsFrameOfType(aFlags);
+  }
+
 #ifdef DEBUG
   /** @see nsIFrame::GetFrameName */
   NS_IMETHOD GetFrameName(nsAString& aResult) const;
 #endif
 
   /** return the width of the column at aColIndex    */
-  virtual PRInt32 GetColumnWidth(PRInt32 aColIndex);
+  virtual int32_t GetColumnWidth(int32_t aColIndex);
 
   /** helper to get the cell spacing X style value */
   virtual nscoord GetCellSpacingX();
@@ -352,10 +367,10 @@ public:
     * @return  the row span, correcting for row spans that extend beyond the bottom
     *          of the table.
     */
-  virtual PRInt32  GetEffectiveRowSpan(PRInt32                 aStartRowIndex,
+  virtual int32_t  GetEffectiveRowSpan(int32_t                 aStartRowIndex,
                                        const nsTableCellFrame& aCell) const;
-  virtual PRInt32  GetEffectiveRowSpan(const nsTableCellFrame& aCell,
-                                       nsCellMap*              aCellMap = nsnull);
+  virtual int32_t  GetEffectiveRowSpan(const nsTableCellFrame& aCell,
+                                       nsCellMap*              aCellMap = nullptr);
 
   /** return the col span of a cell, taking into account col span magic at the edge
     * of a table.
@@ -365,19 +380,19 @@ public:
     * @return  the col span, correcting for col spans that extend beyond the edge
     *          of the table.
     */
-  virtual PRInt32  GetEffectiveColSpan(const nsTableCellFrame& aCell,
-                                       nsCellMap*              aCellMap = nsnull) const;
+  virtual int32_t  GetEffectiveColSpan(const nsTableCellFrame& aCell,
+                                       nsCellMap*              aCellMap = nullptr) const;
 
   /** indicate whether the row has more than one cell that either originates
     * or is spanned from the rows above
     */
-  bool HasMoreThanOneCell(PRInt32 aRowIndex) const;
+  bool HasMoreThanOneCell(int32_t aRowIndex) const;
 
   /** return the column frame associated with aColIndex
-    * returns nsnull if the col frame has not yet been allocated, or if
+    * returns nullptr if the col frame has not yet been allocated, or if
     * aColIndex is out of range
     */
-  nsTableColFrame* GetColFrame(PRInt32 aColIndex) const;
+  nsTableColFrame* GetColFrame(int32_t aColIndex) const;
 
   /** Insert a col frame reference into the colframe cache and adapt the cellmap
     * @param aColFrame    - the column frame
@@ -385,22 +400,22 @@ public:
     *                       colframe cache
     */
   void InsertCol(nsTableColFrame& aColFrame,
-                 PRInt32          aColIndex);
+                 int32_t          aColIndex);
 
   nsTableColGroupFrame* CreateAnonymousColGroupFrame(nsTableColGroupType aType);
 
-  PRInt32 DestroyAnonymousColFrames(PRInt32 aNumFrames);
+  int32_t DestroyAnonymousColFrames(int32_t aNumFrames);
 
   // Append aNumColsToAdd anonymous col frames of type eColAnonymousCell to our
   // last eColGroupAnonymousCell colgroup.  If we have no such colgroup, then
   // create one.
-  void AppendAnonymousColFrames(PRInt32 aNumColsToAdd);
+  void AppendAnonymousColFrames(int32_t aNumColsToAdd);
 
   // Append aNumColsToAdd anonymous col frames of type aColType to
   // aColGroupFrame.  If aAddToTable is true, also call AddColsToTable on the
   // new cols.
   void AppendAnonymousColFrames(nsTableColGroupFrame* aColGroupFrame,
-                                PRInt32               aNumColsToAdd,
+                                int32_t               aNumColsToAdd,
                                 nsTableColType        aColType,
                                 bool                  aAddToTable);
 
@@ -411,26 +426,26 @@ public:
   void DidResizeColumns();
 
   virtual void AppendCell(nsTableCellFrame& aCellFrame,
-                          PRInt32           aRowIndex);
+                          int32_t           aRowIndex);
 
   virtual void InsertCells(nsTArray<nsTableCellFrame*>& aCellFrames,
-                           PRInt32                      aRowIndex,
-                           PRInt32                      aColIndexBefore);
+                           int32_t                      aRowIndex,
+                           int32_t                      aColIndexBefore);
 
   virtual void RemoveCell(nsTableCellFrame* aCellFrame,
-                          PRInt32           aRowIndex);
+                          int32_t           aRowIndex);
 
   void AppendRows(nsTableRowGroupFrame*       aRowGroupFrame,
-                  PRInt32                     aRowIndex,
+                  int32_t                     aRowIndex,
                   nsTArray<nsTableRowFrame*>& aRowFrames);
 
-  PRInt32 InsertRows(nsTableRowGroupFrame*       aRowGroupFrame,
+  int32_t InsertRows(nsTableRowGroupFrame*       aRowGroupFrame,
                      nsTArray<nsTableRowFrame*>& aFrames,
-                     PRInt32                     aRowIndex,
+                     int32_t                     aRowIndex,
                      bool                        aConsiderSpans);
 
   virtual void RemoveRows(nsTableRowFrame& aFirstRowFrame,
-                          PRInt32          aNumRowsToRemove,
+                          int32_t          aNumRowsToRemove,
                           bool             aConsiderSpans);
 
   /** Insert multiple rowgroups into the table cellmap handling
@@ -438,18 +453,18 @@ public:
     */
   void InsertRowGroups(const nsFrameList::Slice& aRowGroups);
 
-  void InsertColGroups(PRInt32                   aStartColIndex,
+  void InsertColGroups(int32_t                   aStartColIndex,
                        const nsFrameList::Slice& aColgroups);
 
   virtual void RemoveCol(nsTableColGroupFrame* aColGroupFrame,
-                         PRInt32               aColIndex,
+                         int32_t               aColIndex,
                          bool                  aRemoveFromCache,
                          bool                  aRemoveFromCellMap);
 
-  NS_IMETHOD GetIndexByRowAndColumn(PRInt32 aRow, PRInt32 aColumn, PRInt32 *aIndex);
-  NS_IMETHOD GetRowAndColumnByIndex(PRInt32 aIndex, PRInt32 *aRow, PRInt32 *aColumn);
+  NS_IMETHOD GetIndexByRowAndColumn(int32_t aRow, int32_t aColumn, int32_t *aIndex);
+  NS_IMETHOD GetRowAndColumnByIndex(int32_t aIndex, int32_t *aRow, int32_t *aColumn);
 
-  bool ColumnHasCellSpacingBefore(PRInt32 aColIndex) const;
+  bool ColumnHasCellSpacingBefore(int32_t aColIndex) const;
 
   bool HasPctCol() const;
   void SetHasPctCol(bool aValue);
@@ -469,10 +484,10 @@ public:
    * @param aIsFirstReflow True if the size/position change is due to the
    *                       first reflow of aFrame.
    */
-  static void InvalidateFrame(nsIFrame* aFrame,
-                              const nsRect& aOrigRect,
-                              const nsRect& aOrigVisualOverflow,
-                              bool aIsFirstReflow);
+  static void InvalidateTableFrame(nsIFrame* aFrame,
+                                   const nsRect& aOrigRect,
+                                   const nsRect& aOrigVisualOverflow,
+                                   bool aIsFirstReflow);
 
   virtual bool UpdateOverflow();
 
@@ -489,7 +504,7 @@ protected:
   void InitChildReflowState(nsHTMLReflowState& aReflowState);
 
   /** implement abstract method on nsContainerFrame */
-  virtual PRIntn GetSkipSides() const;
+  virtual int GetSkipSides() const;
 
 public:
   bool IsRowInserted() const;
@@ -581,7 +596,7 @@ public:
    * our overflow list or moved directly to our next-in-flow if one exists.
    */
 protected:
-  void PushChildren(const RowGroupArray& aRowGroups, PRInt32 aPushFrom);
+  void PushChildren(const RowGroupArray& aRowGroups, int32_t aPushFrom);
 
 public:
   // put the children frames in the display order (e.g. thead before tbodies
@@ -591,8 +606,8 @@ public:
   // the first one are treated as tbodies instead.
 
   void OrderRowGroups(RowGroupArray& aChildren,
-                      nsTableRowGroupFrame** aHead = nsnull,
-                      nsTableRowGroupFrame** aFoot = nsnull) const;
+                      nsTableRowGroupFrame** aHead = nullptr,
+                      nsTableRowGroupFrame** aFoot = nullptr) const;
 
   // Return the thead, if any
   nsTableRowGroupFrame* GetTHead() const;
@@ -603,12 +618,12 @@ public:
   // Returns true if there are any cells above the row at
   // aRowIndex and spanning into the row at aRowIndex, the number of
   // effective columns limits the search up to that column
-  bool RowIsSpannedInto(PRInt32 aRowIndex, PRInt32 aNumEffCols);
+  bool RowIsSpannedInto(int32_t aRowIndex, int32_t aNumEffCols);
 
   // Returns true if there is a cell originating in aRowIndex
   // which spans into the next row,  the number of effective
   // columns limits the search up to that column
-  bool RowHasSpanningCells(PRInt32 aRowIndex, PRInt32 aNumEffCols);
+  bool RowHasSpanningCells(int32_t aRowIndex, int32_t aNumEffCols);
 
 protected:
 
@@ -650,8 +665,8 @@ public:
     * @param aRowIndex   - start adjusting with this index
     * @param aAdjustment - shift the row index by this amount
     */
-  void AdjustRowIndices(PRInt32 aRowIndex,
-                        PRInt32 aAdjustment);
+  void AdjustRowIndices(int32_t aRowIndex,
+                        int32_t aAdjustment);
 
   /** Reset the rowindices of all rows as they might have changed due to 
     * rowgroup reordering, exclude new row group frames that show in the
@@ -677,32 +692,32 @@ protected:
   void SetColumnDimensions(nscoord         aHeight,
                            const nsMargin& aReflowState);
 
-  PRInt32 CollectRows(nsIFrame*                   aFrame,
+  int32_t CollectRows(nsIFrame*                   aFrame,
                       nsTArray<nsTableRowFrame*>& aCollection);
 
 public: /* ----- Cell Map public methods ----- */
 
-  PRInt32 GetStartRowIndex(nsTableRowGroupFrame* aRowGroupFrame);
+  int32_t GetStartRowIndex(nsTableRowGroupFrame* aRowGroupFrame);
 
   /** returns the number of rows in this table.
     */
-  PRInt32 GetRowCount () const
+  int32_t GetRowCount () const
   {
     return GetCellMap()->GetRowCount();
   }
 
   /** returns the number of columns in this table after redundant columns have been removed 
     */
-  PRInt32 GetEffectiveColCount() const;
+  int32_t GetEffectiveColCount() const;
 
   /* return the col count including dead cols */
-  PRInt32 GetColCount () const
+  int32_t GetColCount () const
   {
     return GetCellMap()->GetColCount();
   }
 
   // return the last col index which isn't of type eColAnonymousCell
-  PRInt32 GetIndexOfLastRealCol();
+  int32_t GetIndexOfLastRealCol();
 
   /** returns true if table-layout:auto  */
   virtual bool IsAutoLayout();
@@ -710,18 +725,18 @@ public: /* ----- Cell Map public methods ----- */
   /*---------------- nsITableLayout methods ------------------------*/
   
   /** Get the cell and associated data for a table cell from the frame's cellmap */
-  NS_IMETHOD GetCellDataAt(PRInt32 aRowIndex, PRInt32 aColIndex, 
+  NS_IMETHOD GetCellDataAt(int32_t aRowIndex, int32_t aColIndex, 
                            nsIDOMElement* &aCell,   //out params
-                           PRInt32& aStartRowIndex, PRInt32& aStartColIndex, 
-                           PRInt32& aRowSpan, PRInt32& aColSpan,
-                           PRInt32& aActualRowSpan, PRInt32& aActualColSpan,
+                           int32_t& aStartRowIndex, int32_t& aStartColIndex, 
+                           int32_t& aRowSpan, int32_t& aColSpan,
+                           int32_t& aActualRowSpan, int32_t& aActualColSpan,
                            bool& aIsSelected);
 
   /** Get the number of rows and column for a table from the frame's cellmap 
     *  Some rows may not have enough cells (the number returned is the maximum possible),
     *  which displays as a ragged-right edge table
     */
-  NS_IMETHOD GetTableSize(PRInt32& aRowCount, PRInt32& aColCount);
+  NS_IMETHOD GetTableSize(int32_t& aRowCount, int32_t& aColCount);
 
   /*------------end of nsITableLayout methods -----------------------*/
 
@@ -741,18 +756,18 @@ protected:
   nsAutoTArray<nsTableColFrame*, 8> mColFrames;
 
   struct TableBits {
-    PRUint32 mHaveReflowedColGroups:1; // have the col groups gotten their initial reflow
-    PRUint32 mHasPctCol:1;             // does any cell or col have a pct width
-    PRUint32 mCellSpansPctCol:1;       // does any cell span a col with a pct width (or containing a cell with a pct width)
-    PRUint32 mIsBorderCollapse:1;      // border collapsing model vs. separate model
-    PRUint32 mRowInserted:1;
-    PRUint32 mNeedToCalcBCBorders:1;
-    PRUint32 mGeometryDirty:1;
-    PRUint32 mLeftContBCBorder:8;
-    PRUint32 mNeedToCollapse:1;    // rows, cols that have visibility:collapse need to be collapsed
-    PRUint32 mHasZeroColSpans:1;
-    PRUint32 mNeedColSpanExpansion:1;
-    PRUint32 mResizedColumns:1;        // have we resized columns since last reflow?
+    uint32_t mHaveReflowedColGroups:1; // have the col groups gotten their initial reflow
+    uint32_t mHasPctCol:1;             // does any cell or col have a pct width
+    uint32_t mCellSpansPctCol:1;       // does any cell span a col with a pct width (or containing a cell with a pct width)
+    uint32_t mIsBorderCollapse:1;      // border collapsing model vs. separate model
+    uint32_t mRowInserted:1;
+    uint32_t mNeedToCalcBCBorders:1;
+    uint32_t mGeometryDirty:1;
+    uint32_t mLeftContBCBorder:8;
+    uint32_t mNeedToCollapse:1;    // rows, cols that have visibility:collapse need to be collapsed
+    uint32_t mHasZeroColSpans:1;
+    uint32_t mNeedColSpanExpansion:1;
+    uint32_t mResizedColumns:1;        // have we resized columns since last reflow?
   } mBits;
 
   nsTableCellMap*         mCellMap;            // maintains the relationships between rows, cols, and cells
@@ -761,7 +776,7 @@ protected:
 };
 
 
-inline bool nsTableFrame::IsRowGroup(PRInt32 aDisplayType) const
+inline bool nsTableFrame::IsRowGroup(int32_t aDisplayType) const
 {
   return bool((NS_STYLE_DISPLAY_TABLE_HEADER_GROUP == aDisplayType) ||
                 (NS_STYLE_DISPLAY_TABLE_FOOTER_GROUP == aDisplayType) ||
@@ -872,7 +887,7 @@ inline void nsTableFrame::SetNeedToCalcBCBorders(bool aValue)
 inline nscoord
 nsTableFrame::GetContinuousLeftBCBorderWidth() const
 {
-  PRInt32 aPixelsToTwips = nsPresContext::AppUnitsPerCSSPixel();
+  int32_t aPixelsToTwips = nsPresContext::AppUnitsPerCSSPixel();
   return BC_BORDER_RIGHT_HALF_COORD(aPixelsToTwips, mBits.mLeftContBCBorder);
 }
 
@@ -889,7 +904,7 @@ public:
   nsIFrame* First();
   nsIFrame* Next();
   bool      IsLeftToRight();
-  PRInt32   Count();
+  int32_t   Count();
 
 protected:
   void Init(nsIFrame* aFirstChild);
@@ -897,7 +912,7 @@ protected:
   nsIFrame* mFirstListChild;
   nsIFrame* mFirstChild;
   nsIFrame* mCurrentChild;
-  PRInt32   mCount;
+  int32_t   mCount;
 };
 
 #define ABORT0() \

@@ -12,7 +12,7 @@
 #include "nsIComponentManager.h"
 #include "nsIComponentRegistrar.h"
 #include "nsIServiceManager.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "mozilla/Module.h"
 #include "mozilla/ModuleLoader.h"
 #include "mozilla/ReentrantMonitor.h"
@@ -26,7 +26,6 @@
 #include "nsCOMPtr.h"
 #include "nsAutoPtr.h"
 #include "nsWeakReference.h"
-#include "nsIFile.h"
 #include "plarena.h"
 #include "nsCOMArray.h"
 #include "nsDataHashtable.h"
@@ -35,9 +34,11 @@
 #include "nsTArray.h"
 
 #include "mozilla/Omnijar.h"
+#include "mozilla/Attributes.h"
 
 struct nsFactoryEntry;
 class nsIServiceManager;
+class nsIMemoryReporter;
 struct PRThread;
 
 #define NS_COMPONENTMANAGER_CID                      \
@@ -63,13 +64,7 @@ extern const char staticComponentType[];
 
 extern const mozilla::Module kXPCOMModule;
 
-// Array of Loaders and their type strings
-struct nsLoaderdata {
-    nsCOMPtr<mozilla::ModuleLoader> loader;
-    nsCString                 type;
-};
-
-class nsComponentManagerImpl
+class nsComponentManagerImpl MOZ_FINAL
     : public nsIComponentManager
     , public nsIServiceManager
     , public nsSupportsWeakReference
@@ -87,7 +82,7 @@ public:
     nsresult RegistryLocationForFile(nsIFile* aFile,
                                      nsCString& aResult);
     nsresult FileForRegistryLocation(const nsCString &aLocation,
-                                     nsILocalFile **aSpec);
+                                     nsIFile **aSpec);
 
     NS_DECL_NSISERVICEMANAGER
 
@@ -106,12 +101,12 @@ public:
 
     already_AddRefed<nsIFactory> FindFactory(const nsCID& aClass);
     already_AddRefed<nsIFactory> FindFactory(const char *contractID,
-                                             PRUint32 aContractIDLen);
+                                             uint32_t aContractIDLen);
 
     already_AddRefed<nsIFactory> LoadFactory(nsFactoryEntry *aEntry);
 
     nsFactoryEntry *GetFactoryEntry(const char *aContractID,
-                                    PRUint32 aContractIDLen);
+                                    uint32_t aContractIDLen);
     nsFactoryEntry *GetFactoryEntry(const nsCID &aClass);
 
     nsDataHashtable<nsIDHashKey, nsFactoryEntry*> mFactories;
@@ -244,8 +239,6 @@ public:
         SHUTDOWN_COMPLETE
     } mStatus;
 
-    nsTArray<nsLoaderdata> mLoaderData;
-
     PLArenaPool   mArena;
 
     struct PendingServiceInfo {
@@ -260,8 +253,12 @@ public:
 
     nsTArray<PendingServiceInfo> mPendingServices;
 
+    size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf);
+
 private:
     ~nsComponentManagerImpl();
+
+    nsIMemoryReporter* mReporter;
 };
 
 
@@ -280,6 +277,8 @@ struct nsFactoryEntry
     ~nsFactoryEntry();
 
     already_AddRefed<nsIFactory> GetFactory();
+
+    size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf);
 
     const mozilla::Module::CIDEntry* mCIDEntry;
     nsComponentManagerImpl::KnownModule* mModule;

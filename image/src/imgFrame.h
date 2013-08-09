@@ -30,13 +30,13 @@ public:
   imgFrame();
   ~imgFrame();
 
-  nsresult Init(PRInt32 aX, PRInt32 aY, PRInt32 aWidth, PRInt32 aHeight, gfxASurface::gfxImageFormat aFormat, PRUint8 aPaletteDepth = 0);
+  nsresult Init(int32_t aX, int32_t aY, int32_t aWidth, int32_t aHeight, gfxASurface::gfxImageFormat aFormat, uint8_t aPaletteDepth = 0);
   nsresult Optimize();
 
   void Draw(gfxContext *aContext, gfxPattern::GraphicsFilter aFilter,
             const gfxMatrix &aUserSpaceToImageSpace, const gfxRect& aFill,
             const nsIntMargin &aPadding, const nsIntRect &aSubimage,
-            PRUint32 aImageFlags = imgIContainer::FLAG_NONE);
+            uint32_t aImageFlags = imgIContainer::FLAG_NONE);
 
   nsresult Extract(const nsIntRect& aRegion, imgFrame** aResult);
 
@@ -45,20 +45,20 @@ public:
   nsIntRect GetRect() const;
   gfxASurface::gfxImageFormat GetFormat() const;
   bool GetNeedsBackground() const;
-  PRUint32 GetImageBytesPerRow() const;
-  PRUint32 GetImageDataLength() const;
+  uint32_t GetImageBytesPerRow() const;
+  uint32_t GetImageDataLength() const;
   bool GetIsPaletted() const;
   bool GetHasAlpha() const;
-  void GetImageData(PRUint8 **aData, PRUint32 *length) const;
-  void GetPaletteData(PRUint32 **aPalette, PRUint32 *length) const;
+  void GetImageData(uint8_t **aData, uint32_t *length) const;
+  void GetPaletteData(uint32_t **aPalette, uint32_t *length) const;
 
-  PRInt32 GetTimeout() const;
-  void SetTimeout(PRInt32 aTimeout);
+  int32_t GetTimeout() const;
+  void SetTimeout(int32_t aTimeout);
 
-  PRInt32 GetFrameDisposalMethod() const;
-  void SetFrameDisposalMethod(PRInt32 aFrameDisposalMethod);
-  PRInt32 GetBlendMethod() const;
-  void SetBlendMethod(PRInt32 aBlendMethod);
+  int32_t GetFrameDisposalMethod() const;
+  void SetFrameDisposalMethod(int32_t aFrameDisposalMethod);
+  int32_t GetBlendMethod() const;
+  void SetBlendMethod(int32_t aBlendMethod);
   bool ImageComplete() const;
 
   void SetHasNoAlpha();
@@ -105,11 +105,11 @@ public:
            gfxASurface::MemoryLocation aLocation,
            nsMallocSizeOfFun aMallocSizeOf) const;
 
-  PRUint8 GetPaletteDepth() const { return mPaletteDepth; }
+  uint8_t GetPaletteDepth() const { return mPaletteDepth; }
 
 private: // methods
-  PRUint32 PaletteDataLength() const {
-    return ((1 << mPaletteDepth) * sizeof(PRUint32));
+  uint32_t PaletteDataLength() const {
+    return ((1 << mPaletteDepth) * sizeof(uint32_t));
   }
 
   struct SurfaceWithFormat {
@@ -149,24 +149,25 @@ private: // data
   // doesn't support these images.
   // The paletted data comes first, then the image data itself.
   // Total length is PaletteDataLength() + GetImageDataLength().
-  PRUint8*     mPalettedImageData;
+  uint8_t*     mPalettedImageData;
 
   // Note that the data stored in gfxRGBA is *non-alpha-premultiplied*.
   gfxRGBA      mSinglePixelColor;
 
-  PRInt32      mTimeout; // -1 means display forever
-  PRInt32      mDisposalMethod;
+  int32_t      mTimeout; // -1 means display forever
+  int32_t      mDisposalMethod;
+
+  /** Indicates how many readers currently have locked this frame */
+  int32_t mLockCount;
 
   gfxASurface::gfxImageFormat mFormat;
-  PRUint8      mPaletteDepth;
-  PRInt8       mBlendMethod;
+  uint8_t      mPaletteDepth;
+  int8_t       mBlendMethod;
   bool mSinglePixel;
   bool mNeverUseDeviceSurface;
   bool mFormatChanged;
   bool mCompositingFailed;
   bool mNonPremult;
-  /** Indicates if the image data is currently locked */
-  bool mLocked;
 
   /** Have we called DiscardTracker::InformAllocation()? */
   bool mInformedDiscardTracker;
@@ -175,5 +176,34 @@ private: // data
   bool mIsDDBSurface;
 #endif
 };
+
+namespace mozilla {
+namespace image {
+  // An RAII class to ensure it's easy to balance locks and unlocks on
+  // imgFrames.
+  class AutoFrameLocker
+  {
+  public:
+    AutoFrameLocker(imgFrame* frame)
+      : mFrame(frame)
+      , mSucceeded(NS_SUCCEEDED(frame->LockImageData()))
+    {}
+
+    ~AutoFrameLocker()
+    {
+      if (mSucceeded) {
+        mFrame->UnlockImageData();
+      }
+    }
+
+    // Whether the lock request succeeded.
+    bool Succeeded() { return mSucceeded; }
+
+  private:
+    imgFrame* mFrame;
+    bool mSucceeded;
+  };
+}
+}
 
 #endif /* imgFrame_h */

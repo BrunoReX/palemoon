@@ -2,10 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH = ../..
+DEPTH = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir = @srcdir@
 VPATH = @srcdir@
+FAIL_ON_WARNINGS := 1
 
 include $(DEPTH)/config/autoconf.mk
 
@@ -38,6 +39,7 @@ CPPSRCS = \
   IDBWrapperCache.cpp \
   IndexedDatabaseManager.cpp \
   Key.cpp \
+  KeyPath.cpp \
   OpenDatabaseHelper.cpp \
   TransactionThreadPool.cpp \
   $(NULL)
@@ -58,17 +60,19 @@ EXPORTS_mozilla/dom/indexedDB = \
   IndexedDatabase.h \
   IndexedDatabaseManager.h \
   Key.h \
+  KeyPath.h \
   FileManager.h \
   FileInfo.h \
   $(NULL)
 
 LOCAL_INCLUDES = \
-  -I$(topsrcdir)/db/sqlite3/src \
-  -I$(topsrcdir)/xpcom/build \
-  -I$(topsrcdir)/dom/base \
-  -I$(topsrcdir)/dom/src/storage \
+  -I$(topsrcdir)/caps/include \
   -I$(topsrcdir)/content/base/src \
   -I$(topsrcdir)/content/events/src \
+  -I$(topsrcdir)/db/sqlite3/src \
+  -I$(topsrcdir)/dom/base \
+  -I$(topsrcdir)/dom/src/storage \
+  -I$(topsrcdir)/xpcom/build \
   $(NULL)
 
 DEFINES += -D_IMPL_NS_LAYOUT
@@ -98,3 +102,8 @@ TEST_DIRS += test
 include $(topsrcdir)/config/config.mk
 include $(topsrcdir)/ipc/chromium/chromium-config.mk
 include $(topsrcdir)/config/rules.mk
+
+XPIDL_FLAGS += \
+  -I$(topsrcdir)/dom/interfaces/base \
+  -I$(topsrcdir)/dom/interfaces/events \
+  $(NULL)

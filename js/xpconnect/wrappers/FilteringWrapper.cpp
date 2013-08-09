@@ -6,7 +6,7 @@
 
 #include "FilteringWrapper.h"
 #include "AccessCheck.h"
-#include "CrossOriginWrapper.h"
+#include "WaiveXrayWrapper.h"
 #include "ChromeObjectWrapper.h"
 #include "XrayWrapper.h"
 #include "WrapperFactory.h"
@@ -29,12 +29,6 @@ FilteringWrapper<Base, Policy>::~FilteringWrapper()
 {
 }
 
-typedef Wrapper::Permission Permission;
-
-static const Permission PermitObjectAccess = Wrapper::PermitObjectAccess;
-static const Permission PermitPropertyAccess = Wrapper::PermitPropertyAccess;
-static const Permission DenyAccess = Wrapper::DenyAccess;
-
 template <typename Policy>
 static bool
 Filter(JSContext *cx, JSObject *wrapper, AutoIdVector &props)
@@ -42,14 +36,46 @@ Filter(JSContext *cx, JSObject *wrapper, AutoIdVector &props)
     size_t w = 0;
     for (size_t n = 0; n < props.length(); ++n) {
         jsid id = props[n];
-        Permission perm;
-        if (!Policy::check(cx, wrapper, id, Wrapper::GET, perm))
-            return false; // Error
-        if (perm != DenyAccess)
+        if (Policy::check(cx, wrapper, id, Wrapper::GET))
             props[w++] = id;
+        else if (JS_IsExceptionPending(cx))
+            return false;
     }
     props.resize(w);
     return true;
+}
+
+template <typename Policy>
+static bool
+FilterSetter(JSContext *cx, JSObject *wrapper, jsid id, js::PropertyDescriptor *desc)
+{
+    bool setAllowed = Policy::check(cx, wrapper, id, Wrapper::SET);
+    if (!setAllowed) {
+        if (JS_IsExceptionPending(cx))
+            return false;
+        desc->setter = nullptr;
+    }
+    return true;
+}
+
+template <typename Base, typename Policy>
+bool
+FilteringWrapper<Base, Policy>::getPropertyDescriptor(JSContext *cx, JSObject *wrapper, jsid id,
+                                                      bool set, js::PropertyDescriptor *desc)
+{
+    if (!Base::getPropertyDescriptor(cx, wrapper, id, set, desc))
+        return false;
+    return FilterSetter<Policy>(cx, wrapper, id, desc);
+}
+
+template <typename Base, typename Policy>
+bool
+FilteringWrapper<Base, Policy>::getOwnPropertyDescriptor(JSContext *cx, JSObject *wrapper, jsid id,
+                                                         bool set, js::PropertyDescriptor *desc)
+{
+    if (!Base::getOwnPropertyDescriptor(cx, wrapper, id, set, desc))
+        return false;
+    return FilterSetter<Policy>(cx, wrapper, id, desc);
 }
 
 template <typename Base, typename Policy>
@@ -83,8 +109,18 @@ FilteringWrapper<Base, Policy>::iterate(JSContext *cx, JSObject *wrapper, unsign
     // We refuse to trigger the iterator hook across chrome wrappers because
     // we don't know how to censor custom iterator objects. Instead we trigger
     // the default proxy iterate trap, which will ask enumerate() for the list
-    // of (consored) ids.
+    // of (censored) ids.
     return js::BaseProxyHandler::iterate(cx, wrapper, flags, vp);
+}
+
+template <typename Base, typename Policy>
+bool
+FilteringWrapper<Base, Policy>::nativeCall(JSContext *cx, JS::IsAcceptableThis test,
+                                           JS::NativeImpl impl, JS::CallArgs args)
+{
+    if (Policy::allowNativeCall(cx, test, impl))
+        return Base::Permissive::nativeCall(cx, test, impl, args);
+    return Base::Restrictive::nativeCall(cx, test, impl, args);
 }
 
 template <typename Base, typename Policy>
@@ -92,47 +128,35 @@ bool
 FilteringWrapper<Base, Policy>::enter(JSContext *cx, JSObject *wrapper, jsid id,
                                       Wrapper::Action act, bool *bp)
 {
-    Permission perm;
-    if (!Policy::check(cx, wrapper, id, act, perm)) {
-        *bp = false;
+    if (!Policy::check(cx, wrapper, id, act)) {
+        if (JS_IsExceptionPending(cx)) {
+            *bp = false;
+            return false;
+        }
+        JSAutoCompartment ac(cx, wrapper);
+        *bp = Policy::deny(cx, id, act);
         return false;
     }
     *bp = true;
-    if (perm == DenyAccess)
-        return false;
-    return Base::enter(cx, wrapper, id, act, bp);
+    return true;
 }
 
 #define SOW FilteringWrapper<CrossCompartmentSecurityWrapper, OnlyIfSubjectIsSystem>
 #define SCSOW FilteringWrapper<SameCompartmentSecurityWrapper, OnlyIfSubjectIsSystem>
-#define XOW FilteringWrapper<XrayWrapper<CrossCompartmentSecurityWrapper>, \
-                             CrossOriginAccessiblePropertiesOnly>
-#define PXOW   FilteringWrapper<XrayProxy, \
-                                CrossOriginAccessiblePropertiesOnly>
-#define DXOW   FilteringWrapper<XrayDOM, \
-                                CrossOriginAccessiblePropertiesOnly>
-#define NNXOW FilteringWrapper<CrossCompartmentSecurityWrapper, \
-                               CrossOriginAccessiblePropertiesOnly>
-#define LW    FilteringWrapper<XrayWrapper<SameCompartmentSecurityWrapper>, \
-                               LocationPolicy>
-#define XLW   FilteringWrapper<XrayWrapper<CrossCompartmentSecurityWrapper>, \
-                               LocationPolicy>
-#define CW FilteringWrapper<SameCompartmentSecurityWrapper, \
-                            ComponentsObjectPolicy>
-#define XCW FilteringWrapper<CrossCompartmentSecurityWrapper, \
-                            ComponentsObjectPolicy>
+#define XOW FilteringWrapper<SecurityXrayXPCWN, CrossOriginAccessiblePropertiesOnly>
+#define DXOW   FilteringWrapper<SecurityXrayDOM, CrossOriginAccessiblePropertiesOnly>
+#define NNXOW FilteringWrapper<CrossCompartmentSecurityWrapper, CrossOriginAccessiblePropertiesOnly>
+#define LW    FilteringWrapper<SCSecurityXrayXPCWN, LocationPolicy>
+#define XLW   FilteringWrapper<SecurityXrayXPCWN, LocationPolicy>
+#define CW FilteringWrapper<SameCompartmentSecurityWrapper, ComponentsObjectPolicy>
+#define XCW FilteringWrapper<CrossCompartmentSecurityWrapper, ComponentsObjectPolicy>
 template<> SOW SOW::singleton(WrapperFactory::SCRIPT_ACCESS_ONLY_FLAG |
                               WrapperFactory::SOW_FLAG);
 template<> SCSOW SCSOW::singleton(WrapperFactory::SCRIPT_ACCESS_ONLY_FLAG |
                                   WrapperFactory::SOW_FLAG);
-template<> XOW XOW::singleton(WrapperFactory::SCRIPT_ACCESS_ONLY_FLAG |
-                              WrapperFactory::PARTIALLY_TRANSPARENT);
-template<> PXOW PXOW::singleton(WrapperFactory::SCRIPT_ACCESS_ONLY_FLAG |
-                                WrapperFactory::PARTIALLY_TRANSPARENT);
-template<> DXOW DXOW::singleton(WrapperFactory::SCRIPT_ACCESS_ONLY_FLAG |
-                                WrapperFactory::PARTIALLY_TRANSPARENT);
-template<> NNXOW NNXOW::singleton(WrapperFactory::SCRIPT_ACCESS_ONLY_FLAG |
-                                  WrapperFactory::PARTIALLY_TRANSPARENT);
+template<> XOW XOW::singleton(WrapperFactory::SCRIPT_ACCESS_ONLY_FLAG);
+template<> DXOW DXOW::singleton(WrapperFactory::SCRIPT_ACCESS_ONLY_FLAG);
+template<> NNXOW NNXOW::singleton(WrapperFactory::SCRIPT_ACCESS_ONLY_FLAG);
 template<> LW  LW::singleton(WrapperFactory::SHADOWING_FORBIDDEN);
 template<> XLW XLW::singleton(WrapperFactory::SHADOWING_FORBIDDEN);
 
@@ -141,7 +165,6 @@ template<> XCW XCW::singleton(0);
 
 template class SOW;
 template class XOW;
-template class PXOW;
 template class DXOW;
 template class NNXOW;
 template class LW;

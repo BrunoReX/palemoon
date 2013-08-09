@@ -20,7 +20,7 @@ protected:
     typedef IPC::Message::msgid_t msgid_t;
 
 public:
-    static const int32 kNoTimeout;
+    static const int32_t kNoTimeout;
 
     class /*NS_INTERFACE_CLASS*/ SyncListener : 
         public AsyncChannel::AsyncListener
@@ -32,17 +32,17 @@ public:
         virtual void OnChannelError() = 0;
         virtual Result OnMessageReceived(const Message& aMessage) = 0;
         virtual void OnProcessingError(Result aError) = 0;
+        virtual int32_t GetProtocolTypeId() = 0;
         virtual bool OnReplyTimeout() = 0;
         virtual Result OnMessageReceived(const Message& aMessage,
                                          Message*& aReply) = 0;
-        virtual void OnChannelConnected(int32 peer_pid) {};
+        virtual void OnChannelConnected(int32_t peer_pid) {}
     };
 
     SyncChannel(SyncListener* aListener);
     virtual ~SyncChannel();
 
-    NS_OVERRIDE
-    virtual bool Send(Message* msg) {
+    virtual bool Send(Message* msg) MOZ_OVERRIDE {
         return AsyncChannel::Send(msg);
     }
 
@@ -51,11 +51,11 @@ public:
 
     // Set channel timeout value. Since this is broken up into
     // two period, the minimum timeout value is 2ms.
-    void SetReplyTimeoutMs(int32 aTimeoutMs) {
+    void SetReplyTimeoutMs(int32_t aTimeoutMs) {
         AssertWorkerThread();
         mTimeoutMs = (aTimeoutMs <= 0) ? kNoTimeout :
           // timeouts are broken up into two periods
-          (int32)ceil((double)aTimeoutMs/2.0);
+          (int32_t)ceil((double)aTimeoutMs/2.0);
     }
 
     static bool IsPumpingMessages() {
@@ -106,8 +106,8 @@ protected:
 protected:
     // Executed on the link thread
     // Override the AsyncChannel handler so we can dispatch sync messages
-    NS_OVERRIDE virtual void OnMessageReceivedFromLink(const Message& msg);
-    NS_OVERRIDE virtual void OnChannelErrorFromLink();
+    virtual void OnMessageReceivedFromLink(const Message& msg) MOZ_OVERRIDE;
+    virtual void OnChannelErrorFromLink() MOZ_OVERRIDE;
 
     // Executed on the worker thread
     bool ProcessingSyncMessage() const {
@@ -143,7 +143,7 @@ protected:
         return mPendingReply != 0;
     }
 
-    int32 NextSeqno() {
+    int32_t NextSeqno() {
         AssertWorkerThread();
         return mChild ? --mNextSeqno : ++mNextSeqno;
     }
@@ -153,7 +153,7 @@ protected:
     Message mRecvd;
     // This is only accessed from the worker thread; seqno's are
     // completely opaque to the IO thread.
-    int32 mNextSeqno;
+    int32_t mNextSeqno;
 
     static bool sIsPumpingMessages;
 
@@ -163,7 +163,7 @@ protected:
     // or give up.
     bool WaitResponse(bool aWaitTimedOut);
     bool mInTimeoutSecondHalf;
-    int32 mTimeoutMs;
+    int32_t mTimeoutMs;
 
 #ifdef OS_WIN
     HANDLE mEvent;

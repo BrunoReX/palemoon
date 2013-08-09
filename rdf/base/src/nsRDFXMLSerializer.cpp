@@ -17,10 +17,11 @@
 #include "nsTArray.h"
 #include "rdf.h"
 #include "rdfutil.h"
+#include "mozilla/Attributes.h"
 
 #include "rdfIDataSource.h"
 
-PRInt32 nsRDFXMLSerializer::gRefCnt = 0;
+int32_t nsRDFXMLSerializer::gRefCnt = 0;
 nsIRDFContainerUtils* nsRDFXMLSerializer::gRDFC;
 nsIRDFResource* nsRDFXMLSerializer::kRDF_instanceOf;
 nsIRDFResource* nsRDFXMLSerializer::kRDF_type;
@@ -152,13 +153,13 @@ nsRDFXMLSerializer::AddNameSpace(nsIAtom* aPrefix, const nsAString& aURI)
 }
 
 static nsresult
-rdf_BlockingWrite(nsIOutputStream* stream, const char* buf, PRUint32 size)
+rdf_BlockingWrite(nsIOutputStream* stream, const char* buf, uint32_t size)
 {
-    PRUint32 written = 0;
-    PRUint32 remaining = size;
+    uint32_t written = 0;
+    uint32_t remaining = size;
     while (remaining > 0) {
         nsresult rv;
-        PRUint32 cb;
+        uint32_t cb;
 
         if (NS_FAILED(rv = stream->Write(buf + written, remaining, &cb)))
             return rv;
@@ -199,7 +200,7 @@ nsRDFXMLSerializer::EnsureNewPrefix()
             ++iter;
         } 
     } while (!isNewPrefix);
-    nsIAtom* outPrefix = nsnull;
+    nsIAtom* outPrefix = nullptr;
     prefix.swap(outPrefix);
     return outPrefix;
 }
@@ -211,7 +212,7 @@ nsRDFXMLSerializer::EnsureNewPrefix()
 nsresult
 nsRDFXMLSerializer::RegisterQName(nsIRDFResource* aResource)
 {
-    nsCAutoString uri, qname;
+    nsAutoCString uri, qname;
     aResource->GetValueUTF8(uri);
 
     nsNameSpaceMap::const_iterator iter = mNameSpaces.GetNameSpaceOf(uri);
@@ -226,7 +227,7 @@ nsRDFXMLSerializer::RegisterQName(nsIRDFResource* aResource)
 
     // Okay, so we don't have it in our map. Try to make one up. This
     // is very bogus.
-    PRInt32 i = uri.RFindChar('#'); // first try a '#'
+    int32_t i = uri.RFindChar('#'); // first try a '#'
     if (i == -1) {
         i = uri.RFindChar('/');
         if (i == -1) {
@@ -284,7 +285,7 @@ static const char quot[] = "&quot;";
 static void
 rdf_EscapeAmpersandsAndAngleBrackets(nsCString& s)
 {
-    PRUint32 newLength, origLength;
+    uint32_t newLength, origLength;
     newLength = origLength = s.Length();
 
     // Compute the length of the result string.
@@ -343,7 +344,7 @@ rdf_EscapeAmpersandsAndAngleBrackets(nsCString& s)
 static void
 rdf_EscapeQuotes(nsCString& s)
 {
-    PRInt32 i = 0;
+    int32_t i = 0;
     while ((i = s.FindChar('"', i)) != -1) {
         s.Replace(i, 1, quot, sizeof(quot) - 1);
         i += sizeof(quot) - 2;
@@ -407,8 +408,8 @@ nsRDFXMLSerializer::SerializeChildAssertion(nsIOutputStream* aStream,
     nsCOMPtr<nsIRDFInt> number;
     nsCOMPtr<nsIRDFDate> date;
 
-    if ((resource = do_QueryInterface(aValue)) != nsnull) {
-        nsCAutoString uri;
+    if ((resource = do_QueryInterface(aValue)) != nullptr) {
+        nsAutoCString uri;
         resource->GetValueUTF8(uri);
 
         rdf_MakeRelativeRef(mBaseURLSpec, uri);
@@ -425,7 +426,7 @@ nsRDFXMLSerializer::SerializeChildAssertion(nsIOutputStream* aStream,
 
         goto no_close_tag;
     }
-    else if ((literal = do_QueryInterface(aValue)) != nsnull) {
+    else if ((literal = do_QueryInterface(aValue)) != nullptr) {
         const PRUnichar *value;
         literal->GetValueConst(&value);
         NS_ConvertUTF16toUTF8 s(value);
@@ -437,11 +438,11 @@ nsRDFXMLSerializer::SerializeChildAssertion(nsIOutputStream* aStream,
         rv = rdf_BlockingWrite(aStream, s);
         if (NS_FAILED(rv)) return rv;
     }
-    else if ((number = do_QueryInterface(aValue)) != nsnull) {
-        PRInt32 value;
+    else if ((number = do_QueryInterface(aValue)) != nullptr) {
+        int32_t value;
         number->GetValue(&value);
 
-        nsCAutoString n;
+        nsAutoCString n;
         n.AppendInt(value);
 
         rv = rdf_BlockingWrite(aStream, kRDFParseTypeInteger, 
@@ -450,11 +451,11 @@ nsRDFXMLSerializer::SerializeChildAssertion(nsIOutputStream* aStream,
         rv = rdf_BlockingWrite(aStream, n);
         if (NS_FAILED(rv)) return rv;
     }
-    else if ((date = do_QueryInterface(aValue)) != nsnull) {
+    else if ((date = do_QueryInterface(aValue)) != nullptr) {
         PRTime value;
         date->GetValue(&value);
 
-        nsCAutoString s;
+        nsAutoCString s;
         rdf_FormatDate(value, s);
 
         rv = rdf_BlockingWrite(aStream, kRDFParseTypeDate, 
@@ -487,11 +488,11 @@ nsRDFXMLSerializer::SerializeProperty(nsIOutputStream* aStream,
                                       nsIRDFResource* aResource,
                                       nsIRDFResource* aProperty,
                                       bool aInline,
-                                      PRInt32* aSkipped)
+                                      int32_t* aSkipped)
 {
     nsresult rv = NS_OK;
 
-    PRInt32 skipped = 0;
+    int32_t skipped = 0;
 
     nsCOMPtr<nsISimpleEnumerator> assertions;
     mDataSource->GetTargets(aResource, aProperty, true, getter_AddRefs(assertions));
@@ -517,7 +518,7 @@ nsRDFXMLSerializer::SerializeProperty(nsIOutputStream* aStream,
         if (!needsChild) {
             assertions->HasMoreElements(&needsChild);
             if (!needsChild) {
-                const PRUnichar* literalVal = nsnull;
+                const PRUnichar* literalVal = nullptr;
                 literal->GetValueConst(&literalVal);
                 if (literalVal) {
                     for (; *literalVal; literalVal++) {
@@ -574,7 +575,7 @@ nsRDFXMLSerializer::SerializeDescription(nsIOutputStream* aStream,
         }
     }
 
-    nsCAutoString uri;
+    nsAutoCString uri;
     rv = aResource->GetValueUTF8(uri);
     if (NS_FAILED(rv)) return rv;
 
@@ -610,7 +611,7 @@ nsRDFXMLSerializer::SerializeDescription(nsIOutputStream* aStream,
     // Any value that's a literal we can write out as an inline
     // attribute on the RDF:Description
     nsAutoTArray<nsIRDFResource*, 8> visited;
-    PRInt32 skipped = 0;
+    int32_t skipped = 0;
 
     nsCOMPtr<nsISimpleEnumerator> arcs;
     mDataSource->ArcLabelsOut(aResource, getter_AddRefs(arcs));
@@ -741,8 +742,8 @@ static const char kRDFLIOpen[] = "    <RDF:li";
                                     sizeof(kRDFLIOpen) - 1); 
     if (NS_FAILED(rv)) return rv;
 
-    if ((resource = do_QueryInterface(aMember)) != nsnull) {
-        nsCAutoString uri;
+    if ((resource = do_QueryInterface(aMember)) != nullptr) {
+        nsAutoCString uri;
         resource->GetValueUTF8(uri);
 
         rdf_MakeRelativeRef(mBaseURLSpec, uri);
@@ -759,7 +760,7 @@ static const char kRDFLIOpen[] = "    <RDF:li";
 
         goto no_close_tag;
     }
-    else if ((literal = do_QueryInterface(aMember)) != nsnull) {
+    else if ((literal = do_QueryInterface(aMember)) != nullptr) {
         const PRUnichar *value;
         literal->GetValueConst(&value);
 static const char kRDFLIOpenGT[] = ">";
@@ -774,11 +775,11 @@ static const char kRDFLIOpenGT[] = ">";
         rv = rdf_BlockingWrite(aStream, s);
         if (NS_FAILED(rv)) return rv;
     }
-    else if ((number = do_QueryInterface(aMember)) != nsnull) {
-        PRInt32 value;
+    else if ((number = do_QueryInterface(aMember)) != nullptr) {
+        int32_t value;
         number->GetValue(&value);
 
-        nsCAutoString n;
+        nsAutoCString n;
         n.AppendInt(value);
 
         rv = rdf_BlockingWrite(aStream, kRDFParseTypeInteger, 
@@ -787,11 +788,11 @@ static const char kRDFLIOpenGT[] = ">";
         rv = rdf_BlockingWrite(aStream, n);
         if (NS_FAILED(rv)) return rv;
     }
-    else if ((date = do_QueryInterface(aMember)) != nsnull) {
+    else if ((date = do_QueryInterface(aMember)) != nullptr) {
         PRTime value;
         date->GetValue(&value);
 
-        nsCAutoString s;
+        nsAutoCString s;
         rdf_FormatDate(value, s);
 
         rv = rdf_BlockingWrite(aStream, kRDFParseTypeDate, 
@@ -825,7 +826,7 @@ nsRDFXMLSerializer::SerializeContainer(nsIOutputStream* aStream,
                                          nsIRDFResource* aContainer)
 {
     nsresult rv;
-    nsCAutoString tag;
+    nsAutoCString tag;
 
     // Decide if it's a sequence, bag, or alternation, and print the
     // appropriate tag-open sequence
@@ -855,7 +856,7 @@ nsRDFXMLSerializer::SerializeContainer(nsIOutputStream* aStream,
     // this because we never really know who else might be referring
     // to it...
 
-    nsCAutoString uri;
+    nsAutoCString uri;
     if (NS_SUCCEEDED(aContainer->GetValueUTF8(uri))) {
         rdf_MakeRelativeRef(mBaseURLSpec, uri);
 
@@ -906,7 +907,7 @@ nsRDFXMLSerializer::SerializeContainer(nsIOutputStream* aStream,
             elements->GetNext(getter_AddRefs(isupports));
 
             nsCOMPtr<nsIRDFNode> element = do_QueryInterface(isupports);
-            NS_ASSERTION(element != nsnull, "not an nsIRDFNode");
+            NS_ASSERTION(element != nullptr, "not an nsIRDFNode");
             if (! element)
                 continue;
 
@@ -982,7 +983,7 @@ static const char kXMLVersion[] = "<?xml version=\"1.0\"?>\n";
         if (entry->mPrefix) {
             rv = rdf_BlockingWrite(aStream, NS_LITERAL_CSTRING(":"));
             if (NS_FAILED(rv)) return rv;
-            nsCAutoString prefix;
+            nsAutoCString prefix;
             entry->mPrefix->ToUTF8String(prefix);
             rv = rdf_BlockingWrite(aStream, prefix);
             if (NS_FAILED(rv)) return rv;
@@ -990,7 +991,7 @@ static const char kXMLVersion[] = "<?xml version=\"1.0\"?>\n";
 
         rv = rdf_BlockingWrite(aStream, NS_LITERAL_CSTRING("=\""));
         if (NS_FAILED(rv)) return rv;
-        nsCAutoString uri(entry->mURI);
+        nsAutoCString uri(entry->mURI);
         rdf_EscapeAttributeValue(uri);
         rv = rdf_BlockingWrite(aStream, uri);
         if (NS_FAILED(rv)) return rv;
@@ -1008,7 +1009,7 @@ nsRDFXMLSerializer::SerializeEpilogue(nsIOutputStream* aStream)
     return rdf_BlockingWrite(aStream, NS_LITERAL_CSTRING("</RDF:RDF>\n"));
 }
 
-class QNameCollector : public rdfITripleVisitor {
+class QNameCollector MOZ_FINAL : public rdfITripleVisitor {
 public:
     NS_DECL_ISUPPORTS
     NS_DECL_RDFITRIPLEVISITOR
@@ -1030,14 +1031,14 @@ QNameCollector::Visit(nsIRDFNode* aSubject, nsIRDFResource* aPredicate,
             // ignore error
             return NS_OK;
         }
-        if (mParent->mQNames.Get(resType, nsnull)) {
+        if (mParent->mQNames.Get(resType, nullptr)) {
             return NS_OK;
         }
         mParent->RegisterQName(resType);
         return NS_OK;
     }
 
-    if (mParent->mQNames.Get(aPredicate, nsnull)) {
+    if (mParent->mQNames.Get(aPredicate, nullptr)) {
         return NS_OK;
     }
     if (aPredicate == mParent->kRDF_instanceOf ||

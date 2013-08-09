@@ -5,6 +5,11 @@
   <meta charset="utf-8" />
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
+  <style type="text/css">
+    .gencontent:before { content: "*"; }
+    .gencontent:after  { content: "*"; }
+  </style>
+
   <script type="application/javascript"
           src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
@@ -302,6 +307,24 @@
       attrs = {};
       testTextAttrs(ID, 123, attrs, defAttrs, 122, 130);
 
+      attrs = {
+        "text-line-through-style": "solid",
+        "text-line-through-color": gComputedStyle.color
+      };
+      testTextAttrs(ID, 131, attrs, defAttrs, 130, 143);
+
+      attrs = {};
+      testTextAttrs(ID, 144, attrs, defAttrs, 143, 151);
+
+      attrs = {
+        "text-line-through-style": "solid",
+        "text-line-through-color": gComputedStyle.color
+      };
+      testTextAttrs(ID, 152, attrs, defAttrs, 151, 164);
+
+      attrs = {};
+      testTextAttrs(ID, 165, attrs, defAttrs, 164, 172);
+
       //////////////////////////////////////////////////////////////////////////
       // area10, different single style spans in non-styled paragraph
       ID = "area10";
@@ -506,6 +529,36 @@
       };
       testTextAttrs(ID, 39, attrs, defAttrs, 39, 44);
 
+      //////////////////////////////////////////////////////////////////////////
+      // area18, "auto-generation text" tests
+      ID = "area18";
+      defAttrs = buildDefaultTextAttrs(ID, "12pt");
+      testDefaultTextAttrs(ID, defAttrs);
+
+      var attrs = {
+        "auto-generated": "true"
+      };
+      testTextAttrs(ID, 0, attrs, defAttrs, 0, 2);
+      testTextAttrs(ID, 2, { }, defAttrs, 2, 6);
+      testTextAttrs(ID, 6, attrs, defAttrs, 6, 7);
+
+       //////////////////////////////////////////////////////////////////////////
+      // area19, "HTML5 mark tag" test
+      // text enclosed in mark tag will have a different background color
+      ID = "area19";
+      defAttrs = buildDefaultTextAttrs(ID, "12pt");
+
+      attrs = {};
+      testTextAttrs(ID, 0, attrs, defAttrs, 0, 10);
+      
+      tempElem = getNode(ID).firstChild.nextSibling;
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      attrs = { "background-color": gComputedStyle.backgroundColor };
+      testTextAttrs(ID, 11, attrs, defAttrs, 10, 17);
+
+      attrs = {};
+      testTextAttrs(ID, 18, attrs, defAttrs, 17, 28);
+
       SimpleTest.finish();
     }
 
@@ -539,6 +592,11 @@
      href="https://bugzilla.mozilla.org/show_bug.cgi?id=735645"
      title="expose sub and sup elements in text attributes">
     Mozilla Bug 735645
+  </a>
+  <a target="_blank"
+     href="https://bugzilla.mozilla.org/show_bug.cgi?id=445516"
+     title="Support auto-generated text attribute on bullet lists">
+    Mozilla Bug 445516
   </a>
   <p id="display"></p>
   <div id="content" style="display: none"></div>
@@ -598,6 +656,8 @@
     <span style="font-family: monospace;">Different font</span> normal
     <span style="text-decoration: underline;">underlined</span> normal
     <span style="text-decoration: line-through;">strikethrough</span> normal
+    <s>strikethrough</s> normal
+    <strike>strikethrough</strike> normal
   </p>
 
   <p id="area10">Normal
@@ -644,5 +704,14 @@
     </span><span style="text-decoration: line-through; -moz-text-decoration-style: wavy;">wavy
     </span>
   </p>
+
+  <ul>
+    <li id="area18" class="gencontent">item</li>
+  </ul>
+
+  <p id="area19">uncolored
+    <mark>colored</mark> uncolored
+  </p>
+   
 </body>
 </html>

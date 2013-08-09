@@ -6,21 +6,22 @@
 #ifndef MOZILLA_GFX_SCALEDFONTDWRITE_H_
 #define MOZILLA_GFX_SCALEDFONTDWRITE_H_
 
-#include "2D.h"
 #include <dwrite.h>
+#include "ScaledFontBase.h"
 
 struct ID2D1GeometrySink;
 
 namespace mozilla {
 namespace gfx {
 
-class ScaledFontDWrite : public ScaledFont
+class ScaledFontDWrite : public ScaledFontBase
 {
 public:
   ScaledFontDWrite(IDWriteFontFace *aFont, Float aSize)
     : mFontFace(aFont)
-    , mSize(aSize)
+    , ScaledFontBase(aSize)
   {}
+  ScaledFontDWrite(uint8_t *aData, uint32_t aSize, uint32_t aIndex, Float aGlyphSize);
 
   virtual FontType GetType() const { return FONT_DWRITE; }
 
@@ -29,8 +30,19 @@ public:
 
   void CopyGlyphsToSink(const GlyphBuffer &aBuffer, ID2D1GeometrySink *aSink);
 
+  virtual bool GetFontFileData(FontFileDataOutput aDataCallback, void *aBaton);
+
+  virtual AntialiasMode GetDefaultAAMode();
+
+#ifdef USE_SKIA
+  virtual SkTypeface* GetSkTypeface()
+  {
+    MOZ_ASSERT(false, "Skia and DirectWrite do not mix");
+    return nullptr;
+  }
+#endif
+
   RefPtr<IDWriteFontFace> mFontFace;
-  Float mSize;
 };
 
 class GlyphRenderingOptionsDWrite : public GlyphRenderingOptions

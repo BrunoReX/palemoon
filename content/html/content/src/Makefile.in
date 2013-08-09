@@ -3,7 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -17,11 +17,15 @@ FAIL_ON_WARNINGS = 1
 
 
 EXPORTS		= \
+		nsGenericHTMLElement.h \
+		nsHTMLIFrameElement.h \
 		nsClientRect.h \
 		nsHTMLDNSPrefetch.h \
+		nsTimeRanges.h \
 		$(NULL)
 
 CPPSRCS		= \
+		HTMLPropertiesCollection.cpp \
 		nsClientRect.cpp \
 		nsHTMLDNSPrefetch.cpp \
 		nsGenericHTMLElement.cpp \
@@ -55,6 +59,7 @@ CPPSRCS		= \
 		nsHTMLMenuElement.cpp \
 		nsHTMLMenuItemElement.cpp \
 		nsHTMLMetaElement.cpp \
+		nsHTMLMeterElement.cpp \
 		nsHTMLModElement.cpp \
 		nsHTMLObjectElement.cpp \
 		nsHTMLOListElement.cpp \
@@ -104,6 +109,7 @@ include $(topsrcdir)/config/rules.mk
 include $(topsrcdir)/ipc/chromium/chromium-config.mk
 
 INCLUDES	+= \
+		-I$(srcdir)/../../document/src \
 		-I$(srcdir)/../../../base/src \
 		-I$(srcdir)/../../../events/src \
 		-I$(srcdir)/../../../xbl/src \
@@ -116,6 +122,7 @@ INCLUDES	+= \
 		-I$(srcdir)/../../../../dom/base \
 		-I$(srcdir)/../../../../editor/libeditor/base \
 		-I$(srcdir)/../../../../editor/libeditor/text \
+		-I$(srcdir)/../../../../editor/txmgr/src \
 		-I$(srcdir) \
 		-I$(topsrcdir)/xpcom/ds \
 		$(NULL)

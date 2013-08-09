@@ -22,9 +22,9 @@
 #define ICON_STATUS_CACHED 1 << 3
 
 #define TO_CHARBUFFER(_buffer) \
-  reinterpret_cast<char*>(const_cast<PRUint8*>(_buffer))
+  reinterpret_cast<char*>(const_cast<uint8_t*>(_buffer))
 #define TO_INTBUFFER(_string) \
-  reinterpret_cast<PRUint8*>(const_cast<char*>(_string.get()))
+  reinterpret_cast<uint8_t*>(const_cast<char*>(_string.get()))
 
 /**
  * The maximum time we will keep a favicon around.  We always ask the cache, if
@@ -57,16 +57,16 @@ struct IconData
   , fetchMode(FETCH_NEVER)
   , status(ICON_STATUS_UNKNOWN)
   {
-    guid.SetIsVoid(PR_TRUE);
+    guid.SetIsVoid(true);
   }
 
-  PRInt64 id;
+  int64_t id;
   nsCString spec;
   nsCString data;
   nsCString mimeType;
   PRTime expiration;
   enum AsyncFaviconFetchMode fetchMode;
-  PRUint16 status; // This is a bitset, see ICON_STATUS_* defines above.
+  uint16_t status; // This is a bitset, see ICON_STATUS_* defines above.
   nsCString guid;
 };
 
@@ -83,12 +83,12 @@ struct PageData
     guid.SetIsVoid(true);
   }
 
-  PRInt64 id;
+  int64_t id;
   nsCString spec;
   nsCString bookmarkedSpec;
   nsString revHost;
   bool canAddToHistory; // False for disabled history and unsupported schemas.
-  PRInt64 iconId;
+  int64_t iconId;
   nsCString guid;
 };
 
@@ -133,6 +133,7 @@ public:
   static nsresult start(nsIURI* aFaviconURI,
                         nsIURI* aPageURI,
                         enum AsyncFaviconFetchMode aFetchMode,
+                        uint32_t aFaviconLoadType,
                         nsIFaviconDataCallback* aCallback);
 
   /**
@@ -147,6 +148,7 @@ public:
    */
   AsyncFetchAndSetIconForPage(IconData& aIcon,
                               PageData& aPage,
+                              uint32_t aFaviconLoadType,
                               nsCOMPtr<nsIFaviconDataCallback>& aCallback);
 
   virtual ~AsyncFetchAndSetIconForPage();
@@ -154,6 +156,7 @@ public:
 protected:
   IconData mIcon;
   PageData mPage;
+  const bool mFaviconLoadPrivate;
 };
 
 /**
@@ -186,6 +189,7 @@ public:
    */
   AsyncFetchAndSetIconFromNetwork(IconData& aIcon,
                                   PageData& aPage,
+                                  bool aFaviconLoadPrivate,
                                   nsCOMPtr<nsIFaviconDataCallback>& aCallback);
 
   virtual ~AsyncFetchAndSetIconFromNetwork();
@@ -193,7 +197,7 @@ public:
 protected:
   IconData mIcon;
   PageData mPage;
-  nsCOMPtr<nsIChannel> mChannel;
+  const bool mFaviconLoadPrivate;
 };
 
 /**

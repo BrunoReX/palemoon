@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "base/basictypes.h"
+
 #include "nsLayoutStatics.h"
 #include "nscore.h"
 
@@ -12,13 +14,13 @@
 #include "nsContentDLF.h"
 #include "nsContentUtils.h"
 #include "nsCSSAnonBoxes.h"
+#include "mozilla/css/ErrorReporter.h"
 #include "nsCSSKeywords.h"
 #include "nsCSSParser.h"
 #include "nsCSSProps.h"
 #include "nsCSSPseudoClasses.h"
 #include "nsCSSPseudoElements.h"
 #include "nsCSSRendering.h"
-#include "nsCSSScanner.h"
 #include "nsDOMAttribute.h"
 #include "nsDOMClassInfo.h"
 #include "nsEventListenerManager.h"
@@ -57,6 +59,9 @@
 #include "nsMathMLAtoms.h"
 #include "nsMathMLOperators.h"
 #include "Navigator.h"
+#include "nsDOMStorageBaseDB.h"
+
+#include "AudioChannelService.h"
 
 #ifdef MOZ_XUL
 #include "nsXULPopupManager.h"
@@ -70,17 +75,12 @@
 #include "nsHTMLEditor.h"
 #include "nsTextServicesDocument.h"
 
-#ifdef MOZ_MEDIA
-#include "nsMediaDecoder.h"
-#include "nsHTMLMediaElement.h"
-#endif
-
 #ifdef MOZ_MEDIA_PLUGINS
-#include "nsMediaPluginHost.h"
+#include "MediaPluginHost.h"
 #endif
 
 #ifdef MOZ_SYDNEYAUDIO
-#include "nsAudioStream.h"
+#include "AudioStream.h"
 #endif
 
 #include "nsError.h"
@@ -94,11 +94,20 @@
 #include "nsHyphenationManager.h"
 #include "nsEditorSpellCheck.h"
 #include "nsWindowMemoryReporter.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/ipc/ProcessPriorityManager.h"
+#include "nsPermissionManager.h"
+#include "nsCookieService.h"
+#include "nsApplicationCacheService.h"
+#include "mozilla/dom/time/DateCacheCleaner.h"
+#include "nsIMEStateManager.h"
 
 extern void NS_ShutdownChainItemPool();
 
 using namespace mozilla;
 using namespace mozilla::dom;
+using namespace mozilla::dom::ipc;
+using namespace mozilla::dom::time;
 
 nsrefcnt nsLayoutStatics::sLayoutStaticRefcnt = 0;
 
@@ -113,6 +122,8 @@ nsLayoutStatics::Initialize()
                 "nsLayoutStatics", 1);
 
   nsresult rv;
+
+  ContentParent::StartUp();
 
   // Register all of our atoms once
   nsCSSAnonBoxes::AddRefAtoms();
@@ -224,7 +235,7 @@ nsLayoutStatics::Initialize()
   }
 
 #ifdef MOZ_SYDNEYAUDIO
-  nsAudioStream::InitLibrary();
+  AudioStream::InitLibrary();
 #endif
 
   nsContentSink::InitializeStatics();
@@ -242,6 +253,16 @@ nsLayoutStatics::Initialize()
   nsWindowMemoryReporter::Init();
 
   nsSVGUtils::Init();
+
+  InitProcessPriorityManager();
+
+  nsPermissionManager::AppUninstallObserverInit();
+  nsCookieService::AppClearDataObserverInit();
+  nsApplicationCacheService::AppClearDataObserverInit();
+
+  nsDOMStorageBaseDB::Init();
+
+  InitializeDateCacheCleaner();
 
   return NS_OK;
 }
@@ -261,6 +282,7 @@ nsLayoutStatics::Shutdown()
   txMozillaXSLTProcessor::Shutdown();
   nsDOMAttribute::Shutdown();
   nsEventListenerManager::Shutdown();
+  nsIMEStateManager::Shutdown();
   nsComputedDOMStyle::Shutdown();
   nsCSSParser::Shutdown();
   nsCSSRuleProcessor::Shutdown();
@@ -292,7 +314,7 @@ nsLayoutStatics::Shutdown()
   nsFloatManager::Shutdown();
   nsImageFrame::ReleaseGlobals();
 
-  nsCSSScanner::ReleaseGlobals();
+  mozilla::css::ErrorReporter::ReleaseGlobals();
 
   nsTextFragment::Shutdown();
 
@@ -309,13 +331,14 @@ nsLayoutStatics::Shutdown()
   nsXBLWindowKeyHandler::ShutDown();
   nsXBLService::Shutdown();
   nsAutoCopyListener::Shutdown();
+  FrameLayerBuilder::Shutdown();
 
 #ifdef MOZ_MEDIA_PLUGINS
-  nsMediaPluginHost::Shutdown();  
+  MediaPluginHost::Shutdown();  
 #endif
 
 #ifdef MOZ_SYDNEYAUDIO
-  nsAudioStream::ShutdownLibrary();
+  AudioStream::ShutdownLibrary();
 #endif
 
   nsCORSListenerProxy::Shutdown();
@@ -339,4 +362,8 @@ nsLayoutStatics::Shutdown()
   nsHyphenationManager::Shutdown();
   nsEditorSpellCheck::ShutDown();
   nsDOMMutationObserver::Shutdown();
+
+  AudioChannelService::Shutdown();
+
+  ContentParent::ShutDown();
 }

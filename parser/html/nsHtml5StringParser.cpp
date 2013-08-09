@@ -15,7 +15,7 @@ NS_IMPL_ISUPPORTS0(nsHtml5StringParser)
 
 nsHtml5StringParser::nsHtml5StringParser()
   : mExecutor(new nsHtml5TreeOpExecutor(true))
-  , mTreeBuilder(new nsHtml5TreeBuilder(mExecutor, nsnull))
+  , mTreeBuilder(new nsHtml5TreeBuilder(mExecutor, nullptr))
   , mTokenizer(new nsHtml5Tokenizer(mTreeBuilder, false))
 {
   MOZ_COUNT_CTOR(nsHtml5StringParser);
@@ -32,11 +32,11 @@ nsresult
 nsHtml5StringParser::ParseFragment(const nsAString& aSourceBuffer,
                                    nsIContent* aTargetNode,
                                    nsIAtom* aContextLocalName,
-                                   PRInt32 aContextNamespace,
+                                   int32_t aContextNamespace,
                                    bool aQuirks,
                                    bool aPreventScriptExecution)
 {
-  NS_ENSURE_TRUE(aSourceBuffer.Length() <= PR_INT32_MAX,
+  NS_ENSURE_TRUE(aSourceBuffer.Length() <= INT32_MAX,
                  NS_ERROR_OUT_OF_MEMORY);
 
   nsIDocument* doc = aTargetNode->OwnerDoc();
@@ -60,7 +60,7 @@ nsHtml5StringParser::ParseFragment(const nsAString& aSourceBuffer,
   }
 #endif
 
-  mExecutor->EnableFragmentMode(aPreventScriptExecution);
+  mTreeBuilder->SetPreventScriptExecution(aPreventScriptExecution);
 
   Tokenize(aSourceBuffer, doc, true);
   return NS_OK;
@@ -73,15 +73,15 @@ nsHtml5StringParser::ParseDocument(const nsAString& aSourceBuffer,
 {
   MOZ_ASSERT(!aTargetDoc->GetFirstChild());
 
-  NS_ENSURE_TRUE(aSourceBuffer.Length() <= PR_INT32_MAX,
+  NS_ENSURE_TRUE(aSourceBuffer.Length() <= INT32_MAX,
                  NS_ERROR_OUT_OF_MEMORY);
 
-  mTreeBuilder->setFragmentContext(nsnull,
+  mTreeBuilder->setFragmentContext(nullptr,
                                    kNameSpaceID_None,
-                                   nsnull,
+                                   nullptr,
                                    false);
 
-  mExecutor->PreventScriptExecution();
+  mTreeBuilder->SetPreventScriptExecution(true);
 
   Tokenize(aSourceBuffer, aTargetDoc, aScriptingEnabledForNoscriptParsing);
   return NS_OK;
@@ -94,7 +94,7 @@ nsHtml5StringParser::Tokenize(const nsAString& aSourceBuffer,
 
   nsIURI* uri = aDocument->GetDocumentURI();
 
-  mExecutor->Init(aDocument, uri, nsnull, nsnull);
+  mExecutor->Init(aDocument, uri, nullptr, nullptr);
 
   mExecutor->SetParser(this);
   mExecutor->SetNodeInfoManager(aDocument->NodeInfoManager());
@@ -113,8 +113,10 @@ nsHtml5StringParser::Tokenize(const nsAString& aSourceBuffer,
       if (buffer.hasMore()) {
         lastWasCR = mTokenizer->tokenizeBuffer(&buffer);
         if (mTreeBuilder->HasScript()) {
-          // Flush on each script, because the execution prevention code
-          // can handle at most one script per flush.
+          // If we come here, we are in createContextualFragment() or in the
+          // upcoming document.parse(). It's unclear if it's really necessary
+          // to flush here, but let's do so for consistency with other flushes
+          // to avoid different code paths on the executor side.
           mTreeBuilder->Flush(); // Move ops to the executor
           mExecutor->FlushDocumentWrite(); // run the ops
         }

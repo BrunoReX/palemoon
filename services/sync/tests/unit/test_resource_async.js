@@ -1,9 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
+Cu.import("resource://services-common/log4moz.js");
 Cu.import("resource://services-common/observers.js");
 Cu.import("resource://services-sync/identity.js");
-Cu.import("resource://services-common/log4moz.js");
 Cu.import("resource://services-sync/resource.js");
 Cu.import("resource://services-sync/util.js");
 
@@ -110,21 +110,21 @@ function server_backoff(metadata, response) {
   let body = "Hey, back off!";
   response.setHeader("X-Weave-Backoff", '600', false);
   response.setStatusLine(metadata.httpVersion, 200, "OK");
-  response.bodyOutputStream.write(body, body.length);  
+  response.bodyOutputStream.write(body, body.length);
 }
 
 function server_quota_notice(request, response) {
   let body = "You're approaching quota.";
   response.setHeader("X-Weave-Quota-Remaining", '1048576', false);
   response.setStatusLine(request.httpVersion, 200, "OK");
-  response.bodyOutputStream.write(body, body.length);  
+  response.bodyOutputStream.write(body, body.length);
 }
 
 function server_quota_error(request, response) {
   let body = "14";
   response.setHeader("X-Weave-Quota-Remaining", '-1024', false);
   response.setStatusLine(request.httpVersion, 400, "OK");
-  response.bodyOutputStream.write(body, body.length);  
+  response.bodyOutputStream.write(body, body.length);
 }
 
 function server_headers(metadata, response) {
@@ -151,23 +151,81 @@ function server_headers(metadata, response) {
   response.bodyOutputStream.write(body, body.length);
 }
 
-function server_redirect(metadata, response) {
-  let body = "Redirecting";
-  response.setStatusLine(metadata.httpVersion, 307, "TEMPORARY REDIRECT");
-  response.setHeader("Location", "http://localhost:8081/resource");
-  response.bodyOutputStream.write(body, body.length);
-}
-
 let quotaValue;
 Observers.add("weave:service:quota:remaining",
               function (subject) { quotaValue = subject; });
-
-let server;
 
 function run_test() {
   logger = Log4Moz.repository.getLogger('Test');
   Log4Moz.repository.rootLogger.addAppender(new Log4Moz.DumpAppender());
 
+  Svc.Prefs.set("network.numRetries", 1); // speed up test
+  run_next_test();
+}
+
+// This apparently has to come first in order for our PAC URL to be hit.
+// Don't put any other HTTP requests earlier in the file!
+add_test(function test_proxy_auth_redirect() {
+  _("Ensure that a proxy auth redirect (which switches out our channel) " +
+    "doesn't break AsyncResource.");
+  let server = httpd_setup({
+    "/open": server_open,
+    "/pac2": server_pac
+  });
+
+  PACSystemSettings.PACURI = "http://localhost:8080/pac2";
+  installFakePAC();
+  let res = new AsyncResource("http://localhost:8080/open");
+  res.get(function (error, result) {
+    do_check_true(!error);
+    do_check_true(pacFetched);
+    do_check_true(fetched);
+    do_check_eq("This path exists", result);
+    pacFetched = fetched = false;
+    uninstallFakePAC();
+    server.stop(run_next_test);
+  });
+});
+
+add_test(function test_new_channel() {
+  _("Ensure a redirect to a new channel is handled properly.");
+
+  let resourceRequested = false;
+  function resourceHandler(metadata, response) {
+    resourceRequested = true;
+
+    let body = "Test";
+    response.setHeader("Content-Type", "text/plain");
+    response.bodyOutputStream.write(body, body.length);
+  }
+
+  function redirectHandler(metadata, response) {
+    let body = "Redirecting";
+    response.setStatusLine(metadata.httpVersion, 307, "TEMPORARY REDIRECT");
+    response.setHeader("Location", "http://localhost:8080/resource");
+    response.bodyOutputStream.write(body, body.length);
+  }
+
+  let server = httpd_setup({"/resource": resourceHandler,
+                            "/redirect": redirectHandler},
+                            8080);
+
+  let request = new AsyncResource("http://localhost:8080/redirect");
+  request.get(function onRequest(error, content) {
+    do_check_null(error);
+    do_check_true(resourceRequested);
+    do_check_eq(200, content.status);
+    do_check_true("content-type" in content.headers);
+    do_check_eq("text/plain", content.headers["content-type"]);
+
+    server.stop(run_next_test);
+  });
+});
+
+
+let server;
+
+add_test(function setup() {
   server = httpd_setup({
     "/open": server_open,
     "/protected": server_protected,
@@ -180,31 +238,10 @@ function run_test() {
     "/backoff": server_backoff,
     "/pac2": server_pac,
     "/quota-notice": server_quota_notice,
-    "/quota-error": server_quota_error,
-    "/redirect": server_redirect
+    "/quota-error": server_quota_error
   });
 
-  Svc.Prefs.set("network.numRetries", 1); // speed up test
   run_next_test();
-}
-
-// This apparently has to come first in order for our PAC URL to be hit.
-// Don't put any other HTTP requests earlier in the file!
-add_test(function test_proxy_auth_redirect() {
-  _("Ensure that a proxy auth redirect (which switches out our channel) " +
-    "doesn't break AsyncResource.");
-  PACSystemSettings.PACURI = "http://localhost:8080/pac2";
-  installFakePAC();
-  let res = new AsyncResource("http://localhost:8080/open");
-  res.get(function (error, result) {
-    do_check_true(!error);
-    do_check_true(pacFetched);
-    do_check_true(fetched);
-    do_check_eq("This path exists", result);
-    pacFetched = fetched = false;
-    uninstallFakePAC();
-    run_next_test();
-  });
 });
 
 add_test(function test_members() {
@@ -284,7 +321,8 @@ add_test(function test_get_protected_fail() {
 
 add_test(function test_get_protected_success() {
   _("GET a password protected resource");
-  let auth = Identity.getBasicResourceAuthenticator("guest", "guest");
+  let identity = new IdentityManager();
+  let auth = identity.getBasicResourceAuthenticator("guest", "guest");
   let res3 = new AsyncResource("http://localhost:8080/protected");
   res3.authenticator = auth;
   do_check_eq(res3.authenticator, auth);
@@ -629,7 +667,7 @@ add_test(function test_js_exception_handling() {
     do_check_eq(warnings.pop(),
                 "Got exception calling onProgress handler during fetch of " +
                 "http://localhost:8080/json");
-      
+
     run_next_test();
   });
 });
@@ -663,31 +701,31 @@ add_test(function test_uri_construction() {
   run_next_test();
 });
 
-add_test(function test_new_channel() {
-  _("Ensure a redirect to a new channel is handled properly.");
-
-  let resourceRequested = false;
-  function resourceHandler(metadata, response) {
-    resourceRequested = true;
-
-    let body = "Test";
-    response.setHeader("Content-Type", "text/plain");
+add_test(function test_not_sending_cookie() {
+  function handler(metadata, response) {
+    let body = "COOKIE!";
+    response.setStatusLine(metadata.httpVersion, 200, "OK");
     response.bodyOutputStream.write(body, body.length);
+    do_check_false(metadata.hasHeader("Cookie"));
   }
-  let server2 = httpd_setup({"/resource": resourceHandler}, 8081);
+  let cookieSer = Cc["@mozilla.org/cookieService;1"]
+                    .getService(Ci.nsICookieService);
+  let uri = CommonUtils.makeURI("http://localhost:8080");
+  cookieSer.setCookieString(uri, null, "test=test; path=/;", null);
 
-  let request = new AsyncResource("http://localhost:8080/redirect");
-  request.get(function onRequest(error, content) {
+  let res = new AsyncResource("http://localhost:8080/test");
+  res.get(function (error) {
     do_check_null(error);
-    do_check_true(resourceRequested);
-    do_check_eq(200, content.status);
-    do_check_true("content-type" in content.headers);
-    do_check_eq("text/plain", content.headers["content-type"]);
-
-    server2.stop(run_next_test);
+    do_check_true(this.response.success);
+    do_check_eq("COOKIE!", this.response.body);
+    server.stop(run_next_test);
   });
 });
 
-add_test(function tear_down() {
+/**
+ * End of tests that rely on a single HTTP server.
+ * All tests after this point must begin and end their own.
+ */
+add_test(function eliminate_server() {
   server.stop(run_next_test);
 });

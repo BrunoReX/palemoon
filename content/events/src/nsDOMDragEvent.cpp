@@ -9,11 +9,12 @@
 #include "nsContentUtils.h"
 #include "nsDOMDataTransfer.h"
 #include "nsIDragService.h"
+#include "nsDOMClassInfoID.h"
 
 nsDOMDragEvent::nsDOMDragEvent(nsPresContext* aPresContext,
                                nsInputEvent* aEvent)
   : nsDOMMouseEvent(aPresContext, aEvent ? aEvent :
-                    new nsDragEvent(false, 0, nsnull))
+                    new nsDragEvent(false, 0, nullptr))
 {
   if (aEvent) {
     mEventIsInternal = false;
@@ -31,7 +32,7 @@ nsDOMDragEvent::~nsDOMDragEvent()
   if (mEventIsInternal) {
     if (mEvent->eventStructType == NS_DRAG_EVENT)
       delete static_cast<nsDragEvent*>(mEvent);
-    mEvent = nsnull;
+    mEvent = nullptr;
   }
 }
 
@@ -48,11 +49,11 @@ NS_INTERFACE_MAP_END_INHERITING(nsDOMMouseEvent)
 NS_IMETHODIMP
 nsDOMDragEvent::InitDragEvent(const nsAString & aType,
                               bool aCanBubble, bool aCancelable,
-                              nsIDOMWindow* aView, PRInt32 aDetail,
-                              PRInt32 aScreenX, PRInt32 aScreenY,
-                              PRInt32 aClientX, PRInt32 aClientY, 
+                              nsIDOMWindow* aView, int32_t aDetail,
+                              int32_t aScreenX, int32_t aScreenY,
+                              int32_t aClientX, int32_t aClientY, 
                               bool aCtrlKey, bool aAltKey, bool aShiftKey,
-                              bool aMetaKey, PRUint16 aButton,
+                              bool aMetaKey, uint16_t aButton,
                               nsIDOMEventTarget *aRelatedTarget,
                               nsIDOMDataTransfer* aDataTransfer)
 {
@@ -77,7 +78,7 @@ nsDOMDragEvent::GetDataTransfer(nsIDOMDataTransfer** aDataTransfer)
   // with the drag. It is initialized when an attempt is made to retrieve it
   // rather that when the event is created to avoid duplicating the data when
   // no listener ever uses it.
-  *aDataTransfer = nsnull;
+  *aDataTransfer = nullptr;
 
   if (!mEvent || mEvent->eventStructType != NS_DRAG_EVENT) {
     NS_WARNING("Tried to get dataTransfer from non-drag event!");

@@ -10,20 +10,30 @@
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 #include "nsSize.h"
-#include "nsIFrame.h"
-#include "nsIDocument.h"
-#include "nsIDOMDocument.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 #include "nsNodeInfoManager.h"
 
-#include "nsICanvasRenderingContextInternal.h"
 #include "nsICanvasElementExternal.h"
-#include "nsIDOMCanvasRenderingContext2D.h"
 #include "nsLayoutUtils.h"
 
-#include "Layers.h"
-
+class nsICanvasRenderingContextInternal;
 class nsIDOMFile;
+class nsHTMLCanvasPrintState;
+class nsITimerCallback;
+class nsIPropertyBag;
+
+namespace mozilla {
+
+namespace layers {
+class CanvasLayer;
+class LayerManager;
+}
+
+namespace gfx {
+struct Rect;
+}
+
+}
 
 class nsHTMLCanvasElement : public nsGenericHTMLElement,
                             public nsICanvasElementExternal,
@@ -36,24 +46,19 @@ public:
   nsHTMLCanvasElement(already_AddRefed<nsINodeInfo> aNodeInfo);
   virtual ~nsHTMLCanvasElement();
 
-  static nsHTMLCanvasElement* FromContent(nsIContent* aPossibleCanvas)
-  {
-    if (!aPossibleCanvas || !aPossibleCanvas->IsHTML(nsGkAtoms::canvas)) {
-      return nsnull;
-    }
-    return static_cast<nsHTMLCanvasElement*>(aPossibleCanvas);
-  }
+  NS_IMPL_FROMCONTENT_HTML_WITH_TAG(nsHTMLCanvasElement, canvas)
+
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLCanvasElement
   NS_DECL_NSIDOMHTMLCANVASELEMENT
@@ -81,7 +86,7 @@ public:
    * Notify that some canvas content has changed and the window may
    * need to be updated. aDamageRect is in canvas coordinates.
    */
-  void InvalidateCanvasContent(const gfxRect* aDamageRect);
+  void InvalidateCanvasContent(const mozilla::gfx::Rect* aDamageRect);
   /*
    * Notify that we need to repaint the entire canvas, including updating of
    * the layer tree.
@@ -92,8 +97,8 @@ public:
    * Get the number of contexts in this canvas, and request a context at
    * an index.
    */
-  PRInt32 CountContexts ();
-  nsICanvasRenderingContextInternal *GetContextAtIndex (PRInt32 index);
+  int32_t CountContexts ();
+  nsICanvasRenderingContextInternal *GetContextAtIndex (int32_t index);
 
   /*
    * Returns true if the canvas context content is guaranteed to be opaque
@@ -107,26 +112,26 @@ public:
   NS_IMETHOD_(nsIntSize) GetSizeExternal();
   NS_IMETHOD RenderContextsExternal(gfxContext *aContext,
                                     gfxPattern::GraphicsFilter aFilter,
-                                    PRUint32 aFlags = RenderFlagPremultAlpha);
+                                    uint32_t aFlags = RenderFlagPremultAlpha);
 
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
-  nsChangeHint GetAttributeChangeHint(const nsIAtom* aAttribute, PRInt32 aModType) const;
+  nsChangeHint GetAttributeChangeHint(const nsIAtom* aAttribute, int32_t aModType) const;
 
   // SetAttr override.  C++ is stupid, so have to override both
   // overloaded methods.
-  nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+  nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                    const nsAString& aValue, bool aNotify)
   {
-    return SetAttr(aNameSpaceID, aName, nsnull, aValue, aNotify);
+    return SetAttr(aNameSpaceID, aName, nullptr, aValue, aNotify);
   }
-  virtual nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+  virtual nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                            nsIAtom* aPrefix, const nsAString& aValue,
                            bool aNotify);
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
-  nsresult CopyInnerTo(nsGenericElement* aDest) const;
+  nsresult CopyInnerTo(mozilla::dom::Element* aDest);
 
   /*
    * Helpers called by various users of Canvas
@@ -152,7 +157,7 @@ public:
 protected:
   nsIntSize GetWidthHeight();
 
-  nsresult UpdateContext(nsIPropertyBag *aNewContextOptions = nsnull);
+  nsresult UpdateContext(nsIPropertyBag *aNewContextOptions = nullptr);
   nsresult ExtractData(const nsAString& aType,
                        const nsAString& aOptions,
                        nsIInputStream** aStream,
@@ -164,11 +169,14 @@ protected:
                             const nsAString& aType,
                             nsIDOMFile** aResult);
   nsresult GetContextHelper(const nsAString& aContextId,
-                            bool aForceThebes,
                             nsICanvasRenderingContextInternal **aContext);
+  void CallPrintCallback();
 
   nsString mCurrentContextId;
+  nsRefPtr<nsHTMLCanvasElement> mOriginalCanvas;
+  nsCOMPtr<nsIPrintCallback> mPrintCallback;
   nsCOMPtr<nsICanvasRenderingContextInternal> mCurrentContext;
+  nsCOMPtr<nsHTMLCanvasPrintState> mPrintState;
   
 public:
   // Record whether this canvas should be write-only or not.
@@ -176,12 +184,22 @@ public:
   // We also transitively set it when script paints a canvas which
   // is itself write-only.
   bool                     mWriteOnly;
+
+  bool IsPrintCallbackDone();
+
+  void HandlePrintCallback(nsPresContext::nsPresContextType aType);
+
+  nsresult DispatchPrintCallback(nsITimerCallback* aCallback);
+
+  void ResetPrintCallback();
+
+  nsHTMLCanvasElement* GetOriginalCanvas();
 };
 
 inline nsISupports*
 GetISupports(nsHTMLCanvasElement* p)
 {
-  return static_cast<nsGenericElement*>(p);
+  return static_cast<mozilla::dom::Element*>(p);
 }
 
 #endif /* nsHTMLCanvasElement_h__ */

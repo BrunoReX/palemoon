@@ -35,8 +35,8 @@ public:
   //    Special case: if aKeyBegin == aEquals, then there is only one string
   //    and no equal sign, so we treat the entire thing as a key with no value
 
-  QueryKeyValuePair(const nsCSubstring& aSource, PRInt32 aKeyBegin,
-                    PRInt32 aEquals, PRInt32 aPastEnd)
+  QueryKeyValuePair(const nsCSubstring& aSource, int32_t aKeyBegin,
+                    int32_t aEquals, int32_t aPastEnd)
   {
     if (aEquals == aKeyBegin)
       aEquals = aPastEnd;
@@ -57,9 +57,9 @@ static nsresult ParseQueryBooleanString(const nsCString& aString,
 typedef NS_STDCALL_FUNCPROTO(nsresult, BoolQueryGetter, nsINavHistoryQuery,
                              GetOnlyBookmarked, (bool*));
 typedef NS_STDCALL_FUNCPROTO(nsresult, Uint32QueryGetter, nsINavHistoryQuery,
-                             GetBeginTimeReference, (PRUint32*));
+                             GetBeginTimeReference, (uint32_t*));
 typedef NS_STDCALL_FUNCPROTO(nsresult, Int64QueryGetter, nsINavHistoryQuery,
-                             GetBeginTime, (PRInt64*));
+                             GetBeginTime, (int64_t*));
 static void AppendBoolKeyValueIfTrue(nsACString& aString,
                                      const nsCString& aName,
                                      nsINavHistoryQuery* aQuery,
@@ -77,9 +77,9 @@ static void AppendInt64KeyValueIfNonzero(nsACString& aString,
 typedef NS_STDCALL_FUNCPROTO(nsresult, BoolQuerySetter, nsINavHistoryQuery,
                              SetOnlyBookmarked, (bool));
 typedef NS_STDCALL_FUNCPROTO(nsresult, Uint32QuerySetter, nsINavHistoryQuery,
-                             SetBeginTimeReference, (PRUint32));
+                             SetBeginTimeReference, (uint32_t));
 typedef NS_STDCALL_FUNCPROTO(nsresult, Int64QuerySetter, nsINavHistoryQuery,
-                             SetBeginTime, (PRInt64));
+                             SetBeginTime, (int64_t));
 static void SetQueryKeyBool(const nsCString& aValue, nsINavHistoryQuery* aQuery,
                             BoolQuerySetter setter);
 static void SetQueryKeyUint32(const nsCString& aValue, nsINavHistoryQuery* aQuery,
@@ -93,10 +93,10 @@ typedef NS_STDCALL_FUNCPROTO(nsresult, BoolOptionsSetter,
                              SetExpandQueries, (bool));
 typedef NS_STDCALL_FUNCPROTO(nsresult, Uint32OptionsSetter,
                              nsINavHistoryQueryOptions,
-                             SetMaxResults, (PRUint32));
+                             SetMaxResults, (uint32_t));
 typedef NS_STDCALL_FUNCPROTO(nsresult, Uint16OptionsSetter,
                              nsINavHistoryQueryOptions,
-                             SetResultType, (PRUint16));
+                             SetResultType, (uint16_t));
 static void SetOptionsKeyBool(const nsCString& aValue,
                               nsINavHistoryQueryOptions* aOptions,
                               BoolOptionsSetter setter);
@@ -148,19 +148,19 @@ inline void AppendAmpersandIfNonempty(nsACString& aString)
   if (! aString.IsEmpty())
     aString.Append('&');
 }
-inline void AppendInt16(nsACString& str, PRInt16 i)
+inline void AppendInt16(nsACString& str, int16_t i)
 {
-  nsCAutoString tmp;
+  nsAutoCString tmp;
   tmp.AppendInt(i);
   str.Append(tmp);
 }
-inline void AppendInt32(nsACString& str, PRInt32 i)
+inline void AppendInt32(nsACString& str, int32_t i)
 {
-  nsCAutoString tmp;
+  nsAutoCString tmp;
   tmp.AppendInt(i);
   str.Append(tmp);
 }
-inline void AppendInt64(nsACString& str, PRInt64 i)
+inline void AppendInt64(nsACString& str, int64_t i)
 {
   nsCString tmp;
   tmp.AppendInt(i);
@@ -181,11 +181,11 @@ namespace PlacesFolderConversion {
    *        The name of the folder to convert to a folder id.
    * @returns the folder id if aName is a recognizable name, -1 otherwise.
    */
-  inline PRInt64 DecodeFolder(const nsCString &aName)
+  inline int64_t DecodeFolder(const nsCString &aName)
   {
     nsNavBookmarks *bs = nsNavBookmarks::GetBookmarksService();
     NS_ENSURE_TRUE(bs, false);
-    PRInt64 folderID = -1;
+    int64_t folderID = -1;
 
     if (aName.EqualsLiteral(PLACES_ROOT_FOLDER))
       (void)bs->GetPlacesRoot(&folderID);
@@ -212,43 +212,38 @@ namespace PlacesFolderConversion {
    * @param aFolderID
    *        The folder ID to convert to the proper named constant.
    */
-  inline void AppendFolder(nsCString &aQuery, PRInt64 aFolderID)
+  inline nsresult AppendFolder(nsCString &aQuery, int64_t aFolderID)
   {
     nsNavBookmarks *bs = nsNavBookmarks::GetBookmarksService();
-    PRInt64 folderID;
+    NS_ENSURE_STATE(bs);
+    int64_t folderID;
 
-    (void)bs->GetPlacesRoot(&folderID);
-    if (aFolderID == folderID) {
+    if (NS_SUCCEEDED(bs->GetPlacesRoot(&folderID)) &&
+        aFolderID == folderID) {
       aQuery.AppendLiteral(PLACES_ROOT_FOLDER);
-      return;
     }
-
-    (void)bs->GetBookmarksMenuFolder(&folderID);
-    if (aFolderID == folderID) {
+    else if (NS_SUCCEEDED(bs->GetBookmarksMenuFolder(&folderID)) &&
+             aFolderID == folderID) {
       aQuery.AppendLiteral(BOOKMARKS_MENU_FOLDER);
-      return;
     }
-
-    (void)bs->GetTagsFolder(&folderID);
-    if (aFolderID == folderID) {
+    else if (NS_SUCCEEDED(bs->GetTagsFolder(&folderID)) &&
+             aFolderID == folderID) {
       aQuery.AppendLiteral(TAGS_FOLDER);
-      return;
     }
-
-    (void)bs->GetUnfiledBookmarksFolder(&folderID);
-    if (aFolderID == folderID) {
+    else if (NS_SUCCEEDED(bs->GetUnfiledBookmarksFolder(&folderID)) &&
+             aFolderID == folderID) {
       aQuery.AppendLiteral(UNFILED_BOOKMARKS_FOLDER);
-      return;
     }
-
-    (void)bs->GetToolbarFolder(&folderID);
-    if (aFolderID == folderID) {
+    else if (NS_SUCCEEDED(bs->GetToolbarFolder(&folderID)) &&
+             aFolderID == folderID) {
       aQuery.AppendLiteral(TOOLBAR_FOLDER);
-      return;
+    }
+    else {
+      // It wasn't one of our named constants, so just convert it to a string.
+      aQuery.AppendInt(aFolderID);
     }
 
-    // It wasn't one of our named constants, so just convert it to a string 
-    aQuery.AppendInt(aFolderID);
+    return NS_OK;
   }
 }
 
@@ -260,14 +255,14 @@ namespace PlacesFolderConversion {
 NS_IMETHODIMP
 nsNavHistory::QueryStringToQueries(const nsACString& aQueryString,
                                    nsINavHistoryQuery*** aQueries,
-                                   PRUint32* aResultCount,
+                                   uint32_t* aResultCount,
                                    nsINavHistoryQueryOptions** aOptions)
 {
   NS_ENSURE_ARG_POINTER(aQueries);
   NS_ENSURE_ARG_POINTER(aResultCount);
   NS_ENSURE_ARG_POINTER(aOptions);
 
-  *aQueries = nsnull;
+  *aQueries = nullptr;
   *aResultCount = 0;
   nsCOMPtr<nsNavHistoryQueryOptions> options;
   nsCOMArray<nsNavHistoryQuery> queries;
@@ -281,7 +276,7 @@ nsNavHistory::QueryStringToQueries(const nsACString& aQueryString,
     *aQueries = static_cast<nsINavHistoryQuery**>
                            (nsMemory::Alloc(sizeof(nsINavHistoryQuery*) * queries.Count()));
     NS_ENSURE_TRUE(*aQueries, NS_ERROR_OUT_OF_MEMORY);
-    for (PRInt32 i = 0; i < queries.Count(); i ++) {
+    for (int32_t i = 0; i < queries.Count(); i ++) {
       (*aQueries)[i] = queries[i];
       NS_ADDREF((*aQueries)[i]);
     }
@@ -303,7 +298,7 @@ nsNavHistory::QueryStringToQueryArray(const nsACString& aQueryString,
 {
   nsresult rv;
   aQueries->Clear();
-  *aOptions = nsnull;
+  *aOptions = nullptr;
 
   nsRefPtr<nsNavHistoryQueryOptions> options(new nsNavHistoryQueryOptions());
   if (! options)
@@ -329,7 +324,7 @@ nsNavHistory::QueryStringToQueryArray(const nsACString& aQueryString,
 
 NS_IMETHODIMP
 nsNavHistory::QueriesToQueryString(nsINavHistoryQuery **aQueries,
-                                   PRUint32 aQueryCount,
+                                   uint32_t aQueryCount,
                                    nsINavHistoryQueryOptions* aOptions,
                                    nsACString& aQueryString)
 {
@@ -339,8 +334,8 @@ nsNavHistory::QueriesToQueryString(nsINavHistoryQuery **aQueries,
   nsCOMPtr<nsNavHistoryQueryOptions> options = do_QueryInterface(aOptions);
   NS_ENSURE_TRUE(options, NS_ERROR_INVALID_ARG);
 
-  nsCAutoString queryString;
-  for (PRUint32 queryIndex = 0; queryIndex < aQueryCount;  queryIndex ++) {
+  nsAutoCString queryString;
+  for (uint32_t queryIndex = 0; queryIndex < aQueryCount;  queryIndex ++) {
     nsCOMPtr<nsNavHistoryQuery> query = do_QueryInterface(aQueries[queryIndex]);
     if (queryIndex > 0) {
       AppendAmpersandIfNonempty(queryString);
@@ -387,14 +382,14 @@ nsNavHistory::QueriesToQueryString(nsINavHistoryQuery **aQueries,
     }
 
     // min and max visits
-    PRInt32 minVisits;
+    int32_t minVisits;
     if (NS_SUCCEEDED(query->GetMinVisits(&minVisits)) && minVisits >= 0) {
       AppendAmpersandIfNonempty(queryString);
       queryString.Append(NS_LITERAL_CSTRING(QUERYKEY_MIN_VISITS "="));
       AppendInt32(queryString, minVisits);
     }
 
-    PRInt32 maxVisits;
+    int32_t maxVisits;
     if (NS_SUCCEEDED(query->GetMaxVisits(&maxVisits)) && maxVisits >= 0) {
       AppendAmpersandIfNonempty(queryString);
       queryString.Append(NS_LITERAL_CSTRING(QUERYKEY_MAX_VISITS "="));
@@ -414,7 +409,7 @@ nsNavHistory::QueriesToQueryString(nsINavHistoryQuery **aQueries,
       AppendBoolKeyValueIfTrue(queryString,
                                NS_LITERAL_CSTRING(QUERYKEY_DOMAIN_IS_HOST),
                                query, &nsINavHistoryQuery::GetDomainIsHost);
-      nsCAutoString domain;
+      nsAutoCString domain;
       nsresult rv = query->GetDomain(domain);
       NS_ENSURE_SUCCESS(rv, rv);
       nsCString escapedDomain;
@@ -435,10 +430,10 @@ nsNavHistory::QueriesToQueryString(nsINavHistoryQuery **aQueries,
       nsCOMPtr<nsIURI> uri;
       query->GetUri(getter_AddRefs(uri));
       NS_ENSURE_TRUE(uri, NS_ERROR_FAILURE); // hasURI should tell is if invalid
-      nsCAutoString uriSpec;
+      nsAutoCString uriSpec;
       nsresult rv = uri->GetSpec(uriSpec);
       NS_ENSURE_SUCCESS(rv, rv);
-      nsCAutoString escaped;
+      nsAutoCString escaped;
       bool success = NS_Escape(uriSpec, escaped, url_XAlphas);
       NS_ENSURE_TRUE(success, NS_ERROR_OUT_OF_MEMORY);
 
@@ -457,29 +452,30 @@ nsNavHistory::QueriesToQueryString(nsINavHistoryQuery **aQueries,
         queryString.AppendLiteral(QUERYKEY_NOTANNOTATION "=");
       else
         queryString.AppendLiteral(QUERYKEY_ANNOTATION "=");
-      nsCAutoString annot;
+      nsAutoCString annot;
       query->GetAnnotation(annot);
-      nsCAutoString escaped;
+      nsAutoCString escaped;
       bool success = NS_Escape(annot, escaped, url_XAlphas);
       NS_ENSURE_TRUE(success, NS_ERROR_OUT_OF_MEMORY);
       queryString.Append(escaped);
     }
 
     // folders
-    PRInt64 *folders = nsnull;
-    PRUint32 folderCount = 0;
+    int64_t *folders = nullptr;
+    uint32_t folderCount = 0;
     query->GetFolders(&folderCount, &folders);
-    for (PRUint32 i = 0; i < folderCount; ++i) {
+    for (uint32_t i = 0; i < folderCount; ++i) {
       AppendAmpersandIfNonempty(queryString);
       queryString += NS_LITERAL_CSTRING(QUERYKEY_FOLDER "=");
-      PlacesFolderConversion::AppendFolder(queryString, folders[i]);
+      nsresult rv = PlacesFolderConversion::AppendFolder(queryString, folders[i]);
+      NS_ENSURE_SUCCESS(rv, rv);
     }
     nsMemory::Free(folders);
 
     // tags
     const nsTArray<nsString> &tags = query->Tags();
-    for (PRUint32 i = 0; i < tags.Length(); ++i) {
-      nsCAutoString escapedTag;
+    for (uint32_t i = 0; i < tags.Length(); ++i) {
+      nsAutoCString escapedTag;
       if (!NS_Escape(NS_ConvertUTF16toUTF8(tags[i]), escapedTag, url_XAlphas))
         return NS_ERROR_OUT_OF_MEMORY;
 
@@ -493,8 +489,8 @@ nsNavHistory::QueriesToQueryString(nsINavHistoryQuery **aQueries,
                              &nsINavHistoryQuery::GetTagsAreNot);
  
     // transitions
-    const nsTArray<PRUint32>& transitions = query->Transitions();
-    for (PRUint32 i = 0; i < transitions.Length(); ++i) {
+    const nsTArray<uint32_t>& transitions = query->Transitions();
+    for (uint32_t i = 0; i < transitions.Length(); ++i) {
       AppendAmpersandIfNonempty(queryString);
       queryString += NS_LITERAL_CSTRING(QUERYKEY_TRANSITION "=");
       AppendInt64(queryString, transitions[i]);
@@ -509,7 +505,7 @@ nsNavHistory::QueriesToQueryString(nsINavHistoryQuery **aQueries,
     if (options->SortingMode() == nsINavHistoryQueryOptions::SORT_BY_ANNOTATION_DESCENDING ||
         options->SortingMode() == nsINavHistoryQueryOptions::SORT_BY_ANNOTATION_ASCENDING) {
       // sortingAnnotation
-      nsCAutoString sortingAnnotation;
+      nsAutoCString sortingAnnotation;
       if (NS_SUCCEEDED(options->GetSortingAnnotation(sortingAnnotation))) {
         nsCString escaped;
         if (!NS_Escape(sortingAnnotation, escaped, url_XAlphas))
@@ -590,7 +586,7 @@ TokenizeQueryString(const nsACString& aQuery,
                     nsTArray<QueryKeyValuePair>* aTokens)
 {
   // Strip off the "place:" prefix
-  const PRUint32 prefixlen = 6; // = strlen("place:");
+  const uint32_t prefixlen = 6; // = strlen("place:");
   nsCString query;
   if (aQuery.Length() >= prefixlen &&
       Substring(aQuery, 0, prefixlen).EqualsLiteral("place:"))
@@ -598,9 +594,9 @@ TokenizeQueryString(const nsACString& aQuery,
   else
     query = aQuery;
 
-  PRInt32 keyFirstIndex = 0;
-  PRInt32 equalsIndex = 0;
-  for (PRUint32 i = 0; i < query.Length(); i ++) {
+  int32_t keyFirstIndex = 0;
+  int32_t equalsIndex = 0;
+  for (uint32_t i = 0; i < query.Length(); i ++) {
     if (query[i] == '&') {
       // new clause, save last one
       if (i - keyFirstIndex > 1) {
@@ -641,10 +637,10 @@ nsNavHistory::TokensToQueries(const nsTArray<QueryKeyValuePair>& aTokens,
   if (aTokens.Length() == 0)
     return NS_OK; // nothing to do
 
-  nsTArray<PRInt64> folders;
+  nsTArray<int64_t> folders;
   nsTArray<nsString> tags;
-  nsTArray<PRUint32> transitions;
-  for (PRUint32 i = 0; i < aTokens.Length(); i ++) {
+  nsTArray<uint32_t> transitions;
+  for (uint32_t i = 0; i < aTokens.Length(); i ++) {
     const QueryKeyValuePair& kvp = aTokens[i];
 
     // begin time
@@ -672,7 +668,7 @@ nsNavHistory::TokensToQueries(const nsTArray<QueryKeyValuePair>& aTokens,
 
     // min visits
     } else if (kvp.key.EqualsLiteral(QUERYKEY_MIN_VISITS)) {
-      PRInt32 visits = kvp.value.ToInteger(&rv);
+      int32_t visits = kvp.value.ToInteger(&rv);
       if (NS_SUCCEEDED(rv))
         query->SetMinVisits(visits);
       else
@@ -680,7 +676,7 @@ nsNavHistory::TokensToQueries(const nsTArray<QueryKeyValuePair>& aTokens,
 
     // max visits
     } else if (kvp.key.EqualsLiteral(QUERYKEY_MAX_VISITS)) {
-      PRInt32 visits = kvp.value.ToInteger(&rv);
+      int32_t visits = kvp.value.ToInteger(&rv);
       if (NS_SUCCEEDED(rv))
         query->SetMaxVisits(visits);
       else
@@ -696,14 +692,14 @@ nsNavHistory::TokensToQueries(const nsTArray<QueryKeyValuePair>& aTokens,
 
     // domain string
     } else if (kvp.key.EqualsLiteral(QUERYKEY_DOMAIN)) {
-      nsCAutoString unescapedDomain(kvp.value);
+      nsAutoCString unescapedDomain(kvp.value);
       NS_UnescapeURL(unescapedDomain); // modifies input
       rv = query->SetDomain(unescapedDomain);
       NS_ENSURE_SUCCESS(rv, rv);
 
     // folders
     } else if (kvp.key.EqualsLiteral(QUERYKEY_FOLDER)) {
-      PRInt64 folder;
+      int64_t folder;
       if (PR_sscanf(kvp.value.get(), "%lld", &folder) == 1) {
         NS_ENSURE_TRUE(folders.AppendElement(folder), NS_ERROR_OUT_OF_MEMORY);
       } else {
@@ -716,7 +712,7 @@ nsNavHistory::TokensToQueries(const nsTArray<QueryKeyValuePair>& aTokens,
 
     // uri
     } else if (kvp.key.EqualsLiteral(QUERYKEY_URI)) {
-      nsCAutoString unescapedUri(kvp.value);
+      nsAutoCString unescapedUri(kvp.value);
       NS_UnescapeURL(unescapedUri); // modifies input
       nsCOMPtr<nsIURI> uri;
       nsresult rv = NS_NewURI(getter_AddRefs(uri), unescapedUri);
@@ -732,21 +728,21 @@ nsNavHistory::TokensToQueries(const nsTArray<QueryKeyValuePair>& aTokens,
 
     // not annotation
     } else if (kvp.key.EqualsLiteral(QUERYKEY_NOTANNOTATION)) {
-      nsCAutoString unescaped(kvp.value);
+      nsAutoCString unescaped(kvp.value);
       NS_UnescapeURL(unescaped); // modifies input
       query->SetAnnotationIsNot(true);
       query->SetAnnotation(unescaped);
 
     // annotation
     } else if (kvp.key.EqualsLiteral(QUERYKEY_ANNOTATION)) {
-      nsCAutoString unescaped(kvp.value);
+      nsAutoCString unescaped(kvp.value);
       NS_UnescapeURL(unescaped); // modifies input
       query->SetAnnotationIsNot(false);
       query->SetAnnotation(unescaped);
 
     // tag
     } else if (kvp.key.EqualsLiteral(QUERYKEY_TAG)) {
-      nsCAutoString unescaped(kvp.value);
+      nsAutoCString unescaped(kvp.value);
       NS_UnescapeURL(unescaped); // modifies input
       NS_ConvertUTF8toUTF16 tag(unescaped);
       if (!tags.Contains(tag)) {
@@ -759,7 +755,7 @@ nsNavHistory::TokensToQueries(const nsTArray<QueryKeyValuePair>& aTokens,
 
     // transition
     } else if (kvp.key.EqualsLiteral(QUERYKEY_TRANSITION)) {
-      PRUint32 transition = kvp.value.ToInteger(&rv);
+      uint32_t transition = kvp.value.ToInteger(&rv);
       if (NS_SUCCEEDED(rv)) {
         if (!transitions.Contains(transition))
           NS_ENSURE_TRUE(transitions.AppendElement(transition),
@@ -923,12 +919,12 @@ NS_IMETHODIMP nsNavHistoryQuery::SetBeginTime(PRTime aBeginTime)
 }
 
 /* attribute long beginTimeReference; */
-NS_IMETHODIMP nsNavHistoryQuery::GetBeginTimeReference(PRUint32* _retval)
+NS_IMETHODIMP nsNavHistoryQuery::GetBeginTimeReference(uint32_t* _retval)
 {
   *_retval = mBeginTimeReference;
   return NS_OK;
 }
-NS_IMETHODIMP nsNavHistoryQuery::SetBeginTimeReference(PRUint32 aReference)
+NS_IMETHODIMP nsNavHistoryQuery::SetBeginTimeReference(uint32_t aReference)
 {
   if (aReference > TIME_RELATIVE_NOW)
     return NS_ERROR_INVALID_ARG;
@@ -963,12 +959,12 @@ NS_IMETHODIMP nsNavHistoryQuery::SetEndTime(PRTime aEndTime)
 }
 
 /* attribute long endTimeReference; */
-NS_IMETHODIMP nsNavHistoryQuery::GetEndTimeReference(PRUint32* _retval)
+NS_IMETHODIMP nsNavHistoryQuery::GetEndTimeReference(uint32_t* _retval)
 {
   *_retval = mEndTimeReference;
   return NS_OK;
 }
-NS_IMETHODIMP nsNavHistoryQuery::SetEndTimeReference(PRUint32 aReference)
+NS_IMETHODIMP nsNavHistoryQuery::SetEndTimeReference(uint32_t aReference)
 {
   if (aReference > TIME_RELATIVE_NOW)
     return NS_ERROR_INVALID_ARG;
@@ -1007,27 +1003,27 @@ NS_IMETHODIMP nsNavHistoryQuery::GetHasSearchTerms(bool* _retval)
   return NS_OK;
 }
 
-/* attribute PRInt32 minVisits; */
-NS_IMETHODIMP nsNavHistoryQuery::GetMinVisits(PRInt32* _retval)
+/* attribute int32_t minVisits; */
+NS_IMETHODIMP nsNavHistoryQuery::GetMinVisits(int32_t* _retval)
 {
   NS_ENSURE_ARG_POINTER(_retval);
   *_retval = mMinVisits;
   return NS_OK;
 }
-NS_IMETHODIMP nsNavHistoryQuery::SetMinVisits(PRInt32 aVisits)
+NS_IMETHODIMP nsNavHistoryQuery::SetMinVisits(int32_t aVisits)
 {
   mMinVisits = aVisits;
   return NS_OK;
 }
 
 /* attribute PRint32 maxVisits; */
-NS_IMETHODIMP nsNavHistoryQuery::GetMaxVisits(PRInt32* _retval)
+NS_IMETHODIMP nsNavHistoryQuery::GetMaxVisits(int32_t* _retval)
 {
   NS_ENSURE_ARG_POINTER(_retval);
   *_retval = mMaxVisits;
   return NS_OK;
 }
-NS_IMETHODIMP nsNavHistoryQuery::SetMaxVisits(PRInt32 aVisits)
+NS_IMETHODIMP nsNavHistoryQuery::SetMaxVisits(int32_t aVisits)
 {
   mMaxVisits = aVisits;
   return NS_OK;
@@ -1100,7 +1096,7 @@ NS_IMETHODIMP nsNavHistoryQuery::SetUri(nsIURI* aUri)
 }
 NS_IMETHODIMP nsNavHistoryQuery::GetHasUri(bool* aHasUri)
 {
-  *aHasUri = (mUri != nsnull);
+  *aHasUri = (mUri != nullptr);
   return NS_OK;
 }
 
@@ -1143,7 +1139,7 @@ NS_IMETHODIMP nsNavHistoryQuery::GetTags(nsIVariant **aTags)
                                                        &rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  PRUint32 arrayLen = mTags.Length();
+  uint32_t arrayLen = mTags.Length();
 
   if (arrayLen == 0)
     rv = out->SetAsEmptyArray();
@@ -1153,12 +1149,12 @@ NS_IMETHODIMP nsNavHistoryQuery::GetTags(nsIVariant **aTags)
                               (NS_Alloc(arrayLen * sizeof(PRUnichar *)));
     NS_ENSURE_TRUE(array, NS_ERROR_OUT_OF_MEMORY);
 
-    for (PRUint32 i = 0; i < arrayLen; ++i) {
+    for (uint32_t i = 0; i < arrayLen; ++i) {
       array[i] = mTags[i].get();
     }
 
     rv = out->SetAsArray(nsIDataType::VTYPE_WCHAR_STR,
-                         nsnull,
+                         nullptr,
                          arrayLen,
                          reinterpret_cast<void *>(array));
     NS_Free(array);
@@ -1173,7 +1169,7 @@ NS_IMETHODIMP nsNavHistoryQuery::SetTags(nsIVariant *aTags)
 {
   NS_ENSURE_ARG(aTags);
 
-  PRUint16 dataType;
+  uint16_t dataType;
   aTags->GetDataType(&dataType);
 
   // Caller passed in empty array.  Easy -- clear our mTags array and return.
@@ -1185,9 +1181,9 @@ NS_IMETHODIMP nsNavHistoryQuery::SetTags(nsIVariant *aTags)
   // Before we go any further, make sure caller passed in an array.
   NS_ENSURE_TRUE(dataType == nsIDataType::VTYPE_ARRAY, NS_ERROR_ILLEGAL_VALUE);
 
-  PRUint16 eltType;
+  uint16_t eltType;
   nsIID eltIID;
-  PRUint32 arrayLen;
+  uint32_t arrayLen;
   void *array;
 
   // Convert the nsIVariant to an array.  We own the resulting buffer and its
@@ -1202,7 +1198,7 @@ NS_IMETHODIMP nsNavHistoryQuery::SetTags(nsIVariant *aTags)
     case nsIDataType::VTYPE_CHAR_STR:
       {
         char **charArray = reinterpret_cast<char **>(array);
-        for (PRUint32 i = 0; i < arrayLen; ++i) {
+        for (uint32_t i = 0; i < arrayLen; ++i) {
           if (charArray[i])
             NS_Free(charArray[i]);
         }
@@ -1212,7 +1208,7 @@ NS_IMETHODIMP nsNavHistoryQuery::SetTags(nsIVariant *aTags)
     case nsIDataType::VTYPE_INTERFACE_IS:
       {
         nsISupports **supportsArray = reinterpret_cast<nsISupports **>(array);
-        for (PRUint32 i = 0; i < arrayLen; ++i) {
+        for (uint32_t i = 0; i < arrayLen; ++i) {
           NS_IF_RELEASE(supportsArray[i]);
         }
       }
@@ -1227,7 +1223,7 @@ NS_IMETHODIMP nsNavHistoryQuery::SetTags(nsIVariant *aTags)
   mTags.Clear();
 
   // Finally, add each passed-in tag to our mTags array and then sort it.
-  for (PRUint32 i = 0; i < arrayLen; ++i) {
+  for (uint32_t i = 0; i < arrayLen; ++i) {
 
     // Don't allow nulls.
     if (!tags[i]) {
@@ -1269,17 +1265,17 @@ NS_IMETHODIMP nsNavHistoryQuery::SetTagsAreNot(bool aTagsAreNot)
   return NS_OK;
 }
 
-NS_IMETHODIMP nsNavHistoryQuery::GetFolders(PRUint32 *aCount,
-                                            PRInt64 **aFolders)
+NS_IMETHODIMP nsNavHistoryQuery::GetFolders(uint32_t *aCount,
+                                            int64_t **aFolders)
 {
-  PRUint32 count = mFolders.Length();
-  PRInt64 *folders = nsnull;
+  uint32_t count = mFolders.Length();
+  int64_t *folders = nullptr;
   if (count > 0) {
-    folders = static_cast<PRInt64*>
-                         (nsMemory::Alloc(count * sizeof(PRInt64)));
+    folders = static_cast<int64_t*>
+                         (nsMemory::Alloc(count * sizeof(int64_t)));
     NS_ENSURE_TRUE(folders, NS_ERROR_OUT_OF_MEMORY);
 
-    for (PRUint32 i = 0; i < count; ++i) {
+    for (uint32_t i = 0; i < count; ++i) {
       folders[i] = mFolders[i];
     }
   }
@@ -1288,14 +1284,14 @@ NS_IMETHODIMP nsNavHistoryQuery::GetFolders(PRUint32 *aCount,
   return NS_OK;
 }
 
-NS_IMETHODIMP nsNavHistoryQuery::GetFolderCount(PRUint32 *aCount)
+NS_IMETHODIMP nsNavHistoryQuery::GetFolderCount(uint32_t *aCount)
 {
   *aCount = mFolders.Length();
   return NS_OK;
 }
 
-NS_IMETHODIMP nsNavHistoryQuery::SetFolders(const PRInt64 *aFolders,
-                                            PRUint32 aFolderCount)
+NS_IMETHODIMP nsNavHistoryQuery::SetFolders(const int64_t *aFolders,
+                                            uint32_t aFolderCount)
 {
   if (!mFolders.ReplaceElementsAt(0, mFolders.Length(),
                                   aFolders, aFolderCount)) {
@@ -1305,16 +1301,16 @@ NS_IMETHODIMP nsNavHistoryQuery::SetFolders(const PRInt64 *aFolders,
   return NS_OK;
 }
 
-NS_IMETHODIMP nsNavHistoryQuery::GetTransitions(PRUint32* aCount,
-                                                PRUint32** aTransitions)
+NS_IMETHODIMP nsNavHistoryQuery::GetTransitions(uint32_t* aCount,
+                                                uint32_t** aTransitions)
 {
-  PRUint32 count = mTransitions.Length();
-  PRUint32* transitions = nsnull;
+  uint32_t count = mTransitions.Length();
+  uint32_t* transitions = nullptr;
   if (count > 0) {
-    transitions = reinterpret_cast<PRUint32*>
-                  (NS_Alloc(count * sizeof(PRUint32)));
+    transitions = reinterpret_cast<uint32_t*>
+                  (NS_Alloc(count * sizeof(uint32_t)));
     NS_ENSURE_TRUE(transitions, NS_ERROR_OUT_OF_MEMORY);
-    for (PRUint32 i = 0; i < count; ++i) {
+    for (uint32_t i = 0; i < count; ++i) {
       transitions[i] = mTransitions[i];
     }
   }
@@ -1323,14 +1319,14 @@ NS_IMETHODIMP nsNavHistoryQuery::GetTransitions(PRUint32* aCount,
   return NS_OK;
 }
 
-NS_IMETHODIMP nsNavHistoryQuery::GetTransitionCount(PRUint32* aCount)
+NS_IMETHODIMP nsNavHistoryQuery::GetTransitionCount(uint32_t* aCount)
 {
   *aCount = mTransitions.Length();
   return NS_OK;
 }
 
-NS_IMETHODIMP nsNavHistoryQuery::SetTransitions(const PRUint32* aTransitions,
-                                                PRUint32 aCount)
+NS_IMETHODIMP nsNavHistoryQuery::SetTransitions(const uint32_t* aTransitions,
+                                                uint32_t aCount)
 {
   if (!mTransitions.ReplaceElementsAt(0, mTransitions.Length(), aTransitions,
                                       aCount))
@@ -1341,7 +1337,7 @@ NS_IMETHODIMP nsNavHistoryQuery::SetTransitions(const PRUint32* aTransitions,
 
 NS_IMETHODIMP nsNavHistoryQuery::Clone(nsINavHistoryQuery** _retval)
 {
-  *_retval = nsnull;
+  *_retval = nullptr;
 
   nsNavHistoryQuery *clone = new nsNavHistoryQuery(*this);
   NS_ENSURE_TRUE(clone, NS_ERROR_OUT_OF_MEMORY);
@@ -1357,13 +1353,13 @@ NS_IMPL_ISUPPORTS2(nsNavHistoryQueryOptions, nsNavHistoryQueryOptions, nsINavHis
 
 // sortingMode
 NS_IMETHODIMP
-nsNavHistoryQueryOptions::GetSortingMode(PRUint16* aMode)
+nsNavHistoryQueryOptions::GetSortingMode(uint16_t* aMode)
 {
   *aMode = mSort;
   return NS_OK;
 }
 NS_IMETHODIMP
-nsNavHistoryQueryOptions::SetSortingMode(PRUint16 aMode)
+nsNavHistoryQueryOptions::SetSortingMode(uint16_t aMode)
 {
   if (aMode > SORT_BY_FRECENCY_DESCENDING)
     return NS_ERROR_INVALID_ARG;
@@ -1386,13 +1382,13 @@ nsNavHistoryQueryOptions::SetSortingAnnotation(const nsACString& aSortingAnnotat
 
 // resultType
 NS_IMETHODIMP
-nsNavHistoryQueryOptions::GetResultType(PRUint16* aType)
+nsNavHistoryQueryOptions::GetResultType(uint16_t* aType)
 {
   *aType = mResultType;
   return NS_OK;
 }
 NS_IMETHODIMP
-nsNavHistoryQueryOptions::SetResultType(PRUint16 aType)
+nsNavHistoryQueryOptions::SetResultType(uint16_t aType)
 {
   if (aType > RESULTS_AS_TAG_CONTENTS)
     return NS_ERROR_INVALID_ARG;
@@ -1476,13 +1472,13 @@ nsNavHistoryQueryOptions::SetIncludeHidden(bool aIncludeHidden)
 
 // maxResults
 NS_IMETHODIMP
-nsNavHistoryQueryOptions::GetMaxResults(PRUint32* aMaxResults)
+nsNavHistoryQueryOptions::GetMaxResults(uint32_t* aMaxResults)
 {
   *aMaxResults = mMaxResults;
   return NS_OK;
 }
 NS_IMETHODIMP
-nsNavHistoryQueryOptions::SetMaxResults(PRUint32 aMaxResults)
+nsNavHistoryQueryOptions::SetMaxResults(uint32_t aMaxResults)
 {
   mMaxResults = aMaxResults;
   return NS_OK;
@@ -1490,13 +1486,13 @@ nsNavHistoryQueryOptions::SetMaxResults(PRUint32 aMaxResults)
 
 // queryType
 NS_IMETHODIMP
-nsNavHistoryQueryOptions::GetQueryType(PRUint16* _retval)
+nsNavHistoryQueryOptions::GetQueryType(uint16_t* _retval)
 {
   *_retval = mQueryType;
   return NS_OK;
 }
 NS_IMETHODIMP
-nsNavHistoryQueryOptions::SetQueryType(PRUint16 aQueryType)
+nsNavHistoryQueryOptions::SetQueryType(uint16_t aQueryType)
 {
   // Tag query and containers are forced to QUERY_TYPE_BOOKMARKS when the
   // resultType is set.
@@ -1525,7 +1521,7 @@ nsNavHistoryQueryOptions::SetAsyncEnabled(bool aAsyncEnabled)
 NS_IMETHODIMP
 nsNavHistoryQueryOptions::Clone(nsINavHistoryQueryOptions** aResult)
 {
-  nsNavHistoryQueryOptions *clone = nsnull;
+  nsNavHistoryQueryOptions *clone = nullptr;
   nsresult rv = Clone(&clone);
   *aResult = clone;
   return rv;
@@ -1534,7 +1530,7 @@ nsNavHistoryQueryOptions::Clone(nsINavHistoryQueryOptions** aResult)
 nsresult
 nsNavHistoryQueryOptions::Clone(nsNavHistoryQueryOptions **aResult)
 {
-  *aResult = nsnull;
+  *aResult = nullptr;
   nsNavHistoryQueryOptions *result = new nsNavHistoryQueryOptions();
   if (! result)
     return NS_ERROR_OUT_OF_MEMORY;
@@ -1581,7 +1577,7 @@ AppendUint32KeyValueIfNonzero(nsACString& aString,
                               nsINavHistoryQuery* aQuery,
                               Uint32QueryGetter getter)
 {
-  PRUint32 value;
+  uint32_t value;
   DebugOnly<nsresult> rv = (aQuery->*getter)(&value);
   NS_ASSERTION(NS_SUCCEEDED(rv), "Failure getting value");
   if (value) {
@@ -1589,7 +1585,7 @@ AppendUint32KeyValueIfNonzero(nsACString& aString,
     aString += aName;
 
     // AppendInt requires a concrete string
-    nsCAutoString appendMe("=");
+    nsAutoCString appendMe("=");
     appendMe.AppendInt(value);
     aString.Append(appendMe);
   }
@@ -1604,14 +1600,14 @@ AppendInt64KeyValueIfNonzero(nsACString& aString,
                              nsINavHistoryQuery* aQuery,
                              Int64QueryGetter getter)
 {
-  PRInt64 value;
+  PRTime value;
   DebugOnly<nsresult> rv = (aQuery->*getter)(&value);
   NS_ASSERTION(NS_SUCCEEDED(rv), "Failure getting value");
   if (value) {
     AppendAmpersandIfNonempty(aString);
     aString += aName;
-    nsCAutoString appendMe("=");
-    appendMe.AppendInt(value);
+    nsAutoCString appendMe("=");
+    appendMe.AppendInt(static_cast<int64_t>(value));
     aString.Append(appendMe);
   }
 }
@@ -1658,7 +1654,7 @@ SetQueryKeyUint32(const nsCString& aValue, nsINavHistoryQuery* aQuery,
                   Uint32QuerySetter setter)
 {
   nsresult rv;
-  PRUint32 value = aValue.ToInteger(reinterpret_cast<PRInt32*>(&rv));
+  uint32_t value = aValue.ToInteger(&rv);
   if (NS_SUCCEEDED(rv)) {
     rv = (aQuery->*setter)(value);
     if (NS_FAILED(rv)) {
@@ -1673,7 +1669,7 @@ SetOptionsKeyUint32(const nsCString& aValue, nsINavHistoryQueryOptions* aOptions
                   Uint32OptionsSetter setter)
 {
   nsresult rv;
-  PRUint32 value = aValue.ToInteger(reinterpret_cast<PRInt32*>(&rv));
+  uint32_t value = aValue.ToInteger(&rv);
   if (NS_SUCCEEDED(rv)) {
     rv = (aOptions->*setter)(value);
     if (NS_FAILED(rv)) {
@@ -1689,8 +1685,7 @@ SetOptionsKeyUint16(const nsCString& aValue, nsINavHistoryQueryOptions* aOptions
                     Uint16OptionsSetter setter)
 {
   nsresult rv;
-  PRUint16 value = static_cast<PRUint16>
-                              (aValue.ToInteger(reinterpret_cast<PRInt32*>(&rv)));
+  uint16_t value = static_cast<uint16_t>(aValue.ToInteger(&rv));
   if (NS_SUCCEEDED(rv)) {
     rv = (aOptions->*setter)(value);
     if (NS_FAILED(rv)) {
@@ -1708,7 +1703,7 @@ void SetQueryKeyInt64(const nsCString& aValue, nsINavHistoryQuery* aQuery,
                       Int64QuerySetter setter)
 {
   nsresult rv;
-  PRInt64 value;
+  int64_t value;
   if (PR_sscanf(aValue.get(), "%lld", &value) == 1) {
     rv = (aQuery->*setter)(value);
     if (NS_FAILED(rv)) {

@@ -8,10 +8,7 @@
 #include <math.h>
 #include "DrawTargetD2D.h"
 #include "Logging.h"
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include "mozilla/Constants.h"
 
 namespace mozilla {
 namespace gfx {
@@ -239,7 +236,7 @@ PathBuilderD2D::Finish()
   HRESULT hr = mSink->Close();
   if (FAILED(hr)) {
     gfxDebug() << "Failed to close PathSink. Code: " << hr;
-    return NULL;
+    return nullptr;
   }
 
   return new PathD2D(mGeometry, mFigureActive, mCurrentPoint, mFillRule);
@@ -259,14 +256,14 @@ PathD2D::TransformedCopyToBuilder(const Matrix &aTransform, FillRule aFillRule) 
 
   if (FAILED(hr)) {
     gfxWarning() << "Failed to create PathGeometry. Code: " << hr;
-    return NULL;
+    return nullptr;
   }
 
   RefPtr<ID2D1GeometrySink> sink;
   hr = path->Open(byRef(sink));
   if (FAILED(hr)) {
     gfxWarning() << "Failed to open Geometry for writing. Code: " << hr;
-    return NULL;
+    return nullptr;
   }
 
   if (aFillRule == FILL_WINDING) {
@@ -301,6 +298,29 @@ PathD2D::ContainsPoint(const Point &aPoint, const Matrix &aTransform) const
   BOOL result;
 
   HRESULT hr = mGeometry->FillContainsPoint(D2DPoint(aPoint), D2DMatrix(aTransform), 0.001f, &result);
+
+  if (FAILED(hr)) {
+    // Log
+    return false;
+  }
+
+  return !!result;
+}
+
+bool
+PathD2D::StrokeContainsPoint(const StrokeOptions &aStrokeOptions,
+                             const Point &aPoint,
+                             const Matrix &aTransform) const
+{
+  BOOL result;
+
+  RefPtr<ID2D1StrokeStyle> strokeStyle =
+    DrawTargetD2D::CreateStrokeStyleForOptions(aStrokeOptions);
+  HRESULT hr = mGeometry->StrokeContainsPoint(D2DPoint(aPoint),
+                                              aStrokeOptions.mLineWidth,
+                                              strokeStyle,
+                                              D2DMatrix(aTransform),
+                                              &result);
 
   if (FAILED(hr)) {
     // Log

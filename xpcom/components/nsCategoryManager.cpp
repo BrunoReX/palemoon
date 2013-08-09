@@ -17,6 +17,7 @@
 #include "nsClassHashtable.h"
 #include "nsIFactory.h"
 #include "nsIStringEnumerator.h"
+#include "nsIMemoryReporter.h"
 #include "nsSupportsPrimitives.h"
 #include "nsComponentManagerUtils.h"
 #include "nsServiceManagerUtils.h"
@@ -30,7 +31,6 @@
 #include "mozilla/Services.h"
 
 #include "ManifestParser.h"
-#include "mozilla/FunctionTimer.h"
 
 using namespace mozilla;
 class nsIComponentLoaderManager;
@@ -70,7 +70,7 @@ protected:
   static int SortCallback(const void *, const void *, void *);
 
   BaseStringEnumerator()
-    : mArray(nsnull),
+    : mArray(nullptr),
       mCount(0),
       mSimpleCurItem(0),
       mStringCurItem(0) { }
@@ -87,9 +87,9 @@ protected:
   void Sort();
 
   const char** mArray;
-  PRUint32 mCount;
-  PRUint32 mSimpleCurItem;
-  PRUint32 mStringCurItem;
+  uint32_t mCount;
+  uint32_t mSimpleCurItem;
+  uint32_t mStringCurItem;
 };
 
 NS_IMPL_ISUPPORTS2(BaseStringEnumerator, nsISimpleEnumerator, nsIUTF8StringEnumerator)
@@ -149,7 +149,7 @@ BaseStringEnumerator::SortCallback(const void *e1, const void *e2,
 void
 BaseStringEnumerator::Sort()
 {
-  NS_QuickSort(mArray, mCount, sizeof(mArray[0]), SortCallback, nsnull);
+  NS_QuickSort(mArray, mCount, sizeof(mArray[0]), SortCallback, nullptr);
 }
 
 //
@@ -182,12 +182,12 @@ EntryEnumerator::Create(nsTHashtable<CategoryLeaf>& aTable)
 {
   EntryEnumerator* enumObj = new EntryEnumerator();
   if (!enumObj)
-    return nsnull;
+    return nullptr;
 
   enumObj->mArray = new char const* [aTable.Count()];
   if (!enumObj->mArray) {
     delete enumObj;
-    return nsnull;
+    return nullptr;
   }
 
   aTable.EnumerateEntries(enumfunc_createenumerator, enumObj);
@@ -207,7 +207,7 @@ CategoryNode::Create(PLArenaPool* aArena)
 {
   CategoryNode* node = new(aArena) CategoryNode();
   if (!node)
-    return nsnull;
+    return nullptr;
 
   node->mTable.Init();
   return node;
@@ -311,6 +311,14 @@ CategoryNode::Enumerate(nsISimpleEnumerator **_retval)
   return NS_OK;
 }
 
+size_t
+CategoryNode::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf)
+{
+    // We don't measure the strings pointed to by the entries because the
+    // pointers are non-owning.
+    return mTable.SizeOfExcludingThis(nullptr, aMallocSizeOf);
+}
+
 struct persistent_userstruct {
   PRFileDesc* fd;
   const char* categoryName;
@@ -330,7 +338,7 @@ enumfunc_pentries(CategoryLeaf* aLeaf, void* userArg)
                    "%s,%s,%s\n",
                    args->categoryName,
                    aLeaf->GetKey(),
-                   aLeaf->value) == (PRUint32) -1) {
+                   aLeaf->value) == (uint32_t) -1) {
       args->success = false;
       status = PL_DHASH_STOP;
     }
@@ -361,12 +369,12 @@ CategoryEnumerator::Create(nsClassHashtable<nsDepCharHashKey, CategoryNode>& aTa
 {
   CategoryEnumerator* enumObj = new CategoryEnumerator();
   if (!enumObj)
-    return nsnull;
+    return nullptr;
 
   enumObj->mArray = new const char* [aTable.Count()];
   if (!enumObj->mArray) {
     delete enumObj;
-    return nsnull;
+    return nullptr;
   }
 
   aTable.EnumerateRead(enumfunc_createenumerator, enumObj);
@@ -392,6 +400,16 @@ CategoryEnumerator::enumfunc_createenumerator(const char* aStr, CategoryNode* aN
 //
 
 NS_IMPL_QUERY_INTERFACE1(nsCategoryManager, nsICategoryManager)
+
+NS_MEMORY_REPORTER_MALLOC_SIZEOF_FUN(CategoryManagerMallocSizeOf,
+                                     "category-manager")
+
+NS_MEMORY_REPORTER_IMPLEMENT(CategoryManager,
+    "explicit/xpcom/category-manager",
+    KIND_HEAP,
+    nsIMemoryReporter::UNITS_BYTES,
+    nsCategoryManager::GetCategoryManagerSize,
+    "Memory used for the XPCOM category manager.")
 
 NS_IMETHODIMP_(nsrefcnt)
 nsCategoryManager::AddRef()
@@ -419,6 +437,7 @@ nsCategoryManager::GetSingleton()
 nsCategoryManager::Destroy()
 {
   delete gCategoryManager;
+  gCategoryManager = nullptr;
 }
 
 nsresult
@@ -433,6 +452,7 @@ nsCategoryManager::Create(nsISupports* aOuter, REFNSIID aIID, void** aResult)
 nsCategoryManager::nsCategoryManager()
   : mLock("nsCategoryManager")
   , mSuppressNotifications(false)
+  , mReporter(nullptr)
 {
   PL_INIT_ARENA_POOL(&mArena, "CategoryManagerArena",
                      NS_CATEGORYMANAGER_ARENA_SIZE);
@@ -440,8 +460,18 @@ nsCategoryManager::nsCategoryManager()
   mTable.Init();
 }
 
+void
+nsCategoryManager::InitMemoryReporter()
+{
+  mReporter = new NS_MEMORY_REPORTER_NAME(CategoryManager);
+  NS_RegisterMemoryReporter(mReporter);
+}
+
 nsCategoryManager::~nsCategoryManager()
 {
+  (void)::NS_UnregisterMemoryReporter(mReporter);
+  mReporter = nullptr;
+
   // the hashtable contains entries that must be deleted before the arena is
   // destroyed, or else you will have PRLocks undestroyed and other Really
   // Bad Stuff (TM)
@@ -454,9 +484,48 @@ inline CategoryNode*
 nsCategoryManager::get_category(const char* aName) {
   CategoryNode* node;
   if (!mTable.Get(aName, &node)) {
-    return nsnull;
+    return nullptr;
   }
   return node;
+}
+
+/* static */ int64_t
+nsCategoryManager::GetCategoryManagerSize()
+{
+  MOZ_ASSERT(nsCategoryManager::gCategoryManager);
+  return nsCategoryManager::gCategoryManager->SizeOfIncludingThis(
+           CategoryManagerMallocSizeOf);
+}
+
+static size_t
+SizeOfCategoryManagerTableEntryExcludingThis(nsDepCharHashKey::KeyType aKey,
+                                             const nsAutoPtr<CategoryNode> &aData,
+                                             nsMallocSizeOfFun aMallocSizeOf,
+                                             void* aUserArg)
+{
+    // We don't measure the string pointed to by aKey because it's a non-owning
+    // pointer.
+    return aData.get()->SizeOfExcludingThis(aMallocSizeOf);
+}
+
+size_t
+nsCategoryManager::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf)
+{
+  size_t n = aMallocSizeOf(this);
+
+  // The first PLArena is within the PLArenaPool, i.e. within |this|, so we
+  // don't measure it.  Subsequent PLArenas are by themselves and must be
+  // measured.
+  const PLArena *arena = mArena.first.next;
+  while (arena) {
+    n += aMallocSizeOf(arena);
+    arena = arena->next;
+  }
+
+  n += mTable.SizeOfExcludingThis(SizeOfCategoryManagerTableEntryExcludingThis,
+                                  aMallocSizeOf);
+
+  return n;
 }
 
 namespace {
@@ -593,7 +662,7 @@ nsCategoryManager::AddCategoryEntry(const char *aCategoryName,
     return;
 
   // We will need the return value of AddLeaf even if the called doesn't want it
-  char *oldEntry = nsnull;
+  char *oldEntry = nullptr;
 
   nsresult rv = category->AddLeaf(aEntryName,
                                   aValue,
@@ -664,7 +733,7 @@ nsCategoryManager::DeleteCategory( const char *aCategoryName )
   if (category) {
     category->Clear();
     NotifyObservers(NS_XPCOM_CATEGORY_CLEARED_OBSERVER_ID,
-                    aCategoryName, nsnull);
+                    aCategoryName, nullptr);
   }
 
   return NS_OK;
@@ -732,9 +801,6 @@ NS_CreateServicesFromCategory(const char *category,
                               nsISupports *origin,
                               const char *observerTopic)
 {
-  NS_TIME_FUNCTION_FMT("NS_CreateServicesFromCategory: %s (%s)",
-                       category, observerTopic ? observerTopic : "(no topic)");
-
   nsresult rv;
 
   nsCOMPtr<nsICategoryManager> categoryManager = 
@@ -758,7 +824,7 @@ NS_CreateServicesFromCategory(const char *category,
   bool hasMore;
   while (NS_SUCCEEDED(senumerator->HasMore(&hasMore)) && hasMore) {
     // From here on just skip any error we get.
-    nsCAutoString entryString;
+    nsAutoCString entryString;
     if (NS_FAILED(senumerator->GetNext(entryString)))
       continue;
       
@@ -767,8 +833,6 @@ NS_CreateServicesFromCategory(const char *category,
                                            getter_Copies(contractID));
     if (NS_FAILED(rv))
       continue;
-        
-    NS_TIME_FUNCTION_MARK("getservice: %s", contractID.get());
 
     nsCOMPtr<nsISupports> instance = do_GetService(contractID);
     if (!instance) {
@@ -778,8 +842,6 @@ NS_CreateServicesFromCategory(const char *category,
     }
 
     if (observerTopic) {
-      NS_TIME_FUNCTION_MARK("observe: %s", contractID.get());
-
       // try an observer, if it implements it.
       nsCOMPtr<nsIObserver> observer = do_QueryInterface(instance);
       if (observer)

@@ -63,11 +63,11 @@ AboutWeaveLog.prototype = {
     // view. That way links to files can be opened.
     let ssm = Cc["@mozilla.org/scriptsecuritymanager;1"]
                 .getService(Ci.nsIScriptSecurityManager);
-    let principal = ssm.getCodebasePrincipal(uri);
+    let principal = ssm.getSimpleCodebasePrincipal(uri);
     channel.owner = principal;
     return channel;
   }
 };
 
 const components = [WeaveService, AboutWeaveLog];
-const NSGetFactory = XPCOMUtils.generateNSGetFactory(components);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory(components);

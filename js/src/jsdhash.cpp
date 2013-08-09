@@ -78,13 +78,13 @@ using namespace js;
 JS_PUBLIC_API(void *)
 JS_DHashAllocTable(JSDHashTable *table, uint32_t nbytes)
 {
-    return OffTheBooks::malloc_(nbytes);
+    return js_malloc(nbytes);
 }
 
 JS_PUBLIC_API(void)
 JS_DHashFreeTable(JSDHashTable *table, void *ptr)
 {
-    UnwantedForeground::free_(ptr);
+    js_free(ptr);
 }
 
 JS_PUBLIC_API(JSDHashNumber)
@@ -147,7 +147,7 @@ JS_DHashFreeStringKey(JSDHashTable *table, JSDHashEntryHdr *entry)
 {
     const JSDHashEntryStub *stub = (const JSDHashEntryStub *)entry;
 
-    UnwantedForeground::free_((void *) stub->key);
+    js_free((void *) stub->key);
     memset(entry, 0, table->entrySize);
 }
 
@@ -177,13 +177,11 @@ JS_PUBLIC_API(JSDHashTable *)
 JS_NewDHashTable(const JSDHashTableOps *ops, void *data, uint32_t entrySize,
                  uint32_t capacity)
 {
-    JSDHashTable *table;
-
-    table = (JSDHashTable *) OffTheBooks::malloc_(sizeof *table);
+    JSDHashTable *table = js_pod_malloc<JSDHashTable>();
     if (!table)
         return NULL;
     if (!JS_DHashTableInit(table, ops, data, entrySize, capacity)) {
-        Foreground::free_(table);
+        js_free(table);
         return NULL;
     }
     return table;
@@ -193,7 +191,7 @@ JS_PUBLIC_API(void)
 JS_DHashTableDestroy(JSDHashTable *table)
 {
     JS_DHashTableFinish(table);
-    UnwantedForeground::free_(table);
+    js_free(table);
 }
 
 JS_PUBLIC_API(JSBool)
@@ -275,7 +273,7 @@ JS_DHashTableSetAlphaBounds(JSDHashTable *table,
     JS_ASSERT(JS_DHASH_MIN_SIZE - (maxAlpha * JS_DHASH_MIN_SIZE) >= 1);
     if (JS_DHASH_MIN_SIZE - (maxAlpha * JS_DHASH_MIN_SIZE) < 1) {
         maxAlpha = (float)
-                   (JS_DHASH_MIN_SIZE - JS_MAX(JS_DHASH_MIN_SIZE / 256, 1))
+                   (JS_DHASH_MIN_SIZE - Max(JS_DHASH_MIN_SIZE / 256, 1))
                    / JS_DHASH_MIN_SIZE;
     }
 
@@ -287,7 +285,7 @@ JS_DHashTableSetAlphaBounds(JSDHashTable *table,
     JS_ASSERT(minAlpha < maxAlpha / 2);
     if (minAlpha >= maxAlpha / 2) {
         size = JS_DHASH_TABLE_SIZE(table);
-        minAlpha = (size * maxAlpha - JS_MAX(size / 256, 1)) / (2 * size);
+        minAlpha = (size * maxAlpha - Max(size / 256, 1U)) / (2 * size);
     }
 
     table->maxAlphaFrac = (uint8_t)(maxAlpha * 256);

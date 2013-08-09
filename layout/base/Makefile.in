@@ -3,7 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -17,6 +17,7 @@ XPIDL_MODULE	= layout_base
 GRE_MODULE	= 1
 LIBRARY_NAME	= gkbase_s
 LIBXUL_LIBRARY	= 1
+FAIL_ON_WARNINGS = 1
 
 
 
@@ -29,6 +30,7 @@ EXPORTS_NAMESPACES = mozilla
 EXPORTS		= \
 		FrameLayerBuilder.h \
 		FramePropertyTable.h \
+		nsArenaMemoryStats.h \
 		nsBidi.h \
 		nsBidiPresUtils.h \
 		nsCaret.h \
@@ -36,7 +38,9 @@ EXPORTS		= \
 		nsChangeHint.h \
 		nsCompatibility.h \
 		nsDisplayItemTypes.h \
+		nsDisplayItemTypesList.h \
 		nsDisplayList.h \
+		nsDisplayListInvalidation.h \
 		nsFrameManager.h \
 		nsFrameManagerBase.h \
 		nsFrameTraversal.h \
@@ -46,7 +50,6 @@ EXPORTS		= \
 		nsIPercentHeightObserver.h  \
 		nsIPresShell.h \
 		nsIReflowCallback.h \
-		nsLayoutErrors.h \
 		nsLayoutUtils.h \
 		nsPresArena.h \
 		nsPresContext.h \
@@ -63,6 +66,7 @@ EXPORTS_mozilla = \
 
 CPPSRCS		= \
 		FrameLayerBuilder.cpp \
+		MaskLayerImageCache.cpp \
 		FramePropertyTable.cpp \
 		RestyleTracker.cpp \
 		nsCSSColorUtils.cpp \
@@ -73,11 +77,11 @@ CPPSRCS		= \
 		nsChildIterator.cpp \
 		nsCounterManager.cpp \
 		nsDisplayList.cpp \
+		nsDisplayListInvalidation.cpp \
 		nsDocumentViewer.cpp \
 		nsFrameManager.cpp \
 		nsFrameTraversal.cpp \
 		nsGenConList.cpp \
-		nsImageLoader.cpp \
 		nsLayoutDebugger.cpp \
 		nsLayoutHistoryState.cpp \
 		nsLayoutUtils.cpp \
@@ -89,6 +93,7 @@ CPPSRCS		= \
 		nsStyleChangeList.cpp \
 		nsStyleSheetService.cpp \
 		PaintTracker.cpp \
+ 		PositionedEventTargeting.cpp \
 		StackArena.cpp \
 		$(NULL)
 
@@ -134,7 +139,7 @@ LOCAL_INCLUDES += \
 		-I$(srcdir)/../../content/html/content/src \
 		-I$(srcdir)/../../content/svg/content/src \
 		-I$(topsrcdir)/xpcom/ds \
-		-I$(srcdir)/../svg/base/src \
+		-I$(srcdir)/../svg \
 		-I$(srcdir)/../mathml \
 		$(NULL)
 
@@ -152,9 +157,4 @@ nsBoxObject.cpp: %: $(topsrcdir)/layout/xul/base/src/%
 	$(INSTALL) $^ .
 
 GARBAGE    += nsIBoxObject.idl nsPIBoxObject.h nsBoxObject.cpp
-endif
-
-# Pale Moon: Exclude the following from PGO to avoid compiler crash
-ifeq ($(CPU_ARCH),x86)
-FrameLayerBuilder.$(OBJ_SUFFIX): CXXFLAGS += -GL-
 endif

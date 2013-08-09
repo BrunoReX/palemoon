@@ -1,14 +1,20 @@
 
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
- * Created on Mon Apr 23 20:03:29 2012 from UCD data files with version info:
+ * Derived from the Unicode Character Database by genUnicodePropertyData.pl
+ *
+ * For Unicode terms of use, see http://www.unicode.org/terms_of_use.html
+ */
+
+/*
+ * Created on Sun Nov  4 13:48:45 2012 from UCD data files with version info:
  *
 
-# Date: 2012-01-26, 22:03:00 GMT [KW]
+# Date: 2012-09-24, 22:40:00 GMT [KW]
 #
 # Unicode Character Database
 # Copyright (c) 1991-2012 Unicode, Inc.
@@ -20,27 +26,29 @@
 #
 
 This directory contains final data files
-for the Unicode Character Database (UCD) for Unicode 6.1.0.
+for the Unicode Character Database (UCD) for Unicode 6.2.0.
 
-# Scripts-6.1.0.txt
-# Date: 2011-11-27, 05:10:50 GMT [MD]
 
-# EastAsianWidth-6.1.0.txt
-# Date: 2011-09-19, 18:46:00 GMT [KW]
 
-# BidiMirroring-6.1.0.txt
-# Date: 2011-12-20, 19:31:00 GMT [KW, LI]
+# Scripts-6.2.0.txt
+# Date: 2012-06-04, 17:21:29 GMT [MD]
 
-# HangulSyllableType-6.1.0.txt
-# Date: 2011-08-25, 00:02:18 GMT [MD]
+# EastAsianWidth-6.2.0.txt
+# Date: 2012-05-15, 18:30:00 GMT [KW]
+
+# BidiMirroring-6.2.0.txt
+# Date: 2012-05-15, 24:19:00 GMT [KW, LI]
+
+# HangulSyllableType-6.2.0.txt
+# Date: 2012-05-23, 20:34:56 GMT [MD]
 
 # File: xidmodifications.txt
-# Version: 2.1
-# Generated: 2010-04-13, 01:33:09 GMT
+# Version: 3.0-draft
+# Generated: 2012-05-07, 07:52:41 GMT
 
 #
 # Unihan_Variants.txt
-# Date: 2011-08-08 22:10:53 GMT [JHJ]
+# Date: 2012-08-17 17:13:30 GMT [JHJ]
 
  *
  * * * * * This file contains MACHINE-GENERATED DATA, do not edit! * * * * *
@@ -48,8 +56,11 @@ for the Unicode Character Database (UCD) for Unicode 6.1.0.
 
 #ifndef NS_UNICODE_SCRIPT_CODES
 #define NS_UNICODE_SCRIPT_CODES
+
+#pragma pack(1)
+
 struct nsCharProps1 {
-  unsigned char  mMirrorOffsetIndex:5;
+  unsigned char mMirrorOffsetIndex:5;
   unsigned char mHangulType:3;
   unsigned char mCombiningClass:8;
 };
@@ -63,6 +74,8 @@ struct nsCharProps2 {
   signed char mNumericValue:5;
   unsigned char mHanVariant:2;
 };
+
+#pragma pack()
 
 enum {
   MOZ_SCRIPT_COMMON = 0,
@@ -168,6 +181,9 @@ enum {
   MOZ_SCRIPT_SHARADA = 100,
   MOZ_SCRIPT_SORA_SOMPENG = 101,
   MOZ_SCRIPT_TAKRI = 102,
+
+  MOZ_NUM_SCRIPT_CODES = 103,
+
   MOZ_SCRIPT_INVALID = -1
 };
 

@@ -5,8 +5,6 @@
 #include "nsCOMPtr.h"
 #include "nsButtonBoxFrame.h"
 #include "nsIContent.h"
-#include "nsIDocument.h"
-#include "nsIDOMDocument.h"
 #include "nsIDOMNodeList.h"
 #include "nsIDOMXULButtonElement.h"
 #include "nsGkAtoms.h"
@@ -95,8 +93,8 @@ nsButtonBoxFrame::HandleEvent(nsPresContext* aPresContext,
                                        NS_EVENT_STATE_HOVER)) {
             // return to normal state
             nsEventStateManager *esm = aPresContext->EventStateManager();
-            esm->SetContentState(nsnull, NS_EVENT_STATE_ACTIVE);
-            esm->SetContentState(nsnull, NS_EVENT_STATE_HOVER);
+            esm->SetContentState(nullptr, NS_EVENT_STATE_ACTIVE);
+            esm->SetContentState(nullptr, NS_EVENT_STATE_HOVER);
             MouseClicked(aPresContext, aEvent);
           }
         }
@@ -139,7 +137,7 @@ nsButtonBoxFrame::DoMouseClick(nsGUIEvent* aEvent, bool aTrustEvent)
     nsContentUtils::DispatchXULCommand(mContent,
                                        aEvent ?
                                          NS_IS_TRUSTED_EVENT(aEvent) : aTrustEvent,
-                                       nsnull, shell,
+                                       nullptr, shell,
                                        isControl, isAlt, isShift, isMeta);
   }
 }

@@ -8,12 +8,12 @@
 #include "imgIRequest.h"
 #include "imgIContainer.h"
 
-NS_IMPL_ISUPPORTS2(nsTreeImageListener, imgIDecoderObserver, imgIContainerObserver)
+NS_IMPL_ISUPPORTS1(nsTreeImageListener, imgINotificationObserver)
 
 nsTreeImageListener::nsTreeImageListener(nsTreeBodyFrame* aTreeFrame)
   : mTreeFrame(aTreeFrame),
     mInvalidationSuppressed(true),
-    mInvalidationArea(nsnull)
+    mInvalidationArea(nullptr)
 {
 }
 
@@ -23,44 +23,28 @@ nsTreeImageListener::~nsTreeImageListener()
 }
 
 NS_IMETHODIMP
-nsTreeImageListener::OnImageIsAnimated(imgIRequest *aRequest)
+nsTreeImageListener::Notify(imgIRequest *aRequest, int32_t aType, const nsIntRect* aData)
 {
-  if (!mTreeFrame) {
-    return NS_OK;
+  if (aType == imgINotificationObserver::IS_ANIMATED) {
+    return mTreeFrame ? mTreeFrame->OnImageIsAnimated(aRequest) : NS_OK;
   }
 
-  return mTreeFrame->OnImageIsAnimated(aRequest);
-}
+  if (aType == imgINotificationObserver::SIZE_AVAILABLE) {
+    // Ensure the animation (if any) is started. Note: There is no
+    // corresponding call to Decrement for this. This Increment will be
+    // 'cleaned up' by the Request when it is destroyed, but only then.
+    aRequest->IncrementAnimationConsumers();
+  }
 
-NS_IMETHODIMP nsTreeImageListener::OnStartContainer(imgIRequest *aRequest,
-                                                    imgIContainer *aImage)
-{
-  // Ensure the animation (if any) is started. Note: There is no
-  // corresponding call to Decrement for this. This Increment will be
-  // 'cleaned up' by the Request when it is destroyed, but only then.
-  aRequest->IncrementAnimationConsumers();
+  if (aType == imgINotificationObserver::FRAME_UPDATE) {
+    Invalidate();
+  }
+
   return NS_OK;
 }
-
-NS_IMETHODIMP nsTreeImageListener::OnDataAvailable(imgIRequest *aRequest,
-                                                   bool aCurrentFrame,
-                                                   const nsIntRect *aRect)
-{
-  Invalidate();
-  return NS_OK;
-}
-
-NS_IMETHODIMP nsTreeImageListener::FrameChanged(imgIRequest *aRequest,
-                                                imgIContainer *aContainer,
-                                                const nsIntRect *aDirtyRect)
-{
-  Invalidate();
-  return NS_OK;
-}
-
 
 void
-nsTreeImageListener::AddCell(PRInt32 aIndex, nsITreeColumn* aCol)
+nsTreeImageListener::AddCell(int32_t aIndex, nsITreeColumn* aCol)
 {
   if (!mInvalidationArea) {
     mInvalidationArea = new InvalidationArea(aCol);
@@ -91,7 +75,7 @@ nsTreeImageListener::Invalidate()
     for (InvalidationArea* currArea = mInvalidationArea; currArea;
          currArea = currArea->GetNext()) {
       // Loop from min to max, invalidating each cell that was listening for this image.
-      for (PRInt32 i = currArea->GetMin(); i <= currArea->GetMax(); ++i) {
+      for (int32_t i = currArea->GetMin(); i <= currArea->GetMax(); ++i) {
         if (mTreeFrame) {
           nsITreeBoxObject* tree = mTreeFrame->GetTreeBoxObject();
           if (tree) {
@@ -107,12 +91,12 @@ nsTreeImageListener::InvalidationArea::InvalidationArea(nsITreeColumn* aCol)
   : mCol(aCol),
     mMin(-1), // min should start out "undefined"
     mMax(0),
-    mNext(nsnull)
+    mNext(nullptr)
 {
 }
 
 void
-nsTreeImageListener::InvalidationArea::AddRow(PRInt32 aIndex)
+nsTreeImageListener::InvalidationArea::AddRow(int32_t aIndex)
 {
   if (mMin == -1)
     mMin = mMax = aIndex;
@@ -125,6 +109,6 @@ nsTreeImageListener::InvalidationArea::AddRow(PRInt32 aIndex)
 NS_IMETHODIMP
 nsTreeImageListener::ClearFrame()
 {
-  mTreeFrame = nsnull;
+  mTreeFrame = nullptr;
   return NS_OK;
 }

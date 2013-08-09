@@ -31,9 +31,11 @@ JS_ALWAYS_INLINE void
 js::PropertyCache::test(JSContext *cx, jsbytecode *pc, JSObject *&obj,
                         JSObject *&pobj, PropertyCacheEntry *&entry, PropertyName *&name)
 {
-    JS_ASSERT(this == &JS_PROPERTY_CACHE(cx));
+    AutoAssertNoGC nogc;
 
-    const Shape *kshape = obj->lastProperty();
+    JS_ASSERT(this == &cx->propertyCache());
+
+    Shape *kshape = obj->lastProperty();
     entry = &table[hash(pc, kshape)];
     PCMETER(pctestentry = entry);
     PCMETER(tests++);
@@ -62,9 +64,9 @@ JS_ALWAYS_INLINE bool
 js::PropertyCache::testForSet(JSContext *cx, jsbytecode *pc, JSObject *obj,
                               PropertyCacheEntry **entryp, JSObject **obj2p, PropertyName **namep)
 {
-    JS_ASSERT(this == &JS_PROPERTY_CACHE(cx));
+    JS_ASSERT(this == &cx->propertyCache());
 
-    const Shape *kshape = obj->lastProperty();
+    Shape *kshape = obj->lastProperty();
     PropertyCacheEntry *entry = &table[hash(pc, kshape)];
     *entryp = entry;
     PCMETER(pctestentry = entry);

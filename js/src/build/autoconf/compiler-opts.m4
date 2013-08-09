@@ -34,17 +34,15 @@ case "$target" in
     fi
     ;;
 *-darwin*)
-    # we prefer gcc-4.2 over gcc on older darwin, so
-    # use that specific version if it's available.
-    # On newer versions of darwin, gcc is llvm-gcc while gcc-4.2 is the plain
-    # one, so we also try that first. If that fails, we fall back to clang
-    # as llvm-gcc is an unsupported dead end.
-    MOZ_PATH_PROGS(CC, $CC gcc-4.2 clang gcc)
-    MOZ_PATH_PROGS(CXX, $CXX g++-4.2 clang++ g++)
-    IS_LLVM_GCC=$($CC -v 2>&1 | grep llvm-gcc)
-    if test -n "$IS_LLVM_GCC"
+    # GCC on darwin is based on gcc 4.2 and we don't support it anymore.
+    MOZ_PATH_PROGS(CC, $CC clang)
+    MOZ_PATH_PROGS(CXX, $CXX clang++)
+    IS_GCC=$($CC -v 2>&1 | grep gcc)
+    if test -n "$IS_GCC"
     then
-      echo llvm-gcc is known to be broken, please use gcc-4.2 or clang.
+      echo gcc is known to be broken on OS X, please use clang.
+      echo see http://developer.mozilla.org/en-US/docs/Developer_Guide/Build_Instructions/Mac_OS_X_Prerequisites
+      echo for more information.
       exit 1
     fi
     ;;
@@ -52,19 +50,49 @@ esac
 fi
 ])
 
+dnl ============================================================================
+dnl C++ rtti
+dnl We don't use it in the code, but it can be usefull for debugging, so give
+dnl the user the option of enabling it.
+dnl ============================================================================
+AC_DEFUN([MOZ_RTTI],
+[
+MOZ_ARG_ENABLE_BOOL(cpp-rtti,
+[  --enable-cpp-rtti       Enable C++ RTTI ],
+[ _MOZ_USE_RTTI=1 ],
+[ _MOZ_USE_RTTI= ])
+
+if test -z "$_MOZ_USE_RTTI"; then
+    if test "$GNU_CC"; then
+        CXXFLAGS="$CXXFLAGS -fno-rtti"
+    else
+        case "$target" in
+        *-mingw*)
+            CXXFLAGS="$CXXFLAGS -GR-"
+        esac
+    fi
+fi
+])
+
+dnl A high level macro for selecting compiler options.
 AC_DEFUN([MOZ_COMPILER_OPTS],
 [
+  MOZ_RTTI
 if test "$CLANG_CXX"; then
     ## We disable return-type-c-linkage because jsval is defined as a C++ type but is
     ## returned by C functions. This is possible because we use knowledge about the ABI
     ## to typedef it to a C type with the same layout when the headers are included
     ## from C.
-    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Wno-unknown-warning-option -Wno-return-type-c-linkage"
+    ##
+    ## mismatched-tags is disabled (bug 780474) mostly because it's useless.
+    ## Worse, it's not supported by gcc, so it will cause tryserver bustage
+    ## without any easy way for non-Clang users to check for it.
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Wno-unknown-warning-option -Wno-return-type-c-linkage -Wno-mismatched-tags"
 fi
 
 if test "$GNU_CC"; then
     CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
-    CXXFLAGS="$CXXFLAGS -ffunction-sections -fdata-sections"
+    CXXFLAGS="$CXXFLAGS -ffunction-sections -fdata-sections -fno-exceptions"
 fi
 
 dnl ========================================================

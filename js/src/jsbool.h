@@ -14,7 +14,7 @@
 #include "jsobj.h"
 
 extern JSObject *
-js_InitBooleanClass(JSContext *cx, JSObject *obj);
+js_InitBooleanClass(JSContext *cx, js::HandleObject obj);
 
 extern JSString *
 js_BooleanToString(JSContext *cx, JSBool b);
@@ -25,8 +25,5 @@ inline bool
 BooleanGetPrimitiveValue(JSContext *cx, JSObject &obj, Value *vp);
 
 } /* namespace js */
-
-extern JSBool
-js_ValueToBoolean(const js::Value &v);
 
 #endif /* jsbool_h___ */

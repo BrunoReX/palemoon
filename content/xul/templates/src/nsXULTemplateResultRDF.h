@@ -13,11 +13,12 @@
 #include "nsRuleNetwork.h"
 #include "nsIXULTemplateResult.h"
 #include "nsRDFBinding.h"
+#include "mozilla/Attributes.h"
 
 /**
  * A single result of a query on an RDF graph
  */
-class nsXULTemplateResultRDF : public nsIXULTemplateResult
+class nsXULTemplateResultRDF MOZ_FINAL : public nsIXULTemplateResult
 {
 public:
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -37,7 +38,7 @@ public:
 
     nsXULTemplateQueryProcessorRDF* GetProcessor()
     {
-        return (mQuery ? mQuery->Processor() : nsnull);
+        return (mQuery ? mQuery->Processor() : nullptr);
     }
 
     /**

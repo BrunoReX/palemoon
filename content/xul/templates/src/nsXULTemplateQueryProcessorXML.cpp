@@ -6,27 +6,22 @@
 #include "nsCOMPtr.h"
 #include "nsAutoPtr.h"
 #include "nsIDOMDocument.h"
-#include "nsIDOMXMLDocument.h"
 #include "nsIDOMNode.h"
-#include "nsIDOMNodeList.h"
 #include "nsIDOMElement.h"
 #include "nsIDOMEvent.h"
 #include "nsIDOMEventTarget.h"
 #include "nsIDOMXPathNSResolver.h"
 #include "nsIDocument.h"
 #include "nsIContent.h"
-#include "nsINameSpaceManager.h"
+#include "nsComponentManagerUtils.h"
 #include "nsGkAtoms.h"
-#include "nsIServiceManager.h"
-#include "nsUnicharUtils.h"
 #include "nsIURI.h"
 #include "nsIArray.h"
-#include "nsContentUtils.h"
+#include "nsIScriptContext.h"
 #include "nsArrayUtils.h"
 #include "nsPIDOMWindow.h"
 #include "nsXULContentUtils.h"
 
-#include "nsXULTemplateBuilder.h"
 #include "nsXULTemplateQueryProcessorXML.h"
 #include "nsXULTemplateResultXML.h"
 #include "nsXULSortService.h"
@@ -45,7 +40,7 @@ nsXULTemplateResultSetXML::HasMoreElements(bool *aResult)
 {
     // if GetSnapshotLength failed, then the return type was not a set of
     // nodes, so just return false in this case.
-    PRUint32 length;
+    uint32_t length;
     if (NS_SUCCEEDED(mResults->GetSnapshotLength(&length)))
         *aResult = (mPosition < length);
     else
@@ -85,7 +80,7 @@ TraverseRuleToBindingsMap(nsISupports* aKey, nsXMLBindingSet* aMatch, void* aCon
     NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(*cb, "mRuleToBindingsMap key");
     cb->NoteXPCOMChild(aKey);
     NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(*cb, "mRuleToBindingsMap value");
-    cb->NoteNativeChild(aMatch, &NS_CYCLE_COLLECTION_NAME(nsXMLBindingSet));
+    cb->NoteNativeChild(aMatch, NS_CYCLE_COLLECTION_PARTICIPANT(nsXMLBindingSet));
     return PL_DHASH_NEXT;
 }
   
@@ -94,19 +89,19 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsXULTemplateQueryProcessorXML)
     if (tmp->mRuleToBindingsMap.IsInitialized()) {
         tmp->mRuleToBindingsMap.Clear();
     }
-    NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mRoot)
-    NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mEvaluator)
-    NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mTemplateBuilder)
-    NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mRequest)
+    NS_IMPL_CYCLE_COLLECTION_UNLINK(mRoot)
+    NS_IMPL_CYCLE_COLLECTION_UNLINK(mEvaluator)
+    NS_IMPL_CYCLE_COLLECTION_UNLINK(mTemplateBuilder)
+    NS_IMPL_CYCLE_COLLECTION_UNLINK(mRequest)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsXULTemplateQueryProcessorXML)
     if (tmp->mRuleToBindingsMap.IsInitialized()) {
         tmp->mRuleToBindingsMap.EnumerateRead(TraverseRuleToBindingsMap, &cb);
     }
-    NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mRoot)
-    NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mEvaluator)
-    NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mTemplateBuilder)
-    NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mRequest)
+    NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRoot)
+    NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mEvaluator)
+    NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTemplateBuilder)
+    NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRequest)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsXULTemplateQueryProcessorXML)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsXULTemplateQueryProcessorXML)
@@ -132,11 +127,11 @@ nsXULTemplateQueryProcessorXML::GetDatasource(nsIArray* aDataSources,
                                               bool* aShouldDelayBuilding,
                                               nsISupports** aResult)
 {
-    *aResult = nsnull;
+    *aResult = nullptr;
     *aShouldDelayBuilding = false;
 
     nsresult rv;
-    PRUint32 length;
+    uint32_t length;
 
     aDataSources->GetLength(&length);
     if (length == 0)
@@ -154,7 +149,7 @@ nsXULTemplateQueryProcessorXML::GetDatasource(nsIArray* aDataSources,
     if (!uri)
         return NS_ERROR_UNEXPECTED;
 
-    nsCAutoString uriStr;
+    nsAutoCString uriStr;
     rv = uri->GetSpec(uriStr);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -181,7 +176,8 @@ nsXULTemplateQueryProcessorXML::GetDatasource(nsIArray* aDataSources,
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsCOMPtr<nsPIDOMWindow> owner = do_QueryInterface(scriptObject);
-    req->Init(docPrincipal, context, owner, nsnull);
+    req->Init(docPrincipal, context, owner ? owner->GetOuterWindow() : nullptr,
+              nullptr);
 
     rv = req->Open(NS_LITERAL_CSTRING("GET"), uriStr, true,
                    EmptyString(), EmptyString());
@@ -194,7 +190,7 @@ nsXULTemplateQueryProcessorXML::GetDatasource(nsIArray* aDataSources,
     rv = target->AddEventListener(NS_LITERAL_STRING("error"), this, false);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    rv = req->Send(nsnull, context->GetNativeContext());
+    rv = req->Send(nullptr);
     NS_ENSURE_SUCCESS(rv, rv);
 
     mTemplateBuilder = aBuilder;
@@ -249,7 +245,7 @@ nsXULTemplateQueryProcessorXML::CompileQuery(nsIXULTemplateBuilder* aBuilder,
 {
     nsresult rv = NS_OK;
 
-    *_retval = nsnull;
+    *_retval = nullptr;
 
     nsCOMPtr<nsIContent> content = do_QueryInterface(aQueryNode);
 
@@ -338,7 +334,7 @@ nsXULTemplateQueryProcessorXML::GenerateResults(nsISupports* aDatasource,
     nsCOMPtr<nsISupports> exprsupportsresults;
     nsresult rv = expr->Evaluate(context,
                                  nsIDOMXPathResult::ORDERED_NODE_SNAPSHOT_TYPE,
-                                 nsnull, getter_AddRefs(exprsupportsresults));
+                                 nullptr, getter_AddRefs(exprsupportsresults));
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsCOMPtr<nsIDOMXPathResult> exprresults =
@@ -387,7 +383,7 @@ nsXULTemplateQueryProcessorXML::TranslateRef(nsISupports* aDatasource,
                                              const nsAString& aRefString,
                                              nsIXULTemplateResult** aRef)
 {
-    *aRef = nsnull;
+    *aRef = nullptr;
 
     // the datasource is either a document or a DOM element
     nsCOMPtr<nsIDOMElement> rootElement;
@@ -402,7 +398,7 @@ nsXULTemplateQueryProcessorXML::TranslateRef(nsISupports* aDatasource,
         return NS_OK;
     
     nsXULTemplateResultXML* result =
-        new nsXULTemplateResultXML(nsnull, rootElement, nsnull);
+        new nsXULTemplateResultXML(nullptr, rootElement, nullptr);
     NS_ENSURE_TRUE(result, NS_ERROR_OUT_OF_MEMORY);
 
     *aRef = result;
@@ -416,8 +412,8 @@ NS_IMETHODIMP
 nsXULTemplateQueryProcessorXML::CompareResults(nsIXULTemplateResult* aLeft,
                                                nsIXULTemplateResult* aRight,
                                                nsIAtom* aVar,
-                                               PRUint32 aSortHints,
-                                               PRInt32* aResult)
+                                               uint32_t aSortHints,
+                                               int32_t* aResult)
 {
     *aResult = 0;
     if (!aVar)
@@ -475,12 +471,12 @@ nsXULTemplateQueryProcessorXML::HandleEvent(nsIDOMEvent* aEvent)
             mTemplateBuilder->SetDatasource(doc);
 
         // to avoid leak. we don't need it after...
-        mTemplateBuilder = nsnull;
-        mRequest = nsnull;
+        mTemplateBuilder = nullptr;
+        mRequest = nullptr;
     }
     else if (eventType.EqualsLiteral("error")) {
-        mTemplateBuilder = nsnull;
-        mRequest = nsnull;
+        mTemplateBuilder = nullptr;
+        mRequest = nullptr;
     }
 
     return NS_OK;

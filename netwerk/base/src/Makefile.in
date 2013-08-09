@@ -4,10 +4,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
+FAIL_ON_WARNINGS := 1
 
 include $(DEPTH)/config/autoconf.mk
 
@@ -15,7 +16,10 @@ MODULE		= necko
 LIBRARY_NAME	= neckobase_s
 LIBXUL_LIBRARY  = 1
 
-EXPORTS = nsURLHelper.h
+EXPORTS = \
+		nsMIMEInputStream.h \
+		nsURLHelper.h \
+		$(NULL)
 
 CPPSRCS		= \
 		nsTransportUtils.cpp \
@@ -62,7 +66,11 @@ CPPSRCS		= \
 		RedirectChannelRegistrar.cpp \
 		nsPreloadedStream.cpp \
 		nsStreamListenerWrapper.cpp \
+		ProxyAutoConfig.cpp \
+		NetworkActivityMonitor.cpp \
 		$(NULL)
+
+LOCAL_INCLUDES	+= -I$(topsrcdir)/dom/base
 
 ifeq ($(MOZ_WIDGET_TOOLKIT),os2)
 	CPPSRCS += nsURLHelperOS2.cpp
@@ -92,11 +100,6 @@ ifdef MOZ_ENABLE_QTNETWORK
 	OS_INCLUDES += $(MOZ_QT_CFLAGS)
 endif
 endif
-
-EXTRA_COMPONENTS = \
-		$(srcdir)/nsProxyAutoConfig.js \
-		$(srcdir)/nsProxyAutoConfig.manifest \
-		$(NULL)
 
 EXTRA_JS_MODULES = \
 		NetUtil.jsm \

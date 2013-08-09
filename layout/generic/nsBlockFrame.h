@@ -130,7 +130,7 @@ public:
   line_iterator line(nsLineBox* aList) { return mLines.begin(aList); }
   reverse_line_iterator rline(nsLineBox* aList) { return mLines.rbegin(aList); }
 
-  friend nsIFrame* NS_NewBlockFrame(nsIPresShell* aPresShell, nsStyleContext* aContext, PRUint32 aFlags);
+  friend nsIFrame* NS_NewBlockFrame(nsIPresShell* aPresShell, nsStyleContext* aContext, uint32_t aFlags);
 
   // nsQueryFrame
   NS_DECL_QUERYFRAME
@@ -158,11 +158,8 @@ public:
   NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                               const nsRect&           aDirtyRect,
                               const nsDisplayListSet& aLists);
-  virtual void InvalidateInternal(const nsRect& aDamageRect,
-                                  nscoord aX, nscoord aY, nsIFrame* aForChild,
-                                  PRUint32 aFlags);
   virtual nsIAtom* GetType() const;
-  virtual bool IsFrameOfType(PRUint32 aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const
   {
     return nsContainerFrame::IsFrameOfType(aFlags &
              ~(nsIFrame::eCanContainOverflowContainers |
@@ -170,13 +167,13 @@ public:
   }
 
 #ifdef DEBUG
-  NS_IMETHOD List(FILE* out, PRInt32 aIndent) const;
+  NS_IMETHOD List(FILE* out, int32_t aIndent, uint32_t aFlags = 0) const;
   NS_IMETHOD_(nsFrameState) GetDebugStateBits() const;
   NS_IMETHOD GetFrameName(nsAString& aResult) const;
 #endif
 
 #ifdef ACCESSIBILITY
-  virtual already_AddRefed<Accessible> CreateAccessible();
+  virtual mozilla::a11y::AccType AccessibleType() MOZ_OVERRIDE;
 #endif
 
   // line cursor methods to speed up searching for the line(s)
@@ -193,7 +190,7 @@ public:
 
   // Clear out line cursor because we're disturbing the lines (i.e., Reflow)
   void ClearLineCursor();
-  // Get the first line that might contain y-coord 'y', or nsnull if you must search
+  // Get the first line that might contain y-coord 'y', or nullptr if you must search
   // all lines. If nonnull is returned then we guarantee that the lines'
   // combinedArea.ys and combinedArea.yMosts are non-decreasing.
   // The actual line returned might not contain 'y', but if not, it is guaranteed
@@ -243,7 +240,7 @@ public:
   }
 
   /**
-   * @return the bullet frame or nsnull if we don't have one.
+   * @return the bullet frame or nullptr if we don't have one.
    */
   nsBulletFrame* GetBullet() const {
     nsBulletFrame* outside = GetOutsideBullet();
@@ -264,9 +261,9 @@ public:
                     const nsHTMLReflowState& aReflowState,
                     nsReflowStatus&          aStatus);
 
-  NS_IMETHOD AttributeChanged(PRInt32         aNameSpaceID,
+  NS_IMETHOD AttributeChanged(int32_t         aNameSpaceID,
                               nsIAtom*        aAttribute,
-                              PRInt32         aModType);
+                              int32_t         aModType);
 
   /**
    * Move any frames on our overflow list to the end of our principal list.
@@ -291,7 +288,11 @@ public:
 
   static nsresult GetCurrentLine(nsBlockReflowState *aState, nsLineBox **aOutCurrentLine);
 
-  static bool BlockIsMarginRoot(nsIFrame* aBlock);
+  /**
+   * Determine if this block is a margin root at the top/bottom edges.
+   */
+  void IsMarginRoot(bool* aTopMarginRoot, bool* aBottomMarginRoot);
+
   static bool BlockNeedsFloatManager(nsIFrame* aBlock);
 
   /**
@@ -363,16 +364,16 @@ protected:
 #endif
 #endif
 
-  NS_DECLARE_FRAME_PROPERTY(LineCursorProperty, nsnull)
+  NS_DECLARE_FRAME_PROPERTY(LineCursorProperty, nullptr)
   nsLineBox* GetLineCursor() {
     return (GetStateBits() & NS_BLOCK_HAS_LINE_CURSOR) ?
-      static_cast<nsLineBox*>(Properties().Get(LineCursorProperty())) : nsnull;
+      static_cast<nsLineBox*>(Properties().Get(LineCursorProperty())) : nullptr;
   }
 
   nsLineBox* NewLineBox(nsIFrame* aFrame, bool aIsBlock) {
     return NS_NewLineBox(PresContext()->PresShell(), aFrame, aIsBlock);
   }
-  nsLineBox* NewLineBox(nsLineBox* aFromLine, nsIFrame* aFrame, PRInt32 aCount) {
+  nsLineBox* NewLineBox(nsLineBox* aFromLine, nsIFrame* aFrame, int32_t aCount) {
     return NS_NewLineBox(PresContext()->PresShell(), aFromLine, aFrame, aCount);
   }
   void FreeLineBox(nsLineBox* aLine) {
@@ -399,7 +400,7 @@ protected:
   void SlideLine(nsBlockReflowState& aState,
                  nsLineBox* aLine, nscoord aDY);
 
-  virtual PRIntn GetSkipSides() const;
+  virtual int GetSkipSides() const;
 
   virtual void ComputeFinalSize(const nsHTMLReflowState& aReflowState,
                                 nsBlockReflowState&      aState,
@@ -452,7 +453,7 @@ public:
     REMOVE_FIXED_CONTINUATIONS = 0x02,
     FRAMES_ARE_EMPTY           = 0x04
   };
-  nsresult DoRemoveFrame(nsIFrame* aDeletedFrame, PRUint32 aFlags);
+  nsresult DoRemoveFrame(nsIFrame* aDeletedFrame, uint32_t aFlags);
 
   void ReparentFloats(nsIFrame* aFirstFrame,
                       nsBlockFrame* aOldParent, bool aFromOverflow,
@@ -494,7 +495,7 @@ protected:
 
   /** Find any trailing BR clear from the last line of the block (or its PIFs)
    */
-  PRUint8 FindTrailingClear();
+  uint8_t FindTrailingClear();
 
   /**
     * Remove a float from our float list and also the float cache
@@ -548,11 +549,9 @@ protected:
    * on those lines because the text in the lines might have changed due to
    * addition/removal of frames.
    * @param aLine the line to mark dirty
-   * @param aLineList the line list containing that line, null means the line
-   *        is in 'mLines' of this frame.
+   * @param aLineList the line list containing that line
    */
-  nsresult MarkLineDirty(line_iterator aLine,
-                         const nsLineList* aLineList = nsnull);
+  void MarkLineDirty(line_iterator aLine, const nsLineList* aLineList);
 
   // XXX where to go
   bool IsLastLine(nsBlockReflowState& aState,
@@ -632,11 +631,14 @@ protected:
                                          nsIFrame*           aFrame,
                                          bool&             aMadeNewFrame);
 
-  // Push aLine, which cannot be placed on this page/column but should
-  // fit on a future one.  Set aKeepReflowGoing to false.
+  /**
+   * Push aLine (and any after it), since it cannot be placed on this
+   * page/column.  Set aKeepReflowGoing to false and set
+   * flag aState.mReflowStatus as incomplete.
+   */
   void PushTruncatedLine(nsBlockReflowState& aState,
                          line_iterator       aLine,
-                         bool&             aKeepReflowGoing);
+                         bool*               aKeepReflowGoing);
 
   nsresult SplitLine(nsBlockReflowState& aState,
                      nsLineLayout& aLineLayout,
@@ -647,7 +649,7 @@ protected:
   /**
    * Pull a frame from the next available location (one of our lines or
    * one of our next-in-flows lines).
-   * @return the pulled frame or nsnull
+   * @return the pulled frame or nullptr
    */
   nsIFrame* PullFrame(nsBlockReflowState& aState,
                       line_iterator       aLine);
@@ -662,7 +664,7 @@ protected:
    * it dirty) and the code at the top of ReflowLine empties the
    * array. So eventually, it will be removed, just not right away.
    *
-   * @return the pulled frame or nsnull
+   * @return the pulled frame or nullptr
    */
   nsIFrame* PullFrameFrom(nsBlockReflowState&  aState,
                           nsLineBox*           aLine,
@@ -695,11 +697,14 @@ protected:
   bool RenumberLists(nsPresContext* aPresContext);
 
   static bool RenumberListsInBlock(nsPresContext* aPresContext,
-                                     nsBlockFrame* aBlockFrame,
-                                     PRInt32* aOrdinal,
-                                     PRInt32 aDepth);
+                                   nsBlockFrame* aBlockFrame,
+                                   int32_t* aOrdinal,
+                                   int32_t aDepth,
+                                   int32_t aIncrement);
 
-  static bool RenumberListsFor(nsPresContext* aPresContext, nsIFrame* aKid, PRInt32* aOrdinal, PRInt32 aDepth);
+  static bool RenumberListsFor(nsPresContext* aPresContext, nsIFrame* aKid,
+                               int32_t* aOrdinal, int32_t aDepth,
+                               int32_t aIncrement);
 
   static bool FrameStartsCounterScope(nsIFrame* aFrame);
 
@@ -758,12 +763,12 @@ protected:
   void SetOverflowOutOfFlows(const nsFrameList& aList, nsFrameList* aPropValue);
 
   /**
-   * @return the inside bullet frame or nsnull if we don't have one.
+   * @return the inside bullet frame or nullptr if we don't have one.
    */
   nsBulletFrame* GetInsideBullet() const;
 
   /**
-   * @return the outside bullet frame or nsnull if we don't have one.
+   * @return the outside bullet frame or nullptr if we don't have one.
    */
   nsBulletFrame* GetOutsideBullet() const;
 
@@ -787,10 +792,10 @@ protected:
   // Remove and return the pushed floats list.
   nsFrameList* RemovePushedFloats();
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
   void VerifyLines(bool aFinalCheckOK);
   void VerifyOverflowSituation();
-  PRInt32 GetDepth() const;
+  int32_t GetDepth() const;
 #endif
 
   nscoord mMinWidth, mPrefWidth;
@@ -817,7 +822,7 @@ public:
   static bool gVerifyLines;
   static bool gDisableResizeOpt;
 
-  static PRInt32 gNoiseIndent;
+  static int32_t gNoiseIndent;
 
   static const char* kReflowCommandType[];
 
@@ -876,13 +881,13 @@ public:
   line_iterator GetLine() { return mLine; }
   bool IsLastLineInList();
   nsBlockFrame* GetContainer() { return mFrame; }
-  bool GetInOverflow() { return mInOverflowLines != nsnull; }
+  bool GetInOverflow() { return mLineList != &mFrame->mLines; }
 
   /**
    * Returns the current line list we're iterating, null means
    * we're iterating |mLines| of the container.
    */
-  nsLineList* GetLineList() { return mInOverflowLines; }
+  nsLineList* GetLineList() { return mLineList; }
 
   /**
    * Returns the end-iterator of whatever line list we're in.
@@ -907,7 +912,7 @@ private:
 
   nsBlockFrame* mFrame;
   line_iterator mLine;
-  nsLineList*   mInOverflowLines;
+  nsLineList*   mLineList;  // the line list mLine is in
 
   /**
    * Moves iterator to next valid line reachable from the current block.

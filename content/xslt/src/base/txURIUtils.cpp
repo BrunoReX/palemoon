@@ -5,13 +5,8 @@
 
 #include "txURIUtils.h"
 #include "nsNetUtil.h"
-#include "nsIAttribute.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsIDocument.h"
-#include "nsIDOMDocument.h"
-#include "nsIContent.h"
 #include "nsIPrincipal.h"
-#include "nsINodeInfo.h"
 
 /**
  * URIUtils
@@ -48,8 +43,8 @@ URIUtils::ResetWithSource(nsIDocument *aNewDoc, nsIDOMNode *aSourceNode)
 {
     nsCOMPtr<nsINode> node = do_QueryInterface(aSourceNode);
     if (!node) {
-        // XXXbz passing nsnull as the first arg to Reset is illegal
-        aNewDoc->Reset(nsnull, nsnull);
+        // XXXbz passing nullptr as the first arg to Reset is illegal
+        aNewDoc->Reset(nullptr, nullptr);
         return;
     }
 
@@ -63,7 +58,7 @@ URIUtils::ResetWithSource(nsIDocument *aNewDoc, nsIDOMNode *aSourceNode)
         // Need to synthesize one
         if (NS_FAILED(NS_NewChannel(getter_AddRefs(channel),
                                     sourceDoc->GetDocumentURI(),
-                                    nsnull,
+                                    nullptr,
                                     loadGroup))) {
             return;
         }

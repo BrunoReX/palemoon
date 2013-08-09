@@ -5,7 +5,7 @@
 
 "use strict";
 
-const EXPORTED_SYMBOLS = ["StyleEditor", "StyleEditorFlags"];
+this.EXPORTED_SYMBOLS = ["StyleEditor", "StyleEditorFlags", "StyleEditorManager"];
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -36,10 +36,10 @@ const TRANSITION_CLASS = "moz-styleeditor-transitioning";
 const TRANSITION_DURATION_MS = 500;
 const TRANSITION_RULE = "\
 :root.moz-styleeditor-transitioning, :root.moz-styleeditor-transitioning * {\
--moz-transition-duration: " + TRANSITION_DURATION_MS + "ms !important; \
--moz-transition-delay: 0ms !important;\
--moz-transition-timing-function: ease-out !important;\
--moz-transition-property: all !important;\
+transition-duration: " + TRANSITION_DURATION_MS + "ms !important; \
+transition-delay: 0ms !important;\
+transition-timing-function: ease-out !important;\
+transition-property: all !important;\
 }";
 
 /**
@@ -65,7 +65,7 @@ const TRANSITIONS_ENABLED = Services.prefs.getBoolPref(TRANSITIONS_PREF);
  * @see inputElement
  * @see StyleEditorChrome
  */
-function StyleEditor(aDocument, aStyleSheet)
+this.StyleEditor = function StyleEditor(aDocument, aStyleSheet)
 {
   assert(aDocument, "Argument 'aDocument' is required.");
 
@@ -288,22 +288,24 @@ StyleEditor.prototype = {
    */
   importFromFile: function SE_importFromFile(aFile, aParentWindow)
   {
-    aFile = this._showFilePicker(aFile, false, aParentWindow);
-    if (!aFile) {
-      return;
-    }
-    this._savedFile = aFile; // remember filename for next save if any
+    let callback = function(aFile) {
+      if (aFile) {
+        this._savedFile = aFile; // remember filename for next save if any
 
-    NetUtil.asyncFetch(aFile, function onAsyncFetch(aStream, aStatus) {
-      if (!Components.isSuccessCode(aStatus)) {
-        return this._signalError(LOAD_ERROR);
+        NetUtil.asyncFetch(aFile, function onAsyncFetch(aStream, aStatus) {
+          if (!Components.isSuccessCode(aStatus)) {
+            return this._signalError(LOAD_ERROR);
+          }
+          let source = NetUtil.readInputStreamToString(aStream, aStream.available());
+          aStream.close();
+    
+          this._appendNewStyleSheet(source);
+          this.clearFlag(StyleEditorFlags.ERROR);
+        }.bind(this));
       }
-      let source = NetUtil.readInputStreamToString(aStream, aStream.available());
-      aStream.close();
+    }.bind(this);
 
-      this._appendNewStyleSheet(source);
-      this.clearFlag(StyleEditorFlags.ERROR);
-    }.bind(this));
+    this._showFilePicker(aFile, false, aParentWindow, callback);
   },
 
   /**
@@ -373,6 +375,10 @@ StyleEditor.prototype = {
       this._friendlyName = (sheetURI.indexOf(contentURI) == 0)
                            ? sheetURI.substring(contentURI.length)
                            : sheetURI;
+      try {
+        this._friendlyName = decodeURI(this._friendlyName);
+      } catch (ex) {
+      }
     }
     return this._friendlyName;
   },
@@ -553,46 +559,48 @@ StyleEditor.prototype = {
    */
   saveToFile: function SE_saveToFile(aFile, aCallback)
   {
-    aFile = this._showFilePicker(aFile || this._styleSheetFilePath, true);
-
-    if (!aFile) {
-      if (aCallback) {
-        aCallback(null);
-      }
-      return;
-    }
-
-    if (this._sourceEditor) {
-      this._state.text = this._sourceEditor.getText();
-    }
-
-    let ostream = FileUtils.openSafeFileOutputStream(aFile);
-    let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
-                      .createInstance(Ci.nsIScriptableUnicodeConverter);
-    converter.charset = "UTF-8";
-    let istream = converter.convertToInputStream(this._state.text);
-
-    NetUtil.asyncCopy(istream, ostream, function SE_onStreamCopied(status) {
-      if (!Components.isSuccessCode(status)) {
+    let callback = function(aReturnFile) {
+      if (!aReturnFile) {
         if (aCallback) {
           aCallback(null);
         }
-        this._signalError(SAVE_ERROR);
         return;
       }
-      FileUtils.closeSafeFileOutputStream(ostream);
 
-      // remember filename for next save if any
-      this._friendlyName = null;
-      this._savedFile = aFile;
-      this._persistExpando();
-
-      if (aCallback) {
-        aCallback(aFile);
+      if (this._sourceEditor) {
+        this._state.text = this._sourceEditor.getText();
       }
-      this.clearFlag(StyleEditorFlags.UNSAVED);
-      this.clearFlag(StyleEditorFlags.ERROR);
-    }.bind(this));
+
+      let ostream = FileUtils.openSafeFileOutputStream(aReturnFile);
+      let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
+                        .createInstance(Ci.nsIScriptableUnicodeConverter);
+      converter.charset = "UTF-8";
+      let istream = converter.convertToInputStream(this._state.text);
+
+      NetUtil.asyncCopy(istream, ostream, function SE_onStreamCopied(status) {
+        if (!Components.isSuccessCode(status)) {
+          if (aCallback) {
+            aCallback(null);
+          }
+          this._signalError(SAVE_ERROR);
+          return;
+        }
+        FileUtils.closeSafeFileOutputStream(ostream);
+
+        // remember filename for next save if any
+        this._friendlyName = null;
+        this._savedFile = aReturnFile;
+        this._persistExpando();
+
+        if (aCallback) {
+          aCallback(aReturnFile);
+        }
+        this.clearFlag(StyleEditorFlags.UNSAVED);
+        this.clearFlag(StyleEditorFlags.ERROR);
+      }.bind(this));
+    }.bind(this);
+
+    this._showFilePicker(aFile || this._styleSheetFilePath, true, null, callback);
   },
 
   /**
@@ -690,31 +698,36 @@ StyleEditor.prototype = {
    * @param nsIWindow aParentWindow
    *        Optional parent window. If null the parent window of the file picker
    *        will be the window of the attached input element.
-   * @return nsIFile
-   *         The selected file or null if the user did not pick one.
+   * @param aCallback
+   *        The callback method, which will be called passing in the selected
+   *        file or null if the user did not pick one.
    */
-  _showFilePicker: function SE__showFilePicker(aFile, aSave, aParentWindow)
+  _showFilePicker: function SE__showFilePicker(aFile, aSave, aParentWindow, aCallback)
   {
     if (typeof(aFile) == "string") {
       try {
         if (Services.io.extractScheme(aFile) == "file") {
           let uri = Services.io.newURI(aFile, null, null);
           let file = uri.QueryInterface(Ci.nsIFileURL).file;
-          return file;
+          aCallback(file);
+          return;
         }
       } catch (ex) {
       }
       try {
         let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsILocalFile);
         file.initWithPath(aFile);
-        return file;
+        aCallback(file);
+        return;
       } catch (ex) {
         this._signalError(aSave ? SAVE_ERROR : LOAD_ERROR);
-        return null;
+        aCallback(null);
+        return;
       }
     }
     if (aFile) {
-      return aFile;
+      aCallback(aFile);
+      return;
     }
 
     let window = aParentWindow
@@ -723,13 +736,19 @@ StyleEditor.prototype = {
     let fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
     let mode = aSave ? fp.modeSave : fp.modeOpen;
     let key = aSave ? "saveStyleSheet" : "importStyleSheet";
+    let fpCallback = function fpCallback_done(aResult) {
+      if (aResult == Ci.nsIFilePicker.returnCancel) {
+        aCallback(null);
+      } else {
+        aCallback(fp.file);
+      }
+    };
 
     fp.init(window, _(key + ".title"), mode);
     fp.appendFilters(_(key + ".filter"), "*.css");
     fp.appendFilters(fp.filterAll);
-
-    let rv = fp.show();
-    return (rv == fp.returnCancel) ? null : fp.file;
+    fp.open(fpCallback);
+    return;
   },
 
   /**
@@ -755,6 +774,87 @@ StyleEditor.prototype = {
       default:
         this._loadSourceFromCache(this.styleSheet.href);
         break;
+    }
+  },
+
+  /**
+   * Decode a CSS source string to unicode according to the character set rules
+   * defined in <http://www.w3.org/TR/CSS2/syndata.html#charset>.
+   *
+   * @param string aString
+   *        Source of a CSS stylesheet, loaded from file or cache.
+   * @param string aChannelCharset
+   *        Charset of the source string if set by the HTTP channel.
+   * @return string
+   *         The CSS string, in unicode.
+   */
+  _decodeCSSCharset: function SE__decodeCSSCharset(aString, aChannelCharset)
+  {
+    // StyleSheet's charset can be specified from multiple sources
+
+    if (aChannelCharset.length > 0) {
+      // step 1 of syndata.html: charset given in HTTP header.
+      return this._convertToUnicode(aString, aChannelCharset);
+    }
+
+    let sheet = this.styleSheet;
+    if (sheet) {
+      // Do we have a @charset rule in the stylesheet?
+      // step 2 of syndata.html (without the BOM check).
+      if (sheet.cssRules) {
+        let rules = sheet.cssRules;
+        if (rules.length
+            && rules.item(0).type == Ci.nsIDOMCSSRule.CHARSET_RULE) {
+          return this._convertToUnicode(aString, rules.item(0).encoding);
+        }
+      }
+
+      if (sheet.ownerNode) {
+        // step 3: see <link charset="…">
+        let linkCharset = sheet.ownerNode.getAttribute("charset");
+        if (linkCharset != null) {
+          return this._convertToUnicode(aString, linkCharset);
+        }
+      }
+
+      // step 4 (1 of 2): charset of referring stylesheet.
+      let parentSheet = sheet.parentStyleSheet;
+      if (parentSheet && parentSheet.cssRules &&
+          parentSheet.cssRules[0].type == Ci.nsIDOMCSSRule.CHARSET_RULE) {
+        return this._convertToUnicode(aString,
+            parentSheet.cssRules[0].encoding);
+      }
+
+      // step 4 (2 of 2): charset of referring document.
+      if (sheet.ownerNode && sheet.ownerNode.ownerDocument.characterSet) {
+        return this._convertToUnicode(aString,
+            sheet.ownerNode.ownerDocument.characterSet);
+      }
+    }
+
+    // step 5: default to utf-8.
+    return this._convertToUnicode(aString, "UTF-8");
+  },
+
+  /**
+   * Convert a given string, encoded in a given character set, to unicode.
+   * @param string aString
+   *        A string.
+   * @param string aCharset
+   *        A character set.
+   * @return string
+   *         A unicode string.
+   */
+  _convertToUnicode: function SE__convertToUnicode(aString, aCharset) {
+    // Decoding primitives.
+    let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
+        .createInstance(Ci.nsIScriptableUnicodeConverter);
+
+    try {
+      converter.charset = aCharset;
+      return converter.ConvertToUnicode(aString);
+    } catch(e) {
+      return aString;
     }
   },
 
@@ -790,6 +890,7 @@ StyleEditor.prototype = {
   {
     let channel = Services.io.newChannel(aHref, null, null);
     let chunks = [];
+    let channelCharset = "";
     let streamListener = { // nsIStreamListener inherits nsIRequestObserver
       onStartRequest: function (aRequest, aContext, aStatusCode) {
         if (!Components.isSuccessCode(aStatusCode)) {
@@ -797,6 +898,10 @@ StyleEditor.prototype = {
         }
       }.bind(this),
       onDataAvailable: function (aRequest, aContext, aStream, aOffset, aCount) {
+        let channel = aRequest.QueryInterface(Ci.nsIChannel);
+        if (!channelCharset) {
+          channelCharset = channel.contentCharset;
+        }
         chunks.push(NetUtil.readInputStreamToString(aStream, aCount));
       },
       onStopRequest: function (aRequest, aContext, aStatusCode) {
@@ -804,10 +909,17 @@ StyleEditor.prototype = {
           return this._signalError(LOAD_ERROR);
         }
 
-        this._onSourceLoad(chunks.join(""));
+        this._onSourceLoad(chunks.join(""), channelCharset);
       }.bind(this)
     };
 
+    if (channel instanceof Ci.nsIPrivateBrowsingChannel) {
+      let contentWin = this.contentDocument.defaultView;
+      let loadContext = contentWin.QueryInterface(Ci.nsIInterfaceRequestor)
+                          .getInterface(Ci.nsIWebNavigation)
+                          .QueryInterface(Ci.nsILoadContext);
+      channel.setPrivate(loadContext.usePrivateBrowsing);
+    }
     channel.loadFlags = channel.LOAD_FROM_CACHE;
     channel.asyncOpen(streamListener, null);
   },
@@ -816,9 +928,14 @@ StyleEditor.prototype = {
    * Called when source has been loaded.
    *
    * @param string aSourceText
+   * @param string aCharset
+   *        Optional. The character set to use. The default is to detect the
+   *        character set following the standard (see
+   *        <http://www.w3.org/TR/CSS2/syndata.html#charset>).
    */
-  _onSourceLoad: function SE__onSourceLoad(aSourceText)
+  _onSourceLoad: function SE__onSourceLoad(aSourceText, aCharset)
   {
+    aSourceText = this._decodeCSSCharset(aSourceText, aCharset || "");
     this._restoreExpando();
     this._state.text = prettifyCSS(aSourceText);
     this._loaded = true;
@@ -1026,7 +1143,7 @@ StyleEditor.prototype = {
  *
  * @see StyleEditor.setFlag
  */
-let StyleEditorFlags = {
+this.StyleEditorFlags = {
   DISABLED:      "disabled",
   ERROR:         "error",
   IMPORTED:      "imported",
@@ -1159,4 +1276,135 @@ function setupBracketCompletion(aSourceEditor)
     // and rewind caret
     aSourceEditor.setCaretOffset(aSourceEditor.getCaretOffset() - 1);
   }, false);
+}
+
+/**
+  * Manage the different editors instances.
+  */
+
+this.StyleEditorManager = function StyleEditorManager(aWindow) {
+  this.chromeWindow = aWindow;
+  this.listenToTabs();
+  this.editors = new WeakMap();
+}
+
+StyleEditorManager.prototype = {
+
+  /**
+   * Get the editor for a specific content window.
+   */
+  getEditorForWindow: function SEM_getEditorForWindow(aContentWindow) {
+    return this.editors.get(aContentWindow);
+  },
+
+  /**
+   * Focus the editor and select a stylesheet.
+   *
+   * @param {CSSStyleSheet} [aSelectedStyleSheet] default Stylesheet.
+   * @param {Number} [aLine] Line to which the caret should be moved (one-indexed).
+   * @param {Number} [aCol] Column to which the caret should be moved (one-indexed).
+   */
+  selectEditor: function SEM_selectEditor(aWindow, aSelectedStyleSheet, aLine, aCol) {
+    if (aSelectedStyleSheet) {
+      aWindow.styleEditorChrome.selectStyleSheet(aSelectedStyleSheet, aLine, aCol);
+    }
+    aWindow.focus();
+  },
+
+  /**
+   * Open a new editor.
+   *
+   * @param {Window} content window.
+   * @param {Window} chrome window.
+   * @param {CSSStyleSheet} [aSelectedStyleSheet] default Stylesheet.
+   * @param {Number} [aLine] Line to which the caret should be moved (one-indexed).
+   * @param {Number} [aCol] Column to which the caret should be moved (one-indexed).
+   */
+  newEditor: function SEM_newEditor(aContentWindow, aChromeWindow, aSelectedStyleSheet, aLine, aCol) {
+    const CHROME_URL = "chrome://browser/content/styleeditor.xul";
+    const CHROME_WINDOW_FLAGS = "chrome,centerscreen,resizable,dialog=no";
+
+    let args = {
+      contentWindow: aContentWindow,
+      selectedStyleSheet: aSelectedStyleSheet,
+      line: aLine,
+      col: aCol
+    };
+    args.wrappedJSObject = args;
+    let chromeWindow = Services.ww.openWindow(aChromeWindow, CHROME_URL, "_blank",
+                                              CHROME_WINDOW_FLAGS, args);
+
+    chromeWindow.onunload = function() {
+      if (chromeWindow.location == CHROME_URL) {
+        // not about:blank being unloaded
+        this.unregisterEditor(aContentWindow);
+      }
+    }.bind(this);
+    chromeWindow.focus();
+
+    this.editors.set(aContentWindow, chromeWindow);
+
+    this.refreshCommand();
+
+    return chromeWindow;
+  },
+
+  /**
+   * Toggle an editor.
+   *
+   * @param {Window} associated content window.
+   */
+  toggleEditor: function SEM_toggleEditor(aContentWindow, aChromeWindow) {
+    let editor = this.getEditorForWindow(aContentWindow);
+    if (editor) {
+      editor.close();
+    } else {
+      this.newEditor(aContentWindow, aChromeWindow);
+    }
+  },
+
+  /**
+   * Close an editor.
+   *
+   * @param {Window} associated content window.
+   */
+  unregisterEditor: function SEM_unregisterEditor(aContentWindow) {
+    let chromeWindow = this.editors.get(aContentWindow);
+    if (chromeWindow) {
+      chromeWindow.close();
+    }
+    this.editors.delete(aContentWindow);
+    this.refreshCommand();
+  },
+
+  /**
+   * Update the status of tool's menuitems and buttons.
+   */
+  refreshCommand: function SEM_refreshCommand() {
+    let contentWindow = this.chromeWindow.gBrowser.contentWindow;
+    let command = this.chromeWindow.document.getElementById("Tools:StyleEditor");
+
+    let win = this.getEditorForWindow(contentWindow);
+    if (win) {
+      command.setAttribute("checked", "true");
+    } else {
+      command.setAttribute("checked", "false");
+    }
+  },
+
+  /**
+   * Trigger refreshCommand when needed.
+   */
+  listenToTabs: function SEM_listenToTabs() {
+    let win = this.chromeWindow;
+    let tabs = win.gBrowser.tabContainer;
+
+    let bound_refreshCommand = this.refreshCommand.bind(this);
+    tabs.addEventListener("TabSelect", bound_refreshCommand, true);
+
+    win.addEventListener("unload", function onClose(aEvent) {
+      tabs.removeEventListener("TabSelect", bound_refreshCommand, true);
+      win.removeEventListener("unload", onClose, false);
+    }, false);
+  },
 }

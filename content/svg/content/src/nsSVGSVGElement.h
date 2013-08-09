@@ -18,6 +18,7 @@
 #include "nsSVGStylableElement.h"
 #include "nsSVGViewBox.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
+#include "mozilla/Attributes.h"
 
 class nsIDOMSVGMatrix;
 class nsSMILTimeContainer;
@@ -59,7 +60,7 @@ public:
 
 private:
 
-  struct DOMVal : public nsIDOMSVGPoint {
+  struct DOMVal MOZ_FINAL : public nsIDOMSVGPoint {
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
     NS_DECL_CYCLE_COLLECTION_CLASS(DOMVal)
 
@@ -129,8 +130,8 @@ public:
   NS_DECL_NSIDOMSVGZOOMANDPAN
   
   // xxx I wish we could use virtual inheritance
-  NS_FORWARD_NSIDOMNODE(nsSVGSVGElementBase::)
-  NS_FORWARD_NSIDOMELEMENT(nsSVGSVGElementBase::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
   NS_FORWARD_NSIDOMSVGELEMENT(nsSVGSVGElementBase::)
 
   /**
@@ -172,15 +173,15 @@ public:
   virtual bool HasValidDimensions() const;
  
   // nsSVGSVGElement methods:
-  float GetLength(PRUint8 mCtxType);
-  // Copy our width or height to the target
-  void SyncWidthOrHeight(nsIAtom* aName, nsSVGElement *aTarget) const;
+  float GetLength(uint8_t mCtxType);
 
   // public helpers:
 
   /**
    * Returns true if this element has a base/anim value for its "viewBox"
-   * attribute that defines a viewBox rectangle with finite values.
+   * attribute that defines a viewBox rectangle with finite values, or
+   * if there is a view element overriding this element's viewBox and it
+   * has a valid viewBox.
    *
    * Note that this does not check whether we need to synthesize a viewBox,
    * so you must call ShouldSynthesizeViewBox() if you need to check that too.
@@ -188,9 +189,7 @@ public:
    * Note also that this method does not pay attention to whether the width or
    * height values of the viewBox rect are positive!
    */
-  bool HasViewBox() const {
-    return mViewBox.IsExplicitlySet();
-  }
+  bool HasViewBox() const;
 
   /**
    * Returns true if we should synthesize a viewBox for ourselves (that is, if
@@ -211,6 +210,12 @@ public:
     return mHasChildrenOnlyTransform;
   }
 
+  void UpdateHasChildrenOnlyTransform();
+
+  enum ChildrenOnlyTransformChangedFlags {
+    eDuringReflow = 1
+  };
+
   /**
    * This method notifies the style system that the overflow rects of our
    * immediate childrens' frames need to be updated. It is called by our own
@@ -221,7 +226,7 @@ public:
    * GetAttributeChangeHint is because we need to act on non-attribute (e.g.
    * currentScale) changes in addition to attribute (e.g. viewBox) changes.
    */
-  void ChildrenOnlyTransformChanged();
+  void ChildrenOnlyTransformChanged(uint32_t aFlags = 0);
 
   // This services any pending notifications for the transform on on this root
   // <svg> node needing to be recalculated.  (Only applicable in
@@ -229,6 +234,12 @@ public:
   virtual void FlushImageTransformInvalidation();
 
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
+
+  // Returns true IFF our attributes are currently overridden by a <view>
+  // element and that element's ID matches the passed-in string.
+  bool IsOverriddenBy(const nsAString &aViewID) const {
+    return mCurrentViewID && mCurrentViewID->Equals(aViewID);
+  }
 
   svgFloatSize GetViewportSize() const {
     return svgFloatSize(mViewportWidth, mViewportHeight);
@@ -254,6 +265,8 @@ private:
 
   // implementation helpers:
 
+  nsSVGViewElement* GetCurrentViewElement() const;
+
   // Methods for <image> elements to override my "PreserveAspectRatio" value.
   // These are private so that only our friends (nsSVGImageFrame in
   // particular) have access.
@@ -267,8 +280,8 @@ private:
   bool SetViewBoxProperty(const nsSVGViewBoxRect& aViewBox);
   const nsSVGViewBoxRect* GetViewBoxProperty() const;
   bool ClearViewBoxProperty();
-  bool SetZoomAndPanProperty(PRUint16 aValue);
-  PRUint16 GetZoomAndPanProperty() const;
+  bool SetZoomAndPanProperty(uint16_t aValue);
+  uint16_t GetZoomAndPanProperty() const;
   bool ClearZoomAndPanProperty();
 
   bool IsRoot() const {
@@ -292,7 +305,7 @@ private:
    * While binding to the tree we need to determine if we will be the outermost
    * <svg> element _before_ the children are bound (as they want to know what
    * timed document root to register with) and therefore _before_ our parent is
-   * set (both actions are performed by nsGenericElement::BindToTree) so we
+   * set (both actions are performed by Element::BindToTree) so we
    * can't use GetOwnerSVGElement() as it relies on GetParent(). This code is
    * basically a simplified version of GetOwnerSVGElement that uses the parent
    * parameters passed in instead.
@@ -340,7 +353,8 @@ private:
   nsSVGViewBox                   mViewBox;
   SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;
 
-  nsSVGSVGElement               *mCoordCtx;
+  nsAutoPtr<gfxMatrix>           mFragmentIdentifierTransform;
+  nsAutoPtr<nsString>            mCurrentViewID;
 
   // The size of the rectangular SVG viewport into which we render. This is
   // not (necessarily) the same as the content area. See:

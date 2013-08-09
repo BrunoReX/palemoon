@@ -26,7 +26,7 @@
 #include "nsIServiceManager.h"
 #include "nsPrintSettingsQt.h"
 #include "nsIFileStreams.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsTArray.h"
 
 #include <unistd.h>
@@ -59,14 +59,14 @@ NS_IMETHODIMP nsDeviceContextSpecQt::GetSurfaceForPrinter(
         gfxASurface** aSurface)
 {
     NS_ENSURE_ARG_POINTER(aSurface);
-    *aSurface = nsnull;
+    *aSurface = nullptr;
 
     double width, height;
     mPrintSettings->GetEffectivePageSize(&width, &height);
 
     // If we're in landscape mode, we'll be rotating the output --
     // need to swap width & height.
-    PRInt32 orientation;
+    int32_t orientation;
     mPrintSettings->GetOrientation(&orientation);
     if (nsIPrintSettings::kLandscapeOrientation == orientation) {
         double tmp = width;
@@ -106,7 +106,7 @@ NS_IMETHODIMP nsDeviceContextSpecQt::GetSurfaceForPrinter(
     if (NS_FAILED(rv))
         return rv;
 
-    PRInt16 format;
+    int16_t format;
     mPrintSettings->GetOutputFormat(&format);
 
     nsRefPtr<gfxASurface> surface;
@@ -163,8 +163,8 @@ NS_IMETHODIMP nsDeviceContextSpecQt::GetPath(const char** aPath)
 NS_IMETHODIMP nsDeviceContextSpecQt::BeginDocument(
         PRUnichar* aTitle,
         PRUnichar* aPrintToFileName,
-        PRInt32 aStartPage,
-        PRInt32 aEndPage)
+        int32_t aStartPage,
+        int32_t aEndPage)
 {
     if (mToPrinter) {
         return NS_ERROR_NOT_IMPLEMENTED;
@@ -179,7 +179,7 @@ NS_IMETHODIMP nsDeviceContextSpecQt::EndDocument()
     }
     // Handle print-to-file ourselves for the benefit of embedders
     nsXPIDLString targetPath;
-    nsCOMPtr<nsILocalFile> destFile;
+    nsCOMPtr<nsIFile> destFile;
     mPrintSettings->GetToFileName(getter_Copies(targetPath));
 
     nsresult rv = NS_NewNativeLocalFile(NS_ConvertUTF16toUTF8(targetPath),
@@ -220,7 +220,7 @@ NS_IMETHODIMP nsPrinterEnumeratorQt::GetPrinterNameList(
         nsIStringEnumerator** aPrinterNameList)
 {
     NS_ENSURE_ARG_POINTER(aPrinterNameList);
-    *aPrinterNameList = nsnull;
+    *aPrinterNameList = nullptr;
 
     QList<QPrinterInfo> qprinters = QPrinterInfo::availablePrinters();
     if (qprinters.size() == 0)
@@ -229,7 +229,7 @@ NS_IMETHODIMP nsPrinterEnumeratorQt::GetPrinterNameList(
     nsTArray<nsString>* printers =
         new nsTArray<nsString>(qprinters.size()); 
 
-    for (PRInt32 i = 0; i < qprinters.size(); ++i) {
+    for (int32_t i = 0; i < qprinters.size(); ++i) {
         printers->AppendElement(
                 nsDependentString(
                     (const PRUnichar*)qprinters[i].printerName().constData()));

@@ -9,7 +9,7 @@ typedef InfallibleTArray<nsIntRegion> RegionArray;
 namespace mozilla {
 namespace _ipdltest {
 
-static const uint32 nactors = 10;
+static const uint32_t nactors = 10;
 
 #define test_assert(_cond, _msg) \
     if (!(_cond)) fail(_msg)
@@ -49,7 +49,7 @@ TestDataStructuresParent::~TestDataStructuresParent()
 void
 TestDataStructuresParent::Main()
 {
-    for (uint32 i = 0; i < nactors; ++i)
+    for (uint32_t i = 0; i < nactors; ++i)
         if (!SendPTestDataStructuresSubConstructor(i))
             fail("can't alloc actor");
 
@@ -88,7 +88,7 @@ bool TestDataStructuresParent::RecvTest2(
         InfallibleTArray<PTestDataStructuresSubParent*>* o1)
 {
     test_assert(nactors == i1.Length(), "wrong #actors");
-    for (uint32 i = 0; i < i1.Length(); ++i)
+    for (uint32_t i = 0; i < i1.Length(); ++i)
         test_assert(i == Cast(i1[i]).mI, "wrong mI value");
     *o1 = i1;
     return true;
@@ -150,6 +150,23 @@ bool TestDataStructuresParent::RecvTest5(
     *o2 = i2a;
     *o3 = i3a;
 
+    return true;
+}
+
+bool
+TestDataStructuresParent::RecvTest7_0(const ActorWrapper& i1,
+                                      ActorWrapper* o1)
+{
+    if (i1.actorChild() != nullptr)
+        fail("child side actor should always be null");
+
+    if (i1.actorParent() != mKids[0])
+        fail("should have got back same actor on parent side");
+
+    o1->actorParent() = mKids[0];
+    // malicious behavior
+    o1->actorChild() =
+        reinterpret_cast<PTestDataStructuresSubChild*>(0xdeadbeef);
     return true;
 }
 
@@ -465,6 +482,7 @@ TestDataStructuresChild::RecvStart()
     Test4();
     Test5();
     Test6();
+    Test7_0();
     Test7();
     Test8();
     Test9();
@@ -482,7 +500,7 @@ TestDataStructuresChild::RecvStart()
         Test18();
     }
 
-    for (uint32 i = 0; i < nactors; ++i)
+    for (uint32_t i = 0; i < nactors; ++i)
         if (!PTestDataStructuresSubChild::Send__delete__(mKids[i]))
             fail("can't send dtor");
 
@@ -608,6 +626,28 @@ TestDataStructuresChild::Test6()
     assert_arrays_equal(id3, od3);
 
     printf("  passed %s\n", __FUNCTION__);
+}
+
+void
+TestDataStructuresChild::Test7_0()
+{
+    ActorWrapper iaw;
+    if (iaw.actorChild() != nullptr || iaw.actorParent() != nullptr)
+        fail("actor members should be null initially");
+
+    iaw.actorChild() = mKids[0];
+    if (iaw.actorParent() != nullptr)
+        fail("parent should be null on child side after set");
+
+    ActorWrapper oaw;
+    if (!SendTest7_0(iaw, &oaw))
+        fail("sending Test7_0");
+
+    if (oaw.actorParent() != nullptr)
+        fail("parent accessor on actor-struct members should always be null in child");
+
+    if (oaw.actorChild() != mKids[0])
+        fail("should have got back same child-side actor");
 }
 
 void

@@ -35,7 +35,7 @@ SVGTransformListSMILType::Destroy(nsSMILValue& aValue) const
   NS_PRECONDITION(aValue.mType == this, "Unexpected SMIL value type");
   TransformArray* params = static_cast<TransformArray*>(aValue.mU.mPtr);
   delete params;
-  aValue.mU.mPtr = nsnull;
+  aValue.mU.mPtr = nullptr;
   aValue.mType = &nsSMILNullType::sSingleton;
 }
 
@@ -77,8 +77,8 @@ SVGTransformListSMILType::IsEqual(const nsSMILValue& aLeft,
   }
 
   // Array-lengths match -- check each array-entry for equality.
-  PRUint32 length = leftArr.Length(); // == rightArr->Length(), if we get here
-  for (PRUint32 i = 0; i < length; ++i) {
+  uint32_t length = leftArr.Length(); // == rightArr->Length(), if we get here
+  for (uint32_t i = 0; i < length; ++i) {
     if (leftArr[i] != rightArr[i]) {
       return false;
     }
@@ -91,7 +91,7 @@ SVGTransformListSMILType::IsEqual(const nsSMILValue& aLeft,
 nsresult
 SVGTransformListSMILType::Add(nsSMILValue& aDest,
                               const nsSMILValue& aValueToAdd,
-                              PRUint32 aCount) const
+                              uint32_t aCount) const
 {
   NS_PRECONDITION(aDest.mType == this, "Unexpected SMIL type");
   NS_PRECONDITION(aDest.mType == aValueToAdd.mType, "Incompatible SMIL types");
@@ -275,7 +275,7 @@ SVGTransformListSMILType::Interpolate(const nsSMILValue& aStartVal,
   // then if the type of the start transform doesn't match the end then we
   // can't interpolate and should just use 0, 0, 0
   static float identityParams[3] = { 0.f };
-  const float* startParams = nsnull;
+  const float* startParams = nullptr;
   if (startTransforms.Length() == 1) {
     const SVGTransformSMILData& startTransform = startTransforms[0];
     if (startTransform.mTransformType == endTransform.mTransformType) {
@@ -340,7 +340,7 @@ SVGTransformListSMILType::AppendTransforms(const SVGTransformList& aList,
   if (!transforms.SetCapacity(transforms.Length() + aList.Length()))
     return false;
 
-  for (PRUint32 i = 0; i < aList.Length(); ++i) {
+  for (uint32_t i = 0; i < aList.Length(); ++i) {
     // No need to check the return value below since we have already allocated
     // the necessary space
     transforms.AppendElement(SVGTransformSMILData(aList[i]));
@@ -362,7 +362,7 @@ SVGTransformListSMILType::GetTransforms(const nsSMILValue& aValue,
   if (!aTransforms.SetCapacity(smilTransforms.Length()))
       return false;
 
-  for (PRUint32 i = 0; i < smilTransforms.Length(); ++i) {
+  for (uint32_t i = 0; i < smilTransforms.Length(); ++i) {
     // No need to check the return value below since we have already allocated
     // the necessary space
     aTransforms.AppendElement(smilTransforms[i].ToSVGTransform());

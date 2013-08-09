@@ -80,28 +80,28 @@ nsMathMLmpaddedFrame::ProcessAttributes()
 
   // width
   mWidthSign = NS_MATHML_SIGN_INVALID;
-  GetAttribute(mContent, nsnull, nsGkAtoms::width, value);
+  GetAttribute(mContent, nullptr, nsGkAtoms::width, value);
   if (!value.IsEmpty()) {
     ParseAttribute(value, mWidthSign, mWidth, mWidthPseudoUnit);
   }
 
   // height
   mHeightSign = NS_MATHML_SIGN_INVALID;
-  GetAttribute(mContent, nsnull, nsGkAtoms::height, value);
+  GetAttribute(mContent, nullptr, nsGkAtoms::height, value);
   if (!value.IsEmpty()) {
     ParseAttribute(value, mHeightSign, mHeight, mHeightPseudoUnit);
   }
 
   // depth
   mDepthSign = NS_MATHML_SIGN_INVALID;
-  GetAttribute(mContent, nsnull, nsGkAtoms::depth_, value);
+  GetAttribute(mContent, nullptr, nsGkAtoms::depth_, value);
   if (!value.IsEmpty()) {
     ParseAttribute(value, mDepthSign, mDepth, mDepthPseudoUnit);
   }
 
   // lspace
   mLeadingSpaceSign = NS_MATHML_SIGN_INVALID;
-  GetAttribute(mContent, nsnull, nsGkAtoms::lspace_, value);
+  GetAttribute(mContent, nullptr, nsGkAtoms::lspace_, value);
   if (!value.IsEmpty()) {
     ParseAttribute(value, mLeadingSpaceSign, mLeadingSpace,
                    mLeadingSpacePseudoUnit);
@@ -109,7 +109,7 @@ nsMathMLmpaddedFrame::ProcessAttributes()
 
   // voffset
   mVerticalOffsetSign = NS_MATHML_SIGN_INVALID;
-  GetAttribute(mContent, nsnull, nsGkAtoms::voffset_, value);
+  GetAttribute(mContent, nullptr, nsGkAtoms::voffset_, value);
   if (!value.IsEmpty()) {
     ParseAttribute(value, mVerticalOffsetSign, mVerticalOffset, 
                    mVerticalOffsetPseudoUnit);
@@ -121,16 +121,16 @@ nsMathMLmpaddedFrame::ProcessAttributes()
 // [+|-] unsigned-number (% [pseudo-unit] | pseudo-unit | css-unit | namedspace)
 bool
 nsMathMLmpaddedFrame::ParseAttribute(nsString&   aString,
-                                     PRInt32&    aSign,
+                                     int32_t&    aSign,
                                      nsCSSValue& aCSSValue,
-                                     PRInt32&    aPseudoUnit)
+                                     int32_t&    aPseudoUnit)
 {
   aCSSValue.Reset();
   aSign = NS_MATHML_SIGN_INVALID;
   aPseudoUnit = NS_MATHML_PSEUDO_UNIT_UNSPECIFIED;
   aString.CompressWhitespace(); // aString is not a const in this code
 
-  PRInt32 stringLength = aString.Length();
+  int32_t stringLength = aString.Length();
   if (!stringLength)
     return false;
 
@@ -139,7 +139,7 @@ nsMathMLmpaddedFrame::ParseAttribute(nsString&   aString,
   //////////////////////
   // see if the sign is there
 
-  PRInt32 i = 0;
+  int32_t i = 0;
 
   if (aString[0] == '+') {
     aSign = NS_MATHML_SIGN_PLUS;
@@ -174,7 +174,7 @@ nsMathMLmpaddedFrame::ParseAttribute(nsString&   aString,
   // floatValue = 1, to cater for cases such as width="height", but that wouldn't
   // be in line with the spec which requires an explicit number
   if (number.IsEmpty()) {
-#ifdef NS_DEBUG
+#ifdef DEBUG
     printf("mpadded: attribute with bad numeric value: %s\n",
             NS_LossyConvertUTF16toASCII(aString).get());
 #endif
@@ -182,9 +182,9 @@ nsMathMLmpaddedFrame::ParseAttribute(nsString&   aString,
     return false;
   }
 
-  PRInt32 errorCode;
+  nsresult errorCode;
   float floatValue = number.ToFloat(&errorCode);
-  if (errorCode) {
+  if (NS_FAILED(errorCode)) {
     aSign = NS_MATHML_SIGN_INVALID;
     return false;
   }
@@ -249,7 +249,7 @@ nsMathMLmpaddedFrame::ParseAttribute(nsString&   aString,
   }
 
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
   printf("mpadded: attribute with bad numeric value: %s\n",
           NS_LossyConvertUTF16toASCII(aString).get());
 #endif
@@ -259,8 +259,8 @@ nsMathMLmpaddedFrame::ParseAttribute(nsString&   aString,
 }
 
 void
-nsMathMLmpaddedFrame::UpdateValue(PRInt32                  aSign,
-                                  PRInt32                  aPseudoUnit,
+nsMathMLmpaddedFrame::UpdateValue(int32_t                  aSign,
+                                  int32_t                  aPseudoUnit,
                                   const nsCSSValue&        aCSSValue,
                                   const nsBoundingMetrics& aBoundingMetrics,
                                   nscoord&                 aValueToUpdate) const
@@ -365,7 +365,7 @@ nsMathMLmpaddedFrame::Place(nsRenderingContext& aRenderingContext,
   nscoord width  = mBoundingMetrics.width;
   nscoord voffset = 0;
 
-  PRInt32 pseudoUnit;
+  int32_t pseudoUnit;
   nscoord initialWidth = width;
 
   // update width

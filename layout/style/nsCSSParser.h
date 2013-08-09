@@ -23,6 +23,7 @@ class nsIURI;
 struct nsCSSSelectorList;
 class nsMediaList;
 class nsCSSKeyframeRule;
+class nsCSSValue;
 
 namespace mozilla {
 namespace css {
@@ -37,8 +38,8 @@ class StyleRule;
 
 class NS_STACK_CLASS nsCSSParser {
 public:
-  nsCSSParser(mozilla::css::Loader* aLoader = nsnull,
-              nsCSSStyleSheet* aSheet = nsnull);
+  nsCSSParser(mozilla::css::Loader* aLoader = nullptr,
+              nsCSSStyleSheet* aSheet = nullptr);
   ~nsCSSParser();
 
   static void Shutdown();
@@ -55,9 +56,6 @@ public:
 
   // Set whether or not to emulate Nav quirks
   nsresult SetQuirkMode(bool aQuirkMode);
-
-  // Set whether or not we are in an SVG element
-  nsresult SetSVGMode(bool aSVGMode);
 
   // Set loader to use for child sheets
   nsresult SetChildLoader(mozilla::css::Loader* aChildLoader);
@@ -82,7 +80,7 @@ public:
                       nsIURI*          aSheetURL,
                       nsIURI*          aBaseURI,
                       nsIPrincipal*    aSheetPrincipal,
-                      PRUint32         aLineNumber,
+                      uint32_t         aLineNumber,
                       bool             aAllowUnsafeRules);
 
   // Parse HTML style attribute or its equivalent in other markup
@@ -112,14 +110,23 @@ public:
                      nsIPrincipal*           aSheetPrincipal,
                      nsCOMArray<mozilla::css::Rule>& aResult);
 
+  // Parse the value of a single CSS property, and add or replace that
+  // property in aDeclaration.
+  //
+  // SVG "mapped attributes" (which correspond directly to CSS
+  // properties) are parsed slightly differently from regular CSS; in
+  // particular, units may be omitted from <length>.  The 'aIsSVGMode'
+  // argument controls this quirk.  Note that this *only* applies to
+  // mapped attributes, not inline styles or full style sheets in SVG.
   nsresult ParseProperty(const nsCSSProperty aPropID,
                          const nsAString&    aPropValue,
                          nsIURI*             aSheetURL,
                          nsIURI*             aBaseURL,
                          nsIPrincipal*       aSheetPrincipal,
                          mozilla::css::Declaration* aDeclaration,
-                         bool*             aChanged,
-                         bool                aIsImportant);
+                         bool*               aChanged,
+                         bool                aIsImportant,
+                         bool                aIsSVGMode = false);
 
   /**
    * Parse aBuffer into a media list |aMediaList|, which must be
@@ -131,23 +138,20 @@ public:
    */
   nsresult ParseMediaList(const nsSubstring& aBuffer,
                           nsIURI*            aURL,
-                          PRUint32           aLineNumber,
+                          uint32_t           aLineNumber,
                           nsMediaList*       aMediaList,
                           bool               aHTMLMode);
 
   /**
-   * Parse aBuffer into a nscolor |aColor|.  The alpha component of the
-   * resulting aColor may vary due to rgba()/hsla().  Will return
-   * NS_ERROR_FAILURE if aBuffer is not a valid CSS color specification.
-   *
-   * Will also currently return NS_ERROR_FAILURE if it is not
-   * self-contained (i.e.  doesn't reference any external style state,
-   * such as "initial" or "inherit").
+   * Parse aBuffer into a nsCSSValue |aValue|. Will return false
+   * if aBuffer is not a valid CSS color specification.
+   * One can use nsRuleNode::ComputeColor to compute an nscolor from
+   * the returned nsCSSValue.
    */
-  nsresult ParseColorString(const nsSubstring& aBuffer,
-                            nsIURI*            aURL,
-                            PRUint32           aLineNumber,
-                            nscolor*           aColor);
+  bool ParseColorString(const nsSubstring& aBuffer,
+                        nsIURI*            aURL,
+                        uint32_t           aLineNumber,
+                        nsCSSValue&        aValue);
 
   /**
    * Parse aBuffer into a selector list.  On success, caller must
@@ -155,7 +159,7 @@ public:
    */
   nsresult ParseSelectorString(const nsSubstring&  aSelectorString,
                                nsIURI*             aURL,
-                               PRUint32            aLineNumber,
+                               uint32_t            aLineNumber,
                                nsCSSSelectorList** aSelectorList);
 
   /*
@@ -165,7 +169,7 @@ public:
   already_AddRefed<nsCSSKeyframeRule>
   ParseKeyframeRule(const nsSubstring& aBuffer,
                     nsIURI*            aURL,
-                    PRUint32           aLineNumber);
+                    uint32_t           aLineNumber);
 
   /*
    * Parse a selector list for a keyframe rule.  Return whether
@@ -173,7 +177,7 @@ public:
    */
   bool ParseKeyframeSelectorString(const nsSubstring& aSelectorString,
                                    nsIURI*            aURL,
-                                   PRUint32           aLineNumber,
+                                   uint32_t           aLineNumber,
                                    InfallibleTArray<float>& aSelectorList);
 
 protected:

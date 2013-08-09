@@ -5,11 +5,9 @@
 
 #include "SmsCursor.h"
 #include "nsIDOMClassInfo.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 #include "nsIDOMSmsMessage.h"
-#include "nsIDOMSmsRequest.h"
 #include "SmsRequest.h"
-#include "SmsRequestManager.h"
 #include "nsISmsDatabaseService.h"
 
 DOMCI_DATA(MozSmsCursor, mozilla::dom::sms::SmsCursor)
@@ -34,7 +32,7 @@ SmsCursor::SmsCursor()
 {
 }
 
-SmsCursor::SmsCursor(PRInt32 aListId, nsIDOMMozSmsRequest* aRequest)
+SmsCursor::SmsCursor(int32_t aListId, nsISmsRequest* aRequest)
   : mListId(aListId)
   , mRequest(aRequest)
 {
@@ -61,7 +59,7 @@ SmsCursor::Disconnect()
 {
   NS_ASSERTION(!mMessage, "mMessage shouldn't be set!");
 
-  mRequest = nsnull;
+  mRequest = nullptr;
   mListId = -1;
 }
 
@@ -80,21 +78,21 @@ SmsCursor::Continue()
     return NS_ERROR_DOM_INVALID_STATE_ERR;
   }
 
-  mMessage = nsnull;
-  static_cast<SmsRequest*>(mRequest.get())->Reset();
+  nsRefPtr<SmsRequest> request = static_cast<SmsRequest*>(mRequest.get());
 
-  nsCOMPtr<nsISmsRequestManager> requestManager = do_GetService(SMS_REQUEST_MANAGER_CONTRACTID);
-
-  PRInt32 requestId;
-  nsresult rv = requestManager->AddRequest(mRequest, &requestId);
-  NS_ENSURE_SUCCESS(rv, rv);
+  mMessage = nullptr;
+  request->Reset();
 
   nsCOMPtr<nsISmsDatabaseService> smsDBService =
     do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
   NS_ENSURE_TRUE(smsDBService, NS_ERROR_FAILURE);
 
-  smsDBService->GetNextMessageInList(mListId, requestId, 0);
+  nsCOMPtr<nsISmsRequest> forwarder = new SmsRequestForwarder(request);
+  smsDBService->GetNextMessageInList(mListId, forwarder);
 
+  // We intenionally increase the refcount. The release will be called
+  // in the corresponding callback.
+  request.forget();
   return NS_OK;
 }
 

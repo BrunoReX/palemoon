@@ -4,7 +4,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "EditAggregateTxn.h"
-#include "nsCOMPtr.h"
+#include "nsAString.h"
+#include "nsCOMPtr.h"                   // for nsCOMPtr
+#include "nsError.h"                    // for NS_OK, etc
+#include "nsISupportsUtils.h"           // for NS_ADDREF
+#include "nsITransaction.h"             // for nsITransaction
+#include "nsString.h"                   // for nsAutoString
 
 EditAggregateTxn::EditAggregateTxn()
   : EditTxn()
@@ -17,7 +22,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(EditAggregateTxn, EditTxn)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(EditAggregateTxn, EditTxn)
-  for (PRUint32 i = 0; i < tmp->mChildren.Length(); ++i) {
+  for (uint32_t i = 0; i < tmp->mChildren.Length(); ++i) {
     NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mChildren[i]");
     cb.NoteXPCOMChild(static_cast<nsITransaction*>(tmp->mChildren[i]));
   }
@@ -31,7 +36,7 @@ NS_INTERFACE_MAP_END_INHERITING(EditTxn)
 NS_IMETHODIMP EditAggregateTxn::DoTransaction(void)
 {
   nsresult result=NS_OK;  // it's legal (but not very useful) to have an empty child list
-  for (PRUint32 i = 0, length = mChildren.Length(); i < length; ++i)
+  for (uint32_t i = 0, length = mChildren.Length(); i < length; ++i)
   {
     nsITransaction *txn = mChildren[i];
     if (!txn) { return NS_ERROR_NULL_POINTER; }
@@ -46,7 +51,7 @@ NS_IMETHODIMP EditAggregateTxn::UndoTransaction(void)
 {
   nsresult result=NS_OK;  // it's legal (but not very useful) to have an empty child list
   // undo goes through children backwards
-  for (PRUint32 i = mChildren.Length(); i-- != 0; )
+  for (uint32_t i = mChildren.Length(); i-- != 0; )
   {
     nsITransaction *txn = mChildren[i];
     if (!txn) { return NS_ERROR_NULL_POINTER; }
@@ -60,7 +65,7 @@ NS_IMETHODIMP EditAggregateTxn::UndoTransaction(void)
 NS_IMETHODIMP EditAggregateTxn::RedoTransaction(void)
 {
   nsresult result=NS_OK;  // it's legal (but not very useful) to have an empty child list
-  for (PRUint32 i = 0, length = mChildren.Length(); i < length; ++i)
+  for (uint32_t i = 0, length = mChildren.Length(); i < length; ++i)
   {
     nsITransaction *txn = mChildren[i];
     if (!txn) { return NS_ERROR_NULL_POINTER; }

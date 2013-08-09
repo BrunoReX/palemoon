@@ -1,8 +1,19 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: sw=2 ts=8 et ft=cpp : */
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* vim: set sw=2 ts=8 et ft=cpp : */
+/* Copyright 2012 Mozilla Foundation and Mozilla contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 #include <fcntl.h>
 #include <linux/fb.h>
@@ -24,6 +35,7 @@
 #include "gfxUtils.h"
 #include "mozilla/FileUtils.h"
 #include "nsTArray.h"
+#include "nsRegion.h"
 
 #define LOG(args...)  __android_log_print(ANDROID_LOG_INFO, "Gonk" , ## args)
 
@@ -39,6 +51,7 @@ static struct fb_var_screeninfo sVi;
 static size_t sActiveBuffer;
 typedef vector<nsRefPtr<gfxImageSurface> > BufferVector;
 BufferVector* sBuffers;
+static gfxIntSize *sScreenSize = nullptr;
 
 BufferVector& Buffers() { return *sBuffers; }
 
@@ -57,7 +70,7 @@ SetGraphicsMode()
 }
 
 bool
-Open(nsIntSize* aScreenSize)
+Open()
 {
     if (0 <= sFd)
         return true;
@@ -98,28 +111,32 @@ Open(nsIntSize* aScreenSize)
     // hard-coded numbers here.
     gfxASurface::gfxImageFormat format = gfxASurface::ImageFormatRGB16_565;
     int bytesPerPixel = gfxASurface::BytePerPixelFromFormat(format);
-    gfxIntSize size(sVi.xres, sVi.yres);
-    long stride = size.width * bytesPerPixel;
-    size_t numFrameBytes = stride * size.height;
+    if (!sScreenSize) {
+        sScreenSize = new gfxIntSize(sVi.xres, sVi.yres);
+    }
+    long stride = fi.line_length;
+    size_t numFrameBytes = stride * sScreenSize->height;
 
     sBuffers = new BufferVector(2);
     unsigned char* data = static_cast<unsigned char*>(mem);
     for (size_t i = 0; i < 2; ++i, data += numFrameBytes) {
       memset(data, 0, numFrameBytes);
-      Buffers()[i] = new gfxImageSurface(data, size, stride, format);
+      Buffers()[i] = new gfxImageSurface(data, *sScreenSize, stride, format);
     }
 
     // Clear the framebuffer to a known state.
     Present(nsIntRect());
 
-    *aScreenSize = size;
     return true;
 }
 
 bool
 GetSize(nsIntSize *aScreenSize) {
-    if (0 <= sFd)
+    // If the framebuffer has been opened, we should always have the size.
+    if (sScreenSize) {
+        *aScreenSize = *sScreenSize;
         return true;
+    }
 
     ScopedClose fd(open("/dev/graphics/fb0", O_RDWR));
     if (0 > fd.get()) {
@@ -132,7 +149,8 @@ GetSize(nsIntSize *aScreenSize) {
         return false;
     }
 
-    *aScreenSize = gfxIntSize(sVi.xres, sVi.yres);
+    sScreenSize = new gfxIntSize(sVi.xres, sVi.yres);
+    *aScreenSize = *sScreenSize;
     return true;
 }
 
@@ -145,6 +163,8 @@ Close()
     munmap(Buffers()[0]->Data(), sMappedSize);
     delete sBuffers;
     sBuffers = NULL;
+    delete sScreenSize;
+    sScreenSize = NULL;
 
     close(sFd);
     sFd = -1;

@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/PluginPRLibrary.h"
+#include "nsPluginSafety.h"
 // Some plugins on Windows, notably Quake Live, implement NP_Initialize using
 // cdecl instead of the documented stdcall. In order to work around this,
 // we force the caller to use a frame pointer.
@@ -23,8 +24,11 @@ static int gNotOptimized;
 #include "AndroidBridge.h"
 #include "android_npapi.h"
 #include <android/log.h>
+#undef ALOG
 #define ALOG(args...) __android_log_print(ANDROID_LOG_INFO, "GeckoJavaEnv", ## args)
 #endif
+
+using namespace mozilla::layers;
 
 namespace mozilla {
 #ifdef MOZ_WIDGET_ANDROID
@@ -35,6 +39,8 @@ PluginPRLibrary::NP_Initialize(NPNetscapeFuncs* bFuncs,
   JNIEnv* env = GetJNIForThread();
   if (!env)
     return NS_ERROR_FAILURE;
+
+  mozilla::AutoLocalJNIFrame jniFrame(env);
 
   if (mNP_Initialize) {
     *error = mNP_Initialize(bFuncs, pFuncs, env);
@@ -48,7 +54,6 @@ PluginPRLibrary::NP_Initialize(NPNetscapeFuncs* bFuncs,
 
   // Save pointers to functions that get called through PluginLibrary itself.
   mNPP_New = pFuncs->newp;
-  mNPP_GetValue = pFuncs->getvalue;
   mNPP_ClearSiteData = pFuncs->clearsitedata;
   mNPP_GetSitesWithData = pFuncs->getsiteswithdata;
   return NS_OK;
@@ -192,6 +197,8 @@ PluginPRLibrary::NPP_New(NPMIMEType pluginType, NPP instance,
 {
   if (!mNPP_New)
     return NS_ERROR_FAILURE;
+
+  MAIN_THREAD_JNI_REF_GUARD;
   *error = mNPP_New(pluginType, instance, mode, argc, argn, argv, saved);
   return NS_OK;
 }
@@ -204,6 +211,7 @@ PluginPRLibrary::NPP_ClearSiteData(const char* site, uint64_t flags,
     return NS_ERROR_NOT_AVAILABLE;
   }
 
+  MAIN_THREAD_JNI_REF_GUARD;
   NPError result = mNPP_ClearSiteData(site, flags, maxAge);
 
   switch (result) {
@@ -227,6 +235,7 @@ PluginPRLibrary::NPP_GetSitesWithData(InfallibleTArray<nsCString>& result)
 
   result.Clear();
 
+  MAIN_THREAD_JNI_REF_GUARD;
   char** sites = mNPP_GetSitesWithData();
   if (!sites) {
     return NS_OK;
@@ -277,6 +286,13 @@ PluginPRLibrary::IsRemoteDrawingCoreAnimation(NPP instance, bool *aDrawing)
   *aDrawing = false; 
   return NS_OK;
 }
+nsresult
+PluginPRLibrary::ContentsScaleFactorChanged(NPP instance, double aContentsScaleFactor)
+{
+  nsNPAPIPluginInstance* inst = (nsNPAPIPluginInstance*)instance->ndata;
+  NS_ENSURE_TRUE(inst, NS_ERROR_NULL_POINTER);
+  return NS_OK;
+}
 #endif
 
 nsresult
@@ -301,7 +317,7 @@ PluginPRLibrary::BeginUpdateBackground(NPP instance,
   nsNPAPIPluginInstance* inst = (nsNPAPIPluginInstance*)instance->ndata;
   NS_ENSURE_TRUE(inst, NS_ERROR_NULL_POINTER);
   NS_ERROR("Unexpected use of async APIs for in-process plugin.");
-  *aCtx = nsnull;
+  *aCtx = nullptr;
   return NS_OK;
 }
 

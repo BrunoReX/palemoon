@@ -12,8 +12,9 @@
 #include "prtypes.h"
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
+#include "mozilla/Attributes.h"
 
-class nsAutoCompleteSimpleResult : public nsIAutoCompleteSimpleResult
+class nsAutoCompleteSimpleResult MOZ_FINAL : public nsIAutoCompleteSimpleResult
 {
 public:
   nsAutoCompleteSimpleResult();
@@ -42,8 +43,8 @@ protected:
 
   nsString mSearchString;
   nsString mErrorDescription;
-  PRInt32 mDefaultIndex;
-  PRUint32 mSearchResult;
+  int32_t mDefaultIndex;
+  uint32_t mSearchResult;
 
   bool mTypeAheadResult;
 

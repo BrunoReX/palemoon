@@ -18,6 +18,10 @@
 #include "nsNetUtil.h"
 #include "nsPrintfCString.h"
 #include "nsStreamUtils.h"
+#include "nsIPrivateBrowsingChannel.h"
+#if !(defined(MOZ_PER_WINDOW_PRIVATE_BROWSING)) && defined(DEBUG)
+#include "nsIPrivateBrowsingService.h"
+#endif
 
 #define CONTENT_SNIFFING_SERVICES "content-sniffing-services"
 
@@ -230,7 +234,7 @@ FetchIconInfo(nsRefPtr<Database>& aDB,
   rv = stmt->GetIsNull(1, &isNull);
   NS_ENSURE_SUCCESS(rv, rv);
   if (!isNull) {
-    rv = stmt->GetInt64(1, &_icon.expiration);
+    rv = stmt->GetInt64(1, reinterpret_cast<int64_t*>(&_icon.expiration));
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -238,8 +242,8 @@ FetchIconInfo(nsRefPtr<Database>& aDB,
   rv = stmt->GetIsNull(2, &isNull);
   NS_ENSURE_SUCCESS(rv, rv);
   if (!isNull) {
-    PRUint8* data;
-    PRUint32 dataLen = 0;
+    uint8_t* data;
+    uint32_t dataLen = 0;
     rv = stmt->GetBlob(2, &dataLen, &data);
     NS_ENSURE_SUCCESS(rv, rv);
     _icon.data.Adopt(TO_CHARBUFFER(data), dataLen);
@@ -320,7 +324,7 @@ SniffMimeTypeForIconData(nsIRequest* aRequest,
     nsCOMPtr<nsISupportsCString> snifferCIDSupportsCString =
       do_QueryInterface(snifferCIDSupports);
     NS_ENSURE_STATE(snifferCIDSupports);
-    nsCAutoString snifferCID;
+    nsAutoCString snifferCID;
     rv = snifferCIDSupportsCString->GetData(snifferCID);
     NS_ENSURE_SUCCESS(rv, rv);
     nsCOMPtr<nsIContentSniffer> sniffer = do_GetService(snifferCID.get());
@@ -355,7 +359,7 @@ GetExpirationTimeFromChannel(nsIChannel* aChannel)
     nsresult rv = cachingChannel->GetCacheToken(getter_AddRefs(cacheToken));
     if (NS_SUCCEEDED(rv)) {
       nsCOMPtr<nsICacheEntryInfo> cacheEntry = do_QueryInterface(cacheToken);
-      PRUint32 seconds;
+      uint32_t seconds;
       rv = cacheEntry->GetExpirationTime(&seconds);
       if (NS_SUCCEEDED(rv)) {
         // Set the expiration, but make sure we honor our cap.
@@ -389,7 +393,7 @@ OptimizeIconSize(IconData& aIcon,
   // Even if the page provides a large image for the favicon (eg, a highres
   // image or a multiresolution .ico file), don't try to store more data than
   // needed.
-  nsCAutoString newData, newMimeType;
+  nsAutoCString newData, newMimeType;
   if (aIcon.data.Length() > MAX_ICON_FILESIZE(aFaviconSvc->GetOptimizedIconDimension())) {
     nsresult rv = aFaviconSvc->OptimizeFaviconImage(TO_INTBUFFER(aIcon.data),
                                                     aIcon.data.Length(),
@@ -435,6 +439,7 @@ nsresult
 AsyncFetchAndSetIconForPage::start(nsIURI* aFaviconURI,
                                    nsIURI* aPageURI,
                                    enum AsyncFaviconFetchMode aFetchMode,
+                                   uint32_t aFaviconLoadType,
                                    nsIFaviconDataCallback* aCallback)
 {
   NS_PRECONDITION(NS_IsMainThread(),
@@ -450,7 +455,7 @@ AsyncFetchAndSetIconForPage::start(nsIURI* aFaviconURI,
   NS_ENSURE_TRUE(navHistory, NS_ERROR_OUT_OF_MEMORY);
   rv = navHistory->CanAddURI(aPageURI, &canAddToHistory);
   NS_ENSURE_SUCCESS(rv, rv);
-  page.canAddToHistory = !!canAddToHistory;
+  page.canAddToHistory = !!canAddToHistory && aFaviconLoadType != nsIFaviconService::FAVICON_LOAD_PRIVATE;
 
   IconData icon;
 
@@ -481,7 +486,7 @@ AsyncFetchAndSetIconForPage::start(nsIURI* aFaviconURI,
   // The event will swap owning pointers, thus we need a new pointer.
   nsCOMPtr<nsIFaviconDataCallback> callback(aCallback);
   nsRefPtr<AsyncFetchAndSetIconForPage> event =
-    new AsyncFetchAndSetIconForPage(icon, page, callback);
+    new AsyncFetchAndSetIconForPage(icon, page, aFaviconLoadType, callback);
 
   // Get the target thread and start the work.
   nsRefPtr<Database> DB = Database::GetDatabase();
@@ -494,11 +499,37 @@ AsyncFetchAndSetIconForPage::start(nsIURI* aFaviconURI,
 AsyncFetchAndSetIconForPage::AsyncFetchAndSetIconForPage(
   IconData& aIcon
 , PageData& aPage
+, uint32_t aFaviconLoadType
 , nsCOMPtr<nsIFaviconDataCallback>& aCallback
 ) : AsyncFaviconHelperBase(aCallback)
   , mIcon(aIcon)
   , mPage(aPage)
+  , mFaviconLoadPrivate(aFaviconLoadType == nsIFaviconService::FAVICON_LOAD_PRIVATE)
 {
+#if !(defined(MOZ_PER_WINDOW_PRIVATE_BROWSING)) && defined(DEBUG)
+  // This code makes sure that in global private browsing mode, the flag
+  // passed to us matches the global PB mode.  This can be removed when
+  // per-window private browsing has been turned on.
+  nsCOMPtr<nsIPrivateBrowsingService> pbService =
+    do_GetService(NS_PRIVATE_BROWSING_SERVICE_CONTRACTID);
+  if (pbService) {
+    bool inPrivateBrowsing = false;
+    if (NS_SUCCEEDED(pbService->GetPrivateBrowsingEnabled(&inPrivateBrowsing))) {
+      // In one specific case that we know of, it is possible for these flags
+      // to not match (bug 801151).  We mostly care about the cases where the
+      // global private browsing mode is on, but the favicon load is not marked
+      // as private, as those cases will cause privacy leaks.  But because
+      // fixing bug 801151 properly is going to mean tons of really dirty and
+      // fragile work which might cause other types of problems, we fatally
+      // assert the condition which would be a privacy leak, and non-fatally
+      // assert the other side of the condition which would designate a bug,
+      // but not a privacy sensitive one.
+      MOZ_ASSERT_IF(inPrivateBrowsing && !mFaviconLoadPrivate, false);
+      NS_ASSERTION(inPrivateBrowsing == mFaviconLoadPrivate,
+                   "The favicon load flag and the global PB flag do not match");
+    }
+  }
+#endif
 }
 
 AsyncFetchAndSetIconForPage::~AsyncFetchAndSetIconForPage()
@@ -533,7 +564,7 @@ AsyncFetchAndSetIconForPage::Run()
     // Fetch the icon from network.  When done this will associate the
     // icon to the page and notify.
     nsRefPtr<AsyncFetchAndSetIconFromNetwork> event =
-      new AsyncFetchAndSetIconFromNetwork(mIcon, mPage, mCallback);
+      new AsyncFetchAndSetIconFromNetwork(mIcon, mPage, mFaviconLoadPrivate, mCallback);
 
     // Start the work on the main thread.
     rv = NS_DispatchToMainThread(event);
@@ -557,21 +588,18 @@ NS_IMPL_ISUPPORTS_INHERITED3(
 AsyncFetchAndSetIconFromNetwork::AsyncFetchAndSetIconFromNetwork(
   IconData& aIcon
 , PageData& aPage
+, bool aFaviconLoadPrivate
 , nsCOMPtr<nsIFaviconDataCallback>& aCallback
 )
 : AsyncFaviconHelperBase(aCallback)
 , mIcon(aIcon)
 , mPage(aPage)
+, mFaviconLoadPrivate(aFaviconLoadPrivate)
 {
 }
 
 AsyncFetchAndSetIconFromNetwork::~AsyncFetchAndSetIconFromNetwork()
 {
-  nsCOMPtr<nsIThread> thread;
-  (void)NS_GetMainThread(getter_AddRefs(thread));
-  if (mChannel) {
-    (void)NS_ProxyRelease(thread, mChannel, true);
-  }
 }
 
 NS_IMETHODIMP
@@ -589,17 +617,20 @@ AsyncFetchAndSetIconFromNetwork::Run()
   nsCOMPtr<nsIURI> iconURI;
   nsresult rv = NS_NewURI(getter_AddRefs(iconURI), mIcon.spec);
   NS_ENSURE_SUCCESS(rv, rv);
-  rv = NS_NewChannel(getter_AddRefs(mChannel), iconURI);
+  nsCOMPtr<nsIChannel> channel;
+  rv = NS_NewChannel(getter_AddRefs(channel), iconURI);
   NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsIInterfaceRequestor> listenerRequestor =
     do_QueryInterface(reinterpret_cast<nsISupports*>(this));
   NS_ENSURE_STATE(listenerRequestor);
-  rv = mChannel->SetNotificationCallbacks(listenerRequestor);
+  rv = channel->SetNotificationCallbacks(listenerRequestor);
   NS_ENSURE_SUCCESS(rv, rv);
-  rv = mChannel->AsyncOpen(this, nsnull);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return NS_OK;
+  nsCOMPtr<nsIPrivateBrowsingChannel> pbChannel = do_QueryInterface(channel);
+  if (pbChannel) {
+    rv = pbChannel->SetPrivate(mFaviconLoadPrivate);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+  return channel->AsyncOpen(this, nullptr);
 }
 
 NS_IMETHODIMP
@@ -613,10 +644,10 @@ NS_IMETHODIMP
 AsyncFetchAndSetIconFromNetwork::OnDataAvailable(nsIRequest* aRequest,
                                                  nsISupports* aContext,
                                                  nsIInputStream* aInputStream,
-                                                 PRUint32 aOffset,
-                                                 PRUint32 aCount)
+                                                 uint64_t aOffset,
+                                                 uint32_t aCount)
 {
-  nsCAutoString buffer;
+  nsAutoCString buffer;
   nsresult rv = NS_ConsumeStream(aInputStream, aCount, buffer);
   if (rv != NS_BASE_STREAM_WOULD_BLOCK && NS_FAILED(rv)) {
     return rv;
@@ -639,11 +670,10 @@ NS_IMETHODIMP
 AsyncFetchAndSetIconFromNetwork::AsyncOnChannelRedirect(
   nsIChannel* oldChannel
 , nsIChannel* newChannel
-, PRUint32 flags
+, uint32_t flags
 , nsIAsyncVerifyRedirectCallback *cb
 )
 {
-  mChannel = newChannel;
   (void)cb->OnRedirectVerifyCallback(NS_OK);
   return NS_OK;
 }
@@ -681,7 +711,11 @@ AsyncFetchAndSetIconFromNetwork::OnStopRequest(nsIRequest* aRequest,
     return NS_OK;
   }
 
-  mIcon.expiration = GetExpirationTimeFromChannel(mChannel);
+  nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
+  // aRequest should always QI to nsIChannel.
+  // See AsyncFetchAndSetIconFromNetwork::Run()
+  MOZ_ASSERT(channel);
+  mIcon.expiration = GetExpirationTimeFromChannel(channel);
 
   rv = OptimizeIconSize(mIcon, favicons);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -812,7 +846,7 @@ AsyncGetFaviconURLForPage::start(nsIURI* aPageURI,
   NS_PRECONDITION(NS_IsMainThread(),
                   "This should be called on the main thread.");
 
-  nsCAutoString pageSpec;
+  nsAutoCString pageSpec;
   nsresult rv = aPageURI->GetSpec(pageSpec);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -845,7 +879,7 @@ AsyncGetFaviconURLForPage::Run()
   NS_PRECONDITION(!NS_IsMainThread(),
                   "This should not be called on the main thread.");
 
-  nsCAutoString iconSpec;
+  nsAutoCString iconSpec;
   nsresult rv = FetchIconURL(mDB, mPageSpec, iconSpec);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
@@ -877,7 +911,7 @@ AsyncGetFaviconDataForPage::start(nsIURI* aPageURI,
   NS_PRECONDITION(NS_IsMainThread(),
                   "This should be called on the main thread.");
 
-  nsCAutoString pageSpec;
+  nsAutoCString pageSpec;
   nsresult rv = aPageURI->GetSpec(pageSpec);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -910,7 +944,7 @@ AsyncGetFaviconDataForPage::Run()
   NS_PRECONDITION(!NS_IsMainThread(),
                   "This should not be called on the main thread.");
 
-  nsCAutoString iconSpec;
+  nsAutoCString iconSpec;
   nsresult rv = FetchIconURL(mDB, mPageSpec, iconSpec);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 

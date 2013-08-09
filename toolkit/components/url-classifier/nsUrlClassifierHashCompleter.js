@@ -226,7 +226,7 @@ function HashCompleterRequest(aCompleter) {
   // The internal set of hashes and callbacks that this request corresponds to.
   this._requests = [];
   // URI to query for hash completions. Largely comes from the
-  // browser.safebrowsing.provider.#.gethashURL pref.
+  // browser.safebrowsing.gethashURL pref.
   this._uri = null;
   // nsIChannel that the hash completion query is transmitted over.
   this._channel = null;
@@ -310,6 +310,16 @@ HashCompleterRequest.prototype = {
       if (prefixes.indexOf(request.partialHash) == -1) {
         prefixes.push(request.partialHash);
       }
+    }
+
+    // Randomize the order to obscure the original request from noise
+    // unbiased Fisher-Yates shuffle
+    let i = prefixes.length;
+    while (i--) {
+      let j = Math.floor(Math.random() * (i + 1));
+      let temp = prefixes[i];
+      prefixes[i] = prefixes[j];
+      prefixes[j] = temp;
     }
 
     let body;
@@ -574,4 +584,4 @@ function errorWithStack() {
   return err;
 }
 
-var NSGetFactory = XPCOMUtils.generateNSGetFactory([HashCompleter]);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory([HashCompleter]);

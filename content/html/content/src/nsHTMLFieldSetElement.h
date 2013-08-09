@@ -21,41 +21,34 @@ public:
   nsHTMLFieldSetElement(already_AddRefed<nsINodeInfo> aNodeInfo);
   virtual ~nsHTMLFieldSetElement();
 
-  /** Typesafe, non-refcounting cast from nsIContent.  Cheaper than QI. **/
-  static nsHTMLFieldSetElement* FromContent(nsIContent* aContent)
-  {
-    if (!aContent || !aContent->IsHTML(nsGkAtoms::fieldset)) {
-      return nsnull;
-    }
-    return static_cast<nsHTMLFieldSetElement*>(aContent);
-  }
+  NS_IMPL_FROMCONTENT_HTML_WITH_TAG(nsHTMLFieldSetElement, fieldset)
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLFormElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLFormElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLFormElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLFieldSetElement
   NS_DECL_NSIDOMHTMLFIELDSETELEMENT
 
   // nsIContent
   virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor);
-  virtual nsresult AfterSetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+  virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                                 const nsAttrValue* aValue, bool aNotify);
 
-  virtual nsresult InsertChildAt(nsIContent* aChild, PRUint32 aIndex,
+  virtual nsresult InsertChildAt(nsIContent* aChild, uint32_t aIndex,
                                      bool aNotify);
-  virtual void RemoveChildAt(PRUint32 aIndex, bool aNotify);
+  virtual void RemoveChildAt(uint32_t aIndex, bool aNotify);
 
   // nsIFormControl
-  NS_IMETHOD_(PRUint32) GetType() const { return NS_FORM_FIELDSET; }
+  NS_IMETHOD_(uint32_t) GetType() const { return NS_FORM_FIELDSET; }
   NS_IMETHOD Reset();
   NS_IMETHOD SubmitNamesValues(nsFormSubmission* aFormSubmission);
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
@@ -83,7 +76,7 @@ private:
   void NotifyElementsForFirstLegendChange(bool aNotify);
 
   // This function is used to generate the nsContentList (listed form elements).
-  static bool MatchListedElements(nsIContent* aContent, PRInt32 aNamespaceID,
+  static bool MatchListedElements(nsIContent* aContent, int32_t aNamespaceID,
                                     nsIAtom* aAtom, void* aData);
 
   // listed form controls elements.

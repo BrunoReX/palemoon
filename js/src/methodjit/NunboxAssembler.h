@@ -420,12 +420,20 @@ class NunboxAssembler : public JSC::MacroAssembler
         return branch32(cond, tagOf(address), ImmTag(JSVAL_TAG_BOOLEAN));
     }
 
+    Jump testMagic(Condition cond, RegisterID reg) {
+        return branch32(cond, reg, ImmTag(JSVAL_TAG_MAGIC));
+    }
+
     Jump testString(Condition cond, RegisterID reg) {
         return branch32(cond, reg, ImmTag(JSVAL_TAG_STRING));
     }
 
     Jump testString(Condition cond, Address address) {
         return branch32(cond, tagOf(address), ImmTag(JSVAL_TAG_STRING));
+    }
+
+    Jump testPrivate(Condition cond, Address address, void *ptr) {
+        return branchPtr(cond, address, ImmPtr(ptr));
     }
 
     void compareValue(Address one, Address two, RegisterID T0, RegisterID T1,

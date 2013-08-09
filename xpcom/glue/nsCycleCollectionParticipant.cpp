@@ -6,8 +6,15 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
 
-static void
-NoteChild(void *aScriptThing, const char *name, void *aClosure)
+#ifdef MOZILLA_INTERNAL_API
+#include "nsString.h"
+#else
+#include "nsStringAPI.h"
+#endif
+
+void
+nsScriptObjectTracer::NoteJSChild(void *aScriptThing, const char *name,
+                                  void *aClosure)
 {
   nsCycleCollectionTraversalCallback *cb =
     static_cast<nsCycleCollectionTraversalCallback*>(aClosure);
@@ -15,15 +22,8 @@ NoteChild(void *aScriptThing, const char *name, void *aClosure)
   cb->NoteJSChild(aScriptThing);
 }
 
-void
-nsScriptObjectTracer::TraverseScriptObjects(void *p,
-                                        nsCycleCollectionTraversalCallback &cb)
-{
-  Trace(p, NoteChild, &cb);
-}
-
 nsresult
-nsXPCOMCycleCollectionParticipant::Root(void *p)
+nsXPCOMCycleCollectionParticipant::RootImpl(void *p)
 {
     nsISupports *s = static_cast<nsISupports*>(p);
     NS_ADDREF(s);
@@ -31,34 +31,18 @@ nsXPCOMCycleCollectionParticipant::Root(void *p)
 }
 
 nsresult
-nsXPCOMCycleCollectionParticipant::Unlink(void *p)
-{
-  return NS_OK;
-}
-
-nsresult
-nsXPCOMCycleCollectionParticipant::Unroot(void *p)
+nsXPCOMCycleCollectionParticipant::UnrootImpl(void *p)
 {
     nsISupports *s = static_cast<nsISupports*>(p);
     NS_RELEASE(s);
     return NS_OK;
 }
 
-nsresult
-nsXPCOMCycleCollectionParticipant::Traverse
-    (void *p, nsCycleCollectionTraversalCallback &cb)
-{
-  return NS_OK;
-}
-
-void
-nsXPCOMCycleCollectionParticipant::UnmarkIfPurple(nsISupports *n)
-{
-}
-
+// We define a default trace function because some participants don't need
+// to trace anything, so it is okay for them not to define one.
 NS_IMETHODIMP_(void)
-nsXPCOMCycleCollectionParticipant::Trace(void *p, TraceCallback cb,
-                                         void *closure)
+nsXPCOMCycleCollectionParticipant::TraceImpl(void *p, TraceCallback cb,
+                                             void *closure)
 {
 }
 
@@ -69,4 +53,16 @@ nsXPCOMCycleCollectionParticipant::CheckForRightISupports(nsISupports *s)
     s->QueryInterface(NS_GET_IID(nsCycleCollectionISupports),
                       reinterpret_cast<void**>(&foo));
     return s == foo;
+}
+
+void
+CycleCollectionNoteEdgeNameImpl(nsCycleCollectionTraversalCallback& aCallback,
+                                const char* aName,
+                                uint32_t aFlags)
+{
+  nsAutoCString arrayEdgeName(aName);
+  if (aFlags & CycleCollectionEdgeNameArrayFlag) {
+    arrayEdgeName.AppendLiteral("[i]");
+  }
+  aCallback.NoteNextEdgeName(arrayEdgeName.get());
 }

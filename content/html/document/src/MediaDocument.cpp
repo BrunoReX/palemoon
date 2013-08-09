@@ -68,7 +68,7 @@ MediaDocumentStreamListener::OnStopRequest(nsIRequest* request,
   }
 
   // No more need for our document so clear our reference and prevent leaks
-  mDocument = nsnull;
+  mDocument = nullptr;
 
   return rv;
 }
@@ -77,8 +77,8 @@ NS_IMETHODIMP
 MediaDocumentStreamListener::OnDataAvailable(nsIRequest* request,
                                              nsISupports *ctxt,
                                              nsIInputStream *inStr,
-                                             PRUint32 sourceOffset,
-                                             PRUint32 count)
+                                             uint64_t sourceOffset,
+                                             uint32_t count)
 {
   if (mNextStream) {
     return mNextStream->OnDataAvailable(request, ctxt, inStr, sourceOffset, count);
@@ -163,7 +163,7 @@ MediaDocument::StartDocumentLoad(const char*         aCommand,
   // not being able to set the charset is not critical.
   NS_ENSURE_TRUE(docShell, NS_OK); 
 
-  nsCAutoString charset;
+  nsAutoCString charset;
 
   nsCOMPtr<nsIAtom> csAtom;
   docShell->GetParentCharset(getter_AddRefs(csAtom));
@@ -194,6 +194,26 @@ MediaDocument::StartDocumentLoad(const char*         aCommand,
   return NS_OK;
 }
 
+void
+MediaDocument::BecomeInteractive()
+{
+  // In principle, if we knew the readyState code to work, we could infer
+  // restoration from GetReadyStateEnum() == nsIDocument::READYSTATE_COMPLETE.
+  bool restoring = false;
+  nsPIDOMWindow* window = GetWindow();
+  if (window) {
+    nsIDocShell* docShell = window->GetDocShell();
+    if (docShell) {
+      docShell->GetRestoringDocument(&restoring);
+    }
+  }
+  if (!restoring) {
+    MOZ_ASSERT(GetReadyStateEnum() == nsIDocument::READYSTATE_LOADING,
+               "Bad readyState");
+    SetReadyStateInternal(nsIDocument::READYSTATE_INTERACTIVE);
+  }
+}
+
 nsresult
 MediaDocument::CreateSyntheticDocument()
 {
@@ -201,7 +221,7 @@ MediaDocument::CreateSyntheticDocument()
   nsresult rv;
 
   nsCOMPtr<nsINodeInfo> nodeInfo;
-  nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::html, nsnull,
+  nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::html, nullptr,
                                            kNameSpaceID_XHTML,
                                            nsIDOMNode::ELEMENT_NODE);
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
@@ -213,7 +233,7 @@ MediaDocument::CreateSyntheticDocument()
   rv = AppendChildTo(root, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::head, nsnull,
+  nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::head, nullptr,
                                            kNameSpaceID_XHTML,
                                            nsIDOMNode::ELEMENT_NODE);
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
@@ -222,7 +242,7 @@ MediaDocument::CreateSyntheticDocument()
   nsRefPtr<nsGenericHTMLElement> head = NS_NewHTMLHeadElement(nodeInfo.forget());
   NS_ENSURE_TRUE(head, NS_ERROR_OUT_OF_MEMORY);
 
-  nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::meta, nsnull,
+  nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::meta, nullptr,
                                            kNameSpaceID_XHTML,
                                            nsIDOMNode::ELEMENT_NODE);
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
@@ -240,7 +260,7 @@ MediaDocument::CreateSyntheticDocument()
 
   root->AppendChildTo(head, false);
 
-  nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::body, nsnull,
+  nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::body, nullptr,
                                            kNameSpaceID_XHTML,
                                            nsIDOMNode::ELEMENT_NODE);
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
@@ -260,9 +280,9 @@ MediaDocument::StartLayout()
   nsCOMPtr<nsIPresShell> shell = GetShell();
   // Don't mess with the presshell if someone has already handled
   // its initial reflow.
-  if (shell && !shell->DidInitialReflow()) {
+  if (shell && !shell->DidInitialize()) {
     nsRect visibleArea = shell->GetPresContext()->GetVisibleArea();
-    nsresult rv = shell->InitialReflow(visibleArea.width, visibleArea.height);
+    nsresult rv = shell->Initialize(visibleArea.width, visibleArea.height);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -278,12 +298,12 @@ MediaDocument::GetFileName(nsAString& aResult)
   if (!url)
     return;
 
-  nsCAutoString fileName;
+  nsAutoCString fileName;
   url->GetFileName(fileName);
   if (fileName.IsEmpty())
     return;
 
-  nsCAutoString docCharset;
+  nsAutoCString docCharset;
   // Now that the charset is set in |StartDocumentLoad| to the charset of
   // the document viewer instead of a bogus value ("ISO-8859-1" set in
   // |nsDocument|'s ctor), the priority is given to the current charset. 
@@ -313,7 +333,7 @@ nsresult
 MediaDocument::LinkStylesheet(const nsAString& aStylesheet)
 {
   nsCOMPtr<nsINodeInfo> nodeInfo;
-  nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::link, nsnull,
+  nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::link, nullptr,
                                            kNameSpaceID_XHTML,
                                            nsIDOMNode::ELEMENT_NODE);
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
@@ -333,7 +353,7 @@ MediaDocument::LinkStylesheet(const nsAString& aStylesheet)
 void 
 MediaDocument::UpdateTitleAndCharset(const nsACString& aTypeStr,
                                      const char* const* aFormatNames,
-                                     PRInt32 aWidth, PRInt32 aHeight,
+                                     int32_t aWidth, int32_t aHeight,
                                      const nsAString& aStatus)
 {
   nsXPIDLString fileStr;

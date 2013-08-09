@@ -8,8 +8,7 @@
 #define _NSSSLSTATUS_H
 
 #include "nsISSLStatus.h"
-
-#include "nsAutoPtr.h"
+#include "nsCOMPtr.h"
 #include "nsXPIDLString.h"
 #include "nsIX509Cert.h"
 #include "nsISerializable.h"
@@ -32,8 +31,8 @@ public:
   /* public for initilization in this file */
   nsCOMPtr<nsIX509Cert> mServerCert;
 
-  PRUint32 mKeyLength;
-  PRUint32 mSecretKeyLength;
+  uint32_t mKeyLength;
+  uint32_t mSecretKeyLength;
   nsXPIDLCString mCipherName;
 
   bool mIsDomainMismatch;

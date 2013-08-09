@@ -5543,7 +5543,7 @@ struct cs_info * get_current_cs(const char * es) {
   rv = ccm->GetUnicodeEncoder(es, getter_AddRefs(encoder));
   if (NS_FAILED(rv))
     return ccs;
-  encoder->SetOutputErrorBehavior(encoder->kOnError_Signal, nsnull, '?');
+  encoder->SetOutputErrorBehavior(encoder->kOnError_Signal, nullptr, '?');
   rv = ccm->GetUnicodeDecoder(es, getter_AddRefs(decoder));
   if (NS_FAILED(rv))
     return ccs;
@@ -5564,7 +5564,7 @@ struct cs_info * get_current_cs(const char * es) {
         break;
       const char source = char(i);
       PRUnichar uni, uniCased;
-      PRInt32 charLength = 1, uniLength = 1;
+      int32_t charLength = 1, uniLength = 1;
 
       rv = decoder->Convert(&source, &charLength, &uni, &uniLength);
       // Explicitly check NS_OK because we don't want to allow

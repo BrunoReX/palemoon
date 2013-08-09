@@ -20,12 +20,12 @@ txNamespaceMap::txNamespaceMap(const txNamespaceMap& aOther)
 nsresult
 txNamespaceMap::mapNamespace(nsIAtom* aPrefix, const nsAString& aNamespaceURI)
 {
-    nsIAtom* prefix = aPrefix == nsGkAtoms::_empty ? nsnull : aPrefix;
+    nsIAtom* prefix = aPrefix == nsGkAtoms::_empty ? nullptr : aPrefix;
 
-    PRInt32 nsId;
+    int32_t nsId;
     if (prefix && aNamespaceURI.IsEmpty()) {
         // Remove the mapping
-        PRInt32 index = mPrefixes.IndexOf(prefix);
+        int32_t index = mPrefixes.IndexOf(prefix);
         if (index >= 0) {
             mPrefixes.RemoveObjectAt(index);
             mNamespaces.RemoveElementAt(index);
@@ -44,7 +44,7 @@ txNamespaceMap::mapNamespace(nsIAtom* aPrefix, const nsAString& aNamespaceURI)
     }
 
     // Check if the mapping already exists
-    PRInt32 index = mPrefixes.IndexOf(prefix);
+    int32_t index = mPrefixes.IndexOf(prefix);
     if (index >= 0) {
         mNamespaces.ElementAt(index) = nsId;
 
@@ -56,7 +56,7 @@ txNamespaceMap::mapNamespace(nsIAtom* aPrefix, const nsAString& aNamespaceURI)
         return NS_ERROR_OUT_OF_MEMORY;
     }
     
-    if (mNamespaces.AppendElement(nsId) == nsnull) {
+    if (mNamespaces.AppendElement(nsId) == nullptr) {
         mPrefixes.RemoveObjectAt(mPrefixes.Count() - 1);
 
         return NS_ERROR_OUT_OF_MEMORY;
@@ -65,7 +65,7 @@ txNamespaceMap::mapNamespace(nsIAtom* aPrefix, const nsAString& aNamespaceURI)
     return NS_OK;
 }
 
-PRInt32
+int32_t
 txNamespaceMap::lookupNamespace(nsIAtom* aPrefix)
 {
     if (aPrefix == nsGkAtoms::xml) {
@@ -74,7 +74,7 @@ txNamespaceMap::lookupNamespace(nsIAtom* aPrefix)
 
     nsIAtom* prefix = aPrefix == nsGkAtoms::_empty ? 0 : aPrefix;
 
-    PRInt32 index = mPrefixes.IndexOf(prefix);
+    int32_t index = mPrefixes.IndexOf(prefix);
     if (index >= 0) {
         return mNamespaces.SafeElementAt(index, kNameSpaceID_Unknown);
     }
@@ -86,7 +86,7 @@ txNamespaceMap::lookupNamespace(nsIAtom* aPrefix)
     return kNameSpaceID_Unknown;
 }
 
-PRInt32
+int32_t
 txNamespaceMap::lookupNamespaceWithDefault(const nsAString& aPrefix)
 {
     nsCOMPtr<nsIAtom> prefix = do_GetAtom(aPrefix);
@@ -94,5 +94,5 @@ txNamespaceMap::lookupNamespaceWithDefault(const nsAString& aPrefix)
         return lookupNamespace(prefix);
     }
 
-    return lookupNamespace(nsnull);
+    return lookupNamespace(nullptr);
 }

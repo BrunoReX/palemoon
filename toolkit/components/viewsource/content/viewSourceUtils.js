@@ -1,7 +1,8 @@
-# -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * To keep the global namespace safe, don't define global variables and 
@@ -110,18 +111,36 @@ var gViewSourceUtils = {
           var file = this.getTemporaryFile(uri, aDocument, contentType);
           this.viewSourceProgressListener.file = file;
 
+          let fromPrivateWindow = false;
+          if (aDocument) {
+            try {
+              fromPrivateWindow =
+                aDocument.defaultView
+                         .QueryInterface(Components.interfaces.nsIInterfaceRequestor)
+                         .getInterface(Components.interfaces.nsIWebNavigation)
+                         .QueryInterface(Components.interfaces.nsILoadContext)
+                         .usePrivateBrowsing;
+            } catch (e) {
+            }
+          }
+
           var webBrowserPersist = Components
                                   .classes["@mozilla.org/embedding/browser/nsWebBrowserPersist;1"]
                                   .createInstance(this.mnsIWebBrowserPersist);
           // the default setting is to not decode. we need to decode.
           webBrowserPersist.persistFlags = this.mnsIWebBrowserPersist.PERSIST_FLAGS_REPLACE_EXISTING_FILES;
           webBrowserPersist.progressListener = this.viewSourceProgressListener;
-          webBrowserPersist.saveURI(uri, null, null, null, null, file);
+          webBrowserPersist.savePrivacyAwareURI(uri, null, null, null, null, file, fromPrivateWindow);
 
-          // register the file to be deleted on app exit
-          Components.classes["@mozilla.org/uriloader/external-helper-app-service;1"]
-                    .getService(Components.interfaces.nsPIExternalAppLauncher)
-                    .deleteTemporaryFileOnExit(file);
+          let helperService = Components.classes["@mozilla.org/uriloader/external-helper-app-service;1"]
+                                        .getService(Components.interfaces.nsPIExternalAppLauncher);
+          if (fromPrivateWindow) {
+            // register the file to be deleted when possible
+            helperService.deleteTemporaryPrivateFileWhenPossible(file);
+          } else {
+            // register the file to be deleted on app exit
+            helperService.deleteTemporaryFileOnExit(file);
+          }
         } else {
           // we'll use nsIWebPageDescriptor to get the source because it may
           // not have to refetch the file from the server
@@ -169,14 +188,11 @@ var gViewSourceUtils = {
   getExternalViewSourceEditor: function()
   {
     try {
-      let prefPath =
+      let viewSourceAppPath =
           Components.classes["@mozilla.org/preferences-service;1"]
                     .getService(Components.interfaces.nsIPrefBranch)
-                    .getCharPref("view_source.editor.path");
-      let viewSourceAppPath =
-              Components.classes["@mozilla.org/file/local;1"]
-                        .createInstance(Components.interfaces.nsILocalFile);
-      viewSourceAppPath.initWithPath(prefPath);
+                    .getComplexValue("view_source.editor.path",
+                                     Components.interfaces.nsIFile);
       let editor = Components.classes['@mozilla.org/process/util;1']
                              .createInstance(Components.interfaces.nsIProcess);
       editor.init(viewSourceAppPath);
@@ -263,10 +279,22 @@ var gViewSourceUtils = {
           coStream.close();
           foStream.close();
 
-          // register the file to be deleted on app exit
-          Components.classes["@mozilla.org/uriloader/external-helper-app-service;1"]
-                    .getService(Components.interfaces.nsPIExternalAppLauncher)
-                    .deleteTemporaryFileOnExit(this.file);
+          let fromPrivateWindow =
+            this.data.doc.defaultView
+                         .QueryInterface(Components.interfaces.nsIInterfaceRequestor)
+                         .getInterface(Components.interfaces.nsIWebNavigation)
+                         .QueryInterface(Components.interfaces.nsILoadContext)
+                         .usePrivateBrowsing;
+
+          let helperService = Components.classes["@mozilla.org/uriloader/external-helper-app-service;1"]
+                              .getService(Components.interfaces.nsPIExternalAppLauncher);
+          if (fromPrivateWindow) {
+            // register the file to be deleted when possible
+            helperService.deleteTemporaryPrivateFileWhenPossible(this.file);
+          } else {
+            // register the file to be deleted on app exit
+            helperService.deleteTemporaryFileOnExit(this.file);
+          }
         }
 
         var editorArgs = gViewSourceUtils.buildEditorArgs(this.file.path,

@@ -1,73 +1,38 @@
 /* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 40 -*- */
-/* vim: set ts=2 et sw=2 tw=40: */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "base/basictypes.h"
 #include "BluetoothManager.h"
 #include "BluetoothCommon.h"
-#include "BluetoothFirmware.h"
 #include "BluetoothAdapter.h"
-#include "BluetoothUtils.h"
+#include "BluetoothService.h"
+#include "BluetoothReplyRunnable.h"
 
-#include "nsIDocument.h"
-#include "nsIURI.h"
-#include "nsIURL.h"
-#include "nsPIDOMWindow.h"
-
-#include "jsapi.h"
-#include "mozilla/Preferences.h"
-#include "nsDOMClassInfo.h"
-#include "nsDOMEvent.h"
-#include "nsThreadUtils.h"
-#include "nsXPCOMCIDInternal.h"
-#include "mozilla/LazyIdleThread.h"
-#include "mozilla/Util.h"
-#include "nsCharSeparatedTokenizer.h"
+#include "DOMRequest.h"
 #include "nsContentUtils.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsNetUtil.h"
-#include "nsServiceManagerUtils.h"
-
-#define DOM_BLUETOOTH_URL_PREF "dom.mozBluetooth.whitelist"
+#include "nsDOMClassInfo.h"
+#include "nsIPermissionManager.h"
+#include "nsThreadUtils.h"
+#include "mozilla/Util.h"
+#include "mozilla/dom/bluetooth/BluetoothTypes.h"
 
 using namespace mozilla;
-using mozilla::Preferences;
 
 USING_BLUETOOTH_NAMESPACE
-
-static void
-FireEnabled(bool aResult, nsIDOMDOMRequest* aDomRequest)
-{
-  nsCOMPtr<nsIDOMRequestService> rs =
-    do_GetService("@mozilla.org/dom/dom-request-service;1");
-
-  if (!rs) {
-    NS_WARNING("No DOMRequest Service!");
-    return;
-  }
-
-  DebugOnly<nsresult> rv =
-    aResult ?     
-    rs->FireSuccess(aDomRequest, JSVAL_VOID) :
-    rs->FireError(aDomRequest, 
-                  NS_LITERAL_STRING("Bluetooth firmware loading failed"));
-
-  NS_WARN_IF_FALSE(NS_SUCCEEDED(rv), "Bluetooth firmware loading failed");
-}
 
 DOMCI_DATA(BluetoothManager, BluetoothManager)
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(BluetoothManager)
 
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(BluetoothManager, 
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(BluetoothManager,
                                                   nsDOMEventTargetHelper)
-  NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(enabled)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(BluetoothManager, 
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(BluetoothManager,
                                                 nsDOMEventTargetHelper)
-  NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(enabled)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(BluetoothManager)
@@ -78,181 +43,143 @@ NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetHelper)
 NS_IMPL_ADDREF_INHERITED(BluetoothManager, nsDOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(BluetoothManager, nsDOMEventTargetHelper)
 
-class ToggleBtResultTask : public nsRunnable
+class GetAdapterTask : public BluetoothReplyRunnable
 {
-  public:
-    ToggleBtResultTask(nsRefPtr<BluetoothManager>& aManager, 
-                       nsCOMPtr<nsIDOMDOMRequest>& aReq,
-                       bool aEnabled,
-                       bool aResult)
-      : mEnabled(aEnabled),
-        mResult(aResult)
-    {
-      MOZ_ASSERT(!NS_IsMainThread());
+public:
+  GetAdapterTask(BluetoothManager* aManager,
+                 nsIDOMDOMRequest* aReq) :
+    BluetoothReplyRunnable(aReq),
+    mManagerPtr(aManager)
+  {
+  }
 
-      mDOMRequest.swap(aReq);
-      mManagerPtr.swap(aManager);
+  bool
+  ParseSuccessfulReply(jsval* aValue)
+  {
+    *aValue = JSVAL_VOID;
+
+    const BluetoothValue& v = mReply->get_BluetoothReplySuccess().value();
+
+    MOZ_ASSERT(v.type() == BluetoothValue::TArrayOfBluetoothNamedValue);
+    const InfallibleTArray<BluetoothNamedValue>& values =
+      v.get_ArrayOfBluetoothNamedValue();
+    nsCOMPtr<nsIDOMBluetoothAdapter> adapter;
+    adapter = BluetoothAdapter::Create(mManagerPtr->GetOwner(), values);
+
+    nsresult rv;
+    nsIScriptContext* sc = mManagerPtr->GetContextForEventHandlers(&rv);
+    if (!sc) {
+      NS_WARNING("Cannot create script context!");
+      SetError(NS_LITERAL_STRING("BluetoothScriptContextError"));
+      return false;
     }
 
-    NS_IMETHOD Run() 
-    {
-      MOZ_ASSERT(NS_IsMainThread());
-
-      // Update bt power status to BluetoothAdapter only if loading bluetooth 
-      // firmware succeeds.
-      if (mResult) {
-        mManagerPtr->SetEnabledInternal(mEnabled);
-      }
-
-      FireEnabled(mResult, mDOMRequest);
-
-      //mAdapterPtr must be null before returning to prevent the background 
-      //thread from racing to release it during the destruction of this runnable.
-      mManagerPtr = NULL;
-      mDOMRequest = NULL;
-
-      return NS_OK;
+    rv = nsContentUtils::WrapNative(sc->GetNativeContext(),
+                                    sc->GetNativeGlobal(),
+                                    adapter,
+                                    aValue);
+    if (NS_FAILED(rv)) {
+      NS_WARNING("Cannot create native object!");
+      SetError(NS_LITERAL_STRING("BluetoothNativeObjectError"));
+      return false;
     }
 
-  private:
-    nsRefPtr<BluetoothManager> mManagerPtr;
-    nsCOMPtr<nsIDOMDOMRequest> mDOMRequest;
-    bool mEnabled;
-    bool mResult;
+    return true;
+  }
+
+  void
+  ReleaseMembers()
+  {
+    BluetoothReplyRunnable::ReleaseMembers();
+    mManagerPtr = nullptr;
+  }
+  
+private:
+  nsRefPtr<BluetoothManager> mManagerPtr;
 };
 
-class ToggleBtTask : public nsRunnable
+nsresult
+BluetoothManager::FireEnabledDisabledEvent(bool aEnabled)
 {
-  public:
-    ToggleBtTask(bool aEnabled, nsIDOMDOMRequest* aReq,
-                 BluetoothManager* aManager)
-      : mEnabled(aEnabled),        
-        mManagerPtr(aManager),
-        mDOMRequest(aReq)
-    {
-      MOZ_ASSERT(NS_IsMainThread());
-    }
+  return DispatchTrustedEvent(aEnabled ? NS_LITERAL_STRING("enabled")
+                              : NS_LITERAL_STRING("disabled"));
+}
 
-    NS_IMETHOD Run() 
-    {
-      MOZ_ASSERT(!NS_IsMainThread());
-
-      bool result;
-
-#ifdef MOZ_WIDGET_GONK
-      // Platform specific check for gonk until object is divided in
-      // different implementations per platform. Linux doesn't require
-      // bluetooth firmware loading, but code should work otherwise.
-      if(!EnsureBluetoothInit()) {
-        NS_ERROR("Failed to load bluedroid library.\n");
-        return NS_ERROR_FAILURE;
-      }
-
-      // return 1 if it's enabled, 0 if it's disabled, and -1 on error
-      int isEnabled = IsBluetoothEnabled();
-
-      if ((isEnabled == 1 && mEnabled) || (isEnabled == 0 && !mEnabled)) {
-        result = true;
-      } else if (isEnabled < 0) {
-        result = false;
-      } else if (mEnabled) {
-        result = (EnableBluetooth() == 0) ? true : false;
-      } else {
-        result = (DisableBluetooth() == 0) ? true : false;
-      }
-#else
-      result = true;
-      NS_WARNING("No bluetooth firmware loading support in this build configuration, faking a success event instead");
-#endif
-
-      // Create a result thread and pass it to Main Thread, 
-      nsCOMPtr<nsIRunnable> resultRunnable = new ToggleBtResultTask(mManagerPtr, mDOMRequest, mEnabled, result);
-
-      if (NS_FAILED(NS_DispatchToMainThread(resultRunnable))) {
-        NS_WARNING("Failed to dispatch to main thread!");
-      }
-
-      return NS_OK;
-    }
-
-  private:
-    bool mEnabled;
-    nsRefPtr<BluetoothManager> mManagerPtr;
-    nsCOMPtr<nsIDOMDOMRequest> mDOMRequest;
-};
-
-BluetoothManager::BluetoothManager(nsPIDOMWindow *aWindow) :
-  mEnabled(false),
-  mName(nsDependentCString("/"))
+BluetoothManager::BluetoothManager(nsPIDOMWindow *aWindow)
+: BluetoothPropertyContainer(BluetoothObjectType::TYPE_MANAGER)
 {
+  MOZ_ASSERT(aWindow);
+
   BindToOwner(aWindow);
+  mPath.AssignLiteral("/");
 }
 
 BluetoothManager::~BluetoothManager()
 {
-  if(NS_FAILED(UnregisterBluetoothEventHandler(mName, this))) {
-    NS_WARNING("Failed to unregister object with observer!");
+  BluetoothService* bs = BluetoothService::Get();
+  if (bs) {
+    bs->UnregisterManager(this);
   }
 }
 
-NS_IMETHODIMP
-BluetoothManager::SetEnabled(bool aEnabled, nsIDOMDOMRequest** aDomRequest)
+void
+BluetoothManager::SetPropertyByValue(const BluetoothNamedValue& aValue)
 {
-  nsCOMPtr<nsIDOMRequestService> rs = do_GetService("@mozilla.org/dom/dom-request-service;1");
-
-  if (!rs) {
-    NS_ERROR("No DOMRequest Service!");
-    return NS_ERROR_FAILURE;
-  }
-
-  nsCOMPtr<nsIDOMDOMRequest> request;
-  nsresult rv = rs->CreateRequest(GetOwner(), getter_AddRefs(request));
-  NS_ENSURE_SUCCESS(rv, rv);
-  
-  if (!mToggleBtThread) {
-    mToggleBtThread = new LazyIdleThread(15000);
-  }
-
-  nsCOMPtr<nsIRunnable> r = new ToggleBtTask(aEnabled, request, this);
-
-  rv = mToggleBtThread->Dispatch(r, NS_DISPATCH_NORMAL);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  request.forget(aDomRequest);
-
-  return NS_OK;
+#ifdef DEBUG
+    const nsString& name = aValue.name();
+    nsCString warningMsg;
+    warningMsg.AssignLiteral("Not handling manager property: ");
+    warningMsg.Append(NS_ConvertUTF16toUTF8(name));
+    NS_WARNING(warningMsg.get());
+#endif
 }
 
 NS_IMETHODIMP
 BluetoothManager::GetEnabled(bool* aEnabled)
 {
-  *aEnabled = mEnabled;
-  return NS_OK; 
+  BluetoothService* bs = BluetoothService::Get();
+  NS_ENSURE_TRUE(bs, NS_ERROR_FAILURE);
+
+  *aEnabled = bs->IsEnabled();
+  return NS_OK;
 }
 
 NS_IMETHODIMP
-BluetoothManager::GetDefaultAdapter(nsIDOMBluetoothAdapter** aAdapter)
+BluetoothManager::GetDefaultAdapter(nsIDOMDOMRequest** aAdapter)
 {
-  nsCString path;
-  nsresult rv = GetDefaultAdapterPathInternal(path);
-  if(NS_FAILED(rv)) {
-    NS_WARNING("Cannot fetch adapter path!");
+  nsCOMPtr<nsIDOMRequestService> rs =
+    do_GetService(DOMREQUEST_SERVICE_CONTRACTID);
+  NS_ENSURE_TRUE(rs, NS_ERROR_FAILURE);
+
+  nsCOMPtr<nsIDOMDOMRequest> request;
+  nsresult rv = rs->CreateRequest(GetOwner(), getter_AddRefs(request));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsRefPtr<BluetoothReplyRunnable> results = new GetAdapterTask(this, request);
+
+  BluetoothService* bs = BluetoothService::Get();
+  NS_ENSURE_TRUE(bs, NS_ERROR_FAILURE);
+  if (NS_FAILED(bs->GetDefaultAdapterPathInternal(results))) {
     return NS_ERROR_FAILURE;
   }
-  nsRefPtr<BluetoothAdapter> adapter = BluetoothAdapter::Create(path);
-  adapter.forget(aAdapter);
+
+  request.forget(aAdapter);
   return NS_OK;
 }
 
 // static
 already_AddRefed<BluetoothManager>
-BluetoothManager::Create(nsPIDOMWindow* aWindow) {
+BluetoothManager::Create(nsPIDOMWindow* aWindow)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(aWindow);
+
   nsRefPtr<BluetoothManager> manager = new BluetoothManager(aWindow);
-  nsDependentCString name("/");
-  if(NS_FAILED(RegisterBluetoothEventHandler(name, manager))) {
-    NS_WARNING("Failed to register object with observer!");
-    return NULL;
-  }
+
+  BluetoothService* bs = BluetoothService::Get();
+  NS_ENSURE_TRUE(bs, nullptr);
+  bs->RegisterManager(manager);
+
   return manager.forget();
 }
 
@@ -262,21 +189,54 @@ NS_NewBluetoothManager(nsPIDOMWindow* aWindow,
 {
   NS_ASSERTION(aWindow, "Null pointer!");
 
-  bool allowed;
-  nsresult rv = nsContentUtils::IsOnPrefWhitelist(aWindow, DOM_BLUETOOTH_URL_PREF, &allowed);
-  NS_ENSURE_SUCCESS(rv, rv);
-  
-  if (!allowed) {
-    *aBluetoothManager = NULL;
-    return NS_OK;
-  }
+  nsCOMPtr<nsIPermissionManager> permMgr =
+    do_GetService(NS_PERMISSIONMANAGER_CONTRACTID);
+  NS_ENSURE_TRUE(permMgr, NS_ERROR_UNEXPECTED);
 
-  nsRefPtr<BluetoothManager> bluetoothManager = BluetoothManager::Create(aWindow);
+  uint32_t permission;
+  nsresult rv =
+    permMgr->TestPermissionFromWindow(aWindow, "bluetooth",
+                                      &permission);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsRefPtr<BluetoothManager> bluetoothManager;
+
+  if (permission == nsIPermissionManager::ALLOW_ACTION) {
+    bluetoothManager = BluetoothManager::Create(aWindow);
+  }
 
   bluetoothManager.forget(aBluetoothManager);
   return NS_OK;
 }
 
-void BluetoothManager::Notify(const BluetoothEvent& aData) {
-  printf("Received an manager message!\n");
+void
+BluetoothManager::Notify(const BluetoothSignal& aData)
+{
+  if (aData.name().EqualsLiteral("AdapterAdded")) {
+    DispatchTrustedEvent(NS_LITERAL_STRING("adapteradded"));
+  } else {
+#ifdef DEBUG
+    nsCString warningMsg;
+    warningMsg.AssignLiteral("Not handling manager signal: ");
+    warningMsg.Append(NS_ConvertUTF16toUTF8(aData.name()));
+    NS_WARNING(warningMsg.get());
+#endif
+  }
 }
+
+NS_IMETHODIMP
+BluetoothManager::IsConnected(uint16_t aProfileId, bool* aConnected)
+{
+  BluetoothService* bs = BluetoothService::Get();
+  if (!bs) {
+    NS_WARNING("BluetoothService not available!");
+    return NS_ERROR_FAILURE;
+  }
+
+  *aConnected = bs->IsConnected(aProfileId);
+  return NS_OK;
+}
+NS_IMPL_EVENT_HANDLER(BluetoothManager, enabled)
+NS_IMPL_EVENT_HANDLER(BluetoothManager, disabled)
+NS_IMPL_EVENT_HANDLER(BluetoothManager, adapteradded)
+

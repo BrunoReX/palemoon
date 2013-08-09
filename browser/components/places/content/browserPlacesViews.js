@@ -181,8 +181,6 @@ PlacesViewBase.prototype = {
 
   destroyContextMenu: function PVB_destroyContextMenu(aPopup) {
     this._contextMenuShown = false;
-    if (window.content)
-      window.content.focus();
   },
 
   _cleanPopup: function PVB_cleanPopup(aPopup, aDelay) {
@@ -1604,7 +1602,7 @@ PlacesToolbar.prototype = {
         }
       }
 
-      ind.style.MozTransform = "translate(" + Math.round(translateX) + "px)";
+      ind.style.transform = "translate(" + Math.round(translateX) + "px)";
       ind.style.MozMarginStart = (-ind.clientWidth) + "px";
       ind.collapsed = false;
 

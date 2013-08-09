@@ -4,21 +4,19 @@
 
 package org.mozilla.gecko;
 
-import android.content.Context;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import android.content.res.Resources;
 import android.graphics.drawable.BitmapDrawable;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.ImageView;
 import android.widget.PopupWindow;
-import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.RelativeLayout.LayoutParams;
-import android.widget.ImageView;
 import android.widget.TextView;
-
-import org.json.JSONObject;
-import org.json.JSONException;
 
 /**
  * SiteIdentityPopup is a singleton class that displays site identity data in
@@ -80,7 +78,7 @@ public class SiteIdentityPopup extends PopupWindow {
         mInflated = true;
     }
 
-    public void show(View v, int leftMargin) {
+    public void show(View v) {
         Tab selectedTab = Tabs.getInstance().getSelectedTab();
         if (selectedTab == null) {
             Log.e(LOGTAG, "Selected tab is null");
@@ -97,7 +95,7 @@ public class SiteIdentityPopup extends PopupWindow {
         try {
             mode = identityData.getString("mode");
         } catch (JSONException e) {
-            Log.e(LOGTAG, "Exception trying to get identity mode: " + e);
+            Log.e(LOGTAG, "Exception trying to get identity mode", e);
             return;
         }
 
@@ -122,7 +120,7 @@ public class SiteIdentityPopup extends PopupWindow {
             String encrypted = identityData.getString("encrypted");
             mEncrypted.setText(encrypted);
         } catch (JSONException e) {
-            Log.e(LOGTAG, "Exception trying to get identity data: " + e);
+            Log.e(LOGTAG, "Exception trying to get identity data", e);
             return;
         }
 
@@ -148,13 +146,15 @@ public class SiteIdentityPopup extends PopupWindow {
             mSupplemental.setTextColor(mResources.getColor(R.color.identity_identified));
         }
 
+        int[] anchorLocation = new int[2];
+        v.getLocationOnScreen(anchorLocation);
+
+        int arrowWidth = mResources.getDimensionPixelSize(R.dimen.doorhanger_arrow_width);
+        int leftMargin = anchorLocation[0] + (v.getWidth() - arrowWidth) / 2;
+
         int offset = 0;
         if (GeckoApp.mAppContext.isTablet()) {
-            int popupWidth = mResources.getDimensionPixelSize(R.dimen.site_identity_popup_width);
-            int arrowWidth = mResources.getDimensionPixelSize(R.dimen.doorhanger_arrow_width);
-
-            // Double arrowWidth to leave extra space on the right side of the arrow
-            leftMargin = popupWidth - arrowWidth*2;
+            int popupWidth = mResources.getDimensionPixelSize(R.dimen.popup_width);
             offset = 0 - popupWidth + arrowWidth*3/2 + v.getWidth()/2;
         }
 

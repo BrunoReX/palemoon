@@ -15,7 +15,7 @@
 #include "gfxPlatform.h"
 
 #include "nsIMemoryReporter.h"
-#include "mozilla/FunctionTimer.h"
+#include "mozilla/Attributes.h"
 
 class CharMapHashKey : public PLDHashEntryHdr
 {
@@ -73,11 +73,11 @@ protected:
 // Much of this is based on the old gfxQuartzFontCache, but adapted for use on all platforms.
 
 struct FontListSizes {
-    PRUint32 mFontListSize; // size of the font list and dependent objects
+    uint32_t mFontListSize; // size of the font list and dependent objects
                             // (font family and face names, etc), but NOT
                             // including the font table cache and the cmaps
-    PRUint32 mFontTableCacheSize; // memory used for the gfxFontEntry table caches
-    PRUint32 mCharMapsSize; // memory used for cmap coverage info
+    uint32_t mFontTableCacheSize; // memory used for the gfxFontEntry table caches
+    uint32_t mCharMapsSize; // memory used for cmap coverage info
 };
 
 class gfxPlatformFontList : protected gfxFontInfoLoader
@@ -88,8 +88,6 @@ public:
     }
 
     static nsresult Init() {
-        NS_TIME_FUNCTION;
-
         NS_ASSERTION(!sPlatformFontList, "What's this doing here?");
         gfxPlatform::GetPlatform()->CreatePlatformFontList();
         if (!sPlatformFontList) {
@@ -100,7 +98,7 @@ public:
 
     static void Shutdown() {
         delete sPlatformFontList;
-        sPlatformFontList = nsnull;
+        sPlatformFontList = nullptr;
     }
 
     virtual ~gfxPlatformFontList();
@@ -122,8 +120,8 @@ public:
     virtual void GetFontFamilyList(nsTArray<nsRefPtr<gfxFontFamily> >& aFamilyArray);
 
     virtual gfxFontEntry*
-    SystemFindFontForChar(const PRUint32 aCh,
-                          PRInt32 aRunScript,
+    SystemFindFontForChar(const uint32_t aCh,
+                          int32_t aRunScript,
                           const gfxFontStyle* aStyle);
 
     // TODO: make this virtual, for lazily adding to the font list
@@ -157,8 +155,8 @@ public:
     // create a new platform font from downloaded data (@font-face)
     // this method is responsible to ensure aFontData is NS_Free()'d
     virtual gfxFontEntry* MakePlatformFont(const gfxProxyFontEntry *aProxyEntry,
-                                           const PRUint8 *aFontData,
-                                           PRUint32 aLength) = 0;
+                                           const uint8_t *aFontData,
+                                           uint32_t aLength) = 0;
 
     // get the standard family name on the platform for a given font name
     // (platforms may override, eg Mac)
@@ -180,7 +178,7 @@ public:
     void RemoveCmap(const gfxCharacterMap *aCharMap);
 
 protected:
-    class MemoryReporter
+    class MemoryReporter MOZ_FINAL
         : public nsIMemoryMultiReporter
     {
     public:
@@ -197,15 +195,15 @@ protected:
                                                void* userArg);
 
     // returns default font for a given character, null otherwise
-    virtual gfxFontEntry* CommonFontFallback(const PRUint32 aCh,
-                                             PRInt32 aRunScript,
+    virtual gfxFontEntry* CommonFontFallback(const uint32_t aCh,
+                                             int32_t aRunScript,
                                              const gfxFontStyle* aMatchStyle);
 
     // search fonts system-wide for a given character, null otherwise
-    virtual gfxFontEntry* GlobalFontFallback(const PRUint32 aCh,
-                                             PRInt32 aRunScript,
+    virtual gfxFontEntry* GlobalFontFallback(const uint32_t aCh,
+                                             int32_t aRunScript,
                                              const gfxFontStyle* aMatchStyle,
-                                             PRUint32& aCmapCount);
+                                             uint32_t& aCmapCount);
 
     // whether system-based font fallback is used or not
     // if system fallback is used, no need to load all cmaps
@@ -294,9 +292,9 @@ protected:
 
     // data used as part of the font cmap loading process
     nsTArray<nsRefPtr<gfxFontFamily> > mFontFamiliesToLoad;
-    PRUint32 mStartIndex;
-    PRUint32 mIncrement;
-    PRUint32 mNumFamilies;
+    uint32_t mStartIndex;
+    uint32_t mIncrement;
+    uint32_t mNumFamilies;
 };
 
 #endif /* GFXPLATFORMFONTLIST_H_ */

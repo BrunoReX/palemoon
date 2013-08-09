@@ -10,14 +10,15 @@
 // /cl", whose cached entries are to be invalidated. The tests verifies that
 // "/redirect" and "/cl" are loaded from server the expected number of times.
 //
-do_load_httpd_js();
+
+const Cc = Components.classes;
+const Ci = Components.interfaces;
+const Cu = Components.utils;
+const Cr = Components.results;
+
+Cu.import("resource://testing-common/httpd.js");
 
 var httpserv;
-
-function getCacheService() {
-    return Components.classes["@mozilla.org/network/cache-service;1"]
-            .getService(Components.interfaces.nsICacheService);
-}
 
 function setupChannel(path) {
     var ios =
@@ -78,15 +79,14 @@ FinalListener.prototype = {
 };
 
 function run_test() {
-  httpserv = new nsHttpServer();
+  httpserv = new HttpServer();
   httpserv.registerPathHandler("/cl", content_location);
   httpserv.registerPathHandler("/post", post_target);
   httpserv.registerPathHandler("/redirect", redirect_target);
   httpserv.start(4444);
 
   // Clear cache
-  getCacheService().evictEntries(
-          Components.interfaces.nsICache.STORE_ANYWHERE);
+  evict_cache_entries();
 
   // Load Content-Location URI into cache and start the chain of loads
   var channel = setupChannel("http://localhost:4444/cl");

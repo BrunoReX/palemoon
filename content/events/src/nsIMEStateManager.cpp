@@ -17,7 +17,6 @@
 #include "nsPresContext.h"
 #include "nsIDOMWindow.h"
 #include "nsIDOMMouseEvent.h"
-#include "nsIDOMNSEvent.h"
 #include "nsContentUtils.h"
 #include "nsINode.h"
 #include "nsIFrame.h"
@@ -34,36 +33,106 @@
 #include "nsIFormControl.h"
 #include "nsIForm.h"
 #include "nsHTMLFormElement.h"
+#include "mozilla/Attributes.h"
+#include "nsEventDispatcher.h"
+#include "TextComposition.h"
+#include "mozilla/Preferences.h"
+#include "nsAsyncDOMEvent.h"
 
+using namespace mozilla;
 using namespace mozilla::widget;
+
+// nsTextStateManager notifies widget of any text and selection changes
+//  in the currently focused editor
+// sTextStateObserver points to the currently active nsTextStateManager
+// sTextStateObserver is null if there is no focused editor
+
+class nsTextStateManager MOZ_FINAL : public nsISelectionListener,
+                                     public nsStubMutationObserver
+{
+public:
+  nsTextStateManager()
+    : mObserving(false)
+    {
+    }
+
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSISELECTIONLISTENER
+  NS_DECL_NSIMUTATIONOBSERVER_CHARACTERDATACHANGED
+  NS_DECL_NSIMUTATIONOBSERVER_CONTENTAPPENDED
+  NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
+  NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
+
+  void     Init(nsIWidget* aWidget,
+                nsPresContext* aPresContext,
+                nsIContent* aContent);
+  void     Destroy(void);
+  bool     IsManaging(nsPresContext* aPresContext, nsIContent* aContent);
+
+  nsCOMPtr<nsIWidget>            mWidget;
+  nsCOMPtr<nsISelection>         mSel;
+  nsCOMPtr<nsIContent>           mRootContent;
+  nsCOMPtr<nsINode>              mEditableNode;
+
+private:
+  void NotifyContentAdded(nsINode* aContainer, int32_t aStart, int32_t aEnd);
+  void ObserveEditableNode();
+
+  bool mObserving;
+};
 
 /******************************************************************/
 /* nsIMEStateManager                                              */
 /******************************************************************/
 
-nsIContent*    nsIMEStateManager::sContent      = nsnull;
-nsPresContext* nsIMEStateManager::sPresContext  = nsnull;
+nsIContent*    nsIMEStateManager::sContent      = nullptr;
+nsPresContext* nsIMEStateManager::sPresContext  = nullptr;
 bool           nsIMEStateManager::sInstalledMenuKeyboardListener = false;
 bool           nsIMEStateManager::sInSecureInputMode = false;
+bool           nsIMEStateManager::sIsTestingIME = false;
 
-nsTextStateManager* nsIMEStateManager::sTextStateObserver = nsnull;
+nsTextStateManager* nsIMEStateManager::sTextStateObserver = nullptr;
+TextCompositionArray* nsIMEStateManager::sTextCompositions = nullptr;
+
+void
+nsIMEStateManager::Shutdown()
+{
+  MOZ_ASSERT(!sTextCompositions || !sTextCompositions->Length());
+  delete sTextCompositions;
+  sTextCompositions = nullptr;
+}
 
 nsresult
 nsIMEStateManager::OnDestroyPresContext(nsPresContext* aPresContext)
 {
   NS_ENSURE_ARG_POINTER(aPresContext);
+
+  // First, if there is a composition in the aPresContext, clean up it.
+  if (sTextCompositions) {
+    TextCompositionArray::index_type i =
+      sTextCompositions->IndexOf(aPresContext);
+    if (i != TextCompositionArray::NoIndex) {
+      // there should be only one composition per presContext object.
+      sTextCompositions->RemoveElementAt(i);
+      MOZ_ASSERT(sTextCompositions->IndexOf(aPresContext) ==
+                   TextCompositionArray::NoIndex);
+    }
+  }
+
   if (aPresContext != sPresContext)
     return NS_OK;
-  nsCOMPtr<nsIWidget> widget = GetWidget(sPresContext);
+
+  DestroyTextStateManager();
+
+  nsCOMPtr<nsIWidget> widget = sPresContext->GetRootWidget();
   if (widget) {
-    IMEState newState = GetNewIMEState(sPresContext, nsnull);
+    IMEState newState = GetNewIMEState(sPresContext, nullptr);
     InputContextAction action(InputContextAction::CAUSE_UNKNOWN,
                               InputContextAction::LOST_FOCUS);
-    SetIMEState(newState, nsnull, widget, action);
+    SetIMEState(newState, nullptr, widget, action);
   }
-  sContent = nsnull;
-  sPresContext = nsnull;
-  OnTextStateBlur(nsnull, nsnull);
+  NS_IF_RELEASE(sContent);
+  sPresContext = nullptr;
   return NS_OK;
 }
 
@@ -72,25 +141,59 @@ nsIMEStateManager::OnRemoveContent(nsPresContext* aPresContext,
                                    nsIContent* aContent)
 {
   NS_ENSURE_ARG_POINTER(aPresContext);
-  if (!sPresContext || !sContent ||
-      aPresContext != sPresContext ||
-      aContent != sContent)
-    return NS_OK;
 
-  // Current IME transaction should commit
-  nsCOMPtr<nsIWidget> widget = GetWidget(sPresContext);
-  if (widget) {
-    nsresult rv = widget->CancelIMEComposition();
-    if (NS_FAILED(rv))
-      widget->ResetInputState();
-    IMEState newState = GetNewIMEState(sPresContext, nsnull);
-    InputContextAction action(InputContextAction::CAUSE_UNKNOWN,
-                              InputContextAction::LOST_FOCUS);
-    SetIMEState(newState, nsnull, widget, action);
+  // First, if there is a composition in the aContent, clean up it.
+  if (sTextCompositions) {
+    TextComposition* compositionInContent =
+      sTextCompositions->GetCompositionInContent(aPresContext, aContent);
+
+    if (compositionInContent) {
+      // Store the composition before accessing the native IME.
+      TextComposition storedComposition = *compositionInContent;
+      // Try resetting the native IME state.  Be aware, typically, this method
+      // is called during the content being removed.  Then, the native
+      // composition events which are caused by following APIs are ignored due
+      // to unsafe to run script (in PresShell::HandleEvent()).
+      nsCOMPtr<nsIWidget> widget = aPresContext->GetRootWidget();
+      if (widget) {
+        nsresult rv =
+          storedComposition.NotifyIME(REQUEST_TO_CANCEL_COMPOSITION);
+        if (NS_FAILED(rv)) {
+          storedComposition.NotifyIME(REQUEST_TO_COMMIT_COMPOSITION);
+        }
+        // By calling the APIs, the composition may have been finished normally.
+        compositionInContent =
+          sTextCompositions->GetCompositionFor(
+                               storedComposition.GetPresContext(),
+                               storedComposition.GetEventTargetNode());
+      }
+    }
+
+    // If the compositionInContent is still available, we should finish the
+    // composition just on the content forcibly.
+    if (compositionInContent) {
+      compositionInContent->SynthesizeCommit(true);
+    }
   }
 
-  sContent = nsnull;
-  sPresContext = nsnull;
+  if (!sPresContext || !sContent ||
+      !nsContentUtils::ContentIsDescendantOf(sContent, aContent)) {
+    return NS_OK;
+  }
+
+  DestroyTextStateManager();
+
+  // Current IME transaction should commit
+  nsCOMPtr<nsIWidget> widget = sPresContext->GetRootWidget();
+  if (widget) {
+    IMEState newState = GetNewIMEState(sPresContext, nullptr);
+    InputContextAction action(InputContextAction::CAUSE_UNKNOWN,
+                              InputContextAction::LOST_FOCUS);
+    SetIMEState(newState, nullptr, widget, action);
+  }
+
+  NS_IF_RELEASE(sContent);
+  sPresContext = nullptr;
 
   return NS_OK;
 }
@@ -109,9 +212,31 @@ nsIMEStateManager::OnChangeFocusInternal(nsPresContext* aPresContext,
                                          nsIContent* aContent,
                                          InputContextAction aAction)
 {
-  NS_ENSURE_ARG_POINTER(aPresContext);
+  bool focusActuallyChanging =
+    (sContent != aContent || sPresContext != aPresContext);
 
-  nsCOMPtr<nsIWidget> widget = GetWidget(aPresContext);
+  nsCOMPtr<nsIWidget> oldWidget =
+    sPresContext ? sPresContext->GetRootWidget() : nullptr;
+  if (oldWidget && focusActuallyChanging) {
+    // If we're deactivating, we shouldn't commit composition forcibly because
+    // the user may want to continue the composition.
+    if (aPresContext) {
+      NotifyIME(REQUEST_TO_COMMIT_COMPOSITION, oldWidget);
+    }
+  }
+
+  if (sTextStateObserver &&
+      !sTextStateObserver->IsManaging(aPresContext, aContent)) {
+    DestroyTextStateManager();
+  }
+
+  if (!aPresContext) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIWidget> widget =
+    (sPresContext == aPresContext) ? oldWidget.get() :
+                                     aPresContext->GetRootWidget();
   if (!widget) {
     return NS_OK;
   }
@@ -140,7 +265,7 @@ nsIMEStateManager::OnChangeFocusInternal(nsPresContext* aPresContext,
   }
 
   IMEState newState = GetNewIMEState(aPresContext, aContent);
-  if (aPresContext == sPresContext && aContent == sContent) {
+  if (!focusActuallyChanging) {
     // actual focus isn't changing, but if IME enabled state is changing,
     // we should do it.
     InputContext context = widget->GetInputContext();
@@ -149,6 +274,12 @@ nsIMEStateManager::OnChangeFocusInternal(nsPresContext* aPresContext,
       return NS_OK;
     }
     aAction.mFocusChange = InputContextAction::FOCUS_NOT_CHANGED;
+
+    // Even if focus isn't changing actually, we should commit current
+    // composition here since the IME state is changing.
+    if (sPresContext && oldWidget && !focusActuallyChanging) {
+      NotifyIME(REQUEST_TO_COMMIT_COMPOSITION, oldWidget);
+    }
   } else if (aAction.mFocusChange == InputContextAction::FOCUS_NOT_CHANGED) {
     // If aContent isn't null or aContent is null but editable, somebody gets
     // focus.
@@ -157,22 +288,17 @@ nsIMEStateManager::OnChangeFocusInternal(nsPresContext* aPresContext,
       gotFocus ? InputContextAction::GOT_FOCUS : InputContextAction::LOST_FOCUS;
   }
 
-  // Current IME transaction should commit
-  if (sPresContext) {
-    nsCOMPtr<nsIWidget> oldWidget;
-    if (sPresContext == aPresContext)
-      oldWidget = widget;
-    else
-      oldWidget = GetWidget(sPresContext);
-    if (oldWidget)
-      oldWidget->ResetInputState();
-  }
-
   // Update IME state for new focus widget
   SetIMEState(newState, aContent, widget, aAction);
 
   sPresContext = aPresContext;
-  sContent = aContent;
+  if (sContent != aContent) {
+    NS_IF_RELEASE(sContent);
+    NS_IF_ADDREF(sContent = aContent);
+  }
+
+  // Don't call CreateTextStateManager() here, it should be called from
+  // focus event handler of editor.
 
   return NS_OK;
 }
@@ -197,27 +323,26 @@ nsIMEStateManager::OnClickInEditor(nsPresContext* aPresContext,
     return;
   }
 
-  nsCOMPtr<nsIWidget> widget = GetWidget(aPresContext);
-  NS_ENSURE_TRUE(widget, );
+  nsCOMPtr<nsIWidget> widget = aPresContext->GetRootWidget();
+  NS_ENSURE_TRUE_VOID(widget);
 
   bool isTrusted;
-  nsCOMPtr<nsIDOMNSEvent> NSEvent = do_QueryInterface(aMouseEvent);
-  nsresult rv = NSEvent->GetIsTrusted(&isTrusted);
-  NS_ENSURE_SUCCESS(rv, );
+  nsresult rv = aMouseEvent->GetIsTrusted(&isTrusted);
+  NS_ENSURE_SUCCESS_VOID(rv);
   if (!isTrusted) {
     return; // ignore untrusted event.
   }
 
-  PRUint16 button;
+  uint16_t button;
   rv = aMouseEvent->GetButton(&button);
-  NS_ENSURE_SUCCESS(rv, );
+  NS_ENSURE_SUCCESS_VOID(rv);
   if (button != 0) {
     return; // not a left click event.
   }
 
-  PRInt32 clickCount;
+  int32_t clickCount;
   rv = aMouseEvent->GetDetail(&clickCount);
-  NS_ENSURE_SUCCESS(rv, );
+  NS_ENSURE_SUCCESS_VOID(rv);
   if (clickCount != 1) {
     return; // should notify only first click event.
   }
@@ -229,6 +354,26 @@ nsIMEStateManager::OnClickInEditor(nsPresContext* aPresContext,
 }
 
 void
+nsIMEStateManager::OnFocusInEditor(nsPresContext* aPresContext,
+                                   nsIContent* aContent)
+{
+  if (sPresContext != aPresContext || sContent != aContent) {
+    return;
+  }
+
+  // If the nsTextStateManager instance isn't managing the editor actually,
+  // we need to recreate the instance.
+  if (sTextStateObserver) {
+    if (sTextStateObserver->IsManaging(aPresContext, aContent)) {
+      return;
+    }
+    DestroyTextStateManager();
+  }
+
+  CreateTextStateManager();
+}
+
+void
 nsIMEStateManager::UpdateIMEState(const IMEState &aNewIMEState,
                                   nsIContent* aContent)
 {
@@ -236,24 +381,40 @@ nsIMEStateManager::UpdateIMEState(const IMEState &aNewIMEState,
     NS_WARNING("ISM doesn't know which editor has focus");
     return;
   }
-  nsCOMPtr<nsIWidget> widget = GetWidget(sPresContext);
+  nsCOMPtr<nsIWidget> widget = sPresContext->GetRootWidget();
   if (!widget) {
     NS_WARNING("focused widget is not found");
     return;
   }
 
-  // Don't update IME state when enabled state isn't actually changed.
-  InputContext context = widget->GetInputContext();
-  if (context.mIMEState.mEnabled == aNewIMEState.mEnabled) {
-    return;
+  // If the nsTextStateManager instance isn't managing the editor's current
+  // editable root content, the editor frame might be reframed.  We should
+  // recreate the instance at that time.
+  bool createTextStateManager =
+    (!sTextStateObserver ||
+     !sTextStateObserver->IsManaging(sPresContext, aContent));
+
+  bool updateIMEState =
+    (widget->GetInputContext().mIMEState.mEnabled != aNewIMEState.mEnabled);
+
+  if (updateIMEState) {
+    // commit current composition before modifying IME state.
+    NotifyIME(REQUEST_TO_COMMIT_COMPOSITION, widget);
   }
 
-  // commit current composition
-  widget->ResetInputState();
+  if (createTextStateManager) {
+    DestroyTextStateManager();
+  }
 
-  InputContextAction action(InputContextAction::CAUSE_UNKNOWN,
-                            InputContextAction::FOCUS_NOT_CHANGED);
-  SetIMEState(aNewIMEState, aContent, widget, action);
+  if (updateIMEState) {
+    InputContextAction action(InputContextAction::CAUSE_UNKNOWN,
+                              InputContextAction::FOCUS_NOT_CHANGED);
+    SetIMEState(aNewIMEState, aContent, widget, action);
+  }
+
+  if (createTextStateManager) {
+    CreateTextStateManager();
+  }
 }
 
 IMEState
@@ -286,7 +447,7 @@ nsIMEStateManager::GetNewIMEState(nsPresContext* aPresContext,
 // Helper class, used for IME enabled state change notification
 class IMEEnabledStateChangedEvent : public nsRunnable {
 public:
-  IMEEnabledStateChangedEvent(PRUint32 aState)
+  IMEEnabledStateChangedEvent(uint32_t aState)
     : mState(aState)
   {
   }
@@ -296,13 +457,13 @@ public:
     if (observerService) {
       nsAutoString state;
       state.AppendInt(mState);
-      observerService->NotifyObservers(nsnull, "ime-enabled-state-changed", state.get());
+      observerService->NotifyObservers(nullptr, "ime-enabled-state-changed", state.get());
     }
     return NS_OK;
   }
 
 private:
-  PRUint32 mState;
+  uint32_t mState;
 };
 
 void
@@ -311,7 +472,7 @@ nsIMEStateManager::SetIMEState(const IMEState &aState,
                                nsIWidget* aWidget,
                                InputContextAction aAction)
 {
-  NS_ENSURE_TRUE(aWidget, );
+  NS_ENSURE_TRUE_VOID(aWidget);
 
   InputContext oldContext = aWidget->GetInputContext();
 
@@ -323,6 +484,8 @@ nsIMEStateManager::SetIMEState(const IMEState &aState,
        aContent->Tag() == nsGkAtoms::textarea)) {
     aContent->GetAttr(kNameSpaceID_None, nsGkAtoms::type,
                       context.mHTMLInputType);
+    aContent->GetAttr(kNameSpaceID_None, nsGkAtoms::inputmode,
+                      context.mHTMLInputInputmode);
     aContent->GetAttr(kNameSpaceID_None, nsGkAtoms::moz_action_hint,
                       context.mActionHint);
 
@@ -365,144 +528,297 @@ nsIMEStateManager::SetIMEState(const IMEState &aState,
   }
 }
 
-nsIWidget*
-nsIMEStateManager::GetWidget(nsPresContext* aPresContext)
+void
+nsIMEStateManager::EnsureTextCompositionArray()
 {
-  nsIPresShell* shell = aPresContext->GetPresShell();
-  NS_ENSURE_TRUE(shell, nsnull);
-
-  nsIViewManager* vm = shell->GetViewManager();
-  if (!vm)
-    return nsnull;
-  nsCOMPtr<nsIWidget> widget = nsnull;
-  nsresult rv = vm->GetRootWidget(getter_AddRefs(widget));
-  NS_ENSURE_SUCCESS(rv, nsnull);
-  return widget;
+  if (sTextCompositions) {
+    return;
+  }
+  sTextCompositions = new TextCompositionArray();
 }
 
-
-// nsTextStateManager notifies widget of any text and selection changes
-//  in the currently focused editor
-// sTextStateObserver points to the currently active nsTextStateManager
-// sTextStateObserver is null if there is no focused editor
-
-class nsTextStateManager : public nsISelectionListener,
-                           public nsStubMutationObserver
+void
+nsIMEStateManager::DispatchCompositionEvent(nsINode* aEventTargetNode,
+                                            nsPresContext* aPresContext,
+                                            nsEvent* aEvent,
+                                            nsEventStatus* aStatus,
+                                            nsDispatchingCallback* aCallBack)
 {
-public:
-  nsTextStateManager();
+  MOZ_ASSERT(aEvent->eventStructType == NS_COMPOSITION_EVENT ||
+             aEvent->eventStructType == NS_TEXT_EVENT);
+  if (!NS_IS_TRUSTED_EVENT(aEvent) ||
+      (aEvent->flags & NS_EVENT_FLAG_STOP_DISPATCH) != 0) {
+    return;
+  }
 
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSISELECTIONLISTENER
-  NS_DECL_NSIMUTATIONOBSERVER_CHARACTERDATACHANGED
-  NS_DECL_NSIMUTATIONOBSERVER_CONTENTAPPENDED
-  NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
-  NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
+  EnsureTextCompositionArray();
 
-  nsresult Init(nsIWidget* aWidget,
-                nsPresContext* aPresContext,
-                nsINode* aNode,
-                bool aWantUpdates);
-  void     Destroy(void);
+  nsGUIEvent* GUIEvent = static_cast<nsGUIEvent*>(aEvent);
 
-  nsCOMPtr<nsIWidget>            mWidget;
-  nsCOMPtr<nsISelection>         mSel;
-  nsCOMPtr<nsIContent>           mRootContent;
-  nsCOMPtr<nsINode>              mEditableNode;
-  bool                           mDestroying;
+  TextComposition* composition =
+    sTextCompositions->GetCompositionFor(GUIEvent->widget);
+  if (!composition) {
+    MOZ_ASSERT(GUIEvent->message == NS_COMPOSITION_START);
+    TextComposition newComposition(aPresContext, aEventTargetNode, GUIEvent);
+    composition = sTextCompositions->AppendElement(newComposition);
+  }
+#ifdef DEBUG
+  else {
+    MOZ_ASSERT(GUIEvent->message != NS_COMPOSITION_START);
+  }
+#endif // #ifdef DEBUG
 
-private:
-  void NotifyContentAdded(nsINode* aContainer, PRInt32 aStart, PRInt32 aEnd);
-};
+  // Dispatch the event on composing target.
+  composition->DispatchEvent(GUIEvent, aStatus, aCallBack);
 
-nsTextStateManager::nsTextStateManager()
-{
-  mDestroying = false;
+  // WARNING: the |composition| might have been destroyed already.
+
+  // Remove the ended composition from the array.
+  if (aEvent->message == NS_COMPOSITION_END) {
+    TextCompositionArray::index_type i =
+      sTextCompositions->IndexOf(GUIEvent->widget);
+    if (i != TextCompositionArray::NoIndex) {
+      sTextCompositions->RemoveElementAt(i);
+    }
+  }
 }
 
+// static
 nsresult
+nsIMEStateManager::NotifyIME(NotificationToIME aNotification,
+                             nsIWidget* aWidget)
+{
+  NS_ENSURE_TRUE(aWidget, NS_ERROR_INVALID_ARG);
+
+  TextComposition* composition = nullptr;
+  if (sTextCompositions) {
+    composition = sTextCompositions->GetCompositionFor(aWidget);
+  }
+  if (!composition || !composition->IsSynthesizedForTests()) {
+    switch (aNotification) {
+      case NOTIFY_IME_OF_CURSOR_POS_CHANGED:
+        return aWidget->ResetInputState();
+      case REQUEST_TO_COMMIT_COMPOSITION:
+        return composition ? aWidget->ResetInputState() : NS_OK;
+      case REQUEST_TO_CANCEL_COMPOSITION:
+        return composition ? aWidget->CancelIMEComposition() : NS_OK;
+      default:
+        MOZ_NOT_REACHED("Unsupported notification");
+        return NS_ERROR_INVALID_ARG;
+    }
+    MOZ_NOT_REACHED(
+      "Failed to handle the notification for non-synthesized composition");
+  }
+
+  // If the composition is synthesized events for automated tests, we should
+  // dispatch composition events for emulating the native composition behavior.
+  // NOTE: The dispatched events are discarded if it's not safe to run script.
+  switch (aNotification) {
+    case REQUEST_TO_COMMIT_COMPOSITION: {
+      nsCOMPtr<nsIWidget> widget(aWidget);
+      TextComposition backup = *composition;
+
+      nsEventStatus status = nsEventStatus_eIgnore;
+      if (!backup.GetLastData().IsEmpty()) {
+        nsTextEvent textEvent(true, NS_TEXT_TEXT, widget);
+        textEvent.theText = backup.GetLastData();
+        textEvent.flags |= NS_EVENT_FLAG_SYNTHETIC_TEST_EVENT;
+        widget->DispatchEvent(&textEvent, status);
+        if (widget->Destroyed()) {
+          return NS_OK;
+        }
+      }
+
+      status = nsEventStatus_eIgnore;
+      nsCompositionEvent endEvent(true, NS_COMPOSITION_END, widget);
+      endEvent.data = backup.GetLastData();
+      endEvent.flags |= NS_EVENT_FLAG_SYNTHETIC_TEST_EVENT;
+      widget->DispatchEvent(&endEvent, status);
+
+      return NS_OK;
+    }
+    case REQUEST_TO_CANCEL_COMPOSITION: {
+      nsCOMPtr<nsIWidget> widget(aWidget);
+      TextComposition backup = *composition;
+
+      nsEventStatus status = nsEventStatus_eIgnore;
+      if (!backup.GetLastData().IsEmpty()) {
+        nsCompositionEvent updateEvent(true, NS_COMPOSITION_UPDATE, widget);
+        updateEvent.data = backup.GetLastData();
+        updateEvent.flags |= NS_EVENT_FLAG_SYNTHETIC_TEST_EVENT;
+        widget->DispatchEvent(&updateEvent, status);
+        if (widget->Destroyed()) {
+          return NS_OK;
+        }
+
+        status = nsEventStatus_eIgnore;
+        nsTextEvent textEvent(true, NS_TEXT_TEXT, widget);
+        textEvent.theText = backup.GetLastData();
+        textEvent.flags |= NS_EVENT_FLAG_SYNTHETIC_TEST_EVENT;
+        widget->DispatchEvent(&textEvent, status);
+        if (widget->Destroyed()) {
+          return NS_OK;
+        }
+      }
+
+      status = nsEventStatus_eIgnore;
+      nsCompositionEvent endEvent(true, NS_COMPOSITION_END, widget);
+      endEvent.data = backup.GetLastData();
+      endEvent.flags |= NS_EVENT_FLAG_SYNTHETIC_TEST_EVENT;
+      widget->DispatchEvent(&endEvent, status);
+
+      return NS_OK;
+    }
+    default:
+      return NS_OK;
+  }
+}
+
+// static
+nsresult
+nsIMEStateManager::NotifyIME(NotificationToIME aNotification,
+                             nsPresContext* aPresContext)
+{
+  NS_ENSURE_TRUE(aPresContext, NS_ERROR_INVALID_ARG);
+
+  nsIWidget* widget = aPresContext->GetRootWidget();
+  if (!widget) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  return NotifyIME(aNotification, widget);
+}
+
+void
 nsTextStateManager::Init(nsIWidget* aWidget,
                          nsPresContext* aPresContext,
-                         nsINode* aNode,
-                         bool aWantUpdates)
+                         nsIContent* aContent)
 {
   mWidget = aWidget;
-  MOZ_ASSERT(mWidget);
-  if (!aWantUpdates) {
-    mEditableNode = aNode;
-    return NS_OK;
+  mEditableNode =
+    nsIMEStateManager::GetRootEditableNode(aPresContext, aContent);
+  if (!mEditableNode) {
+    return;
   }
 
   nsIPresShell* presShell = aPresContext->PresShell();
 
   // get selection and root content
   nsCOMPtr<nsISelectionController> selCon;
-  if (aNode->IsNodeOfType(nsINode::eCONTENT)) {
-    nsIFrame* frame = static_cast<nsIContent*>(aNode)->GetPrimaryFrame();
-    NS_ENSURE_TRUE(frame, NS_ERROR_UNEXPECTED);
+  if (mEditableNode->IsNodeOfType(nsINode::eCONTENT)) {
+    nsIFrame* frame =
+      static_cast<nsIContent*>(mEditableNode.get())->GetPrimaryFrame();
+    NS_ENSURE_TRUE_VOID(frame);
 
     frame->GetSelectionController(aPresContext,
                                   getter_AddRefs(selCon));
   } else {
-    // aNode is a document
+    // mEditableNode is a document
     selCon = do_QueryInterface(presShell);
   }
-  NS_ENSURE_TRUE(selCon, NS_ERROR_FAILURE);
+  NS_ENSURE_TRUE_VOID(selCon);
 
-  nsCOMPtr<nsISelection> sel;
-  nsresult rv = selCon->GetSelection(nsISelectionController::SELECTION_NORMAL,
-                                     getter_AddRefs(sel));
-  NS_ENSURE_TRUE(sel, NS_ERROR_UNEXPECTED);
+  selCon->GetSelection(nsISelectionController::SELECTION_NORMAL,
+                       getter_AddRefs(mSel));
+  NS_ENSURE_TRUE_VOID(mSel);
 
   nsCOMPtr<nsIDOMRange> selDomRange;
-  rv = sel->GetRangeAt(0, getter_AddRefs(selDomRange));
-
-  if (NS_SUCCEEDED(rv)) {
+  if (NS_SUCCEEDED(mSel->GetRangeAt(0, getter_AddRefs(selDomRange)))) {
     nsRange* selRange = static_cast<nsRange*>(selDomRange.get());
-    NS_ENSURE_TRUE(selRange && selRange->GetStartParent(),
-                   NS_ERROR_UNEXPECTED);
+    NS_ENSURE_TRUE_VOID(selRange && selRange->GetStartParent());
 
     mRootContent = selRange->GetStartParent()->
                      GetSelectionRootContent(presShell);
   } else {
-    mRootContent = aNode->GetSelectionRootContent(presShell);
+    mRootContent = mEditableNode->GetSelectionRootContent(presShell);
   }
-  if (!mRootContent && aNode->IsNodeOfType(nsINode::eDOCUMENT)) {
+  if (!mRootContent && mEditableNode->IsNodeOfType(nsINode::eDOCUMENT)) {
     // The document node is editable, but there are no contents, this document
     // is not editable.
-    return NS_ERROR_NOT_AVAILABLE;
+    return;
   }
-  NS_ENSURE_TRUE(mRootContent, NS_ERROR_UNEXPECTED);
+  NS_ENSURE_TRUE_VOID(mRootContent);
+
+  if (nsIMEStateManager::sIsTestingIME) {
+    nsIDocument* doc = aPresContext->Document();
+    (new nsAsyncDOMEvent(doc, NS_LITERAL_STRING("MozIMEFocusIn"),
+                         false, false))->RunDOMEventWhenSafe();
+  }
+
+  aWidget->OnIMEFocusChange(true);
+
+  // OnIMEFocusChange(true) might cause recreating nsTextStateManager
+  // instance via nsIMEStateManager::UpdateIMEState().  So, this
+  // instance might already have been destroyed, check it.
+  if (!mRootContent) {
+    return;
+  }
+
+  if (mWidget->GetIMEUpdatePreference().mWantUpdates) {
+    ObserveEditableNode();
+  }
+}
+
+void
+nsTextStateManager::ObserveEditableNode()
+{
+  MOZ_ASSERT(mSel);
+  MOZ_ASSERT(mRootContent);
+
+  // add selection change listener
+  nsCOMPtr<nsISelectionPrivate> selPrivate(do_QueryInterface(mSel));
+  NS_ENSURE_TRUE_VOID(selPrivate);
+  nsresult rv = selPrivate->AddSelectionListener(this);
+  NS_ENSURE_SUCCESS_VOID(rv);
+  rv = selPrivate->AddSelectionListener(this);
+  NS_ENSURE_SUCCESS_VOID(rv);
 
   // add text change observer
   mRootContent->AddMutationObserver(this);
 
-  // add selection change listener
-  nsCOMPtr<nsISelectionPrivate> selPrivate(do_QueryInterface(sel));
-  NS_ENSURE_TRUE(selPrivate, NS_ERROR_UNEXPECTED);
-  rv = selPrivate->AddSelectionListener(this);
-  NS_ENSURE_SUCCESS(rv, rv);
-  mSel = sel;
-
-  mEditableNode = aNode;
-  return NS_OK;
+  mObserving = true;
 }
 
 void
 nsTextStateManager::Destroy(void)
 {
-  if (mSel) {
+  // If CreateTextStateManager failed, mRootContent will be null,
+  // and we should not call OnIMEFocusChange(false)
+  if (mRootContent) {
+    if (nsIMEStateManager::sIsTestingIME && mEditableNode) {
+      nsIDocument* doc = mEditableNode->OwnerDoc();
+      (new nsAsyncDOMEvent(doc, NS_LITERAL_STRING("MozIMEFocusOut"),
+                           false, false))->RunDOMEventWhenSafe();
+    }
+    mWidget->OnIMEFocusChange(false);
+  }
+  // Even if there are some pending notification, it'll never notify the widget.
+  mWidget = nullptr;
+  if (mObserving && mSel) {
     nsCOMPtr<nsISelectionPrivate> selPrivate(do_QueryInterface(mSel));
     if (selPrivate)
       selPrivate->RemoveSelectionListener(this);
-    mSel = nsnull;
   }
-  if (mRootContent) {
+  mSel = nullptr;
+  if (mObserving && mRootContent) {
     mRootContent->RemoveMutationObserver(this);
-    mRootContent = nsnull;
   }
-  mEditableNode = nsnull;
-  mWidget = nsnull;
+  mRootContent = nullptr;
+  mEditableNode = nullptr;
+  mObserving = false;
+}
+
+bool
+nsTextStateManager::IsManaging(nsPresContext* aPresContext,
+                               nsIContent* aContent)
+{
+  if (!mSel || !mRootContent || !mEditableNode) {
+    return false; // failed to initialize.
+  }
+  if (!mRootContent->IsInDoc()) {
+    return false; // the focused editor has already been reframed.
+  }
+  return mEditableNode == nsIMEStateManager::GetRootEditableNode(aPresContext,
+                                                                 aContent);
 }
 
 NS_IMPL_ISUPPORTS2(nsTextStateManager,
@@ -512,33 +828,33 @@ NS_IMPL_ISUPPORTS2(nsTextStateManager,
 // Helper class, used for selection change notification
 class SelectionChangeEvent : public nsRunnable {
 public:
-  SelectionChangeEvent(nsIWidget *widget)
-    : mWidget(widget)
+  SelectionChangeEvent(nsTextStateManager *aDispatcher)
+    : mDispatcher(aDispatcher)
   {
-    MOZ_ASSERT(mWidget);
+    MOZ_ASSERT(mDispatcher);
   }
 
   NS_IMETHOD Run() {
-    if(mWidget) {
-        mWidget->OnIMESelectionChange();
+    if (mDispatcher->mWidget) {
+      mDispatcher->mWidget->OnIMESelectionChange();
     }
     return NS_OK;
   }
 
 private:
-  nsCOMPtr<nsIWidget> mWidget;
+  nsRefPtr<nsTextStateManager> mDispatcher;
 };
 
 nsresult
 nsTextStateManager::NotifySelectionChanged(nsIDOMDocument* aDoc,
                                            nsISelection* aSel,
-                                           PRInt16 aReason)
+                                           int16_t aReason)
 {
-  PRInt32 count = 0;
+  int32_t count = 0;
   nsresult rv = aSel->GetRangeCount(&count);
   NS_ENSURE_SUCCESS(rv, rv);
   if (count > 0 && mWidget) {
-    nsContentUtils::AddScriptRunner(new SelectionChangeEvent(mWidget));
+    nsContentUtils::AddScriptRunner(new SelectionChangeEvent(this));
   }
   return NS_OK;
 }
@@ -546,26 +862,26 @@ nsTextStateManager::NotifySelectionChanged(nsIDOMDocument* aDoc,
 // Helper class, used for text change notification
 class TextChangeEvent : public nsRunnable {
 public:
-  TextChangeEvent(nsIWidget *widget,
-                  PRUint32 start, PRUint32 oldEnd, PRUint32 newEnd)
-    : mWidget(widget)
+  TextChangeEvent(nsTextStateManager* aDispatcher,
+                  uint32_t start, uint32_t oldEnd, uint32_t newEnd)
+    : mDispatcher(aDispatcher)
     , mStart(start)
     , mOldEnd(oldEnd)
     , mNewEnd(newEnd)
   {
-    MOZ_ASSERT(mWidget);
+    MOZ_ASSERT(mDispatcher);
   }
 
   NS_IMETHOD Run() {
-    if(mWidget) {
-        mWidget->OnIMETextChange(mStart, mOldEnd, mNewEnd);
+    if (mDispatcher->mWidget) {
+      mDispatcher->mWidget->OnIMETextChange(mStart, mOldEnd, mNewEnd);
     }
     return NS_OK;
   }
 
 private:
-  nsCOMPtr<nsIWidget> mWidget;
-  PRUint32 mStart, mOldEnd, mNewEnd;
+  nsRefPtr<nsTextStateManager> mDispatcher;
+  uint32_t mStart, mOldEnd, mNewEnd;
 };
 
 void
@@ -576,25 +892,25 @@ nsTextStateManager::CharacterDataChanged(nsIDocument* aDocument,
   NS_ASSERTION(aContent->IsNodeOfType(nsINode::eTEXT),
                "character data changed for non-text node");
 
-  PRUint32 offset = 0;
+  uint32_t offset = 0;
   // get offsets of change and fire notification
   if (NS_FAILED(nsContentEventHandler::GetFlatTextOffsetOfRange(
                     mRootContent, aContent, aInfo->mChangeStart, &offset)))
     return;
 
-  PRUint32 oldEnd = offset + aInfo->mChangeEnd - aInfo->mChangeStart;
-  PRUint32 newEnd = offset + aInfo->mReplaceLength;
+  uint32_t oldEnd = offset + aInfo->mChangeEnd - aInfo->mChangeStart;
+  uint32_t newEnd = offset + aInfo->mReplaceLength;
 
   nsContentUtils::AddScriptRunner(
-      new TextChangeEvent(mWidget, offset, oldEnd, newEnd));
+      new TextChangeEvent(this, offset, oldEnd, newEnd));
 }
 
 void
 nsTextStateManager::NotifyContentAdded(nsINode* aContainer,
-                                       PRInt32 aStartIndex,
-                                       PRInt32 aEndIndex)
+                                       int32_t aStartIndex,
+                                       int32_t aEndIndex)
 {
-  PRUint32 offset = 0, newOffset = 0;
+  uint32_t offset = 0, newOffset = 0;
   if (NS_FAILED(nsContentEventHandler::GetFlatTextOffsetOfRange(
                     mRootContent, aContainer, aStartIndex, &offset)))
     return;
@@ -608,14 +924,14 @@ nsTextStateManager::NotifyContentAdded(nsINode* aContainer,
   // fire notification
   if (newOffset)
     nsContentUtils::AddScriptRunner(
-        new TextChangeEvent(mWidget, offset, offset, offset + newOffset));
+        new TextChangeEvent(this, offset, offset, offset + newOffset));
 }
 
 void
 nsTextStateManager::ContentAppended(nsIDocument* aDocument,
                                     nsIContent* aContainer,
                                     nsIContent* aFirstNewContent,
-                                    PRInt32 aNewIndexInContainer)
+                                    int32_t aNewIndexInContainer)
 {
   NotifyContentAdded(aContainer, aNewIndexInContainer,
                      aContainer->GetChildCount());
@@ -625,7 +941,7 @@ void
 nsTextStateManager::ContentInserted(nsIDocument* aDocument,
                                      nsIContent* aContainer,
                                      nsIContent* aChild,
-                                     PRInt32 aIndexInContainer)
+                                     int32_t aIndexInContainer)
 {
   NotifyContentAdded(NODE_FROM(aContainer, aDocument),
                      aIndexInContainer, aIndexInContainer + 1);
@@ -635,10 +951,10 @@ void
 nsTextStateManager::ContentRemoved(nsIDocument* aDocument,
                                    nsIContent* aContainer,
                                    nsIContent* aChild,
-                                   PRInt32 aIndexInContainer,
+                                   int32_t aIndexInContainer,
                                    nsIContent* aPreviousSibling)
 {
-  PRUint32 offset = 0, childOffset = 1;
+  uint32_t offset = 0, childOffset = 1;
   if (NS_FAILED(nsContentEventHandler::GetFlatTextOffsetOfRange(
                     mRootContent, NODE_FROM(aContainer, aDocument),
                     aIndexInContainer, &offset)))
@@ -657,10 +973,12 @@ nsTextStateManager::ContentRemoved(nsIDocument* aDocument,
   // fire notification
   if (childOffset)
     nsContentUtils::AddScriptRunner(
-        new TextChangeEvent(mWidget, offset, offset + childOffset, offset));
+        new TextChangeEvent(this, offset, offset + childOffset, offset));
 }
 
-static bool IsEditable(nsINode* node) {
+bool
+nsIMEStateManager::IsEditable(nsINode* node)
+{
   if (node->IsEditable()) {
     return true;
   }
@@ -671,15 +989,16 @@ static bool IsEditable(nsINode* node) {
   return false;
 }
 
-static nsINode* GetRootEditableNode(nsPresContext* aPresContext,
-                                    nsIContent* aContent)
+nsINode*
+nsIMEStateManager::GetRootEditableNode(nsPresContext* aPresContext,
+                                       nsIContent* aContent)
 {
   if (aContent) {
-    nsINode* root = nsnull;
+    nsINode* root = nullptr;
     nsINode* node = aContent;
     while (node && IsEditable(node)) {
       root = node;
-      node = node->GetNodeParent();
+      node = node->GetParentNode();
     }
     return root;
   }
@@ -688,71 +1007,70 @@ static nsINode* GetRootEditableNode(nsPresContext* aPresContext,
     if (document && document->IsEditable())
       return document;
   }
-  return nsnull;
+  return nullptr;
 }
 
-nsresult
-nsIMEStateManager::OnTextStateBlur(nsPresContext* aPresContext,
-                                   nsIContent* aContent)
+bool
+nsIMEStateManager::IsEditableIMEState(nsIWidget* aWidget)
 {
-  if (!sTextStateObserver || sTextStateObserver->mDestroying ||
-      sTextStateObserver->mEditableNode ==
-          GetRootEditableNode(aPresContext, aContent))
-    return NS_OK;
-
-  sTextStateObserver->mDestroying = true;
-  sTextStateObserver->mWidget->OnIMEFocusChange(false);
-  sTextStateObserver->Destroy();
-  NS_RELEASE(sTextStateObserver);
-  return NS_OK;
+  switch (aWidget->GetInputContext().mIMEState.mEnabled) {
+    case widget::IMEState::ENABLED:
+    case widget::IMEState::PASSWORD:
+      return true;
+    case widget::IMEState::PLUGIN:
+    case widget::IMEState::DISABLED:
+      return false;
+    default:
+      MOZ_NOT_REACHED("Unknown IME enable state");
+      return false;
+  }
 }
 
-nsresult
-nsIMEStateManager::OnTextStateFocus(nsPresContext* aPresContext,
-                                    nsIContent* aContent)
+void
+nsIMEStateManager::DestroyTextStateManager()
 {
-  if (sTextStateObserver) return NS_OK;
-
-  nsINode *editableNode = GetRootEditableNode(aPresContext, aContent);
-  if (!editableNode) return NS_OK;
-
-  nsIPresShell* shell = aPresContext->GetPresShell();
-  NS_ENSURE_TRUE(shell, NS_ERROR_NOT_AVAILABLE);
-  
-  nsIViewManager* vm = shell->GetViewManager();
-  NS_ENSURE_TRUE(vm, NS_ERROR_NOT_AVAILABLE);
-
-  nsCOMPtr<nsIWidget> widget;
-  nsresult rv = vm->GetRootWidget(getter_AddRefs(widget));
-  NS_ENSURE_SUCCESS(rv, NS_ERROR_NOT_AVAILABLE);
-  if (!widget) {
-    return NS_OK; // Sometimes, there are no widgets.
+  if (!sTextStateObserver) {
+    return;
   }
 
-  rv = widget->OnIMEFocusChange(true);
-  if (rv == NS_ERROR_NOT_IMPLEMENTED)
-    return NS_OK;
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsRefPtr<nsTextStateManager> tsm;
+  tsm.swap(sTextStateObserver);
+  tsm->Destroy();
+}
 
-  bool wantUpdates = rv != NS_SUCCESS_IME_NO_UPDATES;
+void
+nsIMEStateManager::CreateTextStateManager()
+{
+  if (sTextStateObserver) {
+    NS_WARNING("text state observer has been there already");
+    MOZ_ASSERT(sTextStateObserver->IsManaging(sPresContext, sContent));
+    return;
+  }
 
-  // OnIMEFocusChange may cause focus and sTextStateObserver to change
-  // In that case return and keep the current sTextStateObserver
-  NS_ENSURE_TRUE(!sTextStateObserver, NS_OK);
+  nsCOMPtr<nsIWidget> widget = sPresContext->GetRootWidget();
+  if (!widget) {
+    return; // Sometimes, there are no widgets.
+  }
+
+  // If it's not text ediable, we don't need to create nsTextStateManager.
+  if (!IsEditableIMEState(widget)) {
+    return;
+  }
+
+  static bool sInitializeIsTestingIME = true;
+  if (sInitializeIsTestingIME) {
+    Preferences::AddBoolVarCache(&sIsTestingIME, "test.IME", false);
+    sInitializeIsTestingIME = false;
+  }
 
   sTextStateObserver = new nsTextStateManager();
-  NS_ENSURE_TRUE(sTextStateObserver, NS_ERROR_OUT_OF_MEMORY);
   NS_ADDREF(sTextStateObserver);
-  rv = sTextStateObserver->Init(widget, aPresContext,
-                                editableNode, wantUpdates);
-  if (NS_FAILED(rv)) {
-    sTextStateObserver->mDestroying = true;
-    sTextStateObserver->Destroy();
-    NS_RELEASE(sTextStateObserver);
-    widget->OnIMEFocusChange(false);
-    return rv;
-  }
-  return NS_OK;
+
+  // nsTextStateManager::Init() might create another nsTextStateManager
+  // instance.  So, sTextStateObserver would be replaced with new one.
+  // We should hold the current instance here.
+  nsRefPtr<nsTextStateManager> kungFuDeathGrip(sTextStateObserver);
+  sTextStateObserver->Init(widget, sPresContext, sContent);
 }
 
 nsresult

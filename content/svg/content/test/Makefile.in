@@ -3,20 +3,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
-relativesrcdir  = content/svg/content/test
+relativesrcdir  = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
-include $(topsrcdir)/config/rules.mk
 
 # Disabled:
 #		bbox-helper.svg \
 #		test_length.xhtml \
 
-_TEST_FILES = \
+MOCHITEST_FILES = \
 		matrixUtils.js \
 		MutationEventChecker.js \
 		test_a_href_01.xhtml \
@@ -44,7 +43,7 @@ _TEST_FILES = \
 		test_getSubStringLength.xhtml \
 		getSubStringLength-helper.svg \
 		test_isSupported.xhtml \
-		test_lang.xhtml \
+		$(warning test_lang.xhtml is disabled for intermittent failures. Bug 701060) \
 		test_nonAnimStrings.xhtml \
 		test_pathAnimInterpolation.xhtml \
 		test_pathSeg.xhtml \
@@ -52,6 +51,7 @@ _TEST_FILES = \
 		test_pointer-events.xhtml \
 		test_pointer-events-2.xhtml \
 		test_pointer-events-3.xhtml \
+		test_pointer-events-4.xhtml \
 		test_scientific.html \
 		scientific-helper.svg \
 		test_SVGAnimatedImageSMILDisabled.html \
@@ -73,7 +73,6 @@ _TEST_FILES = \
 		test_SVGxxxListIndexing.xhtml \
 		test_switch.xhtml \
 		switch-helper.svg \
-		test_text.html \
 		text-helper.svg \
 		test_transform.xhtml \
 		test_valueAsString.xhtml \
@@ -84,5 +83,10 @@ _TEST_FILES = \
 		test_zoom.xhtml \
 		$(NULL)
 
-libs:: $(_TEST_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/tests/$(relativesrcdir)
+ifneq (android,$(MOZ_WIDGET_TOOLKIT))
+MOCHITEST_FILES += \
+		test_text.html \
+		$(NULL)
+endif
+
+include $(topsrcdir)/config/rules.mk

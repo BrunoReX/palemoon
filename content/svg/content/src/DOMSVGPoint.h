@@ -14,6 +14,7 @@
 #include "nsIDOMSVGPoint.h"
 #include "nsTArray.h"
 #include "SVGPoint.h"
+#include "mozilla/Attributes.h"
 
 class nsSVGElement;
 
@@ -44,7 +45,7 @@ namespace mozilla {
  * See the architecture comment in DOMSVGLength.h (yes, LENGTH) for an overview
  * of the important points regarding how this specific class works.
  */
-class DOMSVGPoint : public nsIDOMSVGPoint
+class DOMSVGPoint MOZ_FINAL : public nsIDOMSVGPoint
 {
 public:
   NS_DECLARE_STATIC_IID_ACCESSOR(MOZILLA_DOMSVGPOINT_IID)
@@ -56,7 +57,7 @@ public:
    * Generic ctor for DOMSVGPoint objects that are created for an attribute.
    */
   DOMSVGPoint(DOMSVGPointList *aList,
-              PRUint32 aListIndex,
+              uint32_t aListIndex,
               bool aIsAnimValItem)
     : mList(aList)
     , mListIndex(aListIndex)
@@ -70,8 +71,8 @@ public:
     NS_ABORT_IF_FALSE(IndexIsValid(), "Bad index for DOMSVGPoint!");
   }
 
-  DOMSVGPoint(const DOMSVGPoint *aPt = nsnull)
-    : mList(nsnull)
+  DOMSVGPoint(const DOMSVGPoint *aPt = nullptr)
+    : mList(nullptr)
     , mListIndex(0)
     , mIsReadonly(false)
     , mIsAnimValItem(false)
@@ -82,7 +83,7 @@ public:
   }
 
   DOMSVGPoint(float aX, float aY)
-    : mList(nsnull)
+    : mList(nullptr)
     , mListIndex(0)
     , mIsReadonly(false)
     , mIsAnimValItem(false)
@@ -92,7 +93,7 @@ public:
   }
 
   DOMSVGPoint(const gfxPoint &aPt)
-    : mList(nsnull)
+    : mList(nullptr)
     , mListIndex(0)
     , mIsReadonly(false)
     , mIsAnimValItem(false)
@@ -109,7 +110,7 @@ public:
     // unlinked us using the cycle collector code, then that has already
     // happened, and mList is null.
     if (mList) {
-      mList->mItems[mListIndex] = nsnull;
+      mList->mItems[mListIndex] = nullptr;
     }
   }
 
@@ -145,15 +146,15 @@ public:
    * the necessary notifications) is located elsewhere (in DOMSVGPointList).)
    */
   void InsertingIntoList(DOMSVGPointList *aList,
-                         PRUint32 aListIndex,
+                         uint32_t aListIndex,
                          bool aIsAnimValItem);
 
-  static PRUint32 MaxListIndex() {
+  static uint32_t MaxListIndex() {
     return (1U << MOZ_SVG_LIST_INDEX_BIT_COUNT) - 1;
   }
 
   /// This method is called to notify this object that its list index changed.
-  void UpdateListIndex(PRUint32 aListIndex) {
+  void UpdateListIndex(uint32_t aListIndex) {
     mListIndex = aListIndex;
   }
 
@@ -202,9 +203,9 @@ protected:
   // Bounds for the following are checked in the ctor, so be sure to update
   // that if you change the capacity of any of the following.
 
-  PRUint32 mListIndex:MOZ_SVG_LIST_INDEX_BIT_COUNT;
-  PRUint32 mIsReadonly:1;    // PRUint32 because MSVC won't pack otherwise
-  PRUint32 mIsAnimValItem:1; // PRUint32 because MSVC won't pack otherwise
+  uint32_t mListIndex:MOZ_SVG_LIST_INDEX_BIT_COUNT;
+  uint32_t mIsReadonly:1;    // uint32_t because MSVC won't pack otherwise
+  uint32_t mIsAnimValItem:1; // uint32_t because MSVC won't pack otherwise
 
   // The following member is only used when we're not in a list:
   SVGPoint mPt;

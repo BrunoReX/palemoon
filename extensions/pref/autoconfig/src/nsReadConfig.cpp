@@ -67,7 +67,7 @@ static void DisplayError(void)
     if (NS_FAILED(rv))
         return;
 
-    promptService->Alert(nsnull, title.get(), err.get());
+    promptService->Alert(nullptr, title.get(), err.get());
 }
 
 // nsISupports Implementation
@@ -123,7 +123,7 @@ nsresult nsReadConfig::readConfigFile()
     nsresult rv = NS_OK;
     nsXPIDLCString lockFileName;
     nsXPIDLCString lockVendor;
-    PRUint32 fileNameLen = 0;
+    uint32_t fileNameLen = 0;
     
     nsCOMPtr<nsIPrefBranch> defaultPrefBranch;
     nsCOMPtr<nsIPrefService> prefService = 
@@ -131,7 +131,7 @@ nsresult nsReadConfig::readConfigFile()
     if (NS_FAILED(rv))
         return rv;
 
-    rv = prefService->GetDefaultBranch(nsnull, getter_AddRefs(defaultPrefBranch));
+    rv = prefService->GetDefaultBranch(nullptr, getter_AddRefs(defaultPrefBranch));
     if (NS_FAILED(rv))
         return rv;
         
@@ -176,10 +176,10 @@ nsresult nsReadConfig::readConfigFile()
     // of the cfg file meaning the file can not be renamed (successfully).
 
     nsCOMPtr<nsIPrefBranch> prefBranch;
-    rv = prefService->GetBranch(nsnull, getter_AddRefs(prefBranch));
+    rv = prefService->GetBranch(nullptr, getter_AddRefs(prefBranch));
     NS_ENSURE_SUCCESS(rv, rv);
 
-    PRInt32 obscureValue = 0;
+    int32_t obscureValue = 0;
     (void) defaultPrefBranch->GetIntPref("general.config.obscure_value", &obscureValue);
     PR_LOG(MCD, PR_LOG_DEBUG, ("evaluating .cfg file %s with obscureValue %d\n", lockFileName.get(), obscureValue));
     rv = openAndEvaluateJSFile(lockFileName.get(), obscureValue, true, true);
@@ -233,7 +233,7 @@ nsresult nsReadConfig::readConfigFile()
 } // ReadConfigFile
 
 
-nsresult nsReadConfig::openAndEvaluateJSFile(const char *aFileName, PRInt32 obscureValue,
+nsresult nsReadConfig::openAndEvaluateJSFile(const char *aFileName, int32_t obscureValue,
                                              bool isEncoded,
                                              bool isBinDir)
 {
@@ -260,11 +260,11 @@ nsresult nsReadConfig::openAndEvaluateJSFile(const char *aFileName, PRInt32 obsc
         if (NS_FAILED(rv)) 
             return rv;
 
-        nsCAutoString location("resource://gre/defaults/autoconfig/");
+        nsAutoCString location("resource://gre/defaults/autoconfig/");
         location += aFileName;
 
         nsCOMPtr<nsIURI> uri;
-        rv = ioService->NewURI(location, nsnull, nsnull, getter_AddRefs(uri));
+        rv = ioService->NewURI(location, nullptr, nullptr, getter_AddRefs(uri));
         if (NS_FAILED(rv))
             return rv;
 
@@ -278,20 +278,27 @@ nsresult nsReadConfig::openAndEvaluateJSFile(const char *aFileName, PRInt32 obsc
             return rv;
     }
 
-    PRUint32 fs, amt = 0;
-    inStr->Available(&fs);
+    uint64_t fs64;
+    uint32_t amt = 0;
+    rv = inStr->Available(&fs64);
+    if (NS_FAILED(rv))
+        return rv;
+    // PR_Malloc dones't support over 4GB
+    if (fs64 > UINT32_MAX)
+      return NS_ERROR_FILE_TOO_BIG;
+    uint32_t fs = (uint32_t)fs64;
 
     char *buf = (char *)PR_Malloc(fs * sizeof(char));
     if (!buf) 
         return NS_ERROR_OUT_OF_MEMORY;
 
-    rv = inStr->Read(buf, fs, &amt);
+    rv = inStr->Read(buf, (uint32_t)fs, &amt);
     NS_ASSERTION((amt == fs), "failed to read the entire configuration file!!");
     if (NS_SUCCEEDED(rv)) {
         if (obscureValue > 0) {
 
             // Unobscure file by subtracting some value from every char. 
-            for (PRUint32 i = 0; i < amt; i++)
+            for (uint32_t i = 0; i < amt; i++)
                 buf[i] -= obscureValue;
         }
         rv = EvaluateAdminConfigScript(buf, amt, aFileName,

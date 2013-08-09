@@ -22,7 +22,7 @@ NS_GetAboutModuleName(nsIURI *aAboutURI, nsCString& aModule)
     nsresult rv = aAboutURI->GetPath(aModule);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    PRInt32 f = aModule.FindCharInSet(NS_LITERAL_CSTRING("#?"));
+    int32_t f = aModule.FindCharInSet(NS_LITERAL_CSTRING("#?"));
     if (f != kNotFound) {
         aModule.Truncate(f);
     }
@@ -37,7 +37,7 @@ NS_GetAboutModule(nsIURI *aAboutURI, nsIAboutModule** aModule)
 {
   NS_PRECONDITION(aAboutURI, "Must have URI");
 
-  nsCAutoString contractID;
+  nsAutoCString contractID;
   nsresult rv = NS_GetAboutModuleName(aAboutURI, contractID);
   if (NS_FAILED(rv)) return rv;
 

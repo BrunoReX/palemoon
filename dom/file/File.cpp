@@ -12,7 +12,7 @@ USING_FILE_NAMESPACE
 using mozilla::dom::indexedDB::IndexedDatabaseManager;
 
 // Create slice
-File::File(const File* aOther, PRUint64 aStart, PRUint64 aLength,
+File::File(const File* aOther, uint64_t aStart, uint64_t aLength,
            const nsAString& aContentType)
 : nsDOMFileCC(aContentType, aOther->mStart + aStart, aLength),
   mFile(aOther->mFile), mLockedFile(aOther->mLockedFile),
@@ -39,12 +39,11 @@ File::File(const File* aOther, PRUint64 aStart, PRUint64 aLength,
 NS_IMPL_CYCLE_COLLECTION_CLASS(File)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(File, nsDOMFileCC)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR_AMBIGUOUS(mLockedFile,
-                                                       nsIDOMLockedFile)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLockedFile)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(File, nsDOMFileCC)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mLockedFile)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mLockedFile)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(File)
@@ -66,7 +65,7 @@ File::GetInternalStream(nsIInputStream **aStream)
 }
 
 already_AddRefed<nsIDOMBlob>
-File::CreateSlice(PRUint64 aStart, PRUint64 aLength,
+File::CreateSlice(uint64_t aStart, uint64_t aLength,
                   const nsAString& aContentType)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");

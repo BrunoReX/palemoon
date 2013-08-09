@@ -13,12 +13,22 @@
 
 @implementation mozHeadingAccessible
 
+- (NSString*)title
+{
+  nsAutoString title;
+  // XXX use the flattening API when there are available
+  // see bug 768298
+  mGeckoAccessible->GetContent()->GetTextContent(title);
+
+  return nsCocoaUtils::ToNSString(title);
+}
+
 - (id)value
 {
   if (!mGeckoAccessible || !mGeckoAccessible->IsHyperText())
     return nil;
 
-  PRUint32 level = mGeckoAccessible->AsHyperText()->GetLevelInternal();
+  uint32_t level = mGeckoAccessible->AsHyperText()->GetLevelInternal();
   return [NSNumber numberWithInt:level];
 }
 
@@ -33,7 +43,7 @@
 - (NSArray*)accessibilityAttributeNames
 {
   // if we're expired, we don't support any attributes.
-  if (mIsExpired)
+  if (!mGeckoAccessible)
     return [NSArray array];
   
   static NSMutableArray* attributes = nil;
@@ -57,7 +67,7 @@
 - (NSArray*)accessibilityActionNames 
 {
     // if we're expired, we don't support any attributes.
-  if (mIsExpired)
+  if (!mGeckoAccessible)
     return [NSArray array];
 
   static NSArray* actionNames = nil;
@@ -79,6 +89,16 @@
     mGeckoAccessible->DoAction(0);
   else
     [super accessibilityPerformAction:action];
+}
+
+- (NSString*)customDescription
+{
+  return @"";
+}
+
+- (NSString*)value
+{
+  return @"";
 }
 
 - (NSURL*)url

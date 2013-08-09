@@ -32,14 +32,15 @@ Notes to self:
 #include "nsIOutputStream.h"
 #include "nsIInputStream.h"
 #include "nsIFile.h"
+#include "nsILoadContext.h"
 #include "nsAutoPtr.h"
 
 NS_IMPL_ISUPPORTS1(nsTransferable, nsITransferable)
 
-PRUint32 GetDataForFlavor (const nsTArray<DataStruct>& aArray,
+uint32_t GetDataForFlavor (const nsTArray<DataStruct>& aArray,
                            const char* aDataFlavor)
 {
-  for (PRUint32 i = 0 ; i < aArray.Length () ; ++i) {
+  for (uint32_t i = 0 ; i < aArray.Length () ; ++i) {
     if (aArray[i].GetFlavor().Equals (aDataFlavor))
       return i;
   }
@@ -58,7 +59,7 @@ DataStruct::~DataStruct()
 
 //-------------------------------------------------------------------------
 void
-DataStruct::SetData ( nsISupports* aData, PRUint32 aDataLen )
+DataStruct::SetData ( nsISupports* aData, uint32_t aDataLen )
 {
   // Now, check to see if we consider the data to be "too large"
   if (aDataLen > kLargeDatasetSize) {
@@ -76,7 +77,7 @@ DataStruct::SetData ( nsISupports* aData, PRUint32 aDataLen )
 
 //-------------------------------------------------------------------------
 void
-DataStruct::GetData ( nsISupports** aData, PRUint32 *aDataLen )
+DataStruct::GetData ( nsISupports** aData, uint32_t *aDataLen )
 {
   // check here to see if the data is cached on disk
   if ( !mData && mCacheFileName ) {
@@ -87,7 +88,7 @@ DataStruct::GetData ( nsISupports** aData, PRUint32 *aDataLen )
     else {
       // oh shit, something went horribly wrong here.
       NS_WARNING("Oh no, couldn't read data in from the cache file");
-      *aData = nsnull;
+      *aData = nullptr;
       *aDataLen = 0;
       return;
     }
@@ -107,8 +108,8 @@ DataStruct::GetFileSpec(const char * aFileName)
   nsIFile* cacheFile;
   NS_GetSpecialDirectory(NS_OS_TEMP_DIR, &cacheFile);
   
-  if (cacheFile == nsnull)
-    return nsnull;
+  if (cacheFile == nullptr)
+    return nullptr;
 
   // if the param aFileName contains a name we should use that
   // because the file probably already exists
@@ -126,7 +127,7 @@ DataStruct::GetFileSpec(const char * aFileName)
 
 //-------------------------------------------------------------------------
 nsresult
-DataStruct::WriteCache(nsISupports* aData, PRUint32 aDataLen)
+DataStruct::WriteCache(nsISupports* aData, uint32_t aDataLen)
 {
   // Get a new path and file to the temp directory
   nsCOMPtr<nsIFile> cacheFile ( getter_AddRefs(GetFileSpec(mCacheFileName)) );
@@ -140,7 +141,7 @@ DataStruct::WriteCache(nsISupports* aData, PRUint32 aDataLen)
 
     // write out the contents of the clipboard
     // to the file
-    //PRUint32 bytes;
+    //uint32_t bytes;
     nsCOMPtr<nsIOutputStream> outStr;
 
     NS_NewLocalFileOutputStream(getter_AddRefs(outStr),
@@ -148,10 +149,10 @@ DataStruct::WriteCache(nsISupports* aData, PRUint32 aDataLen)
 
     if (!outStr) return NS_ERROR_FAILURE;
 
-    void* buff = nsnull;
+    void* buff = nullptr;
     nsPrimitiveHelpers::CreateDataFromPrimitive ( mFlavor.get(), aData, &buff, aDataLen );
     if ( buff ) {
-      PRUint32 ignored;
+      uint32_t ignored;
       outStr->Write(reinterpret_cast<char*>(buff), aDataLen, &ignored);
       nsMemory::Free(buff);
       return NS_OK;
@@ -163,7 +164,7 @@ DataStruct::WriteCache(nsISupports* aData, PRUint32 aDataLen)
 
 //-------------------------------------------------------------------------
 nsresult
-DataStruct::ReadCache(nsISupports** aData, PRUint32* aDataLen)
+DataStruct::ReadCache(nsISupports** aData, uint32_t* aDataLen)
 {
   // if we don't have a cache filename we are out of luck
   if (!mCacheFileName)
@@ -174,14 +175,13 @@ DataStruct::ReadCache(nsISupports** aData, PRUint32* aDataLen)
   bool exists;
   if ( cacheFile && NS_SUCCEEDED(cacheFile->Exists(&exists)) && exists ) {
     // get the size of the file
-    PRInt64 fileSize;
-    PRInt64 max32(LL_INIT(0, 0xFFFFFFFF));
+    int64_t fileSize;
+    int64_t max32 = 0xFFFFFFFF;
     cacheFile->GetFileSize(&fileSize);
-    if (LL_CMP(fileSize, >, max32))
+    if (fileSize > max32)
       return NS_ERROR_OUT_OF_MEMORY;
-    PRUint32 size;
-    LL_L2UI(size, fileSize);
 
+    uint32_t size = uint32_t(fileSize);
     // create new memory for the large clipboard data
     nsAutoArrayPtr<char> data(new char[size]);
     if ( !data )
@@ -203,7 +203,7 @@ DataStruct::ReadCache(nsISupports** aData, PRUint32* aDataLen)
     }
 
     // zero the return params
-    *aData    = nsnull;
+    *aData    = nullptr;
     *aDataLen = 0;
   }
 
@@ -217,6 +217,10 @@ DataStruct::ReadCache(nsISupports** aData, PRUint32* aDataLen)
 //
 //-------------------------------------------------------------------------
 nsTransferable::nsTransferable()
+  : mPrivateData(false)
+#ifdef DEBUG
+  , mInitialized(false)
+#endif
 {
 }
 
@@ -230,6 +234,20 @@ nsTransferable::~nsTransferable()
 }
 
 
+NS_IMETHODIMP
+nsTransferable::Init(nsILoadContext* aContext)
+{
+  MOZ_ASSERT(!mInitialized);
+
+  if (aContext) {
+    mPrivateData = aContext->UsePrivateBrowsing();
+  }
+#ifdef DEBUG
+  mInitialized = true;
+#endif
+  return NS_OK;
+}
+
 //
 // GetTransferDataFlavors
 //
@@ -240,10 +258,12 @@ nsTransferable::~nsTransferable()
 nsresult
 nsTransferable::GetTransferDataFlavors(nsISupportsArray ** aDataFlavorList)
 {
+  MOZ_ASSERT(mInitialized);
+
   nsresult rv = NS_NewISupportsArray ( aDataFlavorList );
   if (NS_FAILED(rv)) return rv;
 
-  for ( PRUint32 i=0; i<mDataArray.Length(); ++i ) {
+  for ( uint32_t i=0; i<mDataArray.Length(); ++i ) {
     DataStruct& data = mDataArray.ElementAt(i);
     nsCOMPtr<nsISupportsCString> flavorWrapper = do_CreateInstance(NS_SUPPORTS_CSTRING_CONTRACTID);
     if ( flavorWrapper ) {
@@ -265,20 +285,22 @@ nsTransferable::GetTransferDataFlavors(nsISupportsArray ** aDataFlavorList)
 // accessible from JS.
 //
 NS_IMETHODIMP
-nsTransferable::GetTransferData(const char *aFlavor, nsISupports **aData, PRUint32 *aDataLen)
+nsTransferable::GetTransferData(const char *aFlavor, nsISupports **aData, uint32_t *aDataLen)
 {
+  MOZ_ASSERT(mInitialized);
+
   NS_ENSURE_ARG_POINTER(aFlavor && aData && aDataLen);
 
   nsresult rv = NS_OK;
   nsCOMPtr<nsISupports> savedData;
   
   // first look and see if the data is present in one of the intrinsic flavors
-  PRUint32 i;
+  uint32_t i;
   for (i = 0; i < mDataArray.Length(); ++i ) {
     DataStruct& data = mDataArray.ElementAt(i);
     if ( data.GetFlavor().Equals(aFlavor) ) {
       nsCOMPtr<nsISupports> dataBytes;
-      PRUint32 len;
+      uint32_t len;
       data.GetData(getter_AddRefs(dataBytes), &len);
       if (len == kFlavorHasDataProvider && dataBytes) {
         // do we have a data provider?
@@ -310,7 +332,7 @@ nsTransferable::GetTransferData(const char *aFlavor, nsISupports **aData, PRUint
       mFormatConv->CanConvert(data.GetFlavor().get(), aFlavor, &canConvert);
       if ( canConvert ) {
         nsCOMPtr<nsISupports> dataBytes;
-        PRUint32 len;
+        uint32_t len;
         data.GetData(getter_AddRefs(dataBytes), &len);
         if (len == kFlavorHasDataProvider && dataBytes) {
           // do we have a data provider?
@@ -346,11 +368,13 @@ nsTransferable::GetTransferData(const char *aFlavor, nsISupports **aData, PRUint
 // flavor string.
 // 
 NS_IMETHODIMP
-nsTransferable::GetAnyTransferData(char **aFlavor, nsISupports **aData, PRUint32 *aDataLen)
+nsTransferable::GetAnyTransferData(char **aFlavor, nsISupports **aData, uint32_t *aDataLen)
 {
+  MOZ_ASSERT(mInitialized);
+
   NS_ENSURE_ARG_POINTER(aFlavor && aData && aDataLen);
 
-  for ( PRUint32 i=0; i < mDataArray.Length(); ++i ) {
+  for ( uint32_t i=0; i < mDataArray.Length(); ++i ) {
     DataStruct& data = mDataArray.ElementAt(i);
     if (data.IsDataAvailable()) {
       *aFlavor = ToNewCString(data.GetFlavor());
@@ -369,12 +393,14 @@ nsTransferable::GetAnyTransferData(char **aFlavor, nsISupports **aData, PRUint32
 //
 // 
 NS_IMETHODIMP
-nsTransferable::SetTransferData(const char *aFlavor, nsISupports *aData, PRUint32 aDataLen)
+nsTransferable::SetTransferData(const char *aFlavor, nsISupports *aData, uint32_t aDataLen)
 {
+  MOZ_ASSERT(mInitialized);
+
   NS_ENSURE_ARG(aFlavor);
 
   // first check our intrinsic flavors to see if one has been registered.
-  PRUint32 i = 0;
+  uint32_t i = 0;
   for (i = 0; i < mDataArray.Length(); ++i) {
     DataStruct& data = mDataArray.ElementAt(i);
     if ( data.GetFlavor().Equals(aFlavor) ) {
@@ -392,7 +418,7 @@ nsTransferable::SetTransferData(const char *aFlavor, nsISupports *aData, PRUint3
 
       if ( canConvert ) {
         nsCOMPtr<nsISupports> ConvertedData;
-        PRUint32 ConvertedLen;
+        uint32_t ConvertedLen;
         mFormatConv->Convert(aFlavor, aData, aDataLen, data.GetFlavor().get(), getter_AddRefs(ConvertedData), &ConvertedLen);
         data.SetData(ConvertedData, ConvertedLen);
         return NS_OK;
@@ -417,6 +443,8 @@ nsTransferable::SetTransferData(const char *aFlavor, nsISupports *aData, PRUint3
 NS_IMETHODIMP
 nsTransferable::AddDataFlavor(const char *aDataFlavor)
 {
+  MOZ_ASSERT(mInitialized);
+
   if (GetDataForFlavor (mDataArray, aDataFlavor) != mDataArray.NoIndex)
     return NS_ERROR_FAILURE;
 
@@ -436,7 +464,9 @@ nsTransferable::AddDataFlavor(const char *aDataFlavor)
 NS_IMETHODIMP
 nsTransferable::RemoveDataFlavor(const char *aDataFlavor)
 {
-  PRUint32 idx;
+  MOZ_ASSERT(mInitialized);
+
+  uint32_t idx;
   if ((idx = GetDataForFlavor(mDataArray, aDataFlavor)) != mDataArray.NoIndex) {
     mDataArray.RemoveElementAt (idx);
     return NS_OK;
@@ -452,6 +482,8 @@ nsTransferable::RemoveDataFlavor(const char *aDataFlavor)
 NS_IMETHODIMP
 nsTransferable::IsLargeDataSet(bool *_retval)
 {
+  MOZ_ASSERT(mInitialized);
+
   NS_ENSURE_ARG_POINTER(_retval);
   *_retval = false;
   return NS_OK;
@@ -464,6 +496,8 @@ nsTransferable::IsLargeDataSet(bool *_retval)
   */
 NS_IMETHODIMP nsTransferable::SetConverter(nsIFormatConverter * aConverter)
 {
+  MOZ_ASSERT(mInitialized);
+
   mFormatConv = aConverter;
   return NS_OK;
 }
@@ -475,6 +509,8 @@ NS_IMETHODIMP nsTransferable::SetConverter(nsIFormatConverter * aConverter)
   */
 NS_IMETHODIMP nsTransferable::GetConverter(nsIFormatConverter * *aConverter)
 {
+  MOZ_ASSERT(mInitialized);
+
   NS_ENSURE_ARG_POINTER(aConverter);
   *aConverter = mFormatConv;
   NS_IF_ADDREF(*aConverter);
@@ -491,6 +527,8 @@ NS_IMETHODIMP nsTransferable::GetConverter(nsIFormatConverter * *aConverter)
 NS_IMETHODIMP
 nsTransferable::FlavorsTransferableCanImport(nsISupportsArray **_retval)
 {
+  MOZ_ASSERT(mInitialized);
+
   NS_ENSURE_ARG_POINTER(_retval);
   
   // Get the flavor list, and on to the end of it, append the list of flavors we
@@ -504,15 +542,15 @@ nsTransferable::FlavorsTransferableCanImport(nsISupportsArray **_retval)
     converter->GetInputDataFlavors(getter_AddRefs(convertedList));
 
     if ( convertedList ) {
-      PRUint32 importListLen;
+      uint32_t importListLen;
       convertedList->Count(&importListLen);
 
-      for ( PRUint32 i=0; i < importListLen; ++i ) {
+      for ( uint32_t i=0; i < importListLen; ++i ) {
         nsCOMPtr<nsISupports> genericFlavor;
         convertedList->GetElementAt ( i, getter_AddRefs(genericFlavor) );
 
         nsCOMPtr<nsISupportsCString> flavorWrapper ( do_QueryInterface (genericFlavor) );
-        nsCAutoString flavorStr;
+        nsAutoCString flavorStr;
         flavorWrapper->GetData( flavorStr );
 
         if (GetDataForFlavor (mDataArray, flavorStr.get())
@@ -535,6 +573,8 @@ nsTransferable::FlavorsTransferableCanImport(nsISupportsArray **_retval)
 NS_IMETHODIMP
 nsTransferable::FlavorsTransferableCanExport(nsISupportsArray **_retval)
 {
+  MOZ_ASSERT(mInitialized);
+
   NS_ENSURE_ARG_POINTER(_retval);
   
   // Get the flavor list, and on to the end of it, append the list of flavors we
@@ -548,15 +588,15 @@ nsTransferable::FlavorsTransferableCanExport(nsISupportsArray **_retval)
     converter->GetOutputDataFlavors(getter_AddRefs(convertedList));
 
     if ( convertedList ) {
-      PRUint32 importListLen;
+      uint32_t importListLen;
       convertedList->Count(&importListLen);
 
-      for ( PRUint32 i=0; i < importListLen; ++i ) {
+      for ( uint32_t i=0; i < importListLen; ++i ) {
         nsCOMPtr<nsISupports> genericFlavor;
         convertedList->GetElementAt ( i, getter_AddRefs(genericFlavor) );
 
         nsCOMPtr<nsISupportsCString> flavorWrapper ( do_QueryInterface (genericFlavor) );
-        nsCAutoString flavorStr;
+        nsAutoCString flavorStr;
         flavorWrapper->GetData( flavorStr );
 
         if (GetDataForFlavor (mDataArray, flavorStr.get())
@@ -568,3 +608,26 @@ nsTransferable::FlavorsTransferableCanExport(nsISupportsArray **_retval)
 
   return NS_OK;
 } // FlavorsTransferableCanExport
+
+NS_IMETHODIMP
+nsTransferable::GetIsPrivateData(bool *aIsPrivateData)
+{
+  MOZ_ASSERT(mInitialized);
+
+  NS_ENSURE_ARG_POINTER(aIsPrivateData);
+
+  *aIsPrivateData = mPrivateData;
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsTransferable::SetIsPrivateData(bool aIsPrivateData)
+{
+  MOZ_ASSERT(mInitialized);
+
+  mPrivateData = aIsPrivateData;
+
+  return NS_OK;
+}
+

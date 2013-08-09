@@ -7,11 +7,14 @@
 #include "gfxImageSurface.h"
 #include "GLContext.h"
 #include "gfxUtils.h"
+#include "gfxPlatform.h"
+#include "mozilla/Preferences.h"
 
 #include "BasicLayersImpl.h"
 #include "nsXULAppAPI.h"
 
 using namespace mozilla::gfx;
+using namespace mozilla::gl;
 
 namespace mozilla {
 namespace layers {
@@ -24,6 +27,7 @@ public:
     CanvasLayer(aLayerManager, static_cast<BasicImplData*>(this))
   {
     MOZ_COUNT_CTOR(BasicCanvasLayer);
+    mForceReadback = Preferences::GetBool("webgl.force-layers-readback", false);
   }
   virtual ~BasicCanvasLayer()
   {
@@ -49,16 +53,17 @@ protected:
   {
     return static_cast<BasicLayerManager*>(mManager);
   }
-  void UpdateSurface(gfxASurface* aDestSurface = nsnull, Layer* aMaskLayer = nsnull);
+  void UpdateSurface(gfxASurface* aDestSurface = nullptr, Layer* aMaskLayer = nullptr);
 
   nsRefPtr<gfxASurface> mSurface;
   nsRefPtr<mozilla::gl::GLContext> mGLContext;
   mozilla::RefPtr<mozilla::gfx::DrawTarget> mDrawTarget;
   
-  PRUint32 mCanvasFramebuffer;
+  uint32_t mCanvasFramebuffer;
 
   bool mGLBufferIsPremultiplied;
   bool mNeedsYFlip;
+  bool mForceReadback;
 
   nsRefPtr<gfxImageSurface> mCachedTempSurface;
   gfxIntSize mCachedSize;
@@ -76,23 +81,24 @@ protected:
       mCachedFormat = aFormat;
     }
 
+    MOZ_ASSERT(mCachedTempSurface->Stride() == mCachedTempSurface->Width() * 4);
     return mCachedTempSurface;
   }
 
   void DiscardTempSurface()
   {
-    mCachedTempSurface = nsnull;
+    mCachedTempSurface = nullptr;
   }
 };
 
 void
 BasicCanvasLayer::Initialize(const Data& aData)
 {
-  NS_ASSERTION(mSurface == nsnull, "BasicCanvasLayer::Initialize called twice!");
+  NS_ASSERTION(mSurface == nullptr, "BasicCanvasLayer::Initialize called twice!");
 
   if (aData.mSurface) {
     mSurface = aData.mSurface;
-    NS_ASSERTION(aData.mGLContext == nsnull,
+    NS_ASSERTION(aData.mGLContext == nullptr,
                  "CanvasLayer can't have both surface and GLContext");
     mNeedsYFlip = false;
   } else if (aData.mGLContext) {
@@ -103,7 +109,7 @@ BasicCanvasLayer::Initialize(const Data& aData)
     mNeedsYFlip = true;
   } else if (aData.mDrawTarget) {
     mDrawTarget = aData.mDrawTarget;
-    mSurface = gfxPlatform::GetPlatform()->GetThebesSurfaceForDrawTarget(mDrawTarget);
+    mSurface = gfxPlatform::GetPlatform()->CreateThebesSurfaceAliasForDrawTarget_hack(mDrawTarget);
     mNeedsYFlip = false;
   } else {
     NS_ERROR("CanvasLayer created without mSurface, mDrawTarget or mGLContext?");
@@ -115,8 +121,20 @@ BasicCanvasLayer::Initialize(const Data& aData)
 void
 BasicCanvasLayer::UpdateSurface(gfxASurface* aDestSurface, Layer* aMaskLayer)
 {
+  if (!IsDirty())
+    return;
+  Painted();
+
   if (mDrawTarget) {
     mDrawTarget->Flush();
+    if (mDrawTarget->GetType() == BACKEND_COREGRAPHICS_ACCELERATED) {
+      // We have an accelerated CG context which has changed, unlike a bitmap surface
+      // where we can alias the bits on initializing the mDrawTarget, we need to readback
+      // and copy the accelerated surface each frame. We want to support this for quick
+      // thumbnail but if we're going to be doing this every frame it likely is better
+      // to use a non accelerated (bitmap) canvas.
+      mSurface = gfxPlatform::GetPlatform()->GetThebesSurfaceForDrawTarget(mDrawTarget);
+    }
   }
 
   if (!mGLContext && aDestSurface) {
@@ -125,10 +143,6 @@ BasicCanvasLayer::UpdateSurface(gfxASurface* aDestSurface, Layer* aMaskLayer)
     BasicCanvasLayer::PaintWithOpacity(tmpCtx, 1.0f, aMaskLayer);
     return;
   }
-
-  if (!mDirty)
-    return;
-  mDirty = false;
 
   if (mGLContext) {
     if (aDestSurface && aDestSurface->GetType() != gfxASurface::SurfaceTypeImage) {
@@ -140,68 +154,66 @@ BasicCanvasLayer::UpdateSurface(gfxASurface* aDestSurface, Layer* aMaskLayer)
     // We need to read from the GLContext
     mGLContext->MakeCurrent();
 
-#if defined (MOZ_X11) && defined (MOZ_EGL_XRENDER_COMPOSITE)
-    mGLContext->GuaranteeResolve();
-    gfxASurface* offscreenSurface = mGLContext->GetOffscreenPixmapSurface();
+    gfxIntSize readSize(mBounds.width, mBounds.height);
+    gfxImageFormat format = (GetContentFlags() & CONTENT_OPAQUE)
+                              ? gfxASurface::ImageFormatRGB24
+                              : gfxASurface::ImageFormatARGB32;
 
-    // XRender can only blend premuliplied alpha, so only allow xrender
-    // path if we have premultiplied alpha or opaque content.
-    if (offscreenSurface && (mGLBufferIsPremultiplied || (GetContentFlags() & CONTENT_OPAQUE))) {  
-        mSurface = offscreenSurface;
-        mNeedsYFlip = false;
-        return;
-    }
-#endif
-    nsRefPtr<gfxImageSurface> isurf;
+    nsRefPtr<gfxImageSurface> readSurf;
+    nsRefPtr<gfxImageSurface> resultSurf;
+
+    bool usingTempSurface = false;
+
     if (aDestSurface) {
-      DiscardTempSurface();
-      isurf = static_cast<gfxImageSurface*>(aDestSurface);
+      resultSurf = static_cast<gfxImageSurface*>(aDestSurface);
+
+      if (resultSurf->GetSize() != readSize ||
+          resultSurf->Stride() != resultSurf->Width() * 4)
+      {
+        readSurf = GetTempSurface(readSize, format);
+        usingTempSurface = true;
+      }
     } else {
-      nsIntSize size(mBounds.width, mBounds.height);
-      gfxImageFormat format = (GetContentFlags() & CONTENT_OPAQUE)
-                                ? gfxASurface::ImageFormatRGB24
-                                : gfxASurface::ImageFormatARGB32;
-
-      isurf = GetTempSurface(size, format);
+      resultSurf = GetTempSurface(readSize, format);
+      usingTempSurface = true;
     }
 
+    if (!usingTempSurface)
+      DiscardTempSurface();
 
-    if (!isurf || isurf->CairoStatus() != 0) {
+    if (!readSurf)
+      readSurf = resultSurf;
+
+    if (!resultSurf || resultSurf->CairoStatus() != 0)
       return;
-    }
 
-    NS_ASSERTION(isurf->Stride() == mBounds.width * 4, "gfxImageSurface stride isn't what we expect!");
-
-    PRUint32 currentFramebuffer = 0;
-
-    mGLContext->fGetIntegerv(LOCAL_GL_FRAMEBUFFER_BINDING, (GLint*)&currentFramebuffer);
-
-    // Make sure that we read pixels from the correct framebuffer, regardless
-    // of what's currently bound.
-    if (currentFramebuffer != mCanvasFramebuffer)
-      mGLContext->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, mCanvasFramebuffer);
+    MOZ_ASSERT(readSurf);
+    MOZ_ASSERT(readSurf->Stride() == mBounds.width * 4, "gfxImageSurface stride isn't what we expect!");
 
     // We need to Flush() the surface before modifying it outside of cairo.
-    isurf->Flush();
-    mGLContext->ReadPixelsIntoImageSurface(0, 0,
-                                           mBounds.width, mBounds.height,
-                                           isurf);
-    isurf->MarkDirty();
-
-    // Put back the previous framebuffer binding.
-    if (currentFramebuffer != mCanvasFramebuffer)
-      mGLContext->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, currentFramebuffer);
+    readSurf->Flush();
+    mGLContext->ReadScreenIntoImageSurface(readSurf);
+    readSurf->MarkDirty();
 
     // If the underlying GLContext doesn't have a framebuffer into which
     // premultiplied values were written, we have to do this ourselves here.
     // Note that this is a WebGL attribute; GL itself has no knowledge of
     // premultiplied or unpremultiplied alpha.
     if (!mGLBufferIsPremultiplied)
-      gfxUtils::PremultiplyImageSurface(isurf);
+      gfxUtils::PremultiplyImageSurface(readSurf);
+
+    if (readSurf != resultSurf) {
+      MOZ_ASSERT(resultSurf->Width() >= readSurf->Width());
+      MOZ_ASSERT(resultSurf->Height() >= readSurf->Height());
+
+      resultSurf->Flush();
+      resultSurf->CopyFrom(readSurf);
+      resultSurf->MarkDirty();
+    }
 
     // stick our surface into mSurface, so that the Paint() path is the same
     if (!aDestSurface) {
-      mSurface = isurf;
+      mSurface = resultSurf;
     }
   }
 }
@@ -258,14 +270,6 @@ BasicCanvasLayer::PaintWithOpacity(gfxContext* aContext,
 
   FillWithMask(aContext, aOpacity, aMaskLayer);
 
-#if defined (MOZ_X11) && defined (MOZ_EGL_XRENDER_COMPOSITE)
-  if (mGLContext) {
-    // Wait for X to complete all operations before continuing
-    // Otherwise gl context could get cleared before X is done.
-    mGLContext->WaitNative();
-  }
-#endif
-
   // Restore surface operator
   if (GetContentFlags() & CONTENT_OPAQUE) {
     aContext->SetOperator(savedOp);
@@ -294,6 +298,11 @@ public:
 
   virtual void Initialize(const Data& aData);
   virtual void Paint(gfxContext* aContext, Layer* aMaskLayer);
+
+  virtual void ClearCachedResources() MOZ_OVERRIDE
+  {
+    DestroyBackBuffer();
+  }
 
   virtual void FillSpecificAttributes(SpecificLayerAttributes& aAttrs)
   {
@@ -335,7 +344,7 @@ private:
   {
     if (mBackBuffer.type() == SurfaceDescriptor::TSharedTextureDescriptor)
       return mBackBuffer.get_SharedTextureDescriptor().handle();
-    return nsnull;
+    return 0;
   }
 
   BasicShadowLayerManager* BasicManager()
@@ -373,8 +382,12 @@ BasicShadowableCanvasLayer::Paint(gfxContext* aContext, Layer* aMaskLayer)
     return;
   }
 
+  if (!IsDirty())
+    return;
+
   if (mGLContext &&
-      BasicManager()->GetParentBackendType() == LayerManager::LAYERS_OPENGL) {
+      !mForceReadback &&
+      BasicManager()->GetParentBackendType() == mozilla::layers::LAYERS_OPENGL) {
     TextureImage::TextureShareType flags;
     // if process type is default, then it is single-process (non-e10s)
     if (XRE_GetProcessType() == GeckoProcessType_Default)
@@ -392,6 +405,8 @@ BasicShadowableCanvasLayer::Paint(gfxContext* aContext, Layer* aMaskLayer)
     if (handle) {
       mGLContext->MakeCurrent();
       mGLContext->UpdateSharedHandle(flags, handle);
+      // call Painted() to reset our dirty 'bit'
+      Painted();
       FireDidTransactionCallback();
       BasicManager()->PaintedCanvas(BasicManager()->Hold(this),
                                     mNeedsYFlip,
@@ -407,21 +422,23 @@ BasicShadowableCanvasLayer::Paint(gfxContext* aContext, Layer* aMaskLayer)
       isOpaque != mBufferIsOpaque) {
     DestroyBackBuffer();
     mBufferIsOpaque = isOpaque;
-    if (!BasicManager()->AllocBuffer(
-        gfxIntSize(mBounds.width, mBounds.height),
-        isOpaque ?
-          gfxASurface::CONTENT_COLOR : gfxASurface::CONTENT_COLOR_ALPHA,
-        &mBackBuffer))
-    NS_RUNTIMEABORT("creating CanvasLayer back buffer failed!");
+
+    gfxIntSize size(mBounds.width, mBounds.height);
+    gfxASurface::gfxContentType type = isOpaque ?
+        gfxASurface::CONTENT_COLOR : gfxASurface::CONTENT_COLOR_ALPHA;
+
+    if (!BasicManager()->AllocBuffer(size, type, &mBackBuffer)) {
+      NS_RUNTIMEABORT("creating CanvasLayer back buffer failed!");
+    }
   }
 
   AutoOpenSurface autoBackSurface(OPEN_READ_WRITE, mBackBuffer);
 
   if (aMaskLayer) {
     static_cast<BasicImplData*>(aMaskLayer->ImplData())
-      ->Paint(aContext, nsnull);
+      ->Paint(aContext, nullptr);
   }
-  UpdateSurface(autoBackSurface.Get(), nsnull);
+  UpdateSurface(autoBackSurface.Get(), nullptr);
   FireDidTransactionCallback();
 
   BasicManager()->PaintedCanvas(BasicManager()->Hold(this),

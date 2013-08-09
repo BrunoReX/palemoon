@@ -12,7 +12,6 @@
 #include "nsIServiceManager.h"
 #include "nsISupportsArray.h"
 
-#include "prmem.h"
 #include "prcvar.h"
 #include "pratom.h"
 
@@ -21,18 +20,23 @@
 #include "nsString.h"
 #include "mozilla/Services.h"
 
+#ifdef ANDROID
+#include <stdio.h>
+#define LOW_MEMORY_THRESHOLD_KB (384 * 1024)
+#endif
+
 static nsMemoryImpl sGlobalMemory;
 
 NS_IMPL_QUERY_INTERFACE1(nsMemoryImpl, nsIMemory)
 
 NS_IMETHODIMP_(void*)
-nsMemoryImpl::Alloc(PRSize size)
+nsMemoryImpl::Alloc(size_t size)
 {
     return NS_Alloc(size);
 }
 
 NS_IMETHODIMP_(void*)
-nsMemoryImpl::Realloc(void* ptr, PRSize size)
+nsMemoryImpl::Realloc(void* ptr, size_t size)
 {
     return NS_Realloc(ptr, size);
 }
@@ -54,6 +58,37 @@ nsMemoryImpl::IsLowMemory(bool *result)
 {
     NS_ERROR("IsLowMemory is deprecated.  See bug 592308.");
     *result = false;
+    return NS_OK;
+}
+
+NS_IMETHODIMP
+nsMemoryImpl::IsLowMemoryPlatform(bool *result)
+{
+#ifdef ANDROID
+    static int sLowMemory = -1; // initialize to unknown, lazily evaluate to 0 or 1
+    if (sLowMemory == -1) {
+        sLowMemory = 0; // assume "not low memory" in case file operations fail
+        *result = false;
+
+        // check if MemTotal from /proc/meminfo is less than LOW_MEMORY_THRESHOLD_KB
+        FILE* fd = fopen("/proc/meminfo", "r");
+        if (!fd) {
+            return NS_OK;
+        }
+        uint64_t mem = 0;
+        int rv = fscanf(fd, "MemTotal: %lu kB", &mem);
+        if (fclose(fd)) {
+            return NS_OK;
+        }
+        if (rv != 1) {
+            return NS_OK;
+        }
+        sLowMemory = (mem < LOW_MEMORY_THRESHOLD_KB) ? 1 : 0;
+    }
+    *result = (sLowMemory == 1);
+#else
+    *result = false;
+#endif
     return NS_OK;
 }
 
@@ -79,7 +114,7 @@ nsMemoryImpl::FlushMemory(const PRUnichar* aReason, bool aImmediate)
         }
     }
 
-    PRInt32 lastVal = PR_ATOMIC_SET(&sIsFlushing, 1);
+    int32_t lastVal = PR_ATOMIC_SET(&sIsFlushing, 1);
     if (lastVal)
         return NS_OK;
 
@@ -148,7 +183,7 @@ nsMemoryImpl::FlushEvent::Run()
     return NS_OK;
 }
 
-PRInt32
+int32_t
 nsMemoryImpl::sIsFlushing = 0;
 
 PRIntervalTime
@@ -158,13 +193,13 @@ nsMemoryImpl::FlushEvent
 nsMemoryImpl::sFlushEvent;
 
 XPCOM_API(void*)
-NS_Alloc(PRSize size)
+NS_Alloc(size_t size)
 {
     return moz_xmalloc(size);
 }
 
 XPCOM_API(void*)
-NS_Realloc(void* ptr, PRSize size)
+NS_Realloc(void* ptr, size_t size)
 {
     return moz_xrealloc(ptr, size);
 }

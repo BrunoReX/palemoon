@@ -292,7 +292,7 @@ let Content = {
     // pages and other similar page. This lets us fix bugs like 401575 which
     // require error page UI to do privileged things, without letting error
     // pages have any privilege themselves.
-    addEventListener("click", this, false);
+    addEventListener("click", this, true);
 
     docShell.QueryInterface(Ci.nsIDocShellHistory).useGlobalHistory = true;
   },
@@ -384,6 +384,10 @@ let Content = {
             //       http://hg.mozilla.org/mozilla-central/file/855e5cd3c884/browser/base/content/browser.js#l2672
             //       http://hg.mozilla.org/mozilla-central/file/855e5cd3c884/browser/components/safebrowsing/content/globalstore.js
           }
+        } else if (/^about:neterror\?e=netOffline/.test(errorDoc.documentURI)) {
+          let tryAgain = errorDoc.getElementById("errorTryAgain");
+          if (target == tryAgain)
+            sendSyncMessage("Browser:GoOnline", { });
         }
         break;
       }
@@ -494,7 +498,7 @@ let Content = {
       case "Browser:MouseClick": {
         this.formAssistant.focusSync = true;
         let element = elementFromPoint(x, y);
-        if (modifiers == Ci.nsIDOMNSEvent.CONTROL_MASK) {
+        if (modifiers == Ci.nsIDOMEvent.CONTROL_MASK) {
           let uri = Util.getHrefForElement(element);
           if (uri)
             sendAsyncMessage("Browser:OpenURI", { uri: uri,
@@ -1362,7 +1366,7 @@ var TouchEventHandler = {
   },
 
   sendEvent: function(aName, aData, aElement) {
-    if (!Services.prefs.getBoolPref("dom.w3c_touch_events.enabled"))
+    if (!Services.prefs.getIntPref("dom.w3c_touch_events.enabled"))
       return true;
 
     let evt = content.document.createEvent("touchevent");
@@ -1493,7 +1497,7 @@ var SelectionHandler = {
 
         if (pointInSelection && this.selectedText.length) {
           let clipboard = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper);
-          clipboard.copyString(this.selectedText);
+          clipboard.copyString(this.selectedText, this.contentWindow.document);
           sendAsyncMessage("Browser:SelectionCopied", { succeeded: true });
         } else {
           sendAsyncMessage("Browser:SelectionCopied", { succeeded: false });
@@ -1518,8 +1522,8 @@ var SelectionHandler = {
           // Keep the cache in "client" coordinates, but translate for the mouse event
           this.cache.end = { x: json.x, y: json.y };
           let end = { x: this.cache.end.x - scrollOffset.x, y: this.cache.end.y - scrollOffset.y };
-          utils.sendMouseEventToWindow("mousedown", end.x, end.y, 0, 1, Ci.nsIDOMNSEvent.SHIFT_MASK, true);
-          utils.sendMouseEventToWindow("mouseup", end.x, end.y, 0, 1, Ci.nsIDOMNSEvent.SHIFT_MASK, true);
+          utils.sendMouseEventToWindow("mousedown", end.x, end.y, 0, 1, Ci.nsIDOMEvent.SHIFT_MASK, true);
+          utils.sendMouseEventToWindow("mouseup", end.x, end.y, 0, 1, Ci.nsIDOMEvent.SHIFT_MASK, true);
         } else {
           // Keep the cache in "client" coordinates, but translate for the mouse event
           this.cache.start = { x: json.x, y: json.y };
@@ -1529,8 +1533,8 @@ var SelectionHandler = {
           utils.sendMouseEventToWindow("mousedown", start.x, start.y, 0, 0, 0, true);
           utils.sendMouseEventToWindow("mouseup", start.x, start.y, 0, 0, 0, true);
         
-          utils.sendMouseEventToWindow("mousedown", end.x, end.y, 0, 1, Ci.nsIDOMNSEvent.SHIFT_MASK, true);
-          utils.sendMouseEventToWindow("mouseup", end.x, end.y, 0, 1, Ci.nsIDOMNSEvent.SHIFT_MASK, true);
+          utils.sendMouseEventToWindow("mousedown", end.x, end.y, 0, 1, Ci.nsIDOMEvent.SHIFT_MASK, true);
+          utils.sendMouseEventToWindow("mouseup", end.x, end.y, 0, 1, Ci.nsIDOMEvent.SHIFT_MASK, true);
         }
 
         // Cache the selected text since the selection might be gone by the time we get the "end" message

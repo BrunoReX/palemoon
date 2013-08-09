@@ -4,13 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAccIterator_h_
-#define nsAccIterator_h_
+#ifndef mozilla_a11y_AccIterator_h__
+#define mozilla_a11y_AccIterator_h__
 
-#include "nsAccessibilityService.h"
-#include "filters.h"
-#include "nscore.h"
 #include "DocAccessible.h"
+#include "Filters.h"
+#include "nsAccessibilityService.h"
+
+namespace mozilla {
+namespace a11y {
 
 /**
  * AccIterable is a basic interface for iterators over accessibles.
@@ -33,24 +35,7 @@ private:
 class AccIterator : public AccIterable
 {
 public:
-  /**
-   * Used to define iteration type.
-   */
-  enum IterationType {
-    /**
-     * Navigation happens through direct children.
-     */
-    eFlatNav,
-
-    /**
-     * Navigation through subtree excluding iterator root; if the accessible
-     * complies with filter, iterator ignores its children.
-     */
-    eTreeNav
-  };
-
-  AccIterator(Accessible* aRoot, filters::FilterFuncPtr aFilterFunc,
-              IterationType aIterationType = eFlatNav);
+  AccIterator(Accessible* aRoot, filters::FilterFuncPtr aFilterFunc);
   virtual ~AccIterator();
 
   /**
@@ -66,16 +51,15 @@ private:
 
   struct IteratorState
   {
-    IteratorState(Accessible* aParent, IteratorState* mParentState = nsnull);
+    IteratorState(Accessible* aParent, IteratorState* mParentState = nullptr);
 
     Accessible* mParent;
-    PRInt32 mIndex;
-    IteratorState *mParentState;
+    int32_t mIndex;
+    IteratorState* mParentState;
   };
 
   filters::FilterFuncPtr mFilterFunc;
-  bool mIsDeep;
-  IteratorState *mState;
+  IteratorState* mState;
 };
 
 
@@ -115,7 +99,7 @@ private:
   nsIAtom* mRelAttr;
   DocAccessible::AttrRelProviderArray* mProviders;
   nsIContent* mBindingParent;
-  PRUint32 mIndex;
+  uint32_t mIndex;
 };
 
 
@@ -281,5 +265,8 @@ private:
 
   nsRefPtr<Accessible> mAcc;
 };
+
+} // namespace a11y
+} // namespace mozilla
 
 #endif

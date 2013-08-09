@@ -128,7 +128,7 @@ private:
   }
 
   static JSBool
-  GetProperty(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, jsval* aVp)
+  GetProperty(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, JSMutableHandleValue aVp)
   {
     JSClass* classPtr = JS_GetClass(aObj);
     if (classPtr != &sClass) {
@@ -141,7 +141,7 @@ private:
     JS_ASSERT(JSID_IS_INT(aIdval));
     JS_ASSERT(JSID_TO_INT(aIdval) >= 0 && JSID_TO_INT(aIdval) < SLOT_COUNT);
 
-    *aVp = JS_GetReservedSlot(aObj, JSID_TO_INT(aIdval));
+    aVp.set(JS_GetReservedSlot(aObj, JSID_TO_INT(aIdval)));
     return true;
   }
 };
@@ -154,19 +154,23 @@ JSClass Location::sClass = {
 };
 
 JSPropertySpec Location::sProperties[] = {
-  { "href", SLOT_href, PROPERTY_FLAGS, GetProperty, js_GetterOnlyPropertyStub },
-  { "protocol", SLOT_protocol, PROPERTY_FLAGS, GetProperty, 
-    js_GetterOnlyPropertyStub },
-  { "host", SLOT_host, PROPERTY_FLAGS, GetProperty, js_GetterOnlyPropertyStub },
-  { "hostname", SLOT_hostname, PROPERTY_FLAGS, GetProperty, 
-    js_GetterOnlyPropertyStub },
-  { "port", SLOT_port, PROPERTY_FLAGS, GetProperty, js_GetterOnlyPropertyStub },
-  { "pathname", SLOT_pathname, PROPERTY_FLAGS, GetProperty,
-    js_GetterOnlyPropertyStub },
-  { "search", SLOT_search, PROPERTY_FLAGS, GetProperty,
-    js_GetterOnlyPropertyStub },
-  { "hash", SLOT_hash, PROPERTY_FLAGS, GetProperty, js_GetterOnlyPropertyStub },
-  { 0, 0, 0, NULL, NULL }
+  { "href", SLOT_href, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
+    JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
+  { "protocol", SLOT_protocol, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
+    JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
+  { "host", SLOT_host, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
+    JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
+  { "hostname", SLOT_hostname, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
+    JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
+  { "port", SLOT_port, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
+    JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
+  { "pathname", SLOT_pathname, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
+    JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
+  { "search", SLOT_search, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
+    JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
+  { "hash", SLOT_hash, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
+    JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
+  { 0, 0, 0, JSOP_NULLWRAPPER, JSOP_NULLWRAPPER }
 };
 
 JSFunctionSpec Location::sFunctions[] = {

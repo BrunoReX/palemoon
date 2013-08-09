@@ -23,7 +23,7 @@ function consoleOpened(aHud) {
   let completeNode = jsterm.completeNode;
 
   let tmp = {};
-  Cu.import("resource:///modules/WebConsoleUtils.jsm", tmp);
+  Cu.import("resource://gre/modules/devtools/WebConsoleUtils.jsm", tmp);
   let WCU = tmp.WebConsoleUtils;
   tmp = null;
 
@@ -34,8 +34,13 @@ function consoleOpened(aHud) {
 
     ok(popup.isOpen, "popup is open");
 
-    let props = WCU.namesAndValuesOf(content.wrappedJSObject.document.body);
-    is(popup.itemCount, props.length, "popup.itemCount is correct");
+    // |props| values, and the following properties:
+    // __defineGetter__  __defineSetter__ __lookupGetter__ __lookupSetter__
+    // constructor hasOwnProperty isPrototypeOf propertyIsEnumerable
+    // toLocaleString toSource toString unwatch valueOf watch.
+    let props = WCU.inspectObject(content.wrappedJSObject.document.body,
+                                  function() { });
+    is(popup.itemCount, 14 + props.length, "popup.itemCount is correct");
 
     popup._panel.addEventListener("popuphidden", autocompletePopupHidden, false);
 
@@ -93,7 +98,7 @@ function testPropertyPanel()
       }, false);
 
       let node = gHUD.outputNode.querySelector(".webconsole-msg-output");
-      EventUtils.synthesizeMouse(node, 2, 2, {});
+      EventUtils.synthesizeMouse(node, 2, 2, {}, gHUD.iframeWindow);
     },
     failureFn: finishTest,
   });

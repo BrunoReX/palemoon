@@ -17,6 +17,7 @@
         title="&window.title;"
         windowtype="devtools:scratchpad"
         macanimationtype="document"
+        fullscreenbutton="true"
         screenX="4" screenY="4"
         width="640" height="480"
         persist="screenX screenY width height sizemode">
@@ -30,8 +31,10 @@
 <commandset id="sp-commandset">
   <command id="sp-cmd-newWindow" oncommand="Scratchpad.openScratchpad();"/>
   <command id="sp-cmd-openFile" oncommand="Scratchpad.openFile();"/>
+  <command id="sp-cmd-clearRecentFiles" oncommand="Scratchpad.clearRecentFiles();"/>
   <command id="sp-cmd-save" oncommand="Scratchpad.saveFile();"/>
   <command id="sp-cmd-saveas" oncommand="Scratchpad.saveFileAs();"/>
+  <command id="sp-cmd-revert" oncommand="Scratchpad.promptRevert();" disabled="true"/>
 
   <!-- TODO: bug 650340 - implement printFile()
   <command id="sp-cmd-printFile" oncommand="Scratchpad.printFile();" disabled="true"/>
@@ -43,6 +46,7 @@
   <command id="sp-cmd-display" oncommand="Scratchpad.display();"/>
   <command id="sp-cmd-contentContext" oncommand="Scratchpad.setContentContext();"/>
   <command id="sp-cmd-browserContext" oncommand="Scratchpad.setBrowserContext();" disabled="true"/>
+  <command id="sp-cmd-reloadAndRun" oncommand="Scratchpad.reloadAndRun();"/>
   <command id="sp-cmd-resetContext" oncommand="Scratchpad.resetContext();"/>
   <command id="sp-cmd-errorConsole" oncommand="Scratchpad.openErrorConsole();" disabled="true"/>
   <command id="sp-cmd-webConsole" oncommand="Scratchpad.openWebConsole();"/>
@@ -88,6 +92,10 @@
        key="&display.key;"
        command="sp-cmd-display"
        modifiers="accel"/>
+  <key id="sp-key-reloadAndRun"
+       key="&reloadAndRun.key;"
+       command="sp-cmd-reloadAndRun"
+       modifiers="accel,shift"/>
   <key id="sp-key-errorConsole"
        key="&errorConsoleCmd.commandkey;"
        command="sp-cmd-errorConsole"
@@ -117,6 +125,11 @@
                 command="sp-cmd-openFile"
                 key="sp-key-open"
                 accesskey="&openFileCmd.accesskey;"/>
+      <menu id="sp-open_recent-menu" label="&openRecentMenu.label;"
+            accesskey="&openRecentMenu.accesskey;"
+            disabled="true">
+        <menupopup id="sp-menu-open_recentPopup"/>
+      </menu>
       <menuitem id="sp-menu-save"
                 label="&saveFileCmd.label;"
                 accesskey="&saveFileCmd.accesskey;"
@@ -126,6 +139,10 @@
                 label="&saveFileAsCmd.label;"
                 accesskey="&saveFileAsCmd.accesskey;"
                 command="sp-cmd-saveas"/>
+      <menuitem id="sp-menu-revert"
+                label="&revertCmd.label;"
+                accesskey="&revertCmd.accesskey;"
+                command="sp-cmd-revert"/>
       <menuseparator/>
 
       <!-- TODO: bug 650340 - implement printFile
@@ -183,6 +200,11 @@
                 key="sp-key-display"
                 command="sp-cmd-display"/>
       <menuseparator/>
+      <menuitem id="sp-text-reloadAndRun"
+                label="&reloadAndRun.label;"
+                key="sp-key-reloadAndRun"
+                accesskey="&reloadAndRun.accesskey;"
+                command="sp-cmd-reloadAndRun"/>
       <menuitem id="sp-text-resetContext"
                 label="&resetContext2.label;"
                 accesskey="&resetContext2.accesskey;"

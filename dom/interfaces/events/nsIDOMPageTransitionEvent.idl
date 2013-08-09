@@ -11,7 +11,7 @@
  * load/unload and saving/restoring a document from session history.
  */
 
-[scriptable, uuid(3ca21c34-8391-4c5b-891e-0540a675dbf4)]
+[scriptable, builtinclass, uuid(9f3ffe42-bbd2-428d-97f1-6c158c6eb2f9)]
 interface nsIDOMPageTransitionEvent : nsIDOMEvent
 {
   /**

@@ -13,7 +13,10 @@
 #if defined(XP_OS2)
 #include "nsIRandomGenerator.h"
 #endif
-#include "nsContentUtils.h"
+
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
+#include "nsIPrivateBrowsingService.h"
+#endif
 
 // The length of guids that are used by history and bookmarks.
 #define GUID_LENGTH 12
@@ -37,7 +40,7 @@ AsyncStatementCallback::HandleResult(mozIStorageResultSet *aResultSet)
 }
 
 NS_IMETHODIMP
-AsyncStatementCallback::HandleCompletion(PRUint16 aReason)
+AsyncStatementCallback::HandleCompletion(uint16_t aReason)
 {
   return NS_OK;
 }
@@ -46,14 +49,14 @@ NS_IMETHODIMP
 AsyncStatementCallback::HandleError(mozIStorageError *aError)
 {
 #ifdef DEBUG
-  PRInt32 result;
+  int32_t result;
   nsresult rv = aError->GetResult(&result);
   NS_ENSURE_SUCCESS(rv, rv);
-  nsCAutoString message;
+  nsAutoCString message;
   rv = aError->GetMessage(message);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCAutoString warnMsg;
+  nsAutoCString warnMsg;
   warnMsg.Append("An error occurred while executing an async statement: ");
   warnMsg.AppendInt(result);
   warnMsg.Append(" ");
@@ -65,7 +68,7 @@ AsyncStatementCallback::HandleError(mozIStorageError *aError)
 }
 
 #define URI_TO_URLCSTRING(uri, spec) \
-  nsCAutoString spec; \
+  nsAutoCString spec; \
   if (NS_FAILED(aURI->GetSpec(spec))) { \
     return NS_ERROR_UNEXPECTED; \
   }
@@ -73,7 +76,7 @@ AsyncStatementCallback::HandleError(mozIStorageError *aError)
 // Bind URI to statement by index.
 nsresult // static
 URIBinder::Bind(mozIStorageStatement* aStatement,
-                PRInt32 aIndex,
+                int32_t aIndex,
                 nsIURI* aURI)
 {
   NS_ASSERTION(aStatement, "Must have non-null statement");
@@ -86,7 +89,7 @@ URIBinder::Bind(mozIStorageStatement* aStatement,
 // Statement URLCString to statement by index.
 nsresult // static
 URIBinder::Bind(mozIStorageStatement* aStatement,
-                PRInt32 index,
+                int32_t index,
                 const nsACString& aURLString)
 {
   NS_ASSERTION(aStatement, "Must have non-null statement");
@@ -123,7 +126,7 @@ URIBinder::Bind(mozIStorageStatement* aStatement,
 // Bind URI to params by index.
 nsresult // static
 URIBinder::Bind(mozIStorageBindingParams* aParams,
-                PRInt32 aIndex,
+                int32_t aIndex,
                 nsIURI* aURI)
 {
   NS_ASSERTION(aParams, "Must have non-null statement");
@@ -136,7 +139,7 @@ URIBinder::Bind(mozIStorageBindingParams* aParams,
 // Bind URLCString to params by index.
 nsresult // static
 URIBinder::Bind(mozIStorageBindingParams* aParams,
-                PRInt32 index,
+                int32_t index,
                 const nsACString& aURLString)
 {
   NS_ASSERTION(aParams, "Must have non-null statement");
@@ -178,7 +181,7 @@ URIBinder::Bind(mozIStorageBindingParams* aParams,
 nsresult
 GetReversedHostname(nsIURI* aURI, nsString& aRevHost)
 {
-  nsCAutoString forward8;
+  nsAutoCString forward8;
   nsresult rv = aURI->GetHost(forward8);
   // Not all URIs have a host.
   if (NS_FAILED(rv))
@@ -200,22 +203,22 @@ void
 ReverseString(const nsString& aInput, nsString& aReversed)
 {
   aReversed.Truncate(0);
-  for (PRInt32 i = aInput.Length() - 1; i >= 0; i--) {
+  for (int32_t i = aInput.Length() - 1; i >= 0; i--) {
     aReversed.Append(aInput[i]);
   }
 }
 
 static
 nsresult
-Base64urlEncode(const PRUint8* aBytes,
-                PRUint32 aNumBytes,
+Base64urlEncode(const uint8_t* aBytes,
+                uint32_t aNumBytes,
                 nsCString& _result)
 {
   // SetLength does not set aside space for NULL termination.  PL_Base64Encode
   // will not NULL terminate, however, nsCStrings must be NULL terminated.  As a
   // result, we set the capacity to be one greater than what we need, and the
   // length to our desired length.
-  PRUint32 length = (aNumBytes + 2) / 3 * 4; // +2 due to integer math.
+  uint32_t length = (aNumBytes + 2) / 3 * 4; // +2 due to integer math.
   NS_ENSURE_TRUE(_result.SetCapacity(length + 1, fallible_t()),
                  NS_ERROR_OUT_OF_MEMORY);
   _result.SetLength(length);
@@ -238,8 +241,8 @@ Base64urlEncode(const PRUint8* aBytes,
 
 static
 nsresult
-GenerateRandomBytes(PRUint32 aSize,
-                    PRUint8* _buffer)
+GenerateRandomBytes(uint32_t aSize,
+                    uint8_t* _buffer)
 {
   // On Windows, we'll use its built-in cryptographic API.
 #if defined(XP_WIN)
@@ -254,12 +257,12 @@ GenerateRandomBytes(PRUint32 aSize,
 
   // On Unix, we'll just read in from /dev/urandom.
 #elif defined(XP_UNIX)
-  NS_ENSURE_ARG_MAX(aSize, PR_INT32_MAX);
+  NS_ENSURE_ARG_MAX(aSize, INT32_MAX);
   PRFileDesc* urandom = PR_Open("/dev/urandom", PR_RDONLY, 0);
   nsresult rv = NS_ERROR_FAILURE;
   if (urandom) {
-    PRInt32 bytesRead = PR_Read(urandom, _buffer, aSize);
-    if (bytesRead == static_cast<PRInt32>(aSize)) {
+    int32_t bytesRead = PR_Read(urandom, _buffer, aSize);
+    if (bytesRead == static_cast<int32_t>(aSize)) {
       rv = NS_OK;
     }
     (void)PR_Close(urandom);
@@ -270,7 +273,7 @@ GenerateRandomBytes(PRUint32 aSize,
     do_GetService("@mozilla.org/security/random-generator;1");
   NS_ENSURE_STATE(rg);
 
-  PRUint8* temp;
+  uint8_t* temp;
   nsresult rv = rg->GenerateRandomBytes(aSize, &temp);
   NS_ENSURE_SUCCESS(rv, rv);
   memcpy(_buffer, temp, aSize);
@@ -286,10 +289,10 @@ GenerateGUID(nsCString& _guid)
 
   // Request raw random bytes and base64url encode them.  For each set of three
   // bytes, we get one character.
-  const PRUint32 kRequiredBytesLength =
-    static_cast<PRUint32>(GUID_LENGTH / 4 * 3);
+  const uint32_t kRequiredBytesLength =
+    static_cast<uint32_t>(GUID_LENGTH / 4 * 3);
 
-  PRUint8 buffer[kRequiredBytesLength];
+  uint8_t buffer[kRequiredBytesLength];
   nsresult rv = GenerateRandomBytes(kRequiredBytesLength, buffer);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -340,14 +343,14 @@ ForceWALCheckpoint()
     );
     if (stmt) {
       nsCOMPtr<mozIStoragePendingStatement> handle;
-      (void)stmt->ExecuteAsync(nsnull, getter_AddRefs(handle));
+      (void)stmt->ExecuteAsync(nullptr, getter_AddRefs(handle));
     }
   }
 }
 
 bool
 GetHiddenState(bool aIsRedirect,
-               PRUint32 aTransitionType)
+               uint32_t aTransitionType)
 {
   return aTransitionType == nsINavHistoryService::TRANSITION_FRAMED_LINK ||
          aTransitionType == nsINavHistoryService::TRANSITION_EMBED ||
@@ -375,7 +378,7 @@ PlacesEvent::Notify()
   NS_ASSERTION(NS_IsMainThread(), "Must only be used on the main thread!");
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (obs) {
-    (void)obs->NotifyObservers(nsnull, mTopic, nsnull);
+    (void)obs->NotifyObservers(nullptr, mTopic, nullptr);
   }
 }
 
@@ -388,14 +391,14 @@ NS_IMPL_THREADSAFE_ISUPPORTS1(
 //// AsyncStatementCallbackNotifier
 
 NS_IMETHODIMP
-AsyncStatementCallbackNotifier::HandleCompletion(PRUint16 aReason)
+AsyncStatementCallbackNotifier::HandleCompletion(uint16_t aReason)
 {
   if (aReason != mozIStorageStatementCallback::REASON_FINISHED)
     return NS_ERROR_UNEXPECTED;
 
   nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
   if (obs) {
-    (void)obs->NotifyObservers(nsnull, mTopic, nsnull);
+    (void)obs->NotifyObservers(nullptr, mTopic, nullptr);
   }
 
   return NS_OK;
@@ -405,12 +408,29 @@ AsyncStatementCallbackNotifier::HandleCompletion(PRUint16 aReason)
 //// AsyncStatementCallbackNotifier
 
 NS_IMETHODIMP
-AsyncStatementTelemetryTimer::HandleCompletion(PRUint16 aReason)
+AsyncStatementTelemetryTimer::HandleCompletion(uint16_t aReason)
 {
   if (aReason == mozIStorageStatementCallback::REASON_FINISHED) {
     Telemetry::AccumulateTimeDelta(mHistogramId, mStart);
   }
   return NS_OK;
+}
+
+void
+EnsureNotGlobalPrivateBrowsing()
+{
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
+  // This code makes sure that certain code is not invoked when global private
+  // browsing is enabled.
+  nsCOMPtr<nsIPrivateBrowsingService> pbService =
+      do_GetService(NS_PRIVATE_BROWSING_SERVICE_CONTRACTID);
+  if (pbService) {
+    bool inPrivateBrowsing = false;
+    if (NS_SUCCEEDED(pbService->GetPrivateBrowsingEnabled(&inPrivateBrowsing))) {
+      MOZ_ASSERT(!inPrivateBrowsing);
+    }
+  }
+#endif
 }
 
 } // namespace places

@@ -374,7 +374,7 @@ static int cvt_ws(SprintfState *ss, const jschar *ws, int width, int prec,
         if (!s)
             return -1; /* JSStuffFunc error indicator. */
         result = cvt_s(ss, s, width, prec, flags);
-        UnwantedForeground::free_(s);
+        js_free(s);
     } else {
         result = cvt_s(ss, NULL, width, prec, flags);
     }
@@ -592,7 +592,7 @@ static struct NumArgState* BuildArgArray( const char *fmt, va_list ap, int* rv, 
 
     if( *rv < 0 ){
         if( nas != nasArray )
-            UnwantedForeground::free_( nas );
+            js_free( nas );
         return NULL;
     }
 
@@ -629,7 +629,7 @@ static struct NumArgState* BuildArgArray( const char *fmt, va_list ap, int* rv, 
 
         default:
             if( nas != nasArray )
-                UnwantedForeground::free_( nas );
+                js_free( nas );
             *rv = -1;
             return NULL;
         }
@@ -668,8 +668,6 @@ static int dosprintf(SprintfState *ss, const char *fmt, va_list ap)
     struct NumArgState nasArray[ NAS_DEFAULT_NUM ];
     char pattern[20];
     const char *dolPt = NULL;  /* in "%4$.2f", dolPt will poiont to . */
-    uint8_t utf8buf[6];
-    int utf8len;
 
     /*
     ** build an argument array, IF the fmt is numbered argument
@@ -718,7 +716,7 @@ static int dosprintf(SprintfState *ss, const char *fmt, va_list ap)
 
             if( nas[i-1].type == TYPE_UNKNOWN ){
                 if( nas && ( nas != nasArray ) )
-                    UnwantedForeground::free_( nas );
+                    js_free( nas );
                 return -1;
             }
 
@@ -906,13 +904,6 @@ static int dosprintf(SprintfState *ss, const char *fmt, va_list ap)
             }
             switch (type) {
               case TYPE_INT16:
-                /* Treat %hc as %c unless js_CStringsAreUTF8. */
-                if (js_CStringsAreUTF8) {
-                    u.wch = va_arg(ap, int);
-                    utf8len = js_OneUcs4ToUtf8Char (utf8buf, u.wch);
-                    rv = (*ss->stuff)(ss, (char *)utf8buf, utf8len);
-                    break;
-                }
               case TYPE_INTN:
                 u.ch = va_arg(ap, int);
                 rv = (*ss->stuff)(ss, &u.ch, 1);
@@ -957,10 +948,6 @@ static int dosprintf(SprintfState *ss, const char *fmt, va_list ap)
 
           case 's':
             if(type == TYPE_INT16) {
-                /*
-                 * This would do a simple string/byte conversion
-                 * unless js_CStringsAreUTF8.
-                 */
                 u.ws = va_arg(ap, const jschar*);
                 rv = cvt_ws(ss, u.ws, width, prec, flags);
             } else {
@@ -999,7 +986,7 @@ static int dosprintf(SprintfState *ss, const char *fmt, va_list ap)
     rv = (*ss->stuff)(ss, "\0", 1);
 
     if( nas && ( nas != nasArray ) ){
-        UnwantedForeground::free_( nas );
+        js_free( nas );
     }
 
     return rv;
@@ -1060,9 +1047,9 @@ static int GrowStuff(SprintfState *ss, const char *sp, uint32_t len)
         /* Grow the buffer */
         newlen = ss->maxlen + ((len > 32) ? len : 32);
         if (ss->base) {
-            newbase = (char*) OffTheBooks::realloc_(ss->base, newlen);
+            newbase = (char*) js_realloc(ss->base, newlen);
         } else {
-            newbase = (char*) OffTheBooks::malloc_(newlen);
+            newbase = (char*) js_malloc(newlen);
         }
         if (!newbase) {
             /* Ran out of memory */
@@ -1101,7 +1088,7 @@ JS_PUBLIC_API(char *) JS_smprintf(const char *fmt, ...)
 */
 JS_PUBLIC_API(void) JS_smprintf_free(char *mem)
 {
-        Foreground::free_(mem);
+        js_free(mem);
 }
 
 JS_PUBLIC_API(char *) JS_vsmprintf(const char *fmt, va_list ap)
@@ -1116,7 +1103,7 @@ JS_PUBLIC_API(char *) JS_vsmprintf(const char *fmt, va_list ap)
     rv = dosprintf(&ss, fmt, ap);
     if (rv < 0) {
         if (ss.base) {
-            Foreground::free_(ss.base);
+            js_free(ss.base);
         }
         return 0;
     }
@@ -1215,7 +1202,7 @@ JS_PUBLIC_API(char *) JS_vsprintf_append(char *last, const char *fmt, va_list ap
     rv = dosprintf(&ss, fmt, ap);
     if (rv < 0) {
         if (ss.base) {
-            Foreground::free_(ss.base);
+            js_free(ss.base);
         }
         return 0;
     }

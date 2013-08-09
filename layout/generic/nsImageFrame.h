@@ -12,11 +12,11 @@
 #include "nsIIOService.h"
 #include "nsIObserver.h"
 
-#include "nsStubImageDecoderObserver.h"
-#include "imgIDecoderObserver.h"
+#include "imgINotificationObserver.h"
 
 #include "nsDisplayList.h"
 #include "imgIContainer.h"
+#include "mozilla/Attributes.h"
 
 class nsIFrame;
 class nsImageMap;
@@ -39,23 +39,14 @@ namespace layers {
 }
 }
 
-class nsImageListener : public nsStubImageDecoderObserver
+class nsImageListener : public imgINotificationObserver
 {
 public:
   nsImageListener(nsImageFrame *aFrame);
   virtual ~nsImageListener();
 
   NS_DECL_ISUPPORTS
-  // imgIDecoderObserver (override nsStubImageDecoderObserver)
-  NS_IMETHOD OnStartContainer(imgIRequest *aRequest, imgIContainer *aImage);
-  NS_IMETHOD OnDataAvailable(imgIRequest *aRequest, bool aCurrentFrame,
-                             const nsIntRect *aRect);
-  NS_IMETHOD OnStopDecode(imgIRequest *aRequest, nsresult status,
-                          const PRUnichar *statusArg);
-  // imgIContainerObserver (override nsStubImageDecoderObserver)
-  NS_IMETHOD FrameChanged(imgIRequest *aRequest,
-                          imgIContainer *aContainer,
-                          const nsIntRect *dirtyRect);
+  NS_DECL_IMGINOTIFICATIONOBSERVER
 
   void SetFrame(nsImageFrame *frame) { mFrame = frame; }
 
@@ -104,27 +95,27 @@ public:
                         nsEventStatus* aEventStatus);
   NS_IMETHOD GetCursor(const nsPoint& aPoint,
                        nsIFrame::Cursor& aCursor);
-  NS_IMETHOD AttributeChanged(PRInt32 aNameSpaceID,
+  NS_IMETHOD AttributeChanged(int32_t aNameSpaceID,
                               nsIAtom* aAttribute,
-                              PRInt32 aModType);
+                              int32_t aModType);
 
 #ifdef ACCESSIBILITY
-  virtual already_AddRefed<Accessible> CreateAccessible();
+  virtual mozilla::a11y::AccType AccessibleType() MOZ_OVERRIDE;
 #endif
 
   virtual nsIAtom* GetType() const;
 
-  virtual bool IsFrameOfType(PRUint32 aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const
   {
     return ImageFrameSuper::IsFrameOfType(aFlags & ~(nsIFrame::eReplaced));
   }
 
 #ifdef DEBUG
   NS_IMETHOD GetFrameName(nsAString& aResult) const;
-  NS_IMETHOD List(FILE* out, PRInt32 aIndent) const;
+  NS_IMETHOD List(FILE* out, int32_t aIndent, uint32_t aFlags = 0) const;
 #endif
 
-  virtual PRIntn GetSkipSides() const;
+  virtual int GetSkipSides() const;
 
   nsresult GetIntrinsicImageSize(nsSize& aSize);
 
@@ -135,6 +126,8 @@ public:
     }
     NS_IF_RELEASE(sIOService);
   }
+
+  nsresult Notify(imgIRequest *aRequest, int32_t aType, const nsIntRect* aData);
 
   /**
    * Function to test whether aContent, which has aStyleContext as its style,
@@ -160,7 +153,7 @@ public:
     if (mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::usemap, usemap)) {
       return mContent->OwnerDoc()->FindImageMap(usemap);
     }
-    return nsnull;
+    return nullptr;
   }
 
   /**
@@ -183,7 +176,7 @@ protected:
   virtual nsSize ComputeSize(nsRenderingContext *aRenderingContext,
                              nsSize aCBSize, nscoord aAvailableWidth,
                              nsSize aMargin, nsSize aBorder, nsSize aPadding,
-                             PRUint32 aFlags) MOZ_OVERRIDE;
+                             uint32_t aFlags) MOZ_OVERRIDE;
 
   bool IsServerImageMap();
 
@@ -202,9 +195,9 @@ protected:
    * @return width of the string that fits within aMaxWidth
    */
   nscoord MeasureString(const PRUnichar*     aString,
-                        PRInt32              aLength,
+                        int32_t              aLength,
                         nscoord              aMaxWidth,
-                        PRUint32&            aMaxFit,
+                        uint32_t&            aMaxFit,
                         nsRenderingContext& aContext);
 
   void DisplayAltText(nsPresContext*      aPresContext,
@@ -214,20 +207,17 @@ protected:
 
   void PaintImage(nsRenderingContext& aRenderingContext, nsPoint aPt,
                   const nsRect& aDirtyRect, imgIContainer* aImage,
-                  PRUint32 aFlags);
+                  uint32_t aFlags);
 
 protected:
   friend class nsImageListener;
   friend class nsImageLoadingContent;
   nsresult OnStartContainer(imgIRequest *aRequest, imgIContainer *aImage);
-  nsresult OnDataAvailable(imgIRequest *aRequest, bool aCurrentFrame,
-                           const nsIntRect *rect);
-  nsresult OnStopDecode(imgIRequest *aRequest,
-                        nsresult aStatus,
-                        const PRUnichar *aStatusArg);
+  nsresult OnDataAvailable(imgIRequest *aRequest, const nsIntRect *rect);
+  nsresult OnStopRequest(imgIRequest *aRequest,
+                         nsresult aStatus);
   nsresult FrameChanged(imgIRequest *aRequest,
-                        imgIContainer *aContainer,
-                        const nsIntRect *aDirtyRect);
+                        imgIContainer *aContainer);
   /**
    * Notification that aRequest will now be the current request.
    */
@@ -287,13 +277,14 @@ private:
 
   nsImageMap*         mImageMap;
 
-  nsCOMPtr<imgIDecoderObserver> mListener;
+  nsCOMPtr<imgINotificationObserver> mListener;
 
   nsSize mComputedSize;
   nsIFrame::IntrinsicSize mIntrinsicSize;
   nsSize mIntrinsicRatio;
 
   bool mDisplayingIcon;
+  bool mFirstFrameComplete;
 
   static nsIIOService* sIOService;
   
@@ -309,8 +300,8 @@ private:
   nsresult LoadIcon(const nsAString& aSpec, nsPresContext *aPresContext,
                     imgIRequest **aRequest);
 
-  class IconLoad : public nsIObserver,
-                   public imgIDecoderObserver {
+  class IconLoad MOZ_FINAL : public nsIObserver,
+                             public imgINotificationObserver {
     // private class that wraps the data and logic needed for
     // broken image and loading image icons
   public:
@@ -320,8 +311,7 @@ private:
 
     NS_DECL_ISUPPORTS
     NS_DECL_NSIOBSERVER
-    NS_DECL_IMGICONTAINEROBSERVER
-    NS_DECL_IMGIDECODEROBSERVER
+    NS_DECL_IMGINOTIFICATIONOBSERVER
 
     void AddIconObserver(nsImageFrame *frame) {
         NS_ABORT_IF_FALSE(!mIconObservers.Contains(frame),
@@ -361,44 +351,48 @@ public:
  * image itself, and hence receive events just as if the image itself
  * received events.
  */
-class nsDisplayImage : public nsDisplayItem {
+class nsDisplayImage : public nsDisplayImageContainer {
 public:
-  typedef mozilla::layers::ImageContainer ImageContainer;
-  typedef mozilla::layers::ImageLayer ImageLayer;
   typedef mozilla::layers::LayerManager LayerManager;
 
   nsDisplayImage(nsDisplayListBuilder* aBuilder, nsImageFrame* aFrame,
                  imgIContainer* aImage)
-    : nsDisplayItem(aBuilder, aFrame), mImage(aImage) {
+    : nsDisplayImageContainer(aBuilder, aFrame), mImage(aImage) {
     MOZ_COUNT_CTOR(nsDisplayImage);
   }
   virtual ~nsDisplayImage() {
     MOZ_COUNT_DTOR(nsDisplayImage);
   }
   virtual void Paint(nsDisplayListBuilder* aBuilder,
-                     nsRenderingContext* aCtx);
+                     nsRenderingContext* aCtx) MOZ_OVERRIDE;
 
   /**
    * Returns an ImageContainer for this image if the image type
    * supports it (TYPE_RASTER only).
    */
-  already_AddRefed<ImageContainer> GetContainer();
+  virtual already_AddRefed<ImageContainer> GetContainer(LayerManager* aManager,
+                                                        nsDisplayListBuilder* aBuilder) MOZ_OVERRIDE;
 
   gfxRect GetDestRect();
 
   virtual LayerState GetLayerState(nsDisplayListBuilder* aBuilder,
                                    LayerManager* aManager,
-                                   const ContainerParameters& aParameters);
+                                   const ContainerParameters& aParameters) MOZ_OVERRIDE;
+  virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap) MOZ_OVERRIDE
+  {
+    *aSnap = true;
+    return nsRect(ToReferenceFrame(), GetUnderlyingFrame()->GetSize());
+  }
 
   virtual already_AddRefed<Layer> BuildLayer(nsDisplayListBuilder* aBuilder,
                                              LayerManager* aManager,
-                                             const ContainerParameters& aContainerParameters);
+                                             const ContainerParameters& aContainerParameters) MOZ_OVERRIDE;
 
   /**
    * Configure an ImageLayer for this display item.
    * Set the required filter and scaling transform.
    */
-  void ConfigureLayer(ImageLayer* aLayer);
+  virtual void ConfigureLayer(ImageLayer* aLayer, const nsIntPoint& aOffset) MOZ_OVERRIDE;
 
   NS_DISPLAY_DECL_NAME("Image", TYPE_IMAGE)
 private:

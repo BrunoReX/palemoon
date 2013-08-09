@@ -8,6 +8,7 @@
 
 #include "LayerManagerD3D10.h"
 #include "ImageLayers.h"
+#include "ImageContainer.h"
 #include "yuv_convert.h"
 
 namespace mozilla {
@@ -34,7 +35,7 @@ public:
   virtual already_AddRefed<ID3D10ShaderResourceView> GetAsTexture(gfxIntSize* aSize);
 
 private:
- ID3D10ShaderResourceView* GetImageSRView(Image* aImage, bool& aHasAlpha, IDXGIKeyedMutex **aMutex = nsnull);
+ ID3D10ShaderResourceView* GetImageSRView(Image* aImage, bool& aHasAlpha, IDXGIKeyedMutex **aMutex = nullptr);
 };
 
 struct PlanarYCbCrD3D10BackendData : public ImageBackendData

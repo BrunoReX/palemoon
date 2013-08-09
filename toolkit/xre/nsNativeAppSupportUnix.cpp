@@ -105,7 +105,7 @@ gboolean save_yourself_cb(GnomeClient *client, gint phase,
 
   // Notify observers to save the session state
   didSaveSession->SetData(false);
-  obsServ->NotifyObservers(didSaveSession, "session-save", nsnull);
+  obsServ->NotifyObservers(didSaveSession, "session-save", nullptr);
 
   bool status;
   didSaveSession->GetData(&status);
@@ -117,7 +117,7 @@ gboolean save_yourself_cb(GnomeClient *client, gint phase,
       do_CreateInstance(NS_SUPPORTS_PRBOOL_CONTRACTID);
 
     cancelQuit->SetData(false);
-    obsServ->NotifyObservers(cancelQuit, "quit-application-requested", nsnull);
+    obsServ->NotifyObservers(cancelQuit, "quit-application-requested", nullptr);
 
     bool abortQuit;
     cancelQuit->GetData(&abortQuit);
@@ -270,10 +270,10 @@ static void OssoDisplayCallback(osso_display_state_t state, gpointer data)
   osso_context_t* context = (osso_context_t*) data;
 
   if (state == OSSO_DISPLAY_ON) {
-      os->NotifyObservers(nsnull, "system-display-on", nsnull);
+      os->NotifyObservers(nullptr, "system-display-on", nullptr);
       OssoRequestAccelerometer(context, true);
   } else {
-      os->NotifyObservers(nsnull, "system-display-dimmed-or-off", nsnull);
+      os->NotifyObservers(nullptr, "system-display-dimmed-or-off", nullptr);
       OssoRequestAccelerometer(context, false);
   }
 }
@@ -295,7 +295,7 @@ static void OssoHardwareCallback(osso_hw_state_t *state, gpointer data)
   if (state->memory_low_ind && !ourState->memory_low_ind) {
     nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
     if (os)
-      os->NotifyObservers(nsnull, "memory-pressure", NS_LITERAL_STRING("low-memory").get());
+      os->NotifyObservers(nullptr, "memory-pressure", NS_LITERAL_STRING("low-memory").get());
   }
   
   if (state->system_inactivity_ind != ourState->system_inactivity_ind) {
@@ -304,9 +304,9 @@ static void OssoHardwareCallback(osso_hw_state_t *state, gpointer data)
         return;
  
       if (state->system_inactivity_ind)
-          os->NotifyObservers(nsnull, "system-idle", nsnull);
+          os->NotifyObservers(nullptr, "system-idle", nullptr);
       else
-          os->NotifyObservers(nsnull, "system-active", nsnull);
+          os->NotifyObservers(nullptr, "system-active", nullptr);
   }
 
   memcpy(ourState, state, sizeof(osso_hw_state_t));
@@ -399,6 +399,7 @@ nsNativeAppSupportUnix::Start(bool *aRetVal)
 {
   NS_ASSERTION(gAppData, "gAppData must not be null.");
 
+#if (MOZ_WIDGET_GTK == 2)
   if (gtk_major_version < MIN_GTK_MAJOR_VERSION ||
       (gtk_major_version == MIN_GTK_MAJOR_VERSION && gtk_minor_version < MIN_GTK_MINOR_VERSION)) {
     GtkWidget* versionErrDialog = gtk_message_dialog_new(NULL,
@@ -415,6 +416,7 @@ nsNativeAppSupportUnix::Start(bool *aRetVal)
     gtk_widget_destroy(versionErrDialog);
     exit(0);
   }
+#endif
 
 #if (MOZ_PLATFORM_MAEMO == 5)
   /* zero state out. */
@@ -429,7 +431,7 @@ nsNativeAppSupportUnix::Start(bool *aRetVal)
      defined in your desktop file.  If it doesn't, the OSSO
      system will happily kill your process.
   */
-  nsCAutoString applicationName;
+  nsAutoCString applicationName;
   if (gAppData->vendor) {
       applicationName.Append(gAppData->vendor);
       applicationName.Append(".");
@@ -440,26 +442,26 @@ nsNativeAppSupportUnix::Start(bool *aRetVal)
   m_osso_context = osso_initialize(applicationName.get(), 
                                    gAppData->version ? gAppData->version : "1.0",
                                    true,
-                                   nsnull);
+                                   nullptr);
 
   /* Check that initilialization was ok */
-  if (m_osso_context == nsnull) {
+  if (m_osso_context == nullptr) {
       return NS_ERROR_FAILURE;
   }
 
-  osso_hw_set_event_cb(m_osso_context, nsnull, OssoHardwareCallback, &m_hw_state);
+  osso_hw_set_event_cb(m_osso_context, nullptr, OssoHardwareCallback, &m_hw_state);
   osso_hw_set_display_event_cb(m_osso_context, OssoDisplayCallback, m_osso_context);
-  osso_rpc_set_default_cb_f(m_osso_context, OssoDbusCallback, nsnull);
+  osso_rpc_set_default_cb_f(m_osso_context, OssoDbusCallback, nullptr);
 
   // Setup an MCE callback to monitor orientation
   DBusConnection *connnection = (DBusConnection*)osso_get_sys_dbus_connection(m_osso_context);
-  dbus_bus_add_match(connnection, MCE_MATCH_RULE, nsnull);
-  dbus_connection_add_filter(connnection, OssoModeControlCallback, nsnull, nsnull);
+  dbus_bus_add_match(connnection, MCE_MATCH_RULE, nullptr);
+  dbus_connection_add_filter(connnection, OssoModeControlCallback, nullptr, nullptr);
 #endif
 
   *aRetVal = true;
 
-#ifdef MOZ_X11
+#if defined(MOZ_X11) && (MOZ_WIDGET_GTK == 2)
 
   PRLibrary *gnomeuiLib = PR_LoadLibrary("libgnomeui-2.so.0");
   if (!gnomeuiLib)
@@ -482,7 +484,7 @@ nsNativeAppSupportUnix::Start(bool *aRetVal)
     return NS_OK;
   }
 
-#endif /* MOZ_X11 */
+#endif /* MOZ_X11 && (MOZ_WIDGET_GTK == 2) */
 
 #ifdef ACCESSIBILITY
   // We will load gail, atk-bridge by ourself later
@@ -493,11 +495,11 @@ nsNativeAppSupportUnix::Start(bool *aRetVal)
   setenv(accEnv, "0", 1);
 #endif
 
-#ifdef MOZ_X11
+#if defined(MOZ_X11) && (MOZ_WIDGET_GTK == 2)
   if (!gnome_program_get()) {
     gnome_program_init("Gecko", "1.0", libgnomeui_module_info_get(), gArgc, gArgv, NULL);
   }
-#endif /* MOZ_X11 */
+#endif /* MOZ_X11 && (MOZ_WIDGET_GTK == 2) */
 
 #ifdef ACCESSIBILITY
   if (accOldValue) { 
@@ -511,7 +513,8 @@ nsNativeAppSupportUnix::Start(bool *aRetVal)
   // gnome_program_init causes atexit handlers to be registered. Strange
   // crashes will occur if these libraries are unloaded.
 
-#ifdef MOZ_X11
+  // TODO GTK3 - see Bug 694570 - Stop using libgnome and libgnomeui on Linux
+#if defined(MOZ_X11) && (MOZ_WIDGET_GTK == 2)
   gnome_client_set_restart_command = (_gnome_client_set_restart_command_fn)
     PR_FindFunctionSymbol(gnomeuiLib, "gnome_client_set_restart_command");
 
@@ -525,7 +528,7 @@ nsNativeAppSupportUnix::Start(bool *aRetVal)
   // Set the correct/requested restart command in any case.
 
   // Is there a request to suppress default binary launcher?
-  nsCAutoString path;
+  nsAutoCString path;
   char* argv1 = getenv("MOZ_APP_LAUNCHER");
 
   if(!argv1) {
@@ -539,7 +542,7 @@ nsNativeAppSupportUnix::Start(bool *aRetVal)
 
     if (NS_SUCCEEDED(rv)) {
       // Strip off the -bin suffix to get the shell script we should run; this is what Breakpad does
-      nsCAutoString leafName;
+      nsAutoCString leafName;
       rv = executablePath->GetNativeLeafName(leafName);
       if (NS_SUCCEEDED(rv) && StringEndsWith(leafName, NS_LITERAL_CSTRING("-bin"))) {
         leafName.SetLength(leafName.Length() - strlen("-bin"));
@@ -554,7 +557,7 @@ nsNativeAppSupportUnix::Start(bool *aRetVal)
   if (argv1) {
     gnome_client_set_restart_command(client, 1, &argv1);
   }
-#endif /* MOZ_X11 */
+#endif /* MOZ_X11 && (MOZ_WIDGET_GTK == 2) */
 
   return NS_OK;
 }
@@ -572,12 +575,12 @@ nsNativeAppSupportUnix::Stop(bool *aResult)
 
     // Remove the MCE callback filter
     DBusConnection *connnection = (DBusConnection*)osso_get_sys_dbus_connection(m_osso_context);
-    dbus_connection_remove_filter(connnection, OssoModeControlCallback, nsnull);
+    dbus_connection_remove_filter(connnection, OssoModeControlCallback, nullptr);
 
-    osso_hw_unset_event_cb(m_osso_context, nsnull);
-    osso_rpc_unset_default_cb_f(m_osso_context, OssoDbusCallback, nsnull);
+    osso_hw_unset_event_cb(m_osso_context, nullptr);
+    osso_rpc_unset_default_cb_f(m_osso_context, OssoDbusCallback, nullptr);
     osso_deinitialize(m_osso_context);
-    m_osso_context = nsnull;
+    m_osso_context = nullptr;
   }
 #endif
   return NS_OK;

@@ -21,12 +21,11 @@ class Matrix;
 
 namespace CanvasUtils {
 
-using namespace gfx;
 
 // Check that the rectangle [x,y,w,h] is a subrectangle of [0,0,realWidth,realHeight]
 
-inline bool CheckSaneSubrectSize(PRInt32 x, PRInt32 y, PRInt32 w, PRInt32 h,
-                            PRInt32 realWidth, PRInt32 realHeight) {
+inline bool CheckSaneSubrectSize(int32_t x, int32_t y, int32_t w, int32_t h,
+                            int32_t realWidth, int32_t realHeight) {
     CheckedInt32 checked_xmost  = CheckedInt32(x) + w;
     CheckedInt32 checked_ymost  = CheckedInt32(y) + h;
 
@@ -55,11 +54,11 @@ bool CoerceDouble(jsval v, double* d);
 bool JSValToMatrix(JSContext* cx, const jsval& val,
                    gfxMatrix* matrix, nsresult* rv);
 bool JSValToMatrix(JSContext* cx, const jsval& val,
-                   Matrix* matrix, nsresult* rv);
+                   gfx::Matrix* matrix, nsresult* rv);
 
 nsresult MatrixToJSVal(const gfxMatrix& matrix,
                        JSContext* cx, jsval* val);
-nsresult MatrixToJSVal(const Matrix& matrix,
+nsresult MatrixToJSVal(const gfx::Matrix& matrix,
                        JSContext* cx, jsval* val);
 
     /* Float validation stuff */
@@ -128,7 +127,7 @@ JSValToDashArray(JSContext* cx, const jsval& patternArray,
         }
 
         bool haveNonzeroElement = false;
-        for (uint32 i = 0; i < length; ++i) {
+        for (uint32_t i = 0; i < length; ++i) {
             jsval elt;
             double d;
             if (!JS_GetElement(cx, obj, i, &elt)) {
@@ -168,11 +167,11 @@ DashArrayToJSVal(FallibleTArray<T>& dashes,
     if (dashes.IsEmpty()) {
         *val = JSVAL_NULL;
     } else {
-        JSObject* obj = JS_NewArrayObject(cx, dashes.Length(), nsnull);
+        JSObject* obj = JS_NewArrayObject(cx, dashes.Length(), nullptr);
         if (!obj) {
             return NS_ERROR_OUT_OF_MEMORY;
         }
-        for (PRUint32 i = 0; i < dashes.Length(); ++i) {
+        for (uint32_t i = 0; i < dashes.Length(); ++i) {
             double d = dashes[i];
             jsval elt = DOUBLE_TO_JSVAL(d);
             if (!JS_SetElement(cx, obj, i, &elt)) {

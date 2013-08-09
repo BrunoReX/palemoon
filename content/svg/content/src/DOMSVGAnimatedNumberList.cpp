@@ -55,16 +55,15 @@ DOMSVGAnimatedNumberList::GetAnimVal(nsIDOMSVGNumberList **_retval)
 /* static */ already_AddRefed<DOMSVGAnimatedNumberList>
 DOMSVGAnimatedNumberList::GetDOMWrapper(SVGAnimatedNumberList *aList,
                                         nsSVGElement *aElement,
-                                        PRUint8 aAttrEnum)
+                                        uint8_t aAttrEnum)
 {
-  DOMSVGAnimatedNumberList *wrapper =
+  nsRefPtr<DOMSVGAnimatedNumberList> wrapper =
     sSVGAnimatedNumberListTearoffTable.GetTearoff(aList);
   if (!wrapper) {
     wrapper = new DOMSVGAnimatedNumberList(aElement, aAttrEnum);
     sSVGAnimatedNumberListTearoffTable.AddTearoff(aList, wrapper);
   }
-  NS_ADDREF(wrapper);
-  return wrapper;
+  return wrapper.forget();
 }
 
 /* static */ DOMSVGAnimatedNumberList*
@@ -92,7 +91,7 @@ DOMSVGAnimatedNumberList::InternalBaseValListWillChangeTo(const SVGNumberList& a
 
   nsRefPtr<DOMSVGAnimatedNumberList> kungFuDeathGrip;
   if (mBaseVal) {
-    if (aNewValue.Length() < mBaseVal->Length()) {
+    if (aNewValue.Length() < mBaseVal->LengthNoFlush()) {
       // InternalListLengthWillChange might clear last reference to |this|.
       // Retain a temporary reference to keep from dying before returning.
       kungFuDeathGrip = this;

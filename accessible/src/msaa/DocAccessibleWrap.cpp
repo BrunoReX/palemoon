@@ -8,6 +8,7 @@
 #include "Compatibility.h"
 #include "DocAccessibleWrap.h"
 #include "ISimpleDOMDocument_i.c"
+#include "nsCoreUtils.h"
 #include "nsIAccessibilityService.h"
 #include "nsWinUtils.h"
 #include "Role.h"
@@ -16,7 +17,6 @@
 
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeNode.h"
-#include "nsIFrame.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsISelectionController.h"
 #include "nsIServiceManager.h"
@@ -227,7 +227,7 @@ DocAccessibleWrap::Shutdown()
       ::DestroyWindow(static_cast<HWND>(mHWND));
     }
 
-    mHWND = nsnull;
+    mHWND = nullptr;
   }
 
   DocAccessible::Shutdown();
@@ -258,7 +258,7 @@ DocAccessibleWrap::DoInitialUpdate()
 
       a11y::RootAccessible* rootDocument = RootAccessible();
 
-      mozilla::WindowsHandle nativeData = nsnull;
+      mozilla::WindowsHandle nativeData = NULL;
       if (tabChild)
         tabChild->SendGetWidgetNativeData(&nativeData);
       else
@@ -266,10 +266,10 @@ DocAccessibleWrap::DoInitialUpdate()
           rootDocument->GetNativeWindow());
 
       bool isActive = true;
-      PRInt32 x = CW_USEDEFAULT, y = CW_USEDEFAULT, width = 0, height = 0;
+      int32_t x = CW_USEDEFAULT, y = CW_USEDEFAULT, width = 0, height = 0;
       if (Compatibility::IsDolphin()) {
         GetBounds(&x, &y, &width, &height);
-        PRInt32 rootX = 0, rootY = 0, rootWidth = 0, rootHeight = 0;
+        int32_t rootX = 0, rootY = 0, rootWidth = 0, rootHeight = 0;
         rootDocument->GetBounds(&rootX, &rootY, &rootWidth, &rootHeight);
         x = rootX - x;
         y -= rootY;

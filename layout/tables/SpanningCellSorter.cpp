@@ -14,10 +14,9 @@
 
 //#define DEBUG_SPANNING_CELL_SORTER
 
-SpanningCellSorter::SpanningCellSorter(nsIPresShell *aPresShell)
-  : mPresShell(aPresShell)
-  , mState(ADDING)
-  , mSortedHashTable(nsnull)
+SpanningCellSorter::SpanningCellSorter()
+  : mState(ADDING)
+  , mSortedHashTable(nullptr)
 {
     memset(mArray, 0, sizeof(mArray));
     mHashTable.entryCount = 0;
@@ -41,7 +40,7 @@ SpanningCellSorter::HashTableOps = {
     PL_DHashMoveEntryStub,
     PL_DHashClearEntryStub,
     PL_DHashFinalizeStub,
-    nsnull
+    nullptr
 };
 
 /* static */ PLDHashNumber
@@ -60,24 +59,24 @@ SpanningCellSorter::HashTableMatchEntry(PLDHashTable *table,
 }
 
 bool
-SpanningCellSorter::AddCell(PRInt32 aColSpan, PRInt32 aRow, PRInt32 aCol)
+SpanningCellSorter::AddCell(int32_t aColSpan, int32_t aRow, int32_t aCol)
 {
     NS_ASSERTION(mState == ADDING, "cannot call AddCell after GetNext");
     NS_ASSERTION(aColSpan >= ARRAY_BASE, "cannot add cells with colspan<2");
 
     Item *i = (Item*) mozilla::AutoStackArena::Allocate(sizeof(Item));
-    NS_ENSURE_TRUE(i != nsnull, false);
+    NS_ENSURE_TRUE(i != nullptr, false);
 
     i->row = aRow;
     i->col = aCol;
 
     if (UseArrayForSpan(aColSpan)) {
-        PRInt32 index = SpanToIndex(aColSpan);
+        int32_t index = SpanToIndex(aColSpan);
         i->next = mArray[index];
         mArray[index] = i;
     } else {
         if (!mHashTable.entryCount &&
-            !PL_DHashTableInit(&mHashTable, &HashTableOps, nsnull,
+            !PL_DHashTableInit(&mHashTable, &HashTableOps, nullptr,
                                sizeof(HashTableEntry), PL_DHASH_MIN_SIZE)) {
             NS_NOTREACHED("table init failed");
             mHashTable.entryCount = 0;
@@ -90,7 +89,7 @@ SpanningCellSorter::AddCell(PRInt32 aColSpan, PRInt32 aRow, PRInt32 aCol)
 
         NS_ASSERTION(entry->mColSpan == 0 || entry->mColSpan == aColSpan,
                      "wrong entry");
-        NS_ASSERTION((entry->mColSpan == 0) == (entry->mItems == nsnull),
+        NS_ASSERTION((entry->mColSpan == 0) == (entry->mItems == nullptr),
                      "entry should be either new or properly initialized");
         entry->mColSpan = aColSpan;
 
@@ -103,7 +102,7 @@ SpanningCellSorter::AddCell(PRInt32 aColSpan, PRInt32 aRow, PRInt32 aCol)
 
 /* static */ PLDHashOperator
 SpanningCellSorter::FillSortedArray(PLDHashTable *table, PLDHashEntryHdr *hdr,
-                                    PRUint32 number, void *arg)
+                                    uint32_t number, void *arg)
 {
     HashTableEntry *entry = static_cast<HashTableEntry*>(hdr);
     HashTableEntry **sh = static_cast<HashTableEntry**>(arg);
@@ -116,8 +115,8 @@ SpanningCellSorter::FillSortedArray(PLDHashTable *table, PLDHashEntryHdr *hdr,
 /* static */ int
 SpanningCellSorter::SortArray(const void *a, const void *b, void *closure)
 {
-    PRInt32 spanA = (*static_cast<HashTableEntry*const*>(a))->mColSpan;
-    PRInt32 spanB = (*static_cast<HashTableEntry*const*>(b))->mColSpan;
+    int32_t spanA = (*static_cast<HashTableEntry*const*>(a))->mColSpan;
+    int32_t spanB = (*static_cast<HashTableEntry*const*>(b))->mColSpan;
 
     if (spanA < spanB)
         return -1;
@@ -127,7 +126,7 @@ SpanningCellSorter::SortArray(const void *a, const void *b, void *closure)
 }
 
 SpanningCellSorter::Item*
-SpanningCellSorter::GetNext(PRInt32 *aColSpan)
+SpanningCellSorter::GetNext(int32_t *aColSpan)
 {
     NS_ASSERTION(mState != DONE, "done enumerating, stop calling");
 
@@ -161,11 +160,11 @@ SpanningCellSorter::GetNext(PRInt32 *aColSpan)
                 if (!sh) {
                     // give up
                     mState = DONE;
-                    return nsnull;
+                    return nullptr;
                 }
                 PL_DHashTableEnumerate(&mHashTable, FillSortedArray, sh);
                 NS_QuickSort(sh, mHashTable.entryCount, sizeof(sh[0]),
-                             SortArray, nsnull);
+                             SortArray, nullptr);
                 mSortedHashTable = sh;
             }
             /* fall through */
@@ -187,5 +186,5 @@ SpanningCellSorter::GetNext(PRInt32 *aColSpan)
         case DONE:
             ;
     }
-    return nsnull;
+    return nullptr;
 }

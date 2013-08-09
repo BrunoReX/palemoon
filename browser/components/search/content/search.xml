@@ -67,25 +67,25 @@
       <constructor><![CDATA[
         if (this.parentNode.parentNode.localName == "toolbarpaletteitem")
           return;
-        setTimeout(function (a) { a.init(); }, 0, this);
-      ]]></constructor>
+        // Make sure we rebuild the popup in onpopupshowing
+        this._needToBuildPopup = true;
 
-      <method name="init">
-        <body><![CDATA[
-          // Make sure we rebuild the popup in onpopupshowing
-          this._needToBuildPopup = true;
-
-          // Refresh the display (updating icon, etc)
-          this.updateDisplay();
-
-          var os =
+        var os =
                Components.classes["@mozilla.org/observer-service;1"]
                          .getService(Components.interfaces.nsIObserverService);
-          os.addObserver(this, "browser-search-engine-modified", false);
+        os.addObserver(this, "browser-search-engine-modified", false);
 
-          this._addedObserver = true;
-        ]]></body>
-      </method>
+        this._addedObserver = true;
+
+        this.searchService.init((function search_init_cb(aStatus) {
+          if (Components.isSuccessCode(aStatus)) {
+            // Refresh the display (updating icon, etc)
+            this.updateDisplay();
+          } else {
+            Components.utils.reportError("Cannot initialize search service, bailing out: " + aStatus);
+          }
+        }).bind(this));
+      ]]></constructor>
 
       <destructor><![CDATA[
         if (this._addedObserver) {
@@ -436,7 +436,7 @@
           }
 
           // Save the current value in the form history
-          if (textValue) {
+          if (textValue && !PrivateBrowsingUtils.isWindowPrivate(window)) {
             try {
               textBox._formHistSvc.addEntry(textBox.getAttribute("autocompletesearchparam"),
                                             textValue);
@@ -498,12 +498,15 @@
 	var connector =
             Services.io.QueryInterface(Components.interfaces.nsISpeculativeConnect);
         var searchURI = engine.getSubmission("dummy").uri;
-        connector.speculativeConnect(searchURI, null, null);
+        let callbacks = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
+                              .getInterface(Components.interfaces.nsIWebNavigation)
+                              .QueryInterface(Components.interfaces.nsILoadContext);
+        connector.speculativeConnect(searchURI, callbacks);
 
         if (engine.supportsResponseType(SUGGEST_TYPE)) {
 	  var suggestURI = engine.getSubmission("dummy", SUGGEST_TYPE).uri;
           if (suggestURI.prePath != searchURI.prePath)
-            connector.speculativeConnect(suggestURI, null, null);
+            connector.speculativeConnect(suggestURI, callbacks);
         }
       ]]></handler>
     </handlers>
@@ -623,6 +626,20 @@
       </method>
 
       <!--
+        This overrides the searchParam property in autocomplete.xml.  We're
+        hijacking this property as a vehicle for delivering the privacy
+        information about the window into the guys of nsSearchSuggestions.
+
+        Note that the setter is the same as the parent.  We were not sure whether
+        we can override just the getter.  If that proves to be the case, the setter
+        can be removed.
+      -->
+      <property name="searchParam"
+                onget="return this.getAttribute('autocompletesearchparam') +
+                       (PrivateBrowsingUtils.isWindowPrivate(window) ? '|private' : '');"
+                onset="this.setAttribute('autocompletesearchparam', val); return val;"/>
+
+      <!--
         This method overrides the autocomplete binding's openPopup (essentially
         duplicating the logic from the autocomplete popup binding's
         openAutocompletePopup method), modifying it so that the popup is aligned with
@@ -662,13 +679,6 @@
             popup.setAttribute("width", width > 100 ? width : 100);
 
             var yOffset = outerRect.bottom - innerRect.bottom;
-
-            // setConsumeRollupEvent() before we call openPopup(), 
-            // see bug #404438 for more details
-            popup.popupBoxObject.setConsumeRollupEvent(
-              this.consumeRollupEvent ? 
-                Ci.nsIPopupBoxObject.ROLLUP_CONSUME : 
-                Ci.nsIPopupBoxObject.ROLLUP_NO_CONSUME);
             popup.openPopup(this.inputField, "after_start", 0, yOffset, false, false);
           }
         ]]></body>

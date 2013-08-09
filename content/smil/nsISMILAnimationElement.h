@@ -60,7 +60,7 @@ public:
    * be used.
    *
    * (The 'Anim' here and below is largely to avoid conflicts for subclasses
-   * that derive from nsGenericElement)
+   * that derive from Element)
    *
    * @param aName the name of the attr
    * @returns true if the attribute was set (even when set to empty string)
@@ -92,7 +92,7 @@ public:
   /*
    * Returns the name of the target (animated) attribute or property.
    */
-  virtual bool GetTargetAttributeName(PRInt32* aNamespaceID,
+  virtual bool GetTargetAttributeName(int32_t* aNamespaceID,
                                         nsIAtom** aLocalName) const = 0;
 
   /*

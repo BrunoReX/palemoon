@@ -22,6 +22,7 @@
 
 #include "mozilla/Util.h"
 
+#include "prenv.h"
 #include "nsComponentManagerUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsCOMPtr.h"
@@ -40,7 +41,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
-static PRUint32 gFailCount = 0;
+static uint32_t gFailCount = 0;
 
 /**
  * Prints the given failure message and arguments using printf, prepending
@@ -77,57 +78,6 @@ void passed(const char* msg, ...)
   va_end(ap);
 
   putchar('\n');
-}
-
-//-----------------------------------------------------------------------------
-// Code profiling
-//
-static const char* gCurrentProfile;
-
-/**
- * If the build has been configured properly, start the best code profiler
- * available on this platform.
- *
- * This is NOT thread safe.
- *
- * @precondition Profiling is not started
- * @param profileName A descriptive name for this profiling run.  Every 
- *                    attempt is made to name the profile data according
- *                    to this name, but check your platform's profiler
- *                    documentation for what this means.
- * @return true if profiling was available and successfully started.
- * @see StopProfiling
- */
-inline bool
-StartProfiling(const char* profileName)
-{
-    NS_ASSERTION(profileName, "need a name for this profile");
-    NS_PRECONDITION(!gCurrentProfile, "started a new profile before stopping another");
-
-    JSBool ok = JS_StartProfiling(profileName);
-    gCurrentProfile = profileName;
-    return ok ? true : false;
-}
-
-/**
- * Stop the platform's profiler.  For what this means, what happens after
- * stopping, and how the profile data can be accessed, check the 
- * documentation of your platform's profiler.
- *
- * This is NOT thread safe.
- *
- * @precondition Profiling was started
- * @return true if profiling was successfully stopped.
- * @see StartProfiling
- */
-inline bool
-StopProfiling()
-{
-    NS_PRECONDITION(gCurrentProfile, "tried to stop profile before starting one");
-
-    const char* profileName = gCurrentProfile;
-    gCurrentProfile = 0;
-    return JS_StopProfiling(profileName) ? true : false;
 }
 
 //-----------------------------------------------------------------------------
@@ -175,16 +125,16 @@ class ScopedXPCOM : public nsIDirectoryServiceProvider2
           do_GetService(NS_OBSERVERSERVICE_CONTRACTID);
         MOZ_ASSERT(os);
         if (os) {
-          MOZ_ALWAYS_TRUE(NS_SUCCEEDED(os->NotifyObservers(nsnull, "profile-change-net-teardown", nsnull)));
-          MOZ_ALWAYS_TRUE(NS_SUCCEEDED(os->NotifyObservers(nsnull, "profile-change-teardown", nsnull)));
-          MOZ_ALWAYS_TRUE(NS_SUCCEEDED(os->NotifyObservers(nsnull, "profile-before-change", nsnull)));
+          MOZ_ALWAYS_TRUE(NS_SUCCEEDED(os->NotifyObservers(nullptr, "profile-change-net-teardown", nullptr)));
+          MOZ_ALWAYS_TRUE(NS_SUCCEEDED(os->NotifyObservers(nullptr, "profile-change-teardown", nullptr)));
+          MOZ_ALWAYS_TRUE(NS_SUCCEEDED(os->NotifyObservers(nullptr, "profile-before-change", nullptr)));
         }
 
         if (NS_FAILED(mProfD->Remove(true))) {
           NS_WARNING("Problem removing profile directory");
         }
 
-        mProfD = nsnull;
+        mProfD = nullptr;
       }
 
       if (mServMgr)
@@ -217,16 +167,34 @@ class ScopedXPCOM : public nsIDirectoryServiceProvider2
       nsCOMPtr<nsIFile> profD;
       nsresult rv = NS_GetSpecialDirectory(NS_OS_TEMP_DIR,
                                            getter_AddRefs(profD));
-      NS_ENSURE_SUCCESS(rv, nsnull);
+      NS_ENSURE_SUCCESS(rv, nullptr);
 
       rv = profD->Append(NS_LITERAL_STRING("cpp-unit-profd"));
-      NS_ENSURE_SUCCESS(rv, nsnull);
+      NS_ENSURE_SUCCESS(rv, nullptr);
 
       rv = profD->CreateUnique(nsIFile::DIRECTORY_TYPE, 0755);
-      NS_ENSURE_SUCCESS(rv, nsnull);
+      NS_ENSURE_SUCCESS(rv, nullptr);
 
       mProfD = profD;
       return profD.forget();
+    }
+
+    already_AddRefed<nsIFile> GetGREDirectory()
+    {
+      if (mGRED) {
+        nsCOMPtr<nsIFile> copy = mGRED;
+        return copy.forget();
+      }
+
+      char* env = PR_GetEnv("MOZ_XRE_DIR");
+      nsCOMPtr<nsIFile> greD;
+      if (env) {
+        NS_NewLocalFile(NS_ConvertUTF8toUTF16(env), false,
+                        getter_AddRefs(greD));
+      }
+
+      mGRED = greD;
+      return greD.forget();
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -258,6 +226,15 @@ class ScopedXPCOM : public nsIDirectoryServiceProvider2
         return NS_OK;
       }
 
+      if (0 == strcmp(aProperty, NS_GRE_DIR)) {
+        nsCOMPtr<nsIFile> greD = GetGREDirectory();
+        NS_ENSURE_TRUE(greD, NS_ERROR_FAILURE);
+
+        *_persistent = true;
+        greD.forget(_result);
+        return NS_OK;
+      }
+
       return NS_ERROR_FAILURE;
     }
 
@@ -281,6 +258,7 @@ class ScopedXPCOM : public nsIDirectoryServiceProvider2
     nsIServiceManager* mServMgr;
     nsCOMPtr<nsIDirectoryServiceProvider> mDirSvcProvider;
     nsCOMPtr<nsIFile> mProfD;
+    nsCOMPtr<nsIFile> mGRED;
 };
 
 NS_IMPL_QUERY_INTERFACE2(

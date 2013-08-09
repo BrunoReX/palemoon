@@ -25,6 +25,7 @@
 #define _NSDEQUE
 
 #include "nscore.h"
+#include "mozilla/Attributes.h"
 
 /**
  * The nsDequeFunctor class is used when you want to create
@@ -36,6 +37,7 @@
 class nsDequeFunctor{
 public:
   virtual void* operator()(void* anObject)=0;
+  virtual ~nsDequeFunctor() {}
 };
 
 /******************************************************
@@ -57,7 +59,7 @@ class nsDequeIterator;
 class NS_COM_GLUE nsDeque {
   friend class nsDequeIterator;
   public:
-   nsDeque(nsDequeFunctor* aDeallocator = nsnull);
+   nsDeque(nsDequeFunctor* aDeallocator = nullptr);
   ~nsDeque();
 
   /**
@@ -66,7 +68,7 @@ class NS_COM_GLUE nsDeque {
    *
    * @return  number of elements currently in the deque
    */
-  inline PRInt32 GetSize() const {return mSize;}
+  inline int32_t GetSize() const {return mSize;}
 
   /**
    * Appends new member at the end of the deque.
@@ -185,9 +187,9 @@ class NS_COM_GLUE nsDeque {
   void SetDeallocator(nsDequeFunctor* aDeallocator);
 
 protected:
-  PRInt32         mSize;
-  PRInt32         mCapacity;
-  PRInt32         mOrigin;
+  int32_t         mSize;
+  int32_t         mCapacity;
+  int32_t         mOrigin;
   nsDequeFunctor* mDeallocator;
   void*           mBuffer[8];
   void**          mData;
@@ -370,7 +372,7 @@ public:
 
   protected:
 
-  PRInt32         mIndex;
+  int32_t         mIndex;
   const nsDeque&  mDeque;
 };
 #endif

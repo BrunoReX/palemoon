@@ -14,7 +14,7 @@ import org.mozilla.gecko.sync.repositories.android.RepoUtils;
  *
  * I map a <code>fieldName</code> string to a <code>value</code> string.
  *
- * {@link http://mxr.mozilla.org/services-central/source/services-central/services/sync/modules/engines/forms.js}
+ * @see "<a href='http://mxr.mozilla.org/services-central/source/services-central/services/sync/modules/engines/forms.js'>http://mxr.mozilla.org/services-central/source/services-central/services/sync/modules/engines/forms.js</a>."
  */
 public class FormHistoryRecord extends Record {
   private static final String LOG_TAG = "FormHistoryRecord";
@@ -100,7 +100,7 @@ public class FormHistoryRecord extends Record {
   @Override
   public boolean equalPayloads(Object o) {
     if (o == null || !(o instanceof FormHistoryRecord)) {
-      Logger.debug(LOG_TAG, "Not a FormHistoryRecord: " + o);
+      Logger.debug(LOG_TAG, "Not a FormHistoryRecord: " + o.getClass());
       return false;
     }
     FormHistoryRecord other = (FormHistoryRecord) o;

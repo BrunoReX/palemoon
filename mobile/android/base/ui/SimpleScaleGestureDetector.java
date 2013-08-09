@@ -6,10 +6,13 @@
 package org.mozilla.gecko.ui;
 
 import org.mozilla.gecko.gfx.PointUtils;
+
 import org.json.JSONException;
+
 import android.graphics.PointF;
 import android.util.Log;
 import android.view.MotionEvent;
+
 import java.util.LinkedList;
 import java.util.ListIterator;
 import java.util.Stack;
@@ -37,6 +40,7 @@ public class SimpleScaleGestureDetector {
 
     private SimpleScaleGestureListener mListener;
     private long mLastEventTime;
+    private boolean mScaleResult;
 
     /* Information about all pointers that are down. */
     private LinkedList<PointerInfo> mPointerInfo;
@@ -51,6 +55,12 @@ public class SimpleScaleGestureDetector {
     public void onTouchEvent(MotionEvent event) {
         switch (event.getAction() & MotionEvent.ACTION_MASK) {
         case MotionEvent.ACTION_DOWN:
+            // If we get ACTION_DOWN while still tracking any pointers,
+            // something is wrong.  Cancel the current gesture and start over.
+            if (getPointersDown() > 0)
+                onTouchEnd(event);
+            onTouchStart(event);
+            break;
         case MotionEvent.ACTION_POINTER_DOWN:
             onTouchStart(event);
             break;
@@ -99,7 +109,10 @@ public class SimpleScaleGestureDetector {
     private void onTouchEnd(MotionEvent event) {
         mLastEventTime = event.getEventTime();
 
-        boolean isCancel = (event.getAction() & MotionEvent.ACTION_MASK) == MotionEvent.ACTION_CANCEL;
+        int action = event.getAction() & MotionEvent.ACTION_MASK;
+        boolean isCancel = (action == MotionEvent.ACTION_CANCEL ||
+                            action == MotionEvent.ACTION_DOWN);
+
         int id = event.getPointerId(getActionIndex(event));
         ListIterator<PointerInfo> iterator = mPointerInfo.listIterator();
         while (iterator.hasNext()) {
@@ -194,9 +207,19 @@ public class SimpleScaleGestureDetector {
     /* Sends the requested scale gesture notification to the listener. */
     private void sendScaleGesture(EventType eventType) {
         switch (eventType) {
-        case BEGIN:     mListener.onScaleBegin(this);   break;
-        case CONTINUE:  mListener.onScale(this);        break;
-        case END:       mListener.onScaleEnd(this);     break;
+        case BEGIN:
+            mScaleResult = mListener.onScaleBegin(this);
+            break;
+        case CONTINUE:
+            if (mScaleResult) {
+                mListener.onScale(this);
+            }
+            break;
+        case END:
+            if (mScaleResult) {
+                mListener.onScaleEnd(this);
+            }
+            break;
         }
     }
 

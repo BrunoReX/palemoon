@@ -1,35 +1,33 @@
-/*
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
-*/
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /**
-# * Session Storage and Restoration
-# *
-# * Overview
-# * This service reads user's session file at startup, and makes a determination
-# * as to whether the session should be restored. It will restore the session
-# * under the circumstances described below.  If the auto-start Private Browsing
-# * mode is active, however, the session is never restored.
-# *
-# * Crash Detection
-# * The session file stores a session.state property, that
-# * indicates whether the browser is currently running. When the browser shuts
-# * down, the field is changed to "stopped". At startup, this field is read, and
-# * if its value is "running", then it's assumed that the browser had previously
-# * crashed, or at the very least that something bad happened, and that we should
-# * restore the session.
-# *
-# * Forced Restarts
-# * In the event that a restart is required due to application update or extension
-# * installation, set the browser.sessionstore.resume_session_once pref to true,
-# * and the session will be restored the next time the browser starts.
-# *
-# * Always Resume
-# * This service will always resume the session if the integer pref
-# * browser.startup.page is set to 3.
-*/
+ * Session Storage and Restoration
+ *
+ * Overview
+ * This service reads user's session file at startup, and makes a determination
+ * as to whether the session should be restored. It will restore the session
+ * under the circumstances described below.  If the auto-start Private Browsing
+ * mode is active, however, the session is never restored.
+ *
+ * Crash Detection
+ * The session file stores a session.state property, that
+ * indicates whether the browser is currently running. When the browser shuts
+ * down, the field is changed to "stopped". At startup, this field is read, and
+ * if its value is "running", then it's assumed that the browser had previously
+ * crashed, or at the very least that something bad happened, and that we should
+ * restore the session.
+ *
+ * Forced Restarts
+ * In the event that a restart is required due to application update or extension
+ * installation, set the browser.sessionstore.resume_session_once pref to true,
+ * and the session will be restored the next time the browser starts.
+ *
+ * Always Resume
+ * This service will always resume the session if the integer pref
+ * browser.startup.page is set to 3.
+ */
 
 /* :::::::: Constants and Helpers ::::::::::::::: */
 
@@ -40,6 +38,7 @@ const Cu = Components.utils;
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/TelemetryStopwatch.jsm");
+Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
 
 const STATE_RUNNING_STR = "running";
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 megabytes
@@ -69,7 +68,8 @@ SessionStartup.prototype = {
     // do not need to initialize anything in auto-started private browsing sessions
     let pbs = Cc["@mozilla.org/privatebrowsing;1"].
               getService(Ci.nsIPrivateBrowsingService);
-    if (pbs.autoStarted || pbs.lastChangedByCommandLine)
+    if (PrivateBrowsingUtils.permanentPrivateBrowsing ||
+        pbs.lastChangedByCommandLine)
       return;
 
     let prefBranch = Cc["@mozilla.org/preferences-service;1"].
@@ -319,4 +319,4 @@ SessionStartup.prototype = {
   classID:          Components.ID("{ec7a6c20-e081-11da-8ad9-0800200c9a66}"),
 };
 
-var NSGetFactory = XPCOMUtils.generateNSGetFactory([SessionStartup]);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory([SessionStartup]);

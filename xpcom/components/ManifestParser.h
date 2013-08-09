@@ -10,7 +10,7 @@
 #include "nsChromeRegistry.h"
 #include "mozilla/FileLocation.h"
 
-class nsILocalFile;
+class nsIFile;
 
 void ParseManifest(NSLocationType type, mozilla::FileLocation &file,
                    char* buf, bool aChromeOnly);
@@ -18,6 +18,6 @@ void ParseManifest(NSLocationType type, mozilla::FileLocation &file,
 void LogMessage(const char* aMsg, ...);
 
 void LogMessageWithContext(mozilla::FileLocation &aFile,
-                           PRUint32 aLineNumber, const char* aMsg, ...);
+                           uint32_t aLineNumber, const char* aMsg, ...);
 
 #endif // ManifestParser_h

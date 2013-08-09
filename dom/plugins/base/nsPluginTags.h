@@ -7,7 +7,6 @@
 #define nsPluginTags_h_
 
 #include "nscore.h"
-#include "prtypes.h"
 #include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsCOMArray.h"
@@ -15,6 +14,7 @@
 #include "nsNPAPIPluginInstance.h"
 #include "nsISupportsArray.h"
 #include "nsITimer.h"
+#include "nsIDOMMimeType.h"
 
 class nsPluginHost;
 struct PRLibrary;
@@ -25,19 +25,15 @@ struct nsPluginInfo;
 #define NS_PLUGIN_FLAG_ENABLED      0x0001    // is this plugin enabled?
 // no longer used                   0x0002    // reuse only if regenerating pluginreg.dat
 #define NS_PLUGIN_FLAG_FROMCACHE    0x0004    // this plugintag info was loaded from cache
-#define NS_PLUGIN_FLAG_UNWANTED     0x0008    // this is an unwanted plugin
+// no longer used                   0x0008    // reuse only if regenerating pluginreg.dat
 #define NS_PLUGIN_FLAG_BLOCKLISTED  0x0010    // this is a blocklisted plugin
+#define NS_PLUGIN_FLAG_CLICKTOPLAY  0x0020    // this is a click-to-play plugin
 
 // A linked-list of plugin information that is used for instantiating plugins
 // and reflecting plugin information into JavaScript.
 class nsPluginTag : public nsIPluginTag
 {
 public:
-  enum nsRegisterType {
-    ePluginRegister,
-    ePluginUnregister
-  };
-  
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPLUGINTAG
   
@@ -51,21 +47,19 @@ public:
               const char* const* aMimeTypes,
               const char* const* aMimeDescriptions,
               const char* const* aExtensions,
-              PRInt32 aVariants,
-              PRInt64 aLastModifiedTime = 0,
+              int32_t aVariants,
+              int64_t aLastModifiedTime = 0,
               bool aArgsAreUTF8 = false);
   virtual ~nsPluginTag();
   
   void SetHost(nsPluginHost * aHost);
   void TryUnloadPlugin(bool inShutdown);
-  void Mark(PRUint32 mask);
-  void UnMark(PRUint32 mask);
-  bool HasFlag(PRUint32 flag);
-  PRUint32 Flags();
-  bool Equals(nsPluginTag* aPluginTag);
+  void Mark(uint32_t mask);
+  void UnMark(uint32_t mask);
+  bool HasFlag(uint32_t flag);
+  uint32_t Flags();
+  bool HasSameNameAndMimes(const nsPluginTag *aPluginTag) const;
   bool IsEnabled();
-  void RegisterWithCategoryManager(bool aOverrideInternalTypes,
-                                   nsRegisterType aType = ePluginRegister);
   
   nsRefPtr<nsPluginTag> mNext;
   nsPluginHost *mPluginHost;
@@ -77,21 +71,66 @@ public:
   PRLibrary     *mLibrary;
   nsRefPtr<nsNPAPIPlugin> mPlugin;
   bool          mIsJavaPlugin;
-  bool          mIsNPRuntimeEnabledJavaPlugin;
   bool          mIsFlashPlugin;
   nsCString     mFileName; // UTF-8
   nsCString     mFullPath; // UTF-8
   nsCString     mVersion;  // UTF-8
-  PRInt64       mLastModifiedTime;
+  int64_t       mLastModifiedTime;
   nsCOMPtr<nsITimer> mUnloadTimer;
 private:
-  PRUint32      mFlags;
+  uint32_t      mFlags;
 
   void InitMime(const char* const* aMimeTypes,
                 const char* const* aMimeDescriptions,
                 const char* const* aExtensions,
-                PRUint32 aVariantCount);
+                uint32_t aVariantCount);
   nsresult EnsureMembersAreUTF8();
+};
+
+class DOMMimeTypeImpl : public nsIDOMMimeType {
+public:
+  NS_DECL_ISUPPORTS
+
+  DOMMimeTypeImpl(nsPluginTag* aTag, uint32_t aMimeTypeIndex)
+  {
+    if (!aTag)
+      return;
+    CopyUTF8toUTF16(aTag->mMimeDescriptions[aMimeTypeIndex], mDescription);
+    CopyUTF8toUTF16(aTag->mExtensions[aMimeTypeIndex], mSuffixes);
+    CopyUTF8toUTF16(aTag->mMimeTypes[aMimeTypeIndex], mType);
+  }
+
+  virtual ~DOMMimeTypeImpl() {
+  }
+
+  NS_METHOD GetDescription(nsAString& aDescription)
+  {
+    aDescription.Assign(mDescription);
+    return NS_OK;
+  }
+
+  NS_METHOD GetEnabledPlugin(nsIDOMPlugin** aEnabledPlugin)
+  {
+    // this has to be implemented by the DOM version.
+    *aEnabledPlugin = nullptr;
+    return NS_OK;
+  }
+
+  NS_METHOD GetSuffixes(nsAString& aSuffixes)
+  {
+    aSuffixes.Assign(mSuffixes);
+    return NS_OK;
+  }
+
+  NS_METHOD GetType(nsAString& aType)
+  {
+    aType.Assign(mType);
+    return NS_OK;
+  }
+private:
+  nsString mDescription;
+  nsString mSuffixes;
+  nsString mType;
 };
 
 #endif // nsPluginTags_h_

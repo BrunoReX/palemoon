@@ -1,5 +1,5 @@
-/* -*- Mode: c++; c-basic-offset: 4; tab-width: 40; indent-tabs-mode: nil -*- */
-/* vim: set ts=40 sw=4 et tw=99: */
+/* -*- Mode: C++; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil -*- */
+/* vim: set ts=4 sw=4 et tw=99: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,23 +12,182 @@
 #include "jsinfer.h"
 #include "jsprf.h"
 
-#include "gc/Marking.h"
+#include "gc/Root.h"
 #include "vm/GlobalObject.h"
+#ifdef JS_ION
+#include "ion/IonFrames.h"
+#endif
 
 #include "vm/Stack-inl.h"
 
 #ifndef jsinferinlines_h___
 #define jsinferinlines_h___
 
-/////////////////////////////////////////////////////////////////////
-// Types
-/////////////////////////////////////////////////////////////////////
+inline bool
+js::TaggedProto::isObject() const
+{
+    /* Skip NULL and Proxy::LazyProto. */
+    return uintptr_t(proto) > uintptr_t(Proxy::LazyProto);
+}
+
+inline bool
+js::TaggedProto::isLazy() const
+{
+    return proto == Proxy::LazyProto;
+}
+
+inline JSObject *
+js::TaggedProto::toObject() const
+{
+    JS_ASSERT(isObject());
+    return proto;
+}
+
+inline JSObject *
+js::TaggedProto::toObjectOrNull() const
+{
+    JS_ASSERT(!proto || isObject());
+    return proto;
+}
+
+template<class Outer>
+inline bool
+js::TaggedProtoOperations<Outer>::isLazy() const
+{
+    return value()->isLazy();
+}
+
+template<class Outer>
+inline bool
+js::TaggedProtoOperations<Outer>::isObject() const
+{
+    return value()->isObject();
+}
+
+template<class Outer>
+inline JSObject *
+js::TaggedProtoOperations<Outer>::toObject() const
+{
+    return value()->toObject();
+}
+
+template<class Outer>
+inline JSObject *
+js::TaggedProtoOperations<Outer>::toObjectOrNull() const
+{
+    return value()->toObjectOrNull();
+}
 
 namespace js {
 namespace types {
 
+/////////////////////////////////////////////////////////////////////
+// CompilerOutput & RecompileInfo
+/////////////////////////////////////////////////////////////////////
+
+inline
+CompilerOutput::CompilerOutput()
+  : script(NULL),
+    kindInt(MethodJIT),
+    constructing(false),
+    barriers(false),
+    chunkIndex(false)
+{
+}
+
+inline mjit::JITScript *
+CompilerOutput::mjit() const
+{
+#ifdef JS_METHODJIT
+    JS_ASSERT(kind() == MethodJIT && isValid());
+    return script->getJIT(constructing, barriers);
+#else
+    return NULL;
+#endif
+}
+
+inline ion::IonScript *
+CompilerOutput::ion() const
+{
+#ifdef JS_ION
+    JS_ASSERT(kind() != MethodJIT && isValid());
+    switch (kind()) {
+      case MethodJIT: break;
+      case Ion: return script->ionScript();
+      case ParallelIon: return script->parallelIonScript();
+    }
+#endif
+    JS_NOT_REACHED("Invalid kind of CompilerOutput");
+    return NULL;
+}
+
+inline bool
+CompilerOutput::isValid() const
+{
+    if (!script)
+        return false;
+
+#if defined(DEBUG) && (defined(JS_METHODJIT) || defined(JS_ION))
+    TypeCompartment &types = script->compartment()->types;
+#endif
+
+    switch (kind()) {
+      case MethodJIT: {
+#ifdef JS_METHODJIT
+        mjit::JITScript *jit = script->getJIT(constructing, barriers);
+        if (!jit)
+            return false;
+        mjit::JITChunk *chunk = jit->chunkDescriptor(chunkIndex).chunk;
+        if (!chunk)
+            return false;
+        JS_ASSERT(this == chunk->recompileInfo.compilerOutput(types));
+        return true;
+#endif
+      }
+
+      case Ion:
+#ifdef JS_ION
+        if (script->hasIonScript()) {
+            JS_ASSERT(this == script->ion->recompileInfo().compilerOutput(types));
+            return true;
+        }
+        if (script->isIonCompilingOffThread())
+            return true;
+#endif
+        return false;
+
+      case ParallelIon:
+#ifdef JS_ION
+        if (script->hasParallelIonScript()) {
+            JS_ASSERT(this == script->parallelIonScript()->recompileInfo().compilerOutput(types));
+            return true;
+        }
+        if (script->isParallelIonCompilingOffThread())
+            return true;
+#endif
+        return false;
+    }
+    return false;
+}
+
+inline CompilerOutput*
+RecompileInfo::compilerOutput(TypeCompartment &types) const
+{
+    return &(*types.constrainedOutputs)[outputIndex];
+}
+
+inline CompilerOutput*
+RecompileInfo::compilerOutput(JSContext *cx) const
+{
+    return compilerOutput(cx->compartment->types);
+}
+
+/////////////////////////////////////////////////////////////////////
+// Types
+/////////////////////////////////////////////////////////////////////
+
 /* static */ inline Type
-Type::ObjectType(JSObject *obj)
+Type::ObjectType(RawObject obj)
 {
     if (obj->hasSingletonType())
         return Type(uintptr_t(obj) | 1);
@@ -158,6 +317,25 @@ TypeIdString(jsid id)
 #endif
 }
 
+/* Assert code to know which PCs are reasonable to be considering inlining on. */
+inline bool
+IsInlinableCall(jsbytecode *pc)
+{
+    JSOp op = JSOp(*pc);
+
+    // CALL, FUNCALL, FUNAPPLY (Standard callsites)
+    // NEW (IonMonkey-only callsite)
+    // GETPROP, CALLPROP, and LENGTH. (Inlined Getters)
+    // SETPROP, SETNAME, SETGNAME (Inlined Setters)
+    return op == JSOP_CALL || op == JSOP_FUNCALL || op == JSOP_FUNAPPLY ||
+#ifdef JS_ION
+           op == JSOP_NEW ||
+#endif
+           op == JSOP_GETPROP || op == JSOP_CALLPROP || op == JSOP_LENGTH ||
+           op == JSOP_SETPROP || op == JSOP_SETGNAME || op == JSOP_SETNAME;
+
+}
+
 /*
  * Structure for type inference entry point functions. All functions which can
  * change type information must use this, and functions which depend on
@@ -223,25 +401,77 @@ struct AutoEnterTypeInference
  */
 struct AutoEnterCompilation
 {
+    JSContext *cx;
     RecompileInfo &info;
+    CompilerOutput::Kind kind;
 
-    AutoEnterCompilation(JSContext *cx, JSScript *script, bool constructing, unsigned chunkIndex)
-        : info(cx->compartment->types.compiledInfo)
+    AutoEnterCompilation(JSContext *cx, CompilerOutput::Kind kind)
+      : cx(cx),
+        info(cx->compartment->types.compiledInfo),
+        kind(kind)
     {
-        JS_ASSERT(!info.script);
-        info.script = script;
-        info.constructing = constructing;
-        info.barriers = cx->compartment->needsBarrier();
-        info.chunkIndex = chunkIndex;
+        JS_ASSERT(cx->compartment->activeAnalysis);
+        JS_ASSERT(info.outputIndex == RecompileInfo::NoCompilerRunning);
+    }
+
+    bool init(JSScript *script, bool constructing, unsigned chunkIndex)
+    {
+        CompilerOutput co;
+        co.script = script;
+        co.setKind(kind);
+        co.constructing = constructing;
+        co.barriers = cx->compartment->compileBarriers();
+        co.chunkIndex = chunkIndex;
+
+        // This flag is used to prevent adding the current compiled script in
+        // the list of compiler output which should be invalided.  This is
+        // necessary because we can run some analysis might discard the script
+        // it-self, which can happen when the monitored value does not reflect
+        // the types propagated by the type inference.
+        co.pendingRecompilation = true;
+
+        JS_ASSERT(!co.isValid());
+        TypeCompartment &types = cx->compartment->types;
+        if (!types.constrainedOutputs) {
+            types.constrainedOutputs = cx->new_< Vector<CompilerOutput> >(cx);
+            if (!types.constrainedOutputs) {
+                types.setPendingNukeTypes(cx);
+                return false;
+            }
+        }
+
+        info.outputIndex = types.constrainedOutputs->length();
+        // I hope we GC before we reach 64k of compilation attempts.
+        if (info.outputIndex >= RecompileInfo::NoCompilerRunning)
+            return false;
+
+        if (!types.constrainedOutputs->append(co)) {
+            info.outputIndex = RecompileInfo::NoCompilerRunning;
+            return false;
+        }
+        return true;
+    }
+
+    void initExisting(RecompileInfo oldInfo)
+    {
+        // Initialize the active compilation index from that produced during a
+        // previous compilation, for finishing an off thread compilation.
+        info = oldInfo;
     }
 
     ~AutoEnterCompilation()
     {
-        JS_ASSERT(info.script);
-        info.script = NULL;
-        info.constructing = false;
-        info.barriers = false;
-        info.chunkIndex = 0;
+        // Handle failure cases of init.
+        if (info.outputIndex >= RecompileInfo::NoCompilerRunning)
+            return;
+
+        JS_ASSERT(info.outputIndex < cx->compartment->types.constrainedOutputs->length());
+        CompilerOutput *co = info.compilerOutput(cx);
+        co->pendingRecompilation = false;
+        if (!co->isValid())
+            co->invalidate();
+
+        info.outputIndex = RecompileInfo::NoCompilerRunning;
     }
 };
 
@@ -263,8 +493,8 @@ struct AutoEnterCompilation
 inline TypeObject *
 GetTypeNewObject(JSContext *cx, JSProtoKey key)
 {
-    JSObject *proto;
-    if (!js_GetClassPrototype(cx, NULL, key, &proto, NULL))
+    js::RootedObject proto(cx);
+    if (!js_GetClassPrototype(cx, key, &proto))
         return NULL;
     return proto->getNewType(cx);
 }
@@ -275,7 +505,7 @@ GetTypeCallerInitObject(JSContext *cx, JSProtoKey key)
 {
     if (cx->typeInferenceEnabled()) {
         jsbytecode *pc;
-        JSScript *script = cx->stack.currentScript(&pc);
+        RootedScript script(cx, cx->stack.currentScript(&pc));
         if (script)
             return TypeScript::InitObject(cx, script, pc, key);
     }
@@ -302,15 +532,15 @@ MarkIteratorUnknown(JSContext *cx)
 inline bool
 TypeMonitorCall(JSContext *cx, const js::CallArgs &args, bool constructing)
 {
-    extern void TypeMonitorCallSlow(JSContext *cx, JSObject *callee,
+    extern void TypeMonitorCallSlow(JSContext *cx, HandleObject callee,
                                     const CallArgs &args, bool constructing);
 
-    JSObject *callee = &args.callee();
+    js::RootedObject callee(cx, &args.callee());
     if (callee->isFunction()) {
         JSFunction *fun = callee->toFunction();
         if (fun->isInterpreted()) {
-            JSScript *script = fun->script();
-            if (!script->ensureRanAnalysis(cx, fun->environment()))
+            js::RootedScript script(cx, fun->script());
+            if (!script->ensureRanAnalysis(cx))
                 return false;
             if (cx->typeInferenceEnabled())
                 TypeMonitorCallSlow(cx, callee, args, constructing);
@@ -321,7 +551,7 @@ TypeMonitorCall(JSContext *cx, const js::CallArgs &args, bool constructing)
 }
 
 inline bool
-TrackPropertyTypes(JSContext *cx, JSObject *obj, jsid id)
+TrackPropertyTypes(JSContext *cx, HandleObject obj, jsid id)
 {
     if (!cx->typeInferenceEnabled() || obj->hasLazyType() || obj->type()->unknownProperties())
         return false;
@@ -334,7 +564,7 @@ TrackPropertyTypes(JSContext *cx, JSObject *obj, jsid id)
 
 /* Add a possible type for a property of obj. */
 inline void
-AddTypePropertyId(JSContext *cx, JSObject *obj, jsid id, Type type)
+AddTypePropertyId(JSContext *cx, HandleObject obj, jsid id, Type type)
 {
     if (cx->typeInferenceEnabled())
         id = MakeTypeId(cx, id);
@@ -343,7 +573,7 @@ AddTypePropertyId(JSContext *cx, JSObject *obj, jsid id, Type type)
 }
 
 inline void
-AddTypePropertyId(JSContext *cx, JSObject *obj, jsid id, const Value &value)
+AddTypePropertyId(JSContext *cx, HandleObject obj, jsid id, const Value &value)
 {
     if (cx->typeInferenceEnabled())
         id = MakeTypeId(cx, id);
@@ -367,7 +597,7 @@ AddTypeProperty(JSContext *cx, TypeObject *obj, const char *name, const Value &v
 
 /* Set one or more dynamic flags on a type object. */
 inline void
-MarkTypeObjectFlags(JSContext *cx, JSObject *obj, TypeObjectFlags flags)
+MarkTypeObjectFlags(JSContext *cx, RawObject obj, TypeObjectFlags flags)
 {
     if (cx->typeInferenceEnabled() && !obj->hasLazyType() && !obj->type()->hasAllFlags(flags))
         obj->type()->setFlags(cx, flags);
@@ -396,7 +626,7 @@ MarkTypeObjectUnknownProperties(JSContext *cx, TypeObject *obj,
  * have a getter/setter.
  */
 inline void
-MarkTypePropertyConfigured(JSContext *cx, JSObject *obj, jsid id)
+MarkTypePropertyConfigured(JSContext *cx, HandleObject obj, jsid id)
 {
     if (cx->typeInferenceEnabled())
         id = MakeTypeId(cx, id);
@@ -406,7 +636,7 @@ MarkTypePropertyConfigured(JSContext *cx, JSObject *obj, jsid id)
 
 /* Mark a state change on a particular object. */
 inline void
-MarkObjectStateChange(JSContext *cx, JSObject *obj)
+MarkObjectStateChange(JSContext *cx, HandleObject obj)
 {
     if (cx->typeInferenceEnabled() && !obj->hasLazyType() && !obj->type()->unknownProperties())
         obj->type()->markStateChange(cx);
@@ -418,57 +648,114 @@ MarkObjectStateChange(JSContext *cx, JSObject *obj)
  */
 
 inline void
-FixArrayType(JSContext *cx, JSObject *obj)
+FixArrayType(JSContext *cx, HandleObject obj)
 {
     if (cx->typeInferenceEnabled())
         cx->compartment->types.fixArrayType(cx, obj);
 }
 
 inline void
-FixObjectType(JSContext *cx, JSObject *obj)
+FixObjectType(JSContext *cx, HandleObject obj)
 {
     if (cx->typeInferenceEnabled())
         cx->compartment->types.fixObjectType(cx, obj);
 }
 
 /* Interface helpers for JSScript */
-extern void TypeMonitorResult(JSContext *cx, JSScript *script, jsbytecode *pc, const js::Value &rval);
-extern void TypeDynamicResult(JSContext *cx, JSScript *script, jsbytecode *pc, js::types::Type type);
+extern void TypeMonitorResult(JSContext *cx, HandleScript script, jsbytecode *pc,
+                              const js::Value &rval);
+extern void TypeDynamicResult(JSContext *cx, HandleScript script, jsbytecode *pc,
+                              js::types::Type type);
 
 inline bool
 UseNewTypeAtEntry(JSContext *cx, StackFrame *fp)
 {
-    return fp->isConstructing() && cx->typeInferenceEnabled() &&
-           fp->prev() && fp->prev()->isScriptFrame() &&
-           UseNewType(cx, fp->prev()->script(), fp->prev()->pcQuadratic(cx->stack, fp));
+
+    if (!fp->isConstructing() || !cx->typeInferenceEnabled() || !fp->prev())
+        return false;
+
+    RootedScript prevScript(cx, fp->prev()->script());
+    return UseNewType(cx, prevScript, fp->prevpc());
+}
+
+inline bool
+UseNewTypeForClone(JSFunction *fun)
+{
+    AutoAssertNoGC nogc;
+
+    if (fun->hasSingletonType() || !fun->isInterpreted())
+        return false;
+
+    /*
+     * When a function is being used as a wrapper for another function, it
+     * improves precision greatly to distinguish between different instances of
+     * the wrapper; otherwise we will conflate much of the information about
+     * the wrapped functions.
+     *
+     * An important example is the Class.create function at the core of the
+     * Prototype.js library, which looks like:
+     *
+     * var Class = {
+     *   create: function() {
+     *     return function() {
+     *       this.initialize.apply(this, arguments);
+     *     }
+     *   }
+     * };
+     *
+     * Each instance of the innermost function will have a different wrapped
+     * initialize method. We capture this, along with similar cases, by looking
+     * for short scripts which use both .apply and arguments. For such scripts,
+     * whenever creating a new instance of the function we both give that
+     * instance a singleton type and clone the underlying script.
+     */
+
+    RawScript script = fun->script().get(nogc);
+
+    if (script->length >= 50)
+        return false;
+
+    if (script->hasConsts() || script->hasObjects() || script->hasRegexps() || fun->isHeavyweight())
+        return false;
+
+    bool hasArguments = false;
+    bool hasApply = false;
+
+    for (jsbytecode *pc = script->code;
+         pc != script->code + script->length;
+         pc += GetBytecodeLength(pc))
+    {
+        if (*pc == JSOP_ARGUMENTS)
+            hasArguments = true;
+        if (*pc == JSOP_FUNAPPLY)
+            hasApply = true;
+    }
+
+    return hasArguments && hasApply;
 }
 
 /////////////////////////////////////////////////////////////////////
 // Script interface functions
 /////////////////////////////////////////////////////////////////////
 
-inline
-TypeScript::TypeScript()
-{
-    this->global = (js::GlobalObject *) GLOBAL_MISSING_SCOPE;
-}
-
 /* static */ inline unsigned
-TypeScript::NumTypeSets(JSScript *script)
+TypeScript::NumTypeSets(RawScript script)
 {
     return script->nTypeSets + analyze::TotalSlots(script);
 }
 
-/* static */ inline TypeSet *
-TypeScript::ReturnTypes(JSScript *script)
+/* static */ inline HeapTypeSet *
+TypeScript::ReturnTypes(RawScript script)
 {
-    return script->types->typeArray() + script->nTypeSets + js::analyze::CalleeSlot();
+    TypeSet *types = script->types->typeArray() + script->nTypeSets + js::analyze::CalleeSlot();
+    return types->toHeapTypeSet();
 }
 
-/* static */ inline TypeSet *
-TypeScript::ThisTypes(JSScript *script)
+/* static */ inline StackTypeSet *
+TypeScript::ThisTypes(RawScript script)
 {
-    return script->types->typeArray() + script->nTypeSets + js::analyze::ThisSlot();
+    TypeSet *types = script->types->typeArray() + script->nTypeSets + js::analyze::ThisSlot();
+    return types->toStackTypeSet();
 }
 
 /*
@@ -477,32 +764,35 @@ TypeScript::ThisTypes(JSScript *script)
  * or undefined for localTypes) and not types from subsequent assignments.
  */
 
-/* static */ inline TypeSet *
-TypeScript::ArgTypes(JSScript *script, unsigned i)
+/* static */ inline StackTypeSet *
+TypeScript::ArgTypes(RawScript script, unsigned i)
 {
     JS_ASSERT(i < script->function()->nargs);
-    return script->types->typeArray() + script->nTypeSets + js::analyze::ArgSlot(i);
+    TypeSet *types = script->types->typeArray() + script->nTypeSets + js::analyze::ArgSlot(i);
+    return types->toStackTypeSet();
 }
 
-/* static */ inline TypeSet *
-TypeScript::LocalTypes(JSScript *script, unsigned i)
+/* static */ inline StackTypeSet *
+TypeScript::LocalTypes(RawScript script, unsigned i)
 {
     JS_ASSERT(i < script->nfixed);
-    return script->types->typeArray() + script->nTypeSets + js::analyze::LocalSlot(script, i);
+    TypeSet *types = script->types->typeArray() + script->nTypeSets + js::analyze::LocalSlot(script, i);
+    return types->toStackTypeSet();
 }
 
-/* static */ inline TypeSet *
-TypeScript::SlotTypes(JSScript *script, unsigned slot)
+/* static */ inline StackTypeSet *
+TypeScript::SlotTypes(RawScript script, unsigned slot)
 {
     JS_ASSERT(slot < js::analyze::TotalSlots(script));
-    return script->types->typeArray() + script->nTypeSets + slot;
+    TypeSet *types = script->types->typeArray() + script->nTypeSets + slot;
+    return types->toStackTypeSet();
 }
 
 /* static */ inline TypeObject *
-TypeScript::StandardType(JSContext *cx, JSScript *script, JSProtoKey key)
+TypeScript::StandardType(JSContext *cx, HandleScript script, JSProtoKey key)
 {
-    JSObject *proto;
-    if (!js_GetClassPrototype(cx, script->global(), key, &proto, NULL))
+    js::RootedObject proto(cx);
+    if (!js_GetClassPrototype(cx, key, &proto, NULL))
         return NULL;
     return proto->getNewType(cx);
 }
@@ -529,14 +819,14 @@ struct AllocationSiteKey {
 };
 
 /* static */ inline TypeObject *
-TypeScript::InitObject(JSContext *cx, JSScript *script, jsbytecode *pc, JSProtoKey kind)
+TypeScript::InitObject(JSContext *cx, HandleScript script, jsbytecode *pc, JSProtoKey kind)
 {
-    JS_ASSERT(!UseNewTypeForInitializer(cx, script, pc));
+    JS_ASSERT(!UseNewTypeForInitializer(cx, script, pc, kind));
 
     /* :XXX: Limit script->length so we don't need to check the offset up front? */
     uint32_t offset = pc - script->code;
 
-    if (!cx->typeInferenceEnabled() || !script->hasGlobal() || offset >= AllocationSiteKey::OFFSET_LIMIT)
+    if (!cx->typeInferenceEnabled() || !script->compileAndGo || offset >= AllocationSiteKey::OFFSET_LIMIT)
         return GetTypeNewObject(cx, kind);
 
     AllocationSiteKey key;
@@ -545,24 +835,27 @@ TypeScript::InitObject(JSContext *cx, JSScript *script, jsbytecode *pc, JSProtoK
     key.kind = kind;
 
     if (!cx->compartment->types.allocationSiteTable)
-        return cx->compartment->types.newAllocationSiteTypeObject(cx, key);
+        return cx->compartment->types.addAllocationSiteTypeObject(cx, key);
 
     AllocationSiteTable::Ptr p = cx->compartment->types.allocationSiteTable->lookup(key);
 
     if (p)
         return p->value;
-    return cx->compartment->types.newAllocationSiteTypeObject(cx, key);
+    return cx->compartment->types.addAllocationSiteTypeObject(cx, key);
 }
 
 /* Set the type to use for obj according to the site it was allocated at. */
 static inline bool
-SetInitializerObjectType(JSContext *cx, JSScript *script, jsbytecode *pc, JSObject *obj)
+SetInitializerObjectType(JSContext *cx, HandleScript script, jsbytecode *pc, HandleObject obj)
 {
     if (!cx->typeInferenceEnabled())
         return true;
 
-    if (UseNewTypeForInitializer(cx, script, pc)) {
-        if (!obj->setSingletonType(cx))
+    JSProtoKey key = JSCLASS_CACHED_PROTO_KEY(obj->getClass());
+    JS_ASSERT(key != JSProto_Null);
+
+    if (UseNewTypeForInitializer(cx, script, pc, key)) {
+        if (!JSObject::setSingletonType(cx, obj))
             return false;
 
         /*
@@ -572,7 +865,6 @@ SetInitializerObjectType(JSContext *cx, JSScript *script, jsbytecode *pc, JSObje
          */
         TypeScript::Monitor(cx, script, pc, ObjectValue(*obj));
     } else {
-        JSProtoKey key = obj->isDenseArray() ? JSProto_Array : JSProto_Object;
         types::TypeObject *type = TypeScript::InitObject(cx, script, pc, key);
         if (!type)
             return false;
@@ -583,44 +875,51 @@ SetInitializerObjectType(JSContext *cx, JSScript *script, jsbytecode *pc, JSObje
 }
 
 /* static */ inline void
-TypeScript::Monitor(JSContext *cx, JSScript *script, jsbytecode *pc, const js::Value &rval)
+TypeScript::Monitor(JSContext *cx, HandleScript script, jsbytecode *pc, const js::Value &rval)
 {
     if (cx->typeInferenceEnabled())
         TypeMonitorResult(cx, script, pc, rval);
 }
 
 /* static */ inline void
-TypeScript::MonitorOverflow(JSContext *cx, JSScript *script, jsbytecode *pc)
+TypeScript::MonitorOverflow(JSContext *cx, HandleScript script, jsbytecode *pc)
 {
     if (cx->typeInferenceEnabled())
         TypeDynamicResult(cx, script, pc, Type::DoubleType());
 }
 
 /* static */ inline void
-TypeScript::MonitorString(JSContext *cx, JSScript *script, jsbytecode *pc)
+TypeScript::MonitorString(JSContext *cx, HandleScript script, jsbytecode *pc)
 {
     if (cx->typeInferenceEnabled())
         TypeDynamicResult(cx, script, pc, Type::StringType());
 }
 
 /* static */ inline void
-TypeScript::MonitorUnknown(JSContext *cx, JSScript *script, jsbytecode *pc)
+TypeScript::MonitorUnknown(JSContext *cx, HandleScript script, jsbytecode *pc)
 {
     if (cx->typeInferenceEnabled())
         TypeDynamicResult(cx, script, pc, Type::UnknownType());
 }
 
 /* static */ inline void
-TypeScript::GetPcScript(JSContext *cx, JSScript **script, jsbytecode **pc)
+TypeScript::GetPcScript(JSContext *cx, MutableHandleScript script, jsbytecode **pc)
 {
-    *script = cx->fp()->script();
+    AutoAssertNoGC nogc;
+#ifdef JS_ION
+    if (cx->fp()->beginsIonActivation()) {
+        ion::GetPcScript(cx, script, pc);
+        return;
+    }
+#endif
+    script.set(cx->fp()->script().get(nogc));
     *pc = cx->regs().pc;
 }
 
 /* static */ inline void
 TypeScript::MonitorOverflow(JSContext *cx)
 {
-    JSScript *script;
+    RootedScript script(cx);
     jsbytecode *pc;
     GetPcScript(cx, &script, &pc);
     MonitorOverflow(cx, script, pc);
@@ -629,7 +928,7 @@ TypeScript::MonitorOverflow(JSContext *cx)
 /* static */ inline void
 TypeScript::MonitorString(JSContext *cx)
 {
-    JSScript *script;
+    RootedScript script(cx);
     jsbytecode *pc;
     GetPcScript(cx, &script, &pc);
     MonitorString(cx, script, pc);
@@ -638,7 +937,7 @@ TypeScript::MonitorString(JSContext *cx)
 /* static */ inline void
 TypeScript::MonitorUnknown(JSContext *cx)
 {
-    JSScript *script;
+    RootedScript script(cx);
     jsbytecode *pc;
     GetPcScript(cx, &script, &pc);
     MonitorUnknown(cx, script, pc);
@@ -647,14 +946,14 @@ TypeScript::MonitorUnknown(JSContext *cx)
 /* static */ inline void
 TypeScript::Monitor(JSContext *cx, const js::Value &rval)
 {
-    JSScript *script;
+    RootedScript script(cx);
     jsbytecode *pc;
     GetPcScript(cx, &script, &pc);
     Monitor(cx, script, pc, rval);
 }
 
 /* static */ inline void
-TypeScript::MonitorAssign(JSContext *cx, JSObject *obj, jsid id)
+TypeScript::MonitorAssign(JSContext *cx, HandleObject obj, jsid id)
 {
     if (cx->typeInferenceEnabled() && !obj->hasSingletonType()) {
         /*
@@ -673,7 +972,7 @@ TypeScript::MonitorAssign(JSContext *cx, JSObject *obj, jsid id)
 }
 
 /* static */ inline void
-TypeScript::SetThis(JSContext *cx, JSScript *script, Type type)
+TypeScript::SetThis(JSContext *cx, HandleScript script, Type type)
 {
     if (!cx->typeInferenceEnabled())
         return;
@@ -689,20 +988,20 @@ TypeScript::SetThis(JSContext *cx, JSScript *script, Type type)
                   script->id(), TypeString(type));
         ThisTypes(script)->addType(cx, type);
 
-        if (analyze && script->types->hasScope())
+        if (analyze)
             script->ensureRanInference(cx);
     }
 }
 
 /* static */ inline void
-TypeScript::SetThis(JSContext *cx, JSScript *script, const js::Value &value)
+TypeScript::SetThis(JSContext *cx, HandleScript script, const js::Value &value)
 {
     if (cx->typeInferenceEnabled())
         SetThis(cx, script, GetValueType(cx, value));
 }
 
 /* static */ inline void
-TypeScript::SetLocal(JSContext *cx, JSScript *script, unsigned local, Type type)
+TypeScript::SetLocal(JSContext *cx, HandleScript script, unsigned local, Type type)
 {
     if (!cx->typeInferenceEnabled())
         return;
@@ -718,7 +1017,7 @@ TypeScript::SetLocal(JSContext *cx, JSScript *script, unsigned local, Type type)
 }
 
 /* static */ inline void
-TypeScript::SetLocal(JSContext *cx, JSScript *script, unsigned local, const js::Value &value)
+TypeScript::SetLocal(JSContext *cx, HandleScript script, unsigned local, const js::Value &value)
 {
     if (cx->typeInferenceEnabled()) {
         Type type = GetValueType(cx, value);
@@ -727,7 +1026,7 @@ TypeScript::SetLocal(JSContext *cx, JSScript *script, unsigned local, const js::
 }
 
 /* static */ inline void
-TypeScript::SetArgument(JSContext *cx, JSScript *script, unsigned arg, Type type)
+TypeScript::SetArgument(JSContext *cx, HandleScript script, unsigned arg, Type type)
 {
     if (!cx->typeInferenceEnabled())
         return;
@@ -743,21 +1042,12 @@ TypeScript::SetArgument(JSContext *cx, JSScript *script, unsigned arg, Type type
 }
 
 /* static */ inline void
-TypeScript::SetArgument(JSContext *cx, JSScript *script, unsigned arg, const js::Value &value)
+TypeScript::SetArgument(JSContext *cx, HandleScript script, unsigned arg, const js::Value &value)
 {
     if (cx->typeInferenceEnabled()) {
         Type type = GetValueType(cx, value);
         SetArgument(cx, script, arg, type);
     }
-}
-
-void
-TypeScript::trace(JSTracer *trc)
-{
-    if (hasScope() && global)
-        gc::MarkObject(trc, &global, "script_global");
-
-    /* Note: nesting does not keep anything alive. */
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -774,7 +1064,7 @@ inline void
 TypeCompartment::addPending(JSContext *cx, TypeConstraint *constraint, TypeSet *source, Type type)
 {
     JS_ASSERT(this == &cx->compartment->types);
-    JS_ASSERT(!cx->runtime->gcRunning);
+    JS_ASSERT(!cx->runtime->isHeapBusy());
 
     InferSpew(ISpewOps, "pending: %sC%p%s %s",
               InferSpewColor(constraint), constraint, InferSpewColorReset(),
@@ -860,7 +1150,7 @@ HashKey(T v)
  */
 template <class T, class U, class KEY>
 static U **
-HashSetInsertTry(JSCompartment *compartment, U **&values, unsigned &count, T key)
+HashSetInsertTry(LifoAlloc &alloc, U **&values, unsigned &count, T key)
 {
     unsigned capacity = HashSetCapacity(count);
     unsigned insertpos = HashKey<T,KEY>(key) & (capacity - 1);
@@ -884,7 +1174,7 @@ HashSetInsertTry(JSCompartment *compartment, U **&values, unsigned &count, T key
         return &values[insertpos];
     }
 
-    U **newValues = compartment->typeLifoAlloc.newArray<U*>(newCapacity);
+    U **newValues = alloc.newArray<U*>(newCapacity);
     if (!newValues)
         return NULL;
     PodZero(newValues, newCapacity);
@@ -912,7 +1202,7 @@ HashSetInsertTry(JSCompartment *compartment, U **&values, unsigned &count, T key
  */
 template <class T, class U, class KEY>
 static inline U **
-HashSetInsert(JSCompartment *compartment, U **&values, unsigned &count, T key)
+HashSetInsert(LifoAlloc &alloc, U **&values, unsigned &count, T key)
 {
     if (count == 0) {
         JS_ASSERT(values == NULL);
@@ -925,7 +1215,7 @@ HashSetInsert(JSCompartment *compartment, U **&values, unsigned &count, T key)
         if (KEY::getKey(oldData) == key)
             return (U **) &values;
 
-        values = compartment->typeLifoAlloc.newArray<U*>(SET_ARRAY_SIZE);
+        values = alloc.newArray<U*>(SET_ARRAY_SIZE);
         if (!values) {
             values = (U **) oldData;
             return NULL;
@@ -949,7 +1239,7 @@ HashSetInsert(JSCompartment *compartment, U **&values, unsigned &count, T key)
         }
     }
 
-    return HashSetInsertTry<T,U,KEY>(compartment, values, count, key);
+    return HashSetInsertTry<T,U,KEY>(alloc, values, count, key);
 }
 
 /* Lookup an entry in a hash set, return NULL if it does not exist. */
@@ -994,7 +1284,7 @@ Type::objectKey() const
     return (TypeObjectKey *) data;
 }
 
-inline JSObject *
+inline RawObject
 Type::singleObject() const
 {
     JS_ASSERT(isSingleObject());
@@ -1071,10 +1361,14 @@ TypeSet::addType(JSContext *cx, Type type)
             return;
         if (type.isAnyObject())
             goto unknownObject;
+
+        LifoAlloc &alloc =
+            purged() ? cx->compartment->analysisLifoAlloc : cx->compartment->typeLifoAlloc;
+
         uint32_t objectCount = baseObjectCount();
         TypeObjectKey *object = type.objectKey();
         TypeObjectKey **pentry = HashSetInsert<TypeObjectKey *,TypeObjectKey,TypeObjectKey>
-                                     (cx->compartment, objectSet, objectCount, object);
+                                     (alloc, objectSet, objectCount, object);
         if (!pentry) {
             cx->compartment->types.setPendingNukeTypes(cx);
             return;
@@ -1164,7 +1458,7 @@ TypeSet::getObject(unsigned i)
     return objectSet[i];
 }
 
-inline JSObject *
+inline RawObject
 TypeSet::getSingleObject(unsigned i)
 {
     TypeObjectKey *key = getObject(i);
@@ -1189,21 +1483,21 @@ TypeCallsite::TypeCallsite(JSContext *cx, JSScript *script, jsbytecode *pc,
       thisTypes(NULL), returnTypes(NULL)
 {
     /* Caller must check for failure. */
-    argumentTypes = cx->typeLifoAlloc().newArray<TypeSet*>(argumentCount);
+    argumentTypes = cx->analysisLifoAlloc().newArray<StackTypeSet*>(argumentCount);
 }
 
 /////////////////////////////////////////////////////////////////////
 // TypeObject
 /////////////////////////////////////////////////////////////////////
 
-inline TypeObject::TypeObject(JSObject *proto, bool function, bool unknown)
+inline TypeObject::TypeObject(TaggedProto proto, bool function, bool unknown)
 {
     PodZero(this);
 
     /* Inner objects may not appear on prototype chains. */
-    JS_ASSERT_IF(proto, !proto->getClass()->ext.outerObject);
+    JS_ASSERT_IF(proto.isObject(), !proto.toObject()->getClass()->ext.outerObject);
 
-    this->proto = proto;
+    this->proto = proto.raw();
 
     if (function)
         flags |= OBJECT_FLAG_FUNCTION;
@@ -1227,8 +1521,8 @@ TypeObject::setBasePropertyCount(uint32_t count)
           | (count << OBJECT_FLAG_PROPERTY_COUNT_SHIFT);
 }
 
-inline TypeSet *
-TypeObject::getProperty(JSContext *cx, jsid id, bool assign)
+inline HeapTypeSet *
+TypeObject::getProperty(JSContext *cx, jsid id, bool own)
 {
     JS_ASSERT(cx->compartment->activeInference);
     JS_ASSERT(JSID_IS_VOID(id) || JSID_IS_EMPTY(id) || JSID_IS_STRING(id));
@@ -1237,7 +1531,7 @@ TypeObject::getProperty(JSContext *cx, jsid id, bool assign)
 
     uint32_t propertyCount = basePropertyCount();
     Property **pprop = HashSetInsert<jsid,Property,Property>
-                           (cx->compartment, propertySet, propertyCount, id);
+                           (cx->compartment->typeLifoAlloc, propertySet, propertyCount, id);
     if (!pprop) {
         cx->compartment->types.setPendingNukeTypes(cx);
         return NULL;
@@ -1252,21 +1546,30 @@ TypeObject::getProperty(JSContext *cx, jsid id, bool assign)
         }
         if (propertyCount == OBJECT_FLAG_PROPERTY_COUNT_LIMIT) {
             markUnknown(cx);
-            TypeSet *types = TypeSet::make(cx, "propertyOverflow");
-            types->addType(cx, Type::UnknownType());
-            return types;
+
+            /*
+             * Return an arbitrary property in the object, as all have unknown
+             * type and are treated as configured.
+             */
+            unsigned count = getPropertyCount();
+            for (unsigned i = 0; i < count; i++) {
+                if (Property *prop = getProperty(i))
+                    return &prop->types;
+            }
+
+            JS_NOT_REACHED("Missing property");
+            return NULL;
         }
     }
 
-    TypeSet *types = &(*pprop)->types;
-
-    if (assign)
+    HeapTypeSet *types = &(*pprop)->types;
+    if (own)
         types->setOwnProperty(cx, false);
 
     return types;
 }
 
-inline TypeSet *
+inline HeapTypeSet *
 TypeObject::maybeGetProperty(JSContext *cx, jsid id)
 {
     JS_ASSERT(JSID_IS_VOID(id) || JSID_IS_EMPTY(id) || JSID_IS_STRING(id));
@@ -1305,49 +1608,35 @@ TypeObject::setFlagsFromKey(JSContext *cx, JSProtoKey key)
     TypeObjectFlags flags = 0;
 
     switch (key) {
-      case JSProto_Function:
-        JS_ASSERT(isFunction());
-        /* FALLTHROUGH */
-
-      case JSProto_Object:
-        flags = OBJECT_FLAG_NON_DENSE_ARRAY
-              | OBJECT_FLAG_NON_PACKED_ARRAY
-              | OBJECT_FLAG_NON_TYPED_ARRAY;
+      case JSProto_Array:
+        flags = OBJECT_FLAG_NON_TYPED_ARRAY
+              | OBJECT_FLAG_NON_DOM;
         break;
 
-      case JSProto_Array:
-        flags = OBJECT_FLAG_NON_TYPED_ARRAY;
+      case JSProto_Int8Array:
+      case JSProto_Uint8Array:
+      case JSProto_Int16Array:
+      case JSProto_Uint16Array:
+      case JSProto_Int32Array:
+      case JSProto_Uint32Array:
+      case JSProto_Float32Array:
+      case JSProto_Float64Array:
+      case JSProto_Uint8ClampedArray:
+        flags = OBJECT_FLAG_NON_DENSE_ARRAY
+              | OBJECT_FLAG_NON_PACKED_ARRAY
+              | OBJECT_FLAG_NON_DOM;
         break;
 
       default:
-        /* :XXX: abstract */
-        JS_ASSERT(key == JSProto_Int8Array ||
-                  key == JSProto_Uint8Array ||
-                  key == JSProto_Int16Array ||
-                  key == JSProto_Uint16Array ||
-                  key == JSProto_Int32Array ||
-                  key == JSProto_Uint32Array ||
-                  key == JSProto_Float32Array ||
-                  key == JSProto_Float64Array ||
-                  key == JSProto_Uint8ClampedArray ||
-                  key == JSProto_DataView);
         flags = OBJECT_FLAG_NON_DENSE_ARRAY
-              | OBJECT_FLAG_NON_PACKED_ARRAY;
+              | OBJECT_FLAG_NON_PACKED_ARRAY
+              | OBJECT_FLAG_NON_TYPED_ARRAY
+              | OBJECT_FLAG_NON_DOM;
         break;
     }
 
     if (!hasAllFlags(flags))
         setFlags(cx, flags);
-}
-
-inline JSObject *
-TypeObject::getGlobal()
-{
-    if (singleton)
-        return &singleton->global();
-    if (interpretedFunction && interpretedFunction->script()->compileAndGo)
-        return &interpretedFunction->global();
-    return NULL;
 }
 
 inline void
@@ -1425,19 +1714,13 @@ JSScript::ensureHasTypes(JSContext *cx)
 }
 
 inline bool
-JSScript::ensureRanAnalysis(JSContext *cx, JSObject *scope)
+JSScript::ensureRanAnalysis(JSContext *cx)
 {
-    JSScript *self = this;
-    JS::SkipRoot root(cx, &self);
+    js::analyze::AutoEnterAnalysis aea(cx->compartment);
+    js::RootedScript self(cx, this);
 
     if (!self->ensureHasTypes(cx))
         return false;
-    if (!self->types->hasScope()) {
-        js::RootedObject scopeRoot(cx, scope);
-        if (!js::types::TypeScript::SetScope(cx, self, scope))
-            return false;
-        scope = scopeRoot;
-    }
     if (!self->hasAnalysis() && !self->makeAnalysis(cx))
         return false;
     JS_ASSERT(self->analysis()->ranBytecode());
@@ -1447,13 +1730,14 @@ JSScript::ensureRanAnalysis(JSContext *cx, JSObject *scope)
 inline bool
 JSScript::ensureRanInference(JSContext *cx)
 {
-    if (!ensureRanAnalysis(cx, NULL))
+    js::RootedScript self(cx, this);
+    if (!ensureRanAnalysis(cx))
         return false;
-    if (!analysis()->ranInference()) {
+    if (!self->analysis()->ranInference()) {
         js::types::AutoEnterTypeInference enter(cx);
-        analysis()->analyzeTypes(cx);
+        self->analysis()->analyzeTypes(cx);
     }
-    return !analysis()->OOM() &&
+    return !self->analysis()->OOM() &&
         !cx->compartment->types.pendingNukeTypes;
 }
 
@@ -1478,6 +1762,13 @@ JSScript::clearAnalysis()
 }
 
 inline void
+JSScript::clearPropertyReadTypes()
+{
+    if (types && types->propertyReadTypes)
+        types->propertyReadTypes = NULL;
+}
+
+inline void
 js::analyze::ScriptAnalysis::addPushedType(JSContext *cx, uint32_t offset, uint32_t which,
                                            js::types::Type type)
 {
@@ -1485,12 +1776,34 @@ js::analyze::ScriptAnalysis::addPushedType(JSContext *cx, uint32_t offset, uint3
     pushed->addType(cx, type);
 }
 
-inline js::types::TypeObject *
-JSCompartment::getEmptyType(JSContext *cx)
+namespace js {
+
+template <>
+struct RootMethods<const types::Type>
 {
-    if (!emptyTypeObject)
-        emptyTypeObject = types.newTypeObject(cx, NULL, JSProto_Object, NULL, true);
-    return emptyTypeObject;
-}
+    static types::Type initial() { return types::Type::UnknownType(); }
+    static ThingRootKind kind() { return THING_ROOT_TYPE; }
+    static bool poisoned(const types::Type &v) {
+        return (v.isTypeObject() && IsPoisonedPtr(v.typeObject()))
+            || (v.isSingleObject() && IsPoisonedPtr(v.singleObject()));
+    }
+};
+
+template <>
+struct RootMethods<types::Type>
+{
+    static types::Type initial() { return types::Type::UnknownType(); }
+    static ThingRootKind kind() { return THING_ROOT_TYPE; }
+    static bool poisoned(const types::Type &v) {
+        return (v.isTypeObject() && IsPoisonedPtr(v.typeObject()))
+            || (v.isSingleObject() && IsPoisonedPtr(v.singleObject()));
+    }
+};
+
+} // namespace js
+
+namespace JS {
+template<> class AnchorPermitted<js::types::TypeObject *> { };
+}  // namespace JS
 
 #endif // jsinferinlines_h___

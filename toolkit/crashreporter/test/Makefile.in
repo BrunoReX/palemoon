@@ -3,11 +3,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
-relativesrcdir  = toolkit/crashreporter/test
+relativesrcdir  = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
@@ -43,12 +43,7 @@ EXTRA_DSO_LDOPTS += $(LIBS_DIR) $(MOZ_COMPONENT_LIBS) $(XPCOM_GLUE_LDOPTS)
 
 EXTRA_JS_MODULES = CrashTestUtils.jsm
 
-include $(topsrcdir)/config/rules.mk
-
-DEFINES += -DSHARED_LIBRARY=$(SHARED_LIBRARY) -DNOMINMAX
-
-ifneq (mobile,$(MOZ_BUILD_APP))
-_BROWSER_FILES = \
+MOCHITEST_BROWSER_FILES = \
   browser/head.js \
   browser/crashreport.sjs \
   browser/browser_aboutCrashes.js \
@@ -56,9 +51,12 @@ _BROWSER_FILES = \
   browser/browser_aboutCrashesResubmit.js \
   $(NULL)
 
-libs::  $(_BROWSER_FILES)
+include $(topsrcdir)/config/rules.mk
+
+DEFINES += -DSHARED_LIBRARY=$(SHARED_LIBRARY) -DNOMINMAX
+
+libs::  $(MOCHITEST_BROWSER_FILES)
 	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/browser/$(relativesrcdir)/browser
-endif
 
 libs:: $(SHARED_LIBRARY) $(EXTRA_JS_MODULES)
 	$(INSTALL) $^ $(DEPTH)/_tests/xpcshell/$(relativesrcdir)/unit/

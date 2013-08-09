@@ -9,26 +9,18 @@
 #include "nsString.h"
 #include "nsCOMPtr.h"
 #include "nsITreeColumns.h"
-#include "nsStubImageDecoderObserver.h"
 #include "nsTreeBodyFrame.h"
+#include "mozilla/Attributes.h"
 
 // This class handles image load observation.
-class nsTreeImageListener : public nsStubImageDecoderObserver
+class nsTreeImageListener MOZ_FINAL : public imgINotificationObserver
 {
 public:
   nsTreeImageListener(nsTreeBodyFrame *aTreeFrame);
   ~nsTreeImageListener();
 
   NS_DECL_ISUPPORTS
-  // imgIDecoderObserver (override nsStubImageDecoderObserver)
-  NS_IMETHOD OnStartContainer(imgIRequest *aRequest, imgIContainer *aImage);
-  NS_IMETHOD OnImageIsAnimated(imgIRequest* aRequest);
-  NS_IMETHOD OnDataAvailable(imgIRequest *aRequest, bool aCurrentFrame,
-                             const nsIntRect *aRect);
-  // imgIContainerObserver (override nsStubImageDecoderObserver)
-  NS_IMETHOD FrameChanged(imgIRequest *aRequest,
-                          imgIContainer *aContainer,
-                          const nsIntRect *aDirtyRect);
+  NS_DECL_IMGINOTIFICATIONOBSERVER
 
   NS_IMETHOD ClearFrame();
 
@@ -37,7 +29,7 @@ public:
 protected:
   void UnsuppressInvalidation() { mInvalidationSuppressed = false; }
   void Invalidate();
-  void AddCell(PRInt32 aIndex, nsITreeColumn* aCol);
+  void AddCell(int32_t aIndex, nsITreeColumn* aCol);
 
 private:
   nsTreeBodyFrame* mTreeFrame;
@@ -53,17 +45,17 @@ private:
       friend class nsTreeImageListener;
 
     protected:
-      void AddRow(PRInt32 aIndex);
+      void AddRow(int32_t aIndex);
       nsITreeColumn* GetCol() { return mCol.get(); }
-      PRInt32 GetMin() { return mMin; }
-      PRInt32 GetMax() { return mMax; }
+      int32_t GetMin() { return mMin; }
+      int32_t GetMax() { return mMax; }
       InvalidationArea* GetNext() { return mNext; }
       void SetNext(InvalidationArea* aNext) { mNext = aNext; }
 
     private:
       nsCOMPtr<nsITreeColumn> mCol;
-      PRInt32                 mMin;
-      PRInt32                 mMax;
+      int32_t                 mMin;
+      int32_t                 mMax;
       InvalidationArea*       mNext;
   };
 

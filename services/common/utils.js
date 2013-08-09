@@ -4,7 +4,7 @@
 
 const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
-const EXPORTED_SYMBOLS = ["CommonUtils"];
+this.EXPORTED_SYMBOLS = ["CommonUtils"];
 
 Cu.import("resource://gre/modules/FileUtils.jsm");
 Cu.import("resource://gre/modules/NetUtil.jsm");
@@ -12,7 +12,7 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://services-common/log4moz.js");
 
-let CommonUtils = {
+this.CommonUtils = {
   exceptionStr: function exceptionStr(e) {
     let message = e.message ? e.message : e;
     return message + " " + CommonUtils.stackTrace(e);
@@ -431,17 +431,19 @@ let CommonUtils = {
       return;
     }
 
-    if (value < 0) {
-      throw new Error("Timestamp value is negative: " + value);
+    if (!/^[0-9]+$/.test(value)) {
+      throw new Error("Timestamp value is not a positive integer: " + value);
+    }
+
+    let intValue = parseInt(value, 10);
+
+    if (!intValue) {
+       return;
     }
 
     // Catch what looks like seconds, not milliseconds.
-    if (value < 10000000000) {
-      throw new Error("Timestamp appears to be in seconds: " + value);
-    }
-
-    if (Math.floor(value) != Math.ceil(value)) {
-      throw new Error("Timestamp value is not an integer: " + value);
+    if (intValue < 10000000000) {
+      throw new Error("Timestamp appears to be in seconds: " + intValue);
     }
   },
 
@@ -465,6 +467,184 @@ let CommonUtils = {
 
     return new BinaryInputStream(stream).readBytes(count);
   },
+
+  /**
+   * Generate a new UUID using nsIUUIDGenerator.
+   *
+   * Example value: "1e00a2e2-1570-443e-bf5e-000354124234"
+   *
+   * @return string A hex-formatted UUID string.
+   */
+  generateUUID: function generateUUID() {
+    let uuid = Cc["@mozilla.org/uuid-generator;1"]
+                 .getService(Ci.nsIUUIDGenerator)
+                 .generateUUID()
+                 .toString();
+
+    return uuid.substring(1, uuid.length - 1);
+  },
+
+  /**
+   * Obtain an epoch value from a preference.
+   *
+   * This reads a string preference and returns an integer. The string
+   * preference is expected to contain the integer milliseconds since epoch.
+   * For best results, only read preferences that have been saved with
+   * setDatePref().
+   *
+   * We need to store times as strings because integer preferences are only
+   * 32 bits and likely overflow most dates.
+   *
+   * If the pref contains a non-integer value, the specified default value will
+   * be returned.
+   *
+   * @param branch
+   *        (Preferences) Branch from which to retrieve preference.
+   * @param pref
+   *        (string) The preference to read from.
+   * @param def
+   *        (Number) The default value to use if the preference is not defined.
+   * @param log
+   *        (Log4Moz.Logger) Logger to write warnings to.
+   */
+  getEpochPref: function getEpochPref(branch, pref, def=0, log=null) {
+    if (!Number.isInteger(def)) {
+      throw new Error("Default value is not a number: " + def);
+    }
+
+    let valueStr = branch.get(pref, null);
+
+    if (valueStr !== null) {
+      let valueInt = parseInt(valueStr, 10);
+      if (Number.isNaN(valueInt)) {
+        if (log) {
+          log.warn("Preference value is not an integer. Using default. " +
+                   pref + "=" + valueStr + " -> " + def);
+        }
+
+        return def;
+      }
+
+      return valueInt;
+    }
+
+    return def;
+  },
+
+  /**
+   * Obtain a Date from a preference.
+   *
+   * This is a wrapper around getEpochPref. It converts the value to a Date
+   * instance and performs simple range checking.
+   *
+   * The range checking ensures the date is newer than the oldestYear
+   * parameter.
+   *
+   * @param branch
+   *        (Preferences) Branch from which to read preference.
+   * @param pref
+   *        (string) The preference from which to read.
+   * @param def
+   *        (Number) The default value (in milliseconds) if the preference is
+   *        not defined or invalid.
+   * @param log
+   *        (Log4Moz.Logger) Logger to write warnings to.
+   * @param oldestYear
+   *        (Number) Oldest year to accept in read values.
+   */
+  getDatePref: function getDatePref(branch, pref, def=0, log=null,
+                                    oldestYear=2010) {
+
+    let valueInt = this.getEpochPref(branch, pref, def, log);
+    let date = new Date(valueInt);
+
+    if (valueInt == def || date.getFullYear() >= oldestYear) {
+      return date;
+    }
+
+    if (log) {
+      log.warn("Unexpected old date seen in pref. Returning default: " +
+               pref + "=" + date + " -> " + def);
+    }
+
+    return new Date(def);
+  },
+
+  /**
+   * Store a Date in a preference.
+   *
+   * This is the opposite of getDatePref(). The same notes apply.
+   *
+   * If the range check fails, an Error will be thrown instead of a default
+   * value silently being used.
+   *
+   * @param branch
+   *        (Preference) Branch from which to read preference.
+   * @param pref
+   *        (string) Name of preference to write to.
+   * @param date
+   *        (Date) The value to save.
+   * @param oldestYear
+   *        (Number) The oldest year to accept for values.
+   */
+  setDatePref: function setDatePref(branch, pref, date, oldestYear=2010) {
+    if (date.getFullYear() < oldestYear) {
+      throw new Error("Trying to set " + pref + " to a very old time: " +
+                      date + ". The current time is " + new Date() +
+                      ". Is the system clock wrong?");
+    }
+
+    branch.set(pref, "" + date.getTime());
+  },
+
+  /**
+   * Convert a string between two encodings.
+   *
+   * Output is only guaranteed if the input stream is composed of octets. If
+   * the input string has characters with values larger than 255, data loss
+   * will occur.
+   *
+   * The returned string is guaranteed to consist of character codes no greater
+   * than 255.
+   *
+   * @param s
+   *        (string) The source string to convert.
+   * @param source
+   *        (string) The current encoding of the string.
+   * @param dest
+   *        (string) The target encoding of the string.
+   *
+   * @return string
+   */
+  convertString: function convertString(s, source, dest) {
+    if (!s) {
+      throw new Error("Input string must be defined.");
+    }
+
+    let is = Cc["@mozilla.org/io/string-input-stream;1"]
+               .createInstance(Ci.nsIStringInputStream);
+    is.setData(s, s.length);
+
+    let listener = Cc["@mozilla.org/network/stream-loader;1"]
+                     .createInstance(Ci.nsIStreamLoader);
+
+    let result;
+
+    listener.init({
+      onStreamComplete: function onStreamComplete(loader, context, status,
+                                                  length, data) {
+        result = String.fromCharCode.apply(this, data);
+      },
+    });
+
+    let converter = this._converterService.asyncConvertData(source, dest,
+                                                            listener, null);
+    converter.onStartRequest(null, null);
+    converter.onDataAvailable(null, null, is, 0, s.length);
+    converter.onStopRequest(null, null, null);
+
+    return result;
+  },
 };
 
 XPCOMUtils.defineLazyGetter(CommonUtils, "_utf8Converter", function() {
@@ -472,4 +652,9 @@ XPCOMUtils.defineLazyGetter(CommonUtils, "_utf8Converter", function() {
                     .createInstance(Ci.nsIScriptableUnicodeConverter);
   converter.charset = "UTF-8";
   return converter;
+});
+
+XPCOMUtils.defineLazyGetter(CommonUtils, "_converterService", function() {
+  return Cc["@mozilla.org/streamConverters;1"]
+           .getService(Ci.nsIStreamConverterService);
 });

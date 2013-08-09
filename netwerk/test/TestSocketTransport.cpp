@@ -20,7 +20,7 @@
 #include "nsIDNSService.h"
 #include "nsIFileStreams.h"
 #include "nsIStreamListener.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsNetUtil.h"
 #include "nsAutoLock.h"
 #include "prlog.h"
@@ -31,7 +31,7 @@
 //
 // set NSPR_LOG_MODULES=Test:5
 //
-static PRLogModuleInfo *gTestLog = nsnull;
+static PRLogModuleInfo *gTestLog = nullptr;
 #endif
 #define LOG(args) PR_LOG(gTestLog, PR_LOG_DEBUG, args)
 
@@ -66,7 +66,7 @@ public:
         LOG(("OnOutputStreamReady\n"));
 
         nsresult rv;
-        PRUint32 n, count = mBuf.Length() - mWriteOffset;
+        uint32_t n, count = mBuf.Length() - mWriteOffset;
 
         rv = out->Write(mBuf.get() + mWriteOffset, count, &n);
 
@@ -75,14 +75,14 @@ public:
         if (NS_FAILED(rv) || (n == 0)) {
             if (rv != NS_BASE_STREAM_WOULD_BLOCK) {
                 LOG(("  done writing; starting to read\n"));
-                mInput->AsyncWait(this, 0, 0, nsnull);
+                mInput->AsyncWait(this, 0, 0, nullptr);
                 return NS_OK;
             }
         }
 
         mWriteOffset += n;
 
-        return out->AsyncWait(this, 0, 0, nsnull);
+        return out->AsyncWait(this, 0, 0, nullptr);
     }
 
     // called on any thread
@@ -91,7 +91,7 @@ public:
         LOG(("OnInputStreamReady\n"));
 
         nsresult rv;
-        PRUint32 n;
+        uint32_t n;
         char buf[500];
 
         rv = in->Read(buf, sizeof(buf), &n);
@@ -105,14 +105,14 @@ public:
             }
         }
 
-        return in->AsyncWait(this, 0, 0, nsnull);
+        return in->AsyncWait(this, 0, 0, nullptr);
     }
 
 private:
     nsCOMPtr<nsIAsyncInputStream>  mInput;
     nsCOMPtr<nsIAsyncOutputStream> mOutput;
     nsCString mBuf;
-    PRUint32  mWriteOffset;
+    uint32_t  mWriteOffset;
 };
 
 NS_IMPL_THREADSAFE_ISUPPORTS2(MyHandler,
@@ -127,15 +127,15 @@ NS_IMPL_THREADSAFE_ISUPPORTS2(MyHandler,
 static nsresult
 RunCloseTest(nsISocketTransportService *sts,
              const char *host, int port,
-             PRUint32 inFlags, PRUint32 outFlags)
+             uint32_t inFlags, uint32_t outFlags)
 {
     nsresult rv;
 
     LOG(("RunCloseTest\n"));
 
     nsCOMPtr<nsISocketTransport> transport;
-    rv = sts->CreateTransport(nsnull, 0,
-                              nsDependentCString(host), port, nsnull,
+    rv = sts->CreateTransport(nullptr, 0,
+                              nsDependentCString(host), port, nullptr,
                               getter_AddRefs(transport));
     if (NS_FAILED(rv)) return rv;
 
@@ -163,15 +163,15 @@ RunCloseTest(nsISocketTransportService *sts,
 static nsresult
 RunTest(nsISocketTransportService *sts,
         const char *host, int port, const char *path,
-        PRUint32 inFlags, PRUint32 outFlags)
+        uint32_t inFlags, uint32_t outFlags)
 {
     nsresult rv;
 
     LOG(("RunTest\n"));
 
     nsCOMPtr<nsISocketTransport> transport;
-    rv = sts->CreateTransport(nsnull, 0,
-                              nsDependentCString(host), port, nsnull,
+    rv = sts->CreateTransport(nullptr, 0,
+                              nsDependentCString(host), port, nullptr,
                               getter_AddRefs(transport));
     if (NS_FAILED(rv)) return rv;
 
@@ -186,11 +186,11 @@ RunTest(nsISocketTransportService *sts,
     if (NS_FAILED(rv)) return rv;
 
     MyHandler *handler = new MyHandler(path, asyncIn, asyncOut);
-    if (handler == nsnull)
+    if (handler == nullptr)
         return NS_ERROR_OUT_OF_MEMORY;
     NS_ADDREF(handler);
 
-    rv = asyncOut->AsyncWait(handler, 0, 0, nsnull);
+    rv = asyncOut->AsyncWait(handler, 0, 0, nullptr);
 
     if (NS_SUCCEEDED(rv))
         PumpEvents();
@@ -217,11 +217,11 @@ main(int argc, char* argv[])
 
     {
         nsCOMPtr<nsIServiceManager> servMan;
-        NS_InitXPCOM2(getter_AddRefs(servMan), nsnull, nsnull);
+        NS_InitXPCOM2(getter_AddRefs(servMan), nullptr, nullptr);
         nsCOMPtr<nsIComponentRegistrar> registrar = do_QueryInterface(servMan);
         NS_ASSERTION(registrar, "Null nsIComponentRegistrar");
         if (registrar)
-            registrar->AutoRegister(nsnull);
+            registrar->AutoRegister(nullptr);
 
 #if defined(PR_LOGGING)
         gTestLog = PR_NewLogModule("Test");
@@ -306,7 +306,7 @@ main(int argc, char* argv[])
         PR_Sleep(PR_SecondsToInterval(1));
     } // this scopes the nsCOMPtrs
     // no nsCOMPtrs are allowed to be alive when you call NS_ShutdownXPCOM
-    rv = NS_ShutdownXPCOM(nsnull);
+    rv = NS_ShutdownXPCOM(nullptr);
     NS_ASSERTION(NS_SUCCEEDED(rv), "NS_ShutdownXPCOM failed");
     return 0;
 }

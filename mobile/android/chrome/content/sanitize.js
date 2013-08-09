@@ -63,7 +63,8 @@ Sanitizer.prototype = {
           cacheService.evictEntries(Ci.nsICache.STORE_ANYWHERE);
         } catch(er) {}
 
-        let imageCache = Cc["@mozilla.org/image/cache;1"].getService(Ci.imgICache);
+        let imageCache = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools)
+                                                         .getImgCacheForDocument(null);
         try {
           imageCache.clearCache(false); // true=chrome, false=content
         } catch(er) {}
@@ -79,17 +80,7 @@ Sanitizer.prototype = {
       clear: function ()
       {
         Services.cookies.removeAll();
-      },
 
-      get canClear()
-      {
-        return true;
-      }
-    },
-
-    geolocation: {
-      clear: function ()
-      {
         // clear any network geolocation provider sessions
         try {
           var branch = Services.prefs.getBranch("geo.wifi.access_token.");
@@ -110,7 +101,7 @@ Sanitizer.prototype = {
         Services.perms.removeAll();
 
         // Clear site-specific settings like page-zoom level
-        Services.contentPrefs.removeGroupedPrefs();
+        Services.contentPrefs.removeGroupedPrefs(null);
 
         // Clear "Never remember passwords for this site", which is not handled by
         // the permission manager
@@ -133,9 +124,6 @@ Sanitizer.prototype = {
         try {
           cacheService.evictEntries(Ci.nsICache.STORE_OFFLINE);
         } catch(er) {}
-
-        var storage = Cc["@mozilla.org/dom/storagemanager;1"].getService(Ci.nsIDOMStorageManager);
-        storage.clearOfflineApps();
       },
 
       get canClear()
@@ -147,6 +135,8 @@ Sanitizer.prototype = {
     history: {
       clear: function ()
       {
+        sendMessageToJava({ gecko: { type: "Sanitize:ClearHistory" } });
+
         try {
           Services.obs.notifyObservers(null, "browser:purge-session-history", "");
         }
@@ -225,9 +215,10 @@ Sanitizer.prototype = {
         var sdr = Cc["@mozilla.org/security/sdr;1"].getService(Ci.nsISecretDecoderRing);
         sdr.logoutAndTeardown();
 
-        // clear plain HTTP auth sessions
-        var authMgr = Cc['@mozilla.org/network/http-auth-manager;1'].getService(Ci.nsIHttpAuthManager);
-        authMgr.clearAll();
+        // clear FTP and plain HTTP auth sessions
+        var os = Components.classes["@mozilla.org/observer-service;1"]
+                           .getService(Components.interfaces.nsIObserverService);
+        os.notifyObservers(null, "net:clear-active-logins", null);
       },
 
       get canClear()

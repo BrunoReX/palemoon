@@ -240,10 +240,12 @@ var Addons = {
     else
       favicon.removeAttribute("src");
 
-    document.querySelector("#addons-details > .addon-item .title").textContent = addon.name;
-    document.querySelector("#addons-details > .addon-item .version").textContent = addon.version;
-    document.querySelector("#addons-details > .addon-item .tag").textContent = gStringBundle.GetStringFromName("addonType." + addon.type);
-    document.querySelector("#addons-details > .addon-item .description-full").textContent = addon.description;
+    detailItem.querySelector(".title").textContent = addon.name;
+    detailItem.querySelector(".version").textContent = addon.version;
+    detailItem.querySelector(".tag").textContent = gStringBundle.GetStringFromName("addonType." + addon.type);
+    detailItem.querySelector(".description-full").textContent = addon.description;
+    detailItem.querySelector(".status-uninstalled").textContent =
+      gStringBundle.formatStringFromName("addonStatus.uninstalled", [addon.name], 1);
 
     let enableBtn = document.getElementById("uninstall-btn");
     if (addon.appDisabled)
@@ -284,7 +286,9 @@ var Addons = {
 
         // Also send a notification to match the behavior of desktop Firefox
         let id = aListItem.getAttribute("addonID");
-        Services.obs.notifyObservers(document, "addon-options-displayed", id);
+        Services.obs.notifyObservers(document,
+                                     AddonManager.OPTIONS_NOTIFICATION_DISPLAYED,
+                                     id);
       }
     } catch (e) {
       Cu.reportError(e)
@@ -315,7 +319,8 @@ var Addons = {
         let item = list.firstElementChild;
         while (item) {
           if (item.addon && (item.addon.type == "theme") && (item.addon.isActive)) {
-            this.setEnabled(false, item);
+            item.addon.userDisabled = true;
+            item.setAttribute("isDisabled", true);
             break;
           }
           item = item.nextSibling;

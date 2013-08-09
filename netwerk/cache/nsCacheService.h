@@ -12,6 +12,8 @@
 #include "nsCacheSession.h"
 #include "nsCacheDevice.h"
 #include "nsCacheEntry.h"
+#include "nsThreadUtils.h"
+#include "nsICacheListener.h"
 
 #include "prthread.h"
 #include "nsIObserver.h"
@@ -20,6 +22,7 @@
 #include "nsRefPtrHashtable.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/Telemetry.h"
 
 class nsCacheRequest;
 class nsCacheProfilePrefObserver;
@@ -29,6 +32,30 @@ class nsOfflineCacheDevice;
 class nsCacheServiceAutoLock;
 class nsITimer;
 
+
+/******************************************************************************
+ * nsNotifyDoomListener
+ *****************************************************************************/
+
+class nsNotifyDoomListener : public nsRunnable {
+public:
+    nsNotifyDoomListener(nsICacheListener *listener,
+                         nsresult status)
+        : mListener(listener)      // transfers reference
+        , mStatus(status)
+    {}
+
+    NS_IMETHOD Run()
+    {
+        mListener->OnCacheEntryDoomed(mStatus);
+        NS_RELEASE(mListener);
+        return NS_OK;
+    }
+
+private:
+    nsICacheListener *mListener;
+    nsresult          mStatus;
+};
 
 /******************************************************************************
  *  nsCacheService
@@ -78,21 +105,21 @@ public:
 
     static nsresult  OpenInputStreamForEntry(nsCacheEntry *     entry,
                                              nsCacheAccessMode  mode,
-                                             PRUint32           offset,
+                                             uint32_t           offset,
                                              nsIInputStream **  result);
 
     static nsresult  OpenOutputStreamForEntry(nsCacheEntry *     entry,
                                               nsCacheAccessMode  mode,
-                                              PRUint32           offset,
+                                              uint32_t           offset,
                                               nsIOutputStream ** result);
 
-    static nsresult  OnDataSizeChange(nsCacheEntry * entry, PRInt32 deltaSize);
+    static nsresult  OnDataSizeChange(nsCacheEntry * entry, int32_t deltaSize);
 
     static nsresult  SetCacheElement(nsCacheEntry * entry, nsISupports * element);
 
     static nsresult  ValidateEntry(nsCacheEntry * entry);
 
-    static PRInt32   CacheCompressionLevel();
+    static int32_t   CacheCompressionLevel();
 
     /**
      * Methods called by any cache classes
@@ -101,11 +128,18 @@ public:
     static
     nsCacheService * GlobalInstance()   { return gService; }
 
-    static PRInt64   MemoryDeviceSize();
+    static int64_t   MemoryDeviceSize();
+
+    static int64_t   DiskDeviceHeapSize();
     
     static nsresult  DoomEntry(nsCacheEntry * entry);
 
     static bool      IsStorageEnabledForPolicy_Locked(nsCacheStoragePolicy policy);
+
+    /**
+     * Called by disk cache to notify us to use the new max smart size
+     */
+    static void      MarkStartingFresh();
 
     /**
      * Methods called by nsApplicationCacheService
@@ -118,8 +152,8 @@ public:
      * A tool to preload offline cache for profiles different from the current
      * application's profile directory.
      */
-    nsresult GetCustomOfflineDevice(nsILocalFile *aProfileDir,
-                                    PRInt32 aQuota,
+    nsresult GetCustomOfflineDevice(nsIFile *aProfileDir,
+                                    int32_t aQuota,
                                     nsOfflineCacheDevice **aDevice);
 
     // This method may be called to release an object while the cache service
@@ -128,7 +162,7 @@ public:
     // proxied to the specified target.  Otherwise, the object will be added to
     // the list of objects to be released when the cache service is unlocked.
     static void      ReleaseObject_Locked(nsISupports *    object,
-                                          nsIEventTarget * target = nsnull);
+                                          nsIEventTarget * target = nullptr);
 
     static nsresult DispatchToCacheIOThread(nsIRunnable* event);
 
@@ -146,23 +180,21 @@ public:
 
     static void      SetDiskCacheEnabled(bool    enabled);
     // Sets the disk cache capacity (in kilobytes)
-    static void      SetDiskCacheCapacity(PRInt32  capacity);
+    static void      SetDiskCacheCapacity(int32_t  capacity);
     // Set max size for a disk-cache entry (in KB). -1 disables limit up to
     // 1/8th of disk cache size
-    static void      SetDiskCacheMaxEntrySize(PRInt32  maxSize);
+    static void      SetDiskCacheMaxEntrySize(int32_t  maxSize);
     // Set max size for a memory-cache entry (in kilobytes). -1 disables
     // limit up to 90% of memory cache size
-    static void      SetMemoryCacheMaxEntrySize(PRInt32  maxSize);
+    static void      SetMemoryCacheMaxEntrySize(int32_t  maxSize);
 
     static void      SetOfflineCacheEnabled(bool    enabled);
     // Sets the offline cache capacity (in kilobytes)
-    static void      SetOfflineCacheCapacity(PRInt32  capacity);
+    static void      SetOfflineCacheCapacity(int32_t  capacity);
 
     static void      SetMemoryCache();
 
-    static void      SetCacheCompressionLevel(PRInt32 level);
-
-    static void      OnEnterExitPrivateBrowsing();
+    static void      SetCacheCompressionLevel(int32_t level);
 
     // Starts smart cache size computation if disk device is available
     static nsresult  SetDiskSmartSize();
@@ -170,8 +202,21 @@ public:
     nsresult         Init();
     void             Shutdown();
 
+    static bool      IsInitialized()
+    {
+      if (!gService) {
+          return false;
+      }
+      return gService->mInitialized;
+    }
+
     static void      AssertOwnsLock()
     { gService->mLock.AssertCurrentThreadOwns(); }
+
+    static void      LeavePrivateBrowsing();
+    bool             IsDoomListEmpty();
+
+    typedef bool (*DoomCheckFn)(nsCacheEntry* entry);
 
 private:
     friend class nsCacheServiceAutoLock;
@@ -181,20 +226,26 @@ private:
     friend class nsBlockOnCacheThreadEvent;
     friend class nsSetDiskSmartSizeCallback;
     friend class nsDoomEvent;
+    friend class nsDisableOldMaxSmartSizePrefEvent;
+    friend class nsDiskCacheMap;
+    friend class nsAsyncDoomEvent;
+    friend class nsCacheEntryDescriptor;
 
     /**
      * Internal Methods
      */
 
-    static void      Lock();
+    static void      Lock(::mozilla::Telemetry::ID mainThreadLockerID);
     static void      Unlock();
 
     nsresult         CreateDiskDevice();
     nsresult         CreateOfflineDevice();
-    nsresult         CreateCustomOfflineDevice(nsILocalFile *aProfileDir,
-                                               PRInt32 aQuota,
+    nsresult         CreateCustomOfflineDevice(nsIFile *aProfileDir,
+                                               int32_t aQuota,
                                                nsOfflineCacheDevice **aDevice);
     nsresult         CreateMemoryDevice();
+
+    nsresult         RemoveCustomOfflineDevice(nsOfflineCacheDevice *aDevice);
 
     nsresult         CreateRequest(nsCacheSession *   session,
                                    const nsACString & clientKey,
@@ -236,17 +287,17 @@ private:
     void             ClearPendingRequests(nsCacheEntry * entry);
     void             ClearDoomList(void);
     void             ClearActiveEntries(void);
-    void             DoomActiveEntries(void);
+    void             DoomActiveEntries(DoomCheckFn check);
 
     static
-    PLDHashOperator  DeactivateAndClearEntry(PLDHashTable *    table,
-                                             PLDHashEntryHdr * hdr,
-                                             PRUint32          number,
-                                             void *            arg);
+    PLDHashOperator  GetActiveEntries(PLDHashTable *    table,
+                                      PLDHashEntryHdr * hdr,
+                                      uint32_t          number,
+                                      void *            arg);
     static
     PLDHashOperator  RemoveActiveEntry(PLDHashTable *    table,
                                        PLDHashEntryHdr * hdr,
-                                       PRUint32          number,
+                                       uint32_t          number,
                                        void *            arg);
 
     static
@@ -293,28 +344,31 @@ private:
 
     // stats
     
-    PRUint32                        mTotalEntries;
-    PRUint32                        mCacheHits;
-    PRUint32                        mCacheMisses;
-    PRUint32                        mMaxKeyLength;
-    PRUint32                        mMaxDataSize;
-    PRUint32                        mMaxMetaSize;
+    uint32_t                        mTotalEntries;
+    uint32_t                        mCacheHits;
+    uint32_t                        mCacheMisses;
+    uint32_t                        mMaxKeyLength;
+    uint32_t                        mMaxDataSize;
+    uint32_t                        mMaxMetaSize;
 
     // Unexpected error totals
-    PRUint32                        mDeactivateFailures;
-    PRUint32                        mDeactivatedUnboundEntries;
+    uint32_t                        mDeactivateFailures;
+    uint32_t                        mDeactivatedUnboundEntries;
 };
 
 /******************************************************************************
  *  nsCacheServiceAutoLock
  ******************************************************************************/
 
+#define LOCK_TELEM(x) \
+  (::mozilla::Telemetry::CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_##x)
+
 // Instantiate this class to acquire the cache service lock for a particular
 // execution scope.
 class nsCacheServiceAutoLock {
 public:
-    nsCacheServiceAutoLock() {
-        nsCacheService::Lock();
+    nsCacheServiceAutoLock(mozilla::Telemetry::ID mainThreadLockerID) {
+        nsCacheService::Lock(mainThreadLockerID);
     }
     ~nsCacheServiceAutoLock() {
         nsCacheService::Unlock();

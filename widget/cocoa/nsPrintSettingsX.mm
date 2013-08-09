@@ -101,7 +101,7 @@ NS_IMETHODIMP nsPrintSettingsX::ReadPageFormatFromPrefs()
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  nsCAutoString encodedData;
+  nsAutoCString encodedData;
   nsresult rv =
     Preferences::GetCString(MAC_OS_X_PAGE_SETUP_PREFNAME, &encodedData);
   if (NS_FAILED(rv)) {
@@ -109,7 +109,7 @@ NS_IMETHODIMP nsPrintSettingsX::ReadPageFormatFromPrefs()
   }
 
   // decode the base64
-  char* decodedData = PL_Base64Decode(encodedData.get(), encodedData.Length(), nsnull);
+  char* decodedData = PL_Base64Decode(encodedData.get(), encodedData.Length(), nullptr);
   NSData* data = [NSData dataWithBytes:decodedData length:PL_strlen(decodedData)];
   if (!data)
     return NS_ERROR_FAILURE;
@@ -139,8 +139,8 @@ NS_IMETHODIMP nsPrintSettingsX::WritePageFormatToPrefs()
   if (err != noErr)
     return NS_ERROR_FAILURE;
 
-  nsCAutoString encodedData;
-  encodedData.Adopt(PL_Base64Encode((char*)[data bytes], [data length], nsnull));
+  nsAutoCString encodedData;
+  encodedData.Adopt(PL_Base64Encode((char*)[data bytes], [data length], nullptr));
   if (!encodedData.get())
     return NS_ERROR_OUT_OF_MEMORY;
 
@@ -152,7 +152,7 @@ NS_IMETHODIMP nsPrintSettingsX::WritePageFormatToPrefs()
 nsresult nsPrintSettingsX::_Clone(nsIPrintSettings **_retval)
 {
   NS_ENSURE_ARG_POINTER(_retval);
-  *_retval = nsnull;
+  *_retval = nullptr;
   
   nsPrintSettingsX *newSettings = new nsPrintSettingsX(*this);
   if (!newSettings)

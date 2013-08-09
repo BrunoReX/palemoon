@@ -16,7 +16,7 @@
 #include "txXPathTreeWalker.h"
 
 txStylesheet::txStylesheet()
-    : mRootFrame(nsnull)
+    : mRootFrame(nullptr)
 {
 }
 
@@ -112,9 +112,9 @@ txStylesheet::findTemplate(const txXPathNode& aNode,
 {
     NS_ASSERTION(aImportFrame, "missing ImportFrame pointer");
 
-    *aImportFrame = nsnull;
-    txInstruction* matchTemplate = nsnull;
-    ImportFrame* endFrame = nsnull;
+    *aImportFrame = nullptr;
+    txInstruction* matchTemplate = nullptr;
+    ImportFrame* endFrame = nullptr;
     txListIterator frameIter(&mImportFrames);
 
     if (aImportedBy) {
@@ -140,7 +140,7 @@ txStylesheet::findTemplate(const txXPathNode& aNode,
 
         if (templates) {
             // Find template with highest priority
-            PRUint32 i, len = templates->Length();
+            uint32_t i, len = templates->Length();
             for (i = 0; i < len && !matchTemplate; ++i) {
                 MatchableTemplate& templ = (*templates)[i];
                 if (templ.mMatch->matches(aNode, aContext)) {
@@ -237,7 +237,7 @@ txStylesheet::getKeyMap()
 bool
 txStylesheet::isStripSpaceAllowed(const txXPathNode& aNode, txIMatchContext* aContext)
 {
-    PRInt32 frameCount = mStripSpaceTests.Length();
+    int32_t frameCount = mStripSpaceTests.Length();
     if (frameCount == 0) {
         return false;
     }
@@ -256,7 +256,7 @@ txStylesheet::isStripSpaceAllowed(const txXPathNode& aNode, txIMatchContext* aCo
     }
 
     // check Whitespace stipping handling list against given Node
-    PRInt32 i;
+    int32_t i;
     for (i = 0; i < frameCount; ++i) {
         txStripSpaceTest* sst = mStripSpaceTests[i];
         if (sst->matches(node, aContext)) {
@@ -276,7 +276,7 @@ txStylesheet::doneCompiling()
     rv = frameIter.addAfter(mRootFrame);
     NS_ENSURE_SUCCESS(rv, rv);
     
-    mRootFrame = nsnull;
+    mRootFrame = nullptr;
     frameIter.next();
     rv = addFrames(frameIter);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -405,10 +405,10 @@ txStylesheet::addTemplate(txTemplateItem* aTemplate,
     if (simple->getType() == txPattern::UNION_PATTERN) {
         unionPattern = simple;
         simple = unionPattern->getSubPatternAt(0);
-        unionPattern->setSubPatternAt(0, nsnull);
+        unionPattern->setSubPatternAt(0, nullptr);
     }
 
-    PRUint32 unionPos = 1; // only used when unionPattern is set
+    uint32_t unionPos = 1; // only used when unionPattern is set
     while (simple) {
         double priority = aTemplate->mPrio;
         if (MOZ_DOUBLE_IS_NaN(priority)) {
@@ -417,7 +417,7 @@ txStylesheet::addTemplate(txTemplateItem* aTemplate,
                          "simple pattern without default priority");
         }
 
-        PRUint32 i, len = templates->Length();
+        uint32_t i, len = templates->Length();
         for (i = 0; i < len; ++i) {
             if (priority > (*templates)[i].mPriority) {
                 break;
@@ -434,7 +434,7 @@ txStylesheet::addTemplate(txTemplateItem* aTemplate,
         if (unionPattern) {
             simple = unionPattern->getSubPatternAt(unionPos);
             if (simple) {
-                unionPattern->setSubPatternAt(unionPos, nsnull);
+                unionPattern->setSubPatternAt(unionPos, nullptr);
             }
             ++unionPos;
         }
@@ -473,11 +473,11 @@ nsresult
 txStylesheet::addStripSpace(txStripSpaceItem* aStripSpaceItem,
                             nsTArray<txStripSpaceTest*>& aFrameStripSpaceTests)
 {
-    PRInt32 testCount = aStripSpaceItem->mStripSpaceTests.Length();
+    int32_t testCount = aStripSpaceItem->mStripSpaceTests.Length();
     for (; testCount > 0; --testCount) {
         txStripSpaceTest* sst = aStripSpaceItem->mStripSpaceTests[testCount-1];
         double priority = sst->getDefaultPriority();
-        PRInt32 i, frameCount = aFrameStripSpaceTests.Length();
+        int32_t i, frameCount = aFrameStripSpaceTests.Length();
         for (i = 0; i < frameCount; ++i) {
             if (aFrameStripSpaceTests[i]->getDefaultPriority() < priority) {
                 break;
@@ -510,7 +510,7 @@ txStylesheet::addAttributeSet(txAttributeSetItem* aAttributeSetItem)
     
     // We need to prepend the new instructions before the existing ones.
     txInstruction* instr = aAttributeSetItem->mFirstInstruction;
-    txInstruction* lastNonReturn = nsnull;
+    txInstruction* lastNonReturn = nullptr;
     while (instr->mNext) {
         lastNonReturn = instr;
         instr = instr->mNext;

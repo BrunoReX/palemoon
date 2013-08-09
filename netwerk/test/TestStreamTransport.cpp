@@ -17,7 +17,7 @@
 #include "nsStringAPI.h"
 #include "nsIFileStreams.h"
 #include "nsIStreamListener.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsNetUtil.h"
 #include "nsAutoLock.h"
 #include "prlog.h"
@@ -29,7 +29,7 @@
 //
 // set NSPR_LOG_MODULES=Test:5
 //
-static PRLogModuleInfo *gTestLog = nsnull;
+static PRLogModuleInfo *gTestLog = nullptr;
 #endif
 #define LOG(args) PR_LOG(gTestLog, PR_LOG_DEBUG, args)
 
@@ -48,7 +48,7 @@ public:
     NS_DECL_ISUPPORTS
 
     MyCopier()
-        : mLock(nsnull)
+        : mLock(nullptr)
         , mInputCondition(NS_OK)
     {
     }
@@ -101,13 +101,13 @@ public:
         while (1) {
             mInputCondition = NS_OK; // reset
 
-            PRUint32 n;
+            uint32_t n;
             nsresult rv = mOutput->WriteSegments(FillOutputBuffer, this, CHUNK_SIZE, &n);
             if (NS_FAILED(rv) || (n == 0)) {
                 if (rv == NS_BASE_STREAM_WOULD_BLOCK)
-                    mOutput->AsyncWait(this, 0, 0, nsnull);
+                    mOutput->AsyncWait(this, 0, 0, nullptr);
                 else if (mInputCondition == NS_BASE_STREAM_WOULD_BLOCK)
-                    mInput->AsyncWait(this, 0, 0, nsnull);
+                    mInput->AsyncWait(this, 0, 0, nullptr);
                 else
                     Close_Locked();
                 break;
@@ -134,15 +134,15 @@ public:
         mInput = do_QueryInterface(inStr);
         mOutput = do_QueryInterface(outStr);
 
-        return mInput->AsyncWait(this, 0, 0, nsnull);
+        return mInput->AsyncWait(this, 0, 0, nullptr);
     }
 
     static NS_METHOD FillOutputBuffer(nsIOutputStream *outStr,
                                       void *closure,
                                       char *buffer,
-                                      PRUint32 offset,
-                                      PRUint32 count,
-                                      PRUint32 *countRead)
+                                      uint32_t offset,
+                                      uint32_t count,
+                                      uint32_t *countRead)
     {
         MyCopier *self = (MyCopier *) closure;
 
@@ -191,17 +191,17 @@ RunTest(nsIFile *srcFile, nsIFile *destFile)
     if (NS_FAILED(rv)) return rv;
 
     nsCOMPtr<nsITransport> srcTransport;
-    rv = sts->CreateInputTransport(srcStr, PRInt64(-1), PRInt64(-1), true,
+    rv = sts->CreateInputTransport(srcStr, int64_t(-1), int64_t(-1), true,
                                    getter_AddRefs(srcTransport));
     if (NS_FAILED(rv)) return rv;
 
     nsCOMPtr<nsITransport> destTransport;
-    rv = sts->CreateOutputTransport(destStr, PRInt64(-1), PRInt64(-1), true,
+    rv = sts->CreateOutputTransport(destStr, int64_t(-1), int64_t(-1), true,
                                     getter_AddRefs(destTransport));
     if (NS_FAILED(rv)) return rv;
 
     MyCopier *copier = new MyCopier();
-    if (copier == nsnull)
+    if (copier == nullptr)
         return NS_ERROR_OUT_OF_MEMORY;
     NS_ADDREF(copier);
 
@@ -236,7 +236,7 @@ RunBlockingTest(nsIFile *srcFile, nsIFile *destFile)
     if (NS_FAILED(rv)) return rv;
     
     nsCOMPtr<nsITransport> destTransport;
-    rv = sts->CreateOutputTransport(fileOut, PRInt64(-1), PRInt64(-1),
+    rv = sts->CreateOutputTransport(fileOut, int64_t(-1), int64_t(-1),
                                     true, getter_AddRefs(destTransport));
     if (NS_FAILED(rv)) return rv;
 
@@ -245,7 +245,7 @@ RunBlockingTest(nsIFile *srcFile, nsIFile *destFile)
     if (NS_FAILED(rv)) return rv;
 
     char buf[120];
-    PRUint32 n;
+    uint32_t n;
     for (;;) {
         rv = srcIn->Read(buf, sizeof(buf), &n);
         if (NS_FAILED(rv) || (n == 0)) return rv;
@@ -274,17 +274,17 @@ main(int argc, char* argv[])
     char* fileName = argv[1];
     {
         nsCOMPtr<nsIServiceManager> servMan;
-        NS_InitXPCOM2(getter_AddRefs(servMan), nsnull, nsnull);
+        NS_InitXPCOM2(getter_AddRefs(servMan), nullptr, nullptr);
         nsCOMPtr<nsIComponentRegistrar> registrar = do_QueryInterface(servMan);
         NS_ASSERTION(registrar, "Null nsIComponentRegistrar");
         if (registrar)
-            registrar->AutoRegister(nsnull);
+            registrar->AutoRegister(nullptr);
 
 #if defined(PR_LOGGING)
         gTestLog = PR_NewLogModule("Test");
 #endif
 
-        nsCOMPtr<nsILocalFile> srcFile;
+        nsCOMPtr<nsIFile> srcFile;
         rv = NS_NewNativeLocalFile(nsDependentCString(fileName), false, getter_AddRefs(srcFile));
         if (NS_FAILED(rv)) return rv;
 
@@ -292,11 +292,11 @@ main(int argc, char* argv[])
         rv = srcFile->Clone(getter_AddRefs(destFile));
         if (NS_FAILED(rv)) return rv;
 
-        nsCAutoString leafName;
+        nsAutoCString leafName;
         rv = destFile->GetNativeLeafName(leafName);
         if (NS_FAILED(rv)) return rv;
 
-        nsCAutoString newName(leafName);
+        nsAutoCString newName(leafName);
         newName.Append(NS_LITERAL_CSTRING(".1"));
         rv = destFile->SetNativeLeafName(newName);
         if (NS_FAILED(rv)) return rv;
@@ -317,7 +317,7 @@ main(int argc, char* argv[])
         PR_Sleep(PR_SecondsToInterval(1));
     } // this scopes the nsCOMPtrs
     // no nsCOMPtrs are allowed to be alive when you call NS_ShutdownXPCOM
-    rv = NS_ShutdownXPCOM(nsnull);
+    rv = NS_ShutdownXPCOM(nullptr);
     NS_ASSERTION(NS_SUCCEEDED(rv), "NS_ShutdownXPCOM failed");
     return NS_OK;
 }

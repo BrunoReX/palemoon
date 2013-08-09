@@ -317,7 +317,7 @@ function copySourceLocation(aDownload)
   if (gPerformAllCallback === null) {
     let uris = [];
     gPerformAllCallback = function(aURI) aURI ? uris.push(aURI) :
-      clipboard.copyString(uris.join("\n"));
+      clipboard.copyString(uris.join("\n"), document);
   }
 
   // We have a callback to use, so use it to add a uri
@@ -325,7 +325,7 @@ function copySourceLocation(aDownload)
     gPerformAllCallback(uri);
   else {
     // It's a plain copy source, so copy it
-    clipboard.copyString(uri);
+    clipboard.copyString(uri, document);
   }
 }
 
@@ -682,6 +682,9 @@ var gDownloadDNDObserver =
 
     var dt = aEvent.dataTransfer;
     dt.mozSetDataAt("application/x-moz-file", f, 0);
+    var url = Services.io.newFileURI(f).spec;
+    dt.setData("text/uri-list", url);
+    dt.setData("text/plain", url);
     dt.effectAllowed = "copyMove";
     dt.addElement(dl);
   },
@@ -698,20 +701,28 @@ var gDownloadDNDObserver =
   onDrop: function(aEvent)
   {
     var dt = aEvent.dataTransfer;
+    // If dragged item is from our source, do not try to
+    // redownload already downloaded file.
+    if (dt.mozGetDataAt("application/x-moz-file", 0))
+      return;
+
     var url = dt.getData("URL");
     var name;
     if (!url) {
       url = dt.getData("text/x-moz-url") || dt.getData("text/plain");
       [url, name] = url.split("\n");
     }
-    if (url)
-      saveURL(url, name ? name : url, null, true, true);
+    if (url) {
+      let sourceDoc = dt.mozSourceNode ? dt.mozSourceNode.ownerDocument : document;
+      saveURL(url, name ? name : url, null, true, true, null, sourceDoc);
+    }
   }
 }
 
 function pasteHandler() {
   let trans = Cc["@mozilla.org/widget/transferable;1"].
               createInstance(Ci.nsITransferable);
+  trans.init(null);
   let flavors = ["text/x-moz-url", "text/unicode"];
   flavors.forEach(trans.addDataFlavor);
 
@@ -728,7 +739,7 @@ function pasteHandler() {
 
     let uri = Services.io.newURI(url, null, null);
 
-    saveURL(uri.spec, name || uri.spec, null, true, true);
+    saveURL(uri.spec, name || uri.spec, null, true, true, null, document);
   } catch (ex) {}
 }
 
@@ -1149,7 +1160,7 @@ function buildDownloadList(aForceBuild)
 
   // Take a quick break before we actually start building the list
   gBuilder = setTimeout(function() {
-    // Start building the list and select the first item
+    // Start building the list
     stepListBuilder(1);
 
     // We just tried to add a single item, so we probably need to enable

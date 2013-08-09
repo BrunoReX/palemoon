@@ -11,8 +11,8 @@
 // Global functions and data [declaration]
 
 
-static const PRUint16 *g_Big5MappingTable[2] = {
-  g_ASCIIMapping,
+static const uint16_t *g_Big5MappingTable[2] = {
+  g_ASCIIMappingTable,
   g_ufBig5Mapping
 };
 

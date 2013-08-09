@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-let EXPORTED_SYMBOLS = [ "WindowDraggingElement" ];
+this.EXPORTED_SYMBOLS = [ "WindowDraggingElement" ];
 
-function WindowDraggingElement(elem) {
+this.WindowDraggingElement = function WindowDraggingElement(elem) {
   this._elem = elem;
   this._window = elem.ownerDocument.defaultView;
 #ifdef XP_WIN
@@ -13,7 +13,7 @@ function WindowDraggingElement(elem) {
   else
 #endif
   this._elem.addEventListener("mousedown", this, false);
-}
+};
 
 WindowDraggingElement.prototype = {
   mouseDownCheck: function(e) { return true; },

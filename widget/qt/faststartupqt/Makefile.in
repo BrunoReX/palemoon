@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH = ../../..
+DEPTH = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir = @srcdir@
 VPATH = @srcdir@
@@ -21,10 +21,20 @@ EXTRA_DSO_LDOPTS = \
 	$(MOZ_QT_LIBS) \
 	$(NULL)
 
-LOCAL_INCLUDES += -I$(topsrcdir)/xpcom/build
+LOCAL_INCLUDES += \
+	-I$(topsrcdir)/xpcom/build \
+	-I$(topsrcdir)/widget/qt \
+	$(NULL)
 
-GARBAGE += moziqwidget.h nsQAppInstance.h nsQAppInstance.cpp
-export:: $(topsrcdir)/widget/qt/moziqwidget.h $(topsrcdir)/toolkit/xre/nsQAppInstance.h $(topsrcdir)/toolkit/xre/nsQAppInstance.cpp
+EXPORT_SOURCES = \
+	$(topsrcdir)/widget/qt/moziqwidget.h \
+	$(topsrcdir)/toolkit/xre/nsQAppInstance.h \
+	$(topsrcdir)/toolkit/xre/nsQAppInstance.cpp \
+	$(topsrcdir)/widget/qt/mozqglwidgetwrapper.h \
+	$(topsrcdir)/widget/qt/mozqglwidgetwrapper.cpp
+
+GARBAGE += $(EXPORT_SOURCES)
+export:: $(EXPORT_SOURCES)
 	$(INSTALL) $^ .
 
 MOCSRCS = \
@@ -42,6 +52,7 @@ CPPSRCS += \
 	mozqwidgetfast.cpp \
 	nsFastStartupQt.cpp \
 	nsQAppInstance.cpp \
+	mozqglwidgetwrapper.cpp \
 	$(NULL)
 
 DEFINES += -DLIBRARY_FILENAME="$(SHARED_LIBRARY)" -DMOZ_NO_MOZALLOC -DXPCOM_GLUE

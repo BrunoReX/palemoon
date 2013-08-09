@@ -43,7 +43,7 @@ private:
 };
 
 
-nsDeleteDir * nsDeleteDir::gInstance = nsnull;
+nsDeleteDir * nsDeleteDir::gInstance = nullptr;
 
 nsDeleteDir::nsDeleteDir()
   : mLock("nsDeleteDir.mLock"),
@@ -51,12 +51,12 @@ nsDeleteDir::nsDeleteDir()
     mShutdownPending(false),
     mStopDeleting(false)
 {
-  NS_ASSERTION(gInstance==nsnull, "multiple nsCacheService instances!");
+  NS_ASSERTION(gInstance==nullptr, "multiple nsCacheService instances!");
 }
 
 nsDeleteDir::~nsDeleteDir()
 {
-  gInstance = nsnull;
+  gInstance = nullptr;
 }
 
 nsresult
@@ -87,7 +87,7 @@ nsDeleteDir::Shutdown(bool finishDeleting)
       gInstance->mStopDeleting = true;
 
     // remove all pending timers
-    for (PRInt32 i = gInstance->mTimers.Count(); i > 0; i--) {
+    for (int32_t i = gInstance->mTimers.Count(); i > 0; i--) {
       nsCOMPtr<nsITimer> timer = gInstance->mTimers[i-1];
       gInstance->mTimers.RemoveObjectAt(i-1);
       timer->Cancel();
@@ -120,7 +120,7 @@ nsDeleteDir::Shutdown(bool finishDeleting)
 
   delete gInstance;
 
-  for (PRInt32 i = 0; i < dirsToRemove.Count(); i++)
+  for (int32_t i = 0; i < dirsToRemove.Count(); i++)
     dirsToRemove[i]->Remove(true);
 
   return NS_OK;
@@ -132,7 +132,7 @@ nsDeleteDir::InitThread()
   if (mThread)
     return NS_OK;
 
-  nsresult rv = NS_NewThread(getter_AddRefs(mThread));
+  nsresult rv = NS_NewNamedThread("Cache Deleter", getter_AddRefs(mThread));
   if (NS_FAILED(rv)) {
     NS_WARNING("Can't create background thread");
     return rv;
@@ -156,7 +156,7 @@ nsDeleteDir::DestroyThread()
     return;
 
   NS_DispatchToMainThread(new nsDestroyThreadEvent(mThread));
-  mThread = nsnull;
+  mThread = nullptr;
 }
 
 void
@@ -166,7 +166,7 @@ nsDeleteDir::TimerCallback(nsITimer *aTimer, void *arg)
   {
     MutexAutoLock lock(gInstance->mLock);
 
-    PRInt32 idx = gInstance->mTimers.IndexOf(aTimer);
+    int32_t idx = gInstance->mTimers.IndexOf(aTimer);
     if (idx == -1) {
       // Timer was canceled and removed during shutdown.
       return;
@@ -179,8 +179,16 @@ nsDeleteDir::TimerCallback(nsITimer *aTimer, void *arg)
   dirList = static_cast<nsCOMArray<nsIFile> *>(arg);
 
   bool shuttingDown = false;
-  for (PRInt32 i = 0; i < dirList->Count() && !shuttingDown; i++) {
-    gInstance->RemoveDir((*dirList)[i], &shuttingDown);
+
+  // Intentional extra braces to control variable sope.
+  {
+    // Low IO priority can only be set when running in the context of the
+    // current thread.  So this shouldn't be moved to where we set the priority
+    // of the Cache deleter thread using the nsThread's NSPR priority constants.
+    nsAutoLowPriorityIO autoLowPriority;
+    for (int32_t i = 0; i < dirList->Count() && !shuttingDown; i++) {
+      gInstance->RemoveDir((*dirList)[i], &shuttingDown);
+    }
   }
 
   {
@@ -190,7 +198,7 @@ nsDeleteDir::TimerCallback(nsITimer *aTimer, void *arg)
 }
 
 nsresult
-nsDeleteDir::DeleteDir(nsIFile *dirIn, bool moveToTrash, PRUint32 delay)
+nsDeleteDir::DeleteDir(nsIFile *dirIn, bool moveToTrash, uint32_t delay)
 {
   Telemetry::AutoTimer<Telemetry::NETWORK_DISK_CACHE_TRASHRENAME> timer;
 
@@ -210,15 +218,15 @@ nsDeleteDir::DeleteDir(nsIFile *dirIn, bool moveToTrash, PRUint32 delay)
     rv = GetTrashDir(dir, &trash);
     if (NS_FAILED(rv))
       return rv;
-    nsCAutoString origLeaf;
+    nsAutoCString origLeaf;
     rv = trash->GetNativeLeafName(origLeaf);
     if (NS_FAILED(rv))
       return rv;
 
     // Append random number to the trash directory and check if it exists.
     srand(PR_Now());
-    nsCAutoString leaf;
-    for (PRInt32 i = 0; i < 10; i++) {
+    nsAutoCString leaf;
+    for (int32_t i = 0; i < 10; i++) {
       leaf = origLeaf;
       leaf.AppendInt(rand());
       rv = trash->SetNativeLeafName(leaf);
@@ -247,7 +255,7 @@ nsDeleteDir::DeleteDir(nsIFile *dirIn, bool moveToTrash, PRUint32 delay)
     // Important: must rename directory w/o changing parent directory: else on
     // NTFS we'll wait (with cache lock) while nsIFile's ACL reset walks file
     // tree: was hanging GUI for *minutes* on large cache dirs.
-    rv = dir->MoveToNative(nsnull, leaf);
+    rv = dir->MoveToNative(nullptr, leaf);
 #endif
     if (NS_FAILED(rv))
       return rv;
@@ -276,12 +284,12 @@ nsDeleteDir::GetTrashDir(nsIFile *target, nsCOMPtr<nsIFile> *result)
   char* cachePath = getenv("CACHE_DIRECTORY");
   if (cachePath) {
     rv = NS_NewNativeLocalFile(nsDependentCString(cachePath),
-                               true, (nsILocalFile**)(nsIFile**)getter_AddRefs(*result));
+                               true, getter_AddRefs(*result));
     if (NS_FAILED(rv))
       return rv;
 
     // Add a sub folder with the cache folder name
-    nsCAutoString leaf;
+    nsAutoCString leaf;
     rv = target->GetNativeLeafName(leaf);
     (*result)->AppendNative(leaf);
   } else
@@ -292,7 +300,7 @@ nsDeleteDir::GetTrashDir(nsIFile *target, nsCOMPtr<nsIFile> *result)
   if (NS_FAILED(rv))
     return rv;
 
-  nsCAutoString leaf;
+  nsAutoCString leaf;
   rv = (*result)->GetNativeLeafName(leaf);
   if (NS_FAILED(rv))
     return rv;
@@ -378,7 +386,7 @@ nsDeleteDir::RemoveOldTrashes(nsIFile *cacheDir)
 }
 
 nsresult
-nsDeleteDir::PostTimer(void *arg, PRUint32 delay)
+nsDeleteDir::PostTimer(void *arg, uint32_t delay)
 {
   nsresult rv;
 

@@ -9,6 +9,7 @@
 #define _nsTextEquivUtils_H_
 
 #include "Accessible.h"
+#include "Role.h"
 
 #include "nsIContent.h"
 #include "nsIStringBundle.h"
@@ -19,19 +20,19 @@
 enum ETextEquivRule
 {
   // No rule.
-  eNoRule = 0x00,
+  eNoNameRule = 0x00,
 
   // Walk into subtree only if the currently navigated accessible is not root
   // accessible (i.e. if the accessible is part of text equivalent computation).
-  eFromSubtreeIfRec = 0x01,
+  eNameFromSubtreeIfReqRule = 0x01,
 
   // Text equivalent computation from subtree is allowed.
-  eFromSubtree = 0x03,
+  eNameFromSubtreeRule = 0x03,
 
   // The accessible allows to append its value to text equivalent.
   // XXX: This is temporary solution. Once we move accessible value of links
   // and linkable accessibles to MSAA part we can remove this.
-  eFromValue = 0x04
+  eNameFromValueRule = 0x04
 };
 
 /**
@@ -41,6 +42,7 @@ enum ETextEquivRule
 class nsTextEquivUtils
 {
 public:
+  typedef mozilla::a11y::Accessible Accessible;
 
   /**
    * Calculates the name from accessible subtree if allowed.
@@ -140,9 +142,9 @@ private:
   static bool IsWhitespace(PRUnichar aChar);
 
   /**
-   * Map array from roles to name rules (constants of ETextEquivRule).
+   * Returns the rule (constant of ETextEquivRule) for a given role.
    */
-  static PRUint32 gRoleToNameRulesMap[];
+  static uint32_t GetRoleRule(mozilla::a11y::roles::Role aRole);
 
   /**
    * The accessible for which we are computing a text equivalent. It is useful

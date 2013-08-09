@@ -6,6 +6,8 @@
 #ifndef nsUnicodeToUTF8_h___
 #define nsUnicodeToUTF8_h___
 
+#include "mozilla/Attributes.h"
+
 // Class ID for our UnicodeToUTF8 charset converter
 // {7C657D18-EC5E-11d2-8AAC-00600811A836}
 #define NS_UNICODETOUTF8_CID \
@@ -25,7 +27,7 @@
  * @created         05/Apr/1999
  * @author  Catalin Rotaru [CATA]
  */
-class nsUnicodeToUTF8 : public nsIUnicodeEncoder
+class nsUnicodeToUTF8 MOZ_FINAL : public nsIUnicodeEncoder
 {
   NS_DECL_ISUPPORTS
 
@@ -37,18 +39,18 @@ public:
   nsUnicodeToUTF8() {mHighSurrogate = 0;}
 
   NS_IMETHOD Convert(const PRUnichar * aSrc, 
-                     PRInt32 * aSrcLength, 
+                     int32_t * aSrcLength, 
                      char * aDest, 
-                     PRInt32 * aDestLength);
+                     int32_t * aDestLength);
 
-  NS_IMETHOD Finish(char * aDest, PRInt32 * aDestLength);
+  NS_IMETHOD Finish(char * aDest, int32_t * aDestLength);
 
-  NS_IMETHOD GetMaxLength(const PRUnichar * aSrc, PRInt32 aSrcLength, 
-      PRInt32 * aDestLength);
+  NS_IMETHOD GetMaxLength(const PRUnichar * aSrc, int32_t aSrcLength, 
+      int32_t * aDestLength);
 
   NS_IMETHOD Reset() {mHighSurrogate = 0; return NS_OK;}
 
-  NS_IMETHOD SetOutputErrorBehavior(PRInt32 aBehavior, 
+  NS_IMETHOD SetOutputErrorBehavior(int32_t aBehavior, 
     nsIUnicharEncoder * aEncoder, PRUnichar aChar) {return NS_OK;}
 
 protected:

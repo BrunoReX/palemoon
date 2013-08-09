@@ -21,7 +21,7 @@
 
 namespace mozilla {
 
-static nsTArray<nsCString> *gFeaturesAlreadyReported = nsnull;
+static nsTArray<nsCString> *gFeaturesAlreadyReported = nullptr;
 
 class ObserverToDestroyFeaturesAlreadyReported : public nsIObserver
 {
@@ -45,7 +45,7 @@ ObserverToDestroyFeaturesAlreadyReported::Observe(nsISupports* aSubject,
   if (!strcmp(aTopic, "xpcom-shutdown")) {
     if (gFeaturesAlreadyReported) {
       delete gFeaturesAlreadyReported;
-      gFeaturesAlreadyReported = nsnull;
+      gFeaturesAlreadyReported = nullptr;
     }
   }
   return NS_OK;
@@ -69,13 +69,13 @@ public:
       nsRefPtr<ObserverToDestroyFeaturesAlreadyReported> observer = new ObserverToDestroyFeaturesAlreadyReported;
       nsresult rv = observerService->AddObserver(observer, "xpcom-shutdown", false);
       if (NS_FAILED(rv)) {
-        observer = nsnull;
+        observer = nullptr;
         return NS_OK;
       }
       gFeaturesAlreadyReported = new nsTArray<nsCString>;
     }
 
-    nsCAutoString featureString;
+    nsAutoCString featureString;
     featureString.AppendPrintf("%s%c ",
                                mFeature,
                                mStatusChar);

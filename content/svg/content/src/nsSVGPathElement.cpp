@@ -10,14 +10,10 @@
 #include "DOMSVGPathSeg.h"
 #include "DOMSVGPathSegList.h"
 #include "nsCOMPtr.h"
-#include "nsIFrame.h"
 #include "nsContentUtils.h"
-#include "nsSVGPathDataParser.h"
 #include "nsSVGPathElement.h"
-#include "nsSVGUtils.h"
 #include "DOMSVGPoint.h"
 #include "gfxContext.h"
-#include "gfxPlatform.h"
 
 using namespace mozilla;
 
@@ -107,7 +103,7 @@ nsSVGPathElement::GetPointAtLength(float distance, nsIDOMSVGPoint **_retval)
 
 /* unsigned long getPathSegAtLength (in float distance); */
 NS_IMETHODIMP
-nsSVGPathElement::GetPathSegAtLength(float distance, PRUint32 *_retval)
+nsSVGPathElement::GetPathSegAtLength(float distance, uint32_t *_retval)
 {
   NS_ENSURE_FINITE(distance, NS_ERROR_ILLEGAL_VALUE);
   *_retval = mD.GetAnimValue().GetPathSegAtLength(distance);

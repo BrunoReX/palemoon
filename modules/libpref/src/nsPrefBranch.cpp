@@ -7,7 +7,7 @@
 #include "nsXULAppAPI.h"
 
 #include "nsPrefBranch.h"
-#include "nsILocalFile.h"
+#include "nsILocalFile.h" // nsILocalFile used for backwards compatibility
 #include "nsIObserverService.h"
 #include "nsXPCOM.h"
 #include "nsISupportsPrimitives.h"
@@ -17,10 +17,8 @@
 #include "nsXPIDLString.h"
 #include "nsIStringBundle.h"
 #include "prefapi.h"
-#include "prmem.h"
 #include "pldhash.h"
 
-#include "plstr.h"
 #include "nsCRT.h"
 #include "mozilla/Services.h"
 
@@ -35,7 +33,7 @@ struct EnumerateData {
 // Prototypes
 static PLDHashOperator
   pref_enumChild(PLDHashTable *table, PLDHashEntryHdr *heh,
-                 PRUint32 i, void *arg);
+                 uint32_t i, void *arg);
 
 using mozilla::dom::ContentChild;
 
@@ -49,7 +47,7 @@ GetContentChild()
     }
     return cpc;
   }
-  return nsnull;
+  return nullptr;
 }
 
 /*
@@ -114,7 +112,7 @@ NS_IMETHODIMP nsPrefBranch::GetRoot(char **aRoot)
   return NS_OK;
 }
 
-NS_IMETHODIMP nsPrefBranch::GetPrefType(const char *aPrefName, PRInt32 *_retval)
+NS_IMETHODIMP nsPrefBranch::GetPrefType(const char *aPrefName, int32_t *_retval)
 {
   NS_ENSURE_ARG(aPrefName);
   const char *pref = getPrefName(aPrefName);
@@ -141,6 +139,19 @@ NS_IMETHODIMP nsPrefBranch::SetBoolPref(const char *aPrefName, bool aValue)
   return PREF_SetBoolPref(pref, aValue, mIsDefault);
 }
 
+NS_IMETHODIMP nsPrefBranch::GetFloatPref(const char *aPrefName, float *_retval)
+{
+  NS_ENSURE_ARG(aPrefName);
+  const char *pref = getPrefName(aPrefName);
+  nsAutoCString stringVal;
+  nsresult rv = GetCharPref(pref, getter_Copies(stringVal));
+  if (NS_SUCCEEDED(rv)) {
+    *_retval = stringVal.ToFloat(&rv);
+  }
+
+  return rv;
+}
+
 NS_IMETHODIMP nsPrefBranch::GetCharPref(const char *aPrefName, char **_retval)
 {
   NS_ENSURE_ARG(aPrefName);
@@ -161,14 +172,14 @@ NS_IMETHODIMP nsPrefBranch::SetCharPref(const char *aPrefName, const char *aValu
   return PREF_SetCharPref(pref, aValue, mIsDefault);
 }
 
-NS_IMETHODIMP nsPrefBranch::GetIntPref(const char *aPrefName, PRInt32 *_retval)
+NS_IMETHODIMP nsPrefBranch::GetIntPref(const char *aPrefName, int32_t *_retval)
 {
   NS_ENSURE_ARG(aPrefName);
   const char *pref = getPrefName(aPrefName);
   return PREF_GetIntPref(pref, _retval, mIsDefault);
 }
 
-NS_IMETHODIMP nsPrefBranch::SetIntPref(const char *aPrefName, PRInt32 aValue)
+NS_IMETHODIMP nsPrefBranch::SetIntPref(const char *aPrefName, int32_t aValue)
 {
   if (GetContentChild()) {
     NS_ERROR("cannot set pref from content process");
@@ -232,18 +243,19 @@ NS_IMETHODIMP nsPrefBranch::GetComplexValue(const char *aPrefName, const nsIID &
     return rv;
   }
 
-  if (aType.Equals(NS_GET_IID(nsILocalFile))) {
+  // also check nsILocalFile, for backwards compatibility
+  if (aType.Equals(NS_GET_IID(nsIFile)) || aType.Equals(NS_GET_IID(nsILocalFile))) {
     if (GetContentChild()) {
-      NS_ERROR("cannot get nsILocalFile pref from content process");
+      NS_ERROR("cannot get nsIFile pref from content process");
       return NS_ERROR_NOT_AVAILABLE;
     }
 
-    nsCOMPtr<nsILocalFile> file(do_CreateInstance(NS_LOCAL_FILE_CONTRACTID, &rv));
+    nsCOMPtr<nsIFile> file(do_CreateInstance(NS_LOCAL_FILE_CONTRACTID, &rv));
 
     if (NS_SUCCEEDED(rv)) {
       rv = file->SetPersistentDescriptor(utf8String);
       if (NS_SUCCEEDED(rv)) {
-        file.forget(reinterpret_cast<nsILocalFile**>(_retval));
+        file.forget(reinterpret_cast<nsIFile**>(_retval));
         return NS_OK;
       }
     }
@@ -266,17 +278,17 @@ NS_IMETHODIMP nsPrefBranch::GetComplexValue(const char *aPrefName, const nsIID &
     nsACString::const_iterator keyEnd(keyBegin);
     if (!FindCharInReadable(']', keyEnd, strEnd))
       return NS_ERROR_FAILURE;
-    nsCAutoString key(Substring(keyBegin, keyEnd));
+    nsAutoCString key(Substring(keyBegin, keyEnd));
     
-    nsCOMPtr<nsILocalFile> fromFile;        
+    nsCOMPtr<nsIFile> fromFile;
     nsCOMPtr<nsIProperties> directoryService(do_GetService(NS_DIRECTORY_SERVICE_CONTRACTID, &rv));
     if (NS_FAILED(rv))
       return rv;
-    rv = directoryService->Get(key.get(), NS_GET_IID(nsILocalFile), getter_AddRefs(fromFile));
+    rv = directoryService->Get(key.get(), NS_GET_IID(nsIFile), getter_AddRefs(fromFile));
     if (NS_FAILED(rv))
       return rv;
     
-    nsCOMPtr<nsILocalFile> theFile;
+    nsCOMPtr<nsIFile> theFile;
     rv = NS_NewNativeLocalFile(EmptyCString(), true, getter_AddRefs(theFile));
     if (NS_FAILED(rv))
       return rv;
@@ -317,11 +329,12 @@ NS_IMETHODIMP nsPrefBranch::SetComplexValue(const char *aPrefName, const nsIID &
 
   nsresult   rv = NS_NOINTERFACE;
 
-  if (aType.Equals(NS_GET_IID(nsILocalFile))) {
-    nsCOMPtr<nsILocalFile> file = do_QueryInterface(aValue);
+  // also check nsILocalFile, for backwards compatibility
+  if (aType.Equals(NS_GET_IID(nsIFile)) || aType.Equals(NS_GET_IID(nsILocalFile))) {
+    nsCOMPtr<nsIFile> file = do_QueryInterface(aValue);
     if (!file)
       return NS_NOINTERFACE;
-    nsCAutoString descriptorString;
+    nsAutoCString descriptorString;
 
     rv = file->GetPersistentDescriptor(descriptorString);
     if (NS_SUCCEEDED(rv)) {
@@ -335,27 +348,27 @@ NS_IMETHODIMP nsPrefBranch::SetComplexValue(const char *aPrefName, const nsIID &
     if (!relFilePref)
       return NS_NOINTERFACE;
     
-    nsCOMPtr<nsILocalFile> file;
+    nsCOMPtr<nsIFile> file;
     relFilePref->GetFile(getter_AddRefs(file));
     if (!file)
       return NS_NOINTERFACE;
-    nsCAutoString relativeToKey;
+    nsAutoCString relativeToKey;
     (void) relFilePref->GetRelativeToKey(relativeToKey);
 
-    nsCOMPtr<nsILocalFile> relativeToFile;        
+    nsCOMPtr<nsIFile> relativeToFile;
     nsCOMPtr<nsIProperties> directoryService(do_GetService(NS_DIRECTORY_SERVICE_CONTRACTID, &rv));
     if (NS_FAILED(rv))
       return rv;
-    rv = directoryService->Get(relativeToKey.get(), NS_GET_IID(nsILocalFile), getter_AddRefs(relativeToFile));
+    rv = directoryService->Get(relativeToKey.get(), NS_GET_IID(nsIFile), getter_AddRefs(relativeToFile));
     if (NS_FAILED(rv))
       return rv;
 
-    nsCAutoString relDescriptor;
+    nsAutoCString relDescriptor;
     rv = file->GetRelativeDescriptor(relativeToFile, relDescriptor);
     if (NS_FAILED(rv))
       return rv;
     
-    nsCAutoString descriptorString;
+    nsAutoCString descriptorString;
     descriptorString.Append('[');
     descriptorString.Append(relativeToKey);
     descriptorString.Append(']');
@@ -472,11 +485,11 @@ NS_IMETHODIMP nsPrefBranch::DeleteBranch(const char *aStartingAt)
   return PREF_DeleteBranch(pref);
 }
 
-NS_IMETHODIMP nsPrefBranch::GetChildList(const char *aStartingAt, PRUint32 *aCount, char ***aChildArray)
+NS_IMETHODIMP nsPrefBranch::GetChildList(const char *aStartingAt, uint32_t *aCount, char ***aChildArray)
 {
   char            **outArray;
-  PRInt32         numPrefs;
-  PRInt32         dwIndex;
+  int32_t         numPrefs;
+  int32_t         dwIndex;
   EnumerateData   ed;
   nsAutoTArray<nsCString, 32> prefArray;
 
@@ -484,7 +497,7 @@ NS_IMETHODIMP nsPrefBranch::GetChildList(const char *aStartingAt, PRUint32 *aCou
   NS_ENSURE_ARG_POINTER(aCount);
   NS_ENSURE_ARG_POINTER(aChildArray);
 
-  *aChildArray = nsnull;
+  *aChildArray = nullptr;
   *aCount = 0;
 
   if (!gHashTable.ops)
@@ -559,7 +572,7 @@ NS_IMETHODIMP nsPrefBranch::AddObserver(const char *aDomain, nsIObserver *aObser
   mObservers.Put(pCallback, pCallback);
 
   // We must pass a fully qualified preference name to the callback
-  // aDomain == nsnull is the only possible failure, and we trapped it with
+  // aDomain == nullptr is the only possible failure, and we trapped it with
   // NS_ENSURE_ARG above.
   pref = getPrefName(aDomain);
   PREF_RegisterCallback(pref, NotifyObserver, pCallback);
@@ -590,7 +603,7 @@ NS_IMETHODIMP nsPrefBranch::RemoveObserver(const char *aDomain, nsIObserver *aOb
   nsAutoPtr<PrefCallback> pCallback;
   mObservers.RemoveAndForget(&key, pCallback);
   if (pCallback) {
-    // aDomain == nsnull is the only possible failure, trapped above
+    // aDomain == nullptr is the only possible failure, trapped above
     const char *pref = getPrefName(aDomain);
     rv = PREF_UnregisterCallback(pref, NotifyObserver, pCallback);
   }
@@ -621,8 +634,8 @@ nsresult nsPrefBranch::NotifyObserver(const char *newpref, void *data)
 
   // remove any root this string may contain so as to not confuse the observer
   // by passing them something other than what they passed us as a topic
-  PRUint32 len = pCallback->GetPrefBranch()->GetRootLength();
-  nsCAutoString suffix(newpref + len);
+  uint32_t len = pCallback->GetPrefBranch()->GetRootLength();
+  nsAutoCString suffix(newpref + len);
 
   observer->Observe(static_cast<nsIPrefBranch *>(pCallback->GetPrefBranch()),
                     NS_PREFBRANCH_PREFCHANGE_TOPIC_ID,
@@ -655,7 +668,7 @@ void nsPrefBranch::freeObserverList(void)
   // RemoveObserver() when they're destructed; we need to keep those calls from
   // touching mObservers.
   mFreeingObserverList = true;
-  mObservers.Enumerate(&FreeObserverFunc, nsnull);
+  mObservers.Enumerate(&FreeObserverFunc, nullptr);
   mFreeingObserverList = false;
 }
 
@@ -711,7 +724,7 @@ const char *nsPrefBranch::getPrefName(const char *aPrefName)
 
 static PLDHashOperator
 pref_enumChild(PLDHashTable *table, PLDHashEntryHdr *heh,
-               PRUint32 i, void *arg)
+               uint32_t i, void *arg)
 {
   PrefHashEntry *he = static_cast<PrefHashEntry*>(heh);
   EnumerateData *d = reinterpret_cast<EnumerateData *>(arg);
@@ -780,7 +793,7 @@ nsPrefLocalizedString::SetData(const PRUnichar *aData)
 }
 
 NS_IMETHODIMP
-nsPrefLocalizedString::SetDataWithLength(PRUint32 aLength,
+nsPrefLocalizedString::SetDataWithLength(uint32_t aLength,
                                          const PRUnichar *aData)
 {
   if (!aData)
@@ -802,7 +815,7 @@ nsRelativeFilePref::~nsRelativeFilePref()
 {
 }
 
-NS_IMETHODIMP nsRelativeFilePref::GetFile(nsILocalFile **aFile)
+NS_IMETHODIMP nsRelativeFilePref::GetFile(nsIFile **aFile)
 {
   NS_ENSURE_ARG_POINTER(aFile);
   *aFile = mFile;
@@ -810,7 +823,7 @@ NS_IMETHODIMP nsRelativeFilePref::GetFile(nsILocalFile **aFile)
   return NS_OK;
 }
 
-NS_IMETHODIMP nsRelativeFilePref::SetFile(nsILocalFile *aFile)
+NS_IMETHODIMP nsRelativeFilePref::SetFile(nsIFile *aFile)
 {
   mFile = aFile;
   return NS_OK;

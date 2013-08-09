@@ -8,6 +8,7 @@
 #ifndef nsLeafFrame_h___
 #define nsLeafFrame_h___
 
+#include "mozilla/Attributes.h"
 #include "nsFrame.h"
 #include "nsDisplayList.h"
 
@@ -53,7 +54,7 @@ public:
   NS_IMETHOD Reflow(nsPresContext*      aPresContext,
                     nsHTMLReflowMetrics& aDesiredSize,
                     const nsHTMLReflowState& aReflowState,
-                    nsReflowStatus&      aStatus);
+                    nsReflowStatus&      aStatus) MOZ_OVERRIDE;
   
   /**
    * This method does most of the work that Reflow() above need done.
@@ -63,7 +64,7 @@ public:
                       const nsHTMLReflowState& aReflowState,
                       nsReflowStatus&      aStatus);
 
-  virtual bool IsFrameOfType(PRUint32 aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const
   {
     // We don't actually contain a block, but we do always want a
     // computed width, so tell a little white lie here.

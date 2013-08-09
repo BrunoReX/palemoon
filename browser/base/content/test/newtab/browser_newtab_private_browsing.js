@@ -12,7 +12,7 @@ let pb = Cc["@mozilla.org/privatebrowsing;1"]
 
 function runTests() {
   // prepare the grid
-  setLinks("0,1,2,3,4,5,6,7,8,9");
+  yield setLinks("0,1,2,3,4,5,6,7,8,9");
   ok(!pb.privateBrowsingEnabled, "private browsing is disabled");
 
   yield addNewTabPageTab();
@@ -39,7 +39,7 @@ function runTests() {
 
   // check that the grid is the same as before entering pb mode
   yield addNewTabPageTab();
-  checkGrid("0p,1,2,3,4,5,6,7,8");
+  checkGrid("0,2,3,4,5,6,7,8")
 }
 
 function togglePrivateBrowsing() {

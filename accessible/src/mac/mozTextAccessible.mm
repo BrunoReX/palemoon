@@ -5,6 +5,7 @@
 
 
 #include "AccessibleWrap.h"
+#include "TextLeafAccessible.h"
 
 #include "nsCocoaUtils.h"
 #include "nsObjCExceptions.h"
@@ -57,7 +58,7 @@ ToNSString(id aValue)
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
 
   if ((self = [super initWithAccessible:accessible])) {
-    CallQueryInterface(accessible, &mGeckoTextAccessible);
+    mGeckoTextAccessible = accessible->AsHyperText();
     CallQueryInterface(accessible, &mGeckoEditableTextAccessible);
   }
   return self;
@@ -67,7 +68,7 @@ ToNSString(id aValue)
 
 - (BOOL)accessibilityIsIgnored
 {
-  return mIsExpired;
+  return !mGeckoAccessible;
 }
 
 - (NSArray*)accessibilityAttributeNames
@@ -110,13 +111,18 @@ ToNSString(id aValue)
   if ([attribute isEqualToString:NSAccessibilitySelectedTextAttribute])
     return [self selectedText];
 
+  if ([attribute isEqualToString:NSAccessibilityTitleAttribute])
+    return @"";
+
   if ([attribute isEqualToString:NSAccessibilityValueAttribute]) {
     // Apple's SpeechSynthesisServer expects AXValue to return an AXStaticText
     // object's AXSelectedText attribute. See bug 674612 for details.
     // Also if there is no selected text, we return the full text. 
     // See bug 369710 for details.
-    if ([[self role] isEqualToString:NSAccessibilityStaticTextRole])
-      return [self selectedText] ? : [self text];
+    if ([[self role] isEqualToString:NSAccessibilityStaticTextRole]) {
+      NSString* selectedText = [self selectedText];
+      return (selectedText && [selectedText length]) ? selectedText : [self text];
+    }
 
     return [self text];
   }
@@ -207,8 +213,8 @@ ToNSString(id aValue)
       return nil;
     }
     
-    PRInt32 start = range.location;
-    PRInt32 end = start + range.length;
+    int32_t start = range.location;
+    int32_t end = start + range.length;
     nsIntRect bounds = mGeckoTextAccessible->GetTextBounds(start, end);
 
     return [NSValue valueWithRect:nsCocoaUtils::GeckoRectToCocoaRect(bounds)];
@@ -226,7 +232,7 @@ ToNSString(id aValue)
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
 
   if ([attribute isEqualToString:NSAccessibilityValueAttribute])
-    return [self isReadOnly];
+    return ![self isReadOnly];
   
   if ([attribute isEqualToString:NSAccessibilitySelectedTextAttribute] ||
       [attribute isEqualToString:NSAccessibilitySelectedTextRangeAttribute] ||
@@ -256,8 +262,8 @@ ToNSString(id aValue)
     if (!stringValue)
       return;
 
-    PRInt32 start = 0;
-    PRInt32 end = 0;
+    int32_t start = 0;
+    int32_t end = 0;
 
     nsresult rv = mGeckoTextAccessible->GetSelectionBounds(0, &start, &end);
     NS_ENSURE_SUCCESS(rv,);
@@ -312,7 +318,7 @@ ToNSString(id aValue)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
-  NS_IF_RELEASE(mGeckoTextAccessible);
+  mGeckoTextAccessible = nullptr;
   NS_IF_RELEASE(mGeckoEditableTextAccessible);
   [super expire];
 
@@ -338,7 +344,7 @@ ToNSString(id aValue)
 
 - (NSNumber*)caretLineNumber
 {
-  PRInt32 lineNumber = mGeckoTextAccessible ?
+  int32_t lineNumber = mGeckoTextAccessible ?
     mGeckoTextAccessible->CaretLineNumber() - 1 : -1;
 
   return (lineNumber >= 0) ? [NSNumber numberWithInt:lineNumber] : nil;
@@ -359,7 +365,7 @@ ToNSString(id aValue)
 
 - (NSString*)text
 {
-  if (!mGeckoTextAccessible)
+  if (!mGeckoAccessible || !mGeckoTextAccessible)
     return nil;
 
   // A password text field returns an empty value
@@ -378,6 +384,9 @@ ToNSString(id aValue)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
 
+  if (!mGeckoAccessible || !mGeckoTextAccessible)
+    return 0;
+
   return mGeckoTextAccessible ? mGeckoTextAccessible->CharacterCount() : 0;
 
   NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(0);
@@ -388,7 +397,7 @@ ToNSString(id aValue)
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
 
   if (mGeckoTextAccessible) {
-    PRInt32 start, end;
+    int32_t start, end;
     start = end = 0;
     nsresult rv = mGeckoTextAccessible->GetSelectionBounds(0, &start, &end);
     NS_ENSURE_SUCCESS(rv, 0);
@@ -405,7 +414,7 @@ ToNSString(id aValue)
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
 
   if (mGeckoTextAccessible) {
-    PRInt32 start, end;
+    int32_t start, end;
     start = end = 0;
     mGeckoTextAccessible->GetSelectionBounds(0, &start, &end);
     if (start != end) {
@@ -424,9 +433,9 @@ ToNSString(id aValue)
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
 
   if (mGeckoTextAccessible) {
-    PRInt32 start = 0;
-    PRInt32 end = 0;
-    PRInt32 count = 0;
+    int32_t start = 0;
+    int32_t end = 0;
+    int32_t count = 0;
 
     nsresult rv = mGeckoTextAccessible->GetSelectionCount(&count);
     NS_ENSURE_SUCCESS(rv, nil);
@@ -481,6 +490,48 @@ ToNSString(id aValue)
   mGeckoTextAccessible->GetText(range->location, 
                                 range->location + range->length, text);
   return nsCocoaUtils::ToNSString(text);
+}
+
+@end
+
+@implementation mozTextLeafAccessible
+
+- (NSArray*)accessibilityAttributeNames
+{
+  static NSMutableArray* supportedAttributes = nil;
+  if (!supportedAttributes) {
+    supportedAttributes = [[super accessibilityAttributeNames] mutableCopy];
+    [supportedAttributes removeObject:NSAccessibilityChildrenAttribute];
+  }
+
+  return supportedAttributes;
+}
+
+- (id)accessibilityAttributeValue:(NSString*)attribute
+{
+  if ([attribute isEqualToString:NSAccessibilityTitleAttribute])
+    return @"";
+
+  if ([attribute isEqualToString:NSAccessibilityValueAttribute])
+    return [self text];
+
+  return [super accessibilityAttributeValue:attribute];
+}
+
+- (NSString*)text
+{
+  if (!mGeckoAccessible)
+    return nil;
+
+  return nsCocoaUtils::ToNSString(mGeckoAccessible->AsTextLeaf()->Text());
+}
+
+- (long)textLength
+{
+  if (!mGeckoAccessible)
+    return 0;
+
+  return mGeckoAccessible->AsTextLeaf()->Text().Length();
 }
 
 @end

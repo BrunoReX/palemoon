@@ -33,6 +33,7 @@
 #include "nsIContentPermissionPrompt.h"
 #include "DictionaryHelpers.h"
 #include "PCOMContentPermissionRequestChild.h"
+#include "mozilla/Attributes.h"
 
 class nsGeolocationService;
 class nsGeolocation;
@@ -52,12 +53,14 @@ class nsGeolocationRequest
   nsGeolocationRequest(nsGeolocation* locator,
                        nsIDOMGeoPositionCallback* callback,
                        nsIDOMGeoPositionErrorCallback* errorCallback,
-                       bool watchPositionRequest = false);
+                       bool watchPositionRequest = false,
+                       int32_t watchId = 0);
   nsresult Init(JSContext* aCx, const jsval& aOptions);
   void Shutdown();
 
   // Called by the geolocation device to notify that a location has changed.
-  bool Update(nsIDOMGeoPosition* aPosition);
+  // isBetter: the accuracy is as good or better than the previous position. 
+  bool Update(nsIDOMGeoPosition* aPosition, bool aIsBetter);
 
   void SendLocation(nsIDOMGeoPosition* location);
   void MarkCleared();
@@ -70,11 +73,14 @@ class nsGeolocationRequest
   bool Recv__delete__(const bool& allow);
   void IPDLRelease() { Release(); }
 
+  int32_t WatchId() { return mWatchId; }
+
  private:
 
-  void NotifyError(PRInt16 errorCode);
+  void NotifyError(int16_t errorCode);
   bool mAllowed;
   bool mCleared;
+  bool mIsFirstUpdate;
   bool mIsWatchPositionRequest;
 
   nsCOMPtr<nsITimer> mTimeoutTimer;
@@ -83,18 +89,19 @@ class nsGeolocationRequest
   nsAutoPtr<mozilla::dom::GeoPositionOptions> mOptions;
 
   nsRefPtr<nsGeolocation> mLocator;
+
+  int32_t mWatchId;
 };
 
 /**
  * Singleton that manages the geolocation provider
  */
-class nsGeolocationService : public nsIGeolocationUpdate, public nsIObserver
+class nsGeolocationService MOZ_FINAL : public nsIGeolocationUpdate, public nsIObserver
 {
 public:
 
-  static nsGeolocationService* GetGeolocationService();
-  static nsGeolocationService* GetInstance();  // Non-Addref'ing
-  static nsGeolocationService* gService;
+  static already_AddRefed<nsGeolocationService> GetGeolocationService();
+  static nsRefPtr<nsGeolocationService> sService;
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIGEOLOCATIONUPDATE
@@ -106,19 +113,23 @@ public:
 
   nsresult Init();
 
+  void HandleMozsettingChanged(const PRUnichar* aData);
+  void HandleMozsettingValue(const bool aValue);
+
   // Management of the nsGeolocation objects
   void AddLocator(nsGeolocation* locator);
   void RemoveLocator(nsGeolocation* locator);
 
   void SetCachedPosition(nsIDOMGeoPosition* aPosition);
   nsIDOMGeoPosition* GetCachedPosition();
+  PRBool IsBetterPosition(nsIDOMGeoPosition *aSomewhere);
 
   // Find and startup a geolocation device (gps, nmea, etc.)
   nsresult StartDevice();
 
   // Stop the started geolocation device (gps, nmea, etc.)
   void     StopDevice();
-  
+
   // create, or reinitalize the callback timer
   void     SetDisconnectTimer();
 
@@ -152,8 +163,8 @@ private:
 
 /**
  * Can return a geolocation info
- */ 
-class nsGeolocation : public nsIDOMGeoGeolocation
+ */
+class nsGeolocation MOZ_FINAL : public nsIDOMGeoGeolocation
 {
 public:
 
@@ -164,10 +175,10 @@ public:
 
   nsGeolocation();
 
-  nsresult Init(nsIDOMWindow* contentDom=nsnull);
+  nsresult Init(nsIDOMWindow* contentDom=nullptr);
 
   // Called by the geolocation device to notify that a location has changed.
-  void Update(nsIDOMGeoPosition* aPosition);
+  void Update(nsIDOMGeoPosition* aPosition, bool aIsBetter);
 
   // Returns true if any of the callbacks are repeating
   bool HasActiveCallbacks();
@@ -178,8 +189,8 @@ public:
   // Shutting down.
   void Shutdown();
 
-  // Getter for the URI that this nsGeolocation was loaded from
-  nsIURI* GetURI() { return mURI; }
+  // Getter for the principal that this nsGeolocation was loaded from
+  nsIPrincipal* GetPrincipal() { return mPrincipal; }
 
   // Getter for the window that this nsGeolocation is owned by
   nsIWeakReference* GetOwner() { return mOwner; }
@@ -187,11 +198,18 @@ public:
   // Check to see if the widnow still exists
   bool WindowOwnerStillExists();
 
+  // Notification from the service:
+  void ServiceReady();
+
 private:
 
   ~nsGeolocation();
 
   bool RegisterRequestWithPrompt(nsGeolocationRequest* request);
+
+  // Methods for the service when it's ready to process requests:
+  nsresult GetCurrentPositionReady(nsGeolocationRequest* aRequest);
+  nsresult WatchPositionReady(nsGeolocationRequest* aRequest);
 
   // Two callback arrays.  The first |mPendingCallbacks| holds objects for only
   // one callback and then they are released/removed from the array.  The second
@@ -205,10 +223,26 @@ private:
   nsWeakPtr mOwner;
 
   // where the content was loaded from
-  nsCOMPtr<nsIURI> mURI;
+  nsCOMPtr<nsIPrincipal> mPrincipal;
 
   // owning back pointer.
   nsRefPtr<nsGeolocationService> mService;
+
+  // Watch ID
+  uint32_t mLastWatchId;
+
+  // Pending requests are used when the service is not ready:
+  class PendingRequest
+  {
+  public:
+    nsRefPtr<nsGeolocationRequest> request;
+    enum {
+      GetCurrentPosition,
+      WatchPosition
+    } type;
+  };
+
+  nsTArray<PendingRequest> mPendingRequests;
 };
 
 #endif /* nsGeoLocation_h */

@@ -37,6 +37,10 @@ namespace mjit {
     struct JITScript;
 }
 
+namespace analyze {
+    struct ScriptLiveness;
+}
+
 struct VMFrame
 {
 #if defined(JS_CPU_SPARC)
@@ -109,7 +113,7 @@ struct VMFrame
     Value        *stackLimit;
     StackFrame   *entryfp;
     FrameRegs    *oldregs;
-    JSRejoinState stubRejoin;  /* How to rejoin if inside a call from an IC stub. */
+    FrameRejoinState stubRejoin;  /* How to rejoin if inside a call from an IC stub. */
 
 #if defined(JS_CPU_X86)
     void         *unused0, *unused1;  /* For 16 byte alignment */
@@ -214,7 +218,7 @@ struct VMFrame
     inline unsigned chunkIndex();
 
     /* Get the inner script/PC in case of inlining. */
-    inline JSScript *script();
+    inline Return<JSScript*> script();
     inline jsbytecode *pc();
 
 #if defined(JS_CPU_SPARC)
@@ -237,6 +241,9 @@ struct VMFrame
 #if defined(JS_CPU_ARM) || defined(JS_CPU_SPARC) || defined(JS_CPU_MIPS)
 // WARNING: Do not call this function directly from C(++) code because it is not ABI-compliant.
 extern "C" void JaegerStubVeneer(void);
+# if defined(JS_CPU_ARM)
+extern "C" void IonVeneer(void);
+# endif
 #endif
 
 namespace mjit {
@@ -294,14 +301,14 @@ enum RejoinState {
     REJOIN_PUSH_BOOLEAN,
     REJOIN_PUSH_OBJECT,
 
-    /* Call returns an object, which should be assigned to a local per the current bytecode. */
-    REJOIN_DEFLOCALFUN,
-
     /*
      * During the prologue of constructing scripts, after the function's
      * .prototype property has been fetched.
      */
     REJOIN_THIS_PROTOTYPE,
+
+    /* As above, after the 'this' object has been created. */
+    REJOIN_THIS_CREATED,
 
     /*
      * Type check on arguments failed during prologue, need stack check and
@@ -310,9 +317,10 @@ enum RejoinState {
     REJOIN_CHECK_ARGUMENTS,
 
     /*
-     * The script's jitcode was discarded after marking an outer function as
-     * reentrant or due to a GC while creating a call object.
+     * The script's jitcode was discarded during one of the following steps of
+     * a frame's prologue.
      */
+    REJOIN_EVAL_PROLOGUE,
     REJOIN_FUNCTION_PROLOGUE,
 
     /*
@@ -326,10 +334,8 @@ enum RejoinState {
     /* Triggered a recompilation while placing the arguments to an apply on the stack. */
     REJOIN_CALL_SPLAT,
 
-    /* FALLTHROUGH ops which can be implemented as part of an IncOp. */
+    /* Like REJOIN_FALLTHROUGH, but handles getprop used as part of JSOP_INSTANCEOF. */
     REJOIN_GETTER,
-    REJOIN_POS,
-    REJOIN_BINARY,
 
     /*
      * For an opcode fused with IFEQ/IFNE, call returns a boolean indicating
@@ -339,14 +345,14 @@ enum RejoinState {
 };
 
 /* Get the rejoin state for a StackFrame after returning from a scripted call. */
-static inline JSRejoinState
+static inline FrameRejoinState
 ScriptedRejoin(uint32_t pcOffset)
 {
     return REJOIN_SCRIPTED | (pcOffset << 1);
 }
 
 /* Get the rejoin state for a StackFrame after returning from a stub call. */
-static inline JSRejoinState
+static inline FrameRejoinState
 StubRejoin(RejoinState rejoin)
 {
     return rejoin << 1;
@@ -589,6 +595,7 @@ namespace mjit {
 
 struct InlineFrame;
 struct CallSite;
+struct CompileTrigger;
 
 struct NativeMapEntry {
     size_t          bcOff;  /* bytecode offset in script */
@@ -597,8 +604,13 @@ struct NativeMapEntry {
 
 /* Per-op counts of performance metrics. */
 struct PCLengthEntry {
-    double          codeLength; /* amount of inline code generated */
-    double          picsLength; /* amount of PIC stub code generated */
+    double          inlineLength; /* amount of inline code generated */
+    double          picsLength;   /* amount of PIC stub code generated */
+    double          stubLength;   /* amount of stubcc code generated */
+    double          codeLengthAugment; /* augment to inlineLength to be added
+                                          at runtime, represents instrumentation
+                                          taken out or common stubcc accounted
+                                          for (instead of just adding inlineLength) */
 };
 
 /*
@@ -644,8 +656,11 @@ struct JITChunk
                                            .ncode values may not be NULL. */
     uint32_t        nInlineFrames;
     uint32_t        nCallSites;
+    uint32_t        nCompileTriggers;
     uint32_t        nRootedTemplates;
     uint32_t        nRootedRegExps;
+    uint32_t        nMonitoredBytecodes;
+    uint32_t        nTypeBarrierBytecodes;
 #ifdef JS_MONOIC
     uint32_t        nGetGlobalNames;
     uint32_t        nSetGlobalNames;
@@ -664,14 +679,26 @@ struct JITChunk
     ExecPoolVector execPools;
 #endif
 
+    types::RecompileInfo recompileInfo;
+
     // Additional ExecutablePools for native call and getter stubs.
     Vector<NativeCallStub, 0, SystemAllocPolicy> nativeCallStubs;
 
     NativeMapEntry *nmap() const;
     js::mjit::InlineFrame *inlineFrames() const;
     js::mjit::CallSite *callSites() const;
+    js::mjit::CompileTrigger *compileTriggers() const;
     JSObject **rootedTemplates() const;
     RegExpShared **rootedRegExps() const;
+
+    /*
+     * Offsets of bytecodes which were monitored or had type barriers at the
+     * point of compilation. Used to avoid unnecessary recompilation after
+     * analysis purges.
+     */
+    uint32_t *monitoredBytecodes() const;
+    uint32_t *typeBarrierBytecodes() const;
+
 #ifdef JS_MONOIC
     ic::GetGlobalNameIC *getGlobalNames() const;
     ic::SetGlobalNameIC *setGlobalNames() const;
@@ -781,6 +808,25 @@ struct JITScript
      */
     JSC::ExecutablePool *shimPool;
 
+    /*
+     * Optional liveness information attached to the JITScript if the analysis
+     * information is purged while retaining JIT info.
+     */
+    analyze::ScriptLiveness *liveness;
+
+    /*
+     * Number of calls made to IonMonkey functions, used to avoid slow
+     * JM -> Ion calls.
+     */
+    uint32_t        ionCalls;
+
+    /*
+     * If set, we decided to keep the JITChunk so that Ion can access its caches.
+     * The chunk has to be destroyed the next time the script runs in JM.
+     * Note that this flag implies nchunks == 1.
+     */
+    bool mustDestroyEntryChunk;
+
 #ifdef JS_MONOIC
     /* Inline cache at function entry for checking this/argument types. */
     JSC::CodeLocationLabel argsCheckStub;
@@ -831,6 +877,8 @@ struct JITScript
 
     void trace(JSTracer *trc);
     void purgeCaches();
+
+    void disableScriptEntry();
 };
 
 /*
@@ -867,12 +915,12 @@ enum CompileRequest
 
 CompileStatus
 CanMethodJIT(JSContext *cx, JSScript *script, jsbytecode *pc,
-             bool construct, CompileRequest request);
+             bool construct, CompileRequest request, StackFrame *sp);
 
 inline void
 ReleaseScriptCode(FreeOp *fop, JSScript *script)
 {
-    if (!script->hasJITInfo())
+    if (!script->hasMJITInfo())
         return;
 
     for (int constructing = 0; constructing <= 1; constructing++) {
@@ -883,8 +931,14 @@ ReleaseScriptCode(FreeOp *fop, JSScript *script)
         }
     }
 
-    script->destroyJITInfo(fop);
+    script->destroyMJITInfo(fop);
 }
+
+// Cripple any JIT code for the specified script, such that the next time
+// execution reaches the script's entry or the OSR PC the script's code will
+// be destroyed.
+void
+DisableScriptCodeForIon(JSScript *script, jsbytecode *osrPC);
 
 // Expand all stack frames inlined by the JIT within a compartment.
 void
@@ -927,6 +981,25 @@ struct CallSite
     }
 };
 
+// Information about a check inserted into the script for triggering Ion
+// compilation at a function or loop entry point.
+struct CompileTrigger
+{
+    uint32_t pcOffset;
+
+    // Offsets into the generated code of the conditional jump in the inline
+    // path and the start of the sync code for the trigger call in the out of
+    // line path.
+    JSC::CodeLocationJump inlineJump;
+    JSC::CodeLocationLabel stubLabel;
+
+    void initialize(uint32_t pcOffset, JSC::CodeLocationJump inlineJump, JSC::CodeLocationLabel stubLabel) {
+        this->pcOffset = pcOffset;
+        this->inlineJump = inlineJump;
+        this->stubLabel = stubLabel;
+    }
+};
+
 void
 DumpAllProfiles(JSContext *cx);
 
@@ -962,6 +1035,21 @@ IsLowerableFunCallOrApply(jsbytecode *pc)
 #endif
 }
 
+Shape *
+GetPICSingleShape(JSContext *cx, JSScript *script, jsbytecode *pc, bool constructing);
+
+static inline void
+PurgeCaches(JSScript *script)
+{
+    for (int constructing = 0; constructing <= 1; constructing++) {
+        for (int barriers = 0; barriers <= 1; barriers++) {
+            mjit::JITScript *jit = script->getJIT((bool) constructing, (bool) barriers);
+            if (jit)
+                jit->purgeCaches();
+        }
+    }
+}
+
 } /* namespace mjit */
 
 inline mjit::JITChunk *
@@ -976,9 +1064,10 @@ VMFrame::chunkIndex()
     return jit()->chunkIndex(regs.pc);
 }
 
-inline JSScript *
+inline Return<JSScript*>
 VMFrame::script()
 {
+    AutoAssertNoGC nogc;
     if (regs.inlined())
         return chunk()->inlineFrames()[regs.inlined()->inlineIndex].fun->script();
     return fp()->script();
@@ -987,6 +1076,7 @@ VMFrame::script()
 inline jsbytecode *
 VMFrame::pc()
 {
+    AutoAssertNoGC nogc;
     if (regs.inlined())
         return script()->code + regs.inlined()->pcOffset;
     return regs.pc;
@@ -997,7 +1087,7 @@ VMFrame::pc()
 inline void *
 JSScript::nativeCodeForPC(bool constructing, jsbytecode *pc)
 {
-    js::mjit::JITScript *jit = getJIT(constructing, compartment()->needsBarrier());
+    js::mjit::JITScript *jit = getJIT(constructing, compartment()->compileBarriers());
     if (!jit)
         return NULL;
     js::mjit::JITChunk *chunk = jit->chunk(pc);

@@ -2,34 +2,46 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-"use strict"
+"use strict";
 
-let DEBUG = 0;
-if (DEBUG)
-  debug = function (s) { dump("-*- Fallback ContactService component: " + s + "\n"); }
-else
-  debug = function (s) {}
+const DEBUG = false;
+function debug(s) { dump("-*- Fallback ContactService component: " + s + "\n"); }
 
 const Cu = Components.utils; 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 
-let EXPORTED_SYMBOLS = ["DOMContactManager"];
+this.EXPORTED_SYMBOLS = ["DOMContactManager"];
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/ContactDB.jsm");
 
-XPCOMUtils.defineLazyGetter(this, "ppmm", function() {
-  return Cc["@mozilla.org/parentprocessmessagemanager;1"].getService(Ci.nsIFrameMessageManager);
+XPCOMUtils.defineLazyServiceGetter(this, "ppmm",
+                                   "@mozilla.org/parentprocessmessagemanager;1",
+                                   "nsIMessageListenerManager");
+
+XPCOMUtils.defineLazyGetter(this, "mRIL", function () {
+  let telephony = Cc["@mozilla.org/telephony/system-worker-manager;1"];
+  if (!telephony) {
+    // Return a mock RIL because B2G Desktop build does not support telephony.
+    return {
+      getICCContacts: function(aContactType, aCallback) {
+        aCallback("!telephony", null, null);
+      }
+    };
+  }
+  return telephony.
+         getService(Ci.nsIInterfaceRequestor).
+         getInterface(Ci.nsIRadioInterfaceLayer);
 });
 
 let myGlobal = this;
 
-let DOMContactManager = {
+this.DOMContactManager = {
   init: function() {
-    debug("Init");
-    this._messages = ["Contacts:Find", "Contacts:Clear", "Contact:Save", "Contact:Remove"];
+    if (DEBUG) debug("Init");
+    this._messages = ["Contacts:Find", "Contacts:Clear", "Contact:Save", "Contact:Remove", "Contacts:GetSimContacts"];
     this._messages.forEach((function(msgName) {
       ppmm.addMessageListener(msgName, this);
     }).bind(this));
@@ -40,16 +52,6 @@ let DOMContactManager = {
     this._db.init(myGlobal);
 
     Services.obs.addObserver(this, "profile-before-change", false);
-
-    try {
-      let hosts = Services.prefs.getCharPref("dom.mozContacts.whitelist")
-      hosts.split(",").forEach(function(aHost) {
-        debug("Add host: " + JSON.stringify(aHost));
-        if (aHost.length > 0)
-          Services.perms.add(Services.io.newURI(aHost, null, null), "webcontacts-manage",
-                             Ci.nsIPermissionManager.ALLOW_ACTION);
-      });
-    } catch(e) { debug(e); }
   },
 
   observe: function(aSubject, aTopic, aData) {
@@ -65,9 +67,19 @@ let DOMContactManager = {
     this._db = null;
   },
 
+  assertPermission: function(aMessage, aPerm) {
+    if (!aMessage.target.assertPermission(aPerm)) {
+      Cu.reportError("Contacts message " + msg.name +
+                     " from a content process with no" + aPerm + " privileges.");
+      return false;
+    }
+    return true;
+  },
+
   receiveMessage: function(aMessage) {
-    debug("Fallback DOMContactManager::receiveMessage " + aMessage.name);
-    let msg = aMessage.json;
+    if (DEBUG) debug("Fallback DOMContactManager::receiveMessage " + aMessage.name);
+    let mm = aMessage.target;
+    let msg = aMessage.data;
 
     /*
      * Sorting the contacts by sortBy field. sortBy can either be familyName or givenName.
@@ -76,78 +88,118 @@ let DOMContactManager = {
      */
     function sortfunction(a, b){
       let x, y;
-      let sortByNameSet = true;
       let result = 0;
-      let sortBy = msg.findOptions.sortBy;
-      let sortOrder = msg.findOptions.sortOrder;
-      if (!a.properties[sortBy] || !(x = a.properties[sortBy][0].toLowerCase())) {
-        sortByNameSet = false;
-      }
+      let findOptions = msg.options.findOptions;
+      let sortOrder = findOptions.sortOrder;
+      let sortBy = findOptions.sortBy === "familyName" ? [ "familyName", "givenName" ] : [ "givenName" , "familyName" ];
+      let xIndex = 0;
+      let yIndex = 0;
 
-      if (!b.properties[sortBy] || !(y = b.properties[sortBy][0].toLowerCase())) {
-        if (sortByNameSet) {
+      do {
+        while (xIndex < sortBy.length && !x) {
+          x = a.properties[sortBy[xIndex]] ? a.properties[sortBy[xIndex]][0].toLowerCase() : null;
+          xIndex++;
+        }
+        if (!x) {
           return sortOrder == 'ascending' ? 1 : -1;
         }
-      }
+        while (yIndex < sortBy.length && !y) {
+          y = b.properties[sortBy[yIndex]] ? b.properties[sortBy[yIndex]][0].toLowerCase() : null;
+          yIndex++;
+        }
+        if (!y) {
+          return sortOrder == 'ascending' ? 1 : -1;
+        }
 
-      if (sortByNameSet) {
         result = x.localeCompare(y);
-      }
+        x = null;
+        y = null;
+      } while (result === 0);
 
-      if (result == 0) {
-        // If 2 entries have the same sortBy (familyName or givenName) field,
-        // we have to continue sorting.
-        let otherSortBy = sortBy == "familyName" ? "givenName" : "familyName";
-        if (!a.properties[otherSortBy] || !(x = a.properties[otherSortBy][0].toLowerCase())) {
-          return sortOrder == 'ascending' ? 1 : -1;
-        }
-        if (!b.properties[otherSortBy] || !(y = b.properties[otherSortBy][0].toLowerCase())) {
-          return sortOrder == 'ascending' ? 1 : -1;
-        }
-        result = x.localeCompare(y);
-      }
       return sortOrder == 'ascending' ? result : -result;
     }
 
     switch (aMessage.name) {
       case "Contacts:Find":
+        if (!this.assertPermission(aMessage, "contacts-read")) {
+          return null;
+        }
         let result = new Array();
         this._db.find(
           function(contacts) {
             for (let i in contacts)
               result.push(contacts[i]);
-            if (msg.findOptions.sortOrder !== 'undefined' && msg.findOptions.sortBy !== 'undefined') {
-              debug('sortBy: ' + msg.findOptions.sortBy + ', sortOrder: ' + msg.findOptions.sortOrder );
-              result.sort(sortfunction);
-              if (msg.findOptions.filterLimit)
-                result = result.slice(0, msg.findOptions.filterLimit);
+            if (msg.options && msg.options.findOptions) {
+              let findOptions = msg.options.findOptions;
+              if (findOptions.sortOrder !== 'undefined' && findOptions.sortBy !== 'undefined') {
+                if (DEBUG) debug('sortBy: ' + findOptions.sortBy + ', sortOrder: ' + findOptions.sortOrder );
+                result.sort(sortfunction);
+                if (findOptions.filterLimit)
+                  result = result.slice(0, findOptions.filterLimit);
+              }
             }
 
-            debug("result:" + JSON.stringify(result));
-            ppmm.sendAsyncMessage("Contacts:Find:Return:OK", {requestID: msg.requestID, contacts: result});
+            if (DEBUG) debug("result:" + JSON.stringify(result));
+            mm.sendAsyncMessage("Contacts:Find:Return:OK", {requestID: msg.requestID, contacts: result});
           }.bind(this),
-          function(aErrorMsg) { ppmm.sendAsyncMessage("Contacts:Find:Return:KO", { requestID: msg.requestID, errorMsg: aErrorMsg }) }.bind(this),
-          msg.findOptions);
+          function(aErrorMsg) { mm.sendAsyncMessage("Contacts:Find:Return:KO", { requestID: msg.requestID, errorMsg: aErrorMsg }) }.bind(this),
+          msg.options.findOptions);
         break;
       case "Contact:Save":
+        if (msg.options.reason === "create") {
+          if (!this.assertPermission(aMessage, "contacts-create")) {
+            return null;
+          }
+        } else {
+          if (!this.assertPermission(aMessage, "contacts-write")) {
+            return null;
+          }
+        }
         this._db.saveContact(
-          msg.contact, 
-          function() { ppmm.sendAsyncMessage("Contact:Save:Return:OK", { requestID: msg.requestID, contactID: msg.contact.id }); }.bind(this),
-          function(aErrorMsg) { ppmm.sendAsyncMessage("Contact:Save:Return:KO", { requestID: msg.requestID, errorMsg: aErrorMsg }); }.bind(this)
+          msg.options.contact,
+          function() { mm.sendAsyncMessage("Contact:Save:Return:OK", { requestID: msg.requestID, contactID: msg.options.contact.id }); }.bind(this),
+          function(aErrorMsg) { mm.sendAsyncMessage("Contact:Save:Return:KO", { requestID: msg.requestID, errorMsg: aErrorMsg }); }.bind(this)
         );
         break;
       case "Contact:Remove":
+        if (!this.assertPermission(aMessage, "contacts-write")) {
+          return null;
+        }
         this._db.removeContact(
-          msg.id, 
-          function() { ppmm.sendAsyncMessage("Contact:Remove:Return:OK", { requestID: msg.requestID, contactID: msg.id }); }.bind(this),
-          function(aErrorMsg) { ppmm.sendAsyncMessage("Contact:Remove:Return:KO", { requestID: msg.requestID, errorMsg: aErrorMsg }); }.bind(this)
+          msg.options.id,
+          function() { mm.sendAsyncMessage("Contact:Remove:Return:OK", { requestID: msg.requestID, contactID: msg.options.id }); }.bind(this),
+          function(aErrorMsg) { mm.sendAsyncMessage("Contact:Remove:Return:KO", { requestID: msg.requestID, errorMsg: aErrorMsg }); }.bind(this)
         );
         break;
       case "Contacts:Clear":
+        if (!this.assertPermission(aMessage, "contacts-write")) {
+          return null;
+        }
         this._db.clear(
-          function() { ppmm.sendAsyncMessage("Contacts:Clear:Return:OK", { requestID: msg.requestID }); }.bind(this),
-          function(aErrorMsg) { ppmm.sendAsyncMessage("Contacts:Clear:Return:KO", { requestID: msg.requestID, errorMsg: aErrorMsg }); }.bind(this)
+          function() { mm.sendAsyncMessage("Contacts:Clear:Return:OK", { requestID: msg.requestID }); }.bind(this),
+          function(aErrorMsg) { mm.sendAsyncMessage("Contacts:Clear:Return:KO", { requestID: msg.requestID, errorMsg: aErrorMsg }); }.bind(this)
         );
+        break;
+      case "Contacts:GetSimContacts":
+        if (!this.assertPermission(aMessage, "contacts-read")) {
+          return null;
+        }
+        mRIL.getICCContacts(
+          msg.options.contactType,
+          function (aErrorMsg, aType, aContacts) {
+            if (aErrorMsg !== 'undefined') {
+              mm.sendAsyncMessage("Contacts:GetSimContacts:Return:KO",
+                                  {requestID: msg.requestID,
+                                   errorMsg: aErrorMsg});
+            } else {
+              mm.sendAsyncMessage("Contacts:GetSimContacts:Return:OK",
+                                  {requestID: msg.requestID,
+                                   contacts: aContacts});
+            }
+          }.bind(this));
+        break;
+      default:
+        if (DEBUG) debug("WRONG MESSAGE NAME: " + aMessage.name);
     }
   }
 }

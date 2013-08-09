@@ -38,9 +38,12 @@ let gDrag = {
 
     // Mark nodes as being dragged.
     let selector = ".newtab-site, .newtab-control, .newtab-thumbnail";
-    let nodes = aSite.node.parentNode.querySelectorAll(selector);
+    let parentCell = aSite.node.parentNode;
+    let nodes = parentCell.querySelectorAll(selector);
     for (let i = 0; i < nodes.length; i++)
       nodes[i].setAttribute("dragged", "true");
+
+    parentCell.setAttribute("dragged", "true");
 
     this._setDragData(aSite, aEvent);
 
@@ -88,7 +91,7 @@ let gDrag = {
    * @param aEvent The 'dragend' event.
    */
   end: function Drag_end(aSite, aEvent) {
-    let nodes = aSite.node.parentNode.querySelectorAll("[dragged]");
+    let nodes = gGrid.node.querySelectorAll("[dragged]")
     for (let i = 0; i < nodes.length; i++)
       nodes[i].removeAttribute("dragged");
 
@@ -104,12 +107,17 @@ let gDrag = {
    * @return Whether we should handle this drag and drop operation.
    */
   isValid: function Drag_isValid(aEvent) {
-    let dt = aEvent.dataTransfer;
-    let mimeType = "text/x-moz-url";
+    let link = gDragDataHelper.getLinkFromDragEvent(aEvent);
 
     // Check that the drag data is non-empty.
     // Can happen when dragging places folders.
-    return dt && dt.types.contains(mimeType) && dt.getData(mimeType);
+    if (!link || !link.url) {
+      return false;
+    }
+
+    // Check that we're not accepting URLs which would inherit the caller's
+    // principal (such as javascript: or data:).
+    return gLinkChecker.checkLoadURI(link.url);
   },
 
   /**

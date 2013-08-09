@@ -25,7 +25,7 @@ SMILStringType::Destroy(nsSMILValue& aValue) const
 {
   NS_PRECONDITION(aValue.mType == this, "Unexpected SMIL value");
   delete static_cast<nsAString*>(aValue.mU.mPtr);
-  aValue.mU.mPtr = nsnull;
+  aValue.mU.mPtr = nullptr;
   aValue.mType = &nsSMILNullType::sSingleton;
 }
 
@@ -57,7 +57,7 @@ SMILStringType::IsEqual(const nsSMILValue& aLeft,
 
 nsresult
 SMILStringType::Add(nsSMILValue& aDest, const nsSMILValue& aValueToAdd,
-                    PRUint32 aCount) const
+                    uint32_t aCount) const
 {
   NS_PRECONDITION(aValueToAdd.mType == aDest.mType,
                   "Trying to add invalid types");

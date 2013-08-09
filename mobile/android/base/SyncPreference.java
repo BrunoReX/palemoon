@@ -5,17 +5,13 @@
 
 package org.mozilla.gecko;
 
-import android.accounts.Account;
-import android.accounts.AccountManager;
-import android.content.ComponentName;
+import org.mozilla.gecko.sync.setup.SyncAccounts;
+import org.mozilla.gecko.sync.setup.activities.SetupSyncActivity;
+
 import android.content.Context;
 import android.content.Intent;
 import android.preference.Preference;
 import android.util.AttributeSet;
-import android.util.Log;
-
-import org.mozilla.gecko.sync.setup.activities.SetupSyncActivity;
-import org.mozilla.gecko.sync.setup.SyncAccounts;
 
 class SyncPreference extends Preference {
     private Context mContext;
@@ -27,9 +23,6 @@ class SyncPreference extends Preference {
 
     @Override
     protected void onClick() {
-        // Make sure we use the same account type as our bundled version of Sync!
-        final String accountType = org.mozilla.gecko.sync.setup.Constants.ACCOUNTTYPE_SYNC;
-
         // Show Sync setup if no accounts exist; otherwise, show account settings.
         if (SyncAccounts.syncAccountsExist(mContext)) {
             SyncAccounts.openSyncSettings(mContext);

@@ -18,16 +18,16 @@ nsThebesFontEnumerator::nsThebesFontEnumerator()
 }
 
 NS_IMETHODIMP
-nsThebesFontEnumerator::EnumerateAllFonts(PRUint32 *aCount,
+nsThebesFontEnumerator::EnumerateAllFonts(uint32_t *aCount,
                                           PRUnichar ***aResult)
 {
-    return EnumerateFonts (nsnull, nsnull, aCount, aResult);
+    return EnumerateFonts (nullptr, nullptr, aCount, aResult);
 }
 
 NS_IMETHODIMP
 nsThebesFontEnumerator::EnumerateFonts(const char *aLangGroup,
                                        const char *aGeneric,
-                                       PRUint32 *aCount,
+                                       uint32_t *aCount,
                                        PRUnichar ***aResult)
 {
     NS_ENSURE_ARG_POINTER(aCount);
@@ -35,7 +35,7 @@ nsThebesFontEnumerator::EnumerateFonts(const char *aLangGroup,
 
     nsTArray<nsString> fontList;
 
-    nsCAutoString generic;
+    nsAutoCString generic;
     if (aGeneric)
         generic.Assign(aGeneric);
     else
@@ -43,7 +43,7 @@ nsThebesFontEnumerator::EnumerateFonts(const char *aLangGroup,
 
     nsCOMPtr<nsIAtom> langGroupAtom;
     if (aLangGroup) {
-        nsCAutoString lowered;
+        nsAutoCString lowered;
         lowered.Assign(aLangGroup);
         ToLowerCase(lowered);
         langGroupAtom = do_GetAtom(lowered);
@@ -53,14 +53,14 @@ nsThebesFontEnumerator::EnumerateFonts(const char *aLangGroup,
 
     if (NS_FAILED(rv)) {
         *aCount = 0;
-        *aResult = nsnull;
+        *aResult = nullptr;
         /* XXX in this case, do we want to return the CSS generics? */
         return NS_OK;
     }
 
     PRUnichar **fs = static_cast<PRUnichar **>
                                 (nsMemory::Alloc(fontList.Length() * sizeof(PRUnichar*)));
-    for (PRUint32 i = 0; i < fontList.Length(); i++) {
+    for (uint32_t i = 0; i < fontList.Length(); i++) {
         fs[i] = ToNewUnicode(fontList[i]);
     }
 
@@ -86,7 +86,7 @@ nsThebesFontEnumerator::GetDefaultFont(const char *aLangGroup,
                                        PRUnichar **aResult)
 {
     NS_ENSURE_ARG_POINTER(aResult);
-    *aResult = nsnull;
+    *aResult = nullptr;
     return NS_OK;
 }
 
@@ -107,7 +107,7 @@ nsThebesFontEnumerator::GetStandardFamilyName(const PRUnichar *aName,
 
     nsAutoString name(aName);
     if (name.IsEmpty()) {
-        *aResult = nsnull;
+        *aResult = nullptr;
         return NS_OK;
     }
 
@@ -115,7 +115,7 @@ nsThebesFontEnumerator::GetStandardFamilyName(const PRUnichar *aName,
     nsresult rv = gfxPlatform::GetPlatform()->
         GetStandardFamilyName(nsDependentString(aName), family);
     if (NS_FAILED(rv) || family.IsEmpty()) {
-        *aResult = nsnull;
+        *aResult = nullptr;
         return NS_OK;
     }
     *aResult = ToNewUnicode(family);

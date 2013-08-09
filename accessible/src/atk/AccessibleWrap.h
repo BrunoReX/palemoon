@@ -36,10 +36,13 @@ enum AtkProperty {
 };
 
 struct AtkPropertyChange {
-  PRInt32 type;     // property type as listed above
+  int32_t type;     // property type as listed above
   void *oldvalue;
   void *newvalue;
 };
+
+namespace mozilla {
+namespace a11y {
 
 class MaiHyperlink;
 
@@ -59,8 +62,8 @@ public:
 
 #ifdef MAI_LOGGING
   virtual void DumpAccessibleWrapInfo(int aDepth) {}
-  static PRInt32 mAccWrapCreated;
-  static PRInt32 mAccWrapDeleted;
+  static int32_t mAccWrapCreated;
+  static int32_t mAccWrapDeleted;
 #endif
 
   // return the atk object for this AccessibleWrap
@@ -107,7 +110,10 @@ private:
 
   static EAvailableAtkSignals gAvailableAtkSignals;
 
-  PRUint16 CreateMaiInterfaces(void);
+  uint16_t CreateMaiInterfaces(void);
 };
+
+} // namespace a11y
+} // namespace mozilla
 
 #endif /* __NS_ACCESSIBLE_WRAP_H__ */

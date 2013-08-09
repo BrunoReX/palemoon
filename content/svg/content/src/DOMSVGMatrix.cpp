@@ -5,11 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DOMSVGMatrix.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 #include <math.h>
 #include "nsContentUtils.h"
 
-const double radPerDegree = 2.0*3.1415926535 / 360.0;
+const double radPerDegree = 2.0 * M_PI / 360.0;
 
 namespace mozilla {
 
@@ -23,10 +23,10 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(DOMSVGMatrix)
   if (tmp->mTransform) {
     tmp->mTransform->ClearMatrixTearoff(tmp);
   }
-NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mTransform)
+NS_IMPL_CYCLE_COLLECTION_UNLINK(mTransform)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(DOMSVGMatrix)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mTransform)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTransform)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(DOMSVGMatrix)
@@ -164,7 +164,7 @@ NS_IMETHODIMP DOMSVGMatrix::SetF(float aF)
 NS_IMETHODIMP DOMSVGMatrix::Multiply(nsIDOMSVGMatrix *secondMatrix,
                                      nsIDOMSVGMatrix **_retval)
 {
-  *_retval = nsnull;
+  *_retval = nullptr;
   nsCOMPtr<DOMSVGMatrix> domMatrix = do_QueryInterface(secondMatrix);
   if (!domMatrix)
     return NS_ERROR_DOM_SVG_WRONG_TYPE_ERR;
@@ -176,7 +176,7 @@ NS_IMETHODIMP DOMSVGMatrix::Multiply(nsIDOMSVGMatrix *secondMatrix,
 /* nsIDOMSVGMatrix inverse (); */
 NS_IMETHODIMP DOMSVGMatrix::Inverse(nsIDOMSVGMatrix **_retval)
 {
-  *_retval = nsnull;
+  *_retval = nullptr;
   if (Matrix().IsSingular())
     return NS_ERROR_DOM_SVG_MATRIX_NOT_INVERTABLE;
 
@@ -188,7 +188,7 @@ NS_IMETHODIMP DOMSVGMatrix::Inverse(nsIDOMSVGMatrix **_retval)
 NS_IMETHODIMP DOMSVGMatrix::Translate(float x, float y,
                                       nsIDOMSVGMatrix **_retval)
 {
-  *_retval = nsnull;
+  *_retval = nullptr;
   NS_ENSURE_FINITE2(x, y, NS_ERROR_ILLEGAL_VALUE);
 
   NS_ADDREF(*_retval =
@@ -208,7 +208,7 @@ NS_IMETHODIMP DOMSVGMatrix::ScaleNonUniform(float scaleFactorX,
                                             float scaleFactorY,
                                             nsIDOMSVGMatrix **_retval)
 {
-  *_retval = nsnull;
+  *_retval = nullptr;
   NS_ENSURE_FINITE2(scaleFactorX, scaleFactorY, NS_ERROR_ILLEGAL_VALUE);
 
   NS_ADDREF(*_retval =
@@ -219,7 +219,7 @@ NS_IMETHODIMP DOMSVGMatrix::ScaleNonUniform(float scaleFactorX,
 /* nsIDOMSVGMatrix rotate (in float angle); */
 NS_IMETHODIMP DOMSVGMatrix::Rotate(float angle, nsIDOMSVGMatrix **_retval)
 {
-  *_retval = nsnull;
+  *_retval = nullptr;
   NS_ENSURE_FINITE(angle, NS_ERROR_ILLEGAL_VALUE);
 
   NS_ADDREF(*_retval =
@@ -231,11 +231,11 @@ NS_IMETHODIMP DOMSVGMatrix::Rotate(float angle, nsIDOMSVGMatrix **_retval)
 NS_IMETHODIMP DOMSVGMatrix::RotateFromVector(float x, float y,
                                              nsIDOMSVGMatrix **_retval)
 {
-  *_retval = nsnull;
+  *_retval = nullptr;
   NS_ENSURE_FINITE2(x, y, NS_ERROR_ILLEGAL_VALUE);
 
   if (x == 0.0 || y == 0.0)
-    return NS_ERROR_DOM_SVG_INVALID_VALUE_ERR;
+    return NS_ERROR_RANGE_ERR;
 
   NS_ADDREF(*_retval =
     new DOMSVGMatrix(gfxMatrix(Matrix()).Rotate(atan2(y, x))));
@@ -265,11 +265,11 @@ NS_IMETHODIMP DOMSVGMatrix::FlipY(nsIDOMSVGMatrix **_retval)
 /* nsIDOMSVGMatrix skewX (in float angle); */
 NS_IMETHODIMP DOMSVGMatrix::SkewX(float angle, nsIDOMSVGMatrix **_retval)
 {
-  *_retval = nsnull;
+  *_retval = nullptr;
   NS_ENSURE_FINITE(angle, NS_ERROR_ILLEGAL_VALUE);
 
   double ta = tan( angle*radPerDegree );
-  NS_ENSURE_FINITE(ta, NS_ERROR_DOM_SVG_INVALID_VALUE_ERR);
+  NS_ENSURE_FINITE(ta, NS_ERROR_RANGE_ERR);
 
   const gfxMatrix& mx = Matrix();
   gfxMatrix skewMx(mx.xx, mx.yx,
@@ -282,11 +282,11 @@ NS_IMETHODIMP DOMSVGMatrix::SkewX(float angle, nsIDOMSVGMatrix **_retval)
 /* nsIDOMSVGMatrix skewY (in float angle); */
 NS_IMETHODIMP DOMSVGMatrix::SkewY(float angle, nsIDOMSVGMatrix **_retval)
 {
-  *_retval = nsnull;
+  *_retval = nullptr;
   NS_ENSURE_FINITE(angle, NS_ERROR_ILLEGAL_VALUE);
 
   double ta = tan( angle*radPerDegree );
-  NS_ENSURE_FINITE(ta, NS_ERROR_DOM_SVG_INVALID_VALUE_ERR);
+  NS_ENSURE_FINITE(ta, NS_ERROR_RANGE_ERR);
 
   const gfxMatrix& mx = Matrix();
   gfxMatrix skewMx((float) (mx.xx + mx.xy*ta), (float) (mx.yx + mx.yy*ta),

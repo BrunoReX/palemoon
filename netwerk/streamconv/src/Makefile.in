@@ -3,7 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -14,6 +14,12 @@ MODULE		= necko
 LIBRARY_NAME	= nkconv_s
 LIBXUL_LIBRARY  = 1
 
+ifneq (cocoa,$(MOZ_WIDGET_TOOLKIT))
+ifeq (x86_64,$(OS_TEST))
+# nsAppleFileDecoder.cpp has warnings I don't understand.
+FAIL_ON_WARNINGS := 1
+endif
+endif
 
 CPPSRCS		= \
 		nsStreamConverterService.cpp \

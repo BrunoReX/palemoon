@@ -4,14 +4,12 @@
 let tmp = {};
 Cu.import("resource:///modules/PageThumbs.jsm", tmp);
 let PageThumbs = tmp.PageThumbs;
-let PageThumbsCache = tmp.PageThumbsCache;
+let PageThumbsStorage = tmp.PageThumbsStorage;
 
 registerCleanupFunction(function () {
   while (gBrowser.tabs.length > 1)
     gBrowser.removeTab(gBrowser.tabs[1]);
 });
-
-let cachedXULDocument;
 
 /**
  * Provide the default test function to start our test runner.
@@ -59,10 +57,11 @@ function next() {
 /**
  * Creates a new tab with the given URI.
  * @param aURI The URI that's loaded in the tab.
+ * @param aCallback The function to call when the tab has loaded.
  */
-function addTab(aURI) {
+function addTab(aURI, aCallback) {
   let tab = gBrowser.selectedTab = gBrowser.addTab(aURI);
-  whenLoaded(tab.linkedBrowser);
+  whenLoaded(tab.linkedBrowser, aCallback);
 }
 
 /**
@@ -146,4 +145,13 @@ function checkThumbnailColor(aURL, aRed, aGreen, aBlue, aMessage) {
 function checkCanvasColor(aContext, aRed, aGreen, aBlue, aMessage) {
   let [r, g, b] = aContext.getImageData(0, 0, 1, 1).data;
   ok(r == aRed && g == aGreen && b == aBlue, aMessage);
+}
+
+/**
+ * Checks if a thumbnail for the given URL exists.
+ * @param aURL The url associated to the thumbnail.
+ */
+function thumbnailExists(aURL) {
+  let file = PageThumbsStorage.getFileForURL(aURL);
+  return file.exists() && file.fileSize;
 }

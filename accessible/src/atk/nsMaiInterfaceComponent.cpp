@@ -10,6 +10,9 @@
 #include "nsAccUtils.h"
 #include "nsCoreUtils.h"
 #include "nsMai.h"
+#include "mozilla/Likely.h"
+
+using namespace mozilla::a11y;
 
 extern "C" {
 
@@ -46,7 +49,7 @@ refAccessibleAtPointHelper(AccessibleWrap* aAccWrap, gint aX, gint aY,
                            AtkCoordType aCoordType)
 {
   if (!aAccWrap || aAccWrap->IsDefunct() || nsAccUtils::MustPrune(aAccWrap))
-    return nsnull;
+    return nullptr;
 
   // Accessible::ChildAtPoint(x,y) is in screen pixels.
   if (aCoordType == ATK_XY_WINDOW) {
@@ -59,7 +62,7 @@ refAccessibleAtPointHelper(AccessibleWrap* aAccWrap, gint aX, gint aY,
   Accessible* accAtPoint = aAccWrap->ChildAtPoint(aX, aY,
                                                   Accessible::eDirectChild);
   if (!accAtPoint)
-    return nsnull;
+    return nullptr;
 
   AtkObject* atkObj = AccessibleWrap::GetAtkObject(accAtPoint);
   if (atkObj)
@@ -77,7 +80,7 @@ getExtentsHelper(AccessibleWrap* aAccWrap,
   if (!aAccWrap || aAccWrap->IsDefunct())
     return;
 
-  PRInt32 x = 0, y = 0, width = 0, height = 0;
+  int32_t x = 0, y = 0, width = 0, height = 0;
   // Returned in screen coordinates
   nsresult rv = aAccWrap->GetBounds(&x, &y, &width, &height);
   if (NS_FAILED(rv))
@@ -100,7 +103,7 @@ void
 componentInterfaceInitCB(AtkComponentIface* aIface)
 {
   NS_ASSERTION(aIface, "Invalid Interface");
-  if(NS_UNLIKELY(!aIface))
+  if(MOZ_UNLIKELY(!aIface))
     return;
 
   /*

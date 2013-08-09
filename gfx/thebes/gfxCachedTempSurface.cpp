@@ -5,8 +5,9 @@
 
 #include "gfxCachedTempSurface.h"
 #include "gfxContext.h"
+#include "mozilla/Attributes.h"
 
-class CachedSurfaceExpirationTracker :
+class CachedSurfaceExpirationTracker MOZ_FINAL :
   public nsExpirationTracker<gfxCachedTempSurface,2> {
 
 public:
@@ -48,7 +49,7 @@ public:
     }
     if (sExpirationTracker->IsEmpty()) {
       delete sExpirationTracker;
-      sExpirationTracker = nsnull;
+      sExpirationTracker = nullptr;
     }
   }
 
@@ -57,7 +58,7 @@ private:
 };
 
 CachedSurfaceExpirationTracker*
-CachedSurfaceExpirationTracker::sExpirationTracker = nsnull;
+CachedSurfaceExpirationTracker::sExpirationTracker = nullptr;
 
 gfxCachedTempSurface::~gfxCachedTempSurface()
 {
@@ -73,7 +74,7 @@ gfxCachedTempSurface::Get(gfxASurface::gfxContentType aContentType,
     /* Verify the current buffer is valid for this purpose */
     if (mSize.width < aRect.width || mSize.height < aRect.height
         || mSurface->GetContentType() != aContentType) {
-      mSurface = nsnull;
+      mSurface = nullptr;
     } else {
       NS_ASSERTION(mType == aSimilarTo->GetType(),
                    "Unexpected surface type change");
@@ -82,10 +83,10 @@ gfxCachedTempSurface::Get(gfxASurface::gfxContentType aContentType,
 
   bool cleared = false;
   if (!mSurface) {
-    mSize = gfxIntSize(PRInt32(ceil(aRect.width)), PRInt32(ceil(aRect.height)));
+    mSize = gfxIntSize(int32_t(ceil(aRect.width)), int32_t(ceil(aRect.height)));
     mSurface = aSimilarTo->CreateSimilarSurface(aContentType, mSize);
     if (!mSurface)
-      return nsnull;
+      return nullptr;
 
     cleared = true;
 #ifdef DEBUG

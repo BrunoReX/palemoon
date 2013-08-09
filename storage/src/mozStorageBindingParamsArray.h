@@ -9,6 +9,7 @@
 
 #include "nsAutoPtr.h"
 #include "nsTArray.h"
+#include "mozilla/Attributes.h"
 
 #include "mozIStorageBindingParamsArray.h"
 
@@ -17,7 +18,7 @@ namespace storage {
 
 class StorageBaseStatementInternal;
 
-class BindingParamsArray : public mozIStorageBindingParamsArray
+class BindingParamsArray MOZ_FINAL : public mozIStorageBindingParamsArray
 {
   typedef nsTArray< nsCOMPtr<mozIStorageBindingParams> > array_type;
 
@@ -48,7 +49,7 @@ public:
   class iterator {
   public:
     iterator(BindingParamsArray *aArray,
-             PRUint32 aIndex)
+             uint32_t aIndex)
     : mArray(aArray)
     , mIndex(aIndex)
     {
@@ -77,7 +78,7 @@ public:
   private:
     void operator--() { }
     BindingParamsArray *mArray;
-    PRUint32 mIndex;
+    uint32_t mIndex;
   };
 
   /**

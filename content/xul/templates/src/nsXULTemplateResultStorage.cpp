@@ -47,7 +47,7 @@ nsXULTemplateResultStorage::GetMayProcessChildren(bool* aMayProcessChildren)
 NS_IMETHODIMP
 nsXULTemplateResultStorage::GetId(nsAString& aId)
 {
-    const char* uri = nsnull;
+    const char* uri = nullptr;
     mNode->GetValueConst(&uri);
 
     aId.Assign(NS_ConvertUTF8toUTF16(uri));
@@ -81,7 +81,7 @@ nsXULTemplateResultStorage::GetBindingFor(nsIAtom* aVar, nsAString& aValue)
         return NS_OK;
     }
 
-    PRInt32 idx = mResultSet->GetColumnIndex(aVar);
+    int32_t idx = mResultSet->GetColumnIndex(aVar);
     if (idx < 0) {
         return NS_OK;
     }
@@ -99,14 +99,14 @@ nsXULTemplateResultStorage::GetBindingObjectFor(nsIAtom* aVar, nsISupports** aVa
     NS_ENSURE_ARG_POINTER(aVar);
 
     if (mResultSet) {
-        PRInt32 idx = mResultSet->GetColumnIndex(aVar);
+        int32_t idx = mResultSet->GetColumnIndex(aVar);
         if (idx >= 0) {
             *aValue = mValues[idx];
             NS_IF_ADDREF(*aValue);
             return NS_OK;
         }
     }
-    *aValue = nsnull;
+    *aValue = nullptr;
     return NS_OK;
 }
 

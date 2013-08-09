@@ -7,7 +7,7 @@
 #define nsDOMEventTargetHelper_h_
 
 #include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
+#include "nsGkAtoms.h"
 #include "nsIDOMEventTarget.h"
 #include "nsIDOMEventListener.h"
 #include "nsCycleCollectionParticipant.h"
@@ -17,37 +17,23 @@
 #include "nsIScriptContext.h"
 #include "nsWrapperCache.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/Attributes.h"
 
-class nsDOMEventListenerWrapper : public nsIDOMEventListener
-{
-public:
-  nsDOMEventListenerWrapper(nsIDOMEventListener* aListener)
-  : mListener(aListener) {}
-
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_CLASS(nsDOMEventListenerWrapper)
-
-  NS_DECL_NSIDOMEVENTLISTENER
-
-  nsIDOMEventListener* GetInner() { return mListener; }
-  void Disconnect() { mListener = nsnull; }
-protected:
-  nsCOMPtr<nsIDOMEventListener> mListener;
-};
+class nsDOMEvent;
 
 class nsDOMEventTargetHelper : public nsIDOMEventTarget,
                                public nsWrapperCache
 {
 public:
-  nsDOMEventTargetHelper() : mOwner(nsnull), mHasOrHasHadOwner(false) {}
+  nsDOMEventTargetHelper() : mOwner(nullptr), mHasOrHasHadOwner(false) {}
   virtual ~nsDOMEventTargetHelper();
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsDOMEventTargetHelper)
+  NS_DECL_CYCLE_COLLECTION_SKIPPABLE_SCRIPT_HOLDER_CLASS(nsDOMEventTargetHelper)
 
   NS_DECL_NSIDOMEVENTTARGET
   void AddEventListener(const nsAString& aType,
                         nsIDOMEventListener* aCallback, // XXX nullable
-                        bool aCapture, Nullable<bool>& aWantsUntrusted,
+                        bool aCapture, const Nullable<bool>& aWantsUntrusted,
                         mozilla::ErrorResult& aRv)
   {
     aRv = AddEventListener(aType, aCallback, aCapture,
@@ -73,7 +59,7 @@ public:
       CallQueryInterface(mOwner, aParentObject);
     }
     else {
-      *aParentObject = nsnull;
+      *aParentObject = nullptr;
     }
   }
 
@@ -96,18 +82,30 @@ public:
     return static_cast<nsDOMEventTargetHelper*>(target);
   }
 
-  void Init(JSContext* aCx = nsnull);
+  void Init(JSContext* aCx = nullptr);
 
-  bool HasListenersFor(const nsAString& aType)
+  bool HasListenersFor(nsIAtom* aTypeWithOn)
   {
-    return mListenerManager && mListenerManager->HasListenersFor(aType);
+    return mListenerManager && mListenerManager->HasListenersFor(aTypeWithOn);
   }
-  nsresult RemoveAddEventListener(const nsAString& aType,
-                                  nsRefPtr<nsDOMEventListenerWrapper>& aCurrent,
-                                  nsIDOMEventListener* aNew);
 
-  nsresult GetInnerEventListener(nsRefPtr<nsDOMEventListenerWrapper>& aWrapper,
-                                 nsIDOMEventListener** aListener);
+  nsresult SetEventHandler(nsIAtom* aType,
+                           JSContext* aCx,
+                           const JS::Value& aValue);
+  void SetEventHandler(nsIAtom* aType,
+                       mozilla::dom::EventHandlerNonNull* aHandler,
+                       mozilla::ErrorResult& rv)
+  {
+    rv = GetListenerManager(true)->SetEventHandler(aType, aHandler);
+  }
+  void GetEventHandler(nsIAtom* aType,
+                       JSContext* aCx,
+                       JS::Value* aValue);
+  mozilla::dom::EventHandlerNonNull* GetEventHandler(nsIAtom* aType)
+  {
+    nsEventListenerManager* elm = GetListenerManager(false);
+    return elm ? elm->GetEventHandler(aType) : nullptr;
+  }
 
   nsresult CheckInnerWindowCorrectness()
   {
@@ -125,72 +123,54 @@ public:
   void BindToOwner(nsPIDOMWindow* aOwner);
   void BindToOwner(nsDOMEventTargetHelper* aOther);
   virtual void DisconnectFromOwner();                   
-  nsPIDOMWindow* GetOwner() { return mOwner; }
+  nsPIDOMWindow* GetOwner() const { return mOwner; }
   bool HasOrHasHadOwner() { return mHasOrHasHadOwner; }
 protected:
   nsRefPtr<nsEventListenerManager> mListenerManager;
+  // Dispatch a trusted, non-cancellable and non-bubbling event to |this|.
+  nsresult DispatchTrustedEvent(const nsAString& aEventName);
+  // Make |event| trusted and dispatch |aEvent| to |this|.
+  nsresult DispatchTrustedEvent(nsIDOMEvent* aEvent);
 private:
   // These may be null (native callers or xpcshell).
   nsPIDOMWindow*             mOwner; // Inner window.
   bool                       mHasOrHasHadOwner;
 };
 
-#define NS_DECL_EVENT_HANDLER(_event)                                         \
-  protected:                                                                  \
-    nsRefPtr<nsDOMEventListenerWrapper> mOn##_event##Listener;                \
-  public:
-
-#define NS_DECL_AND_IMPL_EVENT_HANDLER(_event)                                \
-  protected:                                                                  \
-    nsRefPtr<nsDOMEventListenerWrapper> mOn##_event##Listener;                \
-  public:                                                                     \
-    NS_IMETHOD GetOn##_event(nsIDOMEventListener** a##_event)                 \
-    {                                                                         \
-      return GetInnerEventListener(mOn##_event##Listener, a##_event);         \
-    }                                                                         \
-    NS_IMETHOD SetOn##_event(nsIDOMEventListener* a##_event)                  \
-    {                                                                         \
-      return RemoveAddEventListener(NS_LITERAL_STRING(#_event),               \
-                                    mOn##_event##Listener, a##_event);        \
-    }
-
+// XPIDL event handlers
 #define NS_IMPL_EVENT_HANDLER(_class, _event)                                 \
-  NS_IMETHODIMP                                                               \
-  _class::GetOn##_event(nsIDOMEventListener** a##_event)                      \
-  {                                                                           \
-    return GetInnerEventListener(mOn##_event##Listener, a##_event);           \
-  }                                                                           \
-  NS_IMETHODIMP                                                               \
-  _class::SetOn##_event(nsIDOMEventListener* a##_event)                       \
-  {                                                                           \
-    return RemoveAddEventListener(NS_LITERAL_STRING(#_event),                 \
-                                  mOn##_event##Listener, a##_event);          \
-  }
+    NS_IMETHODIMP _class::GetOn##_event(JSContext* aCx, JS::Value* aValue)    \
+    {                                                                         \
+      GetEventHandler(nsGkAtoms::on##_event, aCx, aValue);                    \
+      return NS_OK;                                                           \
+    }                                                                         \
+    NS_IMETHODIMP _class::SetOn##_event(JSContext* aCx,                       \
+                                        const JS::Value& aValue)              \
+    {                                                                         \
+      return SetEventHandler(nsGkAtoms::on##_event, aCx, aValue);             \
+    }
 
 #define NS_IMPL_FORWARD_EVENT_HANDLER(_class, _event, _baseclass)             \
-    NS_IMETHODIMP                                                             \
-    _class::GetOn##_event(nsIDOMEventListener** a##_event)                    \
+    NS_IMETHODIMP _class::GetOn##_event(JSContext* aCx, JS::Value* aValue)    \
     {                                                                         \
-      return _baseclass::GetOn##_event(a##_event);                           \
+      return _baseclass::GetOn##_event(aCx, aValue);                          \
     }                                                                         \
-    NS_IMETHODIMP                                                             \
-    _class::SetOn##_event(nsIDOMEventListener* a##_event)                     \
+    NS_IMETHODIMP _class::SetOn##_event(JSContext* aCx,                       \
+                                        const JS::Value& aValue)              \
     {                                                                         \
-      return _baseclass::SetOn##_event(a##_event);                            \
+      return _baseclass::SetOn##_event(aCx, aValue);                          \
     }
 
-#define NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(_event)                    \
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mOn##_event##Listener)
-
-#define NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(_event)                      \
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mOn##_event##Listener)
-
-#define NS_DISCONNECT_EVENT_HANDLER(_event)                                   \
-  if (mOn##_event##Listener) { mOn##_event##Listener->Disconnect(); }
-
-#define NS_UNMARK_LISTENER_WRAPPER(_event)                                    \
-  if (tmp->mOn##_event##Listener) {                                           \
-    xpc_TryUnmarkWrappedGrayObject(tmp->mOn##_event##Listener->GetInner());   \
+// WebIDL event handlers
+#define IMPL_EVENT_HANDLER(_event)                                        \
+  inline mozilla::dom::EventHandlerNonNull* GetOn##_event()               \
+  {                                                                       \
+    return GetEventHandler(nsGkAtoms::on##_event);                        \
+  }                                                                       \
+  inline void SetOn##_event(mozilla::dom::EventHandlerNonNull* aCallback, \
+                            ErrorResult& aRv)                             \
+  {                                                                       \
+    SetEventHandler(nsGkAtoms::on##_event, aCallback, aRv);               \
   }
 
 /* Use this macro to declare functions that forward the behavior of this
@@ -199,19 +179,19 @@ private:
  * want to override it.
  */
 #define NS_FORWARD_NSIDOMEVENTTARGET_NOPREHANDLEEVENT(_to) \
-  NS_SCRIPTABLE NS_IMETHOD AddEventListener(const nsAString & type, nsIDOMEventListener *listener, bool useCapture, bool wantsUntrusted, PRUint8 _argc) { \
+  NS_IMETHOD AddEventListener(const nsAString & type, nsIDOMEventListener *listener, bool useCapture, bool wantsUntrusted, uint8_t _argc) { \
     return _to AddEventListener(type, listener, useCapture, wantsUntrusted, _argc); \
   } \
-  NS_IMETHOD AddSystemEventListener(const nsAString & type, nsIDOMEventListener *listener, bool aUseCapture, bool aWantsUntrusted, PRUint8 _argc) { \
+  NS_IMETHOD AddSystemEventListener(const nsAString & type, nsIDOMEventListener *listener, bool aUseCapture, bool aWantsUntrusted, uint8_t _argc) { \
     return _to AddSystemEventListener(type, listener, aUseCapture, aWantsUntrusted, _argc); \
   } \
-  NS_SCRIPTABLE NS_IMETHOD RemoveEventListener(const nsAString & type, nsIDOMEventListener *listener, bool useCapture) { \
+  NS_IMETHOD RemoveEventListener(const nsAString & type, nsIDOMEventListener *listener, bool useCapture) { \
     return _to RemoveEventListener(type, listener, useCapture); \
   } \
   NS_IMETHOD RemoveSystemEventListener(const nsAString & type, nsIDOMEventListener *listener, bool aUseCapture) { \
     return _to RemoveSystemEventListener(type, listener, aUseCapture); \
   } \
-  NS_SCRIPTABLE NS_IMETHOD DispatchEvent(nsIDOMEvent *evt, bool *_retval NS_OUTPARAM) { \
+  NS_IMETHOD DispatchEvent(nsIDOMEvent *evt, bool *_retval) { \
     return _to DispatchEvent(evt, _retval); \
   } \
   virtual nsIDOMEventTarget * GetTargetForDOMEvent(void) { \
@@ -232,7 +212,7 @@ private:
   virtual nsEventListenerManager * GetListenerManager(bool aMayCreate) { \
     return _to GetListenerManager(aMayCreate); \
   } \
-  virtual nsIScriptContext * GetContextForEventHandlers(nsresult *aRv NS_OUTPARAM) { \
+  virtual nsIScriptContext * GetContextForEventHandlers(nsresult *aRv) { \
     return _to GetContextForEventHandlers(aRv); \
   } \
   virtual JSContext * GetJSContextForEventHandlers(void) { \

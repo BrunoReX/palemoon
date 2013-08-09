@@ -1,0 +1,12 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsIDOMEvent.idl"
+
+[scriptable, builtinclass, uuid(c0de7fba-725f-4180-b1f1-83163014d1e2)]
+interface nsIDOMUSSDReceivedEvent : nsIDOMEvent
+{
+  readonly attribute DOMString message;
+  [infallible] readonly attribute boolean sessionEnded;
+};

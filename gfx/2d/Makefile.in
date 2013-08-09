@@ -3,7 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -29,17 +29,25 @@ EXPORTS_mozilla/gfx	= \
         Point.h \
         Matrix.h \
         Rect.h \
+        Scale.h \
         Types.h \
+        Tools.h \
         UserData.h \
 	$(NULL)
 
 CPPSRCS	= \
-	Factory.cpp \
+        Factory.cpp \
+        Rect.cpp \
         Matrix.cpp \
         DrawTargetCairo.cpp \
         SourceSurfaceCairo.cpp \
         PathCairo.cpp \
+        DrawTargetRecording.cpp \
+        PathRecording.cpp \
+        RecordedEvent.cpp \
+        DrawEventRecorder.cpp \
         Blur.cpp \
+        Scale.cpp \
         ScaledFontBase.cpp \
         DrawTargetDual.cpp \
         ImageScaling.cpp \
@@ -52,6 +60,15 @@ CPPSRCS	+= \
 	   DrawTargetCG.cpp \
 	   PathCG.cpp \
 	   $(NULL)
+
+CMMSRCS = \
+	   QuartzSupport.mm \
+	   $(NULL)
+
+EXPORTS_mozilla/gfx	+= \
+	   QuartzSupport.h \
+	   MacIOSurface.h \
+	   $(NULL)
 endif
 
 DEFINES += -DMOZ_GFX -DUSE_CAIRO -DGFX2D_INTERNAL
@@ -61,6 +78,8 @@ CPPSRCS	+= \
         SourceSurfaceSkia.cpp \
         DrawTargetSkia.cpp \
         PathSkia.cpp \
+        convolver.cpp \
+        image_operations.cpp \
         $(NULL)
 
 DEFINES += -DUSE_SKIA
@@ -97,7 +116,10 @@ endif
 ifneq (,$(INTEL_ARCHITECTURE))
 # VC2005 doesn't support _mm_castsi128_ps, so SSE2 is turned off
 ifneq (1400,$(_MSC_VER))
-CPPSRCS += ImageScalingSSE2.cpp
+CPPSRCS += \
+        ImageScalingSSE2.cpp \
+        BlurSSE2.cpp \
+        $(NULL)
 DEFINES += -DUSE_SSE2
 endif
 endif
@@ -120,6 +142,12 @@ endif
 endif
 
 include $(topsrcdir)/config/rules.mk
+include $(topsrcdir)/ipc/chromium/chromium-config.mk
+
+# Due to bug 796023, we can't have -DUNICODE and -D_UNICODE; defining those
+# macros changes the type of LOGFONT to LOGFONTW instead of LOGFONTA. This
+# changes the symbol names of exported C++ functions that use LOGFONT.
+DEFINES := $(filter-out -DUNICODE -D_UNICODE,$(DEFINES))
 
 #ifeq ($(MOZ_WIDGET_TOOLKIT),cocoa)
 #CPPSRCS	+= \
@@ -136,10 +164,12 @@ include $(topsrcdir)/config/rules.mk
 ifneq (,$(INTEL_ARCHITECTURE))
 ifdef GNU_CC
 ImageScalingSSE2.$(OBJ_SUFFIX): CXXFLAGS+=-msse2
+BlurSSE2.$(OBJ_SUFFIX): CXXFLAGS+=-msse2
 endif
 
 ifdef SOLARIS_SUNPRO_CXX
 ImageScalingSSE2.$(OBJ_SUFFIX): OS_CXXFLAGS += -xarch=sse2 -xO4
+BlurSSE2.$(OBJ_SUFFIX): OS_CXXFLAGS += -xarch=sse2 -xO4
 endif
 endif
 

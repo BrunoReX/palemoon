@@ -49,6 +49,22 @@ WatchpointMap::init()
     return map.init();
 }
 
+static void
+WatchpointWriteBarrierPost(JSCompartment *comp, WatchpointMap::Map *map, const WatchKey &key,
+                           const Watchpoint &val)
+{
+#ifdef JSGC_GENERATIONAL
+    if ((JSID_IS_OBJECT(key.id) && comp->gcNursery.isInside(JSID_TO_OBJECT(key.id))) ||
+        (JSID_IS_STRING(key.id) && comp->gcNursery.isInside(JSID_TO_STRING(key.id))) ||
+        comp->gcNursery.isInside(key.object) ||
+        comp->gcNursery.isInside(val.closure))
+    {
+        typedef HashKeyRef<WatchpointMap::Map, WatchKey> WatchKeyRef;
+        comp->gcStoreBuffer.putGeneric(WatchKeyRef(map, key));
+    }
+#endif
+}
+
 bool
 WatchpointMap::watch(JSContext *cx, HandleObject obj, HandleId id,
                      JSWatchPointHandler handler, HandleObject closure)
@@ -66,6 +82,7 @@ WatchpointMap::watch(JSContext *cx, HandleObject obj, HandleId id,
         js_ReportOutOfMemory(cx);
         return false;
     }
+    WatchpointWriteBarrierPost(obj->compartment(), &map, WatchKey(obj, id), w);
     return true;
 }
 
@@ -76,8 +93,12 @@ WatchpointMap::unwatch(JSObject *obj, jsid id,
     if (Map::Ptr p = map.lookup(WatchKey(obj, id))) {
         if (handlerp)
             *handlerp = p->value.handler;
-        if (closurep)
+        if (closurep) {
+            // Read barrier to prevent an incorrectly gray closure from escaping the
+            // watchpoint. See the comment before UnmarkGrayChildren in gc/Marking.cpp
+            ExposeGCThingToActiveJS(p->value.closure, JSTRACE_OBJECT);
             *closurep = p->value.closure;
+        }
         map.remove(p);
     }
 }
@@ -99,7 +120,7 @@ WatchpointMap::clear()
 }
 
 bool
-WatchpointMap::triggerWatchpoint(JSContext *cx, HandleObject obj, HandleId id, Value *vp)
+WatchpointMap::triggerWatchpoint(JSContext *cx, HandleObject obj, HandleId id, MutableHandleValue vp)
 {
     Map::Ptr p = map.lookup(WatchKey(obj, id));
     if (!p || p->value.held)
@@ -115,14 +136,18 @@ WatchpointMap::triggerWatchpoint(JSContext *cx, HandleObject obj, HandleId id, V
     Value old;
     old.setUndefined();
     if (obj->isNative()) {
-        if (const Shape *shape = obj->nativeLookup(cx, id)) {
+        if (Shape *shape = obj->nativeLookup(cx, id)) {
             if (shape->hasSlot())
                 old = obj->nativeGetSlot(shape->slot());
         }
     }
 
+    // Read barrier to prevent an incorrectly gray closure from escaping the
+    // watchpoint. See the comment before UnmarkGrayChildren in gc/Marking.cpp
+    ExposeGCThingToActiveJS(closure, JSTRACE_OBJECT);
+
     /* Call the handler. */
-    return handler(cx, obj, id, old, vp, closure);
+    return handler(cx, obj, id, old, vp.address(), closure);
 }
 
 bool
@@ -143,26 +168,27 @@ WatchpointMap::markIteratively(JSTracer *trc)
     bool marked = false;
     for (Map::Enum e(map); !e.empty(); e.popFront()) {
         Map::Entry &entry = e.front();
-        JSObject *keyObj = entry.key.object;
-        jsid keyId(entry.key.id.get());
-        bool objectIsLive = IsObjectMarked(&keyObj);
+        JSObject *priorKeyObj = entry.key.object;
+        jsid priorKeyId(entry.key.id.get());
+        bool objectIsLive = IsObjectMarked(const_cast<EncapsulatedPtrObject *>(&entry.key.object));
         if (objectIsLive || entry.value.held) {
             if (!objectIsLive) {
-                MarkObjectUnbarriered(trc, &keyObj, "held Watchpoint object");
+                MarkObject(trc, const_cast<EncapsulatedPtrObject *>(&entry.key.object),
+                           "held Watchpoint object");
                 marked = true;
             }
 
-            JS_ASSERT(JSID_IS_STRING(keyId) || JSID_IS_INT(keyId));
-            MarkIdUnbarriered(trc, &keyId, "WatchKey::id");
+            JS_ASSERT(JSID_IS_STRING(priorKeyId) || JSID_IS_INT(priorKeyId));
+            MarkId(trc, const_cast<EncapsulatedId *>(&entry.key.id), "WatchKey::id");
 
             if (entry.value.closure && !IsObjectMarked(&entry.value.closure)) {
                 MarkObject(trc, &entry.value.closure, "Watchpoint::closure");
                 marked = true;
             }
 
-            /* We will sweep this entry if !objectIsLive. */
-            if (keyObj != entry.key.object || keyId != entry.key.id)
-                e.rekeyFront(WatchKey(keyObj, keyId));
+            /* We will sweep this entry in sweepAll if !objectIsLive. */
+            if (priorKeyObj != entry.key.object || priorKeyId != entry.key.id)
+                e.rekeyFront(WatchKey(entry.key.object, entry.key.id));
         }
     }
     return marked;
@@ -173,16 +199,17 @@ WatchpointMap::markAll(JSTracer *trc)
 {
     for (Map::Enum e(map); !e.empty(); e.popFront()) {
         Map::Entry &entry = e.front();
-        JSObject *keyObj = entry.key.object;
-        jsid keyId = entry.key.id;
-        JS_ASSERT(JSID_IS_STRING(keyId) || JSID_IS_INT(keyId));
+        JSObject *priorKeyObj = entry.key.object;
+        jsid priorKeyId = entry.key.id;
+        JS_ASSERT(JSID_IS_STRING(priorKeyId) || JSID_IS_INT(priorKeyId));
 
-        MarkObjectUnbarriered(trc, &keyObj, "held Watchpoint object");
-        MarkIdUnbarriered(trc, &keyId, "WatchKey::id");
+        MarkObject(trc, const_cast<EncapsulatedPtrObject *>(&entry.key.object),
+                   "held Watchpoint object");
+        MarkId(trc, const_cast<EncapsulatedId *>(&entry.key.id), "WatchKey::id");
         MarkObject(trc, &entry.value.closure, "Watchpoint::closure");
 
-        if (keyObj != entry.key.object || keyId != entry.key.id)
-            e.rekeyFront(WatchKey(keyObj, keyId));
+        if (priorKeyObj != entry.key.object || priorKeyId != entry.key.id)
+            e.rekeyFront(entry.key);
     }
 }
 
@@ -200,11 +227,11 @@ WatchpointMap::sweep()
 {
     for (Map::Enum e(map); !e.empty(); e.popFront()) {
         Map::Entry &entry = e.front();
-        HeapPtrObject obj(entry.key.object);
+        RelocatablePtrObject obj(entry.key.object);
         if (!IsObjectMarked(&obj)) {
             JS_ASSERT(!entry.value.held);
             e.removeFront();
-        } else {
+        } else if (obj != entry.key.object) {
             e.rekeyFront(WatchKey(obj, entry.key.id));
         }
     }

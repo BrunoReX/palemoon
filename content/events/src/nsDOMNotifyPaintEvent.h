@@ -18,7 +18,7 @@ class nsDOMNotifyPaintEvent : public nsDOMEvent,
 public:
   nsDOMNotifyPaintEvent(nsPresContext*           aPresContext,
                         nsEvent*                 aEvent,
-                        PRUint32                 aEventType,
+                        uint32_t                 aEventType,
                         nsInvalidateRequestList* aInvalidateRequests);
 
   NS_DECL_ISUPPORTS_INHERITED
@@ -26,10 +26,13 @@ public:
   NS_DECL_NSIDOMNOTIFYPAINTEVENT
 
   // Forward to base class
-  NS_FORWARD_TO_NSDOMEVENT
-
-  virtual void Serialize(IPC::Message* aMsg, bool aSerializeInterfaceType);
-  virtual bool Deserialize(const IPC::Message* aMsg, void** aIter);
+  NS_FORWARD_TO_NSDOMEVENT_NO_SERIALIZATION_NO_DUPLICATION
+  NS_IMETHOD DuplicatePrivateData()
+  {
+    return nsDOMEvent::DuplicatePrivateData();
+  }
+  NS_IMETHOD_(void) Serialize(IPC::Message* aMsg, bool aSerializeInterfaceType);
+  NS_IMETHOD_(bool) Deserialize(const IPC::Message* aMsg, void** aIter);
 private:
   nsRegion GetRegion();
 

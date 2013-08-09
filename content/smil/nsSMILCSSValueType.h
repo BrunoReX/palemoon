@@ -10,7 +10,7 @@
 
 #include "nsISMILType.h"
 #include "nsCSSProperty.h"
-#include "nscore.h" // For NS_OVERRIDE
+#include "mozilla/Attributes.h"
 
 class nsAString;
 
@@ -34,22 +34,22 @@ public:
 protected:
   // nsISMILType Methods
   // -------------------
-  NS_OVERRIDE virtual void     Init(nsSMILValue& aValue) const;
-  NS_OVERRIDE virtual void     Destroy(nsSMILValue&) const;
-  NS_OVERRIDE virtual nsresult Assign(nsSMILValue& aDest,
-                                      const nsSMILValue& aSrc) const;
-  NS_OVERRIDE virtual bool     IsEqual(const nsSMILValue& aLeft,
-                                       const nsSMILValue& aRight) const;
-  NS_OVERRIDE virtual nsresult Add(nsSMILValue& aDest,
-                                   const nsSMILValue& aValueToAdd,
-                                   PRUint32 aCount) const;
-  NS_OVERRIDE virtual nsresult ComputeDistance(const nsSMILValue& aFrom,
-                                               const nsSMILValue& aTo,
-                                               double& aDistance) const;
-  NS_OVERRIDE virtual nsresult Interpolate(const nsSMILValue& aStartVal,
-                                           const nsSMILValue& aEndVal,
-                                           double aUnitDistance,
-                                           nsSMILValue& aResult) const;
+  virtual void     Init(nsSMILValue& aValue) const MOZ_OVERRIDE;
+  virtual void     Destroy(nsSMILValue&) const MOZ_OVERRIDE;
+  virtual nsresult Assign(nsSMILValue& aDest,
+                          const nsSMILValue& aSrc) const MOZ_OVERRIDE;
+  virtual bool     IsEqual(const nsSMILValue& aLeft,
+                           const nsSMILValue& aRight) const MOZ_OVERRIDE;
+  virtual nsresult Add(nsSMILValue& aDest,
+                       const nsSMILValue& aValueToAdd,
+                       uint32_t aCount) const MOZ_OVERRIDE;
+  virtual nsresult ComputeDistance(const nsSMILValue& aFrom,
+                                   const nsSMILValue& aTo,
+                                   double& aDistance) const MOZ_OVERRIDE;
+  virtual nsresult Interpolate(const nsSMILValue& aStartVal,
+                               const nsSMILValue& aEndVal,
+                               double aUnitDistance,
+                               nsSMILValue& aResult) const MOZ_OVERRIDE;
 
 public:
   // Helper Methods
@@ -72,7 +72,7 @@ public:
    *                                  a different |aValue| depending on other
    *                                  CSS properties on |aTargetElement|
    *                                  or its ancestors (e.g. 'inherit).
-   *                                  false otherwise. May be nsnull.
+   *                                  false otherwise. May be nullptr.
    *                                  Not set if the method fails.
    * @pre  aValue.IsNull()
    * @post aValue.IsNull() || aValue.mType == nsSMILCSSValueType::sSingleton

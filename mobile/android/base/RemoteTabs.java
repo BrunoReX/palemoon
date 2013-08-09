@@ -4,23 +4,23 @@
 
 package org.mozilla.gecko;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-
 import org.json.JSONObject;
 
 import android.content.Context;
 import android.os.SystemClock;
+import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.LinearLayout;
 import android.widget.ExpandableListView;
+import android.widget.LinearLayout;
 import android.widget.SimpleExpandableListAdapter;
-import android.text.TextUtils;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 
 public class RemoteTabs extends LinearLayout
                         implements TabsPanel.PanelView,
@@ -30,6 +30,7 @@ public class RemoteTabs extends LinearLayout
     private static final String LOGTAG = "GeckoRemoteTabs";
 
     private Context mContext;
+    private TabsPanel mTabsPanel;
 
     private static ExpandableListView mList;
     
@@ -57,6 +58,11 @@ public class RemoteTabs extends LinearLayout
     }
 
     @Override
+    public void setTabsPanel(TabsPanel panel) {
+        mTabsPanel = panel;
+    }
+
+    @Override
     public void show() {
         TabsAccessor.getTabs(mContext, this);
     }
@@ -65,8 +71,8 @@ public class RemoteTabs extends LinearLayout
     public void hide() {
     }
 
-    void autoHideTabs() {
-        GeckoApp.mAppContext.autoHideTabs();
+    void autoHidePanel() {
+        mTabsPanel.autoHidePanel();
     }
 
     @Override
@@ -79,23 +85,12 @@ public class RemoteTabs extends LinearLayout
     public boolean onChildClick(ExpandableListView parent, View view, int groupPosition, int childPosition, long id) {
         HashMap <String, String> tab = mTabsList.get(groupPosition).get(childPosition);
         if (tab == null) {
-            autoHideTabs();
+            autoHidePanel();
             return true;
         }
 
-        String url = tab.get("url");
-        JSONObject args = new JSONObject();
-        try {
-            args.put("url", url);
-            args.put("engine", null);
-            args.put("userEntered", false);
-        } catch (Exception e) {
-            Log.e(LOGTAG, "error building JSON arguments");
-        }
-
-        Log.d(LOGTAG, "Sending message to Gecko: " + SystemClock.uptimeMillis() + " - Tab:Add");
-        GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Tab:Add", args.toString()));
-        autoHideTabs();
+        Tabs.getInstance().loadUrl(tab.get("url"), Tabs.LOADURL_NEW_TAB);
+        autoHidePanel();
         return true;
     }
 
@@ -103,7 +98,7 @@ public class RemoteTabs extends LinearLayout
     public void onQueryTabsComplete(List<TabsAccessor.RemoteTab> remoteTabsList) {
         ArrayList<TabsAccessor.RemoteTab> remoteTabs = new ArrayList<TabsAccessor.RemoteTab> (remoteTabsList);
         if (remoteTabs == null || remoteTabs.size() == 0) {
-            autoHideTabs();
+            autoHidePanel();
             return;
         }
         

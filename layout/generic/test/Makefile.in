@@ -3,22 +3,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
-relativesrcdir  = layout/generic/test
+relativesrcdir  = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
-include $(topsrcdir)/config/rules.mk
 
 # in the list below, we make sure that the tests that require focus
 # run before test_plugin_clipping, which can steal focus for its window.
-_TEST_FILES = \
+MOCHITEST_FILES = \
+  test_contained_plugin_transplant.html \
   bug344830_testembed.svg \
-  frame_selection_underline.xhtml \
-  frame_selection_underline-ref.xhtml \
-  frame_selection_underline.css \
   plugin_clipping_helper.xhtml \
   plugin_clipping_helper2.xhtml \
   plugin_clipping_helper_transformed.xhtml \
@@ -69,6 +66,8 @@ _TEST_FILES = \
   test_invalidate_during_plugin_paint.html \
   test_movement_by_characters.html \
   test_movement_by_words.html \
+  test_page_scroll_with_fixed_pos.html \
+    page_scroll_with_fixed_pos_window.html \
   test_plugin_clipping.xhtml \
   test_plugin_clipping2.xhtml \
   test_plugin_clipping_transformed.xhtml \
@@ -77,8 +76,8 @@ _TEST_FILES = \
   test_plugin_mouse_coords.html \
   test_plugin_position.xhtml \
   test_selection_expanding.html \
+  test_selection_touchevents.html \
   selection_expanding_xbl.xml \
-  test_selection_underline.html \
   file_BrokenImageReference.png \
   file_Dolske.png \
   file_IconTestServer.sjs \
@@ -102,9 +101,17 @@ _TEST_FILES = \
   test_bug719523.html \
   test_bug735641.html \
   test_bug748961.html \
+  test_bug784410.html \
+  test_bug785324.html \
+  test_bug791616.html \
+  test_bug831780.html \
   $(NULL)
 
-_CHROME_FILES = \
+MOCHITEST_CHROME_FILES = \
+  frame_selection_underline.xhtml \
+  frame_selection_underline-ref.xhtml \
+  frame_selection_underline.css \
+  test_selection_underline.html \
   test_bug632379.xul \
   test_bug508115.xul \
   test_bug469613.xul \
@@ -114,8 +121,4 @@ _CHROME_FILES = \
   file_bug514732_window.xul \
   $(NULL)
 
-libs:: $(_TEST_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/tests/$(relativesrcdir)
-
-libs:: $(_CHROME_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/chrome/$(relativesrcdir)
+include $(topsrcdir)/config/rules.mk

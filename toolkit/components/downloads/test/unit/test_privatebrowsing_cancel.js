@@ -105,7 +105,7 @@ function run_test() {
   prefBranch.setBoolPref("browser.privatebrowsing.keep_current_session", true);
 
   do_test_pending();
-  let httpserv = new nsHttpServer();
+  let httpserv = new HttpServer();
   httpserv.registerDirectory("/file/", do_get_cwd());
   httpserv.registerPathHandler("/noresume", function (meta, response) {
     response.setHeader("Content-Type", "text/html", false);
@@ -159,6 +159,7 @@ function run_test() {
 
             // Create Download-E
             dlE = addDownload({
+              isPrivate: pb.privateBrowsingEnabled,
               targetFile: fileE,
               sourceURI: downloadESource,
               downloadName: downloadEName
@@ -176,6 +177,7 @@ function run_test() {
 
             // Create Download-F
             dlF = addDownload({
+              isPrivate: pb.privateBrowsingEnabled,
               targetFile: fileF,
               sourceURI: downloadFSource,
               downloadName: downloadFName
@@ -204,6 +206,9 @@ function run_test() {
             pb.privateBrowsingEnabled = false;
             do_check_true(promptService.wasCalled());
             do_check_false(pb.privateBrowsingEnabled);
+
+            // Simulate leaving PB mode
+            Services.obs.notifyObservers(null, "last-pb-context-exited", null);
 
             // Check that Download-F is canceled and not accessible
             do_check_eq(dlF.state, dm.DOWNLOAD_PAUSED);
@@ -248,6 +253,7 @@ function run_test() {
 
   // Create Download-D
   let dlD = addDownload({
+    isPrivate: pb.privateBrowsingEnabled,
     targetFile: fileD,
     sourceURI: downloadDSource,
     downloadName: downloadDName

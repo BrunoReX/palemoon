@@ -3024,6 +3024,9 @@ typedef void* GLeglImage;
 #define LOCAL_GL_CONDITION_SATISFIED              0x911C
 #define LOCAL_GL_WAIT_FAILED                      0x911D
 
+// OES_EGL_image_external
+#define LOCAL_GL_TEXTURE_EXTERNAL                 0x8D65
+
 #define LOCAL_GL_MAX_VERTEX_UNIFORM_VECTORS       0x8DFB
 #define LOCAL_GL_MAX_VARYING_VECTORS              0x8DFC
 #define LOCAL_GL_MAX_FRAGMENT_UNIFORM_VECTORS     0x8DFD
@@ -3089,6 +3092,17 @@ typedef void* GLeglImage;
 #define LOCAL_WGL_CONTEXT_CORE_PROFILE_BIT_ARB              0x00000001
 #define LOCAL_WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB     0x00000002
 #define LOCAL_WGL_CONTEXT_ROBUST_ACCESS_BIT_ARB             0x00000004
+
+// AMD_compressed_ATC_texture
+#define LOCAL_GL_ATC_RGB                                0x8C92
+#define LOCAL_GL_ATC_RGBA_EXPLICIT_ALPHA                0x8C93
+#define LOCAL_GL_ATC_RGBA_INTERPOLATED_ALPHA            0x87EE
+
+// IMG_texture_compression_pvrtc
+#define LOCAL_GL_COMPRESSED_RGB_PVRTC_4BPPV1            0x8C00
+#define LOCAL_GL_COMPRESSED_RGB_PVRTC_2BPPV1            0x8C01
+#define LOCAL_GL_COMPRESSED_RGBA_PVRTC_4BPPV1           0x8C02
+#define LOCAL_GL_COMPRESSED_RGBA_PVRTC_2BPPV1           0x8C03
 
 #define LOCAL_WGL_NUMBER_PIXEL_FORMATS_ARB 0x2000
 #define LOCAL_WGL_DRAW_TO_WINDOW_ARB 0x2001
@@ -3236,8 +3250,6 @@ typedef void* GLeglImage;
 #define LOCAL_EGL_TEXTURE_RGB                 0x305D
 #define LOCAL_EGL_TEXTURE_RGBA                0x305E
 #define LOCAL_EGL_TEXTURE_2D                  0x305F
-#define LOCAL_EGL_NATIVE_PIXMAP_KHR           0x30B0
-#define LOCAL_EGL_IMAGE_PRESERVED_KHR         0x30D2
 #define LOCAL_EGL_FALSE                       0
 #define LOCAL_EGL_TRUE                        1
 #define LOCAL_EGL_BITMAP_POINTER_KHR          0x30C6
@@ -3254,10 +3266,30 @@ typedef void* GLeglImage;
 #define LOCAL_EGL_BAD_PARAMETER               0x300C
 #define LOCAL_EGL_CONTEXT_LOST                0x300E
 
+// EGL_KHR_image_base (not supplied by EGL_KHR_image!)
+#define LOCAL_EGL_IMAGE_PRESERVED             0x30D2
+
+// EGL_KHR_image_pixmap
+#define LOCAL_EGL_NATIVE_PIXMAP               0x30B0
+
 // EGL_KHR_gl_texture_2D_image
 #define LOCAL_EGL_GL_TEXTURE_2D               0x30B1
 
 // OES_EGL_image_external
 #define LOCAL_GL_TEXTURE_EXTERNAL             0x8D65
+
+// EGL_KHR_fence_sync
+#define LOCAL_EGL_SYNC_FENCE                  0x30F9
+#define LOCAL_EGL_SYNC_TYPE                   0x30F7
+#define LOCAL_EGL_SYNC_STATUS                 0x30F1
+#define LOCAL_EGL_SYNC_CONDITION              0x30F8
+#define LOCAL_EGL_SIGNALED                    0x30F2
+#define LOCAL_EGL_UNSIGNALED                  0x30F3
+#define LOCAL_EGL_SYNC_PRIOR_COMMANDS_COMPLETE  0x30F0
+#define LOCAL_EGL_SYNC_FLUSH_COMMANDS_BIT     0x0001
+#define LOCAL_EGL_FOREVER                     0xFFFFFFFFFFFFFFFFull
+#define LOCAL_EGL_TIMEOUT_EXPIRED             0x30F5
+#define LOCAL_EGL_CONDITION_SATISFIED         0x30F6
+#define LOCAL_EGL_SUCCESS                     0x3000
 
 #endif

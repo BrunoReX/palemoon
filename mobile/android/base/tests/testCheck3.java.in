@@ -5,15 +5,25 @@ import @ANDROID_PACKAGE_NAME@.*;
 import java.lang.reflect.Method;
 
 public class testCheck3 extends PixelTest {
+    @Override
+    protected int getTestType() {
+        return TEST_TALOS;
+    }
+
     public void testCheck3() {
-        setTestType("talos");
         String url = getAbsoluteUrl("/startup_test/fennecmark/cnn/cnn.com/index.html");
         // Disable Fennec's low-res screenshot for the duration of this test;
         // this distinguishes this test from testCheck2, which is otherwise
         // identical.
-        disableScreenshot();
+        if (!disableScreenshot()) {
+            // if disabling the screenshot fails, there is no point in running
+            // this test, so abort. the lack of __start_report output from the
+            // end of the test should get picked up as an error by the talos
+            // harness.
+            return;
+        }
 
-        mActions.expectGeckoEvent("Gecko:Ready").blockForEvent();
+        blockForGeckoReady();
         loadAndPaint(url);
         mDriver.setupScrollHandling();
 
@@ -42,7 +52,7 @@ public class testCheck3 extends PixelTest {
             Thread.sleep(1000);
             completeness = mDriver.stopCheckerboardRecording();
         } catch (Exception e) {
-            mAsserter.dumpLog("Exception while replaying events", e);
+            mAsserter.ok(false, "Exception while replaying events", e.toString());
         }
 
         mAsserter.dumpLog("__start_report" + completeness + "__end_report");
@@ -51,12 +61,13 @@ public class testCheck3 extends PixelTest {
         mAsserter.dumpLog("__startTimestamp" + msecs + "__endTimestamp");
     }
 
-    private void disableScreenshot() {
+    private boolean disableScreenshot() {
         try {
             ClassLoader classLoader = getActivity().getClassLoader();
-            Class appshell = classLoader.loadClass("org.mozilla.gecko.GeckoAppShell");
+            Class appshell = classLoader.loadClass("org.mozilla.gecko.ScreenshotHandler");
             Method disableScreenshotMethod = appshell.getMethod("disableScreenshot");
             disableScreenshotMethod.invoke(null);
+            return true;
         } catch (ClassNotFoundException ex) {
             mAsserter.ok(false, "Error getting class", ex.toString());
         } catch (IllegalAccessException ex) {
@@ -66,5 +77,6 @@ public class testCheck3 extends PixelTest {
         } catch (java.lang.reflect.InvocationTargetException ex) {
             mAsserter.ok(false, "Error invoking method", ex.toString());
         }
+        return false;
     }
 }

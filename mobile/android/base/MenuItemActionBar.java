@@ -4,38 +4,28 @@
 
 package org.mozilla.gecko;
 
-import android.app.Activity;
 import android.content.Context;
-import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
-import android.util.DisplayMetrics;
-import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ImageView;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 
 public class MenuItemActionBar extends ImageButton
                                implements GeckoMenuItem.Layout {
     private static final String LOGTAG = "GeckoMenuItemActionBar";
 
-    private Context mContext;
-
     public MenuItemActionBar(Context context, AttributeSet attrs) {
         super(context, attrs);
-        mContext = context;
 
-        DisplayMetrics metrics = new DisplayMetrics();
-        ((Activity) context).getWindowManager().getDefaultDisplay().getMetrics(metrics);
+        int size = (int) (context.getResources().getDimension(R.dimen.browser_toolbar_height));
+        setLayoutParams(new ViewGroup.LayoutParams(size, size));
 
-        setLayoutParams(new ViewGroup.LayoutParams((int) (56 * metrics.density),
-                                                   (int) (56 * metrics.density)));
-
-        int padding = (int) (14 * metrics.density);
+        int padding = size / 4;
         setPadding(padding, padding, padding, padding);
         setBackgroundResource(R.drawable.action_bar_button);
-        setScaleType(ImageView.ScaleType.FIT_XY);
+        setScaleType(ImageView.ScaleType.FIT_CENTER);
     }
 
     @Override
@@ -65,6 +55,8 @@ public class MenuItemActionBar extends ImageButton
 
     @Override
     public void setTitle(CharSequence title) {
+        // set accessibility contentDescription here
+        setContentDescription(title);
     }
 
     @Override
@@ -79,5 +71,9 @@ public class MenuItemActionBar extends ImageButton
 
     @Override
     public void setChecked(boolean checked) {
+    }
+
+    @Override
+    public void setSubMenuIndicator(boolean hasSubMenu) {
     }
 }

@@ -23,12 +23,20 @@ GetObjectOrRepresentedView(id <mozAccessible> aObject)
   return [aObject hasRepresentedView] ? [aObject representedView] : aObject;
 }
 
+inline mozAccessible*
+GetNativeFromGeckoAccessible(nsIAccessible* aAccessible)
+{
+  mozAccessible* native = nil;
+  aAccessible->GetNativeInterface((void**)&native);
+  return native;
+}
+
 @interface mozAccessible : NSObject <mozAccessible>
 {
   /**
    * Weak reference; it owns us.
    */
-  AccessibleWrap* mGeckoAccessible;
+  mozilla::a11y::AccessibleWrap* mGeckoAccessible;
   
   /**
    * Strong ref to array of children
@@ -39,15 +47,7 @@ GetObjectOrRepresentedView(id <mozAccessible> aObject)
    * Weak reference to the parent
    */
   mozAccessible* mParent;
-  
-  /**
-   * We can be marked as 'expired' if Shutdown() is called on our geckoAccessible.
-   * since we might still be retained by some third-party, we need to do cleanup
-   * in |expire|, and prevent any potential harm that could come from someone using us
-   * after this point.
-   */
-  BOOL mIsExpired;
-  
+
   /**
    * The nsIAccessible role of our gecko accessible.
    */
@@ -55,7 +55,7 @@ GetObjectOrRepresentedView(id <mozAccessible> aObject)
 }
 
 // inits with the gecko owner.
-- (id)initWithAccessible:(AccessibleWrap*)geckoParent;
+- (id)initWithAccessible:(mozilla::a11y::AccessibleWrap*)geckoParent;
 
 // our accessible parent (AXParent)
 - (id <mozAccessible>)parent;
@@ -116,7 +116,7 @@ GetObjectOrRepresentedView(id <mozAccessible> aObject)
 /** 
  * Append a child if they are already cached.
  */
-- (void)appendChild:(Accessible*)aAccessible;
+- (void)appendChild:(mozilla::a11y::Accessible*)aAccessible;
 
 // makes ourselves "expired". after this point, we might be around if someone
 // has retained us (e.g., a third-party), but we really contain no information.

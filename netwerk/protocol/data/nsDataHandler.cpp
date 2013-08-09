@@ -14,7 +14,7 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIProgressEventSink.h"
 #include "nsNetCID.h"
-#include "nsNetError.h"
+#include "nsError.h"
 
 static NS_DEFINE_CID(kSimpleURICID, NS_SIMPLEURI_CID);
 
@@ -32,7 +32,7 @@ nsresult
 nsDataHandler::Create(nsISupports* aOuter, const nsIID& aIID, void* *aResult) {
 
     nsDataHandler* ph = new nsDataHandler();
-    if (ph == nsnull)
+    if (ph == nullptr)
         return NS_ERROR_OUT_OF_MEMORY;
     NS_ADDREF(ph);
     nsresult rv = ph->QueryInterface(aIID, aResult);
@@ -50,14 +50,14 @@ nsDataHandler::GetScheme(nsACString &result) {
 }
 
 NS_IMETHODIMP
-nsDataHandler::GetDefaultPort(PRInt32 *result) {
+nsDataHandler::GetDefaultPort(int32_t *result) {
     // no ports for data protocol
     *result = -1;
     return NS_OK;
 }
 
 NS_IMETHODIMP
-nsDataHandler::GetProtocolFlags(PRUint32 *result) {
+nsDataHandler::GetProtocolFlags(uint32_t *result) {
     *result = URI_NORELATIVE | URI_NOAUTH | URI_INHERITS_SECURITY_CONTEXT |
         URI_LOADABLE_BY_ANYONE | URI_NON_PERSISTABLE | URI_IS_LOCAL_RESOURCE |
         URI_SYNC_LOAD_IS_OK;
@@ -83,7 +83,7 @@ nsDataHandler::NewURI(const nsACString &aSpec,
         rv = uri->SetRef(spec);
     } else {
         // Otherwise, we'll assume |spec| is a fully-specified data URI
-        nsCAutoString contentType, contentCharset, dataBuffer, hashRef;
+        nsAutoCString contentType, contentCharset, dataBuffer, hashRef;
         bool base64;
         rv = ParseURI(spec, contentType, contentCharset, base64, dataBuffer, hashRef);
         if (NS_FAILED(rv))
@@ -129,11 +129,13 @@ nsDataHandler::NewChannel(nsIURI* uri, nsIChannel* *result) {
 }
 
 NS_IMETHODIMP 
-nsDataHandler::AllowPort(PRInt32 port, const char *scheme, bool *_retval) {
+nsDataHandler::AllowPort(int32_t port, const char *scheme, bool *_retval) {
     // don't override anything.  
     *_retval = false;
     return NS_OK;
 }
+
+#define BASE64_EXTENSION ";base64"
 
 nsresult
 nsDataHandler::ParseURI(nsCString& spec,
@@ -160,10 +162,17 @@ nsDataHandler::ParseURI(nsCString& spec,
     *comma = '\0';
 
     // determine if the data is base64 encoded.
-    char *base64 = PL_strcasestr(buffer, ";base64");
+    char *base64 = PL_strcasestr(buffer, BASE64_EXTENSION);
     if (base64) {
-        isBase64 = true;
-        *base64 = '\0';
+        char *beyond = base64 + strlen(BASE64_EXTENSION);
+        // per the RFC 2397 grammar, "base64" MUST be followed by a comma
+        // previously substituted by '\0', but we also allow it in between
+        // parameters so a subsequent ";" is ok as well (this deals with
+        // *broken* data URIs, see bug 781693 for an example)
+        if (*beyond == '\0' || *beyond == ';') {
+            isBase64 = true;
+            *base64 = '\0';
+        }
     }
 
     if (comma == buffer) {

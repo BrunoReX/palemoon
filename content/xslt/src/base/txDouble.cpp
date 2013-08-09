@@ -31,12 +31,12 @@ public:
     txStringToDouble(): mState(eWhitestart), mSign(ePositive) {}
 
     void
-    write(const input_type* aSource, PRUint32 aSourceLength)
+    write(const input_type* aSource, uint32_t aSourceLength)
     {
         if (mState == eIllegal) {
             return;
         }
-        PRUint32 i = 0;
+        uint32_t i = 0;
         PRUnichar c;
         for ( ; i < aSourceLength; ++i) {
             c = aSource[i];
@@ -109,7 +109,7 @@ public:
         return mSign*PR_strtod(mBuffer.get(), 0);
     }
 private:
-    nsCAutoString mBuffer;
+    nsAutoCString mBuffer;
     enum {
         eWhitestart,
         eDecimal,
@@ -156,12 +156,12 @@ void txDouble::toString(double aValue, nsAString& aDest)
     const int buflen = 20;
     char buf[buflen];
 
-    PRIntn intDigits, sign;
+    int intDigits, sign;
     char* endp;
     PR_dtoa(aValue, 0, 0, &intDigits, &sign, &endp, buf, buflen - 1);
 
     // compute length
-    PRInt32 length = endp - buf;
+    int32_t length = endp - buf;
     if (length > intDigits) {
         // decimal point needed
         ++length;
@@ -177,11 +177,11 @@ void txDouble::toString(double aValue, nsAString& aDest)
     if (aValue < 0)
         ++length;
     // grow the string
-    PRUint32 oldlength = aDest.Length();
+    uint32_t oldlength = aDest.Length();
     if (!EnsureStringLength(aDest, oldlength + length))
         return; // out of memory
     nsAString::iterator dest;
-    aDest.BeginWriting(dest).advance(PRInt32(oldlength));
+    aDest.BeginWriting(dest).advance(int32_t(oldlength));
     if (aValue < 0) {
         *dest = '-'; ++dest;
     }

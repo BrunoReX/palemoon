@@ -116,7 +116,7 @@ BindingParams::BindingParams(mozIStorageBindingParamsArray *aOwningArray,
 BindingParams::BindingParams(mozIStorageBindingParamsArray *aOwningArray)
 : mLocked(false)
 , mOwningArray(aOwningArray)
-, mOwningStatement(nsnull)
+, mOwningStatement(nullptr)
 , mParamCount(0)
 {
 }
@@ -138,8 +138,8 @@ BindingParams::lock()
   // We no longer need to hold a reference to our statement or our owning array.
   // The array owns us at this point, and it will own a reference to the
   // statement.
-  mOwningStatement = nsnull;
-  mOwningArray = nsnull;
+  mOwningStatement = nullptr;
+  mOwningArray = nullptr;
 }
 
 void
@@ -166,13 +166,13 @@ AsyncBindingParams::iterateOverNamedParameters(const nsACString &aName,
 
   // We do not accept any forms of names other than ":name", but we need to add
   // the colon for SQLite.
-  nsCAutoString name(":");
+  nsAutoCString name(":");
   name.Append(aName);
   int oneIdx = ::sqlite3_bind_parameter_index(closureThunk->statement,
                                               name.get());
 
   if (oneIdx == 0) {
-    nsCAutoString errMsg(aName);
+    nsAutoCString errMsg(aName);
     errMsg.Append(NS_LITERAL_CSTRING(" is not a valid named parameter."));
     closureThunk->err = new Error(SQLITE_RANGE, errMsg.get());
     return PL_DHASH_STOP;
@@ -216,7 +216,7 @@ already_AddRefed<mozIStorageError>
 BindingParams::bind(sqlite3_stmt *aStatement)
 {
   // Iterate through all of our stored data, and bind it.
-  for (PRInt32 i = 0; i < mParameters.Count(); i++) {
+  for (int32_t i = 0; i < mParameters.Count(); i++) {
     int rc = variantToSQLiteT(BindingColumnData(aStatement, i), mParameters[i]);
     if (rc != SQLITE_OK) {
       // We had an error while trying to bind.  Now we need to create an error
@@ -231,7 +231,7 @@ BindingParams::bind(sqlite3_stmt *aStatement)
     }
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 already_AddRefed<mozIStorageError>
@@ -244,7 +244,7 @@ AsyncBindingParams::bind(sqlite3_stmt * aStatement)
 
   // Enumerate over everyone in the map, propagating them into mParameters if
   // we can and creating an error immediately when we cannot.
-  NamedParameterIterationClosureThunk closureThunk = {this, aStatement, nsnull};
+  NamedParameterIterationClosureThunk closureThunk = {this, aStatement, nullptr};
   (void)mNamedParameters.EnumerateRead(iterateOverNamedParameters,
                                        (void *)&closureThunk);
 
@@ -262,7 +262,7 @@ BindingParams::BindByName(const nsACString &aName,
   NS_ENSURE_FALSE(mLocked, NS_ERROR_UNEXPECTED);
 
   // Get the column index that we need to store this at.
-  PRUint32 index;
+  uint32_t index;
   nsresult rv = mOwningStatement->GetParameterIndex(aName, &index);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -312,7 +312,7 @@ BindingParams::BindDoubleByName(const nsACString &aName,
 
 NS_IMETHODIMP
 BindingParams::BindInt32ByName(const nsACString &aName,
-                               PRInt32 aValue)
+                               int32_t aValue)
 {
   nsCOMPtr<nsIVariant> value(new IntegerVariant(aValue));
   NS_ENSURE_TRUE(value, NS_ERROR_OUT_OF_MEMORY);
@@ -322,7 +322,7 @@ BindingParams::BindInt32ByName(const nsACString &aName,
 
 NS_IMETHODIMP
 BindingParams::BindInt64ByName(const nsACString &aName,
-                               PRInt64 aValue)
+                               int64_t aValue)
 {
   nsCOMPtr<nsIVariant> value(new IntegerVariant(aValue));
   NS_ENSURE_TRUE(value, NS_ERROR_OUT_OF_MEMORY);
@@ -341,8 +341,8 @@ BindingParams::BindNullByName(const nsACString &aName)
 
 NS_IMETHODIMP
 BindingParams::BindBlobByName(const nsACString &aName,
-                              const PRUint8 *aValue,
-                              PRUint32 aValueSize)
+                              const uint8_t *aValue,
+                              uint32_t aValueSize)
 {
   NS_ENSURE_ARG_MAX(aValueSize, INT_MAX);
   std::pair<const void *, int> data(
@@ -356,7 +356,7 @@ BindingParams::BindBlobByName(const nsACString &aName,
 }
 
 NS_IMETHODIMP
-BindingParams::BindByIndex(PRUint32 aIndex,
+BindingParams::BindByIndex(uint32_t aIndex,
                            nsIVariant *aValue)
 {
   NS_ENSURE_FALSE(mLocked, NS_ERROR_UNEXPECTED);
@@ -369,7 +369,7 @@ BindingParams::BindByIndex(PRUint32 aIndex,
 }
 
 NS_IMETHODIMP
-AsyncBindingParams::BindByIndex(PRUint32 aIndex,
+AsyncBindingParams::BindByIndex(uint32_t aIndex,
                                 nsIVariant *aValue)
 {
   NS_ENSURE_FALSE(mLocked, NS_ERROR_UNEXPECTED);
@@ -383,7 +383,7 @@ AsyncBindingParams::BindByIndex(PRUint32 aIndex,
 }
 
 NS_IMETHODIMP
-BindingParams::BindUTF8StringByIndex(PRUint32 aIndex,
+BindingParams::BindUTF8StringByIndex(uint32_t aIndex,
                                      const nsACString &aValue)
 {
   nsCOMPtr<nsIVariant> value(new UTF8TextVariant(aValue));
@@ -393,7 +393,7 @@ BindingParams::BindUTF8StringByIndex(PRUint32 aIndex,
 }
 
 NS_IMETHODIMP
-BindingParams::BindStringByIndex(PRUint32 aIndex,
+BindingParams::BindStringByIndex(uint32_t aIndex,
                                  const nsAString &aValue)
 {
   nsCOMPtr<nsIVariant> value(new TextVariant(aValue));
@@ -403,7 +403,7 @@ BindingParams::BindStringByIndex(PRUint32 aIndex,
 }
 
 NS_IMETHODIMP
-BindingParams::BindDoubleByIndex(PRUint32 aIndex,
+BindingParams::BindDoubleByIndex(uint32_t aIndex,
                                  double aValue)
 {
   nsCOMPtr<nsIVariant> value(new FloatVariant(aValue));
@@ -413,8 +413,8 @@ BindingParams::BindDoubleByIndex(PRUint32 aIndex,
 }
 
 NS_IMETHODIMP
-BindingParams::BindInt32ByIndex(PRUint32 aIndex,
-                                PRInt32 aValue)
+BindingParams::BindInt32ByIndex(uint32_t aIndex,
+                                int32_t aValue)
 {
   nsCOMPtr<nsIVariant> value(new IntegerVariant(aValue));
   NS_ENSURE_TRUE(value, NS_ERROR_OUT_OF_MEMORY);
@@ -423,8 +423,8 @@ BindingParams::BindInt32ByIndex(PRUint32 aIndex,
 }
 
 NS_IMETHODIMP
-BindingParams::BindInt64ByIndex(PRUint32 aIndex,
-                                PRInt64 aValue)
+BindingParams::BindInt64ByIndex(uint32_t aIndex,
+                                int64_t aValue)
 {
   nsCOMPtr<nsIVariant> value(new IntegerVariant(aValue));
   NS_ENSURE_TRUE(value, NS_ERROR_OUT_OF_MEMORY);
@@ -433,7 +433,7 @@ BindingParams::BindInt64ByIndex(PRUint32 aIndex,
 }
 
 NS_IMETHODIMP
-BindingParams::BindNullByIndex(PRUint32 aIndex)
+BindingParams::BindNullByIndex(uint32_t aIndex)
 {
   nsCOMPtr<nsIVariant> value(new NullVariant());
   NS_ENSURE_TRUE(value, NS_ERROR_OUT_OF_MEMORY);
@@ -442,9 +442,9 @@ BindingParams::BindNullByIndex(PRUint32 aIndex)
 }
 
 NS_IMETHODIMP
-BindingParams::BindBlobByIndex(PRUint32 aIndex,
-                               const PRUint8 *aValue,
-                               PRUint32 aValueSize)
+BindingParams::BindBlobByIndex(uint32_t aIndex,
+                               const uint8_t *aValue,
+                               uint32_t aValueSize)
 {
   NS_ENSURE_ARG_MAX(aValueSize, INT_MAX);
   std::pair<const void *, int> data(

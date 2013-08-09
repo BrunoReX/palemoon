@@ -16,7 +16,6 @@
 #include "nsIDOMNode.h"
 #include "nsIDOMNamedNodeMap.h"
 #include "nsIDOMAttr.h"
-#include "nsIDocument.h"
 #include "nsITheme.h"
 #include "nsIServiceManager.h"
 #include "nsBoxLayout.h"
@@ -25,14 +24,14 @@
 using namespace mozilla;
 
 #ifdef DEBUG_LAYOUT
-PRInt32 gIndent = 0;
+int32_t gIndent = 0;
 #endif
 
 #ifdef DEBUG_LAYOUT
 void
 nsBoxAddIndents()
 {
-    for(PRInt32 i=0; i < gIndent; i++)
+    for(int32_t i=0; i < gIndent; i++)
     {
         printf(" ");
     }
@@ -70,11 +69,11 @@ nsBox::ListBox(nsAutoString& aResult)
       nsCOMPtr<nsIDOMNamedNodeMap> namedMap;
 
       node->GetAttributes(getter_AddRefs(namedMap));
-      PRUint32 length;
+      uint32_t length;
       namedMap->GetLength(&length);
 
       nsCOMPtr<nsIDOMNode> attribute;
-      for (PRUint32 i = 0; i < length; ++i)
+      for (uint32_t i = 0; i < length; ++i)
       {
         namedMap->Item(i, getter_AddRefs(attribute));
         nsCOMPtr<nsIDOMAttr> attr(do_QueryInterface(attribute));
@@ -176,7 +175,7 @@ nsBox::EndLayout(nsBoxLayoutState& aState)
 }
 
 bool nsBox::gGotTheme = false;
-nsITheme* nsBox::gTheme = nsnull;
+nsITheme* nsBox::gTheme = nullptr;
 
 nsBox::nsBox()
 {
@@ -204,7 +203,7 @@ nsBox::Shutdown()
 }
 
 NS_IMETHODIMP
-nsBox::RelayoutChildAtOrdinal(nsBoxLayoutState& aState, nsIBox* aChild)
+nsBox::RelayoutChildAtOrdinal(nsBoxLayoutState& aState, nsIFrame* aChild)
 {
   return NS_OK;
 }
@@ -238,10 +237,10 @@ nsBox::SetBounds(nsBoxLayoutState& aState, const nsRect& aRect, bool aRemoveOver
 
     nsRect rect(mRect);
 
-    PRUint32 flags = 0;
+    uint32_t flags = 0;
     GetLayoutFlags(flags);
 
-    PRUint32 stateFlags = aState.LayoutFlags();
+    uint32_t stateFlags = aState.LayoutFlags();
 
     flags |= stateFlags;
 
@@ -279,7 +278,7 @@ nsBox::SetBounds(nsBoxLayoutState& aState, const nsRect& aRect, bool aRemoveOver
 }
 
 void
-nsBox::GetLayoutFlags(PRUint32& aFlags)
+nsBox::GetLayoutFlags(uint32_t& aFlags)
 {
   aFlags = 0;
 }
@@ -406,7 +405,7 @@ nsBox::GetPrefSize(nsBoxLayoutState& aState)
 
   AddBorderAndPadding(pref);
   bool widthSet, heightSet;
-  nsIBox::AddCSSPrefSize(this, pref, widthSet, heightSet);
+  nsIFrame::AddCSSPrefSize(this, pref, widthSet, heightSet);
 
   nsSize minSize = GetMinSize(aState);
   nsSize maxSize = GetMaxSize(aState);
@@ -426,7 +425,7 @@ nsBox::GetMinSize(nsBoxLayoutState& aState)
 
   AddBorderAndPadding(min);
   bool widthSet, heightSet;
-  nsIBox::AddCSSMinSize(aState, this, min, widthSet, heightSet);
+  nsIFrame::AddCSSMinSize(aState, this, min, widthSet, heightSet);
   return min;
 }
 
@@ -449,7 +448,7 @@ nsBox::GetMaxSize(nsBoxLayoutState& aState)
 
   AddBorderAndPadding(maxSize);
   bool widthSet, heightSet;
-  nsIBox::AddCSSMaxSize(this, maxSize, widthSet, heightSet);
+  nsIFrame::AddCSSMaxSize(this, maxSize, widthSet, heightSet);
   return maxSize;
 }
 
@@ -458,20 +457,20 @@ nsBox::GetFlex(nsBoxLayoutState& aState)
 {
   nscoord flex = 0;
 
-  nsIBox::AddCSSFlex(aState, this, flex);
+  nsIFrame::AddCSSFlex(aState, this, flex);
 
   return flex;
 }
 
-PRUint32
+uint32_t
 nsIFrame::GetOrdinal(nsBoxLayoutState& aState)
 {
-  PRUint32 ordinal = GetStyleXUL()->mBoxOrdinal;
+  uint32_t ordinal = GetStyleXUL()->mBoxOrdinal;
 
   // When present, attribute value overrides CSS.
   nsIContent* content = GetContent();
   if (content && content->IsXUL()) {
-    PRInt32 error;
+    nsresult error;
     nsAutoString value;
 
     content->GetAttr(kNameSpaceID_None, nsGkAtoms::ordinal, value);
@@ -544,10 +543,10 @@ nsBox::SyncLayout(nsBoxLayoutState& aState)
 
   nsPresContext* presContext = aState.PresContext();
 
-  PRUint32 flags = 0;
+  uint32_t flags = 0;
   GetLayoutFlags(flags);
 
-  PRUint32 stateFlags = aState.LayoutFlags();
+  uint32_t stateFlags = aState.LayoutFlags();
 
   flags |= stateFlags;
 
@@ -584,28 +583,20 @@ nsBox::SyncLayout(nsBoxLayoutState& aState)
 }
 
 nsresult
-nsIFrame::Redraw(nsBoxLayoutState& aState,
-                 const nsRect*   aDamageRect)
+nsIFrame::Redraw(nsBoxLayoutState& aState)
 {
   if (aState.PaintingDisabled())
     return NS_OK;
 
-  nsRect damageRect(0,0,0,0);
-  if (aDamageRect)
-    damageRect = *aDamageRect;
-  else
-    damageRect = GetVisualOverflowRect();
-
-  Invalidate(damageRect);
   // nsStackLayout, at least, expects us to repaint descendants even
   // if a damage rect is provided
-  FrameLayerBuilder::InvalidateThebesLayersInSubtree(this);
+  InvalidateFrameSubtree();
 
   return NS_OK;
 }
 
 bool
-nsIBox::AddCSSPrefSize(nsIBox* aBox, nsSize& aSize, bool &aWidthSet, bool &aHeightSet)
+nsIFrame::AddCSSPrefSize(nsIFrame* aBox, nsSize& aSize, bool &aWidthSet, bool &aHeightSet)
 {
     aWidthSet = false;
     aHeightSet = false;
@@ -652,7 +643,7 @@ nsIBox::AddCSSPrefSize(nsIBox* aBox, nsSize& aSize, bool &aWidthSet, bool &aHeig
     // <select>
     if (content && content->IsXUL()) {
         nsAutoString value;
-        PRInt32 error;
+        nsresult error;
 
         content->GetAttr(kNameSpaceID_None, nsGkAtoms::width, value);
         if (!value.IsEmpty()) {
@@ -678,7 +669,7 @@ nsIBox::AddCSSPrefSize(nsIBox* aBox, nsSize& aSize, bool &aWidthSet, bool &aHeig
 
 
 bool
-nsIBox::AddCSSMinSize(nsBoxLayoutState& aState, nsIBox* aBox, nsSize& aSize,
+nsIFrame::AddCSSMinSize(nsBoxLayoutState& aState, nsIFrame* aBox, nsSize& aSize,
                       bool &aWidthSet, bool &aHeightSet)
 {
     aWidthSet = false;
@@ -756,7 +747,7 @@ nsIBox::AddCSSMinSize(nsBoxLayoutState& aState, nsIBox* aBox, nsSize& aSize,
     nsIContent* content = aBox->GetContent();
     if (content && content->IsXUL()) {
         nsAutoString value;
-        PRInt32 error;
+        nsresult error;
 
         content->GetAttr(kNameSpaceID_None, nsGkAtoms::minwidth, value);
         if (!value.IsEmpty())
@@ -788,7 +779,7 @@ nsIBox::AddCSSMinSize(nsBoxLayoutState& aState, nsIBox* aBox, nsSize& aSize,
 }
 
 bool
-nsIBox::AddCSSMaxSize(nsIBox* aBox, nsSize& aSize, bool &aWidthSet, bool &aHeightSet)
+nsIFrame::AddCSSMaxSize(nsIFrame* aBox, nsSize& aSize, bool &aWidthSet, bool &aHeightSet)
 {
     aWidthSet = false;
     aHeightSet = false;
@@ -819,7 +810,7 @@ nsIBox::AddCSSMaxSize(nsIBox* aBox, nsSize& aSize, bool &aWidthSet, bool &aHeigh
     nsIContent* content = aBox->GetContent();
     if (content && content->IsXUL()) {
         nsAutoString value;
-        PRInt32 error;
+        nsresult error;
 
         content->GetAttr(kNameSpaceID_None, nsGkAtoms::maxwidth, value);
         if (!value.IsEmpty()) {
@@ -847,7 +838,7 @@ nsIBox::AddCSSMaxSize(nsIBox* aBox, nsSize& aSize, bool &aWidthSet, bool &aHeigh
 }
 
 bool
-nsIBox::AddCSSFlex(nsBoxLayoutState& aState, nsIBox* aBox, nscoord& aFlex)
+nsIFrame::AddCSSFlex(nsBoxLayoutState& aState, nsIFrame* aBox, nscoord& aFlex)
 {
     bool flexSet = false;
 
@@ -857,7 +848,7 @@ nsIBox::AddCSSFlex(nsBoxLayoutState& aState, nsIBox* aBox, nscoord& aFlex)
     // attribute value overrides CSS
     nsIContent* content = aBox->GetContent();
     if (content && content->IsXUL()) {
-        PRInt32 error;
+        nsresult error;
         nsAutoString value;
 
         content->GetAttr(kNameSpaceID_None, nsGkAtoms::flex, value);
@@ -883,7 +874,7 @@ nsBox::AddBorderAndPadding(nsSize& aSize)
 }
 
 void
-nsBox::AddBorderAndPadding(nsIBox* aBox, nsSize& aSize)
+nsBox::AddBorderAndPadding(nsIFrame* aBox, nsSize& aSize)
 {
   nsMargin borderPadding(0,0,0,0);
   aBox->GetBorderAndPadding(borderPadding);
@@ -891,7 +882,7 @@ nsBox::AddBorderAndPadding(nsIBox* aBox, nsSize& aSize)
 }
 
 void
-nsBox::AddMargin(nsIBox* aChild, nsSize& aSize)
+nsBox::AddMargin(nsIFrame* aChild, nsSize& aSize)
 {
   nsMargin margin(0,0,0,0);
   aChild->GetMargin(margin);
@@ -943,17 +934,17 @@ nsBox::SetDebug(nsBoxLayoutState& aState, bool aDebug)
 
 NS_IMETHODIMP
 nsBox::GetDebugBoxAt( const nsPoint& aPoint,
-                      nsIBox**     aBox)
+                      nsIFrame**     aBox)
 {
   nsRect thisRect(nsPoint(0,0), GetSize());
   if (!thisRect.Contains(aPoint))
     return NS_ERROR_FAILURE;
 
-  nsIBox* child = GetChildBox();
-  nsIBox* hit = nsnull;
+  nsIFrame* child = GetChildBox();
+  nsIFrame* hit = nullptr;
 
-  *aBox = nsnull;
-  while (nsnull != child) {
+  *aBox = nullptr;
+  while (nullptr != child) {
     nsresult rv = child->GetDebugBoxAt(aPoint - child->GetOffsetTo(this), &hit);
 
     if (NS_SUCCEEDED(rv) && hit) {

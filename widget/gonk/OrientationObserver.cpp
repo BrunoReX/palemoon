@@ -1,11 +1,23 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set sw=2 ts=8 et ft=cpp : */
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* Copyright 2012 Mozilla Foundation and Mozilla contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 #include "base/basictypes.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/Hal.h"
 #include "nsIScreen.h"
 #include "nsIScreenManager.h"
@@ -18,30 +30,28 @@ using namespace dom;
 namespace {
 
 struct OrientationMapping {
-  PRUint32 mScreenRotation;
+  uint32_t mScreenRotation;
   ScreenOrientation mDomOrientation;
 };
 
 static OrientationMapping sOrientationMappings[] = {
   {nsIScreen::ROTATION_0_DEG,   eScreenOrientation_PortraitPrimary},
   {nsIScreen::ROTATION_180_DEG, eScreenOrientation_PortraitSecondary},
-  {nsIScreen::ROTATION_0_DEG,   eScreenOrientation_Portrait},
   {nsIScreen::ROTATION_90_DEG,  eScreenOrientation_LandscapePrimary},
   {nsIScreen::ROTATION_270_DEG, eScreenOrientation_LandscapeSecondary},
-  {nsIScreen::ROTATION_90_DEG,  eScreenOrientation_Landscape}
 };
 
-const static int sDefaultLandscape = 3;
+const static int sDefaultLandscape = 2;
 const static int sDefaultPortrait = 0;
 
-static PRUint32 sOrientationOffset = 0;
+static uint32_t sOrientationOffset = 0;
 
 static already_AddRefed<nsIScreen>
 GetPrimaryScreen()
 {
   nsCOMPtr<nsIScreenManager> screenMgr =
     do_GetService("@mozilla.org/gfx/screenmanager;1");
-  NS_ENSURE_TRUE(screenMgr, nsnull);
+  NS_ENSURE_TRUE(screenMgr, nullptr);
 
   nsCOMPtr<nsIScreen> screen;
   screenMgr->GetPrimaryScreen(getter_AddRefs(screen));
@@ -56,12 +66,12 @@ DetectDefaultOrientation()
     return;
   }
 
-  PRInt32 left, top, width, height;
+  int32_t left, top, width, height;
   if (NS_FAILED(screen->GetRect(&left, &top, &width, &height))) {
     return;
   }
 
-  PRUint32 rotation;
+  uint32_t rotation;
   if (NS_FAILED(screen->GetRotation(&rotation))) {
     return;
   }
@@ -94,10 +104,10 @@ DetectDefaultOrientation()
  * @return NS_OK on success. NS_ILLEGAL_VALUE on failure.
  */
 static nsresult
-ConvertToScreenRotation(ScreenOrientation aOrientation, PRUint32 *aResult)
+ConvertToScreenRotation(ScreenOrientation aOrientation, uint32_t *aResult)
 {
   for (int i = 0; i < ArrayLength(sOrientationMappings); i++) {
-    if (aOrientation == sOrientationMappings[i].mDomOrientation) {
+    if (aOrientation & sOrientationMappings[i].mDomOrientation) {
       // Shift the mappings in sOrientationMappings so devices with default
       // landscape orientation map landscape-primary to 0 degree and so forth.
       int adjusted = (i + sOrientationOffset) %
@@ -120,7 +130,7 @@ ConvertToScreenRotation(ScreenOrientation aOrientation, PRUint32 *aResult)
  * @return NS_OK on success. NS_ILLEGAL_VALUE on failure.
  */
 nsresult
-ConvertToDomOrientation(PRUint32 aRotation, ScreenOrientation *aResult)
+ConvertToDomOrientation(uint32_t aRotation, ScreenOrientation *aResult)
 {
   for (int i = 0; i < ArrayLength(sOrientationMappings); i++) {
     if (aRotation == sOrientationMappings[i].mScreenRotation) {
@@ -139,7 +149,7 @@ ConvertToDomOrientation(PRUint32 aRotation, ScreenOrientation *aResult)
 
 // Note that all operations with sOrientationSensorObserver
 // should be on the main thread.
-static nsAutoPtr<OrientationObserver> sOrientationSensorObserver;
+static StaticAutoPtr<OrientationObserver> sOrientationSensorObserver;
 
 } // Anonymous namespace
 
@@ -171,6 +181,18 @@ OrientationObserver::~OrientationObserver()
   }
 }
 
+/* static */ void
+OrientationObserver::ShutDown()
+{
+  if (!sOrientationSensorObserver) {
+    return;
+  }
+
+  if (sOrientationSensorObserver->mAutoOrientationEnabled) {
+    sOrientationSensorObserver->DisableAutoOrientation();
+  }
+}
+
 void
 OrientationObserver::Notify(const hal::SensorData& aSensorData)
 {
@@ -184,7 +206,7 @@ OrientationObserver::Notify(const hal::SensorData& aSensorData)
   float pitch = values[1];
   float roll = values[2];
 
-  PRUint32 rotation;
+  uint32_t rotation;
   if (roll > 45) {
     rotation = nsIScreen::ROTATION_90_DEG;
   } else if (roll < -45) {
@@ -203,7 +225,7 @@ OrientationObserver::Notify(const hal::SensorData& aSensorData)
     return;
   }
 
-  PRUint32 currRotation;
+  uint32_t currRotation;
   if (NS_FAILED(screen->GetRotation(&currRotation)) ||
       rotation == currRotation) {
     return;
@@ -259,13 +281,17 @@ OrientationObserver::DisableAutoOrientation()
 bool
 OrientationObserver::LockScreenOrientation(ScreenOrientation aOrientation)
 {
-  MOZ_ASSERT(eScreenOrientation_None < aOrientation &&
-             aOrientation < eScreenOrientation_EndGuard);
+  MOZ_ASSERT(aOrientation | (eScreenOrientation_PortraitPrimary |
+                             eScreenOrientation_PortraitSecondary |
+                             eScreenOrientation_LandscapePrimary |
+                             eScreenOrientation_LandscapeSecondary));
 
-  // Enable/disable the observer depending on 1. multiple orientations
-  // allowed, and 2. observer enabled.
-  if (aOrientation == eScreenOrientation_Landscape ||
-      aOrientation == eScreenOrientation_Portrait) {
+  // If there are multiple orientations allowed, we should enable the
+  // auto-rotation.
+  if (aOrientation != eScreenOrientation_LandscapePrimary &&
+      aOrientation != eScreenOrientation_LandscapeSecondary &&
+      aOrientation != eScreenOrientation_PortraitPrimary &&
+      aOrientation != eScreenOrientation_PortraitSecondary) {
     if (!mAutoOrientationEnabled) {
       EnableAutoOrientation();
     }
@@ -278,7 +304,7 @@ OrientationObserver::LockScreenOrientation(ScreenOrientation aOrientation)
   nsCOMPtr<nsIScreen> screen = GetPrimaryScreen();
   NS_ENSURE_TRUE(screen, false);
 
-  PRUint32 currRotation;
+  uint32_t currRotation;
   nsresult rv = screen->GetRotation(&currRotation);
   NS_ENSURE_SUCCESS(rv, false);
 
@@ -293,7 +319,7 @@ OrientationObserver::LockScreenOrientation(ScreenOrientation aOrientation)
   }
 
   // Return false on invalid orientation value.
-  PRUint32 rotation;
+  uint32_t rotation;
   rv = ConvertToScreenRotation(aOrientation, &rotation);
   NS_ENSURE_SUCCESS(rv, false);
 

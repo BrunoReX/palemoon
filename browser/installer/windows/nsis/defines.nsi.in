@@ -29,6 +29,14 @@
 # The value below removes all LSP categories previously set.
 !define LSP_CATEGORIES "0x00000000"
 
+# Due to official and beta using the same branding this is needed to
+# differentiante between the url used by the stub for downloading.
+!if "@MOZ_UPDATE_CHANNEL@" == "beta"
+!define BETA_UPDATE_CHANNEL
+!endif
+
+!define BaseURLStubPing "http://download-stats.mozilla.org/stub/v4/"
+
 # NO_INSTDIR_FROM_REG is defined for pre-releases which have a PreReleaseSuffix
 # (e.g. Alpha X, Beta X, etc.) to prevent finding a non-default installation
 # directory in the registry and using that as the default. This prevents
@@ -53,6 +61,10 @@
 !define MOZ_MAINTENANCE_SERVICE
 #endif
 
+#ifdef MOZ_METRO
+!define MOZ_METRO
+#endif
+
 # File details shared by both the installer and uninstaller
 VIProductVersion "1.0.0.0"
 VIAddVersionKey "ProductName"     "Pale Moon"
@@ -64,4 +76,18 @@ VIAddVersionKey "LegalCopyright"  "Moonchild Productions"
 VIAddVersionKey "FileVersion"     "${AppVersion}"
 VIAddVersionKey "ProductVersion"  "${AppVersion}"
 # Comments is not used but left below commented out for future reference
-# VIAddVersionKey "Comments"        "Comments"
+# VIAddVersionKey "Comments"        "Comments" 
+
+# It isn't possible to get the size of the installation prior to downloading
+# so the stub installer uses an estimate.
+!define APPROXIMATE_REQUIRED_SPACE_MB "42.2"
+
+# Control positions in Dialog Units so they are placed correctly with
+# non-default DPI settings
+!define OPTIONS_ITEM_EDGE_DU 90u
+!define OPTIONS_ITEM_WIDTH_DU 356u
+!define OPTIONS_SUBITEM_EDGE_DU 119u
+!define OPTIONS_SUBITEM_WIDTH_DU 327u
+!define INSTALL_BLURB_TOP_DU 78u
+!define APPNAME_BMP_EDGE_DU 19u
+!define APPNAME_BMP_TOP_DU 12u

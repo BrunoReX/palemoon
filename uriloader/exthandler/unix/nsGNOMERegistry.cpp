@@ -4,11 +4,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsGNOMERegistry.h"
-#include "prlink.h"
-#include "prmem.h"
 #include "nsString.h"
 #include "nsIComponentManager.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsMIMEInfoUnix.h"
 #include "nsAutoPtr.h"
 #include "nsIGConfService.h"
@@ -38,7 +36,7 @@ nsGNOMERegistry::HandlerExists(const char *aProtocolScheme)
       return true;
   } else if (gconf) {
     bool isEnabled;
-    nsCAutoString handler;
+    nsAutoCString handler;
     if (NS_FAILED(gconf->GetAppForProtocol(nsDependentCString(aProtocolScheme), &isEnabled, handler)))
       return false;
 
@@ -79,7 +77,7 @@ nsGNOMERegistry::GetAppDescForScheme(const nsACString& aScheme,
   if (!gconf && !giovfs)
     return;
 
-  nsCAutoString name;
+  nsAutoCString name;
   if (giovfs) {
     nsCOMPtr<nsIGIOMimeApp> app;
     if (NS_FAILED(giovfs->GetAppForURIScheme(aScheme, getter_AddRefs(app))))
@@ -93,10 +91,10 @@ nsGNOMERegistry::GetAppDescForScheme(const nsACString& aScheme,
 
     if (!name.IsEmpty()) {
       // Try to only provide the executable name, as it is much simpler than with the path and arguments
-      PRInt32 firstSpace = name.FindChar(' ');
+      int32_t firstSpace = name.FindChar(' ');
       if (firstSpace != kNotFound) {
         name.Truncate(firstSpace);
-        PRInt32 lastSlash = name.RFindChar('/');
+        int32_t lastSlash = name.RFindChar('/');
         if (lastSlash != kNotFound) {
           name.Cut(0, lastSlash + 1);
         }
@@ -111,7 +109,7 @@ nsGNOMERegistry::GetAppDescForScheme(const nsACString& aScheme,
 /* static */ already_AddRefed<nsMIMEInfoBase>
 nsGNOMERegistry::GetFromExtension(const nsACString& aFileExt)
 {
-  nsCAutoString mimeType;
+  nsAutoCString mimeType;
   nsCOMPtr<nsIGIOService> giovfs = do_GetService(NS_GIOSERVICE_CONTRACTID);
 
   if (giovfs) {
@@ -119,17 +117,17 @@ nsGNOMERegistry::GetFromExtension(const nsACString& aFileExt)
     // fill in the MIMEInfo.
     if (NS_FAILED(giovfs->GetMimeTypeFromExtension(aFileExt, mimeType)) ||
         mimeType.EqualsLiteral("application/octet-stream")) {
-      return nsnull;
+      return nullptr;
     }
   } else {
     /* Fallback to GnomeVFS */
     nsCOMPtr<nsIGnomeVFSService> gnomevfs = do_GetService(NS_GNOMEVFSSERVICE_CONTRACTID);
     if (!gnomevfs)
-      return nsnull;
+      return nullptr;
 
     if (NS_FAILED(gnomevfs->GetMimeTypeFromExtension(aFileExt, mimeType)) ||
         mimeType.EqualsLiteral("application/octet-stream"))
-      return nsnull;
+      return nullptr;
   }
 
   return GetFromType(mimeType);
@@ -139,17 +137,17 @@ nsGNOMERegistry::GetFromExtension(const nsACString& aFileExt)
 nsGNOMERegistry::GetFromType(const nsACString& aMIMEType)
 {
   nsRefPtr<nsMIMEInfoUnix> mimeInfo = new nsMIMEInfoUnix(aMIMEType);
-  NS_ENSURE_TRUE(mimeInfo, nsnull);
+  NS_ENSURE_TRUE(mimeInfo, nullptr);
 
-  nsCAutoString name;
-  nsCAutoString description;
+  nsAutoCString name;
+  nsAutoCString description;
 
   nsCOMPtr<nsIGIOService> giovfs = do_GetService(NS_GIOSERVICE_CONTRACTID);
   if (giovfs) {
     nsCOMPtr<nsIGIOMimeApp> gioHandlerApp;
     if (NS_FAILED(giovfs->GetAppForMimeType(aMIMEType, getter_AddRefs(gioHandlerApp))) ||
         !gioHandlerApp) {
-      return nsnull;
+      return nullptr;
     }
     gioHandlerApp->GetName(name);
     giovfs->GetDescriptionForMimeType(aMIMEType, description);
@@ -157,12 +155,12 @@ nsGNOMERegistry::GetFromType(const nsACString& aMIMEType)
     /* Fallback to GnomeVFS*/
     nsCOMPtr<nsIGnomeVFSService> gnomevfs = do_GetService(NS_GNOMEVFSSERVICE_CONTRACTID);
     if (!gnomevfs)
-      return nsnull;
+      return nullptr;
 
     nsCOMPtr<nsIGnomeVFSMimeApp> gnomeHandlerApp;
     if (NS_FAILED(gnomevfs->GetAppForMimeType(aMIMEType, getter_AddRefs(gnomeHandlerApp))) ||
         !gnomeHandlerApp) {
-      return nsnull;
+      return nullptr;
     }
     gnomeHandlerApp->GetName(name);
     gnomevfs->GetDescriptionForMimeType(aMIMEType, description);
@@ -175,7 +173,7 @@ nsGNOMERegistry::GetFromType(const nsACString& aMIMEType)
   // the default maemo domain-name to try and translate the string into the operating 
   // system's native language.
   const char kDefaultTextDomain [] = "maemo-af-desktop";
-  nsCAutoString realName (dgettext(kDefaultTextDomain, PromiseFlatCString(name).get()));
+  nsAutoCString realName (dgettext(kDefaultTextDomain, PromiseFlatCString(name).get()));
   mimeInfo->SetDefaultDescription(NS_ConvertUTF8toUTF16(realName));
 #else
   mimeInfo->SetDefaultDescription(NS_ConvertUTF8toUTF16(name));

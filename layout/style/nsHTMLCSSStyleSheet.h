@@ -15,10 +15,13 @@
 #include "nsIStyleSheet.h"
 #include "nsIStyleRuleProcessor.h"
 
-class nsHTMLCSSStyleSheet : public nsIStyleSheet,
-                            public nsIStyleRuleProcessor {
+struct MiscContainer;
+
+class nsHTMLCSSStyleSheet MOZ_FINAL : public nsIStyleSheet,
+                                      public nsIStyleRuleProcessor {
 public:
   nsHTMLCSSStyleSheet();
+  ~nsHTMLCSSStyleSheet();
 
   NS_DECL_ISUPPORTS
 
@@ -27,37 +30,41 @@ public:
 
   // nsIStyleSheet
   virtual nsIURI* GetSheetURI() const;
-  virtual nsIURI* GetBaseURI() const;
-  virtual void GetTitle(nsString& aTitle) const;
-  virtual void GetType(nsString& aType) const;
-  virtual bool HasRules() const;
-  virtual bool IsApplicable() const;
-  virtual void SetEnabled(bool aEnabled);
-  virtual bool IsComplete() const;
-  virtual void SetComplete();
-  virtual nsIStyleSheet* GetParentSheet() const;  // will be null
-  virtual nsIDocument* GetOwningDocument() const;
-  virtual void SetOwningDocument(nsIDocument* aDocument);
+  virtual nsIURI* GetBaseURI() const MOZ_OVERRIDE;
+  virtual void GetTitle(nsString& aTitle) const MOZ_OVERRIDE;
+  virtual void GetType(nsString& aType) const MOZ_OVERRIDE;
+  virtual bool HasRules() const MOZ_OVERRIDE;
+  virtual bool IsApplicable() const MOZ_OVERRIDE;
+  virtual void SetEnabled(bool aEnabled) MOZ_OVERRIDE;
+  virtual bool IsComplete() const MOZ_OVERRIDE;
+  virtual void SetComplete() MOZ_OVERRIDE;
+  virtual nsIStyleSheet* GetParentSheet() const MOZ_OVERRIDE;  // will be null
+  virtual nsIDocument* GetOwningDocument() const MOZ_OVERRIDE;
+  virtual void SetOwningDocument(nsIDocument* aDocument) MOZ_OVERRIDE;
 #ifdef DEBUG
-  virtual void List(FILE* out = stdout, PRInt32 aIndent = 0) const;
+  virtual void List(FILE* out = stdout, int32_t aIndent = 0) const MOZ_OVERRIDE;
 #endif
 
   // nsIStyleRuleProcessor
-  virtual void RulesMatching(ElementRuleProcessorData* aData);
-  virtual void RulesMatching(PseudoElementRuleProcessorData* aData);
-  virtual void RulesMatching(AnonBoxRuleProcessorData* aData);
+  virtual void RulesMatching(ElementRuleProcessorData* aData) MOZ_OVERRIDE;
+  virtual void RulesMatching(PseudoElementRuleProcessorData* aData) MOZ_OVERRIDE;
+  virtual void RulesMatching(AnonBoxRuleProcessorData* aData) MOZ_OVERRIDE;
 #ifdef MOZ_XUL
-  virtual void RulesMatching(XULTreeRuleProcessorData* aData);
+  virtual void RulesMatching(XULTreeRuleProcessorData* aData) MOZ_OVERRIDE;
 #endif
-  virtual nsRestyleHint HasStateDependentStyle(StateRuleProcessorData* aData);
-  virtual bool HasDocumentStateDependentStyle(StateRuleProcessorData* aData);
+  virtual nsRestyleHint HasStateDependentStyle(StateRuleProcessorData* aData) MOZ_OVERRIDE;
+  virtual bool HasDocumentStateDependentStyle(StateRuleProcessorData* aData) MOZ_OVERRIDE;
   virtual nsRestyleHint
-    HasAttributeDependentStyle(AttributeRuleProcessorData* aData);
-  virtual bool MediumFeaturesChanged(nsPresContext* aPresContext);
+    HasAttributeDependentStyle(AttributeRuleProcessorData* aData) MOZ_OVERRIDE;
+  virtual bool MediumFeaturesChanged(nsPresContext* aPresContext) MOZ_OVERRIDE;
   virtual NS_MUST_OVERRIDE size_t
     SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const MOZ_OVERRIDE;
   virtual NS_MUST_OVERRIDE size_t
     SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const MOZ_OVERRIDE;
+
+  void CacheStyleAttr(const nsAString& aSerialized, MiscContainer* aValue);
+  void EvictStyleAttr(const nsAString& aSerialized, MiscContainer* aValue);
+  MiscContainer* LookupStyleAttr(const nsAString& aSerialized);
 
 private: 
   nsHTMLCSSStyleSheet(const nsHTMLCSSStyleSheet& aCopy) MOZ_DELETE;
@@ -66,6 +73,13 @@ private:
 protected:
   nsCOMPtr<nsIURI> mURL;
   nsIDocument*     mDocument;
+  nsDataHashtable<nsStringHashKey, MiscContainer*> mCachedStyleAttrs;
 };
+
+inline nsISupports*
+ToSupports(nsHTMLCSSStyleSheet* aPointer)
+{
+  return static_cast<nsIStyleSheet*>(aPointer);
+}
 
 #endif /* !defined(nsHTMLCSSStyleSheet_h_) */

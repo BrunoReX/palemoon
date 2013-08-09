@@ -10,6 +10,7 @@
 #define PROCESSMODEL_WINAPI
 #endif
 
+#include "mozilla/Attributes.h"
 #include "mozilla/Mutex.h"
 #include "nsIProcess.h"
 #include "nsIFile.h"
@@ -30,8 +31,8 @@
 {0x7b4eeb20, 0xd781, 0x11d4, \
    {0x8A, 0x83, 0x00, 0x10, 0xa4, 0xe0, 0xc9, 0xca}}
 
-class nsProcess : public nsIProcess,
-                  public nsIObserver
+class nsProcess MOZ_FINAL : public nsIProcess,
+                            public nsIObserver
 {
 public:
 
@@ -43,13 +44,13 @@ public:
 
 private:
   ~nsProcess();
-  static void PR_CALLBACK Monitor(void *arg);
+  static void Monitor(void *arg);
   void ProcessComplete();
   nsresult CopyArgsAndRunProcess(bool blocking, const char** args,
-                                 PRUint32 count, nsIObserver* observer,
+                                 uint32_t count, nsIObserver* observer,
                                  bool holdWeak);
   nsresult CopyArgsAndRunProcessw(bool blocking, const PRUnichar** args,
-                                  PRUint32 count, nsIObserver* observer,
+                                  uint32_t count, nsIObserver* observer,
                                   bool holdWeak);
   // The 'args' array is null-terminated.
   nsresult RunProcess(bool blocking, char **args, nsIObserver* observer,
@@ -58,16 +59,17 @@ private:
   PRThread* mThread;
   mozilla::Mutex mLock;
   bool mShutdown;
+  bool mBlocking;
 
   nsCOMPtr<nsIFile> mExecutable;
   nsString mTargetPath;
-  PRInt32 mPid;
+  int32_t mPid;
   nsCOMPtr<nsIObserver> mObserver;
   nsWeakPtr mWeakObserver;
 
   // These members are modified by multiple threads, any accesses should be
   // protected with mLock.
-  PRInt32 mExitValue;
+  int32_t mExitValue;
 #if defined(PROCESSMODEL_WINAPI)
   HANDLE mProcess;
 #elif !defined(XP_MACOSX)

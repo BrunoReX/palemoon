@@ -16,7 +16,7 @@ namespace statistics {
   inline void A11yInitialized()
     { Telemetry::Accumulate(Telemetry::A11Y_INSTANTIATED_FLAG, true); }
 
-  inline void A11yConsumers(PRUint32 aConsumer)
+  inline void A11yConsumers(uint32_t aConsumer)
     { Telemetry::Accumulate(Telemetry::A11Y_CONSUMERS, aConsumer); }
 
   /**
@@ -30,12 +30,6 @@ namespace statistics {
    */
   inline void IAccessibleTableUsed()
     { Telemetry::Accumulate(Telemetry::A11Y_IATABLE_USAGE_FLAG, true); }
-
-  /**
-   * Report that XForms accessibility has been instantiated.
-   */
-  inline void XFormsAccessibleUsed()
-    { Telemetry::Accumulate(Telemetry::A11Y_XFORMS_USAGE_FLAG, true); }
 
 } // namespace statistics
 } // namespace a11y

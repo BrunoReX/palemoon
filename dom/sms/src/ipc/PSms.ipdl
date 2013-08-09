@@ -5,103 +5,104 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include protocol PContent;
-include "mozilla/dom/sms/Types.h";
-
-using DeliveryState;
-using ReadState;
+include protocol PSmsRequest;
+include SmsTypes;
 
 namespace mozilla {
 namespace dom {
 namespace sms {
 
-struct SmsMessageData {
-  PRInt32       id;
-  DeliveryState delivery;
-  nsString      sender;
-  nsString      receiver;
-  nsString      body;
-  PRUint64      timestamp; // ms since epoch.
-  bool          read;
-};
-
 struct SmsFilterData {
-  PRUint64      startDate;
-  PRUint64      endDate;
+  uint64_t      startDate;
+  uint64_t      endDate;
   nsString[]    numbers;
   DeliveryState delivery;
   ReadState     read;  
 };
 
+struct SendMessageRequest
+{
+  nsString number;
+  nsString message;
+};
+
+struct GetMessageRequest
+{
+  int32_t messageId;
+};
+
+struct DeleteMessageRequest
+{
+  int32_t messageId;
+};
+
+struct CreateMessageListRequest
+{
+  SmsFilterData filter;
+  bool reverse;
+};
+
+struct GetNextMessageInListRequest
+{
+  int32_t aListId;
+};
+
+struct MarkMessageReadRequest
+{
+  int32_t messageId;
+  bool value;
+};
+
+struct GetThreadListRequest
+{
+};
+
+union IPCSmsRequest
+{
+  SendMessageRequest;
+  GetMessageRequest;
+  DeleteMessageRequest;
+  CreateMessageListRequest;
+  GetNextMessageInListRequest;
+  MarkMessageReadRequest;
+  GetThreadListRequest;
+};
+
 sync protocol PSms {
     manager PContent;
+    manages PSmsRequest;
 
 child:
-    NotifyReceivedMessage(SmsMessageData aMessageData);
+  NotifyReceivedMessage(SmsMessageData aMessageData);
 
-    NotifySentMessage(SmsMessageData aMessageData);
+  NotifySendingMessage(SmsMessageData aMessageData);
 
-    NotifyDeliveredMessage(SmsMessageData aMessageData);
+  NotifySentMessage(SmsMessageData aMessageData);
 
-    NotifyRequestSmsSent(SmsMessageData aMessageData, PRInt32 aRequestId,
-                         PRUint64 aProcessId);
+  NotifyFailedMessage(SmsMessageData aMessageData);
 
-    NotifyRequestSmsSendFailed(PRInt32 aError, PRInt32 aRequestId,
-                               PRUint64 aProcessId);
+  NotifyDeliverySuccessMessage(SmsMessageData aMessageData);
 
-    NotifyRequestGotSms(SmsMessageData aMessageData, PRInt32 aRequestId,
-                        PRUint64 aProcessId);
-
-    NotifyRequestGetSmsFailed(PRInt32 aError, PRInt32 aRequestId,
-                              PRUint64 aProcessId);
-
-    NotifyRequestSmsDeleted(bool aDeleted, PRInt32 aRequestId,
-                            PRUint64 aProcessId);
-
-    NotifyRequestSmsDeleteFailed(PRInt32 aError, PRInt32 aRequestId,
-                                 PRUint64 aProcessId);
-
-    NotifyRequestNoMessageInList(PRInt32 aRequestId, PRUint64 aProcessId);
-
-    NotifyRequestCreateMessageList(PRInt32 aListId, SmsMessageData aMessageData, PRInt32 aRequestId, PRUint64 aProcessId);
-
-    NotifyRequestGotNextMessage(SmsMessageData aMessageData, PRInt32 aRequestId, PRUint64 aProcessId);
-
-    NotifyRequestReadListFailed(PRInt32 aError, PRInt32 aRequestId,
-                                PRUint64 aProcessId);
-    NotifyRequestMarkedMessageRead(bool aRead, PRInt32 aRequestId,
-                                   PRUint64 aProcessId);
-    NotifyRequestMarkMessageReadFailed(PRInt32 aError, PRInt32 aRequestId,
-                                       PRUint64 aProcessId);
+  NotifyDeliveryErrorMessage(SmsMessageData aMessageData);
 
 parent:
-    sync HasSupport()
-        returns (bool aHasSupport);
+  /**
+   * Sent when the child no longer needs to use sms.
+   */
+  __delete__();
 
-    sync GetNumberOfMessagesForText(nsString aText)
-        returns (PRUint16 aNumber);
+  /**
+   * Sent when the child makes an asynchronous request to the parent.
+   */
+  PSmsRequest(IPCSmsRequest request);
 
-    SendMessage(nsString aNumber, nsString aMessage, PRInt32 aRequestId,
-                PRUint64 aProcessId);
+  sync HasSupport()
+      returns (bool aHasSupport);
 
-    sync SaveReceivedMessage(nsString aSender, nsString aBody, PRUint64 aDate)
-        returns (PRInt32 aId);
+  sync GetSegmentInfoForText(nsString aText)
+      returns (SmsSegmentInfoData aResult);
 
-    sync SaveSentMessage(nsString aReceiver, nsString aBody, PRUint64 aDate)
-        returns (PRInt32 aId);
-
-    GetMessage(PRInt32 aMessageId, PRInt32 aRequestId, PRUint64 aProcessId);
-
-    DeleteMessage(PRInt32 aMessageId, PRInt32 aRequestId, PRUint64 aProcessId);
-
-    CreateMessageList(SmsFilterData aFilter, bool aReverse, PRInt32 aRequestId, PRUint64 aProcessId);
-
-    GetNextMessageInList(PRInt32 aListId, PRInt32 aRequestId, PRUint64 aProcessId);
-
-    ClearMessageList(PRInt32 aListId);
-
-    MarkMessageRead(PRInt32 aMessageId, bool aValue, PRInt32 aRequestId, PRUint64 aProcessId);
-
-    __delete__();
+  ClearMessageList(int32_t aListId);
 };
 
 } // namespace sms

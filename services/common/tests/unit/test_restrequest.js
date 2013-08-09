@@ -13,7 +13,7 @@ const TEST_RESOURCE_URL = TEST_SERVER_URL + "resource";
 function run_test() {
   Log4Moz.repository.getLogger("Services.Common.RESTRequest").level =
     Log4Moz.Level.Trace;
-  initTestLogging();
+  initTestLogging("Trace");
 
   run_next_test();
 }
@@ -41,7 +41,8 @@ add_test(function test_attributes() {
   do_check_eq(request.response, null);
   do_check_eq(request.status, request.NOT_SENT);
   let expectedLoadFlags = Ci.nsIRequest.LOAD_BYPASS_CACHE |
-                          Ci.nsIRequest.INHIBIT_CACHING;
+                          Ci.nsIRequest.INHIBIT_CACHING |
+                          Ci.nsIRequest.LOAD_ANONYMOUS;
   do_check_eq(request.loadFlags, expectedLoadFlags);
 
   run_next_test();
@@ -156,6 +157,103 @@ add_test(function test_get() {
   do_check_eq(request.method, "GET");
   do_check_throws(function () {
     request.get();
+  });
+});
+
+/**
+ * Test HTTP GET with UTF-8 content, and custom Content-Type.
+ */
+add_test(function test_get_utf8() {
+  let response = "Hello World or Καλημέρα κόσμε or こんにちは 世界";
+
+  let contentType = "text/plain";
+  let charset = true;
+  let charsetSuffix = "; charset=UTF-8";
+
+  let server = httpd_setup({"/resource": function(req, res) {
+    res.setStatusLine(req.httpVersion, 200, "OK");
+    res.setHeader("Content-Type", contentType + (charset ? charsetSuffix : ""));
+
+    let converter = Cc["@mozilla.org/intl/converter-output-stream;1"]
+                    .createInstance(Ci.nsIConverterOutputStream);
+    converter.init(res.bodyOutputStream, "UTF-8", 0, 0x0000);
+    converter.writeString(response);
+    converter.close();
+  }});
+
+  // Check if charset in Content-Type is propertly interpreted.
+  let request1 = new RESTRequest(TEST_RESOURCE_URL);
+  request1.get(function(error) {
+    do_check_null(error);
+
+    do_check_eq(request1.response.status, 200);
+    do_check_eq(request1.response.body, response);
+    do_check_eq(request1.response.headers["content-type"],
+                contentType + charsetSuffix);
+
+    // Check that we default to UTF-8 if Content-Type doesn't have a charset.
+    charset = false;
+    let request2 = new RESTRequest(TEST_RESOURCE_URL);
+    request2.get(function(error) {
+      do_check_null(error);
+
+      do_check_eq(request2.response.status, 200);
+      do_check_eq(request2.response.body, response);
+      do_check_eq(request2.response.headers["content-type"], contentType);
+      do_check_eq(request2.response.charset, "utf-8");
+
+      server.stop(run_next_test);
+    });
+  });
+});
+
+/**
+ * Test more variations of charset handling.
+ */
+add_test(function test_charsets() {
+  let response = "Hello World, I can't speak Russian";
+
+  let contentType = "text/plain";
+  let charset = true;
+  let charsetSuffix = "; charset=us-ascii";
+
+  let server = httpd_setup({"/resource": function(req, res) {
+    res.setStatusLine(req.httpVersion, 200, "OK");
+    res.setHeader("Content-Type", contentType + (charset ? charsetSuffix : ""));
+
+    let converter = Cc["@mozilla.org/intl/converter-output-stream;1"]
+                    .createInstance(Ci.nsIConverterOutputStream);
+    converter.init(res.bodyOutputStream, "us-ascii", 0, 0x0000);
+    converter.writeString(response);
+    converter.close();
+  }});
+
+  // Check that provided charset overrides hint.
+  let request1 = new RESTRequest(TEST_RESOURCE_URL);
+  request1.charset = "not-a-charset";
+  request1.get(function(error) {
+    do_check_null(error);
+
+    do_check_eq(request1.response.status, 200);
+    do_check_eq(request1.response.body, response);
+    do_check_eq(request1.response.headers["content-type"],
+                contentType + charsetSuffix);
+    do_check_eq(request1.response.charset, "us-ascii");
+
+    // Check that hint is used if Content-Type doesn't have a charset.
+    charset = false;
+    let request2 = new RESTRequest(TEST_RESOURCE_URL);
+    request2.charset = "us-ascii";
+    request2.get(function(error) {
+      do_check_null(error);
+
+      do_check_eq(request2.response.status, 200);
+      do_check_eq(request2.response.body, response);
+      do_check_eq(request2.response.headers["content-type"], contentType);
+      do_check_eq(request2.response.charset, "us-ascii");
+
+      server.stop(run_next_test);
+    });
   });
 });
 
@@ -586,7 +684,7 @@ add_test(function test_abort() {
  * channel activity until the request is automatically canceled.
  */
 add_test(function test_timeout() {
-  let server = new nsHttpServer();
+  let server = new HttpServer();
   let server_connection;
   server._handler.handleResponse = function(connection) {
     // This is a handler that doesn't do anything, just keeps the connection
@@ -603,7 +701,9 @@ add_test(function test_timeout() {
     do_check_eq(error.result, Cr.NS_ERROR_NET_TIMEOUT);
     do_check_eq(this.status, this.ABORTED);
 
+    _("Closing connection.");
     server_connection.close();
+    _("Shutting down server.");
     server.stop(run_next_test);
   });
 });
@@ -619,7 +719,7 @@ add_test(function test_exception_in_onProgress() {
   request.onProgress = function onProgress() {
     it.does.not.exist();
   };
-  request.get(function (error) {
+  request.get(function onComplete(error) {
     do_check_eq(error, "ReferenceError: it is not defined");
     do_check_eq(this.status, this.ABORTED);
 
@@ -630,8 +730,15 @@ add_test(function test_exception_in_onProgress() {
 add_test(function test_new_channel() {
   _("Ensure a redirect to a new channel is handled properly.");
 
+  function checkUA(metadata) {
+    let ua = metadata.getHeader("User-Agent");
+    _("User-Agent is " + ua);
+    do_check_eq("foo bar", ua);
+  }
+
   let redirectRequested = false;
   function redirectHandler(metadata, response) {
+    checkUA(metadata);
     redirectRequested = true;
 
     let body = "Redirecting";
@@ -642,12 +749,14 @@ add_test(function test_new_channel() {
 
   let resourceRequested = false;
   function resourceHandler(metadata, response) {
+    checkUA(metadata);
     resourceRequested = true;
 
     let body = "Test";
     response.setHeader("Content-Type", "text/plain");
     response.bodyOutputStream.write(body, body.length);
   }
+
   let server1 = httpd_setup({"/redirect": redirectHandler}, 8080);
   let server2 = httpd_setup({"/resource": resourceHandler}, 8081);
 
@@ -658,12 +767,49 @@ add_test(function test_new_channel() {
   }
 
   let request = new RESTRequest("http://localhost:8080/redirect");
+  request.setHeader("User-Agent", "foo bar");
+
+  // Swizzle in our own fakery, because this redirect is neither
+  // internal nor URI-preserving. RESTRequest's policy is to only
+  // copy headers under certain circumstances.
+  let protoMethod = request.shouldCopyOnRedirect;
+  request.shouldCopyOnRedirect = function wrapped(o, n, f) {
+    // Check the default policy.
+    do_check_false(protoMethod.call(this, o, n, f));
+    return true;
+  };
+
   request.get(function onComplete(error) {
     let response = this.response;
 
     do_check_eq(200, response.status);
     do_check_eq("Test", response.body);
+    do_check_true(redirectRequested);
+    do_check_true(resourceRequested);
 
     advance();
+  });
+});
+
+add_test(function test_not_sending_cookie() {
+  function handler(metadata, response) {
+    let body = "COOKIE!";
+    response.setStatusLine(metadata.httpVersion, 200, "OK");
+    response.bodyOutputStream.write(body, body.length);
+    do_check_false(metadata.hasHeader("Cookie"));
+  }
+  let server = httpd_setup({"/test": handler});
+
+  let cookieSer = Cc["@mozilla.org/cookieService;1"]
+                    .getService(Ci.nsICookieService);
+  let uri = CommonUtils.makeURI("http://localhost:8080");
+  cookieSer.setCookieString(uri, null, "test=test; path=/;", null);
+
+  let res = new RESTRequest("http://localhost:8080/test");
+  res.get(function (error) {
+    do_check_null(error);
+    do_check_true(this.response.success);
+    do_check_eq("COOKIE!", this.response.body);
+    server.stop(run_next_test);
   });
 });

@@ -10,34 +10,6 @@ Components.utils.import("resource://gre/modules/Services.jsm");
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
-//// Utilities
-
-/**
- * Returns true if the string passed in is part of the root domain of the
- * current string.  For example, if this is "www.mozilla.org", and we pass in
- * "mozilla.org", this will return true.  It would return false the other way
- * around.
- */
-String.prototype.hasRootDomain = function hasRootDomain(aDomain)
-{
-  let index = this.indexOf(aDomain);
-  // If aDomain is not found, we know we do not have it as a root domain.
-  if (index == -1)
-    return false;
-
-  // If the strings are the same, we obviously have a match.
-  if (this == aDomain)
-    return true;
-
-  // Otherwise, we have aDomain as our root domain iff the index of aDomain is
-  // aDomain.length subtracted from our length and (since we do not have an
-  // exact match) the character before the index is a dot or slash.
-  let prevChar = this[index - 1];
-  return (index == (this.length - aDomain.length)) &&
-         (prevChar == "." || prevChar == "/");
-}
-
-////////////////////////////////////////////////////////////////////////////////
 //// Constants
 
 const Cc = Components.classes;
@@ -61,7 +33,6 @@ function PrivateBrowsingService() {
   this._obs.addObserver(this, "private-browsing", true);
   this._obs.addObserver(this, "command-line-startup", true);
   this._obs.addObserver(this, "sessionstore-browser-state-restored", true);
-//  this._obs.addObserver(this, "domwindowopened", true);
 
   // List of nsIXULWindows we are going to be closing during the transition
   this._windowsToClose = [];
@@ -107,7 +78,7 @@ PrivateBrowsingService.prototype = {
   // XPCOM registration
   classID: Components.ID("{c31f4883-839b-45f6-82ad-a6a9bc5ad599}"),
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPrivateBrowsingService, 
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPrivateBrowsingService,
                                          Ci.nsIObserver,
                                          Ci.nsISupportsWeakReference,
                                          Ci.nsICommandLineHandler]),
@@ -130,7 +101,20 @@ PrivateBrowsingService.prototype = {
            .usePrivateBrowsing = aFlag;
   },
 
+  _adjustPBFlagOnExistingWindows: function PBS__adjustPBFlagOnExistingWindows() {
+    var windowsEnum = Services.wm.getEnumerator(null);
+    while (windowsEnum.hasMoreElements()) {
+      var window = windowsEnum.getNext();
+      this._setPerWindowPBFlag(window, this._inPrivateBrowsing);
+    }
+  },
+
   _onBeforePrivateBrowsingModeChange: function PBS__onBeforePrivateBrowsingModeChange() {
+    // If we're about to enter PB mode, adjust the flags now
+    if (this._inPrivateBrowsing) {
+      this._adjustPBFlagOnExistingWindows();
+    }
+
     // nothing needs to be done here if we're enabling at startup
     if (!this._autoStarted) {
       let ss = Cc["@mozilla.org/browser/sessionstore;1"].
@@ -204,10 +188,9 @@ PrivateBrowsingService.prototype = {
     else
       this._saveSession = false;
 
-    var windowsEnum = Services.wm.getEnumerator("navigator:browser");
-    while (windowsEnum.hasMoreElements()) {
-      var window = windowsEnum.getNext();
-      this._setPerWindowPBFlag(window, this._inPrivateBrowsing);
+    // If we're about to leave PB mode, adjust the flags now
+    if (!this._inPrivateBrowsing) {
+      this._adjustPBFlagOnExistingWindows();
     }
   },
 
@@ -356,6 +339,9 @@ PrivateBrowsingService.prototype = {
                       createInstance(Ci.nsISupportsPRBool);
     cancelLeave.data = false;
     this._obs.notifyObservers(cancelLeave, "private-browsing-cancel-vote", "exit");
+    if (!cancelLeave.data) {
+      this._obs.notifyObservers(cancelLeave, "last-pb-context-exiting", null);
+    }
     return !cancelLeave.data;
   },
 
@@ -458,11 +444,6 @@ PrivateBrowsingService.prototype = {
                   getService(Ci.nsISecretDecoderRing);
         sdr.logoutAndTeardown();
     
-        // clear plain HTTP auth sessions
-        let authMgr = Cc['@mozilla.org/network/http-auth-manager;1'].
-                      getService(Ci.nsIHttpAuthManager);
-        authMgr.clearAll();
-
         try {
           this._prefs.deleteBranch("geo.wifi.access_token.");
         } catch (ex) {}
@@ -478,12 +459,19 @@ PrivateBrowsingService.prototype = {
       case "command-line-startup":
         this._obs.removeObserver(this, "command-line-startup");
         aSubject.QueryInterface(Ci.nsICommandLine);
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
         if (aSubject.findFlag("private", false) >= 0) {
+          // Don't need to go into PB mode if it's already set to autostart
+          if (this._autoStarted)
+            aSubject.handleFlag("private", false);
+
           this.privateBrowsingEnabled = true;
           this._autoStarted = true;
           this._lastChangedByCommandLine = true;
         }
-        else if (aSubject.findFlag("private-toggle", false) >= 0) {
+        else
+#endif
+        if (aSubject.findFlag("private-toggle", false) >= 0) {
           this._lastChangedByCommandLine = true;
         }
         break;
@@ -493,27 +481,18 @@ PrivateBrowsingService.prototype = {
           this._notifyIfTransitionComplete();
         }
         break;
-//      case "domwindowopened":
-//        let aWindow = aSubject;
-//        let self = this;
-//        aWindow.addEventListener("load", function PBS__onWindowLoad(aEvent) {
-//          aWindow.removeEventListener("load", arguments.callee);
-//          if (aWindow.document
-//                     .documentElement
-//                     .getAttribute("windowtype") == "navigator:browser") {
-//            self._setPerWindowPBFlag(aWindow, self._inPrivateBrowsing);
-//          }
-//        }, false);
-//        break;
     }
   },
 
   // nsICommandLineHandler
 
   handle: function PBS_handle(aCmdLine) {
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
     if (aCmdLine.handleFlag("private", false))
       aCmdLine.preventDefault = true; // It has already been handled
-    else if (aCmdLine.handleFlag("private-toggle", false)) {
+    else
+#endif
+    if (aCmdLine.handleFlag("private-toggle", false)) {
       if (this._autoStarted) {
         throw Cr.NS_ERROR_ABORT;
       }
@@ -617,196 +596,7 @@ PrivateBrowsingService.prototype = {
    */
   get lastChangedByCommandLine() {
     return this._lastChangedByCommandLine;
-  },
-
-  removeDataFromDomain: function PBS_removeDataFromDomain(aDomain)
-  {
-
-    // clear any and all network geolocation provider sessions
-    try {
-        this._prefs.deleteBranch("geo.wifi.access_token.");
-    } catch (e) {}
-    
-    // History
-    let (bh = Cc["@mozilla.org/browser/global-history;2"].
-              getService(Ci.nsIBrowserHistory)) {
-      bh.removePagesFromHost(aDomain, true);
-    }
-
-    // Cache
-    let (cs = Cc["@mozilla.org/network/cache-service;1"].
-              getService(Ci.nsICacheService)) {
-      // NOTE: there is no way to clear just that domain, so we clear out
-      //       everything)
-      try {
-        cs.evictEntries(Ci.nsICache.STORE_ANYWHERE);
-      } catch (ex) {
-        Cu.reportError("Exception thrown while clearing the cache: " +
-          ex.toString());
-      }
-    }
-
-    // Image Cache
-    let (imageCache = Cc["@mozilla.org/image/cache;1"].
-                      getService(Ci.imgICache)) {
-      try {
-        imageCache.clearCache(false); // true=chrome, false=content
-      } catch (ex) {
-        Cu.reportError("Exception thrown while clearing the image cache: " +
-          ex.toString());
-      }
-    }
-
-    // Cookies
-    let (cm = Cc["@mozilla.org/cookiemanager;1"].
-              getService(Ci.nsICookieManager2)) {
-      let enumerator = cm.getCookiesFromHost(aDomain);
-      while (enumerator.hasMoreElements()) {
-        let cookie = enumerator.getNext().QueryInterface(Ci.nsICookie);
-        cm.remove(cookie.host, cookie.name, cookie.path, false);
-      }
-    }
-
-    // Plugin data
-    const phInterface = Ci.nsIPluginHost;
-    const FLAG_CLEAR_ALL = phInterface.FLAG_CLEAR_ALL;
-    let (ph = Cc["@mozilla.org/plugin/host;1"].getService(phInterface)) {
-      let tags = ph.getPluginTags();
-      for (let i = 0; i < tags.length; i++) {
-        try {
-          ph.clearSiteData(tags[i], aDomain, FLAG_CLEAR_ALL, -1);
-        } catch (e) {
-          // Ignore errors from the plugin
-        }
-      }
-    }
-
-    // Downloads
-    let (dm = Cc["@mozilla.org/download-manager;1"].
-              getService(Ci.nsIDownloadManager)) {
-      // Active downloads
-      let enumerator = dm.activeDownloads;
-      while (enumerator.hasMoreElements()) {
-        let dl = enumerator.getNext().QueryInterface(Ci.nsIDownload);
-        if (dl.source.host.hasRootDomain(aDomain)) {
-          dm.cancelDownload(dl.id);
-          dm.removeDownload(dl.id);
-        }
-      }
-
-      // Completed downloads
-      let db = dm.DBConnection;
-      // NOTE: This is lossy, but we feel that it is OK to be lossy here and not
-      //       invoke the cost of creating a URI for each download entry and
-      //       ensure that the hostname matches.
-      let stmt = db.createStatement(
-        "DELETE FROM moz_downloads " +
-        "WHERE source LIKE ?1 ESCAPE '/' " +
-        "AND state NOT IN (?2, ?3, ?4)"
-      );
-      let pattern = stmt.escapeStringForLIKE(aDomain, "/");
-      stmt.bindByIndex(0, "%" + pattern + "%");
-      stmt.bindByIndex(1, Ci.nsIDownloadManager.DOWNLOAD_DOWNLOADING);
-      stmt.bindByIndex(2, Ci.nsIDownloadManager.DOWNLOAD_PAUSED);
-      stmt.bindByIndex(3, Ci.nsIDownloadManager.DOWNLOAD_QUEUED);
-      try {
-        stmt.execute();
-      }
-      finally {
-        stmt.finalize();
-      }
-
-      // We want to rebuild the list if the UI is showing, so dispatch the
-      // observer topic
-      let os = Cc["@mozilla.org/observer-service;1"].
-               getService(Ci.nsIObserverService);
-      os.notifyObservers(null, "download-manager-remove-download", null);
-    }
-
-    // Passwords
-    let (lm = Cc["@mozilla.org/login-manager;1"].
-              getService(Ci.nsILoginManager)) {
-      // Clear all passwords for domain
-      try {
-        let logins = lm.getAllLogins();
-        for (let i = 0; i < logins.length; i++)
-          if (logins[i].hostname.hasRootDomain(aDomain))
-            lm.removeLogin(logins[i]);
-      }
-      // XXXehsan: is there a better way to do this rather than this
-      // hacky comparison?
-      catch (ex if ex.message.indexOf("User canceled Master Password entry") != -1) { }
-
-      // Clear any "do not save for this site" for this domain
-      let disabledHosts = lm.getAllDisabledHosts();
-      for (let i = 0; i < disabledHosts.length; i++)
-        if (disabledHosts[i].hasRootDomain(aDomain))
-          lm.setLoginSavingEnabled(disabledHosts, true);
-    }
-
-    // Permissions
-    let (pm = Cc["@mozilla.org/permissionmanager;1"].
-              getService(Ci.nsIPermissionManager)) {
-      // Enumerate all of the permissions, and if one matches, remove it
-      let enumerator = pm.enumerator;
-      while (enumerator.hasMoreElements()) {
-        let perm = enumerator.getNext().QueryInterface(Ci.nsIPermission);
-        if (perm.host.hasRootDomain(aDomain))
-          pm.remove(perm.host, perm.type);
-      }
-    }
-
-    // Content Preferences
-    let (cp = Cc["@mozilla.org/content-pref/service;1"].
-              getService(Ci.nsIContentPrefService)) {
-      let db = cp.DBConnection;
-      // First we need to get the list of "groups" which are really just domains
-      let names = [];
-      let stmt = db.createStatement(
-        "SELECT name " +
-        "FROM groups " +
-        "WHERE name LIKE ?1 ESCAPE '/'"
-      );
-      let pattern = stmt.escapeStringForLIKE(aDomain, "/");
-      stmt.bindByIndex(0, "%" + pattern);
-      try {
-        while (stmt.executeStep())
-          if (stmt.getString(0).hasRootDomain(aDomain))
-            names.push(stmt.getString(0));
-      }
-      finally {
-        stmt.finalize();
-      }
-
-      // Now, for each name we got back, remove all of its prefs.
-      for (let i = 0; i < names.length; i++) {
-        let uri = names[i];
-        let enumerator = cp.getPrefs(uri).enumerator;
-        while (enumerator.hasMoreElements()) {
-          let pref = enumerator.getNext().QueryInterface(Ci.nsIProperty);
-          cp.removePref(uri, pref.name);
-        }
-      }
-    }
-
-    // Indexed DB
-    let (idbm = Cc["@mozilla.org/dom/indexeddb/manager;1"].
-                getService(Ci.nsIIndexedDatabaseManager)) {
-      // delete data from both HTTP and HTTPS sites
-      let caUtils = {};
-      let scriptLoader = Cc["@mozilla.org/moz/jssubscript-loader;1"].
-                         getService(Ci.mozIJSSubScriptLoader);
-      scriptLoader.loadSubScript("chrome://global/content/contentAreaUtils.js",
-                                 caUtils);
-      let httpURI = caUtils.makeURI("http://" + aDomain);
-      let httpsURI = caUtils.makeURI("https://" + aDomain);
-      idbm.clearDatabasesForURI(httpURI);
-      idbm.clearDatabasesForURI(httpsURI);
-    }
-
-    // Everybody else (including extensions)
-    this._obs.notifyObservers(null, "browser:purge-domain-data", aDomain);
   }
 };
 
-var NSGetFactory = XPCOMUtils.generateNSGetFactory([PrivateBrowsingService]);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory([PrivateBrowsingService]);

@@ -19,7 +19,7 @@
 #include "nsIClassInfoImpl.h"
 ////////////////////////////////////////////////////////////////////////
 
-nsSampleImpl::nsSampleImpl() : mValue(nsnull)
+nsSampleImpl::nsSampleImpl() : mValue(nullptr)
 {
     mValue = (char*)nsMemory::Clone("initial value", 14);
 }
@@ -54,7 +54,7 @@ NS_IMPL_ISUPPORTS1_CI(nsSampleImpl, nsISample)
 NS_IMETHODIMP
 nsSampleImpl::GetValue(char** aValue)
 {
-    NS_PRECONDITION(aValue != nsnull, "null ptr");
+    NS_PRECONDITION(aValue != nullptr, "null ptr");
     if (! aValue)
         return NS_ERROR_NULL_POINTER;
 
@@ -77,7 +77,7 @@ nsSampleImpl::GetValue(char** aValue)
             return NS_ERROR_NULL_POINTER;
     }
     else {
-        *aValue = nsnull;
+        *aValue = nullptr;
     }
     return NS_OK;
 }
@@ -85,7 +85,7 @@ nsSampleImpl::GetValue(char** aValue)
 NS_IMETHODIMP
 nsSampleImpl::SetValue(const char* aValue)
 {
-    NS_PRECONDITION(aValue != nsnull, "null ptr");
+    NS_PRECONDITION(aValue != nullptr, "null ptr");
     if (! aValue)
         return NS_ERROR_NULL_POINTER;
 
@@ -118,7 +118,7 @@ static void GetStringValue(nsACString& aValue)
 NS_IMETHODIMP
 nsSampleImpl::WriteValue(const char* aPrefix)
 {
-    NS_PRECONDITION(aPrefix != nsnull, "null ptr");
+    NS_PRECONDITION(aPrefix != nullptr, "null ptr");
     if (! aPrefix)
         return NS_ERROR_NULL_POINTER;
 
@@ -133,7 +133,7 @@ nsSampleImpl::WriteValue(const char* aPrefix)
     foopy.Append(PRUnichar('y'));
     
     const PRUnichar* f = foopy.get();
-    PRUint32 l = foopy.Length();
+    uint32_t l = foopy.Length();
     printf("%c%c%c%c%c %d\n", char(f[0]), char(f[1]), char(f[2]), char(f[3]), char(f[4]), l);
     
     nsEmbedCString foopy2;
@@ -141,7 +141,7 @@ nsSampleImpl::WriteValue(const char* aPrefix)
 
     //foopy2.AppendLiteral("foopy");
     const char* f2 = foopy2.get();
-    PRUint32 l2 = foopy2.Length();
+    uint32_t l2 = foopy2.Length();
 
     printf("%s %d\n", f2, l2);
 

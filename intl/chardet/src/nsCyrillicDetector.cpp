@@ -17,16 +17,16 @@
 NS_IMPL_ISUPPORTS1(nsCyrXPCOMDetector, nsICharsetDetector)
 NS_IMPL_ISUPPORTS1(nsCyrXPCOMStringDetector, nsIStringCharsetDetector)
 
-void nsCyrillicDetector::HandleData(const char* aBuf, PRUint32 aLen)
+void nsCyrillicDetector::HandleData(const char* aBuf, uint32_t aLen)
 {
-   PRUint8 cls;
+   uint8_t cls;
    const char* b;
-   PRUint32 i;
+   uint32_t i;
    if(mDone) 
       return;
    for(i=0, b=aBuf;i<aLen;i++,b++)
    {
-     for(PRUintn j=0;j<mItems;j++)
+     for(unsigned j=0;j<mItems;j++)
      {
         if( 0x80 & *b)
            cls = mCyrillicClass[j][(*b) & 0x7F];
@@ -45,9 +45,9 @@ void nsCyrillicDetector::HandleData(const char* aBuf, PRUint32 aLen)
 #define THRESHOLD_RATIO 1.5f
 void nsCyrillicDetector::DataEnd()
 {
-   PRUint32 max=0;
-   PRUint8  maxIdx=0;
-   PRUint8 j;
+   uint32_t max=0;
+   uint8_t  maxIdx=0;
+   uint8_t j;
    if(mDone) 
       return;
    for(j=0;j<mItems;j++) {
@@ -70,12 +70,12 @@ void nsCyrillicDetector::DataEnd()
 }
 
 //---------------------------------------------------------------------
-nsCyrXPCOMDetector:: nsCyrXPCOMDetector(PRUint8 aItems, 
-                      const PRUint8 ** aCyrillicClass, 
+nsCyrXPCOMDetector:: nsCyrXPCOMDetector(uint8_t aItems, 
+                      const uint8_t ** aCyrillicClass, 
                       const char **aCharsets)
 	     : nsCyrillicDetector(aItems, aCyrillicClass, aCharsets)
 {
-    mObserver = nsnull;
+    mObserver = nullptr;
 }
 
 //---------------------------------------------------------------------
@@ -87,8 +87,8 @@ nsCyrXPCOMDetector::~nsCyrXPCOMDetector()
 NS_IMETHODIMP nsCyrXPCOMDetector::Init(
   nsICharsetDetectionObserver* aObserver)
 {
-  NS_ASSERTION(mObserver == nsnull , "Init twice");
-  if(nsnull == aObserver)
+  NS_ASSERTION(mObserver == nullptr , "Init twice");
+  if(nullptr == aObserver)
      return NS_ERROR_ILLEGAL_VALUE;
 
   mObserver = aObserver;
@@ -97,11 +97,11 @@ NS_IMETHODIMP nsCyrXPCOMDetector::Init(
 
 //----------------------------------------------------------
 NS_IMETHODIMP nsCyrXPCOMDetector::DoIt(
-  const char* aBuf, PRUint32 aLen, bool* oDontFeedMe)
+  const char* aBuf, uint32_t aLen, bool* oDontFeedMe)
 {
-  NS_ASSERTION(mObserver != nsnull , "have not init yet");
+  NS_ASSERTION(mObserver != nullptr , "have not init yet");
 
-  if((nsnull == aBuf) || (nsnull == oDontFeedMe))
+  if((nullptr == aBuf) || (nullptr == oDontFeedMe))
      return NS_ERROR_ILLEGAL_VALUE;
 
   this->HandleData(aBuf, aLen);
@@ -112,7 +112,7 @@ NS_IMETHODIMP nsCyrXPCOMDetector::DoIt(
 //----------------------------------------------------------
 NS_IMETHODIMP nsCyrXPCOMDetector::Done()
 {
-  NS_ASSERTION(mObserver != nsnull , "have not init yet");
+  NS_ASSERTION(mObserver != nullptr , "have not init yet");
   this->DataEnd();
   return NS_OK;
 }
@@ -120,13 +120,13 @@ NS_IMETHODIMP nsCyrXPCOMDetector::Done()
 //----------------------------------------------------------
 void nsCyrXPCOMDetector::Report(const char* aCharset)
 {
-  NS_ASSERTION(mObserver != nsnull , "have not init yet");
+  NS_ASSERTION(mObserver != nullptr , "have not init yet");
   mObserver->Notify(aCharset, eBestAnswer);
 }
 
 //---------------------------------------------------------------------
-nsCyrXPCOMStringDetector:: nsCyrXPCOMStringDetector(PRUint8 aItems, 
-                      const PRUint8 ** aCyrillicClass, 
+nsCyrXPCOMStringDetector:: nsCyrXPCOMStringDetector(uint8_t aItems, 
+                      const uint8_t ** aCyrillicClass, 
                       const char **aCharsets)
 	     : nsCyrillicDetector(aItems, aCyrillicClass, aCharsets)
 {
@@ -144,10 +144,10 @@ void nsCyrXPCOMStringDetector::Report(const char *aCharset)
 }
 
 //---------------------------------------------------------------------
-NS_IMETHODIMP nsCyrXPCOMStringDetector::DoIt(const char* aBuf, PRUint32 aLen, 
+NS_IMETHODIMP nsCyrXPCOMStringDetector::DoIt(const char* aBuf, uint32_t aLen, 
                      const char** oCharset, nsDetectionConfident &oConf)
 {
-   mResult = nsnull;
+   mResult = nullptr;
    mDone = false;
    this->HandleData(aBuf, aLen); 
    this->DataEnd();

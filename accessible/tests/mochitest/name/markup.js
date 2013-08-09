@@ -14,6 +14,8 @@ var gDumpToConsole = false;
  */
 function testNames()
 {
+  //enableLogging("tree,stack"); // debugging
+
   var request = new XMLHttpRequest();
   request.open("get", gNameRulesFileURL, false);
   request.send();
@@ -58,8 +60,13 @@ var gTestIterator =
 
     this.ruleIdx++;
     if (this.ruleIdx == this.ruleElms.length) {
+      // When test is finished then name is empty and no explict-name.
+      testName(this.elm, null, "No name test. ");
+      testAbsentAttrs(this.elm, {"explicit-name" : "true"});
+
       this.markupIdx++;
       if (this.markupIdx == this.markupElms.length) {
+        //disableLogging("tree"); // debugging
         SimpleTest.finish();
         return;
       }
@@ -125,12 +132,21 @@ function testNamesForMarkupRules(aMarkupElm, aContainer)
   var serializer = new XMLSerializer();
 
   var expr = "//html/body/div[@id='test']/" + aMarkupElm.getAttribute("ref");
-  var elms = evaluateXPath(document, expr, htmlDocResolver);
+  var elm = evaluateXPath(document, expr, htmlDocResolver)[0];
 
   var ruleId = aMarkupElm.getAttribute("ruleset");
   var ruleElms = getRuleElmsByRulesetId(ruleId);
 
-  gTestIterator.iterateRules(elms[0], aContainer, ruleElms);
+  var processMarkupRules =
+    gTestIterator.iterateRules.bind(gTestIterator, elm, aContainer, ruleElms);
+
+  // Images may be recreated after we append them into subtree. We need to wait
+  // in this case. If we are on profiling enabled build then stack tracing
+  // works and thus let's log instead.
+  if (isAccessible(elm) || isLogged("stack"))
+    processMarkupRules();
+  else
+    waitForEvent(EVENT_SHOW, elm, processMarkupRules);
 }
 
 /**
@@ -188,6 +204,11 @@ function testNameForAttrRule(aElm, aRule)
 
   var msg = "Attribute '" + attr + "' test. ";
   testName(aElm, name, msg);
+  if (aRule.getAttribute("explict-name") != "false")
+    testAttrs(aElm, {"explicit-name" : "true"}, true);
+  else
+    testAbsentAttrs(aElm, {"explicit-name" : "true"});
+
   aElm.removeAttribute(attr);
 
   gTestIterator.iterateNext();
@@ -235,6 +256,7 @@ function testNameForElmRule(aElm, aRule)
 
   var msg = "Element '" + tagname + "' test.";
   testName(aElm, labelElm.getAttribute("a11yname"), msg);
+  testAttrs(aElm, {"explicit-name" : "true"}, true);
 
   var parentNode = labelElm.parentNode;
 
@@ -252,6 +274,7 @@ function testNameForSubtreeRule(aElm, aRule)
 {
   var msg = "From subtree test.";
   testName(aElm, aElm.getAttribute("a11yname"), msg);
+  testAbsentAttrs(aElm, {"explicit-name" : "true"});
 
   if (gDumpToConsole) {
     dump("\nProcessed from subtree rule. Wait for reorder event on " +

@@ -18,6 +18,13 @@ TypeMap = {
     # builtins
     'boolean':            xpt.Type.Tags.boolean,
     'void':               xpt.Type.Tags.void,
+    'int16_t':            xpt.Type.Tags.int16,
+    'int32_t':            xpt.Type.Tags.int32,
+    'int64_t':            xpt.Type.Tags.int64,
+    'uint8_t':            xpt.Type.Tags.uint8,
+    'uint16_t':           xpt.Type.Tags.uint16,
+    'uint32_t':           xpt.Type.Tags.uint32,
+    'uint64_t':           xpt.Type.Tags.uint64,
     'octet':              xpt.Type.Tags.uint8,
     'short':              xpt.Type.Tags.int16,
     'long':               xpt.Type.Tags.int32,
@@ -186,7 +193,7 @@ def build_interface(iface, ifaces):
         # Write the getter
         methods.append(xpt.Method(a.name, build_nsresult_param(),
                                   [build_attr_param(a, getter=True)],
-                                  getter=True, setter=False, notxpcom=a.notxpcom,
+                                  getter=True, setter=False,
                                   constructor=False, hidden=a.noscript,
                                   optargc=False,
                                   implicit_jscontext=a.implicit_jscontext))
@@ -195,7 +202,7 @@ def build_interface(iface, ifaces):
         if not a.readonly:
             methods.append(xpt.Method(a.name, build_nsresult_param(),
                                       [build_attr_param(a, setter=True)],
-                                      getter=False, setter=True, notxpcom=a.notxpcom,
+                                      getter=False, setter=True,
                                       constructor=False, hidden=a.noscript,
                                       optargc=False,
                                       implicit_jscontext=a.implicit_jscontext))

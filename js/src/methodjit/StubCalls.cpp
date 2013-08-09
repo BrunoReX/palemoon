@@ -40,6 +40,10 @@
 #include "vm/RegExpObject-inl.h"
 #include "vm/String-inl.h"
 
+#ifdef JS_ION
+#include "ion/Ion.h"
+#endif
+
 #ifdef XP_WIN
 # include "jswin.h"
 #endif
@@ -51,14 +55,16 @@ using namespace js::mjit;
 using namespace js::types;
 using namespace JSC;
 
+using mozilla::DebugOnly;
+
 void JS_FASTCALL
-stubs::BindName(VMFrame &f, PropertyName *name)
+stubs::BindName(VMFrame &f, PropertyName *name_)
 {
-    JSObject *obj = FindIdentifierBase(f.cx, f.fp()->scopeChain(),
-                                       RootedPropertyName(f.cx, name));
-    if (!obj)
+    RootedPropertyName name(f.cx, name_);
+    RootedObject scope(f.cx);
+    if (!LookupNameWithGlobalDefault(f.cx, name, f.fp()->scopeChain(), &scope))
         THROW();
-    f.regs.sp[0].setObject(*obj);
+    f.regs.sp[0].setObject(*scope);
 }
 
 JSObject * JS_FASTCALL
@@ -67,37 +73,25 @@ stubs::BindGlobalName(VMFrame &f)
     return &f.fp()->global();
 }
 
-template<JSBool strict>
 void JS_FASTCALL
 stubs::SetName(VMFrame &f, PropertyName *name)
 {
+    AssertCanGC();
     JSContext *cx = f.cx;
-    const Value &rval = f.regs.sp[-1];
-    const Value &lval = f.regs.sp[-2];
+    RootedObject scope(cx, &f.regs.sp[-2].toObject());
+    HandleValue value = HandleValue::fromMarkedLocation(&f.regs.sp[-1]);
+    RootedScript fscript(cx, f.script());
 
-    if (!SetPropertyOperation(cx, f.pc(), lval, rval))
+    if (!SetNameOperation(cx, fscript, f.pc(), scope, value))
         THROW();
 
     f.regs.sp[-2] = f.regs.sp[-1];
 }
 
-template void JS_FASTCALL stubs::SetName<true>(VMFrame &f, PropertyName *origName);
-template void JS_FASTCALL stubs::SetName<false>(VMFrame &f, PropertyName *origName);
-
-template<JSBool strict>
-void JS_FASTCALL
-stubs::SetGlobalName(VMFrame &f, PropertyName *name)
-{
-    SetName<strict>(f, name);
-}
-
-template void JS_FASTCALL stubs::SetGlobalName<true>(VMFrame &f, PropertyName *name);
-template void JS_FASTCALL stubs::SetGlobalName<false>(VMFrame &f, PropertyName *name);
-
 void JS_FASTCALL
 stubs::Name(VMFrame &f)
 {
-    Value rval;
+    RootedValue rval(f.cx);
     if (!NameOperation(f.cx, f.pc(), &rval))
         THROW();
     f.regs.sp[0] = rval;
@@ -106,11 +100,11 @@ stubs::Name(VMFrame &f)
 void JS_FASTCALL
 stubs::GetElem(VMFrame &f)
 {
-    Value &lref = f.regs.sp[-2];
-    Value &rref = f.regs.sp[-1];
-    Value &rval = f.regs.sp[-2];
+    MutableHandleValue lval = MutableHandleValue::fromMarkedLocation(&f.regs.sp[-2]);
+    HandleValue rval = HandleValue::fromMarkedLocation(&f.regs.sp[-1]);
+    MutableHandleValue res = MutableHandleValue::fromMarkedLocation(&f.regs.sp[-2]);
 
-    if (!GetElementOperation(f.cx, JSOp(*f.pc()), lref, rref, &rval))
+    if (!GetElementOperation(f.cx, JSOp(*f.pc()), lval, rval, res))
         THROW();
 }
 
@@ -121,19 +115,21 @@ stubs::SetElem(VMFrame &f)
     JSContext *cx = f.cx;
     FrameRegs &regs = f.regs;
 
-    Value &objval = regs.sp[-3];
+    HandleValue objval = HandleValue::fromMarkedLocation(&regs.sp[-3]);
     Value &idval  = regs.sp[-2];
-    Value rval    = regs.sp[-1];
+    RootedValue rval(cx, regs.sp[-1]);
 
-    JSObject *obj;
     RootedId id(cx);
 
-    obj = ValueToObject(cx, objval);
+    RootedObject obj(cx, ToObjectFromStack(cx, objval));
     if (!obj)
         THROW();
 
-    if (!FetchElementId(f.cx, obj, idval, id.address(), &regs.sp[-2]))
+    if (!FetchElementId(f.cx, obj, idval, id.address(),
+                        MutableHandleValue::fromMarkedLocation(&regs.sp[-2])))
+    {
         THROW();
+    }
 
     TypeScript::MonitorAssign(cx, obj, id);
 
@@ -143,12 +139,12 @@ stubs::SetElem(VMFrame &f)
             int32_t i = JSID_TO_INT(id);
             if ((uint32_t)i < length) {
                 if (obj->getDenseArrayElement(i).isMagic(JS_ARRAY_HOLE)) {
-                    if (js_PrototypeHasIndexedProperties(cx, obj))
+                    if (js_PrototypeHasIndexedProperties(obj))
                         break;
                     if ((uint32_t)i >= obj->getArrayLength())
-                        obj->setArrayLength(cx, i + 1);
+                        JSObject::setArrayLength(cx, obj, i + 1);
                 }
-                obj->setDenseArrayElementWithType(cx, i, rval);
+                JSObject::setDenseArrayElementWithType(cx, obj, i, rval);
                 goto end_setelem;
             } else {
                 if (f.script()->hasAnalysis())
@@ -156,7 +152,7 @@ stubs::SetElem(VMFrame &f)
             }
         }
     } while (0);
-    if (!obj->setGeneric(cx, id, &rval, strict))
+    if (!JSObject::setGeneric(cx, obj, obj, id, &rval, strict))
         THROW();
   end_setelem:
     /* :FIXME: Moving the assigned object into the lowest stack slot
@@ -172,19 +168,21 @@ template void JS_FASTCALL stubs::SetElem<false>(VMFrame &f);
 void JS_FASTCALL
 stubs::ToId(VMFrame &f)
 {
-    Value &objval = f.regs.sp[-2];
-    Value &idval  = f.regs.sp[-1];
+    HandleValue objval = HandleValue::fromMarkedLocation(&f.regs.sp[-2]);
+    MutableHandleValue idval = MutableHandleValue::fromMarkedLocation(&f.regs.sp[-1]);
 
-    JSObject *obj = ValueToObject(f.cx, objval);
+    JSObject *obj = ToObjectFromStack(f.cx, objval);
     if (!obj)
         THROW();
 
     RootedId id(f.cx);
-    if (!FetchElementId(f.cx, obj, idval, id.address(), &idval))
+    if (!FetchElementId(f.cx, obj, idval, id.address(), idval))
         THROW();
 
-    if (!idval.isInt32())
-        TypeScript::MonitorUnknown(f.cx, f.script(), f.pc());
+    if (!idval.isInt32()) {
+        RootedScript fscript(f.cx, f.script());
+        TypeScript::MonitorUnknown(f.cx, fscript, f.pc());
+    }
 }
 
 void JS_FASTCALL
@@ -193,9 +191,8 @@ stubs::ImplicitThis(VMFrame &f, PropertyName *name_)
     RootedObject scopeObj(f.cx, f.cx->stack.currentScriptedScopeChain());
     RootedPropertyName name(f.cx, name_);
 
-    JSObject *obj, *obj2;
-    JSProperty *prop;
-    if (!FindPropertyHelper(f.cx, name, false, scopeObj, &obj, &obj2, &prop))
+    RootedObject obj(f.cx);
+    if (!LookupNameWithGlobalDefault(f.cx, name, scopeObj, &obj))
         THROW();
 
     if (!ComputeImplicitThis(f.cx, obj, &f.regs.sp[0]))
@@ -285,13 +282,15 @@ stubs::Ursh(VMFrame &f)
 
     u >>= (j & 31);
 
-	if (!f.regs.sp[-2].setNumber(uint32_t(u)))
-        TypeScript::MonitorOverflow(f.cx, f.script(), f.pc());
+    if (!f.regs.sp[-2].setNumber(uint32_t(u))) {
+        RootedScript fscript(f.cx, f.script());
+        TypeScript::MonitorOverflow(f.cx, fscript, f.pc());
+    }
 }
 
 template<JSBool strict>
 void JS_FASTCALL
-stubs::DefFun(VMFrame &f, JSFunction *fun_)
+stubs::DefFun(VMFrame &f, JSFunction *funArg)
 {
     /*
      * A top-level function defined in Global or Eval code (see ECMA-262
@@ -301,7 +300,7 @@ stubs::DefFun(VMFrame &f, JSFunction *fun_)
      */
     JSContext *cx = f.cx;
     StackFrame *fp = f.fp();
-    RootedFunction fun(f.cx, fun_);
+    RootedFunction fun(f.cx, funArg);
 
     /*
      * If static link is not current scope, clone fun's object to link to the
@@ -335,22 +334,22 @@ stubs::DefFun(VMFrame &f, JSFunction *fun_)
      * current scope chain even for the case of function expression statements
      * and functions defined by eval inside let or with blocks.
      */
-    JSObject *parent = &fp->varObj();
+    Rooted<JSObject*> parent(cx, &fp->varObj());
 
     /* ES5 10.5 (NB: with subsequent errata). */
-    PropertyName *name = fun->atom->asPropertyName();
-    JSProperty *prop = NULL;
-    JSObject *pobj;
-    if (!parent->lookupProperty(cx, name, &pobj, &prop))
+    RootedPropertyName name(cx, fun->atom()->asPropertyName());
+    RootedShape shape(cx);
+    RootedObject pobj(cx);
+    if (!JSObject::lookupProperty(cx, parent, name, &pobj, &shape))
         THROW();
 
-    Value rval = ObjectValue(*fun);
+    RootedValue rval(cx, ObjectValue(*fun));
 
     do {
         /* Steps 5d, 5f. */
-        if (!prop || pobj != parent) {
-            if (!parent->defineProperty(cx, name, rval,
-                                        JS_PropertyStub, JS_StrictPropertyStub, attrs))
+        if (!shape || pobj != parent) {
+            if (!JSObject::defineProperty(cx, parent, name, rval,
+                                          JS_PropertyStub, JS_StrictPropertyStub, attrs))
             {
                 THROW();
             }
@@ -359,11 +358,10 @@ stubs::DefFun(VMFrame &f, JSFunction *fun_)
 
         /* Step 5e. */
         JS_ASSERT(parent->isNative());
-        Shape *shape = reinterpret_cast<Shape *>(prop);
         if (parent->isGlobal()) {
             if (shape->configurable()) {
-                if (!parent->defineProperty(cx, name, rval,
-                                            JS_PropertyStub, JS_StrictPropertyStub, attrs))
+                if (!JSObject::defineProperty(cx, parent, name, rval,
+                                              JS_PropertyStub, JS_StrictPropertyStub, attrs))
                 {
                     THROW();
                 }
@@ -388,7 +386,7 @@ stubs::DefFun(VMFrame &f, JSFunction *fun_)
          */
 
         /* Step 5f. */
-        if (!parent->setProperty(cx, name, &rval, strict))
+        if (!JSObject::setProperty(cx, parent, parent, name, &rval, strict))
             THROW();
     } while (false);
 }
@@ -450,13 +448,13 @@ stubs::GreaterEqual(VMFrame &f)
 JSBool JS_FASTCALL
 stubs::ValueToBoolean(VMFrame &f)
 {
-    return js_ValueToBoolean(f.regs.sp[-1]);
+    return ToBoolean(f.regs.sp[-1]);
 }
 
 void JS_FASTCALL
 stubs::Not(VMFrame &f)
 {
-    JSBool b = !js_ValueToBoolean(f.regs.sp[-1]);
+    JSBool b = !ToBoolean(f.regs.sp[-1]);
     f.regs.sp[-1].setBoolean(b);
 }
 
@@ -467,8 +465,9 @@ StubEqualityOp(VMFrame &f)
     JSContext *cx = f.cx;
     FrameRegs &regs = f.regs;
 
-    Value rval = regs.sp[-1];
-    Value lval = regs.sp[-2];
+    RootedValue rval_(cx, regs.sp[-1]);
+    RootedValue lval_(cx, regs.sp[-2]);
+    Value &rval = rval_.get(), &lval = lval_.get();
 
     bool cond;
 
@@ -505,7 +504,9 @@ StubEqualityOp(VMFrame &f)
             JSObject *l = &lval.toObject(), *r = &rval.toObject();
             if (JSEqualityOp eq = l->getClass()->ext.equality) {
                 JSBool equal;
-                if (!eq(cx, RootedObject(cx, l), &rval, &equal))
+                RootedObject lobj(cx, l);
+                RootedValue r(cx, rval);
+                if (!eq(cx, lobj, r, &equal))
                     return false;
                 cond = !!equal == EQ;
             } else {
@@ -576,8 +577,9 @@ stubs::Add(VMFrame &f)
 {
     JSContext *cx = f.cx;
     FrameRegs &regs = f.regs;
-    Value rval = regs.sp[-1];
-    Value lval = regs.sp[-2];
+    RootedValue rval_(cx, regs.sp[-1]);
+    RootedValue lval_(cx, regs.sp[-2]);
+    Value &rval = rval_.get(), &lval = lval_.get();
 
     /* The string + string case is easily the hottest;  try it first. */
     bool lIsString = lval.isString();
@@ -596,7 +598,8 @@ stubs::Add(VMFrame &f)
             THROW();
         regs.sp[-2] = rval;
         regs.sp--;
-        TypeScript::MonitorUnknown(cx, f.script(), f.pc());
+        RootedScript fscript(cx, f.script());
+        TypeScript::MonitorUnknown(cx, fscript, f.pc());
     } else
 #endif
     {
@@ -622,8 +625,10 @@ stubs::Add(VMFrame &f)
                     THROW();
                 regs.sp[-1].setString(rstr);
             }
-            if (lIsObject || rIsObject)
-                TypeScript::MonitorString(cx, f.script(), f.pc());
+            if (lIsObject || rIsObject) {
+                RootedScript fscript(cx, f.script());
+                TypeScript::MonitorString(cx, fscript, f.pc());
+            }
             goto string_concat;
 
         } else {
@@ -633,7 +638,8 @@ stubs::Add(VMFrame &f)
             l += r;
             if (!regs.sp[-2].setNumber(l) &&
                 (lIsObject || rIsObject || (!lval.isDouble() && !rval.isDouble()))) {
-                TypeScript::MonitorOverflow(cx, f.script(), f.pc());
+                RootedScript fscript(cx, f.script());
+                TypeScript::MonitorOverflow(cx, fscript, f.pc());
             }
         }
     }
@@ -657,8 +663,10 @@ stubs::Sub(VMFrame &f)
     if (!ToNumber(cx, regs.sp[-2], &d1) || !ToNumber(cx, regs.sp[-1], &d2))
         THROW();
     double d = d1 - d2;
-    if (!regs.sp[-2].setNumber(d))
-        TypeScript::MonitorOverflow(cx, f.script(), f.pc());
+    if (!regs.sp[-2].setNumber(d)) {
+        RootedScript fscript(cx, f.script());
+        TypeScript::MonitorOverflow(cx, fscript, f.pc());
+    }
 }
 
 void JS_FASTCALL
@@ -670,8 +678,10 @@ stubs::Mul(VMFrame &f)
     if (!ToNumber(cx, regs.sp[-2], &d1) || !ToNumber(cx, regs.sp[-1], &d2))
         THROW();
     double d = d1 * d2;
-    if (!regs.sp[-2].setNumber(d))
-        TypeScript::MonitorOverflow(cx, f.script(), f.pc());
+    if (!regs.sp[-2].setNumber(d)) {
+        RootedScript fscript(cx, f.script());
+        TypeScript::MonitorOverflow(cx, fscript, f.pc());
+    }
 }
 
 void JS_FASTCALL
@@ -699,11 +709,14 @@ stubs::Div(VMFrame &f)
         else
             vp = &rt->positiveInfinityValue;
         regs.sp[-2] = *vp;
-        TypeScript::MonitorOverflow(cx, f.script(), f.pc());
+        RootedScript fscript(cx, f.script());
+        TypeScript::MonitorOverflow(cx, fscript, f.pc());
     } else {
         d1 /= d2;
-        if (!regs.sp[-2].setNumber(d1))
-            TypeScript::MonitorOverflow(cx, f.script(), f.pc());
+        if (!regs.sp[-2].setNumber(d1)) {
+            RootedScript fscript(cx, f.script());
+            TypeScript::MonitorOverflow(cx, fscript, f.pc());
+        }
     }
 }
 
@@ -730,21 +743,25 @@ stubs::Mod(VMFrame &f)
             d1 = js_fmod(d1, d2);
             regs.sp[-2].setDouble(d1);
         }
-        TypeScript::MonitorOverflow(cx, f.script(), f.pc());
+        RootedScript fscript(cx, f.script());
+        TypeScript::MonitorOverflow(cx, fscript, f.pc());
     }
 }
 
 void JS_FASTCALL
 stubs::DebuggerStatement(VMFrame &f, jsbytecode *pc)
 {
+    AssertCanGC();
     JSDebuggerHandler handler = f.cx->runtime->debugHooks.debuggerHandler;
     if (handler || !f.cx->compartment->getDebuggees().empty()) {
         JSTrapStatus st = JSTRAP_CONTINUE;
-        Value rval;
-        if (handler)
-            st = handler(f.cx, f.script(), pc, &rval, f.cx->runtime->debugHooks.debuggerHandlerData);
+        RootedValue rval(f.cx);
+        if (handler) {
+            RootedScript fscript(f.cx, f.script());
+            st = handler(f.cx, fscript, pc, rval.address(), f.cx->runtime->debugHooks.debuggerHandlerData);
+        }
         if (st == JSTRAP_CONTINUE)
-            st = Debugger::onDebuggerStatement(f.cx, &rval);
+            st = Debugger::onDebuggerStatement(f.cx, rval.address());
 
         switch (st) {
           case JSTRAP_THROW:
@@ -776,11 +793,71 @@ stubs::Interrupt(VMFrame &f, jsbytecode *pc)
         THROW();
 }
 
+#ifdef JS_ION
+void JS_FASTCALL
+stubs::TriggerIonCompile(VMFrame &f)
+{
+    AssertCanGC();
+    RootedScript script(f.cx, f.script());
+
+    if (ion::js_IonOptions.parallelCompilation) {
+        if (script->hasIonScript()) {
+            /*
+             * Normally TriggerIonCompile is not called if !script->ion, but the
+             * latter jump can be bypassed if DisableScriptCodeForIon wants this
+             * code to be destroyed so that the Ion code can start running.
+             */
+            ExpandInlineFrames(f.cx->compartment);
+            Recompiler::clearStackReferences(f.cx->runtime->defaultFreeOp(), script);
+            f.jit()->destroyChunk(f.cx->runtime->defaultFreeOp(), f.chunkIndex(),
+                                  /* resetUses = */ false);
+            return;
+        }
+
+        /*
+         * Also check for other possible values of script->ion, which could show up
+         * if Ion code was invalidated after calling DisableScriptCodeForIon.
+         */
+        if (!script->canIonCompile() || script->isIonCompilingOffThread())
+            return;
+
+        jsbytecode *osrPC = f.regs.pc;
+        if (*osrPC != JSOP_LOOPENTRY)
+            osrPC = NULL;
+
+        if (!ion::TestIonCompile(f.cx, script, script->function(), osrPC, f.fp()->isConstructing())) {
+            if (f.cx->isExceptionPending())
+                THROW();
+        }
+
+        return;
+    }
+
+    ExpandInlineFrames(f.cx->compartment);
+    Recompiler::clearStackReferences(f.cx->runtime->defaultFreeOp(), script);
+
+    if (ion::IsEnabled(f.cx) && f.jit()->nchunks == 1 &&
+        script->canIonCompile() && !script->hasIonScript())
+    {
+        // After returning to the interpreter, IonMonkey will try to compile
+        // this script. Don't destroy the JITChunk immediately so that Ion
+        // still has access to its ICs.
+        JS_ASSERT(!f.jit()->mustDestroyEntryChunk);
+        f.jit()->mustDestroyEntryChunk = true;
+        f.jit()->disableScriptEntry();
+        return;
+    }
+
+    f.jit()->destroyChunk(f.cx->runtime->defaultFreeOp(), f.chunkIndex(), /* resetUses = */ false);
+}
+#endif
+
 void JS_FASTCALL
 stubs::RecompileForInline(VMFrame &f)
 {
+    AutoAssertNoGC nogc;
     ExpandInlineFrames(f.cx->compartment);
-    Recompiler::clearStackReferences(f.cx->runtime->defaultFreeOp(), f.script());
+    Recompiler::clearStackReferences(f.cx->runtime->defaultFreeOp(), f.script().get(nogc));
     f.jit()->destroyChunk(f.cx->runtime->defaultFreeOp(), f.chunkIndex(), /* resetUses = */ false);
 }
 
@@ -801,8 +878,10 @@ stubs::Trap(VMFrame &f, uint32_t trapTypes)
          * setting the interruptHook to NULL.
          */
         JSInterruptHook hook = f.cx->runtime->debugHooks.interruptHook;
-        if (hook)
-            result = hook(f.cx, f.script(), f.pc(), &rval, f.cx->runtime->debugHooks.interruptHookData);
+        if (hook) {
+            RootedScript fscript(f.cx, f.script());
+            result = hook(f.cx, fscript, f.pc(), &rval, f.cx->runtime->debugHooks.interruptHookData);
+        }
 
         if (result == JSTRAP_CONTINUE)
             result = Debugger::onSingleStep(f.cx, &rval);
@@ -855,22 +934,25 @@ stubs::Neg(VMFrame &f)
     if (!ToNumber(f.cx, f.regs.sp[-1], &d))
         THROW();
     d = -d;
-    if (!f.regs.sp[-1].setNumber(d))
-        TypeScript::MonitorOverflow(f.cx, f.script(), f.pc());
+    if (!f.regs.sp[-1].setNumber(d)) {
+        RootedScript fscript(f.cx, f.script());
+        TypeScript::MonitorOverflow(f.cx, fscript, f.pc());
+    }
 }
 
 void JS_FASTCALL
 stubs::NewInitArray(VMFrame &f, uint32_t count)
 {
-    JSObject *obj = NewDenseAllocatedArray(f.cx, count);
+    Rooted<TypeObject*> type(f.cx, (TypeObject *) f.scratch);
+    RootedObject obj(f.cx, NewDenseAllocatedArray(f.cx, count));
     if (!obj)
         THROW();
 
-    TypeObject *type = (TypeObject *) f.scratch;
     if (type) {
         obj->setType(type);
     } else {
-        if (!SetInitializerObjectType(f.cx, f.script(), f.pc(), obj))
+        RootedScript fscript(f.cx, f.script());
+        if (!SetInitializerObjectType(f.cx, fscript, f.pc(), obj))
             THROW();
     }
 
@@ -881,12 +963,12 @@ void JS_FASTCALL
 stubs::NewInitObject(VMFrame &f, JSObject *baseobj)
 {
     JSContext *cx = f.cx;
-    TypeObject *type = (TypeObject *) f.scratch;
+    Rooted<TypeObject*> type(f.cx, (TypeObject *) f.scratch);
 
-    JSObject *obj;
-
+    RootedObject obj(cx);
     if (baseobj) {
-        obj = CopyInitializerObject(cx, RootedObject(cx, baseobj));
+        Rooted<JSObject*> base(cx, baseobj);
+        obj = CopyInitializerObject(cx, base);
     } else {
         gc::AllocKind kind = GuessObjectGCKind(0);
         obj = NewBuiltinClassInstance(cx, &ObjectClass, kind);
@@ -898,7 +980,8 @@ stubs::NewInitObject(VMFrame &f, JSObject *baseobj)
     if (type) {
         obj->setType(type);
     } else {
-        if (!SetInitializerObjectType(cx, f.script(), f.pc(), obj))
+        RootedScript fscript(f.cx, f.script());
+        if (!SetInitializerObjectType(cx, fscript, f.pc(), obj))
             THROW();
     }
 
@@ -912,18 +995,18 @@ stubs::InitElem(VMFrame &f, uint32_t last)
     FrameRegs &regs = f.regs;
 
     /* Pop the element's value into rval. */
-    JS_ASSERT(regs.sp - f.fp()->base() >= 3);
-    const Value &rref = regs.sp[-1];
+    JS_ASSERT(regs.stackDepth() >= 3);
+    HandleValue rref = HandleValue::fromMarkedLocation(&regs.sp[-1]);
 
     /* Find the object being initialized at top of stack. */
     const Value &lref = regs.sp[-3];
     JS_ASSERT(lref.isObject());
-    JSObject *obj = &lref.toObject();
+    RootedObject obj(cx, &lref.toObject());
 
     /* Fetch id now that we have obj. */
     RootedId id(cx);
-    const Value &idval = regs.sp[-2];
-    if (!FetchElementId(f.cx, obj, idval, id.address(), &regs.sp[-2]))
+    MutableHandleValue idval = MutableHandleValue::fromMarkedLocation(&regs.sp[-2]);
+    if (!FetchElementId(f.cx, obj, idval, id.address(), idval))
         THROW();
 
     /*
@@ -935,10 +1018,10 @@ stubs::InitElem(VMFrame &f, uint32_t last)
         JS_ASSERT(obj->isArray());
         JS_ASSERT(JSID_IS_INT(id));
         JS_ASSERT(uint32_t(JSID_TO_INT(id)) < StackSpace::ARGS_LENGTH_MAX);
-        if (last && !js_SetLengthProperty(cx, obj, (uint32_t) (JSID_TO_INT(id) + 1)))
+        if (last && !SetLengthProperty(cx, obj, (uint32_t) (JSID_TO_INT(id) + 1)))
             THROW();
     } else {
-        if (!obj->defineGeneric(cx, id, rref, NULL, NULL, JSPROP_ENUMERATE))
+        if (!JSObject::defineGeneric(cx, obj, id, rref, NULL, NULL, JSPROP_ENUMERATE))
             THROW();
     }
 }
@@ -977,8 +1060,11 @@ stubs::GetProp(VMFrame &f, PropertyName *name)
     JSContext *cx = f.cx;
     FrameRegs &regs = f.regs;
 
-    Value rval;
-    if (!GetPropertyOperation(cx, f.pc(), f.regs.sp[-1], &rval))
+    MutableHandleValue objval = MutableHandleValue::fromMarkedLocation(&f.regs.sp[-1]);
+
+    RootedValue rval(cx);
+    RootedScript fscript(cx, f.script());
+    if (!GetPropertyOperation(cx, fscript, f.pc(), objval, &rval))
         THROW();
 
     regs.sp[-1] = rval;
@@ -994,21 +1080,33 @@ stubs::GetPropNoCache(VMFrame &f, PropertyName *name)
 
     // Uncached lookups are only used for .prototype accesses at the start of constructors.
     JS_ASSERT(lval.isObject());
-    JS_ASSERT(name == cx->runtime->atomState.classPrototypeAtom);
+    JS_ASSERT(name == cx->names().classPrototype);
 
-    JSObject *obj = &lval.toObject();
-
-    Value rval;
-    if (!obj->getProperty(cx, name, &rval))
+    RootedObject obj(cx, &lval.toObject());
+    RootedValue rval(cx);
+    if (!JSObject::getProperty(cx, obj, obj, name, &rval))
         THROW();
 
     regs.sp[-1] = rval;
 }
 
 void JS_FASTCALL
+stubs::SetProp(VMFrame &f, PropertyName *name)
+{
+    JSContext *cx = f.cx;
+    HandleValue rval = HandleValue::fromMarkedLocation(&f.regs.sp[-1]);
+    HandleValue lval = HandleValue::fromMarkedLocation(&f.regs.sp[-2]);
+
+    if (!SetPropertyOperation(cx, f.pc(), lval, rval))
+        THROW();
+
+    f.regs.sp[-2] = f.regs.sp[-1];
+}
+
+void JS_FASTCALL
 stubs::Iter(VMFrame &f, uint32_t flags)
 {
-    if (!ValueToIterator(f.cx, flags, &f.regs.sp[-1]))
+    if (!ValueToIterator(f.cx, flags, MutableHandleValue::fromMarkedLocation(&f.regs.sp[-1])))
         THROW();
     JS_ASSERT(!f.regs.sp[-1].isPrimitive());
 }
@@ -1020,9 +1118,8 @@ InitPropOrMethod(VMFrame &f, PropertyName *name, JSOp op)
     FrameRegs &regs = f.regs;
 
     /* Load the property's initial value into rval. */
-    JS_ASSERT(regs.sp - f.fp()->base() >= 2);
-    Value rval;
-    rval = regs.sp[-1];
+    JS_ASSERT(regs.stackDepth() >= 2);
+    RootedValue rval(f.cx, regs.sp[-1]);
 
     /* Load the object being initialized into lval/obj. */
     RootedObject obj(cx, &regs.sp[-2].toObject());
@@ -1031,8 +1128,8 @@ InitPropOrMethod(VMFrame &f, PropertyName *name, JSOp op)
     /* Get the immediate property name into id. */
     RootedId id(cx, NameToId(name));
 
-    if (JS_UNLIKELY(name == cx->runtime->atomState.protoAtom)
-        ? !baseops::SetPropertyHelper(cx, obj, id, 0, &rval, false)
+    if (JS_UNLIKELY(name == cx->names().proto)
+        ? !baseops::SetPropertyHelper(cx, obj, obj, id, 0, &rval, false)
         : !DefineNativeProperty(cx, obj, id, rval, NULL, NULL,
                                 JSPROP_ENUMERATE, 0, 0, 0)) {
         THROW();
@@ -1046,27 +1143,27 @@ stubs::InitProp(VMFrame &f, PropertyName *name)
 }
 
 void JS_FASTCALL
-stubs::IterNext(VMFrame &f, int32_t offset)
+stubs::IterNext(VMFrame &f)
 {
-    JS_ASSERT(f.regs.sp - offset >= f.fp()->base());
-    JS_ASSERT(f.regs.sp[-offset].isObject());
+    JS_ASSERT(f.regs.stackDepth() >= 1);
+    JS_ASSERT(f.regs.sp[-1].isObject());
 
-    JSObject *iterobj = &f.regs.sp[-offset].toObject();
+    RootedObject iterobj(f.cx, &f.regs.sp[-1].toObject());
     f.regs.sp[0].setNull();
     f.regs.sp++;
-    if (!js_IteratorNext(f.cx, iterobj, &f.regs.sp[-1]))
+    if (!js_IteratorNext(f.cx, iterobj, MutableHandleValue::fromMarkedLocation(&f.regs.sp[-1])))
         THROW();
 }
 
 JSBool JS_FASTCALL
 stubs::IterMore(VMFrame &f)
 {
-    JS_ASSERT(f.regs.sp - 1 >= f.fp()->base());
+    JS_ASSERT(f.regs.stackDepth() >= 1);
     JS_ASSERT(f.regs.sp[-1].isObject());
 
-    Value v;
-    JSObject *iterobj = &f.regs.sp[-1].toObject();
-    if (!js_IteratorMore(f.cx, RootedObject(f.cx, iterobj), &v))
+    RootedValue v(f.cx);
+    Rooted<JSObject*> iterobj(f.cx, &f.regs.sp[-1].toObject());
+    if (!js_IteratorMore(f.cx, iterobj, &v))
         THROWV(JS_FALSE);
 
     return v.toBoolean();
@@ -1075,8 +1172,9 @@ stubs::IterMore(VMFrame &f)
 void JS_FASTCALL
 stubs::EndIter(VMFrame &f)
 {
-    JS_ASSERT(f.regs.sp - 1 >= f.fp()->base());
-    if (!CloseIterator(f.cx, &f.regs.sp[-1].toObject()))
+    JS_ASSERT(f.regs.stackDepth() >= 1);
+    RootedObject obj(f.cx, &f.regs.sp[-1].toObject());
+    if (!CloseIterator(f.cx, obj))
         THROW();
 }
 
@@ -1085,7 +1183,7 @@ stubs::TypeOf(VMFrame &f)
 {
     const Value &ref = f.regs.sp[-1];
     JSType type = JS_TypeOfValue(f.cx, ref);
-    return f.cx->runtime->atomState.typeAtoms[type];
+    return TypeName(type, f.cx);
 }
 
 void JS_FASTCALL
@@ -1125,7 +1223,7 @@ stubs::Throw(VMFrame &f)
 void JS_FASTCALL
 stubs::Arguments(VMFrame &f)
 {
-    ArgumentsObject *obj = ArgumentsObject::create(f.cx, f.fp());
+    ArgumentsObject *obj = ArgumentsObject::createExpected(f.cx, f.fp());
     if (!obj)
         THROW();
     f.regs.sp[0] = ObjectValue(*obj);
@@ -1137,16 +1235,16 @@ stubs::InstanceOf(VMFrame &f)
     JSContext *cx = f.cx;
     FrameRegs &regs = f.regs;
 
-    const Value &rref = regs.sp[-1];
+    RootedValue rref(cx, regs.sp[-1]);
     if (rref.isPrimitive()) {
         js_ReportValueError(cx, JSMSG_BAD_INSTANCEOF_RHS,
-                            -1, rref, NULL);
+                            -1, rref, NullPtr());
         THROWV(JS_FALSE);
     }
     RootedObject obj(cx, &rref.toObject());
-    const Value &lref = regs.sp[-2];
+    MutableHandleValue lref = MutableHandleValue::fromMarkedLocation(&regs.sp[-2]);
     JSBool cond = JS_FALSE;
-    if (!HasInstance(cx, obj, &lref, &cond))
+    if (!HasInstance(cx, obj, lref, &cond))
         THROWV(JS_FALSE);
     f.regs.sp[-2].setBoolean(cond);
     return cond;
@@ -1162,38 +1260,37 @@ stubs::FastInstanceOf(VMFrame &f)
          * Throw a runtime error if instanceof is called on a function that
          * has a non-object as its .prototype value.
          */
-        js_ReportValueError(f.cx, JSMSG_BAD_PROTOTYPE, -1, f.regs.sp[-2], NULL);
+        RootedValue val(f.cx, f.regs.sp[-2]);
+        js_ReportValueError(f.cx, JSMSG_BAD_PROTOTYPE, -1, val, NullPtr());
         THROW();
     }
 
-    f.regs.sp[-3].setBoolean(js_IsDelegate(f.cx, &lref.toObject(), f.regs.sp[-3]));
+    bool isDelegate;
+    RootedObject obj(f.cx, &lref.toObject());
+    if (!IsDelegate(f.cx, obj, f.regs.sp[-3], &isDelegate))
+        THROW();
+    f.regs.sp[-3].setBoolean(isDelegate);
 }
 
 void JS_FASTCALL
 stubs::EnterBlock(VMFrame &f, JSObject *obj)
 {
     FrameRegs &regs = f.regs;
-    StackFrame *fp = f.fp();
     JS_ASSERT(!f.regs.inlined());
 
     StaticBlockObject &blockObj = obj->asStaticBlock();
-    if (!fp->pushBlock(f.cx, blockObj))
-        THROW();
 
     if (*regs.pc == JSOP_ENTERBLOCK) {
-        JS_ASSERT(fp->base() + blockObj.stackDepth() == regs.sp);
+        JS_ASSERT(regs.stackDepth() == blockObj.stackDepth());
+        JS_ASSERT(regs.stackDepth() + blockObj.slotCount() <= f.fp()->script()->nslots);
         Value *vp = regs.sp + blockObj.slotCount();
-        JS_ASSERT(regs.sp < vp);
-        JS_ASSERT(vp <= fp->slots() + fp->script()->nslots);
         SetValueRangeToUndefined(regs.sp, vp);
         regs.sp = vp;
-    } else if (*regs.pc == JSOP_ENTERLET0) {
-        JS_ASSERT(regs.fp()->base() + blockObj.stackDepth() + blockObj.slotCount()
-                  == regs.sp);
-    } else if (*regs.pc == JSOP_ENTERLET1) {
-        JS_ASSERT(regs.fp()->base() + blockObj.stackDepth() + blockObj.slotCount()
-                  == regs.sp - 1);
     }
+
+    /* Clone block iff there are any closed-over variables. */
+    if (!regs.fp()->pushBlock(f.cx, blockObj))
+        THROW();
 }
 
 void JS_FASTCALL
@@ -1226,8 +1323,9 @@ FindNativeCode(VMFrame &f, jsbytecode *target)
 void * JS_FASTCALL
 stubs::LookupSwitch(VMFrame &f, jsbytecode *pc)
 {
+    AutoAssertNoGC nogc;
     jsbytecode *jpc = pc;
-    JSScript *script = f.fp()->script();
+    JSScript *script = f.fp()->script().get(nogc);
 
     /* This is correct because the compiler adjusts the stack beforehand. */
     Value lval = f.regs.sp[-1];
@@ -1332,8 +1430,10 @@ stubs::Pos(VMFrame &f)
 {
     if (!ToNumber(f.cx, &f.regs.sp[-1]))
         THROW();
-    if (!f.regs.sp[-1].isInt32())
-        TypeScript::MonitorOverflow(f.cx, f.script(), f.pc());
+    if (!f.regs.sp[-1].isInt32()) {
+        RootedScript fscript(f.cx, f.script());
+        TypeScript::MonitorOverflow(f.cx, fscript, f.pc());
+    }
 }
 
 void JS_FASTCALL
@@ -1342,9 +1442,9 @@ stubs::DelName(VMFrame &f, PropertyName *name_)
     RootedObject scopeObj(f.cx, f.cx->stack.currentScriptedScopeChain());
     RootedPropertyName name(f.cx, name_);
 
-    JSObject *obj, *obj2;
-    JSProperty *prop;
-    if (!FindProperty(f.cx, name, scopeObj, &obj, &obj2, &prop))
+    RootedObject obj(f.cx), obj2(f.cx);
+    RootedShape prop(f.cx);
+    if (!LookupName(f.cx, name, scopeObj, &obj, &obj2, &prop))
         THROW();
 
     /* Strict mode code should never contain JSOP_DELNAME opcodes. */
@@ -1354,7 +1454,7 @@ stubs::DelName(VMFrame &f, PropertyName *name_)
     f.regs.sp++;
     f.regs.sp[-1] = BooleanValue(true);
     if (prop) {
-        if (!obj->deleteProperty(f.cx, name, &f.regs.sp[-1], false))
+        if (!JSObject::deleteProperty(f.cx, obj, name, MutableHandleValue::fromMarkedLocation(&f.regs.sp[-1]), false))
             THROW();
     }
 }
@@ -1366,12 +1466,13 @@ stubs::DelProp(VMFrame &f, PropertyName *name_)
     JSContext *cx = f.cx;
     RootedPropertyName name(cx, name_);
 
-    JSObject *obj = ValueToObject(cx, f.regs.sp[-1]);
+    RootedValue objval(cx, f.regs.sp[-1]);
+    RootedObject obj(cx, ToObjectFromStack(cx, objval));
     if (!obj)
         THROW();
 
-    Value rval;
-    if (!obj->deleteProperty(cx, name, &rval, strict))
+    RootedValue rval(cx);
+    if (!JSObject::deleteProperty(cx, obj, name, &rval, strict))
         THROW();
 
     f.regs.sp[-1] = rval;
@@ -1386,14 +1487,15 @@ stubs::DelElem(VMFrame &f)
 {
     JSContext *cx = f.cx;
 
-    JSObject *obj = ValueToObject(cx, f.regs.sp[-2]);
+    RootedValue objval(cx, f.regs.sp[-2]);
+    RootedObject obj(cx, ToObjectFromStack(cx, objval));
     if (!obj)
         THROW();
 
     const Value &propval = f.regs.sp[-1];
-    Value &rval = f.regs.sp[-2];
+    MutableHandleValue rval = MutableHandleValue::fromMarkedLocation(&f.regs.sp[-2]);
 
-    if (!obj->deleteByValue(cx, propval, &rval, strict))
+    if (!JSObject::deleteByValue(cx, obj, propval, rval, strict))
         THROW();
 }
 
@@ -1406,9 +1508,10 @@ stubs::DefVarOrConst(VMFrame &f, PropertyName *dn)
     if (JSOp(*f.regs.pc) == JSOP_DEFCONST)
         attrs |= JSPROP_READONLY;
 
-    JSObject &obj = f.fp()->varObj();
+    Rooted<JSObject*> varobj(f.cx, &f.fp()->varObj());
+    RootedPropertyName name(f.cx, dn);
 
-    if (!DefVarOrConstOperation(f.cx, RootedObject(f.cx, &obj), dn, attrs))
+    if (!DefVarOrConstOperation(f.cx, varobj, name, attrs))
         THROW();
 }
 
@@ -1417,11 +1520,11 @@ stubs::SetConst(VMFrame &f, PropertyName *name)
 {
     JSContext *cx = f.cx;
 
-    JSObject *obj = &f.fp()->varObj();
-    const Value &ref = f.regs.sp[-1];
+    RootedObject obj(cx, &f.fp()->varObj());
+    HandleValue ref = HandleValue::fromMarkedLocation(&f.regs.sp[-1]);
 
-    if (!obj->defineProperty(cx, name, ref, JS_PropertyStub, JS_StrictPropertyStub,
-                             JSPROP_ENUMERATE | JSPROP_PERMANENT | JSPROP_READONLY))
+    if (!JSObject::defineProperty(cx, obj, name, ref, JS_PropertyStub, JS_StrictPropertyStub,
+                                  JSPROP_ENUMERATE | JSPROP_PERMANENT | JSPROP_READONLY))
     {
         THROW();
     }
@@ -1434,18 +1537,22 @@ stubs::In(VMFrame &f)
 
     const Value &rref = f.regs.sp[-1];
     if (!rref.isObject()) {
-        js_ReportValueError(cx, JSMSG_IN_NOT_OBJECT, -1, rref, NULL);
+        RootedValue val(cx, rref);
+        js_ReportValueError(cx, JSMSG_IN_NOT_OBJECT, -1, val, NullPtr());
         THROWV(JS_FALSE);
     }
 
-    JSObject *obj = &rref.toObject();
+    RootedObject obj(cx, &rref.toObject());
     RootedId id(cx);
-    if (!FetchElementId(f.cx, obj, f.regs.sp[-2], id.address(), &f.regs.sp[-2]))
+    if (!FetchElementId(f.cx, obj, f.regs.sp[-2], id.address(),
+                        MutableHandleValue::fromMarkedLocation(&f.regs.sp[-2])))
+    {
         THROWV(JS_FALSE);
+    }
 
-    JSObject *obj2;
-    JSProperty *prop;
-    if (!obj->lookupGeneric(cx, id, &obj2, &prop))
+    RootedObject obj2(cx);
+    RootedShape prop(cx);
+    if (!JSObject::lookupGeneric(cx, obj, id, &obj2, &prop))
         THROWV(JS_FALSE);
 
     return !!prop;
@@ -1469,12 +1576,13 @@ stubs::TypeBarrierHelper(VMFrame &f, uint32_t which)
      * script have been destroyed, as we will reanalyze and prune type barriers
      * as they are regenerated.
      */
-    if (f.script()->hasAnalysis() && f.script()->analysis()->ranInference()) {
+    RootedScript fscript(f.cx, f.script());
+    if (fscript->hasAnalysis() && fscript->analysis()->ranInference()) {
         AutoEnterTypeInference enter(f.cx);
-        f.script()->analysis()->breakTypeBarriers(f.cx, f.pc() - f.script()->code, false);
+        fscript->analysis()->breakTypeBarriers(f.cx, f.pc() - fscript->code, false);
     }
 
-    TypeScript::Monitor(f.cx, f.script(), f.pc(), result);
+    TypeScript::Monitor(f.cx, fscript, f.pc(), result);
 }
 
 void JS_FASTCALL
@@ -1482,12 +1590,13 @@ stubs::StubTypeHelper(VMFrame &f, int32_t which)
 {
     const Value &result = f.regs.sp[which];
 
-    if (f.script()->hasAnalysis() && f.script()->analysis()->ranInference()) {
+    RootedScript fscript(f.cx, f.script());
+    if (fscript->hasAnalysis() && fscript->analysis()->ranInference()) {
         AutoEnterTypeInference enter(f.cx);
-        f.script()->analysis()->breakTypeBarriers(f.cx, f.pc() - f.script()->code, false);
+        fscript->analysis()->breakTypeBarriers(f.cx, f.pc() - fscript->code, false);
     }
 
-    TypeScript::Monitor(f.cx, f.script(), f.pc(), result);
+    TypeScript::Monitor(f.cx, fscript, f.pc(), result);
 }
 
 /*
@@ -1497,14 +1606,16 @@ stubs::StubTypeHelper(VMFrame &f, int32_t which)
 void JS_FASTCALL
 stubs::TypeBarrierReturn(VMFrame &f, Value *vp)
 {
-    TypeScript::Monitor(f.cx, f.script(), f.pc(), vp[0]);
+    RootedScript fscript(f.cx, f.script());
+    TypeScript::Monitor(f.cx, fscript, f.pc(), vp[0]);
 }
 
 void JS_FASTCALL
 stubs::NegZeroHelper(VMFrame &f)
 {
     f.regs.sp[-1].setDouble(-0.0);
-    TypeScript::MonitorOverflow(f.cx, f.script(), f.pc());
+    RootedScript fscript(f.cx, f.script());
+    TypeScript::MonitorOverflow(f.cx, fscript, f.pc());
 }
 
 void JS_FASTCALL
@@ -1512,7 +1623,7 @@ stubs::CheckArgumentTypes(VMFrame &f)
 {
     StackFrame *fp = f.fp();
     JSFunction *fun = fp->fun();
-    JSScript *script = fun->script();
+    RootedScript fscript(f.cx, fun->script());
     RecompilationMonitor monitor(f.cx);
 
     {
@@ -1520,9 +1631,9 @@ stubs::CheckArgumentTypes(VMFrame &f)
         types::AutoEnterTypeInference enter(f.cx);
 
         if (!f.fp()->isConstructing())
-            TypeScript::SetThis(f.cx, script, fp->thisValue());
+            TypeScript::SetThis(f.cx, fscript, fp->thisValue());
         for (unsigned i = 0; i < fun->nargs; i++)
-            TypeScript::SetArgument(f.cx, script, i, fp->formalArg(i));
+            TypeScript::SetArgument(f.cx, fscript, i, fp->unaliasedFormal(i, DONT_CHECK_ALIASING));
     }
 
     if (monitor.recompiled())
@@ -1537,9 +1648,10 @@ stubs::CheckArgumentTypes(VMFrame &f)
 void JS_FASTCALL
 stubs::AssertArgumentTypes(VMFrame &f)
 {
+    AutoAssertNoGC nogc;
     StackFrame *fp = f.fp();
     JSFunction *fun = fp->fun();
-    JSScript *script = fun->script();
+    RawScript script = fun->script().get(nogc);
 
     /*
      * Don't check the type of 'this' for constructor frames, the 'this' value
@@ -1552,7 +1664,7 @@ stubs::AssertArgumentTypes(VMFrame &f)
     }
 
     for (unsigned i = 0; i < fun->nargs; i++) {
-        Type type = GetValueType(f.cx, fp->formalArg(i));
+        Type type = GetValueType(f.cx, fp->unaliasedFormal(i, DONT_CHECK_ALIASING));
         if (!TypeScript::ArgTypes(script, i)->hasType(type))
             TypeFailure(f.cx, "Missing type for arg %d: %s", i, TypeString(type));
     }
@@ -1569,6 +1681,7 @@ void JS_FASTCALL stubs::MissedBoundsCheckHead(VMFrame &f) {}
 void * JS_FASTCALL
 stubs::InvariantFailure(VMFrame &f, void *rval)
 {
+    AutoAssertNoGC nogc;
     /*
      * Patch this call to the return site of the call triggering the invariant
      * failure (or a MissedBoundsCheck* function if the failure occurred on
@@ -1583,7 +1696,7 @@ stubs::InvariantFailure(VMFrame &f, void *rval)
     *frameAddr = repatchCode;
 
     /* Recompile the outermost script, and don't hoist any bounds checks. */
-    JSScript *script = f.fp()->script();
+    RawScript script = f.fp()->script().get(nogc);
     JS_ASSERT(!script->failedBoundsCheck);
     script->failedBoundsCheck = true;
 
@@ -1609,16 +1722,23 @@ stubs::Exception(VMFrame &f)
 }
 
 void JS_FASTCALL
-stubs::FunctionFramePrologue(VMFrame &f)
+stubs::StrictEvalPrologue(VMFrame &f)
 {
-    if (!f.fp()->functionPrologue(f.cx))
+    if (!f.fp()->jitStrictEvalPrologue(f.cx))
         THROW();
 }
 
 void JS_FASTCALL
-stubs::FunctionFrameEpilogue(VMFrame &f)
+stubs::HeavyweightFunctionPrologue(VMFrame &f)
 {
-    f.fp()->functionEpilogue(f.cx);
+    if (!f.fp()->jitHeavyweightFunctionPrologue(f.cx))
+        THROW();
+}
+
+void JS_FASTCALL
+stubs::Epilogue(VMFrame &f)
+{
+    f.fp()->epilogue(f.cx);
 }
 
 void JS_FASTCALL
@@ -1626,17 +1746,15 @@ stubs::AnyFrameEpilogue(VMFrame &f)
 {
     /*
      * On the normal execution path, emitReturn calls ScriptDebugEpilogue
-     * and inlines ScriptEpilogue. This function implements forced early
+     * and inlines epilogue. This function implements forced early
      * returns, so it must have the same effect.
      */
     bool ok = true;
     if (f.cx->compartment->debugMode())
         ok = js::ScriptDebugEpilogue(f.cx, f.fp(), ok);
-    ok = ScriptEpilogue(f.cx, f.fp(), ok);
+    f.fp()->epilogue(f.cx);
     if (!ok)
         THROW();
-    if (f.fp()->isNonEvalFunctionFrame())
-        f.fp()->functionEpilogue(f.cx);
 }
 
 template <bool Clamped>
@@ -1698,12 +1816,21 @@ stubs::ConvertToTypedFloat(JSContext *cx, Value *vp)
 void JS_FASTCALL
 stubs::WriteBarrier(VMFrame &f, Value *addr)
 {
+#ifdef JS_GC_ZEAL
+    if (!f.cx->compartment->needsBarrier())
+        return;
+#endif
     gc::MarkValueUnbarriered(f.cx->compartment->barrierTracer(), addr, "write barrier");
 }
 
 void JS_FASTCALL
 stubs::GCThingWriteBarrier(VMFrame &f, Value *addr)
 {
+#ifdef JS_GC_ZEAL
+    if (!f.cx->compartment->needsBarrier())
+        return;
+#endif
+
     gc::Cell *cell = (gc::Cell *)addr->toGCThing();
     if (cell && !cell->isMarked())
         gc::MarkValueUnbarriered(f.cx->compartment->barrierTracer(), addr, "write barrier");

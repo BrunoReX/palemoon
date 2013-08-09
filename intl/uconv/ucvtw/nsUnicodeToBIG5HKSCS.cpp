@@ -11,8 +11,8 @@
 // Global functions and data [declaration]
 
 
-static const PRUint16 *g_Big5HKSCSMappingTable[] = {
-  g_ASCIIMapping,
+static const uint16_t *g_Big5HKSCSMappingTable[] = {
+  g_ASCIIMappingTable,
   g_ufBig5Mapping,
   g_ufBig5HKSCSMapping
 };

@@ -9,13 +9,10 @@
 #include "nsTArray.h"
 #include "nsIStringEnumerator.h"
 #include "nsAutoPtr.h"
-#include <dlfcn.h>
 
 #include <gio/gio.h>
 #include <gtk/gtk.h>
 
-
-typedef const char* (*get_commandline_t)(GAppInfo*);
 
 char *
 get_content_type_from_mime_type(const char *mimeType)
@@ -71,29 +68,15 @@ nsGIOMimeApp::GetName(nsACString& aName)
 NS_IMETHODIMP
 nsGIOMimeApp::GetCommand(nsACString& aCommand)
 {
-  get_commandline_t g_app_info_get_commandline_ptr;
-
-  void *libHandle = dlopen("libgio-2.0.so.0", RTLD_LAZY);
-  if (!libHandle) {
+  const char *cmd = g_app_info_get_commandline(mApp);
+  if (!cmd)
     return NS_ERROR_FAILURE;
-  }
-  dlerror(); /* clear any existing error */
-  g_app_info_get_commandline_ptr =
-    (get_commandline_t) dlsym(libHandle, "g_app_info_get_commandline");
-  if (dlerror() == NULL) {
-    const char *cmd = g_app_info_get_commandline_ptr(mApp);
-    if (!cmd) {
-      dlclose(libHandle);
-      return NS_ERROR_FAILURE;
-    }
-    aCommand.Assign(cmd);
-  }
-  dlclose(libHandle);
+  aCommand.Assign(cmd);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsGIOMimeApp::GetExpectsURIs(PRInt32* aExpects)
+nsGIOMimeApp::GetExpectsURIs(int32_t* aExpects)
 {
   *aExpects = g_app_info_supports_uris(mApp);
   return NS_OK;
@@ -128,7 +111,7 @@ public:
   NS_DECL_NSIUTF8STRINGENUMERATOR
 
   nsTArray<nsCString> mStrings;
-  PRUint32            mIndex;
+  uint32_t            mIndex;
 };
 
 NS_IMPL_ISUPPORTS1(GIOUTF8StringEnumerator, nsIUTF8StringEnumerator)
@@ -154,7 +137,7 @@ GIOUTF8StringEnumerator::GetNext(nsACString& aResult)
 NS_IMETHODIMP
 nsGIOMimeApp::GetSupportedURISchemes(nsIUTF8StringEnumerator** aSchemes)
 {
-  *aSchemes = nsnull;
+  *aSchemes = nullptr;
 
   nsRefPtr<GIOUTF8StringEnumerator> array = new GIOUTF8StringEnumerator();
   NS_ENSURE_TRUE(array, NS_ERROR_OUT_OF_MEMORY);
@@ -249,7 +232,7 @@ NS_IMETHODIMP
 nsGIOMimeApp::SetAsDefaultForURIScheme(nsACString const& aURIScheme)
 {
   GError *error = NULL;
-  nsCAutoString contentType("x-scheme-handler/");
+  nsAutoCString contentType("x-scheme-handler/");
   contentType.Append(aURIScheme);
 
   g_app_info_set_as_default_for_type(mApp,
@@ -272,7 +255,7 @@ NS_IMETHODIMP
 nsGIOService::GetMimeTypeFromExtension(const nsACString& aExtension,
                                              nsACString& aMimeType)
 {
-  nsCAutoString fileExtToUse("file.");
+  nsAutoCString fileExtToUse("file.");
   fileExtToUse.Append(aExtension);
 
   gboolean result_uncertain;
@@ -302,7 +285,7 @@ NS_IMETHODIMP
 nsGIOService::GetAppForURIScheme(const nsACString& aURIScheme,
                                  nsIGIOMimeApp** aApp)
 {
-  *aApp = nsnull;
+  *aApp = nullptr;
 
   GAppInfo *app_info = g_app_info_get_default_for_uri_scheme(
                           PromiseFlatCString(aURIScheme).get());
@@ -319,7 +302,7 @@ NS_IMETHODIMP
 nsGIOService::GetAppForMimeType(const nsACString& aMimeType,
                                 nsIGIOMimeApp**   aApp)
 {
-  *aApp = nsnull;
+  *aApp = nullptr;
   char *content_type =
     get_content_type_from_mime_type(PromiseFlatCString(aMimeType).get());
   if (!content_type)
@@ -362,7 +345,7 @@ nsGIOService::GetDescriptionForMimeType(const nsACString& aMimeType,
 NS_IMETHODIMP
 nsGIOService::ShowURI(nsIURI* aURI)
 {
-  nsCAutoString spec;
+  nsAutoCString spec;
   aURI->GetSpec(spec);
   GError *error = NULL;
   if (!g_app_info_launch_default_for_uri(spec.get(), NULL, &error)) {
@@ -408,7 +391,7 @@ nsGIOService::CreateAppFromCommand(nsACString const& cmd,
                                    nsIGIOMimeApp**   appInfo)
 {
   GError *error = NULL;
-  *appInfo = nsnull;
+  *appInfo = nullptr;
 
   GAppInfo *app_info = NULL, *app_info_from_list = NULL;
   GList *apps = g_app_info_get_all();

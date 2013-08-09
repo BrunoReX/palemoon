@@ -10,6 +10,7 @@
 #include "skia/SkCanvas.h"
 #include "skia/SkDashPathEffect.h"
 #include "mozilla/Assertions.h"
+#include <vector>
 
 namespace mozilla {
 namespace gfx {
@@ -76,7 +77,7 @@ JoinStyleToSkiaJoin(JoinStyle aJoin)
 static inline bool
 StrokeOptionsToPaint(SkPaint& aPaint, const StrokeOptions &aOptions)
 {
-  // Skia rendewrs 0 width strokes with a width of 1 (and in black),
+  // Skia renders 0 width strokes with a width of 1 (and in black),
   // so we should just skip the draw call entirely.
   if (!aOptions.mLineWidth) {
     return false;
@@ -111,6 +112,19 @@ StrokeOptionsToPaint(SkPaint& aPaint, const StrokeOptions &aOptions)
 
   aPaint.setStyle(SkPaint::kStroke_Style);
   return true;
+}
+
+static inline void
+ConvertBGRXToBGRA(unsigned char* aData, const IntSize &aSize, int32_t aStride)
+{
+    uint32_t* pixel = reinterpret_cast<uint32_t*>(aData);
+
+    for (int row = 0; row < aSize.height; ++row) {
+        for (int column = 0; column < aSize.width; ++column) {
+            pixel[column] |= 0xFF000000;
+        }
+        pixel += (aStride/4);
+    }
 }
 
 }

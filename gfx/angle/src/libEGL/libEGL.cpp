@@ -182,7 +182,7 @@ const char *__stdcall eglQueryString(EGLDisplay dpy, EGLint name)
           case EGL_VENDOR:
             return success("Google Inc.");
           case EGL_VERSION:
-            return success("1.4 (ANGLE "VERSION_STRING")");
+            return success("1.4 (ANGLE " VERSION_STRING ")");
         }
 
         return error(EGL_BAD_PARAMETER, (const char*)NULL);
@@ -1108,6 +1108,11 @@ EGLBoolean __stdcall eglPostSubBufferNV(EGLDisplay dpy, EGLSurface surface, EGLi
 
     try
     {
+        if (x < 0 || y < 0 || width < 0 || height < 0)
+        {
+            return error(EGL_BAD_PARAMETER, EGL_FALSE);
+        }
+
         egl::Display *display = static_cast<egl::Display*>(dpy);
         egl::Surface *eglSurface = static_cast<egl::Surface*>(surface);
 

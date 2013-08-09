@@ -45,7 +45,7 @@ nsMathMLmmultiscriptsFrame::TransmitAutomaticData()
   // The TeXbook (Ch 17. p.141) says the superscript inherits the compression
   // while the subscript is compressed. So here we collect subscripts and set
   // the compression flag in them.
-  PRInt32 count = 0;
+  int32_t count = 0;
   bool isSubScript = false;
   nsAutoTArray<nsIFrame*, 8> subScriptFrames;
   nsIFrame* childFrame = mFrames.FirstChild();
@@ -70,7 +70,7 @@ nsMathMLmmultiscriptsFrame::TransmitAutomaticData()
     count++;
     childFrame = childFrame->GetNextSibling();
   }
-  for (PRInt32 i = subScriptFrames.Length() - 1; i >= 0; i--) {
+  for (int32_t i = subScriptFrames.Length() - 1; i >= 0; i--) {
     childFrame = subScriptFrames[i];
     PropagatePresentationDataFor(childFrame,
       NS_MATHML_COMPRESSED, NS_MATHML_COMPRESSED);
@@ -221,20 +221,20 @@ nsMathMLmmultiscriptsFrame::Place(nsRenderingContext& aRenderingContext,
   ////////////////////////////////////
 
   nscoord width = 0, prescriptsWidth = 0, rightBearing = 0;
-  nsIFrame* mprescriptsFrame = nsnull; // frame of <mprescripts/>, if there.
+  nsIFrame* mprescriptsFrame = nullptr; // frame of <mprescripts/>, if there.
   bool isSubScript = false;
   nscoord minSubScriptShift = 0, minSupScriptShift = 0;
   nscoord trySubScriptShift = subScriptShift;
   nscoord trySupScriptShift = supScriptShift;
   nscoord maxSubScriptShift = subScriptShift;
   nscoord maxSupScriptShift = supScriptShift;
-  PRInt32 count = 0;
+  int32_t count = 0;
   nsHTMLReflowMetrics baseSize;
   nsHTMLReflowMetrics subScriptSize;
   nsHTMLReflowMetrics supScriptSize;
-  nsIFrame* baseFrame = nsnull;
-  nsIFrame* subScriptFrame = nsnull;
-  nsIFrame* supScriptFrame = nsnull;
+  nsIFrame* baseFrame = nullptr;
+  nsIFrame* subScriptFrame = nullptr;
+  nsIFrame* supScriptFrame = nullptr;
 
   bool firstPrescriptsPair = false;
   nsBoundingMetrics bmBase, bmSubScript, bmSupScript;
@@ -400,7 +400,7 @@ nsMathMLmmultiscriptsFrame::Place(nsRenderingContext& aRenderingContext,
         // place the base ...
         childFrame = baseFrame;
         dy = aDesiredSize.ascent - baseSize.ascent;
-        FinishReflowChild (baseFrame, PresContext(), nsnull, baseSize,
+        FinishReflowChild (baseFrame, PresContext(), nullptr, baseSize,
                            MirrorIfRTL(aDesiredSize.width,
                                        baseSize.width,
                                        dx),
@@ -427,7 +427,7 @@ nsMathMLmmultiscriptsFrame::Place(nsRenderingContext& aRenderingContext,
 
           dy = aDesiredSize.ascent - subScriptSize.ascent +
             maxSubScriptShift;
-          FinishReflowChild (subScriptFrame, PresContext(), nsnull,
+          FinishReflowChild (subScriptFrame, PresContext(), nullptr,
                              subScriptSize,
                              MirrorIfRTL(aDesiredSize.width,
                                          subScriptSize.width,
@@ -436,7 +436,7 @@ nsMathMLmmultiscriptsFrame::Place(nsRenderingContext& aRenderingContext,
 
           dy = aDesiredSize.ascent - supScriptSize.ascent -
             maxSupScriptShift;
-          FinishReflowChild (supScriptFrame, PresContext(), nsnull,
+          FinishReflowChild (supScriptFrame, PresContext(), nullptr,
                              supScriptSize,
                              MirrorIfRTL(aDesiredSize.width,
                                          supScriptSize.width,

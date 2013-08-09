@@ -36,15 +36,15 @@ PRUnichar  medbuffer[MEDBUFSIZE];
 
 int main(int argc, const char** argv)
 {
-  nsIUnicodeEncoder* encoder = nsnull;
-  nsIUnicodeDecoder* decoder = nsnull;
+  nsIUnicodeEncoder* encoder = nullptr;
+  nsIUnicodeDecoder* decoder = nullptr;
   FILE* fin = 0;
   FILE* fout = 0;
   FILE* infile = 0;
   FILE* outfile = 0;
   nsresult res= NS_OK;
 
-  NS_InitXPCOM2(nsnull, nsnull, nsnull);
+  NS_InitXPCOM2(nullptr, nullptr, nullptr);
 
   // get ccMain;
   nsCOMPtr<nsICharsetConverterManager> ccMain =
@@ -63,7 +63,7 @@ int main(int argc, const char** argv)
       if(strcmp(argv[i], "-f") == 0)
       {
         // User has specified the charset to convert from
-        nsCAutoString str;
+        nsAutoCString str;
 
         // First check if a charset alias was given, 
         // and convert to the canonical name
@@ -88,7 +88,7 @@ int main(int argc, const char** argv)
       if(strcmp(argv[i], "-t") == 0)
       {
         // User has specified which charset to convert to
-        nsCAutoString str;
+        nsAutoCString str;
 
         // First check if a charset alias was given, 
         // and convert to the canonical name
@@ -115,7 +115,7 @@ int main(int argc, const char** argv)
       // The user has specified an input file 
       // if we have more than four arguments
       fin = infile = fopen(argv[5], "rb");
-      if(NULL == infile) 
+      if(!infile) 
       {  
         usage();
         fprintf(stderr,"cannot open input file %s\n", argv[5]);
@@ -127,7 +127,7 @@ int main(int argc, const char** argv)
         // The user has specified an output file
         // if we have more than four arguments
         fout = outfile = fopen(argv[6], "ab");
-        if(NULL == outfile) 
+        if(!outfile) 
         {  
           usage();
           fprintf(stderr,"cannot open output file %s\n", argv[6]);
@@ -145,7 +145,7 @@ int main(int argc, const char** argv)
       fout = stdout;
     }
     
-    PRInt32 insize,medsize,outsize;
+    int32_t insize,medsize,outsize;
     while((insize=fread(inbuffer, 1,INBUFSIZE, fin)) > 0)
     {
       medsize=MEDBUFSIZE;

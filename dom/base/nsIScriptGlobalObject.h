@@ -12,7 +12,6 @@
 #include "nsIProgrammingLanguage.h"
 
 class nsIScriptContext;
-class nsIDOMDocument;
 class nsIDOMEvent;
 class nsIScriptGlobalObjectOwner;
 class nsIArray;
@@ -20,21 +19,14 @@ class nsScriptErrorEvent;
 class nsIScriptGlobalObject;
 struct JSObject; // until we finally remove GetGlobalJSObject...
 
+// XXXbz can we just remove all this script type id stuff?
 // Some helpers for working with integer "script type IDs", and specifically
 // for working with arrays of such objects. For example, it is common for
 // implementations supporting multiple script languages to keep each
 // language's nsIScriptContext in an array indexed by the language ID.
 
-// Implementation note: We always ignore nsIProgrammingLanguage::UNKNOWN and
-// nsIProgrammingLanguage::CPLUSPLUS - this gives javascript slot 0.  An
-// attempted micro-optimization tried to avoid us going all the way to 
-// nsIProgrammingLanguage::MAX; however:
-// * Someone is reportedly working on a PHP impl - that has value 9
-// * nsGenericElement therefore allows 4 bits for the value.
-// So there is no good reason for us to be more restrictive again...
-
 #define NS_STID_FIRST nsIProgrammingLanguage::JAVASCRIPT
-// like nsGenericElement, only 4 bits worth is valid...
+// only 4 bits worth is valid...
 #define NS_STID_LAST (nsIProgrammingLanguage::MAX > 0x000FU ? \
                       0x000FU : nsIProgrammingLanguage::MAX)
 
@@ -68,8 +60,8 @@ NS_HandleScriptError(nsIScriptGlobalObject *aScriptGlobal,
 
 
 #define NS_ISCRIPTGLOBALOBJECT_IID \
-{ 0xd1549969, 0x92df, 0x4a75, \
-  { 0x8c, 0x12, 0x35, 0x14, 0xd1, 0x0b, 0xbc, 0x18 } }
+{ 0x92569431, 0x6e6e, 0x408a, \
+  { 0xa8, 0x8c, 0x45, 0x28, 0x5c, 0x1c, 0x85, 0x73 } }
 
 /**
  * The global object which keeps a script context for each supported script
@@ -121,7 +113,8 @@ public:
    */
   virtual nsresult HandleScriptError(nsScriptErrorEvent *aErrorEvent,
                                      nsEventStatus *aEventStatus) {
-    return NS_HandleScriptError(this, aErrorEvent, aEventStatus);
+    NS_ENSURE_STATE(NS_HandleScriptError(this, aErrorEvent, aEventStatus));
+    return NS_OK;
   }
 
   virtual bool IsBlackForCC() { return false; }

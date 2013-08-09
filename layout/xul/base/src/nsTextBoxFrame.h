@@ -16,7 +16,6 @@ class nsTextBoxFrame : public nsTextBoxFrameSuper
 public:
   NS_DECL_FRAMEARENA_HELPERS
 
-  // nsIBox
   virtual nsSize GetPrefSize(nsBoxLayoutState& aBoxLayoutState);
   virtual nsSize GetMinSize(nsBoxLayoutState& aBoxLayoutState);
   virtual nscoord GetBoxAscent(nsBoxLayoutState& aBoxLayoutState);
@@ -33,9 +32,9 @@ public:
 
   virtual void DestroyFrom(nsIFrame* aDestructRoot);
 
-  NS_IMETHOD AttributeChanged(PRInt32         aNameSpaceID,
+  NS_IMETHOD AttributeChanged(int32_t         aNameSpaceID,
                               nsIAtom*        aAttribute,
-                              PRInt32         aModType);
+                              int32_t         aModType);
 
 #ifdef DEBUG
   NS_IMETHOD GetFrameName(nsAString& aResult) const;

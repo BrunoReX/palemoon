@@ -50,6 +50,15 @@ function testCompletion(hud) {
   is(input.selectionEnd, 8, "end selection is alright");
   is(jsterm.completeNode.value.replace(/ /g, ""), "", "'docu' completed");
 
+  // Test typing 'window.Ob' and press tab.  Just 'window.O' is
+  // ambiguous: could be window.Object, window.Option, etc.
+  input.value = "window.Ob";
+  input.setSelectionRange(9, 9);
+  jsterm.complete(jsterm.COMPLETE_FORWARD, testNext);
+  yield;
+
+  is(input.value, "window.Object", "'window.Ob' tab completion");
+
   // Test typing 'document.getElem'.
   input.value = "document.getElem";
   input.setSelectionRange(16, 16);
@@ -89,6 +98,20 @@ function testCompletion(hud) {
   yield;
 
   is(jsterm.completeNode.value, "                   \n      e", "multi-line completion");
+
+  // Test non-object autocompletion.
+  input.value = "Object.name.sl";
+  jsterm.complete(jsterm.COMPLETE_HINT_ONLY, testNext);
+  yield;
+
+  is(jsterm.completeNode.value, "              ice", "non-object completion");
+
+  // Test string literal autocompletion.
+  input.value = "'Asimov'.sl";
+  jsterm.complete(jsterm.COMPLETE_HINT_ONLY, testNext);
+  yield;
+
+  is(jsterm.completeNode.value, "           ice", "string literal completion");
 
   testDriver = jsterm = input = null;
   executeSoon(finishTest);

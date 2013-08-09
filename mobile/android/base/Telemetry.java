@@ -5,17 +5,17 @@
 
 package org.mozilla.gecko;
 
-import android.os.SystemClock;
-import android.util.Log;
-
 import org.json.JSONException;
 import org.json.JSONObject;
+
+import android.os.SystemClock;
+import android.util.Log;
 
 public class Telemetry {
     private static final String LOGTAG = "Telemetry";
 
     // Define new histograms in:
-    // toolkit/components/telemetry/TelemetryHistograms.h
+    // toolkit/components/telemetry/Histograms.json
     public static void HistogramAdd(String name,
                                     int value) {
         try {
@@ -27,8 +27,6 @@ public class Telemetry {
             GeckoEvent event =
                 GeckoEvent.createBroadcastEvent("Telemetry:Add", jsonData.toString());
             GeckoAppShell.sendEventToGecko(event);
-
-            Log.v(LOGTAG, "Sending telemetry: " + jsonData.toString());
         } catch (JSONException e) {
             Log.e(LOGTAG, "JSON exception: ", e);
         }
@@ -37,13 +35,26 @@ public class Telemetry {
     public static class Timer {
         private long mStartTime;
         private String mName;
+        private boolean mHasFinished;
 
         public Timer(String name) {
             mName = name;
             mStartTime = SystemClock.uptimeMillis();
+            mHasFinished = false;
+        }
+
+        public void cancel() {
+            mHasFinished = true;
         }
 
         public void stop() {
+            // Only the first stop counts.
+            if (mHasFinished) {
+                return;
+            } else {
+                mHasFinished = true;
+            }
+
             long elapsed = SystemClock.uptimeMillis() - mStartTime;
             if (elapsed < Integer.MAX_VALUE) {
                 HistogramAdd(mName, (int)(elapsed));

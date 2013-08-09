@@ -15,7 +15,6 @@
 #include "jsscript.h"
 #include "jsscope.h"
 
-#include "vm/ScopeObject.h"
 #include "vm/GlobalObject.h"
 #include "vm/RegExpObject.h"
 
@@ -24,65 +23,18 @@
 namespace js {
 
 inline
-Bindings::Bindings(JSContext *cx)
-    : lastBinding(NULL), nargs(0), nvars(0), hasDup_(false)
+Bindings::Bindings()
+    : callObjShape_(NULL), bindingArrayAndFlag_(TEMPORARY_STORAGE_BIT), numArgs_(0), numVars_(0)
 {}
 
-inline void
-Bindings::transfer(JSContext *cx, Bindings *bindings)
+inline
+AliasedFormalIter::AliasedFormalIter(JSScript *script)
+  : begin_(script->bindings.bindingArray()),
+    p_(begin_),
+    end_(begin_ + (script->funHasAnyAliasedFormal ? script->bindings.numArgs() : 0)),
+    slot_(CallObject::RESERVED_SLOTS)
 {
-    JS_ASSERT(!lastBinding);
-    JS_ASSERT(!bindings->lastBinding || !bindings->lastBinding->inDictionary());
-
-    *this = *bindings;
-#ifdef DEBUG
-    bindings->lastBinding = NULL;
-#endif
-}
-
-inline void
-Bindings::clone(JSContext *cx, Bindings *bindings)
-{
-    JS_ASSERT(!lastBinding);
-    JS_ASSERT(!bindings->lastBinding || !bindings->lastBinding->inDictionary());
-
-    *this = *bindings;
-}
-
-Shape *
-Bindings::lastShape() const
-{
-    JS_ASSERT(lastBinding);
-    JS_ASSERT(!lastBinding->inDictionary());
-    return lastBinding;
-}
-
-Shape *
-Bindings::initialShape(JSContext *cx) const
-{
-    /* Get an allocation kind to match an empty call object. */
-    gc::AllocKind kind = gc::FINALIZE_OBJECT4;
-    JS_ASSERT(gc::GetGCKindSlots(kind) == CallObject::RESERVED_SLOTS + 1);
-
-    return EmptyShape::getInitialShape(cx, &CallClass, NULL, NULL, kind,
-                                       BaseShape::VAROBJ);
-}
-
-bool
-Bindings::ensureShape(JSContext *cx)
-{
-    if (!lastBinding) {
-        lastBinding = initialShape(cx);
-        if (!lastBinding)
-            return false;
-    }
-    return true;
-}
-
-bool
-Bindings::extensibleParents()
-{
-    return lastBinding && lastBinding->extensibleParents();
+    settle();
 }
 
 extern void
@@ -93,9 +45,10 @@ CurrentScriptFileLineOrigin(JSContext *cx, const char **file, unsigned *linenop,
                             LineOption opt = NOT_CALLED_FROM_JSOP_EVAL)
 {
     if (opt == CALLED_FROM_JSOP_EVAL) {
+        AutoAssertNoGC nogc;
         JS_ASSERT(JSOp(*cx->regs().pc) == JSOP_EVAL);
         JS_ASSERT(*(cx->regs().pc + JSOP_EVAL_LENGTH) == JSOP_LINENO);
-        JSScript *script = cx->fp()->script();
+        RawScript script = cx->fp()->script().get(nogc);
         *file = script->filename;
         *linenop = GET_UINT16(cx->regs().pc + JSOP_EVAL_LENGTH);
         *origin = script->originPrincipals;
@@ -109,6 +62,7 @@ inline void
 ScriptCounts::destroy(FreeOp *fop)
 {
     fop->free_(pcCountsVector);
+    fop->delete_(ionCounts);
 }
 
 inline void
@@ -146,14 +100,14 @@ JSScript::getCallerFunction()
     return getFunction(0);
 }
 
-inline JSObject *
+inline js::RegExpObject *
 JSScript::getRegExp(size_t index)
 {
     js::ObjectArray *arr = regexps();
     JS_ASSERT(uint32_t(index) < arr->length);
     JSObject *obj = arr->vector[index];
     JS_ASSERT(obj->isRegExp());
-    return obj;
+    return (js::RegExpObject *) obj;
 }
 
 inline bool
@@ -168,66 +122,31 @@ JSScript::isEmpty() const
     return JSOp(*pc) == JSOP_STOP;
 }
 
-inline bool
-JSScript::hasGlobal() const
-{
-    /*
-     * Make sure that we don't try to query information about global objects
-     * which have had their scopes cleared. compileAndGo code should not run
-     * anymore against such globals.
-     */
-    JS_ASSERT(types && types->hasScope());
-    js::GlobalObject *obj = types->global;
-    return obj && !obj->isCleared();
-}
-
-inline js::GlobalObject *
+inline js::GlobalObject &
 JSScript::global() const
 {
-    JS_ASSERT(hasGlobal());
-    return types->global;
-}
-
-inline bool
-JSScript::hasClearedGlobal() const
-{
-    JS_ASSERT(types && types->hasScope());
-    js::GlobalObject *obj = types->global;
-    return obj && obj->isCleared();
-}
-
-inline js::types::TypeScriptNesting *
-JSScript::nesting() const
-{
-    JS_ASSERT(function() && types && types->hasScope());
-    return types->nesting;
-}
-
-inline void
-JSScript::clearNesting()
-{
-    js::types::TypeScriptNesting *nesting = this->nesting();
-    if (nesting) {
-        js::Foreground::delete_(nesting);
-        types->nesting = NULL;
-    }
+    /*
+     * A JSScript always marks its compartment's global (via bindings) so we
+     * can assert that maybeGlobal is non-null here.
+     */
+    return *compartment()->maybeGlobal();
 }
 
 #ifdef JS_METHODJIT
 inline bool
-JSScript::ensureHasJITInfo(JSContext *cx)
+JSScript::ensureHasMJITInfo(JSContext *cx)
 {
-    if (jitInfo)
+    if (mJITInfo)
         return true;
-    jitInfo = cx->new_<JITScriptSet>();
-    return jitInfo != NULL;
+    mJITInfo = cx->new_<JITScriptSet>();
+    return mJITInfo != NULL;
 }
 
 inline void
-JSScript::destroyJITInfo(js::FreeOp *fop)
+JSScript::destroyMJITInfo(js::FreeOp *fop)
 {
-    fop->delete_(jitInfo);
-    jitInfo = NULL;
+    fop->delete_(mJITInfo);
+    mJITInfo = NULL;
 }
 #endif /* JS_METHODJIT */
 
@@ -240,7 +159,7 @@ JSScript::writeBarrierPre(JSScript *script)
 
     JSCompartment *comp = script->compartment();
     if (comp->needsBarrier()) {
-        JS_ASSERT(!comp->rt->gcRunning);
+        JS_ASSERT(!comp->rt->isHeapBusy());
         JSScript *tmp = script;
         MarkScriptUnbarriered(comp->barrierTracer(), &tmp, "write barrier");
         JS_ASSERT(tmp == script);

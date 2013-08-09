@@ -65,14 +65,14 @@ protected:
     nsFontFaceRuleContainer      mContainer;
   };
 
-  void InsertRule(nsCSSFontFaceRule *aRule, PRUint8 aSheetType,
+  void InsertRule(nsCSSFontFaceRule *aRule, uint8_t aSheetType,
                   nsTArray<FontFaceRuleRecord>& oldRules,
                   bool& aFontSetModified);
 
   virtual nsresult LogMessage(gfxProxyFontEntry *aProxy,
                               const char *aMessage,
-                              PRUint32 aFlags = nsIScriptError::errorFlag,
-                              nsresult aStatus = 0);
+                              uint32_t aFlags = nsIScriptError::errorFlag,
+                              nsresult aStatus = NS_OK);
 
   nsresult CheckFontLoad(gfxProxyFontEntry *aFontToLoad,
                          const gfxFontFaceSrc *aFontFaceSrc,
@@ -80,8 +80,8 @@ protected:
 
   virtual nsresult SyncLoadFontData(gfxProxyFontEntry *aFontToLoad,
                                     const gfxFontFaceSrc *aFontFaceSrc,
-                                    PRUint8* &aBuffer,
-                                    PRUint32 &aBufferLength);
+                                    uint8_t* &aBuffer,
+                                    uint32_t &aBufferLength);
 
   nsPresContext *mPresContext;  // weak reference
 
@@ -109,7 +109,7 @@ public:
   // cancel the load and remove its reference to mFontSet
   void Cancel();
 
-  void DropChannel() { mChannel = nsnull; }
+  void DropChannel() { mChannel = nullptr; }
 
   void StartedLoading(nsIStreamLoader *aStreamLoader);
 

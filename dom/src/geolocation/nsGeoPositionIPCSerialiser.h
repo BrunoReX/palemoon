@@ -5,7 +5,7 @@
 #ifndef dom_src_geolocation_IPC_serialiser
 #define dom_src_geolocation_IPC_serialiser
 
-#include "IPC/IPCMessageUtils.h"
+#include "ipc/IPCMessageUtils.h"
 #include "nsGeoPosition.h"
 #include "nsIDOMGeoPosition.h"
 
@@ -131,12 +131,12 @@ struct ParamTraits<GeoPosition>
     }
 
     DOMTimeStamp timeStamp;
-    GeoPositionCoords coords = nsnull;
+    GeoPositionCoords coords = nullptr;
 
     // It's not important to us where it fails, but rather if it fails
     if (!(   ReadParam(aMsg, aIter, &timeStamp)
           && ReadParam(aMsg, aIter, &coords   ))) {
-          // note it is fine to do "delete nsnull" in case coords hasn't
+          // note it is fine to do "delete nullptr" in case coords hasn't
           // been allocated
           delete coords;
           return false;

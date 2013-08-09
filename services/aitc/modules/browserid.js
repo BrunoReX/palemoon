@@ -4,7 +4,7 @@
 
 "use strict";
 
-const EXPORTED_SYMBOLS = ["BrowserID"];
+this.EXPORTED_SYMBOLS = ["BrowserID"];
 
 const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
@@ -22,7 +22,7 @@ const PREFS = new Preferences("services.aitc.browserid.");
  * generation goodness. See bug 753238.
  */
 function BrowserIDService() {
-  this._log = Log4Moz.repository.getLogger("Services.BrowserID");
+  this._log = Log4Moz.repository.getLogger("Service.AITC.BrowserID");
   this._log.level = Log4Moz.Level[PREFS.get("log")];
 }
 BrowserIDService.prototype = {
@@ -138,6 +138,11 @@ BrowserIDService.prototype = {
   _getEmails: function _getEmails(cb, options, sandbox) {
     let self = this;
 
+    if (!sandbox) {
+      cb(new Error("Sandbox not created"), null);
+      return;
+    }
+
     function callback(res) {
       let emails = {};
       try {
@@ -207,12 +212,11 @@ BrowserIDService.prototype = {
     // We're executing navigator.id.get as a content script in win.
     // This results in a popup that we will temporarily unblock.
     let pm = Services.perms;
-    let origin = Services.io.newURI(
-      win.wrappedJSObject.location.toString(), null, null
-    );
-    let oldPerm = pm.testExactPermission(origin, "popup");
+    let principal = win.document.nodePrincipal;
+
+    let oldPerm = pm.testExactPermissionFromPrincipal(principal, "popup");
     try {
-      pm.add(origin, "popup", pm.ALLOW_ACTION);
+      pm.addFromPrincipal(principal, "popup", pm.ALLOW_ACTION);
     } catch(e) {
       this._log.warn("Setting popup blocking to false failed " + e);
     }
@@ -227,7 +231,7 @@ BrowserIDService.prototype = {
     function callback(val) {
       // Set popup blocker permission to original value.
       try {
-        pm.add(origin, "popup", oldPerm);
+        pm.addFromPrincipal(principal, "popup", oldPerm);
       } catch(e) {
         this._log.warn("Setting popup blocking to original value failed " + e);
       }
@@ -382,8 +386,18 @@ BrowserIDService.prototype = {
  */
 function Sandbox(cb, uri) {
   this._uri = uri;
-  this._createFrame();
-  this._createSandbox(cb, uri);
+
+  // Put in a try/catch block because Services.wm.getMostRecentWindow, called in
+  // _createFrame will be null in XPCShell.
+  try {
+    this._createFrame();
+    this._createSandbox(cb, uri);
+  } catch(e) {
+    this._log = Log4Moz.repository.getLogger("Service.AITC.BrowserID.Sandbox");
+    this._log.level = Log4Moz.Level[PREFS.get("log")];
+    this._log.error("Could not create Sandbox " + e);
+    cb(null);
+  }
 }
 Sandbox.prototype = {
   /**

@@ -18,8 +18,9 @@
 #include "nsITreeColumns.h"
 #endif
 #include "nsWeakPtr.h"
+#include "mozilla/Attributes.h"
 
-class nsXULTooltipListener : public nsIDOMEventListener
+class nsXULTooltipListener MOZ_FINAL : public nsIDOMEventListener
 {
 public:
   NS_DECL_ISUPPORTS
@@ -35,7 +36,7 @@ public:
       mInstance = new nsXULTooltipListener();
     return mInstance;
   }
-  static void ClearTooltipCache() { mInstance = nsnull; }
+  static void ClearTooltipCache() { mInstance = nullptr; }
 
 protected:
 
@@ -44,7 +45,7 @@ protected:
 
   // pref callback for when the "show tooltips" pref changes
   static bool sShowTooltips;
-  static PRUint32 sTooltipListenerCount;
+  static uint32_t sTooltipListenerCount;
 
   void KillTooltipTimer();
 
@@ -76,7 +77,7 @@ protected:
 
   // screen coordinates of the last mousemove event, stored so that the
   // tooltip can be opened at this location.
-  PRInt32 mMouseScreenX, mMouseScreenY;
+  int32_t mMouseScreenX, mMouseScreenY;
 
   // various constants for tooltips
   enum {
@@ -92,7 +93,7 @@ protected:
   // special members for handling trees
   bool mIsSourceTree;
   bool mNeedTitletip;
-  PRInt32 mLastTreeRow;
+  int32_t mLastTreeRow;
   nsCOMPtr<nsITreeColumn> mLastTreeCol;
 #endif
 };

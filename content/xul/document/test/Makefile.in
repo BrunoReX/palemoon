@@ -3,16 +3,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
-relativesrcdir  = content/xul/document/test
+relativesrcdir  = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
-include $(topsrcdir)/config/rules.mk
 
-_CHROME_FILES	= \
+MOCHITEST_CHROME_FILES	= \
 		test_bug311681.xul \
 		test_bug199692.xul \
 		test_bug391002.xul \
@@ -29,7 +28,8 @@ _CHROME_FILES	= \
 		test_bug335375.xul \
 		overlay1_bug335375.xul \
 		overlay2_bug335375.xul \
+		test_bug757137.xul \
+		window_bug757137.xul \
 		$(NULL)
 
-libs:: $(_CHROME_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/chrome/$(relativesrcdir)
+include $(topsrcdir)/config/rules.mk

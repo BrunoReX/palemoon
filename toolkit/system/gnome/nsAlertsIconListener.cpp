@@ -13,15 +13,21 @@
 #include "nsIObserverService.h"
 #include "nsCRT.h"
 
+#include <dlfcn.h>
 #include <gdk/gdk.h>
-
-// Compatibility macro for <libnotify-0.7
-#ifndef NOTIFY_CHECK_VERSION
-#define NOTIFY_CHECK_VERSION(x,y,z) 0
-#endif
 
 static bool gHasActions = false;
 static bool gHasCaps = false;
+
+void* nsAlertsIconListener::libNotifyHandle = nullptr;
+bool nsAlertsIconListener::libNotifyNotAvail = false;
+nsAlertsIconListener::notify_is_initted_t nsAlertsIconListener::notify_is_initted = nullptr;
+nsAlertsIconListener::notify_init_t nsAlertsIconListener::notify_init = nullptr;
+nsAlertsIconListener::notify_get_server_caps_t nsAlertsIconListener::notify_get_server_caps = nullptr;
+nsAlertsIconListener::notify_notification_new_t nsAlertsIconListener::notify_notification_new = nullptr;
+nsAlertsIconListener::notify_notification_show_t nsAlertsIconListener::notify_notification_show = nullptr;
+nsAlertsIconListener::notify_notification_set_icon_from_pixbuf_t nsAlertsIconListener::notify_notification_set_icon_from_pixbuf = nullptr;
+nsAlertsIconListener::notify_notification_add_action_t nsAlertsIconListener::notify_notification_add_action = nullptr;
 
 static void notify_action_cb(NotifyNotification *notification,
                              gchar *action, gpointer user_data)
@@ -45,87 +51,62 @@ static void notify_closed_marshal(GClosure* closure,
   NS_RELEASE(alert);
 }
 
-NS_IMPL_ISUPPORTS4(nsAlertsIconListener, imgIContainerObserver,
-                   imgIDecoderObserver, nsIObserver, nsISupportsWeakReference)
+NS_IMPL_ISUPPORTS3(nsAlertsIconListener, imgINotificationObserver,
+                   nsIObserver, nsISupportsWeakReference)
 
 nsAlertsIconListener::nsAlertsIconListener()
 : mLoadedFrame(false),
   mNotification(NULL)
 {
+  if (!libNotifyHandle && !libNotifyNotAvail) {
+    libNotifyHandle = dlopen("libnotify.so.4", RTLD_LAZY);
+    if (!libNotifyHandle) {
+      libNotifyHandle = dlopen("libnotify.so.1", RTLD_LAZY);
+      if (!libNotifyHandle) {
+        libNotifyNotAvail = true;
+        return;
+      }
+    }
+
+    notify_is_initted = (notify_is_initted_t)dlsym(libNotifyHandle, "notify_is_initted");
+    notify_init = (notify_init_t)dlsym(libNotifyHandle, "notify_init");
+    notify_get_server_caps = (notify_get_server_caps_t)dlsym(libNotifyHandle, "notify_get_server_caps");
+    notify_notification_new = (notify_notification_new_t)dlsym(libNotifyHandle, "notify_notification_new");
+    notify_notification_show = (notify_notification_show_t)dlsym(libNotifyHandle, "notify_notification_show");
+    notify_notification_set_icon_from_pixbuf = (notify_notification_set_icon_from_pixbuf_t)dlsym(libNotifyHandle, "notify_notification_set_icon_from_pixbuf");
+    notify_notification_add_action = (notify_notification_add_action_t)dlsym(libNotifyHandle, "notify_notification_add_action");
+    if (!notify_is_initted || !notify_init || !notify_get_server_caps || !notify_notification_new || !notify_notification_show || !notify_notification_set_icon_from_pixbuf || !notify_notification_add_action) {
+      dlclose(libNotifyHandle);
+      libNotifyHandle = nullptr;
+    }
+  }
 }
 
 nsAlertsIconListener::~nsAlertsIconListener()
 {
   if (mIconRequest)
     mIconRequest->CancelAndForgetObserver(NS_BINDING_ABORTED);
+  // Don't dlclose libnotify as it uses atexit().
 }
 
 NS_IMETHODIMP
-nsAlertsIconListener::OnStartRequest(imgIRequest* aRequest)
+nsAlertsIconListener::Notify(imgIRequest *aRequest, int32_t aType, const nsIntRect* aData)
 {
+  if (aType == imgINotificationObserver::LOAD_COMPLETE) {
+    return OnStopRequest(aRequest);
+  }
+
+  if (aType == imgINotificationObserver::FRAME_COMPLETE) {
+    return OnStopFrame(aRequest);
+  }
+
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsAlertsIconListener::OnStartDecode(imgIRequest* aRequest)
+nsresult
+nsAlertsIconListener::OnStopRequest(imgIRequest* aRequest)
 {
-  return NS_OK;
-}
-
-
-NS_IMETHODIMP
-nsAlertsIconListener::OnStartContainer(imgIRequest* aRequest,
-                                       imgIContainer* aContainer)
-{
-  return NS_OK;
-}
-
-
-NS_IMETHODIMP
-nsAlertsIconListener::OnStartFrame(imgIRequest* aRequest,
-                                   PRUint32 aFrame)
-{
-  return NS_OK;
-}
-
-
-NS_IMETHODIMP
-nsAlertsIconListener::OnDataAvailable(imgIRequest* aRequest,
-                                      bool aCurrentFrame,
-                                      const nsIntRect* aRect)
-{
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsAlertsIconListener::OnStopContainer(imgIRequest* aRequest,
-                                      imgIContainer* aContainer)
-{
-  return NS_OK;
-}
-
-
-NS_IMETHODIMP
-nsAlertsIconListener::OnStopDecode(imgIRequest* aRequest,
-                                   nsresult status,
-                                   const PRUnichar* statusArg)
-{
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsAlertsIconListener::FrameChanged(imgIRequest* aRequest, 
-                                   imgIContainer* aContainer,
-                                   const nsIntRect* aDirtyRect)
-{
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsAlertsIconListener::OnStopRequest(imgIRequest* aRequest,
-                                    bool aIsLastPart)
-{
-  PRUint32 imgStatus = imgIRequest::STATUS_ERROR;
+  uint32_t imgStatus = imgIRequest::STATUS_ERROR;
   nsresult rv = aRequest->GetImageStatus(&imgStatus);
   NS_ENSURE_SUCCESS(rv, rv);
   if (imgStatus == imgIRequest::STATUS_ERROR && !mLoadedFrame) {
@@ -135,26 +116,13 @@ nsAlertsIconListener::OnStopRequest(imgIRequest* aRequest,
 
   if (mIconRequest) {
     mIconRequest->Cancel(NS_BINDING_ABORTED);
-    mIconRequest = nsnull;
+    mIconRequest = nullptr;
   }
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsAlertsIconListener::OnDiscard(imgIRequest *aRequest)
-{
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsAlertsIconListener::OnImageIsAnimated(imgIRequest *aRequest)
-{
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsAlertsIconListener::OnStopFrame(imgIRequest* aRequest,
-                                  PRUint32 aFrame)
+nsresult
+nsAlertsIconListener::OnStopFrame(imgIRequest* aRequest)
 {
   if (aRequest != mIconRequest)
     return NS_ERROR_FAILURE;
@@ -185,14 +153,7 @@ nsAlertsIconListener::OnStopFrame(imgIRequest* aRequest,
 nsresult
 nsAlertsIconListener::ShowAlert(GdkPixbuf* aPixbuf)
 {
-  mNotification = notify_notification_new(mAlertTitle.get(),
-                                          mAlertText.get(),
-                                          NULL
-// >=libnotify-0.7.0 has no support for attaching to widgets
-#if !NOTIFY_CHECK_VERSION(0,7,0)
-                                          , NULL
-#endif
-                                          );
+  mNotification = notify_notification_new(mAlertTitle.get(), mAlertText.get(), NULL, NULL);
 
   if (!mNotification)
     return NS_ERROR_OUT_OF_MEMORY;
@@ -227,7 +188,7 @@ nsAlertsIconListener::StartRequest(const nsAString & aImageUrl)
   if (mIconRequest) {
     // Another icon request is already in flight.  Kill it.
     mIconRequest->Cancel(NS_BINDING_ABORTED);
-    mIconRequest = nsnull;
+    mIconRequest = nullptr;
   }
 
   nsCOMPtr<nsIURI> imageUri;
@@ -239,9 +200,9 @@ nsAlertsIconListener::StartRequest(const nsAString & aImageUrl)
   if (!il)
     return ShowAlert(NULL);
 
-  return il->LoadImage(imageUri, nsnull, nsnull, nsnull, nsnull, this,
-                       nsnull, nsIRequest::LOAD_NORMAL, nsnull, nsnull,
-                       nsnull, getter_AddRefs(mIconRequest));
+  return il->LoadImage(imageUri, nullptr, nullptr, nullptr, nullptr, this,
+                       nullptr, nsIRequest::LOAD_NORMAL, nullptr, nullptr,
+                       getter_AddRefs(mIconRequest));
 }
 
 void
@@ -284,12 +245,15 @@ nsAlertsIconListener::InitAlertAsync(const nsAString & aImageUrl,
                                      const nsAString & aAlertCookie,
                                      nsIObserver * aAlertListener)
 {
+  if (!libNotifyHandle)
+    return NS_ERROR_FAILURE;
+
   if (!notify_is_initted()) {
     // Give the name of this application to libnotify
     nsCOMPtr<nsIStringBundleService> bundleService = 
       do_GetService(NS_STRINGBUNDLE_CONTRACTID);
 
-    nsCAutoString appShortName;
+    nsAutoCString appShortName;
     if (bundleService) {
       nsCOMPtr<nsIStringBundle> bundle;
       bundleService->CreateBundle("chrome://branding/locale/brand.properties",

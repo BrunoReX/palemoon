@@ -23,7 +23,7 @@
 #include "winbase.h"
 
 #include "nsString.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsUnicharUtils.h"
 
 using namespace mozilla;
@@ -43,13 +43,13 @@ static char* GetKeyValue(void* verbuf, const WCHAR* key,
                    keyFormat, language, codepage, key) < 0)
   {
     NS_NOTREACHED("plugin info key too long for buffer!");
-    return nsnull;
+    return nullptr;
   }
 
   if (::VerQueryValueW(verbuf, keybuf, (void **)&buf, &blen) == 0 ||
-      buf == nsnull || blen == 0)
+      buf == nullptr || blen == 0)
   {
-    return nsnull;
+    return nullptr;
   }
 
   return PL_strdup(NS_ConvertUTF16toUTF8(buf, blen).get());
@@ -70,12 +70,12 @@ static char* GetVersion(void* verbuf)
                        LOWORD(fileInfo->dwFileVersionLS));
   }
 
-  return nsnull;
+  return nullptr;
 }
 
-static PRUint32 CalculateVariantCount(char* mimeTypes)
+static uint32_t CalculateVariantCount(char* mimeTypes)
 {
-  PRUint32 variants = 1;
+  uint32_t variants = 1;
 
   if (!mimeTypes)
     return 0;
@@ -90,7 +90,7 @@ static PRUint32 CalculateVariantCount(char* mimeTypes)
   return variants;
 }
 
-static char** MakeStringArray(PRUint32 variants, char* data)
+static char** MakeStringArray(uint32_t variants, char* data)
 {
   // The number of variants has been calculated based on the mime
   // type array. Plugins are not explicitely required to match
@@ -107,7 +107,7 @@ static char** MakeStringArray(PRUint32 variants, char* data)
 
   char * start = data;
 
-  for (PRUint32 i = 0; i < variants; i++) {
+  for (uint32_t i = 0; i < variants; i++) {
     char * p = PL_strchr(start, '|');
     if (p)
       *p = 0;
@@ -128,12 +128,12 @@ static char** MakeStringArray(PRUint32 variants, char* data)
   return array;
 }
 
-static void FreeStringArray(PRUint32 variants, char ** array)
+static void FreeStringArray(uint32_t variants, char ** array)
 {
   if ((variants == 0) || !array)
     return;
 
-  for (PRUint32 i = 0; i < variants; i++) {
+  for (uint32_t i = 0; i < variants; i++) {
     if (array[i]) {
       PL_strfree(array[i]);
       array[i] = NULL;
@@ -188,7 +188,7 @@ static bool CanLoadPlugin(const PRUnichar* aBinaryPath)
 // The file name must be in the form "np*.dll"
 bool nsPluginsDir::IsPluginFile(nsIFile* file)
 {
-  nsCAutoString path;
+  nsAutoCString path;
   if (NS_FAILED(file->GetNativePath(path)))
     return false;
 
@@ -205,8 +205,8 @@ bool nsPluginsDir::IsPluginFile(nsIFile* file)
   if (extension)
     ++extension;
 
-  PRUint32 fullLength = PL_strlen(filename);
-  PRUint32 extLength = PL_strlen(extension);
+  uint32_t fullLength = PL_strlen(filename);
+  uint32_t extLength = PL_strlen(extension);
   if (fullLength >= 7 && extLength == 3) {
     if (!PL_strncasecmp(filename, "np", 2) && !PL_strncasecmp(extension, "dll", 3)) {
       // don't load OJI-based Java plugins
@@ -239,17 +239,15 @@ nsPluginFile::~nsPluginFile()
  */
 nsresult nsPluginFile::LoadPlugin(PRLibrary **outLibrary)
 {
-  nsCOMPtr<nsILocalFile> plugin = do_QueryInterface(mPlugin);
-
-  if (!plugin)
+  if (!mPlugin)
     return NS_ERROR_NULL_POINTER;
 
   bool protectCurrentDirectory = true;
 
   nsAutoString pluginFolderPath;
-  plugin->GetPath(pluginFolderPath);
+  mPlugin->GetPath(pluginFolderPath);
 
-  PRInt32 idx = pluginFolderPath.RFindChar('\\');
+  int32_t idx = pluginFolderPath.RFindChar('\\');
   if (kNotFound == idx)
     return NS_ERROR_FILE_INVALID_PATH;
 
@@ -273,7 +271,7 @@ nsresult nsPluginFile::LoadPlugin(PRLibrary **outLibrary)
     SetDllDirectory(NULL);
   }
 
-  nsresult rv = plugin->Load(outLibrary);
+  nsresult rv = mPlugin->Load(outLibrary);
   if (NS_FAILED(rv))
       *outLibrary = NULL;
 
@@ -282,7 +280,7 @@ nsresult nsPluginFile::LoadPlugin(PRLibrary **outLibrary)
   }
 
   if (restoreOrigDir) {
-    BOOL bCheck = SetCurrentDirectoryW(aOrigDir);
+    DebugOnly<BOOL> bCheck = SetCurrentDirectoryW(aOrigDir);
     NS_ASSERTION(bCheck, "Error in Loading plugin");
   }
 
@@ -294,11 +292,11 @@ nsresult nsPluginFile::LoadPlugin(PRLibrary **outLibrary)
  */
 nsresult nsPluginFile::GetPluginInfo(nsPluginInfo& info, PRLibrary **outLibrary)
 {
-  *outLibrary = nsnull;
+  *outLibrary = nullptr;
 
   nsresult rv = NS_OK;
   DWORD zerome, versionsize;
-  void* verbuf = nsnull;
+  void* verbuf = nullptr;
 
   if (!mPlugin)
     return NS_ERROR_NULL_POINTER;
@@ -323,7 +321,7 @@ nsresult nsPluginFile::GetPluginInfo(nsPluginInfo& info, PRLibrary **outLibrary)
   if (!verbuf)
     return NS_ERROR_OUT_OF_MEMORY;
 
-  if (::GetFileVersionInfoW(lpFilepath, NULL, versionsize, verbuf))
+  if (::GetFileVersionInfoW(lpFilepath, 0, versionsize, verbuf))
   {
     // TODO: get appropriately-localized info from plugin file
     UINT lang = 1033; // language = English

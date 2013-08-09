@@ -5,7 +5,7 @@
 
 #include "nsIAppStartup.h"
 #include "nsIDOMWindow.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIStringBundle.h"
 #include "nsIToolkitProfile.h"
 #include "nsIWindowWatcher.h"
@@ -36,10 +36,10 @@ CreateResetProfile(nsIToolkitProfileService* aProfileSvc, nsIToolkitProfile* *aN
 
   nsCOMPtr<nsIToolkitProfile> newProfile;
   // Make the new profile "default-" + the time in seconds since epoch for uniqueness.
-  nsCAutoString newProfileName("default-");
+  nsAutoCString newProfileName("default-");
   newProfileName.Append(nsPrintfCString("%lld", PR_Now() / 1000));
-  nsresult rv = aProfileSvc->CreateProfile(nsnull, // choose a default dir for us
-                                           nsnull, // choose a default dir for us
+  nsresult rv = aProfileSvc->CreateProfile(nullptr, // choose a default dir for us
+                                           nullptr, // choose a default dir for us
                                            newProfileName,
                                            getter_AddRefs(newProfile));
   if (NS_FAILED(rv)) return rv;
@@ -59,11 +59,11 @@ nsresult
 ProfileResetCleanup(nsIToolkitProfile* aOldProfile)
 {
   nsresult rv;
-  nsCOMPtr<nsILocalFile> profileDir;
+  nsCOMPtr<nsIFile> profileDir;
   rv = aOldProfile->GetRootDir(getter_AddRefs(profileDir));
   if (NS_FAILED(rv)) return rv;
 
-  nsCOMPtr<nsILocalFile> profileLocalDir;
+  nsCOMPtr<nsIFile> profileLocalDir;
   rv = aOldProfile->GetLocalDir(getter_AddRefs(profileLocalDir));
   if (NS_FAILED(rv)) return rv;
 
@@ -114,7 +114,7 @@ ProfileResetCleanup(nsIToolkitProfile* aOldProfile)
   if (!appStartup) return NS_ERROR_FAILURE;
 
   nsCOMPtr<nsIDOMWindow> progressWindow;
-  rv = windowWatcher->OpenWindow(nsnull,
+  rv = windowWatcher->OpenWindow(nullptr,
                                  kResetProgressURL,
                                  "_blank",
                                  "centerscreen,chrome,titlebar",

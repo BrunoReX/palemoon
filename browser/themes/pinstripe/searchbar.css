@@ -4,6 +4,7 @@
 
 .searchbar-textbox {
   border-radius: 10000px;
+  min-width: 6em;
 }
 
 .searchbar-engine-button {
@@ -44,4 +45,20 @@
 
 .search-go-button {
   list-style-image: url("chrome://browser/skin/Search.png");
+}
+
+@media (min-resolution: 2dppx) {
+  .searchbar-engine-image {
+    list-style-image: url("chrome://mozapps/skin/places/defaultFavicon@2x.png");
+  }
+
+  .searchbar-dropmarker-image {
+    list-style-image: url("chrome://browser/skin/searchbar-dropmarker@2x.png");
+    width: 7px;
+  }
+
+  .search-go-button {
+    list-style-image: url("chrome://browser/skin/Search@2x.png");
+    width: 14px;
+  }
 }

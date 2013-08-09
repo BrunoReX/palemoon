@@ -192,9 +192,7 @@ let ConsoleView = {
   },
 
   appendInitialItems: function cv_appendInitialItems() {
-    let out = {}; // Throwaway references to support 'out' parameters.
-    Services.console.getMessageArray(out, {});
-    let messages = out.value;
+    let messages = Services.console.getMessageArray();
 
     // In case getMessageArray returns 0-length array as null
     if (!messages)
@@ -263,7 +261,7 @@ let ConsoleView = {
   onConsoleBoxKeyPress: function cv_onConsoleBoxKeyPress(aEvent) {
     if ((aEvent.charCode == 99 || aEvent.charCode == 67) && aEvent.ctrlKey && this._list && this._list.selectedItem) {
       let clipboard = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper);
-      clipboard.copyString(this._list.selectedItem.getAttribute("msg"));
+      clipboard.copyString(this._list.selectedItem.getAttribute("msg"), document);
     }
   },
 

@@ -4,12 +4,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsSVGDocument.h"
-#include "nsContentUtils.h"
 #include "nsString.h"
 #include "nsLiteralString.h"
 #include "nsIDOMSVGSVGElement.h"
 #include "mozilla/dom/Element.h"
-#include "nsGenericElement.h"
 
 using namespace mozilla::dom;
 
@@ -49,7 +47,7 @@ nsSVGDocument::GetDomain(nsAString& aDomain)
   SetDOMStringToNull(aDomain);
 
   if (mDocumentURI) {
-    nsCAutoString domain;
+    nsAutoCString domain;
     nsresult rv = mDocumentURI->GetHost(domain);
     if (domain.IsEmpty() || NS_FAILED(rv))
       return rv;
@@ -59,28 +57,11 @@ nsSVGDocument::GetDomain(nsAString& aDomain)
   return NS_OK;
 }
 
-/* readonly attribute DOMString URL; */
-NS_IMETHODIMP
-nsSVGDocument::GetURL(nsAString& aURL)
-{
-  SetDOMStringToNull(aURL);
-
-  if (mDocumentURI) {
-    nsCAutoString url;
-    nsresult rv = mDocumentURI->GetSpec(url);
-    if (url.IsEmpty() || NS_FAILED(rv))
-      return rv;
-    CopyUTF8toUTF16(url, aURL);
-  }
-
-  return NS_OK;
-}
-
 /* readonly attribute SVGSVGElement rootElement; */
 NS_IMETHODIMP
 nsSVGDocument::GetRootElement(nsIDOMSVGSVGElement** aRootElement)
 {
-  *aRootElement = nsnull;
+  *aRootElement = nullptr;
   Element* root = nsDocument::GetRootElement();
 
   return root ? CallQueryInterface(root, aRootElement) : NS_OK;
@@ -106,20 +87,13 @@ nsSVGDocument::Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const
 nsresult
 NS_NewSVGDocument(nsIDocument** aInstancePtrResult)
 {
-  *aInstancePtrResult = nsnull;
-  nsSVGDocument* doc = new nsSVGDocument();
+  nsRefPtr<nsSVGDocument> doc = new nsSVGDocument();
 
-  if (!doc)
-    return NS_ERROR_OUT_OF_MEMORY;
-
-  NS_ADDREF(doc);
   nsresult rv = doc->Init();
-
   if (NS_FAILED(rv)) {
-    NS_RELEASE(doc);
     return rv;
   }
 
-  *aInstancePtrResult = doc;
+  *aInstancePtrResult = doc.forget().get();
   return rv;
 }

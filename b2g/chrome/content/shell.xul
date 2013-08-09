@@ -10,19 +10,17 @@
 #ifdef ANDROID
         sizemode="fullscreen"
 #endif
-        style="background: black; overflow: hidden; width:480px; height:800px"
-        onload="shell.start();"
+        style="background: black; overflow: hidden; width:320px; height:480px"
         onunload="shell.stop();">
 
+  <script type="application/javascript" src="chrome://browser/content/settings.js"/>
   <script type="application/javascript" src="chrome://browser/content/shell.js"/>
-#ifndef ANDROID
+
+#ifndef MOZ_WIDGET_GONK
   <!-- this script handles the screen argument for desktop builds -->
   <script type="application/javascript" src="chrome://browser/content/screen.js"/>
+  <!-- this script handles the "runapp" argument for desktop builds -->
+  <script type="application/javascript" src="chrome://browser/content/runapp.js"/>
 #endif
-  <browser id="homescreen"
-           type="content-primary"
-           flex="1"
-           style="overflow: hidden;"
-           src="data:text/html;charset=utf-8,%3C!DOCTYPE html>%3Cbody style='background:black;'>"/>
+  <!-- The html:iframe containing the UI is created here. -->
 </window>
-

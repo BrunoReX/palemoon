@@ -7,6 +7,28 @@
 
 interface nsIDOMEventTarget;
 
+[ptr] native nsEventPtr(nsEvent);
+[ptr] native IPCMessagePtr(IPC::Message);
+[ptr] native ConstIPCMessagePtr(const IPC::Message);
+%{C++
+#ifdef ERROR
+#undef ERROR
+#endif
+
+class nsEvent;
+class nsCommandEvent;
+class nsPresContext;
+class nsInvalidateRequestList;
+namespace IPC {
+class Message;
+}
+namespace mozilla {
+namespace widget {
+class WheelEvent;
+} // namespace widget
+} // namespace mozilla
+%}
+
 /**
  * The nsIDOMEvent interface is the primary datatype for all events in
  * the Document Object Model.
@@ -16,7 +38,7 @@ interface nsIDOMEventTarget;
  * http://dvcs.w3.org/hg/domcore/raw-file/tip/Overview.html
  */
 
-[scriptable, uuid(e85cff74-951f-45c1-be0c-89442ea2f500)]
+[scriptable, builtinclass, uuid(270c945b-8a65-4170-bc0b-4ec1443cd39f)]
 interface nsIDOMEvent : nsISupports
 {
   // PhaseType
@@ -151,6 +173,85 @@ interface nsIDOMEvent : nsISupports
    * unlike Event.stopPropagation() its effect is immediate.
    */
   void                       stopImmediatePropagation();
+
+  const long MOUSEDOWN    = 0x00000001;
+  const long MOUSEUP      = 0x00000002;
+  const long MOUSEOVER    = 0x00000004;
+  const long MOUSEOUT     = 0x00000008;
+  const long MOUSEMOVE    = 0x00000010;
+  const long MOUSEDRAG    = 0x00000020;
+  const long CLICK        = 0x00000040;
+  const long DBLCLICK     = 0x00000080;
+  const long KEYDOWN      = 0x00000100;
+  const long KEYUP        = 0x00000200;
+  const long KEYPRESS     = 0x00000400;
+  const long DRAGDROP     = 0x00000800;
+  const long FOCUS        = 0x00001000;
+  const long BLUR         = 0x00002000;
+  const long SELECT       = 0x00004000;
+  const long CHANGE       = 0x00008000;
+  const long RESET        = 0x00010000;
+  const long SUBMIT       = 0x00020000;
+  const long SCROLL       = 0x00040000;
+  const long LOAD         = 0x00080000;
+  const long UNLOAD       = 0x00100000;
+  const long XFER_DONE    = 0x00200000;
+  const long ABORT        = 0x00400000;
+  const long ERROR        = 0x00800000;
+  const long LOCATE       = 0x01000000;
+  const long MOVE         = 0x02000000;
+  const long RESIZE       = 0x04000000;
+  const long FORWARD      = 0x08000000;
+  const long HELP         = 0x10000000;
+  const long BACK         = 0x20000000;
+  const long TEXT         = 0x40000000;
+
+  const long ALT_MASK     = 0x00000001;
+  const long CONTROL_MASK = 0x00000002;
+  const long SHIFT_MASK   = 0x00000004;
+  const long META_MASK    = 0x00000008;
+
+  /** The original target of the event, before any retargetings. */
+  readonly attribute nsIDOMEventTarget  originalTarget;
+  /**
+   * The explicit original target of the event.  If the event was retargeted
+   * for some reason other than an anonymous boundary crossing, this will be set
+   * to the target before the retargeting occurs.  For example, mouse events
+   * are retargeted to their parent node when they happen over text nodes (bug
+   * 185889), and in that case .target will show the parent and
+   * .explicitOriginalTarget will show the text node.
+   * .explicitOriginalTarget differs from .originalTarget in that it will never
+   * contain anonymous content.
+   */
+  readonly attribute nsIDOMEventTarget  explicitOriginalTarget;
+
+  /**
+   * @deprecated Use nsIDOMEvent::stopPropagation.
+   */
+  void                      preventBubble();
+
+  /**
+   * @deprecated Use nsIDOMEvent::stopPropagation.
+   */
+  void                      preventCapture();
+
+  /**
+   * @deprecated Use nsIDOMEvent::defaultPrevented.
+   * To be removed in bug 691151.
+   */
+  boolean                   getPreventDefault();
+
+  readonly attribute boolean isTrusted;
+
+  [noscript] void duplicatePrivateData();
+  [noscript] void setTarget(in nsIDOMEventTarget aTarget);
+  [notxpcom] boolean IsDispatchStopped();
+  [notxpcom] nsEventPtr GetInternalNSEvent();
+  [noscript] void SetTrusted(in boolean aTrusted);
+  [notxpcom] void Serialize(in IPCMessagePtr aMsg,
+                            in boolean aSerializeInterfaceType);
+  [notxpcom] boolean Deserialize(in ConstIPCMessagePtr aMsg, out voidPtr aIter);
+  
 };
 
 dictionary EventInit
@@ -158,3 +259,75 @@ dictionary EventInit
   boolean bubbles;
   boolean cancelable;
 };
+
+%{C++
+nsresult
+NS_NewDOMEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, nsEvent *aEvent);
+nsresult
+NS_NewDOMDataContainerEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, nsEvent *aEvent);
+nsresult
+NS_NewDOMUIEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, class nsGUIEvent *aEvent);
+nsresult
+NS_NewDOMMouseEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, class nsInputEvent *aEvent);
+nsresult
+NS_NewDOMMouseScrollEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, class nsInputEvent *aEvent);
+nsresult
+NS_NewDOMWheelEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, mozilla::widget::WheelEvent *aEvent);
+nsresult
+NS_NewDOMDragEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, class nsDragEvent *aEvent);
+nsresult
+NS_NewDOMKeyboardEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, class nsKeyEvent *aEvent);
+nsresult
+NS_NewDOMCompositionEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, class nsCompositionEvent *aEvent);
+nsresult
+NS_NewDOMMutationEvent(nsIDOMEvent** aResult, nsPresContext* aPresContext, class nsMutationEvent* aEvent);
+nsresult
+NS_NewDOMDeviceMotionEvent(nsIDOMEvent** aResult, nsPresContext* aPresContext, nsEvent* aEvent);
+nsresult
+NS_NewDOMTextEvent(nsIDOMEvent** aResult, nsPresContext* aPresContext, class nsTextEvent* aEvent);
+nsresult
+NS_NewDOMBeforeUnloadEvent(nsIDOMEvent** aResult, nsPresContext* aPresContext, nsEvent* aEvent);
+nsresult
+NS_NewDOMSVGEvent(nsIDOMEvent** aResult, nsPresContext* aPresContext, class nsEvent* aEvent);
+nsresult
+NS_NewDOMSVGZoomEvent(nsIDOMEvent** aResult, nsPresContext* aPresContext, class nsGUIEvent* aEvent);
+nsresult
+NS_NewDOMTimeEvent(nsIDOMEvent** aResult, nsPresContext* aPresContext, class nsEvent* aEvent);
+nsresult
+NS_NewDOMXULCommandEvent(nsIDOMEvent** aResult, nsPresContext* aPresContext, class nsInputEvent* aEvent);
+nsresult
+NS_NewDOMCommandEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, nsCommandEvent* aEvent);
+nsresult
+NS_NewDOMMessageEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, class nsEvent* aEvent);
+nsresult
+NS_NewDOMProgressEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, class nsEvent* aEvent);
+// This empties aInvalidateRequests.
+nsresult
+NS_NewDOMNotifyPaintEvent(nsIDOMEvent** aResult, nsPresContext* aPresContext,
+                          nsEvent* aEvent,
+                          uint32_t aEventType = 0,
+                          nsInvalidateRequestList* aInvalidateRequests = nullptr);
+nsresult
+NS_NewDOMAudioAvailableEvent(nsIDOMEvent** aResult, nsPresContext* aPresContext,
+                             nsEvent* aEvent,
+                             uint32_t aEventType = 0,
+                             float* aFrameBuffer = nullptr,
+                             uint32_t aFrameBufferLength = 0,
+                             float aTime = 0);
+nsresult
+NS_NewDOMSimpleGestureEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, class nsSimpleGestureEvent* aEvent);
+nsresult
+NS_NewDOMScrollAreaEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, class nsScrollAreaEvent* aEvent);
+nsresult
+NS_NewDOMTransitionEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, class nsTransitionEvent* aEvent);
+nsresult
+NS_NewDOMAnimationEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, class nsAnimationEvent* aEvent);
+nsresult
+NS_NewDOMTouchEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, class nsTouchEvent *aEvent);
+nsresult
+NS_NewDOMSmsEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, nsEvent* aEvent);
+nsresult
+NS_NewDOMMozSettingsEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, nsEvent* aEvent);
+nsresult
+NS_NewDOMMozApplicationEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, nsEvent* aEvent);
+%}

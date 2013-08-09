@@ -71,7 +71,7 @@ nsThreadManager::Init()
 
   nsresult rv = mMainThread->InitCurrentThread();
   if (NS_FAILED(rv)) {
-    mMainThread = nsnull;
+    mMainThread = nullptr;
     return rv;
   }
 
@@ -122,7 +122,7 @@ nsThreadManager::Shutdown()
   // world until such time as the threads exit.
 
   // Shutdown all threads that require it (join with threads that we created).
-  for (PRUint32 i = 0; i < threads.Length(); ++i) {
+  for (uint32_t i = 0; i < threads.Length(); ++i) {
     nsThread *thread = threads[i];
     if (thread->ShutdownRequired())
       thread->Shutdown();
@@ -142,15 +142,15 @@ nsThreadManager::Shutdown()
   // Normally thread shutdown clears the observer for the thread, but since the
   // main thread is special we do it manually here after we're sure all events
   // have been processed.
-  mMainThread->SetObserver(nsnull);
+  mMainThread->SetObserver(nullptr);
   mMainThread->ClearObservers();
 
   // Release main thread object.
-  mMainThread = nsnull;
-  mLock = nsnull;
+  mMainThread = nullptr;
+  mLock = nullptr;
 
   // Remove the TLS entry for the main thread.
-  PR_SetThreadPrivate(mCurThreadIndex, nsnull);
+  PR_SetThreadPrivate(mCurThreadIndex, nullptr);
 }
 
 void
@@ -175,7 +175,7 @@ nsThreadManager::UnregisterCurrentThread(nsThread *thread)
 
   mThreadsByPRThread.Remove(thread->GetPRThread());
 
-  PR_SetThreadPrivate(mCurThreadIndex, nsnull);
+  PR_SetThreadPrivate(mCurThreadIndex, nullptr);
   // Ref-count balanced via ReleaseObject
 }
 
@@ -188,20 +188,20 @@ nsThreadManager::GetCurrentThread()
     return static_cast<nsThread *>(data);
 
   if (!mInitialized) {
-    return nsnull;
+    return nullptr;
   }
 
   // OK, that's fine.  We'll dynamically create one :-)
   nsRefPtr<nsThread> thread = new nsThread(nsThread::NOT_MAIN_THREAD, 0);
   if (!thread || NS_FAILED(thread->InitCurrentThread()))
-    return nsnull;
+    return nullptr;
 
   return thread.get();  // reference held in TLS
 }
 
 NS_IMETHODIMP
-nsThreadManager::NewThread(PRUint32 creationFlags,
-                           PRUint32 stackSize,
+nsThreadManager::NewThread(uint32_t creationFlags,
+                           uint32_t stackSize,
                            nsIThread **result)
 {
   // No new threads during Shutdown

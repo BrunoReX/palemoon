@@ -4,13 +4,12 @@
 
 package org.mozilla.gecko;
 
-import java.io.File;
-import java.util.List;
-import java.util.ArrayList;
-import java.util.concurrent.SynchronousQueue;
-import java.util.concurrent.TimeUnit;
+import org.mozilla.gecko.util.ActivityResultHandler;
+import org.mozilla.gecko.util.ActivityResultHandlerMap;
+
 import org.json.JSONException;
 import org.json.JSONObject;
+
 import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Context;
@@ -21,6 +20,12 @@ import android.net.Uri;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Log;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.TimeUnit;
 
 class ActivityHandlerHelper {
     private static final String LOGTAG = "GeckoActivityHandlerHelper";
@@ -143,7 +148,7 @@ class ActivityHandlerHelper {
         }
 
         Runnable filePicker = new FilePickerPromptRunnable(getFilePickerTitle(context, aMimeType), items);
-        GeckoAppShell.getHandler().post(filePicker);
+        GeckoAppShell.getMainHandler().post(filePicker);
 
         String promptServiceResult = "";
         try {
@@ -232,7 +237,7 @@ class ActivityHandlerHelper {
         }
 
         public void run() {
-            GeckoApp.mAppContext.getPromptService().show(mTitle, "", null, mItems, false);
+            GeckoApp.mAppContext.getPromptService().show(mTitle, "", mItems, false);
         }
     }
 }

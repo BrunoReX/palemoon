@@ -4,7 +4,7 @@ parsing command lines into argv and making sure that no shell magic is being use
 """
 
 #TODO: ship pyprocessing?
-import multiprocessing, multiprocessing.dummy
+import multiprocessing
 import subprocess, shlex, re, logging, sys, traceback, os, imp, glob
 # XXXkhuey Work around http://bugs.python.org/issue1731717
 subprocess._cleanup = lambda: None
@@ -15,72 +15,238 @@ if sys.platform=='win32':
 _log = logging.getLogger('pymake.process')
 
 _escapednewlines = re.compile(r'\\\n')
-_blacklist = re.compile(r'[$><;[{~`|&()]')
-_needsglob = re.compile(r'[\*\?]')
-def clinetoargv(cline):
+
+def tokens2re(tokens):
+    # Create a pattern for non-escaped tokens, in the form:
+    #   (?<!\\)(?:a|b|c...)
+    # This is meant to match patterns a, b, or c, or ... if they are not
+    # preceded by a backslash.
+    # where a, b, c... are in the form
+    #   (?P<name>pattern)
+    # which matches the pattern and captures it in a named match group.
+    # The group names and patterns come are given as a dict in the function
+    # argument.
+    nonescaped = r'(?<!\\)(?:%s)' % '|'.join('(?P<%s>%s)' % (name, value) for name, value in tokens.iteritems())
+    # The final pattern matches either the above pattern, or an escaped
+    # backslash, captured in the "escape" match group.
+    return re.compile('(?:%s|%s)' % (nonescaped, r'(?P<escape>\\\\)'))
+
+_unquoted_tokens = tokens2re({
+  'whitespace': r'[\t\r\n ]',
+  'quote': r'[\'"]',
+  'comment': '#',
+  'special': r'[<>&|`~(){}$;]',
+  'backslashed': r'\\[^\\]',
+  'glob': r'[\*\?]',
+})
+
+_doubly_quoted_tokens = tokens2re({
+  'quote': '"',
+  'backslashedquote': r'\\"',
+  'special': '\$',
+  'backslashed': r'\\[^\\"]',
+})
+
+class MetaCharacterException(Exception):
+    def __init__(self, char):
+        self.char = char
+
+class ClineSplitter(list):
+    """
+    Parses a given command line string and creates a list of command
+    and arguments, with wildcard expansion.
+    """
+    def __init__(self, cline, cwd):
+        self.cwd = cwd
+        self.arg = ''
+        self.cline = cline
+        self.glob = False
+        self._parse_unquoted()
+
+    def _push(self, str):
+        """
+        Push the given string as part of the current argument
+        """
+        self.arg += str
+
+    def _next(self):
+        """
+        Finalize current argument, effectively adding it to the list.
+        Perform globbing if needed.
+        """
+        if not self.arg:
+            return
+        if self.glob:
+            if os.path.isabs(self.arg):
+                path = self.arg
+            else:
+                path = os.path.join(self.cwd, self.arg)
+            globbed = glob.glob(path)
+            if not globbed:
+                # If globbing doesn't find anything, the literal string is
+                # used.
+                self.append(self.arg)
+            else:
+                self.extend(f[len(path)-len(self.arg):] for f in globbed)
+            self.glob = False
+        else:
+            self.append(self.arg)
+        self.arg = ''
+
+    def _parse_unquoted(self):
+        """
+        Parse command line remainder in the context of an unquoted string.
+        """
+        while self.cline:
+            # Find the next token
+            m = _unquoted_tokens.search(self.cline)
+            # If we find none, the remainder of the string can be pushed to
+            # the current argument and the argument finalized
+            if not m:
+                self._push(self.cline)
+                break
+            # The beginning of the string, up to the found token, is part of
+            # the current argument
+            self._push(self.cline[:m.start()])
+            self.cline = self.cline[m.end():]
+
+            match = dict([(name, value) for name, value in m.groupdict().items() if value])
+            if 'quote' in match:
+                # " or ' start a quoted string
+                if match['quote'] == '"':
+                    self._parse_doubly_quoted()
+                else:
+                    self._parse_quoted()
+            elif 'comment' in match:
+                # Comments are ignored. The current argument can be finalized,
+                # and parsing stopped.
+                break
+            elif 'special' in match:
+                # Unquoted, non-escaped special characters need to be sent to a
+                # shell.
+                raise MetaCharacterException, match['special']
+            elif 'whitespace' in match:
+                # Whitespaces terminate current argument.
+                self._next()
+            elif 'escape' in match:
+                # Escaped backslashes turn into a single backslash
+                self._push('\\')
+            elif 'backslashed' in match:
+                # Backslashed characters are unbackslashed
+                # e.g. echo \a -> a
+                self._push(match['backslashed'][1])
+            elif 'glob' in match:
+                # ? or * will need globbing
+                self.glob = True
+                self._push(m.group(0))
+            else:
+                raise Exception, "Shouldn't reach here"
+        self._next()
+
+    def _parse_quoted(self):
+        # Single quoted strings are preserved, except for the final quote
+        index = self.cline.find("'")
+        if index == -1:
+            raise Exception, 'Unterminated quoted string in command'
+        self._push(self.cline[:index])
+        self.cline = self.cline[index+1:]
+
+    def _parse_doubly_quoted(self):
+        if not self.cline:
+            raise Exception, 'Unterminated quoted string in command'
+        while self.cline:
+            m = _doubly_quoted_tokens.search(self.cline)
+            if not m:
+                raise Exception, 'Unterminated quoted string in command'
+            self._push(self.cline[:m.start()])
+            self.cline = self.cline[m.end():]
+            match = dict([(name, value) for name, value in m.groupdict().items() if value])
+            if 'quote' in match:
+                # a double quote ends the quoted string, so go back to
+                # unquoted parsing
+                return
+            elif 'special' in match:
+                # Unquoted, non-escaped special characters in a doubly quoted
+                # string still have a special meaning and need to be sent to a
+                # shell.
+                raise MetaCharacterException, match['special']
+            elif 'escape' in match:
+                # Escaped backslashes turn into a single backslash
+                self._push('\\')
+            elif 'backslashedquote' in match:
+                # Backslashed double quotes are un-backslashed
+                self._push('"')
+            elif 'backslashed' in match:
+                # Backslashed characters are kept backslashed
+                self._push(match['backslashed'])
+
+def clinetoargv(cline, cwd):
     """
     If this command line can safely skip the shell, return an argv array.
     @returns argv, badchar
     """
-
     str = _escapednewlines.sub('', cline)
-    m = _blacklist.search(str)
-    if m is not None:
-        return None, m.group(0)
-
-    args = shlex.split(str, comments=True)
+    try:
+        args = ClineSplitter(str, cwd)
+    except MetaCharacterException, e:
+        return None, e.char
 
     if len(args) and args[0].find('=') != -1:
         return None, '='
 
     return args, None
 
-def doglobbing(args, cwd):
-    """
-    Perform any needed globbing on the argument list passed in
-    """
-    globbedargs = []
-    for arg in args:
-        if _needsglob.search(arg):
-            globbedargs.extend(glob.glob(os.path.join(cwd, arg)))
-        else:
-            globbedargs.append(arg)
-
-    return globbedargs
-
+# shellwords contains a set of shell builtin commands that need to be
+# executed within a shell. It also contains a set of commands that are known
+# to be giving problems when run directly instead of through the msys shell.
 shellwords = (':', '.', 'break', 'cd', 'continue', 'exec', 'exit', 'export',
               'getopts', 'hash', 'pwd', 'readonly', 'return', 'shift', 
               'test', 'times', 'trap', 'umask', 'unset', 'alias',
               'set', 'bind', 'builtin', 'caller', 'command', 'declare',
               'echo', 'enable', 'help', 'let', 'local', 'logout', 
               'printf', 'read', 'shopt', 'source', 'type', 'typeset',
-              'ulimit', 'unalias', 'set')
+              'ulimit', 'unalias', 'set', 'find')
 
-def call(cline, env, cwd, loc, cb, context, echo, justprint=False):
+def prepare_command(cline, cwd, loc):
+    """
+    Returns a list of command and arguments for the given command line string.
+    If the command needs to be run through a shell for some reason, the
+    returned list contains the shell invocation.
+    """
+
     #TODO: call this once up-front somewhere and save the result?
     shell, msys = util.checkmsyscompat()
 
     shellreason = None
+    executable = None
     if msys and cline.startswith('/'):
         shellreason = "command starts with /"
     else:
-        argv, badchar = clinetoargv(cline)
+        argv, badchar = clinetoargv(cline, cwd)
         if argv is None:
             shellreason = "command contains shell-special character '%s'" % (badchar,)
         elif len(argv) and argv[0] in shellwords:
             shellreason = "command starts with shell primitive '%s'" % (argv[0],)
-        else:
-            argv = doglobbing(argv, cwd)
+        elif argv and (os.sep in argv[0] or os.altsep and os.altsep in argv[0]):
+            executable = util.normaljoin(cwd, argv[0])
+            # Avoid "%1 is not a valid Win32 application" errors, assuming
+            # that if the executable path is to be resolved with PATH, it will
+            # be a Win32 executable.
+            if sys.platform == 'win32' and os.path.isfile(executable) and open(executable, 'rb').read(2) == "#!":
+                shellreason = "command executable starts with a hashbang"
 
     if shellreason is not None:
         _log.debug("%s: using shell: %s: '%s'", loc, shellreason, cline)
         if msys:
             if len(cline) > 3 and cline[1] == ':' and cline[2] == '/':
                 cline = '/' + cline[0] + cline[2:]
-            cline = [shell, "-c", cline]
-        context.call(cline, shell=not msys, env=env, cwd=cwd, cb=cb, echo=echo,
-                     justprint=justprint)
-        return
+        argv = [shell, "-c", cline]
+        executable = None
+
+    return executable, argv
+
+def call(cline, env, cwd, loc, cb, context, echo, justprint=False):
+    executable, argv = prepare_command(cline, cwd, loc)
 
     if not len(argv):
         cb(res=0)
@@ -95,17 +261,11 @@ def call(cline, env, cwd, loc, cb, context, echo, justprint=False):
         command.main(argv[2:], env, cwd, cb)
         return
 
-    if argv[0].find('/') != -1:
-        executable = util.normaljoin(cwd, argv[0])
-    else:
-        executable = None
-
     context.call(argv, executable=executable, shell=False, env=env, cwd=cwd, cb=cb,
                  echo=echo, justprint=justprint)
 
 def call_native(module, method, argv, env, cwd, loc, cb, context, echo, justprint=False,
                 pycommandpath=None):
-    argv = doglobbing(argv, cwd)
     context.call_native(module, method, argv, env=env, cwd=cwd, cb=cb,
                         echo=echo, justprint=justprint, pycommandpath=pycommandpath)
 
@@ -149,14 +309,27 @@ class PopenJob(Job):
         self.shell = shell
         self.env = env
         self.cwd = cwd
+        self.parentpid = os.getpid()
 
     def run(self):
+        assert os.getpid() != self.parentpid
+        # subprocess.Popen doesn't use the PATH set in the env argument for
+        # finding the executable on some platforms (but strangely it does on
+        # others!), so set os.environ['PATH'] explicitly. This is parallel-
+        # safe because pymake uses separate processes for parallelism, and
+        # each process is serial. See http://bugs.python.org/issue8557 for a
+        # general overview of "subprocess PATH semantics and portability".
+        oldpath = os.environ['PATH']
         try:
+            if self.env is not None and self.env.has_key('PATH'):
+                os.environ['PATH'] = self.env['PATH']
             p = subprocess.Popen(self.argv, executable=self.executable, shell=self.shell, env=self.env, cwd=self.cwd)
             return p.wait()
         except OSError, e:
             print >>sys.stderr, e
             return -127
+        finally:
+            os.environ['PATH'] = oldpath
 
 class PythonException(Exception):
     def __init__(self, message, exitcode):
@@ -173,15 +346,24 @@ def load_module_recursive(module, path):
     passing a custom path to search for modules.
     """
     bits = module.split('.')
+    oldsyspath = sys.path
     for i, bit in enumerate(bits):
         dotname = '.'.join(bits[:i+1])
         try:
           f, path, desc = imp.find_module(bit, path)
+          # Add the directory the module was found in to sys.path
+          if path != '':
+              abspath = os.path.abspath(path)
+              if not os.path.isdir(abspath):
+                  abspath = os.path.dirname(path)
+              sys.path = [abspath] + sys.path
           m = imp.load_module(dotname, f, path, desc)
           if f is None:
               path = m.__path__
         except ImportError:
             return
+        finally:
+            sys.path = oldsyspath
 
 class PythonJob(Job):
     """
@@ -194,12 +376,17 @@ class PythonJob(Job):
         self.env = env
         self.cwd = cwd
         self.pycommandpath = pycommandpath or []
+        self.parentpid = os.getpid()
 
     def run(self):
-        oldenv = os.environ
+        assert os.getpid() != self.parentpid
+        # os.environ is a magic dictionary. Setting it to something else
+        # doesn't affect the environment of subprocesses, so use clear/update
+        oldenv = dict(os.environ)
         try:
             os.chdir(self.cwd)
-            os.environ = self.env
+            os.environ.clear()
+            os.environ.update(self.env)
             if self.module not in sys.modules:
                 load_module_recursive(self.module,
                                       sys.path + self.pycommandpath)
@@ -208,22 +395,29 @@ class PythonJob(Job):
                 return -127                
             m = sys.modules[self.module]
             if self.method not in m.__dict__:
-                print >>sys.stderr, "No method named '%s' in module %s" % (method, module)
+                print >>sys.stderr, "No method named '%s' in module %s" % (self.method, self.module)
                 return -127
-            m.__dict__[self.method](self.argv)
+            rv = m.__dict__[self.method](self.argv)
+            if rv != 0 and rv is not None:
+                print >>sys.stderr, (
+                    "Native command '%s %s' returned value '%s'" %
+                    (self.module, self.method, rv))
+                return (rv if isinstance(rv, int) else 1)
+
         except PythonException, e:
             print >>sys.stderr, e
             return e.exitcode
         except:
             e = sys.exc_info()[1]
-            if isinstance(e, SystemExit) and (e.code == 0 or e.code == '0'):
+            if isinstance(e, SystemExit) and (e.code == 0 or e.code is None):
                 pass # sys.exit(0) is not a failure
             else:
                 print >>sys.stderr, e
-                print >>sys.stderr, traceback.print_exc()
+                traceback.print_exc()
                 return -127
         finally:
-            os.environ = oldenv
+            os.environ.clear()
+            os.environ.update(oldenv)
         return 0
 
 def job_runner(job):
@@ -245,7 +439,6 @@ class ParallelContext(object):
         self.exit = False
 
         self.processpool = multiprocessing.Pool(processes=jcount)
-        self.threadpool = multiprocessing.dummy.Pool(processes=jcount)
         self.pending = [] # list of (cb, args, kwargs)
         self.running = [] # list of (subprocess, cb)
 
@@ -254,9 +447,7 @@ class ParallelContext(object):
     def finish(self):
         assert len(self.pending) == 0 and len(self.running) == 0, "pending: %i running: %i" % (len(self.pending), len(self.running))
         self.processpool.close()
-        self.threadpool.close()
         self.processpool.join()
-        self.threadpool.join()
         self._allcontexts.remove(self)
 
     def run(self):
@@ -284,7 +475,7 @@ class ParallelContext(object):
         """
 
         job = PopenJob(argv, executable=executable, shell=shell, env=env, cwd=cwd)
-        self.defer(self._docall_generic, self.threadpool, job, cb, echo, justprint)
+        self.defer(self._docall_generic, self.processpool, job, cb, echo, justprint)
 
     def call_native(self, module, method, argv, env, cwd, cb,
                     echo, justprint=False, pycommandpath=None):

@@ -18,7 +18,6 @@
 #include "nsIChannel.h"
 #include "nsCOMArray.h"
 #include "nsContentSink.h"
-#include "nsIHTMLDocument.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIInputStream.h"
 #include "nsDetectionConfident.h"
@@ -73,12 +72,12 @@ class nsHtml5Parser : public nsIParser,
      *  @param   aCharset the charset of a document
      *  @param   aCharsetSource the source of the charset
      */
-    NS_IMETHOD_(void) SetDocumentCharset(const nsACString& aCharset, PRInt32 aSource);
+    NS_IMETHOD_(void) SetDocumentCharset(const nsACString& aCharset, int32_t aSource);
 
     /**
      * Don't call. For interface compat only.
      */
-    NS_IMETHOD_(void) GetDocumentCharset(nsACString& aCharset, PRInt32& aSource)
+    NS_IMETHOD_(void) GetDocumentCharset(nsACString& aCharset, int32_t& aSource)
     {
       NS_NOTREACHED("No one should call this.");
     }
@@ -139,7 +138,7 @@ class nsHtml5Parser : public nsIParser,
      * @param   aMode ignored (for interface compat only)
      */
     NS_IMETHOD Parse(nsIURI* aURL,
-                     nsIRequestObserver* aListener = nsnull,
+                     nsIRequestObserver* aListener = nullptr,
                      void* aKey = 0,
                      nsDTDMode aMode = eDTDMode_autodetect);
 
@@ -237,12 +236,12 @@ class nsHtml5Parser : public nsIParser,
       return mTokenizer;
     }
 
-    void InitializeDocWriteParserState(nsAHtml5TreeBuilderState* aState, PRInt32 aLine);
+    void InitializeDocWriteParserState(nsAHtml5TreeBuilderState* aState, int32_t aLine);
 
     void DropStreamParser() {
       if (mStreamParser) {
         mStreamParser->DropTimer();
-        mStreamParser = nsnull;
+        mStreamParser = nullptr;
       }
     }
     
@@ -275,11 +274,6 @@ class nsHtml5Parser : public nsIParser,
     bool                          mDocWriteSpeculativeLastWasCR;
 
     /**
-     * The parser is in the fragment mode
-     */
-    bool                          mFragmentMode;
-
-    /**
      * The parser is blocking on a script
      */
     bool                          mBlocked;
@@ -292,7 +286,7 @@ class nsHtml5Parser : public nsIParser,
     /**
      * The number of parser-inserted script currently being evaluated.
      */
-    PRInt32                       mParserInsertedScriptsBeingEvaluated;
+    int32_t                       mParserInsertedScriptsBeingEvaluated;
 
     /**
      * True if document.close() has been called.
@@ -300,9 +294,6 @@ class nsHtml5Parser : public nsIParser,
     bool                          mDocumentClosed;
 
     bool                          mInDocumentWrite;
-
-    // Gecko integration
-    void*                         mRootContextKey;
 
     // Portable parser objects
     /**
@@ -312,7 +303,7 @@ class nsHtml5Parser : public nsIParser,
 
     /**
      * The last buffer in the pending UTF-16 buffer queue. Always points
-     * to a sentinel object with nsnull as its parser key.
+     * to a sentinel object with nullptr as its parser key.
      */
     nsHtml5OwningUTF16Buffer* mLastBuffer; // weak ref;
 
@@ -349,7 +340,7 @@ class nsHtml5Parser : public nsIParser,
     /**
      *
      */
-    PRInt32                             mRootContextLineNumber;
+    int32_t                             mRootContextLineNumber;
     
     /**
      * Whether it's OK to transfer parsing back to the stream parser

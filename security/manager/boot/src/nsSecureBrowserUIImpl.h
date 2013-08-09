@@ -75,7 +75,6 @@ protected:
     lis_no_security,
     lis_broken_security,
     lis_mixed_security,
-    lis_low_security,
     lis_high_security
   };
 
@@ -83,31 +82,28 @@ protected:
   bool mNotifiedToplevelIsEV;
 
   void ResetStateTracking();
-  PRUint32 mNewToplevelSecurityState;
+  uint32_t mNewToplevelSecurityState;
   bool mNewToplevelIsEV;
   bool mNewToplevelSecurityStateKnown;
   bool mIsViewSource;
 
   nsXPIDLString mInfoTooltip;
-  PRInt32 mDocumentRequestsInProgress;
-  PRInt32 mSubRequestsHighSecurity;
-  PRInt32 mSubRequestsLowSecurity;
-  PRInt32 mSubRequestsBrokenSecurity;
-  PRInt32 mSubRequestsNoSecurity;
+  int32_t mDocumentRequestsInProgress;
+  int32_t mSubRequestsBrokenSecurity;
+  int32_t mSubRequestsNoSecurity;
   bool mRestoreSubrequests;
   bool mOnLocationChangeSeen;
 #ifdef DEBUG
   /* related to mReentrantMonitor */
-  PRInt32 mOnStateLocationChangeReentranceDetection;
+  int32_t mOnStateLocationChangeReentranceDetection;
 #endif
 
   static already_AddRefed<nsISupports> ExtractSecurityInfo(nsIRequest* aRequest);
-  static nsresult MapInternalToExternalState(PRUint32* aState, lockIconState lock, bool ev);
+  static nsresult MapInternalToExternalState(uint32_t* aState, lockIconState lock, bool ev);
   nsresult UpdateSecurityState(nsIRequest* aRequest, bool withNewLocation,
                                bool withUpdateStatus, bool withUpdateTooltip);
-  bool UpdateMyFlags(bool &showWarning, lockIconState &warnSecurityState);
-  nsresult TellTheWorld(bool showWarning, 
-                        lockIconState warnSecurityState, 
+  bool UpdateMyFlags(lockIconState &warnSecurityState);
+  nsresult TellTheWorld(lockIconState warnSecurityState, 
                         nsIRequest* aRequest);
 
   nsresult EvaluateAndUpdateSecurityState(nsIRequest* aRequest, nsISupports *info,

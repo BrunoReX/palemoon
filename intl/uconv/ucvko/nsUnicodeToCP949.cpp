@@ -13,14 +13,14 @@
 
 
 // Unicode Hangul syllables (not enumerated in KS X 1001) to CP949 : 8822 of them
-static const PRUint16 g_ufCP949NoKSCHangulMapping[] = {
+static const uint16_t g_ufCP949NoKSCHangulMapping[] = {
 #include "u20cp949hangul.uf"
 };
 
 
 
-static const PRUint16 *g_CP949MappingTable[3] = {
-  g_ucvko_AsciiMapping,
+static const uint16_t *g_CP949MappingTable[3] = {
+  g_ASCIIMappingTable,
   g_ufKSC5601Mapping,
   g_ufCP949NoKSCHangulMapping
 };

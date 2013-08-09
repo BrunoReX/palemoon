@@ -34,9 +34,8 @@ using mozilla::MutexAutoLock;
 namespace {
 
 inline
-PRUint32
-GetQuotaPermissions(const nsACString& aASCIIOrigin,
-                    nsIDOMWindow* aWindow)
+uint32_t
+GetQuotaPermissions(nsIDOMWindow* aWindow)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
@@ -47,17 +46,15 @@ GetQuotaPermissions(const nsACString& aASCIIOrigin,
     return nsIPermissionManager::ALLOW_ACTION;
   }
 
-  nsCOMPtr<nsIURI> uri;
-  nsresult rv = NS_NewURI(getter_AddRefs(uri), aASCIIOrigin);
-  NS_ENSURE_SUCCESS(rv, nsIPermissionManager::DENY_ACTION);
-
   nsCOMPtr<nsIPermissionManager> permissionManager =
     do_GetService(NS_PERMISSIONMANAGER_CONTRACTID);
   NS_ENSURE_TRUE(permissionManager, nsIPermissionManager::DENY_ACTION);
 
-  PRUint32 permission;
-  rv = permissionManager->TestPermission(uri, PERMISSION_INDEXEDDB_UNLIMITED,
-                                         &permission);
+  uint32_t permission;
+  nsresult rv =
+    permissionManager->TestPermissionFromPrincipal(sop->GetPrincipal(),
+                                                   PERMISSION_INDEXEDDB_UNLIMITED,
+                                                   &permission);
   NS_ENSURE_SUCCESS(rv, nsIPermissionManager::DENY_ACTION);
 
   return permission;
@@ -111,7 +108,7 @@ CheckQuotaHelper::Cancel()
     nsCOMPtr<nsIObserverService> obs = GetObserverService();
     NS_WARN_IF_FALSE(obs, "Failed to get observer service!");
     if (obs && NS_FAILED(obs->NotifyObservers(static_cast<nsIRunnable*>(this),
-                                              TOPIC_QUOTA_CANCEL, nsnull))) {
+                                              TOPIC_QUOTA_CANCEL, nullptr))) {
       NS_WARNING("Failed to notify observers!");
     }
 
@@ -121,7 +118,7 @@ CheckQuotaHelper::Cancel()
       nsAutoString response;
       response.AppendInt(nsIPermissionManager::UNKNOWN_ACTION);
 
-      if (NS_SUCCEEDED(Observe(nsnull, TOPIC_QUOTA_RESPONSE, response.get()))) {
+      if (NS_SUCCEEDED(Observe(nullptr, TOPIC_QUOTA_RESPONSE, response.get()))) {
         NS_ASSERTION(mHasPrompted, "Should have set this in Observe!");
       }
       else {
@@ -142,14 +139,9 @@ CheckQuotaHelper::Run()
 
   nsresult rv = NS_OK;
 
-  if (mASCIIOrigin.IsEmpty()) {
-    rv = IndexedDatabaseManager::GetASCIIOriginFromWindow(mWindow,
-                                                          mASCIIOrigin);
-  }
-
   if (NS_SUCCEEDED(rv)) {
     if (!mHasPrompted) {
-      mPromptResult = GetQuotaPermissions(mASCIIOrigin, mWindow);
+      mPromptResult = GetQuotaPermissions(mWindow);
     }
 
     if (mHasPrompted) {
@@ -159,22 +151,22 @@ CheckQuotaHelper::Run()
       // we cannot set the permission from the child).
       if (mPromptResult != nsIPermissionManager::UNKNOWN_ACTION &&
           XRE_GetProcessType() == GeckoProcessType_Default) {
-        nsCOMPtr<nsIURI> uri;
-        rv = NS_NewURI(getter_AddRefs(uri), mASCIIOrigin);
-        NS_ENSURE_SUCCESS(rv, rv);
-    
+        nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(mWindow);
+        NS_ENSURE_TRUE(sop, NS_ERROR_FAILURE);
+
         nsCOMPtr<nsIPermissionManager> permissionManager =
           do_GetService(NS_PERMISSIONMANAGER_CONTRACTID);
         NS_ENSURE_STATE(permissionManager);
-    
-        rv = permissionManager->Add(uri, PERMISSION_INDEXEDDB_UNLIMITED,
-                                    mPromptResult,
-                                    nsIPermissionManager::EXPIRE_NEVER, 0);
+
+        rv = permissionManager->AddFromPrincipal(sop->GetPrincipal(),
+                                                 PERMISSION_INDEXEDDB_UNLIMITED,
+                                                 mPromptResult,
+                                                 nsIPermissionManager::EXPIRE_NEVER, 0);
         NS_ENSURE_SUCCESS(rv, rv);
       }
     }
     else if (mPromptResult == nsIPermissionManager::UNKNOWN_ACTION) {
-      PRUint32 quota = IndexedDatabaseManager::GetIndexedDBQuotaMB();
+      uint32_t quota = IndexedDatabaseManager::GetIndexedDBQuotaMB();
 
       nsString quotaString;
       quotaString.AppendInt(quota);
@@ -200,7 +192,7 @@ CheckQuotaHelper::Run()
   NS_ASSERTION(mWaiting, "Huh?!");
 
     // This should never be used again.
-  mWindow = nsnull;
+  mWindow = nullptr;
 
   mWaiting = false;
   mCondVar.NotifyAll();
@@ -222,7 +214,7 @@ CheckQuotaHelper::GetInterface(const nsIID& aIID,
     return mWindow->QueryInterface(aIID, aResult);
   }
 
-  *aResult = nsnull;
+  *aResult = nullptr;
   return NS_ERROR_NOT_AVAILABLE;
 }
 

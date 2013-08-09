@@ -8,7 +8,6 @@
 
 #include "nsISupports.h"
 
-class nsIDocument;
 class nsICSSLoaderObserver;
 class nsIURI;
 
@@ -85,14 +84,14 @@ public:
    * proper loading of xml-stylesheet processing instructions in XUL overlays
    * and is only currently used by nsXMLStylesheetPI.
    *
-   * @param aNewBaseURI the new base URI, nsnull to use the default base URI.
+   * @param aNewBaseURI the new base URI, nullptr to use the default base URI.
    */
   virtual void OverrideBaseURI(nsIURI* aNewBaseURI) = 0;
 
   // This doesn't entirely belong here since they only make sense for
   // some types of linking elements, but it's a better place than
   // anywhere else.
-  virtual void SetLineNumber(PRUint32 aLineNumber) = 0;
+  virtual void SetLineNumber(uint32_t aLineNumber) = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIStyleSheetLinkingElement,

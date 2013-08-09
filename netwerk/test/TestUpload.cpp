@@ -22,7 +22,7 @@ static NS_DEFINE_CID(kIOServiceCID, NS_IOSERVICE_CID);
 //
 // set NSPR_LOG_MODULES=Test:5
 //
-static PRLogModuleInfo *gTestLog = nsnull;
+static PRLogModuleInfo *gTestLog = nullptr;
 #endif
 #define LOG(args) PR_LOG(gTestLog, PR_LOG_DEBUG, args)
 
@@ -65,15 +65,15 @@ NS_IMETHODIMP
 InputTestConsumer::OnDataAvailable(nsIRequest *request, 
                                    nsISupports* context,
                                    nsIInputStream *aIStream, 
-                                   PRUint32 aSourceOffset,
-                                   PRUint32 aLength)
+                                   uint64_t aSourceOffset,
+                                   uint32_t aLength)
 {
   char buf[1025];
-  PRUint32 amt, size;
+  uint32_t amt, size;
   nsresult rv;
 
   while (aLength) {
-    size = NS_MIN<PRUint32>(aLength, sizeof(buf));
+    size = NS_MIN<uint32_t>(aLength, sizeof(buf));
     rv = aIStream->Read(buf, size, &amt);
     if (NS_FAILED(rv)) {
       NS_ASSERTION((NS_BASE_STREAM_WOULD_BLOCK != rv), 
@@ -117,7 +117,7 @@ main(int argc, char* argv[])
 
     {
         nsCOMPtr<nsIServiceManager> servMan;
-        NS_InitXPCOM2(getter_AddRefs(servMan), nsnull, nsnull);
+        NS_InitXPCOM2(getter_AddRefs(servMan), nullptr, nullptr);
 
         nsCOMPtr<nsIIOService> ioService(do_GetService(kIOServiceCID, &rv));
         // first thing to do is create ourselves a stream that
@@ -127,16 +127,16 @@ main(int argc, char* argv[])
                                   true,
                                   nsDependentCString(fileName), // XXX UTF-8
                                   0, ioService);
-        if (NS_FAILED(rv)) return rv;
+        if (NS_FAILED(rv)) return -1;
 
         // create our url.
         nsCOMPtr<nsIURI> uri;
         rv = NS_NewURI(getter_AddRefs(uri), uriSpec);
-        if (NS_FAILED(rv)) return rv;
+        if (NS_FAILED(rv)) return -1;
 
         nsCOMPtr<nsIChannel> channel;
         rv = ioService->NewChannelFromURI(uri, getter_AddRefs(channel));
-        if (NS_FAILED(rv)) return rv;
+        if (NS_FAILED(rv)) return -1;
 	
         // QI and set the upload stream
         nsCOMPtr<nsIUploadChannel> uploadChannel(do_QueryInterface(channel));
@@ -152,12 +152,12 @@ main(int argc, char* argv[])
         }
         NS_ADDREF(listener);
 
-        channel->AsyncOpen(listener, nsnull);
+        channel->AsyncOpen(listener, nullptr);
 
         PumpEvents();
     } // this scopes the nsCOMPtrs
     // no nsCOMPtrs are allowed to be alive when you call NS_ShutdownXPCOM
-    rv = NS_ShutdownXPCOM(nsnull);
+    rv = NS_ShutdownXPCOM(nullptr);
     NS_ASSERTION(NS_SUCCEEDED(rv), "NS_ShutdownXPCOM failed");
 
     return 0;

@@ -9,7 +9,6 @@
 #ifndef nsIntervalSet_h___
 #define nsIntervalSet_h___
 
-#include "prtypes.h"
 #include "nsCoord.h"
 #include "nsDebug.h"
 
@@ -68,8 +67,8 @@ private:
         Interval(coord_type aBegin, coord_type aEnd)
             : mBegin(aBegin),
               mEnd(aEnd),
-              mPrev(nsnull),
-              mNext(nsnull)
+              mPrev(nullptr),
+              mNext(nullptr)
         {
         }
 

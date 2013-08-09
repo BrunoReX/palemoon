@@ -30,7 +30,7 @@ DOMFileHandle::Create(nsPIDOMWindow* aWindow,
 
   newFile->mFileStorage = aFileStorage;
   nsresult rv = aFile->GetLeafName(newFile->mName);
-  NS_ENSURE_SUCCESS(rv, nsnull);
+  NS_ENSURE_SUCCESS(rv, nullptr);
 
   newFile->mFile = aFile;
   newFile->mFileName = newFile->mName;
@@ -47,19 +47,19 @@ DOMFileHandle::CreateStream(nsIFile* aFile, bool aReadOnly)
     nsCOMPtr<nsIInputStream> stream;
     rv = NS_NewLocalFileInputStream(getter_AddRefs(stream), aFile, -1, -1,
                                     nsIFileInputStream::DEFER_OPEN);
-    NS_ENSURE_SUCCESS(rv, nsnull);
+    NS_ENSURE_SUCCESS(rv, nullptr);
     return stream.forget();
   }
 
   nsCOMPtr<nsIFileStream> stream;
   rv = NS_NewLocalFileStream(getter_AddRefs(stream), aFile, -1, -1,
                              nsIFileStream::DEFER_OPEN);
-  NS_ENSURE_SUCCESS(rv, nsnull);
+  NS_ENSURE_SUCCESS(rv, nullptr);
   return stream.forget();
 }
 
 already_AddRefed<nsIDOMFile>
-DOMFileHandle::CreateFileObject(LockedFile* aLockedFile, PRUint32 aFileSize)
+DOMFileHandle::CreateFileObject(LockedFile* aLockedFile, uint32_t aFileSize)
 {
   nsCOMPtr<nsIDOMFile> file = 
     new File(mName, mType, aFileSize, mFile, aLockedFile);

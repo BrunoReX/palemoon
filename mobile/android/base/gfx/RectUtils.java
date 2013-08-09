@@ -5,15 +5,19 @@
 
 package org.mozilla.gecko.gfx;
 
-import org.mozilla.gecko.FloatUtils;
+import org.mozilla.gecko.util.FloatUtils;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import android.graphics.Point;
 import android.graphics.PointF;
 import android.graphics.Rect;
 import android.graphics.RectF;
-import org.json.JSONException;
-import org.json.JSONObject;
 
 public final class RectUtils {
+    private RectUtils() {}
+
     public static Rect create(JSONObject json) {
         try {
             int x = json.getInt("x");
@@ -72,8 +76,14 @@ public final class RectUtils {
 
     /** Returns the nearest integer rect of the given rect. */
     public static Rect round(RectF rect) {
-        return new Rect(Math.round(rect.left), Math.round(rect.top),
-                        Math.round(rect.right), Math.round(rect.bottom));
+        Rect r = new Rect();
+        round(rect, r);
+        return r;
+    }
+
+    public static void round(RectF rect, Rect dest) {
+        dest.set(Math.round(rect.left), Math.round(rect.top),
+                 Math.round(rect.right), Math.round(rect.bottom));
     }
 
     public static Rect roundIn(RectF rect) {
@@ -91,17 +101,6 @@ public final class RectUtils {
 
     public static PointF getOrigin(RectF rect) {
         return new PointF(rect.left, rect.top);
-    }
-
-    /*
-     * Returns the rect that represents a linear transition between `from` and `to` at time `t`,
-     * which is on the scale [0, 1).
-     */
-    public static RectF interpolate(RectF from, RectF to, float t) {
-        return new RectF(FloatUtils.interpolate(from.left, to.left, t),
-                         FloatUtils.interpolate(from.top, to.top, t),
-                         FloatUtils.interpolate(from.right, to.right, t),
-                         FloatUtils.interpolate(from.bottom, to.bottom, t));
     }
 
     public static boolean fuzzyEquals(RectF a, RectF b) {

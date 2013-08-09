@@ -13,15 +13,11 @@
  */
 interface nsISelection;
 
-[scriptable, uuid(1B93973F-28CC-4F33-8E7B-B89C63AA9200)]
+[scriptable, uuid(3f8666a9-76f0-4733-ae11-4aea8753062d)]
 interface nsIDOMHTMLDocument : nsIDOMDocument
 {
-  readonly attribute DOMString            URL;
            attribute DOMString            domain;
            attribute DOMString            cookie;
-  // returns "BackCompat" if we're in quirks mode,
-  // or "CSS1Compat" if we're in strict mode
-  readonly attribute DOMString            compatMode;
 
   readonly attribute nsIDOMHTMLHeadElement head;
            attribute nsIDOMHTMLElement    body;
@@ -34,6 +30,7 @@ interface nsIDOMHTMLDocument : nsIDOMDocument
   readonly attribute nsIDOMHTMLCollection forms;
   readonly attribute nsIDOMHTMLCollection scripts;
   nsIDOMNodeList            getElementsByName(in DOMString elementName);
+  nsIDOMNodeList  getItems([optional] in DOMString types);
 
   // If aContentType is not something supported by nsHTMLDocument and
   // the HTML content sink, trying to write to the document will

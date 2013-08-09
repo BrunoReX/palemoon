@@ -9,7 +9,6 @@
 
 #include <limits.h>
 
-#include "prmem.h"
 #include "prenv.h"
 
 #include "gfxPlatform.h"
@@ -19,6 +18,7 @@ static bool gDisableOptimize = false;
 
 #include "cairo.h"
 #include "sampler.h"
+#include "mozilla/Likely.h"
 
 #if defined(XP_WIN)
 
@@ -27,8 +27,8 @@ static bool gDisableOptimize = false;
 /* Whether to use the windows surface; only for desktop win32 */
 #define USE_WIN_SURFACE 1
 
-static PRUint32 gTotalDDBs = 0;
-static PRUint32 gTotalDDBSize = 0;
+static uint32_t gTotalDDBs = 0;
+static uint32_t gTotalDDBSize = 0;
 // only use up a maximum of 64MB in DDBs
 #define kMaxDDBSize (64*1024*1024)
 // and don't let anything in that's bigger than 4MB
@@ -39,34 +39,34 @@ static PRUint32 gTotalDDBSize = 0;
 using namespace mozilla::image;
 
 // Returns true if an image of aWidth x aHeight is allowed and legal.
-static bool AllowedImageSize(PRInt32 aWidth, PRInt32 aHeight)
+static bool AllowedImageSize(int32_t aWidth, int32_t aHeight)
 {
   // reject over-wide or over-tall images
-  const PRInt32 k64KLimit = 0x0000FFFF;
-  if (NS_UNLIKELY(aWidth > k64KLimit || aHeight > k64KLimit )) {
+  const int32_t k64KLimit = 0x0000FFFF;
+  if (MOZ_UNLIKELY(aWidth > k64KLimit || aHeight > k64KLimit )) {
     NS_WARNING("image too big");
     return false;
   }
 
   // protect against invalid sizes
-  if (NS_UNLIKELY(aHeight <= 0 || aWidth <= 0)) {
+  if (MOZ_UNLIKELY(aHeight <= 0 || aWidth <= 0)) {
     return false;
   }
 
   // check to make sure we don't overflow a 32-bit
-  PRInt32 tmp = aWidth * aHeight;
-  if (NS_UNLIKELY(tmp / aHeight != aWidth)) {
+  int32_t tmp = aWidth * aHeight;
+  if (MOZ_UNLIKELY(tmp / aHeight != aWidth)) {
     NS_WARNING("width or height too large");
     return false;
   }
   tmp = tmp * 4;
-  if (NS_UNLIKELY(tmp / 4 != aWidth * aHeight)) {
+  if (MOZ_UNLIKELY(tmp / 4 != aWidth * aHeight)) {
     NS_WARNING("width or height too large");
     return false;
   }
 #if defined(XP_MACOSX)
   // CoreGraphics is limited to images < 32K in *height*, so clamp all surfaces on the Mac to that height
-  if (NS_UNLIKELY(aHeight > SHRT_MAX)) {
+  if (MOZ_UNLIKELY(aHeight > SHRT_MAX)) {
     NS_WARNING("image too big");
     return false;
   }
@@ -105,10 +105,11 @@ static bool ShouldUseImageSurfaces()
 
 imgFrame::imgFrame() :
   mDecoded(0, 0, 0, 0),
-  mPalettedImageData(nsnull),
+  mPalettedImageData(nullptr),
   mSinglePixelColor(0),
   mTimeout(100),
   mDisposalMethod(0), /* imgIContainer::kDisposeNotSpecified */
+  mLockCount(0),
   mBlendMethod(1), /* imgIContainer::kBlendOver */
   mSinglePixel(false),
   mNeverUseDeviceSurface(false),
@@ -118,7 +119,6 @@ imgFrame::imgFrame() :
 #ifdef USE_WIN_SURFACE
   mIsDDBSurface(false),
 #endif
-  mLocked(false),
   mInformedDiscardTracker(false)
 {
   static bool hasCheckedOptimize = false;
@@ -132,7 +132,8 @@ imgFrame::imgFrame() :
 
 imgFrame::~imgFrame()
 {
-  PR_FREEIF(mPalettedImageData);
+  moz_free(mPalettedImageData);
+  mPalettedImageData = nullptr;
 #ifdef USE_WIN_SURFACE
   if (mIsDDBSurface) {
       gTotalDDBs--;
@@ -145,8 +146,8 @@ imgFrame::~imgFrame()
   }
 }
 
-nsresult imgFrame::Init(PRInt32 aX, PRInt32 aY, PRInt32 aWidth, PRInt32 aHeight, 
-                        gfxASurface::gfxImageFormat aFormat, PRUint8 aPaletteDepth /* = 0 */)
+nsresult imgFrame::Init(int32_t aX, int32_t aY, int32_t aWidth, int32_t aHeight, 
+                        gfxASurface::gfxImageFormat aFormat, uint8_t aPaletteDepth /* = 0 */)
 {
   // assert for properties that should be verified by decoders, warn for properties related to bad content
   if (!AllowedImageSize(aWidth, aHeight))
@@ -166,7 +167,7 @@ nsresult imgFrame::Init(PRInt32 aX, PRInt32 aY, PRInt32 aWidth, PRInt32 aHeight,
     }
 
     // Use the fallible allocator here
-    mPalettedImageData = (PRUint8*)moz_malloc(PaletteDataLength() + GetImageDataLength());
+    mPalettedImageData = (uint8_t*)moz_malloc(PaletteDataLength() + GetImageDataLength());
     NS_ENSURE_TRUE(mPalettedImageData, NS_ERROR_OUT_OF_MEMORY);
   } else {
     // For Windows, we must create the device surface first (if we're
@@ -179,7 +180,7 @@ nsresult imgFrame::Init(PRInt32 aX, PRInt32 aY, PRInt32 aWidth, PRInt32 aHeight,
         // no error
         mImageSurface = mWinSurface->GetAsImageSurface();
       } else {
-        mWinSurface = nsnull;
+        mWinSurface = nullptr;
       }
     }
 #endif
@@ -192,7 +193,7 @@ nsresult imgFrame::Init(PRInt32 aX, PRInt32 aY, PRInt32 aWidth, PRInt32 aHeight,
       mImageSurface = new gfxImageSurface(gfxIntSize(mSize.width, mSize.height), mFormat);
 
     if (!mImageSurface || mImageSurface->CairoStatus()) {
-      mImageSurface = nsnull;
+      mImageSurface = nullptr;
       // guess
       return NS_ERROR_OUT_OF_MEMORY;
     }
@@ -232,9 +233,9 @@ nsresult imgFrame::Optimize()
 
   // this should always be true
   if (mImageSurface->Stride() == mSize.width * 4) {
-    PRUint32 *imgData = (PRUint32*) mImageSurface->Data();
-    PRUint32 firstPixel = * (PRUint32*) imgData;
-    PRUint32 pixelCount = mSize.width * mSize.height + 1;
+    uint32_t *imgData = (uint32_t*) mImageSurface->Data();
+    uint32_t firstPixel = * (uint32_t*) imgData;
+    uint32_t pixelCount = mSize.width * mSize.height + 1;
 
     while (--pixelCount && *imgData++ == firstPixel)
       ;
@@ -254,13 +255,13 @@ nsresult imgFrame::Optimize()
         mSinglePixel = true;
 
         // blow away the older surfaces (if they exist), to release their memory
-        mImageSurface = nsnull;
-        mOptSurface = nsnull;
+        mImageSurface = nullptr;
+        mOptSurface = nullptr;
 #ifdef USE_WIN_SURFACE
-        mWinSurface = nsnull;
+        mWinSurface = nullptr;
 #endif
 #ifdef XP_MACOSX
-        mQuartzSurface = nsnull;
+        mQuartzSurface = nullptr;
 #endif
 
         // We just dumped most of our allocated memory, so tell the discard
@@ -282,7 +283,7 @@ nsresult imgFrame::Optimize()
   if (mNeverUseDeviceSurface || ShouldUseImageSurfaces())
     return NS_OK;
 
-  mOptSurface = nsnull;
+  mOptSurface = nullptr;
 
 #ifdef USE_WIN_SURFACE
   // we need to special-case windows here, because windows has
@@ -306,11 +307,11 @@ nsresult imgFrame::Optimize()
     // be less than 4MB to keep very large images out of DDBs.
 
     // assume (almost -- we don't quadword-align) worst-case size
-    PRUint32 ddbSize = mSize.width * mSize.height * 4;
+    uint32_t ddbSize = mSize.width * mSize.height * 4;
     if (ddbSize <= kMaxSingleDDBSize &&
         ddbSize + gTotalDDBSize <= kMaxDDBSize)
     {
-      nsRefPtr<gfxWindowsSurface> wsurf = mWinSurface->OptimizeToDDB(nsnull, gfxIntSize(mSize.width, mSize.height), mFormat);
+      nsRefPtr<gfxWindowsSurface> wsurf = mWinSurface->OptimizeToDDB(nullptr, gfxIntSize(mSize.width, mSize.height), mFormat);
       if (wsurf) {
         gTotalDDBs++;
         gTotalDDBSize += ddbSize;
@@ -332,16 +333,16 @@ nsresult imgFrame::Optimize()
   }
 #endif
 
-  if (mOptSurface == nsnull)
+  if (mOptSurface == nullptr)
     mOptSurface = gfxPlatform::GetPlatform()->OptimizeImage(mImageSurface, mFormat);
 
   if (mOptSurface) {
-    mImageSurface = nsnull;
+    mImageSurface = nullptr;
 #ifdef USE_WIN_SURFACE
-    mWinSurface = nsnull;
+    mWinSurface = nullptr;
 #endif
 #ifdef XP_MACOSX
-    mQuartzSurface = nsnull;
+    mQuartzSurface = nullptr;
 #endif
   }
 
@@ -381,7 +382,7 @@ imgFrame::SurfaceForDrawing(bool               aDoPadding,
                             gfxRect&           aSourceRect,
                             gfxRect&           aImageRect)
 {
-  gfxIntSize size(PRInt32(aImageRect.Width()), PRInt32(aImageRect.Height()));
+  gfxIntSize size(int32_t(aImageRect.Width()), int32_t(aImageRect.Height()));
   if (!aDoPadding && !aDoPartialDecode) {
     NS_ASSERTION(!mSinglePixel, "This should already have been handled");
     return SurfaceWithFormat(new gfxSurfaceDrawable(ThebesSurface(), size), mFormat);
@@ -435,7 +436,7 @@ imgFrame::SurfaceForDrawing(bool               aDoPadding,
 void imgFrame::Draw(gfxContext *aContext, gfxPattern::GraphicsFilter aFilter,
                     const gfxMatrix &aUserSpaceToImageSpace, const gfxRect& aFill,
                     const nsIntMargin &aPadding, const nsIntRect &aSubimage,
-                    PRUint32 aImageFlags)
+                    uint32_t aImageFlags)
 {
   SAMPLE_LABEL("image", "imgFrame::Draw");
   NS_ASSERTION(!aFill.IsEmpty(), "zero dest size --- fix caller");
@@ -558,7 +559,7 @@ bool imgFrame::GetNeedsBackground() const
   return (mFormat == gfxASurface::ImageFormatARGB32 || !ImageComplete());
 }
 
-PRUint32 imgFrame::GetImageBytesPerRow() const
+uint32_t imgFrame::GetImageBytesPerRow() const
 {
   if (mImageSurface)
     return mImageSurface->Stride();
@@ -571,26 +572,28 @@ PRUint32 imgFrame::GetImageBytesPerRow() const
   return 0;
 }
 
-PRUint32 imgFrame::GetImageDataLength() const
+uint32_t imgFrame::GetImageDataLength() const
 {
   return GetImageBytesPerRow() * mSize.height;
 }
 
-void imgFrame::GetImageData(PRUint8 **aData, PRUint32 *length) const
+void imgFrame::GetImageData(uint8_t **aData, uint32_t *length) const
 {
+  NS_ABORT_IF_FALSE(mLockCount != 0, "Can't GetImageData unless frame is locked");
+
   if (mImageSurface)
     *aData = mImageSurface->Data();
   else if (mPalettedImageData)
     *aData = mPalettedImageData + PaletteDataLength();
   else
-    *aData = nsnull;
+    *aData = nullptr;
 
   *length = GetImageDataLength();
 }
 
 bool imgFrame::GetIsPaletted() const
 {
-  return mPalettedImageData != nsnull;
+  return mPalettedImageData != nullptr;
 }
 
 bool imgFrame::GetHasAlpha() const
@@ -598,27 +601,36 @@ bool imgFrame::GetHasAlpha() const
   return mFormat == gfxASurface::ImageFormatARGB32;
 }
 
-void imgFrame::GetPaletteData(PRUint32 **aPalette, PRUint32 *length) const
+void imgFrame::GetPaletteData(uint32_t **aPalette, uint32_t *length) const
 {
+  NS_ABORT_IF_FALSE(mLockCount != 0, "Can't GetPaletteData unless frame is locked");
+
   if (!mPalettedImageData) {
-    *aPalette = nsnull;
+    *aPalette = nullptr;
     *length = 0;
   } else {
-    *aPalette = (PRUint32 *) mPalettedImageData;
+    *aPalette = (uint32_t *) mPalettedImageData;
     *length = PaletteDataLength();
   }
 }
 
 nsresult imgFrame::LockImageData()
 {
-  if (mPalettedImageData)
-    return NS_ERROR_NOT_AVAILABLE;
-
-  NS_ABORT_IF_FALSE(!mLocked, "Trying to lock already locked image data.");
-  if (mLocked) {
+  NS_ABORT_IF_FALSE(mLockCount >= 0, "Unbalanced locks and unlocks");
+  if (mLockCount < 0) {
     return NS_ERROR_FAILURE;
   }
-  mLocked = true;
+
+  mLockCount++;
+
+  // If we are not the first lock, there's nothing to do.
+  if (mLockCount != 1) {
+    return NS_OK;
+  }
+
+  // Paletted images don't have surfaces, so there's nothing to do.
+  if (mPalettedImageData)
+    return NS_OK;
 
   if ((mOptSurface || mSinglePixel) && !mImageSurface) {
     // Recover the pixels
@@ -635,12 +647,12 @@ nsresult imgFrame::LockImageData()
       context.SetSource(mOptSurface);
     context.Paint();
 
-    mOptSurface = nsnull;
+    mOptSurface = nullptr;
 #ifdef USE_WIN_SURFACE
-    mWinSurface = nsnull;
+    mWinSurface = nullptr;
 #endif
 #ifdef XP_MACOSX
-    mQuartzSurface = nsnull;
+    mQuartzSurface = nullptr;
 #endif
   }
 
@@ -659,15 +671,26 @@ nsresult imgFrame::LockImageData()
 
 nsresult imgFrame::UnlockImageData()
 {
-  if (mPalettedImageData)
-    return NS_ERROR_NOT_AVAILABLE;
-
-  NS_ABORT_IF_FALSE(mLocked, "Unlocking an unlocked image!");
-  if (!mLocked) {
+  NS_ABORT_IF_FALSE(mLockCount != 0, "Unlocking an unlocked image!");
+  if (mLockCount == 0) {
     return NS_ERROR_FAILURE;
   }
 
-  mLocked = false;
+  mLockCount--;
+
+  NS_ABORT_IF_FALSE(mLockCount >= 0, "Unbalanced locks and unlocks");
+  if (mLockCount < 0) {
+    return NS_ERROR_FAILURE;
+  }
+
+  // If we are not the last lock, there's nothing to do.
+  if (mLockCount != 0) {
+    return NS_OK;
+  }
+
+  // Paletted images don't have surfaces, so there's nothing to do.
+  if (mPalettedImageData)
+    return NS_OK;
 
   // Assume we've been written to.
   if (mImageSurface)
@@ -687,7 +710,7 @@ nsresult imgFrame::UnlockImageData()
   return NS_OK;
 }
 
-PRInt32 imgFrame::GetTimeout() const
+int32_t imgFrame::GetTimeout() const
 {
   // Ensure a minimal time between updates so we don't throttle the UI thread.
   // consider 0 == unspecified and make it fast but not too fast.  See bug
@@ -708,29 +731,29 @@ PRInt32 imgFrame::GetTimeout() const
     return mTimeout;
 }
 
-void imgFrame::SetTimeout(PRInt32 aTimeout)
+void imgFrame::SetTimeout(int32_t aTimeout)
 {
   mTimeout = aTimeout;
 }
 
-PRInt32 imgFrame::GetFrameDisposalMethod() const
+int32_t imgFrame::GetFrameDisposalMethod() const
 {
   return mDisposalMethod;
 }
 
-void imgFrame::SetFrameDisposalMethod(PRInt32 aFrameDisposalMethod)
+void imgFrame::SetFrameDisposalMethod(int32_t aFrameDisposalMethod)
 {
   mDisposalMethod = aFrameDisposalMethod;
 }
 
-PRInt32 imgFrame::GetBlendMethod() const
+int32_t imgFrame::GetBlendMethod() const
 {
   return mBlendMethod;
 }
 
-void imgFrame::SetBlendMethod(PRInt32 aBlendMethod)
+void imgFrame::SetBlendMethod(int32_t aBlendMethod)
 {
-  mBlendMethod = (PRInt8)aBlendMethod;
+  mBlendMethod = (int8_t)aBlendMethod;
 }
 
 bool imgFrame::ImageComplete() const

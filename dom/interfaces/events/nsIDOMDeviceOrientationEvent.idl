@@ -4,7 +4,7 @@
 
 #include "nsIDOMEvent.idl"
 
-[scriptable, uuid(a9bd91fd-c0a7-44ed-9975-5a58faba3be3)]
+[scriptable, builtinclass, uuid(8e37040a-dbbb-41d8-a019-eb687e5e8ec7)]
 interface nsIDOMDeviceOrientationEvent : nsIDOMEvent
 {
   void initDeviceOrientationEvent(in DOMString eventTypeArg,
@@ -41,3 +41,10 @@ interface nsIDOMDeviceOrientationEvent : nsIDOMEvent
   readonly attribute boolean absolute;
 };
 
+dictionary DeviceOrientationEventInit : EventInit
+{
+  double alpha;
+  double beta;
+  double gamma;
+  boolean absolute;
+};

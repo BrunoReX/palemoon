@@ -11,12 +11,14 @@
 
 #include "nsDebug.h"
 #include "nsPluginNativeWindow.h"
+#include "nsNPAPIPlugin.h"
 #include "npapi.h"
 #include <gtk/gtk.h>
 #include <gdk/gdkx.h>
 #include <gdk/gdk.h>
 
 #include "gtk2xtbin.h"
+#include "mozilla/X11Util.h"
 
 class nsPluginNativeWindowGtk2 : public nsPluginNativeWindow {
 public: 
@@ -25,13 +27,22 @@ public:
 
   virtual nsresult CallSetWindow(nsRefPtr<nsNPAPIPluginInstance> &aPluginInstance);
 private:
+  void SetWindow(XID aWindow)
+  {
+    window = reinterpret_cast<void*>(static_cast<uintptr_t>(aWindow));
+  }
+  XID GetWindow() const
+  {
+    return static_cast<XID>(reinterpret_cast<uintptr_t>(window));
+  }
+
   NPSetWindowCallbackStruct mWsInfo;
   /**
    * Either a GtkSocket or a special GtkXtBin widget (derived from GtkSocket)
    * that encapsulates the Xt toolkit within a Gtk Application.
    */
   GtkWidget* mSocketWidget;
-  nsresult  CreateXEmbedWindow();
+  nsresult  CreateXEmbedWindow(bool aEnableXtFocus);
   nsresult  CreateXtWindow();
   void      SetAllocation();
 };
@@ -42,7 +53,7 @@ static void socket_unrealize_cb   (GtkWidget *widget, gpointer data);
 nsPluginNativeWindowGtk2::nsPluginNativeWindowGtk2() : nsPluginNativeWindow()
 {
   // initialize the struct fields
-  window = nsnull; 
+  window = nullptr; 
   x = 0; 
   y = 0; 
   width = 0; 
@@ -52,8 +63,8 @@ nsPluginNativeWindowGtk2::nsPluginNativeWindowGtk2() : nsPluginNativeWindow()
   type = NPWindowTypeWindow;
   mSocketWidget = 0;
   mWsInfo.type = 0;
-  mWsInfo.display = nsnull;
-  mWsInfo.visual = nsnull;
+  mWsInfo.display = nullptr;
+  mWsInfo.visual = nullptr;
   mWsInfo.colormap = 0;
   mWsInfo.depth = 0;
 }
@@ -104,8 +115,10 @@ nsresult nsPluginNativeWindowGtk2::CallSetWindow(nsRefPtr<nsNPAPIPluginInstance>
         printf("nsPluginNativeWindowGtk2: NPPVpluginNeedsXEmbed=%d\n", needsXEmbed);
 #endif
 
-        if (needsXEmbed) {
-          rv = CreateXEmbedWindow();
+        bool isOOPPlugin = aPluginInstance->GetPlugin()->GetLibrary()->IsOOP();
+        if (needsXEmbed || isOOPPlugin) {        
+          bool enableXtFocus = !needsXEmbed;
+          rv = CreateXEmbedWindow(enableXtFocus);
         }
         else {
           rv = CreateXtWindow();
@@ -121,16 +134,15 @@ nsresult nsPluginNativeWindowGtk2::CallSetWindow(nsRefPtr<nsNPAPIPluginInstance>
       }
 
       // Make sure to resize and re-place the window if required.
+      SetAllocation();
       // Need to reset "window" each time as nsObjectFrame::DidReflow sets it
       // to the ancestor window.
       if (GTK_IS_XTBIN(mSocketWidget)) {
-        gtk_xtbin_resize(mSocketWidget, width, height);
         // Point the NPWindow structures window to the actual X window
-        window = (void*)GTK_XTBIN(mSocketWidget)->xtwindow;
+        SetWindow(GTK_XTBIN(mSocketWidget)->xtwindow);
       }
-      else { // XEmbed
-        SetAllocation();
-        window = (void*)gtk_socket_get_id(GTK_SOCKET(mSocketWidget));
+      else { // XEmbed or OOP&Xt
+        SetWindow(gtk_socket_get_id(GTK_SOCKET(mSocketWidget)));
       }
 #ifdef DEBUG
       printf("nsPluginNativeWindowGtk2: call SetWindow with xid=%p\n", (void *)window);
@@ -139,20 +151,24 @@ nsresult nsPluginNativeWindowGtk2::CallSetWindow(nsRefPtr<nsNPAPIPluginInstance>
     aPluginInstance->SetWindow(this);
   }
   else if (mPluginInstance)
-    mPluginInstance->SetWindow(nsnull);
+    mPluginInstance->SetWindow(nullptr);
 
   SetPluginInstance(aPluginInstance);
   return NS_OK;
 }
 
-nsresult nsPluginNativeWindowGtk2::CreateXEmbedWindow() {
+nsresult nsPluginNativeWindowGtk2::CreateXEmbedWindow(bool aEnableXtFocus) {
   NS_ASSERTION(!mSocketWidget,"Already created a socket widget!");
-
-  GdkWindow *parent_win = gdk_window_lookup((XID)window);
+  GdkDisplay *display = gdk_display_get_default();
+  GdkWindow *parent_win = gdk_x11_window_lookup_for_display(display, GetWindow());
   mSocketWidget = gtk_socket_new();
 
   //attach the socket to the container widget
   gtk_widget_set_parent_window(mSocketWidget, parent_win);
+
+  // enable/disable focus event handlers,
+  // see plugin_window_filter_func() for details
+  g_object_set_data(G_OBJECT(mSocketWidget), "enable-xt-focus", (void *)aEnableXtFocus);
 
   // Make sure to handle the plug_removed signal.  If we don't the
   // socket will automatically be destroyed when the plug is
@@ -179,7 +195,10 @@ nsresult nsPluginNativeWindowGtk2::CreateXEmbedWindow() {
   // background and this would happen immediately (before the plug is
   // created).  Setting the background to None prevents the server from
   // painting this window, avoiding flicker.
-  gdk_window_set_back_pixmap(mSocketWidget->window, NULL, FALSE);
+  // TODO GTK3
+#if (MOZ_WIDGET_GTK == 2)
+  gdk_window_set_back_pixmap(gtk_widget_get_window(mSocketWidget), NULL, FALSE);
+#endif
 
   // Resize before we show
   SetAllocation();
@@ -187,20 +206,26 @@ nsresult nsPluginNativeWindowGtk2::CreateXEmbedWindow() {
   gtk_widget_show(mSocketWidget);
 
   gdk_flush();
-  window = (void*)gtk_socket_get_id(GTK_SOCKET(mSocketWidget));
+  SetWindow(gtk_socket_get_id(GTK_SOCKET(mSocketWidget)));
 
   // Fill out the ws_info structure.
   // (The windowless case is done in nsObjectFrame.cpp.)
-  GdkWindow *gdkWindow = gdk_window_lookup((XID)window);
+  GdkWindow *gdkWindow = gdk_window_lookup(GetWindow());
   if(!gdkWindow)
     return NS_ERROR_FAILURE;
 
   mWsInfo.display = GDK_WINDOW_XDISPLAY(gdkWindow);
+#if (MOZ_WIDGET_GTK == 2)
   mWsInfo.colormap = GDK_COLORMAP_XCOLORMAP(gdk_drawable_get_colormap(gdkWindow));
   GdkVisual* gdkVisual = gdk_drawable_get_visual(gdkWindow);
-  mWsInfo.visual = GDK_VISUAL_XVISUAL(gdkVisual);
   mWsInfo.depth = gdkVisual->depth;
-
+#else
+  mWsInfo.colormap = None;
+  GdkVisual* gdkVisual = gdk_window_get_visual(gdkWindow);
+  mWsInfo.depth = gdk_visual_get_depth(gdkVisual);
+#endif
+  mWsInfo.visual = GDK_VISUAL_XVISUAL(gdkVisual);
+    
   return NS_OK;
 }
 
@@ -219,11 +244,12 @@ void nsPluginNativeWindowGtk2::SetAllocation() {
 nsresult nsPluginNativeWindowGtk2::CreateXtWindow() {
   NS_ASSERTION(!mSocketWidget,"Already created a socket widget!");
 
-#ifdef NS_DEBUG      
+#ifdef DEBUG      
   printf("About to create new xtbin of %i X %i from %p...\n",
          width, height, (void*)window);
 #endif
-  GdkWindow *gdkWindow = gdk_window_lookup((XID)window);
+  GdkDisplay *display = gdk_display_get_default();
+  GdkWindow *gdkWindow = gdk_x11_window_lookup_for_display(display, GetWindow());
   mSocketWidget = gtk_xtbin_new(gdkWindow, 0);
   // Check to see if creating the xtbin failed for some reason.
   // if it did, we can't go any further.
@@ -235,11 +261,11 @@ nsresult nsPluginNativeWindowGtk2::CreateXtWindow() {
 
   gtk_widget_set_size_request(mSocketWidget, width, height);
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
   printf("About to show xtbin(%p)...\n", (void*)mSocketWidget); fflush(NULL);
 #endif
   gtk_widget_show(mSocketWidget);
-#ifdef NS_DEBUG
+#ifdef DEBUG
   printf("completed gtk_widget_show(%p)\n", (void*)mSocketWidget); fflush(NULL);
 #endif
 
@@ -270,8 +296,9 @@ socket_unrealize_cb(GtkWidget *widget, gpointer data)
 {
   // Unmap and reparent any child windows that GDK does not yet know about.
   // (See bug 540114 comment 10.)
-  GdkWindow* socket_window = widget->window;
-  Display* display = GDK_DISPLAY();
+  GdkWindow* socket_window =  gtk_widget_get_window(widget);
+  GdkDisplay* gdkDisplay = gdk_display_get_default();
+  Display* display = GDK_DISPLAY_XDISPLAY(gdkDisplay);
 
   // Ignore X errors that may happen if windows get destroyed (possibly
   // requested by the plugin) between XQueryTree and when we operate on them.
@@ -280,13 +307,13 @@ socket_unrealize_cb(GtkWidget *widget, gpointer data)
   Window root, parent;
   Window* children;
   unsigned int nchildren;
-  if (!XQueryTree(display, gdk_x11_drawable_get_xid(socket_window),
+  if (!XQueryTree(display, gdk_x11_window_get_xid(socket_window),
                   &root, &parent, &children, &nchildren))
     return;
 
   for (unsigned int i = 0; i < nchildren; ++i) {
     Window child = children[i];
-    if (!gdk_window_lookup(child)) {
+    if (!gdk_x11_window_lookup_for_display(gdkDisplay, child)) {
       // This window is not known to GDK.
       XUnmapWindow(display, child);
       XReparentWindow(display, child, DefaultRootWindow(display), 0, 0);
@@ -295,6 +322,6 @@ socket_unrealize_cb(GtkWidget *widget, gpointer data)
 
   if (children) XFree(children);
 
-  XSync(display, False);
+  mozilla::FinishX(display);
   gdk_error_trap_pop();
 }

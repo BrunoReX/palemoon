@@ -8,6 +8,7 @@
 #define MAC_OS_X_VERSION_10_5_HEX 0x00001050
 #define MAC_OS_X_VERSION_10_6_HEX 0x00001060
 #define MAC_OS_X_VERSION_10_7_HEX 0x00001070
+#define MAC_OS_X_VERSION_10_8_HEX 0x00001080
 
 // This API will not work for OS X 10.10, see Gestalt.h.
 
@@ -17,9 +18,9 @@
 
 #import <Cocoa/Cocoa.h>
 
-PRInt32 nsCocoaFeatures::mOSXVersion = 0;
+int32_t nsCocoaFeatures::mOSXVersion = 0;
 
-/* static */ PRInt32
+/* static */ int32_t
 nsCocoaFeatures::OSXVersion()
 {
     NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
@@ -49,14 +50,14 @@ nsCocoaFeatures::SupportCoreAnimationPlugins()
 }
 
 /* static */ bool
-nsCocoaFeatures::OnSnowLeopardOrLater()
-{
-    return (OSXVersion() >= MAC_OS_X_VERSION_10_6_HEX);
-}
-
-/* static */ bool
 nsCocoaFeatures::OnLionOrLater()
 {
     return (OSXVersion() >= MAC_OS_X_VERSION_10_7_HEX);
+}
+
+/* static */ bool
+nsCocoaFeatures::OnMountainLionOrLater()
+{
+    return (OSXVersion() >= MAC_OS_X_VERSION_10_8_HEX);
 }
 

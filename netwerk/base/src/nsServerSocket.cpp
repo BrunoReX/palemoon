@@ -8,10 +8,11 @@
 #include "nsServerSocket.h"
 #include "nsProxyRelease.h"
 #include "nsAutoPtr.h"
-#include "nsNetError.h"
+#include "nsError.h"
 #include "nsNetCID.h"
 #include "prnetdb.h"
 #include "prio.h"
+#include "mozilla/Attributes.h"
 
 using namespace mozilla;
 
@@ -40,7 +41,7 @@ PostEvent(nsServerSocket *s, nsServerSocketFunc func)
 
 nsServerSocket::nsServerSocket()
   : mLock("nsServerSocket.mLock")
-  , mFD(nsnull)
+  , mFD(nullptr)
   , mAttached(false)
 {
   // we want to be able to access the STS directly, and it may not have been
@@ -152,7 +153,7 @@ nsServerSocket::TryAttach()
 //-----------------------------------------------------------------------------
 
 void
-nsServerSocket::OnSocketReady(PRFileDesc *fd, PRInt16 outFlags)
+nsServerSocket::OnSocketReady(PRFileDesc *fd, int16_t outFlags)
 {
   NS_ASSERTION(NS_SUCCEEDED(mCondition), "oops");
   NS_ASSERTION(mFD == fd, "wrong file descriptor");
@@ -201,7 +202,7 @@ nsServerSocket::OnSocketDetached(PRFileDesc *fd)
   {
     NS_ASSERTION(mFD == fd, "wrong file descriptor");
     PR_Close(mFD);
-    mFD = nsnull;
+    mFD = nullptr;
   }
 
   if (mListener)
@@ -209,7 +210,7 @@ nsServerSocket::OnSocketDetached(PRFileDesc *fd)
     mListener->OnStopListening(this, mCondition);
 
     // need to atomically clear mListener.  see our Close() method.
-    nsIServerSocketListener *listener = nsnull;
+    nsIServerSocketListener *listener = nullptr;
     {
       MutexAutoLock lock(mLock);
       mListener.swap(listener);
@@ -221,6 +222,12 @@ nsServerSocket::OnSocketDetached(PRFileDesc *fd)
   }
 }
 
+void
+nsServerSocket::IsLocal(bool *aIsLocal)
+{
+  // If bound to loopback, this server socket only accepts local connections.
+  *aIsLocal = PR_IsNetAddrType(&mAddr, PR_IpAddrLoopback);
+}
 
 //-----------------------------------------------------------------------------
 // nsServerSocket::nsISupports
@@ -234,7 +241,7 @@ NS_IMPL_THREADSAFE_ISUPPORTS1(nsServerSocket, nsIServerSocket)
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-nsServerSocket::Init(PRInt32 aPort, bool aLoopbackOnly, PRInt32 aBackLog)
+nsServerSocket::Init(int32_t aPort, bool aLoopbackOnly, int32_t aBackLog)
 {
   PRNetAddrValue val;
   PRNetAddr addr;
@@ -251,9 +258,9 @@ nsServerSocket::Init(PRInt32 aPort, bool aLoopbackOnly, PRInt32 aBackLog)
 }
 
 NS_IMETHODIMP
-nsServerSocket::InitWithAddress(const PRNetAddr *aAddr, PRInt32 aBackLog)
+nsServerSocket::InitWithAddress(const PRNetAddr *aAddr, int32_t aBackLog)
 {
-  NS_ENSURE_TRUE(mFD == nsnull, NS_ERROR_ALREADY_INITIALIZED);
+  NS_ENSURE_TRUE(mFD == nullptr, NS_ERROR_ALREADY_INITIALIZED);
 
   //
   // configure listening socket...
@@ -320,7 +327,7 @@ nsServerSocket::Close()
       if (mFD)
       {
         PR_Close(mFD);
-        mFD = nsnull;
+        mFD = nullptr;
       }
       return NS_OK;
     }
@@ -330,7 +337,7 @@ nsServerSocket::Close()
 
 namespace {
 
-class ServerSocketListenerProxy : public nsIServerSocketListener
+class ServerSocketListenerProxy MOZ_FINAL : public nsIServerSocketListener
 {
 public:
   ServerSocketListenerProxy(nsIServerSocketListener* aListener)
@@ -426,7 +433,7 @@ nsServerSocket::AsyncListen(nsIServerSocketListener *aListener)
 {
   // ensuring mFD implies ensuring mLock
   NS_ENSURE_TRUE(mFD, NS_ERROR_NOT_INITIALIZED);
-  NS_ENSURE_TRUE(mListener == nsnull, NS_ERROR_IN_PROGRESS);
+  NS_ENSURE_TRUE(mListener == nullptr, NS_ERROR_IN_PROGRESS);
   {
     MutexAutoLock lock(mLock);
     mListener = new ServerSocketListenerProxy(aListener);
@@ -436,15 +443,15 @@ nsServerSocket::AsyncListen(nsIServerSocketListener *aListener)
 }
 
 NS_IMETHODIMP
-nsServerSocket::GetPort(PRInt32 *aResult)
+nsServerSocket::GetPort(int32_t *aResult)
 {
   // no need to enter the lock here
-  PRUint16 port;
+  uint16_t port;
   if (mAddr.raw.family == PR_AF_INET)
     port = mAddr.inet.port;
   else
     port = mAddr.ipv6.port;
-  *aResult = (PRInt32) PR_ntohs(port);
+  *aResult = (int32_t) PR_ntohs(port);
   return NS_OK;
 }
 

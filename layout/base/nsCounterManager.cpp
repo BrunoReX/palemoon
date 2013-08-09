@@ -10,6 +10,7 @@
 #include "nsBulletFrame.h" // legacy location for list style type to text code
 #include "nsContentUtils.h"
 #include "nsTArray.h"
+#include "mozilla/Likely.h"
 
 bool
 nsCounterUseNode::InitTextFrame(nsGenConList* aList,
@@ -75,12 +76,12 @@ nsCounterUseNode::GetText(nsString& aResult)
             stack.AppendElement(n->mScopePrev);
 
     const nsCSSValue& styleItem = mCounterStyle->Item(mAllCounters ? 2 : 1);
-    PRInt32 style = styleItem.GetIntValue();
+    int32_t style = styleItem.GetIntValue();
     const PRUnichar* separator;
     if (mAllCounters)
         separator = mCounterStyle->Item(1).GetStringBufferValue();
 
-    for (PRUint32 i = stack.Length() - 1;; --i) {
+    for (uint32_t i = stack.Length() - 1;; --i) {
         nsCounterNode *n = stack[i];
         nsBulletFrame::AppendCounterText(style, n->mValueAfter, aResult);
         if (i == 0)
@@ -104,8 +105,8 @@ nsCounterList::SetScope(nsCounterNode *aNode)
     // appropriate.
 
     if (aNode == First()) {
-        aNode->mScopeStart = nsnull;
-        aNode->mScopePrev = nsnull;
+        aNode->mScopeStart = nullptr;
+        aNode->mScopePrev = nullptr;
         return;
     }
 
@@ -146,8 +147,8 @@ nsCounterList::SetScope(nsCounterNode *aNode)
         }
     }
 
-    aNode->mScopeStart = nsnull;
-    aNode->mScopePrev  = nsnull;
+    aNode->mScopeStart = nullptr;
+    aNode->mScopePrev  = nullptr;
 }
 
 void
@@ -192,7 +193,7 @@ nsCounterManager::AddCounterResetsAndIncrements(nsIFrame *aFrame)
 
     // Add in order, resets first, so all the comparisons will be optimized
     // for addition at the end of the list.
-    PRInt32 i, i_end;
+    int32_t i, i_end;
     bool dirty = false;
     for (i = 0, i_end = styleContent->CounterResetCount(); i != i_end; ++i)
         dirty |= AddResetOrIncrement(aFrame, i,
@@ -206,7 +207,7 @@ nsCounterManager::AddCounterResetsAndIncrements(nsIFrame *aFrame)
 }
 
 bool
-nsCounterManager::AddResetOrIncrement(nsIFrame *aFrame, PRInt32 aIndex,
+nsCounterManager::AddResetOrIncrement(nsIFrame *aFrame, int32_t aIndex,
                                       const nsStyleCounterData *aCounterData,
                                       nsCounterNode::Type aType)
 {
@@ -229,7 +230,7 @@ nsCounterManager::AddResetOrIncrement(nsIFrame *aFrame, PRInt32 aIndex,
 
     // Don't call Calc() if the list is already dirty -- it'll be recalculated
     // anyway, and trying to calculate with a dirty list doesn't work.
-    if (NS_LIKELY(!counterList->IsDirty())) {
+    if (MOZ_LIKELY(!counterList->IsDirty())) {
         node->Calc(counterList);
     }
     return false;
@@ -259,7 +260,7 @@ RecalcDirtyLists(const nsAString& aKey, nsCounterList* aList, void* aClosure)
 void
 nsCounterManager::RecalcAll()
 {
-    mNames.EnumerateRead(RecalcDirtyLists, nsnull);
+    mNames.EnumerateRead(RecalcDirtyLists, nullptr);
 }
 
 struct DestroyNodesData {
@@ -300,7 +301,7 @@ DumpList(const nsAString& aKey, nsCounterList* aList, void* aClosure)
     nsCounterNode *node = aList->First();
 
     if (node) {
-        PRInt32 i = 0;
+        int32_t i = 0;
         do {
             const char *types[] = { "RESET", "INCREMENT", "USE" };
             printf("  Node #%d @%p frame=%p index=%d type=%s valAfter=%d\n"
@@ -323,7 +324,7 @@ void
 nsCounterManager::Dump()
 {
     printf("\n\nCounter Manager Lists:\n");
-    mNames.EnumerateRead(DumpList, nsnull);
+    mNames.EnumerateRead(DumpList, nullptr);
     printf("\n\n");
 }
 #endif

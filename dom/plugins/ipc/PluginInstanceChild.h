@@ -17,10 +17,9 @@
 #include "mozilla/gfx/SharedDIBWin.h"
 #elif defined(MOZ_WIDGET_COCOA)
 #include "PluginUtilsOSX.h"
-#include "nsCoreAnimationSupport.h"
+#include "mozilla/gfx/QuartzSupport.h"
 #include "base/timer.h"
 
-using namespace mozilla::plugins::PluginUtilsOSX;
 #endif
 
 #include "npfunctions.h"
@@ -34,6 +33,10 @@ using namespace mozilla::plugins::PluginUtilsOSX;
 #include "gfxASurface.h"
 
 #include <map>
+
+#if defined(MOZ_WIDGET_GTK)
+#include "gtk2xtbin.h"
+#endif
 
 namespace mozilla {
 
@@ -112,17 +115,18 @@ protected:
         return true;
     }
 
-    NS_OVERRIDE
     virtual bool
-    AnswerPaint(const NPRemoteEvent& event, int16_t* handled)
+    AnswerPaint(const NPRemoteEvent& event, int16_t* handled) MOZ_OVERRIDE
     {
         PaintTracker pt;
         return AnswerNPP_HandleEvent(event, handled);
     }
 
-    NS_OVERRIDE
     virtual bool
-    RecvWindowPosChanged(const NPRemoteEvent& event);
+    RecvWindowPosChanged(const NPRemoteEvent& event) MOZ_OVERRIDE;
+
+    virtual bool
+    RecvContentsScaleFactorChanged(const double& aContentsScaleFactor) MOZ_OVERRIDE;
 
     virtual bool
     AnswerNPP_Destroy(NPError* result);
@@ -133,8 +137,8 @@ protected:
     virtual bool
     DeallocPPluginScriptableObject(PPluginScriptableObjectChild* aObject);
 
-    NS_OVERRIDE virtual bool
-    RecvPPluginScriptableObjectConstructor(PPluginScriptableObjectChild* aActor);
+    virtual bool
+    RecvPPluginScriptableObjectConstructor(PPluginScriptableObjectChild* aActor) MOZ_OVERRIDE;
 
     virtual PBrowserStreamChild*
     AllocPBrowserStream(const nsCString& url,
@@ -177,8 +181,8 @@ protected:
                        const bool& file,
                        NPError* result);
 
-    NS_OVERRIDE virtual bool
-    DeallocPStreamNotify(PStreamNotifyChild* notifyData);
+    virtual bool
+    DeallocPStreamNotify(PStreamNotifyChild* notifyData) MOZ_OVERRIDE;
 
     virtual bool
     AnswerSetPluginFocus();
@@ -188,6 +192,11 @@ protected:
 
     virtual bool
     RecvNPP_DidComposite();
+
+#if defined(MOZ_X11) && defined(XP_UNIX) && !defined(XP_MACOSX)
+    bool CreateWindow(const NPRemoteWindow& aWindow);
+    void DeleteWindow();
+#endif
 
 public:
     PluginInstanceChild(const NPPluginFuncs* aPluginIface);
@@ -247,21 +256,17 @@ private:
 
     NPError DeallocateAsyncBitmapSurface(NPAsyncSurface *aSurface);
 
-    NS_OVERRIDE
     virtual bool RecvUpdateBackground(const SurfaceDescriptor& aBackground,
-                                      const nsIntRect& aRect);
+                                      const nsIntRect& aRect) MOZ_OVERRIDE;
 
-    NS_OVERRIDE
     virtual PPluginBackgroundDestroyerChild*
-    AllocPPluginBackgroundDestroyer();
+    AllocPPluginBackgroundDestroyer() MOZ_OVERRIDE;
 
-    NS_OVERRIDE
     virtual bool
-    RecvPPluginBackgroundDestroyerConstructor(PPluginBackgroundDestroyerChild* aActor);
+    RecvPPluginBackgroundDestroyerConstructor(PPluginBackgroundDestroyerChild* aActor) MOZ_OVERRIDE;
 
-    NS_OVERRIDE
     virtual bool
-    DeallocPPluginBackgroundDestroyer(PPluginBackgroundDestroyerChild* aActor);
+    DeallocPPluginBackgroundDestroyer(PPluginBackgroundDestroyerChild* aActor) MOZ_OVERRIDE;
 
 #if defined(OS_WIN)
     static bool RegisterWindowClass();
@@ -326,7 +331,7 @@ private:
                               HWND aWnd, UINT aMsg,
                               WPARAM aWParam, LPARAM aLParam,
                               bool isWindowed)
-          : ChildAsyncCall(aInst, nsnull, nsnull),
+          : ChildAsyncCall(aInst, nullptr, nullptr),
           mWnd(aWnd),
           mMsg(aMsg),
           mWParam(aWParam),
@@ -334,7 +339,7 @@ private:
           mWindowed(isWindowed)
         {}
 
-        NS_OVERRIDE void Run();
+        void Run() MOZ_OVERRIDE;
 
         WNDPROC GetProc();
         HWND GetWnd() { return mWnd; }
@@ -354,6 +359,9 @@ private:
     const NPPluginFuncs* mPluginIface;
     NPP_t mData;
     NPWindow mWindow;
+#if defined(XP_MACOSX)
+    double mContentsScaleFactor;
+#endif
     int16_t               mDrawingModel;
     NPAsyncSurface* mCurrentAsyncSurface;
     struct AsyncBitmapData {
@@ -375,6 +383,10 @@ private:
 
 #if defined(MOZ_X11) && defined(XP_UNIX) && !defined(XP_MACOSX)
     NPSetWindowCallbackStruct mWsInfo;
+#if defined(MOZ_WIDGET_GTK)
+    bool mXEmbed;
+    XtClient mXtClient;
+#endif
 #elif defined(OS_WIN)
     HWND mPluginWindowHWND;
     WNDPROC mPluginWndProc;
@@ -418,7 +430,7 @@ private:
     };
     gfx::SharedDIBWin mSharedSurfaceDib;
     struct {
-      PRUint16        doublePass;
+      uint16_t        doublePass;
       HDC             hdc;
       HBITMAP         bmp;
     } mAlphaExtract;
@@ -426,15 +438,15 @@ private:
 #if defined(MOZ_WIDGET_COCOA)
 private:
 #if defined(__i386__)
-    NPEventModel          mEventModel;
+    NPEventModel                  mEventModel;
 #endif
-    CGColorSpaceRef       mShColorSpace;
-    CGContextRef          mShContext;
-    nsCARenderer          mCARenderer;
-    void                 *mCGLayer;
+    CGColorSpaceRef               mShColorSpace;
+    CGContextRef                  mShContext;
+    mozilla::RefPtr<nsCARenderer> mCARenderer;
+    void                         *mCGLayer;
 
     // Core Animation drawing model requires a refresh timer.
-    uint32_t mCARefreshTimer;
+    uint32_t                      mCARefreshTimer;
 
 public:
     const NPCocoaEvent* getCurrentEvent() {
@@ -542,7 +554,7 @@ private:
 #ifdef XP_MACOSX
     // Current IOSurface available for rendering
     // We can't use thebes gfxASurface like other platforms.
-    nsDoubleBufferCARenderer mDoubleBufferCARenderer; 
+    PluginUtilsOSX::nsDoubleBufferCARenderer mDoubleBufferCARenderer; 
 #endif
 
     // (Not to be confused with mBackSurface).  This is a recent copy

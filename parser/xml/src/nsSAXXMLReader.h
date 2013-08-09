@@ -17,6 +17,7 @@
 #include "nsISAXErrorHandler.h"
 #include "nsISAXLexicalHandler.h"
 #include "nsCycleCollectionParticipant.h"
+#include "mozilla/Attributes.h"
 
 #define NS_SAXXMLREADER_CONTRACTID "@mozilla.org/saxparser/xmlreader;1"
 #define NS_SAXXMLREADER_CLASSNAME "SAX XML Reader"
@@ -24,9 +25,9 @@
 { 0xab1da296, 0x6125, 0x40ba, \
 { 0x96, 0xd0, 0x47, 0xa8, 0x28, 0x2a, 0xe3, 0xdb} }
 
-class nsSAXXMLReader : public nsISAXXMLReader,
-                       public nsIExtendedExpatSink,
-                       public nsIContentSink
+class nsSAXXMLReader MOZ_FINAL : public nsISAXXMLReader,
+                                 public nsIExtendedExpatSink,
+                                 public nsIContentSink
 {
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -70,7 +71,7 @@ public:
   
   virtual nsISupports *GetTarget()
   {
-    return nsnull;
+    return nullptr;
   }
 
 private:
@@ -83,7 +84,7 @@ private:
   nsCOMPtr<nsIRequestObserver> mParserObserver;
   bool mIsAsyncParse;
   static bool TryChannelCharset(nsIChannel *aChannel,
-                                  PRInt32& aCharsetSource,
+                                  int32_t& aCharsetSource,
                                   nsACString& aCharset);
   nsresult EnsureBaseURI();
   nsresult InitParser(nsIRequestObserver *aListener, nsIChannel *aChannel);
@@ -93,6 +94,9 @@ private:
                           nsString &aQName);
   nsString mPublicId;
   nsString mSystemId;
+
+  // Feature flags
+  bool mEnableNamespacePrefixes;
 };
 
 #endif // nsSAXXMLReader_h__

@@ -29,8 +29,8 @@ public:
   NS_DECL_NSIDOMSVGLINEELEMENT
 
   // xxx I wish we could use virtual inheritance
-  NS_FORWARD_NSIDOMNODE(nsSVGLineElementBase::)
-  NS_FORWARD_NSIDOMELEMENT(nsSVGLineElementBase::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
   NS_FORWARD_NSIDOMSVGELEMENT(nsSVGLineElementBase::)
 
   // nsIContent interface
@@ -57,10 +57,10 @@ protected:
 
 nsSVGElement::LengthInfo nsSVGLineElement::sLengthInfo[4] =
 {
-  { &nsGkAtoms::x1, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, nsSVGUtils::X },
-  { &nsGkAtoms::y1, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, nsSVGUtils::Y },
-  { &nsGkAtoms::x2, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, nsSVGUtils::X },
-  { &nsGkAtoms::y2, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, nsSVGUtils::Y },
+  { &nsGkAtoms::x1, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::X },
+  { &nsGkAtoms::y1, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::Y },
+  { &nsGkAtoms::x2, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::X },
+  { &nsGkAtoms::y2, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::Y },
 };
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Line)
@@ -151,7 +151,7 @@ void
 nsSVGLineElement::GetMarkPoints(nsTArray<nsSVGMark> *aMarks) {
   float x1, y1, x2, y2;
 
-  GetAnimatedLengthValues(&x1, &y1, &x2, &y2, nsnull);
+  GetAnimatedLengthValues(&x1, &y1, &x2, &y2, nullptr);
 
   float angle = atan2(y2 - y1, x2 - x1);
 
@@ -164,7 +164,7 @@ nsSVGLineElement::ConstructPath(gfxContext *aCtx)
 {
   float x1, y1, x2, y2;
 
-  GetAnimatedLengthValues(&x1, &y1, &x2, &y2, nsnull);
+  GetAnimatedLengthValues(&x1, &y1, &x2, &y2, nullptr);
 
   aCtx->MoveTo(gfxPoint(x1, y1));
   aCtx->LineTo(gfxPoint(x2, y2));

@@ -3,6 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#if defined(MOZ_LOGGING)
+#define FORCE_PR_LOG
+#endif
+
 #include "OfflineCacheUpdateChild.h"
 #include "OfflineCacheUpdateParent.h"
 #include "nsXULAppAPI.h"
@@ -27,6 +31,7 @@
 #include "nsIObserverService.h"
 #include "nsIURL.h"
 #include "nsIWebProgress.h"
+#include "nsIWebNavigation.h"
 #include "nsICryptoHash.h"
 #include "nsICacheEntryDescriptor.h"
 #include "nsIPermissionManager.h"
@@ -40,10 +45,11 @@
 #include "prlog.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Attributes.h"
 
 using namespace mozilla;
 
-static nsOfflineCacheUpdateService *gOfflineCacheUpdateService = nsnull;
+static nsOfflineCacheUpdateService *gOfflineCacheUpdateService = nullptr;
 
 typedef mozilla::docshell::OfflineCacheUpdateParent OfflineCacheUpdateParent;
 typedef mozilla::docshell::OfflineCacheUpdateChild OfflineCacheUpdateChild;
@@ -61,25 +67,58 @@ typedef mozilla::docshell::OfflineCacheUpdateGlue OfflineCacheUpdateGlue;
 //
 PRLogModuleInfo *gOfflineCacheUpdateLog;
 #endif
+#undef LOG
 #define LOG(args) PR_LOG(gOfflineCacheUpdateLog, 4, args)
 #define LOG_ENABLED() PR_LOG_TEST(gOfflineCacheUpdateLog, 4)
 
 class AutoFreeArray {
 public:
-    AutoFreeArray(PRUint32 count, char **values)
+    AutoFreeArray(uint32_t count, char **values)
         : mCount(count), mValues(values) {};
     ~AutoFreeArray() { NS_FREE_XPCOM_ALLOCATED_POINTER_ARRAY(mCount, mValues); }
 private:
-    PRUint32 mCount;
+    uint32_t mCount;
     char **mValues;
 };
+
+namespace { // anon
+
+nsresult
+GetAppIDAndInBrowserFromWindow(nsIDOMWindow *aWindow,
+                               uint32_t *aAppId,
+                               bool *aInBrowser)
+{
+    *aAppId = NECKO_NO_APP_ID;
+    *aInBrowser = false;
+
+    if (!aWindow) {
+        return NS_OK;
+    }
+
+    nsCOMPtr<nsILoadContext> loadContext = do_GetInterface(aWindow);
+    if (!loadContext) {
+        return NS_OK;
+    }
+
+    nsresult rv;
+
+    rv = loadContext->GetAppId(aAppId);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    rv = loadContext->GetIsInBrowserElement(aInBrowser);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    return NS_OK;
+}
+
+} // anon
 
 //-----------------------------------------------------------------------------
 // nsOfflineCachePendingUpdate
 //-----------------------------------------------------------------------------
 
-class nsOfflineCachePendingUpdate : public nsIWebProgressListener
-                                  , public nsSupportsWeakReference
+class nsOfflineCachePendingUpdate MOZ_FINAL : public nsIWebProgressListener
+                                            , public nsSupportsWeakReference
 {
 public:
     NS_DECL_ISUPPORTS
@@ -114,10 +153,10 @@ NS_IMPL_ISUPPORTS2(nsOfflineCachePendingUpdate,
 NS_IMETHODIMP
 nsOfflineCachePendingUpdate::OnProgressChange(nsIWebProgress *aProgress,
                                               nsIRequest *aRequest,
-                                              PRInt32 curSelfProgress,
-                                              PRInt32 maxSelfProgress,
-                                              PRInt32 curTotalProgress,
-                                              PRInt32 maxTotalProgress)
+                                              int32_t curSelfProgress,
+                                              int32_t maxSelfProgress,
+                                              int32_t curTotalProgress,
+                                              int32_t maxTotalProgress)
 {
     NS_NOTREACHED("notification excluded in AddProgressListener(...)");
     return NS_OK;
@@ -126,7 +165,7 @@ nsOfflineCachePendingUpdate::OnProgressChange(nsIWebProgress *aProgress,
 NS_IMETHODIMP
 nsOfflineCachePendingUpdate::OnStateChange(nsIWebProgress* aWebProgress,
                                            nsIRequest *aRequest,
-                                           PRUint32 progressStateFlags,
+                                           uint32_t progressStateFlags,
                                            nsresult aStatus)
 {
     nsCOMPtr<nsIDOMDocument> updateDoc = do_QueryReferent(mDocument);
@@ -159,9 +198,16 @@ nsOfflineCachePendingUpdate::OnStateChange(nsIWebProgress* aWebProgress,
 
     // Only schedule the update if the document loaded successfully
     if (NS_SUCCEEDED(aStatus)) {
+        // Get extended origin attributes
+        uint32_t appId;
+        bool isInBrowserElement;
+        nsresult rv = GetAppIDAndInBrowserFromWindow(window, &appId, &isInBrowserElement);
+        NS_ENSURE_SUCCESS(rv, rv);
+
         nsCOMPtr<nsIOfflineCacheUpdate> update;
         mService->Schedule(mManifestURI, mDocumentURI,
-                           updateDoc, window, nsnull, getter_AddRefs(update));
+                           updateDoc, window, nullptr,
+                           appId, isInBrowserElement, getter_AddRefs(update));
     }
 
     aWebProgress->RemoveProgressListener(this);
@@ -174,7 +220,7 @@ NS_IMETHODIMP
 nsOfflineCachePendingUpdate::OnLocationChange(nsIWebProgress* aWebProgress,
                                               nsIRequest* aRequest,
                                               nsIURI *location,
-                                              PRUint32 aFlags)
+                                              uint32_t aFlags)
 {
     NS_NOTREACHED("notification excluded in AddProgressListener(...)");
     return NS_OK;
@@ -193,7 +239,7 @@ nsOfflineCachePendingUpdate::OnStatusChange(nsIWebProgress* aWebProgress,
 NS_IMETHODIMP
 nsOfflineCachePendingUpdate::OnSecurityChange(nsIWebProgress *aWebProgress,
                                               nsIRequest *aRequest,
-                                              PRUint32 state)
+                                              uint32_t state)
 {
     NS_NOTREACHED("notification excluded in AddProgressListener(...)");
     return NS_OK;
@@ -220,7 +266,7 @@ nsOfflineCacheUpdateService::nsOfflineCacheUpdateService()
 
 nsOfflineCacheUpdateService::~nsOfflineCacheUpdateService()
 {
-    gOfflineCacheUpdateService = nsnull;
+    gOfflineCacheUpdateService = nullptr;
 }
 
 nsresult
@@ -254,12 +300,12 @@ nsOfflineCacheUpdateService::GetInstance()
     if (!gOfflineCacheUpdateService) {
         gOfflineCacheUpdateService = new nsOfflineCacheUpdateService();
         if (!gOfflineCacheUpdateService)
-            return nsnull;
+            return nullptr;
         NS_ADDREF(gOfflineCacheUpdateService);
         nsresult rv = gOfflineCacheUpdateService->Init();
         if (NS_FAILED(rv)) {
             NS_RELEASE(gOfflineCacheUpdateService);
-            return nsnull;
+            return nullptr;
         }
         return gOfflineCacheUpdateService;
     }
@@ -373,7 +419,7 @@ nsOfflineCacheUpdateService::ProcessNextUpdate()
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-nsOfflineCacheUpdateService::GetNumUpdates(PRUint32 *aNumUpdates)
+nsOfflineCacheUpdateService::GetNumUpdates(uint32_t *aNumUpdates)
 {
     LOG(("nsOfflineCacheUpdateService::GetNumUpdates [%p]", this));
 
@@ -382,7 +428,7 @@ nsOfflineCacheUpdateService::GetNumUpdates(PRUint32 *aNumUpdates)
 }
 
 NS_IMETHODIMP
-nsOfflineCacheUpdateService::GetUpdate(PRUint32 aIndex,
+nsOfflineCacheUpdateService::GetUpdate(uint32_t aIndex,
                                        nsIOfflineCacheUpdate **aUpdate)
 {
     LOG(("nsOfflineCacheUpdateService::GetUpdate [%p, %d]", this, aIndex));
@@ -390,7 +436,7 @@ nsOfflineCacheUpdateService::GetUpdate(PRUint32 aIndex,
     if (aIndex < mUpdates.Length()) {
         NS_ADDREF(*aUpdate = mUpdates[aIndex]);
     } else {
-        *aUpdate = nsnull;
+        *aUpdate = nullptr;
     }
 
     return NS_OK;
@@ -398,13 +444,24 @@ nsOfflineCacheUpdateService::GetUpdate(PRUint32 aIndex,
 
 nsresult
 nsOfflineCacheUpdateService::FindUpdate(nsIURI *aManifestURI,
-                                        nsIURI *aDocumentURI,
+                                        uint32_t aAppID,
+                                        bool aInBrowser,
                                         nsOfflineCacheUpdate **aUpdate)
 {
     nsresult rv;
 
+    nsCOMPtr<nsIApplicationCacheService> cacheService =
+        do_GetService(NS_APPLICATIONCACHESERVICE_CONTRACTID, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsAutoCString groupID;
+    rv = cacheService->BuildGroupIDForApp(aManifestURI,
+                                          aAppID, aInBrowser,
+                                          groupID);
+    NS_ENSURE_SUCCESS(rv, rv);
+
     nsRefPtr<nsOfflineCacheUpdate> update;
-    for (PRUint32 i = 0; i < mUpdates.Length(); i++) {
+    for (uint32_t i = 0; i < mUpdates.Length(); i++) {
         update = mUpdates[i];
 
         bool partial;
@@ -416,15 +473,9 @@ nsOfflineCacheUpdateService::FindUpdate(nsIURI *aManifestURI,
             continue;
         }
 
-        nsCOMPtr<nsIURI> manifestURI;
-        update->GetManifestURI(getter_AddRefs(manifestURI));
-        if (manifestURI) {
-            bool equals;
-            rv = manifestURI->Equals(aManifestURI, &equals);
-            if (equals) {
-                update.swap(*aUpdate);
-                return NS_OK;
-            }
+        if (update->IsForGroupID(groupID)) {
+            update.swap(*aUpdate);
+            return NS_OK;
         }
     }
 
@@ -436,7 +487,9 @@ nsOfflineCacheUpdateService::Schedule(nsIURI *aManifestURI,
                                       nsIURI *aDocumentURI,
                                       nsIDOMDocument *aDocument,
                                       nsIDOMWindow* aWindow,
-                                      nsILocalFile* aCustomProfileDir,
+                                      nsIFile* aCustomProfileDir,
+                                      uint32_t aAppID,
+                                      bool aInBrowser,
                                       nsIOfflineCacheUpdate **aUpdate)
 {
     nsCOMPtr<nsIOfflineCacheUpdate> update;
@@ -449,7 +502,8 @@ nsOfflineCacheUpdateService::Schedule(nsIURI *aManifestURI,
 
     nsresult rv;
 
-    rv = update->Init(aManifestURI, aDocumentURI, aDocument, aCustomProfileDir);
+    rv = update->Init(aManifestURI, aDocumentURI, aDocument,
+                      aCustomProfileDir, aAppID, aInBrowser);
     NS_ENSURE_SUCCESS(rv, rv);
 
     rv = update->Schedule();
@@ -466,19 +520,60 @@ nsOfflineCacheUpdateService::ScheduleUpdate(nsIURI *aManifestURI,
                                             nsIDOMWindow *aWindow,
                                             nsIOfflineCacheUpdate **aUpdate)
 {
-    return Schedule(aManifestURI, aDocumentURI, nsnull, aWindow, nsnull, aUpdate);
+    // Get extended origin attributes
+    uint32_t appId;
+    bool isInBrowser;
+    nsresult rv = GetAppIDAndInBrowserFromWindow(aWindow, &appId, &isInBrowser);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    return Schedule(aManifestURI, aDocumentURI, nullptr, aWindow, nullptr,
+                    appId, isInBrowser, aUpdate);
 }
 
 NS_IMETHODIMP
 nsOfflineCacheUpdateService::ScheduleCustomProfileUpdate(nsIURI *aManifestURI,
                                                          nsIURI *aDocumentURI,
-                                                         nsILocalFile *aProfileDir,
+                                                         nsIFile *aProfileDir,
                                                          nsIOfflineCacheUpdate **aUpdate)
 {
     // The profile directory is mandatory
     NS_ENSURE_ARG(aProfileDir);
 
-    return Schedule(aManifestURI, aDocumentURI, nsnull, nsnull, aProfileDir, aUpdate);
+    return Schedule(aManifestURI, aDocumentURI, nullptr, nullptr, aProfileDir,
+                    NECKO_NO_APP_ID, false, aUpdate);
+}
+
+NS_IMETHODIMP
+nsOfflineCacheUpdateService::ScheduleAppUpdate(nsIURI *aManifestURI,
+                                               nsIURI *aDocumentURI,
+                                               uint32_t aAppID, bool aInBrowser,
+                                               nsIOfflineCacheUpdate **aUpdate)
+{
+    return Schedule(aManifestURI, aDocumentURI, nullptr, nullptr, nullptr,
+                    aAppID, aInBrowser, aUpdate);
+}
+
+NS_IMETHODIMP nsOfflineCacheUpdateService::CheckForUpdate(nsIURI *aManifestURI,
+                                                          uint32_t aAppID,
+                                                          bool aInBrowser,
+                                                          nsIObserver *aObserver)
+{
+    if (GeckoProcessType_Default != XRE_GetProcessType()) {
+        // Not intended to support this on child processes
+        return NS_ERROR_NOT_IMPLEMENTED;
+    }
+
+    nsCOMPtr<nsIOfflineCacheUpdate> update = new OfflineCacheUpdateGlue();
+
+    nsresult rv;
+
+    rv = update->InitForUpdateCheck(aManifestURI, aAppID, aInBrowser, aObserver);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    rv = update->Schedule();
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    return NS_OK;
 }
 
 //-----------------------------------------------------------------------------
@@ -548,7 +643,7 @@ OfflineAppPermForURI(nsIURI *aURI,
         return NS_OK;
     }
 
-    PRUint32 perm;
+    uint32_t perm;
     const char *permName = pinned ? "pin-app" : "offline-app";
     permissionManager->TestExactPermission(innerURI, permName, &perm);
 
@@ -563,7 +658,8 @@ OfflineAppPermForURI(nsIURI *aURI,
         return NS_OK;
     }
 
-    if (perm == nsIPermissionManager::ALLOW_ACTION) {
+    if (perm == nsIPermissionManager::ALLOW_ACTION ||
+        perm == nsIOfflineCacheUpdateService::ALLOW_NO_WARN) {
         *aAllowed = true;
     }
 

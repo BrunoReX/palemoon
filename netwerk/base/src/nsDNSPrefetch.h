@@ -9,13 +9,14 @@
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/Attributes.h"
 
 #include "nsIDNSListener.h"
 
 class nsIURI;
 class nsIDNSService;
 
-class nsDNSPrefetch : public nsIDNSListener
+class nsDNSPrefetch MOZ_FINAL : public nsIDNSListener
 {
 public:
     NS_DECL_ISUPPORTS
@@ -43,7 +44,7 @@ private:
     mozilla::TimeStamp mStartTimestamp;
     mozilla::TimeStamp mEndTimestamp;
 
-    nsresult Prefetch(PRUint16 flags);
+    nsresult Prefetch(uint16_t flags);
 };
 
 #endif 

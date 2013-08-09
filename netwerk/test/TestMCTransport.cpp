@@ -22,8 +22,8 @@
 #include "nsICacheEntryDescriptor.h"
 #include "nsNetCID.h"
 static NS_DEFINE_CID(kCacheServiceCID, NS_CACHESERVICE_CID);
-static nsICacheSession *session = nsnull;
-static nsICacheEntryDescriptor *desc = nsnull;
+static nsICacheSession *session = nullptr;
+static nsICacheEntryDescriptor *desc = nullptr;
 #endif
 
 /**
@@ -36,7 +36,7 @@ static nsICacheEntryDescriptor *desc = nsnull;
  */
 
 static NS_DEFINE_CID(kEventQueueServiceCID, NS_EVENTQUEUESERVICE_CID);
-static nsIEventQueue *gEventQ = nsnull;
+static nsIEventQueue *gEventQ = nullptr;
 
 class TestListener : public nsIStreamListener
 {
@@ -59,7 +59,7 @@ NS_IMPL_ISUPPORTS2(TestListener,
 
 TestListener::TestListener(char *filename)
     : mFilename(filename)
-    , mFile(nsnull)
+    , mFile(nullptr)
 {
 }
 
@@ -93,18 +93,18 @@ TestListener::OnStopRequest(nsIRequest *req, nsISupports *ctx, nsresult status)
 NS_IMETHODIMP
 TestListener::OnDataAvailable(nsIRequest *req, nsISupports *ctx,
                               nsIInputStream *is,
-                              PRUint32 offset, PRUint32 count)
+                              uint64_t offset, uint32_t count)
 {
-    printf("OnDataAvailable: offset=%u count=%u\n", offset, count);
+    printf("OnDataAvailable: offset=%llu count=%u\n", offset, count);
 
     if (!mFile) return NS_ERROR_FAILURE;
 
     char buf[128];
     nsresult rv;
-    PRUint32 nread = 0;
+    uint32_t nread = 0;
 
     while (count) {
-        PRUint32 amount = NS_MIN<PRUint32>(count, sizeof(buf));
+        uint32_t amount = NS_MIN<uint32_t>(count, sizeof(buf));
 
         rv = is->Read(buf, amount, &nread);
         if (NS_FAILED(rv)) return rv;
@@ -148,7 +148,7 @@ nsresult TestMCTransport(const char *filename)
 #endif
 
     nsCOMPtr<nsIOutputStream> os;
-    rv = transport->OpenOutputStream(0, (PRUint32) -1, 0, getter_AddRefs(os));
+    rv = transport->OpenOutputStream(0, (uint32_t) -1, 0, getter_AddRefs(os));
     if (NS_FAILED(rv)) return rv;
 
     char *out = PR_smprintf("%s.out", filename);
@@ -157,7 +157,7 @@ nsresult TestMCTransport(const char *filename)
         return NS_ERROR_OUT_OF_MEMORY;
 
     nsCOMPtr<nsIRequest> req;
-    rv = transport->AsyncRead(listener, nsnull, 0, (PRUint32) -1, 0, getter_AddRefs(req));
+    rv = transport->AsyncRead(listener, nullptr, 0, (uint32_t) -1, 0, getter_AddRefs(req));
     if (NS_FAILED(rv)) return rv;
 
     FILE *file = fopen(filename, "r");
@@ -165,7 +165,7 @@ nsresult TestMCTransport(const char *filename)
         return NS_ERROR_FILE_NOT_FOUND;
 
     char buf[256];
-    PRUint32 count, total=0;
+    uint32_t count, total=0;
 
     while ((count = fread(buf, 1, sizeof(buf), file)) > 0) {
         printf("writing %u bytes\n", count);
@@ -174,7 +174,7 @@ nsresult TestMCTransport(const char *filename)
         if (NS_FAILED(rv)) return rv;
 
         // process an event
-        PLEvent *event = nsnull;
+        PLEvent *event = nullptr;
         gEventQ->GetEvent(&event);
         if (event) gEventQ->HandleEvent(event);
     }

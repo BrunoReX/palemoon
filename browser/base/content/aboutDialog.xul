@@ -41,75 +41,67 @@
   <vbox id="aboutDialogContainer">
     <hbox id="clientBox">
       <vbox id="leftBox" flex="1"/>
-        <vbox id="rightBox" flex="1">
+      <vbox id="rightBox" flex="1">
 #expand <label id="version">Version: __MOZ_APP_VERSION__</label>
-          <label id="distribution" class="text-blurb"/>
-          <label id="distributionId" class="text-blurb"/>
+        <label id="distribution" class="text-blurb"/>
+        <label id="distributionId" class="text-blurb"/>
 
-          <vbox id="detailsBox">
-            <vbox id="updateBox">
+        <vbox id="detailsBox">
+          <vbox id="updateBox">
 #ifdef MOZ_UPDATER
-              <deck id="updateDeck" orient="vertical">
-                <hbox id="updateButtonBox" align="center">
-                  <button id="updateButton" align="start"
+            <deck id="updateDeck" orient="vertical">
+              <hbox id="updateButtonBox" align="center">
+                <button id="updateButton" align="start"
                         oncommand="gAppUpdater.buttonOnCommand();"/>
-                  <spacer flex="1"/>
-                </hbox>
-                <hbox id="checkingForUpdates" align="center">
-                  <image class="update-throbber"/><label>&update.checkingForUpdates;</label>
-                </hbox>
-                <hbox id="checkingAddonCompat" align="center">
-                  <image class="update-throbber"/><label>&update.checkingAddonCompat;</label>
-                </hbox>
-                <hbox id="downloading" align="center">
-                  <image class="update-throbber"/><label>&update.downloading.start;</label><label id="downloadStatus"/><label>&update.downloading.end;</label>
-                </hbox>
-                <hbox id="applying" align="center">
-                  <image class="update-throbber"/><label>&update.applying;</label>
-                </hbox>
-                <hbox id="downloadFailed" align="center">
-                  <label>&update.failed.start;</label><label id="failedLink" class="text-link">&update.failed.linkText;</label><label>&update.failed.end;</label>
-                </hbox>
-                <hbox id="adminDisabled" align="center">
-                  <label>&update.adminDisabled;</label>
-                </hbox>
-                <hbox id="noUpdatesFound" align="center">
-                  <label>&update.noUpdatesFound;</label>
-                </hbox>
-                <hbox id="manualUpdate" align="center">
-                  <label>&update.manual.start;</label><label id="manualLink" class="text-link"/><label>&update.manual.end;</label>
-                </hbox>
-              </deck>
+                <spacer flex="1"/>
+              </hbox>
+              <hbox id="checkingForUpdates" align="center">
+                <image class="update-throbber"/><label>&update.checkingForUpdates;</label>
+              </hbox>
+              <hbox id="checkingAddonCompat" align="center">
+                <image class="update-throbber"/><label>&update.checkingAddonCompat;</label>
+              </hbox>
+              <hbox id="downloading" align="center">
+                <image class="update-throbber"/><label>&update.downloading.start;</label><label id="downloadStatus"/><label>&update.downloading.end;</label>
+              </hbox>
+              <hbox id="applying" align="center">
+                <image class="update-throbber"/><label>&update.applying;</label>
+              </hbox>
+              <hbox id="downloadFailed" align="center">
+                <label>&update.failed.start;</label><label id="failedLink" class="text-link">&update.failed.linkText;</label><label>&update.failed.end;</label>
+              </hbox>
+              <hbox id="adminDisabled" align="center">
+                <label>&update.adminDisabled;</label>
+              </hbox>
+              <hbox id="noUpdatesFound" align="center">
+                <label>&update.noUpdatesFound;</label>
+              </hbox>
+              <hbox id="manualUpdate" align="center">
+                <label>&update.manual.start;</label><label id="manualLink" class="text-link"/><label>&update.manual.end;</label>
+              </hbox>
+            </deck>
 #endif
-            </vbox>
+          </vbox>
 
 #ifdef MOZ_UPDATER
-#            <description class="text-blurb" id="currentChannelText">
-#              &channel.description.start;<label id="currentChannel"/>&channel.description.end;
-#            </description>
+#          <description class="text-blurb" id="currentChannelText">
+#            &channel.description.start;<label id="currentChannel"/>&channel.description.end;
+#          </description>
 #endif
-            <vbox id="experimental" hidden="true">
-              <description class="text-blurb" id="warningDesc">
-                &warningDesc.version;
-#ifdef MOZ_TELEMETRY_REPORTING
-                &warningDesc.telemetryDesc;
-#endif
-              </description>
-            </vbox>
-            <description class="text-pmcreds">
-              Pale Moon is released by <label class="text-link" href="http://www.moonchildproductions.info">Moonchild Productions</label>.
-            </description>
-            <description class="text-pmcreds">
-              Testers and moral support: Jose Arellano, Cole Hughes, Tobias Olsson, Duco Quanjer, Gerardo Rubio, Daryl Sprint, Jason Sullivan.
-            </description>
-            <description class="text-pmcreds">
-              Special thanks to: Lee Brown, Jacob M. Ross, Phil Chan, Colin Moran, and all other supporters!
-            </description>
-            <description class="text-blurb">
-              If you wish to contribute, please consider helping out by providing support to other users or becoming a beta tester on the <label class="text-link" href="http://forum.palemoon.org/">Pale Moon forum</label>
-            </description>   
-          </vbox>
+        <description class="text-pmcreds">
+          Pale Moon is released by <label class="text-link" href="http://www.moonchildproductions.info">Moonchild Productions</label>.
+        </description>
+        <description class="text-pmcreds">
+          Testers and moral support: Jose Arellano, Cole Hughes, Tobias Olsson, Duco Quanjer, Gerardo Rubio, Daryl Sprint, Jason Sullivan.
+        </description>
+        <description class="text-pmcreds">
+          Special thanks to: Lee Brown, Jacob M. Ross, Phil Chan, Colin Moran, and all other supporters!
+        </description>
+        <description class="text-blurb">
+          If you wish to contribute, please consider helping out by providing support to other users or becoming a beta tester on the <label class="text-link" href="http://forum.palemoon.org/">Pale Moon forum</label>
+        </description>   
         </vbox>
+      </vbox>
     </hbox>
     <vbox id="bottomBox">
       <hbox pack="center">
@@ -117,7 +109,7 @@
         <label class="text-link bottom-link" href="about:rights">&bottomLinks.rights;</label>
         <label class="text-link bottom-link" href="http://www.mozilla.com/legal/privacy/">&bottomLinks.privacy;</label>
       </hbox>
-      <description id="trademark">The Pale Moon logo and project names are the property of Moonchild Productions. All rights reserved.</description>
+      <description id="trademark">&trademarkInfo.part1;</description>
     </vbox>
   </vbox>
   

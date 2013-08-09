@@ -14,7 +14,6 @@
 # define NS_InvokeByIndex      NS_InvokeByIndex_P
 #endif
 
-#include "prtypes.h"
 #include "nscore.h"
 #include "nsISupports.h"
 #include "xpt_struct.h"
@@ -27,14 +26,14 @@ struct nsXPTCMiniVariant
 // with no penalty.
     union
     {
-        PRInt8    i8;
-        PRInt16   i16;
-        PRInt32   i32;
-        PRInt64   i64;
-        PRUint8   u8;
-        PRUint16  u16;
-        PRUint32  u32;
-        PRUint64  u64;
+        int8_t    i8;
+        int16_t   i16;
+        int32_t   i32;
+        int64_t   i64;
+        uint8_t   u8;
+        uint16_t  u16;
+        uint32_t  u32;
+        uint64_t  u64;
         float     f;
         double    d;
         bool      b;
@@ -57,7 +56,7 @@ struct nsXPTCVariant : public nsXPTCMiniVariant
     // inherits 'val' here
     void*     ptr;
     nsXPTType type;
-    PRUint8   flags;
+    uint8_t   flags;
 
     enum
     {
@@ -100,7 +99,7 @@ struct nsXPTCVariant : public nsXPTCMiniVariant
     // Internal use only. Use IsIndirect() instead.
     bool IsPtrData()       const  {return 0 != (flags & PTR_IS_DATA);}
 
-    void Init(const nsXPTCMiniVariant& mv, const nsXPTType& t, PRUint8 f)
+    void Init(const nsXPTCMiniVariant& mv, const nsXPTType& t, uint8_t f)
     {
         type = t;
         flags = f;
@@ -108,12 +107,12 @@ struct nsXPTCVariant : public nsXPTCMiniVariant
         if(f & PTR_IS_DATA)
         {
             ptr = mv.val.p;
-            val.p = nsnull;
+            val.p = nullptr;
         }
         else
         {
-            ptr = nsnull;
-            val.p = nsnull; // make sure 'val.p' is always initialized
+            ptr = nullptr;
+            val.p = nullptr; // make sure 'val.p' is always initialized
             switch(t.TagPart()) {
               case nsXPTType::T_I8:                val.i8  = mv.val.i8;  break;
               case nsXPTType::T_I16:               val.i16 = mv.val.i16; break;
@@ -149,7 +148,7 @@ struct nsXPTCVariant : public nsXPTCMiniVariant
 class nsIXPTCProxy : public nsISupports
 {
 public:
-    NS_IMETHOD CallMethod(PRUint16 aMethodIndex,
+    NS_IMETHOD CallMethod(uint16_t aMethodIndex,
                           const XPTMethodDescriptor *aInfo,
                           nsXPTCMiniVariant *aParams) = 0;
 };
@@ -187,7 +186,7 @@ XPCOM_API(void)
 NS_DestroyXPTCallStub(nsISomeInterface* aStub);
 
 XPCOM_API(nsresult)
-NS_InvokeByIndex(nsISupports* that, PRUint32 methodIndex,
-                 PRUint32 paramCount, nsXPTCVariant* params);
+NS_InvokeByIndex(nsISupports* that, uint32_t methodIndex,
+                 uint32_t paramCount, nsXPTCVariant* params);
 
 #endif /* xptcall_h___ */

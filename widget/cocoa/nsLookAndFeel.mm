@@ -32,6 +32,8 @@ static nscolor GetColorFromNSColor(NSColor* aColor)
 nsresult
 nsLookAndFeel::NativeGetColor(ColorID aID, nscolor &aColor)
 {
+  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+
   nsresult res = NS_OK;
   
   switch (aID) {
@@ -228,8 +230,7 @@ nsLookAndFeel::NativeGetColor(ColorID aID, nscolor &aColor)
       aColor = NS_RGB(0xA3,0xA3,0xA3);
       break;          
     case eColorID__moz_mac_menutextdisable:
-      aColor = nsCocoaFeatures::OnSnowLeopardOrLater() ?
-                 NS_RGB(0x88,0x88,0x88) : NS_RGB(0x98,0x98,0x98);
+      aColor = NS_RGB(0x88,0x88,0x88);
       break;      
     case eColorID__moz_mac_menutextselect:
       aColor = GetColorFromNSColor([NSColor selectedMenuItemTextColor]);
@@ -272,10 +273,12 @@ nsLookAndFeel::NativeGetColor(ColorID aID, nscolor &aColor)
     }
   
   return res;
+
+  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
 nsresult
-nsLookAndFeel::GetIntImpl(IntID aID, PRInt32 &aResult)
+nsLookAndFeel::GetIntImpl(IntID aID, int32_t &aResult)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
@@ -376,7 +379,7 @@ nsLookAndFeel::GetIntImpl(IntID aID, PRInt32 &aResult)
                                                             kCFPreferencesAnyHost);
       aResult = 1;    // default to just textboxes
       if (fullKeyboardAccessProperty) {
-        PRInt32 fullKeyboardAccessPrefVal;
+        int32_t fullKeyboardAccessPrefVal;
         if (::CFNumberGetValue((CFNumberRef) fullKeyboardAccessProperty, kCFNumberIntType, &fullKeyboardAccessPrefVal)) {
           // the second bit means  "Full keyboard access" is on
           if (fullKeyboardAccessPrefVal & (1 << 1))
@@ -448,14 +451,17 @@ static void GetStringForNSString(const NSString *aSrc, nsAString& aDest)
 
 bool
 nsLookAndFeel::GetFontImpl(FontID aID, nsString &aFontName,
-                           gfxFontStyle &aFontStyle)
+                           gfxFontStyle &aFontStyle,
+                           float aDevPixPerCSSPixel)
 {
+    NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+
     // hack for now
     if (aID == eFont_Window || aID == eFont_Document) {
         aFontStyle.style      = NS_FONT_STYLE_NORMAL;
         aFontStyle.weight     = NS_FONT_WEIGHT_NORMAL;
         aFontStyle.stretch    = NS_FONT_STRETCH_NORMAL;
-        aFontStyle.size       = 14;
+        aFontStyle.size       = 14 * aDevPixPerCSSPixel;
         aFontStyle.systemFont = true;
 
         aFontName.AssignLiteral("sans-serif");
@@ -479,7 +485,7 @@ nsLookAndFeel::GetFontImpl(FontID aID, nsString &aFontName,
     [NSFont boldSystemFontOfSize:     [NSFont smallSystemFontSize]]
 */
 
-    NSFont *font = nsnull;
+    NSFont *font = nullptr;
     switch (aID) {
         // css2
         case eFont_Caption:
@@ -552,9 +558,12 @@ nsLookAndFeel::GetFontImpl(FontID aID, nsString &aFontName,
         (traits & NSFontExpandedTrait) ?
             NS_FONT_STRETCH_EXPANDED : (traits & NSFontCondensedTrait) ?
                 NS_FONT_STRETCH_CONDENSED : NS_FONT_STRETCH_NORMAL;
-    aFontStyle.size = [font pointSize];
+    // convert size from css pixels to device pixels
+    aFontStyle.size = [font pointSize] * aDevPixPerCSSPixel;
     aFontStyle.systemFont = true;
 
     GetStringForNSString([font familyName], aFontName);
     return true;
+
+    NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(false);
 }

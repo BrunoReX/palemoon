@@ -9,7 +9,7 @@ namespace mozilla {
 namespace gfx {
 
 SharedDIB::SharedDIB() :
-  mShMem(nsnull)
+  mShMem(nullptr)
 {
 }
 
@@ -19,7 +19,7 @@ SharedDIB::~SharedDIB()
 }
 
 nsresult
-SharedDIB::Create(PRUint32 aSize)
+SharedDIB::Create(uint32_t aSize)
 {
   Close();
 
@@ -44,13 +44,13 @@ SharedDIB::Close()
 {
   delete mShMem;
 
-  mShMem = nsnull;
+  mShMem = nullptr;
 
   return NS_OK;
 }
 
 nsresult
-SharedDIB::Attach(Handle aHandle, PRUint32 aSize)
+SharedDIB::Attach(Handle aHandle, uint32_t aSize)
 {
   Close();
 

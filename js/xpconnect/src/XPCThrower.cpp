@@ -19,7 +19,7 @@ XPCThrower::Throw(nsresult rv, JSContext* cx)
     const char* format;
     if (JS_IsExceptionPending(cx))
         return;
-    if (!nsXPCException::NameAndFormatForNSResult(rv, nsnull, &format))
+    if (!nsXPCException::NameAndFormatForNSResult(rv, nullptr, &format))
         format = "";
     BuildAndThrowException(cx, rv, format);
 }
@@ -44,15 +44,11 @@ Throw(JSContext *cx, nsresult rv)
 JSBool
 XPCThrower::CheckForPendingException(nsresult result, JSContext *cx)
 {
-    nsXPConnect* xpc = nsXPConnect::GetXPConnect();
-    if (!xpc)
-        return false;
-
     nsCOMPtr<nsIException> e;
-    xpc->GetPendingException(getter_AddRefs(e));
+    XPCJSRuntime::Get()->GetPendingException(getter_AddRefs(e));
     if (!e)
         return false;
-    xpc->SetPendingException(nsnull);
+    XPCJSRuntime::Get()->SetPendingException(nullptr);
 
     nsresult e_result;
     if (NS_FAILED(e->GetResult(&e_result)) || e_result != result)
@@ -73,7 +69,7 @@ XPCThrower::Throw(nsresult rv, XPCCallContext& ccx)
     if (CheckForPendingException(rv, ccx))
         return;
 
-    if (!nsXPCException::NameAndFormatForNSResult(rv, nsnull, &format))
+    if (!nsXPCException::NameAndFormatForNSResult(rv, nullptr, &format))
         format = "";
 
     sz = (char*) format;
@@ -108,10 +104,10 @@ XPCThrower::ThrowBadResult(nsresult rv, nsresult result, XPCCallContext& ccx)
 
     // else...
 
-    if (!nsXPCException::NameAndFormatForNSResult(rv, nsnull, &format) || !format)
+    if (!nsXPCException::NameAndFormatForNSResult(rv, nullptr, &format) || !format)
         format = "";
 
-    if (nsXPCException::NameAndFormatForNSResult(result, &name, nsnull) && name)
+    if (nsXPCException::NameAndFormatForNSResult(result, &name, nullptr) && name)
         sz = JS_smprintf("%s 0x%x (%s)", format, result, name);
     else
         sz = JS_smprintf("%s 0x%x", format, result);
@@ -132,7 +128,7 @@ XPCThrower::ThrowBadParam(nsresult rv, unsigned paramNum, XPCCallContext& ccx)
     char* sz;
     const char* format;
 
-    if (!nsXPCException::NameAndFormatForNSResult(rv, nsnull, &format))
+    if (!nsXPCException::NameAndFormatForNSResult(rv, nullptr, &format))
         format = "";
 
     sz = JS_smprintf("%s arg %d", format, paramNum);
@@ -152,7 +148,7 @@ void
 XPCThrower::Verbosify(XPCCallContext& ccx,
                       char** psz, bool own)
 {
-    char* sz = nsnull;
+    char* sz = nullptr;
 
     if (ccx.HasInterfaceAndMember()) {
         XPCNativeInterface* iface = ccx.GetInterface();
@@ -183,23 +179,22 @@ XPCThrower::BuildAndThrowException(JSContext* cx, nsresult rv, const char* sz)
         return;
     nsCOMPtr<nsIException> finalException;
     nsCOMPtr<nsIException> defaultException;
-    nsXPCException::NewException(sz, rv, nsnull, nsnull, getter_AddRefs(defaultException));
-    XPCPerThreadData* tls = XPCPerThreadData::GetData(cx);
-    if (tls) {
-        nsIExceptionManager * exceptionManager = tls->GetExceptionManager();
-        if (exceptionManager) {
-           // Ask the provider for the exception, if there is no provider
-           // we expect it to set e to null
-            exceptionManager->GetExceptionFromProvider(rv,
-                                                       defaultException,
-                                                       getter_AddRefs(finalException));
-            // We should get at least the defaultException back,
-            // but just in case
-            if (finalException == nsnull) {
-                finalException = defaultException;
-            }
+    nsXPCException::NewException(sz, rv, nullptr, nullptr, getter_AddRefs(defaultException));
+
+    nsIExceptionManager * exceptionManager = XPCJSRuntime::Get()->GetExceptionManager();
+    if (exceptionManager) {
+        // Ask the provider for the exception, if there is no provider
+        // we expect it to set e to null
+        exceptionManager->GetExceptionFromProvider(rv,
+                                                   defaultException,
+                                                   getter_AddRefs(finalException));
+        // We should get at least the defaultException back,
+        // but just in case
+        if (finalException == nullptr) {
+            finalException = defaultException;
         }
     }
+
     // XXX Should we put the following test and call to JS_ReportOutOfMemory
     // inside this test?
     if (finalException)
@@ -216,22 +211,7 @@ IsCallerChrome(JSContext* cx)
     nsresult rv;
 
     nsCOMPtr<nsIScriptSecurityManager> secMan;
-    if (XPCPerThreadData::IsMainThread(cx)) {
-        secMan = XPCWrapper::GetSecurityManager();
-    } else {
-        nsXPConnect* xpc = nsXPConnect::GetXPConnect();
-        if (!xpc)
-            return false;
-
-        nsCOMPtr<nsIXPCSecurityManager> xpcSecMan;
-        PRUint16 flags = 0;
-        rv = xpc->GetSecurityManagerForJSContext(cx, getter_AddRefs(xpcSecMan),
-                                                 &flags);
-        if (NS_FAILED(rv) || !xpcSecMan)
-            return false;
-
-        secMan = do_QueryInterface(xpcSecMan);
-    }
+    secMan = XPCWrapper::GetSecurityManager();
 
     if (!secMan)
         return false;

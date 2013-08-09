@@ -7,16 +7,13 @@
 #include "nsIDOMNode.h"
 #include "nsDOMClassInfoID.h"
 #include "nsIOutputStream.h"
-#include "nsINode.h"
 #include "nsIDocument.h"
 #include "nsIDOMDocument.h"
 #include "nsIDocumentEncoder.h"
-#include "nsIContentSerializer.h"
 #include "nsString.h"
-#include "nsReadableUtils.h"
 #include "nsContentCID.h"
 #include "nsContentUtils.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 
 nsDOMSerializer::nsDOMSerializer()
 {
@@ -44,7 +41,7 @@ static nsresult
 SetUpEncoder(nsIDOMNode *aRoot, const nsACString& aCharset,
              nsIDocumentEncoder **aEncoder)
 {
-  *aEncoder = nsnull;
+  *aEncoder = nullptr;
    
   nsresult rv;
   nsCOMPtr<nsIDocumentEncoder> encoder =
@@ -69,7 +66,7 @@ SetUpEncoder(nsIDOMNode *aRoot, const nsACString& aCharset,
   if (NS_FAILED(rv))
     return rv;
 
-  nsCAutoString charset(aCharset);
+  nsAutoCString charset(aCharset);
   if (charset.IsEmpty()) {
     nsCOMPtr<nsIDocument> doc = do_QueryInterface(domDoc);
     NS_ASSERTION(doc, "Need a document");

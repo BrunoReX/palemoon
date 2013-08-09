@@ -7,7 +7,9 @@
 #include "XPCWrapper.h"
 #include "AccessCheck.h"
 #include "WrapperFactory.h"
+#include "AccessCheck.h"
 
+using namespace xpc;
 namespace XPCNativeWrapper {
 
 static inline
@@ -37,8 +39,7 @@ UnwrapNW(JSContext *cx, unsigned argc, jsval *vp)
     return true;
   }
 
-  if (xpc::WrapperFactory::IsXrayWrapper(obj) &&
-      !xpc::WrapperFactory::IsPartiallyTransparent(obj)) {
+  if (WrapperFactory::IsXrayWrapper(obj) && AccessCheck::wrapperSubsumes(obj)) {
     return JS_GetProperty(cx, obj, "wrappedJSObject", vp);
   }
 
@@ -80,7 +81,7 @@ AttachNewConstructorObject(XPCCallContext &ccx, JSObject *aGlobalObject)
     return false;
   }
   return JS_DefineFunction(ccx, JS_GetFunctionObject(xpcnativewrapper), "unwrap", UnwrapNW, 1,
-                           JSPROP_READONLY | JSPROP_PERMANENT) != nsnull;
+                           JSPROP_READONLY | JSPROP_PERMANENT) != nullptr;
 }
 
 } // namespace XPCNativeWrapper
@@ -92,11 +93,11 @@ Unwrap(JSContext *cx, JSObject *wrapper, bool stopAtOuter)
 {
   if (js::IsWrapper(wrapper)) {
     if (xpc::AccessCheck::isScriptAccessOnly(cx, wrapper))
-      return nsnull;
+      return nullptr;
     return js::UnwrapObject(wrapper, stopAtOuter);
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 } // namespace xpc

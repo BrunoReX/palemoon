@@ -13,10 +13,15 @@
 #include "nscore.h"
 #include <mozilla/StandardInteger.h>
 
-PR_BEGIN_EXTERN_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
+// aSP will be the best approximation possible of what the stack pointer will be
+// pointing to when the execution returns to executing that at that PC.
+// If no approximation can be made it will be NULL.
 typedef void
-(* NS_WalkStackCallback)(void *aPC, void *aClosure);
+(* NS_WalkStackCallback)(void *aPC, void *aSP, void *aClosure);
 
 /**
  * Call aCallback for the C/C++ stack frames on the current thread, from
@@ -42,7 +47,7 @@ typedef void
  * generation.
  */
 XPCOM_API(nsresult)
-NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
+NS_StackWalk(NS_WalkStackCallback aCallback, uint32_t aSkipFrames,
              void *aClosure, uintptr_t aThread);
 
 typedef struct {
@@ -52,7 +57,7 @@ typedef struct {
      * string and zero if unknown.
      */
     char library[256];
-    PRUptrdiff loffset;
+    ptrdiff_t loffset;
     /*
      * The name of the file name and line number of the code
      * corresponding to the address, or empty string and zero if
@@ -65,7 +70,7 @@ typedef struct {
      * offset within that function, or empty string and zero if unknown.
      */
     char function[256];
-    PRUptrdiff foffset;
+    ptrdiff_t foffset;
 } nsCodeAddressDetails;
 
 /**
@@ -97,8 +102,10 @@ NS_DescribeCodeAddress(void *aPC, nsCodeAddressDetails *aDetails);
  */
 XPCOM_API(nsresult)
 NS_FormatCodeAddressDetails(void *aPC, const nsCodeAddressDetails *aDetails,
-                            char *aBuffer, PRUint32 aBufferSize);
+                            char *aBuffer, uint32_t aBufferSize);
 
-PR_END_EXTERN_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* !defined(nsStackWalk_h_) */

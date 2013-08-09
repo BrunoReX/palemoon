@@ -4,9 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-extern "C" {
 #include "secdert.h"
-}
 #include "nspr.h"
 #include "nsNSSComponent.h" // for PIPNSS string bundle calls.
 #include "keyhi.h"
@@ -14,9 +12,7 @@ extern "C" {
 #include "cryptohi.h"
 #include "base64.h"
 #include "secasn1.h"
-extern "C" {
 #include "pk11pqg.h"
-}
 #include "nsKeygenHandler.h"
 #include "nsVoidArray.h"
 #include "nsIServiceManager.h"
@@ -37,7 +33,7 @@ extern "C" {
 
 DERTemplate SECAlgorithmIDTemplate[] = {
     { DER_SEQUENCE,
-          0, NULL, sizeof(SECAlgorithmID) },
+          0, nullptr, sizeof(SECAlgorithmID) },
     { DER_OBJECT_ID,
           offsetof(SECAlgorithmID,algorithm), },
     { DER_OPTIONAL | DER_ANY,
@@ -47,7 +43,7 @@ DERTemplate SECAlgorithmIDTemplate[] = {
 
 DERTemplate CERTSubjectPublicKeyInfoTemplate[] = {
     { DER_SEQUENCE,
-          0, nsnull, sizeof(CERTSubjectPublicKeyInfo) },
+          0, nullptr, sizeof(CERTSubjectPublicKeyInfo) },
     { DER_INLINE,
           offsetof(CERTSubjectPublicKeyInfo,algorithm),
           SECAlgorithmIDTemplate, },
@@ -58,14 +54,14 @@ DERTemplate CERTSubjectPublicKeyInfoTemplate[] = {
 
 DERTemplate CERTPublicKeyAndChallengeTemplate[] =
 {
-    { DER_SEQUENCE, 0, nsnull, sizeof(CERTPublicKeyAndChallenge) },
+    { DER_SEQUENCE, 0, nullptr, sizeof(CERTPublicKeyAndChallenge) },
     { DER_ANY, offsetof(CERTPublicKeyAndChallenge,spki), },
     { DER_IA5_STRING, offsetof(CERTPublicKeyAndChallenge,challenge), },
     { 0, }
 };
 
 const SEC_ASN1Template SECKEY_PQGParamsTemplate[] = {
-    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(PQGParams) },
+    { SEC_ASN1_SEQUENCE, 0, nullptr, sizeof(PQGParams) },
     { SEC_ASN1_INTEGER, offsetof(PQGParams,prime) },
     { SEC_ASN1_INTEGER, offsetof(PQGParams,subPrime) },
     { SEC_ASN1_INTEGER, offsetof(PQGParams,base) },
@@ -79,15 +75,15 @@ static NS_DEFINE_CID(kNSSComponentCID, NS_NSSCOMPONENT_CID);
 static PQGParams *
 decode_pqg_params(char *aStr)
 {
-    unsigned char *buf = nsnull;
+    unsigned char *buf = nullptr;
     unsigned int len;
-    PRArenaPool *arena = nsnull;
-    PQGParams *params = nsnull;
+    PLArenaPool *arena = nullptr;
+    PQGParams *params = nullptr;
     SECStatus status;
 
     arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
     if (!arena)
-        return nsnull;
+        return nullptr;
 
     params = static_cast<PQGParams*>(PORT_ArenaZAlloc(arena, sizeof(PQGParams)));
     if (!params)
@@ -111,13 +107,13 @@ loser:
     if (buf) {
       PR_Free(buf);
     }
-    return nsnull;
+    return nullptr;
 }
 
 static int
 pqg_prime_bits(char *str)
 {
-    PQGParams *params = nsnull;
+    PQGParams *params = nullptr;
     int primeBits = 0, i;
 
     params = decode_pqg_params(str);
@@ -226,7 +222,7 @@ SECKEYECParams *
 decode_ec_params(const char *curve)
 {
     SECKEYECParams *ecparams;
-    SECOidData *oidData = NULL;
+    SECOidData *oidData = nullptr;
     SECOidTag curveOidTag = SEC_OID_UNKNOWN; /* default */
     int i, numCurves;
 
@@ -239,16 +235,16 @@ decode_ec_params(const char *curve)
         }
     }
 
-    /* Return NULL if curve name is not recognized */
+    /* Return nullptr if curve name is not recognized */
     if ((curveOidTag == SEC_OID_UNKNOWN) || 
-        (oidData = SECOID_FindOIDByTag(curveOidTag)) == NULL) {
-        return nsnull;
+        (oidData = SECOID_FindOIDByTag(curveOidTag)) == nullptr) {
+        return nullptr;
     }
 
-    ecparams = SECITEM_AllocItem(NULL, NULL, (2 + oidData->oid.len));
+    ecparams = SECITEM_AllocItem(nullptr, nullptr, (2 + oidData->oid.len));
 
     if (!ecparams)
-      return nsnull;
+      return nullptr;
 
     /* 
      * ecparams->data needs to contain the ASN encoding of an object ID (OID)
@@ -280,8 +276,6 @@ nsKeygenFormProcessor::Create(nsISupports* aOuter, const nsIID& aIID, void* *aRe
   nsresult rv;
   NS_ENSURE_NO_AGGREGATION(aOuter);
   nsKeygenFormProcessor* formProc = new nsKeygenFormProcessor();
-  if (!formProc)
-    return NS_ERROR_OUT_OF_MEMORY;
 
   nsCOMPtr<nsISupports> stabilize = formProc;
   rv = formProc->Init();
@@ -312,15 +306,15 @@ nsKeygenFormProcessor::Init()
 }
 
 nsresult
-nsKeygenFormProcessor::GetSlot(PRUint32 aMechanism, PK11SlotInfo** aSlot)
+nsKeygenFormProcessor::GetSlot(uint32_t aMechanism, PK11SlotInfo** aSlot)
 {
   return GetSlotWithMechanism(aMechanism,m_ctx,aSlot);
 }
 
 
-PRUint32 MapGenMechToAlgoMech(PRUint32 mechanism)
+uint32_t MapGenMechToAlgoMech(uint32_t mechanism)
 {
-    PRUint32 searchMech;
+    uint32_t searchMech;
 
     /* We are interested in slots based on the ability to perform
        a given algorithm, not on their ability to generate keys usable
@@ -355,21 +349,21 @@ PRUint32 MapGenMechToAlgoMech(PRUint32 mechanism)
 
 
 nsresult
-GetSlotWithMechanism(PRUint32 aMechanism, 
+GetSlotWithMechanism(uint32_t aMechanism, 
                      nsIInterfaceRequestor *m_ctx,
                      PK11SlotInfo** aSlot)
 {
     nsNSSShutDownPreventionLock locker;
-    PK11SlotList * slotList = nsnull;
-    PRUnichar** tokenNameList = nsnull;
+    PK11SlotList * slotList = nullptr;
+    PRUnichar** tokenNameList = nullptr;
     nsITokenDialogs * dialogs;
     PRUnichar *unicodeTokenChosen;
     PK11SlotListElement *slotElement, *tmpSlot;
-    PRUint32 numSlots = 0, i = 0;
+    uint32_t numSlots = 0, i = 0;
     bool canceled;
     nsresult rv = NS_OK;
 
-    *aSlot = nsnull;
+    *aSlot = nullptr;
 
     // Get the slot
     slotList = PK11_GetAllTokens(MapGenMechToAlgoMech(aMechanism), 
@@ -473,25 +467,25 @@ nsKeygenFormProcessor::GetPublicKey(nsAString& aValue, nsAString& aChallenge,
 {
     nsNSSShutDownPreventionLock locker;
     nsresult rv = NS_ERROR_FAILURE;
-    char *keystring = nsnull;
-    char *keyparamsString = nsnull, *str = nsnull;
-    PRUint32 keyGenMechanism;
-    PRInt32 primeBits;
-    PK11SlotInfo *slot = nsnull;
+    char *keystring = nullptr;
+    char *keyparamsString = nullptr, *str = nullptr;
+    uint32_t keyGenMechanism;
+    int32_t primeBits;
+    PK11SlotInfo *slot = nullptr;
     PK11RSAGenParams rsaParams;
     SECOidTag algTag;
     int keysize = 0;
     void *params;
-    SECKEYPrivateKey *privateKey = nsnull;
-    SECKEYPublicKey *publicKey = nsnull;
-    CERTSubjectPublicKeyInfo *spkInfo = nsnull;
-    PRArenaPool *arena = nsnull;
+    SECKEYPrivateKey *privateKey = nullptr;
+    SECKEYPublicKey *publicKey = nullptr;
+    CERTSubjectPublicKeyInfo *spkInfo = nullptr;
+    PLArenaPool *arena = nullptr;
     SECStatus sec_rv = SECFailure;
     SECItem spkiItem;
     SECItem pkacItem;
     SECItem signedItem;
     CERTPublicKeyAndChallenge pkac;
-    pkac.challenge.data = nsnull;
+    pkac.challenge.data = nullptr;
     nsIGeneratingKeypairInfoDialogs * dialogs;
     nsKeygenThread *KeygenRunnable = 0;
     nsCOMPtr<nsIKeygenThread> runnable;
@@ -533,7 +527,7 @@ nsKeygenFormProcessor::GetPublicKey(nsAString& aValue, nsAString& aChallenge,
         bool found_match = false;
         do {
             end = strchr(str, ',');
-            if (end != nsnull)
+            if (end)
                 *end = '\0';
             primeBits = pqg_prime_bits(str);
             if (keysize == primeBits) {
@@ -541,7 +535,7 @@ nsKeygenFormProcessor::GetPublicKey(nsAString& aValue, nsAString& aChallenge,
                 break;
             }
             str = end + 1;
-        } while (end != nsnull);
+        } while (end);
         if (!found_match) {
             goto loser;
         }
@@ -591,7 +585,7 @@ nsKeygenFormProcessor::GetPublicKey(nsAString& aValue, nsAString& aChallenge,
              * is silently ignored when a valid curve is presented
              * in keyparams.
              */
-            if ((params = decode_ec_params(keyparamsString)) == nsnull) {
+            if ((params = decode_ec_params(keyparamsString)) == nullptr) {
                 /* The keyparams attribute did not specify a valid
                  * curve name so use a curve based on the keysize.
                  * NOTE: Here keysize is used only as an indication of
@@ -643,7 +637,7 @@ nsKeygenFormProcessor::GetPublicKey(nsAString& aValue, nsAString& aChallenge,
         privateKey = PK11_GenerateKeyPairWithFlags(slot, keyGenMechanism, params,
                                                    &publicKey, attrFlags, m_ctx);
     } else {
-        KeygenRunnable->SetParams( slot, attrFlags, nsnull, 0,
+        KeygenRunnable->SetParams( slot, attrFlags, nullptr, 0,
                                    keyGenMechanism, params, m_ctx );
 
         runnable = do_QueryInterface(KeygenRunnable);
@@ -664,7 +658,7 @@ nsKeygenFormProcessor::GetPublicKey(nsAString& aValue, nsAString& aChallenge,
 
             NS_RELEASE(dialogs);
             if (NS_SUCCEEDED(rv)) {
-                PK11SlotInfo *used_slot = nsnull;
+                PK11SlotInfo *used_slot = nullptr;
                 rv = KeygenRunnable->ConsumeResult(&used_slot, &privateKey, &publicKey);
                 if (NS_SUCCEEDED(rv) && used_slot) {
                   PK11_FreeSlot(used_slot);
@@ -754,7 +748,7 @@ loser:
     if ( arena ) {
         PORT_FreeArena(arena, true);
     }
-    if (slot != nsnull) {
+    if (slot) {
         PK11_FreeSlot(slot);
     }
     if (KeygenRunnable) {

@@ -24,15 +24,16 @@
 
 #include "jsobjinlines.h"
 
-using namespace mozilla;
 using namespace js;
+
+using mozilla::DebugOnly;
 
 namespace js {
 
 void
 XDRBuffer::freeBuffer()
 {
-    Foreground::free_(base);
+    js_free(base);
 #ifdef DEBUG
     memset(this, 0xe2, sizeof *this);
 #endif
@@ -51,7 +52,7 @@ XDRBuffer::grow(size_t n)
         return false;
     }
 
-    void *data = OffTheBooks::realloc_(base, newCapacity);
+    void *data = js_realloc(base, newCapacity);
     if (!data) {
         js_ReportOutOfMemory(cx());
         return false;
@@ -118,35 +119,40 @@ VersionCheck(XDRState<mode> *xdr)
 
 template<XDRMode mode>
 bool
-XDRState<mode>::codeFunction(JSObject **objp)
+XDRState<mode>::codeFunction(JSMutableHandleObject objp)
 {
     if (mode == XDR_DECODE)
-        *objp = NULL;
+        objp.set(NULL);
 
-    return VersionCheck(this) && XDRInterpretedFunction(this, objp, NULL);
+    if (!VersionCheck(this))
+        return false;
+
+    return XDRInterpretedFunction(this, NullPtr(), NullPtr(), objp);
 }
 
 template<XDRMode mode>
 bool
-XDRState<mode>::codeScript(JSScript **scriptp)
+XDRState<mode>::codeScript(MutableHandleScript scriptp)
 {
-    JSScript *script;
+    RootedScript script(cx());
     if (mode == XDR_DECODE) {
         script = NULL;
-        *scriptp = NULL;
+        scriptp.set(NULL);
     } else {
-        script = *scriptp;
+        script = scriptp.get();
     }
 
-    if (!VersionCheck(this) || !XDRScript(this, &script, NULL))
+    if (!VersionCheck(this))
+        return false;
+
+    if (!XDRScript(this, NullPtr(), NullPtr(), NullPtr(), &script))
         return false;
 
     if (mode == XDR_DECODE) {
         JS_ASSERT(!script->compileAndGo);
-        script->globalObject = GetCurrentGlobal(cx());
         js_CallNewScriptHook(cx(), script, NULL);
         Debugger::onNewScript(cx(), script, NULL);
-        *scriptp = script;
+        scriptp.set(script);
     }
 
     return true;

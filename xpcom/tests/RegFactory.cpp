@@ -9,7 +9,7 @@
 #include "nsIComponentRegistrar.h"
 #include "nsIComponentManager.h"
 #include "nsIServiceManager.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 
@@ -37,7 +37,7 @@ void print_err(nsresult err)
 
 nsresult Register(nsIComponentRegistrar* registrar, const char *path) 
 { 
-  nsCOMPtr<nsILocalFile> file;
+  nsCOMPtr<nsIFile> file;
   nsresult rv =
     NS_NewLocalFile(
       NS_ConvertUTF8toUTF16(path),
@@ -109,7 +109,7 @@ int main(int argc, char *argv[])
   nsresult rv;
   {
     nsCOMPtr<nsIServiceManager> servMan;
-    rv = NS_InitXPCOM2(getter_AddRefs(servMan), nsnull, nsnull);
+    rv = NS_InitXPCOM2(getter_AddRefs(servMan), nullptr, nullptr);
     if (NS_FAILED(rv)) return -1;
     nsCOMPtr<nsIComponentRegistrar> registrar = do_QueryInterface(servMan);
     NS_ASSERTION(registrar, "Null nsIComponentRegistrar");
@@ -117,7 +117,7 @@ int main(int argc, char *argv[])
     /* With no arguments, RegFactory will autoregister */
     if (argc <= 1)
     {
-      rv = registrar->AutoRegister(nsnull);
+      rv = registrar->AutoRegister(nullptr);
       ret = (NS_FAILED(rv)) ? -1 : 0;
     }
     else

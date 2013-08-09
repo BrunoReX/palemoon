@@ -41,7 +41,7 @@ nsSMILInterval::~nsSMILInterval()
 void
 nsSMILInterval::Unlink(bool aFiltered)
 {
-  for (PRInt32 i = mDependentTimes.Length() - 1; i >= 0; --i) {
+  for (int32_t i = mDependentTimes.Length() - 1; i >= 0; --i) {
     if (aFiltered) {
       mDependentTimes[i]->HandleFilteredInterval();
     } else {
@@ -52,11 +52,11 @@ nsSMILInterval::Unlink(bool aFiltered)
   if (mBegin && mBeginFixed) {
     mBegin->ReleaseFixedEndpoint();
   }
-  mBegin = nsnull;
+  mBegin = nullptr;
   if (mEnd && mEndFixed) {
     mEnd->ReleaseFixedEndpoint();
   }
-  mEnd = nsnull;
+  mEnd = nullptr;
 }
 
 nsSMILInstanceTime*

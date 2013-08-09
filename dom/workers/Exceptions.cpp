@@ -126,11 +126,11 @@ private:
   }
 
   static JSBool
-  GetProperty(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, jsval* aVp)
+  GetProperty(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, JSMutableHandleValue aVp)
   {
     JS_ASSERT(JSID_IS_INT(aIdval));
 
-    int32 slot = JSID_TO_INT(aIdval);
+    int32_t slot = JSID_TO_INT(aIdval);
 
     JSClass* classPtr = JS_GetClass(aObj);
 
@@ -141,15 +141,15 @@ private:
       return false;
     }
 
-    *aVp = JS_GetReservedSlot(aObj, slot);
+    aVp.set(JS_GetReservedSlot(aObj, slot));
     return true;
   }
 
   static JSBool
-  GetConstant(JSContext* aCx, JSHandleObject aObj, JSHandleId idval, jsval* aVp)
+  GetConstant(JSContext* aCx, JSHandleObject aObj, JSHandleId idval, JSMutableHandleValue aVp)
   {
     JS_ASSERT(JSID_IS_INT(idval));
-    *aVp = INT_TO_JSVAL(JSID_TO_INT(idval));
+    aVp.set(INT_TO_JSVAL(JSID_TO_INT(idval)));
     return true;
   }
 };
@@ -162,10 +162,13 @@ JSClass DOMException::sClass = {
 };
 
 JSPropertySpec DOMException::sProperties[] = {
-  { "code", SLOT_code, PROPERTY_FLAGS, GetProperty, js_GetterOnlyPropertyStub },
-  { "name", SLOT_name, PROPERTY_FLAGS, GetProperty, js_GetterOnlyPropertyStub },
-  { "message", SLOT_message, PROPERTY_FLAGS, GetProperty, js_GetterOnlyPropertyStub },
-  { 0, 0, 0, NULL, NULL }
+  { "code", SLOT_code, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
+    JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
+  { "name", SLOT_name, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
+    JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
+  { "message", SLOT_message, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
+    JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
+  { 0, 0, 0, JSOP_NULLWRAPPER, JSOP_NULLWRAPPER }
 };
 
 JSFunctionSpec DOMException::sFunctions[] = {
@@ -176,7 +179,7 @@ JSFunctionSpec DOMException::sFunctions[] = {
 JSPropertySpec DOMException::sStaticProperties[] = {
 
 #define EXCEPTION_ENTRY(_name) \
-  { #_name, _name, CONSTANT_FLAGS, GetConstant, NULL },
+  { #_name, _name, CONSTANT_FLAGS, JSOP_WRAPPER(GetConstant), JSOP_NULLWRAPPER },
 
   EXCEPTION_ENTRY(INDEX_SIZE_ERR)
   EXCEPTION_ENTRY(DOMSTRING_SIZE_ERR)
@@ -206,7 +209,7 @@ JSPropertySpec DOMException::sStaticProperties[] = {
 
 #undef EXCEPTION_ENTRY
 
-  { 0, 0, 0, NULL, NULL }
+  { 0, 0, 0, JSOP_NULLWRAPPER, JSOP_NULLWRAPPER }
 };
 
 // static

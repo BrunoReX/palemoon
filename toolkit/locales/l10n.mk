@@ -15,8 +15,6 @@
 # libs-%
 #   This target should call into the various libs targets that this
 #   application depends on.
-#   Make sure to set BOTH_MANIFESTS=1, as this will be called only once
-#   for both packages and language packs.
 # installer-%
 #   This target should list all required targets, a typical rule would be
 #	installers-%: clobber-% langpack-% repackage-zip-%
@@ -77,8 +75,8 @@ include $(MOZILLA_DIR)/toolkit/mozapps/installer/packager.mk
 PACKAGE_BASE_DIR = $(_ABS_DIST)/l10n-stage
 
 $(STAGEDIST): AB_CD:=en-US
-$(STAGEDIST): UNPACKAGE=$(call ESCAPE_SPACE,$(ZIP_IN))
-$(STAGEDIST): $(call ESCAPE_SPACE,$(ZIP_IN))
+$(STAGEDIST): UNPACKAGE=$(call ESCAPE_WILDCARD,$(ZIP_IN))
+$(STAGEDIST): $(call ESCAPE_WILDCARD,$(ZIP_IN))
 # only mac needs to remove the parent of STAGEDIST...
 ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT))
 	$(RM) -r -v $(DIST)/l10n-stage
@@ -115,11 +113,18 @@ repackage-zip:  libs-$(AB_CD)
 	-$(PERL) -pi.old -e "s/en-US/$(AB_CD)/g" $(JARLOG_DIR_AB_CD)/*.jar.log
 # call a hook for apps to put their uninstall helper.exe into the package
 	$(UNINSTALLER_PACKAGE_HOOK)
+# call a hook for apps to build the stub installer
+ifdef MOZ_STUB_INSTALLER
+	$(STUB_HOOK)
+endif
 # copy xpi-stage over, but not install.rdf and chrome.manifest,
 # those are just for language packs
 	cd $(DIST)/xpi-stage/locale-$(AB_CD) && \
 	  tar --exclude=install.rdf --exclude=chrome.manifest $(TAR_CREATE_FLAGS) - * | ( cd $(STAGEDIST) && tar -xf - )
 	mv $(STAGEDIST)/chrome/$(AB_CD).manifest $(STAGEDIST)/chrome/localized.manifest
+ifdef MOZ_WEBAPP_RUNTIME
+	mv $(STAGEDIST)/webapprt/chrome/$(AB_CD).manifest $(STAGEDIST)/webapprt/chrome/localized.manifest
+endif
 ifneq (en,$(AB))
 ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT))
 	mv $(_ABS_DIST)/l10n-stage/$(MOZ_PKG_DIR)/$(_APPNAME)/Contents/Resources/en.lproj $(_ABS_DIST)/l10n-stage/$(MOZ_PKG_DIR)/$(_APPNAME)/Contents/Resources/$(AB).lproj
@@ -127,7 +132,7 @@ endif
 endif
 	$(NSINSTALL) -D $(DIST)/l10n-stage/$(PKG_PATH)
 	cd $(DIST)/l10n-stage; \
-	  $(MAKE_PACKAGE)
+	  $(PREPARE_PACKAGE) && $(MAKE_PACKAGE)
 ifdef MAKE_COMPLETE_MAR
 	$(MAKE) -C $(MOZDEPTH)/tools/update-packaging full-update AB_CD=$(AB_CD) \
 	  MOZ_PKG_PRETTYNAMES=$(MOZ_PKG_PRETTYNAMES) \
@@ -168,7 +173,7 @@ langpack-%: libs-%
 	$(NSINSTALL) -D $(DIST)/$(PKG_LANGPACK_PATH)
 	$(PYTHON) $(MOZILLA_DIR)/config/Preprocessor.py $(DEFINES) $(ACDEFINES) -I$(TK_DEFINES) -I$(APP_DEFINES) $(srcdir)/generic/install.rdf > $(FINAL_TARGET)/install.rdf
 	cd $(DIST)/xpi-stage/locale-$(AB_CD) && \
-	  $(ZIP) -r9D $(LANGPACK_FILE) install.rdf chrome chrome.manifest -x chrome/$(AB_CD).manifest
+	  $(ZIP) -r9D $(LANGPACK_FILE) install.rdf chrome chrome.manifest
 
 
 # This variable is to allow the wget-en-US target to know which ftp server to download from

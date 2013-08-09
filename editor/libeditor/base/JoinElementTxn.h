@@ -6,10 +6,12 @@
 #ifndef JoinElementTxn_h__
 #define JoinElementTxn_h__
 
-#include "EditTxn.h"
-#include "nsIDOMNode.h"
-#include "nsCOMPtr.h"
-#include "nsIEditor.h"
+#include "EditTxn.h"                    // for EditTxn, NS_DECL_EDITTXN
+#include "nsCOMPtr.h"                   // for nsCOMPtr
+#include "nsCycleCollectionParticipant.h"
+#include "nsID.h"                       // for REFNSIID
+#include "nsIDOMNode.h"                 // for nsIDOMNode
+#include "nscore.h"                     // for NS_IMETHOD
 
 class nsEditor;
 
@@ -51,7 +53,7 @@ protected:
     * mOffset is the index of the first child in the right node. 
     * -1 means the left node had no children.
     */
-  PRUint32  mOffset;
+  uint32_t  mOffset;
 
   /** the parent node containing mLeftNode and mRightNode */
   nsCOMPtr<nsIDOMNode> mParent;

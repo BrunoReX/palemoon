@@ -4,7 +4,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <gtk/gtk.h>
+#if (MOZ_WIDGET_GTK == 2)
 #include <gtk/gtkprintunixdialog.h>
+#else
+#include <gtk/gtkunixprint.h>
+#endif
 #include <stdlib.h>
 
 #include "mozilla/Util.h"
@@ -16,7 +20,7 @@
 #include "nsPrintSettingsGTK.h"
 #include "nsString.h"
 #include "nsReadableUtils.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsNetUtil.h"
 #include "nsIStringBundle.h"
 #include "nsIPrintSettingsService.h"
@@ -34,29 +38,10 @@ static const char header_footer_tags[][4] =  {"", "&T", "&U", "&D", "&P", "&PT"}
 
 #define CUSTOM_VALUE_INDEX ArrayLength(header_footer_tags)
 
-// XXXdholbert Duplicated from widget/gtk2/nsFilePicker.cpp
-// Needs to be unified in some generic utility class.
 static GtkWindow *
 get_gtk_window_for_nsiwidget(nsIWidget *widget)
 {
-  // Get native GdkWindow
-  GdkWindow *gdk_win = GDK_WINDOW(widget->GetNativeData(NS_NATIVE_WIDGET));
-  if (!gdk_win)
-    return NULL;
-
-  // Get the container
-  gpointer user_data = NULL;
-  gdk_window_get_user_data(gdk_win, &user_data);
-  if (!user_data)
-    return NULL;
-
-  // Make sure its really a container
-  MozContainer *parent_container = MOZ_CONTAINER(user_data);
-  if (!parent_container)
-    return NULL;
-
-  // Get its toplevel
-  return GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(parent_container)));
+  return GTK_WINDOW(widget->GetNativeData(NS_NATIVE_SHELLWIDGET));
 }
 
 static void
@@ -77,7 +62,11 @@ ShowCustomDialog(GtkComboBox *changed_box, gpointer user_data)
 
   printBundle->GetStringFromName(NS_LITERAL_STRING("headerFooterCustom").get(), getter_Copies(intlString));
   GtkWidget* prompt_dialog = gtk_dialog_new_with_buttons(NS_ConvertUTF16toUTF8(intlString).get(), printDialog,
+#if (MOZ_WIDGET_GTK == 2)
                                                          (GtkDialogFlags)(GTK_DIALOG_MODAL | GTK_DIALOG_NO_SEPARATOR),
+#else
+                                                         (GtkDialogFlags)(GTK_DIALOG_MODAL),
+#endif
                                                          GTK_STOCK_CANCEL, GTK_RESPONSE_REJECT,
                                                          GTK_STOCK_OK, GTK_RESPONSE_ACCEPT,
                                                          NULL);
@@ -110,7 +99,8 @@ ShowCustomDialog(GtkComboBox *changed_box, gpointer user_data)
   gtk_container_set_border_width(GTK_CONTAINER(custom_hbox), 2);
   gtk_widget_show_all(custom_hbox);
 
-  gtk_box_pack_start(GTK_BOX(GTK_DIALOG(prompt_dialog)->vbox), custom_hbox, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(prompt_dialog))), 
+                     custom_hbox, FALSE, FALSE, 0);
   gint diag_response = gtk_dialog_run(GTK_DIALOG(prompt_dialog));
 
   if (diag_response == GTK_RESPONSE_ACCEPT) {
@@ -194,7 +184,7 @@ nsPrintDialogWidgetGTK::nsPrintDialogWidgetGTK(nsIDOMWindow *aParent, nsIPrintSe
   gtk_container_set_border_width(GTK_CONTAINER(custom_options_tab), 12);
   GtkWidget* tab_label = gtk_label_new(GetUTF8FromBundle("optionsTabLabelGTK").get());
 
-  PRInt16 frameUIFlag;
+  int16_t frameUIFlag;
   aSettings->GetHowToEnableFrameUI(&frameUIFlag);
   radio_as_laid_out = gtk_radio_button_new_with_mnemonic(NULL, GetUTF8FromBundle("asLaidOut").get());
   if (frameUIFlag == nsIPrintSettings::kFrameEnableNone)
@@ -481,14 +471,23 @@ nsPrintDialogWidgetGTK::ExportSettings(nsIPrintSettings *aNSSettings)
 GtkWidget*
 nsPrintDialogWidgetGTK::ConstructHeaderFooterDropdown(const PRUnichar *currentString)
 {
+#if (MOZ_WIDGET_GTK == 2)
   GtkWidget* dropdown = gtk_combo_box_new_text();
+#else
+  GtkWidget* dropdown = gtk_combo_box_text_new();
+#endif
   const char hf_options[][22] = {"headerFooterBlank", "headerFooterTitle",
                                  "headerFooterURL", "headerFooterDate",
                                  "headerFooterPage", "headerFooterPageTotal",
                                  "headerFooterCustom"};
 
   for (unsigned int i = 0; i < ArrayLength(hf_options); i++) {
+#if (MOZ_WIDGET_GTK == 2)
     gtk_combo_box_append_text(GTK_COMBO_BOX(dropdown), GetUTF8FromBundle(hf_options[i]).get());
+#else
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(dropdown), NULL, 
+                              GetUTF8FromBundle(hf_options[i]).get());
+#endif
   }
 
   bool shouldBeCustom = true;

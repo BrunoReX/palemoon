@@ -5,13 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsDOMTextEvent.h"
-#include "nsContentUtils.h"
 #include "nsPrivateTextRange.h"
 
 nsDOMTextEvent::nsDOMTextEvent(nsPresContext* aPresContext,
                                nsTextEvent* aEvent)
   : nsDOMUIEvent(aPresContext, aEvent ? aEvent :
-                 new nsTextEvent(false, 0, nsnull))
+                 new nsTextEvent(false, 0, nullptr))
 {
   NS_ASSERTION(mEvent->eventStructType == NS_TEXT_EVENT, "event type mismatch");
 
@@ -36,7 +35,7 @@ nsDOMTextEvent::nsDOMTextEvent(nsPresContext* aPresContext,
   //
   mTextRange = new nsPrivateTextRangeList(te->rangeCount);
   if (mTextRange) {
-    PRUint16 i;
+    uint16_t i;
 
     for(i = 0; i < te->rangeCount; i++) {
       nsRefPtr<nsPrivateTextRange> tempPrivateTextRange = new
@@ -66,11 +65,11 @@ NS_METHOD_(already_AddRefed<nsIPrivateTextRangeList>) nsDOMTextEvent::GetInputRa
 {
   if (mEvent->message == NS_TEXT_TEXT) {
     nsRefPtr<nsPrivateTextRangeList> textRange = mTextRange;
-    nsPrivateTextRangeList *textRangePtr = nsnull;
+    nsPrivateTextRangeList *textRangePtr = nullptr;
     textRange.swap(textRangePtr);
     return textRangePtr;
   }
-  return nsnull;
+  return nullptr;
 }
 
 nsresult NS_NewDOMTextEvent(nsIDOMEvent** aInstancePtrResult,
@@ -78,7 +77,7 @@ nsresult NS_NewDOMTextEvent(nsIDOMEvent** aInstancePtrResult,
                             nsTextEvent *aEvent)
 {
   nsDOMTextEvent* it = new nsDOMTextEvent(aPresContext, aEvent);
-  if (nsnull == it) {
+  if (nullptr == it) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 

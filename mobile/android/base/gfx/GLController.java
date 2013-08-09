@@ -5,17 +5,12 @@
 
 package org.mozilla.gecko.gfx;
 
-import android.util.Log;
-import android.view.SurfaceHolder;
-import android.view.SurfaceView;
 import javax.microedition.khronos.egl.EGL10;
 import javax.microedition.khronos.egl.EGL11;
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.egl.EGLContext;
 import javax.microedition.khronos.egl.EGLDisplay;
 import javax.microedition.khronos.egl.EGLSurface;
-import javax.microedition.khronos.opengles.GL;
-import javax.microedition.khronos.opengles.GL10;
 
 public class GLController {
     private static final int EGL_CONTEXT_CLIENT_VERSION = 0x3098;
@@ -132,7 +127,7 @@ public class GLController {
         // done on the main UI thread, not the GL renderer thread
         mView.post(new Runnable() {
             public void run() {
-                mView.setViewportSize(new IntSize(mWidth, mHeight));
+                mView.setViewportSize(mWidth, mHeight);
             }
         });
     }
@@ -175,8 +170,8 @@ public class GLController {
             initEGL();
         }
 
-        SurfaceHolder surfaceHolder = mView.getHolder();
-        EGLSurface surface = mEGL.eglCreateWindowSurface(mEGLDisplay, mEGLConfig, surfaceHolder, null);
+        Object window = mView.getNativeWindow();
+        EGLSurface surface = mEGL.eglCreateWindowSurface(mEGLDisplay, mEGLConfig, window, null);
         if (surface == null || surface == EGL10.EGL_NO_SURFACE) {
             throw new GLControllerException("EGL window surface could not be created! " +
                                             getEGLError());

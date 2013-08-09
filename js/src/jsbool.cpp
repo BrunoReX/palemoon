@@ -30,7 +30,7 @@
 #include "jsobjinlines.h"
 
 #include "vm/BooleanObject-inl.h"
-#include "vm/MethodGuard-inl.h"
+#include "vm/GlobalObject-inl.h"
 
 using namespace js;
 using namespace js::types;
@@ -46,15 +46,20 @@ Class js::BooleanClass = {
     JS_ConvertStub
 };
 
-#if JS_HAS_TOSOURCE
-static JSBool
-bool_toSource(JSContext *cx, unsigned argc, Value *vp)
+JS_ALWAYS_INLINE bool
+IsBoolean(const Value &v)
 {
-    CallArgs args = CallArgsFromVp(argc, vp);
+    return v.isBoolean() || (v.isObject() && v.toObject().hasClass(&BooleanClass));
+}
 
-    bool b, ok;
-    if (!BoxedPrimitiveMethodGuard(cx, args, bool_toSource, &b, &ok))
-        return ok;
+#if JS_HAS_TOSOURCE
+JS_ALWAYS_INLINE bool
+bool_toSource_impl(JSContext *cx, CallArgs args)
+{
+    const Value &thisv = args.thisv();
+    JS_ASSERT(IsBoolean(thisv));
+
+    bool b = thisv.isBoolean() ? thisv.toBoolean() : thisv.toObject().asBoolean().unbox();
 
     StringBuffer sb(cx);
     if (!sb.append("(new Boolean(") || !BooleanToStringBuffer(cx, b, sb) || !sb.append("))"))
@@ -66,32 +71,49 @@ bool_toSource(JSContext *cx, unsigned argc, Value *vp)
     args.rval().setString(str);
     return true;
 }
-#endif
 
-static JSBool
-bool_toString(JSContext *cx, unsigned argc, Value *vp)
+JSBool
+bool_toSource(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
+    return CallNonGenericMethod<IsBoolean, bool_toSource_impl>(cx, args);
+}
+#endif
 
-    bool b, ok;
-    if (!BoxedPrimitiveMethodGuard<bool>(cx, args, bool_toString, &b, &ok))
-        return ok;
+JS_ALWAYS_INLINE bool
+bool_toString_impl(JSContext *cx, CallArgs args)
+{
+    const Value &thisv = args.thisv();
+    JS_ASSERT(IsBoolean(thisv));
 
-    args.rval().setString(cx->runtime->atomState.booleanAtoms[b ? 1 : 0]);
+    bool b = thisv.isBoolean() ? thisv.toBoolean() : thisv.toObject().asBoolean().unbox();
+    args.rval().setString(js_BooleanToString(cx, b));
     return true;
 }
 
-static JSBool
+JSBool
+bool_toString(JSContext *cx, unsigned argc, Value *vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    return CallNonGenericMethod<IsBoolean, bool_toString_impl>(cx, args);
+}
+
+JS_ALWAYS_INLINE bool
+bool_valueOf_impl(JSContext *cx, CallArgs args)
+{
+    const Value &thisv = args.thisv();
+    JS_ASSERT(IsBoolean(thisv));
+
+    bool b = thisv.isBoolean() ? thisv.toBoolean() : thisv.toObject().asBoolean().unbox();
+    args.rval().setBoolean(b);
+    return true;
+}
+
+JSBool
 bool_valueOf(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
-
-    bool b, ok;
-    if (!BoxedPrimitiveMethodGuard(cx, args, bool_valueOf, &b, &ok))
-        return ok;
-
-    args.rval().setBoolean(b);
-    return true;
+    return CallNonGenericMethod<IsBoolean, bool_valueOf_impl>(cx, args);
 }
 
 static JSFunctionSpec boolean_methods[] = {
@@ -99,7 +121,6 @@ static JSFunctionSpec boolean_methods[] = {
     JS_FN(js_toSource_str,  bool_toSource,  0, 0),
 #endif
     JS_FN(js_toString_str,  bool_toString,  0, 0),
-    JS_FN(js_valueOf_str,   bool_valueOf,   0, 0),
     JS_FS_END
 };
 
@@ -108,7 +129,7 @@ Boolean(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
-    bool b = args.length() != 0 ? js_ValueToBoolean(args[0]) : false;
+    bool b = args.length() != 0 ? JS::ToBoolean(args[0]) : false;
 
     if (IsConstructing(vp)) {
         JSObject *obj = BooleanObject::create(cx, b);
@@ -122,7 +143,7 @@ Boolean(JSContext *cx, unsigned argc, Value *vp)
 }
 
 JSObject *
-js_InitBooleanClass(JSContext *cx, JSObject *obj)
+js_InitBooleanClass(JSContext *cx, HandleObject obj)
 {
     JS_ASSERT(obj->isNative());
 
@@ -133,8 +154,7 @@ js_InitBooleanClass(JSContext *cx, JSObject *obj)
         return NULL;
     booleanProto->setFixedSlot(BooleanObject::PRIMITIVE_VALUE_SLOT, BooleanValue(false));
 
-    RootedFunction ctor(cx);
-    ctor = global->createConstructor(cx, Boolean, CLASS_NAME(cx, Boolean), 1);
+    RootedFunction ctor(cx, global->createConstructor(cx, Boolean, cx->names().Boolean, 1));
     if (!ctor)
         return NULL;
 
@@ -143,6 +163,22 @@ js_InitBooleanClass(JSContext *cx, JSObject *obj)
 
     if (!DefinePropertiesAndBrand(cx, booleanProto, NULL, boolean_methods))
         return NULL;
+
+    Handle<PropertyName*> valueOfName = cx->names().valueOf;
+    RootedFunction
+        valueOf(cx, js_NewFunction(cx, NullPtr(), bool_valueOf, 0, JSFunction::NATIVE_FUN,
+                                   global, valueOfName));
+    if (!valueOf)
+        return NULL;
+
+    RootedValue value(cx, ObjectValue(*valueOf));
+    if (!JSObject::defineProperty(cx, booleanProto, valueOfName, value,
+                                  JS_PropertyStub, JS_StrictPropertyStub, 0))
+    {
+        return NULL;
+    }
+
+    global->setBooleanValueOf(valueOf);
 
     if (!DefineConstructorAndPrototype(cx, global, JSProto_Boolean, ctor, booleanProto))
         return NULL;
@@ -153,29 +189,27 @@ js_InitBooleanClass(JSContext *cx, JSObject *obj)
 JSString *
 js_BooleanToString(JSContext *cx, JSBool b)
 {
-    return cx->runtime->atomState.booleanAtoms[b ? 1 : 0];
+    return b ? cx->runtime->atomState.true_ : cx->runtime->atomState.false_;
 }
 
 namespace js {
 
+JS_PUBLIC_API(bool)
+ToBooleanSlow(const Value &v)
+{
+    JS_ASSERT(v.isString());
+    return v.toString()->length() != 0;
+}
+
 bool
 BooleanGetPrimitiveValueSlow(JSContext *cx, JSObject &obj, Value *vp)
 {
-    JS_ASSERT(ObjectClassIs(obj, ESClass_Boolean, cx));
-    JS_ASSERT(obj.isProxy());
-
-    /*
-     * To respect the proxy abstraction, we can't simply unwrap and call
-     * getPrimitiveThis on the wrapped object. All we know is that obj says
-     * its [[Class]] is "Boolean". Boolean.prototype.valueOf is specified to
-     * return the [[PrimitiveValue]] internal property, so call that instead.
-     */
     InvokeArgsGuard ag;
     if (!cx->stack.pushInvokeArgs(cx, 0, &ag))
         return false;
-    ag.calleev().setUndefined();
-    ag.thisv().setObject(obj);
-    if (!GetProxyHandler(&obj)->nativeCall(cx, &obj, &BooleanClass, bool_valueOf, ag))
+    ag.setCallee(cx->compartment->maybeGlobal()->booleanValueOf());
+    ag.setThis(ObjectValue(obj));
+    if (!Invoke(cx, ag))
         return false;
     *vp = ag.rval();
     return true;
@@ -183,23 +217,4 @@ BooleanGetPrimitiveValueSlow(JSContext *cx, JSObject &obj, Value *vp)
 
 }  /* namespace js */
 
-JSBool
-js_ValueToBoolean(const Value &v)
-{
-    if (v.isInt32())
-        return v.toInt32() != 0;
-    if (v.isString())
-        return v.toString()->length() != 0;
-    if (v.isObject())
-        return JS_TRUE;
-    if (v.isNullOrUndefined())
-        return JS_FALSE;
-    if (v.isDouble()) {
-        double d;
 
-        d = v.toDouble();
-        return !MOZ_DOUBLE_IS_NaN(d) && d != 0;
-    }
-    JS_ASSERT(v.isBoolean());
-    return v.toBoolean();
-}

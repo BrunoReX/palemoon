@@ -15,15 +15,20 @@ ifdef NS_TRACE_MALLOC
 tier_platform_dirs = tools/trace-malloc/lib
 endif
 
+ifdef MOZ_DMD
+tier_platform_dirs += memory/replace/dmd
+endif
+
 ifdef MOZ_TREE_FREETYPE
 tier_platform_staticdirs += modules/freetype2
 endif
 
-tier_platform_dirs += xpcom
-
-ifndef MOZ_NATIVE_ZLIB
-tier_platform_dirs += modules/zlib
+# this must precede xpcom
+ifdef MOZ_DMDV
+tier_platform_dirs += tools/dmdv
 endif
+
+tier_platform_dirs += xpcom
 
 tier_platform_dirs += \
 		modules/libpref \
@@ -108,6 +113,9 @@ endif
 
 ifdef MOZ_WEBM
 tier_platform_dirs += media/libnestegg
+endif
+
+ifdef MOZ_VP8
 ifndef MOZ_NATIVE_LIBVPX
 tier_platform_dirs += media/libvpx
 endif
@@ -126,6 +134,21 @@ tier_platform_dirs += \
 		$(NULL)
 endif
 
+ifdef MOZ_PSM
+tier_platform_dirs += \
+  security/build \
+  $(NULL)
+endif
+
+ifdef MOZ_WEBRTC
+tier_platform_dirs += \
+  media/webrtc \
+  media/mtransport/third_party \
+  media/mtransport/build \
+  media/mtransport/standalone \
+  $(NULL)
+endif
+
 ifdef MOZ_SPEEX_RESAMPLER
 tier_platform_dirs += \
 		media/libspeex_resampler \
@@ -140,12 +163,18 @@ endif
 
 ifdef MOZ_OMX_PLUGIN
 tier_platform_dirs += \
+		media/omx-plugin/lib/ics/libutils \
+		media/omx-plugin/lib/ics/libstagefright \
 		media/omx-plugin \
 		$(NULL)
 endif
 
 ifndef MOZ_NATIVE_PNG
 tier_platform_dirs += media/libpng
+endif
+
+ifdef ENABLE_TESTS
+tier_platform_dirs += testing/specialpowers
 endif
 
 tier_platform_dirs	+= \
@@ -165,6 +194,13 @@ tier_platform_dirs	+= \
 		xpfe/appshell \
 		$(NULL)
 
+# This needs to be built after the gfx/ directory
+# to ensure all dependencies for skia (e.g. mozalloc, xpcom)
+# have been built
+ifeq (android,$(MOZ_WIDGET_TOOLKIT))
+tier_platform_dirs += other-licenses/skia-npapi
+endif
+
 ifdef MOZ_UNIVERSALCHARDET
 tier_platform_dirs += extensions/universalchardet
 endif
@@ -179,7 +215,7 @@ endif
 
 tier_platform_dirs += profile
 
-# This must preceed xpfe
+# This must precede xpfe
 ifdef MOZ_JPROF
 tier_platform_dirs        += tools/jprof
 endif
@@ -220,6 +256,10 @@ tier_platform_dirs += js/ductwork/debugger
 
 tier_platform_dirs += other-licenses/snappy
 
+ifdef MOZ_GIO_COMPONENT
+tier_platform_dirs += extensions/gio
+endif
+
 ifdef APP_LIBXUL_STATICDIRS
 # Applications can cheat and ask for code to be
 # built before libxul so libxul can be linked against it.
@@ -234,6 +274,10 @@ endif
 tier_platform_dirs += toolkit/library
 
 tier_platform_dirs += xpcom/stub
+
+ifdef MOZ_REPLACE_MALLOC
+tier_platform_dirs += memory/replace
+endif
 
 ifdef NS_TRACE_MALLOC
 tier_platform_dirs += tools/trace-malloc
@@ -264,4 +308,10 @@ tier_platform_dirs += testing/xpcshell
 tier_platform_dirs += testing/tools/screenshot
 tier_platform_dirs += testing/peptest
 tier_platform_dirs += testing/mozbase
+ifdef MOZ_WEBRTC
+ifdef MOZ_WEBRTC_TESTS
+tier_platform_dirs += media/webrtc/signaling/test
+tier_platform_dirs += media/mtransport/test
+endif
+endif
 endif

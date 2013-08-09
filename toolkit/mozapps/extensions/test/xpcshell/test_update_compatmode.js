@@ -9,32 +9,17 @@
 // The test extension uses an insecure update url.
 Services.prefs.setBoolPref(PREF_EM_CHECK_UPDATE_SECURITY, false);
 
-do_load_httpd_js();
+Components.utils.import("resource://testing-common/httpd.js");
 var testserver;
 const profileDir = gProfD.clone();
 profileDir.append("extensions");
-
-var COMPATIBILITY_PREF;
 
 function run_test() {
   do_test_pending();
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
   
-  var channel = "default";
-  try {
-    channel = Services.prefs.getCharPref("app.update.channel");
-  } catch (e) { }
-  if (channel != "aurora" &&
-      channel != "beta" &&
-      channel != "release") {
-    var version = "nightly";
-  } else {
-    version = Services.appinfo.version.replace(/^([^\.]+\.[0-9]+[a-z]*).*/gi, "$1");
-  }  
-  COMPATIBILITY_PREF = "extensions.checkCompatibility." + version;
-
   // Create and configure the HTTP server.
-  testserver = new nsHttpServer();
+  testserver = new HttpServer();
   testserver.registerDirectory("/data/", do_get_file("data"));
   testserver.registerDirectory("/addons/", do_get_file("addons"));
   testserver.start(4444);
@@ -174,7 +159,7 @@ function run_test_3() {
 // Compatibility checking disabled.
 function run_test_4() {
   do_print("Testing with all compatibility checking disabled");
-  Services.prefs.setBoolPref(COMPATIBILITY_PREF, false);
+  AddonManager.checkCompatibility = false;
   AddonManager.getAddonByID("compatmode-ignore@tests.mozilla.org", function(addon) {
     do_check_neq(addon, null);
     addon.findUpdates({

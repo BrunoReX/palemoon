@@ -14,6 +14,19 @@
 #include "gc/Heap.h"
 
 #if JS_HAS_XML_SUPPORT
+extern JSObject *
+js_InitXMLClass(JSContext *cx, js::HandleObject obj);
+extern JSObject *
+js_InitNamespaceClass(JSContext *cx, js::HandleObject obj);
+extern JSObject *
+js_InitQNameClass(JSContext *cx, js::HandleObject obj);
+#else
+#define js_InitXMLClass js_InitNullClass
+#define js_InitNamespaceClass js_InitNullClass
+#define js_InitQNameClass js_InitNullClass
+#endif
+
+#if JS_HAS_XML_SUPPORT
 
 extern const char js_AnyName_str[];
 extern const char js_AttributeName_str[];
@@ -177,6 +190,8 @@ struct JSXML : js::gc::Cell {
 
     static void writeBarrierPre(JSXML *xml);
     static void writeBarrierPost(JSXML *xml, void *addr);
+
+    static inline js::ThingRootKind rootKind() { return js::THING_ROOT_XML; }
 };
 
 /* xml_flags values */
@@ -195,16 +210,7 @@ extern JSObject *
 js_GetXMLObject(JSContext *cx, JSXML *xml);
 
 extern JSObject *
-js_InitNamespaceClass(JSContext *cx, JSObject *obj);
-
-extern JSObject *
-js_InitQNameClass(JSContext *cx, JSObject *obj);
-
-extern JSObject *
-js_InitXMLClass(JSContext *cx, JSObject *obj);
-
-extern JSObject *
-js_InitXMLClasses(JSContext *cx, JSObject *obj);
+js_InitXMLClasses(JSContext *cx, js::HandleObject obj);
 
 /*
  * If obj is a QName corresponding to function::name, set *funidp to name's id
@@ -254,10 +260,11 @@ js_GetAnyName(JSContext *cx, jsid *idp);
  * Note: nameval must be either QName, AttributeName, or AnyName.
  */
 extern JSBool
-js_FindXMLProperty(JSContext *cx, const js::Value &nameval, JSObject **objp, jsid *idp);
+js_FindXMLProperty(JSContext *cx, const js::Value &nameval,
+                   js::MutableHandleObject objp, jsid *idp);
 
 extern JSBool
-js_GetXMLMethod(JSContext *cx, js::HandleObject obj, jsid id, js::Value *vp);
+js_GetXMLMethod(JSContext *cx, js::HandleObject obj, jsid id, js::MutableHandleValue vp);
 
 extern JSBool
 js_GetXMLDescendants(JSContext *cx, JSObject *obj, jsval id, jsval *vp);

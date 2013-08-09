@@ -18,7 +18,7 @@
 #include "nsStringAPI.h"
 #include "nsIFileStreams.h"
 #include "nsIStreamListener.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsNetUtil.h"
 #include "nsAutoLock.h"
 #include "prlog.h"
@@ -30,7 +30,7 @@
 //
 // set NSPR_LOG_MODULES=Test:5
 //
-static PRLogModuleInfo *gTestLog = nsnull;
+static PRLogModuleInfo *gTestLog = nullptr;
 #define LOG(args) PR_LOG(gTestLog, PR_LOG_DEBUG, args)
 #else
 #define LOG(args)
@@ -54,15 +54,15 @@ public:
 
     NS_IMETHOD OnDataAvailable(nsIRequest *req, nsISupports *ctx,
                                nsIInputStream *stream,
-                               PRUint32 offset, PRUint32 count)
+                               uint64_t offset, uint32_t count)
     {
-        LOG(("MyListener::OnDataAvailable [offset=%u count=%u]\n", offset, count));
+        LOG(("MyListener::OnDataAvailable [offset=%llu count=%u]\n", offset, count));
 
         char buf[500];
         nsresult rv;
 
         while (count) {
-            PRUint32 n, amt = NS_MIN<PRUint32>(count, sizeof(buf));
+            uint32_t n, amt = NS_MIN<uint32_t>(count, sizeof(buf));
 
             rv = stream->Read(buf, amt, &n);
             if (NS_FAILED(rv)) {
@@ -98,7 +98,7 @@ NS_IMPL_ISUPPORTS2(MyListener,
  * asynchronously copy file.
  */
 static nsresult
-RunTest(nsIFile *file, PRInt64 offset, PRInt64 length)
+RunTest(nsIFile *file, int64_t offset, int64_t length)
 {
     nsresult rv;
 
@@ -112,7 +112,7 @@ RunTest(nsIFile *file, PRInt64 offset, PRInt64 length)
     rv = NS_NewInputStreamPump(getter_AddRefs(pump), stream, offset, length);
     if (NS_FAILED(rv)) return rv;
 
-    rv = pump->AsyncRead(new MyListener(), nsnull);
+    rv = pump->AsyncRead(new MyListener(), nullptr);
     if (NS_FAILED(rv)) return rv;
 
     PumpEvents();
@@ -134,7 +134,7 @@ main(int argc, char* argv[])
         return -1;
     }
     char* fileName = argv[1];
-    PRInt64 offset, length;
+    int64_t offset, length;
     int err = PR_sscanf(argv[2], "%lld", &offset);
     if (err == -1) {
       printf("Start offset must be an integer!\n");
@@ -148,17 +148,17 @@ main(int argc, char* argv[])
 
     {
         nsCOMPtr<nsIServiceManager> servMan;
-        NS_InitXPCOM2(getter_AddRefs(servMan), nsnull, nsnull);
+        NS_InitXPCOM2(getter_AddRefs(servMan), nullptr, nullptr);
         nsCOMPtr<nsIComponentRegistrar> registrar = do_QueryInterface(servMan);
         NS_ASSERTION(registrar, "Null nsIComponentRegistrar");
         if (registrar)
-            registrar->AutoRegister(nsnull);
+            registrar->AutoRegister(nullptr);
 
 #if defined(PR_LOGGING)
         gTestLog = PR_NewLogModule("Test");
 #endif
 
-        nsCOMPtr<nsILocalFile> file;
+        nsCOMPtr<nsIFile> file;
         rv = NS_NewNativeLocalFile(nsDependentCString(fileName), false, getter_AddRefs(file));
         if (NS_FAILED(rv)) return rv;
 
@@ -170,7 +170,7 @@ main(int argc, char* argv[])
         PR_Sleep(PR_SecondsToInterval(1));
     } // this scopes the nsCOMPtrs
     // no nsCOMPtrs are allowed to be alive when you call NS_ShutdownXPCOM
-    rv = NS_ShutdownXPCOM(nsnull);
+    rv = NS_ShutdownXPCOM(nullptr);
     NS_ASSERTION(NS_SUCCEEDED(rv), "NS_ShutdownXPCOM failed");
     return NS_OK;
 }

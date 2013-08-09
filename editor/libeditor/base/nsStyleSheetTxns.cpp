@@ -4,15 +4,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
-#include "nsEditor.h"
+#include <stddef.h>                     // for NULL
 
-#include "nsCSSStyleSheet.h"
-#include "nsIDocument.h"
-#include "nsIDocumentObserver.h"
-#include "nsISelectionController.h"
-
-
+#include "nsAString.h"
+#include "nsCOMPtr.h"                   // for nsCOMPtr, do_QueryInterface, etc
+#include "nsCSSStyleSheet.h"            // for nsCSSStyleSheet
+#include "nsDebug.h"                    // for NS_ENSURE_TRUE
+#include "nsError.h"                    // for NS_OK, etc
+#include "nsIDOMDocument.h"             // for nsIDOMDocument
+#include "nsIDocument.h"                // for nsIDocument
+#include "nsIDocumentObserver.h"        // for UPDATE_STYLE
+#include "nsIEditor.h"                  // for nsIEditor
 #include "nsStyleSheetTxns.h"
+
+class nsIStyleSheet;
 
 static void
 AddStyleSheet(nsIEditor* aEditor, nsIStyleSheet* aSheet)
@@ -49,11 +54,11 @@ AddStyleSheetTxn::AddStyleSheetTxn()
 NS_IMPL_CYCLE_COLLECTION_CLASS(AddStyleSheetTxn)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(AddStyleSheetTxn, EditTxn)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mSheet)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mSheet)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(AddStyleSheetTxn, EditTxn)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR_AMBIGUOUS(mSheet, nsIStyleSheet)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSheet)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(AddStyleSheetTxn)
@@ -106,11 +111,11 @@ RemoveStyleSheetTxn::RemoveStyleSheetTxn()
 NS_IMPL_CYCLE_COLLECTION_CLASS(RemoveStyleSheetTxn)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(RemoveStyleSheetTxn, EditTxn)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mSheet)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mSheet)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(RemoveStyleSheetTxn, EditTxn)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR_AMBIGUOUS(mSheet, nsIStyleSheet)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSheet)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(RemoveStyleSheetTxn)

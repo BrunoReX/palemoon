@@ -248,7 +248,7 @@ Prompt.prototype = {
   },
 
   nsIPrompt_prompt: function nsIPrompt_prompt(aTitle, aText, aValue, aCheckMsg, aCheckState) {
-    let inputs = [{ type: "textbox", value: aValue.value }];
+    let inputs = [{ type: "textbox", value: aValue.value, autofocus: true }];
     let data = this.commonPrompt(aTitle, aText, null, aCheckMsg, aCheckState, inputs);
 
     let ok = data.button == 0;
@@ -261,7 +261,7 @@ Prompt.prototype = {
 
   nsIPrompt_promptPassword: function nsIPrompt_promptPassword(
       aTitle, aText, aPassword, aCheckMsg, aCheckState) {
-    let inputs = [{ type: "password", hint: PromptUtils.getLocaleString("password", "passwdmgr"), value: aPassword.value || "" }];
+    let inputs = [{ type: "password", hint: PromptUtils.getLocaleString("password", "passwdmgr"), value: aPassword.value || "", autofocus: true }];
     let data = this.commonPrompt(aTitle, aText, null, aCheckMsg, aCheckState, inputs);
 
     let ok = data.button == 0;
@@ -274,7 +274,7 @@ Prompt.prototype = {
 
   nsIPrompt_promptUsernameAndPassword: function nsIPrompt_promptUsernameAndPassword(
       aTitle, aText, aUsername, aPassword, aCheckMsg, aCheckState) {
-    let inputs = [{ type: "textbox",  hint: PromptUtils.getLocaleString("username", "passwdmgr"), value: aUsername.value },
+    let inputs = [{ type: "textbox",  hint: PromptUtils.getLocaleString("username", "passwdmgr"), value: aUsername.value, autofocus: true },
                   { type: "password", hint: PromptUtils.getLocaleString("password", "passwdmgr"), value: aPassword.value }];
     let data = this.commonPrompt(aTitle, aText, null, aCheckMsg, aCheckState, inputs);
 
@@ -755,9 +755,15 @@ let PromptUtils = {
   },
 
   fireDialogEvent: function(aDomWin, aEventName) {
-    let event = aDomWin.document.createEvent("Events");
-    event.initEvent(aEventName, true, true);
-    aDomWin.dispatchEvent(event);
+    // accessing the document object can throw if this window no longer exists. See bug 789888.
+    try {
+      if (!aDomWin.document)
+        return;
+      let event = aDomWin.document.createEvent("Events");
+      event.initEvent(aEventName, true, true);
+      aDomWin.dispatchEvent(event);
+    } catch(ex) {
+    }
   }
 };
 
@@ -769,4 +775,4 @@ XPCOMUtils.defineLazyGetter(PromptUtils, "bundle", function () {
   return Services.strings.createBundle("chrome://global/locale/commonDialogs.properties");
 });
 
-const NSGetFactory = XPCOMUtils.generateNSGetFactory([PromptService]);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory([PromptService]);

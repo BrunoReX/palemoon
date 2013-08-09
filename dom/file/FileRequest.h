@@ -36,7 +36,7 @@ public:
   PreHandleEvent(nsEventChainPreVisitor& aVisitor);
 
   void
-  OnProgress(PRUint64 aProgress, PRUint64 aProgressMax)
+  OnProgress(uint64_t aProgress, uint64_t aProgressMax)
   {
     FireProgressEvent(aProgress, aProgressMax);
   }
@@ -49,15 +49,10 @@ private:
   ~FileRequest();
 
   void
-  FireProgressEvent(PRUint64 aLoaded, PRUint64 aTotal);
-
-  virtual void
-  RootResultVal();
+  FireProgressEvent(uint64_t aLoaded, uint64_t aTotal);
 
   nsRefPtr<LockedFile> mLockedFile;
   bool mIsFileRequest;
-
-  NS_DECL_EVENT_HANDLER(progress)
 };
 
 END_FILE_NAMESPACE

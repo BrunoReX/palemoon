@@ -10,7 +10,7 @@
 NS_IMPL_ISUPPORTS1(nsStreamCipher, nsIStreamCipher)
 
 nsStreamCipher::nsStreamCipher()
-  : mContext(NULL)
+  : mContext(nullptr)
 {
 }
 
@@ -26,7 +26,7 @@ nsStreamCipher::InitWithIV_(nsIKeyObject *aKey, SECItem* aIV)
   NS_ENSURE_ARG_POINTER(aKey);
 
   // Make sure we have a SYM_KEY.
-  PRInt16 keyType;
+  int16_t keyType;
   nsresult rv = aKey->GetType(&keyType);
   NS_ENSURE_SUCCESS(rv, rv);
   if (keyType != nsIKeyObject::SYM_KEY)
@@ -46,7 +46,7 @@ nsStreamCipher::InitWithIV_(nsIKeyObject *aKey, SECItem* aIV)
 
   CK_MECHANISM_TYPE cipherMech = PK11_GetMechanism(symkey);
 
-  SECItem *param = nsnull;
+  SECItem *param = nullptr;
   // aIV may be null
   param = PK11_ParamFromIV(cipherMech, aIV);
   if (!param)
@@ -71,11 +71,11 @@ nsStreamCipher::InitWithIV_(nsIKeyObject *aKey, SECItem* aIV)
 
 NS_IMETHODIMP nsStreamCipher::Init(nsIKeyObject *aKey)
 {
-  return InitWithIV_(aKey, nsnull);
+  return InitWithIV_(aKey, nullptr);
 }
 
 NS_IMETHODIMP nsStreamCipher::InitWithIV(nsIKeyObject *aKey,
-                                         const PRUint8 *aIV, PRUint32 aIVLen)
+                                         const uint8_t *aIV, uint32_t aIVLen)
 {
   SECItem IV;
   IV.data = (unsigned char*)aIV;
@@ -83,24 +83,22 @@ NS_IMETHODIMP nsStreamCipher::InitWithIV(nsIKeyObject *aKey,
   return InitWithIV_(aKey, &IV);
 }
 
-NS_IMETHODIMP nsStreamCipher::Update(const PRUint8 *aData, PRUint32 aLen)
+NS_IMETHODIMP nsStreamCipher::Update(const uint8_t *aData, uint32_t aLen)
 {
   if (!mContext)
     return NS_ERROR_NOT_INITIALIZED;
 
   unsigned char* output = new unsigned char[aLen];
-  if (!output)
-    return NS_ERROR_OUT_OF_MEMORY;
   unsigned char* input = (unsigned char*)aData;
   
-  PRInt32 setLen;
+  int32_t setLen;
 
 #ifdef DEBUG
   SECStatus rv =
 #endif
     PK11_CipherOp(mContext, output, &setLen, aLen, input, aLen);
   NS_ASSERTION(rv == SECSuccess, "failed to encrypt");
-  NS_ASSERTION((PRUint32)setLen == aLen, "data length should not change");
+  NS_ASSERTION((uint32_t)setLen == aLen, "data length should not change");
 
   mValue.Append((const char*)output, aLen);
 
@@ -110,7 +108,7 @@ NS_IMETHODIMP nsStreamCipher::Update(const PRUint8 *aData, PRUint32 aLen)
 }
 
 NS_IMETHODIMP nsStreamCipher::UpdateFromStream(nsIInputStream *aStream,
-                                               PRInt32 aLen)
+                                               int32_t aLen)
 {
   if (!mContext)
     return NS_ERROR_NOT_INITIALIZED;
@@ -129,20 +127,18 @@ NS_IMETHODIMP nsStreamCipher::UpdateFromString(const nsACString& aInput)
 
   const nsCString& flatInput = PromiseFlatCString(aInput);
   unsigned char* input = (unsigned char*)flatInput.get();
-  PRUint32 len = aInput.Length();
+  uint32_t len = aInput.Length();
 
   unsigned char* output = new unsigned char[len];
-  if (!output)
-    return NS_ERROR_OUT_OF_MEMORY;
 
-  PRInt32 setLen;
+  int32_t setLen;
 
 #ifdef DEBUG
   SECStatus rv =
 #endif
     PK11_CipherOp(mContext, output, &setLen, len, input, len);
   NS_ASSERTION(rv == SECSuccess, "failed to encrypt");
-  NS_ASSERTION((PRUint32)setLen == len, "data length should not change");
+  NS_ASSERTION((uint32_t)setLen == len, "data length should not change");
 
   mValue.Append((const char*)output, len);
   delete [] output;
@@ -167,22 +163,15 @@ NS_IMETHODIMP nsStreamCipher::Finish(bool aASCII, nsACString & _retval)
   return NS_OK;
 }
 
-NS_IMETHODIMP nsStreamCipher::Discard(PRInt32 aLen)
+NS_IMETHODIMP nsStreamCipher::Discard(int32_t aLen)
 {
   if (!mContext)
     return NS_ERROR_NOT_INITIALIZED;
 
   unsigned char* output = new unsigned char[aLen];
-  if (!output)
-    return NS_ERROR_OUT_OF_MEMORY;
-
   unsigned char* input = new unsigned char[aLen];
-  if (!input) {
-    delete [] output;
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
 
-  PRInt32 setLen;
+  int32_t setLen;
 
 #ifdef DEBUG
   SECStatus rv =

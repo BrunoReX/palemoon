@@ -13,7 +13,6 @@
 #include <objc/objc.h>
 
 #include "Accessible.h"
-#include "nsAccUtils.h"
 #include "States.h"
 
 #include "nsCOMPtr.h"
@@ -25,6 +24,9 @@
 #if defined(__OBJC__)
 @class mozAccessible;
 #endif
+
+namespace mozilla {
+namespace a11y {
 
 class AccessibleWrap : public Accessible
 {
@@ -109,8 +111,7 @@ private:
   bool mNativeInited;  
 };
 
-// Define unsupported wrap classes here
-typedef class nsHTMLTableCellAccessible    nsHTMLTableCellAccessibleWrap;
-typedef class nsHTMLTableAccessible        nsHTMLTableAccessibleWrap;
+} // namespace a11y
+} // namespace mozilla
 
 #endif

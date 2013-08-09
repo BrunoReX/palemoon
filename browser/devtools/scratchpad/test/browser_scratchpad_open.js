@@ -5,6 +5,7 @@
 // only finish() when correct number of tests are done
 const expected = 3;
 var count = 0;
+var lastUniqueName = null;
 
 function done()
 {
@@ -21,15 +22,27 @@ function test()
   testOpenInvalidState();
 }
 
+function testUniqueName(name)
+{
+  ok(name, "Scratchpad has a uniqueName");
+
+  if (lastUniqueName === null) {
+    lastUniqueName = name;
+    return;
+  }
+
+  ok(name !== lastUniqueName,
+      "Unique name for this instance differs from the last one.");
+}
+
 function testOpen()
 {
   openScratchpad(function(win) {
     is(win.Scratchpad.filename, undefined, "Default filename is undefined");
-    is(win.Scratchpad.getText(),
-       win.Scratchpad.strings.GetStringFromName("scratchpadIntro"),
-       "Default text is loaded")
+    isnot(win.Scratchpad.getText(), null, "Default text should not be null");
     is(win.Scratchpad.executionContext, win.SCRATCHPAD_CONTEXT_CONTENT,
       "Default execution context is content");
+    testUniqueName(win.Scratchpad.uniqueName);
 
     win.close();
     done();
@@ -48,6 +61,7 @@ function testOpenWithState()
     is(win.Scratchpad.filename, state.filename, "Filename loaded from state");
     is(win.Scratchpad.executionContext, state.executionContext, "Execution context loaded from state");
     is(win.Scratchpad.getText(), state.text, "Content loaded from state");
+    testUniqueName(win.Scratchpad.uniqueName);
 
     win.close();
     done();

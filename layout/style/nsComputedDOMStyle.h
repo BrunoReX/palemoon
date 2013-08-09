@@ -8,6 +8,7 @@
 #ifndef nsComputedDOMStyle_h__
 #define nsComputedDOMStyle_h__
 
+#include "mozilla/Attributes.h"
 #include "nsDOMCSSDeclaration.h"
 
 #include "nsROCSSPrimitiveValue.h"
@@ -16,48 +17,55 @@
 #include "nsCSSProps.h"
 
 #include "nsIContent.h"
-#include "nsIFrame.h"
 #include "nsCOMPtr.h"
 #include "nsWeakReference.h"
 #include "nsAutoPtr.h"
 #include "nsStyleStruct.h"
+#include "nsStyleContext.h"
 
+class nsIFrame;
 class nsIPresShell;
 
-class nsComputedDOMStyle : public nsDOMCSSDeclaration,
-                           public nsWrapperCache
+class nsComputedDOMStyle MOZ_FINAL : public nsDOMCSSDeclaration
 {
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SKIPPABLE_CLASS_AMBIGUOUS(nsComputedDOMStyle,
-                                                     nsICSSDeclaration)
-
-  NS_IMETHOD Init(nsIDOMElement *aElement,
-                  const nsAString& aPseudoElt,
-                  nsIPresShell *aPresShell);
+  NS_DECL_CYCLE_COLLECTION_SKIPPABLE_SCRIPT_HOLDER_CLASS_AMBIGUOUS(nsComputedDOMStyle,
+                                                                   nsICSSDeclaration)
 
   NS_DECL_NSICSSDECLARATION
 
   NS_DECL_NSIDOMCSSSTYLEDECLARATION
+  virtual void IndexedGetter(uint32_t aIndex, bool& aFound, nsAString& aPropName);
 
-  nsComputedDOMStyle();
+  enum StyleType {
+    eDefaultOnly, // Only includes UA and user sheets
+    eAll // Includes all stylesheets
+  };
+
+  nsComputedDOMStyle(mozilla::dom::Element* aElement,
+                     const nsAString& aPseudoElt,
+                     nsIPresShell* aPresShell,
+                     StyleType aStyleType);
   virtual ~nsComputedDOMStyle();
 
   static void Shutdown();
 
-  virtual nsINode *GetParentObject()
+  virtual nsINode *GetParentObject() MOZ_OVERRIDE
   {
     return mContent;
   }
 
   static already_AddRefed<nsStyleContext>
   GetStyleContextForElement(mozilla::dom::Element* aElement, nsIAtom* aPseudo,
-                            nsIPresShell* aPresShell);
+                            nsIPresShell* aPresShell,
+                            StyleType aStyleType = eAll);
 
   static already_AddRefed<nsStyleContext>
   GetStyleContextForElementNoFlush(mozilla::dom::Element* aElement,
                                    nsIAtom* aPseudo,
-                                   nsIPresShell* aPresShell);
+                                   nsIPresShell* aPresShell,
+                                   StyleType aStyleType = eAll);
 
   static nsIPresShell*
   GetPresShellForContent(nsIContent* aContent);
@@ -71,10 +79,10 @@ public:
   // nsDOMCSSDeclaration abstract methods which should never be called
   // on a nsComputedDOMStyle object, but must be defined to avoid
   // compile errors.
-  virtual mozilla::css::Declaration* GetCSSDeclaration(bool);
-  virtual nsresult SetCSSDeclaration(mozilla::css::Declaration*);
-  virtual nsIDocument* DocToUpdate();
-  virtual void GetCSSParsingEnvironment(CSSParsingEnvironment& aCSSParseEnv);
+  virtual mozilla::css::Declaration* GetCSSDeclaration(bool) MOZ_OVERRIDE;
+  virtual nsresult SetCSSDeclaration(mozilla::css::Declaration*) MOZ_OVERRIDE;
+  virtual nsIDocument* DocToUpdate() MOZ_OVERRIDE;
+  virtual void GetCSSParsingEnvironment(CSSParsingEnvironment& aCSSParseEnv) MOZ_OVERRIDE;
 
 private:
   void AssertFlushedPendingReflows() {
@@ -94,7 +102,7 @@ private:
   // ownership.
 
   nsIDOMCSSValue* GetEllipseRadii(const nsStyleCorners& aRadius,
-                                  PRUint8 aFullCorner,
+                                  uint8_t aFullCorner,
                                   bool aIsBorder); // else outline
 
   nsIDOMCSSValue* GetOffsetWidthFor(mozilla::css::Side aSide);
@@ -125,9 +133,9 @@ private:
                                     const nscolor& aDefaultColor,
                                     bool aIsBoxShadow);
 
-  nsIDOMCSSValue* GetBackgroundList(PRUint8 nsStyleBackground::Layer::* aMember,
-                                    PRUint32 nsStyleBackground::* aCount,
-                                    const PRInt32 aTable[]);
+  nsIDOMCSSValue* GetBackgroundList(uint8_t nsStyleBackground::Layer::* aMember,
+                                    uint32_t nsStyleBackground::* aCount,
+                                    const int32_t aTable[]);
 
   void GetCSSGradientString(const nsStyleGradient* aGradient,
                             nsAString& aString);
@@ -316,6 +324,7 @@ private:
   nsIDOMCSSValue* DoGetResize();
   nsIDOMCSSValue* DoGetPageBreakAfter();
   nsIDOMCSSValue* DoGetPageBreakBefore();
+  nsIDOMCSSValue* DoGetPageBreakInside();
   nsIDOMCSSValue* DoGetTransform();
   nsIDOMCSSValue* DoGetTransformOrigin();
   nsIDOMCSSValue* DoGetPerspective();
@@ -356,6 +365,18 @@ private:
   nsIDOMCSSValue* DoGetAnimationFillMode();
   nsIDOMCSSValue* DoGetAnimationIterationCount();
   nsIDOMCSSValue* DoGetAnimationPlayState();
+
+#ifdef MOZ_FLEXBOX
+  /* CSS Flexbox properties */
+  nsIDOMCSSValue* DoGetAlignItems();
+  nsIDOMCSSValue* DoGetAlignSelf();
+  nsIDOMCSSValue* DoGetFlexBasis();
+  nsIDOMCSSValue* DoGetFlexDirection();
+  nsIDOMCSSValue* DoGetFlexGrow();
+  nsIDOMCSSValue* DoGetFlexShrink();
+  nsIDOMCSSValue* DoGetOrder();
+  nsIDOMCSSValue* DoGetJustifyContent();
+#endif // MOZ_FLEXBOX
 
   /* SVG properties */
   nsIDOMCSSValue* DoGetFill();
@@ -425,8 +446,8 @@ private:
   void SetValueToCoord(nsROCSSPrimitiveValue* aValue,
                        const nsStyleCoord& aCoord,
                        bool aClampNegativeCalc,
-                       PercentageBaseGetter aPercentageBaseGetter = nsnull,
-                       const PRInt32 aTable[] = nsnull,
+                       PercentageBaseGetter aPercentageBaseGetter = nullptr,
+                       const int32_t aTable[] = nullptr,
                        nscoord aMinAppUnits = nscoord_MIN,
                        nscoord aMaxAppUnits = nscoord_MAX);
 
@@ -458,7 +479,7 @@ private:
     bool mNeedsLayoutFlush;
   };
 
-  static const ComputedStyleMapEntry* GetQueryablePropertyMap(PRUint32* aLength);
+  static const ComputedStyleMapEntry* GetQueryablePropertyMap(uint32_t* aLength);
 
   // We don't really have a good immutable representation of "presentation".
   // Given the way GetComputedStyle is currently used, we should just grab the
@@ -492,6 +513,11 @@ private:
    */
   nsIPresShell* mPresShell;
 
+  /*
+   * The kind of styles we should be returning.
+   */
+  StyleType mStyleType;
+
   bool mExposeVisitedStyle;
 
 #ifdef DEBUG
@@ -499,10 +525,12 @@ private:
 #endif
 };
 
-nsresult
-NS_NewComputedDOMStyle(nsIDOMElement *aElement, const nsAString &aPseudoElt,
-                       nsIPresShell *aPresShell,
-                       nsComputedDOMStyle **aComputedStyle);
+already_AddRefed<nsComputedDOMStyle>
+NS_NewComputedDOMStyle(mozilla::dom::Element* aElement,
+                       const nsAString& aPseudoElt,
+                       nsIPresShell* aPresShell,
+                       nsComputedDOMStyle::StyleType aStyleType =
+                         nsComputedDOMStyle::eAll);
 
 #endif /* nsComputedDOMStyle_h__ */
 

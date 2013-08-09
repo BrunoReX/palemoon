@@ -15,8 +15,9 @@
                                 android:background="@drawable/tabs_tray_bg_repeat"
                                 gecko:sidebar="true"/>
 
-   <LinearLayout android:id="@+id/main_layout"
-                 style="@style/Screen.Transparent">
+   <view class="org.mozilla.gecko.GeckoApp$MainLayout"
+         android:id="@+id/main_layout"
+         style="@style/Screen.Transparent">
  
         <!-- BrowserToolbar will be added dynamically -->
         
@@ -25,27 +26,12 @@
                         android:layout_height="fill_parent"
                         android:layout_weight="1">
 
-            <org.mozilla.gecko.gfx.LayerView android:id="@+id/layer_view"
-                                             android:layout_width="fill_parent"
-                                             android:layout_height="fill_parent"
-                                             android:background="#FFF"/>
-
-            <AbsoluteLayout android:id="@+id/plugin_container"
-                            android:background="@android:color/transparent"
-                            android:layout_width="fill_parent"
-                            android:layout_height="fill_parent"/>
-
-            <org.mozilla.gecko.FormAssistPopup android:id="@+id/form_assist_popup"
-                                               android:layout_width="fill_parent"
-                                               android:layout_height="fill_parent"
-                                               android:visibility="gone"/>
+            <include layout="@layout/shared_ui_components"/>
 
             <org.mozilla.gecko.AboutHomeContent android:id="@+id/abouthome_content"
                                                 android:layout_width="fill_parent"
                                                 android:layout_height="fill_parent"
                                                 android:background="@drawable/abouthome_bg_repeat"/>
-
-            <include layout="@layout/text_selection_handles"/>
 
         </RelativeLayout>
 
@@ -56,6 +42,6 @@
                                          style="@style/FindBar"
                                          android:visibility="gone"/>
 
-    </LinearLayout>
+    </view>
 
 </RelativeLayout>

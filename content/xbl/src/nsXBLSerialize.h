@@ -13,7 +13,7 @@
 #include "nsIObjectOutputStream.h"
 #include "nsINameSpaceManager.h"
 
-typedef PRUint8 XBLBindingSerializeDetails;
+typedef uint8_t XBLBindingSerializeDetails;
 
 // A version number to ensure we don't load cached data in a different
 // file format.
@@ -24,6 +24,9 @@ typedef PRUint8 XBLBindingSerializeDetails;
 
 // Set to indicate that nsXBLPrototypeBinding::mInheritStyle should be true
 #define XBLBinding_Serialize_InheritStyle 2
+
+// Set to indicate that nsXBLPrototypeBinding::mChromeOnlyContent should be true
+#define XBLBinding_Serialize_ChromeOnlyContent 4
 
 // Appears at the end of the serialized data to indicate that no more bindings
 // are present for this document.

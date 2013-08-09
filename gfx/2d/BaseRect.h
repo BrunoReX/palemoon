@@ -7,6 +7,7 @@
 #define MOZILLA_GFX_BASERECT_H_
 
 #include <cmath>
+#include <mozilla/Assertions.h>
 
 namespace mozilla {
 namespace gfx {
@@ -276,6 +277,26 @@ struct BaseRect {
   T XMost() const { return x + width; }
   T YMost() const { return y + height; }
 
+  // Moves one edge of the rect without moving the opposite edge.
+  void SetLeftEdge(T aX) {
+    MOZ_ASSERT(aX <= XMost());
+    width = XMost() - aX;
+    x = aX;
+  }
+  void SetRightEdge(T aXMost) { 
+    MOZ_ASSERT(aXMost >= x);
+    width = aXMost - x; 
+  }
+  void SetTopEdge(T aY) {
+    MOZ_ASSERT(aY <= YMost());
+    height = YMost() - aY;
+    y = aY;
+  }
+  void SetBottomEdge(T aYMost) { 
+    MOZ_ASSERT(aYMost >= y);
+    height = aYMost - y; 
+  }
+
   // Round the rectangle edges to integer coordinates, such that the rounded
   // rectangle has the same set of pixel centers as the original rectangle.
   // Edges at offset 0.5 round up.
@@ -381,6 +402,21 @@ struct BaseRect {
     y = static_cast<T>(floor(double(y) / aYScale));
     width = right - x;
     height = bottom - y;
+  }
+  // Scale 'this' by 1/aScale, converting coordinates to integers so that the result is
+  // the largest integer-coordinate rectangle contained by the unrounded result.
+  void ScaleInverseRoundIn(double aScale) { ScaleInverseRoundIn(aScale, aScale); }
+  // Scale 'this' by 1/aXScale and 1/aYScale, converting coordinates to integers so
+  // that the result is the largest integer-coordinate rectangle contained by the
+  // unrounded result.
+  void ScaleInverseRoundIn(double aXScale, double aYScale)
+  {
+    T right = static_cast<T>(floor(double(XMost()) / aXScale));
+    T bottom = static_cast<T>(floor(double(YMost()) / aYScale));
+    x = static_cast<T>(ceil(double(x) / aXScale));
+    y = static_cast<T>(ceil(double(y) / aYScale));
+    width = gfx_max<T>(0, right - x);
+    height = gfx_max<T>(0, bottom - y);
   }
 
   /**

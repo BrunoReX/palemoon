@@ -27,14 +27,13 @@
 
 NS_IMPL_ISUPPORTS1(nsCollationOS2, nsICollation)
 
-nsCollationOS2::nsCollationOS2()
+nsCollationOS2::nsCollationOS2() : mCollation(nullptr)
 {
-  mCollation = NULL;
 }
 
 nsCollationOS2::~nsCollationOS2()
 {
-   if (mCollation != NULL)
+   if (mCollation)
      delete mCollation;
 }
 
@@ -45,22 +44,16 @@ nsCollationOS2::~nsCollationOS2()
 
 nsresult nsCollationOS2::Initialize(nsILocale *locale)
 {
-  NS_ASSERTION(mCollation == NULL, "Should only be initialized once");
-
-  nsresult res;
+  NS_ASSERTION(!mCollation, "Should only be initialized once");
 
   mCollation = new nsCollation;
-  if (mCollation == NULL) {
-    NS_ERROR("mCollation creation failed");
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
 
   return NS_OK;
 }
 
 
-nsresult nsCollationOS2::CompareString(PRInt32 strength, 
-                                       const nsAString& string1, const nsAString& string2, PRInt32* result)
+nsresult nsCollationOS2::CompareString(int32_t strength, 
+                                       const nsAString& string1, const nsAString& string2, int32_t* result)
 {
   nsAutoString stringNormalized1, stringNormalized2;
   if (strength != kCollationCaseSensitive) {
@@ -91,8 +84,8 @@ nsresult nsCollationOS2::CompareString(PRInt32 strength,
 }
  
 
-nsresult nsCollationOS2::AllocateRawSortKey(PRInt32 strength, 
-                                            const nsAString& stringIn, PRUint8** key, PRUint32* outLen)
+nsresult nsCollationOS2::AllocateRawSortKey(int32_t strength, 
+                                            const nsAString& stringIn, uint8_t** key, uint32_t* outLen)
 {
   nsresult res = NS_OK;
 
@@ -118,12 +111,12 @@ nsresult nsCollationOS2::AllocateRawSortKey(PRInt32 strength,
                                         // you let it...)
     // Magic, persistent buffer.  If it's not twice the size we need,
     // we grow/reallocate it 4X so it doesn't grow often.
-    static UniChar* pLocalBuffer = NULL;
+    static UniChar* pLocalBuffer = nullptr;
     static int iBufferLength = 100;
     if (iBufferLength < length*2) {
       if ( pLocalBuffer ) {
         free(pLocalBuffer);
-        pLocalBuffer = nsnull;
+        pLocalBuffer = nullptr;
       }
       iBufferLength = length*4;
     }
@@ -138,7 +131,7 @@ nsresult nsCollationOS2::AllocateRawSortKey(PRInt32 strength,
       if (uLen < iBufferLength) {
           // Success!
           // Give 'em the real size in bytes...
-          *key = (PRUint8 *)nsCRT::strdup((PRUnichar*) pLocalBuffer);
+          *key = (uint8_t *)nsCRT::strdup((PRUnichar*) pLocalBuffer);
           *outLen = uLen * 2 + 2;
           res = NS_OK;
       }
@@ -149,9 +142,9 @@ nsresult nsCollationOS2::AllocateRawSortKey(PRInt32 strength,
   return res;
 }
 
-nsresult nsCollationOS2::CompareRawSortKey(const PRUint8* key1, PRUint32 len1, 
-                                           const PRUint8* key2, PRUint32 len2, 
-                                           PRInt32* result)
+nsresult nsCollationOS2::CompareRawSortKey(const uint8_t* key1, uint32_t len1, 
+                                           const uint8_t* key2, uint32_t len2, 
+                                           int32_t* result)
 {
   *result = PL_strcmp((const char *)key1, (const char *)key2);
   return NS_OK;

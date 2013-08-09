@@ -82,7 +82,7 @@ void StartupSpecialSystemDirectory()
 
 #if defined (XP_WIN)
 
-static nsresult GetKnownFolder(GUID* guid, nsILocalFile** aFile)
+static nsresult GetKnownFolder(GUID* guid, nsIFile** aFile)
 {
     if (!guid || !gGetKnownFolderPath)
         return NS_ERROR_FAILURE;
@@ -102,7 +102,7 @@ static nsresult GetKnownFolder(GUID* guid, nsILocalFile** aFile)
 }
 
 //----------------------------------------------------------------------------------------
-static nsresult GetWindowsFolder(int folder, nsILocalFile** aFile)
+static nsresult GetWindowsFolder(int folder, nsIFile** aFile)
 //----------------------------------------------------------------------------------------
 {
     WCHAR path_orig[MAX_PATH + 3];
@@ -128,7 +128,7 @@ static nsresult GetWindowsFolder(int folder, nsILocalFile** aFile)
  * querying the registry when the call to SHGetSpecialFolderPathW is unable to
  * provide these paths (Bug 513958).
  */
-static nsresult GetRegWindowsAppDataFolder(bool aLocal, nsILocalFile** aFile)
+static nsresult GetRegWindowsAppDataFolder(bool aLocal, nsIFile** aFile)
 {
     HKEY key;
     NS_NAMED_LITERAL_STRING(keyName,
@@ -163,7 +163,7 @@ static nsresult GetRegWindowsAppDataFolder(bool aLocal, nsILocalFile** aFile)
 
 #if defined(XP_UNIX)
 static nsresult
-GetUnixHomeDir(nsILocalFile** aFile)
+GetUnixHomeDir(nsIFile** aFile)
 {
 #ifdef VMS
     char *pHome;
@@ -345,7 +345,7 @@ static const char xdg_user_dirs[] =
     "TEMPLATES\0"
     "VIDEOS";
 
-static const PRUint8 xdg_user_dir_offsets[] = {
+static const uint8_t xdg_user_dir_offsets[] = {
     0,
     8,
     18,
@@ -358,14 +358,14 @@ static const PRUint8 xdg_user_dir_offsets[] = {
 
 static nsresult
 GetUnixXDGUserDirectory(SystemDirectories aSystemDirectory,
-                        nsILocalFile** aFile)
+                        nsIFile** aFile)
 {
     char *dir = xdg_user_dir_lookup
                     (xdg_user_dirs + xdg_user_dir_offsets[aSystemDirectory -
                                                          Unix_XDG_Desktop]);
 
     nsresult rv;
-    nsCOMPtr<nsILocalFile> file;
+    nsCOMPtr<nsIFile> file;
     if (dir) {
         rv = NS_NewNativeLocalFile(nsDependentCString(dir), true,
                                    getter_AddRefs(file));
@@ -413,7 +413,7 @@ GetUnixXDGUserDirectory(SystemDirectories aSystemDirectory,
             return rv;
     }
 
-    *aFile = nsnull;
+    *aFile = nullptr;
     file.swap(*aFile);
 
     return NS_OK;
@@ -422,7 +422,7 @@ GetUnixXDGUserDirectory(SystemDirectories aSystemDirectory,
 
 nsresult
 GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
-                          nsILocalFile** aFile)
+                          nsIFile** aFile)
 {
 #if defined(XP_WIN)
     WCHAR path[MAX_PATH];
@@ -456,7 +456,7 @@ GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
         case OS_DriveDirectory:
 #if defined (XP_WIN)
         {
-            PRInt32 len = ::GetWindowsDirectoryW(path, MAX_PATH);
+            int32_t len = ::GetWindowsDirectoryW(path, MAX_PATH);
             if (len == 0)
                 break;
             if (path[1] == PRUnichar(':') && path[2] == PRUnichar('\\'))
@@ -519,7 +519,7 @@ GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
 
 #elif defined(XP_UNIX)
         {
-            static const char *tPath = nsnull;
+            static const char *tPath = nullptr;
             if (!tPath) {
                 tPath = PR_GetEnv("TMPDIR");
                 if (!tPath || !*tPath) {
@@ -542,7 +542,7 @@ GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
 #if defined (XP_WIN)
         case Win_SystemDirectory:
         {
-            PRInt32 len = ::GetSystemDirectoryW(path, MAX_PATH);
+            int32_t len = ::GetSystemDirectoryW(path, MAX_PATH);
 
             // Need enough space to add the trailing backslash
             if (!len || len > MAX_PATH - 2)
@@ -557,7 +557,7 @@ GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
 
         case Win_WindowsDirectory:
         {
-            PRInt32 len = ::GetWindowsDirectoryW(path, MAX_PATH);
+            int32_t len = ::GetWindowsDirectoryW(path, MAX_PATH);
 
             // Need enough space to add the trailing backslash
             if (!len || len > MAX_PATH - 2)
@@ -582,7 +582,7 @@ GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
             if (NS_SUCCEEDED(rv))
                 return rv;
 
-            PRInt32 len;
+            int32_t len;
             if ((len = ::GetEnvironmentVariableW(L"HOME", path, MAX_PATH)) > 0)
             {
                 // Need enough space to add the trailing backslash
@@ -747,6 +747,18 @@ GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
                 rv = GetRegWindowsAppDataFolder(true, aFile);
             return rv;
         }
+        case Win_Pictures:
+        {
+            return GetWindowsFolder(CSIDL_MYPICTURES, aFile);
+        }
+        case Win_Music:
+        {
+            return GetWindowsFolder(CSIDL_MYMUSIC, aFile);
+        }
+        case Win_Videos:
+        {
+            return GetWindowsFolder(CSIDL_MYVIDEO, aFile);
+        }
 #endif  // XP_WIN
 
 #if defined(XP_UNIX)
@@ -852,7 +864,7 @@ GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
 
 #if defined (MOZ_WIDGET_COCOA)
 nsresult
-GetOSXFolderType(short aDomain, OSType aFolderType, nsILocalFile **localFile)
+GetOSXFolderType(short aDomain, OSType aFolderType, nsIFile **localFile)
 {
     OSErr err;
     FSRef fsRef;

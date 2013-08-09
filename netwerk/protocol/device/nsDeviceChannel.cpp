@@ -31,7 +31,7 @@ void extractAttributeValue(const char* searchString, const char* attributeName, 
   if (!searchString || !attributeName)
     return;
 
-  PRUint32 attributeNameSize = strlen(attributeName);
+  uint32_t attributeNameSize = strlen(attributeName);
   const char *startOfAttribute = PL_strcasestr(searchString, attributeName);
   if (!startOfAttribute ||
       !( *(startOfAttribute-1) == '?' || *(startOfAttribute-1) == '&') )
@@ -80,15 +80,15 @@ nsDeviceChannel::OpenContentStream(bool aAsync,
     return NS_ERROR_NOT_IMPLEMENTED;
 
   nsCOMPtr<nsIURI> uri = nsBaseChannel::URI();
-  *aStream = nsnull;
-  *aChannel = nsnull;
+  *aStream = nullptr;
+  *aChannel = nullptr;
   NS_NAMED_LITERAL_CSTRING(width, "width=");
   NS_NAMED_LITERAL_CSTRING(height, "height=");
 
-  nsCAutoString spec;
+  nsAutoCString spec;
   uri->GetSpec(spec);
 
-  nsCAutoString type;
+  nsAutoCString type;
 
   nsRefPtr<nsDeviceCaptureProvider> capture;
   nsCaptureParams captureParams;
@@ -103,7 +103,7 @@ nsDeviceChannel::OpenContentStream(bool aAsync,
     captureParams.captureVideo = true;
     captureParams.timeLimit = 0;
     captureParams.frameLimit = 1;
-    nsCAutoString buffer;
+    nsAutoCString buffer;
     extractAttributeValue(spec.get(), "width=", buffer);
     nsresult err;
     captureParams.width = buffer.ToInteger(&err);
@@ -130,7 +130,7 @@ nsDeviceChannel::OpenContentStream(bool aAsync,
     SetContentType(type);
     captureParams.captureAudio = false;
     captureParams.captureVideo = true;
-    nsCAutoString buffer;
+    nsAutoCString buffer;
     extractAttributeValue(spec.get(), "width=", buffer);
     nsresult err;
     captureParams.width = buffer.ToInteger(&err);

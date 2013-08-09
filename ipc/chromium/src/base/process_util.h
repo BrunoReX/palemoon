@@ -126,6 +126,14 @@ void SetAllFDsToCloseOnExec();
 void CloseSuperfluousFds(const base::InjectiveMultimap& saved_map);
 #endif
 
+enum ChildPrivileges {
+  PRIVILEGES_DEFAULT,
+  PRIVILEGES_UNPRIVILEGED,
+  PRIVILEGES_CAMERA,
+  PRIVILEGES_VIDEO,
+  PRIVILEGES_INHERIT
+};
+
 #if defined(OS_WIN)
 // Runs the given application name with the given command line. Normally, the
 // first command line argument should be the path to the process, and don't
@@ -163,8 +171,15 @@ typedef std::map<std::string, std::string> environment_map;
 bool LaunchApp(const std::vector<std::string>& argv,
                const file_handle_mapping_vector& fds_to_remap,
                const environment_map& env_vars_to_set,
+               ChildPrivileges privs,
                bool wait, ProcessHandle* process_handle,
                ProcessArchitecture arch=GetCurrentProcessArchitecture());
+bool LaunchApp(const std::vector<std::string>& argv,
+               const file_handle_mapping_vector& fds_to_remap,
+               const environment_map& env_vars_to_set,
+               bool wait, ProcessHandle* process_handle,
+               ProcessArchitecture arch=GetCurrentProcessArchitecture());
+
 #endif
 
 // Executes the application specified by cl. This function delegates to one
@@ -280,6 +295,7 @@ class NamedProcessIterator {
   const ProcessEntry* NextProcessEntry();
 
  private:
+#if !defined(OS_BSD)
   // Determines whether there's another process (regardless of executable)
   // left in the list of all processes.  Returns true and sets entry_ to
   // that process's info if there is one, false otherwise.
@@ -292,18 +308,24 @@ class NamedProcessIterator {
   void InitProcessEntry(ProcessEntry* entry);
 
   std::wstring executable_name_;
+#endif
 
 #if defined(OS_WIN)
   HANDLE snapshot_;
   bool started_iteration_;
 #elif defined(OS_LINUX)
   DIR *procfs_dir_;
+#elif defined(OS_BSD)
+  std::vector<ProcessEntry> content;
+  size_t nextEntry;
 #elif defined(OS_MACOSX)
   std::vector<kinfo_proc> kinfo_procs_;
   size_t index_of_kinfo_proc_;
 #endif
+#if !defined(OS_BSD)
   ProcessEntry entry_;
   const ProcessFilter* filter_;
+#endif
 
   DISALLOW_EVIL_CONSTRUCTORS(NamedProcessIterator);
 };
@@ -402,8 +424,8 @@ class ProcessMetrics {
   int processor_count_;
 
   // Used to store the previous times so we can compute the CPU usage.
-  int64 last_time_;
-  int64 last_system_time_;
+  int64_t last_time_;
+  int64_t last_system_time_;
 
   DISALLOW_EVIL_CONSTRUCTORS(ProcessMetrics);
 };

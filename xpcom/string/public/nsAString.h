@@ -18,7 +18,7 @@
 // If some platform(s) can't handle our template that matches literal strings,
 // then we'll disable it on those platforms.
 #ifndef NS_DISABLE_LITERAL_TEMPLATE
-#  if (defined(_MSC_VER) && (_MSC_VER < 1310)) || (defined(__SUNPRO_CC) && (__SUNPRO_CC < 0x560)) || (defined(__HP_aCC) && (__HP_aCC <= 012100))
+#  if (defined(__SUNPRO_CC) && (__SUNPRO_CC < 0x560)) || (defined(__HP_aCC) && (__HP_aCC <= 012100))
 #    define NS_DISABLE_LITERAL_TEMPLATE
 #  endif
 #endif /* !NS_DISABLE_LITERAL_TEMPLATE */
@@ -52,7 +52,7 @@ class nsCaseInsensitiveCStringComparator
       nsCaseInsensitiveCStringComparator() {}
       typedef char char_type;
 
-      virtual int operator()( const char_type*, const char_type*, PRUint32, PRUint32 ) const;
+      virtual int operator()( const char_type*, const char_type*, uint32_t, uint32_t ) const;
   };
 
 class nsCaseInsensitiveCStringArrayComparator

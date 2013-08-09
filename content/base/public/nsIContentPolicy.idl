@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISupports.idl"
+#include "nsIPrincipal.idl"
 
 interface nsIURI;
 interface nsIDOMNode;
@@ -18,7 +19,7 @@ interface nsIDOMNode;
  * by launching a dialog to prompt the user for something).
  */
 
-[scriptable,uuid(344f9cb0-9a17-44c5-ab96-ee707884266c)]
+[scriptable,uuid(e590e74f-bac7-4876-8c58-54dde92befb2)]
 interface nsIContentPolicy : nsISupports
 {
   const unsigned long TYPE_OTHER       = 1;
@@ -175,6 +176,8 @@ interface nsIContentPolicy : nsISupports
    * @param aContext          OPTIONAL. the nsIDOMNode or nsIDOMWindow that
    *                          initiated the request, or something that can QI
    *                          to one of those; can be null if inapplicable.
+   *                          Note that for navigation events (new windows and
+   *                          link clicks), this is the NEW window.
    *
    * @param aMimeTypeGuess    OPTIONAL. a guess for the requested content's
    *                          MIME type, based on information available to
@@ -184,6 +187,12 @@ interface nsIContentPolicy : nsISupports
    *
    * @param aExtra            an OPTIONAL argument, pass-through for non-Gecko
    *                          callers to pass extra data to callees.
+   *
+   * @param aRequestPrincipal an OPTIONAL argument, defines the principal that
+   *                          caused the load. This is optional only for
+   *                          non-gecko code: all gecko code should set this
+   *                          argument.  For navigation events, this is
+   *                          the principal of the page that caused this load.
    *
    * @return ACCEPT or REJECT_*
    *
@@ -209,7 +218,8 @@ interface nsIContentPolicy : nsISupports
                    in nsIURI        aRequestOrigin,
                    in nsISupports   aContext,
                    in ACString      aMimeTypeGuess,
-                   in nsISupports   aExtra);
+                   in nsISupports   aExtra,
+                   [optional] in nsIPrincipal  aRequestPrincipal);
 
   /**
    * Should the resource be processed?
@@ -251,6 +261,7 @@ interface nsIContentPolicy : nsISupports
                       in nsIURI        aRequestOrigin,
                       in nsISupports   aContext,
                       in ACString      aMimeType,
-                      in nsISupports   aExtra);
+                      in nsISupports   aExtra,
+                      [optional] in nsIPrincipal  aRequestPrincipal);
 
 };

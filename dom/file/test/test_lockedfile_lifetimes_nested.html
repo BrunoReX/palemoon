@@ -25,10 +25,10 @@
 
       let lockedFile2;
 
-      netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
-      let thread = Components.classes["@mozilla.org/thread-manager;1"]
-                             .getService()
-                             .currentThread;
+      let comp = SpecialPowers.wrap(SpecialPowers.Components);
+      let thread = comp.classes["@mozilla.org/thread-manager;1"]
+                       .getService(comp.interfaces.nsIThreadManager)
+                       .currentThread;
 
       let eventHasRun;
 
@@ -36,7 +36,7 @@
         eventHasRun = true;
 
         lockedFile2 = fileHandle.open();
-      }, Components.interfaces.nsIThread.DISPATCH_NORMAL);
+      }, SpecialPowers.Ci.nsIThread.DISPATCH_NORMAL);
 
       while (!eventHasRun) {
         thread.processNextEvent(false);

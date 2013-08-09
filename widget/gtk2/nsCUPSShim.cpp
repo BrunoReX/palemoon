@@ -45,12 +45,12 @@ nsCUPSShim::Init()
         *(symAddr[i]) = PR_FindSymbol(mCupsLib, gSymName[i]);
         if (! *(symAddr[i])) {
 #ifdef DEBUG
-            nsCAutoString msg(gSymName[i]);
+            nsAutoCString msg(gSymName[i]);
             msg.Append(" not found in CUPS library");
             NS_WARNING(msg.get());
 #endif
             PR_UnloadLibrary(mCupsLib);
-            mCupsLib = nsnull;
+            mCupsLib = nullptr;
             return false;
         }
     }

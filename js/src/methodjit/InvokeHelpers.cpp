@@ -5,6 +5,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "jsanalyze.h"
 #include "jscntxt.h"
 #include "jsscope.h"
 #include "jsobj.h"
@@ -13,12 +14,13 @@
 #include "jsnum.h"
 #include "jsxml.h"
 #include "jsbool.h"
+#include "jstypes.h"
+
 #include "assembler/assembler/MacroAssemblerCodeRef.h"
 #include "assembler/assembler/CodeLocation.h"
-#include "jstypes.h"
+#include "builtin/Eval.h"
 #include "methodjit/StubCalls.h"
 #include "methodjit/MonoIC.h"
-#include "jsanalyze.h"
 #include "methodjit/BaseCompiler.h"
 #include "methodjit/ICRepatcher.h"
 #include "vm/Debugger.h"
@@ -29,13 +31,18 @@
 #include "jsobjinlines.h"
 #include "jscntxtinlines.h"
 #include "jsatominlines.h"
+
 #include "StubCalls-inl.h"
 
 #include "jsautooplen.h"
 
+#include "ion/Ion.h"
+
 using namespace js;
 using namespace js::mjit;
 using namespace JSC;
+
+using mozilla::DebugOnly;
 
 using ic::Repatcher;
 
@@ -43,14 +50,14 @@ static jsbytecode *
 FindExceptionHandler(JSContext *cx)
 {
     StackFrame *fp = cx->fp();
-    JSScript *script = fp->script();
+    RootedScript script(cx, fp->script());
 
     if (!script->hasTrynotes())
         return NULL;
 
   error:
     if (cx->isExceptionPending()) {
-        for (TryNoteIter tni(cx->regs()); !tni.done(); ++tni) {
+        for (TryNoteIter tni(cx, cx->regs()); !tni.done(); ++tni) {
             JSTryNote *tn = *tni;
 
             UnwindScope(cx, tn->stackDepth);
@@ -62,7 +69,7 @@ FindExceptionHandler(JSContext *cx)
              */
             jsbytecode *pc = script->main() + tn->start + tn->length;
             cx->regs().pc = pc;
-            cx->regs().sp = fp->base() + tn->stackDepth;
+            cx->regs().sp = cx->regs().spForStackDepth(tn->stackDepth);
 
             switch (tn->kind) {
                 case JSTRY_CATCH:
@@ -102,7 +109,8 @@ FindExceptionHandler(JSContext *cx)
                    * pending exception.
                    */
                   JS_ASSERT(JSOp(*pc) == JSOP_ENDITER);
-                  bool ok = UnwindIteratorForException(cx, &cx->regs().sp[-1].toObject());
+                  RootedObject obj(cx, &cx->regs().sp[-1].toObject());
+                  bool ok = UnwindIteratorForException(cx, obj);
                   cx->regs().sp -= 1;
                   if (!ok)
                       goto error;
@@ -119,34 +127,19 @@ FindExceptionHandler(JSContext *cx)
 /*
  * Clean up a frame and return.
  */
-static void
-InlineReturn(VMFrame &f)
-{
-    JS_ASSERT(f.fp() != f.entryfp);
-    AssertValidFunctionScopeChainAtExit(f.fp());
-
-    f.cx->stack.popInlineFrame(f.regs);
-
-    DebugOnly<JSOp> op = JSOp(*f.regs.pc);
-    JS_ASSERT(op == JSOP_CALL ||
-              op == JSOP_NEW ||
-              op == JSOP_EVAL ||
-              op == JSOP_FUNCALL ||
-              op == JSOP_FUNAPPLY);
-    f.regs.pc += JSOP_CALL_LENGTH;
-}
 
 void JS_FASTCALL
 stubs::SlowCall(VMFrame &f, uint32_t argc)
 {
-    if (*f.regs.pc == JSOP_FUNAPPLY && !GuardFunApplySpeculation(f.cx, f.regs))
+    if (*f.regs.pc == JSOP_FUNAPPLY && !GuardFunApplyArgumentsOptimization(f.cx))
         THROW();
 
     CallArgs args = CallArgsFromSp(argc, f.regs.sp);
     if (!InvokeKernel(f.cx, args))
         THROW();
 
-    types::TypeScript::Monitor(f.cx, f.script(), f.pc(), args.rval());
+    RootedScript fscript(f.cx, f.script());
+    types::TypeScript::Monitor(f.cx, fscript, f.pc(), args.rval());
 }
 
 void JS_FASTCALL
@@ -156,13 +149,14 @@ stubs::SlowNew(VMFrame &f, uint32_t argc)
     if (!InvokeConstructorKernel(f.cx, args))
         THROW();
 
-    types::TypeScript::Monitor(f.cx, f.script(), f.pc(), args.rval());
+    RootedScript fscript(f.cx, f.script());
+    types::TypeScript::Monitor(f.cx, fscript, f.pc(), args.rval());
 }
 
 static inline bool
 CheckStackQuota(VMFrame &f)
 {
-    JS_ASSERT(f.regs.sp == f.fp()->base());
+    JS_ASSERT(f.regs.stackDepth() == 0);
 
     f.stackLimit = f.cx->stack.space().getStackLimit(f.cx, DONT_REPORT_ERROR);
     if (f.stackLimit)
@@ -193,6 +187,7 @@ stubs::HitStackQuota(VMFrame &f)
 void * JS_FASTCALL
 stubs::FixupArity(VMFrame &f, uint32_t nactual)
 {
+    AssertCanGC();
     JSContext *cx = f.cx;
     StackFrame *oldfp = f.fp();
 
@@ -204,9 +199,9 @@ stubs::FixupArity(VMFrame &f, uint32_t nactual)
      * members that have been initialized by the caller and early prologue.
      */
     InitialFrameFlags initial = oldfp->initialFlags();
-    JSFunction *fun           = oldfp->fun();
-    JSScript *script          = fun->script();
-    void *ncode               = oldfp->nativeReturnAddress();
+    RootedFunction fun(cx, oldfp->fun());
+    RootedScript script(cx, fun->script());
+    void *ncode = oldfp->nativeReturnAddress();
 
     /* Pop the inline frame. */
     f.regs.popPartialFrame((Value *)oldfp);
@@ -254,31 +249,63 @@ stubs::CompileFunction(VMFrame &f, uint32_t argc)
         return UncachedCall(f, argc);
 }
 
+// Heuristics to decide whether a JM function call should invoke JM or Ion. Calling
+// into Ion may be faster, especially if the function contains loops, but JM -> Ion
+// calls are slower than JM -> JM calls.
+static inline bool
+ShouldJaegerCompileCallee(JSContext *cx, JSScript *caller, JSScript *callee, JITScript *callerJit)
+{
+#ifdef JS_ION
+    if (!ion::IsEnabled(cx))
+        return true;
+
+    // If we know Ion cannot compile either the caller or callee, use JM.
+    if (!callee->canIonCompile())
+        return true;
+
+    // Use JM if the callee has no loops. In this case calling into Ion
+    // is likely not worth the overhead.
+    if (!callee->hasAnalysis())
+        return true;
+
+    if (callee->isShortRunning())
+        return true;
+
+    return false;
+#endif
+    return true;
+}
+
 static inline bool
 UncachedInlineCall(VMFrame &f, InitialFrameFlags initial,
                    void **pret, bool *unjittable, uint32_t argc)
 {
+    AssertCanGC();
     JSContext *cx = f.cx;
     CallArgs args = CallArgsFromSp(argc, f.regs.sp);
-    JSFunction *newfun = args.callee().toFunction();
-    JSScript *newscript = newfun->script();
+    RootedFunction newfun(cx, args.callee().toFunction());
+    RootedScript newscript(cx, newfun->script());
 
     bool construct = InitialFrameFlagsAreConstructing(initial);
 
+    RootedScript fscript(cx, f.script());
     bool newType = construct && cx->typeInferenceEnabled() &&
-        types::UseNewType(cx, f.script(), f.pc());
+        types::UseNewType(cx, fscript, f.pc());
 
     if (!types::TypeMonitorCall(cx, args, construct))
         return false;
 
     /* Try to compile if not already compiled. */
-    CompileStatus status = CanMethodJIT(cx, newscript, newscript->code, construct, CompileRequest_Interpreter);
-    if (status == Compile_Error) {
-        /* A runtime exception was thrown, get out. */
-        return false;
+    if (ShouldJaegerCompileCallee(cx, f.script().unsafeGet(), newscript, f.jit())) {
+        CompileStatus status = CanMethodJIT(cx, newscript, newscript->code, construct,
+                                            CompileRequest_JIT, f.fp());
+        if (status == Compile_Error) {
+            /* A runtime exception was thrown, get out. */
+            return false;
+        }
+        if (status == Compile_Abort)
+            *unjittable = true;
     }
-    if (status == Compile_Abort)
-        *unjittable = true;
 
     /*
      * Make sure we are not calling from an inline frame if we need to make a
@@ -306,16 +333,12 @@ UncachedInlineCall(VMFrame &f, InitialFrameFlags initial,
     /* Finish the handoff to the new frame regs. */
     PreserveRegsGuard regsGuard(cx, regs);
 
-    /* Scope with a call object parented by callee's parent. */
-    if (!regs.fp()->functionPrologue(cx))
-        return false;
-
     /*
      * If newscript was successfully compiled, run it. Skip for calls which
      * will be constructing a new type object for 'this'.
      */
     if (!newType) {
-        if (JITScript *jit = newscript->getJIT(regs.fp()->isConstructing(), cx->compartment->needsBarrier())) {
+        if (JITScript *jit = newscript->getJIT(regs.fp()->isConstructing(), cx->compartment->compileBarriers())) {
             if (jit->invokeEntry) {
                 *pret = jit->invokeEntry;
 
@@ -340,11 +363,14 @@ UncachedInlineCall(VMFrame &f, InitialFrameFlags initial,
 
     JS_CHECK_RECURSION(cx, return false);
 
-    bool ok = Interpret(cx, cx->fp());
+    RootedScript script(cx, newscript);
+    bool ok = RunScript(cx, script, cx->fp());
     f.cx->stack.popInlineFrame(regs);
 
-    if (ok)
-        types::TypeScript::Monitor(f.cx, f.script(), f.pc(), args.rval());
+    if (ok) {
+        RootedScript fscript(cx, f.script());
+        types::TypeScript::Monitor(f.cx, fscript, f.pc(), args.rval());
+    }
 
     *pret = NULL;
     return ok;
@@ -353,42 +379,43 @@ UncachedInlineCall(VMFrame &f, InitialFrameFlags initial,
 void * JS_FASTCALL
 stubs::UncachedNew(VMFrame &f, uint32_t argc)
 {
-    UncachedCallResult ucr;
-    UncachedNewHelper(f, argc, &ucr);
+    UncachedCallResult ucr(f.cx);
+    UncachedNewHelper(f, argc, ucr);
     return ucr.codeAddr;
 }
 
 void
-stubs::UncachedNewHelper(VMFrame &f, uint32_t argc, UncachedCallResult *ucr)
+stubs::UncachedNewHelper(VMFrame &f, uint32_t argc, UncachedCallResult &ucr)
 {
-    ucr->init();
+    ucr.init();
     JSContext *cx = f.cx;
     CallArgs args = CallArgsFromSp(argc, f.regs.sp);
 
     /* Try to do a fast inline call before the general Invoke path. */
-    if (IsFunctionObject(args.calleev(), &ucr->fun) && ucr->fun->isInterpretedConstructor()) {
-        if (!UncachedInlineCall(f, INITIAL_CONSTRUCT, &ucr->codeAddr, &ucr->unjittable, argc))
+    if (IsFunctionObject(args.calleev(), ucr.fun.address()) && ucr.fun->isInterpretedConstructor()) {
+        if (!UncachedInlineCall(f, INITIAL_CONSTRUCT, &ucr.codeAddr, &ucr.unjittable, argc))
             THROW();
     } else {
         if (!InvokeConstructorKernel(cx, args))
             THROW();
-        types::TypeScript::Monitor(f.cx, f.script(), f.pc(), args.rval());
+        RootedScript fscript(cx, f.script());
+        types::TypeScript::Monitor(f.cx, fscript, f.pc(), args.rval());
     }
 }
 
 void * JS_FASTCALL
 stubs::UncachedCall(VMFrame &f, uint32_t argc)
 {
-    UncachedCallResult ucr;
-    UncachedCallHelper(f, argc, false, &ucr);
+    UncachedCallResult ucr(f.cx);
+    UncachedCallHelper(f, argc, false, ucr);
     return ucr.codeAddr;
 }
 
 void * JS_FASTCALL
 stubs::UncachedLoweredCall(VMFrame &f, uint32_t argc)
 {
-    UncachedCallResult ucr;
-    UncachedCallHelper(f, argc, true, &ucr);
+    UncachedCallResult ucr(f.cx);
+    UncachedCallHelper(f, argc, true, ucr);
     return ucr.codeAddr;
 }
 
@@ -401,7 +428,8 @@ stubs::Eval(VMFrame &f, uint32_t argc)
         if (!InvokeKernel(f.cx, args))
             THROW();
 
-        types::TypeScript::Monitor(f.cx, f.script(), f.pc(), args.rval());
+        RootedScript fscript(f.cx, f.script());
+        types::TypeScript::Monitor(f.cx, fscript, f.pc(), args.rval());
         return;
     }
 
@@ -409,29 +437,31 @@ stubs::Eval(VMFrame &f, uint32_t argc)
     if (!DirectEval(f.cx, args))
         THROW();
 
-    types::TypeScript::Monitor(f.cx, f.script(), f.pc(), args.rval());
+    RootedScript fscript(f.cx, f.script());
+    types::TypeScript::Monitor(f.cx, fscript, f.pc(), args.rval());
 }
 
 void
-stubs::UncachedCallHelper(VMFrame &f, uint32_t argc, bool lowered, UncachedCallResult *ucr)
+stubs::UncachedCallHelper(VMFrame &f, uint32_t argc, bool lowered, UncachedCallResult &ucr)
 {
-    ucr->init();
+    ucr.init();
 
     JSContext *cx = f.cx;
     CallArgs args = CallArgsFromSp(argc, f.regs.sp);
 
-    if (IsFunctionObject(args.calleev(), &ucr->fun)) {
-        if (ucr->fun->isInterpreted()) {
+    if (IsFunctionObject(args.calleev(), ucr.fun.address())) {
+        if (ucr.fun->isInterpreted()) {
             InitialFrameFlags initial = lowered ? INITIAL_LOWERED : INITIAL_NONE;
-            if (!UncachedInlineCall(f, initial, &ucr->codeAddr, &ucr->unjittable, argc))
+            if (!UncachedInlineCall(f, initial, &ucr.codeAddr, &ucr.unjittable, argc))
                 THROW();
             return;
         }
 
-        if (ucr->fun->isNative()) {
-            if (!CallJSNative(cx, ucr->fun->native(), args))
+        if (ucr.fun->isNative()) {
+            if (!CallJSNative(cx, ucr.fun->native(), args))
                 THROW();
-            types::TypeScript::Monitor(f.cx, f.script(), f.pc(), args.rval());
+            RootedScript fscript(cx, f.script());
+            types::TypeScript::Monitor(f.cx, fscript, f.pc(), args.rval());
             return;
         }
     }
@@ -439,7 +469,8 @@ stubs::UncachedCallHelper(VMFrame &f, uint32_t argc, bool lowered, UncachedCallR
     if (!InvokeKernel(f.cx, args))
         THROW();
 
-    types::TypeScript::Monitor(f.cx, f.script(), f.pc(), args.rval());
+    RootedScript fscript(cx, f.script());
+    types::TypeScript::Monitor(f.cx, fscript, f.pc(), args.rval());
     return;
 }
 
@@ -494,7 +525,8 @@ js_InternalThrow(VMFrame &f)
                 Value rval;
                 JSTrapStatus st = Debugger::onExceptionUnwind(cx, &rval);
                 if (st == JSTRAP_CONTINUE && handler) {
-                    st = handler(cx, cx->fp()->script(), cx->regs().pc, &rval,
+                    RootedScript fscript(cx, cx->fp()->script());
+                    st = handler(cx, fscript, cx->regs().pc, &rval,
                                  cx->runtime->debugHooks.throwHookData);
                 }
 
@@ -543,7 +575,7 @@ js_InternalThrow(VMFrame &f)
         }
 
 
-        ScriptEpilogue(f.cx, f.fp(), false);
+        f.fp()->epilogue(f.cx);
 
         // Don't remove the last frame, this is the responsibility of
         // JaegerShot()'s caller. We only guarantee that ScriptEpilogue()
@@ -551,8 +583,14 @@ js_InternalThrow(VMFrame &f)
         if (f.entryfp == f.fp())
             break;
 
-        JS_ASSERT(&cx->regs() == &f.regs);
-        InlineReturn(f);
+        f.cx->stack.popInlineFrame(f.regs);
+        DebugOnly<JSOp> op = JSOp(*f.regs.pc);
+        JS_ASSERT(op == JSOP_CALL ||
+                  op == JSOP_NEW ||
+                  op == JSOP_EVAL ||
+                  op == JSOP_FUNCALL ||
+                  op == JSOP_FUNAPPLY);
+        f.regs.pc += JSOP_CALL_LENGTH;
     }
 
     JS_ASSERT(&cx->regs() == &f.regs);
@@ -561,7 +599,7 @@ js_InternalThrow(VMFrame &f)
         return NULL;
 
     StackFrame *fp = cx->fp();
-    JSScript *script = fp->script();
+    RootedScript script(cx, fp->script());
 
     /*
      * Fall back to EnterMethodJIT and finish the frame in the interpreter.
@@ -572,7 +610,7 @@ js_InternalThrow(VMFrame &f)
      */
     cx->jaegerRuntime().setLastUnfinished(Jaeger_Unfinished);
 
-    if (!script->ensureRanAnalysis(cx, NULL)) {
+    if (!script->ensureRanAnalysis(cx)) {
         js_ReportOutOfMemory(cx);
         return NULL;
     }
@@ -587,11 +625,11 @@ js_InternalThrow(VMFrame &f)
     if (cx->isExceptionPending()) {
         JS_ASSERT(JSOp(*pc) == JSOP_ENTERBLOCK);
         StaticBlockObject &blockObj = script->getObject(GET_UINT32_INDEX(pc))->asStaticBlock();
-        if (!cx->regs().fp()->pushBlock(cx, blockObj))
-            return NULL;
         Value *vp = cx->regs().sp + blockObj.slotCount();
         SetValueRangeToUndefined(cx->regs().sp, vp);
         cx->regs().sp = vp;
+        if (!cx->regs().fp()->pushBlock(cx, blockObj))
+            return NULL;
 
         JS_ASSERT(JSOp(pc[JSOP_ENTERBLOCK_LENGTH]) == JSOP_EXCEPTION);
         cx->regs().sp[0] = cx->getPendingException();
@@ -615,13 +653,14 @@ stubs::CreateThis(VMFrame &f, JSObject *proto)
     JSObject *obj = js_CreateThisForFunctionWithProto(cx, callee, proto);
     if (!obj)
         THROW();
-    fp->formalArgs()[-1].setObject(*obj);
+    fp->thisValue() = ObjectValue(*obj);
 }
 
 void JS_FASTCALL
 stubs::ScriptDebugPrologue(VMFrame &f)
 {
-    Probes::enterJSFun(f.cx, f.fp()->maybeFun(), f.fp()->script());
+    AssertCanGC();
+    Probes::enterScript(f.cx, f.script().unsafeGet(), f.script()->function(), f.fp());
     JSTrapStatus status = js::ScriptDebugPrologue(f.cx, f.fp());
     switch (status) {
       case JSTRAP_CONTINUE:
@@ -640,7 +679,6 @@ stubs::ScriptDebugPrologue(VMFrame &f)
 void JS_FASTCALL
 stubs::ScriptDebugEpilogue(VMFrame &f)
 {
-    Probes::exitJSFun(f.cx, f.fp()->maybeFun(), f.fp()->script());
     if (!js::ScriptDebugEpilogue(f.cx, f.fp(), JS_TRUE))
         THROW();
 }
@@ -648,28 +686,32 @@ stubs::ScriptDebugEpilogue(VMFrame &f)
 void JS_FASTCALL
 stubs::ScriptProbeOnlyPrologue(VMFrame &f)
 {
-    Probes::enterJSFun(f.cx, f.fp()->fun(), f.fp()->script());
+    AutoAssertNoGC nogc;
+    Probes::enterScript(f.cx, f.script().get(nogc), f.script()->function(), f.fp());
 }
 
 void JS_FASTCALL
 stubs::ScriptProbeOnlyEpilogue(VMFrame &f)
 {
-    Probes::exitJSFun(f.cx, f.fp()->fun(), f.fp()->script());
+    AutoAssertNoGC nogc;
+    Probes::exitScript(f.cx, f.script().get(nogc), f.script()->function(), f.fp());
 }
 
 void JS_FASTCALL
 stubs::CrossChunkShim(VMFrame &f, void *edge_)
 {
+    AssertCanGC();
     DebugOnly<CrossChunkEdge*> edge = (CrossChunkEdge *) edge_;
 
     mjit::ExpandInlineFrames(f.cx->compartment);
 
-    JSScript *script = f.script();
+    RawScript script = f.script().unsafeGet();
     JS_ASSERT(edge->target < script->length);
     JS_ASSERT(script->code + edge->target == f.pc());
 
     CompileStatus status = CanMethodJIT(f.cx, script, f.pc(), f.fp()->isConstructing(),
-                                        CompileRequest_Interpreter);
+                                        CompileRequest_Interpreter, f.fp());
+    script = NULL;
     if (status == Compile_Error)
         THROW();
 
@@ -690,39 +732,10 @@ static const char *OpcodeNames[] = {
 };
 #endif
 
-static void
-FinishVarIncOp(VMFrame &f, RejoinState rejoin, Value ov, Value nv, Value *vp)
-{
-    /* Finish an increment operation on a LOCAL or ARG. These do not involve property accesses. */
-    JS_ASSERT(rejoin == REJOIN_POS || rejoin == REJOIN_BINARY);
-
-    JSContext *cx = f.cx;
-
-    JSOp op = JSOp(*f.pc());
-    JS_ASSERT(op == JSOP_LOCALINC || op == JSOP_INCLOCAL ||
-              op == JSOP_LOCALDEC || op == JSOP_DECLOCAL ||
-              op == JSOP_ARGINC || op == JSOP_INCARG ||
-              op == JSOP_ARGDEC || op == JSOP_DECARG);
-    const JSCodeSpec *cs = &js_CodeSpec[op];
-
-    unsigned i = GET_SLOTNO(f.pc());
-    Value *var = (JOF_TYPE(cs->format) == JOF_LOCAL) ? f.fp()->slots() + i : &f.fp()->formalArg(i);
-
-    if (rejoin == REJOIN_POS) {
-        double d = ov.toNumber();
-        double N = (cs->format & JOF_INC) ? 1 : -1;
-        if (!nv.setNumber(d + N))
-            types::TypeScript::MonitorOverflow(cx, f.script(), f.pc());
-    }
-
-    *var = nv;
-    *vp = (cs->format & JOF_POST) ? ov : nv;
-}
-
 extern "C" void *
 js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VMFrame &f)
 {
-    JSRejoinState jsrejoin = f.fp()->rejoin();
+    FrameRejoinState jsrejoin = f.fp()->rejoin();
     RejoinState rejoin;
     if (jsrejoin & 0x1) {
         /* Rejoin after a scripted call finished. Restore f.regs.pc and f.regs.inlined (NULL) */
@@ -736,14 +749,13 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
 
     JSContext *cx = f.cx;
     StackFrame *fp = f.regs.fp();
-    JSScript *script = fp->script();
+    RootedScript script(cx, fp->script());
 
     jsbytecode *pc = f.regs.pc;
 
     JSOp op = JSOp(*pc);
-    const JSCodeSpec *cs = &js_CodeSpec[op];
 
-    if (!script->ensureRanAnalysis(cx, NULL)) {
+    if (!script->ensureRanAnalysis(cx)) {
         js_ReportOutOfMemory(cx);
         return js_InternalThrow(f);
     }
@@ -757,12 +769,12 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
      * here. Update it to its value at the start of the opcode.
      */
     Value *oldsp = f.regs.sp;
-    f.regs.sp = fp->base() + analysis->getCode(pc).stackDepth;
+    f.regs.sp = f.regs.spForStackDepth(analysis->getCode(pc).stackDepth);
 
     jsbytecode *nextpc = pc + GetBytecodeLength(pc);
     Value *nextsp = NULL;
     if (nextpc != script->code + script->length && analysis->maybeCode(nextpc))
-        nextsp = fp->base() + analysis->getCode(nextpc).stackDepth;
+        nextsp = f.regs.spForStackDepth(analysis->getCode(nextpc).stackDepth);
 
     JS_ASSERT(&cx->regs() == &f.regs);
 
@@ -773,29 +785,6 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
 
     uint32_t nextDepth = UINT32_MAX;
     bool skipTrap = false;
-
-    if ((cs->format & (JOF_INC | JOF_DEC)) &&
-        (rejoin == REJOIN_POS || rejoin == REJOIN_BINARY)) {
-        /*
-         * We may reenter the interpreter while finishing the INC/DEC operation
-         * on a local or arg (property INC/DEC operations will rejoin into the
-         * decomposed version of the op.
-         */
-        JS_ASSERT(cs->format & (JOF_LOCAL | JOF_QARG));
-
-        nextDepth = analysis->getCode(nextpc).stackDepth;
-        enter.leave();
-
-        if (rejoin != REJOIN_BINARY || !analysis->incrementInitialValueObserved(pc)) {
-            /* Stack layout is 'V', 'N' or 'N+1' (only if the N is not needed) */
-            FinishVarIncOp(f, rejoin, nextsp[-1], nextsp[-1], &nextsp[-1]);
-        } else {
-            /* Stack layout is 'N N+1' */
-            FinishVarIncOp(f, rejoin, nextsp[-1], nextsp[0], &nextsp[-1]);
-        }
-
-        rejoin = REJOIN_FALLTHROUGH;
-    }
 
     switch (rejoin) {
       case REJOIN_SCRIPTED: {
@@ -867,30 +856,31 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
         f.regs.pc = nextpc;
         break;
 
-      case REJOIN_DEFLOCALFUN:
-        fp->slots()[GET_SLOTNO(pc)].setObject(* (JSObject *) returnReg);
-        f.regs.pc = nextpc;
-        break;
-
       case REJOIN_THIS_PROTOTYPE: {
         RootedObject callee(cx, &fp->callee());
         JSObject *proto = f.regs.sp[0].isObject() ? &f.regs.sp[0].toObject() : NULL;
         JSObject *obj = js_CreateThisForFunctionWithProto(cx, callee, proto);
         if (!obj)
             return js_InternalThrow(f);
-        fp->formalArgs()[-1].setObject(*obj);
+        fp->thisValue() = ObjectValue(*obj);
+        /* FALLTHROUGH */
+      }
 
-        if (Probes::callTrackingActive(cx))
-            Probes::enterJSFun(f.cx, f.fp()->maybeFun(), f.fp()->script());
+      case REJOIN_THIS_CREATED: {
+        Probes::enterScript(f.cx, f.script().unsafeGet(), f.script()->function(), fp);
 
         if (script->debugMode) {
             JSTrapStatus status = js::ScriptDebugPrologue(f.cx, f.fp());
             switch (status) {
               case JSTRAP_CONTINUE:
                 break;
-              case JSTRAP_RETURN:
-                *f.returnAddressLocation() = f.cx->jaegerRuntime().forceReturnFromExternC();
-                return NULL;
+              case JSTRAP_RETURN: {
+                /* Advance to the JSOP_STOP at the end of the script. */
+                f.regs.pc = script->code + script->length - 1;
+                nextDepth = 0;
+                JS_ASSERT(*f.regs.pc == JSOP_STOP);
+                break;
+              }
               case JSTRAP_THROW:
               case JSTRAP_ERROR:
                 return js_InternalThrow(f);
@@ -902,42 +892,56 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
         break;
       }
 
+      /*
+       * Each of these cases indicates a point of progress through
+       * generatePrologue. Execute the rest of the prologue here.
+       */
       case REJOIN_CHECK_ARGUMENTS:
-        /*
-         * Do all the work needed in arity check JIT prologues after the
-         * arguments check occurs (FixupArity has been called if needed, but
-         * the stack check and late prologue have not been performed.
-         */
         if (!CheckStackQuota(f))
             return js_InternalThrow(f);
-
-        SetValueRangeToUndefined(fp->slots(), script->nfixed);
-
-        if (!fp->functionPrologue(cx))
-            return js_InternalThrow(f);
-        /* FALLTHROUGH */
-
-      case REJOIN_FUNCTION_PROLOGUE:
+        fp->initVarsToUndefined();
         fp->scopeChain();
-
-        /* Construct the 'this' object for the frame if necessary. */
-        if (!ScriptPrologueOrGeneratorResume(cx, fp, types::UseNewTypeAtEntry(cx, fp)))
+        if (!fp->prologue(cx, types::UseNewTypeAtEntry(cx, fp)))
             return js_InternalThrow(f);
 
         /*
-         * Having called ScriptPrologueOrGeneratorResume, we would normally call
-         * ScriptDebugPrologue here. But in debug mode, we only use JITted
-         * functions' invokeEntry entry point, whereas CheckArgumentTypes
-         * (REJOIN_CHECK_ARGUMENTS) and FunctionFramePrologue
-         * (REJOIN_FUNCTION_PROLOGUE) are only reachable via the other entry
-         * points. So we should never need either of these rejoin tails in debug
-         * mode.
+         * We would normally call ScriptDebugPrologue here. But in debug mode,
+         * we only use JITted functions' invokeEntry entry point, whereas
+         * CheckArgumentTypes (REJOIN_CHECK_ARGUMENTS) is only reachable via
+         * the other entry points.
          *
          * If we fix bug 699196 ("Debug mode code could use inline caches
-         * now"), then these cases will become reachable again.
+         * now"), then this case will become reachable again.
          */
         JS_ASSERT(!cx->compartment->debugMode());
+        break;
 
+      /* Finish executing the tail of generatePrologue. */
+      case REJOIN_FUNCTION_PROLOGUE:
+        if (fp->isConstructing()) {
+            RootedObject callee(cx, &fp->callee());
+            JSObject *obj = js_CreateThisForFunction(cx, callee, types::UseNewTypeAtEntry(cx, fp));
+            if (!obj)
+                return js_InternalThrow(f);
+            fp->functionThis() = ObjectValue(*obj);
+        }
+        /* FALLTHROUGH */
+      case REJOIN_EVAL_PROLOGUE:
+        Probes::enterScript(cx, f.script().unsafeGet(), f.script()->function(), fp);
+        if (cx->compartment->debugMode()) {
+            JSTrapStatus status = ScriptDebugPrologue(cx, fp);
+            switch (status) {
+              case JSTRAP_CONTINUE:
+                break;
+              case JSTRAP_RETURN:
+                return f.cx->jaegerRuntime().forceReturnFromFastCall();
+              case JSTRAP_ERROR:
+              case JSTRAP_THROW:
+                return js_InternalThrow(f);
+              default:
+                JS_NOT_REACHED("bad ScriptDebugPrologue status");
+            }
+        }
         break;
 
       case REJOIN_CALL_PROLOGUE:
@@ -1004,10 +1008,15 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
              * portion of fun_hasInstance.
              */
             if (f.regs.sp[0].isPrimitive()) {
-                js_ReportValueError(cx, JSMSG_BAD_PROTOTYPE, -1, f.regs.sp[-1], NULL);
+                RootedValue val(cx, f.regs.sp[-1]);
+                js_ReportValueError(cx, JSMSG_BAD_PROTOTYPE, -1, val, NullPtr());
                 return js_InternalThrow(f);
             }
-            nextsp[-1].setBoolean(js_IsDelegate(cx, &f.regs.sp[0].toObject(), f.regs.sp[-2]));
+            bool isDelegate;
+            RootedObject obj(cx, &f.regs.sp[0].toObject());
+            if (!IsDelegate(cx, obj, f.regs.sp[-2], &isDelegate))
+                return js_InternalThrow(f);
+            nextsp[-1].setBoolean(isDelegate);
             f.regs.pc = nextpc;
             break;
           }
@@ -1016,18 +1025,6 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
             f.regs.pc = nextpc;
             break;
         }
-        break;
-
-      case REJOIN_POS:
-        /* Convert-to-number which might be part of an INC* op. */
-        JS_ASSERT(op == JSOP_POS);
-        f.regs.pc = nextpc;
-        break;
-
-      case REJOIN_BINARY:
-        /* Binary arithmetic op which might be part of an INC* op. */
-        JS_ASSERT(op == JSOP_ADD || op == JSOP_SUB || op == JSOP_MUL || op == JSOP_DIV);
-        f.regs.pc = nextpc;
         break;
 
       case REJOIN_BRANCH: {
@@ -1060,7 +1057,7 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
 
     if (nextDepth == UINT32_MAX)
         nextDepth = analysis->getCode(f.regs.pc).stackDepth;
-    f.regs.sp = fp->base() + nextDepth;
+    f.regs.sp = f.regs.spForStackDepth(nextDepth);
 
     /*
      * Monitor the result of the previous op when finishing a JOF_TYPESET op.

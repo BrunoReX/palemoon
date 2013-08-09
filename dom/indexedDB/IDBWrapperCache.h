@@ -37,7 +37,7 @@ public:
     nsCOMPtr<nsIScriptGlobalObject> parent;
     nsDOMEventTargetHelper::GetParentObject(getter_AddRefs(parent));
 
-    return parent ? parent->GetGlobalJSObject() : nsnull;
+    return parent ? parent->GetGlobalJSObject() : nullptr;
   }
 
   static IDBWrapperCache* FromSupports(nsISupports* aSupports)
@@ -46,9 +46,17 @@ public:
       nsDOMEventTargetHelper::FromSupports(aSupports));
   }
 
+#ifdef DEBUG
+  void AssertIsRooted() const;
+#else
+  inline void AssertIsRooted() const
+  {
+  }
+#endif
+
 protected:
   IDBWrapperCache()
-  : mScriptOwner(nsnull)
+  : mScriptOwner(nullptr)
   { }
 
   virtual ~IDBWrapperCache();

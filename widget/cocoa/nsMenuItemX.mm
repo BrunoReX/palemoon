@@ -19,7 +19,6 @@
 #include "nsIWidget.h"
 #include "nsIDocument.h"
 #include "nsIDOMDocument.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsIDOMEventTarget.h"
 #include "nsIDOMElement.h"
 
@@ -27,8 +26,8 @@ nsMenuItemX::nsMenuItemX()
 {
   mType           = eRegularMenuItemType;
   mNativeMenuItem = nil;
-  mMenuParent     = nsnull;
-  mMenuGroupOwner = nsnull;
+  mMenuParent     = nullptr;
+  mMenuGroupOwner = nullptr;
   mIsChecked      = false;
 
   MOZ_COUNT_CTOR(nsMenuItemX);
@@ -59,7 +58,7 @@ nsMenuItemX::~nsMenuItemX()
 struct macKeyCodeData {
   const char* str;
   size_t strlength;
-  PRUint32 keycode;
+  uint32_t keycode;
 };
 
 static const macKeyCodeData gMacKeyCodes[] = {
@@ -186,20 +185,20 @@ static const macKeyCodeData gMacKeyCodes[] = {
 
 };
 
-PRUint32 nsMenuItemX::ConvertGeckoToMacKeyCode(nsAString& aKeyCodeName)
+uint32_t nsMenuItemX::ConvertGeckoToMacKeyCode(nsAString& aKeyCodeName)
 {
   if (aKeyCodeName.IsEmpty()) {
     return 0;
   }
 
-  nsCAutoString keyCodeName;
+  nsAutoCString keyCodeName;
   keyCodeName.AssignWithConversion(aKeyCodeName);
   // We want case-insensitive comparison with data stored as uppercase.
   ToUpperCase(keyCodeName);
 
-  PRUint32 keyCodeNameLength = keyCodeName.Length();
+  uint32_t keyCodeNameLength = keyCodeName.Length();
   const char* keyCodeNameStr = keyCodeName.get();
-  for (PRUint16 i = 0; i < (sizeof(gMacKeyCodes) / sizeof(gMacKeyCodes[0])); ++i) {
+  for (uint16_t i = 0; i < (sizeof(gMacKeyCodes) / sizeof(gMacKeyCodes[0])); ++i) {
     if (keyCodeNameLength == gMacKeyCodes[i].strlength &&
         nsCRT::strcmp(gMacKeyCodes[i].str, keyCodeNameStr) == 0) {
       return gMacKeyCodes[i].keycode;
@@ -342,8 +341,7 @@ nsresult nsMenuItemX::DispatchDOMEvent(const nsString &eventName, bool *preventD
   event->InitEvent(eventName, true, true);
 
   // mark DOM event as trusted
-  nsCOMPtr<nsIPrivateDOMEvent> privateEvent(do_QueryInterface(event));
-  privateEvent->SetTrusted(true);
+  event->SetTrusted(true);
 
   // send DOM event
   nsCOMPtr<nsIDOMEventTarget> eventTarget = do_QueryInterface(mContent);
@@ -370,8 +368,8 @@ void nsMenuItemX::UncheckRadioSiblings(nsIContent* inCheckedContent)
     return;
 
   // loop over siblings
-  PRUint32 count = parent->GetChildCount();
-  for (PRUint32 i = 0; i < count; i++) {
+  uint32_t count = parent->GetChildCount();
+  for (uint32_t i = 0; i < count; i++) {
     nsIContent *sibling = parent->GetChildAt(i);
     if (sibling) {      
       if (sibling != inCheckedContent) { // skip this node
@@ -400,7 +398,7 @@ void nsMenuItemX::SetKeyEquiv()
       if (!hasKey || keyChar.IsEmpty()) {
         nsAutoString keyCodeName;
         keyContent->GetAttr(kNameSpaceID_None, nsGkAtoms::keycode, keyCodeName);
-        PRUint32 keycode = ConvertGeckoToMacKeyCode(keyCodeName);
+        uint32_t keycode = ConvertGeckoToMacKeyCode(keyCodeName);
         if (keycode) {
           keyChar.Assign(keycode);
         }
@@ -411,7 +409,7 @@ void nsMenuItemX::SetKeyEquiv()
 
       nsAutoString modifiersStr;
       keyContent->GetAttr(kNameSpaceID_None, nsGkAtoms::modifiers, modifiersStr);
-      PRUint8 modifiers = nsMenuUtilsX::GeckoModifiersForNodeAttribute(modifiersStr);
+      uint8_t modifiers = nsMenuUtilsX::GeckoModifiersForNodeAttribute(modifiersStr);
 
       unsigned int macModifiers = nsMenuUtilsX::MacModifiersForGeckoModifiers(modifiers);
       [mNativeMenuItem setKeyEquivalentModifierMask:macModifiers];
@@ -501,11 +499,11 @@ nsMenuItemX::ObserveAttributeChanged(nsIDocument *aDocument, nsIContent *aConten
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 
-void nsMenuItemX::ObserveContentRemoved(nsIDocument *aDocument, nsIContent *aChild, PRInt32 aIndexInContainer)
+void nsMenuItemX::ObserveContentRemoved(nsIDocument *aDocument, nsIContent *aChild, int32_t aIndexInContainer)
 {
   if (aChild == mCommandContent) {
     mMenuGroupOwner->UnregisterForContentChanges(mCommandContent);
-    mCommandContent = nsnull;
+    mCommandContent = nullptr;
   }
 
   mMenuParent->SetRebuild(true);

@@ -1,8 +1,8 @@
 #!/usr/bin/env python
+
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
 
 """
 run mozbase tests from a manifest,
@@ -14,6 +14,8 @@ import manifestparser
 import os
 import sys
 import unittest
+
+from moztest.results import TestResultCollection
 
 here = os.path.dirname(os.path.abspath(__file__))
 
@@ -57,11 +59,11 @@ def main(args=sys.argv[1:]):
 
     # run the tests
     suite = unittest.TestSuite(unittestlist)
-    runner = unittest.TextTestRunner()
-    results = runner.run(suite)
+    runner = unittest.TextTestRunner(verbosity=2) # default=1 does not show success of unittests
+    results = TestResultCollection.from_unittest_results(runner.run(suite))
 
     # exit according to results
-    sys.exit((results.failures or results.errors) and 1 or 0)
+    sys.exit(1 if results.num_failures else 0)
 
 if __name__ == '__main__':
     main()

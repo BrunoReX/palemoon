@@ -15,7 +15,7 @@
 nsresult
 nsTreeUtils::TokenizeProperties(const nsAString& aProperties, nsISupportsArray* aPropertiesArray)
 {
-  NS_PRECONDITION(aPropertiesArray != nsnull, "null ptr");
+  NS_PRECONDITION(aPropertiesArray != nullptr, "null ptr");
   if (! aPropertiesArray)
      return NS_ERROR_NULL_POINTER;
 
@@ -65,7 +65,7 @@ nsTreeUtils::GetImmediateChild(nsIContent* aContainer, nsIAtom* aTag)
     }
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 nsIContent*
@@ -84,7 +84,7 @@ nsTreeUtils::GetDescendantChild(nsIContent* aContainer, nsIAtom* aTag)
     }
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 nsresult
@@ -98,7 +98,7 @@ nsTreeUtils::UpdateSortIndicators(nsIContent* aColumn, const nsAString& aDirecti
   if (parentContent &&
       parentContent->NodeInfo()->Equals(nsGkAtoms::treecols,
                                         kNameSpaceID_XUL)) {
-    PRUint32 i, numChildren = parentContent->GetChildCount();
+    uint32_t i, numChildren = parentContent->GetChildCount();
     for (i = 0; i < numChildren; ++i) {
       nsCOMPtr<nsIContent> childContent = parentContent->GetChildAt(i);
 
@@ -118,14 +118,14 @@ nsTreeUtils::UpdateSortIndicators(nsIContent* aColumn, const nsAString& aDirecti
 }
 
 nsresult
-nsTreeUtils::GetColumnIndex(nsIContent* aColumn, PRInt32* aResult)
+nsTreeUtils::GetColumnIndex(nsIContent* aColumn, int32_t* aResult)
 {
   nsIContent* parentContent = aColumn->GetParent();
   if (parentContent &&
       parentContent->NodeInfo()->Equals(nsGkAtoms::treecols,
                                         kNameSpaceID_XUL)) {
-    PRUint32 i, numChildren = parentContent->GetChildCount();
-    PRInt32 colIndex = 0;
+    uint32_t i, numChildren = parentContent->GetChildCount();
+    int32_t colIndex = 0;
     for (i = 0; i < numChildren; ++i) {
       nsIContent *childContent = parentContent->GetChildAt(i);
       if (childContent &&

@@ -27,20 +27,20 @@ nsTableColGroupFrame::GetColType() const
 
 void nsTableColGroupFrame::SetColType(nsTableColGroupType aType) 
 {
-  PRUint32 type = aType - eColGroupContent;
+  uint32_t type = aType - eColGroupContent;
   mState |= (type << COL_GROUP_TYPE_OFFSET);
 }
 
 void nsTableColGroupFrame::ResetColIndices(nsIFrame*       aFirstColGroup,
-                                           PRInt32         aFirstColIndex,
+                                           int32_t         aFirstColIndex,
                                            nsIFrame*       aStartColFrame)
 {
   nsTableColGroupFrame* colGroupFrame = (nsTableColGroupFrame*)aFirstColGroup;
-  PRInt32 colIndex = aFirstColIndex;
+  int32_t colIndex = aFirstColIndex;
   while (colGroupFrame) {
     if (nsGkAtoms::tableColGroupFrame == colGroupFrame->GetType()) {
       // reset the starting col index for the first cg only if we should reset
-      // the whole colgroup (aStartColFrame defaults to nsnull) or if
+      // the whole colgroup (aStartColFrame defaults to nullptr) or if
       // aFirstColIndex is smaller than the existing starting col index
       if ((colIndex != aFirstColIndex) ||
           (colIndex < colGroupFrame->GetStartColumnIndex()) ||
@@ -66,14 +66,16 @@ void nsTableColGroupFrame::ResetColIndices(nsIFrame*       aFirstColGroup,
 
 
 nsresult
-nsTableColGroupFrame::AddColsToTable(PRInt32                   aFirstColIndex,
+nsTableColGroupFrame::AddColsToTable(int32_t                   aFirstColIndex,
                                      bool                      aResetSubsequentColIndices,
                                      const nsFrameList::Slice& aCols)
 {
   nsTableFrame* tableFrame = nsTableFrame::GetTableFrame(this);
 
+  tableFrame->InvalidateFrameSubtree();
+
   // set the col indices of the col frames and and add col info to the table
-  PRInt32 colIndex = aFirstColIndex;
+  int32_t colIndex = aFirstColIndex;
   nsFrameList::Enumerator e(aCols);
   for (; !e.AtEnd(); e.Next()) {
     ((nsTableColFrame*)e.get())->SetColIndex(colIndex);
@@ -106,14 +108,14 @@ nsTableColGroupFrame::GetLastRealColGroup(nsTableFrame* aTableFrame)
 {
   nsFrameList colGroups = aTableFrame->GetColGroups();
 
-  nsIFrame* nextToLastColGroup = nsnull;
+  nsIFrame* nextToLastColGroup = nullptr;
   nsFrameList::FrameLinkEnumerator link(colGroups);
   for ( ; !link.AtEnd(); link.Next()) {
     nextToLastColGroup = link.PrevFrame();
   }
 
   if (!link.PrevFrame()) {
-    return nsnull; // there are no col group frames
+    return nullptr; // there are no col group frames
   }
  
   nsTableColGroupType lastColGroupType =
@@ -155,13 +157,15 @@ nsTableColGroupFrame::SetInitialChildList(ChildListID     aListID,
 /* virtual */ void
 nsTableColGroupFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
 {
+  nsContainerFrame::DidSetStyleContext(aOldStyleContext);
+
   if (!aOldStyleContext) //avoid this on init
     return;
      
   nsTableFrame* tableFrame = nsTableFrame::GetTableFrame(this);
   if (tableFrame->IsBorderCollapse() &&
       tableFrame->BCRecalcNeeded(aOldStyleContext, GetStyleContext())) {
-    PRInt32 colCount = GetColCount();
+    int32_t colCount = GetColCount();
     if (!colCount)
       return; // this is a degenerated colgroup 
     nsIntRect damageArea(GetFirstColumn()->GetColIndex(), 0, colCount,
@@ -216,7 +220,7 @@ nsTableColGroupFrame::InsertFrames(ChildListID     aListID,
       NS_ASSERTION(!nextCol || nextCol->GetColType() != eColAnonymousColGroup,
                    "Inserting in the middle of our anonymous cols?");
       // We'll want to insert at the beginning
-      aPrevFrame = nsnull;
+      aPrevFrame = nullptr;
     }
     RemoveFrame(kPrincipalList, col);
     col = nextCol;
@@ -233,14 +237,14 @@ nsTableColGroupFrame::InsertFrames(ChildListID     aListID,
   nsIFrame* prevFrame = nsTableFrame::GetFrameAtOrBefore(this, aPrevFrame,
                                                          nsGkAtoms::tableColFrame);
 
-  PRInt32 colIndex = (prevFrame) ? ((nsTableColFrame*)prevFrame)->GetColIndex() + 1 : GetStartColumnIndex();
+  int32_t colIndex = (prevFrame) ? ((nsTableColFrame*)prevFrame)->GetColIndex() + 1 : GetStartColumnIndex();
   InsertColsReflow(colIndex, newFrames);
 
   return NS_OK;
 }
 
 void
-nsTableColGroupFrame::InsertColsReflow(PRInt32                   aColIndex,
+nsTableColGroupFrame::InsertColsReflow(int32_t                   aColIndex,
                                        const nsFrameList::Slice& aCols)
 {
   AddColsToTable(aColIndex, true, aCols);
@@ -254,8 +258,8 @@ void
 nsTableColGroupFrame::RemoveChild(nsTableColFrame& aChild,
                                   bool             aResetSubsequentColIndices)
 {
-  PRInt32 colIndex = 0;
-  nsIFrame* nextChild = nsnull;
+  int32_t colIndex = 0;
+  nsIFrame* nextChild = nullptr;
   if (aResetSubsequentColIndices) {
     colIndex = aChild.GetColIndex();
     nextChild = aChild.GetNextSibling();
@@ -314,7 +318,7 @@ nsTableColGroupFrame::RemoveFrame(ChildListID     aListID,
       }
     }
     
-    PRInt32 colIndex = colFrame->GetColIndex();
+    int32_t colIndex = colFrame->GetColIndex();
     // The RemoveChild call handles calling FrameNeedsReflow on us.
     RemoveChild(*colFrame, true);
     
@@ -333,14 +337,14 @@ nsTableColGroupFrame::RemoveFrame(ChildListID     aListID,
   return NS_OK;
 }
 
-PRIntn
+int
 nsTableColGroupFrame::GetSkipSides() const
 {
-  PRIntn skip = 0;
-  if (nsnull != GetPrevInFlow()) {
+  int skip = 0;
+  if (nullptr != GetPrevInFlow()) {
     skip |= 1 << NS_SIDE_TOP;
   }
-  if (nsnull != GetNextInFlow()) {
+  if (nullptr != GetNextInFlow()) {
     skip |= 1 << NS_SIDE_BOTTOM;
   }
   return skip;
@@ -353,7 +357,7 @@ NS_METHOD nsTableColGroupFrame::Reflow(nsPresContext*          aPresContext,
 {
   DO_GLOBAL_REFLOW_COUNT("nsTableColGroupFrame");
   DISPLAY_REFLOW(aPresContext, this, aReflowState, aDesiredSize, aStatus);
-  NS_ASSERTION(nsnull!=mContent, "bad state -- null content for frame");
+  NS_ASSERTION(nullptr!=mContent, "bad state -- null content for frame");
   nsresult rv=NS_OK;
   
   const nsStyleVisibility* groupVis = GetStyleVisibility();
@@ -374,7 +378,7 @@ NS_METHOD nsTableColGroupFrame::Reflow(nsPresContext*          aPresContext,
 
     nsReflowStatus status;
     ReflowChild(kidFrame, aPresContext, kidSize, kidReflowState, 0, 0, 0, status);
-    FinishReflowChild(kidFrame, aPresContext, nsnull, kidSize, 0, 0, 0);
+    FinishReflowChild(kidFrame, aPresContext, nullptr, kidSize, 0, 0, 0);
   }
 
   aDesiredSize.width=0;
@@ -386,12 +390,12 @@ NS_METHOD nsTableColGroupFrame::Reflow(nsPresContext*          aPresContext,
 
 nsTableColFrame * nsTableColGroupFrame::GetFirstColumn()
 {
-  return GetNextColumn(nsnull);
+  return GetNextColumn(nullptr);
 }
 
 nsTableColFrame * nsTableColGroupFrame::GetNextColumn(nsIFrame *aChildFrame)
 {
-  nsTableColFrame *result = nsnull;
+  nsTableColFrame *result = nullptr;
   nsIFrame *childFrame = aChildFrame;
   if (!childFrame) {
     childFrame = mFrames.FirstChild();
@@ -412,12 +416,12 @@ nsTableColFrame * nsTableColGroupFrame::GetNextColumn(nsIFrame *aChildFrame)
   return result;
 }
 
-PRInt32 nsTableColGroupFrame::GetSpan()
+int32_t nsTableColGroupFrame::GetSpan()
 {
   return GetStyleTable()->mSpan;
 }
 
-void nsTableColGroupFrame::SetContinuousBCBorderWidth(PRUint8     aForSide,
+void nsTableColGroupFrame::SetContinuousBCBorderWidth(uint8_t     aForSide,
                                                       BCPixelSize aPixelValue)
 {
   switch (aForSide) {
@@ -434,7 +438,7 @@ void nsTableColGroupFrame::SetContinuousBCBorderWidth(PRUint8     aForSide,
 
 void nsTableColGroupFrame::GetContinuousBCBorderWidth(nsMargin& aBorder)
 {
-  PRInt32 aPixelsToTwips = nsPresContext::AppUnitsPerCSSPixel();
+  int32_t aPixelsToTwips = nsPresContext::AppUnitsPerCSSPixel();
   nsTableFrame* table = nsTableFrame::GetTableFrame(this);
   nsTableColFrame* col = table->GetColFrame(mStartColIndex + mColCount - 1);
   col->GetContinuousBCBorderWidth(aBorder);
@@ -459,6 +463,23 @@ nsTableColGroupFrame::GetType() const
 {
   return nsGkAtoms::tableColGroupFrame;
 }
+  
+void 
+nsTableColGroupFrame::InvalidateFrame(uint32_t aDisplayItemKey)
+{
+  nsIFrame::InvalidateFrame(aDisplayItemKey);
+  GetParent()->InvalidateFrameWithRect(GetVisualOverflowRect() + GetPosition(), aDisplayItemKey);
+}
+
+void 
+nsTableColGroupFrame::InvalidateFrameWithRect(const nsRect& aRect, uint32_t aDisplayItemKey)
+{
+  nsIFrame::InvalidateFrameWithRect(aRect, aDisplayItemKey);
+  // If we have filters applied that would affects our bounds, then
+  // we get an inactive layer created and this is computed
+  // within FrameLayerBuilder
+  GetParent()->InvalidateFrameWithRect(aRect + GetPosition(), aDisplayItemKey);
+}
 
 #ifdef DEBUG
 NS_IMETHODIMP
@@ -467,11 +488,11 @@ nsTableColGroupFrame::GetFrameName(nsAString& aResult) const
   return MakeFrameName(NS_LITERAL_STRING("TableColGroup"), aResult);
 }
 
-void nsTableColGroupFrame::Dump(PRInt32 aIndent)
+void nsTableColGroupFrame::Dump(int32_t aIndent)
 {
   char* indent = new char[aIndent + 1];
   if (!indent) return;
-  for (PRInt32 i = 0; i < aIndent + 1; i++) {
+  for (int32_t i = 0; i < aIndent + 1; i++) {
     indent[i] = ' ';
   }
   indent[aIndent] = 0;
@@ -491,7 +512,7 @@ void nsTableColGroupFrame::Dump(PRInt32 aIndent)
     break;
   }
   // verify the colindices
-  PRInt32 j = GetStartColumnIndex();
+  int32_t j = GetStartColumnIndex();
   nsTableColFrame* col = GetFirstColumn();
   while (col) {
     NS_ASSERTION(j == col->GetColIndex(), "wrong colindex on col frame");

@@ -6,16 +6,17 @@
 #ifndef nsCocoaFeatures_h_
 #define nsCocoaFeatures_h_
 
+#include "mozilla/StandardInteger.h"
 #include "prtypes.h"
 
 class nsCocoaFeatures {
 public:
-  static PRInt32 OSXVersion();
-  static bool OnSnowLeopardOrLater();
+  static int32_t OSXVersion();
   static bool OnLionOrLater();
+  static bool OnMountainLionOrLater();
   static bool SupportCoreAnimationPlugins();
 
 private:
-  static PRInt32 mOSXVersion;
+  static int32_t mOSXVersion;
 };
 #endif // nsCocoaFeatures_h_

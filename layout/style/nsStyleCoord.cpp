@@ -11,6 +11,7 @@
 #include "prlog.h"
 #include "nsMathUtils.h"
 #include "nsStyleContext.h"
+#include "mozilla/HashFunctions.h"
 
 nsStyleCoord::nsStyleCoord(nsStyleUnit aUnit)
   : mUnit(aUnit)
@@ -22,7 +23,7 @@ nsStyleCoord::nsStyleCoord(nsStyleUnit aUnit)
   mValue.mInt = 0;
 }
 
-nsStyleCoord::nsStyleCoord(PRInt32 aValue, nsStyleUnit aUnit)
+nsStyleCoord::nsStyleCoord(int32_t aValue, nsStyleUnit aUnit)
   : mUnit(aUnit)
 {
   //if you want to pass in eStyleUnit_Coord, don't. instead, use the
@@ -79,6 +80,39 @@ bool nsStyleCoord::operator==(const nsStyleCoord& aOther) const
   return false;
 }
 
+uint32_t nsStyleCoord::HashValue(uint32_t aHash = 0) const
+{
+  aHash = mozilla::AddToHash(aHash, mUnit);
+
+  switch (mUnit) {
+    case eStyleUnit_Null:
+    case eStyleUnit_Normal:
+    case eStyleUnit_Auto:
+    case eStyleUnit_None:
+      return mozilla::AddToHash(aHash, true);
+    case eStyleUnit_Percent:
+    case eStyleUnit_Factor:
+    case eStyleUnit_Degree:
+    case eStyleUnit_Grad:
+    case eStyleUnit_Radian:
+    case eStyleUnit_Turn:
+      return mozilla::AddToHash(aHash, mValue.mFloat);
+    case eStyleUnit_Coord:
+    case eStyleUnit_Integer:
+    case eStyleUnit_Enumerated:
+      return mozilla::AddToHash(aHash, mValue.mInt);
+    case eStyleUnit_Calc:
+      Calc* calcValue = GetCalcValue();
+      aHash = mozilla::AddToHash(aHash, calcValue->mLength);
+      if (HasPercent()) {
+        return mozilla::AddToHash(aHash, calcValue->mPercent);
+      }
+      return aHash;
+  }
+  NS_ABORT_IF_FALSE(false, "unexpected unit");
+  return aHash;
+}
+
 void nsStyleCoord::Reset()
 {
   mUnit = eStyleUnit_Null;
@@ -91,7 +125,7 @@ void nsStyleCoord::SetCoordValue(nscoord aValue)
   mValue.mInt = aValue;
 }
 
-void nsStyleCoord::SetIntValue(PRInt32 aValue, nsStyleUnit aUnit)
+void nsStyleCoord::SetIntValue(int32_t aValue, nsStyleUnit aUnit)
 {
   NS_ASSERTION((aUnit == eStyleUnit_Enumerated) ||
                (aUnit == eStyleUnit_Integer), "not an int value");
@@ -174,23 +208,6 @@ nsStyleCoord::GetAngleValueInRadians() const
   }
 }
 
-// used by nsStyleSides and nsStyleCorners
-#define COMPARE_INDEXED_COORD(i)                                              \
-  PR_BEGIN_MACRO                                                              \
-  if (mUnits[i] != aOther.mUnits[i])                                          \
-    return false;                                                          \
-  if ((eStyleUnit_Percent <= mUnits[i]) &&                                    \
-      (mUnits[i] < eStyleUnit_Coord)) {                                       \
-    if (mValues[i].mFloat != aOther.mValues[i].mFloat)                        \
-      return false;                                                        \
-  }                                                                           \
-  else {                                                                      \
-    if (mValues[i].mInt != aOther.mValues[i].mInt)                            \
-      return false;                                                        \
-  }                                                                           \
-  PR_END_MACRO
-
-
 nsStyleSides::nsStyleSides()
 {
   memset(this, 0x00, sizeof(nsStyleSides));
@@ -199,7 +216,10 @@ nsStyleSides::nsStyleSides()
 bool nsStyleSides::operator==(const nsStyleSides& aOther) const
 {
   NS_FOR_CSS_SIDES(i) {
-    COMPARE_INDEXED_COORD(i);
+    if (nsStyleCoord(mValues[i], (nsStyleUnit)mUnits[i]) !=
+        nsStyleCoord(aOther.mValues[i], (nsStyleUnit)aOther.mUnits[i])) {
+      return false;
+    }
   }
   return true;
 }
@@ -218,7 +238,10 @@ bool
 nsStyleCorners::operator==(const nsStyleCorners& aOther) const
 {
   NS_FOR_CSS_HALF_CORNERS(i) {
-    COMPARE_INDEXED_COORD(i);
+    if (nsStyleCoord(mValues[i], (nsStyleUnit)mUnits[i]) !=
+        nsStyleCoord(aOther.mValues[i], (nsStyleUnit)aOther.mUnits[i])) {
+      return false;
+    }
   }
   return true;
 }

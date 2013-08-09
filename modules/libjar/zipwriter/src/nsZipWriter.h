@@ -15,6 +15,7 @@
 #include "nsCOMArray.h"
 #include "nsTArray.h"
 #include "nsDataHashtable.h"
+#include "mozilla/Attributes.h"
 
 #define ZIPWRITER_CONTRACTID "@mozilla.org/zipwriter;1"
 #define ZIPWRITER_CLASSNAME "Zip Writer"
@@ -26,18 +27,18 @@
 struct nsZipQueueItem
 {
 public:
-    PRUint32 mOperation;
+    uint32_t mOperation;
     nsCString mZipEntry;
     nsCOMPtr<nsIFile> mFile;
     nsCOMPtr<nsIChannel> mChannel;
     nsCOMPtr<nsIInputStream> mStream;
     PRTime mModTime;
-    PRInt32 mCompression;
-    PRUint32 mPermissions;
+    int32_t mCompression;
+    uint32_t mPermissions;
 };
 
-class nsZipWriter : public nsIZipWriter,
-                    public nsIRequestObserver
+class nsZipWriter MOZ_FINAL : public nsIZipWriter,
+                              public nsIRequestObserver
 {
 public:
     NS_DECL_ISUPPORTS
@@ -50,7 +51,7 @@ public:
 private:
     ~nsZipWriter();
 
-    PRUint32 mCDSOffset;
+    uint32_t mCDSOffset;
     bool mCDSDirty;
     bool mInQueue;
 
@@ -60,19 +61,19 @@ private:
     nsCOMPtr<nsIOutputStream> mStream;
     nsCOMArray<nsZipHeader> mHeaders;
     nsTArray<nsZipQueueItem> mQueue;
-    nsDataHashtable<nsCStringHashKey, PRInt32> mEntryHash;
+    nsDataHashtable<nsCStringHashKey, int32_t> mEntryHash;
     nsCString mComment;
 
     nsresult SeekCDS();
     void Cleanup();
     nsresult ReadFile(nsIFile *aFile);
     nsresult InternalAddEntryDirectory(const nsACString & aZipEntry,
-                                       PRTime aModTime, PRUint32 aPermissions);
+                                       PRTime aModTime, uint32_t aPermissions);
     nsresult BeginProcessingAddition(nsZipQueueItem* aItem, bool* complete);
-    nsresult BeginProcessingRemoval(PRInt32 aPos);
+    nsresult BeginProcessingRemoval(int32_t aPos);
     nsresult AddEntryStream(const nsACString & aZipEntry, PRTime aModTime,
-                            PRInt32 aCompression, nsIInputStream *aStream,
-                            bool aQueue, PRUint32 aPermissions);
+                            int32_t aCompression, nsIInputStream *aStream,
+                            bool aQueue, uint32_t aPermissions);
     void BeginProcessingNextItem();
     void FinishQueue(nsresult aStatus);
 };

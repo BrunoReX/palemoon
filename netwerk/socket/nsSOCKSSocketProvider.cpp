@@ -8,7 +8,7 @@
 #include "nsSOCKSSocketProvider.h"
 #include "nsSOCKSIOLayer.h"
 #include "nsCOMPtr.h"
-#include "nsNetError.h"
+#include "nsError.h"
 
 //////////////////////////////////////////////////////////////////////////
 
@@ -41,13 +41,13 @@ nsSOCKSSocketProvider::CreateV5(nsISupports *aOuter, REFNSIID aIID, void **aResu
 }
 
 NS_IMETHODIMP
-nsSOCKSSocketProvider::NewSocket(PRInt32 family,
+nsSOCKSSocketProvider::NewSocket(int32_t family,
                                  const char *host, 
-                                 PRInt32 port,
+                                 int32_t port,
                                  const char *proxyHost,
-                                 PRInt32 proxyPort,
-                                 PRUint32 flags,
-                                 PRFileDesc **result, 
+                                 int32_t proxyPort,
+                                 uint32_t flags,
+                                 PRFileDesc **result,
                                  nsISupports **socksInfo)
 {
     PRFileDesc *sock;
@@ -74,13 +74,13 @@ nsSOCKSSocketProvider::NewSocket(PRInt32 family,
 }
 
 NS_IMETHODIMP
-nsSOCKSSocketProvider::AddToSocket(PRInt32 family,
+nsSOCKSSocketProvider::AddToSocket(int32_t family,
                                    const char *host,
-                                   PRInt32 port,
+                                   int32_t port,
                                    const char *proxyHost,
-                                   PRInt32 proxyPort,
-                                   PRUint32 flags,
-                                   PRFileDesc *sock, 
+                                   int32_t proxyPort,
+                                   uint32_t flags,
+                                   PRFileDesc *sock,
                                    nsISupports **socksInfo)
 {
     nsresult rv = nsSOCKSIOLayerAddToSocket(family,

@@ -20,7 +20,7 @@
 // 2) #include IPDL boilerplate, and then undef LOG so our LOG wins.
 // 3) nsNetModule.cpp does its own crazy stuff with #including prlog.h
 //    multiple times; allow it to define ALLOW_LATE_NSHTTP_H_INCLUDE to bypass
-//    check. 
+//    check.
 #if defined(PR_LOG) && !defined(ALLOW_LATE_NSHTTP_H_INCLUDE)
 #error "If nsHttp.h #included it must come before any IPDL-generated files or other files that #include prlog.h"
 #endif
@@ -69,7 +69,7 @@ extern PRLogModuleInfo *gHttpLog;
 #define NS_HTTP_VERSION_1_0     10
 #define NS_HTTP_VERSION_1_1     11
 
-typedef PRUint8 nsHttpVersion;
+typedef uint8_t nsHttpVersion;
 
 //-----------------------------------------------------------------------------
 // http connection capabilities
@@ -93,10 +93,7 @@ typedef PRUint8 nsHttpVersion;
 // a transaction with this caps flag keeps timing information
 #define NS_HTTP_TIMING_ENABLED       (1<<5)
 
-// a transaction with this caps flag will not only not use an existing
-// persistent connection but it will close outstanding ones to the same
-// host. Used by a forced reload to reset the connection states.
-#define NS_HTTP_CLEAR_KEEPALIVES     (1<<6)
+// (1<<6) is unused
 
 // Disallow the use of the SPDY protocol. This is meant for the contexts
 // such as HTTP upgrade which are nonsensical for SPDY, it is not the
@@ -163,7 +160,7 @@ struct nsHttp
                                  const char *separators);
 
     // This function parses a string containing a decimal-valued, non-negative
-    // 64-bit integer.  If the value would exceed LL_MAXINT, then false is
+    // 64-bit integer.  If the value would exceed INT64_MAX, then false is
     // returned.  Otherwise, this function returns true and stores the
     // parsed value in |result|.  The next unparsed character in |input| is
     // optionally returned via |next| if |next| is non-null.
@@ -171,17 +168,28 @@ struct nsHttp
     // TODO(darin): Replace this with something generic.
     //
     static bool ParseInt64(const char *input, const char **next,
-                             PRInt64 *result);
+                             int64_t *result);
 
     // Variant on ParseInt64 that expects the input string to contain nothing
     // more than the value being parsed.
-    static inline bool ParseInt64(const char *input, PRInt64 *result) {
+    static inline bool ParseInt64(const char *input, int64_t *result) {
         const char *next;
         return ParseInt64(input, &next, result) && *next == '\0';
     }
 
+    // Return whether the HTTP status code represents a permanent redirect
+    static bool IsPermanentRedirect(uint32_t httpStatus);
+
+    // Return whether upon a redirect code of httpStatus for method, the
+    // request method should be rewritten to GET.
+    static bool ShouldRewriteRedirectToGET(uint32_t httpStatus, nsHttpAtom method);
+
+    // Return whether the specified method is safe as per RFC 2616,
+    // Section 9.1.1.
+    static bool IsSafeMethod(nsHttpAtom method);
+
     // Declare all atoms
-    // 
+    //
     // The atom names and values are stored in nsHttpAtomList.h and are brought
     // to you by the magic of C preprocessing.  Add new atoms to nsHttpAtomList
     // and all support logic will be auto-generated.
@@ -195,16 +203,16 @@ struct nsHttp
 // utilities...
 //-----------------------------------------------------------------------------
 
-static inline PRUint32
+static inline uint32_t
 PRTimeToSeconds(PRTime t_usec)
 {
-    return PRUint32( t_usec / PR_USEC_PER_SEC );
+    return uint32_t( t_usec / PR_USEC_PER_SEC );
 }
 
 #define NowInSeconds() PRTimeToSeconds(PR_Now())
 
-// round q-value to one decimal place; return most significant digit as uint.
-#define QVAL_TO_UINT(q) ((unsigned int) ((q + 0.05) * 10.0))
+// Round q-value to 2 decimal places; return 2 most significant digits as uint.
+#define QVAL_TO_UINT(q) ((unsigned int) ((q + 0.005) * 100.0))
 
 #define HTTP_LWS " \t"
 #define HTTP_HEADER_VALUE_SEPS HTTP_LWS ","

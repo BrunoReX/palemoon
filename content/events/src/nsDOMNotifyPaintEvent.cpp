@@ -4,16 +4,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "base/basictypes.h"
-#include "IPC/IPCMessageUtils.h"
+#include "ipc/IPCMessageUtils.h"
 #include "nsDOMNotifyPaintEvent.h"
 #include "nsContentUtils.h"
 #include "nsClientRect.h"
 #include "nsPaintRequest.h"
 #include "nsIFrame.h"
+#include "nsDOMClassInfoID.h"
 
 nsDOMNotifyPaintEvent::nsDOMNotifyPaintEvent(nsPresContext* aPresContext,
                                              nsEvent* aEvent,
-                                             PRUint32 aEventType,
+                                             uint32_t aEventType,
                                              nsInvalidateRequestList* aInvalidateRequests)
 : nsDOMEvent(aPresContext, aEvent)
 {
@@ -21,7 +22,7 @@ nsDOMNotifyPaintEvent::nsDOMNotifyPaintEvent(nsPresContext* aPresContext,
     mEvent->message = aEventType;
   }
   if (aInvalidateRequests) {
-    mInvalidateRequests.SwapElements(aInvalidateRequests->mRequests);
+    mInvalidateRequests.MoveElementsFrom(aInvalidateRequests->mRequests);
   }
 }
 
@@ -39,12 +40,10 @@ nsRegion
 nsDOMNotifyPaintEvent::GetRegion()
 {
   nsRegion r;
-  bool isTrusted = nsContentUtils::IsCallerTrustedForRead();
-  for (PRUint32 i = 0; i < mInvalidateRequests.Length(); ++i) {
-    if (!isTrusted &&
-        (mInvalidateRequests[i].mFlags & nsIFrame::INVALIDATE_CROSS_DOC))
-      continue;
-
+  if (!nsContentUtils::IsCallerChrome()) {
+    return r;
+  }
+  for (uint32_t i = 0; i < mInvalidateRequests.Length(); ++i) {
     r.Or(r, mInvalidateRequests[i].mRect);
     r.SimplifyOutward(10);
   }
@@ -98,24 +97,22 @@ nsDOMNotifyPaintEvent::GetPaintRequests(nsIDOMPaintRequestList** aResult)
   if (!requests)
     return NS_ERROR_OUT_OF_MEMORY;
 
-  bool isTrusted = nsContentUtils::IsCallerTrustedForRead();
-  for (PRUint32 i = 0; i < mInvalidateRequests.Length(); ++i) {
-    if (!isTrusted &&
-        (mInvalidateRequests[i].mFlags & nsIFrame::INVALIDATE_CROSS_DOC))
-      continue;
-
-    nsRefPtr<nsPaintRequest> r = new nsPaintRequest();
-    if (!r)
-      return NS_ERROR_OUT_OF_MEMORY;
-    r->SetRequest(mInvalidateRequests[i]);
-    requests->Append(r);
+  if (nsContentUtils::IsCallerChrome()) {
+    for (uint32_t i = 0; i < mInvalidateRequests.Length(); ++i) {
+      nsRefPtr<nsPaintRequest> r = new nsPaintRequest();
+      if (!r)
+        return NS_ERROR_OUT_OF_MEMORY;
+ 
+      r->SetRequest(mInvalidateRequests[i]);
+      requests->Append(r);
+    }
   }
 
   requests.forget(aResult);
   return NS_OK;
 }
 
-void
+NS_IMETHODIMP_(void)
 nsDOMNotifyPaintEvent::Serialize(IPC::Message* aMsg,
                                  bool aSerializeInterfaceType)
 {
@@ -125,9 +122,9 @@ nsDOMNotifyPaintEvent::Serialize(IPC::Message* aMsg,
 
   nsDOMEvent::Serialize(aMsg, false);
 
-  PRUint32 length = mInvalidateRequests.Length();
+  uint32_t length = mInvalidateRequests.Length();
   IPC::WriteParam(aMsg, length);
-  for (PRUint32 i = 0; i < length; ++i) {
+  for (uint32_t i = 0; i < length; ++i) {
     IPC::WriteParam(aMsg, mInvalidateRequests[i].mRect.x);
     IPC::WriteParam(aMsg, mInvalidateRequests[i].mRect.y);
     IPC::WriteParam(aMsg, mInvalidateRequests[i].mRect.width);
@@ -136,15 +133,15 @@ nsDOMNotifyPaintEvent::Serialize(IPC::Message* aMsg,
   }
 }
 
-bool
+NS_IMETHODIMP_(bool)
 nsDOMNotifyPaintEvent::Deserialize(const IPC::Message* aMsg, void** aIter)
 {
   NS_ENSURE_TRUE(nsDOMEvent::Deserialize(aMsg, aIter), false);
 
-  PRUint32 length = 0;
+  uint32_t length = 0;
   NS_ENSURE_TRUE(IPC::ReadParam(aMsg, aIter, &length), false);
   mInvalidateRequests.SetCapacity(length);
-  for (PRUint32 i = 0; i < length; ++i) {
+  for (uint32_t i = 0; i < length; ++i) {
     nsInvalidateRequestList::Request req;
     NS_ENSURE_TRUE(IPC::ReadParam(aMsg, aIter, &req.mRect.x), false);
     NS_ENSURE_TRUE(IPC::ReadParam(aMsg, aIter, &req.mRect.y), false);
@@ -160,13 +157,13 @@ nsDOMNotifyPaintEvent::Deserialize(const IPC::Message* aMsg, void** aIter)
 nsresult NS_NewDOMNotifyPaintEvent(nsIDOMEvent** aInstancePtrResult,
                                    nsPresContext* aPresContext,
                                    nsEvent *aEvent,
-                                   PRUint32 aEventType,
+                                   uint32_t aEventType,
                                    nsInvalidateRequestList* aInvalidateRequests) 
 {
   nsDOMNotifyPaintEvent* it =
     new nsDOMNotifyPaintEvent(aPresContext, aEvent, aEventType,
                               aInvalidateRequests);
-  if (nsnull == it) {
+  if (nullptr == it) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 

@@ -5,20 +5,20 @@
 
 package org.mozilla.gecko.gfx;
 
-import java.util.LinkedList;
-import java.util.Queue;
+import org.mozilla.gecko.OnInterceptTouchListener;
+import org.mozilla.gecko.Tab;
+import org.mozilla.gecko.Tabs;
+import org.mozilla.gecko.ui.PanZoomController;
+import org.mozilla.gecko.ui.SimpleScaleGestureDetector;
+
 import android.content.Context;
-import android.graphics.PointF;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 
-import org.mozilla.gecko.ui.PanZoomController;
-import org.mozilla.gecko.ui.SimpleScaleGestureDetector;
-import org.mozilla.gecko.OnInterceptTouchListener;
-import org.mozilla.gecko.Tab;
-import org.mozilla.gecko.Tabs;
+import java.util.LinkedList;
+import java.util.Queue;
 
 /**
  * This class handles incoming touch events from the user and sends them to
@@ -125,17 +125,17 @@ public final class TouchEventHandler implements Tabs.OnTabsChangedListener {
     //   processed. (n is the absolute value of the balance.)
     private int mProcessingBalance;
 
-    TouchEventHandler(Context context, LayerView view, LayerController controller) {
+    TouchEventHandler(Context context, LayerView view, GeckoLayerClient layerClient) {
         mView = view;
 
         mEventQueue = new LinkedList<MotionEvent>();
-        mGestureDetector = new GestureDetector(context, controller.getGestureListener());
-        mScaleGestureDetector = new SimpleScaleGestureDetector(controller.getScaleGestureListener());
-        mPanZoomController = controller.getPanZoomController();
+        mPanZoomController = layerClient.getPanZoomController();
+        mGestureDetector = new GestureDetector(context, mPanZoomController);
+        mScaleGestureDetector = new SimpleScaleGestureDetector(mPanZoomController);
         mListenerTimeoutProcessor = new ListenerTimeoutProcessor();
         mDispatchEvents = true;
 
-        mGestureDetector.setOnDoubleTapListener(controller.getDoubleTapListener());
+        mGestureDetector.setOnDoubleTapListener(mPanZoomController);
 
         Tabs.registerOnTabsChangedListener(this);
     }
@@ -150,6 +150,12 @@ public final class TouchEventHandler implements Tabs.OnTabsChangedListener {
         }
 
         if (mOnTouchListener.onInterceptTouchEvent(mView, event)) {
+            return true;
+        }
+
+        // if this is a hover event just notify gecko, we don't have any interest in the java layer.
+        if (isHoverEvent(event)) {
+            mOnTouchListener.onTouch(mView, event);
             return true;
         }
 
@@ -231,6 +237,11 @@ public final class TouchEventHandler implements Tabs.OnTabsChangedListener {
         mOnTouchListener = onTouchListener;
     }
 
+    private boolean isHoverEvent(MotionEvent event) {
+        int action = (event.getAction() & MotionEvent.ACTION_MASK);
+        return (action == MotionEvent.ACTION_HOVER_ENTER || action == MotionEvent.ACTION_HOVER_MOVE || action == MotionEvent.ACTION_HOVER_EXIT);
+    }
+
     private boolean isDownEvent(MotionEvent event) {
         int action = (event.getAction() & MotionEvent.ACTION_MASK);
         return (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN);
@@ -246,16 +257,7 @@ public final class TouchEventHandler implements Tabs.OnTabsChangedListener {
      */
     private void dispatchEvent(MotionEvent event) {
         if (mGestureDetector.onTouchEvent(event)) {
-            // An up/cancel event should get passed to both detectors, in
-            // case it comes from a pointer the scale detector is tracking.
-            switch (event.getAction() & MotionEvent.ACTION_MASK) {
-                case MotionEvent.ACTION_POINTER_UP:
-                case MotionEvent.ACTION_UP:
-                case MotionEvent.ACTION_CANCEL:
-                    break;
-                default:
-                    return;
-            }
+            return;
         }
         mScaleGestureDetector.onTouchEvent(event);
         if (mScaleGestureDetector.isInProgress()) {

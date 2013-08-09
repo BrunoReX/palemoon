@@ -11,6 +11,10 @@ var gCert;
 var gChecking;
 var gBroken;
 var gNeedReset;
+var gSecHistogram;
+var gNsISecTel;
+
+Components.utils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
 
 function badCertListener() {}
 badCertListener.prototype = {
@@ -42,6 +46,10 @@ function initExceptionDialog() {
   gDialog = document.documentElement;
   gBundleBrand = srGetStrBundle("chrome://branding/locale/brand.properties");
   gPKIBundle = srGetStrBundle("chrome://pippki/locale/pippki.properties");
+  gSecHistogram = Components.classes["@mozilla.org/base/telemetry;1"].
+                    getService(Components.interfaces.nsITelemetry).
+                    getHistogramById("SECURITY_UI");
+  gNsISecTel = Components.interfaces.nsISecurityUITelemetry;
 
   var brandName = gBundleBrand.GetStringFromName("brandShortName");
   
@@ -203,21 +211,24 @@ function updateCertStatus() {
   var shortDesc3, longDesc3;
   var use2 = false;
   var use3 = false;
+  let bucketId = gNsISecTel.WARNING_BAD_CERT_ADD_EXCEPTION_BASE;
   if(gCert) {
     if(gBroken) { 
       var mms = "addExceptionDomainMismatchShort";
       var mml = "addExceptionDomainMismatchLong";
       var exs = "addExceptionExpiredShort";
       var exl = "addExceptionExpiredLong";
-      var uts = "addExceptionUnverifiedShort";
-      var utl = "addExceptionUnverifiedLong";
+      var uts = "addExceptionUnverifiedOrBadSignatureShort";
+      var utl = "addExceptionUnverifiedOrBadSignatureLong";
       var use1 = false;
       if (gSSLStatus.isDomainMismatch) {
+        bucketId += gNsISecTel.WARNING_BAD_CERT_ADD_EXCEPTION_FLAG_DOMAIN;
         use1 = true;
         shortDesc = mms;
         longDesc  = mml;
       }
       if (gSSLStatus.isNotValidAtThisTime) {
+        bucketId += gNsISecTel.WARNING_BAD_CERT_ADD_EXCEPTION_FLAG_TIME;
         if (!use1) {
           use1 = true;
           shortDesc = exs;
@@ -230,6 +241,7 @@ function updateCertStatus() {
         }
       }
       if (gSSLStatus.isUntrusted) {
+        bucketId += gNsISecTel.WARNING_BAD_CERT_ADD_EXCEPTION_FLAG_UNTRUSTED;
         if (!use1) {
           use1 = true;
           shortDesc = uts;
@@ -246,7 +258,8 @@ function updateCertStatus() {
           longDesc3  = utl;
         }
       }
-      
+      gSecHistogram.add(bucketId);
+
       // In these cases, we do want to enable the "Add Exception" button
       gDialog.getButton("extra1").disabled = false;
 
@@ -317,6 +330,7 @@ function updateCertStatus() {
  * Handle user request to display certificate details
  */
 function viewCertButtonClick() {
+  gSecHistogram.add(gNsISecTel.WARNING_BAD_CERT_CLICK_VIEW_CERT);
   if (gCert)
     viewCertHelper(this, gCert);
     
@@ -332,16 +346,26 @@ function addException() {
   var overrideService = Components.classes["@mozilla.org/security/certoverride;1"]
                                   .getService(Components.interfaces.nsICertOverrideService);
   var flags = 0;
-  if(gSSLStatus.isUntrusted)
+  let confirmBucketId = gNsISecTel.WARNING_BAD_CERT_CONFIRM_ADD_EXCEPTION_BASE;
+  if (gSSLStatus.isUntrusted) {
     flags |= overrideService.ERROR_UNTRUSTED;
-  if(gSSLStatus.isDomainMismatch)
+    confirmBucketId += gNsISecTel.WARNING_BAD_CERT_CONFIRM_ADD_EXCEPTION_FLAG_UNTRUSTED;
+  }
+  if (gSSLStatus.isDomainMismatch) {
     flags |= overrideService.ERROR_MISMATCH;
-  if(gSSLStatus.isNotValidAtThisTime)
+    confirmBucketId += gNsISecTel.WARNING_BAD_CERT_CONFIRM_ADD_EXCEPTION_FLAG_DOMAIN;
+  }
+  if (gSSLStatus.isNotValidAtThisTime) {
     flags |= overrideService.ERROR_TIME;
+    confirmBucketId += gNsISecTel.WARNING_BAD_CERT_CONFIRM_ADD_EXCEPTION_FLAG_TIME;
+  }
   
   var permanentCheckbox = document.getElementById("permanent");
   var shouldStorePermanently = permanentCheckbox.checked && !inPrivateBrowsingMode();
+  if(!permanentCheckbox.checked)
+   gSecHistogram.add(gNsISecTel.WARNING_BAD_CERT_DONT_REMEMBER_EXCEPTION);
 
+  gSecHistogram.add(confirmBucketId);
   var uri = getURI();
   overrideService.rememberValidityOverride(
     uri.asciiHost, uri.port,
@@ -357,22 +381,8 @@ function addException() {
 }
 
 /**
- * Returns true if the private browsing mode is currently active and
- * we have been instructed to handle it.
+ * Returns true if this dialog is in private browsing mode.
  */
 function inPrivateBrowsingMode() {
-  // first, check to see if we should handle the private browsing mode
-  var args = window.arguments;
-  if (args && args[0] && args[0].handlePrivateBrowsing) {
-    // detect if the private browsing mode is active
-    try {
-      var pb = Components.classes["@mozilla.org/privatebrowsing;1"].
-               getService(Components.interfaces.nsIPrivateBrowsingService);
-      return pb.privateBrowsingEnabled;
-    } catch (ex) {
-      Components.utils.reportError("Could not get the Private Browsing service");
-    }
-  }
-
-  return false;
+  return PrivateBrowsingUtils.isWindowPrivate(window);
 }

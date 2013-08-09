@@ -18,10 +18,10 @@ static const char* sDiscardTimeoutPref = "image.mem.min_discard_timeout_ms";
 /* static */ nsCOMPtr<nsITimer> DiscardTracker::sTimer;
 /* static */ bool DiscardTracker::sInitialized = false;
 /* static */ bool DiscardTracker::sTimerOn = false;
-/* static */ PRInt32 DiscardTracker::sDiscardRunnablePending = 0;
-/* static */ PRInt64 DiscardTracker::sCurrentDecodedImageBytes = 0;
-/* static */ PRUint32 DiscardTracker::sMinDiscardTimeoutMs = 10000;
-/* static */ PRUint32 DiscardTracker::sMaxDecodedImageKB = 42 * 1024;
+/* static */ int32_t DiscardTracker::sDiscardRunnablePending = 0;
+/* static */ int64_t DiscardTracker::sCurrentDecodedImageBytes = 0;
+/* static */ uint32_t DiscardTracker::sMinDiscardTimeoutMs = 10000;
+/* static */ uint32_t DiscardTracker::sMaxDecodedImageKB = 42 * 1024;
 /* static */ PRLock * DiscardTracker::sAllocationLock = NULL;
 
 /*
@@ -102,6 +102,10 @@ DiscardTracker::Shutdown()
     sTimer->Cancel();
     sTimer = NULL;
   }
+
+  // Clear the sDiscardableImages linked list so that its destructor
+  // (LinkedList.h) finds an empty array, which is required after bug 803688.
+  DiscardAll();
 }
 
 /*
@@ -127,7 +131,7 @@ DiscardTracker::DiscardAll()
 }
 
 void
-DiscardTracker::InformAllocation(PRInt64 bytes)
+DiscardTracker::InformAllocation(int64_t bytes)
 {
   // This function is called back e.g. from RasterImage::Discard(); be careful!
 
@@ -181,7 +185,7 @@ void
 DiscardTracker::ReloadTimeout()
 {
   // Read the timeout pref.
-  PRInt32 discardTimeout;
+  int32_t discardTimeout;
   nsresult rv = Preferences::GetInt(sDiscardTimeoutPref, &discardTimeout);
 
   // If we got something bogus, return.
@@ -189,11 +193,11 @@ DiscardTracker::ReloadTimeout()
     return;
 
   // If the value didn't change, return.
-  if ((PRUint32) discardTimeout == sMinDiscardTimeoutMs)
+  if ((uint32_t) discardTimeout == sMinDiscardTimeoutMs)
     return;
 
   // Update the value.
-  sMinDiscardTimeoutMs = (PRUint32) discardTimeout;
+  sMinDiscardTimeoutMs = (uint32_t) discardTimeout;
 
   // Restart the timer so the new timeout takes effect.
   DisableTimer();
@@ -218,7 +222,7 @@ DiscardTracker::EnableTimer()
   // ms, so that an image is discarded between sMinDiscardTimeoutMs and
   // (3/2 * sMinDiscardTimeoutMs) ms after it's unlocked.
   return sTimer->InitWithFuncCallback(TimerCallback,
-                                      nsnull,
+                                      nullptr,
                                       sMinDiscardTimeoutMs / 2,
                                       nsITimer::TYPE_REPEATING_SLACK);
 }

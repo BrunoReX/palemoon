@@ -56,7 +56,7 @@ let Telemetry = {
    * Observes for gather telemetry topic.
    */
   observe: function Telemetry_observe(aSubject, aTopic, aData) {
-    if (!gPrivateBrowsing.privateBrowsingEnabled)
+    if (!gWindow.PrivateBrowsingUtils.isWindowPrivate(gWindow))
       this._collect();
   }
 }

@@ -15,8 +15,8 @@ nsHttpHeaderArray::SetHeader(nsHttpAtom header,
                              const nsACString &value,
                              bool merge)
 {
-    nsEntry *entry = nsnull;
-    PRInt32 index;
+    nsEntry *entry = nullptr;
+    int32_t index;
 
     index = LookupEntry(header, &entry);
 
@@ -47,10 +47,9 @@ nsHttpHeaderArray::SetHeader(nsHttpAtom header,
 nsresult
 nsHttpHeaderArray::SetHeaderFromNet(nsHttpAtom header, const nsACString &value)
 {
-    nsEntry *entry = nsnull;
-    PRInt32 index;
+    nsEntry *entry = nullptr;
 
-    index = LookupEntry(header, &entry);
+    LookupEntry(header, &entry);
 
     if (!entry) {
         if (value.IsEmpty()) {
@@ -91,15 +90,15 @@ nsHttpHeaderArray::ClearHeader(nsHttpAtom header)
 const char *
 nsHttpHeaderArray::PeekHeader(nsHttpAtom header) const
 {
-    const nsEntry *entry = nsnull;
+    const nsEntry *entry = nullptr;
     LookupEntry(header, &entry);
-    return entry ? entry->value.get() : nsnull;
+    return entry ? entry->value.get() : nullptr;
 }
 
 nsresult
 nsHttpHeaderArray::GetHeader(nsHttpAtom header, nsACString &result) const
 {
-    const nsEntry *entry = nsnull;
+    const nsEntry *entry = nullptr;
     LookupEntry(header, &entry);
     if (!entry)
         return NS_ERROR_NOT_AVAILABLE;
@@ -111,7 +110,7 @@ nsresult
 nsHttpHeaderArray::VisitHeaders(nsIHttpHeaderVisitor *visitor)
 {
     NS_ENSURE_ARG_POINTER(visitor);
-    PRUint32 i, count = mHeaders.Length();
+    uint32_t i, count = mHeaders.Length();
     for (i = 0; i < count; ++i) {
         const nsEntry &entry = mHeaders[i];
         if (NS_FAILED(visitor->VisitHeader(nsDependentCString(entry.header),
@@ -181,7 +180,7 @@ nsHttpHeaderArray::ParseHeaderLine(const char *line,
 void
 nsHttpHeaderArray::Flatten(nsACString &buf, bool pruneProxyHeaders)
 {
-    PRUint32 i, count = mHeaders.Length();
+    uint32_t i, count = mHeaders.Length();
     for (i = 0; i < count; ++i) {
         const nsEntry &entry = mHeaders[i];
         // prune proxy headers if requested
@@ -196,7 +195,7 @@ nsHttpHeaderArray::Flatten(nsACString &buf, bool pruneProxyHeaders)
 }
 
 const char *
-nsHttpHeaderArray::PeekHeaderAt(PRUint32 index, nsHttpAtom &header) const
+nsHttpHeaderArray::PeekHeaderAt(uint32_t index, nsHttpAtom &header) const
 {
     const nsEntry &entry = mHeaders[index];
 

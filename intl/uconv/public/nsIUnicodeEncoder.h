@@ -22,18 +22,6 @@
 	{ 0x299bccd0, 0xc6df, 0x11d2, \
 		{0x8a, 0xa8, 0x0, 0x60, 0x8, 0x11, 0xa8, 0x36 }}
 
-#define NS_OK_UENC_EXACTLENGTH      \
-  NS_ERROR_GENERATE_SUCCESS(NS_ERROR_MODULE_UCONV, 0x21)
-
-#define NS_OK_UENC_MOREOUTPUT       \
-  NS_ERROR_GENERATE_SUCCESS(NS_ERROR_MODULE_UCONV, 0x22)
-
-#define NS_ERROR_UENC_NOMAPPING     \
-  NS_ERROR_GENERATE_SUCCESS(NS_ERROR_MODULE_UCONV, 0x23)
-
-#define NS_OK_UENC_MOREINPUT       \
-  NS_ERROR_GENERATE_SUCCESS(NS_ERROR_MODULE_UCONV, 0x24)
-
 
 #define NS_UNICODEENCODER_CONTRACTID_BASE "@mozilla.org/intl/unicode/encoder;1?charset="
 
@@ -52,7 +40,7 @@ public:
   /**
    * Converts a character from Unicode to a Charset.
    */
-  NS_IMETHOD Convert(PRUnichar aChar, char * aDest, PRInt32 * aDestLength) = 0;
+  NS_IMETHOD Convert(PRUnichar aChar, char * aDest, int32_t * aDestLength) = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIUnicharEncoder, NS_IUNICHARENCODER_IID)
@@ -64,17 +52,17 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsIUnicharEncoder, NS_IUNICHARENCODER_IID)
 //    p = the buffer pointer   (char*)
 //    e = encoder              (nsIUnicodeEncoder*)
 //    s = string               (PRUnichar*)
-//    l = string length        (PRInt32)
+//    l = string length        (int32_t)
 //   sb = static buffer        (char[])
-//  sbl = static buffer length (PRUint32)
-//   al = actual buffer length (PRInt32)
+//  sbl = static buffer length (uint32_t)
+//   al = actual buffer length (int32_t)
 //
 #define ENCODER_BUFFER_ALLOC_IF_NEEDED(p,e,s,l,sb,sbl,al) \
   PR_BEGIN_MACRO                                          \
     if (e                                                 \
         && NS_SUCCEEDED((e)->GetMaxLength((s), (l), &(al)))\
-        && ((al) > (PRInt32)(sbl))                        \
-        && (nsnull!=((p)=(char*)nsMemory::Alloc((al)+1))) \
+        && ((al) > (int32_t)(sbl))                        \
+        && (nullptr!=((p)=(char*)nsMemory::Alloc((al)+1))) \
         ) {                                               \
     }                                                     \
     else {                                                \
@@ -144,8 +132,8 @@ public:
    *                    NS_ERROR_UENC_NOMAPPING if character without mapping
    *                    was encountered and the behavior was set to "signal".
    */
-  NS_IMETHOD Convert(const PRUnichar * aSrc, PRInt32 * aSrcLength, 
-      char * aDest, PRInt32 * aDestLength) = 0;
+  NS_IMETHOD Convert(const PRUnichar * aSrc, int32_t * aSrcLength, 
+      char * aDest, int32_t * aDestLength) = 0;
 
   /**
    * Finishes the conversion. The converter has the possibility to write some 
@@ -157,7 +145,7 @@ public:
    * @return            NS_OK_UENC_MOREOUTPUT if only  a partial conversion
    *                    was done; more output space is needed to continue
    */
-  NS_IMETHOD Finish(char * aDest, PRInt32 * aDestLength) = 0;
+  NS_IMETHOD Finish(char * aDest, int32_t * aDestLength) = 0;
 
   /**
    * Returns a quick estimation of the size of the buffer needed to hold the
@@ -170,8 +158,8 @@ public:
    * @return            NS_OK_UENC_EXACTLENGTH if an exact length was computed
    *                    NS_OK if all we have is an approximation
    */
-  NS_IMETHOD GetMaxLength(const PRUnichar * aSrc, PRInt32 aSrcLength, 
-      PRInt32 * aDestLength) = 0;
+  NS_IMETHOD GetMaxLength(const PRUnichar * aSrc, int32_t aSrcLength, 
+      int32_t * aDestLength) = 0;
 
   /**
    * Resets the charset converter so it may be recycled for a completely 
@@ -184,7 +172,7 @@ public:
    *
    * @param aOrder      [IN] the behavior; taken from the enum
    */
-  NS_IMETHOD SetOutputErrorBehavior(PRInt32 aBehavior, 
+  NS_IMETHOD SetOutputErrorBehavior(int32_t aBehavior, 
       nsIUnicharEncoder * aEncoder, PRUnichar aChar) = 0;
 };
 

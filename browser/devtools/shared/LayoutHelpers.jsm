@@ -8,9 +8,19 @@ const Cu = Components.utils;
 const Ci = Components.interfaces;
 const Cr = Components.results;
 
-var EXPORTED_SYMBOLS = ["LayoutHelpers"];
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
-LayoutHelpers = {
+XPCOMUtils.defineLazyModuleGetter(this, "Services",
+  "resource://gre/modules/Services.jsm");
+
+XPCOMUtils.defineLazyGetter(this, "PlatformKeys", function() {
+  return Services.strings.createBundle(
+    "chrome://global-platform/locale/platformKeys.properties");
+});
+
+this.EXPORTED_SYMBOLS = ["LayoutHelpers"];
+
+this.LayoutHelpers = LayoutHelpers = {
 
   /**
    * Compute the position and the dimensions for the visible portion
@@ -165,7 +175,7 @@ LayoutHelpers = {
     let zoom =
       aWin.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
         .getInterface(Components.interfaces.nsIDOMWindowUtils)
-        .screenPixelsPerCSSPixel;
+        .fullZoom;
 
     // adjust rect for zoom scaling
     let aRectScaled = {};
@@ -186,8 +196,7 @@ LayoutHelpers = {
    * @param integer aY
    * @returns Node|null the element node found at the given coordinates.
    */
-  getElementFromPoint: function LH_elementFromPoint(aDocument, aX, aY)
-  {
+  getElementFromPoint: function LH_elementFromPoint(aDocument, aX, aY) {
     let node = aDocument.elementFromPoint(aX, aY);
     if (node && node.contentDocument) {
       if (node instanceof Ci.nsIDOMHTMLIFrameElement) {
@@ -214,4 +223,157 @@ LayoutHelpers = {
     }
     return node;
   },
+
+  /**
+   * Scroll the document so that the element "elem" appears in the viewport.
+   *
+   * @param Element elem the element that needs to appear in the viewport.
+   * @param bool centered true if you want it centered, false if you want it to
+   * appear on the top of the viewport. It is true by default, and that is
+   * usually what you want.
+   */
+  scrollIntoViewIfNeeded:
+  function LH_scrollIntoViewIfNeeded(elem, centered) {
+    // We want to default to centering the element in the page,
+    // so as to keep the context of the element.
+    centered = centered === undefined? true: !!centered;
+
+    let win = elem.ownerDocument.defaultView;
+    let clientRect = elem.getBoundingClientRect();
+
+    // The following are always from the {top, bottom, left, right}
+    // of the viewport, to the {top, …} of the box.
+    // Think of them as geometrical vectors, it helps.
+    // The origin is at the top left.
+
+    let topToBottom = clientRect.bottom;
+    let bottomToTop = clientRect.top - win.innerHeight;
+    let leftToRight = clientRect.right;
+    let rightToLeft = clientRect.left - win.innerWidth;
+    let xAllowed = true;  // We allow one translation on the x axis,
+    let yAllowed = true;  // and one on the y axis.
+
+    // Whatever `centered` is, the behavior is the same if the box is
+    // (even partially) visible.
+
+    if ((topToBottom > 0 || !centered) && topToBottom <= elem.offsetHeight) {
+      win.scrollBy(0, topToBottom - elem.offsetHeight);
+      yAllowed = false;
+    } else
+    if ((bottomToTop < 0 || !centered) && bottomToTop >= -elem.offsetHeight) {
+      win.scrollBy(0, bottomToTop + elem.offsetHeight);
+      yAllowed = false;
+    }
+
+    if ((leftToRight > 0 || !centered) && leftToRight <= elem.offsetWidth) {
+      if (xAllowed) {
+        win.scrollBy(leftToRight - elem.offsetWidth, 0);
+        xAllowed = false;
+      }
+    } else
+    if ((rightToLeft < 0 || !centered) && rightToLeft >= -elem.offsetWidth) {
+      if (xAllowed) {
+        win.scrollBy(rightToLeft + elem.offsetWidth, 0);
+        xAllowed = false;
+      }
+    }
+
+    // If we want it centered, and the box is completely hidden,
+    // then we center it explicitly.
+
+    if (centered) {
+
+      if (yAllowed && (topToBottom <= 0 || bottomToTop >= 0)) {
+        win.scroll(win.scrollX,
+                   win.scrollY + clientRect.top
+                   - (win.innerHeight - elem.offsetHeight) / 2);
+      }
+
+      if (xAllowed && (leftToRight <= 0 || rightToLeft <= 0)) {
+        win.scroll(win.scrollX + clientRect.left
+                   - (win.innerWidth - elem.offsetWidth) / 2,
+                   win.scrollY);
+      }
+    }
+
+    if (win.parent !== win) {
+      // We are inside an iframe.
+      LH_scrollIntoViewIfNeeded(win.frameElement, centered);
+    }
+  },
+
+  /**
+   * Check if a node and its document are still alive
+   * and attached to the window.
+   *
+   * @param aNode
+   */
+  isNodeConnected: function LH_isNodeConnected(aNode)
+  {
+    try {
+      let connected = (aNode.ownerDocument && aNode.ownerDocument.defaultView &&
+                      !(aNode.compareDocumentPosition(aNode.ownerDocument.documentElement) &
+                      aNode.DOCUMENT_POSITION_DISCONNECTED));
+      return connected;
+    } catch (e) {
+      // "can't access dead object" error
+      return false;
+    }
+  },
+
+  /**
+   * Prettifies the modifier keys for an element.
+   *
+   * @param Node aElemKey
+   *        The key element to get the modifiers from.
+   * @return string
+   *         A prettified and properly separated modifier keys string.
+   */
+  prettyKey: function LH_prettyKey(aElemKey)
+  {
+    let elemString = "";
+    let elemMod = aElemKey.getAttribute("modifiers");
+
+    if (elemMod.match("accel")) {
+      if (Services.appinfo.OS == "Darwin") {
+        // XXX bug 779642 Use "Cmd-" literal vs. cloverleaf meta-key until
+        // Orion adds variable height lines.
+        // elemString += PlatformKeys.GetStringFromName("VK_META") +
+        //               PlatformKeys.GetStringFromName("MODIFIER_SEPARATOR");
+        elemString += "Cmd-";
+      } else {
+        elemString += PlatformKeys.GetStringFromName("VK_CONTROL") +
+                      PlatformKeys.GetStringFromName("MODIFIER_SEPARATOR");
+      }
+    }
+    if (elemMod.match("access")) {
+      if (Services.appinfo.OS == "Darwin") {
+        elemString += PlatformKeys.GetStringFromName("VK_CONTROL") +
+                      PlatformKeys.GetStringFromName("MODIFIER_SEPARATOR");
+      } else {
+        elemString += PlatformKeys.GetStringFromName("VK_ALT") +
+                      PlatformKeys.GetStringFromName("MODIFIER_SEPARATOR");
+      }
+    }
+    if (elemMod.match("shift")) {
+      elemString += PlatformKeys.GetStringFromName("VK_SHIFT") +
+                    PlatformKeys.GetStringFromName("MODIFIER_SEPARATOR");
+    }
+    if (elemMod.match("alt")) {
+      elemString += PlatformKeys.GetStringFromName("VK_ALT") +
+                    PlatformKeys.GetStringFromName("MODIFIER_SEPARATOR");
+    }
+    if (elemMod.match("ctrl") || elemMod.match("control")) {
+      elemString += PlatformKeys.GetStringFromName("VK_CONTROL") +
+                    PlatformKeys.GetStringFromName("MODIFIER_SEPARATOR");
+    }
+    if (elemMod.match("meta")) {
+      elemString += PlatformKeys.GetStringFromName("VK_META") +
+                    PlatformKeys.GetStringFromName("MODIFIER_SEPARATOR");
+    }
+
+    return elemString +
+      (aElemKey.getAttribute("keycode").replace(/^.*VK_/, "") ||
+       aElemKey.getAttribute("key")).toUpperCase();
+  }
 };

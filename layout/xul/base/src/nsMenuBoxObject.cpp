@@ -7,7 +7,6 @@
 #include "nsBoxObject.h"
 #include "nsIFrame.h"
 #include "nsGUIEvent.h"
-#include "nsIDOMNSEvent.h"
 #include "nsMenuBarFrame.h"
 #include "nsMenuBarListener.h"
 #include "nsMenuFrame.h"
@@ -46,8 +45,9 @@ NS_IMETHODIMP nsMenuBoxObject::OpenMenu(bool aOpenFlag)
         pm->ShowMenu(content, false, false);
       }
       else {
-        if (frame->GetType() == nsGkAtoms::menuFrame) {
-          nsMenuPopupFrame* popupFrame = (static_cast<nsMenuFrame *>(frame))->GetPopup();
+        nsMenuFrame* menu = do_QueryFrame(frame);
+        if (menu) {
+          nsMenuPopupFrame* popupFrame = menu->GetPopup();
           if (popupFrame)
             pm->HidePopup(popupFrame->GetContent(), false, true, false);
         }
@@ -60,18 +60,18 @@ NS_IMETHODIMP nsMenuBoxObject::OpenMenu(bool aOpenFlag)
 
 NS_IMETHODIMP nsMenuBoxObject::GetActiveChild(nsIDOMElement** aResult)
 {
-  *aResult = nsnull;
-  nsIFrame* frame = GetFrame(false);
-  if (frame && frame->GetType() == nsGkAtoms::menuFrame)
-    return static_cast<nsMenuFrame *>(frame)->GetActiveChild(aResult);
+  *aResult = nullptr;
+  nsMenuFrame* menu = do_QueryFrame(GetFrame(false));
+  if (menu)
+    return menu->GetActiveChild(aResult);
   return NS_OK;
 }
 
 NS_IMETHODIMP nsMenuBoxObject::SetActiveChild(nsIDOMElement* aResult)
 {
-  nsIFrame* frame = GetFrame(false);
-  if (frame && frame->GetType() == nsGkAtoms::menuFrame)
-    return static_cast<nsMenuFrame *>(frame)->SetActiveChild(aResult);
+  nsMenuFrame* menu = do_QueryFrame(GetFrame(false));
+  if (menu)
+    return menu->SetActiveChild(aResult);
   return NS_OK;
 }
 
@@ -86,27 +86,23 @@ NS_IMETHODIMP nsMenuBoxObject::HandleKeyPress(nsIDOMKeyEvent* aKeyEvent, bool* a
     return NS_OK;
 
   // if event has already been handled, bail
-  nsCOMPtr<nsIDOMNSEvent> domNSEvent = do_QueryInterface(aKeyEvent);
-  if (!domNSEvent)
-    return NS_OK;
-
   bool eventHandled = false;
-  domNSEvent->GetPreventDefault(&eventHandled);
+  aKeyEvent->GetPreventDefault(&eventHandled);
   if (eventHandled)
     return NS_OK;
 
   if (nsMenuBarListener::IsAccessKeyPressed(aKeyEvent))
     return NS_OK;
 
-  nsIFrame* frame = GetFrame(false);
-  if (!frame || frame->GetType() != nsGkAtoms::menuFrame)
+  nsMenuFrame* menu = do_QueryFrame(GetFrame(false));
+  if (!menu)
     return NS_OK;
 
-  nsMenuPopupFrame* popupFrame = static_cast<nsMenuFrame *>(frame)->GetPopup();
+  nsMenuPopupFrame* popupFrame = menu->GetPopup();
   if (!popupFrame)
     return NS_OK;
 
-  PRUint32 keyCode;
+  uint32_t keyCode;
   aKeyEvent->GetKeyCode(&keyCode);
   switch (keyCode) {
     case NS_VK_UP:
@@ -131,14 +127,15 @@ nsMenuBoxObject::GetOpenedWithKey(bool* aOpenedWithKey)
 {
   *aOpenedWithKey = false;
 
-  nsIFrame* frame = GetFrame(false);
-  if (!frame || frame->GetType() != nsGkAtoms::menuFrame)
+  nsMenuFrame* menuframe = do_QueryFrame(GetFrame(false));
+  if (!menuframe)
     return NS_OK;
 
-  frame = frame->GetParent();
+  nsIFrame* frame = menuframe->GetParent();
   while (frame) {
-    if (frame->GetType() == nsGkAtoms::menuBarFrame) {
-      *aOpenedWithKey = (static_cast<nsMenuBarFrame *>(frame))->IsActiveByKeyboard();
+    nsMenuBarFrame* menubar = do_QueryFrame(frame);
+    if (menubar) {
+      *aOpenedWithKey = menubar->IsActiveByKeyboard();
       return NS_OK;
     }
     frame = frame->GetParent();

@@ -327,10 +327,10 @@ Any type, naked or pointer, can be const (const T) or ref (T&).
                     T=copy.deepcopy(self.T, memo))
 Type.BOOL = Type('bool')
 Type.INT = Type('int')
-Type.INT32 = Type('int32')
+Type.INT32 = Type('int32_t')
 Type.INTPTR = Type('intptr_t')
-Type.UINT32 = Type('uint32')
-Type.UINT32PTR = Type('uint32', ptr=1)
+Type.UINT32 = Type('uint32_t')
+Type.UINT32PTR = Type('uint32_t', ptr=1)
 Type.SIZE = Type('size_t')
 Type.VOID = Type('void')
 Type.VOIDPTR = Type('void', ptr=1)
@@ -369,6 +369,14 @@ class Typedef(Node):
         Node.__init__(self)
         self.fromtype = fromtype
         self.totypename = totypename
+
+    def __cmp__(self, o):
+        return cmp(self.totypename, o.totypename)
+    def __eq__(self, o):
+        return (self.__class__ == o.__class__
+                and 0 == cmp(self, o))
+    def __hash__(self):
+        return hash(self.totypename)
 
 class Using(Node):
     def __init__(self, type):

@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "nsDeviceContextAndroid.h"
 #include "nsString.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIFileStreams.h"
 #include "nsAutoPtr.h"
 #include "gfxPDFSurface.h"
@@ -15,12 +15,12 @@ NS_IMPL_ISUPPORTS1(nsDeviceContextSpecAndroid, nsIDeviceContextSpec)
 NS_IMETHODIMP
 nsDeviceContextSpecAndroid::GetSurfaceForPrinter(gfxASurface** aSurface)
 {
-  nsCAutoString tmpDir(getenv("TMPDIR"));
+  nsAutoCString tmpDir(getenv("TMPDIR"));
   nsresult rv = 
     NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(mTempFile));
   NS_ENSURE_SUCCESS(rv, rv);
   
-  nsCAutoString filename("tmp-printing.pdf");  
+  nsAutoCString filename("tmp-printing.pdf");  
   mTempFile->AppendNative(filename);
   rv = mTempFile->CreateUnique(nsIFile::NORMAL_FILE_TYPE, 0660);
   NS_ENSURE_SUCCESS(rv, rv);  
@@ -54,8 +54,8 @@ nsDeviceContextSpecAndroid::Init(nsIWidget* aWidget,
 NS_IMETHODIMP
 nsDeviceContextSpecAndroid::BeginDocument(PRUnichar* aTitle,
                                       PRUnichar* aPrintToFileName,
-                                      PRInt32 aStartPage,
-                                      PRInt32 aEndPage)
+                                      int32_t aStartPage,
+                                      int32_t aEndPage)
 {
   return NS_OK;
 }
@@ -64,7 +64,7 @@ NS_IMETHODIMP
 nsDeviceContextSpecAndroid::EndDocument()
 {
   nsXPIDLString targetPath;
-  nsCOMPtr<nsILocalFile> destFile;
+  nsCOMPtr<nsIFile> destFile;
   mPrintSettings->GetToFileName(getter_Copies(targetPath));
   
   nsresult rv = NS_NewNativeLocalFile(NS_ConvertUTF16toUTF8(targetPath),

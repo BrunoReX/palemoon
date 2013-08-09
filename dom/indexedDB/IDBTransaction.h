@@ -13,6 +13,7 @@
 #include "mozIStorageStatement.h"
 #include "mozIStorageFunction.h"
 #include "nsIIDBTransaction.h"
+#include "nsIDOMDOMError.h"
 #include "nsIRunnable.h"
 
 #include "nsAutoPtr.h"
@@ -30,6 +31,7 @@ BEGIN_INDEXEDDB_NAMESPACE
 
 class AsyncConnectionHelper;
 class CommitHelper;
+class IDBRequest;
 class IndexedDBDatabaseChild;
 class IndexedDBTransactionChild;
 class IndexedDBTransactionParent;
@@ -43,7 +45,10 @@ public:
   NS_IMETHOD_(nsrefcnt) AddRef() = 0;
   NS_IMETHOD_(nsrefcnt) Release() = 0;
 
-  virtual nsresult NotifyTransactionComplete(IDBTransaction* aTransaction) = 0;
+  // Called just before dispatching the final events on the transaction.
+  virtual nsresult NotifyTransactionPreComplete(IDBTransaction* aTransaction) = 0;
+  // Called just after dispatching the final events on the transaction.
+  virtual nsresult NotifyTransactionPostComplete(IDBTransaction* aTransaction) = 0;
 };
 
 class IDBTransaction : public IDBWrapperCache,
@@ -96,6 +101,7 @@ public:
 
   void OnNewRequest();
   void OnRequestFinished();
+  void OnRequestDisconnected();
 
   void RemoveObjectStore(const nsAString& aName);
 
@@ -119,6 +125,11 @@ public:
   }
 
   bool IsOpen() const;
+
+  bool IsFinished() const
+  {
+    return mReadyState > LOADING;
+  }
 
   bool IsWriteAllowed() const
   {
@@ -178,12 +189,21 @@ public:
     return mActorChild;
   }
 
+  IndexedDBTransactionParent*
+  GetActorParent() const
+  {
+    return mActorParent;
+  }
+
   nsresult
   ObjectStoreInternal(const nsAString& aName,
                       IDBObjectStore** _retval);
 
   nsresult
-  AbortWithCode(nsresult aAbortCode);
+  Abort(IDBRequest* aRequest);
+
+  nsresult
+  Abort(nsresult aAbortCode);
 
   nsresult
   GetAbortCode() const
@@ -192,6 +212,9 @@ public:
   }
 
 private:
+  nsresult
+  AbortInternal(nsresult aAbortCode, already_AddRefed<nsIDOMDOMError> aError);
+
   // Should only be called directly through IndexedDBDatabaseChild.
   static already_AddRefed<IDBTransaction>
   CreateInternal(IDBDatabase* aDatabase,
@@ -207,15 +230,11 @@ private:
 
   nsRefPtr<IDBDatabase> mDatabase;
   nsRefPtr<DatabaseInfo> mDatabaseInfo;
+  nsCOMPtr<nsIDOMDOMError> mError;
   nsTArray<nsString> mObjectStoreNames;
   ReadyState mReadyState;
   Mode mMode;
-  PRUint32 mPendingRequests;
-
-  // Only touched on the main thread.
-  NS_DECL_EVENT_HANDLER(error)
-  NS_DECL_EVENT_HANDLER(complete)
-  NS_DECL_EVENT_HANDLER(abort)
+  uint32_t mPendingRequests;
 
   nsInterfaceHashtable<nsCStringHashKey, mozIStorageStatement>
     mCachedStatements;
@@ -226,9 +245,10 @@ private:
   nsCOMPtr<mozIStorageConnection> mConnection;
 
   // Only touched on the database thread.
-  PRUint32 mSavepointCount;
+  uint32_t mSavepointCount;
 
   nsTArray<nsRefPtr<IDBObjectStore> > mCreatedObjectStores;
+  nsTArray<nsRefPtr<IDBObjectStore> > mDeletedObjectStores;
 
   nsRefPtr<UpdateRefcountFunction> mUpdateFileRefcountFunction;
   nsRefPtrHashtable<nsISupportsHashKey, FileInfo> mCreatedFileInfos;
@@ -265,7 +285,7 @@ public:
         NS_ERROR("Out of memory!");
         return false;
       }
-      aCOMPtr = nsnull;
+      aCOMPtr = nullptr;
     }
     return true;
   }
@@ -310,19 +330,9 @@ public:
     mFileInfoEntries.Clear();
   }
 
-  nsresult UpdateDatabase(mozIStorageConnection* aConnection)
-  {
-    DatabaseUpdateFunction function(aConnection);
-
-    mFileInfoEntries.EnumerateRead(DatabaseUpdateCallback, &function);
-
-    return function.ErrorCode();
-  }
-
-  void UpdateFileInfos()
-  {
-    mFileInfoEntries.EnumerateRead(FileInfoUpdateCallback, nsnull);
-  }
+  nsresult WillCommit(mozIStorageConnection* aConnection);
+  void DidCommit();
+  void DidAbort();
 
 private:
   class FileInfoEntry
@@ -336,7 +346,7 @@ private:
     { }
 
     nsRefPtr<FileInfo> mFileInfo;
-    PRInt32 mDelta;
+    int32_t mDelta;
   };
 
   enum UpdateType {
@@ -347,42 +357,54 @@ private:
   class DatabaseUpdateFunction
   {
   public:
-    DatabaseUpdateFunction(mozIStorageConnection* aConnection)
-    : mConnection(aConnection), mErrorCode(NS_OK)
+    DatabaseUpdateFunction(mozIStorageConnection* aConnection,
+                           UpdateRefcountFunction* aFunction)
+    : mConnection(aConnection), mFunction(aFunction), mErrorCode(NS_OK)
     { }
 
-    bool Update(PRInt64 aId, PRInt32 aDelta);
+    bool Update(int64_t aId, int32_t aDelta);
     nsresult ErrorCode()
     {
       return mErrorCode;
     }
 
   private:
-    nsresult UpdateInternal(PRInt64 aId, PRInt32 aDelta);
+    nsresult UpdateInternal(int64_t aId, int32_t aDelta);
 
     nsCOMPtr<mozIStorageConnection> mConnection;
     nsCOMPtr<mozIStorageStatement> mUpdateStatement;
+    nsCOMPtr<mozIStorageStatement> mSelectStatement;
     nsCOMPtr<mozIStorageStatement> mInsertStatement;
+
+    UpdateRefcountFunction* mFunction;
 
     nsresult mErrorCode;
   };
 
   nsresult ProcessValue(mozIStorageValueArray* aValues,
-                        PRInt32 aIndex,
+                        int32_t aIndex,
                         UpdateType aUpdateType);
 
+  nsresult CreateJournals();
+
+  nsresult RemoveJournals(const nsTArray<int64_t>& aJournals);
+
   static PLDHashOperator
-  DatabaseUpdateCallback(const PRUint64& aKey,
+  DatabaseUpdateCallback(const uint64_t& aKey,
                          FileInfoEntry* aValue,
                          void* aUserArg);
 
   static PLDHashOperator
-  FileInfoUpdateCallback(const PRUint64& aKey,
+  FileInfoUpdateCallback(const uint64_t& aKey,
                          FileInfoEntry* aValue,
                          void* aUserArg);
 
   FileManager* mFileManager;
   nsClassHashtable<nsUint64HashKey, FileInfoEntry> mFileInfoEntries;
+
+  nsTArray<int64_t> mJournalsToCreateBeforeCommit;
+  nsTArray<int64_t> mJournalsToRemoveAfterCommit;
+  nsTArray<int64_t> mJournalsToRemoveAfterAbort;
 };
 
 END_INDEXEDDB_NAMESPACE

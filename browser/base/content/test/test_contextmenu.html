@@ -18,12 +18,9 @@ Browser context menu tests.
 
 /** Test for Login Manager: multiple login autocomplete. **/
 
-netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
-Components.utils.import("resource://gre/modules/InlineSpellChecker.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
+SpecialPowers.Cu.import("resource://gre/modules/InlineSpellChecker.jsm", window);
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
+const Ci = SpecialPowers.Ci;
 
 function openContextMenuFor(element, shiftkey, shouldWaitForFocus) {
     // Context menu should be closed before we open it again.
@@ -54,13 +51,13 @@ function executeCopyCommand(command, expectedValue)
 {
   // Just execute the command directly rather than simulating a context menu
   // press to avoid having to deal with its asynchronous nature
-  subwindow.controllers.getControllerForCommand(command).doCommand(command);
+  SpecialPowers.wrap(subwindow).controllers.getControllerForCommand(command).doCommand(command);
 
   // The easiest way to check the clipboard is to paste the contents into a
   // textbox
   input.focus();
   input.value = "";
-  input.controllers.getControllerForCommand("cmd_paste").doCommand("cmd_paste");
+  SpecialPowers.wrap(input).controllers.getControllerForCommand("cmd_paste").doCommand("cmd_paste");
   is(input.value, expectedValue, "paste for command " + command);
 }
 
@@ -81,6 +78,13 @@ function selectText(element) {
   div.setStartBefore(element);
   div.setEndAfter(element);
   subwindow.getSelection().addRange(div);
+}
+
+function selectInputText(element) {
+  // Clear any previous selections before selecting new element.
+  subwindow.getSelection().removeAllRanges();
+
+  element.select();
 }
 
 function getVisibleMenuItems(aMenu, aData) {
@@ -252,7 +256,6 @@ function checkMenu(menu, expectedItems, data) {
  */
 function runTest(testNum) {
   // Seems we need to enable this again, or sendKeyEvent() complaints.
-  netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
   ok(true, "Starting test #" + testNum);
 
   var inspectItems = [];
@@ -272,11 +275,9 @@ function runTest(testNum) {
         plainTextItems = ["context-back",         false,
                           "context-forward",      false,
                           "context-reload",       true,
-                          "context-stop",         false,
                           "---",                  null,
                           "context-bookmarkpage", true,
                           "context-savepage",     true,
-                          "context-sendpage",     true,
                           "---",                  null,
                           "context-viewbgimage",  false,
                           "context-selectall",    true,
@@ -430,11 +431,9 @@ function runTest(testNum) {
         checkContextMenu(["context-back",         false,
                           "context-forward",      false,
                           "context-reload",       true,
-                          "context-stop",         false,
                           "---",                  null,
                           "context-bookmarkpage", true,
                           "context-savepage",     true,
-                          "context-sendpage",     true,
                           "---",                  null,
                           "context-viewbgimage",  false,
                           "context-selectall",    true,
@@ -656,11 +655,9 @@ function runTest(testNum) {
                           "context-back",         false,
                           "context-forward",      false,
                           "context-reload",       true,
-                          "context-stop",         false,
                           "---",                  null,
                           "context-bookmarkpage", true,
                           "context-savepage",     true,
-                          "context-sendpage",     true,
                           "---",                  null,
                           "context-viewbgimage",  false,
                           "context-selectall",    true,
@@ -691,11 +688,9 @@ function runTest(testNum) {
                           "context-back",                 false,
                           "context-forward",              false,
                           "context-reload",               true,
-                          "context-stop",                 false,
                           "---",                          null,
                           "context-bookmarkpage",         true,
                           "context-savepage",             true,
-                          "context-sendpage",             true,
                           "---",                          null,
                           "context-viewbgimage",          false,
                           "context-selectall",            true,
@@ -721,11 +716,9 @@ function runTest(testNum) {
         checkContextMenu(["context-back",         false,
                           "context-forward",      false,
                           "context-reload",       true,
-                          "context-stop",         false,
                           "---",                  null,
                           "context-bookmarkpage", true,
                           "context-savepage",     true,
-                          "context-sendpage",     true,
                           "---",                  null,
                           "context-viewbgimage",  false,
                           "context-selectall",    true,
@@ -740,7 +733,7 @@ function runTest(testNum) {
 
     case 24:
         // Context menu for selected text
-        if (Services.appinfo.OS == "Darwin") {
+        if (SpecialPowers.Services.appinfo.OS == "Darwin") {
           // This test is only enabled on Mac due to bug 736399.
           checkContextMenu(["context-copy",                        true,
                             "context-selectall",                   true,
@@ -756,7 +749,7 @@ function runTest(testNum) {
 
     case 25:
         // Context menu for selected text which matches valid URL pattern
-        if (Services.appinfo.OS == "Darwin") {
+        if (SpecialPowers.Services.appinfo.OS == "Darwin") {
           // This test is only enabled on Mac due to bug 736399.
           checkContextMenu(["context-openlinkincurrent",           true,
                             "context-openlinkintab",               true,
@@ -773,7 +766,75 @@ function runTest(testNum) {
                            ].concat(inspectItems));
         }
         closeContextMenu();
+        // clear the selection because following tests don't expect any selection
+        subwindow.getSelection().removeAllRanges();
 
+        openContextMenuFor(imagelink)
+        break;
+
+    case 26:
+        // Context menu for image link
+        checkContextMenu(["context-openlinkintab", true,
+                          "context-openlink",      true,
+                          "---",                   null,
+                          "context-bookmarklink",  true,
+                          "context-savelink",      true,
+                          "context-copylink",      true,
+                          "---",                   null,
+                          "context-viewimage",            true,
+                          "context-copyimage-contents",   true,
+                          "context-copyimage",            true,
+                          "---",                          null,
+                          "context-saveimage",            true,
+                          "context-sendimage",            true,
+                          "context-setDesktopBackground", true,
+                          "context-viewimageinfo",        true
+                         ].concat(inspectItems));
+        closeContextMenu();
+        selectInputText(select_inputtext); // Select text prior to opening context menu.
+        openContextMenuFor(select_inputtext); // Invoke context menu for next test.
+        return;
+
+    case 27:
+        // Context menu for selected text in input
+        checkContextMenu(["context-undo",        false,
+                          "---",                 null,
+                          "context-cut",         true,
+                          "context-copy",        true,
+                          "context-paste",       null, // ignore clipboard state
+                          "context-delete",      true,
+                          "---",                 null,
+                          "context-selectall",   true,
+                          "context-searchselect",true,
+                          "---",                 null,
+                          "spell-check-enabled", true
+                         ].concat(inspectItems));
+        closeContextMenu();
+        selectInputText(select_inputtext_password); // Select text prior to opening context menu.
+        openContextMenuFor(select_inputtext_password); // Invoke context menu for next test.
+        return;
+
+    case 28:
+        // Context menu for selected text in input[type="password"]
+          checkContextMenu(["context-undo",        false,
+                            "---",                 null,
+                            "context-cut",         true,
+                            "context-copy",        true,
+                            "context-paste",       null, // ignore clipboard state
+                            "context-delete",      true,
+                            "---",                 null,
+                            "context-selectall",   true,
+                            "---",                 null,
+                            "spell-check-enabled", true,
+                            //spell checker is shown on input[type="password"] on this testcase
+                            "spell-dictionaries",  true,
+                                ["spell-check-dictionary-en-US", true,
+                                 "---",                          null,
+                                 "spell-add-dictionaries",       true], null
+                           ].concat(inspectItems));
+        closeContextMenu();
+
+        // finish test
         subwindow.close();
         SimpleTest.finish();
         return;
@@ -799,11 +860,11 @@ var testNum = 1;
 var subwindow, chromeWin, contextMenu, lastElement;
 var text, link, mailto, input, img, canvas, video_ok, video_bad, video_bad2,
     iframe, video_in_iframe, image_in_iframe, textarea, contenteditable,
-    inputspell, pagemenu, dom_full_screen, plainTextItems, audio_in_video;
+    inputspell, pagemenu, dom_full_screen, plainTextItems, audio_in_video,
+    selecttext, selecttextlink, imagelink, select_inputtext, select_inputtext_password;
 
 function startTest() {
-    netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
-    chromeWin = subwindow
+    chromeWin = SpecialPowers.wrap(subwindow)
                     .QueryInterface(Ci.nsIInterfaceRequestor)
                     .getInterface(Ci.nsIWebNavigation)
                     .QueryInterface(Ci.nsIDocShellTreeItem)
@@ -820,11 +881,12 @@ function startTest() {
       return;
     }
 
-    subwindow.mozAllowFullScreen = true;
+    subwindow.allowfullscreen = true;
     lastElement = null;
 
     text   = subwindow.document.getElementById("test-text");
     link   = subwindow.document.getElementById("test-link");
+    imagelink = subwindow.document.getElementById("test-image-link");
     mailto = subwindow.document.getElementById("test-mailto");
     input  = subwindow.document.getElementById("test-input");
     img    = subwindow.document.getElementById("test-image");
@@ -845,6 +907,8 @@ function startTest() {
     dom_full_screen = subwindow.document.getElementById("test-dom-full-screen");
     selecttext = subwindow.document.getElementById("test-select-text");
     selecttextlink = subwindow.document.getElementById("test-select-text-link");
+    select_inputtext = subwindow.document.getElementById("test-select-input-text");
+    select_inputtext_password = subwindow.document.getElementById("test-select-input-text-type-password");
 
     contextMenu.addEventListener("popupshown", function() { runTest(++testNum); }, false);
     runTest(1);
@@ -869,7 +933,7 @@ function waitForEvents(event)
   }
 }
 
-var subwindow = window.open("./subtst_contextmenu.html", "contextmenu-subtext", "width=600,height=700");
+var subwindow = window.open("./subtst_contextmenu.html", "contextmenu-subtext", "width=600,height=800");
 subwindow.addEventListener("MozAfterPaint", waitForEvents, false);
 subwindow.onload = waitForEvents;
 

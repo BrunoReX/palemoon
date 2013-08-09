@@ -3,7 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -26,7 +26,6 @@ endif
 
 DIRS += pgo
 
-TEST_DIRS += autoconf/test
 ifeq (android,$(MOZ_WIDGET_TOOLKIT))
 TEST_DIRS += mobile/sutagent/android \
           mobile/sutagent/android/watcher \
@@ -37,7 +36,7 @@ TEST_DIRS += mobile/sutagent/android \
 endif
 
 ifdef MOZ_APP_BASENAME
-DIST_FILES = application.ini
+DIST_FILES = $(srcdir)/application.ini
 
 ifneq (android,$(MOZ_WIDGET_TOOLKIT))
 ifdef MOZ_UPDATER
@@ -46,10 +45,8 @@ endif
 endif
 
 ifdef LIBXUL_SDK
-GRE_MILESTONE = $(shell $(PYTHON) $(topsrcdir)/config/printconfigsetting.py $(LIBXUL_DIST)/bin/platform.ini Build Milestone)
 APP_INI_DEPS = $(LIBXUL_DIST)/bin/platform.ini
 else
-GRE_MILESTONE = $(shell tail -n 1 $(topsrcdir)/config/milestone.txt 2>/dev/null || tail -1 $(topsrcdir)/config/milestone.txt)
 APP_INI_DEPS = $(topsrcdir)/config/milestone.txt
 endif
 
@@ -132,21 +129,11 @@ leaktest.py: leaktest.py.in
 	chmod +x $@
 GARBAGE += leaktest.py
 
-ifneq (android,$(MOZ_WIDGET_TOOLKIT))
-ifdef MOZ_UPDATER
-update-settings.ini: update-settings.ini.in $(APP_INI_DEPS)
-	$(PYTHON) $(topsrcdir)/config/Preprocessor.py $(DEFINES) $< > $@
-GARBAGE += update-settings.ini
-endif
-endif
-
 ifdef MOZ_APP_BASENAME
-application.ini: application.ini.in $(APP_INI_DEPS)
-	$(PYTHON) $(topsrcdir)/config/Preprocessor.py $(DEFINES) $< > $@
-GARBAGE += application.ini
+$(FINAL_TARGET)/application.ini: $(APP_INI_DEPS)
 
 ifdef MOZ_APP_STATIC_INI
-application.ini.h: appini_header.py application.ini 
+application.ini.h: appini_header.py $(FINAL_TARGET)/application.ini
 	$(PYTHON) $^ > $@
 export:: application.ini.h
 GARBAGE += application.ini.h
@@ -161,7 +148,8 @@ _VALGRIND_DIR = $(DEPTH)/_valgrind
 GARBAGE_DIRS += $(_VALGRIND_DIR)
 
 _VALGRIND_FILES = \
-		$(topsrcdir)/build/valgrind/i686-redhat-linux-gnu.sup \
+		$(topsrcdir)/build/valgrind/cross-architecture.sup \
+		$(topsrcdir)/build/valgrind/i386-redhat-linux-gnu.sup \
 		$(topsrcdir)/build/valgrind/x86_64-redhat-linux-gnu.sup \
 		$(NULL)
 
@@ -179,8 +167,6 @@ check::
 	  $(srcdir)/tests/test.py
 
 ifeq ($(OS_ARCH),Darwin)
-libs:: $(topsrcdir)/tools/rb/fix-macosx-stack.pl
-	$(INSTALL) $< $(DIST)/bin
 libs:: $(topsrcdir)/tools/rb/fix_macosx_stack.py
 	$(INSTALL) $< $(DIST)/bin
 
@@ -271,4 +257,8 @@ libs:: $(topsrcdir)/tools/rb/fix-linux-stack.pl
 endif
 
 GARBAGE += $(srcdir)/automationutils.pyc
+
+# Test for ConfigStatus.py
+check::
+	$(PYTHON) $(srcdir)/tests/unit-ConfigStatus.py
 endif # ENABLE_TESTS

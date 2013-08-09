@@ -15,8 +15,8 @@
     const READ_WRITE = IDBTransaction.READ_WRITE;
 
     const databaseInfo = [
-      { name: window.location.pathname + "1", description: "Test Database 1" },
-      { name: window.location.pathname + "2", description: "Test Database 2" }
+      { name: window.location.pathname + "1" },
+      { name: window.location.pathname + "2" }
     ];
 
     const objectStoreName = "Blobs";
@@ -25,7 +25,7 @@
 
     let databases = [];
     for each (let info in databaseInfo) {
-      let request = mozIndexedDB.open(info.name, 1, info.description);
+      let request = indexedDB.open(info.name, 1);
       request.onerror = errorHandler;
       request.onupgradeneeded = grabEventAndContinueHandler;
       request.onsuccess = grabEventAndContinueHandler;
@@ -62,8 +62,8 @@
         continue;
       }
 
-      netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
-      isnot(result.mozFullPath, refResult.mozFullPath, "Different os files");
+      isnot(SpecialPowers.getMozFullPath(result),
+            SpecialPowers.getMozFullPath(refResult), "Different os files");
     }
 
     for (let i = 1; i < databases.length; i++) {
@@ -86,8 +86,8 @@
       verifyBlob(result, refResult, 2);
       yield;
 
-      netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
-      isnot(result.mozFullPath, refResult.mozFullPath, "Different os files");
+      isnot(SpecialPowers.getMozFullPath(result),
+            SpecialPowers.getMozFullPath(refResult), "Different os files");
     }
 
     is(bufferCache.length, 2, "Correct length");

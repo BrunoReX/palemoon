@@ -38,7 +38,7 @@ NS_IMPL_ISUPPORTS1(nsScreenManagerWin, nsIScreenManager)
 nsIScreen* 
 nsScreenManagerWin :: CreateNewScreenObject ( HMONITOR inScreen )
 {
-  nsIScreen* retScreen = nsnull;
+  nsIScreen* retScreen = nullptr;
   
   // look through our screen list, hoping to find it. If it's not there,
   // add it and return the new one.
@@ -67,12 +67,12 @@ nsScreenManagerWin :: CreateNewScreenObject ( HMONITOR inScreen )
 // The coordinates are in pixels (not twips) and in screen coordinates.
 //
 NS_IMETHODIMP
-nsScreenManagerWin :: ScreenForRect ( PRInt32 inLeft, PRInt32 inTop, PRInt32 inWidth, PRInt32 inHeight,
+nsScreenManagerWin :: ScreenForRect ( int32_t inLeft, int32_t inTop, int32_t inWidth, int32_t inHeight,
                                         nsIScreen **outScreen )
 {
   if ( !(inWidth || inHeight) ) {
     NS_WARNING ( "trying to find screen for sizeless window, using primary monitor" );
-    *outScreen = CreateNewScreenObject ( nsnull );    // addrefs
+    *outScreen = CreateNewScreenObject ( nullptr );    // addrefs
     return NS_OK;
   }
 
@@ -96,7 +96,7 @@ nsScreenManagerWin :: ScreenForRect ( PRInt32 inLeft, PRInt32 inTop, PRInt32 inW
 NS_IMETHODIMP 
 nsScreenManagerWin :: GetPrimaryScreen(nsIScreen** aPrimaryScreen) 
 {
-  *aPrimaryScreen = CreateNewScreenObject ( nsnull );    // addrefs  
+  *aPrimaryScreen = CreateNewScreenObject ( nullptr );    // addrefs  
   return NS_OK;
   
 } // GetPrimaryScreen
@@ -112,7 +112,7 @@ nsScreenManagerWin :: GetPrimaryScreen(nsIScreen** aPrimaryScreen)
 BOOL CALLBACK
 CountMonitors ( HMONITOR, HDC, LPRECT, LPARAM ioParam )
 {
-  PRUint32* countPtr = reinterpret_cast<PRUint32*>(ioParam);
+  uint32_t* countPtr = reinterpret_cast<uint32_t*>(ioParam);
   ++(*countPtr);
 
   return TRUE; // continue the enumeration
@@ -126,13 +126,13 @@ CountMonitors ( HMONITOR, HDC, LPRECT, LPARAM ioParam )
 // Returns how many physical screens are available.
 //
 NS_IMETHODIMP
-nsScreenManagerWin :: GetNumberOfScreens(PRUint32 *aNumberOfScreens)
+nsScreenManagerWin :: GetNumberOfScreens(uint32_t *aNumberOfScreens)
 {
   if ( mNumberOfScreens )
     *aNumberOfScreens = mNumberOfScreens;
   else {
-    PRUint32 count = 0;
-    BOOL result = ::EnumDisplayMonitors(nsnull, nsnull, (MONITORENUMPROC)CountMonitors, (LPARAM)&count);
+    uint32_t count = 0;
+    BOOL result = ::EnumDisplayMonitors(nullptr, nullptr, (MONITORENUMPROC)CountMonitors, (LPARAM)&count);
     if (!result)
       return NS_ERROR_FAILURE;
     *aNumberOfScreens = mNumberOfScreens = count;

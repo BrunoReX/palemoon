@@ -7,6 +7,7 @@
 #include "nsObjCExceptions.h"
 
 #include "Accessible-inl.h"
+#include "nsAccUtils.h"
 #include "Role.h"
 
 #import "mozAccessible.h"
@@ -59,6 +60,9 @@ AccessibleWrap::GetNativeType ()
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
 
+  if (IsXULDeck())
+    return [mozPaneAccessible class];
+  
   roles::Role role = Role();
   switch (role) {
     case roles::PUSHBUTTON:
@@ -81,15 +85,17 @@ AccessibleWrap::GetNativeType ()
 
     case roles::PAGETABLIST:
       return [mozTabsAccessible class];
-      
+
     case roles::ENTRY:
     case roles::STATICTEXT:
     case roles::CAPTION:
     case roles::ACCEL_LABEL:
-    case roles::TEXT_LEAF:
     case roles::PASSWORD_TEXT:
       // normal textfield (static or editable)
-      return [mozTextAccessible class]; 
+      return [mozTextAccessible class];
+
+    case roles::TEXT_LEAF:
+      return [mozTextLeafAccessible class];
 
     case roles::LINK:
       return [mozLinkAccessible class];
@@ -143,7 +149,7 @@ AccessibleWrap::FirePlatformEvent(AccEvent* aEvent)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  PRUint32 eventType = aEvent->GetEventType();
+  uint32_t eventType = aEvent->GetEventType();
 
   // ignore everything but focus-changed, value-changed, caret and selection
   // events for now.
@@ -233,8 +239,8 @@ AccessibleWrap::GetUnignoredChildren(nsTArray<Accessible*>* aChildrenArray)
   if (nsAccUtils::MustPrune(this))
     return;
 
-  PRUint32 childCount = ChildCount();
-  for (PRUint32 childIdx = 0; childIdx < childCount; childIdx++) {
+  uint32_t childCount = ChildCount();
+  for (uint32_t childIdx = 0; childIdx < childCount; childIdx++) {
     AccessibleWrap* childAcc =
       static_cast<AccessibleWrap*>(GetChildAt(childIdx));
 

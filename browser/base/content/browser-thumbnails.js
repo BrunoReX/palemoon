@@ -26,11 +26,6 @@ let gBrowserThumbnails = {
   _timeouts: null,
 
   /**
-   * Cache for the PageThumbs module.
-   */
-  _pageThumbs: null,
-
-  /**
    * List of tab events we want to listen for.
    */
   _tabEvents: ["TabClose", "TabSelect"],
@@ -41,6 +36,7 @@ let gBrowserThumbnails = {
         return;
     } catch (e) {}
 
+    PageThumbs.addExpirationFilter(this);
     gBrowser.addTabsProgressListener(this);
     Services.prefs.addObserver(this.PREF_DISK_CACHE_SSL, this, false);
 
@@ -52,12 +48,10 @@ let gBrowserThumbnails = {
     }, this);
 
     this._timeouts = new WeakMap();
-
-    XPCOMUtils.defineLazyModuleGetter(this, "_pageThumbs",
-      "resource:///modules/PageThumbs.jsm", "PageThumbs");
   },
 
   uninit: function Thumbnails_uninit() {
+    PageThumbs.removeExpirationFilter(this);
     gBrowser.removeTabsProgressListener(this);
     Services.prefs.removeObserver(this.PREF_DISK_CACHE_SSL, this);
 
@@ -88,6 +82,11 @@ let gBrowserThumbnails = {
       Services.prefs.getBoolPref(this.PREF_DISK_CACHE_SSL);
   },
 
+  filterForThumbnailExpiration:
+  function Thumbnails_filterForThumbnailExpiration(aCallback) {
+    aCallback([browser.currentURI.spec for (browser of gBrowser.browsers)]);
+  },
+
   /**
    * State change progress listener for all tabs.
    */
@@ -100,7 +99,7 @@ let gBrowserThumbnails = {
 
   _capture: function Thumbnails_capture(aBrowser) {
     if (this._shouldCapture(aBrowser))
-      this._pageThumbs.captureAndStore(aBrowser);
+      PageThumbs.captureAndStore(aBrowser);
   },
 
   _delayedCapture: function Thumbnails_delayedCapture(aBrowser) {
@@ -123,7 +122,7 @@ let gBrowserThumbnails = {
       return false;
 
     // Don't capture in per-window private browsing mode.
-    if (gPrivateBrowsingUI.privateWindow)
+    if (PrivateBrowsingUtils.isWindowPrivate(window))
       return false;
 
     let doc = aBrowser.contentDocument;

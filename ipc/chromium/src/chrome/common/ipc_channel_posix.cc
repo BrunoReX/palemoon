@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stddef.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -132,8 +133,7 @@ int ChannelNameToClientFD(const std::string& channel_id) {
 }
 
 //------------------------------------------------------------------------------
-sockaddr_un sizecheck;
-const size_t kMaxPipeNameLength = sizeof(sizecheck.sun_path);
+const size_t kMaxPipeNameLength = sizeof(((sockaddr_un*)0)->sun_path);
 
 // Creates a Fifo with the specified name ready to listen on.
 bool CreateServerFifo(const std::string& pipe_name, int* server_listen_fd) {
@@ -336,7 +336,9 @@ bool Channel::ChannelImpl::CreatePipe(const std::wstring& channel_id,
       pipe_ = pipe_fds[0];
       client_pipe_ = pipe_fds[1];
 
-      Singleton<PipeMap>()->Insert(pipe_name_, client_pipe_);
+      if (pipe_name_.length()) {
+        Singleton<PipeMap>()->Insert(pipe_name_, client_pipe_);
+      }
     } else {
       pipe_ = ChannelNameToClientFD(pipe_name_);
       DCHECK(pipe_ > 0);
@@ -359,6 +361,16 @@ bool Channel::ChannelImpl::EnqueueHelloMessage() {
 
   output_queue_.push(msg.release());
   return true;
+}
+
+static void
+ClearAndShrink(std::string& s, size_t capacity)
+{
+  // This swap trick is the closest thing C++ has to a guaranteed way to
+  // shrink the capacity of a string.
+  std::string tmp;
+  tmp.reserve(capacity);
+  s.swap(tmp);
 }
 
 bool Channel::ChannelImpl::Connect() {
@@ -487,7 +499,7 @@ bool Channel::ChannelImpl::ProcessIncomingMessages() {
     } else {
       if (input_overflow_buf_.size() >
          static_cast<size_t>(kMaximumMessageSize - bytes_read)) {
-        input_overflow_buf_.clear();
+        ClearAndShrink(input_overflow_buf_, Channel::kReadBufferSize);
         LOG(ERROR) << "IPC message is too big";
         return false;
       }
@@ -571,7 +583,7 @@ bool Channel::ChannelImpl::ProcessIncomingMessages() {
       }
     }
     if (end == p) {
-      input_overflow_buf_.clear();
+      ClearAndShrink(input_overflow_buf_, Channel::kReadBufferSize);
     } else if (!overflowp) {
       // p is from input_buf_
       input_overflow_buf_.assign(p, end - p);

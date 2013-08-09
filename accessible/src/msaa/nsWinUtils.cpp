@@ -13,6 +13,8 @@
 
 #include "mozilla/Preferences.h"
 #include "nsArrayUtils.h"
+#include "nsIArray.h"
+#include "nsIDocument.h"
 #include "nsIDocShellTreeItem.h"
 
 using namespace mozilla;
@@ -27,13 +29,13 @@ nsWinUtils::GetComputedStyleDeclaration(nsIContent* aContent)
 {
   nsIContent* elm = nsCoreUtils::GetDOMElementFor(aContent);
   if (!elm)
-    return nsnull;
+    return nullptr;
 
   // Returns number of items in style declaration
   nsCOMPtr<nsIDOMWindow> window =
     do_QueryInterface(elm->OwnerDoc()->GetWindow());
   if (!window)
-    return nsnull;
+    return nullptr;
 
   nsCOMPtr<nsIDOMCSSStyleDeclaration> cssDecl;
   nsCOMPtr<nsIDOMElement> domElement(do_QueryInterface(elm));
@@ -51,7 +53,7 @@ nsWinUtils::ConvertToIA2Array(nsIArray *aGeckoArray, IUnknown ***aIA2Array,
   if (!aGeckoArray)
     return S_FALSE;
 
-  PRUint32 length = 0;
+  uint32_t length = 0;
   nsresult rv = aGeckoArray->GetLength(&length);
   if (NS_FAILED(rv))
     return GetHRESULT(rv);
@@ -64,7 +66,7 @@ nsWinUtils::ConvertToIA2Array(nsIArray *aGeckoArray, IUnknown ***aIA2Array,
   if (!*aIA2Array)
     return E_OUTOFMEMORY;
 
-  PRUint32 idx = 0;
+  uint32_t idx = 0;
   for (; idx < length; ++idx) {
     nsCOMPtr<nsIWinAccessNode> winAccessNode =
       do_QueryElementAt(aGeckoArray, idx, &rv);
@@ -81,7 +83,7 @@ nsWinUtils::ConvertToIA2Array(nsIArray *aGeckoArray, IUnknown ***aIA2Array,
   }
 
   if (NS_FAILED(rv)) {
-    for (PRUint32 idx2 = 0; idx2 < idx; idx2++) {
+    for (uint32_t idx2 = 0; idx2 < idx; idx2++) {
       (*aIA2Array)[idx2]->Release();
       (*aIA2Array)[idx2] = NULL;
     }

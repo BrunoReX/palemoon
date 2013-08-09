@@ -10,13 +10,14 @@
 
 #include "xptcall.h"
 #include "nsAutoPtr.h"
+#include "mozilla/Attributes.h"
 
 class xptiInterfaceEntry;
 
-#if !defined(__ia64) || (!defined(__hpux) && !defined(__linux__))
+#if !defined(__ia64) || (!defined(__hpux) && !defined(__linux__) && !defined(__FreeBSD__))
 #define STUB_ENTRY(n) NS_IMETHOD Stub##n() = 0;
 #else
-#define STUB_ENTRY(n) NS_IMETHOD Stub##n(PRUint64,PRUint64,PRUint64,PRUint64,PRUint64,PRUint64,PRUint64,PRUint64) = 0;
+#define STUB_ENTRY(n) NS_IMETHOD Stub##n(uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t) = 0;
 #endif
 
 #define SENTINEL_ENTRY(n) NS_IMETHOD Sentinel##n() = 0;
@@ -30,15 +31,15 @@ public:
 #undef STUB_ENTRY
 #undef SENTINEL_ENTRY
 
-#if !defined(__ia64) || (!defined(__hpux) && !defined(__linux__))
+#if !defined(__ia64) || (!defined(__hpux) && !defined(__linux__) && !defined(__FreeBSD__))
 #define STUB_ENTRY(n) NS_IMETHOD Stub##n();
 #else
-#define STUB_ENTRY(n) NS_IMETHOD Stub##n(PRUint64,PRUint64,PRUint64,PRUint64,PRUint64,PRUint64,PRUint64,PRUint64);
+#define STUB_ENTRY(n) NS_IMETHOD Stub##n(uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t);
 #endif
 
 #define SENTINEL_ENTRY(n) NS_IMETHOD Sentinel##n();
 
-class nsXPTCStubBase : public nsIXPTCStubBase
+class nsXPTCStubBase MOZ_FINAL : public nsIXPTCStubBase
 {
 public:
     NS_DECL_ISUPPORTS_INHERITED

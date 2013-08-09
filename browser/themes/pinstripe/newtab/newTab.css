@@ -28,6 +28,13 @@
   background-position: -232px 0;
 }
 
+@media (min-resolution: 2dppx) {
+  #newtab-toggle {
+    background-image: url(chrome://browser/skin/newtab/controls@2x.png);
+    background-size: 248px;
+  }
+}
+
 /* ROWS */
 .newtab-row {
   margin-bottom: 20px;
@@ -44,7 +51,7 @@
   border: 1px solid;
   border-color: rgba(8,22,37,.12) rgba(8,22,37,.14) rgba(8,22,37,.16);
   border-radius: 1px;
-  -moz-transition: border-color 100ms ease-out;
+  transition: border-color 100ms ease-out;
 }
 
 .newtab-cell:empty {
@@ -56,14 +63,14 @@
   -moz-margin-end: 0;
 }
 
-.newtab-cell:hover:not(:empty) {
+.newtab-cell:hover:not(:empty):not([dragged]) {
   border-color: rgba(8,22,37,.25) rgba(8,22,37,.27) rgba(8,22,37,.3);
 }
 
 /* SITES */
 .newtab-site {
   text-decoration: none;
-  -moz-transition-property: top, left, opacity, box-shadow, background-color;
+  transition-property: top, left, opacity, box-shadow, background-color;
 }
 
 .newtab-site:hover,
@@ -72,7 +79,7 @@
 }
 
 .newtab-site[dragged] {
-  -moz-transition-property: box-shadow, background-color;
+  transition-property: box-shadow, background-color;
   background-color: rgb(242,242,242);
 }
 
@@ -100,6 +107,13 @@
   padding: 1px 2px 3px;
   border: none;
   background: transparent url(chrome://browser/skin/newtab/controls.png);
+}
+
+@media (min-resolution: 2dppx) {
+  .newtab-control {
+    background-image: url(chrome://browser/skin/newtab/controls@2x.png);
+    background-size: 248px;
+  }
 }
 
 .newtab-control-pin:hover {

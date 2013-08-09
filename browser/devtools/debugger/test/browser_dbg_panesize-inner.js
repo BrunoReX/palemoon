@@ -12,29 +12,38 @@ function test() {
       "Shouldn't have a debugger pane for this tab yet.");
 
     let pane = DebuggerUI.toggleDebugger();
-    let someWidth1 = parseInt(Math.random() * 200) + 100;
-    let someWidth2 = parseInt(Math.random() * 200) + 100;
-
     ok(pane, "toggleDebugger() should return a pane.");
+
+    let preferredSfw = Services.prefs.getIntPref("devtools.debugger.ui.stackframes-width");
+    let preferredBpw = Services.prefs.getIntPref("devtools.debugger.ui.variables-width");
+    let someWidth1, someWidth2;
+
+    do {
+      someWidth1 = parseInt(Math.random() * 200) + 100;
+      someWidth2 = parseInt(Math.random() * 200) + 100;
+    } while (someWidth1 == preferredSfw ||
+             someWidth2 == preferredBpw)
+
+    info("Preferred stackframes width: " + preferredSfw);
+    info("Preferred variables width: " + preferredBpw);
+    info("Generated stackframes width: " + someWidth1);
+    info("Generated variables width: " + someWidth2);
 
     is(DebuggerUI.getDebugger(), pane,
       "getDebugger() should return the same pane as toggleDebugger().");
 
-    let frame = pane._frame;
     let content = pane.contentWindow;
     let stackframes;
     let variables;
 
-    frame.addEventListener("Debugger:Loaded", function dbgLoaded() {
-      frame.removeEventListener("Debugger:Loaded", dbgLoaded, true);
-
+    wait_for_connect_and_resume(function() {
       ok(content.Prefs.stackframesWidth,
         "The debugger preferences should have a saved stackframesWidth value.");
       ok(content.Prefs.variablesWidth,
         "The debugger preferences should have a saved variablesWidth value.");
 
-      stackframes = content.document.getElementById("stackframes");
-      variables = content.document.getElementById("variables");
+      stackframes = content.document.getElementById("stackframes+breakpoints");
+      variables = content.document.getElementById("variables+expressions");
 
       is(content.Prefs.stackframesWidth, stackframes.getAttribute("width"),
         "The stackframes pane width should be the same as the preferred value.");
@@ -45,11 +54,10 @@ function test() {
       variables.setAttribute("width", someWidth2);
 
       removeTab(tab1);
+    });
 
-    }, true);
-
-    frame.addEventListener("Debugger:Unloaded", function dbgUnloaded() {
-      frame.removeEventListener("Debugger:Unloaded", dbgUnloaded, true);
+    window.addEventListener("Debugger:Shutdown", function dbgShutdown() {
+      window.removeEventListener("Debugger:Shutdown", dbgShutdown, true);
 
       is(content.Prefs.stackframesWidth, stackframes.getAttribute("width"),
         "The stackframes pane width should have been saved by now.");

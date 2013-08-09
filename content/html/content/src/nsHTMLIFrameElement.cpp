@@ -5,64 +5,18 @@
 
 #include "mozilla/Util.h"
 
-#include "nsIDOMHTMLIFrameElement.h"
-#include "nsGenericHTMLFrameElement.h"
-#include "nsIDOMDocument.h"
-#include "nsIDOMGetSVGDocument.h"
+#include "nsHTMLIFrameElement.h"
 #include "nsIDOMSVGDocument.h"
-#include "nsGkAtoms.h"
-#include "nsIDocument.h"
 #include "nsMappedAttributes.h"
-#include "nsDOMError.h"
+#include "nsAttrValueInlines.h"
+#include "nsError.h"
 #include "nsRuleData.h"
 #include "nsStyleConsts.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
 
-class nsHTMLIFrameElement : public nsGenericHTMLFrameElement
-                          , public nsIDOMHTMLIFrameElement
-                          , public nsIDOMGetSVGDocument
-{
-public:
-  nsHTMLIFrameElement(already_AddRefed<nsINodeInfo> aNodeInfo,
-                      mozilla::dom::FromParser aFromParser = mozilla::dom::NOT_FROM_PARSER);
-  virtual ~nsHTMLIFrameElement();
-
-  // nsISupports
-  NS_DECL_ISUPPORTS_INHERITED
-
-  // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLFrameElement::)
-
-  // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLFrameElement::)
-
-  // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLFrameElement::)
-
-  // nsIDOMHTMLIFrameElement
-  NS_DECL_NSIDOMHTMLIFRAMEELEMENT
-
-  // nsIDOMGetSVGDocument
-  NS_DECL_NSIDOMGETSVGDOCUMENT
-
-  // nsIContent
-  virtual bool ParseAttribute(PRInt32 aNamespaceID,
-                                nsIAtom* aAttribute,
-                                const nsAString& aValue,
-                                nsAttrValue& aResult);
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const;
-  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const;
-
-  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
-  virtual nsXPCClassInfo* GetClassInfo();
-  virtual nsIDOMNode* AsDOMNode() { return this; }
-};
-
-
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(IFrame)
-
 
 nsHTMLIFrameElement::nsHTMLIFrameElement(already_AddRefed<nsINodeInfo> aNodeInfo,
                                          FromParser aFromParser)
@@ -74,9 +28,8 @@ nsHTMLIFrameElement::~nsHTMLIFrameElement()
 {
 }
 
-
-NS_IMPL_ADDREF_INHERITED(nsHTMLIFrameElement,nsGenericElement)
-NS_IMPL_RELEASE_INHERITED(nsHTMLIFrameElement,nsGenericElement)
+NS_IMPL_ADDREF_INHERITED(nsHTMLIFrameElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLIFrameElement, Element)
 
 DOMCI_NODE_DATA(HTMLIFrameElement, nsHTMLIFrameElement)
 
@@ -90,9 +43,7 @@ NS_INTERFACE_TABLE_HEAD(nsHTMLIFrameElement)
                                                nsGenericHTMLFrameElement)
 NS_HTML_CONTENT_INTERFACE_TABLE_TAIL_CLASSINFO(HTMLIFrameElement)
 
-
 NS_IMPL_ELEMENT_CLONE(nsHTMLIFrameElement)
-
 
 NS_IMPL_STRING_ATTR(nsHTMLIFrameElement, Align, align)
 NS_IMPL_STRING_ATTR(nsHTMLIFrameElement, FrameBorder, frameborder)
@@ -104,7 +55,20 @@ NS_IMPL_STRING_ATTR(nsHTMLIFrameElement, Name, name)
 NS_IMPL_STRING_ATTR(nsHTMLIFrameElement, Scrolling, scrolling)
 NS_IMPL_URI_ATTR(nsHTMLIFrameElement, Src, src)
 NS_IMPL_STRING_ATTR(nsHTMLIFrameElement, Width, width)
-NS_IMPL_BOOL_ATTR(nsHTMLIFrameElement, MozAllowFullScreen, mozallowfullscreen)
+NS_IMPL_BOOL_ATTR(nsHTMLIFrameElement, Allowfullscreen, allowfullscreen)
+NS_IMPL_STRING_ATTR(nsHTMLIFrameElement, Sandbox, sandbox)
+
+void
+nsHTMLIFrameElement::GetItemValueText(nsAString& aValue)
+{
+  GetSrc(aValue);
+}
+
+void
+nsHTMLIFrameElement::SetItemValueText(const nsAString& aValue)
+{
+  SetSrc(aValue);
+}
 
 NS_IMETHODIMP
 nsHTMLIFrameElement::GetContentDocument(nsIDOMDocument** aContentDocument)
@@ -125,7 +89,7 @@ nsHTMLIFrameElement::GetSVGDocument(nsIDOMDocument **aResult)
 }
 
 bool
-nsHTMLIFrameElement::ParseAttribute(PRInt32 aNamespaceID,
+nsHTMLIFrameElement::ParseAttribute(int32_t aNamespaceID,
                                     nsIAtom* aAttribute,
                                     const nsAString& aValue,
                                     nsAttrValue& aResult)
@@ -168,7 +132,7 @@ MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
     // else leave it as the value set in html.css
     const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::frameborder);
     if (value && value->Type() == nsAttrValue::eEnum) {
-      PRInt32 frameborder = value->GetEnumValue();
+      int32_t frameborder = value->GetEnumValue();
       if (NS_STYLE_FRAME_0 == frameborder ||
           NS_STYLE_FRAME_NO == frameborder ||
           NS_STYLE_FRAME_OFF == frameborder) {
@@ -221,7 +185,7 @@ nsHTMLIFrameElement::IsAttributeMapped(const nsIAtom* aAttribute) const
     { &nsGkAtoms::width },
     { &nsGkAtoms::height },
     { &nsGkAtoms::frameborder },
-    { nsnull },
+    { nullptr },
   };
 
   static const MappedAttributeEntry* const map[] = {
@@ -242,3 +206,32 @@ nsHTMLIFrameElement::GetAttributeMappingFunction() const
   return &MapAttributesIntoRule;
 }
 
+nsresult
+nsHTMLIFrameElement::AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
+                                  const nsAttrValue* aValue,
+                                  bool aNotify)
+{
+  if (aName == nsGkAtoms::sandbox && aNameSpaceID == kNameSpaceID_None) {
+    // Parse the new value of the sandbox attribute, and if we have a docshell
+    // set its sandbox flags appropriately.
+    if (mFrameLoader) {
+      nsCOMPtr<nsIDocShell> docshell = mFrameLoader->GetExistingDocShell();
+
+      if (docshell) {
+        uint32_t newFlags = 0;
+        // If a NULL aValue is passed in, we want to clear the sandbox flags
+        // which we will do by setting them to 0.
+        if (aValue) {
+          nsAutoString strValue;
+          aValue->ToString(strValue);
+          newFlags = nsContentUtils::ParseSandboxAttributeToFlags(
+            strValue);
+        }   
+        docshell->SetSandboxFlags(newFlags);
+      }
+    }
+  }
+  return nsGenericHTMLElement::AfterSetAttr(aNameSpaceID, aName, aValue,
+                                            aNotify);
+
+}

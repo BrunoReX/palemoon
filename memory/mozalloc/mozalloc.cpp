@@ -12,7 +12,7 @@
 #include <sys/types.h>
 
 #if defined(MALLOC_H)
-#  include MALLOC_H             // for memalign, valloc where available
+#  include MALLOC_H             // for memalign, valloc, malloc_size, malloc_usable_size
 #endif // if defined(MALLOC_H)
 #include <stddef.h>             // for size_t
 #include <stdlib.h>             // for malloc, free
@@ -210,8 +210,7 @@ moz_malloc_usable_size(void *ptr)
 
 #if defined(XP_MACOSX)
     return malloc_size(ptr);
-#elif defined(MOZ_MEMORY) || (defined(XP_LINUX) && !defined(ANDROID))
-    // Android bionic libc doesn't have malloc_usable_size.
+#elif defined(HAVE_MALLOC_USABLE_SIZE) || defined(MOZ_MEMORY)
     return malloc_usable_size(ptr);
 #elif defined(XP_WIN)
     return _msize(ptr);

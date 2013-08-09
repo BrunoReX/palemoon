@@ -22,6 +22,13 @@
                           accesskey="&newNavigatorCmd.accesskey;"
                           key="key_newNavigator"
                           command="cmd_newNavigator"/>
+#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
+                <menuitem id="menu_newPrivateWindow"
+                          label="&newPrivateWindow.label;"
+                          accesskey="&newPrivateWindow.accesskey;"
+                          command="Tools:PrivateBrowsing"
+                          key="key_privatebrowsing"/>
+#endif
                 <menuitem id="menu_openLocation"
                           class="show-only-for-keyboard"
                           label="&openLocationCmd.label;"
@@ -53,8 +60,8 @@
                           key="key_savePage"
                           command="Browser:SavePage"/>
                 <menuitem id="menu_sendLink"
-                          label="&sendPageCmd.label;"
-                          accesskey="&sendPageCmd.accesskey;"
+                          label="&emailPageCmd.label;"
+                          accesskey="&emailPageCmd.accesskey;"
                           command="Browser:SendLink"/>
                 <menuseparator/>
                 <menuitem id="menu_printSetup"
@@ -196,13 +203,15 @@
                   <menupopup id="viewSidebarMenu">
                     <menuitem id="menu_bookmarksSidebar"
                               key="viewBookmarksSidebarKb"
-                              observes="viewBookmarksSidebar"
-                              accesskey="&bookmarksButton.accesskey;"/>
+                              observes="viewBookmarksSidebar"/>
                     <menuitem id="menu_historySidebar"
                               key="key_gotoHistory"
                               observes="viewHistorySidebar"
-                              label="&historyButton.label;"
-                              accesskey="&historySidebarCmd.accesskey;"/>
+                              label="&historyButton.label;"/>
+                    <menuitem id="menu_socialSidebar"
+                              type="checkbox"
+                              autocheck="false"
+                              command="Social:ToggleSidebar"/>
                   </menupopup>
                 </menu>
                 <menuseparator/>
@@ -362,7 +371,7 @@
 #ifdef MOZ_SERVICES_SYNC
                 <menuitem id="sync-tabs-menuitem"
                           class="syncTabsMenuItem"
-                          label="&syncTabsMenu.label;"
+                          label="&syncTabsMenu2.label;"
                           oncommand="BrowserOpenSyncTabs();"
                           disabled="true"/>
 #endif
@@ -496,6 +505,41 @@
                         accesskey="&addons.accesskey;"
                         key="key_openAddons"
                         command="Tools:Addons"/>
+              <menu id="menu_socialAmbientMenu"
+                    observes="socialActiveBroadcaster">
+                <menupopup id="menu_social-statusarea-popup">
+                  <menuitem class="social-statusarea-user menuitem-iconic" pack="start" align="center"
+                            observes="socialBroadcaster_userDetails"
+                            oncommand="SocialUI.showProfile(); document.getElementById('social-statusarea-popup').hidePopup();">
+                    <image class="social-statusarea-user-portrait"
+                           observes="socialBroadcaster_userDetails"/>
+                    <vbox>
+                      <label class="social-statusarea-loggedInStatus"
+                             observes="socialBroadcaster_userDetails"/>
+                    </vbox>
+                  </menuitem>
+#ifndef XP_WIN
+                  <menuseparator class="social-statusarea-separator"/>
+#endif
+                  <menuseparator id="socialAmbientMenuSeparator"
+                                 hidden="true"/>
+                  <menuitem class="social-toggle-sidebar-menuitem"
+                            type="checkbox"
+                            autocheck="false"
+                            command="Social:ToggleSidebar"
+                            label="&social.toggleSidebar.label;"
+                            accesskey="&social.toggleSidebar.accesskey;"/>
+                  <menuitem class="social-toggle-notifications-menuitem"
+                            type="checkbox"
+                            autocheck="false"
+                            command="Social:ToggleNotifications"
+                            label="&social.toggleNotifications.label;"
+                            accesskey="&social.toggleNotifications.accesskey;"/>
+                  <menuseparator class="social-statusarea-separator"/>
+                  <menuitem class="social-toggle-menuitem" command="Social:Toggle"/>
+                  <menuitem class="social-remove-menuitem" command="Social:Remove"/>
+                </menupopup>
+              </menu>
 #ifdef MOZ_SERVICES_SYNC
               <!-- only one of sync-setup or sync-menu will be showing at once -->
               <menuitem id="sync-setup"
@@ -514,76 +558,20 @@
                     label="&webDeveloperMenu.label;"
                     accesskey="&webDeveloperMenu.accesskey;">
                 <menupopup id="menuWebDeveloperPopup">
-                  <menuitem id="menu_devToolbar"
-                            type="checkbox"
-                            autocheck="false"
-                            hidden="true"
-                            label="&devToolbarMenu.label;"
-                            accesskey="&devToolbarMenu.accesskey;"
-                            key="key_devToolbar"
-                            command="Tools:DevToolbar"/>
-                  <menuitem id="webConsole"
-                            type="checkbox"
-                            label="&webConsoleCmd.label;"
-                            accesskey="&webConsoleCmd.accesskey;"
-                            key="key_webConsole"
-                            command="Tools:WebConsole"/>
-                  <menuitem id="menu_pageinspect"
-                            type="checkbox"
-                            hidden="true"
-                            label="&inspectMenu.label;"
-                            accesskey="&inspectMenu.accesskey;"
-                            key="key_inspect"
-                            command="Tools:Inspect"/>
-                  <menuitem id="menu_responsiveUI"
-                            type="checkbox"
-                            hidden="true"
-                            label="&responsiveDesignTool.label;"
-                            accesskey="&responsiveDesignTool.accesskey;"
-                            key="key_responsiveUI"
-                            command="Tools:ResponsiveUI"/>
-                  <menuitem id="menu_debugger"
-                            hidden="true"
-                            type="checkbox"
-                            label="&debuggerMenu.label2;"
-                            key="key_debugger"
-                            command="Tools:Debugger"/>
-                  <menuitem id="menu_remoteDebugger"
-                            hidden="true"
-                            label="&remoteDebuggerMenu.label;"
-                            command="Tools:RemoteDebugger"/>
-                  <menuitem id="menu_chromeDebugger"
-                            hidden="true"
-                            label="&chromeDebuggerMenu.label;"
-                            command="Tools:ChromeDebugger"/>
-                  <menuitem id="menu_scratchpad"
-                            hidden="true"
-                            label="&scratchpad.label;"
-                            accesskey="&scratchpad.accesskey;"
-                            key="key_scratchpad"
-                            command="Tools:Scratchpad"/>
-                  <menuitem id="menu_styleeditor"
-                            hidden="true"
-                            label="&styleeditor.label;"
-                            accesskey="&styleeditor.accesskey;"
-                            key="key_styleeditor"
-                            command="Tools:StyleEditor"/>
-                  <menuitem id="menu_pageSource"
-                            accesskey="&pageSourceCmd.accesskey;"
-                            label="&pageSourceCmd.label;"
-                            key="key_viewSource"
-                            command="View:PageSource"/>
-                  <menuitem id="javascriptConsole"
-                            hidden="true"
-                            label="&errorConsoleCmd.label;"
-                            accesskey="&errorConsoleCmd.accesskey;"
-                            key="key_errorConsole"
-                            oncommand="toJavaScriptConsole();"/>
+                  <menuitem id="menu_devToolbar" observes="devtoolsMenuBroadcaster_DevToolbar" accesskey="&devToolbarMenu.accesskey;"/>
+                  <menuitem id="webConsole" observes="devtoolsMenuBroadcaster_WebConsole" accesskey="&webConsoleCmd.accesskey;"/>
+                  <menuitem id="menu_remoteWebConsole" observes="devtoolsMenuBroadcaster_RemoteWebConsole"/>
+                  <menuitem id="menu_pageinspect" observes="devtoolsMenuBroadcaster_Inspect" accesskey="&inspectMenu.accesskey;"/>
+                  <menuitem id="menu_responsiveUI" observes="devtoolsMenuBroadcaster_ResponsiveUI" accesskey="&responsiveDesignTool.accesskey;"/>
+                  <menuitem id="menu_debugger" observes="devtoolsMenuBroadcaster_Debugger" accesskey="&debuggerMenu.accesskey;"/>
+                  <menuitem id="menu_remoteDebugger" observes="devtoolsMenuBroadcaster_RemoteDebugger"/>
+                  <menuitem id="menu_chromeDebugger" observes="devtoolsMenuBroadcaster_ChromeDebugger"/>
+                  <menuitem id="menu_scratchpad" observes="devtoolsMenuBroadcaster_Scratchpad" accesskey="&scratchpad.accesskey;"/>
+                  <menuitem id="menu_styleeditor" observes="devtoolsMenuBroadcaster_StyleEditor" accesskey="&styleeditor.accesskey;"/>
+                  <menuitem id="menu_pageSource" observes="devtoolsMenuBroadcaster_PageSource" accesskey="&pageSourceCmd.accesskey;"/>
+                  <menuitem id="javascriptConsole" observes="devtoolsMenuBroadcaster_ErrorConsole" accesskey="&errorConsoleCmd.accesskey;"/>
                   <menuseparator id="devToolsEndSeparator"/>
-                  <menuitem id="getMoreDevtools"
-                            label="&getMoreDevtoolsCmd.label;"
-                            accesskey="&getMoreDevtoolsCmd.accesskey;"
-                            oncommand="openUILinkIn('https://addons.mozilla.org/firefox/collections/mozilla/webdeveloper/', 'tab');"/>
+                  <menuitem id="getMoreDevtools" observes="devtoolsMenuBroadcaster_GetMoreTools" accesskey="&getMoreDevtoolsCmd.accesskey;"/>
                 </menupopup>
               </menu>
               <menuitem id="menu_pageInfo"
@@ -594,6 +582,7 @@
 #endif
                         command="View:PageInfo"/>
               <menuseparator id="sanitizeSeparator"/>
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
               <menuitem id="privateBrowsingItem"
                         label="&privateBrowsingCmd.start.label;"
                         accesskey="&privateBrowsingCmd.start.accesskey;"
@@ -603,6 +592,7 @@
                         stopaccesskey="&privateBrowsingCmd.stop.accesskey;"
                         key="key_privatebrowsing"
                         command="Tools:PrivateBrowsing"/>
+#endif
               <menuitem id="sanitizeItem"
                         accesskey="&clearRecentHistory.accesskey;"
                         label="&clearRecentHistory.label;"

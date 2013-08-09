@@ -15,6 +15,7 @@ MockFilePicker.init();
 
 var observer = {
   lastDisplayed: null,
+  callback: null,
   checkDisplayed: function(aExpected) {
     is(this.lastDisplayed, aExpected, "'addon-options-displayed' notification should have fired");
     this.lastDisplayed = null;
@@ -31,7 +32,7 @@ var observer = {
     is(this.lastHidden, null, "'addon-options-hidden' notification should not have fired");
   },
   observe: function(aSubject, aTopic, aData) {
-    if (aTopic == "addon-options-displayed") {
+    if (aTopic == AddonManager.OPTIONS_NOTIFICATION_DISPLAYED) {
       this.lastDisplayed = aData;
       // Test if the binding has applied before the observers are notified. We test the second setting here,
       // because the code operates on the first setting and we want to check it applies to all.
@@ -41,7 +42,13 @@ var observer = {
 
       // Add some extra height to the scrolling pane to ensure that it needs to scroll when appropriate.
       gManagerWindow.document.getElementById("detail-controls").style.marginBottom = "1000px";
-    } else if (aTopic == "addon-options-hidden") {
+
+      if (this.callback) {
+        var tempCallback = this.callback;
+        this.callback = null;
+        tempCallback();
+      }
+    } else if (aTopic == AddonManager.OPTIONS_NOTIFICATION_HIDDEN) {
       this.lastHidden = aData;
     }
   }
@@ -101,8 +108,12 @@ function test() {
       gManagerWindow = aWindow;
       gCategoryUtilities = new CategoryUtilities(gManagerWindow);
 
-      Services.obs.addObserver(observer, "addon-options-displayed", false);
-      Services.obs.addObserver(observer, "addon-options-hidden", false);
+      Services.obs.addObserver(observer,
+                               AddonManager.OPTIONS_NOTIFICATION_DISPLAYED,
+                               false);
+      Services.obs.addObserver(observer,
+                               AddonManager.OPTIONS_NOTIFICATION_HIDDEN,
+                               false);
 
       run_next_test();
     });
@@ -110,7 +121,8 @@ function test() {
 }
 
 function end_test() {
-  Services.obs.removeObserver(observer, "addon-options-displayed");
+  Services.obs.removeObserver(observer,
+                              AddonManager.OPTIONS_NOTIFICATION_DISPLAYED);
 
   Services.prefs.clearUserPref("extensions.inlinesettings1.bool");
   Services.prefs.clearUserPref("extensions.inlinesettings1.boolint");
@@ -128,7 +140,8 @@ function end_test() {
 
   close_manager(gManagerWindow, function() {
     observer.checkHidden("inlinesettings2@tests.mozilla.org");
-    Services.obs.removeObserver(observer, "addon-options-hidden");
+    Services.obs.removeObserver(observer,
+                                AddonManager.OPTIONS_NOTIFICATION_HIDDEN);
 
     AddonManager.getAddonByID("inlinesettings1@tests.mozilla.org", function(aAddon) {
       aAddon.uninstall();
@@ -504,17 +517,19 @@ add_test(function() {
         var grid = gManagerWindow.document.getElementById("detail-grid");
         var settings = grid.querySelectorAll("rows > setting");
         is(settings.length, 0, "Grid should not have settings children");
-        
+
         // enable
         var button = gManagerWindow.document.getElementById("detail-enable-btn");
         EventUtils.synthesizeMouseAtCenter(button, { clickCount: 1 }, gManagerWindow);
 
-        observer.checkDisplayed("inlinesettings1@tests.mozilla.org");
+        observer.callback = function() {
+          observer.checkDisplayed("inlinesettings1@tests.mozilla.org");
 
-        settings = grid.querySelectorAll("rows > setting");
-        is(settings.length, SETTINGS_ROWS, "Grid should have settings children");
+          settings = grid.querySelectorAll("rows > setting");
+          is(settings.length, SETTINGS_ROWS, "Grid should have settings children");
 
-        gCategoryUtilities.openType("extension", run_next_test);
+          gCategoryUtilities.openType("extension", run_next_test);
+        };
       });
     });
   });

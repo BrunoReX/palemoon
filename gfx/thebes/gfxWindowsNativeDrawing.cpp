@@ -28,7 +28,7 @@ enum {
 
 gfxWindowsNativeDrawing::gfxWindowsNativeDrawing(gfxContext* ctx,
                                                  const gfxRect& nativeRect,
-                                                 PRUint32 nativeDrawFlags)
+                                                 uint32_t nativeDrawFlags)
     : mContext(ctx), mNativeRect(nativeRect), mNativeDrawFlags(nativeDrawFlags), mRenderState(RENDER_STATE_INIT)
 {
 }
@@ -44,7 +44,7 @@ gfxWindowsNativeDrawing::BeginNativeDrawing()
         }
 
         if (surf && surf->CairoStatus())
-            return nsnull;
+            return nullptr;
 
         gfxMatrix m = mContext->CurrentMatrix();
         if (!m.HasNonTranslation())
@@ -112,8 +112,8 @@ gfxWindowsNativeDrawing::BeginNativeDrawing()
                 // There's probably a better fix, but I haven't figured out
                 // the root cause of the problem.
                 mTempSurfaceSize =
-                    gfxIntSize((PRInt32) ceil(mNativeRect.Width() + 1),
-                               (PRInt32) ceil(mNativeRect.Height() + 1));
+                    gfxIntSize((int32_t) ceil(mNativeRect.Width() + 1),
+                               (int32_t) ceil(mNativeRect.Height() + 1));
             } else {
                 // figure out the scale factors
                 mScale = m.ScaleFactors(true);
@@ -127,8 +127,8 @@ gfxWindowsNativeDrawing::BeginNativeDrawing()
 
                 // See comment above about "+1"
                 mTempSurfaceSize =
-                    gfxIntSize((PRInt32) ceil(mNativeRect.Width() * mScale.width + 1),
-                               (PRInt32) ceil(mNativeRect.Height() * mScale.height + 1));
+                    gfxIntSize((int32_t) ceil(mNativeRect.Width() * mScale.width + 1),
+                               (int32_t) ceil(mNativeRect.Height() * mScale.height + 1));
             }
         }
     }
@@ -175,7 +175,7 @@ gfxWindowsNativeDrawing::BeginNativeDrawing()
         return mDC;
     } else {
         NS_ERROR("Bogus render state!");
-        return nsnull;
+        return nullptr;
     }
 }
 
@@ -237,12 +237,12 @@ gfxWindowsNativeDrawing::EndNativeDrawing()
         mRenderState = RENDER_STATE_NATIVE_DRAWING_DONE;
     } else if (mRenderState == RENDER_STATE_ALPHA_RECOVERY_BLACK) {
         mBlackSurface = mWinSurface;
-        mWinSurface = nsnull;
+        mWinSurface = nullptr;
 
         mRenderState = RENDER_STATE_ALPHA_RECOVERY_BLACK_DONE;
     } else if (mRenderState == RENDER_STATE_ALPHA_RECOVERY_WHITE) {
         mWhiteSurface = mWinSurface;
-        mWinSurface = nsnull;
+        mWinSurface = nullptr;
 
         mRenderState = RENDER_STATE_ALPHA_RECOVERY_WHITE_DONE;
     } else {

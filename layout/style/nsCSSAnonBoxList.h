@@ -62,6 +62,10 @@ CSS_ANON_BOX(columnContent, ":-moz-column-content")
 CSS_ANON_BOX(viewport, ":-moz-viewport")
 CSS_ANON_BOX(viewportScroll, ":-moz-viewport-scroll")
 
+// Inside a flex container, a contiguous run of non-replaced inline children
+// gets wrapped in an anonymous block, which is then treated as a flex item.
+CSS_ANON_BOX(anonymousFlexItem, ":-moz-anonymous-flex-item")
+
 #ifdef MOZ_XUL
 CSS_ANON_BOX(moztreecolumn, ":-moz-tree-column")
 CSS_ANON_BOX(moztreerow, ":-moz-tree-row")
@@ -77,4 +81,6 @@ CSS_ANON_BOX(moztreeprogressmeter, ":-moz-tree-progressmeter")
 CSS_ANON_BOX(moztreedropfeedback, ":-moz-tree-drop-feedback")
 #endif
 
+CSS_ANON_BOX(mozSVGOuterSVGAnonChild, ":-moz-svg-outer-svg-anon-child")
 CSS_ANON_BOX(mozSVGForeignContent, ":-moz-svg-foreign-content")
+CSS_ANON_BOX(mozSVGText, ":-moz-svg-text")

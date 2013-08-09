@@ -15,43 +15,32 @@
 #include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
 #include "nsCoreUtils.h"
+#include "nsEventShell.h"
 #include "Relation.h"
 #include "Role.h"
 #include "States.h"
+#ifdef MOZ_XUL
+#include "XULTreeAccessible.h"
+#endif
 
 #include "mozilla/dom/Element.h"
-#include "nsHTMLSelectAccessible.h"
+
 #include "nsIAccessibleRelation.h"
-#include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
-#include "nsIDocShellTreeNode.h"
 #include "nsIDocShellTreeOwner.h"
-#include "nsIDOMElement.h"
-#include "nsIDOMEventListener.h"
 #include "nsIDOMEventTarget.h"
-#include "nsIDOMHTMLAnchorElement.h"
-#include "nsIDOMHTMLImageElement.h"
-#include "nsIDOMHTMLInputElement.h"
-#include "nsIDOMHTMLSelectElement.h"
 #include "nsIDOMDataContainerEvent.h"
-#include "nsIDOMNSEvent.h"
 #include "nsIDOMXULMultSelectCntrlEl.h"
-#include "nsIDOMXULPopupElement.h"
 #include "nsIDocument.h"
 #include "nsEventListenerManager.h"
-#include "nsIFrame.h"
-#include "nsIHTMLDocument.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsISelectionPrivate.h"
 #include "nsIServiceManager.h"
 #include "nsPIDOMWindow.h"
 #include "nsIWebBrowserChrome.h"
 #include "nsReadableUtils.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsFocusManager.h"
 
 #ifdef MOZ_XUL
-#include "nsXULTreeAccessible.h"
 #include "nsIXULDocument.h"
 #include "nsIXULWindow.h"
 #endif
@@ -113,7 +102,7 @@ RootAccessible::NativeRole()
 
 // RootAccessible protected member
 #ifdef MOZ_XUL
-PRUint32
+uint32_t
 RootAccessible::GetChromeFlags()
 {
   // Return the flag set for the top level window as defined 
@@ -129,21 +118,21 @@ RootAccessible::GetChromeFlags()
   if (!xulWin) {
     return 0;
   }
-  PRUint32 chromeFlags;
+  uint32_t chromeFlags;
   xulWin->GetChromeFlags(&chromeFlags);
   return chromeFlags;
 }
 #endif
 
-PRUint64
+uint64_t
 RootAccessible::NativeState()
 {
-  PRUint64 state = DocAccessibleWrap::NativeState();
+  uint64_t state = DocAccessibleWrap::NativeState();
   if (state & states::DEFUNCT)
     return state;
 
 #ifdef MOZ_XUL
-  PRUint32 chromeFlags = GetChromeFlags();
+  uint32_t chromeFlags = GetChromeFlags();
   if (chromeFlags & nsIWebBrowserChrome::CHROME_WINDOW_RESIZE)
     state |= states::SIZEABLE;
     // If it has a titlebar it's movable
@@ -236,7 +225,7 @@ RootAccessible::RemoveEventListeners()
 
   if (mCaretAccessible) {
     mCaretAccessible->Shutdown();
-    mCaretAccessible = nsnull;
+    mCaretAccessible = nullptr;
   }
 
   return NS_OK;
@@ -262,29 +251,25 @@ RootAccessible::DocumentActivated(DocAccessible* aDocument)
 NS_IMETHODIMP
 RootAccessible::HandleEvent(nsIDOMEvent* aDOMEvent)
 {
-  nsCOMPtr<nsIDOMNSEvent> DOMNSEvent(do_QueryInterface(aDOMEvent));
+  MOZ_ASSERT(aDOMEvent);
   nsCOMPtr<nsIDOMEventTarget> DOMEventTarget;
-  DOMNSEvent->GetOriginalTarget(getter_AddRefs(DOMEventTarget));
+  aDOMEvent->GetOriginalTarget(getter_AddRefs(DOMEventTarget));
   nsCOMPtr<nsINode> origTargetNode(do_QueryInterface(DOMEventTarget));
   if (!origTargetNode)
     return NS_OK;
+
+#ifdef A11Y_LOG
+  if (logging::IsEnabled(logging::eDOMEvents)) {
+    nsAutoString eventType;
+    aDOMEvent->GetType(eventType);
+    logging::DOMEvent("handled", origTargetNode, eventType);
+  }
+#endif
 
   DocAccessible* document =
     GetAccService()->GetDocAccessible(origTargetNode->OwnerDoc());
 
   if (document) {
-#ifdef DEBUG
-    if (logging::IsEnabled(logging::eDOMEvents)) {
-      nsAutoString eventType;
-      aDOMEvent->GetType(eventType);
-
-      logging::MsgBegin("DOMEvents", "event '%s' handled",
-                        NS_ConvertUTF16toUTF8(eventType).get());
-      logging::Node("target", origTargetNode);
-      logging::MsgEnd();
-    }
-#endif
-
     // Root accessible exists longer than any of its descendant documents so
     // that we are guaranteed notification is processed before root accessible
     // is destroyed.
@@ -299,13 +284,18 @@ RootAccessible::HandleEvent(nsIDOMEvent* aDOMEvent)
 void
 RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
 {
-  nsCOMPtr<nsIDOMNSEvent> DOMNSEvent(do_QueryInterface(aDOMEvent));
+  MOZ_ASSERT(aDOMEvent);
   nsCOMPtr<nsIDOMEventTarget> DOMEventTarget;
-  DOMNSEvent->GetOriginalTarget(getter_AddRefs(DOMEventTarget));
+  aDOMEvent->GetOriginalTarget(getter_AddRefs(DOMEventTarget));
   nsCOMPtr<nsINode> origTargetNode(do_QueryInterface(DOMEventTarget));
 
   nsAutoString eventType;
   aDOMEvent->GetType(eventType);
+
+#ifdef A11Y_LOG
+  if (logging::IsEnabled(logging::eDOMEvents))
+    logging::DOMEvent("processed", origTargetNode, eventType);
+#endif
 
   if (eventType.EqualsLiteral("popuphiding")) {
     HandlePopupHidingEvent(origTargetNode);
@@ -324,7 +314,7 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
   nsINode* targetNode = accessible->GetNode();
 
 #ifdef MOZ_XUL
-  nsXULTreeAccessible* treeAcc = accessible->AsXULTree();
+  XULTreeAccessible* treeAcc = accessible->AsXULTree();
   if (treeAcc) {
     if (eventType.EqualsLiteral("TreeRowCountChanged")) {
       HandleTreeRowCountChangedEvent(aDOMEvent, treeAcc);
@@ -339,11 +329,11 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
 #endif
 
   if (eventType.EqualsLiteral("RadioStateChange")) {
-    PRUint64 state = accessible->State();
+    uint64_t state = accessible->State();
 
     // radiogroup in prefWindow is exposed as a list,
     // and panebutton is exposed as XULListitem in A11y.
-    // nsXULListitemAccessible::GetStateInternal uses STATE_SELECTED in this case,
+    // XULListitemAccessible::GetStateInternal uses STATE_SELECTED in this case,
     // so we need to check states::SELECTED also.
     bool isEnabled = (state & (states::CHECKED | states::SELECTED)) != 0;
 
@@ -353,14 +343,17 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
 
     if (isEnabled) {
       FocusMgr()->ActiveItemChanged(accessible);
-      A11YDEBUG_FOCUS_ACTIVEITEMCHANGE_CAUSE("RadioStateChange", accessible)
+#ifdef A11Y_LOG
+      if (logging::IsEnabled(logging::eFocus))
+        logging::ActiveItemChangeCausedBy("RadioStateChange", accessible);
+#endif
     }
 
     return;
   }
 
   if (eventType.EqualsLiteral("CheckboxStateChange")) {
-    PRUint64 state = accessible->State();
+    uint64_t state = accessible->State();
 
     bool isEnabled = !!(state & states::CHECKED);
 
@@ -371,7 +364,7 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
     return;
   }
 
-  Accessible* treeItemAcc = nsnull;
+  Accessible* treeItemAcc = nullptr;
 #ifdef MOZ_XUL
   // If it's a tree element, need the currently selected item.
   if (treeAcc) {
@@ -381,7 +374,7 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
   }
 
   if (treeItemAcc && eventType.EqualsLiteral("OpenStateChange")) {
-    PRUint64 state = accessible->State();
+    uint64_t state = accessible->State();
     bool isEnabled = (state & states::EXPANDED) != 0;
 
     nsRefPtr<AccEvent> accEvent =
@@ -403,7 +396,7 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
         // XXX: We need to fire EVENT_SELECTION_ADD and EVENT_SELECTION_REMOVE
         // for each tree item. Perhaps each tree item will need to cache its
         // selection state and fire an event after a DOM "select" event when
-        // that state changes. nsXULTreeAccessible::UpdateTreeSelection();
+        // that state changes. XULTreeAccessible::UpdateTreeSelection();
         nsEventShell::FireEvent(nsIAccessibleEvent::EVENT_SELECTION_WITHIN,
                                 accessible);
         return;
@@ -432,7 +425,10 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
   }
   else if (eventType.EqualsLiteral("DOMMenuItemActive")) {
     FocusMgr()->ActiveItemChanged(accessible);
-    A11YDEBUG_FOCUS_ACTIVEITEMCHANGE_CAUSE("DOMMenuItemActive", accessible)
+#ifdef A11Y_LOG
+    if (logging::IsEnabled(logging::eFocus))
+      logging::ActiveItemChangeCausedBy("DOMMenuItemActive", accessible);
+#endif
   }
   else if (eventType.EqualsLiteral("DOMMenuItemInactive")) {
     // Process DOMMenuItemInactive event for autocomplete only because this is
@@ -442,8 +438,11 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
     Accessible* widget =
       accessible->IsWidget() ? accessible : accessible->ContainerWidget();
     if (widget && widget->IsAutoCompletePopup()) {
-      FocusMgr()->ActiveItemChanged(nsnull);
-      A11YDEBUG_FOCUS_ACTIVEITEMCHANGE_CAUSE("DOMMenuItemInactive", accessible)
+      FocusMgr()->ActiveItemChanged(nullptr);
+#ifdef A11Y_LOG
+      if (logging::IsEnabled(logging::eFocus))
+        logging::ActiveItemChangeCausedBy("DOMMenuItemInactive", accessible);
+#endif
     }
   }
   else if (eventType.EqualsLiteral("DOMMenuBarActive")) {  // Always from user input
@@ -459,20 +458,30 @@ RootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
     Accessible* activeItem = accessible->CurrentItem();
     if (activeItem) {
       FocusMgr()->ActiveItemChanged(activeItem);
-      A11YDEBUG_FOCUS_ACTIVEITEMCHANGE_CAUSE("DOMMenuBarActive", accessible)
+#ifdef A11Y_LOG
+      if (logging::IsEnabled(logging::eFocus))
+        logging::ActiveItemChangeCausedBy("DOMMenuBarActive", accessible);
+#endif
     }
   }
   else if (eventType.EqualsLiteral("DOMMenuBarInactive")) {  // Always from user input
     nsEventShell::FireEvent(nsIAccessibleEvent::EVENT_MENU_END,
                             accessible, eFromUserInput);
 
-    FocusMgr()->ActiveItemChanged(nsnull);
-    A11YDEBUG_FOCUS_ACTIVEITEMCHANGE_CAUSE("DOMMenuBarInactive", accessible)
+    FocusMgr()->ActiveItemChanged(nullptr);
+#ifdef A11Y_LOG
+    if (logging::IsEnabled(logging::eFocus))
+      logging::ActiveItemChangeCausedBy("DOMMenuBarInactive", accessible);
+#endif
   }
   else if (eventType.EqualsLiteral("ValueChange")) {
-    targetDocument->
-      FireDelayedAccessibleEvent(nsIAccessibleEvent::EVENT_VALUE_CHANGE,
-                                 targetNode, AccEvent::eRemoveDupes);
+
+    //We don't process 'ValueChange' events for progress meters since we listen
+    //@value attribute change for them.
+    if (!accessible->IsProgress())
+      targetDocument->
+        FireDelayedAccessibleEvent(nsIAccessibleEvent::EVENT_VALUE_CHANGE,
+                                   targetNode);
   }
 #ifdef DEBUG_DRAGDROPSTART
   else if (eventType.EqualsLiteral("mouseover")) {
@@ -498,7 +507,7 @@ RootAccessible::Shutdown()
 
 // nsIAccessible method
 Relation
-RootAccessible::RelationByType(PRUint32 aType)
+RootAccessible::RelationByType(uint32_t aType)
 {
   if (!mDocument || aType != nsIAccessibleRelation::RELATION_EMBEDS)
     return DocAccessibleWrap::RelationByType(aType);
@@ -581,8 +590,8 @@ RootAccessible::HandlePopupHidingEvent(nsINode* aPopupNode)
     if (!popupContainer)
       return;
 
-    PRUint32 childCount = popupContainer->ChildCount();
-    for (PRUint32 idx = 0; idx < childCount; idx++) {
+    uint32_t childCount = popupContainer->ChildCount();
+    for (uint32_t idx = 0; idx < childCount; idx++) {
       Accessible* child = popupContainer->GetChildAt(idx);
       if (child->IsAutoCompletePopup()) {
         popup = child;
@@ -602,14 +611,14 @@ RootAccessible::HandlePopupHidingEvent(nsINode* aPopupNode)
   // When popup closes (except nested popups and menus) then fire focus event to
   // where it was. The focus event is expected even if popup didn't take a focus.
 
-  static const PRUint32 kNotifyOfFocus = 1;
-  static const PRUint32 kNotifyOfState = 2;
-  PRUint32 notifyOf = 0;
+  static const uint32_t kNotifyOfFocus = 1;
+  static const uint32_t kNotifyOfState = 2;
+  uint32_t notifyOf = 0;
 
   // HTML select is target of popuphidding event. Otherwise get container
   // widget. No container widget means this is either tooltip or menupopup.
   // No events in the former case.
-  Accessible* widget = nsnull;
+  Accessible* widget = nullptr;
   if (popup->IsCombobox()) {
     widget = popup;
   } else {
@@ -657,8 +666,11 @@ RootAccessible::HandlePopupHidingEvent(nsINode* aPopupNode)
 
   // Restore focus to where it was.
   if (notifyOf & kNotifyOfFocus) {
-    FocusMgr()->ActiveItemChanged(nsnull);
-    A11YDEBUG_FOCUS_ACTIVEITEMCHANGE_CAUSE("popuphiding", popup)
+    FocusMgr()->ActiveItemChanged(nullptr);
+#ifdef A11Y_LOG
+    if (logging::IsEnabled(logging::eFocus))
+      logging::ActiveItemChangeCausedBy("popuphiding", popup);
+#endif
   }
 
   // Fire expanded state change event.
@@ -672,7 +684,7 @@ RootAccessible::HandlePopupHidingEvent(nsINode* aPopupNode)
 #ifdef MOZ_XUL
 void
 RootAccessible::HandleTreeRowCountChangedEvent(nsIDOMEvent* aEvent,
-                                               nsXULTreeAccessible* aAccessible)
+                                               XULTreeAccessible* aAccessible)
 {
   nsCOMPtr<nsIDOMDataContainerEvent> dataEvent(do_QueryInterface(aEvent));
   if (!dataEvent)
@@ -690,7 +702,7 @@ RootAccessible::HandleTreeRowCountChangedEvent(nsIDOMEvent* aEvent,
   if (!countVariant)
     return;
 
-  PRInt32 index, count;
+  int32_t index, count;
   indexVariant->GetAsInt32(&index);
   countVariant->GetAsInt32(&count);
 
@@ -699,13 +711,13 @@ RootAccessible::HandleTreeRowCountChangedEvent(nsIDOMEvent* aEvent,
 
 void
 RootAccessible::HandleTreeInvalidatedEvent(nsIDOMEvent* aEvent,
-                                           nsXULTreeAccessible* aAccessible)
+                                           XULTreeAccessible* aAccessible)
 {
   nsCOMPtr<nsIDOMDataContainerEvent> dataEvent(do_QueryInterface(aEvent));
   if (!dataEvent)
     return;
 
-  PRInt32 startRow = 0, endRow = -1, startCol = 0, endCol = -1;
+  int32_t startRow = 0, endRow = -1, startCol = 0, endCol = -1;
 
   nsCOMPtr<nsIVariant> startRowVariant;
   dataEvent->GetData(NS_LITERAL_STRING("startrow"),

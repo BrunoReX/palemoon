@@ -4,9 +4,9 @@
 
 package org.mozilla.gecko.gfx;
 
+import android.view.KeyEvent;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
-import android.view.KeyEvent;
 
 public interface InputConnectionHandler
 {
@@ -16,4 +16,5 @@ public interface InputConnectionHandler
     boolean onKeyLongPress(int keyCode, KeyEvent event);
     boolean onKeyMultiple(int keyCode, int repeatCount, KeyEvent event);
     boolean onKeyUp(int keyCode, KeyEvent event);
+    boolean isIMEEnabled();
 }

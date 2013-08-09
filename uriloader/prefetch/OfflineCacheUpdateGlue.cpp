@@ -75,7 +75,7 @@ OfflineCacheUpdateGlue::Schedule()
         LOG(("Calling offline-cache-update-added"));
         observerService->NotifyObservers(static_cast<nsIOfflineCacheUpdate*>(this),
                                          "offline-cache-update-added",
-                                         nsnull);
+                                         nullptr);
         LOG(("Done offline-cache-update-added"));
     }
 
@@ -92,7 +92,9 @@ NS_IMETHODIMP
 OfflineCacheUpdateGlue::Init(nsIURI *aManifestURI, 
                              nsIURI *aDocumentURI,
                              nsIDOMDocument *aDocument,
-                             nsILocalFile *aCustomProfileDir)
+                             nsIFile *aCustomProfileDir,
+                             uint32_t aAppID,
+                             bool aInBrowser)
 {
     if (!EnsureUpdate())
         return NS_ERROR_NULL_POINTER;
@@ -102,7 +104,7 @@ OfflineCacheUpdateGlue::Init(nsIURI *aManifestURI,
     if (aDocument)
         SetDocument(aDocument);
 
-    return mUpdate->Init(aManifestURI, aDocumentURI, nsnull, aCustomProfileDir);
+    return mUpdate->Init(aManifestURI, aDocumentURI, nullptr, aCustomProfileDir, aAppID, aInBrowser);
 }
 
 void
@@ -141,7 +143,7 @@ OfflineCacheUpdateGlue::SetDocument(nsIDOMDocument *aDocument)
 }
 
 NS_IMETHODIMP
-OfflineCacheUpdateGlue::UpdateStateChanged(nsIOfflineCacheUpdate *aUpdate, PRUint32 state)
+OfflineCacheUpdateGlue::UpdateStateChanged(nsIOfflineCacheUpdate *aUpdate, uint32_t state)
 {
     if (state == nsIOfflineCacheUpdateObserver::STATE_FINISHED) {
         LOG(("OfflineCacheUpdateGlue got STATE_FINISHED [%p]", this));
@@ -152,7 +154,7 @@ OfflineCacheUpdateGlue::UpdateStateChanged(nsIOfflineCacheUpdate *aUpdate, PRUin
             LOG(("Calling offline-cache-update-completed"));
             observerService->NotifyObservers(static_cast<nsIOfflineCacheUpdate*>(this),
                                              "offline-cache-update-completed",
-                                             nsnull);
+                                             nullptr);
             LOG(("Done offline-cache-update-completed"));
         }
 
@@ -182,7 +184,7 @@ OfflineCacheUpdateGlue::ApplicationCacheAvailable(nsIApplicationCache *aApplicat
     if (!existingCache) {
 #if defined(PR_LOGGING)
         if (LOG_ENABLED()) {
-            nsCAutoString clientID;
+            nsAutoCString clientID;
             if (aApplicationCache) {
                 aApplicationCache->GetClientID(clientID);
             }

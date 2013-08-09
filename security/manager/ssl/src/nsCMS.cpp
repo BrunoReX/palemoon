@@ -16,12 +16,16 @@
 #include "nsCERTValInParamWrapper.h"
 
 #include "prlog.h"
+
+#include "nsNSSCleaner.h"
+#include "nsNSSComponent.h"
+
 #ifdef PR_LOGGING
 extern PRLogModuleInfo* gPIPNSSLog;
 #endif
 
-#include "nsNSSCleaner.h"
-#include "nsNSSComponent.h"
+using namespace mozilla;
+
 static NS_DEFINE_CID(kNSSComponentCID, NS_NSSCOMPONENT_CID);
 
 NSSCleanupAutoPtrClass(CERTCertificate, CERT_DestroyCertificate)
@@ -31,7 +35,7 @@ NS_IMPL_THREADSAFE_ISUPPORTS2(nsCMSMessage, nsICMSMessage,
 
 nsCMSMessage::nsCMSMessage()
 {
-  m_cmsMsg = nsnull;
+  m_cmsMsg = nullptr;
 }
 nsCMSMessage::nsCMSMessage(NSSCMSMessage *aCMSMsg)
 {
@@ -65,28 +69,28 @@ void nsCMSMessage::destructorSafeDestroyNSSReference()
 
 NS_IMETHODIMP nsCMSMessage::VerifySignature()
 {
-  return CommonVerifySignature(nsnull, 0);
+  return CommonVerifySignature(nullptr, 0);
 }
 
 NSSCMSSignerInfo* nsCMSMessage::GetTopLevelSignerInfo()
 {
   nsNSSShutDownPreventionLock locker;
   if (isAlreadyShutDown())
-    return nsnull;
+    return nullptr;
 
   if (!m_cmsMsg)
-    return nsnull;
+    return nullptr;
 
   if (!NSS_CMSMessage_IsSigned(m_cmsMsg))
-    return nsnull;
+    return nullptr;
 
   NSSCMSContentInfo *cinfo = NSS_CMSMessage_ContentLevel(m_cmsMsg, 0);
   if (!cinfo)
-    return nsnull;
+    return nullptr;
 
   NSSCMSSignedData *sigd = (NSSCMSSignedData*)NSS_CMSContentInfo_GetContent(cinfo);
   if (!sigd)
-    return nsnull;
+    return nullptr;
 
   PR_ASSERT(NSS_CMSSignedData_SignerInfoCount(sigd) > 0);
   return NSS_CMSSignedData_GetSignerInfo(sigd, 0);
@@ -180,9 +184,9 @@ NS_IMETHODIMP nsCMSMessage::GetSignerCert(nsIX509Cert **scert)
   }
   else {
     PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("nsCMSMessage::GetSignerCert no signer cert, do we have a cert list? %s\n",
-      (si->certList != nsnull ? "yes" : "no") ));
+      (si->certList ? "yes" : "no") ));
 
-    *scert = nsnull;
+    *scert = nullptr;
   }
   
   return NS_OK;
@@ -197,7 +201,7 @@ NS_IMETHODIMP nsCMSMessage::GetEncryptionCert(nsIX509Cert **ecert)
     return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-NS_IMETHODIMP nsCMSMessage::VerifyDetachedSignature(unsigned char* aDigestData, PRUint32 aDigestDataLen)
+NS_IMETHODIMP nsCMSMessage::VerifyDetachedSignature(unsigned char* aDigestData, uint32_t aDigestDataLen)
 {
   if (!aDigestData || !aDigestDataLen)
     return NS_ERROR_FAILURE;
@@ -205,19 +209,19 @@ NS_IMETHODIMP nsCMSMessage::VerifyDetachedSignature(unsigned char* aDigestData, 
   return CommonVerifySignature(aDigestData, aDigestDataLen);
 }
 
-nsresult nsCMSMessage::CommonVerifySignature(unsigned char* aDigestData, PRUint32 aDigestDataLen)
+nsresult nsCMSMessage::CommonVerifySignature(unsigned char* aDigestData, uint32_t aDigestDataLen)
 {
   nsNSSShutDownPreventionLock locker;
   if (isAlreadyShutDown())
     return NS_ERROR_NOT_AVAILABLE;
 
   PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("nsCMSMessage::CommonVerifySignature, content level count %d\n", NSS_CMSMessage_ContentLevelCount(m_cmsMsg)));
-  NSSCMSContentInfo *cinfo = nsnull;
-  NSSCMSSignedData *sigd = nsnull;
+  NSSCMSContentInfo *cinfo = nullptr;
+  NSSCMSSignedData *sigd = nullptr;
   NSSCMSSignerInfo *si;
-  PRInt32 nsigners;
+  int32_t nsigners;
   nsresult rv = NS_ERROR_FAILURE;
-  nsRefPtr<nsCERTValInParamWrapper> survivingParams;
+  RefPtr<nsCERTValInParamWrapper> survivingParams;
   nsCOMPtr<nsINSSComponent> inss;
 
   if (!NSS_CMSMessage_IsSigned(m_cmsMsg)) {
@@ -265,7 +269,7 @@ nsresult nsCMSMessage::CommonVerifySignature(unsigned char* aDigestData, PRUint3
   if (!nsNSSComponent::globalConstFlagUsePKIXVerification) {
     if (CERT_VerifyCertificateNow(CERT_GetDefaultCertDB(), si->cert, true, 
                                   certificateUsageEmailSigner,
-                                  si->cmsg->pwfn_arg, NULL) != SECSuccess) {
+                                  si->cmsg->pwfn_arg, nullptr) != SECSuccess) {
       PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("nsCMSMessage::CommonVerifySignature - signing cert not trusted now\n"));
       rv = NS_ERROR_CMS_VERIFY_UNTRUSTED;
       goto loser;
@@ -283,10 +287,10 @@ nsresult nsCMSMessage::CommonVerifySignature(unsigned char* aDigestData, PRUint3
     if (NS_FAILED(inss->GetDefaultCERTValInParam(survivingParams))) {
       goto loser;
     }
-    rv = CERT_PKIXVerifyCert(si->cert, certificateUsageEmailSigner,
+    SECStatus stat = CERT_PKIXVerifyCert(si->cert, certificateUsageEmailSigner,
 			    survivingParams->GetRawPointerForNSS(),
 			    cvout, si->cmsg->pwfn_arg);
-    if (rv != SECSuccess) {
+    if (stat != SECSuccess) {
       PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("nsCMSMessage::CommonVerifySignature - signing cert not trusted now\n"));
       rv = NS_ERROR_CMS_VERIFY_UNTRUSTED;
       goto loser;
@@ -350,12 +354,12 @@ loser:
 NS_IMETHODIMP nsCMSMessage::AsyncVerifySignature(
                               nsISMimeVerificationListener *aListener)
 {
-  return CommonAsyncVerifySignature(aListener, nsnull, 0);
+  return CommonAsyncVerifySignature(aListener, nullptr, 0);
 }
 
 NS_IMETHODIMP nsCMSMessage::AsyncVerifyDetachedSignature(
                               nsISMimeVerificationListener *aListener,
-                              unsigned char* aDigestData, PRUint32 aDigestDataLen)
+                              unsigned char* aDigestData, uint32_t aDigestDataLen)
 {
   if (!aDigestData || !aDigestDataLen)
     return NS_ERROR_FAILURE;
@@ -364,26 +368,18 @@ NS_IMETHODIMP nsCMSMessage::AsyncVerifyDetachedSignature(
 }
 
 nsresult nsCMSMessage::CommonAsyncVerifySignature(nsISMimeVerificationListener *aListener,
-                                                  unsigned char* aDigestData, PRUint32 aDigestDataLen)
+                                                  unsigned char* aDigestData, uint32_t aDigestDataLen)
 {
   nsSMimeVerificationJob *job = new nsSMimeVerificationJob;
-  if (!job)
-    return NS_ERROR_OUT_OF_MEMORY;
   
   if (aDigestData)
   {
     job->digest_data = new unsigned char[aDigestDataLen];
-    if (!job->digest_data)
-    {
-      delete job;
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-    
     memcpy(job->digest_data, aDigestData, aDigestDataLen);
   }
   else
   {
-    job->digest_data = nsnull;
+    job->digest_data = nullptr;
   }
   
   job->digest_len = aDigestDataLen;
@@ -401,7 +397,7 @@ class nsZeroTerminatedCertArray : public nsNSSShutDownObject
 {
 public:
   nsZeroTerminatedCertArray()
-  :mCerts(nsnull), mPoolp(nsnull), mSize(0)
+  :mCerts(nullptr), mPoolp(nullptr), mSize(0)
   {
   }
   
@@ -427,7 +423,7 @@ public:
 
     if (mCerts)
     {
-      for (PRUint32 i=0; i < mSize; i++) {
+      for (uint32_t i=0; i < mSize; i++) {
         if (mCerts[i]) {
           CERT_DestroyCertificate(mCerts[i]);
         }
@@ -438,7 +434,7 @@ public:
       PORT_FreeArena(mPoolp, false);
   }
 
-  bool allocate(PRUint32 count)
+  bool allocate(uint32_t count)
   {
     // only allow allocation once
     if (mPoolp)
@@ -460,14 +456,14 @@ public:
       return false;
 
     // null array, including zero termination
-    for (PRUint32 i = 0; i < count+1; i++) {
-      mCerts[i] = nsnull;
+    for (uint32_t i = 0; i < count+1; i++) {
+      mCerts[i] = nullptr;
     }
 
     return true;
   }
   
-  void set(PRUint32 i, CERTCertificate *c)
+  void set(uint32_t i, CERTCertificate *c)
   {
     nsNSSShutDownPreventionLock locker;
     if (isAlreadyShutDown())
@@ -483,14 +479,14 @@ public:
     mCerts[i] = CERT_DupCertificate(c);
   }
   
-  CERTCertificate *get(PRUint32 i)
+  CERTCertificate *get(uint32_t i)
   {
     nsNSSShutDownPreventionLock locker;
     if (isAlreadyShutDown())
-      return nsnull;
+      return nullptr;
 
     if (i >= mSize)
-      return nsnull;
+      return nullptr;
     
     return CERT_DupCertificate(mCerts[i]);
   }
@@ -499,7 +495,7 @@ public:
   {
     nsNSSShutDownPreventionLock locker;
     if (isAlreadyShutDown())
-      return nsnull;
+      return nullptr;
 
     return mCerts;
   }
@@ -507,7 +503,7 @@ public:
 private:
   CERTCertificate **mCerts;
   PLArenaPool *mPoolp;
-  PRUint32 mSize;
+  uint32_t mSize;
 };
 
 NS_IMETHODIMP nsCMSMessage::CreateEncrypted(nsIArray * aRecipientCerts)
@@ -523,12 +519,12 @@ NS_IMETHODIMP nsCMSMessage::CreateEncrypted(nsIArray * aRecipientCerts)
   nsZeroTerminatedCertArray recipientCerts;
   SECOidTag bulkAlgTag;
   int keySize;
-  PRUint32 i;
+  uint32_t i;
   nsCOMPtr<nsIX509Cert2> nssRecipientCert;
   nsresult rv = NS_ERROR_FAILURE;
 
   // Check the recipient certificates //
-  PRUint32 recipientCertCount;
+  uint32_t recipientCertCount;
   aRecipientCerts->GetLength(&recipientCertCount);
   PR_ASSERT(recipientCertCount > 0);
 
@@ -557,14 +553,14 @@ NS_IMETHODIMP nsCMSMessage::CreateEncrypted(nsIArray * aRecipientCerts)
     goto loser;
   }
 
-  m_cmsMsg = NSS_CMSMessage_Create(NULL);
-  if (m_cmsMsg == nsnull) {
+  m_cmsMsg = NSS_CMSMessage_Create(nullptr);
+  if (!m_cmsMsg) {
     PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("nsCMSMessage::CreateEncrypted - can't create new cms message\n"));
     rv = NS_ERROR_OUT_OF_MEMORY;
     goto loser;
   }
 
-  if ((envd = NSS_CMSEnvelopedData_Create(m_cmsMsg, bulkAlgTag, keySize)) == nsnull) {
+  if ((envd = NSS_CMSEnvelopedData_Create(m_cmsMsg, bulkAlgTag, keySize)) == nullptr) {
     PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("nsCMSMessage::CreateEncrypted - can't create enveloped data\n"));
     goto loser;
   }
@@ -576,7 +572,7 @@ NS_IMETHODIMP nsCMSMessage::CreateEncrypted(nsIArray * aRecipientCerts)
   }
 
   cinfo = NSS_CMSEnvelopedData_GetContentInfo(envd);
-  if (NSS_CMSContentInfo_SetContent_Data(m_cmsMsg, cinfo, nsnull, false) != SECSuccess) {
+  if (NSS_CMSContentInfo_SetContent_Data(m_cmsMsg, cinfo, nullptr, false) != SECSuccess) {
     PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("nsCMSMessage::CreateEncrypted - can't set content data\n"));
     goto loser;
   }
@@ -585,7 +581,7 @@ NS_IMETHODIMP nsCMSMessage::CreateEncrypted(nsIArray * aRecipientCerts)
   for (i=0; i < recipientCertCount; i++) {
     CERTCertificate *rc = recipientCerts.get(i);
     CERTCertificateCleaner rcCleaner(rc);
-    if ((recipientInfo = NSS_CMSRecipientInfo_Create(m_cmsMsg, rc)) == nsnull) {
+    if ((recipientInfo = NSS_CMSRecipientInfo_Create(m_cmsMsg, rc)) == nullptr) {
       PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("nsCMSMessage::CreateEncrypted - can't create recipient info\n"));
       goto loser;
     }
@@ -599,13 +595,13 @@ NS_IMETHODIMP nsCMSMessage::CreateEncrypted(nsIArray * aRecipientCerts)
 loser:
   if (m_cmsMsg) {
     NSS_CMSMessage_Destroy(m_cmsMsg);
-    m_cmsMsg = nsnull;
+    m_cmsMsg = nullptr;
   }
 
   return rv;
 }
 
-NS_IMETHODIMP nsCMSMessage::CreateSigned(nsIX509Cert* aSigningCert, nsIX509Cert* aEncryptCert, unsigned char* aDigestData, PRUint32 aDigestDataLen)
+NS_IMETHODIMP nsCMSMessage::CreateSigned(nsIX509Cert* aSigningCert, nsIX509Cert* aEncryptCert, unsigned char* aDigestData, uint32_t aDigestDataLen)
 {
   nsNSSShutDownPreventionLock locker;
   if (isAlreadyShutDown())
@@ -615,7 +611,7 @@ NS_IMETHODIMP nsCMSMessage::CreateSigned(nsIX509Cert* aSigningCert, nsIX509Cert*
   NSSCMSContentInfo *cinfo;
   NSSCMSSignedData *sigd;
   NSSCMSSignerInfo *signerinfo;
-  CERTCertificate *scert = nsnull, *ecert = nsnull;
+  CERTCertificate *scert = nullptr, *ecert = nullptr;
   nsCOMPtr<nsIX509Cert2> aSigningCert2 = do_QueryInterface(aSigningCert);
   nsresult rv = NS_ERROR_FAILURE;
 
@@ -640,8 +636,8 @@ NS_IMETHODIMP nsCMSMessage::CreateSigned(nsIX509Cert* aSigningCert, nsIX509Cert*
   /*
    * create the message object
    */
-  m_cmsMsg = NSS_CMSMessage_Create(NULL); /* create a message on its own pool */
-  if (m_cmsMsg == NULL) {
+  m_cmsMsg = NSS_CMSMessage_Create(nullptr); /* create a message on its own pool */
+  if (!m_cmsMsg) {
     PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("nsCMSMessage::CreateSigned - can't create new message\n"));
     rv = NS_ERROR_OUT_OF_MEMORY;
     goto loser;
@@ -650,7 +646,7 @@ NS_IMETHODIMP nsCMSMessage::CreateSigned(nsIX509Cert* aSigningCert, nsIX509Cert*
   /*
    * build chain of objects: message->signedData->data
    */
-  if ((sigd = NSS_CMSSignedData_Create(m_cmsMsg)) == NULL) {
+  if ((sigd = NSS_CMSSignedData_Create(m_cmsMsg)) == nullptr) {
     PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("nsCMSMessage::CreateSigned - can't create signed data\n"));
     goto loser;
   }
@@ -664,7 +660,7 @@ NS_IMETHODIMP nsCMSMessage::CreateSigned(nsIX509Cert* aSigningCert, nsIX509Cert*
   cinfo = NSS_CMSSignedData_GetContentInfo(sigd);
 
   /* we're always passing data in and detaching optionally */
-  if (NSS_CMSContentInfo_SetContent_Data(m_cmsMsg, cinfo, nsnull, true) 
+  if (NSS_CMSContentInfo_SetContent_Data(m_cmsMsg, cinfo, nullptr, true) 
           != SECSuccess) {
     PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("nsCMSMessage::CreateSigned - can't set content data\n"));
     goto loser;
@@ -674,7 +670,7 @@ NS_IMETHODIMP nsCMSMessage::CreateSigned(nsIX509Cert* aSigningCert, nsIX509Cert*
    * create & attach signer information
    */
   if ((signerinfo = NSS_CMSSignerInfo_Create(m_cmsMsg, scert, SEC_OID_SHA1)) 
-          == NULL) {
+          == nullptr) {
     PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("nsCMSMessage::CreateSigned - can't create signer info\n"));
     goto loser;
   }
@@ -746,7 +742,7 @@ NS_IMETHODIMP nsCMSMessage::CreateSigned(nsIX509Cert* aSigningCert, nsIX509Cert*
 loser:
   if (m_cmsMsg) {
     NSS_CMSMessage_Destroy(m_cmsMsg);
-    m_cmsMsg = nsnull;
+    m_cmsMsg = nullptr;
   }
   return rv;
 }
@@ -754,7 +750,7 @@ loser:
 NS_IMPL_THREADSAFE_ISUPPORTS1(nsCMSDecoder, nsICMSDecoder)
 
 nsCMSDecoder::nsCMSDecoder()
-: m_dcx(nsnull)
+: m_dcx(nullptr)
 {
 }
 
@@ -780,7 +776,7 @@ void nsCMSDecoder::destructorSafeDestroyNSSReference()
 
   if (m_dcx) {
     NSS_CMSDecoder_Cancel(m_dcx);
-    m_dcx = nsnull;
+    m_dcx = nullptr;
   }
 }
 
@@ -803,7 +799,7 @@ NS_IMETHODIMP nsCMSDecoder::Start(NSSCMSContentCallback cb, void * arg)
 }
 
 /* void update (in string bug, in long len); */
-NS_IMETHODIMP nsCMSDecoder::Update(const char *buf, PRInt32 len)
+NS_IMETHODIMP nsCMSDecoder::Update(const char *buf, int32_t len)
 {
   nsNSSShutDownPreventionLock locker;
   if (isAlreadyShutDown())
@@ -824,7 +820,7 @@ NS_IMETHODIMP nsCMSDecoder::Finish(nsICMSMessage ** aCMSMsg)
   PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("nsCMSDecoder::Finish\n"));
   NSSCMSMessage *cmsMsg;
   cmsMsg = NSS_CMSDecoder_Finish(m_dcx);
-  m_dcx = nsnull;
+  m_dcx = nullptr;
   if (cmsMsg) {
     nsCMSMessage *obj = new nsCMSMessage(cmsMsg);
     // The NSS object cmsMsg still carries a reference to the context
@@ -840,7 +836,7 @@ NS_IMETHODIMP nsCMSDecoder::Finish(nsICMSMessage ** aCMSMsg)
 NS_IMPL_THREADSAFE_ISUPPORTS1(nsCMSEncoder, nsICMSEncoder)
 
 nsCMSEncoder::nsCMSEncoder()
-: m_ecx(nsnull)
+: m_ecx(nullptr)
 {
 }
 
@@ -881,7 +877,7 @@ NS_IMETHODIMP nsCMSEncoder::Start(nsICMSMessage *aMsg, NSSCMSContentCallback cb,
   m_ctx = new PipUIContext();
 
   m_ecx = NSS_CMSEncoder_Start(cmsMsg->getCMS(), cb, arg, 0, 0, 0, m_ctx, 0, 0, 0, 0);
-  if (m_ecx == nsnull) {
+  if (!m_ecx) {
     PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("nsCMSEncoder::Start - can't start encoder\n"));
     return NS_ERROR_FAILURE;
   }
@@ -889,7 +885,7 @@ NS_IMETHODIMP nsCMSEncoder::Start(nsICMSMessage *aMsg, NSSCMSContentCallback cb,
 }
 
 /* void update (in string aBuf, in long aLen); */
-NS_IMETHODIMP nsCMSEncoder::Update(const char *aBuf, PRInt32 aLen)
+NS_IMETHODIMP nsCMSEncoder::Update(const char *aBuf, int32_t aLen)
 {
   nsNSSShutDownPreventionLock locker;
   if (isAlreadyShutDown())
@@ -916,7 +912,7 @@ NS_IMETHODIMP nsCMSEncoder::Finish()
     PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("nsCMSEncoder::Finish - can't finish encoder\n"));
     rv = NS_ERROR_FAILURE;
   }
-  m_ecx = nsnull;
+  m_ecx = nullptr;
   return rv;
 }
 

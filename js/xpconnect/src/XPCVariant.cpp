@@ -25,12 +25,12 @@ NS_IMPL_CI_INTERFACE_GETTER2(XPCVariant, XPCVariant, nsIVariant)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(XPCVariant)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(XPCVariant)
 
-XPCVariant::XPCVariant(XPCCallContext& ccx, jsval aJSVal)
+XPCVariant::XPCVariant(JSContext* cx, jsval aJSVal)
     : mJSVal(aJSVal), mCCGeneration(0)
 {
     nsVariant::Initialize(&mData);
     if (!JSVAL_IS_PRIMITIVE(mJSVal)) {
-        JSObject *obj = JS_ObjectToInnerObject(ccx, JSVAL_TO_OBJECT(mJSVal));
+        JSObject *obj = JS_ObjectToInnerObject(cx, JSVAL_TO_OBJECT(mJSVal));
 
         mJSVal = OBJECT_TO_JSVAL(obj);
 
@@ -40,9 +40,9 @@ XPCVariant::XPCVariant(XPCCallContext& ccx, jsval aJSVal)
 
         JSObject* proto;
         XPCWrappedNative* wn =
-            XPCWrappedNative::GetWrappedNativeOfJSObject(ccx,
+            XPCWrappedNative::GetWrappedNativeOfJSObject(cx,
                                                          JSVAL_TO_OBJECT(mJSVal),
-                                                         nsnull,
+                                                         nullptr,
                                                          &proto);
         mReturnRawObject = !wn && !proto;
     } else
@@ -96,7 +96,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(XPCVariant)
     // We're sharing val's buffer, clear the pointer to it so Cleanup() won't
     // try to delete it
     if (val.isString())
-        tmp->mData.u.wstr.mWStringValue = nsnull;
+        tmp->mData.u.wstr.mWStringValue = nullptr;
     nsVariant::Cleanup(&tmp->mData);
 
     if (val.isMarkable()) {
@@ -107,21 +107,21 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(XPCVariant)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 // static
-XPCVariant* XPCVariant::newVariant(XPCCallContext& ccx, jsval aJSVal)
+XPCVariant* XPCVariant::newVariant(JSContext* cx, jsval aJSVal)
 {
     XPCVariant* variant;
 
     if (!JSVAL_IS_TRACEABLE(aJSVal))
-        variant = new XPCVariant(ccx, aJSVal);
+        variant = new XPCVariant(cx, aJSVal);
     else
-        variant = new XPCTraceableVariant(ccx, aJSVal);
+        variant = new XPCTraceableVariant(cx, aJSVal);
 
     if (!variant)
-        return nsnull;
+        return nullptr;
     NS_ADDREF(variant);
 
-    if (!variant->InitializeData(ccx))
-        NS_RELEASE(variant);     // Also sets variant to nsnull.
+    if (!variant->InitializeData(cx))
+        NS_RELEASE(variant);     // Also sets variant to nullptr.
 
     return variant;
 }
@@ -152,7 +152,7 @@ private:
     static const Type StateTable[tTypeCount][tTypeCount-1];
 
 public:
-    static JSBool GetTypeForArray(XPCCallContext& ccx, JSObject* array,
+    static JSBool GetTypeForArray(JSContext* cx, JSObject* array,
                                   uint32_t length,
                                   nsXPTType* resultType, nsID* resultID);
 };
@@ -177,7 +177,7 @@ XPCArrayHomogenizer::StateTable[tTypeCount][tTypeCount-1] = {
 
 // static
 JSBool
-XPCArrayHomogenizer::GetTypeForArray(XPCCallContext& ccx, JSObject* array,
+XPCArrayHomogenizer::GetTypeForArray(JSContext* cx, JSObject* array,
                                      uint32_t length,
                                      nsXPTType* resultType, nsID* resultID)
 {
@@ -186,7 +186,7 @@ XPCArrayHomogenizer::GetTypeForArray(XPCCallContext& ccx, JSObject* array,
 
     for (uint32_t i = 0; i < length; i++) {
         JS::Value val;
-        if (!JS_GetElement(ccx, array, i, &val))
+        if (!JS_GetElement(cx, array, i, &val))
             return false;
 
         if (val.isInt32()) {
@@ -205,9 +205,9 @@ XPCArrayHomogenizer::GetTypeForArray(XPCCallContext& ccx, JSObject* array,
         } else {
             NS_ASSERTION(val.isObject(), "invalid type of jsval!");
             JSObject* jsobj = &val.toObject();
-            if (JS_IsArrayObject(ccx, jsobj))
+            if (JS_IsArrayObject(cx, jsobj))
                 type = tArr;
-            else if (xpc_JSObjectIsID(ccx, jsobj))
+            else if (xpc_JSObjectIsID(cx, jsobj))
                 type = tID;
             else
                 type = tISup;
@@ -266,9 +266,9 @@ XPCArrayHomogenizer::GetTypeForArray(XPCCallContext& ccx, JSObject* array,
     return true;
 }
 
-JSBool XPCVariant::InitializeData(XPCCallContext& ccx)
+JSBool XPCVariant::InitializeData(JSContext* cx)
 {
-    JS_CHECK_RECURSION(ccx.GetJSContext(), return false);
+    JS_CHECK_RECURSION(cx, return false);
 
     JS::Value val = GetJSVal();
 
@@ -283,10 +283,8 @@ JSBool XPCVariant::InitializeData(XPCCallContext& ccx)
     if (val.isNull())
         return NS_SUCCEEDED(nsVariant::SetToEmpty(&mData));
     if (val.isString()) {
-        // Make our string immutable.  This will also ensure null-termination,
-        // which nsVariant assumes for its PRUnichar* stuff.
         JSString* str = val.toString();
-        if (!JS_MakeStringImmutable(ccx, str))
+        if (!str)
             return false;
 
         // Don't use nsVariant::SetFromWStringWithSize, because that will copy
@@ -298,14 +296,14 @@ JSBool XPCVariant::InitializeData(XPCCallContext& ccx)
         // Despite the fact that the variant holds the length, there are
         // implicit assumptions that mWStringValue[mWStringLength] == 0
         size_t length;
-        const jschar *chars = JS_GetStringCharsZAndLength(ccx, str, &length);
+        const jschar *chars = JS_GetStringCharsZAndLength(cx, str, &length);
         if (!chars)
             return false;
 
         mData.u.wstr.mWStringValue = const_cast<jschar *>(chars);
         // Use C-style cast, because reinterpret cast from size_t to
-        // PRUint32 is not valid on some platforms.
-        mData.u.wstr.mWStringLength = (PRUint32)length;
+        // uint32_t is not valid on some platforms.
+        mData.u.wstr.mWStringLength = (uint32_t)length;
         mData.mType = nsIDataType::VTYPE_WSTRING_SIZE_IS;
 
         return true;
@@ -318,7 +316,7 @@ JSBool XPCVariant::InitializeData(XPCCallContext& ccx)
 
     // Let's see if it is a xpcJSID.
 
-    const nsID* id = xpc_JSObjectToID(ccx, jsobj);
+    const nsID* id = xpc_JSObjectToID(cx, jsobj);
     if (id)
         return NS_SUCCEEDED(nsVariant::SetFromID(&mData, *id));
 
@@ -326,7 +324,7 @@ JSBool XPCVariant::InitializeData(XPCCallContext& ccx)
 
     uint32_t len;
 
-    if (JS_IsArrayObject(ccx, jsobj) && JS_GetArrayLength(ccx, jsobj, &len)) {
+    if (JS_IsArrayObject(cx, jsobj) && JS_GetArrayLength(cx, jsobj, &len)) {
         if (!len) {
             // Zero length array
             nsVariant::SetToEmptyArray(&mData);
@@ -336,11 +334,11 @@ JSBool XPCVariant::InitializeData(XPCCallContext& ccx)
         nsXPTType type;
         nsID id;
 
-        if (!XPCArrayHomogenizer::GetTypeForArray(ccx, jsobj, len, &type, &id))
+        if (!XPCArrayHomogenizer::GetTypeForArray(cx, jsobj, len, &type, &id))
             return false;
 
-        if (!XPCConvert::JSArray2Native(ccx, &mData.u.array.mArrayValue,
-                                        val, len, type, &id, nsnull))
+        if (!XPCConvert::JSArray2Native(cx, &mData.u.array.mArrayValue,
+                                        val, len, type, &id, nullptr))
             return false;
 
         mData.mType = nsIDataType::VTYPE_ARRAY;
@@ -358,8 +356,8 @@ JSBool XPCVariant::InitializeData(XPCCallContext& ccx)
     nsCOMPtr<nsISupports> wrapper;
     const nsIID& iid = NS_GET_IID(nsISupports);
 
-    return nsnull != (xpc = nsXPConnect::GetXPConnect()) &&
-           NS_SUCCEEDED(xpc->WrapJS(ccx, jsobj,
+    return nullptr != (xpc = nsXPConnect::GetXPConnect()) &&
+           NS_SUCCEEDED(xpc->WrapJS(cx, jsobj,
                                     iid, getter_AddRefs(wrapper))) &&
            NS_SUCCEEDED(nsVariant::SetFromInterface(&mData, iid, wrapper));
 }
@@ -379,7 +377,7 @@ XPCVariant::VariantDataToJS(XPCLazyCallContext& lccx,
                             nsresult* pErr, jsval* pJSVal)
 {
     // Get the type early because we might need to spoof it below.
-    PRUint16 type;
+    uint16_t type;
     if (NS_FAILED(variant->GetDataType(&type)))
         return false;
 
@@ -424,9 +422,9 @@ XPCVariant::VariantDataToJS(XPCLazyCallContext& lccx,
     nsXPTCVariant xpctvar;
     nsID iid;
     nsAutoString astring;
-    nsCAutoString cString;
+    nsAutoCString cString;
     nsUTF8String utf8String;
-    PRUint32 size;
+    uint32_t size;
     xpctvar.flags = 0;
     JSBool success;
 
@@ -449,7 +447,8 @@ XPCVariant::VariantDataToJS(XPCLazyCallContext& lccx,
             // Easy. Handle inline.
             if (NS_FAILED(variant->GetAsDouble(&xpctvar.val.d)))
                 return false;
-            return JS_NewNumberValue(cx, xpctvar.val.d, pJSVal);
+            *pJSVal = JS_NumberValue(xpctvar.val.d);
+            return true;
         }
         case nsIDataType::VTYPE_BOOL:
         {
@@ -558,8 +557,8 @@ XPCVariant::VariantDataToJS(XPCLazyCallContext& lccx,
             success = false;
 
             nsXPTType conversionType;
-            PRUint16 elementType = du.u.array.mArrayType;
-            const nsID* pid = nsnull;
+            uint16_t elementType = du.u.array.mArrayType;
+            const nsID* pid = nullptr;
 
             switch (elementType) {
                 case nsIDataType::VTYPE_INT8:
@@ -622,7 +621,7 @@ VARIANT_DONE:
         }
         case nsIDataType::VTYPE_EMPTY_ARRAY:
         {
-            JSObject* array = JS_NewArrayObject(cx, 0, nsnull);
+            JSObject* array = JS_NewArrayObject(cx, 0, nullptr);
             if (!array)
                 return false;
             *pJSVal = OBJECT_TO_JSVAL(array);
@@ -672,57 +671,57 @@ VARIANT_DONE:
 // some more interesting conversions.
 
 
-/* readonly attribute PRUint16 dataType; */
-NS_IMETHODIMP XPCVariant::GetDataType(PRUint16 *aDataType)
+/* readonly attribute uint16_t dataType; */
+NS_IMETHODIMP XPCVariant::GetDataType(uint16_t *aDataType)
 {
     *aDataType = mData.mType;
     return NS_OK;
 }
 
-/* PRUint8 getAsInt8 (); */
-NS_IMETHODIMP XPCVariant::GetAsInt8(PRUint8 *_retval)
+/* uint8_t getAsInt8 (); */
+NS_IMETHODIMP XPCVariant::GetAsInt8(uint8_t *_retval)
 {
     return nsVariant::ConvertToInt8(mData, _retval);
 }
 
-/* PRInt16 getAsInt16 (); */
-NS_IMETHODIMP XPCVariant::GetAsInt16(PRInt16 *_retval)
+/* int16_t getAsInt16 (); */
+NS_IMETHODIMP XPCVariant::GetAsInt16(int16_t *_retval)
 {
     return nsVariant::ConvertToInt16(mData, _retval);
 }
 
-/* PRInt32 getAsInt32 (); */
-NS_IMETHODIMP XPCVariant::GetAsInt32(PRInt32 *_retval)
+/* int32_t getAsInt32 (); */
+NS_IMETHODIMP XPCVariant::GetAsInt32(int32_t *_retval)
 {
     return nsVariant::ConvertToInt32(mData, _retval);
 }
 
-/* PRInt64 getAsInt64 (); */
-NS_IMETHODIMP XPCVariant::GetAsInt64(PRInt64 *_retval)
+/* int64_t getAsInt64 (); */
+NS_IMETHODIMP XPCVariant::GetAsInt64(int64_t *_retval)
 {
     return nsVariant::ConvertToInt64(mData, _retval);
 }
 
-/* PRUint8 getAsUint8 (); */
-NS_IMETHODIMP XPCVariant::GetAsUint8(PRUint8 *_retval)
+/* uint8_t getAsUint8 (); */
+NS_IMETHODIMP XPCVariant::GetAsUint8(uint8_t *_retval)
 {
     return nsVariant::ConvertToUint8(mData, _retval);
 }
 
-/* PRUint16 getAsUint16 (); */
-NS_IMETHODIMP XPCVariant::GetAsUint16(PRUint16 *_retval)
+/* uint16_t getAsUint16 (); */
+NS_IMETHODIMP XPCVariant::GetAsUint16(uint16_t *_retval)
 {
     return nsVariant::ConvertToUint16(mData, _retval);
 }
 
-/* PRUint32 getAsUint32 (); */
-NS_IMETHODIMP XPCVariant::GetAsUint32(PRUint32 *_retval)
+/* uint32_t getAsUint32 (); */
+NS_IMETHODIMP XPCVariant::GetAsUint32(uint32_t *_retval)
 {
     return nsVariant::ConvertToUint32(mData, _retval);
 }
 
-/* PRUint64 getAsUint64 (); */
-NS_IMETHODIMP XPCVariant::GetAsUint64(PRUint64 *_retval)
+/* uint64_t getAsUint64 (); */
+NS_IMETHODIMP XPCVariant::GetAsUint64(uint64_t *_retval)
 {
     return nsVariant::ConvertToUint64(mData, _retval);
 }
@@ -814,20 +813,20 @@ NS_IMETHODIMP XPCVariant::GetAsInterface(nsIID * *iid, void * *iface)
 }
 
 
-/* [notxpcom] nsresult getAsArray (out PRUint16 type, out nsIID iid, out PRUint32 count, out voidPtr ptr); */
-NS_IMETHODIMP_(nsresult) XPCVariant::GetAsArray(PRUint16 *type, nsIID *iid, PRUint32 *count, void * *ptr)
+/* [notxpcom] nsresult getAsArray (out uint16_t type, out nsIID iid, out uint32_t count, out voidPtr ptr); */
+NS_IMETHODIMP_(nsresult) XPCVariant::GetAsArray(uint16_t *type, nsIID *iid, uint32_t *count, void * *ptr)
 {
     return nsVariant::ConvertToArray(mData, type, iid, count, ptr);
 }
 
-/* void getAsStringWithSize (out PRUint32 size, [size_is (size), retval] out string str); */
-NS_IMETHODIMP XPCVariant::GetAsStringWithSize(PRUint32 *size, char **str)
+/* void getAsStringWithSize (out uint32_t size, [size_is (size), retval] out string str); */
+NS_IMETHODIMP XPCVariant::GetAsStringWithSize(uint32_t *size, char **str)
 {
     return nsVariant::ConvertToStringWithSize(mData, size, str);
 }
 
-/* void getAsWStringWithSize (out PRUint32 size, [size_is (size), retval] out wstring str); */
-NS_IMETHODIMP XPCVariant::GetAsWStringWithSize(PRUint32 *size, PRUnichar **str)
+/* void getAsWStringWithSize (out uint32_t size, [size_is (size), retval] out wstring str); */
+NS_IMETHODIMP XPCVariant::GetAsWStringWithSize(uint32_t *size, PRUnichar **str)
 {
     return nsVariant::ConvertToWStringWithSize(mData, size, str);
 }

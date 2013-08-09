@@ -10,10 +10,10 @@
 
 #include "gfxContext.h"
 #include "gfxCachedTempSurface.h"
+#include "mozilla/layers/ShadowLayers.h"
+#include "mozilla/WidgetUtils.h"
 #include "nsAutoRef.h"
 #include "nsThreadUtils.h"
-
-#include "mozilla/layers/ShadowLayers.h"
 
 class nsIWidget;
 
@@ -27,6 +27,8 @@ class ShadowImageLayer;
 class ShadowCanvasLayer;
 class ShadowColorLayer;
 class ReadbackProcessor;
+class ImageFactory;
+class PaintContext;
 
 /**
  * This is a cairo/Thebes-only, main-thread-only implementation of layers.
@@ -76,22 +78,24 @@ public:
    * mode we always completely overwrite the contents of aContext's
    * destination surface (within the clip region) using OPERATOR_SOURCE.
    */
-  enum BufferMode {
-    BUFFER_NONE,
-    BUFFER_BUFFERED
-  };
-  void SetDefaultTarget(gfxContext* aContext, BufferMode aDoubleBuffering);
+  void SetDefaultTarget(gfxContext* aContext);
+  virtual void SetDefaultTargetConfiguration(BufferMode aDoubleBuffering, ScreenRotation aRotation);
   gfxContext* GetDefaultTarget() { return mDefaultTarget; }
 
   nsIWidget* GetRetainerWidget() { return mWidget; }
-  void ClearRetainerWidget() { mWidget = nsnull; }
+  void ClearRetainerWidget() { mWidget = nullptr; }
+
+  virtual bool IsWidgetLayerManager() { return mWidget != nullptr; }
 
   virtual void BeginTransaction();
   virtual void BeginTransactionWithTarget(gfxContext* aTarget);
-  virtual bool EndEmptyTransaction();
+  virtual bool EndEmptyTransaction(EndTransactionFlags aFlags = END_DEFAULT);
   virtual void EndTransaction(DrawThebesLayerCallback aCallback,
                               void* aCallbackData,
                               EndTransactionFlags aFlags = END_DEFAULT);
+  virtual bool AreComponentAlphaLayersEnabled() { return HasShadowManager() || !IsWidgetLayerManager(); }
+
+  void AbortTransaction();
 
   virtual void SetRoot(Layer* aLayer);
 
@@ -104,15 +108,17 @@ public:
   virtual ImageFactory *GetImageFactory();
 
   virtual already_AddRefed<ShadowThebesLayer> CreateShadowThebesLayer()
-  { return nsnull; }
+  { return nullptr; }
   virtual already_AddRefed<ShadowContainerLayer> CreateShadowContainerLayer()
-  { return nsnull; }
+  { return nullptr; }
   virtual already_AddRefed<ShadowImageLayer> CreateShadowImageLayer()
-  { return nsnull; }
+  { return nullptr; }
   virtual already_AddRefed<ShadowColorLayer> CreateShadowColorLayer()
-  { return nsnull; }
+  { return nullptr; }
   virtual already_AddRefed<ShadowCanvasLayer> CreateShadowCanvasLayer()
-  { return nsnull; }
+  { return nullptr; }
+  virtual already_AddRefed<ShadowRefLayer> CreateShadowRefLayer()
+  { return nullptr; }
 
   virtual LayersBackend GetBackendType() { return LAYERS_BASIC; }
   virtual void GetBackendName(nsAString& name) { name.AssignLiteral("Basic"); }
@@ -121,17 +127,19 @@ public:
   bool InConstruction() { return mPhase == PHASE_CONSTRUCTION; }
   bool InDrawing() { return mPhase == PHASE_DRAWING; }
   bool InForward() { return mPhase == PHASE_FORWARD; }
-  bool InTransaction() { return mPhase != PHASE_NONE; }
 #endif
+  bool InTransaction() { return mPhase != PHASE_NONE; }
+
   gfxContext* GetTarget() { return mTarget; }
-  bool IsRetained() { return mWidget != nsnull; }
+  void SetTarget(gfxContext* aTarget) { mUsingDefaultTarget = false; mTarget = aTarget; }
+  bool IsRetained() { return mWidget != nullptr; }
 
 #ifdef MOZ_LAYERS_HAVE_LOG
   virtual const char* Name() const { return "Basic"; }
 #endif // MOZ_LAYERS_HAVE_LOG
 
-  // Clear the cached contents of this layer.
-  void ClearCachedResources();
+  // Clear the cached contents of this layer tree.
+  virtual void ClearCachedResources(Layer* aSubtree = nullptr) MOZ_OVERRIDE;
 
   void SetTransactionIncomplete() { mTransactionIncomplete = true; }
   bool IsTransactionIncomplete() { return mTransactionIncomplete; }
@@ -144,17 +152,24 @@ public:
   void PopGroupToSourceWithCachedSurface(gfxContext *aTarget, gfxContext *aPushed);
 
   virtual bool IsCompositingCheap() { return false; }
-  virtual bool HasShadowManagerInternal() const { return false; }
-  bool HasShadowManager() const { return HasShadowManagerInternal(); }
-  virtual PRInt32 GetMaxTextureSize() const { return PR_INT32_MAX; }
+  virtual int32_t GetMaxTextureSize() const { return INT32_MAX; }
+  bool CompositorMightResample() { return mCompositorMightResample; }
+  bool HasShadowTarget() { return !!mShadowTarget; }
 
 protected:
-#ifdef DEBUG
   enum TransactionPhase {
     PHASE_NONE, PHASE_CONSTRUCTION, PHASE_DRAWING, PHASE_FORWARD
   };
   TransactionPhase mPhase;
-#endif
+
+  // This is the main body of the PaintLayer routine which will if it has
+  // children, recurse into PaintLayer() otherwise it will paint using the
+  // underlying Paint() method of the Layer. It will not do both.
+  void PaintSelfOrChildren(PaintContext& aPaintContext, gfxContext* aGroupTarget);
+
+  // Paint the group onto the underlying target. This is used by PaintLayer to
+  // flush the group to the underlying target.
+  void FlushGroup(PaintContext& aPaintContext, bool aNeedsClipToVisibleRegion);
 
   // Paints aLayer to mTarget.
   void PaintLayer(gfxContext* aTarget,
@@ -170,6 +185,8 @@ protected:
                               void* aCallbackData,
                               EndTransactionFlags aFlags = END_DEFAULT);
 
+  void FlashWidgetUpdateArea(gfxContext* aContext);
+
   // Widget whose surface should be used as the basis for ThebesLayer
   // buffers.
   nsIWidget* mWidget;
@@ -177,18 +194,27 @@ protected:
   nsRefPtr<gfxContext> mDefaultTarget;
   // The context to draw into.
   nsRefPtr<gfxContext> mTarget;
-  // A context we want our shadow to draw into.
+  // When we're doing a transaction in order to draw to a non-default
+  // target, the layers transaction is only performed in order to send
+  // a PLayers:Update.  We save the original non-default target to
+  // mShadowTarget, and then perform the transaction using
+  // mDummyTarget as the render target.  After the transaction ends,
+  // we send a message to our remote side to capture the actual pixels
+  // being drawn to the default target, and then copy those pixels
+  // back to mShadowTarget.
   nsRefPtr<gfxContext> mShadowTarget;
+  nsRefPtr<gfxContext> mDummyTarget;
   // Image factory we use.
   nsRefPtr<ImageFactory> mFactory;
 
   // Cached surface for double buffering
   gfxCachedTempSurface mCachedSurface;
 
-  BufferMode   mDoubleBuffering;
+  BufferMode mDoubleBuffering;
   bool mUsingDefaultTarget;
   bool mCachedSurfaceInUse;
-  bool         mTransactionIncomplete;
+  bool mTransactionIncomplete;
+  bool mCompositorMightResample;
 };
  
 
@@ -210,10 +236,11 @@ public:
     return this;
   }
 
-  virtual PRInt32 GetMaxTextureSize() const;
+  virtual int32_t GetMaxTextureSize() const;
 
+  virtual void SetDefaultTargetConfiguration(BufferMode aDoubleBuffering, ScreenRotation aRotation) MOZ_OVERRIDE;
   virtual void BeginTransactionWithTarget(gfxContext* aTarget);
-  virtual bool EndEmptyTransaction();
+  virtual bool EndEmptyTransaction(EndTransactionFlags aFlags = END_DEFAULT);
   virtual void EndTransaction(DrawThebesLayerCallback aCallback,
                               void* aCallbackData,
                               EndTransactionFlags aFlags = END_DEFAULT);
@@ -227,11 +254,13 @@ public:
   virtual already_AddRefed<ImageLayer> CreateImageLayer();
   virtual already_AddRefed<CanvasLayer> CreateCanvasLayer();
   virtual already_AddRefed<ColorLayer> CreateColorLayer();
+  virtual already_AddRefed<RefLayer> CreateRefLayer();
   virtual already_AddRefed<ShadowThebesLayer> CreateShadowThebesLayer();
   virtual already_AddRefed<ShadowContainerLayer> CreateShadowContainerLayer();
   virtual already_AddRefed<ShadowImageLayer> CreateShadowImageLayer();
   virtual already_AddRefed<ShadowColorLayer> CreateShadowColorLayer();
   virtual already_AddRefed<ShadowCanvasLayer> CreateShadowCanvasLayer();
+  virtual already_AddRefed<ShadowRefLayer> CreateShadowRefLayer();
 
   ShadowableLayer* Hold(Layer* aLayer);
 
@@ -242,13 +271,53 @@ public:
 
   virtual void SetIsFirstPaint() MOZ_OVERRIDE;
 
+  // Drop cached resources and ask our shadow manager to do the same,
+  // if we have one.
+  virtual void ClearCachedResources(Layer* aSubtree = nullptr) MOZ_OVERRIDE;
+
+  void SetRepeatTransaction() { mRepeatTransaction = true; }
+  bool GetRepeatTransaction() { return mRepeatTransaction; }
+
+  bool IsRepeatTransaction() { return mIsRepeatTransaction; }
+
+  /**
+   * Called for each iteration of a progressive tile update. Fills
+   * aViewport, aScaleX and aScaleY with the current scale and viewport
+   * being used to composite the layers in this manager, to determine what area
+   * intersects with the target render rectangle. aDrawingCritical will be
+   * true if the current drawing operation is using the critical displayport.
+   * Returns true if the update should continue, or false if it should be
+   * cancelled.
+   * This is only called if gfxPlatform::UseProgressiveTilePainting() returns
+   * true.
+   */
+  bool ProgressiveUpdateCallback(bool aHasPendingNewThebesContent,
+                                 gfx::Rect& aViewport,
+                                 float& aScaleX,
+                                 float& aScaleY,
+                                 bool aDrawingCritical);
+
 private:
   /**
    * Forward transaction results to the parent context.
    */
   void ForwardTransaction();
 
+  // The bounds of |mTarget| in device pixels.
+  nsIntRect mTargetBounds;
+
   LayerRefArray mKeepAlive;
+
+  // Sometimes we draw to targets that don't natively support
+  // landscape/portrait orientation.  When we need to implement that
+  // ourselves, |mTargetRotation| describes the induced transform we
+  // need to apply when compositing content to our target.
+  ScreenRotation mTargetRotation;
+
+  // Used to repeat the transaction right away (to avoid rebuilding
+  // a display list) to support progressive drawing.
+  bool mRepeatTransaction;
+  bool mIsRepeatTransaction;
 };
 
 class BasicShadowableThebesLayer;
@@ -273,11 +342,11 @@ public:
     NS_RUNTIMEABORT("if this default impl is called, |aBuffer| leaks");
   }
   
-  virtual void SetBackBufferYUVImage(gfxSharedImageSurface* aYBuffer,
-                                     gfxSharedImageSurface* aUBuffer,
-                                     gfxSharedImageSurface* aVBuffer)
+  virtual void SetBackBufferYUVImage(const SurfaceDescriptor& aYBuffer,
+                                     const SurfaceDescriptor& aUBuffer,
+                                     const SurfaceDescriptor& aVBuffer)
   {
-    NS_RUNTIMEABORT("if this default impl is called, |aBuffer| leaks");
+    NS_RUNTIMEABORT("if this default impl is called, the buffers leak");
   }
 
   virtual void Disconnect()
@@ -287,10 +356,10 @@ public:
     // automatically managed by IPDL, so we don't need to explicitly
     // free them here (it's hard to get that right on emergency
     // shutdown anyway).
-    mShadow = nsnull;
+    mShadow = nullptr;
   }
 
-  virtual BasicShadowableThebesLayer* AsThebes() { return nsnull; }
+  virtual BasicShadowableThebesLayer* AsThebes() { return nullptr; }
 };
 
 

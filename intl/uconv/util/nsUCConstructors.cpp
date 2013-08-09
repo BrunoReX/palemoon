@@ -20,10 +20,10 @@ inline NS_METHOD StabilizedQueryInterface(T* aNewObject,
 }
 
 NS_METHOD
-CreateMultiTableDecoder(PRInt32 aTableCount, const uRange * aRangeArray, 
+CreateMultiTableDecoder(int32_t aTableCount, const uRange * aRangeArray, 
                         uScanClassID * aScanClassArray,
                         uMappingTable ** aMappingTable,
-                        PRUint32 aMaxLengthFactor,
+                        uint32_t aMaxLengthFactor,
                         nsISupports* aOuter,
                         REFNSIID aIID,
                         void** aResult)
@@ -43,11 +43,11 @@ CreateMultiTableDecoder(PRInt32 aTableCount, const uRange * aRangeArray,
 }
 
 NS_METHOD
-CreateMultiTableEncoder(PRInt32 aTableCount,
+CreateMultiTableEncoder(int32_t aTableCount,
                         uScanClassID * aScanClassArray,
                         uShiftOutTable ** aShiftOutTable,
                         uMappingTable ** aMappingTable,
-                        PRUint32 aMaxLengthFactor,
+                        uint32_t aMaxLengthFactor,
                         nsISupports* aOuter,
                         REFNSIID aIID,
                         void** aResult)
@@ -69,16 +69,16 @@ CreateMultiTableEncoder(PRInt32 aTableCount,
 }
 
 NS_METHOD
-CreateMultiTableEncoder(PRInt32 aTableCount,
+CreateMultiTableEncoder(int32_t aTableCount,
                         uScanClassID * aScanClassArray,
                         uMappingTable ** aMappingTable,
-                        PRUint32 aMaxLengthFactor,
+                        uint32_t aMaxLengthFactor,
                         nsISupports* aOuter,
                         REFNSIID aIID,
                         void** aResult)
 {
   return CreateMultiTableEncoder(aTableCount, aScanClassArray,
-                                 nsnull,
+                                 nullptr,
                                  aMappingTable, aMaxLengthFactor,
                                  aOuter, aIID, aResult);
 }
@@ -87,7 +87,7 @@ NS_METHOD
 CreateTableEncoder(uScanClassID aScanClass,
                    uShiftOutTable * aShiftOutTable,
                    uMappingTable  * aMappingTable,
-                   PRUint32 aMaxLengthFactor,
+                   uint32_t aMaxLengthFactor,
                    nsISupports* aOuter,
                    REFNSIID aIID,
                    void** aResult)
@@ -108,12 +108,12 @@ CreateTableEncoder(uScanClassID aScanClass,
 NS_METHOD
 CreateTableEncoder(uScanClassID aScanClass,
                    uMappingTable  * aMappingTable,
-                   PRUint32 aMaxLengthFactor,
+                   uint32_t aMaxLengthFactor,
                    nsISupports* aOuter,
                    REFNSIID aIID,
                    void** aResult)
 {
-    return CreateTableEncoder(aScanClass, nsnull,
+    return CreateTableEncoder(aScanClass, nullptr,
                               aMappingTable, aMaxLengthFactor,
                               aOuter, aIID, aResult);
 }
@@ -122,7 +122,7 @@ NS_METHOD
 CreateTableDecoder(uScanClassID aScanClass,
                    uShiftInTable * aShiftInTable,
                    uMappingTable  * aMappingTable,
-                   PRUint32 aMaxLengthFactor,
+                   uint32_t aMaxLengthFactor,
                    nsISupports* aOuter,
                    REFNSIID aIID,
                    void** aResult)

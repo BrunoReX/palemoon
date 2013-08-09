@@ -11,6 +11,7 @@
 #include "nsCOMPtr.h"
 #include "nsITimer.h"
 #include "nsIWidget.h"
+#include "mozilla/Attributes.h"
 
 #include <msctf.h>
 #include <textstor.h>
@@ -31,8 +32,8 @@ class nsTextEvent;
  * Text Services Framework text store
  */
 
-class nsTextStore : public ITextStoreACP,
-                    public ITfContextOwnerCompositionSink
+class nsTextStore MOZ_FINAL : public ITextStoreACP,
+                              public ITfContextOwnerCompositionSink
 {
 public: /*IUnknown*/
   STDMETHODIMP_(ULONG)  AddRef(void);
@@ -101,9 +102,9 @@ public:
 
   static nsresult OnFocusChange(bool, nsWindow*, IMEState::Enabled);
 
-  static nsresult OnTextChange(PRUint32 aStart,
-                               PRUint32 aOldEnd,
-                               PRUint32 aNewEnd)
+  static nsresult OnTextChange(uint32_t aStart,
+                               uint32_t aOldEnd,
+                               uint32_t aNewEnd)
   {
     if (!sTsfTextStore) return NS_OK;
     return sTsfTextStore->OnTextChangeInternal(aStart, aOldEnd, aNewEnd);
@@ -122,6 +123,8 @@ public:
     if (!sTsfTextStore) return NS_OK;
     return sTsfTextStore->OnSelectionChangeInternal();
   }
+
+  static nsIMEUpdatePreference GetIMEUpdatePreference();
 
   static void CompositionTimerCallbackFunc(nsITimer *aTimer, void *aClosure)
   {
@@ -154,16 +157,31 @@ protected:
   bool     Create(nsWindow*, IMEState::Enabled);
   bool     Destroy(void);
 
+  bool     IsReadLock(DWORD aLock) const
+  {
+    return (TS_LF_READ == (aLock & TS_LF_READ));
+  }
+  bool     IsReadWriteLock(DWORD aLock) const
+  {
+    return (TS_LF_READWRITE == (aLock & TS_LF_READWRITE));
+  }
+  bool     IsReadLocked() const { return IsReadLock(mLock); }
+  bool     IsReadWriteLocked() const { return IsReadWriteLock(mLock); }
+
+  bool     GetScreenExtInternal(RECT &aScreenExt);
+  bool     GetSelectionInternal(TS_SELECTION_ACP &aSelectionACP);
   // If aDispatchTextEvent is true, this method will dispatch text event if
   // this is called during IME composing.  aDispatchTextEvent should be true
   // only when this is called from SetSelection.  Because otherwise, the text
   // event should not be sent from here.
   HRESULT  SetSelectionInternal(const TS_SELECTION_ACP*,
                                 bool aDispatchTextEvent = false);
+  bool     InsertTextAtSelectionInternal(const nsAString &aInsertStr,
+                                         TS_TEXTCHANGE* aTextChange);
   HRESULT  OnStartCompositionInternal(ITfCompositionView*, ITfRange*, bool);
   void     CommitCompositionInternal(bool);
   void     SetInputContextInternal(IMEState::Enabled aState);
-  nsresult OnTextChangeInternal(PRUint32, PRUint32, PRUint32);
+  nsresult OnTextChangeInternal(uint32_t, uint32_t, uint32_t);
   void     OnTextChangeMsgInternal(void);
   nsresult OnSelectionChangeInternal(void);
   HRESULT  GetDisplayAttribute(ITfProperty* aProperty,

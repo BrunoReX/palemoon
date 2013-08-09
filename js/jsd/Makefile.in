@@ -6,18 +6,20 @@
 
 
 
-DEPTH		= ../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 VPATH		= @srcdir@
 srcdir		= @srcdir@
-relativesrcdir  = js/jsd
+relativesrcdir  = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
 MODULE		= jsdebug
 LIBRARY_NAME	= jsd
 DIRS	= idl
-CPPSRCS	 = jsd_xpc.cpp
+CPPSRCS	 = \
+		jsd_xpc.cpp \
+		jshash.cpp
 IS_COMPONENT = 1
 LIBXUL_LIBRARY = 1
 
@@ -34,18 +36,18 @@ ifdef JS_THREADSAFE
 DEFINES         += -DJS_THREADSAFE
 endif
 
-CSRCS		= \
-		  jsdebug.c \
-		  jsd_atom.c \
-		  jsd_high.c \
-		  jsd_hook.c \
-		  jsd_lock.c \
-		  jsd_obj.c \
-		  jsd_scpt.c \
-		  jsd_stak.c \
-		  jsd_step.c \
-		  jsd_text.c \
-		  jsd_val.c \
+CPPSRCS		+= \
+		  jsdebug.cpp \
+		  jsd_atom.cpp \
+		  jsd_high.cpp \
+		  jsd_hook.cpp \
+		  jsd_lock.cpp \
+		  jsd_obj.cpp \
+		  jsd_scpt.cpp \
+		  jsd_stak.cpp \
+		  jsd_step.cpp \
+		  jsd_text.cpp \
+		  jsd_val.cpp \
 		  $(NULL)
 
 ifdef ENABLE_TESTS

@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "prmem.h"
 
 #include "gfxAlphaRecovery.h"
 #include "gfxImageSurface.h"
@@ -88,7 +87,7 @@ TryAllocAlignedBytes(size_t aSize)
     return moz_posix_memalign(&ptr,
                               1 << gfxAlphaRecovery::GoodAlignmentLog2(),
                               aSize) ?
-             nsnull : ptr;
+             nullptr : ptr;
 #else
     // Oh well, hope that luck is with us in the allocator
     return moz_malloc(aSize);
@@ -96,14 +95,14 @@ TryAllocAlignedBytes(size_t aSize)
 }
 
 gfxImageSurface::gfxImageSurface(const gfxIntSize& size, gfxImageFormat format, bool aClear) :
-    mSize(size), mOwnsData(false), mData(nsnull), mFormat(format)
+    mSize(size), mOwnsData(false), mData(nullptr), mFormat(format)
 {
     mStride = ComputeStride();
 
     if (!CheckSurfaceSize(size))
         MakeInvalid();
 
-    // if we have a zero-sized surface, just leave mData nsnull
+    // if we have a zero-sized surface, just leave mData nullptr
     if (mSize.height * mStride > 0) {
 
         // This can fail to allocate memory aligned as we requested,
@@ -316,7 +315,7 @@ gfxImageSurface::MovePixels(const nsIntRect& aSourceRect,
     }
 
     // Slow(er) path: have to move row-by-row.
-    const PRInt32 bpp = BytePerPixelFromFormat(mFormat);
+    const int32_t bpp = BytePerPixelFromFormat(mFormat);
     const size_t nRowBytes = dest.width * bpp;
     // dstRow points at the first pixel within the current destination
     // row, and similarly for srcRow.  endSrcRow is one row beyond the

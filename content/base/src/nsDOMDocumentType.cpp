@@ -12,12 +12,9 @@
 #include "nsIDOMNamedNodeMap.h"
 #include "nsGkAtoms.h"
 #include "nsCOMPtr.h"
-#include "nsContentUtils.h"
 #include "nsDOMString.h"
 #include "nsNodeInfoManager.h"
-#include "nsIDocument.h"
 #include "nsIXPConnect.h"
-#include "nsIDOMDocument.h"
 #include "xpcpublic.h"
 #include "nsWrapperCacheInlines.h"
 
@@ -33,7 +30,7 @@ NS_NewDOMDocumentType(nsIDOMDocumentType** aDocType,
   NS_ENSURE_ARG_POINTER(aName);
 
   nsCOMPtr<nsINodeInfo> ni =
-    aNodeInfoManager->GetNodeInfo(nsGkAtoms::documentTypeNodeName, nsnull,
+    aNodeInfoManager->GetNodeInfo(nsGkAtoms::documentTypeNodeName, nullptr,
                                   kNameSpaceID_None,
                                   nsIDOMNode::DOCUMENT_TYPE_NODE,
                                   aName);
@@ -77,7 +74,7 @@ NS_IMPL_ADDREF_INHERITED(nsDOMDocumentType, nsGenericDOMDataNode)
 NS_IMPL_RELEASE_INHERITED(nsDOMDocumentType, nsGenericDOMDataNode)
 
 bool
-nsDOMDocumentType::IsNodeOfType(PRUint32 aFlags) const
+nsDOMDocumentType::IsNodeOfType(uint32_t aFlags) const
 {
   // Don't claim to be eDATA_NODE since we're just inheriting
   // nsGenericDOMDataNode for convinience. Doctypes aren't really
@@ -89,7 +86,7 @@ nsDOMDocumentType::IsNodeOfType(PRUint32 aFlags) const
 const nsTextFragment*
 nsDOMDocumentType::GetText()
 {
-  return nsnull;
+  return nullptr;
 }
 
 NS_IMETHODIMP    

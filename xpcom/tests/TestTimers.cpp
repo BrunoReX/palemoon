@@ -14,6 +14,7 @@
 #include "nsThreadUtils.h"
 #include "prinrval.h"
 #include "prmon.h"
+#include "mozilla/Attributes.h"
 
 #include "mozilla/ReentrantMonitor.h"
 using namespace mozilla;
@@ -68,7 +69,7 @@ private:
   ReentrantMonitor* mReentrantMonitor;
 };
 
-class TimerCallback : public nsITimerCallback
+class TimerCallback MOZ_FINAL : public nsITimerCallback
 {
 public:
   NS_DECL_ISUPPORTS
@@ -113,7 +114,7 @@ TestTargetedTimers()
   rv = timer->SetTarget(target);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsIThread* notifiedThread = nsnull;
+  nsIThread* notifiedThread = nullptr;
 
   nsCOMPtr<nsITimerCallback> callback =
     new TimerCallback(&notifiedThread, newMon);
@@ -140,9 +141,9 @@ int main(int argc, char** argv)
   static TestFuncPtr testsToRun[] = {
     TestTargetedTimers
   };
-  static PRUint32 testCount = sizeof(testsToRun) / sizeof(testsToRun[0]);
+  static uint32_t testCount = sizeof(testsToRun) / sizeof(testsToRun[0]);
 
-  for (PRUint32 i = 0; i < testCount; i++) {
+  for (uint32_t i = 0; i < testCount; i++) {
     nsresult rv = testsToRun[i]();
     NS_ENSURE_SUCCESS(rv, 1);
   }

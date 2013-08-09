@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsError.h"
 #include "nsSVGInteger.h"
 #include "nsSMILValue.h"
 #include "SMILIntegerType.h"
@@ -26,7 +27,7 @@ NS_INTERFACE_MAP_END
 
 static nsresult
 GetValueFromString(const nsAString &aValueAsString,
-                   PRInt32 *aValue)
+                   int32_t *aValue)
 {
   NS_ConvertUTF16toUTF8 value(aValueAsString);
   const char *str = value.get();
@@ -49,7 +50,7 @@ nsresult
 nsSVGInteger::SetBaseValueString(const nsAString &aValueAsString,
                                  nsSVGElement *aSVGElement)
 {
-  PRInt32 value;
+  int32_t value;
 
   nsresult rv = GetValueFromString(aValueAsString, &value);
   if (NS_FAILED(rv)) {
@@ -131,7 +132,7 @@ nsSVGInteger::SMILInteger::ValueFromString(const nsAString& aStr,
                                            nsSMILValue& aValue,
                                            bool& aPreventCachingOfSandwich) const
 {
-  PRInt32 val;
+  int32_t val;
 
   nsresult rv = GetValueFromString(aStr, &val);
   if (NS_FAILED(rv)) {

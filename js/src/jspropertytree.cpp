@@ -1,10 +1,8 @@
-/* -*- Mode: c++; c-basic-offset: 4; tab-width: 40; indent-tabs-mode: nil -*- */
-/* vim: set ts=40 sw=4 et tw=99: */
+/* -*- Mode: C++; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil -*- */
+/* vim: set ts=4 sw=4 et tw=99: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-#include <new>
 
 #include "jstypes.h"
 #include "jsprf.h"
@@ -46,9 +44,9 @@ PropertyTree::newShape(JSContext *cx)
 static KidsHash *
 HashChildren(Shape *kid1, Shape *kid2)
 {
-    KidsHash *hash = OffTheBooks::new_<KidsHash>();
+    KidsHash *hash = js_new<KidsHash>();
     if (!hash || !hash->init(2)) {
-        Foreground::delete_(hash);
+        js_delete(hash);
         return NULL;
     }
 
@@ -102,12 +100,14 @@ void
 Shape::removeChild(Shape *child)
 {
     JS_ASSERT(!child->inDictionary());
+    JS_ASSERT(child->parent == this);
 
     KidsPointer *kidp = &kids;
 
     if (kidp->isShape()) {
         JS_ASSERT(kidp->toShape() == child);
         kidp->setNull();
+        child->parent = NULL;
         return;
     }
 
@@ -115,6 +115,7 @@ Shape::removeChild(Shape *child)
     JS_ASSERT(hash->count() >= 2);      /* otherwise kidp->isShape() should be true */
 
     hash->remove(child);
+    child->parent = NULL;
 
     if (hash->count() == 1) {
         /* Convert from HASH form back to SHAPE form. */
@@ -122,31 +123,14 @@ Shape::removeChild(Shape *child)
         Shape *otherChild = r.front();
         JS_ASSERT((r.popFront(), r.empty()));    /* No more elements! */
         kidp->setShape(otherChild);
-        js::UnwantedForeground::delete_(hash);
+        js_delete(hash);
     }
-}
-
-/*
- * We need a read barrier for the shape tree, since these are weak pointers.
- */
-static Shape *
-ReadBarrier(Shape *shape)
-{
-#ifdef JSGC_INCREMENTAL
-    JSCompartment *comp = shape->compartment();
-    if (comp->needsBarrier()) {
-        Shape *tmp = shape;
-        MarkShapeUnbarriered(comp->barrierTracer(), &tmp, "read barrier");
-        JS_ASSERT(tmp == shape);
-    }
-#endif
-    return shape;
 }
 
 Shape *
 PropertyTree::getChild(JSContext *cx, Shape *parent_, uint32_t nfixed, const StackShape &child)
 {
-    Shape *shape;
+    Shape *shape = NULL;
 
     JS_ASSERT(parent_);
 
@@ -160,16 +144,43 @@ PropertyTree::getChild(JSContext *cx, Shape *parent_, uint32_t nfixed, const Sta
      */
     KidsPointer *kidp = &parent_->kids;
     if (kidp->isShape()) {
-        shape = kidp->toShape();
-        if (shape->matches(child))
-            return ReadBarrier(shape);
+        Shape *kid = kidp->toShape();
+        if (kid->matches(child))
+            shape = kid;
     } else if (kidp->isHash()) {
-        shape = *kidp->toHash()->lookup(child);
-        if (shape)
-            return ReadBarrier(shape);
+        if (KidsHash::Ptr p = kidp->toHash()->lookup(child))
+            shape = *p;
     } else {
         /* If kidp->isNull(), we always insert. */
     }
+
+#ifdef JSGC_INCREMENTAL
+    if (shape) {
+        JSCompartment *comp = shape->compartment();
+        if (comp->needsBarrier()) {
+            /*
+             * We need a read barrier for the shape tree, since these are weak
+             * pointers.
+             */
+            Shape *tmp = shape;
+            MarkShapeUnbarriered(comp->barrierTracer(), &tmp, "read barrier");
+            JS_ASSERT(tmp == shape);
+        } else if (comp->isGCSweeping() && !shape->isMarked() &&
+                   !shape->arenaHeader()->allocatedDuringIncremental)
+        {
+            /*
+             * The shape we've found is unreachable and due to be finalized, so
+             * remove our weak reference to it and don't use it.
+             */
+            JS_ASSERT(parent_->isMarked());
+            parent_->removeChild(shape);
+            shape = NULL;
+        }
+    }
+#endif
+
+    if (shape)
+        return shape;
 
     StackShape::AutoRooter childRoot(cx, &child);
     RootedShape parent(cx, parent_);
@@ -190,6 +201,11 @@ void
 Shape::finalize(FreeOp *fop)
 {
     if (!inDictionary()) {
+        /*
+         * Note that due to incremental sweeping, if !parent->isMarked() then
+         * the parent may point to a new shape allocated in the same cell that
+         * use to hold our parent.
+         */
         if (parent && parent->isMarked())
             parent->removeChild(this);
 
@@ -201,7 +217,7 @@ Shape::finalize(FreeOp *fop)
 #ifdef DEBUG
 
 void
-KidsPointer::checkConsistency(const Shape *aKid) const
+KidsPointer::checkConsistency(Shape *aKid) const
 {
     if (isShape()) {
         JS_ASSERT(toShape() == aKid);
@@ -270,7 +286,7 @@ Shape::dump(JSContext *cx, FILE *fp) const
         fputs(") ", fp);
     }
 
-    fprintf(fp, "shortid %d\n", shortid());
+    fprintf(fp, "shortid %d\n", maybeShortid());
 }
 
 void

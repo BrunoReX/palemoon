@@ -96,7 +96,7 @@ MakeSN(const char *principal, nsCString &result)
 {
     nsresult rv;
 
-    nsCAutoString buf(principal);
+    nsAutoCString buf(principal);
 
     // The service name looks like "protocol@hostname", we need to map
     // this to a value that SSPI expects.  To be consistent with IE, we
@@ -124,7 +124,7 @@ MakeSN(const char *principal, nsCString &result)
     if (NS_FAILED(rv))
         return rv;
 
-    nsCAutoString cname;
+    nsAutoCString cname;
     rv = record->GetCanonicalName(cname);
     if (NS_SUCCEEDED(rv)) {
         result = StringHead(buf, index) + NS_LITERAL_CSTRING("/") + cname;
@@ -139,7 +139,7 @@ nsAuthSSPI::nsAuthSSPI(pType package)
     : mServiceFlags(REQ_DEFAULT)
     , mMaxTokenLen(0)
     , mPackage(package)
-    , mCertDERData(nsnull)
+    , mCertDERData(nullptr)
     , mCertDERLength(0)
 {
     memset(&mCred, 0, sizeof(mCred));
@@ -167,7 +167,7 @@ nsAuthSSPI::Reset()
 
     if (mCertDERData){
         nsMemory::Free(mCertDERData);
-        mCertDERData = nsnull;
+        mCertDERData = nullptr;
         mCertDERLength = 0;   
     }
 
@@ -181,7 +181,7 @@ NS_IMPL_ISUPPORTS1(nsAuthSSPI, nsIAuthModule)
 
 NS_IMETHODIMP
 nsAuthSSPI::Init(const char *serviceName,
-                 PRUint32    serviceFlags,
+                 uint32_t    serviceFlags,
                  const PRUnichar *domain,
                  const PRUnichar *username,
                  const PRUnichar *password)
@@ -190,7 +190,7 @@ nsAuthSSPI::Init(const char *serviceName,
 
     mIsFirst = true;
     mCertDERLength = 0;
-    mCertDERData = nsnull;
+    mCertDERData = nullptr;
 
     // The caller must supply a service name to be used. (For why we now require
     // a service name for NTLM, see bug 487872.)
@@ -213,7 +213,7 @@ nsAuthSSPI::Init(const char *serviceName,
         // The incoming serviceName is in the format: "protocol@hostname", SSPI expects
         // "<service class>/<hostname>", so swap the '@' for a '/'.
         mServiceName.Assign(serviceName);
-        PRInt32 index = mServiceName.FindChar('@');
+        int32_t index = mServiceName.FindChar('@');
         if (index == kNotFound)
             return NS_ERROR_UNEXPECTED;
         mServiceName.Replace(index, 1, '/');
@@ -242,7 +242,7 @@ nsAuthSSPI::Init(const char *serviceName,
     TimeStamp useBefore;
 
     SEC_WINNT_AUTH_IDENTITY_W ai;
-    SEC_WINNT_AUTH_IDENTITY_W *pai = nsnull;
+    SEC_WINNT_AUTH_IDENTITY_W *pai = nullptr;
     
     // domain, username, and password will be null if nsHttpNTLMAuth's ChallengeReceived
     // returns false for identityInvalid. Use default credentials in this case by passing
@@ -282,9 +282,9 @@ nsAuthSSPI::Init(const char *serviceName,
 // second time these arguments hold an input token. 
 NS_IMETHODIMP
 nsAuthSSPI::GetNextToken(const void *inToken,
-                         PRUint32    inTokenLen,
+                         uint32_t    inTokenLen,
                          void      **outToken,
-                         PRUint32   *outTokenLen)
+                         uint32_t   *outTokenLen)
 {
     // String for end-point bindings.
     const char end_point[] = "tls-server-end-point:"; 
@@ -301,7 +301,7 @@ nsAuthSSPI::GetNextToken(const void *inToken,
     // Optional second input buffer for the CBT (Channel Binding Token)
     SecBuffer ib[2], ob;
     // Pointer to the block of memory that stores the CBT
-    char* sspi_cbt = nsnull;
+    char* sspi_cbt = nullptr;
     SEC_CHANNEL_BINDINGS pendpoint_binding;
 
     LOG(("entering nsAuthSSPI::GetNextToken()\n"));
@@ -336,10 +336,10 @@ nsAuthSSPI::GetNextToken(const void *inToken,
                 LOG(("Cannot restart authentication sequence!"));
                 return NS_ERROR_UNEXPECTED;
             }
-            ctxIn = nsnull;
+            ctxIn = nullptr;
             // The certificate needs to be erased before being passed 
             // to InitializeSecurityContextW().
-            inToken = nsnull;
+            inToken = nullptr;
             inTokenLen = 0;
         } else {
             ibd.ulVersion = SECBUFFER_VERSION;
@@ -386,7 +386,7 @@ nsAuthSSPI::GetNextToken(const void *inToken,
           
                 // Start hashing. We are always doing SHA256, but depending
                 // on the certificate, a different alogirthm might be needed.
-                nsCAutoString hashString;
+                nsAutoCString hashString;
 
                 nsresult rv;
                 nsCOMPtr<nsICryptoHash> crypto;
@@ -399,7 +399,7 @@ nsAuthSSPI::GetNextToken(const void *inToken,
                     rv = crypto->Finish(false, hashString);
                 if (NS_FAILED(rv)) {
                     nsMemory::Free(mCertDERData);
-                    mCertDERData = nsnull;
+                    mCertDERData = nullptr;
                     mCertDERLength = 0;
                     nsMemory::Free(sspi_cbt);
                     return rv;
@@ -412,7 +412,7 @@ nsAuthSSPI::GetNextToken(const void *inToken,
           
                 // Free memory used to store the server certificate
                 nsMemory::Free(mCertDERData);
-                mCertDERData = nsnull;
+                mCertDERData = nullptr;
                 mCertDERLength = 0;
             } // End of CBT computation.
 
@@ -496,9 +496,9 @@ nsAuthSSPI::GetNextToken(const void *inToken,
 
 NS_IMETHODIMP
 nsAuthSSPI::Unwrap(const void *inToken,
-                   PRUint32    inTokenLen,
+                   uint32_t    inTokenLen,
                    void      **outToken,
-                   PRUint32   *outTokenLen)
+                   uint32_t   *outTokenLen)
 {
     SECURITY_STATUS rc;
     SecBufferDesc ibd;
@@ -577,10 +577,10 @@ public:
 
 NS_IMETHODIMP
 nsAuthSSPI::Wrap(const void *inToken,
-                 PRUint32    inTokenLen,
+                 uint32_t    inTokenLen,
                  bool        confidential,
                  void      **outToken,
-                 PRUint32   *outTokenLen)
+                 uint32_t   *outTokenLen)
 {
     SECURITY_STATUS rc;
 

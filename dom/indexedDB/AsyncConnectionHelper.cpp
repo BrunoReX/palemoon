@@ -21,14 +21,15 @@
 #include "TransactionThreadPool.h"
 
 #include "ipc/IndexedDBChild.h"
+#include "ipc/IndexedDBParent.h"
 
 USING_INDEXEDDB_NAMESPACE
 
 namespace {
 
-IDBTransaction* gCurrentTransaction = nsnull;
+IDBTransaction* gCurrentTransaction = nullptr;
 
-const PRUint32 kProgressHandlerGranularity = 1000;
+const uint32_t kProgressHandlerGranularity = 1000;
 
 class TransactionPoolEventTarget : public StackBasedEventTarget
 {
@@ -52,7 +53,7 @@ ConvertCloneReadInfosToArrayInternal(
                                 nsTArray<StructuredCloneReadInfo>& aReadInfos,
                                 jsval* aResult)
 {
-  JSObject* array = JS_NewArrayObject(aCx, 0, nsnull);
+  JSObject* array = JS_NewArrayObject(aCx, 0, nullptr);
   if (!array) {
     NS_WARNING("Failed to make array!");
     return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
@@ -130,7 +131,7 @@ HelperBase::ReleaseMainThreadObjects()
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
-  mRequest = nsnull;
+  mRequest = nullptr;
 }
 
 AsyncConnectionHelper::AsyncConnectionHelper(IDBDatabase* aDatabase,
@@ -203,36 +204,47 @@ AsyncConnectionHelper::Run()
       MaybeSendResponseToChildProcess(mResultCode) :
       Success_NotSent;
 
-    NS_ASSERTION(sendResult == Success_Sent || sendResult == Success_NotSent ||
-                 sendResult == Error,
-                 "Unknown result from MaybeSendResultsToChildProcess!");
-
-    if (sendResult == Success_Sent) {
-      if (mRequest) {
-        mRequest->NotifyHelperSentResultsToChildProcess(NS_OK);
-      }
-    }
-    else if (sendResult == Error) {
-      NS_WARNING("MaybeSendResultsToChildProcess failed!");
-      mResultCode = NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
-      if (mRequest) {
-        mRequest->NotifyHelperSentResultsToChildProcess(mResultCode);
-      }
-    }
-    else if (sendResult == Success_NotSent) {
-      if (mRequest) {
-        nsresult rv = mRequest->NotifyHelperCompleted(this);
-        if (NS_SUCCEEDED(mResultCode) && NS_FAILED(rv)) {
-          mResultCode = rv;
+    switch (sendResult) {
+      case Success_Sent: {
+        if (mRequest) {
+          mRequest->NotifyHelperSentResultsToChildProcess(NS_OK);
         }
+        break;
       }
 
-      // Call OnError if the database had an error or if the OnSuccess handler
-      // has an error.
-      if (NS_FAILED(mResultCode) ||
-          NS_FAILED((mResultCode = OnSuccess()))) {
-        OnError();
+      case Success_NotSent: {
+        if (mRequest) {
+          nsresult rv = mRequest->NotifyHelperCompleted(this);
+          if (NS_SUCCEEDED(mResultCode) && NS_FAILED(rv)) {
+            mResultCode = rv;
+          }
+        }
+
+        // Call OnError if the database had an error or if the OnSuccess
+        // handler has an error.
+        if (NS_FAILED(mResultCode) ||
+            NS_FAILED((mResultCode = OnSuccess()))) {
+          OnError();
+        }
+        break;
       }
+
+      case Success_ActorDisconnected: {
+        // Nothing needs to be done here.
+        break;
+      }
+
+      case Error: {
+        NS_WARNING("MaybeSendResultsToChildProcess failed!");
+        mResultCode = NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+        if (mRequest) {
+          mRequest->NotifyHelperSentResultsToChildProcess(mResultCode);
+        }
+        break;
+      }
+
+      default:
+        MOZ_NOT_REACHED("Unknown value for ChildProcessSendResult!");
     }
 
     NS_ASSERTION(gCurrentTransaction == mTransaction, "Should be unchanged!");
@@ -288,8 +300,6 @@ AsyncConnectionHelper::Run()
     mResultCode = DoDatabaseWork(connection);
 
     if (mDatabase) {
-      IndexedDatabaseManager::SetCurrentWindow(nsnull);
-
       // Release or roll back the savepoint depending on the error code.
       if (hasSavepoint) {
         NS_ASSERTION(mTransaction, "Huh?!");
@@ -300,6 +310,10 @@ AsyncConnectionHelper::Run()
           mTransaction->RollbackSavepoint();
         }
       }
+
+      // Don't unset this until we're sure that all SQLite activity has
+      // completed!
+      IndexedDatabaseManager::SetCurrentWindow(nullptr);
     }
   }
   else {
@@ -438,7 +452,7 @@ AsyncConnectionHelper::OnSuccess()
   if ((internalEvent->flags & NS_EVENT_FLAG_EXCEPTION_THROWN) &&
       mTransaction &&
       mTransaction->IsOpen()) {
-    rv = mTransaction->Abort();
+    rv = mTransaction->Abort(NS_ERROR_DOM_INDEXEDDB_ABORT_ERR);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -468,10 +482,20 @@ AsyncConnectionHelper::OnError()
                  mTransaction->IsAborted(),
                  "How else can this be closed?!");
 
+    nsEvent* internalEvent = event->GetInternalNSEvent();
+    NS_ASSERTION(internalEvent, "This should never be null!");
+
+    if ((internalEvent->flags & NS_EVENT_FLAG_EXCEPTION_THROWN) &&
+        mTransaction &&
+        mTransaction->IsOpen() &&
+        NS_FAILED(mTransaction->Abort(NS_ERROR_DOM_INDEXEDDB_ABORT_ERR))) {
+      NS_WARNING("Failed to abort transaction!");
+    }
+
     if (doDefault &&
         mTransaction &&
         mTransaction->IsOpen() &&
-        NS_FAILED(mTransaction->Abort())) {
+        NS_FAILED(mTransaction->Abort(mRequest))) {
       NS_WARNING("Failed to abort transaction!");
     }
   }
@@ -495,10 +519,42 @@ AsyncConnectionHelper::ReleaseMainThreadObjects()
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
-  mDatabase = nsnull;
-  mTransaction = nsnull;
+  mDatabase = nullptr;
+  mTransaction = nullptr;
 
   HelperBase::ReleaseMainThreadObjects();
+}
+
+AsyncConnectionHelper::ChildProcessSendResult
+AsyncConnectionHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
+{
+  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+  NS_ASSERTION(IndexedDatabaseManager::IsMainProcess(), "Wrong process!");
+
+  // If there's no request, there could never have been an actor, and so there
+  // is nothing to do.
+  if (!mRequest) {
+    return Success_NotSent;
+  }
+
+  IDBTransaction* trans = GetCurrentTransaction();
+  // We may not have a transaction, e.g. for deleteDatabase
+  if (!trans) {
+    return Success_NotSent;
+  }
+
+  // Are we shutting down the child?
+  IndexedDBDatabaseParent* dbActor = trans->Database()->GetActorParent();
+  if (dbActor && dbActor->IsDisconnected()) {
+    return Success_ActorDisconnected;
+  }
+
+  IndexedDBRequestParentBase* actor = mRequest->GetActorParent();
+  if (!actor) {
+    return Success_NotSent;
+  }
+
+  return SendResponseToChildProcess(aResultCode);
 }
 
 nsresult
@@ -533,7 +589,7 @@ AsyncConnectionHelper::ConvertCloneReadInfosToArray(
 
   nsresult rv = ConvertCloneReadInfosToArrayInternal(aCx, aReadInfos, aResult);
 
-  for (PRUint32 index = 0; index < aReadInfos.Length(); index++) {
+  for (uint32_t index = 0; index < aReadInfos.Length(); index++) {
     aReadInfos[index].mCloneBuffer.clear();
   }
   aReadInfos.Clear();
@@ -565,7 +621,7 @@ StackBasedEventTarget::QueryInterface(REFNSIID aIID,
 
 NS_IMETHODIMP
 MainThreadEventTarget::Dispatch(nsIRunnable* aRunnable,
-                                PRUint32 aFlags)
+                                uint32_t aFlags)
 {
   NS_ASSERTION(aRunnable, "Null pointer!");
 
@@ -582,7 +638,7 @@ MainThreadEventTarget::IsOnCurrentThread(bool* aIsOnCurrentThread)
 
 NS_IMETHODIMP
 TransactionPoolEventTarget::Dispatch(nsIRunnable* aRunnable,
-                                     PRUint32 aFlags)
+                                     uint32_t aFlags)
 {
   NS_ASSERTION(aRunnable, "Null pointer!");
   NS_ASSERTION(aFlags == NS_DISPATCH_NORMAL, "Unsupported!");
@@ -590,7 +646,7 @@ TransactionPoolEventTarget::Dispatch(nsIRunnable* aRunnable,
   TransactionThreadPool* pool = TransactionThreadPool::GetOrCreate();
   NS_ENSURE_TRUE(pool, NS_ERROR_UNEXPECTED);
 
-  nsresult rv = pool->Dispatch(mTransaction, aRunnable, false, nsnull);
+  nsresult rv = pool->Dispatch(mTransaction, aRunnable, false, nullptr);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -605,7 +661,7 @@ TransactionPoolEventTarget::IsOnCurrentThread(bool* aIsOnCurrentThread)
 
 NS_IMETHODIMP
 NoDispatchEventTarget::Dispatch(nsIRunnable* aRunnable,
-                                PRUint32 aFlags)
+                                uint32_t aFlags)
 {
   nsCOMPtr<nsIRunnable> runnable = aRunnable;
   return NS_OK;

@@ -75,7 +75,7 @@ static struct GSSFunction {
 };
 
 static bool      gssNativeImp = true;
-static PRLibrary* gssLibrary = nsnull;
+static PRLibrary* gssLibrary = nullptr;
 
 #define gss_display_status_ptr      ((gss_display_status_type)*gssFuncs[0].func)
 #define gss_init_sec_context_ptr    ((gss_init_sec_context_type)*gssFuncs[1].func)
@@ -212,7 +212,7 @@ LogGssError(OM_uint32 maj_stat, OM_uint32 min_stat, const char *prefix)
     gss_buffer_desc status1_string;
     gss_buffer_desc status2_string;
     OM_uint32 ret;
-    nsCAutoString errorStr;
+    nsAutoCString errorStr;
     errorStr.Assign(prefix);
 
     if (!gssLibrary)
@@ -326,7 +326,7 @@ nsAuthGSSAPI::Shutdown()
 {
     if (gssLibrary) {
         PR_UnloadLibrary(gssLibrary);
-        gssLibrary = nsnull;
+        gssLibrary = nullptr;
     }
 }
 
@@ -335,7 +335,7 @@ NS_IMPL_THREADSAFE_ISUPPORTS1(nsAuthGSSAPI, nsIAuthModule)
 
 NS_IMETHODIMP
 nsAuthGSSAPI::Init(const char *serviceName,
-                   PRUint32    serviceFlags,
+                   uint32_t    serviceFlags,
                    const PRUnichar *domain,
                    const PRUnichar *username,
                    const PRUnichar *password)
@@ -358,9 +358,9 @@ nsAuthGSSAPI::Init(const char *serviceName,
 
 NS_IMETHODIMP
 nsAuthGSSAPI::GetNextToken(const void *inToken,
-                           PRUint32    inTokenLen,
+                           uint32_t    inTokenLen,
                            void      **outToken,
-                           PRUint32   *outTokenLen)
+                           uint32_t   *outTokenLen)
 {
     OM_uint32 major_status, minor_status;
     OM_uint32 req_flags = 0;
@@ -368,7 +368,7 @@ nsAuthGSSAPI::GetNextToken(const void *inToken,
     gss_buffer_desc output_token = GSS_C_EMPTY_BUFFER;
     gss_buffer_t  in_token_ptr = GSS_C_NO_BUFFER;
     gss_name_t server;
-    nsCAutoString userbuf;
+    nsAutoCString userbuf;
     nsresult rv;
 
     LOG(("entering nsAuthGSSAPI::GetNextToken()\n"));
@@ -445,10 +445,10 @@ nsAuthGSSAPI::GetNextToken(const void *inToken,
                                             GSS_C_INDEFINITE,
                                             GSS_C_NO_CHANNEL_BINDINGS,
                                             in_token_ptr,
-                                            nsnull,
+                                            nullptr,
                                             &output_token,
-                                            nsnull,
-                                            nsnull);
+                                            nullptr,
+                                            nullptr);
 
     if (GSS_ERROR(major_status)) {
         LogGssError(major_status, minor_status, "gss_init_sec_context() failed");
@@ -491,9 +491,9 @@ end:
 
 NS_IMETHODIMP
 nsAuthGSSAPI::Unwrap(const void *inToken,
-                     PRUint32    inTokenLen,
+                     uint32_t    inTokenLen,
                      void      **outToken,
-                     PRUint32   *outTokenLen)
+                     uint32_t   *outTokenLen)
 {
     OM_uint32 major_status, minor_status;
 
@@ -530,10 +530,10 @@ nsAuthGSSAPI::Unwrap(const void *inToken,
  
 NS_IMETHODIMP
 nsAuthGSSAPI::Wrap(const void *inToken,
-                   PRUint32    inTokenLen,
+                   uint32_t    inTokenLen,
                    bool        confidential,
                    void      **outToken,
-                   PRUint32   *outTokenLen)
+                   uint32_t   *outTokenLen)
 {
     OM_uint32 major_status, minor_status;
 

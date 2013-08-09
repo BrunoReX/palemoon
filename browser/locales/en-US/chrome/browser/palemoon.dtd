@@ -26,3 +26,8 @@
 <!ENTITY palemoon.smoothscroll.pagekeys.duration     "Page up/down scroll duration:">
 <!ENTITY palemoon.smoothscroll.scrollbar.label       "Smooth scroll with scrollbars">
 <!ENTITY palemoon.smoothscroll.scrollbar.duration    "Scrollbar smooth scroll duration:">
+
+<!ENTITY palemoon.sendLinkCmd.label            "Send Link…">
+<!ENTITY palemoon.sendLinkCmd.accesskey        "d">
+<!ENTITY palemoon.sendPageCmd.label            "Send Page Link…">
+<!ENTITY palemoon.sendPageCmd.accesskey        "e">

@@ -12,6 +12,7 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsIDOMSVGAnimTransformList.h"
 #include "nsSVGElement.h"
+#include "mozilla/Attributes.h"
 
 namespace mozilla {
 
@@ -34,7 +35,7 @@ class SVGAnimatedTransformList;
  * nulling out our pointers to them when they die (making our pointers to them
  * true weak refs).
  */
-class DOMSVGAnimatedTransformList : public nsIDOMSVGAnimatedTransformList
+class DOMSVGAnimatedTransformList MOZ_FINAL : public nsIDOMSVGAnimatedTransformList
 {
   friend class DOMSVGTransformList;
 
@@ -60,7 +61,7 @@ public:
   /**
    * This method returns the DOMSVGAnimatedTransformList wrapper for an internal
    * SVGAnimatedTransformList object if it currently has a wrapper. If it does
-   * not, then nsnull is returned.
+   * not, then nullptr is returned.
    */
   static DOMSVGAnimatedTransformList*
     GetDOMWrapperIfExists(SVGAnimatedTransformList *aList);
@@ -77,8 +78,8 @@ public:
    * list and returns. Callers just proceed as normal, and we simply accept
    * that the DOM list will be empty (until successfully set to a new value).
    */
-  void InternalBaseValListWillChangeLengthTo(PRUint32 aNewLength);
-  void InternalAnimValListWillChangeLengthTo(PRUint32 aNewLength);
+  void InternalBaseValListWillChangeLengthTo(uint32_t aNewLength);
+  void InternalAnimValListWillChangeLengthTo(uint32_t aNewLength);
 
   /**
    * Returns true if our attribute is animating (in which case our animVal is
@@ -93,8 +94,8 @@ private:
    * type.
    */
   DOMSVGAnimatedTransformList(nsSVGElement *aElement)
-    : mBaseVal(nsnull)
-    , mAnimVal(nsnull)
+    : mBaseVal(nullptr)
+    , mAnimVal(nullptr)
     , mElement(aElement)
   {}
 

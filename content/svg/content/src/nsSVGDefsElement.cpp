@@ -29,8 +29,8 @@ public:
   NS_DECL_NSIDOMSVGDEFSELEMENT
 
   // xxx I wish we could use virtual inheritance
-  NS_FORWARD_NSIDOMNODE(nsSVGDefsElementBase::)
-  NS_FORWARD_NSIDOMELEMENT(nsSVGDefsElementBase::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
   NS_FORWARD_NSIDOMSVGELEMENT(nsSVGDefsElementBase::)
 
   // nsIContent

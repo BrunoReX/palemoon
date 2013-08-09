@@ -29,7 +29,7 @@ const char* const BlockingResourceBase::kResourceTypeName[] =
 #ifdef DEBUG
 
 PRCallOnceType BlockingResourceBase::sCallOnce;
-PRUintn BlockingResourceBase::sResourceAcqnChainFrontTPI = (PRUintn)-1;
+unsigned BlockingResourceBase::sResourceAcqnChainFrontTPI = (unsigned)-1;
 BlockingResourceBase::DDT* BlockingResourceBase::sDeadlockDetector;
 
 bool
@@ -109,7 +109,7 @@ BlockingResourceBase::CheckAcquire(const CallStack& aCallContext)
         return;
 
     fputs("###!!! ERROR: Potential deadlock detected:\n", stderr);
-    nsCAutoString out("Potential deadlock detected:\n");
+    nsAutoCString out("Potential deadlock detected:\n");
     bool maybeImminent = PrintCycle(cycle, out);
 
     if (maybeImminent) {
@@ -174,7 +174,7 @@ BlockingResourceBase::Release()
         //              /     /
         //  (2)  ...prev<-curr...
         BlockingResourceBase* curr = chainFront;
-        BlockingResourceBase* prev = nsnull;
+        BlockingResourceBase* prev = nullptr;
         while (curr && (prev = curr->mChainPrev) && (prev != this))
             curr = prev;
         if (prev == this)
@@ -300,7 +300,7 @@ ReentrantMonitor::Wait(PRIntervalTime interval)
     AssertCurrentThreadIn();
 
     // save monitor state and reset it to empty
-    PRInt32 savedEntryCount = mEntryCount;
+    int32_t savedEntryCount = mEntryCount;
     CallStack savedAcquisitionContext = GetAcquisitionContext();
     BlockingResourceBase* savedChainPrev = mChainPrev;
     mEntryCount = 0;

@@ -51,7 +51,6 @@
       <field name="mSearchNames">null</field>
       <field name="mIgnoreInput">false</field>
       <field name="mEnterEvent">null</field>
-      <field name="mConsumeRollupEvent">false</field>
 
       <field name="_searchBeginHandler">null</field>
       <field name="_searchCompleteHandler">null</field>
@@ -164,8 +163,14 @@
       <property name="searchCount" readonly="true"
                 onget="this.initSearchNames(); return this.mSearchNames.length;"/>
 
-      <property name="consumeRollupEvent" readonly="true"
-                onget="return this.mConsumeRollupEvent;"/>
+      <field name="PrivateBrowsingUtils" readonly="true">
+        let utils = {};
+        Components.utils.import("resource://gre/modules/PrivateBrowsingUtils.jsm", utils);
+        utils.PrivateBrowsingUtils
+      </field>
+
+      <property name="inPrivateContext" readonly="true"
+                onget="return this.PrivateBrowsingUtils.isWindowPrivate(window);"/>
 
       <!-- This is the maximum number of drop-down rows we get when we
             hit the drop marker beside fields that have it (like the URLbar).-->
@@ -365,7 +370,7 @@
 
       <method name="closePopup">
         <body><![CDATA[
-          this.mConsumeRollupEvent = false;
+          this.popup.setAttribute("consumeoutsideclicks", "false");
           this.popup.closePopup();
         ]]></body>
       </method>
@@ -382,7 +387,7 @@
             input.setAttribute("open", "true");
             function onHide() {
               input.removeAttribute("open");
-              input.mConsumeRollupEvent = false;
+              popup.setAttribute("consumeoutsideclicks", "false");
               popup.removeEventListener("popuphiding", onHide, false);
             }
             popup.addEventListener("popuphiding", onHide, false);
@@ -402,7 +407,7 @@
           // Ensure that we have focus.
           if (!this.focused)
             this.focus();
-          this.mConsumeRollupEvent = true;
+          this.popup.setAttribute("consumeoutsideclicks", "true");
           this.attachController();
           this.mController.startSearch("");
         ]]></body>
@@ -606,7 +611,7 @@
       <stylesheet src="chrome://global/skin/autocomplete.css"/>
     </resources>
 
-    <content ignorekeys="true" level="top">
+    <content ignorekeys="true" level="top" consumeoutsideclicks="false">
       <xul:tree anonid="tree" class="autocomplete-tree plain" hidecolumnpicker="true" flex="1" seltype="single">
         <xul:treecols anonid="treecols">
           <xul:treecol id="treecolAutoCompleteValue" class="autocomplete-treecol" flex="1" overflow="true"/>
@@ -757,12 +762,6 @@
             var popupDirection = aElement.ownerDocument.defaultView.getComputedStyle(aElement).direction;
             this.style.direction = popupDirection;
 
-            // setConsumeRollupEvent() before we call openPopup()
-            var nsIPopupBO = Components.interfaces.nsIPopupBoxObject;
-            this.popupBoxObject.setConsumeRollupEvent(
-              this.mInput.consumeRollupEvent ?
-                nsIPopupBO.ROLLUP_CONSUME :
-                nsIPopupBO.ROLLUP_NO_CONSUME);
             this.openPopup(aElement, "after_start", 0, 0, false, false);
           }
         ]]></body>
@@ -945,7 +944,7 @@
       <stylesheet src="chrome://global/skin/autocomplete.css"/>
     </resources>
 
-    <content ignorekeys="true" level="top">
+    <content ignorekeys="true" level="top" consumeoutsideclicks="false">
       <xul:richlistbox anonid="richlistbox" class="autocomplete-richlistbox" flex="1"/>
       <xul:hbox>
         <children/>
@@ -954,6 +953,7 @@
 
     <implementation implements="nsIAutoCompletePopup">
       <field name="_currentIndex">0</field>
+      <field name="_rowHeight">0</field>
 
       <!-- =================== nsIAutoCompletePopup =================== -->
 
@@ -1001,12 +1001,6 @@
             // invalidate() depends on the width attribute
             this._invalidate();
 
-            // setConsumeRollupEvent() before we call openPopup()
-            var nsIPopupBO = Components.interfaces.nsIPopupBoxObject;
-            this.popupBoxObject.setConsumeRollupEvent(
-              this.mInput.consumeRollupEvent ?
-                nsIPopupBO.ROLLUP_CONSUME :
-                nsIPopupBO.ROLLUP_NO_CONSUME);
             this.openPopup(aElement, "after_start", 0, 0, false, false);
           }
         ]]>
@@ -1078,11 +1072,13 @@
           // Default the height to 0 if we have no rows to show
           let height = 0;
           if (numRows) {
-            let firstRowRect = rows[0].getBoundingClientRect();
-            let lastRowRect = rows[numRows - 1].getBoundingClientRect();
+            if (!this._rowHeight) {
+              let firstRowRect = rows[0].getBoundingClientRect();
+              this._rowHeight = firstRowRect.height;
+            }
 
             // Calculate the height to have the first row to last row shown
-            height = lastRowRect.bottom - firstRowRect.top;
+            height = this._rowHeight * numRows;
           }
 
           // Only update the height if we have a non-zero height and if it
@@ -1376,23 +1372,6 @@
         </body>
       </method>
 
-      <method name="_needsAlternateEmphasis">
-        <parameter name="aText"/>
-        <body>
-          <![CDATA[
-          for (let i = aText.length; --i >= 0; ) {
-            let charCode = aText.charCodeAt(i);
-            // Arabic, Syriac, Indic languages are likely to have ligatures
-            // that are broken when using the main emphasis styling
-            if (0x0600 <= charCode && charCode <= 0x109F)
-              return true;
-          }
-
-          return false;
-          ]]>
-        </body>
-      </method>
-
       <method name="_setUpDescription">
         <parameter name="aDescriptionElement"/>
         <parameter name="aText"/>
@@ -1414,10 +1393,6 @@
           let tokens = this._getSearchTokens(search);
           let indices = this._getBoundaryIndices(aText, tokens);
 
-          // If we're searching for something that needs alternate emphasis,
-          // we'll need to check the text that we match
-          let checkAlt = this._needsAlternateEmphasis(search);
-
           let next;
           let start = 0;
           let len = indices.length;
@@ -1431,8 +1406,7 @@
               // Emphasize the text for even indices
               let span = aDescriptionElement.appendChild(
                 document.createElementNS("http://www.w3.org/1999/xhtml", "span"));
-              span.className = checkAlt && this._needsAlternateEmphasis(text) ?
-                "ac-emphasize-alt" : "ac-emphasize-text";
+              span.className = "ac-emphasize-text";
               span.textContent = text;
             } else {
               // Otherwise, it's plain text

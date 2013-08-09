@@ -5,6 +5,7 @@
 #ifndef nsResizerFrame_h___
 #define nsResizerFrame_h___
 
+#include "mozilla/Attributes.h"
 #include "nsTitleBarFrame.h"
 
 class nsIBaseWindow;
@@ -14,8 +15,8 @@ class nsResizerFrame : public nsTitleBarFrame
 {
 protected:
   struct Direction {
-    PRInt8 mHorizontal;
-    PRInt8 mVertical;
+    int8_t mHorizontal;
+    int8_t mVertical;
   };
 
 public:
@@ -27,16 +28,30 @@ public:
 
   NS_IMETHOD HandleEvent(nsPresContext* aPresContext, 
                                       nsGUIEvent* aEvent,
-                                      nsEventStatus* aEventStatus);
+                                      nsEventStatus* aEventStatus) MOZ_OVERRIDE;
 
-  virtual void MouseClicked(nsPresContext* aPresContext, nsGUIEvent *aEvent);
+  virtual void MouseClicked(nsPresContext* aPresContext, nsGUIEvent *aEvent) MOZ_OVERRIDE;
 
 protected:
   nsIContent* GetContentToResize(nsIPresShell* aPresShell, nsIBaseWindow** aWindow);
 
   Direction GetDirection();
-  static void AdjustDimensions(PRInt32* aPos, PRInt32* aSize,
-                        PRInt32 aMovement, PRInt8 aResizerDirection);
+
+  /**
+   * Adjust the window position and size in a direction according to the mouse
+   * movement and the resizer direction. The minimum and maximum size is used
+   * to constrain the size.
+   *
+   * @param aPos left or top position
+   * @param aSize width or height
+   * @param aMinSize minimum width or height
+   * @param aMacSize maximum width or height
+   * @param aMovement the amount the mouse was moved
+   * @param aResizerDirection resizer direction returned by GetDirection
+   */
+  static void AdjustDimensions(int32_t* aPos, int32_t* aSize,
+                               int32_t aMinSize, int32_t aMaxSize,
+                               int32_t aMovement, int8_t aResizerDirection);
 
   struct SizeInfo {
     nsString width, height;
@@ -47,6 +62,7 @@ protected:
                             const SizeInfo& aSizeInfo, SizeInfo* aOriginalSizeInfo);
   static void MaybePersistOriginalSize(nsIContent* aContent, const SizeInfo& aSizeInfo);
   static void RestoreOriginalSize(nsIContent* aContent);
+
 protected:
 	nsIntRect mMouseDownRect;
 	nsIntPoint mMouseDownPoint;

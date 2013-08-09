@@ -19,7 +19,8 @@
 #include "nsNetUtil.h"
 #include "nsIClassInfoImpl.h"
 #include "nsNetCID.h"
-#include "nsDOMError.h"
+#include "nsError.h"
+#include "nsIScriptSecurityManager.h"
 #include "nsScriptSecurityManager.h"
 
 using namespace mozilla;
@@ -36,7 +37,7 @@ NS_IMPL_CI_INTERFACE_GETTER2(nsNullPrincipal,
 NS_IMETHODIMP_(nsrefcnt) 
 nsNullPrincipal::AddRef()
 {
-  NS_PRECONDITION(PRInt32(refcount) >= 0, "illegal refcnt");
+  NS_PRECONDITION(int32_t(refcount) >= 0, "illegal refcnt");
   nsrefcnt count = PR_ATOMIC_INCREMENT(&refcount);
   NS_LOG_ADDREF(this, count, "nsNullPrincipal", sizeof(*this));
   return count;
@@ -81,8 +82,8 @@ nsNullPrincipal::Init()
   char chars[NSID_LENGTH];
   id.ToProvidedString(chars);
 
-  PRUint32 suffixLen = NSID_LENGTH - 1;
-  PRUint32 prefixLen = ArrayLength(NS_NULLPRINCIPAL_PREFIX) - 1;
+  uint32_t suffixLen = NSID_LENGTH - 1;
+  uint32_t prefixLen = ArrayLength(NS_NULLPRINCIPAL_PREFIX) - 1;
 
   // Use an nsCString so we only do the allocation once here and then share
   // with nsJSPrincipals
@@ -112,7 +113,7 @@ nsNullPrincipal::GetScriptLocation(nsACString &aStr)
 #ifdef DEBUG
 void nsNullPrincipal::dumpImpl()
 {
-  nsCAutoString str;
+  nsAutoCString str;
   mURI->GetSpec(str);
   fprintf(stderr, "nsNullPrincipal (%p) = %s\n", this, str.get());
 }
@@ -121,23 +122,6 @@ void nsNullPrincipal::dumpImpl()
 /**
  * nsIPrincipal implementation
  */
-
-NS_IMETHODIMP
-nsNullPrincipal::GetPreferences(char** aPrefName, char** aID,
-                                char** aSubjectName,
-                                char** aGrantedList, char** aDeniedList,
-                                bool* aIsTrusted)
-{
-  // The null principal should never be written to preferences.
-  *aPrefName = nsnull;
-  *aID = nsnull;
-  *aSubjectName = nsnull;
-  *aGrantedList = nsnull;
-  *aDeniedList = nsnull;
-  *aIsTrusted = false;
-
-  return NS_ERROR_FAILURE; 
-}
 
 NS_IMETHODIMP
 nsNullPrincipal::Equals(nsIPrincipal *aOther, bool *aResult)
@@ -155,7 +139,7 @@ nsNullPrincipal::EqualsIgnoringDomain(nsIPrincipal *aOther, bool *aResult)
 }
 
 NS_IMETHODIMP
-nsNullPrincipal::GetHashValue(PRUint32 *aResult)
+nsNullPrincipal::GetHashValue(uint32_t *aResult)
 {
   *aResult = (NS_PTR_TO_INT32(this) >> 2);
   return NS_OK;
@@ -166,7 +150,7 @@ nsNullPrincipal::GetSecurityPolicy(void** aSecurityPolicy)
 {
   // We don't actually do security policy caching.  And it's not like anyone
   // can set a security policy for us anyway.
-  *aSecurityPolicy = nsnull;
+  *aSecurityPolicy = nullptr;
   return NS_OK;
 }
 
@@ -175,33 +159,6 @@ nsNullPrincipal::SetSecurityPolicy(void* aSecurityPolicy)
 {
   // We don't actually do security policy caching.  And it's not like anyone
   // can set a security policy for us anyway.
-  return NS_OK;
-}
-
-NS_IMETHODIMP 
-nsNullPrincipal::CanEnableCapability(const char *aCapability, 
-                                     PRInt16 *aResult)
-{
-  // Null principal can enable no capabilities.
-  *aResult = nsIPrincipal::ENABLE_DENIED;
-  return NS_OK;
-}
-
-NS_IMETHODIMP 
-nsNullPrincipal::IsCapabilityEnabled(const char *aCapability, 
-                                     void *aAnnotation, 
-                                     bool *aResult)
-{
-  // Nope.  No capabilities, I say!
-  *aResult = false;
-  return NS_OK;
-}
-
-NS_IMETHODIMP 
-nsNullPrincipal::EnableCapability(const char *aCapability, void **aAnnotation)
-{
-  NS_NOTREACHED("Didn't I say it?  NO CAPABILITIES!");
-  *aAnnotation = nsnull;
   return NS_OK;
 }
 
@@ -215,7 +172,7 @@ NS_IMETHODIMP
 nsNullPrincipal::GetCsp(nsIContentSecurityPolicy** aCsp)
 {
   // CSP on a null principal makes no sense
-  *aCsp = nsnull;
+  *aCsp = nullptr;
   return NS_OK;
 }
 
@@ -243,9 +200,9 @@ nsNullPrincipal::SetDomain(nsIURI* aDomain)
 NS_IMETHODIMP 
 nsNullPrincipal::GetOrigin(char** aOrigin)
 {
-  *aOrigin = nsnull;
+  *aOrigin = nullptr;
   
-  nsCAutoString str;
+  nsAutoCString str;
   nsresult rv = mURI->GetSpec(str);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -253,25 +210,6 @@ nsNullPrincipal::GetOrigin(char** aOrigin)
   NS_ENSURE_TRUE(*aOrigin, NS_ERROR_OUT_OF_MEMORY);
 
   return NS_OK;
-}
-
-NS_IMETHODIMP 
-nsNullPrincipal::GetHasCertificate(bool* aResult)
-{
-  *aResult = false;
-  return NS_OK;
-}
-
-NS_IMETHODIMP 
-nsNullPrincipal::GetFingerprint(nsACString& aID)
-{
-    return NS_ERROR_NOT_AVAILABLE;
-}
-
-NS_IMETHODIMP 
-nsNullPrincipal::GetPrettyName(nsACString& aName)
-{
-    return NS_ERROR_NOT_AVAILABLE;
 }
 
 NS_IMETHODIMP
@@ -291,27 +229,73 @@ nsNullPrincipal::SubsumesIgnoringDomain(nsIPrincipal *aOther, bool *aResult)
 }
 
 NS_IMETHODIMP
-nsNullPrincipal::CheckMayLoad(nsIURI* aURI, bool aReport)
-{
+nsNullPrincipal::CheckMayLoad(nsIURI* aURI, bool aReport, bool aAllowIfInheritsPrincipal)
+ {
+  if (aAllowIfInheritsPrincipal) {
+    if (nsPrincipal::IsPrincipalInherited(aURI)) {
+      return NS_OK;
+    }
+
+    // Also allow the load if the principal of the URI being checked is exactly
+    // us ie this.
+    nsCOMPtr<nsIURIWithPrincipal> uriPrinc = do_QueryInterface(aURI);
+    if (uriPrinc) {
+      nsCOMPtr<nsIPrincipal> principal;
+      uriPrinc->GetPrincipal(getter_AddRefs(principal));
+
+      if (principal && principal == this) {
+        return NS_OK;
+      }
+    }
+  }
+
   if (aReport) {
     nsScriptSecurityManager::ReportError(
-      nsnull, NS_LITERAL_STRING("CheckSameOriginError"), mURI, aURI);
+      nullptr, NS_LITERAL_STRING("CheckSameOriginError"), mURI, aURI);
   }
 
   return NS_ERROR_DOM_BAD_URI;
 }
 
-NS_IMETHODIMP 
-nsNullPrincipal::GetSubjectName(nsACString& aName)
+NS_IMETHODIMP
+nsNullPrincipal::GetExtendedOrigin(nsACString& aExtendedOrigin)
 {
-    return NS_ERROR_NOT_AVAILABLE;
+  return GetOrigin(getter_Copies(aExtendedOrigin));
 }
 
 NS_IMETHODIMP
-nsNullPrincipal::GetCertificate(nsISupports** aCertificate)
+nsNullPrincipal::GetAppStatus(uint16_t* aAppStatus)
 {
-    *aCertificate = nsnull;
-    return NS_OK;
+  *aAppStatus = nsIPrincipal::APP_STATUS_NOT_INSTALLED;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNullPrincipal::GetAppId(uint32_t* aAppId)
+{
+  *aAppId = nsIScriptSecurityManager::NO_APP_ID;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNullPrincipal::GetIsInBrowserElement(bool* aIsInBrowserElement)
+{
+  *aIsInBrowserElement = false;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNullPrincipal::GetUnknownAppId(bool* aUnknownAppId)
+{
+  *aUnknownAppId = false;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNullPrincipal::GetIsNullPrincipal(bool* aIsNullPrincipal)
+{
+  *aIsNullPrincipal = true;
+  return NS_OK;
 }
 
 /**

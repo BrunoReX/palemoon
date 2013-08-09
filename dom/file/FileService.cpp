@@ -20,7 +20,7 @@ USING_FILE_NAMESPACE
 
 namespace {
 
-FileService* gInstance = nsnull;
+FileService* gInstance = nullptr;
 bool gShutdown = false;
 
 } // anonymous namespace
@@ -77,7 +77,7 @@ FileService::Cleanup()
 
   if (!mCompleteCallbacks.IsEmpty()) {
     // Run all callbacks manually now.
-    for (PRUint32 index = 0; index < mCompleteCallbacks.Length(); index++) {
+    for (uint32_t index = 0; index < mCompleteCallbacks.Length(); index++) {
       mCompleteCallbacks[index].mCallback->Run();
     }
     mCompleteCallbacks.Clear();
@@ -98,21 +98,21 @@ FileService::GetOrCreate()
 
   if (gShutdown) {
     NS_WARNING("Calling GetOrCreate() after shutdown!");
-    return nsnull;
+    return nullptr;
   }
 
   if (!gInstance) {
     nsRefPtr<FileService> service(new FileService);
 
     nsresult rv = service->Init();
-    NS_ENSURE_SUCCESS(rv, nsnull);
+    NS_ENSURE_SUCCESS(rv, nullptr);
 
     nsCOMPtr<nsIObserverService> obs =
       do_GetService(NS_OBSERVERSERVICE_CONTRACTID, &rv);
-    NS_ENSURE_SUCCESS(rv, nsnull);
+    NS_ENSURE_SUCCESS(rv, nullptr);
 
     rv = obs->AddObserver(service, "profile-before-change", false);
-    NS_ENSURE_SUCCESS(rv, nsnull);
+    NS_ENSURE_SUCCESS(rv, nullptr);
 
     // The observer service now owns us.
     gInstance = service;
@@ -141,7 +141,7 @@ FileService::Shutdown()
     if (NS_FAILED(gInstance->Cleanup())) {
       NS_WARNING("Failed to shutdown file service!");
     }
-    gInstance = nsnull;
+    gInstance = nullptr;
   }
 }
 
@@ -248,11 +248,11 @@ FileService::NotifyLockedFileCompleted(LockedFile* aLockedFile)
     mFileStorageInfos.Remove(storageId);
 
 #ifdef DEBUG
-    storageId = nsnull;
+    storageId = nullptr;
 #endif
 
      // See if we need to fire any complete callbacks.
-    PRUint32 index = 0;
+    uint32_t index = 0;
     while (index < mCompleteCallbacks.Length()) {
       if (MaybeFireCallback(mCompleteCallbacks[index])) {
         mCompleteCallbacks.RemoveElementAt(index);
@@ -299,7 +299,7 @@ FileService::AbortLockedFilesForStorage(nsIFileStorage* aFileStorage)
   fileStorageInfo->CollectRunningAndDelayedLockedFiles(aFileStorage,
                                                        lockedFiles);
 
-  for (PRUint32 index = 0; index < lockedFiles.Length(); index++) {
+  for (uint32_t index = 0; index < lockedFiles.Length(); index++) {
     lockedFiles[index]->Abort();
   }
 }
@@ -337,9 +337,9 @@ FileService::MaybeFireCallback(StoragesCompleteCallback& aCallback)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
-  for (PRUint32 index = 0; index < aCallback.mStorages.Length(); index++) {
+  for (uint32_t index = 0; index < aCallback.mStorages.Length(); index++) {
     if (mFileStorageInfos.Get(aCallback.mStorages[index]->StorageId(),
-                              nsnull)) {
+                              nullptr)) {
       return false;
     }
   }
@@ -378,7 +378,7 @@ void
 FileService::LockedFileQueue::OnFileHelperComplete(FileHelper* aFileHelper)
 {
   if (mLockedFile->mRequestMode == LockedFile::PARALLEL) {
-    PRInt32 index = mQueue.IndexOf(aFileHelper);
+    int32_t index = mQueue.IndexOf(aFileHelper);
     NS_ASSERTION(index != -1, "We don't know anything about this helper!");
 
     mQueue.RemoveElementAt(index);
@@ -386,10 +386,12 @@ FileService::LockedFileQueue::OnFileHelperComplete(FileHelper* aFileHelper)
   else {
     NS_ASSERTION(mCurrentHelper == aFileHelper, "How can this happen?!");
 
-    mCurrentHelper = nsnull;
+    mCurrentHelper = nullptr;
 
     nsresult rv = ProcessQueue();
-    NS_ENSURE_SUCCESS(rv,);
+    if (NS_FAILED(rv)) {
+      return;
+    }
   }
 }
 
@@ -421,20 +423,20 @@ FileService::FileStorageInfo::CreateLockedFileQueue(LockedFile* aLockedFile)
 FileService::LockedFileQueue*
 FileService::FileStorageInfo::GetLockedFileQueue(LockedFile* aLockedFile)
 {
-  PRUint32 count = mLockedFileQueues.Length();
-  for (PRUint32 index = 0; index < count; index++) {
+  uint32_t count = mLockedFileQueues.Length();
+  for (uint32_t index = 0; index < count; index++) {
     nsRefPtr<LockedFileQueue>& lockedFileQueue = mLockedFileQueues[index];
     if (lockedFileQueue->mLockedFile == aLockedFile) {
       return lockedFileQueue;
     }
   }
-  return nsnull;
+  return nullptr;
 }
 
 void
 FileService::FileStorageInfo::RemoveLockedFileQueue(LockedFile* aLockedFile)
 {
-  PRUint32 lockedFileCount = mLockedFileQueues.Length();
+  uint32_t lockedFileCount = mLockedFileQueues.Length();
 
   // We can't just remove entries from lock hash tables, we have to rebuild
   // them instead. Multiple LockedFile objects may lock the same file
@@ -443,7 +445,7 @@ FileService::FileStorageInfo::RemoveLockedFileQueue(LockedFile* aLockedFile)
   mFilesReading.Clear();
   mFilesWriting.Clear();
 
-  for (PRUint32 index = 0, count = lockedFileCount; index < count; index++) {
+  for (uint32_t index = 0, count = lockedFileCount; index < count; index++) {
     LockedFile* lockedFile = mLockedFileQueues[index]->mLockedFile;
     if (lockedFile == aLockedFile) {
       NS_ASSERTION(count == lockedFileCount, "More than one match?!");
@@ -475,7 +477,7 @@ FileService::FileStorageInfo::RemoveLockedFileQueue(LockedFile* aLockedFile)
   nsTArray<DelayedEnqueueInfo> delayedEnqueueInfos;
   delayedEnqueueInfos.SwapElements(mDelayedEnqueueInfos);
 
-  for (PRUint32 index = 0; index < delayedEnqueueInfos.Length(); index++) {
+  for (uint32_t index = 0; index < delayedEnqueueInfos.Length(); index++) {
     DelayedEnqueueInfo& delayedEnqueueInfo = delayedEnqueueInfos[index];
     if (NS_FAILED(gInstance->Enqueue(delayedEnqueueInfo.mLockedFile,
                                      delayedEnqueueInfo.mFileHelper))) {
@@ -488,7 +490,7 @@ bool
 FileService::FileStorageInfo::HasRunningLockedFiles(
                                                   nsIFileStorage* aFileStorage)
 {
-  for (PRUint32 index = 0; index < mLockedFileQueues.Length(); index++) {
+  for (uint32_t index = 0; index < mLockedFileQueues.Length(); index++) {
     LockedFile* lockedFile = mLockedFileQueues[index]->mLockedFile;
     if (lockedFile->mFileHandle->mFileStorage == aFileStorage) {
       return true;
@@ -512,14 +514,14 @@ FileService::FileStorageInfo::CollectRunningAndDelayedLockedFiles(
                                  nsIFileStorage* aFileStorage,
                                  nsTArray<nsRefPtr<LockedFile> >& aLockedFiles)
 {
-  for (PRUint32 index = 0; index < mLockedFileQueues.Length(); index++) {
+  for (uint32_t index = 0; index < mLockedFileQueues.Length(); index++) {
     LockedFile* lockedFile = mLockedFileQueues[index]->mLockedFile;
     if (lockedFile->mFileHandle->mFileStorage == aFileStorage) {
       aLockedFiles.AppendElement(lockedFile);
     }
   }
 
-  for (PRUint32 index = 0; index < mDelayedEnqueueInfos.Length(); index++) {
+  for (uint32_t index = 0; index < mDelayedEnqueueInfos.Length(); index++) {
     LockedFile* lockedFile = mDelayedEnqueueInfos[index].mLockedFile;
     if (lockedFile->mFileHandle->mFileStorage == aFileStorage) {
       aLockedFiles.AppendElement(lockedFile);

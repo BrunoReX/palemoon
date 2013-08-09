@@ -2,14 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-let EXPORTED_SYMBOLS = ["Services"];
+this.EXPORTED_SYMBOLS = ["Services"];
 
 const Ci = Components.interfaces;
 const Cc = Components.classes;
 
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-let Services = {};
+this.Services = {};
 
 XPCOMUtils.defineLazyGetter(Services, "prefs", function () {
   return Cc["@mozilla.org/preferences-service;1"]
@@ -61,7 +61,9 @@ let initTable = [
   ["startup", "@mozilla.org/toolkit/app-startup;1", "nsIAppStartup"],
   ["sysinfo", "@mozilla.org/system-info;1", "nsIPropertyBag2"],
   ["clipboard", "@mozilla.org/widget/clipboard;1", "nsIClipboard"],
-  ["DOMRequest", "@mozilla.org/dom/dom-request-service;1", "nsIDOMRequestService"]
+  ["DOMRequest", "@mozilla.org/dom/dom-request-service;1", "nsIDOMRequestService"],
+  ["focus", "@mozilla.org/focus-manager;1", "nsIFocusManager"],
+  ["uriFixup", "@mozilla.org/docshell/urifixup;1", "nsIURIFixup"],
 ];
 
 initTable.forEach(function ([name, contract, intf])

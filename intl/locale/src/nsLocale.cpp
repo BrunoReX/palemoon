@@ -23,11 +23,12 @@
 NS_IMPL_THREADSAFE_ISUPPORTS1(nsLocale, nsILocale)
 
 nsLocale::nsLocale(void)
-:  fHashtable(nsnull), fCategoryCount(0)
+:  fHashtable(nullptr), fCategoryCount(0)
 {
   fHashtable = PL_NewHashTable(LOCALE_HASH_SIZE,&nsLocale::Hash_HashFunction,
                                &nsLocale::Hash_CompareNSString,
-                               &nsLocale::Hash_CompareNSString, NULL, NULL);
+                               &nsLocale::Hash_CompareNSString,
+                               nullptr, nullptr);
   NS_ASSERTION(fHashtable, "nsLocale: failed to allocate PR_Hashtable");
 }
 
@@ -36,7 +37,7 @@ nsLocale::~nsLocale(void)
   // enumerate all the entries with a delete function to
   // safely delete all the keys and values
   PL_HashTableEnumerateEntries(fHashtable, &nsLocale::Hash_EnumerateDelete,
-                               NULL);
+                               nullptr);
 
   PL_HashTableDestroy(fHashtable);
 }
@@ -94,15 +95,15 @@ nsLocale::Hash_HashFunction(const void* key)
 }
 
 
-PRIntn
+int
 nsLocale::Hash_CompareNSString(const void* s1, const void* s2)
 {
   return !nsCRT::strcmp((const PRUnichar *) s1, (const PRUnichar *) s2);
 }
 
 
-PRIntn
-nsLocale::Hash_EnumerateDelete(PLHashEntry *he, PRIntn hashIndex, void *arg)
+int
+nsLocale::Hash_EnumerateDelete(PLHashEntry *he, int hashIndex, void *arg)
 {
   // delete an entry
   nsMemory::Free((PRUnichar *)he->key);

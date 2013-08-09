@@ -29,25 +29,33 @@ class nsEventTargetChainItem;
 class nsPIDOMWindow;
 class nsCxPusher;
 class nsIEventListenerInfo;
-class nsIDocument;
+
+typedef enum
+{
+    eNativeListener = 0,
+    eJSEventListener,
+    eWrappedJSListener
+} nsListenerType;
 
 struct nsListenerStruct
 {
   nsRefPtr<nsIDOMEventListener> mListener;
-  PRUint32                      mEventType;
   nsCOMPtr<nsIAtom>             mTypeAtom;
-  PRUint16                      mFlags;
-  bool                          mHandlerIsString;
-  bool                          mWrappedJS;
+  uint32_t                      mEventType;
+  uint16_t                      mFlags;
+  uint8_t                       mListenerType;
+  bool                          mListenerIsHandler : 1;
+  bool                          mHandlerIsString : 1;
+  bool                          mAllEvents : 1;
 
   nsIJSEventListener* GetJSListener() const {
-    return (mFlags & NS_PRIV_EVENT_FLAG_SCRIPT) ?
-      static_cast<nsIJSEventListener *>(mListener.get()) : nsnull;
+    return (mListenerType == eJSEventListener) ?
+      static_cast<nsIJSEventListener *>(mListener.get()) : nullptr;
   }
 
   ~nsListenerStruct()
   {
-    if ((mFlags & NS_PRIV_EVENT_FLAG_SCRIPT) && mListener) {
+    if ((mListenerType == eJSEventListener) && mListener) {
       static_cast<nsIJSEventListener*>(mListener.get())->Disconnect();
     }
   }
@@ -64,7 +72,7 @@ public:
   nsEventListenerManager(nsISupports* aTarget);
   virtual ~nsEventListenerManager();
 
-  NS_INLINE_DECL_REFCOUNTING(nsEventListenerManager)
+  NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(nsEventListenerManager)
 
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(nsEventListenerManager)
 
@@ -76,16 +84,24 @@ public:
                            nsIDOMEventListener* aListener,
                            bool aUseCapture);
 
+  void AddListenerForAllEvents(nsIDOMEventListener* aListener,
+                               bool aUseCapture,
+                               bool aWantsUntrusted,
+                               bool aSystemEventGroup);
+  void RemoveListenerForAllEvents(nsIDOMEventListener* aListener,
+                                  bool aUseCapture,
+                                  bool aSystemEventGroup);
+
   /**
   * Sets events listeners of all types. 
   * @param an event listener
   */
   void AddEventListenerByType(nsIDOMEventListener *aListener,
                               const nsAString& type,
-                              PRInt32 aFlags);
+                              int32_t aFlags);
   void RemoveEventListenerByType(nsIDOMEventListener *aListener,
                                  const nsAString& type,
-                                 PRInt32 aFlags);
+                                 int32_t aFlags);
 
   /**
    * Sets the current "inline" event listener for aName to be a
@@ -95,21 +111,21 @@ public:
    */
   // XXXbz does that play correctly with nodes being adopted across
   // documents?  Need to double-check the spec here.
-  nsresult AddScriptEventListener(nsIAtom *aName,
-                                  const nsAString& aFunc,
-                                  PRUint32 aLanguage,
-                                  bool aDeferCompilation,
-                                  bool aPermitUntrustedEvents);
+  nsresult SetEventHandler(nsIAtom *aName,
+                           const nsAString& aFunc,
+                           uint32_t aLanguage,
+                           bool aDeferCompilation,
+                           bool aPermitUntrustedEvents);
   /**
    * Remove the current "inline" event listener for aName.
    */
-  void RemoveScriptEventListener(nsIAtom *aName);
+  void RemoveEventHandler(nsIAtom *aName);
 
   void HandleEvent(nsPresContext* aPresContext,
                    nsEvent* aEvent, 
                    nsIDOMEvent** aDOMEvent,
                    nsIDOMEventTarget* aCurrentTarget,
-                   PRUint32 aFlags,
+                   uint32_t aFlags,
                    nsEventStatus* aEventStatus,
                    nsCxPusher* aPusher)
   {
@@ -141,7 +157,7 @@ public:
                            nsEvent* aEvent, 
                            nsIDOMEvent** aDOMEvent,
                            nsIDOMEventTarget* aCurrentTarget,
-                           PRUint32 aFlags,
+                           uint32_t aFlags,
                            nsEventStatus* aEventStatus,
                            nsCxPusher* aPusher);
 
@@ -169,12 +185,18 @@ public:
    *       event bits are returned. All bits are also returned if one of the
    *       event listeners is registered to handle DOMSubtreeModified events.
    */
-  PRUint32 MutationListenerBits();
+  uint32_t MutationListenerBits();
 
   /**
    * Returns true if there is at least one event listener for aEventName.
    */
   bool HasListenersFor(const nsAString& aEventName);
+
+  /**
+   * Returns true if there is at least one event listener for aEventNameWithOn.
+   * Note that aEventNameWithOn must start with "on"!
+   */
+  bool HasListenersFor(nsIAtom* aEventNameWithOn);
 
   /**
    * Returns true if there is at least one event listener.
@@ -187,7 +209,7 @@ public:
    */
   nsresult GetListenerInfo(nsCOMArray<nsIEventListenerInfo>* aList);
 
-  PRUint32 GetIdentifierForEvent(nsIAtom* aEvent);
+  uint32_t GetIdentifierForEvent(nsIAtom* aEvent);
 
   static void Shutdown();
 
@@ -213,7 +235,7 @@ public:
 
   size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
 
-  void UnmarkGrayJSListeners();
+  void MarkForCC();
 
   nsISupports* GetTarget() { return mTarget; }
 protected:
@@ -221,7 +243,7 @@ protected:
                               nsIDOMEventListener* aListener,
                               nsIDOMEvent* aDOMEvent,
                               nsIDOMEventTarget* aCurrentTarget,
-                              PRUint32 aPhaseFlags,
+                              uint32_t aPhaseFlags,
                               nsCxPusher* aPusher);
 
   /**
@@ -236,73 +258,106 @@ protected:
   /**
    * Find the nsListenerStruct for the "inline" event listener for aTypeAtom.
    */
-  nsListenerStruct* FindJSEventListener(PRUint32 aEventType, nsIAtom* aTypeAtom);
+  nsListenerStruct* FindEventHandler(uint32_t aEventType, nsIAtom* aTypeAtom);
 
   /**
-   * Set the "inline" event listener for aName to aHandler.  aHandler
-   * may be null to indicate that we should lazily get and compile the
-   * string for this listener.  The nsListenerStruct that results, if
-   * any, is returned in aListenerStruct.
+   * Set the "inline" event listener for aName to aHandler.  aHandler may be
+   * have no actual handler set to indicate that we should lazily get and
+   * compile the string for this listener, but in that case aContext and
+   * aScopeGlobal must be non-null.  Otherwise, aContext and aScopeGlobal are
+   * allowed to be null.  The nsListenerStruct that results, if any, is returned
+   * in aListenerStruct.
    */
-  nsresult SetJSEventListener(nsIScriptContext *aContext,
-                              JSObject* aScopeGlobal,
-                              nsIAtom* aName,
-                              JSObject *aHandler,
-                              bool aPermitUntrustedEvents,
-                              nsListenerStruct **aListenerStruct);
+  nsresult SetEventHandlerInternal(nsIScriptContext *aContext,
+                                   JSObject* aScopeGlobal,
+                                   nsIAtom* aName,
+                                   const nsEventHandler& aHandler,
+                                   bool aPermitUntrustedEvents,
+                                   nsListenerStruct **aListenerStruct);
 
-  bool IsDeviceType(PRUint32 aType);
-  void EnableDevice(PRUint32 aType);
-  void DisableDevice(PRUint32 aType);
+  bool IsDeviceType(uint32_t aType);
+  void EnableDevice(uint32_t aType);
+  void DisableDevice(uint32_t aType);
 
 public:
   /**
-   * Set the "inline" event listener for aEventName to |v|.  This
-   * might actually remove the event listener, depending on the value
-   * of |v|.  Note that on entry to this function cx and aScope might
-   * not be in the same compartment, though cx and v are guaranteed to
-   * be in the same compartment.
+   * Set the "inline" event listener for aEventName to aHandler.  If
+   * aHandler is null, this will actually remove the event listener
    */
-  nsresult SetJSEventListenerToJsval(nsIAtom *aEventName, JSContext *cx,
-                                     JSObject *aScope, const jsval &v);
+  nsresult SetEventHandler(nsIAtom* aEventName,
+                           mozilla::dom::EventHandlerNonNull* aHandler);
+  nsresult SetEventHandler(mozilla::dom::OnErrorEventHandlerNonNull* aHandler);
+  nsresult SetEventHandler(mozilla::dom::BeforeUnloadEventHandlerNonNull* aHandler);
+
   /**
    * Get the value of the "inline" event listener for aEventName.
    * This may cause lazy compilation if the listener is uncompiled.
+   *
+   * Note: It's the caller's responsibility to make sure to call the right one
+   * of these methods.  In particular, "onerror" events use
+   * OnErrorEventHandlerNonNull for some event targets and EventHandlerNonNull
+   * for others.
    */
-  void GetJSEventListener(nsIAtom *aEventName, jsval *vp);
+  mozilla::dom::EventHandlerNonNull* GetEventHandler(nsIAtom *aEventName)
+  {
+    const nsEventHandler* handler = GetEventHandlerInternal(aEventName);
+    return handler ? handler->EventHandler() : nullptr;
+  }
+  mozilla::dom::OnErrorEventHandlerNonNull* GetOnErrorEventHandler()
+  {
+    const nsEventHandler* handler = GetEventHandlerInternal(nsGkAtoms::onerror);
+    return handler ? handler->OnErrorEventHandler() : nullptr;
+  }
+  mozilla::dom::BeforeUnloadEventHandlerNonNull* GetOnBeforeUnloadEventHandler()
+  {
+    const nsEventHandler* handler =
+      GetEventHandlerInternal(nsGkAtoms::onbeforeunload);
+    return handler ? handler->BeforeUnloadEventHandler() : nullptr;
+  }
 
 protected:
+  /**
+   * Helper method for implementing the various Get*EventHandler above.  Will
+   * return null if we don't have an event handler for this event name.
+   */
+  const nsEventHandler* GetEventHandlerInternal(nsIAtom* aEventName);
+
   void AddEventListener(nsIDOMEventListener *aListener, 
-                        PRUint32 aType,
+                        uint32_t aType,
                         nsIAtom* aTypeAtom,
-                        PRInt32 aFlags);
+                        int32_t aFlags,
+                        bool aHandler = false,
+                        bool aAllEvents = false);
   void RemoveEventListener(nsIDOMEventListener *aListener,
-                           PRUint32 aType,
+                           uint32_t aType,
                            nsIAtom* aUserType,
-                           PRInt32 aFlags);
+                           int32_t aFlags,
+                           bool aAllEvents = false);
   void RemoveAllListeners();
   const EventTypeData* GetTypeDataForIID(const nsIID& aIID);
   const EventTypeData* GetTypeDataForEventName(nsIAtom* aName);
   nsPIDOMWindow* GetInnerWindowForTarget();
+  already_AddRefed<nsPIDOMWindow> GetTargetAsInnerWindow() const;
 
-  PRUint32 mMayHavePaintEventListener : 1;
-  PRUint32 mMayHaveMutationListeners : 1;
-  PRUint32 mMayHaveCapturingListeners : 1;
-  PRUint32 mMayHaveSystemGroupListeners : 1;
-  PRUint32 mMayHaveAudioAvailableEventListener : 1;
-  PRUint32 mMayHaveTouchEventListener : 1;
-  PRUint32 mMayHaveMouseEnterLeaveEventListener : 1;
-  PRUint32 mNoListenerForEvent : 25;
+  uint32_t mMayHavePaintEventListener : 1;
+  uint32_t mMayHaveMutationListeners : 1;
+  uint32_t mMayHaveCapturingListeners : 1;
+  uint32_t mMayHaveSystemGroupListeners : 1;
+  uint32_t mMayHaveAudioAvailableEventListener : 1;
+  uint32_t mMayHaveTouchEventListener : 1;
+  uint32_t mMayHaveMouseEnterLeaveEventListener : 1;
+  uint32_t mClearingListeners : 1;
+  uint32_t mNoListenerForEvent : 24;
 
   nsAutoTObserverArray<nsListenerStruct, 2> mListeners;
   nsISupports*                              mTarget;  //WEAK
   nsCOMPtr<nsIAtom>                         mNoListenerForEventAtom;
 
-  static PRUint32                           mInstanceCount;
+  static uint32_t                           mInstanceCount;
   static jsid                               sAddListenerID;
 
   friend class nsEventTargetChainItem;
-  static PRUint32                           sCreatedCount;
+  static uint32_t                           sCreatedCount;
 };
 
 /**
@@ -318,7 +373,7 @@ NS_AddSystemEventListener(nsIDOMEventTarget* aTarget,
 {
   nsEventListenerManager* listenerManager = aTarget->GetListenerManager(true);
   NS_ENSURE_STATE(listenerManager);
-  PRUint32 flags = NS_EVENT_FLAG_SYSTEM_EVENT;
+  uint32_t flags = NS_EVENT_FLAG_SYSTEM_EVENT;
   flags |= aUseCapture ? NS_EVENT_FLAG_CAPTURE : NS_EVENT_FLAG_BUBBLE;
   if (aWantsUntrusted) {
     flags |= NS_PRIV_EVENT_UNTRUSTED_PERMITTED;

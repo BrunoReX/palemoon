@@ -2,25 +2,27 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "nsHTMLEditorEventListener.h"
-#include "nsHTMLEditor.h"
-#include "nsString.h"
-
-#include "nsIDOMEvent.h"
-#include "nsIDOMNSEvent.h"
-#include "nsIDOMElement.h"
-#include "nsIDOMMouseEvent.h"
-#include "nsISelection.h"
-#include "nsIDOMRange.h"
-#include "nsIDOMEventTarget.h"
-#include "nsIDOMHTMLTableElement.h"
-#include "nsIDOMHTMLTableCellElement.h"
-#include "nsIContent.h"
-
-#include "nsIHTMLObjectResizer.h"
-#include "nsEditProperty.h"
-#include "nsTextEditUtils.h"
+#include "nsAutoPtr.h"
+#include "nsCOMPtr.h"
+#include "nsDebug.h"
+#include "nsEditor.h"
+#include "nsError.h"
 #include "nsHTMLEditUtils.h"
+#include "nsHTMLEditor.h"
+#include "nsHTMLEditorEventListener.h"
+#include "nsIDOMElement.h"
+#include "nsIDOMEvent.h"
+#include "nsIDOMEventTarget.h"
+#include "nsIDOMMouseEvent.h"
+#include "nsIDOMNode.h"
+#include "nsIDOMRange.h"
+#include "nsIEditor.h"
+#include "nsIHTMLEditor.h"
+#include "nsIHTMLInlineTableEditor.h"
+#include "nsIHTMLObjectResizer.h"
+#include "nsISelection.h"
+#include "nsISupportsImpl.h"
+#include "nsLiteralString.h"
 
 /*
  * nsHTMLEditorEventListener implementation
@@ -65,7 +67,7 @@ nsHTMLEditorEventListener::MouseUp(nsIDOMEvent* aMouseEvent)
   NS_ENSURE_TRUE(target, NS_ERROR_NULL_POINTER);
   nsCOMPtr<nsIDOMElement> element = do_QueryInterface(target);
 
-  PRInt32 clientX, clientY;
+  int32_t clientX, clientY;
   mouseEvent->GetClientX(&clientX);
   mouseEvent->GetClientY(&clientY);
   htmlEditor->MouseUp(clientX, clientY, element);
@@ -89,19 +91,18 @@ nsHTMLEditorEventListener::MouseDown(nsIDOMEvent* aMouseEvent)
   // Detect only "context menu" click
   //XXX This should be easier to do!
   // But eDOMEvents_contextmenu and NS_CONTEXTMENU is not exposed in any event interface :-(
-  PRUint16 buttonNumber;
+  uint16_t buttonNumber;
   nsresult res = mouseEvent->GetButton(&buttonNumber);
   NS_ENSURE_SUCCESS(res, res);
 
   bool isContextClick = buttonNumber == 2;
 
-  PRInt32 clickCount;
+  int32_t clickCount;
   res = mouseEvent->GetDetail(&clickCount);
   NS_ENSURE_SUCCESS(res, res);
 
   nsCOMPtr<nsIDOMEventTarget> target;
-  nsCOMPtr<nsIDOMNSEvent> internalEvent = do_QueryInterface(aMouseEvent);
-  res = internalEvent->GetExplicitOriginalTarget(getter_AddRefs(target));
+  res = aMouseEvent->GetExplicitOriginalTarget(getter_AddRefs(target));
   NS_ENSURE_SUCCESS(res, res);
   NS_ENSURE_TRUE(target, NS_ERROR_NULL_POINTER);
   nsCOMPtr<nsIDOMElement> element = do_QueryInterface(target);
@@ -123,18 +124,18 @@ nsHTMLEditorEventListener::MouseDown(nsIDOMEvent* aMouseEvent)
     NS_ENSURE_SUCCESS(res, res);
     NS_ENSURE_TRUE(parent, NS_ERROR_FAILURE);
 
-    PRInt32 offset = 0;
+    int32_t offset = 0;
     res = mouseEvent->GetRangeOffset(&offset);
     NS_ENSURE_SUCCESS(res, res);
 
     // Detect if mouse point is within current selection for context click
     bool nodeIsInSelection = false;
     if (isContextClick && !selection->Collapsed()) {
-      PRInt32 rangeCount;
+      int32_t rangeCount;
       res = selection->GetRangeCount(&rangeCount);
       NS_ENSURE_SUCCESS(res, res);
 
-      for (PRInt32 i = 0; i < rangeCount; i++) {
+      for (int32_t i = 0; i < rangeCount; i++) {
         nsCOMPtr<nsIDOMRange> range;
 
         res = selection->GetRangeAt(i, getter_AddRefs(range));
@@ -212,7 +213,7 @@ nsHTMLEditorEventListener::MouseDown(nsIDOMEvent* aMouseEvent)
   else if (!isContextClick && buttonNumber == 0 && clickCount == 1)
   {
     // if the target element is an image, we have to display resizers
-    PRInt32 clientX, clientY;
+    int32_t clientX, clientY;
     mouseEvent->GetClientX(&clientX);
     mouseEvent->GetClientY(&clientY);
     htmlEditor->MouseDown(clientX, clientY, element, aMouseEvent);

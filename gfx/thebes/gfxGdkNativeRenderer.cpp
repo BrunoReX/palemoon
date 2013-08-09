@@ -11,10 +11,12 @@
 #include <gdk/gdkx.h>
 #include "cairo-xlib.h"
 #include "gfxXlibSurface.h"
+
+#if (MOZ_WIDGET_GTK == 2)
 nsresult
 gfxGdkNativeRenderer::DrawWithXlib(gfxXlibSurface* surface,
                                    nsIntPoint offset,
-                                   nsIntRect* clipRects, PRUint32 numClipRects)
+                                   nsIntRect* clipRects, uint32_t numClipRects)
 {
     GdkDrawable *drawable = gfxPlatformGtk::GetGdkDrawable(surface);
     if (!drawable) {
@@ -47,7 +49,7 @@ gfxGdkNativeRenderer::DrawWithXlib(gfxXlibSurface* surface,
 
 void
 gfxGdkNativeRenderer::Draw(gfxContext* ctx, nsIntSize size,
-                           PRUint32 flags, GdkColormap* colormap)
+                           uint32_t flags, GdkColormap* colormap)
 {
     mColormap = colormap;
 
@@ -56,7 +58,11 @@ gfxGdkNativeRenderer::Draw(gfxContext* ctx, nsIntSize size,
     Screen* screen =
         gdk_x11_screen_get_xscreen(gdk_colormap_get_screen(colormap));
 
-    gfxXlibNativeRenderer::Draw(ctx, size, flags, screen, visual, nsnull);
+    gfxXlibNativeRenderer::Draw(ctx, size, flags, screen, visual, nullptr);
 }
+
+#else
+// TODO GTK3
+#endif
 
 #endif

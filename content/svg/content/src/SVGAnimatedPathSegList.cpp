@@ -37,7 +37,7 @@ SVGAnimatedPathSegList::SetBaseValueString(const nsAString& aValue)
     baseValWrapper->InternalListWillChangeTo(newBaseValue);
   }
 
-  DOMSVGPathSegList* animValWrapper = nsnull;
+  DOMSVGPathSegList* animValWrapper = nullptr;
   if (!IsAnimating()) {  // DOM anim val wraps our base val too!
     animValWrapper = DOMSVGPathSegList::GetDOMWrapperIfExists(GetAnimValKey());
     if (animValWrapper) {
@@ -48,7 +48,7 @@ SVGAnimatedPathSegList::SetBaseValueString(const nsAString& aValue)
   // Only now may we modify mBaseVal!
 
   // We don't need to call DidChange* here - we're only called by
-  // nsSVGElement::ParseAttribute under nsGenericElement::SetAttr,
+  // nsSVGElement::ParseAttribute under Element::SetAttr,
   // which takes care of notifying.
 
   nsresult rv2 = mBaseVal.CopyFrom(newBaseValue);
@@ -137,7 +137,7 @@ SVGAnimatedPathSegList::ClearAnimValue(nsSVGElement *aElement)
     //
     domWrapper->InternalListWillChangeTo(mBaseVal);
   }
-  mAnimVal = nsnull;
+  mAnimVal = nullptr;
   aElement->DidAnimatePathSegList();
 }
 

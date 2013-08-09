@@ -21,10 +21,12 @@
 #endif
 
 /**
- * Incorporate the core NSPR data types which XPCOM uses.
+ * Incorporate the integer data types which XPCOM uses.
  */
-#include "prtypes.h"
 #include "mozilla/StandardInteger.h"
+#include "stddef.h"
+
+#include "mozilla/NullPtr.h"
 
 /*
  * This is for functions that are like malloc_usable_size.  Such functions are
@@ -105,8 +107,8 @@ typedef size_t(*nsMallocSizeOfFun)(const void *p);
  *  - Adding this to a public function _will_ break binary compatibility.
  *  - This may be used on virtual functions but you must ensure it is applied
  *    to all implementations - the compiler will _not_ warn but it will crash.
- *  - This has no effect for inline functions or functions which take a
- *    variable number of arguments.
+ *  - This has no effect for functions which take a variable number of
+ *    arguments.
  *  - __fastcall on windows should not be applied to class
  *    constructors/destructors - use the NS_CONSTRUCTOR_FASTCALL macro for
  *    constructors/destructors.
@@ -308,7 +310,7 @@ typedef size_t(*nsMallocSizeOfFun)(const void *p);
 /**
  * Generic XPCOM result data type
  */
-typedef PRUint32 nsresult;
+#include "nsError.h"
 
 /**
  * Reference count values
@@ -318,22 +320,11 @@ typedef PRUint32 nsresult;
  * The following ifdef exists to maintain binary compatibility with
  * IUnknown.
  */
-#if defined(XP_WIN) && PR_BYTES_PER_LONG == 4
+#ifdef XP_WIN
 typedef unsigned long nsrefcnt;
 #else
-typedef PRUint32 nsrefcnt;
+typedef uint32_t nsrefcnt;
 #endif
-
-/**
- * The preferred symbol for null.  Make sure this is the same size as
- * void* on the target.  See bug 547964.
- */
-#if defined(_WIN64)
-# define nsnull 0LL
-#else
-# define nsnull 0L
-#endif
-
 
 #include "nsError.h"
 
@@ -354,7 +345,7 @@ typedef PRUint32 nsrefcnt;
   #if defined(HAVE_CPP_2BYTE_WCHAR_T) && defined(XP_WIN)
     typedef wchar_t PRUnichar;
   #else
-    typedef PRUint16 PRUnichar;
+    typedef uint16_t PRUnichar;
   #endif
 #endif
 
@@ -362,8 +353,8 @@ typedef PRUint32 nsrefcnt;
  * Use these macros to do 64bit safe pointer conversions.
  */
 
-#define NS_PTR_TO_INT32(x)  ((PRInt32)  (intptr_t) (x))
-#define NS_PTR_TO_UINT32(x) ((PRUint32) (intptr_t) (x))
+#define NS_PTR_TO_INT32(x)  ((int32_t)  (intptr_t) (x))
+#define NS_PTR_TO_UINT32(x) ((uint32_t) (intptr_t) (x))
 #define NS_INT32_TO_PTR(x)  ((void *)   (intptr_t) (x))
 
 /*
@@ -371,31 +362,6 @@ typedef PRUint32 nsrefcnt;
  */
 #define NS_STRINGIFY_HELPER(x_) #x_
 #define NS_STRINGIFY(x_) NS_STRINGIFY_HELPER(x_)
-
-/*
- * These macros allow you to give a hint to the compiler about branch
- * probability so that it can better optimize.  Use them like this:
- *
- *  if (NS_LIKELY(v == 1)) {
- *    ... expected code path ...
- *  }
- *
- *  if (NS_UNLIKELY(v == 0)) {
- *    ... non-expected code path ...
- *  }
- *
- * These macros are guaranteed to always return 0 or 1.
- * The NS_FAILED/NS_SUCCEEDED macros depends on this.
- * @return 0 or 1
- */
-
-#if defined(__GNUC__) && (__GNUC__ > 2)
-#define NS_LIKELY(x)    (__builtin_expect(!!(x), 1))
-#define NS_UNLIKELY(x)  (__builtin_expect(!!(x), 0))
-#else
-#define NS_LIKELY(x)    (!!(x))
-#define NS_UNLIKELY(x)  (!!(x))
-#endif
 
  /*
   * If we're being linked as standalone glue, we don't want a dynamic
@@ -436,23 +402,6 @@ typedef PRUint32 nsrefcnt;
 #define NS_OKONHEAP
 #define NS_SUPPRESS_STACK_CHECK
 #define NS_MUST_OVERRIDE
-#endif
-
-/**
- * Attributes defined to help Dehydra GCC analysis.
- */
-#ifdef NS_STATIC_CHECKING
-# define NS_SCRIPTABLE __attribute__((user("NS_script")))
-# define NS_INPARAM __attribute__((user("NS_inparam")))
-# define NS_OUTPARAM  __attribute__((user("NS_outparam")))
-# define NS_INOUTPARAM __attribute__((user("NS_inoutparam")))
-# define NS_OVERRIDE __attribute__((user("NS_override")))
-#else
-# define NS_SCRIPTABLE
-# define NS_INPARAM
-# define NS_OUTPARAM
-# define NS_INOUTPARAM
-# define NS_OVERRIDE
 #endif
 
 /*

@@ -12,6 +12,7 @@ const NS_APP_CHROME_DIR_LIST = "AChromDL";
 Cu.import("resource://gre/modules/FileUtils.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://webapprt/modules/WebappRT.jsm");
+Cu.import("resource://gre/modules/Services.jsm");
 
 function DirectoryProvider() {}
 
@@ -52,4 +53,4 @@ DirectoryProvider.prototype = {
   },
 };
 
-const NSGetFactory = XPCOMUtils.generateNSGetFactory([DirectoryProvider]);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory([DirectoryProvider]);

@@ -38,7 +38,7 @@ nsresult TestWinAttribs()
 
     // File variables
     HANDLE hIndexed;
-    nsCOMPtr<nsILocalFile> localFile;
+    nsCOMPtr<nsIFile> localFile;
     WCHAR filePath[MAX_PATH];
 
     // Create and open temporary file
@@ -86,7 +86,7 @@ nsresult TestWinAttribs()
     dwAttrs |= FILE_ATTRIBUTE_NOT_CONTENT_INDEXED;
     SetFileAttributesW(filePath, dwAttrs);
 
-    PRUint32 attribs = 0;
+    uint32_t attribs = 0;
     rv = localFileWin->GetFileAttributesWin(&attribs);
     
     if (NS_FAILED(rv))

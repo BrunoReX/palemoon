@@ -9,8 +9,7 @@
 
 #include <stdio.h>
 
-// FIXME/cjones probably shouldn't depend on STL
-#include <queue>
+#include <deque>
 #include <stack>
 #include <vector>
 
@@ -47,12 +46,13 @@ public:
         virtual void OnChannelError() = 0;
         virtual Result OnMessageReceived(const Message& aMessage) = 0;
         virtual void OnProcessingError(Result aError) = 0;
+        virtual int32_t GetProtocolTypeId() = 0;
         virtual bool OnReplyTimeout() = 0;
         virtual Result OnMessageReceived(const Message& aMessage,
                                          Message*& aReply) = 0;
         virtual Result OnCallReceived(const Message& aMessage,
                                       Message*& aReply) = 0;
-        virtual void OnChannelConnected(int32 peer_pid) {};
+        virtual void OnChannelConnected(int32_t peer_pid) {}
 
         virtual void OnEnteredCxxStack()
         {
@@ -86,18 +86,15 @@ public:
 
     virtual ~RPCChannel();
 
-    NS_OVERRIDE
-    void Clear();
+    void Clear() MOZ_OVERRIDE;
 
     // Make an RPC to the other side of the channel
     bool Call(Message* msg, Message* reply);
 
     // RPCChannel overrides these so that the async and sync messages
     // can be counted against mStackFrames
-    NS_OVERRIDE
-    virtual bool Send(Message* msg);
-    NS_OVERRIDE
-    virtual bool Send(Message* msg, Message* reply);
+    virtual bool Send(Message* msg) MOZ_OVERRIDE;
+    virtual bool Send(Message* msg, Message* reply) MOZ_OVERRIDE;
 
     // Asynchronously, send the child a message that puts it in such a
     // state that it can't send messages to the parent unless the
@@ -127,8 +124,7 @@ public:
         return !mCxxStackFrames.empty();
     }
 
-    NS_OVERRIDE
-    virtual bool OnSpecialMessage(uint16 id, const Message& msg);
+    virtual bool OnSpecialMessage(uint16_t id, const Message& msg) MOZ_OVERRIDE;
 
 
     /**
@@ -149,8 +145,8 @@ protected:
 #endif
 
 protected:
-    NS_OVERRIDE virtual void OnMessageReceivedFromLink(const Message& msg);
-    NS_OVERRIDE virtual void OnChannelErrorFromLink();
+    virtual void OnMessageReceivedFromLink(const Message& msg) MOZ_OVERRIDE;
+    virtual void OnChannelErrorFromLink() MOZ_OVERRIDE;
 
 private:
     // Called on worker thread only
@@ -159,8 +155,7 @@ private:
         return static_cast<RPCListener*>(mListener);
     }
 
-    NS_OVERRIDE
-    virtual bool ShouldDeferNotifyMaybeError() const {
+    virtual bool ShouldDeferNotifyMaybeError() const MOZ_OVERRIDE {
         return IsOnCxxStack();
     }
 
@@ -230,7 +225,7 @@ private:
             return mMsg->is_rpc() && OUT_MESSAGE == mDirection;
         }
 
-        void Describe(int32* id, const char** dir, const char** sems,
+        void Describe(int32_t* id, const char** dir, const char** sems,
                       const char** name) const
         {
             *id = mMsg->routing_id();
@@ -300,8 +295,8 @@ private:
                     const char* type="rpc", bool reply=false) const;
 
     // This method is only safe to call on the worker thread, or in a
-    // debugger with all threads paused.  |outfile| defaults to stdout.
-    void DumpRPCStack(FILE* outfile=NULL, const char* const pfx="") const;
+    // debugger with all threads paused.
+    void DumpRPCStack(const char* const pfx="") const;
 
     // 
     // Queue of all incoming messages, except for replies to sync
@@ -343,7 +338,7 @@ private:
     // sent us another blocking message, because it's blocked on a
     // reply from us.
     //
-    typedef std::queue<Message> MessageQueue;
+    typedef std::deque<Message> MessageQueue;
     MessageQueue mPending;
 
     // 

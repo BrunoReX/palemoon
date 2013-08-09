@@ -40,6 +40,16 @@ public:
         mDeliveringMessage = false;
     }
 
+    // This is a variant of LogMessage which allows the caller to determine
+    // if the message should be output to an OS-specific log. This is used on
+    // B2G to control whether the message is logged to the android log or not.
+
+    enum OutputMode {
+        SuppressLog,
+        OutputToLog
+    };
+    virtual nsresult LogMessageWithMode(nsIConsoleMessage *message, OutputMode outputMode);
+
 private:
     ~nsConsoleService();
 
@@ -47,10 +57,10 @@ private:
     nsIConsoleMessage **mMessages;
 
     // How big?
-    PRUint32 mBufferSize;
+    uint32_t mBufferSize;
 
     // Index of slot in mMessages that'll be filled by *next* log message
-    PRUint32 mCurrent;
+    uint32_t mCurrent;
 
     // Is the buffer full? (Has mCurrent wrapped around at least once?)
     bool mFull;

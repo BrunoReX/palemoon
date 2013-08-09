@@ -15,6 +15,7 @@
 #include "prenv.h"
 
 #include "IPCMessageStart.h"
+#include "mozilla/ipc/FileDescriptor.h"
 #include "mozilla/ipc/Shmem.h"
 #include "mozilla/ipc/Transport.h"
 
@@ -59,13 +60,13 @@ struct Trigger
 {
     enum Action { Send, Recv };
 
-    Trigger(Action action, int32 msg) :
+    Trigger(Action action, int32_t msg) :
         mAction(action),
         mMsg(msg)
     {}
 
     Action mAction;
-    int32 mMsg;
+    int32_t mMsg;
 };
 
 template<class ListenerT>
@@ -82,16 +83,16 @@ public:
 
     typedef base::ProcessHandle ProcessHandle;
 
-    virtual int32 Register(ListenerT*) = 0;
-    virtual int32 RegisterID(ListenerT*, int32) = 0;
-    virtual ListenerT* Lookup(int32) = 0;
-    virtual void Unregister(int32) = 0;
-    virtual void RemoveManagee(int32, ListenerT*) = 0;
+    virtual int32_t Register(ListenerT*) = 0;
+    virtual int32_t RegisterID(ListenerT*, int32_t) = 0;
+    virtual ListenerT* Lookup(int32_t) = 0;
+    virtual void Unregister(int32_t) = 0;
+    virtual void RemoveManagee(int32_t, ListenerT*) = 0;
 
     virtual Shmem::SharedMemory* CreateSharedMemory(
-        size_t, SharedMemory::SharedMemoryType, bool, int32*) = 0;
-    virtual bool AdoptSharedMemory(Shmem::SharedMemory*, int32*) = 0;
-    virtual Shmem::SharedMemory* LookupSharedMemory(int32) = 0;
+        size_t, SharedMemory::SharedMemoryType, bool, int32_t*) = 0;
+    virtual bool AdoptSharedMemory(Shmem::SharedMemory*, int32_t*) = 0;
+    virtual Shmem::SharedMemory* LookupSharedMemory(int32_t) = 0;
     virtual bool IsTrackingSharedMemory(Shmem::SharedMemory*) = 0;
     virtual bool DestroySharedMemory(Shmem&) = 0;
 
@@ -111,6 +112,13 @@ LoggingEnabled()
 #endif
 }
 
+inline void
+ProtocolErrorBreakpoint(const char* aMsg)
+{
+    if (LoggingEnabled()) {
+        printf_stderr("Protocol error: %s\n", aMsg);
+    }
+}
 
 typedef IPCMessageStart ProtocolId;
 

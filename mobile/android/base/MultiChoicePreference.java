@@ -7,17 +7,12 @@ package org.mozilla.gecko;
 
 import android.app.AlertDialog;
 import android.app.AlertDialog.Builder;
-import android.content.res.TypedArray;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.os.Bundle;
-import android.os.Parcel;
-import android.os.Parcelable;
+import android.content.res.TypedArray;
 import android.preference.DialogPreference;
 import android.preference.PreferenceManager;
-import android.preference.Preference.BaseSavedState;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.widget.Button;
 
 class MultiChoicePreference extends DialogPreference {
@@ -174,6 +169,12 @@ class MultiChoicePreference extends DialogPreference {
 
     @Override
     protected void onDialogClosed(boolean positiveResult) {
+        if (mPrevValues == null || mInitialValues == null) {
+            // Initialization is done asynchronously, so these values may not
+            // have been set before the dialog was closed.
+            return;
+        }
+
         if (!positiveResult) {
             // user cancelled; reset checkbox values to their previous state
             mValues = mPrevValues.clone();

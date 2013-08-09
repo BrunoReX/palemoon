@@ -15,7 +15,6 @@
 
 #include "jstypes.h"
 #include "jsutil.h"
-#include "jshash.h"
 #include "jsprf.h"
 #include "jsapi.h"
 #include "jsatom.h"
@@ -29,25 +28,20 @@
 
 #include "frontend/Parser.h"
 #include "gc/Marking.h"
+#include "vm/Xdr.h"
 
 #include "jsstrinlines.h"
 #include "jsatominlines.h"
 #include "jsobjinlines.h"
 
 #include "vm/String-inl.h"
-#include "vm/Xdr.h"
 
-using namespace mozilla;
 using namespace js;
 using namespace js::gc;
 
-const size_t JSAtomState::commonAtomsOffset = offsetof(JSAtomState, emptyAtom);
-
-/*
- * ATOM_HASH assumes that JSHashNumber is 32-bit even on 64-bit systems.
- */
-JS_STATIC_ASSERT(sizeof(JSHashNumber) == 4);
-JS_STATIC_ASSERT(sizeof(JSAtom *) == JS_BYTES_PER_WORD);
+using mozilla::ArrayEnd;
+using mozilla::ArrayLength;
+using mozilla::RangedPtr;
 
 const char *
 js_AtomToPrintableString(JSContext *cx, JSAtom *atom, JSAutoByteString *bytes)
@@ -55,97 +49,69 @@ js_AtomToPrintableString(JSContext *cx, JSAtom *atom, JSAutoByteString *bytes)
     return js_ValueToPrintable(cx, StringValue(atom), bytes);
 }
 
-#define JS_PROTO(name,code,init) const char js_##name##_str[] = #name;
-#include "jsproto.tbl"
-#undef JS_PROTO
-
-/*
- * String constants for common atoms defined in JSAtomState starting from
- * JSAtomState.emptyAtom until JSAtomState.lazy.
- *
- * The elements of the array after the first empty string define strings
- * corresponding to the two boolean literals, false and true, followed by the
- * JSType enumerators from jspubtd.h starting with "undefined" for JSTYPE_VOID
- * (which is special-value 2) and continuing as initialized below. The static
- * asserts check these relations.
- */
-JS_STATIC_ASSERT(JSTYPE_LIMIT == 8);
-JS_STATIC_ASSERT(JSTYPE_VOID == 0);
-
-const char *const js_common_atom_names[] = {
-    "",                         /* emptyAtom                    */
-    js_false_str,               /* booleanAtoms[0]              */
-    js_true_str,                /* booleanAtoms[1]              */
-    js_undefined_str,           /* typeAtoms[JSTYPE_VOID]       */
-    js_object_str,              /* typeAtoms[JSTYPE_OBJECT]     */
-    js_function_str,            /* typeAtoms[JSTYPE_FUNCTION]   */
-    "string",                   /* typeAtoms[JSTYPE_STRING]     */
-    "number",                   /* typeAtoms[JSTYPE_NUMBER]     */
-    "boolean",                  /* typeAtoms[JSTYPE_BOOLEAN]    */
-    js_null_str,                /* typeAtoms[JSTYPE_NULL]       */
-    "xml",                      /* typeAtoms[JSTYPE_XML]        */
-    js_null_str                 /* nullAtom                     */
-
-#define JS_PROTO(name,code,init) ,js_##name##_str
-#include "jsproto.tbl"
-#undef JS_PROTO
-
-#define DEFINE_ATOM(id, text)          ,js_##id##_str
-#define DEFINE_PROTOTYPE_ATOM(id)      ,js_##id##_str
-#define DEFINE_KEYWORD_ATOM(id)        ,js_##id##_str
-#include "jsatom.tbl"
-#undef DEFINE_ATOM
-#undef DEFINE_PROTOTYPE_ATOM
-#undef DEFINE_KEYWORD_ATOM
+const char * js::TypeStrings[] = {
+    js_undefined_str,
+    js_object_str,
+    js_function_str,
+    js_string_str,
+    js_number_str,
+    js_boolean_str,
+    js_null_str,
+    js_xml_str,
 };
 
-void
-JSAtomState::checkStaticInvariants()
-{
-    /*
-     * Start and limit offsets for atom pointers in JSAtomState must be aligned
-     * on the word boundary.
-     */
-    JS_STATIC_ASSERT(commonAtomsOffset % sizeof(JSAtom *) == 0);
-    JS_STATIC_ASSERT(sizeof(*this) % sizeof(JSAtom *) == 0);
+#define DEFINE_PROTO_STRING(name,code,init) const char js_##name##_str[] = #name;
+JS_FOR_EACH_PROTOTYPE(DEFINE_PROTO_STRING)
+#undef DEFINE_PROTO_STRING
 
-    /*
-     * JS_BOOLEAN_STR and JS_TYPE_STR assume that boolean names starts from the
-     * index 1 and type name starts from the index 1+2 atoms in JSAtomState.
-     */
-    JS_STATIC_ASSERT(1 * sizeof(JSAtom *) ==
-                     offsetof(JSAtomState, booleanAtoms) - commonAtomsOffset);
-    JS_STATIC_ASSERT((1 + 2) * sizeof(JSAtom *) ==
-                     offsetof(JSAtomState, typeAtoms) - commonAtomsOffset);
-}
+#define CONST_CHAR_STR(idpart, id, text) const char js_##idpart##_str[] = text;
+FOR_EACH_COMMON_PROPERTYNAME(CONST_CHAR_STR)
+#undef CONST_CHAR_STR
 
-/*
- * Interpreter macros called by the trace recorder assume common atom indexes
- * fit in one byte of immediate operand.
- */
-JS_STATIC_ASSERT(JS_ARRAY_LENGTH(js_common_atom_names) < 256);
-
-const size_t js_common_atom_count = JS_ARRAY_LENGTH(js_common_atom_names);
-
-const char js_undefined_str[]       = "undefined";
-const char js_object_str[]          = "object";
-
-#define DEFINE_ATOM(id, text)          const char js_##id##_str[] = text;
-#define DEFINE_PROTOTYPE_ATOM(id)
-#define DEFINE_KEYWORD_ATOM(id)
-#include "jsatom.tbl"
-#undef DEFINE_ATOM
-#undef DEFINE_PROTOTYPE_ATOM
-#undef DEFINE_KEYWORD_ATOM
-
+/* Constant strings that are not atomized. */
+const char js_break_str[]           = "break";
+const char js_case_str[]            = "case";
+const char js_catch_str[]           = "catch";
+const char js_class_str[]           = "class";
+const char js_const_str[]           = "const";
+const char js_continue_str[]        = "continue";
+const char js_debugger_str[]        = "debugger";
+const char js_default_str[]         = "default";
+const char js_do_str[]              = "do";
+const char js_else_str[]            = "else";
+const char js_enum_str[]            = "enum";
+const char js_export_str[]          = "export";
+const char js_extends_str[]         = "extends";
+const char js_finally_str[]         = "finally";
+const char js_for_str[]             = "for";
+const char js_getter_str[]          = "getter";
+const char js_if_str[]              = "if";
+const char js_implements_str[]      = "implements";
+const char js_import_str[]          = "import";
+const char js_in_str[]              = "in";
+const char js_instanceof_str[]      = "instanceof";
+const char js_interface_str[]       = "interface";
+const char js_let_str[]             = "let";
+const char js_new_str[]             = "new";
+const char js_package_str[]         = "package";
+const char js_private_str[]         = "private";
+const char js_protected_str[]       = "protected";
+const char js_public_str[]          = "public";
+const char js_setter_str[]          = "setter";
+const char js_static_str[]          = "static";
+const char js_super_str[]           = "super";
+const char js_switch_str[]          = "switch";
+const char js_this_str[]            = "this";
+const char js_try_str[]             = "try";
+const char js_typeof_str[]          = "typeof";
+const char js_void_str[]            = "void";
+const char js_while_str[]           = "while";
+const char js_with_str[]            = "with";
+const char js_yield_str[]           = "yield";
 #if JS_HAS_GENERATORS
 const char js_close_str[]           = "close";
 const char js_send_str[]            = "send";
 #endif
-
-/* Constant strings that are not atomized. */
-const char js_getter_str[]          = "getter";
-const char js_setter_str[]          = "setter";
 
 /*
  * For a browser build from 2007-08-09 after the browser starts up there are
@@ -156,24 +122,16 @@ const char js_setter_str[]          = "setter";
 #define JS_STRING_HASH_COUNT   1024
 
 JSBool
-js_InitAtomState(JSRuntime *rt)
+js::InitAtoms(JSRuntime *rt)
 {
-    JSAtomState *state = &rt->atomState;
-
-    JS_ASSERT(!state->atoms.initialized());
-    if (!state->atoms.init(JS_STRING_HASH_COUNT))
-        return false;
-
-    JS_ASSERT(state->atoms.initialized());
-    return true;
+    return rt->atoms.init(JS_STRING_HASH_COUNT);
 }
 
 void
-js_FinishAtomState(JSRuntime *rt)
+js::FinishAtoms(JSRuntime *rt)
 {
-    JSAtomState *state = &rt->atomState;
-
-    if (!state->atoms.initialized()) {
+    AtomSet &atoms = rt->atoms;
+    if (!atoms.initialized()) {
         /*
          * We are called with uninitialized state when JS_NewRuntime fails and
          * calls JS_DestroyRuntime on a partially initialized runtime.
@@ -181,66 +139,70 @@ js_FinishAtomState(JSRuntime *rt)
         return;
     }
 
-    FreeOp fop(rt, false, false);
-    for (AtomSet::Range r = state->atoms.all(); !r.empty(); r.popFront())
+    FreeOp fop(rt, false);
+    for (AtomSet::Range r = atoms.all(); !r.empty(); r.popFront())
         r.front().asPtr()->finalize(&fop);
 }
 
-bool
-js::InitCommonAtoms(JSContext *cx)
+struct CommonNameInfo
 {
-    JSAtomState *state = &cx->runtime->atomState;
-    JSAtom **atoms = state->commonAtomsStart();
-    for (size_t i = 0; i < ArrayLength(js_common_atom_names); i++, atoms++) {
-        JSAtom *atom = js_Atomize(cx, js_common_atom_names[i], strlen(js_common_atom_names[i]),
-                                  InternAtom);
+    const char *str;
+    size_t length;
+};
+
+bool
+js::InitCommonNames(JSContext *cx)
+{
+    static const CommonNameInfo cachedNames[] = {
+#define COMMON_NAME_INFO(idpart, id, text) { js_##idpart##_str, sizeof(text) - 1 },
+        FOR_EACH_COMMON_PROPERTYNAME(COMMON_NAME_INFO)
+#undef COMMON_NAME_INFO
+#define COMMON_NAME_INFO(name, code, init) { js_##name##_str, sizeof(#name) - 1 },
+        JS_FOR_EACH_PROTOTYPE(COMMON_NAME_INFO)
+#undef COMMON_NAME_INFO
+    };
+
+    FixedHeapPtr<PropertyName> *names = &cx->runtime->firstCachedName;
+    for (size_t i = 0; i < ArrayLength(cachedNames); i++, names++) {
+        JSAtom *atom = Atomize(cx, cachedNames[i].str, cachedNames[i].length, InternAtom);
         if (!atom)
             return false;
-        *atoms = atom->asPropertyName();
+        names->init(atom->asPropertyName());
     }
+    JS_ASSERT(uintptr_t(names) == uintptr_t(&cx->runtime->atomState + 1));
 
-    cx->runtime->emptyString = state->emptyAtom;
+    cx->runtime->emptyString = cx->names().empty;
     return true;
 }
 
 void
-js::FinishCommonAtoms(JSRuntime *rt)
+js::FinishCommonNames(JSRuntime *rt)
 {
     rt->emptyString = NULL;
-    rt->atomState.junkAtoms();
+#ifdef DEBUG
+    memset(&rt->atomState, JS_FREE_PATTERN, sizeof(JSAtomState));
+#endif
 }
 
 void
-js::MarkAtomState(JSTracer *trc, bool markAll)
+js::MarkAtoms(JSTracer *trc)
 {
     JSRuntime *rt = trc->runtime;
-    JSAtomState *state = &rt->atomState;
+    for (AtomSet::Range r = rt->atoms.all(); !r.empty(); r.popFront()) {
+        AtomStateEntry entry = r.front();
+        if (!entry.isTagged())
+            continue;
 
-    if (markAll) {
-        for (AtomSet::Range r = state->atoms.all(); !r.empty(); r.popFront()) {
-            JSAtom *tmp = r.front().asPtr();
-            MarkStringRoot(trc, &tmp, "locked_atom");
-            JS_ASSERT(tmp == r.front().asPtr());
-        }
-    } else {
-        for (AtomSet::Range r = state->atoms.all(); !r.empty(); r.popFront()) {
-            AtomStateEntry entry = r.front();
-            if (!entry.isTagged())
-                continue;
-
-            JSAtom *tmp = entry.asPtr();
-            MarkStringRoot(trc, &tmp, "interned_atom");
-            JS_ASSERT(tmp == entry.asPtr());
-        }
+        JSAtom *tmp = entry.asPtr();
+        MarkStringRoot(trc, &tmp, "interned_atom");
+        JS_ASSERT(tmp == entry.asPtr());
     }
 }
 
 void
-js::SweepAtomState(JSRuntime *rt)
+js::SweepAtoms(JSRuntime *rt)
 {
-    JSAtomState *state = &rt->atomState;
-
-    for (AtomSet::Enum e(state->atoms); !e.empty(); e.popFront()) {
+    for (AtomSet::Enum e(rt->atoms); !e.empty(); e.popFront()) {
         AtomStateEntry entry = e.front();
         JSAtom *atom = entry.asPtr();
         bool isMarked = IsStringMarked(&atom);
@@ -250,8 +212,6 @@ js::SweepAtomState(JSRuntime *rt)
 
         if (!isMarked)
             e.removeFront();
-        else
-            e.rekeyFront(AtomHasher::Lookup(atom), AtomStateEntry(atom, entry.isTagged()));
     }
 }
 
@@ -262,7 +222,7 @@ AtomIsInterned(JSContext *cx, JSAtom *atom)
     if (StaticStrings::isStatic(atom))
         return true;
 
-    AtomSet::Ptr p = cx->runtime->atomState.atoms.lookup(atom);
+    AtomSet::Ptr p = cx->runtime->atoms.lookup(atom);
     if (!p)
         return false;
 
@@ -290,7 +250,7 @@ AtomizeInline(JSContext *cx, const jschar **pchars, size_t length,
     if (JSAtom *s = cx->runtime->staticStrings.lookup(chars, length))
         return s;
 
-    AtomSet &atoms = cx->runtime->atomState.atoms;
+    AtomSet &atoms = cx->runtime->atoms;
     AtomSet::AddPtr p = atoms.lookupForAdd(AtomHasher::Lookup(chars, length));
 
     if (p) {
@@ -299,23 +259,23 @@ AtomizeInline(JSContext *cx, const jschar **pchars, size_t length,
         return atom;
     }
 
-    SwitchToCompartment sc(cx, cx->runtime->atomsCompartment);
-
-    JSFixedString *key;
+    AutoEnterAtomsCompartment ac(cx);
 
     SkipRoot skip(cx, &chars);
 
+    /* Workaround for hash values in AddPtr being inadvertently poisoned. */
+    SkipRoot skip2(cx, &p);
+
+    JSFlatString *key;
     if (ocb == TakeCharOwnership) {
         key = js_NewString(cx, const_cast<jschar *>(chars), length);
-        if (!key)
-            return NULL;
         *pchars = NULL; /* Called should not free *pchars. */
     } else {
         JS_ASSERT(ocb == CopyChars);
         key = js_NewStringCopyN(cx, chars, length);
-        if (!key)
-            return NULL;
     }
+    if (!key)
+        return NULL;
 
     /*
      * We have to relookup the key as the last ditch GC invoked from the
@@ -334,15 +294,8 @@ AtomizeInline(JSContext *cx, const jschar **pchars, size_t length,
     return key->morphAtomizedStringIntoAtom();
 }
 
-static JSAtom *
-Atomize(JSContext *cx, const jschar **pchars, size_t length,
-        InternBehavior ib, OwnCharsBehavior ocb = CopyChars)
-{
-    return AtomizeInline(cx, pchars, length, ib, ocb);
-}
-
 JSAtom *
-js_AtomizeString(JSContext *cx, JSString *str, InternBehavior ib)
+js::AtomizeString(JSContext *cx, JSString *str, InternBehavior ib)
 {
     if (str->isAtom()) {
         JSAtom &atom = str->asAtom();
@@ -350,8 +303,7 @@ js_AtomizeString(JSContext *cx, JSString *str, InternBehavior ib)
         if (ib != InternAtom || js::StaticStrings::isStatic(&atom))
             return &atom;
 
-        AtomSet &atoms = cx->runtime->atomState.atoms;
-        AtomSet::Ptr p = atoms.lookup(AtomHasher::Lookup(&atom));
+        AtomSet::Ptr p = cx->runtime->atoms.lookup(AtomHasher::Lookup(&atom));
         JS_ASSERT(p); /* Non-static atom must exist in atom state set. */
         JS_ASSERT(p->asPtr() == &atom);
         JS_ASSERT(ib == InternAtom);
@@ -359,17 +311,18 @@ js_AtomizeString(JSContext *cx, JSString *str, InternBehavior ib)
         return &atom;
     }
 
-    size_t length = str->length();
-    const jschar *chars = str->getChars(cx);
-    if (!chars)
+    JSLinearString *linear = str->ensureLinear(cx);
+    if (!linear)
         return NULL;
 
+    const jschar *chars = linear->chars();
+    size_t length = linear->length();
     JS_ASSERT(length <= JSString::MAX_LENGTH);
-    return Atomize(cx, &chars, length, ib);
+    return AtomizeInline(cx, &chars, length, ib);
 }
 
 JSAtom *
-js_Atomize(JSContext *cx, const char *bytes, size_t length, InternBehavior ib, FlationCoding fc)
+js::Atomize(JSContext *cx, const char *bytes, size_t length, InternBehavior ib)
 {
     CHECK_REQUEST(cx);
 
@@ -381,7 +334,7 @@ js_Atomize(JSContext *cx, const char *bytes, size_t length, InternBehavior ib, F
      * over 20,000 malloc calls on mozilla browser startup. This compares to
      * only 131 calls where the string is longer than a 31 char (net) buffer.
      * The vast majority of atomized strings are already in the hashtable. So
-     * js_AtomizeString rarely has to copy the temp string we make.
+     * js::AtomizeString rarely has to copy the temp string we make.
      */
     static const unsigned ATOMIZE_BUF_MAX = 32;
     jschar inflated[ATOMIZE_BUF_MAX];
@@ -390,28 +343,25 @@ js_Atomize(JSContext *cx, const char *bytes, size_t length, InternBehavior ib, F
     const jschar *chars;
     OwnCharsBehavior ocb = CopyChars;
     if (length < ATOMIZE_BUF_MAX) {
-        if (fc == CESU8Encoding)
-            InflateUTF8StringToBuffer(cx, bytes, length, inflated, &inflatedLength, fc);
-        else
-            InflateStringToBuffer(cx, bytes, length, inflated, &inflatedLength);
+        InflateStringToBuffer(cx, bytes, length, inflated, &inflatedLength);
         inflated[inflatedLength] = 0;
         chars = inflated;
     } else {
         inflatedLength = length;
-        chars = InflateString(cx, bytes, &inflatedLength, fc);
+        chars = InflateString(cx, bytes, &inflatedLength);
         if (!chars)
             return NULL;
         ocb = TakeCharOwnership;
     }
 
-    JSAtom *atom = Atomize(cx, &chars, inflatedLength, ib, ocb);
+    JSAtom *atom = AtomizeInline(cx, &chars, inflatedLength, ib, ocb);
     if (ocb == TakeCharOwnership && chars)
-        cx->free_((void *)chars);
+        js_free((void *)chars);
     return atom;
 }
 
 JSAtom *
-js_AtomizeChars(JSContext *cx, const jschar *chars, size_t length, InternBehavior ib)
+js::AtomizeChars(JSContext *cx, const jschar *chars, size_t length, InternBehavior ib)
 {
     CHECK_REQUEST(cx);
 
@@ -421,62 +371,7 @@ js_AtomizeChars(JSContext *cx, const jschar *chars, size_t length, InternBehavio
     return AtomizeInline(cx, &chars, length, ib);
 }
 
-JSAtom *
-js_GetExistingStringAtom(JSContext *cx, const jschar *chars, size_t length)
-{
-    if (JSAtom *atom = cx->runtime->staticStrings.lookup(chars, length))
-        return atom;
-    if (AtomSet::Ptr p = cx->runtime->atomState.atoms.lookup(AtomHasher::Lookup(chars, length)))
-        return p->asPtr();
-    return NULL;
-}
-
-#ifdef DEBUG
-JS_FRIEND_API(void)
-js_DumpAtoms(JSContext *cx, FILE *fp)
-{
-    JSAtomState *state = &cx->runtime->atomState;
-
-    fprintf(fp, "atoms table contents:\n");
-    unsigned number = 0;
-    for (AtomSet::Range r = state->atoms.all(); !r.empty(); r.popFront()) {
-        AtomStateEntry entry = r.front();
-        fprintf(fp, "%3u ", number++);
-        JSAtom *key = entry.asPtr();
-        FileEscapedString(fp, key, '"');
-        if (entry.isTagged())
-            fputs(" interned", fp);
-        putc('\n', fp);
-    }
-    putc('\n', fp);
-}
-#endif
-
 namespace js {
-
-void
-InitAtomMap(JSContext *cx, AtomIndexMap *indices, HeapPtrAtom *atoms)
-{
-    if (indices->isMap()) {
-        typedef AtomIndexMap::WordMap WordMap;
-        const WordMap &wm = indices->asMap();
-        for (WordMap::Range r = wm.all(); !r.empty(); r.popFront()) {
-            JSAtom *atom = r.front().key;
-            jsatomid index = r.front().value;
-            JS_ASSERT(index < indices->count());
-            atoms[index].init(atom);
-        }
-    } else {
-        for (const AtomIndexMap::InlineElem *it = indices->asInline(), *end = indices->inlineEnd();
-             it != end; ++it) {
-            JSAtom *atom = it->key;
-            if (!atom)
-                continue;
-            JS_ASSERT(it->value < indices->count());
-            atoms[it->value].init(atom);
-        }
-    }
-}
 
 bool
 IndexToIdSlow(JSContext *cx, uint32_t index, jsid *idp)
@@ -487,7 +382,7 @@ IndexToIdSlow(JSContext *cx, uint32_t index, jsid *idp)
     RangedPtr<jschar> end(ArrayEnd(buf), buf, ArrayEnd(buf));
     RangedPtr<jschar> start = BackfillIndexInCharBuffer(index, end);
 
-    JSAtom *atom = js_AtomizeChars(cx, start.get(), end - start);
+    JSAtom *atom = AtomizeChars(cx, start.get(), end - start);
     if (!atom)
         return false;
 
@@ -495,9 +390,11 @@ IndexToIdSlow(JSContext *cx, uint32_t index, jsid *idp)
     return true;
 }
 
+} /* namespace js */
+
 bool
-InternNonIntElementId(JSContext *cx, JSObject *obj, const Value &idval,
-                      jsid *idp, Value *vp)
+js::InternNonIntElementId(JSContext *cx, JSObject *obj, const Value &idval,
+                          jsid *idp, MutableHandleValue vp)
 {
 #if JS_HAS_XML_SUPPORT
     if (idval.isObject()) {
@@ -505,44 +402,42 @@ InternNonIntElementId(JSContext *cx, JSObject *obj, const Value &idval,
 
         if (obj && obj->isXML()) {
             *idp = OBJECT_TO_JSID(idobj);
-            *vp = idval;
+            vp.set(idval);
             return true;
         }
 
         if (js_GetLocalNameFromFunctionQName(idobj, idp, cx)) {
-            *vp = IdToValue(*idp);
+            vp.set(IdToValue(*idp));
             return true;
         }
 
         if (!obj && idobj->isXMLId()) {
             *idp = OBJECT_TO_JSID(idobj);
-            *vp = idval;
+            vp.set(idval);
             return JS_TRUE;
         }
     }
 #endif
 
-    JSAtom *atom;
-    if (!js_ValueToAtom(cx, idval, &atom))
+    JSAtom *atom = ToAtom(cx, idval);
+    if (!atom)
         return false;
 
     *idp = AtomToId(atom);
-    vp->setString(atom);
+    vp.setString(atom);
     return true;
 }
 
-} /* namespace js */
-
 template<XDRMode mode>
 bool
-js::XDRAtom(XDRState<mode> *xdr, JSAtom **atomp)
+js::XDRAtom(XDRState<mode> *xdr, MutableHandleAtom atomp)
 {
     if (mode == XDR_ENCODE) {
-        uint32_t nchars = (*atomp)->length();
+        uint32_t nchars = atomp->length();
         if (!xdr->codeUint32(&nchars))
             return false;
 
-        jschar *chars = const_cast<jschar *>((*atomp)->getChars(xdr->cx()));
+        jschar *chars = const_cast<jschar *>(atomp->getChars(xdr->cx()));
         if (!chars)
             return false;
 
@@ -559,7 +454,7 @@ js::XDRAtom(XDRState<mode> *xdr, JSAtom **atomp)
 #if IS_LITTLE_ENDIAN
     /* Directly access the little endian chars in the XDR buffer. */
     const jschar *chars = reinterpret_cast<const jschar *>(xdr->buf.read(nchars * sizeof(jschar)));
-    atom = js_AtomizeChars(cx, chars, nchars);
+    atom = AtomizeChars(cx, chars, nchars);
 #else
     /*
      * We must copy chars to a temporary buffer to convert between little and
@@ -575,26 +470,26 @@ js::XDRAtom(XDRState<mode> *xdr, JSAtom **atomp)
          * most allocations here will be bigger than tempLifoAlloc's default
          * chunk size.
          */
-        chars = static_cast<jschar *>(cx->runtime->malloc_(nchars * sizeof(jschar)));
+        chars = cx->runtime->pod_malloc<jschar>(nchars);
         if (!chars)
             return false;
     }
 
     JS_ALWAYS_TRUE(xdr->codeChars(chars, nchars));
-    atom = js_AtomizeChars(cx, chars, nchars);
+    atom = AtomizeChars(cx, chars, nchars);
     if (chars != stackChars)
-        Foreground::free_(chars);
+        js_free(chars);
 #endif /* !IS_LITTLE_ENDIAN */
 
     if (!atom)
         return false;
-    *atomp = atom;
+    atomp.set(atom);
     return true;
 }
 
 template bool
-js::XDRAtom(XDRState<XDR_ENCODE> *xdr, JSAtom **atomp);
+js::XDRAtom(XDRState<XDR_ENCODE> *xdr, MutableHandleAtom atomp);
 
 template bool
-js::XDRAtom(XDRState<XDR_DECODE> *xdr, JSAtom **atomp);
+js::XDRAtom(XDRState<XDR_DECODE> *xdr, MutableHandleAtom atomp);
 

@@ -37,7 +37,7 @@ public:
                                      nsISupports*        aContainer,
                                      nsIStreamListener** aDocListener,
                                      bool                aReset = true,
-                                     nsIContentSink*     aSink = nsnull);
+                                     nsIContentSink*     aSink = nullptr);
 
   virtual void SetScriptGlobalObject(nsIScriptGlobalObject* aScriptGlobalObject);
   virtual bool CanSavePresentation(nsIRequest *aNewRequest);
@@ -120,8 +120,7 @@ PluginStreamListener::SetupPlugin()
     return NS_ERROR_UNEXPECTED;
   }
   nsObjectLoadingContent* olcc = static_cast<nsObjectLoadingContent*>(olc.get());
-  nsresult rv = olcc->InstantiatePluginInstance(mPluginDoc->GetType().get(),
-                                                mDocument->nsIDocument::GetDocumentURI());
+  nsresult rv = olcc->InstantiatePluginInstance();
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -149,11 +148,11 @@ PluginDocument::~PluginDocument()
 NS_IMPL_CYCLE_COLLECTION_CLASS(PluginDocument)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(PluginDocument, MediaDocument)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mPluginContent)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPluginContent)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(PluginDocument, MediaDocument)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mPluginContent)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mPluginContent)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_ADDREF_INHERITED(PluginDocument, MediaDocument)
@@ -179,8 +178,9 @@ PluginDocument::SetScriptGlobalObject(nsIScriptGlobalObject* aScriptGlobalObject
         CreateSyntheticPluginDocument();
       NS_ASSERTION(NS_SUCCEEDED(rv), "failed to create synthetic document");
     }
+    BecomeInteractive();
   } else {
-    mStreamListener = nsnull;
+    mStreamListener = nullptr;
   }
 }
 
@@ -239,7 +239,7 @@ PluginDocument::StartDocumentLoad(const char*         aCommand,
 nsresult
 PluginDocument::CreateSyntheticPluginDocument()
 {
-  NS_ASSERTION(!GetShell() || !GetShell()->DidInitialReflow(),
+  NS_ASSERTION(!GetShell() || !GetShell()->DidInitialize(),
                "Creating synthetic plugin document content too late");
 
   // make our generic document
@@ -261,7 +261,7 @@ PluginDocument::CreateSyntheticPluginDocument()
 
   // make plugin content
   nsCOMPtr<nsINodeInfo> nodeInfo;
-  nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::embed, nsnull,
+  nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::embed, nullptr,
                                            kNameSpaceID_XHTML,
                                            nsIDOMNode::ELEMENT_NODE);
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
@@ -281,7 +281,7 @@ PluginDocument::CreateSyntheticPluginDocument()
                           false);
 
   // set URL
-  nsCAutoString src;
+  nsAutoCString src;
   mDocumentURI->GetSpec(src);
   mPluginContent->SetAttr(kNameSpaceID_None, nsGkAtoms::src,
                           NS_ConvertUTF8toUTF16(src), false);
@@ -326,7 +326,7 @@ PluginDocument::Print()
       npprint.mode = NP_FULL;
       npprint.print.fullPrint.pluginPrinted = false;
       npprint.print.fullPrint.printOne = false;
-      npprint.print.fullPrint.platformPrint = nsnull;
+      npprint.print.fullPrint.platformPrint = nullptr;
 
       pi->Print(&npprint);
     }

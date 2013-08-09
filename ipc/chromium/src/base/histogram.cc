@@ -28,7 +28,7 @@ typedef ::Lock Lock;
 typedef ::AutoLock AutoLock;
 
 // Static table of checksums for all possible 8 bit bytes.
-const uint32 Histogram::kCrcTable[256] = {0x0, 0x77073096L, 0xee0e612cL,
+const uint32_t Histogram::kCrcTable[256] = {0x0, 0x77073096L, 0xee0e612cL,
 0x990951baL, 0x76dc419L, 0x706af48fL, 0xe963a535L, 0x9e6495a3L, 0xedb8832L,
 0x79dcb8a4L, 0xe0d5e91eL, 0x97d2d988L, 0x9b64c2bL, 0x7eb17cbdL, 0xe7b82d07L,
 0x90bf1d91L, 0x1db71064L, 0x6ab020f2L, 0xf3b97148L, 0x84be41deL, 0x1adad47dL,
@@ -202,8 +202,8 @@ void Histogram::WriteAscii(bool graph_it, const std::string& newline,
     }
   }
 
-  int64 remaining = sample_count;
-  int64 past = 0;
+  int64_t remaining = sample_count;
+  int64_t past = 0;
   // Output the actual histogram graph.
   for (size_t i = 0; i < bucket_count(); ++i) {
     Count current = snapshot.counts(i);
@@ -261,7 +261,7 @@ bool Histogram::DeserializeHistogramInfo(const std::string& histogram_info) {
   int declared_min;
   int declared_max;
   size_t bucket_count;
-  uint32 range_checksum;
+  uint32_t range_checksum;
   int histogram_type;
   int pickle_flags;
   SampleSet sample;
@@ -332,7 +332,7 @@ Histogram::Inconsistencies Histogram::FindCorruption(
     const SampleSet& snapshot) const {
   int inconsistencies = NO_INCONSISTENCIES;
   Sample previous_range = -1;  // Bottom range is always 0.
-  int64 count = 0;
+  int64_t count = 0;
   for (size_t index = 0; index < bucket_count(); ++index) {
     count += snapshot.counts(index);
     int new_range = ranges(index);
@@ -344,7 +344,7 @@ Histogram::Inconsistencies Histogram::FindCorruption(
   if (!HasValidRangeChecksum())
     inconsistencies |= RANGE_CHECKSUM_ERROR;
 
-  int64 delta64 = snapshot.redundant_count() - count;
+  int64_t delta64 = snapshot.redundant_count() - count;
   if (delta64 != 0) {
     int delta = static_cast<int>(delta64);
     if (delta != delta64)
@@ -408,6 +408,24 @@ bool Histogram::HasConstructorTimeDeltaArguments(TimeDelta minimum,
 
 bool Histogram::HasValidRangeChecksum() const {
   return CalculateRangeChecksum() == range_checksum_;
+}
+
+size_t Histogram::SizeOfIncludingThis(size_t (*aMallocSizeOf)(const void*))
+{
+  size_t n = 0;
+  n += aMallocSizeOf(this);
+  // We're not allowed to do deep dives into STL data structures.  This
+  // is as close as we can get to measuring this array.
+  n += aMallocSizeOf(&ranges_[0]);
+  n += sample_.SizeOfExcludingThis(aMallocSizeOf);
+  return n;
+}
+
+size_t Histogram::SampleSet::SizeOfExcludingThis(size_t (*aMallocSizeOf)(const void*))
+{
+  // We're not allowed to do deep dives into STL data structures.  This
+  // is as close as we can get to measuring this array.
+  return aMallocSizeOf(&counts_[0]);
 }
 
 Histogram::Histogram(const std::string& name, Sample minimum,
@@ -559,9 +577,9 @@ bool Histogram::ValidateBucketRanges() const {
   return true;
 }
 
-uint32 Histogram::CalculateRangeChecksum() const {
+uint32_t Histogram::CalculateRangeChecksum() const {
   DCHECK_EQ(ranges_.size(), bucket_count() + 1);
-  uint32 checksum = static_cast<uint32>(ranges_.size());  // Seed checksum.
+  uint32_t checksum = static_cast<uint32_t>(ranges_.size());  // Seed checksum.
   for (size_t index = 0; index < bucket_count(); ++index)
     checksum = Crc32(checksum, ranges(index));
   return checksum;
@@ -584,14 +602,14 @@ void Histogram::Initialize() {
 
 // We generate the CRC-32 using the low order bits to select whether to XOR in
 // the reversed polynomial 0xedb88320L.  This is nice and simple, and allows us
-// to keep the quotient in a uint32.  Since we're not concerned about the nature
+// to keep the quotient in a uint32_t.  Since we're not concerned about the nature
 // of corruptions (i.e., we don't care about bit sequencing, since we are
 // handling memory changes, which are more grotesque) so we don't bother to
 // get the CRC correct for big-endian vs little-ending calculations.  All we
 // need is a nice hash, that tends to depend on all the bits of the sample, with
 // very little chance of changes in one place impacting changes in another
 // place.
-uint32 Histogram::Crc32(uint32 sum, Histogram::Sample range) {
+uint32_t Histogram::Crc32(uint32_t sum, Histogram::Sample range) {
   const bool kUseRealCrc = true;  // TODO(jar): Switch to false and watch stats.
   if (kUseRealCrc) {
     union {
@@ -607,12 +625,12 @@ uint32 Histogram::Crc32(uint32 sum, Histogram::Sample range) {
     // and we don't care about edge cases since we have an even number of bytes.
     union {
       Histogram::Sample range;
-      uint16 ints[sizeof(Histogram::Sample) / 2];
+      uint16_t ints[sizeof(Histogram::Sample) / 2];
     } converter;
     DCHECK_EQ(sizeof(Histogram::Sample), sizeof(converter));
     converter.range = range;
     sum += converter.ints[0];
-    sum = (sum << 16) ^ sum ^ (static_cast<uint32>(converter.ints[1]) << 11);
+    sum = (sum << 16) ^ sum ^ (static_cast<uint32_t>(converter.ints[1]) << 11);
     sum += sum >> 11;
   }
   return sum;
@@ -649,9 +667,9 @@ void Histogram::WriteAsciiHeader(const SampleSet& snapshot,
     StringAppendF(output, " (flags = 0x%x)", flags_ & ~kHexRangePrintingFlag);
 }
 
-void Histogram::WriteAsciiBucketContext(const int64 past,
+void Histogram::WriteAsciiBucketContext(const int64_t past,
                                         const Count current,
-                                        const int64 remaining,
+                                        const int64_t remaining,
                                         const size_t i,
                                         std::string* output) const {
   double scaled_sum = (past + current + remaining) / 100.0;
@@ -929,7 +947,7 @@ BooleanHistogram::BooleanHistogram(const std::string& name)
 Histogram *
 FlagHistogram::FactoryGet(const std::string &name, Flags flags)
 {
-  Histogram *h(nsnull);
+  Histogram *h(nullptr);
 
   if (!StatisticsRecorder::FindHistogram(name, &h)) {
     // To avoid racy destruction at shutdown, the following will be leaked.
@@ -937,7 +955,7 @@ FlagHistogram::FactoryGet(const std::string &name, Flags flags)
     fh->InitializeBucketRange();
     fh->SetFlags(flags);
     size_t zero_index = fh->BucketIndex(0);
-    fh->Histogram::Accumulate(1, 1, zero_index);
+    fh->Histogram::Accumulate(0, 1, zero_index);
     h = StatisticsRecorder::RegisterOrDeleteDuplicate(fh);
   }
 
@@ -965,7 +983,7 @@ FlagHistogram::Accumulate(Sample value, Count count, size_t index)
   DCHECK_EQ(value, 1);
   Histogram::Accumulate(value, 1, index);
   size_t zero_index = BucketIndex(0);
-  Histogram::Accumulate(1, -1, zero_index);
+  Histogram::Accumulate(0, -1, zero_index);
 }
 
 void

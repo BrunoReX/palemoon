@@ -37,9 +37,9 @@ using namespace mozilla::net;
 static NS_DEFINE_CID(kDNSServiceCID, NS_DNSSERVICE_CID);
 bool sDisablePrefetchHTTPSPref;
 static bool sInitialized = false;
-static nsIDNSService *sDNSService = nsnull;
-static nsHTMLDNSPrefetch::nsDeferrals *sPrefetches = nsnull;
-static nsHTMLDNSPrefetch::nsListener *sDNSListener = nsnull;
+static nsIDNSService *sDNSService = nullptr;
+static nsHTMLDNSPrefetch::nsDeferrals *sPrefetches = nullptr;
+static nsHTMLDNSPrefetch::nsListener *sDNSListener = nullptr;
 
 nsresult
 nsHTMLDNSPrefetch::Initialize()
@@ -105,7 +105,7 @@ nsHTMLDNSPrefetch::IsAllowed (nsIDocument *aDocument)
 }
 
 nsresult
-nsHTMLDNSPrefetch::Prefetch(Link *aElement, PRUint16 flags)
+nsHTMLDNSPrefetch::Prefetch(Link *aElement, uint16_t flags)
 {
   if (!(sInitialized && sPrefetches && sDNSService && sDNSListener))
     return NS_ERROR_NOT_AVAILABLE;
@@ -132,7 +132,7 @@ nsHTMLDNSPrefetch::PrefetchHigh(Link *aElement)
 }
 
 nsresult
-nsHTMLDNSPrefetch::Prefetch(const nsAString &hostname, PRUint16 flags)
+nsHTMLDNSPrefetch::Prefetch(const nsAString &hostname, uint16_t flags)
 {
   if (IsNeckoChild()) {
     // We need to check IsEmpty() because net_IsValidHostName()
@@ -150,7 +150,7 @@ nsHTMLDNSPrefetch::Prefetch(const nsAString &hostname, PRUint16 flags)
   nsCOMPtr<nsICancelable> tmpOutstanding;
   return sDNSService->AsyncResolve(NS_ConvertUTF16toUTF8(hostname),
                                    flags | nsIDNSService::RESOLVE_SPECULATE,
-                                   sDNSListener, nsnull, 
+                                   sDNSListener, nullptr, 
                                    getter_AddRefs(tmpOutstanding));
 }
 
@@ -174,7 +174,7 @@ nsHTMLDNSPrefetch::PrefetchHigh(const nsAString &hostname)
 
 nsresult
 nsHTMLDNSPrefetch::CancelPrefetch(Link *aElement,
-                                  PRUint16 flags,
+                                  uint16_t flags,
                                   nsresult aReason)
 {
   if (!(sInitialized && sPrefetches && sDNSService && sDNSListener))
@@ -188,7 +188,7 @@ nsHTMLDNSPrefetch::CancelPrefetch(Link *aElement,
 
 nsresult
 nsHTMLDNSPrefetch::CancelPrefetch(const nsAString &hostname,
-                                  PRUint16 flags,
+                                  uint16_t flags,
                                   nsresult aReason)
 {
   // Forward this request to Necko Parent if we're a child process
@@ -271,13 +271,13 @@ void
 nsHTMLDNSPrefetch::nsDeferrals::Flush()
 {
   while (mHead != mTail) {
-    mEntries[mTail].mElement = nsnull;
+    mEntries[mTail].mElement = nullptr;
     mTail = (mTail + 1) & sMaxDeferredMask;
   }
 }
 
 nsresult
-nsHTMLDNSPrefetch::nsDeferrals::Add(PRUint16 flags, Link *aElement)
+nsHTMLDNSPrefetch::nsDeferrals::Add(uint16_t flags, Link *aElement)
 {
   // The FIFO has no lock, so it can only be accessed on main thread
   NS_ASSERTION(NS_IsMainThread(), "nsDeferrals::Add must be on main thread");
@@ -312,7 +312,7 @@ nsHTMLDNSPrefetch::nsDeferrals::SubmitQueue()
       nsCOMPtr<Link> link = do_QueryInterface(content);
       // Only prefetch here if request was deferred and deferral not cancelled
       if (link && link->HasDeferredDNSPrefetchRequest()) {
-        nsCOMPtr<nsIURI> hrefURI(link ? link->GetURI() : nsnull);
+        nsCOMPtr<nsIURI> hrefURI(link ? link->GetURI() : nullptr);
         if (hrefURI)
           hrefURI->GetAsciiHost(hostName);
 
@@ -326,7 +326,7 @@ nsHTMLDNSPrefetch::nsDeferrals::SubmitQueue()
             nsresult rv = sDNSService->AsyncResolve(hostName, 
                                     mEntries[mTail].mFlags
                                     | nsIDNSService::RESOLVE_SPECULATE,
-                                    sDNSListener, nsnull,
+                                    sDNSListener, nullptr,
                                     getter_AddRefs(tmpOutstanding));
             // Tell link that deferred prefetch was requested
             if (NS_SUCCEEDED(rv))
@@ -336,7 +336,7 @@ nsHTMLDNSPrefetch::nsDeferrals::SubmitQueue()
       }
     }
     
-    mEntries[mTail].mElement = nsnull;
+    mEntries[mTail].mElement = nullptr;
     mTail = (mTail + 1) & sMaxDeferredMask;
   }
   
@@ -386,7 +386,7 @@ nsHTMLDNSPrefetch::nsDeferrals::Tick(nsITimer *aTimer, void *aClosure)
 NS_IMETHODIMP 
 nsHTMLDNSPrefetch::nsDeferrals::OnStateChange(nsIWebProgress* aWebProgress, 
                                               nsIRequest *aRequest, 
-                                              PRUint32 progressStateFlags, 
+                                              uint32_t progressStateFlags, 
                                               nsresult aStatus)
 {
   // The FIFO has no lock, so it can only be accessed on main thread
@@ -413,10 +413,10 @@ nsHTMLDNSPrefetch::nsDeferrals::OnStateChange(nsIWebProgress* aWebProgress,
 NS_IMETHODIMP
 nsHTMLDNSPrefetch::nsDeferrals::OnProgressChange(nsIWebProgress *aProgress,
                                                  nsIRequest *aRequest, 
-                                                 PRInt32 curSelfProgress, 
-                                                 PRInt32 maxSelfProgress, 
-                                                 PRInt32 curTotalProgress, 
-                                                 PRInt32 maxTotalProgress)
+                                                 int32_t curSelfProgress, 
+                                                 int32_t maxSelfProgress, 
+                                                 int32_t curTotalProgress, 
+                                                 int32_t maxTotalProgress)
 {
   return NS_OK;
 }
@@ -425,7 +425,7 @@ NS_IMETHODIMP
 nsHTMLDNSPrefetch::nsDeferrals::OnLocationChange(nsIWebProgress* aWebProgress,
                                                  nsIRequest* aRequest,
                                                  nsIURI *location,
-                                                 PRUint32 aFlags)
+                                                 uint32_t aFlags)
 {
   return NS_OK;
 }
@@ -442,7 +442,7 @@ nsHTMLDNSPrefetch::nsDeferrals::OnStatusChange(nsIWebProgress* aWebProgress,
 NS_IMETHODIMP 
 nsHTMLDNSPrefetch::nsDeferrals::OnSecurityChange(nsIWebProgress *aWebProgress, 
                                                  nsIRequest *aRequest, 
-                                                 PRUint32 state)
+                                                 uint32_t state)
 {
   return NS_OK;
 }

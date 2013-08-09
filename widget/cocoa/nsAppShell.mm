@@ -38,12 +38,8 @@
 
 using namespace mozilla::widget;
 
-// defined in nsChildView.mm
-extern nsIRollupListener * gRollupListener;
-extern nsIWidget         * gRollupWidget;
-
 // defined in nsCocoaWindow.mm
-extern PRInt32             gXULModalLevel;
+extern int32_t             gXULModalLevel;
 
 static bool gAppShellMethodsSwizzled = false;
 // List of current Cocoa app-modal windows (nested if more than one).
@@ -141,16 +137,8 @@ bool nsCocoaAppModalWindowList::GeckoModalAboveCocoaModal()
 
   nsCocoaAppModalWindowListItem &topItem = mList.ElementAt(mList.Length() - 1);
 
-  return (topItem.mWidget != nsnull);
+  return (topItem.mWidget != nullptr);
 }
-
-// GeckoNSApplication
-//
-// Subclass of NSApplication for filtering out certain events.
-@interface GeckoNSApplication : NSApplication
-{
-}
-@end
 
 @implementation GeckoNSApplication
 
@@ -212,8 +200,8 @@ nsAppShell::ResumeNative(void)
 }
 
 nsAppShell::nsAppShell()
-: mAutoreleasePools(nsnull)
-, mDelegate(nsnull)
+: mAutoreleasePools(nullptr)
+, mDelegate(nullptr)
 , mCFRunLoop(NULL)
 , mCFRunLoopSource(NULL)
 , mRunningEventLoop(false)
@@ -273,7 +261,7 @@ nsAppShell::Init()
   // by |this|.  CFArray is used instead of NSArray because NSArray wants to
   // retain each object you add to it, and you can't retain an
   // NSAutoreleasePool.
-  mAutoreleasePools = ::CFArrayCreateMutable(nsnull, 0, nsnull);
+  mAutoreleasePools = ::CFArrayCreateMutable(nullptr, 0, nullptr);
   NS_ENSURE_STATE(mAutoreleasePools);
 
   // Get the path of the nib file, which lives in the GRE location
@@ -284,7 +272,7 @@ nsAppShell::Init()
   nibFile->AppendNative(NS_LITERAL_CSTRING("res"));
   nibFile->AppendNative(NS_LITERAL_CSTRING("MainMenu.nib"));
 
-  nsCAutoString nibPath;
+  nsAutoCString nibPath;
   rv = nibFile->GetNativePath(nibPath);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -324,7 +312,7 @@ nsAppShell::Init()
 
   rv = nsBaseAppShell::Init();
 
-#ifndef NP_NO_CARBON
+#ifndef __LP64__
   TextInputHandler::InstallPluginKeyEventsHandler();
 #endif
 
@@ -339,17 +327,6 @@ nsAppShell::Init()
     if (!mRunningCocoaEmbedded) {
       nsToolkit::SwizzleMethods([NSApplication class], @selector(terminate:),
                                 @selector(nsAppShell_NSApplication_terminate:));
-    }
-    if (!nsCocoaFeatures::OnSnowLeopardOrLater()) {
-      dlopen("/System/Library/Frameworks/Carbon.framework/Frameworks/Print.framework/Versions/Current/Plugins/PrintCocoaUI.bundle/Contents/MacOS/PrintCocoaUI",
-             RTLD_LAZY);
-      Class PDEPluginCallbackClass = ::NSClassFromString(@"PDEPluginCallback");
-      nsresult rv1 = nsToolkit::SwizzleMethods(PDEPluginCallbackClass, @selector(initWithPrintWindowController:),
-                                               @selector(nsAppShell_PDEPluginCallback_initWithPrintWindowController:));
-      if (NS_SUCCEEDED(rv1)) {
-        nsToolkit::SwizzleMethods(PDEPluginCallbackClass, @selector(dealloc),
-                                  @selector(nsAppShell_PDEPluginCallback_dealloc));
-      }
     }
     gAppShellMethodsSwizzled = true;
   }
@@ -445,7 +422,7 @@ nsAppShell::ProcessGeckoEvents(void* aInfo)
   // make sure not to finish the balancing until all the recursion has been
   // unwound.
   if (self->mTerminated) {
-    PRInt32 releaseCount = 0;
+    int32_t releaseCount = 0;
     if (self->mNativeEventScheduledDepth > self->mNativeEventCallbackDepth) {
       releaseCount = PR_ATOMIC_SET(&self->mNativeEventScheduledDepth,
                                    self->mNativeEventCallbackDepth);
@@ -786,7 +763,7 @@ nsAppShell::Exit(void)
   delete gCocoaAppModalWindowList;
   gCocoaAppModalWindowList = NULL;
 
-#ifndef NP_NO_CARBON
+#ifndef __LP64__
   TextInputHandler::RemovePluginKeyEventsHandler();
 #endif
 
@@ -804,8 +781,8 @@ nsAppShell::Exit(void)
   NS_ASSERTION(!cocoaModal,
                "Don't call nsAppShell::Exit() from a modal event loop!");
   if (cocoaModal)
-    [NSApp stop:nsnull];
-  [NSApp stop:nsnull];
+    [NSApp stop:nullptr];
+  [NSApp stop:nullptr];
 
   // A call to Exit() just after a call to ScheduleNativeEventCallback()
   // prevents the (normally) matching call to ProcessGeckoEvents() from
@@ -814,7 +791,7 @@ nsAppShell::Exit(void)
   // to ScheduleNativeEventCallback() and ProcessGeckoEvents() isn't on the
   // stack, we need to take care of the problem here.
   if (!mNativeEventCallbackDepth && mNativeEventScheduledDepth) {
-    PRInt32 releaseCount = PR_ATOMIC_SET(&mNativeEventScheduledDepth, 0);
+    int32_t releaseCount = PR_ATOMIC_SET(&mNativeEventScheduledDepth, 0);
     while (releaseCount-- > 0)
       NS_RELEASE_THIS();
   }
@@ -836,7 +813,7 @@ nsAppShell::Exit(void)
 // public
 NS_IMETHODIMP
 nsAppShell::OnProcessNextEvent(nsIThreadInternal *aThread, bool aMayWait,
-                               PRUint32 aRecursionDepth)
+                               uint32_t aRecursionDepth)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
@@ -862,7 +839,7 @@ nsAppShell::OnProcessNextEvent(nsIThreadInternal *aThread, bool aMayWait,
 // public
 NS_IMETHODIMP
 nsAppShell::AfterProcessNextEvent(nsIThreadInternal *aThread,
-                                  PRUint32 aRecursionDepth)
+                                  uint32_t aRecursionDepth)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
@@ -971,8 +948,10 @@ nsAppShell::AfterProcessNextEvent(nsIThreadInternal *aThread,
 
   NSString *sender = [aNotification object];
   if (!sender || ![sender isEqualToString:@"org.mozilla.gecko.PopupWindow"]) {
-    if (gRollupListener && gRollupWidget)
-      gRollupListener->Rollup(0);
+    nsIRollupListener* rollupListener = nsBaseWidget::GetActiveRollupListener();
+    nsCOMPtr<nsIWidget> rollupWidget = rollupListener->GetRollupWidget();
+    if (rollupWidget)
+      rollupListener->Rollup(0, nullptr);
   }
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
@@ -1038,43 +1017,6 @@ nsAppShell::AfterProcessNextEvent(nsIThreadInternal *aThread,
 {
   [[NSNotificationCenter defaultCenter] postNotificationName:NSApplicationWillTerminateNotification
                                                       object:NSApp];
-}
-
-@end
-
-@interface NSObject (PDEPluginCallbackMethodSwizzling)
-- (id)nsAppShell_PDEPluginCallback_initWithPrintWindowController:(id)controller;
-- (void)nsAppShell_PDEPluginCallback_dealloc;
-@end
-
-@implementation NSObject (PDEPluginCallbackMethodSwizzling)
-
-// On Leopard, the PDEPluginCallback class in Apple's PrintCocoaUI module
-// fails to retain and release its PMPrintWindowController object.  This
-// causes the PMPrintWindowController to sometimes be deleted prematurely,
-// leading to crashes on attempts to access it.  One example is bug 396680,
-// caused by attempting to call a deleted PMPrintWindowController object's
-// printSettings method.  We work around the problem by hooking the
-// appropriate methods and retaining and releasing the object ourselves.
-// PrintCocoaUI.bundle is a "plugin" of the Carbon framework's Print
-// framework.
-
-- (id)nsAppShell_PDEPluginCallback_initWithPrintWindowController:(id)controller
-{
-  return [self nsAppShell_PDEPluginCallback_initWithPrintWindowController:[controller retain]];
-}
-
-- (void)nsAppShell_PDEPluginCallback_dealloc
-{
-  // Since the PDEPluginCallback class is undocumented (and the OS header
-  // files have no definition for it), we need to use low-level methods to
-  // access its _printWindowController variable.  (object_getInstanceVariable()
-  // is also available in Objective-C 2.0, so this code is 64-bit safe.)
-  id _printWindowController = nil;
-  object_getInstanceVariable(self, "_printWindowController",
-                             (void **) &_printWindowController);
-  [_printWindowController release];
-  [self nsAppShell_PDEPluginCallback_dealloc];
 }
 
 @end

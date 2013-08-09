@@ -10,30 +10,30 @@
 #ifdef NS_BUILD_REFCNT_LOGGING
 
 #define NS_LOG_ADDREF(_p, _rc, _type, _size) \
-  NS_LogAddRef((_p), (_rc), (_type), (PRUint32) (_size))
+  NS_LogAddRef((_p), (_rc), (_type), (uint32_t) (_size))
 
 #define NS_LOG_RELEASE(_p, _rc, _type) \
   NS_LogRelease((_p), (_rc), (_type))
 
 #define MOZ_COUNT_CTOR(_type)                                 \
-PR_BEGIN_MACRO                                                \
+do {                                                          \
   NS_LogCtor((void*)this, #_type, sizeof(*this));             \
-PR_END_MACRO
+} while (0)
 
 #define MOZ_COUNT_CTOR_INHERITED(_type, _base)                    \
-PR_BEGIN_MACRO                                                    \
+do {                                                              \
   NS_LogCtor((void*)this, #_type, sizeof(*this) - sizeof(_base)); \
-PR_END_MACRO
+} while (0)
 
 #define MOZ_COUNT_DTOR(_type)                                 \
-PR_BEGIN_MACRO                                                \
+do {                                                          \
   NS_LogDtor((void*)this, #_type, sizeof(*this));             \
-PR_END_MACRO
+} while (0)
 
 #define MOZ_COUNT_DTOR_INHERITED(_type, _base)                    \
-PR_BEGIN_MACRO                                                    \
+do {                                                              \
   NS_LogDtor((void*)this, #_type, sizeof(*this) - sizeof(_base)); \
-PR_END_MACRO
+} while (0)
 
 /* nsCOMPtr.h allows these macros to be defined by clients
  * These logging functions require dynamic_cast<void*>, so they don't
@@ -62,7 +62,7 @@ PR_END_MACRO
 class nsTraceRefcnt {
 public:
   inline static void LogAddRef(void* aPtr, nsrefcnt aNewRefCnt,
-                               const char* aTypeName, PRUint32 aInstanceSize) {
+                               const char* aTypeName, uint32_t aInstanceSize) {
     NS_LogAddRef(aPtr, aNewRefCnt, aTypeName, aInstanceSize);
   }
 
@@ -72,12 +72,12 @@ public:
   }
 
   inline static void LogCtor(void* aPtr, const char* aTypeName,
-                             PRUint32 aInstanceSize) {
+                             uint32_t aInstanceSize) {
     NS_LogCtor(aPtr, aTypeName, aInstanceSize);
   }
 
   inline static void LogDtor(void* aPtr, const char* aTypeName,
-                             PRUint32 aInstanceSize) {
+                             uint32_t aInstanceSize) {
     NS_LogDtor(aPtr, aTypeName, aInstanceSize);
   }
 

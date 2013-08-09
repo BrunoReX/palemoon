@@ -8,9 +8,11 @@
 
 #include "Workers.h"
 
+#include "nsIContentSecurityPolicy.h"
 #include "nsIRunnable.h"
 #include "nsIThread.h"
 #include "nsIThreadInternal.h"
+#include "nsPIDOMWindow.h"
 
 #include "jsapi.h"
 #include "mozilla/CondVar.h"
@@ -31,7 +33,6 @@
 class JSAutoStructuredCloneBuffer;
 class nsIDocument;
 class nsIPrincipal;
-class nsIMemoryMultiReporter;
 class nsIScriptContext;
 class nsIURI;
 class nsPIDOMWindow;
@@ -40,6 +41,7 @@ class nsIXPCScriptNotify;
 
 BEGIN_WORKERS_NAMESPACE
 
+class WorkerMemoryReporter;
 class WorkerPrivate;
 
 class WorkerRunnable : public nsIRunnable
@@ -110,13 +112,13 @@ private:
 class WorkerSyncRunnable : public WorkerRunnable
 {
 protected:
-  PRUint32 mSyncQueueKey;
+  uint32_t mSyncQueueKey;
   bool mBypassSyncQueue;
 
 protected:
   friend class WorkerPrivate;
 
-  WorkerSyncRunnable(WorkerPrivate* aWorkerPrivate, PRUint32 aSyncQueueKey,
+  WorkerSyncRunnable(WorkerPrivate* aWorkerPrivate, uint32_t aSyncQueueKey,
                      bool aBypassSyncQueue = false,
                      ClearingBehavior aClearingBehavior = SkipWhenClearing)
   : WorkerRunnable(aWorkerPrivate, WorkerThread, UnchangedBusyCount,
@@ -181,21 +183,22 @@ private:
   nsCOMPtr<nsIURI> mBaseURI;
   nsCOMPtr<nsIURI> mScriptURI;
   nsCOMPtr<nsIPrincipal> mPrincipal;
-  nsCOMPtr<nsIDocument> mDocument;
+  nsCOMPtr<nsIContentSecurityPolicy> mCSP;
 
   // Only used for top level workers.
   nsTArray<nsRefPtr<WorkerRunnable> > mQueuedRunnables;
 
-  PRUint64 mBusyCount;
+  uint64_t mBusyCount;
   Status mParentStatus;
-  PRUint32 mJSContextOptions;
-  PRUint32 mJSRuntimeHeapSize;
-  PRUint8 mGCZeal;
+  uint32_t mJSContextOptions;
+  uint32_t mJSRuntimeHeapSize;
+  uint8_t mGCZeal;
   bool mJSObjectRooted;
   bool mParentSuspended;
   bool mIsChromeWorker;
   bool mPrincipalIsSystem;
   bool mMainThreadObjectsForgotten;
+  bool mEvalAllowed;
 
 protected:
   WorkerPrivateParent(JSContext* aCx, JSObject* aObject, WorkerPrivate* aParent,
@@ -205,7 +208,8 @@ protected:
                       nsCOMPtr<nsIScriptContext>& aScriptContext,
                       nsCOMPtr<nsIURI>& aBaseURI,
                       nsCOMPtr<nsIPrincipal>& aPrincipal,
-                      nsCOMPtr<nsIDocument>& aDocument);
+                      nsCOMPtr<nsIContentSecurityPolicy>& aCSP,
+                      bool aEvalAllowed);
 
   ~WorkerPrivateParent();
 
@@ -290,20 +294,20 @@ public:
   ForgetMainThreadObjects(nsTArray<nsCOMPtr<nsISupports> >& aDoomed);
 
   bool
-  PostMessage(JSContext* aCx, jsval aMessage);
+  PostMessage(JSContext* aCx, jsval aMessage, jsval aTransferable);
 
-  PRUint64
+  uint64_t
   GetInnerWindowId();
 
   void
-  UpdateJSContextOptions(JSContext* aCx, PRUint32 aOptions);
+  UpdateJSContextOptions(JSContext* aCx, uint32_t aOptions);
 
   void
-  UpdateJSRuntimeHeapSize(JSContext* aCx, PRUint32 aJSRuntimeHeapSize);
+  UpdateJSRuntimeHeapSize(JSContext* aCx, uint32_t aJSRuntimeHeapSize);
 
 #ifdef JS_GC_ZEAL
   void
-  UpdateGCZeal(JSContext* aCx, PRUint8 aGCZeal);
+  UpdateGCZeal(JSContext* aCx, uint8_t aGCZeal);
 #endif
 
   void
@@ -426,14 +430,7 @@ public:
   GetDocument() const
   {
     AssertIsOnMainThread();
-    return mDocument;
-  }
-
-  void
-  SetDocument(nsIDocument* aDocument)
-  {
-    AssertIsOnMainThread();
-    mDocument = aDocument;
+    return mWindow ? mWindow->GetExtantDoc() : nullptr;
   }
 
   nsPIDOMWindow*
@@ -443,26 +440,52 @@ public:
     return mWindow;
   }
 
+  nsIContentSecurityPolicy*
+  GetCSP() const
+  {
+    AssertIsOnMainThread();
+    return mCSP;
+  }
+
+  void
+  SetCSP(nsIContentSecurityPolicy* aCSP)
+  {
+    AssertIsOnMainThread();
+    mCSP = aCSP;
+  }
+
+  bool
+  IsEvalAllowed() const
+  {
+    return mEvalAllowed;
+  }
+
+  void
+  SetEvalAllowed(bool aEvalAllowed)
+  {
+    mEvalAllowed = aEvalAllowed;
+  }
+
   LocationInfo&
   GetLocationInfo()
   {
     return mLocationInfo;
   }
 
-  PRUint32
+  uint32_t
   GetJSContextOptions() const
   {
     return mJSContextOptions;
   }
 
-  PRUint32
+  uint32_t
   GetJSRuntimeHeapSize() const
   {
     return mJSRuntimeHeapSize;
   }
 
 #ifdef JS_GC_ZEAL
-  PRUint8
+  uint8_t
   GetGCZeal() const
   {
     return mGCZeal;
@@ -495,6 +518,7 @@ public:
 class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
 {
   friend class WorkerPrivateParent<WorkerPrivate>;
+  friend class WorkerMemoryReporter;
   typedef WorkerPrivateParent<WorkerPrivate> ParentType;
 
   struct TimeoutInfo;
@@ -534,11 +558,11 @@ class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
   nsTArray<nsAutoPtr<TimeoutInfo> > mTimeouts;
 
   nsCOMPtr<nsITimer> mTimer;
-  nsCOMPtr<nsIMemoryMultiReporter> mMemoryReporter;
+  nsRefPtr<WorkerMemoryReporter> mMemoryReporter;
 
   mozilla::TimeStamp mKillTime;
-  PRUint32 mErrorHandlerRecursionCount;
-  PRUint32 mNextTimeoutId;
+  uint32_t mErrorHandlerRecursionCount;
+  uint32_t mNextTimeoutId;
   Status mStatus;
   bool mSuspended;
   bool mTimerRunning;
@@ -546,7 +570,7 @@ class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
   bool mCloseHandlerStarted;
   bool mCloseHandlerFinished;
   bool mMemoryReporterRunning;
-  bool mMemoryReporterDisabled;
+  bool mXHRParamsAllowed;
 
 #ifdef DEBUG
   nsCOMPtr<nsIThread> mThread;
@@ -628,17 +652,21 @@ public:
              mFeatures.IsEmpty());
   }
 
-  PRUint32
+  uint32_t
   CreateNewSyncLoop();
 
   bool
-  RunSyncLoop(JSContext* aCx, PRUint32 aSyncLoopKey);
+  RunSyncLoop(JSContext* aCx, uint32_t aSyncLoopKey);
 
   void
-  StopSyncLoop(PRUint32 aSyncLoopKey, bool aSyncResult);
+  StopSyncLoop(uint32_t aSyncLoopKey, bool aSyncResult);
+
+  void
+  DestroySyncLoop(uint32_t aSyncLoopKey);
 
   bool
-  PostMessageToParent(JSContext* aCx, jsval aMessage);
+  PostMessageToParent(JSContext* aCx, jsval aMessage,
+                      jsval transferable);
 
   bool
   NotifyInternal(JSContext* aCx, Status aStatus);
@@ -650,7 +678,7 @@ public:
   SetTimeout(JSContext* aCx, unsigned aArgc, jsval* aVp, bool aIsInterval);
 
   bool
-  ClearTimeout(JSContext* aCx, uint32 aId);
+  ClearTimeout(JSContext* aCx, uint32_t aId);
 
   bool
   RunExpiredTimeouts(JSContext* aCx);
@@ -673,23 +701,35 @@ public:
   }
 
   void
-  UpdateJSContextOptionsInternal(JSContext* aCx, PRUint32 aOptions);
+  UpdateJSContextOptionsInternal(JSContext* aCx, uint32_t aOptions);
 
   void
-  UpdateJSRuntimeHeapSizeInternal(JSContext* aCx, PRUint32 aJSRuntimeHeapSize);
+  UpdateJSRuntimeHeapSizeInternal(JSContext* aCx, uint32_t aJSRuntimeHeapSize);
 
   void
   ScheduleDeletion(bool aWasPending);
 
   bool
-  BlockAndCollectRuntimeStats(bool isQuick, void* aData, bool* aDisabled);
+  BlockAndCollectRuntimeStats(bool isQuick, void* aData);
 
   bool
   DisableMemoryReporter();
 
+  bool
+  XHRParamsAllowed() const
+  {
+    return mXHRParamsAllowed;
+  }
+
+  void
+  SetXHRParamsAllowed(bool aAllowed)
+  {
+    mXHRParamsAllowed = aAllowed;
+  }
+
 #ifdef JS_GC_ZEAL
   void
-  UpdateGCZealInternal(JSContext* aCx, PRUint8 aGCZeal);
+  UpdateGCZealInternal(JSContext* aCx, uint8_t aGCZeal);
 #endif
 
   void
@@ -728,7 +768,12 @@ private:
                 nsCOMPtr<nsPIDOMWindow>& aWindow,
                 nsCOMPtr<nsIScriptContext>& aScriptContext,
                 nsCOMPtr<nsIURI>& aBaseURI, nsCOMPtr<nsIPrincipal>& aPrincipal,
-                nsCOMPtr<nsIDocument>& aDocument);
+                nsCOMPtr<nsIContentSecurityPolicy>& aCSP, bool aEvalAllowed,
+                bool aXHRParamsAllowed);
+
+  static bool
+  GetContentSecurityPolicy(JSContext *aCx,
+                           nsIContentSecurityPolicy** aCsp);
 
   bool
   Dispatch(WorkerRunnable* aEvent, EventQueue* aQueue);
@@ -759,7 +804,7 @@ private:
     return true;
   }
 
-  PRUint32
+  uint32_t
   RemainingRunTimeMS() const;
 
   void
@@ -776,7 +821,7 @@ private:
     mozilla::MutexAutoLock lock(mMutex);
 
     mStatus = Dead;
-    mJSContext = nsnull;
+    mJSContext = nullptr;
 
     ClearQueue(&mControlQueue);
     ClearQueue(&mQueue);
@@ -784,6 +829,9 @@ private:
 
   bool
   ProcessAllControlRunnables();
+
+  static bool
+  CheckXHRParamsAllowed(nsPIDOMWindow* aWindow);
 };
 
 WorkerPrivate*
@@ -802,6 +850,42 @@ WorkerStructuredCloneCallbacks(bool aMainRuntime);
 
 JSStructuredCloneCallbacks*
 ChromeWorkerStructuredCloneCallbacks(bool aMainRuntime);
+
+class AutoSyncLoopHolder
+{
+public:
+  AutoSyncLoopHolder(WorkerPrivate* aWorkerPrivate)
+  : mWorkerPrivate(aWorkerPrivate), mSyncLoopKey(UINT32_MAX)
+  {
+    mSyncLoopKey = mWorkerPrivate->CreateNewSyncLoop();
+  }
+
+  ~AutoSyncLoopHolder()
+  {
+    if (mWorkerPrivate) {
+      mWorkerPrivate->StopSyncLoop(mSyncLoopKey, false);
+      mWorkerPrivate->DestroySyncLoop(mSyncLoopKey);
+    }
+  }
+
+  bool
+  RunAndForget(JSContext* aCx)
+  {
+    WorkerPrivate* workerPrivate = mWorkerPrivate;
+    mWorkerPrivate = nullptr;
+    return workerPrivate->RunSyncLoop(aCx, mSyncLoopKey);
+  }
+
+  uint32_t
+  SyncQueueKey() const
+  {
+    return mSyncLoopKey;
+  }
+
+private:
+  WorkerPrivate* mWorkerPrivate;
+  uint32_t mSyncLoopKey;
+};
 
 END_WORKERS_NAMESPACE
 

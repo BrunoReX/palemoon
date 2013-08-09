@@ -18,15 +18,15 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIDocShell.h"
 
-PRUint32 nsWindowDataSource::windowCount = 0;
+uint32_t nsWindowDataSource::windowCount = 0;
 
-nsIRDFResource* nsWindowDataSource::kNC_Name = nsnull;
-nsIRDFResource* nsWindowDataSource::kNC_WindowRoot = nsnull;
-nsIRDFResource* nsWindowDataSource::kNC_KeyIndex = nsnull;
+nsIRDFResource* nsWindowDataSource::kNC_Name = nullptr;
+nsIRDFResource* nsWindowDataSource::kNC_WindowRoot = nullptr;
+nsIRDFResource* nsWindowDataSource::kNC_KeyIndex = nullptr;
 
-nsIRDFService*  nsWindowDataSource::gRDFService = nsnull;
+nsIRDFService*  nsWindowDataSource::gRDFService = nullptr;
 
-PRUint32 nsWindowDataSource::gRefCnt = 0;
+uint32_t nsWindowDataSource::gRefCnt = 0;
 
 static const char kURINC_WindowRoot[] = "NC:WindowMediatorRoot";
 
@@ -89,8 +89,8 @@ nsWindowDataSource::Observe(nsISupports *aSubject, const char* aTopic, const PRU
     if (strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
         // release these objects so that they release their reference
         // to us
-        mContainer = nsnull;
-        mInner = nsnull;
+        mContainer = nullptr;
+        mInner = nullptr;
     }
 
     return NS_OK;
@@ -100,7 +100,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(nsWindowDataSource)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_0(nsWindowDataSource)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsWindowDataSource)
     // XXX mContainer?
-    NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mInner)
+    NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mInner)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsWindowDataSource)
@@ -170,7 +170,7 @@ nsWindowDataSource::OnWindowTitleChange(nsIXULWindow *window,
 NS_IMETHODIMP
 nsWindowDataSource::OnOpenWindow(nsIXULWindow *window)
 {
-    nsCAutoString windowId(NS_LITERAL_CSTRING("window-"));
+    nsAutoCString windowId(NS_LITERAL_CSTRING("window-"));
     windowId.AppendInt(windowCount++, 10);
 
     nsCOMPtr<nsIRDFResource> windowResource;
@@ -213,7 +213,7 @@ nsWindowDataSource::OnCloseWindow(nsIXULWindow *window)
     
     // update RDF and keyindex - from this point forward we'll ignore
     // errors, because they just indicate some kind of RDF inconsistency
-    PRInt32 winIndex = -1;
+    int32_t winIndex = -1;
     rv = mContainer->IndexOf(resource, &winIndex);
         
     if (NS_FAILED(rv))
@@ -239,7 +239,7 @@ nsWindowDataSource::OnCloseWindow(nsIXULWindow *window)
         if (NS_FAILED(rv))
             continue;
 
-        PRInt32 currentIndex = -1;
+        int32_t currentIndex = -1;
         mContainer->IndexOf(windowResource, &currentIndex);
 
         // can skip updating windows with lower indexes
@@ -308,7 +308,7 @@ nsWindowDataSource::GetWindowForResource(const char *aResourceString,
                              getter_AddRefs(windowResource));
 
     // now reverse-lookup in the hashtable
-    findWindowClosure closure = { windowResource.get(), nsnull };
+    findWindowClosure closure = { windowResource.get(), nullptr };
     mWindowResources.Enumerate(findWindow, (void*)&closure);
     if (closure.resultWindow) {
 
@@ -360,7 +360,7 @@ NS_IMETHODIMP nsWindowDataSource::GetTarget(nsIRDFResource *aSource, nsIRDFResou
     // special case kNC_KeyIndex before we forward to mInner
     if (aProperty == kNC_KeyIndex) {
 
-        PRInt32 theIndex = 0;
+        int32_t theIndex = 0;
         nsresult rv = mContainer->IndexOf(aSource, &theIndex);
         if (NS_FAILED(rv)) return rv;
 

@@ -14,6 +14,8 @@
 #include "nsCOMPtr.h"
 #include "nsThreadUtils.h"
 
+using namespace mozilla::dom;
+
 class nsHTMLSourceElement : public nsGenericHTMLElement,
                             public nsIDOMHTMLSourceElement
 {
@@ -25,13 +27,13 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLSourceElement
   NS_DECL_NSIDOMHTMLSOURCEELEMENT
@@ -47,6 +49,10 @@ public:
   virtual nsXPCClassInfo* GetClassInfo();
 
   virtual nsIDOMNode* AsDOMNode() { return this; }
+
+protected:
+  virtual void GetItemValueText(nsAString& text);
+  virtual void SetItemValueText(const nsAString& text);
 };
 
 
@@ -63,8 +69,8 @@ nsHTMLSourceElement::~nsHTMLSourceElement()
 }
 
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLSourceElement, nsGenericElement)
-NS_IMPL_RELEASE_INHERITED(nsHTMLSourceElement, nsGenericElement)
+NS_IMPL_ADDREF_INHERITED(nsHTMLSourceElement, Element)
+NS_IMPL_RELEASE_INHERITED(nsHTMLSourceElement, Element)
 
 
 DOMCI_NODE_DATA(HTMLSourceElement, nsHTMLSourceElement)
@@ -83,6 +89,18 @@ NS_IMPL_ELEMENT_CLONE(nsHTMLSourceElement)
 NS_IMPL_URI_ATTR(nsHTMLSourceElement, Src, src)
 NS_IMPL_STRING_ATTR(nsHTMLSourceElement, Type, type)
 NS_IMPL_STRING_ATTR(nsHTMLSourceElement, Media, media)
+
+void
+nsHTMLSourceElement::GetItemValueText(nsAString& aValue)
+{
+  GetSrc(aValue);
+}
+
+void
+nsHTMLSourceElement::SetItemValueText(const nsAString& aValue)
+{
+  SetSrc(aValue);
+}
 
 nsresult
 nsHTMLSourceElement::BindToTree(nsIDocument *aDocument,

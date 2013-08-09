@@ -22,12 +22,7 @@ public:
     mCurAcc(mAnchorAcc->GetChildAt(0)), mCurIndex(0), mRefCnt(0) { }
 
   // IUnknown
-  virtual HRESULT STDMETHODCALLTYPE QueryInterface(
-    /* [in] */ REFIID aRefIID,
-    /* [annotation][iid_is][out] */ void** aObject);
-
-  virtual ULONG STDMETHODCALLTYPE AddRef();
-  virtual ULONG STDMETHODCALLTYPE Release();
+  DECL_IUNKNOWN
 
   // IEnumVariant
   virtual /* [local] */ HRESULT STDMETHODCALLTYPE Next(
@@ -55,10 +50,7 @@ private:
 protected:
   nsRefPtr<AccessibleWrap> mAnchorAcc;
   Accessible* mCurAcc;
-  PRUint32 mCurIndex;
-
-private:
-  ULONG mRefCnt;
+  uint32_t mCurIndex;
 };
 
 } // a11y namespace

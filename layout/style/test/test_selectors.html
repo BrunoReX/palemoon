@@ -721,6 +721,27 @@ function run() {
     // Test -moz-locale-dir
     test_parseable(":-moz-locale-dir(ltr)");
     test_parseable(":-moz-locale-dir(rtl)");
+    test_parseable(":-moz-locale-dir(rTl)");
+    test_parseable(":-moz-locale-dir(LTR)");
+    if (document.body.mozMatchesSelector(":-moz-locale-dir(ltr)")) {
+        test_selector_in_html("a:-moz-locale-dir(LTr)", single_a,
+                              set_single, empty_set);
+        test_selector_in_html("a:-moz-locale-dir(ltR)", single_a,
+                              set_single, empty_set);
+        test_selector_in_html("a:-moz-locale-dir(LTR)", single_a,
+                              set_single, empty_set);
+        test_selector_in_html("a:-moz-locale-dir(RTl)", single_a,
+                              empty_set, set_single);
+    } else {
+        test_selector_in_html("a:-moz-locale-dir(RTl)", single_a,
+                              set_single, empty_set);
+        test_selector_in_html("a:-moz-locale-dir(rtL)", single_a,
+                              set_single, empty_set);
+        test_selector_in_html("a:-moz-locale-dir(RTL)", single_a,
+                              set_single, empty_set);
+        test_selector_in_html("a:-moz-locale-dir(LTr)", single_a,
+                              empty_set, set_single);
+    }
 
     test_balanced_unparseable(":-moz-locale-dir(other)");
     test_balanced_unparseable(":-moz-locale-dir()");
@@ -730,6 +751,40 @@ function run() {
     test_balanced_unparseable(":-moz-locale-dir('ltr')");
     test_balanced_unparseable(":-moz-locale-dir(ltr, other)");
     test_balanced_unparseable(":-moz-locale-dir");
+
+    // Test :-moz-dir()
+    test_parseable(":-moz-dir(ltr)");
+    test_parseable(":-moz-dir(rtl)");
+    test_parseable(":-moz-dir(rTl)");
+    test_parseable(":-moz-dir(LTR)");
+    if (document.body.mozMatchesSelector(":-moz-dir(ltr)")) {
+        test_selector_in_html("a:-moz-dir(LTr)", single_a,
+                              set_single, empty_set);
+        test_selector_in_html("a:-moz-dir(ltR)", single_a,
+                              set_single, empty_set);
+        test_selector_in_html("a:-moz-dir(LTR)", single_a,
+                              set_single, empty_set);
+        test_selector_in_html("a:-moz-dir(RTl)", single_a,
+                              empty_set, set_single);
+    } else {
+        test_selector_in_html("a:-moz-dir(RTl)", single_a,
+                              set_single, empty_set);
+        test_selector_in_html("a:-moz-dir(rtL)", single_a,
+                              set_single, empty_set);
+        test_selector_in_html("a:-moz-dir(RTL)", single_a,
+                              set_single, empty_set);
+        test_selector_in_html("a:-moz-dir(LTr)", single_a,
+                              empty_set, set_single);
+    }
+
+    test_balanced_unparseable(":-moz-dir(other)");
+    test_balanced_unparseable(":-moz-dir()");
+    test_balanced_unparseable(":-moz-dir(())");
+    test_balanced_unparseable(":-moz-dir(3())");
+    test_balanced_unparseable(":-moz-dir(f{})");
+    test_balanced_unparseable(":-moz-dir('ltr')");
+    test_balanced_unparseable(":-moz-dir(ltr, other)");
+    test_balanced_unparseable(":-moz-dir");
 
     // Test -moz-lwtheme and -moz-lwtheme-[darktext|brighttext]
     test_parseable(":-moz-lwtheme");
@@ -758,7 +813,6 @@ function run() {
     test_parseable(":-moz-handler-disabled");
     test_parseable(":-moz-handler-blocked");
     test_parseable(":-moz-handler-crashed");
-    test_parseable(":-moz-has-handlerref");
 
     // Case sensitivity of tag selectors
     function setup_cased_spans(body) {
@@ -925,6 +979,9 @@ function run() {
     test_balanced_unparseable("div\\\n p");
     test_balanced_unparseable("div \\\np");
     test_balanced_unparseable("div\\\np");
+
+    // Test that :-moz-placeholder is parsable.
+    test_parseable(":-moz-placeholder");
 
     run_deferred_tests();
 }

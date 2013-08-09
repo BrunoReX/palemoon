@@ -5,10 +5,11 @@
 
 #include "nsIDirIndex.h"
 #include "nsString.h"
+#include "mozilla/Attributes.h"
 
 /* CID: {f6913e2e-1dd1-11b2-84be-f455dee342af} */
 
-class nsDirIndex : public nsIDirIndex {
+class nsDirIndex MOZ_FINAL : public nsIDirIndex {
 public:
     nsDirIndex();
     ~nsDirIndex();
@@ -17,10 +18,10 @@ public:
     NS_DECL_NSIDIRINDEX
 
 protected:
-    PRUint32 mType;
+    uint32_t mType;
     nsXPIDLCString mContentType;
     nsXPIDLCString mLocation;
     nsString mDescription;
-    PRInt64 mSize;
-    PRInt64 mLastModified;
+    int64_t mSize;
+    PRTime mLastModified;
 };

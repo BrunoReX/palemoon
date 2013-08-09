@@ -8,7 +8,6 @@
 
 #include "nsIAccessibilityService.h"
 
-#include "a11yGeneric.h"
 #include "nsAccDocManager.h"
 
 #include "mozilla/a11y/FocusManager.h"
@@ -16,15 +15,34 @@
 #include "nsIObserver.h"
 
 class nsImageFrame;
+class nsObjectFrame;
 class nsITreeView;
 
 namespace mozilla {
 namespace a11y {
 
+class ApplicationAccessible;
+
 /**
  * Return focus manager.
  */
 FocusManager* FocusMgr();
+
+enum EPlatformDisabledState {
+  ePlatformIsForceEnabled = -1,
+  ePlatformIsEnabled = 0,
+  ePlatformIsDisabled = 1
+};
+
+/**
+ * Return the platform disabled state.
+ */
+EPlatformDisabledState PlatformDisabledState();
+
+/**
+ * Returns the application accessible.
+ */
+ApplicationAccessible* ApplicationAcc();
 
 #ifdef MOZ_ACCESSIBILITY_ATK
 /**
@@ -33,10 +51,12 @@ FocusManager* FocusMgr();
  * XXX: this function and the next defined in ApplicationAccessibleWrap.cpp
  */
 void PreInit();
+#endif
 
+#if defined(MOZ_ACCESSIBILITY_ATK) || defined(XP_MACOSX)
 /**
  * Is platform accessibility enabled.
- * Only used on linux with atk for now.
+ * Only used on linux with atk and MacOS for now.
  */
 bool ShouldA11yBeEnabled();
 #endif
@@ -60,65 +80,28 @@ public:
   virtual Accessible* GetRootDocumentAccessible(nsIPresShell* aPresShell,
                                                 bool aCanCreate);
   already_AddRefed<Accessible>
-    CreateHTMLButtonAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLBRAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLCanvasAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLCaptionAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLCheckboxAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLComboboxAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLFileInputAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLGroupboxAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLHRAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLImageAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLImageMapAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLLabelAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLLIAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLListboxAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLMediaAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
     CreateHTMLObjectFrameAccessible(nsObjectFrame* aFrame, nsIContent* aContent,
-                                    nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLRadioButtonAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLTableAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLTableCellAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLTableRowAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateTextLeafAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHTMLTextFieldAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateHyperTextAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  already_AddRefed<Accessible>
-    CreateOuterDocAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
+                                    DocAccessible* aDoc);
 
+  /**
+   * Adds/remove ATK root accessible for gtk+ native window to/from children
+   * of the application accessible.
+   */
   virtual Accessible* AddNativeRootAccessible(void* aAtkAccessible);
   virtual void RemoveNativeRootAccessible(Accessible* aRootAccessible);
 
-  virtual void ContentRangeInserted(nsIPresShell* aPresShell,
-                                    nsIContent* aContainer,
-                                    nsIContent* aStartChild,
-                                    nsIContent* aEndChild);
+  /**
+   * Notification used to update the accessible tree when new content is
+   * inserted.
+   */
+  void ContentRangeInserted(nsIPresShell* aPresShell, nsIContent* aContainer,
+                            nsIContent* aStartChild, nsIContent* aEndChild);
 
-  virtual void ContentRemoved(nsIPresShell* aPresShell, nsIContent* aContainer,
-                              nsIContent* aChild);
+  /**
+   * Notification used to update the accessible tree when content is removed.
+   */
+  void ContentRemoved(nsIPresShell* aPresShell, nsIContent* aContainer,
+                      nsIContent* aChild);
 
   virtual void UpdateText(nsIPresShell* aPresShell, nsIContent* aContent);
 
@@ -140,9 +123,11 @@ public:
    */
   void UpdateImageMap(nsImageFrame* aImageFrame);
 
-  virtual void NotifyOfAnchorJumpTo(nsIContent *aTarget);
-
-  virtual void PresShellDestroyed(nsIPresShell* aPresShell);
+  /**
+   * Notify accessibility that anchor jump has been accomplished to the given
+   * target. Used by layout.
+   */
+  void NotifyOfAnchorJumpTo(nsIContent *aTarget);
 
   /**
    * Notify that presshell is activated.
@@ -154,7 +139,7 @@ public:
    */
   void RecreateAccessible(nsIPresShell* aPresShell, nsIContent* aContent);
 
-  virtual void FireAccessibleEvent(PRUint32 aEvent, Accessible* aTarget);
+  virtual void FireAccessibleEvent(uint32_t aEvent, Accessible* aTarget);
 
   // nsAccessibiltiyService
 
@@ -168,18 +153,12 @@ public:
    * one.
    *
    * @param  aNode             [in] the given node
-   * @param  aDoc              [in] the doc accessible of the node  
+   * @param  aDoc              [in] the doc accessible of the node
    * @param  aIsSubtreeHidden  [out, optional] indicates whether the node's
    *                             frame and its subtree is hidden
    */
   Accessible* GetOrCreateAccessible(nsINode* aNode, DocAccessible* aDoc,
-                                    bool* aIsSubtreeHidden = nsnull);
-
-  /**
-   * Return an accessible for the given DOM node and eventually a presentation
-   * shell.
-   */
-  Accessible* GetAccessible(nsINode* aNode, nsIPresShell* aPresShell);
+                                    bool* aIsSubtreeHidden = nullptr);
 
 private:
   // nsAccessibilityService creation is controlled by friend
@@ -211,7 +190,15 @@ private:
    */
   already_AddRefed<Accessible>
     CreateHTMLAccessibleByMarkup(nsIFrame* aFrame, nsIContent* aContent,
-                                 DocAccessible* aDoc);
+                                 DocAccessible* aDoc,
+                                 bool aIsLegalPartOfHTMLTable);
+
+  /**
+   * Create an accessible whose type depends on the given frame.
+   */
+  already_AddRefed<Accessible>
+    CreateAccessibleByFrameType(nsIFrame* aFrame, nsIContent* aContent,
+                                DocAccessible* aDoc);
 
   /**
    * Create accessible if parent is a deck frame.
@@ -234,21 +221,18 @@ private:
   static nsAccessibilityService* gAccessibilityService;
 
   /**
+   * Reference for application accessible instance.
+   */
+  static mozilla::a11y::ApplicationAccessible* gApplicationAccessible;
+
+  /**
    * Indicates whether accessibility service was shutdown.
    */
   static bool gIsShutdown;
 
-  /**
-   * Does this content node have a universal ARIA property set on it?
-   * A universal ARIA property is one that can be defined on any element even if there is no role.
-   *
-   * @param aContent The content node to test
-   * @return true if there is a universal ARIA property set on the node
-   */
-  bool HasUniversalAriaProperty(nsIContent *aContent);
-
   friend nsAccessibilityService* GetAccService();
   friend mozilla::a11y::FocusManager* mozilla::a11y::FocusMgr();
+  friend mozilla::a11y::ApplicationAccessible* mozilla::a11y::ApplicationAcc();
 
   friend nsresult NS_GetAccessibilityService(nsIAccessibilityService** aResult);
 };

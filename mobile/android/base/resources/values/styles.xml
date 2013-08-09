@@ -11,6 +11,19 @@
         <item name="android:layout_height">fill_parent</item>
     </style>
 
+    <style name="GeckoList" parent="android:style/Widget.ListView">
+    </style>
+
+    <style name="GeckoList.ListItem">
+        <item name="android:minHeight">?android:attr/listPreferredItemHeight</item>
+        <item name="android:textAppearance">?android:attr/textAppearanceLargeInverse</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingLeft">12dip</item>
+        <item name="android:paddingRight">7dip</item>
+        <item name="android:checkMark">?android:attr/listChoiceIndicatorMultiple</item>
+        <item name="android:ellipsize">marquee</item>
+    </style>
+
     <!-- Horizontal Layout -->
     <style name="Layout.Horizontal">
         <item name="android:orientation">horizontal</item>
@@ -54,7 +67,8 @@
 
     <!-- Address bar - Image Button -->
     <style name="AddressBar.ImageButton" parent="AddressBar.Button">
-        <item name="android:scaleType">fitCenter</item>
+        <item name="android:scaleType">center</item>
+        <item name="android:layout_gravity">center_vertical</item>
         <item name="android:background">@android:color/transparent</item>
     </style>
 
@@ -67,8 +81,9 @@
 
     <!-- Address bar - Image Button - Icon -->
     <style name="AddressBar.ImageButton.Icon">
-         <item name="android:layout_width">@dimen/browser_toolbar_height</item>
+         <item name="android:layout_width">@dimen/browser_toolbar_icon_width</item>
          <item name="android:layout_height">@dimen/browser_toolbar_height</item>
+         <item name="android:layout_weight">0.0</item>
     </style>
 
     <!-- AwesomeBar -->
@@ -150,6 +165,75 @@
         <item name="android:scaleType">fitCenter</item>
         <item name="android:layout_centerVertical">true</item>
         <item name="android:background">@android:color/transparent</item>
+    </style>
+
+    <style name="WebView">
+    </style>
+
+    <style name="WebView.Titlebar">
+        <item name="android:background">@drawable/webapp_titlebar_bg</item>
+        <item name="android:padding">2dp</item>
+    </style>
+
+    <style name="WebView.Titlebar.Title">
+        <item name="android:textColor">#ff222222</item>
+    </style>
+
+    <style name="AboutHome">
+    </style>
+
+    <style name="AboutHome.Thumbnail">
+      <item name="android:layout_width">fill_parent</item>
+      <item name="android:layout_height">fill_parent</item>
+      <item name="android:paddingTop">5dip</item>
+      <item name="android:paddingBottom">5dip</item>
+      <item name="android:paddingLeft">5dip</item>
+      <item name="android:paddingRight">5dip</item>
+    </style>
+
+    <style name="AboutHome.Thumbnail.Grid">
+      <item name="android:layout_width">fill_parent</item>
+      <item name="android:layout_height">wrap_content</item>
+      <!-- Use padding instead of grid spacing to split up items so that
+           tap highlight will extend outside the thumbnail -->
+      <item name="android:verticalSpacing">0dip</item>
+      <item name="android:horizontalSpacing">0dip</item>
+      <item name="android:isScrollContainer">false</item>
+      <item name="android:gravity">center</item>
+      <item name="android:listSelector">@drawable/action_bar_button</item>
+      <item name="android:paddingTop">0dip</item>
+      <item name="android:paddingBottom">0dip</item>
+      <item name="android:paddingLeft">0dip</item>
+      <item name="android:paddingRight">0dip</item>
+    </style>
+
+    <style name="AboutHome.Thumbnail.Image">
+      <item name="android:layout_width">fill_parent</item>
+      <item name="android:layout_height">fill_parent</item>
+      <item name="android:layout_centerHorizontal">true</item>
+      <item name="android:layout_alignParentTop">true</item>
+      <item name="android:src">@drawable/abouthome_thumbnail_bg</item>
+      <item name="android:background">#5FFF</item>
+      <item name="android:paddingTop">0dip</item>
+      <item name="android:paddingBottom">@dimen/abouthome_icon_radius</item>
+      <item name="android:paddingLeft">0dip</item>
+      <item name="android:paddingRight">0dip</item>
+      <item name="android:scaleType">fitCenter</item>
+    </style>
+
+    <style name="AboutHome.Thumbnail.Label">
+      <item name="android:layout_width">fill_parent</item>
+      <item name="android:layout_height">18dip</item>
+      <item name="android:layout_alignBottom">@id/thumbnail</item>
+      <item name="android:background">#EFFF</item>
+      <item name="android:singleLine">true</item>
+      <item name="android:textColor">#222</item>
+      <item name="android:paddingTop">0dip</item>
+      <item name="android:paddingBottom">1dip</item>
+      <item name="android:paddingLeft">5dip</item>
+      <item name="android:paddingRight">5dip</item>
+      <item name="android:textSize">10sp</item>
+      <item name="android:gravity">center|left</item>
     </style>
 
 </resources>

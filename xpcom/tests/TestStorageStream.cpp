@@ -16,7 +16,7 @@ int main()
   nsresult rv;
   nsCOMPtr<nsIStorageStream> stor;
 
-  rv = NS_NewStorageStream(4096, PR_UINT32_MAX, getter_AddRefs(stor));
+  rv = NS_NewStorageStream(4096, UINT32_MAX, getter_AddRefs(stor));
   if (NS_FAILED(rv))
     return -1;
 
@@ -25,7 +25,7 @@ int main()
   if (NS_FAILED(rv))
     return -1;
 
-  PRUint32 n;
+  uint32_t n;
 
   rv = out->Write(kData, sizeof(kData), &n);
   if (NS_FAILED(rv))
@@ -39,7 +39,7 @@ int main()
   if (NS_FAILED(rv))
     return -1;
 
-  out = nsnull;
+  out = nullptr;
   
   nsCOMPtr<nsIInputStream> in;
   rv = stor->NewInputStream(0, getter_AddRefs(in));
@@ -58,7 +58,7 @@ int main()
   rv = in->Close();
   if (NS_FAILED(rv))
     return -1;
-  in = nsnull;
+  in = nullptr;
 
   // now, write 3 more full 4k segments + 11 bytes, starting at 8192
   // total written equals 20491 bytes
@@ -87,7 +87,7 @@ int main()
   if (NS_FAILED(rv))
     return -1;
 
-  out = nsnull;
+  out = nullptr;
 
   // now, read all
   rv = stor->NewInputStream(0, getter_AddRefs(in));
@@ -104,7 +104,7 @@ int main()
   rv = in->Close();
   if (NS_FAILED(rv))
     return -1;
-  in = nsnull;
+  in = nullptr;
 
   return 0;
 }

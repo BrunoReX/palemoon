@@ -9,13 +9,23 @@ function tabReload(aEvent) {
   browser.removeEventListener(aEvent.type, tabReload, true);
 
   outputNode = hud.outputNode;
-  findLogEntry("test-network.html");
-  findLogEntry("test-image.png");
-  findLogEntry("testscript.js");
-  isnot(outputNode.textContent.indexOf("running network console logging tests"), -1,
-        "found the console.log() message from testscript.js");
 
-  executeSoon(finishTest);
+  waitForSuccess({
+    name: "console.log() message displayed",
+    validatorFn: function()
+    {
+      return outputNode.textContent
+             .indexOf("running network console logging tests") > -1;
+    },
+    successFn: function()
+    {
+      findLogEntry("test-network.html");
+      findLogEntry("test-image.png");
+      findLogEntry("testscript.js");
+      finishTest();
+    },
+    failureFn: finishTest,
+  });
 }
 
 function test() {
@@ -27,13 +37,14 @@ function test() {
 
   let uri = Services.io.newFileURI(dir);
 
-  addTab(uri.spec);
+  addTab("data:text/html;charset=utf8,<p>test file URI");
   browser.addEventListener("load", function tabLoad() {
     browser.removeEventListener("load", tabLoad, true);
     openConsole(null, function(aHud) {
       hud = aHud;
+      hud.jsterm.clearOutput();
       browser.addEventListener("load", tabReload, true);
-      content.location.reload();
+      content.location = uri.spec;
     });
   }, true);
 }

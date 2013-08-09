@@ -4,8 +4,7 @@
 Cu.import("resource://services-common/async.js");
 Cu.import("resource://services-common/rest.js");
 Cu.import("resource://services-common/utils.js");
-// TODO enable once build infra supports testing modules.
-//Cu.import("resource://testing-common/services-common/storageserver.js");
+Cu.import("resource://testing-common/services-common/storageserver.js");
 
 const PORT = 8080;
 const DEFAULT_USER = "123";
@@ -188,10 +187,12 @@ add_test(function test_basic_http() {
   server.startSynchronous(PORT);
 
   _("Started on " + server.port);
+  do_check_eq(server.requestCount, 0);
   let req = localRequest("/2.0/storage/crypto/keys");
   _("req is " + req);
   req.get(function (err) {
     do_check_eq(null, err);
+    do_check_eq(server.requestCount, 1);
     server.stop(run_next_test);
   });
 });
@@ -248,6 +249,28 @@ add_test(function test_bso_get_existing() {
   let payload = JSON.parse(bso.payload);
   do_check_attribute_count(payload, 1);
   do_check_eq(payload.foo, "bar");
+
+  server.stop(run_next_test);
+});
+
+add_test(function test_percent_decoding() {
+  _("Ensure query string arguments with percent encoded are handled.");
+
+  let server = new StorageServer();
+  server.registerUser("123", "password");
+  server.startSynchronous(PORT);
+
+  let coll = server.user("123").createCollection("test");
+  coll.insert("001", {foo: "bar"});
+  coll.insert("002", {bar: "foo"});
+
+  let request = localRequest("/2.0/123/storage/test?ids=001%2C002", "123",
+                             "password");
+  let error = doGetRequest(request);
+  do_check_null(error);
+  do_check_eq(request.response.status, 200);
+  let items = JSON.parse(request.response.body).items;
+  do_check_attribute_count(items, 2);
 
   server.stop(run_next_test);
 });
@@ -441,6 +464,60 @@ add_test(function test_bso_delete_unmodified() {
   server.stop(run_next_test);
 });
 
+add_test(function test_collection_get_unmodified_since() {
+  _("Ensure conditional unmodified get on collection works when it should.");
+
+  let server = new StorageServer();
+  server.registerUser("123", "password");
+  server.startSynchronous(PORT);
+  let collection = server.user("123").createCollection("testcoll");
+  collection.insert("bso0", {foo: "bar"});
+
+  let serverModified = collection.timestamp;
+
+  let request1 = localRequest("/2.0/123/storage/testcoll", "123", "password");
+  request1.setHeader("X-If-Unmodified-Since", serverModified);
+  let error = doGetRequest(request1);
+  do_check_null(error);
+  do_check_eq(request1.response.status, 200);
+
+  let request2 = localRequest("/2.0/123/storage/testcoll", "123", "password");
+  request2.setHeader("X-If-Unmodified-Since", serverModified - 1);
+  let error = doGetRequest(request2);
+  do_check_null(error);
+  do_check_eq(request2.response.status, 412);
+
+  server.stop(run_next_test);
+});
+
+add_test(function test_bso_get_unmodified_since() {
+  _("Ensure conditional unmodified get on BSO works appropriately.");
+
+  let server = new StorageServer();
+  server.registerUser("123", "password");
+  server.startSynchronous(PORT);
+  let collection = server.user("123").createCollection("testcoll");
+  let bso = collection.insert("bso0", {foo: "bar"});
+
+  let serverModified = bso.modified;
+
+  let request1 = localRequest("/2.0/123/storage/testcoll/bso0", "123",
+                              "password");
+  request1.setHeader("X-If-Unmodified-Since", serverModified);
+  let error = doGetRequest(request1);
+  do_check_null(error);
+  do_check_eq(request1.response.status, 200);
+
+  let request2 = localRequest("/2.0/123/storage/testcoll/bso0", "123",
+                              "password");
+  request2.setHeader("X-If-Unmodified-Since", serverModified - 1);
+  let error = doGetRequest(request2);
+  do_check_null(error);
+  do_check_eq(request2.response.status, 412);
+
+  server.stop(run_next_test);
+});
+
 add_test(function test_missing_collection_404() {
   _("Ensure a missing collection returns a 404.");
 
@@ -514,4 +591,90 @@ add_test(function test_x_num_records() {
       server.stop(run_next_test);
     });
   });
+});
+
+add_test(function test_put_delete_put() {
+  _("Bug 790397: Ensure BSO deleted flag is reset on PUT.");
+
+  let server = new StorageServer();
+  server.registerUser("123", "password");
+  server.createContents("123", {
+    test: {bso: {foo: "bar"}}
+  });
+  server.startSynchronous(PORT);
+
+  _("Ensure we can PUT an existing record.");
+  let request1 = localRequest("/2.0/123/storage/test/bso", "123", "password");
+  request1.setHeader("Content-Type", "application/json");
+  let payload1 = JSON.stringify({"payload": "foobar"});
+  let error1 = doPutRequest(request1, payload1);
+  do_check_eq(null, error1);
+  do_check_eq(request1.response.status, 204);
+
+  _("Ensure we can DELETE it.");
+  let request2 = localRequest("/2.0/123/storage/test/bso", "123", "password");
+  let error2 = doDeleteRequest(request2);
+  do_check_eq(error2, null);
+  do_check_eq(request2.response.status, 204);
+  do_check_false("content-type" in request2.response.headers);
+
+  _("Ensure we can PUT a previously deleted record.");
+  let request3 = localRequest("/2.0/123/storage/test/bso", "123", "password");
+  request3.setHeader("Content-Type", "application/json");
+  let payload3 = JSON.stringify({"payload": "foobar"});
+  let error3 = doPutRequest(request3, payload3);
+  do_check_eq(null, error3);
+  do_check_eq(request3.response.status, 201);
+
+  _("Ensure we can GET the re-uploaded record.");
+  let request4 = localRequest("/2.0/123/storage/test/bso", "123", "password");
+  let error4 = doGetRequest(request4);
+  do_check_eq(error4, null);
+  do_check_eq(request4.response.status, 200);
+  do_check_eq(request4.response.headers["content-type"], "application/json");
+
+  server.stop(run_next_test);
+});
+
+add_test(function test_collection_get_newer() {
+  _("Ensure get with newer argument on collection works.");
+
+  let server = new StorageServer();
+  server.registerUser("123", "password");
+  server.startSynchronous(PORT);
+
+  let coll = server.user("123").createCollection("test");
+  let bso1 = coll.insert("001", {foo: "bar"});
+  let bso2 = coll.insert("002", {bar: "foo"});
+
+  // Don't want both records to have the same timestamp.
+  bso2.modified = bso1.modified + 1000;
+
+  function newerRequest(newer) {
+    return localRequest("/2.0/123/storage/test?newer=" + newer,
+                        "123", "password");
+  }
+
+  let request1 = newerRequest(0);
+  let error1 = doGetRequest(request1);
+  do_check_null(error1);
+  do_check_eq(request1.response.status, 200);
+  let items1 = JSON.parse(request1.response.body).items;
+  do_check_attribute_count(items1, 2);
+
+  let request2 = newerRequest(bso1.modified + 1);
+  let error2 = doGetRequest(request2);
+  do_check_null(error2);
+  do_check_eq(request2.response.status, 200);
+  let items2 = JSON.parse(request2.response.body).items;
+  do_check_attribute_count(items2, 1);
+
+  let request3 = newerRequest(bso2.modified + 1);
+  let error3 = doGetRequest(request3);
+  do_check_null(error3);
+  do_check_eq(request3.response.status, 200);
+  let items3 = JSON.parse(request3.response.body).items;
+  do_check_attribute_count(items3, 0);
+
+  server.stop(run_next_test);
 });

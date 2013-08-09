@@ -1,25 +1,17 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #aboutDialogContainer {
   background-image: url("chrome://branding/content/about-background.png");
   background-repeat: no-repeat;
   background-color: #F7F7F7;
   background-size: cover;
-  color: #000020;
-}
-
-#clientBox {
-  background-image: url("chrome://branding/content/about-background.png");
-  background-repeat: no-repeat;
-  background-color: #F7F7F7;
-  background-size: cover;
-  color: #000020;
-} 
-
-.text-link {
-  color: #303090 !important;
+  color: #000020; 
 }
 
 #leftBox {
-/*  background-image: url("chrome://branding/content/about-logo.png"); */
+  /* background-image: url("chrome://branding/content/about-logo.png"); */
   background-repeat: no-repeat;
   /* min-width and min-height create room for the logo */
   min-width: 210px;
@@ -36,7 +28,7 @@
 #bottomBox {
   padding: 15px 10px 0;
   background-color: rgba(240,240,255,.7);
-}  
+}   
 
 #updateDeck > hbox > label:not([class="text-link"]) {
   color: #909090;

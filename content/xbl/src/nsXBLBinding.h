@@ -45,7 +45,7 @@ public:
    *    which are queued to fire their constructors.
    */
 
-  NS_INLINE_DECL_REFCOUNTING(nsXBLBinding)
+  NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(nsXBLBinding)
 
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(nsXBLBinding)
 
@@ -69,7 +69,8 @@ public:
   bool ImplementsInterface(REFNSIID aIID) const;
 
   void GenerateAnonymousContent();
-  void InstallAnonymousContent(nsIContent* aAnonParent, nsIContent* aElement);
+  void InstallAnonymousContent(nsIContent* aAnonParent, nsIContent* aElement,
+                               bool aNativeAnon);
   static void UninstallAnonymousContent(nsIDocument* aDocument,
                                         nsIContent* aAnonParent);
   void InstallEventHandlers();
@@ -79,7 +80,7 @@ public:
   void ExecuteDetachedHandler();
   void UnhookEventHandlers();
 
-  nsIAtom* GetBaseTag(PRInt32* aNameSpaceID);
+  nsIAtom* GetBaseTag(int32_t* aNameSpaceID);
   nsXBLBinding* RootBinding();
   nsXBLBinding* GetFirstStyleBinding();
 
@@ -89,19 +90,19 @@ public:
 
   // Get the list of insertion points for aParent. The nsInsertionPointList
   // is owned by the binding, you should not delete it.
-  nsresult GetInsertionPointsFor(nsIContent* aParent,
-                                 nsInsertionPointList** aResult);
+  void GetInsertionPointsFor(nsIContent* aParent,
+                             nsInsertionPointList** aResult);
 
   nsInsertionPointList* GetExistingInsertionPointsFor(nsIContent* aParent);
 
   // XXXbz this aIndex has nothing to do with an index into the child
   // list of the insertion parent or anything.
-  nsIContent* GetInsertionPoint(const nsIContent* aChild, PRUint32* aIndex);
+  nsIContent* GetInsertionPoint(const nsIContent* aChild, uint32_t* aIndex);
 
-  nsIContent* GetSingleInsertionPoint(PRUint32* aIndex,
+  nsIContent* GetSingleInsertionPoint(uint32_t* aIndex,
                                       bool* aMultipleInsertionPoints);
 
-  void AttributeChanged(nsIAtom* aAttribute, PRInt32 aNameSpaceID,
+  void AttributeChanged(nsIAtom* aAttribute, int32_t aNameSpaceID,
                         bool aRemoveFlag, bool aNotify);
 
   void ChangeDocument(nsIDocument* aOldDocument, nsIDocument* aNewDocument);

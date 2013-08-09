@@ -46,7 +46,7 @@ nsProfileLock::nsProfileLock() :
 #elif defined (XP_OS2)
     ,mLockFileHandle(-1)
 #elif defined (XP_UNIX)
-    ,mPidLockFileName(nsnull)
+    ,mPidLockFileName(nullptr)
     ,mLockFileDesc(-1)
 #endif
 {
@@ -80,7 +80,7 @@ nsProfileLock& nsProfileLock::operator=(nsProfileLock& rhs)
     mLockFileDesc = rhs.mLockFileDesc;
     rhs.mLockFileDesc = -1;
     mPidLockFileName = rhs.mPidLockFileName;
-    rhs.mPidLockFileName = nsnull;
+    rhs.mPidLockFileName = nullptr;
     if (mPidLockFileName)
     {
         // rhs had a symlink lock, therefore it was on the list.
@@ -133,7 +133,7 @@ void nsProfileLock::FatalSignalHandler(int signo
     RemovePidLockFiles(true);
 
     // Chain to the old handler, which may exit.
-    struct sigaction *oldact = nsnull;
+    struct sigaction *oldact = nullptr;
 
     switch (signo) {
       case SIGHUP:
@@ -195,11 +195,11 @@ void nsProfileLock::FatalSignalHandler(int signo
     _exit(signo);
 }
 
-nsresult nsProfileLock::LockWithFcntl(nsILocalFile *aLockFile)
+nsresult nsProfileLock::LockWithFcntl(nsIFile *aLockFile)
 {
     nsresult rv = NS_OK;
 
-    nsCAutoString lockFilePath;
+    nsAutoCString lockFilePath;
     rv = aLockFile->GetNativePath(lockFilePath);
     if (NS_FAILED(rv)) {
         NS_ERROR("Could not get native path");
@@ -278,7 +278,7 @@ static bool IsSymlinkStaleLock(struct in_addr* aAddr, const char* aFileName,
                     return true;
                 }
                     
-                char *after = nsnull;
+                char *after = nullptr;
                 pid_t pid = strtol(colon, &after, 0);
                 if (pid != 0 && *after == '\0')
                 {
@@ -305,10 +305,10 @@ static bool IsSymlinkStaleLock(struct in_addr* aAddr, const char* aFileName,
     return true;
 }
 
-nsresult nsProfileLock::LockWithSymlink(nsILocalFile *aLockFile, bool aHaveFcntlLock)
+nsresult nsProfileLock::LockWithSymlink(nsIFile *aLockFile, bool aHaveFcntlLock)
 {
     nsresult rv;
-    nsCAutoString lockFilePath;
+    nsAutoCString lockFilePath;
     rv = aLockFile->GetNativePath(lockFilePath);
     if (NS_FAILED(rv)) {
         NS_ERROR("Could not get native path");
@@ -358,7 +358,7 @@ nsresult nsProfileLock::LockWithSymlink(nsILocalFile *aLockFile, bool aHaveFcntl
     }
 
     PR_smprintf_free(signature);
-    signature = nsnull;
+    signature = nullptr;
 
     if (symlink_rv == 0)
     {
@@ -426,12 +426,12 @@ PR_BEGIN_MACRO                                                          \
 }
 #endif /* XP_UNIX */
 
-nsresult nsProfileLock::GetReplacedLockTime(PRInt64 *aResult) {
+nsresult nsProfileLock::GetReplacedLockTime(PRTime *aResult) {
     *aResult = mReplacedLockTime;
     return NS_OK;
 }
 
-nsresult nsProfileLock::Lock(nsILocalFile* aProfileDir,
+nsresult nsProfileLock::Lock(nsIFile* aProfileDir,
                              nsIProfileUnlocker* *aUnlocker)
 {
 #if defined (XP_MACOSX)
@@ -446,7 +446,7 @@ nsresult nsProfileLock::Lock(nsILocalFile* aProfileDir,
 
     nsresult rv;
     if (aUnlocker)
-        *aUnlocker = nsnull;
+        *aUnlocker = nullptr;
 
     NS_ENSURE_STATE(!mHaveLock);
 
@@ -457,8 +457,8 @@ nsresult nsProfileLock::Lock(nsILocalFile* aProfileDir,
     if (!isDir)
         return NS_ERROR_FILE_NOT_DIRECTORY;
 
-    nsCOMPtr<nsILocalFile> lockFile;
-    rv = aProfileDir->Clone((nsIFile **)((void **)getter_AddRefs(lockFile)));
+    nsCOMPtr<nsIFile> lockFile;
+    rv = aProfileDir->Clone(getter_AddRefs(lockFile));
     if (NS_FAILED(rv))
         return rv;
 
@@ -490,8 +490,8 @@ nsresult nsProfileLock::Lock(nsILocalFile* aProfileDir,
             unsigned long launchDate;
         };
 
-        PRFileDesc *fd = nsnull;
-        PRInt32 ioBytes;
+        PRFileDesc *fd = nullptr;
+        int32_t ioBytes;
         ProcessInfoRec processInfo;
         LockProcessInfo lockProcessInfo;
 
@@ -528,8 +528,8 @@ nsresult nsProfileLock::Lock(nsILocalFile* aProfileDir,
     }
 #elif defined(XP_UNIX)
     // Get the old lockfile name
-    nsCOMPtr<nsILocalFile> oldLockFile;
-    rv = aProfileDir->Clone((nsIFile **)((void **)getter_AddRefs(oldLockFile)));
+    nsCOMPtr<nsIFile> oldLockFile;
+    rv = aProfileDir->Clone(getter_AddRefs(oldLockFile));
     if (NS_FAILED(rv))
         return rv;
     rv = oldLockFile->Append(OLD_LOCKFILE_NAME);
@@ -577,16 +577,16 @@ nsresult nsProfileLock::Lock(nsILocalFile* aProfileDir,
     mLockFileHandle = CreateFileW(filePath.get(),
                                   GENERIC_READ | GENERIC_WRITE,
                                   0, // no sharing - of course
-                                  nsnull,
+                                  nullptr,
                                   CREATE_ALWAYS,
-                                  nsnull,
-                                  nsnull);
+                                  0,
+                                  nullptr);
     if (mLockFileHandle == INVALID_HANDLE_VALUE) {
         // XXXbsmedberg: provide a profile-unlocker here!
         return NS_ERROR_FILE_ACCESS_DENIED;
     }
 #elif defined(XP_OS2)
-    nsCAutoString filePath;
+    nsAutoCString filePath;
     rv = lockFile->GetNativePath(filePath);
     if (NS_FAILED(rv))
         return rv;
@@ -609,7 +609,7 @@ nsresult nsProfileLock::Lock(nsILocalFile* aProfileDir,
         return NS_ERROR_FILE_ACCESS_DENIED;
     }
 #elif defined(VMS)
-    nsCAutoString filePath;
+    nsAutoCString filePath;
     rv = lockFile->GetNativePath(filePath);
     if (NS_FAILED(rv))
         return rv;
@@ -668,7 +668,7 @@ nsresult nsProfileLock::Unlock(bool aFatalSignal)
             // holding this lock, so we'll deadlock. See bug 522332.
             if (!aFatalSignal)
                 free(mPidLockFileName);
-            mPidLockFileName = nsnull;
+            mPidLockFileName = nullptr;
         }
         else if (mLockFileDesc != -1)
         {

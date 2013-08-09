@@ -11,18 +11,10 @@ interface nsIDOMBlob;
 interface nsIDOMLocation;
 interface nsIDOMMediaQueryList;
 interface nsIDOMOfflineResourceList;
-interface nsIDOMPerformance;
 interface nsIDOMStorage;
 interface nsIPrompt;
 interface nsISelection;
 interface nsIVariant;
-
-[scriptable, uuid(8fc58f56-f769-4368-a098-edd08550cf1a)]
-interface nsIDOMMozURLProperty : nsISupports
-{
-  DOMString createObjectURL(in nsIDOMBlob blob);
-  void revokeObjectURL(in DOMString URL);
-};
 
 /**
  * The nsIDOMWindow interface is the primary interface for a DOM
@@ -33,7 +25,7 @@ interface nsIDOMMozURLProperty : nsISupports
  * @see <http://www.whatwg.org/html/#window>
  */
 
-[scriptable, uuid(A1AF6CD9-C6E7-4037-99F8-DBCA1B03E345)]
+[scriptable, uuid(b9c71e0b-7f81-419a-8253-91f4c8893c4f)]
 interface nsIDOMWindow : nsISupports
 {
   // the current browsing context
@@ -317,6 +309,8 @@ interface nsIDOMWindow : nsISupports
    */
   nsIDOMCSSStyleDeclaration getComputedStyle(in nsIDOMElement elt, 
                                              [optional] in DOMString pseudoElt);
+  nsIDOMCSSStyleDeclaration getDefaultComputedStyle(in nsIDOMElement elt,
+                                                    [optional] in DOMString pseudoElt);
 
 
   // Mozilla extensions
@@ -364,9 +358,6 @@ interface nsIDOMWindow : nsISupports
   [noscript] readonly attribute nsIPrompt               prompter;
 
   readonly attribute boolean                            closed;
-  // http://wiki.whatwg.org/wiki/Crypto
-  readonly attribute nsIDOMCrypto                       crypto;
-  readonly attribute nsIDOMPkcs11                       pkcs11;
 
   // XXX Shouldn't this be in nsIDOMChromeWindow?
   /* [replaceable] controllers */
@@ -376,6 +367,7 @@ interface nsIDOMWindow : nsISupports
 
   readonly attribute float                              mozInnerScreenX;
   readonly attribute float                              mozInnerScreenY;
+  readonly attribute float                              devicePixelRatio;
 
   /* The maximum offset that the window can be scrolled to
      (i.e., the document width/height minus the scrollport width/height) */
@@ -463,11 +455,6 @@ interface nsIDOMWindow : nsISupports
   readonly attribute long long mozAnimationStartTime;
 
   /**
-   * @see <http://dev.w3.org/2006/webapi/FileAPI/#creating-revoking>
-   */
-  readonly attribute nsIDOMMozURLProperty URL;
-
-  /**
    * HTML5 event attributes that only apply to windows and <body>/<frameset>
    */
   [implicit_jscontext] attribute jsval onafterprint;
@@ -508,12 +495,23 @@ interface nsIDOMWindowPerformance : nsISupports
   /**
    * A namespace to hold performance related data and statistics.
    */
-  readonly attribute nsIDOMPerformance performance;
+  readonly attribute nsISupports performance;
+};
+
+[scriptable, uuid(2ed9ace1-172c-443f-b92f-c4f74bf8f2c5)]
+interface nsIWindowCrypto : nsISupports
+{
+  /**
+   * A namespace to hold crypto related data and statistics.
+   * http://wiki.whatwg.org/wiki/Crypto
+   */
+  readonly attribute nsIDOMCrypto                       crypto;
+  readonly attribute nsIDOMPkcs11                       pkcs11;
 };
 
 /**
  * Empty interface for compatibility with older versions.
  * @deprecated Use nsIDOMWindow instead
  */
-[scriptable, uuid(8da641ab-906a-456e-97f2-b77df4ca2d95)]
+[scriptable, uuid(a5cd0946-bac1-4606-9aaa-9e68dd0a3279)]
 interface nsIDOMWindowInternal : nsIDOMWindow {};

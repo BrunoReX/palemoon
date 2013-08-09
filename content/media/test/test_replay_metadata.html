@@ -32,6 +32,7 @@ function seekStarted(evt) {
 function seekEnded(evt) {
   var v = evt.target;
   v._gotSeekEnded = true;
+  v.play();
 }
 
 function loadedData(evt) {
@@ -46,7 +47,6 @@ function loadedMetaData(evt) {
   ok(v._loadedMetaDataCount <= 1, "No more than 1 onloadedmetadata event for " + v._name);
   checkMetadata(v._name, v, v._test);
   v.play();
-  return false;
 }
 
 function playing(evt) {
@@ -75,7 +75,6 @@ function playbackEnded(evt) {
     v.parentNode.removeChild(v);
     manager.finished(v.token);
   }  
-  return false;
 }
 
 function startTest(test, token) {

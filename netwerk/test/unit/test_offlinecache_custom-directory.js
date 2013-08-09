@@ -9,7 +9,12 @@
  * 3. checks presence of index.sql and files in the expected location
  */
 
-do_load_httpd_js();
+const Cc = Components.classes;
+const Ci = Components.interfaces;
+const Cu = Components.utils;
+const Cr = Components.results;
+
+Cu.import("resource://testing-common/httpd.js");
 
 var httpServer = null;
 var cacheUpdateObserver = null;
@@ -64,12 +69,28 @@ function finish_test(customDir)
   file2.append("0B457F75198B29-0");
   do_check_eq(file2.exists(), true);
 
+  // This must not throw an exception.  After the update has finished
+  // the index file can be freely removed.  This way we check this process
+  // is no longer keeping the file open.  Check like this will probably
+  // work only Windows systems.
+
+  // This test could potentially randomaly fail when we start closing
+  // the offline cache database off the main thread.  Tries in a loop
+  // may be a solution then.
+  try {
+    indexSqlFile.remove(false);
+    do_check_true(true);
+  }
+  catch (ex) {
+    do_throw("Could not remove the sqlite.index file, we still keep it open \n" + ex + "\n");
+  }
+
   httpServer.stop(do_test_finished);
 }
 
 function run_test()
 {
-  httpServer = new nsHttpServer();
+  httpServer = new HttpServer();
   httpServer.registerPathHandler("/masterEntry", masterEntryHandler);
   httpServer.registerPathHandler("/manifest", manifestHandler);
   httpServer.start(4444);
@@ -81,10 +102,14 @@ function run_test()
   var pm = Cc["@mozilla.org/permissionmanager;1"]
     .getService(Ci.nsIPermissionManager);
   var uri = make_uri("http://localhost:4444");
-  if (pm.testPermission(uri, "offline-app") != 0) {
+  var principal = Cc["@mozilla.org/scriptsecuritymanager;1"]
+                    .getService(Ci.nsIScriptSecurityManager)
+                    .getNoAppCodebasePrincipal(uri);
+
+  if (pm.testPermissionFromPrincipal(principal, "offline-app") != 0) {
     dump("Previous test failed to clear offline-app permission!  Expect failures.\n");
   }
-  pm.add(uri, "offline-app", Ci.nsIPermissionManager.ALLOW_ACTION);
+  pm.addFromPrincipal(principal, "offline-app", Ci.nsIPermissionManager.ALLOW_ACTION);
 
   var ps = Cc["@mozilla.org/preferences-service;1"]
     .getService(Ci.nsIPrefBranch);

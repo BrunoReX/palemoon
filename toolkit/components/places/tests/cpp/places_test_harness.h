@@ -19,11 +19,11 @@
 #include "nsPIPlacesDatabase.h"
 #include "nsIObserver.h"
 #include "prinrval.h"
+#include "mozilla/Attributes.h"
 
 #define TOPIC_FRECENCY_UPDATED "places-frecency-updated"
 #define WAITFORTOPIC_TIMEOUT_SECONDS 5
 
-using namespace mozilla;
 
 static size_t gTotalTests = 0;
 static size_t gPassedTests = 0;
@@ -95,7 +95,7 @@ void do_test_finished();
 /**
  * Spins current thread until a topic is received.
  */
-class WaitForTopicSpinner : public nsIObserver
+class WaitForTopicSpinner MOZ_FINAL : public nsIObserver
 {
 public:
   NS_DECL_ISUPPORTS
@@ -156,8 +156,8 @@ addURI(nsIURI* aURI)
 
   nsCOMPtr<nsINavHistoryService> hist =
     do_GetService(NS_NAVHISTORYSERVICE_CONTRACTID);
-  PRInt64 id;
-  nsresult rv = hist->AddVisit(aURI, PR_Now(), nsnull,
+  int64_t id;
+  nsresult rv = hist->AddVisit(aURI, PR_Now(), nullptr,
                                nsINavHistoryService::TRANSITION_LINK, false,
                                0, &id);
   do_check_success(rv);
@@ -168,24 +168,24 @@ addURI(nsIURI* aURI)
 
 struct PlaceRecord
 {
-  PRInt64 id;
-  PRInt32 hidden;
-  PRInt32 typed;
-  PRInt32 visitCount;
+  int64_t id;
+  int32_t hidden;
+  int32_t typed;
+  int32_t visitCount;
   nsCString guid;
 };
 
 struct VisitRecord
 {
-  PRInt64 id;
-  PRInt64 lastVisitId;
-  PRInt32 transitionType;
+  int64_t id;
+  int64_t lastVisitId;
+  int32_t transitionType;
 };
 
-already_AddRefed<IHistory>
+already_AddRefed<mozilla::IHistory>
 do_get_IHistory()
 {
-  nsCOMPtr<IHistory> history = do_GetService(NS_IHISTORY_CONTRACTID);
+  nsCOMPtr<mozilla::IHistory> history = do_GetService(NS_IHISTORY_CONTRACTID);
   do_check_true(history);
   return history.forget();
 }
@@ -264,7 +264,7 @@ do_get_place(nsIURI* aURI, PlaceRecord& result)
  * @param result Out parameter where visit is stored
  */
 void
-do_get_lastVisit(PRInt64 placeId, VisitRecord& result)
+do_get_lastVisit(int64_t placeId, VisitRecord& result)
 {
   nsCOMPtr<mozIStorageConnection> dbConn = do_get_db();
   nsCOMPtr<mozIStorageStatement> stmt;
@@ -299,7 +299,7 @@ do_get_lastVisit(PRInt64 placeId, VisitRecord& result)
 static const char TOPIC_PROFILE_CHANGE[] = "profile-before-change";
 static const char TOPIC_PLACES_CONNECTION_CLOSED[] = "places-connection-closed";
 
-class WaitForConnectionClosed : public nsIObserver
+class WaitForConnectionClosed MOZ_FINAL : public nsIObserver
 {
   nsRefPtr<WaitForTopicSpinner> mSpinner;
 public:

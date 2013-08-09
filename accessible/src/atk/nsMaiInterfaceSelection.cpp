@@ -8,8 +8,11 @@
 
 #include "AccessibleWrap.h"
 #include "nsMai.h"
+#include "mozilla/Likely.h"
 
 #include <atk/atk.h>
+
+using namespace mozilla::a11y;
 
 extern "C" {
 
@@ -38,11 +41,11 @@ refSelectionCB(AtkSelection *aSelection, gint i)
 {
   AccessibleWrap* accWrap = GetAccessibleWrap(ATK_OBJECT(aSelection));
   if (!accWrap || !accWrap->IsSelect())
-    return nsnull;
+    return nullptr;
 
   Accessible* selectedItem = accWrap->GetSelectedItem(i);
   if (!selectedItem)
-    return nsnull;
+    return nullptr;
 
   AtkObject* atkObj = AccessibleWrap::GetAtkObject(selectedItem);
   if (atkObj)
@@ -96,7 +99,7 @@ void
 selectionInterfaceInitCB(AtkSelectionIface* aIface)
 {
   NS_ASSERTION(aIface, "Invalid aIface");
-  if (NS_UNLIKELY(!aIface))
+  if (MOZ_UNLIKELY(!aIface))
     return;
 
   aIface->add_selection = addSelectionCB;

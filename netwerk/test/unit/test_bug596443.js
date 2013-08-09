@@ -1,11 +1,12 @@
-do_load_httpd_js();
-var httpserver = new nsHttpServer();
-var expectedOnStopRequests = 3;
+const Cc = Components.classes;
+const Ci = Components.interfaces;
+const Cu = Components.utils;
+const Cr = Components.results;
 
-function getCacheService() {
-    return Components.classes["@mozilla.org/network/cache-service;1"]
-            .getService(Components.interfaces.nsICacheService);
-}
+Cu.import("resource://testing-common/httpd.js");
+var httpserver = new HttpServer();
+
+var expectedOnStopRequests = 3;
 
 function setupChannel(suffix, xRequest, flags) {
     var ios = Components.classes["@mozilla.org/network/io-service;1"]
@@ -58,8 +59,7 @@ function run_test() {
     do_get_profile();
 
     // clear cache
-    getCacheService().evictEntries(
-            Components.interfaces.nsICache.STORE_ANYWHERE);
+    evict_cache_entries();
 
     var ch0 = setupChannel("/bug596443", "Response0", Ci.nsIRequest.LOAD_BYPASS_CACHE);
     ch0.asyncOpen(new Listener("Response0"), null);

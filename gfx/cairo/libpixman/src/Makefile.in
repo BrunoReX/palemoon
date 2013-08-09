@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
@@ -23,8 +23,7 @@ DEFINES += -DPIXMAN_NO_TLS
 ifdef _MSC_VER
 ifeq (86,$(findstring 86,$(OS_TEST)))
 ifneq (64,$(findstring 64,$(OS_TEST)))
-# Pale Moon: hazardous lib (no EMMS instructions), don't build MMX code for Pale Moon
-USE_MMX=
+# USE_MMX=1
 endif
 USE_SSE2=1
 MMX_CFLAGS=
@@ -82,6 +81,7 @@ CSRCS	= \
 	pixman-access-accessors.c \
 	pixman-bits-image.c \
 	pixman.c \
+	pixman-combine16.c \
 	pixman-combine32.c \
 	pixman-combine64.c \
 	pixman-conical-gradient.c \

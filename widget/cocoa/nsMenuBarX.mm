@@ -29,7 +29,7 @@
 #include "nsIDOMElement.h"
 
 NativeMenuItemTarget* nsMenuBarX::sNativeEventTarget = nil;
-nsMenuBarX* nsMenuBarX::sLastGeckoMenuBarPainted = nsnull;
+nsMenuBarX* nsMenuBarX::sLastGeckoMenuBarPainted = nullptr;
 NSMenu* sApplicationMenu = nil;
 BOOL gSomeMenuBarPainted = NO;
 
@@ -37,10 +37,10 @@ BOOL gSomeMenuBarPainted = NO;
 // will be from the hidden window. We use these when the document for the current
 // window does not have a quit or pref item. We don't need strong refs here because
 // these items are always strong ref'd by their owning menu bar (instance variable).
-static nsIContent* sAboutItemContent  = nsnull;
-static nsIContent* sUpdateItemContent = nsnull;
-static nsIContent* sPrefItemContent   = nsnull;
-static nsIContent* sQuitItemContent   = nsnull;
+static nsIContent* sAboutItemContent  = nullptr;
+static nsIContent* sUpdateItemContent = nullptr;
+static nsIContent* sPrefItemContent   = nullptr;
+static nsIContent* sQuitItemContent   = nullptr;
 
 NS_IMPL_ISUPPORTS1(nsNativeMenuServiceX, nsINativeMenuService)
 
@@ -56,7 +56,7 @@ NS_IMETHODIMP nsNativeMenuServiceX::CreateNativeMenuBar(nsIWidget* aParent, nsIC
 }
 
 nsMenuBarX::nsMenuBarX()
-: nsMenuGroupOwnerX(), mParentWindow(nsnull)
+: nsMenuGroupOwnerX(), mParentWindow(nullptr)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
@@ -70,18 +70,18 @@ nsMenuBarX::~nsMenuBarX()
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
   if (nsMenuBarX::sLastGeckoMenuBarPainted == this)
-    nsMenuBarX::sLastGeckoMenuBarPainted = nsnull;
+    nsMenuBarX::sLastGeckoMenuBarPainted = nullptr;
 
   // the quit/pref items of a random window might have been used if there was no
   // hidden window, thus we need to invalidate the weak references.
   if (sAboutItemContent == mAboutItemContent)
-    sAboutItemContent = nsnull;
+    sAboutItemContent = nullptr;
   if (sUpdateItemContent == mUpdateItemContent)
-    sUpdateItemContent = nsnull;
+    sUpdateItemContent = nullptr;
   if (sQuitItemContent == mQuitItemContent)
-    sQuitItemContent = nsnull;
+    sQuitItemContent = nullptr;
   if (sPrefItemContent == mPrefItemContent)
-    sPrefItemContent = nsnull;
+    sPrefItemContent = nullptr;
 
   // make sure we unregister ourselves as a content observer
   UnregisterForContentChanges(mContent);
@@ -123,8 +123,8 @@ nsresult nsMenuBarX::Create(nsIWidget* aParent, nsIContent* aContent)
 
 void nsMenuBarX::ConstructNativeMenus()
 {
-  PRUint32 count = mContent->GetChildCount();
-  for (PRUint32 i = 0; i < count; i++) { 
+  uint32_t count = mContent->GetChildCount();
+  for (uint32_t i = 0; i < count; i++) { 
     nsIContent *menuContent = mContent->GetChildAt(i);
     if (menuContent &&
         menuContent->Tag() == nsGkAtoms::menu &&
@@ -141,7 +141,7 @@ void nsMenuBarX::ConstructNativeMenus()
   }  
 }
 
-PRUint32 nsMenuBarX::GetMenuCount()
+uint32_t nsMenuBarX::GetMenuCount()
 {
   return mMenuArray.Length();
 }
@@ -156,7 +156,7 @@ bool nsMenuBarX::MenuContainsAppMenu()
   NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(false);
 }
 
-nsresult nsMenuBarX::InsertMenuAtIndex(nsMenuX* aMenu, PRUint32 aIndex)
+nsresult nsMenuBarX::InsertMenuAtIndex(nsMenuX* aMenu, uint32_t aIndex)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
@@ -190,7 +190,7 @@ nsresult nsMenuBarX::InsertMenuAtIndex(nsMenuX* aMenu, PRUint32 aIndex)
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-void nsMenuBarX::RemoveMenuAtIndex(PRUint32 aIndex)
+void nsMenuBarX::RemoveMenuAtIndex(uint32_t aIndex)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
@@ -217,7 +217,7 @@ void nsMenuBarX::ObserveAttributeChanged(nsIDocument* aDocument,
 
 void nsMenuBarX::ObserveContentRemoved(nsIDocument* aDocument,
                                        nsIContent* aChild, 
-                                       PRInt32 aIndexInContainer)
+                                       int32_t aIndexInContainer)
 {
   RemoveMenuAtIndex(aIndexInContainer);
 }
@@ -247,7 +247,7 @@ void nsMenuBarX::ForceUpdateNativeMenuAt(const nsAString& indexString)
   nsMenuX* currentMenu = NULL;
   int targetIndex = [[indexes objectAtIndex:0] intValue];
   int visible = 0;
-  PRUint32 length = mMenuArray.Length();
+  uint32_t length = mMenuArray.Length();
   // first find a menu in the menu bar
   for (unsigned int i = 0; i < length; i++) {
     nsMenuX* menu = mMenuArray[i];
@@ -304,7 +304,7 @@ void nsMenuBarX::ForceNativeMenuReload()
   ConstructNativeMenus();
 }
 
-nsMenuX* nsMenuBarX::GetMenuAt(PRUint32 aIndex)
+nsMenuX* nsMenuBarX::GetMenuAt(uint32_t aIndex)
 {
   if (mMenuArray.Length() <= aIndex) {
     NS_ERROR("Requesting menu at invalid index!");
@@ -317,7 +317,7 @@ nsMenuX* nsMenuBarX::GetXULHelpMenu()
 {
   // The Help menu is usually (always?) the last one, so we start there and
   // count back.
-  for (PRInt32 i = GetMenuCount() - 1; i >= 0; --i) {
+  for (int32_t i = GetMenuCount() - 1; i >= 0; --i) {
     nsMenuX* aMenu = GetMenuAt(i);
     if (aMenu && nsMenuX::IsXULHelpMenu(aMenu->Content()))
       return aMenu;
@@ -331,8 +331,6 @@ nsMenuX* nsMenuBarX::GetXULHelpMenu()
 // This resolves bugs 489196 and 539317.
 void nsMenuBarX::SetSystemHelpMenu()
 {
-  if (!nsCocoaFeatures::OnSnowLeopardOrLater())
-    return;
   nsMenuX* xulHelpMenu = GetXULHelpMenu();
   if (xulHelpMenu) {
     NSMenu* helpMenu = (NSMenu*)xulHelpMenu->NativeData();
@@ -433,36 +431,36 @@ void nsMenuBarX::AquifyMenuBar()
   nsCOMPtr<nsIDOMDocument> domDoc(do_QueryInterface(mContent->GetDocument()));
   if (domDoc) {
     // remove the "About..." item and its separator
-    HideItem(domDoc, NS_LITERAL_STRING("aboutSeparator"), nsnull);
+    HideItem(domDoc, NS_LITERAL_STRING("aboutSeparator"), nullptr);
     HideItem(domDoc, NS_LITERAL_STRING("aboutName"), getter_AddRefs(mAboutItemContent));
     if (!sAboutItemContent)
       sAboutItemContent = mAboutItemContent;
 
     // Hide the software update menu item, since it belongs in the application
     // menu on Mac OS X.
-    HideItem(domDoc, NS_LITERAL_STRING("updateSeparator"), nsnull);
+    HideItem(domDoc, NS_LITERAL_STRING("updateSeparator"), nullptr);
     HideItem(domDoc, NS_LITERAL_STRING("checkForUpdates"), getter_AddRefs(mUpdateItemContent));
     if (!sUpdateItemContent)
       sUpdateItemContent = mUpdateItemContent;
 
     // remove quit item and its separator
-    HideItem(domDoc, NS_LITERAL_STRING("menu_FileQuitSeparator"), nsnull);
+    HideItem(domDoc, NS_LITERAL_STRING("menu_FileQuitSeparator"), nullptr);
     HideItem(domDoc, NS_LITERAL_STRING("menu_FileQuitItem"), getter_AddRefs(mQuitItemContent));
     if (!sQuitItemContent)
       sQuitItemContent = mQuitItemContent;
     
     // remove prefs item and its separator, but save off the pref content node
     // so we can invoke its command later.
-    HideItem(domDoc, NS_LITERAL_STRING("menu_PrefsSeparator"), nsnull);
+    HideItem(domDoc, NS_LITERAL_STRING("menu_PrefsSeparator"), nullptr);
     HideItem(domDoc, NS_LITERAL_STRING("menu_preferences"), getter_AddRefs(mPrefItemContent));
     if (!sPrefItemContent)
       sPrefItemContent = mPrefItemContent;
 
     // hide items that we use for the Application menu
-    HideItem(domDoc, NS_LITERAL_STRING("menu_mac_services"), nsnull);
-    HideItem(domDoc, NS_LITERAL_STRING("menu_mac_hide_app"), nsnull);
-    HideItem(domDoc, NS_LITERAL_STRING("menu_mac_hide_others"), nsnull);
-    HideItem(domDoc, NS_LITERAL_STRING("menu_mac_show_all"), nsnull);
+    HideItem(domDoc, NS_LITERAL_STRING("menu_mac_services"), nullptr);
+    HideItem(domDoc, NS_LITERAL_STRING("menu_mac_hide_app"), nullptr);
+    HideItem(domDoc, NS_LITERAL_STRING("menu_mac_hide_others"), nullptr);
+    HideItem(domDoc, NS_LITERAL_STRING("menu_mac_show_all"), nullptr);
   }
 }
 
@@ -513,7 +511,7 @@ NSMenuItem* nsMenuBarX::CreateNativeAppMenuItem(nsMenuX* inMenu, const nsAString
       // now grab the key equivalent modifiers
       nsAutoString modifiersStr;
       keyContent->GetAttr(kNameSpaceID_None, nsGkAtoms::modifiers, modifiersStr);
-      PRUint8 geckoModifiers = nsMenuUtilsX::GeckoModifiersForNodeAttribute(modifiersStr);
+      uint8_t geckoModifiers = nsMenuUtilsX::GeckoModifiersForNodeAttribute(modifiersStr);
       macKeyModifiers = nsMenuUtilsX::MacModifiersForGeckoModifiers(geckoModifiers);
     }
   }
@@ -836,7 +834,7 @@ static BOOL gMenuItemsExecuteCommands = YES;
   if (!menuGroupOwner)
     return;
 
-  nsMenuBarX* menuBar = nsnull;
+  nsMenuBarX* menuBar = nullptr;
   if (menuGroupOwner->MenuObjectType() == eMenuBarObjectType)
     menuBar = static_cast<nsMenuBarX*>(menuGroupOwner);
 
@@ -892,7 +890,7 @@ static BOOL gMenuItemsExecuteCommands = YES;
   // given the commandID, look it up in our hashtable and dispatch to
   // that menu item.
   if (menuGroupOwner) {
-    nsMenuItemX* menuItem = menuGroupOwner->GetMenuItemForCommandID(static_cast<PRUint32>(tag));
+    nsMenuItemX* menuItem = menuGroupOwner->GetMenuItemForCommandID(static_cast<uint32_t>(tag));
     if (menuItem)
       menuItem->DoCommand();
   }

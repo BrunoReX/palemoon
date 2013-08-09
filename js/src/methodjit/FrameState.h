@@ -318,7 +318,7 @@ class FrameState
      * Pushes a number onto the operation stack.
      *
      * If asInt32 is set to true, then the FS will attempt to optimize
-     * syncing the type as int32. Only use this parameter when the fast-path
+     * syncing the type as int32_t. Only use this parameter when the fast-path
      * guaranteed that the stack slot was guarded to be an int32_t originally.
      *
      * For example, checking LHS and RHS as ints guarantees that if the LHS
@@ -698,7 +698,7 @@ class FrameState
     struct StackEntryExtra {
         bool initArray;
         JSObject *initObject;
-        types::TypeSet *types;
+        types::StackTypeSet *types;
         JSAtom *name;
         void reset() { PodZero(this); }
     };
@@ -928,14 +928,6 @@ class FrameState
 
     inline void syncAndForgetFe(FrameEntry *fe, bool markSynced = false);
     inline void forgetLoopReg(FrameEntry *fe);
-
-    /*
-     * Get an address for the specified name access in another script.
-     * The compiler owns the result's base register.
-     */
-    inline Address loadNameAddress(const analyze::ScriptAnalysis::NameAccess &access);
-    inline Address loadNameAddress(const analyze::ScriptAnalysis::NameAccess &access,
-                                   RegisterID reg);
 
   private:
     inline AnyRegisterID allocAndLoadReg(FrameEntry *fe, bool fp, RematInfo::RematType type);

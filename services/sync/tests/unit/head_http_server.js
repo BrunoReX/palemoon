@@ -1,8 +1,5 @@
 const Cm = Components.manager;
 
-const TEST_CLUSTER_URL = "http://localhost:8080/";
-const TEST_SERVER_URL  = "http://localhost:8080/";
-
 // Shared logging for all HTTP server functions.
 Cu.import("resource://services-common/log4moz.js");
 const SYNC_HTTP_LOGGER = "Sync.Test.Server";
@@ -437,7 +434,7 @@ function sync_httpd_setup(handlers) {
  * Track collection modified times. Return closures.
  */
 function track_collections_helper() {
-  
+
   /*
    * Our tracking object.
    */
@@ -488,7 +485,7 @@ function track_collections_helper() {
     response.setStatusLine(request.httpVersion, 200, "OK");
     response.bodyOutputStream.write(body, body.length);
   }
-  
+
   return {"collections": collections,
           "handler": info_collections,
           "with_updated_collection": with_updated_collection,
@@ -527,7 +524,7 @@ let SyncServerCallback = {
  */
 function SyncServer(callback) {
   this.callback = callback || {__proto__: SyncServerCallback};
-  this.server   = new nsHttpServer();
+  this.server   = new HttpServer();
   this.started  = false;
   this.users    = {};
   this._log     = Log4Moz.repository.getLogger(SYNC_HTTP_LOGGER);
@@ -539,7 +536,7 @@ function SyncServer(callback) {
 }
 SyncServer.prototype = {
   port:   8080,
-  server: null,    // nsHttpServer.
+  server: null,    // HttpServer.
   users:  null,    // Map of username => {collections, password}.
 
   /**
@@ -775,12 +772,12 @@ SyncServer.prototype = {
   },
 
   /**
-   * This is invoked by the nsHttpServer. `this` is bound to the SyncServer;
-   * `handler` is the nsHttpServer's handler.
+   * This is invoked by the HttpServer. `this` is bound to the SyncServer;
+   * `handler` is the HttpServer's handler.
    *
    * TODO: need to use the correct Sync API response codes and errors here.
    * TODO: Basic Auth.
-   * TODO: check username in path against username in BasicAuth. 
+   * TODO: check username in path against username in BasicAuth.
    */
   handleDefault: function handleDefault(handler, req, resp) {
     try {
@@ -914,7 +911,7 @@ SyncServer.prototype = {
           // whole collection!
           //
           // We already handled deleting the WBOs by invoking the deleted
-          // collection's handler. However, in the case of 
+          // collection's handler. However, in the case of
           //
           //   DELETE storage/foobar
           //

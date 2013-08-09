@@ -14,7 +14,7 @@
 #include "txExpr.h"
 #include "txStack.h"
 #include "nsGkAtoms.h"
-#include "txError.h"
+#include "nsError.h"
 #include "txIXPathContext.h"
 #include "txStringUtils.h"
 #include "txXPathNode.h"
@@ -29,10 +29,10 @@ txExprParser::createAVT(const nsSubstring& aAttrValue,
                         txIParseContext* aContext,
                         Expr** aResult)
 {
-    *aResult = nsnull;
+    *aResult = nullptr;
     nsresult rv = NS_OK;
     nsAutoPtr<Expr> expr;
-    FunctionCall* concat = nsnull;
+    FunctionCall* concat = nullptr;
 
     nsAutoString literalString;
     bool inExpr = false;
@@ -146,11 +146,11 @@ txExprParser::createAVT(const nsSubstring& aAttrValue,
 
 nsresult
 txExprParser::createExprInternal(const nsSubstring& aExpression,
-                                 PRUint32 aSubStringPos,
+                                 uint32_t aSubStringPos,
                                  txIParseContext* aContext, Expr** aExpr)
 {
     NS_ENSURE_ARG_POINTER(aExpr);
-    *aExpr = nsnull;
+    *aExpr = nullptr;
     txExprLexer lexer;
     nsresult rv = lexer.parse(aExpression);
     if (NS_FAILED(rv)) {
@@ -173,7 +173,7 @@ txExprParser::createExprInternal(const nsSubstring& aExpression,
     }
 
     txXPathOptimizer optimizer;
-    Expr* newExpr = nsnull;
+    Expr* newExpr = nullptr;
     rv = optimizer.optimize(expr, &newExpr);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -194,9 +194,9 @@ txExprParser::createBinaryExpr(nsAutoPtr<Expr>& left, nsAutoPtr<Expr>& right,
                                Token* op, Expr** aResult)
 {
     NS_ASSERTION(op, "internal error");
-    *aResult = nsnull;
+    *aResult = nullptr;
 
-    Expr* expr = nsnull;
+    Expr* expr = nullptr;
     switch (op->mType) {
         //-- math ops
         case Token::ADDITION_OP :
@@ -266,7 +266,7 @@ nsresult
 txExprParser::createExpr(txExprLexer& lexer, txIParseContext* aContext,
                          Expr** aResult)
 {
-    *aResult = nsnull;
+    *aResult = nullptr;
 
     nsresult rv = NS_OK;
     bool done = false;
@@ -278,7 +278,7 @@ txExprParser::createExpr(txExprLexer& lexer, txIParseContext* aContext,
 
     while (!done) {
 
-        PRUint16 negations = 0;
+        uint16_t negations = 0;
         while (lexer.peek()->mType == Token::SUBTRACTION_OP) {
             negations++;
             lexer.nextToken();
@@ -348,7 +348,7 @@ nsresult
 txExprParser::createFilterOrStep(txExprLexer& lexer, txIParseContext* aContext,
                                  Expr** aResult)
 {
-    *aResult = nsnull;
+    *aResult = nullptr;
 
     nsresult rv = NS_OK;
     Token* tok = lexer.peek();
@@ -363,7 +363,7 @@ txExprParser::createFilterOrStep(txExprLexer& lexer, txIParseContext* aContext,
             lexer.nextToken();
             {
                 nsCOMPtr<nsIAtom> prefix, lName;
-                PRInt32 nspace;
+                int32_t nspace;
                 nsresult rv = resolveQName(tok->Value(), getter_AddRefs(prefix),
                                            aContext, getter_AddRefs(lName),
                                            nspace);
@@ -414,7 +414,7 @@ nsresult
 txExprParser::createFunctionCall(txExprLexer& lexer, txIParseContext* aContext,
                                  Expr** aResult)
 {
-    *aResult = nsnull;
+    *aResult = nullptr;
 
     nsAutoPtr<FunctionCall> fnCall;
 
@@ -424,7 +424,7 @@ txExprParser::createFunctionCall(txExprLexer& lexer, txIParseContext* aContext,
 
     //-- compare function names
     nsCOMPtr<nsIAtom> prefix, lName;
-    PRInt32 namespaceID;
+    int32_t namespaceID;
     nsresult rv = resolveQName(tok->Value(), getter_AddRefs(prefix), aContext,
                                getter_AddRefs(lName), namespaceID);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -468,7 +468,7 @@ nsresult
 txExprParser::createLocationStep(txExprLexer& lexer, txIParseContext* aContext,
                                  Expr** aExpr)
 {
-    *aExpr = nsnull;
+    *aExpr = nullptr;
 
     //-- child axis is default
     LocationStep::LocationStepType axisIdentifier = LocationStep::CHILD_AXIS;
@@ -556,7 +556,7 @@ txExprParser::createLocationStep(txExprLexer& lexer, txIParseContext* aContext,
             lexer.nextToken();
             // resolve QName
             nsCOMPtr<nsIAtom> prefix, lName;
-            PRInt32 nspace;
+            int32_t nspace;
             rv = resolveQName(tok->Value(), getter_AddRefs(prefix),
                               aContext, getter_AddRefs(lName),
                               nspace, true);
@@ -565,8 +565,8 @@ txExprParser::createLocationStep(txExprLexer& lexer, txIParseContext* aContext,
             nodeTest =
               new txNameTest(prefix, lName, nspace,
                              axisIdentifier == LocationStep::ATTRIBUTE_AXIS ?
-                             static_cast<PRUint16>(txXPathNodeType::ATTRIBUTE_NODE) :
-                             static_cast<PRUint16>(txXPathNodeType::ELEMENT_NODE));
+                             static_cast<uint16_t>(txXPathNodeType::ATTRIBUTE_NODE) :
+                             static_cast<uint16_t>(txXPathNodeType::ELEMENT_NODE));
         }
         else {
             rv = createNodeTypeTest(lexer, getter_Transfers(nodeTest));
@@ -643,7 +643,7 @@ nsresult
 txExprParser::createPathExpr(txExprLexer& lexer, txIParseContext* aContext,
                              Expr** aResult)
 {
-    *aResult = nsnull;
+    *aResult = nullptr;
 
     nsAutoPtr<Expr> expr;
 
@@ -725,7 +725,7 @@ nsresult
 txExprParser::createUnionExpr(txExprLexer& lexer, txIParseContext* aContext,
                               Expr** aResult)
 {
-    *aResult = nsnull;
+    *aResult = nullptr;
 
     nsAutoPtr<Expr> expr;
     nsresult rv = createPathExpr(lexer, aContext, getter_Transfers(expr));
@@ -887,17 +887,17 @@ txExprParser::precedence(Token* aToken)
 nsresult
 txExprParser::resolveQName(const nsAString& aQName,
                            nsIAtom** aPrefix, txIParseContext* aContext,
-                           nsIAtom** aLocalName, PRInt32& aNamespace,
+                           nsIAtom** aLocalName, int32_t& aNamespace,
                            bool aIsNameTest)
 {
     aNamespace = kNameSpaceID_None;
-    PRInt32 idx = aQName.FindChar(':');
+    int32_t idx = aQName.FindChar(':');
     if (idx > 0) {
-        *aPrefix = NS_NewAtom(StringHead(aQName, (PRUint32)idx));
+        *aPrefix = NS_NewAtom(StringHead(aQName, (uint32_t)idx));
         if (!*aPrefix) {
             return NS_ERROR_OUT_OF_MEMORY;
         }
-        *aLocalName = NS_NewAtom(Substring(aQName, (PRUint32)idx + 1,
+        *aLocalName = NS_NewAtom(Substring(aQName, (uint32_t)idx + 1,
                                            aQName.Length() - (idx + 1)));
         if (!*aLocalName) {
             NS_RELEASE(*aPrefix);

@@ -9,18 +9,42 @@
 
 #include "nsEventShell.h"
 
+using namespace mozilla;
+using namespace mozilla::a11y;
+
 NS_IMPL_ISUPPORTS_INHERITED0(HyperTextAccessibleWrap,
                              HyperTextAccessible)
 
-IMPL_IUNKNOWN_INHERITED2(HyperTextAccessibleWrap,
-                         AccessibleWrap,
-                         ia2AccessibleHypertext,
-                         CAccessibleEditableText);
+STDMETHODIMP
+HyperTextAccessibleWrap::QueryInterface(REFIID aIID, void** aInstancePtr)
+{
+  if (!aInstancePtr)
+    return E_FAIL;
+
+  *aInstancePtr = NULL;
+
+  if (IsTextRole()) {
+    if (aIID == IID_IAccessibleText)
+      *aInstancePtr =
+        static_cast<IAccessibleText*>(static_cast<ia2AccessibleText*>(this));
+    else if (aIID == IID_IAccessibleHypertext)
+      *aInstancePtr = static_cast<IAccessibleHypertext*>(this);
+    else if (aIID == IID_IAccessibleEditableText)
+      *aInstancePtr = static_cast<IAccessibleEditableText*>(this);
+
+    if (*aInstancePtr) {
+      AddRef();
+      return S_OK;
+    }
+  }
+
+  return AccessibleWrap::QueryInterface(aIID, aInstancePtr);
+}
 
 nsresult
 HyperTextAccessibleWrap::HandleAccEvent(AccEvent* aEvent)
 {
-  PRUint32 eventType = aEvent->GetEventType();
+  uint32_t eventType = aEvent->GetEventType();
 
   if (eventType == nsIAccessibleEvent::EVENT_TEXT_REMOVED ||
       eventType == nsIAccessibleEvent::EVENT_TEXT_INSERTED) {
@@ -47,8 +71,8 @@ HyperTextAccessibleWrap::HandleAccEvent(AccEvent* aEvent)
 nsresult
 HyperTextAccessibleWrap::GetModifiedText(bool aGetInsertedText,
                                          nsAString& aText,
-                                         PRUint32* aStartOffset,
-                                         PRUint32* aEndOffset)
+                                         uint32_t* aStartOffset,
+                                         uint32_t* aEndOffset)
 {
   aText.Truncate();
   *aStartOffset = 0;

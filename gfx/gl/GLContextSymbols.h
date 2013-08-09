@@ -145,6 +145,8 @@ struct GLContextSymbols
     PFNGLGETVERTEXATTRIBFVPROC fGetVertexAttribfv;
     typedef void (GLAPIENTRY * PFNGLGETVERTEXATTRIBIVPROC) (GLuint, GLenum, GLint*);
     PFNGLGETVERTEXATTRIBIVPROC fGetVertexAttribiv;
+    typedef void (GLAPIENTRY * PFNGLGETVERTEXATTRIBPOINTERVPROC) (GLuint, GLenum, GLvoid**);
+    PFNGLGETVERTEXATTRIBPOINTERVPROC fGetVertexAttribPointerv;
     typedef void (GLAPIENTRY * PFNGLHINTPROC) (GLenum target, GLenum mode);
     PFNGLHINTPROC fHint;
     typedef realGLboolean (GLAPIENTRY * PFNGLISBUFFERPROC) (GLuint buffer);
@@ -163,6 +165,8 @@ struct GLContextSymbols
     PFNGLLINKPROGRAMPROC fLinkProgram;
     typedef void (GLAPIENTRY * PFNGLPIXELSTOREIPROC) (GLenum pname, GLint param);
     PFNGLPIXELSTOREIPROC fPixelStorei;
+    typedef void (GLAPIENTRY * PFNGLPOINTPARAMETERFPROC) (GLenum pname, GLfloat param);
+    PFNGLPOINTPARAMETERFPROC fPointParameterf;
     typedef void (GLAPIENTRY * PFNGLPOLYGONOFFSETPROC) (GLfloat factor, GLfloat bias);
     PFNGLPOLYGONOFFSETPROC fPolygonOffset;
     typedef void (GLAPIENTRY * PFNGLREADBUFFERPROC) (GLenum);
@@ -371,8 +375,8 @@ struct GLContextSymbols
     PFNGLGETSYNCIV fGetSynciv;
 
     // OES_egl_image
-    typedef void (GLAPIENTRY * PFNGLIMAGETARGETTEXTURE2D)(GLenum target, GLeglImage image);
-    PFNGLIMAGETARGETTEXTURE2D fImageTargetTexture2D;
+    typedef void (GLAPIENTRY * PFNGLEGLIMAGETARGETTEXTURE2D)(GLenum target, GLeglImage image);
+    PFNGLEGLIMAGETARGETTEXTURE2D fEGLImageTargetTexture2D;
 };
 
 }

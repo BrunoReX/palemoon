@@ -40,6 +40,8 @@ function ContentSecurityPolicy() {
   this._referrer = "";
   this._docRequest = null;
   CSPdebug("CSP POLICY INITED TO 'default-src *'");
+
+  this._cache = { };
 }
 
 /*
@@ -215,6 +217,7 @@ ContentSecurityPolicy.prototype = {
     // (3) Save the result
     this._policy = intersect;
     this._isInitialized = true;
+    this._cache = {};
   },
 
   /**
@@ -273,11 +276,16 @@ ContentSecurityPolicy.prototype = {
       var reportString = JSON.stringify(report);
       CSPdebug("Constructed violation report:\n" + reportString);
 
-      CSPWarning("Directive \"" + violatedDirective + "\" violated"
-               + (blockedUri['asciiSpec'] ? " by " + blockedUri.asciiSpec : ""),
-                 (aSourceFile) ? aSourceFile : null,
-                 (aScriptSample) ? decodeURIComponent(aScriptSample) : null,
-                 (aLineNum) ? aLineNum : null);
+      var violationMessage = null;
+      if (blockedUri["asciiSpec"]) {
+         violationMessage = CSPLocalizer.getFormatStr("directiveViolatedWithURI", [violatedDirective, blockedUri.asciiSpec]);
+      } else {
+         violationMessage = CSPLocalizer.getFormatStr("directiveViolated", [violatedDirective]);
+      }
+      this._policy.warn(violationMessage,
+                        (aSourceFile) ? aSourceFile : null,
+                        (aScriptSample) ? decodeURIComponent(aScriptSample) : null,
+                        (aLineNum) ? aLineNum : null);
 
       // For each URI in the report list, send out a report.
       // We make the assumption that all of the URIs are absolute URIs; this
@@ -289,7 +297,7 @@ ContentSecurityPolicy.prototype = {
 
         try {
           var chan = Services.io.newChannel(uris[i], null, null);
-          if(!chan) {
+          if (!chan) {
             CSPdebug("Error creating channel for " + uris[i]);
             continue;
           }
@@ -304,7 +312,10 @@ ContentSecurityPolicy.prototype = {
 
           // we need to set an nsIChannelEventSink on the channel object
           // so we can tell it to not follow redirects when posting the reports
-          chan.notificationCallbacks = new CSPReportRedirectSink();
+          chan.notificationCallbacks = new CSPReportRedirectSink(this._policy);
+          if (this._docRequest) {
+            chan.loadGroup = this._docRequest.loadGroup;
+          }
 
           chan.QueryInterface(Ci.nsIUploadChannel)
               .setUploadStream(content, "application/json", content.available());
@@ -335,8 +346,8 @@ ContentSecurityPolicy.prototype = {
         } catch(e) {
           // it's possible that the URI was invalid, just log a
           // warning and skip over that.
-          CSPWarning("Tried to send report to invalid URI: \"" + uris[i] + "\"");
-          CSPWarning("error was: \"" + e + "\"");
+          this._policy.warn(CSPLocalizer.getFormatStr("triedToSendReport", [uris[i]]));
+          this._policy.warn(CSPLocalizer.getFormatStr("errorWas", [e.toString()]));
         }
       }
     }
@@ -408,15 +419,17 @@ ContentSecurityPolicy.prototype = {
                           aMimeTypeGuess, 
                           aOriginalUri) {
 
-    // don't filter chrome stuff
-    if (aContentLocation.scheme === 'chrome' ||
-        aContentLocation.scheme === 'resource') {
-      return Ci.nsIContentPolicy.ACCEPT;
+    let key = aContentLocation.spec + "!" + aContentType;
+    if (this._cache[key]) {
+      return this._cache[key];
     }
 
-    // interpret the context, and then pass off to the decision structure
+#ifndef MOZ_B2G
+    // Try to remove as much as possible from the hot path on b2g.
     CSPdebug("shouldLoad location = " + aContentLocation.asciiSpec);
     CSPdebug("shouldLoad content type = " + aContentType);
+#endif
+    // interpret the context, and then pass off to the decision structure
     var cspContext = ContentSecurityPolicy._MAPPINGS[aContentType];
 
     // if the mapping is null, there's no policy, let it through.
@@ -446,7 +459,9 @@ ContentSecurityPolicy.prototype = {
       }
     }
 
-    return (this._reportOnlyMode ? Ci.nsIContentPolicy.ACCEPT : res);
+    let ret = this._cache[key] =
+      (this._reportOnlyMode ? Ci.nsIContentPolicy.ACCEPT : res);
+    return ret;
   },
   
   shouldProcess:
@@ -518,7 +533,8 @@ ContentSecurityPolicy.prototype = {
 // The POST of the violation report (if it happens) should not follow
 // redirects, per the spec. hence, we implement an nsIChannelEventSink
 // with an object so we can tell XHR to abort if a redirect happens.
-function CSPReportRedirectSink() {
+function CSPReportRedirectSink(policy) {
+  this._policy = policy;
 }
 
 CSPReportRedirectSink.prototype = {
@@ -541,8 +557,7 @@ CSPReportRedirectSink.prototype = {
   // nsIChannelEventSink
   asyncOnChannelRedirect: function channel_redirect(oldChannel, newChannel,
                                                     flags, callback) {
-    CSPWarning("Post of violation report to " + oldChannel.URI.asciiSpec +
-               " failed, as a redirect occurred");
+    this._policy.warn(CSPLocalizer.getFormatStr("reportPostRedirect", [oldChannel.URI.asciiSpec]));
 
     // cancel the old channel so XHR failure callback happens
     oldChannel.cancel(Cr.NS_ERROR_ABORT);
@@ -565,4 +580,4 @@ CSPReportRedirectSink.prototype = {
   }
 };
 
-var NSGetFactory = XPCOMUtils.generateNSGetFactory([ContentSecurityPolicy]);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory([ContentSecurityPolicy]);

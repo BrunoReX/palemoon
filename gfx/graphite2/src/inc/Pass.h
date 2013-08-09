@@ -48,6 +48,7 @@ public:
     bool readPass(const byte * pPass, size_t pass_length, size_t subtable_base, const Face & face);
     void runGraphite(vm::Machine & m, FiniteStateMachine & fsm) const;
     void init(Silf *silf) { m_silf = silf; }
+    byte spaceContextuals() const { return (m_flags & 0x0E) >> 1; }
 
     CLASS_NEW_DELETE
 private:
@@ -55,7 +56,6 @@ private:
     int   	doAction(const vm::Machine::Code* codeptr, Slot * & slot_out, vm::Machine &) const;
     bool   	testPassConstraint(vm::Machine & m) const;
     bool   	testConstraint(const Rule & r, vm::Machine &) const;
-    bool   	readFSM(const byte* p, const byte*const pass_start, const size_t max_offset);
     bool   	readRules(const byte * rule_map, const size_t num_entries,
                      const byte *precontext, const uint16 * sort_key,
                      const uint16 * o_constraint, const byte *constraint_data, 
@@ -76,7 +76,7 @@ private:
     State *   * m_sTable;
     State     * m_states;
     
-    bool   m_immutable;
+    byte   m_flags;
     byte   m_iMaxLoop;
     uint16 m_numGlyphs;
     uint16 m_numRules;

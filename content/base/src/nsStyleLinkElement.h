@@ -19,6 +19,7 @@
 #include "nsIStyleSheet.h"
 #include "nsIURI.h"
 #include "nsTArray.h"
+#include "mozilla/CORSMode.h"
 
 #define PREFETCH      0x00000001
 #define DNS_PREFETCH  0x00000002
@@ -51,11 +52,11 @@ public:
   NS_IMETHOD GetCharset(nsAString& aCharset);
 
   virtual void OverrideBaseURI(nsIURI* aNewBaseURI);
-  virtual void SetLineNumber(PRUint32 aLineNumber);
+  virtual void SetLineNumber(uint32_t aLineNumber);
 
-  static PRUint32 ParseLinkTypes(const nsAString& aTypes);
+  static uint32_t ParseLinkTypes(const nsAString& aTypes);
   
-  void UpdateStyleSheetInternal() { UpdateStyleSheetInternal(nsnull); }
+  void UpdateStyleSheetInternal() { UpdateStyleSheetInternal(nullptr); }
 protected:
   /**
    * @param aOldDocument should be non-null only if we're updating because we
@@ -76,6 +77,16 @@ protected:
 
   nsIStyleSheet* GetStyleSheet() { return mStyleSheet; }
 
+  virtual mozilla::CORSMode GetCORSMode() const
+  {
+    // Default to no CORS
+    return mozilla::CORS_NONE;
+  }
+
+  // CC methods
+  void Unlink();
+  void Traverse(nsCycleCollectionTraversalCallback &cb);
+
 private:
   /**
    * @param aOldDocument should be non-null only if we're updating because we
@@ -95,7 +106,7 @@ private:
 protected:
   bool mDontLoadStyle;
   bool mUpdatesEnabled;
-  PRUint32 mLineNumber;
+  uint32_t mLineNumber;
 };
 
 #endif /* nsStyleLinkElement_h___ */

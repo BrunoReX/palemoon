@@ -14,7 +14,6 @@
 #include "nsServiceManagerUtils.h"
 #include "nsIScriptSecurityManager.h"
 
-#include "nsIDOMDocument.h"
 #include "nsIDOMWindow.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
@@ -27,7 +26,7 @@
 
 
 nsCommandManager::nsCommandManager()
-: mWindow(nsnull)
+: mWindow(nullptr)
 {
   /* member initializers and constructor code */
 }
@@ -39,15 +38,16 @@ nsCommandManager::~nsCommandManager()
 
 
 static PLDHashOperator
-TraverseCommandObservers(const char* aKey, nsCOMArray<nsIObserver>* aObservers,
+TraverseCommandObservers(const char* aKey,
+                         nsCommandManager::ObserverList* aObservers,
                          void* aClosure)
 {
   nsCycleCollectionTraversalCallback *cb = 
     static_cast<nsCycleCollectionTraversalCallback*>(aClosure);
 
-  PRInt32 i, numItems = aObservers->Count();
+  int32_t i, numItems = aObservers->Length();
   for (i = 0; i < numItems; ++i) {
-    cb->NoteXPCOMChild(aObservers->ObjectAt(i));
+    cb->NoteXPCOMChild(aObservers->ElementAt(i));
   }
 
   return PL_DHASH_NEXT;
@@ -91,16 +91,16 @@ nsCommandManager::Init(nsIDOMWindow *aWindow)
 NS_IMETHODIMP
 nsCommandManager::CommandStatusChanged(const char * aCommandName)
 {
-  nsCOMArray<nsIObserver>* commandObservers;
+  ObserverList* commandObservers;
   mObserversTable.Get(aCommandName, &commandObservers);
 
   if (commandObservers)
   {
     // XXX Should we worry about observers removing themselves from Observe()?
-    PRInt32 i, numItems = commandObservers->Count();
+    int32_t i, numItems = commandObservers->Length();
     for (i = 0; i < numItems;  ++i)
     {
-      nsCOMPtr<nsIObserver> observer = commandObservers->ObjectAt(i);
+      nsCOMPtr<nsIObserver> observer = commandObservers->ElementAt(i);
       // should we get the command state to pass here? This might be expensive.
       observer->Observe(NS_ISUPPORTS_CAST(nsICommandManager*, this),
                         aCommandName,
@@ -121,28 +121,24 @@ nsCommandManager::AddCommandObserver(nsIObserver *aCommandObserver, const char *
 {
   NS_ENSURE_ARG(aCommandObserver);
 
-  nsresult rv = NS_OK;
-
   // XXX todo: handle special cases of aCommandToObserve being null, or empty
 
   // for each command in the table, we make a list of observers for that command
-  nsCOMArray<nsIObserver>* commandObservers;
+  ObserverList* commandObservers;
   if (!mObserversTable.Get(aCommandToObserve, &commandObservers))
   {
-    nsAutoPtr<nsCOMArray<nsIObserver> > array(new nsCOMArray<nsIObserver>);
-    mObserversTable.Put(aCommandToObserve, array);
-
-    commandObservers = array.forget();
+    commandObservers = new ObserverList;
+    mObserversTable.Put(aCommandToObserve, commandObservers);
   }
 
   // need to check that this command observer hasn't already been registered
-  PRInt32 existingIndex = commandObservers->IndexOf(aCommandObserver);
+  int32_t existingIndex = commandObservers->IndexOf(aCommandObserver);
   if (existingIndex == -1)
-    rv = commandObservers->AppendObject(aCommandObserver);
+    commandObservers->AppendElement(aCommandObserver);
   else
     NS_WARNING("Registering command observer twice on the same command");
   
-  return rv;
+  return NS_OK;
 }
 
 /* void removeCommandObserver (in nsIObserver aCommandObserver, in wstring aCommandObserved); */
@@ -153,12 +149,13 @@ nsCommandManager::RemoveCommandObserver(nsIObserver *aCommandObserver, const cha
 
   // XXX todo: handle special cases of aCommandToObserve being null, or empty
 
-  nsCOMArray<nsIObserver>* commandObservers;
+  ObserverList* commandObservers;
   if (!mObserversTable.Get(aCommandObserved, &commandObservers))
     return NS_ERROR_UNEXPECTED;
 
-  return commandObservers->RemoveObject(aCommandObserver) ? NS_OK :
-                                                            NS_ERROR_FAILURE;
+  commandObservers->RemoveElement(aCommandObserver);
+
+  return NS_OK;
 }
 
 /* boolean isCommandSupported(in string aCommandName,
@@ -172,7 +169,7 @@ nsCommandManager::IsCommandSupported(const char *aCommandName,
 
   nsCOMPtr<nsIController> controller;
   GetControllerForCommand(aCommandName, aTargetWindow, getter_AddRefs(controller)); 
-  *outCommandSupported = (controller.get() != nsnull);
+  *outCommandSupported = (controller.get() != nullptr);
   return NS_OK;
 }
 
@@ -262,7 +259,7 @@ nsCommandManager::GetControllerForCommand(const char *aCommand,
                                           nsIController** outController)
 {
   nsresult rv = NS_ERROR_FAILURE;
-  *outController = nsnull;
+  *outController = nullptr;
 
   // check if we're in content or chrome
   // if we're not chrome we must have a target window or we bail

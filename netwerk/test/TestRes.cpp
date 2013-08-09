@@ -56,7 +56,7 @@ TestOpenInputStream(const char* url)
 
     nsCOMPtr<nsIChannel> channel;
     rv = serv->NewChannel(url,
-                          nsnull, // base uri
+                          nullptr, // base uri
                           getter_AddRefs(channel));
     if (NS_FAILED(rv)) return rv;
 
@@ -69,7 +69,7 @@ TestOpenInputStream(const char* url)
 
     char buf[1024];
     while (1) {
-        PRUint32 amt;
+        uint32_t amt;
         rv = in->Read(buf, sizeof(buf), &amt);
         if (NS_FAILED(rv)) return rv;
         if (amt == 0) break;    // eof
@@ -102,7 +102,7 @@ TestOpenInputStream(const char* url)
 ////////////////////////////////////////////////////////////////////////////////
 
 bool gDone = false;
-nsIEventQueue* gEventQ = nsnull;
+nsIEventQueue* gEventQ = nullptr;
 
 class Listener : public nsIStreamListener 
 {
@@ -150,11 +150,11 @@ public:
 
     NS_IMETHOD OnDataAvailable(nsIRequest *request, nsISupports *ctxt, 
                                nsIInputStream *inStr,
-                               PRUint32 sourceOffset, PRUint32 count) {
+                               uint64_t sourceOffset, uint32_t count) {
         nsresult rv;
         char buf[1024];
         while (count > 0) {
-            PRUint32 amt;
+            uint32_t amt;
             rv = inStr->Read(buf, sizeof(buf), &amt);
             count -= amt;
             char* c = buf;
@@ -185,14 +185,14 @@ TestAsyncRead(const char* url)
 
     nsCOMPtr<nsIChannel> channel;
     rv = serv->NewChannel(url,
-                          nsnull, // base uri
+                          nullptr, // base uri
                           getter_AddRefs(channel));
     if (NS_FAILED(rv)) return rv;
 
     nsCOMPtr<nsIStreamListener> listener = new Listener();
-    if (listener == nsnull)
+    if (listener == nullptr)
         return NS_ERROR_OUT_OF_MEMORY;
-    rv = channel->AsyncOpen(nsnull, listener);
+    rv = channel->AsyncOpen(nullptr, listener);
     if (NS_FAILED(rv)) return rv;
 
     while (!gDone) {
@@ -212,11 +212,11 @@ main(int argc, char* argv[])
     nsresult rv;
     {
         nsCOMPtr<nsIServiceManager> servMan;
-        NS_InitXPCOM2(getter_AddRefs(servMan), nsnull, nsnull);
+        NS_InitXPCOM2(getter_AddRefs(servMan), nullptr, nullptr);
         nsCOMPtr<nsIComponentRegistrar> registrar = do_QueryInterface(servMan);
         NS_ASSERTION(registrar, "Null nsIComponentRegistrar");
         if (registrar)
-            registrar->AutoRegister(nsnull);
+            registrar->AutoRegister(nullptr);
 
         NS_ASSERTION(NS_SUCCEEDED(rv), "AutoregisterComponents failed");
 
@@ -236,7 +236,7 @@ main(int argc, char* argv[])
         NS_ASSERTION(NS_SUCCEEDED(rv), "TestAsyncRead failed");
     } // this scopes the nsCOMPtrs
     // no nsCOMPtrs are allowed to be alive when you call NS_ShutdownXPCOM
-    rv = NS_ShutdownXPCOM(nsnull);
+    rv = NS_ShutdownXPCOM(nullptr);
     NS_ASSERTION(NS_SUCCEEDED(rv), "NS_ShutdownXPCOM failed");
     return rv;
 }

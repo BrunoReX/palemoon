@@ -2,17 +2,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH      = ../..
+DEPTH      = @DEPTH@
 topsrcdir  = @top_srcdir@
 srcdir     = @srcdir@
 VPATH      = @srcdir@
 
-CHROMEDIR = $(call core_abspath,$(DIST))/bin/chrome
+CHROMEDIR = $(call core_abspath,$(FINAL_TARGET))/chrome
 
 include $(DEPTH)/config/autoconf.mk
 
-# Disabled on beta because we're disabling PDF.js support
-#TEST_DIRS += pdfjs/test
+TEST_DIRS += pdfjs/test
 
 include $(topsrcdir)/config/rules.mk
 
@@ -24,13 +23,13 @@ exclude_files = \
   icon64.png \
   $(NULL)
 
-$(DIST)/bin/chrome/pdfjs.manifest: $(GLOBAL_DEPS)
+$(FINAL_TARGET)/chrome/pdfjs.manifest: $(GLOBAL_DEPS)
 	printf "manifest pdfjs/chrome.manifest" > $@
 
-libs:: $(DIST)/bin/chrome/pdfjs.manifest
+libs:: $(FINAL_TARGET)/chrome/pdfjs.manifest
 	$(PYTHON) $(topsrcdir)/config/nsinstall.py \
 	  $(srcdir)/pdfjs \
           $(foreach exclude,$(exclude_files), -X $(srcdir)/pdfjs/$(exclude)) \
-          $(DIST)/bin/chrome
+          $(FINAL_TARGET)/chrome
 	$(PYTHON) $(MOZILLA_DIR)/config/buildlist.py \
-	  $(DIST)/bin/chrome.manifest "manifest chrome/pdfjs.manifest"
+	  $(FINAL_TARGET)/chrome.manifest "manifest chrome/pdfjs.manifest"

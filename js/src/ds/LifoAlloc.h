@@ -64,7 +64,7 @@ class BumpChunk
     void setBump(void *ptr) {
         JS_ASSERT(bumpBase() <= ptr);
         JS_ASSERT(ptr <= limit);
-        DebugOnly<char *> prevBump = bump;
+        mozilla::DebugOnly<char *> prevBump = bump;
         bump = static_cast<char *>(ptr);
 #ifdef DEBUG
         JS_ASSERT(contains(prevBump));
@@ -101,6 +101,10 @@ class BumpChunk
     }
 
     bool canAlloc(size_t n);
+
+    size_t unused() {
+        return limit - AlignPtr(bump);
+    }
 
     /* Try to perform an allocation of size |n|, return null if not possible. */
     JS_ALWAYS_INLINE
@@ -144,6 +148,7 @@ class LifoAlloc
 
     BumpChunk   *first;
     BumpChunk   *latest;
+    BumpChunk   *last;
     size_t      markCount;
     size_t      defaultChunkSize_;
 
@@ -161,10 +166,21 @@ class LifoAlloc
 
     void reset(size_t defaultChunkSize) {
         JS_ASSERT(RoundUpPow2(defaultChunkSize) == defaultChunkSize);
-        first = latest = NULL;
+        first = latest = last = NULL;
         defaultChunkSize_ = defaultChunkSize;
         markCount = 0;
     }
+
+    void append(BumpChunk *start, BumpChunk *end) {
+        JS_ASSERT(start && end);
+        if (last)
+            last->setNext(start);
+        else
+            first = latest = start;
+        last = end;
+    }
+
+    bool ensureUnusedApproximateSlow(size_t n);
 
   public:
     explicit LifoAlloc(size_t defaultChunkSize) { reset(defaultChunkSize); }
@@ -176,15 +192,18 @@ class LifoAlloc
         other->reset(defaultChunkSize_);
     }
 
+    /* Append allocated chunks from |other|. They are removed from |other|. */
+    void transferFrom(LifoAlloc *other);
+
+    /* Append unused chunks from |other|. They are removed from |other|. */
+    void transferUnusedFrom(LifoAlloc *other);
+
     ~LifoAlloc() { freeAll(); }
 
     size_t defaultChunkSize() const { return defaultChunkSize_; }
 
     /* Frees all held memory. */
     void freeAll();
-
-    /* Should be called on GC in order to release any held chunks. */
-    void freeUnused();
 
     JS_ALWAYS_INLINE
     void *alloc(size_t n) {
@@ -198,6 +217,34 @@ class LifoAlloc
             return NULL;
 
         return latest->allocInfallible(n);
+    }
+
+    JS_ALWAYS_INLINE
+    void *allocInfallible(size_t n) {
+        void *result;
+        if (latest && (result = latest->tryAlloc(n)))
+            return result;
+
+        mozilla::DebugOnly<BumpChunk *> chunk = getOrCreateChunk(n);
+        JS_ASSERT(chunk);
+
+        return latest->allocInfallible(n);
+    }
+
+    // Ensures that enough space exists to satisfy N bytes worth of
+    // allocation requests, not necessarily contiguous. Note that this does
+    // not guarantee a successful single allocation of N bytes.
+    JS_ALWAYS_INLINE
+    bool ensureUnusedApproximate(size_t n) {
+        size_t total = 0;
+        BumpChunk *chunk = latest;
+        while (chunk) {
+            total += chunk->unused();
+            if (total >= n)
+                return true;
+            chunk = chunk->next();
+        }
+        return ensureUnusedApproximateSlow(n);
     }
 
     template <typename T>
@@ -250,12 +297,21 @@ class LifoAlloc
         latest->release(mark);
     }
 
+    void releaseAll() {
+        JS_ASSERT(!markCount);
+        latest = first;
+        if (latest)
+            latest->resetBump();
+    }
+
     /* Get the total "used" (occupied bytes) count for the arena chunks. */
     size_t used() const {
         size_t accum = 0;
         BumpChunk *it = first;
         while (it) {
             accum += it->used();
+            if (it == latest)
+                break;
             it = it->next();
         }
         return accum;
@@ -284,7 +340,7 @@ class LifoAlloc
         return static_cast<T *>(alloc(sizeof(T)));
     }
 
-    JS_DECLARE_NEW_METHODS(alloc, JS_ALWAYS_INLINE)
+    JS_DECLARE_NEW_METHODS(new_, alloc, JS_ALWAYS_INLINE)
 };
 
 class LifoAllocScope

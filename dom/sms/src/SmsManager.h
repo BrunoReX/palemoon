@@ -30,6 +30,9 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(SmsManager,
                                            nsDOMEventTargetHelper)
 
+  static already_AddRefed<SmsManager>
+  CreateInstanceIfAllowed(nsPIDOMWindow *aWindow);
+
   void Init(nsPIDOMWindow *aWindow);
   void Shutdown();
 
@@ -43,13 +46,10 @@ private:
   /**
    * Internal Delete() method used to delete a message.
    */
-  nsresult Delete(PRInt32 aId, nsIDOMMozSmsRequest** aRequest);
+  nsresult Delete(int32_t aId, nsIDOMMozSmsRequest** aRequest);
 
   nsresult DispatchTrustedSmsEventToSelf(const nsAString& aEventName,
                                          nsIDOMMozSmsMessage* aMessage);
-  NS_DECL_EVENT_HANDLER(received)
-  NS_DECL_EVENT_HANDLER(sent)
-  NS_DECL_EVENT_HANDLER(delivered)
 };
 
 } // namespace sms

@@ -9,7 +9,7 @@
 #include "gfxTypes.h"
 #include "gfxPattern.h"
 #include "gfxImageSurface.h"
-#include "ImageLayers.h"
+#include "ImageContainer.h"
 #include "mozilla/gfx/2D.h"
 #include "imgIContainer.h"
 
@@ -30,12 +30,12 @@ public:
      * aDestSurface is given, the data is copied over.
      */
     static void PremultiplyImageSurface(gfxImageSurface *aSourceSurface,
-                                        gfxImageSurface *aDestSurface = nsnull);
+                                        gfxImageSurface *aDestSurface = nullptr);
     static void UnpremultiplyImageSurface(gfxImageSurface *aSurface,
-                                          gfxImageSurface *aDestSurface = nsnull);
+                                          gfxImageSurface *aDestSurface = nullptr);
 
     static void ConvertBGRAtoRGBA(gfxImageSurface *aSourceSurface,
-                                  gfxImageSurface *aDestSurface = nsnull);
+                                  gfxImageSurface *aDestSurface = nullptr);
 
     /**
      * Draw something drawable while working around limitations like bad support
@@ -59,7 +59,7 @@ public:
                                  const gfxRect&   aFill,
                                  const gfxImageSurface::gfxImageFormat aFormat,
                                  gfxPattern::GraphicsFilter aFilter,
-                                 PRUint32         aImageFlags = imgIContainer::FLAG_NONE);
+                                 uint32_t         aImageFlags = imgIContainer::FLAG_NONE);
 
     /**
      * Clip aContext to the region aRegion.
@@ -88,7 +88,7 @@ public:
 
     /**
      * If aIn can be represented exactly using an nsIntRect (i.e.
-     * integer-aligned edges and coordinates in the PRInt32 range) then we
+     * integer-aligned edges and coordinates in the int32_t range) then we
      * set aOut to that rectangle, otherwise return failure.
     */
     static bool GfxRectToIntRect(const gfxRect& aIn, nsIntRect* aOut);
@@ -123,8 +123,10 @@ public:
                       const gfxASurface::gfxImageFormat& aDestFormat,
                       const gfxIntSize& aDestSize,
                       unsigned char* aDestBuffer,
-                      PRInt32 aStride);
+                      int32_t aStride);
 
+    static const uint8_t sUnpremultiplyTable[256*256];
+    static const uint8_t sPremultiplyTable[256*256];
 #ifdef MOZ_DUMP_PAINTING
     /**
      * Writes a binary PNG file.

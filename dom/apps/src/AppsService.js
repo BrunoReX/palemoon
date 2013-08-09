@@ -5,37 +5,71 @@
 "use strict"
 
 function debug(s) {
-  //dump("-*- AppsService: " + s + "\n");
+  //dump("-*- AppsService.js: " + s + "\n");
 }
 
+const Cc = Components.classes;
 const Ci = Components.interfaces;
 const Cu = Components.utils;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Webapps.jsm");
 
-const APPS_SERVICE_CONTRACTID = "@mozilla.org/AppsService;1";
-const APPS_SERVICE_CID        = Components.ID("{05072afa-92fe-45bf-ae22-39b69c117058}");
+const APPS_SERVICE_CID = Components.ID("{05072afa-92fe-45bf-ae22-39b69c117058}");
 
 function AppsService()
 {
   debug("AppsService Constructor");
+  let inParent = Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime)
+                   .processType == Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
+  debug("inParent: " + inParent);
+  Cu.import(inParent ? "resource://gre/modules/Webapps.jsm" :
+                       "resource://gre/modules/AppsServiceChild.jsm");
 }
 
 AppsService.prototype = {
+
+  getCSPByLocalId: function getCSPByLocalId(localId) {
+    debug("GetCSPByLocalId( " + localId + " )");
+    return DOMApplicationRegistry.getCSPByLocalId(localId);
+  },
+
   getAppByManifestURL: function getAppByManifestURL(aManifestURL) {
     debug("GetAppByManifestURL( " + aManifestURL + " )");
-    return DOMApplicationRegistry.getAppByManifestURL(aManifestURL)
+    return DOMApplicationRegistry.getAppByManifestURL(aManifestURL);
+  },
+
+  getAppLocalIdByManifestURL: function getAppLocalIdByManifestURL(aManifestURL) {
+    debug("getAppLocalIdByManifestURL( " + aManifestURL + " )");
+    return DOMApplicationRegistry.getAppLocalIdByManifestURL(aManifestURL);
+  },
+
+  getAppByLocalId: function getAppByLocalId(aLocalId) {
+    debug("getAppByLocalId( " + aLocalId + " )");
+    return DOMApplicationRegistry.getAppByLocalId(aLocalId);
+  },
+
+  getManifestURLByLocalId: function getManifestURLByLocalId(aLocalId) {
+    debug("getManifestURLByLocalId( " + aLocalId + " )");
+    return DOMApplicationRegistry.getManifestURLByLocalId(aLocalId);
+  },
+
+  getAppFromObserverMessage: function getAppFromObserverMessage(aMessage) {
+    debug("getAppFromObserverMessage( " + aMessage + " )");
+    return DOMApplicationRegistry.getAppFromObserverMessage(aMessage);
+  },
+
+  getCoreAppsBasePath: function getCoreAppsBasePath() {
+    debug("getCoreAppsBasePath()");
+    return DOMApplicationRegistry.getCoreAppsBasePath();
+  },
+
+  getWebAppsBasePath: function getWebAppsBasePath() {
+    debug("getWebAppsBasePath()");
+    return DOMApplicationRegistry.getWebAppsBasePath();
   },
 
   classID : APPS_SERVICE_CID,
-  QueryInterface : XPCOMUtils.generateQI([Ci.nsIAppsService]),
-
-  classInfo : XPCOMUtils.generateCI({classID: APPS_SERVICE_CID,
-                                     contractID: APPS_SERVICE_CONTRACTID,
-                                     classDescription: "AppsService",
-                                     interfaces: [Ci.nsIAppsService],
-                                     flags: Ci.nsIClassInfo.DOM_OBJECT})
+  QueryInterface : XPCOMUtils.generateQI([Ci.nsIAppsService])
 }
 
-const NSGetFactory = XPCOMUtils.generateNSGetFactory([AppsService])
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory([AppsService])

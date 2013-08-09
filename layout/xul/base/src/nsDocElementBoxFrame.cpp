@@ -20,6 +20,7 @@
 #include "nsNodeInfoManager.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsContentUtils.h"
+#include "nsContentList.h"
 
 //#define DEBUG_REFLOW
 
@@ -41,9 +42,9 @@ public:
   // nsIAnonymousContentCreator
   virtual nsresult CreateAnonymousContent(nsTArray<ContentInfo>& aElements);
   virtual void AppendAnonymousContentTo(nsBaseContentList& aElements,
-                                        PRUint32 aFilter);
+                                        uint32_t aFilter);
 
-  virtual bool IsFrameOfType(PRUint32 aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const
   {
     // Override nsBoxFrame.
     if (aFlags & (nsIFrame::eReplacedContainsBlock | nsIFrame::eReplaced))
@@ -90,7 +91,7 @@ nsDocElementBoxFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
   // create the top-secret popupgroup node. shhhhh!
   nsCOMPtr<nsINodeInfo> nodeInfo;
   nodeInfo = nodeInfoManager->GetNodeInfo(nsGkAtoms::popupgroup,
-                                          nsnull, kNameSpaceID_XUL,
+                                          nullptr, kNameSpaceID_XUL,
                                           nsIDOMNode::ELEMENT_NODE);
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
 
@@ -102,7 +103,7 @@ nsDocElementBoxFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
     return NS_ERROR_OUT_OF_MEMORY;
 
   // create the top-secret default tooltip node. shhhhh!
-  nodeInfo = nodeInfoManager->GetNodeInfo(nsGkAtoms::tooltip, nsnull,
+  nodeInfo = nodeInfoManager->GetNodeInfo(nsGkAtoms::tooltip, nullptr,
                                           kNameSpaceID_XUL,
                                           nsIDOMNode::ELEMENT_NODE);
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
@@ -110,7 +111,7 @@ nsDocElementBoxFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
   rv = NS_NewXULElement(getter_AddRefs(mTooltipContent), nodeInfo.forget());
   NS_ENSURE_SUCCESS(rv, rv);
 
-  mTooltipContent->SetAttr(nsnull, nsGkAtoms::_default,
+  mTooltipContent->SetAttr(kNameSpaceID_None, nsGkAtoms::_default,
                            NS_LITERAL_STRING("true"), false);
 
   if (!aElements.AppendElement(mTooltipContent))
@@ -121,7 +122,7 @@ nsDocElementBoxFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
 
 void
 nsDocElementBoxFrame::AppendAnonymousContentTo(nsBaseContentList& aElements,
-                                               PRUint32 aFilter)
+                                               uint32_t aFilter)
 {
   aElements.MaybeAppendElement(mPopupgroupContent);
   aElements.MaybeAppendElement(mTooltipContent);

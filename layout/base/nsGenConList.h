@@ -26,14 +26,14 @@ struct nsGenConNode : public PRCList {
   // Index within the list of things specified by the 'content' property,
   // which is needed to do 'content: open-quote open-quote' correctly,
   // and needed for similar cases for counters.
-  const PRInt32 mContentIndex;
+  const int32_t mContentIndex;
 
   // null for 'content:no-open-quote', 'content:no-close-quote' and for
   // counter nodes for increments and resets (rather than uses)
   nsCOMPtr<nsIDOMCharacterData> mText;
 
-  nsGenConNode(PRInt32 aContentIndex)
-    : mPseudoFrame(nsnull)
+  nsGenConNode(int32_t aContentIndex)
+    : mPseudoFrame(nullptr)
     , mContentIndex(aContentIndex)
   {
   }
@@ -63,7 +63,7 @@ struct nsGenConNode : public PRCList {
 protected:
   void CheckFrameAssertions() {
     NS_ASSERTION(mContentIndex <
-                   PRInt32(mPseudoFrame->GetStyleContent()->ContentCount()),
+                   int32_t(mPseudoFrame->GetStyleContent()->ContentCount()),
                  "index out of range");
       // We allow negative values of mContentIndex for 'counter-reset' and
       // 'counter-increment'.
@@ -83,9 +83,9 @@ protected:
 class nsGenConList {
 protected:
   nsGenConNode* mFirstNode;
-  PRUint32 mSize;
+  uint32_t mSize;
 public:
-  nsGenConList() : mFirstNode(nsnull), mSize(0) {}
+  nsGenConList() : mFirstNode(nullptr), mSize(0) {}
   ~nsGenConList() { Clear(); }
   void Clear();
   static nsGenConNode* Next(nsGenConNode* aNode) {

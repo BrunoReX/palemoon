@@ -6,8 +6,6 @@
 #ifndef nsDOMNavigationTiming_h___
 #define nsDOMNavigationTiming_h___
 
-#include "nsIDOMPerformanceTiming.h"
-#include "nsIDOMPerformanceNavigation.h"
 #include "nscore.h"
 #include "nsCOMPtr.h"
 #include "nsCOMArray.h"
@@ -15,7 +13,21 @@
 #include "nsIURI.h"
 
 class nsDOMNavigationTimingClock;
-class nsIDocument;
+
+typedef unsigned long long DOMTimeMilliSec;
+typedef double DOMHighResTimeStamp;
+typedef unsigned short nsDOMPerformanceNavigationType;
+
+namespace mozilla {
+namespace dom {
+namespace PerformanceNavigation {
+static const nsDOMPerformanceNavigationType TYPE_NAVIGATE = 0;
+static const nsDOMPerformanceNavigationType TYPE_RELOAD = 1;
+static const nsDOMPerformanceNavigationType TYPE_BACK_FORWARD = 2;
+static const nsDOMPerformanceNavigationType TYPE_RESERVED = 255;
+}
+}
+}
 
 class nsDOMNavigationTiming
 {
@@ -23,22 +35,43 @@ public:
   nsDOMNavigationTiming();
 
   NS_INLINE_DECL_REFCOUNTING(nsDOMNavigationTiming)
-  nsresult GetType(nsDOMPerformanceNavigationType* aNavigationType);
-  nsresult GetRedirectCount(PRUint16* aCount);
 
-  nsresult GetRedirectStart(DOMTimeMilliSec* aRedirectStart);
-  nsresult GetRedirectEnd(DOMTimeMilliSec* aEnd);
-  nsresult GetNavigationStart(DOMTimeMilliSec* aNavigationStart);
-  nsresult GetUnloadEventStart(DOMTimeMilliSec* aStart);
-  nsresult GetUnloadEventEnd(DOMTimeMilliSec* aEnd);
-  nsresult GetFetchStart(DOMTimeMilliSec* aStart);
-  nsresult GetDomLoading(DOMTimeMilliSec* aTime);
-  nsresult GetDomInteractive(DOMTimeMilliSec* aTime);
-  nsresult GetDomContentLoadedEventStart(DOMTimeMilliSec* aStart);
-  nsresult GetDomContentLoadedEventEnd(DOMTimeMilliSec* aEnd);
-  nsresult GetDomComplete(DOMTimeMilliSec* aTime);
-  nsresult GetLoadEventStart(DOMTimeMilliSec* aStart);
-  nsresult GetLoadEventEnd(DOMTimeMilliSec* aEnd);
+  nsDOMPerformanceNavigationType GetType() const {
+    return mNavigationType;
+  }
+  uint16_t GetRedirectCount();
+
+  DOMTimeMilliSec GetRedirectStart();
+  DOMTimeMilliSec GetRedirectEnd();
+  DOMTimeMilliSec GetNavigationStart() const {
+    return mNavigationStart;
+  }
+  DOMTimeMilliSec GetUnloadEventStart();
+  DOMTimeMilliSec GetUnloadEventEnd();
+  DOMTimeMilliSec GetFetchStart() const {
+    return mFetchStart;
+  }
+  DOMTimeMilliSec GetDomLoading() const {
+    return mDOMLoading;
+  }
+  DOMTimeMilliSec GetDomInteractive() const {
+    return mDOMInteractive;
+  }
+  DOMTimeMilliSec GetDomContentLoadedEventStart() const {
+    return mDOMContentLoadedEventStart;
+  }
+  DOMTimeMilliSec GetDomContentLoadedEventEnd() const {
+    return mDOMContentLoadedEventEnd;
+  }
+  DOMTimeMilliSec GetDomComplete() const {
+    return mDOMComplete;
+  }
+  DOMTimeMilliSec GetLoadEventStart() const {
+    return mLoadEventStart;
+  }
+  DOMTimeMilliSec GetLoadEventEnd() const {
+    return mLoadEventEnd;
+  }
 
   void NotifyNavigationStart();
   void NotifyFetchStart(nsIURI* aURI, nsDOMPerformanceNavigationType aNavigationType);
@@ -57,9 +90,8 @@ public:
   void NotifyDOMComplete(nsIURI* aURI);
   void NotifyDOMContentLoadedStart(nsIURI* aURI);
   void NotifyDOMContentLoadedEnd(nsIURI* aURI);
-  nsresult TimeStampToDOM(mozilla::TimeStamp aStamp, DOMTimeMilliSec* aResult);
-  nsresult TimeStampToDOMOrFetchStart(mozilla::TimeStamp aStamp, 
-                                      DOMTimeMilliSec* aResult);
+  DOMTimeMilliSec TimeStampToDOM(mozilla::TimeStamp aStamp) const;
+  DOMTimeMilliSec TimeStampToDOMOrFetchStart(mozilla::TimeStamp aStamp) const;
 
   inline DOMHighResTimeStamp TimeStampToDOMHighRes(mozilla::TimeStamp aStamp)
   {
@@ -83,7 +115,7 @@ private:
                  NO_REDIRECTS,
                  CHECK_FAILED} RedirectCheckState;
   RedirectCheckState mRedirectCheck;
-  PRInt16 mRedirectCount;
+  int16_t mRedirectCount;
 
   nsDOMPerformanceNavigationType mNavigationType;
   DOMTimeMilliSec mNavigationStart;
@@ -96,7 +128,6 @@ private:
   DOMTimeMilliSec mBeforeUnloadStart;
   DOMTimeMilliSec mUnloadStart;
   DOMTimeMilliSec mUnloadEnd;
-  DOMTimeMilliSec mNavigationEnd;
   DOMTimeMilliSec mLoadEventStart;
   DOMTimeMilliSec mLoadEventEnd;
 
@@ -105,6 +136,17 @@ private:
   DOMTimeMilliSec mDOMContentLoadedEventStart;
   DOMTimeMilliSec mDOMContentLoadedEventEnd;
   DOMTimeMilliSec mDOMComplete;
+
+  // Booleans to keep track of what things we've already been notified
+  // about.  We don't update those once we've been notified about them
+  // once.
+  bool mLoadEventStartSet : 1;
+  bool mLoadEventEndSet : 1;
+  bool mDOMLoadingSet : 1;
+  bool mDOMInteractiveSet : 1;
+  bool mDOMContentLoadedEventStartSet : 1;
+  bool mDOMContentLoadedEventEndSet : 1;
+  bool mDOMCompleteSet : 1;
 };
 
 #endif /* nsDOMNavigationTiming_h___ */

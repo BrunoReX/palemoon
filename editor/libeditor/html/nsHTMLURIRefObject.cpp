@@ -48,7 +48,7 @@
   rv = NS_NewURI(getter_AddRefs(theURI), theSpec);
   if (!theURI)
     error;
-  rv = NS_OpenURI(getter_AddRefs(theChannel), theURI, nsnull, theLoadGroup);
+  rv = NS_OpenURI(getter_AddRefs(theChannel), theURI, nullptr, theLoadGroup);
   if (!theChannel)
     error;
   nsCOMPtr<nsILoadGroup> theLoadGroup(do_CreateInstance(NS_LOADGROUP_CONTRACTID));
@@ -59,18 +59,24 @@
 		//qaWebBrowser->AddWebBrowserListener(thisListener, NS_GET_IID(nsIStreamListener));
 
 		// this calls nsIStreamListener::OnDataAvailable()
-		rv = theChannel->AsyncOpen(listener, nsnull);
+		rv = theChannel->AsyncOpen(listener, nullptr);
 
 		nsCOMPtr<nsIRequest> theRequest = do_QueryInterface(theChannel);
     // Now we can do things on nsIRequest (like what?)
  */
 
-#include "nsHTMLURIRefObject.h"
-
+#include "mozilla/mozalloc.h"
 #include "nsAString.h"
-#include "nsString.h"
+#include "nsDebug.h"
+#include "nsError.h"
+#include "nsHTMLURIRefObject.h"
+#include "nsID.h"
 #include "nsIDOMAttr.h"
 #include "nsIDOMElement.h"
+#include "nsIDOMNamedNodeMap.h"
+#include "nsIDOMNode.h"
+#include "nsISupportsUtils.h"
+#include "nsString.h"
 
 // String classes change too often and I can't keep up.
 // Set this macro to this week's approved case-insensitive compare routine.

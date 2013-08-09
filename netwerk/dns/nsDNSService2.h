@@ -2,6 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef nsDNSService2_h__
+#define nsDNSService2_h__
+
 #include "nsPIDNSService.h"
 #include "nsIIDNService.h"
 #include "nsIObserver.h"
@@ -11,9 +14,10 @@
 #include "nsTHashtable.h"
 #include "nsHashKeys.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/Attributes.h"
 
-class nsDNSService : public nsPIDNSService
-                   , public nsIObserver
+class nsDNSService MOZ_FINAL : public nsPIDNSService
+                             , public nsIObserver
 {
 public:
     NS_DECL_ISUPPORTS
@@ -25,7 +29,7 @@ public:
     ~nsDNSService();
 
 private:
-    PRUint16 GetAFForLookup(const nsACString &host, PRUint32 flags);
+    uint16_t GetAFForLookup(const nsACString &host, uint32_t flags);
 
     nsRefPtr<nsHostResolver>  mResolver;
     nsCOMPtr<nsIIDNService>   mIDN;
@@ -40,5 +44,8 @@ private:
     bool                      mDisableIPv6;
     bool                      mDisablePrefetch;
     bool                      mFirstTime;
+    bool                      mOffline;
     nsTHashtable<nsCStringHashKey> mLocalDomains;
 };
+
+#endif //nsDNSService2_h__

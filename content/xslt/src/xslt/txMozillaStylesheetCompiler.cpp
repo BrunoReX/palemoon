@@ -5,7 +5,6 @@
 
 #include "nsCOMArray.h"
 #include "nsIAuthPrompt.h"
-#include "nsCharsetAlias.h"
 #include "nsIDOMNode.h"
 #include "nsIDOMDocument.h"
 #include "nsIDocument.h"
@@ -38,10 +37,13 @@
 #include "nsIScriptError.h"
 #include "nsIURL.h"
 #include "nsCrossSiteListenerProxy.h"
-#include "nsDOMError.h"
+#include "nsError.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/EncodingUtils.h"
 
 using namespace mozilla;
+using mozilla::dom::EncodingUtils;
 
 static NS_DEFINE_CID(kCParserCID, NS_PARSER_CID);
 
@@ -58,15 +60,15 @@ getSpec(nsIChannel* aChannel, nsAString& aSpec)
         return;
     }
 
-    nsCAutoString spec;
+    nsAutoCString spec;
     uri->GetSpec(spec);
     AppendUTF8toUTF16(spec, aSpec);
 }
 
-class txStylesheetSink : public nsIXMLContentSink,
-                         public nsIExpatSink,
-                         public nsIStreamListener,
-                         public nsIInterfaceRequestor
+class txStylesheetSink MOZ_FINAL : public nsIXMLContentSink,
+                                   public nsIExpatSink,
+                                   public nsIStreamListener,
+                                   public nsIInterfaceRequestor
 {
 public:
     txStylesheetSink(txStylesheetCompiler* aCompiler, nsIParser* aParser);
@@ -85,7 +87,7 @@ public:
     NS_IMETHOD SetParser(nsParserBase* aParser) { return NS_OK; }
     virtual void FlushPendingNotifications(mozFlushType aType) { }
     NS_IMETHOD SetDocumentCharset(nsACString& aCharset) { return NS_OK; }
-    virtual nsISupports *GetTarget() { return nsnull; }
+    virtual nsISupports *GetTarget() { return nullptr; }
 
 private:
     nsRefPtr<txStylesheetCompiler> mCompiler;
@@ -116,9 +118,9 @@ NS_IMPL_ISUPPORTS6(txStylesheetSink,
 NS_IMETHODIMP
 txStylesheetSink::HandleStartElement(const PRUnichar *aName,
                                      const PRUnichar **aAtts,
-                                     PRUint32 aAttsCount,
-                                     PRInt32 aIndex,
-                                     PRUint32 aLineNumber)
+                                     uint32_t aAttsCount,
+                                     int32_t aIndex,
+                                     uint32_t aLineNumber)
 {
     NS_PRECONDITION(aAttsCount % 2 == 0, "incorrect aAttsCount");
 
@@ -154,7 +156,7 @@ txStylesheetSink::HandleComment(const PRUnichar *aName)
 
 NS_IMETHODIMP
 txStylesheetSink::HandleCDataSection(const PRUnichar *aData,
-                                     PRUint32 aLength)
+                                     uint32_t aLength)
 {
     return HandleCharacterData(aData, aLength);
 }
@@ -171,7 +173,7 @@ txStylesheetSink::HandleDoctypeDecl(const nsAString & aSubset,
 
 NS_IMETHODIMP
 txStylesheetSink::HandleCharacterData(const PRUnichar *aData,
-                                      PRUint32 aLength)
+                                      uint32_t aLength)
 {
     nsresult rv = mCompiler->characters(Substring(aData, aData + aLength));
     if (NS_FAILED(rv)) {
@@ -192,7 +194,7 @@ txStylesheetSink::HandleProcessingInstruction(const PRUnichar *aTarget,
 NS_IMETHODIMP
 txStylesheetSink::HandleXMLDeclaration(const PRUnichar *aVersion,
                                        const PRUnichar *aEncoding,
-                                       PRInt32 aStandalone)
+                                       int32_t aStandalone)
 {
     return NS_OK;
 }
@@ -222,7 +224,7 @@ txStylesheetSink::DidBuildModel(bool aTerminated)
 NS_IMETHODIMP
 txStylesheetSink::OnDataAvailable(nsIRequest *aRequest, nsISupports *aContext,
                                   nsIInputStream *aInputStream,
-                                  PRUint32 aOffset, PRUint32 aCount)
+                                  uint64_t aOffset, uint32_t aCount)
 {
     if (!mCheckedForXML) {
         nsCOMPtr<nsIParser> parser = do_QueryInterface(aContext);
@@ -234,7 +236,7 @@ txStylesheetSink::OnDataAvailable(nsIRequest *aRequest, nsISupports *aContext,
                 nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
                 nsAutoString spec;
                 getSpec(channel, spec);
-                mCompiler->cancel(NS_ERROR_XSLT_WRONG_MIME_TYPE, nsnull,
+                mCompiler->cancel(NS_ERROR_XSLT_WRONG_MIME_TYPE, nullptr,
                                   spec.get());
 
                 return NS_ERROR_XSLT_WRONG_MIME_TYPE;
@@ -249,15 +251,15 @@ txStylesheetSink::OnDataAvailable(nsIRequest *aRequest, nsISupports *aContext,
 NS_IMETHODIMP
 txStylesheetSink::OnStartRequest(nsIRequest *aRequest, nsISupports *aContext)
 {
-    PRInt32 charsetSource = kCharsetFromDocTypeDefault;
+    int32_t charsetSource = kCharsetFromDocTypeDefault;
 
     nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
 
     // check channel's charset...
-    nsCAutoString charsetVal;
-    nsCAutoString charset;
+    nsAutoCString charsetVal;
+    nsAutoCString charset;
     if (NS_SUCCEEDED(channel->GetContentCharset(charsetVal))) {
-        if (NS_SUCCEEDED(nsCharsetAlias::GetPreferred(charsetVal, charset))) {
+        if (EncodingUtils::FindEncodingForLabel(charsetVal, charset)) {
             charsetSource = kCharsetFromChannel;
         }
     }
@@ -269,7 +271,7 @@ txStylesheetSink::OnStartRequest(nsIRequest *aRequest, nsISupports *aContext)
     nsCOMPtr<nsIParser> parser = do_QueryInterface(aContext);
     parser->SetDocumentCharset(charset, charsetSource);
 
-    nsCAutoString contentType;
+    nsAutoCString contentType;
     channel->GetContentType(contentType);
 
     // Time to sniff! Note: this should go away once file channels do
@@ -329,11 +331,11 @@ txStylesheetSink::OnStopRequest(nsIRequest *aRequest, nsISupports *aContext,
         nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
         nsAutoString spec;
         getSpec(channel, spec);
-        mCompiler->cancel(result, nsnull, spec.get());
+        mCompiler->cancel(result, nullptr, spec.get());
     }
 
     nsresult rv = mListener->OnStopRequest(aRequest, aContext, aStatusCode);
-    mListener = nsnull;
+    mListener = nullptr;
     return rv;
 }
 
@@ -342,7 +344,7 @@ txStylesheetSink::GetInterface(const nsIID& aIID, void** aResult)
 {
     if (aIID.Equals(NS_GET_IID(nsIAuthPrompt))) {
         NS_ENSURE_ARG(aResult);
-        *aResult = nsnull;
+        *aResult = nullptr;
 
         nsresult rv;
         nsCOMPtr<nsIWindowWatcher> wwatcher =
@@ -350,10 +352,10 @@ txStylesheetSink::GetInterface(const nsIID& aIID, void** aResult)
         NS_ENSURE_SUCCESS(rv, rv);
 
         nsCOMPtr<nsIAuthPrompt> prompt;
-        rv = wwatcher->GetNewAuthPrompter(nsnull, getter_AddRefs(prompt));
+        rv = wwatcher->GetNewAuthPrompter(nullptr, getter_AddRefs(prompt));
         NS_ENSURE_SUCCESS(rv, rv);
 
-        nsIAuthPrompt* rawPtr = nsnull;
+        nsIAuthPrompt* rawPtr = nullptr;
         prompt.swap(rawPtr);
         *aResult = rawPtr;
 
@@ -363,7 +365,7 @@ txStylesheetSink::GetInterface(const nsIID& aIID, void** aResult)
     return NS_ERROR_NO_INTERFACE;
 }
 
-class txCompileObserver : public txACompileObserver
+class txCompileObserver MOZ_FINAL : public txACompileObserver
 {
 public:
     txCompileObserver(txMozillaXSLTProcessor* aProcessor,
@@ -411,17 +413,18 @@ txCompileObserver::loadURI(const nsAString& aUri,
 
     nsCOMPtr<nsIPrincipal> referrerPrincipal;
     rv = nsContentUtils::GetSecurityManager()->
-      GetCodebasePrincipal(referrerUri, getter_AddRefs(referrerPrincipal));
+      GetSimpleCodebasePrincipal(referrerUri,
+                                 getter_AddRefs(referrerPrincipal));
     NS_ENSURE_SUCCESS(rv, rv);
 
     // Content Policy
-    PRInt16 shouldLoad = nsIContentPolicy::ACCEPT;
+    int16_t shouldLoad = nsIContentPolicy::ACCEPT;
     rv = NS_CheckContentLoadPolicy(nsIContentPolicy::TYPE_STYLESHEET,
                                    uri,
                                    referrerPrincipal,
-                                   nsnull,
+                                   nullptr,
                                    NS_LITERAL_CSTRING("application/xml"),
-                                   nsnull,
+                                   nullptr,
                                    &shouldLoad);
     NS_ENSURE_SUCCESS(rv, rv);
     if (NS_CP_REJECTED(shouldLoad)) {
@@ -483,10 +486,9 @@ txCompileObserver::startLoad(nsIURI* aUri, txStylesheetCompiler* aCompiler,
     parser->Parse(aUri);
 
     // Always install in case of redirects
-    nsCOMPtr<nsIStreamListener> listener =
-        new nsCORSListenerProxy(sink, aReferrerPrincipal, channel,
-                                false, &rv);
-    NS_ENSURE_TRUE(listener, NS_ERROR_OUT_OF_MEMORY);
+    nsRefPtr<nsCORSListenerProxy> listener =
+        new nsCORSListenerProxy(sink, aReferrerPrincipal, false);
+    rv = listener->Init(channel);
     NS_ENSURE_SUCCESS(rv, rv);
 
     return channel->AsyncOpen(listener, parser);
@@ -496,19 +498,19 @@ nsresult
 TX_LoadSheet(nsIURI* aUri, txMozillaXSLTProcessor* aProcessor,
              nsILoadGroup* aLoadGroup, nsIPrincipal* aCallerPrincipal)
 {
-    nsCAutoString spec;
+    nsAutoCString spec;
     aUri->GetSpec(spec);
     PR_LOG(txLog::xslt, PR_LOG_ALWAYS, ("TX_LoadSheet: %s\n", spec.get()));
 
     // Content Policy
-    PRInt16 shouldLoad = nsIContentPolicy::ACCEPT;
+    int16_t shouldLoad = nsIContentPolicy::ACCEPT;
     nsresult rv =
         NS_CheckContentLoadPolicy(nsIContentPolicy::TYPE_STYLESHEET,
                                   aUri,
                                   aCallerPrincipal,
                                   aProcessor->GetSourceContentModel(),
                                   NS_LITERAL_CSTRING("application/xml"),
-                                  nsnull,
+                                  nullptr,
                                   &shouldLoad);
     NS_ENSURE_SUCCESS(rv, rv);
     if (NS_CP_REJECTED(shouldLoad)) {
@@ -538,13 +540,13 @@ handleNode(nsINode* aNode, txStylesheetCompiler* aCompiler)
     if (aNode->IsElement()) {
         dom::Element* element = aNode->AsElement();
 
-        PRUint32 attsCount = element->GetAttrCount();
+        uint32_t attsCount = element->GetAttrCount();
         nsAutoArrayPtr<txStylesheetAttr> atts;
         if (attsCount > 0) {
             atts = new txStylesheetAttr[attsCount];
             NS_ENSURE_TRUE(atts, NS_ERROR_OUT_OF_MEMORY);
 
-            PRUint32 counter;
+            uint32_t counter;
             for (counter = 0; counter < attsCount; ++counter) {
                 txStylesheetAttr& att = atts[counter];
                 const nsAttrName* name = element->GetAttrNameAt(counter);
@@ -564,7 +566,7 @@ handleNode(nsINode* aNode, txStylesheetCompiler* aCompiler)
         NS_ENSURE_SUCCESS(rv, rv);
 
         // explicitly destroy the attrs here since we no longer need it
-        atts = nsnull;
+        atts = nullptr;
 
         for (nsIContent* child = element->GetFirstChild();
              child;
@@ -596,7 +598,7 @@ handleNode(nsINode* aNode, txStylesheetCompiler* aCompiler)
     return NS_OK;
 }
 
-class txSyncCompileObserver : public txACompileObserver
+class txSyncCompileObserver MOZ_FINAL : public txACompileObserver
 {
 public:
     txSyncCompileObserver(txMozillaXSLTProcessor* aProcessor);
@@ -632,17 +634,18 @@ txSyncCompileObserver::loadURI(const nsAString& aUri,
 
     nsCOMPtr<nsIPrincipal> referrerPrincipal;
     rv = nsContentUtils::GetSecurityManager()->
-      GetCodebasePrincipal(referrerUri, getter_AddRefs(referrerPrincipal));
+      GetSimpleCodebasePrincipal(referrerUri,
+                                 getter_AddRefs(referrerPrincipal));
     NS_ENSURE_SUCCESS(rv, rv);
 
     // Content Policy
-    PRInt16 shouldLoad = nsIContentPolicy::ACCEPT;
+    int16_t shouldLoad = nsIContentPolicy::ACCEPT;
     rv = NS_CheckContentLoadPolicy(nsIContentPolicy::TYPE_STYLESHEET,
                                    uri,
                                    referrerPrincipal,
-                                   nsnull,
+                                   nullptr,
                                    NS_LITERAL_CSTRING("application/xml"),
-                                   nsnull,
+                                   nullptr,
                                    &shouldLoad);
     NS_ENSURE_SUCCESS(rv, rv);
     if (NS_CP_REJECTED(shouldLoad)) {
@@ -656,18 +659,18 @@ txSyncCompileObserver::loadURI(const nsAString& aUri,
       source =
         do_QueryInterface(mProcessor->GetSourceContentModel());
     }
-    nsAutoSyncOperation sync(source ? source->OwnerDoc() : nsnull);
+    nsAutoSyncOperation sync(source ? source->OwnerDoc() : nullptr);
     nsCOMPtr<nsIDOMDocument> document;
-    rv = nsSyncLoadService::LoadDocument(uri, referrerPrincipal, nsnull,
+    rv = nsSyncLoadService::LoadDocument(uri, referrerPrincipal, nullptr,
                                          false, getter_AddRefs(document));
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsCOMPtr<nsIDocument> doc = do_QueryInterface(document);
     rv = handleNode(doc, aCompiler);
     if (NS_FAILED(rv)) {
-        nsCAutoString spec;
+        nsAutoCString spec;
         uri->GetSpec(spec);
-        aCompiler->cancel(rv, nsnull, NS_ConvertUTF8toUTF16(spec).get());
+        aCompiler->cancel(rv, nullptr, NS_ConvertUTF8toUTF16(spec).get());
         return rv;
     }
 
@@ -700,7 +703,7 @@ TX_CompileStylesheet(nsINode* aNode, txMozillaXSLTProcessor* aProcessor,
     }
     NS_ENSURE_TRUE(uri, NS_ERROR_FAILURE);
     
-    nsCAutoString spec;
+    nsAutoCString spec;
     uri->GetSpec(spec);
     NS_ConvertUTF8toUTF16 baseURI(spec);
 

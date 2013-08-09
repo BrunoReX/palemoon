@@ -19,7 +19,7 @@ class nsPluginEvent;
 
 // Do not make this interface scriptable, because the virtual functions in C++
 // blocks will make script call the wrong functions.
-[uuid(23bd0a76-a5dc-4a1d-be76-13d7a0dfd9ff)]
+[uuid(59BE4CA5-3CB0-40E6-A111-9A88C8477610)]
 interface nsIPluginInstanceOwner : nsISupports
 {
   /**
@@ -41,7 +41,7 @@ interface nsIPluginInstanceOwner : nsISupports
   /**
    * Get the display mode for the plugin instance.
    */
-  readonly attribute PRInt32 mode;
+  readonly attribute int32_t mode;
 
   /**
    * Create a place for the plugin to live in the owner's
@@ -54,12 +54,12 @@ interface nsIPluginInstanceOwner : nsISupports
   /**
    * Called when there is a valid target so that the proper
    * frame can be updated with new content. will not be called
-   * with nsnull aTarget.
+   * with nullptr aTarget.
    */
   NS_IMETHOD
   GetURL(const char *aURL, const char *aTarget, 
          nsIInputStream *aPostStream,
-         void *aHeadersData, PRUint32 aHeadersDataLen) = 0;
+         void *aHeadersData, uint32_t aHeadersDataLen) = 0;
 %}
 
   /**
@@ -109,14 +109,16 @@ interface nsIPluginInstanceOwner : nsISupports
   virtual void SetCurrentAsyncSurface(NPAsyncSurface *surface, NPRect *changed) = 0;
 %}
 
-  void setEventModel(in PRInt32 eventModel);
-
-%{C++
-  virtual void SendIdleEvent() = 0;
-%}
+  void setEventModel(in int32_t eventModel);
 
   /**
    * Call NPP_SetWindow on the plugin.
    */
   void callSetWindow();
+
+  /**
+   * Get the contents scale factor for the screen the plugin is
+   * drawn on.
+   */
+  double getContentsScaleFactor();
 };

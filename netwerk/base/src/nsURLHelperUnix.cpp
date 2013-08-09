@@ -7,14 +7,14 @@
 /* Unix-specific local file uri parsing */
 #include "nsURLHelper.h"
 #include "nsEscape.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsNativeCharsetUtils.h"
 
 nsresult 
 net_GetURLSpecFromActualFile(nsIFile *aFile, nsACString &result)
 {
     nsresult rv;
-    nsCAutoString nativePath, ePath;
+    nsAutoCString nativePath, ePath;
     nsAutoString path;
 
     rv = aFile->GetNativePath(nativePath);
@@ -30,7 +30,7 @@ net_GetURLSpecFromActualFile(nsIFile *aFile, nsACString &result)
     else
         ePath = nativePath;
     
-    nsCAutoString escPath;
+    nsAutoCString escPath;
     NS_NAMED_LITERAL_CSTRING(prefix, "file://");
         
     // Escape the path with the directory mask
@@ -55,12 +55,12 @@ net_GetFileFromURLSpec(const nsACString &aURL, nsIFile **result)
 
     nsresult rv;
 
-    nsCOMPtr<nsILocalFile> localFile;
+    nsCOMPtr<nsIFile> localFile;
     rv = NS_NewNativeLocalFile(EmptyCString(), true, getter_AddRefs(localFile));
     if (NS_FAILED(rv))
       return rv;
     
-    nsCAutoString directory, fileBaseName, fileExtension, path;
+    nsAutoCString directory, fileBaseName, fileExtension, path;
 
     rv = net_ParseFileURL(aURL, directory, fileBaseName, fileExtension);
     if (NS_FAILED(rv)) return rv;

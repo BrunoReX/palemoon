@@ -7,26 +7,19 @@
 #ifndef nsPluginInstanceOwner_h_
 #define nsPluginInstanceOwner_h_
 
-#include "prtypes.h"
 #include "npapi.h"
 #include "nsCOMPtr.h"
 #include "nsIPluginInstanceOwner.h"
 #include "nsIPluginTagInfo.h"
 #include "nsIPrivacyTransitionObserver.h"
 #include "nsIDOMEventListener.h"
-#include "nsIScrollPositionListener.h"
 #include "nsPluginHost.h"
 #include "nsPluginNativeWindow.h"
 #include "nsWeakReference.h"
 #include "gfxRect.h"
 
-// X.h defines KeyPress
-#ifdef KeyPress
-#undef KeyPress
-#endif
-
 #ifdef XP_MACOSX
-#include "nsCoreAnimationSupport.h"
+#include "mozilla/gfx/QuartzSupport.h"
 #include <ApplicationServices/ApplicationServices.h>
 #endif
 
@@ -51,15 +44,9 @@ class gfxXlibSurface;
 #include <os2.h>
 #endif
 
-// X.h defines KeyPress
-#ifdef KeyPress
-#undef KeyPress
-#endif
-
 class nsPluginInstanceOwner : public nsIPluginInstanceOwner,
                               public nsIPluginTagInfo,
                               public nsIDOMEventListener,
-                              public nsIScrollPositionListener,
                               public nsIPrivacyTransitionObserver,
                               public nsSupportsWeakReference
 {
@@ -73,7 +60,7 @@ public:
   
   NS_IMETHOD GetURL(const char *aURL, const char *aTarget,
                     nsIInputStream *aPostStream, 
-                    void *aHeadersData, PRUint32 aHeadersDataLen);
+                    void *aHeadersData, uint32_t aHeadersDataLen);
   
   NS_IMETHOD ShowStatus(const PRUnichar *aStatusMsg);
   
@@ -93,8 +80,8 @@ public:
   // nsIDOMEventListener interfaces 
   NS_DECL_NSIDOMEVENTLISTENER
   
-  nsresult MouseDown(nsIDOMEvent* aKeyEvent);
-  nsresult KeyPress(nsIDOMEvent* aKeyEvent);
+  nsresult ProcessMouseDown(nsIDOMEvent* aKeyEvent);
+  nsresult ProcessKeyPress(nsIDOMEvent* aKeyEvent);
 #if defined(MOZ_WIDGET_QT) && (MOZ_PLATFORM_MAEMO == 6)
   nsresult Text(nsIDOMEvent* aTextEvent);
 #endif
@@ -114,17 +101,7 @@ public:
 #elif defined(XP_OS2)
   void Paint(const nsRect& aDirtyRect, HPS aHPS);
 #endif
-  
-#ifdef MAC_CARBON_PLUGINS
-  void CancelTimer();
-  void StartTimer(bool isVisible);
-#endif
-  void SendIdleEvent();
-  
-  // nsIScrollPositionListener interface
-  virtual void ScrollPositionWillChange(nscoord aX, nscoord aY);
-  virtual void ScrollPositionDidChange(nscoord aX, nscoord aY);
-  
+
   //locals
   
   nsresult Init(nsIContent* aContent);
@@ -139,12 +116,13 @@ public:
   
   NPDrawingModel GetDrawingModel();
   bool IsRemoteDrawingCoreAnimation();
+  nsresult ContentsScaleFactorChanged(double aContentsScaleFactor);
   NPEventModel GetEventModel();
   static void CARefresh(nsITimer *aTimer, void *aClosure);
   void AddToCARefreshTimer();
   void RemoveFromCARefreshTimer();
   // This calls into the plugin (NPP_SetWindow) and can run script.
-  void* FixUpPluginWindow(PRInt32 inPaintState);
+  void* FixUpPluginWindow(int32_t inPaintState);
   void HidePluginWindow();
   // Set a flag that (if true) indicates the plugin port info has changed and
   // SetWindow() needs to be called.
@@ -173,14 +151,14 @@ public:
   void SetFrame(nsObjectFrame *aFrame);
   nsObjectFrame* GetFrame();
 
-  PRUint32 GetLastEventloopNestingLevel() const {
+  uint32_t GetLastEventloopNestingLevel() const {
     return mLastEventloopNestingLevel; 
   }
   
-  static PRUint32 GetEventloopNestingLevel();
+  static uint32_t GetEventloopNestingLevel();
   
   void ConsiderNewEventloopNestingLevel() {
-    PRUint32 currentLevel = GetEventloopNestingLevel();
+    uint32_t currentLevel = GetEventloopNestingLevel();
     
     if (currentLevel < mLastEventloopNestingLevel) {
       mLastEventloopNestingLevel = currentLevel;
@@ -235,7 +213,7 @@ public:
   void NotifyPaintWaiter(nsDisplayListBuilder* aBuilder);
 
   // Returns the image container that has our currently displayed image.
-  already_AddRefed<ImageContainer> GetImageContainer();
+  already_AddRefed<mozilla::layers::ImageContainer> GetImageContainer();
 
   /**
    * Returns the bounds of the current async-rendered surface. This can only
@@ -253,12 +231,12 @@ public:
   
   bool UseAsyncRendering();
 
+  already_AddRefed<nsIURI> GetBaseURI() const;
+
 #ifdef MOZ_WIDGET_ANDROID
   // Returns the image container for the specified VideoInfo
   void GetVideos(nsTArray<nsNPAPIPluginInstance::VideoInfo*>& aVideos);
-  already_AddRefed<ImageContainer> GetImageContainerForVideo(nsNPAPIPluginInstance::VideoInfo* aVideoInfo);
-
-  nsIntRect GetVisibleRect();
+  already_AddRefed<mozilla::layers::ImageContainer> GetImageContainerForVideo(nsNPAPIPluginInstance::VideoInfo* aVideoInfo);
 
   void Invalidate();
 
@@ -301,25 +279,19 @@ private:
   
 #ifdef XP_MACOSX
   NP_CGContext                              mCGPluginPortCopy;
-#ifndef NP_NO_QUICKDRAW
-  NP_Port                                   mQDPluginPortCopy;
-#endif
-  PRInt32                                   mInCGPaintLevel;
-  nsRefPtr<nsIOSurface>                     mIOSurface;
-  nsCARenderer                              mCARenderer;
+  int32_t                                   mInCGPaintLevel;
+  mozilla::RefPtr<MacIOSurface>             mIOSurface;
+  mozilla::RefPtr<nsCARenderer>             mCARenderer;
   CGColorSpaceRef                           mColorProfile;
   static nsCOMPtr<nsITimer>                *sCATimer;
   static nsTArray<nsPluginInstanceOwner*>  *sCARefreshListeners;
   bool                                      mSentInitialTopLevelWindowEvent;
 #endif
-  // We need to know if async hide window is required since we
-  // can not check UseAsyncRendering when executing StopPlugin
-  bool                                      mAsyncHidePluginWindow;
-  
+
   // Initially, the event loop nesting level we were created on, it's updated
   // if we detect the appshell is on a lower level as long as we're not stopped.
   // We delay DoStopPlugin() until the appshell reaches this level or lower.
-  PRUint32                    mLastEventloopNestingLevel;
+  uint32_t                    mLastEventloopNestingLevel;
   bool                        mContentFocused;
   bool                        mWidgetVisible;    // used on Mac to store our widget's visible state
 #ifdef XP_MACOSX
@@ -332,8 +304,8 @@ private:
   bool                        mPluginWindowVisible;
   bool                        mPluginDocumentActiveState;
 
-  PRUint16          mNumCachedAttrs;
-  PRUint16          mNumCachedParams;
+  uint16_t          mNumCachedAttrs;
+  uint16_t          mNumCachedParams;
   char              **mCachedAttrParamNames;
   char              **mCachedAttrParamValues;
   
@@ -370,7 +342,7 @@ private:
     mPluginSize(aPluginSize), mDirtyRect(aDirtyRect)
     {}
     virtual nsresult DrawWithXlib(gfxXlibSurface* surface, nsIntPoint offset, 
-                                  nsIntRect* clipRects, PRUint32 numClipRects);
+                                  nsIntRect* clipRects, uint32_t numClipRects);
   private:
     NPWindow* mWindow;
     nsPluginInstanceOwner* mInstanceOwner;

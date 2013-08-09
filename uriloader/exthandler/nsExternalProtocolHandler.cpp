@@ -100,7 +100,7 @@ NS_IMETHODIMP nsExtProtocolChannel::SetNotificationCallbacks(nsIInterfaceRequest
 NS_IMETHODIMP 
 nsExtProtocolChannel::GetSecurityInfo(nsISupports * *aSecurityInfo)
 {
-  *aSecurityInfo = nsnull;
+  *aSecurityInfo = nullptr;
   return NS_OK;
 }
 
@@ -138,7 +138,7 @@ nsresult nsExtProtocolChannel::OpenURL()
   if (extProtService)
   {
 #ifdef DEBUG
-    nsCAutoString urlScheme;
+    nsAutoCString urlScheme;
     mUrl->GetScheme(urlScheme);
     bool haveHandler = false;
     extProtService->ExternalProtocolHandlerExists(urlScheme.get(), &haveHandler);
@@ -213,7 +213,12 @@ NS_IMETHODIMP nsExtProtocolChannel::SetContentCharset(const nsACString &aContent
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-NS_IMETHODIMP nsExtProtocolChannel::GetContentDisposition(PRUint32 *aContentDisposition)
+NS_IMETHODIMP nsExtProtocolChannel::GetContentDisposition(uint32_t *aContentDisposition)
+{
+  return NS_ERROR_NOT_AVAILABLE;
+}
+
+NS_IMETHODIMP nsExtProtocolChannel::SetContentDisposition(uint32_t aContentDisposition)
 {
   return NS_ERROR_NOT_AVAILABLE;
 }
@@ -223,19 +228,24 @@ NS_IMETHODIMP nsExtProtocolChannel::GetContentDispositionFilename(nsAString &aCo
   return NS_ERROR_NOT_AVAILABLE;
 }
 
+NS_IMETHODIMP nsExtProtocolChannel::SetContentDispositionFilename(const nsAString &aContentDispositionFilename)
+{
+  return NS_ERROR_NOT_AVAILABLE;
+}
+
 NS_IMETHODIMP nsExtProtocolChannel::GetContentDispositionHeader(nsACString &aContentDispositionHeader)
 {
   return NS_ERROR_NOT_AVAILABLE;
 }
 
-NS_IMETHODIMP nsExtProtocolChannel::GetContentLength(PRInt32 * aContentLength)
+NS_IMETHODIMP nsExtProtocolChannel::GetContentLength(int64_t * aContentLength)
 {
   *aContentLength = -1;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsExtProtocolChannel::SetContentLength(PRInt32 aContentLength)
+nsExtProtocolChannel::SetContentLength(int64_t aContentLength)
 {
   NS_NOTREACHED("SetContentLength");
   return NS_ERROR_NOT_IMPLEMENTED;
@@ -321,14 +331,14 @@ NS_IMETHODIMP nsExternalProtocolHandler::GetScheme(nsACString &aScheme)
   return NS_OK;
 }
 
-NS_IMETHODIMP nsExternalProtocolHandler::GetDefaultPort(PRInt32 *aDefaultPort)
+NS_IMETHODIMP nsExternalProtocolHandler::GetDefaultPort(int32_t *aDefaultPort)
 {
   *aDefaultPort = 0;
     return NS_OK;
 }
 
 NS_IMETHODIMP 
-nsExternalProtocolHandler::AllowPort(PRInt32 port, const char *scheme, bool *_retval)
+nsExternalProtocolHandler::AllowPort(int32_t port, const char *scheme, bool *_retval)
 {
     // don't override anything.  
     *_retval = false;
@@ -340,7 +350,7 @@ bool nsExternalProtocolHandler::HaveExternalProtocolHandler(nsIURI * aURI)
   bool haveHandler = false;
   if (aURI)
   {
-    nsCAutoString scheme;
+    nsAutoCString scheme;
     aURI->GetScheme(scheme);
     nsCOMPtr<nsIExternalProtocolService> extProtSvc(do_GetService(NS_EXTERNALPROTOCOLSERVICE_CONTRACTID));
     if (extProtSvc)
@@ -350,7 +360,7 @@ bool nsExternalProtocolHandler::HaveExternalProtocolHandler(nsIURI * aURI)
   return haveHandler;
 }
 
-NS_IMETHODIMP nsExternalProtocolHandler::GetProtocolFlags(PRUint32 *aUritype)
+NS_IMETHODIMP nsExternalProtocolHandler::GetProtocolFlags(uint32_t *aUritype)
 {
     // Make it norelative since it is a simple uri
     *aUritype = URI_NORELATIVE | URI_NOAUTH | URI_LOADABLE_BY_ANYONE |

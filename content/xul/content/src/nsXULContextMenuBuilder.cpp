@@ -22,17 +22,17 @@ nsXULContextMenuBuilder::~nsXULContextMenuBuilder()
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsXULContextMenuBuilder)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsXULContextMenuBuilder)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mFragment)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mDocument)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mCurrentNode)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMARRAY(mElements)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFragment)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocument)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCurrentNode)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mElements)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsXULContextMenuBuilder)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mFragment)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mDocument)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mCurrentNode)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMARRAY(mElements)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFragment)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocument)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mCurrentNode)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mElements)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsXULContextMenuBuilder)
@@ -56,13 +56,13 @@ nsXULContextMenuBuilder::OpenContainer(const nsAString& aLabel)
     mCurrentNode = mFragment;
   } else {
     nsCOMPtr<nsIContent> menu;
-    nsresult rv = CreateElement(nsGkAtoms::menu, nsnull, getter_AddRefs(menu));
+    nsresult rv = CreateElement(nsGkAtoms::menu, nullptr, getter_AddRefs(menu));
     NS_ENSURE_SUCCESS(rv, rv);
 
     menu->SetAttr(kNameSpaceID_None, nsGkAtoms::label, aLabel, false);
 
     nsCOMPtr<nsIContent> menuPopup;
-    rv = CreateElement(nsGkAtoms::menupopup, nsnull,
+    rv = CreateElement(nsGkAtoms::menupopup, nullptr,
                        getter_AddRefs(menuPopup));
     NS_ENSURE_SUCCESS(rv, rv);
         
@@ -138,7 +138,7 @@ nsXULContextMenuBuilder::AddSeparator()
   }
 
   nsCOMPtr<nsIContent> menuseparator;
-  nsresult rv = CreateElement(nsGkAtoms::menuseparator, nsnull,
+  nsresult rv = CreateElement(nsGkAtoms::menuseparator, nullptr,
                               getter_AddRefs(menuseparator));
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -152,7 +152,7 @@ nsXULContextMenuBuilder::UndoAddSeparator()
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  PRUint32 count = mCurrentNode->GetChildCount();
+  uint32_t count = mCurrentNode->GetChildCount();
   if (!count ||
       mCurrentNode->GetChildAt(count - 1)->Tag() != nsGkAtoms::menuseparator) {
     return NS_OK;
@@ -170,7 +170,7 @@ nsXULContextMenuBuilder::CloseContainer()
   }
 
   if (mCurrentNode == mFragment) {
-    mCurrentNode = nsnull;
+    mCurrentNode = nullptr;
   } else {
     nsIContent* parent = mCurrentNode->GetParent();
     mCurrentNode = parent->GetParent();
@@ -196,12 +196,12 @@ nsXULContextMenuBuilder::Init(nsIDOMDocumentFragment* aDocumentFragment,
 NS_IMETHODIMP
 nsXULContextMenuBuilder::Click(const nsAString& aGeneratedItemId)
 {
-  PRInt32 rv;
-  PRInt32 idx = nsString(aGeneratedItemId).ToInteger(&rv);
+  nsresult rv;
+  int32_t idx = nsString(aGeneratedItemId).ToInteger(&rv);
   if (NS_SUCCEEDED(rv)) {
     nsCOMPtr<nsIDOMHTMLElement> element = mElements.SafeObjectAt(idx);
     if (element) {
-      element->Click();
+      element->DOMClick();
     }
   }
 
@@ -213,10 +213,10 @@ nsXULContextMenuBuilder::CreateElement(nsIAtom* aTag,
                                        nsIDOMHTMLElement* aHTMLElement,
                                        nsIContent** aResult)
 {
-  *aResult = nsnull;
+  *aResult = nullptr;
 
   nsCOMPtr<nsINodeInfo> nodeInfo = mDocument->NodeInfoManager()->GetNodeInfo(
-    aTag, nsnull, kNameSpaceID_XUL, nsIDOMNode::ELEMENT_NODE);
+    aTag, nullptr, kNameSpaceID_XUL, nsIDOMNode::ELEMENT_NODE);
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
 
   nsresult rv = NS_NewElement(aResult, nodeInfo.forget(), NOT_FROM_PARSER);

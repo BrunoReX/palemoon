@@ -7,7 +7,7 @@ load 56746-1.html
 load 89101-1.html
 load 89358-1.html
 load 90205-1.html
-load 99776-1.html
+skip-if(isDebugBuild&&(OSX==10.7||OSX==10.8)) load 99776-1.html # 10.7 and 10.8 leaks are bug 705570
 load 118931-1.html
 load 121533-1.html
 load 123049-1.html
@@ -41,7 +41,7 @@ load 265736-1.html
 load 265736-2.html
 load 265899-1.html
 load 265973-1.html
-asserts(6-12) load 265986-1.html # Bug 512405
+asserts(6-12) skip-if(isDebugBuild&&(OSX==10.7||OSX==10.8)) load 265986-1.html # Bug 512405 for assertions, bug 705570 for 10.7 and 10.8 leaks
 load 265999-1.html
 load 266222-1.html
 asserts(3-7) load 266360-1.html # bug 575011 / bug 576358
@@ -240,6 +240,7 @@ load 455063-3.html
 load 455171-4.html
 load 455623-1.html
 load 457362-1.xhtml
+asserts(0-1) load 460389-1.html # Bug 780985
 load 466763-1.html
 load 467881-1.html
 load 468491-1.html
@@ -352,7 +353,21 @@ load 707098.html
 load 722137.html
 load 725535.html
 load 727601.html
-skip-if(Android&&!browserIsRemote) asserts(0-2) pref(dom.disable_open_during_load,false) load 735943.html # the assertion is bug 735966, for android bug 760271
+# Bug 778067: This test fails when we try to create a popup window in
+# <browser remote>, because TabParent::AnswerOpenWindow() can't deal
+# with creating a popup window this early during page load.  However,
+# <iframe mobrowser> is set up to handle this, and <browser remote>
+# isn't shipping again in the foreseeable future, so disable for now.
+# (The parent process in this case is behaving "well" by crashing the
+# content process when it gets into an unexpected state, it's just
+# that the reftest harness can't handle restarting crashed content
+# processes so we time out.)
+skip-if(Android||browserIsRemote) asserts(0-2) pref(dom.disable_open_during_load,false) load 735943.html # the assertion is bug 735966, for android bug 760271
 asserts(0-2) load 736389-1.xhtml # sometimes the above assertions are delayed and is reported on this test instead
 asserts-if(winWidget,0-2) load 736924-1.html # bug 738803
 load 749816-1.html
+load 763223-1.html
+test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.lineThreshold,100) load 763702.xhtml
+load 770381-1.html
+load 795646.html
+load 813372-1.html

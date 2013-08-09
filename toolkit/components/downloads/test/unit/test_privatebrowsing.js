@@ -49,7 +49,8 @@ function is_active_download_available(aID, aSrc, aDst, aName) {
     if (download.id == aID &&
         download.source.spec == aSrc &&
         download.targetFile.path == aDst.path &&
-        download.displayName == aName)
+        download.displayName == aName &&
+        download.isPrivate == pb.privateBrowsingEnabled)
       return true;
   }
   return false;
@@ -81,7 +82,7 @@ function run_test() {
   prefBranch.setBoolPref("browser.privatebrowsing.keep_current_session", true);
 
   do_test_pending();
-  let httpserv = new nsHttpServer();
+  let httpserv = new HttpServer();
   httpserv.registerDirectory("/", do_get_cwd());
 
   let tmpDir = Cc["@mozilla.org/file/directory_service;1"].
@@ -173,6 +174,7 @@ function run_test() {
 
           // Create Download-B
           let dlB = addDownload({
+            isPrivate: pb.privateBrowsingEnabled,
             targetFile: fileB,
             sourceURI: downloadBSource,
             downloadName: downloadBName,
@@ -210,6 +212,7 @@ function run_test() {
           // Create Download-C
           httpserv.start(4444);
           dlC = addDownload({
+            isPrivate: pb.privateBrowsingEnabled,
             targetFile: fileC,
             sourceURI: downloadCSource,
             downloadName: downloadCName,
@@ -295,6 +298,7 @@ function run_test() {
 
   // Create Download-A
   let dlA = addDownload({
+    isPrivate: pb.privateBrowsingEnabled,
     targetFile: fileA,
     sourceURI: downloadASource,
     downloadName: downloadAName,

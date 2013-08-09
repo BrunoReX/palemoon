@@ -37,7 +37,7 @@ public:
               Layer* aMaskLayer);
 
   virtual already_AddRefed<gfxASurface>
-  CreateBuffer(ContentType aType, const nsIntSize& aSize, PRUint32 aFlags);
+  CreateBuffer(ContentType aType, const nsIntSize& aSize, uint32_t aFlags);
 
   /**
    * Swap out the old backing buffer for |aBuffer| and attributes.
@@ -45,10 +45,12 @@ public:
   void SetBackingBuffer(gfxASurface* aBuffer,
                         const nsIntRect& aRect, const nsIntPoint& aRotation)
   {
+#ifdef DEBUG
     gfxIntSize prevSize = gfxIntSize(BufferRect().width, BufferRect().height);
     gfxIntSize newSize = aBuffer->GetSize();
-    NS_ABORT_IF_FALSE(newSize == prevSize,
+    NS_ABORT_IF_FALSE(newSize == prevSize || prevSize == gfxIntSize(0,0),
                       "Swapped-in buffer size doesn't match old buffer's!");
+#endif
     nsRefPtr<gfxASurface> oldBuffer;
     oldBuffer = SetBuffer(aBuffer, aRect, aRotation);
   }
@@ -62,7 +64,7 @@ public:
    * When BasicThebesLayerBuffer is used with layers that hold
    * SurfaceDescriptor, this buffer only has a valid gfxASurface in
    * the scope of an AutoOpenSurface for that SurfaceDescriptor.  That
-   * is, it's sort of a "virtual buffer" that's only mapped an
+   * is, it's sort of a "virtual buffer" that's only mapped and
    * unmapped within the scope of AutoOpenSurface.  None of the
    * underlying buffer attributes (rect, rotation) are affected by
    * mapping/unmapping.
@@ -70,13 +72,13 @@ public:
    * These helpers just exist to provide more descriptive names of the
    * map/unmap process.
    */
-  void MapBuffer(gfxASurface* aBuffer)
+  void ProvideBuffer(AutoOpenSurface* aProvider)
   {
-    SetBuffer(aBuffer);
+    SetBufferProvider(aProvider);
   }
-  void UnmapBuffer()
+  void RevokeBuffer()
   {
-    SetBuffer(nsnull);
+    SetBufferProvider(nullptr);
   }
 
 private:
@@ -125,16 +127,16 @@ public:
     *aOldRotation = BufferRotation();
 
     nsRefPtr<gfxASurface> oldBuffer;
-    oldBuffer = SetBuffer(nsnull, aNewRect, aNewRotation);
+    oldBuffer = SetBuffer(nullptr, aNewRect, aNewRotation);
     MOZ_ASSERT(!oldBuffer);
   }
 
 protected:
   virtual already_AddRefed<gfxASurface>
-  CreateBuffer(ContentType, const nsIntSize&, PRUint32)
+  CreateBuffer(ContentType, const nsIntSize&, uint32_t)
   {
     NS_RUNTIMEABORT("ShadowThebesLayer can't paint content");
-    return nsnull;
+    return nullptr;
   }
 };
 

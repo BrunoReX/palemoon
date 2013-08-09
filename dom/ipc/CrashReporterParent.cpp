@@ -17,7 +17,7 @@ namespace dom {
 void
 CrashReporterParent::ActorDestroy(ActorDestroyReason why)
 {
-#if defined(__ANDROID__) && defined(MOZ_CRASHREPORTER)
+#if defined(MOZ_WIDGET_ANDROID) && defined(MOZ_CRASHREPORTER)
   CrashReporter::RemoveLibraryMappingsForChild(ProcessId(OtherProcess()));
 #endif
 }
@@ -25,8 +25,8 @@ CrashReporterParent::ActorDestroy(ActorDestroyReason why)
 bool
 CrashReporterParent::RecvAddLibraryMappings(const InfallibleTArray<Mapping>& mappings)
 {
-#if defined(__ANDROID__) && defined(MOZ_CRASHREPORTER)
-  for (PRUint32 i = 0; i < mappings.Length(); i++) {
+#if defined(MOZ_WIDGET_ANDROID) && defined(MOZ_CRASHREPORTER)
+  for (uint32_t i = 0; i < mappings.Length(); i++) {
     const Mapping& m = mappings[i];
     CrashReporter::AddLibraryMappingForChild(ProcessId(OtherProcess()),
                                              m.library_name().get(),
@@ -39,14 +39,13 @@ CrashReporterParent::RecvAddLibraryMappings(const InfallibleTArray<Mapping>& map
   return true;
 }
 
-bool
-CrashReporterParent::RecvAnnotateCrashReport(const nsCString& key,
-                                             const nsCString& data)
+void
+CrashReporterParent::AnnotateCrashReport(const nsCString& key,
+                                         const nsCString& data)
 {
 #ifdef MOZ_CRASHREPORTER
     mNotes.Put(key, data);
 #endif
-    return true;
 }
 
 bool
@@ -74,7 +73,7 @@ CrashReporterParent::~CrashReporterParent()
 
 void
 CrashReporterParent::SetChildData(const NativeThreadId& tid,
-                                  const PRUint32& processType)
+                                  const uint32_t& processType)
 {
     mInitialized = true;
     mMainThread = tid;
@@ -83,23 +82,7 @@ CrashReporterParent::SetChildData(const NativeThreadId& tid,
 
 #ifdef MOZ_CRASHREPORTER
 bool
-CrashReporterParent::GenerateHangCrashReport(const AnnotationTable* processNotes)
-{
-    if (mChildDumpID.IsEmpty())
-        return false;
-
-    GenerateChildData(processNotes);
-
-    CrashReporter::AnnotationTable notes;
-    notes.Init(4);
-    notes.Put(nsDependentCString("HangID"), NS_ConvertUTF16toUTF8(mHangID));
-    if (!CrashReporter::AppendExtraData(mParentDumpID, notes))
-        NS_WARNING("problem appending parent data to .extra");
-    return true;
-}
-
-bool
-CrashReporterParent::GenerateCrashReportForMinidump(nsILocalFile* minidump,
+CrashReporterParent::GenerateCrashReportForMinidump(nsIFile* minidump,
     const AnnotationTable* processNotes)
 {
     if (!CrashReporter::GetIDFromMinidump(minidump, mChildDumpID))
@@ -112,7 +95,7 @@ CrashReporterParent::GenerateChildData(const AnnotationTable* processNotes)
 {
     MOZ_ASSERT(mInitialized);
 
-    nsCAutoString type;
+    nsAutoCString type;
     switch (mProcessType) {
         case GeckoProcessType_Content:
             type = NS_LITERAL_CSTRING("content");
@@ -127,7 +110,7 @@ CrashReporterParent::GenerateChildData(const AnnotationTable* processNotes)
     mNotes.Put(NS_LITERAL_CSTRING("ProcessType"), type);
 
     char startTime[32];
-    sprintf(startTime, "%lld", static_cast<PRInt64>(mStartTime));
+    sprintf(startTime, "%lld", static_cast<long long>(mStartTime));
     mNotes.Put(NS_LITERAL_CSTRING("StartupTime"), nsDependentCString(startTime));
 
     if (!mAppNotes.IsEmpty())

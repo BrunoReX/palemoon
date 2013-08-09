@@ -6,7 +6,8 @@
 #ifndef MOZILLA_GFX_HELPERSD2D_H_
 #define MOZILLA_GFX_HELPERSD2D_H_
 
-#include <d2d1.h>
+#include "moz-d2d1-1.h"
+
 #include <dwrite.h>
 #include "2D.h"
 
@@ -242,7 +243,7 @@ DWriteGlyphRunFromGlyphs(const GlyphBuffer &aGlyphs, ScaledFontDWrite *aFont, Au
     
   run->bidiLevel = 0;
   run->fontFace = aFont->mFontFace;
-  run->fontEmSize = aFont->mSize;
+  run->fontEmSize = aFont->GetSize();
   run->glyphCount = aGlyphs.mNumGlyphs;
   run->isSideways = FALSE;
 }

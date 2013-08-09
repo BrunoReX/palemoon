@@ -74,7 +74,7 @@ public:
                           bool above);
 
   NS_IMETHOD  InsertChild(nsIView *parent, nsIView *child,
-                          PRInt32 zindex);
+                          int32_t zindex);
 
   NS_IMETHOD  RemoveChild(nsIView *parent);
 
@@ -86,7 +86,7 @@ public:
 
   NS_IMETHOD  SetViewVisibility(nsIView *aView, nsViewVisibility aVisible);
 
-  NS_IMETHOD  SetViewZIndex(nsIView *aView, bool aAuto, PRInt32 aZIndex, bool aTopMost=false);
+  NS_IMETHOD  SetViewZIndex(nsIView *aView, bool aAuto, int32_t aZIndex, bool aTopMost=false);
 
   virtual void SetPresShell(nsIPresShell *aPresShell) { mPresShell = aPresShell; }
   virtual nsIPresShell* GetPresShell() { return mPresShell; }
@@ -99,8 +99,8 @@ public:
   NS_IMETHOD GetRootWidget(nsIWidget **aWidget);
  
   NS_IMETHOD IsPainting(bool& aIsPainting);
-  NS_IMETHOD GetLastUserEventTime(PRUint32& aTime);
-  static PRUint32 gLastUserEventTime;
+  NS_IMETHOD GetLastUserEventTime(uint32_t& aTime);
+  static uint32_t gLastUserEventTime;
 
   /* Update the cached RootViewManager pointer on this view manager. */
   void InvalidateHierarchy();
@@ -121,7 +121,6 @@ private:
    * Call WillPaint() on all view observers under this vm root.
    */
   void CallWillPaintOnObservers(bool aWillSendDidPaint);
-  void CallDidPaintOnObserver();
   void ReparentChildWidgets(nsIView* aView, nsIWidget *aNewWidget);
   void ReparentWidgets(nsIView* aView, nsIView *aParent);
   void InvalidateWidgetArea(nsView *aWidgetView, const nsRegion &aDamagedRegion);
@@ -129,8 +128,7 @@ private:
   void InvalidateViews(nsView *aView);
 
   // aView is the view for aWidget and aRegion is relative to aWidget.
-  void Refresh(nsView *aView, nsIWidget *aWidget, const nsIntRegion& aRegion,
-               bool aWillSendDidPaint);
+  void Refresh(nsView *aView, const nsIntRegion& aRegion, bool aWillSendDidPaint);
 
   void InvalidateRectDifference(nsView *aView, const nsRect& aRect, const nsRect& aCutOut);
   void InvalidateHorizontalBandDifference(nsView *aView, const nsRect& aRect, const nsRect& aCutOut,
@@ -169,11 +167,16 @@ public: // NOT in nsIViewManager, so private to the view module
   // be deferred while refresh is disabled.
   bool IsPaintingAllowed() { return RootViewManager()->mRefreshDisableCount == 0; }
 
+  void WillPaintWindow(nsIWidget* aWidget, bool aWillSendDidPaint);
+  bool PaintWindow(nsIWidget* aWidget, nsIntRegion aRegion,
+                   uint32_t aFlags);
+  void DidPaintWindow();
+
   // Call this when you need to let the viewmanager know that it now has
   // pending updates.
   void PostPendingUpdate();
 
-  PRUint32 AppUnitsPerDevPixel() const
+  uint32_t AppUnitsPerDevPixel() const
   {
     return mContext->AppUnitsPerDevPixel();
   }
@@ -195,16 +198,15 @@ private:
   // the root view manager.  Some have accessor functions to enforce
   // this, as noted.
   
-  PRInt32           mRefreshDisableCount;
+  int32_t           mRefreshDisableCount;
   // Use IsPainting() and SetPainting() to access mPainting.
   bool              mPainting;
   bool              mRecursiveRefreshPending;
-  bool              mHasPendingUpdates;
   bool              mHasPendingWidgetGeometryChanges;
   bool              mInScroll;
 
   //from here to public should be static and locked... MMP
-  static PRInt32           mVMCount;        //number of viewmanagers
+  static int32_t           mVMCount;        //number of viewmanagers
 
   //list of view managers
   static nsVoidArray       *gViewManagers;

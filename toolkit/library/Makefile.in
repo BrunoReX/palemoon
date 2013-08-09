@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH     = ../..
+DEPTH     = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir    = @srcdir@
 VPATH     = @srcdir@
@@ -18,7 +18,9 @@ FORCE_SHARED_LIB = 1
 MOZILLA_INTERNAL_API = 1
 
 ifdef MOZ_METRO
+ifeq ($(OS_ARCH),WINNT)
 DIRS += winvccorlib
+endif
 endif
 
 ifeq ($(MOZ_WIDGET_TOOLKIT),cocoa)
@@ -41,11 +43,8 @@ ifeq ($(OS_ARCH),OS2)
 CPPSRCS += dlldeps-xul.cpp
 endif
 
-ifneq (,$(MOZ_ENABLE_GTK2))
-DEFINES += -DMOZ_ENABLE_GTK2
-endif
-
 SHARED_LIBRARY_LIBS += \
+  $(DEPTH)/toolkit/components/osfile/$(LIB_PREFIX)osfile_s.$(LIB_SUFFIX) \
   $(DEPTH)/toolkit/xre/$(LIB_PREFIX)xulapp_s.$(LIB_SUFFIX) \
   $(NULL)
 
@@ -77,10 +76,6 @@ endif
 
 LOCAL_INCLUDES += -I$(topsrcdir)/widget/windows
 LOCAL_INCLUDES += -I$(topsrcdir)/xpcom/base
-endif
-
-ifneq (,$(filter WINNT OS2,$(OS_ARCH)))
-DEFINES += -DZLIB_DLL=1
 endif
 
 ifeq ($(OS_ARCH),OS2)
@@ -118,7 +113,15 @@ STATIC_LIBS += mozril_s
 endif #}
 
 ifdef MOZ_B2G_BT #{
-STATIC_LIBS += mozdbus_s
+STATIC_LIBS += mozdbus_s mozipcunixsocket_s
+endif #}
+
+ifeq (gonk,$(MOZ_WIDGET_TOOLKIT))
+STATIC_LIBS += moznetd_s
+endif
+
+ifdef MOZ_B2G_CAMERA #{
+OS_LIBS += -lstagefright -lstagefright_omx
 endif #}
 
 ifdef MOZ_IPDL_TESTS
@@ -148,7 +151,9 @@ COMPONENT_LIBS += \
   startupcache \
   pref \
   htmlpars \
+  identity \
   imglib2 \
+  mediasniffer \
   gkgfx \
   gklayout \
   docshell \
@@ -207,6 +212,12 @@ endif
 ifneq (,$(filter windows,$(MOZ_WIDGET_TOOLKIT)))
 COMPONENT_LIBS += \
   windowsproxy \
+  $(NULL)
+endif
+
+ifneq (,$(filter android,$(MOZ_WIDGET_TOOLKIT)))
+COMPONENT_LIBS += \
+  androidproxy \
   $(NULL)
 endif
 
@@ -293,6 +304,9 @@ endif
 
 ifeq (windows,$(MOZ_WIDGET_TOOLKIT))
 COMPONENT_LIBS += widget_windows
+ifdef MOZ_METRO
+COMPONENT_LIBS += widget_winrt
+endif
 endif
 ifeq (os2,$(MOZ_WIDGET_TOOLKIT))
 COMPONENT_LIBS += wdgtos2
@@ -330,6 +344,11 @@ COMPONENT_LIBS += gkdebug
 endif
 endif
 
+ifdef MOZ_GIO_COMPONENT
+DEFINES += -DMOZ_GIO_COMPONENT
+COMPONENT_LIBS += nkgio
+endif
+
 ifdef MOZ_APP_COMPONENT_LIBS
 COMPONENT_LIBS += $(MOZ_APP_COMPONENT_LIBS)
 endif
@@ -348,16 +367,14 @@ EXTRA_DSO_LDOPTS += \
   $(NULL)
 
 ifdef MOZ_NATIVE_JPEG
-EXTRA_DSO_LDOPTS += $(JPEG_LIBS)
+EXTRA_DSO_LDOPTS += $(MOZ_JPEG_LIBS)
 endif
 
 ifdef MOZ_NATIVE_PNG
-EXTRA_DSO_LDOPTS += $(PNG_LIBS)
+EXTRA_DSO_LDOPTS += $(MOZ_PNG_LIBS)
 endif
 
-ifdef MOZ_NATIVE_ZLIB
-EXTRA_DSO_LDOPTS += $(ZLIB_LIBS)
-else
+ifneq (WINNT,$(OS_ARCH))
 EXTRA_DSO_LDOPTS += $(MOZ_ZLIB_LIBS)
 endif
 
@@ -377,11 +394,45 @@ ifndef MOZ_TREE_PIXMAN
 EXTRA_DSO_LDOPTS += $(MOZ_PIXMAN_LIBS)
 endif
 
-EXTRA_DSO_LDOPTS += $(call EXPAND_LIBNAME_PATH,gkmedias,$(DIST)/lib) 
+ifdef MOZ_DMD
+EXTRA_DSO_LDOPTS += $(call EXPAND_LIBNAME_PATH,dmd,$(DIST)/lib)
+endif
+
+EXTRA_DSO_LDOPTS += $(call EXPAND_LIBNAME_PATH,gkmedias,$(DIST)/lib)
+
+ifdef MOZ_WEBRTC
+ifdef MOZ_PEERCONNECTION
+COMPONENT_LIBS += peerconnection
+endif
+ifdef MOZ_WEBRTC_SIGNALING
+EXTRA_DSO_LDOPTS += \
+  $(DEPTH)/media/mtransport/build/$(LIB_PREFIX)mtransport.$(LIB_SUFFIX) \
+  $(DEPTH)/media/webrtc/signaling/signaling_ecc/$(LIB_PREFIX)ecc.$(LIB_SUFFIX) \
+  $(DEPTH)/media/webrtc/signaling/signaling_sipcc/$(LIB_PREFIX)sipcc.$(LIB_SUFFIX) \
+  $(NULL)
+endif
+ifdef MOZ_WEBRTC_IN_LIBXUL
+include $(topsrcdir)/media/webrtc/shared_libs.mk
+EXTRA_DSO_LDOPTS += $(WEBRTC_LIBS)
+ifeq (WINNT,$(OS_TARGET))
+EXTRA_DSO_LDOPTS += \
+  -LIBPATH:"$(MOZ_DIRECTX_SDK_PATH)/lib/$(MOZ_DIRECTX_SDK_CPU_SUFFIX)" \
+  $(NULL)
+OS_LIBS += $(call EXPAND_LIBNAME,secur32 crypt32 iphlpapi strmiids dmoguids wmcodecdspuuid amstrmid msdmo wininet)
+endif
+endif
+endif
+
 
 ifdef MOZ_SYDNEYAUDIO
 ifeq ($(OS_ARCH),Linux)
 EXTRA_DSO_LDOPTS += $(MOZ_ALSA_LIBS)
+endif
+endif
+
+ifdef MOZ_PULSEAUDIO
+ifdef MOZ_CUBEB
+EXTRA_DSO_LDOPTS += $(MOZ_PULSEAUDIO_LIBS)
 endif
 endif
 
@@ -406,6 +457,9 @@ OS_LIBS += \
   -lbinder \
   -lsensorservice \
   -ldbus \
+  -lstagefright \
+  -lstagefright_omx \
+  -lbinder \
   $(NULL)
 endif
 
@@ -421,7 +475,6 @@ CPPSRCS += \
 
 GARBAGE += \
   $(INTL_UNICHARUTIL_UTIL_LCPPSRCS) \
-  $(wildcard *.$(OBJ_SUFFIX)) \
   $(RDF_UTIL_SRC_LCPPSRCS) \
   $(NULL)
 
@@ -457,7 +510,7 @@ ifeq ($(MOZ_WIDGET_TOOLKIT),cocoa)
 CXXFLAGS += $(TK_CFLAGS)
 OS_LIBS += \
   -framework SystemConfiguration \
-  -framework QuickTime \
+  -framework QTKit \
   -framework IOKit \
   -F/System/Library/PrivateFrameworks -framework CoreUI \
   $(TK_LIBS) \
@@ -474,6 +527,7 @@ OS_LIBS += \
   -framework IOKit \
   -framework Foundation \
   -framework AppKit \
+  -framework Security \
   $(NULL)
 endif
 endif
@@ -535,13 +589,19 @@ EXTRA_DSO_LDOPTS += -lelf -ldemangle
 endif
 endif
 
-ifeq ($(OS_ARCH),WINNT)
-OS_LIBS += $(call EXPAND_LIBNAME,shell32 ole32 version winspool comdlg32 imm32 msimg32 shlwapi psapi ws2_32 dbghelp rasapi32 rasdlg iphlpapi uxtheme setupapi secur32 sensorsapi portabledeviceguids windowscodecs)
-ifdef MOZ_CRASHREPORTER
-OS_LIBS += $(call EXPAND_LIBNAME,wininet)
+ifneq (,$(filter DragonFly FreeBSD NetBSD OpenBSD,$(OS_ARCH)))
+OS_LIBS += $(call EXPAND_LIBNAME,kvm)
+# keep `environ' unresolved, see bug 14426 for binutils
+EXTRA_DSO_LDOPTS += -Wl,--warn-unresolved-symbols
 endif
+
+ifeq ($(OS_ARCH),WINNT)
+OS_LIBS += $(call EXPAND_LIBNAME,shell32 ole32 version winspool comdlg32 imm32 msimg32 shlwapi psapi ws2_32 dbghelp rasapi32 rasdlg iphlpapi uxtheme setupapi secur32 sensorsapi portabledeviceguids windowscodecs wininet)
 ifdef ACCESSIBILITY
 OS_LIBS += $(call EXPAND_LIBNAME,oleacc)
+endif
+ifdef MOZ_METRO
+OS_LIBS += $(call EXPAND_LIBNAME,uiautomationcore)
 endif
 ifdef _MSC_VER
 OS_LIBS += $(call EXPAND_LIBNAME,delayimp)
@@ -553,6 +613,7 @@ EXTRA_DSO_LDOPTS += \
   -DELAYLOAD:comdlg32.dll \
   -DELAYLOAD:winspool.drv \
   -DELAYLOAD:secur32.dll \
+  -DELAYLOAD:wininet.dll \
   $(NULL)
 
 # See nsDllMain for an explanation
@@ -564,6 +625,7 @@ EXTRA_DSO_LDOPTS += -DELAYLOAD:VCCORLIB$(CRTDLLVERSION).DLL
 endif
 EXTRA_DSO_LDOPTS += -DELAYLOAD:API-MS-WIN-CORE-WINRT-L$(CRTEXPDLLVERSION).DLL
 EXTRA_DSO_LDOPTS += -DELAYLOAD:API-MS-WIN-CORE-WINRT-STRING-L$(CRTEXPDLLVERSION).DLL
+EXTRA_DSO_LDOPTS += -DELAYLOAD:uiautomationcore.dll
 endif
 
 ifdef ACCESSIBILITY

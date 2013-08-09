@@ -6,9 +6,9 @@
 
 #include "nsDOMCSSValueList.h"
 #include "nsCOMPtr.h"
-#include "nsDOMError.h"
-#include "prtypes.h"
+#include "nsError.h"
 #include "nsContentUtils.h"
+#include "nsDOMClassInfoID.h"
 
 nsDOMCSSValueList::nsDOMCSSValueList(bool aCommaDelimited, bool aReadonly)
   : mCommaDelimited(aCommaDelimited), mReadonly(aReadonly)
@@ -41,7 +41,7 @@ nsDOMCSSValueList::AppendCSSValue(nsIDOMCSSValue* aValue)
 // nsIDOMCSSValueList
 
 NS_IMETHODIMP
-nsDOMCSSValueList::GetLength(PRUint32* aLength)
+nsDOMCSSValueList::GetLength(uint32_t* aLength)
 {
   *aLength = mCSSValues.Length();
 
@@ -49,7 +49,7 @@ nsDOMCSSValueList::GetLength(PRUint32* aLength)
 }
 
 NS_IMETHODIMP
-nsDOMCSSValueList::Item(PRUint32 aIndex, nsIDOMCSSValue **aReturn)
+nsDOMCSSValueList::Item(uint32_t aIndex, nsIDOMCSSValue **aReturn)
 {
   NS_ENSURE_ARG_POINTER(aReturn);
 
@@ -65,7 +65,7 @@ nsDOMCSSValueList::GetCssText(nsAString& aCssText)
 {
   aCssText.Truncate();
 
-  PRUint32 count = mCSSValues.Length();
+  uint32_t count = mCSSValues.Length();
 
   nsAutoString separator;
   if (mCommaDelimited) {
@@ -77,7 +77,7 @@ nsDOMCSSValueList::GetCssText(nsAString& aCssText)
 
   nsCOMPtr<nsIDOMCSSValue> cssValue;
   nsAutoString tmpStr;
-  for (PRUint32 i = 0; i < count; ++i) {
+  for (uint32_t i = 0; i < count; ++i) {
     cssValue = mCSSValues[i];
     NS_ASSERTION(cssValue, "Eek!  Someone filled the value list with null CSSValues!");
     if (cssValue) {
@@ -117,7 +117,7 @@ nsDOMCSSValueList::SetCssText(const nsAString& aCssText)
 
 
 NS_IMETHODIMP
-nsDOMCSSValueList::GetCssValueType(PRUint16* aValueType)
+nsDOMCSSValueList::GetCssValueType(uint16_t* aValueType)
 {
   NS_ENSURE_ARG_POINTER(aValueType);
   *aValueType = nsIDOMCSSValue::CSS_VALUE_LIST;

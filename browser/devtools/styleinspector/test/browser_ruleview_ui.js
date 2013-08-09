@@ -31,7 +31,7 @@ function startTest()
     '#testid {' +
     '  background-color: blue;' +
     '} ' +
-    '.testclass {' +
+    '.testclass, .unmatched {' +
     '  background-color: green;' +
     '}';
 
@@ -54,6 +54,10 @@ function startTest()
     ruleView.highlight(null);
     is(ruleView.element.querySelectorAll("#noResults").length, 1, "After highlighting null, has a no-results element again.");
     ruleView.highlight(testElement);
+
+    let classEditor = ruleView.element.children[2]._ruleEditor;
+    is(classEditor.selectorText.querySelector(".ruleview-selector-matched").textContent, ".testclass", ".textclass should be matched.");
+    is(classEditor.selectorText.querySelector(".ruleview-selector-unmatched").textContent, ".unmatched", ".unmatched should not be matched.");
 
     waitForFocus(testCancelNew, ruleDialog);
   }, true);
@@ -166,6 +170,8 @@ function testEditProperty()
 
       for each (let ch in "red;") {
         EventUtils.sendChar(ch, ruleDialog);
+        is(propEditor.warning.hidden, ch == "d" || ch == ";",
+          "warning triangle is hidden or shown as appropriate");
       }
     });
     for each (let ch in "border-color:") {
@@ -197,7 +203,6 @@ function testDisableProperty()
 
 function finishTest()
 {
-  ruleView.element.removeEventListener("CssRuleViewChanged", ruleViewChanged, false);
   ruleView.clear();
   ruleDialog.close();
   ruleDialog = ruleView = null;

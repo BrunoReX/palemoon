@@ -2,17 +2,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH = ../../../../..
+DEPTH = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir = @srcdir@
 VPATH = @srcdir@
-relativesrcdir  = toolkit/mozapps/extensions/test/browser
+relativesrcdir  = @relativesrcdir@
 ADDONSRC = $(srcdir)/addons
 TESTXPI = $(CURDIR)/$(DEPTH)/_tests/testing/mochitest/browser/$(relativesrcdir)/addons
 
 include $(DEPTH)/config/autoconf.mk
 
-_MAIN_TEST_FILES = \
+MOCHITEST_BROWSER_MAIN = \
   head.js \
   browser_about.js \
   browser_bug523784.js \
@@ -59,9 +59,10 @@ _MAIN_TEST_FILES = \
   browser_types.js \
   browser_inlinesettings.js \
   browser_tabsettings.js \
+  browser_pluginprefs.js \
   $(NULL)
 
-_TEST_FILES = \
+MOCHITEST_BROWSER_SECONDARY = \
   head.js \
   browser_addonrepository_performance.js \
   browser_bug557956.js \
@@ -77,7 +78,7 @@ _TEST_FILES = \
   browser_updatessl.js \
   $(NULL)
 
-_TEST_RESOURCES = \
+MOCHITEST_BROWSER_RESOURCES = \
   addon_about.xul \
   addon_prefs.xul \
   browser_bug557956.rdf \
@@ -108,17 +109,12 @@ _TEST_RESOURCES = \
   releaseNotes.xhtml \
   $(NULL)
 
+MOCHITEST_BROWSER_FILES_PARTS = $(foreach s,MAIN SECONDARY RESOURCES,MOCHITEST_BROWSER_$(s))
+
 include $(topsrcdir)/config/rules.mk
 
-libs:: $(_MAIN_TEST_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/browser/$(relativesrcdir)
+libs:: $(MOCHITEST_BROWSER_MAIN)
 	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/browser/$(relativesrcdir)-window
-
-libs:: $(_TEST_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/browser/$(relativesrcdir)
-
-libs:: $(_TEST_RESOURCES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/browser/$(relativesrcdir)
 
 libs::
 	rm -rf $(TESTXPI)

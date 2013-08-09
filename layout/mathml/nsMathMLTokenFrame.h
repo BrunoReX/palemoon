@@ -6,6 +6,7 @@
 #ifndef nsMathMLTokenFrame_h___
 #define nsMathMLTokenFrame_h___
 
+#include "mozilla/Attributes.h"
 #include "nsCOMPtr.h"
 #include "nsMathMLContainerFrame.h"
 
@@ -35,34 +36,33 @@ public:
   virtual eMathMLFrameType GetMathMLFrameType();
 
   NS_IMETHOD
-  Init(nsIContent*      aContent,
-       nsIFrame*        aParent,
-       nsIFrame*        aPrevInFlow);
+  SetInitialChildList(ChildListID     aListID,
+                      nsFrameList&    aChildList) MOZ_OVERRIDE;
 
   NS_IMETHOD
-  SetInitialChildList(ChildListID     aListID,
-                      nsFrameList&    aChildList);
+  AppendFrames(ChildListID            aListID,
+               nsFrameList&           aChildList) MOZ_OVERRIDE;
+
+  NS_IMETHOD
+  InsertFrames(ChildListID            aListID,
+               nsIFrame*              aPrevFrame,
+               nsFrameList&           aChildList) MOZ_OVERRIDE;
 
   NS_IMETHOD
   Reflow(nsPresContext*          aPresContext,
          nsHTMLReflowMetrics&     aDesiredSize,
          const nsHTMLReflowState& aReflowState,
-         nsReflowStatus&          aStatus);
+         nsReflowStatus&          aStatus) MOZ_OVERRIDE;
 
   virtual nsresult
   Place(nsRenderingContext& aRenderingContext,
         bool                 aPlaceOrigin,
-        nsHTMLReflowMetrics& aDesiredSize);
+        nsHTMLReflowMetrics& aDesiredSize) MOZ_OVERRIDE;
 
   virtual void MarkIntrinsicWidthsDirty();
 
-  NS_IMETHOD
-  AttributeChanged(PRInt32         aNameSpaceID,
-                   nsIAtom*        aAttribute,
-                   PRInt32         aModType);
-
   virtual nsresult
-  ChildListChanged(PRInt32 aModType)
+  ChildListChanged(int32_t aModType) MOZ_OVERRIDE
   {
     ProcessTextData();
     return nsMathMLContainerFrame::ChildListChanged(aModType);
@@ -72,7 +72,7 @@ protected:
   nsMathMLTokenFrame(nsStyleContext* aContext) : nsMathMLContainerFrame(aContext) {}
   virtual ~nsMathMLTokenFrame();
 
-  virtual PRIntn GetSkipSides() const { return 0; }
+  virtual int GetSkipSides() const { return 0; }
 
   // hook to perform MathML-specific actions depending on the tag
   virtual void ProcessTextData();
@@ -81,8 +81,7 @@ protected:
   // depending on its textual content
   bool SetTextStyle();
 
-  // helper to set the quotes of <ms>
-  void SetQuotes(bool aNotify);
+  void ForceTrimChildTextFrames();
 };
 
 #endif /* nsMathMLTokentFrame_h___ */

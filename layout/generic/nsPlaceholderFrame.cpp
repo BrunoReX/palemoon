@@ -82,7 +82,7 @@ nsPlaceholderFrame::AddInlineMinWidth(nsRenderingContext *aRenderingContext,
   // false.
 
   // ...but push floats onto the list
-  if (mOutOfFlowFrame->GetStyleDisplay()->mFloats != NS_STYLE_FLOAT_NONE) {
+  if (mOutOfFlowFrame->IsFloating()) {
     nscoord floatWidth =
       nsLayoutUtils::IntrinsicForContainer(aRenderingContext,
                                            mOutOfFlowFrame,
@@ -103,7 +103,7 @@ nsPlaceholderFrame::AddInlinePrefWidth(nsRenderingContext *aRenderingContext,
   // false.
 
   // ...but push floats onto the list
-  if (mOutOfFlowFrame->GetStyleDisplay()->mFloats != NS_STYLE_FLOAT_NONE) {
+  if (mOutOfFlowFrame->IsFloating()) {
     nscoord floatWidth =
       nsLayoutUtils::IntrinsicForContainer(aRenderingContext,
                                            mOutOfFlowFrame,
@@ -135,10 +135,9 @@ nsPlaceholderFrame::DestroyFrom(nsIFrame* aDestructRoot)
   nsIPresShell* shell = PresContext()->GetPresShell();
   nsIFrame* oof = mOutOfFlowFrame;
   if (oof) {
-    oof->InvalidateFrameSubtree();
     // Unregister out-of-flow frame
     shell->FrameManager()->UnregisterPlaceholderFrame(this);
-    mOutOfFlowFrame = nsnull;
+    mOutOfFlowFrame = nullptr;
     // If aDestructRoot is not an ancestor of the out-of-flow frame,
     // then call RemoveFrame on it here.
     // Also destroy it here if it's a popup frame. (Bug 96291)
@@ -146,7 +145,7 @@ nsPlaceholderFrame::DestroyFrom(nsIFrame* aDestructRoot)
         ((GetStateBits() & PLACEHOLDER_FOR_POPUP) ||
          !nsLayoutUtils::IsProperAncestorFrame(aDestructRoot, oof))) {
       ChildListID listId = nsLayoutUtils::GetChildListNameFor(oof);
-      shell->FrameManager()->RemoveFrame(listId, oof, false);
+      shell->FrameManager()->RemoveFrame(listId, oof);
     }
     // else oof will be destroyed by its parent
   }
@@ -228,7 +227,7 @@ nsPlaceholderFrame::GetFrameName(nsAString& aResult) const
 }
 
 NS_IMETHODIMP
-nsPlaceholderFrame::List(FILE* out, PRInt32 aIndent) const
+nsPlaceholderFrame::List(FILE* out, int32_t aIndent, uint32_t aFlags) const
 {
   IndentBy(out, aIndent);
   ListTag(out);
@@ -244,16 +243,16 @@ nsPlaceholderFrame::List(FILE* out, PRInt32 aIndent) const
   }
   nsIFrame* prevInFlow = GetPrevInFlow();
   nsIFrame* nextInFlow = GetNextInFlow();
-  if (nsnull != prevInFlow) {
+  if (nullptr != prevInFlow) {
     fprintf(out, " prev-in-flow=%p", static_cast<void*>(prevInFlow));
   }
-  if (nsnull != nextInFlow) {
+  if (nullptr != nextInFlow) {
     fprintf(out, " next-in-flow=%p", static_cast<void*>(nextInFlow));
   }
-  if (nsnull != mContent) {
+  if (nullptr != mContent) {
     fprintf(out, " [content=%p]", static_cast<void*>(mContent));
   }
-  if (nsnull != mStyleContext) {
+  if (nullptr != mStyleContext) {
     fprintf(out, " [sc=%p]", static_cast<void*>(mStyleContext));
   }
   if (mOutOfFlowFrame) {

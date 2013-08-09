@@ -23,7 +23,6 @@ function run_test() {
               "browser.privatebrowsing.autostart set to true");
 
   removeUpdateDirsAndFiles();
-  setUpdateChannel();
 
   let registrar = Components.manager.QueryInterface(AUS_Ci.nsIComponentRegistrar);
   registrar.registerFactory(Components.ID("{1dfeb90a-2193-45d5-9cb8-864928b2af55}"),
@@ -73,7 +72,8 @@ function run_test_pt1() {
   do_check_true(privBrowsing.privateBrowsingEnabled);
 
   logTestInfo("Testing: private browsing is auto-started");
-  do_check_true(privBrowsing.autoStarted);
+  Components.utils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
+  do_check_true(PrivateBrowsingUtils.permanentPrivateBrowsing);
 
   // Give private browsing time to reset necko.
   do_execute_soon(run_test_pt2);

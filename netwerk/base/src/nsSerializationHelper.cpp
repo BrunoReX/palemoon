@@ -46,7 +46,7 @@ NS_DeserializeObject(const nsCSubstring& str, nsISupports** obj)
   // multiply by 3 and then divide by 4 (making sure this is an integer
   // division).
 
-  PRUint32 size = str.Length();
+  uint32_t size = str.Length();
   if (size > 0 && str[size-1] == '=') {
     if (size > 1 && str[size-2] == '=') {
       size -= 2;
@@ -55,7 +55,7 @@ NS_DeserializeObject(const nsCSubstring& str, nsISupports** obj)
     }
   }
   size = (size * 3) / 4;
-  char* buf = PL_Base64Decode(str.BeginReading(), str.Length(), nsnull);
+  char* buf = PL_Base64Decode(str.BeginReading(), str.Length(), nullptr);
   if (!buf)
     return NS_ERROR_OUT_OF_MEMORY;
   nsCOMPtr<nsIInputStream> stream;
@@ -77,14 +77,14 @@ NS_IMPL_ISUPPORTS1(nsSerializationHelper, nsISerializationHelper)
 
 NS_IMETHODIMP
 nsSerializationHelper::SerializeToString(nsISerializable *serializable,
-                                         nsACString & _retval NS_OUTPARAM)
+                                         nsACString & _retval)
 {
   return NS_SerializeToString(serializable, _retval);
 }
 
 NS_IMETHODIMP
 nsSerializationHelper::DeserializeObject(const nsACString & input,
-                                         nsISupports **_retval NS_OUTPARAM)
+                                         nsISupports **_retval)
 {
   return NS_DeserializeObject(input, _retval);
 }

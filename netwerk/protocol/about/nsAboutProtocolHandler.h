@@ -8,9 +8,11 @@
 
 #include "nsIProtocolHandler.h"
 #include "nsSimpleNestedURI.h"
+#include "mozilla/Attributes.h"
 
 class nsCString;
 class nsIAboutModule;
+class nsIURI;
 
 class nsAboutProtocolHandler : public nsIProtocolHandler
 {
@@ -25,7 +27,7 @@ public:
     virtual ~nsAboutProtocolHandler() {}
 };
 
-class nsSafeAboutProtocolHandler : public nsIProtocolHandler
+class nsSafeAboutProtocolHandler MOZ_FINAL : public nsIProtocolHandler
 {
 public:
     NS_DECL_ISUPPORTS
@@ -44,8 +46,6 @@ private:
 // Class to allow us to propagate the base URI to about:blank correctly
 class nsNestedAboutURI : public nsSimpleNestedURI {
 public:
-    NS_DECL_NSIIPCSERIALIZABLE
-
     nsNestedAboutURI(nsIURI* aInnerURI, nsIURI* aBaseURI)
         : nsSimpleNestedURI(aInnerURI)
         , mBaseURI(aBaseURI)

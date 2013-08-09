@@ -7,9 +7,10 @@
 #include "DOMSVGTransform.h"
 #include "DOMSVGMatrix.h"
 #include "SVGAnimatedTransformList.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 #include <math.h>
 #include "nsContentUtils.h"
+#include "nsAttrValueInlines.h"
 
 namespace mozilla {
 
@@ -24,12 +25,12 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(DOMSVGTransform)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(DOMSVGTransform)
   // We may not belong to a list, so we must null check tmp->mList.
   if (tmp->mList) {
-    tmp->mList->mItems[tmp->mListIndex] = nsnull;
+    tmp->mList->mItems[tmp->mListIndex] = nullptr;
   }
-NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mList)
+NS_IMPL_CYCLE_COLLECTION_UNLINK(mList)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(DOMSVGTransform)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mList)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mList)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(DOMSVGTransform)
@@ -51,48 +52,47 @@ NS_INTERFACE_MAP_END
 // Ctors:
 
 DOMSVGTransform::DOMSVGTransform(DOMSVGTransformList *aList,
-                                 PRUint32 aListIndex,
+                                 uint32_t aListIndex,
                                  bool aIsAnimValItem)
   : mList(aList)
   , mListIndex(aListIndex)
   , mIsAnimValItem(aIsAnimValItem)
-  , mTransform(nsnull)
-  , mMatrixTearoff(nsnull)
+  , mTransform(nullptr)
+  , mMatrixTearoff(nullptr)
 {
   // These shifts are in sync with the members in the header.
   NS_ABORT_IF_FALSE(aList &&
-                    aListIndex <= MaxListIndex() &&
-                    aIsAnimValItem < (1 << 1), "bad arg");
+                    aListIndex <= MaxListIndex(), "bad arg");
 
   NS_ABORT_IF_FALSE(IndexIsValid(), "Bad index for DOMSVGNumber!");
 }
 
 DOMSVGTransform::DOMSVGTransform()
-  : mList(nsnull)
+  : mList(nullptr)
   , mListIndex(0)
   , mIsAnimValItem(false)
   , mTransform(new SVGTransform()) // Default ctor for objects not in a list
                                    // initialises to matrix type with identity
                                    // matrix
-  , mMatrixTearoff(nsnull)
+  , mMatrixTearoff(nullptr)
 {
 }
 
 DOMSVGTransform::DOMSVGTransform(const gfxMatrix &aMatrix)
-  : mList(nsnull)
+  : mList(nullptr)
   , mListIndex(0)
   , mIsAnimValItem(false)
   , mTransform(new SVGTransform(aMatrix))
-  , mMatrixTearoff(nsnull)
+  , mMatrixTearoff(nullptr)
 {
 }
 
 DOMSVGTransform::DOMSVGTransform(const SVGTransform &aTransform)
-  : mList(nsnull)
+  : mList(nullptr)
   , mListIndex(0)
   , mIsAnimValItem(false)
   , mTransform(new SVGTransform(aTransform))
-  , mMatrixTearoff(nsnull)
+  , mMatrixTearoff(nullptr)
 {
 }
 
@@ -102,7 +102,7 @@ DOMSVGTransform::DOMSVGTransform(const SVGTransform &aTransform)
 
 /* readonly attribute unsigned short type; */
 NS_IMETHODIMP
-DOMSVGTransform::GetType(PRUint16 *aType)
+DOMSVGTransform::GetType(uint16_t *aType)
 {
   *aType = Transform().Type();
   return NS_OK;
@@ -261,7 +261,7 @@ DOMSVGTransform::SetSkewY(float angle)
 
 void
 DOMSVGTransform::InsertingIntoList(DOMSVGTransformList *aList,
-                                   PRUint32 aListIndex,
+                                   uint32_t aListIndex,
                                    bool aIsAnimValItem)
 {
   NS_ABORT_IF_FALSE(!HasOwner(), "Inserting item that is already in a list");
@@ -269,7 +269,7 @@ DOMSVGTransform::InsertingIntoList(DOMSVGTransformList *aList,
   mList = aList;
   mListIndex = aListIndex;
   mIsAnimValItem = aIsAnimValItem;
-  mTransform = nsnull;
+  mTransform = nullptr;
 
   NS_ABORT_IF_FALSE(IndexIsValid(), "Bad index for DOMSVGLength!");
 }
@@ -281,7 +281,7 @@ DOMSVGTransform::RemovingFromList()
       "Item in list also has another non-list value associated with it");
 
   mTransform = new SVGTransform(InternalItem());
-  mList = nsnull;
+  mList = nullptr;
   mIsAnimValItem = false;
 }
 
@@ -337,7 +337,7 @@ DOMSVGTransform::ClearMatrixTearoff(DOMSVGMatrix* aMatrix)
 {
   NS_ABORT_IF_FALSE(mMatrixTearoff == aMatrix,
       "Unexpected matrix pointer to be cleared");
-  mMatrixTearoff = nsnull;
+  mMatrixTearoff = nullptr;
 }
 
 

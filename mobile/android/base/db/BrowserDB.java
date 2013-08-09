@@ -5,12 +5,15 @@
 
 package org.mozilla.gecko.db;
 
+import org.mozilla.gecko.db.BrowserContract.ExpirePriority;
+
 import android.content.ContentResolver;
 import android.database.ContentObserver;
 import android.database.Cursor;
+import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 
-import org.mozilla.gecko.GeckoProfile;
+import java.util.List;
 
 public class BrowserDB {
     public static String ABOUT_PAGES_URL_FILTER = "about:%";
@@ -45,6 +48,8 @@ public class BrowserDB {
 
         public Cursor getRecentHistory(ContentResolver cr, int limit);
 
+        public void expireHistory(ContentResolver cr, ExpirePriority priority);
+
         public void removeHistoryEntry(ContentResolver cr, int id);
 
         public void clearHistory(ContentResolver cr);
@@ -52,6 +57,8 @@ public class BrowserDB {
         public Cursor getBookmarksInFolder(ContentResolver cr, long folderId);
 
         public boolean isBookmark(ContentResolver cr, String uri);
+
+        public boolean isReadingListItem(ContentResolver cr, String uri);
 
         public String getUrlForKeyword(ContentResolver cr, String keyword);
 
@@ -65,17 +72,29 @@ public class BrowserDB {
 
         public void addReadingListItem(ContentResolver cr, String title, String uri);
 
-        public BitmapDrawable getFaviconForUrl(ContentResolver cr, String uri);
+        public void removeReadingListItemWithURL(ContentResolver cr, String uri);
 
-        public void updateFaviconForUrl(ContentResolver cr, String uri, BitmapDrawable favicon);
+        public Bitmap getFaviconForUrl(ContentResolver cr, String uri);
+
+        public Cursor getFaviconsForUrls(ContentResolver cr, List<String> urls);
+
+        public String getFaviconUrlForHistoryUrl(ContentResolver cr, String url);
+
+        public void updateFaviconForUrl(ContentResolver cr, String pageUri, Bitmap favicon, String faviconUri);
 
         public void updateThumbnailForUrl(ContentResolver cr, String uri, BitmapDrawable thumbnail);
 
         public byte[] getThumbnailForUrl(ContentResolver cr, String uri);
 
+        public Cursor getThumbnailsForUrls(ContentResolver cr, List<String> urls);
+
+        public void removeThumbnails(ContentResolver cr);
+
         public void registerBookmarkObserver(ContentResolver cr, ContentObserver observer);
 
         public void registerHistoryObserver(ContentResolver cr, ContentObserver observer);
+
+        public int getCount(ContentResolver cr, String database);
     }
 
     static {
@@ -120,6 +139,15 @@ public class BrowserDB {
         return sDb.getRecentHistory(cr, limit);
     }
 
+    public static void expireHistory(ContentResolver cr, ExpirePriority priority) {
+        if (sDb == null)
+            return;
+
+        if (priority == null)
+            priority = ExpirePriority.NORMAL;
+        sDb.expireHistory(cr, priority);
+    }
+
     public static void removeHistoryEntry(ContentResolver cr, int id) {
         sDb.removeHistoryEntry(cr, id);
     }
@@ -138,6 +166,10 @@ public class BrowserDB {
     
     public static boolean isBookmark(ContentResolver cr, String uri) {
         return sDb.isBookmark(cr, uri);
+    }
+
+    public static boolean isReadingListItem(ContentResolver cr, String uri) {
+        return sDb.isReadingListItem(cr, uri);
     }
 
     public static void addBookmark(ContentResolver cr, String title, String uri) {
@@ -160,12 +192,24 @@ public class BrowserDB {
         sDb.addReadingListItem(cr, title, uri);
     }
 
-    public static BitmapDrawable getFaviconForUrl(ContentResolver cr, String uri) {
+    public static void removeReadingListItemWithURL(ContentResolver cr, String uri) {
+        sDb.removeReadingListItemWithURL(cr, uri);
+    }
+
+    public static Bitmap getFaviconForUrl(ContentResolver cr, String uri) {
         return sDb.getFaviconForUrl(cr, uri);
     }
 
-    public static void updateFaviconForUrl(ContentResolver cr, String uri, BitmapDrawable favicon) {
-        sDb.updateFaviconForUrl(cr, uri, favicon);
+    public static Cursor getFaviconsForUrls(ContentResolver cr, List<String> urls) {
+        return sDb.getFaviconsForUrls(cr, urls);
+    }
+
+    public static String getFaviconUrlForHistoryUrl(ContentResolver cr, String url) {
+        return sDb.getFaviconUrlForHistoryUrl(cr, url);
+    }
+
+    public static void updateFaviconForUrl(ContentResolver cr, String pageUri, Bitmap favicon, String faviconUri) {
+        sDb.updateFaviconForUrl(cr, pageUri, favicon, faviconUri);
     }
 
     public static void updateThumbnailForUrl(ContentResolver cr, String uri, BitmapDrawable thumbnail) {
@@ -174,6 +218,14 @@ public class BrowserDB {
 
     public static byte[] getThumbnailForUrl(ContentResolver cr, String uri) {
         return sDb.getThumbnailForUrl(cr, uri);
+    }
+
+    public static Cursor getThumbnailsForUrls(ContentResolver cr, List<String> urls) {
+        return sDb.getThumbnailsForUrls(cr, urls);
+    }
+
+    public static void removeThumbnails(ContentResolver cr) {
+        sDb.removeThumbnails(cr);
     }
 
     public static void registerBookmarkObserver(ContentResolver cr, ContentObserver observer) {
@@ -186,5 +238,9 @@ public class BrowserDB {
 
     public static void unregisterContentObserver(ContentResolver cr, ContentObserver observer) {
         cr.unregisterContentObserver(observer);
+    }
+
+    public static int getCount(ContentResolver cr, String database) {
+        return sDb.getCount(cr, database);
     }
 }

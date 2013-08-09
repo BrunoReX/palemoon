@@ -4,7 +4,7 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["ChromeManifestParser"];
+this.EXPORTED_SYMBOLS = ["ChromeManifestParser"];
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -25,15 +25,15 @@ const MSG_JAR_FLUSH = "AddonJarFlush";
  */
 function flushJarCache(aJarFile) {
   Services.obs.notifyObservers(aJarFile, "flush-cache-entry", null);
-  Cc["@mozilla.org/globalmessagemanager;1"].getService(Ci.nsIChromeFrameMessageManager)
-    .sendAsyncMessage(MSG_JAR_FLUSH, aJarFile.path);
+  Cc["@mozilla.org/globalmessagemanager;1"].getService(Ci.nsIMessageBroadcaster)
+    .broadcastAsyncMessage(MSG_JAR_FLUSH, aJarFile.path);
 }
 
 
 /**
  * Parses chrome manifest files.
  */
-var ChromeManifestParser = {
+this.ChromeManifestParser = {
 
   /**
    * Reads and parses a chrome manifest file located at a specified URI, and all
@@ -152,7 +152,7 @@ var ChromeManifestParser = {
   * @return True if any matching instructions were found in the manifest.
   */
   hasType: function CMP_hasType(aManifest, aType) {
-    return aManifest.some(function(aEntry) {
+    return aManifest.some(function hasType_matchEntryType(aEntry) {
       return aEntry.type == aType;
     });
   }

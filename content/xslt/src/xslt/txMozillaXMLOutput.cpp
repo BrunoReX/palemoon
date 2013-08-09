@@ -31,14 +31,14 @@
 #include "nsIDocumentTransformer.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/dom/Element.h"
-#include "nsCharsetAlias.h"
-#include "nsIFrame.h"
+#include "mozilla/dom/EncodingUtils.h"
 #include "nsContentUtils.h"
 #include "txXMLUtils.h"
 #include "nsContentSink.h"
 #include "nsINode.h"
 #include "nsContentCreatorFunctions.h"
-#include "txError.h"
+#include "nsError.h"
+#include "nsIFrame.h"
 
 using namespace mozilla::dom;
 
@@ -98,7 +98,7 @@ nsresult
 txMozillaXMLOutput::attribute(nsIAtom* aPrefix,
                               nsIAtom* aLocalName,
                               nsIAtom* aLowercaseLocalName,
-                              const PRInt32 aNsID,
+                              const int32_t aNsID,
                               const nsString& aValue)
 {
     nsCOMPtr<nsIAtom> owner;
@@ -120,7 +120,7 @@ txMozillaXMLOutput::attribute(nsIAtom* aPrefix,
 nsresult
 txMozillaXMLOutput::attribute(nsIAtom* aPrefix,
                               const nsSubstring& aLocalName,
-                              const PRInt32 aNsID,
+                              const int32_t aNsID,
                               const nsString& aValue)
 {
     nsCOMPtr<nsIAtom> lname;
@@ -139,7 +139,7 @@ txMozillaXMLOutput::attribute(nsIAtom* aPrefix,
     // Check that it's a valid name
     if (!nsContentUtils::IsValidNodeName(lname, aPrefix, aNsID)) {
         // Try without prefix
-        aPrefix = nsnull;
+        aPrefix = nullptr;
         if (!nsContentUtils::IsValidNodeName(lname, aPrefix, aNsID)) {
             // Don't return error here since the callers don't deal
             return NS_OK;
@@ -152,7 +152,7 @@ txMozillaXMLOutput::attribute(nsIAtom* aPrefix,
 nsresult
 txMozillaXMLOutput::attributeInternal(nsIAtom* aPrefix,
                                       nsIAtom* aLocalName,
-                                      PRInt32 aNsID,
+                                      int32_t aNsID,
                                       const nsString& aValue)
 {
     if (!mOpenedElement) {
@@ -241,6 +241,7 @@ txMozillaXMLOutput::endDocument(nsresult aResult)
                 do_QueryInterface(win->GetDocShell());
             if (refURI) {
                 refURI->SetupRefreshURIFromHeader(mDocument->GetDocBaseURI(),
+                                                  mDocument->NodePrincipal(),
                                                   mRefreshString);
             }
         }
@@ -283,7 +284,7 @@ txMozillaXMLOutput::endElement()
         }
 
         // Handle elements that are different when parser-created
-        PRInt32 ns = element->GetNameSpaceID();
+        int32_t ns = element->GetNameSpaceID();
         nsIAtom* localName = element->Tag();
 
         if ((ns == kNameSpaceID_XHTML && (localName == nsGkAtoms::title ||
@@ -336,8 +337,8 @@ txMozillaXMLOutput::endElement()
 
     // Add the element to the tree if it wasn't added before and take one step
     // up the tree
-    PRUint32 last = mCurrentNodeStack.Count() - 1;
-    NS_ASSERTION(last != (PRUint32)-1, "empty stack");
+    uint32_t last = mCurrentNodeStack.Count() - 1;
+    NS_ASSERTION(last != (uint32_t)-1, "empty stack");
 
     nsCOMPtr<nsINode> parent = mCurrentNodeStack.SafeObjectAt(last);
     mCurrentNodeStack.RemoveObjectAt(last);
@@ -352,10 +353,10 @@ txMozillaXMLOutput::endElement()
 
         // Check to make sure that script hasn't inserted the node somewhere
         // else in the tree
-        if (!mCurrentNode->GetNodeParent()) {
+        if (!mCurrentNode->GetParentNode()) {
             parent->AppendChildTo(mNonAddedNode, true);
         }
-        mNonAddedNode = nsnull;
+        mNonAddedNode = nullptr;
     }
 
     mCurrentNode = parent;
@@ -435,7 +436,7 @@ txMozillaXMLOutput::startDocument()
 nsresult
 txMozillaXMLOutput::startElement(nsIAtom* aPrefix, nsIAtom* aLocalName,
                                  nsIAtom* aLowercaseLocalName,
-                                 const PRInt32 aNsID)
+                                 const int32_t aNsID)
 {
     NS_PRECONDITION(aNsID != kNameSpaceID_None || !aPrefix,
                     "Can't have prefix without namespace");
@@ -448,7 +449,7 @@ txMozillaXMLOutput::startElement(nsIAtom* aPrefix, nsIAtom* aLocalName,
 
             aLowercaseLocalName = owner;
         }
-        return startElementInternal(nsnull, 
+        return startElementInternal(nullptr, 
                                     aLowercaseLocalName, 
                                     kNameSpaceID_XHTML);
     }
@@ -459,9 +460,9 @@ txMozillaXMLOutput::startElement(nsIAtom* aPrefix, nsIAtom* aLocalName,
 nsresult
 txMozillaXMLOutput::startElement(nsIAtom* aPrefix,
                                  const nsSubstring& aLocalName,
-                                 const PRInt32 aNsID)
+                                 const int32_t aNsID)
 {
-    PRInt32 nsId = aNsID;
+    int32_t nsId = aNsID;
     nsCOMPtr<nsIAtom> lname;
 
     if (mOutputFormat.mMethod == eHTMLOutput && aNsID == kNameSpaceID_None) {
@@ -481,7 +482,7 @@ txMozillaXMLOutput::startElement(nsIAtom* aPrefix,
     // Check that it's a valid name
     if (!nsContentUtils::IsValidNodeName(lname, aPrefix, nsId)) {
         // Try without prefix
-        aPrefix = nsnull;
+        aPrefix = nullptr;
         if (!nsContentUtils::IsValidNodeName(lname, aPrefix, nsId)) {
             return NS_ERROR_XSLT_BAD_NODE_NAME;
         }
@@ -493,7 +494,7 @@ txMozillaXMLOutput::startElement(nsIAtom* aPrefix,
 nsresult
 txMozillaXMLOutput::startElementInternal(nsIAtom* aPrefix,
                                          nsIAtom* aLocalName,
-                                         PRInt32 aNsID)
+                                         int32_t aNsID)
 {
     TX_ENSURE_CURRENTNODE;
 
@@ -588,7 +589,7 @@ txMozillaXMLOutput::closePrevious(bool aFlushText)
         }
 
         mCurrentNode = mOpenedElement;
-        mOpenedElement = nsnull;
+        mOpenedElement = nullptr;
     }
     else if (aFlushText && !mText.IsEmpty()) {
         // Text can't appear in the root of a document
@@ -624,7 +625,7 @@ txMozillaXMLOutput::createTxWrapper()
     NS_ASSERTION(mDocument == mCurrentNode,
                  "creating wrapper when document isn't parent");
 
-    PRInt32 namespaceID;
+    int32_t namespaceID;
     nsresult rv = nsContentUtils::NameSpaceManager()->
         RegisterNameSpace(NS_LITERAL_STRING(kTXNameSpaceURI), namespaceID);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -635,11 +636,11 @@ txMozillaXMLOutput::createTxWrapper()
                                getter_AddRefs(wrapper));
     NS_ENSURE_SUCCESS(rv, rv);
 
-    PRUint32 i, j, childCount = mDocument->GetChildCount();
+    uint32_t i, j, childCount = mDocument->GetChildCount();
 #ifdef DEBUG
     // Keep track of the location of the current documentElement, if there is
     // one, so we can verify later
-    PRUint32 rootLocation = 0;
+    uint32_t rootLocation = 0;
 #endif
     for (i = 0, j = 0; i < childCount; ++i) {
         nsCOMPtr<nsIContent> childContent = mDocument->GetChildAt(j);
@@ -686,8 +687,8 @@ txMozillaXMLOutput::startHTMLElement(nsIContent* aElement, bool aIsHTML)
 
     if ((atom != nsGkAtoms::tr || !aIsHTML) &&
         NS_PTR_TO_INT32(mTableStateStack.peek()) == ADDED_TBODY) {
-        PRUint32 last = mCurrentNodeStack.Count() - 1;
-        NS_ASSERTION(last != (PRUint32)-1, "empty stack");
+        uint32_t last = mCurrentNodeStack.Count() - 1;
+        NS_ASSERTION(last != (uint32_t)-1, "empty stack");
 
         mCurrentNode = mCurrentNodeStack.SafeObjectAt(last);
         mCurrentNodeStack.RemoveObjectAt(last);
@@ -752,8 +753,8 @@ txMozillaXMLOutput::endHTMLElement(nsIContent* aElement)
     if (mTableState == ADDED_TBODY) {
         NS_ASSERTION(atom == nsGkAtoms::tbody,
                      "Element flagged as added tbody isn't a tbody");
-        PRUint32 last = mCurrentNodeStack.Count() - 1;
-        NS_ASSERTION(last != (PRUint32)-1, "empty stack");
+        uint32_t last = mCurrentNodeStack.Count() - 1;
+        NS_ASSERTION(last != (uint32_t)-1, "empty stack");
 
         mCurrentNode = mCurrentNodeStack.SafeObjectAt(last);
         mCurrentNodeStack.RemoveObjectAt(last);
@@ -789,20 +790,23 @@ void txMozillaXMLOutput::processHTTPEquiv(nsIAtom* aHeader, const nsString& aVal
 }
 
 nsresult
-txMozillaXMLOutput::createResultDocument(const nsSubstring& aName, PRInt32 aNsID,
-                                         nsIDOMDocument* aSourceDocument)
+txMozillaXMLOutput::createResultDocument(const nsSubstring& aName, int32_t aNsID,
+                                         nsIDOMDocument* aSourceDocument,
+                                         bool aLoadedAsData)
 {
     nsresult rv;
 
     // Create the document
     if (mOutputFormat.mMethod == eHTMLOutput) {
-        rv = NS_NewHTMLDocument(getter_AddRefs(mDocument));
+        rv = NS_NewHTMLDocument(getter_AddRefs(mDocument),
+                                aLoadedAsData);
         NS_ENSURE_SUCCESS(rv, rv);
     }
     else {
         // We should check the root name/namespace here and create the
         // appropriate document
-        rv = NS_NewXMLDocument(getter_AddRefs(mDocument));
+        rv = NS_NewXMLDocument(getter_AddRefs(mDocument),
+                               aLoadedAsData);
         NS_ENSURE_SUCCESS(rv, rv);
     }
     // This should really be handled by nsIDocument::BeginLoad
@@ -825,9 +829,9 @@ txMozillaXMLOutput::createResultDocument(const nsSubstring& aName, PRInt32 aNsID
 
     // Set the charset
     if (!mOutputFormat.mEncoding.IsEmpty()) {
-        NS_LossyConvertUTF16toASCII charset(mOutputFormat.mEncoding);
-        nsCAutoString canonicalCharset;
-        if (NS_SUCCEEDED(nsCharsetAlias::GetPreferred(charset, canonicalCharset))) {
+        nsAutoCString canonicalCharset;
+        if (EncodingUtils::FindEncodingForLabel(mOutputFormat.mEncoding,
+                                                canonicalCharset)) {
             mDocument->SetDocumentCharacterSetSource(kCharsetFromOtherComponent);
             mDocument->SetDocumentCharacterSet(canonicalCharset);
         }
@@ -846,7 +850,7 @@ txMozillaXMLOutput::createResultDocument(const nsSubstring& aName, PRInt32 aNsID
 
     if (mOutputFormat.mMethod == eXMLOutput &&
         mOutputFormat.mOmitXMLDeclaration != eTrue) {
-        PRInt32 standalone;
+        int32_t standalone;
         if (mOutputFormat.mStandalone == eNotSet) {
           standalone = -1;
         }
@@ -930,10 +934,10 @@ txMozillaXMLOutput::createHTMLElement(nsIAtom* aName,
     NS_ASSERTION(mOutputFormat.mMethod == eHTMLOutput,
                  "need to adjust createHTMLElement");
 
-    *aResult = nsnull;
+    *aResult = nullptr;
 
     nsCOMPtr<nsINodeInfo> ni;
-    ni = mNodeInfoManager->GetNodeInfo(aName, nsnull,
+    ni = mNodeInfoManager->GetNodeInfo(aName, nullptr,
                                        kNameSpaceID_XHTML,
                                        nsIDOMNode::ELEMENT_NODE);
     NS_ENSURE_TRUE(ni, NS_ERROR_OUT_OF_MEMORY);
@@ -958,7 +962,7 @@ txTransformNotifier::ScriptAvailable(nsresult aResult,
                                      nsIScriptElement *aElement, 
                                      bool aIsInline,
                                      nsIURI *aURI, 
-                                     PRInt32 aLineNo)
+                                     int32_t aLineNo)
 {
     if (NS_FAILED(aResult) &&
         mScriptElements.RemoveObject(aElement)) {

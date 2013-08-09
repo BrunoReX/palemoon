@@ -2,28 +2,33 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-package org.mozilla.gecko;
+package org.mozilla.gecko.util;
 
+import android.content.res.Resources;
+import android.graphics.drawable.BitmapDrawable;
+import android.util.Log;
+
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URL;
 import java.util.EmptyStackException;
 import java.util.Stack;
+import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
-import java.util.zip.ZipEntry;
-import java.io.InputStream;
-import java.io.IOException;
-
-import android.graphics.drawable.BitmapDrawable;
-import android.util.Log;
 
 /* Reads out of a multiple level deep jar file such as
  *  jar:jar:file:///data/app/org.mozilla.fennec.apk!/omni.ja!/chrome/chrome/content/branding/favicon32.png
  */
-public class GeckoJarReader {
+public final class GeckoJarReader {
     private static String LOGTAG = "GeckoJarReader";
 
-    public static BitmapDrawable getBitmapDrawable(String url) {
+    private GeckoJarReader() {}
+
+    public static BitmapDrawable getBitmapDrawable(Resources resources, String url) {
         Stack<String> jarUrls = parseUrl(url);
         InputStream inputStream = null;
         BitmapDrawable bitmap = null;
@@ -34,7 +39,7 @@ public class GeckoJarReader {
             zip = getZipFile(jarUrls.pop());
             inputStream = getStream(zip, jarUrls);
             if (inputStream != null) {
-                bitmap = new BitmapDrawable(inputStream);
+                bitmap = new BitmapDrawable(resources, inputStream);
             }
         } catch (IOException ex) {
             Log.e(LOGTAG, "Exception ", ex);
@@ -56,6 +61,41 @@ public class GeckoJarReader {
         }
 
         return bitmap;
+    }
+
+    public static String getText(String url) {
+        Stack<String> jarUrls = parseUrl(url);
+
+        ZipFile zip = null;
+        BufferedReader reader = null;
+        String text = null;
+        try {
+            zip = getZipFile(jarUrls.pop());
+            InputStream input = getStream(zip, jarUrls);
+            if (input != null) {
+                reader = new BufferedReader(new InputStreamReader(input));
+                text = reader.readLine();
+            }
+        } catch (IOException ex) {
+            Log.e(LOGTAG, "Exception ", ex);
+        } finally {
+            if (reader != null) {
+                try {
+                    reader.close();
+                } catch(IOException ex) {
+                    Log.e(LOGTAG, "Error closing reader", ex);
+                }
+            }
+            if (zip != null) {
+                try {
+                    zip.close();
+                } catch(IOException ex) {
+                    Log.e(LOGTAG, "Error closing zip", ex);
+                }
+            }
+        }
+
+        return text;
     }
 
     private static ZipFile getZipFile(String url) throws IOException {

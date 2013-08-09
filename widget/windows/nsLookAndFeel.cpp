@@ -6,20 +6,20 @@
 #include "nsLookAndFeel.h"
 #include <windows.h>
 #include <shellapi.h>
-#include "nsWindow.h"
 #include "nsStyleConsts.h"
 #include "nsUXThemeData.h"
 #include "nsUXThemeConstants.h"
 #include "gfxFont.h"
 #include "WinUtils.h"
+#include "mozilla/Telemetry.h"
 
 using namespace mozilla::widget;
 using mozilla::LookAndFeel;
 
 static nsresult GetColorFromTheme(nsUXThemeClass cls,
-                           PRInt32 aPart,
-                           PRInt32 aState,
-                           PRInt32 aPropId,
+                           int32_t aPart,
+                           int32_t aState,
+                           int32_t aPropId,
                            nscolor &aColor)
 {
   COLORREF color;
@@ -32,14 +32,28 @@ static nsresult GetColorFromTheme(nsUXThemeClass cls,
   return NS_ERROR_FAILURE;
 }
 
-static PRInt32 GetSystemParam(long flag, PRInt32 def)
+static int32_t GetSystemParam(long flag, int32_t def)
 {
     DWORD value; 
     return ::SystemParametersInfo(flag, 0, &value, 0) ? value : def;
 }
 
+namespace mozilla {
+namespace widget {
+// This is in use here and in nsDOMTouchEvent.cpp
+int32_t IsTouchDeviceSupportPresent()
+{
+  int32_t touchCapabilities;
+  touchCapabilities = ::GetSystemMetrics(SM_DIGITIZER);
+  return ((touchCapabilities & NID_READY) && 
+          (touchCapabilities & (NID_EXTERNAL_TOUCH | NID_INTEGRATED_TOUCH)));
+}
+} }
+
 nsLookAndFeel::nsLookAndFeel() : nsXPLookAndFeel()
 {
+  mozilla::Telemetry::Accumulate(mozilla::Telemetry::TOUCH_ENABLED_DEVICE,
+                                 IsTouchDeviceSupportPresent());
 }
 
 nsLookAndFeel::~nsLookAndFeel()
@@ -286,7 +300,7 @@ nsLookAndFeel::NativeGetColor(ColorID aID, nscolor &aColor)
 }
 
 nsresult
-nsLookAndFeel::GetIntImpl(IntID aID, PRInt32 &aResult)
+nsLookAndFeel::GetIntImpl(IntID aID, int32_t &aResult)
 {
   nsresult res = nsXPLookAndFeel::GetIntImpl(aID, aResult);
   if (NS_SUCCEEDED(res))
@@ -295,7 +309,7 @@ nsLookAndFeel::GetIntImpl(IntID aID, PRInt32 &aResult)
 
   switch (aID) {
     case eIntID_CaretBlinkTime:
-        aResult = (PRInt32)::GetCaretBlinkTime();
+        aResult = (int32_t)::GetCaretBlinkTime();
         break;
     case eIntID_CaretWidth:
         aResult = 1;
@@ -365,13 +379,7 @@ nsLookAndFeel::GetIntImpl(IntID aID, PRInt32 &aResult)
         aResult = !IsAppThemed();
         break;
     case eIntID_TouchEnabled:
-        aResult = 0;
-        PRInt32 touchCapabilities;
-        touchCapabilities = ::GetSystemMetrics(SM_DIGITIZER);
-        if ((touchCapabilities & NID_READY) && 
-           (touchCapabilities & (NID_EXTERNAL_TOUCH | NID_INTEGRATED_TOUCH))) {
-            aResult = 1;
-        }
+        aResult = IsTouchDeviceSupportPresent();
         break;
     case eIntID_WindowsDefaultTheme:
         aResult = nsUXThemeData::IsDefaultWindowTheme();
@@ -600,7 +608,8 @@ GetSysFontInfo(HDC aHDC, LookAndFeel::FontID anID,
 
 bool
 nsLookAndFeel::GetFontImpl(FontID anID, nsString &aFontName,
-                           gfxFontStyle &aFontStyle)
+                           gfxFontStyle &aFontStyle,
+                           float aDevPixPerCSSPixel)
 {
   HDC tdc = GetDC(NULL);
   bool status = GetSysFontInfo(tdc, anID, aFontName, aFontStyle);

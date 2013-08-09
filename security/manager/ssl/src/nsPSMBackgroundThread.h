@@ -14,7 +14,7 @@
 class nsPSMBackgroundThread
 {
 protected:
-  static void PR_CALLBACK nsThreadRunner(void *arg);
+  static void nsThreadRunner(void *arg);
   virtual void Run(void) = 0;
 
   // used to join the thread
@@ -41,11 +41,14 @@ private:
     ePSMThreadStopped = 2
   } mExitState;
 
+  // The thread's name.
+  nsCString mName;
+
 public:
   nsPSMBackgroundThread();
   virtual ~nsPSMBackgroundThread();
 
-  nsresult startThread();
+  nsresult startThread(const nsCSubstring & name);
   void requestExit();
 };
 

@@ -1,9 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const TAB_STATE_NEEDS_RESTORE = 1;
-const TAB_STATE_RESTORING = 2;
-
 let state = {windows:[{tabs:[
   {entries:[{url:"http://example.com#1"}]},
   {entries:[{url:"http://example.com#2"}]},
@@ -43,11 +40,16 @@ function test_loadTabs(restoreHiddenTabs, callback) {
       ok(isRestoring < 4, "restoring max. 3 tabs concurrently");
     }
 
-    if (win.gBrowser.tabs.length - needsRestore == expectedTabs) {
+    // We're explicity checking for (isRestoring == 1) here because the test
+    // progress listener is called before the session store one. So when we're
+    // called with one tab left to restore we know that the last tab has
+    // finished restoring and will soon be handled by the SS listener.
+    let tabsNeedingRestore = win.gBrowser.tabs.length - needsRestore;
+    if (isRestoring == 1 && tabsNeedingRestore == expectedTabs) {
       is(win.gBrowser.visibleTabs.length, 4, "only 4 visible tabs");
 
       TabsProgressListener.uninit();
-      callback();
+      executeSoon(callback);
     }
   });
 }

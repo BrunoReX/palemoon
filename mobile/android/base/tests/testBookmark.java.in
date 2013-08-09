@@ -5,17 +5,19 @@ import @ANDROID_PACKAGE_NAME@.*;
 import android.app.Activity;
 import android.database.Cursor;
 import android.view.MenuItem;
+import android.view.View;
 import android.widget.ListAdapter;
 import android.widget.ListView;
 import android.widget.TextView;
+import android.widget.TabHost;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.lang.reflect.Method;
 import android.content.ContentResolver;
 
-public class testBookmark extends BaseTest  {
+public class testBookmark extends PixelTest  {
     private static final int MAX_WAIT_MS = 3000; 
-    private static final String ABOUT_HOME_URL = "about:home";
+    private static final String ABOUT_HOME_URL = "about:firefox";
     private static String BOOKMARK_URL = "/robocop/robocop_blank_01.html";
     private static String BOOKMARK_TITLE = "Browser Blank Page 01";
 
@@ -26,12 +28,16 @@ public class testBookmark extends BaseTest  {
     private String[] defaultBookmarks = new String[] {
         "about:firefox",
         "about:home",
-        "http://support.mozilla.org/en-US/mobile",
+        "http://support.mozilla.org/en-US/products/mobile",
         "https://addons.mozilla.org/en-US/android/"
     };
 
+    @Override
+    protected int getTestType() {
+        return TEST_MOCHITEST;
+    }
+
     public void testBookmark() {
-        setTestType("mochitest");
         BOOKMARK_URL = getAbsoluteUrl(BOOKMARK_URL);
 
         mClassLoader = getActivity().getApplicationContext().getClassLoader();
@@ -67,15 +73,29 @@ public class testBookmark extends BaseTest  {
     }
 
     public void runAwesomeScreenTest() {
-        mActions.expectGeckoEvent("Gecko:Ready").blockForEvent();
+        final long PAINT_CLEAR_DELAY = 1000;  // milliseconds
+
+        blockForGeckoReady();
 
         // Open the bookmark list and check the root folder view
         ListView bookmarksList = openBookmarksList();
+
+        // Clear VKB so that list is not obscured
+        mActions.sendSpecialKey(Actions.SpecialKey.BACK);
 
         // Wait for bookmark to appear in list
         mSolo.waitForText(ABOUT_HOME_URL);
 
         mAsserter.ok(bookmarksList != null, "checking that bookmarks list exists", "bookmarks list exists");
+
+        if (bookmarksList.getChildCount() != 4) {
+            mAsserter.dumpLog("Unexpected child count; dumping bookmarks...");
+            for (int i = 0; i < bookmarksList.getChildCount(); i++) {
+                Cursor c = (Cursor)bookmarksList.getItemAtPosition(i);
+                String url = c.getString(c.getColumnIndexOrThrow("url"));
+                mAsserter.dumpLog(url);
+            }
+        }
 
         // No folders should be visible if no desktop bookmarks exist
         mAsserter.is(bookmarksList.getChildCount(), 4,
@@ -95,9 +115,10 @@ public class testBookmark extends BaseTest  {
             "bookmarks list has 5 children (the default bookmarks and the new one)");
  
         // Click on the bookmark we created and wait for the bookmarked page to load
-        Actions.EventExpecter contentEventExpecter = mActions.expectGeckoEvent("DOMContentLoaded");
-        mSolo.clickInList(1);
-        contentEventExpecter.blockForEvent();
+        Actions.RepeatedEventExpecter paintExpecter = mActions.expectPaint();
+        View child = bookmarksList.getChildAt(1);
+        mSolo.clickOnView(child);
+        paintExpecter.blockUntilClear(PAINT_CLEAR_DELAY);
 
         // Clean up the bookmark we created
         deleteBookmark();
@@ -120,9 +141,9 @@ public class testBookmark extends BaseTest  {
             Boolean res = (Boolean)mIsBookmarked.invoke(null, getActivity().getContentResolver(), BOOKMARK_URL);
             return res.booleanValue();
         } catch(java.lang.IllegalAccessException ex) {
-            mAsserter.is(true, false, "Can not call addBookmark");
+            mAsserter.is(true, false, "Can not call isBookmarked");
         } catch(java.lang.reflect.InvocationTargetException ex) {
-            mAsserter.is(true, false, "Error calling addBookmark");
+            mAsserter.is(true, false, "Error calling isBookmarked");
         }
         return !isBookmarked;
     }
@@ -153,16 +174,11 @@ public class testBookmark extends BaseTest  {
         // Click the "Bookmarks" tab to switch to bookmarks list
         mSolo.clickOnText("Bookmarks");
 
-        Element bookmarkList = mDriver.findElement(awesomeBarActivity, "bookmarks_list");
-        if (bookmarkList != null) {
-            ArrayList<ListView> lists = mSolo.getCurrentListViews();
-            for (ListView list : lists) {
-                if (list.getId() == bookmarkList.getId())
-                    return list;
-            }
+        ArrayList<ListView> views = mSolo.getCurrentListViews();
+        for (ListView view : views) {
+            if (view.getTag() == "bookmarks")
+                return view;
         }
-
-        // Just return null if we can't find the bookmarks list view
         return null;
     }
 
@@ -176,17 +192,17 @@ public class testBookmark extends BaseTest  {
 
     private void setUpBookmark() {
         // Bookmark a page for the test
-        loadUrl(BOOKMARK_URL);
+        loadAndPaint(BOOKMARK_URL);
         toggleBookmark();
-        mAsserter.is(mSolo.waitForText("Bookmark added"), true, "bookmark added sucessfully");
+        mAsserter.is(mSolo.waitForText("Bookmark added"), true, "bookmark added successfully");
 
         // Navigate back to about:home for the test
-        loadUrl(ABOUT_HOME_URL);
+        loadAndPaint(ABOUT_HOME_URL);
     }
 
     private void cleanUpBookmark() {
         // Go back to the page we bookmarked
-        loadUrl(BOOKMARK_URL);
+        loadAndPaint(BOOKMARK_URL);
         toggleBookmark();
         mAsserter.is(mSolo.waitForText("Bookmark removed"), true, "bookmark removed successfully");
     }

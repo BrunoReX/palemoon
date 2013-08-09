@@ -16,7 +16,6 @@
 #include "nsIDOMDocument.h"
 #include "nsIDOMEventTarget.h"
 #include "nsIDOMXULCommandEvent.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsPIDOMWindow.h"
 
 void nsMenuUtilsX::DispatchCommandTo(nsIContent* aTargetContent)
@@ -31,17 +30,16 @@ void nsMenuUtilsX::DispatchCommandTo(nsIContent* aTargetContent)
     domDoc->CreateEvent(NS_LITERAL_STRING("xulcommandevent"),
                         getter_AddRefs(event));
     nsCOMPtr<nsIDOMXULCommandEvent> command = do_QueryInterface(event);
-    nsCOMPtr<nsIPrivateDOMEvent> pEvent = do_QueryInterface(command);
 
     // FIXME: Should probably figure out how to init this with the actual
     // pressed keys, but this is a big old edge case anyway. -dwh
-    if (pEvent &&
+    if (command &&
         NS_SUCCEEDED(command->InitCommandEvent(NS_LITERAL_STRING("command"),
                                                true, true,
                                                doc->GetWindow(), 0,
                                                false, false, false,
-                                               false, nsnull))) {
-      pEvent->SetTrusted(true);
+                                               false, nullptr))) {
+      event->SetTrusted(true);
       bool dummy;
       target->DispatchEvent(event, &dummy);
     }
@@ -61,9 +59,9 @@ NSString* nsMenuUtilsX::GetTruncatedCocoaLabel(const nsString& itemLabel)
   NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
 }
 
-PRUint8 nsMenuUtilsX::GeckoModifiersForNodeAttribute(const nsString& modifiersAttribute)
+uint8_t nsMenuUtilsX::GeckoModifiersForNodeAttribute(const nsString& modifiersAttribute)
 {
-  PRUint8 modifiers = knsMenuItemNoModifier;
+  uint8_t modifiers = knsMenuItemNoModifier;
   char* str = ToNewCString(modifiersAttribute);
   char* newStr;
   char* token = strtok_r(str, ", \t", &newStr);
@@ -85,7 +83,7 @@ PRUint8 nsMenuUtilsX::GeckoModifiersForNodeAttribute(const nsString& modifiersAt
   return modifiers;
 }
 
-unsigned int nsMenuUtilsX::MacModifiersForGeckoModifiers(PRUint8 geckoModifiers)
+unsigned int nsMenuUtilsX::MacModifiersForGeckoModifiers(uint8_t geckoModifiers)
 {
   unsigned int macModifiers = 0;
   
@@ -107,7 +105,7 @@ nsMenuBarX* nsMenuUtilsX::GetHiddenWindowMenuBar()
   if (hiddenWindowWidgetNoCOMPtr)
     return static_cast<nsCocoaWindow*>(hiddenWindowWidgetNoCOMPtr)->GetMenuBar();
   else
-    return nsnull;
+    return nullptr;
 }
 
 // It would be nice if we could localize these edit menu names.
@@ -186,8 +184,8 @@ int nsMenuUtilsX::CalculateNativeInsertionPoint(nsMenuObjectX* aParent,
   nsMenuObjectTypeX parentType = aParent->MenuObjectType();
   if (parentType == eMenuBarObjectType) {
     nsMenuBarX* menubarParent = static_cast<nsMenuBarX*>(aParent);
-    PRUint32 numMenus = menubarParent->GetMenuCount();
-    for (PRUint32 i = 0; i < numMenus; i++) {
+    uint32_t numMenus = menubarParent->GetMenuCount();
+    for (uint32_t i = 0; i < numMenus; i++) {
       nsMenuX* currMenu = menubarParent->GetMenuAt(i);
       if (currMenu == aChild)
         return insertionPoint; // we found ourselves, break out
@@ -203,8 +201,8 @@ int nsMenuUtilsX::CalculateNativeInsertionPoint(nsMenuObjectX* aParent,
     else
       menuParent = static_cast<nsStandaloneNativeMenu*>(aParent)->GetMenuXObject();
 
-    PRUint32 numItems = menuParent->GetItemCount();
-    for (PRUint32 i = 0; i < numItems; i++) {
+    uint32_t numItems = menuParent->GetItemCount();
+    for (uint32_t i = 0; i < numItems; i++) {
       // Using GetItemAt instead of GetVisibleItemAt to avoid O(N^2)
       nsMenuObjectX* currItem = menuParent->GetItemAt(i);
       if (currItem == aChild)

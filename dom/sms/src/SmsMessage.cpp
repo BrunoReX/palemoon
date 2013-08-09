@@ -24,10 +24,17 @@ NS_INTERFACE_MAP_END
 NS_IMPL_ADDREF(SmsMessage)
 NS_IMPL_RELEASE(SmsMessage)
 
-SmsMessage::SmsMessage(PRInt32 aId, DeliveryState aDelivery,
-                       const nsString& aSender, const nsString& aReceiver,
-                       const nsString& aBody, PRUint64 aTimestamp, bool aRead)
-  : mData(aId, aDelivery, aSender, aReceiver, aBody, aTimestamp, aRead)
+SmsMessage::SmsMessage(int32_t aId,
+                       DeliveryState aDelivery,
+                       DeliveryStatus aDeliveryStatus,
+                       const nsString& aSender,
+                       const nsString& aReceiver,
+                       const nsString& aBody,
+                       MessageClass aMessageClass,
+                       uint64_t aTimestamp,
+                       bool aRead)
+  : mData(aId, aDelivery, aDeliveryStatus, aSender, aReceiver, aBody,
+          aMessageClass, aTimestamp, aRead)
 {
 }
 
@@ -37,17 +44,19 @@ SmsMessage::SmsMessage(const SmsMessageData& aData)
 }
 
 /* static */ nsresult
-SmsMessage::Create(PRInt32 aId,
+SmsMessage::Create(int32_t aId,
                    const nsAString& aDelivery,
+                   const nsAString& aDeliveryStatus,
                    const nsAString& aSender,
                    const nsAString& aReceiver,
                    const nsAString& aBody,
+                   const nsAString& aMessageClass,
                    const jsval& aTimestamp,
                    const bool aRead,
                    JSContext* aCx,
                    nsIDOMMozSmsMessage** aMessage)
 {
-  *aMessage = nsnull;
+  *aMessage = nullptr;
 
   // SmsMessageData exposes these as references, so we can simply assign
   // to them.
@@ -60,8 +69,38 @@ SmsMessage::Create(PRInt32 aId,
 
   if (aDelivery.Equals(DELIVERY_RECEIVED)) {
     data.delivery() = eDeliveryState_Received;
+  } else if (aDelivery.Equals(DELIVERY_SENDING)) {
+    data.delivery() = eDeliveryState_Sending;
   } else if (aDelivery.Equals(DELIVERY_SENT)) {
     data.delivery() = eDeliveryState_Sent;
+  } else if (aDelivery.Equals(DELIVERY_ERROR)) {
+    data.delivery() = eDeliveryState_Error;
+  } else {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  if (aDeliveryStatus.Equals(DELIVERY_STATUS_NOT_APPLICABLE)) {
+    data.deliveryStatus() = eDeliveryStatus_NotApplicable;
+  } else if (aDeliveryStatus.Equals(DELIVERY_STATUS_SUCCESS)) {
+    data.deliveryStatus() = eDeliveryStatus_Success;
+  } else if (aDeliveryStatus.Equals(DELIVERY_STATUS_PENDING)) {
+    data.deliveryStatus() = eDeliveryStatus_Pending;
+  } else if (aDeliveryStatus.Equals(DELIVERY_STATUS_ERROR)) {
+    data.deliveryStatus() = eDeliveryStatus_Error;
+  } else {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  if (aMessageClass.Equals(MESSAGE_CLASS_NORMAL)) {
+    data.messageClass() = eMessageClass_Normal;
+  } else if (aMessageClass.Equals(MESSAGE_CLASS_CLASS_0)) {
+    data.messageClass() = eMessageClass_Class0;
+  } else if (aMessageClass.Equals(MESSAGE_CLASS_CLASS_1)) {
+    data.messageClass() = eMessageClass_Class1;
+  } else if (aMessageClass.Equals(MESSAGE_CLASS_CLASS_2)) {
+    data.messageClass() = eMessageClass_Class2;
+  } else if (aMessageClass.Equals(MESSAGE_CLASS_CLASS_3)) {
+    data.messageClass() = eMessageClass_Class3;
   } else {
     return NS_ERROR_INVALID_ARG;
   }
@@ -72,16 +111,16 @@ SmsMessage::Create(PRInt32 aId,
     if (!JS_ObjectIsDate(aCx, &obj)) {
       return NS_ERROR_INVALID_ARG;
     }
-    data.timestamp() = js_DateGetMsecSinceEpoch(aCx, &obj);
+    data.timestamp() = js_DateGetMsecSinceEpoch(&obj);
   } else {
     if (!aTimestamp.isNumber()) {
       return NS_ERROR_INVALID_ARG;
     }
     double number = aTimestamp.toNumber();
-    if (static_cast<PRUint64>(number) != number) {
+    if (static_cast<uint64_t>(number) != number) {
       return NS_ERROR_INVALID_ARG;
     }
-    data.timestamp() = static_cast<PRUint64>(number);
+    data.timestamp() = static_cast<uint64_t>(number);
   }
 
   nsCOMPtr<nsIDOMMozSmsMessage> message = new SmsMessage(data);
@@ -96,7 +135,7 @@ SmsMessage::GetData() const
 }
 
 NS_IMETHODIMP
-SmsMessage::GetId(PRInt32* aId)
+SmsMessage::GetId(int32_t* aId)
 {
   *aId = mData.id();
   return NS_OK;
@@ -109,13 +148,44 @@ SmsMessage::GetDelivery(nsAString& aDelivery)
     case eDeliveryState_Received:
       aDelivery = DELIVERY_RECEIVED;
       break;
+    case eDeliveryState_Sending:
+      aDelivery = DELIVERY_SENDING;
+      break;
     case eDeliveryState_Sent:
       aDelivery = DELIVERY_SENT;
+      break;
+    case eDeliveryState_Error:
+      aDelivery = DELIVERY_ERROR;
       break;
     case eDeliveryState_Unknown:
     case eDeliveryState_EndGuard:
     default:
-      NS_ASSERTION(true, "We shouldn't get any other delivery state!");
+      MOZ_NOT_REACHED("We shouldn't get any other delivery state!");
+      return NS_ERROR_UNEXPECTED;
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+SmsMessage::GetDeliveryStatus(nsAString& aDeliveryStatus)
+{
+  switch (mData.deliveryStatus()) {
+    case eDeliveryStatus_NotApplicable:
+      aDeliveryStatus = DELIVERY_STATUS_NOT_APPLICABLE;
+      break;
+    case eDeliveryStatus_Success:
+      aDeliveryStatus = DELIVERY_STATUS_SUCCESS;
+      break;
+    case eDeliveryStatus_Pending:
+      aDeliveryStatus = DELIVERY_STATUS_PENDING;
+      break;
+    case eDeliveryStatus_Error:
+      aDeliveryStatus = DELIVERY_STATUS_ERROR;
+      break;
+    case eDeliveryStatus_EndGuard:
+    default:
+      MOZ_NOT_REACHED("We shouldn't get any other delivery status!");
       return NS_ERROR_UNEXPECTED;
   }
 
@@ -140,6 +210,33 @@ NS_IMETHODIMP
 SmsMessage::GetBody(nsAString& aBody)
 {
   aBody = mData.body();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+SmsMessage::GetMessageClass(nsAString& aMessageClass)
+{
+  switch (mData.messageClass()) {
+    case eMessageClass_Normal:
+      aMessageClass = MESSAGE_CLASS_NORMAL;
+      break;
+    case eMessageClass_Class0:
+      aMessageClass = MESSAGE_CLASS_CLASS_0;
+      break;
+    case eMessageClass_Class1:
+      aMessageClass = MESSAGE_CLASS_CLASS_1;
+      break;
+    case eMessageClass_Class2:
+      aMessageClass = MESSAGE_CLASS_CLASS_2;
+      break;
+    case eMessageClass_Class3:
+      aMessageClass = MESSAGE_CLASS_CLASS_3;
+      break;
+    default:
+      MOZ_NOT_REACHED("We shouldn't get any other message class!");
+      return NS_ERROR_UNEXPECTED;
+  }
+
   return NS_OK;
 }
 

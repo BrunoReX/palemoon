@@ -58,6 +58,15 @@ let modules = {
   downloads: {
     uri: "chrome://browser/content/aboutDownloads.xhtml",
     privileged: true
+  },
+  reader: {
+    uri: "chrome://browser/content/aboutReader.html",
+    privileged: false,
+    hide: true
+  },
+  feedback: {
+    uri: "chrome://browser/content/aboutFeedback.xhtml",
+    privileged: true
   }
 }
 
@@ -90,11 +99,10 @@ AboutRedirector.prototype = {
     var channel = ios.newChannel(moduleInfo.uri, null, null);
     
     if (!moduleInfo.privileged) {
-      // drop chrome privileges
-      let secMan = Cc["@mozilla.org/scriptsecuritymanager;1"].
-                   getService(Ci.nsIScriptSecurityManager);
-      let principal = secMan.getCodebasePrincipal(aURI);
-      channel.owner = principal;
+      // Setting the owner to null means that we'll go through the normal
+      // path in GetChannelPrincipal and create a codebase principal based
+      // on the channel's originalURI
+      channel.owner = null;
     }
 
     channel.originalURI = aURI;
@@ -104,4 +112,4 @@ AboutRedirector.prototype = {
 };
 
 const components = [AboutRedirector];
-const NSGetFactory = XPCOMUtils.generateNSGetFactory(components);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory(components);

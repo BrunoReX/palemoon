@@ -19,6 +19,7 @@
 #include "nsString.h"
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
+#include "mozilla/Attributes.h"
 
 #include <objbase.h>
 
@@ -30,7 +31,7 @@ namespace widget {
  * we need to maintain an audio session.  This class wraps IAudioSessionControl
  * and implements IAudioSessionEvents (for callbacks from Windows)
  */
-class AudioSession: public IAudioSessionEvents {
+class AudioSession MOZ_FINAL : public IAudioSessionEvents {
 private:
   AudioSession();
   ~AudioSession();
@@ -184,8 +185,9 @@ AudioSession::Start()
 
   HRESULT hr;
 
-  if (FAILED(::CoInitialize(NULL)))
-    return NS_ERROR_FAILURE;
+  // Don't check for errors in case something already initialized COM
+  // on this thread.
+  CoInitialize(NULL);
 
   if (mState == UNINITIALIZED) {
     mState = FAILED;
@@ -200,7 +202,6 @@ AudioSession::Start()
     nsCOMPtr<nsIStringBundleService> bundleService = 
       do_GetService(NS_STRINGBUNDLE_CONTRACTID);
     NS_ENSURE_TRUE(bundleService, NS_ERROR_FAILURE);
-
     nsCOMPtr<nsIStringBundle> bundle;
     bundleService->CreateBundle("chrome://branding/locale/brand.properties",
                                 getter_AddRefs(bundle));
@@ -218,8 +219,7 @@ AudioSession::Start()
 
     nsCOMPtr<nsIUUIDGenerator> uuidgen =
       do_GetService("@mozilla.org/uuid-generator;1");
-    NS_ASSERTION(uuidgen, "No UUID-Generator?!?");
-
+    NS_ENSURE_TRUE(uuidgen, NS_ERROR_FAILURE);
     uuidgen->GenerateUUIDInPlace(&mSessionGroupingParameter);
   }
 
@@ -299,7 +299,7 @@ AudioSession::StopInternal()
   if (mAudioSessionControl) {
     mAudioSessionControl->SetGroupingParam((LPCGUID)&blankId, NULL);
     mAudioSessionControl->UnregisterAudioSessionNotification(this);
-    mAudioSessionControl = nsnull;
+    mAudioSessionControl = nullptr;
   }
 }
 
@@ -420,7 +420,7 @@ AudioSession::OnSessionDisconnectedInternal()
     return NS_OK;
 
   mAudioSessionControl->UnregisterAudioSessionNotification(this);
-  mAudioSessionControl = nsnull;
+  mAudioSessionControl = nullptr;
 
   mState = AUDIO_SESSION_DISCONNECTED;
   CoUninitialize();

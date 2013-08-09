@@ -19,8 +19,11 @@
 #include "nsIRandomGenerator.h"
 #endif
 #include "mozilla/Telemetry.h"
+#include "mozilla/Likely.h"
 
 using namespace mozilla::storage;
+
+// Keep the GUID-related parts of this file in sync with toolkit/downloads/SQLFunctions.cpp!
 
 ////////////////////////////////////////////////////////////////////////////////
 //// Anonymous Helpers
@@ -44,7 +47,7 @@ namespace {
    * @return a pointer to the next word boundary after aStart
    */
   static
-  NS_ALWAYS_INLINE const_char_iterator
+  MOZ_ALWAYS_INLINE const_char_iterator
   nextWordBoundary(const_char_iterator const aStart,
                    const_char_iterator const aNext,
                    const_char_iterator const aEnd) {
@@ -76,7 +79,7 @@ namespace {
    * findAnywhere and findOnBoundary do almost the same thing, so it's natural
    * to implement them in terms of a single function.  They're both
    * performance-critical functions, however, and checking aBehavior makes them
-   * a bit slower.  Our solution is to define findInString as NS_ALWAYS_INLINE
+   * a bit slower.  Our solution is to define findInString as MOZ_ALWAYS_INLINE
    * and rely on the compiler to optimize out the aBehavior check.
    *
    * @param aToken
@@ -91,7 +94,7 @@ namespace {
    * @return true if aToken was found in aSourceString, false otherwise.
    */
   static
-  NS_ALWAYS_INLINE bool
+  MOZ_ALWAYS_INLINE bool
   findInString(const nsDependentCSubstring &aToken,
                const nsACString &aSourceString,
                FindInStringBehavior aBehavior)
@@ -151,7 +154,7 @@ namespace {
       }
 
       // If something went wrong above, get out of here!
-      if (NS_UNLIKELY(error)) {
+      if (MOZ_UNLIKELY(error)) {
         return false;
       }
 
@@ -200,7 +203,7 @@ namespace places {
   /* static */
   void
   MatchAutoCompleteFunction::fixupURISpec(const nsCString &aURISpec,
-                                          PRInt32 aMatchBehavior,
+                                          int32_t aMatchBehavior,
                                           nsCString &_fixedSpec)
   {
     nsCString unescapedSpec;
@@ -299,7 +302,7 @@ namespace places {
 
   /* static */
   MatchAutoCompleteFunction::searchFunctionPtr
-  MatchAutoCompleteFunction::getSearchFunction(PRInt32 aBehavior)
+  MatchAutoCompleteFunction::getSearchFunction(int32_t aBehavior)
   {
     switch (aBehavior) {
       case mozIPlacesAutoComplete::MATCH_ANYWHERE:
@@ -329,16 +332,16 @@ namespace places {
   {
     // Macro to make the code a bit cleaner and easier to read.  Operates on
     // searchBehavior.
-    PRInt32 searchBehavior = aArguments->AsInt32(kArgIndexSearchBehavior);
+    int32_t searchBehavior = aArguments->AsInt32(kArgIndexSearchBehavior);
     #define HAS_BEHAVIOR(aBitName) \
       (searchBehavior & mozIPlacesAutoComplete::BEHAVIOR_##aBitName)
 
-    nsCAutoString searchString;
+    nsAutoCString searchString;
     (void)aArguments->GetUTF8String(kArgSearchString, searchString);
     nsCString url;
     (void)aArguments->GetUTF8String(kArgIndexURL, url);
 
-    PRInt32 matchBehavior = aArguments->AsInt32(kArgIndexMatchBehavior);
+    int32_t matchBehavior = aArguments->AsInt32(kArgIndexMatchBehavior);
 
     // We only want to filter javascript: URLs if we are not supposed to search
     // for them, and the search does not start with "javascript:".
@@ -350,12 +353,12 @@ namespace places {
       return NS_OK;
     }
 
-    PRInt32 visitCount = aArguments->AsInt32(kArgIndexVisitCount);
+    int32_t visitCount = aArguments->AsInt32(kArgIndexVisitCount);
     bool typed = aArguments->AsInt32(kArgIndexTyped) ? true : false;
     bool bookmark = aArguments->AsInt32(kArgIndexBookmark) ? true : false;
-    nsCAutoString tags;
+    nsAutoCString tags;
     (void)aArguments->GetUTF8String(kArgIndexTags, tags);
-    PRInt32 openPageCount = aArguments->AsInt32(kArgIndexOpenPageCount);
+    int32_t openPageCount = aArguments->AsInt32(kArgIndexOpenPageCount);
 
     // Make sure we match all the filter requirements.  If a given restriction
     // is active, make sure the corresponding condition is not true.
@@ -378,7 +381,7 @@ namespace places {
     nsCString fixedURI;
     fixupURISpec(url, matchBehavior, fixedURI);
 
-    nsCAutoString title;
+    nsAutoCString title;
     (void)aArguments->GetUTF8String(kArgIndexTitle, title);
 
     // Determine if every token matches either the bookmark title, tags, page
@@ -444,20 +447,20 @@ namespace places {
                                             nsIVariant **_result)
   {
     // Fetch arguments.  Use default values if they were omitted.
-    PRUint32 numEntries;
+    uint32_t numEntries;
     nsresult rv = aArguments->GetNumEntries(&numEntries);
     NS_ENSURE_SUCCESS(rv, rv);
     NS_ASSERTION(numEntries > 0, "unexpected number of arguments");
 
     Telemetry::AutoTimer<Telemetry::PLACES_FRECENCY_CALC_TIME_MS> timer;
 
-    PRInt64 pageId = aArguments->AsInt64(0);
-    PRInt32 typed = numEntries > 1 ? aArguments->AsInt32(1) : 0;
-    PRInt32 fullVisitCount = numEntries > 2 ? aArguments->AsInt32(2) : 0;
-    PRInt64 bookmarkId = numEntries > 3 ? aArguments->AsInt64(3) : 0;
-    PRInt32 visitCount = 0;
-    PRInt32 hidden = 0;
-    PRInt32 isQuery = 0;
+    int64_t pageId = aArguments->AsInt64(0);
+    int32_t typed = numEntries > 1 ? aArguments->AsInt32(1) : 0;
+    int32_t fullVisitCount = numEntries > 2 ? aArguments->AsInt32(2) : 0;
+    int64_t bookmarkId = numEntries > 3 ? aArguments->AsInt64(3) : 0;
+    int32_t visitCount = 0;
+    int32_t hidden = 0;
+    int32_t isQuery = 0;
     float pointsForSampledVisits = 0.0;
 
     // This is a const version of the history object for thread-safety.
@@ -529,15 +532,15 @@ namespace places {
       NS_ENSURE_SUCCESS(rv, rv);
 
       // Fetch only a limited number of recent visits.
-      PRInt32 numSampledVisits = 0;
-      for (PRInt32 maxVisits = history->GetNumVisitsForFrecency();
+      int32_t numSampledVisits = 0;
+      for (int32_t maxVisits = history->GetNumVisitsForFrecency();
            numSampledVisits < maxVisits &&
            NS_SUCCEEDED(getVisits->ExecuteStep(&hasResult)) && hasResult;
            numSampledVisits++) {
-        PRInt32 visitType;
+        int32_t visitType;
         rv = getVisits->GetInt32(1, &visitType);
         NS_ENSURE_SUCCESS(rv, rv);
-        PRInt32 bonus = history->GetFrecencyTransitionBonus(visitType, true);
+        int32_t bonus = history->GetFrecencyTransitionBonus(visitType, true);
 
         // Always add the bookmark visit bonus.
         if (bookmarkId) {
@@ -546,8 +549,8 @@ namespace places {
 
         // If bonus was zero, we can skip the work to determine the weight.
         if (bonus) {
-          PRInt32 ageInDays = getVisits->AsInt32(0);
-          PRInt32 weight = history->GetFrecencyAgedWeight(ageInDays);
+          int32_t ageInDays = getVisits->AsInt32(0);
+          int32_t weight = history->GetFrecencyAgedWeight(ageInDays);
           pointsForSampledVisits += (float)(weight * (bonus / 100.0));
         }
       }
@@ -565,7 +568,7 @@ namespace places {
           // Estimate frecency using the last few visits.
           // Use ceilf() so that we don't round down to 0, which
           // would cause us to completely ignore the place during autocomplete.
-          NS_ADDREF(*_result = new IntegerVariant((PRInt32) ceilf(fullVisitCount * ceilf(pointsForSampledVisits) / numSampledVisits)));
+          NS_ADDREF(*_result = new IntegerVariant((int32_t) ceilf(fullVisitCount * ceilf(pointsForSampledVisits) / numSampledVisits)));
         }
 
         return NS_OK;
@@ -580,7 +583,7 @@ namespace places {
     // TODO: What if we don't have visits and we never visit?  We could end up
     // with a really high value that keeps coming up in ac results? Should we
     // only do this on import?  Have to figure it out.
-    PRInt32 bonus = 0;
+    int32_t bonus = 0;
 
     // Make it so something bookmarked and typed will have a higher frecency
     // than something just typed or just bookmarked.
@@ -600,7 +603,7 @@ namespace places {
 
     // use ceilf() so that we don't round down to 0, which
     // would cause us to completely ignore the place during autocomplete
-    NS_ADDREF(*_result = new IntegerVariant((PRInt32) ceilf(fullVisitCount * ceilf(pointsForSampledVisits))));
+    NS_ADDREF(*_result = new IntegerVariant((int32_t) ceilf(fullVisitCount * ceilf(pointsForSampledVisits))));
 
     return NS_OK;
   }
@@ -645,7 +648,7 @@ namespace places {
   GenerateGUIDFunction::OnFunctionCall(mozIStorageValueArray *aArguments,
                                        nsIVariant **_result)
   {
-    nsCAutoString guid;
+    nsAutoCString guid;
     nsresult rv = GenerateGUID(guid);
     NS_ENSURE_SUCCESS(rv, rv);
 

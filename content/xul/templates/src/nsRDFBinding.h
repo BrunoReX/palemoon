@@ -46,7 +46,7 @@ private:
         mPredicate(aPredicate),
         mTargetVariable(aTargetVariable),
         mHasDependency(false),
-        mNext(nsnull)
+        mNext(nullptr)
     {
         MOZ_COUNT_CTOR(RDFBinding);
     }
@@ -66,7 +66,7 @@ class RDFBindingSet
 protected:
 
     // the number of bindings
-    PRInt32 mCount;
+    int32_t mCount;
 
     // pointer to the first binding in a linked list
     RDFBinding* mFirst;
@@ -75,7 +75,7 @@ public:
 
     RDFBindingSet()
         : mCount(0),
-          mFirst(nsnull)
+          mFirst(nullptr)
     {
         MOZ_COUNT_CTOR(RDFBindingSet);
     }
@@ -84,7 +84,7 @@ public:
 
     NS_INLINE_DECL_REFCOUNTING(RDFBindingSet)
 
-    PRInt32 Count() const { return mCount; }
+    int32_t Count() const { return mCount; }
 
     /*
      * Add a binding (aRef -> aPredicate -> aVar) to the set
@@ -140,7 +140,7 @@ public:
      * LookupTargetIndex determines the index into the array for a given
      * target symbol.
      */
-    PRInt32
+    int32_t
     LookupTargetIndex(nsIAtom* aTargetVariable, RDFBinding** aBinding);
 };
 
@@ -173,8 +173,8 @@ protected:
 public:
 
     nsBindingValues()
-      : mBindings(nsnull),
-        mValues(nsnull)
+      : mBindings(nullptr),
+        mValues(nullptr)
     {
         MOZ_COUNT_CTOR(nsBindingValues);
     }

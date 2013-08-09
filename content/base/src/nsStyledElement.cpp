@@ -7,7 +7,8 @@
 #include "nsStyledElement.h"
 #include "nsGkAtoms.h"
 #include "nsAttrValue.h"
-#include "nsGenericElement.h"
+#include "nsAttrValueInlines.h"
+#include "mozilla/dom/Element.h"
 #include "nsMutationEvent.h"
 #include "nsDOMCSSDeclaration.h"
 #include "nsDOMCSSAttrDeclaration.h"
@@ -22,6 +23,7 @@
 #include "nsContentUtils.h"
 
 namespace css = mozilla::css;
+using namespace mozilla::dom;
 
 //----------------------------------------------------------------------
 // nsIContent methods
@@ -43,13 +45,13 @@ nsStyledElementNotElementCSSInlineStyle::DoGetID() const
 {
   NS_ASSERTION(HasID(), "Unexpected call");
 
-  // The nullcheck here is needed because nsGenericElement::UnsetAttr calls
+  // The nullcheck here is needed because Element::UnsetAttr calls
   // out to various code between removing the attribute and we get a chance to
   // ClearHasID().
 
   const nsAttrValue* attr = mAttrsAndChildren.GetAttr(nsGkAtoms::id);
 
-  return attr ? attr->GetAtomValue() : nsnull;
+  return attr ? attr->GetAtomValue() : nullptr;
 }
 
 const nsAttrValue*
@@ -60,7 +62,7 @@ nsStyledElementNotElementCSSInlineStyle::DoGetClasses() const
 }
 
 bool
-nsStyledElementNotElementCSSInlineStyle::ParseAttribute(PRInt32 aNamespaceID,
+nsStyledElementNotElementCSSInlineStyle::ParseAttribute(int32_t aNamespaceID,
                                                         nsIAtom* aAttribute,
                                                         const nsAString& aValue,
                                                         nsAttrValue& aResult)
@@ -96,7 +98,7 @@ nsStyledElementNotElementCSSInlineStyle::ParseAttribute(PRInt32 aNamespaceID,
 }
 
 nsresult
-nsStyledElementNotElementCSSInlineStyle::UnsetAttr(PRInt32 aNameSpaceID,
+nsStyledElementNotElementCSSInlineStyle::UnsetAttr(int32_t aNameSpaceID,
                                                    nsIAtom* aAttribute,
                                                    bool aNotify)
 {
@@ -106,11 +108,11 @@ nsStyledElementNotElementCSSInlineStyle::UnsetAttr(PRInt32 aNameSpaceID,
     RemoveFromIdTable();
   }
 
-  return nsGenericElement::UnsetAttr(aNameSpaceID, aAttribute, aNotify);
+  return Element::UnsetAttr(aNameSpaceID, aAttribute, aNotify);
 }
 
 nsresult
-nsStyledElementNotElementCSSInlineStyle::AfterSetAttr(PRInt32 aNamespaceID,
+nsStyledElementNotElementCSSInlineStyle::AfterSetAttr(int32_t aNamespaceID,
                                                       nsIAtom* aAttribute,
                                                       const nsAttrValue* aValue,
                                                       bool aNotify)
@@ -123,8 +125,7 @@ nsStyledElementNotElementCSSInlineStyle::AfterSetAttr(PRInt32 aNamespaceID,
     ClearHasID();
   }
 
-  return nsGenericElement::AfterSetAttr(aNamespaceID, aAttribute, aValue,
-                                        aNotify);
+  return Element::AfterSetAttr(aNamespaceID, aAttribute, aValue, aNotify);
 }
 
 nsresult
@@ -163,11 +164,11 @@ nsStyledElementNotElementCSSInlineStyle::SetInlineStyleRule(css::StyleRule* aSty
   nsAttrValue attrValue(aStyleRule, aSerialized);
 
   // XXXbz do we ever end up with ADDITION here?  I doubt it.
-  PRUint8 modType = modification ?
-    static_cast<PRUint8>(nsIDOMMutationEvent::MODIFICATION) :
-    static_cast<PRUint8>(nsIDOMMutationEvent::ADDITION);
+  uint8_t modType = modification ?
+    static_cast<uint8_t>(nsIDOMMutationEvent::MODIFICATION) :
+    static_cast<uint8_t>(nsIDOMMutationEvent::ADDITION);
 
-  return SetAttrAndNotify(kNameSpaceID_None, nsGkAtoms::style, nsnull,
+  return SetAttrAndNotify(kNameSpaceID_None, nsGkAtoms::style, nullptr,
                           oldValue, attrValue, modType, hasListeners,
                           aNotify, kDontCallAfterSetAttr);
 }
@@ -176,7 +177,7 @@ css::StyleRule*
 nsStyledElementNotElementCSSInlineStyle::GetInlineStyleRule()
 {
   if (!MayHaveStyle()) {
-    return nsnull;
+    return nullptr;
   }
   const nsAttrValue* attrVal = mAttrsAndChildren.GetAttr(nsGkAtoms::style);
 
@@ -184,25 +185,16 @@ nsStyledElementNotElementCSSInlineStyle::GetInlineStyleRule()
     return attrVal->GetCSSStyleRuleValue();
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 // ---------------------------------------------------------------
 // Others and helpers
 
-nsIDOMCSSStyleDeclaration*
+nsICSSDeclaration*
 nsStyledElementNotElementCSSInlineStyle::GetStyle(nsresult* retval)
 {
-  nsXULElement* xulElement = nsXULElement::FromContent(this);
-  if (xulElement) {
-    nsresult rv = xulElement->EnsureLocalStyle();
-    if (NS_FAILED(rv)) {
-      *retval = rv;
-      return nsnull;
-    }
-  }
-    
-  nsGenericElement::nsDOMSlots *slots = DOMSlots();
+  Element::nsDOMSlots *slots = DOMSlots();
 
   if (!slots->mStyle) {
     // Just in case...
@@ -260,21 +252,8 @@ nsStyledElementNotElementCSSInlineStyle::ParseStyleAttribute(const nsAString& aV
       }
     }
 
-    if (isCSS) {
-      css::Loader* cssLoader = doc->CSSLoader();
-      nsCSSParser cssParser(cssLoader);
-
-      nsCOMPtr<nsIURI> baseURI = GetBaseURI();
-
-      nsRefPtr<css::StyleRule> rule;
-      cssParser.ParseStyleAttribute(aValue, doc->GetDocumentURI(),
-                                    baseURI,
-                                    NodePrincipal(),
-                                    getter_AddRefs(rule));
-      if (rule) {
-        aResult.SetTo(rule, &aValue);
-        return;
-      }
+    if (isCSS && aResult.ParseStyleAttribute(aValue, this)) {
+      return;
     }
   }
 

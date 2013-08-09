@@ -11,7 +11,6 @@
 #include "PathSkia.h"
 #include <sstream>
 #include <vector>
-using namespace std;
 
 namespace mozilla {
 namespace gfx {
@@ -66,7 +65,7 @@ public:
                           const GlyphBuffer &aBuffer,
                           const Pattern &aPattern,
                           const DrawOptions &aOptions = DrawOptions(),
-                          const GlyphRenderingOptions *aRenderingOptions = NULL);
+                          const GlyphRenderingOptions *aRenderingOptions = nullptr);
   virtual void Mask(const Pattern &aSource,
                     const Pattern &aMask,
                     const DrawOptions &aOptions = DrawOptions());
@@ -105,7 +104,7 @@ private:
   SkBitmap mBitmap;
   SkRefPtr<SkCanvas> mCanvas;
   SkRefPtr<SkDevice> mDevice;
-  vector<SourceSurfaceSkia*> mSnapshots;
+  std::vector<SourceSurfaceSkia*> mSnapshots;
 };
 
 }

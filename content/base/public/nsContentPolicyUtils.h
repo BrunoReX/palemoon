@@ -65,7 +65,7 @@ class nsACString;
  * @return the name of the given response code
  */
 inline const char *
-NS_CP_ResponseName(PRInt16 response)
+NS_CP_ResponseName(int16_t response)
 {
   switch (response) {
     CASE_RETURN( REJECT_REQUEST );
@@ -88,7 +88,7 @@ NS_CP_ResponseName(PRInt16 response)
  * @return the name of the given content type code
  */
 inline const char *
-NS_CP_ContentTypeName(PRUint32 contentType)
+NS_CP_ContentTypeName(uint32_t contentType)
 {
   switch (contentType) {
     CASE_RETURN( TYPE_OTHER             );
@@ -125,14 +125,16 @@ NS_CP_ContentTypeName(PRUint32 contentType)
         return NS_ERROR_FAILURE;                                              \
                                                                               \
     return policy-> action (contentType, contentLocation, requestOrigin,      \
-                            context, mimeType, extra, decision);              \
+                            context, mimeType, extra, originPrincipal,        \
+                            decision);                                        \
   PR_END_MACRO
 
 /* Passes on parameters from its "caller"'s context. */
 #define CHECK_CONTENT_POLICY_WITH_SERVICE(action, _policy)                    \
   PR_BEGIN_MACRO                                                              \
     return _policy-> action (contentType, contentLocation, requestOrigin,     \
-                             context, mimeType, extra, decision);             \
+                             context, mimeType, extra, originPrincipal,       \
+                             decision);                                       \
   PR_END_MACRO
 
 /**
@@ -174,15 +176,15 @@ NS_CP_ContentTypeName(PRUint32 contentType)
  * null origin URI will be passed).
  */
 inline nsresult
-NS_CheckContentLoadPolicy(PRUint32          contentType,
+NS_CheckContentLoadPolicy(uint32_t          contentType,
                           nsIURI           *contentLocation,
                           nsIPrincipal     *originPrincipal,
                           nsISupports      *context,
                           const nsACString &mimeType,
                           nsISupports      *extra,
-                          PRInt16          *decision,
-                          nsIContentPolicy *policyService = nsnull,
-                          nsIScriptSecurityManager* aSecMan = nsnull)
+                          int16_t          *decision,
+                          nsIContentPolicy *policyService = nullptr,
+                          nsIScriptSecurityManager* aSecMan = nullptr)
 {
     CHECK_PRINCIPAL;
     if (policyService) {
@@ -201,15 +203,15 @@ NS_CheckContentLoadPolicy(PRUint32          contentType,
  * null origin URI will be passed).
  */
 inline nsresult
-NS_CheckContentProcessPolicy(PRUint32          contentType,
+NS_CheckContentProcessPolicy(uint32_t          contentType,
                              nsIURI           *contentLocation,
                              nsIPrincipal     *originPrincipal,
                              nsISupports      *context,
                              const nsACString &mimeType,
                              nsISupports      *extra,
-                             PRInt16          *decision,
-                             nsIContentPolicy *policyService = nsnull,
-                             nsIScriptSecurityManager* aSecMan = nsnull)
+                             int16_t          *decision,
+                             nsIContentPolicy *policyService = nullptr,
+                             nsIScriptSecurityManager* aSecMan = nullptr)
 {
     CHECK_PRINCIPAL;
     if (policyService) {
@@ -230,7 +232,7 @@ NS_CheckContentProcessPolicy(PRUint32          contentType,
  *
  * @param aContext the context to find a docshell for (can be null)
  *
- * @return a WEAK pointer to the docshell, or nsnull if it could
+ * @return a WEAK pointer to the docshell, or nullptr if it could
  *     not be obtained
  *     
  * @note  As of this writing, calls to nsIContentPolicy::Should{Load,Process}
@@ -248,7 +250,7 @@ inline nsIDocShell*
 NS_CP_GetDocShellFromContext(nsISupports *aContext)
 {
     if (!aContext) {
-        return nsnull;
+        return nullptr;
     }
 
     nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aContext);
@@ -276,7 +278,7 @@ NS_CP_GetDocShellFromContext(nsISupports *aContext)
     }
 
     if (!window) {
-        return nsnull;
+        return nullptr;
     }
 
     return window->GetDocShell();

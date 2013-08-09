@@ -18,11 +18,11 @@ extern PRThread *gSocketThread;
 void
 nsHttpConnectionMgr::PrintDiagnostics()
 {
-  PostEvent(&nsHttpConnectionMgr::OnMsgPrintDiagnostics, 0, nsnull);
+  PostEvent(&nsHttpConnectionMgr::OnMsgPrintDiagnostics, 0, nullptr);
 }
 
 void
-nsHttpConnectionMgr::OnMsgPrintDiagnostics(PRInt32, void *)
+nsHttpConnectionMgr::OnMsgPrintDiagnostics(int32_t, void *)
 {
   NS_ABORT_IF_FALSE(PR_GetCurrentThread() == gSocketThread, "wrong thread");
 
@@ -50,7 +50,7 @@ nsHttpConnectionMgr::PrintDiagnosticsCB(const nsACString &key,
                                         void *closure)
 {
   nsHttpConnectionMgr *self = static_cast<nsHttpConnectionMgr *>(closure);
-  PRUint32 i;
+  uint32_t i;
 
   self->mLogData.AppendPrintf(" ent host = %s hashkey = %s\n",
                               ent->mConnInfo->Host(), ent->mConnInfo->HashKey().get());
@@ -108,13 +108,13 @@ nsHttpConnectionMgr::nsHalfOpenSocket::PrintDiagnostics(nsCString &log)
     log.AppendPrintf("    primary not started\n");
   else
     log.AppendPrintf("    primary started %.2fms ago\n",
-                     (mPrimarySynStarted - now).ToMilliseconds());
+                     (now - mPrimarySynStarted).ToMilliseconds());
 
   if (mBackupSynStarted.IsNull())
     log.AppendPrintf("    backup not started\n");
   else
-    log.AppendPrintf("    backup started %ldms ago\n",
-                     (mBackupSynStarted - now).ToMilliseconds());
+    log.AppendPrintf("    backup started %.2f ago\n",
+                     (now - mBackupSynStarted).ToMilliseconds());
     
   log.AppendPrintf("    primary transport %d, backup transport %d\n",
                    !!mSocketTransport.get(), !!mBackupTransport.get());
@@ -131,8 +131,8 @@ nsHttpConnection::PrintDiagnostics(nsCString &log)
   log.AppendPrintf("    spdyVersion = %d  reportedSpdy = %d everspdy = %d\n",
                    mUsingSpdyVersion, mReportedSpdy, mEverUsedSpdy);
 
-  log.AppendPrintf("    iskeepalive = %d  dontReuse = NA isReused = %d\n",
-                   IsKeepAlive(), mIsReused);
+  log.AppendPrintf("    iskeepalive = %d  dontReuse = %d isReused = %d\n",
+                   IsKeepAlive(), mDontReuse, mIsReused);
 
   log.AppendPrintf("    mTransaction = %d mSpdySession = %d\n",
                    !!mTransaction.get(), !!mSpdySession.get());
@@ -237,7 +237,7 @@ nsHttpTransaction::PrintDiagnostics(nsCString &log)
     return;
 
   log.AppendPrintf("     ::: uri = %s\n",
-                   nsCAutoString(mRequestHead->RequestURI()).get());
+                   nsAutoCString(mRequestHead->RequestURI()).get());
   log.AppendPrintf("     caps = 0x%x\n", mCaps);
   log.AppendPrintf("     priority = %d\n", mPriority);
   log.AppendPrintf("     restart count = %u\n", mRestartCount);

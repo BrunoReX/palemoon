@@ -1,7 +1,8 @@
 #!/usr/bin/env python
+
 # This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
 
 """
 Setup mozbase packages for development.
@@ -11,8 +12,6 @@ If no arguments are given, install all packages.
 
 See https://wiki.mozilla.org/Auto-tools/Projects/MozBase
 """
-
-# XXX note that currently directory names must equal package names
 
 import pkg_resources
 import os
@@ -41,29 +40,20 @@ def cycle_check(order, dependencies):
         for d in deps:
             assert index > order_dict[d], "Cyclic dependencies detected"
 
-def dependencies(directory):
-    """
-    get the dependencies of a package directory containing a setup.py
-    returns the package name and the list of dependencies
-    """
+def info(directory):
+    "get the package setup.py information"
+
     assert os.path.exists(os.path.join(directory, 'setup.py'))
 
     # setup the egg info
     call([sys.executable, 'setup.py', 'egg_info'], cwd=directory, stdout=PIPE)
 
     # get the .egg-info directory
-    egg_info = [i for i in os.listdir(directory)
-                if i.endswith('.egg-info')]
+    egg_info = [entry for entry in os.listdir(directory)
+                if entry.endswith('.egg-info')]
     assert len(egg_info) == 1, 'Expected one .egg-info directory in %s, got: %s' % (directory, egg_info)
     egg_info = os.path.join(directory, egg_info[0])
     assert os.path.isdir(egg_info), "%s is not a directory" % egg_info
-
-    # read the dependencies
-    requires = os.path.join(egg_info, 'requires.txt')
-    if os.path.exists(requires):
-        dependencies = [i.strip() for i in file(requires).readlines() if i.strip()]
-    else:
-        dependencies = []
 
     # read the package information
     pkg_info = os.path.join(egg_info, 'PKG-INFO')
@@ -75,20 +65,43 @@ def dependencies(directory):
         key, value = [i.strip() for i in line.split(':', 1)]
         info_dict[key] = value
 
+    return info_dict
+
+def get_dependencies(directory):
+    "returns the package name and dependencies given a package directory"
+
+    # get the package metadata
+    info_dict = info(directory)
+
+    # get the .egg-info directory
+    egg_info = [entry for entry in os.listdir(directory)
+                if entry.endswith('.egg-info')][0]
+
+    # read the dependencies
+    requires = os.path.join(directory, egg_info, 'requires.txt')
+    if os.path.exists(requires):
+        dependencies = [line.strip()
+                        for line in file(requires).readlines()
+                        if line.strip()]
+    else:
+        dependencies = []
 
     # return the information
     return info_dict['Name'], dependencies
 
-def sanitize_dependency(dep):
-    """
-    remove version numbers from deps
-    """
+def dependency_info(dep):
+    "return dictionary of dependency information from a dependency string"
+    retval = dict(Name=None, Type=None, Version=None)
     for joiner in ('==', '<=', '>='):
         if joiner in dep:
-            dep = dep.split(joiner, 1)[0].strip()
-            return dep # XXX only one joiner allowed right now
-    return dep
-
+            retval['Type'] = joiner
+            name, version = [i.strip() for i in dep.split(joiner, 1)]
+            retval['Name'] = name
+            retval['Version'] = version
+            break
+    else:
+        retval['Name'] = dep.strip()
+    return retval
 
 def unroll_dependencies(dependencies):
     """
@@ -145,17 +158,24 @@ def main(args=sys.argv[1:]):
     if options.list_dependencies:
         # list the package dependencies
         for package in packages:
-            print '%s: %s' % dependencies(os.path.join(here, package))
+            print '%s: %s' % get_dependencies(os.path.join(here, package))
         parser.exit()
 
     # gather dependencies
+    # TODO: version conflict checking
     deps = {}
+    alldeps = {}
     mapping = {} # mapping from subdir name to package name
     # core dependencies
     for package in packages:
-        key, value = dependencies(os.path.join(here, package))
-        deps[key] = [sanitize_dependency(dep) for dep in value]
+        key, value = get_dependencies(os.path.join(here, package))
+        deps[key] = [dependency_info(dep)['Name'] for dep in value]
         mapping[package] = key
+
+        # keep track of all dependencies for non-mozbase packages
+        for dep in value:
+            alldeps[dependency_info(dep)['Name']] = ''.join(dep.split())
+
     # indirect dependencies
     flag = True
     while flag:
@@ -163,8 +183,11 @@ def main(args=sys.argv[1:]):
         for value in deps.values():
             for dep in value:
                 if dep in all_packages and dep not in deps:
-                    key, value = dependencies(os.path.join(here, dep))
+                    key, value = get_dependencies(os.path.join(here, dep))
                     deps[key] = [sanitize_dependency(dep) for dep in value]
+
+                    for dep in value:
+                        alldeps[sanitize_dependency(dep)] = ''.join(dep.split())
                     mapping[package] = key
                     flag = True
                     break
@@ -175,7 +198,7 @@ def main(args=sys.argv[1:]):
     for package in all_packages:
         if package in mapping:
             continue
-        key, value = dependencies(os.path.join(here, package))
+        key, value = get_dependencies(os.path.join(here, package))
         mapping[package] = key
 
     # unroll dependencies
@@ -193,9 +216,20 @@ def main(args=sys.argv[1:]):
             print package
         parser.exit()
 
+    # install non-mozbase dependencies
+    # (currently none on modern python)
+    # these need to be installed separately and the --no-deps flag
+    # subsequently used due to a bug in setuptools; see
+    # https://bugzilla.mozilla.org/show_bug.cgi?id=759836
+    pypi_deps = dict([(i, j) for i,j in alldeps.items()
+                      if i not in unrolled])
+    for package, version in pypi_deps.items():
+        # easy_install should be available since we rely on setuptools
+        call(['easy_install', version])
+
     # set up the packages for development
     for package in unrolled:
-        call([sys.executable, 'setup.py', 'develop'],
+        call([sys.executable, 'setup.py', 'develop', '--no-deps'],
              cwd=os.path.join(here, reverse_mapping[package]))
 
 if __name__ == '__main__':

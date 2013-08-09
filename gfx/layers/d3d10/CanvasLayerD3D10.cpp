@@ -22,41 +22,39 @@ CanvasLayerD3D10::~CanvasLayerD3D10()
 void
 CanvasLayerD3D10::Initialize(const Data& aData)
 {
-  NS_ASSERTION(mSurface == nsnull, "BasicCanvasLayer::Initialize called twice!");
+  NS_ASSERTION(mSurface == nullptr, "BasicCanvasLayer::Initialize called twice!");
 
   if (aData.mSurface) {
     mSurface = aData.mSurface;
-    NS_ASSERTION(aData.mGLContext == nsnull && !aData.mDrawTarget,
+    NS_ASSERTION(aData.mGLContext == nullptr && !aData.mDrawTarget,
                  "CanvasLayer can't have both surface and GLContext/DrawTarget");
     mNeedsYFlip = false;
     mDataIsPremultiplied = true;
   } else if (aData.mGLContext) {
     NS_ASSERTION(aData.mGLContext->IsOffscreen(), "canvas gl context isn't offscreen");
     mGLContext = aData.mGLContext;
-    mCanvasFramebuffer = mGLContext->GetOffscreenFBO();
     mDataIsPremultiplied = aData.mGLBufferIsPremultiplied;
     mNeedsYFlip = true;
   } else if (aData.mDrawTarget) {
     mDrawTarget = aData.mDrawTarget;
-    void *texture = mDrawTarget->GetNativeSurface(NATIVE_SURFACE_D3D10_TEXTURE);
-
-    if (!texture) {
-      // XXX - Once we have non-D2D drawtargets we should do something more sensible here.
-      NS_WARNING("Failed to get D3D10 texture from DrawTarget.");
-      return;
-    }
-
-    mTexture = static_cast<ID3D10Texture2D*>(texture);
-
-    NS_ASSERTION(aData.mGLContext == nsnull && aData.mSurface == nsnull,
-                 "CanvasLayer can't have both surface and GLContext/Surface");
-
     mNeedsYFlip = false;
     mDataIsPremultiplied = true;
+    void *texture = mDrawTarget->GetNativeSurface(NATIVE_SURFACE_D3D10_TEXTURE);
 
-    mBounds.SetRect(0, 0, aData.mSize.width, aData.mSize.height);
-    device()->CreateShaderResourceView(mTexture, NULL, getter_AddRefs(mSRView));
-    return;
+    if (texture) {
+      mTexture = static_cast<ID3D10Texture2D*>(texture);
+
+      NS_ASSERTION(aData.mGLContext == nullptr && aData.mSurface == nullptr,
+                   "CanvasLayer can't have both surface and GLContext/Surface");
+
+      mBounds.SetRect(0, 0, aData.mSize.width, aData.mSize.height);
+      device()->CreateShaderResourceView(mTexture, NULL, getter_AddRefs(mSRView));
+      return;
+    } 
+    
+    // XXX we should store mDrawTarget and use it directly in UpdateSurface,
+    // bypassing Thebes
+    mSurface = gfxPlatform::GetPlatform()->GetThebesSurfaceForDrawTarget(mDrawTarget);
   } else {
     NS_ERROR("CanvasLayer created without mSurface, mDrawTarget or mGLContext?");
   }
@@ -78,15 +76,15 @@ CanvasLayerD3D10::Initialize(const Data& aData)
   mIsD2DTexture = false;
   mUsingSharedTexture = false;
 
-  HANDLE shareHandle = mGLContext ? mGLContext->GetD3DShareHandle() : nsnull;
-  if (shareHandle) {
+  HANDLE shareHandle = mGLContext ? mGLContext->GetD3DShareHandle() : nullptr;
+  if (shareHandle && !mForceReadback) {
     HRESULT hr = device()->OpenSharedResource(shareHandle, __uuidof(ID3D10Texture2D), getter_AddRefs(mTexture));
     if (SUCCEEDED(hr))
       mUsingSharedTexture = true;
   }
 
   if (mUsingSharedTexture) {
-    mNeedsYFlip = false;
+    mNeedsYFlip = true;
   } else {
     CD3D10_TEXTURE2D_DESC desc(DXGI_FORMAT_B8G8R8A8_UNORM, mBounds.width, mBounds.height, 1, 1);
     desc.Usage = D3D10_USAGE_DYNAMIC;
@@ -105,21 +103,16 @@ CanvasLayerD3D10::Initialize(const Data& aData)
 void
 CanvasLayerD3D10::UpdateSurface()
 {
-  if (!mDirty)
+  if (!IsDirty())
     return;
-  mDirty = false;
+  Painted();
 
   if (mDrawTarget) {
     mDrawTarget->Flush();
-    return;
-  }
-
-  if (mIsD2DTexture) {
+  } else if (mIsD2DTexture) {
     mSurface->Flush();
     return;
-  }
-
-  if (mUsingSharedTexture) {
+  } else if (mUsingSharedTexture) {
     // need to sync on the d3d9 device
     if (mGLContext) {
       mGLContext->MakeCurrent();
@@ -127,7 +120,6 @@ CanvasLayerD3D10::UpdateSurface()
     }
     return;
   }
-
   if (mGLContext) {
     // WebGL reads entire surface.
     D3D10_MAPPED_TEXTURE2D map;
@@ -141,42 +133,27 @@ CanvasLayerD3D10::UpdateSurface()
 
     const bool stridesMatch = map.RowPitch == mBounds.width * 4;
 
-    PRUint8 *destination;
+    uint8_t *destination;
     if (!stridesMatch) {
       destination = GetTempBlob(mBounds.width * mBounds.height * 4);
     } else {
       DiscardTempBlob();
-      destination = (PRUint8*)map.pData;
+      destination = (uint8_t*)map.pData;
     }
 
     mGLContext->MakeCurrent();
-
-    PRUint32 currentFramebuffer = 0;
-
-    mGLContext->fGetIntegerv(LOCAL_GL_FRAMEBUFFER_BINDING, (GLint*)&currentFramebuffer);
-
-    // Make sure that we read pixels from the correct framebuffer, regardless
-    // of what's currently bound.
-    if (currentFramebuffer != mCanvasFramebuffer)
-      mGLContext->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, mCanvasFramebuffer);
 
     nsRefPtr<gfxImageSurface> tmpSurface =
       new gfxImageSurface(destination,
                           gfxIntSize(mBounds.width, mBounds.height),
                           mBounds.width * 4,
                           gfxASurface::ImageFormatARGB32);
-    mGLContext->ReadPixelsIntoImageSurface(0, 0,
-                                           mBounds.width, mBounds.height,
-                                           tmpSurface);
-    tmpSurface = nsnull;
-
-    // Put back the previous framebuffer binding.
-    if (currentFramebuffer != mCanvasFramebuffer)
-      mGLContext->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, currentFramebuffer);
+    mGLContext->ReadScreenIntoImageSurface(tmpSurface);
+    tmpSurface = nullptr;
 
     if (!stridesMatch) {
       for (int y = 0; y < mBounds.height; y++) {
-        memcpy((PRUint8*)map.pData + map.RowPitch * y,
+        memcpy((uint8_t*)map.pData + map.RowPitch * y,
                destination + mBounds.width * 4 * y,
                mBounds.width * 4);
       }
@@ -231,7 +208,7 @@ CanvasLayerD3D10::RenderLayer()
 
   SetEffectTransformAndOpacity();
 
-  PRUint8 shaderFlags = 0;
+  uint8_t shaderFlags = 0;
   shaderFlags |= LoadMaskTexture();
   shaderFlags |= mDataIsPremultiplied
                 ? SHADER_PREMUL : SHADER_NON_PREMUL | SHADER_RGBA;

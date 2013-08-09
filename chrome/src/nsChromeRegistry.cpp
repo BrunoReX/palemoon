@@ -14,7 +14,7 @@
 #include "prprf.h"
 
 #include "nsCOMPtr.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 #include "nsEscape.h"
 #include "nsLayoutCID.h"
 #include "nsNetUtil.h"
@@ -62,7 +62,7 @@ nsChromeRegistry::LogMessage(const char* aMsg, ...)
 }
 
 void
-nsChromeRegistry::LogMessageWithContext(nsIURI* aURL, PRUint32 aLineNumber, PRUint32 flags,
+nsChromeRegistry::LogMessageWithContext(nsIURI* aURL, uint32_t aLineNumber, uint32_t flags,
                                         const char* aMsg, ...)
 {
   nsresult rv;
@@ -86,9 +86,9 @@ nsChromeRegistry::LogMessageWithContext(nsIURI* aURL, PRUint32 aLineNumber, PRUi
   if (aURL)
     aURL->GetSpec(spec);
 
-  rv = error->Init(NS_ConvertUTF8toUTF16(formatted).get(),
-                   NS_ConvertUTF8toUTF16(spec).get(),
-                   nsnull,
+  rv = error->Init(NS_ConvertUTF8toUTF16(formatted),
+                   NS_ConvertUTF8toUTF16(spec),
+                   EmptyString(),
                    aLineNumber, 0, flags, "chrome registration");
   PR_smprintf_free(formatted);
 
@@ -100,7 +100,7 @@ nsChromeRegistry::LogMessageWithContext(nsIURI* aURL, PRUint32 aLineNumber, PRUi
 
 nsChromeRegistry::~nsChromeRegistry()
 {
-  gChromeRegistry = nsnull;
+  gChromeRegistry = nullptr;
 }
 
 NS_INTERFACE_MAP_BEGIN(nsChromeRegistry)
@@ -165,7 +165,7 @@ nsChromeRegistry::GetProviderAndPath(nsIURL* aChromeURL,
   NS_ASSERTION(isChrome, "Non-chrome URI?");
 #endif
 
-  nsCAutoString path;
+  nsAutoCString path;
   rv = aChromeURL->GetPath(path);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -177,7 +177,7 @@ nsChromeRegistry::GetProviderAndPath(nsIURL* aChromeURL,
   path.SetLength(nsUnescapeCount(path.BeginWriting()));
   NS_ASSERTION(path.First() == '/', "Path should always begin with a slash!");
 
-  PRInt32 slash = path.FindChar('/', 1);
+  int32_t slash = path.FindChar('/', 1);
   if (slash == 1) {
     LogMessage("Invalid chrome URI: %s", path.get());
     return NS_ERROR_FAILURE;
@@ -187,7 +187,7 @@ nsChromeRegistry::GetProviderAndPath(nsIURL* aChromeURL,
     aPath.Truncate();
   }
   else {
-    if (slash == (PRInt32) path.Length() - 1)
+    if (slash == (int32_t) path.Length() - 1)
       aPath.Truncate();
     else
       aPath.Assign(path.get() + slash + 1, path.Length() - slash - 1);
@@ -207,12 +207,12 @@ nsChromeRegistry::Canonify(nsIURL* aChromeURL)
 
   nsresult rv;
 
-  nsCAutoString provider, path;
+  nsAutoCString provider, path;
   rv = GetProviderAndPath(aChromeURL, provider, path);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (path.IsEmpty()) {
-    nsCAutoString package;
+    nsAutoCString package;
     rv = aChromeURL->GetHost(package);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -277,7 +277,7 @@ nsChromeRegistry::ConvertChromeURL(nsIURI* aChromeURI, nsIURI* *aResult)
   nsCOMPtr<nsIURL> chromeURL (do_QueryInterface(aChromeURI));
   NS_ENSURE_TRUE(chromeURL, NS_NOINTERFACE);
 
-  nsCAutoString package, provider, path;
+  nsAutoCString package, provider, path;
   rv = chromeURL->GetHostPort(package);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -286,7 +286,7 @@ nsChromeRegistry::ConvertChromeURL(nsIURI* aChromeURI, nsIURI* *aResult)
 
   nsIURI* baseURI = GetBaseURIFromPackage(package, provider, path);
 
-  PRUint32 flags;
+  uint32_t flags;
   rv = GetFlagsFromPackage(package, &flags);
   if (NS_FAILED(rv))
     return rv;
@@ -307,7 +307,7 @@ nsChromeRegistry::ConvertChromeURL(nsIURI* aChromeURI, nsIURI* *aResult)
     return NS_ERROR_FAILURE;
   }
 
-  return NS_NewURI(aResult, path, nsnull, baseURI);
+  return NS_NewURI(aResult, path, nullptr, baseURI);
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -340,7 +340,7 @@ NS_IMETHODIMP nsChromeRegistry::RefreshSkins()
     return NS_OK;
 
   nsCOMPtr<nsISimpleEnumerator> windowEnumerator;
-  windowMediator->GetEnumerator(nsnull, getter_AddRefs(windowEnumerator));
+  windowMediator->GetEnumerator(nullptr, getter_AddRefs(windowEnumerator));
   bool more;
   windowEnumerator->HasMoreElements(&more);
   while (more) {
@@ -356,7 +356,7 @@ NS_IMETHODIMP nsChromeRegistry::RefreshSkins()
 
   FlushSkinCaches();
 
-  windowMediator->GetEnumerator(nsnull, getter_AddRefs(windowEnumerator));
+  windowMediator->GetEnumerator(nullptr, getter_AddRefs(windowEnumerator));
   windowEnumerator->HasMoreElements(&more);
   while (more) {
     nsCOMPtr<nsISupports> protoWindow;
@@ -380,7 +380,7 @@ nsChromeRegistry::FlushSkinCaches()
   NS_ASSERTION(obsSvc, "Couldn't get observer service.");
 
   obsSvc->NotifyObservers(static_cast<nsIChromeRegistry*>(this),
-                          NS_CHROME_FLUSH_SKINS_TOPIC, nsnull);
+                          NS_CHROME_FLUSH_SKINS_TOPIC, nullptr);
 }
 
 static bool IsChromeURI(nsIURI* aURI)
@@ -397,9 +397,9 @@ nsresult nsChromeRegistry::RefreshWindow(nsIDOMWindow* aWindow)
   // Deal with our subframes first.
   nsCOMPtr<nsIDOMWindowCollection> frames;
   aWindow->GetFrames(getter_AddRefs(frames));
-  PRUint32 length;
+  uint32_t length;
   frames->GetLength(&length);
-  PRUint32 j;
+  uint32_t j;
   for (j = 0; j < length; j++) {
     nsCOMPtr<nsIDOMWindow> childWin;
     frames->Item(j, getter_AddRefs(childWin));
@@ -426,7 +426,7 @@ nsresult nsChromeRegistry::RefreshWindow(nsIDOMWindow* aWindow)
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsCOMArray<nsIStyleSheet> newAgentSheets;
-    for (PRInt32 l = 0; l < agentSheets.Count(); ++l) {
+    for (int32_t l = 0; l < agentSheets.Count(); ++l) {
       nsIStyleSheet *sheet = agentSheets[l];
 
       nsIURI* uri = sheet->GetSheetURI();
@@ -456,10 +456,10 @@ nsresult nsChromeRegistry::RefreshWindow(nsIDOMWindow* aWindow)
   nsCOMArray<nsIStyleSheet> oldSheets;
   nsCOMArray<nsIStyleSheet> newSheets;
 
-  PRInt32 count = document->GetNumberOfStyleSheets();
+  int32_t count = document->GetNumberOfStyleSheets();
 
   // Iterate over the style sheets.
-  PRInt32 i;
+  int32_t i;
   for (i = 0; i < count; i++) {
     // Get the style sheet
     nsIStyleSheet *styleSheet = document->GetStyleSheetAt(i);
@@ -473,7 +473,7 @@ nsresult nsChromeRegistry::RefreshWindow(nsIDOMWindow* aWindow)
   // sheet if and only if it's a chrome URL.
   for (i = 0; i < count; i++) {
     nsRefPtr<nsCSSStyleSheet> sheet = do_QueryObject(oldSheets[i]);
-    nsIURI* uri = sheet ? sheet->GetOriginalURI() : nsnull;
+    nsIURI* uri = sheet ? sheet->GetOriginalURI() : nullptr;
 
     if (uri && IsChromeURI(uri)) {
       // Reload the sheet.
@@ -503,7 +503,7 @@ nsChromeRegistry::FlushAllCaches()
   NS_ASSERTION(obsSvc, "Couldn't get observer service.");
 
   obsSvc->NotifyObservers((nsIChromeRegistry*) this,
-                          NS_CHROME_FLUSH_TOPIC, nsnull);
+                          NS_CHROME_FLUSH_TOPIC, nullptr);
 }  
 
 // xxxbsmedberg Move me to nsIWindowMediator
@@ -521,7 +521,7 @@ nsChromeRegistry::ReloadChrome()
   if (windowMediator) {
     nsCOMPtr<nsISimpleEnumerator> windowEnumerator;
 
-    rv = windowMediator->GetEnumerator(nsnull, getter_AddRefs(windowEnumerator));
+    rv = windowMediator->GetEnumerator(nullptr, getter_AddRefs(windowEnumerator));
     if (NS_SUCCEEDED(rv)) {
       // Get each dom window
       bool more;
@@ -564,7 +564,7 @@ nsChromeRegistry::AllowScriptsForPackage(nsIURI* aChromeURI, bool *aResult)
   nsCOMPtr<nsIURL> url (do_QueryInterface(aChromeURI));
   NS_ENSURE_TRUE(url, NS_NOINTERFACE);
 
-  nsCAutoString provider, file;
+  nsAutoCString provider, file;
   rv = GetProviderAndPath(url, provider, file);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -593,11 +593,11 @@ nsChromeRegistry::AllowContentToAccess(nsIURI *aURI, bool *aResult)
     return NS_ERROR_UNEXPECTED;
   }
 
-  nsCAutoString package;
+  nsAutoCString package;
   rv = url->GetHostPort(package);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  PRUint32 flags;
+  uint32_t flags;
   rv = GetFlagsFromPackage(package, &flags);
 
   if (NS_SUCCEEDED(rv)) {
@@ -618,12 +618,12 @@ nsChromeRegistry::WrappersEnabled(nsIURI *aURI)
   if (NS_FAILED(rv) || !isChrome)
     return false;
 
-  nsCAutoString package;
+  nsAutoCString package;
   rv = chromeURL->GetHostPort(package);
   if (NS_FAILED(rv))
     return false;
 
-  PRUint32 flags;
+  uint32_t flags;
   rv = GetFlagsFromPackage(package, &flags);
   return NS_SUCCEEDED(rv) && (flags & XPCNATIVEWRAPPERS);
 }

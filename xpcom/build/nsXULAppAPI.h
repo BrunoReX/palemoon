@@ -6,7 +6,6 @@
 #ifndef _nsXULAppAPI_h__
 #define _nsXULAppAPI_h__
 
-#include "prtypes.h"
 #include "nsID.h"
 #include "xrecore.h"
 #include "nsXPCOM.h"
@@ -125,6 +124,13 @@
 #define XRE_UPDATE_ROOT_DIR "UpdRootD"
 
 /**
+ * A directory service key which provides the directory where an OS update is
+*  applied.
+ * At present this is supported only in Gonk.
+ */
+#define XRE_OS_UPDATE_APPLY_TO_DIR "OSUpdApplyToD"
+
+/**
  * Platform flag values for XRE_main.
  *
  * XRE_MAIN_FLAG_USE_METRO - On Windows, use the winrt backend. Defaults
@@ -151,16 +157,16 @@
  */
 XRE_API(int,
         XRE_main, (int argc, char* argv[], const nsXREAppData* aAppData,
-                   PRUint32 aFlags))
+                   uint32_t aFlags))
 
 /**
  * Given a path relative to the current working directory (or an absolute
- * path), return an appropriate nsILocalFile object.
+ * path), return an appropriate nsIFile object.
  *
  * @note Pass UTF8 strings on Windows... native charset on other platforms.
  */
 XRE_API(nsresult,
-        XRE_GetFileFromPath, (const char *aPath, nsILocalFile* *aResult))
+        XRE_GetFileFromPath, (const char *aPath, nsIFile* *aResult))
 
 /**
  * Get the path of the running application binary and store it in aResult.
@@ -169,7 +175,7 @@ XRE_API(nsresult,
  *                the binary path have failed.
  */
 XRE_API(nsresult,
-        XRE_GetBinaryPath, (const char *argv0, nsILocalFile* *aResult))
+        XRE_GetBinaryPath, (const char *argv0, nsIFile* *aResult))
 
 /**
  * Get the static module built in to libxul.
@@ -185,7 +191,7 @@ XRE_API(const mozilla::Module*,
  *                    as long as the XPCOM reference is held.
  */
 XRE_API(nsresult,
-        XRE_LockProfileDirectory, (nsILocalFile* aDirectory,
+        XRE_LockProfileDirectory, (nsIFile* aDirectory,
                                    nsISupports* *aLockObject))
 
 /**
@@ -209,8 +215,8 @@ XRE_API(nsresult,
  */
 
 XRE_API(nsresult,
-        XRE_InitEmbedding2, (nsILocalFile *aLibXULDirectory,
-                             nsILocalFile *aAppDirectory,
+        XRE_InitEmbedding2, (nsIFile *aLibXULDirectory,
+                             nsIFile *aAppDirectory,
                              nsIDirectoryServiceProvider *aAppDirProvider))
 
 /**
@@ -245,7 +251,7 @@ enum NSLocationType
 
 XRE_API(nsresult,
         XRE_AddManifestLocation, (NSLocationType aType,
-                                  nsILocalFile* aLocation))
+                                  nsIFile* aLocation))
 
 /**
  * Register XPCOM components found in a JAR.
@@ -266,7 +272,7 @@ XRE_API(nsresult,
  */
 XRE_API(nsresult,
         XRE_AddJarManifestLocation, (NSLocationType aType,
-                                     nsILocalFile* aLocation))
+                                     nsIFile* aLocation))
 
 /**
  * Fire notifications to inform the toolkit about a new profile. This
@@ -312,7 +318,7 @@ XRE_API(void,
  *                 XRE_FreeAppData.
  */
 XRE_API(nsresult,
-        XRE_CreateAppData, (nsILocalFile* aINIFile,
+        XRE_CreateAppData, (nsIFile* aINIFile,
                             nsXREAppData **aAppData))
 
 /**
@@ -323,7 +329,7 @@ XRE_API(nsresult,
  * @param aAppData The nsXREAppData structure to fill.
  */
 XRE_API(nsresult,
-        XRE_ParseAppData, (nsILocalFile* aINIFile,
+        XRE_ParseAppData, (nsIFile* aINIFile,
                            nsXREAppData *aAppData))
 
 /**
@@ -367,8 +373,8 @@ XRE_API(GeckoProcessType,
 #if defined(MOZ_CRASHREPORTER)
 // Used in the "master" parent process hosting the crash server
 XRE_API(bool,
-        XRE_TakeMinidumpForChild, (PRUint32 aChildPid, nsILocalFile** aDump,
-                                   PRUint32* aSequence))
+        XRE_TakeMinidumpForChild, (uint32_t aChildPid, nsIFile** aDump,
+                                   uint32_t* aSequence))
 
 // Used in child processes.
 XRE_API(bool,
@@ -438,11 +444,14 @@ XRE_API(void,
 #endif
 
 XRE_API(void,
-        XRE_TelemetryAccumulate, (int aID, PRUint32 aSample))
+        XRE_TelemetryAccumulate, (int aID, uint32_t aSample))
 
 XRE_API(void,
-        XRE_InitOmnijar, (nsILocalFile* greOmni,
-                          nsILocalFile* appOmni))
+        XRE_StartupTimelineRecord, (int aEvent, PRTime aWhen))
+
+XRE_API(void,
+        XRE_InitOmnijar, (nsIFile* greOmni,
+                          nsIFile* appOmni))
 
 #ifdef XP_WIN
 /**

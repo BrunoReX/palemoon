@@ -335,7 +335,7 @@ PluginScriptableObjectChild::ScriptableEnumerate(NPObject* aObject,
 
   *aCount = identifiers.Length();
   if (!*aCount) {
-    *aIdentifiers = nsnull;
+    *aIdentifiers = nullptr;
     return true;
   }
 
@@ -346,7 +346,7 @@ PluginScriptableObjectChild::ScriptableEnumerate(NPObject* aObject,
     return false;
   }
 
-  for (PRUint32 index = 0; index < *aCount; index++) {
+  for (uint32_t index = 0; index < *aCount; index++) {
     (*aIdentifiers)[index] =
       static_cast<PPluginIdentifierChild*>(identifiers[index]);
   }
@@ -412,8 +412,8 @@ const NPClass PluginScriptableObjectChild::sNPClass = {
 
 PluginScriptableObjectChild::PluginScriptableObjectChild(
                                                      ScriptableObjectType aType)
-: mInstance(nsnull),
-  mObject(nsnull),
+: mInstance(nullptr),
+  mObject(nullptr),
   mInvalidated(false),
   mProtectCount(0),
   mType(aType)
@@ -430,7 +430,7 @@ PluginScriptableObjectChild::~PluginScriptableObjectChild()
 
     if (mObject->_class == GetClass()) {
       NS_ASSERTION(mType == Proxy, "Wrong type!");
-      static_cast<ChildNPObject*>(mObject)->parent = nsnull;
+      static_cast<ChildNPObject*>(mObject)->parent = nullptr;
     }
     else {
       NS_ASSERTION(mType == LocalObject, "Wrong type!");
@@ -536,7 +536,7 @@ PluginScriptableObjectChild::GetObject(bool aCanResurrect)
 {
   if (!mObject && aCanResurrect && !ResurrectProxyObject()) {
     NS_ERROR("Null object!");
-    return nsnull;
+    return nullptr;
   }
   return mObject;
 }
@@ -575,7 +575,7 @@ PluginScriptableObjectChild::DropNPObject()
   // We think we're about to be deleted, but we could be racing with the other
   // process.
   PluginModuleChild::current()->UnregisterActorForNPObject(mObject);
-  mObject = nsnull;
+  mObject = nullptr;
 
   SendUnprotect();
 }
@@ -662,7 +662,7 @@ PluginScriptableObjectChild::AnswerInvoke(PPluginIdentifierChild* aId,
   }
 
   nsAutoTArray<NPVariant, 10> convertedArgs;
-  PRUint32 argCount = aArgs.Length();
+  uint32_t argCount = aArgs.Length();
 
   if (!convertedArgs.SetLength(argCount)) {
     *aResult = void_t();
@@ -670,7 +670,7 @@ PluginScriptableObjectChild::AnswerInvoke(PPluginIdentifierChild* aId,
     return true;
   }
 
-  for (PRUint32 index = 0; index < argCount; index++) {
+  for (uint32_t index = 0; index < argCount; index++) {
     ConvertToVariant(aArgs[index], convertedArgs[index]);
   }
 
@@ -681,7 +681,7 @@ PluginScriptableObjectChild::AnswerInvoke(PPluginIdentifierChild* aId,
                                          convertedArgs.Elements(), argCount,
                                          &result);
 
-  for (PRUint32 index = 0; index < argCount; index++) {
+  for (uint32_t index = 0; index < argCount; index++) {
     PluginModuleChild::sBrowserFuncs.releasevariantvalue(&convertedArgs[index]);
   }
 
@@ -732,7 +732,7 @@ PluginScriptableObjectChild::AnswerInvokeDefault(const InfallibleTArray<Variant>
   }
 
   nsAutoTArray<NPVariant, 10> convertedArgs;
-  PRUint32 argCount = aArgs.Length();
+  uint32_t argCount = aArgs.Length();
 
   if (!convertedArgs.SetLength(argCount)) {
     *aResult = void_t();
@@ -740,7 +740,7 @@ PluginScriptableObjectChild::AnswerInvokeDefault(const InfallibleTArray<Variant>
     return true;
   }
 
-  for (PRUint32 index = 0; index < argCount; index++) {
+  for (uint32_t index = 0; index < argCount; index++) {
     ConvertToVariant(aArgs[index], convertedArgs[index]);
   }
 
@@ -750,7 +750,7 @@ PluginScriptableObjectChild::AnswerInvokeDefault(const InfallibleTArray<Variant>
                                                 convertedArgs.Elements(),
                                                 argCount, &result);
 
-  for (PRUint32 index = 0; index < argCount; index++) {
+  for (uint32_t index = 0; index < argCount; index++) {
     PluginModuleChild::sBrowserFuncs.releasevariantvalue(&convertedArgs[index]);
   }
 
@@ -988,7 +988,7 @@ PluginScriptableObjectChild::AnswerConstruct(const InfallibleTArray<Variant>& aA
   }
 
   nsAutoTArray<NPVariant, 10> convertedArgs;
-  PRUint32 argCount = aArgs.Length();
+  uint32_t argCount = aArgs.Length();
 
   if (!convertedArgs.SetLength(argCount)) {
     *aResult = void_t();
@@ -996,7 +996,7 @@ PluginScriptableObjectChild::AnswerConstruct(const InfallibleTArray<Variant>& aA
     return true;
   }
 
-  for (PRUint32 index = 0; index < argCount; index++) {
+  for (uint32_t index = 0; index < argCount; index++) {
     ConvertToVariant(aArgs[index], convertedArgs[index]);
   }
 
@@ -1005,7 +1005,7 @@ PluginScriptableObjectChild::AnswerConstruct(const InfallibleTArray<Variant>& aA
   bool success = mObject->_class->construct(mObject, convertedArgs.Elements(),
                                             argCount, &result);
 
-  for (PRUint32 index = 0; index < argCount; index++) {
+  for (uint32_t index = 0; index < argCount; index++) {
     PluginModuleChild::sBrowserFuncs.releasevariantvalue(&convertedArgs[index]);
   }
 

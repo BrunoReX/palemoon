@@ -26,7 +26,7 @@ gfxQuartzImageSurface::~gfxQuartzImageSurface()
 {
 }
 
-PRInt32
+int32_t
 gfxQuartzImageSurface::KnownMemoryUsed()
 {
   // This surface doesn't own any memory itself, but we want to report here the
@@ -41,12 +41,12 @@ already_AddRefed<gfxImageSurface>
 gfxQuartzImageSurface::GetAsImageSurface()
 {
     if (!mSurfaceValid)
-        return nsnull;
+        return nullptr;
 
     cairo_surface_t *isurf = cairo_quartz_image_surface_get_image (CairoSurface());
     if (!isurf) {
         NS_WARNING ("Couldn't obtain an image surface from a QuartzImageSurface?!");
-        return nsnull;
+        return nullptr;
     }
 
     nsRefPtr<gfxASurface> asurf = gfxASurface::Wrap(isurf);

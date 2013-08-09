@@ -32,11 +32,114 @@
 #include "hb-object-private.hh"
 
 
+struct hb_set_digest_common_bits_t
+{
+  ASSERT_POD ();
+
+  typedef unsigned int mask_t;
+
+  inline void init (void) {
+    mask = ~0;
+    value = (mask_t) -1;
+  }
+
+  inline void add (hb_codepoint_t g) {
+    if (unlikely (value == (mask_t) -1)) {
+      value = g;
+      return;
+    }
+
+    mask ^= (g & mask) ^ value;
+    value &= mask;
+  }
+
+  inline void add_range (hb_codepoint_t a, hb_codepoint_t b) {
+    /* The negation here stands for ~(x-1). */
+    mask &= -(1 << _hb_bit_storage (a ^ b));
+    value &= mask;
+  }
+
+  inline bool may_have (hb_codepoint_t g) const {
+    return (g & mask) == value;
+  }
+
+  private:
+  mask_t mask;
+  mask_t value;
+};
+
+struct hb_set_digest_lowest_bits_t
+{
+  ASSERT_POD ();
+
+  typedef unsigned long mask_t;
+
+  inline void init (void) {
+    mask = 0;
+  }
+
+  inline void add (hb_codepoint_t g) {
+    mask |= mask_for (g);
+  }
+
+  inline void add_range (hb_codepoint_t a, hb_codepoint_t b) {
+    if (b - a >= sizeof (mask_t) * 8 - 1)
+      mask = (mask_t) -1;
+    else {
+      mask_t ma = mask_for (a);
+      mask_t mb = mask_for (b);
+      mask |= mb + (mb - ma) - (mb < ma);
+    }
+  }
+
+  inline bool may_have (hb_codepoint_t g) const {
+    return !!(mask & mask_for (g));
+  }
+
+  private:
+
+  static inline mask_t mask_for (hb_codepoint_t g) { return ((mask_t) 1) << (g & (sizeof (mask_t) * 8 - 1)); }
+  mask_t mask;
+};
+
+struct hb_set_digest_t
+{
+  ASSERT_POD ();
+
+  inline void init (void) {
+    digest1.init ();
+    digest2.init ();
+  }
+
+  inline void add (hb_codepoint_t g) {
+    digest1.add (g);
+    digest2.add (g);
+  }
+
+  inline void add_range (hb_codepoint_t a, hb_codepoint_t b) {
+    digest1.add_range (a, b);
+    digest2.add_range (a, b);
+  }
+
+  inline bool may_have (hb_codepoint_t g) const {
+    return digest1.may_have (g) && digest2.may_have (g);
+  }
+
+  private:
+  hb_set_digest_common_bits_t digest1;
+  hb_set_digest_lowest_bits_t digest2;
+};
+
+
 /* TODO Make this faster and memmory efficient. */
 
-struct _hb_set_t
+struct hb_set_t
 {
+  hb_object_header_t header;
+  ASSERT_POD ();
+
   inline void init (void) {
+    header.init ();
     clear ();
   }
   inline void fini (void) {
@@ -44,7 +147,7 @@ struct _hb_set_t
   inline void clear (void) {
     memset (elts, 0, sizeof elts);
   }
-  inline bool empty (void) const {
+  inline bool is_empty (void) const {
     for (unsigned int i = 0; i < ARRAY_LENGTH (elts); i++)
       if (elts[i])
         return false;
@@ -56,10 +159,22 @@ struct _hb_set_t
     if (unlikely (g > MAX_G)) return;
     elt (g) |= mask (g);
   }
+  inline void add_range (hb_codepoint_t a, hb_codepoint_t b)
+  {
+    /* TODO Speedup */
+    for (unsigned int i = a; i < b + 1; i++)
+      add (i);
+  }
   inline void del (hb_codepoint_t g)
   {
     if (unlikely (g > MAX_G)) return;
     elt (g) &= ~mask (g);
+  }
+  inline void del_range (hb_codepoint_t a, hb_codepoint_t b)
+  {
+    /* TODO Speedup */
+    for (unsigned int i = a; i < b + 1; i++)
+      del (i);
   }
   inline bool has (hb_codepoint_t g) const
   {
@@ -77,7 +192,7 @@ struct _hb_set_t
         return true;
     return false;
   }
-  inline bool equal (const hb_set_t *other) const
+  inline bool is_equal (const hb_set_t *other) const
   {
     for (unsigned int i = 0; i < ELTS; i++)
       if (elts[i] != other->elts[i])
@@ -109,7 +224,7 @@ struct _hb_set_t
     for (unsigned int i = 0; i < ELTS; i++)
       elts[i] ^= other->elts[i];
   }
-  inline bool next (hb_codepoint_t *codepoint)
+  inline bool next (hb_codepoint_t *codepoint) const
   {
     if (unlikely (*codepoint == SENTINEL)) {
       hb_codepoint_t i = get_min ();
@@ -125,6 +240,28 @@ struct _hb_set_t
 	return true;
       }
     return false;
+  }
+  inline bool next_range (hb_codepoint_t *first, hb_codepoint_t *last) const
+  {
+    hb_codepoint_t i;
+
+    i = *last;
+    if (!next (&i))
+      return false;
+
+    *last = *first = i;
+    while (next (&i) && i == *last + 1)
+      (*last)++;
+
+    return true;
+  }
+
+  inline unsigned int get_population (void) const
+  {
+    unsigned int count = 0;
+    for (unsigned int i = 0; i < ELTS; i++)
+      count += _hb_popcount32 (elts[i]);
+    return count;
   }
   inline hb_codepoint_t get_min (void) const
   {
@@ -157,7 +294,6 @@ struct _hb_set_t
   elt_t elt (hb_codepoint_t g) const { return elts[g >> SHIFT]; }
   elt_t mask (hb_codepoint_t g) const { return elt_t (1) << (g & MASK); }
 
-  hb_object_header_t header;
   elt_t elts[ELTS]; /* XXX 8kb */
 
   ASSERT_STATIC (sizeof (elt_t) * 8 == BITS);

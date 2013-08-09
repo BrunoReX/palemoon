@@ -6,8 +6,9 @@
 #include "nsReadableUtils.h"
 #include "nsComboboxControlFrame.h"
 #include "nsIDOMEventTarget.h"
-#include "nsFrameManager.h"
+#include "nsFocusManager.h"
 #include "nsFormControlFrame.h"
+#include "nsFrameManager.h"
 #include "nsGfxButtonControlFrame.h"
 #include "nsGkAtoms.h"
 #include "nsCSSAnonBoxes.h"
@@ -16,17 +17,17 @@
 #include "nsINameSpaceManager.h"
 #include "nsIDOMElement.h"
 #include "nsIListControlFrame.h"
-#include "nsIDOMHTMLCollection.h" 
-#include "nsIDOMHTMLSelectElement.h" 
-#include "nsIDOMHTMLOptionElement.h" 
+#include "nsIDOMHTMLCollection.h"
+#include "nsIDOMHTMLSelectElement.h"
+#include "nsIDOMHTMLOptionElement.h"
 #include "nsPIDOMWindow.h"
 #include "nsIPresShell.h"
+#include "nsContentList.h"
 #include "nsIView.h"
 #include "nsIViewManager.h"
 #include "nsEventDispatcher.h"
 #include "nsEventListenerManager.h"
 #include "nsIDOMNode.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsISelectControlFrame.h"
 #include "nsXPCOM.h"
 #include "nsISupportsPrimitives.h"
@@ -39,9 +40,6 @@
 #include "nsIScrollableFrame.h"
 #include "nsListControlFrame.h"
 #include "nsContentCID.h"
-#ifdef ACCESSIBILITY
-#include "nsAccessibilityService.h"
-#endif
 #include "nsIServiceManager.h"
 #include "nsGUIEvent.h"
 #include "nsAutoPtr.h"
@@ -55,6 +53,8 @@
 #include "nsAsyncDOMEvent.h"
 #include "nsRenderingContext.h"
 #include "mozilla/Preferences.h"
+#include "nsContentList.h"
+#include "mozilla/Likely.h"
 
 using namespace mozilla;
 
@@ -82,12 +82,8 @@ class nsPresState;
 // The drop-down list does not explicitly set capture when it is in the drop-down mode.
 
 
-//XXX: This is temporary. It simulates pseudo states by using a attribute selector on 
-
-const PRInt32 kSizeNotSet = -1;
-
 /**
- * Helper class that listens to the combo boxes button. If the button is pressed the 
+ * Helper class that listens to the combo boxes button. If the button is pressed the
  * combo box is toggled to open or close. this is used by Accessibility which presses
  * that button Programmatically.
  */
@@ -99,12 +95,12 @@ public:
   NS_IMETHOD HandleEvent(nsIDOMEvent*)
   {
     mComboBox->ShowDropDown(!mComboBox->IsDroppedDown());
-    return NS_OK; 
+    return NS_OK;
   }
 
-  nsComboButtonListener(nsComboboxControlFrame* aCombobox) 
-  { 
-    mComboBox = aCombobox; 
+  nsComboButtonListener(nsComboboxControlFrame* aCombobox)
+  {
+    mComboBox = aCombobox;
   }
 
   virtual ~nsComboButtonListener() {}
@@ -116,10 +112,10 @@ NS_IMPL_ISUPPORTS1(nsComboButtonListener,
                    nsIDOMEventListener)
 
 // static class data member for Bug 32920
-nsComboboxControlFrame * nsComboboxControlFrame::mFocused = nsnull;
+nsComboboxControlFrame* nsComboboxControlFrame::sFocused = nullptr;
 
 nsIFrame*
-NS_NewComboboxControlFrame(nsIPresShell* aPresShell, nsStyleContext* aContext, PRUint32 aStateFlags)
+NS_NewComboboxControlFrame(nsIPresShell* aPresShell, nsStyleContext* aContext, uint32_t aStateFlags)
 {
   nsComboboxControlFrame* it = new (aPresShell) nsComboboxControlFrame(aContext);
 
@@ -146,7 +142,7 @@ public:
   }
 
 private:
-  nsIWidget* GetWidget(nsIView** aOutView = nsnull) const;
+  nsIWidget* GetWidget(nsIView** aOutView = nullptr) const;
 
 private:
   nsCOMPtr<nsIContent> mCombobox;
@@ -155,7 +151,7 @@ private:
 
 NS_IMETHODIMP DestroyWidgetRunnable::Run()
 {
-  nsIView* view = nsnull;
+  nsIView* view = nullptr;
   nsIWidget* currentWidget = GetWidget(&view);
   // Make sure that we are destroying the same widget as what was requested
   // when the event was fired.
@@ -182,7 +178,7 @@ nsIWidget* DestroyWidgetRunnable::GetWidget(nsIView** aOutView) const
       }
     }
   }
-  return nsnull;
+  return nullptr;
 }
 
 }
@@ -194,11 +190,11 @@ nsIWidget* DestroyWidgetRunnable::GetWidget(nsIView** aOutView) const
 #ifdef DO_REFLOW_COUNTER
 
 #define MAX_REFLOW_CNT 1024
-static PRInt32 gTotalReqs    = 0;;
-static PRInt32 gTotalReflows = 0;;
-static PRInt32 gReflowControlCntRQ[MAX_REFLOW_CNT];
-static PRInt32 gReflowControlCnt[MAX_REFLOW_CNT];
-static PRInt32 gReflowInx = -1;
+static int32_t gTotalReqs    = 0;;
+static int32_t gTotalReflows = 0;;
+static int32_t gReflowControlCntRQ[MAX_REFLOW_CNT];
+static int32_t gReflowControlCnt[MAX_REFLOW_CNT];
+static int32_t gReflowInx = -1;
 
 #define REFLOW_COUNTER() \
   if (mReflowId > -1) \
@@ -237,15 +233,15 @@ static PRInt32 gReflowInx = -1;
 
 #else //-------------
 
-#define REFLOW_COUNTER_REQUEST() 
-#define REFLOW_COUNTER() 
-#define REFLOW_COUNTER_DUMP(__desc) 
-#define REFLOW_COUNTER_INIT() 
+#define REFLOW_COUNTER_REQUEST()
+#define REFLOW_COUNTER()
+#define REFLOW_COUNTER_DUMP(__desc)
+#define REFLOW_COUNTER_INIT()
 
-#define REFLOW_DEBUG_MSG(_msg) 
-#define REFLOW_DEBUG_MSG2(_msg1, _msg2) 
-#define REFLOW_DEBUG_MSG3(_msg1, _msg2, _msg3) 
-#define REFLOW_DEBUG_MSG4(_msg1, _msg2, _msg3, _msg4) 
+#define REFLOW_DEBUG_MSG(_msg)
+#define REFLOW_DEBUG_MSG2(_msg1, _msg2)
+#define REFLOW_DEBUG_MSG3(_msg1, _msg2, _msg3)
+#define REFLOW_DEBUG_MSG4(_msg1, _msg2, _msg3, _msg4)
 
 
 #endif
@@ -259,10 +255,10 @@ static PRInt32 gReflowInx = -1;
 #define REFLOW_NOISY_MSG3(_msg1, _msg2, _msg3) printf((_msg1), (_msg2), (_msg3))
 #define REFLOW_NOISY_MSG4(_msg1, _msg2, _msg3, _msg4) printf((_msg1), (_msg2), (_msg3), (_msg4))
 #else
-#define REFLOW_NOISY_MSG(_msg) 
-#define REFLOW_NOISY_MSG2(_msg1, _msg2) 
-#define REFLOW_NOISY_MSG3(_msg1, _msg2, _msg3) 
-#define REFLOW_NOISY_MSG4(_msg1, _msg2, _msg3, _msg4) 
+#define REFLOW_NOISY_MSG(_msg)
+#define REFLOW_NOISY_MSG2(_msg1, _msg2)
+#define REFLOW_NOISY_MSG3(_msg1, _msg2, _msg3)
+#define REFLOW_NOISY_MSG4(_msg1, _msg2, _msg3, _msg4)
 #endif
 
 //------------------------------------------
@@ -271,7 +267,7 @@ static PRInt32 gReflowInx = -1;
 #ifdef DO_PIXELS
 #define PX(__v) __v / 15
 #else
-#define PX(__v) __v 
+#define PX(__v) __v
 #endif
 
 //------------------------------------------------------
@@ -279,19 +275,20 @@ static PRInt32 gReflowInx = -1;
 //------------------------------------------------------
 
 nsComboboxControlFrame::nsComboboxControlFrame(nsStyleContext* aContext)
-  : nsBlockFrame(aContext),
-    mDisplayWidth(0)
+  : nsBlockFrame(aContext)
+  , mDisplayFrame(nullptr)
+  , mButtonFrame(nullptr)
+  , mDropdownFrame(nullptr)
+  , mListControlFrame(nullptr)
+  , mDisplayWidth(0)
+  , mRecentSelectedIndex(NS_SKIP_NOTIFY_INDEX)
+  , mDisplayedIndex(-1)
+  , mLastDropDownAboveScreenY(nscoord_MIN)
+  , mLastDropDownBelowScreenY(nscoord_MIN)
+  , mDroppedDown(false)
+  , mInRedisplayText(false)
+  , mDelayedShowDropDown(false)
 {
-  mListControlFrame            = nsnull;
-  mDroppedDown                 = false;
-  mDisplayFrame                = nsnull;
-  mButtonFrame                 = nsnull;
-  mDropdownFrame               = nsnull;
-
-  mInRedisplayText = false;
-
-  mRecentSelectedIndex = NS_SKIP_NOTIFY_INDEX;
-
   REFLOW_COUNTER_INIT()
 }
 
@@ -312,28 +309,29 @@ NS_QUERYFRAME_HEAD(nsComboboxControlFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsBlockFrame)
 
 #ifdef ACCESSIBILITY
-already_AddRefed<Accessible>
-nsComboboxControlFrame::CreateAccessible()
+a11y::AccType
+nsComboboxControlFrame::AccessibleType()
 {
-  nsAccessibilityService* accService = nsIPresShell::AccService();
-  if (accService) {
-    return accService->CreateHTMLComboboxAccessible(mContent,
-                                                    PresContext()->PresShell());
-  }
-
-  return nsnull;
+  return a11y::eHTMLComboboxAccessible;
 }
 #endif
 
-void 
+void
 nsComboboxControlFrame::SetFocus(bool aOn, bool aRepaint)
 {
   nsWeakFrame weakFrame(this);
   if (aOn) {
     nsListControlFrame::ComboboxFocusSet();
-    mFocused = this;
+    sFocused = this;
+    if (mDelayedShowDropDown) {
+      ShowDropDown(true); // might destroy us
+      if (!weakFrame.IsAlive()) {
+        return;
+      }
+    }
   } else {
-    mFocused = nsnull;
+    sFocused = nullptr;
+    mDelayedShowDropDown = false;
     if (mDroppedDown) {
       mListControlFrame->ComboboxFinish(mDisplayedIndex); // might destroy us
       if (!weakFrame.IsAlive()) {
@@ -351,7 +349,7 @@ nsComboboxControlFrame::SetFocus(bool aOn, bool aRepaint)
   // This is needed on a temporary basis. It causes the focus
   // rect to be drawn. This is much faster than ReResolvingStyle
   // Bug 32920
-  Invalidate(nsRect(0,0,mRect.width,mRect.height));
+  InvalidateFrame();
 }
 
 void
@@ -374,11 +372,11 @@ nsComboboxControlFrame::ShowPopup(bool aShowPopup)
   // fire a popup dom event
   nsEventStatus status = nsEventStatus_eIgnore;
   nsMouseEvent event(true, aShowPopup ?
-                     NS_XUL_POPUP_SHOWING : NS_XUL_POPUP_HIDING, nsnull,
+                     NS_XUL_POPUP_SHOWING : NS_XUL_POPUP_HIDING, nullptr,
                      nsMouseEvent::eReal);
 
   nsCOMPtr<nsIPresShell> shell = PresContext()->GetPresShell();
-  if (shell) 
+  if (shell)
     shell->HandleDOMEventWithTarget(mContent, &event, &status);
 }
 
@@ -392,7 +390,7 @@ nsComboboxControlFrame::ShowList(bool aShowList)
   if (aShowList) {
     nsIView* view = mDropdownFrame->GetView();
     NS_ASSERTION(!view->HasWidget(),
-                 "We shoudldn't have a widget before we need to display the popup");
+                 "We shouldn't have a widget before we need to display the popup");
 
     // Create the widget for the drop-down list
     view->GetViewManager()->SetViewFloating(view, true);
@@ -429,7 +427,7 @@ nsComboboxControlFrame::ShowList(bool aShowList)
     if (view) {
       nsIWidget* widget = view->GetWidget();
       if (widget) {
-        widget->CaptureRollupEvents(this, mDroppedDown, mDroppedDown);
+        widget->CaptureRollupEvents(this, mDroppedDown);
 
         if (!aShowList) {
           nsCOMPtr<nsIRunnable> widgetDestroyer =
@@ -443,8 +441,46 @@ nsComboboxControlFrame::ShowList(bool aShowList)
   return weakFrame.IsAlive();
 }
 
+class nsResizeDropdownAtFinalPosition
+  : public nsIReflowCallback, public nsRunnable
+{
+public:
+  nsResizeDropdownAtFinalPosition(nsComboboxControlFrame* aFrame)
+    : mFrame(aFrame)
+  {
+    MOZ_COUNT_CTOR(nsResizeDropdownAtFinalPosition);
+  }
+  ~nsResizeDropdownAtFinalPosition()
+  {
+    MOZ_COUNT_DTOR(nsResizeDropdownAtFinalPosition);
+  }
+
+  virtual bool ReflowFinished()
+  {
+    Run();
+    NS_RELEASE_THIS();
+    return false;
+  }
+
+  virtual void ReflowCallbackCanceled()
+  {
+    NS_RELEASE_THIS();
+  }
+
+  NS_IMETHODIMP Run()
+  {
+    if (mFrame.IsAlive()) {
+      static_cast<nsComboboxControlFrame*>(mFrame.GetFrame())->
+        AbsolutelyPositionDropDown();
+    }
+    return NS_OK;
+  }
+
+  nsWeakFrame mFrame;
+};
+
 nsresult
-nsComboboxControlFrame::ReflowDropdown(nsPresContext*  aPresContext, 
+nsComboboxControlFrame::ReflowDropdown(nsPresContext*  aPresContext,
                                        const nsHTMLReflowState& aReflowState)
 {
   // All we want out of it later on, really, is the height of a row, so we
@@ -479,10 +515,10 @@ nsComboboxControlFrame::ReflowDropdown(nsPresContext*  aPresContext,
     nsRect emptyRect(0, 0, 0, 0);
     viewManager->ResizeView(view, emptyRect);
   }
-  
+
   // Allow the child to move/size/change-visibility its view if it's currently
   // dropped down
-  PRInt32 flags = NS_FRAME_NO_MOVE_FRAME | NS_FRAME_NO_VISIBILITY | NS_FRAME_NO_SIZE_VIEW;
+  int32_t flags = NS_FRAME_NO_MOVE_FRAME | NS_FRAME_NO_VISIBILITY | NS_FRAME_NO_SIZE_VIEW;
   if (mDroppedDown) {
     flags = 0;
   }
@@ -492,7 +528,7 @@ nsComboboxControlFrame::ReflowDropdown(nsPresContext*  aPresContext,
   nsresult rv = ReflowChild(mDropdownFrame, aPresContext, desiredSize,
                             kidReflowState, rect.x, rect.y, flags,
                             ignoredStatus);
- 
+
    // Set the child's width and height to it's desired size
   FinishReflowChild(mDropdownFrame, aPresContext, &kidReflowState,
                     desiredSize, rect.x, rect.y, flags);
@@ -507,7 +543,7 @@ nsComboboxControlFrame::GetCSSTransformTranslation()
   gfxMatrix transform;
   while (frame) {
     nsIFrame* parent;
-    gfx3DMatrix ctm = frame->GetTransformMatrix(nsnull, &parent);
+    gfx3DMatrix ctm = frame->GetTransformMatrix(nullptr, &parent);
     gfxMatrix matrix;
     if (ctm.Is2D(&matrix)) {
       transform = transform * matrix;
@@ -521,7 +557,7 @@ nsComboboxControlFrame::GetCSSTransformTranslation()
   if (!is3DTransform && !transform.HasNonTranslation()) {
     nsPresContext* pc = PresContext();
     gfxPoint pixelTranslation = transform.GetTranslation();
-    PRInt32 apd = pc->AppUnitsPerDevPixel();
+    int32_t apd = pc->AppUnitsPerDevPixel();
     translation.x = NSFloatPixelsToAppUnits(float(pixelTranslation.x), apd);
     translation.y = NSFloatPixelsToAppUnits(float(pixelTranslation.y), apd);
     // To get the translation introduced only by transforms we subtract the
@@ -536,58 +572,189 @@ nsComboboxControlFrame::GetCSSTransformTranslation()
   return translation;
 }
 
-void
-nsComboboxControlFrame::AbsolutelyPositionDropDown()
+class nsAsyncRollup : public nsRunnable
 {
-   // Position the dropdown list. It is positioned below the display frame if there is enough
-   // room on the screen to display the entire list. Otherwise it is placed above the display
-   // frame.
+public:
+  nsAsyncRollup(nsComboboxControlFrame* aFrame) : mFrame(aFrame) {}
+  NS_IMETHODIMP Run()
+  {
+    if (mFrame.IsAlive()) {
+      static_cast<nsComboboxControlFrame*>(mFrame.GetFrame())
+        ->RollupFromList();
+    }
+    return NS_OK;
+  }
+  nsWeakFrame mFrame;
+};
 
-   // Note: As first glance, it appears that you could simply get the absolute bounding box for the
-   // dropdown list by first getting its view, then getting the view's nsIWidget, then asking the nsIWidget
-   // for it's AbsoluteBounds. The problem with this approach, is that the dropdown lists y location can
-   // change based on whether the dropdown is placed below or above the display frame.
-   // The approach, taken here is to get use the absolute position of the display frame and use it's location
-   // to determine if the dropdown will go offscreen.
+class nsAsyncResize : public nsRunnable
+{
+public:
+  nsAsyncResize(nsComboboxControlFrame* aFrame) : mFrame(aFrame) {}
+  NS_IMETHODIMP Run()
+  {
+    if (mFrame.IsAlive()) {
+      nsComboboxControlFrame* combo =
+        static_cast<nsComboboxControlFrame*>(mFrame.GetFrame());
+      static_cast<nsListControlFrame*>(combo->mDropdownFrame)->
+        SetSuppressScrollbarUpdate(true);
+      nsCOMPtr<nsIPresShell> shell = mFrame->PresContext()->PresShell();
+      shell->FrameNeedsReflow(combo->mDropdownFrame, nsIPresShell::eResize,
+                              NS_FRAME_IS_DIRTY);
+      shell->FlushPendingNotifications(Flush_Layout);
+      if (mFrame.IsAlive()) {
+        combo = static_cast<nsComboboxControlFrame*>(mFrame.GetFrame());
+        static_cast<nsListControlFrame*>(combo->mDropdownFrame)->
+          SetSuppressScrollbarUpdate(false);
+        if (combo->mDelayedShowDropDown) {
+          combo->ShowDropDown(true);
+        }
+      }
+    }
+    return NS_OK;
+  }
+  nsWeakFrame mFrame;
+};
+
+void
+nsComboboxControlFrame::GetAvailableDropdownSpace(nscoord* aAbove,
+                                                  nscoord* aBelow,
+                                                  nsPoint* aTranslation)
+{
+  // Note: At first glance, it appears that you could simply get the absolute
+  // bounding box for the dropdown list by first getting its view, then getting
+  // the view's nsIWidget, then asking the nsIWidget for its AbsoluteBounds.
+  // The problem with this approach, is that the dropdown lists y location can
+  // change based on whether the dropdown is placed below or above the display
+  // frame.  The approach, taken here is to get the absolute position of the
+  // display frame and use its location to determine if the dropdown will go
+  // offscreen.
 
   // Normal frame geometry (eg GetOffsetTo, mRect) doesn't include transforms.
   // In the special case that our transform is only a 2D translation we
   // introduce this hack so that the dropdown will show up in the right place.
-  nsPoint translation = GetCSSTransformTranslation();
-
-   // Use the height calculated for the area frame so it includes both
-   // the display and button heights.
-  nscoord dropdownYOffset = GetRect().height;
-  nsSize dropdownSize = mDropdownFrame->GetSize();
+  *aTranslation = GetCSSTransformTranslation();
+  *aAbove = 0;
+  *aBelow = 0;
 
   nsRect screen = nsFormControlFrame::GetUsableScreenRect(PresContext());
-
-  // Check to see if the drop-down list will go offscreen
-  if ((GetScreenRectInAppUnits() + translation).YMost() + dropdownSize.height > screen.YMost()) {
-    // move the dropdown list up
-    dropdownYOffset = - (dropdownSize.height);
+  if (mLastDropDownBelowScreenY == nscoord_MIN) {
+    nsRect thisScreenRect = GetScreenRectInAppUnits();
+    mLastDropDownBelowScreenY = thisScreenRect.YMost() + aTranslation->y;
+    mLastDropDownAboveScreenY = thisScreenRect.y + aTranslation->y;
   }
 
-  nsPoint dropdownPosition;
-  const nsStyleVisibility* vis = GetStyleVisibility();
-  if (vis->mDirection == NS_STYLE_DIRECTION_RTL) {
+  nscoord minY;
+  nsPresContext* pc = PresContext()->GetToplevelContentDocumentPresContext();
+  nsIFrame* root = pc ? pc->PresShell()->GetRootFrame() : nullptr;
+  if (root) {
+    minY = root->GetScreenRectInAppUnits().y;
+    if (mLastDropDownBelowScreenY < minY) {
+      // Don't allow the drop-down to be placed above the content area.
+      return;
+    }
+  } else {
+    minY = screen.y;
+  }
+
+  nscoord below = screen.YMost() - mLastDropDownBelowScreenY;
+  nscoord above = mLastDropDownAboveScreenY - minY;
+
+  // If the difference between the space above and below is less
+  // than a row-height, then we favor the space below.
+  if (above >= below) {
+    nsListControlFrame* lcf = static_cast<nsListControlFrame*>(mDropdownFrame);
+    nscoord rowHeight = lcf->GetHeightOfARow();
+    if (above < below + rowHeight) {
+      above -= rowHeight;
+    }
+  }
+
+  *aBelow = below;
+  *aAbove = above;
+}
+
+nsComboboxControlFrame::DropDownPositionState
+nsComboboxControlFrame::AbsolutelyPositionDropDown()
+{
+  nsPoint translation;
+  nscoord above, below;
+  mLastDropDownBelowScreenY = nscoord_MIN;
+  GetAvailableDropdownSpace(&above, &below, &translation);
+  if (above <= 0 && below <= 0) {
+    if (IsDroppedDown()) {
+      // Hide the view immediately to minimize flicker.
+      nsIView* view = mDropdownFrame->GetView();
+      view->GetViewManager()->SetViewVisibility(view, nsViewVisibility_kHide);
+      NS_DispatchToCurrentThread(new nsAsyncRollup(this));
+    }
+    return eDropDownPositionSuppressed;
+  }
+
+  nsSize dropdownSize = mDropdownFrame->GetSize();
+  nscoord height = NS_MAX(above, below);
+  nsListControlFrame* lcf = static_cast<nsListControlFrame*>(mDropdownFrame);
+  if (height < dropdownSize.height) {
+    if (lcf->GetNumDisplayRows() > 1) {
+      // The drop-down doesn't fit and currently shows more than 1 row -
+      // schedule a resize to show fewer rows.
+      NS_DispatchToCurrentThread(new nsAsyncResize(this));
+      return eDropDownPositionPendingResize;
+    }
+  } else if (height > (dropdownSize.height + lcf->GetHeightOfARow() * 1.5) &&
+             lcf->GetDropdownCanGrow()) {
+    // The drop-down fits but there is room for at least 1.5 more rows -
+    // schedule a resize to show more rows if it has more rows to show.
+    // (1.5 rows for good measure to avoid any rounding issues that would
+    // lead to a loop of reflow requests)
+    NS_DispatchToCurrentThread(new nsAsyncResize(this));
+    return eDropDownPositionPendingResize;
+  }
+
+  // Position the drop-down below if there is room, otherwise place it
+  // on the side that has more room.
+  bool b = dropdownSize.height <= below || below >= above;
+  nsPoint dropdownPosition(0, b ? GetRect().height : -dropdownSize.height);
+  if (GetStyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL) {
     // Align the right edge of the drop-down with the right edge of the control.
     dropdownPosition.x = GetRect().width - dropdownSize.width;
-  } else {
-    dropdownPosition.x = 0;
   }
-  dropdownPosition.y = dropdownYOffset; 
 
-  mDropdownFrame->SetPosition(dropdownPosition + translation);
+  // Don't position the view unless the position changed since it might cause
+  // a call to NotifyGeometryChange() and an infinite loop here.
+  const nsPoint currentPos = mDropdownFrame->GetPosition();
+  const nsPoint newPos = dropdownPosition + translation;
+  if (currentPos != newPos) {
+    mDropdownFrame->SetPosition(newPos);
+    nsContainerFrame::PositionFrameView(mDropdownFrame);
+  }
+  return eDropDownPositionFinal;
+}
+
+void
+nsComboboxControlFrame::NotifyGeometryChange()
+{
+  // We don't need to resize if we're not dropped down since ShowDropDown
+  // does that, or if we're dirty then the reflow callback does it,
+  // or if we have a delayed ShowDropDown pending.
+  if (IsDroppedDown() &&
+      !(GetStateBits() & NS_FRAME_IS_DIRTY) &&
+      !mDelayedShowDropDown) {
+    // Async because we're likely in a middle of a scroll here so
+    // frame/view positions are in flux.
+    nsRefPtr<nsResizeDropdownAtFinalPosition> resize =
+      new nsResizeDropdownAtFinalPosition(this);
+    NS_DispatchToCurrentThread(resize);
+  }
 }
 
 //----------------------------------------------------------
-// 
+//
 //----------------------------------------------------------
 #ifdef DO_REFLOW_DEBUG
 static int myCounter = 0;
 
-static void printSize(char * aDesc, nscoord aSize) 
+static void printSize(char * aDesc, nscoord aSize)
 {
   printf(" %s: ", aDesc);
   if (aSize == NS_UNCONSTRAINEDSIZE) {
@@ -617,7 +784,7 @@ nsComboboxControlFrame::GetIntrinsicWidth(nsRenderingContext* aRenderingContext,
   }
 
   nscoord displayWidth = 0;
-  if (NS_LIKELY(mDisplayFrame)) {
+  if (MOZ_LIKELY(mDisplayFrame)) {
     displayWidth = nsLayoutUtils::IntrinsicForContainer(aRenderingContext,
                                                         mDisplayFrame,
                                                         aType);
@@ -631,10 +798,10 @@ nsComboboxControlFrame::GetIntrinsicWidth(nsRenderingContext* aRenderingContext,
       NS_ASSERTION(aType == nsLayoutUtils::PREF_WIDTH, "Unexpected type");
       dropdownContentWidth = mDropdownFrame->GetPrefWidth(aRenderingContext);
     }
-    dropdownContentWidth = NSCoordSaturatingSubtract(dropdownContentWidth, 
+    dropdownContentWidth = NSCoordSaturatingSubtract(dropdownContentWidth,
                                                      scrollbarWidth,
                                                      nscoord_MAX);
-  
+
     displayWidth = NS_MAX(dropdownContentWidth, displayWidth);
   }
 
@@ -664,10 +831,10 @@ nsComboboxControlFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
   return prefWidth;
 }
 
-NS_IMETHODIMP 
-nsComboboxControlFrame::Reflow(nsPresContext*          aPresContext, 
+NS_IMETHODIMP
+nsComboboxControlFrame::Reflow(nsPresContext*          aPresContext,
                                nsHTMLReflowMetrics&     aDesiredSize,
-                               const nsHTMLReflowState& aReflowState, 
+                               const nsHTMLReflowState& aReflowState,
                                nsReflowStatus&          aStatus)
 {
   // Constraints we try to satisfy:
@@ -687,7 +854,7 @@ nsComboboxControlFrame::Reflow(nsPresContext*          aPresContext,
   }
 
   // Make sure the displayed text is the same as the selected option, bug 297389.
-  PRInt32 selectedIndex;
+  int32_t selectedIndex;
   nsAutoString selectedOptionText;
   if (!mDroppedDown) {
     selectedIndex = mListControlFrame->GetSelectedIndex();
@@ -706,6 +873,13 @@ nsComboboxControlFrame::Reflow(nsPresContext*          aPresContext,
 
   // First reflow our dropdown so that we know how tall we should be.
   ReflowDropdown(aPresContext, aReflowState);
+  nsRefPtr<nsResizeDropdownAtFinalPosition> resize =
+    new nsResizeDropdownAtFinalPosition(this);
+  if (NS_SUCCEEDED(aPresContext->PresShell()->PostReflowCallback(resize))) {
+    // The reflow callback queue doesn't AddRef so we keep it alive until
+    // it's released in its ReflowFinished / ReflowCallbackCanceled.
+    resize.forget();
+  }
 
   // Get the width of the vertical scrollbar.  That will be the width of the
   // dropdown button.
@@ -718,7 +892,7 @@ nsComboboxControlFrame::Reflow(nsPresContext*          aPresContext,
     nsIScrollableFrame* scrollable = do_QueryFrame(mListControlFrame);
     NS_ASSERTION(scrollable, "List must be a scrollable frame");
     buttonWidth =
-      scrollable->GetDesiredScrollbarSizes(PresContext(), 
+      scrollable->GetDesiredScrollbarSizes(PresContext(),
                                            aReflowState.rendContext).LeftRight();
     if (buttonWidth > aReflowState.ComputedWidth()) {
       buttonWidth = 0;
@@ -760,14 +934,14 @@ nsComboboxControlFrame::Reflow(nsPresContext*          aPresContext,
                  "Different heights?");
   }
 #endif
-  
+
   if (GetStyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL) {
     // Make sure the right edge of the button frame stays where it is now
     buttonRect.x -= buttonWidth - buttonRect.width;
   }
   buttonRect.width = buttonWidth;
   mButtonFrame->SetRect(buttonRect);
-  
+
   return rv;
 }
 
@@ -776,10 +950,10 @@ nsComboboxControlFrame::Reflow(nsPresContext*          aPresContext,
 nsIAtom*
 nsComboboxControlFrame::GetType() const
 {
-  return nsGkAtoms::comboboxControlFrame; 
+  return nsGkAtoms::comboboxControlFrame;
 }
 
-#ifdef NS_DEBUG
+#ifdef DEBUG
 NS_IMETHODIMP
 nsComboboxControlFrame::GetFrameName(nsAString& aResult) const
 {
@@ -792,18 +966,28 @@ nsComboboxControlFrame::GetFrameName(nsAString& aResult) const
 // nsIComboboxControlFrame
 //----------------------------------------------------------------------
 void
-nsComboboxControlFrame::ShowDropDown(bool aDoDropDown) 
+nsComboboxControlFrame::ShowDropDown(bool aDoDropDown)
 {
+  mDelayedShowDropDown = false;
   nsEventStates eventStates = mContent->AsElement()->State();
-  if (eventStates.HasState(NS_EVENT_STATE_DISABLED)) {
+  if (aDoDropDown && eventStates.HasState(NS_EVENT_STATE_DISABLED)) {
     return;
   }
 
   if (!mDroppedDown && aDoDropDown) {
-    if (mListControlFrame) {
-      mListControlFrame->SyncViewWithFrame();
+    nsFocusManager* fm = nsFocusManager::GetFocusManager();
+    if (!fm || fm->GetFocusedContent() == GetContent()) {
+      DropDownPositionState state = AbsolutelyPositionDropDown();
+      if (state == eDropDownPositionFinal) {
+        ShowList(aDoDropDown); // might destroy us
+      } else if (state == eDropDownPositionPendingResize) {
+        // Delay until after the resize reflow, see nsAsyncResize.
+        mDelayedShowDropDown = true;
+      }
+    } else {
+      // Delay until we get focus, see SetFocus().
+      mDelayedShowDropDown = true;
     }
-    ShowList(aDoDropDown); // might destroy us
   } else if (mDroppedDown && !aDoDropDown) {
     ShowList(aDoDropDown); // might destroy us
   }
@@ -817,7 +1001,7 @@ nsComboboxControlFrame::SetDropDown(nsIFrame* aDropDownFrame)
 }
 
 nsIFrame*
-nsComboboxControlFrame::GetDropDown() 
+nsComboboxControlFrame::GetDropDown()
 {
   return mDropdownFrame;
 }
@@ -832,7 +1016,7 @@ nsComboboxControlFrame::RedisplaySelectedText()
 }
 
 nsresult
-nsComboboxControlFrame::RedisplayText(PRInt32 aIndex)
+nsComboboxControlFrame::RedisplayText(int32_t aIndex)
 {
   // Get the text to display
   if (aIndex != -1) {
@@ -912,7 +1096,7 @@ nsComboboxControlFrame::ActuallyDisplayText(bool aNotify)
   }
 }
 
-PRInt32
+int32_t
 nsComboboxControlFrame::GetIndexOfDisplayArea()
 {
   return mDisplayedIndex;
@@ -932,7 +1116,7 @@ nsComboboxControlFrame::DoneAddingChildren(bool aIsDone)
 }
 
 NS_IMETHODIMP
-nsComboboxControlFrame::AddOption(PRInt32 aIndex)
+nsComboboxControlFrame::AddOption(int32_t aIndex)
 {
   if (aIndex <= mDisplayedIndex) {
     ++mDisplayedIndex;
@@ -941,10 +1125,10 @@ nsComboboxControlFrame::AddOption(PRInt32 aIndex)
   nsListControlFrame* lcf = static_cast<nsListControlFrame*>(mDropdownFrame);
   return lcf->AddOption(aIndex);
 }
-  
+
 
 NS_IMETHODIMP
-nsComboboxControlFrame::RemoveOption(PRInt32 aIndex)
+nsComboboxControlFrame::RemoveOption(int32_t aIndex)
 {
   nsWeakFrame weakThis(this);
   if (mListControlFrame->GetNumberOfOptions() > 0) {
@@ -968,12 +1152,12 @@ nsComboboxControlFrame::RemoveOption(PRInt32 aIndex)
 }
 
 NS_IMETHODIMP
-nsComboboxControlFrame::OnSetSelectedIndex(PRInt32 aOldIndex, PRInt32 aNewIndex)
+nsComboboxControlFrame::OnSetSelectedIndex(int32_t aOldIndex, int32_t aNewIndex)
 {
   nsAutoScriptBlocker scriptBlocker;
   RedisplayText(aNewIndex);
   NS_ASSERTION(mDropdownFrame, "No dropdown frame!");
-  
+
   nsISelectControlFrame* listFrame = do_QueryFrame(mDropdownFrame);
   NS_ASSERTION(listFrame, "No list frame!");
 
@@ -983,8 +1167,8 @@ nsComboboxControlFrame::OnSetSelectedIndex(PRInt32 aOldIndex, PRInt32 aNewIndex)
 // End nsISelectControlFrame
 //----------------------------------------------------------------------
 
-NS_IMETHODIMP 
-nsComboboxControlFrame::HandleEvent(nsPresContext* aPresContext, 
+NS_IMETHODIMP
+nsComboboxControlFrame::HandleEvent(nsPresContext* aPresContext,
                                        nsGUIEvent*     aEvent,
                                        nsEventStatus*  aEventStatus)
 {
@@ -1004,7 +1188,7 @@ nsComboboxControlFrame::HandleEvent(nsPresContext* aPresContext,
   const nsStyleUserInterface* uiStyle = GetStyleUserInterface();
   if (uiStyle->mUserInput == NS_STYLE_USER_INPUT_NONE || uiStyle->mUserInput == NS_STYLE_USER_INPUT_DISABLED)
     return nsBlockFrame::HandleEvent(aPresContext, aEvent, aEventStatus);
-    
+
   return NS_OK;
 }
 
@@ -1020,7 +1204,7 @@ nsComboboxControlFrame::SetFormProperty(nsIAtom* aName, const nsAString& aValue)
   return fcFrame->SetFormProperty(aName, aValue);
 }
 
-nsresult 
+nsresult
 nsComboboxControlFrame::GetFormProperty(nsIAtom* aName, nsAString& aValue) const
 {
   nsIFormControlFrame* fcFrame = do_QueryFrame(mDropdownFrame);
@@ -1043,7 +1227,7 @@ nsComboboxControlFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
   // are created through anonymous content. The dropdown list is not created through anonymous
   // content because it's frame is initialized specifically for the drop-down case and it is placed
   // a special list referenced through NS_COMBO_FRAME_POPUP_LIST_INDEX to keep separate from the
-  // layout of the display and button. 
+  // layout of the display and button.
   //
   // Note: The value attribute of the display content is set when an item is selected in the dropdown list.
   // If the content specified below does not honor the value attribute than nothing will be displayed.
@@ -1074,7 +1258,7 @@ nsComboboxControlFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
     return NS_ERROR_OUT_OF_MEMORY;
 
   nsCOMPtr<nsINodeInfo> nodeInfo;
-  nodeInfo = nimgr->GetNodeInfo(nsGkAtoms::button, nsnull, kNameSpaceID_XHTML,
+  nodeInfo = nimgr->GetNodeInfo(nsGkAtoms::button, nullptr, kNameSpaceID_XHTML,
                                 nsIDOMNode::ELEMENT_NODE);
 
   // create button which drops the list down
@@ -1103,7 +1287,7 @@ nsComboboxControlFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
 
 void
 nsComboboxControlFrame::AppendAnonymousContentTo(nsBaseContentList& aElements,
-                                                 PRUint32 aFilter)
+                                                 uint32_t aFilter)
 {
   aElements.MaybeAppendElement(mDisplayContent);
   aElements.MaybeAppendElement(mButtonContent);
@@ -1125,7 +1309,7 @@ public:
   // depends on the available width.
   virtual nsIAtom* GetType() const;
 
-  virtual bool IsFrameOfType(PRUint32 aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const
   {
     return nsBlockFrame::IsFrameOfType(aFlags &
       ~(nsIFrame::eReplacedContainsBlock));
@@ -1166,7 +1350,7 @@ nsComboboxDisplayFrame::Reflow(nsPresContext*           aPresContext,
     state.SetComputedHeight(mComboBox->mListControlFrame->GetHeightOfARow());
   }
   nscoord computedWidth = mComboBox->mDisplayWidth -
-    state.mComputedBorderPadding.LeftRight(); 
+    state.mComputedBorderPadding.LeftRight();
   if (computedWidth < 0) {
     computedWidth = 0;
   }
@@ -1197,16 +1381,16 @@ nsComboboxDisplayFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
 
 nsIFrame*
 nsComboboxControlFrame::CreateFrameFor(nsIContent*      aContent)
-{ 
-  NS_PRECONDITION(nsnull != aContent, "null ptr");
+{
+  NS_PRECONDITION(nullptr != aContent, "null ptr");
 
   NS_ASSERTION(mDisplayContent, "mDisplayContent can't be null!");
 
   if (mDisplayContent != aContent) {
     // We only handle the frames for mDisplayContent here
-    return nsnull;
+    return nullptr;
   }
-  
+
   // Get PresShell
   nsIPresShell *shell = PresContext()->PresShell();
   nsStyleSet *styleSet = shell->StyleSet();
@@ -1216,43 +1400,43 @@ nsComboboxControlFrame::CreateFrameFor(nsIContent*      aContent)
   styleContext = styleSet->
     ResolveAnonymousBoxStyle(nsCSSAnonBoxes::mozDisplayComboboxControlFrame,
                              mStyleContext);
-  if (NS_UNLIKELY(!styleContext)) {
-    return nsnull;
+  if (MOZ_UNLIKELY(!styleContext)) {
+    return nullptr;
   }
 
   nsRefPtr<nsStyleContext> textStyleContext;
   textStyleContext = styleSet->ResolveStyleForNonElement(mStyleContext);
-  if (NS_UNLIKELY(!textStyleContext)) {
-    return nsnull;
+  if (MOZ_UNLIKELY(!textStyleContext)) {
+    return nullptr;
   }
 
   // Start by by creating our anonymous block frame
   mDisplayFrame = new (shell) nsComboboxDisplayFrame(styleContext, this);
-  if (NS_UNLIKELY(!mDisplayFrame)) {
-    return nsnull;
+  if (MOZ_UNLIKELY(!mDisplayFrame)) {
+    return nullptr;
   }
 
-  nsresult rv = mDisplayFrame->Init(mContent, this, nsnull);
+  nsresult rv = mDisplayFrame->Init(mContent, this, nullptr);
   if (NS_FAILED(rv)) {
     mDisplayFrame->Destroy();
-    mDisplayFrame = nsnull;
-    return nsnull;
+    mDisplayFrame = nullptr;
+    return nullptr;
   }
 
   // Create a text frame and put it inside the block frame
   nsIFrame* textFrame = NS_NewTextFrame(shell, textStyleContext);
-  if (NS_UNLIKELY(!textFrame)) {
-    return nsnull;
+  if (MOZ_UNLIKELY(!textFrame)) {
+    return nullptr;
   }
 
   // initialize the text frame
-  rv = textFrame->Init(aContent, mDisplayFrame, nsnull);
+  rv = textFrame->Init(aContent, mDisplayFrame, nullptr);
   if (NS_FAILED(rv)) {
     mDisplayFrame->Destroy();
-    mDisplayFrame = nsnull;
+    mDisplayFrame = nullptr;
     textFrame->Destroy();
-    textFrame = nsnull;
-    return nsnull;
+    textFrame = nullptr;
+    return nullptr;
   }
   mDisplayContent->SetPrimaryFrame(textFrame);
 
@@ -1278,7 +1462,7 @@ nsComboboxControlFrame::DestroyFrom(nsIFrame* aDestructRoot)
       if (view) {
         nsIWidget* widget = view->GetWidget();
         if (widget)
-          widget->CaptureRollupEvents(this, false, true);
+          widget->CaptureRollupEvents(this, false);
       }
     }
   }
@@ -1331,21 +1515,34 @@ nsComboboxControlFrame::SetInitialChildList(ChildListID     aListID,
 //----------------------------------------------------------------------
   //nsIRollupListener
 //----------------------------------------------------------------------
-nsIContent*
-nsComboboxControlFrame::Rollup(PRUint32 aCount, bool aGetLastRolledUp)
+bool
+nsComboboxControlFrame::Rollup(uint32_t aCount, nsIContent** aLastRolledUp)
 {
-  if (mDroppedDown) {
-    nsWeakFrame weakFrame(this);
-    mListControlFrame->AboutToRollup(); // might destroy us
-    if (!weakFrame.IsAlive())
-      return nsnull;
-    ShowDropDown(false); // might destroy us
-    if (!weakFrame.IsAlive())
-      return nsnull;
+  if (!mDroppedDown)
+    return false;
+
+  nsWeakFrame weakFrame(this);
+  mListControlFrame->AboutToRollup(); // might destroy us
+  if (!weakFrame.IsAlive())
+    return true;
+  ShowDropDown(false); // might destroy us
+  if (weakFrame.IsAlive()) {
     mListControlFrame->CaptureMouseEvents(false);
   }
 
-  return nsnull;
+  return true;
+}
+
+nsIWidget*
+nsComboboxControlFrame::GetRollupWidget()
+{
+  nsIFrame* listFrame = do_QueryFrame(mListControlFrame);
+  if (!listFrame)
+    return nullptr;
+
+  nsIView* view = listFrame->GetView();
+  MOZ_ASSERT(view);
+  return view->GetWidget();
 }
 
 void
@@ -1355,10 +1552,10 @@ nsComboboxControlFrame::RollupFromList()
     mListControlFrame->CaptureMouseEvents(false);
 }
 
-PRInt32
-nsComboboxControlFrame::UpdateRecentIndex(PRInt32 aIndex)
+int32_t
+nsComboboxControlFrame::UpdateRecentIndex(int32_t aIndex)
 {
-  PRInt32 index = mRecentSelectedIndex;
+  int32_t index = mRecentSelectedIndex;
   if (mRecentSelectedIndex == NS_SKIP_NOTIFY_INDEX || aIndex == NS_SKIP_NOTIFY_INDEX)
     mRecentSelectedIndex = aIndex;
   return index;
@@ -1436,7 +1633,7 @@ void nsComboboxControlFrame::PaintFocus(nsRenderingContext& aRenderingContext,
 {
   /* Do we need to do anything? */
   nsEventStates eventStates = mContent->AsElement()->State();
-  if (eventStates.HasState(NS_EVENT_STATE_DISABLED) || mFocused != this)
+  if (eventStates.HasState(NS_EVENT_STATE_DISABLED) || sFocused != this)
     return;
 
   aRenderingContext.PushState();
@@ -1471,7 +1668,7 @@ void nsComboboxControlFrame::PaintFocus(nsRenderingContext& aRenderingContext,
 // being selected or not selected
 //---------------------------------------------------------
 NS_IMETHODIMP
-nsComboboxControlFrame::OnOptionSelected(PRInt32 aIndex, bool aSelected)
+nsComboboxControlFrame::OnOptionSelected(int32_t aIndex, bool aSelected)
 {
   if (mDroppedDown) {
     nsISelectControlFrame *selectFrame = do_QueryFrame(mListControlFrame);
@@ -1515,14 +1712,13 @@ nsComboboxControlFrame::OnContentReset()
 // nsIStatefulFrame
 //--------------------------------------------------------
 NS_IMETHODIMP
-nsComboboxControlFrame::SaveState(SpecialStateID aStateID,
-                                  nsPresState** aState)
+nsComboboxControlFrame::SaveState(nsPresState** aState)
 {
   if (!mListControlFrame)
     return NS_ERROR_FAILURE;
 
   nsIStatefulFrame* stateful = do_QueryFrame(mListControlFrame);
-  return stateful->SaveState(aStateID, aState);
+  return stateful->SaveState(aState);
 }
 
 NS_IMETHODIMP
@@ -1543,7 +1739,7 @@ nsComboboxControlFrame::RestoreState(nsPresState* aState)
 // handling here and in nsListControlFrame.
 //
 // Also, Fennec use a custom combobox built-in widget
-// 
+//
 
 /* static */
 bool

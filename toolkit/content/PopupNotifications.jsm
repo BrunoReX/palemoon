@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var EXPORTED_SYMBOLS = ["PopupNotifications"];
+this.EXPORTED_SYMBOLS = ["PopupNotifications"];
 
 var Cc = Components.classes, Ci = Components.interfaces;
 
@@ -14,6 +14,8 @@ const NOTIFICATION_EVENT_SHOWN = "shown";
 
 const ICON_SELECTOR = ".notification-anchor-icon";
 const ICON_ATTRIBUTE_SHOWING = "showing";
+
+let popupNotificationsMap = new WeakMap();
 
 /**
  * Notification object describes a single popup notification.
@@ -85,7 +87,7 @@ Notification.prototype = {
  *        It is used as a fallback popup anchor if notifications specify
  *        invalid or non-existent anchor IDs.
  */
-function PopupNotifications(tabbrowser, panel, iconBox) {
+this.PopupNotifications = function PopupNotifications(tabbrowser, panel, iconBox) {
   if (!(tabbrowser instanceof Ci.nsIDOMXULElement))
     throw "Invalid tabbrowser";
   if (iconBox && !(iconBox instanceof Ci.nsIDOMXULElement))
@@ -351,7 +353,7 @@ PopupNotifications.prototype = {
     return this._getNotificationsForBrowser(this.tabbrowser.selectedBrowser);
   },
   set _currentNotifications(a) {
-    return this.tabbrowser.selectedBrowser.popupNotifications = a;
+    return this._setNotificationsForBrowser(this.tabbrowser.selectedBrowser, a);
   },
 
   _remove: function PopupNotifications_removeHelper(notification) {
@@ -431,7 +433,7 @@ PopupNotifications.prototype = {
 
           popupnotification.appendChild(item);
         }, this);
-  
+
         if (n.secondaryActions.length) {
           let closeItemSeparator = doc.createElementNS(XUL_NS, "menuseparator");
           popupnotification.appendChild(closeItemSeparator);
@@ -469,6 +471,9 @@ PopupNotifications.prototype = {
 
     this._currentAnchorElement = anchorElement;
 
+    // On OS X and Linux we need a different panel arrow color for
+    // click-to-play plugins, so copy the popupid and use css.
+    this.panel.setAttribute("popupid", this.panel.firstChild.getAttribute("popupid"));
     this.panel.openPopup(anchorElement, "bottomcenter topleft");
     notificationsToShow.forEach(function (n) {
       this._fireCallback(n, NOTIFICATION_EVENT_SHOWN);
@@ -539,11 +544,21 @@ PopupNotifications.prototype = {
     }
   },
 
+  /**
+   * Gets and sets notifications for the browser.
+   */
   _getNotificationsForBrowser: function PopupNotifications_getNotifications(browser) {
-    if (browser.popupNotifications)
-      return browser.popupNotifications;
-
-    return browser.popupNotifications = [];
+    let notifications = popupNotificationsMap.get(browser);
+    if (!notifications) {
+      // Initialize the WeakMap for the browser so callers can reference/manipulate the array.
+      notifications = [];
+      popupNotificationsMap.set(browser, notifications);
+    }
+    return notifications;
+  },
+  _setNotificationsForBrowser: function PopupNotifications_setNotifications(browser, notifications) {
+    popupNotificationsMap.set(browser, notifications);
+    return notifications;
   },
 
   _onIconBoxCommand: function PopupNotifications_onIconBoxCommand(event) {

@@ -9,11 +9,20 @@
 #include "nsString.h"
 #include "nsCRT.h"
 #include "prprf.h"
+#include "mozIApplicationClearPrivateDataParams.h"
+#include "nsIObserverService.h"
+#include "mozilla/Services.h"
+#include "nsNetUtil.h"
 
 static inline void
-GetAuthKey(const char *scheme, const char *host, PRInt32 port, nsCString &key)
+GetAuthKey(const char *scheme, const char *host, int32_t port, uint32_t appId, bool inBrowserElement, nsCString &key)
 {
-    key.Assign(scheme);
+    key.Truncate();
+    key.AppendInt(appId);
+    key.Append(':');
+    key.AppendInt(inBrowserElement);
+    key.Append(':');
+    key.Append(scheme);
     key.AppendLiteral("://");
     key.Append(host);
     key.Append(':');
@@ -40,14 +49,24 @@ StrEquivalent(const PRUnichar *a, const PRUnichar *b)
 //-----------------------------------------------------------------------------
 
 nsHttpAuthCache::nsHttpAuthCache()
-    : mDB(nsnull)
+    : mDB(nullptr)
+    , mObserver(new AppDataClearObserver(this))
 {
+    nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
+    if (obsSvc) {
+        obsSvc->AddObserver(mObserver, "webapps-clear-data", false);
+    }
 }
 
 nsHttpAuthCache::~nsHttpAuthCache()
 {
     if (mDB)
         ClearAll();
+    nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
+    if (obsSvc) {
+        obsSvc->RemoveObserver(mObserver, "webapps-clear-data");
+        mObserver->mOwner = nullptr;
+    }
 }
 
 nsresult
@@ -69,15 +88,17 @@ nsHttpAuthCache::Init()
 nsresult
 nsHttpAuthCache::GetAuthEntryForPath(const char *scheme,
                                      const char *host,
-                                     PRInt32     port,
+                                     int32_t     port,
                                      const char *path,
+                                     uint32_t    appId,
+                                     bool        inBrowserElement,
                                      nsHttpAuthEntry **entry)
 {
     LOG(("nsHttpAuthCache::GetAuthEntryForPath [key=%s://%s:%d path=%s]\n",
         scheme, host, port, path));
 
-    nsCAutoString key;
-    nsHttpAuthNode *node = LookupAuthNode(scheme, host, port, key);
+    nsAutoCString key;
+    nsHttpAuthNode *node = LookupAuthNode(scheme, host, port, appId, inBrowserElement, key);
     if (!node)
         return NS_ERROR_NOT_AVAILABLE;
 
@@ -88,16 +109,18 @@ nsHttpAuthCache::GetAuthEntryForPath(const char *scheme,
 nsresult
 nsHttpAuthCache::GetAuthEntryForDomain(const char *scheme,
                                        const char *host,
-                                       PRInt32     port,
+                                       int32_t     port,
                                        const char *realm,
+                                       uint32_t    appId,
+                                       bool        inBrowserElement,
                                        nsHttpAuthEntry **entry)
 
 {
     LOG(("nsHttpAuthCache::GetAuthEntryForDomain [key=%s://%s:%d realm=%s]\n",
         scheme, host, port, realm));
 
-    nsCAutoString key;
-    nsHttpAuthNode *node = LookupAuthNode(scheme, host, port, key);
+    nsAutoCString key;
+    nsHttpAuthNode *node = LookupAuthNode(scheme, host, port, appId, inBrowserElement, key);
     if (!node)
         return NS_ERROR_NOT_AVAILABLE;
 
@@ -108,11 +131,13 @@ nsHttpAuthCache::GetAuthEntryForDomain(const char *scheme,
 nsresult
 nsHttpAuthCache::SetAuthEntry(const char *scheme,
                               const char *host,
-                              PRInt32     port,
+                              int32_t     port,
                               const char *path,
                               const char *realm,
                               const char *creds,
                               const char *challenge,
+                              uint32_t    appId,
+                              bool        inBrowserElement,
                               const nsHttpAuthIdentity *ident,
                               nsISupports *metadata)
 {
@@ -126,8 +151,8 @@ nsHttpAuthCache::SetAuthEntry(const char *scheme,
         if (NS_FAILED(rv)) return rv;
     }
 
-    nsCAutoString key;
-    nsHttpAuthNode *node = LookupAuthNode(scheme, host, port, key);
+    nsAutoCString key;
+    nsHttpAuthNode *node = LookupAuthNode(scheme, host, port, appId, inBrowserElement, key);
 
     if (!node) {
         // create a new entry node and set the given entry
@@ -148,14 +173,16 @@ nsHttpAuthCache::SetAuthEntry(const char *scheme,
 void
 nsHttpAuthCache::ClearAuthEntry(const char *scheme,
                                 const char *host,
-                                PRInt32     port,
-                                const char *realm)
+                                int32_t     port,
+                                const char *realm,
+                                uint32_t    appId,
+                                bool        inBrowserElement)
 {
     if (!mDB)
         return;
 
-    nsCAutoString key;
-    GetAuthKey(scheme, host, port, key);
+    nsAutoCString key;
+    GetAuthKey(scheme, host, port, appId, inBrowserElement, key);
     PL_HashTableRemove(mDB, key.get());
 }
 
@@ -178,19 +205,21 @@ nsHttpAuthCache::ClearAll()
 nsHttpAuthNode *
 nsHttpAuthCache::LookupAuthNode(const char *scheme,
                                 const char *host,
-                                PRInt32     port,
+                                int32_t     port,
+                                uint32_t    appId,
+                                bool        inBrowserElement,
                                 nsCString  &key)
 {
     if (!mDB)
-        return nsnull;
+        return nullptr;
 
-    GetAuthKey(scheme, host, port, key);
+    GetAuthKey(scheme, host, port, appId, inBrowserElement, key);
 
     return (nsHttpAuthNode *) PL_HashTableLookup(mDB, key.get());
 }
 
 void *
-nsHttpAuthCache::AllocTable(void *self, PRSize size)
+nsHttpAuthCache::AllocTable(void *self, size_t size)
 {
     return malloc(size);
 }
@@ -208,7 +237,7 @@ nsHttpAuthCache::AllocEntry(void *self, const void *key)
 }
 
 void
-nsHttpAuthCache::FreeEntry(void *self, PLHashEntry *he, PRUintn flag)
+nsHttpAuthCache::FreeEntry(void *self, PLHashEntry *he, unsigned flag)
 {
     if (flag == HT_FREE_VALUE) {
         // this would only happen if PL_HashTableAdd were to replace an
@@ -231,6 +260,62 @@ PLHashAllocOps nsHttpAuthCache::gHashAllocOps =
     nsHttpAuthCache::AllocEntry,
     nsHttpAuthCache::FreeEntry
 };
+
+NS_IMPL_ISUPPORTS1(nsHttpAuthCache::AppDataClearObserver, nsIObserver)
+
+NS_IMETHODIMP
+nsHttpAuthCache::AppDataClearObserver::Observe(nsISupports *subject,
+                                               const char *      topic,
+                                               const PRUnichar * data_unicode)
+{
+    NS_ENSURE_TRUE(mOwner, NS_ERROR_NOT_AVAILABLE);
+
+    nsCOMPtr<mozIApplicationClearPrivateDataParams> params =
+            do_QueryInterface(subject);
+    if (!params) {
+        NS_ERROR("'webapps-clear-data' notification's subject should be a mozIApplicationClearPrivateDataParams");
+        return NS_ERROR_UNEXPECTED;
+    }
+
+    uint32_t appId;
+    bool browserOnly;
+
+    nsresult rv = params->GetAppId(&appId);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = params->GetBrowserOnly(&browserOnly);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    MOZ_ASSERT(appId != NECKO_UNKNOWN_APP_ID);
+    mOwner->ClearAppData(appId, browserOnly);
+    return NS_OK;
+}
+
+static int
+RemoveEntriesForApp(PLHashEntry *entry, int32_t number, void *arg)
+{
+    nsDependentCString key(static_cast<const char*>(entry->key));
+    nsAutoCString* prefix = static_cast<nsAutoCString*>(arg);
+    if (StringBeginsWith(key, *prefix)) {
+        return HT_ENUMERATE_NEXT | HT_ENUMERATE_REMOVE;
+    }
+    return HT_ENUMERATE_NEXT;
+}
+
+void
+nsHttpAuthCache::ClearAppData(uint32_t appId, bool browserOnly)
+{
+    if (!mDB) {
+        return;
+    }
+    nsAutoCString keyPrefix;
+    keyPrefix.AppendInt(appId);
+    keyPrefix.Append(':');
+    if (browserOnly) {
+        keyPrefix.AppendInt(browserOnly);
+        keyPrefix.Append(':');
+    }
+    PL_HashTableEnumerateEntries(mDB, RemoveEntriesForApp, &keyPrefix);
+}
 
 //-----------------------------------------------------------------------------
 // nsHttpAuthIdentity
@@ -281,9 +366,9 @@ nsHttpAuthIdentity::Clear()
 {
     if (mUser) {
         free(mUser);
-        mUser = nsnull;
-        mPass = nsnull;
-        mDomain = nsnull;
+        mUser = nullptr;
+        mPass = nullptr;
+        mDomain = nullptr;
     }
 }
 
@@ -337,7 +422,7 @@ nsHttpAuthEntry::AddPath(const char *aPath)
         return NS_ERROR_OUT_OF_MEMORY;
 
     memcpy(newAuthPath->mPath, aPath, newpathLen+1);
-    newAuthPath->mNext = nsnull;
+    newAuthPath->mNext = nullptr;
 
     if (!mRoot)
         mRoot = newAuthPath; //first entry
@@ -391,7 +476,7 @@ nsHttpAuthEntry::Set(const char *path,
         // initialized yet (so is currently empty), initialize it now by
         // filling it with nulls.  We need to do that because consumers expect
         // that mIdent is initialized after this function returns.
-        rv = mIdent.Set(nsnull, nsnull, nsnull);
+        rv = mIdent.Set(nullptr, nullptr, nullptr);
     }
     if (NS_FAILED(rv)) {
         free(newRealm);
@@ -445,7 +530,7 @@ nsHttpAuthNode::LookupEntryByPath(const char *path)
     // look for an entry that either matches or contains this directory.
     // ie. we'll give out credentials if the given directory is a sub-
     // directory of an existing entry.
-    for (PRUint32 i=0; i<mList.Length(); ++i) {
+    for (uint32_t i=0; i<mList.Length(); ++i) {
         entry = mList[i];
         nsHttpAuthPath *authPath = entry->RootPath();
         while (authPath) {
@@ -462,7 +547,7 @@ nsHttpAuthNode::LookupEntryByPath(const char *path)
             authPath = authPath->mNext;
         }
     }
-    return nsnull;
+    return nullptr;
 }
 
 nsHttpAuthEntry *
@@ -475,13 +560,13 @@ nsHttpAuthNode::LookupEntryByRealm(const char *realm)
         realm = "";
 
     // look for an entry that matches this realm
-    PRUint32 i;
+    uint32_t i;
     for (i=0; i<mList.Length(); ++i) {
         entry = mList[i];
         if (strcmp(realm, entry->Realm()) == 0)
             return entry;
     }
-    return nsnull;
+    return nullptr;
 }
 
 nsresult

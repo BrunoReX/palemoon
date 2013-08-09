@@ -7,7 +7,7 @@
 #include "nsCRT.h"
 
 nsresult
-nsSegmentedBuffer::Init(PRUint32 segmentSize, PRUint32 maxSize,
+nsSegmentedBuffer::Init(uint32_t segmentSize, uint32_t maxSize,
                         nsIMemory* allocator)
 {
     if (mSegmentArrayCount != 0)
@@ -15,7 +15,7 @@ nsSegmentedBuffer::Init(PRUint32 segmentSize, PRUint32 maxSize,
     mSegmentSize = segmentSize;
     mMaxSize = maxSize;
     mSegAllocator = allocator;
-    if (mSegAllocator == nsnull) {
+    if (mSegAllocator == nullptr) {
         mSegAllocator = nsMemory::GetGlobalMemoryService();
     }
     else {
@@ -33,22 +33,22 @@ char*
 nsSegmentedBuffer::AppendNewSegment()
 {
     if (GetSize() >= mMaxSize)
-        return nsnull;
+        return nullptr;
 
-    if (mSegmentArray == nsnull) {
-        PRUint32 bytes = mSegmentArrayCount * sizeof(char*);
+    if (mSegmentArray == nullptr) {
+        uint32_t bytes = mSegmentArrayCount * sizeof(char*);
         mSegmentArray = (char**)nsMemory::Alloc(bytes);
-        if (mSegmentArray == nsnull)
-            return nsnull;
+        if (mSegmentArray == nullptr)
+            return nullptr;
         memset(mSegmentArray, 0, bytes);
     }
     
     if (IsFull()) {
-        PRUint32 newArraySize = mSegmentArrayCount * 2;
-        PRUint32 bytes = newArraySize * sizeof(char*);
+        uint32_t newArraySize = mSegmentArrayCount * 2;
+        uint32_t bytes = newArraySize * sizeof(char*);
         char** newSegArray = (char**)nsMemory::Realloc(mSegmentArray, bytes);
-        if (newSegArray == nsnull)
-            return nsnull;
+        if (newSegArray == nullptr)
+            return nullptr;
         mSegmentArray = newSegArray;
         // copy wrapped content to new extension
         if (mFirstSegmentIndex > mLastSegmentIndex) {
@@ -69,8 +69,8 @@ nsSegmentedBuffer::AppendNewSegment()
     }
 
     char* seg = (char*)mSegAllocator->Alloc(mSegmentSize);
-    if (seg == nsnull) {
-        return nsnull;
+    if (seg == nullptr) {
+        return nullptr;
     }
     mSegmentArray[mLastSegmentIndex] = seg;
     mLastSegmentIndex = ModSegArraySize(mLastSegmentIndex + 1);
@@ -80,10 +80,10 @@ nsSegmentedBuffer::AppendNewSegment()
 bool
 nsSegmentedBuffer::DeleteFirstSegment()
 {
-    NS_ASSERTION(mSegmentArray[mFirstSegmentIndex] != nsnull, "deleting bad segment");
+    NS_ASSERTION(mSegmentArray[mFirstSegmentIndex] != nullptr, "deleting bad segment");
     (void)mSegAllocator->Free(mSegmentArray[mFirstSegmentIndex]);
-    mSegmentArray[mFirstSegmentIndex] = nsnull;
-    PRInt32 last = ModSegArraySize(mLastSegmentIndex - 1);
+    mSegmentArray[mFirstSegmentIndex] = nullptr;
+    int32_t last = ModSegArraySize(mLastSegmentIndex - 1);
     if (mFirstSegmentIndex == last) {
         mLastSegmentIndex = last;
         return true;
@@ -97,10 +97,10 @@ nsSegmentedBuffer::DeleteFirstSegment()
 bool
 nsSegmentedBuffer::DeleteLastSegment()
 {
-    PRInt32 last = ModSegArraySize(mLastSegmentIndex - 1);
-    NS_ASSERTION(mSegmentArray[last] != nsnull, "deleting bad segment");
+    int32_t last = ModSegArraySize(mLastSegmentIndex - 1);
+    NS_ASSERTION(mSegmentArray[last] != nullptr, "deleting bad segment");
     (void)mSegAllocator->Free(mSegmentArray[last]);
-    mSegmentArray[last] = nsnull;
+    mSegmentArray[last] = nullptr;
     mLastSegmentIndex = last;
     return (bool)(mLastSegmentIndex == mFirstSegmentIndex);
 }
@@ -108,8 +108,8 @@ nsSegmentedBuffer::DeleteLastSegment()
 bool
 nsSegmentedBuffer::ReallocLastSegment(size_t newSize)
 {
-    PRInt32 last = ModSegArraySize(mLastSegmentIndex - 1);
-    NS_ASSERTION(mSegmentArray[last] != nsnull, "realloc'ing bad segment");
+    int32_t last = ModSegArraySize(mLastSegmentIndex - 1);
+    NS_ASSERTION(mSegmentArray[last] != nullptr, "realloc'ing bad segment");
     char *newSegment =
         (char*)mSegAllocator->Realloc(mSegmentArray[last], newSize);
     if (newSegment) {
@@ -124,12 +124,12 @@ void
 nsSegmentedBuffer::Empty()
 {
     if (mSegmentArray) {
-        for (PRUint32 i = 0; i < mSegmentArrayCount; i++) {
+        for (uint32_t i = 0; i < mSegmentArrayCount; i++) {
             if (mSegmentArray[i])
                 mSegAllocator->Free(mSegmentArray[i]);
         }
         nsMemory::Free(mSegmentArray);
-        mSegmentArray = nsnull;
+        mSegmentArray = nullptr;
     }
     mSegmentArrayCount = NS_SEGMENTARRAY_INITIAL_COUNT;
     mFirstSegmentIndex = mLastSegmentIndex = 0;

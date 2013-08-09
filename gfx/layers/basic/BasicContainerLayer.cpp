@@ -30,7 +30,7 @@ BasicContainerLayer::ChildrenPartitionVisibleRegion(const nsIntRect& aInRect)
       transform.HasNonIntegerTranslation())
     return false;
 
-  nsIntPoint offset(PRInt32(transform.x0), PRInt32(transform.y0));
+  nsIntPoint offset(int32_t(transform.x0), int32_t(transform.y0));
   nsIntRect rect = aInRect.Intersect(GetEffectiveVisibleRegion().GetBounds() + offset);
   nsIntRegion covered;
 
@@ -44,7 +44,7 @@ BasicContainerLayer::ChildrenPartitionVisibleRegion(const nsIntRect& aInRect)
         l->GetEffectiveOpacity() != 1.0)
       return false;
     nsIntRegion childRegion = l->GetEffectiveVisibleRegion();
-    childRegion.MoveBy(PRInt32(childTransform.x0), PRInt32(childTransform.y0));
+    childRegion.MoveBy(int32_t(childTransform.x0), int32_t(childTransform.y0));
     childRegion.And(childRegion, rect);
     if (l->GetClipRect()) {
       childRegion.And(childRegion, *l->GetClipRect() + offset);
@@ -77,6 +77,7 @@ public:
 
   virtual void InsertAfter(Layer* aChild, Layer* aAfter);
   virtual void RemoveChild(Layer* aChild);
+  virtual void RepositionChild(Layer* aChild, Layer* aAfter);
 
   virtual Layer* AsLayer() { return this; }
   virtual ShadowableLayer* AsShadowableLayer() { return this; }
@@ -102,7 +103,7 @@ BasicShadowableContainerLayer::InsertAfter(Layer* aChild, Layer* aAfter)
     }
     ShadowManager()->InsertAfter(ShadowManager()->Hold(this),
                                  ShadowManager()->Hold(aChild),
-                                 aAfter ? ShadowManager()->Hold(aAfter) : nsnull);
+                                 aAfter ? ShadowManager()->Hold(aAfter) : nullptr);
   }
   BasicContainerLayer::InsertAfter(aChild, aAfter);
 }
@@ -117,11 +118,30 @@ BasicShadowableContainerLayer::RemoveChild(Layer* aChild)
   BasicContainerLayer::RemoveChild(aChild);
 }
 
+void
+BasicShadowableContainerLayer::RepositionChild(Layer* aChild, Layer* aAfter)
+{
+  if (HasShadow() && ShouldShadow(aChild)) {
+    while (aAfter && !ShouldShadow(aAfter)) {
+      aAfter = aAfter->GetPrevSibling();
+    }
+    ShadowManager()->RepositionChild(ShadowManager()->Hold(this),
+                                     ShadowManager()->Hold(aChild),
+                                     aAfter ? ShadowManager()->Hold(aAfter) : nullptr);
+  }
+  BasicContainerLayer::RepositionChild(aChild, aAfter);
+}
+
 class BasicShadowContainerLayer : public ShadowContainerLayer, public BasicImplData {
   template<class Container>
   friend void ContainerInsertAfter(Layer* aChild, Layer* aAfter, Container* aContainer);
   template<class Container>
   friend void ContainerRemoveChild(Layer* aChild, Container* aContainer);
+  template<class Container>
+  friend void ContainerRepositionChild(Layer* aChild, Layer* aAfter, Container* aContainer);
+  template<class Container>
+  friend void ContainerComputeEffectiveTransforms(const gfx3DMatrix& aTransformToSurface,
+                                                  Container* aContainer);
 
 public:
   BasicShadowContainerLayer(BasicShadowLayerManager* aLayerManager) :
@@ -142,39 +162,48 @@ public:
   { ContainerInsertAfter(aChild, aAfter, this); }
   virtual void RemoveChild(Layer* aChild)
   { ContainerRemoveChild(aChild, this); }
+  virtual void RepositionChild(Layer* aChild, Layer* aAfter)
+  { ContainerRepositionChild(aChild, aAfter, this); }
 
   virtual void ComputeEffectiveTransforms(const gfx3DMatrix& aTransformToSurface)
   {
-    // We push groups for container layers if we need to, which always
-    // are aligned in device space, so it doesn't really matter how we snap
-    // containers.
-    gfxMatrix residual;
-    gfx3DMatrix idealTransform = GetLocalTransform()*aTransformToSurface;
-    idealTransform.ProjectTo2D();
+    ContainerComputeEffectiveTransforms(aTransformToSurface, this);
+  }
+};
 
-    if (!idealTransform.CanDraw2D()) {
-      mEffectiveTransform = idealTransform;
-      ComputeEffectiveTransformsForChildren(gfx3DMatrix());
-      ComputeEffectiveTransformForMaskLayer(gfx3DMatrix());
-      mUseIntermediateSurface = true;
-      return;
-    }
+class BasicShadowableRefLayer : public RefLayer, public BasicImplData,
+                                public BasicShadowableLayer {
+  template<class Container>
+  friend void ContainerComputeEffectiveTransforms(const gfx3DMatrix& aTransformToSurface,
+                                                  Container* aContainer);
+public:
+  BasicShadowableRefLayer(BasicShadowLayerManager* aManager) :
+    RefLayer(aManager, static_cast<BasicImplData*>(this))
+  {
+    MOZ_COUNT_CTOR(BasicShadowableRefLayer);
+  }
+  virtual ~BasicShadowableRefLayer()
+  {
+    MOZ_COUNT_DTOR(BasicShadowableRefLayer);
+  }
 
-    mEffectiveTransform = SnapTransform(idealTransform, gfxRect(0, 0, 0, 0), &residual);
-    // We always pass the ideal matrix down to our children, so there is no
-    // need to apply any compensation using the residual from SnapTransform.
-    ComputeEffectiveTransformsForChildren(idealTransform);
+  virtual Layer* AsLayer() { return this; }
+  virtual ShadowableLayer* AsShadowableLayer() { return this; }
 
-    ComputeEffectiveTransformForMaskLayer(aTransformToSurface);
+  virtual void Disconnect()
+  {
+    BasicShadowableLayer::Disconnect();
+  }
 
-    /* If we have a single child, it can just inherit our opacity,
-     * otherwise we need a PushGroup and we need to mark ourselves as using
-     * an intermediate surface so our children don't inherit our opacity
-     * via GetEffectiveOpacity.
-     * Having a mask layer always forces our own push group
-     */
-    mUseIntermediateSurface = GetMaskLayer() ||
-                              (GetEffectiveOpacity() != 1.0 && HasMultipleChildren());
+  virtual void ComputeEffectiveTransforms(const gfx3DMatrix& aTransformToSurface)
+  {
+    ContainerComputeEffectiveTransforms(aTransformToSurface, this);
+  }
+
+private:
+  BasicShadowLayerManager* ShadowManager()
+  {
+    return static_cast<BasicShadowLayerManager*>(mManager);
   }
 };
 
@@ -196,12 +225,30 @@ BasicShadowLayerManager::CreateContainerLayer()
   return layer.forget();
 }
 
+already_AddRefed<RefLayer>
+BasicShadowLayerManager::CreateRefLayer()
+{
+  NS_ASSERTION(InConstruction(), "Only allowed in construction phase");
+  nsRefPtr<BasicShadowableRefLayer> layer =
+    new BasicShadowableRefLayer(this);
+  MAYBE_CREATE_SHADOW(Ref);
+  return layer.forget();
+}
+
 already_AddRefed<ShadowContainerLayer>
 BasicShadowLayerManager::CreateShadowContainerLayer()
 {
   NS_ASSERTION(InConstruction(), "Only allowed in construction phase");
   nsRefPtr<ShadowContainerLayer> layer = new BasicShadowContainerLayer(this);
   return layer.forget();
+}
+
+already_AddRefed<ShadowRefLayer>
+BasicShadowLayerManager::CreateShadowRefLayer()
+{
+  NS_ASSERTION(InConstruction(), "Only allowed in construction phase");
+  // FIXME/IMPL
+  return nullptr;
 }
 
 }

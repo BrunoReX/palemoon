@@ -34,26 +34,26 @@ main(int argc, char* argv[])
         return -1;
     }
 
-    PRUint32 cycles = atoi(argv[1]);
+    uint32_t cycles = atoi(argv[1]);
     char *base = argv[2];
     char *rel  = argv[3];
     {
         nsCOMPtr<nsIServiceManager> servMan;
-        NS_InitXPCOM2(getter_AddRefs(servMan), nsnull, nsnull);
+        NS_InitXPCOM2(getter_AddRefs(servMan), nullptr, nullptr);
         nsCOMPtr<nsIComponentRegistrar> registrar = do_QueryInterface(servMan);
         NS_ASSERTION(registrar, "Null nsIComponentRegistrar");
         if (registrar)
-            registrar->AutoRegister(nsnull);
+            registrar->AutoRegister(nullptr);
 
         nsCOMPtr<nsIIOService> serv(do_GetService(kIOServiceCID, &rv));
         if (NS_FAILED(rv)) return rv;
 
         nsCOMPtr<nsIURI> uri;
-        rv = serv->NewURI(base, nsnull, getter_AddRefs(uri));
+        rv = serv->NewURI(base, nullptr, getter_AddRefs(uri));
         if (NS_FAILED(rv)) return rv;
 
         char *absURLString;
-        PRUint32 i = 0;
+        uint32_t i = 0;
         while (i++ < cycles) {
             rv = ServiceMakeAbsolute(uri, rel, &absURLString);
             if (NS_FAILED(rv)) return rv;
@@ -64,6 +64,6 @@ main(int argc, char* argv[])
         }
     } // this scopes the nsCOMPtrs
     // no nsCOMPtrs are allowed to be alive when you call NS_ShutdownXPCOM
-    NS_ShutdownXPCOM(nsnull);
+    NS_ShutdownXPCOM(nullptr);
     return rv;
 }

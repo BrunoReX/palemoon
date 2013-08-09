@@ -3,21 +3,28 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsTextEditRules.h"
+#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
-#include "nsIDOMNode.h"
-#include "nsIContent.h"
-#include "nsIPresShell.h"
-#include "nsPresContext.h"
-#include "nsIFrame.h"
-#include "nsISelectionPrivate.h"
+#include "nsDebug.h"
+#include "nsError.h"
 #include "nsFrameSelection.h"
+#include "nsIContent.h"
+#include "nsIDOMNode.h"
+#include "nsIEditor.h"
+#include "nsIPresShell.h"
+#include "nsISelection.h"
+#include "nsISelectionPrivate.h"
+#include "nsISupportsImpl.h"
+#include "nsPlaintextEditor.h"
+#include "nsPresContext.h"
+#include "nsTextEditRules.h"
+#include "nscore.h"
 
 // Test for distance between caret and text that will be deleted
 nsresult
 nsTextEditRules::CheckBidiLevelForDeletion(nsISelection         *aSelection,
                                            nsIDOMNode           *aSelNode, 
-                                           PRInt32               aSelOffset, 
+                                           int32_t               aSelOffset, 
                                            nsIEditor::EDirection aAction,
                                            bool                 *aCancel)
 {
@@ -36,8 +43,8 @@ nsTextEditRules::CheckBidiLevelForDeletion(nsISelection         *aSelection,
   nsCOMPtr<nsIContent> content = do_QueryInterface(aSelNode);
   NS_ENSURE_TRUE(content, NS_ERROR_NULL_POINTER);
 
-  PRUint8 levelBefore;
-  PRUint8 levelAfter;
+  uint8_t levelBefore;
+  uint8_t levelAfter;
 
   nsCOMPtr<nsISelectionPrivate> privateSelection(do_QueryInterface(aSelection));
   NS_ENSURE_TRUE(privateSelection, NS_ERROR_NULL_POINTER);
@@ -52,9 +59,9 @@ nsTextEditRules::CheckBidiLevelForDeletion(nsISelection         *aSelection,
   levelBefore = levels.mLevelBefore;
   levelAfter = levels.mLevelAfter;
 
-  PRUint8 currentCaretLevel = frameSelection->GetCaretBidiLevel();
+  uint8_t currentCaretLevel = frameSelection->GetCaretBidiLevel();
 
-  PRUint8 levelOfDeletion;
+  uint8_t levelOfDeletion;
   levelOfDeletion =
     (nsIEditor::eNext==aAction || nsIEditor::eNextWord==aAction) ?
     levelAfter : levelBefore;

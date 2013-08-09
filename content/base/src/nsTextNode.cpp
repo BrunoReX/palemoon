@@ -13,6 +13,7 @@
 #include "nsIDOMMutationEvent.h"
 #include "nsIDocument.h"
 #include "nsThreadUtils.h"
+#include "nsStubMutationObserver.h"
 #ifdef DEBUG
 #include "nsRange.h"
 #endif
@@ -29,10 +30,10 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   
   nsAttributeTextNode(already_AddRefed<nsINodeInfo> aNodeInfo,
-                      PRInt32 aNameSpaceID,
+                      int32_t aNameSpaceID,
                       nsIAtom* aAttrName) :
     nsTextNode(aNodeInfo),
-    mGrandparent(nsnull),
+    mGrandparent(nullptr),
     mNameSpaceID(aNameSpaceID),
     mAttrName(aAttrName)
   {
@@ -82,7 +83,7 @@ private:
   // and can't be deleted.
   nsIContent* mGrandparent;
   // What attribute we're showing
-  PRInt32 mNameSpaceID;
+  int32_t mNameSpaceID;
   nsCOMPtr<nsIAtom> mAttrName;
 };
 
@@ -92,7 +93,7 @@ NS_NewTextNode(nsIContent** aInstancePtrResult,
 {
   NS_PRECONDITION(aNodeInfoManager, "Missing nodeInfoManager");
 
-  *aInstancePtrResult = nsnull;
+  *aInstancePtrResult = nullptr;
 
   nsCOMPtr<nsINodeInfo> ni = aNodeInfoManager->GetTextNodeInfo();
   if (!ni) {
@@ -134,7 +135,7 @@ NS_INTERFACE_TABLE_HEAD(nsTextNode)
 NS_INTERFACE_MAP_END_INHERITING(nsGenericDOMDataNode)
 
 bool
-nsTextNode::IsNodeOfType(PRUint32 aFlags) const
+nsTextNode::IsNodeOfType(uint32_t aFlags) const
 {
   return !(aFlags & ~(eCONTENT | eTEXT | eDATA_NODE));
 }
@@ -152,7 +153,7 @@ nsTextNode::CloneDataNode(nsINodeInfo *aNodeInfo, bool aCloneText) const
 }
 
 nsresult
-nsTextNode::AppendTextForNormalize(const PRUnichar* aBuffer, PRUint32 aLength,
+nsTextNode::AppendTextForNormalize(const PRUnichar* aBuffer, uint32_t aLength,
                                    bool aNotify, nsIContent* aNextSibling)
 {
   CharacterDataChangeInfo::Details details = {
@@ -163,9 +164,9 @@ nsTextNode::AppendTextForNormalize(const PRUnichar* aBuffer, PRUint32 aLength,
 
 #ifdef DEBUG
 void
-nsTextNode::List(FILE* out, PRInt32 aIndent) const
+nsTextNode::List(FILE* out, int32_t aIndent) const
 {
-  PRInt32 index;
+  int32_t index;
   for (index = aIndent; --index >= 0; ) fputs("  ", out);
 
   fprintf(out, "Text@%p", static_cast<const void*>(this));
@@ -187,10 +188,10 @@ nsTextNode::List(FILE* out, PRInt32 aIndent) const
 }
 
 void
-nsTextNode::DumpContent(FILE* out, PRInt32 aIndent, bool aDumpAll) const
+nsTextNode::DumpContent(FILE* out, int32_t aIndent, bool aDumpAll) const
 {
   if(aDumpAll) {
-    PRInt32 index;
+    int32_t index;
     for (index = aIndent; --index >= 0; ) fputs("  ", out);
 
     nsAutoString tmp;
@@ -206,14 +207,14 @@ nsTextNode::DumpContent(FILE* out, PRInt32 aIndent, bool aDumpAll) const
 
 nsresult
 NS_NewAttributeContent(nsNodeInfoManager *aNodeInfoManager,
-                       PRInt32 aNameSpaceID, nsIAtom* aAttrName,
+                       int32_t aNameSpaceID, nsIAtom* aAttrName,
                        nsIContent** aResult)
 {
   NS_PRECONDITION(aNodeInfoManager, "Missing nodeInfoManager");
   NS_PRECONDITION(aAttrName, "Must have an attr name");
   NS_PRECONDITION(aNameSpaceID != kNameSpaceID_Unknown, "Must know namespace");
   
-  *aResult = nsnull;
+  *aResult = nullptr;
 
   nsCOMPtr<nsINodeInfo> ni = aNodeInfoManager->GetTextNodeInfo();
   if (!ni) {
@@ -267,7 +268,7 @@ nsAttributeTextNode::UnbindFromTree(bool aDeep, bool aNullParent)
     // mutation observer anyway since we only need it while we're
     // in the document.
     mGrandparent->RemoveMutationObserver(this);
-    mGrandparent = nsnull;
+    mGrandparent = nullptr;
   }
   nsTextNode::UnbindFromTree(aDeep, aNullParent);
 }
@@ -275,9 +276,9 @@ nsAttributeTextNode::UnbindFromTree(bool aDeep, bool aNullParent)
 void
 nsAttributeTextNode::AttributeChanged(nsIDocument* aDocument,
                                       Element* aElement,
-                                      PRInt32 aNameSpaceID,
+                                      int32_t aNameSpaceID,
                                       nsIAtom* aAttribute,
-                                      PRInt32 aModType)
+                                      int32_t aModType)
 {
   if (aNameSpaceID == mNameSpaceID && aAttribute == mAttrName &&
       aElement == mGrandparent) {
@@ -294,7 +295,7 @@ void
 nsAttributeTextNode::NodeWillBeDestroyed(const nsINode* aNode)
 {
   NS_ASSERTION(aNode == static_cast<nsINode*>(mGrandparent), "Wrong node!");
-  mGrandparent = nsnull;
+  mGrandparent = nullptr;
 }
 
 void

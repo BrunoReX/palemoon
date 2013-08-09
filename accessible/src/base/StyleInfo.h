@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2: */
+/* vim: set expandtab shiftwidth=2 tabstop=2: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,7 +29,7 @@ public:
 
   static void FormatColor(const nscolor& aValue, nsString& aFormattedValue);
   static void FormatFontStyle(const nscoord& aValue, nsAString& aFormattedValue);
-  static void FormatTextDecorationStyle(PRUint8 aValue, nsAString& aFormattedValue);
+  static void FormatTextDecorationStyle(uint8_t aValue, nsAString& aFormattedValue);
 
 private:
   StyleInfo() MOZ_DELETE;

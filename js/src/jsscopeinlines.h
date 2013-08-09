@@ -7,8 +7,6 @@
 #ifndef jsscopeinlines_h___
 #define jsscopeinlines_h___
 
-#include <new>
-
 #include "jsarray.h"
 #include "jsbool.h"
 #include "jscntxt.h"
@@ -30,6 +28,22 @@
 #include "vm/ScopeObject-inl.h"
 
 namespace js {
+
+static inline void
+GetterSetterWriteBarrierPost(JSCompartment *comp, JSObject **objp)
+{
+#ifdef JSGC_GENERATIONAL
+    comp->gcStoreBuffer.putRelocatableCell(reinterpret_cast<gc::Cell **>(objp));
+#endif
+}
+
+static inline void
+GetterSetterWriteBarrierPostRemove(JSCompartment *comp, JSObject **objp)
+{
+#ifdef JSGC_GENERATIONAL
+    comp->gcStoreBuffer.removeRelocatableCell(reinterpret_cast<gc::Cell **>(objp));
+#endif
+}
 
 inline
 BaseShape::BaseShape(Class *clasp, JSObject *parent, uint32_t objectFlags)
@@ -54,11 +68,11 @@ BaseShape::BaseShape(Class *clasp, JSObject *parent, uint32_t objectFlags,
     this->rawSetter = rawSetter;
     if ((attrs & JSPROP_GETTER) && rawGetter) {
         this->flags |= HAS_GETTER_OBJECT;
-        JSObject::writeBarrierPost(this->getterObj, &this->getterObj);
+        GetterSetterWriteBarrierPost(compartment(), &this->getterObj);
     }
     if ((attrs & JSPROP_SETTER) && rawSetter) {
         this->flags |= HAS_SETTER_OBJECT;
-        JSObject::writeBarrierPost(this->setterObj, &this->setterObj);
+        GetterSetterWriteBarrierPost(compartment(), &this->setterObj);
     }
 }
 
@@ -72,10 +86,10 @@ BaseShape::BaseShape(const StackBaseShape &base)
     this->rawGetter = base.rawGetter;
     this->rawSetter = base.rawSetter;
     if ((base.flags & HAS_GETTER_OBJECT) && base.rawGetter) {
-        JSObject::writeBarrierPost(this->getterObj, &this->getterObj);
+        GetterSetterWriteBarrierPost(compartment(), &this->getterObj);
     }
     if ((base.flags & HAS_SETTER_OBJECT) && base.rawSetter) {
-        JSObject::writeBarrierPost(this->setterObj, &this->setterObj);
+        GetterSetterWriteBarrierPost(compartment(), &this->setterObj);
     }
 }
 
@@ -88,15 +102,17 @@ BaseShape::operator=(const BaseShape &other)
     slotSpan_ = other.slotSpan_;
     if (flags & HAS_GETTER_OBJECT) {
         getterObj = other.getterObj;
-        JSObject::writeBarrierPost(getterObj, &getterObj);
+        GetterSetterWriteBarrierPost(compartment(), &getterObj);
     } else {
         rawGetter = other.rawGetter;
+        GetterSetterWriteBarrierPostRemove(compartment(), &getterObj);
     }
     if (flags & HAS_SETTER_OBJECT) {
         setterObj = other.setterObj;
-        JSObject::writeBarrierPost(setterObj, &setterObj);
+        GetterSetterWriteBarrierPost(compartment(), &setterObj);
     } else {
         rawSetter = other.rawSetter;
+        GetterSetterWriteBarrierPostRemove(compartment(), &setterObj);
     }
     return *this;
 }
@@ -122,10 +138,14 @@ StackBaseShape::updateGetterSetter(uint8_t attrs,
                                    StrictPropertyOp rawSetter)
 {
     flags &= ~(BaseShape::HAS_GETTER_OBJECT | BaseShape::HAS_SETTER_OBJECT);
-    if ((attrs & JSPROP_GETTER) && rawGetter)
+    if ((attrs & JSPROP_GETTER) && rawGetter) {
+        JS_ASSERT(!IsPoisonedPtr(rawGetter));
         flags |= BaseShape::HAS_GETTER_OBJECT;
-    if ((attrs & JSPROP_SETTER) && rawSetter)
+    }
+    if ((attrs & JSPROP_SETTER) && rawSetter) {
+        JS_ASSERT(!IsPoisonedPtr(rawSetter));
         flags |= BaseShape::HAS_SETTER_OBJECT;
+    }
 
     this->rawGetter = rawGetter;
     this->rawSetter = rawSetter;
@@ -139,7 +159,7 @@ BaseShape::adoptUnowned(UnownedBaseShape *other)
      * unowned base shape of a new last property.
      */
     JS_ASSERT(isOwned());
-    DebugOnly<uint32_t> flags = getObjectFlags();
+    mozilla::DebugOnly<uint32_t> flags = getObjectFlags();
     JS_ASSERT((flags & other->getObjectFlags()) == flags);
 
     uint32_t span = slotSpan();
@@ -246,6 +266,7 @@ Shape::matchesParamsAfterId(BaseShape *base, uint32_t aslot,
 inline bool
 Shape::getUserId(JSContext *cx, jsid *idp) const
 {
+    AssertCanGC();
     const Shape *self = this;
 #ifdef DEBUG
     {
@@ -259,43 +280,45 @@ Shape::getUserId(JSContext *cx, jsid *idp) const
             return ValueToId(cx, Int32Value(id), idp);
         *idp = INT_TO_JSID(id);
     } else {
-        *idp = propid();
+        *idp = self->propid();
     }
     return true;
 }
 
 inline bool
-Shape::get(JSContext* cx, HandleObject receiver, JSObject* obj, JSObject *pobj, Value* vp) const
+Shape::get(JSContext* cx, HandleObject receiver, JSObject* obj, JSObject *pobj, MutableHandleValue vp)
 {
     JS_ASSERT(!hasDefaultGetter());
 
     if (hasGetterValue()) {
         Value fval = getterValue();
-        return InvokeGetterOrSetter(cx, receiver, fval, 0, 0, vp);
+        return InvokeGetterOrSetter(cx, receiver, fval, 0, 0, vp.address());
     }
 
+    Rooted<Shape *> self(cx, this);
     RootedId id(cx);
-    if (!getUserId(cx, id.address()))
+    if (!self->getUserId(cx, id.address()))
         return false;
 
-    return CallJSPropertyOp(cx, getterOp(), receiver, id, vp);
+    return CallJSPropertyOp(cx, self->getterOp(), receiver, id, vp);
 }
 
 inline bool
-Shape::set(JSContext* cx, HandleObject obj, bool strict, Value* vp) const
+Shape::set(JSContext* cx, HandleObject obj, HandleObject receiver, bool strict, MutableHandleValue vp)
 {
     JS_ASSERT_IF(hasDefaultSetter(), hasGetterValue());
 
     if (attrs & JSPROP_SETTER) {
         Value fval = setterValue();
-        return InvokeGetterOrSetter(cx, obj, fval, 1, vp, vp);
+        return InvokeGetterOrSetter(cx, receiver, fval, 1, vp.address(), vp.address());
     }
 
     if (attrs & JSPROP_GETTER)
         return js_ReportGetterOnlyAssignment(cx);
 
+    Rooted<Shape *> self(cx, this);
     RootedId id(cx);
-    if (!getUserId(cx, id.address()))
+    if (!self->getUserId(cx, id.address()))
         return false;
 
     /*
@@ -304,10 +327,10 @@ Shape::set(JSContext* cx, HandleObject obj, bool strict, Value* vp) const
      */
     if (obj->isWith()) {
         RootedObject nobj(cx, &obj->asWith().object());
-        return CallJSPropertyOpSetter(cx, setterOp(), nobj, id, strict, vp);
+        return CallJSPropertyOpSetter(cx, self->setterOp(), nobj, id, strict, vp);
     }
 
-    return CallJSPropertyOpSetter(cx, setterOp(), obj, id, strict, vp);
+    return CallJSPropertyOpSetter(cx, self->setterOp(), obj, id, strict, vp);
 }
 
 inline void
@@ -377,7 +400,7 @@ EmptyShape::EmptyShape(UnownedBaseShape *base, uint32_t nfixed)
 }
 
 inline void
-Shape::writeBarrierPre(const js::Shape *shape)
+Shape::writeBarrierPre(Shape *shape)
 {
 #ifdef JSGC_INCREMENTAL
     if (!shape)
@@ -393,12 +416,12 @@ Shape::writeBarrierPre(const js::Shape *shape)
 }
 
 inline void
-Shape::writeBarrierPost(const js::Shape *shape, void *addr)
+Shape::writeBarrierPost(Shape *shape, void *addr)
 {
 }
 
 inline void
-Shape::readBarrier(const Shape *shape)
+Shape::readBarrier(Shape *shape)
 {
 #ifdef JSGC_INCREMENTAL
     JSCompartment *comp = shape->compartment();

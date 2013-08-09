@@ -3,10 +3,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH     = ../..
+DEPTH     = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir    = @srcdir@
 VPATH     = @srcdir@
+FAIL_ON_WARNINGS := 1
 
 include $(DEPTH)/config/autoconf.mk
 
@@ -35,6 +36,19 @@ SHARED_LIBRARY_LIBS = \
   ../ipc/$(LIB_PREFIX)neckoipc_s.$(LIB_SUFFIX) \
   $(NULL)
 
+ifdef MOZ_SRTP
+SHARED_LIBRARY_LIBS += \
+  ../srtp/src/$(LIB_PREFIX)nksrtp_s.$(LIB_SUFFIX) \
+  $(NULL)
+endif
+
+ifdef MOZ_SCTP
+SHARED_LIBRARY_LIBS += \
+  ../sctp/src/$(LIB_PREFIX)nksctp_s.$(LIB_SUFFIX) \
+  ../sctp/datachannel/$(LIB_PREFIX)nkdatachan_s.$(LIB_SUFFIX) \
+  $(NULL)
+endif
+
 ifeq ($(OS_ARCH),WINNT)
     SHARED_LIBRARY_LIBS += \
         ../system/win32/$(LIB_PREFIX)neckosystem_s.$(LIB_SUFFIX)
@@ -60,6 +74,11 @@ ifeq (android,$(MOZ_WIDGET_TOOLKIT))
         ../system/android/$(LIB_PREFIX)neckosystem_s.$(LIB_SUFFIX)
 endif
 
+ifdef MOZ_DASH
+    SHARED_LIBRARY_LIBS += \
+        ../dash/mpd/$(LIB_PREFIX)nkdashmpd_s.$(LIB_SUFFIX)
+endif
+
 LOCAL_INCLUDES = \
   -I$(srcdir)/../base/src \
   -I$(srcdir)/../dns \
@@ -69,6 +88,7 @@ LOCAL_INCLUDES = \
   -I$(srcdir)/../mime \
   -I$(srcdir)/../cache \
   -I$(srcdir)/../protocol/about \
+  -I../dns \
   $(foreach d,$(filter-out about,$(NECKO_PROTOCOLS)), \
     -I$(srcdir)/../protocol/$(d)) \
   $(NULL)

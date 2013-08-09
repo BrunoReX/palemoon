@@ -8,7 +8,6 @@
 #include "nsIJSContextStack.h"
 #include "nsThreadUtils.h"
 #include "jsapi.h"
-#include "jsgc.h"
 #include "jsfriendapi.h"
 #include "jsdbgapi.h"
 #include "mozilla/ModuleUtils.h"
@@ -37,15 +36,15 @@ nsJSInspector::~nsJSInspector()
 }
 
 NS_IMETHODIMP
-nsJSInspector::EnterNestedEventLoop(PRUint32 *out)
+nsJSInspector::EnterNestedEventLoop(uint32_t *out)
 {
   nsresult rv;
   nsCOMPtr<nsIJSContextStack> stack =
     do_GetService("@mozilla.org/js/xpc/ContextStack;1", &rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  PRUint32 nestLevel = ++mNestedLoopLevel;
-  if (NS_SUCCEEDED(stack->Push(nsnull))) {
+  uint32_t nestLevel = ++mNestedLoopLevel;
+  if (NS_SUCCEEDED(stack->Push(nullptr))) {
     while (NS_SUCCEEDED(rv) && mNestedLoopLevel >= nestLevel) {
       if (!NS_ProcessNextEvent())
         rv = NS_ERROR_UNEXPECTED;
@@ -53,7 +52,7 @@ nsJSInspector::EnterNestedEventLoop(PRUint32 *out)
 
     JSContext *cx;
     stack->Pop(&cx);
-    NS_ASSERTION(cx == nsnull, "JSContextStack mismatch");
+    NS_ASSERTION(cx == nullptr, "JSContextStack mismatch");
   } else {
     rv = NS_ERROR_FAILURE;
   }
@@ -69,7 +68,7 @@ nsJSInspector::EnterNestedEventLoop(PRUint32 *out)
 }
 
 NS_IMETHODIMP
-nsJSInspector::ExitNestedEventLoop(PRUint32 *out)
+nsJSInspector::ExitNestedEventLoop(uint32_t *out)
 {
   if (mNestedLoopLevel > 0) {
     --mNestedLoopLevel;
@@ -83,7 +82,7 @@ nsJSInspector::ExitNestedEventLoop(PRUint32 *out)
 }
 
 NS_IMETHODIMP
-nsJSInspector::GetEventLoopNestLevel(PRUint32 *out)
+nsJSInspector::GetEventLoopNestLevel(uint32_t *out)
 {
   *out = mNestedLoopLevel;
   return NS_OK;

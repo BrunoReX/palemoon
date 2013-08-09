@@ -21,18 +21,28 @@ public:
 
   // nsIScreen interface
 
+  // These simply forward to the device-pixel versions;
+  // implementations where global display pixels may not correspond
+  // to per-screen device pixels must override.
+  NS_IMETHOD GetRectDisplayPix(int32_t *outLeft,  int32_t *outTop,
+                               int32_t *outWidth, int32_t *outHeight);
+  NS_IMETHOD GetAvailRectDisplayPix(int32_t *outLeft,  int32_t *outTop,
+                                    int32_t *outWidth, int32_t *outHeight);
+
   /**
    * Simple management of screen brightness locks. This abstract base class
    * allows all widget implementations to share brightness locking code.
    */
-  NS_IMETHOD LockMinimumBrightness(PRUint32 aBrightness);
-  NS_IMETHOD UnlockMinimumBrightness(PRUint32 aBrightness);
+  NS_IMETHOD LockMinimumBrightness(uint32_t aBrightness);
+  NS_IMETHOD UnlockMinimumBrightness(uint32_t aBrightness);
 
-  NS_IMETHOD GetRotation(PRUint32* aRotation) {
+  NS_IMETHOD GetRotation(uint32_t* aRotation) {
     *aRotation = nsIScreen::ROTATION_0_DEG;
     return NS_OK;
   }
-  NS_IMETHOD SetRotation(PRUint32 aRotation) { return NS_ERROR_NOT_AVAILABLE; }
+  NS_IMETHOD SetRotation(uint32_t aRotation) { return NS_ERROR_NOT_AVAILABLE; }
+
+  NS_IMETHOD GetContentsScaleFactor(double* aContentsScaleFactor);
 
 protected:
   /**
@@ -48,12 +58,12 @@ protected:
    * The default implementation does nothing.
    *
    * @param aBrightness The current brightness level to set. If this is
-   *                    nsIScreen_MOZILLA_2_0_BRANCH::BRIGHTNESS_LEVELS
+   *                    nsIScreen::BRIGHTNESS_LEVELS
    *                    (an impossible value for a brightness level to be),
    *                    then that signifies that there is no current
    *                    minimum brightness level, and the screen can shut off.
    */
-  virtual void ApplyMinimumBrightness(PRUint32 aBrightness) { }
+  virtual void ApplyMinimumBrightness(uint32_t aBrightness) { }
 
 private:
   /**
@@ -62,7 +72,7 @@ private:
    */
   void CheckMinimumBrightness();
 
-  PRUint32 mBrightnessLocks[nsIScreen::BRIGHTNESS_LEVELS];
+  uint32_t mBrightnessLocks[nsIScreen::BRIGHTNESS_LEVELS];
 };
 
 #endif // nsBaseScreen_h

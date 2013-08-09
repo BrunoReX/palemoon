@@ -118,7 +118,7 @@ interface ScheduledGCCallback : nsISupports
 /**
 * interface of Components.utils
 */
-[scriptable, uuid(9e43a260-5db2-11e1-b86c-0800200c9a66)]
+[scriptable, uuid(f9c8e351-8608-42b1-a9a7-df211b1a0a91)]
 interface nsIXPCComponents_Utils : nsISupports
 {
 
@@ -228,6 +228,13 @@ interface nsIXPCComponents_Utils : nsISupports
      * Force an immediate garbage collection cycle.
      */
     void forceGC();
+
+    /*
+     * To be called from JS only.
+     *
+     * Force an immediate cycle collection cycle.
+     */
+    void forceCC();
     
     /*
      * To be called from JS only.
@@ -288,6 +295,22 @@ interface nsIXPCComponents_Utils : nsISupports
     /*
      * To be called from JS only.
      *
+     * Returns an array created in |vobj|'s compartment.
+     */
+    [implicit_jscontext]
+    jsval createArrayIn(in jsval vobj);
+
+    /*
+     * To be called from JS only.
+     *
+     * Returns a date given timestamp |msec| created in |vobj|'s compartment.
+     */
+    [implicit_jscontext]
+    jsval createDateIn(in jsval vobj, in long long msec);
+
+    /*
+     * To be called from JS only.
+     *
      * Ensures that all functions come from vobj's scope (and aren't cross
      * compartment wrappers).
      */
@@ -302,6 +325,34 @@ interface nsIXPCComponents_Utils : nsISupports
      * reading/writing a property).
      */
     bool isDeadWrapper(in jsval obj);
+
+    /*
+     * To be called from JS only. This is for Gecko internal use only, and may
+     * disappear at any moment.
+     *
+     * Forces a recomputation of all wrappers in and out of the compartment
+     * containing |obj|. If |obj| is not an object, all wrappers system-wide
+     * are recomputed.
+     */
+    [implicit_jscontext]
+    void recomputeWrappers([optional] in jsval vobj);
+
+    /*
+     * This seemingly-paradoxical API allows privileged code to explicitly give
+     * unprivileged code a reference to its own Components object (whereas it's
+     * normally hidden away on a scope chain visible only to XBL methods). See
+     * also SpecialPowers.getComponents.
+     */
+    [implicit_jscontext]
+    jsval getComponentsForScope(in jsval vscope);
+
+    /*
+     * Dispatches a runnable to the current/main thread. If |scope| is passed,
+     * the runnable will be dispatch in the compartment of |scope|, which
+     * affects which error reporter gets called.
+     */
+    [implicit_jscontext]
+    void dispatch(in jsval runnable, [optional] in jsval scope);
 
     /*
      * To be called from JS only.
@@ -327,9 +378,6 @@ interface nsIXPCComponents_Utils : nsISupports
     attribute boolean xml;
 
     [implicit_jscontext]
-    attribute boolean relimit;
-
-    [implicit_jscontext]
     attribute boolean methodjit;
 
     [implicit_jscontext]
@@ -337,15 +385,21 @@ interface nsIXPCComponents_Utils : nsISupports
 
     [implicit_jscontext]
     attribute boolean strict_mode;
+    
+    [implicit_jscontext]
+    attribute boolean ion;
 
     [implicit_jscontext]
     void setGCZeal(in long zeal);
+
+    [implicit_jscontext]
+    void nukeSandbox(in jsval obj);
 };
 
 /**
 * interface of JavaScript's 'Components' object
 */
-[scriptable, uuid(4676e9cf-2c07-423b-b161-26bb9d8067d3)]
+[scriptable, uuid(8406dedb-23cc-42db-9f69-1f18785091b5)]
 interface nsIXPCComponents : nsISupports
 {
     readonly attribute nsIXPCComponents_Interfaces      interfaces;

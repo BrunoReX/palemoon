@@ -7,9 +7,14 @@
 #define CreateElementTxn_h__
 
 #include "EditTxn.h"
-#include "nsEditor.h"
-#include "nsIDOMNode.h"
 #include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsIDOMNode.h"
+#include "nsISupportsImpl.h"
+#include "nsString.h"
+#include "nscore.h"
+
+class nsEditor;
 
 /**
  * A transaction that creates a new node in the content tree.
@@ -29,7 +34,7 @@ public:
   NS_IMETHOD Init(nsEditor *aEditor,
                   const nsAString& aTag,
                   nsIDOMNode *aParent,
-                  PRUint32 aOffsetInParent);
+                  uint32_t aOffsetInParent);
 
   CreateElementTxn();
 
@@ -54,7 +59,7 @@ protected:
   nsCOMPtr<nsIDOMNode> mParent;
 
   /** the index in mParent for the new node */
-  PRUint32 mOffsetInParent;
+  uint32_t mOffsetInParent;
 
   /** the new node to insert */
   nsCOMPtr<nsIDOMNode> mNewNode;  

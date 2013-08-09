@@ -66,7 +66,7 @@ typedef enum nsCharType nsCharType;
    *        IBMBIDI_NUMERAL_HINDICONTEXT: convert numbers in Arabic text to Hindi, otherwise to Arabic
    * @return the converted Unichar
    */
-  PRUnichar HandleNumberInChar(PRUnichar aChar, bool aPrevCharArabic, PRUint32 aNumFlag);
+  PRUnichar HandleNumberInChar(PRUnichar aChar, bool aPrevCharArabic, uint32_t aNumFlag);
 
   /**
    * Scan a Unichar string, converting numbers to Arabic or Hindi forms in place
@@ -78,14 +78,14 @@ typedef enum nsCharType nsCharType;
    *        IBMBIDI_NUMERAL_ARABIC:       convert to Arabic forms (Unicode 0030-0039)
    *        IBMBIDI_NUMERAL_HINDICONTEXT: convert numbers in Arabic text to Hindi, otherwise to Arabic
    */
-  nsresult HandleNumbers(PRUnichar* aBuffer, PRUint32 aSize, PRUint32  aNumFlag);
+  nsresult HandleNumbers(PRUnichar* aBuffer, uint32_t aSize, uint32_t  aNumFlag);
 
   /**
    * Give a UTF-32 codepoint
    * return true if the codepoint is a Bidi control character (LRE, RLE, PDF, LRO, RLO, LRM, RLM)
    * return false, otherwise
    */
-  bool IsBidiControl(PRUint32 aChar);
+  bool IsBidiControl(uint32_t aChar);
 
   /**
    * Give an nsString.
@@ -183,7 +183,9 @@ typedef enum nsCharType nsCharType;
  *  U+066C;ARABIC THOUSANDS SEPARATOR
  *  U+06DD;ARABIC END OF AYAH
  */
-#define IS_ARABIC_SEPARATOR(u) ( ( (u) == 0x0600 ) || ( (u) == 0x0601 ) || ( (u) == 0x0602 ) || ( (u) == 0x0603 ) || ( (u) == 0x066A ) || ( (u) == 0x066B ) || ( (u) == 0x066C ) || ( (u) == 0x06DD ) )
+#define IS_ARABIC_SEPARATOR(u) ( ( /*(u) >= 0x0600 &&*/ (u) <= 0x0603 ) || \
+                                 ( (u) >= 0x066A && (u) <= 0x066C ) || \
+                                 ( (u) == 0x06DD ) )
 
 #define IS_BIDI_DIACRITIC(u) ( \
   ( (u) >= 0x0591 && (u) <= 0x05A1) || ( (u) >= 0x05A3 && (u) <= 0x05B9) \
@@ -193,11 +195,14 @@ typedef enum nsCharType nsCharType;
     || ( (u) >= 0x06D7 && (u) <= 0x06E4) || ( (u) == 0x06E7) || ( (u) == 0x06E8) \
     || ( (u) >= 0x06EA && (u) <= 0x06ED) )
 
-#define IS_HEBREW_CHAR(c) (((0x0590 <= (c)) && ((c)<= 0x05FF)) || (((c) >= 0xfb1d) && ((c) <= 0xfb4f)))
-#define IS_ARABIC_CHAR(c) ((0x0600 <= (c)) && ((c)<= 0x06FF))
+#define IS_HEBREW_CHAR(c) (((0x0590 <= (c)) && ((c) <= 0x05FF)) || (((c) >= 0xfb1d) && ((c) <= 0xfb4f)))
+#define IS_ARABIC_CHAR(c) ( (0x0600 <= (c) && (c) <= 0x08FF) &&   \
+                            ( (c) <= 0x06ff ||                    \
+                              ((c) >= 0x0750 && (c) <= 0x077f) || \
+                              (c) >= 0x08a0 ) )
 #define IS_ARABIC_ALPHABETIC(c) (IS_ARABIC_CHAR(c) && \
                                 !(IS_HINDI_DIGIT(c) || IS_FARSI_DIGIT(c) || IS_ARABIC_SEPARATOR(c)))
-#define IS_BIDI_CONTROL_CHAR(c) (((0x202a <= (c)) && ((c)<= 0x202e)) \
+#define IS_BIDI_CONTROL_CHAR(c) (((0x202a <= (c)) && ((c) <= 0x202e)) \
                                 || ((c) == 0x200e) || ((c) == 0x200f))
 
 /**

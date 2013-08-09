@@ -56,6 +56,9 @@ public:
    * Return true if this matrix and |aMatrix| are the same matrix.
    */
   bool operator==(const gfx3DMatrix& aMatrix) const;
+  bool operator!=(const gfx3DMatrix& aMatrix) const;
+
+  bool FuzzyEqual(const gfx3DMatrix& aMatrix) const;
   
   /**
    * Divide all values in the matrix by a scalar value
@@ -89,7 +92,7 @@ public:
    * Since drawing is to a 2d plane, any 3d transform without perspective
    * can be reduced by dropping the z row and column.
    */
-  bool CanDraw2D(gfxMatrix* aMatrix = nsnull) const;
+  bool CanDraw2D(gfxMatrix* aMatrix = nullptr) const;
 
   /**
    * Converts the matrix to one that doesn't modify the z coordinate of points,
@@ -213,13 +216,15 @@ public:
    * a single transformation and post-multiply it onto the current
    * matrix.
    */
-  
+
   /**
    * Add a translation by aPoint after the matrix.
    * This is functionally equivalent to:
    * matrix * gfx3DMatrix::Translation(aPoint)
    */
   void TranslatePost(const gfxPoint3D& aPoint);
+
+  void ScalePost(float aX, float aY, float aZ);
 
   /**
    * Transforms a point according to this matrix.
@@ -317,6 +322,8 @@ public:
   static gfx3DMatrix ScalingMatrix(float aX, float aY, float aZ);
 
   gfxFloat Determinant() const;
+
+  void NudgeToIntegers(void);
 
 private:
 

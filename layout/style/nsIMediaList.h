@@ -16,6 +16,7 @@
 #include "nsTArray.h"
 #include "nsIAtom.h"
 #include "nsCSSValue.h"
+#include "mozilla/Attributes.h"
 
 class nsPresContext;
 class nsCSSStyleSheet;
@@ -142,7 +143,7 @@ private:
   nsTArray<nsMediaExpression> mExpressions;
 };
 
-class nsMediaList : public nsIDOMMediaList {
+class nsMediaList MOZ_FINAL : public nsIDOMMediaList {
 public:
   nsMediaList();
 
@@ -166,8 +167,8 @@ public:
 
   nsresult Clone(nsMediaList** aResult);
 
-  PRInt32 Count() { return mArray.Length(); }
-  nsMediaQuery* MediumAt(PRInt32 aIndex) { return mArray[aIndex]; }
+  int32_t Count() { return mArray.Length(); }
+  nsMediaQuery* MediumAt(int32_t aIndex) { return mArray[aIndex]; }
   void Clear() { mArray.Clear(); }
 
 protected:

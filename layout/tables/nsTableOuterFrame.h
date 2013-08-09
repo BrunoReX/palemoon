@@ -5,6 +5,7 @@
 #ifndef nsTableOuterFrame_h__
 #define nsTableOuterFrame_h__
 
+#include "mozilla/Attributes.h"
 #include "nscore.h"
 #include "nsContainerFrame.h"
 #include "nsBlockFrame.h"
@@ -28,11 +29,11 @@ public:
   virtual nsIFrame* GetParentStyleContextFrame() const;
 
 #ifdef ACCESSIBILITY
-  virtual already_AddRefed<Accessible> CreateAccessible();
+  virtual mozilla::a11y::AccType AccessibleType() MOZ_OVERRIDE;
 #endif
 
-#ifdef NS_DEBUG
-  NS_IMETHOD GetFrameName(nsAString& aResult) const;
+#ifdef DEBUG
+  NS_IMETHOD GetFrameName(nsAString& aResult) const MOZ_OVERRIDE;
 #endif
 
 protected:
@@ -68,32 +69,32 @@ public:
   virtual void DestroyFrom(nsIFrame* aDestructRoot);
 
   NS_IMETHOD SetInitialChildList(ChildListID     aListID,
-                                 nsFrameList&    aChildList);
+                                 nsFrameList&    aChildList) MOZ_OVERRIDE;
  
   virtual const nsFrameList& GetChildList(ChildListID aListID) const;
-  virtual void GetChildLists(nsTArray<ChildList>* aLists) const;
+  virtual void GetChildLists(nsTArray<ChildList>* aLists) const MOZ_OVERRIDE;
 
   NS_IMETHOD AppendFrames(ChildListID     aListID,
-                          nsFrameList&    aFrameList);
+                          nsFrameList&    aFrameList) MOZ_OVERRIDE;
 
   NS_IMETHOD InsertFrames(ChildListID     aListID,
                           nsIFrame*       aPrevFrame,
-                          nsFrameList&    aFrameList);
+                          nsFrameList&    aFrameList) MOZ_OVERRIDE;
 
   NS_IMETHOD RemoveFrame(ChildListID     aListID,
-                         nsIFrame*       aOldFrame);
+                         nsIFrame*       aOldFrame) MOZ_OVERRIDE;
 
   virtual nsIFrame* GetContentInsertionFrame() {
     return GetFirstPrincipalChild()->GetContentInsertionFrame();
   }
 
 #ifdef ACCESSIBILITY
-  virtual already_AddRefed<Accessible> CreateAccessible();
+  virtual mozilla::a11y::AccType AccessibleType() MOZ_OVERRIDE;
 #endif
 
   NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                               const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists);
+                              const nsDisplayListSet& aLists) MOZ_OVERRIDE;
 
   nsresult BuildDisplayListForInnerTable(nsDisplayListBuilder*   aBuilder,
                                          const nsRect&           aDirtyRect,
@@ -101,12 +102,12 @@ public:
 
   virtual nscoord GetBaseline() const;
 
-  virtual nscoord GetMinWidth(nsRenderingContext *aRenderingContext);
-  virtual nscoord GetPrefWidth(nsRenderingContext *aRenderingContext);
+  virtual nscoord GetMinWidth(nsRenderingContext *aRenderingContext) MOZ_OVERRIDE;
+  virtual nscoord GetPrefWidth(nsRenderingContext *aRenderingContext) MOZ_OVERRIDE;
   virtual nsSize ComputeAutoSize(nsRenderingContext *aRenderingContext,
                                  nsSize aCBSize, nscoord aAvailableWidth,
                                  nsSize aMargin, nsSize aBorder,
-                                 nsSize aPadding, bool aShrinkWrap);
+                                 nsSize aPadding, bool aShrinkWrap) MOZ_OVERRIDE;
 
   /** process a reflow command for the table.
     * This involves reflowing the caption and the inner table.
@@ -114,36 +115,36 @@ public:
   NS_IMETHOD Reflow(nsPresContext*          aPresContext,
                     nsHTMLReflowMetrics&     aDesiredSize,
                     const nsHTMLReflowState& aReflowState,
-                    nsReflowStatus&          aStatus);
+                    nsReflowStatus&          aStatus) MOZ_OVERRIDE;
 
   /**
    * Get the "type" of the frame
    *
    * @see nsGkAtoms::tableOuterFrame
    */
-  virtual nsIAtom* GetType() const;
+  virtual nsIAtom* GetType() const MOZ_OVERRIDE;
 
 #ifdef DEBUG
-  NS_IMETHOD GetFrameName(nsAString& aResult) const;
+  NS_IMETHOD GetFrameName(nsAString& aResult) const MOZ_OVERRIDE;
 #endif
 
-  virtual nsIFrame* GetParentStyleContextFrame() const;
+  virtual nsIFrame* GetParentStyleContextFrame() const MOZ_OVERRIDE;
 
   /*---------------- nsITableLayout methods ------------------------*/
 
   /** @see nsITableFrame::GetCellDataAt */
-  NS_IMETHOD GetCellDataAt(PRInt32 aRowIndex, PRInt32 aColIndex, 
+  NS_IMETHOD GetCellDataAt(int32_t aRowIndex, int32_t aColIndex, 
                            nsIDOMElement* &aCell,   //out params
-                           PRInt32& aStartRowIndex, PRInt32& aStartColIndex, 
-                           PRInt32& aRowSpan, PRInt32& aColSpan,
-                           PRInt32& aActualRowSpan, PRInt32& aActualColSpan,
+                           int32_t& aStartRowIndex, int32_t& aStartColIndex, 
+                           int32_t& aRowSpan, int32_t& aColSpan,
+                           int32_t& aActualRowSpan, int32_t& aActualColSpan,
                            bool& aIsSelected);
 
   /** @see nsITableFrame::GetTableSize */
-  NS_IMETHOD GetTableSize(PRInt32& aRowCount, PRInt32& aColCount);
+  NS_IMETHOD GetTableSize(int32_t& aRowCount, int32_t& aColCount) MOZ_OVERRIDE;
 
-  NS_IMETHOD GetIndexByRowAndColumn(PRInt32 aRow, PRInt32 aColumn, PRInt32 *aIndex);
-  NS_IMETHOD GetRowAndColumnByIndex(PRInt32 aIndex, PRInt32 *aRow, PRInt32 *aColumn);
+  NS_IMETHOD GetIndexByRowAndColumn(int32_t aRow, int32_t aColumn, int32_t *aIndex) MOZ_OVERRIDE;
+  NS_IMETHOD GetRowAndColumnByIndex(int32_t aIndex, int32_t *aRow, int32_t *aColumn) MOZ_OVERRIDE;
 
 protected:
 
@@ -157,25 +158,25 @@ protected:
   /** Always returns 0, since the outer table frame has no border of its own
     * The inner table frame can answer this question in a meaningful way.
     * @see nsContainerFrame::GetSkipSides */
-  virtual PRIntn GetSkipSides() const;
+  virtual int GetSkipSides() const;
 
-  PRUint8 GetCaptionSide(); // NS_STYLE_CAPTION_SIDE_* or NO_SIDE
+  uint8_t GetCaptionSide(); // NS_STYLE_CAPTION_SIDE_* or NO_SIDE
 
   bool HasSideCaption() {
-    PRUint8 captionSide = GetCaptionSide();
+    uint8_t captionSide = GetCaptionSide();
     return captionSide == NS_STYLE_CAPTION_SIDE_LEFT ||
            captionSide == NS_STYLE_CAPTION_SIDE_RIGHT;
   }
   
-  PRUint8 GetCaptionVerticalAlign();
+  uint8_t GetCaptionVerticalAlign();
 
-  void SetDesiredSize(PRUint8         aCaptionSide,
+  void SetDesiredSize(uint8_t         aCaptionSide,
                       const nsMargin& aInnerMargin,
                       const nsMargin& aCaptionMargin,
                       nscoord&        aWidth,
                       nscoord&        aHeight);
 
-  nsresult   GetCaptionOrigin(PRUint32         aCaptionSide,
+  nsresult   GetCaptionOrigin(uint32_t         aCaptionSide,
                               const nsSize&    aContainBlockSize,
                               const nsSize&    aInnerSize, 
                               const nsMargin&  aInnerMargin,
@@ -183,7 +184,7 @@ protected:
                               nsMargin&        aCaptionMargin,
                               nsPoint&         aOrigin);
 
-  nsresult   GetInnerOrigin(PRUint32         aCaptionSide,
+  nsresult   GetInnerOrigin(uint32_t         aCaptionSide,
                             const nsSize&    aContainBlockSize,
                             const nsSize&    aCaptionSize, 
                             const nsMargin&  aCaptionMargin,
@@ -205,7 +206,7 @@ protected:
                               nsReflowStatus&          aStatus);
 
   // Set the reflow metrics
-  void UpdateReflowMetrics(PRUint8              aCaptionSide,
+  void UpdateReflowMetrics(uint8_t              aCaptionSide,
                            nsHTMLReflowMetrics& aMet,
                            const nsMargin&      aInnerMargin,
                            const nsMargin&      aCaptionMargin);
@@ -226,7 +227,7 @@ private:
   nsFrameList   mCaptionFrames;
 };
 
-inline PRIntn nsTableOuterFrame::GetSkipSides() const
+inline int nsTableOuterFrame::GetSkipSides() const
 { return 0; }
 
 #endif

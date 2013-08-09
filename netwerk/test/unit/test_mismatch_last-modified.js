@@ -1,6 +1,11 @@
-do_load_httpd_js();
-var httpserver = new nsHttpServer();
-var cacheService;
+const Cc = Components.classes;
+const Ci = Components.interfaces;
+const Cu = Components.utils;
+const Cr = Components.results;
+
+Cu.import("resource://testing-common/httpd.js");
+var httpserver = new HttpServer();
+
 var ios;
 
 // Test the handling of a cache revalidation with mismatching last-modified
@@ -103,12 +108,10 @@ var listener_1 = {
 
 function run_test() {
     do_get_profile();
-    cacheService = Cc["@mozilla.org/network/cache-service;1"].
-        getService(Ci.nsICacheService);
     ios = Cc["@mozilla.org/network/io-service;1"]
             .getService(Ci.nsIIOService);
 
-    cacheService.evictEntries(Ci.nsICache.STORE_ANYWHERE);
+    evict_cache_entries();
 
     httpserver.registerPathHandler("/test1", handler);
     httpserver.start(4444);

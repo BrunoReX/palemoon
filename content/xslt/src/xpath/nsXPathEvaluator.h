@@ -14,12 +14,13 @@
 #include "txResultRecycler.h"
 #include "nsAgg.h"
 #include "nsTArray.h"
+#include "mozilla/Attributes.h"
 
 /**
  * A class for evaluating an XPath expression string
  */
-class nsXPathEvaluator : public nsIDOMXPathEvaluator,
-                         public nsIXPathEvaluatorInternal
+class nsXPathEvaluator MOZ_FINAL : public nsIDOMXPathEvaluator,
+                                   public nsIXPathEvaluatorInternal
 {
 public:
     nsXPathEvaluator(nsISupports *aOuter);
@@ -44,7 +45,7 @@ public:
 private:
     nsresult CreateExpression(const nsAString & aExpression,
                               nsIDOMXPathNSResolver *aResolver,
-                              nsTArray<PRInt32> *aNamespaceIDs,
+                              nsTArray<int32_t> *aNamespaceIDs,
                               nsTArray<nsCString> *aContractIDs,
                               nsCOMArray<nsISupports> *aState,
                               nsIDOMXPathExpression **aResult);

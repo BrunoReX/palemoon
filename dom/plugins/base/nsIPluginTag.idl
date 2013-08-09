@@ -4,8 +4,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISupports.idl"
+interface nsIDOMMimeType;
 
-[scriptable, uuid(88e03453-a773-47ba-9d84-14f672ac99e2)]
+[scriptable, uuid(b8bf0a06-e395-4f44-af39-a51d3e7ef4b9)]
 interface nsIPluginTag : nsISupports
 {
   readonly attribute AUTF8String description;
@@ -15,4 +16,7 @@ interface nsIPluginTag : nsISupports
   readonly attribute AUTF8String name;
            attribute boolean  disabled;
            attribute boolean  blocklisted;
+           attribute boolean  clicktoplay;
+  void getMimeTypes([optional] out unsigned long aCount,
+                    [retval, array, size_is(aCount)] out nsIDOMMimeType aResults);
 };

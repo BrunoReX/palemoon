@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-let EXPORTED_SYMBOLS = ["SessionStore"];
+this.EXPORTED_SYMBOLS = ["SessionStore"];
 
 const Cu = Components.utils;
 const Cc = Components.classes;
@@ -36,8 +36,10 @@ const OBSERVING = [
   "quit-application-requested", "quit-application-granted",
   "browser-lastwindow-close-granted",
   "quit-application", "browser:purge-session-history",
-  "private-browsing", "browser:purge-domain-data",
-  "private-browsing-change-granted"
+  "browser:purge-domain-data"
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
+  ,"private-browsing", "private-browsing-change-granted"
+#endif
 ];
 
 // XUL Window properties to (re)store
@@ -79,6 +81,8 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/debug.js");
 Cu.import("resource:///modules/TelemetryTimestamps.jsm");
 Cu.import("resource://gre/modules/TelemetryStopwatch.jsm");
+Cu.import("resource://gre/modules/osfile.jsm");
+Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
   "resource://gre/modules/NetUtil.jsm");
@@ -99,7 +103,7 @@ function debug(aMsg) {
   Services.console.logStringMessage(aMsg);
 }
 
-let SessionStore = {
+this.SessionStore = {
   get canRestoreLastSession() {
     return SessionStoreInternal.canRestoreLastSession;
   },
@@ -259,8 +263,10 @@ let SessionStoreInternal = {
   // counts the number of crashes since the last clean start
   _recentCrashes: 0,
 
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
   // whether we are in private browsing mode
   _inPrivateBrowsing: false,
+#endif
 
   // whether the last window was closed and should be restored
   _restoreLastWindow: false,
@@ -299,8 +305,12 @@ let SessionStoreInternal = {
 
   /* ........ Public Getters .............. */
   get canRestoreLastSession() {
+#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
+    return this._lastSessionState;
+#else
     // Always disallow restoring the previous session when in private browsing
     return this._lastSessionState && !this._inPrivateBrowsing;
+#endif
   },
 
   set canRestoreLastSession(val) {
@@ -321,9 +331,11 @@ let SessionStoreInternal = {
       Services.obs.addObserver(this, aTopic, true);
     }, this);
 
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
     var pbs = Cc["@mozilla.org/privatebrowsing;1"].
               getService(Ci.nsIPrivateBrowsingService);
     this._inPrivateBrowsing = pbs.privateBrowsingEnabled;
+#endif
 
     this._initPrefs();
 
@@ -441,7 +453,16 @@ let SessionStoreInternal = {
         this._prefBranch.getBoolPref("sessionstore.resume_session_once"))
       this._prefBranch.setBoolPref("sessionstore.resume_session_once", false);
 
+    this._initEncoding();
+
     this._initialized = true;
+  },
+
+  _initEncoding : function ssi_initEncoding() {
+    // The (UTF-8) encoder used to write to files.
+    XPCOMUtils.defineLazyGetter(this, "_writeFileEncoder", function () {
+      return new TextEncoder();
+    });
   },
 
   _initPrefs : function() {
@@ -571,12 +592,14 @@ let SessionStoreInternal = {
       case "timer-callback": // timer call back for delayed saving
         this.onTimerCallback();
         break;
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
       case "private-browsing":
         this.onPrivateBrowsing(aSubject, aData);
         break;
       case "private-browsing-change-granted":
         this.onPrivateBrowsingChangeGranted(aData);
         break;
+#endif
     }
   },
 
@@ -658,6 +681,10 @@ let SessionStoreInternal = {
     // and create its internal data object
     this._internalWindows[aWindow.__SSi] = { hosts: {} }
 
+#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
+    if (PrivateBrowsingUtils.isWindowPrivate(aWindow))
+      this._windows[aWindow.__SSi].isPrivate = true;
+#endif
     if (!this._isWindowLoaded(aWindow))
       this._windows[aWindow.__SSi]._restoring = true;
     if (!aWindow.toolbar.visible)
@@ -696,8 +723,12 @@ let SessionStoreInternal = {
       this.restoreWindow(aWindow, this._statesToRestore[aWindow.__SS_restoreID], true, followUp);
     }
     else if (this._restoreLastWindow && aWindow.toolbar.visible &&
-             this._closedWindows.length &&
-             !this._inPrivateBrowsing) {
+             this._closedWindows.length
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
+             && !this._inPrivateBrowsing
+#endif
+             ) {
+      
       // default to the most-recently closed window
       // don't use popup windows
       let closedWindowState = null;
@@ -1125,6 +1156,7 @@ let SessionStoreInternal = {
     this.saveState();
   },
 
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
   /**
    * On private browsing
    * @param aSubject
@@ -1181,6 +1213,7 @@ let SessionStoreInternal = {
 
     this._clearRestoringWindows();
   },
+#endif
 
   /**
    * set up listeners for a new tab
@@ -1703,13 +1736,6 @@ let SessionStoreInternal = {
     let lastWindow = this._getMostRecentBrowserWindow();
     let canUseLastWindow = lastWindow &&
                            !lastWindow.__SS_lastSessionWindowID;
-    let lastSessionFocusedWindow = null;
-    this.windowToFocus = lastWindow;
-
-    // move the last focused window to the start of the array so that we
-    // minimize window movement (see bug 669272)
-    lastSessionState.windows.unshift(
-      lastSessionState.windows.splice(lastSessionState.selectedWindow - 1, 1)[0]);
 
     // Restore into windows or open new ones as needed.
     for (let i = 0; i < lastSessionState.windows.length; i++) {
@@ -1747,18 +1773,9 @@ let SessionStoreInternal = {
         //        weirdness but we will still merge other extData.
         //        Bug 588217 should make this go away by merging the group data.
         this.restoreWindow(windowToUse, { windows: [winState] }, canOverwriteTabs, true);
-        if (i == 0)
-          lastSessionFocusedWindow = windowToUse;
-
-        // if we overwrote the tabs for our last focused window, we should
-        // give focus to the window that had it in the previous session
-        if (canOverwriteTabs && windowToUse == lastWindow)
-          this.windowToFocus = lastSessionFocusedWindow;
       }
       else {
-        let win = this._openWindowWithState({ windows: [winState] });
-        if (i == 0)
-          lastSessionFocusedWindow = win;
+        this._openWindowWithState({ windows: [winState] });
       }
     }
 
@@ -2681,17 +2698,17 @@ let SessionStoreInternal = {
     var winData;
     if (!root.selectedWindow || root.selectedWindow > root.windows.length) {
       root.selectedWindow = 0;
-    } else {
-      // put the selected window at the beginning of the array to ensure that
-      // it gets restored first
-      root.windows.unshift(root.windows.splice(root.selectedWindow - 1, 1)[0]);
     }
+
     // open new windows for all further window entries of a multi-window session
     // (unless they don't contain any tab data)
     for (var w = 1; w < root.windows.length; w++) {
       winData = root.windows[w];
       if (winData && winData.tabs && winData.tabs[0]) {
         var window = this._openWindowWithState({ windows: [winData] });
+        if (w == root.selectedWindow - 1) {
+          this.windowToFocus = window;
+        }
       }
     }
     winData = root.windows[0];
@@ -2824,6 +2841,86 @@ let SessionStoreInternal = {
   },
 
   /**
+   * Sets the tabs restoring order with the following priority:
+   * Selected tab, pinned tabs, optimized visible tabs, other visible tabs and
+   * hidden tabs.
+   * @param aTabBrowser
+   *        Tab browser object
+   * @param aTabs
+   *        Array of tab references
+   * @param aTabData
+   *        Array of tab data
+   * @param aSelectedTab
+   *        Index of selected tab (1 is first tab, 0 no selected tab)
+   */
+  _setTabsRestoringOrder : function ssi__setTabsRestoringOrder(
+    aTabBrowser, aTabs, aTabData, aSelectedTab) {
+
+    // Store the selected tab. Need to substract one to get the index in aTabs.
+    let selectedTab;
+    if (aSelectedTab > 0 && aTabs[aSelectedTab - 1]) {
+      selectedTab = aTabs[aSelectedTab - 1];
+    }
+
+    // Store the pinned tabs and hidden tabs.
+    let pinnedTabs = [];
+    let pinnedTabsData = [];
+    let hiddenTabs = [];
+    let hiddenTabsData = [];
+    if (aTabs.length > 1) {
+      for (let t = aTabs.length - 1; t >= 0; t--) {
+        if (aTabData[t].pinned) {
+          pinnedTabs.unshift(aTabs.splice(t, 1)[0]);
+          pinnedTabsData.unshift(aTabData.splice(t, 1)[0]);
+        } else if (aTabData[t].hidden) {
+          hiddenTabs.unshift(aTabs.splice(t, 1)[0]);
+          hiddenTabsData.unshift(aTabData.splice(t, 1)[0]);
+        }
+      }
+    }
+
+    // Optimize the visible tabs only if there is a selected tab.
+    if (selectedTab) {
+      let selectedTabIndex = aTabs.indexOf(selectedTab);
+      if (selectedTabIndex > 0) {
+        let scrollSize = aTabBrowser.tabContainer.mTabstrip.scrollClientSize;
+        let tabWidth = aTabs[0].getBoundingClientRect().width;
+        let maxVisibleTabs = Math.ceil(scrollSize / tabWidth);
+        if (maxVisibleTabs < aTabs.length) {
+          let firstVisibleTab = 0;
+          let nonVisibleTabsCount = aTabs.length - maxVisibleTabs;
+          if (nonVisibleTabsCount >= selectedTabIndex) {
+            // Selected tab is leftmost since we scroll to it when possible.
+            firstVisibleTab = selectedTabIndex;
+          } else {
+            // Selected tab is rightmost or no more room to scroll right.
+            firstVisibleTab = nonVisibleTabsCount;
+          }
+          aTabs = aTabs.splice(firstVisibleTab, maxVisibleTabs).concat(aTabs);
+          aTabData =
+            aTabData.splice(firstVisibleTab, maxVisibleTabs).concat(aTabData);
+        }
+      }
+    }
+
+    // Merge the stored tabs in order.
+    aTabs = pinnedTabs.concat(aTabs, hiddenTabs);
+    aTabData = pinnedTabsData.concat(aTabData, hiddenTabsData);
+
+    // Load the selected tab to the first position and select it.
+    if (selectedTab) {
+      let selectedTabIndex = aTabs.indexOf(selectedTab);
+      if (selectedTabIndex > 0) {
+        aTabs = aTabs.splice(selectedTabIndex, 1).concat(aTabs);
+        aTabData = aTabData.splice(selectedTabIndex, 1).concat(aTabData);
+      }
+      aTabBrowser.selectedTab = selectedTab;
+    }
+
+    return [aTabs, aTabData];
+  },
+  
+  /**
    * Manage history restoration for a window
    * @param aWindow
    *        Window to restore the tabs into
@@ -2875,48 +2972,9 @@ let SessionStoreInternal = {
       return;
     }
 
-    let unhiddenTabs = aTabData.filter(function (aData) !aData.hidden).length;
-
-    if (unhiddenTabs && aTabs.length > 1) {
-      // Load hidden tabs last, by pushing them to the end of the list
-      for (let t = 0, tabsToReorder = aTabs.length - unhiddenTabs; tabsToReorder > 0; ) {
-        if (aTabData[t].hidden) {
-          aTabs = aTabs.concat(aTabs.splice(t, 1));
-          aTabData = aTabData.concat(aTabData.splice(t, 1));
-          if (aSelectTab > t)
-            --aSelectTab;
-          --tabsToReorder;
-          continue;
-        }
-        ++t;
-      }
-
-      // Determine if we can optimize & load visible tabs first
-      let maxVisibleTabs = Math.ceil(tabbrowser.tabContainer.mTabstrip.scrollClientSize /
-                                     aTabs[unhiddenTabs - 1].getBoundingClientRect().width);
-
-      // make sure we restore visible tabs first, if there are enough
-      if (maxVisibleTabs < unhiddenTabs && aSelectTab > 1) {
-        let firstVisibleTab = 0;
-        if (unhiddenTabs - maxVisibleTabs > aSelectTab) {
-          // aSelectTab is leftmost since we scroll to it when possible
-          firstVisibleTab = aSelectTab - 1;
-        } else {
-          // aSelectTab is rightmost or no more room to scroll right
-          firstVisibleTab = unhiddenTabs - maxVisibleTabs;
-        }
-        aTabs = aTabs.splice(firstVisibleTab, maxVisibleTabs).concat(aTabs);
-        aTabData = aTabData.splice(firstVisibleTab, maxVisibleTabs).concat(aTabData);
-        aSelectTab -= firstVisibleTab;
-      }
-    }
-
-    // make sure to restore the selected tab first (if any)
-    if (aSelectTab-- && aTabs[aSelectTab]) {
-      aTabs.unshift(aTabs.splice(aSelectTab, 1)[0]);
-      aTabData.unshift(aTabData.splice(aSelectTab, 1)[0]);
-      tabbrowser.selectedTab = aTabs[0];
-    }
+    // Sets the tabs restoring order. 
+    [aTabs, aTabData] =
+      this._setTabsRestoringOrder(tabbrowser, aTabs, aTabData, aSelectTab);
 
     // Prepare the tabs so that they can be properly restored. We'll pin/unpin
     // and show/hide tabs as necessary. We'll also set the labels, user typed
@@ -2994,7 +3052,7 @@ let SessionStoreInternal = {
   },
 
   /**
-   * Restory history for a window
+   * Restore history for a window
    * @param aWindow
    *        Window reference
    * @param aTabs
@@ -3536,8 +3594,8 @@ let SessionStoreInternal = {
     }
     // since resizing/moving a window brings it to the foreground,
     // we might want to re-focus the last focused window
-    if (this.windowToFocus && this.windowToFocus.content) {
-      this.windowToFocus.content.focus();
+    if (this.windowToFocus) {
+      this.windowToFocus.focus();
     }
   },
 
@@ -3575,7 +3633,11 @@ let SessionStoreInternal = {
       this._dirtyWindows[aWindow.__SSi] = true;
     }
 
-    if (!this._saveTimer && !this._inPrivateBrowsing) {
+    if (!this._saveTimer
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
+        && !this._inPrivateBrowsing
+#endif
+       ) {
       // interval until the next disk operation is allowed
       var minimalDelay = this._lastSaveTime + this._interval - Date.now();
 
@@ -3597,9 +3659,11 @@ let SessionStoreInternal = {
    *        Bool update all windows
    */
   saveState: function ssi_saveState(aUpdateAll) {
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
     // if we're in private browsing mode, do nothing
     if (this._inPrivateBrowsing)
       return;
+#endif
 
     // If crash recovery is disabled, we only want to resume with pinned tabs
     // if we crash.
@@ -3608,8 +3672,24 @@ let SessionStoreInternal = {
     TelemetryStopwatch.start("FX_SESSION_RESTORE_COLLECT_DATA_MS");
 
     var oState = this._getCurrentState(aUpdateAll, pinnedOnly);
-    if (!oState)
+    if (!oState) {
+      TelemetryStopwatch.cancel("FX_SESSION_RESTORE_COLLECT_DATA_MS");
       return;
+    }
+
+#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
+    // Forget about private windows.
+    for (let i = oState.windows.length - 1; i >= 0; i--) {
+      if (oState.windows[i].isPrivate) {
+        oState.windows.splice(i, 1);
+      }
+    }
+    for (let i = oState._closedWindows.length - 1; i >= 0; i--) {
+      if (oState._closedWindows[i].isPrivate) {
+        oState._closedWindows.splice(i, 1);
+      }
+    }
+#endif
 
 #ifndef XP_MACOSX
     // We want to restore closed windows that are marked with _shouldRestore.
@@ -3775,6 +3855,12 @@ let SessionStoreInternal = {
         features += "," + aFeature + "=" + winState[aFeature];
     });
 
+#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
+    if (winState.isPrivate) {
+      features += ",private";
+    }
+#endif
+
     var window =
       Services.ww.openWindow(null, this._prefBranch.getCharPref("chromeURL"),
                              "_blank", features, argString);
@@ -3824,16 +3910,17 @@ let SessionStoreInternal = {
                      aState.windows.every(function (win)
                        win.tabs.every(function (tab) tab.pinned));
 
+    let hasFirstArgument = aWindow.arguments && aWindow.arguments[0];
     if (!pinnedOnly) {
       let defaultArgs = Cc["@mozilla.org/browser/clh;1"].
                         getService(Ci.nsIBrowserHandler).defaultArgs;
       if (aWindow.arguments &&
           aWindow.arguments[0] &&
           aWindow.arguments[0] == defaultArgs)
-        aWindow.arguments[0] = null;
+        hasFirstArgument = false;
     }
 
-    return !aWindow.arguments || !aWindow.arguments[0];
+    return !hasFirstArgument;
   },
 
   /**
@@ -4382,28 +4469,23 @@ let SessionStoreInternal = {
    *        String data
    */
   _writeFile: function ssi_writeFile(aFile, aData) {
-    TelemetryStopwatch.start("FX_SESSION_RESTORE_WRITE_FILE_MS");
-    // Initialize the file output stream.
-    var ostream = Cc["@mozilla.org/network/safe-file-output-stream;1"].
-                  createInstance(Ci.nsIFileOutputStream);
-    ostream.init(aFile, 0x02 | 0x08 | 0x20, 0600, ostream.DEFER_OPEN);
+    let refObj = {};
+    TelemetryStopwatch.start("FX_SESSION_RESTORE_WRITE_FILE_MS", refObj);
+    let path = aFile.path;
+    let encoded = this._writeFileEncoder.encode(aData);
+    let promise = OS.File.writeAtomic(path, encoded, {tmpPath: path + ".tmp"});
 
-    // Obtain a converter to convert our data to a UTF-8 encoded input stream.
-    var converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"].
-                    createInstance(Ci.nsIScriptableUnicodeConverter);
-    converter.charset = "UTF-8";
-
-    // Asynchronously copy the data to the file.
-    var istream = converter.convertToInputStream(aData);
-    var self = this;
-    NetUtil.asyncCopy(istream, ostream, function(rc) {
-      if (Components.isSuccessCode(rc)) {
-        TelemetryStopwatch.finish("FX_SESSION_RESTORE_WRITE_FILE_MS");
+    promise.then(
+      function onSuccess() {
+        TelemetryStopwatch.finish("FX_SESSION_RESTORE_WRITE_FILE_MS", refObj);
         Services.obs.notifyObservers(null,
-                                     "sessionstore-state-write-complete",
-                                     "");
-      }
-    });
+                                      "sessionstore-state-write-complete",
+                                      "");
+      },
+      function onFailure(reason) {
+        TelemetryStopwatch.cancel("FX_SESSION_RESTORE_WRITE_FILE_MS", refObj);
+        Components.reportError("ssi_writeFile failure " + reason);
+      });
   }
 };
 

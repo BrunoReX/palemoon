@@ -10,7 +10,6 @@
 /*
  * JS symbol tables.
  */
-#include <new>
 #ifdef DEBUG
 #include <stdio.h>
 #endif
@@ -130,7 +129,7 @@ struct ShapeTable {
     }
 
     ~ShapeTable() {
-        js::UnwantedForeground::free_(entries);
+        js_free(entries);
     }
 
     /* By definition, hashShift = HASH_BITS - log2(capacity). */
@@ -254,19 +253,17 @@ class BaseShape : public js::gc::Cell
          * last property changes.
          */
 
-        EXTENSIBLE_PARENTS =    0x8,
-        DELEGATE           =   0x10,
-        SYSTEM             =   0x20,
-        NOT_EXTENSIBLE     =   0x40,
-        INDEXED            =   0x80,
-        BOUND_FUNCTION     =  0x100,
-        VAROBJ             =  0x200,
-        WATCHED            =  0x400,
-        ITERATED_SINGLETON =  0x800,
-        NEW_TYPE_UNKNOWN   = 0x1000,
-        UNCACHEABLE_PROTO  = 0x2000,
+        DELEGATE           =    0x8,
+        NOT_EXTENSIBLE     =   0x10,
+        INDEXED            =   0x20,
+        BOUND_FUNCTION     =   0x40,
+        VAROBJ             =   0x80,
+        WATCHED            =  0x100,
+        ITERATED_SINGLETON =  0x200,
+        NEW_TYPE_UNKNOWN   =  0x400,
+        UNCACHEABLE_PROTO  =  0x800,
 
-        OBJECT_FLAG_MASK   = 0x3ff8
+        OBJECT_FLAG_MASK   = 0x1ff8
     };
 
   private:
@@ -459,7 +456,7 @@ struct Shape : public js::gc::Cell
 
   protected:
     HeapPtrBaseShape    base_;
-    HeapId              propid_;
+    EncapsulatedId      propid_;
 
     JS_ENUM_HEADER(SlotInfo, uint32_t)
     {
@@ -506,9 +503,7 @@ struct Shape : public js::gc::Cell
     static inline Shape *search(JSContext *cx, Shape *start, jsid id,
                                 Shape ***pspp, bool adding = false);
 
-#ifdef DEBUG
-    static inline Shape *searchNoAllocation(JSContext *cx, Shape *start, jsid id);
-#endif
+    static inline Shape *searchNoAllocation(Shape *start, jsid id);
 
     inline void removeFromDictionary(JSObject *obj);
     inline void insertIntoDictionary(HeapPtrShape *dictp);
@@ -520,7 +515,7 @@ struct Shape : public js::gc::Cell
 
     /* Replace the base shape of the last shape in a non-dictionary lineage with base. */
     static Shape *replaceLastProperty(JSContext *cx, const StackBaseShape &base,
-                                      JSObject *proto, Shape *shape);
+                                      TaggedProto proto, Shape *shape);
 
     bool hashify(JSContext *cx);
     void handoffTableTo(Shape *newShape);
@@ -559,16 +554,16 @@ struct Shape : public js::gc::Cell
     class Range {
       protected:
         friend struct Shape;
-        const Shape *cursor;
+        Shape *cursor;
 
       public:
-        Range(const Shape *shape) : cursor(shape) { }
+        Range(Shape *shape) : cursor(shape) { }
 
         bool empty() const {
-            return cursor->isEmptyShape();
+            return !cursor || cursor->isEmptyShape();
         }
 
-        const Shape &front() const {
+        Shape &front() const {
             JS_ASSERT(!empty());
             return *cursor;
         }
@@ -598,15 +593,15 @@ struct Shape : public js::gc::Cell
         };
     };
 
-    Range all() const {
+    Range all() {
         return Range(this);
     }
 
     Class *getObjectClass() const { return base()->clasp; }
     JSObject *getObjectParent() const { return base()->parent; }
 
-    static Shape *setObjectParent(JSContext *cx, JSObject *obj, JSObject *proto, Shape *last);
-    static Shape *setObjectFlag(JSContext *cx, BaseShape::Flag flag, JSObject *proto, Shape *last);
+    static Shape *setObjectParent(JSContext *cx, JSObject *obj, TaggedProto proto, Shape *last);
+    static Shape *setObjectFlag(JSContext *cx, BaseShape::Flag flag, TaggedProto proto, Shape *last);
 
     uint32_t getObjectFlags() const { return base()->getObjectFlags(); }
     bool hasObjectFlag(BaseShape::Flag flag) const {
@@ -700,8 +695,8 @@ struct Shape : public js::gc::Cell
                                      uint32_t aslot, unsigned aattrs, unsigned aflags,
                                      int ashortid) const;
 
-    bool get(JSContext* cx, HandleObject receiver, JSObject *obj, JSObject *pobj, js::Value* vp) const;
-    bool set(JSContext* cx, HandleObject obj, bool strict, js::Value* vp) const;
+    bool get(JSContext* cx, HandleObject receiver, JSObject *obj, JSObject *pobj, MutableHandleValue vp);
+    bool set(JSContext* cx, HandleObject obj, HandleObject receiver, bool strict, MutableHandleValue vp);
 
     BaseShape *base() const { return base_; }
 
@@ -747,12 +742,12 @@ struct Shape : public js::gc::Cell
         slotInfo = slotInfo | ((count + 1) << LINEAR_SEARCHES_SHIFT);
     }
 
-    const HeapId &propid() const {
+    const EncapsulatedId &propid() const {
         JS_ASSERT(!isEmptyShape());
         JS_ASSERT(!JSID_IS_VOID(propid_));
         return propid_;
     }
-    HeapId &propidRef() { JS_ASSERT(!JSID_IS_VOID(propid_)); return propid_; }
+    EncapsulatedId &propidRef() { JS_ASSERT(!JSID_IS_VOID(propid_)); return propid_; }
 
     int16_t shortid() const { JS_ASSERT(hasShortID()); return maybeShortid(); }
     int16_t maybeShortid() const { return shortid_; }
@@ -780,6 +775,16 @@ struct Shape : public js::gc::Cell
         return (attrs & (JSPROP_SETTER | JSPROP_GETTER)) != 0;
     }
 
+    PropDesc::Writability writability() const {
+        return (attrs & JSPROP_READONLY) ? PropDesc::NonWritable : PropDesc::Writable;
+    }
+    PropDesc::Enumerability enumerability() const {
+        return (attrs & JSPROP_ENUMERATE) ? PropDesc::Enumerable : PropDesc::NonEnumerable;
+    }
+    PropDesc::Configurability configurability() const {
+        return (attrs & JSPROP_PERMANENT) ? PropDesc::NonConfigurable : PropDesc::Configurable;
+    }
+
     /*
      * For ES5 compatibility, we allow properties with PropertyOp-flavored
      * setters to be shadowed when set. The "own" property thereby created in
@@ -791,66 +796,20 @@ struct Shape : public js::gc::Cell
         return hasSlot() || (attrs & JSPROP_SHADOWABLE);
     }
 
-    /*
-     * Sometimes call objects and run-time block objects need unique shapes, but
-     * sometimes they don't.
-     *
-     * Property cache entries only record the shapes of the first and last
-     * objects along the search path, so if the search traverses more than those
-     * two objects, then those first and last shapes must determine the shapes
-     * of everything else along the path. The js_PurgeScopeChain stuff takes
-     * care of making this work, but that suffices only because we require that
-     * start points with the same shape have the same successor object in the
-     * search path --- a cache hit means the starting shapes were equal, which
-     * means the search path tail (everything but the first object in the path)
-     * was shared, which in turn means the effects of a purge will be seen by
-     * all affected starting search points.
-     *
-     * For call and run-time block objects, the "successor object" is the scope
-     * chain parent. Unlike prototype objects (of which there are usually few),
-     * scope chain parents are created frequently (possibly on every call), so
-     * following the shape-implies-parent rule blindly would lead one to give
-     * every call and block its own shape.
-     *
-     * In many cases, however, it's not actually necessary to give call and
-     * block objects their own shapes, and we can do better. If the code will
-     * always be used with the same global object, and none of the enclosing
-     * call objects could have bindings added to them at runtime (by direct eval
-     * calls or function statements), then we can use a fixed set of shapes for
-     * those objects. You could think of the shapes in the functions' bindings
-     * and compile-time blocks as uniquely identifying the global object(s) at
-     * the end of the scope chain.
-     *
-     * (In fact, some JSScripts we do use against multiple global objects (see
-     * bug 618497), and using the fixed shapes isn't sound there.)
-     *
-     * In deciding whether a call or block has any extensible parents, we
-     * actually only need to consider enclosing calls; blocks are never
-     * extensible, and the other sorts of objects that appear in the scope
-     * chains ('with' blocks, say) are not CacheableNonGlobalScopes.
-     *
-     * If the hasExtensibleParents flag is set for the last property in a
-     * script's bindings or a compiler-generated Block object, then created
-     * Call or Block objects need unique shapes. If the flag is clear, then we
-     * can use lastBinding's shape.
-     */
-    static Shape *setExtensibleParents(JSContext *cx, Shape *shape);
-    bool extensibleParents() const { return !!(base()->flags & BaseShape::EXTENSIBLE_PARENTS); }
-
-    uint32_t entryCount() const {
+    uint32_t entryCount() {
         if (hasTable())
             return table().entryCount;
 
-        const js::Shape *shape = this;
+        js::Shape *shape = this;
         uint32_t count = 0;
         for (js::Shape::Range r = shape->all(); !r.empty(); r.popFront())
             ++count;
         return count;
     }
 
-    bool isBigEnoughForAShapeTable() const {
+    bool isBigEnoughForAShapeTable() {
         JS_ASSERT(!hasTable());
-        const js::Shape *shape = this;
+        js::Shape *shape = this;
         uint32_t count = 0;
         for (js::Shape::Range r = shape->all(); !r.empty(); r.popFront()) {
             ++count;
@@ -868,19 +827,24 @@ struct Shape : public js::gc::Cell
     void finalize(FreeOp *fop);
     void removeChild(js::Shape *child);
 
-    static inline void writeBarrierPre(const Shape *shape);
-    static inline void writeBarrierPost(const Shape *shape, void *addr);
+    static inline void writeBarrierPre(Shape *shape);
+    static inline void writeBarrierPost(Shape *shape, void *addr);
 
     /*
      * All weak references need a read barrier for incremental GC. This getter
      * method implements the read barrier. It's used to obtain initial shapes
      * from the compartment.
      */
-    static inline void readBarrier(const Shape *shape);
+    static inline void readBarrier(Shape *shape);
 
     static inline ThingRootKind rootKind() { return THING_ROOT_SHAPE; }
 
     inline void markChildren(JSTracer *trc);
+
+    inline Shape *search(JSContext *cx, jsid id) {
+        Shape **_;
+        return search(cx, this, id, &_);
+    }
 
     /* For JIT usage */
     static inline size_t offsetOfBase() { return offsetof(Shape, base_); }
@@ -903,7 +867,10 @@ class AutoRooterGetterSetter
             : AutoGCRooter(cx, GETTERSETTER), attrs(attrs),
               pgetter(pgetter_), psetter(psetter_),
               getterRoot(cx, pgetter_), setterRoot(cx, psetter_)
-        {}
+        {
+            JS_ASSERT_IF(attrs & JSPROP_GETTER, !IsPoisonedPtr(*pgetter));
+            JS_ASSERT_IF(attrs & JSPROP_SETTER, !IsPoisonedPtr(*psetter));
+        }
 
         friend void AutoGCRooter::trace(JSTracer *trc);
 
@@ -927,7 +894,7 @@ class AutoRooterGetterSetter
     friend void AutoGCRooter::trace(JSTracer *trc);
 
   private:
-    Maybe<Inner> inner;
+    mozilla::Maybe<Inner> inner;
     JS_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
@@ -939,7 +906,7 @@ struct EmptyShape : public js::Shape
      * Lookup an initial shape matching the given parameters, creating an empty
      * shape if none was found.
      */
-    static Shape *getInitialShape(JSContext *cx, Class *clasp, JSObject *proto,
+    static Shape *getInitialShape(JSContext *cx, Class *clasp, TaggedProto proto,
                                   JSObject *parent, gc::AllocKind kind, uint32_t objectFlags = 0);
 
     /*
@@ -967,16 +934,16 @@ struct InitialShapeEntry
      * Matching prototype for the entry. The shape of an object determines its
      * prototype, but the prototype cannot be determined from the shape itself.
      */
-    JSObject *proto;
+    TaggedProto proto;
 
     /* State used to determine a match on an initial shape. */
     struct Lookup {
         Class *clasp;
-        JSObject *proto;
+        TaggedProto proto;
         JSObject *parent;
         uint32_t nfixed;
         uint32_t baseFlags;
-        Lookup(Class *clasp, JSObject *proto, JSObject *parent, uint32_t nfixed,
+        Lookup(Class *clasp, TaggedProto proto, JSObject *parent, uint32_t nfixed,
                uint32_t baseFlags)
             : clasp(clasp), proto(proto), parent(parent),
               nfixed(nfixed), baseFlags(baseFlags)
@@ -984,7 +951,7 @@ struct InitialShapeEntry
     };
 
     inline InitialShapeEntry();
-    inline InitialShapeEntry(const ReadBarriered<Shape> &shape, JSObject *proto);
+    inline InitialShapeEntry(const ReadBarriered<Shape> &shape, TaggedProto proto);
 
     inline Lookup getLookup();
 
@@ -1089,6 +1056,15 @@ namespace js {
 inline Shape *
 Shape::search(JSContext *cx, Shape *start, jsid id, Shape ***pspp, bool adding)
 {
+    AssertCanGC();
+#ifdef DEBUG
+    {
+        SkipRoot skip0(cx, &start);
+        SkipRoot skip1(cx, &id);
+        MaybeCheckStackRoots(cx);
+    }
+#endif
+
     if (start->inDictionary()) {
         *pspp = start->table().search(id, adding);
         return SHAPE_FETCH(*pspp);
@@ -1105,8 +1081,8 @@ Shape::search(JSContext *cx, Shape *start, jsid id, Shape ***pspp, bool adding)
         if (start->isBigEnoughForAShapeTable()) {
             RootedShape startRoot(cx, start);
             RootedId idRoot(cx, id);
-            if (start->hashify(cx)) {
-                Shape **spp = start->table().search(id, adding);
+            if (startRoot->hashify(cx)) {
+                Shape **spp = startRoot->table().search(idRoot, adding);
                 return SHAPE_FETCH(spp);
             }
             start = startRoot;
@@ -1129,9 +1105,8 @@ Shape::search(JSContext *cx, Shape *start, jsid id, Shape ***pspp, bool adding)
     return NULL;
 }
 
-#ifdef DEBUG
 /* static */ inline Shape *
-Shape::searchNoAllocation(JSContext *cx, Shape *start, jsid id)
+Shape::searchNoAllocation(Shape *start, jsid id)
 {
     if (start->hasTable()) {
         Shape **spp = start->table().search(id, false);
@@ -1145,7 +1120,12 @@ Shape::searchNoAllocation(JSContext *cx, Shape *start, jsid id)
 
     return NULL;
 }
-#endif /* DEBUG */
+
+void
+MarkNonNativePropertyFound(HandleObject obj, MutableHandleShape propp);
+
+template<> struct RootKind<Shape *> : SpecificRootKind<Shape *, THING_ROOT_SHAPE> {};
+template<> struct RootKind<BaseShape *> : SpecificRootKind<BaseShape *, THING_ROOT_BASE_SHAPE> {};
 
 } // namespace js
 
@@ -1155,8 +1135,8 @@ Shape::searchNoAllocation(JSContext *cx, Shape *start, jsid id)
 #endif
 
 namespace JS {
-    template<> class AnchorPermitted<js::Shape *> { };
-    template<> class AnchorPermitted<const js::Shape *> { };
+template<> class AnchorPermitted<js::Shape *> { };
+template<> class AnchorPermitted<const js::Shape *> { };
 }
 
 #endif /* jsscope_h___ */

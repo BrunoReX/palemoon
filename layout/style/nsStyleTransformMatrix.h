@@ -30,6 +30,21 @@ namespace nsStyleTransformMatrix {
    */
   nsCSSKeyword TransformFunctionOf(const nsCSSValue::Array* aData);
 
+  float ProcessTranslatePart(const nsCSSValue& aValue,
+                             nsStyleContext* aContext,
+                             nsPresContext* aPresContext,
+                             bool& aCanStoreInRuleTree,
+                             nscoord aSize,
+                             float aAppUnitsPerMatrixUnit);
+
+  void
+  ProcessInterpolateMatrix(gfx3DMatrix& aMatrix,
+                            const nsCSSValue::Array* aData,
+                            nsStyleContext* aContext,
+                            nsPresContext* aPresContext,
+                            bool& aCanStoreInRuleTree,
+                            nsRect& aBounds, float aAppUnitsPerMatrixUnit);
+
   /**
    * Given an nsCSSValueList containing -moz-transform functions,
    * returns a matrix containing the value of those functions.

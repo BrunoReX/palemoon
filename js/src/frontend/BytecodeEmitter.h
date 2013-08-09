@@ -20,27 +20,20 @@
 
 #include "frontend/Parser.h"
 #include "frontend/ParseMaps.h"
-#include "frontend/TreeContext.h"
+#include "frontend/SharedContext.h"
 
 #include "vm/ScopeObject.h"
 
 namespace js {
+namespace frontend {
 
-/*
- * To reuse space in StmtInfo, rename breaks and continues for use during
- * try/catch/finally code generation and backpatching. To match most common
- * use cases, the macro argument is a struct, not a struct pointer. Only a
- * loop, switch, or label statement info record can have breaks and continues,
- * and only a for loop has an update backpatch chain, so it's safe to overlay
- * these for the "trying" StmtTypes.
- */
-#define CATCHNOTE(stmt)  ((stmt).update)
-#define GOSUBS(stmt)     ((stmt).breaks)
-#define GUARDJUMP(stmt)  ((stmt).continues)
+struct CGTryNoteList {
+    Vector<JSTryNote> list;
+    CGTryNoteList(JSContext *cx) : list(cx) {}
 
-struct TryNode {
-    JSTryNote       note;
-    TryNode       *prev;
+    bool append(JSTryNoteKind kind, unsigned stackDepth, size_t start, size_t end);
+    size_t length() const { return list.length(); }
+    void finish(TryNoteArray *array);
 };
 
 struct CGObjectList {
@@ -49,32 +42,31 @@ struct CGObjectList {
 
     CGObjectList() : length(0), lastbox(NULL) {}
 
-    unsigned index(ObjectBox *objbox);
+    unsigned add(ObjectBox *objbox);
+    unsigned indexOf(JSObject *obj);
     void finish(ObjectArray *array);
 };
 
-class GCConstList {
+class CGConstList {
     Vector<Value> list;
   public:
-    GCConstList(JSContext *cx) : list(cx) {}
+    CGConstList(JSContext *cx) : list(cx) {}
     bool append(Value v) { JS_ASSERT_IF(v.isString(), v.toString()->isAtom()); return list.append(v); }
     size_t length() const { return list.length(); }
     void finish(ConstArray *array);
 };
 
-struct GlobalScope {
-    GlobalScope(JSContext *cx, JSObject *globalObj)
-      : globalObj(cx, globalObj)
-    { }
-
-    RootedObject globalObj;
-};
+struct StmtInfoBCE;
 
 struct BytecodeEmitter
 {
-    SharedContext   *sc;            /* context shared between parsing and bytecode generation */
+    typedef StmtInfoBCE StmtInfo;
 
-    BytecodeEmitter *parent;        /* enclosing function or global context */
+    SharedContext   *const sc;      /* context shared between parsing and bytecode generation */
+
+    BytecodeEmitter *const parent;  /* enclosing function or global context */
+
+    Rooted<JSScript*> script;       /* the JSScript we're ultimately producing */
 
     struct {
         jsbytecode  *base;          /* base of JS bytecode vector */
@@ -85,52 +77,54 @@ struct BytecodeEmitter
         unsigned    noteLimit;      /* limit number for source notes in notePool */
         ptrdiff_t   lastNoteOffset; /* code offset for last source note */
         unsigned    currentLine;    /* line number for tree-based srcnote gen */
+        unsigned    lastColumn;     /* zero-based column index on currentLine of
+                                       last SRC_COLSPAN-annotated opcode */
     } prolog, main, *current;
 
-    Parser          *parser;        /* the parser */
+    Parser          *const parser;  /* the parser */
+
+    StackFrame      *const callerFrame; /* scripted caller frame for eval and dbgapi */
+
+    StmtInfoBCE     *topStmt;       /* top of statement info stack */
+    StmtInfoBCE     *topScopeStmt;  /* top lexical scope statement */
+    Rooted<StaticBlockObject *> blockChain;
+                                    /* compile time block scope chain */
 
     OwnedAtomIndexMapPtr atomIndices; /* literals indexed for mapping */
-    unsigned        firstLine;      /* first line, for JSScript::NewScriptFromEmitter */
+    unsigned        firstLine;      /* first line, for JSScript::initFromEmitter */
 
     int             stackDepth;     /* current stack depth in script frame */
     unsigned        maxStackDepth;  /* maximum stack depth so far */
 
-    unsigned        ntrynotes;      /* number of allocated so far try notes */
-    TryNode         *lastTryNode;   /* the last allocated try node */
+    CGTryNoteList   tryNoteList;    /* list of emitted try notes */
 
     unsigned        arrayCompDepth; /* stack depth of array in comprehension */
 
     unsigned        emitLevel;      /* js::frontend::EmitTree recursion level */
 
-    typedef HashMap<JSAtom *, Value> ConstMap;
-    ConstMap        constMap;       /* compile time constants */
-
-    GCConstList     constList;      /* constants to be included with the script */
+    CGConstList     constList;      /* constants to be included with the script */
 
     CGObjectList    objectList;     /* list of emitted objects */
     CGObjectList    regexpList;     /* list of emitted regexp that will be
                                        cloned during execution */
 
-    GlobalScope     *globalScope;   /* frontend::CompileScript global scope, or null */
-
-    /* Vectors of pn_cookie slot values. */
-    typedef Vector<uint32_t, 8> SlotVector;
-    SlotVector      closedArgs;
-    SlotVector      closedVars;
-
     uint16_t        typesetCount;   /* Number of JOF_TYPESET opcodes generated */
-
-    /* These two should only be true if sc->inFunction() is false. */
-    const bool      noScriptRval:1;     /* The caller is JS_Compile*Script*. */
-    const bool      needScriptGlobal:1; /* API caller does not want result value
-                                           from global script. */
 
     bool            hasSingletons:1;    /* script contains singleton initializer JSOP_OBJECT */
 
-    bool            inForInit:1;        /* emitting init expr of for; exclude 'in' */
+    bool            emittingForInit:1;  /* true while emitting init expr of for; exclude 'in' */
 
-    BytecodeEmitter(Parser *parser, SharedContext *sc, unsigned lineno,
-                    bool noScriptRval, bool needScriptGlobal);
+    const bool      hasGlobalScope:1;   /* frontend::CompileScript's scope chain is the
+                                           global object */
+
+    const bool      selfHostingMode:1;  /* Emit JSOP_CALLINTRINSIC instead of JSOP_NAME
+                                           and assert that JSOP_NAME and JSOP_*GNAME
+                                           don't ever get emitted. See the comment for
+                                           the field |selfHostingMode| in Parser.h for details. */
+
+    BytecodeEmitter(BytecodeEmitter *parent, Parser *parser, SharedContext *sc,
+                    HandleScript script, StackFrame *callerFrame, bool hasGlobalScope,
+                    unsigned lineno, bool selfHostingMode = false);
     bool init();
 
     /*
@@ -141,12 +135,7 @@ struct BytecodeEmitter
      */
     ~BytecodeEmitter();
 
-    JSVersion version() const { return parser->versionWithFlags(); }
-
     bool isAliasedName(ParseNode *pn);
-    bool shouldNoteClosedName(ParseNode *pn);
-    bool noteClosedVar(ParseNode *pn);
-    bool noteClosedArg(ParseNode *pn);
 
     JS_ALWAYS_INLINE
     bool makeAtomIndex(JSAtom *atom, jsatomid *indexp) {
@@ -164,18 +153,11 @@ struct BytecodeEmitter
         return true;
     }
 
-    bool checkSingletonContext() {
-        if (!parser->compileAndGo || sc->inFunction())
-            return false;
-        for (StmtInfo *stmt = sc->topStmt; stmt; stmt = stmt->down) {
-            if (STMT_IS_LOOP(stmt))
-                return false;
-        }
-        hasSingletons = true;
-        return true;
-    }
+    bool checkSingletonContext();
 
     bool needsImplicitThis();
+
+    void tellDebuggerAboutCompiledScript(JSContext *cx);
 
     TokenStream *tokenStream() { return &parser->tokenStream; }
 
@@ -194,11 +176,14 @@ struct BytecodeEmitter
     unsigned noteLimit() const { return current->noteLimit; }
     ptrdiff_t lastNoteOffset() const { return current->lastNoteOffset; }
     unsigned currentLine() const { return current->currentLine; }
+    unsigned lastColumn() const { return current->lastColumn; }
 
     inline ptrdiff_t countFinalSourceNotes();
-};
 
-namespace frontend {
+    bool reportError(ParseNode *pn, unsigned errorNumber, ...);
+    bool reportStrictWarning(ParseNode *pn, unsigned errorNumber, ...);
+    bool reportStrictModeError(ParseNode *pn, unsigned errorNumber, ...);
+};
 
 /*
  * Emit one bytecode.
@@ -225,38 +210,15 @@ ptrdiff_t
 EmitN(JSContext *cx, BytecodeEmitter *bce, JSOp op, size_t extra);
 
 /*
- * Like PopStatementTC(bce), also patch breaks and continues unless the top
- * statement info record represents a try-catch-finally suite. May fail if a
- * jump offset overflows.
- */
-JSBool
-PopStatementBCE(JSContext *cx, BytecodeEmitter *bce);
-
-/*
- * Define and lookup a primitive jsval associated with the const named by atom.
- * DefineCompileTimeConstant analyzes the constant-folded initializer at pn
- * and saves the const's value in bce->constList, if it can be used at compile
- * time. It returns true unless an error occurred.
- *
- * If the initializer's value could not be saved, DefineCompileTimeConstant
- * calls will return the undefined value. DefineCompileTimeConstant tries
- * to find a const value memorized for atom, returning true with *vp set to a
- * value other than undefined if the constant was found, true with *vp set to
- * JSVAL_VOID if not found, and false on error.
- */
-JSBool
-DefineCompileTimeConstant(JSContext *cx, BytecodeEmitter *bce, JSAtom *atom, ParseNode *pn);
-
-/*
  * Emit code into bce for the tree rooted at pn.
  */
-JSBool
+bool
 EmitTree(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn);
 
 /*
  * Emit function code using bce for the tree rooted at body.
  */
-JSBool
+bool
 EmitFunctionScript(JSContext *cx, BytecodeEmitter *bce, ParseNode *body);
 
 } /* namespace frontend */
@@ -275,7 +237,7 @@ EmitFunctionScript(JSContext *cx, BytecodeEmitter *bce, ParseNode *body);
  *              +---------+-----+           +---+-----------+
  *
  * At most one "gettable" note (i.e., a note of type other than SRC_NEWLINE,
- * SRC_SETLINE, and SRC_XDELTA) applies to a given bytecode.
+ * SRC_COLSPAN, SRC_SETLINE, and SRC_XDELTA) applies to a given bytecode.
  *
  * NB: the js_SrcNoteSpec array in BytecodeEmitter.cpp is indexed by this
  * enum, so its initializers need to match the order here.
@@ -336,7 +298,7 @@ enum SrcNoteType {
     SRC_SWITCHBREAK = 18,       /* JSOP_GOTO is a break in a switch */
     SRC_FUNCDEF     = 19,       /* JSOP_NOP for function f() with atomid */
     SRC_CATCH       = 20,       /* catch block has guard */
-                                /* 21 is unused */
+    SRC_COLSPAN     = 21,       /* number of columns this opcode spans */
     SRC_NEWLINE     = 22,       /* bytecode follows a source newline */
     SRC_SETLINE     = 23,       /* a file-absolute source line number note */
     SRC_XDELTA      = 24        /* 24-31 are for extended delta notes */
@@ -372,7 +334,7 @@ enum SrcNoteType {
                                                    ? SRC_XDELTA               \
                                                    : *(sn) >> SN_DELTA_BITS))
 #define SN_SET_TYPE(sn,type)    SN_MAKE_NOTE(sn, type, SN_DELTA(sn))
-#define SN_IS_GETTABLE(sn)      (SN_TYPE(sn) < SRC_NEWLINE)
+#define SN_IS_GETTABLE(sn)      (SN_TYPE(sn) < SRC_COLSPAN)
 
 #define SN_DELTA(sn)            ((ptrdiff_t)(SN_IS_XDELTA(sn)                 \
                                              ? *(sn) & SN_XDELTA_MASK         \
@@ -391,6 +353,19 @@ enum SrcNoteType {
  */
 #define SN_3BYTE_OFFSET_FLAG    0x80
 #define SN_3BYTE_OFFSET_MASK    0x7f
+
+/*
+ * Negative SRC_COLSPAN offsets are rare, but can arise with for(;;) loops and
+ * other constructs that generate code in non-source order. They can also arise
+ * due to failure to update pn->pn_pos.end to be the last child's end -- such
+ * failures are bugs to fix.
+ *
+ * Source note offsets in general must be non-negative and less than 0x800000,
+ * per the above SN_3BYTE_* definitions. To encode negative colspans, we bias
+ * them by the offset domain size and restrict non-negative colspans to less
+ * than half this domain.
+ */
+#define SN_COLSPAN_DOMAIN       ptrdiff_t(SN_3BYTE_OFFSET_FLAG << 16)
 
 #define SN_MAX_OFFSET ((size_t)((ptrdiff_t)SN_3BYTE_OFFSET_FLAG << 16) - 1)
 
@@ -426,13 +401,8 @@ NewSrcNote3(JSContext *cx, BytecodeEmitter *bce, SrcNoteType type, ptrdiff_t off
 jssrcnote *
 AddToSrcNoteDelta(JSContext *cx, BytecodeEmitter *bce, jssrcnote *sn, ptrdiff_t delta);
 
-JSBool
+bool
 FinishTakingSrcNotes(JSContext *cx, BytecodeEmitter *bce, jssrcnote *notes);
-
-void
-FinishTakingTryNotes(BytecodeEmitter *bce, TryNoteArray *array);
-
-} /* namespace frontend */
 
 /*
  * Finish taking source notes in cx's notePool, copying final notes to the new
@@ -488,6 +458,7 @@ inline bool LetDataToGroupAssign(ptrdiff_t w)
     return size_t(w) & 1;
 }
 
+} /* namespace frontend */
 } /* namespace js */
 
 struct JSSrcNoteSpec {

@@ -26,14 +26,25 @@ class MacOSFontEntry : public gfxFontEntry
 public:
     friend class gfxMacPlatformFontList;
 
+    MacOSFontEntry(const nsAString& aPostscriptName, int32_t aWeight,
+                   gfxFontFamily *aFamily, bool aIsStandardFace = false);
+
+    // for use with data fonts
+    MacOSFontEntry(const nsAString& aPostscriptName, CGFontRef aFontRef,
+                   uint16_t aWeight, uint16_t aStretch, uint32_t aItalicStyle,
+                   bool aIsUserFont, bool aIsLocal);
+
     virtual ~MacOSFontEntry() {
         ::CGFontRelease(mFontRef);
     }
 
-    virtual CGFontRef GetFontRef() = 0;
+    virtual CGFontRef GetFontRef();
 
-    virtual nsresult GetFontTable(PRUint32 aTableTag,
-                                  FallibleTArray<PRUint8>& aBuffer) = 0;
+    virtual nsresult GetFontTable(uint32_t aTableTag,
+                                  FallibleTArray<uint8_t>& aBuffer);
+
+    virtual void SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf,
+                                     FontListSizes*    aSizes) const;
 
     nsresult ReadCMAP();
 
@@ -42,12 +53,9 @@ public:
     bool IsCFF();
 
 protected:
-    MacOSFontEntry(const nsAString& aPostscriptName, PRInt32 aWeight,
-                   gfxFontFamily *aFamily, bool aIsStandardFace = false);
-
     virtual gfxFont* CreateFontInstance(const gfxFontStyle *aFontStyle, bool aNeedsBold);
 
-    virtual bool HasFontTable(PRUint32 aTableTag) = 0;
+    virtual bool HasFontTable(uint32_t aTableTag);
 
     CGFontRef mFontRef; // owning reference to the CGFont, released on destruction
 
@@ -57,65 +65,13 @@ protected:
     bool mIsCFFInitialized;
 };
 
-// concrete subclasses of MacOSFontEntry: ATSFontEntry for 10.5, CGFontEntry for 10.6+
-class ATSFontEntry : public MacOSFontEntry
-{
-public:
-    ATSFontEntry(const nsAString& aPostscriptName, PRInt32 aWeight,
-                 gfxFontFamily *aFamily, bool aIsStandardFace = false);
-
-    // for use with data fonts
-    ATSFontEntry(const nsAString& aPostscriptName, ATSFontRef aFontRef,
-                 PRUint16 aWeight, PRUint16 aStretch, PRUint32 aItalicStyle,
-                 gfxUserFontData *aUserFontData, bool aIsLocal);
-
-    ATSFontRef GetATSFontRef();
-
-    virtual CGFontRef GetFontRef();
-
-    virtual nsresult GetFontTable(PRUint32 aTableTag,
-                                  FallibleTArray<PRUint8>& aBuffer);
-
-    virtual void SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf,
-                                     FontListSizes*    aSizes) const;
-
-protected:
-    virtual bool HasFontTable(PRUint32 aTableTag);
-
-    ATSFontRef   mATSFontRef;
-    bool mATSFontRefInitialized;
-};
-
-class CGFontEntry : public MacOSFontEntry
-{
-public:
-    CGFontEntry(const nsAString& aPostscriptName, PRInt32 aWeight,
-                gfxFontFamily *aFamily, bool aIsStandardFace = false);
-
-    // for use with data fonts
-    CGFontEntry(const nsAString& aPostscriptName, CGFontRef aFontRef,
-                PRUint16 aWeight, PRUint16 aStretch, PRUint32 aItalicStyle,
-                bool aIsUserFont, bool aIsLocal);
-
-    virtual CGFontRef GetFontRef();
-
-    virtual nsresult GetFontTable(PRUint32 aTableTag,
-                                  FallibleTArray<PRUint8>& aBuffer);
-
-    virtual void SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf,
-                                     FontListSizes*    aSizes) const;
-
-protected:
-    virtual bool HasFontTable(PRUint32 aTableTag);
-};
-
 class gfxMacPlatformFontList : public gfxPlatformFontList {
 public:
     static gfxMacPlatformFontList* PlatformFontList() {
         return static_cast<gfxMacPlatformFontList*>(sPlatformFontList);
     }
 
-    static PRInt32 AppleWeightToCSSWeight(PRInt32 aAppleWeight);
+    static int32_t AppleWeightToCSSWeight(int32_t aAppleWeight);
 
     virtual gfxFontEntry* GetDefaultFont(const gfxFontStyle* aStyle, bool& aNeedsBold);
 
@@ -125,13 +81,9 @@ public:
                                           const nsAString& aFontName);
     
     virtual gfxFontEntry* MakePlatformFont(const gfxProxyFontEntry *aProxyEntry,
-                                           const PRUint8 *aFontData, PRUint32 aLength);
+                                           const uint8_t *aFontData, uint32_t aLength);
 
     void ClearPrefFonts() { mPrefFonts.Clear(); }
-
-    static bool UseATSFontEntry() {
-        return gfxPlatformMac::GetPlatform()->OSXVersion() < MAC_OS_X_VERSION_10_6_HEX;
-    }
 
 private:
     friend class gfxPlatformMac;
@@ -145,24 +97,18 @@ private:
     // special case font faces treated as font families (set via prefs)
     void InitSingleFaceList();
 
-    gfxFontEntry* MakePlatformFontCG(const gfxProxyFontEntry *aProxyEntry,
-                                     const PRUint8 *aFontData, PRUint32 aLength);
-
-    gfxFontEntry* MakePlatformFontATS(const gfxProxyFontEntry *aProxyEntry,
-                                      const PRUint8 *aFontData, PRUint32 aLength);
-
     static void ATSNotification(ATSFontNotificationInfoRef aInfo, void* aUserArg);
 
     // search fonts system-wide for a given character, null otherwise
-    virtual gfxFontEntry* GlobalFontFallback(const PRUint32 aCh,
-                                             PRInt32 aRunScript,
+    virtual gfxFontEntry* GlobalFontFallback(const uint32_t aCh,
+                                             int32_t aRunScript,
                                              const gfxFontStyle* aMatchStyle,
-                                             PRUint32& aCmapCount);
+                                             uint32_t& aCmapCount);
 
     virtual bool UsesSystemFallback() { return true; }
 
     // keep track of ATS generation to prevent unneeded updates when loading downloaded fonts
-    PRUint32 mATSGeneration;
+    uint32_t mATSGeneration;
 
     enum {
         kATSGenerationInitial = -1

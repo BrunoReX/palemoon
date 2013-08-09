@@ -25,6 +25,7 @@
 #include "nsIURI.h"
 #include "nsTHashtable.h"
 #include "nsHashKeys.h"
+#include "mozilla/LinkedList.h"
 
 class nsHtml5Parser;
 class nsHtml5TreeBuilder;
@@ -42,7 +43,8 @@ enum eHtml5FlushState {
 
 class nsHtml5TreeOpExecutor : public nsContentSink,
                               public nsIContentSink,
-                              public nsAHtml5TreeOpSink
+                              public nsAHtml5TreeOpSink,
+                              public mozilla::LinkedListElement<nsHtml5TreeOpExecutor>
 {
   friend class nsHtml5FlushLoopGuard;
 
@@ -54,11 +56,11 @@ class nsHtml5TreeOpExecutor : public nsContentSink,
   private:
     static bool        sExternalViewSource;
 #ifdef DEBUG_NS_HTML5_TREE_OP_EXECUTOR_FLUSH
-    static PRUint32    sAppendBatchMaxSize;
-    static PRUint32    sAppendBatchSlotsExamined;
-    static PRUint32    sAppendBatchExaminations;
-    static PRUint32    sLongestTimeOffTheEventLoop;
-    static PRUint32    sTimesFlushLoopInterrupted;
+    static uint32_t    sAppendBatchMaxSize;
+    static uint32_t    sAppendBatchSlotsExamined;
+    static uint32_t    sAppendBatchExaminations;
+    static uint32_t    sLongestTimeOffTheEventLoop;
+    static uint32_t    sTimesFlushLoopInterrupted;
 #endif
 
     /**
@@ -200,30 +202,15 @@ class nsHtml5TreeOpExecutor : public nsContentSink,
     
     // Not from interface
 
-    void SetDocumentCharsetAndSource(nsACString& aCharset, PRInt32 aCharsetSource);
+    void SetDocumentCharsetAndSource(nsACString& aCharset, int32_t aCharsetSource);
 
     void SetStreamParser(nsHtml5StreamParser* aStreamParser) {
       mStreamParser = aStreamParser;
     }
     
-    void InitializeDocWriteParserState(nsAHtml5TreeBuilderState* aState, PRInt32 aLine);
+    void InitializeDocWriteParserState(nsAHtml5TreeBuilderState* aState, int32_t aLine);
 
     bool IsScriptEnabled();
-
-    /**
-     * Enables the fragment mode.
-     *
-     * @param aPreventScriptExecution if true, scripts are prevented from
-     * executing; don't set to false when parsing a fragment directly into
-     * a document--only when parsing to an actual DOM fragment
-     */
-    void EnableFragmentMode(bool aPreventScriptExecution) {
-      mPreventScriptExecution = aPreventScriptExecution;
-    }
-    
-    void PreventScriptExecution() {
-      mPreventScriptExecution = true;
-    }
 
     bool BelongsToStringParser() {
       return mRunsToCompletion;
@@ -342,12 +329,12 @@ class nsHtml5TreeOpExecutor : public nsContentSink,
     void Start();
 
     void NeedsCharsetSwitchTo(const char* aEncoding,
-                              PRInt32 aSource,
-                              PRUint32 aLineNumber);
+                              int32_t aSource,
+                              uint32_t aLineNumber);
 
     void MaybeComplainAboutCharset(const char* aMsgId,
                                    bool aError,
-                                   PRUint32 aLineNumber);
+                                   uint32_t aLineNumber);
 
     void ComplainAboutBogusProtocolCharset(nsIDocument* aDoc);
 
@@ -408,7 +395,8 @@ class nsHtml5TreeOpExecutor : public nsContentSink,
                        const nsAString& aType,
                        const nsAString& aCrossOrigin);
 
-    void PreloadStyle(const nsAString& aURL, const nsAString& aCharset);
+    void PreloadStyle(const nsAString& aURL, const nsAString& aCharset,
+		      const nsAString& aCrossOrigin);
 
     void PreloadImage(const nsAString& aURL, const nsAString& aCrossOrigin);
 

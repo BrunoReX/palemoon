@@ -8,8 +8,8 @@ the MFBT source directory)
 endif
 
 CPPSRCS += \
-  Assertions.cpp \
   HashFunctions.cpp \
+  SHA1.cpp \
   $(NULL)
 
 # Imported double-conversion sources.

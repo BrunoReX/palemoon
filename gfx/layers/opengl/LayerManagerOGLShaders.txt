@@ -136,7 +136,11 @@ $VERTEX_MASK_STUFF<mask>$
 @define FRAGMENT_SHADER_HEADER
 /* Fragment Shader */
 #ifdef GL_ES
+#ifdef MEDIUMP_SHADER
+precision mediump float;
+#else
 precision lowp float;
+#endif
 #endif
 @end
 
@@ -176,12 +180,12 @@ uniform sampler2D uMaskTexture;
 @end
 
 @define FRAGMENT_CALC_MASK<Mask>
-  float mask = texture2D(uMaskTexture, vMaskCoord).a;
+  float mask = texture2D(uMaskTexture, vMaskCoord).r;
 @end
 
 @define FRAGMENT_CALC_MASK<Mask3D>
   vec2 maskCoords = vMaskCoord.xy / vMaskCoord.z;
-  float mask = texture2D(uMaskTexture, maskCoords).a;
+  float mask = texture2D(uMaskTexture, maskCoords).r;
 @end
 
 // Solid color rendering.
@@ -213,8 +217,11 @@ $FRAGMENT_CALC_MASK<mask>$
 
 // Single texture in RGBA format for use with GL_TEXTURE_EXTERNAL_OES
 @shader sRGBATextureLayerExternal<mask:,Mask,Mask3D>FS
-$LAYER_FRAGMENT<mask>$
 #extension GL_OES_EGL_image_external : require
+
+#define MEDIUMP_SHADER 1
+$LAYER_FRAGMENT<mask>$
+
 uniform samplerExternalOES uTexture;
 uniform mat4 uTextureTransform;
 
@@ -249,6 +256,25 @@ void main()
 }
 #endif
 @end
+
+// Single texture in RGBA format, but uses external image.  External
+// image is an EGLImage which have internal formats not otherwise
+// supported by OpenGL ES. It is up to the implementation exactly what
+// formats are accepted. It is specified in the OES_EGL_image_external
+// extension.
+@shader sRGBAExternalTextureLayer<mask:,Mask,Mask3D>FS
+#extension GL_OES_EGL_image_external : require
+
+$LAYER_FRAGMENT<mask>$
+uniform samplerExternalOES uTexture;
+
+void main()
+{
+$FRAGMENT_CALC_MASK<mask>$
+  gl_FragColor = texture2D(uTexture, vTexCoord) * uLayerOpacity * mask;
+}
+@end
+
 
 // Single texture in BGRA format (via swizzle)
 @shader sBGRATextureLayer<mask:,Mask>FS

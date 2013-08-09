@@ -15,7 +15,6 @@
 #include "nsDirectoryServiceUtils.h"
 #include "nsIClassInfo.h"
 #include "nsIFile.h"
-#include "nsILocalFile.h"
 #include "nsIMemoryReporter.h"
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
@@ -32,7 +31,6 @@
 #include "nsZipArchive.h"
 #include "mozilla/Omnijar.h"
 #include "prenv.h"
-#include "mozilla/FunctionTimer.h"
 #include "mozilla/Telemetry.h"
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
@@ -53,7 +51,7 @@
 namespace mozilla {
 namespace scache {
 
-static PRInt64
+static int64_t
 GetStartupCacheMappingSize()
 {
     mozilla::scache::StartupCache* sc = mozilla::scache::StartupCache::GetSingleton();
@@ -70,7 +68,7 @@ NS_MEMORY_REPORTER_IMPLEMENT(StartupCacheMapping,
 
 NS_MEMORY_REPORTER_MALLOC_SIZEOF_FUN(StartupCacheDataMallocSizeOf, "startup-cache/data")
 
-static PRInt64
+static int64_t
 GetStartupCacheDataSize()
 {
     mozilla::scache::StartupCache* sc = mozilla::scache::StartupCache::GetSingleton();
@@ -90,8 +88,14 @@ static NS_DEFINE_CID(kZipReaderCID, NS_ZIPREADER_CID);
 StartupCache*
 StartupCache::GetSingleton() 
 {
-  if (!gStartupCache)
+  if (!gStartupCache) {
+    if (XRE_GetProcessType() != GeckoProcessType_Default) {
+      NS_WARNING("Startup cache is only available in the chrome process");
+      return nullptr;
+    }
+
     StartupCache::InitSingleton();
+  }
 
   return StartupCache::gStartupCache;
 }
@@ -111,18 +115,19 @@ StartupCache::InitSingleton()
   rv = StartupCache::gStartupCache->Init();
   if (NS_FAILED(rv)) {
     delete StartupCache::gStartupCache;
-    StartupCache::gStartupCache = nsnull;
+    StartupCache::gStartupCache = nullptr;
   }
   return rv;
 }
 
 StartupCache* StartupCache::gStartupCache;
 bool StartupCache::gShutdownInitiated;
+bool StartupCache::gIgnoreDiskCache;
 enum StartupCache::TelemetrifyAge StartupCache::gPostFlushAgeAction = StartupCache::IGNORE_AGE;
 
 StartupCache::StartupCache() 
   : mArchive(NULL), mStartupWriteInitiated(false), mWriteThread(NULL),
-    mMappingMemoryReporter(nsnull), mDataMemoryReporter(nsnull) { }
+    mMappingMemoryReporter(nullptr), mDataMemoryReporter(nullptr) { }
 
 StartupCache::~StartupCache() 
 {
@@ -135,20 +140,16 @@ StartupCache::~StartupCache()
   // or the write thread is still running.
   WaitOnWriteThread();
   WriteToDisk();
-  gStartupCache = nsnull;
+  gStartupCache = nullptr;
   (void)::NS_UnregisterMemoryReporter(mMappingMemoryReporter);
   (void)::NS_UnregisterMemoryReporter(mDataMemoryReporter);
-  mMappingMemoryReporter = nsnull;
-  mDataMemoryReporter = nsnull;
+  mMappingMemoryReporter = nullptr;
+  mDataMemoryReporter = nullptr;
 }
 
 nsresult
 StartupCache::Init() 
 {
-  if (XRE_GetProcessType() != GeckoProcessType_Default) {
-    NS_WARNING("Startup cache is only available in the chrome process");
-    return NS_ERROR_NOT_AVAILABLE;
-  }
   // workaround for bug 653936
   nsCOMPtr<nsIProtocolHandler> jarInitializer(do_GetService(NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX "jar"));
   
@@ -203,12 +204,12 @@ StartupCache::Init()
   rv = mObserverService->AddObserver(mListener, "startupcache-invalidate",
                                      false);
   NS_ENSURE_SUCCESS(rv, rv);
-  
+
   rv = LoadArchive(RECORD_AGE);
   
   // Sometimes we don't have a cache yet, that's ok.
   // If it's corrupted, just remove it and start over.
-  if (NS_FAILED(rv) && rv != NS_ERROR_FILE_NOT_FOUND) {
+  if (gIgnoreDiskCache || (NS_FAILED(rv) && rv != NS_ERROR_FILE_NOT_FOUND)) {
     NS_WARNING("Failed to load startupcache file correctly, removing!");
     InvalidateCache();
   }
@@ -227,6 +228,9 @@ StartupCache::Init()
 nsresult
 StartupCache::LoadArchive(enum TelemetrifyAge flag)
 {
+  if (gIgnoreDiskCache)
+    return NS_ERROR_FAILURE;
+
   bool exists;
   mArchive = NULL;
   nsresult rv = mFile->Exists(&exists);
@@ -251,12 +255,12 @@ StartupCache::LoadArchive(enum TelemetrifyAge flag)
   if (len == sizeof(creationStamp)) {
     memcpy(&creationStamp, data, len);
     PRTime current = PR_Now();
-    PRInt64 diff = current - creationStamp;
+    int64_t diff = current - creationStamp;
 
     // We can't use AccumulateTimeDelta here because we have no way of
     // reifying a TimeStamp from creationStamp.
-    PRInt64 usec_per_hour = PR_USEC_PER_SEC * PRInt64(3600);
-    PRInt64 hour_diff = (diff + usec_per_hour - 1) / usec_per_hour;
+    int64_t usec_per_hour = PR_USEC_PER_SEC * int64_t(3600);
+    int64_t hour_diff = (diff + usec_per_hour - 1) / usec_per_hour;
     mozilla::Telemetry::Accumulate(Telemetry::STARTUP_CACHE_AGE_HOURS,
                                    hour_diff);
   }
@@ -268,7 +272,7 @@ namespace {
 
 nsresult
 GetBufferFromZipArchive(nsZipArchive *zip, bool doCRC, const char* id,
-                        char** outbuf, PRUint32* length)
+                        char** outbuf, uint32_t* length)
 {
   if (!zip)
     return NS_ERROR_NOT_AVAILABLE;
@@ -287,7 +291,7 @@ GetBufferFromZipArchive(nsZipArchive *zip, bool doCRC, const char* id,
 // NOTE: this will not find a new entry until it has been written to disk!
 // Consumer should take ownership of the resulting buffer.
 nsresult
-StartupCache::GetBuffer(const char* id, char** outbuf, PRUint32* length) 
+StartupCache::GetBuffer(const char* id, char** outbuf, uint32_t* length) 
 {
   NS_ASSERTION(NS_IsMainThread(), "Startup cache only available on main thread");
   WaitOnWriteThread();
@@ -320,7 +324,7 @@ StartupCache::GetBuffer(const char* id, char** outbuf, PRUint32* length)
 
 // Makes a copy of the buffer, client retains ownership of inbuf.
 nsresult
-StartupCache::PutBuffer(const char* id, const char* inbuf, PRUint32 len) 
+StartupCache::PutBuffer(const char* id, const char* inbuf, uint32_t len) 
 {
   NS_ASSERTION(NS_IsMainThread(), "Startup cache only available on main thread");
   WaitOnWriteThread();
@@ -337,11 +341,11 @@ StartupCache::PutBuffer(const char* id, const char* inbuf, PRUint32 len)
   
 #ifdef DEBUG
   mTable.Get(idStr, &entry);
-  NS_ASSERTION(entry == nsnull, "Existing entry in StartupCache.");
+  NS_ASSERTION(entry == nullptr, "Existing entry in StartupCache.");
   
   if (mArchive) {
     nsZipItem* zipItem = mArchive->GetItem(id);
-    NS_ASSERTION(zipItem == nsnull, "Existing entry in disk StartupCache.");
+    NS_ASSERTION(zipItem == nullptr, "Existing entry in disk StartupCache.");
   }
 #endif
   
@@ -416,7 +420,7 @@ StartupCache::WriteToDisk()
   nsresult rv;
   mStartupWriteInitiated = true;
 
-  if (mTable.Count() == 0)
+  if (!mTable.IsInitialized() || mTable.Count() == 0)
     return;
 
   nsCOMPtr<nsIZipWriter> zipW = do_CreateInstance("@mozilla.org/zipwriter;1");
@@ -458,6 +462,9 @@ StartupCache::WriteToDisk()
   mArchive = NULL;
   zipW->Close();
 
+  // We succesfully wrote the archive to disk; mark the disk file as trusted
+  gIgnoreDiskCache = false;
+
   // Our reader's view of the archive is outdated now, reload it.
   LoadArchive(gPostFlushAgeAction);
   
@@ -470,8 +477,23 @@ StartupCache::InvalidateCache()
   WaitOnWriteThread();
   mTable.Clear();
   mArchive = NULL;
-  mFile->Remove(false);
+  nsresult rv = mFile->Remove(false);
+  if (NS_FAILED(rv) && rv != NS_ERROR_FILE_TARGET_DOES_NOT_EXIST &&
+      rv != NS_ERROR_FILE_NOT_FOUND) {
+    gIgnoreDiskCache = true;
+    mozilla::Telemetry::Accumulate(Telemetry::STARTUP_CACHE_INVALID, true);
+    return;
+  }
+  gIgnoreDiskCache = false;
   LoadArchive(gPostFlushAgeAction);
+}
+
+void
+StartupCache::IgnoreDiskCache()
+{
+  gIgnoreDiskCache = true;
+  if (gStartupCache)
+    gStartupCache->InvalidateCache();
 }
 
 /*
@@ -486,7 +508,6 @@ StartupCache::WaitOnWriteThread()
   if (!mWriteThread || mWriteThread == PR_GetCurrentThread())
     return;
 
-  NS_TIME_FUNCTION_MIN(30);
   PR_JoinThread(mWriteThread);
   mWriteThread = NULL;
 }
@@ -494,6 +515,7 @@ StartupCache::WaitOnWriteThread()
 void 
 StartupCache::ThreadedWrite(void *aClosure)
 {
+  PR_SetCurrentThreadName("StartupCache");
   gStartupCache->WriteToDisk();
 }
 
@@ -590,7 +612,7 @@ StartupCacheDebugOutputStream::CheckReferences(nsISupports* aObject)
     return false;
   }
   
-  PRUint32 flags;
+  uint32_t flags;
   rv = classInfo->GetFlags(&flags);
   NS_ENSURE_SUCCESS(rv, false);
   if (flags & nsIClassInfo::SINGLETON)
@@ -657,19 +679,19 @@ StartupCacheDebugOutputStream::WriteID(nsID const& aID)
 }
 
 char*
-StartupCacheDebugOutputStream::GetBuffer(PRUint32 aLength, PRUint32 aAlignMask)
+StartupCacheDebugOutputStream::GetBuffer(uint32_t aLength, uint32_t aAlignMask)
 {
   return mBinaryStream->GetBuffer(aLength, aAlignMask);
 }
 
 void
-StartupCacheDebugOutputStream::PutBuffer(char* aBuffer, PRUint32 aLength)
+StartupCacheDebugOutputStream::PutBuffer(char* aBuffer, uint32_t aLength)
 {
   mBinaryStream->PutBuffer(aBuffer, aLength);
 }
 #endif //DEBUG
 
-StartupCacheWrapper* StartupCacheWrapper::gStartupCacheWrapper = nsnull;
+StartupCacheWrapper* StartupCacheWrapper::gStartupCacheWrapper = nullptr;
 
 NS_IMPL_THREADSAFE_ISUPPORTS1(StartupCacheWrapper, nsIStartupCache)
 
@@ -683,7 +705,7 @@ StartupCacheWrapper* StartupCacheWrapper::GetSingleton()
 }
 
 nsresult 
-StartupCacheWrapper::GetBuffer(const char* id, char** outbuf, PRUint32* length) 
+StartupCacheWrapper::GetBuffer(const char* id, char** outbuf, uint32_t* length) 
 {
   StartupCache* sc = StartupCache::GetSingleton();
   if (!sc) {
@@ -693,7 +715,7 @@ StartupCacheWrapper::GetBuffer(const char* id, char** outbuf, PRUint32* length)
 }
 
 nsresult
-StartupCacheWrapper::PutBuffer(const char* id, const char* inbuf, PRUint32 length) 
+StartupCacheWrapper::PutBuffer(const char* id, const char* inbuf, uint32_t length) 
 {
   StartupCache* sc = StartupCache::GetSingleton();
   if (!sc) {
@@ -710,6 +732,13 @@ StartupCacheWrapper::InvalidateCache()
     return NS_ERROR_NOT_INITIALIZED;
   }
   sc->InvalidateCache();
+  return NS_OK;
+}
+
+nsresult
+StartupCacheWrapper::IgnoreDiskCache()
+{
+  StartupCache::IgnoreDiskCache();
   return NS_OK;
 }
 

@@ -18,7 +18,7 @@ MetadataHelper::DoAsyncRun(nsISupports* aStream)
   nsRefPtr<AsyncMetadataGetter> getter =
     new AsyncMetadataGetter(aStream, mParams, readWrite);
 
-  nsresult rv = getter->AsyncWork(this, nsnull);
+  nsresult rv = getter->AsyncWork(this, nullptr);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -28,23 +28,13 @@ nsresult
 MetadataHelper::GetSuccessResult(JSContext* aCx,
                                  jsval* aVal)
 {
-  JSObject* obj = JS_NewObject(aCx, nsnull, nsnull, nsnull);
+  JSObject* obj = JS_NewObject(aCx, nullptr, nullptr, nullptr);
   NS_ENSURE_TRUE(obj, NS_ERROR_OUT_OF_MEMORY);
 
   if (mParams->SizeRequested()) {
-    jsval val;
+    jsval val = JS_NumberValue(mParams->Size());
 
-    if (mParams->Size() <= JSVAL_INT_MAX) {
-      val = INT_TO_JSVAL(mParams->Size());
-    }
-    else {
-      double size = mParams->Size();
-      if (!JS_NewNumberValue(aCx, size, &val)) {
-        return NS_ERROR_FAILURE;
-      }
-    }
-
-    if (!JS_DefineProperty(aCx, obj, "size", val, nsnull, nsnull,
+    if (!JS_DefineProperty(aCx, obj, "size", val, nullptr, nullptr,
                            JSPROP_ENUMERATE)) {
       return NS_ERROR_FAILURE;
     }
@@ -56,7 +46,7 @@ MetadataHelper::GetSuccessResult(JSContext* aCx,
     NS_ENSURE_TRUE(date, NS_ERROR_OUT_OF_MEMORY);
 
     if (!JS_DefineProperty(aCx, obj, "lastModified", OBJECT_TO_JSVAL(date),
-                           nsnull, nsnull, JSPROP_ENUMERATE)) {
+                           nullptr, nullptr, JSPROP_ENUMERATE)) {
       return NS_ERROR_FAILURE;
     }
   }
@@ -85,17 +75,17 @@ MetadataHelper::AsyncMetadataGetter::DoStreamWork(nsISupports* aStream)
   nsCOMPtr<nsIFileMetadata> metadata = do_QueryInterface(aStream);
 
   if (mParams->SizeRequested()) {
-    PRInt64 size;
+    int64_t size;
     rv = metadata->GetSize(&size);
     NS_ENSURE_SUCCESS(rv, rv);
 
     NS_ENSURE_TRUE(size >= 0, NS_ERROR_FAILURE);
 
-    mParams->mSize = PRUint64(size);
+    mParams->mSize = uint64_t(size);
   }
 
   if (mParams->LastModifiedRequested()) {
-    PRInt64 lastModified;
+    int64_t lastModified;
     rv = metadata->GetLastModified(&lastModified);
     NS_ENSURE_SUCCESS(rv, rv);
 

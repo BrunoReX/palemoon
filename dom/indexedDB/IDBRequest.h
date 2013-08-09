@@ -20,6 +20,7 @@ class nsPIDOMWindow;
 BEGIN_INDEXEDDB_NAMESPACE
 
 class HelperBase;
+class IDBFactory;
 class IDBTransaction;
 class IndexedDBRequestParentBase;
 
@@ -35,7 +36,8 @@ public:
   static
   already_AddRefed<IDBRequest> Create(nsISupports* aSource,
                                       IDBWrapperCache* aOwnerCache,
-                                      IDBTransaction* aTransaction);
+                                      IDBTransaction* aTransaction,
+                                      JSContext* aCallingCx);
 
   // nsIDOMEventTarget
   virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor);
@@ -78,15 +80,21 @@ public:
     return mActorParent;
   }
 
+  void CaptureCaller(JSContext* aCx);
+
+  void FillScriptErrorEvent(nsScriptErrorEvent* aEvent) const;
+
+  bool IsPending() const
+  {
+    return !mHaveResultOrErrorCode;
+  }
+
 protected:
   IDBRequest();
   ~IDBRequest();
 
   nsCOMPtr<nsISupports> mSource;
   nsRefPtr<IDBTransaction> mTransaction;
-
-  NS_DECL_EVENT_HANDLER(success)
-  NS_DECL_EVENT_HANDLER(error)
 
   jsval mResultVal;
 
@@ -96,6 +104,9 @@ protected:
 
   nsresult mErrorCode;
   bool mHaveResultOrErrorCode;
+
+  nsString mFilename;
+  uint32_t mLineNo;
 };
 
 class IDBOpenDBRequest : public IDBRequest,
@@ -109,28 +120,27 @@ public:
 
   static
   already_AddRefed<IDBOpenDBRequest>
-  Create(nsPIDOMWindow* aOwner,
-         JSObject* aScriptOwner);
-
-  static
-  already_AddRefed<IDBOpenDBRequest>
-  Create(IDBWrapperCache* aOwnerCache)
-  {
-    return Create(aOwnerCache->GetOwner(),
-                  aOwnerCache->GetScriptOwner());
-  }
+  Create(IDBFactory* aFactory,
+         nsPIDOMWindow* aOwner,
+         JSObject* aScriptOwner,
+         JSContext* aCallingCx);
 
   void SetTransaction(IDBTransaction* aTransaction);
 
   // nsIDOMEventTarget
   virtual nsresult PostHandleEvent(nsEventChainPostVisitor& aVisitor);
 
+  IDBFactory*
+  Factory() const
+  {
+    return mFactory;
+  }
+
 protected:
   ~IDBOpenDBRequest();
 
   // Only touched on the main thread.
-  NS_DECL_EVENT_HANDLER(blocked)
-  NS_DECL_EVENT_HANDLER(upgradeneeded)
+  nsRefPtr<IDBFactory> mFactory;
 };
 
 END_INDEXEDDB_NAMESPACE

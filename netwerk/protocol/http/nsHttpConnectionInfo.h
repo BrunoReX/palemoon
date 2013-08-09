@@ -13,6 +13,7 @@
 #include "nsString.h"
 #include "plstr.h"
 #include "nsCRT.h"
+#include "nsIProtocolProxyService.h"
 
 //-----------------------------------------------------------------------------
 // nsHttpConnectionInfo - holds the properties of a connection
@@ -21,16 +22,26 @@
 class nsHttpConnectionInfo
 {
 public:
-    nsHttpConnectionInfo(const nsACString &host, PRInt32 port,
+    nsHttpConnectionInfo(const nsACString &host, int32_t port,
                          nsProxyInfo* proxyInfo,
                          bool usingSSL=false)
         : mRef(0)
         , mProxyInfo(proxyInfo)
         , mUsingSSL(usingSSL)
+        , mUsingConnect(false)
     {
         LOG(("Creating nsHttpConnectionInfo @%x\n", this));
 
-        mUsingHttpProxy = (proxyInfo && !nsCRT::strcmp(proxyInfo->Type(), "http"));
+        mUsingHttpProxy = (proxyInfo && proxyInfo->IsHTTP());
+
+        if (mUsingHttpProxy) {
+            mUsingConnect = mUsingSSL;  // SSL always uses CONNECT
+            uint32_t resolveFlags = 0;
+            if (NS_SUCCEEDED(mProxyInfo->GetResolveFlags(&resolveFlags)) &&
+                resolveFlags & nsIProtocolProxyService::RESOLVE_ALWAYS_TUNNEL) {
+                mUsingConnect = true;
+            }
+        }
 
         SetOriginServer(host, port);
     }
@@ -58,9 +69,9 @@ public:
 
     const nsAFlatCString &HashKey() const { return mHashKey; }
 
-    void SetOriginServer(const nsACString &host, PRInt32 port);
+    void SetOriginServer(const nsACString &host, int32_t port);
 
-    void SetOriginServer(const char *host, PRInt32 port)
+    void SetOriginServer(const char *host, int32_t port)
     {
         SetOriginServer(nsDependentCString(host), port);
     }
@@ -68,9 +79,9 @@ public:
     // OK to treat this as an infalible allocation
     nsHttpConnectionInfo* Clone() const;
 
-    const char *ProxyHost() const { return mProxyInfo ? mProxyInfo->Host().get() : nsnull; }
-    PRInt32     ProxyPort() const { return mProxyInfo ? mProxyInfo->Port() : -1; }
-    const char *ProxyType() const { return mProxyInfo ? mProxyInfo->Type() : nsnull; }
+    const char *ProxyHost() const { return mProxyInfo ? mProxyInfo->Host().get() : nullptr; }
+    int32_t     ProxyPort() const { return mProxyInfo ? mProxyInfo->Port() : -1; }
+    const char *ProxyType() const { return mProxyInfo ? mProxyInfo->Type() : nullptr; }
 
     // Compare this connection info to another...
     // Two connections are 'equal' if they end up talking the same
@@ -85,26 +96,32 @@ public:
     }
 
     const char   *Host() const           { return mHost.get(); }
-    PRInt32       Port() const           { return mPort; }
+    int32_t       Port() const           { return mPort; }
     nsProxyInfo  *ProxyInfo()            { return mProxyInfo; }
     bool          UsingHttpProxy() const { return mUsingHttpProxy; }
     bool          UsingSSL() const       { return mUsingSSL; }
-    PRInt32       DefaultPort() const    { return mUsingSSL ? NS_HTTPS_DEFAULT_PORT : NS_HTTP_DEFAULT_PORT; }
+    bool          UsingConnect() const   { return mUsingConnect; }
+    int32_t       DefaultPort() const    { return mUsingSSL ? NS_HTTPS_DEFAULT_PORT : NS_HTTP_DEFAULT_PORT; }
     void          SetAnonymous(bool anon)         
                                          { mHashKey.SetCharAt(anon ? 'A' : '.', 2); }
-    bool          GetAnonymous()         { return mHashKey.CharAt(2) == 'A'; }
+    bool          GetAnonymous() const   { return mHashKey.CharAt(2) == 'A'; }
+    void          SetPrivate(bool priv)  { mHashKey.SetCharAt(priv ? 'P' : '.', 3); }
+    bool          GetPrivate() const     { return mHashKey.CharAt(3) == 'P'; }
 
-    bool          ShouldForceConnectMethod();
     const nsCString &GetHost() { return mHost; }
+
+    // Returns true for any kind of proxy (http, socks, etc..)
+    bool UsingProxy();
 
 private:
     nsrefcnt               mRef;
     nsCString              mHashKey;
     nsCString              mHost;
-    PRInt32                mPort;
+    int32_t                mPort;
     nsCOMPtr<nsProxyInfo>  mProxyInfo;
     bool                   mUsingHttpProxy;
     bool                   mUsingSSL;
+    bool                   mUsingConnect;  // if will use CONNECT with http proxy
 };
 
 #endif // nsHttpConnectionInfo_h__

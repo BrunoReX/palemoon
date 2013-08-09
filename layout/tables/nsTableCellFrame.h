@@ -5,6 +5,7 @@
 #ifndef nsTableCellFrame_h__
 #define nsTableCellFrame_h__
 
+#include "mozilla/Attributes.h"
 #include "nsITableCellLayout.h"
 #include "nscore.h"
 #include "nsContainerFrame.h"
@@ -54,12 +55,12 @@ public:
                   nsIFrame*        aPrevInFlow);
 
 #ifdef ACCESSIBILITY
-  virtual already_AddRefed<Accessible> CreateAccessible();
+  virtual mozilla::a11y::AccType AccessibleType() MOZ_OVERRIDE;
 #endif
 
-  NS_IMETHOD  AttributeChanged(PRInt32         aNameSpaceID,
+  NS_IMETHOD  AttributeChanged(int32_t         aNameSpaceID,
                                nsIAtom*        aAttribute,
-                               PRInt32         aModType);
+                               int32_t         aModType);
 
   /** @see nsIFrame::DidSetStyleContext */
   virtual void DidSetStyleContext(nsStyleContext* aOldStyleContext);
@@ -68,12 +69,12 @@ public:
   // so these functions should never be called. They assert and return
   // NS_ERROR_NOT_IMPLEMENTED
   NS_IMETHOD AppendFrames(ChildListID     aListID,
-                          nsFrameList&    aFrameList);
+                          nsFrameList&    aFrameList) MOZ_OVERRIDE;
   NS_IMETHOD InsertFrames(ChildListID     aListID,
                           nsIFrame*       aPrevFrame,
-                          nsFrameList&    aFrameList);
+                          nsFrameList&    aFrameList) MOZ_OVERRIDE;
   NS_IMETHOD RemoveFrame(ChildListID     aListID,
-                         nsIFrame*       aOldFrame);
+                         nsIFrame*       aOldFrame) MOZ_OVERRIDE;
 
   virtual nsIFrame* GetContentInsertionFrame() {
     return GetFirstPrincipalChild()->GetContentInsertionFrame();
@@ -83,7 +84,7 @@ public:
 
   virtual void NotifyPercentHeight(const nsHTMLReflowState& aReflowState);
 
-  virtual bool NeedsToObserve(const nsHTMLReflowState& aReflowState);
+  virtual bool NeedsToObserve(const nsHTMLReflowState& aReflowState) MOZ_OVERRIDE;
 
   /** instantiate a new instance of nsTableRowFrame.
     * @param aPresShell the pres shell for this frame
@@ -94,11 +95,11 @@ public:
 
   NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                               const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists);
+                              const nsDisplayListSet& aLists) MOZ_OVERRIDE;
 
   void PaintCellBackground(nsRenderingContext& aRenderingContext,
                            const nsRect& aDirtyRect, nsPoint aPt,
-                           PRUint32 aFlags);
+                           uint32_t aFlags);
 
   virtual nscoord GetMinWidth(nsRenderingContext *aRenderingContext);
   virtual nscoord GetPrefWidth(nsRenderingContext *aRenderingContext);
@@ -128,7 +129,7 @@ public:
    * table cell, which means the result is always
    * NS_STYLE_VERTICAL_ALIGN_{TOP,MIDDLE,BOTTOM,BASELINE}.
    */
-  PRUint8 GetVerticalAlign() const;
+  uint8_t GetVerticalAlign() const;
 
   bool HasVerticalAlignBaseline() const {
     return GetVerticalAlign() == NS_STYLE_VERTICAL_ALIGN_BASELINE;
@@ -150,7 +151,7 @@ public:
    * to get the effective row span (the actual value that applies), use GetEffectiveRowSpan()
    * @see nsTableFrame::GetEffectiveRowSpan()
    */
-  virtual PRInt32 GetRowSpan();
+  virtual int32_t GetRowSpan();
 
   // there is no set row index because row index depends on the cell's parent row only
 
@@ -161,10 +162,10 @@ public:
    * for continued cell frames the row index is that of the cell's first-in-flow
    * and the column index (starting at 0 for the first column
    */
-  NS_IMETHOD GetCellIndexes(PRInt32 &aRowIndex, PRInt32 &aColIndex);
+  NS_IMETHOD GetCellIndexes(int32_t &aRowIndex, int32_t &aColIndex);
 
   /** return the mapped cell's row index (starting at 0 for the first row) */
-  virtual nsresult GetRowIndex(PRInt32 &aRowIndex) const;
+  virtual nsresult GetRowIndex(int32_t &aRowIndex) const MOZ_OVERRIDE;
 
   /**
    * return the cell's specified col span. this is what was specified in the
@@ -172,11 +173,11 @@ public:
    * to get the effective col span (the actual value that applies), use GetEffectiveColSpan()
    * @see nsTableFrame::GetEffectiveColSpan()
    */
-  virtual PRInt32 GetColSpan();
+  virtual int32_t GetColSpan();
 
   /** return the cell's column index (starting at 0 for the first column) */
-  virtual nsresult GetColIndex(PRInt32 &aColIndex) const;
-  void SetColIndex(PRInt32 aColIndex);
+  virtual nsresult GetColIndex(int32_t &aColIndex) const MOZ_OVERRIDE;
+  void SetColIndex(int32_t aColIndex);
 
   /** return the available width given to this frame during its last reflow */
   inline nscoord GetPriorAvailWidth();
@@ -203,16 +204,20 @@ public:
   virtual void PaintBackground(nsRenderingContext& aRenderingContext,
                                const nsRect&        aDirtyRect,
                                nsPoint              aPt,
-                               PRUint32             aFlags);
+                               uint32_t             aFlags);
 
   void DecorateForSelection(nsRenderingContext& aRenderingContext,
                             nsPoint              aPt);
 
   virtual bool UpdateOverflow();
+  
+  virtual void InvalidateFrame(uint32_t aDisplayItemKey = 0) MOZ_OVERRIDE;
+  virtual void InvalidateFrameWithRect(const nsRect& aRect, uint32_t aDisplayItemKey = 0) MOZ_OVERRIDE;
+  virtual void InvalidateFrameForRemoval() MOZ_OVERRIDE { InvalidateFrameSubtree(); }
 
 protected:
   /** implement abstract method on nsContainerFrame */
-  virtual PRIntn GetSkipSides() const;
+  virtual int GetSkipSides() const;
 
   /**
    * GetBorderOverflow says how far the cell's own borders extend
@@ -225,7 +230,7 @@ protected:
 
   friend class nsTableRowFrame;
 
-  PRUint32     mColIndex;             // the starting column for this cell
+  uint32_t     mColIndex;             // the starting column for this cell
 
   nscoord      mPriorAvailWidth;      // the avail width during the last reflow
   nsSize       mDesiredSize;          // the last desired width & height
@@ -286,13 +291,13 @@ public:
 
   ~nsBCTableCellFrame();
 
-  virtual nsIAtom* GetType() const;
+  virtual nsIAtom* GetType() const MOZ_OVERRIDE;
 
   virtual nsMargin GetUsedBorder() const;
   virtual bool GetBorderRadii(nscoord aRadii[8]) const;
 
   // Get the *inner half of the border only*, in twips.
-  virtual nsMargin* GetBorderWidth(nsMargin& aBorder) const;
+  virtual nsMargin* GetBorderWidth(nsMargin& aBorder) const MOZ_OVERRIDE;
 
   // Get the *inner half of the border only*, in pixels.
   BCPixelSize GetBorderWidth(mozilla::css::Side aSide) const;
@@ -300,16 +305,16 @@ public:
   // Set the full (both halves) width of the border
   void SetBorderWidth(mozilla::css::Side aSide, BCPixelSize aPixelValue);
 
-  virtual nsMargin GetBorderOverflow();
+  virtual nsMargin GetBorderOverflow() MOZ_OVERRIDE;
 
 #ifdef DEBUG
-  NS_IMETHOD GetFrameName(nsAString& aResult) const;
+  NS_IMETHOD GetFrameName(nsAString& aResult) const MOZ_OVERRIDE;
 #endif
 
   virtual void PaintBackground(nsRenderingContext& aRenderingContext,
                                const nsRect&        aDirtyRect,
                                nsPoint              aPt,
-                               PRUint32             aFlags);
+                               uint32_t             aFlags) MOZ_OVERRIDE;
 
 private:
 

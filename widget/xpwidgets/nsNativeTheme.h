@@ -42,15 +42,16 @@ class nsNativeTheme : public nsITimerCallback
   };
 
   nsNativeTheme();
+  virtual ~nsNativeTheme() {}
 
   // Returns the content state (hover, focus, etc), see nsEventStateManager.h
-  nsEventStates GetContentState(nsIFrame* aFrame, PRUint8 aWidgetType);
+  nsEventStates GetContentState(nsIFrame* aFrame, uint8_t aWidgetType);
 
   // Returns whether the widget is already styled by content
   // Normally called from ThemeSupportsWidget to turn off native theming
   // for elements that are already styled.
   bool IsWidgetStyled(nsPresContext* aPresContext, nsIFrame* aFrame,
-                        PRUint8 aWidgetType);                                              
+                        uint8_t aWidgetType);                                              
 
   // Accessors to widget-specific state information
 
@@ -81,14 +82,14 @@ class nsNativeTheme : public nsITimerCallback
   }
   
   // scrollbar button:
-  PRInt32 GetScrollbarButtonType(nsIFrame* aFrame);
+  int32_t GetScrollbarButtonType(nsIFrame* aFrame);
 
   // tab:
   bool IsSelectedTab(nsIFrame* aFrame) {
     return CheckBooleanAttr(aFrame, nsGkAtoms::selected);
   }
   
-  bool IsNextToSelectedTab(nsIFrame* aFrame, PRInt32 aOffset);
+  bool IsNextToSelectedTab(nsIFrame* aFrame, int32_t aOffset);
   
   bool IsBeforeSelectedTab(nsIFrame* aFrame) {
     return IsNextToSelectedTab(aFrame, -1);
@@ -136,6 +137,9 @@ class nsNativeTheme : public nsITimerCallback
   bool IsIndeterminateProgress(nsIFrame* aFrame, nsEventStates aEventStates);
   bool IsVerticalProgress(nsIFrame* aFrame);
 
+  // meter:
+  bool IsVerticalMeter(nsIFrame* aFrame);
+
   // textfield:
   bool IsReadOnly(nsIFrame* aFrame) {
       return CheckBooleanAttr(aFrame, nsGkAtoms::readonly);
@@ -150,20 +154,20 @@ class nsNativeTheme : public nsITimerCallback
   bool IsMenuListEditable(nsIFrame *aFrame);
 
   nsIPresShell *GetPresShell(nsIFrame* aFrame);
-  PRInt32 CheckIntAttr(nsIFrame* aFrame, nsIAtom* aAtom, PRInt32 defaultValue);
+  int32_t CheckIntAttr(nsIFrame* aFrame, nsIAtom* aAtom, int32_t defaultValue);
   bool CheckBooleanAttr(nsIFrame* aFrame, nsIAtom* aAtom);
 
   bool GetCheckedOrSelected(nsIFrame* aFrame, bool aCheckSelected);
   bool GetIndeterminate(nsIFrame* aFrame);
 
   bool QueueAnimatedContentForRefresh(nsIContent* aContent,
-                                        PRUint32 aMinimumFrameRate);
+                                        uint32_t aMinimumFrameRate);
 
   nsIFrame* GetAdjacentSiblingFrameWithSameAppearance(nsIFrame* aFrame,
                                                       bool aNextSibling);
 
  private:
-  PRUint32 mAnimatedContentTimeout;
+  uint32_t mAnimatedContentTimeout;
   nsCOMPtr<nsITimer> mAnimatedContentTimer;
   nsAutoTArray<nsCOMPtr<nsIContent>, 20> mAnimatedContentList;
 };

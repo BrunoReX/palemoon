@@ -6,35 +6,6 @@
 
 pref("toolkit.defaultChromeURI", "chrome://browser/content/shell.xul");
 pref("browser.chromeURL", "chrome://browser/content/");
-#ifdef MOZ_OFFICIAL_BRANDING
-pref("browser.homescreenURL", "http://homescreen.gaiamobile.org/");
-#else
-pref("browser.homescreenURL", "http://homescreen.gaiamobile.org/");
-#endif
-
-// All the privileged domains
-// XXX TODO : we should read them from a file somewhere
-pref("b2g.privileged.domains", "http://browser.gaiamobile.org,
-	                            http://calculator.gaiamobile.org,
-	                            http://contacts.gaiamobile.org,
-	                            http://camera.gaiamobile.org,
-	                            http://clock.gaiamobile.org,
-	                            http://crystalskull.gaiamobile.org,
-	                            http://cubevid.gaiamobile.org,
-	                            http://dialer.gaiamobile.org,
-	                            http://gallery.gaiamobile.org,
-	                            http://homescreen.gaiamobile.org,
-	                            http://maps.gaiamobile.org,
-	                            http://market.gaiamobile.org,
-	                            http://music.gaiamobile.org,
-	                            http://penguinpop.gaiamobile.org,
-	                            http://settings.gaiamobile.org,
-	                            http://sms.gaiamobile.org,
-	                            http://towerjelly.gaiamobile.org,
-	                            http://video.gaiamobile.org");
-
-// URL for the dialer application.
-pref("dom.telephony.app.phone.url", "http://dialer.gaiamobile.org,http://homescreen.gaiamobile.org");
 
 // Device pixel to CSS px ratio, in percent. Set to -1 to calculate based on display density.
 pref("browser.viewport.scaleRatio", -1);
@@ -56,6 +27,7 @@ pref("browser.cache.memory.capacity", 1024); // kilobytes
 
 /* image cache prefs */
 pref("image.cache.size", 1048576); // bytes
+pref("image.high_quality_downscaling.enabled", false);
 
 /* offline cache prefs */
 pref("browser.offline-apps.notify", false);
@@ -73,10 +45,9 @@ pref("network.http.pipelining.ssl", true);
 pref("network.http.proxy.pipelining", true);
 pref("network.http.pipelining.maxrequests" , 6);
 pref("network.http.keep-alive.timeout", 600);
-pref("network.http.max-connections", 6);
-pref("network.http.max-connections-per-server", 4);
-pref("network.http.max-persistent-connections-per-server", 4);
-pref("network.http.max-persistent-connections-per-proxy", 4);
+pref("network.http.max-connections", 20);
+pref("network.http.max-persistent-connections-per-server", 6);
+pref("network.http.max-persistent-connections-per-proxy", 20);
 
 // See bug 545869 for details on why these are set the way they are
 pref("network.buffer.cache.count", 24);
@@ -98,7 +69,6 @@ pref("mozilla.widget.force-24bpp", true);
 pref("mozilla.widget.use-buffer-pixmap", true);
 pref("mozilla.widget.disable-native-theme", true);
 pref("layout.reflow.synthMouseMove", false);
-pref("dom.send_after_paint_to_content", true);
 
 /* download manager (don't show the window or alert) */
 pref("browser.download.useDownloadDir", true);
@@ -112,12 +82,6 @@ pref("browser.download.manager.openDelay", 0);
 pref("browser.download.manager.focusWhenStarting", false);
 pref("browser.download.manager.flashCount", 2);
 pref("browser.download.manager.displayedHistoryDays", 7);
-
-/* download alerts (disabled above) */
-pref("alerts.slideIncrement", 1);
-pref("alerts.slideIncrementTime", 10);
-pref("alerts.totalOpenTime", 6000);
-pref("alerts.height", 50);
 
 /* download helper */
 pref("browser.helperApps.deleteTempFileOnExit", false);
@@ -208,11 +172,10 @@ pref("content.sink.pending_event_mode", 0);
 pref("content.sink.perf_deflect_count", 1000000);
 pref("content.sink.perf_parse_time", 50000000);
 
-pref("javascript.options.mem.high_water_mark", 32);
-
 // Maximum scripts runtime before showing an alert
 pref("dom.max_chrome_script_run_time", 0); // disable slow script dialog for chrome
-pref("dom.max_script_run_time", 20);
+// Bug 817230 - disable the dialog until we implement its checkbox properly
+pref("dom.max_script_run_time", 0);
 
 // plugins
 pref("plugin.disable", true);
@@ -272,9 +235,24 @@ pref("editor.singleLine.pasteNewlines", 2);
 pref("ui.dragThresholdX", 25);
 pref("ui.dragThresholdY", 25);
 
-// Layers Acceleration
-pref("layers.acceleration.disabled", false);
+// Layers Acceleration.  We can only have nice things on gonk, because
+// they're not maintained anywhere else.
+#ifndef MOZ_WIDGET_GONK
+pref("dom.ipc.tabs.disabled", true);
 pref("layers.offmainthreadcomposition.enabled", false);
+pref("layers.offmainthreadcomposition.animate-opacity", false);
+pref("layers.offmainthreadcomposition.animate-transform", false);
+pref("layers.async-video.enabled", false);
+#else
+pref("dom.ipc.tabs.disabled", false);
+pref("layers.offmainthreadcomposition.enabled", true);
+pref("layers.acceleration.disabled", false);
+pref("layers.offmainthreadcomposition.animate-opacity", true);
+pref("layers.offmainthreadcomposition.animate-transform", true);
+pref("layers.offmainthreadcomposition.throttle-animations", true);
+pref("layers.async-video.enabled", true);
+pref("layers.async-pan-zoom.enabled", true);
+#endif
 
 // Web Notifications
 pref("notification.feature.enabled", true);
@@ -286,6 +264,11 @@ pref("dom.indexedDB.warningQuota", 5);
 // prevent video elements from preloading too much data
 pref("media.preload.default", 1); // default to preload none
 pref("media.preload.auto", 2);    // preload metadata if preload=auto
+pref("media.cache_size", 4096);    // 4MB media cache
+
+// The default number of decoded video frames that are enqueued in
+// MediaDecoderReader's mVideoQueue.
+pref("media.video-queue.default-size", 3);
 
 //  0: don't show fullscreen keyboard
 //  1: always show fullscreen keyboard
@@ -293,15 +276,20 @@ pref("media.preload.auto", 2);    // preload metadata if preload=auto
 pref("widget.ime.android.landscape_fullscreen", -1);
 pref("widget.ime.android.fullscreen_threshold", 250); // in hundreths of inches
 
-// optimize images memory usage
+// optimize images' memory usage
 pref("image.mem.decodeondraw", true);
-pref("content.image.allow_locking", false);
+pref("content.image.allow_locking", true);
 pref("image.mem.min_discard_timeout_ms", 10000);
+pref("image.mem.max_decoded_image_kb", 5120); /* 5MB */
 
+// XXX this isn't a good check for "are touch events supported", but
+// we don't really have a better one at the moment.
+#ifdef MOZ_WIDGET_GONK
 // enable touch events interfaces
-pref("dom.w3c_touch_events.enabled", true);
+pref("dom.w3c_touch_events.enabled", 1);
 pref("dom.w3c_touch_events.safetyX", 0); // escape borders in units of 1/240"
 pref("dom.w3c_touch_events.safetyY", 120); // escape borders in units of 1/240"
+#endif
 
 #ifdef MOZ_SAFE_BROWSING
 // Safe browsing does nothing unless this pref is set
@@ -339,16 +327,16 @@ pref("urlclassifier.alternate_error_page", "blocked");
 // The number of random entries to send with a gethash request.
 pref("urlclassifier.gethashnoise", 4);
 
+// Randomize all UrlClassifier data with a per-client key.
+pref("urlclassifier.randomizeclient", false);
+
 // The list of tables that use the gethash request to confirm partial results.
 pref("urlclassifier.gethashtables", "goog-phish-shavar,goog-malware-shavar");
 
 // If an urlclassifier table has not been updated in this number of seconds,
 // a gethash request will be forced to check that the result is still in
 // the database.
-pref("urlclassifier.confirm-age", 2700);
-
-// Maximum size of the sqlite3 cache during an update, in bytes
-pref("urlclassifier.updatecachemax", 4194304);
+pref("urlclassifier.max-complete-age", 2700);
 
 // URL for checking the reason for a malware warning.
 pref("browser.safebrowsing.malware.reportURL", "http://safebrowsing.clients.google.com/safebrowsing/diagnostic?client=%NAME%&hl=%LOCALE%&site=");
@@ -371,12 +359,9 @@ pref("content.ime.strict_policy", true);
 // $ adb shell start
 pref("browser.dom.window.dump.enabled", false);
 
-
-
-// Temporarily relax file:// origin checks so that we can use <img>s
-// from other dirs as webgl textures and more.  Remove me when we have
-// installable apps or wifi support.
-pref("security.fileuri.strict_origin_policy", false);
+// Default Content Security Policy to apply to privileged and certified apps
+pref("security.apps.privileged.CSP.default", "default-src *; script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'");
+pref("security.apps.certified.CSP.default", "default-src *; script-src 'self'; object-src 'none'; style-src 'self'");
 
 // Temporarily force-enable GL compositing.  This is default-disabled
 // deep within the bowels of the widgetry system.  Remove me when GL
@@ -395,36 +380,39 @@ pref("browser.link.open_newwindow.restriction", 0);
 // Enable browser frames (including OOP, except on Windows, where it doesn't
 // work), but make in-process browser frames the default.
 pref("dom.mozBrowserFramesEnabled", true);
-pref("dom.mozBrowserFramesWhitelist", "http://homescreen.gaiamobile.org,http://browser.gaiamobile.org");
 
-#ifdef XP_WIN
-pref("dom.ipc.tabs.disabled", true);
-#else
-pref("dom.ipc.tabs.disabled", false);
-#endif
+// Enable a (virtually) unlimited number of mozbrowser processes.
+// We'll run out of PIDs on UNIX-y systems before we hit this limit.
+pref("dom.ipc.processCount", 100000);
 
 pref("dom.ipc.browser_frames.oop_by_default", false);
 
 // Temporary permission hack for WebSMS
 pref("dom.sms.enabled", true);
-pref("dom.sms.whitelist", "file://,http://homescreen.gaiamobile.org,http://sms.gaiamobile.org");
-
-// Temporary permission hack for WebMobileConnection
-pref("dom.mobileconnection.whitelist", "http://system.gaiamobile.org,http://homescreen.gaiamobile.org,http://dialer.gaiamobile.org");
+pref("dom.sms.strict7BitEncoding", false); // Disabled by default.
 
 // Temporary permission hack for WebContacts
 pref("dom.mozContacts.enabled", true);
-pref("dom.mozContacts.whitelist", "http://dialer.gaiamobile.org,http://sms.gaiamobile.org");
+
+// WebAlarms
+pref("dom.mozAlarms.enabled", true);
+
+// NetworkStats
+#ifdef MOZ_B2G_RIL
+pref("dom.mozNetworkStats.enabled", true);
+pref("ril.lastKnownMcc", 724);
+#endif
 
 // WebSettings
 pref("dom.mozSettings.enabled", true);
-
-// Ignore X-Frame-Options headers.
-pref("b2g.ignoreXFrameOptions", true);
+pref("dom.mozPermissionSettings.enabled", true);
 
 // controls if we want camera support
 pref("device.camera.enabled", true);
 pref("media.realtime_decoder.enabled", true);
+
+// TCPSocket
+pref("dom.mozTCPSocket.enabled", true);
 
 // "Preview" landing of bug 710563, which is bogged down in analysis
 // of talos regression.  This is a needed change for higher-framerate
@@ -435,48 +423,73 @@ pref("media.realtime_decoder.enabled", true);
 // by bug 710563.
 pref("layout.frame_rate.precise", true);
 
-// Temporary remote js console hack
-pref("b2g.remote-js.enabled", true);
-pref("b2g.remote-js.port", 9999);
-
 // Handle hardware buttons in the b2g chrome package
 pref("b2g.keys.menu.enabled", true);
-pref("b2g.keys.search.enabled", false);
 
-// Screen timeout in minutes
+// Screen timeout in seconds
 pref("power.screen.timeout", 60);
-pref("dom.power.whitelist", "http://homescreen.gaiamobile.org,http://settings.gaiamobile.org");
 
 pref("full-screen-api.enabled", true);
 
+#ifndef MOZ_WIDGET_GONK
+// If we're not actually on physical hardware, don't make the top level widget
+// fullscreen when transitioning to fullscreen. This means in emulated
+// environments (like the b2g desktop client) we won't make the client window
+// fill the whole screen, we'll just make the content fill the client window,
+// i.e. it won't give the impression to content that the number of device
+// screen pixels changes!
+pref("full-screen-api.ignore-widgets", true);
+#endif
+
 pref("media.volume.steps", 10);
 
+#ifdef ENABLE_MARIONETTE
 //Enable/disable marionette server, set listening port
 pref("marionette.defaultPrefs.enabled", true);
 pref("marionette.defaultPrefs.port", 2828);
+#endif
 
 #ifdef MOZ_UPDATER
+// When we're applying updates, we can't let anything hang us on
+// quit+restart.  The user has no recourse.
+pref("shutdown.watchdog.timeoutSecs", 5);
+// Timeout before the update prompt automatically installs the update
+pref("b2g.update.apply-prompt-timeout", 60000); // milliseconds
+// Amount of time to wait after the user is idle before prompting to apply an update
+pref("b2g.update.apply-idle-timeout", 600000); // milliseconds
+
 pref("app.update.enabled", true);
-pref("app.update.auto", true);
-pref("app.update.silent", true);
+pref("app.update.auto", false);
+pref("app.update.silent", false);
 pref("app.update.mode", 0);
 pref("app.update.incompatible.mode", 0);
+pref("app.update.staging.enabled", true);
 pref("app.update.service.enabled", true);
 
 // The URL hosting the update manifest.
-pref("app.update.url", "http://update.boot2gecko.org/m2.5/updates.xml");
+pref("app.update.url", "http://update.boot2gecko.org/%CHANNEL%/update.xml");
+pref("app.update.channel", "@MOZ_UPDATE_CHANNEL@");
+
 // Interval at which update manifest is fetched.  In units of seconds.
-pref("app.update.interval", 3600); // 1 hour
-// First interval to elapse before checking for update.  In units of
-// milliseconds.  Capped at 10 seconds.
-pref("app.update.timerFirstInterval", 30000);
-pref("app.update.timerMinimumDelay", 30); // seconds
+pref("app.update.interval", 86400); // 1 day
 // Don't throttle background updates.
 pref("app.update.download.backgroundInterval", 0);
+
+// Retry update socket connections every 30 seconds in the cases of certain kinds of errors
+pref("app.update.socket.retryTimeout", 30000);
+
+// Max of 20 consecutive retries (total 10 minutes) before giving up and marking
+// the update download as failed.
+// Note: Offline errors will always retry when the network comes online.
+pref("app.update.socket.maxErrors", 20);
 
 // Enable update logging for now, to diagnose growing pains in the
 // field.
 pref("app.update.log", true);
+#else
+// Explicitly disable the shutdown watchdog.  It's enabled by default.
+// When the updater is disabled, we want to know about shutdown hangs.
+pref("shutdown.watchdog.timeoutSecs", -1);
 #endif
 
 // Extensions preferences
@@ -485,9 +498,125 @@ pref("extensions.getAddons.cache.enabled", false);
 
 // Context Menu
 pref("ui.click_hold_context_menus", true);
-pref("ui.click_hold_context_menus.delay", 1000);
+pref("ui.click_hold_context_menus.delay", 750);
 
 // Enable device storage
 pref("device.storage.enabled", true);
 
-pref("media.plugins.enabled", true);
+pref("media.plugins.enabled", false);
+pref("media.omx.enabled", true);
+
+// Disable printing (particularly, window.print())
+pref("dom.disable_window_print", true);
+
+// Disable window.showModalDialog
+pref("dom.disable_window_showModalDialog", true);
+
+// Enable new experimental html forms
+pref("dom.experimental_forms", true);
+
+// Turns on gralloc-based direct texturing for Gonk
+pref("gfx.gralloc.enabled", false);
+
+// XXXX REMOVE FOR PRODUCTION. Turns on GC and CC logging
+pref("javascript.options.mem.log", false);
+
+// Increase mark slice time from 10ms to 30ms
+pref("javascript.options.mem.gc_incremental_slice_ms", 30);
+
+pref("javascript.options.mem.gc_high_frequency_heap_growth_max", 120);
+pref("javascript.options.mem.gc_high_frequency_heap_growth_min", 101);
+pref("javascript.options.mem.gc_high_frequency_high_limit_mb", 40);
+pref("javascript.options.mem.gc_high_frequency_low_limit_mb", 10);
+pref("javascript.options.mem.gc_low_frequency_heap_growth", 105);
+pref("javascript.options.mem.high_water_mark", 6);
+pref("javascript.options.mem.gc_allocation_threshold_mb", 3);
+
+// Show/Hide scrollbars when active/inactive
+pref("ui.showHideScrollbars", 1);
+
+// Enable the ProcessPriorityManager, and give processes with no visible
+// documents a 1s grace period before they're eligible to be marked as
+// background.
+pref("dom.ipc.processPriorityManager.enabled", true);
+pref("dom.ipc.processPriorityManager.gracePeriodMS", 1000);
+
+// Kernel parameters for how processes are killed on low-memory.
+pref("gonk.systemMemoryPressureRecoveryPollMS", 5000);
+pref("hal.processPriorityManager.gonk.masterOomScoreAdjust", 0);
+pref("hal.processPriorityManager.gonk.masterKillUnderMB", 1);
+pref("hal.processPriorityManager.gonk.foregroundOomScoreAdjust", 67);
+pref("hal.processPriorityManager.gonk.foregroundKillUnderMB", 4);
+pref("hal.processPriorityManager.gonk.backgroundPerceivableOomScoreAdjust", 134);
+pref("hal.processPriorityManager.gonk.backgroundPerceivebleKillUnderMB", 5);
+pref("hal.processPriorityManager.gonk.backgroundHomescreenOomScoreAdjust", 200);
+pref("hal.processPriorityManager.gonk.backgroundHomescreenKillUnderMB", 5);
+pref("hal.processPriorityManager.gonk.backgroundOomScoreAdjust", 400);
+pref("hal.processPriorityManager.gonk.backgroundKillUnderMB", 8);
+pref("hal.processPriorityManager.gonk.notifyLowMemUnderMB", 10);
+
+// Niceness values (i.e., CPU priorities) for B2G processes.
+pref("hal.processPriorityManager.gonk.masterNice", -1);
+pref("hal.processPriorityManager.gonk.foregroundNice", 0);
+pref("hal.processPriorityManager.gonk.backgroundNice", 10);
+
+#ifndef DEBUG
+// Enable pre-launching content processes for improved startup time
+// (hiding latency).
+pref("dom.ipc.processPrelaunch.enabled", true);
+// Wait this long before pre-launching a new subprocess.
+pref("dom.ipc.processPrelaunch.delayMs", 1000);
+#endif
+
+// Ignore the "dialog=1" feature in window.open.
+pref("dom.disable_window_open_dialog_feature", true);
+
+// Screen reader support
+pref("accessibility.accessfu.activate", 2);
+
+// Enable hit-target fluffing
+pref("ui.touch.radius.enabled", false);
+pref("ui.touch.radius.leftmm", 3);
+pref("ui.touch.radius.topmm", 5);
+pref("ui.touch.radius.rightmm", 3);
+pref("ui.touch.radius.bottommm", 2);
+
+pref("ui.mouse.radius.enabled", false);
+pref("ui.mouse.radius.leftmm", 3);
+pref("ui.mouse.radius.topmm", 5);
+pref("ui.mouse.radius.rightmm", 3);
+pref("ui.mouse.radius.bottommm", 2);
+
+// Disable native prompt
+pref("browser.prompt.allowNative", false);
+
+// Minimum delay in milliseconds between network activity notifications (0 means
+// no notifications). The delay is the same for both download and upload, though
+// they are handled separately. This pref is only read once at startup:
+// a restart is required to enable a new value.
+pref("network.activity.blipIntervalMilliseconds", 250);
+
+// By default we want the NetworkManager service to manage Gecko's offline
+// status for us according to the state of Wifi/cellular data connections.
+// In some environments, such as the emulator or hardware with other network
+// connectivity, this is not desireable, however, in which case this pref
+// can be flipped to false.
+pref("network.gonk.manage-offline-status", true);
+
+pref("jsloader.reuseGlobal", true);
+
+// Enable font inflation for browser tab content.
+pref("font.size.inflation.minTwips", 120);
+// And disable it for lingering master-process UI.
+pref("font.size.inflation.disabledInMasterProcess", true);
+
+// Enable freeing dirty pages when minimizing memory; this reduces memory
+// consumption when applications are sent to the background.
+pref("memory.free_dirty_pages", true);
+
+// Wait up to this much milliseconds when orientation changed
+pref("layers.orientation.sync.timeout", 1000);
+
+// Don't discard WebGL contexts for foreground apps on memory
+// pressure.
+pref("webgl.can-lose-context-in-foreground", false);

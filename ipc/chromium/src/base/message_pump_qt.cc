@@ -4,7 +4,8 @@
 
 #include <qabstracteventdispatcher.h>
 #include <qevent.h>
-#include <QApplication>
+#include <QCoreApplication>
+#include <QThread>
 #include <qtimer.h>
 
 #include "base/message_pump_qt.h"
@@ -75,11 +76,11 @@ MessagePumpQt::scheduleDelayedIfNeeded(const Time& delayed_work_time)
   }
 
   TimeDelta later = delayed_work_time - Time::Now();
-  // later.InMilliseconds() returns an int64, QTimer only accepts int's for start(),
+  // later.InMilliseconds() returns an int64_t, QTimer only accepts int's for start(),
   // std::min only works on exact same types.
   int laterMsecs = later.InMilliseconds() > std::numeric_limits<int>::max() ?
     std::numeric_limits<int>::max() : later.InMilliseconds();
-  mTimer->start(laterMsecs);
+  mTimer->start(laterMsecs > 0 ? laterMsecs : 0);
 }
 
 void
@@ -110,7 +111,7 @@ void MessagePumpForUI::Run(Delegate* delegate) {
     }
 
     QAbstractEventDispatcher* dispatcher =
-      QAbstractEventDispatcher::instance(qApp->thread());
+      QAbstractEventDispatcher::instance(QThread::currentThread());
     // An assertion seems too much here, as during startup,
     // the dispatcher might not be ready yet.
     if (!dispatcher) {

@@ -16,10 +16,11 @@
 #include "txXPathTreeWalker.h"
 #include "xptcall.h"
 #include "txXPathObjectAdaptor.h"
+#include "mozilla/Attributes.h"
 
 NS_IMPL_ISUPPORTS1(txXPathObjectAdaptor, txIXPathObject)
 
-class txFunctionEvaluationContext : public txIFunctionEvaluationContext
+class txFunctionEvaluationContext MOZ_FINAL : public txIFunctionEvaluationContext
 {
 public:
     txFunctionEvaluationContext(txIEvalContext *aContext, nsISupports *aState);
@@ -29,7 +30,7 @@ public:
 
     void ClearContext()
     {
-        mContext = nsnull;
+        mContext = nullptr;
     }
 
 private:
@@ -47,7 +48,7 @@ txFunctionEvaluationContext::txFunctionEvaluationContext(txIEvalContext *aContex
 NS_IMPL_ISUPPORTS1(txFunctionEvaluationContext, txIFunctionEvaluationContext)
 
 NS_IMETHODIMP
-txFunctionEvaluationContext::GetPosition(PRUint32 *aPosition)
+txFunctionEvaluationContext::GetPosition(uint32_t *aPosition)
 {
     NS_ENSURE_TRUE(mContext, NS_ERROR_FAILURE);
 
@@ -57,7 +58,7 @@ txFunctionEvaluationContext::GetPosition(PRUint32 *aPosition)
 }
 
 NS_IMETHODIMP
-txFunctionEvaluationContext::GetSize(PRUint32 *aSize)
+txFunctionEvaluationContext::GetSize(uint32_t *aSize)
 {
     NS_ENSURE_TRUE(mContext, NS_ERROR_FAILURE);
 
@@ -96,11 +97,11 @@ class txXPCOMExtensionFunctionCall : public FunctionCall
 {
 public:
     txXPCOMExtensionFunctionCall(nsISupports *aHelper, const nsIID &aIID,
-                                 PRUint16 aMethodIndex,
+                                 uint16_t aMethodIndex,
 #ifdef TX_TO_STRING
-                                 PRInt32 aNamespaceID, nsIAtom *aName,
+                                 nsIAtom *aName,
 #endif
-                                  nsISupports *aState);
+                                 nsISupports *aState);
 
     TX_DECL_FUNCTION
 
@@ -110,9 +111,8 @@ private:
 
     nsCOMPtr<nsISupports> mHelper;
     nsIID mIID;
-    PRUint16 mMethodIndex;
+    uint16_t mMethodIndex;
 #ifdef TX_TO_STRING
-    PRInt32 mNamespaceID;
     nsCOMPtr<nsIAtom> mName;
 #endif
     nsCOMPtr<nsISupports> mState;
@@ -120,9 +120,8 @@ private:
 
 txXPCOMExtensionFunctionCall::txXPCOMExtensionFunctionCall(nsISupports *aHelper,
                                                            const nsIID &aIID,
-                                                           PRUint16 aMethodIndex,
+                                                           uint16_t aMethodIndex,
 #ifdef TX_TO_STRING
-                                                           PRInt32 aNamespaceID,
                                                            nsIAtom *aName,
 #endif
                                                            nsISupports *aState)
@@ -130,7 +129,6 @@ txXPCOMExtensionFunctionCall::txXPCOMExtensionFunctionCall(nsISupports *aHelper,
       mIID(aIID),
       mMethodIndex(aMethodIndex),
 #ifdef TX_TO_STRING
-      mNamespaceID(aNamespaceID),
       mName(aName),
 #endif
       mState(aState)
@@ -140,7 +138,7 @@ txXPCOMExtensionFunctionCall::txXPCOMExtensionFunctionCall(nsISupports *aHelper,
 class txInterfacesArrayHolder
 {
 public:
-    txInterfacesArrayHolder(nsIID **aArray, PRUint32 aCount) : mArray(aArray),
+    txInterfacesArrayHolder(nsIID **aArray, uint32_t aCount) : mArray(aArray),
                                                                mCount(aCount)
     {
     }
@@ -151,12 +149,12 @@ public:
 
 private:
     nsIID **mArray;
-    PRUint32 mCount;
+    uint32_t mCount;
 };
 
 static nsresult
 LookupFunction(const char *aContractID, nsIAtom* aName, nsIID &aIID,
-               PRUint16 &aMethodIndex, nsISupports **aHelper)
+               uint16_t &aMethodIndex, nsISupports **aHelper)
 {
     nsresult rv;
     nsCOMPtr<nsISupports> helper = do_GetService(aContractID, &rv);
@@ -169,8 +167,8 @@ LookupFunction(const char *aContractID, nsIAtom* aName, nsIID &aIID,
         do_GetService(NS_INTERFACEINFOMANAGER_SERVICE_CONTRACTID);
     NS_ENSURE_TRUE(iim, NS_ERROR_FAILURE);
 
-    nsIID** iidArray = nsnull;
-    PRUint32 iidCount = 0;
+    nsIID** iidArray = nullptr;
+    uint32_t iidCount = 0;
     rv = classInfo->GetInterfaces(&iidCount, &iidArray);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -181,7 +179,7 @@ LookupFunction(const char *aContractID, nsIAtom* aName, nsIID &aIID,
     // have uppercase letters they might cause false matches (both fooBar and
     // foo-bar matching fooBar).
     const PRUnichar *name = aName->GetUTF16String();
-    nsCAutoString methodName;
+    nsAutoCString methodName;
     PRUnichar letter;
     bool upperNext = false;
     while ((letter = *name)) {
@@ -195,7 +193,7 @@ LookupFunction(const char *aContractID, nsIAtom* aName, nsIID &aIID,
         ++name;
     }
 
-    PRUint32 i;
+    uint32_t i;
     for (i = 0; i < iidCount; ++i) {
         nsIID *iid = iidArray[i];
 
@@ -203,7 +201,7 @@ LookupFunction(const char *aContractID, nsIAtom* aName, nsIID &aIID,
         rv = iim->GetInfoForIID(iid, getter_AddRefs(info));
         NS_ENSURE_SUCCESS(rv, rv);
 
-        PRUint16 methodIndex;
+        uint16_t methodIndex;
         const nsXPTMethodInfo *methodInfo;
         rv = info->GetMethodInfoForName(methodName.get(), &methodIndex,
                                         &methodInfo);
@@ -211,7 +209,7 @@ LookupFunction(const char *aContractID, nsIAtom* aName, nsIID &aIID,
             // Exclude notxpcom and hidden. Also check that we have at least a
             // return value (the xpidl compiler ensures that that return value
             // is the last argument).
-            PRUint8 paramCount = methodInfo->GetParamCount();
+            uint8_t paramCount = methodInfo->GetParamCount();
             if (methodInfo->IsNotXPCOM() || methodInfo->IsHidden() ||
                 paramCount == 0 ||
                 !methodInfo->GetParam(paramCount - 1).IsRetval()) {
@@ -229,12 +227,12 @@ LookupFunction(const char *aContractID, nsIAtom* aName, nsIID &aIID,
 
 /* static */
 nsresult
-TX_ResolveFunctionCallXPCOM(const nsCString &aContractID, PRInt32 aNamespaceID,
+TX_ResolveFunctionCallXPCOM(const nsCString &aContractID, int32_t aNamespaceID,
                             nsIAtom* aName, nsISupports *aState,
                             FunctionCall **aFunction)
 {
     nsIID iid;
-    PRUint16 methodIndex = 0;
+    uint16_t methodIndex = 0;
     nsCOMPtr<nsISupports> helper;
 
     nsresult rv = LookupFunction(aContractID.get(), aName, iid, methodIndex,
@@ -247,7 +245,7 @@ TX_ResolveFunctionCallXPCOM(const nsCString &aContractID, PRInt32 aNamespaceID,
 
     *aFunction = new txXPCOMExtensionFunctionCall(helper, iid, methodIndex,
 #ifdef TX_TO_STRING
-                                                  aNamespaceID, aName,
+                                                  aName,
 #endif
                                                   aState);
 
@@ -258,7 +256,7 @@ txArgumentType
 txXPCOMExtensionFunctionCall::GetParamType(const nsXPTParamInfo &aParam,
                                            nsIInterfaceInfo *aInfo)
 {
-    PRUint8 tag = aParam.GetType().TagPart();
+    uint8_t tag = aParam.GetType().TagPart();
     switch (tag) {
         case nsXPTType::T_BOOL:
         case nsXPTType::T_DOUBLE:
@@ -299,7 +297,7 @@ public:
     }
     ~txParamArrayHolder();
 
-    bool Init(PRUint8 aCount);
+    bool Init(uint8_t aCount);
     operator nsXPTCVariant*() const
     {
       return mArray;
@@ -307,12 +305,12 @@ public:
 
 private:
     nsAutoArrayPtr<nsXPTCVariant> mArray;
-    PRUint8 mCount;
+    uint8_t mCount;
 };
 
 txParamArrayHolder::~txParamArrayHolder()
 {
-    PRUint8 i;
+    uint8_t i;
     for (i = 0; i < mCount; ++i) {
         nsXPTCVariant &variant = mArray[i];
         if (variant.DoesValNeedCleanup()) {
@@ -330,7 +328,7 @@ txParamArrayHolder::~txParamArrayHolder()
 }
 
 bool
-txParamArrayHolder::Init(PRUint8 aCount)
+txParamArrayHolder::Init(uint8_t aCount)
 {
     mCount = aCount;
     mArray = new nsXPTCVariant[mCount];
@@ -359,8 +357,8 @@ txXPCOMExtensionFunctionCall::evaluate(txIEvalContext* aContext,
     rv = info->GetMethodInfo(mMethodIndex, &methodInfo);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    PRUint8 paramCount = methodInfo->GetParamCount();
-    PRUint8 inArgs = paramCount - 1;
+    uint8_t paramCount = methodInfo->GetParamCount();
+    uint8_t inArgs = paramCount - 1;
 
     txParamArrayHolder invokeParams;
     if (!invokeParams.Init(paramCount)) {
@@ -374,7 +372,7 @@ txXPCOMExtensionFunctionCall::evaluate(txIEvalContext* aContext,
     }
 
     txFunctionEvaluationContext *context;
-    PRUint32 paramStart = 0;
+    uint32_t paramStart = 0;
     if (type == eCONTEXT) {
         if (paramInfo.IsOut()) {
             // We don't support out values.
@@ -396,7 +394,7 @@ txXPCOMExtensionFunctionCall::evaluate(txIEvalContext* aContext,
         paramStart = 1;
     }
     else {
-        context = nsnull;
+        context = nullptr;
     }
 
     // XXX varargs
@@ -404,7 +402,7 @@ txXPCOMExtensionFunctionCall::evaluate(txIEvalContext* aContext,
         return NS_ERROR_FAILURE;
     }
 
-    PRUint32 i;
+    uint32_t i;
     for (i = paramStart; i < inArgs; ++i) {
         Expr* expr = mParams[i - paramStart];
 

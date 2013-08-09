@@ -27,16 +27,16 @@ inline NS_HIDDEN_(float) NS_roundf(float x)
 {
     return x >= 0.0f ? floorf(x + 0.5f) : ceilf(x - 0.5f);
 }
-inline NS_HIDDEN_(PRInt32) NS_lround(double x)
+inline NS_HIDDEN_(int32_t) NS_lround(double x)
 {
-    return x >= 0.0 ? PRInt32(x + 0.5) : PRInt32(x - 0.5);
+    return x >= 0.0 ? int32_t(x + 0.5) : int32_t(x - 0.5);
 }
 
 /* NS_roundup30 rounds towards infinity for positive and       */
 /* negative numbers.                                           */
 
 #if defined(XP_WIN32) && defined(_M_IX86) && !defined(__GNUC__)
-inline NS_HIDDEN_(PRInt32) NS_lroundup30(float x)
+inline NS_HIDDEN_(int32_t) NS_lroundup30(float x)
 {
     /* Code derived from Laurent de Soras' paper at             */
     /* http://ldesoras.free.fr/doc/articles/rounding_en.pdf     */
@@ -68,9 +68,9 @@ inline NS_HIDDEN_(PRInt32) NS_lroundup30(float x)
 }
 #endif /* XP_WIN32 && _M_IX86 && !__GNUC__ */
 
-inline NS_HIDDEN_(PRInt32) NS_lroundf(float x)
+inline NS_HIDDEN_(int32_t) NS_lroundf(float x)
 {
-    return x >= 0.0f ? PRInt32(x + 0.5f) : PRInt32(x - 0.5f);
+    return x >= 0.0f ? int32_t(x + 0.5f) : int32_t(x - 0.5f);
 }
 
 /*
@@ -105,6 +105,17 @@ inline NS_HIDDEN_(bool) NS_finite(double d)
 #else
     return finite(d);
 #endif
+}
+
+/**
+ * Returns the result of the modulo of x by y using a floored division.
+ * fmod(x, y) is using a truncated division.
+ * The main difference is that the result of this method will have the sign of
+ * y while the result of fmod(x, y) will have the sign of x.
+ */
+inline NS_HIDDEN_(double) NS_floorModulo(double x, double y)
+{
+  return (x - y * floor(x / y));
 }
 
 #endif

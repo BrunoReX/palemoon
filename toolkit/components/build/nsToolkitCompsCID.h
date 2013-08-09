@@ -2,6 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#if defined(MOZ_UPDATER)
+# if !defined(MOZ_WIDGET_ANDROID)
+#  define USE_MOZ_UPDATER
+# endif
+#endif
+
 #define NS_ALERTSERVICE_CONTRACTID \
   "@mozilla.org/alerts-service;1"
 
@@ -87,7 +93,7 @@
 #define NS_APPSTARTUP_CONTRACTID \
   "@mozilla.org/toolkit/app-startup;1"
 
-#if defined(MOZ_UPDATER) && !defined(ANDROID)
+#if defined(USE_MOZ_UPDATER)
 #define NS_UPDATEPROCESSOR_CONTRACTID \
   "@mozilla.org/updates/update-processor;1"
 #endif
@@ -133,9 +139,9 @@
 #define NS_TYPEAHEADFIND_CID \
 { 0xe7f70966, 0x9a37, 0x48d7, { 0x8a, 0xeb, 0x35, 0x99, 0x8f, 0x31, 0x09, 0x0e} }
 
-// {15a892dd-cb0f-4a9f-a27f-8291d5e16653}
-#define NS_URLCLASSIFIERPREFIXSET_CID \
-{ 0x15a892dd, 0xcb0f, 0x4a9f, { 0xa2, 0x7f, 0x82, 0x91, 0xd5, 0xe1, 0x66, 0x53} }
+// {3d8579f0-75fa-4e00-ba41-38661d5b5d17}
+ #define NS_URLCLASSIFIERPREFIXSET_CID \
+{ 0x3d8579f0, 0x75fa, 0x4e00, { 0xba, 0x41, 0x38, 0x66, 0x1d, 0x5b, 0x5d, 0x17} }
 
 // {5eb7c3c1-ec1f-4007-87cc-eefb37d68ce6}
 #define NS_URLCLASSIFIERDBSERVICE_CID \
@@ -168,7 +174,7 @@
 #define NS_PLACESIMPORTEXPORTSERVICE_CID \
 { 0x6fb0c970, 0xe1b1, 0x11db, { 0x83, 0x14, 0x08, 0x00, 0x20, 0x0c, 0x9a, 0x66 } }
 
-#if defined(MOZ_UPDATER) && !defined(ANDROID)
+#if defined(USE_MOZ_UPDATER)
 #define NS_UPDATEPROCESSOR_CID \
 { 0xf3dcf644, 0x79e8, 0x4f59, { 0xa1, 0xbb, 0x87, 0x84, 0x54, 0x48, 0x8e, 0xf9 } }
 #endif
