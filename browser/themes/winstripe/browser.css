@@ -2002,8 +2002,11 @@ richlistitem[type~="action"][actiontype="switchtab"] > .ac-url-box > .ac-action-
 
 %ifdef WINSTRIPE_AERO
 .tabbrowser-arrowscrollbox > .scrollbutton-up:-moz-system-metric(windows-compositor):not(:-moz-lwtheme),
-.tabbrowser-arrowscrollbox > .scrollbutton-down:-moz-system-metric(windows-compositor):not(:-moz-lwtheme),
+.tabbrowser-arrowscrollbox > .scrollbutton-down:-moz-system-metric(windows-compositor):not(:-moz-lwtheme) {
+  list-style-image: url(chrome://browser/skin/tabbrowser/tab-arrow-left-glass.png);
+}
 %endif
+
 .tabbrowser-arrowscrollbox > .scrollbutton-up:-moz-lwtheme-brighttext,
 .tabbrowser-arrowscrollbox > .scrollbutton-down:-moz-lwtheme-brighttext {
   list-style-image: url(chrome://browser/skin/tabbrowser/tab-arrow-left-inverted.png);
@@ -2049,8 +2052,11 @@ richlistitem[type~="action"][actiontype="switchtab"] > .ac-url-box > .ac-action-
 
 %ifdef WINSTRIPE_AERO
 #TabsToolbar > #new-tab-button:-moz-system-metric(windows-compositor):not(:-moz-lwtheme),
-#TabsToolbar > toolbarpaletteitem > #new-tab-button:-moz-system-metric(windows-compositor):not(:-moz-lwtheme),
+#TabsToolbar > toolbarpaletteitem > #new-tab-button:-moz-system-metric(windows-compositor):not(:-moz-lwtheme) {
+  list-style-image: url(chrome://browser/skin/tabbrowser/newtab-glass.png);
+}
 %endif
+
 .tabs-newtab-button:-moz-lwtheme-brighttext,
 #TabsToolbar > #new-tab-button:-moz-lwtheme-brighttext,
 #TabsToolbar > toolbarpaletteitem > #new-tab-button:-moz-lwtheme-brighttext {
