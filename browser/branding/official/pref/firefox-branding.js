@@ -71,7 +71,9 @@ pref("network.prefetch-next", false); //prefetching engine off by default!
 pref("network.http.pipelining"      , true); //pipelining on by default, haven't seen any issues
 pref("network.http.pipelining.ssl"  , true); 
 pref("network.http.proxy.pipelining", false); // pipeline proxy requests - breaks some proxies! (406)
-pref("network.http.pipelining.maxrequests", 12);  // Max number of requests in the pipeline
+pref("network.http.pipelining.aggressive", true);
+pref("network.http.pipelining.max-optimistic-requests", 4);
+pref("network.http.pipelining.maxrequests", 4);  // Max number of requests in the pipeline
 pref("network.http.max-connections",48); // Don't saturate the network layer and go easy on poor residential routers&wireless! (FF=256)
 pref("network.http.max-connections-per-server",8); // With pipelining, this should be low (FF=15)
 pref("network.http.max-persistent-connections-per-proxy", 8);
