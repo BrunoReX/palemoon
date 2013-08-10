@@ -114,20 +114,46 @@ var padlock_PadLock =
   usePrefs: function() {
     var prefval = padlock_PadLock.prefbranch.getIntPref("style");
     var position;
+    var padstyle;
     if (prefval == 2) {
       position = "ib-left";
+      padstyle = "modern";
     }
     else if (prefval == 3) {
       position = "ub-right";
+      padstyle = "modern";
     }
     else if (prefval == 4) {
       position = "statbar";
+      padstyle = "modern";
     }
     else if (prefval == 5) {
       position = "tabs-bar";
+      padstyle = "modern";
+    }
+    else if (prefval == 6) {
+      position = "ib-trans-bg";
+      padstyle = "classic";
+    }
+    else if (prefval == 7) {
+      position = "ib-left";
+      padstyle = "classic";
+    }
+    else if (prefval == 8) {
+      position = "ub-right";
+      padstyle = "classic";
+    }
+    else if (prefval == 9) {
+      position = "statbar";
+      padstyle = "classic";
+    }
+    else if (prefval == 10) {
+      position = "tabs-bar";
+      padstyle = "classic";
     }
     else { // 1 or anything else_ default
       position = "ib-trans-bg";
+      padstyle = "modern";
     }
 
     var colshow;
@@ -151,6 +177,12 @@ var padlock_PadLock =
     document.getElementById("padlock-ub-right").setAttribute("padshow", padshow);
     document.getElementById("padlock-sb").setAttribute("padshow", padshow);
     document.getElementById("padlock-tab").setAttribute("padshow", padshow);
+
+    document.getElementById("padlock-ib").setAttribute("padstyle", padstyle);
+    document.getElementById("padlock-ib-left").setAttribute("padstyle", padstyle);
+    document.getElementById("padlock-ub-right").setAttribute("padstyle", padstyle);
+    document.getElementById("padlock-sb").setAttribute("padstyle", padstyle);
+    document.getElementById("padlock-tab").setAttribute("padstyle", padstyle);
 
     document.getElementById("urlbar").setAttribute("https_color", colshow);
   }

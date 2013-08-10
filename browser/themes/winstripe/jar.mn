@@ -279,6 +279,7 @@ browser.jar:
         skin/classic/aero/browser/setDesktopBackground.css
         skin/classic/aero/browser/click-to-play-warning-stripes.png
         skin/classic/aero/browser/Toolbar.png
+        skin/classic/aero/browser/Toolbar-glass.png
         skin/classic/aero/browser/Toolbar-inverted.png
         skin/classic/aero/browser/toolbarbutton-dropdown-arrow.png
         skin/classic/aero/browser/toolbarbutton-dropdown-arrow-inverted.png

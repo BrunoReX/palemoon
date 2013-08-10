@@ -425,15 +425,17 @@ nsXMLHttpRequest::~nsXMLHttpRequest()
   NS_ABORT_IF_FALSE(!(mState & XML_HTTP_REQUEST_SYNCLOOPING), "we rather crash than hang");
   mState &= ~XML_HTTP_REQUEST_SYNCLOOPING;
 
+  mResultJSON = JSVAL_VOID;
+  mResultArrayBuffer = nullptr;
+  NS_DROP_JS_OBJECTS(this, nsXMLHttpRequest);
+
   nsLayoutStatics::Release();
 }
 
 void
 nsXMLHttpRequest::RootJSResultObjects()
 {
-  nsContentUtils::PreserveWrapper(
-    static_cast<nsIDOMEventTarget*>(
-      static_cast<nsDOMEventTargetHelper*>(this)), this);
+  NS_HOLD_JS_OBJECTS(this, nsXMLHttpRequest);
 }
 
 /**
@@ -2822,7 +2824,8 @@ nsXMLHttpRequest::Send(nsIVariant* aVariant, const Nullable<RequestBody>& aBody)
   mUploadProgress = 0;
   mUploadProgressMax = 0;
   if ((aVariant || !aBody.IsNull()) && httpChannel &&
-      !method.EqualsLiteral("GET")) {
+      !method.LowerCaseEqualsLiteral("get") &&
+      !method.LowerCaseEqualsLiteral("head")) { 
 
     nsAutoCString charset;
     nsAutoCString defaultContentType;

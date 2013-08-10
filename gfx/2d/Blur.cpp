@@ -64,7 +64,7 @@ BoxBlurHorizontal(unsigned char* aInput,
         }
 
         uint32_t alphaSum = 0;
-		#pragma omp parallel for
+	#pragma omp parallel for
         for (int32_t i = 0; i < boxSize; i++) {
             int32_t pos = i - aLeftLobe;
             // See assertion above; if aWidth is zero, then we would have no
@@ -86,7 +86,7 @@ BoxBlurHorizontal(unsigned char* aInput,
                 // Recalculate the neighbouring alpha values for
                 // our new point on the surface.
                 alphaSum = 0;
-				#pragma omp parallel for
+	#pragma omp parallel for
                 for (int32_t i = 0; i < boxSize; i++) {
                     int32_t pos = x + i - aLeftLobe;
                     // See assertion above; if aWidth is zero, then we would have no
@@ -142,7 +142,7 @@ BoxBlurVertical(unsigned char* aInput,
         }
 
         uint32_t alphaSum = 0;
-		#pragma omp parallel for
+	#pragma omp parallel for
         for (int32_t i = 0; i < boxSize; i++) {
             int32_t pos = i - aTopLobe;
             // See assertion above; if aRows is zero, then we would have no
@@ -160,7 +160,7 @@ BoxBlurVertical(unsigned char* aInput,
                     break;
 
                 alphaSum = 0;
-				#pragma omp parallel for
+	#pragma omp parallel for
                 for (int32_t i = 0; i < boxSize; i++) {
                     int32_t pos = y + i - aTopLobe;
                     // See assertion above; if aRows is zero, then we would have no
@@ -267,7 +267,7 @@ SpreadHorizontal(unsigned char* aInput,
             int32_t sMin = max(x - aRadius, 0);
             int32_t sMax = min(x + aRadius, aWidth - 1);
             int32_t v = 0;
-			#pragma omp parallel for
+	#pragma omp parallel for
             for (int32_t s = sMin; s <= sMax; ++s) {
                 v = max<int32_t>(v, aInput[aStride * y + s]);
             }
@@ -313,7 +313,7 @@ SpreadVertical(unsigned char* aInput,
             int32_t sMin = max(y - aRadius, 0);
             int32_t sMax = min(y + aRadius, aRows - 1);
             int32_t v = 0;
-			#pragma omp parallel for
+	#pragma omp parallel for
             for (int32_t s = sMin; s <= sMax; ++s) {
                 v = max<int32_t>(v, aInput[aStride * s + x]);
             }
