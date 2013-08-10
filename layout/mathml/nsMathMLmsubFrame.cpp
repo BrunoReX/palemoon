@@ -63,16 +63,14 @@ nsMathMLmsubFrame::Place (nsRenderingContext& aRenderingContext,
   // default: automatic
   //
   // We use 0 as the default value so unitless values can be ignored.
-  // XXXfredw Should we forbid negative values? (bug 411227)
+  // As a minimum, negative values can be ignored.
   //
   nscoord subScriptShift = 0;
   nsAutoString value;
   GetAttribute(mContent, mPresentationData.mstyle,
                nsGkAtoms::subscriptshift_, value);
   if (!value.IsEmpty()) {
-    ParseNumericValue(value, &subScriptShift,
-                      nsMathMLElement::PARSE_ALLOW_NEGATIVE,
-                      PresContext(), mStyleContext);
+    ParseNumericValue(value, &subScriptShift, 0, PresContext(), mStyleContext);
   }
 
   return nsMathMLmsubFrame::PlaceSubScript(PresContext(), 
@@ -110,6 +108,9 @@ nsMathMLmsubFrame::PlaceSubScript (nsPresContext*      aPresContext,
     subScriptFrame = baseFrame->GetNextSibling();
   if (!baseFrame || !subScriptFrame || subScriptFrame->GetNextSibling()) {
     // report an error, encourage people to get their markups in order
+    if (aPlaceOrigin) {
+      aFrame->ReportChildCountError();
+    }
     return aFrame->ReflowError(aRenderingContext, aDesiredSize);
   }
   GetReflowAndBoundingMetricsFor(baseFrame, baseSize, bmBase);

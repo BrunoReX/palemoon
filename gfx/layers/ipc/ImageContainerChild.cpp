@@ -12,6 +12,7 @@
 #include "ImageContainer.h"
 #include "GonkIOSurfaceImage.h"
 #include "GrallocImages.h"
+#include "SharedRGBImage.h"
 #include "mozilla/layers/ShmemYCbCrImage.h"
 #include "mozilla/ReentrantMonitor.h"
 
@@ -104,12 +105,32 @@ void ImageContainerChild::StopChild()
 bool ImageContainerChild::RecvReturnImage(const SharedImage& aImage)
 {
   SharedImage* img = new SharedImage(aImage);
+  // Hold the image because removing it from the image queue
+  // risks deleting the object before we can put it into
+  // the pool
+  nsRefPtr<Image> image;
   // Remove oldest image from the queue.
   if (mImageQueue.Length() > 0) {
+    image = mImageQueue[0];
     mImageQueue.RemoveElementAt(0);
   }
-  if (!AddSharedImageToPool(img) || mStop) {
-    DestroySharedImage(*img);
+  bool isSharedImage;
+  if (image && image->GetFormat() == PLANAR_YCBCR) {
+    SharedPlanarYCbCrImage* sharedYCbCr
+      = static_cast<PlanarYCbCrImage*>(image.get())->AsSharedPlanarYCbCrImage();
+    isSharedImage = !!sharedYCbCr;
+  } else if (image && image->GetFormat() == SHARED_RGB) {
+    SharedRGBImage *rgbImage = static_cast<SharedRGBImage*>(image.get());
+    isSharedImage = !!rgbImage;
+  } else {
+    isSharedImage = false;
+  }
+  if (!isSharedImage) {
+    if (!AddSharedImageToPool(img) || mStop) {
+      delete img;
+      DestroySharedImage(*img);
+    }
+  } else {
     delete img;
   }
   return true;
@@ -361,6 +382,7 @@ void ImageContainerChild::SendImageAsync(ImageContainer* aContainer,
 
   if (InImageBridgeChildThread()) {
     SendImageNow(aImage);
+    return;
   }
 
   // Sending images and (potentially) allocating shmems must be done 
@@ -429,7 +451,7 @@ bool ImageContainerChild::AllocUnsafeShmemSync(size_t aBufSize,
     return false;
   }
   if (InImageBridgeChildThread()) {
-    AllocUnsafeShmem(aBufSize, aType, aShmem);
+    return AllocUnsafeShmem(aBufSize, aType, aShmem);
   }
   ReentrantMonitor barrier("ImageContainerChild::AllocUnsafeShmemSync");
   ReentrantMonitorAutoEnter autoBarrier(barrier);
@@ -596,12 +618,13 @@ already_AddRefed<Image> ImageContainerChild::CreateImage(const uint32_t *aFormat
                                                          uint32_t aNumFormats)
 {
   nsRefPtr<Image> img;
-#ifdef MOZ_WIDGET_GONK
   for (uint32_t i = 0; i < aNumFormats; i++) {
     switch (aFormats[i]) {
       case PLANAR_YCBCR:
-#endif
         img = new SharedPlanarYCbCrImage(this);
+        return img.forget();
+      case SHARED_RGB:
+        img = new SharedRGBImage(this);
         return img.forget();
 #ifdef MOZ_WIDGET_GONK
       case GONK_IO_SURFACE:
@@ -610,11 +633,11 @@ already_AddRefed<Image> ImageContainerChild::CreateImage(const uint32_t *aFormat
       case GRALLOC_PLANAR_YCBCR:
         img = new GrallocPlanarYCbCrImage();
         return img.forget();
+#endif
     }
   }
 
   return nullptr;
-#endif
 }
 
 SharedImage* ImageContainerChild::AsSharedImage(Image* aImage)
@@ -635,6 +658,11 @@ SharedImage* ImageContainerChild::AsSharedImage(Image* aImage)
       = static_cast<PlanarYCbCrImage*>(aImage)->AsSharedPlanarYCbCrImage();
     if (sharedYCbCr) {
       return sharedYCbCr->ToSharedImage();
+    }
+  } else if (aImage->GetFormat() == SHARED_RGB) {
+    SharedRGBImage *rgbImage = static_cast<SharedRGBImage*>(aImage);
+    if (rgbImage) {
+      return rgbImage->ToSharedImage();
     }
   }
   return nullptr;

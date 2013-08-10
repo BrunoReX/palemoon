@@ -11,6 +11,7 @@ const Cu = Components.utils;
 
 const DBG_STRINGS_URI = "chrome://browser/locale/devtools/debugger.properties";
 const NEW_SCRIPT_DISPLAY_DELAY = 200; // ms
+const FETCH_SOURCE_RESPONSE_DELAY = 50; // ms
 const FRAME_STEP_CLEAR_DELAY = 100; // ms
 const CALL_STACK_PAGE_SIZE = 25; // frames
 
@@ -48,6 +49,7 @@ let DebuggerController = {
       return;
     }
     this._isInitialized = true;
+
     window.removeEventListener("load", this._startupDebugger, true);
 
     DebuggerView.initialize(function() {
@@ -145,14 +147,36 @@ let DebuggerController = {
    * wiring event handlers as necessary.
    */
   _connect: function DC__connect() {
-    if (window._isRemoteDebugger && !this._prepareConnection()) {
+    function callback() {
+      window.dispatchEvent("Debugger:Connected");
+    }
+
+    let client;
+
+    // Remote debugging gets the debuggee from a RemoteTarget object.
+    if (this._target && this._target.isRemote) {
+      window._isRemoteDebugger = true;
+
+      client = this.client = this._target.client;
+      this._target.on("close", this._onTabDetached);
+      this._target.on("navigate", this._onTabNavigated);
+
+      if (this._target.chrome) {
+        let dbg = this._target.form.chromeDebugger;
+        this._startChromeDebugging(client, dbg, callback);
+      } else {
+        this._startDebuggingTab(client, this._target.form, callback);
+      }
       return;
     }
-    let transport = (window._isChromeDebugger || window._isRemoteDebugger)
+
+    // Content or chrome debugging can connect directly to the debuggee.
+    // TODO: convert this to use a TabTarget.
+    let transport = window._isChromeDebugger
       ? debuggerSocketConnect(Prefs.remoteHost, Prefs.remotePort)
       : DebuggerServer.connectPipe();
 
-    let client = this.client = new DebuggerClient(transport);
+    client = this.client = new DebuggerClient(transport);
     client.addListener("tabNavigated", this._onTabNavigated);
     client.addListener("tabDetached", this._onTabDetached);
 
@@ -160,12 +184,11 @@ let DebuggerController = {
       client.listTabs(function(aResponse) {
         if (window._isChromeDebugger) {
           let dbg = aResponse.chromeDebugger;
-          this._startChromeDebugging(client, dbg);
+          this._startChromeDebugging(client, dbg, callback);
         } else {
           let tab = aResponse.tabs[aResponse.selected];
-          this._startDebuggingTab(client, tab);
+          this._startDebuggingTab(client, tab, callback);
         }
-        window.dispatchEvent("Debugger:Connected");
       }.bind(this));
     }.bind(this));
   },
@@ -180,7 +203,11 @@ let DebuggerController = {
     }
     this.client.removeListener("tabNavigated", this._onTabNavigated);
     this.client.removeListener("tabDetached", this._onTabDetached);
-    this.client.close();
+
+    // When remote debugging, the connection is closed by the RemoteTarget.
+    if (!window._isRemoteDebugger) {
+      this.client.close();
+    }
 
     this.client = null;
     this.tabClient = null;
@@ -189,9 +216,18 @@ let DebuggerController = {
 
   /**
    * Called for each location change in the debugged tab.
+   *
+   * @param string aType
+   *        Packet type.
+   * @param object aPacket
+   *        Packet received from the server.
    */
-  _onTabNavigated: function DC__onTabNavigated() {
-    DebuggerView._handleTabNavigation();
+  _onTabNavigated: function DC__onTabNavigated(aType, aPacket) {
+    if (aPacket.state == "start") {
+      DebuggerView._handleTabNavigation();
+      return;
+    }
+
     this.ThreadState._handleTabNavigation();
     this.StackFrames._handleTabNavigation();
     this.SourceScripts._handleTabNavigation();
@@ -212,7 +248,7 @@ let DebuggerController = {
    * @param object aTabGrip
    *        The remote protocol grip of the tab.
    */
-  _startDebuggingTab: function DC__startDebuggingTab(aClient, aTabGrip) {
+  _startDebuggingTab: function DC__startDebuggingTab(aClient, aTabGrip, aCallback) {
     if (!aClient) {
       Cu.reportError("No client found!");
       return;
@@ -238,6 +274,9 @@ let DebuggerController = {
         this.SourceScripts.connect();
         aThreadClient.resume();
 
+        if (aCallback) {
+          aCallback();
+        }
       }.bind(this));
     }.bind(this));
   },
@@ -250,7 +289,7 @@ let DebuggerController = {
    * @param object aChromeDebugger
    *        The remote protocol grip of the chrome debugger.
    */
-  _startChromeDebugging: function DC__startChromeDebugging(aClient, aChromeDebugger) {
+  _startChromeDebugging: function DC__startChromeDebugging(aClient, aChromeDebugger, aCallback) {
     if (!aClient) {
       Cu.reportError("No client found!");
       return;
@@ -269,6 +308,9 @@ let DebuggerController = {
       this.SourceScripts.connect();
       aThreadClient.resume();
 
+      if (aCallback) {
+        aCallback();
+      }
     }.bind(this));
   },
 
@@ -469,14 +511,17 @@ StackFrames.prototype = {
     if (this.currentBreakpointLocation) {
       let { url, line } = this.currentBreakpointLocation;
       let breakpointClient = DebuggerController.Breakpoints.getBreakpoint(url, line);
-      let conditionalExpression = breakpointClient.conditionalExpression;
-      if (conditionalExpression) {
-        // Evaluating the current breakpoint's conditional expression will
-        // cause the stack frames to be cleared and active thread to pause,
-        // sending a 'clientEvaluated' packed and adding the frames again.
-        this.evaluate(conditionalExpression, 0);
-        this._isConditionalBreakpointEvaluation = true;
-        return;
+      if (breakpointClient) {
+        // Make sure a breakpoint actually exists at the specified url and line.
+        let conditionalExpression = breakpointClient.conditionalExpression;
+        if (conditionalExpression) {
+          // Evaluating the current breakpoint's conditional expression will
+          // cause the stack frames to be cleared and active thread to pause,
+          // sending a 'clientEvaluated' packed and adding the frames again.
+          this.evaluate(conditionalExpression, 0);
+          this._isConditionalBreakpointEvaluation = true;
+          return;
+        }
       }
     }
     // Got our evaluation of the current breakpoint's conditional expression.
@@ -602,8 +647,10 @@ StackFrames.prototype = {
       let arrow = L10N.getStr("watchExpressionsSeparatorLabel");
       let scope = DebuggerView.Variables.addScope(label);
       scope.separator = arrow;
+      scope.showDescriptorTooltip = false;
       scope.allowNameInput = true;
       scope.allowDeletion = true;
+      scope.contextMenu = "debuggerWatchExpressionsContextMenu";
       scope.switch = DebuggerView.WatchExpressions.switchExpression;
       scope.delete = DebuggerView.WatchExpressions.deleteExpression;
 
@@ -890,7 +937,9 @@ StackFrames.prototype = {
         label += " [" + aEnv.object.class + "]";
         break;
       case "function":
-        label += " [" + aEnv.functionName + "]";
+        let f = aEnv.function;
+        label += " [" + (f.name || f.userDisplayName || f.displayName ||
+                         "(anonymous)") + "]";
         break;
     }
     return label;
@@ -1118,6 +1167,7 @@ SourceScripts.prototype = {
 
     DebuggerView.Sources.push(label, url, {
       forced: aOptions.forced,
+      tooltip: url,
       attachment: aSource
     });
   },
@@ -1129,20 +1179,33 @@ SourceScripts.prototype = {
    *        The source object coming from the active thread.
    * @param function aCallback
    *        Function called after the source text has been loaded.
+   * @param function aOnTimeout
+   *        Function called when the source text takes too long to fetch.
    */
-  getText: function SS_getText(aSource, aCallback) {
+  getText: function SS_getText(aSource, aCallback, aOnTimeout) {
     // If already loaded, return the source text immediately.
     if (aSource.loaded) {
       aCallback(aSource.url, aSource.text);
       return;
     }
 
+    // If the source text takes too long to fetch, invoke a timeout to
+    // avoid blocking any operations.
+    if (aOnTimeout) {
+      var fetchTimeout = window.setTimeout(aOnTimeout, FETCH_SOURCE_RESPONSE_DELAY);
+    }
+
     // Get the source text from the active thread.
     this.activeThread.source(aSource.source).source(function(aResponse) {
+      window.clearTimeout(fetchTimeout);
+
       if (aResponse.error) {
-        Cu.reportError("Error loading " + aUrl);
+        Cu.reportError("Error loading " + aSource.url + "\n" + aResponse.error);
+        aCallback(aSource.url, "");
         return;
       }
+      aSource.loaded = true;
+      aSource.text = aResponse.source;
       aCallback(aSource.url, aResponse.source);
     });
   }
@@ -1559,7 +1622,6 @@ let Prefs = {
   }
 };
 
-Prefs.map("Int", "height", "devtools.debugger.ui.height");
 Prefs.map("Int", "windowX", "devtools.debugger.ui.win-x");
 Prefs.map("Int", "windowY", "devtools.debugger.ui.win-y");
 Prefs.map("Int", "windowWidth", "devtools.debugger.ui.win-width");
@@ -1568,7 +1630,7 @@ Prefs.map("Int", "stackframesWidth", "devtools.debugger.ui.stackframes-width");
 Prefs.map("Int", "variablesWidth", "devtools.debugger.ui.variables-width");
 Prefs.map("Bool", "panesVisibleOnStartup", "devtools.debugger.ui.panes-visible-on-startup");
 Prefs.map("Bool", "variablesSortingEnabled", "devtools.debugger.ui.variables-sorting-enabled");
-Prefs.map("Bool", "variablesNonEnumVisible", "devtools.debugger.ui.variables-non-enum-visible");
+Prefs.map("Bool", "variablesOnlyEnumVisible", "devtools.debugger.ui.variables-only-enum-visible");
 Prefs.map("Bool", "variablesSearchboxVisible", "devtools.debugger.ui.variables-searchbox-visible");
 Prefs.map("Char", "remoteHost", "devtools.debugger.remote-host");
 Prefs.map("Int", "remotePort", "devtools.debugger.remote-port");

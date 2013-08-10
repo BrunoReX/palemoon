@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/DebugOnly.h"
+
 #include "base/basictypes.h"
 
 #include "ContentParent.h"
@@ -38,7 +40,6 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/Util.h"
 #include "mozilla/unused.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsAppDirectoryServiceDefs.h"
@@ -92,10 +93,6 @@
 
 #ifdef MOZ_PERMISSIONS
 # include "nsPermissionManager.h"
-#endif
-
-#ifdef MOZ_SYDNEYAUDIO
-# include "AudioParent.h"
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
@@ -1564,29 +1561,6 @@ ContentParent::DeallocPTestShell(PTestShellParent* shell)
   return true;
 }
  
-PAudioParent*
-ContentParent::AllocPAudio(const int32_t& numChannels,
-                           const int32_t& rate)
-{
-#if defined(MOZ_SYDNEYAUDIO)
-    AudioParent *parent = new AudioParent(numChannels, rate);
-    NS_ADDREF(parent);
-    return parent;
-#else
-    return nullptr;
-#endif
-}
-
-bool
-ContentParent::DeallocPAudio(PAudioParent* doomed)
-{
-#if defined(MOZ_SYDNEYAUDIO)
-    AudioParent *parent = static_cast<AudioParent*>(doomed);
-    NS_RELEASE(parent);
-#endif
-    return true;
-}
-
 PNeckoParent* 
 ContentParent::AllocPNecko()
 {
@@ -1973,16 +1947,69 @@ ContentParent::RecvAsyncMessage(const nsString& aMsg,
 }
 
 bool
-ContentParent::RecvAddGeolocationListener()
+ContentParent::RecvAddGeolocationListener(const IPC::Principal& aPrincipal)
 {
-  if (mGeolocationWatchID == -1) {
-    nsCOMPtr<nsIDOMGeoGeolocation> geo = do_GetService("@mozilla.org/geolocation;1");
-    if (!geo) {
+#ifdef MOZ_PERMISSIONS
+  if (Preferences::GetBool("geo.testing.ignore_ipc_principal", false) == false) {
+    nsIPrincipal* principal = aPrincipal;
+    if (principal == nullptr) {
+      KillHard();
       return true;
     }
-    jsval dummy = JSVAL_VOID;
-    geo->WatchPosition(this, nullptr, dummy, nullptr, &mGeolocationWatchID);
+
+    uint32_t principalAppId;
+    nsresult rv = principal->GetAppId(&principalAppId);
+    if (NS_FAILED(rv)) {
+      return true;
+    }
+
+    bool found = false;
+    const InfallibleTArray<PBrowserParent*>& browsers = ManagedPBrowserParent();
+    for (uint32_t i = 0; i < browsers.Length(); ++i) {
+      TabParent* tab = static_cast<TabParent*>(browsers[i]);
+      nsCOMPtr<mozIApplication> app = tab->GetOwnOrContainingApp();
+      uint32_t appId;
+      app->GetLocalId(&appId);
+      if (appId == principalAppId) {
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      return true;
+    }
+
+    // We need to ensure that this permission has been set.
+    // If it hasn't, just noop
+    nsCOMPtr<nsIPermissionManager> pm = do_GetService(NS_PERMISSIONMANAGER_CONTRACTID);
+    if (!pm) {
+      return false;
+    }
+
+    uint32_t permission = nsIPermissionManager::UNKNOWN_ACTION;
+    rv = pm->TestPermissionFromPrincipal(principal, "geolocation", &permission);
+    if (NS_FAILED(rv) || permission != nsIPermissionManager::ALLOW_ACTION) {
+      KillHard();
+      return true;
+    }
   }
+#endif
+
+  // To ensure no geolocation updates are skipped, we always force the
+  // creation of a new listener.
+  RecvRemoveGeolocationListener();
+
+  nsCOMPtr<nsIDOMGeoGeolocation> geo = do_GetService("@mozilla.org/geolocation;1");
+  if (!geo) {
+    return true;
+  }
+
+  nsRefPtr<nsGeolocation> geosvc = static_cast<nsGeolocation*>(geo.get());
+  nsAutoPtr<mozilla::dom::GeoPositionOptions> options(new mozilla::dom::GeoPositionOptions());
+  jsval null = JS::NullValue();
+  options->Init(nullptr, &null);
+  geosvc->WatchPosition(this, nullptr, options.forget(), &mGeolocationWatchID);
   return true;
 }
 

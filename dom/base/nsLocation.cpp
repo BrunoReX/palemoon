@@ -524,8 +524,8 @@ nsLocation::SetHrefWithBase(const nsAString& aHref, nsIURI* aBase,
     bool inScriptTag=false;
     JSContext *cx = nsContentUtils::GetCurrentJSContext();
     if (cx) {
-      nsCOMPtr<nsIScriptContext_19> scriptContext =
-        do_QueryInterface(nsJSUtils::GetDynamicScriptContext(cx));
+      nsIScriptContext *scriptContext =
+        nsJSUtils::GetDynamicScriptContext(cx);
 
       if (scriptContext) {
         if (scriptContext->GetProcessingScriptTag()) {

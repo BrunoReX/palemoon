@@ -31,7 +31,7 @@ sync/DelayedWorkTracker.java
 sync/delegates/ClientsDataDelegate.java
 sync/delegates/FreshStartDelegate.java
 sync/delegates/GlobalSessionCallback.java
-sync/delegates/InfoCollectionsDelegate.java
+sync/delegates/JSONRecordFetchDelegate.java
 sync/delegates/KeyUploadDelegate.java
 sync/delegates/MetaGlobalDelegate.java
 sync/delegates/WipeServerDelegate.java
@@ -40,6 +40,7 @@ sync/ExtendedJSONObject.java
 sync/GlobalSession.java
 sync/HTTPFailureException.java
 sync/InfoCollections.java
+sync/InfoCounts.java
 sync/jpake/BigIntegerHelper.java
 sync/jpake/Gx3OrGx4IsZeroOrOneException.java
 sync/jpake/IncorrectZkpException.java
@@ -50,9 +51,6 @@ sync/jpake/JPakeNoActivePairingException.java
 sync/jpake/JPakeNumGenerator.java
 sync/jpake/JPakeNumGeneratorRandom.java
 sync/jpake/JPakeParty.java
-sync/jpake/JPakeRequest.java
-sync/jpake/JPakeRequestDelegate.java
-sync/jpake/JPakeResponse.java
 sync/jpake/stage/CompleteStage.java
 sync/jpake/stage/ComputeFinalStage.java
 sync/jpake/stage/ComputeKeyVerificationStage.java
@@ -66,6 +64,7 @@ sync/jpake/stage/JPakeStage.java
 sync/jpake/stage/PutRequestStage.java
 sync/jpake/stage/VerifyPairingStage.java
 sync/jpake/Zkp.java
+sync/JSONRecordFetcher.java
 sync/KeyBundleProvider.java
 sync/log/writers/AndroidLevelCachingLogWriter.java
 sync/log/writers/AndroidLogWriter.java
@@ -85,13 +84,17 @@ sync/middleware/Crypto5MiddlewareRepository.java
 sync/middleware/Crypto5MiddlewareRepositorySession.java
 sync/middleware/MiddlewareRepository.java
 sync/middleware/MiddlewareRepositorySession.java
+sync/net/AuthHeaderProvider.java
 sync/net/BaseResource.java
+sync/net/BaseResourceDelegate.java
+sync/net/BasicAuthHeaderProvider.java
+sync/net/BrowserIDAuthHeaderProvider.java
 sync/net/ConnectionMonitorThread.java
 sync/net/HandleProgressException.java
+sync/net/HMACAuthHeaderProvider.java
 sync/net/HttpResponseObserver.java
 sync/net/Resource.java
 sync/net/ResourceDelegate.java
-sync/net/SyncResourceDelegate.java
 sync/net/SyncResponse.java
 sync/net/SyncStorageCollectionRequest.java
 sync/net/SyncStorageCollectionRequestDelegate.java
@@ -223,6 +226,7 @@ sync/stage/GlobalSyncStage.java
 sync/stage/NoSuchStageException.java
 sync/stage/NoSyncIDException.java
 sync/stage/PasswordsServerSyncStage.java
+sync/stage/SafeConstrainedServer11Repository.java
 sync/stage/ServerSyncStage.java
 sync/stage/SyncClientsEngineStage.java
 sync/stage/UploadMetaGlobalStage.java

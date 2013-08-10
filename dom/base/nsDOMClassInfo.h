@@ -20,31 +20,10 @@
 #undef GetClassName
 #endif
 
-namespace mozilla {
-class DOMSVGLengthList;
-class DOMSVGNumberList;
-class DOMSVGPathSegList;
-class DOMSVGPointList;
-class DOMSVGStringList;
-class DOMSVGTransformList;
-}
-
 class nsContentList;
 class nsGlobalWindow;
 class nsICanvasRenderingContextInternal;
 class nsIDOMHTMLOptionsCollection;
-class nsIDOMSVGLength;
-class nsIDOMSVGLengthList;
-class nsIDOMSVGNumber;
-class nsIDOMSVGNumberList;
-class nsIDOMSVGPathSeg;
-class nsIDOMSVGPathSegList;
-class nsIDOMSVGPoint;
-class nsIDOMSVGPointList;
-class nsIDOMSVGStringList;
-class nsIDOMSVGTests;
-class nsIDOMSVGTransform;
-class nsIDOMSVGTransformList;
 class nsIDOMWindow;
 class nsIForm;
 class nsIHTMLDocument;
@@ -196,19 +175,6 @@ protected:
             id == sURL_id);
   }
 
-  static inline bool IsWritableReplaceable(jsid id)
-  {
-    return (id == sInnerHeight_id  ||
-            id == sInnerWidth_id   ||
-            id == sOpener_id       ||
-            id == sOuterHeight_id  ||
-            id == sOuterWidth_id   ||
-            id == sScreenX_id      ||
-            id == sScreenY_id      ||
-            id == sStatus_id       ||
-            id == sName_id);
-  }
-
   static nsIXPConnect *sXPConnect;
   static nsIScriptSecurityManager *sSecMan;
 
@@ -234,14 +200,6 @@ public:
   static jsid sDialogArguments_id;
   static jsid sControllers_id;
   static jsid sLength_id;
-  static jsid sInnerHeight_id;
-  static jsid sInnerWidth_id;
-  static jsid sOuterHeight_id;
-  static jsid sOuterWidth_id;
-  static jsid sScreenX_id;
-  static jsid sScreenY_id;
-  static jsid sStatus_id;
-  static jsid sName_id;
   static jsid sScrollX_id;
   static jsid sScrollY_id;
   static jsid sScrollMaxX_id;
@@ -254,21 +212,13 @@ public:
   static jsid sDocument_id;
   static jsid sFrames_id;
   static jsid sSelf_id;
-  static jsid sOpener_id;
   static jsid sAll_id;
   static jsid sTags_id;
-  static jsid sAddEventListener_id;
-  static jsid sBaseURIObject_id;
-  static jsid sNodePrincipal_id;
   static jsid sDocumentURIObject_id;
   static jsid sJava_id;
   static jsid sPackages_id;
   static jsid sWrappedJSObject_id;
   static jsid sURL_id;
-  static jsid sKeyPath_id;
-  static jsid sAutoIncrement_id;
-  static jsid sUnique_id;
-  static jsid sMultiEntry_id;
   static jsid sOnload_id;
   static jsid sOnerror_id;
 
@@ -341,30 +291,6 @@ public:
   static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
   {
     return new nsEventTargetSH(aData);
-  }
-};
-
-class nsDOMMutationObserverSH : public nsDOMGenericSH
-{
-protected:
-  nsDOMMutationObserverSH(nsDOMClassInfoData* aData) : nsDOMGenericSH(aData)
-  {
-  }
-
-  virtual ~nsDOMMutationObserverSH()
-  {
-  }
-public:
-  NS_IMETHOD PreCreate(nsISupports* aNativeObj, JSContext* aCx,
-                       JSObject* aGlobalObj, JSObject** aParentObj);
-  NS_IMETHOD AddProperty(nsIXPConnectWrappedNative* aWrapper, JSContext* aCx,
-                         JSObject* aObj, jsid aId, jsval* aVp, bool* aRetval);
-
-  virtual void PreserveWrapper(nsISupports* aNative);
-
-  static nsIClassInfo* doCreate(nsDOMClassInfoData* aData)
-  {
-    return new nsDOMMutationObserverSH(aData);
   }
 };
 
@@ -454,6 +380,8 @@ public:
 
   NS_IMETHOD PreCreate(nsISupports *nativeObj, JSContext *cx,
                        JSObject *globalObj, JSObject **parentObj);
+  NS_IMETHODIMP AddProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
+                            JSObject *obj, jsid id, jsval *vp, bool *_retval);
 
   static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
   {
@@ -528,7 +456,6 @@ protected:
 public:
   NS_IMETHOD PreCreate(nsISupports *nativeObj, JSContext *cx,
                        JSObject *globalObj, JSObject **parentObj);
-  NS_IMETHOD PostCreatePrototype(JSContext * cx, JSObject * proto);
   NS_IMETHOD AddProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
                          JSObject *obj, jsid id, jsval *vp, bool *_retval);
   NS_IMETHOD NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
@@ -1105,29 +1032,6 @@ public:
 };
 
 
-// CSSValueList helper
-
-class nsCSSValueListSH : public nsArraySH
-{
-protected:
-  nsCSSValueListSH(nsDOMClassInfoData* aData) : nsArraySH(aData)
-  {
-  }
-
-  virtual ~nsCSSValueListSH()
-  {
-  }
-
-  virtual nsISupports* GetItemAt(nsISupports *aNative, uint32_t aIndex,
-                                 nsWrapperCache **aCache, nsresult *aResult);
-
-public:
-  static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
-  {
-    return new nsCSSValueListSH(aData);
-  }
-};
-
 // CSSRuleList helper
 
 class nsCSSRuleListSH : public nsArraySH
@@ -1251,24 +1155,6 @@ public:
   }
 
   virtual ~nsEventListenerThisTranslator()
-  {
-  }
-
-  // nsISupports
-  NS_DECL_ISUPPORTS
-
-  // nsIXPCFunctionThisTranslator
-  NS_DECL_NSIXPCFUNCTIONTHISTRANSLATOR
-};
-
-class nsMutationCallbackThisTranslator : public nsIXPCFunctionThisTranslator
-{
-public:
-  nsMutationCallbackThisTranslator()
-  {
-  }
-
-  virtual ~nsMutationCallbackThisTranslator()
   {
   }
 

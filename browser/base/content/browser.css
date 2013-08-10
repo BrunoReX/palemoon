@@ -478,10 +478,6 @@ window[chromehidden~="toolbar"] toolbar:not(.toolbar-primary):not(.chromeclass-m
   max-width: 280px;
 }
 
-#geolocation-notification {
-  -moz-binding: url("chrome://browser/content/urlbarBindings.xml#geolocation-notification");
-}
-
 #addon-progress-notification {
   -moz-binding: url("chrome://browser/content/urlbarBindings.xml#addon-progress-notification");
 }
@@ -564,10 +560,6 @@ statuspanel[inactive][previoustype=overLink] {
   -moz-box-align: end;
 }
 
-.styleInspector {
-  min-width: 350px;
-}
-
 .panel-inner-arrowcontentfooter[footertype="promobox"] {
   -moz-binding: url("chrome://browser/content/urlbarBindings.xml#promobox");
 }
@@ -595,20 +587,14 @@ html|*#gcli-output-frame,
   direction: ltr;
 }
 
-#developer-toolbar-webconsole[error-count] > .toolbarbutton-icon {
+#developer-toolbar-toolbox-button[error-count] > .toolbarbutton-icon {
   display: none;
 }
 
-#developer-toolbar-webconsole[error-count]:before {
+#developer-toolbar-toolbox-button[error-count]:before {
   content: attr(error-count);
   display: -moz-box;
   -moz-box-pack: center;
-}
-
-/* We don't show the Style Editor button in the developer toolbar for now.
-   See bug 771203 */
-#developer-toolbar-styleeditor {
-  display: none;
 }
 
 /* Responsive Mode */
@@ -632,6 +618,10 @@ html|*#gcli-output-frame,
 
 .browserStack[responsivemode][notransition] {
   transition: none;
+}
+
+.social-notification-container > .toolbarbutton-1[badge]:not([badge=""])::after {
+  content: attr(badge);
 }
 
 chatbox {

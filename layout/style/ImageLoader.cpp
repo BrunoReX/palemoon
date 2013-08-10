@@ -43,10 +43,27 @@ ImageLoader::SetAnimationModeEnumerator(nsISupports* aKey, FrameSet* aValue,
   return PL_DHASH_NEXT;
 }
 
+static PLDHashOperator
+ClearImageHashSet(nsPtrHashKey<ImageLoader::Image>* aKey, void* aClosure)
+{
+  nsIDocument* doc = static_cast<nsIDocument*>(aClosure);
+  ImageLoader::Image* image = aKey->GetKey();
+
+  imgIRequest* request = image->mRequests.GetWeak(doc);
+  if (request) {
+    request->CancelAndForgetObserver(NS_BINDING_ABORTED);
+  }
+
+  image->mRequests.Remove(doc);
+
+  return PL_DHASH_REMOVE;
+}
+
 void
 ImageLoader::DropDocumentReference()
 {
-  ClearAll();
+  ClearFrames();
+  mImages.EnumerateEntries(&ClearImageHashSet, mDocument);
   mDocument = nullptr;
 }
 
@@ -121,13 +138,13 @@ ImageLoader::MaybeRegisterCSSImage(ImageLoader::Image* aImage)
     return;
   }
 
-  imgIRequest* canonicalRequest = aImage->mRequests.GetWeak(nullptr);
+  imgRequestProxy* canonicalRequest = aImage->mRequests.GetWeak(nullptr);
   if (!canonicalRequest) {
     // The image was blocked or something.
     return;
   }
 
-  nsCOMPtr<imgIRequest> request;
+  nsRefPtr<imgRequestProxy> request;
 
   // Ignore errors here.  If cloning fails for some reason we'll put a null
   // entry in the hash and we won't keep trying to clone.
@@ -220,28 +237,11 @@ ImageLoader::SetAnimationMode(uint16_t aMode)
   mRequestToFrameMap.EnumerateRead(SetAnimationModeEnumerator, &aMode);
 }
 
-static PLDHashOperator
-ClearImageHashSet(nsPtrHashKey<ImageLoader::Image>* aKey, void* aClosure)
-{
-  nsIDocument* doc = static_cast<nsIDocument*>(aClosure);
-  ImageLoader::Image* image = aKey->GetKey();
-
-  imgIRequest* request = image->mRequests.GetWeak(doc);
-  if (request) {
-    request->CancelAndForgetObserver(NS_BINDING_ABORTED);
-  }
-
-  image->mRequests.Remove(doc);
-
-  return PL_DHASH_REMOVE;
-}
-
 void
-ImageLoader::ClearAll()
+ImageLoader::ClearFrames()
 {
   mRequestToFrameMap.Clear();
   mFrameToRequestMap.Clear();
-  mImages.EnumerateEntries(&ClearImageHashSet, mDocument);
 }
 
 void
@@ -261,7 +261,7 @@ ImageLoader::LoadImage(nsIURI* aURI, nsIPrincipal* aOriginPrincipal,
     return;
   }
 
-  nsCOMPtr<imgIRequest> request;
+  nsRefPtr<imgRequestProxy> request;
   nsContentUtils::LoadImage(aURI, mDocument, aOriginPrincipal, aReferrer,
                             nullptr, nsIRequest::LOAD_NORMAL,
                             getter_AddRefs(request));
@@ -270,7 +270,7 @@ ImageLoader::LoadImage(nsIURI* aURI, nsIPrincipal* aOriginPrincipal,
     return;
   }
 
-  nsCOMPtr<imgIRequest> clonedRequest;
+  nsRefPtr<imgRequestProxy> clonedRequest;
   mInClone = true;
   nsresult rv = request->Clone(this, getter_AddRefs(clonedRequest));
   mInClone = false;
@@ -341,7 +341,14 @@ ImageLoader::DoRedraw(FrameSet* aFrameSet)
     nsIFrame* frame = aFrameSet->ElementAt(i);
 
     if (frame->GetStyleVisibility()->IsVisible()) {
-      FrameLayerBuilder::IterateRetainedDataFor(frame, InvalidateImagesCallback);
+      if (frame->IsFrameOfType(nsIFrame::eTablePart)) {
+        // Tables don't necessarily build border/background display items
+        // for the individual table part frames, so IterateRetainedDataFor
+        // might not find the right display item.
+        frame->InvalidateFrame();
+      } else {
+        FrameLayerBuilder::IterateRetainedDataFor(frame, InvalidateImagesCallback);
+      }
     }
   }
 }

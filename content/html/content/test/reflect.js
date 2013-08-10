@@ -48,15 +48,22 @@ function reflectString(aParameters)
    * specifications, don't add it to the loop below and keep it here.
    */
   element.setAttribute(contentAttr, null);
-  todo_is(element.getAttribute(contentAttr), "null",
+  is(element.getAttribute(contentAttr), "null",
      "null should have been stringified to 'null'");
-  todo_is(element[idlAttr], "null",
+  is(element[idlAttr], "null",
      "null should have been stringified to 'null'");
   element.removeAttribute(contentAttr);
 
   element[idlAttr] = null;
   // TODO: remove this ugly hack when null stringification will work as expected.
-  if (element.localName == "textarea" && idlAttr == "wrap") {
+  var todoAttrs = {
+    form: [ "acceptCharset", "name", "target" ],
+    input: [ "accept", "alt", "formTarget", "max", "min", "name", "pattern", "placeholder", "step", "defaultValue" ],
+    link: [ "crossOrigin" ],
+    source: [ "media" ],
+    textarea: [ "name", "placeholder" ],
+  };
+  if (!(element.localName in todoAttrs) || todoAttrs[element.localName].indexOf(idlAttr) == -1) {
     is(element.getAttribute(contentAttr), "null",
        "null should have been stringified to 'null'");
     is(element[idlAttr], "null", "null should have been stringified to 'null'");
@@ -156,7 +163,7 @@ function reflectUnsignedInt(aParameters)
 
   var values = [ 1, 3, 42, 2147483647 ];
 
-  for each (var value in values) {
+  for (var value of values) {
     element[attr] = value;
     is(element[attr], value, "." + attr + " should be equals " + value);
     is(element.getAttribute(attr), value,
@@ -188,7 +195,7 @@ function reflectUnsignedInt(aParameters)
     [ 3147483647,  3147483647 ],
   ];
 
-  for each (var values in nonValidValues) {
+  for (var values of nonValidValues) {
     element[attr] = values[0];
     is(element.getAttribute(attr), values[1],
        "@" + attr + " should be equals to " + values[1]);
@@ -196,7 +203,7 @@ function reflectUnsignedInt(aParameters)
        "." + attr + " should be equals to " + defaultValue);
   }
 
-  for each (var values in nonValidValues) {
+  for (var values of nonValidValues) {
     element.setAttribute(attr, values[0]);
     is(element.getAttribute(attr), values[0],
        "@" + attr + " should be equals to " + values[0]);
@@ -423,14 +430,8 @@ function reflectBoolean(aParameters)
     element.setAttribute(contentAttr, v.value);
     is(element[idlAttr], true,
        "IDL attribute should return always return 'true' if the content attribute has been set");
-    if (v.value === null) {
-      // bug 667856
-      todo(element.getAttribute(contentAttr), v.stringified,
-           "Content attribute should return the stringified value it has been set to.");
-    } else {
-      is(element.getAttribute(contentAttr), v.stringified,
-         "Content attribute should return the stringified value it has been set to.");
-    }
+    is(element.getAttribute(contentAttr), v.stringified,
+       "Content attribute should return the stringified value it has been set to.");
     element.removeAttribute(contentAttr);
 
     element[idlAttr] = v.value;
@@ -465,7 +466,7 @@ function reflectInt(aParameters)
 {
   // Expected value returned by .getAttribute() when |value| has been previously passed to .setAttribute().
   function expectedGetAttributeResult(value) {
-    return (value !== null) ? String(value) : "";
+    return String(value);
   }
 
   function stringToInteger(value, nonNegative, defaultValue) {

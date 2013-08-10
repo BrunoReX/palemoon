@@ -104,6 +104,7 @@ public:
   NS_IMETHOD SaveState();
   virtual bool RestoreState(nsPresState* aState);
   virtual bool AllowDrop();
+  virtual bool IsDisabledForEvents(uint32_t aMessage);
 
   virtual void FieldSetDisabledChanged(bool aNotify);
 
@@ -224,7 +225,7 @@ public:
    *
    * @param aIgnoreSelf Whether the required attribute and the checked state
    * of the current radio should be ignored.
-   * @note This method shouldn't be called if the radio elemnet hasn't a group.
+   * @note This method shouldn't be called if the radio element hasn't a group.
    */
   void     UpdateValueMissingValidityStateForRadio(bool aIgnoreSelf);
 
@@ -502,7 +503,7 @@ protected:
   /**
    * Returns whether the placeholder attribute applies for the current type.
    */
-  bool PlaceholderApplies() const { return IsSingleLineTextControl(false, mType); }
+  bool PlaceholderApplies() const;
 
   /**
    * Set the current default value to the value of the input element.
@@ -515,7 +516,7 @@ protected:
    * Return if an element should have a specific validity UI
    * (with :-moz-ui-invalid and :-moz-ui-valid pseudo-classes).
    *
-   * @return Whether the elemnet should have a validity UI.
+   * @return Whether the element should have a validity UI.
    */
   bool ShouldShowValidityUI() const {
     /**
@@ -559,6 +560,54 @@ protected:
   double GetValueAsDouble() const;
 
   /**
+   * Convert a string to a number in a type specific way,
+   * http://www.whatwg.org/specs/web-apps/current-work/multipage/the-input-element.html#concept-input-value-string-number
+   * ie parse a date string to a timestamp if type=date,
+   * or parse a number string to its value if type=number.
+   * @param aValue the string to be parsed.
+   * @param aResultValue the timestamp as a double.
+   * @result whether the parsing was successful.
+   */
+  bool ConvertStringToNumber(nsAString& aValue, double& aResultValue) const;
+
+  /**
+   * Convert a double to a string in a type specific way, ie convert a timestamp
+   * to a date string if type=date or append the number string representing the
+   * value if type=number.
+   *
+   * @param aValue the double to be converted
+   * @param aResultString [out] the string representing the double
+   * @return whether the function succeded, it will fail if the current input's
+   *         type is not supported or the number can't be converted to a string
+   *         as expected by the type.
+   */
+  bool ConvertNumberToString(double aValue, nsAString& aResultString) const;
+
+  /**
+   * Parse a date string of the form yyyy-mm-dd
+   * @param the string to be parsed.
+   * @return whether the string is a valid date.
+   * Note : this function does not consider the empty string as valid.
+   */
+  bool IsValidDate(nsAString& aValue) const;
+
+  /**
+   * Parse a date string of the form yyyy-mm-dd
+   * @param the string to be parsed.
+   * @return the date in aYear, aMonth, aDay.
+   * @return whether the parsing was successful.
+   */
+  bool GetValueAsDate(nsAString& aValue,
+                      uint32_t& aYear,
+                      uint32_t& aMonth,
+                      uint32_t& aDay) const;
+
+  /**
+   * This methods returns the number of days in a given month, for a given year.
+   */
+  uint32_t NumberOfDaysInMonth(uint32_t aMonth, uint32_t aYear) const;
+
+  /**
    * Sets the value of the element to the string representation of the double.
    *
    * @param aValue The double that will be used to set the value.
@@ -581,6 +630,13 @@ protected:
    * Returns NaN if the max attribute isn't a valid floating point number.
    */
   double GetMaxAsDouble() const;
+
+   /**
+    * Get the step scale value for the current type.
+    * See:
+    * http://www.whatwg.org/specs/web-apps/current-work/multipage/common-input-element-attributes.html#concept-input-step-scale
+    */
+  double GetStepScaleFactor() const;
 
   /**
    * Returns the current step value.
@@ -650,6 +706,10 @@ protected:
    * where type= "text", "email", "search", "tel", "url" or "password".
    */
   nsString mFocusedValue;  
+
+  // Step scale factor values, for input types that have one.
+  static const double kStepScaleFactorDate;
+  static const double kStepScaleFactorNumber;
 
   // Default step base value when a type do not have specific one.
   static const double kDefaultStepBase;

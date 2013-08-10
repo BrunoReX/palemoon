@@ -18,18 +18,27 @@ function test() {
       is(crhCommand.hasAttribute("disabled"), aPrivateMode,
         "Clear Recent History command should be disabled according to the private browsing mode");
 
-      aCallback();
+      executeSoon(aCallback);
     });
   };
 
   let windowsToClose = [];
-  function testOnWindow(options, callback) {
-    let win = OpenBrowserWindow(options);
-    win.addEventListener("load", function onLoad() {
-      win.removeEventListener("load", onLoad, false);
-      windowsToClose.push(win);
-      callback(win);
-    }, false);
+  let testURI = "about:blank";
+
+  function testOnWindow(aIsPrivate, aCallback) {
+    whenNewWindowLoaded({private: aIsPrivate}, function(aWin) {
+      windowsToClose.push(aWin);
+      aWin.gBrowser.selectedBrowser.addEventListener("load", function onLoad() {
+        if (aWin.content.location.href != testURI) {
+          aWin.gBrowser.loadURI(testURI);
+          return;
+        }
+        aWin.gBrowser.selectedBrowser.removeEventListener("load", onLoad, true);
+        executeSoon(function() aCallback(aWin));
+      }, true);
+
+      aWin.gBrowser.loadURI(testURI);
+    });
   };
 
   registerCleanupFunction(function() {
@@ -38,9 +47,11 @@ function test() {
     });
   });
 
-  testOnWindow({private: true}, function(win) {
+  testOnWindow(true, function(win) {
+    info("Test on private window");
     checkDisableOption(true, win, function() {
-      testOnWindow({}, function(win) {
+      testOnWindow(false, function(win) {
+        info("Test on public window");
         checkDisableOption(false, win, finish);
       });
     });

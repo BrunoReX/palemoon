@@ -240,6 +240,8 @@ RestyleTracker::DoProcessRestyles()
     }
   }
 
+  mFrameConstructor->FlushOverflowChangedTracker();
+
   // Set mInStyleRefresh to false now, since the EndUpdate call might
   // add more restyles.
   mFrameConstructor->mInStyleRefresh = false;

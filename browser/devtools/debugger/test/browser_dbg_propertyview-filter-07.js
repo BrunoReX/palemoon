@@ -21,7 +21,7 @@ function test()
   debug_tab_pane(TAB_URL, function(aTab, aDebuggee, aPane) {
     gTab = aTab;
     gPane = aPane;
-    gDebugger = gPane.contentWindow;
+    gDebugger = gPane.panelWin;
     gDebuggee = aDebuggee;
 
     gDebugger.DebuggerController.StackFrames.autoScopeExpand = true;
@@ -41,7 +41,7 @@ function testVariablesFiltering()
     test2: function()
     {
       assertExpansion(2, [true, false, false, false, false]);
-      EventUtils.sendKey("RETURN");
+      EventUtils.sendKey("RETURN", gDebugger);
     },
     test3: function()
     {
@@ -55,7 +55,7 @@ function testVariablesFiltering()
     },
     test5: function() {
       assertExpansion(5, [true, true, true, true, true]);
-      EventUtils.sendKey("RETURN");
+      EventUtils.sendKey("RETURN", gDebugger);
     },
     test6: function() {
       assertExpansion(6, [true, true, true, true, true]);
@@ -67,7 +67,7 @@ function testVariablesFiltering()
     },
     test8: function() {
       assertExpansion(8, [true, true, true, true, true]);
-      EventUtils.sendKey("RETURN");
+      EventUtils.sendKey("RETURN", gDebugger);
     },
     test9: function() {
       assertExpansion(9, [true, true, true, true, true]);
@@ -87,7 +87,7 @@ function testVariablesFiltering()
     },
     test12: function() {
       assertExpansion(12, [false, false, false, false, false]);
-      EventUtils.sendKey("RETURN");
+      EventUtils.sendKey("RETURN", gDebugger);
     },
     test13: function() {
       assertExpansion(13, [false, false, false, false, false]);
@@ -99,7 +99,7 @@ function testVariablesFiltering()
     },
     test15: function() {
       assertExpansion(15, [true, true, true, true, true]);
-      EventUtils.sendKey("RETURN");
+      EventUtils.sendKey("RETURN", gDebugger);
     },
     test16: function() {
       assertExpansion(16, [true, true, true, true, true]);
@@ -111,7 +111,7 @@ function testVariablesFiltering()
     },
     test18: function() {
       assertExpansion(18, [true, true, true, true, true]);
-      EventUtils.sendKey("RETURN");
+      EventUtils.sendKey("RETURN", gDebugger);
     },
     test19: function() {
       assertExpansion(19, [true, true, true, true, true]);
@@ -204,10 +204,10 @@ function prepareVariables(aCallback)
       let globalScopeItem = gDebugger.DebuggerView.Variables._currHierarchy.get(
         globalScope.querySelector(".name").getAttribute("value"));
 
-      EventUtils.sendMouseEvent({ type: "mousedown" }, mathScope.querySelector(".arrow"), gDebuggee);
-      EventUtils.sendMouseEvent({ type: "mousedown" }, testScope.querySelector(".arrow"), gDebuggee);
-      EventUtils.sendMouseEvent({ type: "mousedown" }, loadScope.querySelector(".arrow"), gDebuggee);
-      EventUtils.sendMouseEvent({ type: "mousedown" }, globalScope.querySelector(".arrow"), gDebuggee);
+      EventUtils.sendMouseEvent({ type: "mousedown" }, mathScope.querySelector(".arrow"), gDebugger);
+      EventUtils.sendMouseEvent({ type: "mousedown" }, testScope.querySelector(".arrow"), gDebugger);
+      EventUtils.sendMouseEvent({ type: "mousedown" }, loadScope.querySelector(".arrow"), gDebugger);
+      EventUtils.sendMouseEvent({ type: "mousedown" }, globalScope.querySelector(".arrow"), gDebugger);
 
       executeSoon(function() {
         aCallback();
@@ -232,7 +232,7 @@ function write(text) {
 
 function backspace(times) {
   for (let i = 0; i < times; i++) {
-    EventUtils.sendKey("BACK_SPACE")
+    EventUtils.sendKey("BACK_SPACE", gDebugger);
   }
 }
 
@@ -240,7 +240,7 @@ function append(text) {
   gSearchBox.focus();
 
   for (let i = 0; i < text.length; i++) {
-    EventUtils.sendChar(text[i]);
+    EventUtils.sendChar(text[i], gDebugger);
   }
 }
 

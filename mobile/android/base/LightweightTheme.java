@@ -20,17 +20,22 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.LayerDrawable;
+import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.Shader;
 import android.os.Build;
+import android.os.Looper;
+import android.os.Handler;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewParent;
 
+import java.io.InputStream;
+import java.io.IOException;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
-import java.io.InputStream;
 import java.util.List;
 import java.util.ArrayList;
 
@@ -40,15 +45,13 @@ public class LightweightTheme implements GeckoEventListener {
     private static final String LOGTAG = "GeckoLightweightTheme";
 
     private Application mApplication;
+    private Handler mHandler;
+
     private Bitmap mBitmap;
     private int mColor;
     private boolean mIsLight;
 
     public static interface OnChangeListener {
-        // This is the View's default post.
-        // This is required to post the change/rest on UI thread.
-        public boolean post(Runnable action);
-
         // The View should change its background/text color. 
         public void onLightweightThemeChanged();
 
@@ -60,8 +63,10 @@ public class LightweightTheme implements GeckoEventListener {
     
     public LightweightTheme(Application application) {
         mApplication = application;
+        mHandler = new Handler(Looper.getMainLooper());
         mListeners = new ArrayList<OnChangeListener>();
 
+        // unregister isn't needed as the lifetime is same as the application.
         GeckoAppShell.getEventDispatcher().registerEventListener("LightweightTheme:Update", this);
         GeckoAppShell.getEventDispatcher().registerEventListener("LightweightTheme:Disable", this);
     }
@@ -76,76 +81,6 @@ public class LightweightTheme implements GeckoEventListener {
         mListeners.remove(listener);
     }
 
-    public void setLightweightTheme(String headerURL) {
-        try {
-            // Get the image and convert it to a bitmap.
-            URL url = new URL(headerURL);
-            InputStream stream = url.openStream();
-            mBitmap = BitmapFactory.decodeStream(stream);
-            stream.close();
-
-            // The download could be HTTP for previews, so let's be sure we have a bitmap
-            if (mBitmap == null || mBitmap.getWidth() == 0 || mBitmap.getHeight() == 0) {
-                mBitmap = null;
-                return;
-            }
-
-            // To find the dominant color only once, take the bottom 25% of pixels.
-            DisplayMetrics dm = mApplication.getResources().getDisplayMetrics();
-            int maxWidth = Math.max(dm.widthPixels, dm.heightPixels);
-            int height = (int) (mBitmap.getHeight() * 0.25);
-            Bitmap cropped = Bitmap.createBitmap(mBitmap, mBitmap.getWidth() - maxWidth,
-                                                          mBitmap.getHeight() - height, 
-                                                          maxWidth, height);
-            mColor = BitmapUtils.getDominantColor(cropped, false);
-
-            double luminance = (0.2125 * ((mColor & 0x00FF0000) >> 16)) + 
-                               (0.7154 * ((mColor & 0x0000FF00) >> 8)) + 
-                               (0.0721 * (mColor &0x000000FF));
-            mIsLight = (luminance > 110) ? true : false;
-
-            notifyListeners();
-        } catch(java.net.MalformedURLException e) {
-            mBitmap = null;
-        } catch(java.io.IOException e) {
-            mBitmap = null;
-        }
-    }
-
-    public void resetLightweightTheme() {
-        if (mBitmap != null) {
-            // Reset the bitmap.
-            mBitmap = null;
-
-            // Post the reset on the UI thread.
-            for (OnChangeListener listener : mListeners) {
-                 final OnChangeListener oneListener = listener;
-                 oneListener.post(new Runnable() {
-                     @Override
-                     public void run() {
-                         oneListener.onLightweightThemeReset();
-                     }
-                 });
-            }
-        }
-    }
-
-    public void notifyListeners() {
-        if (mBitmap == null)
-            return;
-
-        // Post the change on the UI thread.
-        for (OnChangeListener listener : mListeners) {
-             final OnChangeListener oneListener = listener;
-             oneListener.post(new Runnable() {
-                 @Override
-                 public void run() {
-                     oneListener.onLightweightThemeChanged();
-                 }
-             });
-        }
-    }
-
     @Override
     public void handleMessage(String event, JSONObject message) {
         try {
@@ -155,15 +90,117 @@ public class LightweightTheme implements GeckoEventListener {
                 int mark = headerURL.indexOf('?');
                 if (mark != -1)
                     headerURL = headerURL.substring(0, mark);
-                setLightweightTheme(headerURL);
+                try {
+                    // Get the image and convert it to a bitmap.
+                    URL url = new URL(headerURL);
+                    InputStream stream = url.openStream();
+                    final Bitmap bitmap = BitmapFactory.decodeStream(stream);
+                    stream.close();
+                    mHandler.post(new Runnable() {
+                        public void run() {
+                            setLightweightTheme(bitmap);
+                        }
+                    });
+                } catch(MalformedURLException e) {
+                } catch(IOException e) {
+                }
             } else if (event.equals("LightweightTheme:Disable")) {
-                resetLightweightTheme();
+                mHandler.post(new Runnable() {
+                    public void run() {
+                        resetLightweightTheme();
+                    }
+                });
             }
         } catch (Exception e) {
             Log.e(LOGTAG, "Exception handling message \"" + event + "\":", e);
         }
     }
 
+    /**
+     * Set a new lightweight theme with the given bitmap.
+     * Note: This should be called on the UI thread to restrict accessing the
+     * bitmap to a single thread.
+     *
+     * @param bitmap The bitmap used for the lightweight theme.
+     */
+    private void setLightweightTheme(Bitmap bitmap) {
+        if (bitmap == null || bitmap.getWidth() == 0 || bitmap.getHeight() == 0) {
+            mBitmap = null;
+            return;
+        }
+
+        // To find the dominant color only once, take the bottom 25% of pixels.
+        DisplayMetrics dm = mApplication.getResources().getDisplayMetrics();
+        int maxWidth = Math.max(dm.widthPixels, dm.heightPixels);
+        int height = (int) (bitmap.getHeight() * 0.25);
+
+        // The lightweight theme image's width and height.
+        int bitmapWidth = bitmap.getWidth();
+        int bitmapHeight = bitmap.getHeight();
+
+        // A cropped bitmap of the bottom 25% of pixels.
+        Bitmap cropped = Bitmap.createBitmap(bitmap,
+                                             bitmapWidth > maxWidth ? bitmapWidth - maxWidth : 0,
+                                             bitmapHeight - height, 
+                                             bitmapWidth > maxWidth ? maxWidth : bitmapWidth,
+                                             height);
+
+        // Dominant color based on the cropped bitmap.
+        mColor = BitmapUtils.getDominantColor(cropped, false);
+
+        // Calculate the luminance to determine if it's a light or a dark theme.
+        double luminance = (0.2125 * ((mColor & 0x00FF0000) >> 16)) + 
+                           (0.7154 * ((mColor & 0x0000FF00) >> 8)) + 
+                           (0.0721 * (mColor &0x000000FF));
+        mIsLight = (luminance > 110) ? true : false;
+
+        // The bitmap image might be smaller than the device's width.
+        // If it's smaller, fill the extra space on the left with the dominant color.
+        if (bitmap.getWidth() >= maxWidth) {
+            mBitmap = bitmap;
+        } else {
+            Paint paint = new Paint();
+            paint.setAntiAlias(true);
+
+            // Create a bigger image that can fill the device width.
+            // By creating a canvas for the bitmap, anything drawn on the canvas
+            // will be drawn on the bitmap.
+            mBitmap = Bitmap.createBitmap(maxWidth, bitmapHeight, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(mBitmap);
+
+            // Fill the canvas with dominant color.
+            canvas.drawColor(mColor);
+
+            // The image should be top-right aligned.
+            Rect rect = new Rect();
+            Gravity.apply(Gravity.TOP | Gravity.RIGHT,
+                          bitmapWidth,
+                          bitmapHeight,
+                          new Rect(0, 0, maxWidth, bitmapHeight),
+                          rect);
+
+            // Draw the bitmap.
+            canvas.drawBitmap(bitmap, null, rect, paint);
+        }
+
+        for (OnChangeListener listener : mListeners)
+            listener.onLightweightThemeChanged();
+    }
+
+    /**
+     * Reset the lightweight theme.
+     * Note: This should be called on the UI thread to restrict accessing the
+     * bitmap to a single thread.
+     */
+    private void resetLightweightTheme() {
+        if (mBitmap != null) {
+            // Reset the bitmap.
+            mBitmap = null;
+
+            for (OnChangeListener listener : mListeners)
+                listener.onLightweightThemeReset();
+        }
+    }
 
     /**
      * A lightweight theme is enabled only if there is an active bitmap.

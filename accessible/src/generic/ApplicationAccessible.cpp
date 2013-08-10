@@ -26,7 +26,8 @@ using namespace mozilla::a11y;
 ApplicationAccessible::ApplicationAccessible() :
   AccessibleWrap(nullptr, nullptr)
 {
-  mFlags |= eApplicationAccessible;
+  mType = eApplicationType;
+  mAppInfo = do_GetService("@mozilla.org/xre/app-info;1");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -265,12 +266,6 @@ ApplicationAccessible::GetPlatformVersion(nsAString& aVersion)
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsAccessNode public methods
-
-void
-ApplicationAccessible::Init()
-{
-  mAppInfo = do_GetService("@mozilla.org/xre/app-info;1");
-}
 
 void
 ApplicationAccessible::Shutdown()

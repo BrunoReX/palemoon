@@ -252,6 +252,7 @@ MOCHITEST_FILES_A = \
 		file_XHRDocURI.text \
 		file_XHRDocURI.text^headers^ \
 		test_DOMException.html \
+		test_domparsing.html \
 		test_meta_viewport0.html \
 		test_meta_viewport1.html \
 		test_meta_viewport2.html \
@@ -266,6 +267,10 @@ MOCHITEST_FILES_A = \
 		test_bug782342.html \
 		test_bug282547.html \
 		bug282547.sjs \
+		test_domparser_null_char.html \
+		test_bug811701.html \
+		test_bug811701.xhtml \
+		test_bug820909.html \
 		$(NULL)
 
 MOCHITEST_FILES_B = \
@@ -501,6 +506,8 @@ MOCHITEST_FILES_B = \
 		file_html_in_xhr3.html \
 		file_html_in_xhr.sjs \
 		test_bug647518.html \
+		test_bug654352.html \
+                Ahem.ttf \
 		test_bug664916.html \
 		test_bug666604.html \
 		test_bug675121.html \
@@ -595,7 +602,13 @@ MOCHITEST_FILES_B = \
 		file_bug804395.jar \
 		test_bug804395.html \
 		test_bug809003.html \
+		test_bug810494.html \
+		test_textnode_split_in_selection.html \
+		test_textnode_normalize_in_selection.html \
+		test_xhr_send_readystate.html \
+		test_bug813919.html \
 		test_bug814576.html \
+		test_xhr_withCredentials.html \
 		$(NULL)
 
 # OOP tests don't work on Windows (bug 763081) or native-fennec

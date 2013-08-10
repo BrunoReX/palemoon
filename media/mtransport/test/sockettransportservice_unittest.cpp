@@ -79,7 +79,7 @@ class SocketTransportServiceTest : public ::testing::Test {
 class EventReceived : public nsRunnable {
 public:
   EventReceived(SocketTransportServiceTest *test) :
-      test_(test) {};
+      test_(test) {}
 
   NS_IMETHOD Run() {
     test_->ReceiveEvent();
@@ -94,7 +94,7 @@ public:
 class RegisterEvent : public nsRunnable {
 public:
   RegisterEvent(SocketTransportServiceTest *test) :
-      test_(test) {};
+      test_(test) {}
 
   NS_IMETHOD Run() {
     test_->RegisterHandler();
@@ -129,13 +129,16 @@ class SocketHandler : public nsASocketHandler {
     *aIsLocal = false;
   }
 
+  virtual uint64_t ByteCountSent() { return 0; }
+  virtual uint64_t ByteCountReceived() { return 0; }
+
   NS_DECL_ISUPPORTS
 
  private:
   SocketTransportServiceTest *test_;
 };
 
-NS_IMPL_ISUPPORTS0(SocketHandler);
+NS_IMPL_ISUPPORTS0(SocketHandler)
 
 void SocketTransportServiceTest::SetUp() {
   // Get the transport service as a dispatch target

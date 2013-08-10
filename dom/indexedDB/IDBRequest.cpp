@@ -40,6 +40,7 @@ IDBRequest::IDBRequest()
 
 IDBRequest::~IDBRequest()
 {
+  mResultVal = JSVAL_VOID;
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 }
 
@@ -56,10 +57,7 @@ IDBRequest::Create(nsISupports* aSource,
   request->mSource = aSource;
   request->mTransaction = aTransaction;
   request->BindToOwner(aOwnerCache);
-  if (!request->SetScriptOwner(aOwnerCache->GetScriptOwner())) {
-    return nullptr;
-  }
-
+  request->SetScriptOwner(aOwnerCache->GetScriptOwner());
   request->CaptureCaller(aCallingCx);
 
   return request.forget();
@@ -351,10 +349,7 @@ IDBOpenDBRequest::Create(IDBFactory* aFactory,
   nsRefPtr<IDBOpenDBRequest> request = new IDBOpenDBRequest();
 
   request->BindToOwner(aOwner);
-  if (!request->SetScriptOwner(aScriptOwner)) {
-    return nullptr;
-  }
-
+  request->SetScriptOwner(aScriptOwner);
   request->CaptureCaller(aCallingCx);
   request->mFactory = aFactory;
 

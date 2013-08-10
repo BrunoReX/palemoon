@@ -14,6 +14,7 @@
 #include "nsXPCOM.h"
 #include "nsXPCOMGlue.h"
 
+#include "mozilla/RefPtr.h"
 #include "nsIComponentManager.h"
 #include "nsIComponentRegistrar.h"
 #include "nsIIOService.h"
@@ -35,6 +36,20 @@ using namespace mozilla;
 MtransportTestUtils *test_utils;
 
 namespace {
+
+class Destructor {
+ public:
+  Destructor(bool* destroyed) : destroyed_(destroyed) {}
+  ~Destructor() {
+    std::cerr << "Destructor called" << std::endl;
+    *destroyed_ = true;
+  }
+
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(Destructor);
+
+ private:
+  bool *destroyed_;
+};
 
 class TargetClass {
  public:
@@ -58,9 +73,15 @@ class TargetClass {
     std::cerr << __FUNCTION__ << std::endl;
     return x;
   }
+  void destructor_target(Destructor*) {
+  }
+
+  void destructor_target_ref(RefPtr<Destructor> destructor) {
+  }
 
   int *ran_;
 };
+
 
 class RunnableArgsTest : public ::testing::Test {
  public:
@@ -121,7 +142,7 @@ class DispatchTest : public ::testing::Test {
     ASSERT_EQ(10, z);
   }
 
- private:
+ protected:
   int ran_;
   TargetClass cl_;
   nsCOMPtr<nsIEventTarget> target_;
@@ -150,6 +171,55 @@ TEST_F(DispatchTest, Test1Set) {
 
 TEST_F(DispatchTest, TestRet) {
   TestRet();
+}
+
+void SetNonMethod(TargetClass *cl, int x) {
+  cl->m1(x);
+}
+
+int SetNonMethodRet(TargetClass *cl, int x) {
+  cl->m1(x);
+
+  return x;
+}
+
+TEST_F(DispatchTest, TestNonMethod) {
+  test_utils->sts_target()->Dispatch(
+      WrapRunnableNM(SetNonMethod, &cl_, 10), NS_DISPATCH_SYNC);
+
+  ASSERT_EQ(1, ran_);
+}
+
+TEST_F(DispatchTest, TestNonMethodRet) {
+  int z;
+
+  test_utils->sts_target()->Dispatch(
+      WrapRunnableNMRet(SetNonMethodRet, &cl_, 10, &z), NS_DISPATCH_SYNC);
+
+  ASSERT_EQ(1, ran_);
+  ASSERT_EQ(10, z);
+}
+
+TEST_F(DispatchTest, TestDestructor) {
+  bool destroyed = false;
+  RefPtr<Destructor> destructor = new Destructor(&destroyed);
+  target_->Dispatch(WrapRunnable(&cl_, &TargetClass::destructor_target,
+                                 destructor),
+                    NS_DISPATCH_SYNC);
+  ASSERT_FALSE(destroyed);
+  destructor = nullptr;
+  ASSERT_TRUE(destroyed);
+}
+
+TEST_F(DispatchTest, TestDestructorRef) {
+  bool destroyed = false;
+  RefPtr<Destructor> destructor = new Destructor(&destroyed);
+  target_->Dispatch(WrapRunnable(&cl_, &TargetClass::destructor_target_ref,
+                                 destructor),
+                    NS_DISPATCH_SYNC);
+  ASSERT_FALSE(destroyed);
+  destructor = nullptr;
+  ASSERT_TRUE(destroyed);
 }
 
 

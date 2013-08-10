@@ -242,6 +242,7 @@ pref("dom.ipc.tabs.disabled", true);
 pref("layers.offmainthreadcomposition.enabled", false);
 pref("layers.offmainthreadcomposition.animate-opacity", false);
 pref("layers.offmainthreadcomposition.animate-transform", false);
+pref("layers.offmainthreadcomposition.throttle-animations", false);
 pref("layers.async-video.enabled", false);
 #else
 pref("dom.ipc.tabs.disabled", false);
@@ -613,6 +614,13 @@ pref("font.size.inflation.disabledInMasterProcess", true);
 // Enable freeing dirty pages when minimizing memory; this reduces memory
 // consumption when applications are sent to the background.
 pref("memory.free_dirty_pages", true);
+
+// UAProfile settings
+pref("wap.UAProf.url", "");
+pref("wap.UAProf.tagname", "x-wap-profile");
+
+// Enable native identity (persona/browserid)
+pref("dom.identity.enabled", true);
 
 // Wait up to this much milliseconds when orientation changed
 pref("layers.orientation.sync.timeout", 1000);

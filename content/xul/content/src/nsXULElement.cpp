@@ -54,7 +54,7 @@
 #include "mozilla/css/StyleRule.h"
 #include "nsIStyleSheet.h"
 #include "nsIURL.h"
-#include "nsIViewManager.h"
+#include "nsViewManager.h"
 #include "nsIWidget.h"
 #include "nsIXULDocument.h"
 #include "nsIXULTemplateBuilder.h"
@@ -104,6 +104,7 @@
 #include "nsICSSDeclaration.h"
 
 namespace css = mozilla::css;
+namespace dom = mozilla::dom;
 
 //----------------------------------------------------------------------
 
@@ -141,7 +142,7 @@ public:
     NS_ADDREF(*aStyle);
     return NS_OK;
   }
-  NS_FORWARD_NSIFRAMELOADEROWNER(static_cast<nsXULElement*>(mElement.get())->);
+  NS_FORWARD_NSIFRAMELOADEROWNER(static_cast<nsXULElement*>(mElement.get())->)
 private:
   nsCOMPtr<nsIDOMXULElement> mElement;
 };
@@ -199,10 +200,26 @@ nsXULElement::CreateSlots()
     return new nsXULSlots();
 }
 
+void
+nsXULElement::MaybeUpdatePrivateLifetime()
+{
+    if (AttrValueIs(kNameSpaceID_None, nsGkAtoms::windowtype,
+                    NS_LITERAL_STRING("navigator:browser"),
+                    eCaseMatters)) {
+        return;
+    }
+
+    nsPIDOMWindow* win = OwnerDoc()->GetWindow();
+    nsCOMPtr<nsIDocShell> docShell = win ? win->GetDocShell() : nullptr;
+    if (docShell) {
+        docShell->SetAffectPrivateSessionLifetime(false);
+    }
+}
+
 /* static */
 already_AddRefed<nsXULElement>
 nsXULElement::Create(nsXULPrototypeElement* aPrototype, nsINodeInfo *aNodeInfo,
-                     bool aIsScriptable)
+                     bool aIsScriptable, bool aIsRoot)
 {
     nsCOMPtr<nsINodeInfo> ni = aNodeInfo;
     nsXULElement *element = new nsXULElement(ni.forget());
@@ -229,6 +246,14 @@ nsXULElement::Create(nsXULPrototypeElement* aPrototype, nsINodeInfo *aNodeInfo,
                                         true);
             }
         }
+
+        if (aIsRoot && aPrototype->mNodeInfo->Equals(nsGkAtoms::window)) {
+            for (uint32_t i = 0; i < aPrototype->mNumAttributes; ++i) {
+                if (aPrototype->mAttributes[i].mName.Equals(nsGkAtoms::windowtype)) {
+                    element->MaybeUpdatePrivateLifetime();
+                }
+            }
+        }
     }
 
     return element;
@@ -238,6 +263,7 @@ nsresult
 nsXULElement::Create(nsXULPrototypeElement* aPrototype,
                      nsIDocument* aDocument,
                      bool aIsScriptable,
+                     bool aIsRoot,
                      Element** aResult)
 {
     // Create an nsXULElement from a prototype
@@ -262,7 +288,7 @@ nsXULElement::Create(nsXULPrototypeElement* aPrototype,
     }
 
     nsRefPtr<nsXULElement> element = Create(aPrototype, nodeInfo,
-                                            aIsScriptable);
+                                            aIsScriptable, aIsRoot);
     if (!element) {
         return NS_ERROR_OUT_OF_MEMORY;
     }
@@ -929,6 +955,8 @@ nsXULElement::AfterSetAttr(int32_t aNamespaceID, nsIAtom* aName,
                 }
             }
     
+            nsIDocument *document = GetCurrentDoc();
+
             // Hide chrome if needed
             if (mNodeInfo->Equals(nsGkAtoms::window)) {
                 if (aName == nsGkAtoms::hidechrome) {
@@ -938,11 +966,14 @@ nsXULElement::AfterSetAttr(int32_t aNamespaceID, nsIAtom* aName,
                 else if (aName == nsGkAtoms::chromemargin) {
                     SetChromeMargins(aValue);
                 }
+
+                else if (aName == nsGkAtoms::windowtype &&
+                         document && document->GetRootElement() == this) {
+                    MaybeUpdatePrivateLifetime();
+                }
             }
-    
             // title, (in)activetitlebarcolor and drawintitlebar are settable on
             // any root node (windows, dialogs, etc)
-            nsIDocument *document = GetCurrentDoc();
             if (document && document->GetRootElement() == this) {
                 if (aName == nsGkAtoms::title) {
                     document->NotifyPossibleTitleChange(false);
@@ -1125,6 +1156,7 @@ nsXULElement::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
             // Stop building the event target chain for the original event.
             // We don't want it to propagate to any DOM nodes.
             aVisitor.mCanHandle = false;
+            aVisitor.mAutomaticChromeDispatch = false;
 
             // XXX sXBL/XBL2 issue! Owner or current document?
             nsCOMPtr<nsIDOMDocument> domDoc(do_QueryInterface(GetCurrentDoc()));
@@ -1155,7 +1187,7 @@ nsXULElement::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
                     static_cast<nsInputEvent*>(aVisitor.mEvent);
                 nsContentUtils::DispatchXULCommand(
                   commandContent,
-                  NS_IS_TRUSTED_EVENT(aVisitor.mEvent),
+                  aVisitor.mEvent->mFlags.mIsTrusted,
                   aVisitor.mDOMEvent,
                   nullptr,
                   orig->IsControl(),
@@ -1579,13 +1611,11 @@ nsXULElement::AddPopupListener(nsIAtom* aName)
     if (isContext) {
       manager->AddEventListenerByType(listener,
                                       NS_LITERAL_STRING("contextmenu"),
-                                      NS_EVENT_FLAG_BUBBLE |
-                                      NS_EVENT_FLAG_SYSTEM_EVENT);
+                                      dom::TrustedEventsAtSystemGroupBubble());
     } else {
       manager->AddEventListenerByType(listener,
                                       NS_LITERAL_STRING("mousedown"),
-                                      NS_EVENT_FLAG_BUBBLE |
-                                      NS_EVENT_FLAG_SYSTEM_EVENT);
+                                      dom::TrustedEventsAtSystemGroupBubble());
     }
     return NS_OK;
 }
@@ -1665,7 +1695,7 @@ nsXULElement::HideWindowChrome(bool aShouldHide)
         nsPresContext *presContext = shell->GetPresContext();
 
         if (frame && presContext && presContext->IsChrome()) {
-            nsIView* view = frame->GetClosestView();
+            nsView* view = frame->GetClosestView();
 
             if (view) {
                 nsIWidget* w = view->GetWidget();
@@ -1826,9 +1856,15 @@ nsXULElement::RecompileScriptEventListeners()
     }
 }
 
+bool
+nsXULElement::IsEventAttributeName(nsIAtom *aName)
+{
+  return nsContentUtils::IsEventAttributeName(aName, EventNameType_XUL);
+}
+
 NS_IMPL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(nsXULPrototypeNode)
 
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_NATIVE(nsXULPrototypeNode)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsXULPrototypeNode)
     if (tmp->mType == nsXULPrototypeNode::eType_Element) {
         static_cast<nsXULPrototypeElement*>(tmp)->Unlink();
     }
@@ -1836,7 +1872,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_NATIVE(nsXULPrototypeNode)
         static_cast<nsXULPrototypeScript*>(tmp)->UnlinkJSObjects();
     }
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_BEGIN(nsXULPrototypeNode)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsXULPrototypeNode)
     if (tmp->mType == nsXULPrototypeNode::eType_Element) {
         nsXULPrototypeElement *elem =
             static_cast<nsXULPrototypeElement*>(tmp);
@@ -1855,12 +1891,13 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_BEGIN(nsXULPrototypeNode)
     }
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-NS_IMPL_CYCLE_COLLECTION_TRACE_NATIVE_BEGIN(nsXULPrototypeNode)
+NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(nsXULPrototypeNode)
     if (tmp->mType == nsXULPrototypeNode::eType_Script) {
         nsXULPrototypeScript *script =
             static_cast<nsXULPrototypeScript*>(tmp);
-        NS_IMPL_CYCLE_COLLECTION_TRACE_JS_CALLBACK(script->mScriptObject.mObject,
-                                                   "mScriptObject.mObject")
+        NS_IMPL_CYCLE_COLLECTION_TRACE_JS_CALLBACK(script->GetScriptObject(),
+                                                   "mScriptObject")
+
     }
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
@@ -1976,7 +2013,7 @@ nsXULPrototypeElement::Serialize(nsIObjectOutputStream* aStream,
                   rv = tmp;
                 }
 
-                if (script->mScriptObject.mObject) {
+                if (script->GetScriptObject()) {
                     // This may return NS_OK without muxing script->mSrcURI's
                     // data into the cache file, in the case where that
                     // muxed document is already there (written by a prior
@@ -2225,6 +2262,22 @@ nsXULPrototypeElement::Unlink()
     mAttributes = nullptr;
 }
 
+void
+nsXULPrototypeElement::TraceAllScripts(JSTracer* aTrc)
+{
+    for (uint32_t i = 0; i < mChildren.Length(); ++i) {
+        nsXULPrototypeNode* child = mChildren[i];
+        if (child->mType == nsXULPrototypeNode::eType_Element) {
+            static_cast<nsXULPrototypeElement*>(child)->TraceAllScripts(aTrc);
+        } else if (child->mType == nsXULPrototypeNode::eType_Script) {
+            JSScript* script = static_cast<nsXULPrototypeScript*>(child)->GetScriptObject();
+            if (script) {
+                JS_CALL_SCRIPT_TRACER(aTrc, script, "active window XUL prototype script");
+            }
+        }
+    }
+}
+
 //----------------------------------------------------------------------
 //
 // nsXULPrototypeScript
@@ -2237,7 +2290,7 @@ nsXULPrototypeScript::nsXULPrototypeScript(uint32_t aLineNo, uint32_t aVersion)
       mOutOfLine(true),
       mSrcLoadWaiters(nullptr),
       mLangVersion(aVersion),
-      mScriptObject()
+      mScriptObject(nullptr)
 {
 }
 
@@ -2254,9 +2307,9 @@ nsXULPrototypeScript::Serialize(nsIObjectOutputStream* aStream,
 {
     nsIScriptContext *context = aGlobal->GetScriptContext();
     NS_ASSERTION(!mSrcLoading || mSrcLoadWaiters != nullptr ||
-                 !mScriptObject.mObject,
+                 !mScriptObject,
                  "script source still loading when serializing?!");
-    if (!mScriptObject.mObject)
+    if (!mScriptObject)
         return NS_ERROR_FAILURE;
 
     // Write basic prototype data
@@ -2266,7 +2319,7 @@ nsXULPrototypeScript::Serialize(nsIObjectOutputStream* aStream,
     rv = aStream->Write32(mLangVersion);
     if (NS_FAILED(rv)) return rv;
     // And delegate the writing to the nsIScriptContext
-    rv = context->Serialize(aStream, mScriptObject.mObject);
+    rv = context->Serialize(aStream, mScriptObject);
     if (NS_FAILED(rv)) return rv;
 
     return NS_OK;
@@ -2329,7 +2382,7 @@ nsXULPrototypeScript::Deserialize(nsIObjectInputStream* aStream,
     nsresult rv;
 
     NS_ASSERTION(!mSrcLoading || mSrcLoadWaiters != nullptr ||
-                 !mScriptObject.mObject,
+                 !mScriptObject,
                  "prototype script not well-initialized when deserializing?!");
 
     // Read basic prototype data
@@ -2382,7 +2435,7 @@ nsXULPrototypeScript::DeserializeOutOfLine(nsIObjectInputStream* aInput,
             }
         }
 
-        if (! mScriptObject.mObject) {
+        if (!mScriptObject) {
             if (mSrcURI) {
                 rv = cache->GetInputStream(mSrcURI, getter_AddRefs(objectInput));
             } 
@@ -2403,7 +2456,7 @@ nsXULPrototypeScript::DeserializeOutOfLine(nsIObjectInputStream* aInput,
                     bool isChrome = false;
                     mSrcURI->SchemeIs("chrome", &isChrome);
                     if (isChrome)
-                        cache->PutScript(mSrcURI, mScriptObject.mObject);
+                        cache->PutScript(mSrcURI, mScriptObject);
                 }
                 cache->FinishInputStream(mSrcURI);
             } else {
@@ -2490,26 +2543,24 @@ nsXULPrototypeScript::Compile(const PRUnichar* aText,
 void
 nsXULPrototypeScript::UnlinkJSObjects()
 {
-    if (mScriptObject.mObject) {
+    if (mScriptObject) {
+        mScriptObject = nullptr;
         nsContentUtils::DropJSObjects(this);
-        mScriptObject.mObject = nullptr;
     }
 }
 
 void
 nsXULPrototypeScript::Set(JSScript* aObject)
 {
-    NS_ASSERTION(!mScriptObject.mObject, "Leaking script object.");
+    MOZ_ASSERT(!mScriptObject, "Leaking script object.");
     if (!aObject) {
-        mScriptObject.mObject = nullptr;
+        mScriptObject = nullptr;
         return;
     }
 
-    nsresult rv = nsContentUtils::HoldJSObjects(
+    nsContentUtils::HoldJSObjects(
         this, NS_CYCLE_COLLECTION_PARTICIPANT(nsXULPrototypeNode));
-    if (NS_SUCCEEDED(rv)) {
-        mScriptObject.mObject = aObject;
-    }
+    mScriptObject = aObject;
 }
 
 //----------------------------------------------------------------------

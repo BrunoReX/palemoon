@@ -194,9 +194,10 @@ public:
   MediaCacheStream(ChannelMediaResource* aClient)
     : mClient(aClient), mInitialized(false),
       mHasHadUpdate(false),
+      mDownloadCancelled(false),
       mClosed(false),
       mDidNotifyDataEnded(false), mResourceID(0),
-      mIsSeekable(false), mCacheSuspended(false),
+      mIsTransportSeekable(false), mCacheSuspended(false),
       mChannelEnded(false),
       mChannelOffset(0), mStreamLength(-1),  
       mStreamOffset(0), mPlaybackBytesPerSecond(10000),
@@ -222,7 +223,7 @@ public:
   // change during the lifetime of the MediaCacheStream --- every time
   // we do an HTTP load the seekability may be different (and sometimes
   // is, in practice, due to the effects of caching proxies).
-  void SetSeekable(bool aIsSeekable);
+  void SetTransportSeekable(bool aIsTransportSeekable);
   // This must be called (and return) before the ChannelMediaResource
   // used to create this MediaCacheStream is deleted.
   void Close();
@@ -273,8 +274,18 @@ public:
   // We pass in the principal that was used to load this data.
   void NotifyDataReceived(int64_t aSize, const char* aData,
                           nsIPrincipal* aPrincipal);
+  // Notifies the cache that the current bytes should be written to disk.
+  // Called on the main thread.
+  void FlushPartialBlock();
   // Notifies the cache that the channel has closed with the given status.
   void NotifyDataEnded(nsresult aStatus);
+  // Notifies the cache that the download was cancelled. Sets
+  // |mDownloadCancelled| to false and notifies any thread waiting on the media
+  // cache monitor. In this way, if |Read| is waiting when a download is
+  // cancelled, it will be wakened and should stop trying to read.
+  // Note: |mDownloadCancelled| is set to false when |Read| is awakened, and in
+  // |NotifyDataStarted|, when new data starts downloading.
+  void NotifyDownloadCancelled();
 
   // These methods can be called on any thread.
   // Cached blocks associated with this stream will not be evicted
@@ -323,8 +334,8 @@ public:
   // because it doesn't know when the decoder was paused, buffering, etc.
   // Do not pass zero.
   void SetPlaybackRate(uint32_t aBytesPerSecond);
-  // Returns the last set value of SetSeekable.
-  bool IsSeekable();
+  // Returns the last set value of SetTransportSeekable.
+  bool IsTransportSeekable();
 
   // Returns true when all streams for this resource are suspended or their
   // channel has ended.
@@ -415,6 +426,11 @@ private:
   // This method assumes that the cache monitor is held and can be called on
   // any thread.
   int64_t GetNextCachedDataInternal(int64_t aOffset);
+  // Writes |mPartialBlock| to disk.
+  // Used by |NotifyDataEnded| and |FlushPartialBlock|.
+  // If |aNotifyAll| is true, this function will wake up readers who may be
+  // waiting on the media cache monitor. Called on the main thread only.
+  void FlushPartialBlockInternal(bool aNotify);
   // A helper function to do the work of closing the stream. Assumes
   // that the cache monitor is held. Main thread only.
   // aReentrantMonitor is the nsAutoReentrantMonitor wrapper holding the cache monitor.
@@ -432,6 +448,9 @@ private:
   // Set to true when MediaCache::Update() has finished while this stream
   // was present.
   bool                   mHasHadUpdate;
+  // True if the download was cancelled. Set true in NotifyDownloadCancelled.
+  // Set false in NotifyDataStarted.
+  bool mDownloadCancelled;
   // Set to true when the stream has been closed either explicitly or
   // due to an internal cache error
   bool                   mClosed;
@@ -447,7 +466,7 @@ private:
   // underlying resource and should share data.
   int64_t mResourceID;
   // The last reported seekability state for the underlying channel
-  bool mIsSeekable;
+  bool mIsTransportSeekable;
   // True if the cache has suspended our channel because the cache is
   // full and the priority of the data that would be received is lower
   // than the priority of the data already in the cache

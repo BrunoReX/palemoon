@@ -27,8 +27,17 @@ function test()
     gTab = aTab;
     gDebuggee = aDebuggee;
     gPane = aPane;
-    gDebugger = gPane.contentWindow;
+    gDebugger = gPane.panelWin;
     gDebugger.SourceResults.prototype.alwaysExpand = false;
+
+    gDebugger.addEventListener("Debugger:SourceShown", function _onEvent(aEvent) {
+      let url = aEvent.detail.url;
+      if (url.indexOf("-02.js") != -1) {
+        scriptShown = true;
+        gDebugger.removeEventListener(aEvent.type, _onEvent);
+        runTest();
+      }
+    });
 
     gDebugger.DebuggerController.activeThread.addOneTimeListener("framesadded", function() {
       framesAdded = true;
@@ -36,15 +45,6 @@ function test()
     });
 
     gDebuggee.firstCall();
-  });
-
-  window.addEventListener("Debugger:SourceShown", function _onEvent(aEvent) {
-    let url = aEvent.detail.url;
-    if (url.indexOf("-02.js") != -1) {
-      scriptShown = true;
-      window.removeEventListener(aEvent.type, _onEvent);
-      runTest();
-    }
   });
 
   function runTest()
@@ -74,8 +74,8 @@ function doSearch() {
   is(gSearchView._splitter.hidden, true,
     "The global search pane splitter shouldn't be visible yet.");
 
-  window.addEventListener("Debugger:GlobalSearch:MatchFound", function _onEvent(aEvent) {
-    window.removeEventListener(aEvent.type, _onEvent);
+  gDebugger.addEventListener("Debugger:GlobalSearch:MatchFound", function _onEvent(aEvent) {
+    gDebugger.removeEventListener(aEvent.type, _onEvent);
     info("Current script url:\n" + gScripts.selectedValue + "\n");
     info("Debugger editor text:\n" + gEditor.getText() + "\n");
 
@@ -86,7 +86,7 @@ function doSearch() {
         ok(gEditor.getCaretPosition().line == 5 &&
            gEditor.getCaretPosition().col == 0,
           "The editor shouldn't have jumped to a matching line yet.");
-        is(gScripts.visibleItems, 2,
+        is(gScripts.visibleItems.length, 2,
           "Not all the scripts are shown after the global search.");
 
         isnot(gSearchView._container._list.childNodes.length, 0,
@@ -118,8 +118,8 @@ function testLocationChange()
     }
   }
 
-  window.addEventListener("Debugger:GlobalSearch:ViewCleared", function _onViewCleared(aEvent) {
-    window.removeEventListener(aEvent.type, _onViewCleared);
+  gDebugger.addEventListener("Debugger:GlobalSearch:ViewCleared", function _onViewCleared(aEvent) {
+    gDebugger.removeEventListener(aEvent.type, _onViewCleared);
 
     is(gSearchView._container._list.childNodes.length, 0,
       "The global search pane shouldn't have any child nodes after a page navigation.");
@@ -132,8 +132,8 @@ function testLocationChange()
     _maybeFinish();
   });
 
-  window.addEventListener("Debugger:GlobalSearch:CacheCleared", function _onCacheCleared(aEvent) {
-    window.removeEventListener(aEvent.type, _onCacheCleared);
+  gDebugger.addEventListener("Debugger:GlobalSearch:CacheCleared", function _onCacheCleared(aEvent) {
+    gDebugger.removeEventListener(aEvent.type, _onCacheCleared);
 
     is(gSearchView._cache.size, 0,
       "The scripts sources cache for global searching should be cleared after a page navigation.")
@@ -159,7 +159,7 @@ function append(text) {
   gSearchBox.focus();
 
   for (let i = 0; i < text.length; i++) {
-    EventUtils.sendChar(text[i]);
+    EventUtils.sendChar(text[i], gDebugger);
   }
   info("Editor caret position: " + gEditor.getCaretPosition().toSource() + "\n");
 }

@@ -183,6 +183,8 @@ let FormAssistant = {
     addEventListener("focus", this, true, false);
     addEventListener("blur", this, true, false);
     addEventListener("resize", this, true, false);
+    addEventListener("submit", this, true, false);
+    addEventListener("pagehide", this, true, false);
     addMessageListener("Forms:Select:Choice", this);
     addMessageListener("Forms:Input:Value", this);
     addMessageListener("Forms:Select:Blur", this);
@@ -246,6 +248,8 @@ let FormAssistant = {
         break;
 
       case "blur":
+      case "submit":
+      case "pagehide":
         if (this.focusedElement)
           this.hideKeyboard();
         break;
@@ -453,14 +457,12 @@ function getJSON(element) {
 
   // Until the input type=date/datetime/time have been implemented
   // let's return their real type even if the platform returns 'text'
-  // Related to Bug 769352 - Implement <input type=date>
   // Related to Bug 777279 - Implement <input type=time>
   let attributeType = element.getAttribute("type") || "";
 
   if (attributeType) {
     var typeLowerCase = attributeType.toLowerCase(); 
     switch (typeLowerCase) {
-      case "date":
       case "time":
       case "datetime":
       case "datetime-local":

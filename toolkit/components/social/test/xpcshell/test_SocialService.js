@@ -32,6 +32,8 @@ function run_test() {
   runner.appendIterator(testGetProviderList(manifests, next));
   runner.appendIterator(testEnabled(manifests, next));
   runner.appendIterator(testAddRemoveProvider(manifests, next));
+  runner.appendIterator(testIsSameOrigin(manifests, next));
+  runner.appendIterator(testResolveUri  (manifests, next));
   runner.next();
 }
 
@@ -54,18 +56,19 @@ function testGetProviderList(manifests, next) {
     let providerIdx = providers.map(function (p) p.origin).indexOf(manifests[i].origin);
     let provider = providers[providerIdx];
     do_check_true(!!provider);
-    do_check_true(provider.enabled);
+    do_check_false(provider.enabled);
     do_check_eq(provider.workerURL, manifests[i].workerURL);
     do_check_eq(provider.name, manifests[i].name);
   }
 }
 
 function testEnabled(manifests, next) {
+  // Check that providers are disabled by default
   let providers = yield SocialService.getProviderList(next);
   do_check_true(providers.length >= manifests.length);
   do_check_true(SocialService.enabled);
   providers.forEach(function (provider) {
-    do_check_true(provider.enabled);
+    do_check_false(provider.enabled);
   });
 
   let notificationDisabledCorrect = false;
@@ -74,12 +77,16 @@ function testEnabled(manifests, next) {
     notificationDisabledCorrect = data == "disabled";
   }, "social:pref-changed", false);
 
+  // enable one of the added providers
+  providers[providers.length-1].enabled = true;
+
+  // now disable the service and check that it disabled that provider (and all others for good measure)
   SocialService.enabled = false;
   do_check_true(notificationDisabledCorrect);
   do_check_true(!Services.prefs.getBoolPref("social.enabled"));
   do_check_true(!SocialService.enabled);
   providers.forEach(function (provider) {
-    do_check_true(!provider.enabled);
+    do_check_false(provider.enabled);
   });
 
   // Check that setting the pref directly updates things accordingly
@@ -93,8 +100,9 @@ function testEnabled(manifests, next) {
 
   do_check_true(notificationEnabledCorrect);
   do_check_true(SocialService.enabled);
+  // Enabling the service should not enable providers
   providers.forEach(function (provider) {
-    do_check_true(provider.enabled);
+    do_check_false(provider.enabled);
   });
 }
 
@@ -129,4 +137,32 @@ function testAddRemoveProvider(manifests, next) {
   do_check_eq(providersAfter.indexOf(newProvider), -1);
   newProvider = yield SocialService.getProvider(newProvider.origin, next);
   do_check_true(!newProvider);
+}
+
+function testIsSameOrigin(manifests, next) {
+  let providers = yield SocialService.getProviderList(next);
+  let provider = providers[0];
+  // provider.origin is a string.
+  do_check_true(provider.isSameOrigin(provider.origin));
+  do_check_true(provider.isSameOrigin(Services.io.newURI(provider.origin, null, null)));
+  do_check_true(provider.isSameOrigin(provider.origin + "/some-sub-page"));
+  do_check_true(provider.isSameOrigin(Services.io.newURI(provider.origin + "/some-sub-page", null, null)));
+  do_check_false(provider.isSameOrigin("http://something.com"));
+  do_check_false(provider.isSameOrigin(Services.io.newURI("http://something.com", null, null)));
+  do_check_false(provider.isSameOrigin("data:text/html,<p>hi"));
+  do_check_true(provider.isSameOrigin("data:text/html,<p>hi", true));
+  do_check_false(provider.isSameOrigin(Services.io.newURI("data:text/html,<p>hi", null, null)));
+  do_check_true(provider.isSameOrigin(Services.io.newURI("data:text/html,<p>hi", null, null), true));
+  // we explicitly handle null and return false
+  do_check_false(provider.isSameOrigin(null));
+}
+
+function testResolveUri(manifests, next) {
+  let providers = yield SocialService.getProviderList(next);
+  let provider = providers[0];
+  do_check_eq(provider.resolveUri(provider.origin).spec, provider.origin + "/");
+  do_check_eq(provider.resolveUri("foo.html").spec, provider.origin + "/foo.html");
+  do_check_eq(provider.resolveUri("/foo.html").spec, provider.origin + "/foo.html");
+  do_check_eq(provider.resolveUri("http://somewhereelse.com/foo.html").spec, "http://somewhereelse.com/foo.html");
+  do_check_eq(provider.resolveUri("data:text/html,<p>hi").spec, "data:text/html,<p>hi");
 }

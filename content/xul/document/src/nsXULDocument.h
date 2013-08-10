@@ -40,8 +40,9 @@ class nsIXULPrototypeScript;
 #endif
 #include "nsURIHashKey.h"
 #include "nsInterfaceHashtable.h"
- 
+
 struct JSObject;
+struct JSTracer;
 struct PRLogModuleInfo;
 
 class nsRefMapEntry : public nsStringHashKey
@@ -132,18 +133,23 @@ public:
     NS_IMETHOD OnPrototypeLoadDone(bool aResumeWalk);
     bool OnDocumentParserError();
 
-    // nsIDOMNode interface overrides
-    NS_IMETHOD CloneNode(bool deep, uint8_t aOptionalArgc, nsIDOMNode **_retval)
-        MOZ_OVERRIDE;
+    // nsINode interface overrides
+    virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const MOZ_OVERRIDE;
 
-    // nsIDOMDocument
-    NS_IMETHOD GetContentType(nsAString& aContentType);
+    // nsIDOMNode interface
+    NS_FORWARD_NSIDOMNODE_TO_NSINODE
+
+    // nsIDOMDocument interface
+    NS_FORWARD_NSIDOMDOCUMENT(nsXMLDocument::)
+    // And explicitly import the things from nsDocument that we just shadowed
+    using nsDocument::GetImplementation;
+    using nsDocument::GetTitle;
+    using nsDocument::SetTitle;
+    using nsDocument::GetLastStyleSheetSet;
+    using nsDocument::MozSetImageElement;
+    using nsDocument::GetMozFullScreenElement;
 
     // nsDocument interface overrides
-    NS_IMETHOD GetElementById(const nsAString& aId, nsIDOMElement** aReturn)
-    {
-        return nsDocument::GetElementById(aId, aReturn);
-    }
     virtual mozilla::dom::Element* GetElementById(const nsAString & elementId);
 
     // nsIDOMXULDocument interface
@@ -173,6 +179,9 @@ public:
     NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsXULDocument, nsXMLDocument)
 
     virtual nsXPCClassInfo* GetClassInfo();
+
+    void TraceProtos(JSTracer* aTrc, uint32_t aGCNumber);
+
 protected:
     // Implementation methods
     friend nsresult
@@ -368,7 +377,8 @@ protected:
      * Note that the resulting content node is not bound to any tree
      */
     nsresult CreateElementFromPrototype(nsXULPrototypeElement* aPrototype,
-                                        mozilla::dom::Element** aResult);
+                                        mozilla::dom::Element** aResult,
+                                        bool aIsRoot);
 
     /**
      * Create a hook-up element to which content nodes can be attached for

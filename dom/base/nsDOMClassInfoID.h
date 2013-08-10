@@ -51,13 +51,17 @@ enum nsDOMClassInfoID {
 DOMCI_CASTABLE_INTERFACE(nsINode, nsINode, 0, _extra)                         \
 DOMCI_CASTABLE_NODECL_INTERFACE(mozilla::dom::Element,  mozilla::dom::Element,\
                                 1, _extra)                                    \
+/* If this is ever removed, the IID for EventTarget can go away */            \
+DOMCI_CASTABLE_NODECL_INTERFACE(mozilla::dom::EventTarget,                    \
+                                mozilla::dom::EventTarget, 2, _extra)         \
+DOMCI_CASTABLE_INTERFACE(nsIDocument, nsIDocument, 4, _extra)                 \
 DOMCI_CASTABLE_INTERFACE(nsDocument, nsIDocument, 5, _extra)                  \
 DOMCI_CASTABLE_INTERFACE(nsGenericHTMLElement, nsGenericHTMLElement, 6,       \
                          _extra)                                              \
 DOMCI_CASTABLE_INTERFACE(nsHTMLDocument, nsIDocument, 7, _extra)              \
 DOMCI_CASTABLE_INTERFACE(nsStyledElement, nsStyledElement, 8, _extra)         \
-DOMCI_CASTABLE_INTERFACE(nsSVGStylableElement, nsIContent, 9, _extra)
- 
+DOMCI_CASTABLE_INTERFACE(nsSVGElement, nsIContent, 9, _extra)
+
 // Make sure all classes mentioned in DOMCI_CASTABLE_INTERFACES
 // have been declared.
 #define DOMCI_CASTABLE_NODECL_INTERFACE(_interface, _u1, _u2, _u3) /* Nothing */
@@ -68,6 +72,7 @@ DOMCI_CASTABLE_INTERFACES(unused)
 namespace mozilla {
 namespace dom {
 class Element;
+class EventTarget;
 } // namespace dom
 } // namespace mozilla
 
@@ -88,8 +93,7 @@ class Element;
  * but it does the job adequately for our purposes.
  */
 
-#if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ > 2) || \
-    _MSC_FULL_VER >= 140050215
+#if defined(__GNUC__) || _MSC_FULL_VER >= 140050215
 
 /* Use a compiler intrinsic if one is available. */
 

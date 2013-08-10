@@ -9,13 +9,10 @@ VPATH     = @srcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-ifdef MOZ_SERVICES_COMMON
-PARALLEL_DIRS += common
-endif
-
-ifdef MOZ_SERVICES_CRYPTO
-PARALLEL_DIRS += crypto
-endif
+PARALLEL_DIRS += \
+  common \
+  crypto \
+  $(NULL)
 
 ifdef MOZ_SERVICES_AITC
 PARALLEL_DIRS += aitc
@@ -25,12 +22,12 @@ ifdef MOZ_SERVICES_HEALTHREPORT
 PARALLEL_DIRS += healthreport
 endif
 
-ifdef MOZ_SERVICES_METRICS
-PARALLEL_DIRS += metrics
+ifdef MOZ_DATA_REPORTING
+PARALLEL_DIRS += datareporting
 endif
 
-ifdef MOZ_SERVICES_NOTIFICATIONS
-PARALLEL_DIRS += notifications
+ifdef MOZ_SERVICES_METRICS
+PARALLEL_DIRS += metrics
 endif
 
 ifdef MOZ_SERVICES_SYNC

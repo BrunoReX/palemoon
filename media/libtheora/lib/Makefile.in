@@ -127,11 +127,3 @@ endif
 include $(topsrcdir)/config/rules.mk
 
 LOCAL_INCLUDES = -I$(srcdir)
-
-ifdef _MSC_VER
-ifeq ($(CPU_ARCH),x86)
-# Workaround compiler bug on PGO (Bug 804205)
-# XXX: Duped bug, added patch for bug# 703135 which should eliminate the need for this
-# huffdec.$(OBJ_SUFFIX): CFLAGS += -GL-
-endif
-endif # _MSC_VER  

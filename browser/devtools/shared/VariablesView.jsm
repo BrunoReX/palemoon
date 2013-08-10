@@ -65,6 +65,7 @@ VariablesView.prototype = {
    */
   addScope: function VV_addScope(aName = "") {
     this._removeEmptyNotice();
+    this._toggleSearch(true);
 
     let scope = new Scope(this, aName);
     this._store.set(scope.id, scope);
@@ -100,6 +101,7 @@ VariablesView.prototype = {
 
     this._store = new Map();
     this._appendEmptyNotice();
+    this._toggleSearch(false);
   },
 
   /**
@@ -133,12 +135,14 @@ VariablesView.prototype = {
 
       if (!this._store.size) {
         this._appendEmptyNotice();
+        this._toggleSearch(false);
       }
     }.bind(this), aTimeout);
   },
 
   /**
    * Specifies if enumerable properties and variables should be displayed.
+   * These variables and properties are visible by default.
    * @param boolean aFlag
    */
   set enumVisible(aFlag) {
@@ -151,6 +155,7 @@ VariablesView.prototype = {
 
   /**
    * Specifies if non-enumerable properties and variables should be displayed.
+   * These variables and properties are visible by default.
    * @param boolean aFlag
    */
   set nonEnumVisible(aFlag) {
@@ -158,6 +163,21 @@ VariablesView.prototype = {
 
     for (let [, scope] in this) {
       scope._nonEnumVisible = aFlag;
+    }
+  },
+
+  /**
+   * Specifies if only enumerable properties and variables should be displayed.
+   * Both types of these variables and properties are visible by default.
+   * @param boolean aFlag
+   */
+  set onlyEnumVisible(aFlag) {
+    if (aFlag) {
+      this.enumVisible = true;
+      this.nonEnumVisible = false;
+    } else {
+      this.enumVisible = true;
+      this.nonEnumVisible = true;
     }
   },
 
@@ -170,13 +190,14 @@ VariablesView.prototype = {
       return;
     }
     let document = this.document;
-    let parent = this._parent;
+    let ownerView = this._parent.parentNode;
 
     let container = this._searchboxContainer = document.createElement("hbox");
     container.className = "devtools-toolbar";
+    container.hidden = !this._store.size;
 
     let searchbox = this._searchboxNode = document.createElement("textbox");
-    searchbox.className = "devtools-searchinput";
+    searchbox.className = "variables-searchinput devtools-searchinput";
     searchbox.setAttribute("placeholder", this._searchboxPlaceholder);
     searchbox.setAttribute("type", "search");
     searchbox.setAttribute("flex", "1");
@@ -184,7 +205,7 @@ VariablesView.prototype = {
     searchbox.addEventListener("keypress", this._onSearchboxKeyPress, false);
 
     container.appendChild(searchbox);
-    parent.insertBefore(container, parent.firstChild);
+    ownerView.insertBefore(container, this._parent);
   },
 
   /**
@@ -195,12 +216,26 @@ VariablesView.prototype = {
     if (!this._searchboxContainer) {
       return;
     }
-    this._parent.removeChild(this._searchboxContainer);
+    this._searchboxContainer.parentNode.removeChild(this._searchboxContainer);
     this._searchboxNode.addEventListener("input", this._onSearchboxInput, false);
     this._searchboxNode.addEventListener("keypress", this._onSearchboxKeyPress, false);
 
     this._searchboxContainer = null;
     this._searchboxNode = null;
+  },
+
+  /**
+   * Sets the variables searchbox hidden or visible. It's hidden by default.
+   *
+   * @param boolean aVisibleFlag
+   *        Specifies the intended visibility.
+   */
+  _toggleSearch: function VV__toggleSearch(aVisibleFlag) {
+    // If searching was already disabled, there's no need to hide it.
+    if (!this._searchboxContainer) {
+      return;
+    }
+    this._searchboxContainer.hidden = !aVisibleFlag;
   },
 
   /**
@@ -531,7 +566,11 @@ Scope.prototype = {
   /**
    * Toggles between the scope's collapsed and expanded state.
    */
-  toggle: function S_toggle() {
+  toggle: function S_toggle(e) {
+    if (e && e.button != 0) {
+      // Only allow left-click to trigger this event.
+      return;
+    }
     this._wasToggled = true;
     this.expanded ^= 1;
 
@@ -640,6 +679,13 @@ Scope.prototype = {
   set twisty(aFlag) aFlag ? this.showArrow() : this.hideArrow(),
 
   /**
+   * Specifies if the configurable/enumerable/writable tooltip should be shown
+   * whenever a variable or property descriptor is available.
+   * This flag applies non-recursively to the current scope.
+   */
+  showDescriptorTooltip: true,
+
+  /**
    * Specifies if editing variable or property names is allowed.
    * This flag applies non-recursively to the current scope.
    */
@@ -656,6 +702,11 @@ Scope.prototype = {
    * This flag applies non-recursively to the current scope.
    */
   allowDeletion: false,
+
+  /**
+   * Specifies the context menu attribute set on variables and properties.
+   */
+  contextMenu: "",
 
   /**
    * Gets the id associated with this item.
@@ -704,7 +755,7 @@ Scope.prototype = {
     let document = this.document;
 
     let element = this._target = document.createElement("vbox");
-    element.id = this._id;
+    element.id = this._idString;
     element.className = aClassName;
 
     let arrow = this._arrow = document.createElement("hbox");
@@ -1211,6 +1262,9 @@ create({ constructor: Variable, proto: Scope.prototype }, {
       closeNode.addEventListener("click", this._onClose, false);
       this._title.appendChild(closeNode);
     }
+    if (this.ownerView.contextMenu) {
+      this._title.setAttribute("context", this.ownerView.contextMenu);
+    }
   },
 
   /**
@@ -1227,25 +1281,36 @@ create({ constructor: Variable, proto: Scope.prototype }, {
     this._target.removeEventListener("mouseover", this._displayTooltip, false);
     let document = this.document;
 
-    let tooltip = document.createElement("tooltip");
-    tooltip.id = "tooltip-" + this.id;
+    if (this.ownerView.showDescriptorTooltip) {
+      let tooltip = document.createElement("tooltip");
+      tooltip.id = "tooltip-" + this.id;
 
-    let configurableLabel = document.createElement("label");
-    configurableLabel.setAttribute("value", "configurable");
+      let configurableLabel = document.createElement("label");
+      configurableLabel.setAttribute("value", "configurable");
 
-    let enumerableLabel = document.createElement("label");
-    enumerableLabel.setAttribute("value", "enumerable");
+      let enumerableLabel = document.createElement("label");
+      enumerableLabel.setAttribute("value", "enumerable");
 
-    let writableLabel = document.createElement("label");
-    writableLabel.setAttribute("value", "writable");
+      let writableLabel = document.createElement("label");
+      writableLabel.setAttribute("value", "writable");
 
-    tooltip.setAttribute("orient", "horizontal")
-    tooltip.appendChild(configurableLabel);
-    tooltip.appendChild(enumerableLabel);
-    tooltip.appendChild(writableLabel);
+      tooltip.setAttribute("orient", "horizontal")
+      tooltip.appendChild(configurableLabel);
+      tooltip.appendChild(enumerableLabel);
+      tooltip.appendChild(writableLabel);
 
-    this._target.appendChild(tooltip);
-    this._target.setAttribute("tooltip", tooltip.id);
+      this._target.appendChild(tooltip);
+      this._target.setAttribute("tooltip", tooltip.id);
+    }
+    if (this.ownerView.allowNameInput) {
+      this._name.setAttribute("tooltiptext", L10N.getStr("variablesEditableNameTooltip"));
+    }
+    if (this.ownerView.allowValueInput) {
+      this._valueLabel.setAttribute("tooltiptext", L10N.getStr("variablesEditableValueTooltip"));
+    }
+    if (this.ownerView.allowDeletion) {
+      this._closeNode.setAttribute("tooltiptext", L10N.getStr("variablesCloseButtonTooltip"));
+    }
   },
 
   /**
@@ -1363,7 +1428,11 @@ create({ constructor: Variable, proto: Scope.prototype }, {
   /**
    * Makes this variable's name editable.
    */
-  _activateNameInput: function V__activateNameInput() {
+  _activateNameInput: function V__activateNameInput(e) {
+    if (e && e.button != 0) {
+      // Only allow left-click to trigger this event.
+      return;
+    }
     if (!this.ownerView.allowNameInput || !this.switch) {
       return;
     }
@@ -1390,7 +1459,11 @@ create({ constructor: Variable, proto: Scope.prototype }, {
   /**
    * Makes this variable's value editable.
    */
-  _activateValueInput: function V__activateValueInput() {
+  _activateValueInput: function V__activateValueInput(e) {
+    if (e && e.button != 0) {
+      // Only allow left-click to trigger this event.
+      return;
+    }
     if (!this.ownerView.allowValueInput || !this.eval) {
       return;
     }
@@ -1610,12 +1683,11 @@ VariablesView.prototype.commitHierarchy = function VV_commitHierarchy() {
     // Dispatch this action after all the nodes have been drawn, so that
     // the transition efects can take place.
     this.window.setTimeout(function(aTarget) {
-      aTarget.setAttribute("changed", "");
-
       aTarget.addEventListener("transitionend", function onEvent() {
         aTarget.removeEventListener("transitionend", onEvent, false);
         aTarget.removeAttribute("changed");
       }, false);
+      aTarget.setAttribute("changed", "");
     }.bind(this, currVariable.target), LAZY_EMPTY_DELAY + 1);
   }
 };

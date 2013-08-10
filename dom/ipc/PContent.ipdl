@@ -4,7 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-include protocol PAudio;
 include protocol PBlob;
 include protocol PBluetooth;
 include protocol PBrowser;
@@ -24,10 +23,10 @@ include DOMTypes;
 include URIParams;
 
 include "mozilla/chrome/RegistryMessageUtils.h";
+include "mozilla/dom/PermissionMessageUtils.h";
 include "mozilla/dom/TabMessageUtils.h";
 include "mozilla/layout/RenderFrameUtils.h";
 include "mozilla/net/NeckoMessageUtils.h";
-
 include "nsGeoPositionIPCSerialiser.h";
 
 using GeoPosition;
@@ -37,6 +36,7 @@ using ChromePackage;
 using ResourceMapping;
 using OverrideMapping;
 using IPC::Permission;
+using IPC::Principal;
 using mozilla::null_t;
 using mozilla::void_t;
 using mozilla::dom::AudioChannelType;
@@ -221,7 +221,6 @@ rpc protocol PContent
     parent opens PCompositor;
     parent opens PImageBridge;
 
-    manages PAudio;
     manages PBlob;
     manages PBluetooth;
     manages PBrowser;
@@ -348,8 +347,6 @@ parent:
     sync GetXPCOMProcessAttributes()
         returns (bool isOffline);
 
-    PAudio(int32_t aNumChannels, int32_t aRate);
-
     PDeviceStorageRequest(DeviceStorageParams params);
 
     sync PCrashReporter(NativeThreadId tid, uint32_t processType);
@@ -399,7 +396,7 @@ parent:
                        nsCString aContentDisposition, bool aForceSave,
                        int64_t aContentLength, OptionalURIParams aReferrer);
 
-    AddGeolocationListener();
+    AddGeolocationListener(Principal principal);
     RemoveGeolocationListener();
     SetGeolocationHigherAccuracy(bool enable);
 

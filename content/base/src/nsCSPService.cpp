@@ -96,9 +96,10 @@ CSPService::ShouldLoad(uint32_t aContentType,
 
 
     // These content types are not subject to CSP content policy checks:
-    // TYPE_REFRESH, TYPE_DOCUMENT
+    // TYPE_CSP_REPORT, TYPE_REFRESH, TYPE_DOCUMENT
     // (their mappings are null in contentSecurityPolicy.js)
-    if (aContentType == nsIContentPolicy::TYPE_REFRESH ||
+    if (aContentType == nsIContentPolicy::TYPE_CSP_REPORT ||
+        aContentType == nsIContentPolicy::TYPE_REFRESH ||
         aContentType == nsIContentPolicy::TYPE_DOCUMENT) {
         return NS_OK;
     }

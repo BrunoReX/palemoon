@@ -19,7 +19,6 @@
 #include "nsAutoPtr.h"
 #include "nsWeakPtr.h"
 #include "nsIPrompt.h"
-#include "nsISupportsArray.h"
 #include "nsWeakReference.h"
 #include "nsThreadUtils.h"
 #include "nsTArray.h"
@@ -177,42 +176,29 @@ public:
 
   nsTArray< nsRefPtr<nsNPAPIPluginInstance> > *InstanceArray();
 
-  void DestroyRunningInstances(nsISupportsArray* aReloadDocs, nsPluginTag* aPluginTag);
+  void DestroyRunningInstances(nsTArray<nsCOMPtr<nsIDocument> >* aReloadDocs, nsPluginTag* aPluginTag);
 
   // Return the tag for |aLibrary| if found, nullptr if not.
   nsPluginTag* FindTagForLibrary(PRLibrary* aLibrary);
 
   // The last argument should be false if we already have an in-flight stream
   // and don't need to set up a new stream.
-  nsresult InstantiateEmbeddedPluginInstance(const char *aMimeType, nsIURI* aURL,
-                                             nsObjectLoadingContent *aContent,
-                                             nsPluginInstanceOwner** aOwner);
-
-  nsresult InstantiateFullPagePluginInstance(const char *aMimeType,
-                                             nsIURI* aURI,
-                                             nsObjectLoadingContent *aContent,
-                                             nsPluginInstanceOwner **aOwner,
-                                             nsIStreamListener **aStreamListener);
+  nsresult InstantiatePluginInstance(const char *aMimeType, nsIURI* aURL,
+                                     nsObjectLoadingContent *aContent,
+                                     nsPluginInstanceOwner** aOwner);
 
   // Does not accept NULL and should never fail.
   nsPluginTag* TagForPlugin(nsNPAPIPlugin* aPlugin);
 
   nsresult GetPlugin(const char *aMimeType, nsNPAPIPlugin** aPlugin);
 
-  nsresult NewEmbeddedPluginStreamListener(nsIURI* aURL, nsObjectLoadingContent *aContent,
-                                           nsNPAPIPluginInstance* aInstance,
-                                           nsIStreamListener **aStreamListener);
-
-  nsresult NewFullPagePluginStreamListener(nsIURI* aURI,
-                                           nsNPAPIPluginInstance *aInstance,
-                                           nsIStreamListener **aStreamListener);
+  nsresult NewPluginStreamListener(nsIURI* aURL,
+                                   nsNPAPIPluginInstance* aInstance,
+                                   nsIStreamListener **aStreamListener);
 
 private:
   nsresult
   TrySetUpPluginInstance(const char *aMimeType, nsIURI *aURL, nsPluginInstanceOwner *aOwner);
-
-  nsresult
-  NewEmbeddedPluginStream(nsIURI* aURL, nsObjectLoadingContent *aContent, nsNPAPIPluginInstance* aInstance);
 
   nsPluginTag*
   FindPreferredPlugin(const InfallibleTArray<nsPluginTag*>& matches);
@@ -304,7 +290,7 @@ private:
   // Helpers for ClearSiteData and SiteHasData.
   nsresult NormalizeHostname(nsCString& host);
   nsresult EnumerateSiteData(const nsACString& domain,
-                             const nsTArray<nsCString>& sites,
+                             const InfallibleTArray<nsCString>& sites,
                              InfallibleTArray<nsCString>& result,
                              bool firstMatchOnly);
 

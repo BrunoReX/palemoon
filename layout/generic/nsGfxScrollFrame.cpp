@@ -9,9 +9,9 @@
 #include "nsHTMLParts.h"
 #include "nsPresContext.h"
 #include "nsIServiceManager.h"
-#include "nsIView.h"
+#include "nsView.h"
 #include "nsIScrollable.h"
-#include "nsIViewManager.h"
+#include "nsViewManager.h"
 #include "nsContainerFrame.h"
 #include "nsGfxScrollFrame.h"
 #include "nsGkAtoms.h"
@@ -861,10 +861,10 @@ nsHTMLScrollFrame::AccessibleType()
   if (mContent->IsRootOfNativeAnonymousSubtree() ||
       GetScrollbarStyles() == nsIScrollableFrame::
         ScrollbarStyles(NS_STYLE_OVERFLOW_HIDDEN, NS_STYLE_OVERFLOW_HIDDEN) ) {
-    return a11y::eNoAccessible;
+    return a11y::eNoType;
   }
 
-  return a11y::eHyperTextAccessible;
+  return a11y::eHyperTextType;
 }
 #endif
 
@@ -1633,7 +1633,7 @@ nsGfxScrollFrameInner::ScrollToWithOrigin(nsPoint aScrollPosition,
 // we don't want to invalidate views that have moved.
 static void AdjustViews(nsIFrame* aFrame)
 {
-  nsIView* view = aFrame->GetView();
+  nsView* view = aFrame->GetView();
   if (view) {
     nsPoint pt;
     aFrame->GetParent()->GetClosestView(&pt);
@@ -1700,6 +1700,10 @@ bool nsGfxScrollFrameInner::ShouldClampScrollPosition() const
 
 bool nsGfxScrollFrameInner::IsAlwaysActive() const
 {
+  if (nsDisplayItem::ForceActiveLayers()) {
+    return true;
+  }
+
   // Unless this is the root scrollframe for a non-chrome document 
   // which is the direct child of a chrome document, we default to not
   // being "active".
@@ -2160,11 +2164,6 @@ static void HandleScrollPref(nsIScrollable *aScrollable, int32_t aOrientation,
 nsGfxScrollFrameInner::ScrollbarStyles
 nsGfxScrollFrameInner::GetScrollbarStylesFromFrame() const
 {
-  // XXX EVIL COMPILER BUG BE CAREFUL WHEN CHANGING THIS METHOD
-  //     There's bugs in the Android compiler :(
-  //     It was first worked around in bug 642205, then it failed
-  //     on armv6 (bug 790624) *in a different way*.
-
   nsPresContext* presContext = mOuter->PresContext();
   if (!presContext->IsDynamic() &&
       !(mIsRoot && presContext->HasPaginatedScrolling())) {
@@ -2843,7 +2842,7 @@ nsGfxScrollFrameInner::FireScrollEvent()
   } else {
     // scroll events fired at elements don't bubble (although scroll events
     // fired at documents do, to the window)
-    event.flags |= NS_EVENT_FLAG_CANT_BUBBLE;
+    event.mFlags.mBubbles = false;
     nsEventDispatcher::Dispatch(content, prescontext, &event, nullptr, &status);
   }
 }

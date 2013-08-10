@@ -3,6 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/DebugOnly.h"          // for DebugOnly
+
 #include <stdio.h>                      // for NULL, stdout
 #include <string.h>                     // for strcmp
 
@@ -25,7 +27,6 @@
 #include "mozilla/Preferences.h"        // for Preferences
 #include "mozilla/Selection.h"          // for Selection, etc
 #include "mozilla/Services.h"           // for GetObserverService
-#include "mozilla/Util.h"               // for DebugOnly
 #include "mozilla/dom/Element.h"        // for Element, nsINode::AsElement
 #include "mozilla/mozalloc.h"           // for operator new, etc
 #include "nsAString.h"                  // for nsAString_internal::Length, etc
@@ -868,7 +869,7 @@ nsEditor::BeginTransaction()
   BeginUpdateViewBatch();
 
   if (mTxnMgr) {
-    mTxnMgr->BeginBatch();
+    mTxnMgr->BeginBatch(nullptr);
   }
 
   return NS_OK;
@@ -878,7 +879,7 @@ NS_IMETHODIMP
 nsEditor::EndTransaction()
 {
   if (mTxnMgr) {
-    mTxnMgr->EndBatch();
+    mTxnMgr->EndBatch(false);
   }
 
   EndUpdateViewBatch();
@@ -1818,7 +1819,7 @@ public:
     }
 
     nsEvent inputEvent(mIsTrusted, NS_FORM_INPUT);
-    inputEvent.flags |= NS_EVENT_FLAG_CANT_CANCEL;
+    inputEvent.mFlags.mCancelable = false;
     inputEvent.time = static_cast<uint64_t>(PR_Now() / 1000);
     nsEventStatus status = nsEventStatus_eIgnore;
     nsresult rv =
@@ -2605,18 +2606,18 @@ nsEditor::NotifyDocumentListeners(TDocumentListenerNotification aNotificationTyp
           break;
       }
       break;
-  
+
     case eDocumentStateChanged:
       {
         bool docIsDirty;
         rv = GetDocumentModified(&docIsDirty);
         NS_ENSURE_SUCCESS(rv, rv);
-        
-        if (docIsDirty == mDocDirtyState)
+
+        if (static_cast<int8_t>(docIsDirty) == mDocDirtyState)
           return NS_OK;
-        
-        mDocDirtyState = (int8_t)docIsDirty;
-        
+
+        mDocDirtyState = docIsDirty;
+
         for (i = 0; i < numListeners;i++)
         {
           rv = listeners[i]->NotifyDocumentStateChanged(mDocDirtyState);
@@ -3385,28 +3386,13 @@ nsEditor::FindNode(nsINode *aCurrentNode,
   return FindNode(candidate, aGoForward, aEditableNode, bNoBlockCrossing);
 }
 
-already_AddRefed<nsIDOMNode>
-nsEditor::GetRightmostChild(nsIDOMNode *aCurrentNode, 
+nsIDOMNode*
+nsEditor::GetRightmostChild(nsIDOMNode* aCurrentNode,
                             bool bNoBlockCrossing)
 {
-  NS_ENSURE_TRUE(aCurrentNode, nullptr);
-  nsCOMPtr<nsIDOMNode> resultNode, temp = aCurrentNode;
-  bool hasChildren;
-  aCurrentNode->HasChildNodes(&hasChildren);
-  while (hasChildren) {
-    temp->GetLastChild(getter_AddRefs(resultNode));
-    if (resultNode) {
-      if (bNoBlockCrossing && IsBlockNode(resultNode)) {
-        return resultNode.forget();
-      }
-      resultNode->HasChildNodes(&hasChildren);
-      temp = resultNode;
-    } else {
-      hasChildren = false;
-    }
-  }
-
-  return resultNode.forget();
+  nsCOMPtr<nsINode> currentNode = do_QueryInterface(aCurrentNode);
+  nsIContent* result = GetRightmostChild(currentNode, bNoBlockCrossing);
+  return result ? result->AsDOMNode() : nullptr;
 }
 
 nsIContent*
@@ -3457,28 +3443,13 @@ nsEditor::GetLeftmostChild(nsINode *aCurrentNode,
   return nullptr;
 }
 
-already_AddRefed<nsIDOMNode>
-nsEditor::GetLeftmostChild(nsIDOMNode *aCurrentNode,
+nsIDOMNode*
+nsEditor::GetLeftmostChild(nsIDOMNode* aCurrentNode,
                            bool bNoBlockCrossing)
 {
-  NS_ENSURE_TRUE(aCurrentNode, nullptr);
-  nsCOMPtr<nsIDOMNode> resultNode, temp = aCurrentNode;
-  bool hasChildren;
-  aCurrentNode->HasChildNodes(&hasChildren);
-  while (hasChildren) {
-    temp->GetFirstChild(getter_AddRefs(resultNode));
-    if (resultNode) {
-      if (bNoBlockCrossing && IsBlockNode(resultNode)) {
-        return resultNode.forget();
-      }
-      resultNode->HasChildNodes(&hasChildren);
-      temp = resultNode;
-    } else {
-      hasChildren = false;
-    }
-  }
-
-  return resultNode.forget();
+  nsCOMPtr<nsINode> currentNode = do_QueryInterface(aCurrentNode);
+  nsIContent* result = GetLeftmostChild(currentNode, bNoBlockCrossing);
+  return result ? result->AsDOMNode() : nullptr;
 }
 
 bool

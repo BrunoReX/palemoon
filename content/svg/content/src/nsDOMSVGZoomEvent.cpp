@@ -32,7 +32,7 @@ nsDOMSVGZoomEvent::nsDOMSVGZoomEvent(nsPresContext* aPresContext,
     mEvent->time = PR_Now();
   }
 
-  mEvent->flags |= NS_EVENT_FLAG_CANT_CANCEL;
+  mEvent->mFlags.mCancelable = false;
 
   // We must store the "Previous" and "New" values before this event is
   // dispatched. Reading the values from the root 'svg' element after we've
@@ -56,14 +56,12 @@ nsDOMSVGZoomEvent::nsDOMSVGZoomEvent(nsPresContext* aPresContext,
           mNewScale = SVGSVGElement->GetCurrentScale();
           mPreviousScale = SVGSVGElement->GetPreviousScale();
 
-          const nsSVGTranslatePoint& translate =
-            SVGSVGElement->GetCurrentTranslate();
+          const SVGPoint& translate = SVGSVGElement->GetCurrentTranslate();
           mNewTranslate =
             new DOMSVGPoint(translate.GetX(), translate.GetY());
           mNewTranslate->SetReadonly(true);
 
-          const nsSVGTranslatePoint& prevTranslate =
-            SVGSVGElement->GetPreviousTranslate();
+          const SVGPoint& prevTranslate = SVGSVGElement->GetPreviousTranslate();
           mPreviousTranslate =
             new DOMSVGPoint(prevTranslate.GetX(), prevTranslate.GetY());
           mPreviousTranslate->SetReadonly(true);
@@ -122,7 +120,7 @@ nsDOMSVGZoomEvent::GetPreviousScale(float *aPreviousScale)
 
 /* readonly attribute SVGPoint previousTranslate; */
 NS_IMETHODIMP
-nsDOMSVGZoomEvent::GetPreviousTranslate(nsIDOMSVGPoint **aPreviousTranslate)
+nsDOMSVGZoomEvent::GetPreviousTranslate(nsISupports **aPreviousTranslate)
 {
   *aPreviousTranslate = mPreviousTranslate;
   NS_IF_ADDREF(*aPreviousTranslate);
@@ -138,7 +136,7 @@ NS_IMETHODIMP nsDOMSVGZoomEvent::GetNewScale(float *aNewScale)
 
 /* readonly attribute SVGPoint newTranslate; */
 NS_IMETHODIMP
-nsDOMSVGZoomEvent::GetNewTranslate(nsIDOMSVGPoint **aNewTranslate)
+nsDOMSVGZoomEvent::GetNewTranslate(nsISupports **aNewTranslate)
 {
   *aNewTranslate = mNewTranslate;
   NS_IF_ADDREF(*aNewTranslate);

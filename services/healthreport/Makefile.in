@@ -11,12 +11,12 @@ include $(DEPTH)/config/autoconf.mk
 
 modules := \
   healthreporter.jsm \
-  policy.jsm \
+  profile.jsm \
   providers.jsm \
   $(NULL)
 
 testing_modules := \
-  mocks.jsm \
+  utils.jsm \
   $(NULL)
 
 TEST_DIRS += tests
@@ -30,9 +30,6 @@ TESTING_JS_MODULE_DIR := services/healthreport
 
 EXTRA_COMPONENTS := \
   HealthReportComponents.manifest \
-  HealthReportService.js \
   $(NULL)
-
-PREF_JS_EXPORTS := healthreport-prefs.js
 
 include $(topsrcdir)/config/rules.mk

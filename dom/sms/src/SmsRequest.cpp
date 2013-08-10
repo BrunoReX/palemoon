@@ -43,7 +43,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(SmsRequest,
                                                 nsDOMEventTargetHelper)
   if (tmp->mResultRooted) {
-    tmp->mResult = JSVAL_VOID;
     tmp->UnrootResult();
   }
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mCursor)
@@ -59,7 +58,6 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(SmsRequest)
   NS_INTERFACE_MAP_ENTRY(nsIDOMMozSmsRequest)
   NS_INTERFACE_MAP_ENTRY(nsIDOMDOMRequest)
   NS_INTERFACE_MAP_ENTRY(nsISmsRequest)
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMMozSmsRequest)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(MozSmsRequest)
 NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetHelper)
 
@@ -137,6 +135,7 @@ void
 SmsRequest::UnrootResult()
 {
   NS_ASSERTION(mResultRooted, "Don't call UnrotResult() if not rooted!");
+  mResult = JSVAL_VOID;
   NS_DROP_JS_OBJECTS(this, SmsRequest);
   mResultRooted = false;
 }
@@ -206,7 +205,6 @@ SmsRequest::SetSuccessInternal(nsISupports* aObject)
 
   if (NS_FAILED(nsContentUtils::WrapNative(cx, global, aObject, &mResult))) {
     UnrootResult();
-    mResult = JSVAL_VOID;
     SetError(nsISmsRequest::INTERNAL_ERROR);
     return false;
   }
@@ -291,8 +289,7 @@ SmsRequest::DispatchTrustedEvent(const nsAString& aEventName)
   nsresult rv = event->InitEvent(aEventName, false, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = event->SetTrusted(true);
-  NS_ENSURE_SUCCESS(rv, rv);
+  event->SetTrusted(true);
 
   bool dummy;
   return DispatchEvent(event, &dummy);

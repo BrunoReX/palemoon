@@ -62,8 +62,6 @@ SDK_XPIDLSRCS =					\
 	nsIDOMHTMLParagraphElement.idl		\
 	nsIDOMHTMLParamElement.idl		\
 	nsIDOMHTMLPreElement.idl		\
-	nsIDOMHTMLPropertiesCollection.idl  \
-	nsIDOMPropertyNodeList.idl  \
 	nsIDOMHTMLProgressElement.idl		\
 	nsIDOMHTMLQuoteElement.idl		\
 	nsIDOMHTMLScriptElement.idl		\
@@ -74,7 +72,7 @@ SDK_XPIDLSRCS =					\
 	nsIDOMHTMLTableColElement.idl		\
 	nsIDOMHTMLTableElement.idl		\
 	nsIDOMHTMLTableRowElement.idl		\
-	nsIDOMHTMLTableSectionElem.idl		\
+	nsIDOMHTMLTableSectionElement.idl		\
 	nsIDOMHTMLTextAreaElement.idl		\
 	nsIDOMHTMLTitleElement.idl		\
 	nsIDOMHTMLUListElement.idl		\
@@ -86,6 +84,7 @@ SDK_XPIDLSRCS =					\
 	nsIDOMHTMLVideoElement.idl		\
 	nsIDOMHTMLAudioElement.idl		\
 	nsIDOMValidityState.idl		\
+	nsIUndoManagerTransaction.idl	\
 	nsIDOMMozBrowserFrame.idl		\
 	$(NULL)
 

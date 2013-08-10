@@ -31,27 +31,6 @@ ifneq (,$(filter armeabi,$(ANDROID_CPU_ARCH)))
 DEFINES += -DARCH_ARMV6
 endif
 
-ifneq (,$(MOZ_PROFILING))
-ifneq (,$(filter Android,$(OS_TARGET)))
-LOCAL_INCLUDES += \
-  -I$(topsrcdir)/tools/profiler/libunwind/src/include \
-  -I$(DEPTH)/tools/profiler/libunwind/src/include \
-  $(NULL)
-
-SHARED_LIBRARY_LIBS += \
-  $(DEPTH)/tools/profiler/libunwind/src/src/.libs/libunwind-arm.$(LIB_SUFFIX) \
-  $(NULL)
-
-export::
-	# Avoid building libunwind documentation
-	$(topsrcdir)/tools/profiler/libunwind/dont_build_docs.sh $(DEPTH)/tools/profiler/libunwind/src/doc/Makefile
-	$(call SUBMAKE,,libunwind/src)
-
-distclean::
-	$(call SUBMAKE,$@,libunwind/src)
-endif
-endif
-
 MODULE          = profiler
 MODULE_NAME     = nsProfilerModule
 LIBRARY_NAME    = profiler
@@ -63,6 +42,8 @@ CPPSRCS		= \
   nsProfilerFactory.cpp \
   nsProfiler.cpp \
   TableTicker.cpp \
+  JSObjectBuilder.cpp \
+  JSCustomObjectBuilder.cpp \
   $(NULL)
 
 XPIDLSRCS = \
@@ -72,10 +53,6 @@ XPIDLSRCS = \
 EXTRA_JS_MODULES = \
   Profiler.jsm \
   $(NULL)
-
-ifdef MOZ_OLD_LINKER
-DEFINES += -DMOZ_OLD_LINKER
-endif
 
 ifneq (,$(filter Android Linux,$(OS_TARGET)))
 CPPSRCS += \

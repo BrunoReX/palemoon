@@ -17,7 +17,7 @@
 #include "nsIDOMHTMLSelectElement.h"
 #include "nsIDOMHTMLOptionElement.h"
 #include "nsComboboxControlFrame.h"
-#include "nsIViewManager.h"
+#include "nsViewManager.h"
 #include "nsIDOMHTMLOptGroupElement.h"
 #include "nsWidgetsCID.h"
 #include "nsIPresShell.h"
@@ -267,7 +267,7 @@ NS_QUERYFRAME_TAIL_INHERITING(nsHTMLScrollFrame)
 a11y::AccType
 nsListControlFrame::AccessibleType()
 {
-  return a11y::eHTMLSelectListAccessible;
+  return a11y::eHTMLSelectListType;
 }
 #endif
 

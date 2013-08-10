@@ -25,6 +25,7 @@
 namespace mozilla {
 
 class DASHDecoder;
+class DASHRepReader;
 
 class DASHRepDecoder : public MediaDecoder
 {
@@ -39,7 +40,7 @@ public:
     mMPDRepresentation(nullptr),
     mMetadataChunkCount(0),
     mCurrentByteRange(),
-    mSubsegmentIdx(0),
+    mSubsegmentIdx(-1),
     mReader(nullptr)
   {
     MOZ_COUNT_CTOR(DASHRepDecoder);
@@ -80,6 +81,12 @@ public:
   // thread only.
   void LoadNextByteRange();
 
+  // Cancels current byte range loads. Called on the main thread only.
+  void CancelByteRangeLoad();
+
+  // Returns true if the subsegment is already in the media cache.
+  bool IsSubsegmentCached(int32_t aSubsegmentIdx);
+
   // Calls from DASHRepDecoder. Called on the main thread only.
   void SetReader(WebMReader* aReader);
 
@@ -96,7 +103,7 @@ public:
   void SetInfinite(bool aInfinite);
 
   // Sets media stream as seekable. Called on main thread only.
-  void SetSeekable(bool aSeekable);
+  void SetMediaSeekable(bool aSeekable);
 
   // Fire progress events if needed according to the time and byte
   // constraints outlined in the specification. aTimer is true
@@ -118,15 +125,34 @@ public:
   // Called on the main thread only.
   void NotifyDownloadEnded(nsresult aStatus);
 
+  // Called asynchronously by |LoadNextByteRange| if the data is already in the
+  // media cache. This will call NotifyDownloadEnded on the main thread with
+  // |aStatus| of NS_OK.
+  void DoNotifyDownloadEnded();
+
   // Called by MediaResource when the "cache suspended" status changes.
   // If MediaResource::IsSuspendedByCache returns true, then the decoder
   // should stop buffering or otherwise waiting for download progress and
   // start consuming data, if possible, because the cache is full.
   void NotifySuspendedStatusChanged();
 
+  // Increments the parsed and decoded frame counters by the passed in counts.
+  // Can be called on any thread.
+  void NotifyDecodedFrames(uint32_t aParsed, uint32_t aDecoded) MOZ_OVERRIDE {
+    if (mMainDecoder) {mMainDecoder->NotifyDecodedFrames(aParsed, aDecoded); }
+  }
+
   // Gets a byte range containing the byte offset. Call on main thread only.
   nsresult GetByteRangeForSeek(int64_t const aOffset,
                                MediaByteRange& aByteRange);
+
+  // Gets the number of data byte ranges (not inc. metadata).
+  uint32_t GetNumDataByteRanges() {
+    return mByteRanges.Length();
+  }
+
+  // Notify that a switch is about to happen. Called on the main thread.
+  void PrepareForSwitch();
 
   // Returns true if the current thread is the state machine thread.
   bool OnStateMachineThread() const;
@@ -135,21 +161,24 @@ public:
   bool OnDecodeThread() const;
 
   // Returns main decoder's monitor for synchronised access.
-  ReentrantMonitor& GetReentrantMonitor();
+  ReentrantMonitor& GetReentrantMonitor() MOZ_OVERRIDE;
 
   // Called on the decode thread from WebMReader.
   ImageContainer* GetImageContainer();
 
   // Called when Metadata has been read; notifies that index data is read.
   // Called on the decode thread only.
-  void OnReadMetadataCompleted();
+  void OnReadMetadataCompleted() MOZ_OVERRIDE;
 
   // Overridden to cleanup ref to |DASHDecoder|. Called on main thread only.
   void Shutdown() {
     NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+    // Remove ref to state machine before |MediaDecoder|::|Shutdown|, since
+    // |DASHDecoder| is responsible for its shutdown.
+    mDecoderStateMachine = nullptr;
     // Call parent class shutdown.
     MediaDecoder::Shutdown();
-    NS_ENSURE_TRUE(mShuttingDown, );
+    NS_ENSURE_TRUE_VOID(mShuttingDown);
     // Cleanup ref to main decoder.
     mMainDecoder = nullptr;
   }
@@ -162,6 +191,10 @@ public:
   void DecodeError();
 
 private:
+  // Populates |mByteRanges| by calling |GetIndexByteRanges| from |mReader|.
+  // Called on the main thread only.
+  nsresult PopulateByteRanges();
+
   // The main decoder.
   nsRefPtr<DASHDecoder> mMainDecoder;
   // This decoder's MPD |Representation| object.
@@ -179,12 +212,12 @@ private:
 
   // The current byte range being requested.
   MediaByteRange  mCurrentByteRange;
-  // Index of the current byte range.
-  uint64_t        mSubsegmentIdx;
+  // Index of the current byte range. Initialized to -1.
+  int32_t         mSubsegmentIdx;
 
   // Ptr to the reader object for this |Representation|. Owned by state
   // machine.
-  MediaDecoderReader*   mReader;
+  DASHRepReader* mReader;
 };
 
 } // namespace mozilla

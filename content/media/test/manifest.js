@@ -6,6 +6,8 @@
 // really only need one test file per backend here.
 var gSmallTests = [
   { name:"small-shot.ogg", type:"audio/ogg", duration:0.276 },
+  { name:"small-shot.m4a", type:"audio/mp4", duration:0.29 },
+  { name:"small-shot.mp3", type:"audio/mpeg", duration:0.27 },
   { name:"r11025_s16_c1.wav", type:"audio/x-wav", duration:1.0 },
   { name:"320x240.ogv", type:"video/ogg", width:320, height:240, duration:0.266 },
   { name:"seek.webm", type:"video/webm", width:320, height:240, duration:3.966 },
@@ -33,6 +35,7 @@ var gPlayedTests = [
   { name:"seek.ogv", type:"video/ogg", duration:3.966 },
   { name:"seek.webm", type:"video/webm", duration:3.966 },
   { name:"gizmo.mp4", type:"video/mp4", duration:5.56 },
+  { name:"owl.mp3", type:"audio/mpeg", duration:3.29 },
 ];
 
 // Used by test_mozLoadFrom.  Need one test file per decoder backend, plus
@@ -152,6 +155,10 @@ var gPlayTests = [
 
   { name:"gizmo.mp4", type:"video/mp4", duration:5.56 },
 
+  { name:"small-shot.m4a", type:"audio/mp4", duration:0.29 },
+  { name:"small-shot.mp3", type:"audio/mpeg", duration:0.27 },
+  { name:"owl.mp3", type:"audio/mpeg", duration:3.29 },
+
   // Invalid file
   { name:"bogus.duh", type:"bogus/duh", duration:Number.NaN }
 ];
@@ -161,10 +168,24 @@ var gSnifferTests = [
   { name:"big.wav", type:"audio/x-wav", duration:9.278981, size:102444 },
   { name:"320x240.ogv", type:"video/ogg", width:320, height:240, duration:0.233, size:28942 },
   { name:"seek.webm", type:"video/webm", duration:3.966, size:215529 },
-  { name:"short.mp4", type:"video/mp4", duration:0.2, size:29435},
+  { name:"gizmo.mp4", type:"video/mp4", duration:5.56, size:383631 },
   // A mp3 file with id3 tags.
   { name:"id3tags.mp3", type:"audio/mpeg", duration:0.28, size:3530},
   { name:"bogus.duh", type:"bogus/duh" }
+];
+
+// Files we must reject as invalid.
+var gInvalidTests = [
+  { name:"invalid-m0c0.opus", type:"audio/ogg; codecs=opus"},
+  { name:"invalid-m0c3.opus", type:"audio/ogg; codecs=opus"},
+  { name:"invalid-m1c0.opus", type:"audio/ogg; codecs=opus"},
+  { name:"invalid-m1c9.opus", type:"audio/ogg; codecs=opus"},
+  { name:"invalid-m2c0.opus", type:"audio/ogg; codecs=opus"},
+  { name:"invalid-m2c1.opus", type:"audio/ogg; codecs=opus"},
+  { name:"invalid-cmap-short.opus", type:"audio/ogg; codecs=opus"},
+  { name:"invalid-cmap-s0c0.opus", type:"audio/ogg; codecs=opus"},
+  { name:"invalid-cmap-s0c2.opus", type:"audio/ogg; codecs=opus"},
+  { name:"invalid-cmap-s1c2.opus", type:"audio/ogg; codecs=opus"},
 ];
 
 // Converts a path/filename to a file:// URI which we can load from disk.
@@ -278,6 +299,8 @@ var gSeekTests = [
   { name:"bug516323.indexed.ogv", type:"video/ogg", duration:4.208 },
   { name:"split.webm", type:"video/webm", duration:1.967 },
   { name:"detodos.opus", type:"audio/ogg; codecs=opus", duration:2.9135 },
+  { name:"gizmo.mp4", type:"video/mp4", duration:5.56 },
+  { name:"owl.mp3", type:"audio/mpeg", duration:3.29 },
   { name:"bogus.duh", type:"bogus/duh", duration:123 }
 ];
 
@@ -285,6 +308,8 @@ var gSeekTests = [
 var gAudioTests = [
   { name:"r11025_s16_c1.wav", type:"audio/x-wav", duration:1.0 },
   { name:"sound.ogg", type:"audio/ogg" },
+  { name:"owl.mp3", type:"audio/mpeg", duration:3.29 },
+  { name:"small-shot.m4a", type:"audio/mp4", duration:0.29 },
   { name:"bogus.duh", type:"bogus/duh", duration:123 }
 ];
 
@@ -317,6 +342,35 @@ var gFragmentTests = [
   { name:"big.wav", type:"audio/x-wav", duration:9.278981, size:102444 }
 ];
 
+// Used by test_chaining.html. The |links| attributes is the number of links in
+// this file that we should be able to play.
+var gChainingTests = [
+  // Vorbis and Opus chained file. They have user comments |index=n| where `n`
+  // is the index of this segment in the file, 0 indexed.
+  { name:"chain.ogg", type:"audio/ogg", links: 4},
+  { name:"chain.opus", type:"audio/ogg; codec=opus", links: 4},
+  // Those files are chained files with a different number of channels in each
+  // part. This is not supported and should stop playing after the first part.
+  { name:"variable-channel.ogg", type:"audio/ogg", links: 1 },
+  { name:"variable-channel.opus", type:"audio/ogg; codec=opus", links: 1 },
+  // Those files are chained files with a different sample rate in each
+  // part. This is not supported and should stop playing after the first part.
+  { name:"variable-samplerate.ogg", type:"audio/ogg", links: 1 },
+  // Opus decoding in Firefox outputs 48 kHz PCM despite having a different
+  // original sample rate, so we can safely play Opus chained media that have
+  // different samplerate accross links.
+  { name:"variable-samplerate.opus", type:"audio/ogg; codec=opus", links: 2 },
+  // A chained video file. We don't support those, so only one link should be
+  // reported.
+  { name:"chained-video.ogv", type:"video/ogg", links: 1 },
+  // A file that consist in 4 links of audio, then another link that has video.
+  // We should stop right after the 4 audio links.
+  { name:"chained-audio-video.ogg", type:"video/ogg", links: 4 },
+  // An opus file that has two links, with a different preskip value for each
+  // link. We should be able to play both links.
+  { name:"variable-preskip.opus", type:"audio/ogg; codec=opus", links: 2 },
+  { name:"bogus.duh", type:"bogus/duh" }
+];
 
 // These are files with non-trivial tag sets.
 // Used by test_metadata.html.
@@ -370,7 +424,42 @@ var gMetadataTests = [
       // "not~valid":"this isn't a valid name either",
       // "not-utf-8":"invalid sequences: \xff\xfe\xfa\xfb\0eol"
     }
-  }
+  },
+  { name:"wave_metadata.wav", tags: {
+      name:"Track Title",
+      artist:"Artist Name",
+      comments:"Comments",
+    }
+  },
+  { name:"wave_metadata_utf8.wav", tags: {
+      name:"歌曲名稱",
+      artist:"作曲者",
+      comments:"註解",
+    }
+  },
+  { name:"wave_metadata_unknown_tag.wav", tags: {
+      name:"Track Title",
+      comments:"Comments",
+    }
+  },
+  { name:"wave_metadata_bad_len.wav", tags: {
+      name:"Track Title",
+      artist:"Artist Name",
+    }
+  },
+  { name:"wave_metadata_bad_no_null.wav", tags: {
+      name:"Track Title",
+      artist:"Artist Name",
+      comments:"Comments!!",
+    }
+  },
+  { name:"wave_metadata_bad_utf8.wav", tags: {
+      name:"歌曲名稱",
+      comments:"註解",
+    }
+  },
+  { name:"wavedata_u8.wav", tags: { }
+  },
 ];
 
 function checkMetadata(msg, e, test) {

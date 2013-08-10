@@ -46,7 +46,7 @@ public:
     // called to check the transaction status.
     virtual bool     IsDone() = 0;
     virtual nsresult Status() = 0;
-    virtual uint8_t  Caps() = 0;
+    virtual uint32_t Caps() = 0;
 
     // called to find out how much request data is available for writing.
     virtual uint64_t Available() = 0;
@@ -142,7 +142,7 @@ public:
                            nsresult status, uint64_t progress); \
     bool     IsDone(); \
     nsresult Status(); \
-    uint8_t  Caps();   \
+    uint32_t Caps();   \
     uint64_t Available(); \
     nsresult ReadSegments(nsAHttpSegmentReader *, uint32_t, uint32_t *); \
     nsresult WriteSegments(nsAHttpSegmentWriter *, uint32_t, uint32_t *); \
@@ -172,12 +172,13 @@ public:
     // data from subsequent OnReadSegment() calls or throw hard
     // (i.e. not wouldblock) exceptions. Implementations
     // can return NS_ERROR_FAILURE if they never make commitments of that size
-    // (the default), NS_BASE_STREAM_WOULD_BLOCK if they cannot make
-    // the commitment now but might in the future, or NS_OK
-    // if they make the commitment.
+    // (the default), NS_OK if they make the commitment, or
+    // NS_BASE_STREAM_WOULD_BLOCK if they cannot make the
+    // commitment now but might in the future and forceCommitment is not true .
+    // (forceCommitment requires a hard failure or OK at this moment.)
     //
     // Spdy uses this to make sure frames are atomic.
-    virtual nsresult CommitToSegmentSize(uint32_t size)
+    virtual nsresult CommitToSegmentSize(uint32_t size, bool forceCommitment)
     {
         return NS_ERROR_FAILURE;
     }

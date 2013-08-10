@@ -20,7 +20,7 @@
 #include "nsEventStateManager.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsLayoutUtils.h"
-#include "nsIViewManager.h"
+#include "nsViewManager.h"
 #include "nsIComponentManager.h"
 #include "nsITimer.h"
 #include "nsFocusManager.h"
@@ -1325,15 +1325,15 @@ nsXULPopupManager::GetTopPopup(nsPopupType aType)
   return nullptr;
 }
 
-nsTArray<nsIFrame *>
-nsXULPopupManager::GetVisiblePopups()
+void
+nsXULPopupManager::GetVisiblePopups(nsTArray<nsIFrame *>& aPopups)
 {
-  nsTArray<nsIFrame *> popups;
+  aPopups.Clear();
 
   nsMenuChainItem* item = mPopups;
   while (item) {
     if (item->Frame()->PopupState() == ePopupOpenAndVisible)
-      popups.AppendElement(static_cast<nsIFrame*>(item->Frame()));
+      aPopups.AppendElement(static_cast<nsIFrame*>(item->Frame()));
     item = item->GetParent();
   }
 
@@ -1342,12 +1342,10 @@ nsXULPopupManager::GetVisiblePopups()
     // skip panels which are not open and visible as well as draggable popups,
     // as those don't respond to events.
     if (item->Frame()->PopupState() == ePopupOpenAndVisible && !item->Frame()->IsDragPopup()) {
-      popups.AppendElement(static_cast<nsIFrame*>(item->Frame()));
+      aPopups.AppendElement(static_cast<nsIFrame*>(item->Frame()));
     }
     item = item->GetParent();
   }
-
-  return popups;
 }
 
 already_AddRefed<nsIDOMNode>
@@ -2264,7 +2262,7 @@ nsXULMenuCommandEvent::Run()
   if (!pm)
     return NS_OK;
 
-  // The order of the nsIViewManager and nsIPresShell COM pointers is
+  // The order of the nsViewManager and nsIPresShell COM pointers is
   // important below.  We want the pres shell to get released before the
   // associated view manager on exit from this function.
   // See bug 54233.
@@ -2297,7 +2295,7 @@ nsXULMenuCommandEvent::Run()
 
     nsPresContext* presContext = menuFrame->PresContext();
     nsCOMPtr<nsIPresShell> shell = presContext->PresShell();
-    nsCOMPtr<nsIViewManager> kungFuDeathGrip = shell->GetViewManager();
+    nsRefPtr<nsViewManager> kungFuDeathGrip = shell->GetViewManager();
 
     // Deselect ourselves.
     if (mCloseMenuMode != CloseMenuMode_None)

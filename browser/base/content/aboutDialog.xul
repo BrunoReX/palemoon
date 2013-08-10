@@ -21,7 +21,7 @@
 
 <window xmlns:html="http://www.w3.org/1999/xhtml"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-        id="aboutDialog"
+        id="PMaboutDialog"
         windowtype="Browser:About"
         onload="init(event);"
 #ifdef MOZ_UPDATER
@@ -38,11 +38,11 @@
 
   <script type="application/javascript" src="chrome://browser/content/aboutDialog.js"/>
 
-  <vbox id="aboutDialogContainer">
-    <hbox id="clientBox">
-      <vbox id="leftBox" flex="1"/>
-      <vbox id="rightBox" flex="1">
-#expand <label id="version">Version: __MOZ_APP_VERSION__</label>
+  <vbox id="aboutPMDialogContainer">
+    <hbox id="PMclientBox">
+      <vbox id="PMleftBox" flex="1"/>
+      <vbox id="PMrightBox" flex="1">
+#expand <label id="PMversion">Version: __MOZ_APP_VERSION__</label>
         <label id="distribution" class="text-blurb"/>
         <label id="distributionId" class="text-blurb"/>
 
@@ -88,6 +88,14 @@
 #            &channel.description.start;<label id="currentChannel"/>&channel.description.end;
 #          </description>
 #endif
+#          <vbox id="experimental" hidden="true">
+#            <description class="text-blurb" id="warningDesc">
+#              &warningDesc.version;
+#ifdef MOZ_TELEMETRY_ON_BY_DEFAULT
+#              &warningDesc.telemetryDesc;
+#endif
+#            </description>
+#			  </vbox>
         <description class="text-pmcreds">
           Pale Moon is released by <label class="text-link" href="http://www.moonchildproductions.info">Moonchild Productions</label>.
         </description>
@@ -99,17 +107,17 @@
         </description>
         <description class="text-blurb">
           If you wish to contribute, please consider helping out by providing support to other users or becoming a beta tester on the <label class="text-link" href="http://forum.palemoon.org/">Pale Moon forum</label>
-        </description>   
+        </description>    
         </vbox>
       </vbox>
     </hbox>
-    <vbox id="bottomBox">
+    <vbox id="PMbottomBox">
       <hbox pack="center">
-        <label class="text-link bottom-link" href="about:license">&bottomLinks.license;</label>
-        <label class="text-link bottom-link" href="about:rights">&bottomLinks.rights;</label>
-        <label class="text-link bottom-link" href="http://www.mozilla.com/legal/privacy/">&bottomLinks.privacy;</label>
+        <label class="text-link bottom-link" href="about:license">Licensing information</label>
+        <label class="text-link bottom-link" href="about:rights">End-user rights</label>
+        <label class="text-link bottom-link" href="http://www.palemoon.org/releasenotes-ng.shtml">Release notes</label>
       </hbox>
-      <description id="trademark">&trademarkInfo.part1;</description>
+      <description id="PMtrademark">&trademarkInfo.part1;</description>
     </vbox>
   </vbox>
   

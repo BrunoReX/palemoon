@@ -204,8 +204,7 @@ CreateGenericEvent(const nsAString& aType, bool aBubbles, bool aCancelable)
   nsresult rv = event->InitEvent(aType, aBubbles, aCancelable);
   NS_ENSURE_SUCCESS(rv, nullptr);
 
-  rv = event->SetTrusted(true);
-  NS_ENSURE_SUCCESS(rv, nullptr);
+  event->SetTrusted(true);
 
   return event.forget();
 }
@@ -323,17 +322,8 @@ LockedFile::~LockedFile()
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(LockedFile)
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(LockedFile,
-                                                  nsDOMEventTargetHelper)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFileHandle)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(LockedFile,
-                                                nsDOMEventTargetHelper)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFileHandle)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_INHERITED_1(LockedFile, nsDOMEventTargetHelper,
+                                     mFileHandle)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(LockedFile)
   NS_INTERFACE_MAP_ENTRY(nsIDOMLockedFile)
@@ -962,10 +952,10 @@ FinishHelper::Run()
   }
 
   for (uint32_t index = 0; index < mParallelStreams.Length(); index++) {
-    nsCOMPtr<nsIOutputStream> ostream =
+    nsCOMPtr<nsIInputStream> stream =
       do_QueryInterface(mParallelStreams[index]);
 
-    if (NS_FAILED(ostream->Close())) {
+    if (NS_FAILED(stream->Close())) {
       NS_WARNING("Failed to close stream!");
     }
 
@@ -973,9 +963,9 @@ FinishHelper::Run()
   }
 
   if (mStream) {
-    nsCOMPtr<nsIOutputStream> ostream = do_QueryInterface(mStream);
+    nsCOMPtr<nsIInputStream> stream = do_QueryInterface(mStream);
 
-    if (NS_FAILED(ostream->Close())) {
+    if (NS_FAILED(stream->Close())) {
       NS_WARNING("Failed to close stream!");
     }
 

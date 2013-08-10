@@ -67,7 +67,7 @@ DOMProxyHandler::EnsureExpandoObject(JSContext* cx, JSObject* obj)
     }
 
     nsWrapperCache* cache;
-    CallQueryInterface(UnwrapDOMObject<nsISupports>(obj, eProxyDOMObject), &cache);
+    CallQueryInterface(UnwrapDOMObject<nsISupports>(obj), &cache);
     cache->SetPreservingWrapper(true);
 
     js::SetProxyExtra(obj, JSPROXYSLOT_EXPANDO, ObjectValue(*expando));
@@ -76,10 +76,10 @@ DOMProxyHandler::EnsureExpandoObject(JSContext* cx, JSObject* obj)
 }
 
 bool
-DOMProxyHandler::getPropertyDescriptor(JSContext* cx, JSObject* proxy, jsid id, bool set,
-                                       JSPropertyDescriptor* desc)
+DOMProxyHandler::getPropertyDescriptor(JSContext* cx, JSObject* proxy, jsid id,
+                                       JSPropertyDescriptor* desc, unsigned flags)
 {
-  if (!getOwnPropertyDescriptor(cx, proxy, id, set, desc)) {
+  if (!getOwnPropertyDescriptor(cx, proxy, id, desc, flags)) {
     return false;
   }
   if (desc->obj) {
@@ -95,7 +95,7 @@ DOMProxyHandler::getPropertyDescriptor(JSContext* cx, JSObject* proxy, jsid id, 
     return true;
   }
 
-  return JS_GetPropertyDescriptorById(cx, proto, id, JSRESOLVE_QUALIFIED, desc);
+  return JS_GetPropertyDescriptorById(cx, proto, id, 0, desc);
 }
 
 bool

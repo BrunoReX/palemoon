@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/DebugOnly.h"
+#include "mozilla/Likely.h"
+
 #include "nsError.h"
 #include "nsHtml5TreeOpExecutor.h"
 #include "nsScriptLoader.h"
@@ -25,17 +28,16 @@
 #include "nsHtml5TreeBuilder.h"
 #include "nsHtml5StreamParser.h"
 #include "mozilla/css/Loader.h"
-#include "mozilla/Util.h" // DebugOnly
 #include "sampler.h"
 #include "nsIScriptError.h"
 #include "nsIScriptContext.h"
 #include "mozilla/Preferences.h"
 #include "nsIHTMLDocument.h"
-#include "mozilla/Likely.h"
 
 using namespace mozilla;
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsHtml5TreeOpExecutor)
+NS_IMPL_CYCLE_COLLECTION_INHERITED_1(nsHtml5TreeOpExecutor, nsContentSink,
+                                     mOwnedElements)
 
 NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(nsHtml5TreeOpExecutor)
   NS_INTERFACE_TABLE_INHERITED1(nsHtml5TreeOpExecutor, 
@@ -45,14 +47,6 @@ NS_INTERFACE_TABLE_TAIL_INHERITING(nsContentSink)
 NS_IMPL_ADDREF_INHERITED(nsHtml5TreeOpExecutor, nsContentSink)
 
 NS_IMPL_RELEASE_INHERITED(nsHtml5TreeOpExecutor, nsContentSink)
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsHtml5TreeOpExecutor, nsContentSink)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOwnedElements)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsHtml5TreeOpExecutor, nsContentSink)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mOwnedElements)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 class nsHtml5ExecutorReflusher : public nsRunnable
 {
@@ -1050,13 +1044,15 @@ void
 nsHtml5TreeOpExecutor::PreloadScript(const nsAString& aURL,
                                      const nsAString& aCharset,
                                      const nsAString& aType,
-                                     const nsAString& aCrossOrigin)
+                                     const nsAString& aCrossOrigin,
+                                     bool aScriptFromHead)
 {
   nsCOMPtr<nsIURI> uri = ConvertIfNotPreloadedYet(aURL);
   if (!uri) {
     return;
   }
-  mDocument->ScriptLoader()->PreloadURI(uri, aCharset, aType, aCrossOrigin);
+  mDocument->ScriptLoader()->PreloadURI(uri, aCharset, aType, aCrossOrigin,
+                                        aScriptFromHead);
 }
 
 void

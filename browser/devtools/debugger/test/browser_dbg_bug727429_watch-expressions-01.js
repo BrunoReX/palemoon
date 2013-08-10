@@ -19,7 +19,7 @@ function test()
     gTab = aTab;
     gDebuggee = aDebuggee;
     gPane = aPane;
-    gDebugger = gPane.contentWindow;
+    gDebugger = gPane.panelWin;
     gWatch = gDebugger.DebuggerView.WatchExpressions;
 
     gDebugger.DebuggerView.togglePanes({ visible: true, animated: false });
@@ -116,7 +116,7 @@ function test()
     addAndCheckExpressions(total, index, "", true);
 
     for (let i = 0; i < string.length; i++) {
-      EventUtils.sendChar(string[i]);
+      EventUtils.sendChar(string[i], gDebugger);
     }
 
     gDebugger.editor.focus();

@@ -75,6 +75,7 @@ import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -93,8 +94,10 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.StringTokenizer;
+import java.util.TreeMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.SynchronousQueue;
 import java.net.ProxySelector;
@@ -133,7 +136,6 @@ public class GeckoAppShell
 
     static private File sCacheFile = null;
     static private int sFreeSpace = -1;
-    static File sHomeDir = null;
     static private int sDensityDpi = 0;
     private static Boolean sSQLiteLibsLoaded = false;
     private static Boolean sNSSLibsLoaded = false;
@@ -408,6 +410,16 @@ public class GeckoAppShell
         }
     }
 
+    private static void delTree(File file) {
+        if (file.isDirectory()) {
+            File children[] = file.listFiles();
+            for (File child : children) {
+                delTree(child);
+            }
+        }
+        file.delete();
+    }
+
     public static void setupGeckoEnvironment(Context context) {
         GeckoProfile profile = GeckoProfile.get(context);
 
@@ -417,9 +429,12 @@ public class GeckoAppShell
         // profile home path
         GeckoAppShell.putenv("HOME=" + profile.getFilesDir().getPath());
 
-        // setup the tmp path
-        File f = context.getDir("tmp", Context.MODE_WORLD_READABLE |
-                                 Context.MODE_WORLD_WRITEABLE );
+        File f = context.getDir("tmpdir", Context.MODE_PRIVATE);
+        // check if the old tmp dir is there
+        File oldDir = new File(f.getParentFile(), "app_tmp");
+        if (oldDir.exists()) {
+            delTree(oldDir);
+        }
         if (!f.exists())
             f.mkdirs();
         GeckoAppShell.putenv("TMPDIR=" + f.getPath());
@@ -427,9 +442,6 @@ public class GeckoAppShell
         // setup the downloads path
         f = Environment.getDownloadCacheDirectory();
         GeckoAppShell.putenv("EXTERNAL_STORAGE=" + f.getPath());
-
-        // Enable fixed position layers
-        GeckoAppShell.putenv("MOZ_ENABLE_FIXED_POSITION_LAYERS=1");
 
         // setup the app-specific cache path
         f = context.getCacheDir();
@@ -1189,6 +1201,20 @@ public class GeckoAppShell
         toast.show();
     }
 
+    static boolean isUriSafeForScheme(Uri aUri) {
+        // Bug 794034 - We don't want to pass MWI or USSD codes to the
+        // dialer, and ensure the Uri class doesn't parse a URI
+        // containing a fragment ('#')
+        final String scheme = aUri.getScheme();
+        if ("tel".equals(scheme) || "sms".equals(scheme)) {
+            final String number = aUri.getSchemeSpecificPart();
+            if (number.contains("#") || number.contains("*") || aUri.getFragment() != null) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     static boolean openUriExternal(String aUriSpec, String aMimeType, String aPackageName,
                                    String aClassName, String aAction, String aTitle) {
         Intent intent = getIntentForActionString(aAction);
@@ -1203,17 +1229,13 @@ public class GeckoAppShell
             intent.setDataAndType(Uri.parse(aUriSpec), aMimeType);
         } else {
             Uri uri = Uri.parse(aUriSpec);
+            if (isUriSafeForScheme(uri) == false) {
+                return false;
+            }
+            
             final String scheme = uri.getScheme();
-            if ("tel".equals(scheme)) {
-                // Bug 794034 - We don't want to pass MWI or USSD codes to the
-                // dialer, and ensure the Uri class doesn't parse a tel: URI as
-                // containing a fragment ('#')
-                final String number = uri.getSchemeSpecificPart();
-                if (number.contains("#") || number.contains("*") || uri.getFragment() != null) {
-                    return false;
-                }
-            } else if ("sms".equals(scheme)) {
-                // Have a apecial handling for the SMS, as the message body
+            if ("sms".equals(scheme)) {
+                // Have a special handling for the SMS, as the message body
                 // is not extracted from the URI automatically
                 final String query = uri.getEncodedQuery();
                 if (query != null && query.length() > 0) {
@@ -1226,8 +1248,7 @@ public class GeckoAppShell
                             final String body = Uri.decode(field.substring(5));
                             intent.putExtra("sms_body", body);
                             foundBody = true;
-                        }
-                        else {
+                        } else {
                             resultQuery = resultQuery.concat(resultQuery.length() > 0 ? "&" + field : field);
                         }
                     }
@@ -1689,6 +1710,70 @@ public class GeckoAppShell
                 Thread.sleep(100);
             } catch (InterruptedException ie) {}
         }
+    }
+    public static String getAppNameByPID(int pid) {
+        BufferedReader cmdlineReader = null;
+        String path = "/proc/" + pid + "/cmdline";
+        try {
+            File cmdlineFile = new File(path);
+            if (!cmdlineFile.exists())
+                return "";
+            cmdlineReader = new BufferedReader(new FileReader(cmdlineFile));
+            return cmdlineReader.readLine().trim();
+        } catch (Exception ex) {
+            return "";
+        } finally {
+            if (null != cmdlineReader) {
+                try {
+                    cmdlineReader.close();
+                } catch (Exception e) {}
+            }
+        }
+    }
+
+    public static void listOfOpenFiles() {
+        int pidColumn = -1;
+        int nameColumn = -1;
+
+        try {
+            String filter = GeckoProfile.get(GeckoApp.mAppContext).getDir().toString();
+            Log.i(LOGTAG, "[OPENFILE] Filter: " + filter);
+
+            // run lsof and parse its output
+            java.lang.Process lsof = Runtime.getRuntime().exec("lsof");
+            BufferedReader in = new BufferedReader(new InputStreamReader(lsof.getInputStream()), 2048);
+
+            String headerOutput = in.readLine();
+            StringTokenizer st = new StringTokenizer(headerOutput);
+            int token = 0;
+            while (st.hasMoreTokens()) {
+                String next = st.nextToken();
+                if (next.equalsIgnoreCase("PID"))
+                    pidColumn = token;
+                else if (next.equalsIgnoreCase("NAME"))
+                    nameColumn = token;
+                token++;
+            }
+
+            // alright, the rest are open file entries.
+            Map<Integer, String> pidNameMap = new TreeMap<Integer, String>();
+            String output = null;
+            while ((output = in.readLine()) != null) {
+                String[] split = output.split("\\s+");
+                if (split.length <= pidColumn || split.length <= nameColumn)
+                    continue;
+                Integer pid = new Integer(split[pidColumn]);
+                String name = pidNameMap.get(pid);
+                if (name == null) {
+                    name = getAppNameByPID(pid.intValue());
+                    pidNameMap.put(pid, name);
+                }
+                String file = split[nameColumn];
+                if (!TextUtils.isEmpty(name) && !TextUtils.isEmpty(file) && file.startsWith(filter))
+                    Log.i(LOGTAG, "[OPENFILE] " + name + "(" + split[pidColumn] + ") : " + file);
+            }
+            in.close();
+        } catch (Exception e) { }
     }
 
     public static void scanMedia(String aFile, String aMimeType) {

@@ -10,13 +10,16 @@
 
 #include "mozilla/CheckedInt.h"
 
-class nsHTMLCanvasElement;
 class nsIPrincipal;
 
 namespace mozilla {
 
 namespace gfx {
 class Matrix;
+}
+
+namespace dom {
+class HTMLCanvasElement;
 }
 
 namespace CanvasUtils {
@@ -39,7 +42,7 @@ inline bool CheckSaneSubrectSize(int32_t x, int32_t y, int32_t w, int32_t h,
 // Flag aCanvasElement as write-only if drawing an image with aPrincipal
 // onto it would make it such.
 
-void DoDrawImageSecurityCheck(nsHTMLCanvasElement *aCanvasElement,
+void DoDrawImageSecurityCheck(dom::HTMLCanvasElement *aCanvasElement,
                               nsIPrincipal *aPrincipal,
                               bool forceWriteOnly,
                               bool CORSUsed);
@@ -48,18 +51,6 @@ void DoDrawImageSecurityCheck(nsHTMLCanvasElement *aCanvasElement,
 // the sake of sparse arrays).  Return true iff coercion
 // succeeded.
 bool CoerceDouble(jsval v, double* d);
-
-// Return true iff the conversion succeeded, false otherwise.  *rv is
-// the value to return to script if this returns false.
-bool JSValToMatrix(JSContext* cx, const jsval& val,
-                   gfxMatrix* matrix, nsresult* rv);
-bool JSValToMatrix(JSContext* cx, const jsval& val,
-                   gfx::Matrix* matrix, nsresult* rv);
-
-nsresult MatrixToJSVal(const gfxMatrix& matrix,
-                       JSContext* cx, jsval* val);
-nsresult MatrixToJSVal(const gfx::Matrix& matrix,
-                       JSContext* cx, jsval* val);
 
     /* Float validation stuff */
 #define VALIDATE(_f)  if (!NS_finite(_f)) return false

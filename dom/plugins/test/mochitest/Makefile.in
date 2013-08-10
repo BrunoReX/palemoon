@@ -99,10 +99,21 @@ MOCHITEST_CHROME_FILES = \
   utils.js \
   test_clear_site_data.html \
   test_npruntime.xul   \
-  test_privatemode.xul \
   test_wmode.xul \
   test_bug479979.xul \
+  test_refresh_navigator_plugins.html \
   $(NULL)
+
+ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
+MOCHITEST_CHROME_FILES += \
+  test_privatemode.xul \
+  $(NULL)
+else
+MOCHITEST_CHROME_FILES += \
+  privatemode_perwindowpb.xul \
+  test_privatemode_perwindowpb.xul \
+  $(NULL)
+endif
 
 ifneq ($(MOZ_WIDGET_TOOLKIT),cocoa)
 MOCHITEST_FILES += \
@@ -122,7 +133,7 @@ endif
 ifdef MOZ_CRASHREPORTER
 MOCHITEST_FILES += \
   test_crashing.html \
-  $(warning test_crashing2.html disabled due to random orange; see bug 566049) \
+  $(filter disabled-for-random-orange--bug-566049, test_crashing2.html) \
   test_hanging.html \
   $(NULL)
 

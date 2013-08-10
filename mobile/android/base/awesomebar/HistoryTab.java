@@ -167,8 +167,7 @@ public class HistoryTab extends AwesomeBarTab {
             if (b != null) {
                 Bitmap bitmap = BitmapFactory.decodeByteArray(b, 0, b.length);
                 if (bitmap != null && bitmap.getWidth() > 0 && bitmap.getHeight() > 0) {
-                    Favicons favicons = GeckoApp.mAppContext.getFavicons();
-                    favicon = favicons.scaleImage(bitmap);
+                    favicon = Favicons.getInstance().scaleImage(bitmap);
                 }
             }
             updateFavicon(viewHolder.faviconView, favicon);
@@ -380,9 +379,10 @@ public class HistoryTab extends AwesomeBarTab {
         Map<String,Object> historyItem = (Map<String,Object>) adapter.getChild(groupPosition, childPosition);
 
         String url = (String) historyItem.get(URLColumns.URL);
+        String title = (String) historyItem.get(URLColumns.TITLE);
         AwesomeBarTabs.OnUrlOpenListener listener = getUrlListener();
         if (!TextUtils.isEmpty(url) && listener != null)
-            listener.onUrlOpen(url);
+            listener.onUrlOpen(url, title);
 
         return true;
     }

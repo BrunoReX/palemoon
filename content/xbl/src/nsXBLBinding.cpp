@@ -59,7 +59,11 @@
 #include "nsDOMClassInfo.h"
 #include "nsJSUtils.h"
 
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Element.h"
+
+using namespace mozilla;
+using namespace mozilla::dom;
 
 // Helper classes
 
@@ -110,6 +114,11 @@ ValueHasISupportsPrivate(const JS::Value &v)
     return false;
   }
 
+  const DOMClass* domClass = GetDOMClass(&v.toObject());
+  if (domClass) {
+    return domClass->mDOMObjectIsISupports;
+  }
+
   JSClass* clasp = ::JS_GetClass(&v.toObject());
   const uint32_t HAS_PRIVATE_NSISUPPORTS =
     JSCLASS_HAS_PRIVATE | JSCLASS_PRIVATE_IS_NSISUPPORTS;
@@ -136,9 +145,9 @@ InstallXBLField(JSContext* cx,
   // But there are some cases where we must accept |thisObj| but not install a
   // property on it, or otherwise touch it.  Hence this split of |this|-vetting
   // duties.
-  nsCOMPtr<nsIXPConnectWrappedNative> xpcWrapper =
-    do_QueryInterface(static_cast<nsISupports*>(::JS_GetPrivate(thisObj)));
-  if (!xpcWrapper) {
+  nsISupports* native =
+    nsContentUtils::XPConnect()->GetNativeOfWrapper(cx, thisObj);
+  if (!native) {
     // Looks like whatever |thisObj| is it's not our nsIContent.  It might well
     // be the proto our binding installed, however, where the private is the
     // nsXBLDocumentInfo, so just baul out quietly.  Do NOT throw an exception
@@ -148,7 +157,7 @@ InstallXBLField(JSContext* cx,
     return true;
   }
 
-  nsCOMPtr<nsIContent> xblNode = do_QueryWrappedNative(xpcWrapper);
+  nsCOMPtr<nsIContent> xblNode = do_QueryInterface(native);
   if (!xblNode) {
     xpc::Throw(cx, NS_ERROR_UNEXPECTED);
     return false;
@@ -438,7 +447,7 @@ TraverseKey(nsISupports* aKey, nsInsertionPointList* aData, void* aClosure)
 }
 
 NS_IMPL_CYCLE_COLLECTION_NATIVE_CLASS(nsXBLBinding)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_NATIVE(nsXBLBinding)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsXBLBinding)
   // XXX Probably can't unlink mPrototypeBinding->XBLDocumentInfo(), because
   //     mPrototypeBinding is weak.
   if (tmp->mContent) {
@@ -450,7 +459,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_NATIVE(nsXBLBinding)
   delete tmp->mInsertionPointTable;
   tmp->mInsertionPointTable = nullptr;
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_BEGIN(nsXBLBinding)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsXBLBinding)
   NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb,
                                      "mPrototypeBinding->XBLDocumentInfo()");
   cb.NoteXPCOMChild(static_cast<nsIScriptGlobalObjectOwner*>(
@@ -989,20 +998,20 @@ nsXBLBinding::InstallEventHandlers()
         nsXBLEventHandler* handler = curr->GetEventHandler();
         if (handler) {
           // Figure out if we're using capturing or not.
-          int32_t flags = (curr->GetPhase() == NS_PHASE_CAPTURING) ?
-            NS_EVENT_FLAG_CAPTURE : NS_EVENT_FLAG_BUBBLE;
+          dom::EventListenerFlags flags;
+          flags.mCapture = (curr->GetPhase() == NS_PHASE_CAPTURING);
 
           // If this is a command, add it in the system event group
           if ((curr->GetType() & (NS_HANDLER_TYPE_XBL_COMMAND |
                                   NS_HANDLER_TYPE_SYSTEM)) &&
               (isChromeBinding || mBoundElement->IsInNativeAnonymousSubtree())) {
-            flags |= NS_EVENT_FLAG_SYSTEM_EVENT;
+            flags.mInSystemGroup = true;
           }
 
           bool hasAllowUntrustedAttr = curr->HasAllowUntrustedAttr();
           if ((hasAllowUntrustedAttr && curr->AllowUntrustedEvents()) ||
               (!hasAllowUntrustedAttr && !isChromeDoc)) {
-            flags |= NS_PRIV_EVENT_UNTRUSTED_PERMITTED;
+            flags.mAllowUntrustedEvents = true;
           }
 
           manager->AddEventListenerByType(handler,
@@ -1025,19 +1034,19 @@ nsXBLBinding::InstallEventHandlers()
         // add it to the standard event group.
 
         // Figure out if we're using capturing or not.
-        int32_t flags = (handler->GetPhase() == NS_PHASE_CAPTURING) ?
-          NS_EVENT_FLAG_CAPTURE : NS_EVENT_FLAG_BUBBLE;
+        dom::EventListenerFlags flags;
+        flags.mCapture = (handler->GetPhase() == NS_PHASE_CAPTURING);
 
         if ((handler->GetType() & (NS_HANDLER_TYPE_XBL_COMMAND |
                                    NS_HANDLER_TYPE_SYSTEM)) &&
             (isChromeBinding || mBoundElement->IsInNativeAnonymousSubtree())) {
-          flags |= NS_EVENT_FLAG_SYSTEM_EVENT;
+          flags.mInSystemGroup = true;
         }
 
-        // For key handlers we have to set NS_PRIV_EVENT_UNTRUSTED_PERMITTED flag.
+        // For key handlers we have to set mAllowUntrustedEvents flag.
         // Whether the handling of the event is allowed or not is handled in
         // nsXBLKeyEventHandler::HandleEvent
-        flags |= NS_PRIV_EVENT_UNTRUSTED_PERMITTED;
+        flags.mAllowUntrustedEvents = true;
 
         manager->AddEventListenerByType(handler, type, flags);
       }
@@ -1139,8 +1148,8 @@ nsXBLBinding::UnhookEventHandlers()
         continue;
 
       // Figure out if we're using capturing or not.
-      int32_t flags = (curr->GetPhase() == NS_PHASE_CAPTURING) ?
-        NS_EVENT_FLAG_CAPTURE : NS_EVENT_FLAG_BUBBLE;
+      dom::EventListenerFlags flags;
+      flags.mCapture = (curr->GetPhase() == NS_PHASE_CAPTURING);
 
       // If this is a command, remove it from the system event group,
       // otherwise remove it from the standard event group.
@@ -1148,7 +1157,7 @@ nsXBLBinding::UnhookEventHandlers()
       if ((curr->GetType() & (NS_HANDLER_TYPE_XBL_COMMAND |
                               NS_HANDLER_TYPE_SYSTEM)) &&
           (isChromeBinding || mBoundElement->IsInNativeAnonymousSubtree())) {
-        flags |= NS_EVENT_FLAG_SYSTEM_EVENT;
+        flags.mInSystemGroup = true;
       }
 
       manager->RemoveEventListenerByType(handler,
@@ -1166,15 +1175,15 @@ nsXBLBinding::UnhookEventHandlers()
       handler->GetEventName(type);
 
       // Figure out if we're using capturing or not.
-      int32_t flags = (handler->GetPhase() == NS_PHASE_CAPTURING) ?
-        NS_EVENT_FLAG_CAPTURE : NS_EVENT_FLAG_BUBBLE;
+      dom::EventListenerFlags flags;
+      flags.mCapture = (handler->GetPhase() == NS_PHASE_CAPTURING);
 
       // If this is a command, remove it from the system event group, otherwise 
       // remove it from the standard event group.
 
       if ((handler->GetType() & (NS_HANDLER_TYPE_XBL_COMMAND | NS_HANDLER_TYPE_SYSTEM)) &&
           (isChromeBinding || mBoundElement->IsInNativeAnonymousSubtree())) {
-        flags |= NS_EVENT_FLAG_SYSTEM_EVENT;
+        flags.mInSystemGroup = true;
       }
 
       manager->RemoveEventListenerByType(handler, type, flags);
@@ -1206,21 +1215,7 @@ nsXBLBinding::ChangeDocument(nsIDocument* aOldDocument, nsIDocument* aNewDocumen
             nsCxPusher pusher;
             pusher.Push(cx);
 
-            nsCOMPtr<nsIXPConnectWrappedNative> wrapper;
-            nsIXPConnect *xpc = nsContentUtils::XPConnect();
-            nsresult rv =
-              xpc->GetWrappedNativeOfNativeObject(cx, scope, mBoundElement,
-                                                  NS_GET_IID(nsISupports),
-                                                  getter_AddRefs(wrapper));
-            if (NS_FAILED(rv))
-              return;
-
-            JSObject* scriptObject;
-            if (wrapper)
-                wrapper->GetJSObject(&scriptObject);
-            else
-                scriptObject = nullptr;
-
+            JSObject* scriptObject = mBoundElement->GetWrapper();
             if (scriptObject) {
               // XXX Stay in sync! What if a layered binding has an
               // <interface>?!

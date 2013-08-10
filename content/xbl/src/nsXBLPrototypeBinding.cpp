@@ -229,7 +229,7 @@ uint32_t nsXBLInsertionPointEntry::gRefCnt = 0;
 nsFixedSizeAllocator* nsXBLInsertionPointEntry::kPool;
 
 NS_IMPL_CYCLE_COLLECTION_NATIVE_CLASS(nsXBLInsertionPointEntry)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_NATIVE(nsXBLInsertionPointEntry)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsXBLInsertionPointEntry)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mInsertionParent)
   if (tmp->mDefaultContent) {
     nsAutoScriptBlocker scriptBlocker;
@@ -240,7 +240,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_NATIVE(nsXBLInsertionPointEntry)
     tmp->mDefaultContent = nullptr;
   }      
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_BEGIN(nsXBLInsertionPointEntry)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsXBLInsertionPointEntry)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mInsertionParent)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDefaultContent)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
@@ -1899,7 +1899,7 @@ nsXBLPrototypeBinding::ReadContentNode(nsIObjectInputStream* aStream,
 
     nsCOMPtr<Element> result;
     nsresult rv =
-      nsXULElement::Create(prototype, aDocument, false, getter_AddRefs(result));
+      nsXULElement::Create(prototype, aDocument, false, false, getter_AddRefs(result));
     NS_ENSURE_SUCCESS(rv, rv);
     content = result;
   }

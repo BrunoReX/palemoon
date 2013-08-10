@@ -13,7 +13,7 @@
 #include "nsIDocShell.h"
 #include "nsReadableUtils.h"
 #include "nsDOMClassInfoID.h"
-#include "nsIView.h"
+#include "nsView.h"
 #ifdef MOZ_XUL
 #include "nsIDOMXULElement.h"
 #else
@@ -137,7 +137,7 @@ nsBoxObject::GetPresShell(bool aFlushLayout)
     return nullptr;
   }
 
-  nsIDocument* doc = mContent->GetCurrentDoc();
+  nsCOMPtr<nsIDocument> doc = mContent->GetCurrentDoc();
   if (!doc) {
     return nullptr;
   }

@@ -91,6 +91,7 @@ const RIL_IPC_MOBILECONNECTION_MSG_NAMES = [
   "RIL:CancelMMI",
   "RIL:SendStkResponse",
   "RIL:SendStkMenuSelection",
+  "RIL:SendStkTimerExpiration",
   "RIL:SendStkEventDownload",
   "RIL:RegisterMobileConnectionMsg",
   "RIL:SetCallForwardingOption",
@@ -459,6 +460,9 @@ RadioInterfaceLayer.prototype = {
       case "RIL:SendStkMenuSelection":
         this.sendStkMenuSelection(msg.json);
         break;
+      case "RIL:SendStkTimerExpiration":
+        this.sendStkTimerExpiration(msg.json);
+        break;
       case "RIL:SendStkEventDownload":
         this.sendStkEventDownload(msg.json);
         break;
@@ -502,6 +506,9 @@ RadioInterfaceLayer.prototype = {
     let message = event.data;
     debug("Received message from worker: " + JSON.stringify(message));
     switch (message.rilMessageType) {
+      case "callRing":
+        this.handleCallRing();
+        break;
       case "callStateChange":
         // This one will handle its own notifications.
         this.handleCallStateChange(message.call);
@@ -1203,6 +1210,16 @@ RadioInterfaceLayer.prototype = {
   },
 
   /**
+   * Handle an incoming call.
+   *
+   * Not much is known about this call at this point, but it's enough
+   * to start bringing up the Phone app already.
+   */
+  handleCallRing: function handleCallRing() {
+    gSystemMessenger.broadcastMessage("telephony-new-call", {});
+  },
+
+  /**
    * Handle call state changes by updating our current state and the audio
    * system.
    */
@@ -1210,10 +1227,8 @@ RadioInterfaceLayer.prototype = {
     debug("handleCallStateChange: " + JSON.stringify(call));
     call.state = convertRILCallState(call.state);
 
-    if (call.state == nsIRadioInterfaceLayer.CALL_STATE_INCOMING ||
-        call.state == nsIRadioInterfaceLayer.CALL_STATE_DIALING) {
-      gSystemMessenger.broadcastMessage("telephony-new-call", {number: call.number,
-                                                               state: call.state});
+    if (call.state == nsIRadioInterfaceLayer.CALL_STATE_DIALING) {
+      gSystemMessenger.broadcastMessage("telephony-new-call", {});
     }
     this.updateCallAudioState(call);
     this._sendTargetMessage("telephony", "RIL:CallStateChanged", call);
@@ -1244,6 +1259,8 @@ RadioInterfaceLayer.prototype = {
     debug("handleEnumerateCalls: " + JSON.stringify(options));
     for (let i in options.calls) {
       options.calls[i].state = convertRILCallState(options.calls[i].state);
+      options.calls[i].isActive = this._activeCall ?
+        options.calls[i].callIndex == this._activeCall.callIndex : false;
     }
     this._sendRequestResults("RIL:EnumerateCalls", options);
   },
@@ -1594,6 +1611,22 @@ RadioInterfaceLayer.prototype = {
     // RIL:IccInfoChanged corresponds to a DOM event that gets fired only
     // when the MCC or MNC codes have changed.
     this._sendTargetMessage("mobileconnection", "RIL:IccInfoChanged", message);
+
+    // If spn becomes available, we should check roaming again.
+    if (!oldIcc.spn && message.spn) {
+      let voice = this.rilContext.voice;
+      let data = this.rilContext.data;
+      let voiceRoaming = voice.roaming;
+      let dataRoaming = data.roaming;
+      this.checkRoamingBetweenOperators(voice);
+      this.checkRoamingBetweenOperators(data);
+      if (voiceRoaming != voice.roaming) {
+        this._sendTargetMessage("mobileconnection", "RIL:VoiceInfoChanged", voice);
+      }
+      if (dataRoaming != data.roaming) {
+        this._sendTargetMessage("mobileconnection", "RIL:DataInfoChanged", data);
+      }
+    }
   },
 
   handleICCCardLockResult: function handleICCCardLockResult(message) {
@@ -1907,6 +1940,11 @@ RadioInterfaceLayer.prototype = {
 
   sendStkMenuSelection: function sendStkMenuSelection(message) {
     message.rilMessageType = "sendStkMenuSelection";
+    this.worker.postMessage(message);
+  },
+
+  sendStkTimerExpiration: function sendStkTimerExpiration(message) {
+    message.rilMessageType = "sendStkTimerExpiration";
     this.worker.postMessage(message);
   },
 

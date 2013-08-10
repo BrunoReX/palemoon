@@ -94,15 +94,14 @@ nsMathMLmmultiscriptsFrame::ProcessAttributes()
   // default: automatic
   //
   // We use 0 as the default value so unitless values can be ignored.
-  // XXXfredw Should we forbid negative values? (bug 411227)
+  // As a minimum, negative values can be ignored.
   //
   nsAutoString value;
   GetAttribute(mContent, mPresentationData.mstyle,
                nsGkAtoms::subscriptshift_, value);
   if (!value.IsEmpty()) {
-    ParseNumericValue(value, &mSubScriptShift,
-                      nsMathMLElement::PARSE_ALLOW_NEGATIVE,
-                      PresContext(), mStyleContext);
+    ParseNumericValue(value, &mSubScriptShift, 0, PresContext(),
+                      mStyleContext);
   }
   // superscriptshift
   //
@@ -113,14 +112,13 @@ nsMathMLmmultiscriptsFrame::ProcessAttributes()
   // default: automatic
   //
   // We use 0 as the default value so unitless values can be ignored.
-  // XXXfredw Should we forbid negative values? (bug 411227)
+  // As a minimum, negative values can be ignored.
   //
   GetAttribute(mContent, mPresentationData.mstyle,
                nsGkAtoms::superscriptshift_, value);
   if (!value.IsEmpty()) {
-    ParseNumericValue(value, &mSupScriptShift,
-                      nsMathMLElement::PARSE_ALLOW_NEGATIVE,
-                      PresContext(), mStyleContext);
+    ParseNumericValue(value, &mSupScriptShift, 0, PresContext(),
+                      mStyleContext);
   }
 }
 
@@ -251,6 +249,9 @@ nsMathMLmmultiscriptsFrame::Place(nsRenderingContext& aRenderingContext,
       if (mprescriptsFrame) {
         // duplicate <mprescripts/> found
         // report an error, encourage people to get their markups in order
+        if (aPlaceOrigin) {
+          ReportErrorToConsole("DuplicateMprescripts");
+        }
         return ReflowError(aRenderingContext, aDesiredSize);
       }
       mprescriptsFrame = childFrame;
@@ -359,6 +360,13 @@ nsMathMLmmultiscriptsFrame::Place(nsRenderingContext& aRenderingContext,
   // note: width=0 if all sup-sub pairs match correctly
   if ((0 != width) || !baseFrame || !subScriptFrame || !supScriptFrame) {
     // report an error, encourage people to get their markups in order
+    if (aPlaceOrigin) {
+      if (count <= 1 || (count == 2 && mprescriptsFrame)) {
+        ReportErrorToConsole("NoSubSup");
+      } else {
+        ReportErrorToConsole("SubSupMismatch");
+      }
+    }
     return ReflowError(aRenderingContext, aDesiredSize);
   }
 

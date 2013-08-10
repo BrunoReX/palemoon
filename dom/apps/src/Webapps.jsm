@@ -139,6 +139,11 @@ this.DOMApplicationRegistry = {
             if (this.webapps[id].installerIsBrowser === undefined) {
               this.webapps[id].installerIsBrowser = false;
             }
+
+            // Default installState to "installed".
+            if (this.webapps[id].installState === undefined) {
+              this.webapps[id].installState = "installed";
+            }
           };
         }
         aNext();
@@ -1382,8 +1387,16 @@ this.DOMApplicationRegistry = {
           sendError("INVALID_SECURITY_LEVEL");
         } else {
           app.etag = xhr.getResponseHeader("Etag");
-          Services.obs.notifyObservers(aMm, "webapps-ask-install",
-                                       JSON.stringify(aData));
+          // We allow bypassing the install confirmation process to facilitate
+          // automation.
+          let prefName = "dom.mozApps.auto_confirm_install";
+          if (Services.prefs.prefHasUserValue(prefName) &&
+              Services.prefs.getBoolPref(prefName)) {
+            this.confirmInstall(aData);
+          } else {
+            Services.obs.notifyObservers(aMm, "webapps-ask-install",
+                                         JSON.stringify(aData));
+          }
         }
       } else {
         sendError("MANIFEST_URL_ERROR");

@@ -186,9 +186,9 @@ enum eNPPStreamTypeInternal {
 
 static NS_DEFINE_IID(kMemoryCID, NS_MEMORY_CID);
 
-PRIntervalTime NS_NotifyBeginPluginCall()
+PRIntervalTime NS_NotifyBeginPluginCall(NSPluginCallReentry aReentryState)
 {
-  nsNPAPIPluginInstance::BeginPluginCall();
+  nsNPAPIPluginInstance::BeginPluginCall(aReentryState);
   return PR_IntervalNow();
 }
 
@@ -196,9 +196,9 @@ PRIntervalTime NS_NotifyBeginPluginCall()
 // registered to listen to the "experimental-notify-plugin-call" subject.
 // Each "experimental-notify-plugin-call" notification carries with it the run
 // time value in milliseconds that the call took to execute.
-void NS_NotifyPluginCall(PRIntervalTime startTime) 
+void NS_NotifyPluginCall(PRIntervalTime startTime, NSPluginCallReentry aReentryState)
 {
-  nsNPAPIPluginInstance::EndPluginCall();
+  nsNPAPIPluginInstance::EndPluginCall(aReentryState);
 
   PRIntervalTime endTime = PR_IntervalNow() - startTime;
   nsCOMPtr<nsIObserverService> notifyUIService =
@@ -789,7 +789,8 @@ nsPluginThreadRunnable::Run()
   if (mFunc) {
     PluginDestructionGuard guard(mInstance);
 
-    NS_TRY_SAFE_CALL_VOID(mFunc(mUserData), nullptr);
+    NS_TRY_SAFE_CALL_VOID(mFunc(mUserData), nullptr,
+                          NS_PLUGIN_CALL_UNSAFE_TO_REENTER_GECKO);
   }
 
   return NS_OK;
@@ -1593,7 +1594,7 @@ _evaluate(NPP npp, NPObject* npobj, NPString *script, NPVariant *result)
                   npp, npobj, script->UTF8Characters));
 
   nsresult rv = scx->EvaluateStringWithValue(utf16script, obj, principal,
-                                             spec, 0, 0, rval, nullptr);
+                                             spec, 0, 0, false, rval, nullptr);
 
   return NS_SUCCEEDED(rv) &&
          (!result || JSValToNPVariant(npp, cx, *rval, result));

@@ -8,7 +8,7 @@
 #include "nsContentCreatorFunctions.h"
 #include "nsContentUtils.h"
 #include "nsDOMClassInfoID.h"
-#include "nsIDOMDocumentType.h"
+#include "DocumentType.h"
 
 namespace mozilla {
 namespace dom {
@@ -50,16 +50,33 @@ DOMImplementation::HasFeature(const nsAString& aFeature,
   return NS_OK;
 }
 
-already_AddRefed<nsIDOMDocumentType>
+already_AddRefed<DocumentType>
 DOMImplementation::CreateDocumentType(const nsAString& aQualifiedName,
                                       const nsAString& aPublicId,
                                       const nsAString& aSystemId,
                                       ErrorResult& aRv)
 {
-  nsCOMPtr<nsIDOMDocumentType> doctype;
-  aRv = CreateDocumentType(aQualifiedName, aPublicId, aSystemId,
-                           getter_AddRefs(doctype));
-  return doctype.forget();
+  if (!mOwner) {
+    aRv.Throw(NS_ERROR_UNEXPECTED);
+    return nullptr;
+  }
+
+  aRv = nsContentUtils::CheckQName(aQualifiedName);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
+  nsCOMPtr<nsIAtom> name = do_GetAtom(aQualifiedName);
+  if (!name) {
+    aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+    return nullptr;
+  }
+
+  // Indicate that there is no internal subset (not just an empty one)
+  nsRefPtr<DocumentType> docType =
+    NS_NewDOMDocumentType(mOwner->NodeInfoManager(), name, aPublicId,
+                          aSystemId, NullString(), aRv);
+  return docType.forget();
 }
 
 NS_IMETHODIMP
@@ -68,19 +85,9 @@ DOMImplementation::CreateDocumentType(const nsAString& aQualifiedName,
                                       const nsAString& aSystemId,
                                       nsIDOMDocumentType** aReturn)
 {
-  *aReturn = nullptr;
-  NS_ENSURE_STATE(mOwner);
-
-  nsresult rv = nsContentUtils::CheckQName(aQualifiedName);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsIAtom> name = do_GetAtom(aQualifiedName);
-  NS_ENSURE_TRUE(name, NS_ERROR_OUT_OF_MEMORY);
-
-  // Indicate that there is no internal subset (not just an empty one)
-  return NS_NewDOMDocumentType(aReturn, mOwner->NodeInfoManager(),
-                               name, aPublicId,
-                               aSystemId, NullString());
+  ErrorResult rv;
+  *aReturn = CreateDocumentType(aQualifiedName, aPublicId, aSystemId, rv).get();
+  return rv.ErrorCode();
 }
 
 nsresult
@@ -119,12 +126,12 @@ DOMImplementation::CreateDocument(const nsAString& aNamespaceURI,
 
   nsCOMPtr<nsIDOMDocument> document;
 
-  rv = nsContentUtils::CreateDocument(aNamespaceURI, aQualifiedName, aDoctype,
-                                      mDocumentURI, mBaseURI,
-                                      mOwner->NodePrincipal(),
-                                      scriptHandlingObject,
-                                        DocumentFlavorLegacyGuess,
-                                      getter_AddRefs(document));
+  rv = NS_NewDOMDocument(getter_AddRefs(document),
+                         aNamespaceURI, aQualifiedName, aDoctype,
+                         mDocumentURI, mBaseURI,
+                         mOwner->NodePrincipal(),
+                         true, scriptHandlingObject,
+                         DocumentFlavorLegacyGuess);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIDocument> doc = do_QueryInterface(document);
@@ -186,12 +193,12 @@ DOMImplementation::CreateHTMLDocument(const nsAString& aTitle,
   NS_ENSURE_STATE(!mScriptObject || scriptHandlingObject);
 
   nsCOMPtr<nsIDOMDocument> document;
-  rv = nsContentUtils::CreateDocument(EmptyString(), EmptyString(),
-                                      doctype, mDocumentURI, mBaseURI,
-                                      mOwner->NodePrincipal(),
-                                      scriptHandlingObject,
-                                      DocumentFlavorLegacyGuess,
-                                      getter_AddRefs(document));
+  rv = NS_NewDOMDocument(getter_AddRefs(document),
+                         EmptyString(), EmptyString(),
+                         doctype, mDocumentURI, mBaseURI,
+                         mOwner->NodePrincipal(),
+                         true, scriptHandlingObject,
+                         DocumentFlavorLegacyGuess);
   NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsIDocument> doc = do_QueryInterface(document);
 

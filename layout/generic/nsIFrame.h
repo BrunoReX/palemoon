@@ -62,7 +62,7 @@ class nsIAtom;
 class nsPresContext;
 class nsIPresShell;
 class nsRenderingContext;
-class nsIView;
+class nsView;
 class nsIWidget;
 class nsIDOMRange;
 class nsISelectionController;
@@ -1307,6 +1307,18 @@ public:
   void RecomputePerspectiveChildrenOverflow(const nsStyleContext* aStartStyle, const nsRect* aBounds);
 
   /**
+   * Returns the number of ancestors between this and the root of our frame tree
+   */
+  uint32_t GetDepthInFrameTree() {
+    uint32_t result = 0;
+    for (nsIFrame* ancestor = GetParent(); ancestor;
+         ancestor = ancestor->GetParent()) {
+      result++;
+    }
+    return result;
+  }
+
+  /**
    * Event handling of GUI events.
    *
    * @param   aEvent event structure describing the type of event and rge widget
@@ -1937,16 +1949,16 @@ public:
    * GetView returns non-null if and only if |HasView| returns true.
    */
   bool HasView() const { return !!(mState & NS_FRAME_HAS_VIEW); }
-  nsIView* GetView() const;
-  virtual nsIView* GetViewExternal() const;
-  nsresult SetView(nsIView* aView);
+  nsView* GetView() const;
+  virtual nsView* GetViewExternal() const;
+  nsresult SetView(nsView* aView);
 
   /**
    * Find the closest view (on |this| or an ancestor).
    * If aOffset is non-null, it will be set to the offset of |this|
    * from the returned view.
    */
-  nsIView* GetClosestView(nsPoint* aOffset = nullptr) const;
+  nsView* GetClosestView(nsPoint* aOffset = nullptr) const;
 
   /**
    * Find the closest ancestor (excluding |this| !) that has a view
@@ -2014,7 +2026,7 @@ public:
    * has a view. Also returns the containing view or null in case of error
    */
   NS_IMETHOD  GetOffsetFromView(nsPoint&  aOffset,
-                                nsIView** aView) const = 0;
+                                nsView** aView) const = 0;
 
   /**
    * Returns the nearest widget containing this frame. If this frame has a
@@ -2081,11 +2093,12 @@ public:
     eXULBox =                           1 << 10,
     eCanContainOverflowContainers =     1 << 11,
     eBlockFrame =                       1 << 12,
+    eTablePart =                        1 << 13,
     // If this bit is set, the frame doesn't allow ignorable whitespace as
     // children. For example, the whitespace between <table>\n<tr>\n<td>
     // will be excluded during the construction of children. 
-    eExcludesIgnorableWhitespace =      1 << 13,
-    eSupportsCSSTransforms =            1 << 14,
+    eExcludesIgnorableWhitespace =      1 << 14,
+    eSupportsCSSTransforms =            1 << 15,
 
     // These are to allow nsFrame::Init to assert that IsFrameOfType
     // implementations all call the base class method.  They are only
@@ -2392,7 +2405,7 @@ public:
    * the overflow areas changed.
    */
   bool FinishAndStoreOverflow(nsOverflowAreas& aOverflowAreas,
-                              nsSize aNewSize);
+                              nsSize aNewSize, nsSize* aOldSize = nullptr);
 
   bool FinishAndStoreOverflow(nsHTMLReflowMetrics* aMetrics) {
     return FinishAndStoreOverflow(aMetrics->mOverflowAreas,
@@ -2720,7 +2733,7 @@ NS_PTR_TO_INT32(frame->Properties().Get(nsIFrame::ParagraphDepthProperty()))
   virtual nsSize GetMinSizeForScrollArea(nsBoxLayoutState& aBoxLayoutState) = 0;
 
   // Implemented in nsBox, used in nsBoxFrame
-  uint32_t GetOrdinal(nsBoxLayoutState& aBoxLayoutState);
+  uint32_t GetOrdinal();
 
   virtual nscoord GetFlex(nsBoxLayoutState& aBoxLayoutState) = 0;
   virtual nscoord GetBoxAscent(nsBoxLayoutState& aBoxLayoutState) = 0;

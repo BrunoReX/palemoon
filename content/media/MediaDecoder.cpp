@@ -20,6 +20,12 @@
 #include "MediaResource.h"
 #include "nsError.h"
 #include "mozilla/Preferences.h"
+#include <cstdlib> // for std::abs(int/long)
+#include <cmath> // for std::abs(float/double)
+
+#ifdef MOZ_WMF
+#include "WMFDecoder.h"
+#endif
 
 using namespace mozilla::layers;
 using namespace mozilla::dom;
@@ -107,7 +113,7 @@ NS_IMPL_THREADSAFE_ISUPPORTS1(MediaDecoder, nsIObserver)
 
 void MediaDecoder::Pause()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
   if (mPlayState == PLAY_STATE_SEEKING || mPlayState == PLAY_STATE_ENDED) {
     mNextState = PLAY_STATE_PAUSED;
@@ -119,7 +125,7 @@ void MediaDecoder::Pause()
 
 void MediaDecoder::SetVolume(double aVolume)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   mInitialVolume = aVolume;
   if (mDecoderStateMachine) {
     mDecoderStateMachine->SetVolume(aVolume);
@@ -128,7 +134,7 @@ void MediaDecoder::SetVolume(double aVolume)
 
 void MediaDecoder::SetAudioCaptured(bool aCaptured)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   mInitialAudioCaptured = aCaptured;
   if (mDecoderStateMachine) {
     mDecoderStateMachine->SetAudioCaptured(aCaptured);
@@ -175,7 +181,7 @@ MediaDecoder::DecodedStreamData::~DecodedStreamData()
 
 void MediaDecoder::DestroyDecodedStream()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   GetReentrantMonitor().AssertCurrentThreadIn();
 
   // All streams are having their SourceMediaStream disconnected, so they
@@ -199,7 +205,7 @@ void MediaDecoder::DestroyDecodedStream()
 
 void MediaDecoder::RecreateDecodedStream(int64_t aStartTimeUSecs)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   GetReentrantMonitor().AssertCurrentThreadIn();
   LOG(PR_LOG_DEBUG, ("MediaDecoder::RecreateDecodedStream this=%p aStartTimeUSecs=%lld!",
                      this, (long long)aStartTimeUSecs));
@@ -238,7 +244,7 @@ void MediaDecoder::NotifyDecodedStreamMainThreadStateChanged()
 void MediaDecoder::AddOutputStream(ProcessedMediaStream* aStream,
                                        bool aFinishWhenEnded)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   LOG(PR_LOG_DEBUG, ("MediaDecoder::AddOutputStream this=%p aStream=%p!",
                      this, aStream));
 
@@ -269,7 +275,7 @@ void MediaDecoder::AddOutputStream(ProcessedMediaStream* aStream,
 
 double MediaDecoder::GetDuration()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   if (mInfiniteStream) {
     return std::numeric_limits<double>::infinity();
   }
@@ -279,15 +285,21 @@ double MediaDecoder::GetDuration()
   return std::numeric_limits<double>::quiet_NaN();
 }
 
+int64_t MediaDecoder::GetMediaDuration()
+{
+  NS_ENSURE_TRUE(GetStateMachine(), -1);
+  return GetStateMachine()->GetDuration();
+}
+
 void MediaDecoder::SetInfinite(bool aInfinite)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   mInfiniteStream = aInfinite;
 }
 
 bool MediaDecoder::IsInfinite()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   return mInfiniteStream;
 }
 
@@ -298,7 +310,8 @@ MediaDecoder::MediaDecoder() :
   mInitialVolume(0.0),
   mRequestedSeekTime(-1.0),
   mDuration(-1),
-  mSeekable(true),
+  mTransportSeekable(true),
+  mMediaSeekable(true),
   mReentrantMonitor("media.decoder"),
   mPlayState(PLAY_STATE_PAUSED),
   mNextState(PLAY_STATE_PAUSED),
@@ -313,7 +326,7 @@ MediaDecoder::MediaDecoder() :
   mAudioChannelType(AUDIO_CHANNEL_NORMAL)
 {
   MOZ_COUNT_CTOR(MediaDecoder);
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   MediaMemoryReporter::AddMediaDecoder(this);
 #ifdef PR_LOGGING
   if (!gMediaDecoderLog) {
@@ -324,7 +337,7 @@ MediaDecoder::MediaDecoder() :
 
 bool MediaDecoder::Init(MediaDecoderOwner* aOwner)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   mOwner = aOwner;
   mVideoFrameContainer = aOwner->GetVideoFrameContainer();
   nsContentUtils::RegisterShutdownObserver(this);
@@ -333,7 +346,7 @@ bool MediaDecoder::Init(MediaDecoderOwner* aOwner)
 
 void MediaDecoder::Shutdown()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
 
   if (mShuttingDown)
     return;
@@ -368,7 +381,7 @@ void MediaDecoder::Shutdown()
 
 MediaDecoder::~MediaDecoder()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   MediaMemoryReporter::RemoveMediaDecoder(this);
   UnpinForSeek();
   MOZ_COUNT_DTOR(MediaDecoder);
@@ -377,7 +390,7 @@ MediaDecoder::~MediaDecoder()
 nsresult MediaDecoder::OpenResource(MediaResource* aResource,
                                         nsIStreamListener** aStreamListener)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   if (aStreamListener) {
     *aStreamListener = nullptr;
   }
@@ -404,7 +417,7 @@ nsresult MediaDecoder::Load(MediaResource* aResource,
                                 nsIStreamListener** aStreamListener,
                                 MediaDecoder* aCloneDonor)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
 
   nsresult rv = OpenResource(aResource, aStreamListener);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -420,7 +433,8 @@ nsresult MediaDecoder::Load(MediaResource* aResource,
 
 nsresult MediaDecoder::InitializeStateMachine(MediaDecoder* aCloneDonor)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
+  NS_ASSERTION(mDecoderStateMachine, "Cannot initialize null state machine!");
 
   MediaDecoder* cloneDonor = static_cast<MediaDecoder*>(aCloneDonor);
   if (NS_FAILED(mDecoderStateMachine->Init(cloneDonor ?
@@ -430,7 +444,8 @@ nsresult MediaDecoder::InitializeStateMachine(MediaDecoder* aCloneDonor)
   }
   {
     ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
-    mDecoderStateMachine->SetSeekable(mSeekable);
+    mDecoderStateMachine->SetTransportSeekable(mTransportSeekable);
+    mDecoderStateMachine->SetMediaSeekable(mMediaSeekable);
     mDecoderStateMachine->SetDuration(mDuration);
     mDecoderStateMachine->SetVolume(mInitialVolume);
     mDecoderStateMachine->SetAudioCaptured(mInitialAudioCaptured);
@@ -462,7 +477,7 @@ nsresult MediaDecoder::RequestFrameBufferLength(uint32_t aLength)
 
 nsresult MediaDecoder::ScheduleStateMachineThread()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   NS_ASSERTION(mDecoderStateMachine,
                "Must have state machine to start state machine thread");
   NS_ENSURE_STATE(mDecoderStateMachine);
@@ -477,7 +492,7 @@ nsresult MediaDecoder::ScheduleStateMachineThread()
 
 nsresult MediaDecoder::Play()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
   NS_ASSERTION(mDecoderStateMachine != nullptr, "Should have state machine.");
   nsresult res = ScheduleStateMachineThread();
@@ -522,7 +537,7 @@ static bool IsInRanges(nsTimeRanges& aRanges, double aValue, int32_t& aIntervalI
 
 nsresult MediaDecoder::Seek(double aTime)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
 
   NS_ABORT_IF_FALSE(aTime >= 0.0, "Cannot seek to a negative value.");
@@ -554,11 +569,11 @@ nsresult MediaDecoder::Seek(double aTime)
         NS_ENSURE_SUCCESS(res, NS_OK);
         res = seekable.Start(range + 1, &rightBound);
         NS_ENSURE_SUCCESS(res, NS_OK);
-        double distanceLeft = NS_ABS(leftBound - aTime);
-        double distanceRight = NS_ABS(rightBound - aTime);
+        double distanceLeft = std::abs(leftBound - aTime);
+        double distanceRight = std::abs(rightBound - aTime);
         if (distanceLeft == distanceRight) {
-          distanceLeft = NS_ABS(leftBound - mCurrentTime);
-          distanceRight = NS_ABS(rightBound - mCurrentTime);
+          distanceLeft = std::abs(leftBound - mCurrentTime);
+          distanceRight = std::abs(rightBound - mCurrentTime);
         } 
         aTime = (distanceLeft < distanceRight) ? leftBound : rightBound;
       } else {
@@ -595,19 +610,19 @@ nsresult MediaDecoder::Seek(double aTime)
 
 nsresult MediaDecoder::PlaybackRateChanged()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 double MediaDecoder::GetCurrentTime()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   return mCurrentTime;
 }
 
 already_AddRefed<nsIPrincipal> MediaDecoder::GetCurrentPrincipal()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   return mResource ? mResource->GetCurrentPrincipal() : nullptr;
 }
 
@@ -619,19 +634,28 @@ void MediaDecoder::AudioAvailable(float* aFrameBuffer,
   // here, this ensures we free the memory. Otherwise, we pass off ownership
   // to HTMLMediaElement::NotifyAudioAvailable().
   nsAutoArrayPtr<float> frameBuffer(aFrameBuffer);
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   if (mShuttingDown || !mOwner) {
     return;
   }
   mOwner->NotifyAudioAvailable(frameBuffer.forget(), aFrameBufferLength, aTime);
 }
 
-void MediaDecoder::MetadataLoaded(uint32_t aChannels,
-                                      uint32_t aRate,
-                                      bool aHasAudio,
-                                      const MetadataTags* aTags)
+void MediaDecoder::QueueMetadata(int64_t aPublishTime,
+                                 int aChannels,
+                                 int aRate,
+                                 bool aHasAudio,
+                                 MetadataTags* aTags)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  NS_ASSERTION(mDecoderStateMachine->OnDecodeThread(),
+               "Should be on decode thread.");
+  GetReentrantMonitor().AssertCurrentThreadIn();
+  mDecoderStateMachine->QueueMetadata(aPublishTime, aChannels, aRate, aHasAudio, aTags);
+}
+
+void MediaDecoder::MetadataLoaded(int aChannels, int aRate, bool aHasAudio, MetadataTags* aTags)
+{
+  MOZ_ASSERT(NS_IsMainThread());
   if (mShuttingDown) {
     return;
   }
@@ -698,7 +722,7 @@ void MediaDecoder::MetadataLoaded(uint32_t aChannels,
 
 void MediaDecoder::ResourceLoaded()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
 
   // Don't handle ResourceLoaded if we are shutting down, or if
   // we need to ignore progress data due to seeking (in the case
@@ -728,7 +752,7 @@ void MediaDecoder::ResourceLoaded()
 
 void MediaDecoder::NetworkError()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   if (mShuttingDown)
     return;
 
@@ -740,7 +764,7 @@ void MediaDecoder::NetworkError()
 
 void MediaDecoder::DecodeError()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   if (mShuttingDown)
     return;
 
@@ -752,19 +776,19 @@ void MediaDecoder::DecodeError()
 
 bool MediaDecoder::IsSeeking() const
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   return mPlayState == PLAY_STATE_SEEKING;
 }
 
 bool MediaDecoder::IsEnded() const
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   return mPlayState == PLAY_STATE_ENDED || mPlayState == PLAY_STATE_SHUTDOWN;
 }
 
 void MediaDecoder::PlaybackEnded()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
 
   if (mShuttingDown || mPlayState == MediaDecoder::PLAY_STATE_SEEKING)
     return;
@@ -813,7 +837,7 @@ NS_IMETHODIMP MediaDecoder::Observe(nsISupports *aSubjet,
                                         const char *aTopic,
                                         const PRUnichar *someData)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   if (strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
     Shutdown();
   }
@@ -824,8 +848,7 @@ NS_IMETHODIMP MediaDecoder::Observe(nsISupports *aSubjet,
 MediaDecoder::Statistics
 MediaDecoder::GetStatistics()
 {
-  NS_ASSERTION(NS_IsMainThread() || OnStateMachineThread(),
-               "Should be on main or state machine thread.");
+  MOZ_ASSERT(NS_IsMainThread() || OnStateMachineThread());
   Statistics result;
 
   ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
@@ -856,8 +879,7 @@ MediaDecoder::GetStatistics()
 double MediaDecoder::ComputePlaybackRate(bool* aReliable)
 {
   GetReentrantMonitor().AssertCurrentThreadIn();
-  NS_ASSERTION(NS_IsMainThread() || OnStateMachineThread(),
-               "Should be on main or state machine thread.");
+  MOZ_ASSERT(NS_IsMainThread() || OnStateMachineThread());
 
   int64_t length = mResource ? mResource->GetLength() : -1;
   if (mDuration >= 0 && length >= 0) {
@@ -869,8 +891,7 @@ double MediaDecoder::ComputePlaybackRate(bool* aReliable)
 
 void MediaDecoder::UpdatePlaybackRate()
 {
-  NS_ASSERTION(NS_IsMainThread() || OnStateMachineThread(),
-               "Should be on main or state machine thread.");
+  MOZ_ASSERT(NS_IsMainThread() || OnStateMachineThread());
   GetReentrantMonitor().AssertCurrentThreadIn();
   if (!mResource)
     return;
@@ -890,7 +911,7 @@ void MediaDecoder::UpdatePlaybackRate()
 
 void MediaDecoder::NotifySuspendedStatusChanged()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   if (!mResource)
     return;
   MediaResource* activeStream;
@@ -909,14 +930,18 @@ void MediaDecoder::NotifySuspendedStatusChanged()
 
 void MediaDecoder::NotifyBytesDownloaded()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
+  {
+    ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
+    UpdatePlaybackRate();
+  }
   UpdateReadyStateForData();
   Progress(false);
 }
 
 void MediaDecoder::NotifyDownloadEnded(nsresult aStatus)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
 
   if (aStatus == NS_BINDING_ABORTED) {
     // Download has been cancelled by user.
@@ -949,9 +974,9 @@ void MediaDecoder::NotifyPrincipalChanged()
 
 void MediaDecoder::NotifyBytesConsumed(int64_t aBytes)
 {
+  NS_ENSURE_TRUE_VOID(mDecoderStateMachine);
   ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
-  NS_ASSERTION(OnStateMachineThread() || mDecoderStateMachine->OnDecodeThread(),
-               "Should be on play state machine or decode thread.");
+  MOZ_ASSERT(OnStateMachineThread() || mDecoderStateMachine->OnDecodeThread());
   if (!mIgnoreProgressData) {
     mDecoderPosition += aBytes;
     mPlaybackStatistics.AddBytes(aBytes);
@@ -960,7 +985,7 @@ void MediaDecoder::NotifyBytesConsumed(int64_t aBytes)
 
 void MediaDecoder::NextFrameUnavailableBuffering()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be called on main thread");
+  MOZ_ASSERT(NS_IsMainThread());
   if (!mOwner || mShuttingDown || !mDecoderStateMachine)
     return;
 
@@ -969,7 +994,7 @@ void MediaDecoder::NextFrameUnavailableBuffering()
 
 void MediaDecoder::NextFrameAvailable()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be called on main thread");
+  MOZ_ASSERT(NS_IsMainThread());
   if (!mOwner || mShuttingDown || !mDecoderStateMachine)
     return;
 
@@ -978,7 +1003,7 @@ void MediaDecoder::NextFrameAvailable()
 
 void MediaDecoder::NextFrameUnavailable()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be called on main thread");
+  MOZ_ASSERT(NS_IsMainThread());
   if (!mOwner || mShuttingDown || !mDecoderStateMachine)
     return;
   mOwner->UpdateReadyStateForData(MediaDecoderOwner::NEXT_FRAME_UNAVAILABLE);
@@ -986,7 +1011,7 @@ void MediaDecoder::NextFrameUnavailable()
 
 void MediaDecoder::UpdateReadyStateForData()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be called on main thread");
+  MOZ_ASSERT(NS_IsMainThread());
   if (!mOwner || mShuttingDown || !mDecoderStateMachine)
     return;
   MediaDecoderOwner::NextFrameStatus frameStatus =
@@ -996,7 +1021,7 @@ void MediaDecoder::UpdateReadyStateForData()
 
 void MediaDecoder::SeekingStopped()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
 
   if (mShuttingDown)
     return;
@@ -1028,7 +1053,7 @@ void MediaDecoder::SeekingStopped()
 // media.
 void MediaDecoder::SeekingStoppedAtEnd()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
 
   if (mShuttingDown)
     return;
@@ -1063,7 +1088,7 @@ void MediaDecoder::SeekingStoppedAtEnd()
 
 void MediaDecoder::SeekingStarted()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   if (mShuttingDown)
     return;
 
@@ -1075,7 +1100,7 @@ void MediaDecoder::SeekingStarted()
 
 void MediaDecoder::ChangeState(PlayState aState)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
 
   if (mNextState == aState) {
@@ -1114,7 +1139,7 @@ void MediaDecoder::ChangeState(PlayState aState)
 
 void MediaDecoder::PlaybackPositionChanged()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   if (mShuttingDown)
     return;
 
@@ -1152,7 +1177,7 @@ void MediaDecoder::PlaybackPositionChanged()
 
 void MediaDecoder::DurationChanged()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
   int64_t oldDuration = mDuration;
   mDuration = mDecoderStateMachine ? mDecoderStateMachine->GetDuration() : -1;
@@ -1167,7 +1192,7 @@ void MediaDecoder::DurationChanged()
 
 void MediaDecoder::SetDuration(double aDuration)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   mDuration = static_cast<int64_t>(NS_round(aDuration * static_cast<double>(USECS_PER_S)));
 
   ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
@@ -1179,20 +1204,43 @@ void MediaDecoder::SetDuration(double aDuration)
   UpdatePlaybackRate();
 }
 
-void MediaDecoder::SetSeekable(bool aSeekable)
+void MediaDecoder::SetMediaDuration(int64_t aDuration)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
-  mSeekable = aSeekable;
+  NS_ENSURE_TRUE_VOID(GetStateMachine());
+  GetStateMachine()->SetDuration(aDuration);
+}
+
+void MediaDecoder::SetMediaSeekable(bool aMediaSeekable) {
+  ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
+  MOZ_ASSERT(NS_IsMainThread() || OnDecodeThread());
+  mMediaSeekable = aMediaSeekable;
   if (mDecoderStateMachine) {
-    ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
-    mDecoderStateMachine->SetSeekable(aSeekable);
+    mDecoderStateMachine->SetMediaSeekable(aMediaSeekable);
   }
 }
 
-bool MediaDecoder::IsSeekable()
+void MediaDecoder::SetTransportSeekable(bool aTransportSeekable)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
-  return mSeekable;
+  MOZ_ASSERT(NS_IsMainThread());
+  mTransportSeekable = aTransportSeekable;
+  if (mDecoderStateMachine) {
+    ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
+    mDecoderStateMachine->SetTransportSeekable(aTransportSeekable);
+  }
+}
+
+bool MediaDecoder::IsTransportSeekable()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  return mTransportSeekable;
+}
+
+bool MediaDecoder::IsMediaSeekable()
+{
+  NS_ENSURE_TRUE(GetStateMachine(), false);
+  ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
+  MOZ_ASSERT(OnDecodeThread() || NS_IsMainThread());
+  return mMediaSeekable;
 }
 
 nsresult MediaDecoder::GetSeekable(nsTimeRanges* aSeekable)
@@ -1200,34 +1248,39 @@ nsresult MediaDecoder::GetSeekable(nsTimeRanges* aSeekable)
   //TODO : change 0.0 to GetInitialTime() when available
   double initialTime = 0.0;
 
-  if (IsSeekable()) {
+  // We can seek in buffered range if the media is seekable. Also, we can seek
+  // in unbuffered ranges if the transport level is seekable (local file or the
+  // server supports range requests, etc.)
+  if (!IsMediaSeekable()) {
+    return NS_OK;
+  } else if (!IsTransportSeekable()) {
+    return GetBuffered(aSeekable);
+  } else {
     double end = IsInfinite() ? std::numeric_limits<double>::infinity()
                               : initialTime + GetDuration();
     aSeekable->Add(initialTime, end);
     return NS_OK;
   }
-
-  if (mDecoderStateMachine && mDecoderStateMachine->IsSeekableInBufferedRanges()) {
-    return GetBuffered(aSeekable);
-  } else {
-    // The stream is not seekable using only buffered ranges, and is not
-    // seekable. Don't allow seeking (return no ranges in |seekable|).
-    return NS_OK;
-  }
 }
 
-void MediaDecoder::SetEndTime(double aTime)
+void MediaDecoder::SetFragmentEndTime(double aTime)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   if (mDecoderStateMachine) {
     ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
     mDecoderStateMachine->SetFragmentEndTime(static_cast<int64_t>(aTime * USECS_PER_S));
   }
 }
 
+void MediaDecoder::SetMediaEndTime(int64_t aTime)
+{
+  NS_ENSURE_TRUE_VOID(GetStateMachine());
+  GetStateMachine()->SetMediaEndTime(aTime);
+}
+
 void MediaDecoder::Suspend()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   if (mResource) {
     mResource->Suspend(true);
   }
@@ -1235,7 +1288,7 @@ void MediaDecoder::Suspend()
 
 void MediaDecoder::Resume(bool aForceBuffering)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   if (mResource) {
     mResource->Resume();
   }
@@ -1249,8 +1302,7 @@ void MediaDecoder::Resume(bool aForceBuffering)
 
 void MediaDecoder::StopProgressUpdates()
 {
-  NS_ASSERTION(OnStateMachineThread() || OnDecodeThread(),
-               "Should be on state machine or decode thread.");
+  MOZ_ASSERT(OnStateMachineThread() || OnDecodeThread());
   GetReentrantMonitor().AssertCurrentThreadIn();
   mIgnoreProgressData = true;
   if (mResource) {
@@ -1260,8 +1312,7 @@ void MediaDecoder::StopProgressUpdates()
 
 void MediaDecoder::StartProgressUpdates()
 {
-  NS_ASSERTION(OnStateMachineThread() || OnDecodeThread(),
-               "Should be on state machine or decode thread.");
+  MOZ_ASSERT(OnStateMachineThread() || OnDecodeThread());
   GetReentrantMonitor().AssertCurrentThreadIn();
   mIgnoreProgressData = false;
   if (mResource) {
@@ -1272,7 +1323,7 @@ void MediaDecoder::StartProgressUpdates()
 
 void MediaDecoder::MoveLoadsToBackground()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   if (mResource) {
     mResource->MoveLoadsToBackground();
   }
@@ -1291,14 +1342,42 @@ bool MediaDecoder::OnStateMachineThread() const
 
 void MediaDecoder::NotifyAudioAvailableListener()
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  MOZ_ASSERT(NS_IsMainThread());
   if (mDecoderStateMachine) {
     ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
     mDecoderStateMachine->NotifyAudioAvailableListener();
   }
 }
 
+void MediaDecoder::SetPlaybackRate(double aPlaybackRate)
+{
+  if (aPlaybackRate == 0) {
+    mPausedForPlaybackRateNull = true;
+    Pause();
+    return;
+  } else if (mPausedForPlaybackRateNull) {
+    // If the playbackRate is no longer null, restart the playback, iff the
+    // media was playing.
+    if (mOwner && !mOwner->GetPaused()) {
+      Play();
+    }
+    mPausedForPlaybackRateNull = false;
+  }
+
+  if (mDecoderStateMachine) {
+    mDecoderStateMachine->SetPlaybackRate(aPlaybackRate);
+  }
+}
+
+void MediaDecoder::SetPreservesPitch(bool aPreservesPitch)
+{
+  if (mDecoderStateMachine) {
+    mDecoderStateMachine->SetPreservesPitch(aPreservesPitch);
+  }
+}
+
 bool MediaDecoder::OnDecodeThread() const {
+  NS_ENSURE_TRUE(mDecoderStateMachine, false);
   return mDecoderStateMachine->OnDecodeThread();
 }
 
@@ -1353,8 +1432,18 @@ void MediaDecoder::UpdatePlaybackPosition(int64_t aTime)
 }
 
 // Provide access to the state machine object
-MediaDecoderStateMachine* MediaDecoder::GetStateMachine() {
+MediaDecoderStateMachine* MediaDecoder::GetStateMachine() const {
   return mDecoderStateMachine;
+}
+
+bool MediaDecoder::IsShutdown() const {
+  NS_ENSURE_TRUE(GetStateMachine(), true);
+  return GetStateMachine()->IsShutdown();
+}
+
+int64_t MediaDecoder::GetEndMediaTime() const {
+  NS_ENSURE_TRUE(GetStateMachine(), -1);
+  return GetStateMachine()->GetEndMediaTime();
 }
 
 // Drop reference to state machine.  Only called during shutdown dance.
@@ -1553,6 +1642,14 @@ bool
 MediaDecoder::IsDASHEnabled()
 {
   return Preferences::GetBool("media.dash.enabled");
+}
+#endif
+
+#ifdef MOZ_WMF
+bool
+MediaDecoder::IsWMFEnabled()
+{
+  return WMFDecoder::IsEnabled();
 }
 #endif
 

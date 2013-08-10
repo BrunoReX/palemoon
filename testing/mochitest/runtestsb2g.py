@@ -107,7 +107,7 @@ class B2GOptions(MochitestOptions):
                         help="Path to busybox binary to install on device")
         defaults['busybox'] = None
 
-        defaults["remoteTestRoot"] = None
+        defaults["remoteTestRoot"] = "/data/local/tests"
         defaults["logFile"] = "mochitest.log"
         defaults["autorun"] = True
         defaults["closeWhenDone"] = True
@@ -117,7 +117,8 @@ class B2GOptions(MochitestOptions):
         self.set_defaults(**defaults)
 
     def verifyRemoteOptions(self, options, automation):
-        options.remoteTestRoot = automation._devicemanager.getDeviceRoot()
+        if not options.remoteTestRoot:
+            options.remoteTestRoot = automation._devicemanager.getDeviceRoot()
         productRoot = options.remoteTestRoot + "/" + automation._product
 
         if options.utilityPath == self._automation.DIST_BIN:
@@ -204,7 +205,6 @@ class B2GMochitest(Mochitest):
     _automation = None
     _dm = None
     localProfile = None
-    testDir = '/data/local/tests'
 
     def __init__(self, automation, devmgr, options):
         self._automation = automation
@@ -401,6 +401,7 @@ const CHILD_LOGGER_SCRIPT = "chrome://specialpowers/content/MozillaLogger.js";
 
 let homescreen = document.getElementById('homescreen');
 let container = homescreen.contentWindow.document.getElementById('test-container');
+container.setAttribute('mozapp', 'http://mochi.test:8888/manifest.webapp');
 
 let specialpowers = {};
 let loader = Cc["@mozilla.org/moz/jssubscript-loader;1"].getService(Ci.mozIJSSubScriptLoader);
@@ -432,7 +433,6 @@ user_pref("dom.mozBrowserFramesEnabled", true);
 user_pref("dom.ipc.tabs.disabled", false);
 user_pref("dom.ipc.browser_frames.oop_by_default", false);
 user_pref("dom.mozBrowserFramesWhitelist","app://test-container.gaiamobile.org,http://mochi.test:8888");
-user_pref("network.dns.localDomains","app://test-container.gaiamobile.org");
 user_pref("marionette.loadearly", true);
 """)
         f.close()
@@ -504,7 +504,7 @@ def main():
 
     # create the DeviceManager
     kwargs = {'adbPath': options.adbPath,
-              'deviceRoot': B2GMochitest.testDir}
+              'deviceRoot': options.remoteTestRoot}
     if options.deviceIP:
         kwargs.update({'host': options.deviceIP,
                        'port': options.devicePort})
@@ -540,7 +540,7 @@ def main():
             mochitest.cleanup(None, options)
         except:
             pass
-            sys.exit(1)
+        retVal = 1
 
     sys.exit(retVal)
 

@@ -16,9 +16,7 @@ export MOZILLA_OFFICIAL=1
 
 export MOZ_TELEMETRY_REPORTING=1
 
-if test -n "${_PYMAKE}"; then
-  mk_add_options MOZ_MAKE_FLAGS=-j4
-else
+if test -z "${_PYMAKE}"; then
   mk_add_options MOZ_MAKE_FLAGS=-j1
 fi
 
@@ -27,6 +25,9 @@ if test "$PROCESSOR_ARCHITECTURE" = "AMD64" -o "$PROCESSOR_ARCHITEW6432" = "AMD6
 else
   . $topsrcdir/build/win32/mozconfig.vs2010
 fi
+
+# Treat warnings as errors in directories with FAIL_ON_WARNINGS.
+ac_add_options --enable-warnings-as-errors
 
 # Package js shell.
 export MOZ_PACKAGE_JSSHELL=1

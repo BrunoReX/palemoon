@@ -7,6 +7,7 @@
 #include "DOMSVGStringList.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 nsSVGElement::StringListInfo nsSVGViewElement::sStringListInfo[1] =
 {
@@ -91,12 +92,15 @@ nsSVGViewElement::GetViewBox(nsIDOMSVGAnimatedRect * *aViewBox)
   return mViewBox.ToDOMAnimatedRect(aViewBox, this);
 }
 
-/* readonly attribute nsIDOMSVGAnimatedPreserveAspectRatio preserveAspectRatio; */
+/* readonly attribute SVGPreserveAspectRatio preserveAspectRatio; */
 NS_IMETHODIMP
-nsSVGViewElement::GetPreserveAspectRatio(nsIDOMSVGAnimatedPreserveAspectRatio
+nsSVGViewElement::GetPreserveAspectRatio(nsISupports
                                          **aPreserveAspectRatio)
 {
-  return mPreserveAspectRatio.ToDOMAnimatedPreserveAspectRatio(aPreserveAspectRatio, this);
+  nsRefPtr<DOMSVGAnimatedPreserveAspectRatio> ratio;
+  mPreserveAspectRatio.ToDOMAnimatedPreserveAspectRatio(getter_AddRefs(ratio), this);
+  ratio.forget(aPreserveAspectRatio);
+  return NS_OK;
 }
 
 //----------------------------------------------------------------------

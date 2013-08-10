@@ -79,7 +79,7 @@ AdaptationSet::GetMIMEType(nsAString& aMIMEType) const
 void
 AdaptationSet::SetMIMEType(nsAString const &aMIMEType)
 {
-  NS_ENSURE_FALSE(aMIMEType.IsEmpty(),);
+  NS_ENSURE_FALSE_VOID(aMIMEType.IsEmpty());
   mMIMEType = aMIMEType;
 }
 
@@ -93,10 +93,10 @@ AdaptationSet::GetRepresentation(uint32_t aIndex) const
 void
 AdaptationSet::AddRepresentation(Representation* aRep)
 {
-  NS_ENSURE_TRUE(aRep,);
+  NS_ENSURE_TRUE_VOID(aRep);
   // Only add if it's not already in the array.
   if (!mRepresentations.Contains(aRep)) {
-    mRepresentations.AppendElement(aRep);
+    mRepresentations.InsertElementSorted(aRep, CompareRepresentationBitrates());
   }
 }
 

@@ -45,7 +45,7 @@ class Bootstrapper(object):
                 cls = FedoraBootstrapper
             elif distro == 'Gentoo Base System':
                 cls = GentooBootstrapper
-            elif distro == 'Mint':
+            elif distro in ('Mint', 'LinuxMint'):
                 cls = MintBootstrapper
             elif distro == 'Ubuntu':
                 cls = UbuntuBootstrapper
@@ -58,12 +58,10 @@ class Bootstrapper(object):
 
         elif sys.platform.startswith('darwin'):
             # TODO Support Darwin platforms that aren't OS X.
-            major, minor, point = map(int, platform.mac_ver()[0].split('.'))
+            osx_version = platform.mac_ver()[0]
 
             cls = OSXBootstrapper
-            args['major'] = major
-            args['minor'] = minor
-            args['point'] = point
+            args['version'] = osx_version
 
         elif sys.platform.startswith('openbsd'):
             cls = OpenBSDBootstrapper

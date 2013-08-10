@@ -26,6 +26,7 @@
 #include "nsCOMArray.h"
 #include "nsDataHashtable.h"
 #include "nsHashKeys.h"
+#include "PermissionMessageUtils.h"
 
 #define CHILD_PROCESS_SHUTDOWN_MESSAGE NS_LITERAL_STRING("child-process-shutdown")
 
@@ -231,10 +232,6 @@ private:
     virtual PTestShellParent* AllocPTestShell();
     virtual bool DeallocPTestShell(PTestShellParent* shell);
 
-    virtual PAudioParent* AllocPAudio(const int32_t&,
-                                     const int32_t&);
-    virtual bool DeallocPAudio(PAudioParent*);
-
     virtual PNeckoParent* AllocPNecko();
     virtual bool DeallocPNecko(PNeckoParent* necko);
 
@@ -304,7 +301,7 @@ private:
     virtual bool RecvAsyncMessage(const nsString& aMsg,
                                   const ClonedMessageData& aData);
 
-    virtual bool RecvAddGeolocationListener();
+    virtual bool RecvAddGeolocationListener(const IPC::Principal& aPrincipal);
     virtual bool RecvRemoveGeolocationListener();
     virtual bool RecvSetGeolocationHigherAccuracy(const bool& aEnable);
 

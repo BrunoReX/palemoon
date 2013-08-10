@@ -143,6 +143,12 @@ public:
    */
   virtual void NotifyFinished(MediaStreamGraph* aGraph) {}
 
+  /**
+   * Notify that your listener has been removed, either due to RemoveListener(),
+   * or due to the stream being destroyed.  You will get no further notifications.
+   */
+  virtual void NotifyRemoved(MediaStreamGraph* aGraph) {}
+
   enum {
     TRACK_EVENT_CREATED = 0x01,
     TRACK_EVENT_ENDED = 0x02
@@ -261,6 +267,7 @@ public:
     , mGraphUpdateIndices(0)
     , mFinished(false)
     , mNotifiedFinished(false)
+    , mNotifiedBlocked(false)
     , mWrapper(aWrapper)
     , mMainThreadCurrentTime(0)
     , mMainThreadFinished(false)
@@ -362,10 +369,9 @@ public:
     mExplicitBlockerCount.SetAtAndAfter(aTime, mExplicitBlockerCount.GetAt(aTime) + aDelta);
   }
   void AddListenerImpl(already_AddRefed<MediaStreamListener> aListener);
-  void RemoveListenerImpl(MediaStreamListener* aListener)
-  {
-    mListeners.RemoveElement(aListener);
-  }
+  void RemoveListenerImpl(MediaStreamListener* aListener);
+  void RemoveAllListenersImpl();
+
   void AddConsumer(MediaInputPort* aPort)
   {
     mConsumers.AppendElement(aPort);
@@ -442,7 +448,7 @@ protected:
     // Amount of time that we've wanted to play silence because of the stream
     // blocking.
     MediaTime mBlockedAudioTime;
-    nsRefPtr<AudioStream> mStream;
+    nsAutoPtr<AudioStream> mStream;
     TrackID mTrackID;
   };
   nsTArray<AudioOutputStream> mAudioOutputStreams;
@@ -457,6 +463,11 @@ protected:
    * and fired NotifyFinished notifications.
    */
   bool mNotifiedFinished;
+  /**
+   * When true, the last NotifyBlockingChanged delivered to the listeners
+   * indicated that the stream is blocked.
+   */
+  bool mNotifiedBlocked;
 
   // Temporary data for ordering streams by dependency graph
   bool mHasBeenOrdered;
@@ -521,22 +532,27 @@ public:
   /**
    * Append media data to a track. Ownership of aSegment remains with the caller,
    * but aSegment is emptied.
+   * Returns false if the data was not appended because no such track exists
+   * or the stream was already finished.
    */
-  void AppendToTrack(TrackID aID, MediaSegment* aSegment);
+  bool AppendToTrack(TrackID aID, MediaSegment* aSegment);
   /**
    * Returns true if the buffer currently has enough data.
+   * Returns false if there isn't enough data or if no such track exists.
    */
   bool HaveEnoughBuffered(TrackID aID);
   /**
    * Ensures that aSignalRunnable will be dispatched to aSignalThread
    * when we don't have enough buffered data in the track (which could be
-   * immediately).
+   * immediately). Will dispatch the runnable immediately if the track
+   * does not exist.
    */
   void DispatchWhenNotEnoughBuffered(TrackID aID,
       nsIThread* aSignalThread, nsIRunnable* aSignalRunnable);
   /**
    * Indicate that a track has ended. Do not do any more API calls
    * affecting this track.
+   * Ignored if the track does not exist.
    */
   void EndTrack(TrackID aID);
   /**
@@ -607,7 +623,6 @@ protected:
         return &mUpdateTracks[i];
       }
     }
-    NS_ERROR("Bad track ID!");
     return nullptr;
   }
 

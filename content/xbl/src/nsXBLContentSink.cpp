@@ -150,7 +150,7 @@ nsXBLContentSink::FlushText(bool aReleaseTextNode)
         const PRUnichar* end = mText + mTextLength;
         while (cp < end) {
           PRUnichar ch = *cp++;
-          if (!XP_IS_SPACE(ch)) {
+          if (!dom::IsSpaceCharacter(ch)) {
             isWS = false;
             break;
           }
@@ -487,7 +487,7 @@ nsXBLContentSink::OnOpenContainer(const PRUnichar **aAtts,
                      mSecondaryState == eXBL_None);
     NS_ASSERTION(mBinding, "Must have binding here");
     mSecondaryState = eXBL_InProperty;
-    ConstructProperty(aAtts);
+    ConstructProperty(aAtts, aLineNumber);
   }
   else if (aTagName == nsGkAtoms::getter) {
     ENSURE_XBL_STATE(mSecondaryState == eXBL_InProperty && mProperty);
@@ -770,7 +770,7 @@ nsXBLContentSink::ConstructField(const PRUnichar **aAtts, uint32_t aLineNumber)
 }
 
 void
-nsXBLContentSink::ConstructProperty(const PRUnichar **aAtts)
+nsXBLContentSink::ConstructProperty(const PRUnichar **aAtts, uint32_t aLineNumber)
 {
   const PRUnichar* name     = nullptr;
   const PRUnichar* readonly = nullptr;
@@ -805,7 +805,7 @@ nsXBLContentSink::ConstructProperty(const PRUnichar **aAtts)
   if (name) {
     // All of our pointers are now filled in. Construct our property with all of
     // these parameters.
-    mProperty = new nsXBLProtoImplProperty(name, onget, onset, readonly);
+    mProperty = new nsXBLProtoImplProperty(name, onget, onset, readonly, aLineNumber);
     if (mProperty) {
       AddMember(mProperty);
     }
@@ -866,7 +866,7 @@ nsXBLContentSink::CreateElement(const PRUnichar** aAtts, uint32_t aAttsCount,
   AddAttributesToXULPrototype(aAtts, aAttsCount, prototype);
 
   Element* result;
-  nsresult rv = nsXULElement::Create(prototype, mDocument, false, &result);
+  nsresult rv = nsXULElement::Create(prototype, mDocument, false, false, &result);
   *aResult = result;
   return rv;
 #endif

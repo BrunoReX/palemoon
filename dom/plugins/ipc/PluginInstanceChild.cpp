@@ -259,14 +259,14 @@ PluginInstanceChild::InternalGetNPObjectForValue(NPNVariable aValue,
                                                            &currentResult);
                 break;
             default:
-                NS_NOTREACHED("Don't know what to do with this value type!");
+                MOZ_ASSERT(false);
         }
 
         // Make sure that the current actor returned by the parent matches our
         // cached actor!
-        NS_ASSERTION(static_cast<PluginScriptableObjectChild*>(currentActor) ==
+        NS_ASSERTION(!currentActor ||
+                     static_cast<PluginScriptableObjectChild*>(currentActor) ==
                      actor, "Cached actor is out of date!");
-        NS_ASSERTION(currentResult == result, "Results don't match?!");
     }
 #endif
 
@@ -437,12 +437,12 @@ PluginInstanceChild::NPN_GetValue(NPNVariable aVar,
         *((NPBool*)aValue) = false;
         return NPERR_NO_ERROR;
     }
+#endif /* NP_NO_QUICKDRAW */
 
     case NPNVcontentsScaleFactor: {
         *static_cast<double*>(aValue) = mContentsScaleFactor;
         return NPERR_NO_ERROR;
     }
-#endif /* NP_NO_QUICKDRAW */
 #endif /* XP_MACOSX */
 
 #ifdef DEBUG
@@ -3050,7 +3050,8 @@ PluginInstanceChild::EnsureCurrentBuffer(void)
                 bool avoidCGCrashes = !nsCocoaFeatures::OnMountainLionOrLater() &&
                   (GetQuirks() & PluginModuleChild::QUIRK_FLASH_AVOID_CGMODE_CRASHES);
                 caLayer = mozilla::plugins::PluginUtilsOSX::GetCGLayer(CallCGDraw, this,
-                                                                       avoidCGCrashes);
+                                                                       avoidCGCrashes,
+                                                                       mContentsScaleFactor);
 
                 if (!caLayer) {
                     PLUGIN_LOG_DEBUG(("GetCGLayer failed."));

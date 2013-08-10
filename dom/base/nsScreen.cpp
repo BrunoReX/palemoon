@@ -91,20 +91,11 @@ nsScreen::~nsScreen()
 
 DOMCI_DATA(Screen, nsScreen)
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsScreen)
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsScreen,
-                                                  nsDOMEventTargetHelper)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsScreen,
-                                                nsDOMEventTargetHelper)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_INHERITED_0(nsScreen, nsDOMEventTargetHelper)
 
 // QueryInterface implementation for nsScreen
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(nsScreen)
   NS_INTERFACE_MAP_ENTRY(nsIDOMScreen)
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMScreen)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(Screen)
 NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetHelper)
 
@@ -379,19 +370,20 @@ nsScreen::MozLockOrientation(const Sequence<nsString>& aOrientations,
     case LOCK_ALLOWED:
       return hal::LockScreenOrientation(orientation);
     case FULLSCREEN_LOCK_ALLOWED: {
+      // We need to register a listener so we learn when we leave full-screen
+      // and when we will have to unlock the screen.
+      // This needs to be done before LockScreenOrientation call to make sure
+      // the locking can be unlocked.
+      nsCOMPtr<nsIDOMEventTarget> target = do_QueryInterface(GetOwner());
+      if (!target) {
+        return false;
+      }
+
       if (!hal::LockScreenOrientation(orientation)) {
         return false;
       }
 
       // We are fullscreen and lock has been accepted.
-      // Now, we need to register a listener so we learn when we leave
-      // full-screen and when we will have to unlock the screen.
-      nsCOMPtr<nsIDOMEventTarget> target = do_QueryInterface(GetOwner());
-      if (!target) {
-        // XXX: Bug 796873
-        return true;
-      }
-
       if (!mEventListener) {
         mEventListener = new FullScreenEventListener();
       }

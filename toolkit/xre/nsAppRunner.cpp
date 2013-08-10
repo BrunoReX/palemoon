@@ -1117,6 +1117,7 @@ ScopedXPCOMStartup::~ScopedXPCOMStartup()
       appStartup->DestroyHiddenWindow();
 
     gDirServiceProvider->DoShutdown();
+    SAMPLE_MARKER("Shutdown early");
 
     WriteConsoleLog();
 
@@ -3806,8 +3807,7 @@ XREMain::XRE_mainRun()
     if (!mDisableRemote)
       mRemoteService = do_GetService("@mozilla.org/toolkit/remote-service;1");
     if (mRemoteService)
-      mRemoteService->Startup(mAppData->name,
-                              PromiseFlatCString(mProfileName).get());
+      mRemoteService->Startup(mAppData->name, mProfileName.get());
 #endif /* MOZ_ENABLE_XREMOTE */
 
     mNativeApp->Enable();
@@ -3937,6 +3937,7 @@ XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
     MOZ_gdk_display_close(mGdkDisplay);
 #endif
 
+    SAMPLER_SHUTDOWN();
     rv = LaunchChild(mNativeApp, true);
 
 #ifdef MOZ_CRASHREPORTER
@@ -3958,6 +3959,8 @@ XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
 #endif
 
   XRE_DeinitCommandLine();
+
+  SAMPLER_SHUTDOWN();
 
   return NS_FAILED(rv) ? 1 : 0;
 }
@@ -4070,11 +4073,17 @@ XRE_mainMetro(int argc, char* argv[], const nsXREAppData* aAppData)
   // thread that called XRE_metroStartup.
   NS_ASSERTION(!xreMainPtr->mScopedXPCom,
                "XPCOM Shutdown hasn't occured, and we are exiting.");
+  SAMPLER_SHUTDOWN();
   return 0;
 }
 
 void SetWindowsEnvironment(WindowsEnvironmentType aEnvID);
 #endif // MOZ_METRO || !defined(XP_WIN)
+
+void
+XRE_DisableWritePoisoning(void) {
+  mozilla::DisableWritePoisoning();
+}
 
 int
 XRE_main(int argc, char* argv[], const nsXREAppData* aAppData, uint32_t aFlags)

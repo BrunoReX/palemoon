@@ -50,6 +50,10 @@ public:
 
   nsresult ToDOMAnimatedEnum(nsIDOMSVGAnimatedEnumeration **aResult,
                              nsSVGElement* aSVGElement);
+
+  already_AddRefed<nsIDOMSVGAnimatedEnumeration>
+  ToDOMAnimatedEnum(nsSVGElement* aSVGElement);
+
   // Returns a new nsISMILAttr object that the caller must delete
   nsISMILAttr* ToSMILAttr(nsSVGElement* aSVGElement);
 
@@ -70,6 +74,7 @@ public:
 
     DOMAnimatedEnum(nsSVGEnum* aVal, nsSVGElement *aSVGElement)
       : mVal(aVal), mSVGElement(aSVGElement) {}
+    virtual ~DOMAnimatedEnum();
 
     nsSVGEnum *mVal; // kept alive because it belongs to content
     nsRefPtr<nsSVGElement> mSVGElement;

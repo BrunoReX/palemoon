@@ -6,12 +6,20 @@
 
 /* utility functions for drawing borders and backgrounds */
 
+#include <cmath> // for std::abs(float/double)
+#include <cstdlib> // for std::abs(int/long)
+#include <ctime>
+
+#include "mozilla/DebugOnly.h"
+#include "mozilla/HashFunctions.h"
+#include "mozilla/Types.h"
+
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
 #include "nsIFrame.h"
 #include "nsPoint.h"
 #include "nsRect.h"
-#include "nsIViewManager.h"
+#include "nsViewManager.h"
 #include "nsIPresShell.h"
 #include "nsFrameManager.h"
 #include "nsStyleContext.h"
@@ -47,10 +55,8 @@
 #include "nsCSSRenderingBorders.h"
 #include "mozilla/css/ImageLoader.h"
 #include "ImageContainer.h"
-#include "mozilla/HashFunctions.h"
 #include "mozilla/Telemetry.h"
-#include "mozilla/Types.h"
-#include <ctime>
+#include "gfxUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::css;
@@ -1969,10 +1975,10 @@ ComputeRadialGradientLine(nsPresContext* aPresContext,
 
   // Compute gradient shape: the x and y radii of an ellipse.
   double radiusX, radiusY;
-  double leftDistance = NS_ABS(aLineStart->x);
-  double rightDistance = NS_ABS(aBoxSize.width - aLineStart->x);
-  double topDistance = NS_ABS(aLineStart->y);
-  double bottomDistance = NS_ABS(aBoxSize.height - aLineStart->y);
+  double leftDistance = std::abs(aLineStart->x);
+  double rightDistance = std::abs(aBoxSize.width - aLineStart->x);
+  double topDistance = std::abs(aLineStart->y);
+  double bottomDistance = std::abs(aBoxSize.height - aLineStart->y);
   switch (aGradient->mSize) {
   case NS_STYLE_GRADIENT_SIZE_CLOSEST_SIDE:
     radiusX = NS_MIN(leftDistance, rightDistance);
@@ -2070,35 +2076,6 @@ FindTileStart(nscoord aDirtyCoord, nscoord aTilePos, nscoord aTileDim)
   NS_ASSERTION(aTileDim > 0, "Non-positive tile dimension");
   double multiples = floor(double(aDirtyCoord - aTilePos)/aTileDim);
   return NSToCoordRound(multiples*aTileDim + aTilePos);
-}
-
-/**
- * Return the transform matrix that maps aFrom to the rectangle defined by
- * aToTopLeft/aToTopRight/aToBottomRight. The destination rectangle must be
- * nonempty and must be axis-aligned.
- */
-static gfxMatrix
-TransformRectToRect(const gfxRect& aFrom, const gfxPoint& aToTopLeft,
-                    const gfxPoint& aToTopRight, const gfxPoint& aToBottomRight)
-{
-  gfxMatrix m;
-  if (aToTopRight.y == aToTopLeft.y && aToTopRight.x == aToBottomRight.x) {
-    // Not a rotation, so xy and yx are zero
-    m.xy = m.yx = 0.0;
-    m.xx = (aToBottomRight.x - aToTopLeft.x)/aFrom.width;
-    m.yy = (aToBottomRight.y - aToTopLeft.y)/aFrom.height;
-    m.x0 = aToTopLeft.x - m.xx*aFrom.x;
-    m.y0 = aToTopLeft.y - m.yy*aFrom.y;
-  } else {
-    NS_ASSERTION(aToTopRight.y == aToBottomRight.y && aToTopRight.x == aToTopLeft.x,
-                 "Destination rectangle not axis-aligned");
-    m.xx = m.yy = 0.0;
-    m.xy = (aToBottomRight.x - aToTopLeft.x)/aFrom.height;
-    m.yx = (aToBottomRight.y - aToTopLeft.y)/aFrom.width;
-    m.x0 = aToTopLeft.x - m.xy*aFrom.y;
-    m.y0 = aToTopLeft.y - m.yx*aFrom.x;
-  }
-  return m;
 }
 
 void
@@ -2447,7 +2424,7 @@ nsCSSRendering::PaintGradient(nsPresContext* aPresContext,
         // Set the context's transform to the transform that maps fillRect to
         // snappedFillRect. The part of the gradient that was going to
         // exactly fill fillRect will fill snappedFillRect instead.
-        gfxMatrix transform = TransformRectToRect(fillRect,
+        gfxMatrix transform = gfxUtils::TransformRectToRect(fillRect,
             snappedFillRectTopLeft, snappedFillRectTopRight,
             snappedFillRectBottomRight);
         ctx->SetMatrix(transform);
@@ -3028,12 +3005,13 @@ nsRect
 nsCSSRendering::GetBackgroundLayerRect(nsPresContext* aPresContext,
                                        nsIFrame* aForFrame,
                                        const nsRect& aBorderArea,
+                                       const nsRect& aClipRect,
                                        const nsStyleBackground& aBackground,
                                        const nsStyleBackground::Layer& aLayer)
 {
   nsBackgroundLayerState state =
       PrepareBackgroundLayer(aPresContext, aForFrame, 0, aBorderArea,
-                             aBorderArea, aBackground, aLayer);
+                             aClipRect, aBackground, aLayer);
   return state.mFillArea;
 }
 
@@ -4696,26 +4674,19 @@ nsImageRenderer::Draw(nsPresContext*       aPresContext,
 bool
 nsImageRenderer::IsRasterImage()
 {
-  if (mType != eStyleImageType_Image)
+  if (mType != eStyleImageType_Image || !mImageContainer)
     return false;
-  nsCOMPtr<imgIContainer> img;
-  if (NS_FAILED(mImage->GetImageData()->GetImage(getter_AddRefs(img))))
-    return false;
-  return img->GetType() == imgIContainer::TYPE_RASTER;
+  return mImageContainer->GetType() == imgIContainer::TYPE_RASTER;
 }
 
 already_AddRefed<mozilla::layers::ImageContainer>
 nsImageRenderer::GetContainer(LayerManager* aManager)
 {
-  if (mType != eStyleImageType_Image)
-    return nullptr;
-  nsCOMPtr<imgIContainer> img;
-  nsresult rv = mImage->GetImageData()->GetImage(getter_AddRefs(img));
-  if (NS_FAILED(rv))
+  if (mType != eStyleImageType_Image || !mImageContainer)
     return nullptr;
 
   nsRefPtr<ImageContainer> container;
-  rv = img->GetImageContainer(aManager, getter_AddRefs(container));
+  nsresult rv = mImageContainer->GetImageContainer(aManager, getter_AddRefs(container));
   NS_ENSURE_SUCCESS(rv, nullptr);
   return container.forget();
 }

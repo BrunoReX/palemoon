@@ -22,10 +22,11 @@
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/Likely.h"
 #include "prlog.h"
-#include <math.h>
 #include "gfxMatrix.h"
 #include "gfxQuaternion.h"
 #include "nsPrintfCString.h"
+#include <cstdlib> // for std::abs(int/long)
+#include <cmath> // for std::abs(float/double)
 
 using namespace mozilla;
 
@@ -383,7 +384,7 @@ nsStyleAnimation::ComputeDistance(nsCSSProperty aProperty,
           // just like eUnit_Integer.
           int32_t startInt = aStartValue.GetIntValue();
           int32_t endInt = aEndValue.GetIntValue();
-          aDistance = NS_ABS(endInt - startInt);
+          aDistance = std::abs(endInt - startInt);
           return true;
         }
         default:
@@ -394,13 +395,13 @@ nsStyleAnimation::ComputeDistance(nsCSSProperty aProperty,
         aStartValue.GetIntValue() == NS_STYLE_VISIBILITY_VISIBLE;
       int32_t endVal =
         aEndValue.GetIntValue() == NS_STYLE_VISIBILITY_VISIBLE;
-      aDistance = NS_ABS(startVal - endVal);
+      aDistance = std::abs(startVal - endVal);
       return true;
     }
     case eUnit_Integer: {
       int32_t startInt = aStartValue.GetIntValue();
       int32_t endInt = aEndValue.GetIntValue();
-      aDistance = NS_ABS(endInt - startInt);
+      aDistance = std::abs(endInt - startInt);
       return true;
     }
     case eUnit_Coord: {
@@ -487,7 +488,7 @@ nsStyleAnimation::ComputeDistance(nsCSSProperty aProperty,
       unit[1] = GetCommonUnit(aProperty, pair1->mYValue.GetUnit(),
                               pair2->mYValue.GetUnit());
       if (unit[0] == eCSSUnit_Null || unit[1] == eCSSUnit_Null ||
-          unit[0] == eCSSUnit_URL) {
+          unit[0] == eCSSUnit_URL || unit[0] == eCSSUnit_Enumerated) {
         return false;
       }
 
@@ -1293,7 +1294,7 @@ Decompose2DMatrix(const gfxMatrix &aMatrix, gfxPoint3D &aScale,
   XYshear /= scaleY;
 
   // A*D - B*C should now be 1 or -1
-  NS_ASSERTION(0.99 < NS_ABS(A*D - B*C) && NS_ABS(A*D - B*C) < 1.01,
+  NS_ASSERTION(0.99 < std::abs(A*D - B*C) && std::abs(A*D - B*C) < 1.01,
                "determinant should now be 1 or -1");
   if (A * D < B * C) {
     A = -A;
@@ -1827,7 +1828,7 @@ nsStyleAnimation::AddWeighted(nsCSSProperty aProperty,
       unit[1] = GetCommonUnit(aProperty, pair1->mYValue.GetUnit(),
                               pair2->mYValue.GetUnit());
       if (unit[0] == eCSSUnit_Null || unit[1] == eCSSUnit_Null ||
-          unit[0] == eCSSUnit_URL) {
+          unit[0] == eCSSUnit_URL || unit[0] == eCSSUnit_Enumerated) {
         return false;
       }
 
@@ -2338,12 +2339,9 @@ nsStyleAnimation::ComputeValue(nsCSSProperty aProperty,
 
 bool
 nsStyleAnimation::UncomputeValue(nsCSSProperty aProperty,
-                                 nsPresContext* aPresContext,
                                  const Value& aComputedValue,
                                  nsCSSValue& aSpecifiedValue)
 {
-  NS_ABORT_IF_FALSE(aPresContext, "null pres context");
-
   switch (aComputedValue.GetUnit()) {
     case eUnit_Normal:
       aSpecifiedValue.SetNormalValue();
@@ -2430,11 +2428,9 @@ nsStyleAnimation::UncomputeValue(nsCSSProperty aProperty,
 
 bool
 nsStyleAnimation::UncomputeValue(nsCSSProperty aProperty,
-                                 nsPresContext* aPresContext,
                                  const Value& aComputedValue,
                                  nsAString& aSpecifiedValue)
 {
-  NS_ABORT_IF_FALSE(aPresContext, "null pres context");
   aSpecifiedValue.Truncate(); // Clear outparam, if it's not already empty
 
   if (aComputedValue.GetUnit() == eUnit_UnparsedString) {
@@ -2442,8 +2438,7 @@ nsStyleAnimation::UncomputeValue(nsCSSProperty aProperty,
     return true;
   }
   nsCSSValue val;
-  if (!nsStyleAnimation::UncomputeValue(aProperty, aPresContext,
-                                        aComputedValue, val)) {
+  if (!nsStyleAnimation::UncomputeValue(aProperty, aComputedValue, val)) {
     return false;
   }
 
@@ -3126,6 +3121,17 @@ nsStyleAnimation::ExtractComputedValue(nsCSSProperty aProperty,
                                      doc->GetDocumentURI(),
                                      doc->NodePrincipal());
         pair->mXValue.SetURLValue(url);
+        pair->mYValue.SetColorValue(paint.mFallbackColor);
+        aComputedValue.SetAndAdoptCSSValuePairValue(pair.forget(),
+                                                    eUnit_CSSValuePair);
+        return true;
+      }
+      if (paint.mType == eStyleSVGPaintType_ObjectFill ||
+          paint.mType == eStyleSVGPaintType_ObjectStroke) {
+        nsAutoPtr<nsCSSValuePair> pair(new nsCSSValuePair);
+        pair->mXValue.SetIntValue(paint.mType == eStyleSVGPaintType_ObjectFill ?
+                                    NS_COLOR_OBJECTFILL : NS_COLOR_OBJECTSTROKE,
+                                  eCSSUnit_Enumerated);
         pair->mYValue.SetColorValue(paint.mFallbackColor);
         aComputedValue.SetAndAdoptCSSValuePairValue(pair.forget(),
                                                     eUnit_CSSValuePair);

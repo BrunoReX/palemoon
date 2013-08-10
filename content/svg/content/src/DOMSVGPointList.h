@@ -10,18 +10,16 @@
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDebug.h"
-#include "nsIDOMSVGPointList.h"
 #include "nsSVGElement.h"
 #include "nsTArray.h"
 #include "SVGPointList.h" // IWYU pragma: keep
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
 
-class nsIDOMSVGPoint;
-
 namespace mozilla {
 
 class DOMSVGPoint;
+class nsISVGPoint;
 class SVGAnimatedPointList;
 
 /**
@@ -49,15 +47,15 @@ class SVGAnimatedPointList;
  *
  * Our DOM items are created lazily on demand as and when script requests them.
  */
-class DOMSVGPointList MOZ_FINAL : public nsIDOMSVGPointList,
+class DOMSVGPointList MOZ_FINAL : public nsISupports,
                                   public nsWrapperCache
 {
-  friend class DOMSVGPoint;
+  friend class nsISVGPoint;
+  friend class mozilla::DOMSVGPoint;
 
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMSVGPointList)
-  NS_DECL_NSIDOMSVGPOINTLIST
 
   virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
                                bool *triedToWrap);
@@ -140,29 +138,29 @@ public:
     return LengthNoFlush();
   }
   void Clear(ErrorResult& aError);
-  already_AddRefed<nsIDOMSVGPoint> Initialize(nsIDOMSVGPoint *aNewItem,
-                                              ErrorResult& aError);
-  nsIDOMSVGPoint* GetItem(uint32_t aIndex, ErrorResult& aError)
+  already_AddRefed<nsISVGPoint> Initialize(nsISVGPoint& aNewItem,
+                                           ErrorResult& aError);
+  nsISVGPoint* GetItem(uint32_t aIndex, ErrorResult& aError)
   {
     bool found;
-    nsIDOMSVGPoint* item = IndexedGetter(aIndex, found, aError);
+    nsISVGPoint* item = IndexedGetter(aIndex, found, aError);
     if (!found) {
       aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     }
     return item;
   }
-  nsIDOMSVGPoint* IndexedGetter(uint32_t aIndex, bool& aFound,
-                                ErrorResult& aError);
-  already_AddRefed<nsIDOMSVGPoint> InsertItemBefore(nsIDOMSVGPoint *aNewItem,
-                                                     uint32_t aIndex,
-                                                     ErrorResult& aError);
-  already_AddRefed<nsIDOMSVGPoint> ReplaceItem(nsIDOMSVGPoint *aNewItem,
-                                               uint32_t aIndex,
-                                               ErrorResult& aError);
-  already_AddRefed<nsIDOMSVGPoint> RemoveItem(uint32_t aIndex,
-                                              ErrorResult& aError);
-  already_AddRefed<nsIDOMSVGPoint> AppendItem(nsIDOMSVGPoint *aNewItem,
-                                              ErrorResult& aError)
+  nsISVGPoint* IndexedGetter(uint32_t aIndex, bool& aFound,
+                             ErrorResult& aError);
+  already_AddRefed<nsISVGPoint> InsertItemBefore(nsISVGPoint& aNewItem,
+                                                 uint32_t aIndex,
+                                                 ErrorResult& aError);
+  already_AddRefed<nsISVGPoint> ReplaceItem(nsISVGPoint& aNewItem,
+                                            uint32_t aIndex,
+                                            ErrorResult& aError);
+  already_AddRefed<nsISVGPoint> RemoveItem(uint32_t aIndex,
+                                           ErrorResult& aError);
+  already_AddRefed<nsISVGPoint> AppendItem(nsISVGPoint& aNewItem,
+                                           ErrorResult& aError)
   {
     return InsertItemBefore(aNewItem, LengthNoFlush(), aError);
   }
@@ -209,18 +207,18 @@ private:
 
   SVGAnimatedPointList& InternalAList() const;
 
-  /// Creates a DOMSVGPoint for aIndex, if it doesn't already exist.
+  /// Creates an nsISVGPoint for aIndex, if it doesn't already exist.
   void EnsureItemAt(uint32_t aIndex);
 
   void MaybeInsertNullInAnimValListAt(uint32_t aIndex);
   void MaybeRemoveItemFromAnimValListAt(uint32_t aIndex);
 
-  // Weak refs to our DOMSVGPoint items. The items are friends and take care
+  // Weak refs to our nsISVGPoint items. The items are friends and take care
   // of clearing our pointer to them when they die.
-  nsTArray<DOMSVGPoint*> mItems;
+  nsTArray<nsISVGPoint*> mItems;
 
   // Strong ref to our element to keep it alive. We hold this not only for
-  // ourself, but also for our DOMSVGPoint items too.
+  // ourself, but also for our nsISVGPoint items too.
   nsRefPtr<nsSVGElement> mElement;
 
   bool mIsAnimValList;

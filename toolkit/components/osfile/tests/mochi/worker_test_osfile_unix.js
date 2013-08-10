@@ -1,13 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-function log(text) {
-  dump("WORKER "+text+"\n");
-}
-
-function send(message) {
-  self.postMessage(message);
-}
+importScripts('worker_test_osfile_shared.js');
 
 self.onmessage = function(msg) {
   log("received message "+JSON.stringify(msg.data));
@@ -20,28 +14,8 @@ self.onmessage = function(msg) {
   test_create_file();
   test_access();
   test_read_write();
-  test_path();
   finish();
 };
-
-function finish() {
-  send({kind: "finish"});
-}
-
-function ok(condition, description) {
-  send({kind: "ok", condition: condition, description:description});
-}
-function is(a, b, description) {
-  let outcome = a == b; // Need to decide outcome here, as not everything can be serialized
-  send({kind: "is", outcome: outcome, description: description, a:""+a, b:""+b});
-}
-function isnot(a, b, description) {
-  let outcome = a != b; // Need to decide outcome here, as not everything can be serialized
-  send({kind: "isnot", outcome: outcome, description: description, a:""+a, b:""+b});
-}
-function info(description) {
-  send({kind: "info", description:description});
-}
 
 function test_init() {
   info("Starting test_init");
@@ -207,30 +181,3 @@ function test_read_write()
   info("test_read_write cleanup complete");
 }
 
-function test_path()
-{
-  info("test_path: starting");
-  is(OS.Unix.Path.basename("a/b"), "b", "basename of a/b");
-  is(OS.Unix.Path.basename("a/b/"), "", "basename of a/b/");
-  is(OS.Unix.Path.basename("abc"), "abc", "basename of abc");
-  is(OS.Unix.Path.dirname("a/b"), "a", "basename of a/b");
-  is(OS.Unix.Path.dirname("a/b/"), "a/b", "basename of a/b/");
-  is(OS.Unix.Path.dirname("a////b"), "a", "basename of a///b");
-  is(OS.Unix.Path.dirname("abc"), ".", "basename of abc");
-  is(OS.Unix.Path.normalize("/a/b/c"), "/a/b/c", "normalize /a/b/c");
-  is(OS.Unix.Path.normalize("/a/b////c"), "/a/b/c", "normalize /a/b////c");
-  is(OS.Unix.Path.normalize("////a/b/c"), "/a/b/c", "normalize ///a/b/c");
-  is(OS.Unix.Path.normalize("/a/b/c///"), "/a/b/c", "normalize /a/b/c///");
-  is(OS.Unix.Path.normalize("/a/b/c/../../../d/e/f"), "/d/e/f", "normalize /a/b/c/../../../d/e/f");
-  is(OS.Unix.Path.normalize("a/b/c/../../../d/e/f"), "d/e/f", "normalize a/b/c/../../../d/e/f");
-  let error = false;
-  try {
-    OS.Unix.Path.normalize("/a/b/c/../../../../d/e/f");
-  } catch (x) {
-    error = true;
-  }
-  ok(error, "cannot normalize /a/b/c/../../../../d/e/f");
-  is(OS.Unix.Path.join("/tmp", "foo", "bar"), "/tmp/foo/bar", "join /tmp,foo,bar");
-  is(OS.Unix.Path.join("/tmp", "/foo", "bar"), "/foo/bar", "join /tmp,/foo,bar");
-  info("test_path: complete");
-}

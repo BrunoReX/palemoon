@@ -8,6 +8,9 @@
  * attribute.
  */
 
+#include "mozilla/DebugOnly.h"
+#include "mozilla/HashFunctions.h"
+
 #include "nsAttrValue.h"
 #include "nsAttrValueInlines.h"
 #include "nsIAtom.h"
@@ -17,7 +20,6 @@
 #include "nsContentUtils.h"
 #include "nsReadableUtils.h"
 #include "prprf.h"
-#include "mozilla/HashFunctions.h"
 #include "nsHTMLCSSStyleSheet.h"
 #include "nsCSSParser.h"
 #include "nsStyledElement.h"
@@ -28,7 +30,7 @@ using namespace mozilla;
   reinterpret_cast<void*>((_cont)->mStringBits & NS_ATTRVALUE_POINTERVALUE_MASK)
 
 bool
-MiscContainer::GetString(nsDependentString& aString) const
+MiscContainer::GetString(nsAString& aString) const
 {
   void* ptr = MISC_STR_PTR(this);
 
@@ -44,8 +46,7 @@ MiscContainer::GetString(nsDependentString& aString) const
       return false;
     }
 
-    aString.Rebind(reinterpret_cast<PRUnichar*>(buffer->Data()),
-                   buffer->StorageSize() / sizeof(PRUnichar) - 1);
+    buffer->ToString(buffer->StorageSize() / sizeof(PRUnichar) - 1, aString);
     return true;
   }
 
@@ -54,7 +55,7 @@ MiscContainer::GetString(nsDependentString& aString) const
     return false;
   }
 
-  aString.Rebind(atom->GetUTF16String(), atom->GetLength());
+  atom->ToString(aString);
   return true;
 }
 
@@ -73,7 +74,7 @@ MiscContainer::Cache()
     return;
   }
 
-  nsDependentString str;
+  nsString str;
   bool gotString = GetString(str);
   if (!gotString) {
     return;
@@ -105,7 +106,7 @@ MiscContainer::Evict()
   nsHTMLCSSStyleSheet* sheet = rule->GetHTMLCSSStyleSheet();
   MOZ_ASSERT(sheet);
 
-  nsDependentString str;
+  nsString str;
   DebugOnly<bool> gotString = GetString(str);
   MOZ_ASSERT(gotString);
 
@@ -576,9 +577,7 @@ nsAttrValue::ToString(nsAString& aResult) const
   if (BaseType() == eOtherBase) {
     cont = GetMiscContainer();
 
-    nsDependentString str;
-    if (cont->GetString(str)) {
-      aResult = str;
+    if (cont->GetString(aResult)) {
       return;
     }
   }
@@ -1066,7 +1065,7 @@ nsAttrValue::Equals(const nsAString& aValue,
         nsDependentString dep(static_cast<PRUnichar*>(str->Data()),
                               str->StorageSize()/sizeof(PRUnichar) - 1);
         return aCaseSensitive == eCaseMatters ? aValue.Equals(dep) :
-          aValue.Equals(dep, nsCaseInsensitiveStringComparator());
+          nsContentUtils::EqualsIgnoreASCIICase(aValue, dep);
       }
       return aValue.IsEmpty();
     }
@@ -1074,8 +1073,9 @@ nsAttrValue::Equals(const nsAString& aValue,
       if (aCaseSensitive == eCaseMatters) {
         return static_cast<nsIAtom*>(GetPtr())->Equals(aValue);
       }
-      return nsDependentAtomString(static_cast<nsIAtom*>(GetPtr())).
-        Equals(aValue, nsCaseInsensitiveStringComparator());
+      return nsContentUtils::EqualsIgnoreASCIICase(
+          nsDependentAtomString(static_cast<nsIAtom*>(GetPtr())),
+          aValue);
     default:
       break;
   }
@@ -1083,7 +1083,7 @@ nsAttrValue::Equals(const nsAString& aValue,
   nsAutoString val;
   ToString(val);
   return aCaseSensitive == eCaseMatters ? val.Equals(aValue) :
-    val.Equals(aValue, nsCaseInsensitiveStringComparator());
+    nsContentUtils::EqualsIgnoreASCIICase(val, aValue);
 }
 
 bool

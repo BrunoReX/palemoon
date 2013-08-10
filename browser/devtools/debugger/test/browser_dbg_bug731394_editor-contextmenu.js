@@ -28,8 +28,10 @@ function test()
     gTab = aTab;
     gDebuggee = aDebuggee;
     gPane = aPane;
-    gDebugger = gPane.contentWindow;
+    gDebugger = gPane.panelWin;
     resumed = true;
+
+    gDebugger.addEventListener("Debugger:SourceShown", onScriptShown);
 
     gDebugger.DebuggerController.activeThread.addOneTimeListener("framesadded", function() {
       framesAdded = true;
@@ -46,13 +48,11 @@ function test()
     executeSoon(startTest);
   }
 
-  window.addEventListener("Debugger:SourceShown", onScriptShown);
-
   function startTest()
   {
     if (scriptShown && framesAdded && resumed && !testStarted) {
       testStarted = true;
-      window.removeEventListener("Debugger:SourceShown", onScriptShown);
+      gDebugger.removeEventListener("Debugger:SourceShown", onScriptShown);
       Services.tm.currentThread.dispatch({ run: performTest }, 0);
     }
   }
@@ -97,8 +97,6 @@ function test()
        "#editMenuKeys not found");
     ok(document.getElementById("sourceEditorCommands"),
        "#sourceEditorCommands found");
-    ok(document.getElementById("sourceEditorKeys"),
-       "#sourceEditorKeys found");
 
     // Map command ids to their expected disabled state.
     let commands = {"se-cmd-undo": true, "se-cmd-redo": true,

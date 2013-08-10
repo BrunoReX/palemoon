@@ -34,7 +34,11 @@ volatile bool gDebugDisableHangMonitor = false;
 
 const char kHangMonitorPrefName[] = "hangmonitor.timeout";
 
+#ifdef MOZ_TELEMETRY_ON_BY_DEFAULT
+const char kTelemetryPrefName[] = "toolkit.telemetry.enabledPreRelease";
+#else
 const char kTelemetryPrefName[] = "toolkit.telemetry.enabled";
+#endif
 
 // Monitor protects gShutdown and gTimeout, but not gTimestamp which rely on
 // being atomically set by the processor; synchronization doesn't really matter
@@ -133,12 +137,13 @@ GetChromeHangReport(Telemetry::ProcessedStack &aStack)
   DWORD ret = ::SuspendThread(winMainThreadHandle);
   if (ret == -1)
     return;
-  NS_StackWalk(ChromeStackWalker, 0, reinterpret_cast<void*>(&rawStack),
-               reinterpret_cast<uintptr_t>(winMainThreadHandle));
+  NS_StackWalk(ChromeStackWalker, /* skipFrames */ 0, /* maxFrames */ 0,
+               reinterpret_cast<void*>(&rawStack),
+               reinterpret_cast<uintptr_t>(winMainThreadHandle), nullptr);
   ret = ::ResumeThread(winMainThreadHandle);
   if (ret == -1)
     return;
-  aStack = Telemetry::GetStackAndModules(rawStack, false);
+  aStack = Telemetry::GetStackAndModules(rawStack);
 }
 #endif
 

@@ -463,7 +463,7 @@ nsBox::GetFlex(nsBoxLayoutState& aState)
 }
 
 uint32_t
-nsIFrame::GetOrdinal(nsBoxLayoutState& aState)
+nsIFrame::GetOrdinal()
 {
   uint32_t ordinal = GetStyleXUL()->mBoxOrdinal;
 
@@ -571,7 +571,7 @@ nsBox::SyncLayout(nsBoxLayoutState& aState)
     visualOverflow = overflowAreas.VisualOverflow();
   }
 
-  nsIView* view = GetView();
+  nsView* view = GetView();
   if (view) {
     // Make sure the frame's view is properly sized and positioned and has
     // things like opacity correct

@@ -155,8 +155,7 @@ class MemoryMonitor extends BroadcastReceiver {
                 GeckoAppShell.onLowMemory();
             }
             GeckoAppShell.geckoEventSync();
-
-            GeckoApp.mAppContext.getFavicons().clearMemCache();
+            Favicons.getInstance().clearMemCache();
         }
     }
 
@@ -222,7 +221,7 @@ class MemoryMonitor extends BroadcastReceiver {
 
             BrowserDB.expireHistory(mContext.getContentResolver(),
                                     BrowserContract.ExpirePriority.AGGRESSIVE);
-            BrowserDB.removeThumbnails(Tabs.getInstance().getContentResolver());
+            BrowserDB.removeThumbnails(mContext.getContentResolver());
             // TODO: drop or shrink disk caches
         }
     }

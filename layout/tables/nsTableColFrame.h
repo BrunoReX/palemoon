@@ -6,9 +6,9 @@
 #define nsTableColFrame_h__
 
 #include "mozilla/Attributes.h"
+#include "celldata.h"
 #include "nscore.h"
 #include "nsContainerFrame.h"
-#include "nsTablePainter.h"
 #include "nsTArray.h"
 
 class nsTableCellFrame;
@@ -262,6 +262,11 @@ public:
   }
   nscoord GetFinalWidth() {
     return mFinalWidth;
+  }
+
+  virtual bool IsFrameOfType(uint32_t aFlags) const
+  {
+    return nsSplittableFrame::IsFrameOfType(aFlags & ~(nsIFrame::eTablePart));
   }
   
   virtual void InvalidateFrame(uint32_t aDisplayItemKey = 0) MOZ_OVERRIDE;

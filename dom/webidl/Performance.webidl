@@ -10,12 +10,13 @@
  * liability, trademark and document use rules apply.
  */
 
-// typedef double DOMHighResTimeStamp;
+typedef double DOMHighResTimeStamp;
 
 interface Performance {
-  // DOMHighResTimeStamp now();
-  double now();
+  DOMHighResTimeStamp now();
 
+  [Constant]
   readonly attribute PerformanceTiming timing;
+  [Constant]
   readonly attribute PerformanceNavigation navigation;
 };

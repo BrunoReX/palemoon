@@ -8,7 +8,6 @@
 #define imgRequest_h__
 
 #include "nsIChannelEventSink.h"
-#include "nsIContentSniffer.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIRequest.h"
 #include "nsIProperties.h"
@@ -18,7 +17,7 @@
 #include "nsITimedChannel.h"
 #include "nsIApplicationCache.h"
 
-#include "nsCategoryCache.h"
+#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsStringGlue.h"
 #include "nsError.h"
@@ -63,8 +62,6 @@ public:
   void AddProxy(imgRequestProxy *proxy);
 
   nsresult RemoveProxy(imgRequestProxy *proxy, nsresult aStatus);
-
-  void SniffMimeType(const char *buf, uint32_t len, nsACString& newType);
 
   // Cancel, but also ensure that all work done in Init() is undone. Call this
   // only when the channel has failed to open, and so calling Cancel() on it
@@ -117,7 +114,7 @@ public:
   imgStatusTracker& GetStatusTracker();
 
   // Get the current principal of the image. No AddRefing.
-  inline nsIPrincipal* GetPrincipal() const { return mPrincipal.get(); };
+  inline nsIPrincipal* GetPrincipal() const { return mPrincipal.get(); }
 
   // Resize the cache entry to 0 if it exists
   void ResetCacheEntry();
@@ -201,7 +198,7 @@ private:
   // The principal of this image.
   nsCOMPtr<nsIPrincipal> mPrincipal;
   // Status-tracker -- transferred to mImage, when it gets instantiated
-  nsAutoPtr<imgStatusTracker> mStatusTracker;
+  nsRefPtr<imgStatusTracker> mStatusTracker;
   nsRefPtr<mozilla::image::Image> mImage;
   nsCOMPtr<nsIProperties> mProperties;
   nsCOMPtr<nsISupports> mSecurityInfo;
@@ -218,7 +215,6 @@ private:
   void *mLoadId;
 
   imgCacheValidator *mValidator;
-  nsCategoryCache<nsIContentSniffer> mImageSniffers;
   nsCOMPtr<nsIAsyncVerifyRedirectCallback> mRedirectCallback;
   nsCOMPtr<nsIChannel> mNewRedirectChannel;
 

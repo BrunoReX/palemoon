@@ -53,6 +53,7 @@ public class LayerView extends FrameLayout {
     /* Must be a PAINT_xxx constant */
     private int mPaintState;
     private int mBackgroundColor;
+    private boolean mFullScreen;
 
     private SurfaceView mSurfaceView;
     private TextureView mTextureView;
@@ -318,6 +319,10 @@ public class LayerView extends FrameLayout {
         return getDrawable(R.drawable.shadow);
     }
 
+    Bitmap getScrollbarImage() {
+        return getDrawable(R.drawable.scrollbar);
+    }
+
     private void onSizeChanged(int width, int height) {
         mGLController.surfaceChanged(width, height);
 
@@ -414,5 +419,18 @@ public class LayerView extends FrameLayout {
     public void onFocusChanged (boolean gainFocus, int direction, Rect previouslyFocusedRect) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
         GeckoAccessibility.onLayerViewFocusChanged(this, gainFocus);
+    }
+
+    public void setFullScreen(boolean fullScreen) {
+        mFullScreen = fullScreen;
+    }
+
+    public boolean isFullScreen() {
+        return mFullScreen;
+    }
+
+    @Override
+    public boolean onGenericMotionEvent(MotionEvent event) {
+        return mTouchEventHandler == null ? false : mTouchEventHandler.handleEvent(event);
     }
 }

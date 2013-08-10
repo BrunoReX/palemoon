@@ -345,6 +345,17 @@ NrIceCtx::CreateStream(const std::string& name, int components) {
   return stream;
 }
 
+void NrIceCtx::destroy_peer_ctx() {
+  nr_ice_peer_ctx_destroy(&peer_);
+}
+
+nsresult NrIceCtx::SetControlling(Controlling controlling) {
+  peer_->controlling = (controlling == ICE_CONTROLLING)? 1 : 0;
+
+  MOZ_MTLOG(PR_LOG_DEBUG, "ICE ctx " << name_ << " setting controlling to" <<
+            controlling);
+  return NS_OK;
+}
 
 nsresult NrIceCtx::StartGathering() {
   this->AddRef();
@@ -484,6 +495,7 @@ void NrIceCtx::SetState(State state) {
   state_ = state;
 }
 }  // close namespace
+
 
 
 extern "C" {

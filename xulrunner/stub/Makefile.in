@@ -67,25 +67,18 @@ ifdef _MSC_VER
 WIN32_EXE_LDFLAGS += -ENTRY:wmainCRTStartup
 endif
 
-include $(topsrcdir)/config/rules.mk
-
-ifeq ($(OS_ARCH),WINNT)
-OS_LIBS += $(call EXPAND_LIBNAME,shell32)
-endif
-
 ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT))
 
 FRAMEWORK_NAME = XUL
 FRAMEWORK_VERSION = $(MOZILLA_VERSION)
 
-FRAMEWORK_DIR = \
+FINAL_TARGET = \
    $(DIST)/$(FRAMEWORK_NAME).framework/Versions/$(FRAMEWORK_VERSION)
 
-$(FRAMEWORK_DIR):
-	$(NSINSTALL) -D $@
+endif
 
-$(FRAMEWORK_DIR)/$(PROGRAM): $(PROGRAM) $(FRAMEWORK_DIR)
-	$(NSINSTALL) $(PROGRAM) $(FRAMEWORK_DIR)
+include $(topsrcdir)/config/rules.mk
 
-libs:: $(FRAMEWORK_DIR)/$(PROGRAM)
+ifeq ($(OS_ARCH),WINNT)
+OS_LIBS += $(call EXPAND_LIBNAME,shell32)
 endif

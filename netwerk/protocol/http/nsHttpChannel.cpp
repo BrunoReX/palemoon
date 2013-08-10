@@ -316,7 +316,7 @@ nsHttpChannel::~nsHttpChannel()
 
 nsresult
 nsHttpChannel::Init(nsIURI *uri,
-                    uint8_t caps,
+                    uint32_t caps,
                     nsProxyInfo *proxyInfo,
                     uint32_t proxyResolveFlags,
                     nsIURI *proxyURI)
@@ -666,6 +666,31 @@ nsHttpChannel::ContinueHandleAsyncFallback(nsresult rv)
     return rv;
 }
 
+void
+nsHttpChannel::SetupTransactionLoadGroupInfo()
+{
+    // Find the loadgroup at the end of the chain in order
+    // to make sure all channels derived from the load group
+    // use the same connection scope.
+    nsCOMPtr<nsILoadGroup> rootLoadGroup = mLoadGroup;
+    while (rootLoadGroup) {
+        nsCOMPtr<nsILoadGroup> tmp;
+        rootLoadGroup->GetLoadGroup(getter_AddRefs(tmp));
+        if (tmp)
+            rootLoadGroup.swap(tmp);
+        else
+            break;
+    }
+
+    // Set the load group connection scope on the transaction
+    if (rootLoadGroup) {
+        nsCOMPtr<nsILoadGroupConnectionInfo> ci;
+        rootLoadGroup->GetConnectionInfo(getter_AddRefs(ci));
+        if (ci)
+            mTransaction->SetLoadGroupConnectionInfo(ci);
+    }
+}
+
 nsresult
 nsHttpChannel::SetupTransaction()
 {
@@ -839,6 +864,8 @@ nsHttpChannel::SetupTransaction()
         return rv;
     }
 
+    SetupTransactionLoadGroupInfo();
+    
     rv = nsInputStreamPump::Create(getter_AddRefs(mTransactionPump),
                                    responseStream);
     return rv;
@@ -851,17 +878,10 @@ CallTypeSniffers(void *aClosure, const uint8_t *aData, uint32_t aCount)
 {
   nsIChannel *chan = static_cast<nsIChannel*>(aClosure);
 
-  const nsCOMArray<nsIContentSniffer>& sniffers =
-    gIOService->GetContentSniffers();
-  uint32_t length = sniffers.Count();
-  for (uint32_t i = 0; i < length; ++i) {
-    nsAutoCString newType;
-    nsresult rv =
-      sniffers[i]->GetMIMETypeFromContent(chan, aData, aCount, newType);
-    if (NS_SUCCEEDED(rv) && !newType.IsEmpty()) {
-      chan->SetContentType(newType);
-      break;
-    }
+  nsAutoCString newType;
+  NS_SniffContent(NS_CONTENT_SNIFFER_CATEGORY, chan, aData, aCount, newType);
+  if (!newType.IsEmpty()) {
+    chan->SetContentType(newType);
   }
 }
 
@@ -871,8 +891,7 @@ nsHttpChannel::CallOnStartRequest()
     mTracingEnabled = false;
 
     // Allow consumers to override our content type
-    if ((mLoadFlags & LOAD_CALL_CONTENT_SNIFFERS) &&
-        gIOService->GetContentSniffers().Count() != 0) {
+    if (mLoadFlags & LOAD_CALL_CONTENT_SNIFFERS) {
         // NOTE: We can have both a txn pump and a cache pump when the cache
         // content is partial. In that case, we need to read from the cache,
         // because that's the one that has the initial contents. If that fails
@@ -1331,6 +1350,8 @@ nsHttpChannel::ContinueProcessResponse(nsresult rv)
     }
 
     if (NS_SUCCEEDED(rv)) {
+        UpdateInhibitPersistentCachingFlag();
+
         InitCacheEntry();
         CloseCacheEntry(false);
 
@@ -1514,18 +1535,17 @@ nsHttpChannel::HandleAsyncRedirectChannelToHttps()
         return;
     }
 
-    nsresult rv = AsyncRedirectChannelToHttps();
+    nsresult rv = StartRedirectChannelToHttps();
     if (NS_FAILED(rv))
-        ContinueAsyncRedirectChannelToHttps(rv);
+        ContinueAsyncRedirectChannelToURI(rv);
 }
 
 nsresult
-nsHttpChannel::AsyncRedirectChannelToHttps()
+nsHttpChannel::StartRedirectChannelToHttps()
 {
     nsresult rv = NS_OK;
     LOG(("nsHttpChannel::HandleAsyncRedirectChannelToHttps() [STS]\n"));
 
-    nsCOMPtr<nsIChannel> newChannel;
     nsCOMPtr<nsIURI> upgradedURI;
 
     rv = mURI->Clone(getter_AddRefs(upgradedURI));
@@ -1547,6 +1567,36 @@ nsHttpChannel::AsyncRedirectChannelToHttps()
     else
         upgradedURI->SetPort(oldPort);
 
+    return StartRedirectChannelToURI(upgradedURI);
+}
+
+void
+nsHttpChannel::HandleAsyncAPIRedirect()
+{
+    NS_PRECONDITION(!mCallOnResume, "How did that happen?");
+    NS_PRECONDITION(mAPIRedirectToURI, "How did that happen?");
+
+    if (mSuspendCount) {
+        LOG(("Waiting until resume to do async API redirect [this=%p]\n", this));
+        mCallOnResume = &nsHttpChannel::HandleAsyncAPIRedirect;
+        return;
+    }
+
+    nsresult rv = StartRedirectChannelToURI(mAPIRedirectToURI);
+    if (NS_FAILED(rv))
+        ContinueAsyncRedirectChannelToURI(rv);
+
+    return;
+}
+
+nsresult
+nsHttpChannel::StartRedirectChannelToURI(nsIURI *upgradedURI)
+{
+    nsresult rv = NS_OK;
+    LOG(("nsHttpChannel::StartRedirectChannelToURI()\n"));
+
+    nsCOMPtr<nsIChannel> newChannel;
+
     nsCOMPtr<nsIIOService> ioService;
     rv = gHttpHandler->GetIOService(getter_AddRefs(ioService));
     NS_ENSURE_SUCCESS(rv, rv);
@@ -1562,7 +1612,7 @@ nsHttpChannel::AsyncRedirectChannelToHttps()
     uint32_t flags = nsIChannelEventSink::REDIRECT_PERMANENT;
 
     PushRedirectAsyncFunc(
-        &nsHttpChannel::ContinueAsyncRedirectChannelToHttps);
+        &nsHttpChannel::ContinueAsyncRedirectChannelToURI);
     rv = gHttpHandler->AsyncOnChannelRedirect(this, newChannel, flags);
 
     if (NS_SUCCEEDED(rv))
@@ -1570,15 +1620,19 @@ nsHttpChannel::AsyncRedirectChannelToHttps()
 
     if (NS_FAILED(rv)) {
         AutoRedirectVetoNotifier notifier(this);
+
+        /* Remove the async call to ContinueAsyncRedirectChannelToURI().
+         * It is called directly by our callers upon return (to clean up
+         * the failed redirect). */
         PopRedirectAsyncFunc(
-            &nsHttpChannel::ContinueAsyncRedirectChannelToHttps);
+            &nsHttpChannel::ContinueAsyncRedirectChannelToURI);
     }
 
     return rv;
 }
 
 nsresult
-nsHttpChannel::ContinueAsyncRedirectChannelToHttps(nsresult rv)
+nsHttpChannel::ContinueAsyncRedirectChannelToURI(nsresult rv)
 {
     if (NS_SUCCEEDED(rv))
         rv = OpenRedirectChannel(rv);
@@ -3774,16 +3828,9 @@ nsHttpChannel::InstallCacheListener(uint32_t offset)
     NS_ASSERTION(mCacheEntry, "no cache entry");
     NS_ASSERTION(mListener, "no listener");
 
-    nsCacheStoragePolicy policy;
-    rv = mCacheEntry->GetStoragePolicy(&policy);
-    if (NS_FAILED(rv)) {
-        policy = nsICache::STORE_ON_DISK_AS_FILE;
-    }
-
     // If the content is compressible and the server has not compressed it,
     // mark the cache entry for compression.
     if ((mResponseHead->PeekHeader(nsHttp::Content_Encoding) == nullptr) && (
-         policy != nsICache::STORE_ON_DISK_AS_FILE) && (
          mResponseHead->ContentType().EqualsLiteral(TEXT_HTML) ||
          mResponseHead->ContentType().EqualsLiteral(TEXT_PLAIN) ||
          mResponseHead->ContentType().EqualsLiteral(TEXT_CSS) ||
@@ -3829,10 +3876,9 @@ nsHttpChannel::InstallCacheListener(uint32_t offset)
     nsCOMPtr<nsIEventTarget> cacheIOTarget;
     serv->GetCacheIOTarget(getter_AddRefs(cacheIOTarget));
 
-    if (policy == nsICache::STORE_ON_DISK_AS_FILE ||
-        !cacheIOTarget) {
-        LOG(("nsHttpChannel::InstallCacheListener sync tee %p rv=%x policy=%d "
-             "cacheIOTarget=%p", tee.get(), rv, policy, cacheIOTarget.get()));
+    if (!cacheIOTarget) {
+        LOG(("nsHttpChannel::InstallCacheListener sync tee %p rv=%x "
+             "cacheIOTarget=%p", tee.get(), rv, cacheIOTarget.get()));
         rv = tee->Init(mListener, out, nullptr);
     } else {
         LOG(("nsHttpChannel::InstallCacheListener async tee %p", tee.get()));
@@ -4356,9 +4402,13 @@ nsHttpChannel::BeginConnect()
     nsresult rv;
 
     // notify "http-on-modify-request" observers
-    gHttpHandler->OnModifyRequest(this);
+    CallOnModifyRequestObservers();
 
-    mRequestObserversCalled = true;
+    // Check to see if we should redirect this channel elsewhere by
+    // nsIHttpChannel.redirectTo API request
+    if (mAPIRedirectToURI) {
+        return AsyncCall(&nsHttpChannel::HandleAsyncAPIRedirect);
+    }
 
     // If mTimingEnabled flag is not set after OnModifyRequest() then
     // clear the already recorded AsyncOpen value for consistency.
@@ -4438,6 +4488,13 @@ nsHttpChannel::BeginConnect()
     if ((mLoadFlags & VALIDATE_ALWAYS) || 
         (BYPASS_LOCAL_CACHE(mLoadFlags)))
         mCaps |= NS_HTTP_REFRESH_DNS;
+
+    if (gHttpHandler->CritialRequestPrioritization()) {
+        if (mLoadAsBlocking)
+            mCaps |= NS_HTTP_LOAD_AS_BLOCKING;
+        if (mLoadUnblocked)
+            mCaps |= NS_HTTP_LOAD_UNBLOCKED;
+    }
 
     // Force-Reload should reset the persistent connection pool for this host
     if (mLoadFlags & LOAD_FRESH_CONNECTION) {
@@ -5014,25 +5071,6 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
         mListener->OnStopRequest(this, mListenerContext, status);
     }
 
-    if (mCacheEntry) {
-        bool asFile = false;
-        if (mInitedCacheEntry && !mCachedContentIsPartial &&
-            (NS_SUCCEEDED(mStatus) || contentComplete) &&
-            (mCacheAccess & nsICache::ACCESS_WRITE) &&
-            NS_SUCCEEDED(GetCacheAsFile(&asFile)) && asFile) {
-            // We can allow others access to the cache entry
-            // because we don't write to the cache anymore.
-            // CloseCacheEntry may not actually close the cache
-            // entry immediately because someone (such as XHR2
-            // blob response) may hold the token to the cache
-            // entry. So we mark the cache valid here.
-            // We also need to check the entry is stored as file
-            // because we write to the cache asynchronously when
-            // it isn't stored in the file and it isn't completely
-            // written to the disk yet.
-            mCacheEntry->MarkValid();
-        }
-    }
     CloseCacheEntry(!contentComplete);
 
     if (mOfflineCacheEntry)
@@ -5375,39 +5413,6 @@ nsHttpChannel::SetCacheKey(nsISupports *key)
     return NS_OK;
 }
 
-NS_IMETHODIMP
-nsHttpChannel::GetCacheAsFile(bool *value)
-{
-    NS_ENSURE_ARG_POINTER(value);
-    if (!mCacheEntry)
-        return NS_ERROR_NOT_AVAILABLE;
-    nsCacheStoragePolicy storagePolicy;
-    mCacheEntry->GetStoragePolicy(&storagePolicy);
-    *value = (storagePolicy == nsICache::STORE_ON_DISK_AS_FILE);
-    return NS_OK;
-}
-
-NS_IMETHODIMP
-nsHttpChannel::SetCacheAsFile(bool value)
-{
-    if (!mCacheEntry || mLoadFlags & INHIBIT_PERSISTENT_CACHING)
-        return NS_ERROR_NOT_AVAILABLE;
-    nsCacheStoragePolicy policy;
-    if (value)
-        policy = nsICache::STORE_ON_DISK_AS_FILE;
-    else
-        policy = nsICache::STORE_ANYWHERE;
-    return mCacheEntry->SetStoragePolicy(policy);
-}
-
-NS_IMETHODIMP
-nsHttpChannel::GetCacheFile(nsIFile **cacheFile)
-{
-    if (!mCacheEntry)
-        return NS_ERROR_NOT_AVAILABLE;
-    return mCacheEntry->GetFile(cacheFile);
-}
-
 //-----------------------------------------------------------------------------
 // nsHttpChannel::nsIResumableChannel
 //-----------------------------------------------------------------------------
@@ -5556,7 +5561,7 @@ nsHttpChannel::DoAuthRetry(nsAHttpConnection *conn)
     AddCookiesToRequest();
     
     // notify "http-on-modify-request" observers
-    gHttpHandler->OnModifyRequest(this);
+    CallOnModifyRequestObservers();
 
     mIsPending = true;
 

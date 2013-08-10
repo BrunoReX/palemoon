@@ -198,9 +198,7 @@ AnimValuesStyleRule::MapRuleInfoInto(nsRuleData* aRuleData)
 #ifdef DEBUG
         bool ok =
 #endif
-          nsStyleAnimation::UncomputeValue(cv.mProperty,
-                                           aRuleData->mPresContext,
-                                           cv.mValue, *prop);
+          nsStyleAnimation::UncomputeValue(cv.mProperty, cv.mValue, *prop);
         NS_ABORT_IF_FALSE(ok, "could not store computed value");
       }
     }
@@ -211,7 +209,16 @@ AnimValuesStyleRule::MapRuleInfoInto(nsRuleData* aRuleData)
 /* virtual */ void
 AnimValuesStyleRule::List(FILE* out, int32_t aIndent) const
 {
-  // WRITE ME?
+  for (int32_t index = aIndent; --index >= 0; ) fputs("  ", out);
+  fputs("[anim values] { ", out);
+  for (uint32_t i = 0, i_end = mPropertyValuePairs.Length(); i < i_end; ++i) {
+    const PropertyValuePair &pair = mPropertyValuePairs[i];
+    nsAutoString value;
+    nsStyleAnimation::UncomputeValue(pair.mProperty, pair.mValue, value);
+    fprintf(out, "%s: %s; ", nsCSSProps::GetStringValue(pair.mProperty).get(),
+                             NS_ConvertUTF16toUTF8(value).get());
+  }
+  fputs("}\n", out);
 }
 #endif
 
@@ -275,8 +282,8 @@ CommonElementAnimationData::CanAnimatePropertyOnCompositor(const dom::Element *a
     if (shouldLog) {
       nsCString message;
       message.AppendLiteral("Performance warning: Async animation of geometric property '");
-      message.Append(aProperty);
-      message.AppendLiteral(" is disabled");
+      message.Append(nsCSSProps::GetStringValue(aProperty));
+      message.AppendLiteral("' is disabled");
       LogAsyncAnimationFailure(message, aElement);
     }
     return false;
@@ -343,6 +350,7 @@ CommonElementAnimationData::LogAsyncAnimationFailure(nsCString& aMessage,
     }
     aMessage.AppendLiteral("]");
   }
+  aMessage.AppendLiteral("\n");
   printf_stderr(aMessage.get());
 }
 

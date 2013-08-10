@@ -9,6 +9,7 @@ nestegg_destroy
 nestegg_duration
 nestegg_free_packet
 nestegg_init
+nestegg_offset_seek
 nestegg_packet_count
 nestegg_packet_data
 nestegg_packet_track
@@ -24,6 +25,7 @@ nestegg_track_seek
 nestegg_track_type
 nestegg_track_video_params
 nestegg_tstamp_scale
+nestegg_has_cues
 #endif
 #ifdef MOZ_VP8
 #ifndef MOZ_NATIVE_LIBVPX

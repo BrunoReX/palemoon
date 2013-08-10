@@ -38,6 +38,10 @@ var gAdvancedPane = {
 #ifdef MOZ_CRASHREPORTER
     this.initSubmitCrashes();
 #endif
+    this.initTelemetry();
+#ifdef MOZ_SERVICES_HEALTHREPORT
+    this.initSubmitHealthReport();
+#endif
     this.updateActualCacheSize("disk");
     this.updateActualCacheSize("offline");
   },
@@ -113,11 +117,45 @@ var gAdvancedPane = {
     return checkbox.checked ? (this._storedSpellCheck == 2 ? 2 : 1) : 0;
   },
 
+
+  /**
+   * When the user toggles the layers.acceleration.disabled pref,
+   * sync its new value to the gfx.direct2d.disabled pref too.
+   */
+  updateHardwareAcceleration: function()
+  {
+#ifdef XP_WIN
+    var fromPref = document.getElementById("layers.acceleration.disabled");
+    var toPref = document.getElementById("gfx.direct2d.disabled");
+    toPref.value = fromPref.value;
+#endif
+  },
+
+  // DATA CHOICES TAB
+
+  /**
+   * Set up or hide the Learn More links for various data collection options
+   */
+  _setupLearnMoreLink: function (pref, element) {
+    // set up the Learn More link with the correct URL
+    let url = Services.prefs.getCharPref(pref);
+    let el = document.getElementById(element);
+
+    if (url) {
+      el.setAttribute("href", url);
+    } else {
+      el.setAttribute("hidden", "true");
+    }
+  },
+
   /**
    *
    */
   initSubmitCrashes: function ()
   {
+    this._setupLearnMoreLink("toolkit.crashreporter.infoURL",
+                             "crashReporterLearnMore");
+
     var checkbox = document.getElementById("submitCrashesBox");
     try {
       var cr = Components.classes["@mozilla.org/toolkit/crash-reporter;1"].
@@ -142,17 +180,56 @@ var gAdvancedPane = {
   },
 
   /**
-   * When the user toggles the layers.acceleration.disabled pref,
-   * sync its new value to the gfx.direct2d.disabled pref too.
+   * The preference/checkbox is configured in XUL.
+   *
+   * In all cases, set up the Learn More link sanely.
    */
-  updateHardwareAcceleration: function()
+  initTelemetry: function ()
   {
-#ifdef XP_WIN
-    var fromPref = document.getElementById("layers.acceleration.disabled");
-    var toPref = document.getElementById("gfx.direct2d.disabled");
-    toPref.value = fromPref.value;
+#ifdef MOZ_TELEMETRY_REPORTING
+    this._setupLearnMoreLink("toolkit.telemetry.infoURL", "telemetryLearnMore");
 #endif
   },
+
+#ifdef MOZ_SERVICES_HEALTHREPORT
+  /**
+   * Initialize the health report service reference and checkbox.
+   */
+  initSubmitHealthReport: function () {
+    this._setupLearnMoreLink("datareporting.healthreport.infoURL", "FHRLearnMore");
+
+    let policy = Components.classes["@mozilla.org/datareporting/service;1"]
+                                   .getService(Components.interfaces.nsISupports)
+                                   .wrappedJSObject
+                                   .policy;
+
+    let checkbox = document.getElementById("submitHealthReportBox");
+
+    if (!policy) {
+      checkbox.setAttribute("disabled", "true");
+      return;
+    }
+
+    checkbox.checked = policy.healthReportUploadEnabled;
+  },
+
+  /**
+   * Update the health report policy acceptance with state from checkbox.
+   */
+  updateSubmitHealthReport: function () {
+    let policy = Components.classes["@mozilla.org/datareporting/service;1"]
+                                   .getService(Components.interfaces.nsISupports)
+                                   .wrappedJSObject
+                                   .policy;
+
+    if (!policy) {
+      return;
+    }
+
+    let checkbox = document.getElementById("submitHealthReportBox");
+    policy.healthReportUploadEnabled = checkbox.checked;
+  },
+#endif
 
   // NETWORK TAB
 

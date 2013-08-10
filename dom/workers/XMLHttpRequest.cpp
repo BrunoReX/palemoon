@@ -1500,8 +1500,8 @@ XMLHttpRequest::Constructor(JSContext* aCx,
   }
 
   if (workerPrivate->XHRParamsAllowed()) {
-    xhr->mMozAnon = aParams.mozAnon;
-    xhr->mMozSystem = aParams.mozSystem;
+    xhr->mMozAnon = aParams.mMozAnon;
+    xhr->mMozSystem = aParams.mMozSystem;
   }
 
   xhr->mJSObject = xhr->GetJSObject();
@@ -2017,7 +2017,8 @@ XMLHttpRequest::Send(JSObject* aBody, ErrorResult& aRv)
   JSContext* cx = GetJSContext();
 
   jsval valToClone;
-  if (JS_IsArrayBufferObject(aBody) || file::GetDOMBlobFromJSObject(aBody)) {
+  if (JS_IsArrayBufferObject(aBody) || JS_IsArrayBufferViewObject(aBody) ||
+      file::GetDOMBlobFromJSObject(aBody)) {
     valToClone = OBJECT_TO_JSVAL(aBody);
   }
   else {

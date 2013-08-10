@@ -51,7 +51,8 @@ class IceTestPeer : public sigslot::has_slots<> {
       ready_ct_(0),
       ice_complete_(false),
       received_(0),
-      sent_(0) {
+      sent_(0),
+      remote_(nullptr) {
     ice_ctx_->SignalGatheringCompleted.connect(this,
                                               &IceTestPeer::GatheringComplete);
     ice_ctx_->SignalCompleted.connect(this, &IceTestPeer::IceCompleted);
@@ -92,13 +93,18 @@ class IceTestPeer : public sigslot::has_slots<> {
 
   bool gathering_complete() { return gathering_complete_; }
   int ready_ct() { return ready_ct_; }
+  bool is_ready(size_t stream) {
+    return streams_[stream]->state() == NrIceMediaStream::ICE_OPEN;
+  }
   bool ice_complete() { return ice_complete_; }
   size_t received() { return received_; }
   size_t sent() { return sent_; }
 
   // Start connecting to another peer
-  void Connect(IceTestPeer *remote, TrickleMode trickle_mode) {
+  void Connect(IceTestPeer *remote, TrickleMode trickle_mode, bool start = true) {
     nsresult res;
+
+    remote_ = remote;
 
     test_utils->sts_target()->Dispatch(
       WrapRunnableRet(ice_ctx_,
@@ -128,29 +134,49 @@ class IceTestPeer : public sigslot::has_slots<> {
       }
     }
 
+    if (start) {
+      // Now start checks
+      test_utils->sts_target()->Dispatch(
+        WrapRunnableRet(ice_ctx_, &NrIceCtx::StartChecks, &res),
+        NS_DISPATCH_SYNC);
+      ASSERT_TRUE(NS_SUCCEEDED(res));
+    }
+  }
+
+  void DoTrickle(size_t stream) {
+    std::cerr << "Doing trickle for stream " << stream << std::endl;
+    // If we are in trickle deferred mode, now trickle in the candidates
+    // for |stream}
+    nsresult res;
+
+    ASSERT_GT(remote_->streams_.size(), stream);
+
+    std::vector<std::string> candidates =
+      remote_->GetCandidates(remote_->streams_[stream]->name());
+
+    for (size_t j=0; j<candidates.size(); j++) {
+      test_utils->sts_target()->Dispatch(
+        WrapRunnableRet(streams_[stream],
+                        &NrIceMediaStream::ParseTrickleCandidate,
+                        candidates[j],
+                        &res), NS_DISPATCH_SYNC);
+
+      ASSERT_TRUE(NS_SUCCEEDED(res));
+    }
+  }
+
+  void Close() {
+    ice_ctx_->destroy_peer_ctx();
+  }
+
+  void StartChecks() {
+    nsresult res;
+
     // Now start checks
     test_utils->sts_target()->Dispatch(
         WrapRunnableRet(ice_ctx_, &NrIceCtx::StartChecks, &res),
         NS_DISPATCH_SYNC);
     ASSERT_TRUE(NS_SUCCEEDED(res));
-
-    if (trickle_mode == TRICKLE_DEFERRED) {
-      // If we are in trickle deferred mode, now trickle in the candidates
-      // after ICE has started
-      for (size_t i=0; i<streams_.size(); ++i) {
-        std::vector<std::string> candidates =
-            remote->GetCandidates(remote->streams_[i]->name());
-
-        for (size_t j=0; j<candidates.size(); j++) {
-          test_utils->sts_target()->Dispatch(
-              WrapRunnableRet(streams_[i], &NrIceMediaStream::ParseTrickleCandidate,
-                              candidates[j],
-                              &res), NS_DISPATCH_SYNC);
-
-          ASSERT_TRUE(NS_SUCCEEDED(res));
-        }
-      }
-    }
   }
 
   // Handle events
@@ -197,6 +223,7 @@ class IceTestPeer : public sigslot::has_slots<> {
   bool ice_complete_;
   size_t received_;
   size_t sent_;
+  IceTestPeer *remote_;
 };
 
 class IceTest : public ::testing::Test {
@@ -238,12 +265,43 @@ class IceTest : public ::testing::Test {
     return true;
   }
 
-  void Connect(TrickleMode trickle_mode = TRICKLE_NONE) {
-    p1_->Connect(p2_, trickle_mode);
-    p2_->Connect(p1_, trickle_mode);
+  void Connect() {
+    p1_->Connect(p2_, TRICKLE_NONE);
+    p2_->Connect(p1_, TRICKLE_NONE);
 
     ASSERT_TRUE_WAIT(p1_->ready_ct() == 1 && p2_->ready_ct() == 1, 5000);
     ASSERT_TRUE_WAIT(p1_->ice_complete() && p2_->ice_complete(), 5000);
+  }
+
+  void ConnectTrickle() {
+    p1_->Connect(p2_, TRICKLE_DEFERRED);
+    p2_->Connect(p1_, TRICKLE_DEFERRED);
+  }
+
+  void DoTrickle(size_t stream) {
+    p1_->DoTrickle(stream);
+    p2_->DoTrickle(stream);
+    ASSERT_TRUE_WAIT(p1_->is_ready(stream), 5000);
+    ASSERT_TRUE_WAIT(p2_->is_ready(stream), 5000);
+  }
+
+  void VerifyConnected() {
+  }
+
+  void CloseP1() {
+    p1_->Close();
+  }
+
+  void ConnectThenDelete() {
+    p1_->Connect(p2_, TRICKLE_NONE, true);
+    p2_->Connect(p1_, TRICKLE_NONE, false);
+    test_utils->sts_target()->Dispatch(WrapRunnable(this,
+                                                    &IceTest::CloseP1),
+                                       NS_DISPATCH_SYNC);
+    p2_->StartChecks();
+
+    // Wait to see if we crash
+    PR_Sleep(PR_MillisecondsToInterval(5000));
   }
 
   void SendReceive() {
@@ -288,11 +346,26 @@ TEST_F(IceTest, TestConnectAutoPrioritize) {
   Connect();
 }
 
-TEST_F(IceTest, TestConnectTrickle) {
+TEST_F(IceTest, TestConnectTrickleOneStreamOneComponent) {
   AddStream("first", 1);
   ASSERT_TRUE(Gather(true));
-  Connect(TRICKLE_DEFERRED);
+  ConnectTrickle();
+  DoTrickle(0);
+  ASSERT_TRUE_WAIT(p1_->ice_complete(), 1000);
+  ASSERT_TRUE_WAIT(p2_->ice_complete(), 1000);
 }
+
+TEST_F(IceTest, TestConnectTrickleTwoStreamsOneComponent) {
+  AddStream("first", 1);
+  AddStream("second", 1);
+  ASSERT_TRUE(Gather(true));
+  ConnectTrickle();
+  DoTrickle(0);
+  DoTrickle(1);
+  ASSERT_TRUE_WAIT(p1_->ice_complete(), 1000);
+  ASSERT_TRUE_WAIT(p2_->ice_complete(), 1000);
+}
+
 
 TEST_F(IceTest, TestSendReceive) {
   AddStream("first", 1);
@@ -301,9 +374,20 @@ TEST_F(IceTest, TestSendReceive) {
   SendReceive();
 }
 
+TEST_F(IceTest, TestConnectShutdownOneSide) {
+  AddStream("first", 1);
+  ASSERT_TRUE(Gather(true));
+  ConnectThenDelete();
+}
+
 
 int main(int argc, char **argv)
 {
+#ifdef LINUX
+  // This test can cause intermittent oranges on the builders on Linux
+  CHECK_ENVIRONMENT_FLAG("MOZ_WEBRTC_TESTS")
+#endif
+
   test_utils = new MtransportTestUtils();
   NSS_NoDB_Init(nullptr);
   NSS_SetDomesticPolicy();

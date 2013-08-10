@@ -77,16 +77,32 @@ Tracker.prototype = {
     this._score = 0;
   },
 
-  saveChangedIDs: function T_saveChangedIDs() {
+  persistChangedIDs: true,
+
+  /**
+   * Persist changedIDs to disk at a later date.
+   * Optionally pass a callback to be invoked when the write has occurred.
+   */
+  saveChangedIDs: function (cb) {
+    if (!this.persistChangedIDs) {
+      this._log.debug("Not saving changedIDs.");
+      return;
+    }
     Utils.namedTimer(function() {
-      Utils.jsonSave("changes/" + this.file, this, this.changedIDs);
+      Utils.jsonSave("changes/" + this.file, this, this.changedIDs, cb);
     }, 1000, this, "_lazySave");
   },
 
-  loadChangedIDs: function T_loadChangedIDs() {
+  loadChangedIDs: function (cb) {
     Utils.jsonLoad("changes/" + this.file, this, function(json) {
-      if (json) {
+      if (json && (typeof(json) == "object")) {
         this.changedIDs = json;
+      } else {
+        this._log.warn("Changed IDs file " + this.file + " contains non-object value.");
+        json = null;
+      }
+      if (cb) {
+        cb.call(this, json);
       }
     });
   },
@@ -122,7 +138,7 @@ Tracker.prototype = {
     if ((this.changedIDs[id] || -Infinity) < when) {
       this._log.trace("Adding changed ID: " + [id, when]);
       this.changedIDs[id] = when;
-      this.saveChangedIDs();
+      this.saveChangedIDs(this.onSavedChangedIDs);
     }
     return true;
   },
@@ -742,14 +758,29 @@ SyncEngine.prototype = {
     this._delete = {};
   },
 
-  // Process incoming records
-  _processIncoming: function SyncEngine__processIncoming() {
+  /**
+   * A tiny abstraction to make it easier to test incoming record
+   * application.
+   */
+  _itemSource: function () {
+    return new Collection(this.engineURL, this._recordObj, this.service);
+  },
+
+  /**
+   * Process incoming records.
+   * In the most awful and untestable way possible.
+   * This now accepts something that makes testing vaguely less impossible.
+   */
+  _processIncoming: function (newitems) {
     this._log.trace("Downloading & applying server changes");
 
     // Figure out how many total items to fetch this sync; do less on mobile.
     let batchSize = Infinity;
-    let newitems = new Collection(this.engineURL, this._recordObj, this.service);
     let isMobile = (Svc.Prefs.get("client.type") == "mobile");
+
+    if (!newitems) {
+      newitems = this._itemSource();
+    }
 
     if (isMobile) {
       batchSize = MOBILE_BATCH_SIZE;

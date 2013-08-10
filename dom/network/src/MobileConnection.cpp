@@ -60,7 +60,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(MobileConnection)
   NS_INTERFACE_MAP_ENTRY(nsIDOMMozMobileConnection)
   NS_INTERFACE_MAP_ENTRY(nsIObserver)
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMMozMobileConnection)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(MozMobileConnection)
 NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetHelper)
 
@@ -167,7 +166,7 @@ MobileConnection::Observe(nsISupports* aSubject,
     NS_ENSURE_TRUE(ok, NS_ERROR_FAILURE);
 
     nsRefPtr<USSDReceivedEvent> event =
-      USSDReceivedEvent::Create(dict.message, dict.sessionEnded);
+      USSDReceivedEvent::Create(dict.mMessage, dict.mSessionEnded);
     NS_ASSERTION(event, "This should never fail!");
 
     nsresult rv = event->Dispatch(ToIDOMEventTarget(), USSDRECEIVED_EVENTNAME);

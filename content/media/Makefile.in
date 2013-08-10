@@ -6,17 +6,22 @@ DEPTH     = @DEPTH@
 topsrcdir = @top_srcdir@
 srcdir    = @srcdir@
 VPATH     = @srcdir@
-FAIL_ON_WARNINGS := 1
 
 include $(DEPTH)/config/autoconf.mk
 
 MODULE = content
 LIBRARY_NAME = gkconmedia_s
 LIBXUL_LIBRARY = 1
+ifndef _MSC_VER
+FAIL_ON_WARNINGS := 1
+endif # !_MSC_VER
 
 EXPORTS = \
+  AbstractMediaDecoder.h \
   AudioSampleFormat.h \
   AudioSegment.h \
+  BufferMediaResource.h \
+  DecoderTraits.h \
   FileBlockCache.h \
   MediaDecoderOwner.h \
   MediaResource.h \
@@ -35,10 +40,12 @@ EXPORTS = \
   VideoUtils.h \
   VideoSegment.h \
   VorbisUtils.h \
+  MediaMetadataManager.h \
   $(NULL)
 
 CPPSRCS = \
   AudioSegment.cpp \
+  DecoderTraits.cpp \
   FileBlockCache.cpp \
   MediaResource.cpp \
   MediaStreamGraph.cpp \
@@ -91,6 +98,10 @@ endif
 
 ifdef MOZ_MEDIA_PLUGINS
 PARALLEL_DIRS += plugins
+endif
+
+ifdef MOZ_WMF
+PARALLEL_DIRS += wmf
 endif
 
 PARALLEL_DIRS += webrtc

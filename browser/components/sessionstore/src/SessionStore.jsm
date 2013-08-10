@@ -75,14 +75,18 @@ const TAB_EVENTS = [
 #define BROKEN_WM_Z_ORDER
 #endif
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+Cu.import("resource://gre/modules/Services.jsm", this);
+Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
 // debug.js adds NS_ASSERT. cf. bug 669196
-Cu.import("resource://gre/modules/debug.js");
-Cu.import("resource:///modules/TelemetryTimestamps.jsm");
-Cu.import("resource://gre/modules/TelemetryStopwatch.jsm");
-Cu.import("resource://gre/modules/osfile.jsm");
-Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
+Cu.import("resource://gre/modules/debug.js", this);
+Cu.import("resource:///modules/TelemetryTimestamps.jsm", this);
+Cu.import("resource://gre/modules/TelemetryStopwatch.jsm", this);
+Cu.import("resource://gre/modules/osfile.jsm", this);
+Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm", this);
+Cu.import("resource://gre/modules/commonjs/promise/core.js", this);
+
+XPCOMUtils.defineLazyServiceGetter(this, "gSessionStartup",
+  "@mozilla.org/browser/sessionstartup;1", "nsISessionStartup");
 
 XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
   "resource://gre/modules/NetUtil.jsm");
@@ -92,6 +96,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "DocumentUtils",
   "resource:///modules/sessionstore/DocumentUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "SessionStorage",
   "resource:///modules/sessionstore/SessionStorage.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "_SessionFile",
+  "resource:///modules/sessionstore/_SessionFile.jsm");
 
 #ifdef MOZ_CRASHREPORTER
 XPCOMUtils.defineLazyServiceGetter(this, "CrashReporter",
@@ -290,8 +296,16 @@ let SessionStoreInternal = {
   // session
   _lastSessionState: null,
 
-  // Whether we've been initialized
-  _initialized: false,
+  // When starting Firefox with a single private window, this is the place
+  // where we keep the session we actually wanted to restore in case the user
+  // decides to later open a non-private window as well.
+  _deferredInitialState: null,
+
+  // A promise resolved once initialization is complete
+  _promiseInitialization: Promise.defer(),
+
+  // Whether session has been initialized
+  _sessionInitialized: false,
 
   // The original "sessionstore.resume_session_once" preference value before it
   // was modified by saveState.  saveState will set the
@@ -326,6 +340,9 @@ let SessionStoreInternal = {
    * Initialize the component
    */
   initService: function ssi_initService() {
+    if (this._sessionInitialized) {
+      return;
+    }
     TelemetryTimestamps.add("sessionRestoreInitialized");
     OBSERVING.forEach(function(aTopic) {
       Services.obs.addObserver(this, aTopic, true);
@@ -358,15 +375,13 @@ let SessionStoreInternal = {
       this._prefBranch.getBoolPref("sessionstore.restore_pinned_tabs_on_demand");
     this._prefBranch.addObserver("sessionstore.restore_pinned_tabs_on_demand", this, true);
 
-    // get file references
-    this._sessionFile = Services.dirsvc.get("ProfD", Ci.nsILocalFile);
-    this._sessionFileBackup = this._sessionFile.clone();
-    this._sessionFile.append("sessionstore.js");
-    this._sessionFileBackup.append("sessionstore.bak");
+    gSessionStartup.onceInitialized.then(
+      this.initSession.bind(this)
+    );
+  },
 
-    // get string containing session state
-    var ss = Cc["@mozilla.org/browser/sessionstartup;1"].
-             getService(Ci.nsISessionStartup);
+  initSession: function ssi_initSession() {
+    let ss = gSessionStartup;
     try {
       if (ss.doRestore() ||
           ss.sessionType == Ci.nsISessionStartup.DEFER_SESSION)
@@ -437,14 +452,11 @@ let SessionStoreInternal = {
     }
 
     if (this._resume_from_crash) {
-      // create a backup if the session data file exists
-      try {
-        if (this._sessionFileBackup.exists())
-          this._sessionFileBackup.remove(false);
-        if (this._sessionFile.exists())
-          this._sessionFile.copyTo(null, this._sessionFileBackup.leafName);
-      }
-      catch (ex) { Cu.reportError(ex); } // file was write-locked?
+      // Launch background copy of the session file. Note that we do
+      // not have race conditions here as _SessionFile guarantees
+      // that any I/O operation is completed before proceeding to
+      // the next I/O operation.
+      _SessionFile.createBackupCopy();
     }
 
     // at this point, we've as good as resumed the session, so we can
@@ -455,7 +467,9 @@ let SessionStoreInternal = {
 
     this._initEncoding();
 
-    this._initialized = true;
+    // Session is ready.
+    this._sessionInitialized = true;
+    this._promiseInitialization.resolve();
   },
 
   _initEncoding : function ssi_initEncoding() {
@@ -495,16 +509,7 @@ let SessionStoreInternal = {
     });
   },
 
-  /**
-   * Start tracking a window.
-   * This function also initializes the component if it's not already
-   * initialized.
-   */
-  init: function ssi_init(aWindow) {
-    // Initialize the service if needed.
-    if (!this._initialized)
-      this.initService();
-
+  _initWindow: function ssi_initWindow(aWindow) {
     if (!aWindow || this._loadState == STATE_RUNNING) {
       // make sure that all browser windows which try to initialize
       // SessionStore are really tracked by it
@@ -525,12 +530,29 @@ let SessionStoreInternal = {
   },
 
   /**
+   * Start tracking a window.
+   *
+   * This function also initializes the component if it is not
+   * initialized yet.
+   */
+  init: function ssi_init(aWindow) {
+    let self = this;
+    this.initService();
+    this._promiseInitialization.promise.then(
+      function onSuccess() {
+        self._initWindow(aWindow);
+      }
+    );
+  },
+
+  /**
    * Called on application shutdown, after notifications:
    * quit-application-granted, quit-application
    */
   _uninit: function ssi_uninit() {
     // save all data for session resuming
-    this.saveState(true);
+    if (this._sessionInitialized)
+      this.saveState(true);
 
     // clear out _tabsToRestore in case it's still holding refs
     this._tabsToRestore.priority = null;
@@ -681,9 +703,10 @@ let SessionStoreInternal = {
     // and create its internal data object
     this._internalWindows[aWindow.__SSi] = { hosts: {} }
 
+    let isPrivateWindow = false;
 #ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
     if (PrivateBrowsingUtils.isWindowPrivate(aWindow))
-      this._windows[aWindow.__SSi].isPrivate = true;
+      this._windows[aWindow.__SSi].isPrivate = isPrivateWindow = true;
 #endif
     if (!this._isWindowLoaded(aWindow))
       this._windows[aWindow.__SSi]._restoring = true;
@@ -697,17 +720,28 @@ let SessionStoreInternal = {
 
       // restore a crashed session resp. resume the last session if requested
       if (this._initialState) {
-        TelemetryTimestamps.add("sessionRestoreRestoring");
-        // make sure that the restored tabs are first in the window
-        this._initialState._firstTabs = true;
-        this._restoreCount = this._initialState.windows ? this._initialState.windows.length : 0;
-        this.restoreWindow(aWindow, this._initialState,
-                           this._isCmdLineEmpty(aWindow, this._initialState));
-        delete this._initialState;
+        if (isPrivateWindow) {
+          // We're starting with a single private window. Save the state we
+          // actually wanted to restore so that we can do it later in case
+          // the user opens another, non-private window.
+          this._deferredInitialState = this._initialState;
+          delete this._initialState;
 
-        // _loadState changed from "stopped" to "running"
-        // force a save operation so that crashes happening during startup are correctly counted
-        this.saveState(true);
+          // Nothing to restore now, notify observers things are complete.
+          Services.obs.notifyObservers(null, NOTIFY_WINDOWS_RESTORED, "");
+        } else {
+          TelemetryTimestamps.add("sessionRestoreRestoring");
+          // make sure that the restored tabs are first in the window
+          this._initialState._firstTabs = true;
+          this._restoreCount = this._initialState.windows ? this._initialState.windows.length : 0;
+          this.restoreWindow(aWindow, this._initialState,
+                             this._isCmdLineEmpty(aWindow, this._initialState));
+          delete this._initialState;
+
+          // _loadState changed from "stopped" to "running"
+          // force a save operation so that crashes happening during startup are correctly counted
+          this.saveState(true);
+        }
       }
       else {
         // Nothing to restore, notify observers things are complete.
@@ -722,9 +756,25 @@ let SessionStoreInternal = {
       let followUp = this._statesToRestore[aWindow.__SS_restoreID].windows.length == 1;
       this.restoreWindow(aWindow, this._statesToRestore[aWindow.__SS_restoreID], true, followUp);
     }
+#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
+    // The user opened another, non-private window after starting up with
+    // a single private one. Let's restore the session we actually wanted to
+    // restore at startup.
+    else if (this._deferredInitialState && !isPrivateWindow &&
+             aWindow.toolbar.visible) {
+
+      this._deferredInitialState._firstTabs = true;
+      this._restoreCount = this._deferredInitialState.windows ?
+        this._deferredInitialState.windows.length : 0;
+      this.restoreWindow(aWindow, this._deferredInitialState, true);
+      this._deferredInitialState = null;
+    }
+#endif
     else if (this._restoreLastWindow && aWindow.toolbar.visible &&
              this._closedWindows.length
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
+#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
+             && !isPrivateWindow
+#else
              && !this._inPrivateBrowsing
 #endif
              ) {
@@ -886,9 +936,16 @@ let SessionStoreInternal = {
       winData._shouldRestore = true;
 #endif
 
+#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
+      // Save the window if it has multiple tabs or a single saveable tab and
+      // it's not private.
+      if (!winData.isPrivate && (winData.tabs.length > 1 ||
+          (winData.tabs.length == 1 && this._shouldSaveTabState(winData.tabs[0])))) {
+#else
       // save the window if it has multiple tabs or a single saveable tab
       if (winData.tabs.length > 1 ||
           (winData.tabs.length == 1 && this._shouldSaveTabState(winData.tabs[0]))) {
+#endif
         // we don't want to save the busy state
         delete winData.busy;
 
@@ -989,7 +1046,7 @@ let SessionStoreInternal = {
    */
   onPurgeSessionHistory: function ssi_onPurgeSessionHistory() {
     var _this = this;
-    this._clearDisk();
+    _SessionFile.wipe();
     // If the browser is shutting down, simply return after clearing the
     // session data on disk as this notification fires after the
     // quit-application notification so the browser is about to exit.
@@ -1130,7 +1187,7 @@ let SessionStoreInternal = {
         // either create the file with crash recovery information or remove it
         // (when _loadState is not STATE_RUNNING, that file is used for session resuming instead)
         if (!this._resume_from_crash)
-          this._clearDisk();
+          _SessionFile.wipe();
         this.saveState(true);
         break;
       case "sessionstore.restore_on_demand":
@@ -1264,8 +1321,8 @@ let SessionStoreInternal = {
     // If this tab was in the middle of restoring or still needs to be restored,
     // we need to reset that state. If the tab was restoring, we will attempt to
     // restore the next tab.
-    let previousState;
-    if (previousState = browser.__SS_restoreState) {
+    let previousState = browser.__SS_restoreState;
+    if (previousState) {
       this._resetTabRestoringState(aTab);
       if (previousState == TAB_STATE_RESTORING)
         this.restoreNextTab();
@@ -1736,6 +1793,13 @@ let SessionStoreInternal = {
     let lastWindow = this._getMostRecentBrowserWindow();
     let canUseLastWindow = lastWindow &&
                            !lastWindow.__SS_lastSessionWindowID;
+    let lastSessionFocusedWindow = null;
+    this.windowToFocus = lastWindow;
+
+    // move the last focused window to the start of the array so that we
+    // minimize window movement (see bug 669272)
+    lastSessionState.windows.unshift(
+      lastSessionState.windows.splice(lastSessionState.selectedWindow - 1, 1)[0]);
 
     // Restore into windows or open new ones as needed.
     for (let i = 0; i < lastSessionState.windows.length; i++) {
@@ -1773,9 +1837,18 @@ let SessionStoreInternal = {
         //        weirdness but we will still merge other extData.
         //        Bug 588217 should make this go away by merging the group data.
         this.restoreWindow(windowToUse, { windows: [winState] }, canOverwriteTabs, true);
+        if (i == 0)
+          lastSessionFocusedWindow = windowToUse;
+
+        // if we overwrote the tabs for our last focused window, we should
+        // give focus to the window that had it in the previous session
+        if (canOverwriteTabs && windowToUse == lastWindow)
+          this.windowToFocus = lastSessionFocusedWindow;
       }
       else {
-        this._openWindowWithState({ windows: [winState] });
+        let win = this._openWindowWithState({ windows: [winState] });
+        if (i == 0)
+          lastSessionFocusedWindow = win;
       }
     }
 
@@ -2698,17 +2771,17 @@ let SessionStoreInternal = {
     var winData;
     if (!root.selectedWindow || root.selectedWindow > root.windows.length) {
       root.selectedWindow = 0;
+    } else {
+      // put the selected window at the beginning of the array to ensure that
+      // it gets restored first
+      root.windows.unshift(root.windows.splice(root.selectedWindow - 1, 1)[0]);
     }
-
     // open new windows for all further window entries of a multi-window session
     // (unless they don't contain any tab data)
     for (var w = 1; w < root.windows.length; w++) {
       winData = root.windows[w];
       if (winData && winData.tabs && winData.tabs[0]) {
         var window = this._openWindowWithState({ windows: [winData] });
-        if (w == root.selectedWindow - 1) {
-          this.windowToFocus = window;
-        }
       }
     }
     winData = root.windows[0];
@@ -3004,6 +3077,7 @@ let SessionStoreInternal = {
       // a tab gets closed before it's been properly restored
       browser.__SS_data = tabData;
       browser.__SS_restoreState = TAB_STATE_NEEDS_RESTORE;
+      browser.setAttribute("pending", "true");
       tab.setAttribute("pending", "true");
 
       // Make sure that set/getTabValue will set/read the correct data by
@@ -3188,6 +3262,7 @@ let SessionStoreInternal = {
 
     // Set this tab's state to restoring
     browser.__SS_restoreState = TAB_STATE_RESTORING;
+    browser.removeAttribute("pending");
     aTab.removeAttribute("pending");
 
     // Remove the history listener, since we no longer need it once we start restoring
@@ -3682,8 +3757,20 @@ let SessionStoreInternal = {
     for (let i = oState.windows.length - 1; i >= 0; i--) {
       if (oState.windows[i].isPrivate) {
         oState.windows.splice(i, 1);
+        if (oState.selectedWindow >= i) {
+          oState.selectedWindow--;
+        }
       }
     }
+
+    // Don't save invalid states.
+    // Looks like we currently have private windows, only.
+    if (oState.windows.length == 0) {
+      TelemetryStopwatch.cancel("FX_SESSION_RESTORE_COLLECT_DATA_MS");
+      TelemetryStopwatch.cancel("FX_SESSION_RESTORE_COLLECT_DATA_LONGEST_OP_MS");
+      return;
+    }
+
     for (let i = oState._closedWindows.length - 1; i >= 0; i--) {
       if (oState._closedWindows[i].isPrivate) {
         oState._closedWindows.splice(i, 1);
@@ -3735,39 +3822,36 @@ let SessionStoreInternal = {
    */
   _saveStateObject: function ssi_saveStateObject(aStateObj) {
     TelemetryStopwatch.start("FX_SESSION_RESTORE_SERIALIZE_DATA_MS");
-    var stateString = Cc["@mozilla.org/supports-string;1"].
-                        createInstance(Ci.nsISupportsString);
-    stateString.data = this._toJSONString(aStateObj);
+    let data = this._toJSONString(aStateObj);
     TelemetryStopwatch.finish("FX_SESSION_RESTORE_SERIALIZE_DATA_MS");
 
+    let stateString = this._createSupportsString(data);
     Services.obs.notifyObservers(stateString, "sessionstore-state-write", "");
+    data = stateString.data;
 
-    // don't touch the file if an observer has deleted all state data
-    if (stateString.data)
-      this._writeFile(this._sessionFile, stateString.data);
-
-    this._lastSaveTime = Date.now();
-  },
-
-  /**
-   * delete session datafile and backup
-   */
-  _clearDisk: function ssi_clearDisk() {
-    if (this._sessionFile.exists()) {
-      try {
-        this._sessionFile.remove(false);
-      }
-      catch (ex) { dump(ex + '\n'); } // couldn't remove the file - what now?
+    // Don't touch the file if an observer has deleted all state data.
+    if (!data) {
+      return;
     }
-    if (this._sessionFileBackup.exists()) {
-      try {
-        this._sessionFileBackup.remove(false);
+
+    let self = this;
+    _SessionFile.write(data).then(
+      function onSuccess() {
+        self._lastSaveTime = Date.now();
+        Services.obs.notifyObservers(null, "sessionstore-state-write-complete", "");
       }
-      catch (ex) { dump(ex + '\n'); } // couldn't remove the file - what now?
-    }
+    );
   },
 
   /* ........ Auxiliary Functions .............. */
+
+  // Wrap a string as a nsISupports
+  _createSupportsString: function ssi_createSupportsString(aData) {
+    let string = Cc["@mozilla.org/supports-string;1"]
+                   .createInstance(Ci.nsISupportsString);
+    string.data = aData;
+    return string;
+  },
 
   /**
    * call a callback for all currently opened browser windows
@@ -4380,6 +4464,9 @@ let SessionStoreInternal = {
     // The browser is no longer in any sort of restoring state.
     delete browser.__SS_restoreState;
 
+    aTab.removeAttribute("pending");
+    browser.removeAttribute("pending");
+
     // We want to decrement window.__SS_tabsToRestore here so that we always
     // decrement it AFTER a tab is done restoring or when a tab gets "reset".
     window.__SS_tabsToRestore--;
@@ -4459,33 +4546,6 @@ let SessionStoreInternal = {
                             removeSHistoryListener(browser.__SS_shistoryListener);
       delete browser.__SS_shistoryListener;
     }
-  },
-
-  /**
-   * write file to disk
-   * @param aFile
-   *        nsIFile
-   * @param aData
-   *        String data
-   */
-  _writeFile: function ssi_writeFile(aFile, aData) {
-    let refObj = {};
-    TelemetryStopwatch.start("FX_SESSION_RESTORE_WRITE_FILE_MS", refObj);
-    let path = aFile.path;
-    let encoded = this._writeFileEncoder.encode(aData);
-    let promise = OS.File.writeAtomic(path, encoded, {tmpPath: path + ".tmp"});
-
-    promise.then(
-      function onSuccess() {
-        TelemetryStopwatch.finish("FX_SESSION_RESTORE_WRITE_FILE_MS", refObj);
-        Services.obs.notifyObservers(null,
-                                      "sessionstore-state-write-complete",
-                                      "");
-      },
-      function onFailure(reason) {
-        TelemetryStopwatch.cancel("FX_SESSION_RESTORE_WRITE_FILE_MS", refObj);
-        Components.reportError("ssi_writeFile failure " + reason);
-      });
   }
 };
 

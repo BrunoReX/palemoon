@@ -33,7 +33,6 @@
 #include "nsNetUtil.h"
 #include "nsScriptLoader.h"
 #include "nsDataHashtable.h"
-#include "nsIThreadPool.h"
 #include "nsXPCOMCIDInternal.h"
 #include "nsMimeTypes.h"
 #include "mozilla/CondVar.h"
@@ -1754,8 +1753,8 @@ ExtractCharsetFromXmlDeclaration(const unsigned char* aBytes, int32_t aLen,
               if (q && q == qi) {
                 int32_t count = i - encStart;
                 // encoding value is invalid if it is UTF-16
-                if (count > 0 && (0 != PL_strcmp("UTF-16",
-                    (char*) (aBytes + encStart)))) {
+                if (count > 0 && PL_strncasecmp("UTF-16",
+                    (char*) (aBytes + encStart), count)) {
                   oCharset.Assign((char*) (aBytes + encStart), count);
                 }
                 encodingFound = true;

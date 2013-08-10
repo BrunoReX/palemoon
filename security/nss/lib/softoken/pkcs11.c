@@ -488,7 +488,10 @@ static const struct mechanismList mechanisms[] = {
      {CKM_NSS_JPAKE_FINAL_SHA1,         {0, 0, CKF_DERIVE}, PR_TRUE},
      {CKM_NSS_JPAKE_FINAL_SHA256,       {0, 0, CKF_DERIVE}, PR_TRUE},
      {CKM_NSS_JPAKE_FINAL_SHA384,       {0, 0, CKF_DERIVE}, PR_TRUE},
-     {CKM_NSS_JPAKE_FINAL_SHA512,       {0, 0, CKF_DERIVE}, PR_TRUE}
+     {CKM_NSS_JPAKE_FINAL_SHA512,       {0, 0, CKF_DERIVE}, PR_TRUE},
+     /* -------------------- Constant Time TLS MACs ----------------------- */
+     {CKM_NSS_HMAC_CONSTANT_TIME,       {0, 0, CKF_DIGEST}, PR_TRUE},
+     {CKM_NSS_SSL3_MAC_CONSTANT_TIME,   {0, 0, CKF_DIGEST}, PR_TRUE}
 };
 static const CK_ULONG mechanismCount = sizeof(mechanisms)/sizeof(mechanisms[0]);
 
@@ -1891,7 +1894,18 @@ sftk_mkPrivKey(SFTKObject *object, CK_KEY_TYPE key_type, CK_RV *crvp)
 	}
         rv = DER_SetUInteger(privKey->arena, &privKey->u.ec.version,
                           NSSLOWKEY_EC_PRIVATE_KEY_VERSION);
-	if (rv != SECSuccess) crv = CKR_HOST_MEMORY;
+	if (rv != SECSuccess) {
+	    crv = CKR_HOST_MEMORY;
+	    /* The following ifdef is needed for Linux arm distros and
+	     * Android as gcc 4.6 has a bug when targeting arm (but not
+	     * thumb). The bug has been fixed in gcc 4.7.
+	     * http://gcc.gnu.org/bugzilla/show_bug.cgi?id=56561
+	     */
+#if defined (__arm__) && !defined(__thumb__) && defined (__GNUC__)
+	    *crvp = CKR_HOST_MEMORY;
+	    break;
+#endif
+	}
 	break;
 #endif /* NSS_ENABLE_ECC */
 

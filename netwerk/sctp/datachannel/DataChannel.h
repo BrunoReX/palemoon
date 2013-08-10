@@ -30,6 +30,10 @@
 #include "mtransport/transportlayerprsock.h"
 #endif
 
+#ifndef DATACHANNEL_LOG
+#define DATACHANNEL_LOG(args)
+#endif
+
 #ifndef EALREADY
 #define EALREADY  WSAEALREADY
 #endif
@@ -102,13 +106,14 @@ public:
     virtual void NotifyClosedConnection() = 0;
 
     // Called when a new DataChannel has been opened by the other side.
-    virtual void NotifyDataChannel(DataChannel *channel) = 0;
+    virtual void NotifyDataChannel(already_AddRefed<DataChannel> channel) = 0;
   };
 
   DataChannelConnection(DataConnectionListener *listener);
   virtual ~DataChannelConnection();
 
   bool Init(unsigned short aPort, uint16_t aNumStreams, bool aUsingDtls);
+  void Destroy(); // So we can spawn refs tied to runnables in shutdown
 
   // These block; they require something to decide on listener/connector
   // (though you can do simultaneous Connect()).  Do not call these from
@@ -126,7 +131,7 @@ public:
     PARTIAL_RELIABLE_REXMIT = 1,
     PARTIAL_RELIABLE_TIMED = 2
   } Type;
-    
+
   already_AddRefed<DataChannel> Open(const nsACString& label,
                                      Type type, bool inOrder,
                                      uint32_t prValue,
@@ -147,8 +152,8 @@ public:
   int32_t SendBlob(uint16_t stream, nsIInputStream *aBlob);
 
   // Called on data reception from the SCTP library
-  // must(?) be public so my c->c++ tramploine can call it
-  int ReceiveCallback(struct socket* sock, void *data, size_t datalen, 
+  // must(?) be public so my c->c++ trampoline can call it
+  int ReceiveCallback(struct socket* sock, void *data, size_t datalen,
                       struct sctp_rcvinfo rcv, int32_t flags);
 
   // Find out state
@@ -168,6 +173,8 @@ protected:
   DataConnectionListener *mListener;
 
 private:
+  friend class DataChannelConnectRunnable;
+
 #ifdef SCTP_DTLS_SUPPORTED
   static void DTLSConnectThread(void *data);
   int SendPacket(const unsigned char* data, size_t len, bool release);
@@ -226,6 +233,10 @@ private:
   }
 #endif
 
+  // Exists solely for proxying release of the TransportFlow to the STS thread
+  static void ReleaseTransportFlow(nsRefPtr<TransportFlow> aFlow) {}
+
+  // Data:
   // NOTE: while these arrays will auto-expand, increases in the number of
   // channels available from the stack must be negotiated!
   nsAutoTArray<nsRefPtr<DataChannel>,16> mStreamsOut;
@@ -235,22 +246,31 @@ private:
   // Streams pending reset
   nsAutoTArray<uint16_t,4> mStreamsResetting;
 
-  struct socket *mMasterSocket;
-  struct socket *mSocket;
-  uint16_t mState;
+  struct socket *mMasterSocket; // accessed from connect thread
+  struct socket *mSocket; // cloned from mMasterSocket on successful Connect on connect thread
+  uint16_t mState; // modified on connect thread (to OPEN)
 
 #ifdef SCTP_DTLS_SUPPORTED
   nsRefPtr<TransportFlow> mTransportFlow;
   nsCOMPtr<nsIEventTarget> mSTS;
 #endif
-  uint16_t mLocalPort;
+  uint16_t mLocalPort; // Accessed from connect thread
   uint16_t mRemotePort;
 
   // Timer to control when we try to resend blocked messages
   nsCOMPtr<nsITimer> mDeferredTimer;
   uint32_t mDeferTimeout; // in ms
   bool mTimerRunning;
+
+  // Thread used for connections
+  nsCOMPtr<nsIThread> mConnectThread;
 };
+
+#define ENSURE_DATACONNECTION \
+  do { if (!mConnection) { DATACHANNEL_LOG(("%s: %p no connection!",__FUNCTION__, this)); return; } } while (0)
+
+#define ENSURE_DATACONNECTION_RET(x) \
+  do { if (!mConnection) { DATACHANNEL_LOG(("%s: %p no connection!",__FUNCTION__, this)); return (x); } } while (0)
 
 class DataChannel {
 public:
@@ -263,7 +283,7 @@ public:
   };
 
   DataChannel(DataChannelConnection *connection,
-              uint16_t streamOut, uint16_t streamIn, 
+              uint16_t streamOut, uint16_t streamIn,
               uint16_t state,
               const nsACString& label,
               uint16_t policy, uint32_t value,
@@ -286,6 +306,7 @@ public:
     }
 
   ~DataChannel();
+  void Destroy(); // when we disconnect from the connection after stream RESET
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(DataChannel)
 
@@ -299,6 +320,8 @@ public:
   // Send a string
   bool SendMsg(const nsACString &aMsg)
     {
+      ENSURE_DATACONNECTION_RET(false);
+
       if (mStreamOut != INVALID_STREAM)
         return (mConnection->SendMsg(mStreamOut, aMsg) > 0);
       else
@@ -308,6 +331,8 @@ public:
   // Send a binary message (TypedArray)
   bool SendBinaryMsg(const nsACString &aMsg)
     {
+      ENSURE_DATACONNECTION_RET(false);
+
       if (mStreamOut != INVALID_STREAM)
         return (mConnection->SendBinaryMsg(mStreamOut, aMsg) > 0);
       else
@@ -317,6 +342,8 @@ public:
   // Send a binary blob
   bool SendBinaryStream(nsIInputStream *aBlob, uint32_t msgLen)
     {
+      ENSURE_DATACONNECTION_RET(false);
+
       if (mStreamOut != INVALID_STREAM)
         return (mConnection->SendBlob(mStreamOut, aBlob) > 0);
       else
@@ -394,7 +421,7 @@ public:
                                 int32_t     aLen)
     : mType(aType),
       mChannel(aChannel),
-      mConnection(aConnection), 
+      mConnection(aConnection),
       mData(aData),
       mLen(aLen) {}
 
@@ -412,6 +439,14 @@ public:
     : mType(aType),
       mChannel(aChannel),
       mConnection(aConnection) {}
+
+  // for ON_CONNECTION
+  DataChannelOnMessageAvailable(int32_t     aType,
+                                DataChannelConnection *aConnection,
+                                bool aResult)
+    : mType(aType),
+      mConnection(aConnection),
+      mResult(aResult) {}
 
   NS_IMETHOD Run()
   {
@@ -446,10 +481,14 @@ public:
         mChannel->mListener->OnChannelClosed(mChannel->mContext);
         break;
       case ON_CHANNEL_CREATED:
-        mConnection->mListener->NotifyDataChannel(mChannel);
+        // important to give it an already_AddRefed pointer!
+        mConnection->mListener->NotifyDataChannel(mChannel.forget());
         break;
       case ON_CONNECTION:
-        mConnection->mListener->NotifyConnection();
+        if (mResult) {
+          mConnection->mListener->NotifyConnection();
+        }
+        mConnection->mConnectThread = nullptr; // kill the connection thread
         break;
       case ON_DISCONNECTED:
         mConnection->mListener->NotifyClosedConnection();
@@ -470,6 +509,7 @@ private:
   nsRefPtr<DataChannelConnection>   mConnection;
   nsCString                         mData;
   int32_t                           mLen;
+  bool                              mResult;
 };
 
 }

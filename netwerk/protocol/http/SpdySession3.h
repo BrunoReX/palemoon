@@ -111,8 +111,8 @@ public:
 
   // This should be big enough to hold all of your control packets,
   // but if it needs to grow for huge headers it can do so dynamically.
-  // About 1% of requests to SPDY google services seem to be > 1000
-  // with all less than 2000.
+  // About 1% of responses from SPDY google services seem to be > 1000
+  // with all less than 2000 when compression is enabled.
   const static uint32_t kDefaultBufferSize = 2048;
 
   // kDefaultQueueSize must be >= other queue size constants
@@ -162,7 +162,7 @@ public:
   void TransactionHasDataToWrite(SpdyStream3 *);
 
   // an overload of nsAHttpSegementReader
-  virtual nsresult CommitToSegmentSize(uint32_t size);
+  virtual nsresult CommitToSegmentSize(uint32_t size, bool forceCommitment);
   
   uint32_t GetServerInitialWindow() { return mServerInitialWindow; }
 
@@ -194,6 +194,7 @@ private:
 
   void        SetWriteCallbacks();
   void        FlushOutputQueue();
+  void        RealignOutputQueue();
 
   bool        RoomForMoreConcurrent();
   void        ActivateStream(SpdyStream3 *);

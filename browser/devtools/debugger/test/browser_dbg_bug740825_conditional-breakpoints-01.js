@@ -29,12 +29,14 @@ function test()
     gTab = aTab;
     gDebuggee = aDebuggee;
     gPane = aPane;
-    gDebugger = gPane.contentWindow;
+    gDebugger = gPane.panelWin;
     gBreakpoints = gDebugger.DebuggerController.Breakpoints;
     gBreakpointsPane = gDebugger.DebuggerView.Breakpoints;
 
     gDebugger.DebuggerView.togglePanes({ visible: true, animated: false });
     resumed = true;
+
+    gDebugger.addEventListener("Debugger:SourceShown", onScriptShown);
 
     gDebugger.DebuggerController.activeThread.addOneTimeListener("framesadded", function() {
       framesAdded = true;
@@ -52,12 +54,10 @@ function test()
     executeSoon(startTest);
   }
 
-  window.addEventListener("Debugger:SourceShown", onScriptShown);
-
   function startTest()
   {
     if (scriptShown && framesAdded && resumed && !testStarted) {
-      window.removeEventListener("Debugger:SourceShown", onScriptShown);
+      gDebugger.removeEventListener("Debugger:SourceShown", onScriptShown);
       testStarted = true;
       Services.tm.currentThread.dispatch({ run: addBreakpoints }, 0);
     }
@@ -79,7 +79,7 @@ function test()
     is(gScripts.selectedValue, gScripts.values[0],
           "The correct script is selected");
 
-    gBreakpoints = gPane.breakpoints;
+    gBreakpoints = gPane.getAllBreakpoints();
     is(Object.keys(gBreakpoints).length, 13, "thirteen breakpoints");
     ok(!gPane.getBreakpoint("foo", 3), "getBreakpoint('foo', 3) returns falsey");
 
@@ -143,9 +143,9 @@ function test()
       is(gBreakpointsPane._popupShown, false,
         "The breakpoint conditional expression popup should not be shown.");
 
-      is(gDebugger.DebuggerView.StackFrames.visibleItems, 0,
+      is(gDebugger.DebuggerView.StackFrames.visibleItems.length, 0,
         "There should be no visible stackframes.");
-      is(gDebugger.DebuggerView.Breakpoints.visibleItems, 13,
+      is(gDebugger.DebuggerView.Breakpoints.visibleItems.length, 13,
         "There should be thirteen visible breakpoints.");
 
       testReload();
@@ -341,7 +341,7 @@ function test()
         window.clearInterval(intervalID);
         return closeDebuggerAndFinish();
       }
-      if (gBreakpointsPane.visibleItems != total) {
+      if (gBreakpointsPane.visibleItems.length != total) {
         return;
       }
       // We got all the breakpoints, it's safe to callback.

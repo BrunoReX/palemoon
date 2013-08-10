@@ -38,7 +38,7 @@
 #include "gtest_utils.h"
 
 using namespace mozilla;
-MOZ_MTLOG_MODULE("mtransport");
+MOZ_MTLOG_MODULE("mtransport")
 
 MtransportTestUtils *test_utils;
 
@@ -74,7 +74,7 @@ class TransportLayerLossy : public TransportLayer {
     SignalPacketReceived(this, data, len);
   }
 
-  TRANSPORT_LAYER_ID("lossy");
+  TRANSPORT_LAYER_ID("lossy")
 
  protected:
   virtual void WasInserted() {

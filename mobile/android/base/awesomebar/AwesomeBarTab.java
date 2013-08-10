@@ -94,7 +94,7 @@ abstract public class AwesomeBarTab {
         if (b != null) {
             Bitmap bitmap = BitmapFactory.decodeByteArray(b, 0, b.length);
             if (bitmap != null && bitmap.getWidth() > 0 && bitmap.getHeight() > 0) {
-                favicon = GeckoApp.mAppContext.getFavicons().scaleImage(bitmap);
+                favicon = Favicons.getInstance().scaleImage(bitmap);
             }
         }
         updateFavicon(faviconView, favicon);
@@ -103,7 +103,7 @@ abstract public class AwesomeBarTab {
     protected void updateFavicon(ImageView faviconView, Bitmap bitmap) {
         if (bitmap == null) {
             faviconView.setImageDrawable(null);
-        } else if (GeckoApp.mAppContext.getFavicons().isLargeFavicon(bitmap)) {
+        } else if (Favicons.getInstance().isLargeFavicon(bitmap)) {
             // If the icon is large, hide the background
             faviconView.setImageBitmap(bitmap);
             faviconView.setBackgroundResource(0);

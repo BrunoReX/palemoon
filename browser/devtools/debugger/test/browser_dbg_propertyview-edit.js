@@ -22,7 +22,7 @@ function test() {
     gTab = aTab;
     gDebuggee = aDebuggee;
     gPane = aPane;
-    gDebugger = gPane.contentWindow;
+    gDebugger = gPane.panelWin;
 
     gDebugger.DebuggerController.StackFrames.autoScopeExpand = true;
     gDebugger.DebuggerView.Variables.nonEnumVisible = false;
@@ -65,8 +65,8 @@ function testFrameEval() {
 
 function testModification(aVar, aCallback, aNewValue, aNewResult) {
   function makeChangesAndExitInputMode() {
-    EventUtils.sendString(aNewValue);
-    EventUtils.sendKey("RETURN");
+    EventUtils.sendString(aNewValue, gDebugger);
+    EventUtils.sendKey("RETURN", gDebugger);
   }
 
   EventUtils.sendMouseEvent({ type: "click" },

@@ -5,6 +5,8 @@
  
 /* the interface (to internal code) for retrieving computed style data */
 
+#include "mozilla/DebugOnly.h"
+
 #include "nsStyleConsts.h"
 #include "nsString.h"
 #include "nsPresContext.h"
@@ -18,7 +20,6 @@
 #include "nsStyleContext.h"
 #include "prlog.h"
 #include "nsStyleAnimation.h"
-#include "mozilla/Util.h"
 #include "sampler.h"
 
 #ifdef DEBUG
@@ -106,17 +107,6 @@ void nsStyleContext::AddChild(nsStyleContext* aChild)
   NS_ASSERTION(aChild->mPrevSibling == aChild &&
                aChild->mNextSibling == aChild,
                "child already in a child list");
-
-#if defined(_WIN32) && defined(_MSC_VER)
-#define NOPS_8 __asm nop __asm nop __asm nop __asm nop __asm nop __asm nop __asm nop __asm nop
-#define NOPS_64 NOPS_8 NOPS_8 NOPS_8 NOPS_8 NOPS_8 NOPS_8 NOPS_8 NOPS_8
-  __asm jmp AddChildSuperHack
-  NOPS_64
-  NOPS_64
-  NOPS_64
-  NOPS_64
-  __asm AddChildSuperHack:
-#endif
 
   nsStyleContext **list = aChild->mRuleNode->IsRoot() ? &mEmptyChild : &mChild;
 

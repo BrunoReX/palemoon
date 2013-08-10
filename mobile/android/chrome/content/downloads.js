@@ -3,12 +3,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+function dump(a) {
+  Cc["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService).logStringMessage(a);
+}
+
 const URI_GENERIC_ICON_DOWNLOAD = "drawable://alert_download";
 
 var Downloads = {
   _initialized: false,
   _dlmgr: null,
   _progressAlert: null,
+  _privateDownloads: [],
 
   _getLocalFile: function dl__getLocalFile(aFileURI) {
     // if this is a URL, get the file from that
@@ -23,13 +28,11 @@ var Downloads = {
     this._initialized = true;
 
     // Monitor downloads and display alerts
-    var os = Services.obs;
-    os.addObserver(this, "dl-start", true);
-    os.addObserver(this, "dl-failed", true);
-    os.addObserver(this, "dl-done", true);
-    os.addObserver(this, "dl-blocked", true);
-    os.addObserver(this, "dl-dirty", true);
-    os.addObserver(this, "dl-cancel", true);
+    this._dlmgr = Cc["@mozilla.org/download-manager;1"].getService(Ci.nsIDownloadManager);
+    this._progressAlert = new AlertDownloadProgressListener();
+    this._dlmgr.addPrivacyAwareListener(this._progressAlert);
+    Services.obs.addObserver(this, "xpcom-shutdown", true);
+    Services.obs.addObserver(this, "last-pb-context-exited", true);
   },
 
   openDownload: function dl_openDownload(aFileURI) {
@@ -40,7 +43,7 @@ var Downloads = {
   },
 
   cancelDownload: function dl_cancelDownload(aDownload) {
-    this._dlmgr.cancelDownload(aDownload.id);
+    aDownload.cancel();
     
     let fileURI = aDownload.target.spec;
     let f = this._getLocalFile(fileURI);
@@ -83,36 +86,40 @@ var Downloads = {
     if (!aIcon)
       aIcon = URI_GENERIC_ICON_DOWNLOAD;
 
+    if (aDownload.isPrivate) {
+      this._privateDownloads.push(aDownload);
+    }
+
     var notifier = Cc["@mozilla.org/alerts-service;1"].getService(Ci.nsIAlertsService);
+
+    if (aDownload.isPrivate) {
+      // temporary workaround for private downloads being stuck in the
+      // notification bar (bug 823285)
+      aTitle = "download";
+    }
     notifier.showAlertNotification(aIcon, aTitle, aMessage, true, "", observer,
                                    aDownload.target.spec.replace("file:", "download:"));
   },
 
+  // observer for last-pb-context-exited
   observe: function dl_observe(aSubject, aTopic, aData) {
-    let download = aSubject.QueryInterface(Ci.nsIDownload);
-    let msgKey = "";
-    if (aTopic == "dl-start") {
-      msgKey = "alertDownloadsStart2";
-      if (!this._progressAlert) {
-        if (!this._dlmgr)
-          this._dlmgr = Cc["@mozilla.org/download-manager;1"].getService(Ci.nsIDownloadManager);
-        this._progressAlert = new AlertDownloadProgressListener();
-        this._dlmgr.addListener(this._progressAlert);
+    let alertsService = Cc["@mozilla.org/alerts-service;1"].getService(Ci.nsIAlertsService);
+    let progressListener = alertsService.QueryInterface(Ci.nsIAlertsProgressListener);
+    let download;
+    while (download = this._privateDownloads.pop()) {
+      try {
+        let notificationName = download.target.spec.replace("file:", "download:");
+        progressListener.onCancel(notificationName);
+      } catch (e) {
+        dump("Error removing private download: " + e);
       }
-
-      NativeWindow.toast.show(Strings.browser.GetStringFromName("alertDownloadsToast"), "long");
-    } else if (aTopic == "dl-done") {
-      msgKey = "alertDownloadsDone2";
     }
-
-    if (msgKey)
-      this.showAlert(download, Strings.browser.GetStringFromName(msgKey), download.displayName);
   },
 
   QueryInterface: function (aIID) {
-    if (!aIID.equals(Ci.nsIObserver) &&
-        !aIID.equals(Ci.nsISupportsWeakReference) &&
-        !aIID.equals(Ci.nsISupports))
+    if (!aIID.equals(Ci.nsISupports) &&
+        !aIID.equals(Ci.nsIObserver) &&
+        !aIID.equals(Ci.nsISupportsWeakReference))
       throw Components.results.NS_ERROR_NO_INTERFACE;
     return this;
   }
@@ -136,7 +143,7 @@ AlertDownloadProgressListener.prototype = {
       Downloads.showAlert(aDownload, strings.GetStringFromName("alertDownloadsNoSpace"),
                                      strings.GetStringFromName("alertDownloadsSize"));
 
-      Cc["@mozilla.org/download-manager;1"].getService(Ci.nsIDownloadManager).cancelDownload(aDownload.id);
+      aDownload.cancel();
     }
 
     if (aDownload.percentComplete == -1) {
@@ -152,6 +159,11 @@ AlertDownloadProgressListener.prototype = {
   onDownloadStateChange: function(aState, aDownload) {
     let state = aDownload.state;
     switch (state) {
+      case Ci.nsIDownloadManager.DOWNLOAD_QUEUED:
+        NativeWindow.toast.show(Strings.browser.GetStringFromName("alertDownloadsToast"), "long");
+        Downloads.showAlert(aDownload, Strings.browser.GetStringFromName("alertDownloadsStart2"),
+                            aDownload.displayName);
+        break;
       case Ci.nsIDownloadManager.DOWNLOAD_FAILED:
       case Ci.nsIDownloadManager.DOWNLOAD_CANCELED:
       case Ci.nsIDownloadManager.DOWNLOAD_BLOCKED_PARENTAL:
@@ -161,6 +173,18 @@ AlertDownloadProgressListener.prototype = {
         let progressListener = alertsService.QueryInterface(Ci.nsIAlertsProgressListener);
         let notificationName = aDownload.target.spec.replace("file:", "download:");
         progressListener.onCancel(notificationName);
+
+        if (aDownload.isPrivate) {
+          let index = this._privateDownloads.indexOf(aDownload);
+          if (index != -1) {
+            this._privateDownloads.splice(index, 1);
+          }
+        }
+
+        if (state == Ci.nsIDownloadManager.DOWNLOAD_FINISHED) {
+          Downloads.showAlert(aDownload, Strings.browser.GetStringFromName("alertDownloadsDone2"),
+                              aDownload.displayName);
+        }
         break;
       }
     }

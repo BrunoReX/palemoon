@@ -44,6 +44,7 @@ var gIgnoreWindowSize = false;
 var gTotalChunks = 0;
 var gThisChunk = 0;
 var gContainingWindow = null;
+var gFilter = null;
 
 // "<!--CLEAR-->"
 const BLANK_URL_FOR_CLEARING = "data:text/html,%3C%21%2D%2DCLEAR%2D%2D%3E";
@@ -129,6 +130,7 @@ const PREF_INTEGER = 2;
 var gPrefsToRestore = [];
 
 const gProtocolRE = /^\w+:/;
+const gPrefItemRE = /^(|test-|ref-)pref\((.+?),(.*)\)$/;
 
 var HTTP_SERVER_PORT = 4444;
 const HTTP_SERVER_PORTS_TO_TRY = 50;
@@ -339,6 +341,10 @@ function InitAndStartRefTests()
         gThisChunk = 0;
     }
 
+    try {
+        gFilter = new RegExp(prefs.getCharPref("reftest.filter"));
+    } catch(e) {}
+
     gWindowUtils = gContainingWindow.QueryInterface(CI.nsIInterfaceRequestor).getInterface(CI.nsIDOMWindowUtils);
     if (!gWindowUtils || !gWindowUtils.compareCanvases)
         throw "nsIDOMWindowUtils inteface missing";
@@ -444,9 +450,9 @@ function StartTests()
         ReadTopManifest(uri);
         BuildUseCounts();
 
-        // We need to filter the tests which will be skipped during this test run, so when we chunk,
-        // we have a more even distribution
-        var tURL = new Array();
+        // Filter tests which will be skipped to get a more even distribution when chunking
+        // tURLs is a temporary array containing all active tests
+        var tURLs = new Array();
         for (var i = 0; i < gURLs.length; ++i) {
             if (gURLs[i].expected == EXPECTED_DEATH)
                 continue;
@@ -457,18 +463,25 @@ function StartTests()
             if (gURLs[i].slow && !gRunSlowTests)
                 continue;
 
-            tURL.push(gURLs[i]);
+            tURLs.push(gURLs[i]);
         }
 
-        gDumpLog("REFTEST INFO | Discovered " + gURLs.length + " tests, after filtering SKIP tests, we have " + tURL.length + "\n");
-        gURLs = tURL;
+        gDumpLog("REFTEST INFO | Discovered " + gURLs.length + " tests, after filtering SKIP tests, we have " + tURLs.length + "\n");
 
         if (gTotalChunks > 0 && gThisChunk > 0) {
-            var testsPerChunk = gURLs.length / gTotalChunks;
+            // Calculate start and end indices of this chunk if tURLs array were
+            // divided evenly
+            var testsPerChunk = tURLs.length / gTotalChunks;
             var start = Math.round((gThisChunk-1) * testsPerChunk);
             var end = Math.round(gThisChunk * testsPerChunk);
+
+            // Map these indices onto the gURLs array. This avoids modifying the
+            // gURLs array which prevents skipped tests from showing up in the log
+            start = gThisChunk == 1 ? 0 : gURLs.indexOf(tURLs[start]);
+            end = gThisChunk == gTotalChunks ? gURLs.length : gURLs.indexOf(tURLs[end + 1]) - 1;
             gURLs = gURLs.slice(start, end);
-            gDumpLog("REFTEST INFO | Running chunk " + gThisChunk + " out of " + gTotalChunks + " chunks.  ")
+
+            gDumpLog("REFTEST INFO | Running chunk " + gThisChunk + " out of " + gTotalChunks + " chunks.  ");
             gDumpLog("tests " + (start+1) + "-" + end + "/" + gURLs.length + "\n");
         }
         gTotalTests = gURLs.length;
@@ -668,6 +681,32 @@ function BuildConditionSandbox(aURL) {
     return sandbox;
 }
 
+function AddPrefSettings(aWhere, aPrefName, aPrefValExpression, aSandbox, aTestPrefSettings, aRefPrefSettings)
+{
+    var prefVal = Components.utils.evalInSandbox("(" + aPrefValExpression + ")", aSandbox);
+    var prefType;
+    var valType = typeof(prefVal);
+    if (valType == "boolean") {
+        prefType = PREF_BOOLEAN;
+    } else if (valType == "string") {
+        prefType = PREF_STRING;
+    } else if (valType == "number" && (parseInt(prefVal) == prefVal)) {
+        prefType = PREF_INTEGER;
+    } else {
+        return false;
+    }
+    var setting = { name: aPrefName,
+                    type: prefType,
+                    value: prefVal };
+    if (aWhere != "ref-") {
+        aTestPrefSettings.push(setting);
+    }
+    if (aWhere != "test-") {
+        aRefPrefSettings.push(setting);
+    }
+    return true;
+}
+
 function ReadTopManifest(aFileURL)
 {
     gURLs = new Array();
@@ -675,6 +714,13 @@ function ReadTopManifest(aFileURL)
     if (!url)
         throw "Expected a file or http URL for the manifest.";
     ReadManifest(url, EXPECTED_PASS);
+}
+
+function AddTestItem(aTest)
+{
+    if (gFilter && !gFilter.test(aTest.url1.spec))
+        return;
+    gURLs.push(aTest);
 }
 
 // Note: If you materially change the reftest manifest parsing,
@@ -700,6 +746,7 @@ function ReadManifest(aURL, inherited_status)
     var sandbox = BuildConditionSandbox(aURL);
     var lineNo = 0;
     var urlprefix = "";
+    var defaultTestPrefSettings = [], defaultRefPrefSettings = [];
     for each (var str in lines) {
         ++lineNo;
         if (str.charAt(0) == "#")
@@ -720,13 +767,31 @@ function ReadManifest(aURL, inherited_status)
             continue;
         }
 
+        if (items[0] == "default-preferences") {
+            var m;
+            var item;
+            defaultTestPrefSettings = [];
+            defaultRefPrefSettings = [];
+            items.shift();
+            while ((item = items.shift())) {
+                if (!(m = item.match(gPrefItemRE))) {
+                    throw "Unexpected item in default-preferences list in manifest file " + aURL.spec + " line " + lineNo;
+                }
+                if (!AddPrefSettings(m[1], m[2], m[3], sandbox, defaultTestPrefSettings, defaultRefPrefSettings)) {
+                    throw "Error in pref value in manifest file " + aURL.spec + " line " + lineNo;
+                }
+            }
+            continue;
+        }
+
         var expected_status = EXPECTED_PASS;
         var allow_silent_fail = false;
         var minAsserts = 0;
         var maxAsserts = 0;
         var needs_focus = false;
         var slow = false;
-        var testPrefSettings = [], refPrefSettings = [];
+        var testPrefSettings = defaultTestPrefSettings.concat();
+        var refPrefSettings = defaultRefPrefSettings.concat();
         var fuzzy_max_delta = 2;
         var fuzzy_max_pixels = 1;
 
@@ -792,30 +857,10 @@ function ReadManifest(aURL, inherited_status)
             } else if (item == "silentfail") {
                 cond = false;
                 allow_silent_fail = true;
-            } else if ((m = item.match(/^(|test-|ref-)pref\((.+?),(.*)\)$/))) {
+            } else if ((m = item.match(gPrefItemRE))) {
                 cond = false;
-                var where = m[1];
-                var prefName = m[2];
-                var prefVal = Components.utils.evalInSandbox("(" + m[3] + ")", sandbox);
-                var prefType;
-                var valType = typeof(prefVal);
-                if (valType == "boolean") {
-                    prefType = PREF_BOOLEAN;
-                } else if (valType == "string") {
-                    prefType = PREF_STRING;
-                } else if (valType == "number" && (parseInt(prefVal) == prefVal)) {
-                    prefType = PREF_INTEGER;
-                } else {
+                if (!AddPrefSettings(m[1], m[2], m[3], sandbox, testPrefSettings, refPrefSettings)) {
                     throw "Error in pref value in manifest file " + aURL.spec + " line " + lineNo;
-                }
-                var setting = { name: prefName,
-                                type: prefType,
-                                value: prefVal };
-                if (where != "ref-") {
-                    testPrefSettings.push(setting);
-                }
-                if (where != "test-") {
-                    refPrefSettings.push(setting);
                 }
             } else if ((m = item.match(/^fuzzy\((\d+),(\d+)\)$/))) {
               cond = false;
@@ -901,7 +946,7 @@ function ReadManifest(aURL, inherited_status)
                            : testURI.spec;
             secMan.checkLoadURIWithPrincipal(principal, testURI,
                                              CI.nsIScriptSecurityManager.DISALLOW_SCRIPT);
-            gURLs.push( { type: TYPE_LOAD,
+            AddTestItem({ type: TYPE_LOAD,
                           expected: expected_status,
                           allowSilentFail: allow_silent_fail,
                           prettyPath: prettyPath,
@@ -914,7 +959,7 @@ function ReadManifest(aURL, inherited_status)
                           fuzzyMaxDelta: fuzzy_max_delta,
                           fuzzyMaxPixels: fuzzy_max_pixels,
                           url1: testURI,
-                          url2: null } );
+                          url2: null });
         } else if (items[0] == TYPE_SCRIPT) {
             if (items.length != 2)
                 throw "Error 4 in manifest file " + aURL.spec + " line " + lineNo;
@@ -927,7 +972,7 @@ function ReadManifest(aURL, inherited_status)
                            : testURI.spec;
             secMan.checkLoadURIWithPrincipal(principal, testURI,
                                              CI.nsIScriptSecurityManager.DISALLOW_SCRIPT);
-            gURLs.push( { type: TYPE_SCRIPT,
+            AddTestItem({ type: TYPE_SCRIPT,
                           expected: expected_status,
                           allowSilentFail: allow_silent_fail,
                           prettyPath: prettyPath,
@@ -940,7 +985,7 @@ function ReadManifest(aURL, inherited_status)
                           fuzzyMaxDelta: fuzzy_max_delta,
                           fuzzyMaxPixels: fuzzy_max_pixels,
                           url1: testURI,
-                          url2: null } );
+                          url2: null });
         } else if (items[0] == TYPE_REFTEST_EQUAL || items[0] == TYPE_REFTEST_NOTEQUAL) {
             if (items.length != 3)
                 throw "Error 5 in manifest file " + aURL.spec + " line " + lineNo;
@@ -956,7 +1001,7 @@ function ReadManifest(aURL, inherited_status)
                                              CI.nsIScriptSecurityManager.DISALLOW_SCRIPT);
             secMan.checkLoadURIWithPrincipal(principal, refURI,
                                              CI.nsIScriptSecurityManager.DISALLOW_SCRIPT);
-            gURLs.push( { type: items[0],
+            AddTestItem({ type: items[0],
                           expected: expected_status,
                           allowSilentFail: allow_silent_fail,
                           prettyPath: prettyPath,
@@ -969,7 +1014,7 @@ function ReadManifest(aURL, inherited_status)
                           fuzzyMaxDelta: fuzzy_max_delta,
                           fuzzyMaxPixels: fuzzy_max_pixels,
                           url1: testURI,
-                          url2: refURI } );
+                          url2: refURI });
         } else {
             throw "Error 6 in manifest file " + aURL.spec + " line " + lineNo;
         }
@@ -1681,6 +1726,7 @@ function RestoreChangedPreferences()
     if (gPrefsToRestore.length > 0) {
         var prefs = Components.classes["@mozilla.org/preferences-service;1"].
                     getService(Components.interfaces.nsIPrefBranch);
+        gPrefsToRestore.reverse();
         gPrefsToRestore.forEach(function(ps) {
             var value = ps.value;
             if (ps.type == PREF_BOOLEAN) {

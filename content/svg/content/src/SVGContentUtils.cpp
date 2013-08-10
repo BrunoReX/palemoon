@@ -12,11 +12,10 @@
 #include "mozilla/Preferences.h"
 #include "nsComputedDOMStyle.h"
 #include "nsFontMetrics.h"
-#include "nsIDOMSVGElement.h"
 #include "nsIFrame.h"
 #include "nsIScriptError.h"
 #include "nsLayoutUtils.h"
-#include "nsSVGAnimationElement.h"
+#include "SVGAnimationElement.h"
 #include "nsSVGSVGElement.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
 
@@ -47,7 +46,7 @@ SVGContentUtils::ActivateByHyperlink(nsIContent *aContent)
   NS_ABORT_IF_FALSE(aContent->IsNodeOfType(nsINode::eANIMATION),
                     "Expecting an animation element");
 
-  static_cast<nsSVGAnimationElement*>(aContent)->ActivateByHyperlink();
+  static_cast<SVGAnimationElement*>(aContent)->ActivateByHyperlink();
 }
 
 float
@@ -160,7 +159,7 @@ SVGContentUtils::EstablishesViewport(nsIContent *aContent)
             aContent->Tag() == nsGkAtoms::symbol);
 }
 
-already_AddRefed<nsIDOMSVGElement>
+nsSVGElement*
 SVGContentUtils::GetNearestViewportElement(nsIContent *aContent)
 {
   nsIContent *element = aContent->GetFlattenedTreeParent();
@@ -170,7 +169,7 @@ SVGContentUtils::GetNearestViewportElement(nsIContent *aContent)
       if (element->Tag() == nsGkAtoms::foreignObject) {
         return nullptr;
       }
-      return nsCOMPtr<nsIDOMSVGElement>(do_QueryInterface(element)).forget();
+      return static_cast<nsSVGElement*>(element);
     }
     element = element->GetFlattenedTreeParent();
   }
@@ -247,11 +246,6 @@ GetCTMInternal(nsSVGElement *aElement, bool aScreenCTM, bool aHaveRecursed)
 gfxMatrix
 SVGContentUtils::GetCTM(nsSVGElement *aElement, bool aScreenCTM)
 {
-  nsIDocument* currentDoc = aElement->GetCurrentDoc();
-  if (currentDoc) {
-    // Flush all pending notifications so that our frames are up to date
-    currentDoc->FlushPendingNotifications(Flush_Layout);
-  }
   return GetCTMInternal(aElement, aScreenCTM, false);
 }
 
@@ -303,14 +297,14 @@ SVGContentUtils::GetViewBoxTransform(const nsSVGElement* aElement,
   NS_ASSERTION(aViewboxWidth  > 0, "viewBox width must be greater than zero!");
   NS_ASSERTION(aViewboxHeight > 0, "viewBox height must be greater than zero!");
 
-  uint16_t align = aPreserveAspectRatio.GetAlign();
-  uint16_t meetOrSlice = aPreserveAspectRatio.GetMeetOrSlice();
+  SVGAlign align = aPreserveAspectRatio.GetAlign();
+  SVGMeetOrSlice meetOrSlice = aPreserveAspectRatio.GetMeetOrSlice();
 
   // default to the defaults
-  if (align == nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_UNKNOWN)
-    align = nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMIDYMID;
-  if (meetOrSlice == nsIDOMSVGPreserveAspectRatio::SVG_MEETORSLICE_UNKNOWN)
-    meetOrSlice = nsIDOMSVGPreserveAspectRatio::SVG_MEETORSLICE_MEET;
+  if (align == SVG_PRESERVEASPECTRATIO_UNKNOWN)
+    align = SVG_PRESERVEASPECTRATIO_XMIDYMID;
+  if (meetOrSlice == SVG_MEETORSLICE_UNKNOWN)
+    meetOrSlice = SVG_MEETORSLICE_MEET;
 
   float a, d, e, f;
   a = aViewportWidth / aViewboxWidth;
@@ -318,26 +312,24 @@ SVGContentUtils::GetViewBoxTransform(const nsSVGElement* aElement,
   e = 0.0f;
   f = 0.0f;
 
-  if (align != nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_NONE &&
+  if (align != SVG_PRESERVEASPECTRATIO_NONE &&
       a != d) {
-    if ((meetOrSlice == nsIDOMSVGPreserveAspectRatio::SVG_MEETORSLICE_MEET &&
-        a < d) ||
-        (meetOrSlice == nsIDOMSVGPreserveAspectRatio::SVG_MEETORSLICE_SLICE &&
-        d < a)) {
+    if ((meetOrSlice == SVG_MEETORSLICE_MEET && a < d) ||
+        (meetOrSlice == SVG_MEETORSLICE_SLICE && d < a)) {
       d = a;
       switch (align) {
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMINYMIN:
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMIDYMIN:
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMAXYMIN:
+      case SVG_PRESERVEASPECTRATIO_XMINYMIN:
+      case SVG_PRESERVEASPECTRATIO_XMIDYMIN:
+      case SVG_PRESERVEASPECTRATIO_XMAXYMIN:
         break;
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMINYMID:
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMIDYMID:
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMAXYMID:
+      case SVG_PRESERVEASPECTRATIO_XMINYMID:
+      case SVG_PRESERVEASPECTRATIO_XMIDYMID:
+      case SVG_PRESERVEASPECTRATIO_XMAXYMID:
         f = (aViewportHeight - a * aViewboxHeight) / 2.0f;
         break;
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMINYMAX:
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMIDYMAX:
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMAXYMAX:
+      case SVG_PRESERVEASPECTRATIO_XMINYMAX:
+      case SVG_PRESERVEASPECTRATIO_XMIDYMAX:
+      case SVG_PRESERVEASPECTRATIO_XMAXYMAX:
         f = aViewportHeight - a * aViewboxHeight;
         break;
       default:
@@ -345,24 +337,24 @@ SVGContentUtils::GetViewBoxTransform(const nsSVGElement* aElement,
       }
     }
     else if (
-      (meetOrSlice == nsIDOMSVGPreserveAspectRatio::SVG_MEETORSLICE_MEET &&
+      (meetOrSlice == SVG_MEETORSLICE_MEET &&
       d < a) ||
-      (meetOrSlice == nsIDOMSVGPreserveAspectRatio::SVG_MEETORSLICE_SLICE &&
+      (meetOrSlice == SVG_MEETORSLICE_SLICE &&
       a < d)) {
       a = d;
       switch (align) {
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMINYMIN:
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMINYMID:
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMINYMAX:
+      case SVG_PRESERVEASPECTRATIO_XMINYMIN:
+      case SVG_PRESERVEASPECTRATIO_XMINYMID:
+      case SVG_PRESERVEASPECTRATIO_XMINYMAX:
         break;
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMIDYMIN:
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMIDYMID:
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMIDYMAX:
+      case SVG_PRESERVEASPECTRATIO_XMIDYMIN:
+      case SVG_PRESERVEASPECTRATIO_XMIDYMID:
+      case SVG_PRESERVEASPECTRATIO_XMIDYMAX:
         e = (aViewportWidth - a * aViewboxWidth) / 2.0f;
         break;
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMAXYMIN:
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMAXYMID:
-      case nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMAXYMAX:
+      case SVG_PRESERVEASPECTRATIO_XMAXYMIN:
+      case SVG_PRESERVEASPECTRATIO_XMAXYMID:
+      case SVG_PRESERVEASPECTRATIO_XMAXYMAX:
         e = aViewportWidth - a * aViewboxWidth;
         break;
       default:

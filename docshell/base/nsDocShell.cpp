@@ -65,8 +65,8 @@
 #include "nsWidgetsCID.h"
 #include "nsDOMJSUtils.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsIView.h"
-#include "nsIViewManager.h"
+#include "nsView.h"
+#include "nsViewManager.h"
 #include "nsIScriptChannel.h"
 #include "nsIOfflineCacheUpdate.h"
 #include "nsITimedChannel.h"
@@ -161,7 +161,6 @@
 #include "nsIJARChannel.h"
 
 #include "prlog.h"
-#include "prmem.h"
 
 #include "nsISelectionDisplay.h"
 
@@ -194,7 +193,10 @@
 #include "mozilla/Telemetry.h"
 #include "nsISecurityUITelemetry.h"
 
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
+#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
+#include "nsIAppShellService.h"
+#include "nsAppShellCID.h"
+#else
 #include "nsIPrivateBrowsingService.h"
 #endif
 
@@ -767,6 +769,7 @@ nsDocShell::nsDocShell():
 #ifdef DEBUG
     mInEnsureScriptEnv(false),
 #endif
+    mAffectPrivateSessionLifetime(true),
     mFrameType(eFrameTypeRegular),
     mOwnOrContainingAppId(nsIScriptSecurityManager::UNKNOWN_APP_ID),
     mParentCharsetSource(0)
@@ -1038,9 +1041,8 @@ NS_IMETHODIMP nsDocShell::GetInterface(const nsIID & aIID, void **aSink)
         return NS_OK;
     }
     else if (aIID.Equals(NS_GET_IID(nsISelectionDisplay))) {
-      nsCOMPtr<nsIPresShell> shell;
-      nsresult rv = GetPresShell(getter_AddRefs(shell));
-      if (NS_SUCCEEDED(rv) && shell)
+      nsIPresShell* shell = GetPresShell();
+      if (shell)
         return shell->QueryInterface(aIID,aSink);    
     }
     else if (aIID.Equals(NS_GET_IID(nsIDocShellTreeOwner))) {
@@ -1511,6 +1513,7 @@ nsDocShell::LoadURI(nsIURI * aURI,
                         flags,
                         target.get(),
                         nullptr,         // No type hint
+                        NullString(),    // No forced download
                         postStream,
                         headersStream,
                         loadType,
@@ -1743,22 +1746,12 @@ nsDocShell::GetPresContext(nsPresContext ** aPresContext)
     return mContentViewer->GetPresContext(aPresContext);
 }
 
-NS_IMETHODIMP
-nsDocShell::GetPresShell(nsIPresShell ** aPresShell)
+NS_IMETHODIMP_(nsIPresShell*)
+nsDocShell::GetPresShell()
 {
-    nsresult rv = NS_OK;
-
-    NS_ENSURE_ARG_POINTER(aPresShell);
-    *aPresShell = nullptr;
-
     nsRefPtr<nsPresContext> presContext;
     (void) GetPresContext(getter_AddRefs(presContext));
-
-    if (presContext) {
-        NS_IF_ADDREF(*aPresShell = presContext->GetPresShell());
-    }
-
-    return rv;
+    return presContext ? presContext->GetPresShell() : nullptr;
 }
 
 NS_IMETHODIMP
@@ -1879,8 +1872,7 @@ nsDocShell::GetCharset(char** aCharset)
     NS_ENSURE_ARG_POINTER(aCharset);
     *aCharset = nullptr; 
 
-    nsCOMPtr<nsIPresShell> presShell;
-    GetPresShell(getter_AddRefs(presShell));
+    nsIPresShell* presShell = GetPresShell();
     NS_ENSURE_TRUE(presShell, NS_ERROR_FAILURE);
     nsIDocument *doc = presShell->GetDocument();
     NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
@@ -1971,6 +1963,14 @@ nsDocShell::GetChannelIsUnsafe(bool *aUnsafe)
 }
 
 NS_IMETHODIMP
+nsDocShell::GetHasMixedActiveContentLoaded(bool *aHasMixedActiveContentLoaded)
+{
+    nsCOMPtr<nsIDocument> doc(do_GetInterface(GetAsSupports(this)));
+    *aHasMixedActiveContentLoaded = doc && doc->GetHasMixedActiveContentLoaded();
+    return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDocShell::GetAllowPlugins(bool * aAllowPlugins)
 {
     NS_ENSURE_ARG_POINTER(aAllowPlugins);
@@ -2044,10 +2044,12 @@ nsDocShell::SetPrivateBrowsing(bool aUsePrivateBrowsing)
     bool changed = aUsePrivateBrowsing != mInPrivateBrowsing;
     if (changed) {
         mInPrivateBrowsing = aUsePrivateBrowsing;
-        if (aUsePrivateBrowsing) {
-            IncreasePrivateDocShellCount();
-        } else {
-            DecreasePrivateDocShellCount();
+        if (mAffectPrivateSessionLifetime) {
+            if (aUsePrivateBrowsing) {
+                IncreasePrivateDocShellCount();
+            } else {
+                DecreasePrivateDocShellCount();
+            }
         }
     }
 
@@ -2071,6 +2073,36 @@ nsDocShell::SetPrivateBrowsing(bool aUsePrivateBrowsing)
             }
         }
     }
+    return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDocShell::SetAffectPrivateSessionLifetime(bool aAffectLifetime)
+{
+    bool change = aAffectLifetime != mAffectPrivateSessionLifetime;
+    if (change && mInPrivateBrowsing) {
+        if (aAffectLifetime) {
+            IncreasePrivateDocShellCount();
+        } else {
+            DecreasePrivateDocShellCount();
+        }
+    }
+    mAffectPrivateSessionLifetime = aAffectLifetime;
+
+    int32_t count = mChildList.Count();
+    for (int32_t i = 0; i < count; ++i) {
+        nsCOMPtr<nsIDocShell> shell = do_QueryInterface(ChildAt(i));
+        if (shell) {
+            shell->SetAffectPrivateSessionLifetime(aAffectLifetime);
+        }
+    }
+    return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDocShell::GetAffectPrivateSessionLifetime(bool* aAffectLifetime)
+{
+    *aAffectLifetime = mAffectPrivateSessionLifetime;
     return NS_OK;
 }
 
@@ -2789,24 +2821,28 @@ nsDocShell::SetDocLoaderParent(nsDocLoader * aParent)
             value = false;
         }
         SetAllowDNSPrefetch(value);
+        value = parentAsDocShell->GetAffectPrivateSessionLifetime();
+        SetAffectPrivateSessionLifetime(value);
     }
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-    // Set the PB flag on the docshell based on the global PB mode for now
-    nsCOMPtr<nsIPrivateBrowsingService> pbs =
-      do_GetService(NS_PRIVATE_BROWSING_SERVICE_CONTRACTID);
-    if (pbs) {
-      bool inPrivateBrowsing = false;
-      pbs->GetPrivateBrowsingEnabled(&inPrivateBrowsing);
-      SetPrivateBrowsing(inPrivateBrowsing);
-    }
-#else
+
     nsCOMPtr<nsILoadContext> parentAsLoadContext(do_QueryInterface(parent));
     if (parentAsLoadContext &&
         NS_SUCCEEDED(parentAsLoadContext->GetUsePrivateBrowsing(&value)))
     {
         SetPrivateBrowsing(value);
-    }
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
+        // Belt and suspenders - we want to catch any instances where the flag
+        // we're propagating doesn't match the global state.
+        nsCOMPtr<nsIPrivateBrowsingService> pbs =
+                do_GetService(NS_PRIVATE_BROWSING_SERVICE_CONTRACTID);
+        if (pbs) {
+            bool inPrivateBrowsing = false;
+            pbs->GetPrivateBrowsingEnabled(&inPrivateBrowsing);
+            NS_ASSERTION(inPrivateBrowsing == mInPrivateBrowsing,
+                         "Privacy status of parent docshell doesn't match global state!");
+        }
 #endif
+    }
     
     nsCOMPtr<nsIURIContentListener> parentURIListener(do_GetInterface(parent));
     if (parentURIListener)
@@ -3246,8 +3282,7 @@ PrintDocTree(nsIDocShellTreeItem * aParentNode, int aLevel)
   nsCOMPtr<nsIDocShell> parentAsDocShell(do_QueryInterface(aParentNode));
   int32_t type;
   aParentNode->GetItemType(&type);
-  nsCOMPtr<nsIPresShell> presShell;
-  parentAsDocShell->GetPresShell(getter_AddRefs(presShell));
+  nsCOMPtr<nsIPresShell> presShell = parentAsDocShell->GetPresShell();
   nsRefPtr<nsPresContext> presContext;
   parentAsDocShell->GetPresContext(getter_AddRefs(presContext));
   nsIDocument *doc = presShell->GetDocument();
@@ -3255,7 +3290,7 @@ PrintDocTree(nsIDocShellTreeItem * aParentNode, int aLevel)
   nsCOMPtr<nsIDOMWindow> domwin(doc->GetWindow());
 
   nsCOMPtr<nsIWidget> widget;
-  nsIViewManager* vm = presShell->GetViewManager();
+  nsViewManager* vm = presShell->GetViewManager();
   if (vm) {
     vm->GetWidget(getter_AddRefs(widget));
   }
@@ -4502,7 +4537,7 @@ nsDocShell::LoadErrorPage(nsIURI *aURI, const PRUnichar *aURL,
 
     return InternalLoad(errorPageURI, nullptr, nullptr,
                         INTERNAL_LOAD_FLAGS_INHERIT_OWNER, nullptr, nullptr,
-                        nullptr, nullptr, LOAD_ERROR_PAGE,
+                        NullString(), nullptr, nullptr, LOAD_ERROR_PAGE,
                         nullptr, true, nullptr, nullptr);
 }
 
@@ -4533,7 +4568,7 @@ nsDocShell::Reload(uint32_t aReloadFlags)
 
     if (!canReload)
       return NS_OK;
-    
+
     /* If you change this part of code, make sure bug 45297 does not re-occur */
     if (mOSHE) {
         rv = LoadHistoryEntry(mOSHE, loadType);
@@ -4557,15 +4592,15 @@ nsDocShell::Reload(uint32_t aReloadFlags)
                           INTERNAL_LOAD_FLAGS_NONE, // Do not inherit owner from document
                           nullptr,         // No window target
                           NS_LossyConvertUTF16toASCII(contentTypeHint).get(),
+                          NullString(),    // No forced download
                           nullptr,         // No post data
                           nullptr,         // No headers data
-                          loadType,       // Load type
+                          loadType,        // Load type
                           nullptr,         // No SHEntry
                           true,
                           nullptr,         // No nsIDocShell
                           nullptr);        // No nsIRequest
     }
-    
 
     return rv;
 }
@@ -4932,7 +4967,9 @@ nsDocShell::Destroy()
 
     if (mInPrivateBrowsing) {
         mInPrivateBrowsing = false;
-        DecreasePrivateDocShellCount();
+        if (mAffectPrivateSessionLifetime) {
+            DecreasePrivateDocShellCount();
+        }
     }
 
     return NS_OK;
@@ -5051,14 +5088,13 @@ nsDocShell::DoGetPositionAndSize(int32_t * x, int32_t * y, int32_t * cx,
 NS_IMETHODIMP
 nsDocShell::Repaint(bool aForce)
 {
-    nsCOMPtr<nsIPresShell> presShell;
-    GetPresShell(getter_AddRefs(presShell));
+    nsCOMPtr<nsIPresShell> presShell =GetPresShell();
     NS_ENSURE_TRUE(presShell, NS_ERROR_FAILURE);
 
-    nsIViewManager* viewManager = presShell->GetViewManager();
+    nsViewManager* viewManager = presShell->GetViewManager();
     NS_ENSURE_TRUE(viewManager, NS_ERROR_FAILURE);
 
-    NS_ENSURE_SUCCESS(viewManager->InvalidateAllViews(), NS_ERROR_FAILURE);
+    viewManager->InvalidateAllViews();
     return NS_OK;
 }
 
@@ -5117,17 +5153,16 @@ nsDocShell::GetVisibility(bool * aVisibility)
     if (!mContentViewer)
         return NS_OK;
 
-    nsCOMPtr<nsIPresShell> presShell;
-    GetPresShell(getter_AddRefs(presShell));
+    nsCOMPtr<nsIPresShell> presShell = GetPresShell();
     if (!presShell)
         return NS_OK;
 
     // get the view manager
-    nsIViewManager* vm = presShell->GetViewManager();
+    nsViewManager* vm = presShell->GetViewManager();
     NS_ENSURE_TRUE(vm, NS_ERROR_FAILURE);
 
     // get the root view
-    nsIView *view = vm->GetRootView(); // views are not ref counted
+    nsView *view = vm->GetRootView(); // views are not ref counted
     NS_ENSURE_TRUE(view, NS_ERROR_FAILURE);
 
     // if our root view is hidden, we are not visible
@@ -5143,11 +5178,10 @@ nsDocShell::GetVisibility(bool * aVisibility)
     treeItem->GetParent(getter_AddRefs(parentItem));
     while (parentItem) {
         nsCOMPtr<nsIDocShell> docShell(do_QueryInterface(treeItem));
-        docShell->GetPresShell(getter_AddRefs(presShell));
+        presShell = docShell->GetPresShell();
 
         nsCOMPtr<nsIDocShell> parentDS = do_QueryInterface(parentItem);
-        nsCOMPtr<nsIPresShell> pPresShell;
-        parentDS->GetPresShell(getter_AddRefs(pPresShell));
+        nsCOMPtr<nsIPresShell> pPresShell = parentDS->GetPresShell();
 
         // Null-check for crash in bug 267804
         if (!pPresShell) {
@@ -5208,8 +5242,7 @@ nsDocShell::SetIsActive(bool aIsActive)
   mIsActive = aIsActive;
 
   // Tell the PresShell about it.
-  nsCOMPtr<nsIPresShell> pshell;
-  GetPresShell(getter_AddRefs(pshell));
+  nsCOMPtr<nsIPresShell> pshell = GetPresShell();
   if (pshell)
     pshell->SetIsActive(aIsActive);
 
@@ -6233,8 +6266,6 @@ NS_IMETHODIMP
 nsDocShell::OnStateChange(nsIWebProgress * aProgress, nsIRequest * aRequest,
                           uint32_t aStateFlags, nsresult aStatus)
 {
-    nsresult rv;
-
     if ((~aStateFlags & (STATE_START | STATE_IS_NETWORK)) == 0) {
         // Save timing statistics.
         nsCOMPtr<nsIChannel> channel(do_QueryInterface(aRequest));
@@ -6249,7 +6280,7 @@ nsDocShell::OnStateChange(nsIWebProgress * aProgress, nsIRequest * aRequest,
 
         // We don't update navigation timing for wyciwyg channels
         if (this == aProgress && !wcwgChannel){
-            rv = MaybeInitTiming();
+            MaybeInitTiming();
             if (mTiming) {
                 mTiming->NotifyFetchStart(uri, ConvertLoadTypeToNavigationType(mLoadType));
             } 
@@ -6293,11 +6324,11 @@ nsDocShell::OnStateChange(nsIWebProgress * aProgress, nsIRequest * aRequest,
                 // from the channel and store it in session history.
                 // Pass false for aCloneChildren, since we're creating
                 // a new DOM here.
-                rv = AddToSessionHistory(uri, wcwgChannel, nullptr, false,
-                                         getter_AddRefs(mLSHE));
+                AddToSessionHistory(uri, wcwgChannel, nullptr, false,
+                                    getter_AddRefs(mLSHE));
                 SetCurrentURI(uri, aRequest, true, 0);
                 // Save history state of the previous page
-                rv = PersistLayoutHistoryState();
+                PersistLayoutHistoryState();
                 // We'll never get an Embed() for this load, so just go ahead
                 // and SetHistoryEntry now.
                 SetHistoryEntry(&mOSHE, mLSHE);
@@ -7395,15 +7426,14 @@ nsDocShell::RestoreFromHistory()
     // new content viewer's root view at the same position.  Also save the
     // bounds of the root view's widget.
 
-    nsIView *rootViewSibling = nullptr, *rootViewParent = nullptr;
+    nsView *rootViewSibling = nullptr, *rootViewParent = nullptr;
     nsIntRect newBounds(0, 0, 0, 0);
 
-    nsCOMPtr<nsIPresShell> oldPresShell;
-    nsDocShell::GetPresShell(getter_AddRefs(oldPresShell));
+    nsCOMPtr<nsIPresShell> oldPresShell = GetPresShell();
     if (oldPresShell) {
-        nsIViewManager *vm = oldPresShell->GetViewManager();
+        nsViewManager *vm = oldPresShell->GetViewManager();
         if (vm) {
-            nsIView *oldRootView = vm->GetRootView();
+            nsView *oldRootView = vm->GetRootView();
 
             if (oldRootView) {
                 rootViewSibling = oldRootView->GetNextSibling();
@@ -7620,11 +7650,10 @@ nsDocShell::RestoreFromHistory()
         NS_ENSURE_SUCCESS(rv, rv);
     }
 
-    nsCOMPtr<nsIPresShell> shell;
-    nsDocShell::GetPresShell(getter_AddRefs(shell));
+    nsCOMPtr<nsIPresShell> shell = GetPresShell();
 
-    nsIViewManager *newVM = shell ? shell->GetViewManager() : nullptr;
-    nsIView *newRootView = newVM ? newVM->GetRootView() : nullptr;
+    nsViewManager *newVM = shell ? shell->GetViewManager() : nullptr;
+    nsView *newRootView = newVM ? newVM->GetRootView() : nullptr;
 
     // Insert the new root view at the correct location in the view tree.
     if (container) {
@@ -7639,7 +7668,7 @@ nsDocShell::RestoreFromHistory()
         rootViewSibling = nullptr;
     }
     if (rootViewParent && newRootView && newRootView->GetParent() != rootViewParent) {
-        nsIViewManager *parentVM = rootViewParent->GetViewManager();
+        nsViewManager *parentVM = rootViewParent->GetViewManager();
         if (parentVM) {
             // InsertChild(parent, child, sib, true) inserts the child after
             // sib in content order, which is before sib in view order. BUT
@@ -7901,8 +7930,7 @@ nsDocShell::CreateContentViewer(const char *aContentType,
     // the ID can be used to distinguish it from the other parts.
     nsCOMPtr<nsIMultiPartChannel> multiPartChannel(do_QueryInterface(request));
     if (multiPartChannel) {
-      nsCOMPtr<nsIPresShell> shell;
-      rv = GetPresShell(getter_AddRefs(shell));
+      nsCOMPtr<nsIPresShell> shell = GetPresShell();
       if (NS_SUCCEEDED(rv) && shell) {
         nsIDocument *doc = shell->GetDocument();
         if (doc) {
@@ -8328,12 +8356,13 @@ public:
             mTypeHint = aTypeHint;
         }
     }
-    
+
     NS_IMETHOD Run() {
         return mDocShell->InternalLoad(mURI, mReferrer, mOwner, mFlags,
                                        nullptr, mTypeHint.get(),
-                                       mPostData, mHeadersData, mLoadType,
-                                       mSHEntry, mFirstParty, nullptr, nullptr);
+                                       NullString(), mPostData, mHeadersData,
+                                       mLoadType, mSHEntry, mFirstParty,
+                                       nullptr, nullptr);
     }
 
 private:
@@ -8378,6 +8407,7 @@ nsDocShell::InternalLoad(nsIURI * aURI,
                          uint32_t aFlags,
                          const PRUnichar *aWindowTarget,
                          const char* aTypeHint,
+                         const nsAString& aFileName,
                          nsIInputStream * aPostData,
                          nsIInputStream * aHeadersData,
                          uint32_t aLoadType,
@@ -8397,7 +8427,6 @@ nsDocShell::InternalLoad(nsIURI * aURI,
         PR_LogPrint("DOCSHELL %p InternalLoad %s\n", this, spec.get());
     }
 #endif
-    
     // Initialize aDocShell/aRequest
     if (aDocShell) {
         *aDocShell = nullptr;
@@ -8612,6 +8641,7 @@ nsDocShell::InternalLoad(nsIURI * aURI,
                                               aFlags,
                                               nullptr,         // No window target
                                               aTypeHint,
+                                              NullString(),    // No forced download
                                               aPostData,
                                               aHeadersData,
                                               aLoadType,
@@ -8992,12 +9022,13 @@ nsDocShell::InternalLoad(nsIURI * aURI,
     if (!bIsJavascript) {
         MaybeInitTiming();
     }
-    if (mTiming) {
+    bool timeBeforeUnload = aFileName.IsVoid();
+    if (mTiming && timeBeforeUnload) {
       mTiming->NotifyBeforeUnload();
     }
     // Check if the page doesn't want to be unloaded. The javascript:
     // protocol handler deals with this for javascript: URLs.
-    if (!bIsJavascript && mContentViewer) {
+    if (!bIsJavascript && aFileName.IsVoid() && mContentViewer) {
         bool okToUnload;
         rv = mContentViewer->PermitUnload(false, &okToUnload);
 
@@ -9008,7 +9039,7 @@ nsDocShell::InternalLoad(nsIURI * aURI,
         }
     }
 
-    if (mTiming) {
+    if (mTiming && timeBeforeUnload) {
       mTiming->NotifyUnloadAccepted(mCurrentURI);
     }
 
@@ -9108,8 +9139,8 @@ nsDocShell::InternalLoad(nsIURI * aURI,
     nsCOMPtr<nsIRequest> req;
     rv = DoURILoad(aURI, aReferrer,
                    !(aFlags & INTERNAL_LOAD_FLAGS_DONT_SEND_REFERRER),
-                   owner, aTypeHint, aPostData, aHeadersData, aFirstParty,
-                   aDocShell, getter_AddRefs(req),
+                   owner, aTypeHint, aFileName, aPostData, aHeadersData,
+                   aFirstParty, aDocShell, getter_AddRefs(req),
                    (aFlags & INTERNAL_LOAD_FLAGS_FIRST_LOAD) != 0,
                    (aFlags & INTERNAL_LOAD_FLAGS_BYPASS_CLASSIFIER) != 0,
                    (aFlags & INTERNAL_LOAD_FLAGS_FORCE_ALLOW_COOKIES) != 0);
@@ -9182,6 +9213,7 @@ nsDocShell::DoURILoad(nsIURI * aURI,
                       bool aSendReferrer,
                       nsISupports * aOwner,
                       const char * aTypeHint,
+                      const nsAString & aFileName,
                       nsIInputStream * aPostData,
                       nsIInputStream * aHeadersData,
                       bool aFirstParty,
@@ -9281,11 +9313,19 @@ nsDocShell::DoURILoad(nsIURI * aURI,
     if (aTypeHint && *aTypeHint) {
         channel->SetContentType(nsDependentCString(aTypeHint));
         mContentTypeHint = aTypeHint;
-    }
-    else {
+    } else {
         mContentTypeHint.Truncate();
     }
-    
+
+    if (!aFileName.IsVoid()) {
+        rv = channel->SetContentDisposition(nsIChannel::DISPOSITION_ATTACHMENT);
+        NS_ENSURE_SUCCESS(rv, rv);
+        if (!aFileName.IsEmpty()) {
+            rv = channel->SetContentDispositionFilename(aFileName);
+            NS_ENSURE_SUCCESS(rv, rv);
+        }
+    }
+
     //hack
     nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(channel));
     nsCOMPtr<nsIHttpChannelInternal> httpChannelInternal(do_QueryInterface(channel));
@@ -9597,12 +9637,11 @@ nsDocShell::ScrollToAnchor(nsACString & aCurHash, nsACString & aNewHash,
         return NS_OK;
     }
 
-    nsCOMPtr<nsIPresShell> shell;
-    nsresult rv = GetPresShell(getter_AddRefs(shell));
-    if (NS_FAILED(rv) || !shell) {
+    nsCOMPtr<nsIPresShell> shell = GetPresShell();
+    if (!shell) {
         // If we failed to get the shell, or if there is no shell,
         // nothing left to do here.
-        return rv;
+        return NS_OK;
     }
 
     // If we have no new anchor, we do not want to scroll, unless there is a
@@ -9644,7 +9683,7 @@ nsDocShell::ScrollToAnchor(nsACString & aCurHash, nsACString & aNewHash,
         // conversion will fail and give us an empty Unicode string.
         // In that case, we should just fall through to using the
         // page's charset.
-        rv = NS_ERROR_FAILURE;
+        nsresult rv = NS_ERROR_FAILURE;
         NS_ConvertUTF8toUTF16 uStr(str);
         if (!uStr.IsEmpty()) {
             rv = shell->GoToAnchor(NS_ConvertUTF8toUTF16(str), scroll);
@@ -10322,10 +10361,13 @@ nsDocShell::ShouldAddToSessionHistory(nsIURI * aURI)
         }
     }
 
-    rv = aURI->GetSpec(buf);
-    NS_ENSURE_SUCCESS(rv, true);
-
     rv = Preferences::GetDefaultCString("browser.newtab.url", &pref);
+
+    if (NS_FAILED(rv)) {
+        return true;
+    }
+
+    rv = aURI->GetSpec(buf);
     NS_ENSURE_SUCCESS(rv, true);
 
     return !buf.Equals(pref);
@@ -10593,11 +10635,12 @@ nsDocShell::LoadHistoryEntry(nsISHEntry * aEntry, uint32_t aLoadType)
                       owner,
                       INTERNAL_LOAD_FLAGS_NONE, // Do not inherit owner from document (security-critical!)
                       nullptr,            // No window target
-                      contentType.get(), // Type hint
-                      postData,          // Post data stream
+                      contentType.get(),  // Type hint
+                      NullString(),       // No forced file download
+                      postData,           // Post data stream
                       nullptr,            // No headers stream
-                      aLoadType,         // Load type
-                      aEntry,            // SHEntry
+                      aLoadType,          // Load type
+                      aEntry,             // SHEntry
                       true,
                       nullptr,            // No nsIDocShell
                       nullptr);           // No nsIRequest
@@ -10621,9 +10664,8 @@ NS_IMETHODIMP nsDocShell::PersistLayoutHistoryState()
     nsresult  rv = NS_OK;
     
     if (mOSHE) {
-        nsCOMPtr<nsIPresShell> shell;
-        rv = GetPresShell(getter_AddRefs(shell));
-        if (NS_SUCCEEDED(rv) && shell) {
+        nsCOMPtr<nsIPresShell> shell = GetPresShell();
+        if (shell) {
             nsCOMPtr<nsILayoutHistoryState> layoutState;
             rv = shell->CaptureHistoryState(getter_AddRefs(layoutState));
         }
@@ -11269,8 +11311,7 @@ nsDocShell::GetChildOffset(nsIDOMNode * aChild, nsIDOMNode * aParent,
 nsIScrollableFrame *
 nsDocShell::GetRootScrollFrame()
 {
-    nsCOMPtr<nsIPresShell> shell;
-    NS_ENSURE_SUCCESS(GetPresShell(getter_AddRefs(shell)), nullptr);
+    nsCOMPtr<nsIPresShell> shell = GetPresShell();
     NS_ENSURE_TRUE(shell, nullptr);
 
     return shell->GetRootScrollFrameAsScrollableExternal();
@@ -11830,7 +11871,8 @@ public:
   OnLinkClickEvent(nsDocShell* aHandler, nsIContent* aContent,
                    nsIURI* aURI,
                    const PRUnichar* aTargetSpec,
-                   nsIInputStream* aPostDataStream, 
+                   const nsAString& aFileName,
+                   nsIInputStream* aPostDataStream,
                    nsIInputStream* aHeadersDataStream,
                    bool aIsTrusted);
 
@@ -11841,8 +11883,8 @@ public:
     nsCxPusher pusher;
     if (mIsTrusted || pusher.Push(mContent)) {
       mHandler->OnLinkClickSync(mContent, mURI,
-                                mTargetSpec.get(), mPostDataStream,
-                                mHeadersDataStream,
+                                mTargetSpec.get(), mFileName,
+                                mPostDataStream, mHeadersDataStream,
                                 nullptr, nullptr);
     }
     return NS_OK;
@@ -11852,6 +11894,7 @@ private:
   nsRefPtr<nsDocShell>     mHandler;
   nsCOMPtr<nsIURI>         mURI;
   nsString                 mTargetSpec;
+  nsString                mFileName;
   nsCOMPtr<nsIInputStream> mPostDataStream;
   nsCOMPtr<nsIInputStream> mHeadersDataStream;
   nsCOMPtr<nsIContent>     mContent;
@@ -11863,12 +11906,14 @@ OnLinkClickEvent::OnLinkClickEvent(nsDocShell* aHandler,
                                    nsIContent *aContent,
                                    nsIURI* aURI,
                                    const PRUnichar* aTargetSpec,
+                                   const nsAString& aFileName,
                                    nsIInputStream* aPostDataStream,
                                    nsIInputStream* aHeadersDataStream,
                                    bool aIsTrusted)
   : mHandler(aHandler)
   , mURI(aURI)
   , mTargetSpec(aTargetSpec)
+  , mFileName(aFileName)
   , mPostDataStream(aPostDataStream)
   , mHeadersDataStream(aHeadersDataStream)
   , mContent(aContent)
@@ -11885,6 +11930,7 @@ NS_IMETHODIMP
 nsDocShell::OnLinkClick(nsIContent* aContent,
                         nsIURI* aURI,
                         const PRUnichar* aTargetSpec,
+                        const nsAString& aFileName,
                         nsIInputStream* aPostDataStream,
                         nsIInputStream* aHeadersDataStream,
                         bool aIsTrusted)
@@ -11924,7 +11970,7 @@ nsDocShell::OnLinkClick(nsIContent* aContent,
     target = aTargetSpec;  
 
   nsCOMPtr<nsIRunnable> ev =
-      new OnLinkClickEvent(this, aContent, aURI, target.get(),
+      new OnLinkClickEvent(this, aContent, aURI, target.get(), aFileName, 
                            aPostDataStream, aHeadersDataStream, aIsTrusted);
   return NS_DispatchToCurrentThread(ev);
 }
@@ -11933,6 +11979,7 @@ NS_IMETHODIMP
 nsDocShell::OnLinkClickSync(nsIContent *aContent,
                             nsIURI* aURI,
                             const PRUnichar* aTargetSpec,
+                            const nsAString& aFileName,
                             nsIInputStream* aPostDataStream,
                             nsIInputStream* aHeadersDataStream,
                             nsIDocShell** aDocShell,
@@ -12025,7 +12072,7 @@ nsDocShell::OnLinkClickSync(nsIContent *aContent,
   if (!clonedURI) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
-  
+
   nsresult rv = InternalLoad(clonedURI,                 // New URI
                              referer,                   // Referer URI
                              aContent->NodePrincipal(), // Owner is our node's
@@ -12033,11 +12080,12 @@ nsDocShell::OnLinkClickSync(nsIContent *aContent,
                              INTERNAL_LOAD_FLAGS_NONE,
                              target.get(),              // Window target
                              NS_LossyConvertUTF16toASCII(typeHint).get(),
+                             aFileName,                 // Download as file
                              aPostDataStream,           // Post data stream
                              aHeadersDataStream,        // Headers stream
                              LOAD_LINK,                 // Load type
-                             nullptr,                    // No SHEntry
-                             true,                   // first party site
+                             nullptr,                   // No SHEntry
+                             true,                      // first party site
                              aDocShell,                 // DocShell out-param
                              aRequest);                 // Request out-param
   if (NS_SUCCEEDED(rv)) {

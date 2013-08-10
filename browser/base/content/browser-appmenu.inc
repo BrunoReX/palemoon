@@ -27,12 +27,6 @@
                       label="&newNavigatorCmd.label;"
                       command="cmd_newNavigator"
                       key="key_newNavigator"/>
-#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
-            <menuitem id="appmenu_newPrivateWindow"
-                      label="&newPrivateWindow.label;"
-                      command="Tools:PrivateBrowsing"
-                      key="key_privatebrowsing"/>
-#endif
             <menuseparator/>
             <menuitem id="appmenu_openFile"
                       label="&openFileCmd.label;"
@@ -40,7 +34,13 @@
                       key="openFileKb"/>
           </menupopup>
       </splitmenu>
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
+#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
+      <menuitem id="appmenu_newPrivateWindow"
+                class="menuitem-iconic menuitem-iconic-tooltip"
+                label="&newPrivateWindow.label;"
+                command="Tools:PrivateBrowsing"
+                key="key_privatebrowsing"/>
+#else
       <menuitem id="appmenu_privateBrowsing"
                 class="menuitem-iconic menuitem-iconic-tooltip"
                 label="&privateBrowsingCmd.start.label;"
@@ -147,23 +147,30 @@
           </menupopup>
       </splitmenu>
       <menuseparator class="appmenu-menuseparator"/>
-      <menu id="appmenu_webDeveloper"
-            label="&appMenuWebDeveloper.label;">
+      <splitmenu id="appmenu_webDeveloper"
+                 command="Tools:DevToolbox"
+                 label="&appMenuWebDeveloper.label;">
         <menupopup id="appmenu_webDeveloper_popup">
-          <menuitem id="appmenu_devToolbar" observes="devtoolsMenuBroadcaster_DevToolbar"/>
-          <menuitem id="appmenu_webConsole" observes="devtoolsMenuBroadcaster_WebConsole"/>
-          <menuitem id="appmenu_remoteWebConsole" observes="devtoolsMenuBroadcaster_RemoteWebConsole"/>
-          <menuitem id="appmenu_pageinspect" observes="devtoolsMenuBroadcaster_Inspect"/>
-          <menuitem id="appmenu_responsiveUI" observes="devtoolsMenuBroadcaster_ResponsiveUI"/>
-          <menuitem id="appmenu_debugger" observes="devtoolsMenuBroadcaster_Debugger"/>
-          <menuitem id="appmenu_remoteDebugger" observes="devtoolsMenuBroadcaster_RemoteDebugger"/>
-          <menuitem id="appmenu_chromeDebugger" observes="devtoolsMenuBroadcaster_ChromeDebugger"/>
-          <menuitem id="appmenu_scratchpad" observes="devtoolsMenuBroadcaster_Scratchpad"/>
-          <menuitem id="appmenu_styleeditor" observes="devtoolsMenuBroadcaster_StyleEditor"/>
-          <menuitem id="appmenu_pageSource" observes="devtoolsMenuBroadcaster_PageSource"/>
-          <menuitem id="appmenu_errorConsole" observes="devtoolsMenuBroadcaster_ErrorConsole"/>
+          <menuitem id="appmenu_devToolbox"
+                    observes="devtoolsMenuBroadcaster_DevToolbox"/>
+          <menuseparator id="appmenu_devtools_separator"/>
+          <menuitem id="appmenu_devToolbar"
+                    observes="devtoolsMenuBroadcaster_DevToolbar"/>
+          <menuitem id="appmenu_chromeDebugger"
+                    observes="devtoolsMenuBroadcaster_ChromeDebugger"/>
+          <menuitem id="appmenu_responsiveUI"
+                    observes="devtoolsMenuBroadcaster_ResponsiveUI"/>
+          <menuitem id="appmenu_scratchpad"
+                    observes="devtoolsMenuBroadcaster_Scratchpad"/>
+          <menuitem id="appmenu_pageSource"
+                    observes="devtoolsMenuBroadcaster_PageSource"/>
+          <menuitem id="appmenu_errorConsole"
+                    observes="devtoolsMenuBroadcaster_ErrorConsole"/>
+          <menuitem id="appmenu_devtools_connect"
+                    observes="devtoolsMenuBroadcaster_connect"/>
           <menuseparator id="appmenu_devToolsEndSeparator"/>
-          <menuitem id="appmenu_getMoreDevtools" observes="devtoolsMenuBroadcaster_GetMoreTools"/>
+          <menuitem id="appmenu_getMoreDevtools"
+                    observes="devtoolsMenuBroadcaster_GetMoreTools"/>
           <menuseparator/>
 #define ID_PREFIX appmenu_developer_
 #define OMIT_ACCESSKEYS
@@ -175,7 +182,7 @@
                     observes="workOfflineMenuitemState"
                     oncommand="BrowserOffline.toggleOfflineStatus();"/>
         </menupopup>
-      </menu>
+      </splitmenu>
       <menuseparator class="appmenu-menuseparator"/>
 #define ID_PREFIX appmenu_
 #define OMIT_ACCESSKEYS
@@ -302,10 +309,8 @@
                       disabled="true"/>
 #endif
             <menuitem id="appmenu_restoreLastSession"
-                      class="restoreLastSession"
                       label="&historyRestoreLastSession.label;"
-                      oncommand="restoreLastSession();"
-                      disabled="true"/>
+                      command="Browser:RestoreLastSession"/>
             <menu id="appmenu_recentlyClosedTabsMenu"
                   class="recentlyClosedTabsMenu"
                   label="&historyUndoMenu.label;"
@@ -373,6 +378,12 @@
                       label="&appMenuGettingStarted.label;"
                       oncommand="gBrowser.loadOneTab('http://www.mozilla.com/firefox/central/', {inBackground: false});"
                       onclick="checkForMiddleClick(this, event);"/>
+#ifdef MOZ_SERVICES_HEALTHREPORT
+            <menuitem id="appmenu_healthReport"
+                      label="&healthReport.label;"
+                      oncommand="openHealthReport()"
+                      onclick="checkForMiddleClick(this, event);"/>
+#endif
             <menuitem id="appmenu_troubleshootingInfo"
                       label="&helpTroubleshootingInfo.label;"
                       oncommand="openTroubleshootingPage()"

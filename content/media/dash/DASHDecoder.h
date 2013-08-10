@@ -61,12 +61,148 @@ public:
   // Called on the main thread only.
   void NotifyDownloadEnded(nsresult aStatus);
 
+  // Notification from |DASHReader| that a seek has occurred in
+  // |aSubsegmentIdx|. Passes notification onto subdecoder which downloaded
+  // the subsegment already, if download is in the past. Otherwise, it returns.
+  void NotifySeekInVideoSubsegment(int32_t aRepDecoderIdx,
+                                   int32_t aSubsegmentIdx);
+  void NotifySeekInAudioSubsegment(int32_t aSubsegmentIdx);
+
   // Notifies that a byte range download has ended. As per the DASH spec, this
   // allows for stream switching at the boundaries of the byte ranges.
   // Called on the main thread only.
   void NotifyDownloadEnded(DASHRepDecoder* aRepDecoder,
                            nsresult aStatus,
-                           MediaByteRange &aRange);
+                           int32_t const aSubsegmentIdx);
+
+  // Notification from an |MediaDecoderReader| class that metadata has been
+  // read. Declared here to allow overloading.
+  void OnReadMetadataCompleted() MOZ_OVERRIDE { }
+
+  // Seeks to aTime in seconds
+  nsresult Seek(double aTime) MOZ_OVERRIDE;
+
+  // Notification from |DASHRepDecoder| that a metadata has been read.
+  // |DASHDecoder| will initiate load of data bytes for active audio/video
+  // decoders. Called on the decode thread.
+  void OnReadMetadataCompleted(DASHRepDecoder* aRepDecoder);
+
+  // Refers to downloading data bytes, i.e. non metadata.
+  // Returns true if |aRepDecoder| is an active audio or video sub decoder AND
+  // if metadata for all audio or video decoders has been read.
+  // Could be called from any thread; enters decoder monitor.
+  bool IsDecoderAllowedToDownloadData(DASHRepDecoder* aRepDecoder);
+
+  // Refers to downloading data bytes during SEEKING.
+  // Returns true if |aRepDecoder| is the active audio sub decoder, OR if
+  // it is a video decoder and is allowed to download this subsegment.
+  // Returns false if there is still some metadata to download.
+  // Could be called from any thread; enters decoder monitor.
+  bool IsDecoderAllowedToDownloadSubsegment(DASHRepDecoder* aRepDecoder,
+                                            int32_t const aSubsegmentIdx);
+
+  // Determines if rep/sub decoders should be switched, and if so switches
+  // them. Notifies |DASHReader| if and when it should switch readers.
+  // Returns a pointer to the new active decoder.
+  // Called on the main thread.
+  nsresult PossiblySwitchDecoder(DASHRepDecoder* aRepDecoder);
+
+  // Sets the byte range index for audio|video downloads. Will only increment
+  // for current active decoders. Could be called from any thread.
+  // Requires monitor because of write to |mAudioSubsegmentIdx| or
+  // |mVideoSubsegmentIdx|.
+  void SetSubsegmentIndex(DASHRepDecoder* aRepDecoder,
+                          int32_t aSubsegmentIdx);
+private:
+  // Increments the byte range index for audio|video downloads. Will only
+  // increment for current active decoders. Could be called from any thread.
+  // Requires monitor because of write to |mAudioSubsegmentIdx| or
+  // |mVideoSubsegmentIdx|.
+  void IncrementSubsegmentIndex(DASHRepDecoder* aRepDecoder)
+  {
+    ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
+    if (aRepDecoder == AudioRepDecoder()) {
+      mAudioSubsegmentIdx++;
+    } else if (aRepDecoder == VideoRepDecoder()) {
+      mVideoSubsegmentIdx++;
+    }
+  }
+public:
+  // Gets the byte range index for audio|video downloads. Will only increment
+  // for current active decoders. Could be called from any thread. Will enter
+  // monitor for read access off the decode thread.
+  int32_t GetSubsegmentIndex(DASHRepDecoder* aRepDecoder)
+  {
+    ReentrantMonitorConditionallyEnter mon(!OnDecodeThread(),
+                                           GetReentrantMonitor());
+    if (aRepDecoder == AudioRepDecoder()) {
+      return mAudioSubsegmentIdx;
+    } else if (aRepDecoder == VideoRepDecoder()) {
+      return mVideoSubsegmentIdx;
+    }
+    return (-1);
+  }
+
+  // Returns the index of the rep decoder used to load a subsegment. Will enter
+  // monitor for read access off the decode thread.
+  int32_t GetRepIdxForVideoSubsegmentLoad(int32_t aSubsegmentIdx)
+  {
+    NS_ASSERTION(0 <= aSubsegmentIdx, "Subsegment index should not be negative.");
+    ReentrantMonitorConditionallyEnter mon(!OnDecodeThread(),
+                                           GetReentrantMonitor());
+    if ((uint32_t)aSubsegmentIdx < mVideoSubsegmentLoads.Length()) {
+      return mVideoSubsegmentLoads[aSubsegmentIdx];
+    } else {
+      // If it hasn't been downloaded yet, use the lowest bitrate decoder.
+      return 0;
+    }
+  }
+
+  int32_t GetSwitchCountAtVideoSubsegment(int32_t aSubsegmentIdx)
+  {
+    ReentrantMonitorConditionallyEnter mon(!OnDecodeThread(),
+                                           GetReentrantMonitor());
+    NS_ASSERTION(0 <= aSubsegmentIdx, "Subsegment index should not be negative.");
+    if (aSubsegmentIdx == 0) {
+      // Do the zeroeth switch next.
+      return 0;
+    }
+    int32_t switchCount = 0;
+    for (uint32_t i = 1;
+         i < mVideoSubsegmentLoads.Length() &&
+         i <= (uint32_t)aSubsegmentIdx;
+         i++) {
+      if (mVideoSubsegmentLoads[i-1] != mVideoSubsegmentLoads[i]) {
+        switchCount++;
+      }
+    }
+    return switchCount;
+  }
+
+  // The actual playback rate computation. The monitor must be held.
+  // XXX Computes playback for the current video rep decoder only.
+  double ComputePlaybackRate(bool* aReliable) MOZ_OVERRIDE;
+
+  // Something has changed that could affect the computed playback rate,
+  // so recompute it. The monitor must be held. Will be forwarded to current
+  // audio and video rep decoders.
+  void UpdatePlaybackRate() MOZ_OVERRIDE;
+
+  // Used to estimate rates of data passing through the decoder's channel.
+  // Records activity starting on the channel. The monitor must be held.
+  virtual void NotifyPlaybackStarted() MOZ_OVERRIDE;
+
+  // Used to estimate rates of data passing through the decoder's channel.
+  // Records activity stopping on the channel. The monitor must be held.
+  virtual void NotifyPlaybackStopped() MOZ_OVERRIDE;
+
+  // Return statistics. This is used for progress events and other things.
+  // This can be called from any thread. It's only a snapshot of the
+  // current state, since other threads might be changing the state
+  // at any time.
+  // XXX Stats are calculated based on the current video rep decoder, with the
+  // exception of download rate, which is based on all video downloads.
+  virtual Statistics GetStatistics() MOZ_OVERRIDE;
 
   // Drop reference to state machine and tell sub-decoders to do the same.
   // Only called during shutdown dance, on main thread only.
@@ -107,6 +243,38 @@ private:
   nsresult CreateAudioRepDecoder(nsIURI* aUrl, Representation const * aRep);
   nsresult CreateVideoRepDecoder(nsIURI* aUrl, Representation const * aRep);
 
+  // Get audio sub-decoder for current audio |Representation|. Will return
+  // nullptr for out of range indexes.
+  // Enters monitor for read access off the decode thread.
+  // XXX Note: Although an array of audio decoders is provided, audio stream
+  // switching is not yet supported.
+  DASHRepDecoder* AudioRepDecoder() {
+    ReentrantMonitorConditionallyEnter mon(!OnDecodeThread(),
+                                           GetReentrantMonitor());
+    NS_ENSURE_TRUE((uint32_t)mAudioRepDecoderIdx < mAudioRepDecoders.Length(),
+                   nullptr);
+    if (mAudioRepDecoderIdx < 0) {
+      return nullptr;
+    } else {
+      return mAudioRepDecoders[mAudioRepDecoderIdx];
+    }
+  }
+
+  // Get video sub-decoder for current video |Representation|. Will return
+  // nullptr for out of range indexes.
+  // Enters monitor for read access off the decode thread.
+  DASHRepDecoder* VideoRepDecoder() {
+    ReentrantMonitorConditionallyEnter mon(!OnDecodeThread(),
+                                           GetReentrantMonitor());
+    NS_ENSURE_TRUE((uint32_t)mVideoRepDecoderIdx < mVideoRepDecoders.Length(),
+                   nullptr);
+    if (mVideoRepDecoderIdx < 0) {
+      return nullptr;
+    } else {
+      return mVideoRepDecoders[mVideoRepDecoderIdx];
+    }
+  }
+
   // Creates audio/video resources for individual |Representation|s.
   // On the main thread.
   MediaResource* CreateAudioSubResource(nsIURI* aUrl,
@@ -141,15 +309,49 @@ private:
   // state machine; destroyed in state machine's destructor.
   DASHReader* mDASHReader;
 
-  // Sub-decoder for current audio |Representation|.
-  nsRefPtr<DASHRepDecoder> mAudioRepDecoder;
-  // Array of pointers for the |Representation|s in the audio |AdaptationSet|.
-  nsTArray<nsRefPtr<DASHRepDecoder> > mAudioRepDecoders;
+  // Sub-decoder vars. Note: For all following members, the decode monitor
+  // should be held for write access on decode thread, and all read/write off
+  // the decode thread.
 
-  // Sub-decoder for current video |Representation|.
-  nsRefPtr<DASHRepDecoder> mVideoRepDecoder;
-  // Array of pointers for the |Representation|s in the video |AdaptationSet|.
+  // Index of the video |AdaptationSet|.
+  int32_t mVideoAdaptSetIdx;
+
+  // Indexes for the current audio and video decoders.
+  int32_t mAudioRepDecoderIdx;
+  int32_t mVideoRepDecoderIdx;
+
+  // Array of pointers for the |Representation|s in the audio/video
+  // |AdaptationSet|.
+  nsTArray<nsRefPtr<DASHRepDecoder> > mAudioRepDecoders;
   nsTArray<nsRefPtr<DASHRepDecoder> > mVideoRepDecoders;
+
+  // Current index of subsegments downloaded for audio/video decoder.
+  int32_t mAudioSubsegmentIdx;
+  int32_t mVideoSubsegmentIdx;
+
+  // Count for the number of readers which have called |OnReadMetadataCompleted|.
+  // Initialised to 0; incremented for every decoder which has |Load| called;
+  // and decremented for every call to |OnReadMetadataCompleted|. When it is
+  // zero again, all metadata has been read for audio or video, and data bytes
+  // can be downloaded.
+  uint32_t mAudioMetadataReadCount;
+  uint32_t mVideoMetadataReadCount;
+
+  // Array records the index of the decoder/Representation which loaded each
+  // subsegment.
+  nsTArray<int32_t> mVideoSubsegmentLoads;
+
+  // True when Seek is called; will block any downloads until
+  // |NotifySeekInSubsegment| is called, which will set it to false, and will
+  // start a new series of downloads from the seeked subsegment.
+  bool mSeeking;
+
+  // Mutex for statistics.
+  Mutex mStatisticsLock;
+  // Stores snapshot statistics, such as download rate, for the audio|video
+  // data streams. |mStatisticsLock| must be locked for access.
+  nsRefPtr<MediaChannelStatistics> mAudioStatistics;
+  nsRefPtr<MediaChannelStatistics> mVideoStatistics;
 };
 
 } // namespace mozilla

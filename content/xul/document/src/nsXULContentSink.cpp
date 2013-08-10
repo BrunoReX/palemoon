@@ -30,7 +30,7 @@
 #include "nsIScriptGlobalObject.h"
 #include "nsIServiceManager.h"
 #include "nsIURL.h"
-#include "nsIViewManager.h"
+#include "nsViewManager.h"
 #include "nsIXULDocument.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsLayoutCID.h"
@@ -170,7 +170,7 @@ XULContentSinkImpl::~XULContentSinkImpl()
     NS_ASSERTION(mContextStack.Depth() == 0, "Context stack not empty?");
     mContextStack.Clear();
 
-    PR_FREEIF(mText);
+    moz_free(mText);
 }
 
 //----------------------------------------------------------------------
@@ -530,7 +530,7 @@ XULContentSinkImpl::HandleEndElement(const PRUnichar *aName)
             static_cast<nsXULPrototypeScript*>(node.get());
 
         // If given a src= attribute, we must ignore script tag content.
-        if (! script->mSrcURI && ! script->mScriptObject.mObject) {
+        if (!script->mSrcURI && !script->GetScriptObject()) {
             nsCOMPtr<nsIDocument> doc = do_QueryReferent(mDocument);
 
             script->mOutOfLine = false;
@@ -840,7 +840,7 @@ XULContentSinkImpl::OpenScript(const PRUnichar** aAttributes,
                                const uint32_t aLineNumber)
 {
   uint32_t langID = nsIProgrammingLanguage::JAVASCRIPT;
-  uint32_t version = 0;
+  uint32_t version = JSVERSION_LATEST;
   nsresult rv;
 
   // Look for SRC attribute and look for a LANGUAGE attribute
@@ -1051,7 +1051,7 @@ XULContentSinkImpl::AddText(const PRUnichar* aText,
 {
   // Create buffer when we first need it
   if (0 == mTextSize) {
-      mText = (PRUnichar *) PR_MALLOC(sizeof(PRUnichar) * 4096);
+      mText = (PRUnichar *) moz_malloc(sizeof(PRUnichar) * 4096);
       if (nullptr == mText) {
           return NS_ERROR_OUT_OF_MEMORY;
       }
@@ -1074,7 +1074,7 @@ XULContentSinkImpl::AddText(const PRUnichar* aText,
       }
       else {
         mTextSize += aLength;
-        mText = (PRUnichar *) PR_REALLOC(mText, sizeof(PRUnichar) * mTextSize);
+        mText = (PRUnichar *) moz_realloc(mText, sizeof(PRUnichar) * mTextSize);
         if (nullptr == mText) {
             return NS_ERROR_OUT_OF_MEMORY;
         }

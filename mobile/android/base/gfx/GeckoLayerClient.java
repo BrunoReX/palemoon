@@ -12,7 +12,6 @@ import org.mozilla.gecko.GeckoApp;
 import org.mozilla.gecko.Tab;
 import org.mozilla.gecko.Tabs;
 import org.mozilla.gecko.ZoomConstraints;
-import org.mozilla.gecko.ui.Axis;
 import org.mozilla.gecko.ui.PanZoomController;
 import org.mozilla.gecko.ui.PanZoomTarget;
 import org.mozilla.gecko.util.EventDispatcher;
@@ -138,7 +137,6 @@ public class GeckoLayerClient implements LayerView.Listener, PanZoomTarget
         sendResizeEventIfNecessary(true);
 
         DisplayPortCalculator.initPrefs();
-        PluginLayer.initPrefs();
     }
 
     public void destroy() {
@@ -304,7 +302,9 @@ public class GeckoLayerClient implements LayerView.Listener, PanZoomTarget
             case UPDATE:
                 // Keep the old viewport size
                 metrics = messageMetrics.setViewportSize(oldMetrics.getWidth(), oldMetrics.getHeight());
-                abortPanZoomAnimation();
+                if (!oldMetrics.fuzzyEquals(metrics)) {
+                    abortPanZoomAnimation();
+                }
                 break;
             case PAGE_SIZE:
                 // adjust the page dimensions to account for differences in zoom
@@ -645,6 +645,11 @@ public class GeckoLayerClient implements LayerView.Listener, PanZoomTarget
     }
 
     /** Implementation of PanZoomTarget */
+    public boolean isFullScreen() {
+        return mView.isFullScreen();
+    }
+
+    /** Implementation of PanZoomTarget */
     public void setAnimationTarget(ImmutableViewportMetrics metrics) {
         if (mGeckoIsReady) {
             // We know what the final viewport of the animation is going to be, so
@@ -678,12 +683,8 @@ public class GeckoLayerClient implements LayerView.Listener, PanZoomTarget
                 if (BrowserApp.mBrowserToolbar == null) {
                     return;
                 }
-                Axis.Overscroll overscroll = mPanZoomController.getOverscrollY();
-                if (overscroll == Axis.Overscroll.PLUS || overscroll == Axis.Overscroll.NONE) {
-                    BrowserApp.mBrowserToolbar.setShadowVisibility(true);
-                } else {
-                    BrowserApp.mBrowserToolbar.setShadowVisibility(false);
-                }
+                ImmutableViewportMetrics m = mViewportMetrics;
+                BrowserApp.mBrowserToolbar.setShadowVisibility(m.viewportRectTop >= m.pageRectTop);
             }
         });
     }

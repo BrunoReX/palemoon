@@ -39,6 +39,27 @@ public:
   NS_DECL_NSIIMAGELOADINGCONTENT
   NS_DECL_IMGIONLOADBLOCKER
 
+  // Web IDL binding methods.
+  // Note that the XPCOM SetLoadingEnabled, AddObserver, RemoveObserver,
+  // ForceImageState methods are OK for Web IDL bindings to use as well,
+  // since none of them throw when called via the Web IDL bindings.
+
+  bool LoadingEnabled() const { return mLoadingEnabled; }
+  int16_t ImageBlockingStatus() const
+  {
+    return mImageBlockingStatus;
+  }
+  already_AddRefed<imgIRequest>
+    GetRequest(int32_t aRequestType, mozilla::ErrorResult& aError);
+  int32_t
+    GetRequestType(imgIRequest* aRequest, mozilla::ErrorResult& aError);
+  already_AddRefed<nsIURI> GetCurrentURI(mozilla::ErrorResult& aError);
+  already_AddRefed<nsIStreamListener>
+    LoadImageWithChannel(nsIChannel* aChannel, mozilla::ErrorResult& aError);
+  void ForceReload(mozilla::ErrorResult& aError);
+
+
+
 protected:
   /**
    * LoadImage is called by subclasses when the appropriate
@@ -124,11 +145,11 @@ protected:
 
   /**
    * UseAsPrimaryRequest is called by subclasses when they have an existing
-   * imgIRequest that they want this nsImageLoadingContent to use.  This may
+   * imgRequestProxy that they want this nsImageLoadingContent to use.  This may
    * effectively be called instead of LoadImage or LoadImageWithChannel.
    * If aNotify is true, this method will notify on state changes.
    */
-  nsresult UseAsPrimaryRequest(imgIRequest* aRequest, bool aNotify);
+  nsresult UseAsPrimaryRequest(imgRequestProxy* aRequest, bool aNotify);
 
   /**
    * Derived classes of nsImageLoadingContent MUST call
@@ -141,8 +162,6 @@ protected:
   void DestroyImageLoadingContent();
 
   void ClearBrokenState() { mBroken = false; }
-
-  bool LoadingEnabled() { return mLoadingEnabled; }
 
   // Sets blocking state only if the desired state is different from the
   // current one. See the comment for mBlockingOnload for more information.
@@ -234,6 +253,7 @@ private:
    * @param aEventType "load" or "error" depending on how things went
    */
   nsresult FireEvent(const nsAString& aEventType);
+
 protected:
   /**
    * Method to create an nsIURI object from the given string (will
@@ -255,7 +275,7 @@ protected:
    * "pending" until it becomes usable. Otherwise, this becomes the current
    * request.
    */
-   nsCOMPtr<imgIRequest>& PrepareNextRequest();
+   nsRefPtr<imgRequestProxy>& PrepareNextRequest();
 
   /**
    * Called when we would normally call PrepareNextRequest(), but the request was
@@ -270,8 +290,8 @@ protected:
    * Clear*Request(NS_BINDING_ABORTED) instead, since it passes a more appropriate
    * aReason than Prepare*Request() does (NS_ERROR_IMAGE_SRC_CHANGED).
    */
-  nsCOMPtr<imgIRequest>& PrepareCurrentRequest();
-  nsCOMPtr<imgIRequest>& PreparePendingRequest();
+  nsRefPtr<imgRequestProxy>& PrepareCurrentRequest();
+  nsRefPtr<imgRequestProxy>& PreparePendingRequest();
 
   /**
    * Switch our pending request to be our current request.
@@ -316,8 +336,8 @@ protected:
   nsresult UntrackImage(imgIRequest* aImage);
 
   /* MEMBERS */
-  nsCOMPtr<imgIRequest> mCurrentRequest;
-  nsCOMPtr<imgIRequest> mPendingRequest;
+  nsRefPtr<imgRequestProxy> mCurrentRequest;
+  nsRefPtr<imgRequestProxy> mPendingRequest;
   uint32_t mCurrentRequestFlags;
   uint32_t mPendingRequestFlags;
 

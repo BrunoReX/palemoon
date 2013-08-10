@@ -3,6 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/DebugOnly.h"
+
 #include "nsCOMPtr.h"
 #include "nsTextControlFrame.h"
 #include "nsIDocument.h"
@@ -36,8 +38,8 @@
 #include "nsGkAtoms.h"
 #include "nsLayoutUtils.h"
 #include "nsIComponentManager.h"
-#include "nsIView.h"
-#include "nsIViewManager.h"
+#include "nsView.h"
+#include "nsViewManager.h"
 #include "nsIDOMHTMLInputElement.h"
 #include "nsIDOMElement.h"
 #include "nsIDOMHTMLElement.h"
@@ -95,7 +97,7 @@ NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 a11y::AccType
 nsTextControlFrame::AccessibleType()
 {
-  return a11y::eHTMLTextFieldAccessible;
+  return a11y::eHTMLTextFieldType;
 }
 #endif
 
@@ -1476,7 +1478,11 @@ nsTextControlFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsIFrame* kid = mFrames.FirstChild();
-  nsDisplayListSet set(aLists, aLists.Content());
+  // Redirect all lists to the Content list so that nothing can escape, ie
+  // opacity creating stacking contexts that then get sorted with stacking
+  // contexts external to us.
+  nsDisplayList* content = aLists.Content();
+  nsDisplayListSet set(content, content, content, content, content, content);
 
   while (kid) {
     // If the frame is the placeholder frame, we should only show it if the

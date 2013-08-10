@@ -154,6 +154,7 @@ public:
   void PassOptionalByteWithDefault(int8_t);
   void PassNullableByte(const Nullable<int8_t>&);
   void PassOptionalNullableByte(const Optional< Nullable<int8_t> >&);
+  void PassVariadicByte(const Sequence<int8_t>&);
 
   int16_t ReadonlyShort();
   int16_t WritableShort();
@@ -210,6 +211,43 @@ public:
   uint64_t ReceiveUnsignedLongLong();
   void PassOptionalUnsignedLongLong(const Optional<uint64_t>&);
   void PassOptionalUnsignedLongLongWithDefault(uint64_t);
+
+  float WritableFloat() const;
+  void SetWritableFloat(float);
+  float WritableUnrestrictedFloat() const;
+  void SetWritableUnrestrictedFloat(float);
+  Nullable<float> GetWritableNullableFloat() const;
+  void SetWritableNullableFloat(Nullable<float>);
+  Nullable<float> GetWritableNullableUnrestrictedFloat() const;
+  void SetWritableNullableUnrestrictedFloat(Nullable<float>);
+  double WritableDouble() const;
+  void SetWritableDouble(double);
+  double WritableUnrestrictedDouble() const;
+  void SetWritableUnrestrictedDouble(double);
+  Nullable<double> GetWritableNullableDouble() const;
+  void SetWritableNullableDouble(Nullable<double>);
+  Nullable<double> GetWritableNullableUnrestrictedDouble() const;
+  void SetWritableNullableUnrestrictedDouble(Nullable<double>);
+  void PassFloat(float, float, Nullable<float>, Nullable<float>,
+                 double, double, Nullable<double>, Nullable<double>,
+                 const Sequence<float>&, const Sequence<float>&,
+                 const Sequence<Nullable<float> >&,
+                 const Sequence<Nullable<float> >&,
+                 const Sequence<double>&, const Sequence<double>&,
+                 const Sequence<Nullable<double> >&,
+                 const Sequence<Nullable<double> >&);
+  void PassLenientFloat(float, float, Nullable<float>, Nullable<float>,
+                        double, double, Nullable<double>, Nullable<double>,
+                        const Sequence<float>&, const Sequence<float>&,
+                        const Sequence<Nullable<float> >&,
+                        const Sequence<Nullable<float> >&,
+                        const Sequence<double>&, const Sequence<double>&,
+                        const Sequence<Nullable<double> >&,
+                        const Sequence<Nullable<double> >&);
+  float LenientFloatAttr() const;
+  void SetLenientFloatAttr(float);
+  double LenientDoubleAttr() const;
+  void SetLenientDoubleAttr(double);
 
   // Interface types
   already_AddRefed<TestInterface> ReceiveSelf();
@@ -310,6 +348,8 @@ public:
   void PassOptionalNullableSequence(const Optional<Nullable<Sequence<int32_t> > >&);
   void PassOptionalNullableSequenceWithDefaultValue(const Nullable< Sequence<int32_t> >&);
   void PassOptionalObjectSequence(const Optional<Sequence<OwningNonNull<TestInterface> > >&);
+  void PassExternalInterfaceSequence(const Sequence<nsRefPtr<TestExternalInterface> >&);
+  void PassNullableExternalInterfaceSequence(const Sequence<nsRefPtr<TestExternalInterface> >&);
 
   void ReceiveStringSequence(nsTArray<nsString>&);
   void PassStringSequence(const Sequence<nsString>&);
@@ -342,6 +382,7 @@ public:
   void PassOptionalStringWithDefaultValue(const nsAString&);
   void PassOptionalNullableString(const Optional<nsAString>&);
   void PassOptionalNullableStringWithDefaultValue(const nsAString&);
+  void PassVariadicString(const Sequence<nsString>&);
 
   // Enumerated types
   void PassEnum(TestEnum);
@@ -363,6 +404,10 @@ public:
   void PassNullableTreatAsNullCallback(TestTreatAsNullCallback*);
   void PassOptionalNullableTreatAsNullCallback(const Optional<nsRefPtr<TestTreatAsNullCallback> >&);
   void PassOptionalNullableTreatAsNullCallbackWithDefaultValue(TestTreatAsNullCallback*);
+  void SetTreatAsNullCallback(TestTreatAsNullCallback&);
+  already_AddRefed<TestTreatAsNullCallback> TreatAsNullCallback();
+  void SetNullableTreatAsNullCallback(TestTreatAsNullCallback*);
+  already_AddRefed<TestTreatAsNullCallback> GetNullableTreatAsNullCallback();
 
   // Any types
   void PassAny(JSContext*, JS::Value);
@@ -434,6 +479,23 @@ public:
   static bool StaticAttribute(nsISupports*);
   static void SetStaticAttribute(nsISupports*, bool);
 
+  // Overload resolution tests
+  bool Overload1(TestInterface&);
+  TestInterface* Overload1(const nsAString&, TestInterface&);
+  void Overload2(TestInterface&);
+  void Overload2(const Dict&);
+  void Overload2(const nsAString&);
+  void Overload3(TestInterface&);
+  void Overload3(const TestCallback&);
+  void Overload3(const nsAString&);
+  void Overload4(TestInterface&);
+  void Overload4(TestCallbackInterface&);
+  void Overload4(const nsAString&);
+
+  // Variadic handling
+  void PassVariadicThirdArg(const nsAString&, int32_t,
+                            const Sequence<OwningNonNull<TestInterface> >&);
+
   // Miscellania
   int32_t AttrWithLenientThis();
   void SetAttrWithLenientThis(int32_t);
@@ -483,6 +545,7 @@ private:
   void PassOptionalByte(const Optional<T>&) MOZ_DELETE;
   template<typename T>
   void PassOptionalByteWithDefault(T) MOZ_DELETE;
+  void PassVariadicByte(Sequence<int8_t>&) MOZ_DELETE;
 
   void SetReadonlyShort(int16_t) MOZ_DELETE;
   template<typename T>
@@ -592,7 +655,7 @@ private:
   void PassOptionalStringWithDefaultValue(nsAString&) MOZ_DELETE;
   void PassOptionalNullableString(Optional<nsAString>&) MOZ_DELETE;
   void PassOptionalNullableStringWithDefaultValue(nsAString&) MOZ_DELETE;
-
+  void PassVariadicString(Sequence<nsString>&) MOZ_DELETE;
 };
 
 class TestIndexedGetterInterface : public nsISupports,
@@ -816,6 +879,12 @@ public:
   void DelNamedItem(const nsAString&);
   void DelNamedItem(const nsAString&, bool&) MOZ_DELETE;
   void GetSupportedNames(nsTArray<nsString>&);
+};
+
+class TestChildInterface : public TestInterface
+{
+public:
+  NS_DECL_ISUPPORTS
 };
 
 } // namespace dom

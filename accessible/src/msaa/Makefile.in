@@ -28,6 +28,7 @@ CPPSRCS = \
   nsWinUtils.cpp \
   Compatibility.cpp \
   EnumVariant.cpp \
+  Platform.cpp \
   RootAccessibleWrap.cpp \
   TextLeafAccessibleWrap.cpp \
   $(NULL)
@@ -67,6 +68,7 @@ LOCAL_INCLUDES += \
   -I$(srcdir)/../xpcom \
   -I$(srcdir)/../xul \
   -I$(srcdir)/../windows/ia2 \
+  -I$(srcdir)/../windows/sdn \
   -I$(srcdir)/../windows/uia \
   -I$(srcdir)/../../../content/base/src \
   -I$(srcdir)/../../../content/events/src \

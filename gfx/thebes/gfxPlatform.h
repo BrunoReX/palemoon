@@ -409,6 +409,9 @@ public:
     // it into a buffer at a lower precision. Requires tiled buffers.
     static bool UseLowPrecisionBuffer();
 
+    // Retrieve the resolution that a low precision buffer should render at.
+    static float GetLowPrecisionResolution();
+
     // Retain some invalid tiles when the valid region of a layer changes and
     // excludes previously valid tiles.
     static bool UseReusableTileStore();
@@ -491,6 +494,8 @@ public:
     bool WorkAroundDriverBugs() const { return mWorkAroundDriverBugs; }
 
     virtual int GetScreenDepth() const;
+
+    bool WidgetUpdateFlashing() const { return mWidgetUpdateFlashing; }
 
     uint32_t GetOrientationSyncMillis() const;
 
@@ -588,6 +593,7 @@ private:
     bool mWorkAroundDriverBugs;
 
     mozilla::RefPtr<mozilla::gfx::DrawEventRecorder> mRecorder;
+    bool mWidgetUpdateFlashing;
     uint32_t mOrientationSyncMillis;
 };
 

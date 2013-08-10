@@ -5,7 +5,6 @@
 #ifndef MEDIAENGINEWEBRTC_H_
 #define MEDIAENGINEWEBRTC_H_
 
-#include "prmem.h"
 #include "prcvar.h"
 #include "prthread.h"
 #include "nsIThread.h"
@@ -77,6 +76,7 @@ public:
     , mInitDone(false)
     , mInSnapshotMode(false)
     , mSnapshotPath(NULL) {
+    MOZ_ASSERT(aVideoEnginePtr);
     mState = kReleased;
     Init();
   }
@@ -88,9 +88,13 @@ public:
   virtual nsresult Allocate();
   virtual nsresult Deallocate();
   virtual nsresult Start(SourceMediaStream*, TrackID);
-  virtual nsresult Stop();
+  virtual nsresult Stop(SourceMediaStream*, TrackID);
   virtual nsresult Snapshot(uint32_t aDuration, nsIDOMFile** aFile);
-  virtual void NotifyPull(MediaStreamGraph* aGraph, StreamTime aDesiredTime);
+  virtual void NotifyPull(MediaStreamGraph* aGraph,
+                          SourceMediaStream *aSource,
+                          TrackID aId,
+                          StreamTime aDesiredTime,
+                          TrackTicks &aLastEndTime);
 
   NS_DECL_ISUPPORTS
 
@@ -135,8 +139,12 @@ private:
   TrackID mTrackID;
   TrackTicks mLastEndTime;
 
+  // mMonitor protects mImage access/changes, and transitions of mState
+  // from kStarted to kStopped (which are combined with EndTrack() and
+  // image changes).  Note that mSources is not accessed from other threads
+  // for video and is not protected.
   mozilla::ReentrantMonitor mMonitor; // Monitor for processing WebRTC frames.
-  SourceMediaStream* mSource;
+  nsTArray<SourceMediaStream *> mSources; // When this goes empty, we shut down HW
 
   int mFps; // Track rate (30 fps by default)
   int mMinFps; // Min rate we want to accept
@@ -162,14 +170,15 @@ class MediaEngineWebRTCAudioSource : public MediaEngineAudioSource,
                                      public webrtc::VoEMediaProcess
 {
 public:
-  MediaEngineWebRTCAudioSource(webrtc::VoiceEngine* voiceEngine, int aIndex,
+  MediaEngineWebRTCAudioSource(webrtc::VoiceEngine* aVoiceEnginePtr, int aIndex,
     const char* name, const char* uuid)
-    : mVoiceEngine(voiceEngine)
+    : mVoiceEngine(aVoiceEnginePtr)
     , mMonitor("WebRTCMic.Monitor")
     , mCapIndex(aIndex)
     , mChannel(-1)
     , mInitDone(false)
     , mNullTransport(nullptr) {
+    MOZ_ASSERT(aVoiceEnginePtr);
     mState = kReleased;
     mDeviceName.Assign(NS_ConvertUTF8toUTF16(name));
     mDeviceUUID.Assign(NS_ConvertUTF8toUTF16(uuid));
@@ -183,9 +192,13 @@ public:
   virtual nsresult Allocate();
   virtual nsresult Deallocate();
   virtual nsresult Start(SourceMediaStream*, TrackID);
-  virtual nsresult Stop();
+  virtual nsresult Stop(SourceMediaStream*, TrackID);
   virtual nsresult Snapshot(uint32_t aDuration, nsIDOMFile** aFile);
-  virtual void NotifyPull(MediaStreamGraph* aGraph, StreamTime aDesiredTime);
+  virtual void NotifyPull(MediaStreamGraph* aGraph,
+                          SourceMediaStream *aSource,
+                          TrackID aId,
+                          StreamTime aDesiredTime,
+                          TrackTicks &aLastEndTime);
 
   // VoEMediaProcess.
   void Process(const int channel, const webrtc::ProcessingTypes type,
@@ -206,7 +219,11 @@ private:
   webrtc::VoEExternalMedia* mVoERender;
   webrtc::VoENetwork*  mVoENetwork;
 
+  // mMonitor protects mSources[] access/changes, and transitions of mState
+  // from kStarted to kStopped (which are combined with EndTrack()).
+  // mSources[] is accessed from webrtc threads.
   mozilla::ReentrantMonitor mMonitor;
+  nsTArray<SourceMediaStream *> mSources; // When this goes empty, we shut down HW
 
   int mCapIndex;
   int mChannel;
@@ -216,7 +233,6 @@ private:
   nsString mDeviceName;
   nsString mDeviceUUID;
 
-  SourceMediaStream* mSource;
   NullTransport *mNullTransport;
 };
 

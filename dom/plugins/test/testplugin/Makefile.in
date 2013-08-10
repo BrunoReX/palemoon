@@ -13,6 +13,9 @@ include $(DEPTH)/config/autoconf.mk
 MODULE       = nptest
 LIBRARY_NAME = nptest
 MODULE_NAME  = TestPlugin
+ifndef _MSC_VER
+FAIL_ON_WARNINGS = 1
+endif # !_MSC_VER
 
 DIRS = secondplugin
 

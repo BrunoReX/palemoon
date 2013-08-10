@@ -6,7 +6,7 @@
 
 #include "nsIMEStateManager.h"
 #include "nsCOMPtr.h"
-#include "nsIViewManager.h"
+#include "nsViewManager.h"
 #include "nsIPresShell.h"
 #include "nsISupports.h"
 #include "nsPIDOMWindow.h"
@@ -62,6 +62,8 @@ public:
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTAPPENDED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
+  NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTEWILLCHANGE
+  NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
 
   void     Init(nsIWidget* aWidget,
                 nsPresContext* aPresContext,
@@ -79,6 +81,7 @@ private:
   void ObserveEditableNode();
 
   bool mObserving;
+  uint32_t mPreAttrChangeLength;
 };
 
 /******************************************************************/
@@ -546,8 +549,7 @@ nsIMEStateManager::DispatchCompositionEvent(nsINode* aEventTargetNode,
 {
   MOZ_ASSERT(aEvent->eventStructType == NS_COMPOSITION_EVENT ||
              aEvent->eventStructType == NS_TEXT_EVENT);
-  if (!NS_IS_TRUSTED_EVENT(aEvent) ||
-      (aEvent->flags & NS_EVENT_FLAG_STOP_DISPATCH) != 0) {
+  if (!aEvent->mFlags.mIsTrusted || aEvent->mFlags.mPropagationStopped) {
     return;
   }
 
@@ -622,7 +624,7 @@ nsIMEStateManager::NotifyIME(NotificationToIME aNotification,
       if (!backup.GetLastData().IsEmpty()) {
         nsTextEvent textEvent(true, NS_TEXT_TEXT, widget);
         textEvent.theText = backup.GetLastData();
-        textEvent.flags |= NS_EVENT_FLAG_SYNTHETIC_TEST_EVENT;
+        textEvent.mFlags.mIsSynthesizedForTests = true;
         widget->DispatchEvent(&textEvent, status);
         if (widget->Destroyed()) {
           return NS_OK;
@@ -632,7 +634,7 @@ nsIMEStateManager::NotifyIME(NotificationToIME aNotification,
       status = nsEventStatus_eIgnore;
       nsCompositionEvent endEvent(true, NS_COMPOSITION_END, widget);
       endEvent.data = backup.GetLastData();
-      endEvent.flags |= NS_EVENT_FLAG_SYNTHETIC_TEST_EVENT;
+      endEvent.mFlags.mIsSynthesizedForTests = true;
       widget->DispatchEvent(&endEvent, status);
 
       return NS_OK;
@@ -645,7 +647,7 @@ nsIMEStateManager::NotifyIME(NotificationToIME aNotification,
       if (!backup.GetLastData().IsEmpty()) {
         nsCompositionEvent updateEvent(true, NS_COMPOSITION_UPDATE, widget);
         updateEvent.data = backup.GetLastData();
-        updateEvent.flags |= NS_EVENT_FLAG_SYNTHETIC_TEST_EVENT;
+        updateEvent.mFlags.mIsSynthesizedForTests = true;
         widget->DispatchEvent(&updateEvent, status);
         if (widget->Destroyed()) {
           return NS_OK;
@@ -654,7 +656,7 @@ nsIMEStateManager::NotifyIME(NotificationToIME aNotification,
         status = nsEventStatus_eIgnore;
         nsTextEvent textEvent(true, NS_TEXT_TEXT, widget);
         textEvent.theText = backup.GetLastData();
-        textEvent.flags |= NS_EVENT_FLAG_SYNTHETIC_TEST_EVENT;
+        textEvent.mFlags.mIsSynthesizedForTests = true;
         widget->DispatchEvent(&textEvent, status);
         if (widget->Destroyed()) {
           return NS_OK;
@@ -664,7 +666,7 @@ nsIMEStateManager::NotifyIME(NotificationToIME aNotification,
       status = nsEventStatus_eIgnore;
       nsCompositionEvent endEvent(true, NS_COMPOSITION_END, widget);
       endEvent.data = backup.GetLastData();
-      endEvent.flags |= NS_EVENT_FLAG_SYNTHETIC_TEST_EVENT;
+      endEvent.mFlags.mIsSynthesizedForTests = true;
       widget->DispatchEvent(&endEvent, status);
 
       return NS_OK;
@@ -974,6 +976,50 @@ nsTextStateManager::ContentRemoved(nsIDocument* aDocument,
   if (childOffset)
     nsContentUtils::AddScriptRunner(
         new TextChangeEvent(this, offset, offset + childOffset, offset));
+}
+
+static nsIContent*
+GetContentBR(mozilla::dom::Element *aElement) {
+  if (!aElement->IsNodeOfType(nsINode::eCONTENT)) {
+    return nullptr;
+  }
+  nsIContent *content = static_cast<nsIContent*>(aElement);
+  return content->IsHTML(nsGkAtoms::br) ? content : nullptr;
+}
+
+void
+nsTextStateManager::AttributeWillChange(nsIDocument* aDocument,
+                                        mozilla::dom::Element* aElement,
+                                        int32_t      aNameSpaceID,
+                                        nsIAtom*     aAttribute,
+                                        int32_t      aModType)
+{
+  nsIContent *content = GetContentBR(aElement);
+  mPreAttrChangeLength = content ?
+    nsContentEventHandler::GetNativeTextLength(content) : 0;
+}
+
+void
+nsTextStateManager::AttributeChanged(nsIDocument* aDocument,
+                                     mozilla::dom::Element* aElement,
+                                     int32_t aNameSpaceID,
+                                     nsIAtom* aAttribute,
+                                     int32_t aModType)
+{
+  nsIContent *content = GetContentBR(aElement);
+  if (!content) {
+    return;
+  }
+  uint32_t postAttrChangeLength =
+    nsContentEventHandler::GetNativeTextLength(content);
+  if (postAttrChangeLength != mPreAttrChangeLength) {
+    uint32_t start;
+    if (NS_SUCCEEDED(nsContentEventHandler::GetFlatTextOffsetOfRange(
+        mRootContent, content, 0, &start))) {
+      nsContentUtils::AddScriptRunner(new TextChangeEvent(this, start,
+        start + mPreAttrChangeLength, start + postAttrChangeLength));
+    }
+  }
 }
 
 bool

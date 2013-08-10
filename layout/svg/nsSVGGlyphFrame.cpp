@@ -1160,11 +1160,11 @@ CompressIndex(int index, const nsTextFragment*fragment)
   if (fragment->Is2b()) {
     const PRUnichar *data=fragment->Get2b();
     while(*data && index) {
-      if (XP_IS_SPACE_W(*data)){
+      if (dom::IsSpaceCharacter(*data)){
         do {
           ++data;
           --index;
-        }while(XP_IS_SPACE_W(*data) && index);
+        }while(dom::IsSpaceCharacter(*data) && index);
       }
       else {
         ++data;
@@ -1176,11 +1176,11 @@ CompressIndex(int index, const nsTextFragment*fragment)
   else {
     const char *data=fragment->Get1b();
     while(*data && index) {
-      if (XP_IS_SPACE_W(*data)){
+      if (dom::IsSpaceCharacter(*data)){
         do {
           ++data;
           --index;
-        }while(XP_IS_SPACE_W(*data) && index);
+        }while(dom::IsSpaceCharacter(*data) && index);
       }
       else {
         ++data;
@@ -1340,7 +1340,7 @@ nsSVGGlyphFrame::SetGlyphPosition(gfxPoint *aPosition, bool aForceGlobalTransfor
 
 nsresult
 nsSVGGlyphFrame::GetStartPositionOfChar(uint32_t charnum,
-                                        nsIDOMSVGPoint **_retval)
+                                        nsISupports **_retval)
 {
   *_retval = nullptr;
 
@@ -1354,7 +1354,7 @@ nsSVGGlyphFrame::GetStartPositionOfChar(uint32_t charnum,
 
 nsresult
 nsSVGGlyphFrame::GetEndPositionOfChar(uint32_t charnum,
-                                      nsIDOMSVGPoint **_retval)
+                                      nsISupports **_retval)
 {
   *_retval = nullptr;
 
@@ -1599,11 +1599,9 @@ nsSVGGlyphFrame::GetSubStringLength(uint32_t charnum, uint32_t fragmentChars)
 }
 
 int32_t
-nsSVGGlyphFrame::GetCharNumAtPosition(nsIDOMSVGPoint *point)
+nsSVGGlyphFrame::GetCharNumAtPosition(nsISVGPoint *point)
 {
-  float xPos, yPos;
-  point->GetX(&xPos);
-  point->GetY(&yPos);
+  float xPos = point->X(), yPos = point->Y();
 
   nsRefPtr<gfxContext> tmpCtx = MakeTmpCtx();
   CharacterIterator iter(this, false);

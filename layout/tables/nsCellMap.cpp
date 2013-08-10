@@ -7,6 +7,7 @@
 #include "nsCellMap.h"
 #include "nsTableFrame.h"
 #include "nsTableCellFrame.h"
+#include "nsTableRowFrame.h"
 #include "nsTableRowGroupFrame.h"
 
 
@@ -278,6 +279,10 @@ nsTableCellMap::Synchronize(nsTableFrame* aTableFrame)
         break;
       }
     }
+  }
+  if (maps.IsEmpty()) {
+    MOZ_ASSERT(!mFirstMap);
+    return;
   }
 
   int32_t mapIndex = maps.Length() - 1;  // Might end up -1

@@ -99,6 +99,10 @@ public:
    * Insert aDuration of null data at the end of the segment.
    */
   virtual void AppendNullData(TrackTicks aDuration) = 0;
+  /**
+   * Remove all contents, setting duration to 0.
+   */
+  virtual void Clear() = 0;
 
 protected:
   MediaSegment(Type aType) : mDuration(0), mType(aType)
@@ -192,6 +196,11 @@ public:
     }
     mDuration += aDuration;
   }
+  virtual void Clear()
+  {
+    mDuration = 0;
+    mChunks.Clear();
+  }
 
   class ChunkIterator {
   public:
@@ -215,6 +224,7 @@ protected:
   void AppendFromInternal(MediaSegmentBase<C, Chunk>* aSource)
   {
     static_cast<C*>(this)->CheckCompatible(*static_cast<C*>(aSource));
+    MOZ_ASSERT(aSource->mDuration >= 0);
     mDuration += aSource->mDuration;
     aSource->mDuration = 0;
     if (!mChunks.IsEmpty() && !aSource->mChunks.IsEmpty() &&
@@ -248,6 +258,7 @@ protected:
 
   Chunk* AppendChunk(TrackTicks aDuration)
   {
+    MOZ_ASSERT(aDuration >= 0);
     Chunk* c = mChunks.AppendElement();
     c->mDuration = aDuration;
     mDuration += aDuration;

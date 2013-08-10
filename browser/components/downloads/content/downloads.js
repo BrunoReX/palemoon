@@ -35,6 +35,33 @@
  * related to a single item in the downloads list widgets.
  */
 
+/**
+ * A few words on focus and focusrings
+ *
+ * We do quite a few hacks in the Downloads Panel for focusrings. In fact, we
+ * basically suppress most if not all XUL-level focusrings, and style/draw
+ * them ourselves (using :focus instead of -moz-focusring). There are a few
+ * reasons for this:
+ *
+ * 1) Richlists on OSX don't have focusrings; instead, they are shown as
+ *    selected. This makes for some ambiguity when we have a focused/selected
+ *    item in the list, and the mouse is hovering a completed download (which
+ *    highlights).
+ * 2) Windows doesn't show focusrings until after the first time that tab is
+ *    pressed (and by then you're focusing the second item in the panel).
+ * 3) Richlistbox sets -moz-focusring even when we select it with a mouse.
+ *
+ * In general, the desired behaviour is to focus the first item after pressing
+ * tab/down, and show that focus with a ring. Then, if the mouse moves over
+ * the panel, to hide that focus ring; essentially resetting us to the state
+ * before pressing the key.
+ *
+ * We end up capturing the tab/down key events, and preventing their default
+ * behaviour. We then set a "keyfocus" attribute on the panel, which allows
+ * us to draw a ring around the currently focused element. If the panel is
+ * closed or the mouse moves over the panel, we remove the attribute.
+ */
+
 "use strict";
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -44,6 +71,12 @@ XPCOMUtils.defineLazyModuleGetter(this, "DownloadUtils",
                                   "resource://gre/modules/DownloadUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "DownloadsCommon",
                                   "resource:///modules/DownloadsCommon.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
+                                  "resource://gre/modules/PrivateBrowsingUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
+                                  "resource://gre/modules/PlacesUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
+                                  "resource://gre/modules/NetUtil.jsm");
 
 ////////////////////////////////////////////////////////////////////////////////
 //// DownloadsPanel
@@ -107,7 +140,7 @@ const DownloadsPanel = {
     DownloadsOverlayLoader.ensureOverlayLoaded(this.kDownloadsOverlay,
                                                function DP_I_callback() {
       DownloadsViewController.initialize();
-      DownloadsCommon.data.addView(DownloadsView);
+      DownloadsCommon.getData(window).addView(DownloadsView);
       DownloadsPanel._attachEventListeners();
       aCallback();
     });
@@ -130,10 +163,12 @@ const DownloadsPanel = {
     this.hidePanel();
 
     DownloadsViewController.terminate();
-    DownloadsCommon.data.removeView(DownloadsView);
+    DownloadsCommon.getData(window).removeView(DownloadsView);
     this._unattachEventListeners();
 
     this._state = this.kStateUninitialized;
+
+    DownloadsSummary.active = false;
   },
 
   //////////////////////////////////////////////////////////////////////////////
@@ -200,6 +235,42 @@ const DownloadsPanel = {
            this._state == this.kStateShown;
   },
 
+  /**
+   * Returns whether the user has started keyboard navigation.
+   */
+  get keyFocusing()
+  {
+    return this.panel.hasAttribute("keyfocus");
+  },
+
+  /**
+   * Set to true if the user has started keyboard navigation, and we should be
+   * showing focusrings in the panel. Also adds a mousemove event handler to
+   * the panel which disables keyFocusing.
+   */
+  set keyFocusing(aValue)
+  {
+    if (aValue) {
+      this.panel.setAttribute("keyfocus", "true");
+      this.panel.addEventListener("mousemove", this);
+    } else {
+      this.panel.removeAttribute("keyfocus");
+      this.panel.removeEventListener("mousemove", this);
+    }
+    return aValue;
+  },
+
+  /**
+   * Handles the mousemove event for the panel, which disables focusring
+   * visualization.
+   */
+  handleEvent: function DP_handleEvent(aEvent)
+  {
+    if (aEvent.type == "mousemove") {
+      this.keyFocusing = false;
+    }
+  },
+
   //////////////////////////////////////////////////////////////////////////////
   //// Callback functions from DownloadsView
 
@@ -230,7 +301,7 @@ const DownloadsPanel = {
     this._state = this.kStateShown;
 
     // Since at most one popup is open at any given time, we can set globally.
-    DownloadsCommon.indicatorData.attentionSuppressed = true;
+    DownloadsCommon.getIndicatorData(window).attentionSuppressed = true;
 
     // Ensure that an item is selected when the panel is focused.
     if (DownloadsView.richListBox.itemCount > 0 &&
@@ -248,8 +319,12 @@ const DownloadsPanel = {
       return;
     }
 
+    // Removes the keyfocus attribute so that we stop handling keyboard
+    // navigation.
+    this.keyFocusing = false;
+
     // Since at most one popup is open at any given time, we can set globally.
-    DownloadsCommon.indicatorData.attentionSuppressed = false;
+    DownloadsCommon.getIndicatorData(window).attentionSuppressed = false;
 
     // Allow the anchor to be hidden.
     DownloadsButton.releaseAnchor();
@@ -283,7 +358,11 @@ const DownloadsPanel = {
    */
   _attachEventListeners: function DP__attachEventListeners()
   {
+    // Handle keydown to support accel-V.
     this.panel.addEventListener("keydown", this._onKeyDown.bind(this), false);
+    // Handle keypress to be able to preventDefault() events before they reach
+    // the richlistbox, for keyboard navigation.
+    this.panel.addEventListener("keypress", this._onKeyPress.bind(this), false);
   },
 
   /**
@@ -294,14 +373,67 @@ const DownloadsPanel = {
   {
     this.panel.removeEventListener("keydown", this._onKeyDown.bind(this),
                                    false);
+    this.panel.removeEventListener("keypress", this._onKeyPress.bind(this),
+                                   false);
+  },
+
+  _onKeyPress: function DP__onKeyPress(aEvent)
+  {
+    // Handle unmodified keys only.
+    if (aEvent.altKey || aEvent.ctrlKey || aEvent.shiftKey || aEvent.metaKey) {
+      return;
+    }
+
+    let richListBox = DownloadsView.richListBox;
+
+    // If the user has pressed the tab, up, or down cursor key, start keyboard
+    // navigation, thus enabling focusrings in the panel.  Keyboard navigation
+    // is automatically disabled if the user moves the mouse on the panel, or
+    // if the panel is closed.
+    if ((aEvent.keyCode == Ci.nsIDOMKeyEvent.DOM_VK_TAB ||
+        aEvent.keyCode == Ci.nsIDOMKeyEvent.DOM_VK_UP ||
+        aEvent.keyCode == Ci.nsIDOMKeyEvent.DOM_VK_DOWN) &&
+        !this.keyFocusing) {
+      this.keyFocusing = true;
+      aEvent.preventDefault();
+      return;
+    }
+
+    if (aEvent.keyCode == Ci.nsIDOMKeyEvent.DOM_VK_DOWN) {
+      // If the last element in the list is selected, or the footer is already
+      // focused, focus the footer.
+      if (richListBox.selectedItem === richListBox.lastChild ||
+          document.activeElement.parentNode.id === "downloadsFooter") {
+        DownloadsFooter.focus();
+        aEvent.preventDefault();
+        return;
+      }
+    }
+
+    // Pass keypress events to the richlistbox view when it's focused.
+    if (document.activeElement === richListBox) {
+      DownloadsView.onDownloadKeyPress(aEvent);
+    }
   },
 
   /**
-   * Keydown listener that listens for the accel-V "paste" event. Initiates a
-   * file download if the pasted item can be resolved to a URI.
+   * Keydown listener that listens for the keys to start key focusing, as well
+   * as the the accel-V "paste" event, which initiates a file download if the
+   * pasted item can be resolved to a URI.
    */
   _onKeyDown: function DP__onKeyDown(aEvent)
   {
+    // If the footer is focused and the downloads list has at least 1 element
+    // in it, focus the last element in the list when going up.
+    if (aEvent.keyCode == Ci.nsIDOMKeyEvent.DOM_VK_UP &&
+        document.activeElement.parentNode.id === "downloadsFooter" &&
+        DownloadsView.richListBox.firstChild) {
+      DownloadsView.richListBox.focus();
+      DownloadsView.richListBox.selectedItem = DownloadsView.richListBox.lastChild;
+      aEvent.preventDefault();
+      return;
+    }
+
     let pasting = aEvent.keyCode == Ci.nsIDOMKeyEvent.DOM_VK_V &&
 #ifdef XP_MACOSX
                   aEvent.metaKey;
@@ -331,7 +463,7 @@ const DownloadsPanel = {
         return;
       }
 
-      let uri = Services.io.newURI(url, null, null);
+      let uri = NetUtil.newURI(url);
       saveURL(uri.spec, name || uri.spec, null, true, true,
               undefined, document);
     } catch (ex) {}
@@ -356,7 +488,7 @@ const DownloadsPanel = {
       if (DownloadsView.richListBox.itemCount > 0) {
         DownloadsView.richListBox.focus();
       } else {
-        DownloadsView.downloadsHistory.focus();
+        DownloadsFooter.focus();
       }
     }
   },
@@ -540,10 +672,10 @@ const DownloadsView = {
       DownloadsPanel.panel.removeAttribute("hasdownloads");
     }
 
-    // If we've got some hidden downloads, we should show the summary just
-    // below the list.
-    this.downloadsHistory.collapsed = hiddenCount > 0;
-    DownloadsSummary.visible = this.downloadsHistory.collapsed;
+    // If we've got some hidden downloads, we should activate the
+    // DownloadsSummary. The DownloadsSummary will determine whether or not
+    // it's appropriate to actually display the summary.
+    DownloadsSummary.active = hiddenCount > 0;
   },
 
   /**
@@ -685,8 +817,8 @@ const DownloadsView = {
   {
     // If the item is visible, just return it, otherwise return a mock object
     // that doesn't react to notifications.
-    if (aDataItem.downloadId in this._viewItems) {
-      return this._viewItems[aDataItem.downloadId];
+    if (aDataItem.downloadGuid in this._viewItems) {
+      return this._viewItems[aDataItem.downloadGuid];
     }
     return this._invisibleViewItem;
   },
@@ -707,7 +839,7 @@ const DownloadsView = {
   {
     let element = document.createElement("richlistitem");
     let viewItem = new DownloadsViewItem(aDataItem, element);
-    this._viewItems[aDataItem.downloadId] = viewItem;
+    this._viewItems[aDataItem.downloadGuid] = viewItem;
     if (aNewest) {
       this.richListBox.insertBefore(element, this.richListBox.firstChild);
     } else {
@@ -725,7 +857,7 @@ const DownloadsView = {
     this.richListBox.removeChild(element);
     this.richListBox.selectedIndex = Math.min(previousSelectedIndex,
                                               this.richListBox.itemCount - 1);
-    delete this._viewItems[aDataItem.downloadId];
+    delete this._viewItems[aDataItem.downloadGuid];
   },
 
   //////////////////////////////////////////////////////////////////////////////
@@ -759,13 +891,11 @@ const DownloadsView = {
     }
   },
 
+  /**
+   * Handles keypress events on a download item.
+   */
   onDownloadKeyPress: function DV_onDownloadKeyPress(aEvent)
   {
-    // Handle unmodified keys only.
-    if (aEvent.altKey || aEvent.ctrlKey || aEvent.shiftKey || aEvent.metaKey) {
-      return;
-    }
-
     // Pressing the key on buttons should not invoke the action because the
     // event has already been handled by the button itself.
     if (aEvent.originalTarget.hasAttribute("command") ||
@@ -778,11 +908,9 @@ const DownloadsView = {
       return;
     }
 
-    switch (aEvent.keyCode) {
-      case KeyEvent.DOM_VK_ENTER:
-      case KeyEvent.DOM_VK_RETURN:
-        goDoCommand("downloadsCmd_doDefault");
-        break;
+    if (aEvent.keyCode == KeyEvent.DOM_VK_ENTER ||
+        aEvent.keyCode == KeyEvent.DOM_VK_RETURN) {
+      goDoCommand("downloadsCmd_doDefault");
     }
   },
 
@@ -842,8 +970,6 @@ function DownloadsViewItem(aDataItem, aElement)
   this._element = aElement;
   this.dataItem = aDataItem;
 
-  this.wasDone = this.dataItem.done;
-  this.wasInProgress = this.dataItem.inProgress;
   this.lastEstimatedSecondsLeft = Infinity;
 
   // Set the URI that represents the correct icon for the target file.  As soon
@@ -855,8 +981,8 @@ function DownloadsViewItem(aDataItem, aElement)
   let attributes = {
     "type": "download",
     "class": "download-state",
-    "id": "downloadsItem_" + this.dataItem.downloadId,
-    "downloadId": this.dataItem.downloadId,
+    "id": "downloadsItem_" + this.dataItem.downloadGuid,
+    "downloadGuid": this.dataItem.downloadGuid,
     "state": this.dataItem.state,
     "progress": this.dataItem.inProgress ? this.dataItem.percentComplete : 100,
     "target": this.dataItem.target,
@@ -896,7 +1022,7 @@ DownloadsViewItem.prototype = {
    * the download might be the same as before, if the data layer received
    * multiple events for the same download.
    */
-  onStateChange: function DVI_onStateChange()
+  onStateChange: function DVI_onStateChange(aOldState)
   {
     // If a download just finished successfully, it means that the target file
     // now exists and we can extract its specific icon.  To ensure that the icon
@@ -904,17 +1030,10 @@ DownloadsViewItem.prototype = {
     // example by adding a query parameter.  Since this URI has a "moz-icon"
     // scheme, this only works if we add one of the parameters explicitly
     // supported by the nsIMozIconURI interface.
-    if (!this.wasDone && this.dataItem.openable) {
+    if (aOldState != Ci.nsIDownloadManager.DOWNLOAD_FINISHED &&
+        aOldState != this.dataItem.state) {
       this._element.setAttribute("image", this.image + "&state=normal");
     }
-
-    // Update the end time using the current time if required.
-    if (this.wasInProgress && !this.dataItem.inProgress) {
-      this.endTime = Date.now();
-    }
-
-    this.wasDone = this.dataItem.done;
-    this.wasInProgress = this.dataItem.inProgress;
 
     // Update the user interface after switching states.
     this._element.setAttribute("state", this.dataItem.state);
@@ -1104,7 +1223,11 @@ const DownloadsViewController = {
   {
     // Handle commands that are not selection-specific.
     if (aCommand == "downloadsCmd_clearList") {
-      return Services.downloads.canCleanUp;
+      if (PrivateBrowsingUtils.isWindowPrivate(window)) {
+        return Services.downloads.canCleanUpPrivate;
+      } else {
+        return Services.downloads.canCleanUp;
+      }
     }
 
     // Other commands are selection-specific.
@@ -1151,7 +1274,11 @@ const DownloadsViewController = {
   commands: {
     downloadsCmd_clearList: function DVC_downloadsCmd_clearList()
     {
-      Services.downloads.cleanUp();
+      if (PrivateBrowsingUtils.isWindowPrivate(window)) {
+        Services.downloads.cleanUpPrivate();
+      } else {
+        Services.downloads.cleanUp();
+      }
     }
   }
 };
@@ -1164,17 +1291,11 @@ const DownloadsViewController = {
  * related to a single item in the downloads list widgets.
  */
 function DownloadsViewItemController(aElement) {
-  let downloadId = aElement.getAttribute("downloadId");
-  this.dataItem = DownloadsCommon.data.dataItems[downloadId];
+  let downloadGuid = aElement.getAttribute("downloadGuid");
+  this.dataItem = DownloadsCommon.getData(window).dataItems[downloadGuid];
 }
 
 DownloadsViewItemController.prototype = {
-  //////////////////////////////////////////////////////////////////////////////
-  //// Constants
-
-  get kPrefBdmAlertOnExeOpen() "browser.download.manager.alertOnEXEOpen",
-  get kPrefBdmScanWhenDone() "browser.download.manager.scanWhenDone",
-
   //////////////////////////////////////////////////////////////////////////////
   //// Command dispatching
 
@@ -1226,87 +1347,18 @@ DownloadsViewItemController.prototype = {
   commands: {
     cmd_delete: function DVIC_cmd_delete()
     {
-      this.commands.downloadsCmd_cancel.apply(this);
-
-      Services.downloads.removeDownload(this.dataItem.downloadId);
+      this.dataItem.remove();
+      PlacesUtils.bhistory.removePage(NetUtil.newURI(this.dataItem.uri));
     },
 
     downloadsCmd_cancel: function DVIC_downloadsCmd_cancel()
     {
-      if (this.dataItem.inProgress) {
-        Services.downloads.cancelDownload(this.dataItem.downloadId);
-
-        // It is possible that in some cases the Download Manager service
-        // doesn't delete the file from disk when canceling.  See bug 732924.
-        try {
-          let localFile = this.dataItem.localFile;
-          if (localFile.exists()) {
-            localFile.remove(false);
-          }
-        } catch (ex) { }
-      }
+      this.dataItem.cancel();
     },
 
     downloadsCmd_open: function DVIC_downloadsCmd_open()
     {
-      // Confirm opening executable files if required.
-      let localFile = this.dataItem.localFile;
-      if (localFile.isExecutable()) {
-        let showAlert = true;
-        try {
-          showAlert = Services.prefs.getBoolPref(this.kPrefBdmAlertOnExeOpen);
-        } catch (ex) { }
-
-        // On Vista and above, we rely on native security prompting for
-        // downloaded content unless it's disabled.
-        if (DownloadsCommon.isWinVistaOrHigher) {
-          try {
-            if (Services.prefs.getBoolPref(this.kPrefBdmScanWhenDone)) {
-              showAlert = false;
-            }
-          } catch (ex) { }
-        }
-
-        if (showAlert) {
-          let name = this.dataItem.target;
-          let message =
-              DownloadsCommon.strings.fileExecutableSecurityWarning(name, name);
-          let title =
-              DownloadsCommon.strings.fileExecutableSecurityWarningTitle;
-          let dontAsk =
-              DownloadsCommon.strings.fileExecutableSecurityWarningDontAsk;
-
-          let checkbox = { value: false };
-          let open = Services.prompt.confirmCheck(window, title, message,
-                                                  dontAsk, checkbox);
-          if (!open) {
-            return;
-          }
-
-          Services.prefs.setBoolPref(this.kPrefBdmAlertOnExeOpen,
-                                     !checkbox.value);
-        }
-      }
-
-      // Actually open the file.
-      try {
-        let launched = false;
-        try {
-          let mimeInfo = this.dataItem.download.MIMEInfo;
-          if (mimeInfo.preferredAction == mimeInfo.useHelperApp) {
-            mimeInfo.launchWithFile(localFile);
-            launched = true;
-          }
-        } catch (ex) { }
-        if (!launched) {
-          localFile.launch();
-        }
-      } catch (ex) {
-        // If launch fails, try sending it through the system's external "file:"
-        // URL handler.
-        this._openExternal(localFile);
-      }
-
+      this.dataItem.openLocalFile(window);
       // We explicitly close the panel here to give the user the feedback that
       // their click has been received, and we're handling the action.
       // Otherwise, we'd have to wait for the file-type handler to execute
@@ -1317,26 +1369,7 @@ DownloadsViewItemController.prototype = {
 
     downloadsCmd_show: function DVIC_downloadsCmd_show()
     {
-      let localFile = this.dataItem.localFile;
-
-      try {
-        // Show the directory containing the file and select the file.
-        localFile.reveal();
-      } catch (ex) {
-        // If reveal fails for some reason (e.g., it's not implemented on unix
-        // or the file doesn't exist), try using the parent if we have it.
-        let parent = localFile.parent.QueryInterface(Ci.nsILocalFile);
-        if (parent) {
-          try {
-            // Open the parent directory to show where the file should be.
-            parent.launch();
-          } catch (ex) {
-            // If launch also fails (probably because it's not implemented), let
-            // the OS handler try to open the parent.
-            this._openExternal(parent);
-          }
-        }
-      }
+      this.dataItem.showLocalFile();
 
       // We explicitly close the panel here to give the user the feedback that
       // their click has been received, and we're handling the action.
@@ -1348,16 +1381,12 @@ DownloadsViewItemController.prototype = {
 
     downloadsCmd_pauseResume: function DVIC_downloadsCmd_pauseResume()
     {
-      if (this.dataItem.paused) {
-        Services.downloads.resumeDownload(this.dataItem.downloadId);
-      } else {
-        Services.downloads.pauseDownload(this.dataItem.downloadId);
-      }
+      this.dataItem.togglePauseResume();
     },
 
     downloadsCmd_retry: function DVIC_downloadsCmd_retry()
     {
-      Services.downloads.retryDownload(this.dataItem.downloadId);
+      this.dataItem.retry();
     },
 
     downloadsCmd_openReferrer: function DVIC_downloadsCmd_openReferrer()
@@ -1380,7 +1409,6 @@ DownloadsViewItemController.prototype = {
       let defaultCommand = function () {
         switch (this.dataItem.state) {
           case nsIDM.DOWNLOAD_NOTSTARTED:       return "downloadsCmd_cancel";
-          case nsIDM.DOWNLOAD_DOWNLOADING:      return "downloadsCmd_show";
           case nsIDM.DOWNLOAD_FINISHED:         return "downloadsCmd_open";
           case nsIDM.DOWNLOAD_FAILED:           return "downloadsCmd_retry";
           case nsIDM.DOWNLOAD_CANCELED:         return "downloadsCmd_retry";
@@ -1391,21 +1419,11 @@ DownloadsViewItemController.prototype = {
           case nsIDM.DOWNLOAD_DIRTY:            return "downloadsCmd_openReferrer";
           case nsIDM.DOWNLOAD_BLOCKED_POLICY:   return "downloadsCmd_openReferrer";
         }
-        return null;
+        return "";
       }.apply(this);
-      // Invoke the command.
-      this.doCommand(defaultCommand);
+      if (defaultCommand && this.isCommandEnabled(defaultCommand))
+        this.doCommand(defaultCommand);
     }
-  },
-
-  /**
-   * Support function to open the specified nsIFile.
-   */
-  _openExternal: function DVIC_openExternal(aFile)
-  {
-    let protocolSvc = Cc["@mozilla.org/uriloader/external-protocol-service;1"]
-                      .getService(Ci.nsIExternalProtocolService);
-    protocolSvc.loadUrl(makeFileURI(aFile));
   }
 };
 
@@ -1420,28 +1438,35 @@ DownloadsViewItemController.prototype = {
 const DownloadsSummary = {
 
   /**
-   * Sets the collapsed state of the summary, and automatically subscribes or
-   * unsubscribes from the DownloadsCommon DownloadsSummaryData singleton.
+   * Sets the active state of the summary. When active, the summary subscribes
+   * to the DownloadsCommon DownloadsSummaryData singleton.
    *
-   * @param aVisible
-   *        True if the summary should be shown.
+   * @param aActive
+   *        Set to true to activate the summary.
    */
-  set visible(aVisible)
+  set active(aActive)
   {
-    if (aVisible == this._visible || !this._summaryNode) {
-      return;
+    if (aActive == this._active || !this._summaryNode) {
+      return this._active;
     }
-    if (aVisible) {
-      DownloadsCommon.getSummary(DownloadsView.kItemCountLimit)
+    if (aActive) {
+      DownloadsCommon.getSummary(window, DownloadsView.kItemCountLimit)
                      .addView(this);
     } else {
-      DownloadsCommon.getSummary(DownloadsView.kItemCountLimit)
+      DownloadsCommon.getSummary(window, DownloadsView.kItemCountLimit)
                      .removeView(this);
+      DownloadsFooter.showingSummary = false;
     }
-    this._summaryNode.collapsed = !aVisible;
-    return this._visible = aVisible;
+
+    return this._active = aActive;
   },
-  _visible: false,
+
+  /**
+   * Returns the active state of the downloads summary.
+   */
+  get active() this._active,
+
+  _active: false,
 
   /**
    * Sets whether or not we show the progress bar.
@@ -1456,6 +1481,8 @@ const DownloadsSummary = {
     } else {
       this._summaryNode.removeAttribute("inprogress");
     }
+    // If progress isn't being shown, then we simply do not show the summary.
+    return DownloadsFooter.showingSummary = aShowingProgress;
   },
 
   /**
@@ -1504,6 +1531,42 @@ const DownloadsSummary = {
       this._detailsNode.setAttribute("tooltiptext", aValue);
     }
     return aValue;
+  },
+
+  /**
+   * Focuses the root element of the summary.
+   */
+  focus: function()
+  {
+    if (this._summaryNode) {
+      this._summaryNode.focus();
+    }
+  },
+
+  /**
+   * Respond to keydown events on the Downloads Summary node.
+   *
+   * @param aEvent
+   *        The keydown event being handled.
+   */
+  onKeyDown: function DS_onKeyDown(aEvent)
+  {
+    if (aEvent.charCode == " ".charCodeAt(0) ||
+        aEvent.keyCode == KeyEvent.DOM_VK_ENTER ||
+        aEvent.keyCode == KeyEvent.DOM_VK_RETURN) {
+      DownloadsPanel.showDownloadsHistory();
+    }
+  },
+
+  /**
+   * Respond to click events on the Downloads Summary node.
+   *
+   * @param aEvent
+   *        The click event being handled.
+   */
+  onClick: function DS_onClick(aEvent)
+  {
+    DownloadsPanel.showDownloadsHistory();
   },
 
   /**
@@ -1560,3 +1623,59 @@ const DownloadsSummary = {
     return this._detailsNode = node;
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+//// DownloadsFooter
+
+/**
+ * Manages events sent to to the footer vbox, which contains both the
+ * DownloadsSummary as well as the "Show All Downloads" button.
+ */
+const DownloadsFooter = {
+
+  /**
+   * Focuses the appropriate element within the footer. If the summary
+   * is visible, focus it. If not, focus the "Show All Downloads"
+   * button.
+   */
+  focus: function DF_focus()
+  {
+    if (this._showingSummary) {
+      DownloadsSummary.focus();
+    } else {
+      DownloadsView.downloadsHistory.focus();
+    }
+  },
+
+  _showingSummary: false,
+
+  /**
+   * Sets whether or not the Downloads Summary should be displayed in the
+   * footer. If not, the "Show All Downloads" button is shown instead.
+   */
+  set showingSummary(aValue)
+  {
+    if (this._footerNode) {
+      if (aValue) {
+        this._footerNode.setAttribute("showingsummary", "true");
+      } else {
+        this._footerNode.removeAttribute("showingsummary");
+      }
+      this._showingSummary = aValue;
+    }
+    return aValue;
+  },
+
+  /**
+   * Element corresponding to the footer of the downloads panel.
+   */
+  get _footerNode()
+  {
+    let node = document.getElementById("downloadsFooter");
+    if (!node) {
+      return null;
+    }
+    delete this._footerNode;
+    return this._footerNode = node;
+  }
+};

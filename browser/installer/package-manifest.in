@@ -78,6 +78,7 @@
 @BINPATH@/@MOZ_CHILD_PROCESS_NAME@
 #endif
 #ifdef XP_WIN32
+@BINPATH@/plugin-hang-ui@BIN_SUFFIX@
 #ifndef MOZ_DEBUG
 #if MOZ_MSVC_REDIST == 1400
 @BINPATH@/Microsoft.VC80.CRT.manifest
@@ -342,8 +343,13 @@
 @BINPATH@/components/DownloadsUI.js
 @BINPATH@/components/BrowserPlaces.manifest
 @BINPATH@/components/BrowserPageThumbs.manifest
+#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
+@BINPATH@/components/nsPrivateBrowsingServiceObsolete.manifest
+@BINPATH@/components/nsPrivateBrowsingServiceObsolete.js
+#else
 @BINPATH@/components/nsPrivateBrowsingService.manifest
 @BINPATH@/components/nsPrivateBrowsingService.js
+#endif
 @BINPATH@/components/SiteSpecificUserAgent.js
 @BINPATH@/components/SiteSpecificUserAgent.manifest
 @BINPATH@/components/toolkitsearch.manifest
@@ -463,17 +469,19 @@
 @BINPATH@/components/AitcComponents.manifest
 @BINPATH@/components/Aitc.js
 #endif
+#ifdef MOZ_DATA_REPORTING
+@BINPATH@/components/DataReporting.manifest
+@BINPATH@/components/DataReportingService.js
+#endif
 #ifdef MOZ_SERVICES_HEALTHREPORT
 @BINPATH@/components/HealthReportComponents.manifest
-@BINPATH@/components/HealthReportService.js
-#endif
-#ifdef MOZ_SERVICES_NOTIFICATIONS
-@BINPATH@/components/NotificationsComponents.manifest
 #endif
 #ifdef MOZ_SERVICES_SYNC
 @BINPATH@/components/SyncComponents.manifest
 @BINPATH@/components/Weave.js
 #endif
+@BINPATH@/components/servicesComponents.manifest
+@BINPATH@/components/cryptoComponents.manifest
 @BINPATH@/components/TelemetryPing.js
 @BINPATH@/components/TelemetryPing.manifest
 @BINPATH@/components/messageWakeupService.js
@@ -572,28 +580,31 @@
 ; All the pref files must be part of base to prevent migration bugs
 @BINPATH@/@PREF_DIR@/firefox.js
 @BINPATH@/@PREF_DIR@/firefox-branding.js
-#ifdef MOZ_SERVICES_AITC
-@BINPATH@/@PREF_DIR@/services-aitc.js
-#endif
-#ifdef MOZ_SERVICES_NOTIFICATIONS
-@BINPATH@/@PREF_DIR@/services-notifications.js
-#endif
-#ifdef MOZ_SERVICES_SYNC
-@BINPATH@/@PREF_DIR@/services-sync.js
-#endif
-#ifdef MOZ_SERVICES_HEALTHREPORT
-@BINPATH@/@PREF_DIR@/healthreport-prefs.js
-#endif
 @BINPATH@/greprefs.js
 @BINPATH@/defaults/autoconfig/platform.js
 @BINPATH@/defaults/autoconfig/prefcalls.js
+@BINPATH@/defaults/profile/prefs.js
+
 #ifndef LIBXUL_SDK
 ; Warning: changing the path to channel-prefs.js can cause bugs (Bug 756325)
+; Technically this is an app pref file, but we are keeping it in the original
+; gre location for now.
 @BINPATH@/defaults/pref/channel-prefs.js
 #else
+; For Fx-on-xr, channel-prefs lives with the app preferences. (Bug 762588)
 @BINPATH@/@PREF_DIR@/channel-prefs.js
 #endif
-@BINPATH@/defaults/profile/prefs.js
+
+; Services (gre) prefs
+#ifdef MOZ_SERVICES_AITC
+@BINPATH@/defaults/pref/services-aitc.js
+#endif
+#ifdef MOZ_SERVICES_NOTIFICATIONS
+@BINPATH@/defaults/pref/services-notifications.js
+#endif
+#ifdef MOZ_SERVICES_SYNC
+@BINPATH@/defaults/pref/services-sync.js
+#endif
 
 ; [Layout Engine Resources]
 ; Style Sheets, Graphics and other Resources used by the layout engine. 

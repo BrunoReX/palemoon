@@ -137,7 +137,7 @@ static GSourceFuncs xt_event_funcs = {
   xt_event_prepare,
   xt_event_check,
   xt_event_dispatch,
-  g_free,
+  NULL,
   (GSourceFunc)NULL,
   (GSourceDummyMarshal)NULL
 };
@@ -410,7 +410,8 @@ xt_client_xloop_create(void)
   /* If this is the first running widget, hook this display into the
      mainloop */
   if (0 == num_widgets) {
-    int           cnumber;
+    int cnumber;
+    GSource* gs;
 
     /* Set up xtdisplay in case we're missing one */
     if (!xtdisplay) {
@@ -421,14 +422,15 @@ xt_client_xloop_create(void)
      * hook Xt event loop into the glib event loop.
      */
     /* the assumption is that gtk_init has already been called */
-    GSource* gs = g_source_new(&xt_event_funcs, sizeof(GSource));
-      if (!gs) {
-       return;
-      }
-    
+    gs = g_source_new(&xt_event_funcs, sizeof(GSource));
+    if (!gs) {
+      return;
+    }
+
     g_source_set_priority(gs, GDK_PRIORITY_EVENTS);
     g_source_set_can_recurse(gs, TRUE);
     tag = g_source_attach(gs, (GMainContext*)NULL);
+    g_source_unref(gs);
 #ifdef VMS
     cnumber = XConnectionNumber(xtdisplay);
 #else
@@ -549,12 +551,12 @@ xt_client_create ( XtClient* xtclient ,
 
   /* set the event handler */
   XtAddEventHandler(child_widget,
-                    0x0FFFFF & ~ResizeRedirectMask,
+                    StructureNotifyMask | KeyPressMask,
                     TRUE, 
                     (XtEventHandler)xt_client_event_handler, xtclient);
   XtAddEventHandler(child_widget, 
                     SubstructureNotifyMask | ButtonReleaseMask, 
-                    TRUE, 
+                    FALSE,
                     (XtEventHandler)xt_client_focus_listener, 
                     xtclient);
   XSync(xtclient->xtdisplay, FALSE);
@@ -583,7 +585,9 @@ void
 xt_client_destroy   (XtClient* xtclient)
 {
   if(xtclient->top_widget) {
-    XtRemoveEventHandler(xtclient->child_widget, 0x0FFFFF, TRUE, 
+    XtRemoveEventHandler(xtclient->child_widget,
+                         StructureNotifyMask | KeyPressMask,
+                         TRUE, 
                          (XtEventHandler)xt_client_event_handler, xtclient);
     XtDestroyWidget(xtclient->top_widget);
     xtclient->top_widget = NULL;
@@ -689,12 +693,6 @@ xt_client_event_handler( Widget w, XtPointer client_data, XEvent *event)
       break;
     case UnmapNotify:
       xt_client_set_info (w, 0);
-      break;
-    case FocusIn:
-      send_xembed_message ( xtplug,
-                            XEMBED_REQUEST_FOCUS, 0, 0, 0, 0);
-      break;
-    case FocusOut:
       break;
     case KeyPress:
 #ifdef DEBUG_XTBIN
@@ -815,21 +813,12 @@ xt_client_focus_listener( Widget w, XtPointer user_data, XEvent *event)
 static void
 xt_add_focus_listener( Widget w, XtPointer user_data)
 {
-  XWindowAttributes attr;
-  long eventmask;
   XtClient *xtclient = user_data;
-  int errorcode;
 
   trap_errors ();
-  XGetWindowAttributes(XtDisplay(w), XtWindow(w), &attr);
-  eventmask = attr.your_event_mask | SubstructureNotifyMask | ButtonReleaseMask;
-  XSelectInput(XtDisplay(w),
-               XtWindow(w), 
-               eventmask);
-
   XtAddEventHandler(w, 
                     SubstructureNotifyMask | ButtonReleaseMask, 
-                    TRUE, 
+                    FALSE, 
                     (XtEventHandler)xt_client_focus_listener, 
                     xtclient);
   untrap_error();
@@ -838,10 +827,8 @@ xt_add_focus_listener( Widget w, XtPointer user_data)
 static void
 xt_remove_focus_listener(Widget w, XtPointer user_data)
 {
-  int errorcode;
-
   trap_errors ();
-  XtRemoveEventHandler(w, SubstructureNotifyMask | ButtonReleaseMask, TRUE, 
+  XtRemoveEventHandler(w, SubstructureNotifyMask | ButtonReleaseMask, FALSE, 
                       (XtEventHandler)xt_client_focus_listener, user_data);
 
   untrap_error();

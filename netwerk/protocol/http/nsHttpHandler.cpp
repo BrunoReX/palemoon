@@ -86,7 +86,11 @@ static NS_DEFINE_CID(kSocketProviderServiceCID, NS_SOCKETPROVIDERSERVICE_CID);
 #define NETWORK_ENABLEIDN       "network.enableIDN"
 #define BROWSER_PREF_PREFIX     "browser.cache."
 #define DONOTTRACK_HEADER_ENABLED "privacy.donottrackheader.enabled"
+#ifdef MOZ_TELEMETRY_ON_BY_DEFAULT
+#define TELEMETRY_ENABLED        "toolkit.telemetry.enabledPreRelease"
+#else
 #define TELEMETRY_ENABLED        "toolkit.telemetry.enabled"
+#endif
 #define ALLOW_EXPERIMENTS        "network.allow-experiments"
 
 #define UA_PREF(_pref) UA_PREF_PREFIX _pref
@@ -179,6 +183,8 @@ nsHttpHandler::nsHttpHandler()
     , mSpdyPingThreshold(PR_SecondsToInterval(58))
     , mSpdyPingTimeout(PR_SecondsToInterval(8))
     , mConnectTimeout(90000)
+    , mParallelSpeculativeConnectLimit(6)
+    , mCritialRequestPrioritization(true)
 {
 #if defined(PR_LOGGING)
     gHttpLog = PR_NewLogModule("nsHttp");
@@ -384,7 +390,7 @@ nsHttpHandler::AddStandardRequestHeaders(nsHttpHeaderArray *request)
 
 nsresult
 nsHttpHandler::AddConnectionHeader(nsHttpHeaderArray *request,
-                                   uint8_t caps)
+                                   uint32_t caps)
 {
     // RFC2616 section 19.6.2 states that the "Connection: keep-alive"
     // and "Keep-alive" request headers should not be sent by HTTP/1.1
@@ -1140,6 +1146,22 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
             mConnectTimeout = clamped(val, 1, 0xffff) * PR_MSEC_PER_SEC;
     }
 
+    // The maximum number of current global half open sockets allowable
+    // for starting a new speculative connection.
+    if (PREF_CHANGED(HTTP_PREF("speculative-parallel-limit"))) {
+        rv = prefs->GetIntPref(HTTP_PREF("speculative-parallel-limit"), &val);
+        if (NS_SUCCEEDED(rv))
+            mParallelSpeculativeConnectLimit = (uint32_t) clamped(val, 0, 1024);
+    }
+
+    // Whether or not to block requests for non head js/css items (e.g. media)
+    // while those elements load.
+    if (PREF_CHANGED(HTTP_PREF("rendering-critical-requests-prioritization"))) {
+        rv = prefs->GetBoolPref(HTTP_PREF("rendering-critical-requests-prioritization"), &cVar);
+        if (NS_SUCCEEDED(rv))
+            mCritialRequestPrioritization = cVar;
+    }
+
     // on transition of network.http.diagnostics to true print
     // a bunch of information to the console
     if (pref && PREF_CHANGED(HTTP_PREF("diagnostics"))) {
@@ -1494,7 +1516,7 @@ nsHttpHandler::NewProxiedChannel(nsIURI *uri,
         httpChannel = new nsHttpChannel();
     }
 
-    uint8_t caps = mCapabilities;
+    uint32_t caps = mCapabilities;
 
     if (https) {
         // enable pipelining over SSL if requested

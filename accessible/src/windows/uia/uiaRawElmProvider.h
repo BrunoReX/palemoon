@@ -9,7 +9,7 @@
 
 #include "objbase.h"
 #include "AccessibleWrap.h"
-#include "UIAutomation.h"
+#include "uiautomation.h"
 
 namespace mozilla {
 namespace a11y {
@@ -23,7 +23,7 @@ class uiaRawElmProvider MOZ_FINAL : public IAccessibleEx,
                                     public IRawElementProviderSimple
 {
 public:
-  uiaRawElmProvider(AccessibleWrap* aAcc) : mAcc(aAcc), mRefCnt(0) { }
+  uiaRawElmProvider(AccessibleWrap* aAcc) : mRefCnt(0), mAcc(aAcc) { }
 
   // IUnknown
   DECL_IUNKNOWN

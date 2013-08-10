@@ -8,10 +8,10 @@ package org.mozilla.gecko;
 import org.mozilla.gecko.db.BrowserDB;
 import org.mozilla.gecko.db.BrowserContract.Combined;
 import org.mozilla.gecko.util.GeckoAsyncTask;
+import org.mozilla.gecko.util.StringUtils;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.ContentResolver;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -59,17 +59,18 @@ public class AwesomeBar extends GeckoActivity {
     static final String CURRENT_URL_KEY = "currenturl";
     static final String TARGET_KEY = "target";
     static final String SEARCH_KEY = "search";
+    static final String TITLE_KEY = "title";
     static final String USER_ENTERED_KEY = "user_entered";
     static final String READING_LIST_KEY = "reading_list";
-    static enum Target { NEW_TAB, CURRENT_TAB };
+    public static enum Target { NEW_TAB, CURRENT_TAB, PICK_SITE };
 
     private String mTarget;
     private AwesomeBarTabs mAwesomeTabs;
     private CustomEditText mText;
     private ImageButton mGoButton;
-    private ContentResolver mResolver;
     private ContextMenuSubject mContextMenuSubject;
     private boolean mIsUsingSwype;
+    private boolean mDelayRestartInput;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -77,9 +78,7 @@ public class AwesomeBar extends GeckoActivity {
 
         Log.d(LOGTAG, "creating awesomebar");
 
-        mResolver = Tabs.getInstance().getContentResolver();
         LayoutInflater.from(this).setFactory(GeckoViewsFactory.getInstance());
-
         setContentView(R.layout.awesomebar);
 
         mGoButton = (ImageButton) findViewById(R.id.awesomebar_button);
@@ -90,8 +89,8 @@ public class AwesomeBar extends GeckoActivity {
 
         mAwesomeTabs = (AwesomeBarTabs) findViewById(R.id.awesomebar_tabs);
         mAwesomeTabs.setOnUrlOpenListener(new AwesomeBarTabs.OnUrlOpenListener() {
-            public void onUrlOpen(String url) {
-                openUrlAndFinish(url);
+            public void onUrlOpen(String url, String title) {
+                openUrlAndFinish(url, title, false);
             }
 
             public void onSearch(String engine, String text) {
@@ -119,11 +118,26 @@ public class AwesomeBar extends GeckoActivity {
 
         Intent intent = getIntent();
         String currentUrl = intent.getStringExtra(CURRENT_URL_KEY);
-        mTarget = intent.getStringExtra(TARGET_KEY);
         if (currentUrl != null) {
             mText.setText(currentUrl);
             mText.selectAll();
         }
+
+        mTarget = intent.getStringExtra(TARGET_KEY);
+        if (mTarget.equals(Target.CURRENT_TAB.name())) {
+            Tab tab = Tabs.getInstance().getSelectedTab();
+            if (tab != null && tab.isPrivate()) {
+                BrowserToolbarBackground mAddressBarBg = (BrowserToolbarBackground) findViewById(R.id.address_bar_bg);
+                mAddressBarBg.setPrivateMode(true);
+
+                TabsButton mTabs = (TabsButton) findViewById(R.id.dummy_tab);
+                if (mTabs != null)
+                    mTabs.setPrivateMode(true);
+
+                mText.setPrivateMode(true);
+            }
+        }
+        mAwesomeTabs.setTarget(mTarget);
 
         mText.setOnKeyPreImeListener(new CustomEditText.OnKeyPreImeListener() {
             public boolean onKeyPreIme(View v, int keyCode, KeyEvent event) {
@@ -248,7 +262,7 @@ public class AwesomeBar extends GeckoActivity {
         if (showReadingList) {
             BookmarksTab bookmarksTab = mAwesomeTabs.getBookmarksTab();
             bookmarksTab.setShowReadingList(true);
-            mAwesomeTabs.setCurrentTabByTag(bookmarksTab.getTag());
+            mAwesomeTabs.setCurrentItemByTag(bookmarksTab.getTag());
         }
     }
 
@@ -290,34 +304,6 @@ public class AwesomeBar extends GeckoActivity {
         return true;
     }
 
-    /*
-     * This method tries to guess if the given string could be a search query or URL
-     * Search examples:
-     *  foo
-     *  foo bar.com
-     *  foo http://bar.com
-     *
-     * URL examples
-     *  foo.com
-     *  foo.c
-     *  :foo
-     *  http://foo.com bar
-    */
-    private boolean isSearchUrl(String text) {
-        text = text.trim();
-        if (text.length() == 0)
-            return false;
-
-        int colon = text.indexOf(':');
-        int dot = text.indexOf('.');
-        int space = text.indexOf(' ');
-
-        // If a space is found before any dot or colon, we assume this is a search query
-        boolean spacedOut = space > -1 && (space < colon || space < dot);
-
-        return spacedOut || (dot == -1 && colon == -1);
-    }
-
     private void updateGoButton(String text) {
         if (text.length() == 0) {
             mGoButton.setVisibility(View.GONE);
@@ -329,7 +315,7 @@ public class AwesomeBar extends GeckoActivity {
         int imageResource = R.drawable.ic_awesomebar_go;
         String contentDescription = getString(R.string.go);
         int imeAction = EditorInfo.IME_ACTION_GO;
-        if (isSearchUrl(text)) {
+        if (StringUtils.isSearchQuery(text)) {
             imageResource = R.drawable.ic_awesomebar_search;
             contentDescription = getString(R.string.search);
             imeAction = EditorInfo.IME_ACTION_SEARCH;
@@ -337,11 +323,24 @@ public class AwesomeBar extends GeckoActivity {
         mGoButton.setImageResource(imageResource);
         mGoButton.setContentDescription(contentDescription);
 
+        InputMethodManager imm = InputMethods.getInputMethodManager(mText.getContext());
+        if (imm == null) {
+            return;
+        }
         int actionBits = mText.getImeOptions() & EditorInfo.IME_MASK_ACTION;
         if (actionBits != imeAction) {
-            InputMethodManager imm = (InputMethodManager) mText.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
             int optionBits = mText.getImeOptions() & ~EditorInfo.IME_MASK_ACTION;
             mText.setImeOptions(optionBits | imeAction);
+
+            mDelayRestartInput = InputMethods.shouldDelayAwesomebarUpdate(mText.getContext());
+            if (!mDelayRestartInput) {
+                imm.restartInput(mText);
+            }
+        } else if (mDelayRestartInput) {
+            // Only call delayed restartInput when actionBits == imeAction
+            // so if there are two restarts in a row, the first restarts will
+            // be discarded and the second restart will be properly delayed
+            mDelayRestartInput = false;
             imm.restartInput(mText);
         }
     }
@@ -349,18 +348,26 @@ public class AwesomeBar extends GeckoActivity {
     private void cancelAndFinish() {
         setResult(Activity.RESULT_CANCELED);
         finish();
-        overridePendingTransition(0, 0);
+        overridePendingTransition(R.anim.awesomebar_hold_still, R.anim.awesomebar_fade_out);
     }
 
     private void finishWithResult(Intent intent) {
         setResult(Activity.RESULT_OK, intent);
         finish();
-        overridePendingTransition(0, 0);
+        overridePendingTransition(R.anim.awesomebar_hold_still, R.anim.awesomebar_fade_out);
     }
 
     private void openUrlAndFinish(String url) {
+        openUrlAndFinish(url, null, false);
+    }
+
+    private void openUrlAndFinish(String url, String title, boolean userEntered) {
         Intent resultIntent = new Intent();
         resultIntent.putExtra(URL_KEY, url);
+        if (title != null && !TextUtils.isEmpty(title))
+            resultIntent.putExtra(TITLE_KEY, title);
+        if (userEntered)
+            resultIntent.putExtra(USER_ENTERED_KEY, userEntered);
         resultIntent.putExtra(TARGET_KEY, mTarget);
         finishWithResult(resultIntent);
     }
@@ -371,10 +378,10 @@ public class AwesomeBar extends GeckoActivity {
         String keywordSearch = null;
 
         if (index == -1) {
-            keywordUrl = BrowserDB.getUrlForKeyword(mResolver, url);
+            keywordUrl = BrowserDB.getUrlForKeyword(getContentResolver(), url);
             keywordSearch = "";
         } else {
-            keywordUrl = BrowserDB.getUrlForKeyword(mResolver, url.substring(0, index));
+            keywordUrl = BrowserDB.getUrlForKeyword(getContentResolver(), url.substring(0, index));
             keywordSearch = url.substring(index + 1);
         }
 
@@ -383,11 +390,7 @@ public class AwesomeBar extends GeckoActivity {
             url = keywordUrl.replace("%s", search);
         }
 
-        Intent resultIntent = new Intent();
-        resultIntent.putExtra(URL_KEY, url);
-        resultIntent.putExtra(TARGET_KEY, mTarget);
-        resultIntent.putExtra(USER_ENTERED_KEY, true);
-        finishWithResult(resultIntent);
+        openUrlAndFinish(url, "", true);
     }
 
     private void openSearchAndFinish(String url, String engine) {
@@ -514,7 +517,8 @@ public class AwesomeBar extends GeckoActivity {
         final int display = mContextMenuSubject.display;
 
         switch (item.getItemId()) {
-            case R.id.open_new_tab: {
+            case R.id.open_new_tab:
+            case R.id.open_private_tab: {
                 if (url == null) {
                     Log.e(LOGTAG, "Can't open in new tab because URL is null");
                     break;
@@ -524,7 +528,11 @@ public class AwesomeBar extends GeckoActivity {
                 if (display == Combined.DISPLAY_READER)
                     newTabUrl = ReaderModeUtils.getAboutReaderForUrl(url, true);
 
-                Tabs.getInstance().loadUrl(newTabUrl, Tabs.LOADURL_NEW_TAB);
+                int flags = Tabs.LOADURL_NEW_TAB;
+                if (item.getItemId() == R.id.open_private_tab)
+                    flags |= Tabs.LOADURL_PRIVATE;
+
+                Tabs.getInstance().loadUrl(newTabUrl, flags);
                 Toast.makeText(this, R.string.new_tab_opened, Toast.LENGTH_SHORT).show();
                 break;
             }
@@ -556,7 +564,7 @@ public class AwesomeBar extends GeckoActivity {
                             @Override
                             public Void doInBackground(Void... params) {
                                 String newUrl = locationText.getText().toString().trim();
-                                BrowserDB.updateBookmark(mResolver, id, newUrl, nameText.getText().toString(),
+                                BrowserDB.updateBookmark(getContentResolver(), id, newUrl, nameText.getText().toString(),
                                                          keywordText.getText().toString());
                                 return null;
                             }
@@ -608,7 +616,7 @@ public class AwesomeBar extends GeckoActivity {
 
                     @Override
                     public Void doInBackground(Void... params) {
-                        BrowserDB.removeBookmark(mResolver, id);
+                        BrowserDB.removeBookmark(getContentResolver(), id);
                         return null;
                     }
 
@@ -631,7 +639,7 @@ public class AwesomeBar extends GeckoActivity {
                 (new GeckoAsyncTask<Void, Void, Void>(GeckoApp.mAppContext, GeckoAppShell.getHandler()) {
                     @Override
                     public Void doInBackground(Void... params) {
-                        BrowserDB.removeHistoryEntry(mResolver, id);
+                        BrowserDB.removeHistoryEntry(getContentResolver(), id);
                         return null;
                     }
 

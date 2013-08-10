@@ -3,6 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/DebugOnly.h"
+
 #ifdef MOZ_WIDGET_ANDROID
 // For ScreenOrientation.h and Hal.h
 #include "base/basictypes.h"
@@ -31,9 +33,11 @@
 #include "nsSize.h"
 #include "nsNetCID.h"
 #include "nsIContent.h"
-
-#include "mozilla/Preferences.h"
 #include "nsVersionComparator.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/unused.h"
+
+using namespace mozilla;
 
 #ifdef MOZ_WIDGET_ANDROID
 #include "ANPBase.h"
@@ -47,7 +51,6 @@
 #include "GLContextProvider.h"
 #include "TexturePoolOGL.h"
 
-using namespace mozilla;
 using namespace mozilla::gl;
 
 typedef nsNPAPIPluginInstance::TextureInfo TextureInfo;
@@ -129,7 +132,10 @@ public:
     if (mTextureInfo.mWidth == 0 || mTextureInfo.mHeight == 0)
       return 0;
 
-    SharedTextureHandle handle = sPluginContext->CreateSharedHandle(TextureImage::ThreadShared, (void*)mTextureInfo.mTexture, GLContext::TextureID);
+    SharedTextureHandle handle =
+      sPluginContext->CreateSharedHandle(GLContext::SameProcess,
+                                         (void*)mTextureInfo.mTexture,
+                                         GLContext::TextureID);
 
     // We want forget about this now, so delete the texture. Assigning it to zero
     // ensures that we create a new one in Lock()
@@ -206,7 +212,7 @@ nsNPAPIPluginInstance::~nsNPAPIPluginInstance()
   }
 }
 
-uint32_t nsNPAPIPluginInstance::gInPluginCalls = 0;
+uint32_t nsNPAPIPluginInstance::gInUnsafePluginCalls = 0;
 
 void
 nsNPAPIPluginInstance::Destroy()
@@ -310,7 +316,8 @@ nsresult nsNPAPIPluginInstance::Stop()
   if (pluginFunctions->destroy) {
     NPSavedData *sdata = 0;
 
-    NS_TRY_SAFE_CALL_RETURN(error, (*pluginFunctions->destroy)(&mNPP, &sdata), this);
+    NS_TRY_SAFE_CALL_RETURN(error, (*pluginFunctions->destroy)(&mNPP, &sdata), this,
+                            NS_PLUGIN_CALL_UNSAFE_TO_REENTER_GECKO);
 
     NPP_PLUGIN_LOG(PLUGIN_LOG_NORMAL,
                    ("NPP Destroy called: this=%p, npp=%p, return=%d\n", this, &mNPP, error));
@@ -574,15 +581,16 @@ nsresult nsNPAPIPluginInstance::SetWindow(NPWindow* window)
 
     NPPAutoPusher nppPusher(&mNPP);
 
-    NPError error;
-    NS_TRY_SAFE_CALL_RETURN(error, (*pluginFunctions->setwindow)(&mNPP, (NPWindow*)window), this);
+    DebugOnly<NPError> error;
+    NS_TRY_SAFE_CALL_RETURN(error, (*pluginFunctions->setwindow)(&mNPP, (NPWindow*)window), this,
+                            NS_PLUGIN_CALL_UNSAFE_TO_REENTER_GECKO);
 
     mInPluginInitCall = oldVal;
 
     NPP_PLUGIN_LOG(PLUGIN_LOG_NORMAL,
     ("NPP SetWindow called: this=%p, [x=%d,y=%d,w=%d,h=%d], clip[t=%d,b=%d,l=%d,r=%d], return=%d\n",
     this, window->x, window->y, window->width, window->height,
-    window->clipRect.top, window->clipRect.bottom, window->clipRect.left, window->clipRect.right, error));
+    window->clipRect.top, window->clipRect.bottom, window->clipRect.left, window->clipRect.right, (NPError)error));
   }
   return NS_OK;
 }
@@ -643,7 +651,8 @@ nsresult nsNPAPIPluginInstance::Print(NPPrint* platformPrint)
   }
 
   if (pluginFunctions->print)
-      NS_TRY_SAFE_CALL_VOID((*pluginFunctions->print)(&mNPP, thePrint), this);
+      NS_TRY_SAFE_CALL_VOID((*pluginFunctions->print)(&mNPP, thePrint), this,
+                            NS_PLUGIN_CALL_UNSAFE_TO_REENTER_GECKO);
 
   NPP_PLUGIN_LOG(PLUGIN_LOG_NORMAL,
   ("NPP PrintProc called: this=%p, pDC=%p, [x=%d,y=%d,w=%d,h=%d], clip[t=%d,b=%d,l=%d,r=%d]\n",
@@ -661,7 +670,8 @@ nsresult nsNPAPIPluginInstance::Print(NPPrint* platformPrint)
   return NS_OK;
 }
 
-nsresult nsNPAPIPluginInstance::HandleEvent(void* event, int16_t* result)
+nsresult nsNPAPIPluginInstance::HandleEvent(void* event, int16_t* result,
+                                            NSPluginCallReentry aSafeToReenterGecko)
 {
   if (RUNNING != mRunning)
     return NS_OK;
@@ -681,7 +691,8 @@ nsresult nsNPAPIPluginInstance::HandleEvent(void* event, int16_t* result)
   if (pluginFunctions->event) {
     mCurrentPluginEvent = event;
 #if defined(XP_WIN) || defined(XP_OS2)
-    NS_TRY_SAFE_CALL_RETURN(tmpResult, (*pluginFunctions->event)(&mNPP, event), this);
+    NS_TRY_SAFE_CALL_RETURN(tmpResult, (*pluginFunctions->event)(&mNPP, event), this,
+                            aSafeToReenterGecko);
 #else
     MAIN_THREAD_JNI_REF_GUARD;
     tmpResult = (*pluginFunctions->event)(&mNPP, event);
@@ -711,7 +722,8 @@ nsresult nsNPAPIPluginInstance::GetValueFromPlugin(NPPVariable variable, void* v
     PluginDestructionGuard guard(this);
 
     NPError pluginError = NPERR_GENERIC_ERROR;
-    NS_TRY_SAFE_CALL_RETURN(pluginError, (*pluginFunctions->getvalue)(&mNPP, variable, value), this);
+    NS_TRY_SAFE_CALL_RETURN(pluginError, (*pluginFunctions->getvalue)(&mNPP, variable, value), this,
+                            NS_PLUGIN_CALL_UNSAFE_TO_REENTER_GECKO);
     NPP_PLUGIN_LOG(PLUGIN_LOG_NORMAL,
     ("NPP GetValue called: this=%p, npp=%p, var=%d, value=%d, return=%d\n", 
     this, &mNPP, variable, value, pluginError));
@@ -1000,7 +1012,9 @@ SharedTextureHandle nsNPAPIPluginInstance::CreateSharedHandle()
     return mContentTexture->CreateSharedHandle();
   } else if (mContentSurface) {
     EnsureGLContext();
-    return sPluginContext->CreateSharedHandle(TextureImage::ThreadShared, mContentSurface, GLContext::SurfaceTexture);
+    return sPluginContext->CreateSharedHandle(GLContext::SameProcess,
+                                              mContentSurface,
+                                              GLContext::SurfaceTexture);
   } else return 0;
 }
 
@@ -1395,7 +1409,8 @@ nsNPAPIPluginInstance::PrivateModeStateChanged(bool enabled)
 
   NPError error;
   NPBool value = static_cast<NPBool>(enabled);
-  NS_TRY_SAFE_CALL_RETURN(error, (*pluginFunctions->setvalue)(&mNPP, NPNVprivateModeBool, &value), this);
+  NS_TRY_SAFE_CALL_RETURN(error, (*pluginFunctions->setvalue)(&mNPP, NPNVprivateModeBool, &value), this,
+                          NS_PLUGIN_CALL_UNSAFE_TO_REENTER_GECKO);
   return (error == NPERR_NO_ERROR) ? NS_OK : NS_ERROR_FAILURE;
 }
 

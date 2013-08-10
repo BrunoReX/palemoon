@@ -3,6 +3,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <cmath> // for std::abs(float/double)
+#include <cstdlib> // for std::abs(int/long)
+
+#include "mozilla/DebugOnly.h"
+#include "mozilla/Likely.h"
+
 #include "nsCOMPtr.h"
 #include "nsISupportsArray.h"
 #include "nsPresContext.h"
@@ -32,8 +38,8 @@
 #include "nsIXULTemplateBuilder.h"
 #include "nsXPIDLString.h"
 #include "nsContainerFrame.h"
-#include "nsIView.h"
-#include "nsIViewManager.h"
+#include "nsView.h"
+#include "nsViewManager.h"
 #include "nsWidgetsCID.h"
 #include "nsBoxFrame.h"
 #include "nsBoxObject.h"
@@ -46,7 +52,6 @@
 #include "nsITheme.h"
 #include "imgIRequest.h"
 #include "imgIContainer.h"
-#include "imgIContainerObserver.h"
 #include "imgILoader.h"
 #include "nsINodeInfo.h"
 #include "nsContentUtils.h"
@@ -57,8 +62,6 @@
 #include "nsTreeBoxObject.h"
 #include "nsRenderingContext.h"
 #include "nsIScriptableRegion.h"
-
-#include "mozilla/Likely.h"
 
 #ifdef ACCESSIBILITY
 #include "nsAccessibilityService.h"
@@ -870,10 +873,14 @@ nsTreeBodyFrame::UpdateScrollbars(const ScrollParts& aParts)
   nscoord rowHeightAsPixels = nsPresContext::AppUnitsToIntCSSPixels(mRowHeight);
 
   if (aParts.mVScrollbar) {
+    nsWeakFrame self(this);
     nsAutoString curPos;
     curPos.AppendInt(mTopRowIndex*rowHeightAsPixels);
     aParts.mVScrollbarContent->
       SetAttr(kNameSpaceID_None, nsGkAtoms::curpos, curPos, true);
+    if (!self.IsAlive()) {
+      return;
+    }
   }
 
   if (aParts.mHScrollbar) {
@@ -881,6 +888,7 @@ nsTreeBodyFrame::UpdateScrollbars(const ScrollParts& aParts)
     curPos.AppendInt(mHorzPosition);
     aParts.mHScrollbarContent->
       SetAttr(kNameSpaceID_None, nsGkAtoms::curpos, curPos, true);
+    // 'this' might be deleted here
   }
 }
 
@@ -1305,7 +1313,7 @@ nsTreeBodyFrame::AdjustForCellText(nsAutoString& aText,
   nscoord maxWidth = aTextRect.width;
 
   if (aColumn->Overflow()) {
-    nsresult rv;
+    DebugOnly<nsresult> rv;
     nsTreeColumn* nextColumn = aColumn->GetNext();
     while (nextColumn && width > maxWidth) {
       while (nextColumn) {
@@ -1821,7 +1829,7 @@ nsTreeBodyFrame::RowCountChanged(int32_t aIndex, int32_t aCount)
   NS_ASSERTION(rowCount == mRowCount, "row count did not change by the amount suggested, check caller");
 #endif
 
-  int32_t count = NS_ABS(aCount);
+  int32_t count = std::abs(aCount);
   int32_t last = GetLastVisibleRow();
   if (aIndex >= mTopRowIndex && aIndex <= last)
     InvalidateRange(aIndex, last);
@@ -2086,7 +2094,7 @@ nsTreeBodyFrame::GetImage(int32_t aRowIndex, nsTreeColumn* aCol, bool aUseContex
 
   nsAutoString imageSrc;
   mView->GetImageSrc(aRowIndex, aCol, imageSrc);
-  nsCOMPtr<imgIRequest> styleRequest;
+  nsRefPtr<imgRequestProxy> styleRequest;
   if (!aUseContext && !imageSrc.IsEmpty()) {
     aAllowImageRegions = false;
   }
@@ -2144,7 +2152,7 @@ nsTreeBodyFrame::GetImage(int32_t aRowIndex, nsTreeColumn* aCol, bool aUseContex
     listener->AddCell(aRowIndex, aCol);
     nsCOMPtr<imgINotificationObserver> imgNotificationObserver = listener;
 
-    nsCOMPtr<imgIRequest> imageRequest;
+    nsRefPtr<imgRequestProxy> imageRequest;
     if (styleRequest) {
       styleRequest->Clone(imgNotificationObserver, getter_AddRefs(imageRequest));
     } else {
@@ -4435,7 +4443,7 @@ nsTreeBodyFrame::FireScrollEvent()
   mScrollEvent.Forget();
   nsScrollbarEvent event(true, NS_SCROLL_EVENT, nullptr);
   // scroll events fired at elements don't bubble
-  event.flags |= NS_EVENT_FLAG_CANT_BUBBLE;
+  event.mFlags.mBubbles = false;
   nsEventDispatcher::Dispatch(GetContent(), PresContext(), &event);
 }
 
