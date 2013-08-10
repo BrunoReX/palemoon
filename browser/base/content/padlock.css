@@ -15,9 +15,13 @@
   background-color: transparent;
 }
 
-#padlock-ib[padshow="ib-trans-bg"][level="high"],
-#padlock-ib[padshow="ib-trans-bg"][level="low"] {
+#padlock-ib[padshow="ib-trans-bg"][level="high"] {
   list-style-image: url("chrome://browser/content/padlock_mod_https.png");
+  background-color: transparent;
+}
+
+#padlock-ib[padshow="ib-trans-bg"][level="low"] {
+  list-style-image: url("chrome://browser/content/padlock_mod_low.png");
   background-color: transparent;
 }
 
@@ -44,9 +48,14 @@
   background-color: transparent;
 }
 
-#padlock-ib-left[padshow="ib-left"][level="high"],
-#padlock-ib-left[padshow="ib-left"][level="low"] {
+#padlock-ib-left[padshow="ib-left"][level="high"] {
   list-style-image: url("chrome://browser/content/padlock_mod_https.png");
+  padding: 2px;
+  background-color: transparent;
+}
+
+#padlock-ib-left[padshow="ib-left"][level="low"] {
+  list-style-image: url("chrome://browser/content/padlock_mod_low.png");
   padding: 2px;
   background-color: transparent;
 }
@@ -74,9 +83,13 @@
   background-color: transparent;
 }
 
-#padlock-ub-right[padshow="ub-right"][level="high"],
-#padlock-ub-right[padshow="ub-right"][level="low"] {
+#padlock-ub-right[padshow="ub-right"][level="high"] {
   list-style-image: url("chrome://browser/content/padlock_mod_https.png");
+  background-color: transparent;
+}
+
+#padlock-ub-right[padshow="ub-right"][level="low"] {
+  list-style-image: url("chrome://browser/content/padlock_mod_low.png");
   background-color: transparent;
 }
 
@@ -96,9 +109,13 @@
   background-color: transparent;
 }
 
-#padlock-sb[padshow="statbar"][level="high"],
-#padlock-sb[padshow="statbar"][level="low"] {
+#padlock-sb[padshow="statbar"][level="high"] {
   list-style-image: url("chrome://browser/content/padlock_mod_https.png");
+  background-color: transparent;
+}
+
+#padlock-sb[padshow="statbar"][level="low"] {
+  list-style-image: url("chrome://browser/content/padlock_mod_low.png");
   background-color: transparent;
 }
 
@@ -118,13 +135,59 @@
   background-color: transparent;
 }
 
-#padlock-tab[padshow="tabs-bar"][level="high"],
-#padlock-tab[padshow="tabs-bar"][level="low"] {
+#padlock-tab[padshow="tabs-bar"][level="high"] {
   list-style-image: url("chrome://browser/content/padlock_mod_https.png");
+  background-color: transparent;
+}
+
+#padlock-tab[padshow="tabs-bar"][level="low"] {
+  list-style-image: url("chrome://browser/content/padlock_mod_low.png");
   background-color: transparent;
 }
 
 #padlock-tab[padshow="tabs-bar"][level="broken"] {
   list-style-image: url("chrome://browser/content/padlock_mod_broken.png");
   background-color: transparent;
+}
+
+/* Classic style */
+#padlock-ib[padshow="ib-trans-bg"][padstyle="classic"][level="ev"],
+#padlock-ib-left[padshow="ib-left"][padstyle="classic"][level="ev"],
+#padlock-ub-right[padshow="ub-right"][padstyle="classic"][level="ev"],
+#padlock-sb[padshow="statbar"][padstyle="classic"][level="ev"],
+#padlock-tab[padshow="tabs-bar"][padstyle="classic"][level="ev"] {
+  list-style-image: url("chrome://browser/content/padlock_classic_ev.png");
+}
+
+#padlock-ib[padshow="ib-trans-bg"][padstyle="classic"][level="high"],
+#padlock-ib-left[padshow="ib-left"][padstyle="classic"][level="high"],
+#padlock-ub-right[padshow="ub-right"][padstyle="classic"][level="high"],
+#padlock-sb[padshow="statbar"][padstyle="classic"][level="high"],
+#padlock-tab[padshow="tabs-bar"][padstyle="classic"][level="high"] {
+  list-style-image: url("chrome://browser/content/padlock_classic_https.png");
+}
+
+#padlock-ib[padshow="ib-trans-bg"][padstyle="classic"][level="low"],
+#padlock-ib-left[padshow="ib-left"][padstyle="classic"][level="low"],
+#padlock-ub-right[padshow="ub-right"][padstyle="classic"][level="low"],
+#padlock-sb[padshow="statbar"][padstyle="classic"][level="low"],
+#padlock-tab[padshow="tabs-bar"][padstyle="classic"][level="low"] {
+  list-style-image: url("chrome://browser/content/padlock_classic_https.png");
+}
+
+#padlock-ib[padshow="ib-trans-bg"][padstyle="classic"][level="broken"],
+#padlock-ib-left[padshow="ib-left"][padstyle="classic"][level="broken"],
+#padlock-ub-right[padshow="ub-right"][padstyle="classic"][level="broken"],
+#padlock-sb[padshow="statbar"][padstyle="classic"][level="broken"],
+#padlock-tab[padshow="tabs-bar"][padstyle="classic"][level="broken"] {
+  list-style-image: url("chrome://browser/content/padlock_classic_broken.png");
+}
+
+/* Remove a few px of dead space for disabled locations */
+#padlock-ib:not([padshow="ib-trans-bg"]),
+#padlock-ib-left:not([padshow="ib-left"]),
+#padlock-ub-right:not([padshow="ub-right"]),
+#padlock-sb:not([padshow="statbar"]),
+#padlock-tab:not([padshow="tabs-bar"]) {
+    visibility: collapse;
 }

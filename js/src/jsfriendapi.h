@@ -1029,6 +1029,10 @@ SetListBaseInformation(void *listBaseHandlerFamily, uint32_t listBaseExpandoSlot
 void *GetListBaseHandlerFamily();
 uint32_t GetListBaseExpandoSlot();
 
+/* ES5 8.12.8. */
+JS_FRIEND_API(JSBool)
+DefaultValue(JSContext *cx, HandleObject obj, JSType hint, MutableHandleValue vp);
+  
 } /* namespace js */
 
 /* Implemented in jsdate.cpp. */
