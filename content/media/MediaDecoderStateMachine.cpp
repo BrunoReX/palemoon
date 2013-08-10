@@ -1264,7 +1264,7 @@ void MediaDecoderStateMachine::StartPlayback()
 
   NS_ASSERTION(!IsPlaying(), "Shouldn't be playing when StartPlayback() is called");
   mDecoder->GetReentrantMonitor().AssertCurrentThreadIn();
-  LOG(PR_LOG_DEBUG, ("%p StartPlayback", mDecoder.get()));
+
   mDecoder->NotifyPlaybackStarted();
   mPlayStartTime = TimeStamp::Now();
 
@@ -2035,6 +2035,14 @@ nsresult MediaDecoderStateMachine::RunStateMachine()
         StopPlayback();
       }
       StopAudioThread();
+      // If mAudioThread is non-null after StopAudioThread completes, we are
+      // running in a nested event loop waiting for Shutdown() on
+      // mAudioThread to complete.  Return to the event loop and let it
+      // finish processing before continuing with shutdown.
+      if (mAudioThread) {
+        MOZ_ASSERT(mStopAudioThread);
+        return NS_OK;
+      }
       StopDecodeThread();
       // Now that those threads are stopped, there's no possibility of
       // mPendingWakeDecoder being needed again. Revoke it.
@@ -2197,7 +2205,7 @@ nsresult MediaDecoderStateMachine::RunStateMachine()
         NS_ASSERTION(IsStateMachineScheduled(), "Must have timer scheduled");
         return NS_OK;
       }
- 
+
       StopAudioThread();
       if (mDecoder->GetState() == MediaDecoder::PLAY_STATE_PLAYING) {
         int64_t videoTime = HasVideo() ? mVideoFrameEndTime : 0;
@@ -2639,7 +2647,7 @@ void MediaDecoderStateMachine::TimeoutExpired()
 void MediaDecoderStateMachine::ScheduleStateMachineWithLockAndWakeDecoder() {
   ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
   mon.NotifyAll();
-  ScheduleStateMachine(0);
+  ScheduleStateMachine();
 }
 
 nsresult MediaDecoderStateMachine::ScheduleStateMachine(int64_t aUsecs) {
