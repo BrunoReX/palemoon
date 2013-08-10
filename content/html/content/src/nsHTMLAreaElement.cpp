@@ -120,6 +120,7 @@ NS_IMPL_STRING_ATTR(nsHTMLAreaElement, Coords, coords)
 NS_IMPL_URI_ATTR(nsHTMLAreaElement, Href, href)
 NS_IMPL_BOOL_ATTR(nsHTMLAreaElement, NoHref, nohref)
 NS_IMPL_STRING_ATTR(nsHTMLAreaElement, Shape, shape)
+NS_IMPL_STRING_ATTR(nsHTMLAreaElement, Download, download)
 
 int32_t
 nsHTMLAreaElement::TabIndexDefault()
@@ -186,7 +187,7 @@ nsHTMLAreaElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                               nsIContent* aBindingParent,
                               bool aCompileEventHandlers)
 {
-  Link::ResetLinkState(false);
+  Link::ResetLinkState(false, Link::ElementHasHref());
   if (aDocument) {
     aDocument->RegisterPendingLinkUpdate(this);
   }
@@ -201,7 +202,7 @@ nsHTMLAreaElement::UnbindFromTree(bool aDeep, bool aNullParent)
 {
   // If this link is ever reinserted into a document, it might
   // be under a different xml:base, so forget the cached state now.
-  Link::ResetLinkState(false);
+  Link::ResetLinkState(false, Link::ElementHasHref());
   
   nsIDocument* doc = GetCurrentDoc();
   if (doc) {
@@ -225,7 +226,7 @@ nsHTMLAreaElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
   // that content states have changed will call IntrinsicState, which will try
   // to get updated information about the visitedness from Link.
   if (aName == nsGkAtoms::href && aNameSpaceID == kNameSpaceID_None) {
-    Link::ResetLinkState(!!aNotify);
+    Link::ResetLinkState(!!aNotify, true);
   }
 
   return rv;
@@ -244,7 +245,7 @@ nsHTMLAreaElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
   // that content states have changed will call IntrinsicState, which will try
   // to get updated information about the visitedness from Link.
   if (aAttribute == nsGkAtoms::href && kNameSpaceID_None == aNameSpaceID) {
-    Link::ResetLinkState(!!aNotify);
+    Link::ResetLinkState(!!aNotify, false);
   }
 
   return rv;
@@ -254,12 +255,14 @@ nsHTMLAreaElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
   NS_IMETHODIMP                                              \
   nsHTMLAreaElement::Get##_part(nsAString& a##_part)         \
   {                                                          \
-    return Link::Get##_part(a##_part);                       \
+    Link::Get##_part(a##_part);                              \
+    return NS_OK;                                            \
   }                                                          \
   NS_IMETHODIMP                                              \
   nsHTMLAreaElement::Set##_part(const nsAString& a##_part)   \
   {                                                          \
-    return Link::Set##_part(a##_part);                       \
+    Link::Set##_part(a##_part);                              \
+    return NS_OK;                                            \
   }
 
 IMPL_URI_PART(Protocol)

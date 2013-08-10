@@ -45,6 +45,7 @@
 #include "nsISMILAttr.h"
 #include "nsClientRect.h"
 #include "nsIDOMDOMTokenList.h"
+#include "nsEvent.h"
 
 class nsIDOMEventListener;
 class nsIFrame;
@@ -115,6 +116,7 @@ namespace mozilla {
 namespace dom {
 
 class Link;
+class UndoManager;
 
 // IID for the dom::Element interface
 #define NS_ELEMENT_IID \
@@ -282,34 +284,33 @@ public:
    */
   virtual nsIAtom *GetClassAttributeName() const;
 
-  inline directionality::Directionality GetDirectionality() const {
+  inline Directionality GetDirectionality() const {
     if (HasFlag(NODE_HAS_DIRECTION_RTL)) {
-      return directionality::eDir_RTL;
+      return eDir_RTL;
     }
 
     if (HasFlag(NODE_HAS_DIRECTION_LTR)) {
-      return directionality::eDir_LTR;
+      return eDir_LTR;
     }
 
-    return directionality::eDir_NotSet;
+    return eDir_NotSet;
   }
 
-  inline void SetDirectionality(directionality::Directionality aDir,
-                                bool aNotify) {
+  inline void SetDirectionality(Directionality aDir, bool aNotify) {
     UnsetFlags(NODE_ALL_DIRECTION_FLAGS);
     if (!aNotify) {
       RemoveStatesSilently(DIRECTION_STATES);
     }
 
     switch (aDir) {
-      case (directionality::eDir_RTL):
+      case (eDir_RTL):
         SetFlags(NODE_HAS_DIRECTION_RTL);
         if (!aNotify) {
           AddStatesSilently(NS_EVENT_STATE_RTL);
         }
         break;
 
-      case(directionality::eDir_LTR):
+      case(eDir_LTR):
         SetFlags(NODE_HAS_DIRECTION_LTR);
         if (!aNotify) {
           AddStatesSilently(NS_EVENT_STATE_LTR);
@@ -449,12 +450,12 @@ public:
 
   virtual nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName, nsIAtom* aPrefix,
                            const nsAString& aValue, bool aNotify);
-  virtual nsresult SetParsedAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                                 nsIAtom* aPrefix, nsAttrValue& aParsedValue,
-                                 bool aNotify);
+  nsresult SetParsedAttr(int32_t aNameSpaceID, nsIAtom* aName, nsIAtom* aPrefix,
+                         nsAttrValue& aParsedValue, bool aNotify);
   virtual bool GetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                          nsAString& aResult) const;
   virtual bool HasAttr(int32_t aNameSpaceID, nsIAtom* aName) const;
+  // aCaseSensitive == eIgnoreCaase means ASCII case-insensitive matching.
   virtual bool AttrValueIs(int32_t aNameSpaceID, nsIAtom* aName,
                              const nsAString& aValue,
                              nsCaseTreatment aCaseSensitive) const;
@@ -522,7 +523,7 @@ public:
     SetAttr(kNameSpaceID_None, nsGkAtoms::id, aId, true);
   }
 
-  nsDOMTokenList* ClassList();
+  nsDOMTokenList* GetClassList();
   nsDOMAttributeMap* GetAttributes()
   {
     nsDOMSlots *slots = DOMSlots();
@@ -687,6 +688,29 @@ public:
            0;
   }
 
+  virtual already_AddRefed<mozilla::dom::UndoManager> GetUndoManager()
+  {
+    return nullptr;
+  }
+
+  virtual bool UndoScope()
+  {
+    return false;
+  }
+
+  virtual void SetUndoScope(bool aUndoScope, mozilla::ErrorResult& aError)
+  {
+  }
+
+  virtual void GetInnerHTML(nsAString& aInnerHTML,
+                            mozilla::ErrorResult& aError);
+  virtual void SetInnerHTML(const nsAString& aInnerHTML,
+                            mozilla::ErrorResult& aError);
+  void GetOuterHTML(nsAString& aOuterHTML, mozilla::ErrorResult& aError);
+  void SetOuterHTML(const nsAString& aOuterHTML, mozilla::ErrorResult& aError);
+  void InsertAdjacentHTML(const nsAString& aPosition, const nsAString& aText,
+                          mozilla::ErrorResult& aError);
+
   //----------------------------------------
 
   /**
@@ -713,12 +737,15 @@ public:
    * through the full dispatching of the presshell of the aPresContext; if it's
    * false the event will be dispatched only as a DOM event.
    * If aPresContext is nullptr, this does nothing.
+   *
+   * @param aFlags      Extra flags for the dispatching event.  The true flags
+   *                    will be respected.
    */
   static nsresult DispatchClickEvent(nsPresContext* aPresContext,
                                      nsInputEvent* aSourceEvent,
                                      nsIContent* aTarget,
                                      bool aFullDispatch,
-                                     uint32_t aFlags,
+                                     const mozilla::widget::EventFlags* aFlags,
                                      nsEventStatus* aStatus);
 
   /**
@@ -831,6 +858,11 @@ public:
 
   virtual JSObject* WrapObject(JSContext *aCx, JSObject *aScope,
                                bool *aTriedToWrap) MOZ_FINAL;
+
+  /**
+   * Locate an nsIEditor rooted at this content node, if there is one.
+   */
+  nsIEditor* GetEditorInternal();
 
 protected:
   /*
@@ -1069,6 +1101,8 @@ private:
   nsRect GetClientAreaRect();
 
   nsIScrollableFrame* GetScrollFrame(nsIFrame **aStyledFrame = nullptr);
+
+  nsresult GetMarkup(bool aIncludeSelf, nsAString& aMarkup);
 
   // Data members
   nsEventStates mState;

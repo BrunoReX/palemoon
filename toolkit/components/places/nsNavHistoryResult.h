@@ -61,12 +61,8 @@ private:
 
 // Declare methods for implementing nsINavBookmarkObserver
 // and nsINavHistoryObserver (some methods, such as BeginUpdateBatch overlap)
-#define NS_DECL_BOOKMARK_HISTORY_OBSERVER                               \
+#define NS_DECL_BOOKMARK_HISTORY_OBSERVER_BASE                          \
   NS_DECL_NSINAVBOOKMARKOBSERVER                                        \
-  NS_IMETHOD OnVisit(nsIURI* aURI, int64_t aVisitId, PRTime aTime,      \
-                     int64_t aSessionId, int64_t aReferringId,          \
-                     uint32_t aTransitionType, const nsACString& aGUID, \
-                     uint32_t* aAdded);                                 \
   NS_IMETHOD OnTitleChanged(nsIURI* aURI, const nsAString& aPageTitle,  \
                             const nsACString& aGUID);                   \
   NS_IMETHOD OnBeforeDeleteURI(nsIURI *aURI, const nsACString& aGUID,   \
@@ -78,7 +74,26 @@ private:
                            const nsAString &aNewValue,                  \
                            const nsACString &aGUID);                    \
   NS_IMETHOD OnDeleteVisits(nsIURI* aURI, PRTime aVisitTime,            \
-                            const nsACString& aGUID, uint16_t aReason);
+                            const nsACString& aGUID, uint16_t aReason,  \
+                            uint32_t aTransitionType);
+
+// The internal version has an output aAdded parameter, it is incremented by
+// query nodes when the visited uri belongs to them. If no such query exists,
+// the history result creates a new query node dynamically.
+#define NS_DECL_BOOKMARK_HISTORY_OBSERVER_INTERNAL                      \
+  NS_DECL_BOOKMARK_HISTORY_OBSERVER_BASE                                \
+  NS_IMETHOD OnVisit(nsIURI* aURI, int64_t aVisitId, PRTime aTime,      \
+                     int64_t aSessionId, int64_t aReferringId,          \
+                     uint32_t aTransitionType, const nsACString& aGUID, \
+                     bool aHidden, uint32_t* aAdded);
+
+// The external version is used by results.
+#define NS_DECL_BOOKMARK_HISTORY_OBSERVER_EXTERNAL                      \
+  NS_DECL_BOOKMARK_HISTORY_OBSERVER_BASE                                \
+  NS_IMETHOD OnVisit(nsIURI* aURI, int64_t aVisitId, PRTime aTime,      \
+                     int64_t aSessionId, int64_t aReferringId,          \
+                     uint32_t aTransitionType, const nsACString& aGUID, \
+                     bool aHidden);
 
 // nsNavHistoryResult
 //
@@ -106,7 +121,7 @@ public:
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_NSINAVHISTORYRESULT
-  NS_DECL_BOOKMARK_HISTORY_OBSERVER
+  NS_DECL_BOOKMARK_HISTORY_OBSERVER_EXTERNAL
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsNavHistoryResult, nsINavHistoryResult)
 
   void AddHistoryObserver(nsNavHistoryQueryResultNode* aNode);
@@ -362,7 +377,14 @@ public:
   // root's children will have a value of 0, and so on.
   int32_t mIndentLevel;
 
-  int32_t mFrecency; // Containers have 0 frecency.
+  // Frecency of the page.  Valid only for URI nodes.
+  int32_t mFrecency;
+
+  // Hidden status of the page.  Valid only for URI nodes.
+  bool mHidden;
+
+  // Transition type used when this node represents a single visit.
+  int32_t mTransitionType;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsNavHistoryResultNode, NS_NAVHISTORYRESULTNODE_IID)
@@ -695,7 +717,7 @@ public:
 
   virtual nsresult OpenContainer();
 
-  NS_DECL_BOOKMARK_HISTORY_OBSERVER
+  NS_DECL_BOOKMARK_HISTORY_OBSERVER_INTERNAL
   virtual void OnRemoving();
 
 public:
@@ -730,6 +752,9 @@ public:
   nsresult NotifyIfTagsChanged(nsIURI* aURI);
 
   uint32_t mBatchChanges;
+
+  // Tracks transition type filters shared by all mQueries.
+  nsTArray<uint32_t> mTransitions;
 };
 
 

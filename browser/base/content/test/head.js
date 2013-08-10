@@ -88,15 +88,6 @@ function waitForCondition(condition, nextTest, errorMsg) {
   var moveOn = function() { clearInterval(interval); nextTest(); };
 }
 
-// Check that a specified (string) URL hasn't been "remembered" (ie, is not
-// in history, will not appear in about:newtab or auto-complete, etc.)
-function ensureSocialUrlNotRemembered(url) {
-  let gh = Cc["@mozilla.org/browser/global-history;2"]
-           .getService(Ci.nsIGlobalHistory2);
-  let uri = Services.io.newURI(url, null, null);
-  ok(!gh.isVisited(uri), "social URL " + url + " should not be in global history");
-}
-
 function getTestPlugin() {
   var ph = Cc["@mozilla.org/plugin/host;1"].getService(Ci.nsIPluginHost);
   var tags = ph.getPluginTags();
@@ -110,95 +101,27 @@ function getTestPlugin() {
   return null;
 }
 
-function runSocialTestWithProvider(manifest, callback) {
-  let SocialService = Cu.import("resource://gre/modules/SocialService.jsm", {}).SocialService;
-
-  // Check that none of the provider's content ends up in history.
-  registerCleanupFunction(function () {
-    for (let what of ['sidebarURL', 'workerURL', 'iconURL']) {
-      if (manifest[what]) {
-        ensureSocialUrlNotRemembered(manifest[what]);
-      }
-    }
-  });
-
-  info("runSocialTestWithProvider: " + manifest.toSource());
-
-  let oldProvider;
-  SocialService.addProvider(manifest, function(provider) {
-    info("runSocialTestWithProvider: provider added");
-    oldProvider = Social.provider;
-    Social.provider = provider;
-
-    // Now that we've set the UI's provider, enable the social functionality
-    Services.prefs.setBoolPref("social.enabled", true);
-    Services.prefs.setBoolPref("social.active", true);
-
-    // Need to re-call providerReady since it is actually called before the test
-    // framework is loaded and the provider state won't be set in the browser yet.
-    SocialUI._providerReady();
-
-    registerCleanupFunction(function () {
-      // if one test happens to fail, it is likely finishSocialTest will not
-      // be called, causing most future social tests to also fail as they
-      // attempt to add a provider which already exists - so work
-      // around that by also attempting to remove the test provider.
-      try {
-        SocialService.removeProvider(provider.origin, finish);
-      } catch (ex) {
-        ;
-      }
-      Social.provider = oldProvider;
-      Services.prefs.clearUserPref("social.enabled");
-      Services.prefs.clearUserPref("social.active");
-    });
-
-    function finishSocialTest() {
-      SocialService.removeProvider(provider.origin, finish);
-    }
-    callback(finishSocialTest);
-  });
+function updateBlocklist(aCallback) {
+  var blocklistNotifier = Cc["@mozilla.org/extensions/blocklist;1"]
+                          .getService(Ci.nsITimerCallback);
+  var observer = function() {
+    aCallback();
+    Services.obs.removeObserver(observer, "blocklist-updated");
+  };
+  Services.obs.addObserver(observer, "blocklist-updated", false);
+  blocklistNotifier.notify(null);
 }
 
+var _originalTestBlocklistURL = null;
+function setAndUpdateBlocklist(aURL, aCallback) {
+  if (!_originalTestBlocklistURL)
+    _originalTestBlocklistURL = Services.prefs.getCharPref("extensions.blocklist.url");
+  Services.prefs.setCharPref("extensions.blocklist.url", aURL);
+  updateBlocklist(aCallback);
+}
 
-function runSocialTests(tests, cbPreTest, cbPostTest, cbFinish) {
-  let testIter = Iterator(tests);
-
-  if (cbPreTest === undefined) {
-    cbPreTest = function(cb) {cb()};
-  }
-  if (cbPostTest === undefined) {
-    cbPostTest = function(cb) {cb()};
-  }
-
-  function runNextTest() {
-    let name, func;
-    try {
-      [name, func] = testIter.next();
-    } catch (err if err instanceof StopIteration) {
-      // out of items:
-      (cbFinish || finish)();
-      return;
-    }
-    // We run on a timeout as the frameworker also makes use of timeouts, so
-    // this helps keep the debug messages sane.
-    executeSoon(function() {
-      function cleanupAndRunNextTest() {
-        info("sub-test " + name + " complete");
-        cbPostTest(runNextTest);
-      }
-      cbPreTest(function() {
-        info("sub-test " + name + " starting");
-        try {
-          func.call(tests, cleanupAndRunNextTest);
-        } catch (ex) {
-          ok(false, "sub-test " + name + " failed: " + ex.toString() +"\n"+ex.stack);
-          cleanupAndRunNextTest();
-        }
-      })
-    });
-  }
-  runNextTest();
+function resetBlocklist() {
+  Services.prefs.setCharPref("extensions.blocklist.url", _originalTestBlocklistURL);
 }
 
 function whenNewWindowLoaded(aOptions, aCallback) {

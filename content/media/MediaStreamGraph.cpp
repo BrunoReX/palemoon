@@ -587,19 +587,25 @@ MediaStreamGraphImpl::ExtractPendingInput(SourceMediaStream* aStream,
   bool finished;
   {
     MutexAutoLock lock(aStream->mMutex);
-    if (aStream->mPullEnabled && !aStream->mFinished) {
-      for (uint32_t j = 0; j < aStream->mListeners.Length(); ++j) {
-        MediaStreamListener* l = aStream->mListeners[j];
-        {
-          // Compute how much stream time we'll need assuming we don't block
-          // the stream at all between mBlockingDecisionsMadeUntilTime and
-          // aDesiredUpToTime.
-          StreamTime t =
-            GraphTimeToStreamTime(aStream, mStateComputedTime) +
-            (aDesiredUpToTime - mStateComputedTime);
-          MutexAutoUnlock unlock(aStream->mMutex);
-          l->NotifyPull(this, t);
-          *aEnsureNextIteration = true;
+    if (aStream->mPullEnabled && !aStream->mFinished &&
+        !aStream->mListeners.IsEmpty()) {
+      // Compute how much stream time we'll need assuming we don't block
+      // the stream at all between mBlockingDecisionsMadeUntilTime and
+      // aDesiredUpToTime.
+      StreamTime t =
+        GraphTimeToStreamTime(aStream, mStateComputedTime) +
+        (aDesiredUpToTime - mStateComputedTime);
+      LOG(PR_LOG_DEBUG, ("Calling NotifyPull aStream=%p t=%f current end=%f", aStream,
+                         MediaTimeToSeconds(t),
+                         MediaTimeToSeconds(aStream->mBuffer.GetEnd())));
+      if (t > aStream->mBuffer.GetEnd()) {
+        *aEnsureNextIteration = true;
+        for (uint32_t j = 0; j < aStream->mListeners.Length(); ++j) {
+          MediaStreamListener* l = aStream->mListeners[j];
+          {
+            MutexAutoUnlock unlock(aStream->mMutex);
+            l->NotifyPull(this, t);
+          }
         }
       }
     }
@@ -799,21 +805,19 @@ MediaStreamGraphImpl::UpdateCurrentTime()
     // Calculate blocked time and fire Blocked/Unblocked events
     GraphTime blockedTime = 0;
     GraphTime t = prevCurrentTime;
-    // Save current blocked status
-    bool wasBlocked = stream->mBlocked.GetAt(prevCurrentTime);
     while (t < nextCurrentTime) {
       GraphTime end;
       bool blocked = stream->mBlocked.GetAt(t, &end);
       if (blocked) {
         blockedTime += NS_MIN(end, nextCurrentTime) - t;
       }
-      if (blocked != wasBlocked) {
+      if (blocked != stream->mNotifiedBlocked) {
         for (uint32_t j = 0; j < stream->mListeners.Length(); ++j) {
           MediaStreamListener* l = stream->mListeners[j];
           l->NotifyBlockingChanged(this,
               blocked ? MediaStreamListener::BLOCKED : MediaStreamListener::UNBLOCKED);
         }
-        wasBlocked = blocked;
+        stream->mNotifiedBlocked = blocked;
       }
       t = end;
     }
@@ -1776,8 +1780,20 @@ MediaStream::FinishOnGraphThread()
 }
 
 void
+MediaStream::RemoveAllListenersImpl()
+{
+  for (int32_t i = mListeners.Length() - 1; i >= 0; --i) {
+    nsRefPtr<MediaStreamListener> listener = mListeners[i].forget();
+    listener->NotifyRemoved(GraphImpl());
+  }
+  mListeners.Clear();
+}
+
+void
 MediaStream::DestroyImpl()
 {
+  RemoveAllListenersImpl();
+
   for (int32_t i = mConsumers.Length() - 1; i >= 0; --i) {
     mConsumers[i]->Disconnect();
   }
@@ -1938,7 +1954,7 @@ MediaStream::AddListenerImpl(already_AddRefed<MediaStreamListener> aListener)
 {
   MediaStreamListener* listener = *mListeners.AppendElement() = aListener;
   listener->NotifyBlockingChanged(GraphImpl(),
-    mBlocked.GetAt(GraphImpl()->mCurrentTime) ? MediaStreamListener::BLOCKED : MediaStreamListener::UNBLOCKED);
+    mNotifiedBlocked ? MediaStreamListener::BLOCKED : MediaStreamListener::UNBLOCKED);
   if (mNotifiedFinished) {
     listener->NotifyFinished(GraphImpl());
   }
@@ -1958,6 +1974,15 @@ MediaStream::AddListener(MediaStreamListener* aListener)
     nsRefPtr<MediaStreamListener> mListener;
   };
   GraphImpl()->AppendMessage(new Message(this, aListener));
+}
+
+void
+MediaStream::RemoveListenerImpl(MediaStreamListener* aListener)
+{ 
+  // wouldn't need this if we could do it in the opposite order
+  nsRefPtr<MediaStreamListener> listener(aListener);
+  mListeners.RemoveElement(aListener);
+  listener->NotifyRemoved(GraphImpl());
 }
 
 void
@@ -2013,22 +2038,25 @@ SourceMediaStream::AddTrack(TrackID aID, TrackRate aRate, TrackTicks aStart,
   }
 }
 
-void
+bool
 SourceMediaStream::AppendToTrack(TrackID aID, MediaSegment* aSegment)
 {
   MutexAutoLock lock(mMutex);
   // ::EndAllTrackAndFinished() can end these before the sources notice
+  bool appended = false;
   if (!mFinished) {
     TrackData *track = FindDataForTrack(aID);
     if (track) {
       track->mData->AppendFrom(aSegment);
+      appended = true;
     } else {
-      NS_ERROR("Append to non-existent track!");
+      aSegment->Clear();
     }
   }
   if (!mDestroyed) {
     GraphImpl()->EnsureNextIteration();
   }
+  return appended;
 }
 
 bool
@@ -2039,8 +2067,7 @@ SourceMediaStream::HaveEnoughBuffered(TrackID aID)
   if (track) {
     return track->mHaveEnough;
   }
-  NS_ERROR("No track in HaveEnoughBuffered!");
-  return true;
+  return false;
 }
 
 void
@@ -2050,7 +2077,7 @@ SourceMediaStream::DispatchWhenNotEnoughBuffered(TrackID aID,
   MutexAutoLock lock(mMutex);
   TrackData* data = FindDataForTrack(aID);
   if (!data) {
-    NS_ERROR("No track in DispatchWhenNotEnoughBuffered");
+    aSignalThread->Dispatch(aSignalRunnable, 0);
     return;
   }
 
@@ -2070,8 +2097,6 @@ SourceMediaStream::EndTrack(TrackID aID)
     TrackData *track = FindDataForTrack(aID);
     if (track) {
       track->mCommands |= TRACK_END;
-    } else {
-      NS_ERROR("End of non-existant track");
     }
   }
   if (!mDestroyed) {

@@ -60,7 +60,7 @@ public:
     nsresult Init();
     nsresult AddStandardRequestHeaders(nsHttpHeaderArray *);
     nsresult AddConnectionHeader(nsHttpHeaderArray *,
-                                 uint8_t capabilities);
+                                 uint32_t capabilities);
     bool     IsAcceptableEncoding(const char *encoding);
 
     const nsAFlatCString &UserAgent();
@@ -97,6 +97,8 @@ public:
     PRIntervalTime SpdyPingThreshold() { return mSpdyPingThreshold; }
     PRIntervalTime SpdyPingTimeout() { return mSpdyPingTimeout; }
     uint32_t       ConnectTimeout()  { return mConnectTimeout; }
+    uint32_t       ParallelSpeculativeConnectLimit() { return mParallelSpeculativeConnectLimit; }
+    bool           CritialRequestPrioritization() { return mCritialRequestPrioritization; }
 
     bool           PromptTempRedirect()      { return mPromptTempRedirect; }
 
@@ -152,6 +154,11 @@ public:
     nsresult ProcessPendingQ(nsHttpConnectionInfo *cinfo)
     {
         return mConnMgr->ProcessPendingQ(cinfo);
+    }
+
+    nsresult ProcessPendingQ()
+    {
+        return mConnMgr->ProcessPendingQ();
     }
 
     nsresult GetSocketThreadTarget(nsIEventTarget **target)
@@ -293,7 +300,7 @@ private:
 
     uint8_t  mHttpVersion;
     uint8_t  mProxyHttpVersion;
-    uint8_t  mCapabilities;
+    uint32_t mCapabilities;
     uint8_t  mReferrerLevel;
 
     bool mFastFallbackToIPv4;
@@ -396,6 +403,14 @@ private:
     // The maximum amount of time to wait for socket transport to be
     // established. In milliseconds.
     uint32_t       mConnectTimeout;
+
+    // The maximum number of current global half open sockets allowable
+    // when starting a new speculative connection.
+    uint32_t       mParallelSpeculativeConnectLimit;
+
+    // Whether or not to block requests for non head js/css items (e.g. media)
+    // while those elements load.
+    bool           mCritialRequestPrioritization;
 };
 
 //-----------------------------------------------------------------------------

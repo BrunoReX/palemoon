@@ -9,8 +9,12 @@
  * boxes, also used for various anonymous boxes
  */
 
+#include "mozilla/DebugOnly.h"
+#include "mozilla/Likely.h"
+
 #include "nsCOMPtr.h"
 #include "nsBlockFrame.h"
+#include "nsAbsoluteContainingBlock.h"
 #include "nsBlockReflowContext.h"
 #include "nsBlockReflowState.h"
 #include "nsBulletFrame.h"
@@ -23,7 +27,7 @@
 #include "nsPresContext.h"
 #include "nsIPresShell.h"
 #include "nsStyleContext.h"
-#include "nsIView.h"
+#include "nsView.h"
 #include "nsHTMLParts.h"
 #include "nsGkAtoms.h"
 #include "nsIDOMEvent.h"
@@ -53,8 +57,6 @@
 #include "nsRenderingContext.h"
 #include "TextOverflow.h"
 #include "nsStyleStructInlines.h"
-#include "mozilla/Util.h" // for DebugOnly
-#include "mozilla/Likely.h"
 
 #ifdef IBMBIDI
 #include "nsBidiPresUtils.h"
@@ -1572,14 +1574,16 @@ nsBlockFrame::PrepareResizeReflow(nsBlockReflowState& aState)
   const nsStyleTextReset* styleTextReset = GetStyleTextReset();
   // See if we can try and avoid marking all the lines as dirty
   bool tryAndSkipLines =
-      // The text must be left-aligned.
+    // The block must be LTR (bug 806284)
+    GetStyleVisibility()->mDirection == NS_STYLE_DIRECTION_LTR &&
+    // The text must be left-aligned.
     IsAlignedLeft(styleText->mTextAlign, 
                   aState.mReflowState.mStyleVisibility->mDirection,
                   styleTextReset->mUnicodeBidi,
                   this) &&
-      // The left content-edge must be a constant distance from the left
-      // border-edge.
-      !GetStylePadding()->mPadding.GetLeft().HasPercent();
+    // The left content-edge must be a constant distance from the left
+    // border-edge.
+    !GetStylePadding()->mPadding.GetLeft().HasPercent();
 
 #ifdef DEBUG
   if (gDisableResizeOpt) {
@@ -2488,7 +2492,8 @@ nsBlockFrame::PullFrame(nsBlockReflowState& aState,
 {
   // First check our remaining lines.
   if (end_lines() != aLine.next()) {
-    return PullFrameFrom(aState, aLine, this, false, mFrames, aLine.next());
+    return PullFrameFrom(aState, aLine, this, false, mFrames, mLines,
+                         aLine.next());
   }
 
   NS_ASSERTION(!GetOverflowLines(),
@@ -2500,14 +2505,14 @@ nsBlockFrame::PullFrame(nsBlockReflowState& aState,
     // first normal lines, then overflow lines
     if (!nextInFlow->mLines.empty()) {
       return PullFrameFrom(aState, aLine, nextInFlow, false,
-                           nextInFlow->mFrames,
+                           nextInFlow->mFrames, nextInFlow->mLines,
                            nextInFlow->mLines.begin());
     }
 
     FrameLines* overflowLines = nextInFlow->GetOverflowLines();
     if (overflowLines) {
       return PullFrameFrom(aState, aLine, nextInFlow, true,
-                           overflowLines->mFrames,
+                           overflowLines->mFrames, overflowLines->mLines,
                            overflowLines->mLines.begin());
     }
 
@@ -2524,6 +2529,7 @@ nsBlockFrame::PullFrameFrom(nsBlockReflowState&  aState,
                             nsBlockFrame*        aFromContainer,
                             bool                 aFromOverflowLine,
                             nsFrameList&         aFromFrameList,
+                            nsLineList&          aFromLineList,
                             nsLineList::iterator aFromLine)
 {
   nsLineBox* fromLine = aFromLine;
@@ -2571,35 +2577,25 @@ nsBlockFrame::PullFrameFrom(nsBlockReflowState&  aState,
   // when aFromContainer is 'this', then aLine->LastChild()'s next sibling
   // is already set correctly.
   aLine->NoteFrameAdded(frame);
+  fromLine->NoteFrameRemoved(frame);
 
-  if (fromLine->GetChildCount() > 1) {
+  if (fromLine->GetChildCount() > 0) {
     // Mark line dirty now that we pulled a child
-    fromLine->NoteFrameRemoved(frame);
     fromLine->MarkDirty();
     fromLine->mFirstChild = newFirstChild;
   } else {
-    // Free up the fromLine now that it's empty
+    // Free up the fromLine now that it's empty.
     // Its bounds might need to be redrawn, though.
-    FrameLines* overflowLines =
-      aFromOverflowLine ? aFromContainer->RemoveOverflowLines() : nullptr;
-    nsLineList* fromLineList =
-      aFromOverflowLine ? &overflowLines->mLines : &aFromContainer->mLines;
-    if (aFromLine.next() != fromLineList->end())
+    if (aFromLine.next() != aFromLineList.end()) {
       aFromLine.next()->MarkPreviousMarginDirty();
-
-    fromLineList->erase(aFromLine);
+    }
+    aFromLineList.erase(aFromLine);
     // aFromLine is now invalid
     aFromContainer->FreeLineBox(fromLine);
 
-    // Put any remaining overflow lines back.
-    if (aFromOverflowLine) {
-      if (!fromLineList->empty()) {
-        aFromContainer->SetOverflowLines(overflowLines);
-      } else {
-        delete overflowLines;
-        // Now any iterators into fromLineList are invalid (but
-        // aFromLine already was invalidated above)
-      }
+    // Destroy the property if we pulled the last frame.
+    if (aFromOverflowLine && aFromFrameList.IsEmpty()) {
+      aFromContainer->DestroyOverflowLines();
     }
   }
 
@@ -4460,7 +4456,8 @@ nsBlockFrame::GetOverflowLines() const
   FrameLines* prop =
     static_cast<FrameLines*>(Properties().Get(OverflowLinesProperty()));
   NS_ASSERTION(prop && !prop->mLines.empty() &&
-               prop->mLines.front()->mFirstChild == prop->mFrames.FirstChild(),
+               prop->mLines.front()->GetChildCount() == 0 ? prop->mFrames.IsEmpty() :
+                 prop->mLines.front()->mFirstChild == prop->mFrames.FirstChild(),
                "value should always be stored and non-empty when state set");
   return prop;
 }
@@ -4474,7 +4471,8 @@ nsBlockFrame::RemoveOverflowLines()
   FrameLines* prop =
     static_cast<FrameLines*>(Properties().Remove(OverflowLinesProperty()));
   NS_ASSERTION(prop && !prop->mLines.empty() &&
-               prop->mLines.front()->mFirstChild == prop->mFrames.FirstChild(),
+               prop->mLines.front()->GetChildCount() == 0 ? prop->mFrames.IsEmpty() :
+                 prop->mLines.front()->mFirstChild == prop->mFrames.FirstChild(),
                "value should always be stored and non-empty when state set");
   RemoveStateBits(NS_BLOCK_HAS_OVERFLOW_LINES);
   return prop;
@@ -5430,13 +5428,10 @@ nsBlockFrame::DoRemoveFrame(nsIFrame* aDeletedFrame, uint32_t aFlags)
                visOverflow.width, visOverflow.height);
 #endif
       } else {
-        // XXX update searchingOverflowList directly, remove only when empty
-        FrameLines* overflowLines = RemoveOverflowLines();
         line = overflowLines->mLines.erase(line);
-        if (!overflowLines->mLines.empty()) {
-          SetOverflowLines(overflowLines);
-        } else {
-          delete overflowLines;
+        if (overflowLines->mLines.empty()) {
+          DestroyOverflowLines();
+          overflowLines = nullptr;
           // We just invalidated our iterators.  Since we were in
           // the overflow lines list, which is now empty, set them
           // so we're at the end of the regular line list.
@@ -5571,14 +5566,11 @@ nsBlockFrame::StealFrame(nsPresContext* aPresContext,
           // Remove the line box
           nsLineBox* lineBox = line;
           if (searchingOverflowList) {
-            // Erase line, but avoid making the overflow line list empty
-            // XXX update overflowLines directly, remove only when empty
-            RemoveOverflowLines();
+            // Erase the line, destroy the property if it was the last one.
             line = overflowLines->mLines.erase(line);
-            if (!overflowLines->mLines.empty()) {
-              SetOverflowLines(overflowLines);
-            } else {
-              delete overflowLines;
+            if (overflowLines->mLines.empty()) {
+              DestroyOverflowLines();
+              overflowLines = nullptr;
               // We just invalidated our iterators.  Since we were in
               // the overflow lines list, which is now empty, set them
               // so we're at the end of the regular line list.
@@ -6077,27 +6069,26 @@ DisplayLine(nsDisplayListBuilder* aBuilder, const nsRect& aLineArea,
       !lineMayHaveTextOverflow)
     return NS_OK;
 
-  nsDisplayListCollection collection;
-  nsresult rv;
-
   // Block-level child backgrounds go on the blockBorderBackgrounds list ...
   // Inline-level child backgrounds go on the regular child content list.
-  nsDisplayListSet childLists(collection,
-    lineInline ? collection.Content() : collection.BlockBorderBackgrounds());
+  nsDisplayListSet childLists(aLists,
+    lineInline ? aLists.Content() : aLists.BlockBorderBackgrounds());
+
+  uint32_t flags = lineInline ? nsIFrame::DISPLAY_CHILD_INLINE : 0;
+
   nsIFrame* kid = aLine->mFirstChild;
   int32_t n = aLine->GetChildCount();
   while (--n >= 0) {
-    rv = aFrame->BuildDisplayListForChild(aBuilder, kid, aDirtyRect, childLists,
-                                          lineInline ? nsIFrame::DISPLAY_CHILD_INLINE : 0);
+    nsresult rv = aFrame->BuildDisplayListForChild(aBuilder, kid, aDirtyRect,
+                                                   childLists, flags);
     NS_ENSURE_SUCCESS(rv, rv);
     kid = kid->GetNextSibling();
   }
   
   if (lineMayHaveTextOverflow) {
-    aTextOverflow->ProcessLine(collection, aLine.get());
+    aTextOverflow->ProcessLine(aLists, aLine.get());
   }
 
-  collection.MoveTo(aLists);
   return NS_OK;
 }
 
@@ -6249,14 +6240,14 @@ nsBlockFrame::AccessibleType()
 {
   // block frame may be for <hr>
   if (mContent->Tag() == nsGkAtoms::hr) {
-    return a11y::eHTMLHRAccessible;
+    return a11y::eHTMLHRType;
   }
 
   if (!HasBullet() || !PresContext()) {
     if (!mContent->GetParent()) {
       // Don't create accessible objects for the root content node, they are redundant with
       // the nsDocAccessible object created with the document node
-      return a11y::eNoAccessible;
+      return a11y::eNoType;
     }
     
     nsCOMPtr<nsIDOMHTMLDocument> htmlDoc =
@@ -6267,16 +6258,16 @@ nsBlockFrame::AccessibleType()
       if (SameCOMIdentity(body, mContent)) {
         // Don't create accessible objects for the body, they are redundant with
         // the nsDocAccessible object created with the document node
-        return a11y::eNoAccessible;
+        return a11y::eNoType;
       }
     }
 
     // Not a bullet, treat as normal HTML container
-    return a11y::eHyperTextAccessible;
+    return a11y::eHyperTextType;
   }
 
   // Create special list bullet accessible
-  return a11y::eHTMLLiAccessible;
+  return a11y::eHTMLLiType;
 }
 #endif
 

@@ -286,7 +286,7 @@ const DownloadsIndicatorView = {
     this._initialized = true;
 
     window.addEventListener("unload", this.onWindowUnload, false);
-    DownloadsCommon.indicatorData.addView(this);
+    DownloadsCommon.getIndicatorData(window).addView(this);
   },
 
   /**
@@ -300,7 +300,7 @@ const DownloadsIndicatorView = {
     this._initialized = false;
 
     window.removeEventListener("unload", this.onWindowUnload, false);
-    DownloadsCommon.indicatorData.removeView(this);
+    DownloadsCommon.getIndicatorData(window).removeView(this);
 
     // Reset the view properties, so that a neutral indicator is displayed if we
     // are visible only temporarily as an anchor.
@@ -327,7 +327,7 @@ const DownloadsIndicatorView = {
       // If the view is initialized, we need to update the elements now that
       // they are finally available in the document.
       if (this._initialized) {
-        DownloadsCommon.indicatorData.refreshView(this);
+        DownloadsCommon.getIndicatorData(window).refreshView(this);
       }
 
       aCallback();
@@ -349,8 +349,11 @@ const DownloadsIndicatorView = {
   /**
    * If the status indicator is visible in its assigned position, shows for a
    * brief time a visual notification of a relevant event, like a new download.
+   *
+   * @param aType
+   *        Set to "start" for new downloads, "finish" for completed downloads.
    */
-  showEventNotification: function DIV_showEventNotification()
+  showEventNotification: function DIV_showEventNotification(aType)
   {
     if (!this._initialized) {
       return;
@@ -366,7 +369,7 @@ const DownloadsIndicatorView = {
       DownloadsButton.updatePosition();
 
       let indicator = this.indicator;
-      indicator.setAttribute("notification", "true");
+      indicator.setAttribute("notification", aType);
       this._notificationTimeout = setTimeout(
         function () indicator.removeAttribute("notification"), 1000);
     }
@@ -486,7 +489,7 @@ const DownloadsIndicatorView = {
     if (this._attention != aValue) {
       this._attention = aValue;
       if (aValue) {
-        this.indicator.setAttribute("attention", "true")
+        this.indicator.setAttribute("attention", "true");
       } else {
         this.indicator.removeAttribute("attention");
       }
@@ -508,7 +511,7 @@ const DownloadsIndicatorView = {
   {
     if (DownloadsCommon.useToolkitUI) {
       // The panel won't suppress attention for us, we need to clear now.
-      DownloadsCommon.indicatorData.attention = false;
+      DownloadsCommon.getIndicatorData(window).attention = false;
       BrowserDownloadsUI();
     } else {
       DownloadsPanel.showPanel();

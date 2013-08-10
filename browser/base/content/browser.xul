@@ -47,7 +47,6 @@
         windowtype="navigator:browser"
         macanimationtype="document"
         screenX="4" screenY="4"
-        browsingmode="normal"
         fullscreenbutton="true"
         persist="screenX screenY width height sizemode">
 
@@ -197,7 +196,7 @@
         <button id="social-undoactivation-button"
                 label="&social.activated.undobutton.label;"
                 accesskey="&social.activated.undobutton.accesskey;"
-                onclick="SocialUI.undoActivation();"/>
+                onclick="SocialUI.undoActivation(this);"/>
         <button default="true"
                 autofocus="autofocus"
                 label="&social.ok.label;"
@@ -212,7 +211,7 @@
         <button id="social-undoactivation-button"
                 label="&social.activated.undobutton.label;"
                 accesskey="&social.activated.undobutton.accesskey;"
-                onclick="SocialUI.undoActivation();"/>
+                onclick="SocialUI.undoActivation(this);"/>
 #endif
           </hbox>
         </vbox>
@@ -280,22 +279,6 @@
            hidden="true"
            noautofocus="true"
            position="topcenter topright"/>
-
-    <menupopup id="inspector-node-popup">
-      <menuitem id="inspectorHTMLCopyInner"
-                label="&inspectorHTMLCopyInner.label;"
-                accesskey="&inspectorHTMLCopyInner.accesskey;"
-                command="Inspector:CopyInner"/>
-      <menuitem id="inspectorHTMLCopyOuter"
-                label="&inspectorHTMLCopyOuter.label;"
-                accesskey="&inspectorHTMLCopyOuter.accesskey;"
-                command="Inspector:CopyOuter"/>
-      <menuseparator/>
-      <menuitem id="inspectorHTMLDelete"
-                label="&inspectorHTMLDelete.label;"
-                accesskey="&inspectorHTMLDelete.accesskey;"
-                command="Inspector:DeleteNode"/>
-    </menupopup>
 
     <menupopup id="toolbar-context-menu"
                onpopupshowing="onViewToolbarsPopupShowing(event);">
@@ -463,6 +446,34 @@
       <label class="tooltip-label" value="&backForwardButtonMenu.tooltip;"/>
 #endif
     </tooltip>
+
+    <popupnotification id="webRTC-shareDevices-notification" hidden="true">
+      <popupnotificationcontent id="webRTC-selectCamera" orient="vertical">
+        <separator class="thin"/>
+        <label value="&getUserMedia.selectCamera.label;"
+               accesskey="&getUserMedia.selectCamera.accesskey;"
+               control="webRTC-selectCamera-menulist"/>
+        <menulist id="webRTC-selectCamera-menulist">
+          <menupopup id="webRTC-selectCamera-menupopup"/>
+        </menulist>
+      </popupnotificationcontent>
+      <popupnotificationcontent id="webRTC-selectMicrophone" orient="vertical">
+        <separator class="thin"/>
+        <label value="&getUserMedia.selectMicrophone.label;"
+               accesskey="&getUserMedia.selectMicrophone.accesskey;"
+               control="webRTC-selectMicrophone-menulist"/>
+        <menulist id="webRTC-selectMicrophone-menulist">
+          <menupopup id="webRTC-selectMicrophone-menupopup"/>
+        </menulist>
+      </popupnotificationcontent>
+    </popupnotification>
+
+    <popupnotification id="geolocation-notification" hidden="true">
+      <popupnotificationcontent orient="vertical" align="start">
+        <separator class="thin"/>
+        <label id="geolocation-learnmore-link" class="text-link"/>
+      </popupnotificationcontent>
+    </popupnotification>
   </popupset>
 
 #ifdef CAN_DRAW_IN_TITLEBAR
@@ -520,7 +531,7 @@
              toolbarname="&navbarCmd.label;" accesskey="&navbarCmd.accesskey;"
              fullscreentoolbar="true" mode="icons" customizable="true"
              iconsize="large"
-             defaultset="unified-back-forward-button,reload-button,stop-button,home-button,urlbar-container,search-container,bookmarks-menu-button-container,window-controls"
+             defaultset="unified-back-forward-button,reload-button,stop-button,home-button,urlbar-container,search-container,downloads-button,bookmarks-menu-button-container,window-controls"
              context="toolbar-context-menu">
 
       <toolbaritem id="unified-back-forward-button" class="chromeclass-toolbar-additional"
@@ -598,6 +609,8 @@
             <image id="webapps-notification-icon" class="notification-anchor-icon" role="button"/>
             <image id="plugins-notification-icon" class="notification-anchor-icon" role="button"/>
             <image id="blocked-plugins-notification-icon" class="notification-anchor-icon" role="button"/>
+            <image id="webRTC-shareDevices-notification-icon" class="notification-anchor-icon" role="button"/>
+            <image id="webRTC-sharingDevices-notification-icon" class="notification-anchor-icon" role="button"/>
           </box>
           <!-- Use onclick instead of normal popup= syntax since the popup
                code fires onmousedown, and hence eats our favicon drag events.
@@ -662,11 +675,24 @@
         <searchbar id="searchbar" flex="1"/>
       </toolbaritem>
 
+      <toolbarbutton id="webrtc-status-button"
+                     class="toolbarbutton-1 chromeclass-toolbar-additional"
+                     type="menu"
+                     hidden="true"
+                     orient="horizontal"
+                     label="&webrtcIndicatorButton.label;"
+                     tooltiptext="&webrtcIndicatorButton.tooltip;">
+        <menupopup onpopupshowing="WebrtcIndicator.fillPopup(this);"
+                   onpopuphiding="WebrtcIndicator.clearPopup(this);"
+                   oncommand="WebrtcIndicator.menuCommand(event.target);"/>
+      </toolbarbutton>
+
       <toolbaritem id="social-toolbar-item"
                    class="chromeclass-toolbar-additional"
                    removable="false"
                    title="&socialToolbar.title;"
                    hidden="true"
+                   skipintoolbarset="true"
                    observes="socialActiveBroadcaster">
         <toolbarbutton id="social-provider-button"
                        class="toolbarbutton-1"
@@ -698,6 +724,7 @@
                       label="&social.toggleNotifications.label;"
                       accesskey="&social.toggleNotifications.accesskey;"/>
             <menuseparator class="social-statusarea-separator"/>
+            <menuseparator class="social-provider-menu" hidden="true"/>
             <menuitem class="social-toggle-menuitem" command="Social:Toggle"/>
             <menuitem class="social-remove-menuitem" command="Social:Remove"/>
           </menupopup>
@@ -891,7 +918,8 @@
             tabbrowser="content"
             flex="1"
             setfocus="false"
-            tooltip="tabbrowser-tab-tooltip">
+            tooltip="tabbrowser-tab-tooltip"
+            stopwatchid="FX_TAB_CLICK_MS">
         <tab class="tabbrowser-tab" selected="true" fadein="true"/>
       </tabs>
 
@@ -1049,6 +1077,8 @@
     </toolbarpalette>
   </toolbox>
 
+  <hbox id="fullscr-toggler" collapsed="true"/>
+
   <hbox flex="1" id="browser">
     <vbox id="browser-border-start" hidden="true" layer="true"/>
     <vbox id="sidebar-box" hidden="true" class="chromeclass-extrachrome">
@@ -1071,19 +1101,6 @@
                   onclick="contentAreaClick(event, false);"/>
       <chatbar id="pinnedchats" layer="true" mousethrough="always" hidden="true"/>
       <statuspanel id="statusbar-display" inactive="true"/>
-    </vbox>
-    <splitter id="devtools-side-splitter" hidden="true"/>
-    <vbox id="devtools-sidebar-box" hidden="true"
-          style="min-width: 18em; width: 22em; max-width: 42em;" persist="width">
-      <toolbar id="devtools-sidebar-toolbar"
-               class="devtools-toolbar"
-               nowindowdrag="true">
-        <spacer flex="1"/>
-        <toolbarbutton tooltiptext="&inspectSidebarCloseButton.tooltiptext;"
-                       class="devtools-closebutton"
-                       command="Inspector:Sidebar"/>
-      </toolbar>
-      <deck id="devtools-sidebar-deck" flex="1"/>
     </vbox>
     <splitter id="social-sidebar-splitter"
               class="chromeclass-extrachrome sidebar-splitter"
@@ -1123,52 +1140,6 @@
   </hbox>
 
   <vbox id="browser-bottombox" layer="true">
-    <toolbar id="inspector-toolbar"
-             class="devtools-toolbar"
-             nowindowdrag="true"
-             hidden="true">
-#ifdef XP_MACOSX
-      <toolbarbutton id="highlighter-closebutton"
-                     class="devtools-closebutton"
-                     oncommand="InspectorUI.closeInspectorUI(false);"
-                     tooltiptext="&inspectCloseButton.tooltiptext;"/>
-#endif
-      <toolbarbutton id="inspector-inspect-toolbutton"
-                     class="devtools-toolbarbutton"
-                     command="Inspector:Inspect"/>
-      <toolbarbutton id="inspector-treepanel-toolbutton"
-                     class="devtools-toolbarbutton"
-                     tabindex="0"
-                     aria-label="&markupButton.arialabel;"
-                     accesskey="&markupButton.accesskey;"
-                     command="Inspector:HTMLPanel"/>
-      <arrowscrollbox id="inspector-breadcrumbs"
-                      flex="1" orient="horizontal"
-                      clicktoscroll="true"/>
-      <hbox id="inspector-tools">
-        <toolbarbutton id="inspector-3D-button"
-                       class="devtools-toolbarbutton"
-                       hidden="true"
-                       label="&inspect3DViewButton.label;"
-                       accesskey="&inspect3DViewButton.accesskey;"
-                       tabindex="0"
-                       command="Inspector:Tilt"/>
-        <toolbarbutton id="inspector-style-button"
-                       class="devtools-toolbarbutton"
-                       label="&inspectStyleButton.label;"
-                       accesskey="&inspectStyleButton.accesskey;"
-                       tabindex="0"
-                       command="Inspector:Sidebar"/>
-        <!-- registered tools go here -->
-      </hbox>
-#ifndef XP_MACOSX
-      <toolbarbutton id="highlighter-closebutton"
-                     class="devtools-closebutton"
-                     oncommand="InspectorUI.closeInspectorUI(false);"
-                     tooltiptext="&inspectCloseButton.tooltiptext;"/>
-#endif
-    </toolbar>
-
     <toolbar id="developer-toolbar"
              class="devtools-toolbar"
              hidden="true">
@@ -1185,36 +1156,10 @@
             <hbox class="gclitoolbar-complete-node"/>
             <textbox class="gclitoolbar-input-node" rows="1"/>
           </stack>
-          <toolbarbutton id="developer-toolbar-webconsole"
+          <toolbarbutton id="developer-toolbar-toolbox-button"
                          class="developer-toolbar-button"
-                         observes="devtoolsMenuBroadcaster_WebConsole"/>
-          <toolbarbutton id="developer-toolbar-inspector"
-                         class="developer-toolbar-button"
-                         observes="devtoolsMenuBroadcaster_Inspect"/>
-          <toolbarbutton id="developer-toolbar-styleeditor"
-                         class="developer-toolbar-button"
-                         observes="devtoolsMenuBroadcaster_StyleEditor"/>
-          <toolbarbutton id="developer-toolbar-debugger"
-                         class="developer-toolbar-button"
-                         observes="devtoolsMenuBroadcaster_Debugger"/>
-          <toolbarbutton id="developer-toolbar-other-tools"
-                         type="menu"
-                         class="developer-toolbar-button"
-                         label="&devToolbarOtherToolsButton.label;">
-            <menupopup position="before_end">
-               <menuitem observes="devtoolsMenuBroadcaster_DevToolbar"/>
-               <menuitem observes="devtoolsMenuBroadcaster_ResponsiveUI"/>
-               <menuitem observes="devtoolsMenuBroadcaster_RemoteDebugger"/>
-               <menuitem observes="devtoolsMenuBroadcaster_ChromeDebugger"/>
-               <menuitem observes="devtoolsMenuBroadcaster_Scratchpad"/>
-               <menuitem observes="devtoolsMenuBroadcaster_StyleEditor"/>
-               <menuitem observes="devtoolsMenuBroadcaster_PageSource"/>
-               <menuitem observes="devtoolsMenuBroadcaster_ErrorConsole"/>
-               <menuseparator/>
-               <menuitem observes="devtoolsMenuBroadcaster_GetMoreTools"/>
-            </menupopup>
-          </toolbarbutton>
-
+                         observes="devtoolsMenuBroadcaster_DevToolbox"
+                         tooltiptext="&devToolbarToolsButton.tooltip;"/>
 #ifndef XP_MACOSX
           <toolbarbutton id="developer-toolbar-closebutton"
                          class="devtools-closebutton"

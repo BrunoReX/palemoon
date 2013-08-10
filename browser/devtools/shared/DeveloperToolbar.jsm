@@ -4,7 +4,7 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [ "DeveloperToolbar" ];
+this.EXPORTED_SYMBOLS = [ "DeveloperToolbar", "CommandUtils" ];
 
 const NS_XHTML = "http://www.w3.org/1999/xhtml";
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
@@ -22,10 +22,115 @@ XPCOMUtils.defineLazyModuleGetter(this, "gcli",
                                   "resource:///modules/devtools/gcli.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "CmdCommands",
-                                  "resource:///modules/devtools/CmdCmd.jsm");
+                                  "resource:///modules/devtools/BuiltinCommands.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "PageErrorListener",
                                   "resource://gre/modules/devtools/WebConsoleUtils.jsm");
+
+XPCOMUtils.defineLazyGetter(this, "prefBranch", function() {
+  let prefService = Components.classes["@mozilla.org/preferences-service;1"]
+          .getService(Components.interfaces.nsIPrefService);
+  return prefService.getBranch(null)
+          .QueryInterface(Components.interfaces.nsIPrefBranch2);
+});
+
+/**
+ * A collection of utilities to help working with commands
+ */
+this.CommandUtils = {
+  /**
+   * Read a toolbarSpec from preferences
+   * @param aPref The name of the preference to read
+   */
+  getCommandbarSpec: function CU_getCommandbarSpec(aPref) {
+    let value = prefBranch.getComplexValue(aPref,
+                               Components.interfaces.nsISupportsString).data;
+    return JSON.parse(value);
+  },
+
+  /**
+   * A toolbarSpec is an array of buttonSpecs. A buttonSpec is an array of
+   * strings each of which is a GCLI command (including args if needed).
+   *
+   * Warning: this method uses the unload event of the window that owns the
+   * buttons that are of type checkbox. this means that we don't properly
+   * unregister event handlers until the window is destroyed.
+   */
+  createButtons: function CU_createButtons(toolbarSpec, target, document, requisition) {
+    let reply = [];
+
+    toolbarSpec.forEach(function(buttonSpec) {
+      let button = document.createElement("toolbarbutton");
+      reply.push(button);
+
+      if (typeof buttonSpec == "string") {
+        buttonSpec = { typed: buttonSpec };
+      }
+      // Ask GCLI to parse the typed string (doesn't execute it)
+      requisition.update(buttonSpec.typed);
+
+      // Ignore invalid commands
+      let command = requisition.commandAssignment.value;
+      if (command == null) {
+        // TODO: Have a broken icon
+        // button.icon = 'Broken';
+        button.setAttribute("label", "X");
+        button.setAttribute("tooltip", "Unknown command: " + buttonSpec.typed);
+        button.setAttribute("disabled", "true");
+      }
+      else {
+        if (command.buttonId != null) {
+          button.id = command.buttonId;
+        }
+        if (command.buttonClass != null) {
+          button.className = command.buttonClass;
+        }
+        if (command.tooltipText != null) {
+          button.setAttribute("tooltiptext", command.tooltipText);
+        }
+        else if (command.description != null) {
+          button.setAttribute("tooltiptext", command.description);
+        }
+
+        button.addEventListener("click", function() {
+          requisition.update(buttonSpec.typed);
+          //if (requisition.getStatus() == Status.VALID) {
+            requisition.exec();
+          /*
+          }
+          else {
+            console.error('incomplete commands not yet supported');
+          }
+          */
+        }, false);
+
+        // Allow the command button to be toggleable
+        if (command.state) {
+          button.setAttribute("autocheck", false);
+          let onChange = function(event, eventTab) {
+            if (eventTab == target.tab) {
+              if (command.state.isChecked(target)) {
+                button.setAttribute("checked", true);
+              }
+              else if (button.hasAttribute("checked")) {
+                button.removeAttribute("checked");
+              }
+            }
+          };
+          command.state.onChange(target, onChange);
+          onChange(null, target.tab);
+          document.defaultView.addEventListener("unload", function() {
+            command.state.offChange(target, onChange);
+          }, false);
+        }
+      }
+    });
+
+    requisition.update('');
+
+    return reply;
+  }
+};
 
 /**
  * Due to a number of panel bugs we need a way to check if we are running on
@@ -57,10 +162,10 @@ this.DeveloperToolbar = function DeveloperToolbar(aChromeWindow, aToolbarElement
   this._lastState = NOTIFICATIONS.HIDE;
   this._pendingShowCallback = undefined;
   this._pendingHide = false;
-  this._errorsCount = Object.create(null);
-  this._errorListeners = Object.create(null);
-  this._webConsoleButton = this._doc
-                           .getElementById("developer-toolbar-webconsole");
+  this._errorsCount = {};
+  this._errorListeners = {};
+  this._errorCounterButton = this._doc
+                             .getElementById("developer-toolbar-toolbox-button");
 
   try {
     CmdCommands.refreshAutoCommands(aChromeWindow);
@@ -100,7 +205,7 @@ Object.defineProperty(DeveloperToolbar.prototype, 'visible', {
   enumerable: true
 });
 
-var _gSequenceId = 0;
+let _gSequenceId = 0;
 
 /**
  * Getter for a unique ID.
@@ -147,8 +252,8 @@ DeveloperToolbar.prototype.focusToggle = function DT_focusToggle()
   if (this.visible) {
     // If we have focus then the active element is the HTML input contained
     // inside the xul input element
-    var active = this._chromeWindow.document.activeElement;
-    var position = this._input.compareDocumentPosition(active);
+    let active = this._chromeWindow.document.activeElement;
+    let position = this._input.compareDocumentPosition(active);
     if (position & Node.DOCUMENT_POSITION_CONTAINED_BY) {
       this.hide();
     }
@@ -351,7 +456,12 @@ DeveloperToolbar.prototype.hide = function DT_hide()
  */
 DeveloperToolbar.prototype.destroy = function DT_destroy()
 {
+  if (this._lastState == NOTIFICATIONS.HIDE) {
+    return;
+  }
+
   this._chromeWindow.getBrowser().tabContainer.removeEventListener("TabSelect", this, false);
+  this._chromeWindow.getBrowser().tabContainer.removeEventListener("TabClose", this, false);
   this._chromeWindow.getBrowser().removeEventListener("load", this, true); 
   this._chromeWindow.getBrowser().removeEventListener("beforeunload", this, true);
 
@@ -378,6 +488,8 @@ DeveloperToolbar.prototype.destroy = function DT_destroy()
   delete this.outputPanel;
   delete this.tooltipPanel;
   */
+
+  this._lastState = NOTIFICATIONS.HIDE;
 };
 
 /**
@@ -497,9 +609,9 @@ function DT__updateErrorsCount(aChangedTabId)
   let errors = this._errorsCount[tabId];
 
   if (errors) {
-    this._webConsoleButton.setAttribute("error-count", errors);
+    this._errorCounterButton.setAttribute("error-count", errors);
   } else {
-    this._webConsoleButton.removeAttribute("error-count");
+    this._errorCounterButton.removeAttribute("error-count");
   }
 };
 

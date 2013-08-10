@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 50; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 50; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* vim: set ts=4 et sw=4 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -584,7 +585,7 @@ NS_FALLIBLE_MEMORY_REPORTER_IMPLEMENT(Explicit,
     "different results.")
 #endif  // HAVE_JEMALLOC_STATS
 
-NS_MEMORY_REPORTER_MALLOC_SIZEOF_FUN(AtomTableMallocSizeOf, "atom-table")
+NS_MEMORY_REPORTER_MALLOC_SIZEOF_FUN(AtomTableMallocSizeOf)
 
 static int64_t GetAtomTableSize() {
   return NS_SizeOfAtomTablesIncludingThis(AtomTableMallocSizeOf);
@@ -1160,7 +1161,7 @@ NS_UnregisterMemoryMultiReporter (nsIMemoryMultiReporter *reporter)
     return mgr->UnregisterMultiReporter(reporter);
 }
 
-#if defined(MOZ_DMDV) || defined(MOZ_DMD)
+#if defined(MOZ_DMD)
 
 namespace mozilla {
 namespace dmd {
@@ -1175,7 +1176,7 @@ public:
                         const nsACString &aDescription,
                         nsISupports *aData)
     {
-        // Do nothing;  the reporter has already reported to DMDV.
+        // Do nothing;  the reporter has already reported to DMD.
         return NS_OK;
     }
 };
@@ -1218,7 +1219,7 @@ RunReporters()
             path.Find("explicit") == 0)
         {
             // Just getting the amount is enough for the reporter to report to
-            // DMDV.
+            // DMD.
             int64_t amount;
             (void)r->GetAmount(&amount);
         }
@@ -1238,20 +1239,5 @@ RunReporters()
 } // namespace dmd
 } // namespace mozilla
 
-#endif  // defined(MOZ_DMDV) || defined(MOZ_DMD)
-
-#ifdef MOZ_DMDV
-namespace mozilla {
-namespace dmdv {
-
-void
-Dump()
-{
-    VALGRIND_DMDV_CHECK_REPORTING;
-}
-
-} // namespace dmdv
-} // namespace mozilla
-
-#endif  /* defined(MOZ_DMDV) */
+#endif  // defined(MOZ_DMD)
 

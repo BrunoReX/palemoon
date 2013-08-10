@@ -62,6 +62,9 @@ interface nsIDOMHTMLMediaElement : nsIDOMHTMLElement
   readonly attribute double initialTime;
   readonly attribute double duration;
   readonly attribute boolean paused;
+           attribute double defaultPlaybackRate;
+           attribute double playbackRate;
+           attribute boolean mozPreservesPitch;
   readonly attribute nsIDOMTimeRanges played;
   readonly attribute nsIDOMTimeRanges seekable;
   readonly attribute boolean ended;
@@ -145,7 +148,7 @@ interface nsIDOMHTMLMediaElement : nsIDOMHTMLElement
    //   Use case: Camera shutter sound.
    attribute DOMString mozAudioChannelType;
 
-  // In addition the media element has these new events:
+  // In addition the media element has this new events:
   // * onmozinterruptbegin - called when the media element is interrupted
   //   because of the audiochannel manager.
   // * onmozinterruptend - called when the interruption is concluded

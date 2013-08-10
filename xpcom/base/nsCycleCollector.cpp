@@ -132,9 +132,6 @@
 #include <io.h>
 #include <process.h>
 #endif
-#ifdef ANDROID
-#include <sys/stat.h>
-#endif
 
 #ifdef XP_WIN
 #include <windows.h>
@@ -167,8 +164,19 @@ extern NS_TLS mozilla::threads::ID gTLSThreadID;
 PRThread* gCycleCollectorThread = nullptr;
 #endif
 
-// If true, always log cycle collector graphs.
-const bool gAlwaysLogCCGraphs = false;
+// Cycle collector environment variables
+//
+// XPCOM_CC_LOG_ALL: If defined, always log cycle collector heaps.
+//
+// XPCOM_CC_LOG_SHUTDOWN: If defined, log cycle collector heaps at shutdown.
+//
+// XPCOM_CC_ALL_TRACES_AT_SHUTDOWN: If defined, any cycle collector
+// logging done at shutdown will be WantAllTraces, which disables
+// various cycle collector optimizations to give a fuller picture of
+// the heap.
+//
+// XPCOM_CC_RUN_DURING_SHUTDOWN: In non-DEBUG or non-DEBUG_CC builds,
+// if this is set, run cycle collections at shutdown.
 
 MOZ_NEVER_INLINE void
 CC_AbortIfNull(void *ptr)
@@ -182,8 +190,10 @@ CC_AbortIfNull(void *ptr)
 
 struct nsCycleCollectorParams
 {
+    bool mLogAll;
+    bool mLogShutdown;
+    bool mAllTracesAtShutdown;
     bool mDoNothing;
-    bool mLogGraphs;
 #ifdef DEBUG_CC
     bool mReportStats;
     bool mLogPointers;
@@ -191,17 +201,16 @@ struct nsCycleCollectorParams
 #endif
     
     nsCycleCollectorParams() :
+        mLogAll      (PR_GetEnv("XPCOM_CC_LOG_ALL") != NULL),
+        mLogShutdown (PR_GetEnv("XPCOM_CC_LOG_SHUTDOWN") != NULL),
+        mAllTracesAtShutdown (PR_GetEnv("XPCOM_CC_ALL_TRACES_AT_SHUTDOWN") != NULL),
 #ifdef DEBUG_CC
-        mDoNothing     (PR_GetEnv("XPCOM_CC_DO_NOTHING") != NULL),
-        mLogGraphs     (gAlwaysLogCCGraphs ||
-                        PR_GetEnv("XPCOM_CC_DRAW_GRAPHS") != NULL),
-        mReportStats   (PR_GetEnv("XPCOM_CC_REPORT_STATS") != NULL),
-        mLogPointers   (PR_GetEnv("XPCOM_CC_LOG_POINTERS") != NULL),
-
+        mDoNothing   (PR_GetEnv("XPCOM_CC_DO_NOTHING") != NULL),
+        mReportStats (PR_GetEnv("XPCOM_CC_REPORT_STATS") != NULL),
+        mLogPointers (PR_GetEnv("XPCOM_CC_LOG_POINTERS") != NULL),
         mShutdownCollections(DEFAULT_SHUTDOWN_COLLECTIONS)
 #else
-        mDoNothing     (false),
-        mLogGraphs     (gAlwaysLogCCGraphs)
+        mDoNothing   (false)
 #endif
     {
 #ifdef DEBUG_CC
@@ -1293,9 +1302,14 @@ public:
     }
     NS_DECL_ISUPPORTS
 
-    NS_IMETHOD AllTraces(nsICycleCollectorListener** aListener)
+    void SetAllTraces()
     {
         mWantAllTraces = true;
+    }
+
+    NS_IMETHOD AllTraces(nsICycleCollectorListener** aListener)
+    {
+        SetAllTraces();
         NS_ADDREF(*aListener = this);
         return NS_OK;
     }
@@ -1583,12 +1597,22 @@ private:
             NS_ConvertUTF16toUTF8(mFilenameIdentifier).get());
 
         // Get the log directory either from $MOZ_CC_LOG_DIRECTORY or from our
-        // platform's temp directory.
+        // platform's temp directory. For Android, first try the downloads
+        // directory which is world-readable rather than the temp directory
+        // which is not.
         nsCOMPtr<nsIFile> logFile;
-        if (char* env = PR_GetEnv("MOZ_CC_LOG_DIRECTORY")) {
+        char* env;
+        if (env = PR_GetEnv("MOZ_CC_LOG_DIRECTORY")) {
             NS_NewNativeLocalFile(nsCString(env), /* followLinks = */ true,
                                   getter_AddRefs(logFile));
-        } else {
+        }
+#ifdef ANDROID
+        if (!logFile && (env = PR_GetEnv("DOWNLOADS_DIRECTORY"))) {
+            NS_NewNativeLocalFile(nsCString(env), /* followLinks = */ true,
+                                  getter_AddRefs(logFile));
+        }
+#endif
+        if (!logFile) {
             // Ask NSPR to point us to the temp directory.
             NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(logFile));
         }
@@ -1599,18 +1623,6 @@ private:
 
         rv = logFile->CreateUnique(nsIFile::NORMAL_FILE_TYPE, 0644);
         NS_ENSURE_SUCCESS(rv, nullptr);
-#ifdef ANDROID
-        {
-            // On android the default system umask is 0077 which makes these files
-            // unreadable to the shell user. In order to pull the dumps off a non-rooted
-            // device we need to chmod them to something world-readable.
-            nsAutoCString path;
-            rv = logFile->GetNativePath(path);
-            if (NS_SUCCEEDED(rv)) {
-                chmod(PromiseFlatCString(path).get(), 0644);
-            }
-        }
-#endif
 
         return logFile.forget();
     }
@@ -2378,7 +2390,18 @@ nsCycleCollector::CollectWhite(nsICycleCollectorListener *aListener)
 
     for (uint32_t i = 0; i < count; ++i) {
         PtrInfo *pinfo = mWhiteNodes->ElementAt(i);
+#ifdef DEBUG
+        if (mJSRuntime) {
+            mJSRuntime->SetObjectToUnlink(pinfo->mPointer);
+        }
+#endif
         rv = pinfo->mParticipant->Unlink(pinfo->mPointer);
+#ifdef DEBUG
+        if (mJSRuntime) {
+            mJSRuntime->SetObjectToUnlink(nullptr);
+            mJSRuntime->AssertNoObjectsToTrace(pinfo->mPointer);
+        }
+#endif
         if (NS_FAILED(rv)) {
             Fault("Failed unlink call while unlinking", pinfo);
 #ifdef DEBUG_CC
@@ -2953,8 +2976,11 @@ nsCycleCollector::Shutdown()
 #endif
     {
         nsCOMPtr<nsCycleCollectorLogger> listener;
-        if (mParams.mLogGraphs) {
+        if (mParams.mLogAll || mParams.mLogShutdown) {
             listener = new nsCycleCollectorLogger();
+            if (mParams.mAllTracesAtShutdown) {
+                listener->SetAllTraces();
+            }
         }
         Collect(false, nullptr,  SHUTDOWN_COLLECTIONS(mParams), listener);
     }
@@ -2996,8 +3022,7 @@ nsCycleCollector::WasFreed(nsISupports *n)
 // Memory reporter
 ////////////////////////
 
-NS_MEMORY_REPORTER_MALLOC_SIZEOF_FUN(CycleCollectorMallocSizeOf,
-                                     "cycle-collector")
+NS_MEMORY_REPORTER_MALLOC_SIZEOF_FUN(CycleCollectorMallocSizeOf)
 
 void
 nsCycleCollector::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf,
@@ -3355,7 +3380,7 @@ nsCycleCollector_collect(bool aMergeCompartments,
     MOZ_ASSERT(NS_IsMainThread(), "Wrong thread!");
     SAMPLE_LABEL("CC", "nsCycleCollector_collect");
     nsCOMPtr<nsICycleCollectorListener> listener(aListener);
-    if (!aListener && sCollector && sCollector->mParams.mLogGraphs) {
+    if (!aListener && sCollector && sCollector->mParams.mLogAll) {
         listener = new nsCycleCollectorLogger();
     }
 

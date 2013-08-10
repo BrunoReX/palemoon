@@ -121,6 +121,25 @@ int nr_stun_server_add_client(nr_stun_server_ctx *ctx, char *client_label, char 
     return(_status);
   }
 
+int nr_stun_server_remove_client(nr_stun_server_ctx *ctx, void *cb_arg)
+  {
+    nr_stun_server_client *clnt1,*clnt2;
+    int found = 0;
+
+    STAILQ_FOREACH_SAFE(clnt1, &ctx->clients, entry, clnt2) {
+      if(clnt1->cb_arg == cb_arg) {
+        STAILQ_REMOVE(&ctx->clients, clnt1, nr_stun_server_client_, entry);
+        nr_stun_server_destroy_client(clnt1);
+        found++;
+      }
+    }
+
+    if (!found)
+      ERETURN(R_NOT_FOUND);
+
+    return 0;
+  }
+
 static int nr_stun_server_get_password(void *arg, nr_stun_message *msg, Data **password)
   {
     int _status;
@@ -174,7 +193,7 @@ int nr_stun_server_process_request(nr_stun_server_ctx *ctx, nr_socket *sock, cha
     char string[256];
     nr_stun_message *req = 0;
     nr_stun_message *res = 0;
-    nr_stun_server_client *clnt;
+    nr_stun_server_client *clnt = 0;
     nr_stun_server_request info;
     int error;
 
@@ -372,7 +391,8 @@ int nr_stun_get_message_client(nr_stun_server_ctx *ctx, nr_stun_message *req, nr
     }
 
     STAILQ_FOREACH(clnt, &ctx->clients, entry) {
-        if (!strcmp(clnt->username, attr->u.username))
+        if (!strncmp(clnt->username, attr->u.username,
+                     sizeof(attr->u.username)))
             break;
     }
     if (!clnt) {

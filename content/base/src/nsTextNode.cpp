@@ -8,6 +8,7 @@
  */
 
 #include "nsTextNode.h"
+#include "mozilla/dom/TextBinding.h"
 #include "nsContentUtils.h"
 #include "nsIDOMEventListener.h"
 #include "nsIDOMMutationEvent.h"
@@ -18,6 +19,7 @@
 #include "nsRange.h"
 #endif
 
+using namespace mozilla;
 using namespace mozilla::dom;
 
 /**
@@ -110,13 +112,6 @@ NS_NewTextNode(nsIContent** aInstancePtrResult,
   return NS_OK;
 }
 
-nsTextNode::nsTextNode(already_AddRefed<nsINodeInfo> aNodeInfo)
-  : nsGenericDOMDataNode(aNodeInfo)
-{
-  NS_ABORT_IF_FALSE(mNodeInfo->NodeType() == nsIDOMNode::TEXT_NODE,
-                    "Bad NodeType in aNodeInfo");
-}
-
 nsTextNode::~nsTextNode()
 {
 }
@@ -133,6 +128,12 @@ NS_INTERFACE_TABLE_HEAD(nsTextNode)
   NS_INTERFACE_MAP_ENTRIES_CYCLE_COLLECTION(nsTextNode)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(Text)
 NS_INTERFACE_MAP_END_INHERITING(nsGenericDOMDataNode)
+
+JSObject*
+nsTextNode::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+{
+  return TextBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+}
 
 bool
 nsTextNode::IsNodeOfType(uint32_t aFlags) const
@@ -307,3 +308,4 @@ nsAttributeTextNode::UpdateText(bool aNotify)
     SetText(attrValue, aNotify);
   }  
 }
+

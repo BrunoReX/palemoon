@@ -6,6 +6,12 @@ const TEST_BASE_HTTP = "http://example.com/browser/browser/devtools/styleeditor/
 const TEST_BASE_HTTPS = "https://example.com/browser/browser/devtools/styleeditor/test/";
 const TEST_HOST = 'mochi.test:8888';
 
+let tempScope = {};
+Cu.import("resource:///modules/devtools/Target.jsm", tempScope);
+let TargetFactory = tempScope.TargetFactory;
+Components.utils.import("resource://gre/modules/devtools/Console.jsm", tempScope);
+let console = tempScope.console;
+
 let gChromeWindow;               //StyleEditorChrome window
 let cache = Cc["@mozilla.org/network/cache-service;1"]
               .getService(Ci.nsICacheService);
@@ -17,10 +23,7 @@ Services.scriptloader.loadSubScript(testDir + "/helpers.js", this);
 
 function cleanup()
 {
-  if (gChromeWindow) {
-    gChromeWindow.close();
-    gChromeWindow = null;
-  }
+  gChromeWindow = null;
   while (gBrowser.tabs.length > 1) {
     gBrowser.removeCurrentTab();
   }
@@ -28,32 +31,21 @@ function cleanup()
 
 function launchStyleEditorChrome(aCallback, aSheet, aLine, aCol)
 {
-  gChromeWindow = StyleEditor.openChrome(aSheet, aLine, aCol);
-  if (gChromeWindow.document.readyState != "complete") {
-    gChromeWindow.addEventListener("load", function onChromeLoad() {
-      gChromeWindow.removeEventListener("load", onChromeLoad, true);
-      gChromeWindow.styleEditorChrome._alwaysDisableAnimations = true;
-      aCallback(gChromeWindow.styleEditorChrome);
-    }, true);
-  } else {
-    gChromeWindow.styleEditorChrome._alwaysDisableAnimations = true;
-    aCallback(gChromeWindow.styleEditorChrome);
-  }
+  launchStyleEditorChromeFromWindow(window, aCallback, aSheet, aLine, aCol);
 }
 
 function launchStyleEditorChromeFromWindow(aWindow, aCallback, aSheet, aLine, aCol)
 {
-  gChromeWindow = aWindow.StyleEditor.openChrome(aSheet, aLine, aCol);
-  if (gChromeWindow.document.readyState != "complete") {
-    gChromeWindow.addEventListener("load", function onChromeLoad() {
-      gChromeWindow.removeEventListener("load", onChromeLoad, true);
-      gChromeWindow.styleEditorChrome._alwaysDisableAnimations = true;
-      aCallback(gChromeWindow.styleEditorChrome);
-    }, true);
-  } else {
+  let target = TargetFactory.forTab(aWindow.gBrowser.selectedTab);
+  gDevTools.showToolbox(target, "styleeditor").then(function(toolbox) {
+    let panel = toolbox.getCurrentPanel();
+    gChromeWindow = panel._panelWin;
     gChromeWindow.styleEditorChrome._alwaysDisableAnimations = true;
+    if (aSheet) {
+      panel.selectStyleSheet(aSheet, aLine, aCol);
+    }
     aCallback(gChromeWindow.styleEditorChrome);
-  }
+  });
 }
 
 function addTabAndLaunchStyleEditorChromeWhenLoaded(aCallback, aSheet, aLine, aCol)

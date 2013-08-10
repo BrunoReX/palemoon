@@ -1,9 +1,28 @@
-// XXXkhuey this should have a license header.
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 this.EXPORTED_SYMBOLS = ["EventEmitter"];
 
-this.EventEmitter = function EventEmitter() {
-}
+/**
+ * EventEmitter.
+ */
+this.EventEmitter = function EventEmitter() {};
+
+/**
+ * Decorate an object with event emitter functionality.
+ *
+ * @param Object aObjectToDecorate
+ *        Bind all public methods of EventEmitter to
+ *        the aObjectToDecorate object.
+ */
+EventEmitter.decorate = function EventEmitter_decorate (aObjectToDecorate) {
+  let emitter = new EventEmitter();
+  aObjectToDecorate.on = emitter.on.bind(emitter);
+  aObjectToDecorate.off = emitter.off.bind(emitter);
+  aObjectToDecorate.once = emitter.once.bind(emitter);
+  aObjectToDecorate.emit = emitter.emit.bind(emitter);
+};
 
 EventEmitter.prototype = {
   /**
@@ -34,7 +53,7 @@ EventEmitter.prototype = {
   once: function EventEmitter_once(aEvent, aListener) {
     let handler = function() {
       this.off(aEvent, handler);
-      aListener();
+      aListener.apply(null, arguments);
     }.bind(this);
     this.on(aEvent, handler);
   },
@@ -52,7 +71,9 @@ EventEmitter.prototype = {
     if (!this._eventEmitterListeners)
       return;
     let listeners = this._eventEmitterListeners.get(aEvent);
-    this._eventEmitterListeners.set(aEvent, listeners.filter(function(l) aListener != l));
+    if (listeners) {
+      this._eventEmitterListeners.set(aEvent, listeners.filter(function(l) aListener != l));
+    }
   },
 
   /**
@@ -75,8 +96,16 @@ EventEmitter.prototype = {
       // event handler we're going to fire wasn't removed.
       if (originalListeners === this._eventEmitterListeners.get(aEvent) ||
           this._eventEmitterListeners.get(aEvent).some(function(l) l === listener)) {
-        listener.apply(null, arguments);
+        try {
+          listener.apply(null, arguments);
+        }
+        catch (ex) {
+          // Prevent a bad listener from interfering with the others.
+          let msg = ex + ": " + ex.stack;
+          Components.utils.reportError(msg);
+          dump(msg + "\n");
+        }
       }
     }
-  },
-}
+  }
+};

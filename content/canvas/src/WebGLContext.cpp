@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebGLContext.h"
+#include "WebGLObjectModel.h"
 #include "WebGLExtensions.h"
 #include "WebGLContextUtils.h"
 
@@ -801,7 +802,7 @@ namespace mozilla {
 
 class WebGLContextUserData : public LayerUserData {
 public:
-    WebGLContextUserData(nsHTMLCanvasElement *aContent)
+    WebGLContextUserData(HTMLCanvasElement *aContent)
     : mContent(aContent) {}
 
   /** DidTransactionCallback gets called by the Layers code everytime the WebGL canvas gets composite,
@@ -810,7 +811,7 @@ public:
   static void DidTransactionCallback(void* aData)
   {
     WebGLContextUserData *userdata = static_cast<WebGLContextUserData*>(aData);
-    nsHTMLCanvasElement *canvas = userdata->mContent;
+    HTMLCanvasElement *canvas = userdata->mContent;
     WebGLContext *context = static_cast<WebGLContext*>(canvas->GetContextAtIndex(0));
 
     context->mBackbufferClearingStatus = BackbufferClearingStatus::NotClearedSinceLastPresented;
@@ -820,7 +821,7 @@ public:
   }
 
 private:
-  nsRefPtr<nsHTMLCanvasElement> mContent;
+  nsRefPtr<HTMLCanvasElement> mContent;
 };
 
 } // end namespace mozilla
@@ -901,12 +902,12 @@ WebGLContext::GetContextAttributes(Nullable<dom::WebGLContextAttributesInitializ
     dom::WebGLContextAttributes& result = retval.SetValue();
 
     gl::ContextFormat cf = gl->ActualFormat();
-    result.alpha = cf.alpha > 0;
-    result.depth = cf.depth > 0;
-    result.stencil = cf.stencil > 0;
-    result.antialias = cf.samples > 1;
-    result.premultipliedAlpha = mOptions.premultipliedAlpha;
-    result.preserveDrawingBuffer = mOptions.preserveDrawingBuffer;
+    result.mAlpha = cf.alpha > 0;
+    result.mDepth = cf.depth > 0;
+    result.mStencil = cf.stencil > 0;
+    result.mAntialias = cf.samples > 1;
+    result.mPremultipliedAlpha = mOptions.premultipliedAlpha;
+    result.mPreserveDrawingBuffer = mOptions.preserveDrawingBuffer;
 }
 
 bool

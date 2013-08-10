@@ -27,8 +27,17 @@ function test()
     gTab = aTab;
     gDebuggee = aDebuggee;
     gPane = aPane;
-    gDebugger = gPane.contentWindow;
+    gDebugger = gPane.panelWin;
     gDebugger.SourceResults.prototype.alwaysExpand = false;
+
+    gDebugger.addEventListener("Debugger:SourceShown", function _onEvent(aEvent) {
+      let url = aEvent.detail.url;
+      if (url.indexOf("-02.js") != -1) {
+        scriptShown = true;
+        gDebugger.removeEventListener(aEvent.type, _onEvent);
+        runTest();
+      }
+    });
 
     gDebugger.DebuggerController.activeThread.addOneTimeListener("framesadded", function() {
       framesAdded = true;
@@ -36,15 +45,6 @@ function test()
     });
 
     gDebuggee.firstCall();
-  });
-
-  window.addEventListener("Debugger:SourceShown", function _onEvent(aEvent) {
-    let url = aEvent.detail.url;
-    if (url.indexOf("-02.js") != -1) {
-      scriptShown = true;
-      window.removeEventListener(aEvent.type, _onEvent);
-      runTest();
-    }
   });
 
   function runTest()
@@ -67,8 +67,8 @@ function testScriptSearching() {
 }
 
 function doSearch() {
-  window.addEventListener("Debugger:GlobalSearch:MatchFound", function _onEvent(aEvent) {
-    window.removeEventListener(aEvent.type, _onEvent);
+  gDebugger.addEventListener("Debugger:GlobalSearch:MatchFound", function _onEvent(aEvent) {
+    gDebugger.removeEventListener(aEvent.type, _onEvent);
     info("Current script url:\n" + gScripts.selectedValue + "\n");
     info("Debugger editor text:\n" + gEditor.getText() + "\n");
 
@@ -79,7 +79,7 @@ function doSearch() {
         ok(gEditor.getCaretPosition().line == 5 &&
            gEditor.getCaretPosition().col == 0,
           "The editor shouldn't have jumped to a matching line yet.");
-        is(gScripts.visibleItems, 2,
+        is(gScripts.visibleItems.length, 2,
           "Not all the scripts are shown after the global search.");
 
         testSearchMatchNotFound();
@@ -94,8 +94,8 @@ function doSearch() {
 }
 
 function testSearchMatchNotFound() {
-  window.addEventListener("Debugger:GlobalSearch:MatchNotFound", function _onEvent(aEvent) {
-    window.removeEventListener(aEvent.type, _onEvent);
+  gDebugger.addEventListener("Debugger:GlobalSearch:MatchNotFound", function _onEvent(aEvent) {
+    gDebugger.removeEventListener(aEvent.type, _onEvent);
     info("Current script url:\n" + gScripts.selectedValue + "\n");
     info("Debugger editor text:\n" + gEditor.getText() + "\n");
 
@@ -106,7 +106,7 @@ function testSearchMatchNotFound() {
         ok(gEditor.getCaretPosition().line == 5 &&
            gEditor.getCaretPosition().col == 0,
           "The editor didn't remain at the correct line.");
-        is(gScripts.visibleItems, 2,
+        is(gScripts.visibleItems.length, 2,
           "Not all the correct scripts are shown after the search.");
 
         closeDebuggerAndFinish();
@@ -132,7 +132,7 @@ function append(text) {
   gSearchBox.focus();
 
   for (let i = 0; i < text.length; i++) {
-    EventUtils.sendChar(text[i]);
+    EventUtils.sendChar(text[i], gDebugger);
   }
   info("Editor caret position: " + gEditor.getCaretPosition().toSource() + "\n");
 }

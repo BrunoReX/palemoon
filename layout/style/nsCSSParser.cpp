@@ -6,6 +6,8 @@
 
 /* parsing of CSS stylesheets, based on a token stream from the CSS scanner */
 
+#include "mozilla/DebugOnly.h"
+
 #include "nsCSSParser.h"
 #include "nsCSSProps.h"
 #include "nsCSSKeywords.h"
@@ -48,8 +50,6 @@
 #include "CSSCalc.h"
 #include "nsMediaFeatures.h"
 #include "nsLayoutUtils.h"
-
-#include "mozilla/Util.h"
 
 using namespace mozilla;
 
@@ -229,9 +229,26 @@ public:
                                    uint32_t aLineNumber, // for error reporting
                                    InfallibleTArray<float>& aSelectorList);
 
+  bool EvaluateSupportsDeclaration(const nsAString& aProperty,
+                                   const nsAString& aValue,
+                                   nsIURI* aDocURL,
+                                   nsIURI* aBaseURL,
+                                   nsIPrincipal* aDocPrincipal);
+
+  bool EvaluateSupportsCondition(const nsAString& aCondition,
+                                 nsIURI* aDocURL,
+                                 nsIURI* aBaseURL,
+                                 nsIPrincipal* aDocPrincipal);
+
 protected:
   class nsAutoParseCompoundProperty;
   friend class nsAutoParseCompoundProperty;
+
+  class nsAutoFailingSupportsRule;
+  friend class nsAutoFailingSupportsRule;
+
+  class nsAutoSuppressErrors;
+  friend class nsAutoSuppressErrors;
 
   void AppendRule(css::Rule* aRule);
   friend void AppendRuleToSheet(css::Rule*, void*); // calls AppendRule
@@ -256,6 +273,58 @@ protected:
       }
     private:
       CSSParserImpl* mParser;
+  };
+
+  /**
+   * This helper class conditionally sets mInFailingSupportsRule to
+   * true if aCondition = false, and resets it to its original value in its
+   * destructor.  If we are already somewhere within a failing @supports
+   * rule, passing in aCondition = true does not change mInFailingSupportsRule.
+   */
+  class nsAutoFailingSupportsRule {
+    public:
+      nsAutoFailingSupportsRule(CSSParserImpl* aParser,
+                                bool aCondition)
+        : mParser(aParser),
+          mOriginalValue(aParser->mInFailingSupportsRule)
+      {
+        if (!aCondition) {
+          mParser->mInFailingSupportsRule = true;
+        }
+      }
+
+      ~nsAutoFailingSupportsRule()
+      {
+        mParser->mInFailingSupportsRule = mOriginalValue;
+      }
+
+    private:
+      CSSParserImpl* mParser;
+      bool mOriginalValue;
+  };
+
+  /**
+   * Auto class to set aParser->mSuppressErrors to the specified value
+   * and restore it to its original value later.
+   */
+  class nsAutoSuppressErrors {
+    public:
+      nsAutoSuppressErrors(CSSParserImpl* aParser,
+                           bool aSuppressErrors = true)
+        : mParser(aParser),
+          mOriginalValue(aParser->mSuppressErrors)
+      {
+        mParser->mSuppressErrors = aSuppressErrors;
+      }
+
+      ~nsAutoSuppressErrors()
+      {
+        mParser->mSuppressErrors = mOriginalValue;
+      }
+
+    private:
+      CSSParserImpl* mParser;
+      bool mOriginalValue;
   };
 
   // the caller must hold on to aString until parsing is done
@@ -284,8 +353,11 @@ protected:
   bool ExpectEndProperty();
   bool CheckEndProperty();
   nsSubstring* NextIdent();
-  void SkipUntil(PRUnichar aStopSymbol);
+
+  // returns true when the stop symbol is found, and false for EOF
+  bool SkipUntil(PRUnichar aStopSymbol);
   void SkipUntilOneOf(const PRUnichar* aStopSymbolChars);
+
   void SkipRuleSet(bool aInsideBraces);
   bool SkipAtRule(bool aInsideBlock);
   bool SkipDeclaration(bool aCheckForBraces);
@@ -692,6 +764,15 @@ protected:
   // some quirks during shorthand parsing
   bool          mParsingCompoundProperty : 1;
 
+  // True if we are somewhere within a @supports rule whose condition is
+  // false.
+  bool mInFailingSupportsRule : 1;
+
+  // True if we will suppress all parse errors (except unexpected EOFs).
+  // This is used to prevent errors for declarations inside a failing
+  // @supports rule.
+  bool mSuppressErrors : 1;
+
   // Stack of rule groups; used for @media and such.
   InfallibleTArray<nsRefPtr<css::GroupRule> > mGroupStack;
 
@@ -722,16 +803,16 @@ static void AppendRuleToSheet(css::Rule* aRule, void* aParser)
 }
 
 #define REPORT_UNEXPECTED(msg_) \
-  mReporter->ReportUnexpected(#msg_)
+  { if (!mSuppressErrors) mReporter->ReportUnexpected(#msg_); }
 
 #define REPORT_UNEXPECTED_P(msg_, param_) \
-  mReporter->ReportUnexpected(#msg_, param_)
+  { if (!mSuppressErrors) mReporter->ReportUnexpected(#msg_, param_); }
 
 #define REPORT_UNEXPECTED_TOKEN(msg_) \
-  mReporter->ReportUnexpected(#msg_, mToken)
+  { if (!mSuppressErrors) mReporter->ReportUnexpected(#msg_, mToken); }
 
 #define REPORT_UNEXPECTED_TOKEN_CHAR(msg_, ch_) \
-  mReporter->ReportUnexpected(#msg_, mToken, ch_)
+  { if (!mSuppressErrors) mReporter->ReportUnexpected(#msg_, mToken, ch_); }
 
 #define REPORT_UNEXPECTED_EOF(lf_) \
   mReporter->ReportUnexpectedEOF(#lf_)
@@ -760,6 +841,8 @@ CSSParserImpl::CSSParserImpl()
     mViewportUnitsEnabled(true),
     mHTMLMediaMode(false),
     mParsingCompoundProperty(false),
+    mInFailingSupportsRule(false),
+    mSuppressErrors(false),
     mNextFree(nullptr)
 {
 }
@@ -1148,7 +1231,8 @@ CSSParserImpl::ParseMediaList(const nsSubstring& aBuffer,
                               bool aHTMLMode)
 {
   // XXX Are there cases where the caller wants to keep what it already
-  // has in case of parser error?
+  // has in case of parser error?  If GatherMedia ever changes to return
+  // a value other than true, we probably should avoid modifying aMediaList.
   aMediaList->Clear();
 
   // fake base URI since media lists don't have URIs in them
@@ -1170,7 +1254,9 @@ CSSParserImpl::ParseMediaList(const nsSubstring& aBuffer,
   // to a media query.  (The main substative difference is the relative
   // precedence of commas and paretheses.)
 
-  GatherMedia(aMediaList, false);
+  DebugOnly<bool> parsedOK = GatherMedia(aMediaList, false);
+  NS_ASSERTION(parsedOK, "GatherMedia returned false; we probably want to avoid "
+                         "trashing aMediaList");
 
   CLEAR_ERROR();
   ReleaseScanner();
@@ -1277,6 +1363,55 @@ CSSParserImpl::ParseKeyframeSelectorString(const nsSubstring& aSelectorString,
   }
 
   return success;
+}
+
+bool
+CSSParserImpl::EvaluateSupportsDeclaration(const nsAString& aProperty,
+                                           const nsAString& aValue,
+                                           nsIURI* aDocURL,
+                                           nsIURI* aBaseURL,
+                                           nsIPrincipal* aDocPrincipal)
+{
+  nsCSSProperty propID = nsCSSProps::LookupProperty(aProperty,
+                                                    nsCSSProps::eEnabled);
+  if (propID == eCSSProperty_UNKNOWN) {
+    return false;
+  }
+
+  nsCSSScanner scanner(aValue, 0);
+  css::ErrorReporter reporter(scanner, mSheet, mChildLoader, aDocURL);
+  InitScanner(scanner, reporter, aDocURL, aBaseURL, aDocPrincipal);
+  nsAutoSuppressErrors suppressErrors(this);
+
+  bool parsedOK = ParseProperty(propID) && !GetToken(true);
+
+  CLEAR_ERROR();
+  ReleaseScanner();
+
+  mTempData.ClearProperty(propID);
+  mTempData.AssertInitialState();
+
+  return parsedOK;
+}
+
+bool
+CSSParserImpl::EvaluateSupportsCondition(const nsAString& aDeclaration,
+                                         nsIURI* aDocURL,
+                                         nsIURI* aBaseURL,
+                                         nsIPrincipal* aDocPrincipal)
+{
+  nsCSSScanner scanner(aDeclaration, 0);
+  css::ErrorReporter reporter(scanner, mSheet, mChildLoader, aDocURL);
+  InitScanner(scanner, reporter, aDocURL, aBaseURL, aDocPrincipal);
+  nsAutoSuppressErrors suppressErrors(this);
+
+  bool conditionMet;
+  bool parsedOK = ParseSupportsCondition(conditionMet) && !GetToken(true);
+
+  CLEAR_ERROR();
+  ReleaseScanner();
+
+  return parsedOK && conditionMet;
 }
 
 //----------------------------------------------------------------------
@@ -1437,7 +1572,7 @@ CSSParserImpl::SkipAtRule(bool aInsideBlock)
 {
   for (;;) {
     if (!GetToken(true)) {
-      REPORT_UNEXPECTED_EOF(PESkipAtRuleEOF);
+      REPORT_UNEXPECTED_EOF(PESkipAtRuleEOF2);
       return false;
     }
     if (eCSSToken_Symbol == mToken.mType) {
@@ -2383,6 +2518,10 @@ CSSParserImpl::ParseSupportsRule(RuleAppendFunc aAppendFunc, void* aProcessData)
   // Remove spaces from the start and end of the recorded supports condition.
   condition.Trim(" ", true, true, false);
 
+  // Record whether we are in a failing @supports, so that property parse
+  // errors don't get reported.
+  nsAutoFailingSupportsRule failing(this, conditionMet);
+
   nsRefPtr<css::GroupRule> rule = new CSSSupportsRule(conditionMet, condition);
   return ParseGroupRule(rule, aAppendFunc, aProcessData);
 }
@@ -2395,13 +2534,16 @@ bool
 CSSParserImpl::ParseSupportsCondition(bool& aConditionMet)
 {
   if (!GetToken(true)) {
-    REPORT_UNEXPECTED_EOF(PESupportsConditionStartEOF);
+    REPORT_UNEXPECTED_EOF(PESupportsConditionStartEOF2);
     return false;
   }
 
   UngetToken();
 
-  if (mToken.IsSymbol('(')) {
+  if (mToken.IsSymbol('(') ||
+      mToken.mType == eCSSToken_Function ||
+      mToken.mType == eCSSToken_URL ||
+      mToken.mType == eCSSToken_Bad_URL) {
     return ParseSupportsConditionInParens(aConditionMet) &&
            ParseSupportsConditionTerms(aConditionMet);
   }
@@ -2442,18 +2584,44 @@ CSSParserImpl::ParseSupportsConditionNegation(bool& aConditionMet)
 
 // supports_condition_in_parens
 //   : '(' S* supports_condition_in_parens_inside_parens ')' S*
+//   | general_enclosed
 //   ;
 bool
 CSSParserImpl::ParseSupportsConditionInParens(bool& aConditionMet)
 {
-  if (!ExpectSymbol('(', true)) {
-    REPORT_UNEXPECTED_TOKEN(PESupportsConditionExpectedOpenParen);
+  if (!GetToken(true)) {
+    REPORT_UNEXPECTED_EOF(PESupportsConditionInParensStartEOF);
+    return false;
+  }
+
+  if (mToken.mType == eCSSToken_URL) {
+    aConditionMet = false;
+    return true;
+  }
+
+  if (mToken.mType == eCSSToken_Function ||
+      mToken.mType == eCSSToken_Bad_URL) {
+    if (!SkipUntil(')')) {
+      REPORT_UNEXPECTED_EOF(PESupportsConditionInParensEOF);
+      return false;
+    }
+    aConditionMet = false;
+    return true;
+  }
+
+  if (!mToken.IsSymbol('(')) {
+    REPORT_UNEXPECTED_TOKEN(PESupportsConditionExpectedOpenParenOrFunction);
+    UngetToken();
     return false;
   }
 
   if (!ParseSupportsConditionInParensInsideParens(aConditionMet)) {
-    SkipUntil(')');
-    return false;
+    if (!SkipUntil(')')) {
+      REPORT_UNEXPECTED_EOF(PESupportsConditionInParensEOF);
+      return false;
+    }
+    aConditionMet = false;
+    return true;
   }
 
   if (!(ExpectSymbol(')', true))) {
@@ -2474,7 +2642,6 @@ bool
 CSSParserImpl::ParseSupportsConditionInParensInsideParens(bool& aConditionMet)
 {
   if (!GetToken(true)) {
-    REPORT_UNEXPECTED_EOF(PESupportsConditionInParensStartEOF);
     return false;
   }
 
@@ -2482,12 +2649,10 @@ CSSParserImpl::ParseSupportsConditionInParensInsideParens(bool& aConditionMet)
     if (!mToken.mIdent.LowerCaseEqualsLiteral("not")) {
       nsAutoString propertyName = mToken.mIdent;
       if (!ExpectSymbol(':', true)) {
-        REPORT_UNEXPECTED_TOKEN(PEParseDeclarationNoColon);
         return false;
       }
 
       if (ExpectSymbol(')', true)) {
-        REPORT_UNEXPECTED_P(PEValueParsingError, propertyName);
         UngetToken();
         return false;
       }
@@ -2578,7 +2743,7 @@ CSSParserImpl::ParseSupportsConditionTermsAfterOperator(
   }
 }
 
-void
+bool
 CSSParserImpl::SkipUntil(PRUnichar aStopSymbol)
 {
   nsCSSToken* tk = &mToken;
@@ -2586,7 +2751,7 @@ CSSParserImpl::SkipUntil(PRUnichar aStopSymbol)
   stack.AppendElement(aStopSymbol);
   for (;;) {
     if (!GetToken(true)) {
-      break;
+      return false;
     }
     if (eCSSToken_Symbol == tk->mType) {
       PRUnichar symbol = tk->mSymbol;
@@ -2594,7 +2759,7 @@ CSSParserImpl::SkipUntil(PRUnichar aStopSymbol)
       if (symbol == stack.ElementAt(stackTopIndex)) {
         stack.RemoveElementAt(stackTopIndex);
         if (stackTopIndex == 0) {
-          break;
+          return true;
         }
 
       // Just handle out-of-memory by parsing incorrectly.  It's
@@ -4328,6 +4493,10 @@ CSSParserImpl::ParseDeclaration(css::Declaration* aDeclaration,
     UngetToken();
     return false;
   }
+
+  // Don't report property parse errors if we're inside a failing @supports
+  // rule.
+  nsAutoSuppressErrors suppressErrors(this, mInFailingSupportsRule);
 
   // Map property name to its ID and then parse the property
   nsCSSProperty propID = nsCSSProps::LookupProperty(propertyName,
@@ -10137,4 +10306,26 @@ nsCSSParser::ParseKeyframeSelectorString(const nsSubstring& aSelectorString,
   return static_cast<CSSParserImpl*>(mImpl)->
     ParseKeyframeSelectorString(aSelectorString, aURI, aLineNumber,
                                 aSelectorList);
+}
+
+bool
+nsCSSParser::EvaluateSupportsDeclaration(const nsAString& aProperty,
+                                         const nsAString& aValue,
+                                         nsIURI* aDocURL,
+                                         nsIURI* aBaseURL,
+                                         nsIPrincipal* aDocPrincipal)
+{
+  return static_cast<CSSParserImpl*>(mImpl)->
+    EvaluateSupportsDeclaration(aProperty, aValue, aDocURL, aBaseURL,
+                                aDocPrincipal);
+}
+
+bool
+nsCSSParser::EvaluateSupportsCondition(const nsAString& aCondition,
+                                       nsIURI* aDocURL,
+                                       nsIURI* aBaseURL,
+                                       nsIPrincipal* aDocPrincipal)
+{
+  return static_cast<CSSParserImpl*>(mImpl)->
+    EvaluateSupportsCondition(aCondition, aDocURL, aBaseURL, aDocPrincipal);
 }

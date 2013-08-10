@@ -31,7 +31,7 @@ HTMLSelectListAccessible::
   HTMLSelectListAccessible(nsIContent* aContent, DocAccessible* aDoc) :
   AccessibleWrap(aContent, aDoc)
 {
-  mFlags |= eSelectAccessible | eListControlAccessible;
+  mGenericTypes |= eListControl | eSelect;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -145,7 +145,7 @@ HTMLSelectListAccessible::CacheOptSiblings(nsIContent* aParentContent)
 
       // Get an accessible for option or optgroup and cache it.
       nsRefPtr<Accessible> accessible =
-        GetAccService()->GetOrCreateAccessible(childContent, mDoc);
+        GetAccService()->GetOrCreateAccessible(childContent, this);
       if (accessible)
         AppendChild(accessible);
 
@@ -397,7 +397,7 @@ HTMLComboboxAccessible::
   HTMLComboboxAccessible(nsIContent* aContent, DocAccessible* aDoc) :
   AccessibleWrap(aContent, aDoc)
 {
-  mFlags |= eComboboxAccessible;
+  mGenericTypes |= eCombobox;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -620,7 +620,7 @@ HTMLComboboxListAccessible::
                              DocAccessible* aDoc) :
   HTMLSelectListAccessible(aContent, aDoc)
 {
-  mFlags |= eSharedNode;
+  mStateFlags |= eSharedNode;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

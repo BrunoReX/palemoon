@@ -12,6 +12,10 @@
 #include "mozilla/SSE.h"
 #include "mozilla/arm.h"
 
+#ifdef XP_WIN
+#include <windows.h>
+#endif
+
 #ifdef MOZ_WIDGET_GTK
 #include <gtk/gtk.h>
 #endif
@@ -102,6 +106,16 @@ nsSystemInfo::Init()
         NS_ENSURE_SUCCESS(rv, rv);
     }
 
+#ifdef XP_WIN
+    BOOL isWow64;
+    BOOL gotWow64Value = IsWow64Process(GetCurrentProcess(), &isWow64);
+    NS_WARN_IF_FALSE(gotWow64Value, "IsWow64Process failed");
+    if (gotWow64Value) {
+      rv = SetPropertyAsBool(NS_LITERAL_STRING("isWow64"), !!isWow64);
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
+#endif
+
 #ifdef MOZ_WIDGET_GTK2
     // This must be done here because NSPR can only separate OS's when compiled, not libraries.
     char* gtkver = PR_smprintf("GTK %u.%u.%u", gtk_major_version, gtk_minor_version, gtk_micro_version);
@@ -173,6 +187,8 @@ nsSystemInfo::Init()
             SetPropertyAsAString(NS_LITERAL_STRING("device"), str);
         if (mozilla::AndroidBridge::Bridge()->GetStaticStringField("android/os/Build", "MANUFACTURER", str))
             SetPropertyAsAString(NS_LITERAL_STRING("manufacturer"), str);
+        if (mozilla::AndroidBridge::Bridge()->GetStaticStringField("android/os/Build$VERSION", "RELEASE", str))
+            SetPropertyAsAString(NS_LITERAL_STRING("release_version"), str);
         int32_t version;
         if (!mozilla::AndroidBridge::Bridge()->GetStaticIntField("android/os/Build$VERSION", "SDK_INT", &version))
             version = 0;

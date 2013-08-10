@@ -11,11 +11,17 @@
 #include "MediaPluginDecoder.h"
 #include "MediaPluginHost.h"
 #include "MediaDecoderStateMachine.h"
+#include "ImageContainer.h"
+#include "AbstractMediaDecoder.h"
 
 namespace mozilla {
 
-MediaPluginReader::MediaPluginReader(MediaDecoder *aDecoder) :
+typedef mozilla::layers::Image Image;
+
+MediaPluginReader::MediaPluginReader(AbstractMediaDecoder *aDecoder,
+                                     const nsACString& aContentType) :
   MediaDecoderReader(aDecoder),
+  mType(aContentType),
   mPlugin(NULL),
   mHasAudio(false),
   mHasVideo(false),
@@ -23,7 +29,6 @@ MediaPluginReader::MediaPluginReader(MediaDecoder *aDecoder) :
   mAudioSeekTimeUs(-1),
   mLastVideoFrame(NULL)
 {
-  reinterpret_cast<MediaPluginDecoder *>(aDecoder)->GetContentType(mType);
 }
 
 MediaPluginReader::~MediaPluginReader()
@@ -36,7 +41,7 @@ nsresult MediaPluginReader::Init(MediaDecoderReader* aCloneDonor)
   return NS_OK;
 }
 
-nsresult MediaPluginReader::ReadMetadata(nsVideoInfo* aInfo,
+nsresult MediaPluginReader::ReadMetadata(VideoInfo* aInfo,
                                            MetadataTags** aTags)
 {
   NS_ASSERTION(mDecoder->OnDecodeThread(), "Should be on decode thread.");
@@ -53,7 +58,7 @@ nsresult MediaPluginReader::ReadMetadata(nsVideoInfo* aInfo,
   mPlugin->GetDuration(mPlugin, &durationUs);
   if (durationUs) {
     ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
-    mDecoder->GetStateMachine()->SetDuration(durationUs);
+    mDecoder->SetMediaDuration(durationUs);
   }
 
   if (mPlugin->HasVideo(mPlugin)) {
@@ -65,7 +70,7 @@ nsresult MediaPluginReader::ReadMetadata(nsVideoInfo* aInfo,
     // that our video frame creation code doesn't overflow.
     nsIntSize displaySize(width, height);
     nsIntSize frameSize(width, height);
-    if (!nsVideoInfo::ValidateVideoRegion(frameSize, pictureRect, displaySize)) {
+    if (!VideoInfo::ValidateVideoRegion(frameSize, pictureRect, displaySize)) {
       return NS_ERROR_FAILURE;
     }
 
@@ -116,7 +121,7 @@ bool MediaPluginReader::DecodeVideoFrame(bool &aKeyframeSkip,
   // Record number of frames decoded and parsed. Automatically update the
   // stats counters using the AutoNotifyDecoded stack-based class.
   uint32_t parsed = 0, decoded = 0;
-  MediaDecoder::AutoNotifyDecoded autoNotify(mDecoder, parsed, decoded);
+  AbstractMediaDecoder::AutoNotifyDecoded autoNotify(mDecoder, parsed, decoded);
 
   // Throw away the currently buffered frame if we are seeking.
   if (mLastVideoFrame && mVideoSeekTimeUs != -1) {
@@ -124,10 +129,13 @@ bool MediaPluginReader::DecodeVideoFrame(bool &aKeyframeSkip,
     mLastVideoFrame = NULL;
   }
 
+  ImageBufferCallback bufferCallback(mDecoder->GetImageContainer());
+  nsRefPtr<Image> currentImage;
+
   // Read next frame
   while (true) {
     MPAPI::VideoFrame frame;
-    if (!mPlugin->ReadVideo(mPlugin, &frame, mVideoSeekTimeUs)) {
+    if (!mPlugin->ReadVideo(mPlugin, &frame, mVideoSeekTimeUs, &bufferCallback)) {
       // We reached the end of the video stream. If we have a buffered
       // video frame, push it the video queue using the total duration
       // of the video as the end time.
@@ -158,54 +166,84 @@ bool MediaPluginReader::DecodeVideoFrame(bool &aKeyframeSkip,
       aKeyframeSkip = false;
     }
 
-    VideoData::YCbCrBuffer b;
-    b.mPlanes[0].mData = static_cast<uint8_t *>(frame.Y.mData);
-    b.mPlanes[0].mStride = frame.Y.mStride;
-    b.mPlanes[0].mHeight = frame.Y.mHeight;
-    b.mPlanes[0].mWidth = frame.Y.mWidth;
-    b.mPlanes[0].mOffset = frame.Y.mOffset;
-    b.mPlanes[0].mSkip = frame.Y.mSkip;
+    if (frame.mSize == 0)
+      return true;
 
-    b.mPlanes[1].mData = static_cast<uint8_t *>(frame.Cb.mData);
-    b.mPlanes[1].mStride = frame.Cb.mStride;
-    b.mPlanes[1].mHeight = frame.Cb.mHeight;
-    b.mPlanes[1].mWidth = frame.Cb.mWidth;
-    b.mPlanes[1].mOffset = frame.Cb.mOffset;
-    b.mPlanes[1].mSkip = frame.Cb.mSkip;
-
-    b.mPlanes[2].mData = static_cast<uint8_t *>(frame.Cr.mData);
-    b.mPlanes[2].mStride = frame.Cr.mStride;
-    b.mPlanes[2].mHeight = frame.Cr.mHeight;
-    b.mPlanes[2].mWidth = frame.Cr.mWidth;
-    b.mPlanes[2].mOffset = frame.Cr.mOffset;
-    b.mPlanes[2].mSkip = frame.Cr.mSkip;
-
-    nsIntRect picture = mPicture;
-    if (frame.Y.mWidth != mInitialFrame.width ||
-        frame.Y.mHeight != mInitialFrame.height) {
-
-      // Frame size is different from what the container reports. This is legal,
-      // and we will preserve the ratio of the crop rectangle as it
-      // was reported relative to the picture size reported by the container.
-      picture.x = (mPicture.x * frame.Y.mWidth) / mInitialFrame.width;
-      picture.y = (mPicture.y * frame.Y.mHeight) / mInitialFrame.height;
-      picture.width = (frame.Y.mWidth * mPicture.width) / mInitialFrame.width;
-      picture.height = (frame.Y.mHeight * mPicture.height) / mInitialFrame.height;
-    }
-
-    // This is the approximate byte position in the stream.
+    currentImage = bufferCallback.GetImage();
     int64_t pos = mDecoder->GetResource()->Tell();
+    nsIntRect picture = mPicture;
+ 
+    VideoData *v;
+    if (currentImage) {
+      gfxIntSize frameSize = currentImage->GetSize();
+      if (frameSize.width != mInitialFrame.width ||
+          frameSize.height != mInitialFrame.height) {
+        // Frame size is different from what the container reports. This is legal,
+        // and we will preserve the ratio of the crop rectangle as it
+        // was reported relative to the picture size reported by the container.
+        picture.x = (mPicture.x * frameSize.width) / mInitialFrame.width;
+        picture.y = (mPicture.y * frameSize.height) / mInitialFrame.height;
+        picture.width = (frameSize.width * mPicture.width) / mInitialFrame.width;
+        picture.height = (frameSize.height * mPicture.height) / mInitialFrame.height;
+      }
 
-    VideoData *v = VideoData::Create(mInfo,
+      v = VideoData::CreateFromImage(mInfo,
                                      mDecoder->GetImageContainer(),
                                      pos,
                                      frame.mTimeUs,
                                      frame.mTimeUs+1, // We don't know the end time.
-                                     b,
+                                     currentImage,
                                      frame.mKeyFrame,
                                      -1,
                                      picture);
+    } else {
+      // Assume YUV
+      VideoData::YCbCrBuffer b;
+      b.mPlanes[0].mData = static_cast<uint8_t *>(frame.Y.mData);
+      b.mPlanes[0].mStride = frame.Y.mStride;
+      b.mPlanes[0].mHeight = frame.Y.mHeight;
+      b.mPlanes[0].mWidth = frame.Y.mWidth;
+      b.mPlanes[0].mOffset = frame.Y.mOffset;
+      b.mPlanes[0].mSkip = frame.Y.mSkip;
 
+      b.mPlanes[1].mData = static_cast<uint8_t *>(frame.Cb.mData);
+      b.mPlanes[1].mStride = frame.Cb.mStride;
+      b.mPlanes[1].mHeight = frame.Cb.mHeight;
+      b.mPlanes[1].mWidth = frame.Cb.mWidth;
+      b.mPlanes[1].mOffset = frame.Cb.mOffset;
+      b.mPlanes[1].mSkip = frame.Cb.mSkip;
+
+      b.mPlanes[2].mData = static_cast<uint8_t *>(frame.Cr.mData);
+      b.mPlanes[2].mStride = frame.Cr.mStride;
+      b.mPlanes[2].mHeight = frame.Cr.mHeight;
+      b.mPlanes[2].mWidth = frame.Cr.mWidth;
+      b.mPlanes[2].mOffset = frame.Cr.mOffset;
+      b.mPlanes[2].mSkip = frame.Cr.mSkip;
+
+      if (frame.Y.mWidth != mInitialFrame.width ||
+          frame.Y.mHeight != mInitialFrame.height) {
+
+        // Frame size is different from what the container reports. This is legal,
+        // and we will preserve the ratio of the crop rectangle as it
+        // was reported relative to the picture size reported by the container.
+        picture.x = (mPicture.x * frame.Y.mWidth) / mInitialFrame.width;
+        picture.y = (mPicture.y * frame.Y.mHeight) / mInitialFrame.height;
+        picture.width = (frame.Y.mWidth * mPicture.width) / mInitialFrame.width;
+        picture.height = (frame.Y.mHeight * mPicture.height) / mInitialFrame.height;
+      }
+
+      // This is the approximate byte position in the stream.
+      v = VideoData::Create(mInfo,
+                            mDecoder->GetImageContainer(),
+                            pos,
+                            frame.mTimeUs,
+                            frame.mTimeUs+1, // We don't know the end time.
+                            b,
+                            frame.mKeyFrame,
+                            -1,
+                            picture);
+    }
+ 
     if (!v) {
       return false;
     }
@@ -306,6 +344,41 @@ nsresult MediaPluginReader::GetBuffered(nsTimeRanges* aBuffered, int64_t aStartT
   GetEstimatedBufferedTimeRanges(stream, durationUs, aBuffered);
   
   return NS_OK;
+}
+
+MediaPluginReader::ImageBufferCallback::ImageBufferCallback(mozilla::layers::ImageContainer *aImageContainer) :
+  mImageContainer(aImageContainer)
+{
+}
+
+void *
+MediaPluginReader::ImageBufferCallback::operator()(size_t aWidth, size_t aHeight,
+                                                     MPAPI::ColorFormat aColorFormat)
+{
+  if (!mImageContainer) {
+    NS_WARNING("No image container to construct an image");
+    return nullptr;
+  }
+
+  nsRefPtr<mozilla::layers::SharedRGBImage> rgbImage;
+  switch(aColorFormat) {
+    case MPAPI::RGB565:
+      rgbImage = mozilla::layers::SharedRGBImage::Create(mImageContainer,
+                                                         nsIntSize(aWidth, aHeight),
+                                                         gfxASurface::ImageFormatRGB16_565);
+      mImage = rgbImage;
+      return rgbImage->GetBuffer();
+    case MPAPI::YCbCr:
+    default:
+      NS_NOTREACHED("Color format not supported");
+      return nullptr;
+  }
+}
+
+already_AddRefed<Image>
+MediaPluginReader::ImageBufferCallback::GetImage()
+{
+  return mImage.forget();
 }
 
 } // namespace mozilla

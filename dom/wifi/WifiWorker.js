@@ -40,18 +40,21 @@ XPCOMUtils.defineLazyServiceGetter(this, "gSettingsService",
 // command always succeeds and we do a string/boolean check for the
 // expected results).
 var WifiManager = (function() {
-  function getSdkVersion() {
+  function getStartupPrefs() {
     Cu.import("resource://gre/modules/systemlibs.js");
-    let sdkVersion = libcutils.property_get("ro.build.version.sdk");
-    return parseInt(sdkVersion, 10);
+    return {
+      sdkVersion: parseInt(libcutils.property_get("ro.build.version.sdk"), 10),
+      schedScanRecovery: libcutils.property_get("ro.moz.wifi.sched_scan_recover") === "false" ? false : true
+    };
   }
 
-  let sdkVersion = getSdkVersion();
+  let {sdkVersion, schedScanRecovery} = getStartupPrefs();
 
   var controlWorker = new ChromeWorker(WIFIWORKER_WORKER);
   var eventWorker = new ChromeWorker(WIFIWORKER_WORKER);
 
   var manager = {};
+  manager.schedScanRecovery = schedScanRecovery;
 
   // Callbacks to invoke when a reply arrives from the controlWorker.
   var controlCallbacks = Object.create(null);
@@ -922,6 +925,12 @@ var WifiManager = (function() {
       }
       return true;
     }
+    if (eventData.indexOf("CTRL-EVENT-EAP-FAILURE") === 0) {
+      if (event.indexOf("EAP authentication failed") !== -1) {
+        notify("passwordmaybeincorrect");
+      }
+      return true;
+    }
     if (eventData.indexOf("CTRL-EVENT-CONNECTED") === 0) {
       // Format: CTRL-EVENT-CONNECTED - Connection to 00:1e:58:ec:d5:6d completed (reauth) [id=1 id_str=]
       var bssid = event.split(" ")[4];
@@ -1624,6 +1633,7 @@ function WifiWorker() {
   // all cases, the supplicant will take the last quotation that we pass it as
   // the end of the string.
   this.configuredNetworks = Object.create(null);
+  this._addingNetworks = Object.create(null);
 
   this.currentNetwork = null;
   this.ipAddress = "";
@@ -1647,9 +1657,11 @@ function WifiWorker() {
   this._turnOnBackgroundScan = false;
 
   function startScanStuckTimer() {
-    self._scanStuckTimer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
-    self._scanStuckTimer.initWithCallback(scanIsStuck, SCAN_STUCK_WAIT,
-                                          Ci.nsITimer.TYPE_ONE_SHOT);
+    if (WifiManager.schedScanRecovery) {
+      self._scanStuckTimer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+      self._scanStuckTimer.initWithCallback(scanIsStuck, SCAN_STUCK_WAIT,
+                                            Ci.nsITimer.TYPE_ONE_SHOT);
+    }
   }
 
   function scanIsStuck() {
@@ -2184,14 +2196,14 @@ WifiWorker.prototype = {
 
     var self = this;
     function getConnectionInformation() {
-      WifiManager.getConnectionInfo(function(info) {
+      WifiManager.getConnectionInfo(function(connInfo) {
         // See comments in calculateSignal for information about this.
-        if (!info) {
+        if (!connInfo) {
           self._lastConnectionInfo = null;
           return;
         }
 
-        let { rssi, linkspeed } = info;
+        let { rssi, linkspeed } = connInfo;
         if (rssi > 0)
           rssi -= 256;
         if (rssi <= MIN_RSSI)
@@ -2655,6 +2667,11 @@ WifiWorker.prototype = {
     let networkKey = getNetworkKey(privnet);
     let configured;
 
+    if (networkKey in this._addingNetworks) {
+      this._sendMessage(message, false, "Racing associates");
+      return;
+    }
+
     if (networkKey in this.configuredNetworks)
       configured = this.configuredNetworks[networkKey];
 
@@ -2677,7 +2694,10 @@ WifiWorker.prototype = {
       // set it to being "enabled" before we add it and save the
       // configuration.
       privnet.disabled = 0;
+      this._addingNetworks[networkKey] = privnet;
       WifiManager.addNetwork(privnet, (function(ok) {
+        delete this._addingNetworks[networkKey];
+
         if (!ok) {
           this._sendMessage(message, false, "Network is misconfigured", msg);
           return;

@@ -129,7 +129,7 @@ CanvasLayerOGL::Initialize(const Data& aData)
   } else if (aData.mSurface) {
     mCanvasSurface = aData.mSurface;
     mNeedsYFlip = false;
-#if defined(MOZ_X11) && !defined(MOZ_PLATFORM_MAEMO)
+#if defined(GL_PROVIDER_GLX)
     if (aData.mSurface->GetType() == gfxASurface::SurfaceTypeXlib) {
         gfxXlibSurface *xsurf = static_cast<gfxXlibSurface*>(aData.mSurface);
         mPixmap = xsurf->GetGLXPixmap();
@@ -189,7 +189,7 @@ CanvasLayerOGL::UpdateSurface()
     return;
   }
 
-#if defined(MOZ_X11) && !defined(MOZ_PLATFORM_MAEMO)
+#if defined(GL_PROVIDER_GLX)
   if (mPixmap) {
     return;
   }
@@ -309,7 +309,7 @@ CanvasLayerOGL::RenderLayer(int aPreviousDestination,
     program = mOGLManager->GetProgram(mLayerProgram, GetMaskLayer());
   }
 
-#if defined(MOZ_X11) && !defined(MOZ_PLATFORM_MAEMO)
+#if defined(GL_PROVIDER_GLX)
   if (mPixmap && !mDelayedUpdates) {
     sDefGLXLib.BindTexImage(mPixmap);
   }
@@ -335,7 +335,7 @@ CanvasLayerOGL::RenderLayer(int aPreviousDestination,
     mOGLManager->BindAndDrawQuadWithTextureRect(program, drawRect, drawRect.Size());
   }
 
-#if defined(MOZ_X11) && !defined(MOZ_PLATFORM_MAEMO)
+#if defined(GL_PROVIDER_GLX)
   if (mPixmap && !mDelayedUpdates) {
     sDefGLXLib.ReleaseTexImage(mPixmap);
   }
@@ -421,7 +421,10 @@ ShadowCanvasLayerOGL::Swap(const CanvasSurface& aNewFront,
   } else if (IsValidSharedTexDescriptor(aNewFront)) {
     MakeTextureIfNeeded(gl(), mTexture);
     if (!IsValidSharedTexDescriptor(mFrontBufferDescriptor)) {
-      mFrontBufferDescriptor = SharedTextureDescriptor(TextureImage::ThreadShared, 0, nsIntSize(0, 0), false);
+      mFrontBufferDescriptor = SharedTextureDescriptor(GLContext::SameProcess,
+                                                       0,
+                                                       nsIntSize(0, 0),
+                                                       false);
     }
     *aNewBack = mFrontBufferDescriptor;
     mFrontBufferDescriptor = aNewFront;

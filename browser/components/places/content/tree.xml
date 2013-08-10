@@ -56,6 +56,10 @@
         ]]></setter>
       </property>
 
+      <property name="associatedElement"
+                readonly="true"
+                onget="return this"/>
+
       <method name="applyFilter">
         <parameter name="filterString"/>
         <parameter name="folderRestrict"/>
@@ -113,6 +117,11 @@
           // calls removeObserver.
           result.addObserver(treeView, false);
           this.view = treeView;
+
+          if (this.getAttribute("selectfirstnode") == "true" && treeView.rowCount > 0) {
+            treeView.selection.select(0);
+          }
+
           this._cachedInsertionPoint = undefined;
         ]]></body>
       </method>
@@ -670,6 +679,12 @@
       <property name="ownerWindow"
                 readonly="true"
                 onget="return window;"/>
+
+      <field name="_active">true</field>
+      <property name="active"
+                onget="return this._active"
+                onset="return this._active = val"/>
+
     </implementation>
     <handlers>
       <handler event="focus"><![CDATA[

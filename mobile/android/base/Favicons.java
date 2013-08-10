@@ -60,16 +60,8 @@ public class Favicons {
         public void onFaviconLoaded(String url, Bitmap favicon);
     }
 
-    public Favicons(Context context) {
+    public Favicons() {
         Log.d(LOGTAG, "Creating Favicons instance");
-
-        mContext = context;
-        if (sFaviconSmallSize < 0) {
-            sFaviconSmallSize = Math.round(mContext.getResources().getDimension(R.dimen.awesomebar_row_favicon_size_small));
-        }
-        if (sFaviconLargeSize < 0) {
-            sFaviconLargeSize = Math.round(mContext.getResources().getDimension(R.dimen.awesomebar_row_favicon_size_large));
-        }
 
         mLoadTasks = Collections.synchronizedMap(new HashMap<Long,LoadFaviconTask>());
         mNextFaviconLoadId = 0;
@@ -179,6 +171,14 @@ public class Favicons {
             mHttpClient.close();
     }
 
+    private static class FaviconsInstanceHolder {
+        private static final Favicons INSTANCE = new Favicons();
+    }
+
+    public static Favicons getInstance() {
+       return Favicons.FaviconsInstanceHolder.INSTANCE;
+    }
+
     public boolean isLargeFavicon(Bitmap image) {
         return image.getWidth() > sFaviconSmallSize || image.getHeight() > sFaviconSmallSize;
     }
@@ -192,6 +192,16 @@ public class Favicons {
             image = Bitmap.createScaledBitmap(image, sFaviconSmallSize, sFaviconSmallSize, false);
         }
         return image;
+    }
+
+    public void attachToContext(Context context) {
+        mContext = context;
+        if (sFaviconSmallSize < 0) {
+            sFaviconSmallSize = Math.round(mContext.getResources().getDimension(R.dimen.awesomebar_row_favicon_size_small));
+        }
+        if (sFaviconLargeSize < 0) {
+            sFaviconLargeSize = Math.round(mContext.getResources().getDimension(R.dimen.awesomebar_row_favicon_size_large));
+        }
     }
 
     private class LoadFaviconTask extends AsyncTask<Void, Void, Bitmap> {

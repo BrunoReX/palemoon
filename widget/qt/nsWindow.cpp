@@ -411,9 +411,9 @@ nsWindow::Destroy(void)
 
     nsIRollupListener* rollupListener = nsBaseWidget::GetActiveRollupListener();
     if (rollupListener) {
-    nsCOMPtr<nsIWidget> rollupWidget = rollupListener->GetRollupWidget();
+        nsCOMPtr<nsIWidget> rollupWidget = rollupListener->GetRollupWidget();
         if (static_cast<nsIWidget *>(this) == rollupWidget) {
-        rollupListener->Rollup(0, nullptr);
+            rollupListener->Rollup(0, nullptr);
         }
     }
 
@@ -548,26 +548,29 @@ nsWindow::ConstrainPosition(bool aAllowSlop, int32_t *aX, int32_t *aY)
 }
 
 NS_IMETHODIMP
-nsWindow::Move(int32_t aX, int32_t aY)
+nsWindow::Move(double aX, double aY)
 {
-    LOG(("nsWindow::Move [%p] %d %d\n", (void *)this,
+    LOG(("nsWindow::Move [%p] %f %f\n", (void *)this,
          aX, aY));
+
+    int32_t x = NSToIntRound(aX);
+    int32_t y = NSToIntRound(aY);
 
     if (mIsTopLevel) {
         SetSizeMode(nsSizeMode_Normal);
     }
 
-    if (aX == mBounds.x && aY == mBounds.y)
+    if (x == mBounds.x && y == mBounds.y)
         return NS_OK;
 
     mNeedsMove = false;
 
     // update the bounds
-    QPointF pos( aX, aY );
+    QPointF pos( x, y );
     if (mIsTopLevel) {
         QWidget *widget = GetViewWidget();
         NS_ENSURE_TRUE(widget, NS_OK);
-        widget->move(aX, aY);
+        widget->move(x, y);
     }
     else if (mWidget) {
         // the position of the widget is set relative to the parent
@@ -949,42 +952,42 @@ nsWindow::CheckForRollup(double aMouseX, double aMouseY,
     }
 
     bool retVal = false;
-        MozQWidget *currentPopup =
-            (MozQWidget *)rollupWidget->GetNativeData(NS_NATIVE_WINDOW);
-        if (!is_mouse_in_window(currentPopup, aMouseX, aMouseY)) {
-            bool rollup = true;
-            if (aIsWheel) {
-                rollup = rollupListener->ShouldRollupOnMouseWheelEvent();
-                retVal = true;
-            }
-            // if we're dealing with menus, we probably have submenus and
-            // we don't want to rollup if the clickis in a parent menu of
-            // the current submenu
-            uint32_t popupsToRollup = UINT32_MAX;
-            if (rollupListener) {
-                nsAutoTArray<nsIWidget*, 5> widgetChain;
-                uint32_t sameTypeCount = rollupListener->GetSubmenuWidgetChain(&widgetChain);
-                for (uint32_t i=0; i<widgetChain.Length(); ++i) {
-                    nsIWidget* widget =  widgetChain[i];
-                    MozQWidget* currWindow =
-                        (MozQWidget*) widget->GetNativeData(NS_NATIVE_WINDOW);
-                    if (is_mouse_in_window(currWindow, aMouseX, aMouseY)) {
-                      if (i < sameTypeCount) {
-                        rollup = false;
-                      }
-                      else {
-                        popupsToRollup = sameTypeCount;
-                      }
-                      break;
-                    }
-                } // foreach parent menu widget
-            } // if rollup listener knows about menus
-
-            // if we've determined that we should still rollup, do it.
-            if (rollup) {
-                retVal = rollupListener->Rollup(popupsToRollup, nullptr);
-            }
+    MozQWidget *currentPopup =
+        (MozQWidget *)rollupWidget->GetNativeData(NS_NATIVE_WINDOW);
+    if (!is_mouse_in_window(currentPopup, aMouseX, aMouseY)) {
+        bool rollup = true;
+        if (aIsWheel) {
+            rollup = rollupListener->ShouldRollupOnMouseWheelEvent();
+            retVal = true;
         }
+        // if we're dealing with menus, we probably have submenus and
+        // we don't want to rollup if the clickis in a parent menu of
+        // the current submenu
+        uint32_t popupsToRollup = UINT32_MAX;
+        if (rollupListener) {
+            nsAutoTArray<nsIWidget*, 5> widgetChain;
+            uint32_t sameTypeCount = rollupListener->GetSubmenuWidgetChain(&widgetChain);
+            for (uint32_t i=0; i<widgetChain.Length(); ++i) {
+                nsIWidget* widget =  widgetChain[i];
+                MozQWidget* currWindow =
+                    (MozQWidget*) widget->GetNativeData(NS_NATIVE_WINDOW);
+                if (is_mouse_in_window(currWindow, aMouseX, aMouseY)) {
+                  if (i < sameTypeCount) {
+                    rollup = false;
+                  }
+                  else {
+                    popupsToRollup = sameTypeCount;
+                  }
+                  break;
+                }
+            } // foreach parent menu widget
+        } // if rollup listener knows about menus
+
+        // if we've determined that we should still rollup, do it.
+        if (rollup) {
+            retVal = rollupListener->Rollup(popupsToRollup, nullptr);
+        }
+    }
 
     return retVal;
 }
@@ -1689,7 +1692,7 @@ nsWindow::OnKeyPressEvent(QKeyEvent *aEvent)
 
     // If prevent default on keydown, do same for keypress
     if (setNoDefault) {
-        event.flags |= NS_EVENT_FLAG_NO_DEFAULT;
+        event.mFlags.mDefaultPrevented = true;
     }
 
     // If there is no charcode attainable from the text, try to
@@ -1874,7 +1877,7 @@ nsWindow::OnKeyPressEvent(QKeyEvent *aEvent)
     event.keyCode = domCharCode ? 0 : domKeyCode;
 
     if (setNoDefault)
-        event.flags |= NS_EVENT_FLAG_NO_DEFAULT;
+        event.mFlags.mDefaultPrevented = true;
 
     // send the key press event
     return DispatchEvent(&event);
@@ -2958,10 +2961,10 @@ nsWindow::Show(bool aState)
 }
 
 NS_IMETHODIMP
-nsWindow::Resize(int32_t aWidth, int32_t aHeight, bool aRepaint)
+nsWindow::Resize(double aWidth, double aHeight, bool aRepaint)
 {
-    mBounds.width = aWidth;
-    mBounds.height = aHeight;
+    mBounds.width = NSToIntRound(aWidth);
+    mBounds.height = NSToIntRound(aHeight);
 
     if (!mWidget)
         return NS_OK;
@@ -2995,7 +2998,7 @@ nsWindow::Resize(int32_t aWidth, int32_t aHeight, bool aRepaint)
         // For widgets that we listen for resizes for (widgets created
         // with native parents) we apparently _always_ have to resize.  I
         // dunno why, but apparently we're lame like that.
-        NativeResize(aWidth, aHeight, aRepaint);
+        NativeResize(mBounds.width, mBounds.height, aRepaint);
     }
     else {
         mNeedsResize = true;
@@ -3003,9 +3006,8 @@ nsWindow::Resize(int32_t aWidth, int32_t aHeight, bool aRepaint)
 
     // synthesize a resize event if this isn't a toplevel
     if (mIsTopLevel || mListenForResizes) {
-        nsIntRect rect(mBounds.x, mBounds.y, aWidth, aHeight);
         nsEventStatus status;
-        DispatchResizeEvent(rect, status);
+        DispatchResizeEvent(mBounds, status);
     }
 
     NotifyRollupGeometryChange();
@@ -3013,13 +3015,13 @@ nsWindow::Resize(int32_t aWidth, int32_t aHeight, bool aRepaint)
 }
 
 NS_IMETHODIMP
-nsWindow::Resize(int32_t aX, int32_t aY, int32_t aWidth, int32_t aHeight,
+nsWindow::Resize(double aX, double aY, double aWidth, double aHeight,
                  bool aRepaint)
 {
-    mBounds.x = aX;
-    mBounds.y = aY;
-    mBounds.width = aWidth;
-    mBounds.height = aHeight;
+    mBounds.x = NSToIntRound(aX);
+    mBounds.y = NSToIntRound(aY);
+    mBounds.width = NSToIntRound(aWidth);
+    mBounds.height = NSToIntRound(aHeight);
 
     mPlaced = true;
 
@@ -3031,7 +3033,8 @@ nsWindow::Resize(int32_t aX, int32_t aY, int32_t aWidth, int32_t aHeight,
         // Are the bounds sane?
         if (AreBoundsSane()) {
             // Yep?  Resize the window
-            NativeResize(aX, aY, aWidth, aHeight, aRepaint);
+            NativeResize(mBounds.x, mBounds.y, mBounds.width, mBounds.height,
+                         aRepaint);
             // Does it need to be shown because it was previously insane?
             if (mNeedsShow)
                 NativeShow(true);
@@ -3055,7 +3058,8 @@ nsWindow::Resize(int32_t aX, int32_t aY, int32_t aWidth, int32_t aHeight,
         // For widgets that we listen for resizes for (widgets created
         // with native parents) we apparently _always_ have to resize.  I
         // dunno why, but apparently we're lame like that.
-        NativeResize(aX, aY, aWidth, aHeight, aRepaint);
+        NativeResize(mBounds.x, mBounds.y, mBounds.width, mBounds.height,
+                     aRepaint);
     }
     else {
         mNeedsResize = true;
@@ -3064,9 +3068,8 @@ nsWindow::Resize(int32_t aX, int32_t aY, int32_t aWidth, int32_t aHeight,
 
     if (mIsTopLevel || mListenForResizes) {
         // synthesize a resize event
-        nsIntRect rect(aX, aY, aWidth, aHeight);
         nsEventStatus status;
-        DispatchResizeEvent(rect, status);
+        DispatchResizeEvent(mBounds, status);
     }
 
     if (aRepaint)
@@ -3254,7 +3257,8 @@ nsWindow::SetSoftwareKeyboardState(bool aOpen,
                                    const InputContextAction& aAction)
 {
     if (aOpen) {
-        NS_ENSURE_TRUE(mInputContext.mIMEState.mEnabled != IMEState::DISABLED,);
+        NS_ENSURE_TRUE_VOID(mInputContext.mIMEState.mEnabled !=
+                            IMEState::DISABLED);
 
         // Ensure that opening the virtual keyboard is allowed for this specific
         // InputContext depending on the content.ime.strict.policy pref

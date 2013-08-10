@@ -298,8 +298,10 @@ nsHTMLEditor::IsSimpleModifiableNode(nsIContent* aContent,
     nsCOMPtr<nsIAtom> atom = do_GetAtom(*aAttribute);
     MOZ_ASSERT(atom);
 
+    nsString attrValue;
     if (element->IsHTML(aProperty) && IsOnlyAttribute(element, *aAttribute) &&
-        element->AttrValueIs(kNameSpaceID_None, atom, *aValue, eIgnoreCase)) {
+        element->GetAttr(kNameSpaceID_None, atom, attrValue) &&
+        attrValue.Equals(*aValue, nsCaseInsensitiveStringComparator())) {
       // This is not quite correct, because it excludes cases like
       // <font face=000> being the same as <font face=#000000>.
       // Property-specific handling is needed (bug 760211).
@@ -1781,9 +1783,13 @@ nsHTMLEditor::RelativeFontChangeHelper(int32_t aSizeChange, nsINode* aNode)
       nsresult rv = RelativeFontChangeOnNode(aSizeChange, aNode->GetChildAt(i));
       NS_ENSURE_SUCCESS(rv, rv);
     }
+
+    // RelativeFontChangeOnNode already calls us recursively,
+    // so we don't need to check our children again.
+    return NS_OK;
   }
 
-  // Now cycle through the children.
+  // Otherwise cycle through the children.
   for (uint32_t i = aNode->GetChildCount(); i--; ) {
     nsresult rv = RelativeFontChangeHelper(aSizeChange, aNode->GetChildAt(i));
     NS_ENSURE_SUCCESS(rv, rv);

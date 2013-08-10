@@ -53,6 +53,7 @@ class nsCSSFrameConstructor : public nsFrameManager
 public:
   typedef mozilla::dom::Element Element;
   typedef mozilla::css::RestyleTracker RestyleTracker;
+  typedef mozilla::css::OverflowChangedTracker OverflowChangedTracker;
 
   nsCSSFrameConstructor(nsIDocument *aDocument, nsIPresShell* aPresShell);
   ~nsCSSFrameConstructor(void) {
@@ -303,6 +304,11 @@ public:
                                  nsChangeHint aMinChangeHint)
   {
     PostRestyleEventCommon(aElement, aRestyleHint, aMinChangeHint, true);
+  }
+
+  void FlushOverflowChangedTracker() 
+  {
+    mOverflowChangedTracker.Flush();
   }
 
 private:
@@ -1460,7 +1466,11 @@ private:
    * corresponding logic in these functions.
    */
 public:
-  nsIFrame* GetAbsoluteContainingBlock(nsIFrame* aFrame);
+  enum ContainingBlockType {
+    ABS_POS,
+    FIXED_POS
+  };
+  nsIFrame* GetAbsoluteContainingBlock(nsIFrame* aFrame, ContainingBlockType aType);
 private:
   nsIFrame* GetFloatContainingBlock(nsIFrame* aFrame);
 
@@ -1887,6 +1897,8 @@ private:
   nsChangeHint        mRebuildAllExtraHint;
 
   nsCOMPtr<nsILayoutHistoryState> mTempFrameTreeState;
+
+  OverflowChangedTracker mOverflowChangedTracker;
 
   // The total number of animation flushes by this frame constructor.
   // Used to keep the layer and animation manager in sync.

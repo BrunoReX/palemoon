@@ -1,28 +1,32 @@
 // ****************** App/Update/General ******************
 
-pref("startup.homepage_override_url","");
-pref("startup.homepage_welcome_url","");
+pref("startup.homepage_override_url","http://www.palemoon.org/");
+pref("startup.homepage_welcome_url","http://www.palemoon.org/firstrun.shtml");
 // Interval: Time between checks for a new version (in seconds) -- 2 days for Pale Moon
 pref("app.update.interval", 172800);
 pref("app.update.auto", false);
 pref("app.update.enabled", false);
 // URL for update checks, re-enabled on palemoon.org (369)
-pref("app.update.url", "");
+pref("app.update.url", "http://www.palemoon.org/update/%VERSION%/update.xml");
 pref("app.update.promptWaitTime", 86400); 
 // The time interval between the downloading of mar file chunks in the
 // background (in seconds)
 pref("app.update.download.backgroundInterval", 600);
 // URL user can browse to manually if for some reason all update installation
 // attempts fail.
-pref("app.update.url.manual", "");
+pref("app.update.url.manual", "http://www.palemoon.org/");
 // A default value for the "More information about this update" link
 // supplied in the "An update is available" page of the update wizard. 
-pref("app.update.url.details", "");
-// Fix useragent for UA sniffing websites
-pref("general.useragent.compatMode.firefox", true);
+pref("app.update.url.details", "http://www.palemoon.org/releasenotes-ng.shtml");
+// Additional Update fixes - no SSL damnit, I don't have a cert (4.0)
+pref("app.update.cert.checkAttributes", false);
+pref("app.update.cert.requireBuiltIn", false);
+// Make sure we shortcut out of a11y to save walking unnecessary code
+pref("accessibility.force_disabled", 1);
 
 // ****************** Release notes and vendor URLs ******************
 
+pref("app.releaseNotesURL", "http://www.palemoon.org/releasenotes-ng.shtml");
 pref("app.vendorURL", "http://www.palemoon.org/");
 pref("app.support.baseURL", "http://www.palemoon.org/support/");
 //Add-on window fixes
@@ -37,8 +41,8 @@ pref("extensions.blocklist.url", "https://addons.mozilla.org/blocklist/3/firefox
 pref("extensions.webservice.discoverURL","https://services.addons.mozilla.org/%LOCALE%/firefox/discovery/pane/%VERSION%/%OS%");
 pref("extensions.getAddons.get.url","https://services.addons.mozilla.org/%LOCALE%/firefox/api/%API_VERSION%/search/guid:%IDS%?src=firefox&appOS=%OS%&appVersion=%VERSION%&tMain=%TIME_MAIN%&tFirstPaint=%TIME_FIRST_PAINT%&tSessionRestored=%TIME_SESSION_RESTORED%");
 //Add-on updates: hard-code base Firefox version number.
-pref("extensions.update.background.url","https://versioncheck-bg.addons.mozilla.org/update/VersionCheck.php?reqVersion=%REQ_VERSION%&id=%ITEM_ID%&version=%ITEM_VERSION%&maxAppVersion=%ITEM_MAXAPPVERSION%&status=%ITEM_STATUS%&appID=%APP_ID%&appVersion=19.0&appOS=%APP_OS%&appABI=%APP_ABI%&locale=%APP_LOCALE%&currentAppVersion=%CURRENT_APP_VERSION%&updateType=%UPDATE_TYPE%&compatMode=%COMPATIBILITY_MODE%");
-pref("extensions.update.url","https://versioncheck.addons.mozilla.org/update/VersionCheck.php?reqVersion=%REQ_VERSION%&id=%ITEM_ID%&version=%ITEM_VERSION%&maxAppVersion=%ITEM_MAXAPPVERSION%&status=%ITEM_STATUS%&appID=%APP_ID%&appVersion=19.0&appOS=%APP_OS%&appABI=%APP_ABI%&locale=%APP_LOCALE%&currentAppVersion=%CURRENT_APP_VERSION%&updateType=%UPDATE_TYPE%&compatMode=%COMPATIBILITY_MODE%");
+pref("extensions.update.background.url","https://versioncheck-bg.addons.mozilla.org/update/VersionCheck.php?reqVersion=%REQ_VERSION%&id=%ITEM_ID%&version=%ITEM_VERSION%&maxAppVersion=%ITEM_MAXAPPVERSION%&status=%ITEM_STATUS%&appID=%APP_ID%&appVersion=20.0&appOS=%APP_OS%&appABI=%APP_ABI%&locale=%APP_LOCALE%&currentAppVersion=%CURRENT_APP_VERSION%&updateType=%UPDATE_TYPE%&compatMode=%COMPATIBILITY_MODE%");
+pref("extensions.update.url","https://versioncheck.addons.mozilla.org/update/VersionCheck.php?reqVersion=%REQ_VERSION%&id=%ITEM_ID%&version=%ITEM_VERSION%&maxAppVersion=%ITEM_MAXAPPVERSION%&status=%ITEM_STATUS%&appID=%APP_ID%&appVersion=20.0&appOS=%APP_OS%&appABI=%APP_ABI%&locale=%APP_LOCALE%&currentAppVersion=%CURRENT_APP_VERSION%&updateType=%UPDATE_TYPE%&compatMode=%COMPATIBILITY_MODE%");
 //Search engine fixes
 pref("browser.search.searchEnginesURL", "https://addons.mozilla.org/%LOCALE%/firefox/search-engines/");
 //Safebrowsing URL fixes
@@ -65,7 +69,9 @@ pref("network.prefetch-next", false); //prefetching engine off by default!
 pref("network.http.pipelining"      , true); //pipelining on by default, haven't seen any issues
 pref("network.http.pipelining.ssl"  , true); 
 pref("network.http.proxy.pipelining", false); // pipeline proxy requests - breaks some proxies! (406)
-pref("network.http.pipelining.maxrequests", 12);  // Max number of requests in the pipeline
+pref("network.http.pipelining.aggressive", true);
+pref("network.http.pipelining.max-optimistic-requests", 4);
+pref("network.http.pipelining.maxrequests", 4);  // Max number of requests in the pipeline
 pref("network.http.max-connections",48); // Don't saturate the network layer and go easy on poor residential routers&wireless! (FF=256)
 pref("network.http.max-connections-per-server",8); // With pipelining, this should be low (FF=15)
 pref("network.http.max-persistent-connections-per-proxy", 8);
@@ -76,9 +82,7 @@ pref("network.dnsCacheExpiration", 3600); //TTL 1 hour
 
 // ****************** Renderer config ******************
 
-// JIT the chrome!
-pref("javascript.options.jitprofiling.chrome", true);
-pref("javascript.options.methodjit.chrome", true);
+pref("nglayout.initialpaint.delay", 150);
 
 // ****************** UI config ******************
 
@@ -89,23 +93,11 @@ pref("browser.search.context.loadInBackground", true); //don't swap focus to the
 pref("browser.ctrlTab.previews", true);
 pref("browser.allTabs.previews", true);
 pref("browser.urlbar.trimURLs", false); //stop being a derp, Mozilla!
-pref("browser.preferences.animateFadeIn", false); //Animate preferences windows; off because of errors in sizing logic & add-ons
 pref("browser.identity.ssl_domain_display", 1); //show domain verified SSL (blue)
 pref("browser.urlbar.autoFill", true);
 pref("browser.urlbar.autoFill.typed", true);
 
-//Take unintended/removed tools out of the UI
-pref("devtools.errorconsole.enabled",true); //Essential for troubleshooting
-pref("devtools.scratchpad.enabled",false); //Still present but flipped off
-pref("devtools.inspector.enabled",false);
-pref("devtools.styleeditor.enabled",false); //NIIB
-pref("devtools.styleinspector.enabled",false); //NIIB
-pref("devtools.tilt.enabled",false); //Tilt? WHY? NIIB
-pref("devtools.layoutview.enabled",false);
-pref("devtools.ruleview.enabled",false);
-pref("devtools.toolbar.enabled",false);
-pref("devtools.responsiveUI.enabled",false); 
-pref("devtools.debugger.enabled",false);
+pref("social.enabled", false);
 
 //Set tabs NOT on top
 pref("browser.tabs.onTop",false); 
@@ -129,7 +121,7 @@ pref("general.smoothScroll.scrollbars.durationMaxMS",200);
 
 // Download manager
 pref("browser.download.manager.flashCount", 10);
-pref("browser.download.manager.scanWhenDone", false); //NIIB, make sure to disable to prevent hangups
+pref("browser.download.manager.scanWhenDone", false); //NIB, make sure to disable to prevent hangups
 pref("browser.altClickSave", true); //SBaD,M! (#2)
 
 //plugin kill timeout
@@ -138,16 +130,13 @@ pref("dom.ipc.plugins.timeoutSecs", 20);
 //give people a choice for add-on updates.
 pref("extensions.update.autoUpdateDefault", false);
 
-//cache handling 1GB -> 200MB by default, disable automatic
+//cache handling 1GB -> 250MB by default, disable automatic
 //max element size -> 4MB, caching anything larger is not recommended
 pref("browser.cache.disk.smart_size.enabled",false);
-pref("browser.cache.disk.capacity",204800); //200MB
+pref("browser.cache.disk.capacity",256000); //250MB
 pref("browser.cache.disk.max_entry_size",4096);
 pref("browser.cache.memory.capacity",-1); //dynamically allocate RAM cache as-needed.
 pref("browser.cache.memory.max_entry_size",-1); 
-
-//image RAM cache size for *decoded* images; 256MB should be enough here;
-pref("image.mem.max_decoded_image_kb", 256000);
 
 //Improve memory handling for js
 pref("javascript.options.mem.gc_per_compartment", true);

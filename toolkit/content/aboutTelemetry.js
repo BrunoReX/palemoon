@@ -13,12 +13,19 @@ Cu.import("resource://gre/modules/Services.jsm");
 const Telemetry = Services.telemetry;
 const bundle = Services.strings.createBundle(
   "chrome://global/locale/aboutTelemetry.properties");
+const brandBundle = Services.strings.createBundle(
+  "chrome://branding/locale/brand.properties");
 const TelemetryPing = Cc["@mozilla.org/base/telemetry-ping;1"].
-  getService(Ci.nsIObserver);
+  getService(Ci.nsITelemetryPing);
 
 // Maximum height of a histogram bar (in em)
 const MAX_BAR_HEIGHT = 18;
+const PREF_TELEMETRY_SERVER_OWNER = "toolkit.telemetry.server_owner";
+#ifdef MOZ_TELEMETRY_ON_BY_DEFAULT
+const PREF_TELEMETRY_ENABLED = "toolkit.telemetry.enabledPreRelease";
+#else
 const PREF_TELEMETRY_ENABLED = "toolkit.telemetry.enabled";
+#endif
 const PREF_DEBUG_SLOW_SQL = "toolkit.telemetry.debugSlowSql";
 const PREF_SYMBOL_SERVER_URI = "profiler.symbolicationUrl";
 const DEFAULT_SYMBOL_SERVER_URI = "http://symbolapi.mozilla.org";
@@ -151,24 +158,26 @@ let SlowSQL = {
 
   /**
    * Creates a header row for a Slow SQL table
+   * Tabs & newlines added to cells to make it easier to copy-paste.
    *
    * @param aTable Parent table element
    * @param aTitle Table's title
    */
   renderTableHeader: function SlowSQL_renderTableHeader(aTable, aTitle) {
     let caption = document.createElement("caption");
-    caption.appendChild(document.createTextNode(aTitle));
+    caption.appendChild(document.createTextNode(aTitle + "\n"));
     aTable.appendChild(caption);
 
     let headings = document.createElement("tr");
-    this.appendColumn(headings, "th", this.slowSqlHits);
-    this.appendColumn(headings, "th", this.slowSqlAverage);
-    this.appendColumn(headings, "th", this.slowSqlStatement);
+    this.appendColumn(headings, "th", this.slowSqlHits + "\t");
+    this.appendColumn(headings, "th", this.slowSqlAverage + "\t");
+    this.appendColumn(headings, "th", this.slowSqlStatement + "\n");
     aTable.appendChild(headings);
   },
 
   /**
    * Fills out the table body
+   * Tabs & newlines added to cells to make it easier to copy-paste.
    *
    * @param aTable Parent table element
    * @param aSql SQL stats object
@@ -179,9 +188,9 @@ let SlowSQL = {
 
       let sqlRow = document.createElement("tr");
 
-      this.appendColumn(sqlRow, "td", hitCount);
-      this.appendColumn(sqlRow, "td", averageTime.toFixed(0));
-      this.appendColumn(sqlRow, "td", sql);
+      this.appendColumn(sqlRow, "td", hitCount + "\t");
+      this.appendColumn(sqlRow, "td", averageTime.toFixed(0) + "\t");
+      this.appendColumn(sqlRow, "td", sql + "\n");
 
       aTable.appendChild(sqlRow);
     }
@@ -196,19 +205,65 @@ let SlowSQL = {
    */
   appendColumn: function SlowSQL_appendColumn(aRowElement, aColType, aColText) {
     let colElement = document.createElement(aColType);
-    let aColTextElement = document.createTextNode(aColText);
-    colElement.appendChild(aColTextElement);
+    let colTextElement = document.createTextNode(aColText);
+    colElement.appendChild(colTextElement);
     aRowElement.appendChild(colElement);
+  }
+};
+
+/**
+ * Removes child elements from the supplied div
+ *
+ * @param aDiv Element to be cleared
+ */
+function clearDivData(aDiv) {
+  while (aDiv.hasChildNodes()) {
+    aDiv.removeChild(aDiv.lastChild);
+  }
+};
+
+let StackRenderer = {
+
+  stackTitle: bundle.GetStringFromName("stackTitle"),
+
+  memoryMapTitle: bundle.GetStringFromName("memoryMapTitle"),
+
+  /**
+   * Outputs the memory map associated with this hang report
+   *
+   * @param aDiv Output div
+   */
+  renderMemoryMap: function StackRenderer_renderMemoryMap(aDiv, memoryMap) {
+    aDiv.appendChild(document.createTextNode(this.memoryMapTitle));
+    aDiv.appendChild(document.createElement("br"));
+
+    for (let currentModule of memoryMap) {
+      aDiv.appendChild(document.createTextNode(currentModule.join(" ")));
+      aDiv.appendChild(document.createElement("br"));
+    }
+
+    aDiv.appendChild(document.createElement("br"));
+  },
+
+  /**
+   * Outputs the raw PCs from the hang's stack
+   *
+   * @param aDiv Output div
+   * @param aStack Array of PCs from the hang stack
+   */
+  renderStack: function StackRenderer_renderStack(aDiv, aStack) {
+    aDiv.appendChild(document.createTextNode(this.stackTitle));
+    let stackText = " " + aStack.join(" ");
+    aDiv.appendChild(document.createTextNode(stackText));
+
+    aDiv.appendChild(document.createElement("br"));
+    aDiv.appendChild(document.createElement("br"));
   }
 };
 
 let ChromeHangs = {
 
   symbolRequest: null,
-
-  stackTitle: bundle.GetStringFromName("stackTitle"),
-
-  memoryMapTitle: bundle.GetStringFromName("memoryMapTitle"),
 
   errorMessage: bundle.GetStringFromName("errorFetchingSymbols"),
 
@@ -217,22 +272,25 @@ let ChromeHangs = {
    */
   render: function ChromeHangs_render() {
     let hangsDiv = document.getElementById("chrome-hangs-data");
-    this.clearHangData(hangsDiv);
+    clearDivData(hangsDiv);
     document.getElementById("fetch-symbols").classList.remove("hidden");
     document.getElementById("hide-symbols").classList.add("hidden");
 
     let hangs = Telemetry.chromeHangs;
-    if (hangs.length == 0) {
+    let stacks = hangs.stacks;
+    if (stacks.length == 0) {
       showEmptySectionMessage("chrome-hangs-section");
       return;
     }
 
-    this.renderMemoryMap(hangsDiv);
+    let memoryMap = hangs.memoryMap;
+    StackRenderer.renderMemoryMap(hangsDiv, memoryMap);
 
-    for (let i = 0; i < hangs.length; ++i) {
-      let currentHang = hangs[i];
-      this.renderHangHeader(hangsDiv, i + 1, currentHang.duration);
-      this.renderStack(hangsDiv, currentHang.stack)
+    let durations = hangs.durations;
+    for (let i = 0; i < stacks.length; ++i) {
+      let stack = stacks[i];
+      this.renderHangHeader(hangsDiv, i + 1, durations[i]);
+      StackRenderer.renderStack(hangsDiv, stack)
     }
   },
 
@@ -256,55 +314,27 @@ let ChromeHangs = {
   },
 
   /**
-   * Outputs the raw PCs from the hang's stack
-   *
-   * @param aDiv Output div
-   * @param aStack Array of PCs from the hang stack
-   */
-  renderStack: function ChromeHangs_renderStack(aDiv, aStack) {
-    aDiv.appendChild(document.createTextNode(this.stackTitle));
-    let stackText = " " + aStack.join(" ");
-    aDiv.appendChild(document.createTextNode(stackText));
-
-    aDiv.appendChild(document.createElement("br"));
-    aDiv.appendChild(document.createElement("br"));
-  },
-
-  /**
-   * Outputs the memory map associated with this hang report
-   *
-   * @param aDiv Output div
-   */
-  renderMemoryMap: function ChromeHangs_renderMemoryMap(aDiv) {
-    aDiv.appendChild(document.createTextNode(this.memoryMapTitle));
-    aDiv.appendChild(document.createElement("br"));
-
-    let singleMemoryMap = Telemetry.chromeHangs[0].memoryMap;
-    for (let currentModule of singleMemoryMap) {
-      aDiv.appendChild(document.createTextNode(currentModule.join(" ")));
-      aDiv.appendChild(document.createElement("br"));
-    }
-
-    aDiv.appendChild(document.createElement("br"));
-  },
-
-  /**
    * Sends a symbolication request for the recorded hangs
    */
   fetchSymbols: function ChromeHangs_fetchSymbols() {
     let symbolServerURI =
       getPref(PREF_SYMBOL_SERVER_URI, DEFAULT_SYMBOL_SERVER_URI);
 
-    let chromeHangsJSON = JSON.stringify(Telemetry.chromeHangs);
+    let hangs = Telemetry.chromeHangs;
+    let memoryMap = hangs.memoryMap;
+    let stacks = hangs.stacks;
+    let request = {"memoryMap" : memoryMap, "stacks" : stacks,
+                   "version" : 2};
+    let requestJSON = JSON.stringify(request);
 
     this.symbolRequest = XMLHttpRequest();
     this.symbolRequest.open("POST", symbolServerURI, true);
     this.symbolRequest.setRequestHeader("Content-type", "application/json");
-    this.symbolRequest.setRequestHeader("Content-length", chromeHangsJSON.length);
+    this.symbolRequest.setRequestHeader("Content-length", requestJSON.length);
     this.symbolRequest.setRequestHeader("Connection", "close");
 
     this.symbolRequest.onreadystatechange = this.handleSymbolResponse.bind(this);
-    this.symbolRequest.send(chromeHangsJSON);
+    this.symbolRequest.send(requestJSON);
   },
 
   /**
@@ -319,7 +349,7 @@ let ChromeHangs = {
     document.getElementById("hide-symbols").classList.remove("hidden");
 
     let hangsDiv = document.getElementById("chrome-hangs-data");
-    this.clearHangData(hangsDiv);
+    clearDivData(hangsDiv);
 
     if (this.symbolRequest.status != 200) {
       hangsDiv.appendChild(document.createTextNode(this.errorMessage));
@@ -335,9 +365,11 @@ let ChromeHangs = {
     }
 
     let hangs = Telemetry.chromeHangs;
+    let stacks = hangs.stacks;
+    let durations = hangs.durations;
     for (let i = 0; i < jsonResponse.length; ++i) {
       let stack = jsonResponse[i];
-      let hangDuration = hangs[i].duration;
+      let hangDuration = durations[i];
       this.renderHangHeader(hangsDiv, i + 1, hangDuration);
 
       for (let symbol of stack) {
@@ -345,17 +377,6 @@ let ChromeHangs = {
         hangsDiv.appendChild(document.createElement("br"));
       }
       hangsDiv.appendChild(document.createElement("br"));
-    }
-  },
-
-  /**
-   * Removes child elements from the supplied div
-   *
-   * @param aDiv Element to be cleared
-   */
-  clearHangData: function ChromeHangs_clearHangData(aDiv) {
-    while (aDiv.hasChildNodes()) {
-      aDiv.removeChild(aDiv.lastChild);
     }
   }
 };
@@ -501,6 +522,7 @@ let KeyValueTable = {
 
   /**
    * Create the table header
+   * Tabs & newlines added to cells to make it easier to copy-paste.
    *
    * @param aTable Table element
    */
@@ -509,9 +531,9 @@ let KeyValueTable = {
     aTable.appendChild(headerRow);
 
     let keysColumn = document.createElement("th");
-    keysColumn.appendChild(document.createTextNode(this.keysHeader));
+    keysColumn.appendChild(document.createTextNode(this.keysHeader + "\t"));
     let valuesColumn = document.createElement("th");
-    valuesColumn.appendChild(document.createTextNode(this.valuesHeader));
+    valuesColumn.appendChild(document.createTextNode(this.valuesHeader + "\n"));
 
     headerRow.appendChild(keysColumn);
     headerRow.appendChild(valuesColumn);
@@ -519,6 +541,7 @@ let KeyValueTable = {
 
   /**
    * Create the table body
+   * Tabs & newlines added to cells to make it easier to copy-paste.
    *
    * @param aTable Table element
    * @param aMeasurements Key/value map
@@ -533,11 +556,11 @@ let KeyValueTable = {
       aTable.appendChild(newRow);
 
       let keyField = document.createElement("td");
-      keyField.appendChild(document.createTextNode(key));
+      keyField.appendChild(document.createTextNode(key + "\t"));
       newRow.appendChild(keyField);
 
       let valueField = document.createElement("td");
-      valueField.appendChild(document.createTextNode(value));
+      valueField.appendChild(document.createTextNode(value + "\n"));
       newRow.appendChild(valueField);
     }
   }
@@ -588,6 +611,19 @@ function toggleSection(aEvent) {
   toggleLinks[1].classList.toggle("hidden");
 }
 
+/**
+ * Sets the text of the page header based on a config pref + bundle strings
+ */
+function setupPageHeader()
+{
+  let serverOwner = getPref(PREF_TELEMETRY_SERVER_OWNER, "Mozilla");
+  let brandName = brandBundle.GetStringFromName("brandFullName");
+  let subtitleText = bundle.formatStringFromName(
+    "pageSubtitle", [serverOwner, brandName], 2);
+
+  let subtitleElement = document.getElementById("page-subtitle");
+  subtitleElement.appendChild(document.createTextNode(subtitleText));
+}
 
 /**
  * Initializes load/unload, pref change and mouse-click listeners
@@ -635,6 +671,9 @@ function setupListeners() {
 function onLoad() {
   window.removeEventListener("load", onLoad);
 
+  // Set the text in the page header
+  setupPageHeader();
+
   // Set up event listeners
   setupListeners();
 
@@ -655,30 +694,6 @@ function onLoad() {
     showEmptySectionMessage("histograms-section");
   }
 
-  // Get the Telemetry Ping payload
-  let pingData = Cc['@mozilla.org/supports-string;1'].
-    createInstance(Ci.nsISupportsString);
-  TelemetryPing.observe(pingData, "get-payload", "");
-  let ping = {};
-  try {
-    ping = JSON.parse(pingData.data);
-  } catch (e) {
-  }
-
-  // Show simple measurements
-  if (Object.keys(ping.simpleMeasurements).length) {
-    KeyValueTable.render("simple-measurements-table", ping.simpleMeasurements);
-  } else {
-    showEmptySectionMessage("simple-measurements-section");
-  }
-
-  // Show basic system info gathered
-  if (Object.keys(ping.info).length) {
-    KeyValueTable.render("system-info-table", ping.info);
-  } else {
-    showEmptySectionMessage("system-info-section");
-  }
-
   // Show addon histogram data
   let addonDiv = document.getElementById("addon-histograms");
   let addonHistogramsRendered = false;
@@ -692,6 +707,27 @@ function onLoad() {
 
   if (!addonHistogramsRendered) {
     showEmptySectionMessage("addon-histograms-section");
+  }
+
+  // Get the Telemetry Ping payload
+  Telemetry.asyncFetchTelemetryData(displayPingData);
+}
+
+function displayPingData() {
+  let ping = TelemetryPing.getPayload();
+
+  // Show simple measurements
+  if (Object.keys(ping.simpleMeasurements).length) {
+    KeyValueTable.render("simple-measurements-table", ping.simpleMeasurements);
+  } else {
+    showEmptySectionMessage("simple-measurements-section");
+  }
+
+  // Show basic system info gathered
+  if (Object.keys(ping.info).length) {
+    KeyValueTable.render("system-info-table", ping.info);
+  } else {
+    showEmptySectionMessage("system-info-section");
   }
 }
 

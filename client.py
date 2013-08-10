@@ -128,22 +128,22 @@ elif action in ('update_nspr'):
     if not options.cvsroot:
         options.cvsroot = os.environ.get('CVSROOT', CVSROOT_MOZILLA)
     do_cvs_export(NSPR_DIRS, tag, options.cvsroot, options.cvs)
-    print >>file("nsprpub/TAG-INFO", "wb"), tag
+    print >>file("nsprpub/TAG-INFO", "w"), tag
     toggle_trailing_blank_line("nsprpub/config/prdepend.h")
 elif action in ('update_nss'):
     tag, = args[1:]
     if not options.cvsroot:
         options.cvsroot = os.environ.get('CVSROOT', CVSROOT_MOZILLA)
     do_cvs_export(NSS_DIRS, tag, options.cvsroot, options.cvs)
-    print >>file("security/nss/TAG-INFO", "wb"), tag
-    print >>file("security/nss/TAG-INFO-CKBI", "wb"), tag
+    print >>file("security/nss/TAG-INFO", "w"), tag
+    print >>file("security/nss/TAG-INFO-CKBI", "w"), tag
     toggle_trailing_blank_line("security/coreconf/coreconf.dep")
 elif action in ('update_nssckbi'):
     tag, = args[1:]
     if not options.cvsroot:
         options.cvsroot = os.environ.get('CVSROOT', CVSROOT_MOZILLA)
     do_cvs_export(NSSCKBI_DIRS, tag, options.cvsroot, options.cvs)
-    print >>file("security/nss/TAG-INFO-CKBI", "wb"), tag
+    print >>file("security/nss/TAG-INFO-CKBI", "w"), tag
 elif action in ('update_libffi'):
     tag, = args[1:]
     if not options.cvsroot:

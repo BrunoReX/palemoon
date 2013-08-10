@@ -6,17 +6,29 @@
 <level-list xmlns:android="http://schemas.android.com/apk/res/android">
 
     <item android:maxLevel="1">
+
         <selector>
-            <item android:state_pressed="true" android:drawable="@drawable/highlight"/>
+
+            <item android:state_pressed="true"
+                  android:drawable="@drawable/highlight"/>
+
             <item android:drawable="@drawable/tabs_tray_bg_repeat"/>
+
         </selector>
+
     </item>
 
     <item android:maxLevel="2">
+
         <selector>
-            <item android:state_pressed="true" android:drawable="@drawable/highlight"/>
-            <item android:drawable="@drawable/tabs_tray_bg_repeat"/>
+
+            <item android:state_pressed="true"
+                  android:drawable="@drawable/highlight"/>
+
+            <item android:drawable="@drawable/tabs_tray_dark_bg_repeat"/>
+
         </selector>
+
     </item>
 
 </level-list>

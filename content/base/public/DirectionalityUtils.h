@@ -7,6 +7,8 @@
 #ifndef DirectionalityUtils_h___
 #define DirectionalityUtils_h___
 
+#include "nscore.h"
+
 class nsIContent;
 class nsIDocument;
 class nsINode;
@@ -19,12 +21,10 @@ class Element;
 
 namespace mozilla {
 
-namespace directionality {
-
 enum Directionality {
-  eDir_NotSet = 0,
-  eDir_RTL    = 1,
-  eDir_LTR    = 2
+  eDir_NotSet,
+  eDir_RTL,
+  eDir_LTR
 };
 
 /**
@@ -44,11 +44,9 @@ Directionality RecomputeDirectionality(mozilla::dom::Element* aElement,
  * of setting the dir attribute, rather than walking up the ancestor tree in
  * the much more common case of getting the element's directionality.
  */
-void SetDirectionalityOnDescendants(mozilla::dom::Element* aElement, 
+void SetDirectionalityOnDescendants(mozilla::dom::Element* aElement,
                                     Directionality aDir,
                                     bool aNotify = true);
-
-} // end namespace directionality
 
 } // end namespace mozilla
 

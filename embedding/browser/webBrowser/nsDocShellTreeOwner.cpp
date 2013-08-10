@@ -33,7 +33,6 @@
 #include "nsIDOMElement.h"
 #include "Link.h"
 #include "mozilla/dom/Element.h"
-#include "nsIDOMSVGElement.h"
 #include "nsIDOMSVGTitleElement.h"
 #include "nsIDOMEvent.h"
 #include "nsIDOMMouseEvent.h"
@@ -61,8 +60,8 @@
 #include "imgIContainer.h"
 #include "nsContextMenuInfo.h"
 #include "nsPresContext.h"
-#include "nsIViewManager.h"
-#include "nsIView.h"
+#include "nsViewManager.h"
+#include "nsView.h"
 #include "nsEventListenerManager.h"
 #include "nsIDOMDragEvent.h"
 #include "nsIConstraintValidation.h"
@@ -860,11 +859,9 @@ nsDocShellTreeOwner::AddChromeListeners()
   nsEventListenerManager* elmP = target->GetListenerManager(true);
   if (elmP) {
     elmP->AddEventListenerByType(this, NS_LITERAL_STRING("dragover"),
-                                 NS_EVENT_FLAG_BUBBLE |
-                                 NS_EVENT_FLAG_SYSTEM_EVENT);
+                                 dom::TrustedEventsAtSystemGroupBubble());
     elmP->AddEventListenerByType(this, NS_LITERAL_STRING("drop"),
-                                 NS_EVENT_FLAG_BUBBLE |
-                                 NS_EVENT_FLAG_SYSTEM_EVENT);
+                                 dom::TrustedEventsAtSystemGroupBubble());
   }
 
   return rv;
@@ -893,11 +890,9 @@ nsDocShellTreeOwner::RemoveChromeListeners()
   if (elmP)
   {
     elmP->RemoveEventListenerByType(this, NS_LITERAL_STRING("dragover"),
-                                    NS_EVENT_FLAG_BUBBLE |
-                                    NS_EVENT_FLAG_SYSTEM_EVENT);
+                                    dom::TrustedEventsAtSystemGroupBubble());
     elmP->RemoveEventListenerByType(this, NS_LITERAL_STRING("drop"),
-                                    NS_EVENT_FLAG_BUBBLE |
-                                    NS_EVENT_FLAG_SYSTEM_EVENT);
+                                    dom::TrustedEventsAtSystemGroupBubble());
   }
 
   return NS_OK;
@@ -1019,19 +1014,11 @@ DefaultTooltipTextProvider::DefaultTooltipTextProvider()
 static bool
 UseSVGTitle(nsIDOMElement *currElement)
 {
-  nsCOMPtr<nsIDOMSVGElement> svgContent(do_QueryInterface(currElement));
-  if (!svgContent)
+  nsCOMPtr<dom::Element> element(do_QueryInterface(currElement));
+  if (!element || !element->IsSVG() || !element->GetParentNode())
     return false;
 
-  nsCOMPtr<nsIDOMNode> parent;
-  currElement->GetParentNode(getter_AddRefs(parent));
-  if (!parent)
-    return false;
-
-  uint16_t nodeType;
-  nsresult rv = parent->GetNodeType(&nodeType);
-
-  return NS_SUCCEEDED(rv) && nodeType != nsIDOMNode::DOCUMENT_NODE;
+  return element->GetParentNode()->NodeType() != nsIDOMNode::DOCUMENT_NODE;
 }
 
 /* void getNodeText (in nsIDOMNode aNode, out wstring aText); */
@@ -1442,14 +1429,14 @@ ChromeTooltipListener::sTooltipCallback(nsITimer *aTimer,
       do_GetInterface(static_cast<nsIWebBrowser*>(self->mWebBrowser));
     nsCOMPtr<nsIPresShell> shell;
     if (docShell) {
-      docShell->GetPresShell(getter_AddRefs(shell));
+      shell = docShell->GetPresShell();
     }
 
     nsIWidget* widget = nullptr;
     if (shell) {
-      nsIViewManager* vm = shell->GetViewManager();
+      nsViewManager* vm = shell->GetViewManager();
       if (vm) {
-        nsIView* view = vm->GetRootView();
+        nsView* view = vm->GetRootView();
         if (view) {
           nsPoint offset;
           widget = view->GetNearestWidget(&offset);

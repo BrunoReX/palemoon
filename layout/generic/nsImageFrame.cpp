@@ -5,7 +5,7 @@
 
 /* rendering object for replaced elements with bitmap image data */
 
-#include "mozilla/Util.h"
+#include "mozilla/DebugOnly.h"
 
 #include "nsHTMLParts.h"
 #include "nsCOMPtr.h"
@@ -53,6 +53,7 @@
 
 #include "imgIContainer.h"
 #include "imgLoader.h"
+#include "imgRequestProxy.h"
 
 #include "nsCSSFrameConstructor.h"
 #include "nsIDOMRange.h"
@@ -69,7 +70,6 @@
 #include "ImageContainer.h"
 
 #include "mozilla/Preferences.h"
-#include "mozilla/Util.h" // for DebugOnly
 
 using namespace mozilla;
 
@@ -163,10 +163,10 @@ nsImageFrame::AccessibleType()
 {
   // Don't use GetImageMap() to avoid reentrancy into accessibility.
   if (HasImageMap()) {
-    return a11y::eHTMLImageMapAccessible;
+    return a11y::eHTMLImageMapType;
   }
 
-  return a11y::eImageAccessible;
+  return a11y::eImageType;
 }
 #endif
 
@@ -942,7 +942,7 @@ nsImageFrame::MeasureString(const PRUnichar*     aString,
     uint32_t  len = aLength;
     bool      trailingSpace = false;
     for (int32_t i = 0; i < aLength; i++) {
-      if (XP_IS_SPACE(aString[i]) && (i > 0)) {
+      if (dom::IsSpaceCharacter(aString[i]) && (i > 0)) {
         len = i;  // don't include the space when measuring
         trailingSpace = true;
         break;
@@ -1816,7 +1816,7 @@ nsImageFrame::GetIntrinsicImageSize(nsSize& aSize)
 nsresult
 nsImageFrame::LoadIcon(const nsAString& aSpec,
                        nsPresContext *aPresContext,
-                       imgIRequest** aRequest)
+                       imgRequestProxy** aRequest)
 {
   nsresult rv = NS_OK;
   NS_PRECONDITION(!aSpec.IsEmpty(), "What happened??");

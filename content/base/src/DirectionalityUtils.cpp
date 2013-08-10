@@ -9,14 +9,9 @@
 #include "nsIContent.h"
 #include "nsIDocument.h"
 #include "mozilla/dom/Element.h"
-#include "nsIDOMNodeFilter.h"
-#include "nsTreeWalker.h"
 #include "nsIDOMHTMLDocument.h"
 
-
 namespace mozilla {
-
-namespace directionality {
 
 typedef mozilla::dom::Element Element;
 
@@ -46,7 +41,7 @@ RecomputeDirectionality(Element* aElement, bool aNotify)
         dir = documentDir;
       }
     }
-    
+
     aElement->SetDirectionality(dir, aNotify);
   }
   return dir;
@@ -71,8 +66,6 @@ SetDirectionalityOnDescendants(Element* aElement, Directionality aDir,
     child = child->GetNextNode(aElement);
   }
 }
-
-} // end namespace directionality
 
 } // end namespace mozilla
 

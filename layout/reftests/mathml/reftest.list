@@ -7,7 +7,7 @@ fails == dir-6.html dir-6-ref.html
 == dir-7.html dir-7-ref.html
 fails == dir-8.html dir-8-ref.html
 fails == dir-9.html dir-9-ref.html # Bug 787215
-fails-if(smallScreen&&Android) fuzzy(255,200) == mirror-op-1.html mirror-op-1-ref.html
+skip-if(B2G) fails-if(smallScreen&&Android) fuzzy(255,200) == mirror-op-1.html mirror-op-1-ref.html
 != mirror-op-2.html mirror-op-2-ref.html
 != mirror-op-3.html mirror-op-3-ref.html
 != mirror-op-4.html mirror-op-4-ref.html
@@ -34,9 +34,10 @@ fails-if(winWidget) == mfenced-10.html mfenced-10-ref.html
 == mi-mathvariant-2.xhtml mi-mathvariant-2-ref.xhtml
 != non-spacing-accent-1.xhtml non-spacing-accent-1-ref.xhtml
 == overbar-width-1.xhtml overbar-width-1-ref.xhtml
-== quotes-1.xhtml quotes-1-ref.xhtml
+skip-if(B2G) == quotes-1.xhtml quotes-1-ref.xhtml
 != stretchy-underbar-1.xhtml stretchy-underbar-1-ref.xhtml 
 == table-width-1.xhtml table-width-1-ref.xhtml
+== table-width-2.html table-width-2-ref.html
 == underbar-width-1.xhtml underbar-width-1-ref.xhtml
 == mathml-type-supported.xhtml mathml-type-supported-ref.xml
 == mtable-align-negative-rownumber.html mtable-align-negative-rownumber-ref.html
@@ -93,6 +94,8 @@ fails == mstyle-5.xhtml mstyle-5-ref.xhtml # Bug 787215
 == munder-mover-align-accent-true.html munder-mover-align-accent-true-ref.html
 == munder-mover-align-accent-false.html munder-mover-align-accent-false-ref.html
 == mfrac-linethickness-1.xhtml mfrac-linethickness-1-ref.xhtml
+== mfrac-linethickness-2.xhtml mfrac-linethickness-2-ref.xhtml
+== mfrac-linethickness-3.xhtml mfrac-linethickness-3-ref.xhtml
 == mathml-negativespace.html mathml-negativespace-ref.html
 != link-1.xhtml link-ref.xhtml
 == munderover-empty-scripts.html munderover-empty-scripts-ref.html
@@ -101,12 +104,15 @@ fails == mstyle-5.xhtml mstyle-5-ref.xhtml # Bug 787215
 == mtable-width.html mtable-width-ref.html
 == maction-selection.html maction-selection-ref.html
 == maction-dynamic-embellished-op.html maction-dynamic-embellished-op-ref.html
-== maction-dynamic-1.html maction-dynamic-1-ref.html
+skip-if(B2G) == maction-dynamic-1.html maction-dynamic-1-ref.html # bug 773482
 == maction-dynamic-2.html maction-dynamic-2-ref.html
 == mo-lspace-rspace.html mo-lspace-rspace-ref.html
-== maction-dynamic-3.html maction-dynamic-3-ref.html
+skip-if(B2G) == maction-dynamic-3.html maction-dynamic-3-ref.html # bug 773482
 == whitespace-trim-1.html whitespace-trim-1-ref.html
 == whitespace-trim-2.html whitespace-trim-2-ref.html
 == whitespace-trim-3.html whitespace-trim-3-ref.html
 fails == whitespace-trim-4.html whitespace-trim-4-ref.html # Bug 787215
 == whitespace-trim-5.html whitespace-trim-5-ref.html
+== operator-1.xhtml operator-1-ref.xhtml
+== scriptshift-1.xhtml scriptshift-1-ref.xhtml
+== number-size-1.xhtml number-size-1-ref.xhtml

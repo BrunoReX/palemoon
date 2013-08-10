@@ -12,7 +12,7 @@
 namespace mozilla {
 namespace image {
 
-Decoder::Decoder(RasterImage &aImage, imgIDecoderObserver* aObserver)
+Decoder::Decoder(RasterImage &aImage, imgDecoderObserver* aObserver)
   : mImage(aImage)
   , mObserver(aObserver)
   , mDecodeFlags(0)
@@ -42,7 +42,7 @@ Decoder::Init()
   // No re-initializing
   NS_ABORT_IF_FALSE(!mInitialized, "Can't re-initialize a decoder!");
 
-  // Fire OnStartDecode at init time to support bug 512435
+  // Fire OnStartDecode at init time to support bug 512435.
   if (!IsSizeDecode() && mObserver)
       mObserver->OnStartDecode();
 

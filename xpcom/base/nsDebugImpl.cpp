@@ -195,7 +195,6 @@ static void InitLog(void)
 {
   if (0 == gDebugLog) {
     gDebugLog = PR_NewLogModule("nsDebug");
-    gDebugLog->level = PR_LOG_DEBUG;
   }
 }
 
@@ -593,12 +592,3 @@ NS_ErrorAccordingToNSPR()
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifdef XP_WIN
-bool sXPCOMHasLoadedNewDLLs = false;
-
-NS_EXPORT void
-NS_SetHasLoadedNewDLLs()
-{
-  sXPCOMHasLoadedNewDLLs = true;
-}
-#endif

@@ -30,13 +30,12 @@ import @ANDROID_PACKAGE_NAME@.*;
 
 public class testAllPagesTab extends BaseTest {
     private static final String ABOUT_HOME_URL = "about:home";
-    private static final int WAIT_FOR_CHILD_TIMEOUT = 2000;
     private static ListView listview = null;
 
     private String[] bookmarks = new String[] {
         "about:firefox",
         "about:home",
-        "http://support.mozilla.org/en-US/products/mobile",	
+        "http://support.mozilla.org/en-US/products/mobile",
         "https://addons.mozilla.org/en-US/android/"
     };
 
@@ -59,7 +58,7 @@ public class testAllPagesTab extends BaseTest {
 
     private void testList(String url) {
         final ListView list = getAllPagesList(url);
-        mSolo.waitForText(url);
+        mSolo.waitForText(bookmarks[0]);
 
         // some basic checks for the tab strip
         TabWidget tabwidget = (TabWidget)mSolo.getView(TabWidget.class, 0);
@@ -71,7 +70,7 @@ public class testAllPagesTab extends BaseTest {
         // This test fails, only when we're running tests
         // mAsserter.is(host.getCurrentTab(), 0, "All pages tab is selected in tab strip");
 
-        mAsserter.ok(list != null, "checking that all pages list exists", list.toString());
+        mAsserter.isnot(list, null, "checking that all pages list exists");
         mAsserter.is(list.getChildCount(), 5, "all pages list has 5 children (the default bookmarks)");
 
         final int count = list.getChildCount();
@@ -116,7 +115,7 @@ public class testAllPagesTab extends BaseTest {
 
     private void testContextMenu(String url) {
         ListView list = getAllPagesList(url);
-        mSolo.waitForText(url);
+        mSolo.waitForText(bookmarks[0]);
 
         View child = list.getChildAt(0);
         mSolo.clickLongOnView(child);
@@ -133,7 +132,7 @@ public class testAllPagesTab extends BaseTest {
 
     private void testClick(String url) {
         ListView list = getAllPagesList(url);
-        mSolo.waitForText(url);
+        mSolo.waitForText(bookmarks[0]);
 
         Actions.EventExpecter contentEventExpecter = mActions.expectGeckoEvent("DOMContentLoaded");
         View child = list.getChildAt(0);
@@ -144,7 +143,7 @@ public class testAllPagesTab extends BaseTest {
 
     private ListView getAllPagesList(String url) {
         Activity awesomeBarActivity = clickOnAwesomeBar();
-        mSolo.waitForText(url);
+        mSolo.waitForText(bookmarks[0]);
 
         final ArrayList<ListView> views = mSolo.getCurrentListViews();
 
@@ -152,14 +151,14 @@ public class testAllPagesTab extends BaseTest {
         boolean success = waitForTest(new BooleanTest() {
             public boolean test() {
                for (ListView view : views) {
-                   if (view.getTag() == "allPages") {
+                   if (view.getTag().equals("allPages")) {
                        listview = view;
                        return true;
                    }
                }
                return false;
             }
-        }, WAIT_FOR_CHILD_TIMEOUT);
+        }, MAX_WAIT_MS);
         return listview;
     }
 

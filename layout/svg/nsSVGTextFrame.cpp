@@ -12,11 +12,11 @@
 #include "nsIDOMSVGTextElement.h"
 #include "nsISVGGlyphFragmentNode.h"
 #include "nsSVGGlyphFrame.h"
-#include "nsSVGGraphicElement.h"
 #include "nsSVGIntegrationUtils.h"
 #include "nsSVGPathElement.h"
 #include "nsSVGTextPathFrame.h"
 #include "nsSVGUtils.h"
+#include "SVGGraphicsElement.h"
 #include "SVGLengthList.h"
 
 using namespace mozilla;
@@ -114,7 +114,7 @@ nsSVGTextFrame::GetSubStringLength(uint32_t charnum, uint32_t nchars)
 }
 
 int32_t
-nsSVGTextFrame::GetCharNumAtPosition(nsIDOMSVGPoint *point)
+nsSVGTextFrame::GetCharNumAtPosition(nsISVGPoint *point)
 {
   UpdateGlyphPositioning(false);
 
@@ -122,7 +122,7 @@ nsSVGTextFrame::GetCharNumAtPosition(nsIDOMSVGPoint *point)
 }
 
 NS_IMETHODIMP
-nsSVGTextFrame::GetStartPositionOfChar(uint32_t charnum, nsIDOMSVGPoint **_retval)
+nsSVGTextFrame::GetStartPositionOfChar(uint32_t charnum, nsISupports **_retval)
 {
   UpdateGlyphPositioning(false);
 
@@ -130,7 +130,7 @@ nsSVGTextFrame::GetStartPositionOfChar(uint32_t charnum, nsIDOMSVGPoint **_retva
 }
 
 NS_IMETHODIMP
-nsSVGTextFrame::GetEndPositionOfChar(uint32_t charnum, nsIDOMSVGPoint **_retval)
+nsSVGTextFrame::GetEndPositionOfChar(uint32_t charnum, nsISupports **_retval)
 {
   UpdateGlyphPositioning(false);
 
@@ -280,7 +280,7 @@ nsSVGTextFrame::GetCanvasTM(uint32_t aFor)
     NS_ASSERTION(mParent, "null parent");
 
     nsSVGContainerFrame *parent = static_cast<nsSVGContainerFrame*>(mParent);
-    nsSVGGraphicElement *content = static_cast<nsSVGGraphicElement*>(mContent);
+    dom::SVGGraphicsElement *content = static_cast<dom::SVGGraphicsElement*>(mContent);
 
     gfxMatrix tm =
       content->PrependLocalTransformsTo(parent->GetCanvasTM(aFor));

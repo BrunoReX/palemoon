@@ -24,32 +24,25 @@ class B2GXPCShellRemote(XPCShellRemote):
         if self.options.clean:
             # Ensure a fresh directory structure for our tests
             self.clean()
-            self.device.mkDir(DEVICE_TEST_ROOT)
+            self.device.mkDir(self.options.remoteTestRoot)
 
         XPCShellRemote.setupUtilities(self)
 
     def clean(self):
         print >>sys.stderr, "\nCleaning files from previous run.."
-        self.device.removeDir(DEVICE_TEST_ROOT)
+        self.device.removeDir(self.options.remoteTestRoot)
 
     # Overriden
     def setupTestDir(self):
         if self.device._useZip:
             return XPCShellRemote.setupTestDir(self)
 
-        push_attempts = 10
         for root, dirs, files in os.walk(self.xpcDir):
             for filename in files:
                 rel_path = os.path.relpath(os.path.join(root, filename), self.xpcDir)
                 test_file = os.path.join(self.remoteScriptsDir, rel_path)
-                for retry in range(1, push_attempts+1):
-                    print 'pushing', test_file, '(attempt %s of %s)' % (retry, push_attempts)
-                    try:
-                        self.device.pushFile(os.path.join(root, filename), test_file)
-                        break
-                    except DMError:
-                        if retry == push_attempts:
-                            raise
+                print 'pushing %s' % test_file
+                self.device.pushFile(os.path.join(root, filename), test_file, retryLimit=10)
 
     # Overridden
     def pushLibs(self):
@@ -139,6 +132,7 @@ class B2GOptions(RemoteXPCShellOptions):
                         help="Path to busybox binary to install on device")
         defaults['busybox'] = None
 
+        defaults["remoteTestRoot"] = DEVICE_TEST_ROOT
         defaults['dm_trans'] = 'adb'
         defaults['debugger'] = None
         defaults['debuggerArgs'] = None
@@ -189,10 +183,11 @@ def main():
     if options.deviceIP:
         kwargs['host'] = options.deviceIP
         kwargs['port'] = options.devicePort
-    kwargs['deviceRoot'] = DEVICE_TEST_ROOT
+    kwargs['deviceRoot'] = options.remoteTestRoot
     dm = devicemanagerADB.DeviceManagerADB(**kwargs)
 
-    options.remoteTestRoot = dm.getDeviceRoot()
+    if not options.remoteTestRoot:
+        options.remoteTestRoot = dm.getDeviceRoot()
     xpcsh = B2GXPCShellRemote(dm, options, args)
 
     try:

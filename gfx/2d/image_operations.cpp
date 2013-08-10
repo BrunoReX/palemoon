@@ -1,6 +1,30 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Copyright (c) 2006-2012 The Chromium Authors. All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions
+// are met:
+//  * Redistributions of source code must retain the above copyright
+//    notice, this list of conditions and the following disclaimer.
+//  * Redistributions in binary form must reproduce the above copyright
+//    notice, this list of conditions and the following disclaimer in
+//    the documentation and/or other materials provided with the
+//    distribution.
+//  * Neither the name of Google, Inc. nor the names of its contributors
+//    may be used to endorse or promote products derived from this
+//    software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+// FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+// COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+// INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+// BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
+// OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+// AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
+// OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+// SUCH DAMAGE.
 
 #include "base/basictypes.h"
 
@@ -246,11 +270,7 @@ void ResizeFilter::ComputeFilters(int src_size,
     // downscale should "cover" the pixels around the pixel with *its center*
     // at coordinates (2.5, 2.5) in the source, not those around (0, 0).
     // Hence we need to scale coordinates (0.5, 0.5), not (0, 0).
-    // TODO(evannier): this code is therefore incorrect and should read:
-    // float src_pixel = (static_cast<float>(dest_subset_i) + 0.5f) * inv_scale;
-    // I leave it incorrect, because changing it would require modifying
-    // the results for the webkit test, which I will do in a subsequent checkin.
-    float src_pixel = dest_subset_i * inv_scale;
+    float src_pixel = (static_cast<float>(dest_subset_i) + 0.5f) * inv_scale;
 
     // Compute the (inclusive) range of source pixels the filter covers.
     int src_begin = NS_MAX(0, FloorInt(src_pixel - src_support));
@@ -267,11 +287,8 @@ void ResizeFilter::ComputeFilters(int src_size,
       // example used above the distance from the center of the filter to
       // the pixel with coordinates (2, 2) should be 0, because its center
       // is at (2.5, 2.5).
-      // TODO(evannier): as above (in regards to the 0.5 pixel error),
-      // this code is incorrect, but is left it for the same reasons.
-      // float src_filter_dist =
-      //     ((static_cast<float>(cur_filter_pixel) + 0.5f) - src_pixel);
-      float src_filter_dist = cur_filter_pixel - src_pixel;
+      float src_filter_dist =
+           ((static_cast<float>(cur_filter_pixel) + 0.5f) - src_pixel);
 
       // Since the filter really exists in dest space, map it there.
       float dest_filter_dist = src_filter_dist * clamped_scale;

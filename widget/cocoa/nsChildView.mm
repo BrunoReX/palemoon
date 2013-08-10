@@ -23,7 +23,7 @@
 
 #include "nsFontMetrics.h"
 #include "nsIRollupListener.h"
-#include "nsIViewManager.h"
+#include "nsViewManager.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIFile.h"
 #include "nsILocalFileMac.h"
@@ -51,10 +51,11 @@
 #include "nsRegion.h"
 #include "Layers.h"
 #include "LayerManagerOGL.h"
-#include "GLContext.h"
+#include "GLTextureImage.h"
 #include "mozilla/layers/CompositorCocoaWidgetHelper.h"
 #ifdef ACCESSIBILITY
 #include "nsAccessibilityService.h"
+#include "mozilla/a11y/Platform.h"
 #endif
 
 #include "mozilla/Preferences.h"
@@ -741,6 +742,18 @@ NS_IMETHODIMP nsChildView::GetBounds(nsIntRect &aRect)
   return NS_OK;
 }
 
+NS_IMETHODIMP nsChildView::GetClientBounds(nsIntRect &aRect)
+{
+  GetBounds(aRect);
+  if (!mParentWidget) {
+    // For top level widgets we want the position on screen, not the position
+    // of this view inside the window.
+    MOZ_ASSERT(mWindowType != eWindowType_plugin, "plugin widgets should have parents");
+    aRect.MoveTo(WidgetToScreenOffset());
+  }
+  return NS_OK;
+}
+
 double
 nsChildView::GetDefaultScaleInternal()
 {
@@ -795,15 +808,18 @@ NS_IMETHODIMP nsChildView::ConstrainPosition(bool aAllowSlop,
 }
 
 // Move this component, aX and aY are in the parent widget coordinate system
-NS_IMETHODIMP nsChildView::Move(int32_t aX, int32_t aY)
+NS_IMETHODIMP nsChildView::Move(double aX, double aY)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  if (!mView || (mBounds.x == aX && mBounds.y == aY))
+  int32_t x = NSToIntRound(aX);
+  int32_t y = NSToIntRound(aY);
+
+  if (!mView || (mBounds.x == x && mBounds.y == y))
     return NS_OK;
 
-  mBounds.x = aX;
-  mBounds.y = aY;
+  mBounds.x = x;
+  mBounds.y = y;
 
   [mView setFrame:DevPixelsToCocoaPoints(mBounds)];
 
@@ -818,15 +834,18 @@ NS_IMETHODIMP nsChildView::Move(int32_t aX, int32_t aY)
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-NS_IMETHODIMP nsChildView::Resize(int32_t aWidth, int32_t aHeight, bool aRepaint)
+NS_IMETHODIMP nsChildView::Resize(double aWidth, double aHeight, bool aRepaint)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  if (!mView || (mBounds.width == aWidth && mBounds.height == aHeight))
+  int32_t width = NSToIntRound(aWidth);
+  int32_t height = NSToIntRound(aHeight);
+
+  if (!mView || (mBounds.width == width && mBounds.height == height))
     return NS_OK;
 
-  mBounds.width  = aWidth;
-  mBounds.height = aHeight;
+  mBounds.width  = width;
+  mBounds.height = height;
 
   [mView setFrame:DevPixelsToCocoaPoints(mBounds)];
 
@@ -841,22 +860,28 @@ NS_IMETHODIMP nsChildView::Resize(int32_t aWidth, int32_t aHeight, bool aRepaint
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-NS_IMETHODIMP nsChildView::Resize(int32_t aX, int32_t aY, int32_t aWidth, int32_t aHeight, bool aRepaint)
+NS_IMETHODIMP nsChildView::Resize(double aX, double aY,
+                                  double aWidth, double aHeight, bool aRepaint)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  BOOL isMoving = (mBounds.x != aX || mBounds.y != aY);
-  BOOL isResizing = (mBounds.width != aWidth || mBounds.height != aHeight);
+  int32_t x = NSToIntRound(aX);
+  int32_t y = NSToIntRound(aY);
+  int32_t width = NSToIntRound(aWidth);
+  int32_t height = NSToIntRound(aHeight);
+
+  BOOL isMoving = (mBounds.x != x || mBounds.y != y);
+  BOOL isResizing = (mBounds.width != width || mBounds.height != height);
   if (!mView || (!isMoving && !isResizing))
     return NS_OK;
 
   if (isMoving) {
-    mBounds.x = aX;
-    mBounds.y = aY;
+    mBounds.x = x;
+    mBounds.y = y;
   }
   if (isResizing) {
-    mBounds.width  = aWidth;
-    mBounds.height = aHeight;
+    mBounds.width  = width;
+    mBounds.height = height;
   }
 
   [mView setFrame:DevPixelsToCocoaPoints(mBounds)];
@@ -1122,13 +1147,16 @@ nsresult nsChildView::SynthesizeNativeMouseEvent(nsIntPoint aPoint,
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
+  NSPoint pt =
+    nsCocoaUtils::DevPixelsToCocoaPoints(aPoint, BackingScaleFactor());
+
   // Move the mouse cursor to the requested position and reconnect it to the mouse.
-  CGWarpMouseCursorPosition(CGPointMake(aPoint.x, aPoint.y));
+  CGWarpMouseCursorPosition(NSPointToCGPoint(pt));
   CGAssociateMouseAndMouseCursorPosition(true);
 
   // aPoint is given with the origin on the top left, but convertScreenToBase
   // expects a point in a coordinate system that has its origin on the bottom left.
-  NSPoint screenPoint = NSMakePoint(aPoint.x, [[NSScreen mainScreen] frame].size.height - aPoint.y);
+  NSPoint screenPoint = NSMakePoint(pt.x, nsCocoaUtils::FlippedScreenY(pt.y));
   NSPoint windowPoint = [[mView window] convertScreenToBase:screenPoint];
 
   NSEvent* event = [NSEvent mouseEventWithType:aNativeMessage
@@ -1420,21 +1448,36 @@ bool nsChildView::DispatchWindowEvent(nsGUIEvent &event)
   return ConvertStatus(status);
 }
 
-bool nsChildView::PaintWindow(nsIntRegion aRegion, bool aIsAlternate)
+nsIWidget*
+nsChildView::GetWidgetForListenerEvents()
 {
-  nsIWidget* widget = this;
-  nsIWidgetListener* listener = mWidgetListener;
-
   // If there is no listener, use the parent popup's listener if that exists.
-  if (!listener && mParentWidget) {
+  if (!mWidgetListener && mParentWidget) {
     nsWindowType type;
     mParentWidget->GetWindowType(type);
     if (type == eWindowType_popup) {
-      widget = mParentWidget;
-      listener = mParentWidget->GetWidgetListener();
+      return mParentWidget;
     }
   }
 
+  return this;
+}
+
+void nsChildView::WillPaintWindow()
+{
+  nsCOMPtr<nsIWidget> widget = GetWidgetForListenerEvents();
+
+  nsIWidgetListener* listener = widget->GetWidgetListener();
+  if (listener) {
+    listener->WillPaintWindow(widget, false);
+  }
+}
+
+bool nsChildView::PaintWindow(nsIntRegion aRegion, bool aIsAlternate)
+{
+  nsCOMPtr<nsIWidget> widget = GetWidgetForListenerEvents();
+
+  nsIWidgetListener* listener = widget->GetWidgetListener();
   if (!listener)
     return false;
 
@@ -1698,8 +1741,7 @@ nsChildView::CreateCompositor()
     LayerManagerOGL *manager =
       static_cast<LayerManagerOGL*>(compositor::GetLayerManager(mCompositorParent));
 
-    NSOpenGLContext *glContext =
-      (NSOpenGLContext *) manager->gl()->GetNativeData(GLContext::NativeGLContext);
+    NSOpenGLContext *glContext = (NSOpenGLContext *)manager->GetNSOpenGLContext();
 
     [(ChildView *)mView setGLContext:glContext];
     [(ChildView *)mView setUsingOMTCompositor:true];
@@ -1762,10 +1804,11 @@ nsChildView::DrawWindowOverlay(LayerManager* aManager, nsIntRect aRect)
   }
 
   if (!mResizerImage) {
-    mResizerImage = manager->gl()->CreateTextureImage(nsIntSize(15, 15),
-                                                      gfxASurface::CONTENT_COLOR_ALPHA,
-                                                      LOCAL_GL_CLAMP_TO_EDGE,
-                                                      TextureImage::UseNearestFilter);
+    mResizerImage = TextureImage::Create(manager->gl(),
+                                         nsIntSize(15, 15),
+                                         gfxASurface::CONTENT_COLOR_ALPHA,
+                                         LOCAL_GL_CLAMP_TO_EDGE,
+                                         TextureImage::UseNearestFilter);
 
     // Creation of texture images can fail.
     if (!mResizerImage)
@@ -2463,7 +2506,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
     LayerManagerOGL *manager = static_cast<LayerManagerOGL*>(layerManager);
     manager->SetClippingRegion(region);
-    glContext = (NSOpenGLContext *)manager->gl()->GetNativeData(mozilla::gl::GLContext::NativeGLContext);
+    glContext = (NSOpenGLContext *)manager->GetNSOpenGLContext();
 
     if (!mGLContext) {
       [self setGLContext:glContext];
@@ -2601,10 +2644,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
                  afterDelay:0];
     }
 
-    nsIWidgetListener* listener = mGeckoChild->GetWidgetListener();
-    if (listener) {
-      listener->WillPaintWindow(mGeckoChild, false);
-    }
+    mGeckoChild->WillPaintWindow();
   }
   [super viewWillDraw];
 }

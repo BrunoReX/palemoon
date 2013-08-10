@@ -7,6 +7,9 @@
 <selector xmlns:android="http://schemas.android.com/apk/res/android"
           xmlns:gecko="http://schemas.android.com/apk/res/@ANDROID_PACKAGE_NAME@">
 
+    <!-- private browsing mode -->
+    <item gecko:state_private="true" android:color="#FFDDDDDD" />
+
     <!-- dark theme -->
     <item gecko:state_dark="true" android:color="#FFDDDDDD"/>
 

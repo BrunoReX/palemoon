@@ -193,6 +193,7 @@ destroying the MediaDecoder object.
 #include "MediaStreamGraph.h"
 #include "MediaDecoderOwner.h"
 #include "AudioChannelCommon.h"
+#include "AbstractMediaDecoder.h"
 
 class nsIStreamListener;
 class nsTimeRanges;
@@ -227,7 +228,14 @@ static inline bool IsCurrentThread(nsIThread* aThread) {
   return NS_GetCurrentThread() == aThread;
 }
 
-class MediaDecoder : public nsIObserver
+// GetCurrentTime is defined in winbase.h as zero argument macro forwarding to
+// GetTickCount() and conflicts with MediaDecoder::GetCurrentTime implementation.
+#ifdef GetCurrentTime
+#undef GetCurrentTime
+#endif
+
+class MediaDecoder : public nsIObserver,
+                     public AbstractMediaDecoder
 {
 public:
   typedef mozilla::layers::Image Image;
@@ -288,7 +296,10 @@ public:
 
   // Get the current MediaResource being used. Its URI will be returned
   // by currentSrc. Returns what was passed to Load(), if Load() has been called.
-  virtual MediaResource* GetResource() { return mResource; }
+  MediaResource* GetResource() const MOZ_FINAL MOZ_OVERRIDE
+  {
+    return mResource;
+  }
 
   // Return the principal of the current URI being played or downloaded.
   virtual already_AddRefed<nsIPrincipal> GetCurrentPrincipal();
@@ -327,6 +338,9 @@ public:
   // Sets whether audio is being captured. If it is, we won't play any
   // of our audio.
   virtual void SetAudioCaptured(bool aCaptured);
+
+  void SetPlaybackRate(double aPlaybackRate);
+  void SetPreservesPitch(bool aPreservesPitch);
 
   // All MediaStream-related data is protected by mReentrantMonitor.
   // We have at most one DecodedStreamData per MediaDecoder. Its stream
@@ -435,6 +449,9 @@ public:
   // Return the duration of the video in seconds.
   virtual double GetDuration();
 
+  // Return the duration of the video in seconds.
+  int64_t GetMediaDuration() MOZ_FINAL MOZ_OVERRIDE;
+
   // A media stream is assumed to be infinite if the metadata doesn't
   // contain the duration, and range requests are not supported, and
   // no headers give a hint of a possible duration (Content-Length,
@@ -473,7 +490,9 @@ public:
 
   // Called by the decode thread to keep track of the number of bytes read
   // from the resource.
-  void NotifyBytesConsumed(int64_t aBytes);
+  void NotifyBytesConsumed(int64_t aBytes) MOZ_FINAL MOZ_OVERRIDE;
+
+  int64_t GetEndMediaTime() const MOZ_FINAL MOZ_OVERRIDE;
 
   // Return true if we are currently seeking in the media resource.
   // Call on the main thread only.
@@ -488,18 +507,27 @@ public:
   // from a content header. Must be called from the main thread only.
   virtual void SetDuration(double aDuration);
 
-  // Set a flag indicating whether seeking is supported
-  virtual void SetSeekable(bool aSeekable);
+  void SetMediaDuration(int64_t aDuration) MOZ_FINAL MOZ_OVERRIDE;
 
-  // Return true if seeking is supported.
-  virtual bool IsSeekable();
+  // Set a flag indicating whether seeking is supported
+  virtual void SetMediaSeekable(bool aMediaSeekable) MOZ_OVERRIDE;
+  virtual void SetTransportSeekable(bool aTransportSeekable) MOZ_FINAL MOZ_OVERRIDE;
+  // Returns true if this media supports seeking. False for example for WebM
+  // files without an index and chained ogg files.
+  virtual bool IsMediaSeekable() MOZ_FINAL MOZ_OVERRIDE;
+  // Returns true if seeking is supported on a transport level (e.g. the server
+  // supports range requests, we are playing a file, etc.).
+  virtual bool IsTransportSeekable();
 
   // Return the time ranges that can be seeked into.
   virtual nsresult GetSeekable(nsTimeRanges* aSeekable);
 
   // Set the end time of the media resource. When playback reaches
   // this point the media pauses. aTime is in seconds.
-  virtual void SetEndTime(double aTime);
+  virtual void SetFragmentEndTime(double aTime);
+
+  // Set the end time of the media. aTime is in microseconds.
+  void SetMediaEndTime(int64_t aTime) MOZ_FINAL MOZ_OVERRIDE;
 
   // Invalidate the frame.
   void Invalidate();
@@ -539,13 +567,16 @@ public:
   // has changed.
   void DurationChanged();
 
-  virtual bool OnStateMachineThread() const;
+  bool OnStateMachineThread() const MOZ_OVERRIDE;
 
-  virtual bool OnDecodeThread() const;
+  bool OnDecodeThread() const MOZ_OVERRIDE;
 
   // Returns the monitor for other threads to synchronise access to
   // state.
-  virtual ReentrantMonitor& GetReentrantMonitor();
+  ReentrantMonitor& GetReentrantMonitor() MOZ_OVERRIDE;
+
+  // Returns true if the decoder is shut down
+  bool IsShutdown() const MOZ_FINAL MOZ_OVERRIDE;
 
   // Constructs the time ranges representing what segments of the media
   // are buffered and playable.
@@ -556,8 +587,11 @@ public:
   virtual int64_t VideoQueueMemoryInUse();
   virtual int64_t AudioQueueMemoryInUse();
 
-  VideoFrameContainer* GetVideoFrameContainer() { return mVideoFrameContainer; }
-  virtual mozilla::layers::ImageContainer* GetImageContainer();
+  VideoFrameContainer* GetVideoFrameContainer() MOZ_FINAL MOZ_OVERRIDE
+  {
+    return mVideoFrameContainer;
+  }
+  mozilla::layers::ImageContainer* GetImageContainer() MOZ_OVERRIDE;
 
   // Sets the length of the framebuffer used in MozAudioAvailable events.
   // The new size must be between 512 and 16384.
@@ -590,10 +624,24 @@ public:
 
   // Something has changed that could affect the computed playback rate,
   // so recompute it. The monitor must be held.
-  void UpdatePlaybackRate();
+  virtual void UpdatePlaybackRate();
+
+  // Used to estimate rates of data passing through the decoder's channel.
+  // Records activity stopping on the channel. The monitor must be held.
+  virtual void NotifyPlaybackStarted() {
+    GetReentrantMonitor().AssertCurrentThreadIn();
+    mPlaybackStatistics.Start();
+  }
+
+  // Used to estimate rates of data passing through the decoder's channel.
+  // Records activity stopping on the channel. The monitor must be held.
+  virtual void NotifyPlaybackStopped() {
+    GetReentrantMonitor().AssertCurrentThreadIn();
+    mPlaybackStatistics.Stop();
+  }
 
   // The actual playback rate computation. The monitor must be held.
-  double ComputePlaybackRate(bool* aReliable);
+  virtual double ComputePlaybackRate(bool* aReliable);
 
   // Returns true if we can play the entire media through without stopping
   // to buffer, given the current download and playback rates.
@@ -603,10 +651,19 @@ public:
   // the reader on the decoder thread (Assertions for this checked by
   // mDecoderStateMachine). This must be called with the decode monitor
   // held.
-  void UpdatePlaybackPosition(int64_t aTime);
+  void UpdatePlaybackPosition(int64_t aTime) MOZ_FINAL MOZ_OVERRIDE;
 
   void SetAudioChannelType(AudioChannelType aType) { mAudioChannelType = aType; }
   AudioChannelType GetAudioChannelType() { return mAudioChannelType; }
+
+  // Send a new set of metadata to the state machine, to be dispatched to the
+  // main thread to be presented when the |currentTime| of the media is greater
+  // or equal to aPublishTime.
+  void QueueMetadata(int64_t aPublishTime,
+                     int aChannels,
+                     int aRate,
+                     bool aHasAudio,
+                     MetadataTags* aTags);
 
   /******
    * The following methods must only be called on the main
@@ -618,16 +675,13 @@ public:
   // change. Call on the main thread only.
   void ChangeState(PlayState aState);
 
-  // Called when the metadata from the media file has been read by the reader.
-  // Call on the decode thread only.
-  virtual void OnReadMetadataCompleted() { }
+  // May be called by the reader to notify this decoder that the metadata from
+  // the media file has been read. Call on the decode thread only.
+  void OnReadMetadataCompleted() MOZ_OVERRIDE { }
 
   // Called when the metadata from the media file has been loaded by the
   // state machine. Call on the main thread only.
-  void MetadataLoaded(uint32_t aChannels,
-                      uint32_t aRate,
-                      bool aHasAudio,
-                      const MetadataTags* aTags);
+  void MetadataLoaded(int aChannels, int aRate, bool aHasAudio, MetadataTags* aTags);
 
   // Called when the first frame has been loaded.
   // Call on the main thread only.
@@ -673,7 +727,7 @@ public:
   void UpdatePlaybackOffset(int64_t aOffset);
 
   // Provide access to the state machine object
-  MediaDecoderStateMachine* GetStateMachine();
+  MediaDecoderStateMachine* GetStateMachine() const;
 
   // Drop reference to state machine.  Only called during shutdown dance.
   virtual void ReleaseStateMachine();
@@ -719,6 +773,10 @@ public:
   static bool IsDASHEnabled();
 #endif
 
+#ifdef MOZ_WMF
+  static bool IsWMFEnabled();
+#endif
+
   // Schedules the state machine to run one cycle on the shared state
   // machine thread. Main thread only.
   nsresult ScheduleStateMachineThread();
@@ -753,7 +811,7 @@ public:
   // This can be called from any thread. It's only a snapshot of the
   // current state, since other threads might be changing the state
   // at any time.
-  Statistics GetStatistics();
+  virtual Statistics GetStatistics();
 
   // Frame decoding/painting related performance counters.
   // Threadsafe.
@@ -823,24 +881,15 @@ public:
     uint32_t mPresentedFrames;
   };
 
-  // Stack based class to assist in notifying the frame statistics of
-  // parsed and decoded frames. Use inside video demux & decode functions
-  // to ensure all parsed and decoded frames are reported on all return paths.
-  class AutoNotifyDecoded {
-  public:
-    AutoNotifyDecoded(MediaDecoder* aDecoder, uint32_t& aParsed, uint32_t& aDecoded)
-      : mDecoder(aDecoder), mParsed(aParsed), mDecoded(aDecoded) {}
-    ~AutoNotifyDecoded() {
-      mDecoder->GetFrameStatistics().NotifyDecodedFrames(mParsed, mDecoded);
-    }
-  private:
-    MediaDecoder* mDecoder;
-    uint32_t& mParsed;
-    uint32_t& mDecoded;
-  };
-
   // Return the frame decode/paint related statistics.
   FrameStatistics& GetFrameStatistics() { return mFrameStats; }
+
+  // Increments the parsed and decoded frame counters by the passed in counts.
+  // Can be called on any thread.
+  virtual void NotifyDecodedFrames(uint32_t aParsed, uint32_t aDecoded) MOZ_OVERRIDE
+  {
+    GetFrameStatistics().NotifyDecodedFrames(aParsed, aDecoded);
+  }
 
   /******
    * The following members should be accessed with the decoder lock held.
@@ -856,10 +905,6 @@ public:
   // during decoder seek operations, but it's updated at the end when we
   // start playing back again.
   int64_t mPlaybackPosition;
-  // Data needed to estimate playback data rate. The timeline used for
-  // this estimate is "decode time" (where the "current time" is the
-  // time of the last decoded video frame).
-  MediaChannelStatistics mPlaybackStatistics;
 
   // The current playback position of the media resource in units of
   // seconds. This is updated approximately at the framerate of the
@@ -886,9 +931,12 @@ public:
   // True when playback should start with audio captured (not playing).
   bool mInitialAudioCaptured;
 
-  // True if the media resource is seekable (server supports byte range
-  // requests).
-  bool mSeekable;
+  // True if the resource is seekable at a transport level (server supports byte
+  // range requests, local file, etc.).
+  bool mTransportSeekable;
+
+  // True if the media is seekable (i.e. supports random access).
+  bool mMediaSeekable;
 
   /******
    * The following member variables can be accessed from any thread.
@@ -1022,6 +1070,11 @@ protected:
   // more data is received. Read/Write from the main thread only.
   TimeStamp mDataTime;
 
+  // Data needed to estimate playback data rate. The timeline used for
+  // this estimate is "decode time" (where the "current time" is the
+  // time of the last decoded video frame).
+  MediaChannelStatistics mPlaybackStatistics;
+
   // The framebuffer size to use for audioavailable events.
   uint32_t mFrameBufferLength;
 
@@ -1034,6 +1087,9 @@ protected:
   // being run that operates on the element and decoder during shutdown.
   // Read/Write from the main thread only.
   bool mShuttingDown;
+
+  // True if the playback is paused because the playback rate member is 0.0.
+  bool mPausedForPlaybackRateNull;
 
   // Be assigned from media element during the initialization and pass to
   // AudioStream Class.

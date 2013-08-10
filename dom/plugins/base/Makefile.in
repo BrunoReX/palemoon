@@ -7,7 +7,6 @@ DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
-FAIL_ON_WARNINGS := 1
 
 include $(DEPTH)/config/autoconf.mk
 
@@ -42,6 +41,7 @@ EXPORTS = \
   nsPluginsCID.h \
   nsNPAPIPluginInstance.h \
   nsPluginsDir.h \
+  nsPluginSafety.h \
   nsPluginTags.h \
   nsPluginDirServiceProvider.h \
   nsPluginHost.h \
@@ -68,6 +68,13 @@ CPPSRCS		= \
 ifeq ($(MOZ_WIDGET_TOOLKIT),android)
 DIRS += android
 LOCAL_INCLUDES += -I$(topsrcdir)/dom/plugins/base/android
+else
+# android_npapi.h extends the NPNVariable and NPPVariable enums
+# using #defines, which results in Wswitch warnings in gcc-4.6.
+# Therefore, enable FAIL_ON_WARNINGS only on non-Android platforms.
+ifndef _MSC_VER
+FAIL_ON_WARNINGS := 1
+endif # !_MSC_VER
 endif
 
 ifeq ($(OS_ARCH),WINNT)
@@ -115,8 +122,3 @@ include $(topsrcdir)/ipc/chromium/chromium-config.mk
 include $(topsrcdir)/config/rules.mk
 
 CXXFLAGS         += $(TK_CFLAGS)
-
-$(DIST)/bin/plugins:
-	$(NSINSTALL) -D $@
-
-export:: $(DIST)/bin/plugins

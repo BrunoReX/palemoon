@@ -21,12 +21,10 @@ class nsTimeRanges;
 
 namespace mozilla {
 
-class MediaDecoder;
-
 class OggReader : public MediaDecoderReader
 {
 public:
-  OggReader(MediaDecoder* aDecoder);
+  OggReader(AbstractMediaDecoder* aDecoder);
   ~OggReader();
 
   virtual nsresult Init(MediaDecoderReader* aCloneDonor);
@@ -48,17 +46,14 @@ public:
     return mTheoraState != 0 && mTheoraState->mActive;
   }
 
-  virtual nsresult ReadMetadata(nsVideoInfo* aInfo,
+  virtual nsresult ReadMetadata(VideoInfo* aInfo,
                                 MetadataTags** aTags);
   virtual nsresult Seek(int64_t aTime, int64_t aStartTime, int64_t aEndTime, int64_t aCurrentTime);
   virtual nsresult GetBuffered(nsTimeRanges* aBuffered, int64_t aStartTime);
 
-  // We use bisection to seek in buffered range.
-  virtual bool IsSeekableInBufferedRanges() {
-    return true;
-  }
-
 private:
+  // This monitor should be taken when reading or writing to mIsChained.
+  ReentrantMonitor mMonitor;
 
   // Specialized Reset() method to signal if the seek is
   // to the start of the stream.
@@ -218,6 +213,13 @@ private:
   // succeeds.
   bool ReadHeaders(OggCodecState* aState);
 
+  // Reads the next link in the chain.
+  bool ReadOggChain();
+
+  // Set this media as being a chain and notifies the state machine that the
+  // media is no longer seekable.
+  void SetChained(bool aIsChained);
+
   // Returns the next Ogg packet for an bitstream/codec state. Returns a
   // pointer to an ogg_packet on success, or nullptr if the read failed.
   // The caller is responsible for deleting the packet and its |packet| field.
@@ -276,6 +278,13 @@ private:
   // The picture region inside Theora frame to be displayed, if we have
   // a Theora video track.
   nsIntRect mPicture;
+
+  // True if we are decoding a chained ogg. Reading or writing to this member
+  // should be done with |mMonitor| acquired.
+  bool mIsChained;
+
+  // Number of audio frames decoded so far.
+  int64_t mDecodedAudioFrames;
 };
 
 } // namespace mozilla

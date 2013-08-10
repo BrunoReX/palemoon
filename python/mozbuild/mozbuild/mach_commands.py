@@ -57,9 +57,16 @@ class Build(MachCommandBase):
             {'count': len(warnings_collector.database)},
             '{count} compiler warnings present.')
 
+        warnings_database.prune()
+
         warnings_database.save_to_file(warnings_path)
 
         return status
+
+    @Command('clobber', help='Clobber the tree (delete the object directory).')
+    def clobber(self):
+        self.remove_objdir()
+        return 0
 
 
 @CommandProvider
@@ -124,3 +131,10 @@ class Warnings(MachCommandBase):
                 print('%s:%d [%s] %s' % (filename, warning['line'],
                     warning['flag'], warning['message']))
 
+@CommandProvider
+class Package(MachCommandBase):
+    """Package the built product for distribution."""
+
+    @Command('package', help='Package the built product for distribution as an APK, DMG, etc.')
+    def package(self):
+        return self._run_make(directory=".", target='package', ensure_exit_code=False)

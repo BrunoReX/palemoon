@@ -91,7 +91,7 @@ interface EventListener {
 
 [Constructor(MutationCallback callback)]
 interface MutationObserver {
-  void observe(Node target, MutationObserverInit options);
+  void observe(Node target, optional MutationObserverInit options);
   void disconnect();
 };
 
@@ -209,6 +209,7 @@ interface Node : EventTarget {
   boolean isDefaultNamespace(DOMString? namespace);
 };
 
+[Constructor]
 interface Document : Node {
   readonly attribute DOMImplementation implementation;
   readonly attribute DOMString URL;

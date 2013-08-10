@@ -221,6 +221,9 @@ class XPCShellTests(object):
     if self.debuggerInfo:
       self.xpcsCmd = [self.debuggerInfo["path"]] + self.debuggerInfo["args"] + self.xpcsCmd
 
+    if self.pluginsPath:
+      self.xpcsCmd.extend(['-p', os.path.abspath(self.pluginsPath)])
+
   def buildTestPath(self):
     """
       If we specifiy a testpath, set the self.testPath variable to be the given directory or file.
@@ -609,7 +612,8 @@ class XPCShellTests(object):
                debuggerArgs=None, debuggerInteractive=False,
                profileName=None, mozInfo=None, shuffle=False,
                testsRootDir=None, xunitFilename=None, xunitName=None,
-               testingModulesDir=None, autolog=False, **otherOptions):
+               testingModulesDir=None, autolog=False, pluginsPath=None,
+               **otherOptions):
     """Run xpcshell tests.
 
     |xpcshell|, is the xpcshell executable to use to run the tests.
@@ -622,6 +626,8 @@ class XPCShellTests(object):
     |testdirs|, if provided, is a list of absolute paths of test directories.
       No-manifest only option.
     |testPath|, if provided, indicates a single path and/or test to run.
+    |pluginsPath|, if provided, custom plugins directory to be returned from
+      the xpcshell dir svc provider for NS_APP_PLUGINS_DIR_LIST.
     |interactive|, if set to True, indicates to provide an xpcshell prompt
       instead of automatically executing the test.
     |verbose|, if set to True, will cause stdout/stderr from tests to
@@ -702,6 +708,7 @@ class XPCShellTests(object):
     self.profileName = profileName or "xpcshell"
     self.mozInfo = mozInfo
     self.testingModulesDir = testingModulesDir
+    self.pluginsPath = pluginsPath
 
     # If we have an interactive debugger, disable ctrl-c.
     if self.debuggerInfo and self.debuggerInfo["interactive"]:
@@ -729,6 +736,14 @@ class XPCShellTests(object):
         return False
       self.mozInfo = parse_json(open(mozInfoFile).read())
     mozinfo.update(self.mozInfo)
+
+    # The appDirKey is a optional entry in either the default or individual test
+    # sections that defines a relative application directory for test runs. If
+    # defined we pass 'grePath/$appDirKey' for the -a parameter of the xpcshell
+    # test harness.
+    appDirKey = None
+    if "appname" in self.mozInfo:
+      appDirKey = self.mozInfo["appname"] + "-appdir"
 
     # We have to do this before we build the test list so we know whether or
     # not to run tests that depend on having the node spdy server
@@ -776,6 +791,15 @@ class XPCShellTests(object):
 
       # Check for known-fail tests
       expected = test['expected'] == 'pass'
+
+      # By default self.appPath will equal the gre dir. If specified in the
+      # xpcshell.ini file, set a different app dir for this test.
+      if appDirKey != None and appDirKey in test:
+        relAppDir = test[appDirKey]
+        relAppDir = os.path.join(self.xrePath, relAppDir)
+        self.appPath = os.path.abspath(relAppDir)
+      else:
+        self.appPath = None
 
       testdir = os.path.dirname(name)
       self.buildXpcsCmd(testdir)
@@ -870,7 +894,16 @@ class XPCShellTests(object):
             self.todoCount += 1
             xunitResult["todo"] = True
 
-        checkForCrashes(testdir, self.symbolsPath, testName=name)
+        if checkForCrashes(testdir, self.symbolsPath, testName=name):
+          message = "PROCESS-CRASH | %s | application crashed" % name
+          self.failCount += 1
+          xunitResult["passed"] = False
+          xunitResult["failure"] = {
+            "type": "PROCESS-CRASH",
+            "message": message,
+            "text": stdout
+          }
+
         # Find child process(es) leak log(s), if any: See InitLog() in
         # xpcom/base/nsTraceRefcntImpl.cpp for logfile naming logic
         leakLogs = [self.leakLogFile]
@@ -1007,6 +1040,11 @@ class XPCShellOptions(OptionParser):
     self.add_option("--testing-modules-dir",
                     dest="testingModulesDir", default=None,
                     help="Directory where testing modules are located.")
+    self.add_option("--test-plugin-path",
+                    type="string", dest="pluginsPath", default=None,
+                    help="Path to the location of a plugins directory containing the test plugin or plugins required for tests. "
+                         "By default xpcshell's dir svc provider returns gre/plugins. Use test-plugin-path to add a directory "
+                         "to return for NS_APP_PLUGINS_DIR_LIST when queried.")
     self.add_option("--total-chunks",
                     type = "int", dest = "totalChunks", default=1,
                     help = "how many chunks to split the tests up into")

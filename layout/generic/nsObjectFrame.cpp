@@ -13,8 +13,8 @@
 #include "nsPresContext.h"
 #include "nsIPresShell.h"
 #include "nsWidgetsCID.h"
-#include "nsIView.h"
-#include "nsIViewManager.h"
+#include "nsView.h"
+#include "nsViewManager.h"
 #include "nsIDOMEventListener.h"
 #include "nsIDOMDragEvent.h"
 #include "nsPluginHost.h"
@@ -275,7 +275,7 @@ NS_QUERYFRAME_TAIL_INHERITING(nsObjectFrameSuper)
 a11y::AccType
 nsObjectFrame::AccessibleType()
 {
-  return a11y::eHTMLObjectFrameAccessible;
+  return a11y::ePluginType;
 }
 
 #ifdef XP_WIN
@@ -328,8 +328,8 @@ nsObjectFrame::DestroyFrom(nsIFrame* aDestructRoot)
 nsObjectFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
 {
   if (HasView()) {
-    nsIView* view = GetView();
-    nsIViewManager* vm = view->GetViewManager();
+    nsView* view = GetView();
+    nsViewManager* vm = view->GetViewManager();
     if (vm) {
       nsViewVisibility visibility = 
         IsHidden() ? nsViewVisibility_kHide : nsViewVisibility_kShow;
@@ -359,13 +359,13 @@ nsObjectFrame::PrepForDrawing(nsIWidget *aWidget)
 {
   mWidget = aWidget;
 
-  nsIView* view = GetView();
+  nsView* view = GetView();
   NS_ASSERTION(view, "Object frames must have views");  
   if (!view) {
     return NS_ERROR_FAILURE;
   }
 
-  nsIViewManager* viewMan = view->GetViewManager();
+  nsViewManager* viewMan = view->GetViewManager();
   // mark the view as hidden since we don't know the (x,y) until Paint
   // XXX is the above comment correct?
   viewMan->SetViewVisibility(view, nsViewVisibility_kHide);
@@ -374,7 +374,7 @@ nsObjectFrame::PrepForDrawing(nsIWidget *aWidget)
   // Position and size view relative to its parent, not relative to our
   // parent frame (our parent frame may not have a view).
   
-  nsIView* parentWithView;
+  nsView* parentWithView;
   nsPoint origin;
   nsRect r(0, 0, mRect.width, mRect.height);
 
@@ -593,7 +593,7 @@ nsObjectFrame::Reflow(nsPresContext*           aPresContext,
   r.Deflate(aReflowState.mComputedBorderPadding);
 
   if (mInnerView) {
-    nsIViewManager* vm = mInnerView->GetViewManager();
+    nsViewManager* vm = mInnerView->GetViewManager();
     vm->MoveViewTo(mInnerView, r.x, r.y);
     vm->ResizeView(mInnerView, nsRect(nsPoint(0, 0), r.Size()), true);
   }
@@ -637,7 +637,7 @@ nsObjectFrame::FixupWindow(const nsSize& aSize)
   NPWindow *window;
   mInstanceOwner->GetWindow(window);
 
-  NS_ENSURE_TRUE(window, /**/);
+  NS_ENSURE_TRUE_VOID(window);
 
 #ifdef XP_MACOSX
   nsWeakFrame weakFrame(this);
@@ -843,7 +843,7 @@ nsObjectFrame::IsHidden(bool aCheckVisibilityStyle) const
 
 nsIntPoint nsObjectFrame::GetWindowOriginInPixels(bool aWindowless)
 {
-  nsIView * parentWithView;
+  nsView * parentWithView;
   nsPoint origin(0,0);
 
   GetOffsetFromView(origin, &parentWithView);
@@ -883,8 +883,8 @@ nsObjectFrame::DidReflow(nsPresContext*            aPresContext,
     return rv;
 
   if (HasView()) {
-    nsIView* view = GetView();
-    nsIViewManager* vm = view->GetViewManager();
+    nsView* view = GetView();
+    nsViewManager* vm = view->GetViewManager();
     if (vm)
       vm->SetViewVisibility(view, IsHidden() ? nsViewVisibility_kHide : nsViewVisibility_kShow);
   }
@@ -1152,7 +1152,12 @@ nsObjectFrame::DidSetWidgetGeometry()
   if (!mWidget && mInstanceOwner) {
     // UpdateWindowVisibility will notify the plugin of position changes
     // by updating the NPWindow and calling NPP_SetWindow/AsyncSetWindow.
-    mInstanceOwner->UpdateWindowVisibility(!mNextConfigurationBounds.IsEmpty());
+    // We treat windowless plugins inside popups as always visible, since
+    // plugins inside popups don't get valid mNextConfigurationBounds
+    // set up.
+    mInstanceOwner->UpdateWindowVisibility(
+      nsLayoutUtils::IsPopup(nsLayoutUtils::GetDisplayRootFrame(this)) ||
+      !mNextConfigurationBounds.IsEmpty());
   }
 #endif
 }
@@ -1250,10 +1255,15 @@ nsObjectFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
         nsDisplayGeneric(aBuilder, this, PaintPrintPlugin, "PrintPlugin",
                          nsDisplayItem::TYPE_PRINT_PLUGIN));
   } else {
+    LayerState state = GetLayerState(aBuilder, nullptr);
+    if (state == LAYER_INACTIVE &&
+        nsDisplayItem::ForceActiveLayers()) {
+      state = LAYER_ACTIVE;
+    }
     // We don't need this on Android, and it just confuses things
 #if !MOZ_WIDGET_ANDROID
     if (aBuilder->IsPaintingToWindow() &&
-        GetLayerState(aBuilder, nullptr) == LAYER_ACTIVE &&
+        state == LAYER_ACTIVE &&
         IsTransparentMode()) {
       rv = replacedContent.AppendNewToTop(new (aBuilder)
           nsDisplayPluginReadback(aBuilder, this));
@@ -1263,7 +1273,7 @@ nsObjectFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
 
 #if MOZ_WIDGET_ANDROID
     if (aBuilder->IsPaintingToWindow() &&
-        GetLayerState(aBuilder, nullptr) == LAYER_ACTIVE) {
+        state == LAYER_ACTIVE) {
 
       nsTArray<nsNPAPIPluginInstance::VideoInfo*> videos;
       mInstanceOwner->GetVideos(videos);
@@ -2066,6 +2076,8 @@ nsObjectFrame::HandleEvent(nsPresContext* aPresContext,
   if (mInstanceOwner->SendNativeEvents() &&
       NS_IS_PLUGIN_EVENT(anEvent)) {
     *anEventStatus = mInstanceOwner->ProcessEvent(*anEvent);
+    // Due to plugin code reentering Gecko, this frame may be dead at this
+    // point.
     return rv;
   }
 
@@ -2080,6 +2092,8 @@ nsObjectFrame::HandleEvent(nsPresContext* aPresContext,
        anEvent->message == NS_WHEEL_WHEEL) &&
       mInstanceOwner->GetEventModel() == NPEventModelCocoa) {
     *anEventStatus = mInstanceOwner->ProcessEvent(*anEvent);
+    // Due to plugin code reentering Gecko, this frame may be dead at this
+    // point.
     return rv;
   }
 #endif
@@ -2204,11 +2218,20 @@ nsObjectFrame::EndSwapDocShells(nsIContent* aContent, void*)
     nsIWidget* parent =
       rootPC->PresShell()->GetRootFrame()->GetNearestWidget();
     widget->SetParent(parent);
+    nsWeakFrame weakFrame(objectFrame);
     objectFrame->CallSetWindow();
+    if (!weakFrame.IsAlive()) {
+      return;
+    }
+  }
 
-    // Register for geometry updates and make a request.
+#ifdef XP_MACOSX
+  if (objectFrame->mWidget) {
     objectFrame->RegisterPluginForGeometryUpdates();
   }
+#else
+  objectFrame->RegisterPluginForGeometryUpdates();
+#endif
 }
 
 nsIFrame*

@@ -20,11 +20,15 @@
 #include "nsHTMLParts.h"
 #include "nsIPresShell.h"
 #include "nsCSSRendering.h"
-#include "nsIViewManager.h"
+#include "nsViewManager.h"
 #include "nsBoxLayoutState.h"
 #include "nsStackLayout.h"
 #include "nsDisplayList.h"
 #include "nsContainerFrame.h"
+
+#ifdef ACCESSIBILITY
+#include "nsAccessibilityService.h"
+#endif
 
 nsIFrame*
 NS_NewDeckFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
@@ -105,6 +109,14 @@ nsDeckFrame::IndexChanged()
     HideBox(currentBox);
 
   mIndex = index;
+
+#ifdef ACCESSIBILITY
+  nsAccessibilityService* accService = GetAccService();
+  if (accService) {
+    accService->DeckPanelSwitched(PresContext()->GetPresShell(), mContent,
+                                  currentBox, GetSelectedBox());
+  }
+#endif
 }
 
 int32_t

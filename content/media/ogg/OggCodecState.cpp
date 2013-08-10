@@ -3,16 +3,18 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include <string.h>
+
+#include "mozilla/DebugOnly.h"
+#include "mozilla/StandardInteger.h"
+
 #include "nsDebug.h"
 #include "OggCodecState.h"
 #include "OggDecoder.h"
-#include <string.h>
 #include "nsTraceRefcnt.h"
 #include "VideoUtils.h"
 #include "MediaDecoderReader.h"
-
-#include "mozilla/StandardInteger.h"
-#include "mozilla/Util.h" // DebugOnly
 
 namespace mozilla {
 
@@ -194,7 +196,7 @@ void OggCodecState::ReleasePacket(ogg_packet* aPacket) {
   delete aPacket;
 }
 
-void PacketQueue::Append(ogg_packet* aPacket) {
+void OggPacketQueue::Append(ogg_packet* aPacket) {
   nsDeque::Push(aPacket);
 }
 
@@ -289,7 +291,7 @@ bool TheoraState::Init() {
   // maximum, or zero sized.
   nsIntSize frame(mInfo.frame_width, mInfo.frame_height);
   nsIntRect picture(mInfo.pic_x, mInfo.pic_y, mInfo.pic_width, mInfo.pic_height);
-  if (!nsVideoInfo::ValidateVideoRegion(frame, picture, frame)) {
+  if (!VideoInfo::ValidateVideoRegion(frame, picture, frame)) {
     return mActive = false;
   }
 

@@ -10,6 +10,11 @@ var gPrivacyPane = {
   _autoStartPrivateBrowsing: false,
 
   /**
+   * Whether the prompt to restart Firefox should appear when changing the autostart pref.
+   */
+  _shouldPromptForRestart: true,
+
+  /**
    * Sets up the UI for the number of days of history to keep, and updates the
    * label of the "Clear Now..." button.
    */
@@ -19,9 +24,7 @@ var gPrivacyPane = {
     this.initializeHistoryMode();
     this.updateHistoryModePane();
     this.updatePrivacyMicroControls();
-    this.initAutoStartPrivateBrowsingObserver();
-
-    window.addEventListener("unload", this.removeASPBObserver.bind(this), false);
+    this.initAutoStartPrivateBrowsingReverter();
   },
 
   // HISTORY MODE
@@ -127,7 +130,8 @@ var gPrivacyPane = {
     let pref = document.getElementById("browser.privatebrowsing.autostart");
     switch (document.getElementById("historyMode").value) {
     case "remember":
-      pref.value = false;
+      if (pref.value)
+        pref.value = false;
 
       // select the remember history option if needed
       let rememberHistoryCheckbox = document.getElementById("rememberHistory");
@@ -146,7 +150,8 @@ var gPrivacyPane = {
       document.getElementById("privacy.sanitize.sanitizeOnShutdown").value = false;
       break;
     case "dontremember":
-      pref.value = true;
+      if (!pref.value)
+        pref.value = true;
       break;
     }
   },
@@ -189,50 +194,90 @@ var gPrivacyPane = {
   // PRIVATE BROWSING
 
   /**
-   * Install the observer for the auto-start private browsing mode pref.
+   * Initialize the starting state for the auto-start private browsing mode pref reverter.
    */
-  initAutoStartPrivateBrowsingObserver: function PPP_initAutoStartPrivateBrowsingObserver()
+  initAutoStartPrivateBrowsingReverter: function PPP_initAutoStartPrivateBrowsingReverter()
   {
-    let prefService = document.getElementById("privacyPreferences")
-                              .service
-                              .QueryInterface(Components.interfaces.nsIPrefBranch);
-    prefService.addObserver("browser.privatebrowsing.autostart",
-                            this.autoStartPrivateBrowsingObserver,
-                            false);
+    let mode = document.getElementById("historyMode");
+    let autoStart = document.getElementById("privateBrowsingAutoStart");
+    this._lastMode = mode.selectedIndex;
+    this._lastCheckState = autoStart.hasAttribute('checked');
   },
 
-  /**
-   * Install the observer for the auto-start private browsing mode pref.
-   */
-  removeASPBObserver: function PPP_removeASPBObserver()
-  {
-    let prefService = document.getElementById("privacyPreferences")
-                              .service
-                              .QueryInterface(Components.interfaces.nsIPrefBranch);
-    prefService.removeObserver("browser.privatebrowsing.autostart",
-                               this.autoStartPrivateBrowsingObserver);
-  },
+  _lastMode: null,
+  _lasCheckState: null,
+  updateAutostart: function PPP_updateAutostart() {
+#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
+      let mode = document.getElementById("historyMode");
+      let autoStart = document.getElementById("privateBrowsingAutoStart");
+      let pref = document.getElementById("browser.privatebrowsing.autostart");
+      if ((mode.value == "custom" && this._lastCheckState == autoStart.checked) ||
+          (mode.value == "remember" && !this._lastCheckState) ||
+          (mode.value == "dontremember" && this._lastCheckState)) {
+          // These are all no-op changes, so we don't need to prompt.
+          this._lastMode = mode.selectedIndex;
+          this._lastCheckState = autoStart.hasAttribute('checked');
+          return;
+      }
 
-  autoStartPrivateBrowsingObserver:
-  {
-    QueryInterface: XPCOMUtils.generateQI([Components.interfaces.nsIObserver]),
+      if (!this._shouldPromptForRestart) {
+        // We're performing a revert. Just let it happen.
+        return;
+      }
 
-    observe: function PPP_observe(aSubject, aTopic, aData)
-    {
+      const Cc = Components.classes, Ci = Components.interfaces;
+      let brandName = document.getElementById("bundleBrand").getString("brandShortName");
+      let bundle = document.getElementById("bundlePreferences");
+      let msg = bundle.getFormattedString(autoStart.checked ?
+                                          "featureEnableRequiresRestart" : "featureDisableRequiresRestart",
+                                          [brandName]);
+      let title = bundle.getFormattedString("shouldRestartTitle", [brandName]);
+      let prompts = Cc["@mozilla.org/embedcomp/prompt-service;1"].getService(Ci.nsIPromptService);
+      let shouldProceed = prompts.confirm(window, title, msg)
+      if (shouldProceed) {
+        let cancelQuit = Cc["@mozilla.org/supports-PRBool;1"]
+                           .createInstance(Ci.nsISupportsPRBool);
+        Services.obs.notifyObservers(cancelQuit, "quit-application-requested",
+                                     "restart");
+        shouldProceed = !cancelQuit.data;
+
+        if (shouldProceed) {
+          pref.value = autoStart.hasAttribute('checked');
+          document.documentElement.acceptDialog();
+          let appStartup = Cc["@mozilla.org/toolkit/app-startup;1"]
+                             .getService(Ci.nsIAppStartup);
+          appStartup.quit(Ci.nsIAppStartup.eAttemptQuit |  Ci.nsIAppStartup.eRestart);
+          return;
+        }
+      }
+      this._shouldPromptForRestart = false;
+
+      if (this._lastCheckState) {
+        autoStart.checked = "checked";
+      } else {
+        autoStart.removeAttribute('checked');
+      }
+      mode.selectedIndex = this._lastMode;
+      mode.doCommand();
+
+      this._shouldPromptForRestart = true;
+#else
+      // Toggle the private browsing mode without switching the session
+      let prefValue = document.getElementById("privateBrowsingAutoStart").checked;
+      let keepCurrentSession = document.getElementById("browser.privatebrowsing.keep_current_session");
+      keepCurrentSession.value = true;
+
       let privateBrowsingService = Components.classes["@mozilla.org/privatebrowsing;1"].
         getService(Components.interfaces.nsIPrivateBrowsingService);
 
-      // Toggle the private browsing mode without switching the session
-      let prefValue = document.getElementById("browser.privatebrowsing.autostart").value;
-      let keepCurrentSession = document.getElementById("browser.privatebrowsing.keep_current_session");
-      keepCurrentSession.value = true;
       // If activating from within the private browsing mode, reset the
       // private session
       if (prefValue && privateBrowsingService.privateBrowsingEnabled)
         privateBrowsingService.privateBrowsingEnabled = false;
       privateBrowsingService.privateBrowsingEnabled = prefValue;
+
       keepCurrentSession.reset();
-    }
+#endif
   },
 
   // HISTORY

@@ -25,6 +25,7 @@ interface Element : Node {
   readonly attribute DOMString? prefix;
   readonly attribute DOMString localName;
 */
+  // Not [Constant] because it depends on which document we're in
   readonly attribute DOMString tagName;
 
            attribute DOMString id;
@@ -32,7 +33,8 @@ interface Element : Node {
   FIXME Bug 810677 Move className from HTMLElement to Element
            attribute DOMString className;
 */
-  readonly attribute DOMTokenList classList;
+  [Constant]
+  readonly attribute DOMTokenList? classList;
 
   //readonly attribute Attr[] attributes;
   DOMString? getAttribute(DOMString name);
@@ -53,6 +55,7 @@ interface Element : Node {
   HTMLCollection getElementsByTagNameNS(DOMString? namespace, DOMString localName);
   HTMLCollection getElementsByClassName(DOMString classNames);
 
+  [Constant]
   readonly attribute HTMLCollection children;
   readonly attribute Element? firstElementChild;
   readonly attribute Element? lastElementChild;
@@ -73,6 +76,13 @@ interface Element : Node {
 */
 
   // Mozilla specific stuff
+
+  [SetterThrows,LenientThis]
+           attribute EventHandler onmouseenter;
+  [SetterThrows,LenientThis]
+           attribute EventHandler onmouseleave;
+  [SetterThrows]
+           attribute EventHandler onwheel;
 
   // Selectors API
   /**
@@ -125,7 +135,7 @@ interface Element : Node {
   [Throws]
   Attr removeAttributeNode(Attr oldAttr);
   [Throws]
-  Attr getAttributeNodeNS(DOMString namespaceURI, DOMString localName);
+  Attr getAttributeNodeNS(DOMString? namespaceURI, DOMString localName);
   [Throws]
   Attr setAttributeNodeNS(Attr newAttr);
 /*
@@ -159,21 +169,26 @@ partial interface Element {
 /*
 };
 
-enum insertAdjacentHTMLPosition {
-  "beforebegin",
-  "afterbegin",
-  "beforeend",
-  "afterend"
+// http://dvcs.w3.org/hg/undomanager/raw-file/tip/undomanager.html
+partial interface Element {
+*/
+  [Pref="dom.undo_manager.enabled"]
+  readonly attribute UndoManager? undoManager;
+  [SetterThrows,Pref="dom.undo_manager.enabled"]
+  attribute boolean undoScope;
+/*
 };
 
 // http://domparsing.spec.whatwg.org/#extensions-to-the-element-interface
 partial interface Element {
-  [Throws]
+*/
+  [Throws,TreatNullAs=EmptyString]
   attribute DOMString innerHTML;
-  [Throws]
+  [Throws,TreatNullAs=EmptyString]
   attribute DOMString outerHTML;
   [Throws]
-  void insertAdjacentHTML(insertAdjacentHTMLPosition position, DOMString text);
+  void insertAdjacentHTML(DOMString position, DOMString text);
+/*
 };
 
 // http://www.w3.org/TR/selectors-api/#interface-definitions

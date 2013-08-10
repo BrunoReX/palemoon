@@ -365,6 +365,9 @@ gfxPlatform::Init()
 
     gPlatform->mWorkAroundDriverBugs = Preferences::GetBool("gfx.work-around-driver-bugs", true);
 
+    mozilla::Preferences::AddBoolVarCache(&gPlatform->mWidgetUpdateFlashing,
+                                          "nglayout.debug.widget_update_flashing");
+
     mozilla::gl::GLContext::PlatformStartup();
 
 #ifdef MOZ_WIDGET_ANDROID
@@ -1289,6 +1292,24 @@ gfxPlatform::UseLowPrecisionBuffer()
     return sUseLowPrecisionBuffer;
 }
 
+float
+gfxPlatform::GetLowPrecisionResolution()
+{
+    static float sLowPrecisionResolution;
+    static bool sLowPrecisionResolutionPrefCached = false;
+
+    if (!sLowPrecisionResolutionPrefCached) {
+        int32_t lowPrecisionResolution = 250;
+        sLowPrecisionResolutionPrefCached = true;
+        mozilla::Preferences::AddIntVarCache(&lowPrecisionResolution,
+                                             "layers.low-precision-resolution",
+                                             250);
+        sLowPrecisionResolution = lowPrecisionResolution / 1000.f;
+    }
+
+    return sLowPrecisionResolution;
+}
+
 bool
 gfxPlatform::UseReusableTileStore()
 {
@@ -1580,8 +1601,7 @@ gfxPlatform::SetupClusterBoundaries(gfxTextRun *aTextRun, const PRUnichar *aStri
         return;
     }
 
-    gfxShapedWord::SetupClusterBoundaries(aTextRun->GetCharacterGlyphs(),
-                                          aString, aTextRun->GetLength());
+    aTextRun->SetupClusterBoundaries(0, aString, aTextRun->GetLength());
 }
 
 int32_t

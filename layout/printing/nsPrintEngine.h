@@ -14,7 +14,7 @@
 #include "nsFrameList.h"
 #include "mozilla/Attributes.h"
 #include "nsIWebProgress.h"
-#include "nsHTMLCanvasElement.h"
+#include "mozilla/dom/HTMLCanvasElement.h"
 #include "nsIWebProgressListener.h"
 #include "nsWeakReference.h"
 
@@ -209,6 +209,10 @@ public:
     mDisallowSelectionPrint = aDisallowSelectionPrint;
   }
 
+  void SetNoMarginBoxes(bool aNoMarginBoxes) {
+    mNoMarginBoxes = aNoMarginBoxes;
+  }
+
 protected:
 
   nsresult CommonPrint(bool aIsPrintPreview, nsIPrintSettings* aPrintSettings,
@@ -287,6 +291,7 @@ protected:
   bool mDidLoadDataForPrinting;
   bool mIsDestroying;
   bool mDisallowSelectionPrint;
+  bool mNoMarginBoxes;
 
   nsresult AfterNetworkPrint(bool aHandleError);
 
@@ -294,7 +299,7 @@ protected:
                        bool& aDoReturn,
                        bool& aDocumentIsTopLevel,
                        nsSize& aAdjSize);
-  nsIView* GetParentViewForRoot();
+  nsView* GetParentViewForRoot();
   bool DoSetPixelScale();
   void UpdateZoomRatio(nsPrintObject* aPO, bool aSetPixelScale);
   nsresult ReconstructAndReflow(bool aDoSetPixelScale);

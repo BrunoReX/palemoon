@@ -68,6 +68,7 @@ MAKEFILES_dom="
   dom/plugins/base/Makefile
   dom/plugins/ipc/Makefile
   dom/power/Makefile
+  dom/quota/Makefile
   dom/settings/Makefile
   dom/sms/Makefile
   dom/sms/interfaces/Makefile
@@ -490,6 +491,8 @@ MAKEFILES_xulapp="
   toolkit/forgetaboutsite/test/browser/Makefile
   toolkit/identity/Makefile
   toolkit/locales/Makefile
+  toolkit/modules/Makefile
+  toolkit/modules/tests/Makefile
   toolkit/mozapps/downloads/Makefile
   toolkit/mozapps/extensions/Makefile
   toolkit/mozapps/handling/Makefile
@@ -763,7 +766,6 @@ if [ "$ENABLE_TESTS" ]; then
     dom/imptests/failures/webapps/DOMCore/tests/submissions/Opera/Makefile
     dom/imptests/failures/webapps/WebStorage/tests/submissions/Infraware/Makefile
     dom/imptests/failures/webapps/WebStorage/tests/submissions/Ms2ger/Makefile
-    dom/imptests/failures/webapps/XMLHttpRequest/tests/submissions/Ms2ger/Makefile
     dom/imptests/html/tests/submission/Mozilla/Makefile
     dom/imptests/html/tests/submission/Opera/microdata/Makefile
     dom/imptests/webapps/DOMCore/tests/approved/Makefile
@@ -1578,12 +1580,6 @@ if [ ! "$MOZ_NATIVE_PNG" ]; then
   "
 fi
 
-if [ "$MOZ_DMDV" ]; then
-  add_makefiles "
-    tools/dmdv/Makefile
-  "
-fi
-
 if [ "$MOZ_JPROF" ]; then
   add_makefiles "
     tools/jprof/Makefile
@@ -1733,6 +1729,13 @@ if [ "$MOZ_SPEEX_RESAMPLER" ]; then
   add_makefiles "
     media/libspeex_resampler/Makefile
     media/libspeex_resampler/src/Makefile
+  "
+fi
+
+if [ "$MOZ_SOUNDTOUCH" ]; then
+  add_makefiles "
+    media/libsoundtouch/Makefile
+    media/libsoundtouch/src/Makefile
   "
 fi
 

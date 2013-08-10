@@ -43,7 +43,7 @@ import java.util.ArrayList;
 
 public class GeckoPreferences
     extends PreferenceActivity
-    implements OnPreferenceChangeListener, GeckoEventListener
+    implements OnPreferenceChangeListener, GeckoEventListener, GeckoActivityStatus
 {
     private static final String LOGTAG = "GeckoPreferences";
 
@@ -83,6 +83,24 @@ public class GeckoPreferences
     protected void onDestroy() {
         super.onDestroy();
         unregisterEventListener("Sanitize:Finished");
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+
+        if (getApplication() instanceof GeckoApplication) {
+            ((GeckoApplication) getApplication()).onActivityPause(this);
+        }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+
+        if (getApplication() instanceof GeckoApplication) {
+            ((GeckoApplication) getApplication()).onActivityResume(this);
+        }
     }
 
     public void handleMessage(String event, JSONObject message) {
@@ -271,6 +289,28 @@ public class GeckoPreferences
         public void onTextChanged(CharSequence s, int start, int before, int count) { }
     }
 
+    private class EmptyTextWatcher implements TextWatcher {
+        EditText input = null;
+        AlertDialog dialog = null;
+
+        EmptyTextWatcher(EditText aInput, AlertDialog aDialog) {
+            input = aInput;
+            dialog = aDialog;
+        }
+
+        public void afterTextChanged(Editable s) {
+            if (dialog == null)
+                return;
+
+            String text = input.getText().toString();
+            boolean disabled = TextUtils.isEmpty(text);
+            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setEnabled(!disabled);
+        }
+
+        public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+        public void onTextChanged(CharSequence s, int start, int before, int count) { }
+    }
+
     protected Dialog onCreateDialog(int id) {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         LinearLayout linearLayout = new LinearLayout(this);
@@ -342,6 +382,12 @@ public class GeckoPreferences
                                 input.setText("");
                             }
                         });
+                        dialog.setOnShowListener(new DialogInterface.OnShowListener() {
+                            public void onShow(DialogInterface dialog) {
+                                input.setText("");
+                            }
+                        });
+                        input.addTextChangedListener(new EmptyTextWatcher(input, dialog));
                 break;
             default:
                 return null;
@@ -416,5 +462,9 @@ public class GeckoPreferences
 
     private void unregisterEventListener(String event) {
         GeckoAppShell.getEventDispatcher().unregisterEventListener(event, this);
+    }
+
+    public boolean isGeckoActivityOpened() {
+        return false;
     }
 }

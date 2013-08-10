@@ -40,9 +40,14 @@
 @BINPATH@/@DLL_PREFIX@xpcom@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@nspr4@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@mozalloc@DLL_SUFFIX@
-@BINPATH@/@DLL_PREFIX@soundtouch@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@mozglue@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@omxplugin@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@omxplugingb@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@omxplugingb235@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@omxpluginhc@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@omxpluginjb-htc@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@omxpluginsony@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@omxpluginfroyo@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@xul@DLL_SUFFIX@
 @BINPATH@/@MOZ_CHILD_PROCESS_NAME@
 
@@ -54,6 +59,7 @@
 @BINPATH@/res/drawable-hdpi
 @BINPATH@/res/layout
 @BINPATH@/recommended-addons.json
+@BINPATH@/distribution/*
 
 [browser]
 ; [Base Browser Files]
@@ -127,6 +133,7 @@
 @BINPATH@/components/dom_sms.xpt
 @BINPATH@/components/dom_storage.xpt
 @BINPATH@/components/dom_stylesheets.xpt
+@BINPATH@/components/dom_system.xpt
 @BINPATH@/components/dom_threads.xpt
 @BINPATH@/components/dom_traversal.xpt
 @BINPATH@/components/dom_views.xpt
@@ -187,6 +194,9 @@
 @BINPATH@/components/necko.xpt
 @BINPATH@/components/loginmgr.xpt
 @BINPATH@/components/parentalcontrols.xpt
+#ifdef MOZ_WEBRTC
+@BINPATH@/components/peerconnection.xpt
+#endif
 @BINPATH@/components/plugin.xpt
 @BINPATH@/components/pref.xpt
 @BINPATH@/components/prefetch.xpt
@@ -357,6 +367,11 @@
 @BINPATH@/components/TCPSocketParentIntermediary.js
 @BINPATH@/components/TCPSocket.manifest
 
+#ifdef MOZ_WEBRTC
+@BINPATH@/components/PeerConnection.js
+@BINPATH@/components/PeerConnection.manifest
+#endif
+
 #ifdef MOZ_SERVICES_HEALTHREPORT
 @BINPATH@/components/HealthReportComponents.manifest
 @BINPATH@/components/HealthReportService.js
@@ -408,9 +423,6 @@
 @BINPATH@/@PREF_DIR@/mobile.js
 @BINPATH@/@PREF_DIR@/mobile-branding.js
 @BINPATH@/@PREF_DIR@/channel-prefs.js
-#ifdef MOZ_SERVICES_HEALTHREPORT
-@BINPATH@/@PREF_DIR@/healthreport-prefs.js
-#endif
 @BINPATH@/greprefs.js
 @BINPATH@/defaults/autoconfig/platform.js
 @BINPATH@/defaults/autoconfig/prefcalls.js

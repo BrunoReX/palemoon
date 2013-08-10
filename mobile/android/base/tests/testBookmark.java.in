@@ -16,11 +16,10 @@ import java.lang.reflect.Method;
 import android.content.ContentResolver;
 
 public class testBookmark extends PixelTest  {
-    private static final int MAX_WAIT_MS = 3000; 
     private static final String ABOUT_HOME_URL = "about:firefox";
     private static String BOOKMARK_URL = "/robocop/robocop_blank_01.html";
     private static String BOOKMARK_TITLE = "Browser Blank Page 01";
-
+    private ListView mList;
     private ClassLoader mClassLoader;
     private Method mAddBookmark;
     private Method mRemoveBookmark;
@@ -80,25 +79,13 @@ public class testBookmark extends PixelTest  {
         // Open the bookmark list and check the root folder view
         ListView bookmarksList = openBookmarksList();
 
-        // Clear VKB so that list is not obscured
-        mActions.sendSpecialKey(Actions.SpecialKey.BACK);
-
         // Wait for bookmark to appear in list
         mSolo.waitForText(ABOUT_HOME_URL);
 
         mAsserter.ok(bookmarksList != null, "checking that bookmarks list exists", "bookmarks list exists");
 
-        if (bookmarksList.getChildCount() != 4) {
-            mAsserter.dumpLog("Unexpected child count; dumping bookmarks...");
-            for (int i = 0; i < bookmarksList.getChildCount(); i++) {
-                Cursor c = (Cursor)bookmarksList.getItemAtPosition(i);
-                String url = c.getString(c.getColumnIndexOrThrow("url"));
-                mAsserter.dumpLog(url);
-            }
-        }
-
         // No folders should be visible if no desktop bookmarks exist
-        mAsserter.is(bookmarksList.getChildCount(), 4,
+        mAsserter.is(bookmarksList.getAdapter().getCount(), 4,
             "bookmarks list has 4 children (the default bookmarks)");
 
         for (int i = 0; i < bookmarksList.getChildCount(); i++) {
@@ -111,7 +98,7 @@ public class testBookmark extends PixelTest  {
         insertOneBookmark();
         mSolo.waitForText(BOOKMARK_TITLE);
 
-        mAsserter.is(bookmarksList.getChildCount(), 5,
+        mAsserter.is(bookmarksList.getAdapter().getCount(), 5,
             "bookmarks list has 5 children (the default bookmarks and the new one)");
  
         // Click on the bookmark we created and wait for the bookmarked page to load
@@ -174,12 +161,20 @@ public class testBookmark extends PixelTest  {
         // Click the "Bookmarks" tab to switch to bookmarks list
         mSolo.clickOnText("Bookmarks");
 
-        ArrayList<ListView> views = mSolo.getCurrentListViews();
-        for (ListView view : views) {
-            if (view.getTag() == "bookmarks")
-                return view;
-        }
-        return null;
+        final ArrayList<ListView> views = mSolo.getCurrentListViews();
+        mList = null;
+        boolean success = waitForTest(new BooleanTest() {
+            public boolean test() {
+               for (ListView view : views) {
+                   if (view.getTag().equals("bookmarks")) {
+                       mList = view;
+                       return true;
+                   }
+               }
+               return false;
+            }
+        }, MAX_WAIT_MS);
+        return mList;
     }
 
     // This method opens the menu and selects the "Bookmark" menu item

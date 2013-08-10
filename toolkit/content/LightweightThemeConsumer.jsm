@@ -9,11 +9,19 @@ Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "LightweightThemeImageOptimizer",
   "resource://gre/modules/LightweightThemeImageOptimizer.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
+  "resource://gre/modules/PrivateBrowsingUtils.jsm");
+
 this.LightweightThemeConsumer =
  function LightweightThemeConsumer(aDocument) {
   this._doc = aDocument;
   this._win = aDocument.defaultView;
   this._footerId = aDocument.documentElement.getAttribute("lightweightthemesfooter");
+
+/* Pale Moon: don't disable personas for PB mode
+  if (PrivateBrowsingUtils.isWindowPrivate(this._win)) {
+    return;
+  } */
 
   let screen = this._win.screen;
   this._lastScreenWidth = screen.width;
@@ -52,11 +60,15 @@ LightweightThemeConsumer.prototype = {
   },
 
   destroy: function () {
-    Components.classes["@mozilla.org/observer-service;1"]
-              .getService(Components.interfaces.nsIObserverService)
-              .removeObserver(this, "lightweight-theme-styling-update");
+	/* Pale Moon: don't disable personas in PB mode -> always destroy */
+   /* if (!PrivateBrowsingUtils.isWindowPrivate(this._win)) { */
+      Components.classes["@mozilla.org/observer-service;1"]
+                .getService(Components.interfaces.nsIObserverService)
+                .removeObserver(this, "lightweight-theme-styling-update");
 
-    this._win.removeEventListener("resize", this);
+      this._win.removeEventListener("resize", this);
+   /* } PM */
+
     this._win = this._doc = null;
   },
 

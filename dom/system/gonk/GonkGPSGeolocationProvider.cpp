@@ -585,7 +585,7 @@ GonkGPSGeolocationProvider::Startup()
 }
 
 NS_IMETHODIMP
-GonkGPSGeolocationProvider::Watch(nsIGeolocationUpdate* aCallback)
+GonkGPSGeolocationProvider::Watch(nsIGeolocationUpdate* aCallback, bool aPrivate)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -597,7 +597,6 @@ NS_IMETHODIMP
 GonkGPSGeolocationProvider::Shutdown()
 {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(mInitThread);
 
   if (!mStarted) {
     return NS_OK;

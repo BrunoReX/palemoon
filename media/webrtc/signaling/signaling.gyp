@@ -14,7 +14,7 @@
   },
 
   'targets': [
-  
+
     #
     # ECC
     #
@@ -53,8 +53,8 @@
         '../../../netwerk/srtp/src/include',
         '../../../netwerk/srtp/src/crypto/include',
         '../../../ipc/chromium/src',
-      ],	
-	  
+      ],
+
       #
       # DEPENDENCIES
       #
@@ -63,13 +63,13 @@
 
       'export_dependent_settings': [
       ],
-      
-      
+
+
       #
       # SOURCES
       #
       'sources': [
-        # Media Conduit 
+        # Media Conduit
         './src/media-conduit/AudioConduit.h',
         './src/media-conduit/AudioConduit.cpp',
         './src/media-conduit/VideoConduit.h',
@@ -143,15 +143,15 @@
         './src/mediapipeline/SrtpFlow.h',
         './src/mediapipeline/SrtpFlow.cpp',
       ],
-    
+
       #
       # DEFINES
       #
-      
+
       'defines' : [
-        'LOG4CXX_STATIC', 
-        '_NO_LOG4CXX', 
-        'USE_SSLEAY', 
+        'LOG4CXX_STATIC',
+        '_NO_LOG4CXX',
+        'USE_SSLEAY',
         '_CPR_USE_EXTERNAL_LOGGER',
         'WEBRTC_RELATIVE_PATH',
       	'HAVE_WEBRTC_VIDEO',
@@ -177,7 +177,7 @@
           'defines' : [
             'MOZILLA_INTERNAL_API'
           ],
-        }], 
+        }],
         ['build_for_test!=0', {
           'include_dirs': [
             './test'
@@ -186,34 +186,34 @@
             'NO_CHROMIUM_LOGGING',
             'USE_FAKE_MEDIA_STREAMS'
           ],
-        }], 
-        ['OS=="linux"', {
+        }],
+        ['(OS=="linux") or (OS=="android")', {
           'include_dirs': [
           ],
 
           'defines': [
             'SIP_OS_LINUX',
             '_GNU_SOURCE',
-            'LINUX', 
-            'GIPS_VER=3510', 
+            'LINUX',
+            'GIPS_VER=3510',
             'SECLIB_OPENSSL',
           ],
-          
+
           'cflags_mozilla': [
           ],
         }],
         ['OS=="win"', {
           'include_dirs': [
-          ],		
+          ],
           'defines': [
             'SIP_OS_WINDOWS',
-            'WIN32', 
+            'WIN32',
             'GIPS_VER=3480',
             'SIPCC_BUILD',
             'HAVE_WINSOCK2_H',
             'CPR_STDINT_INCLUDE=\\"mozilla/StandardInteger.h\\"'
           ],
-          
+
           'cflags_mozilla': [
           ],
         }],
@@ -222,23 +222,23 @@
           ],
           'defines': [
             'SIP_OS_OSX',
-            'OSX', 
+            'OSX',
             '_FORTIFY_SOURCE=2',
           ],
-          
+
           'cflags_mozilla': [
           ],
         }],
       ],
     },
-  
+
     #
     # SIPCC
     #
     {
       'target_name': 'sipcc',
       'type': 'static_library',
-    
+
       #
       # INCLUDES
       #
@@ -261,18 +261,18 @@
         # Danger: this is to include config.h. This could be bad.
         '../trunk/third_party/libsrtp/config',
       ],
-      
+
       #
       # DEPENDENCIES
       #
       'dependencies': [
       ],
-      
-      
+
+
       'export_dependent_settings': [
       ],
-      
-      
+
+
       #
       # SOURCES
       #
@@ -280,7 +280,7 @@
         # CCAPP
         './src/sipcc/core/ccapp/call_logger.c',
         './src/sipcc/core/ccapp/call_logger.h',
-        './src/sipcc/core/ccapp/capability_set.c',  
+        './src/sipcc/core/ccapp/capability_set.c',
         './src/sipcc/core/ccapp/capability_set.h',
         './src/sipcc/core/ccapp/cc_blf.c',
         './src/sipcc/core/ccapp/cc_call_feature.c',
@@ -332,8 +332,9 @@
         './src/sipcc/core/common/subscription_handler.h',
         './src/sipcc/core/common/text_strings.c',
         './src/sipcc/core/common/text_strings.h',
+        './src/sipcc/core/common/thread_monitor.h',
+        './src/sipcc/core/common/thread_monitor.c',
         './src/sipcc/core/common/ui.c',
-        './src/sipcc/core/common/vcm_util.c',
         # GSM
         './src/sipcc/core/gsm/ccapi.c',
         './src/sipcc/core/gsm/ccapi_strings.c',
@@ -412,7 +413,6 @@
         './src/sipcc/core/includes/util_ios_queue.h',
         './src/sipcc/core/includes/util_parse.h',
         './src/sipcc/core/includes/util_string.h',
-        './src/sipcc/core/includes/vcm_util.h',
         './src/sipcc/core/includes/www.h',
         './src/sipcc/core/includes/xml_defs.h',
         # SDP
@@ -569,7 +569,7 @@
         # PLAT
         './src/sipcc/plat/csf2g/model.c',
         './src/sipcc/plat/csf2g/reset_api.c',
-        # 
+        #
         # './src/sipcc/plat/common/plat_debug.h',
         # './src/sipcc/plat/common/tnp_blf.h',
 
@@ -582,8 +582,11 @@
       #
       # DEFINES
       #
-      
+
       'defines' : [
+      # CPR timers are needed by SIP, but are disabled for now
+      # to avoid the extra timer thread and stale cleanup code
+      #    'CPR_TIMERS_ENABLED',
       ],
 
       'cflags_mozilla': [
@@ -592,48 +595,10 @@
 
       #
       # OS SPECIFIC
-      #      
+      #
       'conditions': [
-        ['OS=="linux"', {
+        ['(OS=="android") or (OS=="linux")', {
           'include_dirs': [
-          ],
-
-          'sources': [
-            # SIPSTACK
-            './src/sipcc/core/sipstack/sip_platform_task.c',
-
-            # PLAT
-            './src/sipcc/plat/common/dns_utils.c',
-
-            # CPR
-            './src/sipcc/cpr/linux/cpr_linux_errno.c',
-            './src/sipcc/cpr/linux/cpr_linux_init.c',
-            './src/sipcc/cpr/linux/cpr_linux_ipc.c',
-            './src/sipcc/cpr/linux/cpr_linux_locks.c',
-            './src/sipcc/cpr/linux/cpr_linux_socket.c',
-            './src/sipcc/cpr/linux/cpr_linux_stdio.c',
-            './src/sipcc/cpr/linux/cpr_linux_string.c',
-            './src/sipcc/cpr/linux/cpr_linux_threads.c',
-            './src/sipcc/cpr/linux/cpr_linux_timers_using_select.c', 
-        
-            './src/sipcc/cpr/linux/cpr_assert.h',
-            './src/sipcc/cpr/linux/cpr_linux_align.h',
-            './src/sipcc/cpr/linux/cpr_linux_assert.h',
-            './src/sipcc/cpr/linux/cpr_linux_errno.h',
-            './src/sipcc/cpr/linux/cpr_linux_in.h',
-            './src/sipcc/cpr/linux/cpr_linux_ipc.h',
-            './src/sipcc/cpr/linux/cpr_linux_locks.h',
-            './src/sipcc/cpr/linux/cpr_linux_private.h',
-            './src/sipcc/cpr/linux/cpr_linux_rand.h',
-            './src/sipcc/cpr/linux/cpr_linux_socket.h',
-            './src/sipcc/cpr/linux/cpr_linux_stdio.h',
-            './src/sipcc/cpr/linux/cpr_linux_string.h',
-            './src/sipcc/cpr/linux/cpr_linux_strings.h',
-            './src/sipcc/cpr/linux/cpr_linux_time.h',
-            './src/sipcc/cpr/linux/cpr_linux_timers.h',
-            './src/sipcc/cpr/linux/cpr_linux_tst.h',
-            './src/sipcc/cpr/linux/cpr_linux_types.h',
-        
           ],
 
           'defines' : [
@@ -651,21 +616,98 @@
           'cflags_mozilla': [
           ],
         }],
+        ['OS=="android"', {
+          'sources': [
+            # SIPSTACK
+            './src/sipcc/core/sipstack/sip_platform_task.c',
+
+            # PLAT
+            './src/sipcc/plat/common/dns_utils.c',
+
+            # CPR
+            './src/sipcc/cpr/android/cpr_android_errno.c',
+            './src/sipcc/cpr/android/cpr_android_init.c',
+            './src/sipcc/cpr/android/cpr_android_ipc.c',
+            './src/sipcc/cpr/android/cpr_android_locks.c',
+            './src/sipcc/cpr/android/cpr_android_socket.c',
+            './src/sipcc/cpr/android/cpr_android_stdio.c',
+            './src/sipcc/cpr/android/cpr_android_string.c',
+            './src/sipcc/cpr/android/cpr_android_threads.c',
+            './src/sipcc/cpr/android/cpr_android_timers_using_select.c',
+
+            './src/sipcc/cpr/android/cpr_assert.h',
+            './src/sipcc/cpr/android/cpr_android_align.h',
+            './src/sipcc/cpr/android/cpr_android_assert.h',
+            './src/sipcc/cpr/android/cpr_android_errno.h',
+            './src/sipcc/cpr/android/cpr_android_in.h',
+            './src/sipcc/cpr/android/cpr_darwin_ipc.h',
+            './src/sipcc/cpr/android/cpr_android_locks.h',
+            './src/sipcc/cpr/android/cpr_android_private.h',
+            './src/sipcc/cpr/android/cpr_android_rand.h',
+            './src/sipcc/cpr/android/cpr_android_socket.h',
+            './src/sipcc/cpr/android/cpr_android_stdio.h',
+            './src/sipcc/cpr/android/cpr_android_string.h',
+            './src/sipcc/cpr/android/cpr_android_strings.h',
+            './src/sipcc/cpr/android/cpr_android_time.h',
+            './src/sipcc/cpr/android/cpr_android_timers.h',
+            './src/sipcc/cpr/android/cpr_android_tst.h',
+            './src/sipcc/cpr/android/cpr_android_types.h',
+          ],
+        }],
+        ['OS=="linux"', {
+          'sources': [
+            # SIPSTACK
+            './src/sipcc/core/sipstack/sip_platform_task.c',
+
+            # PLAT
+            './src/sipcc/plat/common/dns_utils.c',
+
+            # CPR
+            './src/sipcc/cpr/linux/cpr_linux_errno.c',
+            './src/sipcc/cpr/linux/cpr_linux_init.c',
+            './src/sipcc/cpr/linux/cpr_linux_ipc.c',
+            './src/sipcc/cpr/linux/cpr_linux_locks.c',
+            './src/sipcc/cpr/linux/cpr_linux_socket.c',
+            './src/sipcc/cpr/linux/cpr_linux_stdio.c',
+            './src/sipcc/cpr/linux/cpr_linux_string.c',
+            './src/sipcc/cpr/linux/cpr_linux_threads.c',
+            './src/sipcc/cpr/linux/cpr_linux_timers_using_select.c',
+
+            './src/sipcc/cpr/linux/cpr_assert.h',
+            './src/sipcc/cpr/linux/cpr_linux_align.h',
+            './src/sipcc/cpr/linux/cpr_linux_assert.h',
+            './src/sipcc/cpr/linux/cpr_linux_errno.h',
+            './src/sipcc/cpr/linux/cpr_linux_in.h',
+            './src/sipcc/cpr/linux/cpr_linux_ipc.h',
+            './src/sipcc/cpr/linux/cpr_linux_locks.h',
+            './src/sipcc/cpr/linux/cpr_linux_private.h',
+            './src/sipcc/cpr/linux/cpr_linux_rand.h',
+            './src/sipcc/cpr/linux/cpr_linux_socket.h',
+            './src/sipcc/cpr/linux/cpr_linux_stdio.h',
+            './src/sipcc/cpr/linux/cpr_linux_string.h',
+            './src/sipcc/cpr/linux/cpr_linux_strings.h',
+            './src/sipcc/cpr/linux/cpr_linux_time.h',
+            './src/sipcc/cpr/linux/cpr_linux_timers.h',
+            './src/sipcc/cpr/linux/cpr_linux_tst.h',
+            './src/sipcc/cpr/linux/cpr_linux_types.h',
+
+          ],
+        }],
         ['OS=="win"', {
           'include_dirs': [
           ],
-          
+
           'sources': [
             # SIPSTACK
             './src/sipcc/core/sipstack/sip_platform_win32_task.c',
-            
+
             # PLAT
             './src/sipcc/plat/win32/dns_utils.c',
             './src/sipcc/plat/win32/mystub.c',
             './src/sipcc/plat/win32/plat_api_stub.c',
             './src/sipcc/plat/win32/plat_api_win.c',
             './src/sipcc/plat/win32/StdAfx.h',
-            
+
             # CPR
             './src/sipcc/cpr/win32/cpr_win_assert.h',
             './src/sipcc/cpr/win32/cpr_win_debug.c',
@@ -695,36 +737,36 @@
             './src/sipcc/cpr/win32/cpr_win_types.h',
 
           ],
-          
+
           'defines' : [
             'SIP_OS_WINDOWS',
-            'WIN32', 
+            'WIN32',
             'SIPCC_BUILD',
             'SDP_WIN32',
             'STUBBED_OUT',
             'EXTERNAL_TICK_REQUIRED',
             'GIPS_VER=3480',
           ],
-          
+
           'cflags_mozilla': [
           ],
-          
+
         }],
         ['OS=="mac"', {
 
           'include_dirs': [
           ],
-          
+
           'sources': [
             # SIPSTACK
             './src/sipcc/core/sipstack/sip_platform_task.c',
-            
+
             # PLAT
             './src/sipcc/plat/common/dns_utils.c',
             #'./src/sipcc/plat/darwin/netif.c',
             './src/sipcc/plat/darwin/plat_api_stub.c',
             #'./src/sipcc/plat/unix-common/random.c',
-            
+
             # CPR
             './src/sipcc/cpr/darwin/cpr_darwin_assert.h',
             './src/sipcc/cpr/darwin/cpr_darwin_errno.c',
@@ -751,7 +793,7 @@
             './src/sipcc/cpr/darwin/cpr_darwin_tst.h',
             './src/sipcc/cpr/darwin/cpr_darwin_types.h',
           ],
-          
+
 
           'defines' : [
             'SIP_OS_OSX',
@@ -765,12 +807,12 @@
             '_DARWIN_C_SOURCE',
             'NO_NSPR_10_SUPPORT',
           ],
-          
+
           'cflags_mozilla': [
           ],
         }],
       ],
-            
+
     },
   ],
 }

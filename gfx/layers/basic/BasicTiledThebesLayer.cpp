@@ -7,6 +7,8 @@
 #include "gfxImageSurface.h"
 #include "sampler.h"
 #include "gfxPlatform.h"
+#include <cstdlib> // for std::abs(int/long)
+#include <cmath> // for std::abs(float/double)
 
 #ifdef GFX_TILEDLAYER_DEBUG_OVERLAY
 #include "cairo.h"
@@ -91,6 +93,8 @@ BasicTiledLayerBuffer::PaintThebes(BasicTiledThebesLayer* aLayer,
   NS_ASSERTION(!aPaintRegion.GetBounds().IsEmpty(), "Empty paint region\n");
 
   bool useSinglePaintBuffer = UseSinglePaintBuffer();
+  // XXX The single-tile case doesn't work at the moment, see bug 850396
+  /*
   if (useSinglePaintBuffer) {
     // Check if the paint only spans a single tile. If that's
     // the case there's no point in using a single paint buffer.
@@ -100,6 +104,7 @@ BasicTiledLayerBuffer::PaintThebes(BasicTiledThebesLayer* aLayer,
                            GetTileStart(paintBounds.y) !=
                            GetTileStart(paintBounds.YMost() - 1);
   }
+  */
 
   if (useSinglePaintBuffer) {
     const nsIntRect bounds = aPaintRegion.GetBounds();
@@ -236,6 +241,20 @@ BasicTiledLayerBuffer::ValidateTile(BasicTiledLayerTile aTile,
   return aTile;
 }
 
+BasicTiledThebesLayer::BasicTiledThebesLayer(BasicShadowLayerManager* const aManager)
+  : ThebesLayer(aManager, static_cast<BasicImplData*>(this))
+  , mLastScrollOffset(0, 0)
+  , mFirstPaint(true)
+{
+  MOZ_COUNT_CTOR(BasicTiledThebesLayer);
+  mLowPrecisionTiledBuffer.SetResolution(gfxPlatform::GetLowPrecisionResolution());
+}
+
+BasicTiledThebesLayer::~BasicTiledThebesLayer()
+{
+  MOZ_COUNT_DTOR(BasicTiledThebesLayer);
+}
+
 void
 BasicTiledThebesLayer::FillSpecificAttributes(SpecificLayerAttributes& aAttrs)
 {
@@ -361,7 +380,7 @@ BasicTiledThebesLayer::ComputeProgressiveUpdateRegion(BasicTiledLayerBuffer& aTi
     if (!aRegionToPaint.IsEmpty()) {
       break;
     }
-    if (NS_ABS(scrollDiffY) >= NS_ABS(scrollDiffX)) {
+    if (std::abs(scrollDiffY) >= std::abs(scrollDiffX)) {
       tileBounds.x += incX;
     } else {
       tileBounds.y += incY;
@@ -405,6 +424,7 @@ BasicTiledThebesLayer::ProgressiveUpdate(BasicTiledLayerBuffer& aTiledBuffer,
                                          void* aCallbackData)
 {
   bool repeat = false;
+  bool isBufferChanged = false;
   do {
     // Compute the region that should be updated. Repeat as many times as
     // is required.
@@ -419,15 +439,12 @@ BasicTiledThebesLayer::ProgressiveUpdate(BasicTiledLayerBuffer& aTiledBuffer,
                                             aResolution,
                                             repeat);
 
-    // There's no further work to be done, return if nothing has been
-    // drawn, or give what has been drawn to the shadow layer to upload.
+    // There's no further work to be done.
     if (regionToPaint.IsEmpty()) {
-      if (repeat) {
-        break;
-      } else {
-        return false;
-      }
+      break;
     }
+
+    isBufferChanged |= true;
 
     // Keep track of what we're about to refresh.
     aValidRegion.Or(aValidRegion, regionToPaint);
@@ -443,7 +460,9 @@ BasicTiledThebesLayer::ProgressiveUpdate(BasicTiledLayerBuffer& aTiledBuffer,
     aInvalidRegion.Sub(aInvalidRegion, regionToPaint);
   } while (repeat);
 
-  return true;
+  // Return false if nothing has been drawn, or give what has been drawn
+  // to the shadow layer to upload.
+  return isBufferChanged;
 }
 
 void

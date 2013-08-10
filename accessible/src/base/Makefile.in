@@ -21,9 +21,9 @@ CPPSRCS = \
   AccIterator.cpp \
   Filters.cpp \
   ARIAStateMap.cpp \
+  DocManager.cpp \
   FocusManager.cpp \
   NotificationController.cpp \
-  nsAccDocManager.cpp \
   nsAccessNode.cpp \
   nsARIAMap.cpp \
   nsCoreUtils.cpp \
@@ -48,7 +48,6 @@ endif
 
 EXPORTS = \
   AccEvent.h \
-  nsAccDocManager.h \
   nsAccessibilityService.h \
   nsAccessNode.h \
   $(NULL)
@@ -56,8 +55,10 @@ EXPORTS = \
 EXPORTS_NAMESPACES = mozilla/a11y
 
 EXPORTS_mozilla/a11y = \
+  DocManager.h \
   FocusManager.h \
   AccTypes.h \
+  Platform.h \
   States.h \
   Role.h \
   $(NULL)
@@ -81,6 +82,7 @@ LOCAL_INCLUDES += \
   -I$(srcdir)/../xul \
   -I$(srcdir)/../../../layout/generic \
   -I$(srcdir)/../../../layout/style \
+  -I$(srcdir)/../../../layout/svg \
   -I$(srcdir)/../../../layout/xul/base/src \
   $(NULL)
 

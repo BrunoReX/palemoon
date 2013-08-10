@@ -24,7 +24,6 @@
 #include "nsIWeakReference.h"
 #include "nsIDocShellTreeNode.h"
 
-class nsAccDocManager;
 class nsAccessiblePivot;
 
 class nsIScrollableView;
@@ -34,6 +33,7 @@ const uint32_t kDefaultCacheSize = 256;
 namespace mozilla {
 namespace a11y {
 
+class DocManager;
 class NotificationController;
 class RelatedAccIterator;
 template<class Class, class Arg>
@@ -79,8 +79,8 @@ public:
   virtual void Init();
   virtual void Shutdown();
   virtual nsIFrame* GetFrame() const;
-  virtual nsINode* GetNode() const { return mDocument; }
-  nsIDocument* DocumentNode() const { return mDocument; }
+  virtual nsINode* GetNode() const { return mDocumentNode; }
+  nsIDocument* DocumentNode() const { return mDocumentNode; }
 
   // Accessible
   virtual mozilla::a11y::ENameValueFlag Name(nsString& aName);
@@ -122,8 +122,8 @@ public:
     // eDOMLoaded flag check is used for error pages as workaround to make this
     // method return correct result since error pages do not receive 'pageshow'
     // event and as consequence nsIDocument::IsShowing() returns false.
-    return mDocument && mDocument->IsVisible() &&
-      (mDocument->IsShowing() || HasLoadState(eDOMLoaded));
+    return mDocumentNode && mDocumentNode->IsVisible() &&
+      (mDocumentNode->IsShowing() || HasLoadState(eDOMLoaded));
   }
 
   /**
@@ -173,22 +173,10 @@ public:
     { return mChildDocuments.SafeElementAt(aIndex, nullptr); }
 
   /**
-   * Non-virtual method to fire a delayed event after a 0 length timeout.
-   *
-   * @param aEventType   [in] the nsIAccessibleEvent event type
-   * @param aDOMNode     [in] DOM node the accesible event should be fired for
-   * @param aAllowDupes  [in] rule to process an event (see EEventRule constants)
+   * Fire accessible event asynchronously.
    */
-  nsresult FireDelayedAccessibleEvent(uint32_t aEventType, nsINode *aNode,
-                                      AccEvent::EEventRule aAllowDupes = AccEvent::eRemoveDupes,
-                                      EIsFromUserInput aIsFromUserInput = eAutoDetect);
-
-  /**
-   * Fire accessible event after timeout.
-   *
-   * @param aEvent  [in] the event to fire
-   */
-  nsresult FireDelayedAccessibleEvent(AccEvent* aEvent);
+  void FireDelayedEvent(AccEvent* aEvent);
+  void FireDelayedEvent(uint32_t aEventType, Accessible* aTarget);
 
   /**
    * Fire value change event on the given accessible if applicable.
@@ -331,7 +319,7 @@ protected:
   void NotifyOfLoad(uint32_t aLoadEventType);
   void NotifyOfLoading(bool aIsReloading);
 
-  friend class ::nsAccDocManager;
+  friend class DocManager;
 
   /**
    * Perform initial update (create accessible tree).
@@ -345,8 +333,11 @@ protected:
    */
   void ProcessLoad();
 
-    void AddScrollListener();
-    void RemoveScrollListener();
+  /**
+   * Add/remove scroll listeners, @see nsIScrollPositionListener interface.
+   */
+  void AddScrollListener();
+  void RemoveScrollListener();
 
   /**
    * Append the given document accessible to this document's child document
@@ -374,7 +365,7 @@ protected:
    * @param aRelProvider [in] accessible that element has relation attribute
    * @param aRelAttr     [in, optional] relation attribute
    */
-  void AddDependentIDsFor(Accessible* aRelProvider,
+  void AddDependentIDsFor(dom::Element* aRelProviderElm,
                           nsIAtom* aRelAttr = nullptr);
 
   /**
@@ -385,7 +376,7 @@ protected:
    * @param aRelProvider [in] accessible that element has relation attribute
    * @param aRelAttr     [in, optional] relation attribute
    */
-  void RemoveDependentIDsFor(Accessible* aRelProvider,
+  void RemoveDependentIDsFor(dom::Element* aRelProviderElm,
                              nsIAtom* aRelAttr = nullptr);
 
   /**
@@ -398,27 +389,28 @@ protected:
   bool UpdateAccessibleOnAttrChange(mozilla::dom::Element* aElement,
                                     nsIAtom* aAttribute);
 
-    /**
-     * Fires accessible events when attribute is changed.
-     *
-     * @param aContent - node that attribute is changed for
-     * @param aNameSpaceID - namespace of changed attribute
-     * @param aAttribute - changed attribute
-     */
-    void AttributeChangedImpl(nsIContent* aContent, int32_t aNameSpaceID, nsIAtom* aAttribute);
+  /**
+   * Fire accessible events when attribute is changed.
+   *
+   * @param aAccessible   [in] accessible the DOM attribute is changed for
+   * @param aNameSpaceID  [in] namespace of changed attribute
+   * @param aAttribute    [in] changed attribute
+   */
+  void AttributeChangedImpl(Accessible* aAccessible,
+                            int32_t aNameSpaceID, nsIAtom* aAttribute);
 
-    /**
-     * Fires accessible events when ARIA attribute is changed.
-     *
-     * @param aContent - node that attribute is changed for
-     * @param aAttribute - changed attribute
-     */
-    void ARIAAttributeChanged(nsIContent* aContent, nsIAtom* aAttribute);
+  /**
+   * Fire accessible events when ARIA attribute is changed.
+   *
+   * @param aAccessible  [in] accesislbe the DOM attribute is changed for
+   * @param aAttribute   [in] changed attribute
+   */
+  void ARIAAttributeChanged(Accessible* aAccessible, nsIAtom* aAttribute);
 
   /**
    * Process ARIA active-descendant attribute change.
    */
-  void ARIAActiveDescendantChanged(nsIContent* aElm);
+  void ARIAActiveDescendantChanged(Accessible* aAccessible);
 
   /**
    * Update the accessible tree for inserted content.
@@ -494,20 +486,39 @@ protected:
 protected:
 
   /**
+   * State and property flags, kept by mDocFlags.
+   */
+  enum {
+    // Whether scroll listeners were added.
+    eScrollInitialized = 1 << 0,
+
+    // Whether we support nsIAccessibleCursorable.
+    eCursorable = 1 << 1,
+
+    // Whether the document is a tab document.
+    eTabDocument = 1 << 2
+  };
+
+  /**
    * Cache of accessibles within this document accessible.
    */
   AccessibleHashtable mAccessibleCache;
   nsDataHashtable<nsPtrHashKey<const nsINode>, Accessible*>
     mNodeToAccessibleMap;
 
-    nsCOMPtr<nsIDocument> mDocument;
+    nsCOMPtr<nsIDocument> mDocumentNode;
     nsCOMPtr<nsITimer> mScrollWatchTimer;
     uint16_t mScrollPositionChangedTicks; // Used for tracking scroll events
 
   /**
    * Bit mask of document load states (@see LoadState).
    */
-  uint32_t mLoadState;
+  uint32_t mLoadState : 3;
+
+  /**
+   * Bit mask of other states and props.
+   */
+  uint32_t mDocFlags : 28;
 
   /**
    * Type of document load event fired after the document is loaded completely.
@@ -526,11 +537,6 @@ protected:
   nsIAtom* mARIAAttrOldValue;
 
   nsTArray<nsRefPtr<DocAccessible> > mChildDocuments;
-
-  /**
-   * Whether we support nsIAccessibleCursorable, used when querying the interface.
-   */
-  bool mIsCursorable;
 
   /**
    * The virtual cursor of the document when it supports nsIAccessibleCursorable.
@@ -585,8 +591,7 @@ private:
 inline DocAccessible*
 Accessible::AsDoc()
 {
-  return mFlags & eDocAccessible ?
-    static_cast<DocAccessible*>(this) : nullptr;
+  return IsDoc() ? static_cast<DocAccessible*>(this) : nullptr;
 }
 
 } // namespace a11y

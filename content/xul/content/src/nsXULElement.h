@@ -186,6 +186,9 @@ public:
 
     void Unlink();
 
+    // Trace all scripts held by this element and its children.
+    void TraceAllScripts(JSTracer* aTrc);
+
     nsPrototypeArray         mChildren;
 
     nsCOMPtr<nsINodeInfo>    mNodeInfo;           // [OWNER]
@@ -235,13 +238,10 @@ public:
     }
     void Set(JSScript* aObject);
 
-    struct ScriptObjectHolder
+    JSScript *GetScriptObject()
     {
-        ScriptObjectHolder() : mObject(nullptr)
-        {
-        }
-        JSScript* mObject;
-    };
+        return mScriptObject;
+    }
 
     nsCOMPtr<nsIURI>         mSrcURI;
     uint32_t                 mLineNo;
@@ -249,7 +249,8 @@ public:
     bool                     mOutOfLine;
     nsXULDocument*           mSrcLoadWaiters;   // [OWNER] but not COMPtr
     uint32_t                 mLangVersion;
-    ScriptObjectHolder       mScriptObject;
+private:
+    JSScript*                mScriptObject;
 };
 
 class nsXULPrototypeText : public nsXULPrototypeNode
@@ -341,7 +342,7 @@ public:
 
     static nsresult
     Create(nsXULPrototypeElement* aPrototype, nsIDocument* aDocument,
-           bool aIsScriptable, mozilla::dom::Element** aResult);
+           bool aIsScriptable, bool aIsRoot, mozilla::dom::Element** aResult);
 
     NS_IMPL_FROMCONTENT(nsXULElement, kNameSpaceID_XUL)
 
@@ -419,6 +420,9 @@ public:
     virtual nsXPCClassInfo* GetClassInfo();
 
     virtual nsIDOMNode* AsDOMNode() { return this; }
+
+    virtual bool IsEventAttributeName(nsIAtom* aName) MOZ_OVERRIDE;
+
 protected:
 
     // This can be removed if EnsureContentsGenerated dies.
@@ -516,7 +520,7 @@ protected:
 
     static already_AddRefed<nsXULElement>
     Create(nsXULPrototypeElement* aPrototype, nsINodeInfo *aNodeInfo,
-           bool aIsScriptable);
+           bool aIsScriptable, bool aIsRoot);
 
     bool IsReadWriteTextElement() const
     {
@@ -526,6 +530,8 @@ protected:
             (tag == nsGkAtoms::textbox || tag == nsGkAtoms::textarea) &&
             !HasAttr(kNameSpaceID_None, nsGkAtoms::readonly);
     }
+
+    void MaybeUpdatePrivateLifetime();
 };
 
 #endif // nsXULElement_h__

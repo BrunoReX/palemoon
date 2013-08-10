@@ -890,7 +890,7 @@ function loadManifestFromDir(aDir) {
     let size = 0;
     let entries = aFile.directoryEntries.QueryInterface(Ci.nsIDirectoryEnumerator);
     let entry;
-    while (entry = entries.nextFile)
+    while ((entry = entries.nextFile))
       size += getFileSize(entry);
     entries.close();
     return size;
@@ -1315,7 +1315,7 @@ function recursiveLastModifiedTime(aFile) {
     let entries = aFile.directoryEntries.QueryInterface(Ci.nsIDirectoryEnumerator);
     let entry, time;
     let maxTime = aFile.lastModifiedTime;
-    while (entry = entries.nextFile) {
+    while ((entry = entries.nextFile)) {
       time = recursiveLastModifiedTime(entry);
       maxTime = Math.max(time, maxTime);
     }
@@ -1805,8 +1805,8 @@ var XPIProvider = {
     }
     catch (e) { }
     
-    const TelemetryPing = Cc["@mozilla.org/base/telemetry-ping;1"].getService(Ci.nsIObserver);
-    TelemetryPing.observe(null, "Add-ons", data);
+    const TelemetryPing = Cc["@mozilla.org/base/telemetry-ping;1"].getService(Ci.nsITelemetryPing);
+    TelemetryPing.setAddOns(data);
   },
 
   /**
@@ -2174,7 +2174,7 @@ var XPIProvider = {
     let entries = distroDir.directoryEntries
                            .QueryInterface(Ci.nsIDirectoryEnumerator);
     let entry;
-    while (entry = entries.nextFile) {
+    while ((entry = entries.nextFile)) {
 
       let id = entry.leafName;
 
@@ -2989,7 +2989,11 @@ var XPIProvider = {
         Prefs.getBoolPref(PREF_INSTALL_DISTRO_ADDONS, true))
       updateDatabase = this.installDistributionAddons(manifests) || updateDatabase;
 
+    // Telemetry probe added around getInstallLocationStates() to check perf
+    let telemetryCaptureTime = new Date();
     let state = this.getInstallLocationStates();
+    let telemetry = Services.telemetry;
+    telemetry.getHistogramById("CHECK_ADDONS_MODIFIED_MS").add(new Date() - telemetryCaptureTime);
 
     if (!updateDatabase) {
       // If the state has changed then we must update the database

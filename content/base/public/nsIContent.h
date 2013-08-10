@@ -27,10 +27,9 @@ struct IMEState;
 } // namespace mozilla
 
 enum nsLinkState {
-  eLinkState_Unknown    = 0,
   eLinkState_Unvisited  = 1,
   eLinkState_Visited    = 2,
-  eLinkState_NotLink    = 3
+  eLinkState_NotLink    = 3 
 };
 
 // IID for the nsIContent interface
@@ -495,6 +494,18 @@ public:
    * NOTE: This should not be called on elements.
    */
   virtual uint32_t TextLength() const = 0;
+
+   /**
+    * Determines if an event attribute name (such as onclick) is valid for
+    * a given element type.
+    * @note calls nsContentUtils::IsEventAttributeName with right flag
+    * @note overridden by subclasses as needed
+    * @param aName the event name to look up
+    */
+  virtual bool IsEventAttributeName(nsIAtom* aName)
+  {
+    return false;
+  }
 
   /**
    * Set the text to the given value. If aNotify is true then

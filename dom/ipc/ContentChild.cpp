@@ -15,9 +15,6 @@
 #include "ContentChild.h"
 #include "CrashReporterChild.h"
 #include "TabChild.h"
-#if defined(MOZ_SYDNEYAUDIO)
-#include "AudioChild.h"
-#endif
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/ExternalHelperAppChild.h"
@@ -34,9 +31,6 @@
 #include "mozilla/net/NeckoChild.h"
 #include "mozilla/Preferences.h"
 
-#if defined(MOZ_SYDNEYAUDIO)
-#include "AudioStream.h"
-#endif
 #include "nsIMemoryReporter.h"
 #include "nsIMemoryInfoDumper.h"
 #include "nsIObserverService.h"
@@ -311,6 +305,18 @@ ContentChild::Init(MessageLoop* aIOLoop,
 void
 ContentChild::SetProcessName(const nsAString& aName)
 {
+    char* name;
+    if ((name = PR_GetEnv("MOZ_DEBUG_APP_PROCESS")) &&
+        aName.EqualsASCII(name)) {
+#ifdef OS_POSIX
+        printf_stderr("\n\nCHILDCHILDCHILDCHILD\n  [%s] debug me @%d\n\n", name, getpid());
+        sleep(30);
+#elif defined(OS_WIN)
+        printf_stderr("\n\nCHILDCHILDCHILDCHILD\n  [%s] debug me @%d\n\n", name, _getpid());
+        Sleep(30000);
+#endif
+    }
+
     mProcessName = aName;
     mozilla::ipc::SetThisProcessName(NS_LossyConvertUTF16toASCII(aName).get());
 }
@@ -677,29 +683,6 @@ bool
 ContentChild::RecvPTestShellConstructor(PTestShellChild* actor)
 {
     actor->SendPContextWrapperConstructor()->SendPObjectWrapperConstructor(true);
-    return true;
-}
-
-PAudioChild*
-ContentChild::AllocPAudio(const int32_t& numChannels,
-                          const int32_t& rate)
-{
-#if defined(MOZ_SYDNEYAUDIO)
-    AudioChild *child = new AudioChild();
-    NS_ADDREF(child);
-    return child;
-#else
-    return nullptr;
-#endif
-}
-
-bool
-ContentChild::DeallocPAudio(PAudioChild* doomed)
-{
-#if defined(MOZ_SYDNEYAUDIO)
-    AudioChild *child = static_cast<AudioChild*>(doomed);
-    NS_RELEASE(child);
-#endif
     return true;
 }
 

@@ -73,7 +73,7 @@ GCONF_VERSION=1.2.1
 GIO_VERSION=2.20
 STARTUP_NOTIFICATION_VERSION=0.8
 DBUS_VERSION=0.60
-SQLITE_VERSION=3.7.14.1
+SQLITE_VERSION=3.7.15.2
 
 MSMANIFEST_TOOL=
 
@@ -122,6 +122,30 @@ then
   fi
 fi
 MOZ_BUILD_ROOT=`pwd`
+
+dnl Do not allow building if a clobber is required
+dnl ==============================================================
+dnl TODO Make this better, ideally this would clobber automaticially
+if test -e $_objdir/CLOBBER; then
+  if test $_topsrcdir/CLOBBER -nt $_objdir/CLOBBER; then
+    echo "	***"
+    echo "	*	The CLOBBER file has been updated, indicating that an incremental build"
+    echo "	*	since your last build will probably not work. A full build is required."
+    echo "	*	The change that caused this is:"
+    cat $_topsrcdir/CLOBBER | sed '/^#/d' | sed 's/^/	*	/'
+    echo "	*	"
+    echo "	*	The easiest way to fix this is to manually delete your objdir:"
+    echo "	*	rm -rf $_objdir"
+    echo "	*	"
+    echo "	*	Or, if you know this clobber doesn't apply to you, it can be ignored with:"
+    echo "	*	cp '$_topsrcdir/CLOBBER' $_objdir"
+    echo "	***"
+    exit 1
+    break;
+  fi
+else
+  touch $_objdir/CLOBBER
+fi
 
 MOZ_PATH_PROGS(PYTHON, $PYTHON python2.7 python2.6 python2.5 python)
 if test -z "$PYTHON"; then
@@ -727,6 +751,18 @@ EOF
                 "$_WINDRES_RELEASE_VERSION" -lt "$WINDRES_RELEASE_VERSION"
         then
             AC_MSG_ERROR([windres version $WINDRES_VERSION or higher is required to build.])
+        fi
+
+        AC_CHECK_PROGS(MIDL, $target-widl widl)
+        if test -n "$MIDL"; then
+            case "$target" in
+            i*86-*)
+                MIDL_FLAGS="$MIDL_FLAGS --win32 -m32"
+                ;;
+            x86_64-*)
+                MIDL_FLAGS="$MIDL_FLAGS --win64 -m64"
+                ;;
+            esac
         fi
 
         MOZ_WINSDK_MAXVER=0x06020000
@@ -1398,6 +1434,14 @@ if test "$GNU_CC"; then
     AC_TRY_LINK(,,AC_MSG_RESULT([yes]),
                   AC_MSG_RESULT([no])
                   LDFLAGS=$_SAVE_LDFLAGS)
+    AC_MSG_CHECKING([for --build-id option to ld])
+    _SAVE_LDFLAGS=$LDFLAGS
+    LDFLAGS="$LDFLAGS -Wl,--build-id"
+    AC_TRY_LINK(,,AC_MSG_RESULT([yes])
+                  [NSPR_LDFLAGS="$NSPR_LDFLAGS -Wl,--build-id"],
+                  AC_MSG_RESULT([no])
+                  LDFLAGS=$_SAVE_LDFLAGS)
+
 
     # Check for -mssse3 on $CC
     AC_MSG_CHECKING([if toolchain supports -mssse3 option])
@@ -1611,7 +1655,11 @@ MOZ_ARG_ENABLE_BOOL(profiling,
 
 # For profiling builds keep the symbol information
 if test "$MOZ_PROFILING" -a -z "$STRIP_FLAGS"; then
-    STRIP_FLAGS="--strip-debug"
+    case "$OS_TARGET" in
+    Linux|DragonFly|FreeBSD|NetBSD|OpenBSD)
+        STRIP_FLAGS="--strip-debug"
+        ;;
+    esac
 fi
 
 dnl ========================================================
@@ -1672,21 +1720,6 @@ if test -n "$MOZ_VALGRIND"; then
     AC_DEFINE(MOZ_VALGRIND)
 fi
 AC_SUBST(MOZ_VALGRIND)
-
-dnl ========================================================
-dnl = Enable DMDV
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(dmdv,
-[  --enable-dmdv           Enable DMDV; also disables jemalloc (default=no)],
-    MOZ_DMDV=1,
-    MOZ_DMDV= )
-if test -n "$MOZ_DMDV"; then
-    MOZ_CHECK_HEADER([valgrind/valgrind.h], [],
-        AC_MSG_ERROR(
-            [--enable-dmdv specified but Valgrind is not installed]))
-    AC_DEFINE(MOZ_DMDV)
-fi
-AC_SUBST(MOZ_DMDV)
 
 dnl ========================================================
 dnl jprof
@@ -2171,7 +2204,10 @@ ia64*-hpux*)
         # because this also forces narrowing to a single byte, which can be a
         # perf hit.  But this matters so little in practice (and often we want
         # that behavior) that it's better to turn it off.
-        CXXFLAGS="$CXXFLAGS -wd4345 -wd4351 -wd4800"
+        # MSVC warning C4819 warns some UTF-8 characters (e.g. copyright sign)
+        # on non-Western system locales even if it is in a comment.
+        CFLAGS="$CFLAGS -wd4819"
+        CXXFLAGS="$CXXFLAGS -wd4345 -wd4351 -wd4800 -wd4819"
         # make 'foo == bar;' error out
         CFLAGS="$CFLAGS -we4553"
         CXXFLAGS="$CXXFLAGS -we4553"
@@ -3685,8 +3721,8 @@ if test -n "$MOZ_LINKER"; then
     ARM_ARCH=`${CC-cc} ${CFLAGS} -dM -E - < /dev/null | sed -n 's/.*__ARM_ARCH_\([[0-9]]*\).*/\1/p'`
     dnl When building for < ARMv7, we need to ensure 16k alignment of ELF segments
     if test -n "$ARM_ARCH" && test "$ARM_ARCH" -lt 7; then
-      LDFLAGS="$LDFLAGS -Wl,-z,max-page-size=0x4000"
-      _SUBDIR_LDFLAGS="$_SUBDIR_LDFLAGS -Wl,-z,max-page-size=0x4000"
+      LDFLAGS="$LDFLAGS -Wl,-z,max-page-size=0x4000 -Wl,-z,common-page-size=0x4000"
+      _SUBDIR_LDFLAGS="$_SUBDIR_LDFLAGS -Wl,-z,max-page-size=0x4000 -Wl,-z,common-page-size=0x4000"
     fi
   fi
 fi
@@ -3701,7 +3737,7 @@ dnl __cxa_finalize. The custom linker actually takes care of calling
 dnl __cxa_finalize when the library doesn't call it itself, which makes it
 dnl safe not to link crtbegin. Besides, previous versions of the NDK didn't
 dnl link crtbegin and crtend at all.
-if test -n "$MOZ_LINKER" -a -z "$MOZ_OLD_LINKER" -a "$OS_TARGET" = "Android"; then
+if test -n "$MOZ_LINKER" -a "$OS_TARGET" = "Android"; then
   AC_CACHE_CHECK([whether the CRT objects have text relocations],
     ac_cv_crt_has_text_relocations,
     [echo 'int foo() { return 0; }' > conftest.cpp
@@ -3724,7 +3760,7 @@ if test -n "$MOZ_LINKER" -a -z "$MOZ_OLD_LINKER" -a "$OS_TARGET" = "Android"; th
     dnl Using LDFLAGS in nspr is safe, since we only really build
     dnl libraries there.
     DSO_LDOPTS="$DSO_LDOPTS -nostartfiles"
-    NSPR_LDFLAGS=-nostartfiles
+    NSPR_LDFLAGS="$NSPR_LDFLAGS -nostartfiles"
   fi
 fi
 
@@ -3964,7 +4000,7 @@ MOZ_ARG_WITH_BOOL(system-nss,
     _USE_SYSTEM_NSS=1 )
 
 if test -n "$_USE_SYSTEM_NSS"; then
-    AM_PATH_NSS(3.14.1, [MOZ_NATIVE_NSS=1], [AC_MSG_ERROR([you don't have NSS installed or your version is too old])])
+    AM_PATH_NSS(3.14.3, [MOZ_NATIVE_NSS=1], [AC_MSG_ERROR([you don't have NSS installed or your version is too old])])
 fi
 
 if test -n "$MOZ_NATIVE_NSS"; then
@@ -4202,6 +4238,7 @@ MOZ_OGG=1
 MOZ_RAW=
 MOZ_SYDNEYAUDIO=
 MOZ_SPEEX_RESAMPLER=1
+MOZ_SOUNDTOUCH=1
 MOZ_CUBEB=
 MOZ_VORBIS=
 MOZ_TREMOR=
@@ -4211,7 +4248,8 @@ MOZ_SAMPLE_TYPE_S16=
 MOZ_MEDIA=
 MOZ_OPUS=1
 MOZ_WEBM=1
-MOZ_DASH=
+MOZ_DASH=1
+MOZ_WMF=
 MOZ_WEBRTC=1
 MOZ_PEERCONNECTION=
 MOZ_SRTP=
@@ -4576,9 +4614,6 @@ cairo-android)
     MOZ_WEBGL=1
     MOZ_PDF_PRINTING=1
     MOZ_INSTRUMENT_EVENT_LOOP=1
-    if test "$MOZ_BUILD_APP" = "mobile/xul"; then
-        MOZ_OLD_LINKER=1
-    fi
     ;;
 
 cairo-gonk)
@@ -4594,7 +4629,6 @@ cairo-gonk)
 
 esac
 
-AC_SUBST(MOZ_OLD_LINKER)
 AC_SUBST(MOZ_PDF_PRINTING)
 if test "$MOZ_PDF_PRINTING"; then
    PDF_SURFACE_FEATURE="#define CAIRO_HAS_PDF_SURFACE 1"
@@ -5187,7 +5221,25 @@ MOZ_ARG_DISABLE_BOOL(accessibility,
     ACCESSIBILITY=,
     ACCESSIBILITY=1 )
 if test "$ACCESSIBILITY"; then
+    case "$target" in
+    *-mingw*)
+        if test -z "$MIDL"; then
+            if test "$GCC" != "yes"; then
+                AC_MSG_ERROR([MIDL could not be found. Building accessibility without MIDL is not supported.])
+            else
+                AC_MSG_ERROR([You have accessibility enabled, but widl could not be found. Add --disable-accessibility to your mozconfig or install widl. See https://developer.mozilla.org/en-US/docs/Cross_Compile_Mozilla_for_Mingw32 for details.])
+            fi
+        fi
+    esac
     AC_DEFINE(ACCESSIBILITY)
+fi
+
+dnl ========================================================
+dnl Accessibility is required for the linuxgl widget
+dnl backend
+dnl ========================================================
+if test "${MOZ_WIDGET_TOOLKIT}" = "linuxgl" -a "$ACCESSIBILITY" != "1"; then
+    AC_MSG_ERROR(["Accessibility is required for the linuxgl widget backend"])
 fi
 
 dnl ========================================================
@@ -5237,6 +5289,20 @@ if test -n "$MOZ_WEBRTC"; then
     MOZ_VP8=1
     MOZ_VP8_ENCODER=1
     MOZ_VP8_ERROR_CONCEALMENT=1
+
+    dnl OpenSLES is only available in Android 2.3 and later; we'll change this
+    dnl hard dependency to a dynamic load with graceful runtime failure before
+    dnl we make --enable-webrtc on by default in Android (bug 815905)
+    dnl
+    if test "$OS_TARGET" = "Android"; then
+       LDFLAGS="$LDFLAGS -lOpenSLES"
+    fi
+    case "$target" in
+    *-android*|*-linuxandroid*)
+       LDFLAGS="$LDFLAGS -lOpenSLES"
+       ;;
+    esac
+
 dnl enable once Signaling lands
     MOZ_WEBRTC_SIGNALING=1
     AC_DEFINE(MOZ_WEBRTC_SIGNALING)
@@ -5253,7 +5319,7 @@ dnl enable once PeerConnection lands
 fi
 
 AC_SUBST(MOZ_WEBRTC)
-AC_SUBST(MOZ_WEBRTC_TESTS)
+AC_SUBST(MOZ_WEBRTC_LEAKING_TESTS)
 AC_SUBST(MOZ_WEBRTC_SIGNALING)
 AC_SUBST(MOZ_PEERCONNECTION)
 AC_SUBST(MOZ_WEBRTC_IN_LIBXUL)
@@ -5346,12 +5412,12 @@ if test -n "$MOZ_WEBM"; then
 fi;
 
 dnl ========================================================
-dnl = Enable DASH-WebM support
+dnl = Disable DASH-WebM support
 dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(dash,
-[  --enable-dash          Enable support for DASH-WebM],
-    MOZ_DASH=1,
-    MOZ_DASH=)
+MOZ_ARG_DISABLE_BOOL(dash,
+[  --disable-dash          Disable support for DASH-WebM],
+    MOZ_DASH=,
+    MOZ_DASH=1)
 
 if test -n "$MOZ_DASH"; then
     if test -n "$MOZ_WEBM"; then
@@ -5361,6 +5427,29 @@ if test -n "$MOZ_DASH"; then
         AC_MSG_ERROR([WebM is currently disabled and must be enabled for DASH
                      to work.])
     fi
+fi;
+
+
+dnl ========================================================
+dnl = Windows Media Foundation support
+dnl ========================================================
+if test "$OS_ARCH" = "WINNT"; then
+    dnl Enable Windows Media Foundation support by default.
+    dnl Note our minimum SDK version is Windows 7 SDK, so we are (currently)
+    dnl guaranteed to have a recent-enough SDK to build WMF.
+    MOZ_WMF=1
+fi
+
+MOZ_ARG_DISABLE_BOOL(wmf,
+[  --disable-wmf  Disable support for Windows Media Foundation],
+    MOZ_WMF=,
+    MOZ_WMF=1)
+
+if test -n "$MOZ_WMF"; then
+    AC_DEFINE(MOZ_WMF)
+    MOZ_SYDNEYAUDIO=1
+    MOZ_CUBEB=1
+    MOZ_MEDIA=1
 fi;
 
 dnl ========================================================
@@ -5576,6 +5665,10 @@ if test -n "$MOZ_SPEEX_RESAMPLER"; then
     AC_DEFINE(MOZ_SPEEX_RESAMPLER)
 fi
 
+if test -n "$MOZ_SOUNDTOUCH"; then
+    AC_DEFINE(MOZ_SOUNDTOUCH)
+fi
+
 if test -n "$MOZ_CUBEB"; then
     case "$target" in
     *-android*|*-linuxandroid*)
@@ -5628,10 +5721,24 @@ dnl ========================================================
 
 dnl If using sydneyaudio with Linux, ensure that the alsa library is available
 if test -n "$MOZ_SYDNEYAUDIO" -a "$OS_TARGET" = "Linux"; then
+    MOZ_ALSA=1
+fi
+
+MOZ_ARG_ENABLE_BOOL(alsa,
+[  --enable-alsa          Enable Alsa support (default on Linux)],
+MOZ_ALSA=1,
+MOZ_ALSA=)
+
+if test -n "$MOZ_ALSA"; then
+    AC_DEFINE(MOZ_CUBEB)
     PKG_CHECK_MODULES(MOZ_ALSA, alsa, ,
          [echo "$MOZ_ALSA_PKG_ERRORS"
           AC_MSG_ERROR([Need alsa for Ogg, Wave or WebM decoding on Linux.  Disable with --disable-ogg --disable-wave --disable-webm.  (On Ubuntu, you might try installing the package libasound2-dev.)])])
 fi
+
+AC_SUBST(MOZ_ALSA)
+AC_SUBST(MOZ_ALSA_CFLAGS)
+AC_SUBST(MOZ_ALSA_LIBS)
 
 dnl ========================================================
 dnl = Enable PulseAudio
@@ -6702,6 +6809,7 @@ AC_SUBST(MOZ_GL_PROVIDER)
 AC_DEFINE_UNQUOTED(MOZ_GL_PROVIDER, GLContextProvider$MOZ_GL_PROVIDER)
 fi
 AC_SUBST(MOZ_GL_DEFAULT_PROVIDER)
+AC_DEFINE_UNQUOTED(GL_PROVIDER_$MOZ_GL_DEFAULT_PROVIDER)
 
 dnl ========================================================
 dnl = faststripe theme
@@ -6935,7 +7043,7 @@ dnl = Enable DMD
 dnl ========================================================
 
 MOZ_ARG_ENABLE_BOOL(dmd,
-[  --enable-dmd            Enable DMD; also enables jemalloc and replace-malloc and disables DMDV],
+[  --enable-dmd            Enable DMD; also enables jemalloc and replace-malloc],
     MOZ_DMD=1,
     MOZ_DMD= )
 
@@ -6953,7 +7061,6 @@ if test "$MOZ_DMD"; then
 
     MOZ_MEMORY=1                        # DMD enables jemalloc
     MOZ_REPLACE_MALLOC=1                # DMD enables replace-malloc
-    MOZ_DMDV=                           # DMD disables DMDV
 fi
 AC_SUBST(MOZ_DMD)
 
@@ -6966,9 +7073,6 @@ MOZ_ARG_ENABLE_BOOL(jemalloc,
     MOZ_MEMORY=)
 
 if test "$NS_TRACE_MALLOC"; then
-    MOZ_MEMORY=
-fi
-if test "$MOZ_DMDV"; then
     MOZ_MEMORY=
 fi
 
@@ -6996,7 +7100,7 @@ else
     MOZ_GLUE_PROGRAM_LDFLAGS="$MOZ_GLUE_PROGRAM_LDFLAGS -rdynamic"
   fi
   if test "$MOZ_LINKER" = 1; then
-    MOZ_GLUE_PROGRAM_LDFLAGS="$MOZ_GLUE_PROGRAM_LDFLAGS $ZLIB_LIBS"
+    MOZ_GLUE_PROGRAM_LDFLAGS="$MOZ_GLUE_PROGRAM_LDFLAGS $MOZ_ZLIB_LIBS"
   fi
 fi
 
@@ -7191,13 +7295,11 @@ dnl We need to wrap dlopen and related functions on Android because we use
 dnl our own linker.
 if test "$OS_TARGET" = Android; then
     WRAP_LDFLAGS="${WRAP_LDFLAGS} -L$_objdir/dist/lib -lmozglue"
-    if test -n "$MOZ_OLD_LINKER"; then
-        WRAP_LDFLAGS="${WRAP_LDFLAGS} -Wl,--wrap=dlopen,--wrap=dlclose,--wrap=dlerror,--wrap=dlsym,--wrap=dladdr"
-    fi
     WRAP_LDFLAGS="${WRAP_LDFLAGS} -Wl,--wrap=getaddrinfo,--wrap=freeaddrinfo,--wrap=gai_strerror"
     WRAP_LDFLAGS="${WRAP_LDFLAGS} -Wl--wrap=PR_GetEnv,--wrap=PR_SetEnv"
     if test -z "$gonkdir"; then
         WRAP_LDFLAGS="${WRAP_LDFLAGS} -Wl,--wrap=fork,--wrap=pthread_atfork,--wrap=raise"
+        WRAP_LDFLAGS="${WRAP_LDFLAGS} -Wl,--wrap=memccpy,--wrap=memchr,--wrap=memrchr,--wrap=memcmp,--wrap=memcpy,--wrap=memmove,--wrap=memset,--wrap=memmem,--wrap=memswap,--wrap=index,--wrap=strchr,--wrap=strrchr,--wrap=strlen,--wrap=strcmp,--wrap=strcpy,--wrap=strcat,--wrap=strcasecmp,--wrap=strncasecmp,--wrap=strstr,--wrap=strcasestr,--wrap=strtok,--wrap=strtok_r,--wrap=strerror,--wrap=strerror_r,--wrap=strnlen,--wrap=strncat,--wrap=strncmp,--wrap=strncpy,--wrap=strlcat,--wrap=strlcpy,--wrap=strcspn,--wrap=strpbrk,--wrap=strsep,--wrap=strspn,--wrap=strcoll,--wrap=strxfrm"
     fi
 fi
 
@@ -8598,19 +8700,32 @@ fi
 AC_DEFINE_UNQUOTED(MOZ_UA_BUILDID, "$MOZ_UA_BUILDID")
 AC_SUBST(MOZ_UA_BUILDID)
 
-# We can't use the static application.ini data when building against
-# a libxul SDK.
-if test -n "$LIBXUL_SDK"; then
-    MOZ_APP_STATIC_INI=
-fi
 AC_SUBST(MOZ_APP_STATIC_INI)
 
 AC_SUBST(MOZ_PKG_SPECIAL)
 
 AC_SUBST(MOZILLA_OFFICIAL)
 
+AC_DEFINE_UNQUOTED(MOZ_TELEMETRY_DISPLAY_REV, 2)
+AC_SUBST(MOZ_TELEMETRY_DISPLAY_REV)
+
 if test "$MOZ_TELEMETRY_REPORTING"; then
     AC_DEFINE(MOZ_TELEMETRY_REPORTING)
+
+    # Enable Telemetry by default for nightly and aurora channels
+    if test "$MOZ_UPDATE_CHANNEL" = "nightly" -o \
+        "$MOZ_UPDATE_CHANNEL" = "aurora"; then
+        AC_DEFINE(MOZ_TELEMETRY_ON_BY_DEFAULT)
+    fi
+fi
+
+dnl If we have any service that uploads data (and requires data submission
+dnl policy alert), set MOZ_DATA_REPORTING.
+dnl We need SUBST for build system and DEFINE for xul preprocessor.
+if test -n "$MOZ_TELEMETRY_REPORTING" || test -n "$MOZ_SERVICES_HEALTHREPORT" || test -n "$MOZ_CRASHREPORTER"; then
+  MOZ_DATA_REPORTING=1
+  AC_DEFINE(MOZ_DATA_REPORTING)
+  AC_SUBST(MOZ_DATA_REPORTING)
 fi
 
 dnl win32 options
@@ -8737,6 +8852,7 @@ AC_SUBST(MOZ_APP_EXTRA_LIBS)
 AC_SUBST(MOZ_MEDIA)
 AC_SUBST(MOZ_SYDNEYAUDIO)
 AC_SUBST(MOZ_SPEEX_RESAMPLER)
+AC_SUBST(MOZ_SOUNDTOUCH)
 AC_SUBST(MOZ_CUBEB)
 AC_SUBST(MOZ_WAVE)
 AC_SUBST(MOZ_VORBIS)
@@ -8744,14 +8860,13 @@ AC_SUBST(MOZ_TREMOR)
 AC_SUBST(MOZ_OPUS)
 AC_SUBST(MOZ_WEBM)
 AC_SUBST(MOZ_DASH)
+AC_SUBST(MOZ_WMF)
 AC_SUBST(MOZ_MEDIA_PLUGINS)
 AC_SUBST(MOZ_OMX_PLUGIN)
 AC_SUBST(MOZ_VP8_ERROR_CONCEALMENT)
 AC_SUBST(MOZ_VP8_ENCODER)
 AC_SUBST(MOZ_VP8)
 AC_SUBST(MOZ_OGG)
-AC_SUBST(MOZ_ALSA_LIBS)
-AC_SUBST(MOZ_ALSA_CFLAGS)
 AC_SUBST(VPX_AS)
 AC_SUBST(VPX_ASFLAGS)
 AC_SUBST(VPX_DASH_C_FLAG)
@@ -8915,6 +9030,28 @@ echo $MAKEFILES > unallmakefiles
 
 AC_OUTPUT($MAKEFILES)
 
+# target_arch is from {ia32|x64|arm}
+case "$CPU_ARCH" in
+x86_64 | ia64)
+    WEBRTC_TARGET_ARCH=x64
+    ;;
+
+arm*)
+    WEBRTC_TARGET_ARCH=arm
+    ;;
+
+x86)
+    WEBRTC_TARGET_ARCH=ia32
+    ;;
+
+*)
+# unsupported arch for webrtc
+    WEBRTC_TARGET_ARCH=unknown
+    MOZ_WEBRTC=
+    ;;
+
+esac
+
 # Generate Makefiles for WebRTC directly from .gyp files
 if test "${OS_TARGET}" = "WINNT"; then
    if test "$HAVE_64BIT_OS"; then
@@ -8923,6 +9060,14 @@ if test "${OS_TARGET}" = "WINNT"; then
       OS_BITS=32
    fi
    EXTRA_GYP_DEFINES="-D MSVS_VERSION=${_MSVS_VERSION} -D MSVS_OS_BITS=${OS_BITS}"
+
+elif test "${OS_TARGET}" = "Android"; then
+   EXTRA_GYP_DEFINES="-D gtest_target_type=executable -D android_toolchain=${android_toolchain} -G os=android "
+   if test -n "$ARM_ARCH" && test "$ARM_ARCH" -lt 7; then
+      EXTRA_GYP_DEFINES+=" -D armv7=0 "
+   else
+      EXTRA_GYP_DEFINES+=" -D armv7=1 "
+   fi
 fi
 
 if test -n "$MOZ_WEBRTC"; then
@@ -8932,7 +9077,7 @@ dnl Any --include files must also appear in -D FORCED_INCLUDE_FILE= entries
 dnl so that regeneration via dependencies works correctly
    WEBRTC_CONFIG="-D build_with_mozilla=1 --include ${srcdir}/media/webrtc/webrtc_config.gypi -D FORCED_INCLUDE_FILE=${srcdir}/media/webrtc/webrtc_config.gypi"
 
-   GYP_WEBRTC_OPTIONS="--format=mozmake ${WEBRTC_CONFIG} ${EXTRA_GYP_DEFINES} --depth=${srcdir}/media/webrtc/trunk --toplevel-dir=${srcdir} -G OBJDIR=${_objdir}"
+   GYP_WEBRTC_OPTIONS="--format=mozmake ${WEBRTC_CONFIG} -D target_arch=${WEBRTC_TARGET_ARCH} ${EXTRA_GYP_DEFINES} --depth=${srcdir}/media/webrtc/trunk --toplevel-dir=${srcdir} -G OBJDIR=${_objdir}"
 
    $PYTHON ${srcdir}/media/webrtc/trunk/build/gyp_chromium \
      $GYP_WEBRTC_OPTIONS \
@@ -9002,6 +9147,8 @@ MOZ_DEBUG=${MOZ_DEBUG} \
 MOZ_WIDGET_TOOLKIT=${MOZ_WIDGET_TOOLKIT} \
 UNIVERSAL_BINARY=${UNIVERSAL_BINARY} \
 MOZ_CRASHREPORTER=${MOZ_CRASHREPORTER} \
+MOZ_APP_NAME=${MOZ_APP_NAME} \
+MOZ_PER_WINDOW_PRIVATE_BROWSING=${MOZ_PER_WINDOW_PRIVATE_BROWSING} \
   $PYTHON ${_topsrcdir}/config/writemozinfo.py ./mozinfo.json.tmp
 if cmp -s ./mozinfo.json.tmp ./mozinfo.json; then
   rm ./mozinfo.json.tmp
@@ -9075,42 +9222,6 @@ if test -z "$MOZ_NATIVE_JEMALLOC" -a "$MOZ_MEMORY" && test -n "$MOZ_JEMALLOC3" -
   ac_configure_args="$_SUBDIR_CONFIG_ARGS"
 fi
 
-dnl Build libunwind for Android profiling builds
-if test "$OS_TARGET" = "Android" -a "$MOZ_PROFILING"; then
-  old_ac_configure_arg="$ac_configure_args"
-  ac_configure_args="--build=${build} --host=${target_alias} --disable-shared --enable-block-signals=no"
-  if test "$MOZ_DEBUG"; then
-    ac_configure_args="$ac_configure_args --enable-debug"
-  fi
-  if test "$DSO_PIC_CFLAGS"; then
-    ac_configure_args="$ac_configure_args --with-pic"
-  fi
-  ac_configure_args="$ac_configure_args \
-      CC=\"$CC\" \
-      CXX=\"$CXX\" \
-      CPP=\"$CPP\" \
-      CFLAGS=\"$CFLAGS\" \
-      CXXFLAGS=\"$CXXFLAGS\" \
-      CPPFLAGS=\"$CPPFLAGS\" \
-      LD=\"$LD\" \
-      LDFLAGS=\"$LDFLAGS\" \
-      AR=\"$AR\" \
-      RANLIB=\"$RANLIB\" \
-      STRIP=\"$STRIP\" \
-      LIBS=\"$LIBS\""
-
-  # Use a separate cache file for libunwind, since it does not use caching.
-  mkdir -p $_objdir/tools/profiler/libunwind/src
-  old_cache_file=$cache_file
-  cache_file=$_objdir/tools/profiler/libunwind/src/config.cache
-  old_config_files=$CONFIG_FILES
-  unset CONFIG_FILES
-  AC_OUTPUT_SUBDIRS(tools/profiler/libunwind/src)
-  cache_file=$old_cache_file
-  ac_configure_args="$old_ac_configure_args"
-  CONFIG_FILES=$old_config_files
-fi
-
 # Run freetype configure script
 
 if test "$MOZ_TREE_FREETYPE"; then
@@ -9172,7 +9283,7 @@ if test -z "$MOZ_NATIVE_NSPR"; then
         ac_configure_args="$ac_configure_args --with-arm-kuser"
     fi
     ac_configure_args="$ac_configure_args $NSPR_CONFIGURE_ARGS"
-    if test -n "$MOZ_LINKER" -a -z "$MOZ_OLD_LINKER" -a "$ac_cv_func_dladdr" = no ; then
+    if test -n "$MOZ_LINKER" -a "$ac_cv_func_dladdr" = no ; then
       # dladdr is supported by the new linker, even when the system linker doesn't
       # support it. Trick nspr into using dladdr when it's not supported.
       _SAVE_CPPFLAGS="$CPPFLAGS"
@@ -9182,7 +9293,7 @@ if test -z "$MOZ_NATIVE_NSPR"; then
     export LDFLAGS="$LDFLAGS $NSPR_LDFLAGS"
     AC_OUTPUT_SUBDIRS(nsprpub)
     LDFLAGS="$_SAVE_LDFLAGS"
-    if test -n "$MOZ_LINKER" -a -z "$MOZ_OLD_LINKER" -a "$ac_cv_func_dladdr" = no; then
+    if test -n "$MOZ_LINKER" -a "$ac_cv_func_dladdr" = no; then
       unset CPPFLAGS
       CPPFLAGS="$_SAVE_CFLAGS"
     fi

@@ -6,7 +6,6 @@
 #include "mozilla/Util.h"
 
 #include "nsSVGAElement.h"
-#include "nsSVGGraphicElement.h"
 #include "nsIDOMSVGAElement.h"
 #include "nsIDOMSVGURIReference.h"
 #include "nsILink.h"
@@ -36,12 +35,11 @@ NS_IMPL_RELEASE_INHERITED(nsSVGAElement, nsSVGAElementBase)
 DOMCI_NODE_DATA(SVGAElement, nsSVGAElement)
 
 NS_INTERFACE_TABLE_HEAD(nsSVGAElement)
-  NS_NODE_INTERFACE_TABLE8(nsSVGAElement,
+  NS_NODE_INTERFACE_TABLE7(nsSVGAElement,
                            nsIDOMNode,
                            nsIDOMElement,
                            nsIDOMSVGElement,
                            nsIDOMSVGAElement,
-                           nsIDOMSVGTests,
                            nsIDOMSVGURIReference,
                            nsILink,
                            Link)
@@ -68,6 +66,7 @@ nsSVGAElement::GetHref(nsIDOMSVGAnimatedString * *aHref)
   return mStringAttributes[HREF].ToDOMAnimatedString(aHref, this);
 }
 
+NS_IMPL_STRING_ATTR(nsSVGAElement, Download, download)
 
 //----------------------------------------------------------------------
 // nsINode methods
@@ -109,7 +108,7 @@ nsSVGAElement::BindToTree(nsIDocument *aDocument, nsIContent *aParent,
                           nsIContent *aBindingParent,
                           bool aCompileEventHandlers)
 {
-  Link::ResetLinkState(false);
+  Link::ResetLinkState(false, Link::ElementHasHref());
 
   nsresult rv = nsSVGAElementBase::BindToTree(aDocument, aParent,
                                               aBindingParent,
@@ -128,7 +127,7 @@ nsSVGAElement::UnbindFromTree(bool aDeep, bool aNullParent)
 {
   // If this link is ever reinserted into a document, it might
   // be under a different xml:base, so forget the cached state now.
-  Link::ResetLinkState(false);
+  Link::ResetLinkState(false, Link::ElementHasHref());
   
   nsIDocument* doc = GetCurrentDoc();
   if (doc) {
@@ -281,7 +280,7 @@ nsSVGAElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
   // that content states have changed will call IntrinsicState, which will try
   // to get updated information about the visitedness from Link.
   if (aName == nsGkAtoms::href && aNameSpaceID == kNameSpaceID_XLink) {
-    Link::ResetLinkState(!!aNotify);
+    Link::ResetLinkState(!!aNotify, true);
   }
 
   return rv;
@@ -291,7 +290,7 @@ nsresult
 nsSVGAElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttr,
                          bool aNotify)
 {
-  nsresult rv = nsSVGAElementBase::UnsetAttr(aNameSpaceID, aAttr, aNotify);
+  nsresult rv = nsSVGElement::UnsetAttr(aNameSpaceID, aAttr, aNotify);
 
   // The ordering of the parent class's UnsetAttr call and Link::ResetLinkState
   // is important here!  The attribute is not unset until UnsetAttr returns, and
@@ -299,7 +298,7 @@ nsSVGAElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttr,
   // that content states have changed will call IntrinsicState, which will try
   // to get updated information about the visitedness from Link.
   if (aAttr == nsGkAtoms::href && aNameSpaceID == kNameSpaceID_XLink) {
-    Link::ResetLinkState(!!aNotify);
+    Link::ResetLinkState(!!aNotify, false);
   }
 
   return rv;

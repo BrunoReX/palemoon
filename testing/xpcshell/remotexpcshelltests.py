@@ -25,12 +25,16 @@ class XPCShellRemote(xpcshell.XPCShellTests, object):
         self.device = devmgr
         self.pathMapping = []
         self.remoteTestRoot = self.device.getTestRoot("xpcshell")
-        # Terse directory names are used here ("b" for a binaries directory)
+        # remoteBinDir contains xpcshell and its wrapper script, both of which must
+        # be executable. Since +x permissions cannot usually be set on /mnt/sdcard,
+        # and the test root may be on /mnt/sdcard, remoteBinDir is set to be on 
+        # /data/local, always.
+        self.remoteBinDir = "/data/local/xpcb"
+        # Terse directory names are used here ("c" for the components directory)
         # to minimize the length of the command line used to execute
         # xpcshell on the remote device. adb has a limit to the number
         # of characters used in a shell command, and the xpcshell command
         # line can be quite complex.
-        self.remoteBinDir = self.remoteJoin(self.remoteTestRoot, "b")
         self.remoteTmpDir = self.remoteJoin(self.remoteTestRoot, "tmp")
         self.remoteScriptsDir = self.remoteTestRoot
         self.remoteComponentsDir = self.remoteJoin(self.remoteTestRoot, "c")
@@ -83,6 +87,10 @@ class XPCShellRemote(xpcshell.XPCShellTests, object):
         return local
 
     def setupUtilities(self):
+        if (not self.device.dirExists(self.remoteBinDir)):
+          # device.mkDir may fail here where shellCheckOutput may succeed -- see bug 817235
+          self.device.shellCheckOutput(["mkdir", self.remoteBinDir]);
+
         remotePrefDir = self.remoteJoin(self.remoteBinDir, "defaults/pref")
         if (self.device.dirExists(self.remoteTmpDir)):
           self.device.removeDir(self.remoteTmpDir)
@@ -143,15 +151,8 @@ class XPCShellRemote(xpcshell.XPCShellTests, object):
             self.device.pushDir(self.testingModulesDir, self.remoteModulesDir)
 
     def setupTestDir(self):
-        push_attempts = 10
-        for retry in range(1, push_attempts+1):
-            print 'pushing', self.xpcDir, '(attempt %s of %s)' % (retry, push_attempts)
-            try:
-                self.device.pushDir(self.xpcDir, self.remoteScriptsDir)
-                break
-            except DMError:
-                if retry == push_attempts:
-                    raise
+        print 'pushing %s' % self.xpcDir
+        self.device.pushDir(self.xpcDir, self.remoteScriptsDir, retryLimit=10)
 
     def buildTestList(self):
         xpcshell.XPCShellTests.buildTestList(self)
@@ -371,6 +372,11 @@ class RemoteXPCShellOptions(xpcshell.XPCShellOptions):
                         help = "local path to bin directory")
         defaults["localBin"] = None
 
+        self.add_option("--remoteTestRoot", action = "store",
+                    type = "string", dest = "remoteTestRoot",
+                    help = "remote directory to use as test root (eg. /mnt/sdcard/tests or /data/local/tests)")
+        defaults["remoteTestRoot"] = None
+
         self.set_defaults(**defaults)
 
     def verifyRemoteOptions(self, options):
@@ -415,6 +421,17 @@ def main():
 
     parser = RemoteXPCShellOptions()
     options, args = parser.parse_args()
+    if not options.localAPK:
+      for file in os.listdir(os.path.join(options.objdir, "dist")):
+        if (file.endswith(".apk") and file.startswith("fennec")):
+          options.localAPK = os.path.join(options.objdir, "dist")
+          options.localAPK = os.path.join(options.localAPK, file)
+          print >>sys.stderr, "using APK: " + options.localAPK
+          break
+      else:
+        print >>sys.stderr, "Error: please specify an APK"
+        sys.exit(1)
+
     options = parser.verifyRemoteOptions(options)
 
     if len(args) < 1 and options.manifest is None:
@@ -424,11 +441,11 @@ def main():
 
     if (options.dm_trans == "adb"):
       if (options.deviceIP):
-        dm = devicemanagerADB.DeviceManagerADB(options.deviceIP, options.devicePort)
+        dm = devicemanagerADB.DeviceManagerADB(options.deviceIP, options.devicePort, packageName=None, deviceRoot=options.remoteTestRoot)
       else:
-        dm = devicemanagerADB.DeviceManagerADB()
+        dm = devicemanagerADB.DeviceManagerADB(packageName=None, deviceRoot=options.remoteTestRoot)
     else:
-      dm = devicemanagerSUT.DeviceManagerSUT(options.deviceIP, options.devicePort)
+      dm = devicemanagerSUT.DeviceManagerSUT(options.deviceIP, options.devicePort, deviceRoot=options.remoteTestRoot)
       if (options.deviceIP == None):
         print "Error: you must provide a device IP to connect to via the --device option"
         sys.exit(1)
@@ -439,18 +456,6 @@ def main():
 
     if not options.objdir:
       print >>sys.stderr, "Error: You must specify an objdir"
-      sys.exit(1)
-
-    if not options.localAPK:
-      for file in os.listdir(os.path.join(options.objdir, "dist")):
-        if (file.endswith(".apk") and file.startswith("fennec")):
-          options.localAPK = os.path.join(options.objdir, "dist")
-          options.localAPK = os.path.join(options.localAPK, file)
-          print >>sys.stderr, "using APK: " + options.localAPK
-          break
-
-    if not options.localAPK:
-      print >>sys.stderr, "Error: please specify an APK"
       sys.exit(1)
 
     xpcsh = XPCShellRemote(dm, options, args)

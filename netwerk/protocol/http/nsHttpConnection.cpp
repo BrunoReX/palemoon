@@ -297,7 +297,7 @@ npnComplete:
 
 // called on the socket thread
 nsresult
-nsHttpConnection::Activate(nsAHttpTransaction *trans, uint8_t caps, int32_t pri)
+nsHttpConnection::Activate(nsAHttpTransaction *trans, uint32_t caps, int32_t pri)
 {
     nsresult rv;
 
@@ -358,7 +358,7 @@ failed_activation:
 }
 
 void
-nsHttpConnection::SetupNPN(uint8_t caps)
+nsHttpConnection::SetupNPN(uint32_t caps)
 {
     if (mSetupNPNCalled)                                /* do only once */
         return;
@@ -1274,17 +1274,21 @@ nsHttpConnection::OnSocketWritable()
             again = false;
         }
         else if (n == 0) {
-            // 
-            // at this point we've written out the entire transaction, and now we
-            // must wait for the server's response.  we manufacture a status message
-            // here to reflect the fact that we are waiting.  this message will be
-            // trumped (overwritten) if the server responds quickly.
-            //
-            mTransaction->OnTransportStatus(mSocketTransport,
-                                            NS_NET_STATUS_WAITING_FOR,
-                                            0);
+            rv = NS_OK;
 
-            rv = ResumeRecv(); // start reading
+            if (mTransaction) { // in case the ReadSegments stack called CloseTransaction()
+                // 
+                // at this point we've written out the entire transaction, and now we
+                // must wait for the server's response.  we manufacture a status message
+                // here to reflect the fact that we are waiting.  this message will be
+                // trumped (overwritten) if the server responds quickly.
+                //
+                mTransaction->OnTransportStatus(mSocketTransport,
+                                                NS_NET_STATUS_WAITING_FOR,
+                                                0);
+
+                rv = ResumeRecv(); // start reading
+            }
             again = false;
         }
         // write more to the socket until error or end-of-request...

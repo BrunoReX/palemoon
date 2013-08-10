@@ -1,12 +1,12 @@
 == default-size.html default-size-ref.html
-== size-1.html size-1-ref.html
+skip-if(B2G) == size-1.html size-1-ref.html
 
 == empty-transaction-1.html empty-transaction-1-ref.html
 
 == image-rendering-test.html image-rendering-ref.html
 == image-shadow.html image-shadow-ref.html
 
-asserts-if(cocoaWidget,0-2) == size-change-1.html size-change-1-ref.html
+skip-if(B2G) asserts-if(cocoaWidget,0-2) == size-change-1.html size-change-1-ref.html
 
 != text-ltr-left.html text-blank.html
 != text-ltr-right.html text-blank.html
@@ -43,7 +43,7 @@ asserts-if(cocoaWidget,0-2) == size-change-1.html size-change-1-ref.html
 != text-bidi-ltr-test.html text-bidi-ltr-notref.html # for bug 698185
 == text-bidi-rtl-test.html text-bidi-rtl-ref.html
 
-fails-if(Android) != text-font-lang.html text-font-lang-notref.html
+fails-if(Android||B2G) != text-font-lang.html text-font-lang-notref.html
 
 == text-measure.html text-measure-ref.html
 
@@ -77,7 +77,7 @@ fails-if(OSX==10.6||(azureQuartz&&(OSX==10.7||OSX==10.8))) == linear-gradient-1b
 fuzzy-if(azureSkia,9,470) random-if(Android) == dash-1.html dash-1-ref.svg  # Bug 668412 (really is android-specific, not IPC-specific)
 
 == ctm-sanity.html data:text/html,<body>Pass
-fails == ctm-singular-sanity.html data:text/html,<body>Pass  # Bug 612033
+== ctm-singular-sanity.html data:text/html,<body>Pass
 == ctm-1.html ctm-1-ref.html
 
 fails-if(OSX==10.6) == 672646-alpha-radial-gradient.html 672646-alpha-radial-gradient-ref.html # Bug 673333

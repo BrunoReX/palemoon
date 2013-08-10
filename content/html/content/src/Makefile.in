@@ -13,15 +13,47 @@ include $(DEPTH)/config/autoconf.mk
 MODULE		= content
 LIBRARY_NAME	= gkconhtmlcon_s
 LIBXUL_LIBRARY	= 1
+ifndef _MSC_VER
 FAIL_ON_WARNINGS = 1
+endif # !_MSC_VER
 
 
 EXPORTS		= \
+		HTMLPropertiesCollection.h \
 		nsGenericHTMLElement.h \
 		nsHTMLIFrameElement.h \
 		nsClientRect.h \
 		nsHTMLDNSPrefetch.h \
 		nsTimeRanges.h \
+		$(NULL)
+
+EXPORTS_NAMESPACES = mozilla/dom
+
+EXPORTS_mozilla/dom = \
+		HTMLAnchorElement.h \
+		HTMLBodyElement.h \
+		HTMLDataListElement.h \
+		HTMLDivElement.h \
+		HTMLFontElement.h \
+		HTMLFrameSetElement.h \
+		HTMLHeadingElement.h \
+		HTMLImageElement.h \
+		HTMLLabelElement.h \
+		HTMLLIElement.h \
+		HTMLParagraphElement.h \
+		HTMLPreElement.h \
+		HTMLScriptElement.h \
+		HTMLSharedListElement.h \
+		HTMLSpanElement.h \
+		HTMLTableCaptionElement.h \
+		HTMLTableCellElement.h \
+		HTMLTableColElement.h \
+		HTMLTableElement.h \
+		HTMLTableRowElement.h \
+		HTMLTableSectionElement.h \
+		HTMLTitleElement.h \
+		HTMLUnknownElement.h \
+		UndoManager.h \
 		$(NULL)
 
 CPPSRCS		= \
@@ -32,27 +64,27 @@ CPPSRCS		= \
 		nsGenericHTMLFrameElement.cpp \
 		nsFormSubmission.cpp \
 		nsTextEditorState.cpp \
-		nsHTMLElement.cpp \
-		nsHTMLAnchorElement.cpp \
+		HTMLElement.cpp \
+		HTMLAnchorElement.cpp \
 		nsHTMLAreaElement.cpp \
 		nsHTMLBRElement.cpp \
-		nsHTMLBodyElement.cpp \
+		HTMLBodyElement.cpp \
 		nsHTMLButtonElement.cpp \
-		nsHTMLCanvasElement.cpp \
-		nsHTMLDataListElement.cpp \
-		nsHTMLDivElement.cpp \
+		HTMLCanvasElement.cpp \
+		HTMLDataListElement.cpp \
+		HTMLDivElement.cpp \
 		nsHTMLFieldSetElement.cpp \
-		nsHTMLFontElement.cpp \
+		HTMLFontElement.cpp \
 		nsHTMLFormElement.cpp \
 		nsHTMLFrameElement.cpp \
-		nsHTMLFrameSetElement.cpp \
+		HTMLFrameSetElement.cpp \
 		nsHTMLHRElement.cpp \
-		nsHTMLHeadingElement.cpp \
+		HTMLHeadingElement.cpp \
 		nsHTMLIFrameElement.cpp \
-		nsHTMLImageElement.cpp \
+		HTMLImageElement.cpp \
 		nsHTMLInputElement.cpp \
-		nsHTMLLIElement.cpp \
-		nsHTMLLabelElement.cpp \
+		HTMLLIElement.cpp \
+		HTMLLabelElement.cpp \
 		nsHTMLLegendElement.cpp \
 		nsHTMLLinkElement.cpp \
 		nsHTMLMapElement.cpp \
@@ -62,32 +94,33 @@ CPPSRCS		= \
 		nsHTMLMeterElement.cpp \
 		nsHTMLModElement.cpp \
 		nsHTMLObjectElement.cpp \
-		nsHTMLOListElement.cpp \
 		nsHTMLSharedObjectElement.cpp \
 		nsHTMLOptionElement.cpp \
 		nsHTMLOptGroupElement.cpp \
 		nsHTMLOutputElement.cpp \
-		nsHTMLParagraphElement.cpp \
-		nsHTMLPreElement.cpp \
+		HTMLParagraphElement.cpp \
+		HTMLPreElement.cpp \
 		nsHTMLProgressElement.cpp \
-		nsHTMLScriptElement.cpp \
+		HTMLScriptElement.cpp \
 		nsHTMLSelectElement.cpp \
 		nsHTMLSharedElement.cpp \
-		nsHTMLSpanElement.cpp \
+		HTMLSpanElement.cpp \
+		HTMLSharedListElement.cpp \
 		nsHTMLStyleElement.cpp \
-		nsHTMLTableElement.cpp \
-		nsHTMLTableCaptionElement.cpp \
-		nsHTMLTableCellElement.cpp \
-		nsHTMLTableColElement.cpp \
-		nsHTMLTableRowElement.cpp \
-		nsHTMLTableSectionElement.cpp \
+		HTMLTableElement.cpp \
+		HTMLTableCaptionElement.cpp \
+		HTMLTableCellElement.cpp \
+		HTMLTableColElement.cpp \
+		HTMLTableRowElement.cpp \
+		HTMLTableSectionElement.cpp \
 		nsHTMLTextAreaElement.cpp \
-		nsHTMLTitleElement.cpp \
-		nsHTMLUnknownElement.cpp \
+		HTMLTitleElement.cpp \
+		HTMLUnknownElement.cpp \
 		nsDOMValidityState.cpp \
 		nsIConstraintValidation.cpp \
 		nsRadioVisitor.cpp \
 		nsDOMStringMap.cpp \
+		UndoManager.cpp \
 		$(NULL)
 
 ifdef MOZ_MEDIA

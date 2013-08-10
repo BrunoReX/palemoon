@@ -25,7 +25,7 @@ public:
   }
 
   // Create as a blob
-  nsDOMMultipartFile(nsTArray<nsCOMPtr<nsIDOMBlob> > aBlobs,
+  nsDOMMultipartFile(nsTArray<nsCOMPtr<nsIDOMBlob> >& aBlobs,
                      const nsAString& aContentType)
     : nsDOMFile(aContentType, UINT64_MAX),
       mBlobs(aBlobs)
@@ -125,15 +125,15 @@ protected:
     }
 
     // Start at 1 or we'll loop forever.
-    CheckedUint32 bufferLen = NS_MAX<uint32_t>(mDataBufferLen, 1);
+    CheckedUint32 bufferLen =
+      NS_MAX<uint32_t>(static_cast<uint32_t>(mDataBufferLen), 1);
     while (bufferLen.isValid() && bufferLen.value() < mDataLen + aSize)
       bufferLen *= 2;
 
     if (!bufferLen.isValid())
       return false;
 
-    // PR_ memory functions are still fallible
-    void* data = PR_Realloc(mData, bufferLen.value());
+    void* data = moz_realloc(mData, bufferLen.value());
     if (!data)
       return false;
 

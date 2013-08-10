@@ -37,7 +37,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(IccManager)
   NS_INTERFACE_MAP_ENTRY(nsIDOMMozIccManager)
   NS_INTERFACE_MAP_ENTRY(nsIObserver)
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMMozIccManager)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(MozIccManager)
 NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetHelper)
 
@@ -135,6 +134,17 @@ IccManager::SendStkMenuSelection(uint16_t aItemIdentifier, bool aHelpRequested)
   }
 
   mProvider->SendStkMenuSelection(GetOwner(), aItemIdentifier, aHelpRequested);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+IccManager::SendStkTimerExpiration(const JS::Value& aTimer)
+{
+  if (!mProvider) {
+    return NS_ERROR_FAILURE;
+  }
+
+  mProvider->SendStkTimerExpiration(GetOwner(), aTimer);
   return NS_OK;
 }
 

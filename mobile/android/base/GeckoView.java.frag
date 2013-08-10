@@ -9,9 +9,11 @@ import android.util.AttributeSet;
 import android.widget.@VIEWTYPE@;
 
 public class Gecko@VIEWTYPE@ extends @VIEWTYPE@ {
+    private static final int[] STATE_PRIVATE_MODE = { R.attr.state_private };
     private static final int[] STATE_LIGHT = { R.attr.state_light };
     private static final int[] STATE_DARK = { R.attr.state_dark };
 
+    private boolean mIsPrivate = false;
     private boolean mIsLight = false;
     private boolean mIsDark = false;
 
@@ -23,12 +25,25 @@ public class Gecko@VIEWTYPE@ extends @VIEWTYPE@ {
     public int[] onCreateDrawableState(int extraSpace) {
         final int[] drawableState = super.onCreateDrawableState(extraSpace + 1);
 
-        if (mIsLight)
+        if (mIsPrivate)
+            mergeDrawableStates(drawableState, STATE_PRIVATE_MODE);
+        else if (mIsLight)
             mergeDrawableStates(drawableState, STATE_LIGHT);
         else if (mIsDark)
             mergeDrawableStates(drawableState, STATE_DARK);
 
         return drawableState;
+    }
+
+    public boolean isPrivateMode() {
+        return mIsPrivate;
+    }
+
+    public void setPrivateMode(boolean isPrivate) {
+        if (mIsPrivate != isPrivate) {
+            mIsPrivate = isPrivate;
+            refreshDrawableState();
+        }
     }
 
     public void setTheme(boolean isLight) {

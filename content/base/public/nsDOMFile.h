@@ -17,7 +17,6 @@
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsIXMLHttpRequest.h"
-#include "prmem.h"
 #include "nsAutoPtr.h"
 
 #include "mozilla/GuardObjects.h"
@@ -245,24 +244,17 @@ public:
     NS_ASSERTION(mFile, "must have file");
   }
 
-  // Create as a blob
-  nsDOMFileFile(nsIFile *aFile, const nsAString& aContentType,
-                nsISupports *aCacheToken)
-    : nsDOMFile(aContentType, UINT64_MAX),
-      mFile(aFile), mWholeFile(true), mStoredFile(false),
-      mCacheToken(aCacheToken)
-  {
-    NS_ASSERTION(mFile, "must have file");
-  }
-
   // Create as a file with custom name
-  nsDOMFileFile(nsIFile *aFile, const nsAString& aName)
-    : nsDOMFile(aName, EmptyString(), UINT64_MAX, UINT64_MAX),
+  nsDOMFileFile(nsIFile *aFile, const nsAString& aName,
+                const nsAString& aContentType)
+    : nsDOMFile(aName, aContentType, UINT64_MAX, UINT64_MAX),
       mFile(aFile), mWholeFile(true), mStoredFile(false)
   {
     NS_ASSERTION(mFile, "must have file");
-    // Lazily get the content type and size
-    mContentType.SetIsVoid(true);
+    if (aContentType.IsEmpty()) {
+      // Lazily get the content type and size
+      mContentType.SetIsVoid(true);
+    }
   }
 
   // Create as a stored file
@@ -310,7 +302,7 @@ protected:
                 const nsAString& aContentType)
     : nsDOMFile(aContentType, aOther->mStart + aStart, aLength),
       mFile(aOther->mFile), mWholeFile(false),
-      mStoredFile(aOther->mStoredFile), mCacheToken(aOther->mCacheToken)
+      mStoredFile(aOther->mStoredFile)
   {
     NS_ASSERTION(mFile, "must have file");
     mImmutable = aOther->mImmutable;
@@ -349,7 +341,6 @@ protected:
   nsCOMPtr<nsIFile> mFile;
   bool mWholeFile;
   bool mStoredFile;
-  nsCOMPtr<nsISupports> mCacheToken;
 };
 
 class nsDOMMemoryFile : public nsDOMFile
@@ -406,7 +397,7 @@ protected:
     }
 
     ~DataOwner() {
-      PR_Free(mData);
+      moz_free(mData);
     }
 
     static void EnsureMemoryReporterRegistered();

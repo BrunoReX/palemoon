@@ -25,14 +25,12 @@
 
 class nsXMLNameSpaceMap;
 class nsCSSRuleProcessor;
-class nsMediaList;
 class nsIPrincipal;
 class nsIURI;
 class nsMediaList;
 class nsMediaQueryResultCacheKey;
 class nsCSSStyleSheet;
 class nsPresContext;
-template<class E, class A> class nsTArray;
 
 namespace mozilla {
 namespace css {

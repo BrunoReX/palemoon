@@ -16,7 +16,7 @@
 #include "nsContentUtils.h"
 
 #include "nsIDocument.h"
-#include "nsHTMLCanvasElement.h"
+#include "mozilla/dom/HTMLCanvasElement.h"
 #include "nsSVGEffects.h"
 #include "nsPresContext.h"
 #include "nsIPresShell.h"
@@ -93,9 +93,11 @@
 #include "nsJSUtils.h"
 #include "XPCQuickStubs.h"
 #include "mozilla/dom/BindingUtils.h"
-#include "nsHTMLImageElement.h"
+#include "mozilla/dom/HTMLImageElement.h"
 #include "nsHTMLVideoElement.h"
 #include "mozilla/dom/CanvasRenderingContext2DBinding.h"
+#include <cstdlib> // for std::abs(int/long)
+#include <cmath> // for std::abs(float/double)
 
 #ifdef XP_WIN
 #include "gfxWindowsPlatform.h"
@@ -618,7 +620,7 @@ CanvasRenderingContext2D::Reset()
 }
 
 static void
-WarnAboutUnexpectedStyle(nsHTMLCanvasElement* canvasElement)
+WarnAboutUnexpectedStyle(HTMLCanvasElement* canvasElement)
 {
   nsContentUtils::ReportToConsole(
     nsIScriptError::warningFlag,
@@ -1051,10 +1053,6 @@ CanvasRenderingContext2D::Restore()
 void
 CanvasRenderingContext2D::Scale(double x, double y, ErrorResult& error)
 {
-  if (!FloatValidate(x,y)) {
-    return;
-  }
-
   TransformWillUpdate();
   if (!IsTargetValid()) {
     error.Throw(NS_ERROR_FAILURE);
@@ -1068,16 +1066,11 @@ CanvasRenderingContext2D::Scale(double x, double y, ErrorResult& error)
 void
 CanvasRenderingContext2D::Rotate(double angle, ErrorResult& error)
 {
-  if (!FloatValidate(angle)) {
-    return;
-  }
-
   TransformWillUpdate();
   if (!IsTargetValid()) {
     error.Throw(NS_ERROR_FAILURE);
     return;
   }
-
 
   Matrix rotation = Matrix::Rotation(angle);
   mTarget->SetTransform(rotation * mTarget->GetTransform());
@@ -1086,10 +1079,6 @@ CanvasRenderingContext2D::Rotate(double angle, ErrorResult& error)
 void
 CanvasRenderingContext2D::Translate(double x, double y, ErrorResult& error)
 {
-  if (!FloatValidate(x,y)) {
-    return;
-  }
-
   TransformWillUpdate();
   if (!IsTargetValid()) {
     error.Throw(NS_ERROR_FAILURE);
@@ -1105,10 +1094,6 @@ CanvasRenderingContext2D::Transform(double m11, double m12, double m21,
                                     double m22, double dx, double dy,
                                     ErrorResult& error)
 {
-  if (!FloatValidate(m11,m12,m21,m22,dx,dy)) {
-    return;
-  }
-
   TransformWillUpdate();
   if (!IsTargetValid()) {
     error.Throw(NS_ERROR_FAILURE);
@@ -1125,10 +1110,6 @@ CanvasRenderingContext2D::SetTransform(double m11, double m12,
                                        double dx, double dy,
                                        ErrorResult& error)
 {
-  if (!FloatValidate(m11,m12,m21,m22,dx,dy)) {
-    return;
-  }
-
   TransformWillUpdate();
   if (!IsTargetValid()) {
     error.Throw(NS_ERROR_FAILURE);
@@ -1373,11 +1354,6 @@ already_AddRefed<nsIDOMCanvasGradient>
 CanvasRenderingContext2D::CreateLinearGradient(double x0, double y0, double x1, double y1,
                                                ErrorResult& aError)
 {
-  if (!FloatValidate(x0,y0,x1,y1)) {
-    aError.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return nullptr;
-  }
-
   nsRefPtr<nsIDOMCanvasGradient> grad =
     new CanvasLinearGradient(Point(x0, y0), Point(x1, y1));
 
@@ -1389,11 +1365,6 @@ CanvasRenderingContext2D::CreateRadialGradient(double x0, double y0, double r0,
                                                double x1, double y1, double r1,
                                                ErrorResult& aError)
 {
-  if (!FloatValidate(x0,y0,r0,x1,y1,r1)) {
-    aError.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return nullptr;
-  }
-
   if (r0 < 0.0 || r1 < 0.0) {
     aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     return nullptr;
@@ -1428,7 +1399,7 @@ CanvasRenderingContext2D::CreatePattern(const HTMLImageOrCanvasOrVideoElement& e
 
   Element* htmlElement;
   if (element.IsHTMLCanvasElement()) {
-    nsHTMLCanvasElement* canvas = element.GetAsHTMLCanvasElement();
+    HTMLCanvasElement* canvas = element.GetAsHTMLCanvasElement();
     htmlElement = canvas;
 
     nsIntSize size = canvas->GetSize();
@@ -1449,7 +1420,7 @@ CanvasRenderingContext2D::CreatePattern(const HTMLImageOrCanvasOrVideoElement& e
       return pat.forget();
     }
   } else if (element.IsHTMLImageElement()) {
-    htmlElement = element.GetAsHTMLImageElement();
+    htmlElement = &element.GetAsHTMLImageElement();
   } else {
     htmlElement = element.GetAsHTMLVideoElement();
   }
@@ -1503,7 +1474,7 @@ void
 CanvasRenderingContext2D::ClearRect(double x, double y, double w,
                                     double h)
 {
-  if (!FloatValidate(x,y,w,h) || !mTarget) {
+  if (!mTarget) {
     return;
   }
 
@@ -1516,10 +1487,6 @@ void
 CanvasRenderingContext2D::FillRect(double x, double y, double w,
                                    double h)
 {
-  if (!FloatValidate(x,y,w,h)) {
-    return;
-  }
-
   const ContextState &state = CurrentState();
 
   if (state.patternStyles[STYLE_FILL]) {
@@ -1588,10 +1555,6 @@ void
 CanvasRenderingContext2D::StrokeRect(double x, double y, double w,
                                      double h)
 {
-  if (!FloatValidate(x,y,w,h)) {
-    return;
-  }
-
   const ContextState &state = CurrentState();
 
   mgfx::Rect bounds;
@@ -1740,10 +1703,6 @@ CanvasRenderingContext2D::ArcTo(double x1, double y1, double x2,
                                 double y2, double radius,
                                 ErrorResult& error)
 {
-  if (!FloatValidate(x1, y1, x2, y2, radius)) {
-    return;
-  }
-
   if (radius < 0) {
     error.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     return;
@@ -1822,10 +1781,6 @@ CanvasRenderingContext2D::Arc(double x, double y, double r,
                               double startAngle, double endAngle,
                               bool anticlockwise, ErrorResult& error)
 {
-  if (!FloatValidate(x, y, r, startAngle, endAngle)) {
-    return;
-  }
-
   if (r < 0.0) {
     error.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     return;
@@ -1839,10 +1794,6 @@ CanvasRenderingContext2D::Arc(double x, double y, double r,
 void
 CanvasRenderingContext2D::Rect(double x, double y, double w, double h)
 {
-  if (!FloatValidate(x, y, w, h)) {
-    return;
-  }
-
   EnsureWritablePath();
 
   if (mPathBuilder) {
@@ -1896,7 +1847,7 @@ CanvasRenderingContext2D::EnsureWritablePath()
 }
 
 void
-CanvasRenderingContext2D::EnsureUserSpacePath(bool aCommitTransform /* = true */)
+CanvasRenderingContext2D::EnsureUserSpacePath()
 {
   FillRule fillRule = CurrentState().fillRule;
 
@@ -1910,8 +1861,7 @@ CanvasRenderingContext2D::EnsureUserSpacePath(bool aCommitTransform /* = true */
     mPathBuilder = nullptr;
   }
 
-  if (aCommitTransform &&
-      mPath &&
+  if (mPath &&
       mPathTransformWillUpdate) {
     mDSPathBuilder =
       mPath->TransformedCopyToBuilder(mPathToDS, fillRule);
@@ -2499,10 +2449,6 @@ CanvasRenderingContext2D::DrawOrMeasureText(const nsAString& aRawText,
 {
   nsresult rv;
 
-  if (!FloatValidate(aX, aY) ||
-      (aMaxWidth.WasPassed() && !FloatValidate(aMaxWidth.Value())))
-      return NS_ERROR_DOM_SYNTAX_ERR;
-
   // spec isn't clear on what should happen if aMaxWidth <= 0, so
   // treat it as an invalid argument
   // technically, 0 should be an invalid value as well, but 0 is the default
@@ -2838,10 +2784,6 @@ CanvasRenderingContext2D::GetMozDash(JSContext* cx, ErrorResult& error)
 void
 CanvasRenderingContext2D::SetMozDashOffset(double mozDashOffset)
 {
-  if (!FloatValidate(mozDashOffset)) {
-    return;
-  }
-
   ContextState& state = CurrentState();
   if (!state.dash.IsEmpty()) {
     state.dashOffset = mozDashOffset;
@@ -2855,7 +2797,7 @@ CanvasRenderingContext2D::IsPointInPath(double x, double y)
     return false;
   }
 
-  EnsureUserSpacePath(false);
+  EnsureUserSpacePath();
   if (!mPath) {
     return false;
   }
@@ -2872,7 +2814,7 @@ CanvasRenderingContext2D::IsPointInStroke(double x, double y)
     return false;
   }
 
-  EnsureUserSpacePath(false);
+  EnsureUserSpacePath();
   if (!mPath) {
     return false;
   }
@@ -2926,7 +2868,7 @@ CanvasRenderingContext2D::DrawImage(const HTMLImageOrCanvasOrVideoElement& image
 
   EnsureTarget();
   if (image.IsHTMLCanvasElement()) {
-    nsHTMLCanvasElement* canvas = image.GetAsHTMLCanvasElement();
+    HTMLCanvasElement* canvas = image.GetAsHTMLCanvasElement();
     element = canvas;
     nsIntSize size = canvas->GetSize();
     if (size.width == 0 || size.height == 0) {
@@ -2957,7 +2899,7 @@ CanvasRenderingContext2D::DrawImage(const HTMLImageOrCanvasOrVideoElement& image
     }
   } else {
     if (image.IsHTMLImageElement()) {
-      nsHTMLImageElement* img = image.GetAsHTMLImageElement();
+      HTMLImageElement* img = &image.GetAsHTMLImageElement();
       element = img;
     } else {
       nsHTMLVideoElement* video = image.GetAsHTMLVideoElement();
@@ -3082,6 +3024,21 @@ CanvasRenderingContext2D::SetGlobalCompositeOperation(const nsAString& op,
   else CANVAS_OP_TO_GFX_OP("destination-atop", DEST_ATOP)
   else CANVAS_OP_TO_GFX_OP("lighter", ADD)
   else CANVAS_OP_TO_GFX_OP("xor", XOR)
+  else CANVAS_OP_TO_GFX_OP("multiply", MULTIPLY)
+  else CANVAS_OP_TO_GFX_OP("screen", SCREEN)
+  else CANVAS_OP_TO_GFX_OP("overlay", OVERLAY)
+  else CANVAS_OP_TO_GFX_OP("darken", DARKEN)
+  else CANVAS_OP_TO_GFX_OP("lighten", LIGHTEN)
+  else CANVAS_OP_TO_GFX_OP("color-dodge", COLOR_DODGE)
+  else CANVAS_OP_TO_GFX_OP("color-burn", COLOR_BURN)
+  else CANVAS_OP_TO_GFX_OP("hard-light", HARD_LIGHT)
+  else CANVAS_OP_TO_GFX_OP("soft-light", SOFT_LIGHT)
+  else CANVAS_OP_TO_GFX_OP("difference", DIFFERENCE)
+  else CANVAS_OP_TO_GFX_OP("exclusion", EXCLUSION)
+  else CANVAS_OP_TO_GFX_OP("hue", HUE)
+  else CANVAS_OP_TO_GFX_OP("saturation", SATURATION)
+  else CANVAS_OP_TO_GFX_OP("color", COLOR)
+  else CANVAS_OP_TO_GFX_OP("luminosity", LUMINOSITY)
   // XXX ERRMSG we need to report an error to developers here! (bug 329026)
   else return;
 
@@ -3110,6 +3067,21 @@ CanvasRenderingContext2D::GetGlobalCompositeOperation(nsAString& op,
   else CANVAS_OP_TO_GFX_OP("source-out", OUT)
   else CANVAS_OP_TO_GFX_OP("source-over", OVER)
   else CANVAS_OP_TO_GFX_OP("xor", XOR)
+  else CANVAS_OP_TO_GFX_OP("multiply", MULTIPLY)
+  else CANVAS_OP_TO_GFX_OP("screen", SCREEN)
+  else CANVAS_OP_TO_GFX_OP("overlay", OVERLAY)
+  else CANVAS_OP_TO_GFX_OP("darken", DARKEN)
+  else CANVAS_OP_TO_GFX_OP("lighten", LIGHTEN)
+  else CANVAS_OP_TO_GFX_OP("color-dodge", COLOR_DODGE)
+  else CANVAS_OP_TO_GFX_OP("color-burn", COLOR_BURN)
+  else CANVAS_OP_TO_GFX_OP("hard-light", HARD_LIGHT)
+  else CANVAS_OP_TO_GFX_OP("soft-light", SOFT_LIGHT)
+  else CANVAS_OP_TO_GFX_OP("difference", DIFFERENCE)
+  else CANVAS_OP_TO_GFX_OP("exclusion", EXCLUSION)
+  else CANVAS_OP_TO_GFX_OP("hue", HUE)
+  else CANVAS_OP_TO_GFX_OP("saturation", SATURATION)
+  else CANVAS_OP_TO_GFX_OP("color", COLOR)
+  else CANVAS_OP_TO_GFX_OP("luminosity", LUMINOSITY)
   else {
     error.Throw(NS_ERROR_FAILURE);
   }
@@ -3401,6 +3373,20 @@ CanvasRenderingContext2D::GetImageDataArray(JSContext* aCx,
     return NS_ERROR_DOM_SYNTAX_ERR;
   }
 
+  IntRect srcRect(0, 0, mWidth, mHeight);
+  IntRect destRect(aX, aY, aWidth, aHeight);
+  IntRect srcReadRect = srcRect.Intersect(destRect);
+  RefPtr<DataSourceSurface> readback;
+  if (!srcReadRect.IsEmpty() && !mZero) {
+    RefPtr<SourceSurface> snapshot = mTarget->Snapshot();
+    if (snapshot) {
+      readback = snapshot->GetDataSurface();
+    }
+    if (!readback || !readback->GetData()) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+  }
+
   JSObject* darray = JS_NewUint8ClampedArray(aCx, len.value());
   if (!darray) {
     return NS_ERROR_OUT_OF_MEMORY;
@@ -3413,25 +3399,14 @@ CanvasRenderingContext2D::GetImageDataArray(JSContext* aCx,
 
   uint8_t* data = JS_GetUint8ClampedArrayData(darray);
 
-  IntRect srcRect(0, 0, mWidth, mHeight);
-  IntRect destRect(aX, aY, aWidth, aHeight);
-
-  IntRect srcReadRect = srcRect.Intersect(destRect);
   IntRect dstWriteRect = srcReadRect;
   dstWriteRect.MoveBy(-aX, -aY);
 
   uint8_t* src = data;
   uint32_t srcStride = aWidth * 4;
-
-  RefPtr<DataSourceSurface> readback;
-  if (!srcReadRect.IsEmpty()) {
-    RefPtr<SourceSurface> snapshot = mTarget->Snapshot();
-    if (snapshot) {
-      readback = snapshot->GetDataSurface();
-
-      srcStride = readback->Stride();
-      src = readback->GetData() + srcReadRect.y * srcStride + srcReadRect.x * 4;
-    }
+  if (readback) {
+    srcStride = readback->Stride();
+    src = readback->GetData() + srcReadRect.y * srcStride + srcReadRect.x * 4;
   }
 
   // NOTE! dst is the same as src, and this relies on reading
@@ -3495,11 +3470,6 @@ void
 CanvasRenderingContext2D::PutImageData(ImageData& imageData, double dx,
                                        double dy, ErrorResult& error)
 {
-  if (!FloatValidate(dx, dy)) {
-    error.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return;
-  }
-
   dom::Uint8ClampedArray arr(imageData.GetDataObject());
 
   error = PutImageData_explicit(JS_DoubleToInt32(dx), JS_DoubleToInt32(dy),
@@ -3514,11 +3484,6 @@ CanvasRenderingContext2D::PutImageData(ImageData& imageData, double dx,
                                        double dirtyHeight,
                                        ErrorResult& error)
 {
-  if (!FloatValidate(dx, dy, dirtyX, dirtyY, dirtyWidth, dirtyHeight)) {
-    error.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return;
-  }
-
   dom::Uint8ClampedArray arr(imageData.GetDataObject());
 
   error = PutImageData_explicit(JS_DoubleToInt32(dx), JS_DoubleToInt32(dy),
@@ -3705,11 +3670,6 @@ already_AddRefed<ImageData>
 CanvasRenderingContext2D::CreateImageData(JSContext* cx, double sw,
                                           double sh, ErrorResult& error)
 {
-  if (!FloatValidate(sw, sh)) {
-    error.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return NULL;
-  }
-
   if (!sw || !sh) {
     error.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     return NULL;
@@ -3718,8 +3678,8 @@ CanvasRenderingContext2D::CreateImageData(JSContext* cx, double sw,
   int32_t wi = JS_DoubleToInt32(sw);
   int32_t hi = JS_DoubleToInt32(sh);
 
-  uint32_t w = NS_ABS(wi);
-  uint32_t h = NS_ABS(hi);
+  uint32_t w = std::abs(wi);
+  uint32_t h = std::abs(hi);
   return mozilla::dom::CreateImageData(cx, this, w, h, error);
 }
 

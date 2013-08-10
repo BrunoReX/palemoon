@@ -906,6 +906,12 @@ public:
   { return false; }
 
   /**
+   * Returns true if all layers that can be active should be forced to be
+   * active. Requires setting the pref layers.force-active=true.
+   */
+  static bool ForceActiveLayers();
+
+  /**
    * @return LAYER_NONE if BuildLayer will return null. In this case
    * there is no layer for the item, and Paint should be called instead
    * to paint the content using Thebes.
@@ -924,6 +930,9 @@ public:
    * changing frequently. In this case it makes sense to keep the layer
    * as a separate buffer in VRAM and composite it into the destination
    * every time we paint.
+   *
+   * Users of GetLayerState should check ForceActiveLayers() and if it returns
+   * true, change a returned value of LAYER_INACTIVE to LAYER_ACTIVE.
    */
   virtual LayerState GetLayerState(nsDisplayListBuilder* aBuilder,
                                    LayerManager* aManager,
@@ -1904,6 +1913,9 @@ protected:
                                   gfxRect* aDestRect);
   nsRect GetBoundsInternal();
 
+  void PaintInternal(nsDisplayListBuilder* aBuilder, nsRenderingContext* aCtx,
+                     const nsRect& aBounds, nsRect* aClipRect);
+
   // Cache the result of nsCSSRendering::FindBackground. Always null if
   // mIsThemed is true or if FindBackground returned false.
   const nsStyleBackground* mBackgroundStyle;
@@ -1961,6 +1973,7 @@ public:
   nsDisplayBoxShadowOuter(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame)
     : nsDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayBoxShadowOuter);
+    mBounds = GetBoundsInternal();
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
   virtual ~nsDisplayBoxShadowOuter() {
@@ -1990,8 +2003,11 @@ public:
     }
   }
 
+  nsRect GetBoundsInternal();
+
 private:
   nsRegion mVisibleRegion;
+  nsRect mBounds;
 };
 
 /**
@@ -2801,6 +2817,29 @@ public:
    */
   static nsRect GetFrameBoundsForTransform(const nsIFrame* aFrame);
 
+  struct FrameTransformProperties
+  {
+    FrameTransformProperties(const nsIFrame* aFrame,
+                             float aAppUnitsPerPixel,
+                             const nsRect* aBoundsOverride);
+    FrameTransformProperties(const nsCSSValueList* aTransformList,
+                             const gfxPoint3D& aToMozOrigin,
+                             const gfxPoint3D& aToPerspectiveOrigin,
+                             nscoord aChildPerspective)
+      : mFrame(nullptr)
+      , mTransformList(aTransformList)
+      , mToMozOrigin(aToMozOrigin)
+      , mToPerspectiveOrigin(aToPerspectiveOrigin)
+      , mChildPerspective(aChildPerspective)
+    {}
+
+    const nsIFrame* mFrame;
+    const nsCSSValueList* mTransformList;
+    const gfxPoint3D mToMozOrigin;
+    const gfxPoint3D mToPerspectiveOrigin;
+    nscoord mChildPerspective;
+  };
+
   /**
    * Given a frame with the -moz-transform property or an SVG transform,
    * returns the transformation matrix for that frame.
@@ -2818,10 +2857,11 @@ public:
                                                  const nsPoint& aOrigin,
                                                  float aAppUnitsPerPixel,
                                                  const nsRect* aBoundsOverride = nullptr,
-                                                 const nsCSSValueList* aTransformOverride = nullptr,
-                                                 gfxPoint3D* aToMozOrigin = nullptr,
-                                                 gfxPoint3D* aToPerspectiveOrigin = nullptr,
-                                                 nscoord* aChildPerspective = nullptr,
+                                                 nsIFrame** aOutAncestor = nullptr);
+  static gfx3DMatrix GetResultingTransformMatrix(const FrameTransformProperties& aProperties,
+                                                 const nsPoint& aOrigin,
+                                                 float aAppUnitsPerPixel,
+                                                 const nsRect* aBoundsOverride = nullptr,
                                                  nsIFrame** aOutAncestor = nullptr);
   /**
    * Return true when we should try to prerender the entire contents of the
@@ -2833,14 +2873,10 @@ public:
   bool CanUseAsyncAnimations(nsDisplayListBuilder* aBuilder) MOZ_OVERRIDE;
 
 private:
-  static gfx3DMatrix GetResultingTransformMatrixInternal(const nsIFrame* aFrame,
+  static gfx3DMatrix GetResultingTransformMatrixInternal(const FrameTransformProperties& aProperties,
                                                          const nsPoint& aOrigin,
                                                          float aAppUnitsPerPixel,
                                                          const nsRect* aBoundsOverride,
-                                                         const nsCSSValueList* aTransformOverride,
-                                                         gfxPoint3D* aToMozOrigin,
-                                                         gfxPoint3D* aToPerspectiveOrigin,
-                                                         nscoord* aChildPerspective,
                                                          nsIFrame** aOutAncestor);
 
   nsDisplayWrapList mStoredList;

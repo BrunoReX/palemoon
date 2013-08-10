@@ -41,6 +41,7 @@ import org.mozilla.gecko.db.DBUtils;
 import org.mozilla.gecko.ProfileMigrator;
 import org.mozilla.gecko.sync.Utils;
 import org.mozilla.gecko.util.GeckoBackgroundThread;
+import org.mozilla.gecko.util.GeckoJarReader;
 
 import android.app.SearchManager;
 import android.content.ContentProvider;
@@ -60,6 +61,7 @@ import android.database.sqlite.SQLiteOpenHelper;
 import android.database.sqlite.SQLiteQueryBuilder;
 import android.graphics.BitmapFactory;
 import android.graphics.Bitmap;
+import android.graphics.drawable.BitmapDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.text.TextUtils;
@@ -71,7 +73,7 @@ public class BrowserProvider extends ContentProvider {
 
     static final String DATABASE_NAME = "browser.db";
 
-    static final int DATABASE_VERSION = 13;
+    static final int DATABASE_VERSION = 14;
 
     // Maximum age of deleted records to be cleaned up (20 days in ms)
     static final long MAX_AGE_OF_DELETED_RECORDS = 86400000 * 20;
@@ -1018,31 +1020,72 @@ public class BrowserProvider extends ContentProvider {
         }
 
         private void setDefaultFavicon(SQLiteDatabase db, String name, String url) {
-            Class<?> drawablesClass = R.drawable.class;
-            ByteArrayOutputStream stream = null;
-            try {
-                // Look for a drawable with the id R.drawable.bookmarkdefaults_favicon_*
-                Field faviconField = drawablesClass.getField(name.replace("_title_", "_favicon_"));
-                if (faviconField == null)
-                  return;
-
-                int faviconId = faviconField.getInt(null);
-                Bitmap bitmap = BitmapFactory.decodeResource(mContext.getResources(), faviconId);
-                stream = new ByteArrayOutputStream();
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
-            } catch (java.lang.IllegalAccessException ex) {
-                Log.e(LOGTAG, "Can't create favicon " + name, ex);
-            } catch (java.lang.NoSuchFieldException ex) {
-                // if there is no such field, create the bookmark without a favicon
-                Log.d(LOGTAG, "Can't create favicon " + name);
+            ByteArrayOutputStream stream = getDefaultFaviconFromPath(db, name, url);
+            if (stream == null) {
+              stream = getDefaultFaviconFromDrawable(db, name, url);
             }
-
             if (stream != null) {
                 ContentValues values = new ContentValues();
                 values.put(Favicons.DATA, stream.toByteArray());
                 values.put(Favicons.PAGE_URL, url);
                 insertFavicon(db, values);
             }
+        }
+
+        private ByteArrayOutputStream getDefaultFaviconFromPath(SQLiteDatabase db, String name, String url) {
+            ByteArrayOutputStream stream = null;
+            Class<?> stringClass = R.string.class;
+            try {
+                // Look for a drawable with the id R.drawable.bookmarkdefaults_favicon_*
+                Field faviconField = stringClass.getField(name.replace("_title_", "_favicon_"));
+                if (faviconField == null)
+                  return null;
+                int faviconId = faviconField.getInt(null);
+                String path = mContext.getString(faviconId);
+
+                String apkPath = mContext.getPackageResourcePath();
+                File apkFile = new File(apkPath);
+                BitmapDrawable bitmapDrawable = GeckoJarReader.getBitmapDrawable(mContext.getResources(),
+                                                                                 "jar:jar:" + apkFile.toURI() + "!/omni.ja!/" + path);
+                if (bitmapDrawable == null) {
+                  return null;
+                }
+                Bitmap bitmap = bitmapDrawable.getBitmap();
+                if (bitmap == null) {
+                  return null;
+                }
+                stream = new ByteArrayOutputStream();
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
+            } catch (java.lang.IllegalAccessException ex) {
+                Log.e(LOGTAG, "[Path] Can't create favicon " + name, ex);
+            } catch (java.lang.NoSuchFieldException ex) {
+                // if there is no such field, create the bookmark without a favicon
+                Log.d(LOGTAG, "[Path] Can't create favicon " + name);
+            }
+            return stream;
+        }
+
+        private ByteArrayOutputStream getDefaultFaviconFromDrawable(SQLiteDatabase db, String name, String url) {
+            Class<?> drawablesClass = R.drawable.class;
+            ByteArrayOutputStream stream = null;
+            try {
+                // Look for a drawable with the id R.drawable.bookmarkdefaults_favicon_*
+                Field faviconField = drawablesClass.getField(name.replace("_title_", "_favicon_"));
+                if (faviconField == null)
+                  return null;
+
+                int faviconId = faviconField.getInt(null);
+                Bitmap bitmap = BitmapFactory.decodeResource(mContext.getResources(), faviconId);
+                stream = new ByteArrayOutputStream();
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
+            } catch (java.lang.IllegalAccessException ex) {
+                Log.e(LOGTAG, "[Drawable] Can't create favicon " + name, ex);
+            } catch (java.lang.NoSuchFieldException ex) {
+                // if there is no such field, create the bookmark without a favicon
+                Log.d(LOGTAG, "[Drawable] Can't create favicon " + name);
+            }
+
+            return stream;
         }
 
         private void createOrUpdateAllSpecialFolders(SQLiteDatabase db) {
@@ -1058,6 +1101,8 @@ public class BrowserProvider extends ContentProvider {
                 R.string.bookmarks_folder_unfiled, 4);
             createOrUpdateSpecialFolder(db, Bookmarks.READING_LIST_FOLDER_GUID,
                 R.string.bookmarks_folder_reading_list, 5);
+            createOrUpdateSpecialFolder(db, Bookmarks.PINNED_FOLDER_GUID,
+                R.string.bookmarks_folder_pinned, 6);
         }
 
         private void createOrUpdateSpecialFolder(SQLiteDatabase db,
@@ -1071,6 +1116,8 @@ public class BrowserProvider extends ContentProvider {
                 values.put(Bookmarks._ID, Bookmarks.FIXED_ROOT_ID);
             else if (guid.equals(Bookmarks.READING_LIST_FOLDER_GUID))
                 values.put(Bookmarks._ID, Bookmarks.FIXED_READING_LIST_ID);
+            else if (guid.equals(Bookmarks.PINNED_FOLDER_GUID))
+                values.put(Bookmarks._ID, Bookmarks.FIXED_PINNED_LIST_ID);
 
             // Set the parent to 0, which sync assumes is the root
             values.put(Bookmarks.PARENT, Bookmarks.FIXED_ROOT_ID);
@@ -1461,10 +1508,11 @@ public class BrowserProvider extends ContentProvider {
                         null, null, null, null);
 
                 while (c.moveToNext()) {
-                    String faviconUrl = c.getString(c.getColumnIndexOrThrow(Obsolete.Images.FAVICON_URL));
                     long faviconId = -1;
-
-                    if (faviconUrl != null) {
+                    int faviconUrlIndex = c.getColumnIndexOrThrow(Obsolete.Images.FAVICON_URL);
+                    String faviconUrl = null;
+                    if (!c.isNull(faviconUrlIndex)) {
+                        faviconUrl = c.getString(faviconUrlIndex);
                         Cursor c2 = null;
                         try {
                             c2 = db.query(TABLE_FAVICONS,
@@ -1524,6 +1572,11 @@ public class BrowserProvider extends ContentProvider {
             db.execSQL("DROP TABLE IF EXISTS " + Obsolete.TABLE_IMAGES);
         }
 
+        private void upgradeDatabaseFrom13to14(SQLiteDatabase db) {
+            createOrUpdateSpecialFolder(db, Bookmarks.PINNED_FOLDER_GUID,
+                R.string.bookmarks_folder_pinned, 6);
+        }
+
         @Override
         public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
             debug("Upgrading browser.db: " + db.getPath() + " from " +
@@ -1581,6 +1634,10 @@ public class BrowserProvider extends ContentProvider {
 
                     case 13:
                         upgradeDatabaseFrom12to13(db);
+                        break;
+
+                    case 14:
+                        upgradeDatabaseFrom13to14(db);
                         break;
                 }
             }
@@ -1675,15 +1732,19 @@ public class BrowserProvider extends ContentProvider {
             }
 
             String databasePath = getDatabasePath(profile, isTest);
+
+            // Before bug 768532, the database was located outside if the
+            // profile on Android 2.2. Make sure it is moved inside the profile
+            // directory.
+            if (Build.VERSION.SDK_INT == 8) {
+                File oldPath = mContext.getDatabasePath("browser-" + profile + ".db");
+                if (oldPath.exists()) {
+                    oldPath.renameTo(new File(databasePath));
+                }
+            }
+
             dbHelper = new DatabaseHelper(getContext(), databasePath);
             mDatabasePerProfile.put(profile, dbHelper);
-
-            // When running inside a test or on Android releases older than 8,
-            // the returned database path is just filename, not the full path.
-            // We need the full path when unlocking the database.
-            if (isTest || Build.VERSION.SDK_INT <= 8) {
-                databasePath = mContext.getDatabasePath(databasePath).getAbsolutePath();
-            }
 
             DBUtils.ensureDatabaseIsNotLocked(dbHelper, databasePath);
         }
@@ -1695,13 +1756,8 @@ public class BrowserProvider extends ContentProvider {
     public String getDatabasePath(String profile, boolean isTest) {
         trace("Getting database path for profile: " + profile);
 
-        // On Android releases older than 2.3, it's not possible to use
-        // SQLiteOpenHelper with a full path. Fallback to using separate
-        // db files per profile in the app directory.
         if (isTest) {
             return DATABASE_NAME;
-        } else if(Build.VERSION.SDK_INT <= 8) {
-            return "browser-" + profile + ".db";
         }
 
         File profileDir = GeckoProfile.get(mContext, profile).getDir();
@@ -1826,8 +1882,8 @@ public class BrowserProvider extends ContentProvider {
 
     /**
      * Remove any thumbnails that for sites that aren't likely to be ever shown.
-     * Items will be removed according to a frecency calculation.
-     *
+     * Items will be removed according to a frecency calculation and only if they are not pinned
+     * 
      * Call this method within a transaction.
      */
     private void expireThumbnails(final SQLiteDatabase db) {
@@ -1838,6 +1894,10 @@ public class BrowserProvider extends ContentProvider {
                              " FROM " + VIEW_COMBINED +
                              " ORDER BY " + sortOrder +
                              " LIMIT " + DEFAULT_EXPIRY_THUMBNAIL_COUNT +
+                           ") AND " + Thumbnails.URL + " NOT IN ( " +
+                             " SELECT " + Bookmarks.URL +
+                             " FROM " + TABLE_BOOKMARKS +
+                             " WHERE " + Bookmarks.PARENT + " = " + Bookmarks.FIXED_PINNED_LIST_ID +
                            ")";
         trace("Clear thumbs using query: " + sql);
         db.execSQL(sql);

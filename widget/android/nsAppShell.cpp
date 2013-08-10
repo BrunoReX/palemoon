@@ -72,7 +72,7 @@ NS_IMPL_ISUPPORTS_INHERITED1(nsAppShell, nsBaseAppShell, nsIObserver)
 class ThumbnailRunnable : public nsRunnable {
 public:
     ThumbnailRunnable(nsIAndroidBrowserApp* aBrowserApp, int aTabId,
-                       nsTArray<nsIntPoint>& aPoints, RefCountedJavaObject* aBuffer):
+                       const nsTArray<nsIntPoint>& aPoints, RefCountedJavaObject* aBuffer):
         mBrowserApp(aBrowserApp), mPoints(aPoints), mTabId(aTabId), mBuffer(aBuffer) {}
 
     virtual nsresult Run() {
@@ -435,7 +435,7 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
             break;
 
         int32_t tabId = curEvent->MetaState();
-        nsTArray<nsIntPoint> points = curEvent->Points();
+        const nsTArray<nsIntPoint>& points = curEvent->Points();
         RefCountedJavaObject* buffer = curEvent->ByteBuffer();
         nsCOMPtr<ThumbnailRunnable> sr = new ThumbnailRunnable(mBrowserApp, tabId, points, buffer);
         MessageLoop::current()->PostIdleTask(FROM_HERE, NewRunnableMethod(sr.get(), &ThumbnailRunnable::Run));
@@ -479,7 +479,7 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
             uri,
             flag ? flag : ""
         };
-        nsresult rv = cmdline->Init(4, const_cast<char **>(argv), nullptr, nsICommandLine::STATE_REMOTE_AUTO);
+        nsresult rv = cmdline->Init(4, argv, nullptr, nsICommandLine::STATE_REMOTE_AUTO);
         if (NS_SUCCEEDED(rv))
             cmdline->Run();
         nsMemory::Free(uri);

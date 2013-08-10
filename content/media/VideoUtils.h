@@ -70,6 +70,45 @@ private:
     ReentrantMonitor* mReentrantMonitor;
 };
 
+/**
+ * ReentrantMonitorConditionallyEnter
+ *
+ * Enters the supplied monitor only if the conditional value |aEnter| is true.
+ * E.g. Used to allow unmonitored read access on the decode thread,
+ * and monitored access on all other threads.
+ */
+class NS_STACK_CLASS ReentrantMonitorConditionallyEnter
+{
+public:
+  ReentrantMonitorConditionallyEnter(bool aEnter,
+                                     ReentrantMonitor &aReentrantMonitor) :
+    mReentrantMonitor(nullptr)
+  {
+    MOZ_COUNT_CTOR(ReentrantMonitorConditionallyEnter);
+    if (aEnter) {
+      mReentrantMonitor = &aReentrantMonitor;
+      NS_ASSERTION(mReentrantMonitor, "null monitor");
+      mReentrantMonitor->Enter();
+    }
+  }
+  ~ReentrantMonitorConditionallyEnter(void)
+  {
+    if (mReentrantMonitor) {
+      mReentrantMonitor->Exit();
+    }
+    MOZ_COUNT_DTOR(ReentrantMonitorConditionallyEnter);
+  }
+private:
+  // Restrict to constructor and destructor defined above.
+  ReentrantMonitorConditionallyEnter();
+  ReentrantMonitorConditionallyEnter(const ReentrantMonitorConditionallyEnter&);
+  ReentrantMonitorConditionallyEnter& operator =(const ReentrantMonitorConditionallyEnter&);
+  static void* operator new(size_t) CPP_THROW_NEW;
+  static void operator delete(void*);
+
+  ReentrantMonitor* mReentrantMonitor;
+};
+
 // Shuts down a thread asynchronously.
 class ShutdownThreadEvent : public nsRunnable 
 {
@@ -126,7 +165,7 @@ static const int32_t MAX_VIDEO_WIDTH = 4000;
 static const int32_t MAX_VIDEO_HEIGHT = 3000;
 
 // Scales the display rect aDisplay by aspect ratio aAspectRatio.
-// Note that aDisplay must be validated by nsVideoInfo::ValidateVideoRegion()
+// Note that aDisplay must be validated by VideoInfo::ValidateVideoRegion()
 // before being used!
 void ScaleDisplayByAspectRatio(nsIntSize& aDisplay, float aAspectRatio);
 

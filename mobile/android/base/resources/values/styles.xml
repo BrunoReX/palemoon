@@ -65,6 +65,15 @@
         <item name="android:background">@android:color/transparent</item>
     </style>
 
+    <style name="AddressBar.Button.Container">
+        <item name="android:layout_marginLeft">4dp</item>
+        <item name="android:layout_marginRight">4dp</item>
+        <item name="android:layout_toLeftOf">@id/menu_items</item>
+        <item name="android:layout_alignParentLeft">true</item>
+        <item name="android:layout_alignParentBottom">true</item>
+        <item name="android:layout_centerVertical">true</item>
+    </style>
+
     <!-- Address bar - Image Button -->
     <style name="AddressBar.ImageButton" parent="AddressBar.Button">
         <item name="android:scaleType">center</item>
@@ -77,6 +86,10 @@
         <item name="android:layout_width">0dip</item>
         <item name="android:layout_height">0dip</item>
         <item name="android:visibility">gone</item>
+    </style>
+
+    <style name="AddressBar.ImageButton.Forward" parent="AddressBar.ImageButton.Unused">
+        <item name="android:contentDescription">@string/forward</item>
     </style>
 
     <!-- Address bar - Image Button - Icon -->
@@ -122,22 +135,32 @@
          <item name="android:layout_width">20dp</item>
     </style>
 
-    <!-- Lists in TabsTray -->
+    <!-- TabsTray List -->
     <style name="TabsList" parent="android:style/Widget.ListView">
-        <item name="android:layout_width">fill_parent</item>
-        <item name="android:layout_height">fill_parent</item>
-        <item name="android:layout_weight">1</item>
+         <item name="android:background">@android:color/transparent</item>
+         <item name="android:cacheColorHint">@android:color/transparent</item>
+         <item name="android:divider">@android:color/transparent</item>
+         <item name="android:dividerHeight">0dip</item>
+         <item name="android:listSelector">@android:color/transparent</item>
+    </style>
+
+    <!-- RemoteTabsList -->
+    <style name="RemoteTabsList" parent="TabsList">
+         <item name="android:dividerHeight">1dip</item>
+         <item name="android:childDivider">@drawable/remote_tabs_child_divider</item>
+         <item name="android:groupIndicator">@android:color/transparent</item>
     </style>
 
     <!-- TabsTray Row -->
     <style name="TabRowTextAppearance">
-        <item name="android:textColor">#E5F2FF</item>
-        <item name="android:shadowColor">#7F000000</item>
-        <item name="android:shadowRadius">1</item>
-        <item name="android:shadowDx">0</item>
-        <item name="android:shadowDy">1</item>
+        <item name="android:textColor">#FFFFFFFF</item>
         <item name="android:singleLine">true</item>
         <item name="android:ellipsize">middle</item>
+    </style>
+
+    <!-- TabsTray RemoteTabs Row Url -->
+    <style name="TabRowTextAppearance.Url">
+        <item name="android:textColor">#FFA4A7A9</item>
     </style>
 
     <!-- TabWidget --> 
@@ -207,6 +230,15 @@
       <item name="android:paddingRight">0dip</item>
     </style>
 
+    <style name="AboutHome.Thumbnail.Pinned">
+      <item name="android:layout_width">@dimen/abouthome_topsite_pinsize</item>
+      <item name="android:layout_height">@dimen/abouthome_topsite_pinsize</item>
+      <item name="android:layout_alignTop">@id/thumbnail</item>
+      <item name="android:layout_alignRight">@id/thumbnail</item>
+      <item name="android:minWidth">30dip</item>
+      <item name="android:minHeight">30dip</item>
+    </style>
+
     <style name="AboutHome.Thumbnail.Image">
       <item name="android:layout_width">fill_parent</item>
       <item name="android:layout_height">fill_parent</item>
@@ -234,6 +266,18 @@
       <item name="android:paddingRight">5dip</item>
       <item name="android:textSize">10sp</item>
       <item name="android:gravity">center|left</item>
+    </style>
+
+    <style name="AboutHome.TextAppearance" />
+
+    <style name="AboutHome.TextAppearance.Title">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">@color/abouthome_section_title</item>
+    </style>
+
+    <style name="AboutHome.TextAppearance.SubTitle">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/abouthome_section_subtitle</item>
     </style>
 
 </resources>

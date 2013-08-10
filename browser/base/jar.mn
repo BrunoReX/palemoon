@@ -49,6 +49,11 @@ browser.jar:
         content/browser/abouthome/restore-large@2x.png (content/abouthome/restore-large@2x.png)
         content/browser/abouthome/mozilla@2x.png       (content/abouthome/mozilla@2x.png)
 #endif
+#ifdef MOZ_SERVICES_HEALTHREPORT
+        content/browser/abouthealthreport/abouthealth.xhtml   (content/abouthealthreport/abouthealth.xhtml)
+        content/browser/abouthealthreport/abouthealth.js      (content/abouthealthreport/abouthealth.js)
+        content/browser/abouthealthreport/abouthealth.css     (content/abouthealthreport/abouthealth.css)
+#endif
         content/browser/aboutRobots-icon.png          (content/aboutRobots-icon.png)
         content/browser/aboutRobots-widget-left.png   (content/aboutRobots-widget-left.png)
         content/browser/aboutSocialError.xhtml        (content/aboutSocialError.xhtml)
@@ -129,7 +134,7 @@ browser.jar:
 *       content/browser/license.html                  (/toolkit/content/license.html)
 % override chrome://global/content/license.html chrome://browser/content/license.html
 #ifdef MOZ_SAFE_BROWSING
-*       content/browser/report-phishing-overlay.xul     (content/report-phishing-overlay.xul)
+        content/browser/report-phishing-overlay.xul     (content/report-phishing-overlay.xul)
         content/browser/blockedSite.xhtml               (content/blockedSite.xhtml)
 % overlay chrome://browser/content/browser.xul chrome://browser/content/report-phishing-overlay.xul
 #endif

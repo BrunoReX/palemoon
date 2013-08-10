@@ -44,6 +44,9 @@ pref("toolkit.storage.synchronous", 0);
 // Device pixel to CSS px ratio, in percent. Set to -1 to calculate based on display density.
 pref("browser.viewport.scaleRatio", -1);
 pref("browser.viewport.desktopWidth", 980);
+// The default fallback zoom level to render pages at. Set to -1 to fit page; otherwise
+// the value is divided by 1000 and clamped to hard-coded min/max scale values.
+pref("browser.viewport.defaultZoom", -1);
 
 /* allow scrollbars to float above chrome ui */
 pref("ui.scrollbarsCanOverlapContent", 1);
@@ -76,8 +79,9 @@ pref("offline-apps.quota.warn", 1024); // kilobytes
 // cache compression turned off for now - see bug #715198
 pref("browser.cache.compression_level", 0);
 
-/* protocol warning prefs */
+/* disable some protocol warnings */
 pref("network.protocol-handler.warn-external.tel", false);
+pref("network.protocol-handler.warn-external.sms", false);
 pref("network.protocol-handler.warn-external.mailto", false);
 pref("network.protocol-handler.warn-external.vnd.youtube", false);
 
@@ -426,10 +430,6 @@ pref("plugin.disable", false);
 pref("dom.ipc.plugins.enabled", false);
 
 pref("plugins.click_to_play", true);
-// Disabled because of thread safety problem
-// in getting the bits from the surface.
-// Bug 756253
-pref("plugins.use_placeholder", 0);
 
 // product URLs
 // The breakpad report server to link to in about:crashes
@@ -523,6 +523,7 @@ pref("layers.offmainthreadcomposition.enabled", true);
 pref("layers.async-video.enabled", true);
 pref("layers.progressive-paint", true);
 pref("layers.low-precision-buffer", true);
+pref("layers.low-precision-resolution", 250);
 
 pref("notification.feature.enabled", true);
 
@@ -629,6 +630,7 @@ pref("ui.scrolling.min_scrollable_distance", -1);
 
 // Enable accessibility mode if platform accessibility is enabled.
 pref("accessibility.accessfu.activate", 2);
+pref("accessibility.accessfu.quicknav_modes", "Link,Heading,FormElement,ListItem");
 
 // Mobile manages state by autodetection
 pref("network.manage-offline-status", true);
@@ -663,3 +665,7 @@ pref("dom.event.touch.coalescing.enabled", false);
 // default orientation for the app, default to undefined
 // the java GeckoScreenOrientationListener needs this to be defined
 pref("app.orientation.default", "");
+
+// On memory pressure, release dirty but unused pages held by jemalloc
+// back to the system.
+pref("memory.free_dirty_pages", true);

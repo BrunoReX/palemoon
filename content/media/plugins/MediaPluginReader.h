@@ -7,13 +7,22 @@
 #define MediaPluginReader_h_
 
 #include "MediaResource.h"
-#include "MediaDecoder.h"
 #include "MediaDecoderReader.h"
-
+#include "ImageContainer.h"
+#include "mozilla/layers/SharedRGBImage.h"
+ 
 #include "MPAPI.h"
+
+class nsACString;
 
 namespace mozilla {
 
+class AbstractMediaDecoder;
+
+namespace layers {
+class ImageContainer;
+}
+ 
 class MediaPluginReader : public MediaDecoderReader
 {
   nsCString mType;
@@ -26,7 +35,8 @@ class MediaPluginReader : public MediaDecoderReader
   int64_t mAudioSeekTimeUs;
   VideoData *mLastVideoFrame;
 public:
-  MediaPluginReader(MediaDecoder* aDecoder);
+  MediaPluginReader(AbstractMediaDecoder* aDecoder,
+                    const nsACString& aContentType);
   ~MediaPluginReader();
 
   virtual nsresult Init(MediaDecoderReader* aCloneDonor);
@@ -46,14 +56,21 @@ public:
     return mHasVideo;
   }
 
-  virtual nsresult ReadMetadata(nsVideoInfo* aInfo,
+  virtual nsresult ReadMetadata(VideoInfo* aInfo,
                                 MetadataTags** aTags);
   virtual nsresult Seek(int64_t aTime, int64_t aStartTime, int64_t aEndTime, int64_t aCurrentTime);
   virtual nsresult GetBuffered(nsTimeRanges* aBuffered, int64_t aStartTime);
-  virtual bool IsSeekableInBufferedRanges() {
-    return true;
-  }
-
+  class ImageBufferCallback : public MPAPI::BufferCallback {
+    typedef mozilla::layers::Image Image;
+  public:
+    ImageBufferCallback(mozilla::layers::ImageContainer *aImageContainer);
+    void *operator()(size_t aWidth, size_t aHeight,
+                     MPAPI::ColorFormat aColorFormat);
+    already_AddRefed<Image> GetImage();
+  private:
+    mozilla::layers::ImageContainer *mImageContainer;
+    nsRefPtr<Image> mImage;
+  };
 };
 
 } // namespace mozilla

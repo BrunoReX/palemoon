@@ -28,6 +28,7 @@ public final class GeckoProfile {
     private static final String LOGTAG = "GeckoProfile";
 
     private static HashMap<String, GeckoProfile> sProfileCache = new HashMap<String, GeckoProfile>();
+    private static String sDefaultProfileName = null;
 
     private final Context mContext;
     private final String mName;
@@ -49,6 +50,11 @@ public final class GeckoProfile {
     }
 
     public static GeckoProfile get(Context context, String profileName) {
+        synchronized (sProfileCache) {
+            GeckoProfile profile = sProfileCache.get(profileName);
+            if (profile != null)
+                return profile;
+        }
         return get(context, profileName, null);
     }
 
@@ -60,22 +66,9 @@ public final class GeckoProfile {
         // if no profile was passed in, look for the default profile listed in profiles.ini
         // if that doesn't exist, look for a profile called 'default'
         if (TextUtils.isEmpty(profileName) && TextUtils.isEmpty(profilePath)) {
-            profileName = "default";
-
-            INIParser parser = getProfilesINI(context);
-
-            String profile = "";
-            boolean foundDefault = false;
-            for (Enumeration<INISection> e = parser.getSections().elements(); e.hasMoreElements();) {
-                INISection section = e.nextElement();
-                if (section.getIntProperty("Default") == 1) {
-                    profile = section.getStringProperty("Name");
-                    foundDefault = true;
-                }
-            }
-
-            if (foundDefault)
-                profileName = profile;
+            profileName = GeckoProfile.findDefaultProfile(context);
+            if (profileName == null)
+                profileName = "default";
         }
 
         // actually try to look up the profile
@@ -123,12 +116,9 @@ public final class GeckoProfile {
         if (!TextUtils.isEmpty(profilePath)) {
             File dir = new File(profilePath);
             if (dir.exists() && dir.isDirectory()) {
-                if (mDir != null) {
-                    Log.i(LOGTAG, "profile dir changed from "+mDir+" to "+dir);
-                }
                 mDir = dir;
             } else {
-                Log.w(LOGTAG, "requested profile directory missing: "+profilePath);
+                Log.w(LOGTAG, "requested profile directory missing: " + profilePath);
             }
         }
     }
@@ -314,6 +304,28 @@ public final class GeckoProfile {
             Log.w(LOGTAG, "Failed to remove profile " + mName + ":\n" + ex);
             return false;
         }
+    }
+
+    public static String findDefaultProfile(Context context) {
+        // Have we read the default profile from the INI already?
+        // Changing the default profile requires a restart, so we don't
+        // need to worry about runtime changes.
+        if (sDefaultProfileName != null) {
+            return sDefaultProfileName;
+        }
+
+        // Open profiles.ini to find the correct path
+        INIParser parser = getProfilesINI(context);
+
+        for (Enumeration<INISection> e = parser.getSections().elements(); e.hasMoreElements();) {
+            INISection section = e.nextElement();
+            if (section.getIntProperty("Default") == 1) {
+                sDefaultProfileName = section.getStringProperty("Name");
+                return sDefaultProfileName;
+            }
+        }
+
+        return null;
     }
 
     private File findProfileDir(File mozillaDir) {

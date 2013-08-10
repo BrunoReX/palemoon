@@ -271,6 +271,7 @@ public:
   NS_IMETHOD SubmitNamesValues(nsFormSubmission* aFormSubmission);
   NS_IMETHOD SaveState();
   virtual bool RestoreState(nsPresState* aState);
+  virtual bool IsDisabledForEvents(uint32_t aMessage);
 
   virtual void FieldSetDisabledChanged(bool aNotify);
 
@@ -670,11 +671,7 @@ nsHTMLOptionCollection::Add(const HTMLOptionOrOptGroupElement& aElement,
   if (aBefore.IsNull()) {
     mSelect->Add(element, (nsGenericHTMLElement*)nullptr, aError);
   } else if (aBefore.Value().IsHTMLElement()) {
-    nsCOMPtr<nsIContent> content =
-      do_QueryInterface(aBefore.Value().GetAsHTMLElement());
-    nsGenericHTMLElement* before =
-      static_cast<nsGenericHTMLElement*>(content.get());
-    mSelect->Add(element, before, aError);
+    mSelect->Add(element, &aBefore.Value().GetAsHTMLElement(), aError);
   } else {
     mSelect->Add(element, aBefore.Value().GetAsLong(), aError);
   }

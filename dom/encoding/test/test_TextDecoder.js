@@ -180,10 +180,16 @@ function testDecodeStreamCompositions() {
     {encoding: "utf-8", input: [0xEF,0xBB,0xBF,0xC2,0x80], expected: ["","","","","\x80"]},
     {encoding: "utf-16", input: [0x01,0x00], expected: ["","\x01"]},
     {encoding: "utf-16", input: [0x01,0x00,0x03,0x02], expected: ["","\x01","","\u0203"]},
+    {encoding: "utf-16", input: [0xFF,0xFD], expected: ["","\uFDFF"]},
     {encoding: "utf-16", input: [0xFF,0xFE], expected: ["",""]},
+    {encoding: "utf-16", input: [0xFF,0xFF], expected: ["","\uFFFF"]},
     {encoding: "utf-16", input: [0xFF,0xFE,0x01,0x00], expected: ["","","","\x01"]},
     {encoding: "utf-16", input: [0xFF,0xFE,0xFF,0xFE], expected: ["","","","\uFEFF"]},
     {encoding: "utf-16", input: [0xFF,0xFE,0xFE,0xFF], expected: ["","","","\uFFFE"]},
+    {encoding: "utf-16", input: [0xFD,0xFE], expected: ["","\uFEFD"]},
+    {encoding: "utf-16", input: [0xFD,0xFF], expected: ["","\uFFFD"]},
+    {encoding: "utf-16", input: [0xFE,0xFD], expected: ["","\uFDFE"]},
+    {encoding: "utf-16", input: [0xFE,0xFE], expected: ["","\uFEFE"]},
     {encoding: "utf-16", input: [0xFE,0xFF], expected: ["","\uFFFE"]},
     {encoding: "utf-16", input: [0xFE,0xFF,0x01,0x00], expected: ["","\uFFFE","","\x01"]},
     {encoding: "utf-16", input: [0xFE,0xFF,0xFF,0xFE], expected: ["","\uFFFE","","\uFEFF"]},
@@ -194,8 +200,16 @@ function testDecodeStreamCompositions() {
     {encoding: "utf-16le", input: [0xFE,0xFF,0x01,0x00], expected: ["","\uFFFE","","\x01"]},
     {encoding: "utf-16be", input: [0x01,0x00], expected: ["","\u0100"]},
     {encoding: "utf-16be", input: [0x01,0x00,0x03,0x02], expected: ["","\u0100","","\u0302"]},
-    {encoding: "utf-16be", input: [0xFF,0xFE,0x01,0x00], expected: ["","\uFFFE","","\u0100"]},
+    {encoding: "utf-16be", input: [0xFD,0xFE], expected: ["","\uFDFE"]},
+    {encoding: "utf-16be", input: [0xFD,0xFF], expected: ["","\uFDFF"]},
+    {encoding: "utf-16be", input: [0xFE,0xFD], expected: ["","\uFEFD"]},
+    {encoding: "utf-16be", input: [0xFE,0xFE], expected: ["","\uFEFE"]},
+    {encoding: "utf-16be", input: [0xFE,0xFF], expected: ["",""]},
     {encoding: "utf-16be", input: [0xFE,0xFF,0x01,0x00], expected: ["","","","\u0100"]},
+    {encoding: "utf-16be", input: [0xFF,0xFD], expected: ["","\uFFFD"]},
+    {encoding: "utf-16be", input: [0xFF,0xFE], expected: ["","\uFFFE"]},
+    {encoding: "utf-16be", input: [0xFF,0xFF], expected: ["","\uFFFF"]},
+    {encoding: "utf-16be", input: [0xFF,0xFE,0x01,0x00], expected: ["","\uFFFE","","\u0100"]},
     {encoding: "shift_jis", input: [0x81,0x40], expected: ["","\u3000"]},
   ];
   tests.forEach(function(t) {
@@ -247,7 +261,7 @@ function testDecodeABVOption(data, expectedString)
     msg: "text decoding ABV empty string test."});
 
   // null for Array Buffer
-  testCharset({encoding: "iso-8859-11", input: null, expected: "",
+  testCharset({encoding: "iso-8859-11", input: null, error: "TypeError",
     msg: "text decoding ABV null test."});
 }
 
@@ -328,7 +342,8 @@ function testDecoderGetEncoding()
     {encoding: "gbk", labels: ["chinese", "csgb2312", "csiso58gb231280", "gb2312", "gb_2312", "gb_2312-80", "gbk", "iso-ir-58", "x-gbk"]},
     {encoding: "gb18030", labels: ["gb18030"]},
     {encoding: "hz-gb-2312", labels: ["hz-gb-2312"]},
-    {encoding: "big5", labels: ["big5", "big5-hkscs", "cn-big5", "csbig5", "x-x-big5"]},
+    {encoding: "big5", labels: ["big5", "cn-big5", "csbig5", "x-x-big5"]},
+    {encoding: "big5-hkscs", labels: ["big5-hkscs"]},
     {encoding: "euc-jp", labels: ["cseucpkdfmtjapanese", "euc-jp", "x-euc-jp"]},
     {encoding: "iso-2022-jp", labels: ["csiso2022jp", "iso-2022-jp"]},
     {encoding: "shift_jis", labels: ["csshiftjis", "ms_kanji", "shift-jis", "shift_jis", "sjis", "windows-31j", "x-sjis"]},

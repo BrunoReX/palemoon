@@ -8,7 +8,6 @@
 }
 
 body {
-  font: message-box;
   color: hsl(0,0%,50%);
 }
 
@@ -53,6 +52,10 @@ li.container {
 
 .expander[expanded] {
   background-image: url("chrome://global/skin/tree/twisty-open.png");
+}
+
+.more-nodes {
+  padding-left: 16px;
 }
 
 .styleinspector-propertyeditor {

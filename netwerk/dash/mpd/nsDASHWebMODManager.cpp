@@ -57,7 +57,7 @@ static PRLogModuleInfo* gnsDASHWebMODManagerLog = nullptr;
 nsDASHWebMODManager::nsDASHWebMODManager(MPD* aMpd)
 {
   MOZ_COUNT_CTOR(nsDASHWebMODManager);
-  NS_ENSURE_TRUE(aMpd,);
+  NS_ENSURE_TRUE_VOID(aMpd);
   mMpd = aMpd;
 #if defined(PR_LOGGING)
   if(!gnsDASHWebMODManagerLog)
@@ -196,6 +196,39 @@ nsDASHWebMODManager::GetDuration() const
   NS_ENSURE_TRUE(current, -1);
 
   return current->GetDuration();
+}
+
+bool
+nsDASHWebMODManager::GetBestRepForBandwidth(uint32_t aAdaptSetIdx,
+                                            uint64_t aBandwidth,
+                                            uint32_t &aRepIdx) const
+{
+  NS_ENSURE_TRUE(aAdaptSetIdx < GetNumAdaptationSets(), false);
+  NS_ENSURE_TRUE(0 < GetNumRepresentations(aAdaptSetIdx), false);
+  // Return false if there isn't enough bandwidth for even the lowest bitrate.
+  // Let calling function decide what to do. Use 0.95 multiplier to deal with
+  // 5% variance in bandwidth.
+  // XXX Multiplier is a guess at present.
+  if (aBandwidth*0.95 < GetRepresentation(aAdaptSetIdx, 0)->GetBitrate()) {
+    aRepIdx = UINT32_MAX;
+    return false;
+  }
+  // Iterate until the current |Representation|'s bitrate is higher than the
+  // estimated available bandwidth. Use 0.95 multiplier to deal with 5%
+  // variance in bandwidth.
+  // XXX Multiplier is a guess at present.
+  for (uint32_t i = 1; i < GetNumRepresentations(aAdaptSetIdx); i++) {
+    NS_ENSURE_TRUE(GetRepresentation(aAdaptSetIdx, i), false);
+    if (aBandwidth*0.95 < GetRepresentation(aAdaptSetIdx, i)->GetBitrate()) {
+      // Pick the previous one, since this one's bitrate is too high.
+      aRepIdx = i-1;
+      return true;
+    }
+  }
+  // If we reach here, all of the |Representation|'s bitrates are lower than the
+  // available bandwidth. Just pick the highest, i.e. last in the array.
+  aRepIdx = GetNumRepresentations(aAdaptSetIdx)-1;
+  return true;
 }
 
 }//namespace net

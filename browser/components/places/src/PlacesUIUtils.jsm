@@ -548,9 +548,10 @@ this.PlacesUIUtils = {
       aWindow : this._getTopBrowserWin();
 
     var urls = [];
+    let skipMarking = browserWindow && PrivateBrowsingUtils.isWindowPrivate(browserWindow);
     for (let item of aItemsToOpen) {
       urls.push(item.uri);
-      if (browserWindow && PrivateBrowsingUtils.isWindowPrivate(browserWindow)) {
+      if (skipMarking) {
         continue;
       }
 
@@ -621,7 +622,7 @@ this.PlacesUIUtils = {
   openNodeWithEvent:
   function PUIU_openNodeWithEvent(aNode, aEvent, aView) {
     let window = aView.ownerWindow;
-    this._openNodeIn(aNode, window.whereToOpenLink(aEvent), window);
+    this._openNodeIn(aNode, window.whereToOpenLink(aEvent, false, true), window);
   },
 
   /**
@@ -1008,9 +1009,11 @@ XPCOMUtils.defineLazyGetter(PlacesUIUtils, "ellipsis", function() {
                                         Ci.nsIPrefLocalizedString).data;
 });
 
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
 XPCOMUtils.defineLazyServiceGetter(PlacesUIUtils, "privateBrowsing",
                                    "@mozilla.org/privatebrowsing;1",
                                    "nsIPrivateBrowsingService");
+#endif
 
 XPCOMUtils.defineLazyServiceGetter(this, "URIFixup",
                                    "@mozilla.org/docshell/urifixup;1",
@@ -1150,10 +1153,10 @@ XPCOMUtils.defineLazyGetter(PlacesUIUtils, "ptm", function() {
     //// nsITransactionManager forwarders.
 
     beginBatch: function()
-      PlacesUtils.transactionManager.beginBatch(),
+      PlacesUtils.transactionManager.beginBatch(null),
 
     endBatch: function()
-      PlacesUtils.transactionManager.endBatch(),
+      PlacesUtils.transactionManager.endBatch(false),
 
     doTransaction: function(txn)
       PlacesUtils.transactionManager.doTransaction(txn),

@@ -761,7 +761,7 @@ MediaCache::FindReusableBlock(TimeStamp aNow,
 
     // Don't consider readahead blocks in non-seekable streams. If we
     // remove the block we won't be able to seek back to read it later.
-    if (stream->mIsSeekable) {
+    if (stream->mIsTransportSeekable) {
       AppendMostReusableBlock(&stream->mReadaheadBlocks, &candidates, length);
     }
   }
@@ -1082,7 +1082,7 @@ MediaCache::Update()
     int32_t nonSeekableReadaheadBlockCount = 0;
     for (uint32_t i = 0; i < mStreams.Length(); ++i) {
       MediaCacheStream* stream = mStreams[i];
-      if (!stream->mIsSeekable) {
+      if (!stream->mIsTransportSeekable) {
         nonSeekableReadaheadBlockCount += stream->mReadaheadBlocks.GetCount();
       }
     }
@@ -1110,7 +1110,7 @@ MediaCache::Update()
 
       // Compute where we'd actually seek to to read at readOffset
       int64_t desiredOffset = dataOffset;
-      if (stream->mIsSeekable) {
+      if (stream->mIsTransportSeekable) {
         if (desiredOffset > stream->mChannelOffset &&
             desiredOffset <= stream->mChannelOffset + SEEK_VS_READ_THRESHOLD) {
           // Assume it's more efficient to just keep reading up to the
@@ -1162,7 +1162,7 @@ MediaCache::Update()
         // The stream reader is waiting for us, or nearly so. Better feed it.
         LOG(PR_LOG_DEBUG, ("Stream %p feeding reader", stream));
         enableReading = true;
-      } else if (!stream->mIsSeekable &&
+      } else if (!stream->mIsTransportSeekable &&
                  nonSeekableReadaheadBlockCount >= maxBlocks*NONSEEKABLE_READAHEAD_MAX) {
         // This stream is not seekable and there are already too many blocks
         // being cached for readahead for nonseekable streams (which we can't
@@ -1209,7 +1209,7 @@ MediaCache::Update()
 
       if (stream->mChannelOffset != desiredOffset && enableReading) {
         // We need to seek now.
-        NS_ASSERTION(stream->mIsSeekable || desiredOffset == 0,
+        NS_ASSERTION(stream->mIsTransportSeekable || desiredOffset == 0,
                      "Trying to seek in a non-seekable stream!");
         // Round seek offset down to the start of the block. This is essential
         // because we don't want to think we have part of a block already
@@ -1628,6 +1628,10 @@ MediaCacheStream::NotifyDataStarted(int64_t aOffset)
     // the stream is at least that long.
     mStreamLength = NS_MAX(mStreamLength, mChannelOffset);
   }
+  // Ensure that |mDownloadCancelled| is set to false since we have new data.
+  if (mDownloadCancelled) {
+    mDownloadCancelled = false;
+  }
 }
 
 bool
@@ -1720,6 +1724,50 @@ MediaCacheStream::NotifyDataReceived(int64_t aSize, const char* aData,
 }
 
 void
+MediaCacheStream::FlushPartialBlockInternal(bool aNotifyAll)
+{
+  NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
+
+  ReentrantMonitorAutoEnter mon(gMediaCache->GetReentrantMonitor());
+
+  int32_t blockOffset = int32_t(mChannelOffset%BLOCK_SIZE);
+  if (blockOffset > 0) {
+    LOG(PR_LOG_DEBUG,
+        ("Stream %p writing partial block: [%d] bytes; "
+         "mStreamOffset [%lld] mChannelOffset[%lld] mStreamLength [%lld] "
+         "notifying: [%s]",
+         this, blockOffset, mStreamOffset, mChannelOffset, mStreamLength,
+         aNotifyAll ? "yes" : "no"));
+
+    // Write back the partial block
+    memset(reinterpret_cast<char*>(mPartialBlockBuffer) + blockOffset, 0,
+           BLOCK_SIZE - blockOffset);
+    gMediaCache->AllocateAndWriteBlock(this, mPartialBlockBuffer,
+        mMetadataInPartialBlockBuffer ? MODE_METADATA : MODE_PLAYBACK);
+    if (aNotifyAll) {
+      // Wake up readers who may be waiting for this data
+      mon.NotifyAll();
+    }
+  }
+}
+
+void
+MediaCacheStream::FlushPartialBlock()
+{
+  NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
+
+  ReentrantMonitorAutoEnter mon(gMediaCache->GetReentrantMonitor());
+
+  // Write the current partial block to memory.
+  // Note: This writes a full block, so if data is not at the end of the
+  // stream, the decoder must subsequently choose correct start and end offsets
+  // for reading/seeking.
+  FlushPartialBlockInternal(false);
+
+  gMediaCache->QueueUpdate();
+}
+
+void
 MediaCacheStream::NotifyDataEnded(nsresult aStatus)
 {
   NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
@@ -1733,16 +1781,7 @@ MediaCacheStream::NotifyDataEnded(nsresult aStatus)
     mResourceID = gMediaCache->AllocateResourceID();
   }
 
-  int32_t blockOffset = int32_t(mChannelOffset%BLOCK_SIZE);
-  if (blockOffset > 0) {
-    // Write back the partial block
-    memset(reinterpret_cast<char*>(mPartialBlockBuffer) + blockOffset, 0,
-           BLOCK_SIZE - blockOffset);
-    gMediaCache->AllocateAndWriteBlock(this, mPartialBlockBuffer,
-        mMetadataInPartialBlockBuffer ? MODE_METADATA : MODE_PLAYBACK);
-    // Wake up readers who may be waiting for this data
-    mon.NotifyAll();
-  }
+  FlushPartialBlockInternal(true);
 
   if (!mDidNotifyDataEnded) {
     MediaCache::ResourceStreamIterator iter(mResourceID);
@@ -1762,6 +1801,24 @@ MediaCacheStream::NotifyDataEnded(nsresult aStatus)
   gMediaCache->QueueUpdate();
 }
 
+void
+MediaCacheStream::NotifyDownloadCancelled()
+{
+  NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
+
+  ReentrantMonitorAutoEnter mon(gMediaCache->GetReentrantMonitor());
+
+  MediaCache::ResourceStreamIterator iter(mResourceID);
+  while (MediaCacheStream* stream = iter.Next()) {
+    // The remainder of the download was cancelled; in order to cancel any
+    // waiting reads, assume length is equal to current channel offset.
+    stream->mDownloadCancelled = true;
+  }
+
+  // Wake up waiting streams so they will stop reading.
+  mon.NotifyAll();
+}
+
 MediaCacheStream::~MediaCacheStream()
 {
   NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
@@ -1775,22 +1832,22 @@ MediaCacheStream::~MediaCacheStream()
 }
 
 void
-MediaCacheStream::SetSeekable(bool aIsSeekable)
+MediaCacheStream::SetTransportSeekable(bool aIsTransportSeekable)
 {
   ReentrantMonitorAutoEnter mon(gMediaCache->GetReentrantMonitor());
-  NS_ASSERTION(mIsSeekable || aIsSeekable ||
+  NS_ASSERTION(mIsTransportSeekable || aIsTransportSeekable ||
                mChannelOffset == 0, "channel offset must be zero when we become non-seekable");
-  mIsSeekable = aIsSeekable;
+  mIsTransportSeekable = aIsTransportSeekable;
   // Queue an Update since we may change our strategy for dealing
   // with this stream
   gMediaCache->QueueUpdate();
 }
 
 bool
-MediaCacheStream::IsSeekable()
+MediaCacheStream::IsTransportSeekable()
 {
   ReentrantMonitorAutoEnter mon(gMediaCache->GetReentrantMonitor());
-  return mIsSeekable;
+  return mIsTransportSeekable;
 }
 
 bool
@@ -2106,6 +2163,11 @@ MediaCacheStream::Read(char* aBuffer, uint32_t aCount, uint32_t* aBytes)
         // that out.
         return NS_ERROR_FAILURE;
       }
+      // If the download was cancelled, stop reading and return silently.
+      if (mDownloadCancelled) {
+        mDownloadCancelled = false;
+        return NS_OK;
+      }
       continue;
     }
 
@@ -2228,7 +2290,7 @@ MediaCacheStream::InitAsClone(MediaCacheStream* aOriginal)
 
   mPrincipal = aOriginal->mPrincipal;
   mStreamLength = aOriginal->mStreamLength;
-  mIsSeekable = aOriginal->mIsSeekable;
+  mIsTransportSeekable = aOriginal->mIsTransportSeekable;
 
   // Cloned streams are initially suspended, since there is no channel open
   // initially for a clone.

@@ -75,9 +75,9 @@ enum FlipStyle {
 #define POPUPALIGNMENT_BOTTOMRIGHT -2
 
 #define POPUPALIGNMENT_LEFTCENTER 16
-#define POPUPALIGNMENT_RIGHTCENTER 17
-#define POPUPALIGNMENT_TOPCENTER 18
-#define POPUPALIGNMENT_BOTTOMCENTER 19
+#define POPUPALIGNMENT_RIGHTCENTER -16
+#define POPUPALIGNMENT_TOPCENTER 17
+#define POPUPALIGNMENT_BOTTOMCENTER 18
 
 #define INC_TYP_INTERVAL  1000  // 1s. If the interval between two keypresses is shorter than this, 
                                 //   treat as a continue typing
@@ -90,8 +90,8 @@ enum FlipStyle {
 
 nsIFrame* NS_NewMenuPopupFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
 
-class nsIViewManager;
-class nsIView;
+class nsViewManager;
+class nsView;
 class nsMenuPopupFrame;
 
 class nsMenuPopupFrame : public nsBoxFrame, public nsMenuParent
@@ -170,7 +170,7 @@ public:
 
   void EnsureWidget();
 
-  nsresult CreateWidgetForView(nsIView* aView);
+  nsresult CreateWidgetForView(nsView* aView);
   uint8_t GetShadowStyle();
 
   NS_IMETHOD SetInitialChildList(ChildListID     aListID,
@@ -181,7 +181,7 @@ public:
   // layout, position and display the popup as needed
   void LayoutPopup(nsBoxLayoutState& aState, nsIFrame* aParentMenu, bool aSizedToPopup);
 
-  nsIView* GetRootViewForPopup(nsIFrame* aStartFrame);
+  nsView* GetRootViewForPopup(nsIFrame* aStartFrame);
 
   // set the position of the popup either relative to the anchor aAnchorFrame
   // (or the frame for mAnchorContent if aAnchorFrame is null) or at a specific

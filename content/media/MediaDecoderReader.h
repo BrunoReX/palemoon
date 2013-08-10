@@ -18,12 +18,12 @@
 
 namespace mozilla {
 
-class MediaDecoder;
+class AbstractMediaDecoder;
 
 // Stores info relevant to presenting media frames.
-class nsVideoInfo {
+class VideoInfo {
 public:
-  nsVideoInfo()
+  VideoInfo()
     : mAudioRate(44100),
       mAudioChannels(2),
       mDisplay(0,0),
@@ -138,7 +138,7 @@ public:
   // indicate that memory couldn't be allocated to create the VideoData
   // object, or it may indicate some problem with the input data (e.g.
   // negative stride).
-  static VideoData* Create(nsVideoInfo& aInfo,
+  static VideoData* Create(VideoInfo& aInfo,
                            ImageContainer* aContainer,
                            int64_t aOffset,
                            int64_t aTime,
@@ -148,7 +148,7 @@ public:
                            int64_t aTimecode,
                            nsIntRect aPicture);
 
-  static VideoData* Create(nsVideoInfo& aInfo,
+  static VideoData* Create(VideoInfo& aInfo,
                            ImageContainer* aContainer,
                            int64_t aOffset,
                            int64_t aTime,
@@ -157,6 +157,16 @@ public:
                            bool aKeyframe,
                            int64_t aTimecode,
                            nsIntRect aPicture);
+
+  static VideoData* CreateFromImage(VideoInfo& aInfo,
+                                    ImageContainer* aContainer,
+                                    int64_t aOffset,
+                                    int64_t aTime,
+                                    int64_t aEndTime,
+                                    const nsRefPtr<Image>& aImage,
+                                    bool aKeyframe,
+                                    int64_t aTimecode,
+                                    nsIntRect aPicture);
 
   // Constructs a duplicate VideoData object. This intrinsically tells the
   // player that it does not need to update the displayed frame when this
@@ -355,7 +365,7 @@ private:
 // this class can only be accessed on the decode thread.
 class MediaDecoderReader {
 public:
-  MediaDecoderReader(MediaDecoder* aDecoder);
+  MediaDecoderReader(AbstractMediaDecoder* aDecoder);
   virtual ~MediaDecoderReader();
 
   NS_INLINE_DECL_REFCOUNTING(MediaDecoderReader)
@@ -373,6 +383,9 @@ public:
   // or an un-recoverable read error has occured.
   virtual bool DecodeAudioData() = 0;
 
+  // Steps to carry out at the start of the |DecodeLoop|.
+  virtual void PrepareToDecode() { }
+
   // Reads and decodes one video frame. Packets with a timestamp less
   // than aTimeThreshold will be decoded (unless they're not keyframes
   // and aKeyframeSkip is true), but will not be added to the queue.
@@ -386,7 +399,7 @@ public:
   // the data required to present the media, and optionally fills *aTags
   // with tag metadata from the file.
   // Returns NS_OK on success, or NS_ERROR_FAILURE on failure.
-  virtual nsresult ReadMetadata(nsVideoInfo* aInfo,
+  virtual nsresult ReadMetadata(VideoInfo* aInfo,
                                 MetadataTags** aTags) = 0;
 
   // Stores the presentation time of the first frame we'd be able to play if
@@ -401,6 +414,17 @@ public:
                         int64_t aStartTime,
                         int64_t aEndTime,
                         int64_t aCurrentTime) = 0;
+  
+  // Called when the decode thread is started, before calling any other
+  // decode, read metadata, or seek functions. Do any thread local setup
+  // in this function.
+  virtual void OnDecodeThreadStart() {}
+  
+  // Called when the decode thread is about to finish, after all calls to
+  // any other decode, read metadata, or seek functions. Any backend specific
+  // thread local tear down must be done in this function. Note that another
+  // decode thread could start up and run in future.
+  virtual void OnDecodeThreadFinish() {}
 
 protected:
   // Queue of audio frames. This queue is threadsafe, and is accessed from
@@ -418,9 +442,6 @@ public:
   // should only be called on the main thread.
   virtual nsresult GetBuffered(nsTimeRanges* aBuffered,
                                int64_t aStartTime) = 0;
-
-  // True if we can seek using only buffered ranges. This is backend dependant.
-  virtual bool IsSeekableInBufferedRanges() = 0;
 
   class VideoQueueMemoryFunctor : public nsDequeFunctor {
   public:
@@ -464,23 +485,12 @@ public:
   virtual MediaQueue<VideoData>& VideoQueue() { return mVideoQueue; }
 
   // Returns a pointer to the decoder.
-  MediaDecoder* GetDecoder() {
+  AbstractMediaDecoder* GetDecoder() {
     return mDecoder;
   }
 
   AudioData* DecodeToFirstAudioData();
   VideoData* DecodeToFirstVideoData();
-
-  // Sets range for initialization bytes; used by DASH.
-  virtual void SetInitByteRange(MediaByteRange &aByteRange) { }
-
-  // Sets range for index frame bytes; used by DASH.
-  virtual void SetIndexByteRange(MediaByteRange &aByteRange) { }
-
-  // Returns list of ranges for index frame start/end offsets. Used by DASH.
-  virtual nsresult GetIndexByteRanges(nsTArray<MediaByteRange>& aByteRanges) {
-    return NS_ERROR_NOT_AVAILABLE;
-  }
 
 protected:
   // Pumps the decode until we reach frames required to play at time aTarget
@@ -488,10 +498,10 @@ protected:
   nsresult DecodeToTarget(int64_t aTarget);
 
   // Reference to the owning decoder object.
-  MediaDecoder* mDecoder;
+  AbstractMediaDecoder* mDecoder;
 
   // Stores presentation info required for playback.
-  nsVideoInfo mInfo;
+  VideoInfo mInfo;
 };
 
 } // namespace mozilla

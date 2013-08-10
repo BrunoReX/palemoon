@@ -18,6 +18,8 @@
 #include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "mozAutoDocUpdate.h"
+#include "nsIScriptError.h"
+#include "nsContentUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -41,6 +43,41 @@ NS_ELEMENT_INTERFACE_MAP_END
 NS_IMPL_ADDREF_INHERITED(nsMathMLElement, nsMathMLElementBase)
 NS_IMPL_RELEASE_INHERITED(nsMathMLElement, nsMathMLElementBase)
 
+static nsresult 
+WarnDeprecated(const PRUnichar* aDeprecatedAttribute, 
+               const PRUnichar* aFavoredAttribute, nsIDocument* aDocument)
+{
+  const PRUnichar *argv[] = 
+    { aDeprecatedAttribute, aFavoredAttribute };
+  return nsContentUtils::
+          ReportToConsole(nsIScriptError::warningFlag, "MathML", aDocument,
+                          nsContentUtils::eMATHML_PROPERTIES,
+                          "DeprecatedSupersededBy", argv, 2);
+}
+
+static nsresult 
+ReportLengthParseError(const nsString& aValue, nsIDocument* aDocument)
+{
+  const PRUnichar *arg = aValue.get();
+  return nsContentUtils::
+         ReportToConsole(nsIScriptError::errorFlag, "MathML", aDocument,
+                         nsContentUtils::eMATHML_PROPERTIES,
+                         "LengthParsingError", &arg, 1);
+}
+
+static nsresult
+ReportParseErrorNoTag(const nsString& aValue, 
+                      nsIAtom*        aAtom,
+                      nsIDocument*    aDocument)
+{
+  const PRUnichar *argv[] = 
+    { aValue.get(), aAtom->GetUTF16String() };
+  return nsContentUtils::
+         ReportToConsole(nsIScriptError::errorFlag, "MathML", aDocument,
+                         nsContentUtils::eMATHML_PROPERTIES,
+                         "AttributeParsingErrorNoTag", argv, 2);
+}
+
 nsresult
 nsMathMLElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                             nsIContent* aBindingParent,
@@ -48,7 +85,7 @@ nsMathMLElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
 {
   static const char kMathMLStyleSheetURI[] = "resource://gre-resources/mathml.css";
 
-  Link::ResetLinkState(false);
+  Link::ResetLinkState(false, Link::ElementHasHref());
 
   nsresult rv = nsMathMLElementBase::BindToTree(aDocument, aParent,
                                                 aBindingParent,
@@ -83,7 +120,7 @@ nsMathMLElement::UnbindFromTree(bool aDeep, bool aNullParent)
 {
   // If this link is ever reinserted into a document, it might
   // be under a different xml:base, so forget the cached state now.
-  Link::ResetLinkState(false);
+  Link::ResetLinkState(false, Link::ElementHasHref());
   
   nsIDocument* doc = GetCurrentDoc();
   if (doc) {
@@ -100,6 +137,14 @@ nsMathMLElement::ParseAttribute(int32_t aNamespaceID,
                                 nsAttrValue& aResult)
 {
   if (aNamespaceID == kNameSpaceID_None) {
+    if (Tag() == nsGkAtoms::math && aAttribute == nsGkAtoms::mode) {
+      WarnDeprecated(nsGkAtoms::mode->GetUTF16String(),
+                     nsGkAtoms::display->GetUTF16String(), OwnerDoc());
+    }
+    if (aAttribute == nsGkAtoms::color) {
+      WarnDeprecated(nsGkAtoms::color->GetUTF16String(),
+                     nsGkAtoms::mathcolor_->GetUTF16String(), OwnerDoc());
+    }
     if (aAttribute == nsGkAtoms::color ||
         aAttribute == nsGkAtoms::mathcolor_ ||
         aAttribute == nsGkAtoms::background ||
@@ -294,14 +339,19 @@ nsMathMLElement::ParseNamedSpaceValue(const nsString& aString,
 /* static */ bool
 nsMathMLElement::ParseNumericValue(const nsString& aString,
                                    nsCSSValue&     aCSSValue,
-                                   uint32_t        aFlags)
+                                   uint32_t        aFlags,
+                                   nsIDocument*    aDocument)
 {
   nsAutoString str(aString);
   str.CompressWhitespace(); // aString is const in this code...
 
   int32_t stringLength = str.Length();
-  if (!stringLength)
+  if (!stringLength) {
+    if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
+      ReportLengthParseError(aString, aDocument);
+    }
     return false;
+  }
 
   if (ParseNamedSpaceValue(aString, aCSSValue, aFlags)) {
     return true;
@@ -321,8 +371,12 @@ nsMathMLElement::ParseNumericValue(const nsString& aString,
   bool gotDot = false;
   for ( ; i < stringLength; i++) {
     c = str[i];
-    if (gotDot && c == '.')
+    if (gotDot && c == '.') {
+      if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
+        ReportLengthParseError(aString, aDocument);
+      }
       return false;  // two dots encountered
+    }
     else if (c == '.')
       gotDot = true;
     else if (!nsCRT::IsAsciiDigit(c)) {
@@ -337,22 +391,45 @@ nsMathMLElement::ParseNumericValue(const nsString& aString,
   // Convert number to floating point
   nsresult errorCode;
   float floatValue = number.ToFloat(&errorCode);
-  if (NS_FAILED(errorCode))
+  if (NS_FAILED(errorCode)) {
+    if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
+      ReportLengthParseError(aString, aDocument);
+    }
     return false;
-  if (floatValue < 0 && !(aFlags & PARSE_ALLOW_NEGATIVE))
+  }
+  if (floatValue < 0 && !(aFlags & PARSE_ALLOW_NEGATIVE)) {
+    if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
+      ReportLengthParseError(aString, aDocument);
+    }
     return false;
+  }
 
   nsCSSUnit cssUnit;
   if (unit.IsEmpty()) {
     if (aFlags & PARSE_ALLOW_UNITLESS) {
       // no explicit unit, this is a number that will act as a multiplier
-      cssUnit = eCSSUnit_Number;
+      if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
+        nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
+                                        "MathML", aDocument,
+                                        nsContentUtils::eMATHML_PROPERTIES,
+                                        "UnitlessValuesAreDeprecated");
+      }
+      if (aFlags & CONVERT_UNITLESS_TO_PERCENT) {
+        aCSSValue.SetPercentValue(floatValue);
+        return true;
+      }
+      else
+        cssUnit = eCSSUnit_Number;
     } else {
       // We are supposed to have a unit, but there isn't one.
       // If the value is 0 we can just call it "pixels" otherwise
       // this is illegal.
-      if (floatValue != 0.0)
+      if (floatValue != 0.0) {
+        if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
+          ReportLengthParseError(aString, aDocument);
+        }
         return false;
+      }
       cssUnit = eCSSUnit_Pixel;
     }
   }
@@ -368,8 +445,12 @@ nsMathMLElement::ParseNumericValue(const nsString& aString,
   else if (unit.EqualsLiteral("mm")) cssUnit = eCSSUnit_Millimeter;
   else if (unit.EqualsLiteral("pt")) cssUnit = eCSSUnit_Point;
   else if (unit.EqualsLiteral("pc")) cssUnit = eCSSUnit_Pica;
-  else // unexpected unit
+  else { // unexpected unit
+    if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
+      ReportLengthParseError(aString, aDocument);
+    }
     return false;
+  }
 
   aCSSValue.SetFloatValue(floatValue, cssUnit);
   return true;
@@ -403,6 +484,10 @@ nsMathMLElement::MapMathMLAttributesInto(const nsMappedAttributes* aAttributes,
         // Negative scriptsizemultipliers are not parsed
         if (NS_SUCCEEDED(errorCode) && floatValue >= 0.0f) {
           scriptSizeMultiplier->SetFloatValue(floatValue, eCSSUnit_Number);
+        } else {
+          ReportParseErrorNoTag(str,
+                                nsGkAtoms::scriptsizemultiplier_,
+                                aData->mPresContext->Document());
         }
       }
     }
@@ -416,14 +501,20 @@ nsMathMLElement::MapMathMLAttributesInto(const nsMappedAttributes* aAttributes,
     // default: 8pt
     //
     // We don't allow negative values.
-    // XXXfredw Should we allow unitless values? (bug 411227)
-    // XXXfredw Does a relative unit give a multiple of the default value?
+    // Unitless and percent values give a multiple of the default value.
     //
     value = aAttributes->GetAttr(nsGkAtoms::scriptminsize_);
     nsCSSValue* scriptMinSize = aData->ValueForScriptMinSize();
     if (value && value->Type() == nsAttrValue::eString &&
         scriptMinSize->GetUnit() == eCSSUnit_Null) {
-      ParseNumericValue(value->GetStringValue(), *scriptMinSize, 0);
+      ParseNumericValue(value->GetStringValue(), *scriptMinSize,
+                        PARSE_ALLOW_UNITLESS | CONVERT_UNITLESS_TO_PERCENT,
+                        aData->mPresContext->Document());
+
+      if (scriptMinSize->GetUnit() == eCSSUnit_Percent) {
+        scriptMinSize->SetFloatValue(8.0 * scriptMinSize->GetPercentValue(),
+                                     eCSSUnit_Point);
+      }
     }
 
     // scriptlevel
@@ -457,6 +548,10 @@ nsMathMLElement::MapMathMLAttributesInto(const nsMappedAttributes* aAttributes,
           } else {
             scriptLevel->SetFloatValue(intValue, eCSSUnit_Number);
           }
+        } else {
+          ReportParseErrorNoTag(str,
+                                nsGkAtoms::scriptlevel_,
+                                aData->mPresContext->Document());
         }
       }
     }
@@ -480,21 +575,27 @@ nsMathMLElement::MapMathMLAttributesInto(const nsMappedAttributes* aAttributes,
     // default: inherited
     //
     // In both cases, we don't allow negative values.
-    // XXXfredw Should we allow unitless values? (bug 411227)
-    // XXXfredw Does a relative unit give a multiple of the default value?
+    // Unitless values give a multiple of the default value.
     //  
     bool parseSizeKeywords = true;
     value = aAttributes->GetAttr(nsGkAtoms::mathsize_);
     if (!value) {
       parseSizeKeywords = false;
       value = aAttributes->GetAttr(nsGkAtoms::fontsize_);
+      if (value) {
+        WarnDeprecated(nsGkAtoms::fontsize_->GetUTF16String(),
+                       nsGkAtoms::mathsize_->GetUTF16String(),
+                       aData->mPresContext->Document());
+      }
     }
     nsCSSValue* fontSize = aData->ValueForFontSize();
     if (value && value->Type() == nsAttrValue::eString &&
         fontSize->GetUnit() == eCSSUnit_Null) {
       nsAutoString str(value->GetStringValue());
-      if (!ParseNumericValue(str, *fontSize, 0) &&
-          parseSizeKeywords) {
+      if (!ParseNumericValue(str, *fontSize, PARSE_SUPPRESS_WARNINGS |
+                             PARSE_ALLOW_UNITLESS | CONVERT_UNITLESS_TO_PERCENT,
+                             nullptr)
+          && parseSizeKeywords) {
         static const char sizes[3][7] = { "small", "normal", "big" };
         static const int32_t values[NS_ARRAY_LENGTH(sizes)] = {
           NS_STYLE_FONT_SIZE_SMALL, NS_STYLE_FONT_SIZE_MEDIUM,
@@ -520,6 +621,11 @@ nsMathMLElement::MapMathMLAttributesInto(const nsMappedAttributes* aAttributes,
     // 
     value = aAttributes->GetAttr(nsGkAtoms::fontfamily_);
     nsCSSValue* fontFamily = aData->ValueForFontFamily();
+    if (value) {
+      WarnDeprecated(nsGkAtoms::fontfamily_->GetUTF16String(),
+                     nsGkAtoms::mathvariant_->GetUTF16String(),
+                     aData->mPresContext->Document());
+    }
     if (value && value->Type() == nsAttrValue::eString &&
         fontFamily->GetUnit() == eCSSUnit_Null) {
       fontFamily->SetStringValue(value->GetStringValue(), eCSSUnit_Families);
@@ -549,6 +655,11 @@ nsMathMLElement::MapMathMLAttributesInto(const nsMappedAttributes* aAttributes,
       aAttributes->GetAttr(nsGkAtoms::mathbackground_);
     if (!value) {
       value = aAttributes->GetAttr(nsGkAtoms::background);
+      if (value) {
+        WarnDeprecated(nsGkAtoms::background->GetUTF16String(),
+                       nsGkAtoms::mathbackground_->GetUTF16String(),
+                       aData->mPresContext->Document());
+      }
     }
     nsCSSValue* backgroundColor = aData->ValueForBackgroundColor();
     if (value && backgroundColor->GetUnit() == eCSSUnit_Null) {
@@ -580,6 +691,11 @@ nsMathMLElement::MapMathMLAttributesInto(const nsMappedAttributes* aAttributes,
     const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::mathcolor_);
     if (!value) {
       value = aAttributes->GetAttr(nsGkAtoms::color);
+      if (value) {
+        WarnDeprecated(nsGkAtoms::color->GetUTF16String(),
+                       nsGkAtoms::mathcolor_->GetUTF16String(),
+                       aData->mPresContext->Document());
+      }
     }
     nscolor color;
     nsCSSValue* colorValue = aData->ValueForColor();
@@ -596,7 +712,8 @@ nsMathMLElement::MapMathMLAttributesInto(const nsMappedAttributes* aAttributes,
       const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::width);
       // This does not handle auto and unitless values
       if (value && value->Type() == nsAttrValue::eString) {
-        ParseNumericValue(value->GetStringValue(), *width, 0);
+        ParseNumericValue(value->GetStringValue(), *width, 0,
+                          aData->mPresContext->Document());
       }
     }
   }
@@ -793,7 +910,11 @@ nsMathMLElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
   if (aName == nsGkAtoms::href &&
       (aNameSpaceID == kNameSpaceID_None ||
        aNameSpaceID == kNameSpaceID_XLink)) {
-    Link::ResetLinkState(!!aNotify);
+    if (aNameSpaceID == kNameSpaceID_XLink) {
+      WarnDeprecated(NS_LITERAL_STRING("xlink:href").get(),
+                     NS_LITERAL_STRING("href").get(), OwnerDoc());
+    }
+    Link::ResetLinkState(!!aNotify, true);
   }
 
   return rv;
@@ -813,7 +934,9 @@ nsMathMLElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttr,
   if (aAttr == nsGkAtoms::href &&
       (aNameSpaceID == kNameSpaceID_None ||
        aNameSpaceID == kNameSpaceID_XLink)) {
-    Link::ResetLinkState(!!aNotify);
+    // Note: just because we removed a single href attr doesn't mean there's no href,
+    // since there are 2 possible namespaces.
+    Link::ResetLinkState(!!aNotify, Link::ElementHasHref());
   }
 
   return rv;

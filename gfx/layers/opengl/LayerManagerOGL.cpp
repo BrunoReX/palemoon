@@ -3,13 +3,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "LayerManagerOGL.h"
+
 #include "mozilla/layers/PLayers.h"
 
 /* This must occur *after* layers/PLayers.h to avoid typedefs conflicts. */
 #include "mozilla/Util.h"
 
 #include "Composer2D.h"
-#include "LayerManagerOGL.h"
 #include "ThebesLayerOGL.h"
 #include "ContainerLayerOGL.h"
 #include "ImageLayerOGL.h"
@@ -51,6 +52,93 @@ using namespace mozilla::gl;
 #ifdef CHECK_CURRENT_PROGRAM
 int ShaderProgramOGL::sCurrentProgramKey = 0;
 #endif
+
+bool
+LayerManagerOGL::Initialize(bool force)
+{
+  return Initialize(CreateContext(), force);
+}
+
+int32_t
+LayerManagerOGL::GetMaxTextureSize() const
+{
+  int32_t maxSize;
+  mGLContext->fGetIntegerv(LOCAL_GL_MAX_TEXTURE_SIZE, &maxSize);
+  return maxSize;
+}
+
+void
+LayerManagerOGL::MakeCurrent(bool aForce)
+{
+  if (mDestroyed) {
+    NS_WARNING("Call on destroyed layer manager");
+    return;
+  }
+  mGLContext->MakeCurrent(aForce);
+}
+
+void*
+LayerManagerOGL::GetNSOpenGLContext() const
+{
+  return gl()->GetNativeData(GLContext::NativeGLContext);
+}
+
+
+void
+LayerManagerOGL::BindQuadVBO() {
+  mGLContext->fBindBuffer(LOCAL_GL_ARRAY_BUFFER, mQuadVBO);
+}
+
+void
+LayerManagerOGL::QuadVBOVerticesAttrib(GLuint aAttribIndex) {
+  mGLContext->fVertexAttribPointer(aAttribIndex, 2,
+                                   LOCAL_GL_FLOAT, LOCAL_GL_FALSE, 0,
+                                   (GLvoid*) QuadVBOVertexOffset());
+}
+
+void
+LayerManagerOGL::QuadVBOTexCoordsAttrib(GLuint aAttribIndex) {
+  mGLContext->fVertexAttribPointer(aAttribIndex, 2,
+                                   LOCAL_GL_FLOAT, LOCAL_GL_FALSE, 0,
+                                   (GLvoid*) QuadVBOTexCoordOffset());
+}
+
+void
+LayerManagerOGL::QuadVBOFlippedTexCoordsAttrib(GLuint aAttribIndex) {
+  mGLContext->fVertexAttribPointer(aAttribIndex, 2,
+                                   LOCAL_GL_FLOAT, LOCAL_GL_FALSE, 0,
+                                   (GLvoid*) QuadVBOFlippedTexCoordOffset());
+}
+
+// Super common
+
+void
+LayerManagerOGL::BindAndDrawQuad(GLuint aVertAttribIndex,
+                     GLuint aTexCoordAttribIndex,
+                     bool aFlipped)
+{
+  BindQuadVBO();
+  QuadVBOVerticesAttrib(aVertAttribIndex);
+
+  if (aTexCoordAttribIndex != GLuint(-1)) {
+    if (aFlipped)
+      QuadVBOFlippedTexCoordsAttrib(aTexCoordAttribIndex);
+    else
+      QuadVBOTexCoordsAttrib(aTexCoordAttribIndex);
+
+    mGLContext->fEnableVertexAttribArray(aTexCoordAttribIndex);
+  }
+
+  mGLContext->fEnableVertexAttribArray(aVertAttribIndex);
+
+  mGLContext->fDrawArrays(LOCAL_GL_TRIANGLE_STRIP, 0, 4);
+
+  mGLContext->fDisableVertexAttribArray(aVertAttribIndex);
+
+  if (aTexCoordAttribIndex != GLuint(-1)) {
+    mGLContext->fDisableVertexAttribArray(aTexCoordAttribIndex);
+  }
+}
 
 static const double kFpsWindowMs = 250.0;
 static const size_t kNumFrameTimeStamps = 16;
@@ -1639,6 +1727,7 @@ GetRegionArea(const nsIntRegion& aRegion)
   return area;
 }
 
+#ifdef MOZ_ANDROID_OMTC
 static float
 GetDisplayportCoverage(const gfx::Rect& aDisplayPort,
                        const gfx3DMatrix& aTransformToScreen,
@@ -1662,6 +1751,7 @@ GetDisplayportCoverage(const gfx::Rect& aDisplayPort,
 
   return 1.0f;
 }
+#endif // MOZ_ANDROID_OMTC
 
 float
 LayerManagerOGL::ComputeRenderIntegrity()
@@ -1735,7 +1825,7 @@ LayerManagerOGL::ComputeRenderIntegrity()
   if (highPrecisionMultiplier <= 0.0f && lowPrecisionMultiplier <= 0.0f) {
     return 0.0f;
   }
-#endif
+#endif // MOZ_ANDROID_OMTC
 
   nsIntRegion screenRegion(screenRect);
   nsIntRegion lowPrecisionScreenRegion(screenRect);

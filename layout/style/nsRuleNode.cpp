@@ -11,6 +11,11 @@
 
 #include <algorithm>
 
+#include "mozilla/Assertions.h"
+#include "mozilla/DebugOnly.h"
+#include "mozilla/Likely.h"
+#include "mozilla/Util.h"
+
 #include "nsRuleNode.h"
 #include "nscore.h"
 #include "nsIServiceManager.h"
@@ -40,11 +45,8 @@
 #include "CSSCalc.h"
 #include "nsPrintfCString.h"
 
-#include "mozilla/Assertions.h"
 #include "mozilla/dom/Element.h"
-#include "mozilla/Likely.h"
 #include "mozilla/LookAndFeel.h"
-#include "mozilla/Util.h"
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <malloc.h>
@@ -65,7 +67,7 @@ using namespace mozilla::dom;
   if ((context_)->PresContext()->IsDynamic()) {                               \
     method_(request_);                                                      \
   } else {                                                                  \
-    nsCOMPtr<imgIRequest> req = nsContentUtils::GetStaticRequest(request_); \
+    nsRefPtr<imgRequestProxy> req = nsContentUtils::GetStaticRequest(request_); \
     method_(req);                                                           \
   }
 
@@ -319,27 +321,35 @@ static nscoord CalcLengthWith(const nsCSSValue& aValue,
       aPresContext->SetUsesRootEMUnits(true);
       nscoord rootFontSize;
 
+      // NOTE: Be very careful with |styleFont|, since we haven't set
+      // aCanStoreInRuleTree to false yet, so we don't want to introduce
+      // any dependencies on aStyleContext's data here.
+      const nsStyleFont *styleFont =
+        aStyleFont ? aStyleFont : aStyleContext->GetStyleFont();
+
       if (aUseProvidedRootEmSize) {
         // We should use the provided aFontSize as the reference length to
         // scale. This only happens when we are calculating font-size or
         // an equivalent (scriptminsize or CalcLengthWithInitialFont) on
         // the root element, in which case aFontSize is already the
         // value we want.
+        if (aFontSize == -1) {
+          // XXX Should this be styleFont->mSize instead to avoid taking
+          // minfontsize prefs into account?
+          aFontSize = styleFont->mFont.size;
+        }
         rootFontSize = aFontSize;
       } else if (aStyleContext && !aStyleContext->GetParent()) {
         // This is the root element (XXX we don't really know this, but
         // nsRuleNode::SetFont makes the same assumption!), so we should
         // use GetStyleFont on this context to get the root element's
         // font size.
-        const nsStyleFont *styleFont =
-          aStyleFont ? aStyleFont : aStyleContext->GetStyleFont();
         rootFontSize = styleFont->mFont.size;
       } else {
         // This is not the root element or we are calculating something other
         // than font size, so rem is relative to the root element's font size.
         nsRefPtr<nsStyleContext> rootStyle;
-        const nsStyleFont *rootStyleFont =
-          aStyleFont ? aStyleFont : aStyleContext->GetStyleFont();
+        const nsStyleFont *rootStyleFont = styleFont;
         Element* docElement = aPresContext->Document()->GetRootElement();
 
         if (docElement) {
@@ -2318,17 +2328,24 @@ nsRuleNode::AdjustLogicalBoxProp(nsStyleContext* aContext,
                                                                               \
   nsStyleContext* parentContext = aContext->GetParent();                      \
                                                                               \
-  nsStyle##type_* data_ = nullptr;                                             \
-  const nsStyle##type_* parentdata_ = nullptr;                                 \
-  bool canStoreInRuleTree = aCanStoreInRuleTree;                            \
+  nsStyle##type_* data_ = nullptr;                                            \
+  mozilla::Maybe<nsStyle##type_> maybeFakeParentData;                         \
+  const nsStyle##type_* parentdata_ = nullptr;                                \
+  bool canStoreInRuleTree = aCanStoreInRuleTree;                              \
                                                                               \
   /* If |canStoreInRuleTree| might be true by the time we're done, we */      \
   /* can't call parentContext->GetStyle##type_() since it could recur into */ \
   /* setting the same struct on the same rule node, causing a leak. */        \
-  if (parentContext && aRuleDetail != eRuleFullReset &&                       \
+  if (aRuleDetail != eRuleFullReset &&                                        \
       (!aStartStruct || (aRuleDetail != eRulePartialReset &&                  \
-                         aRuleDetail != eRuleNone)))                          \
-    parentdata_ = parentContext->GetStyle##type_();                           \
+                         aRuleDetail != eRuleNone))) {                        \
+    if (parentContext) {                                                      \
+      parentdata_ = parentContext->GetStyle##type_();                         \
+    } else {                                                                  \
+      maybeFakeParentData.construct ctorargs_;                                \
+      parentdata_ = maybeFakeParentData.addr();                               \
+    }                                                                         \
+  }                                                                           \
   if (aStartStruct)                                                           \
     /* We only need to compute the delta between this computed data and */    \
     /* our computed data. */                                                  \
@@ -2385,12 +2402,18 @@ nsRuleNode::AdjustLogicalBoxProp(nsStyleContext* aContext,
   /* If |canStoreInRuleTree| might be true by the time we're done, we */      \
   /* can't call parentContext->GetStyle##type_() since it could recur into */ \
   /* setting the same struct on the same rule node, causing a leak. */        \
+  mozilla::Maybe<nsStyle##type_> maybeFakeParentData;                         \
   const nsStyle##type_* parentdata_ = data_;                                  \
-  if (parentContext &&                                                        \
-      aRuleDetail != eRuleFullReset &&                                        \
+  if (aRuleDetail != eRuleFullReset &&                                        \
       aRuleDetail != eRulePartialReset &&                                     \
-      aRuleDetail != eRuleNone)                                               \
-    parentdata_ = parentContext->GetStyle##type_();                           \
+      aRuleDetail != eRuleNone) {                                             \
+    if (parentContext) {                                                      \
+      parentdata_ = parentContext->GetStyle##type_();                         \
+    } else {                                                                  \
+      maybeFakeParentData.construct ctorargs_;                                \
+      parentdata_ = maybeFakeParentData.addr();                               \
+    }                                                                         \
+  }                                                                           \
   bool canStoreInRuleTree = aCanStoreInRuleTree;
 
 /**
@@ -3570,7 +3593,7 @@ nsRuleNode::GetShadowData(const nsCSSValueList* aList,
     return nullptr;
 
   nsStyleCoord tempCoord;
-  bool unitOK;
+  DebugOnly<bool> unitOK;
   for (nsCSSShadowItem* item = shadowList->ShadowAt(0);
        aList;
        aList = aList->mNext, ++item) {
@@ -6509,18 +6532,14 @@ nsRuleNode::ComputePositionData(void* aStartStruct,
     // and inherit that resolved value.
     uint8_t inheritedAlignSelf = parentPos->mAlignSelf;
     if (inheritedAlignSelf == NS_STYLE_ALIGN_SELF_AUTO) {
-      if (parentPos == pos) {
-        // We're the root node. (If we weren't, COMPUTE_START_RESET would've
-        // given us a distinct parentPos, since we've got an 'inherit' value.)
-        // Nothing to inherit from --> just use default value.
+      if (!parentContext) {
+        // We're the root node. Nothing to inherit from --> just use default
+        // value.
         inheritedAlignSelf = NS_STYLE_ALIGN_ITEMS_INITIAL_VALUE;
       } else {
         // Our parent's "auto" value should resolve to our grandparent's value
         // for "align-items".  So, that's what we're supposed to inherit.
-        NS_ABORT_IF_FALSE(aContext->GetParent(),
-                          "we've got a distinct parent style-struct already, "
-                          "so we should have a parent style-context");
-        nsStyleContext* grandparentContext = aContext->GetParent()->GetParent();
+        nsStyleContext* grandparentContext = parentContext->GetParent();
         if (!grandparentContext) {
           // No grandparent --> our parent is the root node, so its
           // "align-self: auto" computes to the default "align-items" value:
@@ -7131,7 +7150,12 @@ nsRuleNode::ComputeColumnData(void* aStartStruct,
     canStoreInRuleTree = false;
     column->mColumnRuleColorIsForeground = false;
     if (parent->mColumnRuleColorIsForeground) {
-      column->mColumnRuleColor = parentContext->GetStyleColor()->mColor;
+      if (parentContext) {
+        column->mColumnRuleColor = parentContext->GetStyleColor()->mColor;
+      } else {
+        nsStyleColor defaultColumnRuleColor(mPresContext);
+        column->mColumnRuleColor = defaultColumnRuleColor.mColor;
+      }
     } else {
       column->mColumnRuleColor = parent->mColumnRuleColor;
     }
@@ -7601,6 +7625,13 @@ nsRuleNode::ComputeSVGResetData(void* aStartStruct,
     canStoreInRuleTree = false;
     svgReset->mMask = parentSVGReset->mMask;
   }
+
+  // mask-type: enum, inherit, initial
+  SetDiscrete(*aRuleData->ValueForMaskType(),
+              svgReset->mMaskType,
+              canStoreInRuleTree, SETDSC_ENUMERATED,
+              parentSVGReset->mMaskType,
+              NS_STYLE_MASK_TYPE_LUMINANCE, 0, 0, 0, 0);
 
   COMPUTE_END_RESET(SVGReset, svgReset)
 }

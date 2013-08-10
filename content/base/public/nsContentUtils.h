@@ -34,8 +34,6 @@
 #include "nsThreadUtils.h"
 #include "nsIContent.h"
 #include "nsCharSeparatedTokenizer.h"
-#include "gfxContext.h"
-#include "gfxFont.h"
 #include "nsContentList.h"
 
 #include "mozilla/AutoRestore.h"
@@ -65,7 +63,7 @@ class nsIIOService;
 class nsIURI;
 class imgIContainer;
 class imgINotificationObserver;
-class imgIRequest;
+class imgRequestProxy;
 class imgLoader;
 class imgICache;
 class nsIImageLoadingContent;
@@ -102,7 +100,8 @@ struct nsIntMargin;
 class nsPIDOMWindow;
 class nsIDocumentLoaderFactory;
 class nsIDOMHTMLInputElement;
-class gfxTextObjectPaint;
+
+class nsViewportInfo;
 
 namespace mozilla {
 
@@ -131,40 +130,6 @@ enum EventNameType {
 
   EventNameType_HTMLXUL = 0x0003,
   EventNameType_All = 0xFFFF
-};
-
-/**
- * Information retrieved from the <meta name="viewport"> tag. See
- * GetViewportInfo for more information on this functionality.
- */
-struct ViewportInfo
-{
-    // Default zoom indicates the level at which the display is 'zoomed in'
-    // initially for the user, upon loading of the page.
-    double defaultZoom;
-
-    // The minimum zoom level permitted by the page.
-    double minZoom;
-
-    // The maximum zoom level permitted by the page.
-    double maxZoom;
-
-    // The width of the viewport, specified by the <meta name="viewport"> tag,
-    // in CSS pixels.
-    uint32_t width;
-
-    // The height of the viewport, specified by the <meta name="viewport"> tag,
-    // in CSS pixels.
-    uint32_t height;
-
-    // Whether or not we should automatically size the viewport to the device's
-    // width. This is true if the document has been optimized for mobile, and
-    // the width property of a specified <meta name="viewport"> tag is either
-    // not specified, or is set to the special value 'device-width'.
-    bool autoSize;
-
-    // Whether or not the user can zoom in and out on the page. Default is true.
-    bool allowZoom;
 };
 
 struct EventNameMapping
@@ -199,6 +164,7 @@ public:
   static JSContext* GetContextFromDocument(nsIDocument *aDocument);
 
   static bool     IsCallerChrome();
+  static bool     IsCallerXBL();
 
   static bool     IsImageSrcSetDisabled();
 
@@ -388,10 +354,10 @@ public:
   /**
    * Checks whether two nodes come from the same origin.
    */
-  static nsresult CheckSameOrigin(nsINode* aTrustedNode,
+  static nsresult CheckSameOrigin(const nsINode* aTrustedNode,
                                   nsIDOMNode* aUnTrustedNode);
-  static nsresult CheckSameOrigin(nsINode* aTrustedNode,
-                                  nsINode* unTrustedNode);
+  static nsresult CheckSameOrigin(const nsINode* aTrustedNode,
+                                  const nsINode* unTrustedNode);
 
   // Check if the (JS) caller can access aNode.
   static bool CanCallerAccess(nsIDOMNode *aNode);
@@ -642,7 +608,7 @@ public:
                             nsIURI* aReferrer,
                             imgINotificationObserver* aObserver,
                             int32_t aLoadFlags,
-                            imgIRequest** aRequest);
+                            imgRequestProxy** aRequest);
 
   /**
    * Obtain an image loader that respects the given document/channel's privacy status.
@@ -668,7 +634,7 @@ public:
   /**
    * Helper method to call imgIRequest::GetStaticRequest.
    */
-  static already_AddRefed<imgIRequest> GetStaticRequest(imgIRequest* aRequest);
+  static already_AddRefed<imgRequestProxy> GetStaticRequest(imgRequestProxy* aRequest);
 
   /**
    * Method that decides whether a content node is draggable
@@ -799,6 +765,7 @@ public:
     eSVG_PROPERTIES,
     eBRAND_PROPERTIES,
     eCOMMON_DIALOG_PROPERTIES,
+    eMATHML_PROPERTIES,
     PropertiesFile_COUNT
   };
   static nsresult ReportToConsole(uint32_t aErrorFlags,
@@ -1182,34 +1149,6 @@ public:
                                      uint32_t aWrapCol);
 
   /**
-   * Creates a new XML document, which is marked to be loaded as data.
-   *
-   * @param aNamespaceURI Namespace for the root element to create and insert in
-   *                      the document. Only used if aQualifiedName is not
-   *                      empty.
-   * @param aQualifiedName Qualified name for the root element to create and
-   *                       insert in the document. If empty no root element will
-   *                       be created.
-   * @param aDoctype Doctype node to insert in the document.
-   * @param aDocumentURI URI of the document. Must not be null.
-   * @param aBaseURI Base URI of the document. Must not be null.
-   * @param aPrincipal Prinicpal of the document. Must not be null.
-   * @param aScriptObject The object from which the context for event handling
-   *                      can be got.
-   * @param aFlavor Select the kind of document to create.
-   * @param aResult [out] The document that was created.
-   */
-  static nsresult CreateDocument(const nsAString& aNamespaceURI, 
-                                 const nsAString& aQualifiedName, 
-                                 nsIDOMDocumentType* aDoctype,
-                                 nsIURI* aDocumentURI,
-                                 nsIURI* aBaseURI,
-                                 nsIPrincipal* aPrincipal,
-                                 nsIScriptGlobalObject* aScriptObject,
-                                 DocumentFlavor aFlavor,
-                                 nsIDOMDocument** aResult);
-
-  /**
    * Sets the text contents of a node by replacing all existing children
    * with a single text child.
    *
@@ -1285,8 +1224,8 @@ public:
    *                            keep alive
    * @param aTracer the tracer for aScriptObject
    */
-  static nsresult HoldJSObjects(void* aScriptObjectHolder,
-                                nsScriptObjectTracer* aTracer);
+  static void HoldJSObjects(void* aScriptObjectHolder,
+                            nsScriptObjectTracer* aTracer);
 
   /**
    * Drop the JS objects held by aScriptObjectHolder.
@@ -1294,7 +1233,7 @@ public:
    * @param aScriptObjectHolder the object that holds JS objects that we want to
    *                            drop
    */
-  static nsresult DropJSObjects(void* aScriptObjectHolder);
+  static void DropJSObjects(void* aScriptObjectHolder);
 
 #ifdef DEBUG
   static bool AreJSObjectsHeld(void* aScriptObjectHolder); 
@@ -1579,16 +1518,9 @@ public:
    * NOTE: If the site is optimized for mobile (via the doctype), this
    * will return viewport information that specifies default information.
    */
-  static ViewportInfo GetViewportInfo(nsIDocument* aDocument,
-                                      uint32_t aDisplayWidth,
-                                      uint32_t aDisplayHeight);
-
-  /**
-   * Constrain the viewport calculations from the GetViewportInfo() function
-   * in order to always return sane minimum/maximum values. This modifies the
-   * ViewportInfo struct passed as an input parameter, in place.
-   */
-  static void ConstrainViewportValues(ViewportInfo& aViewInfo);
+  static nsViewportInfo GetViewportInfo(nsIDocument* aDocument,
+                                        uint32_t aDisplayWidth,
+                                        uint32_t aDisplayHeight);
 
   /**
    * The device-pixel-to-CSS-px ratio used to adjust meta viewport values.
@@ -2150,13 +2082,6 @@ public:
 
   static nsIEditor* GetHTMLEditor(nsPresContext* aPresContext);
 
-  static bool PaintSVGGlyph(Element *aElement, gfxContext *aContext,
-                            gfxFont::DrawMode aDrawMode,
-                            gfxTextObjectPaint *aObjectPaint);
-
-  static bool GetSVGGlyphExtents(Element *aElement, const gfxMatrix& aSVGToAppSpace,
-                                 gfxRect *aResult);
-
   /**
    * Check whether a spec feature/version is supported.
    * @param aObject the object, which should support the feature,
@@ -2238,8 +2163,6 @@ private:
 
   static nsILineBreaker* sLineBreaker;
   static nsIWordBreaker* sWordBreaker;
-
-  static uint32_t sJSGCThingRootCount;
 
 #ifdef IBMBIDI
   static nsIBidiKeyboard* sBidiKeyboard;
@@ -2366,6 +2289,43 @@ public:
     nsContentUtils::LeaveMicroTask();
   }
 };
+
+namespace mozilla {
+
+/**
+ * Use AutoJSContext when you need a JS context on the stack but don't have one
+ * passed as a parameter. AutoJSContext will take care of finding the most
+ * appropriate JS context and release it when leaving the stack.
+ */
+class NS_STACK_CLASS AutoJSContext {
+public:
+  AutoJSContext(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM);
+  operator JSContext*();
+
+protected:
+  AutoJSContext(bool aSafe MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+
+private:
+  // We need this Init() method because we can't use delegating constructor for
+  // the moment. It is a C++11 feature and we do not require C++11 to be
+  // supported to be able to compile Gecko.
+  void Init(bool aSafe MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+
+  JSContext* mCx;
+  nsCxPusher mPusher;
+  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
+};
+
+/**
+ * SafeAutoJSContext is similar to AutoJSContext but will only return the safe
+ * JS context. That means it will never call ::GetCurrentJSContext().
+ */
+class NS_STACK_CLASS SafeAutoJSContext : public AutoJSContext {
+public:
+  SafeAutoJSContext(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM);
+};
+
+} // namespace mozilla
 
 #define NS_INTERFACE_MAP_ENTRY_TEAROFF(_interface, _allocator)                \
   if (aIID.Equals(NS_GET_IID(_interface))) {                                  \

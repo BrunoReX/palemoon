@@ -9,8 +9,10 @@ const Cu = Components.utils;
 
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+Cu.import("resource:///modules/devtools/gDevTools.jsm");
 Cu.import("resource:///modules/devtools/FloatingScrollbars.jsm");
 Cu.import("resource:///modules/devtools/EventEmitter.jsm");
+Cu.import("resource:///modules/devtools/Target.jsm");
 
 this.EXPORTED_SYMBOLS = ["ResponsiveUIManager"];
 
@@ -33,8 +35,17 @@ this.ResponsiveUIManager = {
     if (aTab.__responsiveUI) {
       aTab.__responsiveUI.close();
     } else {
-      aTab.__responsiveUI = new ResponsiveUI(aWindow, aTab);
+      new ResponsiveUI(aWindow, aTab);
     }
+  },
+
+  /**
+   * Returns true if responsive view is active for the provided tab.
+   *
+   * @param aTab the tab targeted.
+   */
+  isActiveForTab: function(aTab) {
+    return !!aTab.__responsiveUI;
   },
 
   /**
@@ -49,13 +60,13 @@ this.ResponsiveUIManager = {
     switch (aCommand) {
       case "resize to":
         if (!aTab.__responsiveUI) {
-          aTab.__responsiveUI = new ResponsiveUI(aWindow, aTab);
+          new ResponsiveUI(aWindow, aTab);
         }
         aTab.__responsiveUI.setSize(aArgs.width, aArgs.height);
         break;
       case "resize on":
         if (!aTab.__responsiveUI) {
-          aTab.__responsiveUI = new ResponsiveUI(aWindow, aTab);
+          new ResponsiveUI(aWindow, aTab);
         }
         break;
       case "resize off":
@@ -67,15 +78,10 @@ this.ResponsiveUIManager = {
           this.toggle(aWindow, aTab);
       default:
     }
-  },
-
-  get events() {
-    if (!this._eventEmitter) {
-      this._eventEmitter = new EventEmitter();
-    }
-    return this._eventEmitter;
-  },
+  }
 }
+
+EventEmitter.decorate(ResponsiveUIManager);
 
 let presets = [
   // Phones
@@ -161,8 +167,6 @@ function ResponsiveUI(aWindow, aTab)
   this.buildUI();
   this.checkMenus();
 
-  this.inspectorWasOpen = this.mainWindow.InspectorUI.isInspectorOpen;
-
   try {
     if (Services.prefs.getBoolPref("devtools.responsiveUI.rotate")) {
       this.rotate();
@@ -172,7 +176,9 @@ function ResponsiveUI(aWindow, aTab)
   if (this._floatingScrollbars)
     switchToFloatingScrollbars(this.tab);
 
-  ResponsiveUIManager.events.emit("on", this.tab, this);
+  this.tab.__responsiveUI = this;
+
+  ResponsiveUIManager.emit("on", this.tab, this);
 }
 
 ResponsiveUI.prototype = {
@@ -229,7 +235,7 @@ ResponsiveUI.prototype = {
     this.stack.removeAttribute("responsivemode");
 
     delete this.tab.__responsiveUI;
-    ResponsiveUIManager.events.emit("off", this.tab, this);
+    ResponsiveUIManager.emit("off", this.tab, this);
   },
 
   /**
@@ -241,16 +247,9 @@ ResponsiveUI.prototype = {
     if (aEvent.keyCode == this.mainWindow.KeyEvent.DOM_VK_ESCAPE &&
         this.mainWindow.gBrowser.selectedBrowser == this.browser) {
 
-      // If the inspector wasn't open at first but is open now,
-      // we don't want to close the Responsive Mode on Escape.
-      // We let the inspector close first.
-
-      let isInspectorOpen = this.mainWindow.InspectorUI.isInspectorOpen;
-      if (this.inspectorWasOpen || !isInspectorOpen) {
-        aEvent.preventDefault();
-        aEvent.stopPropagation();
-        this.close();
-      }
+      aEvent.preventDefault();
+      aEvent.stopPropagation();
+      this.close();
     }
   },
 
@@ -604,8 +603,8 @@ ResponsiveUI.prototype = {
     this._resizing = true;
     this.stack.setAttribute("notransition", "true");
 
-    this.lastClientX = aEvent.clientX;
-    this.lastClientY = aEvent.clientY;
+    this.lastScreenX = aEvent.screenX;
+    this.lastScreenY = aEvent.screenY;
 
     this.ignoreY = (aEvent.target === this.resizeBar);
 
@@ -618,8 +617,8 @@ ResponsiveUI.prototype = {
    * @param aEvent
    */
   onDrag: function RUI_onDrag(aEvent) {
-    let deltaX = aEvent.clientX - this.lastClientX;
-    let deltaY = aEvent.clientY - this.lastClientY;
+    let deltaX = aEvent.screenX - this.lastScreenX;
+    let deltaY = aEvent.screenY - this.lastScreenY;
 
     if (this.ignoreY)
       deltaY = 0;
@@ -630,13 +629,13 @@ ResponsiveUI.prototype = {
     if (width < MIN_WIDTH) {
         width = MIN_WIDTH;
     } else {
-        this.lastClientX = aEvent.clientX;
+        this.lastScreenX = aEvent.screenX;
     }
 
     if (height < MIN_HEIGHT) {
         height = MIN_HEIGHT;
     } else {
-        this.lastClientY = aEvent.clientY;
+        this.lastScreenY = aEvent.screenY;
     }
 
     this.setSize(width, height);

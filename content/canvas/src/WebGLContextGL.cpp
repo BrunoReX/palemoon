@@ -45,7 +45,7 @@ static WebGLenum InternalFormatForFormatAndType(WebGLenum format, WebGLenum type
 void
 WebGLContext::ActiveTexture(WebGLenum texture)
 {
-    if (!IsContextStable())
+    if (!IsContextStable()) 
         return;
 
     if (texture < LOCAL_GL_TEXTURE0 ||
@@ -2261,7 +2261,7 @@ WebGLContext::GetFramebufferAttachmentParameter(JSContext* cx,
 
     MakeContextCurrent();
 
-    const WebGLFramebufferAttachment& fba = mBoundFramebuffer->GetAttachment(attachment);
+    const WebGLFramebuffer::Attachment& fba = mBoundFramebuffer->GetAttachment(attachment);
 
     if (fba.Renderbuffer()) {
         switch (pname) {
@@ -3166,8 +3166,6 @@ WebGLContext::ReadPixels(WebGLint x, WebGLint y, WebGLsizei width,
     WebGLsizei framebufferWidth = framebufferRect ? framebufferRect->Width() : 0;
     WebGLsizei framebufferHeight = framebufferRect ? framebufferRect->Height() : 0;
 
-    void* data = pixels->Data();
-
     uint32_t channels = 0;
 
     // Check the format param
@@ -3225,6 +3223,12 @@ WebGLContext::ReadPixels(WebGLint x, WebGLint y, WebGLsizei width,
     uint32_t dataByteLen = JS_GetTypedArrayByteLength(pixels->Obj());
     if (checked_neededByteLength.value() > dataByteLen)
         return ErrorInvalidOperation("readPixels: buffer too small");
+
+    void* data = pixels->Data();
+    if (!data) {
+        ErrorOutOfMemory("readPixels: buffer storage is null. Did we run out of memory?");
+        return rv.Throw(NS_ERROR_OUT_OF_MEMORY);
+    }
 
     // Check the format and type params to assure they are an acceptable pair (as per spec)
     switch (format) {
@@ -4165,15 +4169,13 @@ WebGLContext::CompileShader(WebGLShader *shader)
         // cleanSource nsAString instance will be destroyed before the reference is
         // actually used.
         StripComments stripComments(shader->Source());
-        const nsAString& cleanSource = nsString(stripComments.result().Elements(), stripComments.length());
+        const nsAString& cleanSource = Substring(stripComments.result().Elements(), stripComments.length());
         if (!ValidateGLSLString(cleanSource, "compileShader"))
             return;
 
-        const nsPromiseFlatString& flatSource = PromiseFlatString(cleanSource);
-
         // shaderSource() already checks that the source stripped of comments is in the
         // 7-bit ASCII range, so we can skip the NS_IsAscii() check.
-        const nsCString& sourceCString = NS_LossyConvertUTF16toASCII(flatSource);
+        NS_LossyConvertUTF16toASCII sourceCString(cleanSource);
 
         if (gl->WorkAroundDriverBugs()) {
             const uint32_t maxSourceLength = 0x3ffff;
@@ -4191,6 +4193,15 @@ WebGLContext::CompileShader(WebGLShader *shader)
 
         int compileOptions = SH_ATTRIBUTES_UNIFORMS |
                              SH_ENFORCE_PACKING_RESTRICTIONS;
+
+        // we want to do this everywhere, but:
+#ifndef XP_WIN // to do this on Windows, we need ANGLE r1719, 1733, 1734.
+#ifndef XP_MACOSX // to do this on Mac, we need to do it only on Mac OSX > 10.6 as this
+                  // causes the shader compiler in 10.6 to crash
+        compileOptions |= SH_CLAMP_INDIRECT_ARRAY_BOUNDS;
+#endif
+#endif
+
         if (useShaderSourceTranslation) {
             compileOptions |= SH_OBJECT_CODE
                             | SH_MAP_LONG_VARIABLE_NAMES;
@@ -4294,8 +4305,7 @@ WebGLContext::CompileShader(WebGLShader *shader)
             translatedSrc.SetLength(len);
             ShGetObjectCode(compiler, translatedSrc.BeginWriting());
 
-            nsPromiseFlatCString translatedSrc2(translatedSrc);
-            const char *ts = translatedSrc2.get();
+            const char *ts = translatedSrc.get();
 
             gl->fShaderSource(shadername, 1, &ts, NULL);
         } else { // not useShaderSourceTranslation
@@ -4609,7 +4619,7 @@ WebGLContext::ShaderSource(WebGLShader *shader, const nsAString& source)
     // cleanSource nsAString instance will be destroyed before the reference is
     // actually used.
     StripComments stripComments(source);
-    const nsAString& cleanSource = nsString(stripComments.result().Elements(), stripComments.length());
+    const nsAString& cleanSource = Substring(stripComments.result().Elements(), stripComments.length());
     if (!ValidateGLSLString(cleanSource, "compileShader"))
         return;
 

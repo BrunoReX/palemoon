@@ -13,16 +13,17 @@
 !define URLInfoAbout          "http://www.palemoon.org/"
 !define URLUpdateInfo         "http://www.palemoon.org/"
 
-; Prevents the beta channel urls in stub.nsi from being used when not using
-; official branding
-!define Official
-!define URLStubDownload "http://download.mozilla.org/?product=firefox-latest&os=win&lang=${AB_CD}"
-!define URLManualDownload "https://www.mozilla.org/firefox/installer-help/?channel=release"
+; The OFFICIAL define is a workaround to support different urls for Release and
+; Beta since they share the same branding when building with other branches that
+; set the update channel to beta.
+!define OFFICIAL
+!define URLStubDownload ""
+!define URLManualDownload "http://www.palemoon.org/download-ng.shtml"
 !define Channel "release"
 
 # The installer's certificate name and issuer expected by the stub installer
-!define CertNameDownload   "Mozilla Corporation"
-!define CertIssuerDownload "Thawte Code Signing CA - G2"
+# !define CertNameDownload   "Mozilla Corporation"
+# !define CertIssuerDownload "Thawte Code Signing CA - G2"
 
 # Dialog units are used so the UI displays correctly with the system's DPI
 # settings.

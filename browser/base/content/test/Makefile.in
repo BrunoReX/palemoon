@@ -10,6 +10,7 @@ relativesrcdir  = @relativesrcdir@
 
 DIRS += \
 		newtab \
+		social \
 		$(NULL)
 
 include $(DEPTH)/config/autoconf.mk
@@ -50,6 +51,11 @@ MOCHITEST_FILES += \
 		test_contextmenu.html \
 		subtst_contextmenu.html \
 		$(NULL)
+ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
+MOCHITEST_FILES += \
+		privateBrowsingMode.js \
+		$(NULL)
+endif
 endif
 
 # The following tests are disabled because they are unreliable:
@@ -118,10 +124,10 @@ _BROWSER_FILES = \
                  browser_bug556061.js \
                  browser_bug559991.js \
                  browser_bug561623.js \
-                 browser_bug561636.js \
                  browser_bug562649.js \
                  browser_bug563588.js \
                  browser_bug565575.js \
+                 browser_bug567306.js \
                  browser_zbug569342.js \
                  browser_bug575561.js \
                  browser_bug575830.js \
@@ -157,8 +163,6 @@ _BROWSER_FILES = \
                  browser_bug735471.js \
                  browser_bug743421.js \
                  browser_bug749738.js \
-                 browser_bug763468.js \
-                 browser_bug767836.js \
                  browser_bug783614.js \
                  browser_bug797677.js \
                  browser_canonizeURL.js \
@@ -198,7 +202,6 @@ _BROWSER_FILES = \
                  bug564387.html \
                  bug564387_video1.ogv \
                  bug564387_video1.ogv^headers^ \
-                 browser_save_private_link.js \
                  bug792517.html \
                  bug792517-2.html \
                  bug792517.sjs \
@@ -260,7 +263,6 @@ _BROWSER_FILES = \
                  alltabslistener.html \
                  zoom_test.html \
                  dummy_page.html \
-                 browser_tabMatchesInAwesomebar.js \
                  file_bug550565_popup.html \
                  file_bug550565_favicon.ico \
                  browser_aboutHome.js \
@@ -282,28 +284,20 @@ _BROWSER_FILES = \
                  browser_lastAccessedTab.js \
                  browser_bug734076.js \
                  browser_bug744745.js \
+                 browser_bug812562.js \
                  browser_bug818009.js \
+                 browser_bug818118.js \
                  browser_bug820497.js \
+                 blockPluginVulnerableUpdatable.xml \
+                 blockPluginVulnerableNoUpdate.xml \
+                 blockNoPlugins.xml \
                  browser_utilityOverlay.js \
-                 browser_social.js \
-                 browser_social_toolbar.js \
-                 browser_social_shareButton.js \
-                 browser_social_sidebar.js \
-                 browser_social_flyout.js \
-                 browser_social_mozSocial_API.js \
-                 browser_social_isVisible.js \
-                 browser_social_chatwindow.js \
-                 social_panel.html \
-                 social_share_image.png \
-                 social_sidebar.html \
-                 social_chat.html \
-                 social_flyout.html \
-                 social_window.html \
-                 social_worker.js \
+                 browser_bug676619.js \
+                 download_page.html \
                  browser_URLBarSetURI.js \
-                 browser_bug567306.js \
+                 browser_bookmark_titles.js \
+                 browser_pageInfo_plugins.js \
                  $(NULL)
-
 
 ifneq (cocoa,$(MOZ_WIDGET_TOOLKIT))
 _BROWSER_FILES += \
@@ -313,20 +307,36 @@ else
 _BROWSER_FILES += \
 		browser_bug565667.js \
 		$(NULL)
-
 # TODO: Activate after carbon test plugin lands, bug 628651
-# 		browser_maconly_carbon_mismatch_plugin.js \
+# 		browser_maconly_carbon_mismatch_plugin.js
+endif
 
+# bug 766546, disable browser_bug561636.js on Windows
+ifneq ($(OS_ARCH),WINNT)
+_BROWSER_FILES += \
+                 browser_bug561636.js \
+                 $(NULL)
 endif
 
 ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
 _BROWSER_FILES += \
+                browser_bug763468_perwindowpb.js \
+                browser_bug767836_perwindowpb.js \
+                browser_bug816527.js \
                 browser_private_browsing_window.js \
-                $(warning browser_save_link-perwindowpb.js disabled until bug 722850) \
+                browser_save_link-perwindowpb.js \
+                browser_save_private_link_perwindowpb.js \
+                browser_tabMatchesInAwesomebar_perwindowpb.js \
+                browser_tab_drag_drop_perwindow.js \
+                browser_private_no_prompt.js \
                 $(NULL)
 else
 _BROWSER_FILES += \
+                browser_bug763468.js \
+                browser_bug767836.js \
                 browser_save_link.js \
+                browser_save_private_link.js \
+                browser_tabMatchesInAwesomebar.js \
                 $(NULL)
 endif
 

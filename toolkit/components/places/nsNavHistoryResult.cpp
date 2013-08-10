@@ -105,7 +105,9 @@ nsNavHistoryResultNode::nsNavHistoryResultNode(
   mDateAdded(0),
   mLastModified(0),
   mIndentLevel(-1),
-  mFrecency(0)
+  mFrecency(0),
+  mHidden(false),
+  mTransitionType(0)
 {
   mTags.SetIsVoid(true);
 }
@@ -880,7 +882,7 @@ bool
 nsNavHistoryContainerResultNode::DoesChildNeedResorting(uint32_t aIndex,
     SortComparator aComparator, const char* aData)
 {
-  NS_ASSERTION(aIndex >= 0 && aIndex < uint32_t(mChildren.Count()),
+  NS_ASSERTION(aIndex < uint32_t(mChildren.Count()),
                "Input index out of range");
   if (mChildren.Count() == 1)
     return false;
@@ -1951,7 +1953,8 @@ nsNavHistoryQueryResultNode::nsNavHistoryQueryResultNode(
                                   true, aOptions),
   mQueries(aQueries),
   mContentsValid(false),
-  mBatchChanges(0)
+  mBatchChanges(0),
+  mTransitions(mQueries[0]->Transitions())
 {
   NS_ASSERTION(aQueries.Count() > 0, "Must have at least one query");
 
@@ -1960,6 +1963,16 @@ nsNavHistoryQueryResultNode::nsNavHistoryQueryResultNode(
   if (history) {
     mLiveUpdate = history->GetUpdateRequirements(mQueries, mOptions,
                                                  &mHasSearchTerms);
+  }
+
+  // Collect transitions shared by all queries.
+  for (int32_t i = 1; i < mQueries.Count(); ++i) {
+    const nsTArray<uint32_t>& queryTransitions = mQueries[i]->Transitions();
+    for (uint32_t j = 0; j < mTransitions.Length() ; ++j) {
+      uint32_t transition = mTransitions.SafeElementAt(j, 0);
+      if (transition && !queryTransitions.Contains(transition))
+        mTransitions.RemoveElement(transition);
+    }
   }
 }
 
@@ -1973,7 +1986,8 @@ nsNavHistoryQueryResultNode::nsNavHistoryQueryResultNode(
                                   true, aOptions),
   mQueries(aQueries),
   mContentsValid(false),
-  mBatchChanges(0)
+  mBatchChanges(0),
+  mTransitions(mQueries[0]->Transitions())
 {
   NS_ASSERTION(aQueries.Count() > 0, "Must have at least one query");
 
@@ -1982,6 +1996,16 @@ nsNavHistoryQueryResultNode::nsNavHistoryQueryResultNode(
   if (history) {
     mLiveUpdate = history->GetUpdateRequirements(mQueries, mOptions,
                                                  &mHasSearchTerms);
+  }
+
+  // Collect transitions shared by all queries.
+  for (int32_t i = 1; i < mQueries.Count(); ++i) {
+    const nsTArray<uint32_t>& queryTransitions = mQueries[i]->Transitions();
+    for (uint32_t j = 0; j < mTransitions.Length() ; ++j) {
+      uint32_t transition = mTransitions.SafeElementAt(j, 0);
+      if (transition && !queryTransitions.Contains(transition))
+        mTransitions.RemoveElement(transition);
+    }
   }
 }
 
@@ -2529,8 +2553,12 @@ nsNavHistoryQueryResultNode::OnVisit(nsIURI* aURI, int64_t aVisitId,
                                      int64_t aReferringId,
                                      uint32_t aTransitionType,
                                      const nsACString& aGUID,
+                                     bool aHidden,
                                      uint32_t* aAdded)
 {
+  if (aHidden && !mOptions->IncludeHidden())
+    return NS_OK;
+
   nsNavHistoryResult* result = GetResult();
   NS_ENSURE_STATE(result);
   if (result->mBatchInProgress &&
@@ -2598,12 +2626,19 @@ nsNavHistoryQueryResultNode::OnVisit(nsIURI* aURI, int64_t aVisitId,
       // QUERYUPDATE_SIMPLE case.
     }
     case QUERYUPDATE_SIMPLE: {
+      // If all of the queries are filtered by some transitions, skip the
+      // update if aTransitionType doesn't match any of them.
+      if (mTransitions.Length() > 0 && !mTransitions.Contains(aTransitionType))
+        return NS_OK;
+
       // The history service can tell us whether the new item should appear
       // in the result.  We first have to construct a node for it to check.
       rv = history->VisitIdToResultNode(aVisitId, mOptions,
                                         getter_AddRefs(addition));
-      if (NS_FAILED(rv) || !addition ||
-          !history->EvaluateQueryForNode(mQueries, mOptions, addition))
+      NS_ENSURE_SUCCESS(rv, rv);
+      NS_ENSURE_STATE(addition);
+      addition->mTransitionType = aTransitionType;
+      if (!history->EvaluateQueryForNode(mQueries, mOptions, addition))
         return NS_OK; // don't need to include in our query
       break;
     }
@@ -2852,7 +2887,8 @@ NS_IMETHODIMP
 nsNavHistoryQueryResultNode::OnDeleteVisits(nsIURI* aURI,
                                             PRTime aVisitTime,
                                             const nsACString& aGUID,
-                                            uint16_t aReason)
+                                            uint16_t aReason,
+                                            uint32_t aTransitionType)
 {
   NS_PRECONDITION(mOptions->QueryType() == nsINavHistoryQueryOptions::QUERY_TYPE_HISTORY,
                   "Bookmarks queries should not get a OnDeleteVisits notification");
@@ -2862,6 +2898,15 @@ nsNavHistoryQueryResultNode::OnDeleteVisits(nsIURI* aURI,
     // query this is equivalent to a onDeleteURI notification.
     nsresult rv = OnDeleteURI(aURI, aGUID, aReason);
     NS_ENSURE_SUCCESS(rv, rv);
+  }
+  if (aTransitionType > 0) {
+    // All visits for aTransitionType have been removed, if the query is
+    // filtering on such transition type, this is equivalent to an onDeleteURI
+    // notification.
+    if (mTransitions.Length() > 0 && mTransitions.Contains(aTransitionType)) {
+      nsresult rv = OnDeleteURI(aURI, aGUID, aReason);
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
   }
 
   return NS_OK;
@@ -4024,8 +4069,7 @@ nsNavHistoryFolderResultNode::OnItemMoved(int64_t aItemId,
       NS_NOTREACHED("Can't find folder that is moving!");
       return NS_ERROR_FAILURE;
     }
-    NS_ASSERTION(index >= 0 && index < uint32_t(mChildren.Count()),
-                 "Invalid index!");
+    NS_ASSERTION(index < uint32_t(mChildren.Count()), "Invalid index!");
     node->mBookmarkIndex = aNewIndex;
 
     // adjust position
@@ -4720,13 +4764,13 @@ NS_IMETHODIMP
 nsNavHistoryResult::OnVisit(nsIURI* aURI, int64_t aVisitId, PRTime aTime,
                             int64_t aSessionId, int64_t aReferringId,
                             uint32_t aTransitionType, const nsACString& aGUID,
-                            uint32_t* aAdded)
+                            bool aHidden)
 {
   uint32_t added = 0;
 
   ENUMERATE_HISTORY_OBSERVERS(OnVisit(aURI, aVisitId, aTime, aSessionId,
                                       aReferringId, aTransitionType, aGUID,
-                                      &added));
+                                      aHidden, &added));
 
   if (!mRootNode->mExpanded)
     return NS_OK;
@@ -4833,8 +4877,10 @@ NS_IMETHODIMP
 nsNavHistoryResult::OnDeleteVisits(nsIURI* aURI,
                                    PRTime aVisitTime,
                                    const nsACString& aGUID,
-                                   uint16_t aReason)
+                                   uint16_t aReason,
+                                   uint32_t aTransitionType)
 {
-  ENUMERATE_HISTORY_OBSERVERS(OnDeleteVisits(aURI, aVisitTime, aGUID, aReason));
+  ENUMERATE_HISTORY_OBSERVERS(OnDeleteVisits(aURI, aVisitTime, aGUID, aReason,
+                                             aTransitionType));
   return NS_OK;
 }
