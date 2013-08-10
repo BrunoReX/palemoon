@@ -8147,7 +8147,7 @@ case "$host" in
     case "${host_cpu}" in
     i*86)
         if test -n "$_WIN32_MSVC"; then
-            HOST_LDFLAGS="$HOST_LDFLAGS -MACHINE:X86"
+            HOST_LDFLAGS="$HOST_LDFLAGS"
         fi
         ;;
     x86_64)
@@ -8978,7 +8978,7 @@ cat >> confdefs.h <<\EOF
 #define HAVE_STDCALL 1
 EOF
 
-            DSO_LDOPTS="$DSO_LDOPTS -MACHINE:X86"
+            DSO_LDOPTS="$DSO_LDOPTS"
             LDFLAGS="$LDFLAGS -SAFESEH"
         fi
 

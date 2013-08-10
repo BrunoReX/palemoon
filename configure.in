@@ -1799,7 +1799,7 @@ case "$host" in
     case "${host_cpu}" in
     i*86)
         if test -n "$_WIN32_MSVC"; then
-            HOST_LDFLAGS="$HOST_LDFLAGS -MACHINE:X86"
+            HOST_LDFLAGS="$HOST_LDFLAGS"
         fi
         ;;
     x86_64)
@@ -2264,7 +2264,7 @@ ia64*-hpux*)
             LDFLAGS="$LDFLAGS -Wl,--enable-stdcall-fixup"
         else
             AC_DEFINE(HAVE_STDCALL)
-            DSO_LDOPTS="$DSO_LDOPTS -MACHINE:X86"
+            DSO_LDOPTS="$DSO_LDOPTS"
             LDFLAGS="$LDFLAGS -SAFESEH"
         fi
 
