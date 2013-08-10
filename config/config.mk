@@ -592,7 +592,7 @@ ifeq ($(OS_ARCH),WINNT)
 ifdef GNU_CC
 WIN32_EXE_LDFLAGS	+= -mconsole
 else
-WIN32_EXE_LDFLAGS	+= -SUBSYSTEM:CONSOLE,5.01
+WIN32_EXE_LDFLAGS	+= -SUBSYSTEM:CONSOLE
 endif
 endif
 else # MOZ_WINCONSOLE
@@ -603,12 +603,12 @@ ifeq ($(OS_ARCH),WINNT)
 ifdef GNU_CC
 WIN32_EXE_LDFLAGS	+= -mwindows
 else
-WIN32_EXE_LDFLAGS	+= -SUBSYSTEM:WINDOWS,5.01
+WIN32_EXE_LDFLAGS	+= -SUBSYSTEM:WINDOWS
 endif
 endif
 endif
 else
-LDFLAGS += -SUBSYSTEM:CONSOLE,5.01
+LDFLAGS += -SUBSYSTEM:CONSOLE
 endif
 
 # If we're building a component on MSVC, we don't want to generate an

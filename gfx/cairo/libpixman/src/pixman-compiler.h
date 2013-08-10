@@ -56,6 +56,10 @@
 # define INT64_MAX              (9223372036854775807)
 #endif
 
+#ifndef SIZE_MAX
+# define SIZE_MAX               ((size_t)-1)
+#endif
+
 
 #ifndef M_PI
 # define M_PI			3.14159265358979323846
@@ -95,6 +99,10 @@
 #endif
 
 #endif
+
+/* member offsets */
+#define CONTAINER_OF(type, member, data)				\
+    ((type *)(((uint8_t *)data) - offsetof (type, member)))
 
 /* TLS */
 #if defined(PIXMAN_NO_TLS)
