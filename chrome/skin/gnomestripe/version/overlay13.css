@@ -37,21 +37,13 @@
 
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 
-#status-bar
-{
-	min-height: 0px;
-	-moz-appearance: none;
-	background-color: transparent;
-	border: none;
+/*
+ * Location bar
+ */
 
-	margin: 0px;
-}
-
-#addon-bar[customizing] > #status-bar
+.urlbar-origin-label,
+#urlbar[s4esalign="left"] .urlbar-over-link-box
 {
-	opacity: .5;
-	background-image: -moz-repeating-linear-gradient(-45deg,
-	                                                 rgba(255,255,255,.3), rgba(255,255,255,.3) 5px,
-	                                                 rgba(0,0,0,.3) 5px, rgba(0,0,0,.3) 10px);
+	-moz-padding-start: 4px;
 }
 

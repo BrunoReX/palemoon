@@ -37,21 +37,96 @@
 
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 
-#status-bar
-{
-	min-height: 0px;
-	-moz-appearance: none;
-	background-color: transparent;
-	border: none;
+/*
+ * General
+ */
 
-	margin: 0px;
+#status4evar-status-text,
+#status4evar-progress-bar
+{
+	margin: 0px 4px;
 }
 
-#addon-bar[customizing] > #status-bar
+/*
+ * Download status
+ */
+
+#status4evar-download-button
 {
-	opacity: .5;
-	background-image: -moz-repeating-linear-gradient(-45deg,
-	                                                 rgba(255,255,255,.3), rgba(255,255,255,.3) 5px,
-	                                                 rgba(0,0,0,.3) 5px, rgba(0,0,0,.3) 10px);
+	-moz-image-region: rect(0px 24px 24px 0px);
+}
+
+#status4evar-download-button .dl-progress
+{
+	height: 24px;
+}
+
+toolbar[iconsize="small"] #status4evar-download-button
+{
+	list-style-image: url("chrome://browser/skin/Toolbar-small.png");
+	-moz-image-region: rect(0px 16px 16px 0px);
+}
+
+toolbar[iconsize="small"] #status4evar-download-button .dl-progress
+{
+	height: 16px;
+}
+
+toolbar[mode="icons"] #status4evar-download-button[forcelabel="true"] > label
+{
+	margin: 0px 2px !important;
+	margin-top: -1px !important;
+	-moz-margin-start: 4px !important;
+}
+
+/*
+ * Splitter
+ */
+
+splitter.status4evar-status-splitter
+{
+	width: 8px;
+	margin: 0px -4px;
+}
+
+/*
+ * Location bar
+ */
+
+.urlbar-stack
+{
+	margin: -1px 0px
+}
+
+#urlbar-container:not([combined]) #urlbar-progress-alt
+{
+	margin-right: -1px;
+}
+
+#urlbar-container:not([combined]) #urlbar:not([pmpack="center"]) #urlbar-progress-alt
+{
+	margin-right: -2px;
+}
+
+/*
+ * Add-on bar
+ */
+
+#browser-bottombox[s4eboarder="true"] #addon-bar
+{
+	-moz-appearance: none;
+}
+
+#browser-bottombox[s4eboarder="true"] > *:not([hidden="true"]):not([collapsed="true"])
+{
+	box-shadow: none !important;
+	border: none !important;
+	border-top: 2px solid !important;
+	-moz-border-top-colors: ThreeDShadow ThreeDHighlight !important;
+}
+
+#browser-bottombox[s4eboarder="true"] > *:not([hidden="true"]):not([collapsed="true"]) ~ *
+{
+	border: none !important;
 }
 

@@ -16,7 +16,7 @@
  * The Initial Developer of the Original Code is 
  * Matthew Turnbull <sparky@bluefang-logic.com>.
  *
- * Portions created by the Initial Developer are Copyright (C) 2011
+ * Portions created by the Initial Developer are Copyright (C) 2012
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -88,12 +88,6 @@ splitter.status4evar-status-splitter
 #urlbar-container:not([combined]) #urlbar:not([pmpack="center"]) #urlbar-progress-alt
 {
 	margin-right: -3px;
-}
-
-.urlbar-origin-label,
-#urlbar[s4esalign="left"] .urlbar-over-link-box
-{
-	-moz-padding-start: 4px;
 }
 
 /*

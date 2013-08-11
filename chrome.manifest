@@ -50,6 +50,7 @@ locale	status4evar	es-ES		chrome/locale/es/
 locale	status4evar	es-MX		chrome/locale/es/
 locale	status4evar	fr		chrome/locale/fr/
 locale	status4evar	ja		chrome/locale/ja/
+locale	status4evar	ru		chrome/locale/ru/
 
 # Skin registration
 skin	status4evar	classic/1.0	chrome/skin/all/

@@ -16,11 +16,10 @@
  * The Initial Developer of the Original Code is 
  * Matthew Turnbull <sparky@bluefang-logic.com>.
  *
- * Portions created by the Initial Developer are Copyright (C) 2011
+ * Portions created by the Initial Developer are Copyright (C) 2012
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
- *    Moonchild <moonchild@palemoon.org>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -43,13 +42,13 @@
 #urlbar[s4estyle="true"] > #urlbar-progress-alt > .progress-bar
 {
 	-moz-appearance: none;
-	background: #333399;
+	background: #33FF33;
 }
 
 #status4evar-progress-bar[s4estyle="true"] > .progress-bar
 {
 	-moz-appearance: none;
-	background: #333399;
+	background: #33FF33;
 	border-radius: 3px;
 }
 
@@ -60,7 +59,7 @@
 
 #status4evar-download-button[pmType^="active"] .dl-progress-bar
 {
-	background-color: #333399;
+	background-color: #33FF33;
 }
 
 #status4evar-download-button[pmType^="paused"] .dl-progress-bar

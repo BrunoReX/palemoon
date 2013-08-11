@@ -24,7 +24,7 @@
    - The Initial Developer of the Original Code is 
    - Matthew Turnbull <sparky@bluefang-logic.com>.
    -
-   - Portions created by the Initial Developer are Copyright (C) 2011
+   - Portions created by the Initial Developer are Copyright (C) 2012
    - the Initial Developer. All Rights Reserved.
    -
    - Contributor(s):
@@ -88,7 +88,6 @@
 			<preference id="toolkit-pref-dom-status-change"              name="dom.disable_window_status_change"       type="bool" inverted="true" />
 			<preference id="browser-pref-urlbar-formatting-enabled"      name="browser.urlbar.formatting.enabled"      type="bool" />
 			<preference id="browser-pref-urlbar-trimming-enabled"        name="browser.urlbar.trimURLs"                type="bool" />
-			<preference id="browser-pref-urlbar-autofill"                name="browser.urlbar.autoFill"                type="bool" />
 		</preferences>
 
 		<commandset id="status4evar-commandset-status">
@@ -207,7 +206,6 @@
 
 						<checkbox id="browser-urlbar-formatting-enabled-ckeck" preference="browser-pref-urlbar-formatting-enabled" label="&browser.urlbar.formatting.enabled.label;" />
 						<checkbox id="browser-urlbar-trimming-enabled-ckeck" preference="browser-pref-urlbar-trimming-enabled" label="&browser.urlbar.trimming.enabled.label;" />
-						<checkbox id="browser-pref-urlbar-autofill-ckeck" preference="browser-pref-urlbar-autofill" label="&browser.urlbar.autofill.enabled.label;" />
 					</groupbox>
 				</tabpanel>
 
