@@ -1,0 +1,25 @@
+/* Stop animations when the page they are on are not displayed (bug 341749). */
+#updates:not([currentpageid="checking"]) #checkingProgress,
+#updates:not([currentpageid="incompatibleCheck"]) #incompatibleCheckProgress,
+#updates:not([currentpageid="downloading"]) #downloadProgress {
+  display: none;
+}
+
+/* General */
+wizard[description=""] .wizard-header-description {
+  display: none;
+}
+
+/* Remote content displayed in the billboard and license pages. */
+remotecontent {
+  -moz-binding: url("chrome://mozapps/content/update/updates.xml#remotecontent");
+  display: -moz-deck;
+}
+
+/* Update History Window */
+update {
+  -moz-binding: url("chrome://mozapps/content/update/updates.xml#update");
+  display: -moz-box;
+  -moz-box-orient: vertical;
+}
+

@@ -1,0 +1,2 @@
+MOZ_APP_DISPLAYNAME=Palemoon
+MOZ_APP_NAME=palemoon
