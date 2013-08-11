@@ -20,7 +20,7 @@
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
- * Moonchild<moonchild@palemoon.org>
+ *    Moonchild <moonchild@palemoon.org>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -246,7 +246,7 @@ splitter.status4evar-status-splitter:not(:hover)
 .urlbar-over-link-layer[overlinkstate="fade-out"]
 {
 	-moz-transition-property: color;
-	-moz-transition-duration: 50ms;
+	-moz-transition-duration: 150ms;
 	color: transparent;
 }
 
@@ -255,21 +255,21 @@ splitter.status4evar-status-splitter:not(:hover)
 .urlbar-input-layer[overlinkstate="fade-out"] html|input.urlbar-input:-moz-placeholder
 {
 	-moz-transition-property: color;
-	-moz-transition-duration: 50ms;
+	-moz-transition-duration: 150ms;
 	-moz-transition-timing-function: cubic-bezier(0.0, 1.0, 1.0, 1.0);
 }
 
 .urlbar-over-link-box[overlinkstate="fade-in"]
 {
 	-moz-transition-property: opacity;
-	-moz-transition-duration: 50ms;
+	-moz-transition-duration: 100ms;
 	opacity: 1;
 }
 
 .urlbar-over-link-box[overlinkstate="fade-out"]
 {
 	-moz-transition-property: opacity;
-	-moz-transition-duration: 50ms;
+	-moz-transition-duration: 100ms;
 	-moz-transition-timing-function: cubic-bezier(0.0, 1.0, 1.0, 1.0);
 	opacity: 0;
 }
@@ -277,14 +277,14 @@ splitter.status4evar-status-splitter:not(:hover)
 .urlbar-input-layer-children[overlinkstate="fade-in"]
 {
 	-moz-transition-property: opacity;
-	-moz-transition-duration: 50ms;
+	-moz-transition-duration: 100ms;
 	opacity: 0;
 }
 
 .urlbar-input-layer-children[overlinkstate="fade-out"]
 {
 	-moz-transition-property: opacity;
-	-moz-transition-duration: 50ms;
+	-moz-transition-duration: 100ms;
 	-moz-transition-timing-function: cubic-bezier(0.0, 1.0, 1.0, 1.0);
 	opacity: 1;
 }
@@ -351,14 +351,6 @@ splitter.status4evar-status-splitter:not(:hover)
 #urlbar:not([s4esalign="left"]) .urlbar-over-link-box:-moz-locale-dir(rtl)
 {
 	background: url(chrome://status4evar/skin/urlbar-over-link-arrow-rtl.png) no-repeat right center;
-}
-
-/*
- * Popup status
- */
-statuspanel[nomouse="true"]
-{
-	pointer-events: none;
 }
 
 /*

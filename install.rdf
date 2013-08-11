@@ -22,7 +22,6 @@
    - the Initial Developer. All Rights Reserved.
    -
    - Contributor(s):
-   - Moonchild <moonchild@palemoon.org>
    -
    - Alternatively, the contents of this file may be used under the terms of
    - either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -44,14 +43,14 @@
 		<!-- Info -->
 
 		<em:creator>Moonchild/Sparky Bluefang</em:creator>
-		<em:description>Status Bar functionality for Pale Moon</em:description>
-		<em:homepageURL>http://www.palemoon.org</em:homepageURL>
-		<em:iconURL>chrome://status4evar/skin/pms32.png</em:iconURL>
+		<em:description>Status bar functionality for Pale Moon</em:description>
+		<em:homepageURL>http://forums.mozillazine.org/viewtopic.php?f=48&amp;t=2001965</em:homepageURL>
+		<em:iconURL>chrome://status4evar/skin/s4e32.png</em:iconURL>
 		<em:id>statusbar@palemoon.org</em:id>
 		<em:name>Pale Moon status bar</em:name>
 		<em:optionsURL>chrome://status4evar/content/prefs.xul</em:optionsURL>
 		<em:type>2</em:type>
-		<em:version>3.0</em:version>
+		<em:version>3.1</em:version>
 
 		<!-- Localizations -->
 
@@ -66,9 +65,9 @@
 
 		<em:translator>José I. Plaza [es-ES]</em:translator>
 		<em:translator>Carlos Mella [es-ES]</em:translator>
-		<em:localized><!-- es-ES -->
+		<em:localized><!-- es -->
 			<Description>
-				<em:locale>es-ES</em:locale>
+				<em:locale>es</em:locale>
 			</Description>
 		</em:localized>
 
@@ -85,7 +84,7 @@
 			<Description>
 				<em:id>{ec8030f7-c20a-464f-9b0e-13a3a9e97384}</em:id>
 				<em:minVersion>4.0</em:minVersion>
-				<em:maxVersion>12.0a1</em:maxVersion>
+				<em:maxVersion>13.0a1</em:maxVersion>
 			</Description>
 		</em:targetApplication>
 

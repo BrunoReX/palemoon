@@ -143,7 +143,7 @@ Status_4_Evar.prototype =
 			},
 			updateWindow: function(win)
 			{
-				win.caligon.status4evar.updateWindowGripper(true);
+				win.caligon.status4evar.windowGripper.update(true);
 			}
 		},
 
@@ -868,7 +868,7 @@ Status_4_Evar.prototype =
 
 	launchOptions: function(currentWindow)
 	{
-		//AddonManager.getAddonByID("statusbar@palemoon.org", function(aAddon)
+		//AddonManager.getAddonByID("status4evar@caligonstudios.com", function(aAddon)
 		//{
 			let optionsURL = "chrome://status4evar/content/prefs.xul";
 			let windows = Services.wm.getEnumerator(null);

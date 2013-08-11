@@ -20,7 +20,6 @@
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
- *    Moonchild <moonchild@palemoon.org>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -38,48 +37,21 @@
 
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 
-#status4evar-prefs > prefpane > vbox.content-box
+#status-bar
 {
-	min-height: 18em !important;
-}
-
-radio[pane="status4evar-pane-status"]
-{
-	list-style-image: url("chrome://global/skin/icons/information-32.png");
-}
-
-radio[pane="status4evar-pane-progress"]
-{
-	list-style-image: url("chrome://status4evar/skin/throbberStatic.png");
-}
-
-radio[pane="status4evar-pane-download"]
-{
-	list-style-image: url("chrome://mozapps/skin/downloads/downloadIcon.png");
-}
-
-radio[pane="status4evar-pane-addonbar"]
-{
-	list-style-image: url("chrome://mozapps/skin/extensions/extensionGeneric.png");
-}
-
-radio[pane="status4evar-pane-advanced"]
-{
-	list-style-image: url("chrome://browser/skin/preferences/Options.png");
-	-moz-image-region: rect(0px, 224px, 32px, 192px);
-}
-
-#status4evar-advanced-urlbar-forceBinding-desc
-{
+	min-height: 0px;
 	-moz-appearance: none;
-	pointer-events: none;
 	background-color: transparent;
 	border: none;
-	padding: 0px;
+
+	margin: 0px;
 }
 
-#warningInnerBox
+#addon-bar[customizing] > #status-bar
 {
-	max-width: 25em;
+	opacity: .5;
+	background-image: -moz-repeating-linear-gradient(-45deg,
+	                                                 rgba(255,255,255,.3), rgba(255,255,255,.3) 5px,
+	                                                 rgba(0,0,0,.3) 5px, rgba(0,0,0,.3) 10px);
 }
 
