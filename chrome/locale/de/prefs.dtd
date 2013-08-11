@@ -54,6 +54,7 @@
 <!ENTITY status4evar.status.urlbar.firefox.builtin.caption "Firefox-Kompatibilität Funktionen">
 <!ENTITY browser.urlbar.formatting.enabled.label "Domain-Hervorhebung aktivieren">
 <!ENTITY browser.urlbar.trimming.enabled.label "Protokoll ausblenden (http:// und ftp://)">
+<!ENTITY browser.urlbar.autofill.enabled.label "Automatische vervollständigung von URLs">
 <!ENTITY status4evar.status.popup.invertMirror.label "Standardmäßig auf der rechten Seite">
 <!ENTITY status4evar.status.popup.findMirror.label "Bei geöffneter Suchleiste, auf gegenüberliegender Seite starten.">
 <!ENTITY status4evar.status.popup.mouseMirror.label "Beim überfahren mit der Maus, Seite wechseln">

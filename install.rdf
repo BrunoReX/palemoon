@@ -78,6 +78,13 @@
 			</Description>
 		</em:localized>
 
+		<em:translator>Hikaru Murai</em:translator>
+		<em:localized><!-- ja -->
+			<Description>
+				<em:locale>ja</em:locale>
+			</Description>
+		</em:localized>
+
 		<!-- Targets -->
 
 		<em:targetApplication><!-- Firefox -->

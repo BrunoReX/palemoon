@@ -54,6 +54,7 @@
 <!ENTITY status4evar.status.urlbar.firefox.builtin.caption "Características de compatibilidad con Firefox">
 <!ENTITY browser.urlbar.formatting.enabled.label "Resaltar el dominio">
 <!ENTITY browser.urlbar.trimming.enabled.label "Ocultar el protocolo (http:// y ftp://)">
+<!ENTITY browser.urlbar.autofill.enabled.label "Habilitar el autocompletado de direcciones URL">
 <!ENTITY status4evar.status.popup.invertMirror.label "Mostrar por defecto en el lado derecho">
 <!ENTITY status4evar.status.popup.findMirror.label "Mostrar al lado opuesto cuando la barra de busqueda esta abierta">
 <!ENTITY status4evar.status.popup.mouseMirror.label "Mover al lado opuesto al pasar el raton por encima">

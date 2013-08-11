@@ -18,8 +18,10 @@
 #
 # Portions created by the Initial Developer are Copyright (C) 2011
 # the Initial Developer. All Rights Reserved.
+# Portions created for Pale Moon are Copyright (C) 2011 M.C. Straver
 #
 # Contributor(s):
+# Moonchild <moonchild@palemoon.org>
 #
 # Alternatively, the contents of this file may be used under the terms of
 # either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -47,6 +49,7 @@ locale	status4evar	es		chrome/locale/es/
 locale	status4evar	es-ES		chrome/locale/es/
 locale	status4evar	es-MX		chrome/locale/es/
 locale	status4evar	fr		chrome/locale/fr/
+locale	status4evar	ja		chrome/locale/ja/
 
 # Skin registration
 skin	status4evar	classic/1.0	chrome/skin/all/
