@@ -16,7 +16,7 @@
  * The Initial Developer of the Original Code is 
  * Matthew Turnbull <sparky@bluefang-logic.com>.
  *
- * Portions created by the Initial Developer are Copyright (C) 2012
+ * Portions created by the Initial Developer are Copyright (C) 2013
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -51,25 +51,42 @@
  * Download status
  */
 
-#status4evar-download-button
+#status4evar-download-anchor
 {
-	-moz-image-region: rect(0px 24px 24px 0px);
+	position: relative;
 }
 
-#status4evar-download-button .dl-progress
+#status4evar-download-progress-bar
 {
-	height: 24px;
+	height: 6px;
 }
 
-toolbar[iconsize="small"] #status4evar-download-button
+toolbar[iconsize="small"] #status4evar-download-progress-bar
 {
-	list-style-image: url("chrome://browser/skin/Toolbar-small.png");
-	-moz-image-region: rect(0px 16px 16px 0px);
+	height: 4px;
 }
 
-toolbar[iconsize="small"] #status4evar-download-button .dl-progress
+#status4evar-download-button #status4evar-download-icon
 {
-	height: 16px;
+	background: -moz-image-rect(url("chrome://browser/skin/Toolbar.png"), 0, 24, 24, 0) center no-repeat;
+	min-width: 24px;
+	min-height: 24px;
+}
+
+#status4evar-download-button[attention] #status4evar-download-icon
+{
+	background-image: url("chrome://browser/skin/downloads/download-glow.png");
+}
+
+toolbar[iconsize="small"] #status4evar-download-button #status4evar-download-icon
+{
+	background: -moz-image-rect(url("chrome://browser/skin/Toolbar-small.png"), 0, 16, 16, 0) center no-repeat;
+	min-width: 16px;
+	min-height: 16px;
+}
+
+toolbar[iconsize="small"] > #status4evar-download-button[attention] #status4evar-download-icon {
+	background-image: url("chrome://browser/skin/downloads/download-glow-small.png");
 }
 
 toolbar[mode="icons"] #status4evar-download-button[forcelabel="true"] > label
@@ -93,19 +110,20 @@ splitter.status4evar-status-splitter
  * Location bar
  */
 
-.urlbar-stack
+#urlbar-progress-alt
 {
-	margin: -1px 0px
+	margin: -1px;
 }
 
-#urlbar-container:not([combined]) #urlbar-progress-alt
+#notification-popup-box
 {
-	margin-right: -1px;
+	-moz-margin-start: -1px;
 }
 
-#urlbar-container:not([combined]) #urlbar:not([pmpack="center"]) #urlbar-progress-alt
+#urlbar .urlbar-over-link-box
 {
-	margin-right: -2px;
+	margin-top: -1px;
+	margin-bottom: -1px;
 }
 
 /*

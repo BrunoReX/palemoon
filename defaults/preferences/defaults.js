@@ -16,11 +16,11 @@
  * The Initial Developer of the Original Code is 
  * Matthew Turnbull <sparky@bluefang-logic.com>.
  *
- * Portions created by the Initial Developer are Copyright (C) 2011
+ * Portions created by the Initial Developer are Copyright (C) 2013
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
- * Moonchild <moonchild@palemoon.org>
+ *   Moonchild <moonchild@palemoon.org>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -41,6 +41,7 @@ pref("status4evar.addonbar.closeButton", false);
 pref("status4evar.addonbar.windowGripper", true);
 
 pref("status4evar.advanced.showWarning", false);
+pref("status4evar.advanced.status.detectFullScreen", true);
 pref("status4evar.advanced.urlbar.forceBinding", false);
 
 pref("status4evar.download.color.active", "#333399");
@@ -82,7 +83,6 @@ pref("status4evar.status.urlbar.align", 0);
 pref("status4evar.status.urlbar.color", "GrayText");
 pref("status4evar.status.urlbar.position", 33);
 
-pref("status4evar.status.popup.findMirror", true);
 pref("status4evar.status.popup.invertMirror", false);
 pref("status4evar.status.popup.mouseMirror", true);
 

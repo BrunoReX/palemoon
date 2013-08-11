@@ -16,7 +16,7 @@
  * The Initial Developer of the Original Code is 
  * Matthew Turnbull <sparky@bluefang-logic.com>.
  *
- * Portions created by the Initial Developer are Copyright (C) 2012
+ * Portions created by the Initial Developer are Copyright (C) 2013
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -51,6 +51,8 @@ var status4evarPrefs =
 				return this.dynamicProgressStyle = styleSheet;
 			}
 		}
+
+		return null;
 	},
 
 //
@@ -453,6 +455,12 @@ var status4evarPrefs =
 //
 // Pref Window load
 //
+	get statusUrlbarPositionValue()
+	{
+		delete this.statusUrlbarPositionValue;
+		return this.statusUrlbarPositionValue = document.getElementById("status4evar-status-urlbar-position-value");
+	},
+
 	onPrefWindowLoad: function()
 	{
 		let showWarning = this.advancedShowWarningPref.value;
@@ -460,6 +468,11 @@ var status4evarPrefs =
 		if(showWarning)
 		{
 			this.advancedContinueButton.focus();
+		}
+
+		if(window.getComputedStyle(this.statusUrlbarPositionValue).direction == "ltr")
+		{
+			this.statusUrlbarPositionValue.setAttribute("dir", "reverse");
 		}
 	},
 

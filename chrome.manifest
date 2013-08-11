@@ -16,12 +16,11 @@
 # The Initial Developer of the Original Code is 
 # Matthew Turnbull <sparky@bluefang-logic.com>.
 #
-# Portions created by the Initial Developer are Copyright (C) 2011
+# Portions created by the Initial Developer are Copyright (C) 2013
 # the Initial Developer. All Rights Reserved.
-# Portions created for Pale Moon are Copyright (C) 2011 M.C. Straver
 #
 # Contributor(s):
-# Moonchild <moonchild@palemoon.org>
+#   Moonchild <moonchild@palemoon.org>
 #
 # Alternatively, the contents of this file may be used under the terms of
 # either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -42,36 +41,34 @@ content	status4evar			chrome/content/
 
 # Locale registration
 locale	status4evar	en-US		chrome/locale/en-US/
-locale	status4evar	en-GB		chrome/locale/en-US/
 locale	status4evar	en		chrome/locale/en-US/
 locale	status4evar	de		chrome/locale/de/
 locale	status4evar	es		chrome/locale/es/
-locale	status4evar	es-ES		chrome/locale/es/
-locale	status4evar	es-MX		chrome/locale/es/
 locale	status4evar	fr		chrome/locale/fr/
+locale	status4evar	fi		chrome/locale/fi/
 locale	status4evar	ja		chrome/locale/ja/
+locale	status4evar	kn-IN		chrome/locale/kn-IN/
+locale	status4evar	nl		chrome/locale/nl/
+locale	status4evar	pt-PT		chrome/locale/pt-PT/
 locale	status4evar	ru		chrome/locale/ru/
+locale	status4evar	zh		chrome/locale/zh/
 
 # Skin registration
 skin	status4evar	classic/1.0	chrome/skin/all/
+skin	status4evar-os	classic/1.0	chrome/skin/gnomestripe/
 skin	status4evar-os	classic/1.0	chrome/skin/winstripe/		os=WINNT
+skin	status4evar-os	classic/1.0	chrome/skin/pinstripe/		os=Darwin
 
 # Browser overlays
 overlay	chrome://browser/content/browser.xul		chrome://status4evar/content/overlay.xul
-style	chrome://browser/content/browser.xul		chrome://status4evar/skin/version/overlay10.css		appversion<=10.0.*
-style	chrome://browser/content/browser.xul		chrome://status4evar/skin/version/overlay11.css		appversion<=11.0.*
-style	chrome://browser/content/browser.xul		chrome://status4evar-os/skin/version/overlay8.css	appversion<=8.0.*
-
-# Pref overlays
-style	chrome://status4evar/content/prefs.xul		chrome://status4evar/skin/version/prefs5.css		appversion<=5.0.*
-style	chrome://status4evar/content/prefs.xul		chrome://status4evar/skin/version/prefs6.css		appversion<=6.0.*
-style	chrome://status4evar/content/prefs.xul		chrome://status4evar/skin/version/prefs12.css		appversion>=12.0a2
-style	chrome://status4evar/content/prefs.xul		chrome://status4evar-os/skin/version/overlay8.css	appversion<=8.0.*
 
 # Toolbar overlays
 style	chrome://global/content/customizeToolbar.xul	chrome://status4evar/content/overlay.css
 style	chrome://global/content/customizeToolbar.xul	chrome://status4evar/skin/overlay.css
 style	chrome://global/content/customizeToolbar.xul	chrome://status4evar-os/skin/overlay.css
+
+# Pref overlays
+style	chrome://status4evar/content/prefs.xul		chrome://status4evar/skin/version/prefs19.css		appversion<=19.0.*
 
 # XPCOM registration
 interfaces	components/status4evar.xpt

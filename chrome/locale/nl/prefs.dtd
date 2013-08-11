@@ -1,0 +1,88 @@
+<!ENTITY status4evar.window.title "Pale Moon statusbalkvoorkeuren">
+<!ENTITY status4evar.pane.status "Status">
+<!ENTITY status4evar.pane.progress "Voortgang">
+<!ENTITY status4evar.pane.download "Downloads">
+<!ENTITY status4evar.pane.addonbar "Statusbalk">
+<!ENTITY status4evar.pane.advanced "Geavanceerd">
+<!ENTITY status4evar.tab.general "Algemeen">
+<!ENTITY status4evar.tab.toolbar "Statusbalk">
+<!ENTITY status4evar.tab.urlbar "Adresbalk">
+<!ENTITY status4evar.tab.popup "Pop-up">
+<!ENTITY status4evar.tab.tabs "Tabs">
+<!ENTITY status4evar.option.none "Geen">
+<!ENTITY status4evar.option.toolbar "Statusbalk">
+<!ENTITY status4evar.option.urlbar "Adresbalk">
+<!ENTITY status4evar.option.popup "Pop-up">
+<!ENTITY status4evar.option.tooltip "Tooltip">
+<!ENTITY status4evar.option.bottom "Onder">
+<!ENTITY status4evar.option.top "Boven">
+<!ENTITY status4evar.option.fill "Vullen">
+<!ENTITY status4evar.option.dlcount "Download aantal">
+<!ENTITY status4evar.option.dltime "Tijd over">
+<!ENTITY status4evar.option.both "Beide">
+<!ENTITY status4evar.option.right "Rechts">
+<!ENTITY status4evar.option.left "Links">
+<!ENTITY status4evar.option.fixed "Vast">
+<!ENTITY status4evar.option.simple "Eenvoudig">
+<!ENTITY status4evar.option.advanced "Geavanceerd">
+<!ENTITY status4evar.option.browse "Bladeren">
+<!ENTITY status4evar.option.clear "Wissen">
+<!ENTITY status4evar.option.center "Centreren">
+<!ENTITY status4evar.option.offset "Offset">
+<!ENTITY status4evar.option.repeat "Herhalen">
+<!ENTITY status4evar.option.no-repeat "Niet herhalen">
+<!ENTITY status4evar.option.space "Ruimte">
+<!ENTITY status4evar.option.round "Rond">
+<!ENTITY status4evar.unit.seconds "seconden">
+<!ENTITY status4evar.unit.px "px">
+<!ENTITY status4evar.status.general.status.caption "Statustekst">
+<!ENTITY status4evar.status.label "Toon status in:">
+<!ENTITY status4evar.status.timeout.label "Status verbergen na">
+<!ENTITY status4evar.status.default.label "Standaardstatus weergeven">
+<!ENTITY status4evar.status.network.label "Netwerkstatus weergeven">
+<!ENTITY status4evar.status.network.xhr.label "Achtergrond-netwerkverkeer weergeven">
+<!ENTITY toolkit.dom.status.change.label "Sta toe dat pagona's de status veranderen">
+<!ENTITY status4evar.status.general.linkOver.caption "Koppelingen">
+<!ENTITY status4evar.status.linkOver.label "Toon koppelingen in:">
+<!ENTITY status4evar.status.linkOver.delay.show.label "Wachttijd voordat koppelingen worden getoond:">
+<!ENTITY status4evar.status.linkOver.delay.hide.label "Wachttijd voordat koppelingen worden verborgen:">
+<!ENTITY status4evar.status.toolbar.maxLength.label "Maximumlengte van de statustekst:">
+<!ENTITY status4evar.status.urlbar.align.label "Statusuitlijning:">
+<!ENTITY status4evar.status.urlbar.color.label "Statuskleur:">
+<!ENTITY status4evar.status.currentUrl "Huidige locatie">
+<!ENTITY status4evar.status.statusText "Statustekst">
+<!ENTITY status4evar.status.urlbar.firefox.builtin.caption "Firefox-compatibiliteit">
+<!ENTITY browser.urlbar.formatting.enabled.label "Domeinamen uitlichten">
+<!ENTITY browser.urlbar.trimming.enabled.label "Protocol (http:// en ftp://) verbergen">
+<!ENTITY browser.urlbar.autofill.enabled.label "Automatisch aanvullen van URL's">
+<!ENTITY status4evar.status.popup.invertMirror.label "Standaard rechts">
+<!ENTITY status4evar.status.popup.mouseMirror.label "Wissel zijde als de muiscursor erover gaat">
+<!ENTITY status4evar.status.popup.findMirror.label "Start aan de tegenoverliggende zijde als de Zoekbalk open is">
+<!ENTITY status4evar.progress.style.label "Een aangepaste stijl gebruiken">
+<!ENTITY status4evar.progress.urlbar.enable.label "Voortgang in de adresbalk weergeven">
+<!ENTITY status4evar.progress.urlbar.line.label "Lijnstijl:">
+<!ENTITY status4evar.progress.toolbar.force.label "Het status-item altijs weergeven">
+<!ENTITY status4evar.editor.label "Editor:">
+<!ENTITY status4evar.editor.css.color.label "Kleur:">
+<!ENTITY status4evar.editor.css.image.label "Afbeelding:">
+<!ENTITY status4evar.editor.css.image.repeat "Herhalen">
+<!ENTITY status4evar.editor.css.image.position "Positie">
+<!ENTITY status4evar.editor.css.image.offset "Offset">
+<!ENTITY status4evar.download.force.label "De download-statusindicator altijd weergeven">
+<!ENTITY status4evar.download.label.force.label "De knoptekst altijd weergeven">
+<!ENTITY status4evar.download.label.label "Tekst download-statusindicator:">
+<!ENTITY status4evar.download.tooltip.label "Tooltip download-statusindicator:">
+<!ENTITY status4evar.download.progress.label "Downloadvoortgang op de indicator weergeven">
+<!ENTITY status4evar.download.progress.average.label "Toon gemiddelde van voltooide downloads">
+<!ENTITY status4evar.download.progress.max.label "Toon de messt voltooide download">
+<!ENTITY status4evar.download.progress.min.label "Toon de minst voltooide download">
+<!ENTITY status4evar.download.color.active.label "Voortgangskleur voor actieve downloads:">
+<!ENTITY status4evar.download.color.paused.label "Voortgangskleur voor gepauzeerde downloads:">
+<!ENTITY toolkit.classic.download.window.label "Klassiek downloadvenster gebruiken">
+<!ENTITY status4evar.addonbar.borderStyle "Alternatieve werkbalkranden gebruiken">
+<!ENTITY status4evar.addonbar.windowGripper "Toon het handvat voor venstergrootte wijzigen">
+<!ENTITY status4evar.addonbar.closeButton "Toon de sluiten-knop">
+<!ENTITY status4evar.advanced.warning "Deze geavanceerde instellingen kunnen problemen veroorzaken met andere extensies. Wijzigen is voor eigen risico.">
+<!ENTITY status4evar.advanced.urlbar.forceBinding "Probeer XBL-binding te forceren.">
+<!ENTITY status4evar.advanced.urlbar.forceBinding.desc "Selecteer dit uitsluitend als u problemen heeft met de voortgangs- of statustekst in de adresbalk en deze onjuist worden weergegeven. Dit kan mogelijk tot gevolg hebben dat andere extensies niet meer werken die een XBL-binding op de adresbalk willen instellen.">
+<!ENTITY status4evar.advanced.status.detectFullScreen "Detecteer volledig-scherm modus en pas de koppelingen/status hierop aan.">

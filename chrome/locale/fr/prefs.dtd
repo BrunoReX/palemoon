@@ -56,8 +56,8 @@
 <!ENTITY browser.urlbar.trimming.enabled.label "Activer le masquage du protocole (http:// et ftp://)">
 <!ENTITY browser.urlbar.autofill.enabled.label "Achèvement automatique des URLs">
 <!ENTITY status4evar.status.popup.invertMirror.label "Côté droit par défaut">
-<!ENTITY status4evar.status.popup.findMirror.label "Commencer du côté opposé lorsque la barre de recherche est ouverte">
 <!ENTITY status4evar.status.popup.mouseMirror.label "Échanger les côtés lors du survol de la souris">
+<!ENTITY status4evar.status.popup.findMirror.label "Commencer du côté opposé lorsque la barre de recherche est ouverte">
 <!ENTITY status4evar.progress.style.label "Utiliser un style personnalisé pour la barre de progression">
 <!ENTITY status4evar.progress.urlbar.enable.label "Afficher la progression dans la barre d'adresse">
 <!ENTITY status4evar.progress.urlbar.line.label "Style de la ligne :">
@@ -78,9 +78,11 @@
 <!ENTITY status4evar.download.progress.min.label "Afficher les téléchargements en début de processus">
 <!ENTITY status4evar.download.color.active.label "Couleur de la barre de progression des téléchargements actifs :">
 <!ENTITY status4evar.download.color.paused.label "Couleur de la barre de progression des téléchargements en pause :">
+<!ENTITY toolkit.classic.download.window.label "Utiliser la fenêtre classique de téléchargements">
 <!ENTITY status4evar.addonbar.borderStyle "Utiliser les bordures de barre d'outils alternatives">
 <!ENTITY status4evar.addonbar.windowGripper "Afficher le pointeur de redimensionnement de fenêtre">
 <!ENTITY status4evar.addonbar.closeButton "Afficher le bouton de fermeture">
 <!ENTITY status4evar.advanced.warning "Ces paramètres avancés peuvent entraîner des problèmes avec d'autres extensions. Modifications à vos propre risques.">
 <!ENTITY status4evar.advanced.urlbar.forceBinding "Tentative de forcer le binding XBL de la barre d'adresse.">
 <!ENTITY status4evar.advanced.urlbar.forceBinding.desc "Ne sélectionnez ceci que si vous avez des problèmes avec l'affichage du texte de progression ou d'état de la barre de navigation. Cela pourra potentiellement endommager d'autres extensions qui tentent de définir le binding XBL sur la barre d'adresse.">
+<!ENTITY status4evar.advanced.status.detectFullScreen "Détecter le mode plein écran et afficher les liens et le texte d'état en conséquence.">

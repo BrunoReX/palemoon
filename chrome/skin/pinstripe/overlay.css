@@ -16,7 +16,7 @@
  * The Initial Developer of the Original Code is 
  * Matthew Turnbull <sparky@bluefang-logic.com>.
  *
- * Portions created by the Initial Developer are Copyright (C) 2012
+ * Portions created by the Initial Developer are Copyright (C) 2013
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -51,14 +51,41 @@
  * Download status
  */
 
-#status4evar-download-button
+#status4evar-download-anchor
 {
-	-moz-image-region: rect(0, 140px, 20px, 120px);
+	position: relative;
+	z-index: 1;
 }
 
-#status4evar-download-button .dl-progress
+#status4evar-download-progress-bar
 {
-	height: 20px;
+	height: 5px;
+}
+
+#status4evar-download-button #status4evar-download-icon
+{
+	background: -moz-image-rect(url("chrome://browser/skin/Toolbar.png"), 0, 140, 20, 120) center no-repeat;
+	min-width: 20px;
+	min-height: 20px;
+}
+
+#status4evar-download-button[attention] #status4evar-download-icon
+{
+	background-image: url("chrome://browser/skin/downloads/download-glow.png");
+}
+
+@media (min-resolution: 2dppx)
+{
+	#status4evar-download-button #status4evar-download-icon
+	{
+		background-image: -moz-image-rect(url("chrome://browser/skin/Toolbar@2x.png"), 0, 280, 40, 240);
+		background-size: 20px;
+	}
+
+	#status4evar-download-button[attention] #status4evar-download-icon
+	{
+		background-image: url("chrome://browser/skin/downloads/download-glow@2x.png");
+	}
 }
 
 toolbar[mode="icons"] #status4evar-download-button[forcelabel="true"] > label
@@ -78,6 +105,15 @@ splitter.status4evar-status-splitter
 }
 
 /*
+ * Location bar
+ */
+
+#urlbar-progress-alt
+{
+       margin-right: -1px;
+}
+
+/*
  * Toolbar progress
  */
 
@@ -90,26 +126,6 @@ splitter.status4evar-status-splitter
 #status4evar-progress-bar[s4estyle="true"] > .progress-remainder
 {
 	background-color: white;
-}
-
-/*
- * Location bar
- */
-
-.urlbar-stack
-{
-	margin: 0px;
-	-moz-margin-end: -2px;
-}
-
-#urlbar-container:not([combined]) #urlbar-progress-alt
-{
-	margin-right: -1px;
-}
-
-#urlbar-container:not([combined]) #urlbar:not([pmpack="center"]) #urlbar-progress-alt
-{
-	margin-right: -2px;
 }
 
 /*

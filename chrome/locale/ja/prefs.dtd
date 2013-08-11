@@ -1,17 +1,14 @@
 <!ENTITY status4evar.window.title "Pale Moon status bar preferences">
-
 <!ENTITY status4evar.pane.status "Status">
 <!ENTITY status4evar.pane.progress "Progress">
 <!ENTITY status4evar.pane.download "Download">
 <!ENTITY status4evar.pane.addonbar "Status Bar">
 <!ENTITY status4evar.pane.advanced "Advanced">
-
 <!ENTITY status4evar.tab.general "General">
 <!ENTITY status4evar.tab.toolbar "Status Bar">
 <!ENTITY status4evar.tab.urlbar "Address Bar">
 <!ENTITY status4evar.tab.popup "Pop-up">
 <!ENTITY status4evar.tab.tabs "Tabs">
-
 <!ENTITY status4evar.option.none "None">
 <!ENTITY status4evar.option.toolbar "Status Bar">
 <!ENTITY status4evar.option.urlbar "Address Bar">
@@ -36,12 +33,8 @@
 <!ENTITY status4evar.option.no-repeat "No Repeat">
 <!ENTITY status4evar.option.space "Space">
 <!ENTITY status4evar.option.round "Round">
-
 <!ENTITY status4evar.unit.seconds "seconds">
 <!ENTITY status4evar.unit.px "px">
-
-
-
 <!ENTITY status4evar.status.general.status.caption "Status Text">
 <!ENTITY status4evar.status.label "ステータスの表示場所">
 <!ENTITY status4evar.status.timeout.label "ステータスの表示時間">
@@ -49,46 +42,32 @@
 <!ENTITY status4evar.status.network.label "ネットワークのステータスを表示">
 <!ENTITY status4evar.status.network.xhr.label "背景のネットワークのステータスを表示">
 <!ENTITY toolkit.dom.status.change.label "ウェブページによるステータスの変更を許可する">
-
 <!ENTITY status4evar.status.general.linkOver.caption "Links">
 <!ENTITY status4evar.status.linkOver.label "リンクの表示場所">
 <!ENTITY status4evar.status.linkOver.delay.show.label "リンクを表示するまでの時間">
 <!ENTITY status4evar.status.linkOver.delay.hide.label "リンクを隠すまでの時間">
-
 <!ENTITY status4evar.status.toolbar.maxLength.label "ステータステキストの最大の長さ">
-
 <!ENTITY status4evar.status.urlbar.align.label "ステータスの位置">
 <!ENTITY status4evar.status.urlbar.color.label "URLバーの文字色">
 <!ENTITY status4evar.status.currentUrl "Current Location">
 <!ENTITY status4evar.status.statusText "Status Text">
-
 <!ENTITY status4evar.status.urlbar.firefox.builtin.caption "Firefox compatibility features">
 <!ENTITY browser.urlbar.formatting.enabled.label "ドメインをハイライトする">
 <!ENTITY browser.urlbar.trimming.enabled.label "プロトコルを非表示にする(http:// and ftp://)">
 <!ENTITY browser.urlbar.autofill.enabled.label "Enable autocompletion of URLs">
-
 <!ENTITY status4evar.status.popup.invertMirror.label "右端を標準にする">
-<!ENTITY status4evar.status.popup.findMirror.label "Start on the opposite side when the Find Bar is open">
 <!ENTITY status4evar.status.popup.mouseMirror.label "マウスオーバーしたとき逆側にする">
-
-
-
+<!ENTITY status4evar.status.popup.findMirror.label "Start on the opposite side when the Find Bar is open">
 <!ENTITY status4evar.progress.style.label "スタイルをカスタマイズする">
-
 <!ENTITY status4evar.progress.urlbar.enable.label "ロケーションバーに進行状態を表示">
 <!ENTITY status4evar.progress.urlbar.line.label "ラインのスタイル">
-
 <!ENTITY status4evar.progress.toolbar.force.label "ステータスバーのアイテムを常に表示">
-
 <!ENTITY status4evar.editor.label "Editor:">
 <!ENTITY status4evar.editor.css.color.label "Color:">
 <!ENTITY status4evar.editor.css.image.label "Image:">
 <!ENTITY status4evar.editor.css.image.repeat "Repeat">
 <!ENTITY status4evar.editor.css.image.position "Position">
 <!ENTITY status4evar.editor.css.image.offset "Offset">
-
-
-
 <!ENTITY status4evar.download.force.label "ダウンロードの進行状況を常に表示">
 <!ENTITY status4evar.download.label.force.label "常にラベルを表示">
 <!ENTITY status4evar.download.label.label "ダウンロードステータスボタンのラベル">
@@ -99,17 +78,11 @@
 <!ENTITY status4evar.download.progress.min.label "未完了のダウンロードを表示">
 <!ENTITY status4evar.download.color.active.label "進行中のダウンロードの色">
 <!ENTITY status4evar.download.color.paused.label "停止中のダウンロードの色">
-
-
-
+<!ENTITY toolkit.classic.download.window.label "古典的なダウンロードウィンドウを使用">
 <!ENTITY status4evar.addonbar.borderStyle "別のツールバーの境界を使う">
 <!ENTITY status4evar.addonbar.windowGripper "ウィンドウのリサイズパネルを表示">
 <!ENTITY status4evar.addonbar.closeButton "閉じるボタンを表示">
-
-
-
 <!ENTITY status4evar.advanced.warning "These advanced settings may cause issues with other extensions. Modify at your own risk.">
-
 <!ENTITY status4evar.advanced.urlbar.forceBinding "ロケーションバーで強制的にXBL bindingを試みる">
 <!ENTITY status4evar.advanced.urlbar.forceBinding.desc "ロケーションバーの進行状態やテキスト表示に以上がある場合にだけ選択すること（他の拡張機能がロケーションバーでXBL bindingするのを妨げる可能性があるため）">
-
+<!ENTITY status4evar.advanced.status.detectFullScreen "適切にフルスクリーンモードと表示リンクや状態を自動検出します。">

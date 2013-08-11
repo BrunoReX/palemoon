@@ -16,7 +16,7 @@
  * The Initial Developer of the Original Code is 
  * Matthew Turnbull <sparky@bluefang-logic.com>.
  *
- * Portions created by the Initial Developer are Copyright (C) 2012
+ * Portions created by the Initial Developer are Copyright (C) 2013
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -83,11 +83,6 @@ toolbar[iconsize="small"] #status4evar-options-button
  * Download status
  */
 
-#status4evar-download-button
-{
-	list-style-image: url("chrome://browser/skin/Toolbar.png");
-}
-
 toolbar[mode="icons"] #status4evar-download-button[forcelabel="true"],
 toolbar[mode="text"] #status4evar-download-button
 {
@@ -99,46 +94,46 @@ toolbar[mode="icons"] #status4evar-download-button[forcelabel="true"] > label
 	display: -moz-box !important;
 }
 
-#status4evar-download-button .toolbarbutton-icon
+#status4evar-download-progress-bar
 {
-	margin: 0px !important;
-}
-
-#status4evar-download-button .dl-progress-wrapper
-{
-	min-width: 6px;
-}
-
-#status4evar-download-button .dl-progress
-{
-	width: 6px;
 	border: 1px solid gray;
+	-moz-appearance: none;
+	margin: 0px;
+	min-height: 0px;
+	min-width: 0px;
 }
 
-toolbar[iconsize="small"] #status4evar-download-button .dl-progress-wrapper
+#status4evar-download-progress-bar > *
 {
-	min-width: 4px;
-}
-
-toolbar[iconsize="small"] #status4evar-download-button .dl-progress
-{
-	width: 4px;
-}
-
-#status4evar-download-button[pmValue]:not([pmValue="100"]):not([pmValue="0"]) .dl-progress-bar
-{
-	border-top: 1px solid gray;
-}
-
-#status4evar-download-button .dl-progress-remainder,
-#status4evar-download-button .dl-progress-bar
-{
+	-moz-appearance: none;
 	background: #FFFFFF;
 }
 
-#status4evar-download-button[pmType$="unknown"] .dl-progress-bar
+#status4evar-download-progress-bar[pmType$="unknown"] > .progress-bar
 {
 	background-image: url("chrome://status4evar/skin/pulse.png");
+}
+
+#status4evar-download-notification-icon
+{
+	opacity: 0;
+	background-size: 16px;
+	background-position: center;
+	background-repeat: no-repeat;
+}
+
+@keyframes status4evar-download-button-finish
+{
+	from { opacity: 0; transform: scale(1); }
+	20%  { opacity: .65; animation-timing-function: ease-in; }
+	to   { opacity: 0; transform: scale(8); }
+}
+
+#status4evar-download-button[notification="finish"][forcevisible="true"] #status4evar-download-notification-icon
+{
+	background-image: url("chrome://browser/skin/downloads/download-notification-finish.png");
+	animation-name: status4evar-download-button-finish;
+	animation-duration: 1s;
 }
 
 /*
@@ -161,11 +156,6 @@ splitter.status4evar-status-splitter:not(:hover)
 /*
  * Location bar progress
  */
-
-#urlbar-progress-alt:-moz-locale-dir(rtl)
-{
-	-moz-box-direction: reverse;
-}
 
 #urlbar-progress-alt
 {
@@ -191,12 +181,14 @@ splitter.status4evar-status-splitter:not(:hover)
 #urlbar-container:not([combined]) #urlbar:not([pmpack="begin"]) #urlbar-progress-alt,
 #urlbar-container:not([combined]) #urlbar:not([pmpack="begin"]) #urlbar-progress-alt > *
 {
+	border-bottom-left-radius: 3px;
 	border-bottom-right-radius: 3px;
 }
 
 #urlbar-container:not([combined]) #urlbar:not([pmpack="end"]) #urlbar-progress-alt,
 #urlbar-container:not([combined]) #urlbar:not([pmpack="end"]) #urlbar-progress-alt > *
 {
+	border-top-left-radius: 3px;
 	border-top-right-radius: 3px;
 }
 
@@ -232,108 +224,158 @@ splitter.status4evar-status-splitter:not(:hover)
 }
 
 /*
- * Location bar status
+ * Location bar status transisions
  */
 
-.urlbar-over-link-layer
+#urlbar .urlbar-over-link-layer
 {
 	opacity: 0;
 }
 
-.urlbar-over-link-box:-moz-locale-dir(rtl)
-{
-	-moz-box-direction: reverse;
-}
-
-.urlbar-input-layer[overlinkstate="fade-in"],
-.urlbar-input-layer[overlinkstate="fade-in"] html|input.urlbar-input:-moz-placeholder
+#urlbar .urlbar-input-layer[overlinkstate="fade-in"]
 {
 	-moz-transition-property: color;
-	-moz-transition-duration: 100ms;
+	-moz-transition-duration: 150ms;
 	color: transparent;
 }
 
-.urlbar-input-layer[overlinkstate="fade-out"],
-.urlbar-input-layer[overlinkstate="fade-out"] html|input.urlbar-input:-moz-placeholder
+/* < Firefox 19 */
+#urlbar .urlbar-input-layer[overlinkstate="fade-in"] html|input.urlbar-input:-moz-placeholder
 {
 	-moz-transition-property: color;
-	-moz-transition-duration: 100ms;
+	-moz-transition-duration: 150ms;
+	color: transparent;
 }
 
-.urlbar-input-layer[overlinkstate="showing"],
-.urlbar-input-layer[overlinkstate="showing"] html|input.urlbar-input:-moz-placeholder
+/* >= Firefox 19 */
+#urlbar .urlbar-input-layer[overlinkstate="fade-in"] html|input.urlbar-input::-moz-placeholder
+{
+	-moz-transition-property: color;
+	-moz-transition-duration: 150ms;
+	color: transparent;
+}
+
+#urlbar .urlbar-input-layer[overlinkstate="fade-out"]
+{
+	-moz-transition-property: color;
+	-moz-transition-duration: 150ms;
+	-moz-transition-timing-function: cubic-bezier(0.0, 1.0, 1.0, 1.0);
+}
+
+/* < Firefox 19 */
+#urlbar .urlbar-input-layer[overlinkstate="fade-out"] html|input.urlbar-input:-moz-placeholder
+{
+	-moz-transition-property: color;
+	-moz-transition-duration: 150ms;
+	-moz-transition-timing-function: cubic-bezier(0.0, 1.0, 1.0, 1.0);
+}
+
+/* >= Firefox 19 */
+#urlbar .urlbar-input-layer[overlinkstate="fade-out"] html|input.urlbar-input::-moz-placeholder
+{
+	-moz-transition-property: color;
+	-moz-transition-duration: 150ms;
+	-moz-transition-timing-function: cubic-bezier(0.0, 1.0, 1.0, 1.0);
+}
+
+#urlbar .urlbar-input-layer[overlinkstate="showing"]
 {
 	color: transparent;
 }
 
-.urlbar-over-link-layer[overlinkstate="fade-in"]
+/* < Firefox 19 */
+#urlbar .urlbar-input-layer[overlinkstate="showing"] html|input.urlbar-input:-moz-placeholder
+{
+	color: transparent;
+}
+
+/* >= Firefox 19 */
+#urlbar .urlbar-input-layer[overlinkstate="showing"] html|input.urlbar-input::-moz-placeholder
+{
+	color: transparent;
+}
+
+#urlbar .urlbar-over-link-layer[overlinkstate="fade-in"]
 {
 	-moz-transition-property: opacity;
-	-moz-transition-duration: 100ms;
+	-moz-transition-duration: 150ms;
 	opacity: 1;
 }
 
-.urlbar-over-link-layer[overlinkstate="fade-out"]
+#urlbar .urlbar-over-link-layer[overlinkstate="fade-out"]
 {
 	-moz-transition-property: opacity;
-	-moz-transition-duration: 100ms;
+	-moz-transition-duration: 150ms;
+	-moz-transition-timing-function: cubic-bezier(0.0, 1.0, 1.0, 1.0);
 }
 
-.urlbar-over-link-layer[overlinkstate="showing"]
+#urlbar .urlbar-over-link-layer[overlinkstate="showing"]
 {
 	opacity: 1;
 }
 
-.urlbar-input-layer-children[overlinkstate="fade-in"]
+#urlbar .urlbar-input-layer-children[overlinkstate="fade-in"]
 {
 	-moz-transition-property: opacity;
-	-moz-transition-duration: 100ms;
+	-moz-transition-duration: 150ms;
 	opacity: 0;
 }
 
-.urlbar-input-layer-children[overlinkstate="fade-out"]
+#urlbar .urlbar-input-layer-children[overlinkstate="fade-out"]
 {
 	-moz-transition-property: opacity;
-	-moz-transition-duration: 100ms;
+	-moz-transition-duration: 150ms;
+	-moz-transition-timing-function: cubic-bezier(0.0, 1.0, 1.0, 1.0);
 }
 
-.urlbar-input-layer-children[overlinkstate="showing"]
+#urlbar .urlbar-input-layer-children[overlinkstate="showing"]
 {
 	opacity: 0;
 }
 
-.urlbar-origin-label
-{
-	padding-top: 0;
-	padding-bottom: 0;
-	-moz-padding-end: 0;
-	margin: 0;
-}
+/*
+ * Location bar status layout
+ */
 
 #urlbar[s4esalign="left"] .urlbar-origin-box
 {
 	display: none;
 }
 
-.urlbar-over-link-box
+#urlbar .urlbar-origin-label,
+#urlbar .urlbar-over-link-host-label,
+#urlbar .urlbar-over-link-path-label
 {
-	padding-top: 0;
-	padding-bottom: 0;
-	-moz-padding-start: 18px;
-	-moz-padding-end: 2px;
+	padding: 0;
+	margin: 0;
+	border: none;
 }
 
-.urlbar-origin-label,
-#urlbar[s4esalign="left"] .urlbar-over-link-box
+#urlbar .urlbar-origin-label
 {
 	-moz-padding-start: 1px;
 }
 
-.urlbar-over-link-host-label,
-.urlbar-over-link-path-label
+#urlbar .urlbar-over-link-box:-moz-locale-dir(ltr)
 {
-	padding: 0;
-	margin: 0;
+	-moz-padding-start: 18px;
+	-moz-padding-end: 2px;
+}
+
+#urlbar .urlbar-over-link-box:-moz-locale-dir(rtl)
+{
+	-moz-padding-end: 18px;
+	-moz-padding-start: 2px;
+}
+
+#urlbar[s4esalign="left"] .urlbar-over-link-box:-moz-locale-dir(ltr)
+{
+	-moz-padding-start: 1px;
+}
+
+#urlbar[s4esalign="left"] .urlbar-over-link-box:-moz-locale-dir(rtl)
+{
+	-moz-padding-end: 1px;
 }
 
 #urlbar:not([s4esalign="left"]) .urlbar-over-link-box:-moz-locale-dir(ltr)

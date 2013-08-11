@@ -16,7 +16,7 @@
  * The Initial Developer of the Original Code is 
  * Matthew Turnbull <sparky@bluefang-logic.com>.
  *
- * Portions created by the Initial Developer are Copyright (C) 2012
+ * Portions created by the Initial Developer are Copyright (C) 2013
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -37,21 +37,8 @@
 
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 
-#status-bar
+#status4evar-download-builtin
 {
-	min-height: 0px;
-	-moz-appearance: none;
-	background-color: transparent;
-	border: none;
-
-	margin: 0px;
-}
-
-#addon-bar[customizing] > #status-bar
-{
-	opacity: .5;
-	background-image: -moz-repeating-linear-gradient(-45deg,
-	                                                 rgba(255,255,255,.3), rgba(255,255,255,.3) 5px,
-	                                                 rgba(0,0,0,.3) 5px, rgba(0,0,0,.3) 10px);
+	display: none;
 }
 

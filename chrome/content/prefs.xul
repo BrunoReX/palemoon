@@ -24,7 +24,7 @@
    - The Initial Developer of the Original Code is 
    - Matthew Turnbull <sparky@bluefang-logic.com>.
    -
-   - Portions created by the Initial Developer are Copyright (C) 2012
+   - Portions created by the Initial Developer are Copyright (C) 2013
    - the Initial Developer. All Rights Reserved.
    -
    - Contributor(s):
@@ -82,7 +82,6 @@
 			            onchange="status4evarPrefs.urlbarAlignChanged();" />
 			<preference id="status4evar-pref-status-urlbar-color"        name="status4evar.status.urlbar.color"        type="string" />
 			<preference id="status4evar-pref-status-urlbar-position"     name="status4evar.status.urlbar.position"     type="int" />
-			<preference id="status4evar-pref-status-popup-findMirror"    name="status4evar.status.popup.findMirror"    type="bool" />
 			<preference id="status4evar-pref-status-popup-invertMirror"  name="status4evar.status.popup.invertMirror"  type="bool" />
 			<preference id="status4evar-pref-status-popup-mouseMirror"   name="status4evar.status.popup.mouseMirror"   type="bool" />
 			<preference id="toolkit-pref-dom-status-change"              name="dom.disable_window_status_change"       type="bool" inverted="true" />
@@ -165,6 +164,12 @@
 							<textbox id="status4evar-status-linkOver-delay-hide-value" preference="status4evar-pref-status-linkOver-delay-hide" type="number" size="5" />
 						</hbox>
 					</groupbox>
+
+					<groupbox id="status4evar-status-urlbar-builtin">
+						<caption label="&status4evar.status.urlbar.firefox.builtin.caption;" />
+
+						<checkbox id="browser-urlbar-trimming-enabled-ckeck" preference="browser-pref-urlbar-trimming-enabled" label="&browser.urlbar.trimming.enabled.label;" />
+					</groupbox>
 				</tabpanel>
 
 				<tabpanel id="status4evar-tabpanel-status-urlbar" orient="vertical">
@@ -187,7 +192,7 @@
 
 					<vbox id="status4evar-status-urlbar-position-vbox">
 						<scale id="status4evar-status-urlbar-position-value" preference="status4evar-pref-status-urlbar-position" min="0" max="100"
-						       movetoclick="true" preference-editable="true" dir="reverse" />
+						       movetoclick="true" preference-editable="true" />
 
 						<hbox align="center">
 							<hbox pack="start" flex="1">
@@ -205,7 +210,6 @@
 						<caption label="&status4evar.status.urlbar.firefox.builtin.caption;" />
 
 						<checkbox id="browser-urlbar-formatting-enabled-ckeck" preference="browser-pref-urlbar-formatting-enabled" label="&browser.urlbar.formatting.enabled.label;" />
-						<checkbox id="browser-urlbar-trimming-enabled-ckeck" preference="browser-pref-urlbar-trimming-enabled" label="&browser.urlbar.trimming.enabled.label;" />
 					</groupbox>
 				</tabpanel>
 
@@ -221,8 +225,6 @@
 
 				<tabpanel id="status4evar-tabpanel-status-popup" orient="vertical">
 					<checkbox id="status4evar-status-popup-invertMirror-check" preference="status4evar-pref-status-popup-invertMirror" label="&status4evar.status.popup.invertMirror.label;" />
-
-					<checkbox id="status4evar-status-popup-findMirror-check" preference="status4evar-pref-status-popup-findMirror" label="&status4evar.status.popup.findMirror.label;" />
 
 					<checkbox id="status4evar-status-popup-mouseMirror-check" preference="status4evar-pref-status-popup-mouseMirror" label="&status4evar.status.popup.mouseMirror.label;" />
 				</tabpanel>
@@ -324,6 +326,7 @@
 			<preference id="status4evar-pref-download-label-force"  name="status4evar.download.label.force"  type="bool" />
 			<preference id="status4evar-pref-download-progress"     name="status4evar.download.progress"     type="int" />
 			<preference id="status4evar-pref-download-tooltip"      name="status4evar.download.tooltip"      type="int" />
+			<preference id="toolkit-pref-classic-download-window"   name="browser.download.useToolkitUI"     type="bool" />
 		</preferences>
 
 		<commandset id="status4evar-commandset-download">
@@ -378,6 +381,14 @@
 				<colorpicker id="status4evar-download-color-paused-picker" preference="status4evar-pref-download-color-paused" type="button" />
 			</hbox>
 		</vbox>
+
+		<separator/>
+
+		<groupbox id="status4evar-download-builtin">
+			<caption label="&status4evar.status.urlbar.firefox.builtin.caption;" />
+
+			<checkbox id="toolkit-classic-download-window-check" preference="toolkit-pref-classic-download-window" label="&toolkit.classic.download.window.label;" />
+		</groupbox>
 	</prefpane>
 
 	<prefpane id="status4evar-pane-addonbar" label="&status4evar.pane.addonbar;">
@@ -397,6 +408,7 @@
 	<prefpane id="status4evar-pane-advanced" label="&status4evar.pane.advanced;">
 		<preferences>
 			<preference id="status4evar-pref-advanced-showWarning" name="status4evar.advanced.showWarning" type="bool" />
+			<preference id="status4evar-pref-advanced-status-detectFullScreen" name="status4evar.advanced.status.detectFullScreen" type="bool" />
 			<preference id="status4evar-pref-advanced-urlbar-forceBinding" name="status4evar.advanced.urlbar.forceBinding" type="bool" />
 		</preferences>
 
@@ -421,10 +433,20 @@
 				<spacer flex="2" />
 			</vbox>
 			<vbox flex="1">
-				<checkbox id="status4evar-advanced-urlbar-forceBinding-check" preference="status4evar-pref-advanced-urlbar-forceBinding" label="&status4evar.advanced.urlbar.forceBinding;" />
-				<textbox id="status4evar-advanced-urlbar-forceBinding-desc" class="indent" tabindex="-1"
-				         multiline="true" readonly="true" onoverflow="this.height = this.inputField.scrollHeight;"
-				         value="&status4evar.advanced.urlbar.forceBinding.desc;" />
+				<groupbox id="status4evar-advanced-general">
+					<caption label="&status4evar.tab.general;" />
+
+					<checkbox id="status4evar-advanced-urlbar-forceBinding-check" preference="status4evar-pref-advanced-urlbar-forceBinding" label="&status4evar.advanced.urlbar.forceBinding;" />
+					<textbox id="status4evar-advanced-urlbar-forceBinding-desc" class="indent" tabindex="-1"
+					         multiline="true" readonly="true" onoverflow="this.height = this.inputField.scrollHeight;"
+					         value="&status4evar.advanced.urlbar.forceBinding.desc;" />
+				</groupbox>
+
+				<groupbox id="status4evar-advanced-status">
+					<caption label="&status4evar.pane.status;" />
+
+					<checkbox id="status4evar-advanced-status-detectFullScreen-check" preference="status4evar-pref-advanced-status-detectFullScreen" label="&status4evar.advanced.status.detectFullScreen;" />
+				</groupbox>
 			</vbox>
 		</deck>
 	</prefpane>

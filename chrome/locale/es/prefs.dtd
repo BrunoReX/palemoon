@@ -56,8 +56,8 @@
 <!ENTITY browser.urlbar.trimming.enabled.label "Ocultar el protocolo (http:// y ftp://)">
 <!ENTITY browser.urlbar.autofill.enabled.label "Habilitar el autocompletado de direcciones URL">
 <!ENTITY status4evar.status.popup.invertMirror.label "Mostrar por defecto en el lado derecho">
-<!ENTITY status4evar.status.popup.findMirror.label "Mostrar al lado opuesto cuando la barra de busqueda esta abierta">
 <!ENTITY status4evar.status.popup.mouseMirror.label "Mover al lado opuesto al pasar el raton por encima">
+<!ENTITY status4evar.status.popup.findMirror.label "Mostrar al lado opuesto cuando la barra de busqueda esta abierta">
 <!ENTITY status4evar.progress.style.label "Usar un estilo personalizado para el medidor de progreso">
 <!ENTITY status4evar.progress.urlbar.enable.label "Mostrar el medidor de progreso en la barra de direcciones">
 <!ENTITY status4evar.progress.urlbar.line.label "Estilo de línea:">
@@ -78,9 +78,11 @@
 <!ENTITY status4evar.download.progress.min.label "Mostrar el progreso de la descarga menos avanzada">
 <!ENTITY status4evar.download.color.active.label "Color del icono de progreso teniendo al menos una descarga activa:">
 <!ENTITY status4evar.download.color.paused.label "Color del icono del progreso teniendo todas las descargas en pausa:">
+<!ENTITY toolkit.classic.download.window.label "Use la ventana de descargas clásica">
 <!ENTITY status4evar.addonbar.borderStyle "Usar un estilo visual alternativo para los bordes">
 <!ENTITY status4evar.addonbar.windowGripper "Mostrar el control deslizante de la ventana">
 <!ENTITY status4evar.addonbar.closeButton "Mostrar botón de Cerrar">
 <!ENTITY status4evar.advanced.warning "Cambiar estas opciones avanzadas puede causar problemas con otras extensiones. Hágalo bajo su propia responsabilidad.">
 <!ENTITY status4evar.advanced.urlbar.forceBinding "Forzar la vinculación (binding) XBL a la barra de direcciones">
 <!ENTITY status4evar.advanced.urlbar.forceBinding.desc "Habilite esta opción sólo si el medidor de progreso o el mensaje de estado no son mostrados correctamente en la barra de direcciones. Esto afectará potencialmente otras extensiones que asocian una vinculación XBL a la barra de direcciones.">
+<!ENTITY status4evar.advanced.status.detectFullScreen "Detectar modo de ventana completa y mostrat enlaces/estado apropiadamente.">

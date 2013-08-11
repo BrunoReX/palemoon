@@ -16,7 +16,7 @@
  * The Initial Developer of the Original Code is 
  * Matthew Turnbull <sparky@bluefang-logic.com>.
  *
- * Portions created by the Initial Developer are Copyright (C) 2011
+ * Portions created by the Initial Developer are Copyright (C) 2013
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -44,7 +44,7 @@ CU.import("resource://gre/modules/XPCOMUtils.jsm");
 CU.import("resource://gre/modules/Services.jsm");
 CU.import("resource://gre/modules/AddonManager.jsm");
 
-const CURRENT_MIGRATION = 5;
+const CURRENT_MIGRATION = 6;
 
 function Status_4_Evar(){}
 
@@ -63,6 +63,7 @@ Status_4_Evar.prototype =
 	addonbarCloseButton:		false,
 	addonbarWindowGripper:		true,
 
+	advancedStatusDetectFullScreen: true,
 	advancedUrlbarForceBinding:	false,
 
 	downloadColorActive:		null,
@@ -97,7 +98,6 @@ Status_4_Evar.prototype =
 	statusUrlbarColor:		null,
 	statusUrlbarPosition:		33,
 
-	statusUrlbarFindMirror:		true,
 	statusUrlbarInvertMirror:	false,
 	statusUrlbarMouseMirror:	true,
 
@@ -143,7 +143,15 @@ Status_4_Evar.prototype =
 			},
 			updateWindow: function(win)
 			{
-				win.caligon.status4evar.windowGripper.update(true);
+				win.caligon.status4evar.updateWindowGripper(true);
+			}
+		},
+
+		"advanced.status.detectFullScreen":
+		{
+			update: function()
+			{
+				this.advancedStatusDetectFullScreen = this.prefs.getBoolPref("advanced.status.detectFullScreen");
 			}
 		},
 
@@ -436,22 +444,6 @@ Status_4_Evar.prototype =
 			}
 		},
 
-		"status.popup.findMirror":
-		{
-			update: function()
-			{
-				this.statusUrlbarFindMirror = this.prefs.getBoolPref("status.popup.findMirror");
-			},
-			updateWindow: function(win)
-			{
-				let statusOverlay = win.caligon.status4evar.getters.statusOverlay;
-				if(statusOverlay)
-				{
-					statusOverlay.findMirror = this.statusUrlbarFindMirror;
-				}
-			}
-		},
-
 		"status.popup.invertMirror":
 		{
 			update: function()
@@ -611,11 +603,6 @@ Status_4_Evar.prototype =
 		if(this.firstRun)
 		{
 			this.prefs.setBoolPref("firstRun", false);
-
-			if(!this.prefs.prefHasUserValue("migration"))
-			{
-				this.prefs.setIntPref("migration", CURRENT_MIGRATION);
-			}
 		}
 
 		this.migrate();
@@ -656,88 +643,23 @@ Status_4_Evar.prototype =
 
 	migrate: function()
 	{
-		let migration = 0;
-		try
+		if(!this.firstRun)
 		{
-			migration = this.prefs.getIntPref("migration");
-		}
-		catch(e) {}
+			let migration = 0;
+			try
+			{
+				migration = this.prefs.getIntPref("migration");
+			}
+			catch(e) {}
 
-		switch(migration)
-		{
-			case CURRENT_MIGRATION:
-				break;
-			case 0:
-				// Reset the preferences
-				let childPrefs = this.prefs.getChildList("");
-				childPrefs.forEach(function(pref)
-				{
-					if(this.prefs.prefHasUserValue(pref))
-					{
-						this.prefs.clearUserPref(pref);
-					}
-				}, this);
-				break;
-			case 1:
-				this.migrateBoolPref("forceDownloadLabel",	"downloadLabelForce");
-			case 2:
-				this.migrateBoolPref("styleProgressItem",	"progressStyle");
-			case 3:
-				this.migrateBoolPref("forceDownloadVisible",	"download.force");
-				this.migrateIntPref( "downloadLabel",		"download.label");
-				this.migrateBoolPref("downloadLabelForce",	"download.label.force");
-				this.migrateIntPref( "downloadTooltip",		"download.tooltip");
-
-				this.migrateBoolPref("forceProgressVisible",	"progress.toolbar.force");
-
-				this.migrateBoolPref("default",			"status.default");
-				this.migrateBoolPref("network",			"status.network");
-				this.migrateIntPref( "statusTimeout",		"status.timeout");
-				this.migrateIntPref( "linkOver",		"status.linkOver");
-				this.migrateIntPref( "textMaxLength",		"status.maxLength");
-
-				if(this.prefs.getIntPref("status.linkOver") == 3)
-				{
-					this.prefs.setIntPref("status.linkOver", 1);
-				}
-
-				if(this.prefs.prefHasUserValue("statusInUrlBar"))
-				{
-					this.prefs.setIntPref("status", 2);
-					this.prefs.clearUserPref("statusInUrlBar");
-				}
-
-				let urlbarProgress = true;
-				if(this.prefs.prefHasUserValue("urlbarProgress"))
-				{
-					urlbarProgress = false;
-					this.prefs.setIntPref("progress.urlbar", 0);
-					this.prefs.clearUserPref("urlbarProgress");
-				}
-				
-				if(this.prefs.prefHasUserValue("urlbarProgressStyle"))
-				{
-					if(urlbarProgress)
-					{
-						this.prefs.setIntPref("progress.urlbar", this.prefs.getIntPref("urlbarProgressStyle") + 1);
-					}
-					this.prefs.clearUserPref("urlbarProgressStyle");
-				}
-
-				if(this.prefs.prefHasUserValue("progressColor"))
-				{
-					let oldPrefVal = this.prefs.getCharPref("progressColor");
-					this.prefs.setCharPref("progress.toolbar.css", oldPrefVal);
-					this.prefs.setCharPref("progress.urlbar.css", oldPrefVal);
-					this.prefs.clearUserPref("progressColor");
-				}
-
-				if(this.prefs.prefHasUserValue("progressStyle"))
-				{
-					this.prefs.clearUserPref("progressStyle");
-				}
-			case 4:
-				this.migrateIntPref( "status.maxLength", "status.toolbar.maxLength");
+			switch(migration)
+			{
+				case 5:
+					this.migrateBoolPref("status.detectFullScreen", "advanced.status.detectFullScreen");
+					break;
+				case CURRENT_MIGRATION:
+					break;
+			}
 		}
 
 		this.prefs.setIntPref("migration", CURRENT_MIGRATION);
@@ -866,10 +788,23 @@ Status_4_Evar.prototype =
 		}
 	},
 
+	resetPrefs: function()
+	{
+		let childPrefs = this.prefs.getChildList("");
+		childPrefs.forEach(function(pref)
+		{
+			if(this.prefs.prefHasUserValue(pref))
+			{
+				this.prefs.clearUserPref(pref);
+			}
+		}, this);
+	},
+
 	launchOptions: function(currentWindow)
 	{
-		//AddonManager.getAddonByID("status4evar@caligonstudios.com", function(aAddon)
-		//{
+		// AddonManager.getAddonByID("status4evar@caligonstudios.com", function(aAddon)
+		// {
+		// 	let optionsURL = aAddon.optionsURL;
 			let optionsURL = "chrome://status4evar/content/prefs.xul";
 			let windows = Services.wm.getEnumerator(null);
 			while (windows.hasMoreElements())
@@ -893,7 +828,7 @@ Status_4_Evar.prototype =
 				features += ",modal";
 			}
 			currentWindow.openDialog(optionsURL, "", features);
-		//});
+		// });
 	}
 };
 
