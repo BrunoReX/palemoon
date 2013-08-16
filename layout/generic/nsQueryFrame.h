@@ -8,7 +8,12 @@
 #include "nscore.h"
 
 #define NS_DECL_QUERYFRAME_TARGET(classname)                    \
-  static const nsQueryFrame::FrameIID kFrameIID = nsQueryFrame::classname##_id;
+  template<class T>                                             \
+  struct FrameTypeInfo;                                         \
+  template<>                                                    \
+  struct FrameTypeInfo<classname> {                             \
+  static const nsQueryFrame::FrameIID kFrameIID = nsQueryFrame::classname##_id;\
+  };
 
 #define NS_DECL_QUERYFRAME                                      \
   virtual void* QueryFrame(FrameIID id);
@@ -17,10 +22,10 @@
   void* class::QueryFrame(FrameIID id) { switch (id) {
 
 #define NS_QUERYFRAME_ENTRY(class)                              \
-  case class::kFrameIID: return static_cast<class*>(this);
+  case class::FrameTypeInfo<class>::kFrameIID: return static_cast<class*>(this);
 
 #define NS_QUERYFRAME_ENTRY_CONDITIONAL(class, condition)       \
-  case class::kFrameIID:                                        \
+  case class::FrameTypeInfo<class>::kFrameIID:                  \
   if (condition) return static_cast<class*>(this);              \
   break;
 
@@ -66,7 +71,7 @@ public:
     if (!mRawPtr)
       return nullptr;
 
-    return reinterpret_cast<Dest*>(mRawPtr->QueryFrame(Dest::kFrameIID));
+    return reinterpret_cast<Dest*>(mRawPtr->QueryFrame(Dest::FrameTypeInfo<Dest>::kFrameIID));
   }
 
 private:

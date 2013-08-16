@@ -607,8 +607,6 @@ WIN32_EXE_LDFLAGS	+= -SUBSYSTEM:WINDOWS,5.01
 endif
 endif
 endif
-else
-LDFLAGS += -SUBSYSTEM:CONSOLE,5.01
 endif
 
 # If we're building a component on MSVC, we don't want to generate an

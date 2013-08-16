@@ -88,7 +88,7 @@ pref("dom.enable_performance", true);
 
 // Fastback caching - if this pref is negative, then we calculate the number
 // of content viewers to cache based on the amount of available memory.
-pref("browser.sessionhistory.max_total_viewers", -1);
+pref("browser.sessionhistory.max_total_viewers", 2);
 
 pref("ui.use_native_colors", true);
 pref("ui.click_hold_context_menus", false);

@@ -75,7 +75,9 @@ pref("network.http.pipelining.aggressive", true);
 pref("network.http.pipelining.max-optimistic-requests", 4);
 pref("network.http.pipelining.maxrequests", 4);  // Max number of requests in the pipeline
 pref("network.http.max-connections",48); // Don't saturate the network layer and go easy on poor residential routers&wireless! (FF=256)
-pref("network.http.max-connections-per-server",8); // With pipelining, this should be low (FF=15)
+pref("network.http.max-connections-per-server",10); // With pipelining, this should be low (FF=15)
+pref("network.http.pipelining.read-timeout", 5000); //More aggressive fallback to non-pipelined
+pref("network.http.pipelining.reschedule-timeout", 1000);
 pref("network.http.max-persistent-connections-per-proxy", 8);
 pref("network.http.max-persistent-connections-per-server", 6);
 pref("network.dns.disablePrefetch", true); //Disable DNS prefetching to prevent router hangups

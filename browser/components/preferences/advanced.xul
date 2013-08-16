@@ -175,10 +175,11 @@
                       label="&useAutoScroll.label;"
                       accesskey="&useAutoScroll.accesskey;"
                       preference="general.autoScroll"/>
+				<!-- Found in its designated tab 
             <checkbox id="useSmoothScrolling"
                       label="&useSmoothScrolling.label;"
                       accesskey="&useSmoothScrolling.accesskey;"
-                      preference="general.smoothScroll"/>
+                      preference="general.smoothScroll"/> -->
             <checkbox id="allowHWAccel"
                       label="&allowHWAccel.label;"
                       accesskey="&allowHWAccel.accesskey;"
