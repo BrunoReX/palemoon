@@ -336,9 +336,9 @@ cryptojs_interpret_key_gen_type(char *keyAlg)
     return invalidKeyGen;
   }
   /* First let's remove all leading and trailing white space */
-  while (isspace(keyAlg[0])) keyAlg++;
+  while (isspace(*keyAlg)) keyAlg++;
   end = strchr(keyAlg, '\0');
-  if (!end) {
+  if (!end || end == keyAlg) {
     return invalidKeyGen;
   }
   end--;
@@ -1902,7 +1902,7 @@ nsCrypto::GenerateCRMFRequest(nsIDOMCRMFObject** aReturn)
   JSAutoByteString jsCallback(cx, jsString);
   NS_ENSURE_TRUE(!!jsCallback, NS_ERROR_OUT_OF_MEMORY);
 
-  nrv = xpc->WrapNative(cx, ::JS_GetGlobalObject(cx),
+  nrv = xpc->WrapNative(cx, JS_GetGlobalForScopeChain(cx),
                         static_cast<nsIDOMCrypto *>(this),
                         NS_GET_IID(nsIDOMCrypto), getter_AddRefs(holder));
   NS_ENSURE_SUCCESS(nrv, nrv);
