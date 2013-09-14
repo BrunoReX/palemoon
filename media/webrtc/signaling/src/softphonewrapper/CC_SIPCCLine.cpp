@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "CSFLog.h"
+
 #include "CC_Common.h"
 
 #include "CC_SIPCCLine.h"
@@ -17,8 +19,6 @@ extern "C"
 using namespace std;
 using namespace CSF;
 
-#include "CSFLog.h"
-
 CSF_IMPLEMENT_WRAP(CC_SIPCCLine, cc_lineid_t);
 
 cc_lineid_t CC_SIPCCLine::getID()
@@ -29,7 +29,7 @@ cc_lineid_t CC_SIPCCLine::getID()
 CC_LineInfoPtr CC_SIPCCLine::getLineInfo ()
 {
     cc_lineinfo_ref_t lineInfoRef = CCAPI_Line_getLineInfo(lineId);
-    CC_LineInfoPtr lineInfoPtr = CC_SIPCCLineInfo::wrap(lineInfoRef);
+    CC_LineInfoPtr lineInfoPtr = CC_SIPCCLineInfo::wrap(lineInfoRef).get();
 
     //A call to CCAPI_Line_getLineInfo() needs a matching call to CCAPI_Line_releaseLineInfo()
     //However, the CC_SIPCCLineInfo() ctor/dtor does a retain/release internally, so I need to explicitly release
@@ -49,7 +49,7 @@ CC_CallPtr CC_SIPCCLine::createCall ()
 {
     cc_call_handle_t callHandle = CCAPI_Line_CreateCall(lineId);
 
-    return CC_SIPCCCall::wrap(callHandle);
+    return CC_SIPCCCall::wrap(callHandle).get();
 }
 
 

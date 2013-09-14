@@ -1,34 +1,30 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=79 ft=cpp:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef String_h_
-#define String_h_
+#ifndef vm_String_h
+#define vm_String_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/GuardObjects.h"
+#include "mozilla/PodOperations.h"
 
 #include "jsapi.h"
-#include "jsatom.h"
 #include "jsfriendapi.h"
 #include "jsstr.h"
 
 #include "gc/Barrier.h"
 #include "gc/Heap.h"
+#include "js/CharacterEncoding.h"
+#include "js/RootingAPI.h"
 
-class JSString;
 class JSDependentString;
-class JSUndependedString;
 class JSExtensibleString;
 class JSExternalString;
-class JSLinearString;
-class JSStableString;
 class JSInlineString;
+class JSStableString;
+class JSString;
 class JSRope;
-class JSAtom;
 
 namespace js {
 
@@ -235,7 +231,7 @@ class JSString : public js::gc::Cell
      * representable by a JSString. An allocation overflow is reported if false
      * is returned.
      */
-    static inline bool validateLength(JSContext *cx, size_t length);
+    static inline bool validateLength(JSContext *maybecx, size_t length);
 
     static void staticAsserts() {
         JS_STATIC_ASSERT(JS_BITS_PER_WORD >= 32);
@@ -270,6 +266,7 @@ class JSString : public js::gc::Cell
 
     inline const jschar *getChars(JSContext *cx);
     inline const jschar *getCharsZ(JSContext *cx);
+    inline bool getChar(JSContext *cx, size_t index, jschar *code);
 
     /* Fallible conversions to more-derived string types. */
 
@@ -411,9 +408,12 @@ class JSString : public js::gc::Cell
         return offsetof(JSString, d.u1.chars);
     }
 
+    JS::Zone *zone() const { return tenuredZone(); }
+    js::gc::AllocKind getAllocKind() const { return tenuredGetAllocKind(); }
+
     static inline void writeBarrierPre(JSString *str);
     static inline void writeBarrierPost(JSString *str, void *addr);
-    static inline bool needWriteBarrierPre(JSCompartment *comp);
+    static inline bool needWriteBarrierPre(JS::Zone *zone);
     static inline void readBarrier(JSString *str);
 
     static inline js::ThingRootKind rootKind() { return js::THING_ROOT_STRING; }
@@ -442,8 +442,11 @@ class JSRope : public JSString
     void init(JSString *left, JSString *right, size_t length);
 
   public:
-    static inline JSRope *new_(JSContext *cx, js::HandleString left,
-                               js::HandleString right, size_t length);
+    template <js::AllowGC allowGC>
+    static inline JSRope *new_(JSContext *cx,
+                               typename js::MaybeRooted<JSString*, allowGC>::HandleType left,
+                               typename js::MaybeRooted<JSString*, allowGC>::HandleType right,
+                               size_t length);
 
     inline JSString *leftChild() const {
         JS_ASSERT(isRope());
@@ -456,6 +459,13 @@ class JSRope : public JSString
     }
 
     inline void markChildren(JSTracer *trc);
+
+    inline static size_t offsetOfLeft() {
+        return offsetof(JSRope, d.u1.left);
+    }
+    inline static size_t offsetOfRight() {
+        return offsetof(JSRope, d.s.u2.right);
+    }
 };
 
 JS_STATIC_ASSERT(sizeof(JSRope) == sizeof(JSString));
@@ -474,6 +484,11 @@ class JSLinearString : public JSString
     const jschar *chars() const {
         JS_ASSERT(JSString::isLinear());
         return d.u1.chars;
+    }
+
+    JS::TwoByteChars range() const {
+        JS_ASSERT(JSString::isLinear());
+        return JS::TwoByteChars(d.u1.chars, length());
     }
 };
 
@@ -547,6 +562,7 @@ class JSStableString : public JSFlatString
     void init(const jschar *chars, size_t length);
 
   public:
+    template <js::AllowGC allowGC>
     static inline JSStableString *new_(JSContext *cx, const jschar *chars, size_t length);
 
     JS_ALWAYS_INLINE
@@ -554,12 +570,18 @@ class JSStableString : public JSFlatString
         JS_ASSERT(!JSString::isInline());
         return JS::StableCharPtr(d.u1.chars, length());
     }
+
+    JS_ALWAYS_INLINE
+    JS::StableTwoByteChars range() const {
+        JS_ASSERT(!JSString::isInline());
+        return JS::StableTwoByteChars(d.u1.chars, length());
+    }
 };
 
 JS_STATIC_ASSERT(sizeof(JSStableString) == sizeof(JSString));
 
 #if !(defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING))
-namespace js {
+namespace JS {
 /*
  * Specialization of Rooted<T> to explicitly root the string rather than
  * relying on conservative stack scanning.
@@ -597,7 +619,7 @@ class Rooted<JSStableString *>
 
     Rooted & operator =(JSStableString *value)
     {
-        JS_ASSERT(!RootMethods<JSStableString *>::poisoned(value));
+        JS_ASSERT(!js::GCMethods<JSStableString *>::poisoned(value));
         rooter.setString(value);
         return *this;
     }
@@ -637,6 +659,7 @@ class JSInlineString : public JSFlatString
     static const size_t MAX_INLINE_LENGTH = NUM_INLINE_CHARS - 1;
 
   public:
+    template <js::AllowGC allowGC>
     static inline JSInlineString *new_(JSContext *cx);
 
     inline jschar *init(size_t length);
@@ -647,6 +670,10 @@ class JSInlineString : public JSFlatString
 
     static bool lengthFits(size_t length) {
         return length <= MAX_INLINE_LENGTH;
+    }
+
+    static size_t offsetOfInlineStorage() {
+        return offsetof(JSInlineString, d.inlineStorage);
     }
 };
 
@@ -668,6 +695,7 @@ class JSShortString : public JSInlineString
     jschar inlineStorageExtension[INLINE_EXTENSION_CHARS];
 
   public:
+    template <js::AllowGC allowGC>
     static inline JSShortString *new_(JSContext *cx);
 
     static const size_t MAX_SHORT_LENGTH = JSString::NUM_INLINE_CHARS +
@@ -751,9 +779,9 @@ class StaticStrings
     JSAtom *length2StaticTable[NUM_SMALL_CHARS * NUM_SMALL_CHARS];
 
     void clear() {
-        PodArrayZero(unitStaticTable);
-        PodArrayZero(length2StaticTable);
-        PodArrayZero(intStaticTable);
+        mozilla::PodArrayZero(unitStaticTable);
+        mozilla::PodArrayZero(length2StaticTable);
+        mozilla::PodArrayZero(intStaticTable);
     }
 
   public:
@@ -815,8 +843,8 @@ class StaticStrings
  *   - uint32_t indexes,
  *   - PropertyName strings which don't encode uint32_t indexes, and
  *   - jsspecial special properties (non-ES5 properties like object-valued
- *     jsids, JSID_EMPTY, JSID_VOID, E4X's default XML namespace, and maybe in
- *     the future Harmony-proposed private names).
+ *     jsids, JSID_EMPTY, JSID_VOID, and maybe in the future Harmony-proposed
+ *     private names).
  */
 class PropertyName : public JSAtom
 {};
@@ -856,16 +884,48 @@ class AutoNameVector : public AutoVectorRooter<PropertyName *>
 JS_ALWAYS_INLINE const jschar *
 JSString::getChars(JSContext *cx)
 {
-    JS::AutoAssertNoGC nogc;
     if (JSLinearString *str = ensureLinear(cx))
         return str->chars();
     return NULL;
 }
 
+JS_ALWAYS_INLINE bool
+JSString::getChar(JSContext *cx, size_t index, jschar *code)
+{
+    JS_ASSERT(index < length());
+
+    /*
+     * Optimization for one level deep ropes.
+     * This is common for the following pattern:
+     *
+     * while() {
+     *   text = text.substr(0, x) + "bla" + text.substr(x)
+     *   test.charCodeAt(x + 1)
+     * }
+     */
+    const jschar *chars;
+    if (isRope()) {
+        JSRope *rope = &asRope();
+        if (uint32_t(index) < rope->leftChild()->length()) {
+            chars = rope->leftChild()->getChars(cx);
+        } else {
+            chars = rope->rightChild()->getChars(cx);
+            index -= rope->leftChild()->length();
+        }
+    } else {
+        chars = getChars(cx);
+    }
+
+    if (!chars)
+        return false;
+
+    *code = chars[index];
+    return true;
+}
+
 JS_ALWAYS_INLINE const jschar *
 JSString::getCharsZ(JSContext *cx)
 {
-    JS::AutoAssertNoGC nogc;
     if (JSFlatString *str = ensureFlat(cx))
         return str->chars();
     return NULL;
@@ -874,7 +934,6 @@ JSString::getCharsZ(JSContext *cx)
 JS_ALWAYS_INLINE JSLinearString *
 JSString::ensureLinear(JSContext *cx)
 {
-    JS::AutoAssertNoGC nogc;
     return isLinear()
            ? &asLinear()
            : asRope().flatten(cx);
@@ -883,7 +942,6 @@ JSString::ensureLinear(JSContext *cx)
 JS_ALWAYS_INLINE JSFlatString *
 JSString::ensureFlat(JSContext *cx)
 {
-    JS::AutoAssertNoGC nogc;
     return isFlat()
            ? &asFlat()
            : isDependent()
@@ -894,7 +952,6 @@ JSString::ensureFlat(JSContext *cx)
 JS_ALWAYS_INLINE JSStableString *
 JSString::ensureStable(JSContext *maybecx)
 {
-    JS::AutoAssertNoGC nogc;
     if (isRope()) {
         JSFlatString *flat = asRope().flatten(maybecx);
         if (!flat)
@@ -935,4 +992,4 @@ JSAtom::asPropertyName()
     return static_cast<js::PropertyName *>(this);
 }
 
-#endif
+#endif /* vm_String_h */

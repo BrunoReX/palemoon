@@ -16,10 +16,16 @@
 #include "nsDOMEventTargetHelper.h"
 
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/FileHandleBinding.h"
+#include "mozilla/dom/FileModeBinding.h"
 
 class nsIDOMFile;
 class nsIFileStorage;
+
+namespace mozilla {
+namespace dom {
+class DOMRequest;
+} // namespace dom
+} // namespace mozilla
 
 BEGIN_FILE_NAMESPACE
 
@@ -50,8 +56,8 @@ public:
   {
     return GetOwner();
   }
-  virtual JSObject* WrapObject(JSContext* aCx, JSObject* aScope,
-                               bool* aTriedToWrap) MOZ_OVERRIDE;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
 
   void GetName(nsString& aName) const
   {
@@ -62,7 +68,7 @@ public:
     aType = mType;
   }
   already_AddRefed<nsIDOMLockedFile> Open(FileMode aMode, ErrorResult& aError);
-  already_AddRefed<nsIDOMDOMRequest> GetFile(ErrorResult& aError);
+  already_AddRefed<DOMRequest> GetFile(ErrorResult& aError);
   IMPL_EVENT_HANDLER(abort)
   IMPL_EVENT_HANDLER(error)
 

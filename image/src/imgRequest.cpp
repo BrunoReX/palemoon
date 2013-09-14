@@ -7,17 +7,11 @@
 #include "imgRequest.h"
 #include "ImageLogging.h"
 
-/* We end up pulling in windows.h because we eventually hit gfxWindowsSurface;
- * windows.h defines LoadImage, so we have to #undef it or imgLoader::LoadImage
- * gets changed.
- * This #undef needs to be in multiple places because we don't always pull
- * headers in in the same order.
- */
-#undef LoadImage
-
 #include "imgLoader.h"
 #include "imgRequestProxy.h"
+#include "imgStatusTracker.h"
 #include "ImageFactory.h"
+#include "Image.h"
 
 #include "imgILoader.h"
 
@@ -31,6 +25,7 @@
 #include "nsIHttpChannel.h"
 #include "nsIApplicationCache.h"
 #include "nsIApplicationCacheChannel.h"
+#include "nsMimeTypes.h"
 
 #include "nsIComponentManager.h"
 #include "nsIInterfaceRequestorUtils.h"
@@ -205,7 +200,7 @@ nsresult imgRequest::RemoveProxy(imgRequestProxy *proxy, nsresult aStatus)
       NS_ABORT_IF_FALSE(mURI, "Removing last observer without key uri.");
 
       mLoader->SetHasNoProxies(mURI, mCacheEntry);
-    } 
+    }
 #if defined(PR_LOGGING)
     else {
       nsAutoCString spec;
@@ -342,15 +337,8 @@ void imgRequest::SetIsInCache(bool incache)
 
 void imgRequest::UpdateCacheEntrySize()
 {
-  if (mCacheEntry) {
+  if (mCacheEntry)
     mCacheEntry->SetDataSize(mImage->SizeOfData());
-
-#ifdef DEBUG_joe
-    nsAutoCString url;
-    mURI->GetSpec(url);
-    printf("CACHEPUT: %d %s %d\n", time(NULL), url.get(), imageSize);
-#endif
-  }
 }
 
 void imgRequest::SetCacheValidation(imgCacheEntry* aCacheEntry, nsIRequest* aRequest)
@@ -601,11 +589,6 @@ NS_IMETHODIMP imgRequest::OnStopRequest(nsIRequest *aRequest, nsISupports *ctxt,
 {
   LOG_FUNC(GetImgLog(), "imgRequest::OnStopRequest");
 
-  bool lastPart = true;
-  nsCOMPtr<nsIMultiPartChannel> mpchan(do_QueryInterface(aRequest));
-  if (mpchan)
-    mpchan->GetIsLastPart(&lastPart);
-
   // XXXldb What if this is a non-last part of a multipart request?
   // xxx before we release our reference to mRequest, lets
   // save the last status that we saw so that the
@@ -621,11 +604,16 @@ NS_IMETHODIMP imgRequest::OnStopRequest(nsIRequest *aRequest, nsISupports *ctxt,
     mChannel = nullptr;
   }
 
+  bool lastPart = true;
+  nsCOMPtr<nsIMultiPartChannel> mpchan(do_QueryInterface(aRequest));
+  if (mpchan)
+    mpchan->GetIsLastPart(&lastPart);
+
   // Tell the image that it has all of the source data. Note that this can
   // trigger a failure, since the image might be waiting for more non-optional
   // data and this is the point where we break the news that it's not coming.
   if (mImage) {
-    nsresult rv = mImage->OnImageDataComplete(aRequest, ctxt, status);
+    nsresult rv = mImage->OnImageDataComplete(aRequest, ctxt, status, lastPart);
 
     // If we got an error in the OnImageDataComplete() call, we don't want to
     // proceed as if nothing bad happened. However, we also want to give
@@ -634,9 +622,6 @@ NS_IMETHODIMP imgRequest::OnStopRequest(nsIRequest *aRequest, nsISupports *ctxt,
     if (NS_FAILED(rv) && NS_SUCCEEDED(status))
       status = rv;
   }
-
-  imgStatusTracker& statusTracker = GetStatusTracker();
-  statusTracker.RecordStopRequest(lastPart, status);
 
   // If the request went through, update the cache entry size. Otherwise,
   // cancel the request, which removes us from the cache.
@@ -650,7 +635,12 @@ NS_IMETHODIMP imgRequest::OnStopRequest(nsIRequest *aRequest, nsISupports *ctxt,
     this->Cancel(status);
   }
 
-  GetStatusTracker().OnStopRequest(lastPart, status);
+  if (!mImage) {
+    // We have to fire imgStatusTracker::OnStopRequest ourselves because there's
+    // no image capable of doing so.
+    imgStatusTracker& statusTracker = GetStatusTracker();
+    statusTracker.OnStopRequest(lastPart, status);
+  }
 
   mTimedChannel = nullptr;
   return NS_OK;
@@ -694,10 +684,6 @@ imgRequest::OnDataAvailable(nsIRequest *aRequest, nsISupports *ctxt,
     uint32_t out;
     inStr->ReadSegments(sniff_mimetype_callback, &closure, count, &out);
 
-#ifdef DEBUG
-    /* NS_WARNING if the content type from the channel isn't the same if the sniffing */
-#endif
-
     nsCOMPtr<nsIChannel> chan(do_QueryInterface(aRequest));
     if (newType.IsEmpty()) {
       LOG_SCOPE(GetImgLog(), "imgRequest::OnDataAvailable |sniffing of mimetype failed|");
@@ -720,13 +706,24 @@ imgRequest::OnDataAvailable(nsIRequest *aRequest, nsISupports *ctxt,
       LOG_MSG(GetImgLog(), "imgRequest::OnDataAvailable", "Got content type from the channel");
     }
 
+#ifdef MOZ_WBMP
+#ifdef MOZ_WIDGET_GONK
+    // Only support WBMP in privileged app and certified app, do not support in browser app.
+    if (newType.EqualsLiteral(IMAGE_WBMP) &&
+        (!mLoadingPrincipal || mLoadingPrincipal->GetAppStatus() < nsIPrincipal::APP_STATUS_PRIVILEGED)) {
+      this->Cancel(NS_ERROR_FAILURE);
+      return NS_BINDING_ABORTED;
+    }
+#endif
+#endif
+
     // If we're a regular image and this is the first call to OnDataAvailable,
     // this will always be true. If we've resniffed our MIME type (i.e. we're a
     // multipart/x-mixed-replace image), we have to be able to switch our image
     // type and decoder.
     // We always reinitialize for SVGs, because they have no way of
     // reinitializing themselves.
-    if (mContentType != newType || newType.Equals(SVG_MIMETYPE)) {
+    if (mContentType != newType || newType.EqualsLiteral(IMAGE_SVG_XML)) {
       mContentType = newType;
 
       // If we've resniffed our MIME type and it changed, we need to create a
@@ -834,7 +831,7 @@ imgRequest::GetInterface(const nsIID & aIID, void **aResult)
   if (!mPrevChannelSink || aIID.Equals(NS_GET_IID(nsIChannelEventSink)))
     return QueryInterface(aIID, aResult);
 
-  NS_ASSERTION(mPrevChannelSink != this, 
+  NS_ASSERTION(mPrevChannelSink != this,
                "Infinite recursion - don't keep track of channel sinks that are us!");
   return mPrevChannelSink->GetInterface(aIID, aResult);
 }

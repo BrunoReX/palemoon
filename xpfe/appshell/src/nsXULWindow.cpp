@@ -4,8 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/MathAlgorithms.h"
+
 // Local includes
 #include "nsXULWindow.h"
+#include <algorithm>
 
 // Helper classes
 #include "nsPrintfCString.h"
@@ -22,11 +25,9 @@
 #include "nsIServiceManager.h"
 #include "nsIContentViewer.h"
 #include "nsIDocument.h"
-#include "nsIDOMBarProp.h"
 #include "nsIDOMDocument.h"
 #include "nsIDOMXULDocument.h"
 #include "nsIDOMElement.h"
-#include "nsIDOMEventTarget.h"
 #include "nsIDOMXULElement.h"
 #include "nsPIDOMWindow.h"
 #include "nsIDOMScreen.h"
@@ -34,7 +35,6 @@
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIIOService.h"
-#include "nsIJSContextStack.h"
 #include "nsIMarkupDocumentViewer.h"
 #include "nsIObserverService.h"
 #include "nsIWindowMediator.h"
@@ -50,13 +50,15 @@
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "nsWebShellWindow.h" // get rid of this one, too...
+#include "nsDOMEvent.h"
+#include "nsGlobalWindow.h"
 
 #include "prenv.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/dom/BarProps.h"
 #include "mozilla/dom/Element.h"
-#include <cstdlib> // for std::abs(int/long)
-#include <cmath> // for std::abs(float/double)
 
 using namespace mozilla;
 
@@ -208,12 +210,10 @@ NS_IMETHODIMP nsXULWindow::SetZLevel(uint32_t aLevel)
 
   /* refuse to raise a maximized window above the normal browser level,
      for fear it could hide newly opened browser windows */
-  if (aLevel > nsIXULWindow::normalZ) {
-    int32_t sizeMode;
-    if (mWindow) {
-      mWindow->GetSizeMode(&sizeMode);
-      if (sizeMode == nsSizeMode_Maximized || sizeMode == nsSizeMode_Fullscreen)
-        return NS_ERROR_FAILURE;
+  if (aLevel > nsIXULWindow::normalZ && mWindow) {
+    int32_t sizeMode = mWindow->SizeMode();
+    if (sizeMode == nsSizeMode_Maximized || sizeMode == nsSizeMode_Fullscreen) {
+      return NS_ERROR_FAILURE;
     }
   }
 
@@ -225,20 +225,17 @@ NS_IMETHODIMP nsXULWindow::SetZLevel(uint32_t aLevel)
   nsCOMPtr<nsIContentViewer> cv;
   mDocShell->GetContentViewer(getter_AddRefs(cv));
   if (cv) {
-    nsCOMPtr<nsIDOMDocument> domDoc = do_QueryInterface(cv->GetDocument());
-    if (domDoc) {
-      nsCOMPtr<nsIDOMEvent> event;
-      domDoc->CreateEvent(NS_LITERAL_STRING("Events"), getter_AddRefs(event));
+    nsCOMPtr<nsIDocument> doc = cv->GetDocument();
+    if (doc) {
+      ErrorResult rv;
+      nsRefPtr<nsDOMEvent> event = doc->CreateEvent(NS_LITERAL_STRING("Events"),rv);
       if (event) {
         event->InitEvent(NS_LITERAL_STRING("windowZLevel"), true, false);
 
         event->SetTrusted(true);
 
-        nsCOMPtr<nsIDOMEventTarget> targ = do_QueryInterface(domDoc);
-        if (targ) {
-          bool defaultActionEnabled;
-          targ->DispatchEvent(event, &defaultActionEnabled);
-        }
+        bool defaultActionEnabled;
+        doc->DispatchEvent(event, &defaultActionEnabled);
       }
     }
   }
@@ -359,16 +356,14 @@ NS_IMETHODIMP nsXULWindow::ShowModal()
   mContinueModalLoop = true;
   EnableParent(false);
 
-  nsCOMPtr<nsIJSContextStack> stack(do_GetService("@mozilla.org/js/xpc/ContextStack;1"));
-  if (stack && NS_SUCCEEDED(stack->Push(nullptr))) {
+  {
+    nsCxPusher pusher;
+    pusher.PushNull();
     nsIThread *thread = NS_GetCurrentThread();
     while (mContinueModalLoop) {
       if (!NS_ProcessNextEvent(thread))
         break;
     }
-    JSContext* cx;
-    stack->Pop(&cx);
-    NS_ASSERTION(cx == nullptr, "JSContextStack mismatch");
   }
 
   mContinueModalLoop = false;
@@ -1137,7 +1132,7 @@ bool nsXULWindow::LoadSizeFromXUL()
   if (NS_SUCCEEDED(rv)) {
     temp = sizeString.ToInteger(&errorCode);
     if (NS_SUCCEEDED(errorCode) && temp > 0) {
-      specWidth = NS_MAX(temp, 100);
+      specWidth = std::max(temp, 100);
       gotSize = true;
     }
   }
@@ -1145,7 +1140,7 @@ bool nsXULWindow::LoadSizeFromXUL()
   if (NS_SUCCEEDED(rv)) {
     temp = sizeString.ToInteger(&errorCode);
     if (NS_SUCCEEDED(errorCode) && temp > 0) {
-      specHeight = NS_MAX(temp, 100);
+      specHeight = std::max(temp, 100);
       gotSize = true;
     }
   }
@@ -1252,7 +1247,7 @@ bool nsXULWindow::LoadMiscPersistentAttributesFromXUL()
   rv = windowElement->GetAttribute(ZLEVEL_ATTRIBUTE, stateString);
   if (NS_SUCCEEDED(rv) && stateString.Length() > 0) {
     nsresult errorCode;
-    uint32_t zLevel = stateString.ToInteger(&errorCode);
+    int32_t zLevel = stateString.ToInteger(&errorCode);
     if (NS_SUCCEEDED(errorCode) && zLevel >= lowestZ && zLevel <= highestZ)
       SetZLevel(zLevel);
   }
@@ -1269,7 +1264,7 @@ void nsXULWindow::StaggerPosition(int32_t &aRequestedX, int32_t &aRequestedY,
                                   int32_t aSpecWidth, int32_t aSpecHeight)
 {
   const int32_t kOffset = 22;
-  const int32_t kSlop   = 4;
+  const uint32_t kSlop  = 4;
 
   nsresult rv;
   bool     keepTrying;
@@ -1348,8 +1343,7 @@ void nsXULWindow::StaggerPosition(int32_t &aRequestedX, int32_t &aRequestedY,
           listY = NSToIntRound(listY / scale);
         }
 
-        if (std::abs(listX - aRequestedX) <= kSlop &&
-            std::abs(listY - aRequestedY) <= kSlop) {
+        if (Abs(listX - aRequestedX) <= kSlop && Abs(listY - aRequestedY) <= kSlop) {
           // collision! offset and start over
           if (bouncedX & 0x1)
             aRequestedX -= kOffset;
@@ -1466,12 +1460,11 @@ NS_IMETHODIMP nsXULWindow::SavePersistentAttributes()
     return NS_OK;
   }
 
-  int32_t x, y, cx, cy;
-  int32_t sizeMode;
-
   // get our size, position and mode to persist
+  int32_t x, y, cx, cy;
   NS_ENSURE_SUCCESS(GetPositionAndSize(&x, &y, &cx, &cy), NS_ERROR_FAILURE);
-  mWindow->GetSizeMode(&sizeMode);
+
+  int32_t sizeMode = mWindow->SizeMode();
   double scale = mWindow->GetDefaultScale();
 
   // make our position relative to our parent, if any
@@ -1493,8 +1486,8 @@ NS_IMETHODIMP nsXULWindow::SavePersistentAttributes()
     nsCOMPtr<nsIDOMDocument> ownerDoc;
     docShellElement->GetOwnerDocument(getter_AddRefs(ownerDoc));
     ownerXULDoc = do_QueryInterface(ownerDoc);
-    nsCOMPtr<nsIDOMXULElement> XULElement(do_QueryInterface(docShellElement));
-    if (XULElement)
+    nsCOMPtr<mozilla::dom::Element> XULElement(do_QueryInterface(docShellElement));
+    if (XULElement && XULElement->IsXUL())
       XULElement->GetId(windowElementId);
   }
 
@@ -1720,8 +1713,8 @@ NS_IMETHODIMP nsXULWindow::SizeShellTo(nsIDocShellTreeItem* aShellItem,
     // desired docshell size --- that's not likely to work. This whole
     // function assumes that the outer docshell is adding some constant
     // "border" chrome to aShellItem.
-    winCX = NS_MAX(winCX + widthDelta, aCX);
-    winCY = NS_MAX(winCY + heightDelta, aCY);
+    winCX = std::max(winCX + widthDelta, aCX);
+    winCY = std::max(winCY + heightDelta, aCY);
     SetSize(winCX, winCY, true);
   }
 
@@ -1799,8 +1792,7 @@ NS_IMETHODIMP nsXULWindow::CreateNewContentWindow(int32_t aChromeFlags,
   // it to make things work right, so push a null cx. See bug 799348 comment 13
   // for a description of what happens when we don't.
   nsCxPusher pusher;
-  if (!pusher.PushNull())
-    return NS_ERROR_FAILURE;
+  pusher.PushNull();
   nsCOMPtr<nsIXULWindow> newWindow;
   appShell->CreateTopLevelWindow(this, uri,
                                  aChromeFlags, 615, 480,
@@ -1816,17 +1808,15 @@ NS_IMETHODIMP nsXULWindow::CreateNewContentWindow(int32_t aChromeFlags,
   xulWin->LockUntilChromeLoad();
 
   // Push nullptr onto the JSContext stack before we dispatch a native event.
-  nsCOMPtr<nsIJSContextStack> stack(do_GetService("@mozilla.org/js/xpc/ContextStack;1"));
-  if (stack && NS_SUCCEEDED(stack->Push(nullptr))) {
+  {
+    nsCxPusher pusher;
+    pusher.PushNull();
     nsIThread *thread = NS_GetCurrentThread();
     while (xulWin->IsLocked()) {
       if (!NS_ProcessNextEvent(thread))
         break;
     }
-    JSContext *cx;
-    stack->Pop(&cx);
-    NS_ASSERTION(cx == nullptr, "JSContextStack mismatch");
-  }
+ }
 
   NS_ENSURE_STATE(xulWin->mPrimaryContentShell);
 
@@ -1992,12 +1982,14 @@ void nsXULWindow::PlaceWindowLayersBehind(uint32_t aLowLevel,
 
 void nsXULWindow::SetContentScrollbarVisibility(bool aVisible)
 {
-  nsCOMPtr<nsIDOMWindow> contentWin(do_GetInterface(mPrimaryContentShell));
+  nsCOMPtr<nsPIDOMWindow> contentWin(do_GetInterface(mPrimaryContentShell));
   if (contentWin) {
-    nsCOMPtr<nsIDOMBarProp> scrollbars;
-    contentWin->GetScrollbars(getter_AddRefs(scrollbars));
-    if (scrollbars)
-      scrollbars->SetVisible(aVisible);
+    nsRefPtr<nsGlobalWindow> window = static_cast<nsGlobalWindow*>(contentWin.get());
+    nsRefPtr<mozilla::dom::BarProp> scrollbars = window->Scrollbars();
+    if (scrollbars) {
+      mozilla::ErrorResult rv;
+      scrollbars->SetVisible(aVisible, rv);
+    }
   }
 }
 

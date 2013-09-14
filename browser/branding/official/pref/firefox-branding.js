@@ -7,11 +7,13 @@ pref("app.update.interval", 172800);
 pref("app.update.auto", false);
 pref("app.update.enabled", true);
 // URL for update checks, re-enabled on palemoon.org (369)
-pref("app.update.url", "http://www.palemoon.org/update/%VERSION%/update.xml");
+pref("app.update.url", "http://www.palemoon.org/update/%VERSION%/%BUILD_TARGET%/update.xml");
 pref("app.update.promptWaitTime", 86400); 
 // The time interval between the downloading of mar file chunks in the
 // background (in seconds)
 pref("app.update.download.backgroundInterval", 600);
+// Give the user x seconds to react before showing the big UI. default=48 hours
+pref("app.update.promptWaitTime", 172800);
 // URL user can browse to manually if for some reason all update installation
 // attempts fail.
 pref("app.update.url.manual", "http://www.palemoon.org/");
@@ -43,8 +45,8 @@ pref("extensions.blocklist.url", "https://addons.mozilla.org/blocklist/3/firefox
 pref("extensions.webservice.discoverURL","https://services.addons.mozilla.org/%LOCALE%/firefox/discovery/pane/%VERSION%/%OS%");
 pref("extensions.getAddons.get.url","https://services.addons.mozilla.org/%LOCALE%/firefox/api/%API_VERSION%/search/guid:%IDS%?src=firefox&appOS=%OS%&appVersion=%VERSION%&tMain=%TIME_MAIN%&tFirstPaint=%TIME_FIRST_PAINT%&tSessionRestored=%TIME_SESSION_RESTORED%");
 //Add-on updates: hard-code base Firefox version number.
-pref("extensions.update.background.url","https://versioncheck-bg.addons.mozilla.org/update/VersionCheck.php?reqVersion=%REQ_VERSION%&id=%ITEM_ID%&version=%ITEM_VERSION%&maxAppVersion=%ITEM_MAXAPPVERSION%&status=%ITEM_STATUS%&appID=%APP_ID%&appVersion=20.0&appOS=%APP_OS%&appABI=%APP_ABI%&locale=%APP_LOCALE%&currentAppVersion=%CURRENT_APP_VERSION%&updateType=%UPDATE_TYPE%&compatMode=%COMPATIBILITY_MODE%");
-pref("extensions.update.url","https://versioncheck.addons.mozilla.org/update/VersionCheck.php?reqVersion=%REQ_VERSION%&id=%ITEM_ID%&version=%ITEM_VERSION%&maxAppVersion=%ITEM_MAXAPPVERSION%&status=%ITEM_STATUS%&appID=%APP_ID%&appVersion=20.0&appOS=%APP_OS%&appABI=%APP_ABI%&locale=%APP_LOCALE%&currentAppVersion=%CURRENT_APP_VERSION%&updateType=%UPDATE_TYPE%&compatMode=%COMPATIBILITY_MODE%");
+pref("extensions.update.background.url","https://versioncheck-bg.addons.mozilla.org/update/VersionCheck.php?reqVersion=%REQ_VERSION%&id=%ITEM_ID%&version=%ITEM_VERSION%&maxAppVersion=%ITEM_MAXAPPVERSION%&status=%ITEM_STATUS%&appID=%APP_ID%&appVersion=24.0&appOS=%APP_OS%&appABI=%APP_ABI%&locale=%APP_LOCALE%&currentAppVersion=%CURRENT_APP_VERSION%&updateType=%UPDATE_TYPE%&compatMode=%COMPATIBILITY_MODE%");
+pref("extensions.update.url","https://versioncheck.addons.mozilla.org/update/VersionCheck.php?reqVersion=%REQ_VERSION%&id=%ITEM_ID%&version=%ITEM_VERSION%&maxAppVersion=%ITEM_MAXAPPVERSION%&status=%ITEM_STATUS%&appID=%APP_ID%&appVersion=24.0&appOS=%APP_OS%&appABI=%APP_ABI%&locale=%APP_LOCALE%&currentAppVersion=%CURRENT_APP_VERSION%&updateType=%UPDATE_TYPE%&compatMode=%COMPATIBILITY_MODE%");
 //Search engine fixes
 pref("browser.search.searchEnginesURL", "https://addons.mozilla.org/%LOCALE%/firefox/search-engines/");
 //Safebrowsing URL fixes
@@ -64,6 +66,12 @@ pref("browser.search.param.ms-pc", "MOZI");
 pref("browser.search.param.yahoo-fr", "moz35");
 pref("browser.search.param.yahoo-fr-cjkt", "moz35"); // now unused
 pref("browser.search.param.yahoo-fr-ja", "mozff");
+
+// ****************** Extensions/plugins ******************
+
+pref("plugins.click_to_play"  , true); //Enable tri-state option (Always/Never/Ask)
+pref("plugin.default.state", 2); //Allow plugins to run by default
+pref("plugin.expose_full_path", true); //Security: expose the full path to the plugin
 
 // ****************** Networking config ******************
 
@@ -133,7 +141,7 @@ pref("browser.altClickSave", true); //SBaD,M! (#2)
 //plugin kill timeout
 pref("dom.ipc.plugins.timeoutSecs", 20);
 
-//give people a choice for add-on updates.
+//Give people a choice for add-on updates.
 pref("extensions.update.autoUpdateDefault", false);
 
 //cache handling 1GB -> 250MB by default, disable automatic
@@ -160,8 +168,11 @@ pref("dom.disable_window_status_change", false); //Allow status feedback by defa
 pref("dom.max_chrome_script_run_time", 90); //Some addons need ample time!
 pref("dom.max_script_run_time", 20); //Should be plenty for a page script to do what it needs
 
+//Media components
+pref("media.webaudio.enabled", true);
+
 //Image decoding tweaks
-pref("image.mem.max_ms_before_yield", 250);
+pref("image.mem.max_ms_before_yield", 20);
 
 //store sessions less frequently to prevent redundant mem usage by storing too much
 pref("browser.sessionstore.interval",60000); //every minute instead of every 10 seconds

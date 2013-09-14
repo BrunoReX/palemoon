@@ -21,6 +21,7 @@ function test()
     gDebugger = gPane.panelWin;
     gVariablesView = gDebugger.DebuggerView.Variables;
 
+    gDebugger.DebuggerView.toggleInstrumentsPane({ visible: true, animated: false });
     testVariablesView();
   });
 }
@@ -61,6 +62,9 @@ function testVariablesView()
     set someProp7(value) { arr[0] = value }
   };
 
+  gVariablesView.eval = function() {};
+  gVariablesView.switch = function() {};
+  gVariablesView.delete = function() {};
   gVariablesView.rawObject = test;
 
   testHierarchy();
@@ -70,7 +74,23 @@ function testVariablesView()
   testThirdLevelContents();
   testIntegrity(arr, obj);
 
-  closeDebuggerAndFinish();
+  let fooScope = gVariablesView.addScope("foo");
+  let anonymousVar = fooScope.addItem();
+
+  let anonymousScope = gVariablesView.addScope();
+  let barVar = anonymousScope.addItem("bar");
+  let bazProperty = barVar.addItem("baz");
+
+  testAnonymousHeaders(fooScope, anonymousVar, anonymousScope, barVar, bazProperty);
+  testPropertyInheritance(fooScope, anonymousVar, anonymousScope, barVar, bazProperty);
+
+  executeSoon(function() {
+    testKeyboardAccessibility(function() {
+      testClearHierarchy();
+
+      closeDebuggerAndFinish();
+    });
+  });
 }
 
 function testHierarchy() {
@@ -78,9 +98,9 @@ function testHierarchy() {
     "There should be 1 scope, 1 var, 1 proto, 8 props, 1 getter and 1 setter.");
 
   gScope = gVariablesView._currHierarchy.get("");
-  gVariable = gVariablesView._currHierarchy.get(".");
+  gVariable = gVariablesView._currHierarchy.get("[\"\"]");
 
-  is(gVariablesView._store.size, 1,
+  is(gVariablesView._store.length, 1,
     "There should be only one scope in the view");
   is(gScope._store.size, 1,
     "There should be only one variable in the scope");
@@ -97,18 +117,18 @@ function testHeader() {
   gScope.showHeader();
   gVariable.showHeader();
 
-  is(gScope.header, true,
-    "The scope title header should now be visible");
-  is(gVariable.header, true,
-    "The variable title header should now be visible");
+  is(gScope.header, false,
+    "The scope title header should still not be visible");
+  is(gVariable.header, false,
+    "The variable title header should still not be visible");
 
   gScope.hideHeader();
   gVariable.hideHeader();
 
   is(gScope.header, false,
-    "The scope title header should now be hidden");
+    "The scope title header should now still be hidden");
   is(gVariable.header, false,
-    "The variable title header should now be hidden");
+    "The variable title header should now still be hidden");
 }
 
 function testFirstLevelContents() {
@@ -472,6 +492,389 @@ function testIntegrity(arr, obj) {
   ok(obj.p6 instanceof Object, "The seventh object property should be an Object");
   is(obj.p6.prop1, 7, "The seventh object property should not have changed");
   is(obj.p6.prop2, 6, "The seventh object property should not have changed");
+}
+
+function testAnonymousHeaders(fooScope, anonymousVar, anonymousScope, barVar, bazProperty) {
+  is(fooScope.header, true,
+    "A named scope should have a header visible.");
+  is(fooScope.target.hasAttribute("non-header"), false,
+    "The non-header attribute should not be applied to scopes with headers.");
+
+  is(anonymousScope.header, false,
+    "An anonymous scope should have a header visible.");
+  is(anonymousScope.target.hasAttribute("non-header"), true,
+    "The non-header attribute should not be applied to scopes without headers.");
+
+  is(barVar.header, true,
+    "A named variable should have a header visible.");
+  is(barVar.target.hasAttribute("non-header"), false,
+    "The non-header attribute should not be applied to variables with headers.");
+
+  is(anonymousVar.header, false,
+    "An anonymous variable should have a header visible.");
+  is(anonymousVar.target.hasAttribute("non-header"), true,
+    "The non-header attribute should not be applied to variables without headers.");
+}
+
+function testPropertyInheritance(fooScope, anonymousVar, anonymousScope, barVar, bazProperty) {
+  is(fooScope.editableValueTooltip, gVariablesView.editableValueTooltip,
+    "The editableValueTooltip property should persist from the view to all scopes.");
+  is(fooScope.editableNameTooltip, gVariablesView.editableNameTooltip,
+    "The editableNameTooltip property should persist from the view to all scopes.");
+  is(fooScope.deleteButtonTooltip, gVariablesView.deleteButtonTooltip,
+    "The deleteButtonTooltip property should persist from the view to all scopes.");
+  is(fooScope.descriptorTooltip, gVariablesView.descriptorTooltip,
+    "The descriptorTooltip property should persist from the view to all scopes.");
+  is(fooScope.contextMenuId, gVariablesView.contextMenuId,
+    "The contextMenuId property should persist from the view to all scopes.");
+  is(fooScope.separatorStr, gVariablesView.separatorStr,
+    "The separatorStr property should persist from the view to all scopes.");
+  is(fooScope.eval, gVariablesView.eval,
+    "The eval property should persist from the view to all scopes.");
+  is(fooScope.switch, gVariablesView.switch,
+    "The switch property should persist from the view to all scopes.");
+  is(fooScope.delete, gVariablesView.delete,
+    "The delete property should persist from the view to all scopes.");
+  isnot(fooScope.eval, fooScope.switch,
+    "The eval and switch functions got mixed up in the scope.");
+  isnot(fooScope.switch, fooScope.delete,
+    "The eval and switch functions got mixed up in the scope.");
+
+  is(barVar.editableValueTooltip, gVariablesView.editableValueTooltip,
+    "The editableValueTooltip property should persist from the view to all variables.");
+  is(barVar.editableNameTooltip, gVariablesView.editableNameTooltip,
+    "The editableNameTooltip property should persist from the view to all variables.");
+  is(barVar.deleteButtonTooltip, gVariablesView.deleteButtonTooltip,
+    "The deleteButtonTooltip property should persist from the view to all variables.");
+  is(barVar.descriptorTooltip, gVariablesView.descriptorTooltip,
+    "The descriptorTooltip property should persist from the view to all variables.");
+  is(barVar.contextMenuId, gVariablesView.contextMenuId,
+    "The contextMenuId property should persist from the view to all variables.");
+  is(barVar.separatorStr, gVariablesView.separatorStr,
+    "The separatorStr property should persist from the view to all variables.");
+  is(barVar.eval, gVariablesView.eval,
+    "The eval property should persist from the view to all variables.");
+  is(barVar.switch, gVariablesView.switch,
+    "The switch property should persist from the view to all variables.");
+  is(barVar.delete, gVariablesView.delete,
+    "The delete property should persist from the view to all variables.");
+  isnot(barVar.eval, barVar.switch,
+    "The eval and switch functions got mixed up in the variable.");
+  isnot(barVar.switch, barVar.delete,
+    "The eval and switch functions got mixed up in the variable.");
+
+  is(bazProperty.editableValueTooltip, gVariablesView.editableValueTooltip,
+    "The editableValueTooltip property should persist from the view to all properties.");
+  is(bazProperty.editableNameTooltip, gVariablesView.editableNameTooltip,
+    "The editableNameTooltip property should persist from the view to all properties.");
+  is(bazProperty.deleteButtonTooltip, gVariablesView.deleteButtonTooltip,
+    "The deleteButtonTooltip property should persist from the view to all properties.");
+  is(bazProperty.descriptorTooltip, gVariablesView.descriptorTooltip,
+    "The descriptorTooltip property should persist from the view to all properties.");
+  is(bazProperty.contextMenuId, gVariablesView.contextMenuId,
+    "The contextMenuId property should persist from the view to all properties.");
+  is(bazProperty.separatorStr, gVariablesView.separatorStr,
+    "The separatorStr property should persist from the view to all properties.");
+  is(bazProperty.eval, gVariablesView.eval,
+    "The eval property should persist from the view to all properties.");
+  is(bazProperty.switch, gVariablesView.switch,
+    "The switch property should persist from the view to all properties.");
+  is(bazProperty.delete, gVariablesView.delete,
+    "The delete property should persist from the view to all properties.");
+  isnot(bazProperty.eval, bazProperty.switch,
+    "The eval and switch functions got mixed up in the property.");
+  isnot(bazProperty.switch, bazProperty.delete,
+    "The eval and switch functions got mixed up in the property.");
+}
+
+function testKeyboardAccessibility(callback) {
+  gDebugger.DebuggerView.Filtering._doVariablesFocus();
+  gDebugger.DebuggerView.Variables.pageSize = 5;
+
+  is(gVariablesView.getFocusedItem().name, "someProp0",
+    "The someProp0 item should be focused.");
+
+  gVariablesView.focusNextItem();
+  is(gVariablesView.getFocusedItem().name, "someProp1",
+    "The someProp1 item should be focused.");
+
+  gVariablesView.focusPrevItem();
+  is(gVariablesView.getFocusedItem().name, "someProp0",
+    "The someProp0 item should be focused again.");
+
+
+  ok(!gVariablesView._list.querySelector(".element-value-input"),
+    "There shouldn't be a value input element created.");
+
+  EventUtils.synthesizeKey("VK_ENTER", {}, gDebugger);
+  waitForElement(".element-value-input", true, function() {
+
+    ok(gVariablesView._list.querySelector(".element-value-input"),
+      "There should be a value input element created.");
+
+    EventUtils.sendKey("ESCAPE", gDebugger);
+    waitForElement(".element-value-input", false, function() {
+
+      ok(!gVariablesView._list.querySelector(".element-value-input"),
+        "There shouldn't be a value input element anymore.");
+
+      ok(!gVariablesView._list.querySelector(".element-name-input"),
+        "There shouldn't be a name input element created.");
+
+      EventUtils.synthesizeKey("VK_ENTER", { shiftKey: true }, gDebugger);
+      waitForElement(".element-name-input", true, function() {
+
+        ok(gVariablesView._list.querySelector(".element-name-input"),
+          "There should be a name input element created.");
+
+        EventUtils.sendKey("ESCAPE", gDebugger);
+        waitForElement(".element-name-input", false, function() {
+
+          ok(!gVariablesView._list.querySelector(".element-name-input"),
+            "There shouldn't be a name input element anymore.");
+
+
+          EventUtils.sendKey("DOWN", gDebugger);
+          executeSoon(function() {
+            is(gVariablesView._parent.scrollTop, 0,
+              "The variables view shouldn't scroll when pressing the DOWN key.");
+
+            EventUtils.sendKey("UP", gDebugger);
+            executeSoon(function() {
+              is(gVariablesView._parent.scrollTop, 0,
+                "The variables view shouldn't scroll when pressing the UP key.");
+
+              EventUtils.sendKey("PAGE_DOWN", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "someProp5",
+                "The someProp5 item should be focused now.");
+
+              EventUtils.sendKey("DOWN", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "0",
+                "The 0 item should be focused now.");
+
+              EventUtils.sendKey("END", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "bar",
+                "The bar item should be focused now.");
+
+              EventUtils.sendKey("DOWN", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "bar",
+                "The bar item should still be focused now.");
+
+              EventUtils.sendKey("UP", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "foo",
+                "The foo item should be focused now.");
+
+              EventUtils.sendKey("RIGHT", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "foo",
+                "The foo item should still be focused now.");
+
+              EventUtils.sendKey("PAGE_DOWN", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "bar",
+                "The bar item should be focused now.");
+
+              EventUtils.sendKey("PAGE_UP", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "someProp7",
+                "The someProp7 item should be focused now.");
+
+              EventUtils.sendKey("UP", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "__proto__",
+                "The __proto__ item should be focused now.");
+
+              EventUtils.sendKey("UP", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "set",
+                "The set item should be focused now.");
+
+              EventUtils.sendKey("UP", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "get",
+                "The get item should be focused now.");
+
+              EventUtils.sendKey("HOME", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "someProp0",
+                "The someProp0 item should be focused now.");
+
+              EventUtils.sendKey("UP", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "someProp0",
+                "The someProp0 item should still be focused now.");
+
+              EventUtils.sendKey("LEFT", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "someProp0",
+                "The someProp0 item should still be focused now.");
+
+              EventUtils.sendKey("PAGE_UP", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "someProp0",
+                "The someProp0 item should still be focused now.");
+
+              for (let i = 0; i < 16; i++) {
+                // Advance to the first collapsed __proto__ property.
+                EventUtils.sendKey("DOWN", gDebugger);
+              }
+              is(gVariablesView.getFocusedItem().name, "__proto__",
+                "The __proto__ item should be focused now.");
+              is(gVariablesView.getFocusedItem().expanded, false,
+                "The __proto__ item shouldn't be expanded yet.");
+
+              EventUtils.sendKey("RIGHT", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "__proto__",
+                "The __proto__ item should still be focused.");
+              is(gVariablesView.getFocusedItem().expanded, true,
+                "The __proto__ item should be expanded now.");
+
+              for (let i = 0; i < 3; i++) {
+                // Advance to the fifth top-level someProp5 property.
+                EventUtils.sendKey("LEFT", gDebugger);
+              }
+              is(gVariablesView.getFocusedItem().name, "5",
+                "The fifth array item should be focused.");
+              is(gVariablesView.getFocusedItem().expanded, false,
+                "The fifth array item should not be expanded now.");
+
+              for (let i = 0; i < 6; i++) {
+                // Advance to the fifth top-level someProp5 property.
+                EventUtils.sendKey("UP", gDebugger);
+              }
+              is(gVariablesView.getFocusedItem().name, "someProp5",
+                "The someProp5 item should be focused now.");
+              is(gVariablesView.getFocusedItem().expanded, true,
+                "The someProp5 item should already be expanded.");
+
+              EventUtils.sendKey("LEFT", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "someProp5",
+                "The someProp5 item should still be focused.");
+              is(gVariablesView.getFocusedItem().expanded, false,
+                "The someProp5 item should not be expanded now.");
+
+              EventUtils.sendKey("LEFT", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "someProp5",
+                "The someProp5 item should still be focused.");
+
+              EventUtils.sendKey("UP", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "someProp4",
+                "The someProp4 item should be focused.");
+
+              EventUtils.sendKey("UP", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "someProp3",
+                "The someProp3 item should be focused.");
+
+              EventUtils.sendKey("UP", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "someProp2",
+                "The someProp2 item should be focused.");
+
+              EventUtils.sendKey("UP", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "someProp1",
+                "The someProp1 item should be focused.");
+
+              EventUtils.sendKey("UP", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "someProp0",
+                "The someProp0 item should be focused.");
+
+              EventUtils.sendKey("UP", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "someProp0",
+                "The someProp0 item should still be focused.");
+
+              for (let i = 0; i < 32; i++) {
+                // Advance to the last property in this scope.
+                EventUtils.sendKey("DOWN", gDebugger);
+              }
+              is(gVariablesView.getFocusedItem().name, "__proto__",
+                "The top-level __proto__ item should be focused.");
+
+              EventUtils.sendKey("DOWN", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "foo",
+                "The foo scope should be focused now.");
+              is(gVariablesView.getFocusedItem().expanded, true,
+                "The foo scope should already be expanded.");
+
+              EventUtils.sendKey("LEFT", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "foo",
+                "The foo scope should be focused now.");
+              is(gVariablesView.getFocusedItem().expanded, false,
+                "The foo scope shouldn't be expanded now.");
+
+              EventUtils.sendKey("DOWN", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "bar",
+                "The bar variable should be focused.");
+              is(gVariablesView.getFocusedItem().expanded, false,
+                "The bar variable shouldn't be expanded.");
+              is(gVariablesView.getFocusedItem().visible, true,
+                "The bar variable shouldn't be hidden.");
+
+              EventUtils.sendKey("BACK_SPACE", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "bar",
+                "The bar variable should still be focused.");
+              is(gVariablesView.getFocusedItem().expanded, false,
+                "The bar variable should still not be expanded.");
+              is(gVariablesView.getFocusedItem().visible, false,
+                "The bar variable should be hidden.");
+
+              EventUtils.sendKey("UP", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "foo",
+                "The foo scope should be focused.");
+
+              EventUtils.sendKey("UP", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "__proto__",
+                "The top-level __proto__ item should be focused.");
+              is(gVariablesView.getFocusedItem().expanded, false,
+                "The top-level __proto__ item should not be expanded.");
+
+              EventUtils.sendKey("RIGHT", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "__proto__",
+                "The top-level __proto__ item should still be focused.");
+              is(gVariablesView.getFocusedItem().expanded, true,
+                "The top-level __proto__ item should be expanded.");
+
+              EventUtils.sendKey("LEFT", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "__proto__",
+                "The top-level __proto__ item should still be focused.");
+              is(gVariablesView.getFocusedItem().expanded, false,
+                "The top-level __proto__ item should not be expanded.");
+
+              EventUtils.sendKey("END", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "foo",
+                "The foo scope should be focused.");
+
+              EventUtils.sendKey("PAGE_UP", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "__proto__",
+                "The __proto__ property should be focused.");
+
+              EventUtils.sendKey("PAGE_DOWN", gDebugger);
+              is(gVariablesView.getFocusedItem().name, "foo",
+                "The foo scope should be focused.");
+
+              executeSoon(callback);
+            });
+          });
+        });
+      });
+    });
+  });
+}
+
+function waitForElement(selector, exists, callback)
+{
+  // Poll every few milliseconds until the element are retrieved.
+  let count = 0;
+  let intervalID = window.setInterval(function() {
+    info("count: " + count + " ");
+    if (++count > 50) {
+      ok(false, "Timed out while polling for the element.");
+      window.clearInterval(intervalID);
+      return closeDebuggerAndFinish();
+    }
+    if (!!gVariablesView._list.querySelector(selector) != exists) {
+      return;
+    }
+    // We got the element, it's safe to callback.
+    window.clearInterval(intervalID);
+    callback();
+  }, 100);
+}
+
+function testClearHierarchy() {
+  gVariablesView.clearHierarchy();
+  ok(!gVariablesView._prevHierarchy.size,
+    "The previous hierarchy should have been cleared.");
+  ok(!gVariablesView._currHierarchy.size,
+    "The current hierarchy should have been cleared.");
 }
 
 registerCleanupFunction(function() {

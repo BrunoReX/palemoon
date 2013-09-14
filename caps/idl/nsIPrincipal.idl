@@ -21,7 +21,7 @@ interface nsIContentSecurityPolicy;
 [ptr] native JSPrincipals(JSPrincipals);
 [ptr] native PrincipalArray(nsTArray<nsCOMPtr<nsIPrincipal> >);
 
-[scriptable, builtinclass, uuid(011966C0-8564-438D-B37A-08D7E1195E5A)]
+[scriptable, builtinclass, uuid(dbda8bb0-3023-4aec-ad98-8e9931a29d70)]
 interface nsIPrincipal : nsISerializable
 {
     /**
@@ -35,6 +35,18 @@ interface nsIPrincipal : nsISerializable
      * Like equals, but doesn't take document.domain changes into account.
      */
     boolean equalsIgnoringDomain(in nsIPrincipal other);
+
+    %{C++
+    inline bool Equals(nsIPrincipal* aOther) {
+      bool equal = false;
+      return NS_SUCCEEDED(Equals(aOther, &equal)) && equal;
+    }
+
+    inline bool EqualsIgnoringDomain(nsIPrincipal* aOther) {
+      bool equal = false;
+      return NS_SUCCEEDED(EqualsIgnoringDomain(aOther, &equal)) && equal;
+    }
+    %}
 
     /**
      * Returns a hash value for the principal.
@@ -100,6 +112,18 @@ interface nsIPrincipal : nsISerializable
      */
     boolean subsumesIgnoringDomain(in nsIPrincipal other);
 
+    %{C++
+    inline bool Subsumes(nsIPrincipal* aOther) {
+      bool subsumes = false;
+      return NS_SUCCEEDED(Subsumes(aOther, &subsumes)) && subsumes;
+    }
+
+    inline bool SubsumesIgnoringDomain(nsIPrincipal* aOther) {
+      bool subsumes = false;
+      return NS_SUCCEEDED(SubsumesIgnoringDomain(aOther, &subsumes)) && subsumes;
+    }
+    %}
+
     /**
      * Checks whether this principal is allowed to load the network resource
      * located at the given URI under the same-origin policy. This means that
@@ -108,7 +132,7 @@ interface nsIPrincipal : nsISerializable
      * principals are not allowed to load anything. This is changed slightly
      * by the optional flag allowIfInheritsPrincipal (which defaults to false)
      * which allows the load of a data: URI (which inherits the principal of
-     * its loader) or a URI with the same principal as its loader (eg. a 
+     * its loader) or a URI with the same principal as its loader (eg. a
      * Blob URI).
      * In these cases, with allowIfInheritsPrincipal set to true, the URI can
      * be loaded by a null principal.
@@ -152,6 +176,13 @@ interface nsIPrincipal : nsISerializable
      * as is and it might be crypto-hashed at some point.
      */
     readonly attribute AUTF8String extendedOrigin;
+
+    /**
+     * The base domain of the codebase URI to which this principal pertains
+     * (generally the document URI), handling null principals and
+     * non-hierarchical schemes correctly.
+     */
+    readonly attribute ACString baseDomain;
 
     const short APP_STATUS_NOT_INSTALLED = 0;
     const short APP_STATUS_INSTALLED     = 1;
@@ -222,14 +253,14 @@ interface nsIPrincipal : nsISerializable
 };
 
 /**
- * If nsSystemPrincipal is too risky to use, but we want a principal to access 
- * more than one origin, nsExpandedPrincipals letting us define an array of 
+ * If nsSystemPrincipal is too risky to use, but we want a principal to access
+ * more than one origin, nsExpandedPrincipals letting us define an array of
  * principals it subsumes. So script with an nsExpandedPrincipals will gain
- * same origin access when at least one of its principals it contains gained 
+ * same origin access when at least one of its principals it contains gained
  * sameorigin acccess. An nsExpandedPrincipal will be subsumed by the system
  * principal, and by another nsExpandedPrincipal that has all its principals.
  * It is added for jetpack content-scripts to let them interact with the
- * content and a well defined set of other domains, without the risk of 
+ * content and a well defined set of other domains, without the risk of
  * leaking out a system principal to the content. See: Bug 734891
  */
 [uuid(f3e177Df-6a5e-489f-80a7-2dd1481471d8)]
@@ -237,7 +268,7 @@ interface nsIExpandedPrincipal : nsISupports
 {
   /**
    * An array of principals that the expanded principal subsumes.
-   * Note: this list is not reference counted, it is shared, so 
+   * Note: this list is not reference counted, it is shared, so
    * should not be changed and should only be used ephemerally.
    */
   [noscript] readonly attribute PrincipalArray whiteList;

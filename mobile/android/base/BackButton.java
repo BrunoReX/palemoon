@@ -12,11 +12,13 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PorterDuff.Mode;
 import android.graphics.Shader;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.StateListDrawable;
 import android.util.AttributeSet;
 
 public class BackButton extends ShapedButton { 
+    private Path mPath;
     private Path mBorderPath;
     private Paint mBorderPaint;
     private Paint mBorderPrivatePaint;
@@ -54,12 +56,12 @@ public class BackButton extends ShapedButton {
 
         mBorderPaint.setShader(new LinearGradient(0, 0, 
                                                   0, height, 
-                                                  0xFF898D8F, 0xFFFEFEFE,
+                                                  0xFFB5BBC1, 0xFFFAFBFC,
                                                   Shader.TileMode.CLAMP));
 
         mBorderPrivatePaint.setShader(new LinearGradient(0, 0, 
                                                          0, height, 
-                                                         0xCC06090D, 0xFF616569,
+                                                         0xFF040607, 0xFF0B0D0E,
                                                          Shader.TileMode.CLAMP));
     }
 
@@ -81,8 +83,11 @@ public class BackButton extends ShapedButton {
         Resources resources = getContext().getResources();
         StateListDrawable stateList = new StateListDrawable();
 
-        stateList.addState(new int[] { android.R.attr.state_pressed }, resources.getDrawable(R.drawable.highlight));
-        stateList.addState(new int[] { R.attr.state_private }, resources.getDrawable(R.drawable.address_bar_bg_private));
+        stateList.addState(new int[] { R.attr.state_private, android.R.attr.state_pressed }, new ColorDrawable(resources.getColor(R.color.highlight_nav_pb)));
+        stateList.addState(new int[] { android.R.attr.state_pressed }, new ColorDrawable(resources.getColor(R.color.highlight_nav)));
+        stateList.addState(new int[] { R.attr.state_private, android.R.attr.state_focused }, new ColorDrawable(resources.getColor(R.color.highlight_nav_focused_pb)));
+        stateList.addState(new int[] { android.R.attr.state_focused }, new ColorDrawable(resources.getColor(R.color.highlight_nav_focused)));
+        stateList.addState(new int[] { R.attr.state_private }, new ColorDrawable(resources.getColor(R.color.background_private)));
         stateList.addState(new int[] {}, drawable);
 
         setBackgroundDrawable(stateList);

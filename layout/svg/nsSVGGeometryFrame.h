@@ -7,6 +7,7 @@
 #ifndef __NS_SVGGEOMETRYFRAME_H__
 #define __NS_SVGGEOMETRYFRAME_H__
 
+#include "mozilla/Attributes.h"
 #include "gfxMatrix.h"
 #include "gfxTypes.h"
 #include "nsFrame.h"
@@ -42,11 +43,11 @@ protected:
 
 public:
   // nsIFrame interface:
-  NS_IMETHOD Init(nsIContent* aContent,
-                  nsIFrame* aParent,
-                  nsIFrame* aPrevInFlow);
+  virtual void Init(nsIContent* aContent,
+		    nsIFrame* aParent,
+		    nsIFrame* aPrevInFlow) MOZ_OVERRIDE;
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const MOZ_OVERRIDE
   {
     return nsSVGGeometryFrameBase::IsFrameOfType(aFlags & ~(nsIFrame::eSVG | nsIFrame::eSVGGeometry));
   }

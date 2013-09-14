@@ -1,12 +1,13 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=79 ft=cpp:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsstr_h___
-#define jsstr_h___
+#ifndef jsstr_h
+#define jsstr_h
+
+#include "mozilla/PodOperations.h"
 
 #include <ctype.h>
 #include "jsapi.h"
@@ -40,10 +41,13 @@ class MutatingRopeSegmentRange;
  */
 class RopeBuilder;
 
-}  /* namespace js */
-
+template <AllowGC allowGC>
 extern JSString *
-js_ConcatStrings(JSContext *cx, js::HandleString s1, js::HandleString s2);
+ConcatStrings(JSContext *cx,
+              typename MaybeRooted<JSString*, allowGC>::HandleType left,
+              typename MaybeRooted<JSString*, allowGC>::HandleType right);
+
+}  /* namespace js */
 
 extern JSString * JS_FASTCALL
 js_toLowerCase(JSContext *cx, JSString *str);
@@ -56,8 +60,8 @@ struct JSSubString {
     const jschar    *chars;
 };
 
-extern jschar      js_empty_ucstr[];
-extern JSSubString js_EmptySubString;
+extern const jschar js_empty_ucstr[];
+extern const JSSubString js_EmptySubString;
 
 /*
  * Shorthands for ASCII (7-bit) decimal and hex conversion.
@@ -82,6 +86,7 @@ extern const char js_decodeURIComponent_str[];
 extern const char js_encodeURIComponent_str[];
 
 /* GC-allocate a string descriptor for the given malloc-allocated chars. */
+template <js::AllowGC allowGC>
 extern JSStableString *
 js_NewString(JSContext *cx, jschar *chars, size_t length);
 
@@ -89,16 +94,20 @@ extern JSLinearString *
 js_NewDependentString(JSContext *cx, JSString *base, size_t start, size_t length);
 
 /* Copy a counted string and GC-allocate a descriptor for it. */
+template <js::AllowGC allowGC>
 extern JSFlatString *
 js_NewStringCopyN(JSContext *cx, const jschar *s, size_t n);
 
+template <js::AllowGC allowGC>
 extern JSFlatString *
 js_NewStringCopyN(JSContext *cx, const char *s, size_t n);
 
 /* Copy a C string and GC-allocate a descriptor for it. */
+template <js::AllowGC allowGC>
 extern JSFlatString *
 js_NewStringCopyZ(JSContext *cx, const jschar *s);
 
+template <js::AllowGC allowGC>
 extern JSFlatString *
 js_NewStringCopyZ(JSContext *cx, const char *s);
 
@@ -115,20 +124,21 @@ namespace js {
  * Convert a non-string value to a string, returning null after reporting an
  * error, otherwise returning a new string reference.
  */
+template <AllowGC allowGC>
 extern JSString *
-ToStringSlow(JSContext *cx, const Value &v);
+ToStringSlow(JSContext *cx, typename MaybeRooted<Value, allowGC>::HandleType arg);
 
 /*
  * Convert the given value to a string.  This method includes an inline
  * fast-path for the case where the value is already a string; if the value is
  * known not to be a string, use ToStringSlow instead.
  */
+template <AllowGC allowGC>
 static JS_ALWAYS_INLINE JSString *
-ToString(JSContext *cx, const js::Value &v)
+ToString(JSContext *cx, JS::HandleValue v)
 {
-    AssertCanGC();
 #ifdef DEBUG
-    {
+    if (allowGC) {
         SkipRoot skip(cx, &v);
         MaybeCheckStackRoots(cx);
     }
@@ -136,7 +146,7 @@ ToString(JSContext *cx, const js::Value &v)
 
     if (v.isString())
         return v.toString();
-    return ToStringSlow(cx, v);
+    return ToStringSlow<allowGC>(cx, v);
 }
 
 /*
@@ -149,14 +159,13 @@ ValueToStringBuffer(JSContext *cx, const Value &v, StringBuffer &sb);
 
 } /* namespace js */
 
+namespace js {
 /*
  * Convert a value to its source expression, returning null after reporting
  * an error, otherwise returning a new string reference.
  */
-extern JS_FRIEND_API(JSString *)
-js_ValueToSource(JSContext *cx, const js::Value &v);
-
-namespace js {
+extern JSString *
+ValueToSource(JSContext *cx, const js::Value &v);
 
 /*
  * Test if strings are equal. The caller can call the function even if str1
@@ -186,6 +195,11 @@ CompareStrings(JSContext *cx, JSString *str1, JSString *str2, int32_t *result);
 extern bool
 StringEqualsAscii(JSLinearString *str, const char *asciiBytes);
 
+/* Return true if the string contains a pattern anywhere inside it. */
+extern bool
+StringHasPattern(const jschar *text, uint32_t textlen,
+                 const jschar *pat, uint32_t patlen);
+
 } /* namespace js */
 
 extern size_t
@@ -200,7 +214,7 @@ js_strchr_limit(const jschar *s, jschar c, const jschar *limit);
 static JS_ALWAYS_INLINE void
 js_strncpy(jschar *dst, const jschar *src, size_t nelem)
 {
-    return js::PodCopy(dst, src, nelem);
+    return mozilla::PodCopy(dst, src, nelem);
 }
 
 extern jschar *
@@ -224,9 +238,6 @@ InflateString(JSContext *cx, const char *bytes, size_t *length);
 extern jschar *
 InflateUTF8String(JSContext *cx, const char *bytes, size_t *length);
 
-extern char *
-DeflateString(JSContext *cx, const jschar *chars, size_t length);
-
 /*
  * Inflate bytes to JS chars in an existing buffer. 'chars' must be large
  * enough for 'length' jschars. The buffer is NOT null-terminated.
@@ -242,9 +253,15 @@ extern bool
 InflateUTF8StringToBuffer(JSContext *cx, const char *bytes, size_t length,
                           jschar *chars, size_t *charsLength);
 
-/* Get number of bytes in the deflated sequence of characters. */
-extern size_t
-GetDeflatedStringLength(JSContext *cx, const jschar *chars, size_t charsLength);
+/*
+ * The same as InflateUTF8StringToBuffer(), except that any malformed UTF-8
+ * characters will be replaced by \uFFFD. No exception will be thrown for
+ * malformed UTF-8 input.
+ */
+extern bool
+InflateUTF8StringToBufferReplaceInvalid(JSContext *cx, const char *bytes,
+                                        size_t length, jschar *chars,
+                                        size_t *charsLength);
 
 /*
  * Deflate JS chars to bytes into a buffer. 'bytes' must be large enough for
@@ -333,4 +350,4 @@ str_split(JSContext *cx, unsigned argc, Value *vp);
 extern JSBool
 js_String(JSContext *cx, unsigned argc, js::Value *vp);
 
-#endif /* jsstr_h___ */
+#endif /* jsstr_h */

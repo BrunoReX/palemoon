@@ -5,7 +5,6 @@
 import time
 import re
 import os
-import automationutils
 import tempfile
 import shutil
 import subprocess
@@ -75,7 +74,7 @@ class RemoteAutomation(Automation):
         status = proc.wait(timeout = maxTime)
         self.lastTestSeen = proc.getLastTestSeen
 
-        if (status == 1 and self._devicemanager.processExist(proc.procName)):
+        if (status == 1 and self._devicemanager.getTopActivity() == proc.procName):
             # Then we timed out, make sure Fennec is dead
             if maxTime:
                 print "TEST-UNEXPECTED-FAIL | %s | application ran for longer than " \
@@ -87,20 +86,87 @@ class RemoteAutomation(Automation):
 
         return status
 
-    def checkForCrashes(self, directory, symbolsPath):
+    def checkForJavaException(self, logcat):
+        found_exception = False
+        for i, line in enumerate(logcat):
+            if "REPORTING UNCAUGHT EXCEPTION" in line or "FATAL EXCEPTION" in line:
+                # Strip away the date, time, logcat tag and pid from the next two lines and
+                # concatenate the remainder to form a concise summary of the exception. 
+                #
+                # For example:
+                #
+                # 01-30 20:15:41.937 E/GeckoAppShell( 1703): >>> REPORTING UNCAUGHT EXCEPTION FROM THREAD 9 ("GeckoBackgroundThread")
+                # 01-30 20:15:41.937 E/GeckoAppShell( 1703): java.lang.NullPointerException
+                # 01-30 20:15:41.937 E/GeckoAppShell( 1703): 	at org.mozilla.gecko.GeckoApp$21.run(GeckoApp.java:1833)
+                # 01-30 20:15:41.937 E/GeckoAppShell( 1703): 	at android.os.Handler.handleCallback(Handler.java:587)
+                # 01-30 20:15:41.937 E/GeckoAppShell( 1703): 	at android.os.Handler.dispatchMessage(Handler.java:92)
+                # 01-30 20:15:41.937 E/GeckoAppShell( 1703): 	at android.os.Looper.loop(Looper.java:123)
+                # 01-30 20:15:41.937 E/GeckoAppShell( 1703): 	at org.mozilla.gecko.util.GeckoBackgroundThread.run(GeckoBackgroundThread.java:31)
+                #
+                #   -> java.lang.NullPointerException at org.mozilla.gecko.GeckoApp$21.run(GeckoApp.java:1833)
+                found_exception = True
+                logre = re.compile(r".*\): \t?(.*)")
+                m = logre.search(logcat[i+1])
+                if m and m.group(1):
+                    top_frame = m.group(1)
+                m = logre.search(logcat[i+2])
+                if m and m.group(1):
+                    top_frame = top_frame + m.group(1)
+                print "PROCESS-CRASH | java-exception | %s" % top_frame
+                break
+        return found_exception
+
+    def deleteANRs(self):
+        # delete ANR traces.txt file; usually need root permissions
+        traces = "/data/anr/traces.txt"
         try:
+            self._devicemanager.shellCheckOutput(['rm', traces], root=True)
+        except DMError:
+            print "Error deleting %s" % traces
+            pass
+
+    def checkForANRs(self):
+        traces = "/data/anr/traces.txt"
+        if self._devicemanager.fileExists(traces):
+            try:
+                t = self._devicemanager.pullFile(traces)
+                print "Contents of %s:" % traces
+                print t
+                # Once reported, delete traces
+                self.deleteANRs()
+            except DMError:
+                print "Error pulling %s" % traces
+                pass
+        else:
+            print "%s not found" % traces
+
+    def checkForCrashes(self, directory, symbolsPath):
+        self.checkForANRs()
+
+        logcat = self._devicemanager.getLogcat(filterOutRegexps=fennecLogcatFilters)
+        javaException = self.checkForJavaException(logcat)
+        if javaException:
+            return True
+
+        # If crash reporting is disabled (MOZ_CRASHREPORTER!=1), we can't say
+        # anything.
+        if not self.CRASHREPORTER:
+            return False
+
+        try:
+            dumpDir = tempfile.mkdtemp()
             remoteCrashDir = self._remoteProfile + '/minidumps/'
             if not self._devicemanager.dirExists(remoteCrashDir):
-                # As of this writing, the minidumps directory is automatically
-                # created when fennec (first) starts, so its lack of presence
-                # is a hint that something went wrong.
+                # If crash reporting is enabled (MOZ_CRASHREPORTER=1), the
+                # minidumps directory is automatically created when Fennec
+                # (first) starts, so its lack of presence is a hint that
+                # something went wrong.
                 print "Automation Error: No crash directory (%s) found on remote device" % remoteCrashDir
                 # Whilst no crash was found, the run should still display as a failure
                 return True
-            dumpDir = tempfile.mkdtemp()
             self._devicemanager.getDirectory(remoteCrashDir, dumpDir)
-            crashed = automationutils.checkForCrashes(dumpDir, symbolsPath,
-                                            self.lastTestSeen)
+            crashed = Automation.checkForCrashes(self, dumpDir, symbolsPath)
+
         finally:
             try:
                 shutil.rmtree(dumpDir)
@@ -229,7 +295,7 @@ class RemoteAutomation(Automation):
             if timeout == None:
                 timeout = self.timeout
 
-            while (self.dm.processExist(self.procName)):
+            while (self.dm.getTopActivity() == self.procName):
                 t = self.stdout
                 if t != '': print t
                 time.sleep(interval)

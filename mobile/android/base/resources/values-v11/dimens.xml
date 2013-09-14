@@ -6,6 +6,6 @@
 <resources>
 
     <dimen name="tabs_counter_size">22sp</dimen>
-    <dimen name="widget_padding">0dp</dimen>
+    <dimen name="doorhanger_spinner_textsize">6sp</dimen>
 
 </resources>

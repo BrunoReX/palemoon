@@ -77,7 +77,7 @@ BluetoothServiceChildProcess::RegisterBluetoothSignalHandler(
                                               const nsAString& aNodeName,
                                               BluetoothSignalObserver* aHandler)
 {
-  if (gBluetoothChild) {
+  if (gBluetoothChild && !IsSignalRegistered(aNodeName)) {
     gBluetoothChild->SendRegisterSignalHandler(nsString(aNodeName));
   }
   BluetoothService::RegisterBluetoothSignalHandler(aNodeName, aHandler);
@@ -88,10 +88,10 @@ BluetoothServiceChildProcess::UnregisterBluetoothSignalHandler(
                                               const nsAString& aNodeName,
                                               BluetoothSignalObserver* aHandler)
 {
-  if (gBluetoothChild) {
+  BluetoothService::UnregisterBluetoothSignalHandler(aNodeName, aHandler);
+  if (gBluetoothChild && !IsSignalRegistered(aNodeName)) {
     gBluetoothChild->SendUnregisterSignalHandler(nsString(aNodeName));
   }
-  BluetoothService::UnregisterBluetoothSignalHandler(aNodeName, aHandler);
 }
 
 nsresult
@@ -103,19 +103,19 @@ BluetoothServiceChildProcess::GetDefaultAdapterPathInternal(
 }
 
 nsresult
-BluetoothServiceChildProcess::GetDevicePropertiesInternal(
-                                                 const BluetoothSignal& aSignal)
+BluetoothServiceChildProcess::GetConnectedDevicePropertiesInternal(
+                                              uint16_t aProfileId,
+                                              BluetoothReplyRunnable* aRunnable)
 {
-  MOZ_NOT_REACHED("Should never be called from child");
-  return NS_ERROR_NOT_IMPLEMENTED;
+  SendRequest(aRunnable, ConnectedDevicePropertiesRequest(aProfileId));
+  return NS_OK;
 }
-
 nsresult
 BluetoothServiceChildProcess::GetPairedDevicePropertiesInternal(
                                      const nsTArray<nsString>& aDeviceAddresses,
                                      BluetoothReplyRunnable* aRunnable)
 {
-  DevicePropertiesRequest request;
+  PairedDevicePropertiesRequest request;
   request.addresses().AppendElements(aDeviceAddresses);
 
   SendRequest(aRunnable, request);
@@ -124,38 +124,26 @@ BluetoothServiceChildProcess::GetPairedDevicePropertiesInternal(
 
 nsresult
 BluetoothServiceChildProcess::StopDiscoveryInternal(
-                                              const nsAString& aAdapterPath,
                                               BluetoothReplyRunnable* aRunnable)
 {
-  SendRequest(aRunnable, StopDiscoveryRequest(nsString(aAdapterPath)));
+  SendRequest(aRunnable, StopDiscoveryRequest());
   return NS_OK;
 }
 
 nsresult
 BluetoothServiceChildProcess::StartDiscoveryInternal(
-                                              const nsAString& aAdapterPath,
                                               BluetoothReplyRunnable* aRunnable)
 {
-  SendRequest(aRunnable, StartDiscoveryRequest(nsString(aAdapterPath)));
-  return NS_OK;
-}
-
-nsresult
-BluetoothServiceChildProcess::GetProperties(BluetoothObjectType aType,
-                                            const nsAString& aPath,
-                                            BluetoothReplyRunnable* aRunnable)
-{
-  SendRequest(aRunnable, GetPropertyRequest(aType, nsString(aPath)));
+  SendRequest(aRunnable, StartDiscoveryRequest());
   return NS_OK;
 }
 
 nsresult
 BluetoothServiceChildProcess::SetProperty(BluetoothObjectType aType,
-                                          const nsAString& aPath,
                                           const BluetoothNamedValue& aValue,
                                           BluetoothReplyRunnable* aRunnable)
 {
-  SendRequest(aRunnable, SetPropertyRequest(aType, nsString(aPath), aValue));
+  SendRequest(aRunnable, SetPropertyRequest(aType, aValue));
   return NS_OK;
 }
 
@@ -180,24 +168,22 @@ BluetoothServiceChildProcess::GetDevicePath(const nsAString& aAdapterPath,
 
 nsresult
 BluetoothServiceChildProcess::CreatePairedDeviceInternal(
-                                              const nsAString& aAdapterPath,
                                               const nsAString& aAddress,
                                               int aTimeout,
                                               BluetoothReplyRunnable* aRunnable)
 {
   SendRequest(aRunnable,
-              PairRequest(nsString(aAdapterPath), nsString(aAddress), aTimeout));
+              PairRequest(nsString(aAddress), aTimeout));
   return NS_OK;
 }
 
 nsresult
 BluetoothServiceChildProcess::RemoveDeviceInternal(
-                                              const nsAString& aAdapterPath,
                                               const nsAString& aObjectPath,
                                               BluetoothReplyRunnable* aRunnable)
 {
   SendRequest(aRunnable,
-              UnpairRequest(nsString(aAdapterPath), nsString(aObjectPath)));
+              UnpairRequest(nsString(aObjectPath)));
   return NS_OK;
 }
 
@@ -213,30 +199,20 @@ BluetoothServiceChildProcess::GetScoSocket(
 }
 
 nsresult
-BluetoothServiceChildProcess::GetSocketViaService(
-                                       const nsAString& aObjectPath,
-                                       const nsAString& aService,
-                                       BluetoothSocketType aType,
-                                       bool aAuth,
-                                       bool aEncrypt,
-                                       mozilla::ipc::UnixSocketConsumer* aConsumer,
-                                       BluetoothReplyRunnable* aRunnable)
+BluetoothServiceChildProcess::GetServiceChannel(const nsAString& aDeviceAddress,
+                                                const nsAString& aServiceUuid,
+                                                BluetoothProfileManagerBase* aManager)
 {
   MOZ_NOT_REACHED("This should never be called!");
   return NS_ERROR_FAILURE;
 }
 
-
-nsresult
-BluetoothServiceChildProcess::ListenSocketViaService(
-  int aChannel,
-  BluetoothSocketType aType,
-  bool aAuth,
-  bool aEncrypt,
-  mozilla::ipc::UnixSocketConsumer* aConsumer)
+bool
+BluetoothServiceChildProcess::UpdateSdpRecords(const nsAString& aDeviceAddress,
+                                               BluetoothProfileManagerBase* aManager)
 {
   MOZ_NOT_REACHED("This should never be called!");
-  return NS_ERROR_FAILURE;
+  return false;
 }
 
 bool
@@ -293,23 +269,14 @@ BluetoothServiceChildProcess::SetAuthorizationInternal(
   return true;
 }
 
-nsresult
-BluetoothServiceChildProcess::PrepareAdapterInternal(const nsAString& aPath)
-{
-  MOZ_NOT_REACHED("Should never be called from child");
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
 void
 BluetoothServiceChildProcess::Connect(
   const nsAString& aDeviceAddress,
-  const nsAString& aAdapterPath,
   const uint16_t aProfileId,
   BluetoothReplyRunnable* aRunnable)
 {
   SendRequest(aRunnable,
               ConnectRequest(nsString(aDeviceAddress),
-                             nsString(aAdapterPath),
                              aProfileId));
 }
 
@@ -357,6 +324,24 @@ BluetoothServiceChildProcess::ConfirmReceivingFile(
               DenyReceivingFileRequest(nsString(aDeviceAddress)));
 }
 
+void
+BluetoothServiceChildProcess::ConnectSco(BluetoothReplyRunnable* aRunnable)
+{
+  SendRequest(aRunnable, ConnectScoRequest());
+}
+
+void
+BluetoothServiceChildProcess::DisconnectSco(BluetoothReplyRunnable* aRunnable)
+{
+  SendRequest(aRunnable, DisconnectScoRequest());
+}
+
+void
+BluetoothServiceChildProcess::IsScoConnected(BluetoothReplyRunnable* aRunnable)
+{
+  SendRequest(aRunnable, IsScoConnectedRequest());
+}
+
 nsresult
 BluetoothServiceChildProcess::HandleStartup()
 {
@@ -391,8 +376,23 @@ BluetoothServiceChildProcess::StopInternal()
 }
 
 bool
+BluetoothServiceChildProcess::IsEnabledInternal()
+{
+  MOZ_NOT_REACHED("This should never be called!");
+  return false;
+}
+
+bool
 BluetoothServiceChildProcess::IsConnected(uint16_t aProfileId)
 {
   MOZ_NOT_REACHED("This should never be called!");
   return false;
+}
+
+nsresult
+BluetoothServiceChildProcess::SendSinkMessage(const nsAString& aDeviceAddresses,
+                                              const nsAString& aMessage)
+{
+  MOZ_NOT_REACHED("This should never be called!");
+  return NS_ERROR_FAILURE;
 }

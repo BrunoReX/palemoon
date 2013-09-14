@@ -11,7 +11,9 @@
 #include "gfxImageSurface.h"
 #include "nsRenderingContext.h"
 #include "nsSVGEffects.h"
-#include "nsSVGMaskElement.h"
+#include "mozilla/dom/SVGMaskElement.h"
+
+using namespace mozilla::dom;
 
 //----------------------------------------------------------------------
 // Implementation
@@ -39,17 +41,17 @@ nsSVGMaskFrame::ComputeMaskAlpha(nsRenderingContext *aContext,
   }
   AutoMaskReferencer maskRef(this);
 
-  nsSVGMaskElement *mask = static_cast<nsSVGMaskElement*>(mContent);
+  SVGMaskElement *mask = static_cast<SVGMaskElement*>(mContent);
 
   uint16_t units =
-    mask->mEnumAttributes[nsSVGMaskElement::MASKUNITS].GetAnimValue();
+    mask->mEnumAttributes[SVGMaskElement::MASKUNITS].GetAnimValue();
   gfxRect bbox;
-  if (units == nsIDOMSVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
+  if (units == SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
     bbox = nsSVGUtils::GetBBox(aParent);
   }
 
   gfxRect maskArea = nsSVGUtils::GetRelativeRect(units,
-    &mask->mLengthAttributes[nsSVGMaskElement::X], bbox, aParent);
+    &mask->mLengthAttributes[SVGMaskElement::ATTR_X], bbox, aParent);
 
   gfxContext *gfx = aContext->ThebesContext();
 
@@ -111,44 +113,22 @@ nsSVGMaskFrame::ComputeMaskAlpha(nsRenderingContext *aContext,
 
   uint8_t *data   = image->Data();
   int32_t  stride = image->Stride();
-
   nsIntRect rect(0, 0, surfaceSize.width, surfaceSize.height);
-  nsSVGUtils::UnPremultiplyImageDataAlpha(data, stride, rect);
-  if (GetStyleSVG()->mColorInterpolation ==
-      NS_STYLE_COLOR_INTERPOLATION_LINEARRGB) {
-    nsSVGUtils::ConvertImageDataToLinearRGB(data, stride, rect);
-  }
 
-  if (GetStyleSVGReset()->mMaskType == NS_STYLE_MASK_TYPE_LUMINANCE) {
-    for (int32_t y = 0; y < surfaceSize.height; y++) {
-      for (int32_t x = 0; x < surfaceSize.width; x++) {
-        uint8_t *pixel = data + stride * y + 4 * x;
-
-        /* linearRGB -> intensity */
-        uint8_t alpha =
-          static_cast<uint8_t>
-                     ((pixel[GFX_ARGB32_OFFSET_R] * 0.2125 +
-                          pixel[GFX_ARGB32_OFFSET_G] * 0.7154 +
-                          pixel[GFX_ARGB32_OFFSET_B] * 0.0721) *
-                         (pixel[GFX_ARGB32_OFFSET_A] / 255.0) * aOpacity);
-
-        memset(pixel, alpha, 4);
-      }
+  if (StyleSVGReset()->mMaskType == NS_STYLE_MASK_TYPE_LUMINANCE) {
+    if (StyleSVG()->mColorInterpolation ==
+        NS_STYLE_COLOR_INTERPOLATION_LINEARRGB) {
+      nsSVGUtils::ComputeLinearRGBLuminanceMask(data, stride, rect, aOpacity);
+    } else {
+      nsSVGUtils::ComputesRGBLuminanceMask(data, stride, rect, aOpacity);
     }
   } else {
-    for (int32_t y = 0; y < surfaceSize.height; y++) {
-      for (int32_t x = 0; x < surfaceSize.width; x++) {
-        uint8_t *pixel = data + stride * y + 4 * x;
-        uint8_t alpha = pixel[GFX_ARGB32_OFFSET_A] * aOpacity;
-        memset(pixel, alpha, 4);
-      }
-    }
+    nsSVGUtils::ComputeAlphaMask(data, stride, rect, aOpacity);
   }
 
-  gfxPattern *retval = new gfxPattern(image);
+  nsRefPtr<gfxPattern> retval = new gfxPattern(image);
   retval->SetMatrix(matrix);
-  NS_IF_ADDREF(retval);
-  return retval;
+  return retval.forget();
 }
 
 /* virtual */ void
@@ -178,15 +158,15 @@ nsSVGMaskFrame::AttributeChanged(int32_t  aNameSpaceID,
 }
 
 #ifdef DEBUG
-NS_IMETHODIMP
+void
 nsSVGMaskFrame::Init(nsIContent* aContent,
                      nsIFrame* aParent,
                      nsIFrame* aPrevInFlow)
 {
-  nsCOMPtr<nsIDOMSVGMaskElement> mask = do_QueryInterface(aContent);
-  NS_ASSERTION(mask, "Content is not an SVG mask");
+  NS_ASSERTION(aContent->IsSVG(nsGkAtoms::mask),
+               "Content is not an SVG mask");
 
-  return nsSVGMaskFrameBase::Init(aContent, aParent, aPrevInFlow);
+  nsSVGMaskFrameBase::Init(aContent, aParent, aPrevInFlow);
 }
 #endif /* DEBUG */
 
@@ -201,11 +181,11 @@ nsSVGMaskFrame::GetCanvasTM(uint32_t aFor)
 {
   NS_ASSERTION(mMaskParentMatrix, "null parent matrix");
 
-  nsSVGMaskElement *mask = static_cast<nsSVGMaskElement*>(mContent);
+  SVGMaskElement *mask = static_cast<SVGMaskElement*>(mContent);
 
   return nsSVGUtils::AdjustMatrixForUnits(
     mMaskParentMatrix ? *mMaskParentMatrix : gfxMatrix(),
-    &mask->mEnumAttributes[nsSVGMaskElement::MASKCONTENTUNITS],
+    &mask->mEnumAttributes[SVGMaskElement::MASKCONTENTUNITS],
     mMaskParent);
 }
 

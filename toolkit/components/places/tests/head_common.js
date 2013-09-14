@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const CURRENT_SCHEMA_VERSION = 21;
+const CURRENT_SCHEMA_VERSION = 23;
 
 const NS_APP_USER_PROFILE_50_DIR = "ProfD";
 const NS_APP_PROFILE_DIR_STARTUP = "ProfDS";
@@ -28,11 +28,15 @@ XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
 XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
                                   "resource://gre/modules/NetUtil.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-                                  "resource://gre/modules/commonjs/promise/core.js");
+                                  "resource://gre/modules/commonjs/sdk/core/promise.js");
 XPCOMUtils.defineLazyModuleGetter(this, "Services",
                                   "resource://gre/modules/Services.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Task",
                                   "resource://gre/modules/Task.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "BookmarkJSONUtils",
+                                  "resource://gre/modules/BookmarkJSONUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "PlacesBackups",
+                                  "resource://gre/modules/PlacesBackups.jsm");
 
 // This imports various other objects in addition to PlacesUtils.
 Cu.import("resource://gre/modules/PlacesUtils.jsm");
@@ -51,42 +55,11 @@ function LOG(aMsg) {
 
 let gTestDir = do_get_cwd();
 
-// Ensure history is enabled.
-Services.prefs.setBoolPref("places.history.enabled", true);
-
 // Initialize profile.
 let gProfD = do_get_profile();
 
 // Remove any old database.
 clearDB();
-
-/**
- * Adds a task generator function written for Task.jsm to the list of tests that
- * are to be run asynchronously.
- *
- * The next asynchronous test runs automatically when the task terminates.  The
- * task should not call run_next_test() to continue.  Any exception in the task
- * function causes the current test to fail immediately, and the next test to be
- * executed.
- *
- * Test files should call run_next_test() inside run_test() to execute all the
- * asynchronous tests, as usual.  Test files may include both function added
- * with add_test() as well as function added with add_task().
- *
- * Example:
- *
- * add_task(function test_promise_resolves_to_true() {
- *   let result = yield promiseThatResolvesToTrue;
- *   do_check_true(result);
- * });
- */
-function add_task(aTaskFn) {
-  function wrapperFn() {
-    Task.spawn(aTaskFn)
-        .then(run_next_test, do_report_unexpected_exception);
-  }
-  eval("add_test(function " + aTaskFn.name + "() wrapperFn());");
-}
 
 /**
  * Shortcut to create a nsIURI.
@@ -383,23 +356,6 @@ function check_no_bookmarks() {
   root.containerOpen = false;
 }
 
-
-
-/**
- * Sets title synchronously for a page in moz_places.
- *
- * @param aURI
- *        An nsIURI to set the title for.
- * @param aTitle
- *        The title to set the page to.
- * @throws if the page is not found in the database.
- *
- * @note This is just a test compatibility mock.
- */
-function setPageTitle(aURI, aTitle) {
-  PlacesUtils.history.setPageTitle(aURI, aTitle);
-}
-
 /**
  * Allows waiting for an observer notification once.
  *
@@ -518,7 +474,7 @@ function create_JSON_backup(aFilename) {
   let bookmarksBackupDir = gProfD.clone();
   bookmarksBackupDir.append("bookmarkbackups");
   if (!bookmarksBackupDir.exists()) {
-    bookmarksBackupDir.create(Ci.nsIFile.DIRECTORY_TYPE, parseInt("0755"));
+    bookmarksBackupDir.create(Ci.nsIFile.DIRECTORY_TYPE, parseInt("0755", 8));
     do_check_true(bookmarksBackupDir.exists());
   }
   let bookmarksJSONFile = gTestDir.clone();
@@ -822,6 +778,25 @@ function do_compare_arrays(a1, a2, sorted)
 }
 
 /**
+ * Generic nsINavBookmarkObserver that doesn't implement anything, but provides
+ * dummy methods to prevent errors about an object not having a certain method.
+ */
+function NavBookmarkObserver() {}
+
+NavBookmarkObserver.prototype = {
+  onBeginUpdateBatch: function () {},
+  onEndUpdateBatch: function () {},
+  onItemAdded: function () {},
+  onItemRemoved: function () {},
+  onItemChanged: function () {},
+  onItemVisited: function () {},
+  onItemMoved: function () {},
+  QueryInterface: XPCOMUtils.generateQI([
+    Ci.nsINavBookmarkObserver,
+  ])
+};
+
+/**
  * Generic nsINavHistoryObserver that doesn't implement anything, but provides
  * dummy methods to prevent errors about an object not having a certain method.
  */
@@ -832,7 +807,6 @@ NavHistoryObserver.prototype = {
   onEndUpdateBatch: function () {},
   onVisit: function () {},
   onTitleChanged: function () {},
-  onBeforeDeleteURI: function () {},
   onDeleteURI: function () {},
   onClearHistory: function () {},
   onPageChanged: function () {},
@@ -864,7 +838,6 @@ NavHistoryResultObserver.prototype = {
   nodeLastModifiedChanged: function () {},
   nodeMoved: function () {},
   nodeRemoved: function () {},
-  nodeReplaced: function () {},
   nodeTagsChanged: function () {},
   nodeTitleChanged: function () {},
   nodeURIChanged: function () {},
@@ -938,18 +911,20 @@ function promiseAddVisits(aPlaceInfo)
 }
 
 /**
- * Asynchronously adds visits to a page, then either invokes a callback function
- * on success, or reports a test error on failure.
+ * Asynchronously check a url is visited.
  *
- * @deprecated Use promiseAddVisits instead.
+ * @param aURI The URI.
+ * @return {Promise}
+ * @resolves When the check has been added successfully.
+ * @rejects JavaScript exception.
  */
-function addVisits(aPlaceInfo, aCallback, aStack)
-{
-  let stack = aStack || Components.stack.caller;
-  promiseAddVisits(aPlaceInfo).then(
-    aCallback,
-    function addVisits_onFailure(ex) {
-      do_throw(ex, stack);
-    }
-  );
+function promiseIsURIVisited(aURI) {
+  let deferred = Promise.defer();
+
+  PlacesUtils.asyncHistory.isURIVisited(aURI, function(aURI, aIsVisited) {
+    deferred.resolve(aIsVisited);
+  });
+
+  return deferred.promise;
 }
+

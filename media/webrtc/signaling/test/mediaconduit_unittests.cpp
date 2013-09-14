@@ -490,11 +490,11 @@ class TransportConduitTest : public ::testing::Test
   {
     //get pointer to AudioSessionConduit
     int err=0;
-    mAudioSession = mozilla::AudioSessionConduit::Create();
+    mAudioSession = mozilla::AudioSessionConduit::Create(NULL);
     if( !mAudioSession )
       ASSERT_NE(mAudioSession, (void*)NULL);
 
-    mAudioSession2 = mozilla::AudioSessionConduit::Create();
+    mAudioSession2 = mozilla::AudioSessionConduit::Create(NULL);
     if( !mAudioSession2 )
       ASSERT_NE(mAudioSession2, (void*)NULL);
 
@@ -511,7 +511,7 @@ class TransportConduitTest : public ::testing::Test
 
     //configure send and recv codecs on the audio-conduit
     //mozilla::AudioCodecConfig cinst1(124,"PCMU",8000,80,1,64000);
-    mozilla::AudioCodecConfig cinst1(124,"opus",48000,480,1,64000);
+    mozilla::AudioCodecConfig cinst1(124,"opus",48000,960,1,64000);
     mozilla::AudioCodecConfig cinst2(125,"L16",16000,320,1,256000);
 
 
@@ -574,8 +574,8 @@ class TransportConduitTest : public ::testing::Test
     ASSERT_EQ(mozilla::kMediaConduitNoError, err);
 
     //configure send and recv codecs on theconduit
-    mozilla::VideoCodecConfig cinst1(120, "VP8", 640, 480);
-    mozilla::VideoCodecConfig cinst2(124, "I420", 640, 480);
+    mozilla::VideoCodecConfig cinst1(120, "VP8");
+    mozilla::VideoCodecConfig cinst2(124, "I420");
 
 
     std::vector<mozilla::VideoCodecConfig* > rcvCodecList;
@@ -638,8 +638,8 @@ class TransportConduitTest : public ::testing::Test
     cerr << "    1. Same Codec (VP8) Repeated Twice " << endl;
     cerr << "   *************************************************" << endl;
 
-    mozilla::VideoCodecConfig cinst1(120, "VP8", 640, 480);
-    mozilla::VideoCodecConfig cinst2(120, "VP8", 640, 480);
+    mozilla::VideoCodecConfig cinst1(120, "VP8");
+    mozilla::VideoCodecConfig cinst2(120, "VP8");
     rcvCodecList.push_back(&cinst1);
     rcvCodecList.push_back(&cinst2);
     err = mVideoSession->ConfigureRecvMediaCodecs(rcvCodecList);
@@ -655,8 +655,8 @@ class TransportConduitTest : public ::testing::Test
     cerr << "   Setting payload 1 with name: I4201234tttttthhhyyyy89087987y76t567r7756765rr6u6676" << endl;
     cerr << "   Setting payload 2 with name of zero length" << endl;
 
-    mozilla::VideoCodecConfig cinst3(124, "I4201234tttttthhhyyyy89087987y76t567r7756765rr6u6676", 352, 288);
-    mozilla::VideoCodecConfig cinst4(124, "", 352, 288);
+    mozilla::VideoCodecConfig cinst3(124, "I4201234tttttthhhyyyy89087987y76t567r7756765rr6u6676");
+    mozilla::VideoCodecConfig cinst4(124, "");
 
     rcvCodecList.push_back(&cinst3);
     rcvCodecList.push_back(&cinst4);

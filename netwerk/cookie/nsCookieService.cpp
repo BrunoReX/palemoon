@@ -48,6 +48,8 @@
 #include "nsNetCID.h"
 #include "mozilla/storage.h"
 #include "mozilla/AutoRestore.h"
+#include "mozilla/FileUtils.h"
+#include "mozilla/Telemetry.h"
 #include "nsIAppsService.h"
 #include "mozIApplication.h"
 
@@ -75,6 +77,21 @@ static const char kHttpOnlyPrefix[] = "#HttpOnly_";
 #define COOKIES_FILE "cookies.sqlite"
 #define COOKIES_SCHEMA_VERSION 5
 
+// parameter indexes; see EnsureReadDomain, EnsureReadComplete and
+// ReadCookieDBListener::HandleResult
+#define IDX_NAME 0
+#define IDX_VALUE 1
+#define IDX_HOST 2
+#define IDX_PATH 3
+#define IDX_EXPIRY 4
+#define IDX_LAST_ACCESSED 5
+#define IDX_CREATION_TIME 6
+#define IDX_SECURE 7
+#define IDX_HTTPONLY 8
+#define IDX_BASE_DOMAIN 9
+#define IDX_APP_ID 10
+#define IDX_BROWSER_ELEM 11
+
 static const int64_t kCookieStaleThreshold = 60 * PR_USEC_PER_SEC; // 1 minute in microseconds
 static const int64_t kCookiePurgeAge =
   int64_t(30 * 24 * 60 * 60) * PR_USEC_PER_SEC; // 30 days in microseconds
@@ -85,7 +102,7 @@ static const char kOldCookieFileName[] = "cookies.txt";
 #define LIMIT(x, low, high, default) ((x) >= (low) && (x) <= (high) ? (x) : (default))
 
 #undef  ADD_TEN_PERCENT
-#define ADD_TEN_PERCENT(i) ((i) + (i)/10)
+#define ADD_TEN_PERCENT(i) static_cast<uint32_t>((i) + (i)/10)
 
 // default limits for the cookie list. these can be tuned by the
 // network.cookie.maxNumber and network.cookie.maxPerHost prefs respectively.
@@ -95,9 +112,11 @@ static const uint32_t kMaxBytesPerCookie  = 4096;
 static const uint32_t kMaxBytesPerPath    = 1024;
 
 // behavior pref constants
-static const uint32_t BEHAVIOR_ACCEPT        = 0;
-static const uint32_t BEHAVIOR_REJECTFOREIGN = 1;
-static const uint32_t BEHAVIOR_REJECT        = 2;
+static const uint32_t BEHAVIOR_ACCEPT        = 0; // allow all cookies
+static const uint32_t BEHAVIOR_REJECTFOREIGN = 1; // reject all third-party cookies
+static const uint32_t BEHAVIOR_REJECT        = 2; // reject all cookies
+static const uint32_t BEHAVIOR_LIMITFOREIGN  = 3; // reject third-party cookies unless the
+                                                  // eTLD already has at least one cookie
 
 // pref string constants
 static const char kPrefCookieBehavior[]     = "network.cookie.cookieBehavior";
@@ -482,9 +501,9 @@ public:
         break;
 
       CookieDomainTuple *tuple = mDBState->hostArray.AppendElement();
-      row->GetUTF8String(9, tuple->key.mBaseDomain);
-      tuple->key.mAppId = static_cast<uint32_t>(row->AsInt32(10));
-      tuple->key.mInBrowserElement = static_cast<bool>(row->AsInt32(11));
+      row->GetUTF8String(IDX_BASE_DOMAIN, tuple->key.mBaseDomain);
+      tuple->key.mAppId = static_cast<uint32_t>(row->AsInt32(IDX_APP_ID));
+      tuple->key.mInBrowserElement = static_cast<bool>(row->AsInt32(IDX_BROWSER_ELEM));
       tuple->cookie = gCookieService->GetCookieFromRow(row);
     }
 
@@ -777,12 +796,19 @@ nsCookieService::TryInitDB(bool aRecreateDB)
     NS_ENSURE_SUCCESS(rv, RESULT_FAILURE);
   }
 
-  // open a connection to the cookie database, and only cache our connection
-  // and statements upon success. The connection is opened unshared to eliminate
-  // cache contention between the main and background threads.
-  rv = mStorageService->OpenUnsharedDatabase(mDefaultDBState->cookieFile,
-    getter_AddRefs(mDefaultDBState->dbConn));
-  NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
+  // This block provides scope for the Telemetry AutoTimer
+  {
+    Telemetry::AutoTimer<Telemetry::MOZ_SQLITE_COOKIES_OPEN_READAHEAD_MS>
+      telemetry;
+    ReadAheadFile(mDefaultDBState->cookieFile);
+
+    // open a connection to the cookie database, and only cache our connection
+    // and statements upon success. The connection is opened unshared to eliminate
+    // cache contention between the main and background threads.
+    rv = mStorageService->OpenUnsharedDatabase(mDefaultDBState->cookieFile,
+      getter_AddRefs(mDefaultDBState->dbConn));
+    NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
+  }
 
   // Set up our listeners.
   mDefaultDBState->insertListener = new InsertCookieDBListener(mDefaultDBState);
@@ -835,6 +861,8 @@ nsCookieService::TryInitDB(bool aRecreateDB)
         // Compute the baseDomains for the table. This must be done eagerly
         // otherwise we won't be able to synchronously read in individual
         // domains on demand.
+        const int64_t SCHEMA2_IDX_ID  =  0;
+        const int64_t SCHEMA2_IDX_HOST = 1;
         nsCOMPtr<mozIStorageStatement> select;
         rv = mDefaultDBState->dbConn->CreateStatement(NS_LITERAL_CSTRING(
           "SELECT id, host FROM moz_cookies"), getter_AddRefs(select));
@@ -855,8 +883,8 @@ nsCookieService::TryInitDB(bool aRecreateDB)
           if (!hasResult)
             break;
 
-          int64_t id = select->AsInt64(0);
-          select->GetUTF8String(1, host);
+          int64_t id = select->AsInt64(SCHEMA2_IDX_ID);
+          select->GetUTF8String(SCHEMA2_IDX_HOST, host);
 
           rv = GetBaseDomainFromHost(host, baseDomain);
           NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
@@ -894,6 +922,10 @@ nsCookieService::TryInitDB(bool aRecreateDB)
         // Select the whole table, and order by the fields we're interested in.
         // This means we can simply do a linear traversal of the results and
         // check for duplicates as we go.
+        const int64_t SCHEMA3_IDX_ID =   0;
+        const int64_t SCHEMA3_IDX_NAME = 1;
+        const int64_t SCHEMA3_IDX_HOST = 2;
+        const int64_t SCHEMA3_IDX_PATH = 3;
         nsCOMPtr<mozIStorageStatement> select;
         rv = mDefaultDBState->dbConn->CreateStatement(NS_LITERAL_CSTRING(
           "SELECT id, name, host, path FROM moz_cookies "
@@ -914,10 +946,10 @@ nsCookieService::TryInitDB(bool aRecreateDB)
 
         if (hasResult) {
           nsCString name1, host1, path1;
-          int64_t id1 = select->AsInt64(0);
-          select->GetUTF8String(1, name1);
-          select->GetUTF8String(2, host1);
-          select->GetUTF8String(3, path1);
+          int64_t id1 = select->AsInt64(SCHEMA3_IDX_ID);
+          select->GetUTF8String(SCHEMA3_IDX_NAME, name1);
+          select->GetUTF8String(SCHEMA3_IDX_HOST, host1);
+          select->GetUTF8String(SCHEMA3_IDX_PATH, path1);
 
           nsCString name2, host2, path2;
           while (1) {
@@ -928,10 +960,10 @@ nsCookieService::TryInitDB(bool aRecreateDB)
             if (!hasResult)
               break;
 
-            int64_t id2 = select->AsInt64(0);
-            select->GetUTF8String(1, name2);
-            select->GetUTF8String(2, host2);
-            select->GetUTF8String(3, path2);
+            int64_t id2 = select->AsInt64(SCHEMA3_IDX_ID);
+            select->GetUTF8String(SCHEMA3_IDX_NAME, name2);
+            select->GetUTF8String(SCHEMA3_IDX_HOST, host2);
+            select->GetUTF8String(SCHEMA3_IDX_PATH, path2);
 
             // If the two rows match in (name, host, path), we know the earlier
             // row has an earlier expiry time. Delete it.
@@ -1614,13 +1646,23 @@ nsCookieService::SetCookieStringInternal(nsIURI             *aHostURI,
   // check default prefs
   CookieStatus cookieStatus = CheckPrefs(aHostURI, aIsForeign, requireHostMatch,
                                          aCookieHeader.get());
-  // fire a notification if cookie was rejected (but not if there was an error)
+  // fire a notification if third party or if cookie was rejected
+  // (but not if there was an error)
   switch (cookieStatus) {
   case STATUS_REJECTED:
     NotifyRejected(aHostURI);
-    return;
+    if (aIsForeign) {
+      NotifyThirdParty(aHostURI, false, aChannel);
+    }
+    return; // Stop here
   case STATUS_REJECTED_WITH_ERROR:
     return;
+  case STATUS_ACCEPTED: // Fallthrough
+  case STATUS_ACCEPT_SESSION:
+    if (aIsForeign) {
+      NotifyThirdParty(aHostURI, true, aChannel);
+    }
+    break;
   default:
     break;
   }
@@ -1653,8 +1695,50 @@ nsCookieService::SetCookieStringInternal(nsIURI             *aHostURI,
 void
 nsCookieService::NotifyRejected(nsIURI *aHostURI)
 {
-  if (mObserverService)
+  if (mObserverService) {
     mObserverService->NotifyObservers(aHostURI, "cookie-rejected", nullptr);
+  }
+}
+
+// notify observers that a third-party cookie was accepted/rejected
+// if the cookie issuer is unknown, it defaults to "?"
+void
+nsCookieService::NotifyThirdParty(nsIURI *aHostURI, bool aIsAccepted, nsIChannel *aChannel)
+{
+  if (!mObserverService) {
+    return;
+  }
+  const char* topic = aIsAccepted ? "third-party-cookie-accepted"
+    : "third-party-cookie-rejected";
+
+  do {
+    // Attempt to find the host of aChannel.
+    if (!aChannel) {
+      break;
+    }
+    nsCOMPtr<nsIURI> channelURI;
+    nsresult rv = aChannel->GetURI(getter_AddRefs(channelURI));
+    if (NS_FAILED(rv)) {
+      break;
+    }
+
+    nsAutoCString referringHost;
+    rv = channelURI->GetHost(referringHost);
+    if (NS_FAILED(rv)) {
+      break;
+    }
+
+    nsAutoString referringHostUTF16 = NS_ConvertUTF8toUTF16(referringHost);
+    mObserverService->NotifyObservers(aHostURI,
+                                      topic,
+                                      referringHostUTF16.get());
+    return;
+  } while (0);
+
+  // This can fail for a number of reasons, in which kind we fallback to "?"
+  mObserverService->NotifyObservers(aHostURI,
+                                    topic,
+                                    NS_LITERAL_STRING("?").get());
 }
 
 // notify observers that the cookie list changed. there are five possible
@@ -1694,7 +1778,7 @@ nsCookieService::PrefChanged(nsIPrefBranch *aPrefBranch)
 {
   int32_t val;
   if (NS_SUCCEEDED(aPrefBranch->GetIntPref(kPrefCookieBehavior, &val)))
-    mCookieBehavior = (uint8_t) LIMIT(val, 0, 2, 0);
+    mCookieBehavior = (uint8_t) LIMIT(val, 0, 3, 0);
 
   if (NS_SUCCEEDED(aPrefBranch->GetIntPref(kPrefMaxNumberOfCookies, &val)))
     mMaxNumberOfCookies = (uint16_t) LIMIT(val, 1, 0xFFFF, kMaxNumberOfCookies);
@@ -1967,20 +2051,20 @@ nsCookieService::GetCookieFromRow(T &aRow)
 {
   // Skip reading 'baseDomain' -- up to the caller.
   nsCString name, value, host, path;
-  DebugOnly<nsresult> rv = aRow->GetUTF8String(0, name);
+  DebugOnly<nsresult> rv = aRow->GetUTF8String(IDX_NAME, name);
   NS_ASSERT_SUCCESS(rv);
-  rv = aRow->GetUTF8String(1, value);
+  rv = aRow->GetUTF8String(IDX_VALUE, value);
   NS_ASSERT_SUCCESS(rv);
-  rv = aRow->GetUTF8String(2, host);
+  rv = aRow->GetUTF8String(IDX_HOST, host);
   NS_ASSERT_SUCCESS(rv);
-  rv = aRow->GetUTF8String(3, path);
+  rv = aRow->GetUTF8String(IDX_PATH, path);
   NS_ASSERT_SUCCESS(rv);
 
-  int64_t expiry = aRow->AsInt64(4);
-  int64_t lastAccessed = aRow->AsInt64(5);
-  int64_t creationTime = aRow->AsInt64(6);
-  bool isSecure = 0 != aRow->AsInt32(7);
-  bool isHttpOnly = 0 != aRow->AsInt32(8);
+  int64_t expiry = aRow->AsInt64(IDX_EXPIRY);
+  int64_t lastAccessed = aRow->AsInt64(IDX_LAST_ACCESSED);
+  int64_t creationTime = aRow->AsInt64(IDX_CREATION_TIME);
+  bool isSecure = 0 != aRow->AsInt32(IDX_SECURE);
+  bool isHttpOnly = 0 != aRow->AsInt32(IDX_HTTPONLY);
 
   // Create a new nsCookie and assign the data.
   return nsCookie::Create(name, value, host, path,
@@ -2072,6 +2156,7 @@ nsCookieService::EnsureReadDomain(const nsCookieKey &aKey)
     return;
 
   // Read in the data synchronously.
+  // see IDX_NAME, etc. for parameter indexes
   nsresult rv;
   if (!mDefaultDBState->stmtReadDomain) {
     // Cache the statement, since it's likely to be used again.
@@ -2166,6 +2251,7 @@ nsCookieService::EnsureReadComplete()
   CancelAsyncRead(false);
 
   // Read in the data synchronously.
+  // see IDX_NAME, etc. for parameter indexes
   nsCOMPtr<mozIStorageStatement> stmt;
   nsresult rv = mDefaultDBState->syncConn->CreateStatement(NS_LITERAL_CSTRING(
     "SELECT "
@@ -2212,9 +2298,9 @@ nsCookieService::EnsureReadComplete()
       break;
 
     // Make sure we haven't already read the data.
-    stmt->GetUTF8String(9, baseDomain);
-    appId = static_cast<uint32_t>(stmt->AsInt32(10));
-    inBrowserElement = static_cast<bool>(stmt->AsInt32(11));
+    stmt->GetUTF8String(IDX_BASE_DOMAIN, baseDomain);
+    appId = static_cast<uint32_t>(stmt->AsInt32(IDX_APP_ID));
+    inBrowserElement = static_cast<bool>(stmt->AsInt32(IDX_BROWSER_ELEM));
     nsCookieKey key(baseDomain, appId, inBrowserElement);
     if (mDefaultDBState->readSet.GetEntry(key))
       continue;
@@ -3244,6 +3330,20 @@ nsCookieService::CheckPrefs(nsIURI          *aHostURI,
         }
         return STATUS_ACCEPTED;
 
+      case nsICookiePermission::ACCESS_LIMIT_THIRD_PARTY:
+        if (!aIsForeign)
+          return STATUS_ACCEPTED;
+        uint32_t priorCookieCount = 0;
+        nsAutoCString hostFromURI;
+        aHostURI->GetHost(hostFromURI);
+        CountCookiesFromHost(hostFromURI, &priorCookieCount);
+        if (priorCookieCount == 0) {
+          COOKIE_LOGFAILURE(aCookieHeader ? SET_COOKIE : GET_COOKIE, aHostURI,
+                            aCookieHeader, "third party cookies are blocked "
+                            "for this site");
+          return STATUS_REJECTED;
+        }
+        return STATUS_ACCEPTED;
       }
     }
   }
@@ -3262,6 +3362,19 @@ nsCookieService::CheckPrefs(nsIURI          *aHostURI,
     if (mCookieBehavior == BEHAVIOR_REJECTFOREIGN) {
       COOKIE_LOGFAILURE(aCookieHeader ? SET_COOKIE : GET_COOKIE, aHostURI, aCookieHeader, "context is third party");
       return STATUS_REJECTED;
+    }
+
+    if (mCookieBehavior == BEHAVIOR_LIMITFOREIGN) {
+      uint32_t priorCookieCount = 0;
+      nsAutoCString hostFromURI;
+      aHostURI->GetHost(hostFromURI);
+      CountCookiesFromHost(hostFromURI, &priorCookieCount);
+      if (priorCookieCount == 0) {
+        COOKIE_LOGFAILURE(aCookieHeader ? SET_COOKIE : GET_COOKIE, aHostURI, aCookieHeader, "context is third party");
+        return STATUS_REJECTED;
+      }
+      if (mThirdPartySession)
+        return STATUS_ACCEPT_SESSION;
     }
   }
 

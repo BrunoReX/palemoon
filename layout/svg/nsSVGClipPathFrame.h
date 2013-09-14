@@ -6,6 +6,7 @@
 #ifndef __NS_SVGCLIPPATHFRAME_H__
 #define __NS_SVGCLIPPATHFRAME_H__
 
+#include "mozilla/Attributes.h"
 #include "gfxMatrix.h"
 #include "nsSVGContainerFrame.h"
 #include "nsSVGUtils.h"
@@ -31,11 +32,9 @@ public:
   NS_DECL_FRAMEARENA_HELPERS
 
   // nsIFrame methods:
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists) {
-    return NS_OK;
-  }
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE {}
 
   // nsSVGClipPathFrame methods:
   nsresult ClipPaint(nsRenderingContext* aContext,
@@ -56,21 +55,21 @@ public:
   // nsIFrame interface:
   NS_IMETHOD AttributeChanged(int32_t         aNameSpaceID,
                               nsIAtom*        aAttribute,
-                              int32_t         aModType);
+                              int32_t         aModType) MOZ_OVERRIDE;
 
-  NS_IMETHOD Init(nsIContent*      aContent,
-                  nsIFrame*        aParent,
-                  nsIFrame*        aPrevInFlow);
+  virtual void Init(nsIContent*      aContent,
+                    nsIFrame*        aParent,
+                    nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
 
   /**
    * Get the "type" of the frame
    *
    * @see nsGkAtoms::svgClipPathFrame
    */
-  virtual nsIAtom* GetType() const;
+  virtual nsIAtom* GetType() const MOZ_OVERRIDE;
 
 #ifdef DEBUG
-  NS_IMETHOD GetFrameName(nsAString& aResult) const
+  NS_IMETHOD GetFrameName(nsAString& aResult) const MOZ_OVERRIDE
   {
     return MakeFrameName(NS_LITERAL_STRING("SVGClipPath"), aResult);
   }
@@ -102,7 +101,7 @@ public:
   bool mInUse;
 
   // nsSVGContainerFrame methods:
-  virtual gfxMatrix GetCanvasTM(uint32_t aFor);
+  virtual gfxMatrix GetCanvasTM(uint32_t aFor) MOZ_OVERRIDE;
 };
 
 #endif

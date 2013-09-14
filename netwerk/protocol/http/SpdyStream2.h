@@ -35,11 +35,13 @@ public:
 
   // returns false if called more than once
   bool GetFullyOpen() {return mFullyOpen;}
-  void SetFullyOpen() 
+  void SetFullyOpen()
   {
-    NS_ABORT_IF_FALSE(!mFullyOpen, "SetFullyOpen already open");
+    MOZ_ASSERT(!mFullyOpen);
     mFullyOpen = 1;
   }
+
+  bool HasRegisteredID() { return mStreamID != 0; }
 
   nsAHttpTransaction *Transaction()
   {
@@ -91,7 +93,7 @@ private:
   void     CompressToFrame(uint16_t);
   void     CompressFlushFrame();
   void     ExecuteCompress(uint32_t);
-  
+
   // Each stream goes from syn_stream to upstream_complete, perhaps
   // looping on multiple instances of generating_request_body and
   // sending_request_body for each SPDY chunk in the upload.
@@ -121,7 +123,7 @@ private:
   // The quanta upstream data frames are chopped into
   uint32_t                    mChunkSize;
 
-  // Flag is set when all http request headers have been read
+  // Flag is set when all http request headers have been read and ID is stable
   uint32_t                     mSynFrameComplete     : 1;
 
   // Flag is set when the HTTP processor has more data to send

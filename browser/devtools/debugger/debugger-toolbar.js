@@ -5,12 +5,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
+// A time interval sufficient for the options popup panel to finish hiding
+// itself.
+const POPUP_HIDDEN_DELAY = 100; // ms
+
 /**
  * Functions handling the toolbar view: close button, expand/collapse button,
  * pause/resume and stepping buttons etc.
  */
 function ToolbarView() {
   dumpn("ToolbarView was instantiated");
+
   this._onTogglePanesPressed = this._onTogglePanesPressed.bind(this);
   this._onResumePressed = this._onResumePressed.bind(this);
   this._onStepOverPressed = this._onStepOverPressed.bind(this);
@@ -22,27 +27,28 @@ ToolbarView.prototype = {
   /**
    * Initialization function, called when the debugger is started.
    */
-  initialize: function DVT_initialize() {
+  initialize: function() {
     dumpn("Initializing the ToolbarView");
-    this._togglePanesButton = document.getElementById("toggle-panes");
+
+    this._instrumentsPaneToggleButton = document.getElementById("instruments-pane-toggle");
+    this._resumeOrderPanel = document.getElementById("resumption-order-panel");
     this._resumeButton = document.getElementById("resume");
     this._stepOverButton = document.getElementById("step-over");
     this._stepInButton = document.getElementById("step-in");
     this._stepOutButton = document.getElementById("step-out");
     this._chromeGlobals = document.getElementById("chrome-globals");
-    this._scripts = document.getElementById("sources");
 
     let resumeKey = LayoutHelpers.prettyKey(document.getElementById("resumeKey"), true);
     let stepOverKey = LayoutHelpers.prettyKey(document.getElementById("stepOverKey"), true);
     let stepInKey = LayoutHelpers.prettyKey(document.getElementById("stepInKey"), true);
     let stepOutKey = LayoutHelpers.prettyKey(document.getElementById("stepOutKey"), true);
-    this._resumeTooltip = L10N.getFormatStr("resumeButtonTooltip", [resumeKey]);
-    this._pauseTooltip = L10N.getFormatStr("pauseButtonTooltip", [resumeKey]);
-    this._stepOverTooltip = L10N.getFormatStr("stepOverTooltip", [stepOverKey]);
-    this._stepInTooltip = L10N.getFormatStr("stepInTooltip", [stepInKey]);
-    this._stepOutTooltip = L10N.getFormatStr("stepOutTooltip", [stepOutKey]);
+    this._resumeTooltip = L10N.getFormatStr("resumeButtonTooltip", resumeKey);
+    this._pauseTooltip = L10N.getFormatStr("pauseButtonTooltip", resumeKey);
+    this._stepOverTooltip = L10N.getFormatStr("stepOverTooltip", stepOverKey);
+    this._stepInTooltip = L10N.getFormatStr("stepInTooltip", stepInKey);
+    this._stepOutTooltip = L10N.getFormatStr("stepOutTooltip", stepOutKey);
 
-    this._togglePanesButton.addEventListener("mousedown", this._onTogglePanesPressed, false);
+    this._instrumentsPaneToggleButton.addEventListener("mousedown", this._onTogglePanesPressed, false);
     this._resumeButton.addEventListener("mousedown", this._onResumePressed, false);
     this._stepOverButton.addEventListener("mousedown", this._onStepOverPressed, false);
     this._stepInButton.addEventListener("mousedown", this._onStepInPressed, false);
@@ -52,20 +58,36 @@ ToolbarView.prototype = {
     this._stepInButton.setAttribute("tooltiptext", this._stepInTooltip);
     this._stepOutButton.setAttribute("tooltiptext", this._stepOutTooltip);
 
-    // TODO: bug 806775
+    // TODO: bug 806775 - group scripts by globals using hostAnnotations.
     // this.toggleChromeGlobalsContainer(window._isChromeDebugger);
   },
 
   /**
    * Destruction function, called when the debugger is closed.
    */
-  destroy: function DVT_destroy() {
+  destroy: function() {
     dumpn("Destroying the ToolbarView");
-    this._togglePanesButton.removeEventListener("mousedown", this._onTogglePanesPressed, false);
+
+    this._instrumentsPaneToggleButton.removeEventListener("mousedown", this._onTogglePanesPressed, false);
     this._resumeButton.removeEventListener("mousedown", this._onResumePressed, false);
     this._stepOverButton.removeEventListener("mousedown", this._onStepOverPressed, false);
     this._stepInButton.removeEventListener("mousedown", this._onStepInPressed, false);
     this._stepOutButton.removeEventListener("mousedown", this._onStepOutPressed, false);
+  },
+
+  /**
+   * Display a warning when trying to resume a debuggee while another is paused.
+   * Debuggees must be unpaused in a Last-In-First-Out order.
+   *
+   * @param string aPausedUrl
+   *        The URL of the last paused debuggee.
+   */
+  showResumeWarning: function(aPausedUrl) {
+    let label = L10N.getFormatStr("resumptionOrderPanelTitle", aPausedUrl);
+    let descriptionNode = document.getElementById("resumption-panel-desc");
+    descriptionNode.setAttribute("value", label);
+
+    this._resumeOrderPanel.openPopup(this._resumeButton);
   },
 
   /**
@@ -74,7 +96,7 @@ ToolbarView.prototype = {
    * @param string aState
    *        Either "paused" or "attached".
    */
-  toggleResumeButtonState: function DVT_toggleResumeButtonState(aState) {
+  toggleResumeButtonState: function(aState) {
     // If we're paused, check and show a resume label on the button.
     if (aState == "paused") {
       this._resumeButton.setAttribute("checked", "true");
@@ -93,26 +115,16 @@ ToolbarView.prototype = {
    * @param boolean aVisibleFlag
    *        Specifies the intended visibility.
    */
-  toggleChromeGlobalsContainer: function DVT_toggleChromeGlobalsContainer(aVisibleFlag) {
+  toggleChromeGlobalsContainer: function(aVisibleFlag) {
     this._chromeGlobals.setAttribute("hidden", !aVisibleFlag);
-  },
-
-  /**
-   * Sets the sources container hidden or visible. It's visible by default.
-   *
-   * @param boolean aVisibleFlag
-   *        Specifies the intended visibility.
-   */
-  toggleSourcesContainer: function DVT_toggleSourcesContainer(aVisibleFlag) {
-    this._sources.setAttribute("hidden", !aVisibleFlag);
   },
 
   /**
    * Listener handling the toggle button click event.
    */
-  _onTogglePanesPressed: function DVT__onTogglePanesPressed() {
-    DebuggerView.togglePanes({
-      visible: DebuggerView.panesHidden,
+  _onTogglePanesPressed: function() {
+    DebuggerView.toggleInstrumentsPane({
+      visible: DebuggerView.instrumentsPaneHidden,
       animated: true,
       delayed: true
     });
@@ -121,9 +133,10 @@ ToolbarView.prototype = {
   /**
    * Listener handling the pause/resume button click event.
    */
-  _onResumePressed: function DVT__onResumePressed() {
+  _onResumePressed: function() {
     if (DebuggerController.activeThread.paused) {
-      DebuggerController.activeThread.resume();
+      let warn = DebuggerController._ensureResumptionOrder;
+      DebuggerController.activeThread.resume(warn);
     } else {
       DebuggerController.activeThread.interrupt();
     }
@@ -132,7 +145,7 @@ ToolbarView.prototype = {
   /**
    * Listener handling the step over button click event.
    */
-  _onStepOverPressed: function DVT__onStepOverPressed() {
+  _onStepOverPressed: function() {
     if (DebuggerController.activeThread.paused) {
       DebuggerController.activeThread.stepOver();
     }
@@ -141,7 +154,7 @@ ToolbarView.prototype = {
   /**
    * Listener handling the step in button click event.
    */
-  _onStepInPressed: function DVT__onStepInPressed() {
+  _onStepInPressed: function() {
     if (DebuggerController.activeThread.paused) {
       DebuggerController.activeThread.stepIn();
     }
@@ -150,19 +163,19 @@ ToolbarView.prototype = {
   /**
    * Listener handling the step out button click event.
    */
-  _onStepOutPressed: function DVT__onStepOutPressed() {
+  _onStepOutPressed: function() {
     if (DebuggerController.activeThread.paused) {
       DebuggerController.activeThread.stepOut();
     }
   },
 
-  _togglePanesButton: null,
+  _instrumentsPaneToggleButton: null,
+  _resumeOrderPanel: null,
   _resumeButton: null,
   _stepOverButton: null,
   _stepInButton: null,
   _stepOutButton: null,
   _chromeGlobals: null,
-  _sources: null,
   _resumeTooltip: "",
   _pauseTooltip: "",
   _stepOverTooltip: "",
@@ -175,34 +188,39 @@ ToolbarView.prototype = {
  */
 function OptionsView() {
   dumpn("OptionsView was instantiated");
+
   this._togglePauseOnExceptions = this._togglePauseOnExceptions.bind(this);
   this._toggleShowPanesOnStartup = this._toggleShowPanesOnStartup.bind(this);
   this._toggleShowVariablesOnlyEnum = this._toggleShowVariablesOnlyEnum.bind(this);
   this._toggleShowVariablesFilterBox = this._toggleShowVariablesFilterBox.bind(this);
+  this._toggleShowOriginalSource = this._toggleShowOriginalSource.bind(this);
 }
 
 OptionsView.prototype = {
   /**
    * Initialization function, called when the debugger is started.
    */
-  initialize: function DVO_initialize() {
+  initialize: function() {
     dumpn("Initializing the OptionsView");
+
     this._button = document.getElementById("debugger-options");
     this._pauseOnExceptionsItem = document.getElementById("pause-on-exceptions");
     this._showPanesOnStartupItem = document.getElementById("show-panes-on-startup");
     this._showVariablesOnlyEnumItem = document.getElementById("show-vars-only-enum");
     this._showVariablesFilterBoxItem = document.getElementById("show-vars-filter-box");
+    this._showOriginalSourceItem = document.getElementById("show-original-source");
 
-    this._pauseOnExceptionsItem.setAttribute("checked", "false");
+    this._pauseOnExceptionsItem.setAttribute("checked", Prefs.pauseOnExceptions);
     this._showPanesOnStartupItem.setAttribute("checked", Prefs.panesVisibleOnStartup);
     this._showVariablesOnlyEnumItem.setAttribute("checked", Prefs.variablesOnlyEnumVisible);
     this._showVariablesFilterBoxItem.setAttribute("checked", Prefs.variablesSearchboxVisible);
+    this._showOriginalSourceItem.setAttribute("checked", Prefs.sourceMapsEnabled);
   },
 
   /**
    * Destruction function, called when the debugger is closed.
    */
-  destroy: function DVO_destroy() {
+  destroy: function() {
     dumpn("Destroying the OptionsView");
     // Nothing to do here yet.
   },
@@ -210,29 +228,38 @@ OptionsView.prototype = {
   /**
    * Listener handling the 'gear menu' popup showing event.
    */
-  _onPopupShowing: function DVO__onPopupShowing() {
+  _onPopupShowing: function() {
     this._button.setAttribute("open", "true");
   },
 
   /**
    * Listener handling the 'gear menu' popup hiding event.
    */
-  _onPopupHiding: function DVO__onPopupHiding() {
+  _onPopupHiding: function() {
     this._button.removeAttribute("open");
+  },
+
+  /**
+   * Listener handling the 'gear menu' popup hidden event.
+   */
+  _onPopupHidden: function() {
+    window.dispatchEvent(document, "Debugger:OptionsPopupHidden");
   },
 
   /**
    * Listener handling the 'pause on exceptions' menuitem command.
    */
-  _togglePauseOnExceptions: function DVO__togglePauseOnExceptions() {
-    DebuggerController.activeThread.pauseOnExceptions(
-      this._pauseOnExceptionsItem.getAttribute("checked") == "true");
+  _togglePauseOnExceptions: function() {
+    let pref = Prefs.pauseOnExceptions =
+      this._pauseOnExceptionsItem.getAttribute("checked") == "true";
+
+    DebuggerController.activeThread.pauseOnExceptions(pref);
   },
 
   /**
    * Listener handling the 'show panes on startup' menuitem command.
    */
-  _toggleShowPanesOnStartup: function DVO__toggleShowPanesOnStartup() {
+  _toggleShowPanesOnStartup: function() {
     Prefs.panesVisibleOnStartup =
       this._showPanesOnStartupItem.getAttribute("checked") == "true";
   },
@@ -240,24 +267,49 @@ OptionsView.prototype = {
   /**
    * Listener handling the 'show non-enumerables' menuitem command.
    */
-  _toggleShowVariablesOnlyEnum: function DVO__toggleShowVariablesOnlyEnum() {
-    DebuggerView.Variables.onlyEnumVisible = Prefs.variablesOnlyEnumVisible =
+  _toggleShowVariablesOnlyEnum: function() {
+    let pref = Prefs.variablesOnlyEnumVisible =
       this._showVariablesOnlyEnumItem.getAttribute("checked") == "true";
+
+    DebuggerView.Variables.onlyEnumVisible = pref;
   },
 
   /**
    * Listener handling the 'show variables searchbox' menuitem command.
    */
-  _toggleShowVariablesFilterBox: function DVO__toggleShowVariablesFilterBox() {
-    DebuggerView.Variables.searchEnabled = Prefs.variablesSearchboxVisible =
+  _toggleShowVariablesFilterBox: function() {
+    let pref = Prefs.variablesSearchboxVisible =
       this._showVariablesFilterBoxItem.getAttribute("checked") == "true";
+
+    DebuggerView.Variables.searchEnabled = pref;
+  },
+
+  /**
+   * Listener handling the 'show original source' menuitem command.
+   */
+  _toggleShowOriginalSource: function() {
+    function reconfigure() {
+      window.removeEventListener("Debugger:OptionsPopupHidden", reconfigure, false);
+
+      // The popup panel needs more time to hide after triggering onpopuphidden.
+      window.setTimeout(() => {
+        DebuggerController.reconfigureThread(pref);
+      }, POPUP_HIDDEN_DELAY);
+    }
+
+    let pref = Prefs.sourceMapsEnabled =
+      this._showOriginalSourceItem.getAttribute("checked") == "true";
+
+    // Don't block the UI while reconfiguring the server.
+    window.addEventListener("Debugger:OptionsPopupHidden", reconfigure, false);
   },
 
   _button: null,
   _pauseOnExceptionsItem: null,
   _showPanesOnStartupItem: null,
   _showVariablesOnlyEnumItem: null,
-  _showVariablesFilterBoxItem: null
+  _showVariablesFilterBoxItem: null,
+  _showOriginalSourceItem: null
 };
 
 /**
@@ -265,279 +317,372 @@ OptionsView.prototype = {
  */
 function ChromeGlobalsView() {
   dumpn("ChromeGlobalsView was instantiated");
-  MenuContainer.call(this);
+
   this._onSelect = this._onSelect.bind(this);
   this._onClick = this._onClick.bind(this);
 }
 
-create({ constructor: ChromeGlobalsView, proto: MenuContainer.prototype }, {
+ChromeGlobalsView.prototype = Heritage.extend(WidgetMethods, {
   /**
    * Initialization function, called when the debugger is started.
    */
-  initialize: function DVCG_initialize() {
+  initialize: function() {
     dumpn("Initializing the ChromeGlobalsView");
-    this._container = document.getElementById("chrome-globals");
-    this._emptyLabel = L10N.getStr("noGlobalsText");
-    this._unavailableLabel = L10N.getStr("noMatchingGlobalsText");
 
-    this._container.addEventListener("select", this._onSelect, false);
-    this._container.addEventListener("click", this._onClick, false);
+    this.widget = document.getElementById("chrome-globals");
+    this.emptyText = L10N.getStr("noGlobalsText");
+    this.unavailableText = L10N.getStr("noMatchingGlobalsText");
 
+    this.widget.addEventListener("select", this._onSelect, false);
+    this.widget.addEventListener("click", this._onClick, false);
+
+    // Show an empty label by default.
     this.empty();
   },
 
   /**
    * Destruction function, called when the debugger is closed.
    */
-  destroy: function DVT_destroy() {
+  destroy: function() {
     dumpn("Destroying the ChromeGlobalsView");
-    this._container.removeEventListener("select", this._onSelect, false);
-    this._container.removeEventListener("click", this._onClick, false);
+
+    this.widget.removeEventListener("select", this._onSelect, false);
+    this.widget.removeEventListener("click", this._onClick, false);
   },
 
   /**
    * The select listener for the chrome globals container.
    */
-  _onSelect: function DVCG__onSelect() {
-    if (!this.refresh()) {
-      return;
-    }
-    // TODO: Do something useful for chrome debugging.
+  _onSelect: function() {
+    // TODO: bug 806775, do something useful for chrome debugging.
   },
 
   /**
    * The click listener for the chrome globals container.
    */
-  _onClick: function DVCG__onClick() {
+  _onClick: function() {
+    // Use this container as a filtering target.
     DebuggerView.Filtering.target = this;
   }
 });
 
 /**
- * Functions handling the sources UI.
+ * Functions handling the stackframes UI.
  */
-function SourcesView() {
-  dumpn("SourcesView was instantiated");
-  MenuContainer.call(this);
+function StackFramesView() {
+  dumpn("StackFramesView was instantiated");
+
+  this._onStackframeRemoved = this._onStackframeRemoved.bind(this);
   this._onSelect = this._onSelect.bind(this);
-  this._onClick = this._onClick.bind(this);
+  this._onScroll = this._onScroll.bind(this);
+  this._afterScroll = this._afterScroll.bind(this);
 }
 
-create({ constructor: SourcesView, proto: MenuContainer.prototype }, {
+StackFramesView.prototype = Heritage.extend(WidgetMethods, {
   /**
    * Initialization function, called when the debugger is started.
    */
-  initialize: function DVS_initialize() {
-    dumpn("Initializing the SourcesView");
-    this._container = document.getElementById("sources");
-    this._emptyLabel = L10N.getStr("noScriptsText");
-    this._unavailableLabel = L10N.getStr("noMatchingScriptsText");
+  initialize: function() {
+    dumpn("Initializing the StackFramesView");
 
-    this._container.addEventListener("select", this._onSelect, false);
-    this._container.addEventListener("click", this._onClick, false);
+    let commandset = this._commandset = document.createElement("commandset");
+    let menupopup = this._menupopup = document.createElement("menupopup");
+    commandset.id = "stackframesCommandset";
+    menupopup.id = "stackframesMenupopup";
 
-    this.empty();
+    document.getElementById("debuggerPopupset").appendChild(menupopup);
+    document.getElementById("debuggerCommands").appendChild(commandset);
+
+    this.widget = new BreadcrumbsWidget(document.getElementById("stackframes"));
+    this.widget.addEventListener("select", this._onSelect, false);
+    this.widget.addEventListener("scroll", this._onScroll, true);
+    window.addEventListener("resize", this._onScroll, true);
+
+    this.autoFocusOnFirstItem = false;
+    this.autoFocusOnSelection = false;
   },
 
   /**
    * Destruction function, called when the debugger is closed.
    */
-  destroy: function DVS_destroy() {
-    dumpn("Destroying the SourcesView");
-    this._container.removeEventListener("select", this._onSelect, false);
-    this._container.removeEventListener("click", this._onClick, false);
+  destroy: function() {
+    dumpn("Destroying the StackFramesView");
+
+    this.widget.removeEventListener("select", this._onSelect, false);
+    this.widget.removeEventListener("scroll", this._onScroll, true);
+    window.removeEventListener("resize", this._onScroll, true);
   },
 
   /**
-   * Sets the preferred source url to be displayed in this container.
-   * @param string aValue
+   * Adds a frame in this stackframes container.
+   *
+   * @param string aFrameTitle
+   *        The frame title to be displayed in the list.
+   * @param string aSourceLocation
+   *        The source location to be displayed in the list.
+   * @param string aLineNumber
+   *        The line number to be displayed in the list.
+   * @param number aDepth
+   *        The frame depth specified by the debugger.
    */
-  set preferredSource(aValue) {
-    this._preferredValue = aValue;
+  addFrame: function(aFrameTitle, aSourceLocation, aLineNumber, aDepth) {
+    // Create the element node and menu entry for the stack frame item.
+    let frameView = this._createFrameView.apply(this, arguments);
+    let menuEntry = this._createMenuEntry.apply(this, arguments);
 
-    // Selects the element with the specified value in this container,
-    // if already inserted.
-    if (this.containsValue(aValue)) {
-      this.selectedValue = aValue;
+    // Append a stack frame item to this container.
+    this.push([frameView], {
+      index: 0, /* specifies on which position should the item be appended */
+      attachment: {
+        popup: menuEntry,
+        depth: aDepth
+      },
+      attributes: [
+        ["contextmenu", "stackframesMenupopup"],
+        ["tooltiptext", aSourceLocation]
+      ],
+      // Make sure that when the stack frame item is removed, the corresponding
+      // menuitem and command are also destroyed.
+      finalize: this._onStackframeRemoved
+    });
+  },
+
+  /**
+   * Selects the frame at the specified depth in this container.
+   * @param number aDepth
+   */
+  set selectedDepth(aDepth) {
+    this.selectedItem = (aItem) => aItem.attachment.depth == aDepth;
+  },
+
+  /**
+   * Specifies if the active thread has more frames that need to be loaded.
+   */
+  dirty: false,
+
+  /**
+   * Customization function for creating an item's UI.
+   *
+   * @param string aFrameTitle
+   *        The frame title to be displayed in the list.
+   * @param string aSourceLocation
+   *        The source location to be displayed in the list.
+   * @param string aLineNumber
+   *        The line number to be displayed in the list.
+   * @param number aDepth
+   *        The frame depth specified by the debugger.
+   * @return nsIDOMNode
+   *         The stack frame view.
+   */
+  _createFrameView: function(aFrameTitle, aSourceLocation, aLineNumber, aDepth) {
+    let frameDetails =
+      SourceUtils.trimUrlLength(
+        SourceUtils.getSourceLabel(aSourceLocation),
+        STACK_FRAMES_SOURCE_URL_MAX_LENGTH,
+        STACK_FRAMES_SOURCE_URL_TRIM_SECTION) + SEARCH_LINE_FLAG + aLineNumber;
+
+    let frameTitleNode = document.createElement("label");
+    frameTitleNode.className = "plain dbg-stackframe-title breadcrumbs-widget-item-tag";
+    frameTitleNode.setAttribute("value", aFrameTitle);
+
+    let frameDetailsNode = document.createElement("label");
+    frameDetailsNode.className = "plain dbg-stackframe-details breadcrumbs-widget-item-id";
+    frameDetailsNode.setAttribute("value", frameDetails);
+
+    let container = document.createElement("hbox");
+    container.id = "stackframe-" + aDepth;
+    container.className = "dbg-stackframe";
+
+    container.appendChild(frameTitleNode);
+    container.appendChild(frameDetailsNode);
+
+    return container;
+  },
+
+  /**
+   * Customization function for populating an item's context menu.
+   *
+   * @param string aFrameTitle
+   *        The frame title to be displayed in the list.
+   * @param string aSourceLocation
+   *        The source location to be displayed in the list.
+   * @param string aLineNumber
+   *        The line number to be displayed in the list.
+   * @param number aDepth
+   *        The frame depth specified by the debugger.
+   * @return object
+   *         An object containing the stack frame command and menu item.
+   */
+  _createMenuEntry: function(aFrameTitle, aSourceLocation, aLineNumber, aDepth) {
+    let frameDescription =
+      SourceUtils.trimUrlLength(
+        SourceUtils.getSourceLabel(aSourceLocation),
+        STACK_FRAMES_POPUP_SOURCE_URL_MAX_LENGTH,
+        STACK_FRAMES_POPUP_SOURCE_URL_TRIM_SECTION) + SEARCH_LINE_FLAG + aLineNumber;
+
+    let prefix = "sf-cMenu-"; // "stackframes context menu"
+    let commandId = prefix + aDepth + "-" + "-command";
+    let menuitemId = prefix + aDepth + "-" + "-menuitem";
+
+    let command = document.createElement("command");
+    command.id = commandId;
+    command.addEventListener("command", () => this.selectedDepth = aDepth, false);
+
+    let menuitem = document.createElement("menuitem");
+    menuitem.id = menuitemId;
+    menuitem.className = "dbg-stackframe-menuitem";
+    menuitem.setAttribute("type", "checkbox");
+    menuitem.setAttribute("command", commandId);
+    menuitem.setAttribute("tooltiptext", aSourceLocation);
+
+    let labelNode = document.createElement("label");
+    labelNode.className = "plain dbg-stackframe-menuitem-title";
+    labelNode.setAttribute("value", aFrameTitle);
+    labelNode.setAttribute("flex", "1");
+
+    let descriptionNode = document.createElement("label");
+    descriptionNode.className = "plain dbg-stackframe-menuitem-details";
+    descriptionNode.setAttribute("value", frameDescription);
+
+    menuitem.appendChild(labelNode);
+    menuitem.appendChild(descriptionNode);
+
+    this._commandset.appendChild(command);
+    this._menupopup.appendChild(menuitem);
+
+    return {
+      command: command,
+      menuitem: menuitem
+    };
+  },
+
+  /**
+   * Function called each time a stack frame item is removed.
+   *
+   * @param object aItem
+   *        The corresponding item.
+   */
+  _onStackframeRemoved: function(aItem) {
+    dumpn("Finalizing stackframe item: " + aItem);
+
+    // Destroy the context menu item for the stack frame.
+    let contextItem = aItem.attachment.popup;
+    contextItem.command.remove();
+    contextItem.menuitem.remove();
+  },
+
+  /**
+   * The select listener for the stackframes container.
+   */
+  _onSelect: function(e) {
+    let stackframeItem = this.selectedItem;
+    if (stackframeItem) {
+      // The container is not empty and an actual item was selected.
+      gStackFrames.selectFrame(stackframeItem.attachment.depth);
+
+      // Update the context menu to show the currently selected stackframe item
+      // as a checked entry.
+      for (let otherItem in this) {
+        if (otherItem != stackframeItem) {
+          otherItem.attachment.popup.menuitem.removeAttribute("checked");
+        } else {
+          otherItem.attachment.popup.menuitem.setAttribute("checked", "");
+        }
+      }
     }
   },
 
   /**
-   * The select listener for the sources container.
+   * The scroll listener for the stackframes container.
    */
-  _onSelect: function DVS__onSelect() {
-    if (!this.refresh()) {
+  _onScroll: function() {
+    // Update the stackframes container only if we have to.
+    if (!this.dirty) {
       return;
     }
-    DebuggerView.setEditorSource(this.selectedItem.attachment);
+    window.clearTimeout(this._scrollTimeout);
+    this._scrollTimeout = window.setTimeout(this._afterScroll, STACK_FRAMES_SCROLL_DELAY);
   },
 
   /**
-   * The click listener for the sources container.
+   * Requests the addition of more frames from the controller.
    */
-  _onClick: function DVS__onClick() {
-    DebuggerView.Filtering.target = this;
-  }
+  _afterScroll: function() {
+    // TODO: Accessing private widget properties. Figure out what's the best
+    // way to expose such things. Bug 876271.
+    let list = this.widget._list;
+    let scrollPosition = list.scrollPosition;
+    let scrollWidth = list.scrollWidth;
+
+    // If the stackframes container scrolled almost to the end, with only
+    // 1/10 of a breadcrumb remaining, load more content.
+    if (scrollPosition - scrollWidth / 10 < 1) {
+      list.ensureElementIsVisible(this.getItemAtIndex(CALL_STACK_PAGE_SIZE - 1).target);
+      this.dirty = false;
+
+      // Loads more stack frames from the debugger server cache.
+      DebuggerController.StackFrames.addMoreFrames();
+    }
+  },
+
+  _commandset: null,
+  _menupopup: null,
+  _scrollTimeout: null
 });
 
 /**
- * Utility functions for handling sources.
+ * Utility functions for handling stackframes.
  */
-let SourceUtils = {
-  _labelsCache: new Map(),
-
+let StackFrameUtils = {
   /**
-   * Gets a unique, simplified label from a source url.
+   * Create a textual representation for the specified stack frame
+   * to display in the stackframes container.
    *
-   * @param string aUrl
-   *        The source url.
-   * @return string
-   *         The simplified label.
+   * @param object aFrame
+   *        The stack frame to label.
    */
-  getSourceLabel: function SU_getSourceLabel(aUrl) {
-    if (!this._labelsCache.has(aUrl)) {
-      this._labelsCache.set(aUrl, this.trimUrlLength(this.trimUrl(aUrl)));
+  getFrameTitle: function(aFrame) {
+    if (aFrame.type == "call") {
+      let c = aFrame.callee;
+      return (c.name || c.userDisplayName || c.displayName || "(anonymous)");
     }
-    return this._labelsCache.get(aUrl);
+    return "(" + aFrame.type + ")";
   },
 
   /**
-   * Clears the labels cache, populated by SourceUtils.getSourceLabel.
-   * This should be done every time the content location changes.
-   */
-  clearLabelsCache: function SU_clearLabelsCache() {
-    this._labelsCache = new Map();
-  },
-
-  /**
-   * Trims the url by shortening it if it exceeds a certain length, adding an
-   * ellipsis at the end.
+   * Constructs a scope label based on its environment.
    *
-   * @param string aUrl
-   *        The source url.
-   * @param number aMaxLength [optional]
-   *        The max source url length.
+   * @param object aEnv
+   *        The scope's environment.
    * @return string
-   *         The shortened url.
+   *         The scope's label.
    */
-  trimUrlLength: function SU_trimUrlLength(aUrl, aMaxLength = SOURCE_URL_MAX_LENGTH) {
-    if (aUrl.length > aMaxLength) {
-      return aUrl.substring(0, aMaxLength) + L10N.ellipsis;
+  getScopeLabel: function(aEnv) {
+    let name = "";
+
+    // Name the outermost scope Global.
+    if (!aEnv.parent) {
+      name = L10N.getStr("globalScopeLabel");
     }
-    return aUrl;
-  },
-
-  /**
-   * Trims the query part or reference identifier of a url string, if necessary.
-   *
-   * @param string aUrl
-   *        The source url.
-   * @return string
-   *         The shortened url.
-   */
-  trimUrlQuery: function SU_trimUrlQuery(aUrl) {
-    let length = aUrl.length;
-    let q1 = aUrl.indexOf('?');
-    let q2 = aUrl.indexOf('&');
-    let q3 = aUrl.indexOf('#');
-    let q = Math.min(q1 != -1 ? q1 : length,
-                     q2 != -1 ? q2 : length,
-                     q3 != -1 ? q3 : length);
-
-    return aUrl.slice(0, q);
-  },
-
-  /**
-   * Trims as much as possible from a url, while keeping the result unique
-   * in the sources container.
-   *
-   * @param string | nsIURL aUrl
-   *        The script url.
-   * @param string aLabel [optional]
-   *        The resulting label at each step.
-   * @param number aSeq [optional]
-   *        The current iteration step.
-   * @return string
-   *         The resulting label at the final step.
-   */
-  trimUrl: function SU_trimUrl(aUrl, aLabel, aSeq) {
-    if (!(aUrl instanceof Ci.nsIURL)) {
-      try {
-        // Use an nsIURL to parse all the url path parts.
-        aUrl = Services.io.newURI(aUrl, null, null).QueryInterface(Ci.nsIURL);
-      } catch (e) {
-        // This doesn't look like a url, or nsIURL can't handle it.
-        return aUrl;
-      }
-    }
-    if (!aSeq) {
-      let name = aUrl.fileName;
-      if (name) {
-        // This is a regular file url, get only the file name (contains the
-        // base name and extension if available).
-
-        // If this url contains an invalid query, unfortunately nsIURL thinks
-        // it's part of the file extension. It must be removed.
-        aLabel = aUrl.fileName.replace(/\&.*/, "");
-      } else {
-        // This is not a file url, hence there is no base name, nor extension.
-        // Proceed using other available information.
-        aLabel = "";
-      }
-      aSeq = 1;
+    // Otherwise construct the scope name.
+    else {
+      name = aEnv.type.charAt(0).toUpperCase() + aEnv.type.slice(1);
     }
 
-    // If we have a label and it doesn't start with a query...
-    if (aLabel && aLabel.indexOf("?") != 0) {
-      if (DebuggerView.Sources.containsTrimmedValue(aUrl.spec)) {
-        // A page may contain multiple requests to the same url but with different
-        // queries. It would be redundant to show each one.
-        return aLabel;
-      }
-      if (!DebuggerView.Sources.containsLabel(aLabel)) {
-        // We found the shortest unique label for the url.
-        return aLabel;
-      }
+    let label = L10N.getFormatStr("scopeLabel", name);
+    switch (aEnv.type) {
+      case "with":
+      case "object":
+        label += " [" + aEnv.object.class + "]";
+        break;
+      case "function":
+        let f = aEnv.function;
+        label += " [" +
+          (f.name || f.userDisplayName || f.displayName || "(anonymous)") +
+        "]";
+        break;
     }
-
-    // Append the url query.
-    if (aSeq == 1) {
-      let query = aUrl.query;
-      if (query) {
-        return this.trimUrl(aUrl, aLabel + "?" + query, aSeq + 1);
-      }
-      aSeq++;
-    }
-    // Append the url reference.
-    if (aSeq == 2) {
-      let ref = aUrl.ref;
-      if (ref) {
-        return this.trimUrl(aUrl, aLabel + "#" + aUrl.ref, aSeq + 1);
-      }
-      aSeq++;
-    }
-    // Prepend the url directory.
-    if (aSeq == 3) {
-      let dir = aUrl.directory;
-      if (dir) {
-        return this.trimUrl(aUrl, dir.replace(/^\//, "") + aLabel, aSeq + 1);
-      }
-      aSeq++;
-    }
-    // Prepend the hostname and port number.
-    if (aSeq == 4) {
-      let host = aUrl.hostPort;
-      if (host) {
-        return this.trimUrl(aUrl, host + "/" + aLabel, aSeq + 1);
-      }
-      aSeq++;
-    }
-    // Use the whole url spec but ignoring the reference.
-    if (aSeq == 5) {
-      return this.trimUrl(aUrl, aUrl.specIgnoringRef, aSeq + 1);
-    }
-    // Give up.
-    return aUrl.spec;
+    return label;
   }
 };
 
@@ -546,6 +691,7 @@ let SourceUtils = {
  */
 function FilterView() {
   dumpn("FilterView was instantiated");
+
   this._onClick = this._onClick.bind(this);
   this._onSearch = this._onSearch.bind(this);
   this._onKeyPress = this._onKeyPress.bind(this);
@@ -556,12 +702,15 @@ FilterView.prototype = {
   /**
    * Initialization function, called when the debugger is started.
    */
-  initialize: function DVF_initialize() {
+  initialize: function() {
     dumpn("Initializing the FilterView");
+
     this._searchbox = document.getElementById("searchbox");
-    this._searchboxPanel = document.getElementById("searchbox-panel");
+    this._searchboxHelpPanel = document.getElementById("searchbox-help-panel");
     this._globalOperatorButton = document.getElementById("global-operator-button");
     this._globalOperatorLabel = document.getElementById("global-operator-label");
+    this._functionOperatorButton = document.getElementById("function-operator-button");
+    this._functionOperatorLabel = document.getElementById("function-operator-label");
     this._tokenOperatorButton = document.getElementById("token-operator-button");
     this._tokenOperatorLabel = document.getElementById("token-operator-label");
     this._lineOperatorButton = document.getElementById("line-operator-button");
@@ -571,6 +720,7 @@ FilterView.prototype = {
 
     this._fileSearchKey = LayoutHelpers.prettyKey(document.getElementById("fileSearchKey"), true);
     this._globalSearchKey = LayoutHelpers.prettyKey(document.getElementById("globalSearchKey"), true);
+    this._filteredFunctionsKey = LayoutHelpers.prettyKey(document.getElementById("functionSearchKey"), true);
     this._tokenSearchKey = LayoutHelpers.prettyKey(document.getElementById("tokenSearchKey"), true);
     this._lineSearchKey = LayoutHelpers.prettyKey(document.getElementById("lineSearchKey"), true);
     this._variableSearchKey = LayoutHelpers.prettyKey(document.getElementById("variableSearchKey"), true);
@@ -582,20 +732,23 @@ FilterView.prototype = {
     this._searchbox.addEventListener("blur", this._onBlur, false);
 
     this._globalOperatorButton.setAttribute("label", SEARCH_GLOBAL_FLAG);
+    this._functionOperatorButton.setAttribute("label", SEARCH_FUNCTION_FLAG);
     this._tokenOperatorButton.setAttribute("label", SEARCH_TOKEN_FLAG);
     this._lineOperatorButton.setAttribute("label", SEARCH_LINE_FLAG);
     this._variableOperatorButton.setAttribute("label", SEARCH_VARIABLE_FLAG);
 
     this._globalOperatorLabel.setAttribute("value",
-      L10N.getFormatStr("searchPanelGlobal", [this._globalSearchKey]));
+      L10N.getFormatStr("searchPanelGlobal", this._globalSearchKey));
+    this._functionOperatorLabel.setAttribute("value",
+      L10N.getFormatStr("searchPanelFunction", this._filteredFunctionsKey));
     this._tokenOperatorLabel.setAttribute("value",
-      L10N.getFormatStr("searchPanelToken", [this._tokenSearchKey]));
+      L10N.getFormatStr("searchPanelToken", this._tokenSearchKey));
     this._lineOperatorLabel.setAttribute("value",
-      L10N.getFormatStr("searchPanelLine", [this._lineSearchKey]));
+      L10N.getFormatStr("searchPanelLine", this._lineSearchKey));
     this._variableOperatorLabel.setAttribute("value",
-      L10N.getFormatStr("searchPanelVariable", [this._variableSearchKey]));
+      L10N.getFormatStr("searchPanelVariable", this._variableSearchKey));
 
-    // TODO: bug 806775
+    // TODO: bug 806775 - group scripts by globals using hostAnnotations.
     // if (window._isChromeDebugger) {
     //   this.target = DebuggerView.ChromeGlobals;
     // } else {
@@ -606,8 +759,9 @@ FilterView.prototype = {
   /**
    * Destruction function, called when the debugger is closed.
    */
-  destroy: function DVF_destroy() {
+  destroy: function() {
     dumpn("Destroying the FilterView");
+
     this._searchbox.removeEventListener("click", this._onClick, false);
     this._searchbox.removeEventListener("select", this._onSearch, false);
     this._searchbox.removeEventListener("input", this._onSearch, false);
@@ -623,10 +777,10 @@ FilterView.prototype = {
     let placeholder = "";
     switch (aView) {
       case DebuggerView.ChromeGlobals:
-        placeholder = L10N.getFormatStr("emptyChromeGlobalsFilterText", [this._fileSearchKey]);
+        placeholder = L10N.getFormatStr("emptyChromeGlobalsFilterText", this._fileSearchKey);
         break;
       case DebuggerView.Sources:
-        placeholder = L10N.getFormatStr("emptyFilterText", [this._fileSearchKey]);
+        placeholder = L10N.getFormatStr("emptyFilterText", this._fileSearchKey);
         break;
     }
     this._searchbox.setAttribute("placeholder", placeholder);
@@ -634,79 +788,98 @@ FilterView.prototype = {
   },
 
   /**
+   * Gets the target container to be currently filtered.
+   * @return object
+   */
+  get target() this._target,
+
+  /**
    * Gets the entered file, line and token entered in the searchbox.
    * @return array
    */
   get searchboxInfo() {
-    let file, line, token, isGlobal, isVariable;
+    let operator, file, line, token;
 
     let rawValue = this._searchbox.value;
     let rawLength = rawValue.length;
     let globalFlagIndex = rawValue.indexOf(SEARCH_GLOBAL_FLAG);
+    let functionFlagIndex = rawValue.indexOf(SEARCH_FUNCTION_FLAG);
     let variableFlagIndex = rawValue.indexOf(SEARCH_VARIABLE_FLAG);
     let lineFlagIndex = rawValue.lastIndexOf(SEARCH_LINE_FLAG);
     let tokenFlagIndex = rawValue.lastIndexOf(SEARCH_TOKEN_FLAG);
 
-    // This is not a global or variable search, allow file or line flags.
-    if (globalFlagIndex != 0 && variableFlagIndex != 0) {
+    // This is not a global, function or variable search, allow file/line flags.
+    if (globalFlagIndex != 0 && functionFlagIndex != 0 && variableFlagIndex != 0) {
       let fileEnd = lineFlagIndex != -1
         ? lineFlagIndex
-        : tokenFlagIndex != -1 ? tokenFlagIndex : rawLength;
+        : tokenFlagIndex != -1
+          ? tokenFlagIndex
+          : rawLength;
 
       let lineEnd = tokenFlagIndex != -1
         ? tokenFlagIndex
         : rawLength;
 
+      operator = "";
       file = rawValue.slice(0, fileEnd);
       line = ~~(rawValue.slice(fileEnd + 1, lineEnd)) || 0;
       token = rawValue.slice(lineEnd + 1);
-      isGlobal = false;
-      isVariable = false;
     }
     // Global searches dissalow the use of file or line flags.
     else if (globalFlagIndex == 0) {
+      operator = SEARCH_GLOBAL_FLAG;
       file = "";
       line = 0;
       token = rawValue.slice(1);
-      isGlobal = true;
-      isVariable = false;
+    }
+    // Function searches dissalow the use of file or line flags.
+    else if (functionFlagIndex == 0) {
+      operator = SEARCH_FUNCTION_FLAG;
+      file = "";
+      line = 0;
+      token = rawValue.slice(1);
     }
     // Variable searches dissalow the use of file or line flags.
     else if (variableFlagIndex == 0) {
+      operator = SEARCH_VARIABLE_FLAG;
       file = "";
       line = 0;
       token = rawValue.slice(1);
-      isGlobal = false;
-      isVariable = true;
     }
 
-    return [file, line, token, isGlobal, isVariable];
+    return [operator, file, line, token];
   },
+
+  /**
+   * Returns the current searched operator.
+   * @return string
+   */
+  get currentOperator() this.searchboxInfo[0],
 
   /**
    * Returns the currently searched file.
    * @return string
    */
-  get searchedFile() this.searchboxInfo[0],
+  get searchedFile() this.searchboxInfo[1],
 
   /**
    * Returns the currently searched line.
    * @return number
    */
-  get searchedLine() this.searchboxInfo[1],
+  get searchedLine() this.searchboxInfo[2],
 
   /**
    * Returns the currently searched token.
    * @return string
    */
-  get searchedToken() this.searchboxInfo[2],
+  get searchedToken() this.searchboxInfo[3],
 
   /**
    * Clears the text from the searchbox and resets any changed view.
    */
-  clearSearch: function DVF_clearSearch() {
+  clearSearch: function() {
     this._searchbox.value = "";
-    this._searchboxPanel.hidePopup();
+    this._searchboxHelpPanel.hidePopup();
   },
 
   /**
@@ -715,12 +888,14 @@ FilterView.prototype = {
    * @param string aFile
    *        The source location to search for.
    */
-  _performFileSearch: function DVF__performFileSearch(aFile) {
+  _performFileSearch: function(aFile) {
     // Don't search for files if the input hasn't changed.
     if (this._prevSearchedFile == aFile) {
       return;
     }
 
+    // This is the target container to be currently filtered. Clicking on a
+    // container generally means it should become a target.
     let view = this._target;
 
     // If we're not searching for a file anymore, unhide all the items.
@@ -763,6 +938,13 @@ FilterView.prototype = {
     // Synchronize with the view's filtered sources container.
     DebuggerView.FilteredSources.syncFileSearch();
 
+    // Hide all the groups with no visible children.
+    view.widget.hideEmptyGroups();
+
+    // Ensure the currently selected item is visible.
+    view.widget.ensureSelectionIsVisible({ withGroup: true });
+
+    // Remember the previously searched file to avoid redundant filtering.
     this._prevSearchedFile = aFile;
   },
 
@@ -773,7 +955,7 @@ FilterView.prototype = {
    * @param number aLine
    *        The source line number to jump to.
    */
-  _performLineSearch: function DVF__performLineSearch(aLine) {
+  _performLineSearch: function(aLine) {
     // Don't search for lines if the input hasn't changed.
     if (this._prevSearchedLine != aLine && aLine) {
       DebuggerView.editor.setCaretPosition(aLine - 1);
@@ -782,6 +964,8 @@ FilterView.prototype = {
     if (this._prevSearchedToken && !aLine) {
       this._target.refresh();
     }
+
+    // Remember the previously searched line to avoid redundant filtering.
     this._prevSearchedLine = aLine;
   },
 
@@ -792,7 +976,7 @@ FilterView.prototype = {
    * @param string aToken
    *        The source token to find.
    */
-  _performTokenSearch: function DVF__performTokenSearch(aToken) {
+  _performTokenSearch: function(aToken) {
     // Don't search for tokens if the input hasn't changed.
     if (this._prevSearchedToken != aToken && aToken) {
       let editor = DebuggerView.editor;
@@ -805,40 +989,52 @@ FilterView.prototype = {
     if (this._prevSearchedLine && !aToken) {
       this._target.refresh();
     }
+
+    // Remember the previously searched token to avoid redundant filtering.
     this._prevSearchedToken = aToken;
   },
 
   /**
    * The click listener for the search container.
    */
-  _onClick: function DVF__onClick() {
-    this._searchboxPanel.openPopup(this._searchbox);
+  _onClick: function() {
+    this._searchboxHelpPanel.openPopup(this._searchbox);
   },
 
   /**
    * The search listener for the search container.
    */
-  _onSearch: function DVF__onScriptsSearch() {
-    this._searchboxPanel.hidePopup();
-    let [file, line, token, isGlobal, isVariable] = this.searchboxInfo;
+  _onSearch: function() {
+    this._searchboxHelpPanel.hidePopup();
+    let [operator, file, line, token] = this.searchboxInfo;
 
     // If this is a global search, schedule it for when the user stops typing,
     // or hide the corresponding pane otherwise.
-    if (isGlobal) {
+    if (operator == SEARCH_GLOBAL_FLAG) {
       DebuggerView.GlobalSearch.scheduleSearch(token);
+      this._prevSearchedToken = token;
+      return;
+    }
+
+    // If this is a function search, schedule it for when the user stops typing,
+    // or hide the corresponding panel otherwise.
+    if (operator == SEARCH_FUNCTION_FLAG) {
+      DebuggerView.FilteredFunctions.scheduleSearch(token);
       this._prevSearchedToken = token;
       return;
     }
 
     // If this is a variable search, defer the action to the corresponding
     // variables view instance.
-    if (isVariable) {
+    if (operator == SEARCH_VARIABLE_FLAG) {
       DebuggerView.Variables.scheduleSearch(token);
       this._prevSearchedToken = token;
       return;
     }
 
     DebuggerView.GlobalSearch.clearView();
+    DebuggerView.FilteredFunctions.clearView();
+
     this._performFileSearch(file);
     this._performLineSearch(line);
     this._performTokenSearch(token);
@@ -847,22 +1043,24 @@ FilterView.prototype = {
   /**
    * The key press listener for the search container.
    */
-  _onKeyPress: function DVF__onScriptsKeyPress(e) {
+  _onKeyPress: function(e) {
     // This attribute is not implemented in Gecko at this time, see bug 680830.
     e.char = String.fromCharCode(e.charCode);
 
-    let [file, line, token, isGlobal, isVariable] = this.searchboxInfo;
-    let isFileSearch, isLineSearch, isDifferentToken, isReturnKey;
+    let [operator, file, line, token] = this.searchboxInfo;
+    let isGlobal = operator == SEARCH_GLOBAL_FLAG;
+    let isFunction = operator == SEARCH_FUNCTION_FLAG;
+    let isVariable = operator == SEARCH_VARIABLE_FLAG;
     let action = -1;
 
     if (file && !line && !token) {
-      isFileSearch = true;
+      var isFileSearch = true;
     }
     if (line && !token) {
-      isLineSearch = true;
+      var isLineSearch = true;
     }
     if (this._prevSearchedToken != token) {
-      isDifferentToken = true;
+      var isDifferentToken = true;
     }
 
     // Meta+G and Ctrl+N focus next matches.
@@ -873,12 +1071,12 @@ FilterView.prototype = {
     else if ((e.char == "G" && e.metaKey) || e.char == "p" && e.ctrlKey) {
       action = 1;
     }
-    // Return, enter down and up keys focus next or previous matches, while
+    // Return, enter, down and up keys focus next or previous matches, while
     // the escape key switches focus from the search container.
     else switch (e.keyCode) {
       case e.DOM_VK_RETURN:
       case e.DOM_VK_ENTER:
-        isReturnKey = true;
+        var isReturnKey = true;
         // fall through
       case e.DOM_VK_DOWN:
         action = 0;
@@ -895,8 +1093,7 @@ FilterView.prototype = {
       DebuggerView.editor.focus();
       return;
     }
-    if (action == -1 || (!file && !line && !token)) {
-      DebuggerView.FilteredSources.hidden = true;
+    if (action == -1 || (!operator && !file && !line && !token)) {
       return;
     }
 
@@ -906,11 +1103,11 @@ FilterView.prototype = {
     // Select the next or previous file search entry.
     if (isFileSearch) {
       if (isReturnKey) {
-        DebuggerView.FilteredSources.hidden = true;
+        DebuggerView.FilteredSources.clearView();
         DebuggerView.editor.focus();
         this.clearSearch();
       } else {
-        DebuggerView.FilteredSources[["focusNext", "focusPrev"][action]]();
+        DebuggerView.FilteredSources[["selectNext", "selectPrev"][action]]();
       }
       this._prevSearchedFile = file;
       return;
@@ -921,7 +1118,22 @@ FilterView.prototype = {
       if (isReturnKey && (isDifferentToken || DebuggerView.GlobalSearch.hidden)) {
         DebuggerView.GlobalSearch.performSearch(token);
       } else {
-        DebuggerView.GlobalSearch[["focusNextMatch", "focusPrevMatch"][action]]();
+        DebuggerView.GlobalSearch[["selectNext", "selectPrev"][action]]();
+      }
+      this._prevSearchedToken = token;
+      return;
+    }
+
+    // Perform a function search based on the specified operator.
+    if (isFunction) {
+      if (isReturnKey && (isDifferentToken || DebuggerView.FilteredFunctions.hidden)) {
+        DebuggerView.FilteredFunctions.performSearch(token);
+      } else if (!isReturnKey) {
+        DebuggerView.FilteredFunctions[["selectNext", "selectPrev"][action]]();
+      } else {
+        DebuggerView.FilteredFunctions.clearView();
+        DebuggerView.editor.focus();
+        this.clearSearch();
       }
       this._prevSearchedToken = token;
       return;
@@ -960,10 +1172,12 @@ FilterView.prototype = {
   /**
    * The blur listener for the search container.
    */
-  _onBlur: function DVF__onBlur() {
+  _onBlur: function() {
     DebuggerView.GlobalSearch.clearView();
+    DebuggerView.FilteredSources.clearView();
+    DebuggerView.FilteredFunctions.clearView();
     DebuggerView.Variables.performSearch(null);
-    this._searchboxPanel.hidePopup();
+    this._searchboxHelpPanel.hidePopup();
   },
 
   /**
@@ -972,56 +1186,75 @@ FilterView.prototype = {
    * @param string aOperator
    *        The operator to use for filtering.
    */
-  _doSearch: function DVF__doSearch(aOperator = "") {
+  _doSearch: function(aOperator = "") {
     this._searchbox.focus();
+    this._searchbox.value = ""; // Need to clear value beforehand. Bug 779738.
     this._searchbox.value = aOperator;
   },
 
   /**
    * Called when the source location filter key sequence was pressed.
    */
-  _doFileSearch: function DVF__doFileSearch() {
+  _doFileSearch: function() {
     this._doSearch();
-    this._searchboxPanel.openPopup(this._searchbox);
+    this._searchboxHelpPanel.openPopup(this._searchbox);
   },
 
   /**
    * Called when the global search filter key sequence was pressed.
    */
-  _doGlobalSearch: function DVF__doGlobalSearch() {
+  _doGlobalSearch: function() {
     this._doSearch(SEARCH_GLOBAL_FLAG);
-    this._searchboxPanel.hidePopup();
+    this._searchboxHelpPanel.hidePopup();
+  },
+
+  /**
+   * Called when the source function filter key sequence was pressed.
+   */
+  _doFunctionSearch: function() {
+    this._doSearch(SEARCH_FUNCTION_FLAG);
+    this._searchboxHelpPanel.hidePopup();
   },
 
   /**
    * Called when the source token filter key sequence was pressed.
    */
-  _doTokenSearch: function DVF__doTokenSearch() {
+  _doTokenSearch: function() {
     this._doSearch(SEARCH_TOKEN_FLAG);
-    this._searchboxPanel.hidePopup();
+    this._searchboxHelpPanel.hidePopup();
   },
 
   /**
    * Called when the source line filter key sequence was pressed.
    */
-  _doLineSearch: function DVF__doLineSearch() {
+  _doLineSearch: function() {
     this._doSearch(SEARCH_LINE_FLAG);
-    this._searchboxPanel.hidePopup();
+    this._searchboxHelpPanel.hidePopup();
   },
 
   /**
    * Called when the variable search filter key sequence was pressed.
    */
-  _doVariableSearch: function DVF__doVariableSearch() {
+  _doVariableSearch: function() {
     DebuggerView.Variables.performSearch("");
     this._doSearch(SEARCH_VARIABLE_FLAG);
-    this._searchboxPanel.hidePopup();
+    this._searchboxHelpPanel.hidePopup();
+  },
+
+  /**
+   * Called when the variables focus key sequence was pressed.
+   */
+  _doVariablesFocus: function() {
+    DebuggerView.showInstrumentsPane();
+    DebuggerView.Variables.focusFirstVisibleItem();
   },
 
   _searchbox: null,
-  _searchboxPanel: null,
+  _searchboxHelpPanel: null,
   _globalOperatorButton: null,
   _globalOperatorLabel: null,
+  _functionOperatorButton: null,
+  _functionOperatorLabel: null,
   _tokenOperatorButton: null,
   _tokenOperatorLabel: null,
   _lineOperatorButton: null,
@@ -1030,6 +1263,7 @@ FilterView.prototype = {
   _variableOperatorLabel: null,
   _fileSearchKey: "",
   _globalSearchKey: "",
+  _filteredFunctionsKey: "",
   _tokenSearchKey: "",
   _lineSearchKey: "",
   _variableSearchKey: "",
@@ -1043,61 +1277,43 @@ FilterView.prototype = {
  * Functions handling the filtered sources UI.
  */
 function FilteredSourcesView() {
-  MenuContainer.call(this);
+  dumpn("FilteredSourcesView was instantiated");
+
   this._onClick = this._onClick.bind(this);
+  this._onSelect = this._onSelect.bind(this);
 }
 
-create({ constructor: FilteredSourcesView, proto: MenuContainer.prototype }, {
+FilteredSourcesView.prototype = Heritage.extend(ResultsPanelContainer.prototype, {
   /**
    * Initialization function, called when the debugger is started.
    */
-  initialize: function DVFS_initialize() {
+  initialize: function() {
     dumpn("Initializing the FilteredSourcesView");
 
-    let panel = this._panel = document.createElement("panel");
-    panel.id = "filtered-sources-panel";
-    panel.setAttribute("noautofocus", "true");
-    panel.setAttribute("level", "top");
-    panel.setAttribute("position", FILTERED_SOURCES_POPUP_POSITION);
-    document.documentElement.appendChild(panel);
-
-    this._searchbox = document.getElementById("searchbox");
-    this._container = new StackList(panel);
-
-    this._container.itemFactory = this._createItemView;
-    this._container.itemType = "vbox";
-    this._container.addEventListener("click", this._onClick, false);
+    this.anchor = document.getElementById("searchbox");
+    this.widget.addEventListener("select", this._onSelect, false);
+    this.widget.addEventListener("click", this._onClick, false);
   },
 
   /**
    * Destruction function, called when the debugger is closed.
    */
-  destroy: function DVFS_destroy() {
+  destroy: function() {
     dumpn("Destroying the FilteredSourcesView");
-    document.documentElement.removeChild(this._panel);
-    this._container.removeEventListener("click", this._onClick, false);
-  },
 
-  /**
-   * Sets the files container hidden or visible. It's hidden by default.
-   * @param boolean aFlag
-   */
-  set hidden(aFlag) {
-    if (aFlag) {
-      this._container._parent.hidePopup();
-    } else {
-      this._container._parent.openPopup(this._searchbox);
-    }
+    this.widget.removeEventListener("select", this._onSelect, false);
+    this.widget.removeEventListener("click", this._onClick, false);
+    this.anchor = null;
   },
 
   /**
    * Updates the list of sources displayed in this container.
    */
-  syncFileSearch: function DVFS_syncFileSearch() {
+  syncFileSearch: function() {
     this.empty();
 
     // If there's no currently searched file, or there are no matches found,
-    // hide the popup.
+    // hide the popup and avoid creating the view again.
     if (!DebuggerView.Filtering.searchedFile ||
         !DebuggerView.Sources.visibleItems.length) {
       this.hidden = true;
@@ -1106,100 +1322,281 @@ create({ constructor: FilteredSourcesView, proto: MenuContainer.prototype }, {
 
     // Get the currently visible items in the sources container.
     let visibleItems = DebuggerView.Sources.visibleItems;
-    let displayedItems = visibleItems.slice(0, FILTERED_SOURCES_MAX_RESULTS);
+    let displayedItems = visibleItems.slice(0, RESULTS_PANEL_MAX_RESULTS);
 
+    // Append a location item item to this container.
     for (let item of displayedItems) {
-      // Append a location item item to this container.
       let trimmedLabel = SourceUtils.trimUrlLength(item.label);
-      let trimmedValue = SourceUtils.trimUrlLength(item.value);
-
-      let locationItem = this.push(trimmedLabel, trimmedValue, {
-        forced: true,
-        relaxed: true,
-        unsorted: true,
+      let trimmedValue = SourceUtils.trimUrlLength(item.value, 0, "start");
+      let locationItem = this.push([trimmedLabel, trimmedValue], {
+        relaxed: true, /* this container should allow dupes & degenerates */
         attachment: {
           fullLabel: item.label,
           fullValue: item.value
         }
       });
-
-      let element = locationItem.target;
-      element.className = "dbg-source-item list-item";
-      element.labelNode.className = "dbg-source-item-name plain";
-      element.valueNode.className = "dbg-source-item-details plain";
     }
 
-    this._updateSelection(this.getItemAtIndex(0));
-    this.hidden = false;
-  },
+    // Select the first entry in this container.
+    this.selectedIndex = 0;
 
-  /**
-   * Focuses the next found match in this container.
-   */
-  focusNext: function DVFS_focusNext() {
-    let nextIndex = this.selectedIndex + 1;
-    if (nextIndex >= this.totalItems) {
-      nextIndex = 0;
-    }
-    this._updateSelection(this.getItemAtIndex(nextIndex));
-  },
-
-  /**
-   * Focuses the previously found match in this container.
-   */
-  focusPrev: function DVFS_focusPrev() {
-    let prevIndex = this.selectedIndex - 1;
-    if (prevIndex < 0) {
-      prevIndex = this.totalItems - 1;
-    }
-    this._updateSelection(this.getItemAtIndex(prevIndex));
+    // Only display the results panel if there's at least one entry available.
+    this.hidden = this.itemCount == 0;
   },
 
   /**
    * The click listener for this container.
    */
-  _onClick: function DVFS__onClick(e) {
+  _onClick: function(e) {
     let locationItem = this.getItemForElement(e.target);
     if (locationItem) {
-      this._updateSelection(locationItem);
+      this.selectedItem = locationItem;
+      DebuggerView.Filtering.clearSearch();
     }
   },
 
   /**
-   * Updates the selected item in this container and other views.
+   * The select listener for this container.
    *
-   * @param MenuItem aItem
+   * @param object aItem
    *        The item associated with the element to select.
    */
-  _updateSelection: function DVFS__updateSelection(aItem) {
-    this.selectedItem = aItem;
-    DebuggerView.Filtering._target.selectedValue = aItem.attachment.fullValue;
+  _onSelect: function({ detail: locationItem }) {
+    if (locationItem) {
+      DebuggerView.updateEditor(locationItem.attachment.fullValue, 0);
+    }
+  }
+});
+
+/**
+ * Functions handling the function search UI.
+ */
+function FilteredFunctionsView() {
+  dumpn("FilteredFunctionsView was instantiated");
+
+  this._performFunctionSearch = this._performFunctionSearch.bind(this);
+  this._onClick = this._onClick.bind(this);
+  this._onSelect = this._onSelect.bind(this);
+}
+
+FilteredFunctionsView.prototype = Heritage.extend(ResultsPanelContainer.prototype, {
+  /**
+   * Initialization function, called when the debugger is started.
+   */
+  initialize: function() {
+    dumpn("Initializing the FilteredFunctionsView");
+
+    this.anchor = document.getElementById("searchbox");
+    this.widget.addEventListener("select", this._onSelect, false);
+    this.widget.addEventListener("click", this._onClick, false);
   },
 
   /**
-   * Customization function for creating an item's UI.
-   *
-   * @param string aLabel
-   *        The item's label.
-   * @param string aValue
-   *        The item's value.
+   * Destruction function, called when the debugger is closed.
    */
-  _createItemView: function DVFS__createItemView(aElementNode, aLabel, aValue) {
-    let labelNode = document.createElement("label");
-    let valueNode = document.createElement("label");
+  destroy: function() {
+    dumpn("Destroying the FilteredFunctionsView");
 
-    labelNode.setAttribute("value", aLabel);
-    valueNode.setAttribute("value", aValue);
-
-    aElementNode.appendChild(labelNode);
-    aElementNode.appendChild(valueNode);
-
-    aElementNode.labelNode = labelNode;
-    aElementNode.valueNode = valueNode;
+    this.widget.removeEventListener("select", this._onSelect, false);
+    this.widget.removeEventListener("click", this._onClick, false);
+    this.anchor = null;
   },
 
-  _panel: null,
-  _searchbox: null
+  /**
+   * Allows searches to be scheduled and delayed to avoid redundant calls.
+   */
+  delayedSearch: true,
+
+  /**
+   * Schedules searching for a function in all of the sources.
+   *
+   * @param string aQuery
+   *        The function to search for.
+   */
+  scheduleSearch: function(aQuery) {
+    if (!this.delayedSearch) {
+      this.performSearch(aQuery);
+      return;
+    }
+    let delay = Math.max(FUNCTION_SEARCH_ACTION_MAX_DELAY / aQuery.length, 0);
+
+    window.clearTimeout(this._searchTimeout);
+    this._searchFunction = this._startSearch.bind(this, aQuery);
+    this._searchTimeout = window.setTimeout(this._searchFunction, delay);
+  },
+
+  /**
+   * Immediately searches for a function in all of the sources.
+   *
+   * @param string aQuery
+   *        The function to search for.
+   */
+  performSearch: function(aQuery) {
+    window.clearTimeout(this._searchTimeout);
+    this._searchFunction = null;
+    this._startSearch(aQuery);
+  },
+
+  /**
+   * Starts searching for a function in all of the sources.
+   *
+   * @param string aQuery
+   *        The function to search for.
+   */
+  _startSearch: function(aQuery) {
+    this._searchedToken = aQuery;
+
+    // Start fetching as many sources as possible, then perform the search.
+    DebuggerController.SourceScripts
+      .getTextForSources(DebuggerView.Sources.values)
+      .then(this._performFunctionSearch);
+  },
+
+  /**
+   * Finds function matches in all the sources stored in the cache, and groups
+   * them by location and line number.
+   */
+  _performFunctionSearch: function(aSources) {
+    // Get the currently searched token from the filtering input.
+    // Continue parsing even if the searched token is an empty string, to
+    // cache the syntax tree nodes generated by the reflection API.
+    let token = this._searchedToken;
+
+    // Make sure the currently displayed source is parsed first. Once the
+    // maximum allowed number of resutls are found, parsing will be halted.
+    let currentUrl = DebuggerView.Sources.selectedValue;
+    aSources.sort(([sourceUrl]) => sourceUrl == currentUrl ? -1 : 1);
+
+    // If not searching for a specific function, only parse the displayed source.
+    if (!token) {
+      aSources.splice(1);
+    }
+
+    // Prepare the results array, containing search details for each source.
+    let searchResults = [];
+
+    for (let [location, contents] of aSources) {
+      let parserMethods = DebuggerController.Parser.get(location, contents);
+      let sourceResults = parserMethods.getNamedFunctionDefinitions(token);
+
+      for (let scriptResult of sourceResults) {
+        for (let parseResult of scriptResult.parseResults) {
+          searchResults.push({
+            sourceUrl: scriptResult.sourceUrl,
+            scriptOffset: scriptResult.scriptOffset,
+            functionName: parseResult.functionName,
+            functionLocation: parseResult.functionLocation,
+            inferredName: parseResult.inferredName,
+            inferredChain: parseResult.inferredChain,
+            inferredLocation: parseResult.inferredLocation
+          });
+
+          // Once the maximum allowed number of results is reached, proceed
+          // with building the UI immediately.
+          if (searchResults.length >= RESULTS_PANEL_MAX_RESULTS) {
+            this._syncFunctionSearch(searchResults);
+            return;
+          }
+        }
+      }
+    }
+    // Couldn't reach the maximum allowed number of results, but that's ok,
+    // continue building the UI.
+    this._syncFunctionSearch(searchResults);
+  },
+
+  /**
+   * Updates the list of functions displayed in this container.
+   *
+   * @param array aSearchResults
+   *        The results array, containing search details for each source.
+   */
+  _syncFunctionSearch: function(aSearchResults) {
+    this.empty();
+
+    // Show the popup even if the search token is an empty string. If there are
+    // no matches found, hide the popup and avoid creating the view again.
+    if (!aSearchResults.length) {
+      this.hidden = true;
+      return;
+    }
+
+    for (let item of aSearchResults) {
+      // Some function expressions don't necessarily have a name, but the
+      // parser provides us with an inferred name from an enclosing
+      // VariableDeclarator, AssignmentExpression, ObjectExpression node.
+      if (item.functionName && item.inferredName &&
+          item.functionName != item.inferredName) {
+        let s = " " + L10N.getStr("functionSearchSeparatorLabel") + " ";
+        item.displayedName = item.inferredName + s + item.functionName;
+      }
+      // The function doesn't have an explicit name, but it could be inferred.
+      else if (item.inferredName) {
+        item.displayedName = item.inferredName;
+      }
+      // The function only has an explicit name.
+      else {
+        item.displayedName = item.functionName;
+      }
+
+      // Some function expressions have unexpected bounds, since they may not
+      // necessarily have an associated name defining them.
+      if (item.inferredLocation) {
+        item.actualLocation = item.inferredLocation;
+      } else {
+        item.actualLocation = item.functionLocation;
+      }
+
+      // Append a function item to this container.
+      let trimmedLabel = SourceUtils.trimUrlLength(item.displayedName + "()");
+      let trimmedValue = SourceUtils.trimUrlLength(item.sourceUrl, 0, "start");
+      let description = (item.inferredChain || []).join(".");
+
+      let functionItem = this.push([trimmedLabel, trimmedValue, description], {
+        index: -1, /* specifies on which position should the item be appended */
+        relaxed: true, /* this container should allow dupes & degenerates */
+        attachment: item
+      });
+    }
+
+    // Select the first entry in this container.
+    this.selectedIndex = 0;
+
+    // Only display the results panel if there's at least one entry available.
+    this.hidden = this.itemCount == 0;
+  },
+
+  /**
+   * The click listener for this container.
+   */
+  _onClick: function(e) {
+    let functionItem = this.getItemForElement(e.target);
+    if (functionItem) {
+      this.selectedItem = functionItem;
+      DebuggerView.Filtering.clearSearch();
+    }
+  },
+
+  /**
+   * The select listener for this container.
+   */
+  _onSelect: function({ detail: functionItem }) {
+    if (functionItem) {
+      let sourceUrl = functionItem.attachment.sourceUrl;
+      let scriptOffset = functionItem.attachment.scriptOffset;
+      let actualLocation = functionItem.attachment.actualLocation;
+
+      DebuggerView.updateEditor(sourceUrl, actualLocation.start.line, {
+        charOffset: scriptOffset,
+        columnOffset: actualLocation.start.column,
+        noDebug: true
+      });
+    }
+  },
+
+  _searchTimeout: null,
+  _searchFunction: null,
+  _searchedToken: ""
 });
 
 /**
@@ -1207,7 +1604,8 @@ create({ constructor: FilteredSourcesView, proto: MenuContainer.prototype }, {
  */
 DebuggerView.Toolbar = new ToolbarView();
 DebuggerView.Options = new OptionsView();
-DebuggerView.ChromeGlobals = new ChromeGlobalsView();
-DebuggerView.Sources = new SourcesView();
 DebuggerView.Filtering = new FilterView();
 DebuggerView.FilteredSources = new FilteredSourcesView();
+DebuggerView.FilteredFunctions = new FilteredFunctionsView();
+DebuggerView.ChromeGlobals = new ChromeGlobalsView();
+DebuggerView.StackFrames = new StackFramesView();

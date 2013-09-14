@@ -4,7 +4,6 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* $Id: loader.h,v 1.39 2013/02/05 18:10:42 wtc%google.com Exp $ */
 
 #ifndef _LOADER_H_
 #define _LOADER_H_ 1
@@ -140,7 +139,7 @@ struct FREEBLVectorStr {
  SECStatus (* p_MD5_Hash)(unsigned char *dest, const char *src);
 
  SECStatus (* p_MD5_HashBuf)(unsigned char *dest, const unsigned char *src,
-			     uint32 src_length);
+			     PRUint32 src_length);
 
  MD5Context *(* p_MD5_NewContext)(void);
 
@@ -185,7 +184,7 @@ struct FREEBLVectorStr {
  SECStatus (* p_SHA1_Hash)(unsigned char *dest, const char *src);
 
  SECStatus (* p_SHA1_HashBuf)(unsigned char *dest, const unsigned char *src,
-			      uint32 src_length);
+			      PRUint32 src_length);
 
  SHA1Context *(* p_SHA1_NewContext)(void);
 
@@ -244,7 +243,7 @@ struct FREEBLVectorStr {
  void (* p_SHA256_End)(SHA256Context *cx, unsigned char *digest,
 		     unsigned int *digestLen, unsigned int maxDigestLen);
  SECStatus (* p_SHA256_HashBuf)(unsigned char *dest, const unsigned char *src,
-			      uint32 src_length);
+				PRUint32 src_length);
  SECStatus (* p_SHA256_Hash)(unsigned char *dest, const char *src);
  void (* p_SHA256_TraceState)(SHA256Context *cx);
  unsigned int (* p_SHA256_FlattenSize)(SHA256Context *cx);
@@ -259,7 +258,7 @@ struct FREEBLVectorStr {
  void (* p_SHA512_End)(SHA512Context *cx, unsigned char *digest,
 		     unsigned int *digestLen, unsigned int maxDigestLen);
  SECStatus (* p_SHA512_HashBuf)(unsigned char *dest, const unsigned char *src,
-			      uint32 src_length);
+				PRUint32 src_length);
  SECStatus (* p_SHA512_Hash)(unsigned char *dest, const char *src);
  void (* p_SHA512_TraceState)(SHA512Context *cx);
  unsigned int (* p_SHA512_FlattenSize)(SHA512Context *cx);
@@ -274,7 +273,7 @@ struct FREEBLVectorStr {
  void (* p_SHA384_End)(SHA384Context *cx, unsigned char *digest,
 		     unsigned int *digestLen, unsigned int maxDigestLen);
  SECStatus (* p_SHA384_HashBuf)(unsigned char *dest, const unsigned char *src,
-			      uint32 src_length);
+				PRUint32 src_length);
  SECStatus (* p_SHA384_Hash)(unsigned char *dest, const char *src);
  void (* p_SHA384_TraceState)(SHA384Context *cx);
  unsigned int (* p_SHA384_FlattenSize)(SHA384Context *cx);
@@ -552,7 +551,7 @@ struct FREEBLVectorStr {
  void (* p_SHA224_End)(SHA224Context *cx, unsigned char *digest,
 		     unsigned int *digestLen, unsigned int maxDigestLen);
  SECStatus (*p_SHA224_HashBuf)(unsigned char *dest, const unsigned char *src,
-			      uint32 src_length);
+			       PRUint32 src_length);
  SECStatus (*p_SHA224_Hash)(unsigned char *dest, const char *src);
  void (*p_SHA224_TraceState)(SHA224Context *cx);
  unsigned int (* p_SHA224_FlattenSize)(SHA224Context *cx);

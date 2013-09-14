@@ -10,13 +10,16 @@
 #if defined(XP_WIN)
 #include <windows.h>
 #include <stdlib.h>
+#include <io.h>
+#include <fcntl.h>
 #elif defined(XP_UNIX)
-#include <sys/time.h>
 #include <sys/resource.h>
+#include <time.h>
 #include <unistd.h>
 #endif
 
 #ifdef XP_MACOSX
+#include <mach/mach_time.h>
 #include "MacQuirks.h"
 #endif
 
@@ -27,6 +30,10 @@
 #include "nsCOMPtr.h"
 #include "nsIFile.h"
 #include "nsStringGlue.h"
+
+// Easy access to a five second startup delay used to get
+// a debugger attached in the metro environment. 
+// #define DEBUG_delay_start_metro
 
 #ifdef XP_WIN
 // we want a wmain entry point
@@ -41,6 +48,14 @@
 #include "mozilla/Telemetry.h"
 
 using namespace mozilla;
+
+#define kDesktopFolder "browser"
+#define kMetroFolder "metro"
+#define kMetroAppIniFilename "metroapp.ini"
+#ifdef XP_WIN
+#define kMetroTestFile "tests.ini"
+const char* kMetroConsoleIdParam = "testconsoleid=";
+#endif
 
 static void Output(const char *fmt, ... )
 {
@@ -92,15 +107,39 @@ static bool IsArg(const char* arg, const char* s)
   return false;
 }
 
-/**
- * A helper class which calls NS_LogInit/NS_LogTerm in its scope.
+#ifdef XP_WIN
+/*
+ * AttachToTestHarness - Windows helper for when we are running
+ * in the immersive environment. Firefox is launched by Windows in
+ * response to a request by metrotestharness, which is launched by
+ * runtests.py. As such stdout in fx doesn't point to the right
+ * stream. This helper touches up stdout such that test output gets
+ * routed to a named pipe metrotestharness creates and dumps to its
+ * stdout.
  */
-class ScopedLogging
+static void AttachToTestHarness()
 {
-public:
-  ScopedLogging() { NS_LogInit(); }
-  ~ScopedLogging() { NS_LogTerm(); }
-};
+  // attach to the metrotestharness named logging pipe
+  HANDLE winOut = CreateFileA("\\\\.\\pipe\\metrotestharness",
+                              GENERIC_WRITE,
+                              FILE_SHARE_WRITE, 0,
+                              OPEN_EXISTING, 0, 0);
+  
+  if (winOut == INVALID_HANDLE_VALUE) {
+    OutputDebugStringW(L"Could not create named logging pipe.\n");
+    return;
+  }
+
+  // Set the c runtime handle
+  int stdOut = _open_osfhandle((intptr_t)winOut, _O_APPEND);
+  if (stdOut == -1) {
+    OutputDebugStringW(L"Could not open c-runtime handle.\n");
+    return;
+  }
+  FILE *fp = _fdopen(stdOut, "a");
+  *stdout = *fp;
+}
+#endif
 
 XRE_GetFileFromPathType XRE_GetFileFromPath;
 XRE_CreateAppDataType XRE_CreateAppData;
@@ -131,6 +170,7 @@ static int do_main(int argc, char* argv[], nsIFile *xreDirectory)
 {
   nsCOMPtr<nsIFile> appini;
   nsresult rv;
+  uint32_t mainFlags = 0;
 
   // Allow firefox.exe to launch XULRunner apps via -app <application.ini>
   // Note that -app must be the *first* argument.
@@ -174,46 +214,248 @@ static int do_main(int argc, char* argv[], nsIFile *xreDirectory)
     }
     // xreDirectory already has a refcount from NS_NewLocalFile
     appData->xreDirectory = xreDirectory;
-    int result = XRE_main(argc, argv, appData, 0);
+    int result = XRE_main(argc, argv, appData, mainFlags);
     XRE_FreeAppData(appData);
     return result;
   }
 
-  ScopedAppData appData(&sAppData);
-  nsCOMPtr<nsIFile> exeFile;
-  rv = mozilla::BinaryPath::GetFile(argv[0], getter_AddRefs(exeFile));
-  if (NS_FAILED(rv)) {
-    Output("Couldn't find the application directory.\n");
-    return 255;
+  bool metroOnDesktop = false;
+
+#ifdef MOZ_METRO
+  if (argc > 1) {
+    // This command-line flag is passed to our executable when it is to be
+    // launched in metro mode (i.e. our EXE is registered as the default
+    // browser and the user has tapped our EXE's tile)
+    if (IsArg(argv[1], "ServerName:DefaultBrowserServer")) {
+      mainFlags = XRE_MAIN_FLAG_USE_METRO;
+      argv[1] = argv[0];
+      argv++;
+      argc--;
+    } else if (IsArg(argv[1], "BackgroundSessionClosed")) {
+      // This command line flag is used for indirect shutdowns, the OS
+      // relaunches Metro Firefox with this command line arg.
+      mainFlags = XRE_MAIN_FLAG_USE_METRO;
+    } else {
+      // This command-line flag is used to test the metro browser in a desktop
+      // environment.
+      for (int idx = 1; idx < argc; idx++) {
+        if (IsArg(argv[idx], "metrodesktop")) {
+          metroOnDesktop = true;
+          break;
+        } 
+      }
+    }
   }
-  nsCOMPtr<nsIFile> appDir;
-  exeFile->GetParent(getter_AddRefs(appDir));
-
-  SetStrongPtr(appData.directory, static_cast<nsIFile*>(appDir.get()));
-  // xreDirectory already has a refcount from NS_NewLocalFile
-  appData.xreDirectory = xreDirectory;
-  return XRE_main(argc, argv, &appData, 0);
-}
-
-/* Local implementation of PR_Now, since the executable can't depend on NSPR */
-static PRTime _PR_Now()
-{
-#ifdef XP_WIN
-  MOZ_STATIC_ASSERT(sizeof(PRTime) == sizeof(FILETIME), "PRTime must have the same size as FILETIME");
-  FILETIME ft;
-  GetSystemTimeAsFileTime(&ft);
-  PRTime now;
-  CopyMemory(&now, &ft, sizeof(PRTime));
-#ifdef __GNUC__
-  return (now - 116444736000000000LL) / 10LL;
-#else
-  return (now - 116444736000000000i64) / 10i64;
 #endif
 
-#else
-  struct timeval tm;
-  gettimeofday(&tm, 0);
-  return (((PRTime)tm.tv_sec * 1000000LL) + (PRTime)tm.tv_usec);
+  // Desktop browser launch
+  if (mainFlags != XRE_MAIN_FLAG_USE_METRO && !metroOnDesktop) {
+    ScopedAppData appData(&sAppData);
+    nsCOMPtr<nsIFile> exeFile;
+    rv = mozilla::BinaryPath::GetFile(argv[0], getter_AddRefs(exeFile));
+    if (NS_FAILED(rv)) {
+      Output("Couldn't find the application directory.\n");
+      return 255;
+    }
+
+    nsCOMPtr<nsIFile> greDir;
+    exeFile->GetParent(getter_AddRefs(greDir));
+
+    nsCOMPtr<nsIFile> appSubdir;
+    greDir->Clone(getter_AddRefs(appSubdir));
+    appSubdir->Append(NS_LITERAL_STRING(kDesktopFolder));
+
+    SetStrongPtr(appData.directory, static_cast<nsIFile*>(appSubdir.get()));
+    // xreDirectory already has a refcount from NS_NewLocalFile
+    appData.xreDirectory = xreDirectory;
+
+    return XRE_main(argc, argv, &appData, mainFlags);
+  }
+
+  // Metro browser launch
+#ifdef MOZ_METRO
+  nsCOMPtr<nsIFile> iniFile, appSubdir;
+
+  xreDirectory->Clone(getter_AddRefs(iniFile));
+  xreDirectory->Clone(getter_AddRefs(appSubdir));
+
+  iniFile->Append(NS_LITERAL_STRING(kMetroFolder));
+  iniFile->Append(NS_LITERAL_STRING(kMetroAppIniFilename));
+
+  appSubdir->Append(NS_LITERAL_STRING(kMetroFolder));
+
+  nsAutoCString path;
+  if (NS_FAILED(iniFile->GetNativePath(path))) {
+    Output("Couldn't get ini file path.\n");
+    return 255;
+  }
+
+  char appEnv[MAXPATHLEN];
+  snprintf(appEnv, MAXPATHLEN, "XUL_APP_FILE=%s", path.get());
+  if (putenv(appEnv)) {
+    Output("Couldn't set %s.\n", appEnv);
+    return 255;
+  }
+
+  nsXREAppData *appData;
+  rv = XRE_CreateAppData(iniFile, &appData);
+  if (NS_FAILED(rv) || !appData) {
+    Output("Couldn't read application.ini");
+    return 255;
+  }
+
+  SetStrongPtr(appData->directory, static_cast<nsIFile*>(appSubdir.get()));
+  // xreDirectory already has a refcount from NS_NewLocalFile
+  appData->xreDirectory = xreDirectory;
+
+#ifdef XP_WIN
+  if (!metroOnDesktop) {
+    nsCOMPtr<nsIFile> testFile;
+
+    xreDirectory->Clone(getter_AddRefs(testFile));
+    testFile->Append(NS_LITERAL_STRING(kMetroTestFile));
+
+    nsAutoCString path;
+    if (NS_FAILED(testFile->GetNativePath(path))) {
+      Output("Couldn't get test file path.\n");
+      return 255;
+    }
+
+    // Check for a metro test harness command line args file
+    HANDLE hTestFile = CreateFileA(path.get(),
+                                   GENERIC_READ,
+                                   0, NULL, OPEN_EXISTING,
+                                   FILE_ATTRIBUTE_NORMAL,
+                                   NULL);
+    if (hTestFile != INVALID_HANDLE_VALUE) {
+      // Typical test harness command line args string is around 100 bytes.
+      char buffer[1024];
+      memset(buffer, 0, sizeof(buffer));
+      DWORD bytesRead = 0;
+      if (!ReadFile(hTestFile, (VOID*)buffer, sizeof(buffer)-1,
+                    &bytesRead, NULL) || !bytesRead) {
+        CloseHandle(hTestFile);
+        printf("failed to read test file '%s'", testFile);
+        return -1;
+      }
+      CloseHandle(hTestFile);
+
+      // Build new args array
+      char* newArgv[20];
+      int newArgc = 1;
+
+      memset(newArgv, 0, sizeof(newArgv));
+
+      char* ptr = buffer;
+      newArgv[0] = ptr;
+      while (*ptr != NULL &&
+             (ptr - buffer) < sizeof(buffer) &&
+             newArgc < ARRAYSIZE(newArgv)) {
+        if (isspace(*ptr)) {
+          *ptr = '\0';
+          ptr++;
+          newArgv[newArgc] = ptr;
+          newArgc++;
+          continue;
+        }
+        ptr++;
+      }
+      if (ptr == newArgv[newArgc-1])
+        newArgc--;
+
+      // attach browser stdout to metrotestharness stdout
+      AttachToTestHarness();
+
+      int result = XRE_main(newArgc, newArgv, appData, mainFlags);
+      XRE_FreeAppData(appData);
+      return result;
+    }
+  }
+#endif
+
+  int result = XRE_main(argc, argv, appData, mainFlags);
+  XRE_FreeAppData(appData);
+  return result;
+#endif
+
+  NS_NOTREACHED("browser do_main failed to pickup proper initialization");
+  return 255;
+}
+
+#ifdef XP_WIN
+
+/**
+ * Used only when GetTickCount64 is not available on the platform.
+ * Last result of GetTickCount call. Kept in [ms].
+ */
+static DWORD sLastGTCResult = 0;
+
+/**
+ *  Higher part of the 64-bit value of MozGetTickCount64,
+ * incremented atomically.
+ */
+static DWORD sLastGTCRollover = 0;
+
+/**
+ * Function protecting GetTickCount result from rolling over. The original
+ * code comes from the Windows implementation of the TimeStamp class minus the
+ * locking harness which isn't needed here.
+ *
+ * @returns The current time in milliseconds
+ */
+static ULONGLONG WINAPI
+MozGetTickCount64()
+{
+  DWORD GTC = ::GetTickCount();
+
+  /* Pull the rollover counter forward only if new value of GTC goes way
+   * down under the last saved result */
+  if ((sLastGTCResult > GTC) && ((sLastGTCResult - GTC) > (1UL << 30)))
+    ++sLastGTCRollover;
+
+  sLastGTCResult = GTC;
+  return (ULONGLONG)sLastGTCRollover << 32 | sLastGTCResult;
+}
+
+typedef ULONGLONG (WINAPI* GetTickCount64_t)();
+static GetTickCount64_t sGetTickCount64 = nullptr;
+
+#endif
+
+/**
+ * Local TimeStamp::Now()-compatible implementation used to record timestamps
+ * which will be passed to XRE_StartupTimelineRecord().
+ */
+static uint64_t
+TimeStamp_Now()
+{
+#ifdef XP_WIN
+  LARGE_INTEGER freq;
+  ::QueryPerformanceFrequency(&freq);
+
+  HMODULE kernelDLL = GetModuleHandleW(L"kernel32.dll");
+  sGetTickCount64 = reinterpret_cast<GetTickCount64_t>
+    (GetProcAddress(kernelDLL, "GetTickCount64"));
+
+  if (!sGetTickCount64) {
+    /* If the platform does not support the GetTickCount64 (Windows XP doesn't),
+     * then use our fallback implementation based on GetTickCount. */
+    sGetTickCount64 = MozGetTickCount64;
+  }
+
+  return sGetTickCount64() * freq.QuadPart;
+#elif defined(XP_MACOSX)
+  return mach_absolute_time();
+#elif defined(HAVE_CLOCK_MONOTONIC)
+  struct timespec ts;
+  int rv = clock_gettime(CLOCK_MONOTONIC, &ts);
+
+  if (rv != 0) {
+    return 0;
+  }
+
+  uint64_t baseNs = (uint64_t)ts.tv_sec * 1000000000;
+  return baseNs + (uint64_t)ts.tv_nsec;
 #endif
 }
 
@@ -315,14 +557,16 @@ InitXPCOMGlue(const char *argv0, nsIFile **xreDirectory)
     return rv;
   }
 
+  NS_LogInit();
+
   // chop XPCOM_DLL off exePath
   *lastSlash = '\0';
 #ifdef XP_WIN
-  NS_NewLocalFile(NS_ConvertUTF8toUTF16(exePath), false,
-                  xreDirectory);
+  rv = NS_NewLocalFile(NS_ConvertUTF8toUTF16(exePath), false,
+                       xreDirectory);
 #else
-  NS_NewNativeLocalFile(nsDependentCString(exePath), false,
-                        xreDirectory);
+  rv = NS_NewNativeLocalFile(nsDependentCString(exePath), false,
+                             xreDirectory);
 #endif
 
   return rv;
@@ -330,7 +574,10 @@ InitXPCOMGlue(const char *argv0, nsIFile **xreDirectory)
 
 int main(int argc, char* argv[])
 {
-  PRTime start = _PR_Now();
+#ifdef DEBUG_delay_start_metro
+  Sleep(5000);
+#endif
+  uint64_t start = TimeStamp_Now();
 
 #ifdef XP_MACOSX
   TriggerQuirks();
@@ -382,14 +629,9 @@ int main(int argc, char* argv[])
 #endif
   }
 
-  int result;
-  {
-    ScopedLogging log;
-    result = do_main(argc, argv, xreDirectory);
-  }
+  int result = do_main(argc, argv, xreDirectory);
 
-  XPCOMGlueShutdown();
-
+  NS_LogTerm();
 
 #ifdef XP_MACOSX
   // Allow writes again. While we would like to catch writes from static
@@ -397,9 +639,6 @@ int main(int argc, char* argv[])
   // at least one such write that we don't control (see bug 826029). For
   // now we enable writes again and early exits will have to use exit instead
   // of _exit.
-
-  // Currently write poisoning is only available on OS X. Since on OS X we never
-  // unload XUL, it is safe to call this function after XPCOMGlueShutdown.
   XRE_DisableWritePoisoning();
 #endif
 

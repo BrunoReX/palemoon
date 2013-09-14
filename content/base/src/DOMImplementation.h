@@ -29,7 +29,7 @@ class DOMImplementation MOZ_FINAL : public nsIDOMDOMImplementation
 {
 public:
   DOMImplementation(nsIDocument* aOwner,
-                    nsIScriptGlobalObject* aScriptObject,
+                    nsIGlobalObject* aScriptObject,
                     nsIURI* aDocumentURI,
                     nsIURI* aBaseURI)
     : mOwner(aOwner)
@@ -53,8 +53,8 @@ public:
     return mOwner;
   }
 
-  virtual JSObject* WrapObject(JSContext* aCx, JSObject* aScope,
-                               bool* aTriedToWrap) MOZ_OVERRIDE;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
 
   // nsIDOMDOMImplementation
   NS_DECL_NSIDOMDOMIMPLEMENTATION
@@ -74,7 +74,7 @@ public:
                  ErrorResult& aRv);
 
   already_AddRefed<nsIDocument>
-  CreateHTMLDocument(const nsAString& aTitle, ErrorResult& aRv);
+  CreateHTMLDocument(const Optional<nsAString>& aTitle, ErrorResult& aRv);
 
 private:
   nsresult CreateDocument(const nsAString& aNamespaceURI,

@@ -29,12 +29,12 @@ namespace {
 // protocol 0.  Oops!  We can get away with this until protocol 0
 // starts approaching its 65,536th message.
 enum {
-    CHANNEL_OPENED_MESSAGE_TYPE = kuint16max - 6,
-    SHMEM_DESTROYED_MESSAGE_TYPE = kuint16max - 5,
-    UNBLOCK_CHILD_MESSAGE_TYPE = kuint16max - 4,
-    BLOCK_CHILD_MESSAGE_TYPE   = kuint16max - 3,
-    SHMEM_CREATED_MESSAGE_TYPE = kuint16max - 2,
-    GOODBYE_MESSAGE_TYPE       = kuint16max - 1
+    CHANNEL_OPENED_MESSAGE_TYPE = kuint16max - 5,
+    SHMEM_DESTROYED_MESSAGE_TYPE = kuint16max - 4,
+    SHMEM_CREATED_MESSAGE_TYPE = kuint16max - 3,
+    GOODBYE_MESSAGE_TYPE       = kuint16max - 2
+
+    // kuint16max - 1 is used by ipc_channel.h.
 };
 }
 
@@ -115,9 +115,10 @@ LoggingEnabled()
 inline void
 ProtocolErrorBreakpoint(const char* aMsg)
 {
-    if (LoggingEnabled()) {
-        printf_stderr("Protocol error: %s\n", aMsg);
-    }
+    // Bugs that generate these error messages can be tough to
+    // reproduce.  Log always in the hope that someone finds the error
+    // message.
+    printf_stderr("IPDL protocol error: %s\n", aMsg);
 }
 
 typedef IPCMessageStart ProtocolId;

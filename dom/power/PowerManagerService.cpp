@@ -108,6 +108,7 @@ PowerManagerService::SyncProfile()
     obsServ->NotifyObservers(nullptr, "profile-change-net-teardown", context.get());
     obsServ->NotifyObservers(nullptr, "profile-change-teardown", context.get());
     obsServ->NotifyObservers(nullptr, "profile-before-change", context.get());
+    obsServ->NotifyObservers(nullptr, "profile-before-change2", context.get());
   }
 }
 
@@ -118,7 +119,7 @@ PowerManagerService::Reboot()
   // To synchronize any unsaved user data before rebooting.
   SyncProfile();
   hal::Reboot();
-  MOZ_NOT_REACHED();
+  MOZ_NOT_REACHED("hal::Reboot() shouldn't return");
   return NS_OK;
 }
 
@@ -129,7 +130,7 @@ PowerManagerService::PowerOff()
   // To synchronize any unsaved user data before powering off.
   SyncProfile();
   hal::PowerOff();
-  MOZ_NOT_REACHED();
+  MOZ_NOT_REACHED("hal::PowerOff() shouldn't return");
   return NS_OK;
 }
 
@@ -152,7 +153,7 @@ PowerManagerService::Restart()
   sync();
 #endif
   _exit(0);
-  MOZ_NOT_REACHED();
+  MOZ_NOT_REACHED("_exit() shouldn't return");
   return NS_OK;
 }
 
@@ -197,6 +198,16 @@ PowerManagerService::NewWakeLock(const nsAString &aTopic,
   wl.forget(aWakeLock);
 
   return NS_OK;
+}
+
+already_AddRefed<nsIDOMMozWakeLock>
+PowerManagerService::NewWakeLockOnBehalfOfProcess(const nsAString& aTopic,
+                                                  ContentParent* aContentParent)
+{
+  nsRefPtr<WakeLock> wakelock = new WakeLock();
+  nsresult rv = wakelock->Init(aTopic, aContentParent);
+  NS_ENSURE_SUCCESS(rv, nullptr);
+  return wakelock.forget();
 }
 
 } // power

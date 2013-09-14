@@ -588,6 +588,7 @@ static dom::ConstantSpec gWinProperties[] =
   INT_CONSTANT(ERROR_ALREADY_EXISTS),
   INT_CONSTANT(ERROR_FILE_NOT_FOUND),
   INT_CONSTANT(ERROR_NO_MORE_FILES),
+  INT_CONSTANT(ERROR_PATH_NOT_FOUND),
 
   PROP_END
 };
@@ -600,11 +601,11 @@ static dom::ConstantSpec gWinProperties[] =
  * If the field does not exist, create it. If it exists but is not an
  * object, throw a JS error.
  */
-JSObject *GetOrCreateObjectProperty(JSContext *cx, JSObject *aObject,
+JSObject *GetOrCreateObjectProperty(JSContext *cx, JS::Handle<JSObject*> aObject,
                                     const char *aProperty)
 {
-  JS::Value val;
-  if (!JS_GetProperty(cx, aObject, aProperty, &val)) {
+  JS::Rooted<JS::Value> val(cx);
+  if (!JS_GetProperty(cx, aObject, aProperty, val.address())) {
     return NULL;
   }
   if (!val.isUndefined()) {
@@ -624,7 +625,7 @@ JSObject *GetOrCreateObjectProperty(JSContext *cx, JSObject *aObject,
  *
  * If the nsString is void (i.e. IsVoid is true), do nothing.
  */
-bool SetStringProperty(JSContext *cx, JSObject *aObject, const char *aProperty,
+bool SetStringProperty(JSContext *cx, JS::Handle<JSObject*> aObject, const char *aProperty,
                        const nsString aValue)
 {
   if (aValue.IsVoid()) {
@@ -632,8 +633,8 @@ bool SetStringProperty(JSContext *cx, JSObject *aObject, const char *aProperty,
   }
   JSString* strValue = JS_NewUCStringCopyZ(cx, aValue.get());
   NS_ENSURE_TRUE(strValue, false);
-  jsval valValue = STRING_TO_JSVAL(strValue);
-  return JS_SetProperty(cx, aObject, aProperty, &valValue);
+  JS::Rooted<JS::Value> valValue(cx, STRING_TO_JSVAL(strValue));
+  return JS_SetProperty(cx, aObject, aProperty, valValue.address());
 }
 
 /**
@@ -642,7 +643,7 @@ bool SetStringProperty(JSContext *cx, JSObject *aObject, const char *aProperty,
  * This function creates or uses JS object |OS.Constants| to store
  * all its constants.
  */
-bool DefineOSFileConstants(JSContext *cx, JSObject *global)
+bool DefineOSFileConstants(JSContext *cx, JS::Handle<JSObject*> global)
 {
   MOZ_ASSERT(gInitialized);
 
@@ -656,18 +657,18 @@ bool DefineOSFileConstants(JSContext *cx, JSObject *global)
     return false;
   }
 
-  JSObject *objOS;
+  JS::Rooted<JSObject*> objOS(cx);
   if (!(objOS = GetOrCreateObjectProperty(cx, global, "OS"))) {
     return false;
   }
-  JSObject *objConstants;
+  JS::Rooted<JSObject*> objConstants(cx);
   if (!(objConstants = GetOrCreateObjectProperty(cx, objOS, "Constants"))) {
     return false;
   }
 
   // Build OS.Constants.libc
 
-  JSObject *objLibc;
+  JS::Rooted<JSObject*> objLibc(cx);
   if (!(objLibc = GetOrCreateObjectProperty(cx, objConstants, "libc"))) {
     return false;
   }
@@ -678,7 +679,7 @@ bool DefineOSFileConstants(JSContext *cx, JSObject *global)
 #if defined(XP_WIN)
   // Build OS.Constants.Win
 
-  JSObject *objWin;
+  JS::Rooted<JSObject*> objWin(cx);
   if (!(objWin = GetOrCreateObjectProperty(cx, objConstants, "Win"))) {
     return false;
   }
@@ -689,7 +690,7 @@ bool DefineOSFileConstants(JSContext *cx, JSObject *global)
 
   // Build OS.Constants.Sys
 
-  JSObject *objSys;
+  JS::Rooted<JSObject*> objSys(cx);
   if (!(objSys = GetOrCreateObjectProperty(cx, objConstants, "Sys"))) {
     return false;
   }
@@ -705,15 +706,22 @@ bool DefineOSFileConstants(JSContext *cx, JSObject *global)
       return false;
     }
 
-    jsval valVersion = STRING_TO_JSVAL(strVersion);
-    if (!JS_SetProperty(cx, objSys, "Name", &valVersion)) {
+    JS::Rooted<JS::Value> valVersion(cx, STRING_TO_JSVAL(strVersion));
+    if (!JS_SetProperty(cx, objSys, "Name", valVersion.address())) {
       return false;
     }
   }
 
+#if defined(DEBUG)
+  JS::Rooted<JS::Value> valDebug(cx, JSVAL_TRUE);
+  if (!JS_SetProperty(cx, objSys, "DEBUG", valDebug.address())) {
+    return false;
+  }
+#endif
+
   // Build OS.Constants.Path
 
-  JSObject *objPath;
+  JS::Rooted<JSObject*> objPath(cx);
   if (!(objPath = GetOrCreateObjectProperty(cx, objConstants, "Path"))) {
     return false;
   }
@@ -784,9 +792,8 @@ OSFileConstantsService::Init(JSContext *aCx)
     return rv;
   }
 
-  JSObject *targetObj = nullptr;
-
   mozJSComponentLoader* loader = mozJSComponentLoader::Get();
+  JS::Rooted<JSObject*> targetObj(aCx);
   rv = loader->FindTargetObject(aCx, &targetObj);
   NS_ENSURE_SUCCESS(rv, rv);
 

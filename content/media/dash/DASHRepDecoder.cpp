@@ -20,6 +20,7 @@
 #include "MediaResource.h"
 #include "DASHRepDecoder.h"
 #include "WebMReader.h"
+#include <algorithm>
 
 namespace mozilla {
 
@@ -101,12 +102,12 @@ DASHRepDecoder::Load(MediaResource* aResource,
   // delta between it and the INIT byte ranges is less than
   // |SEEK_VS_READ_THRESHOLD|. To get around this, request all metadata bytes
   // now so |MediaCache| can assume the bytes are en route.
-  int64_t delta = NS_MAX(mIndexByteRange.mStart, mInitByteRange.mStart)
-                - NS_MIN(mIndexByteRange.mEnd, mInitByteRange.mEnd);
+  int64_t delta = std::max(mIndexByteRange.mStart, mInitByteRange.mStart)
+                - std::min(mIndexByteRange.mEnd, mInitByteRange.mEnd);
   MediaByteRange byteRange;
   if (delta <= SEEK_VS_READ_THRESHOLD) {
-    byteRange.mStart = NS_MIN(mIndexByteRange.mStart, mInitByteRange.mStart);
-    byteRange.mEnd = NS_MAX(mIndexByteRange.mEnd, mInitByteRange.mEnd);
+    byteRange.mStart = std::min(mIndexByteRange.mStart, mInitByteRange.mStart);
+    byteRange.mEnd = std::max(mIndexByteRange.mEnd, mInitByteRange.mEnd);
     // Loading everything in one chunk .
     mMetadataChunkCount = 1;
   } else {
@@ -124,9 +125,11 @@ DASHRepDecoder::NotifyDownloadEnded(nsresult aStatus)
   NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
 
   if (!mMainDecoder) {
-    LOG("Error! Main Decoder is reported as null: mMainDecoder [%p]",
-        mMainDecoder.get());
-    DecodeError();
+    if (!mShuttingDown) {
+      LOG("Error! Main Decoder is null before shutdown: mMainDecoder [%p] ",
+          mMainDecoder.get());
+      DecodeError();
+    }
     return;
   }
 
@@ -152,7 +155,8 @@ DASHRepDecoder::NotifyDownloadEnded(nsresult aStatus)
       mMainDecoder->NotifyDownloadEnded(this, aStatus, mSubsegmentIdx);
     }
   } else if (aStatus == NS_BINDING_ABORTED) {
-    LOG("MPD download has been cancelled by the user: aStatus [%x].", aStatus);
+    LOG("Media download has been cancelled by the user: aStatus [%x].",
+        aStatus);
     if (mMainDecoder) {
       mMainDecoder->LoadAborted();
     }
@@ -276,23 +280,6 @@ DASHRepDecoder::LoadNextByteRange()
   }
 }
 
-void
-DASHRepDecoder::CancelByteRangeLoad()
-{
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
-  NS_ASSERTION(mResource, "Error: resource is reported as null!");
-
-  if (mCurrentByteRange.IsNull() || mSubsegmentIdx < 0) {
-    LOG1("Canceling current byte range load: none to cancel.");
-    return;
-  }
-  LOG("Canceling current byte range load: [%lld] to [%lld] subsegment "
-      "[%lld]", mCurrentByteRange.mStart, mCurrentByteRange.mEnd,
-      mSubsegmentIdx);
-
-  mResource->CancelByteRangeOpen();
-}
-
 bool
 DASHRepDecoder::IsSubsegmentCached(int32_t aSubsegmentIdx)
 {
@@ -412,7 +399,8 @@ DASHRepDecoder::SetInfinite(bool aInfinite)
 void
 DASHRepDecoder::SetMediaSeekable(bool aMediaSeekable)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  NS_ASSERTION(NS_IsMainThread() || OnDecodeThread(),
+               "Should be on main thread or decode thread.");
   if (mMainDecoder) { mMainDecoder->SetMediaSeekable(aMediaSeekable); }
 }
 
@@ -513,6 +501,18 @@ DASHRepDecoder::ReleaseStateMachine()
   mReader = nullptr;
 
   MediaDecoder::ReleaseStateMachine();
+}
+
+void DASHRepDecoder::StopProgressUpdates()
+{
+  NS_ENSURE_TRUE_VOID(mMainDecoder);
+  MediaDecoder::StopProgressUpdates();
+}
+
+void DASHRepDecoder::StartProgressUpdates()
+{
+  NS_ENSURE_TRUE_VOID(mMainDecoder);
+  MediaDecoder::StartProgressUpdates();
 }
 
 } // namespace mozilla

@@ -111,7 +111,7 @@ public:
                 int64_t aCurrentTime) MOZ_OVERRIDE;
 
   // Called by state machine on multiple threads.
-  nsresult GetBuffered(nsTimeRanges* aBuffered, int64_t aStartTime) MOZ_OVERRIDE;
+  nsresult GetBuffered(mozilla::dom::TimeRanges* aBuffered, int64_t aStartTime) MOZ_OVERRIDE;
 
   // Called on the state machine or decode threads.
   VideoData* FindStartTime(int64_t& aOutStartTime) MOZ_OVERRIDE;
@@ -124,6 +124,10 @@ public:
   void RequestVideoReaderSwitch(uint32_t aFromReaderIdx,
                                 uint32_t aToReaderIdx,
                                 uint32_t aSubsegmentIdx);
+
+  // Returns a pointer to the reader which should be used for the specified
+  // subsegment. Called on the decode thread only.
+  DASHRepReader* GetReaderForSubsegment(uint32_t aSubsegmentIdx);
 
 private:
   // Switches video subreaders if a stream-switch flag has been set, and the
@@ -236,6 +240,16 @@ private:
       return mSubReaderList.Length();
     }
 
+    // Returns true if |mSubReaderList| is empty. Will assert that threads
+    // other than the decode thread are "in monitor".
+    bool IsEmpty() const
+    {
+      NS_ASSERTION(mReader->GetDecoder(), "Decoder is null!");
+      if (!mReader->GetDecoder()->OnDecodeThread()) {
+        mReader->GetDecoder()->GetReentrantMonitor().AssertCurrentThreadIn();
+      }
+      return mSubReaderList.IsEmpty();
+    }
     // Override '[]' to assert threads other than the decode thread are "in
     // monitor" for accessing individual elems. Note: elems returned do not
     // have monitor assertions builtin like |MonitoredSubReader| objects.

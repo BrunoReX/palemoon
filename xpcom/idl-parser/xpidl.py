@@ -768,7 +768,7 @@ class Attribute(object):
                            self.location)
         if self.infallible and not self.realtype.kind == 'builtin':
             raise IDLError('[infallible] only works on builtin types '
-                           '(numbers, bool, and raw char types)',
+                           '(numbers, booleans, and raw char types)',
                            self.location)
         if self.infallible and not iface.attributes.builtinclass:
             raise IDLError('[infallible] attributes are only allowed on '
@@ -1009,7 +1009,8 @@ class IDLParser(object):
         'raises': 'RAISES',
         'readonly': 'READONLY',
         'native': 'NATIVE',
-        'typedef': 'TYPEDEF'
+        'typedef': 'TYPEDEF',
+        'Infinity': 'INFINITY'
         }
 
     tokens = [
@@ -1439,9 +1440,11 @@ class IDLParser(object):
 
     def p_optdefvalue(self, p):
         """optdefvalue : '=' STRING
+                       | '=' INFINITY
+                       | '=' '-' INFINITY
                        | """
         if len(p) > 1:
-            p[0] = p[2]
+            p[0] = "".join(p[2:])
         else:
             p[0] = None
 

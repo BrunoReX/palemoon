@@ -2,8 +2,41 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 var gPageCompleted;
 var GLOBAL = this + '';
+
+// Variables local to jstests harness.
+var jstestsTestPassesUnlessItThrows = false;
+var jstestsRestoreFunction;
+var jstestsOptions;
+
+/*
+ * Signals to this script that the current test case should be considered to
+ * have passed if it doesn't throw an exception.
+ *
+ * Overrides the same-named function in shell.js.
+ */
+function testPassesUnlessItThrows() {
+  jstestsTestPassesUnlessItThrows = true;
+}
+
+/*
+ * Requests to load the given JavaScript file before the file containing the
+ * test case.
+ */
+function include(file) {
+  outputscripttag(file, {language: "type", mimetype: "text/javascript"});
+}
+
+/*
+ * Sets a restore function which restores the standard built-in ECMAScript
+ * properties after a destructive test case, and which will be called after
+ * the test case terminates.
+ */
+function setRestoreFunction(restore) {
+  jstestsRestoreFunction = restore;
+}
 
 function htmlesc(str) {
   if (str == '<')
@@ -83,6 +116,16 @@ function writeFormattedResult( expect, actual, string, passed ) {
 
 window.onerror = function (msg, page, line)
 {
+  jstestsTestPassesUnlessItThrows = false;
+
+  // Restore options in case a test case used this common variable name.
+  options = jstestsOptions;
+
+  // Restore the ECMAScript environment after potentially destructive tests.
+  if (typeof jstestsRestoreFunction === "function") {
+    jstestsRestoreFunction();
+  }
+
   optionsPush();
 
   if (typeof DESCRIPTION == 'undefined')
@@ -158,10 +201,7 @@ function options(aOptionName)
     value = value.substring(0, value.length-1);
   }
 
-  if (aOptionName === 'moar_xml')
-    aOptionName = 'xml';
-
-  if (aOptionName && aOptionName !== 'allow_xml') {
+  if (aOptionName) {
     netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
     if (!(aOptionName in Components.utils)) {
 //    if (!(aOptionName in SpecialPowers.wrap(Components).utils)) {
@@ -181,10 +221,15 @@ function options(aOptionName)
 //    SpecialPowers.wrap(Components).utils[aOptionName] = options.currvalues.hasOwnProperty(aOptionName);
     Components.utils[aOptionName] =
       options.currvalues.hasOwnProperty(aOptionName);
-  }  
+  }
 
   return value;
 }
+
+// Keep a reference to options around so that we can restore it after running
+// a test case, which may have used this common name for one of its own
+// variables.
+jstestsOptions = options;
 
 function optionsInit() {
 
@@ -192,10 +237,6 @@ function optionsInit() {
   options.currvalues = {
     strict:     true,
     werror:     true,
-    atline:     true,
-    moar_xml:   true,
-    methodjit:  true,
-    methodjit_always: true,
     strict_mode: true
   };
 
@@ -211,8 +252,6 @@ function optionsInit() {
   for (var optionName in options.currvalues)
   {
     var propName = optionName;
-    if (optionName === "moar_xml")
-      propName = "xml";
 
 //    if (!(propName in SpecialPowers.wrap(Components).utils))
     if (!(propName in Components.utils))
@@ -332,8 +371,8 @@ function jsTestDriverBrowserInit()
    * since the default setting of jit changed from false to true
    * in http://hg.mozilla.org/tracemonkey/rev/685e00e68be9
    * bisections which depend upon jit settings can be thrown off.
-   * default jit(false) when not running jsreftests to make bisections 
-   * depending upon jit settings consistent over time. This is not needed 
+   * default jit(false) when not running jsreftests to make bisections
+   * depending upon jit settings consistent over time. This is not needed
    * in shell tests as the default jit setting has not changed there.
    */
 
@@ -357,30 +396,33 @@ function jsTestDriverBrowserInit()
   // is file:. insert an empty script tag, to work around it.
   document.write('<script></script>');
 
+  // Enable a test suite that has more than two levels of directories to
+  // provide browser.js and shell.js in its base directory.
+  // This assumes that suitepath is a relative path, as is the case in the
+  // try server environment. Absolute paths are not allowed.
+  if (suitepath.indexOf('/') !== -1) {
+    var base = suitepath.slice(0, suitepath.indexOf('/'));
+    outputscripttag(base + '/shell.js', properties);
+    outputscripttag(base + '/browser.js', properties);
+  }
+
   outputscripttag(suitepath + '/shell.js', properties);
   outputscripttag(suitepath + '/browser.js', properties);
   outputscripttag(suitepath + '/' + subsuite + '/shell.js', properties);
   outputscripttag(suitepath + '/' + subsuite + '/browser.js', properties);
-  outputscripttag(suitepath + '/' + subsuite + '/' + test, properties,
-  	properties.e4x || /e4x\//.test(properties.test));
+  outputscripttag(suitepath + '/' + subsuite + '/' + test, properties);
   outputscripttag('js-test-driver-end.js', properties);
   return;
 }
 
-function outputscripttag(src, properties, e4x)
+function outputscripttag(src, properties)
 {
   if (!src)
   {
     return;
   }
 
-  if (e4x)
-  {
-    // e4x requires type=mimetype;e4x=1
-    properties.language = 'type';
-  }
-
-  var s = '<script src="' +  src + '" ';
+  var s = '<script src="' +  src + '" charset="utf-8" ';
 
   if (properties.language != 'type')
   {
@@ -396,10 +438,6 @@ function outputscripttag(src, properties, e4x)
     if (properties.version)
     {
       s += ';version=' + properties.version;
-    }
-    if (e4x)
-    {
-      s += ';e4x=1';
     }
   }
   s += '"><\/script>';
@@ -423,6 +461,20 @@ function jsTestDriverEnd()
   }
 
   window.onerror = null;
+
+  // Restore options in case a test case used this common variable name.
+  options = jstestsOptions;
+
+  // Restore the ECMAScript environment after potentially destructive tests.
+  if (typeof jstestsRestoreFunction === "function") {
+    jstestsRestoreFunction();
+  }
+
+  if (jstestsTestPassesUnlessItThrows) {
+    var testcase = new TestCase("unknown-test-name", "", true, true);
+    print(PASSED);
+    jstestsTestPassesUnlessItThrows = false;
+  }
 
   try
   {
@@ -511,7 +563,7 @@ function closeDialog()
 
   while ( (subject = gDialogCloserSubjects.pop()) != null)
   {
-    if (subject.document instanceof XULDocument && 
+    if (subject.document instanceof XULDocument &&
         subject.document.documentURI == 'chrome://global/content/commonDialog.xul')
     {
       subject.close();

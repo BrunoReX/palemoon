@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebGLContext.h"
+#include "WebGLMemoryMultiReporterWrapper.h"
 #include "nsIMemoryReporter.h"
 
 using namespace mozilla;
@@ -24,14 +25,6 @@ WebGLMemoryMultiReporter::GetName(nsACString &aName)
 {
   aName.AssignLiteral("webgl");
   return NS_OK;
-}
-
-NS_IMETHODIMP
-WebGLMemoryMultiReporter::GetExplicitNonHeap(int64_t *aAmount)
-{
-    // WebGLMemoryMultiReporterWrapper has no KIND_NONHEAP measurements.
-    *aAmount = 0;
-    return NS_OK;
 }
 
 NS_IMETHODIMP

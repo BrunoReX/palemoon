@@ -44,6 +44,7 @@
 #include "prlog.h"
 
 #include <Carbon/Carbon.h>
+#include <algorithm>
 
 #import <AppKit/AppKit.h>
 
@@ -83,11 +84,6 @@ public:
 private:
     NSAutoreleasePool *mLocalPool;
 };
-
-// font info loader constants
-static const uint32_t kDelayBeforeLoadingCmaps = 8 * 1000; // 8secs
-static const uint32_t kIntervalBetweenLoadingCmaps = 150; // 150ms
-static const uint32_t kNumFontsPerSlice = 10; // read in info 10 fonts at a time
 
 // indexes into the NSArray objects that the Cocoa font manager returns
 // as the available members of a family
@@ -205,41 +201,21 @@ static const ScriptRange sComplexScripts[] = {
     // Thai seems to be "renderable" without AAT morphing tables
 };
 
-static void
-DestroyBlobFunc(void* aUserData)
-{
-    FallibleTArray<uint8_t>* data = static_cast<FallibleTArray<uint8_t>*>(aUserData);
-    delete data;
-}
-
-// This is only used via MacOSFontEntry::ReadCMAP when checking for layout
-// support; it does not respect the mIgnore* flags on font entries, as those
-// are not relevant here at present.
-static hb_blob_t *
-GetTableForHarfBuzz(hb_face_t *aFace, hb_tag_t aTag, void *aUserData)
-{
-    gfxFontEntry *fe = static_cast<gfxFontEntry*>(aUserData);
-    FallibleTArray<uint8_t>* table = new FallibleTArray<uint8_t>;
-    nsresult rv = fe->GetFontTable(aTag, *table);
-    if (NS_SUCCEEDED(rv)) {
-        return hb_blob_create((const char*)table->Elements(), table->Length(),
-                              HB_MEMORY_MODE_READONLY, table, DestroyBlobFunc);
-    }
-    delete table;
-    return hb_blob_get_empty();
-}
-
 static bool
 SupportsScriptInGSUB(gfxFontEntry* aFontEntry, const hb_tag_t* aScriptTags)
 {
-    hb_face_t *face = hb_face_create_for_tables(GetTableForHarfBuzz,
-                                                aFontEntry, nullptr);
+    hb_face_t *face = aFontEntry->GetHBFace();
+    if (!face) {
+        return false;
+    }
+
     unsigned int index;
     hb_tag_t     chosenScript;
     bool found =
         hb_ot_layout_table_choose_script(face, TRUETYPE_TAG('G','S','U','B'),
                                          aScriptTags, &index, &chosenScript);
     hb_face_destroy(face);
+
     return found && chosenScript != TRUETYPE_TAG('D','F','L','T');
 }
 
@@ -254,27 +230,34 @@ MacOSFontEntry::ReadCMAP()
     nsRefPtr<gfxCharacterMap> charmap = new gfxCharacterMap();
 
     uint32_t kCMAP = TRUETYPE_TAG('c','m','a','p');
+
+    AutoTable cmapTable(this, kCMAP);
     nsresult rv;
 
-    AutoFallibleTArray<uint8_t,16384> cmap;
-    rv = GetFontTable(kCMAP, cmap);
+    if (cmapTable) {
+        bool unicodeFont = false, symbolFont = false; // currently ignored
 
-    bool unicodeFont = false, symbolFont = false; // currently ignored
-
-    if (NS_SUCCEEDED(rv)) {
-        rv = gfxFontUtils::ReadCMAP(cmap.Elements(), cmap.Length(),
+        uint32_t cmapLen;
+        const char* cmapData = hb_blob_get_data(cmapTable, &cmapLen);
+        rv = gfxFontUtils::ReadCMAP((const uint8_t*)cmapData, cmapLen,
                                     *charmap, mUVSOffset,
                                     unicodeFont, symbolFont);
+    } else {
+        rv = NS_ERROR_NOT_AVAILABLE;
     }
-  
-    if (NS_SUCCEEDED(rv)) {
+
+    if (NS_SUCCEEDED(rv) && !HasGraphiteTables()) {
+        // We assume a Graphite font knows what it's doing,
+        // and provides whatever shaping is needed for the
+        // characters it supports, so only check/clear the
+        // complex-script ranges for non-Graphite fonts
+
         // for layout support, check for the presence of mort/morx and/or
         // opentype layout tables
         bool hasAATLayout = HasFontTable(TRUETYPE_TAG('m','o','r','x')) ||
                             HasFontTable(TRUETYPE_TAG('m','o','r','t'));
         bool hasGSUB = HasFontTable(TRUETYPE_TAG('G','S','U','B'));
         bool hasGPOS = HasFontTable(TRUETYPE_TAG('G','P','O','S'));
-
         if (hasAATLayout && !(hasGSUB || hasGPOS)) {
             mRequiresAAT = true; // prefer CoreText if font has no OTL tables
         }
@@ -395,33 +378,29 @@ MacOSFontEntry::GetFontRef()
     return mFontRef;
 }
 
-nsresult
-MacOSFontEntry::GetFontTable(uint32_t aTableTag,
-                             FallibleTArray<uint8_t>& aBuffer)
+/*static*/ void
+MacOSFontEntry::DestroyBlobFunc(void* aUserData)
 {
-    nsAutoreleasePool localPool;
+    ::CFRelease((CFDataRef)aUserData);
+}
 
+hb_blob_t *
+MacOSFontEntry::GetFontTable(uint32_t aTag)
+{
     CGFontRef fontRef = GetFontRef();
     if (!fontRef) {
-        return NS_ERROR_FAILURE;
+        return nullptr;
     }
 
-    CFDataRef tableData = ::CGFontCopyTableForTag(fontRef, aTableTag);
-    if (!tableData) {
-        return NS_ERROR_FAILURE;
+    CFDataRef dataRef = ::CGFontCopyTableForTag(fontRef, aTag);
+    if (dataRef) {
+        return hb_blob_create((const char*)::CFDataGetBytePtr(dataRef),
+                              ::CFDataGetLength(dataRef),
+                              HB_MEMORY_MODE_READONLY,
+                              (void*)dataRef, DestroyBlobFunc);
     }
 
-    nsresult rval = NS_OK;
-    CFIndex dataLength = ::CFDataGetLength(tableData);
-    if (aBuffer.AppendElements(dataLength)) {
-        ::CFDataGetBytes(tableData, ::CFRangeMake(0, dataLength),
-                         aBuffer.Elements());
-    } else {
-        rval = NS_ERROR_OUT_OF_MEMORY;
-    }
-    ::CFRelease(tableData);
-
-    return rval;
+    return nullptr;
 }
 
 bool
@@ -640,22 +619,26 @@ gfxSingleFaceMacFontFamily::LocalizedName(nsAString& aLocalizedName)
 void
 gfxSingleFaceMacFontFamily::ReadOtherFamilyNames(gfxPlatformFontList *aPlatformFontList)
 {
-    if (mOtherFamilyNamesInitialized)
+    if (mOtherFamilyNamesInitialized) {
         return;
+    }
 
     gfxFontEntry *fe = mAvailableFonts[0];
-    if (!fe)
+    if (!fe) {
         return;
+    }
 
     const uint32_t kNAME = TRUETYPE_TAG('n','a','m','e');
-    AutoFallibleTArray<uint8_t,8192> buffer;
 
-    if (fe->GetFontTable(kNAME, buffer) != NS_OK)
+    gfxFontEntry::AutoTable nameTable(fe, kNAME);
+    if (!nameTable) {
         return;
+    }
 
     mHasOtherFamilyNames = ReadOtherFamilyNamesForFace(aPlatformFontList,
-                                                       buffer,
+                                                       nameTable,
                                                        true);
+
     mOtherFamilyNamesInitialized = true;
 }
 
@@ -737,7 +720,7 @@ gfxMacPlatformFontList::InitFontList()
     PreloadNamesList();
 
     // start the delayed cmap loader
-    StartLoader(kDelayBeforeLoadingCmaps, kIntervalBetweenLoadingCmaps);
+    GetPrefsAndStartLoader();
 
     return NS_OK;
 }
@@ -798,7 +781,7 @@ gfxMacPlatformFontList::GetStandardFamilyName(const nsAString& aFontName, nsAStr
     // convert the name to a Pascal-style Str255 to try as Quickdraw name
     Str255 qdname;
     NS_ConvertUTF16toUTF8 utf8name(aFontName);
-    qdname[0] = NS_MAX<size_t>(255, strlen(utf8name.get()));
+    qdname[0] = std::max<size_t>(255, strlen(utf8name.get()));
     memcpy(&qdname[1], utf8name.get(), qdname[0]);
 
     // look up the Quickdraw name

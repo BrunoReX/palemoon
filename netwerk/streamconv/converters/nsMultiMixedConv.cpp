@@ -16,6 +16,7 @@
 #include "nsIHttpChannelInternal.h"
 #include "nsURLHelper.h"
 #include "nsIStreamConverterService.h"
+#include <algorithm>
 
 //
 // Helper function for determining the length of data bytes up to
@@ -564,7 +565,8 @@ nsMultiMixedConv::OnDataAvailable(nsIRequest *request, nsISupports *context,
     int32_t tokenLinefeed = 1;
     while ( (token = FindToken(cursor, bufLen)) ) {
 
-        if (*(token+mTokenLen+1) == '-') {
+        if (((token + mTokenLen) < (cursor + bufLen)) &&
+            (*(token + mTokenLen + 1) == '-')) {
             // This was the last delimiter so we can stop processing
             rv = SendData(cursor, LengthToToken(cursor, token));
             if (NS_FAILED(rv)) return rv;
@@ -637,7 +639,7 @@ nsMultiMixedConv::OnDataAvailable(nsIRequest *request, nsISupports *context,
         // have enough info to start a part, go ahead and buffer
         // enough to collect a boundary token.
         if (!mPartChannel || !(cursor[bufLen-1] == nsCRT::LF) )
-            bufAmt = NS_MIN(mTokenLen - 1, bufLen);
+            bufAmt = std::min(mTokenLen - 1, bufLen);
     }
 
     if (bufAmt) {
@@ -882,7 +884,7 @@ nsMultiMixedConv::SendData(char *aBuffer, uint32_t aLen) {
         // make sure that we don't send more than the mContentLength
         // XXX why? perhaps the Content-Length header was actually wrong!!
         if ((uint64_t(aLen) + mTotalSent) > mContentLength)
-            aLen = mContentLength - mTotalSent;
+            aLen = static_cast<uint32_t>(mContentLength - mTotalSent);
 
         if (aLen == 0)
             return NS_OK;

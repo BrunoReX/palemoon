@@ -8,6 +8,7 @@
 #define mozilla_dom_bluetooth_bluetootheventservice_h__
 
 #include "BluetoothCommon.h"
+#include "BluetoothProfileManagerBase.h"
 #include "mozilla/dom/ipc/Blob.h"
 #include "nsAutoPtr.h"
 #include "nsClassHashtable.h"
@@ -88,18 +89,6 @@ public:
   DistributeSignal(const BluetoothSignal& aEvent);
 
   /**
-   * Called when a BluetoothManager is created.
-   */
-  void
-  RegisterManager(BluetoothManager* aManager);
-
-  /**
-   * Called when a BluetoothManager is destroyed.
-   */
-  void
-  UnregisterManager(BluetoothManager* aManager);
-
-  /**
    * Called when get a Bluetooth Signal from BluetoothDBusService
    *
    */
@@ -143,56 +132,35 @@ public:
   GetPairedDevicePropertiesInternal(const nsTArray<nsString>& aDeviceAddresses,
                                     BluetoothReplyRunnable* aRunnable) = 0;
 
-  /** 
-   * Stop device discovery (platform specific implementation)
+  /**
+   * Returns the properties of connected devices regarding to specific profile,
+   * implemented via a platform specific methood.
    *
-   * @param aAdapterPath Adapter to stop discovery on
+   * @return NS_OK on success, NS_ERROR_FAILURE otherwise
+   */
+  virtual nsresult
+  GetConnectedDevicePropertiesInternal(uint16_t aProfileId,
+                                       BluetoothReplyRunnable* aRunnable) = 0;
+
+  /**
+   * Stop device discovery (platform specific implementation)
    *
    * @return NS_OK if discovery stopped correctly, false otherwise
    */
   virtual nsresult
-  StopDiscoveryInternal(const nsAString& aAdapterPath,
-                        BluetoothReplyRunnable* aRunnable) = 0;
+  StopDiscoveryInternal(BluetoothReplyRunnable* aRunnable) = 0;
 
   /** 
    * Start device discovery (platform specific implementation)
    *
-   * @param aAdapterPath Adapter to start discovery on
-   *
    * @return NS_OK if discovery stopped correctly, false otherwise
    */
   virtual nsresult
-  StartDiscoveryInternal(const nsAString& aAdapterPath,
-                         BluetoothReplyRunnable* aRunnable) = 0;
-
-  /**
-   * Fetches the propertes for the specified object
-   *
-   * @param aType Type of the object (see BluetoothObjectType in BluetoothCommon.h)
-   * @param aPath Path of the object
-   * @param aRunnable Runnable to return to after receiving callback
-   *
-   * @return NS_OK on function run, NS_ERROR_FAILURE otherwise
-   */
-  virtual nsresult
-  GetProperties(BluetoothObjectType aType,
-                const nsAString& aPath,
-                BluetoothReplyRunnable* aRunnable) = 0;
-
-  /** 
-   * Fetches the propertes for the specified device
-   *
-   * @param aSignal BluetoothSignal to be distrubuted after retrieving device properties
-   *
-   * @return NS_OK on function run, NS_ERROR_FAILURE otherwise
-   */
-  virtual nsresult
-  GetDevicePropertiesInternal(const BluetoothSignal& aSignal) = 0;
+  StartDiscoveryInternal(BluetoothReplyRunnable* aRunnable) = 0;
 
   /**
    * Set a property for the specified object
    *
-   * @param aPath Path to the object
    * @param aPropName Name of the property
    * @param aValue Boolean value
    * @param aRunnable Runnable to run on async reply
@@ -201,11 +169,10 @@ public:
    */
   virtual nsresult
   SetProperty(BluetoothObjectType aType,
-              const nsAString& aPath,
               const BluetoothNamedValue& aValue,
               BluetoothReplyRunnable* aRunnable) = 0;
 
-  /** 
+  /**
    * Get the path of a device
    *
    * @param aAdapterPath Path to the Adapter that's communicating with the device
@@ -220,14 +187,12 @@ public:
                 nsAString& aDevicePath) = 0;
 
   virtual nsresult
-  CreatePairedDeviceInternal(const nsAString& aAdapterPath,
-                             const nsAString& aAddress,
+  CreatePairedDeviceInternal(const nsAString& aAddress,
                              int aTimeout,
                              BluetoothReplyRunnable* aRunnable) = 0;
 
   virtual nsresult
-  RemoveDeviceInternal(const nsAString& aAdapterPath,
-                       const nsAString& aObjectPath,
+  RemoveDeviceInternal(const nsAString& aObjectPath,
                        BluetoothReplyRunnable* aRunnable) = 0;
 
   virtual nsresult
@@ -236,14 +201,24 @@ public:
                bool aEncrypt,
                mozilla::ipc::UnixSocketConsumer* aConsumer) = 0;
 
+  /**
+   * Get corresponding service channel of specific service on remote device.
+   * It's usually the very first step of establishing an outbound connection.
+   *
+   * @param aObjectPath Object path of remote device
+   * @param aServiceUuid UUID of the target service
+   * @param aManager Instance which has callback function OnGetServiceChannel()
+   *
+   * @return NS_OK if the task begins, NS_ERROR_FAILURE otherwise
+   */
   virtual nsresult
-  GetSocketViaService(const nsAString& aObjectPath,
-                      const nsAString& aService,
-                      BluetoothSocketType aType,
-                      bool aAuth,
-                      bool aEncrypt,
-                      mozilla::ipc::UnixSocketConsumer* aSocketConsumer,
-                      BluetoothReplyRunnable* aRunnable) = 0;
+  GetServiceChannel(const nsAString& aDeviceAddress,
+                    const nsAString& aServiceUuid,
+                    BluetoothProfileManagerBase* aManager) = 0;
+
+  virtual bool
+  UpdateSdpRecords(const nsAString& aDeviceAddress,
+                   BluetoothProfileManagerBase* aManager) = 0;
 
   virtual bool
   SetPinCodeInternal(const nsAString& aDeviceAddress, const nsAString& aPinCode,
@@ -261,12 +236,8 @@ public:
   SetAuthorizationInternal(const nsAString& aDeviceAddress, bool aAllow,
                            BluetoothReplyRunnable* aRunnable) = 0;
 
-  virtual nsresult
-  PrepareAdapterInternal(const nsAString& aPath) = 0;
-
   virtual void
   Connect(const nsAString& aDeviceAddress,
-          const nsAString& aAdapterPath,
           uint16_t aProfileId,
           BluetoothReplyRunnable* aRunnable) = 0;
 
@@ -286,16 +257,22 @@ public:
   StopSendingFile(const nsAString& aDeviceAddress,
                   BluetoothReplyRunnable* aRunnable) = 0;
 
-  virtual nsresult
-  ListenSocketViaService(int aChannel,
-                         BluetoothSocketType aType,
-                         bool aAuth,
-                         bool aEncrypt,
-                         mozilla::ipc::UnixSocketConsumer* aConsumer) = 0;
-
   virtual void
   ConfirmReceivingFile(const nsAString& aDeviceAddress, bool aConfirm,
                        BluetoothReplyRunnable* aRunnable) = 0;
+
+  virtual void
+  ConnectSco(BluetoothReplyRunnable* aRunnable) = 0;
+
+  virtual void
+  DisconnectSco(BluetoothReplyRunnable* aRunnable) = 0;
+
+  virtual void
+  IsScoConnected(BluetoothReplyRunnable* aRunnable) = 0;
+
+  virtual nsresult
+  SendSinkMessage(const nsAString& aDeviceAddresses,
+                  const nsAString& aMessage) = 0;
 
   bool
   IsEnabled() const
@@ -306,12 +283,15 @@ public:
   bool
   IsToggling() const;
 
+  void
+  RemoveObserverFromTable(const nsAString& key);
+
+  void
+  DispatchToCommandThread(nsRunnable* aRunnable);
+
 protected:
   BluetoothService()
   : mEnabled(false)
-#ifdef DEBUG
-  , mLastRequestedEnable(false)
-#endif
   {
     mBluetoothSignalObserverTable.Init();
   }
@@ -336,7 +316,7 @@ protected:
   virtual nsresult
   StartInternal() = 0;
 
-  /** 
+  /**
    * Platform specific startup functions go here. Usually deals with member
    * variables, so not static. Guaranteed to be called outside of main thread.
    *
@@ -344,6 +324,15 @@ protected:
    */
   virtual nsresult
   StopInternal() = 0;
+
+  /**
+   * Platform specific startup functions go here. Usually deals with member
+   * variables, so not static. Guaranteed to be called outside of main thread.
+   *
+   * @return true if Bluetooth is enabled, false otherwise
+   */
+  virtual bool
+  IsEnabledInternal() = 0;
 
   /**
    * Called when XPCOM first creates this service.
@@ -396,14 +385,7 @@ protected:
 
   BluetoothSignalObserverTable mBluetoothSignalObserverTable;
 
-  typedef nsTObserverArray<BluetoothManager*> BluetoothManagerList;
-  BluetoothManagerList mLiveManagers;
-
   bool mEnabled;
-
-#ifdef DEBUG
-  bool mLastRequestedEnable;
-#endif
 };
 
 END_BLUETOOTH_NAMESPACE

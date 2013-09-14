@@ -1,7 +1,6 @@
-# -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 //******** define a js object to implement nsITreeView
 function pageInfoTreeView(treeid, copycol)
@@ -103,9 +102,9 @@ pageInfoTreeView.prototype = {
     this.sortcol = treecol.index;
   },
 
-  getRowProperties: function(row, prop) { },
-  getCellProperties: function(row, column, prop) { },
-  getColumnProperties: function(column, prop) { },
+  getRowProperties: function(row) { return ""; },
+  getCellProperties: function(row, column) { return ""; },
+  getColumnProperties: function(column) { return ""; },
   isContainer: function(index) { return false; },
   isContainerOpen: function(index) { return false; },
   isSeparator: function(index) { return false; },
@@ -151,21 +150,19 @@ const COPYCOL_IMAGE = COL_IMAGE_ADDRESS;
 var gMetaView = new pageInfoTreeView('metatree', COPYCOL_META_CONTENT);
 var gImageView = new pageInfoTreeView('imagetree', COPYCOL_IMAGE);
 
-var atomSvc = Components.classes["@mozilla.org/atom-service;1"]
-                        .getService(Components.interfaces.nsIAtomService);
-gImageView._ltrAtom = atomSvc.getAtom("ltr");
-gImageView._brokenAtom = atomSvc.getAtom("broken");
-
-gImageView.getCellProperties = function(row, col, props) {
+gImageView.getCellProperties = function(row, col) {
   var data = gImageView.data[row];
   var item = gImageView.data[row][COL_IMAGE_NODE];
+  var props = "";
   if (!checkProtocol(data) ||
       item instanceof HTMLEmbedElement ||
       (item instanceof HTMLObjectElement && !item.type.startsWith("image/")))
-    props.AppendElement(this._brokenAtom);
+    props += "broken";
 
   if (col.element.id == "image-address")
-    props.AppendElement(this._ltrAtom);
+    props += " ltr";
+
+  return props;
 };
 
 gImageView.getCellText = function(row, column) {
@@ -312,10 +309,8 @@ function onLoadPageInfo()
   gStrings.mediaEmbed = gBundle.getString("mediaEmbed");
   gStrings.mediaLink = gBundle.getString("mediaLink");
   gStrings.mediaInput = gBundle.getString("mediaInput");
-#ifdef MOZ_MEDIA
   gStrings.mediaVideo = gBundle.getString("mediaVideo");
   gStrings.mediaAudio = gBundle.getString("mediaAudio");
-#endif
 
   var args = "arguments" in window &&
              window.arguments.length >= 1 &&
@@ -575,7 +570,7 @@ function processFrames()
   if (gFrameList.length) {
     var doc = gFrameList[0];
     onProcessFrame.forEach(function(func) { func(doc); });
-    var iterator = doc.createTreeWalker(doc, NodeFilter.SHOW_ELEMENT, grabAll, true);
+    var iterator = doc.createTreeWalker(doc, NodeFilter.SHOW_ELEMENT, grabAll);
     gFrameList.shift();
     setTimeout(doGrab, 10, iterator);
     onFinished.push(selectImage);
@@ -679,14 +674,12 @@ function grabAll(elem)
       addImage(href, gStrings.mediaImg, "", elem, false);
     } catch (e) { }
   }
-#ifdef MOZ_MEDIA
   else if (elem instanceof HTMLVideoElement) {
     addImage(elem.currentSrc, gStrings.mediaVideo, "", elem, false);
   }
   else if (elem instanceof HTMLAudioElement) {
     addImage(elem.currentSrc, gStrings.mediaAudio, "", elem, false);
   }
-#endif
   else if (elem instanceof HTMLLinkElement) {
     if (elem.rel && /\bicon\b/i.test(elem.rel))
       addImage(elem.href, gStrings.mediaLink, "", elem, false);
@@ -816,21 +809,21 @@ function saveMedia()
           internalSave(aURIString, null, null, null, null, false, "SaveImageTitle",
                        aChosenData, aBaseURI, gDocument);
         };
-      
+
         for (var i = 0; i < rowArray.length; i++) {
           var v = rowArray[i];
           var dir = aDirectory.clone();
           var item = gImageView.data[v][COL_IMAGE_NODE];
           var uriString = gImageView.data[v][COL_IMAGE_ADDRESS];
           var uri = makeURI(uriString);
-  
+
           try {
             uri.QueryInterface(Components.interfaces.nsIURL);
             dir.append(decodeURIComponent(uri.fileName));
           } catch(ex) {
             /* data: uris */
           }
-  
+
           if (i == 0) {
             saveAnImage(uriString, new AutoChosen(dir, uri), makeURI(item.baseURI));
           } else {
@@ -940,7 +933,7 @@ function makePreview(row)
           numFrames = image.numFrames;
       }
     }
-    
+
     if (!mimeType)
       mimeType = getContentTypeFromHeaders(cacheEntry);
 
@@ -987,7 +980,7 @@ function makePreview(row)
     if ((item instanceof HTMLLinkElement || item instanceof HTMLInputElement ||
          item instanceof HTMLImageElement ||
          item instanceof SVGImageElement ||
-         (item instanceof HTMLObjectElement && mimeType.startsWith("image/")) || isBG) && isProtocolAllowed) {
+         (item instanceof HTMLObjectElement && mimeType && mimeType.startsWith("image/")) || isBG) && isProtocolAllowed) {
       newImage.setAttribute("src", url);
       physWidth = newImage.width || 0;
       physHeight = newImage.height || 0;
@@ -1017,11 +1010,10 @@ function makePreview(row)
       document.getElementById("theimagecontainer").collapsed = false
       document.getElementById("brokenimagecontainer").collapsed = true;
     }
-#ifdef MOZ_MEDIA
     else if (item instanceof HTMLVideoElement && isProtocolAllowed) {
       newImage = document.createElementNS("http://www.w3.org/1999/xhtml", "video");
       newImage.id = "thepreviewimage";
-      newImage.mozLoadFrom(item);
+      newImage.src = url;
       newImage.controls = true;
       width = physWidth = item.videoWidth;
       height = physHeight = item.videoHeight;
@@ -1039,7 +1031,6 @@ function makePreview(row)
       document.getElementById("theimagecontainer").collapsed = false;
       document.getElementById("brokenimagecontainer").collapsed = true;
     }
-#endif
     else {
       // fallback image for protocols not allowed (e.g., javascript:)
       // or elements not [yet] handled (e.g., object, embed).

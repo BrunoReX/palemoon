@@ -7,12 +7,12 @@
 
 #define TILEDLAYERBUFFER_TILE_SIZE 256
 
-// Debug defines
 #ifdef MOZ_ANDROID_OMTC
   // This needs to go away as we enabled tiled
   // layers everywhere.
   #define FORCE_BASICTILEDTHEBESLAYER
 #endif
+// Debug defines
 //#define GFX_TILEDLAYER_DEBUG_OVERLAY
 //#define GFX_TILEDLAYER_PREF_WARNINGS
 
@@ -111,6 +111,10 @@ public:
   bool RemoveTile(int x, int y, Tile& aRemovedTile);
 
   uint16_t GetTileLength() const { return TILEDLAYERBUFFER_TILE_SIZE; }
+
+#ifdef MOZ_WIDGET_ANDROID
+  MOZ_NEVER_INLINE // bug 881018 causes wrong results when GetScaledTileLength is inlined
+#endif
   uint32_t GetScaledTileLength() const { return TILEDLAYERBUFFER_TILE_SIZE / mResolution; }
 
   unsigned int GetTileCount() const { return mRetainedTiles.Length(); }
@@ -144,6 +148,10 @@ public:
     mResolution = aResolution;
   }
   bool IsLowPrecision() const { return mResolution < 1; }
+
+  typedef Tile* Iterator;
+  Iterator TilesBegin() { return mRetainedTiles.Elements(); }
+  Iterator TilesEnd() { return mRetainedTiles.Elements() + mRetainedTiles.Length(); }
 
 protected:
   // The implementor should call Update() to change
@@ -189,8 +197,6 @@ public:
    * is retained until it has been uploaded/copyed and unlocked.
    */
   virtual void PaintedTiledLayerBuffer(const BasicTiledLayerBuffer* aTiledBuffer) = 0;
-
-  virtual void MemoryPressure() = 0;
 
   /**
    * If some part of the buffer is being rendered at a lower precision, this

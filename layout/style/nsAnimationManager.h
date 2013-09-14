@@ -29,9 +29,11 @@ struct AnimationEventInfo {
 
   AnimationEventInfo(mozilla::dom::Element *aElement,
                      const nsString& aAnimationName,
-                     uint32_t aMessage, mozilla::TimeDuration aElapsedTime)
+                     uint32_t aMessage, mozilla::TimeDuration aElapsedTime,
+                     const nsAString& aPseudoElement)
     : mElement(aElement),
-      mEvent(true, aMessage, aAnimationName, aElapsedTime.ToSeconds())
+      mEvent(true, aMessage, aAnimationName, aElapsedTime.ToSeconds(),
+             aPseudoElement)
   {
   }
 
@@ -40,7 +42,8 @@ struct AnimationEventInfo {
   AnimationEventInfo(const AnimationEventInfo &aOther)
     : mElement(aOther.mElement),
       mEvent(true, aOther.mEvent.message,
-             aOther.mEvent.animationName, aOther.mEvent.elapsedTime)
+             aOther.mEvent.animationName, aOther.mEvent.elapsedTime,
+             aOther.mEvent.pseudoElement)
   {
   }
 };
@@ -93,8 +96,17 @@ struct ElementAnimation
   virtual bool HasAnimationOfProperty(nsCSSProperty aProperty) const;
   bool IsRunningAt(mozilla::TimeStamp aTime) const;
 
-  mozilla::TimeStamp mStartTime; // with delay taken into account
+  // Return the duration, at aTime (or, if paused, mPauseStart), since
+  // the *end* of the delay period.  May be negative.
+  mozilla::TimeDuration ElapsedDurationAt(mozilla::TimeStamp aTime) const {
+    NS_ABORT_IF_FALSE(!IsPaused() || aTime >= mPauseStart,
+                      "if paused, aTime must be at least mPauseStart");
+    return (IsPaused() ? mPauseStart : aTime) - mStartTime - mDelay;
+  }
+
+  mozilla::TimeStamp mStartTime; // the beginning of the delay period
   mozilla::TimeStamp mPauseStart;
+  mozilla::TimeDuration mDelay;
   mozilla::TimeDuration mIterationDuration;
 
   enum {
@@ -132,12 +144,10 @@ struct ElementAnimations MOZ_FINAL
   // run (because it is not currently active and has no fill behavior), but
   // only does so if aAnimation is non-null; with a null aAnimation it is an
   // error to give aCurrentTime < aStartTime, and fill-forwards is assumed.
-  static double GetPositionInIteration(TimeStamp aStartTime,
-                                       TimeStamp aCurrentTime,
-                                       TimeDuration aDuration,
+  static double GetPositionInIteration(TimeDuration aElapsedDuration,
+                                       TimeDuration aIterationDuration,
                                        double aIterationCount,
                                        uint32_t aDirection,
-                                       bool aIsForElement = true,
                                        ElementAnimation* aAnimation = nullptr,
                                        ElementAnimations* aEa = nullptr,
                                        EventArray* aEventsToDispatch = nullptr);
@@ -148,6 +158,15 @@ struct ElementAnimations MOZ_FINAL
 
   bool IsForElement() const { // rather than for a pseudo-element
     return mElementProperty == nsGkAtoms::animationsProperty;
+  }
+
+  nsString PseudoElement()
+  {
+    return mElementProperty == nsGkAtoms::animationsProperty ?
+             EmptyString() :
+             mElementProperty == nsGkAtoms::animationsOfBeforeProperty ?
+               NS_LITERAL_STRING("::before") :
+               NS_LITERAL_STRING("::after");
   }
 
   void PostRestyleForAnimation(nsPresContext *aPresContext) {
@@ -172,9 +191,7 @@ class nsAnimationManager : public mozilla::css::CommonAnimationManager
 public:
   nsAnimationManager(nsPresContext *aPresContext)
     : mozilla::css::CommonAnimationManager(aPresContext)
-    , mKeyframesListIsDirty(true)
   {
-    mKeyframesRules.Init(16); // FIXME: make infallible!
   }
 
   static ElementAnimations* GetAnimationsForCompositor(nsIContent* aContent,
@@ -214,10 +231,10 @@ public:
 #ifdef MOZ_XUL
   virtual void RulesMatching(XULTreeRuleProcessorData* aData) MOZ_OVERRIDE;
 #endif
-  virtual NS_MUST_OVERRIDE size_t
-    SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const MOZ_OVERRIDE;
-  virtual NS_MUST_OVERRIDE size_t
-    SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const MOZ_OVERRIDE;
+  virtual size_t SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf)
+    const MOZ_MUST_OVERRIDE MOZ_OVERRIDE;
+  virtual size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf)
+    const MOZ_MUST_OVERRIDE MOZ_OVERRIDE;
 
   // nsARefreshObserver
   virtual void WillRefresh(mozilla::TimeStamp aTime) MOZ_OVERRIDE;
@@ -237,10 +254,6 @@ public:
    */
   nsIStyleRule* CheckAnimationRule(nsStyleContext* aStyleContext,
                                    mozilla::dom::Element* aElement);
-
-  void KeyframesListIsDirty() {
-    mKeyframesListIsDirty = true;
-  }
 
   /**
    * Dispatch any pending events.  We accumulate animationend and
@@ -271,13 +284,8 @@ private:
   nsIStyleRule* GetAnimationRule(mozilla::dom::Element* aElement,
                                  nsCSSPseudoElements::Type aPseudoType);
 
-  nsCSSKeyframesRule* KeyframesRuleFor(const nsSubstring& aName);
-
   // The guts of DispatchEvents
   void DoDispatchEvents();
-
-  bool mKeyframesListIsDirty;
-  nsDataHashtable<nsStringHashKey, nsCSSKeyframesRule*> mKeyframesRules;
 
   EventArray mPendingEvents;
 };

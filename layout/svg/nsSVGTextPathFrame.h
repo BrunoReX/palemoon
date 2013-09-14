@@ -6,6 +6,7 @@
 #ifndef NSSVGTEXTPATHFRAME_H
 #define NSSVGTEXTPATHFRAME_H
 
+#include "mozilla/Attributes.h"
 #include "gfxTypes.h"
 #include "nsCOMPtr.h"
 #include "nsFrame.h"
@@ -41,23 +42,23 @@ public:
 
   // nsIFrame:
 #ifdef DEBUG
-  NS_IMETHOD Init(nsIContent*      aContent,
-                  nsIFrame*        aParent,
-                  nsIFrame*        aPrevInFlow);
+  virtual void Init(nsIContent*      aContent,
+                    nsIFrame*        aParent,
+                    nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
 #endif
 
   NS_IMETHOD  AttributeChanged(int32_t         aNameSpaceID,
                                nsIAtom*        aAttribute,
-                               int32_t         aModType);
+                               int32_t         aModType) MOZ_OVERRIDE;
   /**
    * Get the "type" of the frame
    *
    * @see nsGkAtoms::svgGFrame
    */
-  virtual nsIAtom* GetType() const;
+  virtual nsIAtom* GetType() const MOZ_OVERRIDE;
 
 #ifdef DEBUG
-  NS_IMETHOD GetFrameName(nsAString& aResult) const
+  NS_IMETHOD GetFrameName(nsAString& aResult) const MOZ_OVERRIDE
   {
     return MakeFrameName(NS_LITERAL_STRING("SVGTextPath"), aResult);
   }
@@ -83,9 +84,9 @@ public:
 
 protected:
 
-  virtual void GetXY(SVGUserUnitList *aX, SVGUserUnitList *aY);
-  virtual void GetDxDy(SVGUserUnitList *aDx, SVGUserUnitList *aDy);
-  virtual const SVGNumberList *GetRotate();
+  virtual void GetXY(SVGUserUnitList *aX, SVGUserUnitList *aY) MOZ_OVERRIDE;
+  virtual void GetDxDy(SVGUserUnitList *aDx, SVGUserUnitList *aDy) MOZ_OVERRIDE;
+  virtual const SVGNumberList *GetRotate() MOZ_OVERRIDE;
 };
 
 #endif

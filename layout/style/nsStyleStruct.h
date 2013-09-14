@@ -26,16 +26,13 @@
 #include "nsCOMArray.h"
 #include "nsTArray.h"
 #include "nsIAtom.h"
-#include "nsIURI.h"
 #include "nsCSSValue.h"
-#include "nsStyleTransformMatrix.h"
-#include "nsAlgorithm.h"
 #include "imgRequestProxy.h"
-#include "gfxRect.h"
+#include <algorithm>
 
 class nsIFrame;
+class nsIURI;
 class imgIContainer;
-struct nsCSSValueList;
 
 // Includes nsStyleStructID.
 #include "nsStyleStructFwd.h"
@@ -257,6 +254,13 @@ struct nsStyleImage {
   bool operator==(const nsStyleImage& aOther) const;
   bool operator!=(const nsStyleImage& aOther) const {
     return !(*this == aOther);
+  }
+
+  bool ImageDataEquals(const nsStyleImage& aOther) const
+  {
+    return GetType() == eStyleImageType_Image &&
+           aOther.GetType() == eStyleImageType_Image &&
+           GetImageData() == aOther.GetImageData();
   }
 
 private:
@@ -711,14 +715,14 @@ class nsCSSShadowArray {
 // but values between zero and one device pixels are always rounded up to
 // one device pixel.
 #define NS_ROUND_BORDER_TO_PIXELS(l,tpp) \
-  ((l) == 0) ? 0 : NS_MAX((tpp), (l) / (tpp) * (tpp))
+  ((l) == 0) ? 0 : std::max((tpp), (l) / (tpp) * (tpp))
 // Outline offset is rounded to the nearest integer number of pixels, but values
 // between zero and one device pixels are always rounded up to one device pixel.
 // Note that the offset can be negative.
 #define NS_ROUND_OFFSET_TO_PIXELS(l,tpp) \
   (((l) == 0) ? 0 : \
-    ((l) > 0) ? NS_MAX( (tpp), ((l) + ((tpp) / 2)) / (tpp) * (tpp)) : \
-                NS_MIN(-(tpp), ((l) - ((tpp) / 2)) / (tpp) * (tpp)))
+    ((l) > 0) ? std::max( (tpp), ((l) + ((tpp) / 2)) / (tpp) * (tpp)) : \
+                std::min(-(tpp), ((l) - ((tpp) / 2)) / (tpp) * (tpp)))
 
 // Returns if the given border style type is visible or not
 static bool IsVisibleBorderStyle(uint8_t aStyle)
@@ -1094,11 +1098,8 @@ struct nsStylePosition {
   nsStyleCoord  mHeight;                // [reset] coord, percent, calc, auto
   nsStyleCoord  mMinHeight;             // [reset] coord, percent, calc
   nsStyleCoord  mMaxHeight;             // [reset] coord, percent, calc, none
-#ifdef MOZ_FLEXBOX
   nsStyleCoord  mFlexBasis;             // [reset] coord, percent, enum, calc, auto
-#endif // MOZ_FLEXBOX
   uint8_t       mBoxSizing;             // [reset] see nsStyleConsts.h
-#ifdef MOZ_FLEXBOX
   uint8_t       mAlignItems;            // [reset] see nsStyleConsts.h
   uint8_t       mAlignSelf;             // [reset] see nsStyleConsts.h
   uint8_t       mFlexDirection;         // [reset] see nsStyleConsts.h
@@ -1106,23 +1107,10 @@ struct nsStylePosition {
   int32_t       mOrder;                 // [reset] integer
   float         mFlexGrow;              // [reset] float
   float         mFlexShrink;            // [reset] float
-#endif // MOZ_FLEXBOX
   nsStyleCoord  mZIndex;                // [reset] integer, auto
 
   bool WidthDependsOnContainer() const
-    {
-      return mWidth.GetUnit() == eStyleUnit_Auto ||
-        WidthCoordDependsOnContainer(mWidth);
-    }
-
-  // NOTE: For a flex item, "min-width:auto" is supposed to behave like
-  // "min-content", which does depend on the container, so you might think we'd
-  // need a special case for "flex item && min-width:auto" here.  However,
-  // we don't actually need that special-case code, because flex items are
-  // explicitly supposed to *ignore* their min-width (i.e. behave like it's 0)
-  // until the flex container explicitly considers it.  So -- since the flex
-  // container doesn't rely on this method, we don't need to worry about
-  // special behavior for flex items' "min-width:auto" values here.
+    { return WidthCoordDependsOnContainer(mWidth); }
   bool MinWidthDependsOnContainer() const
     { return WidthCoordDependsOnContainer(mMinWidth); }
   bool MaxWidthDependsOnContainer() const
@@ -1135,13 +1123,7 @@ struct nsStylePosition {
   // FIXME: We should probably change the assumption to be the other way
   // around.
   bool HeightDependsOnContainer() const
-    {
-      return mHeight.GetUnit() == eStyleUnit_Auto || // CSS 2.1, 10.6.4, item (5)
-        HeightCoordDependsOnContainer(mHeight);
-    }
-
-  // NOTE: The comment above MinWidthDependsOnContainer about flex items
-  // applies here, too.
+    { return HeightCoordDependsOnContainer(mHeight); }
   bool MinHeightDependsOnContainer() const
     { return HeightCoordDependsOnContainer(mMinHeight); }
   bool MaxHeightDependsOnContainer() const
@@ -1155,7 +1137,10 @@ struct nsStylePosition {
 private:
   static bool WidthCoordDependsOnContainer(const nsStyleCoord &aCoord);
   static bool HeightCoordDependsOnContainer(const nsStyleCoord &aCoord)
-    { return aCoord.HasPercent(); }
+  {
+    return aCoord.GetUnit() == eStyleUnit_Auto || // CSS 2.1, 10.6.4, item (5)
+           aCoord.HasPercent();
+  }
 };
 
 struct nsStyleTextOverflowSide {
@@ -1339,19 +1324,27 @@ struct nsStyleText {
            mWhiteSpace == NS_STYLE_WHITESPACE_PRE_DISCARD_NEWLINES;
   }
 
-  bool WhiteSpaceCanWrap() const {
+  bool WhiteSpaceCanWrapStyle() const {
     return mWhiteSpace == NS_STYLE_WHITESPACE_NORMAL ||
            mWhiteSpace == NS_STYLE_WHITESPACE_PRE_WRAP ||
            mWhiteSpace == NS_STYLE_WHITESPACE_PRE_LINE;
   }
 
-  bool WordCanWrap() const {
-    return WhiteSpaceCanWrap() && mWordWrap == NS_STYLE_WORDWRAP_BREAK_WORD;
+  bool WordCanWrapStyle() const {
+    return WhiteSpaceCanWrapStyle() &&
+           mWordWrap == NS_STYLE_WORDWRAP_BREAK_WORD;
   }
 
   // These are defined in nsStyleStructInlines.h.
-  inline bool HasTextShadow(const nsIFrame* aFrame) const;
-  inline nsCSSShadowArray* GetTextShadow(const nsIFrame* aFrame) const;
+
+  // The aContextFrame argument on each of these is the frame this
+  // style struct is for.  If the frame is for SVG text, the return
+  // value will be massaged to be something that makes sense for
+  // SVG text.
+  inline bool HasTextShadow(const nsIFrame* aContextFrame) const;
+  inline nsCSSShadowArray* GetTextShadow(const nsIFrame* aContextFrame) const;
+  inline bool WhiteSpaceCanWrap(const nsIFrame* aContextFrame) const;
+  inline bool WordCanWrap(const nsIFrame* aContextFrame) const;
 };
 
 struct nsStyleVisibility {
@@ -1377,6 +1370,7 @@ struct nsStyleVisibility {
   uint8_t mDirection;                  // [inherited] see nsStyleConsts.h NS_STYLE_DIRECTION_*
   uint8_t mVisible;                    // [inherited]
   uint8_t mPointerEvents;              // [inherited] see nsStyleConsts.h
+  uint8_t mWritingMode;                // [inherited] see nsStyleConsts.h
 
   bool IsVisible() const {
     return (mVisible == NS_STYLE_VISIBILITY_VISIBLE);
@@ -1645,9 +1639,7 @@ struct nsStyleDisplay {
 
   bool IsBlockOutsideStyle() const {
     return NS_STYLE_DISPLAY_BLOCK == mDisplay ||
-#ifdef MOZ_FLEXBOX
            NS_STYLE_DISPLAY_FLEX == mDisplay ||
-#endif // MOZ_FLEXBOX
            NS_STYLE_DISPLAY_LIST_ITEM == mDisplay ||
            NS_STYLE_DISPLAY_TABLE == mDisplay;
   }
@@ -1657,9 +1649,7 @@ struct nsStyleDisplay {
            NS_STYLE_DISPLAY_INLINE_BLOCK == aDisplay ||
            NS_STYLE_DISPLAY_INLINE_TABLE == aDisplay ||
            NS_STYLE_DISPLAY_INLINE_BOX == aDisplay ||
-#ifdef MOZ_FLEXBOX
            NS_STYLE_DISPLAY_INLINE_FLEX == aDisplay ||
-#endif // MOZ_FLEXBOX
            NS_STYLE_DISPLAY_INLINE_GRID == aDisplay ||
            NS_STYLE_DISPLAY_INLINE_STACK == aDisplay;
   }
@@ -1701,18 +1691,24 @@ struct nsStyleDisplay {
   }
 
   // These are defined in nsStyleStructInlines.h.
-  inline bool IsBlockInside(const nsIFrame* aFrame) const;
-  inline bool IsBlockOutside(const nsIFrame* aFrame) const;
-  inline bool IsInlineOutside(const nsIFrame* aFrame) const;
-  inline bool IsOriginalDisplayInlineOutside(const nsIFrame* aFrame) const;
-  inline uint8_t GetDisplay(const nsIFrame* aFrame) const;
-  inline bool IsFloating(const nsIFrame* aFrame) const;
-  inline bool IsPositioned(const nsIFrame* aFrame) const;
-  inline bool IsRelativelyPositioned(const nsIFrame* aFrame) const;
-  inline bool IsAbsolutelyPositioned(const nsIFrame* aFrame) const;
+
+  // The aContextFrame argument on each of these is the frame this
+  // style struct is for.  If the frame is for SVG text, the return
+  // value will be massaged to be something that makes sense for
+  // SVG text.
+  inline bool IsBlockInside(const nsIFrame* aContextFrame) const;
+  inline bool IsBlockOutside(const nsIFrame* aContextFrame) const;
+  inline bool IsInlineOutside(const nsIFrame* aContextFrame) const;
+  inline bool IsOriginalDisplayInlineOutside(const nsIFrame* aContextFrame) const;
+  inline uint8_t GetDisplay(const nsIFrame* aContextFrame) const;
+  inline bool IsFloating(const nsIFrame* aContextFrame) const;
+  inline bool IsPositioned(const nsIFrame* aContextFrame) const;
+  inline bool IsRelativelyPositioned(const nsIFrame* aContextFrame) const;
+  inline bool IsAbsolutelyPositioned(const nsIFrame* aContextFrame) const;
+
   /* Returns whether the element has the -moz-transform property
    * or a related property, and supports CSS transforms. */
-  inline bool HasTransform(const nsIFrame* aFrame) const;
+  inline bool HasTransform(const nsIFrame* aContextFrame) const;
 };
 
 struct nsStyleTable {
@@ -1736,7 +1732,6 @@ struct nsStyleTable {
   uint8_t       mLayoutStrategy;// [reset] see nsStyleConsts.h NS_STYLE_TABLE_LAYOUT_*
   uint8_t       mFrame;         // [reset] see nsStyleConsts.h NS_STYLE_TABLE_FRAME_*
   uint8_t       mRules;         // [reset] see nsStyleConsts.h NS_STYLE_TABLE_RULES_*
-  int32_t       mCols;          // [reset] an integer if set, or see nsStyleConsts.h NS_STYLE_TABLE_COLS_*
   int32_t       mSpan;          // [reset] the number of columns spanned by a colgroup or col
 };
 
@@ -2133,12 +2128,20 @@ struct nsStyleColumn {
     return NS_STYLE_HINT_FRAMECHANGE;
   }
 
+  /**
+   * This is the maximum number of columns we can process. It's used in both
+   * nsColumnSetFrame and nsRuleNode.
+   */
+  static const uint32_t kMaxColumnCount;
+
   uint32_t     mColumnCount; // [reset] see nsStyleConsts.h
   nsStyleCoord mColumnWidth; // [reset] coord, auto
   nsStyleCoord mColumnGap;   // [reset] coord, normal
 
   nscolor      mColumnRuleColor;  // [reset]
   uint8_t      mColumnRuleStyle;  // [reset]
+  uint8_t      mColumnFill;  // [reset] see nsStyleConsts.h
+
   // See https://bugzilla.mozilla.org/show_bug.cgi?id=271586#c43 for why
   // this is hard to replace with 'currentColor'.
   bool mColumnRuleColorIsForeground;
@@ -2206,7 +2209,7 @@ struct nsStyleSVG {
   nsChangeHint CalcDifference(const nsStyleSVG& aOther) const;
   static nsChangeHint MaxDifference() {
     return NS_CombineHint(NS_CombineHint(nsChangeHint_UpdateEffects,
-                                         nsChangeHint_AllReflowHints),
+             NS_CombineHint(nsChangeHint_NeedReflow, nsChangeHint_NeedDirtyReflow)), // XXX remove nsChangeHint_NeedDirtyReflow: bug 876085
                                          nsChangeHint_RepaintFrame);
   }
 
@@ -2230,6 +2233,7 @@ struct nsStyleSVG {
   uint8_t          mColorInterpolationFilters; // [inherited] see nsStyleConsts.h
   uint8_t          mFillRule;         // [inherited] see nsStyleConsts.h
   uint8_t          mImageRendering;   // [inherited] see nsStyleConsts.h
+  uint8_t          mPaintOrder;       // [inherited] see nsStyleConsts.h
   uint8_t          mShapeRendering;   // [inherited] see nsStyleConsts.h
   uint8_t          mStrokeLinecap;    // [inherited] see nsStyleConsts.h
   uint8_t          mStrokeLinejoin;   // [inherited] see nsStyleConsts.h
@@ -2263,9 +2267,7 @@ struct nsStyleSVGReset {
 
   nsChangeHint CalcDifference(const nsStyleSVGReset& aOther) const;
   static nsChangeHint MaxDifference() {
-    return NS_CombineHint(NS_CombineHint(nsChangeHint_UpdateEffects,
-                                         nsChangeHint_AllReflowHints),
-                                         nsChangeHint_RepaintFrame);
+    return NS_CombineHint(nsChangeHint_UpdateEffects, NS_STYLE_HINT_REFLOW);
   }
 
   nsCOMPtr<nsIURI> mClipPath;         // [reset]

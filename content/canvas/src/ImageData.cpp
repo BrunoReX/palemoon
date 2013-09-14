@@ -22,8 +22,6 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ImageData)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(ImageData)
-
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(ImageData)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mData)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
@@ -46,13 +44,13 @@ void
 ImageData::DropData()
 {
   if (mData) {
-    mData = NULL;
+    mData = nullptr;
     NS_DROP_JS_OBJECTS(this, ImageData);
   }
 }
 
 JSObject*
-ImageData::WrapObject(JSContext* cx, JSObject* scope)
+ImageData::WrapObject(JSContext* cx, JS::Handle<JSObject*> scope)
 {
   return ImageDataBinding::Wrap(cx, scope, this);
 }

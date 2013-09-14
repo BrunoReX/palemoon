@@ -2,9 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Python 2.5 needs this for the with statement.
-from __future__ import with_statement
-
 import collections
 import gyp
 import gyp.common
@@ -35,6 +32,8 @@ topsrcdir	= %(topsrcdir)s
 srcdir          = %(srcdir)s
 VPATH           = %(srcdir)s
 
+EXTERNALLY_MANAGED_MAKE_FILE := 1
+
 """
 
 COMMON_FOOTER = """
@@ -43,6 +42,7 @@ NO_MAKEFILE_RULE = 1
 NO_SUBMAKEFILES_RULE = 1
 
 include $(topsrcdir)/config/rules.mk
+include $(topsrcdir)/ipc/chromium/chromium-config.mk
 include %(common_mk_path)s
 """
 
@@ -55,11 +55,13 @@ CFLAGS += $(CPPFLAGS_Debug) $(CFLAGS_Debug)
 CXXFLAGS += $(CPPFLAGS_Debug) $(CXXFLAGS_Debug)
 DEFINES += $(DEFINES_Debug)
 LOCAL_INCLUDES += $(INCLUDES_Debug)
+ASFLAGS += $(ASFLAGS_Debug)
 else # non-MOZ_DEBUG
 CFLAGS += $(CPPFLAGS_Release) $(CFLAGS_Release)
 CXXFLAGS += $(CPPFLAGS_Release) $(CXXFLAGS_Release)
 DEFINES += $(DEFINES_Release)
 LOCAL_INCLUDES += $(INCLUDES_Release)
+ASFLAGS += $(ASFLAGS_Release)
 endif
 
 ifeq (WINNT,$(OS_TARGET))
@@ -70,11 +72,6 @@ endif
 
 # Don't use STL wrappers when compiling Google code.
 STL_FLAGS =
-
-# Work around the fact that Google codebases don't compile cleanly
-# with -pedantic.
-OS_CFLAGS := $(filter-out -pedantic,$(OS_CFLAGS))
-OS_CXXFLAGS := $(filter-out -pedantic,$(OS_CXXFLAGS))
 
 # Skip Mozilla-specific include locations.
 # Specific GYP files can add them back by adding
@@ -171,6 +168,10 @@ def striplib(name):
     return name[3:]
   return name
 
+AS_EXTENSIONS = set([
+  '.s',
+  '.S'
+])
 CPLUSPLUS_EXTENSIONS = set([
   '.cc',
   '.cpp',
@@ -325,12 +326,15 @@ class MakefileGenerator(object):
       cflags_mozilla = config.get('cflags_mozilla')
       if cflags_mozilla:
         data['CPPFLAGS_%s' % configname] = cflags_mozilla
+      asflags_mozilla = config.get('asflags_mozilla')
+      if asflags_mozilla:
+        data['ASFLAGS_%s' % configname] = asflags_mozilla
     sources = {
       'CPPSRCS': {'exts': CPLUSPLUS_EXTENSIONS, 'files': []},
       'CSRCS': {'exts': ['.c'], 'files': []},
       'CMSRCS': {'exts': ['.m'], 'files': []},
       'CMMSRCS': {'exts': ['.mm'], 'files': []},
-      'ASFILES': {'exts': ['.s'], 'files': []},
+      'SSRCS': {'exts': AS_EXTENSIONS, 'files': []},
       }
     copy_srcs = []
     for s in spec.get('sources', []):
@@ -370,14 +374,10 @@ class MakefileGenerator(object):
     else:
       # Maybe nothing?
       return False
-    if self.flavor == 'win':
-      top = self.relative_topsrcdir
-    else:
-      top = self.topsrcdir
-    WriteMakefile(output_file, data, build_file, depth, top,
+    WriteMakefile(output_file, data, build_file, depth, self.topsrcdir,
                   # we set srcdir up one directory, since the subdir
                   # doesn't actually exist in the source directory
-                  swapslashes(os.path.join(top, self.relative_srcdir, os.path.split(rel_path)[0])),
+                  swapslashes(os.path.normpath(os.path.join(self.topsrcdir, self.relative_srcdir, os.path.split(rel_path)[0]))),
                   self.relative_srcdir,
                   self.common_mk_path)
     return True
@@ -433,16 +433,10 @@ def GenerateOutput(target_list, target_dicts, data, params):
   topdata = {'DIRS': generator.dirs}
   if generator.parallel_dirs:
     topdata['PARALLEL_DIRS'] = generator.parallel_dirs
-  if flavor == 'win':
-    top = relative_topsrcdir
-    src = srcdir
-  else:
-    top = topsrcdir
-    src = abs_srcdir
   WriteMakefile(makefile_path, topdata, params['build_files'][0],
                 depth,
-                swapslashes(top),
-                swapslashes(src),
+                swapslashes(topsrcdir),
+                swapslashes(abs_srcdir),
                 swapslashes(relative_srcdir),
                 common_mk_path)
   scriptname = "$(topsrcdir)/media/webrtc/trunk/tools/gyp/pylib/gyp/generator/mozmake.py"
@@ -462,8 +456,8 @@ def GenerateOutput(target_list, target_dicts, data, params):
                  "--depth=%s" % topsrcdir_path(options.depth),
                  "--generator-output=%s" % objdir_path(options.generator_output),
                  "--toplevel-dir=$(topsrcdir)",
-                 #XXX: handle other generator_flags gracefully?
                  "-G OBJDIR=$(DEPTH)"] + \
+                 ['-G %s' % g for g in options.generator_flags if not g.startswith('OBJDIR=')] + \
                  ['-D%s' % d for d in options.defines] + \
                  [topsrcdir_path(b) for b in params['build_files']]
 

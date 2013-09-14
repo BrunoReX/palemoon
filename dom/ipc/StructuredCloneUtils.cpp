@@ -57,10 +57,11 @@ Read(JSContext* aCx, JSStructuredCloneReader* aReader, uint32_t aTag,
     }
 #endif
 
-    jsval wrappedFile;
-    nsresult rv =
-      nsContentUtils::WrapNative(aCx, JS_GetGlobalForScopeChain(aCx), file,
-                                  &NS_GET_IID(nsIDOMFile), &wrappedFile);
+    JS::Rooted<JS::Value> wrappedFile(aCx);
+    JS::Rooted<JSObject*> global(aCx, JS_GetGlobalForScopeChain(aCx));
+    nsresult rv = nsContentUtils::WrapNative(aCx, global, file,
+                                             &NS_GET_IID(nsIDOMFile),
+                                             wrappedFile.address());
     if (NS_FAILED(rv)) {
       Error(aCx, nsIDOMDOMException::DATA_CLONE_ERR);
       return nullptr;
@@ -89,10 +90,11 @@ Read(JSContext* aCx, JSStructuredCloneReader* aReader, uint32_t aTag,
     }
 #endif
 
-    jsval wrappedBlob;
-    nsresult rv =
-      nsContentUtils::WrapNative(aCx, JS_GetGlobalForScopeChain(aCx), blob,
-                                  &NS_GET_IID(nsIDOMBlob), &wrappedBlob);
+    JS::Rooted<JS::Value> wrappedBlob(aCx);
+    JS::Rooted<JSObject*> global(aCx, JS_GetGlobalForScopeChain(aCx));
+    nsresult rv = nsContentUtils::WrapNative(aCx, global, blob,
+                                             &NS_GET_IID(nsIDOMBlob),
+                                             wrappedBlob.address());
     if (NS_FAILED(rv)) {
       Error(aCx, nsIDOMDOMException::DATA_CLONE_ERR);
       return nullptr;
@@ -105,8 +107,8 @@ Read(JSContext* aCx, JSStructuredCloneReader* aReader, uint32_t aTag,
 }
 
 JSBool
-Write(JSContext* aCx, JSStructuredCloneWriter* aWriter, JSObject* aObj,
-      void* aClosure)
+Write(JSContext* aCx, JSStructuredCloneWriter* aWriter,
+      JS::Handle<JSObject*> aObj, void* aClosure)
 {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aClosure);

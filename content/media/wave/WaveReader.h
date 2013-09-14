@@ -8,7 +8,11 @@
 
 #include "MediaDecoderReader.h"
 
-class nsTimeRanges;
+namespace mozilla {
+namespace dom {
+class TimeRanges;
+}
+}
 
 namespace mozilla {
 
@@ -36,7 +40,7 @@ public:
   virtual nsresult ReadMetadata(VideoInfo* aInfo,
                                 MetadataTags** aTags);
   virtual nsresult Seek(int64_t aTime, int64_t aStartTime, int64_t aEndTime, int64_t aCurrentTime);
-  virtual nsresult GetBuffered(nsTimeRanges* aBuffered, int64_t aStartTime);
+  virtual nsresult GetBuffered(dom::TimeRanges* aBuffered, int64_t aStartTime);
 
   // To seek in a buffered range, we just have to seek the stream.
   virtual bool IsSeekableInBufferedRanges() {
@@ -49,8 +53,8 @@ private:
   bool GetNextChunk(uint32_t* aChunk, uint32_t* aChunkSize);
   bool LoadFormatChunk(uint32_t aChunkSize);
   bool FindDataOffset(uint32_t aChunkSize);
-  bool LoadListChunk(uint32_t aChunkSize, nsAutoPtr<nsHTMLMediaElement::MetadataTags> &aTags);
-  bool LoadAllChunks(nsAutoPtr<nsHTMLMediaElement::MetadataTags> &aTags);
+  bool LoadListChunk(uint32_t aChunkSize, nsAutoPtr<dom::HTMLMediaElement::MetadataTags> &aTags);
+  bool LoadAllChunks(nsAutoPtr<dom::HTMLMediaElement::MetadataTags> &aTags);
 
   // Returns the number of seconds that aBytes represents based on the
   // current audio parameters.  e.g.  176400 bytes is 1 second at 16-bit

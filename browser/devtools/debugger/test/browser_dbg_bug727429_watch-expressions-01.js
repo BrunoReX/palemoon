@@ -22,16 +22,13 @@ function test()
     gDebugger = gPane.panelWin;
     gWatch = gDebugger.DebuggerView.WatchExpressions;
 
-    gDebugger.DebuggerView.togglePanes({ visible: true, animated: false });
-
-    executeSoon(function() {
-      performTest();
-    });
+    gDebugger.DebuggerView.toggleInstrumentsPane({ visible: true, animated: false });
+    performTest();
   });
 
   function performTest()
   {
-    is(gWatch.getExpressions().length, 0,
+    is(gWatch.getAllStrings().length, 0,
       "There should initially be no watch expressions");
 
     addAndCheckExpressions(1, 0, "a");
@@ -44,26 +41,27 @@ function test()
 
     addAndCheckExpressions(2, 0, "", true);
     gDebugger.editor.focus();
-    is(gWatch.getExpressions().length, 1,
+    is(gWatch.getAllStrings().length, 1,
       "Empty watch expressions are automatically removed");
+
 
     addAndCheckExpressions(2, 0, "a", true);
     gDebugger.editor.focus();
-    is(gWatch.getExpressions().length, 1,
+    is(gWatch.getAllStrings().length, 1,
       "Duplicate watch expressions are automatically removed");
 
     addAndCheckExpressions(2, 0, "a\t", true);
     addAndCheckExpressions(2, 0, "a\r", true);
     addAndCheckExpressions(2, 0, "a\n", true);
     gDebugger.editor.focus();
-    is(gWatch.getExpressions().length, 1,
+    is(gWatch.getAllStrings().length, 1,
       "Duplicate watch expressions are automatically removed");
 
     addAndCheckExpressions(2, 0, "\ta", true);
     addAndCheckExpressions(2, 0, "\ra", true);
     addAndCheckExpressions(2, 0, "\na", true);
     gDebugger.editor.focus();
-    is(gWatch.getExpressions().length, 1,
+    is(gWatch.getAllStrings().length, 1,
       "Duplicate watch expressions are automatically removed");
 
 
@@ -72,40 +70,40 @@ function test()
 
 
     EventUtils.sendMouseEvent({ type: "click" },
-      gWatch.getItemAtIndex(0).target.closeNode,
+      gWatch.getItemAtIndex(0).attachment.closeNode,
       gDebugger);
 
-    is(gWatch.getExpressions().length, 2,
+    is(gWatch.getAllStrings().length, 2,
       "Watch expressions are removed when the close button is pressed");
-    is(gWatch.getExpressions()[0], "bazΩΩka",
+    is(gWatch.getAllStrings()[0], "bazΩΩka",
       "The expression at index " + 0 + " should be correct (1)");
-    is(gWatch.getExpressions()[1], "a",
+    is(gWatch.getAllStrings()[1], "a",
       "The expression at index " + 1 + " should be correct (2)");
 
 
     EventUtils.sendMouseEvent({ type: "click" },
-      gWatch.getItemAtIndex(0).target.closeNode,
+      gWatch.getItemAtIndex(0).attachment.closeNode,
       gDebugger);
 
-    is(gWatch.getExpressions().length, 1,
+    is(gWatch.getAllStrings().length, 1,
       "Watch expressions are removed when the close button is pressed");
-    is(gWatch.getExpressions()[0], "a",
+    is(gWatch.getAllStrings()[0], "a",
       "The expression at index " + 0 + " should be correct (3)");
 
 
     EventUtils.sendMouseEvent({ type: "click" },
-      gWatch.getItemAtIndex(0).target.closeNode,
+      gWatch.getItemAtIndex(0).attachment.closeNode,
       gDebugger);
 
-    is(gWatch.getExpressions().length, 0,
+    is(gWatch.getAllStrings().length, 0,
       "Watch expressions are removed when the close button is pressed");
 
 
     EventUtils.sendMouseEvent({ type: "click" },
-      gWatch._container._parent,
+      gWatch.widget._parent,
       gDebugger);
 
-    is(gWatch.getExpressions().length, 1,
+    is(gWatch.getAllStrings().length, 1,
       "Watch expressions are added when the view container is pressed");
 
 
@@ -121,70 +119,64 @@ function test()
 
     gDebugger.editor.focus();
 
-    let id = gWatch.getItemAtIndex(index).attachment.id;
-    let element = gDebugger.document.getElementById("expression-" + id);
+    let element = gWatch.getItemAtIndex(index).target;
 
     is(gWatch.getItemAtIndex(index).attachment.initialExpression, "",
       "The initial expression at index " + index + " should be correct (1)");
     is(gWatch.getItemForElement(element).attachment.initialExpression, "",
       "The initial expression at index " + index + " should be correct (2)");
 
-    is(gWatch.getItemAtIndex(index).attachment.expression, string,
+    is(gWatch.getItemAtIndex(index).attachment.currentExpression, string,
       "The expression at index " + index + " should be correct (1)");
-    is(gWatch.getItemForElement(element).attachment.expression, string,
+    is(gWatch.getItemForElement(element).attachment.currentExpression, string,
       "The expression at index " + index + " should be correct (2)");
 
-    is(gWatch.getExpression(index), string,
+    is(gWatch.getString(index), string,
       "The expression at index " + index + " should be correct (3)");
-    is(gWatch.getExpressions()[index], string,
+    is(gWatch.getAllStrings()[index], string,
       "The expression at index " + index + " should be correct (4)");
   }
 
   function addAndCheckExpressions(total, index, string, noBlur) {
     gWatch.addExpression(string);
 
-    is(gWatch.getExpressions().length, total,
+    is(gWatch.getAllStrings().length, total,
       "There should be " + total + " watch expressions available (1)");
-    is(gWatch.totalItems, total,
+    is(gWatch.itemCount, total,
       "There should be " + total + " watch expressions available (2)");
 
     ok(gWatch.getItemAtIndex(index),
       "The expression at index " + index + " should be available");
-    ok(gWatch.getItemAtIndex(index).attachment.id,
-      "The expression at index " + index + " should have an id");
     is(gWatch.getItemAtIndex(index).attachment.initialExpression, string,
       "The expression at index " + index + " should have an initial expression");
 
-    let id = gWatch.getItemAtIndex(index).attachment.id;
-    let element = gDebugger.document.getElementById("expression-" + id);
+    let element = gWatch.getItemAtIndex(index).target;
 
     ok(element,
-      "Three should be a new expression item in the view");
+      "There should be a new expression item in the view");
     ok(gWatch.getItemForElement(element),
       "The watch expression item should be accessible");
     is(gWatch.getItemForElement(element), gWatch.getItemAtIndex(index),
       "The correct watch expression item was accessed");
 
-    ok(gWatch.getItemAtIndex(index) instanceof gDebugger.MenuItem,
+    ok(gWatch.widget.getItemAtIndex(index) instanceof XULElement,
       "The correct watch expression element was accessed (1)");
-    ok(gWatch._container.getItemAtIndex(index) instanceof XULElement,
+    is(element, gWatch.widget.getItemAtIndex(index),
       "The correct watch expression element was accessed (2)");
-    is(element, gWatch._container.getItemAtIndex(index),
-      "The correct watch expression element was accessed (3)");
 
-    is(element.arrowNode.hidden, false,
+    is(gWatch.getItemForElement(element).attachment.arrowNode.hidden, false,
       "The arrow node should be visible");
-    is(element.closeNode.hidden, false,
+    is(gWatch.getItemForElement(element).attachment.closeNode.hidden, false,
       "The close button should be visible");
-    is(element.inputNode.getAttribute("focused"), "true",
+    is(gWatch.getItemForElement(element).attachment.inputNode.getAttribute("focused"), "true",
       "The textbox input should be focused");
 
-    is(gWatch._variables.scrollTop, 0,
+    is(gDebugger.DebuggerView.Variables.parentNode.scrollTop, 0,
       "The variables view should be scrolled to top");
 
-    is(gWatch._cache[0], gWatch.getItemAtIndex(index),
+    is(gWatch.orderedItems[0], gWatch.getItemAtIndex(index),
       "The correct watch expression was added to the cache (1)");
-    is(gWatch._cache[0], gWatch.getItemForElement(element),
+    is(gWatch.orderedItems[0], gWatch.getItemForElement(element),
       "The correct watch expression was added to the cache (2)");
 
     if (!noBlur) {
@@ -195,49 +187,46 @@ function test()
       is(gWatch.getItemForElement(element).attachment.initialExpression, string,
         "The initial expression at index " + index + " should be correct (2)");
 
-      is(gWatch.getItemAtIndex(index).attachment.expression, string,
+      is(gWatch.getItemAtIndex(index).attachment.currentExpression, string,
         "The expression at index " + index + " should be correct (1)");
-      is(gWatch.getItemForElement(element).attachment.expression, string,
+      is(gWatch.getItemForElement(element).attachment.currentExpression, string,
         "The expression at index " + index + " should be correct (2)");
 
-      is(gWatch.getExpression(index), string,
+      is(gWatch.getString(index), string,
         "The expression at index " + index + " should be correct (3)");
-      is(gWatch.getExpressions()[index], string,
+      is(gWatch.getAllStrings()[index], string,
         "The expression at index " + index + " should be correct (4)");
     }
   }
 
   function removeAndCheckExpression(total, index, string) {
-    gWatch.removeExpressionAt(index);
+    gWatch.removeAt(index);
 
-    is(gWatch.getExpressions().length, total,
+    is(gWatch.getAllStrings().length, total,
       "There should be " + total + " watch expressions available (1)");
-    is(gWatch.totalItems, total,
+    is(gWatch.itemCount, total,
       "There should be " + total + " watch expressions available (2)");
 
     ok(gWatch.getItemAtIndex(index),
       "The expression at index " + index + " should still be available");
-    ok(gWatch.getItemAtIndex(index).attachment.id,
-      "The expression at index " + index + " should still have an id");
     is(gWatch.getItemAtIndex(index).attachment.initialExpression, string,
       "The expression at index " + index + " should still have an initial expression");
 
-    let id = gWatch.getItemAtIndex(index).attachment.id;
-    let element = gDebugger.document.getElementById("expression-" + id);
+    let element = gWatch.getItemAtIndex(index).target;
 
     is(gWatch.getItemAtIndex(index).attachment.initialExpression, string,
       "The initial expression at index " + index + " should be correct (1)");
     is(gWatch.getItemForElement(element).attachment.initialExpression, string,
       "The initial expression at index " + index + " should be correct (2)");
 
-    is(gWatch.getItemAtIndex(index).attachment.expression, string,
+    is(gWatch.getItemAtIndex(index).attachment.currentExpression, string,
       "The expression at index " + index + " should be correct (1)");
-    is(gWatch.getItemForElement(element).attachment.expression, string,
+    is(gWatch.getItemForElement(element).attachment.currentExpression, string,
       "The expression at index " + index + " should be correct (2)");
 
-    is(gWatch.getExpression(index), string,
+    is(gWatch.getString(index), string,
       "The expression at index " + index + " should be correct (3)");
-    is(gWatch.getExpressions()[index], string,
+    is(gWatch.getAllStrings()[index], string,
       "The expression at index " + index + " should be correct (4)");
   }
 

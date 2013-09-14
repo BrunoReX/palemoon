@@ -11,11 +11,9 @@
 #ifndef LIBEGL_DISPLAY_H_
 #define LIBEGL_DISPLAY_H_
 
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
+#include "common/system.h"
 #include <d3d9.h>
+#include <d3dcompiler.h>
 
 #include <set>
 #include <vector>
@@ -109,6 +107,8 @@ class Display
     virtual IDirect3DVertexShader9 *createVertexShader(const DWORD *function, size_t length);
     virtual IDirect3DPixelShader9 *createPixelShader(const DWORD *function, size_t length);
 
+    virtual HRESULT compileShaderSource(const char* hlsl, const char* sourceName, const char* profile, DWORD flags, ID3DBlob** binary, ID3DBlob** errorMessage);
+
   private:
     DISALLOW_COPY_AND_ASSIGN(Display);
 
@@ -161,6 +161,21 @@ class Display
 
     void initExtensionString();
     std::string mExtensionString;
+
+    typedef HRESULT (WINAPI *D3DCompileFunc)(LPCVOID pSrcData,
+                                             SIZE_T SrcDataSize,
+                                             LPCSTR pSourceName,
+                                             CONST D3D_SHADER_MACRO* pDefines,
+                                             ID3DInclude* pInclude,
+                                             LPCSTR pEntrypoint,
+                                             LPCSTR pTarget,
+                                             UINT Flags1,
+                                             UINT Flags2,
+                                             ID3DBlob** ppCode,
+                                             ID3DBlob** ppErrorMsgs);
+
+    HMODULE mD3dCompilerModule;
+    D3DCompileFunc mD3DCompileFunc;
 };
 }
 

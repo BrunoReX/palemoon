@@ -12,6 +12,7 @@
 #include "nsStyleConsts.h"
 
 #include "nsMathMLmpaddedFrame.h"
+#include <algorithm>
 
 //
 // <mpadded> -- adjust space around content - implementation
@@ -381,21 +382,21 @@ nsMathMLmpaddedFrame::Place(nsRenderingContext& aRenderingContext,
              ? NS_MATHML_PSEUDO_UNIT_WIDTH : mWidthPseudoUnit;
   UpdateValue(mWidthSign, pseudoUnit, mWidth,
               mBoundingMetrics, width);
-  width = NS_MAX(0, width);
+  width = std::max(0, width);
 
   // update "height" (this is the ascent in the terminology of the REC)
   pseudoUnit = (mHeightPseudoUnit == NS_MATHML_PSEUDO_UNIT_ITSELF)
              ? NS_MATHML_PSEUDO_UNIT_HEIGHT : mHeightPseudoUnit;
   UpdateValue(mHeightSign, pseudoUnit, mHeight,
               mBoundingMetrics, height);
-  height = NS_MAX(0, height);
+  height = std::max(0, height);
 
   // update "depth" (this is the descent in the terminology of the REC)
   pseudoUnit = (mDepthPseudoUnit == NS_MATHML_PSEUDO_UNIT_ITSELF)
              ? NS_MATHML_PSEUDO_UNIT_DEPTH : mDepthPseudoUnit;
   UpdateValue(mDepthSign, pseudoUnit, mDepth,
               mBoundingMetrics, depth);
-  depth = NS_MAX(0, depth);
+  depth = std::max(0, depth);
 
   // update lspace
   if (mLeadingSpacePseudoUnit != NS_MATHML_PSEUDO_UNIT_ITSELF) {
@@ -416,14 +417,14 @@ nsMathMLmpaddedFrame::Place(nsRenderingContext& aRenderingContext,
   // attributes, tweak our metrics and move children to achieve the desired visual
   // effects.
 
-  if ((NS_MATHML_IS_RTL(mPresentationData.flags) ?
+  if ((StyleVisibility()->mDirection ?
        mWidthSign : mLeadingSpaceSign) != NS_MATHML_SIGN_INVALID) {
     // there was padding on the left. dismiss the left italic correction now
     // (so that our parent won't correct us)
     mBoundingMetrics.leftBearing = 0;
   }
 
-  if ((NS_MATHML_IS_RTL(mPresentationData.flags) ?
+  if ((StyleVisibility()->mDirection ?
        mLeadingSpaceSign : mWidthSign) != NS_MATHML_SIGN_INVALID) {
     // there was padding on the right. dismiss the right italic correction now
     // (so that our parent won't correct us)
@@ -432,8 +433,8 @@ nsMathMLmpaddedFrame::Place(nsRenderingContext& aRenderingContext,
   }
 
   nscoord dy = height - mBoundingMetrics.ascent;
-  nscoord dx = NS_MATHML_IS_RTL(mPresentationData.flags) ?
-    width - initialWidth - lspace : lspace;
+  nscoord dx = (StyleVisibility()->mDirection ?
+                width - initialWidth - lspace : lspace);
     
   aDesiredSize.ascent += dy;
   aDesiredSize.width = mBoundingMetrics.width;

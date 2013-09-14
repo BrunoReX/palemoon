@@ -8,7 +8,7 @@
 #include "nsITimer.h"
 
 #include "nsCOMPtr.h"
-#include "nsDOMMediaStream.h"
+#include "DOMMediaStream.h"
 #include "nsComponentManagerUtils.h"
 
 #include "VideoUtils.h"
@@ -25,6 +25,8 @@ class ImageContainer;
 class PlanarYCbCrImage;
 }
 
+class MediaEngineDefault;
+
 /**
  * The default implementation of the MediaEngine interface.
  */
@@ -38,12 +40,14 @@ public:
   virtual void GetName(nsAString&);
   virtual void GetUUID(nsAString&);
 
-  virtual const MediaEngineVideoOptions *GetOptions();
-  virtual nsresult Allocate();
+  virtual nsresult Allocate(const MediaEnginePrefs &aPrefs);
   virtual nsresult Deallocate();
   virtual nsresult Start(SourceMediaStream*, TrackID);
   virtual nsresult Stop(SourceMediaStream*, TrackID);
   virtual nsresult Snapshot(uint32_t aDuration, nsIDOMFile** aFile);
+  virtual nsresult Config(bool aEchoOn, uint32_t aEcho,
+                          bool aAgcOn, uint32_t aAGC,
+                          bool aNoiseOn, uint32_t aNoise) { return NS_OK; };
   virtual void NotifyPull(MediaStreamGraph* aGraph, StreamTime aDesiredTime);
   virtual void NotifyPull(MediaStreamGraph* aGraph,
                           SourceMediaStream *aSource,
@@ -54,19 +58,16 @@ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSITIMERCALLBACK
 
-  // Need something better...
-  static const int DEFAULT_WIDTH=640;
-  static const int DEFAULT_HEIGHT=480;
-  static const int DEFAULT_FPS=30;
-
 protected:
+  friend class MediaEngineDefault;
+
   TrackID mTrackID;
   nsCOMPtr<nsITimer> mTimer;
   nsRefPtr<layers::ImageContainer> mImageContainer;
 
   SourceMediaStream* mSource;
   layers::PlanarYCbCrImage* mImage;
-  static const MediaEngineVideoOptions mOpts;
+  MediaEnginePrefs mOpts;
   int mCb;
   int mCr;
 };
@@ -81,11 +82,14 @@ public:
   virtual void GetName(nsAString&);
   virtual void GetUUID(nsAString&);
 
-  virtual nsresult Allocate();
+  virtual nsresult Allocate(const MediaEnginePrefs &aPrefs);
   virtual nsresult Deallocate();
   virtual nsresult Start(SourceMediaStream*, TrackID);
   virtual nsresult Stop(SourceMediaStream*, TrackID);
   virtual nsresult Snapshot(uint32_t aDuration, nsIDOMFile** aFile);
+  virtual nsresult Config(bool aEchoOn, uint32_t aEcho,
+                          bool aAgcOn, uint32_t aAGC,
+                          bool aNoiseOn, uint32_t aNoise) { return NS_OK; };
   virtual void NotifyPull(MediaStreamGraph* aGraph, StreamTime aDesiredTime);
   virtual void NotifyPull(MediaStreamGraph* aGraph,
                           SourceMediaStream *aSource,

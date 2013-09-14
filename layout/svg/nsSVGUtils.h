@@ -25,6 +25,7 @@
 #include "nsRect.h"
 #include "nsStyleStruct.h"
 #include "mozilla/Constants.h"
+#include <algorithm>
 
 class gfxASurface;
 class gfxContext;
@@ -63,10 +64,47 @@ class Element;
 #define NS_STATE_IS_OUTER_SVG                    NS_FRAME_STATE_BIT(20)
 
 /* are we the child of a non-display container? */
-#define NS_STATE_SVG_NONDISPLAY_CHILD            NS_FRAME_STATE_BIT(22)
+#define NS_STATE_SVG_NONDISPLAY_CHILD            NS_FRAME_STATE_BIT(21)
 
 // If this bit is set, we are a <clipPath> element or descendant.
-#define NS_STATE_SVG_CLIPPATH_CHILD              NS_FRAME_STATE_BIT(23)
+#define NS_STATE_SVG_CLIPPATH_CHILD              NS_FRAME_STATE_BIT(22)
+
+/**
+ * For text, the NS_FRAME_IS_DIRTY and NS_FRAME_HAS_DIRTY_CHILDREN bits indicate
+ * that our anonymous block child needs to be reflowed, and that mPositions
+ * will likely need to be updated as a consequence. These are set, for
+ * example, when the font-family changes. Sometimes we only need to
+ * update mPositions though. For example if the x/y attributes change.
+ * mPositioningDirty is used to indicate this latter "things are dirty" case
+ * to allow us to avoid reflowing the anonymous block when it is not
+ * necessary.
+ */
+#define NS_STATE_SVG_POSITIONING_DIRTY           NS_FRAME_STATE_BIT(23)
+
+/**
+ * For text, whether the values from x/y/dx/dy attributes have any percentage values
+ * that are used in determining the positions of glyphs.  The value will
+ * be true even if a positioning value is overridden by a descendant element's
+ * attribute with a non-percentage length.  For example,
+ * NS_STATE_SVG_POSITIONING_MAY_USE_PERCENTAGES would be set for:
+ *
+ *   <text x="10%"><tspan x="0">abc</tspan></text>
+ *
+ * Percentage values beyond the number of addressable characters, however, do
+ * not influence NS_STATE_SVG_POSITIONING_MAY_USE_PERCENTAGES.  For example,
+ * NS_STATE_SVG_POSITIONING_MAY_USE_PERCENTAGES would be false for:
+ *
+ *   <text x="10 20 30 40%">abc</text>
+ *
+ * NS_STATE_SVG_POSITIONING_MAY_USE_PERCENTAGES is used to determine whether
+ * to recompute mPositions when the viewport size changes.  So although the 
+ * first example above shows that NS_STATE_SVG_POSITIONING_MAY_USE_PERCENTAGES
+ * can be true even if a viewport size change will not affect mPositions,
+ * determining a completley accurate value for
+ * NS_STATE_SVG_POSITIONING_MAY_USE_PERCENTAGES would require extra work that is
+ * probably not worth it.
+ */
+#define NS_STATE_SVG_POSITIONING_MAY_USE_PERCENTAGES NS_FRAME_STATE_BIT(24)
 
 /**
  * Byte offsets of channels in a native packed gfxColor or cairo image surface.
@@ -93,10 +131,6 @@ class Element;
 #define SVG_HIT_TEST_STROKE      0x02
 #define SVG_HIT_TEST_CHECK_MRECT 0x04
 
-/*
- * Checks the smil enabled preference.
- */
-bool NS_SMILEnabled();
 
 bool NS_SVGDisplayListHitTestingEnabled();
 bool NS_SVGDisplayListPaintingEnabled();
@@ -144,7 +178,7 @@ private:
 // GRRR WINDOWS HATE HATE HATE
 #undef CLIP_MASK
 
-class NS_STACK_CLASS SVGAutoRenderState
+class MOZ_STACK_CLASS SVGAutoRenderState
 {
 public:
   enum RenderMode {
@@ -234,6 +268,30 @@ public:
                                             const nsIntRect &rect);
 
   /*
+   * Converts image data from sRGB to luminance
+   */
+  static void ComputesRGBLuminanceMask(uint8_t *aData,
+                                       int32_t aStride,
+                                       const nsIntRect &aRect,
+                                       float aOpacity);
+
+  /*
+   * Converts image data from sRGB to luminance assuming
+   * Linear RGB Interpolation
+   */
+  static void ComputeLinearRGBLuminanceMask(uint8_t *aData,
+                                            int32_t aStride,
+                                            const nsIntRect &aRect,
+                                            float aOpacity);
+  /*
+   * Converts image data to luminance using the value of alpha as luminance
+   */
+  static void ComputeAlphaMask(uint8_t *aData,
+                               int32_t aStride,
+                               const nsIntRect &aRect,
+                               float aOpacity);
+
+  /*
    * Converts a nsStyleCoord into a userspace value.  Handles units
    * Factor (straight userspace), Coord (dimensioned), and Percent (of
    * the current SVG viewport)
@@ -256,21 +314,6 @@ public:
    */
   static nsRect GetPostFilterVisualOverflowRect(nsIFrame *aFrame,
                                                 const nsRect &aUnfilteredRect);
-
-  /**
-   * Invalidates the area that is painted by the frame without updating its
-   * bounds.
-   *
-   * This is similar to InvalidateOverflowRect(). It will go away when we
-   * support display list based invalidation of SVG.
-   *
-   * @param aBoundsSubArea If non-null, a sub-area of aFrame's pre-filter
-   *   visual overflow rect that should be invalidated instead of aFrame's
-   *   entire visual overflow rect.
-   */
-  static void InvalidateBounds(nsIFrame *aFrame, bool aDuringUpdate = false,
-                               const nsRect *aBoundsSubArea = nullptr,
-                               uint32_t aFlags = 0);
 
   /**
    * Schedules an update of the frame's bounds (which will in turn invalidate
@@ -381,12 +424,6 @@ public:
   /**
    * Notify the descendants of aFrame of a change to one of their ancestors
    * that might affect them.
-   *
-   * If the changed ancestor renders and needs to be invalidated, it should
-   * call nsSVGUtils::InvalidateAndScheduleBoundsUpdate or
-   * nsSVGUtils::InvalidateBounds _before_ calling this method. That makes it
-   * cheaper when descendants schedule their own bounds update because the code
-   * that walks up the parent chain marking dirty bits can stop earlier.
    */
   static void
   NotifyChildrenOfSVGChange(nsIFrame *aFrame, uint32_t aFlags);
@@ -521,6 +558,7 @@ public:
   static nsIFrame* GetFirstNonAAncestorFrame(nsIFrame* aStartFrame);
 
   static bool OuterSVGIsCallingReflowSVG(nsIFrame *aFrame);
+  static bool AnyOuterSVGIsCallingReflowSVG(nsIFrame *aFrame);
 
   /*
    * Get any additional transforms that apply only to stroking
@@ -557,8 +595,8 @@ public:
    */
   static int32_t ClampToInt(double aVal)
   {
-    return NS_lround(NS_MAX(double(INT32_MIN),
-                            NS_MIN(double(INT32_MAX), aVal)));
+    return NS_lround(std::max(double(INT32_MIN),
+                            std::min(double(INT32_MAX), aVal)));
   }
 
   static nscolor GetFallbackOrPaintColor(gfxContext *aContext,
@@ -648,6 +686,16 @@ public:
   static bool GetSVGGlyphExtents(Element* aElement,
                                  const gfxMatrix& aSVGToAppSpace,
                                  gfxRect* aResult);
+
+  /**
+   * Returns the app unit canvas bounds of a userspace rect.
+   *
+   * @param aToCanvas Transform from userspace to canvas device space.
+   */
+  static nsRect
+  ToCanvasBounds(const gfxRect &aUserspaceRect,
+                 const gfxMatrix &aToCanvas,
+                 const nsPresContext *presContext);
 };
 
 #endif

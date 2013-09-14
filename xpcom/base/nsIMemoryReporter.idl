@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 50; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -198,7 +199,7 @@ interface nsIMemoryMultiReporterCallback : nsISupports
  * (Compare and contrast this with nsIMemoryReporter, which allows all
  * fields except |amount| to be accessed without triggering computation.)
  */
-[scriptable, uuid(61d498d5-b460-4398-a8ea-7f75208534b4)]
+[scriptable, uuid(24d61ead-237b-4969-a6bd-73fd8fed1d99)]
 interface nsIMemoryMultiReporter : nsISupports
 {
   /*
@@ -213,21 +214,9 @@ interface nsIMemoryMultiReporter : nsISupports
    */
   void collectReports(in nsIMemoryMultiReporterCallback callback,
                       in nsISupports closure);
-
-  /*
-   * Return the sum of all this multi-reporter's measurements that have a
-   * path that starts with "explicit" and are KIND_NONHEAP.
-   *
-   * This is a hack that's required to implement
-   * nsIMemoryReporterManager::explicit efficiently, which is important --
-   * multi-reporters can special-case this operation so it's much faster
-   * than getting all the reports, filtering out the unneeded ones, and
-   * summing the remainder.
-   */
-  readonly attribute int64_t explicitNonHeap;
 };
 
-[scriptable, builtinclass, uuid(0baaa958-3112-4952-b557-2a0c57eabb8f)]
+[scriptable, builtinclass, uuid(70b0e608-8dbf-4dc7-b88f-f1c745c1b48c)]
 interface nsIMemoryReporterManager : nsISupports
 {
   /*
@@ -265,6 +254,14 @@ interface nsIMemoryReporterManager : nsISupports
    * Unregister the given memory multi-reporter.
    */
   void unregisterMultiReporter (in nsIMemoryMultiReporter reporter);
+
+  /**
+   * These functions should only be used for testing purposes.
+   */
+  void blockRegistration();
+  void unblockRegistration();
+  void registerReporterEvenIfBlocked(in nsIMemoryReporter aReporter);
+  void registerMultiReporterEvenIfBlocked(in nsIMemoryMultiReporter aReporter);
 
   /*
    * Initialize.
@@ -304,9 +301,13 @@ interface nsIMemoryReporterManager : nsISupports
 
 %{C++
 
-/*
- * Note that this defaults 'process' to "", which is usually what's desired.
- */
+#include "nsStringGlue.h"
+
+// The NS_*MEMORY_REPORTER_IMPLEMENT* macros are the deprecated short-cut way
+// of defining memory reporters.   You should instead subclass the
+// MemoryReporterBase class below.
+
+// Note that this defaults 'process' to "", which is usually what's desired.
 #define NS_MEMORY_REPORTER_IMPLEMENT_HELPER(_classname, _path, _kind, _units, _amountFunction, _desc, _ts) \
     class MemoryReporter_##_classname MOZ_FINAL : public nsIMemoryReporter {                  \
     public:                                                                                   \
@@ -320,20 +321,18 @@ interface nsIMemoryReporterManager : nsISupports
     };                                                                                        \
     NS_IMPL##_ts##ISUPPORTS1(MemoryReporter_##_classname, nsIMemoryReporter)
 
-/*
- * The only difference between this and NS_MEMORY_REPORTER_IMPLEMENT_HELPER
- * is that the function used to implement GetAmount is fallible.
- */
+// The only difference between this and NS_MEMORY_REPORTER_IMPLEMENT_HELPER
+// is that the function used to implement GetAmount is fallible.
 #define NS_FALLIBLE_MEMORY_REPORTER_IMPLEMENT_HELPER(_classname, _path, _kind, _units, _amountFunction, _desc, _ts) \
     class MemoryReporter_##_classname MOZ_FINAL : public nsIMemoryReporter {                  \
     public:                                                                                   \
       NS_DECL_ISUPPORTS                                                                       \
       NS_IMETHOD GetProcess(nsACString &process) { process.Truncate(); return NS_OK; }        \
       NS_IMETHOD GetPath(nsACString &memoryPath) { memoryPath.AssignLiteral(_path); return NS_OK; }  \
-      NS_IMETHOD GetKind(int *kind) { *kind = _kind; return NS_OK; }                          \
-      NS_IMETHOD GetUnits(int *units) { *units = _units; return NS_OK; }                      \
+      NS_IMETHOD GetKind(int32_t *kind) { *kind = _kind; return NS_OK; }                      \
+      NS_IMETHOD GetUnits(int32_t *units) { *units = _units; return NS_OK; }                  \
       NS_IMETHOD GetAmount(int64_t *amount) { return _amountFunction(amount); }               \
-      NS_IMETHOD GetDescription(nsACString &desc) { desc.AssignLiteral(_desc); return NS_OK; }       \
+      NS_IMETHOD GetDescription(nsACString &desc) { desc.AssignLiteral(_desc); return NS_OK; }\
     };                                                                                        \
     NS_IMPL##_ts##ISUPPORTS1(MemoryReporter_##_classname, nsIMemoryReporter)
 
@@ -352,11 +351,11 @@ interface nsIMemoryReporterManager : nsISupports
 // that individual reporters should be referenced with |nsIMemoryReporter *|
 // instead of nsCOMPtr<nsIMemoryReporter>.
 
-nsresult NS_RegisterMemoryReporter(nsIMemoryReporter *reporter);
-nsresult NS_RegisterMemoryMultiReporter(nsIMemoryMultiReporter *reporter);
+XPCOM_API(nsresult) NS_RegisterMemoryReporter(nsIMemoryReporter *reporter);
+XPCOM_API(nsresult) NS_RegisterMemoryMultiReporter(nsIMemoryMultiReporter *reporter);
 
-nsresult NS_UnregisterMemoryReporter(nsIMemoryReporter *reporter);
-nsresult NS_UnregisterMemoryMultiReporter(nsIMemoryMultiReporter *reporter);
+XPCOM_API(nsresult) NS_UnregisterMemoryReporter(nsIMemoryReporter *reporter);
+XPCOM_API(nsresult) NS_UnregisterMemoryMultiReporter(nsIMemoryMultiReporter *reporter);
 
 #if defined(MOZ_DMD)
 namespace mozilla {
@@ -420,5 +419,91 @@ void RunReporters();
   {                                                                           \
       return moz_malloc_size_of(ptr);                                         \
   }
+
+namespace mozilla {
+
+// The following base class reduces the amount of boilerplate code required for
+// memory reporters.  You just need to provide the following.
+// - The constant values: path, kind, units, and description.  They are passed
+//   to the MemoryReporterBase constructor.
+// - A (private) Amount() or (public) GetAmount() method.  It can use the 
+//   MallocSizeOf method if necessary.  Use Amount() if the reporter is
+//   infallible, and GetAmount() otherwise.  (If you fail to provide one or the
+//   other, you'll get assertion failures when the memory reporter runs.)
+//
+// The class name of subclasses should match the path, minus the "explicit"
+// (if present), and with "Reporter" at the end.  For example:
+// - "explicit/dom/xyzzy"     --> DOMXyzzyReporter
+// - "js-compartments/system" --> JSCompartmentsSystemReporter
+//
+class MemoryReporterBase : public nsIMemoryReporter
+{
+public:
+  MemoryReporterBase(const char* aPath, int32_t aKind, int32_t aUnits,
+                     const char* aDescription)
+    : mPath(aPath)
+    , mKind(aKind)
+    , mUnits(aUnits)
+    , mDescription(aDescription)
+  {}
+
+  virtual ~MemoryReporterBase() {}
+
+  NS_DECL_ISUPPORTS
+
+  NS_IMETHOD GetProcess(nsACString& aProcess)
+  {
+    aProcess.Truncate();
+    return NS_OK;
+  }
+
+  NS_IMETHOD GetPath(nsACString& aPath)
+  {
+    aPath.Assign(mPath);
+    return NS_OK;
+  }
+
+  NS_IMETHOD GetKind(int32_t* aKind)
+  {
+    *aKind = mKind;
+    return NS_OK;
+  }
+
+  NS_IMETHOD GetUnits(int32_t* aUnits)
+  {
+    *aUnits = mUnits;
+    return NS_OK;
+  }
+
+  NS_IMETHOD GetAmount(int64_t* aAmount)
+  {
+    *aAmount = Amount();
+    return NS_OK;
+  }
+
+  NS_IMETHOD GetDescription(nsACString& aDescription)
+  {
+    aDescription.Assign(mDescription);
+    return NS_OK;
+  }
+
+protected:
+  virtual int64_t Amount()
+  {
+    // We only reach here if neither GetAmount() nor Amount() was overridden.
+    MOZ_ASSERT(false);
+    return 0;
+  }
+
+  NS_MEMORY_REPORTER_MALLOC_SIZEOF_FUN(MallocSizeOf)
+
+  const nsCString mPath;
+  const int32_t   mKind;
+  const int32_t   mUnits;
+  const nsCString mDescription;
+};
+
+} // namespace mozilla
+
 
 %}

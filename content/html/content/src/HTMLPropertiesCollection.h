@@ -7,6 +7,7 @@
 #ifndef HTMLPropertiesCollection_h_
 #define HTMLPropertiesCollection_h_
 
+#include "mozilla/Attributes.h"
 #include "nsDOMLists.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsAutoPtr.h"
@@ -56,15 +57,15 @@ public:
   virtual ~HTMLPropertiesCollection();
 
   using nsWrapperCache::GetWrapperPreserveColor;
-  virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
-                               bool *triedToWrap);
+  virtual JSObject* WrapObject(JSContext *cx,
+                               JS::Handle<JSObject*> scope) MOZ_OVERRIDE;
 
   virtual Element* GetElementAt(uint32_t aIndex);
 
   void SetDocument(nsIDocument* aDocument);
-  nsINode* GetParentObject();
+  nsINode* GetParentObject() MOZ_OVERRIDE;
   virtual JSObject* NamedItem(JSContext* cx, const nsAString& name,
-                              mozilla::ErrorResult& error);
+                              mozilla::ErrorResult& error) MOZ_OVERRIDE;
   PropertyNodeList* NamedItem(const nsAString& aName);
   PropertyNodeList* NamedGetter(const nsAString& aName, bool& aFound)
   {
@@ -76,7 +77,7 @@ public:
     EnsureFresh();
     return mNames;
   }
-  virtual void GetSupportedNames(nsTArray<nsString>& aNames);
+  virtual void GetSupportedNames(nsTArray<nsString>& aNames) MOZ_OVERRIDE;
 
   NS_DECL_NSIDOMHTMLCOLLECTION
 
@@ -133,15 +134,15 @@ public:
                    nsIContent* aRoot, const nsAString& aName);
   virtual ~PropertyNodeList();
 
-  virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
-                               bool *triedToWrap);
+  virtual JSObject* WrapObject(JSContext *cx,
+                               JS::Handle<JSObject*> scope) MOZ_OVERRIDE;
 
   void SetDocument(nsIDocument* aDocument);
 
   void GetValues(JSContext* aCx, nsTArray<JS::Value >& aResult,
                  ErrorResult& aError);
 
-  virtual nsIContent* Item(uint32_t aIndex);
+  virtual nsIContent* Item(uint32_t aIndex) MOZ_OVERRIDE;
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
@@ -155,8 +156,8 @@ public:
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
 
   // nsINodeList interface
-  virtual int32_t IndexOf(nsIContent* aContent);
-  virtual nsINode* GetParentObject();
+  virtual int32_t IndexOf(nsIContent* aContent) MOZ_OVERRIDE;
+  virtual nsINode* GetParentObject() MOZ_OVERRIDE;
 
   void AppendElement(nsGenericHTMLElement* aElement)
   {

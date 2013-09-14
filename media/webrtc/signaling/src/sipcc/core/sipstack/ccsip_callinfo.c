@@ -226,7 +226,7 @@ parse_call_info_parm (char *parm_p, cc_call_info_data_t * feature_data_p)
                     errno = 0;
                     strtoul_result = strtoul(temp_p, &strtoul_end, 10);
 
-                    if (errno || temp_p == strtoul_end || strtoul_result > MAX_INSTANCES) {
+                    if (errno || temp_p == strtoul_end || strtoul_result > (MAX_CALLS - 1)) {
                         /*
                          * Call instance ID should not exceed max instances
                          * or calls.
@@ -485,7 +485,7 @@ ccsip_encode_call_info_hdr (cc_call_info_t *call_info_p,
                     MAX_SIP_HEADER_LENGTH - strlen(header));
             break;
         default:
-            CCSIP_DEBUG_ERROR(SIP_F_PREFIX  "unsupported hold_resume_reason\n",
+            CCSIP_DEBUG_ERROR(SIP_F_PREFIX  "unsupported hold_resume_reason",
                               fname);
             cpr_free(header);
             return NULL;

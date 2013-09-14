@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsCOMPtr.h"
+#include "nsICollation.h"
 #include "nsIDOMNode.h"
 #include "nsIRDFNode.h"
 #include "nsIRDFObserver.h"
@@ -45,7 +46,6 @@ nsIRDFContainerUtils*     nsXULTemplateQueryProcessorRDF::gRDFContainerUtils;
 nsIRDFResource*           nsXULTemplateQueryProcessorRDF::kNC_BookmarkSeparator;
 nsIRDFResource*           nsXULTemplateQueryProcessorRDF::kRDF_type;
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsXULTemplateQueryProcessorRDF)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsXULTemplateQueryProcessorRDF)
     tmp->Done();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
@@ -170,7 +170,7 @@ nsXULTemplateQueryProcessorRDF::InitGlobals()
                              &kRDF_type);
     }
 
-    return MemoryElement::Init() ? NS_OK : NS_ERROR_FAILURE;
+    return NS_OK;
 }
 
 //----------------------------------------------------------------------

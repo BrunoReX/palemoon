@@ -66,7 +66,7 @@ int nr_ice_peer_ctx_create(nr_ice_ctx *ctx, nr_ice_handler *handler,char *label,
         r_log(LOG_ICE,LOG_ERR,"Both sides are ICE-Lite");
         ABORT(R_BAD_DATA);
       }
-        
+
       pctx->controlling=0;
     }
     else{
@@ -77,7 +77,7 @@ int nr_ice_peer_ctx_create(nr_ice_ctx *ctx, nr_ice_handler *handler,char *label,
     }
     if(r=nr_crypto_random_bytes((UCHAR *)&pctx->tiebreaker,8))
       ABORT(r);
-    
+
     STAILQ_INIT(&pctx->peer_streams);
 
     STAILQ_INSERT_TAIL(&ctx->peers,pctx,entry);
@@ -211,7 +211,7 @@ int nr_ice_peer_ctx_parse_trickle_candidate(nr_ice_peer_ctx *pctx, nr_ice_media_
     while(pstream) {
       if (pstream->local_stream == stream)
         break;
-      
+
       pstream = STAILQ_NEXT(pstream, entry);
     }
     if (!pstream) {
@@ -286,12 +286,12 @@ int nr_ice_peer_ctx_pair_candidates(nr_ice_peer_ctx *pctx)
 
     stream=STAILQ_FIRST(&pctx->peer_streams);
     while(stream){
-      if(r=nr_ice_media_stream_pair_candidates(pctx, stream->local_stream, 
+      if(r=nr_ice_media_stream_pair_candidates(pctx, stream->local_stream,
         stream))
         ABORT(r);
 
       stream=STAILQ_NEXT(stream,entry);
-    }   
+    }
 
     _status=0;
   abort:
@@ -312,7 +312,9 @@ static void nr_ice_peer_ctx_destroy_cb(NR_SOCKET s, int how, void *cb_arg)
       STAILQ_REMOVE(&pctx->peer_streams,str1,nr_ice_media_stream_,entry);
       nr_ice_media_stream_destroy(&str1);
     }
-    STAILQ_REMOVE(&pctx->ctx->peers, pctx, nr_ice_peer_ctx_, entry);
+    assert(pctx->ctx);
+    if (pctx->ctx)
+      STAILQ_REMOVE(&pctx->ctx->peers, pctx, nr_ice_peer_ctx_, entry);
 
     RFREE(pctx);
   }
@@ -446,19 +448,21 @@ int nr_ice_peer_ctx_stream_done(nr_ice_peer_ctx *pctx, nr_ice_media_stream *stre
       }
       str=STAILQ_NEXT(str,entry);
     }
- 
+
     if(str)
       goto done;  /* Something isn't done */
 
     /* OK, we're finished, one way or another */
     r_log(LOG_ICE,LOG_INFO,"ICE-PEER(%s): all checks completed success=%d fail=%d",pctx->label,succeeded,failed);
-    
-    /* Schedule a done notification
+
+    /* Schedule a done notification for the first done event.
        IMPORTANT: This is done in a callback because we expect destructors
        of various kinds to be fired from here */
-
-    assert(!pctx->done_cb_timer);
-    NR_ASYNC_TIMER_SET(0,nr_ice_peer_ctx_fire_done,pctx,&pctx->done_cb_timer);
+    if (!pctx->reported_done) {
+      pctx->reported_done = 1;
+      assert(!pctx->done_cb_timer);
+      NR_ASYNC_TIMER_SET(0,nr_ice_peer_ctx_fire_done,pctx,&pctx->done_cb_timer);
+    }
 
   done:
     _status=0;
@@ -492,15 +496,15 @@ int nr_ice_peer_ctx_find_component(nr_ice_peer_ctx *pctx, nr_ice_media_stream *s
     return(_status);
   }
 
-/* 
+/*
    This packet may be for us.
 
-   1. Find the matching peer component 
+   1. Find the matching peer component
    2. Examine the packet source address to see if it matches
-   one of the peer candidates. 
+   one of the peer candidates.
    3. Fire the relevant callback handler if there is a match
-   
-   Return 0 if match, R_REJECTED if no match, other errors 
+
+   Return 0 if match, R_REJECTED if no match, other errors
    if we can't even find the component or something like that.
 */
 

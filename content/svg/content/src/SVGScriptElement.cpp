@@ -10,17 +10,15 @@
 #include "mozilla/dom/SVGScriptElement.h"
 #include "mozilla/dom/SVGScriptElementBinding.h"
 
-DOMCI_NODE_DATA(SVGScriptElement, mozilla::dom::SVGScriptElement)
-
 NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT_CHECK_PARSER(Script)
 
 namespace mozilla {
 namespace dom {
 
 JSObject*
-SVGScriptElement::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+SVGScriptElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return SVGScriptElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return SVGScriptElementBinding::Wrap(aCx, aScope, this);
 }
 
 nsSVGElement::StringInfo SVGScriptElement::sStringInfo[1] =
@@ -31,16 +29,11 @@ nsSVGElement::StringInfo SVGScriptElement::sStringInfo[1] =
 //----------------------------------------------------------------------
 // nsISupports methods
 
-NS_IMPL_ADDREF_INHERITED(SVGScriptElement,SVGScriptElementBase)
-NS_IMPL_RELEASE_INHERITED(SVGScriptElement,SVGScriptElementBase)
-
-NS_INTERFACE_TABLE_HEAD(SVGScriptElement)
-  NS_NODE_INTERFACE_TABLE8(SVGScriptElement, nsIDOMNode, nsIDOMElement,
-                           nsIDOMSVGElement, nsIDOMSVGScriptElement,
-                           nsIDOMSVGURIReference, nsIScriptLoaderObserver,
-                           nsIScriptElement, nsIMutationObserver)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(SVGScriptElement)
-NS_INTERFACE_MAP_END_INHERITING(SVGScriptElementBase)
+NS_IMPL_ISUPPORTS_INHERITED6(SVGScriptElement, SVGScriptElementBase,
+                             nsIDOMNode, nsIDOMElement,
+                             nsIDOMSVGElement,
+                             nsIScriptLoaderObserver,
+                             nsIScriptElement, nsIMutationObserver)
 
 //----------------------------------------------------------------------
 // Implementation
@@ -50,7 +43,6 @@ SVGScriptElement::SVGScriptElement(already_AddRefed<nsINodeInfo> aNodeInfo,
   : SVGScriptElementBase(aNodeInfo)
   , nsScriptElement(aFromParser)
 {
-  SetIsDOMBinding();
   AddMutationObserver(this);
 }
 
@@ -82,30 +74,34 @@ SVGScriptElement::Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const
 }
 
 //----------------------------------------------------------------------
-// nsIDOMSVGScriptElement methods
-
-/* attribute DOMString type; */
-NS_IMPL_STRING_ATTR(SVGScriptElement, Type, type)
-/* attribute DOMString crossOrigin */
-NS_IMPL_STRING_ATTR(SVGScriptElement, CrossOrigin, crossorigin)
-
-//----------------------------------------------------------------------
-// nsIDOMSVGURIReference methods
-
-/* readonly attribute nsIDOMSVGAnimatedString href; */
-NS_IMETHODIMP
-SVGScriptElement::GetHref(nsIDOMSVGAnimatedString * *aHref)
+void
+SVGScriptElement::GetType(nsAString & aType)
 {
-  *aHref = Href().get();
-  return NS_OK;
+  GetAttr(kNameSpaceID_None, nsGkAtoms::type, aType);
 }
 
-already_AddRefed<nsIDOMSVGAnimatedString>
+void
+SVGScriptElement::SetType(const nsAString & aType, ErrorResult& rv)
+{
+  rv = SetAttr(kNameSpaceID_None, nsGkAtoms::type, aType, true);
+}
+
+void
+SVGScriptElement::GetCrossOrigin(nsAString & aOrigin)
+{
+  GetAttr(kNameSpaceID_None, nsGkAtoms::crossorigin, aOrigin);
+}
+
+void
+SVGScriptElement::SetCrossOrigin(const nsAString & aOrigin, ErrorResult& rv)
+{
+  rv = SetAttr(kNameSpaceID_None, nsGkAtoms::crossorigin, aOrigin, true);
+}
+
+already_AddRefed<SVGAnimatedString>
 SVGScriptElement::Href()
 {
-  nsCOMPtr<nsIDOMSVGAnimatedString> href;
-  mStringAttributes[HREF].ToDOMAnimatedString(getter_AddRefs(href), this);
-  return href.forget();
+  return mStringAttributes[HREF].ToDOMAnimatedString(this);
 }
 
 //----------------------------------------------------------------------

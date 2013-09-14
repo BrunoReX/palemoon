@@ -9,6 +9,10 @@ searchbar {
   -moz-binding: url("chrome://browser/content/search/search.xml#searchbar");
 }
 
+browser[remote="true"] {
+  -moz-binding: url("chrome://global/content/bindings/remote-browser.xml#remote-browser");
+}
+
 tabbrowser {
   -moz-binding: url("chrome://browser/content/tabbrowser.xml#tabbrowser");
 }
@@ -28,7 +32,7 @@ tabbrowser {
 #alltabs-button { /* Pale Moon: Always show this button! (less jumpy UI) */
   visibility: visible !important;
 } 
-
+ 
 #tabbrowser-tabs:not([overflow="true"])[using-closing-tabs-spacer] ~ #alltabs-button {
   visibility: hidden; /* temporary space to keep a tab's close button under the cursor */
 }
@@ -42,7 +46,7 @@ tabbrowser {
   max-width: 250px;
   min-width: 100px;
   width: 0;
-  transition: min-width 150ms ease-out,
+  transition: min-width 175ms ease-out,
               max-width 200ms ease-out,
               opacity 80ms ease-out 20ms /* hide the tab for the first 20ms of the max-width transition */;
 }
@@ -51,9 +55,9 @@ tabbrowser {
   max-width: 0.1px;
   min-width: 0.1px;
   opacity: 0 !important;
-  transition: min-width 150ms ease-out,
+  transition: min-width 175ms ease-out,
               max-width 200ms ease-out,
-              opacity 80ms ease-out 100ms /* hide the tab for the last 20ms of the max-width transition */;
+              opacity 80ms ease-out 180ms /* hide the tab for the last 20ms of the max-width transition */;
 }
 
 .tab-throbber:not([fadein]):not([pinned]),
@@ -309,9 +313,8 @@ toolbarbutton.bookmark-item {
 }
 
 %ifdef MENUBAR_CAN_AUTOHIDE
-#toolbar-menubar:not([autohide="true"]) ~ #nav-bar > #bookmarks-menu-button-container,
-#toolbar-menubar:not([autohide="true"]) ~ toolbar > #personal-bookmarks > #bookmarks-menu-button,
-#toolbar-menubar:not([autohide="true"]) > #personal-bookmarks > #bookmarks-menu-button {
+#toolbar-menubar:not([autohide="true"]) ~ toolbar > #bookmarks-menu-button,
+#toolbar-menubar:not([autohide="true"]) > #bookmarks-menu-button {
   display: none;
 }
 %endif
@@ -362,6 +365,30 @@ window[chromehidden~="toolbar"] toolbar:not(.toolbar-primary):not(.chromeclass-m
 }
 %endif
 
+/* History Swipe Animation */
+
+#historySwipeAnimationContainer {
+  overflow: hidden;
+}
+
+#historySwipeAnimationPreviousPage,
+#historySwipeAnimationCurrentPage,
+#historySwipeAnimationNextPage {
+  background: none top left no-repeat white;
+}
+
+#historySwipeAnimationPreviousPage {
+  background-image: -moz-element(#historySwipeAnimationPreviousPageSnapshot);
+}
+
+#historySwipeAnimationCurrentPage {
+  background-image: -moz-element(#historySwipeAnimationCurrentPageSnapshot);
+}
+
+#historySwipeAnimationNextPage {
+  background-image: -moz-element(#historySwipeAnimationNextPageSnapshot);
+}
+
 /* Identity UI */
 #identity-popup-content-box.unknownIdentity > #identity-popup-connectedToLabel ,
 #identity-popup-content-box.unknownIdentity > #identity-popup-runByLabel ,
@@ -385,12 +412,21 @@ window[chromehidden~="toolbar"] toolbar:not(.toolbar-primary):not(.chromeclass-m
   left: 0;
   width: 100%;
   height: 100%;
+  z-index: 2147483647 !important;
 }
 
 #full-screen-warning-container[fade-warning-out] {
   transition-property: opacity !important;
   transition-duration: 500ms !important;
   opacity: 0.0;
+}
+
+/* When the modal fullscreen approval UI is showing, don't allow interaction
+   with the page, but when we're just showing the warning upon entering
+   fullscreen on an already approved page, do allow interaction with the page.
+ */
+#full-screen-warning-container:not([obscure-browser]) {
+  pointer-events: none;
 }
 
 #full-screen-warning-message {
@@ -490,8 +526,8 @@ window[chromehidden~="toolbar"] toolbar:not(.toolbar-primary):not(.chromeclass-m
   -moz-binding: url("chrome://browser/content/urlbarBindings.xml#click-to-play-plugins-notification");
 }
 
-popupnotification-centeritem {
-  -moz-binding: url("chrome://browser/content/urlbarBindings.xml#center-item");
+.plugin-popupnotification-centeritem {
+  -moz-binding: url("chrome://browser/content/urlbarBindings.xml#plugin-popupnotification-center-item");
 }
 
 /* override hidden="true" for the status bar compatibility shim
@@ -564,11 +600,6 @@ statuspanel[inactive][previoustype=overLink] {
   -moz-binding: url("chrome://browser/content/urlbarBindings.xml#promobox");
 }
 
-/* tabview menus */
-.tabview-menuitem {
-  max-width: 32em;
-}
-
 /* highlighter */
 %include highlighter.css
 
@@ -582,8 +613,7 @@ html|*#gcli-output-frame,
 }
 
 .gclitoolbar-input-node,
-.gclitoolbar-complete-node,
-.gclitoolbar-prompt {
+.gclitoolbar-complete-node {
   direction: ltr;
 }
 
@@ -620,15 +650,63 @@ html|*#gcli-output-frame,
   transition: none;
 }
 
-.social-notification-container > .toolbarbutton-1[badge]:not([badge=""])::after {
+.toolbarbutton-badge[badge]:not([badge=""])::after {
   content: attr(badge);
 }
 
+toolbarbutton[type="badged"] {
+  -moz-binding: url("chrome://browser/content/urlbarBindings.xml#toolbarbutton-badged");
+}
+
+/* Note the chatbox 'width' values are duplicated in socialchat.xml */
 chatbox {
   -moz-binding: url("chrome://browser/content/socialchat.xml#chatbox");
+  transition: height 150ms ease-out, width 150ms ease-out;
+  height: 285px;
+  width: 260px; /* CHAT_WIDTH_OPEN in socialchat.xml */
+}
+
+chatbox[minimized="true"] {
+  width: 160px;
+  height: 20px; /* CHAT_WIDTH_MINIMIZED in socialchat.xml */
 }
 
 chatbar {
   -moz-binding: url("chrome://browser/content/socialchat.xml#chatbar");
   height: 0;
+  max-height: 0;
+}
+
+/* full screen chat window support */
+chatbar:-moz-full-screen-ancestor,
+chatbox:-moz-full-screen-ancestor  {
+  border: none;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  -moz-box-sizing: border-box !important; 
+}
+
+/* hide chat chrome when chat is fullscreen */
+chatbox:-moz-full-screen-ancestor > .chat-titlebar {
+  display: none;
+}
+
+/* hide chatbar if browser tab is fullscreen */
+*:-moz-full-screen-ancestor chatbar:not(:-moz-full-screen-ancestor) {
+  display: none;
+}
+
+/* hide sidebar when fullscreen */
+*:-moz-full-screen-ancestor #social-sidebar-box:not(:-moz-full-screen-ancestor) {
+  display: none;
 }

@@ -18,6 +18,7 @@
 #include "nsCRT.h"
 
 #include "Image.h"
+#include "ImageOps.h"
 #include "nsError.h"
 #include "ImageLogging.h"
 
@@ -54,7 +55,12 @@ class RequestBehaviour : public ProxyBehaviour
 
   virtual void SetOwner(imgRequest* aOwner) MOZ_OVERRIDE {
     mOwner = aOwner;
-    mOwnerHasImage = !!aOwner->GetStatusTracker().GetImage();
+
+    if (mOwner) {
+      mOwnerHasImage = !!aOwner->GetStatusTracker().GetImage();
+    } else {
+      mOwnerHasImage = false;
+    }
   }
 
  private:
@@ -651,7 +657,10 @@ NS_IMETHODIMP imgRequestProxy::SetPriority(int32_t priority)
 
 NS_IMETHODIMP imgRequestProxy::AdjustPriority(int32_t priority)
 {
-  NS_ENSURE_STATE(GetOwner() && !mCanceled);
+  // We don't require |!mCanceled| here. This may be called even if we're
+  // cancelled, because it's invoked as part of the process of removing an image
+  // from the load group.
+  NS_ENSURE_STATE(GetOwner());
   GetOwner()->AdjustPriority(this, priority);
   return NS_OK;
 }
@@ -761,6 +770,17 @@ void imgRequestProxy::OnDiscard()
   if (GetOwner()) {
     // Update the cache entry size, since we just got rid of frame data.
     GetOwner()->UpdateCacheEntrySize();
+  }
+}
+
+void imgRequestProxy::OnUnlockedDraw()
+{
+  LOG_FUNC(GetImgLog(), "imgRequestProxy::OnUnlockedDraw");
+
+  if (mListener && !mCanceled) {
+    // Hold a ref to the listener while we call it, just in case.
+    nsCOMPtr<imgINotificationObserver> kungFuDeathGrip(mListener);
+    mListener->Notify(this, imgINotificationObserver::UNLOCKED_DRAW, nullptr);
   }
 }
 
@@ -892,25 +912,21 @@ imgRequestProxy::GetStaticRequest(imgRequestProxy** aReturn)
     return NS_OK;
   }
 
-  // We are animated. We need to extract the current frame from this image.
-  int32_t w = 0;
-  int32_t h = 0;
-  image->GetWidth(&w);
-  image->GetHeight(&h);
-  nsIntRect rect(0, 0, w, h);
-  nsCOMPtr<imgIContainer> currentFrame;
-  nsresult rv = image->ExtractFrame(imgIContainer::FRAME_CURRENT, rect,
-                                    imgIContainer::FLAG_SYNC_DECODE,
-                                    getter_AddRefs(currentFrame));
-  if (NS_FAILED(rv))
-    return rv;
+  // Check for errors in the image. Callers code rely on GetStaticRequest
+  // failing in this case, though with FrozenImage there's no technical reason
+  // for it anymore.
+  if (image->HasError()) {
+    return NS_ERROR_FAILURE;
+  }
 
-  nsRefPtr<Image> frame = static_cast<Image*>(currentFrame.get());
+  // We are animated. We need to create a frozen version of this image.
+  nsRefPtr<Image> frozenImage = ImageOps::Freeze(image);
 
   // Create a static imgRequestProxy with our new extracted frame.
   nsCOMPtr<nsIPrincipal> currentPrincipal;
   GetImagePrincipal(getter_AddRefs(currentPrincipal));
-  nsRefPtr<imgRequestProxy> req = new imgRequestProxyStatic(frame, currentPrincipal);
+  nsRefPtr<imgRequestProxy> req = new imgRequestProxyStatic(frozenImage,
+                                                            currentPrincipal);
   req->Init(nullptr, nullptr, mURI, nullptr);
 
   NS_ADDREF(*aReturn = req);
@@ -1003,7 +1019,7 @@ public:
   }
 
   virtual void SetOwner(imgRequest* aOwner) MOZ_OVERRIDE {
-    MOZ_ASSERT_IF(aOwner, "We shouldn't be giving static requests a non-null owner.");
+    MOZ_ASSERT(!aOwner, "We shouldn't be giving static requests a non-null owner.");
   }
 
 private:
@@ -1029,13 +1045,9 @@ NS_IMETHODIMP imgRequestProxyStatic::GetImagePrincipal(nsIPrincipal **aPrincipal
   return NS_OK;
 }
 
-NS_IMETHODIMP
+nsresult
 imgRequestProxyStatic::Clone(imgINotificationObserver* aObserver,
-                             imgIRequest** aClone)
+                             imgRequestProxy** aClone)
 {
-  nsresult result;
-  imgRequestProxy* proxy;
-  result = PerformClone(aObserver, NewStaticProxy, &proxy);
-  *aClone = proxy;
-  return result;
+  return PerformClone(aObserver, NewStaticProxy, aClone);
 }

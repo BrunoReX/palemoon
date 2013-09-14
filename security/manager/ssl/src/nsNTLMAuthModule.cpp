@@ -5,21 +5,14 @@
 
 #include "prlog.h"
 
-#include <stdlib.h>
-#include "nsIPrefService.h"
-#include "nsIPrefBranch.h"
-#include "nsServiceManagerUtils.h"
-#include "nsCOMPtr.h"
-#include "nsNSSShutDown.h"
 #include "nsNTLMAuthModule.h"
+#include "nsNSSShutDown.h"
 #include "nsNativeCharsetUtils.h"
-#include "nsReadableUtils.h"
-#include "nsString.h"
 #include "prsystem.h"
-#include "nss.h"
-#include "pk11func.h"
+#include "pk11pub.h"
 #include "md4.h"
 #include "mozilla/Likely.h"
+#include "mozilla/Telemetry.h"
 
 #ifdef PR_LOGGING
 static PRLogModuleInfo *
@@ -105,15 +98,12 @@ static const char NTLM_TYPE3_MARKER[] = { 0x03, 0x00, 0x00, 0x00 };
 
 //-----------------------------------------------------------------------------
 
-static bool SendLM()
-{
-  nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
-  if (!prefs)
-    return false;
+static bool sendLM = false;
 
-  bool val;
-  nsresult rv = prefs->GetBoolPref("network.ntlm.send-lm-response", &val);
-  return NS_SUCCEEDED(rv) && val;
+/*static*/ void
+nsNTLMAuthModule::SetSendLM(bool newSendLM)
+{
+  sendLM = newSendLM;
 }
 
 //-----------------------------------------------------------------------------
@@ -691,7 +681,7 @@ GenerateType3Msg(const nsString &domain,
     NTLM_Hash(password, ntlmHash);
     LM_Response(ntlmHash, msg.challenge, ntlmResp);
 
-    if (SendLM())
+    if (sendLM)
     {
       uint8_t lmHash[LM_HASH_LEN];
       LM_Hash(password, lmHash);
@@ -778,11 +768,23 @@ nsNTLMAuthModule::Init(const char      *serviceName,
                        const PRUnichar *username,
                        const PRUnichar *password)
 {
-  NS_ASSERTION(serviceFlags == nsIAuthModule::REQ_DEFAULT, "unexpected service flags");
+  NS_ASSERTION((serviceFlags & ~nsIAuthModule::REQ_PROXY_AUTH) == nsIAuthModule::REQ_DEFAULT,
+      "unexpected service flags");
 
   mDomain = domain;
   mUsername = username;
   mPassword = password;
+
+  static bool sTelemetrySent = false;
+  if (!sTelemetrySent) {
+      mozilla::Telemetry::Accumulate(
+          mozilla::Telemetry::NTLM_MODULE_USED,
+          serviceFlags | nsIAuthModule::REQ_PROXY_AUTH
+              ? NTLM_MODULE_GENERIC_PROXY
+              : NTLM_MODULE_GENERIC_DIRECT);
+      sTelemetrySent = true;
+  }
+
   return NS_OK;
 }
 

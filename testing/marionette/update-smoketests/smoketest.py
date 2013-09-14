@@ -18,8 +18,8 @@ marionette_client_dir = os.path.join(marionette_dir, 'client', 'marionette')
 
 def find_b2g():
     sys.path.append(marionette_client_dir)
-    from b2ginstance import B2GInstance
-    return B2GInstance()
+    from b2gbuild import B2GBuild
+    return B2GBuild()
 
 class DictObject(dict):
     def __getattr__(self, item):
@@ -135,7 +135,7 @@ class SmokeTestRunner(object):
         if not os.path.exists(partial_mar):
             build_gecko_mar = os.path.join(self.b2g.update_tools,
                                            'build-gecko-mar.py')
-            subprocess.check_call([build_gecko_mar,
+            subprocess.check_call([sys.executable, build_gecko_mar,
                                    '--from', start_data.complete_mar,
                                    '--to', finish_data.complete_mar,
                                    partial_mar])

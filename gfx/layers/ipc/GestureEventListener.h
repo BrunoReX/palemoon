@@ -1,4 +1,7 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */ /* vim: set sw=4 ts=8 et tw=80 : */ /* This Source Code Form is subject to the terms of the Mozilla Public * License, v. 2.0. If a copy of the MPL was not distributed with this
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set sw=4 ts=8 et tw=80 : */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef mozilla_layers_GestureEventListener_h
@@ -198,22 +201,28 @@ protected:
    * Task used to timeout a double tap. This gets posted to the UI thread such
    * that it runs a short time after a single tap happens. We cache it so that
    * we can cancel it if a double tap actually comes in.
+   * CancelDoubleTapTimeoutTask: Cancel the mDoubleTapTimeoutTask and also set
+   * it to null.
    */
   CancelableTask *mDoubleTapTimeoutTask;
+  inline void CancelDoubleTapTimeoutTask();
 
   /**
    * Task used to timeout a long tap. This gets posted to the UI thread such
    * that it runs a time when a single tap happens. We cache it so that
    * we can cancel it if any other touch event happens.
+   * CancelLongTapTimeoutTask: Cancel the mLongTapTimeoutTask and also set
+   * it to null.
    */
   CancelableTask *mLongTapTimeoutTask;
+  inline void CancelLongTapTimeoutTask();
 
   /**
    * Position of the last touch starting. This is only valid during an attempt
    * to determine if a touch is a tap. This means that it is used in both the
    * "GESTURE_WAITING_SINGLE_TAP" and "GESTURE_WAITING_DOUBLE_TAP" states.
    */
-  nsIntPoint mTouchStartPosition;
+  ScreenIntPoint mTouchStartPosition;
 };
 
 }

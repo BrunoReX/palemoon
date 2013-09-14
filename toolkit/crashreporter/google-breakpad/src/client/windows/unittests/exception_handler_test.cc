@@ -27,6 +27,8 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include "client/windows/unittests/exception_handler_test.h"
+
 #include <windows.h>
 #include <dbghelp.h>
 #include <strsafe.h>
@@ -35,12 +37,25 @@
 
 #include <string>
 
-#include "../../../breakpad_googletest_includes.h"
-#include "../../../../common/windows/string_utils-inl.h"
-#include "../../../../google_breakpad/processor/minidump.h"
-#include "../crash_generation/crash_generation_server.h"
-#include "../handler/exception_handler.h"
-#include "dump_analysis.h"  // NOLINT
+#include "breakpad_googletest_includes.h"
+#include "client/windows/crash_generation/crash_generation_server.h"
+#include "client/windows/handler/exception_handler.h"
+#include "client/windows/unittests/dump_analysis.h"  // NOLINT
+#include "common/windows/string_utils-inl.h"
+#include "google_breakpad/processor/minidump.h"
+
+namespace testing {
+
+DisableExceptionHandlerInScope::DisableExceptionHandlerInScope() {
+  catch_exceptions_ = GTEST_FLAG(catch_exceptions);
+  GTEST_FLAG(catch_exceptions) = false;
+}
+
+DisableExceptionHandlerInScope::~DisableExceptionHandlerInScope() {
+  GTEST_FLAG(catch_exceptions) = catch_exceptions_;
+}
+
+}  // namespace testing
 
 namespace {
 
@@ -361,6 +376,10 @@ TEST_F(ExceptionHandlerTest, WriteMinidumpTest) {
                            DumpCallback,
                            NULL,
                            ExceptionHandler::HANDLER_ALL);
+
+  // Disable GTest SEH handler
+  testing::DisableExceptionHandlerInScope disable_exception_handler;
+
   ASSERT_TRUE(handler.WriteMinidump());
   ASSERT_FALSE(dump_file.empty());
 
@@ -378,15 +397,15 @@ TEST_F(ExceptionHandlerTest, WriteMinidumpTest) {
 TEST_F(ExceptionHandlerTest, AdditionalMemory) {
   SYSTEM_INFO si;
   GetSystemInfo(&si);
-  const u_int32_t kMemorySize = si.dwPageSize;
+  const uint32_t kMemorySize = si.dwPageSize;
 
   // Get some heap memory.
-  u_int8_t* memory = new u_int8_t[kMemorySize];
+  uint8_t* memory = new uint8_t[kMemorySize];
   const uintptr_t kMemoryAddress = reinterpret_cast<uintptr_t>(memory);
   ASSERT_TRUE(memory);
 
   // Stick some data into the memory so the contents can be verified.
-  for (u_int32_t i = 0; i < kMemorySize; ++i) {
+  for (uint32_t i = 0; i < kMemorySize; ++i) {
     memory[i] = i % 255;
   }
 
@@ -395,6 +414,9 @@ TEST_F(ExceptionHandlerTest, AdditionalMemory) {
                            DumpCallback,
                            NULL,
                            ExceptionHandler::HANDLER_ALL);
+
+  // Disable GTest SEH handler
+  testing::DisableExceptionHandlerInScope disable_exception_handler;
 
   // Add the memory region to the list of memory to be included.
   handler.RegisterAppMemory(memory, kMemorySize);
@@ -429,15 +451,15 @@ TEST_F(ExceptionHandlerTest, AdditionalMemory) {
 TEST_F(ExceptionHandlerTest, AdditionalMemoryRemove) {
   SYSTEM_INFO si;
   GetSystemInfo(&si);
-  const u_int32_t kMemorySize = si.dwPageSize;
+  const uint32_t kMemorySize = si.dwPageSize;
 
   // Get some heap memory.
-  u_int8_t* memory = new u_int8_t[kMemorySize];
+  uint8_t* memory = new uint8_t[kMemorySize];
   const uintptr_t kMemoryAddress = reinterpret_cast<uintptr_t>(memory);
   ASSERT_TRUE(memory);
 
   // Stick some data into the memory so the contents can be verified.
-  for (u_int32_t i = 0; i < kMemorySize; ++i) {
+  for (uint32_t i = 0; i < kMemorySize; ++i) {
     memory[i] = i % 255;
   }
 
@@ -446,6 +468,9 @@ TEST_F(ExceptionHandlerTest, AdditionalMemoryRemove) {
                            DumpCallback,
                            NULL,
                            ExceptionHandler::HANDLER_ALL);
+
+  // Disable GTest SEH handler
+  testing::DisableExceptionHandlerInScope disable_exception_handler;
 
   // Add the memory region to the list of memory to be included.
   handler.RegisterAppMemory(memory, kMemorySize);

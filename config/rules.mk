@@ -10,6 +10,50 @@ ifndef topsrcdir
 $(error topsrcdir was not set))
 endif
 
+# Integrate with mozbuild-generated make files. We first verify that no
+# variables provided by the automatically generated .mk files are
+# present. If they are, this is a violation of the separation of
+# responsibility between Makefile.in and mozbuild files.
+_MOZBUILD_EXTERNAL_VARIABLES := \
+  DIRS \
+  EXTRA_PP_COMPONENTS \
+  HOST_CSRCS \
+  HOST_LIBRARY_NAME \
+  MODULE \
+  PARALLEL_DIRS \
+  TEST_DIRS \
+  TIERS \
+  TOOL_DIRS \
+  XPIDL_MODULE \
+  $(NULL)
+
+ifndef EXTERNALLY_MANAGED_MAKE_FILE
+# Using $(firstword) may not be perfect. But it should be good enough for most
+# scenarios.
+_current_makefile = $(CURDIR)/$(firstword $(MAKEFILE_LIST))
+
+$(foreach var,$(_MOZBUILD_EXTERNAL_VARIABLES),$(if $($(var)),\
+    $(error Variable $(var) is defined in $(_current_makefile). It should only be defined in moz.build files),\
+    ))
+
+ifneq (,$(XPIDLSRCS)$(SDK_XPIDLSRCS))
+    $(error XPIDLSRCS and SDK_XPIDLSRCS have been merged and moved to moz.build files as the XPIDL_SOURCES variable. You must move these variables out of $(_current_makefile))
+endif
+
+# Import the automatically generated backend file. If this file doesn't exist,
+# the backend hasn't been properly configured. We want this to be a fatal
+# error, hence not using "-include".
+ifndef STANDALONE_MAKEFILE
+GLOBAL_DEPS += backend.mk
+include backend.mk
+endif
+endif
+
+ifdef TIERS
+DIRS += $(foreach tier,$(TIERS),$(tier_$(tier)_dirs))
+STATIC_DIRS += $(foreach tier,$(TIERS),$(tier_$(tier)_staticdirs))
+endif
+
 ifndef MOZILLA_DIR
 MOZILLA_DIR = $(topsrcdir)
 endif
@@ -25,10 +69,17 @@ endif
 USE_AUTOTARGETS_MK = 1
 include $(topsrcdir)/config/makefiles/makeutils.mk
 
-ifdef SDK_XPIDLSRCS
-_EXTRA_XPIDLSRCS := $(filter-out $(XPIDLSRCS),$(SDK_XPIDLSRCS))
-XPIDLSRCS += $(_EXTRA_XPIDLSRCS)
+# Only build with Pymake (not GNU make) on Windows.
+ifeq ($(HOST_OS_ARCH),WINNT)
+ifndef L10NBASEDIR
+ifndef .PYMAKE
+$(error Pymake is required to build on Windows. Run |./mach build| to \
+automatically use pymake or invoke pymake directly via \
+|python build/pymake/make.py|.)
 endif
+endif
+endif
+
 ifdef SDK_HEADERS
 _EXTRA_EXPORTS := $(filter-out $(EXPORTS),$(SDK_HEADERS))
 EXPORTS += $(_EXTRA_EXPORTS)
@@ -62,10 +113,6 @@ endif # ifndef .PYMAKE
 
 _VPATH_SRCS = $(abspath $<)
 
-ifdef EXTRA_DSO_LIBS
-EXTRA_DSO_LIBS	:= $(call EXPAND_MOZLIBNAME,$(EXTRA_DSO_LIBS))
-endif
-
 ################################################################################
 # Testing frameworks support
 ################################################################################
@@ -95,6 +142,20 @@ ifndef INCLUDED_TESTS_MOCHITEST_MK #{
   include $(topsrcdir)/config/makefiles/mochitest.mk
 endif #}
 
+ifdef MOZ_ENABLE_GTEST
+ifdef GTEST_CPPSRCS
+CPPSRCS += $(GTEST_CPPSRCS)
+endif
+
+ifdef GTEST_CSRCS
+CSRCS += $(GTEST_CSRCS)
+endif
+
+ifdef GTEST_CMMSRCS
+CMMSRCS += $(GTEST_CMMSRCS)
+endif
+endif
+
 ifdef CPP_UNIT_TESTS
 
 # Compile the tests to $(DIST)/bin.  Make lots of niceties available by default
@@ -116,7 +177,7 @@ cppunittests-remote:
 			--localLib=$(DEPTH)/dist/$(MOZ_APP_NAME) \
 			--dm_trans=$(DM_TRANS) \
 			--deviceIP=${TEST_DEVICE} \
- 			$(subst .cpp,$(BIN_SUFFIX),$(CPP_UNIT_TESTS)) $(EXTRA_TEST_ARGS); \
+			$(subst .cpp,$(BIN_SUFFIX),$(CPP_UNIT_TESTS)) $(EXTRA_TEST_ARGS); \
 	else \
 		echo "please prepare your host with environment variables for TEST_DEVICE"; \
 	fi
@@ -357,11 +418,24 @@ ifdef MOZ_UPDATE_XTERM
 UPDATE_TITLE = printf "\033]0;%s in %s\007" $(1) $(shell $(BUILD_TOOLS)/print-depth-path.sh)/$(2) ;
 endif
 
-define SUBMAKE # $(call SUBMAKE,target,directory)
+# Static directories are largely independent of our build system. But, they
+# could share the same build mechanism (like moz.build files). We need to
+# prevent leaking of our backend state to these independent build systems. This
+# is why MOZBUILD_BACKEND_CHECKED isn't exported to make invocations for static
+# directories.
+define SUBMAKE # $(call SUBMAKE,target,directory,static)
 +@$(UPDATE_TITLE)
-+$(MAKE) $(if $(2),-C $(2)) $(1)
++$(if $(3), MOZBUILD_BACKEND_CHECKED=,) $(MAKE) $(if $(2),-C $(2)) $(1)
 
 endef # The extra line is important here! don't delete it
+
+define TIER_DIR_SUBMAKE
+@echo "BUILDSTATUS TIERDIR_START $(2)"
+$(call SUBMAKE,$(1),$(2),$(3))
+@echo "BUILDSTATUS TIERDIR_FINISH $(2)"
+
+endef # Ths empty line is important.
+
 
 ifneq (,$(strip $(DIRS)))
 LOOP_OVER_DIRS = \
@@ -372,11 +446,6 @@ endif
 ifneq (,$(strip $(PARALLEL_DIRS)))
 LOOP_OVER_PARALLEL_DIRS = \
   $(foreach dir,$(PARALLEL_DIRS),$(call SUBMAKE,$@,$(dir)))
-endif
-
-ifneq (,$(strip $(STATIC_DIRS)))
-LOOP_OVER_STATIC_DIRS = \
-  $(foreach dir,$(STATIC_DIRS),$(call SUBMAKE,$@,$(dir)))
 endif
 
 ifneq (,$(strip $(TOOL_DIRS)))
@@ -560,6 +629,33 @@ HOST_OUTOPTION = -o # eol
 endif
 ################################################################################
 
+# Regenerate the build backend if it is out of date. We only check this once
+# per traversal, hence the ifdef and the export. This rule needs to come before
+# other rules for the default target or else it may not run in time.
+ifndef MOZBUILD_BACKEND_CHECKED
+
+# Since Makefile is listed as a global dependency, this has the
+# unfortunate side-effect of invalidating all targets if it is executed.
+# So e.g. if you are in /dom/bindings and /foo/moz.build changes,
+# /dom/bindings will get invalidated. The upside is if the current
+# Makefile/backend.mk is updated as a result of backend regeneration, we
+# actually pick up the changes. This should reduce the amount of
+# required clobbers and is thus the lesser evil.
+Makefile: $(DEPTH)/backend.RecursiveMakeBackend.built
+	@$(TOUCH) $@
+
+$(DEPTH)/backend.RecursiveMakeBackend.built:
+	@echo "Build configuration changed. Regenerating backend."
+	@cd $(DEPTH) && $(PYTHON) ./config.status
+
+include $(DEPTH)/backend.RecursiveMakeBackend.built.pp
+
+default:: $(DEPTH)/backend.RecursiveMakeBackend.built
+
+export MOZBUILD_BACKEND_CHECKED=1
+endif
+
+
 # SUBMAKEFILES: List of Makefiles for next level down.
 #   This is used to update or create the Makefiles before invoking them.
 SUBMAKEFILES += $(addsuffix /Makefile, $(DIRS) $(TOOL_DIRS) $(PARALLEL_DIRS))
@@ -571,12 +667,13 @@ SUBMAKEFILES += $(addsuffix /Makefile, $(DIRS) $(TOOL_DIRS) $(PARALLEL_DIRS))
 ifndef SUPPRESS_DEFAULT_RULES
 ifdef TIERS
 default all alldep::
+	@echo "BUILDSTATUS TIERS $(TIERS)"
 	$(foreach tier,$(TIERS),$(call SUBMAKE,tier_$(tier)))
 else
 
 default all::
 ifneq (,$(strip $(STATIC_DIRS)))
-	$(foreach dir,$(STATIC_DIRS),$(call SUBMAKE,,$(dir)))
+	$(foreach dir,$(STATIC_DIRS),$(call SUBMAKE,,$(dir),1))
 endif
 	$(MAKE) export
 	$(MAKE) libs
@@ -600,14 +697,44 @@ ECHO := true
 QUIET := -q
 endif
 
-MAKE_TIER_SUBMAKEFILES = +$(if $(tier_$*_dirs),$(MAKE) $(addsuffix /Makefile,$(tier_$*_dirs)))
+# This function is called and evaluated to produce the rule to build the
+# specified tier. Each tier begins by building the "static" directories.
+# The BUILDSTATUS echo commands are used to faciliate easier parsing
+# of build output. Build drivers are encouraged to filter these lines
+# from the user.
+define CREATE_TIER_RULE
+tier_$(1)::
+	@echo "BUILDSTATUS TIER_START $(1)"
+	@printf "BUILDSTATUS SUBTIERS"
+ifneq (,$(tier_$(1)_staticdirs))
+	@printf " static"
+endif
+ifneq (,$(tier_$(1)_dirs))
+	@printf " export libs tools"
+endif
+	@printf "\n"
+	@echo "BUILDSTATUS STATICDIRS $$($$@_staticdirs)"
+	@echo "BUILDSTATUS DIRS $$($$@_dirs)"
+ifneq (,$(tier_$(1)_staticdirs))
+	@echo "BUILDSTATUS SUBTIER_START $(1) static"
+	$$(foreach dir,$$($$@_staticdirs),$$(call TIER_DIR_SUBMAKE,,$$(dir),1))
+	@echo "BUILDSTATUS SUBTIER_FINISH $(1) static"
+endif
+ifneq (,$(tier_$(1)_dirs))
+	@echo "BUILDSTATUS SUBTIER_START $(1) export"
+	$$(MAKE) export_$$@
+	@echo "BUILDSTATUS SUBTIER_FINISH $(1) export"
+	@echo "BUILDSTATUS SUBTIER_START $(1) libs"
+	$$(MAKE) libs_$$@
+	@echo "BUILDSTATUS SUBTIER_FINISH $(1) libs"
+	@echo "BUILDSTATUS SUBTIER_START $(1) tools"
+	$$(MAKE) tools_$$@
+	@echo "BUILDSTATUS SUBTIER_FINISH $(1) tools"
+	@echo "BUILDSTATUS TIER_FINISH $(1)"
+endif
+endef
 
-$(foreach tier,$(TIERS),tier_$(tier))::
-	@$(ECHO) "$@: $($@_staticdirs) $($@_dirs)"
-	$(foreach dir,$($@_staticdirs),$(call SUBMAKE,,$(dir)))
-	$(MAKE) export_$@
-	$(MAKE) libs_$@
-	$(MAKE) tools_$@
+$(foreach tier,$(TIERS),$(eval $(call CREATE_TIER_RULE,$(tier))))
 
 # Do everything from scratch
 everything::
@@ -893,6 +1020,7 @@ endif
 # so no need to conditionalize on OS version or debugging format.
 
 $(SHARED_LIBRARY): $(OBJS) $(LOBJS) $(DEF_FILE) $(RESFILE) $(LIBRARY) $(EXTRA_DEPS) $(GLOBAL_DEPS)
+	$(info $(notdir $@))
 ifndef INCREMENTAL_LINKER
 	$(RM) $@
 endif
@@ -936,17 +1064,19 @@ define MAKE_DEPS_AUTO_CC
 if test -d $(@D); then \
 	echo "Building deps for $< using Sun Studio cc"; \
 	$(CC) $(COMPILE_CFLAGS) -xM  $< >$(_MDDEPFILE) ; \
+	$(PYTHON) $(topsrcdir)/build/unix/add_phony_targets.py $(_MDDEPFILE) ; \
 fi
 endef
 define MAKE_DEPS_AUTO_CXX
 if test -d $(@D); then \
 	echo "Building deps for $< using Sun Studio CC"; \
 	$(CXX) $(COMPILE_CXXFLAGS) -xM $< >$(_MDDEPFILE) ; \
+	$(PYTHON) $(topsrcdir)/build/unix/add_phony_targets.py $(_MDDEPFILE) ; \
 fi
 endef
 endif # Sun Studio on Solaris
 
-$(OBJS) $(HOST_OBJS): $(GLOBAL_DEPS)
+$(OBJS) $(HOST_OBJS) $(PROGOBJS) $(HOST_PROGOBJS): $(GLOBAL_DEPS)
 
 # Rules for building native targets must come first because of the host_ prefix
 $(HOST_COBJS): host_%.$(OBJ_SUFFIX): %.c
@@ -1100,6 +1230,10 @@ else
 normalizepath = $(1)
 endif
 
+ifneq (,$(value JAVAFILES)$(value RESFILES))
+  include $(topsrcdir)/config/makefiles/java-build.mk
+endif
+
 _srcdir = $(call normalizepath,$(srcdir))
 ifdef JAVA_SOURCEPATH
 SP = $(subst $(SPACE),$(SEP),$(call normalizepath,$(strip $(JAVA_SOURCEPATH))))
@@ -1129,7 +1263,7 @@ $(JAVA_LIBRARY): $(addprefix $(_JAVA_DIR)/,$(JAVA_SRCS:.java=.class)) $(GLOBAL_D
 GARBAGE_DIRS += $(_JAVA_DIR)
 
 ###############################################################################
-# Update Makefiles
+# Update Files Managed by Build Backend
 ###############################################################################
 
 ifndef NO_MAKEFILE_RULE
@@ -1206,12 +1340,6 @@ endif
 # on win32, pref files need CRLF line endings... see bug 206029
 ifeq (WINNT,$(OS_ARCH))
 PREF_PPFLAGS += --line-endings=crlf
-endif
-
-# Set a flag that can be used in pref files to disable features if
-# we are not building for Aurora or Nightly.
-ifeq (,$(findstring a,$(GRE_MILESTONE)))
-PREF_PPFLAGS += -DRELEASE_BUILD
 endif
 
 ifneq ($(PREF_JS_EXPORTS),)
@@ -1437,11 +1565,30 @@ $(FINAL_TARGET)/chrome: $(call mkdir_deps,$(FINAL_TARGET)/chrome)
 
 ifneq (,$(wildcard $(JAR_MANIFEST)))
 ifndef NO_DIST_INSTALL
+
+ifdef XPI_NAME
+ifdef XPI_ROOT_APPID
+# For add-on packaging we may specify that an application
+# sub-dir should be added to the root chrome manifest with
+# a specific application id.
+MAKE_JARS_FLAGS += --root-manifest-entry-appid="$(XPI_ROOT_APPID)"
+endif
+
+# if DIST_SUBDIR is defined but XPI_ROOT_APPID is not there's
+# no way langpacks will get packaged right, so error out.
+ifneq (,$(DIST_SUBDIR))
+ifndef XPI_ROOT_APPID
+$(error XPI_ROOT_APPID is not defined - langpacks will break.)
+endif
+endif
+endif
+
 libs realchrome:: $(CHROME_DEPS) $(FINAL_TARGET)/chrome
 	$(PYTHON) $(MOZILLA_DIR)/config/JarMaker.py \
 	  $(QUIET) -j $(FINAL_TARGET)/chrome \
 	  $(MAKE_JARS_FLAGS) $(XULPPFLAGS) $(DEFINES) $(ACDEFINES) \
 	  $(JAR_MANIFEST)
+
 endif
 endif
 
@@ -1498,9 +1645,9 @@ $(error XPI_NAME must be set for INSTALL_EXTENSION_ID)
 endif
 
 libs::
-	$(RM) -r "$(DIST)/bin/extensions/$(INSTALL_EXTENSION_ID)"
-	$(NSINSTALL) -D "$(DIST)/bin/extensions/$(INSTALL_EXTENSION_ID)"
-	cd $(FINAL_TARGET) && tar $(TAR_CREATE_FLAGS) - . | (cd "../../bin/extensions/$(INSTALL_EXTENSION_ID)" && tar -xf -)
+	$(RM) -r "$(DIST)/bin$(DIST_SUBDIR:%=/%)/extensions/$(INSTALL_EXTENSION_ID)"
+	$(NSINSTALL) -D "$(DIST)/bin$(DIST_SUBDIR:%=/%)/extensions/$(INSTALL_EXTENSION_ID)"
+	$(call copy_dir,$(FINAL_TARGET),$(DIST)/bin$(DIST_SUBDIR:%=/%)/extensions/$(INSTALL_EXTENSION_ID))
 
 endif
 
@@ -1517,20 +1664,32 @@ endif
 #   it.
 
 ifneq (,$(filter-out all chrome default export realchrome tools clean clobber clobber_all distclean realclean,$(MAKECMDGOALS)))
-MDDEPEND_FILES		:= $(strip $(wildcard $(foreach file,$(OBJS) $(PROGOBJS) $(HOST_OBJS) $(HOST_PROGOBJS) $(TARGETS) $(XPIDLSRCS:.idl=.h) $(XPIDLSRCS:.idl=.xpt),$(MDDEPDIR)/$(notdir $(file)).pp) $(addprefix $(MDDEPDIR)/,$(EXTRA_MDDEPEND_FILES))))
+MDDEPEND_FILES		:= $(strip $(wildcard $(foreach file,$(sort $(OBJS) $(PROGOBJS) $(HOST_OBJS) $(HOST_PROGOBJS) $(TARGETS) $(XPIDLSRCS:.idl=.h) $(XPIDLSRCS:.idl=.xpt)),$(MDDEPDIR)/$(notdir $(file)).pp) $(addprefix $(MDDEPDIR)/,$(EXTRA_MDDEPEND_FILES))))
 
 ifneq (,$(MDDEPEND_FILES))
-# The script mddepend.pl checks the dependencies and writes to stdout
-# one rule to force out-of-date objects. For example,
-#   foo.o boo.o: FORCE
-# The script has an advantage over including the *.pp files directly
-# because it handles the case when header files are removed from the build.
-# 'make' would complain that there is no way to build missing headers.
-ALL_PP_RESULTS = $(shell $(PERL) $(BUILD_TOOLS)/mddepend.pl - $(MDDEPEND_FILES))
-$(eval $(ALL_PP_RESULTS))
+ifdef .PYMAKE
+includedeps $(MDDEPEND_FILES)
+else
+include $(MDDEPEND_FILES)
+endif
 endif
 
 endif
+
+
+ifneq (,$(filter export,$(MAKECMDGOALS)))
+MDDEPEND_FILES		:= $(strip $(wildcard $(addprefix $(MDDEPDIR)/,$(EXTRA_EXPORT_MDDEPEND_FILES))))
+
+ifneq (,$(MDDEPEND_FILES))
+ifdef .PYMAKE
+includedeps $(MDDEPEND_FILES)
+else
+include $(MDDEPEND_FILES)
+endif
+endif
+
+endif
+
 #############################################################################
 
 -include $(topsrcdir)/$(MOZ_BUILD_APP)/app-rules.mk
@@ -1565,17 +1724,19 @@ endif
 
 # If we're using binary nsinstall and it's not built yet, fallback to python nsinstall.
 ifneq (,$(filter $(CONFIG_TOOLS)/nsinstall$(HOST_BIN_SUFFIX),$(install_cmd)))
-nsinstall_is_usable = $(if $(wildcard $(CONFIG_TOOLS)/nsinstall$(HOST_BIN_SUFFIX)),$(eval nsinstall_is_usable := yes)yes)
+ifeq (,$(wildcard $(CONFIG_TOOLS)/nsinstall$(HOST_BIN_SUFFIX)))
+nsinstall_is_usable = $(if $(wildcard $(CONFIG_TOOLS)/nsinstall$(HOST_BIN_SUFFIX)),yes)
 
 define install_cmd_override
 $(1): install_cmd = $$(if $$(nsinstall_is_usable),$$(INSTALL),$$(NSINSTALL_PY)) $$(1)
 endef
 endif
+endif
 
 define install_file_template
 $(or $(3),libs):: $(2)/$(notdir $(1))
 $(call install_cmd_override,$(2)/$(notdir $(1)))
-$(2)/$(notdir $(1)): $(1) $$(call mkdir_deps,$(2))
+$(2)/$(notdir $(1)): $(1)
 	$$(call install_cmd,$(4) "$$<" "$${@D}")
 endef
 $(foreach category,$(INSTALL_TARGETS),\
@@ -1622,9 +1783,9 @@ $(foreach category,$(INSTALL_TARGETS),\
 # $(call preprocess_file_template, source_file, output_file,
 #                                  makefile_target, extra_flags)
 define preprocess_file_template
-$(2): $(1) $$(call mkdir_deps,$(dir $(2))) $$(GLOBAL_DEPS)
+$(2): $(1) $$(GLOBAL_DEPS)
 	$$(RM) "$$@"
-	$$(PYTHON) $$(topsrcdir)/config/Preprocessor.py $(4) $$(DEFINES) $$(ACDEFINES) $$(XULPPFLAGS) "$$<" > "$$@"
+	$$(PYTHON) $$(topsrcdir)/config/Preprocessor.py $(4) $$(DEFINES) $$(ACDEFINES) $$(XULPPFLAGS) "$$<" -o "$$@"
 $(3):: $(2)
 endef
 
@@ -1637,6 +1798,11 @@ $(foreach category,$(PP_TARGETS),						\
                   $($(category)_FLAGS)))					\
    )										\
  )
+
+# Pull in non-recursive targets if this is a partial tree build.
+ifndef TOPLEVEL_BUILD
+include $(topsrcdir)/config/makefiles/nonrecursive.mk
+endif
 
 ################################################################################
 # Special gmake rules.
@@ -1705,6 +1871,7 @@ FREEZE_VARIABLES = \
   MOCHITEST_BROWSER_FILES \
   MOCHITEST_BROWSER_FILES_PARTS \
   MOCHITEST_A11Y_FILES \
+  MOCHITEST_ROBOCOP_FILES \
   MOCHITEST_WEBAPPRT_CHROME_FILES \
   $(NULL)
 
@@ -1716,10 +1883,19 @@ CHECK_FROZEN_VARIABLES = $(foreach var,$(FREEZE_VARIABLES), \
 libs export::
 	$(CHECK_FROZEN_VARIABLES)
 
-default all::
-	if test -d $(DIST)/bin ; then touch $(DIST)/bin/.purgecaches ; fi
+PURGECACHES_DIRS ?= $(DIST)/bin
+ifdef MOZ_WEBAPP_RUNTIME
+PURGECACHES_DIRS += $(DIST)/bin/webapprt
+endif
 
-.DEFAULT_GOAL ?= default
+PURGECACHES_FILES = $(addsuffix /.purgecaches,$(PURGECACHES_DIRS))
+
+default all:: $(PURGECACHES_FILES)
+
+$(PURGECACHES_FILES):
+	if test -d $(@D) ; then touch $@ ; fi
+
+.DEFAULT_GOAL := $(or $(OVERRIDE_DEFAULT_GOAL),default)
 
 #############################################################################
 # Derived targets and dependencies

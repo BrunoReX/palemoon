@@ -9,6 +9,7 @@
 
 #include "ISimpleDOMNode.h"
 #include "AccessibleWrap.h"
+#include "IUnknownImpl.h"
 
 #include "mozilla/Attributes.h"
 
@@ -18,7 +19,12 @@ namespace a11y {
 class sdnAccessible MOZ_FINAL : public ISimpleDOMNode
 {
 public:
-  sdnAccessible(nsINode* aNode) : mNode(aNode) { }
+  sdnAccessible(nsINode* aNode) :
+    mNode(aNode)
+  {
+    if (!mNode)
+      MOZ_CRASH();
+  }
   ~sdnAccessible() { }
 
   /**

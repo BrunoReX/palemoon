@@ -54,6 +54,16 @@ public:
    * case, the stack will be set aside before reporting the exception.
    */
   static void ReportPendingException(JSContext *aContext);
+
+  static nsresult CompileFunction(JSContext* aCx,
+                                  JS::HandleObject aTarget,
+                                  JS::CompileOptions& aOptions,
+                                  const nsACString& aName,
+                                  uint32_t aArgCount,
+                                  const char** aArgArray,
+                                  const nsAString& aBody,
+                                  JSObject** aFunctionObject);
+
 };
 
 
@@ -64,7 +74,7 @@ public:
    * In the case of string ids, getting the string's chars is infallible, so
    * the dependent string can be constructed directly.
    */
-  explicit nsDependentJSString(jsid id)
+  explicit nsDependentJSString(JS::Handle<jsid> id)
     : nsDependentString(JS_GetInternedStringChars(JSID_TO_STRING(id)),
                         JS_GetStringLength(JSID_TO_STRING(id)))
   {
@@ -102,7 +112,7 @@ public:
       return JS_TRUE;
   }
 
-  JSBool init(JSContext* aContext, const jsval &v)
+  JSBool init(JSContext* aContext, const JS::Value &v)
   {
       return init(aContext, JSVAL_TO_STRING(v));
   }

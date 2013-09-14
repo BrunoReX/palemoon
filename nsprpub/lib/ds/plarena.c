@@ -201,6 +201,7 @@ PR_IMPLEMENT(void *) PL_ArenaAllocate(PLArenaPool *pool, PRUint32 nb)
         if ( NULL != a )  {
             a->limit = (PRUword)a + sz;
             a->base = a->avail = (PRUword)PL_ARENA_ALIGN(pool, a + 1);
+            PL_MAKE_MEM_NOACCESS((void*)a->avail, a->limit - a->avail);
             rp = (char *)a->avail;
             a->avail += nb;
             /* the newly allocated arena is linked after pool->current 
@@ -237,7 +238,8 @@ static void ClearArenaList(PLArena *a, PRInt32 pattern)
     for (; a; a = a->next) {
         PR_ASSERT(a->base <= a->avail && a->avail <= a->limit);
         a->avail = a->base;
-	PL_CLEAR_UNUSED_PATTERN(a, pattern);
+        PL_CLEAR_UNUSED_PATTERN(a, pattern);
+        PL_MAKE_MEM_NOACCESS((void*)a->avail, a->limit - a->avail);
     }
 }
 
@@ -273,6 +275,8 @@ static void FreeArenaList(PLArenaPool *pool, PLArena *head, PRBool reallyFree)
     } else {
         /* Insert the whole arena chain at the front of the freelist. */
         do {
+            PL_MAKE_MEM_NOACCESS((void*)(*ap)->base,
+                                 (*ap)->limit - (*ap)->base);
             ap = &(*ap)->next;
         } while (*ap);
         LockArena();
@@ -343,6 +347,22 @@ PR_IMPLEMENT(void) PL_ArenaFinish(void)
         arenaLock = NULL;
     }
     once = pristineCallOnce;
+}
+
+PR_IMPLEMENT(size_t) PL_SizeOfArenaPoolExcludingPool(
+    const PLArenaPool *pool, PLMallocSizeFn mallocSizeOf)
+{
+    /*
+     * The first PLArena is within |pool|, so don't measure it.  Subsequent
+     * PLArenas are separate and must be measured.
+     */
+    size_t size = 0;
+    const PLArena *arena = pool->first.next;
+    while (arena) {
+        size += mallocSizeOf(arena);
+        arena = arena->next;
+    }
+    return size;
 }
 
 #ifdef PL_ARENAMETER

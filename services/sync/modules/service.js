@@ -18,9 +18,9 @@ const PBKDF2_KEY_BYTES = 16;
 const CRYPTO_COLLECTION = "crypto";
 const KEYS_WBO = "keys";
 
+Cu.import("resource://gre/modules/Preferences.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://services-common/log4moz.js");
-Cu.import("resource://services-common/preferences.js");
 Cu.import("resource://services-common/utils.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/engines.js");
@@ -362,6 +362,14 @@ Sync11Service.prototype = {
     // registering an observer.
     Utils.nextTick(function onNextTick() {
       this.status.ready = true;
+
+      // UI code uses the flag on the XPCOM service so it doesn't have
+      // to load a bunch of modules.
+      let xps = Cc["@mozilla.org/weave/service;1"]
+                  .getService(Ci.nsISupports)
+                  .wrappedJSObject;
+      xps.ready = true;
+
       Svc.Obs.notify("weave:service:ready");
     }.bind(this));
   },
@@ -868,6 +876,8 @@ Sync11Service.prototype = {
     Svc.Prefs.set("lastversion", WEAVE_VERSION);
 
     this.identity.deleteSyncCredentials();
+
+    Svc.Obs.notify("weave:service:start-over:finish");
   },
 
   persistLogin: function persistLogin() {

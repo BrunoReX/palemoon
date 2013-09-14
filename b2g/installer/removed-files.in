@@ -10,3 +10,15 @@ run-mozilla.sh
 #endif
 defaults/preferences/services-sync.js
 defaults/preferences/healthreport-prefs.js
+components/dom_sms.xpt
+components/dom_webspeech.xpt
+#ifdef MOZ_FOLD_LIBS
+@DLL_PREFIX@nspr4@DLL_SUFFIX@
+@DLL_PREFIX@plds4@DLL_SUFFIX@
+@DLL_PREFIX@plc4@DLL_SUFFIX@
+@DLL_PREFIX@ssl3@DLL_SUFFIX@
+@DLL_PREFIX@smime3@DLL_SUFFIX@
+@DLL_PREFIX@nssutil3@DLL_SUFFIX@
+@DLL_PREFIX@mozsqlite3@DLL_SUFFIX@
+#endif
+@DLL_PREFIX@xpcom@DLL_SUFFIX@

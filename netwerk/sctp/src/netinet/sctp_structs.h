@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_structs.h 240198 2012-09-07 13:36:42Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_structs.h 246595 2013-02-09 17:26:14Z tuexen $");
 #endif
 
 #ifndef _NETINET_SCTP_STRUCTS_H_
@@ -563,7 +563,6 @@ struct sctp_stream_queue_pending {
 	uint32_t context;
 	uint16_t sinfo_flags;
 	uint16_t stream;
-	uint16_t strseq;
 	uint16_t act_flags;
 	uint16_t auth_keyid;
 	uint8_t  holds_key_ref;
@@ -635,9 +634,10 @@ union scheduling_parameters {
 struct sctp_stream_out {
 	struct sctp_streamhead outqueue;
 	union scheduling_parameters ss_params;
+	uint32_t chunks_on_queues;
 	uint16_t stream_no;
-	uint16_t next_sequence_sent;	/* next one I expect to send out */
-	uint8_t  last_msg_incomplete;
+	uint16_t next_sequence_send;	/* next one I expect to send out */
+	uint8_t last_msg_incomplete;
 };
 
 /* used to keep track of the addresses yet to try to add/delete */
@@ -653,6 +653,9 @@ struct sctp_asconf_addr {
 struct sctp_scoping {
 	uint8_t ipv4_addr_legal;
 	uint8_t ipv6_addr_legal;
+#if defined(__Userspace__)
+	uint8_t conn_addr_legal;
+#endif
 	uint8_t loopback_scope;
 	uint8_t ipv4_local_scope;
 	uint8_t local_scope;
@@ -1221,17 +1224,7 @@ struct sctp_association {
 	 */
 	uint8_t peer_supports_pktdrop;
 
-	/* Do we allow V6/V4? */
-	uint8_t ipv4_addr_legal;
-	uint8_t ipv6_addr_legal;
-	/* Address scoping flags */
-	/* scope value for IPv4 */
-	uint8_t ipv4_local_scope;
-	/* scope values for IPv6 */
-	uint8_t local_scope;
-	uint8_t site_scope;
-	/* loopback scope */
-	uint8_t loopback_scope;
+	struct sctp_scoping scope;
 	/* flags to handle send alternate net tracking */
 	uint8_t used_alt_onsack;
 	uint8_t used_alt_asconfack;

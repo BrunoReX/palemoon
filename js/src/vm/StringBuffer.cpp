@@ -1,8 +1,8 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- *
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "vm/StringBuffer.h"
 
@@ -51,7 +51,7 @@ StringBuffer::finishString()
 
     JS_STATIC_ASSERT(JSShortString::MAX_SHORT_LENGTH < CharBuffer::InlineLength);
     if (JSShortString::lengthFits(length))
-        return NewShortString(cx, cb.begin(), length);
+        return NewShortString<CanGC>(cx, TwoByteChars(cb.begin(), length));
 
     if (!cb.append('\0'))
         return NULL;
@@ -60,7 +60,7 @@ StringBuffer::finishString()
     if (!buf)
         return NULL;
 
-    JSFlatString *str = js_NewString(cx, buf, length);
+    JSFlatString *str = js_NewString<CanGC>(cx, buf, length);
     if (!str)
         js_free(buf);
     return str;
@@ -75,7 +75,7 @@ StringBuffer::finishAtom()
     if (length == 0)
         return cx->names().empty;
 
-    JSAtom *atom = AtomizeChars(cx, cb.begin(), length);
+    JSAtom *atom = AtomizeChars<CanGC>(cx, cb.begin(), length);
     cb.clear();
     return atom;
 }
@@ -83,7 +83,7 @@ StringBuffer::finishAtom()
 bool
 js::ValueToStringBufferSlow(JSContext *cx, const Value &arg, StringBuffer &sb)
 {
-    Value v = arg;
+    RootedValue v(cx, arg);
     if (!ToPrimitive(cx, JSTYPE_STRING, &v))
         return false;
 

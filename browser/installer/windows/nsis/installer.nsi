@@ -73,7 +73,7 @@ VIAddVersionKey "OriginalFilename" "setup.exe"
 !insertmacro AddDisabledDDEHandlerValues
 !insertmacro ChangeMUIHeaderImage
 !insertmacro CheckForFilesInUse
-!insertmacro CleanUpdatesDir
+!insertmacro CleanUpdateDirectories
 !insertmacro CopyFilesFromDir
 !insertmacro CreateRegKey
 !insertmacro GetLongPath
@@ -207,8 +207,11 @@ Section "-InstallStartCleanup"
     ClearErrors
   ${EndIf}
 
+  ; setup the application model id registration value
+  ${InitHashAppModelId} "$INSTDIR" "Software\Mozilla\${AppName}\TaskBarIDs"
+
   ; Remove the updates directory for Vista and above
-  ${CleanUpdatesDir} "Mozilla\Firefox"
+  ${CleanUpdateDirectories} "Mozilla\Firefox" "Mozilla\updates"
 
   ${RemoveDeprecatedFiles}
 
@@ -283,6 +286,9 @@ Section "-Application" APP_IDX
   SetShellVarContext current  ; Set SHCTX to HKCU
   ${RegCleanMain} "Software\Mozilla"
   ${RegCleanUninstall}
+!ifdef MOZ_METRO
+  ${ResetWin8PromptKeys}
+!endif
   ${UpdateProtocolHandlers}
 
   ClearErrors
@@ -303,9 +309,9 @@ Section "-Application" APP_IDX
     ${EndIf}
   ${EndIf}
 
-  ; setup the application model id registration value
-  ${InitHashAppModelId} "$INSTDIR" "Software\Mozilla\${AppName}\TaskBarIDs"
-
+!ifdef MOZ_METRO
+  ${ResetWin8MetroSplash}
+!endif
   ${RemoveDeprecatedKeys}
 
   ; The previous installer adds several regsitry values to both HKLM and HKCU.
@@ -335,34 +341,10 @@ Section "-Application" APP_IDX
   ${AddDisabledDDEHandlerValues} "FirefoxHTML" "$2" "$8,1" \
                                  "${AppRegName} Document" ""
   ${AddDisabledDDEHandlerValues} "FirefoxURL" "$2" "$8,1" "${AppRegName} URL" \
-                                 "true"
-  ${If} ${AtLeastWin8}
-!ifdef MOZ_METRO
-    ${CleanupMetroBrowserHandlerValues} ${DELEGATE_EXECUTE_HANDLER_ID}
-    ${AddMetroBrowserHandlerValues} ${DELEGATE_EXECUTE_HANDLER_ID} \
-                                    "$INSTDIR\CommandExecuteHandler.exe" \
-                                    $AppUserModelID \
-                                    "FirefoxURL" \
-                                    "FirefoxHTML"
-!endif
-    ; Set the Start Menu Internet and Vista Registered App HKCU registry keys.
-    ${SetStartMenuInternet} "HKCU"
-    ${FixShellIconHandler} "HKCU"
+                                 "delete"
 
-    ; If we create either the desktop or start menu shortcuts, then
-    ; set IconsVisible to 1 otherwise to 0.
-    ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
-    StrCpy $0 "Software\Clients\StartMenuInternet\$R9\InstallInfo"
-    ${If} $AddDesktopSC == 1
-    ${OrIf} $AddStartMenuSC == 1
-      WriteRegDWORD HKCU "$0" "IconsVisible" 1
-    ${Else}
-      WriteRegDWORD HKCU "$0" "IconsVisible" 0
-    ${EndIf}
-  ${EndIf}
-
-  ; The following keys should only be set if we can write to HKLM for pre win8
-  ; For post win8 we set the keys above in HKCU in addition to below in HKLM.
+  ; For pre win8, the following keys should only be set if we can write to HKLM.
+  ; For post win8, the keys below get set in both HKLM and HKCU.
   ${If} $TmpVal == "HKLM"
     ; Set the Start Menu Internet and Vista Registered App HKLM registry keys.
     ${SetStartMenuInternet} "HKLM"
@@ -378,6 +360,31 @@ Section "-Application" APP_IDX
     ${Else}
       WriteRegDWORD HKLM "$0" "IconsVisible" 0
     ${EndIf}
+  ${EndIf}
+
+  ${If} ${AtLeastWin8}
+    ; Set the Start Menu Internet and Vista Registered App HKCU registry keys.
+    ${SetStartMenuInternet} "HKCU"
+    ${FixShellIconHandler} "HKCU"
+
+    ; If we create either the desktop or start menu shortcuts, then
+    ; set IconsVisible to 1 otherwise to 0.
+    ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
+    StrCpy $0 "Software\Clients\StartMenuInternet\$R9\InstallInfo"
+    ${If} $AddDesktopSC == 1
+    ${OrIf} $AddStartMenuSC == 1
+      WriteRegDWORD HKCU "$0" "IconsVisible" 1
+    ${Else}
+      WriteRegDWORD HKCU "$0" "IconsVisible" 0
+    ${EndIf}
+!ifdef MOZ_METRO
+    ${CleanupMetroBrowserHandlerValues} ${DELEGATE_EXECUTE_HANDLER_ID}
+    ${AddMetroBrowserHandlerValues} ${DELEGATE_EXECUTE_HANDLER_ID} \
+                                    "$INSTDIR\CommandExecuteHandler.exe" \
+                                    $AppUserModelID \
+                                    "FirefoxURL" \
+                                    "FirefoxHTML"
+!endif
   ${EndIf}
 
 !ifdef MOZ_MAINTENANCE_SERVICE

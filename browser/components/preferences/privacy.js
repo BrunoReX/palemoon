@@ -125,6 +125,42 @@ var gPrivacyPane = {
   },
 
   /**
+   * Update the Tracking preferences based on controls.
+   */
+  setTrackingPrefs: function PPP_setTrackingPrefs()
+  {
+    let dntRadioGroup = document.getElementById("doNotTrackSelection"),
+        dntValuePref = document.getElementById("privacy.donottrackheader.value"),
+        dntEnabledPref = document.getElementById("privacy.donottrackheader.enabled");
+
+    // if the selected radio button says "no preference", set on/off pref to
+    // false and don't change the value pref.
+    if (dntRadioGroup.selectedItem.value == -1) {
+      dntEnabledPref.value = false;
+      return dntValuePref.value;
+    }
+
+    dntEnabledPref.value = true;
+    return dntRadioGroup.selectedItem.value;
+  },
+
+  /**
+   * Obtain the tracking preference value and reflect it in the UI.
+   */
+  getTrackingPrefs: function PPP_getTrackingPrefs()
+  {
+    let dntValuePref = document.getElementById("privacy.donottrackheader.value"),
+        dntEnabledPref = document.getElementById("privacy.donottrackheader.enabled");
+
+    // if DNT is enbaled, select the value from the selected radio
+    // button, otherwise choose the "no preference" radio button
+    if (dntEnabledPref.value)
+      return dntValuePref.value;
+
+    return document.getElementById("dntnopref").value;
+  },
+
+  /**
    * Update the private browsing auto-start pref and the history mode
    * micro-management prefs based on the history mode menulist
    */
@@ -210,7 +246,6 @@ var gPrivacyPane = {
   _lastMode: null,
   _lasCheckState: null,
   updateAutostart: function PPP_updateAutostart() {
-#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
       let mode = document.getElementById("historyMode");
       let autoStart = document.getElementById("privateBrowsingAutoStart");
       let pref = document.getElementById("browser.privatebrowsing.autostart");
@@ -253,6 +288,7 @@ var gPrivacyPane = {
           return;
         }
       }
+
       this._shouldPromptForRestart = false;
 
       if (this._lastCheckState) {
@@ -264,23 +300,6 @@ var gPrivacyPane = {
       mode.doCommand();
 
       this._shouldPromptForRestart = true;
-#else
-      // Toggle the private browsing mode without switching the session
-      let prefValue = document.getElementById("privateBrowsingAutoStart").checked;
-      let keepCurrentSession = document.getElementById("browser.privatebrowsing.keep_current_session");
-      keepCurrentSession.value = true;
-
-      let privateBrowsingService = Components.classes["@mozilla.org/privatebrowsing;1"].
-        getService(Components.interfaces.nsIPrivateBrowsingService);
-
-      // If activating from within the private browsing mode, reset the
-      // private session
-      if (prefValue && privateBrowsingService.privateBrowsingEnabled)
-        privateBrowsingService.privateBrowsingEnabled = false;
-      privateBrowsingService.privateBrowsingEnabled = prefValue;
-
-      keepCurrentSession.reset();
-#endif
   },
 
   // HISTORY
@@ -340,9 +359,10 @@ var gPrivacyPane = {
    * network.cookie.cookieBehavior
    * - determines how the browser should handle cookies:
    *     0   means enable all cookies
-   *     1   means reject third party cookies; see
-   *         netwerk/cookie/src/nsCookieService.cpp for a hairier definition
+   *     1   means reject all third party cookies
    *     2   means disable all cookies
+   *     3   means reject third party cookies unless at least one is already set for the eTLD
+   *         see netwerk/cookie/src/nsCookieService.cpp for details
    * network.cookie.lifetimePolicy
    * - determines how long cookies are stored:
    *     0   means keep cookies until they expire
@@ -358,23 +378,18 @@ var gPrivacyPane = {
   readAcceptCookies: function ()
   {
     var pref = document.getElementById("network.cookie.cookieBehavior");
-    var acceptThirdParty = document.getElementById("acceptThirdParty");
+    var acceptThirdPartyLabel = document.getElementById("acceptThirdPartyLabel");
+    var acceptThirdPartyMenu = document.getElementById("acceptThirdPartyMenu");
     var keepUntil = document.getElementById("keepUntil");
     var menu = document.getElementById("keepCookiesUntil");
 
     // enable the rest of the UI for anything other than "disable all cookies"
     var acceptCookies = (pref.value != 2);
 
-    acceptThirdParty.disabled = !acceptCookies;
+    acceptThirdPartyLabel.disabled = acceptThirdPartyMenu.disabled = !acceptCookies;
     keepUntil.disabled = menu.disabled = this._autoStartPrivateBrowsing || !acceptCookies;
     
     return acceptCookies;
-  },
-
-  readAcceptThirdPartyCookies: function ()
-  {
-    var pref = document.getElementById("network.cookie.cookieBehavior");
-    return pref.value == 0;
   },
 
   /**
@@ -384,20 +399,50 @@ var gPrivacyPane = {
   writeAcceptCookies: function ()
   {
     var accept = document.getElementById("acceptCookies");
-    var acceptThirdParty = document.getElementById("acceptThirdParty");
+    var acceptThirdPartyMenu = document.getElementById("acceptThirdPartyMenu");
 
-    // if we're enabling cookies, automatically check 'accept third party'
+    // if we're enabling cookies, automatically select 'accept third party always'
     if (accept.checked)
-      acceptThirdParty.checked = true;
+      acceptThirdPartyMenu.selectedIndex = 0;
 
-    return accept.checked ? (acceptThirdParty.checked ? 0 : 1) : 2;
+    return accept.checked ? 0 : 2;
   },
-
+  
+  /**
+   * Converts between network.cookie.cookieBehavior and the third-party cookie UI
+   */
+  readAcceptThirdPartyCookies: function ()
+  {
+    var pref = document.getElementById("network.cookie.cookieBehavior");
+    switch (pref.value)
+    {
+      case 0:
+        return "always";
+      case 1:
+        return "never";
+      case 2:
+        return "never";
+      case 3:
+        return "visited";
+      default:
+        return undefined;
+    }
+  },
+  
   writeAcceptThirdPartyCookies: function ()
   {
-    var accept = document.getElementById("acceptCookies");
-    var acceptThirdParty = document.getElementById("acceptThirdParty");
-    return accept.checked ? (acceptThirdParty.checked ? 0 : 1) : 2;
+    var accept = document.getElementById("acceptThirdPartyMenu").selectedItem;
+    switch (accept.value)
+    {
+      case "always":
+        return 0;
+      case "visited":
+        return 3;
+      case "never":
+        return 1;
+      default:
+        return undefined;
+    }
   },
 
   /**
@@ -477,7 +522,7 @@ var gPrivacyPane = {
     var settingsButton = document.getElementById("clearDataSettings");
     var sanitizeOnShutdownPref = document.getElementById("privacy.sanitize.sanitizeOnShutdown");
     
-    settingsButton.disabled = !sanitizeOnShutdownPref.value;  	
+    settingsButton.disabled = !sanitizeOnShutdownPref.value;
    }
 
 };

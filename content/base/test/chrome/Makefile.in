@@ -20,6 +20,8 @@ MOCHITEST_CHROME_FILES = \
     test_bug380418.html^headers^ \
     test_bug383430.html \
     test_bug391728.html \
+    blockPluginHard.xml \
+    blockNoPlugins.xml \
     file_bug391728.html \
     file_bug391728_2.html \
     test_bug421622.xul \
@@ -57,6 +59,7 @@ MOCHITEST_CHROME_FILES = \
     test_domparsing.xul \
     test_bug814638.xul \
     host_bug814638.xul \
+    test_document_register.xul \
     frame_bug814638.xul \
     $(NULL)
 

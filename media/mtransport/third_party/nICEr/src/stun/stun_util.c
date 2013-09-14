@@ -208,45 +208,34 @@ nr_stun_msg_type(int type)
     case NR_STUN_MSG_ALLOCATE_ERROR_RESPONSE:
          ret = "ALLOCATE-ERROR-RESPONSE";
          break;
+    case NR_STUN_MSG_REFRESH_REQUEST:
+         ret = "REFRESH-REQUEST";
+         break;
+    case NR_STUN_MSG_REFRESH_RESPONSE:
+         ret = "REFRESH-RESPONSE";
+         break;
+    case NR_STUN_MSG_REFRESH_ERROR_RESPONSE:
+         ret = "REFRESH-ERROR-RESPONSE";
+         break;
     case NR_STUN_MSG_SEND_INDICATION:
          ret = "SEND-INDICATION";
          break;
     case NR_STUN_MSG_DATA_INDICATION:
          ret = "DATA-INDICATION";
          break;
-    case NR_STUN_MSG_SET_ACTIVE_DEST_REQUEST:
-         ret = "SET-ACTIVE-DEST-REQUEST";
+    case NR_STUN_MSG_PERMISSION_REQUEST:
+         ret = "PERMISSION-REQUEST";
          break;
-    case NR_STUN_MSG_SET_ACTIVE_DEST_RESPONSE:
-         ret = "SET-ACTIVE-DEST-RESPONSE";
+    case NR_STUN_MSG_PERMISSION_RESPONSE:
+         ret = "PERMISSION-RESPONSE";
          break;
-    case NR_STUN_MSG_SET_ACTIVE_DEST_ERROR_RESPONSE:
-         ret = "SET-ACTIVE-DEST-ERROR-RESPONSE";
+    case NR_STUN_MSG_PERMISSION_ERROR_RESPONSE:
+         ret = "PERMISSION-ERROR-RESPONSE";
          break;
-#ifdef NR_STUN_MSG_CONNECT_REQUEST
-    case NR_STUN_MSG_CONNECT_REQUEST:
-         ret = "CONNECT-REQUEST";
-         break;
-#endif
-#ifdef NR_STUN_MSG_CONNECT_RESPONSE
-    case NR_STUN_MSG_CONNECT_RESPONSE:
-         ret = "CONNECT-RESPONSE";
-         break;
-#endif
-#ifdef NR_STUN_MSG_CONNECT_ERROR_RESPONSE
-    case NR_STUN_MSG_CONNECT_ERROR_RESPONSE:
-         ret = "CONNECT-ERROR-RESPONSE";
-         break;
-#endif
-#ifdef NR_STUN_MSG_CONNECT_STATUS_INDICATION
-    case NR_STUN_MSG_CONNECT_STATUS_INDICATION:
-         ret = "CONNECT-STATUS-INDICATION";
-         break;
-#endif
 #endif /* USE_TURN */
 
     default:
-         assert(0);
+         /* ret remains 0 */
          break;
     }
 
@@ -259,32 +248,32 @@ nr_random_alphanum(char *alphanum, int size)
     static char alphanums[256] = {
         'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
         'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
-        'U', 'V', 'W', 'X', 'Y', 'Z', 
+        'U', 'V', 'W', 'X', 'Y', 'Z',
         'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
         'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
-        'u', 'v', 'w', 'x', 'y', 'z', 
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 
+        'u', 'v', 'w', 'x', 'y', 'z',
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
         'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
         'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
-        'U', 'V', 'W', 'X', 'Y', 'Z', 
+        'U', 'V', 'W', 'X', 'Y', 'Z',
         'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
         'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
-        'u', 'v', 'w', 'x', 'y', 'z', 
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 
+        'u', 'v', 'w', 'x', 'y', 'z',
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
         'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
         'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
-        'U', 'V', 'W', 'X', 'Y', 'Z', 
+        'U', 'V', 'W', 'X', 'Y', 'Z',
         'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
         'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
-        'u', 'v', 'w', 'x', 'y', 'z', 
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 
+        'u', 'v', 'w', 'x', 'y', 'z',
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
         'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
         'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
-        'U', 'V', 'W', 'X', 'Y', 'Z', 
+        'U', 'V', 'W', 'X', 'Y', 'Z',
         'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
         'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
-        'u', 'v', 'w', 'x', 'y', 'z', 
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 
+        'u', 'v', 'w', 'x', 'y', 'z',
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
         'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H' };
     int i;
 

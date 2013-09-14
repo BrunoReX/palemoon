@@ -89,7 +89,7 @@ VIAddVersionKey "OriginalFilename" "helper.exe"
 
 !insertmacro un.ChangeMUIHeaderImage
 !insertmacro un.CheckForFilesInUse
-!insertmacro un.CleanUpdatesDir
+!insertmacro un.CleanUpdateDirectories
 !insertmacro un.CleanVirtualStore
 !insertmacro un.DeleteRelativeProfiles
 !insertmacro un.DeleteShortcuts
@@ -271,6 +271,9 @@ Section "Uninstall"
     ApplicationID::UninstallJumpLists "$AppUserModelID"
   ${EndIf}
 
+  ; Remove the updates directory for Vista and above
+  ${un.CleanUpdateDirectories} "Moonchild Productions\Pale Moon" "Moonchild Productions\updates"
+
   ; Remove any app model id's stored in the registry for this install path
   DeleteRegValue HKCU "Software\Mozilla\${AppName}\TaskBarIDs" "$INSTDIR"
   DeleteRegValue HKLM "Software\Mozilla\${AppName}\TaskBarIDs" "$INSTDIR"
@@ -293,6 +296,8 @@ Section "Uninstall"
   ${If} ${AtLeastWin8}
     ${un.CleanupMetroBrowserHandlerValues} ${DELEGATE_EXECUTE_HANDLER_ID}
   ${EndIf}
+  ${ResetWin8PromptKeys}
+  ${ResetWin8MetroSplash}
 !endif
 
   ${un.RegCleanAppHandler} "FirefoxURL"
@@ -395,9 +400,6 @@ Section "Uninstall"
   ${If} ${FileExists} "$INSTDIR\removed-files"
     Delete /REBOOTOK "$INSTDIR\removed-files"
   ${EndIf}
-
-  ; Remove the updates directory for Vista and above
-  ${un.CleanUpdatesDir} "Moonchild Productions\Pale Moon"
 
   ; Remove files that may be left behind by the application in the
   ; VirtualStore directory.

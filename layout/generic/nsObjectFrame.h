@@ -50,9 +50,9 @@ public:
   NS_DECL_QUERYFRAME
   NS_DECL_QUERYFRAME_TARGET(nsObjectFrame)
 
-  NS_IMETHOD Init(nsIContent* aContent,
-                  nsIFrame* aParent,
-                  nsIFrame* aPrevInFlow);
+  virtual void Init(nsIContent* aContent,
+                    nsIFrame* aParent,
+                    nsIFrame* aPrevInFlow) MOZ_OVERRIDE;
   virtual nscoord GetMinWidth(nsRenderingContext *aRenderingContext);
   virtual nscoord GetPrefWidth(nsRenderingContext *aRenderingContext);
   NS_IMETHOD Reflow(nsPresContext* aPresContext,
@@ -62,9 +62,9 @@ public:
   NS_IMETHOD DidReflow(nsPresContext* aPresContext,
                        const nsHTMLReflowState* aReflowState,
                        nsDidReflowStatus aStatus);
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists);
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE;
 
   NS_IMETHOD  HandleEvent(nsPresContext* aPresContext,
                           nsGUIEvent* aEvent,
@@ -93,7 +93,7 @@ public:
 
   virtual void DidSetStyleContext(nsStyleContext* aOldStyleContext);
 
-  NS_METHOD GetPluginInstance(nsNPAPIPluginInstance** aPluginInstance);
+  NS_METHOD GetPluginInstance(nsNPAPIPluginInstance** aPluginInstance) MOZ_OVERRIDE;
 
   virtual void SetIsDocumentActive(bool aIsActive) MOZ_OVERRIDE;
 
@@ -158,8 +158,6 @@ public:
   // nsIReflowCallback
   virtual bool ReflowFinished() MOZ_OVERRIDE;
   virtual void ReflowCallbackCanceled() MOZ_OVERRIDE;
-
-  void UpdateImageLayer(const gfxRect& aRect);
 
   /**
    * Builds either an ImageLayer or a ReadbackLayer, depending on the type
@@ -260,7 +258,7 @@ private:
     PluginEventNotifier(const nsString &aEventType) : 
       mEventType(aEventType) {}
     
-    NS_IMETHOD Run();
+    NS_IMETHOD Run() MOZ_OVERRIDE;
   private:
     nsString mEventType;
   };

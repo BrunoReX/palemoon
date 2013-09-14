@@ -18,14 +18,12 @@ class nsDisplayItem;
 class nsFontMetrics;
 class nsClientRectList;
 class nsFontFaceList;
-class nsHTMLVideoElement;
 class nsIImageLoadingContent;
 
 #include "nsChangeHint.h"
 #include "nsStyleContext.h"
 #include "nsAutoPtr.h"
 #include "nsStyleSet.h"
-#include "nsView.h"
 #include "nsIFrame.h"
 #include "nsThreadUtils.h"
 #include "nsIPresShell.h"
@@ -38,15 +36,19 @@ class nsIImageLoadingContent;
 #include "FrameMetrics.h"
 
 #include <limits>
+#include <algorithm>
 
 class nsBlockFrame;
 class gfxDrawable;
+class nsView;
 
 namespace mozilla {
+class SVGImageContext;
 namespace dom {
 class Element;
 class HTMLImageElement;
 class HTMLCanvasElement;
+class HTMLVideoElement;
 } // namespace dom
 } // namespace mozilla
 
@@ -374,6 +376,17 @@ public:
   static nsIScrollableFrame* GetNearestScrollableFrame(nsIFrame* aFrame);
 
   /**
+   * GetScrolledRect returns the range of allowable scroll offsets
+   * for aScrolledFrame, assuming the scrollable overflow area is
+   * aScrolledFrameOverflowArea and the scrollport size is aScrollPortSize.
+   * aDirection is either NS_STYLE_DIRECTION_LTR or NS_STYLE_DIRECTION_RTL.
+   */
+  static nsRect GetScrolledRect(nsIFrame* aScrolledFrame,
+                                const nsRect& aScrolledFrameOverflowArea,
+                                const nsSize& aScrollPortSize,
+                                uint8_t aDirection);
+
+  /**
    * HasPseudoStyle returns true if aContent (whose primary style
    * context is aStyleContext) has the aPseudoElement pseudo-style
    * attached to it; returns false otherwise.
@@ -461,7 +474,7 @@ public:
   static nsIFrame* GetPopupFrameForEventCoordinates(nsPresContext* aPresContext,
                                                     const nsEvent* aEvent);
 
-/**
+  /**
    * Translate from widget coordinates to the view's coordinates
    * @param aPresContext the PresContext for the view
    * @param aWidget the widget
@@ -576,7 +589,18 @@ public:
    * @return aPoint, expressed in aFrame's canonical coordinate space.
    */
   static nsPoint TransformRootPointToFrame(nsIFrame* aFrame,
-                                           const nsPoint &aPt);
+                                           const nsPoint &aPoint)
+  {
+    return TransformAncestorPointToFrame(aFrame, aPoint, nullptr);
+  }
+
+  /**
+   * Transform aPoint relative to aAncestor down to the coordinate system of
+   * aFrame.
+   */
+  static nsPoint TransformAncestorPointToFrame(nsIFrame* aFrame,
+                                               const nsPoint& aPoint,
+                                               nsIFrame* aAncestor);
 
   /**
    * Helper function that, given a rectangle and a matrix, returns the smallest
@@ -632,6 +656,15 @@ public:
   static nsRegion RoundedRectIntersectRect(const nsRect& aRoundedRect,
                                            const nscoord aRadii[8],
                                            const nsRect& aContainedRect);
+
+  /**
+   * Return whether any part of aTestRect is inside of the rounded
+   * rectangle formed by aBounds and aRadii (which are indexed by the
+   * NS_CORNER_* constants in nsStyleConsts.h). This is precise.
+   */
+  static bool RoundedRectIntersectsRect(const nsRect& aRoundedRect,
+                                        const nscoord aRadii[8],
+                                        const nsRect& aTestRect);
 
   enum {
     PAINT_IN_TRANSFORM = 0x01,
@@ -751,10 +784,9 @@ public:
 
   struct RectListBuilder : public RectCallback {
     nsClientRectList* mRectList;
-    nsresult          mRV;
 
     RectListBuilder(nsClientRectList* aList);
-     virtual void AddRect(const nsRect& aRect);
+    virtual void AddRect(const nsRect& aRect);
   };
 
   static nsIFrame* GetContainingBlockForClientRect(nsIFrame* aFrame);
@@ -776,13 +808,6 @@ public:
    */
   static void GetAllInFlowRects(nsIFrame* aFrame, nsIFrame* aRelativeTo,
                                 RectCallback* aCallback, uint32_t aFlags = 0);
-  /**
-   * The same as GetAllInFlowRects, but it collects the CSS padding-boxes
-   * rather than the CSS border-boxes. SVG frames are handled the same way
-   * as in GetAllInFlowRects.
-   */
-  static void GetAllInFlowPaddingRects(nsIFrame* aFrame, nsIFrame* aRelativeTo,
-                                RectCallback* aCallback, uint32_t aFlags = 0);
 
   /**
    * Computes the union of all rects returned by GetAllInFlowRects. If
@@ -793,14 +818,6 @@ public:
    */
   static nsRect GetAllInFlowRectsUnion(nsIFrame* aFrame, nsIFrame* aRelativeTo,
                                        uint32_t aFlags = 0);
-
-  /**
-   * The same as GetAllInFlowRectsUnion, but it computes the union of the
-   * rects returned by GetAllInFlowPaddingRects.
-   */
-  static nsRect GetAllInFlowPaddingRectsUnion(nsIFrame* aFrame,
-                                              nsIFrame* aRelativeTo,
-                                              uint32_t aFlags = 0);
 
   enum {
     EXCLUDE_BLUR_SHADOWS = 0x01
@@ -914,11 +931,12 @@ public:
 
   /*
    * Convert nsStyleCoord to nscoord when percentages depend on the
-   * containing block width.
+   * containing block size.
+   * @param aPercentBasis The width or height of the containing block
+   * (whichever the client wants to use for resolving percentages).
    */
-  static nscoord ComputeWidthDependentValue(
-                   nscoord              aContainingBlockWidth,
-                   const nsStyleCoord&  aCoord);
+  static nscoord ComputeCBDependentValue(nscoord aPercentBasis,
+                                         const nsStyleCoord& aCoord);
 
   /*
    * Convert nsStyleCoord to nscoord when percentages depend on the
@@ -967,7 +985,7 @@ public:
     nscoord result =
       nsRuleNode::ComputeCoordPercentCalc(aCoord, aContainingBlockHeight);
     // Clamp calc(), and the subtraction for box-sizing.
-    return NS_MAX(0, result - aContentEdgeToBoxSizingBoxEdge);
+    return std::max(0, result - aContentEdgeToBoxSizingBoxEdge);
   }
 
   static bool IsAutoHeight(const nsStyleCoord &aCoord, nscoord aCBHeight)
@@ -1262,19 +1280,25 @@ public:
    *   @param aImage            The image.
    *   @param aDest             The area that the image should fill
    *   @param aDirty            Pixels outside this area may be skipped.
+   *   @param aSVGContext       If non-null, SVG-related rendering context
+   *                            such as overridden attributes on the image
+   *                            document's root <svg> node. Ignored for
+   *                            raster images.
+   *   @param aImageFlags       Image flags of the imgIContainer::FLAG_*
+   *                            variety.
    *   @param aSourceArea       If non-null, this area is extracted from
    *                            the image and drawn in aDest. It's
    *                            in appunits. For best results it should
    *                            be aligned with image pixels.
-   *   @param aImageFlags       Image flags of the imgIContainer::FLAG_* variety
    */
-  static nsresult DrawSingleImage(nsRenderingContext* aRenderingContext,
-                                  imgIContainer*       aImage,
-                                  GraphicsFilter       aGraphicsFilter,
-                                  const nsRect&        aDest,
-                                  const nsRect&        aDirty,
-                                  uint32_t             aImageFlags,
-                                  const nsRect*        aSourceArea = nullptr);
+  static nsresult DrawSingleImage(nsRenderingContext*    aRenderingContext,
+                                  imgIContainer*         aImage,
+                                  GraphicsFilter         aGraphicsFilter,
+                                  const nsRect&          aDest,
+                                  const nsRect&          aDirty,
+                                  const mozilla::SVGImageContext* aSVGContext,
+                                  uint32_t               aImageFlags,
+                                  const nsRect*          aSourceArea = nullptr);
 
   /**
    * Given an imgIContainer, this method attempts to obtain an intrinsic
@@ -1478,7 +1502,7 @@ public:
                                                      uint32_t aSurfaceFlags = 0);
   static SurfaceFromElementResult SurfaceFromElement(mozilla::dom::HTMLCanvasElement *aElement,
                                                      uint32_t aSurfaceFlags = 0);
-  static SurfaceFromElementResult SurfaceFromElement(nsHTMLVideoElement *aElement,
+  static SurfaceFromElementResult SurfaceFromElement(mozilla::dom::HTMLVideoElement *aElement,
                                                      uint32_t aSurfaceFlags = 0);
 
   /**
@@ -1556,15 +1580,9 @@ public:
                                          nsCSSProperty aProperty);
 
   /**
-   * Checks if CSS 3D transforms are currently enabled.
+   * Checks if off-main-thread animations are enabled.
    */
-  static bool Are3DTransformsEnabled();
-
-  /**
-   * Checks if off-main-thread transform and opacity animations are enabled.
-   */
-  static bool AreOpacityAnimationsEnabled();
-  static bool AreTransformAnimationsEnabled();
+  static bool AreAsyncAnimationsEnabled();
 
   /**
    * Checks if we should warn about animations that can't be async
@@ -1589,6 +1607,11 @@ public:
    * possible.
    */
   static bool GPUImageScalingEnabled();
+
+  /**
+   * Checks whether we want to layerize animated images whenever possible.
+   */
+  static bool AnimatedImageLayersEnabled();
 
   /**
    * Unions the overflow areas of all non-popup children of aFrame with
@@ -1686,6 +1709,15 @@ public:
    */
   static int32_t FontSizeInflationMappingIntercept() {
     return sFontSizeInflationMappingIntercept;
+  }
+
+  /**
+   * Returns true if the nglayout.debug.invalidation pref is set to true.
+   * Note that sInvalidationDebuggingIsEnabled is declared outside this function to
+   * allow it to be accessed an manipulated from breakpoint conditions.
+   */
+  static bool InvalidationDebuggingIsEnabled() {
+    return sInvalidationDebuggingIsEnabled || getenv("MOZ_DUMP_INVALIDATION") != 0;
   }
 
   static void Initialize();
@@ -1815,6 +1847,7 @@ private:
   static uint32_t sFontSizeInflationMaxRatio;
   static bool sFontSizeInflationForceEnabled;
   static bool sFontSizeInflationDisabledInMasterProcess;
+  static bool sInvalidationDebuggingIsEnabled;
 };
 
 // Helper-functions for nsLayoutUtils::SortFrameList()
@@ -1962,7 +1995,7 @@ nsLayoutUtils::PointIsCloserToRect(PointType aPoint, const RectType& aRect,
   if (fromLeft >= 0 && fromRight <= 0) {
     xDistance = 0;
   } else {
-    xDistance = NS_MIN(abs(fromLeft), abs(fromRight));
+    xDistance = std::min(abs(fromLeft), abs(fromRight));
   }
 
   if (xDistance <= aClosestXDistance) {
@@ -1977,7 +2010,7 @@ nsLayoutUtils::PointIsCloserToRect(PointType aPoint, const RectType& aRect,
     if (fromTop >= 0 && fromBottom <= 0) {
       yDistance = 0;
     } else {
-      yDistance = NS_MIN(abs(fromTop), abs(fromBottom));
+      yDistance = std::min(abs(fromTop), abs(fromBottom));
     }
 
     if (yDistance < aClosestYDistance) {

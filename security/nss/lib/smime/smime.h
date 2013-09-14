@@ -5,8 +5,6 @@
 /*
  * Header file for routines specific to S/MIME.  Keep things that are pure
  * pkcs7 out of here; this is for S/MIME policy, S/MIME interoperability, etc.
- *
- * $Id: smime.h,v 1.13 2012/09/21 21:58:44 wtc%google.com Exp $
  */
 
 #ifndef _SECMIME_H_

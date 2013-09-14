@@ -18,7 +18,12 @@ var FullScreen = {
 
     // Toggle the View:FullScreen command, which controls elements like the
     // fullscreen menuitem, menubars, and the appmenu.
-    document.getElementById("View:FullScreen").setAttribute("checked", enterFS);
+    let fullscreenCommand = document.getElementById("View:FullScreen");
+    if (enterFS) {
+      fullscreenCommand.setAttribute("checked", enterFS);
+    } else {
+      fullscreenCommand.removeAttribute("checked");
+    }
 
 #ifdef XP_MACOSX
     // Make sure the menu items are adjusted.
@@ -88,12 +93,10 @@ var FullScreen = {
 
   handleEvent: function (event) {
     switch (event.type) {
-      case "deactivate":
-        // We must call exitDomFullScreen asynchronously, since "deactivate" is
-        // dispatched in the middle of the focus manager's window lowering code,
-        // and the focus manager gets confused if we exit fullscreen mode in the
-        // middle of window lowering. See bug 729872.
-        setTimeout(this.exitDomFullScreen.bind(this), 0);
+      case "activate":
+        if (document.mozFullScreen) {
+          this.showWarning(this.fullscreenDoc);
+        }
         break;
       case "transitionend":
         if (event.propertyName == "opacity")
@@ -107,11 +110,13 @@ var FullScreen = {
       return;
 
     // However, if we receive a "MozEnteredDomFullScreen" event for a document
-    // which is not a subdocument of the currently selected tab, we know that
-    // we've switched tabs since the request to enter full-screen was made,
-    // so we should exit full-screen since the "full-screen document" isn't
-    // acutally visible.
-    if (event.target.defaultView.top != gBrowser.contentWindow) {
+    // which is not a subdocument of a currently active (ie. visible) browser
+    // or iframe, we know that we've switched to a different frame since the
+    // request to enter full-screen was made, so we should exit full-screen
+    // since the "full-screen document" isn't acutally visible.
+    if (!event.target.defaultView.QueryInterface(Ci.nsIInterfaceRequestor)
+                                 .getInterface(Ci.nsIWebNavigation)
+                                 .QueryInterface(Ci.nsIDocShell).isActive) {
       document.mozCancelFullScreen();
       return;
     }
@@ -138,10 +143,11 @@ var FullScreen = {
     gBrowser.tabContainer.addEventListener("TabClose", this.exitDomFullScreen);
     gBrowser.tabContainer.addEventListener("TabSelect", this.exitDomFullScreen);
 
-    // Exit DOM full-screen mode when the browser window loses focus (ALT+TAB, etc).
-    if (!this.useLionFullScreen &&
-        gPrefService.getBoolPref("full-screen-api.exit-on-deactivate")) {
-      window.addEventListener("deactivate", this);
+    // Add listener to detect when the fullscreen window is re-focused.
+    // If a fullscreen window loses focus, we show a warning when the
+    // fullscreen window is refocused.
+    if (!this.useLionFullScreen) {
+      window.addEventListener("activate", this);
     }
 
     // Cancel any "hide the toolbar" animation which is in progress, and make
@@ -171,7 +177,8 @@ var FullScreen = {
       gBrowser.tabContainer.removeEventListener("TabClose", this.exitDomFullScreen);
       gBrowser.tabContainer.removeEventListener("TabSelect", this.exitDomFullScreen);
       if (!this.useLionFullScreen)
-        window.removeEventListener("deactivate", this);
+        window.removeEventListener("activate", this);
+      this.fullscreenDoc = null;
     }
   },
 
@@ -307,7 +314,6 @@ var FullScreen = {
   cancelWarning: function(event) {
     if (!this.warningBox)
       return;
-    this.fullscreenDoc = null;
     this.warningBox.removeEventListener("transitionend", this);
     if (this.warningFadeOutTimeout) {
       clearTimeout(this.warningFadeOutTimeout);
@@ -572,9 +578,8 @@ var FullScreen = {
     var fullscreenctls = document.getElementById("window-controls");
     var navbar = document.getElementById("nav-bar");
     var ctlsOnTabbar = window.toolbar.visible &&
-                       (navbar.collapsed ||
-                          (TabsOnTop.enabled &&
-                           !gPrefService.getBoolPref("browser.tabs.autoHide")));
+                        (navbar.collapsed || (TabsOnTop.enabled &&
+                        !gPrefService.getBoolPref("browser.tabs.autoHide")));
     if (fullscreenctls.parentNode == navbar && ctlsOnTabbar) {
       fullscreenctls.removeAttribute("flex");
       document.getElementById("TabsToolbar").appendChild(fullscreenctls);

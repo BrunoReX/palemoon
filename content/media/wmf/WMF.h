@@ -28,7 +28,9 @@ which makes Windows Media Foundation unavailable.
 #include <mferror.h>
 #include <propvarutil.h>
 #include <wmcodecdsp.h>
-
+#include <initguid.h>
+#include <d3d9.h>
+#include <dxva2api.h>
 
 namespace mozilla {
 namespace wmf {
@@ -47,14 +49,6 @@ HRESULT UnloadDLLs();
 HRESULT MFStartup();
 
 HRESULT MFShutdown();
-
-HRESULT MFPutWorkItem(DWORD aWorkQueueId,
-                      IMFAsyncCallback *aCallback,
-                      IUnknown *aState);
-
-HRESULT MFAllocateWorkQueue(DWORD *aOutWorkQueueId);
-
-HRESULT MFUnlockWorkQueue(DWORD aWorkQueueId);
 
 HRESULT MFCreateAsyncResult(IUnknown *aUunkObject,
                             IMFAsyncCallback *aCallback,
@@ -92,6 +86,24 @@ HRESULT MFCreateSourceReaderFromURL(LPCWSTR aURL,
                                     IMFAttributes *aAttributes,
                                     IMFSourceReader **aSourceReader);
 
+HRESULT MFCreateAttributes(IMFAttributes **ppMFAttributes, UINT32 cInitialSize);
+
+HRESULT MFGetPluginControl(IMFPluginControl **aOutPluginControl);
+
+HRESULT MFTEnumEx(GUID guidCategory,
+                  UINT32 Flags,
+                  const MFT_REGISTER_TYPE_INFO *pInputType,
+                  const MFT_REGISTER_TYPE_INFO *pOutputType,
+                  IMFActivate ***pppMFTActivate,
+                  UINT32 *pcMFTActivate);
+
+HRESULT MFGetService(IUnknown *punkObject,
+                     REFGUID guidService,
+                     REFIID riid,
+                     LPVOID *ppvObject);
+
+HRESULT DXVA2CreateDirect3DDeviceManager9(UINT *pResetToken,
+                                          IDirect3DDeviceManager9 **ppDXVAManager);
 } // end namespace wmf
 } // end namespace mozilla
 

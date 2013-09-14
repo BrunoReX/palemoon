@@ -13,6 +13,7 @@
 #include "nsXPCOM.h"
 #include "nsIXPConnect.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "nsEventDispatcher.h"
 #include "nsError.h"
 #include "nsIScriptObjectPrincipal.h"
@@ -32,7 +33,6 @@
 #include "nsIDOMCloseEvent.h"
 #include "nsICryptoHash.h"
 #include "jsdbgapi.h"
-#include "nsIJSContextStack.h"
 #include "nsJSUtils.h"
 #include "nsIScriptError.h"
 #include "nsNetUtil.h"
@@ -454,7 +454,7 @@ WebSocket::WebSocket()
   mCloseEventCode(nsIWebSocketChannel::CLOSE_ABNORMAL),
   mReadyState(WebSocket::CONNECTING),
   mOutgoingBufferedAmount(0),
-  mBinaryType(BinaryTypeValues::Blob),
+  mBinaryType(dom::BinaryType::Blob),
   mScriptLine(0),
   mInnerWindowID(0)
 {
@@ -476,9 +476,9 @@ WebSocket::~WebSocket()
 }
 
 JSObject*
-WebSocket::WrapObject(JSContext* cx, JSObject* scope, bool* triedToWrap)
+WebSocket::WrapObject(JSContext* cx, JS::Handle<JSObject*> scope)
 {
-  return WebSocketBinding::Wrap(cx, scope, this, triedToWrap);
+  return WebSocketBinding::Wrap(cx, scope, this);
 }
 
 //---------------------------------------------------------------------------
@@ -487,30 +487,30 @@ WebSocket::WrapObject(JSContext* cx, JSObject* scope, bool* triedToWrap)
 
 // Constructor:
 already_AddRefed<WebSocket>
-WebSocket::Constructor(JSContext* aCx,
-                       nsISupports* aGlobal,
+WebSocket::Constructor(const GlobalObject& aGlobal,
+                       JSContext* aCx,
                        const nsAString& aUrl,
                        ErrorResult& aRv)
 {
   Sequence<nsString> protocols;
-  return WebSocket::Constructor(aCx, aGlobal, aUrl, protocols, aRv);
+  return WebSocket::Constructor(aGlobal, aCx, aUrl, protocols, aRv);
 }
 
 already_AddRefed<WebSocket>
-WebSocket::Constructor(JSContext* aCx,
-                       nsISupports* aGlobal,
+WebSocket::Constructor(const GlobalObject& aGlobal,
+                       JSContext* aCx,
                        const nsAString& aUrl,
                        const nsAString& aProtocol,
                        ErrorResult& aRv)
 {
   Sequence<nsString> protocols;
   protocols.AppendElement(aProtocol);
-  return WebSocket::Constructor(aCx, aGlobal, aUrl, protocols, aRv);
+  return WebSocket::Constructor(aGlobal, aCx, aUrl, protocols, aRv);
 }
 
 already_AddRefed<WebSocket>
-WebSocket::Constructor(JSContext* aCx,
-                       nsISupports* aGlobal,
+WebSocket::Constructor(const GlobalObject& aGlobal,
+                       JSContext* aCx,
                        const nsAString& aUrl,
                        const Sequence<nsString>& aProtocols,
                        ErrorResult& aRv)
@@ -520,7 +520,8 @@ WebSocket::Constructor(JSContext* aCx,
     return nullptr;
   }
 
-  nsCOMPtr<nsIScriptObjectPrincipal> scriptPrincipal = do_QueryInterface(aGlobal);
+  nsCOMPtr<nsIScriptObjectPrincipal> scriptPrincipal =
+    do_QueryInterface(aGlobal.Get());
   if (!scriptPrincipal) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
@@ -532,13 +533,13 @@ WebSocket::Constructor(JSContext* aCx,
     return nullptr;
   }
 
-  nsCOMPtr<nsIScriptGlobalObject> sgo = do_QueryInterface(aGlobal);
+  nsCOMPtr<nsIScriptGlobalObject> sgo = do_QueryInterface(aGlobal.Get());
   if (!sgo) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
   }
 
-  nsCOMPtr<nsPIDOMWindow> ownerWindow = do_QueryInterface(aGlobal);
+  nsCOMPtr<nsPIDOMWindow> ownerWindow = do_QueryInterface(aGlobal.Get());
   if (!ownerWindow) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
@@ -575,8 +576,6 @@ WebSocket::Constructor(JSContext* aCx,
 
   return webSocket.forget();
 }
-
-NS_IMPL_CYCLE_COLLECTION_CLASS(WebSocket)
 
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(WebSocket)
   bool isBlack = tmp->IsBlack();
@@ -853,7 +852,7 @@ WebSocket::CreateAndDispatchSimpleEvent(const nsString& aName)
   }
 
   nsCOMPtr<nsIDOMEvent> event;
-  rv = NS_NewDOMEvent(getter_AddRefs(event), nullptr, nullptr);
+  rv = NS_NewDOMEvent(getter_AddRefs(event), this, nullptr, nullptr);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // it doesn't bubble, and it isn't cancelable
@@ -882,42 +881,39 @@ WebSocket::CreateAndDispatchMessageEvent(const nsACString& aData,
   nsIScriptContext* scriptContext = sgo->GetContext();
   NS_ENSURE_TRUE(scriptContext, NS_ERROR_FAILURE);
 
-  JSContext* cx = scriptContext->GetNativeContext();
+  AutoPushJSContext cx(scriptContext->GetNativeContext());
   NS_ENSURE_TRUE(cx, NS_ERROR_FAILURE);
 
   // Create appropriate JS object for message
-  jsval jsData;
-  {
-    JSAutoRequest ar(cx);
-    if (isBinary) {
-      if (mBinaryType == BinaryTypeValues::Blob) {
-        rv = nsContentUtils::CreateBlobBuffer(cx, aData, jsData);
-        NS_ENSURE_SUCCESS(rv, rv);
-      } else if (mBinaryType == BinaryTypeValues::Arraybuffer) {
-        JSObject* arrayBuf;
-        rv = nsContentUtils::CreateArrayBuffer(cx, aData, &arrayBuf);
-        NS_ENSURE_SUCCESS(rv, rv);
-        jsData = OBJECT_TO_JSVAL(arrayBuf);
-      } else {
-        NS_RUNTIMEABORT("Unknown binary type!");
-        return NS_ERROR_UNEXPECTED;
-      }
+  JS::Rooted<JS::Value> jsData(cx);
+  if (isBinary) {
+    if (mBinaryType == dom::BinaryType::Blob) {
+      rv = nsContentUtils::CreateBlobBuffer(cx, aData, &jsData);
+      NS_ENSURE_SUCCESS(rv, rv);
+    } else if (mBinaryType == dom::BinaryType::Arraybuffer) {
+      JS::Rooted<JSObject*> arrayBuf(cx);
+      rv = nsContentUtils::CreateArrayBuffer(cx, aData, arrayBuf.address());
+      NS_ENSURE_SUCCESS(rv, rv);
+      jsData = OBJECT_TO_JSVAL(arrayBuf);
     } else {
-      // JS string
-      NS_ConvertUTF8toUTF16 utf16Data(aData);
-      JSString* jsString;
-      jsString = JS_NewUCStringCopyN(cx, utf16Data.get(), utf16Data.Length());
-      NS_ENSURE_TRUE(jsString, NS_ERROR_FAILURE);
-
-      jsData = STRING_TO_JSVAL(jsString);
+      NS_RUNTIMEABORT("Unknown binary type!");
+      return NS_ERROR_UNEXPECTED;
     }
+  } else {
+    // JS string
+    NS_ConvertUTF8toUTF16 utf16Data(aData);
+    JSString* jsString;
+    jsString = JS_NewUCStringCopyN(cx, utf16Data.get(), utf16Data.Length());
+    NS_ENSURE_TRUE(jsString, NS_ERROR_FAILURE);
+
+    jsData = STRING_TO_JSVAL(jsString);
   }
 
   // create an event that uses the MessageEvent interface,
   // which does not bubble, is not cancelable, and has no default action
 
   nsCOMPtr<nsIDOMEvent> event;
-  rv = NS_NewDOMMessageEvent(getter_AddRefs(event), nullptr, nullptr);
+  rv = NS_NewDOMMessageEvent(getter_AddRefs(event), this, nullptr, nullptr);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIDOMMessageEvent> messageEvent = do_QueryInterface(event);
@@ -949,7 +945,7 @@ WebSocket::CreateAndDispatchCloseEvent(bool aWasClean,
   // which does not bubble, is not cancelable, and has no default action
 
   nsCOMPtr<nsIDOMEvent> event;
-  rv = NS_NewDOMCloseEvent(getter_AddRefs(event), nullptr, nullptr);
+  rv = NS_NewDOMCloseEvent(getter_AddRefs(event), this, nullptr, nullptr);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIDOMCloseEvent> closeEvent = do_QueryInterface(event);
@@ -1100,10 +1096,10 @@ WebSocket::UpdateMustKeepAlive()
 
   if (mKeepingAlive && !shouldKeepAlive) {
     mKeepingAlive = false;
-    static_cast<nsIDOMEventTarget*>(this)->Release();
+    static_cast<EventTarget*>(this)->Release();
   } else if (!mKeepingAlive && shouldKeepAlive) {
     mKeepingAlive = true;
-    static_cast<nsIDOMEventTarget*>(this)->AddRef();
+    static_cast<EventTarget*>(this)->AddRef();
   }
 }
 
@@ -1113,7 +1109,7 @@ WebSocket::DontKeepAliveAnyMore()
   NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
   if (mKeepingAlive) {
     mKeepingAlive = false;
-    static_cast<nsIDOMEventTarget*>(this)->Release();
+    static_cast<EventTarget*>(this)->Release();
   }
   mCheckMustKeepAlive = false;
 }
@@ -1139,38 +1135,16 @@ WebSocket::UpdateURI()
   return NS_OK;
 }
 
-NS_IMETHODIMP
-WebSocket::RemoveEventListener(const nsAString& aType,
-                               nsIDOMEventListener* aListener,
-                               bool aUseCapture)
+void
+WebSocket::EventListenerAdded(nsIAtom* aType)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
-  nsresult rv = nsDOMEventTargetHelper::RemoveEventListener(aType,
-                                                            aListener,
-                                                            aUseCapture);
-  if (NS_SUCCEEDED(rv)) {
-    UpdateMustKeepAlive();
-  }
-  return rv;
+  UpdateMustKeepAlive();
 }
 
-NS_IMETHODIMP
-WebSocket::AddEventListener(const nsAString& aType,
-                            nsIDOMEventListener *aListener,
-                            bool aUseCapture,
-                            bool aWantsUntrusted,
-                            uint8_t optional_argc)
+void
+WebSocket::EventListenerRemoved(nsIAtom* aType)
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "Not running on main thread");
-  nsresult rv = nsDOMEventTargetHelper::AddEventListener(aType,
-                                                         aListener,
-                                                         aUseCapture,
-                                                         aWantsUntrusted,
-                                                         optional_argc);
-  if (NS_SUCCEEDED(rv)) {
-    UpdateMustKeepAlive();
-  }
-  return rv;
+  UpdateMustKeepAlive();
 }
 
 //-----------------------------------------------------------------------------

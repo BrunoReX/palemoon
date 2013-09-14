@@ -15,6 +15,8 @@
 #include "nsGUIEvent.h"
 #include "nsAutoPtr.h"
 #include "nsIRollupListener.h"
+#include "nsIObserver.h"
+#include <algorithm>
 class nsIContent;
 class nsAutoRollup;
 class gfxContext;
@@ -36,6 +38,21 @@ class CompositorParent;
 namespace base {
 class Thread;
 }
+
+class nsBaseWidget;
+
+class WidgetShutdownObserver MOZ_FINAL : public nsIObserver
+{
+public:
+  WidgetShutdownObserver(nsBaseWidget* aWidget)
+    : mWidget(aWidget)
+  { }
+
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIOBSERVER
+
+  nsBaseWidget *mWidget;
+};
 
 /**
  * Common widget implementation used as base class for native
@@ -83,7 +100,10 @@ public:
                                       nsIWidget *aWidget, bool aActivate);
 
   NS_IMETHOD              SetSizeMode(int32_t aMode);
-  NS_IMETHOD              GetSizeMode(int32_t* aMode);
+  virtual int32_t         SizeMode() MOZ_OVERRIDE
+  {
+    return mSizeMode;
+  }
 
   virtual nscolor         GetForegroundColor(void);
   NS_IMETHOD              SetForegroundColor(const nscolor &aColor);
@@ -104,18 +124,33 @@ public:
   NS_IMETHOD              HideWindowChrome(bool aShouldHide);
   NS_IMETHOD              MakeFullScreen(bool aFullScreen);
   virtual nsDeviceContext* GetDeviceContext();
-  virtual LayerManager*   GetLayerManager(PLayersChild* aShadowManager = nullptr,
+  virtual LayerManager*   GetLayerManager(PLayerTransactionChild* aShadowManager = nullptr,
                                           LayersBackend aBackendHint = mozilla::layers::LAYERS_NONE,
                                           LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT,
                                           bool* aAllowRetaining = nullptr);
 
+  virtual CompositorParent* NewCompositorParent(int aSurfaceWidth, int aSurfaceHeight);
   virtual void            CreateCompositor();
+  virtual void            CreateCompositor(int aWidth, int aHeight);
+  virtual void            PrepareWindowEffects() {}
+  virtual void            CleanupWindowEffects() {}
+  virtual void            PreRender(LayerManager* aManager) {}
   virtual void            DrawWindowUnderlay(LayerManager* aManager, nsIntRect aRect) {}
   virtual void            DrawWindowOverlay(LayerManager* aManager, nsIntRect aRect) {}
   virtual void            UpdateThemeGeometries(const nsTArray<ThemeGeometry>& aThemeGeometries) {}
   virtual gfxASurface*    GetThebesSurface();
   NS_IMETHOD              SetModal(bool aModal); 
   NS_IMETHOD              SetWindowClass(const nsAString& xulWinType);
+  // Return whether this widget interprets parameters to Move and Resize APIs
+  // as "global display pixels" rather than "device pixels", and therefore
+  // applies its GetDefaultScale() value to them before using them as mBounds
+  // etc (which are always stored in device pixels).
+  // Note that APIs that -get- the widget's position/size/bounds, rather than
+  // -setting- them (i.e. moving or resizing the widget) will always return
+  // values in the widget's device pixels.
+  bool                    BoundsUseDisplayPixels() const {
+    return mWindowType <= eWindowType_popup;
+  }
   NS_IMETHOD              MoveClient(double aX, double aY);
   NS_IMETHOD              ResizeClient(double aWidth, double aHeight, bool aRepaint);
   NS_IMETHOD              ResizeClient(double aX, double aY, double aWidth, double aHeight, bool aRepaint);
@@ -129,8 +164,6 @@ public:
   NS_IMETHOD              GetAttention(int32_t aCycleCount);
   virtual bool            HasPendingInputEvent();
   NS_IMETHOD              SetIcon(const nsAString &anIconSpec);
-  NS_IMETHOD              BeginSecureKeyboardInput();
-  NS_IMETHOD              EndSecureKeyboardInput();
   NS_IMETHOD              SetWindowTitlebarColor(nscolor aColor, bool aActive);
   virtual void            SetDrawsInTitlebar(bool aState) {}
   virtual bool            ShowsResizeIndicator(nsIntRect* aResizerRect);
@@ -139,18 +172,18 @@ public:
   NS_IMETHOD              BeginMoveDrag(nsMouseEvent* aEvent);
   virtual nsresult        ActivateNativeMenuItemAt(const nsAString& indexString) { return NS_ERROR_NOT_IMPLEMENTED; }
   virtual nsresult        ForceUpdateNativeMenuAt(const nsAString& indexString) { return NS_ERROR_NOT_IMPLEMENTED; }
-  NS_IMETHOD              ResetInputState() { return NS_OK; }
-  NS_IMETHOD              CancelIMEComposition() { return NS_OK; }
+  NS_IMETHOD              NotifyIME(NotificationToIME aNotification) MOZ_OVERRIDE { return NS_ERROR_NOT_IMPLEMENTED; }
   NS_IMETHOD              SetLayersAcceleration(bool aEnabled);
   virtual bool            GetLayersAcceleration() { return mUseLayersAcceleration; }
   virtual bool            ComputeShouldAccelerate(bool aDefault);
   NS_IMETHOD              GetToggledKeyState(uint32_t aKeyCode, bool* aLEDState) { return NS_ERROR_NOT_IMPLEMENTED; }
-  NS_IMETHOD              OnIMEFocusChange(bool aFocus) { return NS_ERROR_NOT_IMPLEMENTED; }
-  NS_IMETHOD              OnIMETextChange(uint32_t aStart, uint32_t aOldEnd, uint32_t aNewEnd) { return NS_ERROR_NOT_IMPLEMENTED; }
-  NS_IMETHOD              OnIMESelectionChange(void) { return NS_ERROR_NOT_IMPLEMENTED; }
+  NS_IMETHOD              NotifyIMEOfTextChange(uint32_t aStart, uint32_t aOldEnd, uint32_t aNewEnd) MOZ_OVERRIDE { return NS_ERROR_NOT_IMPLEMENTED; }
   virtual nsIMEUpdatePreference GetIMEUpdatePreference() { return nsIMEUpdatePreference(false, false); }
   NS_IMETHOD              OnDefaultButtonLoaded(const nsIntRect &aButtonRect) { return NS_ERROR_NOT_IMPLEMENTED; }
-  NS_IMETHOD              OverrideSystemMouseScrollSpeed(int32_t aOriginalDelta, bool aIsHorizontal, int32_t &aOverriddenDelta);
+  NS_IMETHOD              OverrideSystemMouseScrollSpeed(double aOriginalDeltaX,
+                                                         double aOriginalDeltaY,
+                                                         double& aOverriddenDeltaX,
+                                                         double& aOverriddenDeltaY);
   virtual already_AddRefed<nsIWidget>
   CreateChild(const nsIntRect  &aRect,
               nsDeviceContext *aContext,
@@ -233,9 +266,11 @@ public:
 
   nsWindowType            GetWindowType() { return mWindowType; }
 
-  virtual bool            UseOffMainThreadCompositing();
+  virtual bool            ShouldUseOffMainThreadCompositing();
 
   static nsIRollupListener* GetActiveRollupListener();
+
+  void Shutdown();
 
 protected:
 
@@ -310,13 +345,15 @@ protected:
    */
   void ConstrainSize(int32_t* aWidth, int32_t* aHeight) const
   {
-    *aWidth = NS_MAX(mSizeConstraints.mMinSize.width,
-                     NS_MIN(mSizeConstraints.mMaxSize.width, *aWidth));
-    *aHeight = NS_MAX(mSizeConstraints.mMinSize.height,
-                      NS_MIN(mSizeConstraints.mMaxSize.height, *aHeight));
+    *aWidth = std::max(mSizeConstraints.mMinSize.width,
+                     std::min(mSizeConstraints.mMaxSize.width, *aWidth));
+    *aHeight = std::max(mSizeConstraints.mMinSize.height,
+                      std::min(mSizeConstraints.mMaxSize.height, *aHeight));
   }
 
   virtual CompositorChild* GetRemoteRenderer() MOZ_OVERRIDE;
+
+  virtual mozilla::layers::LayersBackend GetPreferredCompositorBackend();
 
 protected:
   /**
@@ -337,6 +374,7 @@ protected:
   nsRefPtr<LayerManager> mBasicLayerManager;
   nsRefPtr<CompositorChild> mCompositorChild;
   nsRefPtr<CompositorParent> mCompositorParent;
+  nsCOMPtr<WidgetShutdownObserver> mShutdownObserver;
   nscolor           mBackground;
   nscolor           mForeground;
   nsCursor          mCursor;

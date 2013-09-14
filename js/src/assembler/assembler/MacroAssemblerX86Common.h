@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sw=4 et tw=79:
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  *
  * ***** BEGIN LICENSE BLOCK *****
  * Copyright (C) 2008 Apple Inc. All rights reserved.
@@ -27,8 +27,8 @@
  * 
  * ***** END LICENSE BLOCK ***** */
 
-#ifndef MacroAssemblerX86Common_h
-#define MacroAssemblerX86Common_h
+#ifndef assembler_assembler_MacroAssemblerX86Common_h
+#define assembler_assembler_MacroAssemblerX86Common_h
 
 #include "assembler/wtf/Platform.h"
 
@@ -1374,6 +1374,15 @@ private:
              );
 #endif
 #endif
+
+#ifdef DEBUG
+        if (s_floatingPointDisabled) {
+            // Disable SSE2.
+            s_sseCheckState = HasSSE;
+            return;
+        }
+#endif
+
         static const int SSEFeatureBit = 1 << 25;
         static const int SSE2FeatureBit = 1 << 26;
         static const int SSE3FeatureBit = 1 << 0;
@@ -1407,6 +1416,10 @@ private:
 
     static bool isSSE2Present()
     {
+#ifdef DEBUG
+        if (s_floatingPointDisabled)
+            return false;
+#endif
         return true;
     }
 
@@ -1489,10 +1502,19 @@ private:
 
         return s_sseCheckState >= HasSSE4_2;
     }
+
+#ifdef DEBUG
+    static bool s_floatingPointDisabled;
+
+  public:
+    static void SetFloatingPointDisabled() {
+        s_floatingPointDisabled = true;
+    }
+#endif
 };
 
 } // namespace JSC
 
 #endif // ENABLE(ASSEMBLER)
 
-#endif // MacroAssemblerX86Common_h
+#endif /* assembler_assembler_MacroAssemblerX86Common_h */

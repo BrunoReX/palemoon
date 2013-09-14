@@ -1,5 +1,6 @@
-/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
+ * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,7 +9,7 @@
  */
 
 /*                                                                           
-* ifdef JSD_USE_NSPR_LOCKS then you musat build and run against NSPR2.       
+* ifdef JSD_USE_NSPR_LOCKS then you must build and run against NSPR2.       
 * Otherwise, there are stubs that can be filled in with your own locking     
 * code. Also, note that these stubs include a jsd_CurrentThread()            
 * implementation that only works on Win32 - this is needed for the inprocess 

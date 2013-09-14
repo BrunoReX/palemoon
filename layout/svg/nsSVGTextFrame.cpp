@@ -8,12 +8,11 @@
 
 // Keep others in (case-insensitive) order:
 #include "nsGkAtoms.h"
-#include "nsIDOMSVGRect.h"
-#include "nsIDOMSVGTextElement.h"
+#include "mozilla/dom/SVGIRect.h"
 #include "nsISVGGlyphFragmentNode.h"
+#include "nsSVGEffects.h"
 #include "nsSVGGlyphFrame.h"
 #include "nsSVGIntegrationUtils.h"
-#include "nsSVGPathElement.h"
 #include "nsSVGTextPathFrame.h"
 #include "nsSVGUtils.h"
 #include "SVGGraphicsElement.h"
@@ -35,15 +34,15 @@ NS_IMPL_FRAMEARENA_HELPERS(nsSVGTextFrame)
 //----------------------------------------------------------------------
 // nsIFrame methods
 #ifdef DEBUG
-NS_IMETHODIMP
+void
 nsSVGTextFrame::Init(nsIContent* aContent,
                      nsIFrame* aParent,
                      nsIFrame* aPrevInFlow)
 {
-  nsCOMPtr<nsIDOMSVGTextElement> text = do_QueryInterface(aContent);
-  NS_ASSERTION(text, "Content is not an SVG text");
+  NS_ASSERTION(aContent->IsSVG(nsGkAtoms::text),
+               "Content is not an SVG text");
 
-  return nsSVGTextFrameBase::Init(aContent, aParent, aPrevInFlow);
+  nsSVGTextFrameBase::Init(aContent, aParent, aPrevInFlow);
 }
 #endif /* DEBUG */
 
@@ -56,15 +55,17 @@ nsSVGTextFrame::AttributeChanged(int32_t         aNameSpaceID,
     return NS_OK;
 
   if (aAttribute == nsGkAtoms::transform) {
-    nsSVGUtils::InvalidateBounds(this, false);
-    nsSVGUtils::ScheduleReflowSVG(this);
+    // We don't invalidate for transform changes (the layers code does that).
+    // Also note that SVGTransformableElement::GetAttributeChangeHint will
+    // return nsChangeHint_UpdateOverflow for "transform" attribute changes
+    // and cause DoApplyRenderingChangeToTree to make the SchedulePaint call.
     NotifySVGChanged(TRANSFORM_CHANGED);
   } else if (aAttribute == nsGkAtoms::x ||
              aAttribute == nsGkAtoms::y ||
              aAttribute == nsGkAtoms::dx ||
              aAttribute == nsGkAtoms::dy ||
              aAttribute == nsGkAtoms::rotate) {
-    nsSVGUtils::InvalidateBounds(this, false);
+    nsSVGEffects::InvalidateRenderingObservers(this);
     nsSVGUtils::ScheduleReflowSVG(this);
     NotifyGlyphMetricsChange();
   }
@@ -78,13 +79,13 @@ nsSVGTextFrame::GetType() const
   return nsGkAtoms::svgTextFrame;
 }
 
-NS_IMETHODIMP
+void
 nsSVGTextFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                                  const nsRect&           aDirtyRect,
                                  const nsDisplayListSet& aLists)
 {
   UpdateGlyphPositioning(true);
-  return nsSVGTextFrameBase::BuildDisplayList(aBuilder, aDirtyRect, aLists);
+  nsSVGTextFrameBase::BuildDisplayList(aBuilder, aDirtyRect, aLists);
 }
 
 //----------------------------------------------------------------------
@@ -138,7 +139,7 @@ nsSVGTextFrame::GetEndPositionOfChar(uint32_t charnum, nsISupports **_retval)
 }
 
 NS_IMETHODIMP
-nsSVGTextFrame::GetExtentOfChar(uint32_t charnum, nsIDOMSVGRect **_retval)
+nsSVGTextFrame::GetExtentOfChar(uint32_t charnum, dom::SVGIRect **_retval)
 {
   UpdateGlyphPositioning(false);
 
@@ -237,14 +238,14 @@ nsSVGTextFrame::ReflowSVG()
                     "ReflowSVG mechanism not designed for this");
 
   if (!nsSVGUtils::NeedsReflowSVG(this)) {
-    NS_ASSERTION(!mPositioningDirty, "How did this happen?");
+    NS_ASSERTION(!(mState & NS_STATE_SVG_POSITIONING_DIRTY), "How did this happen?");
     return;
   }
 
-  // UpdateGlyphPositioning may have been called under DOM calls and set
-  // mPositioningDirty to false. We may now have better positioning, though, so
+  // UpdateGlyphPositioning may have been called under DOM calls and cleared
+  // NS_STATE_SVG_POSITIONING_DIRTY. We may now have better positioning, though, so
   // set it to true so that UpdateGlyphPositioning will do its work.
-  mPositioningDirty = true;
+  AddStateBits(NS_STATE_SVG_POSITIONING_DIRTY);
 
   UpdateGlyphPositioning(false);
 
@@ -322,10 +323,10 @@ nsSVGTextFrame::NotifyGlyphMetricsChange()
   // as fully dirty to get ReflowSVG() called on them:
   MarkDirtyBitsOnDescendants(this);
 
-  nsSVGUtils::InvalidateBounds(this, false);
+  nsSVGEffects::InvalidateRenderingObservers(this);
   nsSVGUtils::ScheduleReflowSVG(this);
 
-  mPositioningDirty = true;
+  AddStateBits(NS_STATE_SVG_POSITIONING_DIRTY);
 }
 
 void
@@ -373,10 +374,10 @@ nsSVGTextFrame::SetWhitespaceHandling(nsSVGGlyphFrame *aFrame)
 void
 nsSVGTextFrame::UpdateGlyphPositioning(bool aForceGlobalTransform)
 {
-  if (!mPositioningDirty)
+  if (!(mState & NS_STATE_SVG_POSITIONING_DIRTY))
     return;
 
-  mPositioningDirty = false;
+  RemoveStateBits(NS_STATE_SVG_POSITIONING_DIRTY);
 
   nsISVGGlyphFragmentNode* node = GetFirstGlyphFragmentChildNode();
   if (!node)
@@ -442,7 +443,7 @@ nsSVGTextFrame::UpdateGlyphPositioning(bool aForceGlobalTransform)
      * See also XXXsmontagu comments in nsSVGGlyphFrame::EnsureTextRun
      */
 #if 0
-    if (GetStyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL) {
+    if (StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL) {
       if (anchor == NS_STYLE_TEXT_ANCHOR_END) {
         anchor = NS_STYLE_TEXT_ANCHOR_START;
       } else if (anchor == NS_STYLE_TEXT_ANCHOR_START) {

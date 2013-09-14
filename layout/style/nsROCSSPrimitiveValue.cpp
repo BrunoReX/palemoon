@@ -7,8 +7,8 @@
 
 #include "nsROCSSPrimitiveValue.h"
 
-#include "nsContentUtils.h"
 #include "mozilla/dom/CSSPrimitiveValueBinding.h"
+#include "nsContentUtils.h"
 #include "nsPresContext.h"
 #include "nsStyleUtil.h"
 #include "nsDOMCSSRGBColor.h"
@@ -43,7 +43,6 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsROCSSPrimitiveValue)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, CSSValue)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsROCSSPrimitiveValue)
 NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(nsROCSSPrimitiveValue)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsROCSSPrimitiveValue)
@@ -63,10 +62,9 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsROCSSPrimitiveValue)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 JSObject*
-nsROCSSPrimitiveValue::WrapObject(JSContext *cx, JSObject *scope,
-                                  bool *triedToWrap)
+nsROCSSPrimitiveValue::WrapObject(JSContext *cx, JS::Handle<JSObject*> scope)
 {
-  return dom::CSSPrimitiveValueBinding::Wrap(cx, scope, this, triedToWrap);
+  return dom::CSSPrimitiveValueBinding::Wrap(cx, scope, this);
 }
 
 // nsIDOMCSSValue

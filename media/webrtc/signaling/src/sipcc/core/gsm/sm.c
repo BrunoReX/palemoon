@@ -39,7 +39,7 @@ sm_process_event (sm_table_t *tbl, sm_event_t *event)
         fsm_type = fcb->fsm_type;
         call_id  = fcb->call_id;
         if ((hdlr = tbl->table[tbl->max_event * state_id + event_id]) != NULL) {
-            FSM_DEBUG_SM(DEB_F_PREFIX"%s %-4d: 0x%08lx: sm entry: (%s:%s)\n",
+            FSM_DEBUG_SM(DEB_F_PREFIX"%s %-4d: %px: sm entry: (%s:%s)",
                      DEB_F_PREFIX_ARGS(FSM, fname), fsm_type_name(fsm_type), call_id,
                      tbl->table[tbl->max_event * state_id + event_id],
                      fsm_state_name(fsm_type, state_id),
@@ -57,7 +57,7 @@ sm_process_event (sm_table_t *tbl, sm_event_t *event)
             }
             line_id = ((cc_feature_t *) event->msg)->line;
 
-            DEF_DEBUG(DEB_L_C_F_PREFIX"%-5s :(%s:%s%s)\n",
+            DEF_DEBUG(DEB_L_C_F_PREFIX"%-5s :(%s:%s%s)",
                         DEB_L_C_F_PREFIX_ARGS(GSM, line_id, call_id, fname),
                         fsm_type_name(fsm_type),
                         fsm_state_name(fsm_type, state_id),
@@ -69,7 +69,7 @@ sm_process_event (sm_table_t *tbl, sm_event_t *event)
      * Invalid state-event pair.
      */
     else {
-        GSM_ERR_MSG(GSM_F_PREFIX"illegal state-event pair: (%d <-- %d)\n",
+        GSM_ERR_MSG(GSM_F_PREFIX"illegal state-event pair: (%d <-- %d)",
                     fname, state_id, event_id);
         rc = SM_RC_ERROR;
     }

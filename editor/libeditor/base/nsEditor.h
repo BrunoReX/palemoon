@@ -6,7 +6,8 @@
 #ifndef __editor_h__
 #define __editor_h__
 
-#include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
+#include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc.
+#include "mozilla/TypedEnum.h"          // for MOZ_BEGIN_ENUM_CLASS, etc.
 #include "nsAutoPtr.h"                  // for nsRefPtr
 #include "nsCOMArray.h"                 // for nsCOMArray
 #include "nsCOMPtr.h"                   // for already_AddRefed, nsCOMPtr
@@ -173,9 +174,10 @@ public:
 
   /* ------------ nsIEditor methods -------------- */
   NS_DECL_NSIEDITOR
+
   /* ------------ nsIEditorIMESupport methods -------------- */
   NS_DECL_NSIEDITORIMESUPPORT
-  
+
   /* ------------ nsIObserver methods -------------- */
   NS_DECL_NSIOBSERVER
 
@@ -184,8 +186,9 @@ public:
 
 public:
 
+  nsresult MarkNodeDirty(nsINode* aNode);
   virtual bool IsModifiableNode(nsINode *aNode);
-  
+
   NS_IMETHOD InsertTextImpl(const nsAString& aStringToInsert, 
                                nsCOMPtr<nsIDOMNode> *aInOutNode, 
                                int32_t *aInOutOffset,
@@ -251,28 +254,28 @@ protected:
 
   /** create a transaction for setting aAttribute to aValue on aElement
     */
-  NS_IMETHOD CreateTxnForSetAttribute(nsIDOMElement *aElement, 
-                                      const nsAString &  aAttribute, 
+  NS_IMETHOD CreateTxnForSetAttribute(mozilla::dom::Element *aElement,
+                                      const nsAString &  aAttribute,
                                       const nsAString &  aValue,
                                       ChangeAttributeTxn ** aTxn);
 
   /** create a transaction for removing aAttribute on aElement
     */
-  NS_IMETHOD CreateTxnForRemoveAttribute(nsIDOMElement *aElement, 
+  NS_IMETHOD CreateTxnForRemoveAttribute(mozilla::dom::Element *aElement,
                                          const nsAString &  aAttribute,
                                          ChangeAttributeTxn ** aTxn);
 
   /** create a transaction for creating a new child node of aParent of type aTag.
     */
   NS_IMETHOD CreateTxnForCreateElement(const nsAString & aTag,
-                                       nsIDOMNode     *aParent,
+                                       nsINode         *aParent,
                                        int32_t         aPosition,
                                        CreateElementTxn ** aTxn);
 
   /** create a transaction for inserting aNode as a child of aParent.
     */
-  NS_IMETHOD CreateTxnForInsertElement(nsIDOMNode * aNode,
-                                       nsIDOMNode * aParent,
+  NS_IMETHOD CreateTxnForInsertElement(nsINode    * aNode,
+                                       nsINode    * aParent,
                                        int32_t      aOffset,
                                        InsertElementTxn ** aTxn);
 
@@ -330,12 +333,12 @@ protected:
                                        EDirection           aDirection,
                                        DeleteTextTxn**      aTxn);
 	
-  NS_IMETHOD CreateTxnForSplitNode(nsIDOMNode *aNode,
+  NS_IMETHOD CreateTxnForSplitNode(nsINode *aNode,
                                    uint32_t    aOffset,
                                    SplitElementTxn **aTxn);
 
-  NS_IMETHOD CreateTxnForJoinNode(nsIDOMNode  *aLeftNode,
-                                  nsIDOMNode  *aRightNode,
+  NS_IMETHOD CreateTxnForJoinNode(nsINode  *aLeftNode,
+                                  nsINode  *aRightNode,
                                   JoinElementTxn **aTxn);
 
   /**
@@ -737,6 +740,11 @@ public:
            IsInteractionAllowed();
   }
 
+  bool HasIndependentSelection() const
+  {
+    return !!mSelConWeak;
+  }
+
   // Get the input event target. This might return null.
   virtual already_AddRefed<nsIContent> GetInputEventTargetContent() = 0;
 
@@ -760,7 +768,7 @@ public:
 
   // FindSelectionRoot() returns a selection root of this editor when aNode
   // gets focus.  aNode must be a content node or a document node.  When the
-  // target isn't a part of this editor, returns NULL.  If this is for
+  // target isn't a part of this editor, returns nullptr.  If this is for
   // designMode, you should set the document node to aNode except that an
   // element in the document has focus.
   virtual already_AddRefed<nsIContent> FindSelectionRoot(nsINode* aNode);
@@ -769,6 +777,9 @@ public:
   // a host of the editor, i.e., the editor doesn't get focus, this does
   // nothing.
   nsresult InitializeSelection(nsIDOMEventTarget* aFocusEventTarget);
+
+  // Finalizes selection and caret for the editor.
+  void FinalizeSelection();
 
   // This method has to be called by nsEditorEventListener::Focus.
   // All actions that have to be done when the editor is focused needs to be
@@ -788,45 +799,6 @@ public:
   virtual nsresult InsertFromDrop(nsIDOMEvent* aDropEvent) = 0;
 
   virtual already_AddRefed<nsIDOMNode> FindUserSelectAllNode(nsIDOMNode* aNode) { return nullptr; }
-
-  NS_STACK_CLASS class HandlingTrustedAction
-  {
-  public:
-    explicit HandlingTrustedAction(nsEditor* aSelf, bool aIsTrusted = true)
-    {
-      Init(aSelf, aIsTrusted);
-    }
-
-    HandlingTrustedAction(nsEditor* aSelf, nsIDOMEvent* aEvent);
-
-    ~HandlingTrustedAction()
-    {
-      mEditor->mHandlingTrustedAction = mWasHandlingTrustedAction;
-      mEditor->mHandlingActionCount--;
-    }
-
-  private:
-    nsRefPtr<nsEditor> mEditor;
-    bool mWasHandlingTrustedAction;
-
-    void Init(nsEditor* aSelf, bool aIsTrusted)
-    {
-      MOZ_ASSERT(aSelf);
-
-      mEditor = aSelf;
-      mWasHandlingTrustedAction = aSelf->mHandlingTrustedAction;
-      if (aIsTrusted) {
-        // If action is nested and the outer event is not trusted,
-        // we shouldn't override it.
-        if (aSelf->mHandlingActionCount == 0) {
-          aSelf->mHandlingTrustedAction = true;
-        }
-      } else {
-        aSelf->mHandlingTrustedAction = false;
-      }
-      aSelf->mHandlingActionCount++;
-    }
-  };
 
 protected:
   enum Tristate {
@@ -867,7 +839,6 @@ protected:
 
   int32_t           mPlaceHolderBatch;   // nesting count for batching
   EditAction        mAction;             // the current editor action
-  uint32_t          mHandlingActionCount;
 
   uint32_t          mIMETextOffset;    // offset in text node where IME comp string begins
   uint32_t          mIMEBufferLength;  // current length of IME comp string
@@ -883,7 +854,6 @@ protected:
   bool mShouldTxnSetSelection;  // turn off for conservative selection adjustment by txns
   bool mDidPreDestroy;    // whether PreDestroy has been called
   bool mDidPostCreate;    // whether PostCreate has been called
-  bool mHandlingTrustedAction;
   bool mDispatchInputEvent;
 
   friend bool NSCanUnload(nsISupports* serviceMgr);

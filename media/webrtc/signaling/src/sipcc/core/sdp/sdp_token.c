@@ -11,6 +11,7 @@
 #include "prot_configmgr.h"
 #include "ccapi.h"
 #include "CSFLog.h"
+#include "prprf.h"
 
 static const char *logTag = "sdp_token";
 
@@ -59,12 +60,40 @@ sdp_result_e sdp_build_version (sdp_t *sdp_p, u16 level, flex_string *fs)
     return (SDP_SUCCESS);
 }
 
+static sdp_result_e sdp_verify_unsigned(const char *ptr, uint64_t max_value)
+{
+    uint64_t numeric_value;
+    /* Checking for only numbers since PR_sscanf will ignore trailing
+       characters */
+    size_t end = strspn(ptr, "0123456789");
+
+    if (ptr[end] != '\0')
+        return SDP_INVALID_PARAMETER;
+
+    if (PR_sscanf(ptr, "%llu", &numeric_value) != 1)
+        return SDP_INVALID_PARAMETER;
+
+    if (numeric_value > max_value)
+        return SDP_INVALID_PARAMETER;
+
+    return SDP_SUCCESS;
+}
+
 sdp_result_e sdp_parse_owner (sdp_t *sdp_p, u16 level, const char *ptr)
 {
     int          i;
     char        *tmpptr;
     sdp_result_e result;
     char         tmp[SDP_MAX_STRING_LEN];
+    /* The spec says this:
+
+        The numeric value of the session id
+        and version in the o line MUST be representable with a 64 bit signed
+        integer.  The initial value of the version MUST be less than
+        (2**62)-1, to avoid rollovers.
+    */
+    const uint64_t max_value_sessid = ((((uint64_t) 1) << 63) - 1);
+    const uint64_t max_value_version = ((((uint64_t) 1) << 62) - 2);
 
     if (sdp_p->owner_name[0] != '\0') {
         sdp_p->conf_p->num_invalid_token_order++;
@@ -91,8 +120,7 @@ sdp_result_e sdp_parse_owner (sdp_t *sdp_p, u16 level, const char *ptr)
         /* Make sure the sessid is numeric, even though we store it as
          * a string.
          */
-        (void)sdp_getnextnumtok(sdp_p->owner_sessid,
-                                (const char **)&tmpptr, " \t",&result);
+        result = sdp_verify_unsigned(sdp_p->owner_sessid, max_value_sessid);
     }
     if (result != SDP_SUCCESS) {
         sdp_parse_error(sdp_p->peerconnection,
@@ -108,8 +136,7 @@ sdp_result_e sdp_parse_owner (sdp_t *sdp_p, u16 level, const char *ptr)
         /* Make sure the version is numeric, even though we store it as
          * a string.
          */
-        (void)sdp_getnextnumtok(sdp_p->owner_version,
-                                (const char **)&tmpptr," \t",&result);
+        result = sdp_verify_unsigned(sdp_p->owner_version, max_value_version);
     }
     if (result != SDP_SUCCESS) {
         sdp_parse_error(sdp_p->peerconnection,
@@ -1168,6 +1195,18 @@ sdp_result_e sdp_parse_media (sdp_t *sdp_p, u16 level, const char *ptr)
             break;
         }
     }
+
+    /* TODO(ehugg): Remove this next block when backward
+       compatibility with versions earlier than FF24
+       is no longer required.  See Bug 886134 */
+#define DATACHANNEL_OLD_TRANSPORT "SCTP/DTLS"
+    if (mca_p->transport == SDP_TRANSPORT_UNSUPPORTED) {
+        if (cpr_strncasecmp(tmp, DATACHANNEL_OLD_TRANSPORT,
+            strlen(DATACHANNEL_OLD_TRANSPORT)) == 0) {
+            mca_p->transport = SDP_TRANSPORT_DTLSSCTP;
+        }
+    }
+
     if (mca_p->transport == SDP_TRANSPORT_UNSUPPORTED) {
         /* If we don't recognize or don't support the transport type,
          * just store the first num as the port.
@@ -1192,7 +1231,7 @@ sdp_result_e sdp_parse_media (sdp_t *sdp_p, u16 level, const char *ptr)
             (mca_p->transport == SDP_TRANSPORT_UDPTL) ||
             (mca_p->transport == SDP_TRANSPORT_UDPSPRT) ||
             (mca_p->transport == SDP_TRANSPORT_LOCAL) ||
-            (mca_p->transport == SDP_TRANSPORT_SCTPDTLS)) {
+            (mca_p->transport == SDP_TRANSPORT_DTLSSCTP)) {
             /* Port format is simply <port>.  Make sure that either
              * the choose param is allowed or that the choose value
              * wasn't specified.
@@ -1344,8 +1383,8 @@ sdp_result_e sdp_parse_media (sdp_t *sdp_p, u16 level, const char *ptr)
         sdp_parse_payload_types(sdp_p, mca_p, ptr);
     }
 
-    /* Parse SCTP/DTLS port */
-    if (mca_p->transport == SDP_TRANSPORT_SCTPDTLS) {
+    /* Parse DTLS/SCTP port */
+    if (mca_p->transport == SDP_TRANSPORT_DTLSSCTP) {
         ptr = sdp_getnextstrtok(ptr, port, sizeof(port), " \t", &result);
         if (result != SDP_SUCCESS) {
             sdp_parse_error(sdp_p->peerconnection,
@@ -1387,28 +1426,28 @@ sdp_result_e sdp_parse_media (sdp_t *sdp_p, u16 level, const char *ptr)
                   sdp_get_media_name(mca_p->media));
         switch (mca_p->port_format) {
         case SDP_PORT_NUM_ONLY:
-            SDP_PRINT("Port num %ld, ", mca_p->port);
+            SDP_PRINT("Port num %d, ", mca_p->port);
             break;
 
         case SDP_PORT_NUM_COUNT:
-            SDP_PRINT("Port num %ld, count %ld, ",
+            SDP_PRINT("Port num %d, count %d, ",
                       mca_p->port, mca_p->num_ports);
             break;
         case SDP_PORT_VPI_VCI:
-            SDP_PRINT("VPI/VCI %ld/%lu, ", mca_p->vpi, mca_p->vci);
+            SDP_PRINT("VPI/VCI %d/%u, ", mca_p->vpi, mca_p->vci);
             break;
         case SDP_PORT_VCCI:
-            SDP_PRINT("VCCI %ld, ", mca_p->vcci);
+            SDP_PRINT("VCCI %d, ", mca_p->vcci);
             break;
         case SDP_PORT_NUM_VPI_VCI:
-            SDP_PRINT("Port %ld, VPI/VCI %ld/%lu, ", mca_p->port,
+            SDP_PRINT("Port %d, VPI/VCI %d/%u, ", mca_p->port,
                       mca_p->vpi, mca_p->vci);
             break;
         case SDP_PORT_VCCI_CID:
-            SDP_PRINT("VCCI %ld, CID %ld, ", mca_p->vcci, mca_p->cid);
+            SDP_PRINT("VCCI %d, CID %d, ", mca_p->vcci, mca_p->cid);
             break;
         case SDP_PORT_NUM_VPI_VCI_CID:
-            SDP_PRINT("Port %ld, VPI/VCI %ld/%lu, CID %ld, ", mca_p->port,
+            SDP_PRINT("Port %d, VPI/VCI %d/%u, CID %d, ", mca_p->port,
                       mca_p->vpi, mca_p->vci, mca_p->cid);
             break;
         default:
@@ -1526,7 +1565,7 @@ sdp_result_e sdp_build_media (sdp_t *sdp_p, u16 level, flex_string *fs)
     flex_string_sprintf(fs, "%s",
                      sdp_get_transport_name(mca_p->transport));
 
-    if(mca_p->transport != SDP_TRANSPORT_SCTPDTLS) {
+    if(mca_p->transport != SDP_TRANSPORT_DTLSSCTP) {
 
         /* Build the format lists */
         for (i=0; i < mca_p->num_payloads; i++) {
@@ -1538,7 +1577,7 @@ sdp_result_e sdp_build_media (sdp_t *sdp_p, u16 level, flex_string *fs)
             }
         }
     } else {
-        /* Add port to SDP if transport is SCTP/DTLS */
+        /* Add port to SDP if transport is DTLS/SCTP */
     	flex_string_sprintf(fs, " %u ", (u32)mca_p->sctpport);
     }
 

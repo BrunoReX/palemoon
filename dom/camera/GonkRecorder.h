@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
+ * Copyright (C) 2013 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +16,15 @@
  */
 
 #ifndef GONK_RECORDER_H_
-
 #define GONK_RECORDER_H_
+
+#include "nsISupportsImpl.h"
 
 #include <media/mediarecorder.h>
 #include <camera/CameraParameters.h>
 #include <utils/String8.h>
-
 #include <system/audio.h>
+#include "GonkCameraHwMgr.h"
 
 namespace android {
 
@@ -32,10 +34,12 @@ struct MediaWriter;
 class MetaData;
 struct AudioSource;
 class MediaProfiles;
+class GonkCameraHardware;
 
 struct GonkRecorder {
+    NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GonkRecorder)
+
     GonkRecorder();
-    virtual ~GonkRecorder();
 
     virtual status_t init();
     virtual status_t setAudioSource(audio_source_t as);
@@ -48,7 +52,7 @@ struct GonkRecorder {
     virtual status_t setOutputFile(const char *path);
     virtual status_t setOutputFile(int fd, int64_t offset, int64_t length);
     virtual status_t setParameters(const String8& params);
-    virtual status_t setCameraHandle(int32_t handle);
+    virtual status_t setCamera(const sp<GonkCameraHardware>& aCameraHw);
     virtual status_t setListener(const sp<IMediaRecorderClient>& listener);
     virtual status_t prepare();
     virtual status_t start();
@@ -59,6 +63,9 @@ struct GonkRecorder {
     virtual status_t getMaxAmplitude(int *max);
     virtual status_t dump(int fd, const Vector<String16>& args) const;
     // Querying a SurfaceMediaSourcer
+
+protected:
+    virtual ~GonkRecorder();
 
 private:
     sp<IMediaRecorderClient> mListener;
@@ -105,7 +112,7 @@ private:
     // will be sent to the client side using which the
     // frame buffers will be queued and dequeued
     bool mDisableAudio;
-    int32_t mCameraHandle;
+    sp<GonkCameraHardware> mCameraHw;
 
     status_t setupMPEG4Recording(
         int outputFd,

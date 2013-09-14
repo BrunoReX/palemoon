@@ -40,8 +40,8 @@ class Image;
 } // namespace image
 } // namespace mozilla
 
-class imgRequestProxy : public imgIRequest, 
-                        public nsISupportsPriority, 
+class imgRequestProxy : public imgIRequest,
+                        public nsISupportsPriority,
                         public nsISecurityInfoProvider,
                         public nsITimedChannel
 {
@@ -104,7 +104,7 @@ public:
   // imgRequest::RemoveProxy
   void ClearAnimationConsumers();
 
-  nsresult Clone(imgINotificationObserver* aObserver, imgRequestProxy** aClone);
+  virtual nsresult Clone(imgINotificationObserver* aObserver, imgRequestProxy** aClone);
   nsresult GetStaticRequest(imgRequestProxy** aReturn);
 
 protected:
@@ -143,6 +143,7 @@ protected:
   void OnStopFrame       ();
   void OnStopDecode      ();
   void OnDiscard         ();
+  void OnUnlockedDraw    ();
   void OnImageIsAnimated ();
 
   /* non-virtual sort-of-nsIRequestObserver methods */
@@ -230,8 +231,10 @@ public:
 
   NS_IMETHOD GetImagePrincipal(nsIPrincipal** aPrincipal) MOZ_OVERRIDE;
 
-  NS_IMETHOD Clone(imgINotificationObserver* aObserver,
-                   imgIRequest** aClone) MOZ_OVERRIDE;
+  using imgRequestProxy::Clone;
+
+  virtual nsresult Clone(imgINotificationObserver* aObserver,
+                         imgRequestProxy** aClone) MOZ_OVERRIDE;
 
 protected:
   friend imgRequestProxy* NewStaticProxy(imgRequestProxy*);

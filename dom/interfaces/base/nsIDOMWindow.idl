@@ -25,7 +25,7 @@ interface nsIVariant;
  * @see <http://www.whatwg.org/html/#window>
  */
 
-[scriptable, uuid(8d86d6b2-fc2c-416a-8085-f670d5a35832)]
+[scriptable, uuid(be62660a-e3f6-409c-a4a9-378364a9526f)]
 interface nsIDOMWindow : nsISupports
 {
   // the current browsing context
@@ -53,13 +53,16 @@ interface nsIDOMWindow : nsISupports
 
 
   /* [replaceable] locationbar */
-  readonly attribute nsIDOMBarProp                      locationbar;
+  /* BarProp */
+  readonly attribute nsISupports                        locationbar;
 
   /* [replaceable] menubar */
-  readonly attribute nsIDOMBarProp                      menubar;
+  /* BarProp */
+  readonly attribute nsISupports                        menubar;
 
   /* [replaceable] personalbar */
-  readonly attribute nsIDOMBarProp                      personalbar;
+  /* BarProp */
+  readonly attribute nsISupports                        personalbar;
 
   /**
    * Accessor for the object that controls whether or not scrollbars
@@ -67,13 +70,16 @@ interface nsIDOMWindow : nsISupports
    *
    * This attribute is "replaceable" in JavaScript
    */
-  readonly attribute nsIDOMBarProp                      scrollbars;
+  /* BarProp */
+  readonly attribute nsISupports                        scrollbars;
 
   /* [replaceable] statusbar */
-  readonly attribute nsIDOMBarProp                      statusbar;
+  /* BarProp */
+  readonly attribute nsISupports                        statusbar;
 
   /* [replaceable] toolbar */
-  readonly attribute nsIDOMBarProp                      toolbar;
+  /* BarProp */
+  readonly attribute nsISupports                        toolbar;
 
   /* [replaceable] */
            attribute DOMString                          status;
@@ -185,8 +191,8 @@ interface nsIDOMWindow : nsISupports
 
 
   // user prompts
-  void                      alert(in DOMString text);
-  boolean                   confirm(in DOMString text);
+  void                      alert([optional, Null(Stringify)] in DOMString text);
+  boolean                   confirm([optional] in DOMString text);
 
   // prompt() should return a null string if cancel is pressed
   DOMString                 prompt([optional] in DOMString aMessage,
@@ -194,6 +200,7 @@ interface nsIDOMWindow : nsISupports
 
   void                      print();
 
+  [optional_argc]
   nsIVariant                showModalDialog(in DOMString aURI,
                                             [optional] in nsIVariant aArgs,
                                             [optional] in DOMString aOptions);
@@ -360,11 +367,12 @@ interface nsIDOMWindow : nsISupports
 
   readonly attribute boolean                            closed;
 
+  readonly attribute nsIDOMCrypto                       crypto;
+  readonly attribute nsIDOMPkcs11                       pkcs11;
+
   // XXX Shouldn't this be in nsIDOMChromeWindow?
   /* [replaceable] controllers */
   readonly attribute nsIControllers                     controllers;
-
-           attribute DOMString                          defaultStatus;
 
   readonly attribute float                              mozInnerScreenX;
   readonly attribute float                              mozInnerScreenY;
@@ -442,6 +450,9 @@ interface nsIDOMWindow : nsISupports
   // Argument is optional only so we can warn when it's null
   long
     mozRequestAnimationFrame([optional] in nsIFrameRequestCallback aCallback);
+  // jsval because we want a WebIDL callback here
+  [implicit_jscontext]
+  long requestAnimationFrame(in jsval aCallback);
 
   /**
    * Cancel a refresh callback.
@@ -449,6 +460,7 @@ interface nsIDOMWindow : nsISupports
   void mozCancelAnimationFrame(in long aHandle);
   // Backwards-compat shim for now to make Google maps work
   void mozCancelRequestAnimationFrame(in long aHandle);
+  void cancelAnimationFrame(in long aHandle);
 
   /**
    * The current animation start time in milliseconds since the epoch.
@@ -499,20 +511,9 @@ interface nsIDOMWindowPerformance : nsISupports
   readonly attribute nsISupports performance;
 };
 
-[scriptable, uuid(2ed9ace1-172c-443f-b92f-c4f74bf8f2c5)]
-interface nsIWindowCrypto : nsISupports
-{
-  /**
-   * A namespace to hold crypto related data and statistics.
-   * http://wiki.whatwg.org/wiki/Crypto
-   */
-  readonly attribute nsIDOMCrypto                       crypto;
-  readonly attribute nsIDOMPkcs11                       pkcs11;
-};
-
 /**
  * Empty interface for compatibility with older versions.
  * @deprecated Use nsIDOMWindow instead
  */
-[scriptable, uuid(a5cd0946-bac1-4606-9aaa-9e68dd0a3279)]
+[scriptable, uuid(ad5768c7-8668-4cd4-bcac-3d0a400d50be)]
 interface nsIDOMWindowInternal : nsIDOMWindow {};

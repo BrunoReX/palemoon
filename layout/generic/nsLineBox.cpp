@@ -16,6 +16,7 @@
 #include "nsBidiPresUtils.h"
 #endif
 #include "nsStyleStructInlines.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/Likely.h"
 
 #ifdef DEBUG
@@ -43,6 +44,9 @@ nsLineBox::nsLineBox(nsIFrame* aFrame, int32_t aCount, bool aIsBlock)
   }
 #endif
 
+  MOZ_STATIC_ASSERT(NS_STYLE_CLEAR_LAST_VALUE <= 15,
+                    "FlagBits needs more bits to store the full range of "
+                    "break type ('clear') values");
 #if NS_STYLE_CLEAR_NONE > 0
   mFlags.mBreakType = NS_STYLE_CLEAR_NONE;
 #endif
@@ -198,9 +202,6 @@ BreakTypeToString(uint8_t aBreakType)
   case NS_STYLE_CLEAR_RIGHT: return "rightbr";
   case NS_STYLE_CLEAR_LEFT_AND_RIGHT: return "leftbr+rightbr";
   case NS_STYLE_CLEAR_LINE: return "linebr";
-  case NS_STYLE_CLEAR_BLOCK: return "blockbr";
-  case NS_STYLE_CLEAR_COLUMN: return "columnbr";
-  case NS_STYLE_CLEAR_PAGE: return "pagebr";
   default:
     break;
   }
@@ -235,8 +236,10 @@ nsLineBox::List(FILE* out, int32_t aIndent, uint32_t aFlags) const
   }
   fprintf(out, "{%d,%d,%d,%d} ",
           mBounds.x, mBounds.y, mBounds.width, mBounds.height);
-  if (mData) {
-    fprintf(out, "vis-overflow={%d,%d,%d,%d} scr-overflow={%d,%d,%d,%d} ",
+  if (mData &&
+      (!mData->mOverflowAreas.VisualOverflow().IsEqualEdges(mBounds) ||
+       !mData->mOverflowAreas.ScrollableOverflow().IsEqualEdges(mBounds))) {
+    fprintf(out, "vis-overflow=%d,%d,%d,%d scr-overflow=%d,%d,%d,%d ",
             mData->mOverflowAreas.VisualOverflow().x,
             mData->mOverflowAreas.VisualOverflow().y,
             mData->mOverflowAreas.VisualOverflow().width,

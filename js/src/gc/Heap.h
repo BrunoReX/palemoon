@@ -1,17 +1,19 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- */
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef gc_heap_h___
-#define gc_heap_h___
+#ifndef gc_Heap_h
+#define gc_Heap_h
 
 #include "mozilla/Attributes.h"
+#include "mozilla/PodOperations.h"
 #include "mozilla/StandardInteger.h"
 
 #include <stddef.h>
 
+#include "jspubtd.h"
 #include "jstypes.h"
 #include "jsutil.h"
 
@@ -26,6 +28,9 @@ struct JSRuntime;
 
 namespace js {
 
+// Defined in vm/ForkJoin.cpp
+extern bool InSequentialOrExclusiveParallelSection();
+
 class FreeOp;
 
 namespace gc {
@@ -33,6 +38,16 @@ namespace gc {
 struct Arena;
 struct ArenaHeader;
 struct Chunk;
+
+/*
+ * This flag allows an allocation site to request a specific heap based upon the
+ * estimated lifetime or lifetime requirements of objects allocated from that
+ * site.
+ */
+enum InitialHeap {
+    DefaultHeap,
+    TenuredHeap
+};
 
 /* The GC allocation kinds. */
 enum AllocKind {
@@ -50,12 +65,10 @@ enum AllocKind {
     FINALIZE_OBJECT16_BACKGROUND,
     FINALIZE_OBJECT_LAST = FINALIZE_OBJECT16_BACKGROUND,
     FINALIZE_SCRIPT,
+    FINALIZE_LAZY_SCRIPT,
     FINALIZE_SHAPE,
     FINALIZE_BASE_SHAPE,
     FINALIZE_TYPE_OBJECT,
-#if JS_HAS_XML_SUPPORT
-    FINALIZE_XML,
-#endif
     FINALIZE_SHORT_STRING,
     FINALIZE_STRING,
     FINALIZE_EXTERNAL_STRING,
@@ -77,26 +90,25 @@ static const size_t MAX_BACKGROUND_FINALIZE_KINDS = FINALIZE_LIMIT - FINALIZE_OB
  */
 struct Cell
 {
-    inline uintptr_t address() const;
+  public:
     inline ArenaHeader *arenaHeader() const;
-    inline Chunk *chunk() const;
-    inline AllocKind getAllocKind() const;
+    inline AllocKind tenuredGetAllocKind() const;
     MOZ_ALWAYS_INLINE bool isMarked(uint32_t color = BLACK) const;
     MOZ_ALWAYS_INLINE bool markIfUnmarked(uint32_t color = BLACK) const;
     MOZ_ALWAYS_INLINE void unmark(uint32_t color) const;
 
-    inline JSCompartment *compartment() const;
+    inline JSRuntime *runtime() const;
+    inline Zone *tenuredZone() const;
 
 #ifdef DEBUG
     inline bool isAligned() const;
+    inline bool isTenured() const;
 #endif
-};
 
-/*
- * This is the maximum number of arenas we allow in the FreeCommitted state
- * before we trigger a GC_SHRINK to release free arenas to the OS.
- */
-const static uint32_t FreeCommittedArenasThreshold = (32 << 20) / ArenaSize;
+  protected:
+    inline uintptr_t address() const;
+    inline Chunk *chunk() const;
+};
 
 /*
  * The mark bitmap has one bit per each GC cell. For multi-cell GC things this
@@ -444,12 +456,12 @@ struct ArenaHeader : public JS::shadow::ArenaHeader
         return allocKind < size_t(FINALIZE_LIMIT);
     }
 
-    void init(JSCompartment *comp, AllocKind kind) {
+    void init(Zone *zoneArg, AllocKind kind) {
         JS_ASSERT(!allocated());
         JS_ASSERT(!markOverflow);
         JS_ASSERT(!allocatedDuringIncremental);
         JS_ASSERT(!hasDelayedMarking);
-        compartment = comp;
+        zone = zoneArg;
 
         JS_STATIC_ASSERT(FINALIZE_LIMIT <= 255);
         allocKind = size_t(kind);
@@ -592,7 +604,7 @@ struct ChunkInfo
      * Calculating sizes and offsets is simpler if sizeof(ChunkInfo) is
      * architecture-independent.
      */
-    char            padding[12];
+    char            padding[16];
 #endif
 
     /*
@@ -610,6 +622,9 @@ struct ChunkInfo
 
     /* Number of GC cycles this chunk has survived. */
     uint32_t        age;
+
+    /* This is findable from any address in the Chunk by aligning to 1MiB. */
+    JSRuntime       *runtime;
 };
 
 /*
@@ -649,7 +664,10 @@ const size_t ArenasPerChunk = ChunkBytesAvailable / BytesPerArenaWithHeader;
 /* A chunk bitmap contains enough mark bits for all the cells in a chunk. */
 struct ChunkBitmap
 {
-    uintptr_t bitmap[ArenaBitmapWords * ArenasPerChunk];
+    volatile uintptr_t bitmap[ArenaBitmapWords * ArenasPerChunk];
+
+  public:
+    ChunkBitmap() { }
 
     MOZ_ALWAYS_INLINE void getMarkWordAndMask(const Cell *cell, uint32_t color,
                                               uintptr_t **wordp, uintptr_t *maskp)
@@ -689,7 +707,7 @@ struct ChunkBitmap
     }
 
     void clear() {
-        PodArrayZero(bitmap);
+        memset((void *)bitmap, 0, sizeof(bitmap));
     }
 
     uintptr_t *arenaBits(ArenaHeader *aheader) {
@@ -762,11 +780,11 @@ struct Chunk
         return info.numArenasFree != 0;
     }
 
-    inline void addToAvailableList(JSCompartment *compartment);
+    inline void addToAvailableList(Zone *zone);
     inline void insertToAvailableList(Chunk **insertPoint);
     inline void removeFromAvailableList();
 
-    ArenaHeader *allocateArena(JSCompartment *comp, AllocKind kind);
+    ArenaHeader *allocateArena(JS::Zone *zone, AllocKind kind);
 
     void releaseArena(ArenaHeader *aheader);
 
@@ -796,7 +814,7 @@ struct Chunk
     }
 
   private:
-    inline void init();
+    inline void init(JSRuntime *rt);
 
     /* Search for a decommitted arena to allocate. */
     unsigned findDecommittedArenaOffset();
@@ -811,15 +829,7 @@ struct Chunk
 
 JS_STATIC_ASSERT(sizeof(Chunk) == ChunkSize);
 JS_STATIC_ASSERT(js::gc::ChunkMarkBitmapOffset == offsetof(Chunk, bitmap));
-
-inline uintptr_t
-Cell::address() const
-{
-    uintptr_t addr = uintptr_t(this);
-    JS_ASSERT(addr % CellSize == 0);
-    JS_ASSERT(Chunk::withinArenasRange(addr));
-    return addr;
-}
+JS_STATIC_ASSERT(js::gc::ChunkRuntimeOffset == offsetof(Chunk, info) + offsetof(ChunkInfo, runtime));
 
 inline uintptr_t
 ArenaHeader::address() const
@@ -932,9 +942,83 @@ AssertValidColor(const void *thing, uint32_t color)
 inline ArenaHeader *
 Cell::arenaHeader() const
 {
+    JS_ASSERT(isTenured());
     uintptr_t addr = address();
     addr &= ~ArenaMask;
     return reinterpret_cast<ArenaHeader *>(addr);
+}
+
+inline JSRuntime *
+Cell::runtime() const
+{
+    JS_ASSERT(InSequentialOrExclusiveParallelSection());
+    return chunk()->info.runtime;
+}
+
+AllocKind
+Cell::tenuredGetAllocKind() const
+{
+    return arenaHeader()->getAllocKind();
+}
+
+bool
+Cell::isMarked(uint32_t color /* = BLACK */) const
+{
+    JS_ASSERT(isTenured());
+    AssertValidColor(this, color);
+    return chunk()->bitmap.isMarked(this, color);
+}
+
+bool
+Cell::markIfUnmarked(uint32_t color /* = BLACK */) const
+{
+    JS_ASSERT(isTenured());
+    AssertValidColor(this, color);
+    return chunk()->bitmap.markIfUnmarked(this, color);
+}
+
+void
+Cell::unmark(uint32_t color) const
+{
+    JS_ASSERT(isTenured());
+    JS_ASSERT(color != BLACK);
+    AssertValidColor(this, color);
+    chunk()->bitmap.unmark(this, color);
+}
+
+Zone *
+Cell::tenuredZone() const
+{
+    JS_ASSERT(InSequentialOrExclusiveParallelSection());
+    JS_ASSERT(isTenured());
+    return arenaHeader()->zone;
+}
+
+#ifdef DEBUG
+bool
+Cell::isAligned() const
+{
+    return Arena::isAligned(address(), arenaHeader()->getThingSize());
+}
+
+bool
+Cell::isTenured() const
+{
+#ifdef JSGC_GENERATIONAL
+    JS::shadow::Runtime *rt = js::gc::GetGCThingRuntime(this);
+    return uintptr_t(this) < rt->gcNurseryStart_ || uintptr_t(this) >= rt->gcNurseryEnd_;
+#endif
+    return true;
+}
+#endif
+
+inline uintptr_t
+Cell::address() const
+{
+    uintptr_t addr = uintptr_t(this);
+    JS_ASSERT(addr % CellSize == 0);
+    JS_ASSERT(Chunk::withinArenasRange(addr));
+    return addr;
 }
 
 Chunk *
@@ -945,48 +1029,6 @@ Cell::chunk() const
     addr &= ~(ChunkSize - 1);
     return reinterpret_cast<Chunk *>(addr);
 }
-
-AllocKind
-Cell::getAllocKind() const
-{
-    return arenaHeader()->getAllocKind();
-}
-
-bool
-Cell::isMarked(uint32_t color /* = BLACK */) const
-{
-    AssertValidColor(this, color);
-    return chunk()->bitmap.isMarked(this, color);
-}
-
-bool
-Cell::markIfUnmarked(uint32_t color /* = BLACK */) const
-{
-    AssertValidColor(this, color);
-    return chunk()->bitmap.markIfUnmarked(this, color);
-}
-
-void
-Cell::unmark(uint32_t color) const
-{
-    JS_ASSERT(color != BLACK);
-    AssertValidColor(this, color);
-    chunk()->bitmap.unmark(this, color);
-}
-
-JSCompartment *
-Cell::compartment() const
-{
-    return arenaHeader()->compartment;
-}
-
-#ifdef DEBUG
-bool
-Cell::isAligned() const
-{
-    return Arena::isAligned(address(), arenaHeader()->getThingSize());
-}
-#endif
 
 inline bool
 InFreeList(ArenaHeader *aheader, void *thing)
@@ -1021,4 +1063,4 @@ InFreeList(ArenaHeader *aheader, void *thing)
 } /* namespace gc */
 } /* namespace js */
 
-#endif /* gc_heap_h___ */
+#endif /* gc_Heap_h */

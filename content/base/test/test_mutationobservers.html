@@ -568,6 +568,7 @@ function testExpandos() {
   m2 = null;
   if (SpecialPowers) {
     // Run GC several times to see if the expando property disappears.
+
     SpecialPowers.gc();
     SpecialPowers.gc();
     SpecialPowers.gc();

@@ -6,6 +6,7 @@
 
 #include "nsHtml5TreeOperation.h"
 #include "nsContentUtils.h"
+#include "nsDocElementCreatedNotificationRunner.h"
 #include "nsNodeUtils.h"
 #include "nsAttrName.h"
 #include "nsHtml5TreeBuilder.h"
@@ -29,13 +30,17 @@
 #include "nsIFormProcessor.h"
 #include "nsIServiceManager.h"
 #include "nsEscape.h"
+#include "mozilla/dom/Comment.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLImageElement.h"
+#include "mozilla/dom/HTMLTemplateElement.h"
 #include "nsHtml5SVGLoadDispatcher.h"
 #include "nsIURI.h"
 #include "nsIProtocolHandler.h"
 #include "nsNetUtil.h"
 #include "nsIHTMLDocument.h"
 #include "mozilla/Likely.h"
+#include "nsTextNode.h"
 
 namespace dom = mozilla::dom;
 
@@ -45,7 +50,7 @@ static NS_DEFINE_CID(kFormProcessorCID, NS_FORMPROCESSOR_CID);
  * Helper class that opens a notification batch if the current doc
  * is different from the executor doc.
  */
-class NS_STACK_CLASS nsHtml5OtherDocUpdate {
+class MOZ_STACK_CLASS nsHtml5OtherDocUpdate {
   public:
     nsHtml5OtherDocUpdate(nsIDocument* aCurrentDoc, nsIDocument* aExecutorDoc)
     {
@@ -160,8 +165,7 @@ nsHtml5TreeOperation::AppendText(const PRUnichar* aBuffer,
                                 aBuilder);
   }
 
-  nsCOMPtr<nsIContent> text;
-  NS_NewTextNode(getter_AddRefs(text), aBuilder->GetNodeInfoManager());
+  nsRefPtr<nsTextNode> text = new nsTextNode(aBuilder->GetNodeInfoManager());
   NS_ASSERTION(text, "Infallible malloc failed?");
   rv = text->SetText(aBuffer, aLength, false);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -391,9 +395,8 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
                          : (aBuilder->BelongsToStringParser() ?
                             dom::FROM_PARSER_FRAGMENT :
                             dom::FROM_PARSER_DOCUMENT_WRITE)));
-          nsCOMPtr<nsIContent> optionText;
-          NS_NewTextNode(getter_AddRefs(optionText), 
-                         aBuilder->GetNodeInfoManager());
+          nsRefPtr<nsTextNode> optionText =
+            new nsTextNode(aBuilder->GetNodeInfoManager());
           (void) optionText->SetText(theContent[i], false);
           optionElt->AppendChildTo(optionText, false);
           newContent->AppendChildTo(optionElt, false);
@@ -439,6 +442,7 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       nsIContent* node = *(mOne.node);
       nsIContent* parent = *(mTwo.node);
       nsCOMPtr<nsIFormControl> formControl(do_QueryInterface(node));
+      nsCOMPtr<nsIDOMHTMLImageElement> domImageElement = do_QueryInterface(node);
       // NS_ASSERTION(formControl, "Form-associated element did not implement nsIFormControl.");
       // TODO: uncomment the above line when <keygen> (bug 101019) is supported by Gecko
       nsCOMPtr<nsIDOMHTMLFormElement> formElement(do_QueryInterface(parent));
@@ -447,7 +451,13 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       if (formControl &&
           !node->HasAttr(kNameSpaceID_None, nsGkAtoms::form)) {
         formControl->SetForm(formElement);
+      } else if (domImageElement) {
+        nsRefPtr<dom::HTMLImageElement> imageElement =
+          static_cast<dom::HTMLImageElement*>(domImageElement.get());
+        MOZ_ASSERT(imageElement);
+        imageElement->SetForm(formElement);
       }
+
       return rv;
     }
     case eTreeOpAppendText: {
@@ -496,8 +506,8 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
                                       aBuilder);
         }
         
-        nsCOMPtr<nsIContent> text;
-        NS_NewTextNode(getter_AddRefs(text), aBuilder->GetNodeInfoManager());
+        nsRefPtr<nsTextNode> text =
+          new nsTextNode(aBuilder->GetNodeInfoManager());
         NS_ASSERTION(text, "Infallible malloc failed?");
         rv = text->SetText(buffer, length, false);
         NS_ENSURE_SUCCESS(rv, rv);
@@ -515,8 +525,8 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       PRUnichar* buffer = mTwo.unicharPtr;
       int32_t length = mFour.integer;
       
-      nsCOMPtr<nsIContent> comment;
-      NS_NewCommentNode(getter_AddRefs(comment), aBuilder->GetNodeInfoManager());
+      nsRefPtr<dom::Comment> comment =
+        new dom::Comment(aBuilder->GetNodeInfoManager());
       NS_ASSERTION(comment, "Infallible malloc failed?");
       rv = comment->SetText(buffer, length, false);
       NS_ENSURE_SUCCESS(rv, rv);
@@ -527,8 +537,8 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       PRUnichar* buffer = mTwo.unicharPtr;
       int32_t length = mFour.integer;
       
-      nsCOMPtr<nsIContent> comment;
-      NS_NewCommentNode(getter_AddRefs(comment), aBuilder->GetNodeInfoManager());
+      nsRefPtr<dom::Comment> comment =
+        new dom::Comment(aBuilder->GetNodeInfoManager());
       NS_ASSERTION(comment, "Infallible malloc failed?");
       rv = comment->SetText(buffer, length, false);
       NS_ENSURE_SUCCESS(rv, rv);
@@ -556,6 +566,13 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       NS_ASSERTION(docType, "Doctype creation failed.");
       nsCOMPtr<nsIContent> asContent = do_QueryInterface(docType);
       return AppendToDocument(asContent, aBuilder);
+    }
+    case eTreeOpGetDocumentFragmentForTemplate: {
+      dom::HTMLTemplateElement* tempElem =
+        static_cast<dom::HTMLTemplateElement*>(*mOne.node);
+      nsRefPtr<dom::DocumentFragment> frag = tempElem->Content();
+      *mTwo.node = frag.get();
+      return rv;
     }
     case eTreeOpMarkAsBroken: {
       aBuilder->MarkAsBroken(NS_ERROR_OUT_OF_MEMORY);
@@ -810,3 +827,4 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
   }
   return rv; // keep compiler happy
 }
+

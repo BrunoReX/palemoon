@@ -10,11 +10,8 @@ VPATH		= @srcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-MODULE		= xpcshell
-PROGRAM		= xpcshell$(BIN_SUFFIX)
+FAIL_ON_WARNINGS := 1
 SDK_BINARY	= $(PROGRAM)
-
-CPPSRCS		= xpcshell.cpp
 
 LOCAL_INCLUDES += \
   -I$(topsrcdir)/toolkit/xre \
@@ -52,13 +49,6 @@ LIBS +=	$(NSPR_LIBS)
 
 NSDISTMODE = copy
 
-ifdef _MSC_VER
-ifeq ($(OS_TEST),x86_64)
-# set stack to 2MB on x64 build.  See bug 582910
-WIN32_EXE_LDFLAGS += -STACK:2097152
-endif
-endif
-
 ifeq ($(OS_TEST),ia64)
 LIBS += $(JEMALLOC_LIBS)
 endif
@@ -77,8 +67,6 @@ DEFINES		+= -DJS_THREADSAFE
 
 ifdef MOZ_SHARK
 DEFINES += -DMOZ_SHARK
-CFLAGS += -F/System/Library/PrivateFrameworks
-LDFLAGS += -F/System/Library/PrivateFrameworks -framework CHUD
 endif
 ifdef MOZ_CALLGRIND
 DEFINES += -DMOZ_CALLGRIND

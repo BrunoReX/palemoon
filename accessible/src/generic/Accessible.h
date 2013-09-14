@@ -9,15 +9,15 @@
 #include "mozilla/a11y/AccTypes.h"
 #include "mozilla/a11y/Role.h"
 #include "mozilla/a11y/States.h"
-#include "nsAccessNodeWrap.h"
+#include "nsAccessNode.h"
 
 #include "nsIAccessible.h"
 #include "nsIAccessibleHyperLink.h"
 #include "nsIAccessibleSelectable.h"
 #include "nsIAccessibleValue.h"
 #include "nsIAccessibleStates.h"
-#include "nsIContent.h"
 
+#include "nsIContent.h"
 #include "nsStringGlue.h"
 #include "nsTArray.h"
 #include "nsRefPtrHashtable.h"
@@ -25,7 +25,6 @@
 struct nsRoleMapEntry;
 
 struct nsRect;
-class nsIContent;
 class nsIFrame;
 class nsIAtom;
 class nsView;
@@ -46,6 +45,7 @@ class Relation;
 class TableAccessible;
 class TableCellAccessible;
 class TextLeafAccessible;
+class XULLabelAccessible;
 class XULTreeAccessible;
 
 /**
@@ -100,7 +100,7 @@ typedef nsRefPtrHashtable<nsPtrHashKey<const void>, Accessible>
   { 0xbd, 0x50, 0x42, 0x6b, 0xd1, 0xd6, 0xe1, 0xad }    \
 }
 
-class Accessible : public nsAccessNodeWrap,
+class Accessible : public nsAccessNode,
                    public nsIAccessible,
                    public nsIAccessibleHyperLink,
                    public nsIAccessibleSelectable,
@@ -150,10 +150,8 @@ public:
    */
   inline already_AddRefed<nsIDOMNode> DOMNode() const
   {
-    nsIDOMNode *DOMNode = nullptr;
-    if (GetNode())
-      CallQueryInterface(GetNode(), &DOMNode);
-    return DOMNode;
+    nsCOMPtr<nsIDOMNode> DOMNode = do_QueryInterface(GetNode());
+    return DOMNode.forget();
   }
 
   /**
@@ -332,7 +330,8 @@ public:
   /**
    * Append/insert/remove a child. Return true if operation was successful.
    */
-  virtual bool AppendChild(Accessible* aChild);
+  bool AppendChild(Accessible* aChild)
+    { return InsertChildAt(mChildren.Length(), aChild); }
   virtual bool InsertChildAt(uint32_t aIndex, Accessible* aChild);
   virtual bool RemoveChild(Accessible* aChild);
 
@@ -487,6 +486,8 @@ public:
   bool IsHTMLListItem() const { return mType == eHTMLLiType; }
   HTMLLIAccessible* AsHTMLListItem();
 
+  bool IsHTMLOptGroup() const { return mType == eHTMLOptGroupType; }
+
   bool IsHTMLTable() const { return mType == eHTMLTableType; }
   bool IsHTMLTableRow() const { return mType == eHTMLTableRowType; }
 
@@ -515,11 +516,18 @@ public:
   virtual TableAccessible* AsTable() { return nullptr; }
 
   virtual TableCellAccessible* AsTableCell() { return nullptr; }
+  const TableCellAccessible* AsTableCell() const
+    { return const_cast<Accessible*>(this)->AsTableCell(); }
 
   bool IsTableRow() const { return HasGenericType(eTableRow); }
 
+  bool IsTextField() const { return mType == eHTMLTextFieldType; }
+
   bool IsTextLeaf() const { return mType == eTextLeafType; }
   TextLeafAccessible* AsTextLeaf();
+
+  bool IsXULLabel() const { return mType == eXULLabelType; }
+  XULLabelAccessible* AsXULLabel();
 
   bool IsXULTabpanels() const { return mType == eXULTabpanelsType; }
 
@@ -864,7 +872,7 @@ protected:
 
   /**
    * Return the action rule based on ARIA enum constants EActionRule
-   * (see nsARIAMap.h). Used by ActionCount() and GetActionName().
+   * (see ARIAMap.h). Used by ActionCount() and GetActionName().
    */
   uint32_t GetActionRule();
 
@@ -873,16 +881,6 @@ protected:
    */
   AccGroupInfo* GetGroupInfo();
 
-  /**
-   * Fires platform accessible event. It's notification method only. It does
-   * change nothing on Gecko side. Don't use it until you're sure what you do
-   * (see example in XUL tree accessible), use nsEventShell::FireEvent()
-   * instead. MUST be overridden in wrap classes.
-   *
-   * @param aEvent  the accessible event to fire.
-   */
-  virtual nsresult FirePlatformEvent(AccEvent* aEvent) = 0;
-
   // Data Members
   nsRefPtr<Accessible> mParent;
   nsTArray<nsRefPtr<Accessible> > mChildren;
@@ -890,7 +888,7 @@ protected:
 
   static const uint8_t kChildrenFlagsBits = 2;
   static const uint8_t kStateFlagsBits = 5;
-  static const uint8_t kTypeBits = 5;
+  static const uint8_t kTypeBits = 6;
   static const uint8_t kGenericTypesBits = 12;
 
   /**

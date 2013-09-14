@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozIThirdPartyUtil.h"
 #include "nscore.h"
 #include "nsScriptSecurityManager.h"
 #include "nsString.h"
@@ -16,13 +17,13 @@
 #include "nsNetUtil.h"
 #include "nsJSPrincipals.h"
 #include "nsVoidArray.h"
-#include "nsHashtable.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
 #include "nsIClassInfoImpl.h"
 #include "nsError.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "jswrapper.h"
 
 #include "nsPrincipal.h"
@@ -45,7 +46,7 @@ static bool URIIsImmutable(nsIURI* aURI)
   return
     mutableObj &&
     NS_SUCCEEDED(mutableObj->GetMutable(&isMutable)) &&
-    !isMutable;                               
+    !isMutable;
 }
 
 // Static member variables
@@ -144,7 +145,7 @@ void nsPrincipal::dumpImpl()
 }
 #endif 
 
-NS_IMPL_CLASSINFO(nsPrincipal, NULL, nsIClassInfo::MAIN_THREAD_ONLY,
+NS_IMPL_CLASSINFO(nsPrincipal, nullptr, nsIClassInfo::MAIN_THREAD_ONLY,
                   NS_PRINCIPAL_CID)
 NS_IMPL_QUERY_INTERFACE2_CI(nsPrincipal,
                             nsIPrincipal,
@@ -343,18 +344,6 @@ nsPrincipal::GetURI(nsIURI** aURI)
   return NS_EnsureSafeToReturn(mCodebase, aURI);
 }
 
-static bool
-URIIsLocalFile(nsIURI *aURI)
-{
-  bool isFile;
-  nsCOMPtr<nsINetUtil> util = do_GetNetUtil();
-
-  return util && NS_SUCCEEDED(util->ProtocolHasFlags(aURI,
-                                nsIProtocolHandler::URI_IS_LOCAL_FILE,
-                                &isFile)) &&
-         isFile;
-}
-
 NS_IMETHODIMP
 nsPrincipal::CheckMayLoad(nsIURI* aURI, bool aReport, bool aAllowIfInheritsPrincipal)
 {
@@ -366,86 +355,23 @@ nsPrincipal::CheckMayLoad(nsIURI* aURI, bool aReport, bool aAllowIfInheritsPrinc
     }
   }
 
-  if (!nsScriptSecurityManager::SecurityCompareURIs(mCodebase, aURI)) {
-    if (nsScriptSecurityManager::GetStrictFileOriginPolicy() &&
-        URIIsLocalFile(aURI)) {
-      nsCOMPtr<nsIFileURL> fileURL(do_QueryInterface(aURI));
-
-      if (!URIIsLocalFile(mCodebase)) {
-        // If the codebase is not also a file: uri then forget it
-        // (don't want resource: principals in a file: doc)
-        //
-        // note: we're not de-nesting jar: uris here, we want to
-        // keep archive content bottled up in its own little island
-
-        if (aReport) {
-          nsScriptSecurityManager::ReportError(
-            nullptr, NS_LITERAL_STRING("CheckSameOriginError"), mCodebase, aURI);
-        }
-
-        return NS_ERROR_DOM_BAD_URI;
-      }
-
-      //
-      // pull out the internal files
-      //
-      nsCOMPtr<nsIFileURL> codebaseFileURL(do_QueryInterface(mCodebase));
-      nsCOMPtr<nsIFile> targetFile;
-      nsCOMPtr<nsIFile> codebaseFile;
-      bool targetIsDir;
-
-      // Make sure targetFile is not a directory (bug 209234)
-      // and that it exists w/out unescaping (bug 395343)
-
-      if (!codebaseFileURL || !fileURL ||
-          NS_FAILED(fileURL->GetFile(getter_AddRefs(targetFile))) ||
-          NS_FAILED(codebaseFileURL->GetFile(getter_AddRefs(codebaseFile))) ||
-          !targetFile || !codebaseFile ||
-          NS_FAILED(targetFile->Normalize()) ||
-          NS_FAILED(codebaseFile->Normalize()) ||
-          NS_FAILED(targetFile->IsDirectory(&targetIsDir)) ||
-          targetIsDir) {
-        if (aReport) {
-          nsScriptSecurityManager::ReportError(
-            nullptr, NS_LITERAL_STRING("CheckSameOriginError"), mCodebase, aURI);
-        }
-
-        return NS_ERROR_DOM_BAD_URI;
-      }
-
-      //
-      // If the file to be loaded is in a subdirectory of the codebase
-      // (or same-dir if codebase is not a directory) then it will
-      // inherit its codebase principal and be scriptable by that codebase.
-      //
-      bool codebaseIsDir;
-      bool contained = false;
-      nsresult rv = codebaseFile->IsDirectory(&codebaseIsDir);
-      if (NS_SUCCEEDED(rv) && codebaseIsDir) {
-        rv = codebaseFile->Contains(targetFile, true, &contained);
-      }
-      else {
-        nsCOMPtr<nsIFile> codebaseParent;
-        rv = codebaseFile->GetParent(getter_AddRefs(codebaseParent));
-        if (NS_SUCCEEDED(rv) && codebaseParent) {
-          rv = codebaseParent->Contains(targetFile, true, &contained);
-        }
-      }
-
-      if (NS_SUCCEEDED(rv) && contained) {
-        return NS_OK;
-      }
-    }
-
-    if (aReport) {
-      nsScriptSecurityManager::ReportError(
-        nullptr, NS_LITERAL_STRING("CheckSameOriginError"), mCodebase, aURI);
-    }
-    
-    return NS_ERROR_DOM_BAD_URI;
+  if (nsScriptSecurityManager::SecurityCompareURIs(mCodebase, aURI)) {
+    return NS_OK;
   }
 
-  return NS_OK;
+  // If strict file origin policy is in effect, local files will always fail
+  // SecurityCompareURIs unless they are identical. Explicitly check file origin
+  // policy, in that case.
+  if (nsScriptSecurityManager::GetStrictFileOriginPolicy() &&
+      NS_URIIsLocalFile(aURI) &&
+      NS_RelaxStrictFileOriginPolicy(aURI, mCodebase)) {
+    return NS_OK;
+  }
+
+  if (aReport) {
+    nsScriptSecurityManager::ReportError(nullptr, NS_LITERAL_STRING("CheckSameOriginError"), mCodebase, aURI);
+  }
+  return NS_ERROR_DOM_BAD_URI;
 }
 
 void
@@ -485,14 +411,13 @@ nsPrincipal::SetDomain(nsIURI* aDomain)
 {
   mDomain = NS_TryToMakeImmutable(aDomain);
   mDomainImmutable = URIIsImmutable(mDomain);
-  
+
   // Domain has changed, forget cached security policy
   SetSecurityPolicy(nullptr);
 
   // Recompute all wrappers between compartments using this principal and other
   // non-chrome compartments.
-  JSContext *cx = nsContentUtils::GetSafeJSContext();
-  NS_ENSURE_TRUE(cx, NS_ERROR_FAILURE);
+  AutoSafeJSContext cx;
   JSPrincipals *principals = nsJSPrincipals::get(static_cast<nsIPrincipal*>(this));
   bool success = js::RecomputeWrappers(cx, js::ContentCompartmentsOnly(),
                                        js::CompartmentsWithPrincipals(principals));
@@ -553,6 +478,29 @@ NS_IMETHODIMP
 nsPrincipal::GetIsNullPrincipal(bool* aIsNullPrincipal)
 {
   *aIsNullPrincipal = false;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsPrincipal::GetBaseDomain(nsACString& aBaseDomain)
+{
+  // For a file URI, we return the file path.
+  if (NS_URIIsLocalFile(mCodebase)) {
+    nsCOMPtr<nsIURL> url = do_QueryInterface(mCodebase);
+
+    if (url) {
+      return url->GetFilePath(aBaseDomain);
+    }
+  }
+
+  // For everything else, we ask the TLD service via
+  // the ThirdPartyUtil.
+  nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
+    do_GetService(THIRDPARTYUTIL_CONTRACTID);
+  if (thirdPartyUtil) {
+    return thirdPartyUtil->GetBaseDomain(mCodebase, aBaseDomain);
+  }
+
   return NS_OK;
 }
 
@@ -669,7 +617,7 @@ nsPrincipal::GetAppStatus()
 
 static const char EXPANDED_PRINCIPAL_SPEC[] = "[Expanded Principal]";
 
-NS_IMPL_CLASSINFO(nsExpandedPrincipal, NULL, nsIClassInfo::MAIN_THREAD_ONLY,
+NS_IMPL_CLASSINFO(nsExpandedPrincipal, nullptr, nsIClassInfo::MAIN_THREAD_ONLY,
                   NS_EXPANDEDPRINCIPAL_CID)
 NS_IMPL_QUERY_INTERFACE2_CI(nsExpandedPrincipal,
                             nsIPrincipal,
@@ -688,20 +636,20 @@ nsExpandedPrincipal::nsExpandedPrincipal(nsTArray<nsCOMPtr <nsIPrincipal> > &aWh
 nsExpandedPrincipal::~nsExpandedPrincipal()
 { }
 
-NS_IMETHODIMP 
+NS_IMETHODIMP
 nsExpandedPrincipal::GetDomain(nsIURI** aDomain)
 {
   *aDomain = nullptr;
   return NS_OK;
 }
 
-NS_IMETHODIMP 
+NS_IMETHODIMP
 nsExpandedPrincipal::SetDomain(nsIURI* aDomain)
 {
   return NS_OK;
 }
 
-NS_IMETHODIMP 
+NS_IMETHODIMP
 nsExpandedPrincipal::GetOrigin(char** aOrigin)
 {
   *aOrigin = ToNewCString(NS_LITERAL_CSTRING(EXPANDED_PRINCIPAL_SPEC));
@@ -713,10 +661,10 @@ typedef nsresult (NS_STDCALL nsIPrincipal::*nsIPrincipalMemFn)(nsIPrincipal* aOt
 #define CALL_MEMBER_FUNCTION(THIS,MEM_FN)  ((THIS)->*(MEM_FN))
 
 // nsExpandedPrincipal::Equals and nsExpandedPrincipal::EqualsIgnoringDomain
-// shares the same logic. The difference only that Equals requires 'this' 
-// and 'aOther' to Subsume each other while EqualsIgnoringDomain requires 
+// shares the same logic. The difference only that Equals requires 'this'
+// and 'aOther' to Subsume each other while EqualsIgnoringDomain requires
 // bidirectional SubsumesIgnoringDomain.
-static nsresult 
+static nsresult
 Equals(nsExpandedPrincipal* aThis, nsIPrincipalMemFn aFn, nsIPrincipal* aOther,
        bool* aResult)
 {
@@ -750,14 +698,14 @@ nsExpandedPrincipal::EqualsIgnoringDomain(nsIPrincipal* aOther, bool* aResult)
 // nsExpandedPrincipal::Subsumes and nsExpandedPrincipal::SubsumesIgnoringDomain
 // shares the same logic. The difference only that Subsumes calls are replaced
 //with SubsumesIgnoringDomain calls in the second case.
-static nsresult 
-Subsumes(nsExpandedPrincipal* aThis, nsIPrincipalMemFn aFn, nsIPrincipal* aOther, 
+static nsresult
+Subsumes(nsExpandedPrincipal* aThis, nsIPrincipalMemFn aFn, nsIPrincipal* aOther,
          bool* aResult)
 {
   nsresult rv;
-  nsCOMPtr<nsIExpandedPrincipal> expanded = do_QueryInterface(aOther);  
+  nsCOMPtr<nsIExpandedPrincipal> expanded = do_QueryInterface(aOther);
   if (expanded) {
-    // If aOther is an ExpandedPrincipal too, check if all of its 
+    // If aOther is an ExpandedPrincipal too, check if all of its
     // principals are subsumed.
     nsTArray< nsCOMPtr<nsIPrincipal> >* otherList;
     expanded->GetWhiteList(&otherList);
@@ -766,7 +714,7 @@ Subsumes(nsExpandedPrincipal* aThis, nsIPrincipalMemFn aFn, nsIPrincipal* aOther
       NS_ENSURE_SUCCESS(rv, rv);
       if (!*aResult) {
         // If we don't subsume at least one principal of aOther, return false.
-        return NS_OK;    
+        return NS_OK;
       }
     }
   } else {
@@ -826,7 +774,7 @@ nsExpandedPrincipal::GetURI(nsIURI** aURI)
   return NS_OK;
 }
 
-NS_IMETHODIMP 
+NS_IMETHODIMP
 nsExpandedPrincipal::GetWhiteList(nsTArray<nsCOMPtr<nsIPrincipal> >** aWhiteList)
 {
   *aWhiteList = &mPrincipals;
@@ -872,6 +820,12 @@ nsExpandedPrincipal::GetIsNullPrincipal(bool* aIsNullPrincipal)
 {
   *aIsNullPrincipal = false;
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsExpandedPrincipal::GetBaseDomain(nsACString& aBaseDomain)
+{
+  return NS_ERROR_NOT_AVAILABLE;
 }
 
 void

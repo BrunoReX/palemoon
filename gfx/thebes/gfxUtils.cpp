@@ -10,7 +10,7 @@
 #include "nsRegion.h"
 #include "yuv_convert.h"
 #include "ycbcr_to_rgb565.h"
-#include "sampler.h"
+#include "GeckoProfiler.h"
 
 #ifdef XP_WIN
 #include "gfxWindowsPlatform.h"
@@ -20,13 +20,7 @@ using namespace mozilla;
 using namespace mozilla::layers;
 using namespace mozilla::gfx;
 
-const uint8_t gfxUtils::sPremultiplyTable[256*256] = {
-#include "sPremultiplyTable.h"
-};
-
-const uint8_t gfxUtils::sUnpremultiplyTable[256*256] = {
-#include "sUnpremultiplyTable.h"
-};
+#include "PremultiplyTables.h"
 
 static const uint8_t PremultiplyValue(uint8_t a, uint8_t v) {
     return gfxUtils::sPremultiplyTable[a*256+v];
@@ -43,14 +37,14 @@ gfxUtils::PremultiplyImageSurface(gfxImageSurface *aSourceSurface,
     if (!aDestSurface)
         aDestSurface = aSourceSurface;
 
-    NS_ASSERTION(aSourceSurface->Format() == aDestSurface->Format() &&
-                 aSourceSurface->Width() == aDestSurface->Width() &&
-                 aSourceSurface->Height() == aDestSurface->Height() &&
-                 aSourceSurface->Stride() == aDestSurface->Stride(),
-                 "Source and destination surfaces don't have identical characteristics");
+    MOZ_ASSERT(aSourceSurface->Format() == aDestSurface->Format() &&
+               aSourceSurface->Width()  == aDestSurface->Width() &&
+               aSourceSurface->Height() == aDestSurface->Height() &&
+               aSourceSurface->Stride() == aDestSurface->Stride(),
+               "Source and destination surfaces don't have identical characteristics");
 
-    NS_ASSERTION(aSourceSurface->Stride() == aSourceSurface->Width() * 4,
-                 "Source surface stride isn't tightly packed");
+    MOZ_ASSERT(aSourceSurface->Stride() == aSourceSurface->Width() * 4,
+               "Source surface stride isn't tightly packed");
 
     // Only premultiply ARGB32
     if (aSourceSurface->Format() != gfxASurface::ImageFormatARGB32) {
@@ -97,14 +91,14 @@ gfxUtils::UnpremultiplyImageSurface(gfxImageSurface *aSourceSurface,
     if (!aDestSurface)
         aDestSurface = aSourceSurface;
 
-    NS_ASSERTION(aSourceSurface->Format() == aDestSurface->Format() &&
-                 aSourceSurface->Width() == aDestSurface->Width() &&
-                 aSourceSurface->Height() == aDestSurface->Height() &&
-                 aSourceSurface->Stride() == aDestSurface->Stride(),
-                 "Source and destination surfaces don't have identical characteristics");
+    MOZ_ASSERT(aSourceSurface->Format() == aDestSurface->Format() &&
+               aSourceSurface->Width()  == aDestSurface->Width() &&
+               aSourceSurface->Height() == aDestSurface->Height() &&
+               aSourceSurface->Stride() == aDestSurface->Stride(),
+               "Source and destination surfaces don't have identical characteristics");
 
-    NS_ASSERTION(aSourceSurface->Stride() == aSourceSurface->Width() * 4,
-                 "Source surface stride isn't tightly packed");
+    MOZ_ASSERT(aSourceSurface->Stride() == aSourceSurface->Width() * 4,
+               "Source surface stride isn't tightly packed");
 
     // Only premultiply ARGB32
     if (aSourceSurface->Format() != gfxASurface::ImageFormatARGB32) {
@@ -150,17 +144,17 @@ gfxUtils::ConvertBGRAtoRGBA(gfxImageSurface *aSourceSurface,
     if (!aDestSurface)
         aDestSurface = aSourceSurface;
 
-    NS_ABORT_IF_FALSE(aSourceSurface->Format() == aDestSurface->Format() &&
-                      aSourceSurface->Width() == aDestSurface->Width() &&
-                      aSourceSurface->Height() == aDestSurface->Height() &&
-                      aSourceSurface->Stride() == aDestSurface->Stride(),
-                      "Source and destination surfaces don't have identical characteristics");
+    MOZ_ASSERT(aSourceSurface->Format() == aDestSurface->Format() &&
+               aSourceSurface->Width()  == aDestSurface->Width() &&
+               aSourceSurface->Height() == aDestSurface->Height() &&
+               aSourceSurface->Stride() == aDestSurface->Stride(),
+               "Source and destination surfaces don't have identical characteristics");
 
-    NS_ABORT_IF_FALSE(aSourceSurface->Stride() == aSourceSurface->Width() * 4,
-                      "Source surface stride isn't tightly packed");
+    MOZ_ASSERT(aSourceSurface->Stride() == aSourceSurface->Width() * 4,
+               "Source surface stride isn't tightly packed");
 
-    NS_ABORT_IF_FALSE(aSourceSurface->Format() == gfxASurface::ImageFormatARGB32,
-                      "Surfaces must be ARGB32");
+    MOZ_ASSERT(aSourceSurface->Format() == gfxASurface::ImageFormatARGB32,
+               "Surfaces must be ARGB32");
 
     uint8_t *src = aSourceSurface->Data();
     uint8_t *dst = aDestSurface->Data();
@@ -216,6 +210,7 @@ OptimalFillOperator()
 #endif
 }
 
+#ifndef MOZ_GFX_OPTIMIZE_MOBILE
 // EXTEND_PAD won't help us here; we have to create a temporary surface to hold
 // the subimage of pixels we're allowed to sample.
 static already_AddRefed<gfxDrawable>
@@ -226,7 +221,7 @@ CreateSamplingRestrictedDrawable(gfxDrawable* aDrawable,
                                  const gfxRect& aSubimage,
                                  const gfxImageSurface::gfxImageFormat aFormat)
 {
-    SAMPLE_LABEL("gfxUtils", "CreateSamplingRestricedDrawable");
+    PROFILER_LABEL("gfxUtils", "CreateSamplingRestricedDrawable");
     gfxRect userSpaceClipExtents = aContext->GetClipExtents();
     // This isn't optimal --- if aContext has a rotation then GetClipExtents
     // will have to do a bounding-box computation, and TransformBounds might
@@ -265,10 +260,11 @@ CreateSamplingRestrictedDrawable(gfxDrawable* aDrawable,
         new gfxSurfaceDrawable(temp, size, gfxMatrix().Translate(-needed.TopLeft()));
     return drawable.forget();
 }
+#endif // !MOZ_GFX_OPTIMIZE_MOBILE
 
 // working around cairo/pixman bug (bug 364968)
 // Our device-space-to-image-space transform may not be acceptable to pixman.
-struct NS_STACK_CLASS AutoCairoPixmanBugWorkaround
+struct MOZ_STACK_CLASS AutoCairoPixmanBugWorkaround
 {
     AutoCairoPixmanBugWorkaround(gfxContext*      aContext,
                                  const gfxMatrix& aDeviceSpaceToImageSpace,
@@ -422,7 +418,7 @@ gfxUtils::DrawPixelSnapped(gfxContext*      aContext,
                            gfxPattern::GraphicsFilter aFilter,
                            uint32_t         aImageFlags)
 {
-    SAMPLE_LABEL("gfxUtils", "DrawPixelSnapped");
+    PROFILER_LABEL("gfxUtils", "DrawPixelSnapped");
     bool doTile = !aImageRect.Contains(aSourceRect) &&
                   !(aImageFlags & imgIContainer::FLAG_CLAMP);
 
@@ -525,6 +521,56 @@ ClipToRegionInternal(gfxContext* aContext, const nsIntRegion& aRegion,
   aContext->Clip();
 }
 
+static TemporaryRef<Path>
+PathFromRegionInternal(gfx::DrawTarget* aTarget, const nsIntRegion& aRegion,
+                       bool aSnap)
+{
+  Matrix mat = aTarget->GetTransform();
+  const gfxFloat epsilon = 0.000001;
+#define WITHIN_E(a,b) (fabs((a)-(b)) < epsilon)
+  // We're essentially duplicating the logic in UserToDevicePixelSnapped here.
+  bool shouldNotSnap = !aSnap || (WITHIN_E(mat._11,1.0) &&
+                                  WITHIN_E(mat._22,1.0) &&
+                                  WITHIN_E(mat._12,0.0) &&
+                                  WITHIN_E(mat._21,0.0));
+#undef WITHIN_E
+
+  RefPtr<PathBuilder> pb = aTarget->CreatePathBuilder();
+  nsIntRegionRectIterator iter(aRegion);
+
+  const nsIntRect* r;
+  if (shouldNotSnap) {
+    while ((r = iter.Next()) != nullptr) {
+      pb->MoveTo(Point(r->x, r->y));
+      pb->LineTo(Point(r->XMost(), r->y));
+      pb->LineTo(Point(r->XMost(), r->YMost()));
+      pb->LineTo(Point(r->x, r->YMost()));
+      pb->Close();
+    }
+  } else {
+    while ((r = iter.Next()) != nullptr) {
+      Rect rect(r->x, r->y, r->width, r->height);
+
+      rect.Round();
+      pb->MoveTo(rect.TopLeft());
+      pb->LineTo(rect.TopRight());
+      pb->LineTo(rect.BottomRight());
+      pb->LineTo(rect.BottomLeft());
+      pb->Close();
+    }
+  }
+  RefPtr<Path> path = pb->Finish();
+  return path;
+}
+
+static void
+ClipToRegionInternal(gfx::DrawTarget* aTarget, const nsIntRegion& aRegion,
+                     bool aSnap)
+{
+  RefPtr<Path> path = PathFromRegionInternal(aTarget, aRegion, aSnap);
+  aTarget->PushClip(path);
+}
+
 /*static*/ void
 gfxUtils::ClipToRegion(gfxContext* aContext, const nsIntRegion& aRegion)
 {
@@ -535,6 +581,12 @@ gfxUtils::ClipToRegion(gfxContext* aContext, const nsIntRegion& aRegion)
 gfxUtils::ClipToRegionSnapped(gfxContext* aContext, const nsIntRegion& aRegion)
 {
   ClipToRegionInternal(aContext, aRegion, true);
+}
+
+/*static*/ void
+gfxUtils::ClipToRegionSnapped(DrawTarget* aTarget, const nsIntRegion& aRegion)
+{
+  ClipToRegionInternal(aTarget, aRegion, true);
 }
 
 /*static*/ gfxFloat

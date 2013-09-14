@@ -39,7 +39,7 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/TelemetryStopwatch.jsm");
 Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
-Cu.import("resource://gre/modules/commonjs/promise/core.js");
+Cu.import("resource://gre/modules/commonjs/sdk/core/promise.js");
 
 XPCOMUtils.defineLazyModuleGetter(this, "_SessionFile",
   "resource:///modules/sessionstore/_SessionFile.jsm");
@@ -71,7 +71,6 @@ SessionStartup.prototype = {
    * Initialize the component
    */
   init: function sss_init() {
-    debug("init starting");
     // do not need to initialize anything in auto-started private browsing sessions
     if (PrivateBrowsingUtils.permanentPrivateBrowsing) {
       this._initialized = true;
@@ -79,16 +78,9 @@ SessionStartup.prototype = {
       return;
     }
 
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-    let pbs = Cc["@mozilla.org/privatebrowsing;1"].
-              getService(Ci.nsIPrivateBrowsingService);
-    if (pbs.lastChangedByCommandLine)
-      return;
-#endif
     _SessionFile.read().then(
       this._onSessionFileRead.bind(this)
     );
-    debug("init launched");
   },
 
   // Wrap a string as a nsISupports
@@ -100,9 +92,7 @@ SessionStartup.prototype = {
   },
 
   _onSessionFileRead: function sss_onSessionFileRead(aStateString) {
-    debug("onSessionFileRead ");
     if (this._initialized) {
-      debug("onSessionFileRead: Initialization is already complete");
       // Initialization is complete, nothing else to do
       return;
     }
@@ -172,15 +162,6 @@ SessionStartup.prototype = {
       else
         this._initialState = null; // reset the state
 
-      // wait for the first browser window to open
-      // Don't reset the initial window's default args (i.e. the home page(s))
-      // if all stored tabs are pinned.
-      if (this.doRestore() &&
-          (!this._initialState.windows ||
-           !this._initialState.windows.every(function (win)
-             win.tabs.every(function (tab) tab.pinned))))
-        Services.obs.addObserver(this, "domwindowopened", true);
-
       Services.obs.addObserver(this, "sessionstore-windows-restored", true);
 
       if (this._sessionType != Ci.nsISessionStartup.NO_SESSION)
@@ -214,14 +195,6 @@ SessionStartup.prototype = {
       if (this._sessionType != Ci.nsISessionStartup.NO_SESSION)
         Services.obs.removeObserver(this, "browser:purge-session-history");
       break;
-    case "domwindowopened":
-      var window = aSubject;
-      var self = this;
-      window.addEventListener("load", function() {
-        self._onWindowOpened(window);
-        window.removeEventListener("load", arguments.callee, false);
-      }, false);
-      break;
     case "sessionstore-windows-restored":
       Services.obs.removeObserver(this, "sessionstore-windows-restored");
       // free _initialState after nsSessionStore is done with it
@@ -232,43 +205,6 @@ SessionStartup.prototype = {
       // reset all state on sanitization
       this._sessionType = Ci.nsISessionStartup.NO_SESSION;
       break;
-    }
-  },
-
-  /**
-   * Removes the default arguments from the first browser window
-   * (and removes the "domwindowopened" observer afterwards).
-   */
-  _onWindowOpened: function sss_onWindowOpened(aWindow) {
-    var wType = aWindow.document.documentElement.getAttribute("windowtype");
-    if (wType != "navigator:browser")
-      return;
-
-    /**
-     * Note: this relies on the fact that nsBrowserContentHandler will return
-     * a different value the first time its getter is called after an update,
-     * due to its needHomePageOverride() logic. We don't want to remove the
-     * default arguments in the update case, since they include the "What's
-     * New" page.
-     *
-     * Since we're garanteed to be at least the second caller of defaultArgs
-     * (nsBrowserContentHandler calls it to determine which arguments to pass
-     * at startup), we know that if the window's arguments don't match the
-     * current defaultArguments, we're either in the update case, or we're
-     * launching a non-default browser window, so we shouldn't remove the
-     * window's arguments.
-     */
-    var defaultArgs = Cc["@mozilla.org/browser/clh;1"].
-                      getService(Ci.nsIBrowserHandler).defaultArgs;
-    if (aWindow.arguments && aWindow.arguments[0] &&
-        aWindow.arguments[0] == defaultArgs)
-      aWindow.arguments[0] = null;
-
-    try {
-      Services.obs.removeObserver(this, "domwindowopened");
-    } catch (e) {
-      // This might throw if we're removing the observer multiple times,
-      // but this is safe to ignore.
     }
   },
 
@@ -287,13 +223,45 @@ SessionStartup.prototype = {
   },
 
   /**
-   * Determine whether there is a pending session restore.
+   * Determines whether there is a pending session restore and makes sure that
+   * we're initialized before returning. If we're not yet this will read the
+   * session file synchronously.
    * @returns bool
    */
   doRestore: function sss_doRestore() {
     this._ensureInitialized();
+    return this._willRestore();
+  },
+
+  /**
+   * Determines whether there is a pending session restore.
+   * @returns bool
+   */
+  _willRestore: function () {
     return this._sessionType == Ci.nsISessionStartup.RECOVER_SESSION ||
            this._sessionType == Ci.nsISessionStartup.RESUME_SESSION;
+  },
+
+  /**
+   * Returns whether we will restore a session that ends up replacing the
+   * homepage. The browser uses this to not start loading the homepage if
+   * we're going to stop its load anyway shortly after.
+   *
+   * This is meant to be an optimization for the average case that loading the
+   * session file finishes before we may want to start loading the default
+   * homepage. Should this be called before the session file has been read it
+   * will just return false.
+   *
+   * @returns bool
+   */
+  get willOverrideHomepage() {
+    if (this._initialState && this._willRestore()) {
+      let windows = this._initialState.windows || null;
+      // If there are valid windows with not only pinned tabs, signal that we
+      // will override the default homepage by restoring a session.
+      return windows && windows.some(w => w.tabs.some(t => !t.pinned));
+    }
+    return false;
   },
 
   /**
@@ -309,7 +277,6 @@ SessionStartup.prototype = {
   // initialization and kill ongoing asynchronous initialization
   _ensureInitialized: function sss__ensureInitialized() {
     try {
-      debug("_ensureInitialized: " + this._initialState);
       if (this._initialized) {
         // Initialization is complete, nothing else to do
         return;
@@ -326,7 +293,7 @@ SessionStartup.prototype = {
   QueryInterface : XPCOMUtils.generateQI([Ci.nsIObserver,
                                           Ci.nsISupportsWeakReference,
                                           Ci.nsISessionStartup]),
-  classID:          Components.ID("{ec7a6c20-e081-11da-8ad9-0800200c9a66}"),
+  classID:          Components.ID("{ec7a6c20-e081-11da-8ad9-0800200c9a66}")
 };
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([SessionStartup]);

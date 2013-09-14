@@ -1,18 +1,33 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #include "domstubs.idl"
 
 #include "nsIDOMEventTarget.idl"
 
+%{C++
+#ifdef GetBinaryType
+// Windows apparently has a #define for GetBinaryType...
+#undef GetBinaryType
+#endif
+%}
+
 interface nsIVariant;
 
-[scriptable, builtinclass, uuid(7363aa5c-f4b2-4b86-8d15-e0f714c9216b)]
+[scriptable, builtinclass, uuid(af7077ac-0f9f-44e1-815f-9b1a94618531)]
 interface nsIDOMDataChannel : nsIDOMEventTarget
 {
   readonly attribute DOMString label;
+  readonly attribute DOMString protocol;
   readonly attribute boolean reliable;
   readonly attribute boolean ordered;
 
   readonly attribute DOMString readyState;
   readonly attribute unsigned long bufferedAmount;
+
+  readonly attribute unsigned short id;
+  readonly attribute unsigned short stream; /* deprecated name for 'id' */
 
   [implicit_jscontext] attribute jsval onopen;
   [implicit_jscontext] attribute jsval onerror;
@@ -22,14 +37,4 @@ interface nsIDOMDataChannel : nsIDOMEventTarget
   attribute DOMString binaryType;
 
   void close();
-
-  /**
-   * Transmits data to other end of the connection.
-   * @param data The data to be transmitted.  Arraybuffers and Blobs are sent as
-   * binary data.  Strings are sent as UTF-8 text data.  Other types are
-   * converted to a String and sent as a String.
-   * @return if the connection is still established and the data was queued or
-   *         sent successfully.
-   */
-  void send(in nsIVariant data);
 };

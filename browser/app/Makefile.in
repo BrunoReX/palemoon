@@ -9,7 +9,6 @@ VPATH		= @srcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-DIRS        = profile/extensions
 dist_dest   = $(DIST)/$(MOZ_MACBUNDLE_NAME)
 
 ifdef ENABLE_MARIONETTE
@@ -31,8 +30,11 @@ DEFINES += \
   -DNEWWINDOW_ICO=\"$(DIST)/branding/newwindow.ico\" \
   -DNEWTAB_ICO=\"$(DIST)/branding/newtab.ico\" \
   -DPBMODE_ICO=\"$(DIST)/branding/pbmode.ico\" \
-
   $(NULL)
+
+ifdef MOZILLA_OFFICIAL
+DEFINES += -DMOZILLA_OFFICIAL
+endif
 
 ifdef LIBXUL_SDK #{
 PREF_JS_EXPORTS += $(srcdir)/profile/channel-prefs.js
@@ -40,10 +42,6 @@ DEFINES += -DLIBXUL_SDK
 endif #} LIBXUL_SDK
 
 # Build a binary bootstrapping with XRE_main
-
-PROGRAM = $(MOZ_APP_NAME)$(BIN_SUFFIX)
-
-CPPSRCS = nsBrowserApp.cpp
 
 LOCAL_INCLUDES += \
   -I$(topsrcdir)/toolkit/xre \
@@ -56,12 +54,15 @@ DEFINES += -DXPCOM_GLUE
 STL_FLAGS=
 
 LIBS += \
-	$(EXTRA_DSO_LIBS) \
 	$(XPCOM_STANDALONE_GLUE_LDOPTS) \
 	$(NULL)
 
 ifdef MOZ_LINKER
 LIBS += $(MOZ_ZLIB_LIBS)
+endif
+
+ifdef HAVE_CLOCK_MONOTONIC
+LIBS += $(REALTIME_LIBS)
 endif
 
 ifndef MOZ_WINCONSOLE
@@ -86,6 +87,9 @@ endif
 
 ifeq ($(OS_ARCH),WINNT)
 RCINCLUDE = splash.rc
+# Rebuild firefox.exe if the manifest changes - it's included by splash.rc.
+# (this dependency should really be just for firefox.exe, not other targets)
+EXTRA_DEPS += $(PROGRAM).manifest
 ifndef GNU_CC
 RCFLAGS += -DMOZ_PHOENIX -I$(srcdir)
 else
@@ -98,6 +102,8 @@ RESFILE=splashos2.res
 RCFLAGS += -DMOZ_PHOENIX
 RCFLAGS += -DFIREFOX_ICO=\"$(DIST)/branding/firefox-os2.ico\" -DDOCUMENT_ICO=\"$(DIST)/branding/document-os2.ico\"
 endif
+
+PROGRAMS_DEST = $(DIST)/bin
 
 include $(topsrcdir)/config/rules.mk
 
@@ -114,10 +120,6 @@ ifeq ($(OS_ARCH),WINNT) #{
 #
 ifndef GNU_CC #{
 LDFLAGS += /HEAP:0x40000
-ifeq ($(OS_TEST),x86_64) #{
-# set stack to 2MB on x64 build.  See bug 582910
-LDFLAGS += -STACK:2097152
-endif #}
 endif #}
 endif #}
 
@@ -130,7 +132,7 @@ GARBAGE += $(addprefix $(FINAL_TARGET)/defaults/pref/, firefox.js)
 
 endif
 
-ifeq ($(MOZ_WIDGET_TOOLKIT),gtk2)
+ifdef MOZ_WIDGET_GTK
 libs::
 	$(INSTALL) $(IFLAGS1) $(DIST)/branding/mozicon128.png $(FINAL_TARGET)/icons
 	$(INSTALL) $(IFLAGS1) $(DIST)/branding/default16.png  $(FINAL_TARGET)/chrome/icons/default
@@ -174,13 +176,10 @@ endif
 
 MAC_BUNDLE_VERSION = $(shell $(PYTHON) $(srcdir)/macversion.py --version=$(MOZ_APP_VERSION) --buildid=$(DEPTH)/config/buildid)
 
-libs-preqs = \
-  $(call mkdir_deps,$(dist_dest)/Contents/MacOS) \
-  $(call mkdir_deps,$(dist_dest)/Contents/Resources/$(AB).lproj) \
-  $(NULL)
-
 .PHONY: repackage
-libs repackage:: $(PROGRAM) $(libs-preqs)
+libs repackage:: $(PROGRAM)
+	$(MKDIR) -p $(dist_dest)/Contents/MacOS
+	$(MKDIR) -p $(dist_dest)/Contents/Resources/$(AB).lproj
 	rsync -a --exclude "*.in" $(srcdir)/macbuild/Contents $(dist_dest) --exclude English.lproj
 	rsync -a --exclude "*.in" $(srcdir)/macbuild/Contents/Resources/English.lproj/ $(dist_dest)/Contents/Resources/$(AB).lproj
 	sed -e "s/%APP_VERSION%/$(MOZ_APP_VERSION)/" -e "s/%MAC_APP_NAME%/$(MAC_APP_NAME)/" -e "s/%MOZ_MACBUNDLE_ID%/$(MOZ_MACBUNDLE_ID)/" -e "s/%MAC_BUNDLE_VERSION%/$(MAC_BUNDLE_VERSION)/" $(srcdir)/macbuild/Contents/Info.plist.in > $(dist_dest)/Contents/Info.plist

@@ -24,7 +24,7 @@ function testEvalCallResume() {
   gDebugger.DebuggerController.activeThread.addOneTimeListener("framesadded", function() {
     Services.tm.currentThread.dispatch({ run: function() {
 
-      let frames = gDebugger.DebuggerView.StackFrames._container._list;
+      let frames = gDebugger.DebuggerView.StackFrames.widget._list;
       let childNodes = frames.childNodes;
 
       is(gDebugger.DebuggerController.activeThread.state, "paused",
@@ -45,9 +45,6 @@ function testEvalCallResume() {
 
         is(childNodes.length, 0,
           "Should only have no children.");
-
-        is(frames.parentNode.querySelectorAll(".empty").length, 1,
-           "Should have the empty list explanation.");
 
         closeDebuggerAndFinish();
       }, true);

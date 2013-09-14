@@ -128,6 +128,7 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 // orient
 #define NS_STYLE_ORIENT_HORIZONTAL 0
 #define NS_STYLE_ORIENT_VERTICAL   1
+#define NS_STYLE_ORIENT_AUTO       2
 
 // stack-sizing
 #define NS_STYLE_STACK_SIZING_IGNORE         0
@@ -311,10 +312,7 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_CLEAR_RIGHT                    2
 #define NS_STYLE_CLEAR_LEFT_AND_RIGHT           3
 #define NS_STYLE_CLEAR_LINE                     4
-#define NS_STYLE_CLEAR_BLOCK                    5
-#define NS_STYLE_CLEAR_COLUMN                   6
-#define NS_STYLE_CLEAR_PAGE                     7
-#define NS_STYLE_CLEAR_LAST_VALUE NS_STYLE_CLEAR_PAGE
+#define NS_STYLE_CLEAR_LAST_VALUE NS_STYLE_CLEAR_LINE
 
 // See nsStyleContent
 #define NS_STYLE_CONTENT_OPEN_QUOTE             0
@@ -347,8 +345,8 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_CURSOR_GRAB                    21
 #define NS_STYLE_CURSOR_GRABBING                22
 #define NS_STYLE_CURSOR_SPINNING                23
-#define NS_STYLE_CURSOR_MOZ_ZOOM_IN             24
-#define NS_STYLE_CURSOR_MOZ_ZOOM_OUT            25
+#define NS_STYLE_CURSOR_ZOOM_IN                 24
+#define NS_STYLE_CURSOR_ZOOM_OUT                25
 #define NS_STYLE_CURSOR_NOT_ALLOWED             26
 #define NS_STYLE_CURSOR_COL_RESIZE              27
 #define NS_STYLE_CURSOR_ROW_RESIZE              28
@@ -365,6 +363,11 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_DIRECTION_LTR                  0
 #define NS_STYLE_DIRECTION_RTL                  1
 #define NS_STYLE_DIRECTION_INHERIT              2
+
+// See nsStyleVisibility
+#define NS_STYLE_WRITING_MODE_HORIZONTAL_TB     0
+#define NS_STYLE_WRITING_MODE_VERTICAL_LR       1
+#define NS_STYLE_WRITING_MODE_VERTICAL_RL       2
 
 // See nsStyleDisplay
 #define NS_STYLE_DISPLAY_NONE                   0
@@ -395,12 +398,9 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_DISPLAY_POPUP                  27
 #define NS_STYLE_DISPLAY_GROUPBOX               28
 #endif
-#ifdef MOZ_FLEXBOX
 #define NS_STYLE_DISPLAY_FLEX                   29
 #define NS_STYLE_DISPLAY_INLINE_FLEX            30
-#endif // MOZ_FLEXBOX
 
-#ifdef MOZ_FLEXBOX
 // See nsStylePosition
 #define NS_STYLE_ALIGN_ITEMS_FLEX_START         0
 #define NS_STYLE_ALIGN_ITEMS_FLEX_END           1
@@ -434,7 +434,6 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_JUSTIFY_CONTENT_CENTER         2
 #define NS_STYLE_JUSTIFY_CONTENT_SPACE_BETWEEN  3
 #define NS_STYLE_JUSTIFY_CONTENT_SPACE_AROUND   4
-#endif // MOZ_FLEXBOX
 
 // See nsStyleDisplay
 #define NS_STYLE_FLOAT_NONE                     0
@@ -768,9 +767,6 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_TABLE_RULES_COLS               3
 #define NS_STYLE_TABLE_RULES_ALL                4
 
-#define NS_STYLE_TABLE_COLS_NONE                (-1)
-#define NS_STYLE_TABLE_COLS_ALL                 int32_t(1 << 30)
-
 #define NS_STYLE_TABLE_LAYOUT_AUTO              0
 #define NS_STYLE_TABLE_LAYOUT_FIXED             1
 
@@ -811,6 +807,9 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 // See nsStyleColumn
 #define NS_STYLE_COLUMN_COUNT_AUTO              0
 #define NS_STYLE_COLUMN_COUNT_UNLIMITED         (-1)
+
+#define NS_STYLE_COLUMN_FILL_AUTO               0
+#define NS_STYLE_COLUMN_FILL_BALANCE            1
 
 // See nsStyleUIReset
 #define NS_STYLE_IME_MODE_AUTO                  0
@@ -859,6 +858,16 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 // mask-type
 #define NS_STYLE_MASK_TYPE_LUMINANCE            0
 #define NS_STYLE_MASK_TYPE_ALPHA                1
+
+// paint-order
+#define NS_STYLE_PAINT_ORDER_NORMAL             0
+#define NS_STYLE_PAINT_ORDER_FILL               1
+#define NS_STYLE_PAINT_ORDER_STROKE             2
+#define NS_STYLE_PAINT_ORDER_MARKERS            3
+#define NS_STYLE_PAINT_ORDER_LAST_VALUE NS_STYLE_PAINT_ORDER_MARKERS
+// NS_STYLE_PAINT_ORDER_BITWIDTH is the number of bits required to store
+// a single paint-order component value.
+#define NS_STYLE_PAINT_ORDER_BITWIDTH           2
 
 // shape-rendering
 #define NS_STYLE_SHAPE_RENDERING_AUTO               0

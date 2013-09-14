@@ -7,6 +7,7 @@
 #ifndef nsDOMMutationObserver_h
 #define nsDOMMutationObserver_h
 
+#include "mozilla/Attributes.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsPIDOMWindow.h"
 #include "nsIScriptContext.h"
@@ -44,11 +45,10 @@ public:
     return mOwner;
   }
 
-  virtual JSObject* WrapObject(JSContext* aCx, JSObject* aScope,
-                               bool* aTriedToWrap)
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aScope) MOZ_OVERRIDE
   {
-    return mozilla::dom::MutationRecordBinding::Wrap(aCx, aScope, this,
-                                                     aTriedToWrap);
+    return mozilla::dom::MutationRecordBinding::Wrap(aCx, aScope, this);
   }
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -329,7 +329,7 @@ public:
   virtual void AttributeSetToCurrentValue(nsIDocument* aDocument,
                                           mozilla::dom::Element* aElement,
                                           int32_t aNameSpaceID,
-                                          nsIAtom* aAttribute)
+                                          nsIAtom* aAttribute) MOZ_OVERRIDE
   {
     // We can reuse AttributeWillChange implementation.
     AttributeWillChange(aDocument, aElement, aNameSpaceID, aAttribute,
@@ -355,14 +355,14 @@ public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsDOMMutationObserver)
 
   static already_AddRefed<nsDOMMutationObserver>
-  Constructor(nsISupports* aGlobal, mozilla::dom::MutationCallback& aCb,
+  Constructor(const mozilla::dom::GlobalObject& aGlobal,
+              mozilla::dom::MutationCallback& aCb,
               mozilla::ErrorResult& aRv);
 
-  virtual JSObject* WrapObject(JSContext* aCx, JSObject* aScope,
-                               bool* aTriedToWrap)
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aScope) MOZ_OVERRIDE
   {
-    return mozilla::dom::MutationObserverBinding::Wrap(aCx, aScope,
-                                                       this, aTriedToWrap);
+    return mozilla::dom::MutationObserverBinding::Wrap(aCx, aScope, this);
   }
 
   nsISupports* GetParentObject() const
@@ -411,7 +411,7 @@ protected:
   bool Suppressed()
   {
     if (mOwner) {
-      nsCOMPtr<nsIDocument> d = do_QueryInterface(mOwner->GetExtantDocument());
+      nsCOMPtr<nsIDocument> d = mOwner->GetExtantDoc();
       return d && d->IsInSyncOperation();
     }
     return false;

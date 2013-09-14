@@ -20,20 +20,11 @@ VPATH = \
 
 include $(DEPTH)/config/autoconf.mk
 
-MODULE = necko
 LIBRARY_NAME = nksrtp_s
 LIBXUL_LIBRARY = 1
-XPIDL_MODULE = necko_srtp
-GRE_MODULE = 1
 FORCE_STATIC_LIB = 1
 
-EXPORTS_NAMESPACES = mozilla/net
-
-ifdef GNU_CC
-OS_CFLAGS := $(filter-out -pedantic,$(OS_CFLAGS))
-endif
-
-CSRCS := \
+DISABLED_CSRCS := \
   ekt.c \
   srtp.c \
   aes.c \

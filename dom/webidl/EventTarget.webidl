@@ -10,8 +10,6 @@
  * liability, trademark and document use rules apply.
  */
 
-interface Event;
-
 interface EventTarget {
   /* Passing null for wantsUntrusted means "default behavior", which
      differs in content and chrome.  In content that default boolean
@@ -28,4 +26,22 @@ interface EventTarget {
                            optional boolean capture = false);
   [Throws]
   boolean dispatchEvent(Event event);
+};
+
+// Mozilla extensions for use by JS-implemented event targets to
+// implement on* properties.
+partial interface EventTarget {
+  [ChromeOnly, Throws]
+  void setEventHandler(DOMString type, EventHandler handler);
+
+  [ChromeOnly]
+  EventHandler getEventHandler(DOMString type);
+};
+
+// Mozilla extension to make firing events on event targets from
+// chrome easier.  This returns the window which can be used to create
+// events to fire at this EventTarget, or null if there isn't one.
+partial interface EventTarget {
+  [ChromeOnly]
+  readonly attribute WindowProxy? ownerGlobal;
 };

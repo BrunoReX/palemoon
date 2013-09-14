@@ -6,6 +6,8 @@
 
 "use strict";
 SimpleTest.waitForExplicitFinish();
+browserElementTestHelpers.setEnabledPref(true);
+browserElementTestHelpers.addPermission();
 
 var iframe;
 var gotConfirmRepost = false;
@@ -72,11 +74,8 @@ function pageLoadDone() {
 }
 
 function runTest() {
-  browserElementTestHelpers.setEnabledPref(true);
-  browserElementTestHelpers.addPermission();
-
   iframe = document.createElement('iframe');
-  iframe.mozbrowser = true;
+  SpecialPowers.wrap(iframe).mozbrowser = true;
 
   isPostRequestSubmitted = false;
   iframe.src = 'file_post_request.html';
@@ -114,4 +113,4 @@ function runTest() {
   });
 }
 
-runTest();
+addEventListener('testready', runTest);

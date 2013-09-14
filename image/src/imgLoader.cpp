@@ -12,19 +12,13 @@
 #include "imgRequestProxy.h"
 
 #include "RasterImage.h"
-/* We end up pulling in windows.h because we eventually hit gfxWindowsSurface;
- * windows.h defines LoadImage, so we have to #undef it or imgLoader::LoadImage
- * gets changed.
- * This #undef needs to be in multiple places because we don't always pull
- * headers in in the same order.
- */
-#undef LoadImage
 
 #include "nsCOMPtr.h"
 
 #include "nsContentUtils.h"
 #include "nsCrossSiteListenerProxy.h"
 #include "nsNetUtil.h"
+#include "nsMimeTypes.h"
 #include "nsStreamUtils.h"
 #include "nsIHttpChannel.h"
 #include "nsICachingChannel.h"
@@ -54,10 +48,11 @@
 // we want to explore making the document own the load group
 // so we can associate the document URI with the load group.
 // until this point, we have an evil hack:
-#include "nsIHttpChannelInternal.h"  
+#include "nsIHttpChannelInternal.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIChannelPolicy.h"
 #include "nsILoadContext.h"
+#include "nsILoadGroupChild.h"
 
 #include "nsContentUtils.h"
 
@@ -155,17 +150,6 @@ public:
     return NS_OK;
   }
 
-  NS_IMETHOD GetExplicitNonHeap(int64_t *n)
-  {
-    size_t n2 = 0;
-    for (uint32_t i = 0; i < mKnownLoaders.Length(); i++) {
-      mKnownLoaders[i]->mChromeCache.EnumerateRead(EntryExplicitNonHeapSize, &n2);
-      mKnownLoaders[i]->mCache.EnumerateRead(EntryExplicitNonHeapSize, &n2);
-    }
-    *n = n2;
-    return NS_OK;
-  }
-
   static int64_t GetImagesContentUsedUncompressed()
   {
     size_t n = 0;
@@ -222,20 +206,6 @@ private:
           image->HeapSizeOfDecodedWithComputedFallback(ImagesMallocSizeOf);
         sizes->mUsedUncompressedNonheap += image->NonHeapSizeOfDecoded();
       }
-    }
-
-    return PL_DHASH_NEXT;
-  }
-
-  static PLDHashOperator EntryExplicitNonHeapSize(const nsACString&,
-                                                  imgCacheEntry *entry,
-                                                  void *userArg)
-  {
-    size_t *n = static_cast<size_t*>(userArg);
-    nsRefPtr<imgRequest> req = entry->GetRequest();
-    Image *image = static_cast<Image*>(req->mImage.get());
-    if (image) {
-      *n += image->NonHeapSizeOfDecoded();
     }
 
     return PL_DHASH_NEXT;
@@ -397,8 +367,8 @@ static bool ShouldRevalidateEntry(imgCacheEntry *aEntry,
     // entries to be used unless they have been explicitly marked to
     // indicate that revalidation is necessary.
     //
-    if (aFlags & (nsIRequest::VALIDATE_NEVER | 
-                  nsIRequest::VALIDATE_ONCE_PER_SESSION)) 
+    if (aFlags & (nsIRequest::VALIDATE_NEVER |
+                  nsIRequest::VALIDATE_ONCE_PER_SESSION))
     {
       bValidateEntry = false;
     }
@@ -467,7 +437,7 @@ static nsresult NewImageChannel(nsIChannel **aResult,
   nsresult rv;
   nsCOMPtr<nsIChannel> newChannel;
   nsCOMPtr<nsIHttpChannel> newHttpChannel;
- 
+
   nsCOMPtr<nsIInterfaceRequestor> callbacks;
 
   if (aLoadGroup) {
@@ -488,7 +458,7 @@ static nsresult NewImageChannel(nsIChannel **aResult,
   // canceled too.
   //
   rv = NS_NewChannel(aResult,
-                     aURI,        // URI 
+                     aURI,        // URI
                      nullptr,      // Cached IOService
                      nullptr,      // LoadGroup
                      callbacks,   // Notification Callbacks
@@ -641,9 +611,7 @@ already_AddRefed<imgCacheEntry> imgCacheQueue::Pop()
   mQueue.pop_back();
 
   mSize -= entry->GetDataSize();
-  imgCacheEntry *ret = entry;
-  NS_ADDREF(ret);
-  return ret;
+  return entry.forget();
 }
 
 void imgCacheQueue::Refresh()
@@ -957,7 +925,7 @@ void imgLoader::ReadAcceptHeaderPref()
   if (accept)
     mAcceptHeader = accept;
   else
-    mAcceptHeader = "image/png,image/*;q=0.8,*/*;q=0.5";
+    mAcceptHeader = IMAGE_PNG "," IMAGE_WILDCARD ";q=0.8," ANY_WILDCARD ";q=0.5";
 }
 
 /* void clearCache (in boolean chrome); */
@@ -1145,7 +1113,7 @@ void imgLoader::CacheEntriesChanged(nsIURI *uri, int32_t sizediff /* = 0 */)
 void imgLoader::CheckCacheLimits(imgCacheTable &cache, imgCacheQueue &queue)
 {
   if (queue.GetNumElements() == 0)
-    NS_ASSERTION(queue.GetSize() == 0, 
+    NS_ASSERTION(queue.GetSize() == 0,
                  "imgLoader::CheckCacheLimits -- incorrect cache size");
 
   // Remove entries from the cache until we're back under our desired size.
@@ -1369,7 +1337,7 @@ bool imgLoader::ValidateEntry(imgCacheEntry *aEntry,
     validateRequest = ShouldRevalidateEntry(aEntry, aLoadFlags, hasExpired);
 
     PR_LOG(GetImgLog(), PR_LOG_DEBUG,
-           ("imgLoader::ValidateEntry validating cache entry. " 
+           ("imgLoader::ValidateEntry validating cache entry. "
             "validateRequest = %d", validateRequest));
   }
 #if defined(PR_LOGGING)
@@ -1378,7 +1346,7 @@ bool imgLoader::ValidateEntry(imgCacheEntry *aEntry,
     aURI->GetSpec(spec);
 
     PR_LOG(GetImgLog(), PR_LOG_DEBUG,
-           ("imgLoader::ValidateEntry BYPASSING cache validation for %s " 
+           ("imgLoader::ValidateEntry BYPASSING cache validation for %s "
             "because of NULL LoadID", spec.get()));
   }
 #endif
@@ -1484,11 +1452,11 @@ bool imgLoader::RemoveFromCache(imgCacheEntry *entry)
   return false;
 }
 
-static PLDHashOperator EnumEvictEntries(const nsACString&, 
+static PLDHashOperator EnumEvictEntries(const nsACString&,
                                         nsRefPtr<imgCacheEntry> &aData,
                                         void *data)
 {
-  nsTArray<nsRefPtr<imgCacheEntry> > *entries = 
+  nsTArray<nsRefPtr<imgCacheEntry> > *entries =
     reinterpret_cast<nsTArray<nsRefPtr<imgCacheEntry> > *>(data);
 
   entries->AppendElement(aData);
@@ -1667,7 +1635,7 @@ nsresult imgLoader::LoadImage(nsIURI *aURI,
 
         if (mCacheTracker)
           mCacheTracker->MarkUsed(entry);
-      } 
+      }
 
       entry->Touch();
 
@@ -1716,8 +1684,9 @@ nsresult imgLoader::LoadImage(nsIURI *aURI,
     // together as a logical group.
     nsCOMPtr<nsILoadGroup> loadGroup =
         do_CreateInstance(NS_LOADGROUP_CONTRACTID);
-    if (loadGroup)
-      loadGroup->SetLoadGroup(aLoadGroup);
+    nsCOMPtr<nsILoadGroupChild> childLoadGroup = do_QueryInterface(loadGroup);
+    if (childLoadGroup)
+      childLoadGroup->SetParentLoadGroup(aLoadGroup);
     newChannel->SetLoadGroup(loadGroup);
 
     request->Init(aURI, aURI, loadGroup, newChannel, entry, aCX,
@@ -1771,7 +1740,7 @@ nsresult imgLoader::LoadImage(nsIURI *aURI,
     // Try to add the new request into the cache.
     PutIntoCache(aURI, entry);
   } else {
-    LOG_MSG_WITH_PARAM(GetImgLog(), 
+    LOG_MSG_WITH_PARAM(GetImgLog(),
                        "imgLoader::LoadImage |cache hit|", "request", request);
   }
 
@@ -1908,7 +1877,7 @@ nsresult imgLoader::LoadImageWithChannel(nsIChannel *channel, imgINotificationOb
 
           if (mCacheTracker)
             mCacheTracker->MarkUsed(entry);
-        } 
+        }
       }
     }
   }
@@ -1991,7 +1960,7 @@ nsresult imgLoader::GetMimeTypeFromContent(const char* aContents, uint32_t aLeng
   if (aLength >= 6 && (!nsCRT::strncmp(aContents, "GIF87a", 6) ||
                        !nsCRT::strncmp(aContents, "GIF89a", 6)))
   {
-    aContentType.AssignLiteral("image/gif");
+    aContentType.AssignLiteral(IMAGE_GIF);
   }
 
   /* or a PNG? */
@@ -2003,8 +1972,8 @@ nsresult imgLoader::GetMimeTypeFromContent(const char* aContents, uint32_t aLeng
                    (unsigned char)aContents[5]==0x0A &&
                    (unsigned char)aContents[6]==0x1A &&
                    (unsigned char)aContents[7]==0x0A))
-  { 
-    aContentType.AssignLiteral("image/png");
+  {
+    aContentType.AssignLiteral(IMAGE_PNG);
   }
 
   /* maybe a JPEG (JFIF)? */
@@ -2019,7 +1988,7 @@ nsresult imgLoader::GetMimeTypeFromContent(const char* aContents, uint32_t aLeng
      ((unsigned char)aContents[1])==0xD8 &&
      ((unsigned char)aContents[2])==0xFF)
   {
-    aContentType.AssignLiteral("image/jpeg");
+    aContentType.AssignLiteral(IMAGE_JPEG);
   }
 
   /* or how about ART? */
@@ -2031,18 +2000,18 @@ nsresult imgLoader::GetMimeTypeFromContent(const char* aContents, uint32_t aLeng
    ((unsigned char) aContents[1])==0x47 &&
    ((unsigned char) aContents[4])==0x00 )
   {
-    aContentType.AssignLiteral("image/x-jg");
+    aContentType.AssignLiteral(IMAGE_ART);
   }
 
   else if (aLength >= 2 && !nsCRT::strncmp(aContents, "BM", 2)) {
-    aContentType.AssignLiteral("image/bmp");
+    aContentType.AssignLiteral(IMAGE_BMP);
   }
 
   // ICOs always begin with a 2-byte 0 followed by a 2-byte 1.
   // CURs begin with 2-byte 0 followed by 2-byte 2.
   else if (aLength >= 4 && (!memcmp(aContents, "\000\000\001\000", 4) ||
                             !memcmp(aContents, "\000\000\002\000", 4))) {
-    aContentType.AssignLiteral("image/x-icon");
+    aContentType.AssignLiteral(IMAGE_ICO);
   }
 
   else {

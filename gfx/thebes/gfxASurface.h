@@ -29,7 +29,7 @@ struct nsIntRect;
  * A surface is something you can draw on. Instantiate a subclass of this
  * abstract class, and use gfxContext to draw on this surface.
  */
-class THEBES_API gfxASurface {
+class gfxASurface {
 public:
 #ifdef MOZILLA_INTERNAL_API
     nsrefcnt AddRef(void);
@@ -155,6 +155,19 @@ public:
       return nullptr;
     }
 
+    /**
+     * Returns a read-only ARGB32 image surface for this surface. If this is an
+     * optimized surface this may require a copy.
+     * Returns null on error.
+     */
+    virtual already_AddRefed<gfxImageSurface> GetAsReadableARGB32ImageSurface();
+
+    /**
+     * Creates a new ARGB32 image surface with the same contents as this surface.
+     * Returns null on error.
+     */
+    already_AddRefed<gfxImageSurface> CopyToARGB32ImageSurface();
+
     int CairoStatus();
 
     /* Make sure that the given dimensions don't overflow a 32-bit signed int
@@ -229,7 +242,6 @@ public:
 
     virtual const gfxIntSize GetSize() const { return gfxIntSize(-1, -1); }
 
-#ifdef MOZ_DUMP_IMAGES
     /**
      * Debug functions to encode the current image as a PNG and export it.
      */
@@ -255,7 +267,6 @@ public:
     void CopyAsDataURL();
     
     void WriteAsPNG_internal(FILE* aFile, bool aBinary);
-#endif
 
     void SetOpaqueRect(const gfxRect& aRect) {
         if (aRect.IsEmpty()) {
@@ -341,7 +352,7 @@ protected:
 /**
  * An Unknown surface; used to wrap unknown cairo_surface_t returns from cairo
  */
-class THEBES_API gfxUnknownSurface : public gfxASurface {
+class gfxUnknownSurface : public gfxASurface {
 public:
     gfxUnknownSurface(cairo_surface_t *surf) {
         Init(surf, true);

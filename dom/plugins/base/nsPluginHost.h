@@ -25,6 +25,7 @@
 #include "nsTObserverArray.h"
 #include "nsITimer.h"
 #include "nsPluginTags.h"
+#include "nsPluginPlayPreviewInfo.h"
 #include "nsIEffectiveTLDService.h"
 #include "nsIIDNService.h"
 #include "nsCRT.h"
@@ -62,7 +63,7 @@ public:
   nsPluginHost();
   virtual ~nsPluginHost();
 
-  static nsPluginHost* GetInst();
+  static already_AddRefed<nsPluginHost> GetInst();
 
   NS_DECL_AND_IMPL_ZEROING_OPERATOR_NEW
 
@@ -78,10 +79,9 @@ public:
   nsresult SetUpPluginInstance(const char *aMimeType,
                                nsIURI *aURL,
                                nsPluginInstanceOwner *aOwner);
-  nsresult IsPluginEnabledForType(const char* aMimeType);
+  bool PluginExistsForType(const char* aMimeType);
+
   nsresult IsPluginEnabledForExtension(const char* aExtension, const char* &aMimeType);
-  bool     IsPluginPlayPreviewForType(const char *aMimeType);
-  nsresult GetBlocklistStateForType(const char *aMimeType, uint32_t *state);
 
   nsresult GetPluginCount(uint32_t* aPluginCount);
   nsresult GetPlugins(uint32_t aPluginCount, nsIDOMPlugin** aPluginArray);
@@ -118,7 +118,6 @@ public:
 
   nsresult GetPluginName(nsNPAPIPluginInstance *aPluginInstance, const char** aPluginName);
   nsresult StopPluginInstance(nsNPAPIPluginInstance* aInstance);
-  nsresult HandleBadPlugin(PRLibrary* aLibrary, nsNPAPIPluginInstance *aInstance);
   nsresult GetPluginTagForInstance(nsNPAPIPluginInstance *aPluginInstance, nsIPluginTag **aPluginTag);
 
   nsresult
@@ -153,7 +152,7 @@ public:
   // Writes updated plugins settings to disk and unloads the plugin
   // if it is now disabled
   nsresult UpdatePluginInfo(nsPluginTag* aPluginTag);
-  
+
   // Helper that checks if a type is whitelisted in plugin.allowed_types.
   // Always returns true if plugin.allowed_types is not set
   static bool IsTypeWhitelisted(const char *aType);
@@ -176,7 +175,7 @@ public:
 
   nsTArray< nsRefPtr<nsNPAPIPluginInstance> > *InstanceArray();
 
-  void DestroyRunningInstances(nsTArray<nsCOMPtr<nsIDocument> >* aReloadDocs, nsPluginTag* aPluginTag);
+  void DestroyRunningInstances(nsPluginTag* aPluginTag);
 
   // Return the tag for |aLibrary| if found, nullptr if not.
   nsPluginTag* FindTagForLibrary(PRLibrary* aLibrary);
@@ -263,9 +262,8 @@ private:
   nsRefPtr<nsPluginTag> mPlugins;
   nsRefPtr<nsPluginTag> mCachedPlugins;
   nsRefPtr<nsInvalidPluginTag> mInvalidPlugins;
-  nsTArray<nsCString> mPlayPreviewMimeTypes;
+  nsTArray< nsRefPtr<nsPluginPlayPreviewInfo> > mPlayPreviewMimeTypes;
   bool mPluginsLoaded;
-  bool mDontShowBadPluginMessage;
 
   // set by pref plugin.override_internal_types
   bool mOverrideInternalTypes;
@@ -303,7 +301,7 @@ private:
   static nsPluginHost* sInst;
 };
 
-class NS_STACK_CLASS PluginDestructionGuard : protected PRCList
+class MOZ_STACK_CLASS PluginDestructionGuard : protected PRCList
 {
 public:
   PluginDestructionGuard(nsNPAPIPluginInstance *aInstance)

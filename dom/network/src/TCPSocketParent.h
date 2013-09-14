@@ -9,7 +9,7 @@
 #include "nsIDOMTCPSocket.h"
 
 struct JSContext;
-struct JSObject;
+class JSObject;
 
 namespace mozilla {
 namespace dom {
@@ -27,8 +27,7 @@ public:
   TCPSocketParent() : mIntermediaryObj(nullptr), mIPCOpen(true) {}
 
   bool Init(const nsString& aHost, const uint16_t& aPort,
-            const bool& useSSL, const nsString& aBinaryType,
-            PBrowserParent* aBrowser);
+            const bool& useSSL, const nsString& aBinaryType);
 
   virtual bool RecvSuspend() MOZ_OVERRIDE;
   virtual bool RecvResume() MOZ_OVERRIDE;

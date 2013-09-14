@@ -23,14 +23,15 @@ include "mozilla/dom/TabMessageUtils.h";
 include "mozilla/dom/ScreenOrientation.h";
 include "mozilla/dom/PermissionMessageUtils.h";
 include "mozilla/layout/RenderFrameUtils.h";
+include "mozilla/layers/CompositorTypes.h";
 
 using IPC::Principal;
 using gfxMatrix;
 using gfxRect;
 using gfxSize;
-using mozilla::layers::LayersBackend;
 using mozilla::layers::FrameMetrics;
 using mozilla::layout::ScrollingBehavior;
+using mozilla::void_t;
 using mozilla::WindowsHandle;
 using nscolor;
 using nsCompositionEvent;
@@ -49,7 +50,8 @@ using nsTextEvent;
 using nsTouchEvent;
 using RemoteDOMEvent;
 using mozilla::dom::ScreenOrientation;
-
+using mozilla::layers::TextureFactoryIdentifier;
+using mozilla::CSSIntPoint;
 namespace mozilla {
 namespace dom {
 
@@ -175,6 +177,11 @@ parent:
     sync GetDPI() returns (float value);
 
     /**
+     * Gets the default scaling factor of the screen corresponding to this browser.
+     */
+    sync GetDefaultScale() returns (double value);
+
+    /**
      * Return native data of root widget
      */
     sync GetWidgetNativeData() returns (WindowsHandle value);
@@ -208,7 +215,7 @@ parent:
      */
     sync PRenderFrame()
         returns (ScrollingBehavior scrolling,
-                 LayersBackend backend, int32_t maxTextureSize, uint64_t layersId);
+                 TextureFactoryIdentifier textureFactoryIdentifier, uint64_t layersId);
 
     /** 
      * Starts an offline application cache update.
@@ -290,6 +297,8 @@ child:
 
     LoadURL(nsCString uri);
 
+    CacheFileDescriptor(nsString path, FileDescriptor fd);
+
     UpdateDimensions(nsRect rect, nsIntSize size, ScreenOrientation orientation) compress;
 
     UpdateFrame(FrameMetrics frame) compress;
@@ -299,21 +308,21 @@ child:
      * the scroll offset. This message is expected to round-trip back to
      * ZoomToRect() with a rect indicating where we should zoom to.
      */
-    HandleDoubleTap(nsIntPoint point);
+    HandleDoubleTap(CSSIntPoint point);
 
     /**
      * Requests handling of a single tap. |point| is in CSS pixels, relative to
      * the scroll offset. This message is expected to send a "mousedown" and
      * "mouseup" series of events at this point.
      */
-    HandleSingleTap(nsIntPoint point);
+    HandleSingleTap(CSSIntPoint point);
 
     /**
      * Requests handling of a long tap. |point| is in CSS pixels, relative to
      * the scroll offset. This message is expected to send a "contextmenu"
      * events at this point.
      */
-    HandleLongTap(nsIntPoint point);
+    HandleLongTap(CSSIntPoint point);
 
     /**
      * Sending an activate message moves focus to the child.
@@ -380,20 +389,6 @@ child:
                       nsString bgcolor,
                       uint32_t renderFlags, bool flushLayout,
                       nsIntSize renderSize);
-
-    /**
-     * Send the child its app type.  The app type identifies the kind of app
-     * shown in this PBrowser.  Currently, the only recognized app type is
-     * "homescreen".
-     *
-     * The value here corresponds to the "mozapptype" attribute on iframes.  For
-     * example, <iframe mozbrowser mozapp="..." mozapptype="homescreen">.
-     *
-     * Only app frames (i.e., frames with an app-id) should have a non-empty app
-     * type.  If you try to SetAppType() with a non-empty app type on a non-app
-     * PBrowserChild, we may assert.
-     */
-    SetAppType(nsString appType);
 
     /**
      * Sent by the chrome process when it no longer wants this remote

@@ -359,6 +359,15 @@ const DownloadsIndicatorView = {
       return;
     }
 
+    if (!DownloadsCommon.animateNotifications) {
+      return;
+    }
+
+    // No need to show visual notification if the panel is visible.
+    if (DownloadsPanel.isPanelShowing) {
+      return;
+    }
+
     function DIV_SEN_callback() {
       if (this._notificationTimeout) {
         clearTimeout(this._notificationTimeout);
@@ -525,8 +534,6 @@ const DownloadsIndicatorView = {
     browserDragAndDrop.dragOver(aEvent);
   },
 
-  onDragExit: function () { },
-
   onDrop: function DIV_onDrop(aEvent)
   {
     let dt = aEvent.dataTransfer;
@@ -538,6 +545,10 @@ const DownloadsIndicatorView = {
     let name = {};
     let url = browserDragAndDrop.drop(aEvent, name);
     if (url) {
+      if (url.startsWith("about:")) {
+        return;
+      }
+
       let sourceDoc = dt.mozSourceNode ? dt.mozSourceNode.ownerDocument : document;
       saveURL(url, name.value, null, true, true, null, sourceDoc);
       aEvent.preventDefault();

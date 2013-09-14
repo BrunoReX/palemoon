@@ -28,6 +28,7 @@ pref("browser.cache.memory.capacity", 1024); // kilobytes
 /* image cache prefs */
 pref("image.cache.size", 1048576); // bytes
 pref("image.high_quality_downscaling.enabled", false);
+pref("canvas.image.cache.limit", 10485760); // 10 MB
 
 /* offline cache prefs */
 pref("browser.offline-apps.notify", false);
@@ -48,6 +49,9 @@ pref("network.http.keep-alive.timeout", 600);
 pref("network.http.max-connections", 20);
 pref("network.http.max-persistent-connections-per-server", 6);
 pref("network.http.max-persistent-connections-per-proxy", 20);
+
+// spdy
+pref("network.http.spdy.push-allowance", 32768);
 
 // See bug 545869 for details on why these are set the way they are
 pref("network.buffer.cache.count", 24);
@@ -102,7 +106,6 @@ pref("dom.disable_open_during_load", true);
 pref("privacy.popups.showBrowserMessage", true);
 
 pref("keyword.enabled", true);
-pref("keyword.URL", "https://www.google.com/m?ie=UTF-8&oe=UTF-8&sourceid=navclient&gfns=1&q=");
 
 pref("accessibility.typeaheadfind", false);
 pref("accessibility.typeaheadfind.timeout", 5000);
@@ -174,8 +177,6 @@ pref("content.sink.perf_parse_time", 50000000);
 
 // Maximum scripts runtime before showing an alert
 pref("dom.max_chrome_script_run_time", 0); // disable slow script dialog for chrome
-// Bug 817230 - disable the dialog until we implement its checkbox properly
-pref("dom.max_script_run_time", 0);
 
 // plugins
 pref("plugin.disable", true);
@@ -183,10 +184,9 @@ pref("dom.ipc.plugins.enabled", true);
 
 // product URLs
 // The breakpad report server to link to in about:crashes
-pref("breakpad.reportURL", "http://crash-stats.mozilla.com/report/index/");
+pref("breakpad.reportURL", "https://crash-stats.mozilla.com/report/index/");
 pref("app.releaseNotesURL", "http://www.mozilla.com/%LOCALE%/b2g/%VERSION%/releasenotes/");
 pref("app.support.baseURL", "http://support.mozilla.com/b2g");
-pref("app.feedbackURL", "http://input.mozilla.com/feedback/");
 pref("app.privacyURL", "http://www.mozilla.com/%LOCALE%/m/privacy.html");
 pref("app.creditsURL", "http://www.mozilla.org/credits/");
 pref("app.featuresURL", "http://www.mozilla.com/%LOCALE%/b2g/features/");
@@ -240,23 +240,20 @@ pref("ui.dragThresholdY", 25);
 #ifndef MOZ_WIDGET_GONK
 pref("dom.ipc.tabs.disabled", true);
 pref("layers.offmainthreadcomposition.enabled", false);
-pref("layers.offmainthreadcomposition.animate-opacity", false);
-pref("layers.offmainthreadcomposition.animate-transform", false);
-pref("layers.offmainthreadcomposition.throttle-animations", false);
+pref("layers.offmainthreadcomposition.async-animations", false);
 pref("layers.async-video.enabled", false);
 #else
 pref("dom.ipc.tabs.disabled", false);
 pref("layers.offmainthreadcomposition.enabled", true);
 pref("layers.acceleration.disabled", false);
-pref("layers.offmainthreadcomposition.animate-opacity", true);
-pref("layers.offmainthreadcomposition.animate-transform", true);
-pref("layers.offmainthreadcomposition.throttle-animations", true);
+pref("layers.offmainthreadcomposition.async-animations", true);
 pref("layers.async-video.enabled", true);
 pref("layers.async-pan-zoom.enabled", true);
 #endif
 
 // Web Notifications
 pref("notification.feature.enabled", true);
+pref("dom.webnotifications.enabled", false);
 
 // IndexedDB
 pref("indexedDB.feature.enabled", true);
@@ -271,17 +268,12 @@ pref("media.cache_size", 4096);    // 4MB media cache
 // MediaDecoderReader's mVideoQueue.
 pref("media.video-queue.default-size", 3);
 
-//  0: don't show fullscreen keyboard
-//  1: always show fullscreen keyboard
-// -1: show fullscreen keyboard based on threshold pref
-pref("widget.ime.android.landscape_fullscreen", -1);
-pref("widget.ime.android.fullscreen_threshold", 250); // in hundreths of inches
-
 // optimize images' memory usage
 pref("image.mem.decodeondraw", true);
-pref("content.image.allow_locking", true);
-pref("image.mem.min_discard_timeout_ms", 10000);
-pref("image.mem.max_decoded_image_kb", 5120); /* 5MB */
+pref("content.image.allow_locking", false); /* don't allow image locking */
+pref("image.mem.min_discard_timeout_ms", 86400000); /* 24h, we rely on the out of memory hook */
+pref("image.mem.max_decoded_image_kb", 30000); /* 30MB seems reasonable */
+pref("image.onload.decode.limit", 24); /* don't decode more than 24 images eagerly */
 
 // XXX this isn't a good check for "are touch events supported", but
 // we don't really have a better one at the moment.
@@ -327,9 +319,6 @@ pref("urlclassifier.alternate_error_page", "blocked");
 
 // The number of random entries to send with a gethash request.
 pref("urlclassifier.gethashnoise", 4);
-
-// Randomize all UrlClassifier data with a per-client key.
-pref("urlclassifier.randomizeclient", false);
 
 // The list of tables that use the gethash request to confirm partial results.
 pref("urlclassifier.gethashtables", "goog-phish-shavar,goog-malware-shavar");
@@ -388,24 +377,57 @@ pref("dom.ipc.processCount", 100000);
 
 pref("dom.ipc.browser_frames.oop_by_default", false);
 
-// Temporary permission hack for WebSMS
+// WebSMS
 pref("dom.sms.enabled", true);
 pref("dom.sms.strict7BitEncoding", false); // Disabled by default.
+pref("dom.sms.requestStatusReport", true); // Enabled by default.
 
-// Temporary permission hack for WebContacts
+// WebContacts
 pref("dom.mozContacts.enabled", true);
+pref("dom.navigator-property.disable.mozContacts", false);
+pref("dom.global-constructor.disable.mozContact", false);
+
+// Shortnumber matching needed for e.g. Brazil:
+// 01187654321 can be found with 87654321
+pref("dom.phonenumber.substringmatching.BR", 8);
+pref("dom.phonenumber.substringmatching.CO", 10);
+pref("dom.phonenumber.substringmatching.VE", 7);
 
 // WebAlarms
 pref("dom.mozAlarms.enabled", true);
 
+// SimplePush
+pref("services.push.enabled", true);
+// Is the network connection allowed to be up?
+// This preference should be used in UX to enable/disable push.
+pref("services.push.connection.enabled", true);
+// serverURL to be assigned by services team
+pref("services.push.serverURL", "wss://push.services.mozilla.com/");
+pref("services.push.userAgentID", "");
+// Exponential back-off start is 5 seconds like in HTTP/1.1.
+// Maximum back-off is pingInterval.
+pref("services.push.retryBaseInterval", 5000);
+// Interval at which to ping PushServer to check connection status. In
+// milliseconds. If no reply is received within requestTimeout, the connection
+// is considered closed.
+pref("services.push.pingInterval", 1800000); // 30 minutes
+// How long before a DOMRequest errors as timeout
+pref("services.push.requestTimeout", 10000);
+// enable udp wakeup support
+pref("services.push.udp.wakeupEnabled", true);
+// port on which UDP server socket is bound
+pref("services.push.udp.port", 2442);
+
 // NetworkStats
 #ifdef MOZ_B2G_RIL
 pref("dom.mozNetworkStats.enabled", true);
-pref("ril.lastKnownMcc", 724);
+pref("ril.lastKnownMcc", "724");
+pref("ril.cellbroadcast.disabled", false);
 #endif
 
 // WebSettings
 pref("dom.mozSettings.enabled", true);
+pref("dom.navigator-property.disable.mozSettings", false);
 pref("dom.mozPermissionSettings.enabled", true);
 
 // controls if we want camera support
@@ -448,6 +470,10 @@ pref("media.volume.steps", 10);
 //Enable/disable marionette server, set listening port
 pref("marionette.defaultPrefs.enabled", true);
 pref("marionette.defaultPrefs.port", 2828);
+#ifndef MOZ_WIDGET_GONK
+// On desktop builds, we need to force the socket to listen on localhost only
+pref("marionette.force-local", true);
+#endif
 #endif
 
 #ifdef MOZ_UPDATER
@@ -458,6 +484,9 @@ pref("shutdown.watchdog.timeoutSecs", 5);
 pref("b2g.update.apply-prompt-timeout", 60000); // milliseconds
 // Amount of time to wait after the user is idle before prompting to apply an update
 pref("b2g.update.apply-idle-timeout", 600000); // milliseconds
+// Amount of time after which connection will be restarted if no progress
+pref("b2g.update.download-watchdog-timeout", 120000); // milliseconds
+pref("b2g.update.download-watchdog-max-retries", 5);
 
 pref("app.update.enabled", true);
 pref("app.update.auto", false);
@@ -504,6 +533,8 @@ pref("ui.click_hold_context_menus.delay", 750);
 // Enable device storage
 pref("device.storage.enabled", true);
 
+// Enable system message
+pref("dom.sysmsg.enabled", true);
 pref("media.plugins.enabled", false);
 pref("media.omx.enabled", true);
 
@@ -525,13 +556,14 @@ pref("javascript.options.mem.log", false);
 // Increase mark slice time from 10ms to 30ms
 pref("javascript.options.mem.gc_incremental_slice_ms", 30);
 
-pref("javascript.options.mem.gc_high_frequency_heap_growth_max", 120);
-pref("javascript.options.mem.gc_high_frequency_heap_growth_min", 101);
+pref("javascript.options.mem.gc_high_frequency_heap_growth_max", 150);
+pref("javascript.options.mem.gc_high_frequency_heap_growth_min", 120);
 pref("javascript.options.mem.gc_high_frequency_high_limit_mb", 40);
 pref("javascript.options.mem.gc_high_frequency_low_limit_mb", 10);
-pref("javascript.options.mem.gc_low_frequency_heap_growth", 105);
+pref("javascript.options.mem.gc_low_frequency_heap_growth", 120);
 pref("javascript.options.mem.high_water_mark", 6);
-pref("javascript.options.mem.gc_allocation_threshold_mb", 3);
+pref("javascript.options.mem.gc_allocation_threshold_mb", 1);
+pref("javascript.options.mem.gc_decommit_threshold_mb", 1);
 
 // Show/Hide scrollbars when active/inactive
 pref("ui.showHideScrollbars", 1);
@@ -540,40 +572,81 @@ pref("ui.showHideScrollbars", 1);
 // documents a 1s grace period before they're eligible to be marked as
 // background.
 pref("dom.ipc.processPriorityManager.enabled", true);
-pref("dom.ipc.processPriorityManager.gracePeriodMS", 1000);
+pref("dom.ipc.processPriorityManager.backgroundGracePeriodMS", 1000);
+pref("dom.ipc.processPriorityManager.temporaryPriorityLockMS", 5000);
 
-// Kernel parameters for how processes are killed on low-memory.
+// Kernel parameters for process priorities.  These affect how processes are
+// killed on low-memory and their relative CPU priorities.
+//
+// Note: The maximum nice value on Linux is 19, but the max value you should
+// use here is 18.  NSPR adds 1 to some threads' nice values, to mark
+// low-priority threads.  If the process priority manager were to renice a
+// process (and all its threads) to 19, all threads would have the same
+// niceness.  Then when we reniced the process to (say) 10, all threads would
+// /still/ have the same niceness; we'd effectively have erased NSPR's thread
+// priorities.
+
+pref("hal.processPriorityManager.gonk.MASTER.OomScoreAdjust", 0);
+pref("hal.processPriorityManager.gonk.MASTER.KillUnderMB", 4);
+pref("hal.processPriorityManager.gonk.MASTER.Nice", 0);
+
+pref("hal.processPriorityManager.gonk.FOREGROUND_HIGH.OomScoreAdjust", 67);
+pref("hal.processPriorityManager.gonk.FOREGROUND_HIGH.KillUnderMB", 5);
+pref("hal.processPriorityManager.gonk.FOREGROUND_HIGH.Nice", 0);
+
+pref("hal.processPriorityManager.gonk.FOREGROUND.OomScoreAdjust", 134);
+pref("hal.processPriorityManager.gonk.FOREGROUND.KillUnderMB", 6);
+pref("hal.processPriorityManager.gonk.FOREGROUND.Nice", 1);
+
+pref("hal.processPriorityManager.gonk.BACKGROUND_PERCEIVABLE.OomScoreAdjust", 200);
+pref("hal.processPriorityManager.gonk.BACKGROUND_PERCEIVABLE.KillUnderMB", 7);
+pref("hal.processPriorityManager.gonk.BACKGROUND_PERCEIVABLE.Nice", 7);
+
+pref("hal.processPriorityManager.gonk.BACKGROUND_HOMESCREEN.OomScoreAdjust", 267);
+pref("hal.processPriorityManager.gonk.BACKGROUND_HOMESCREEN.KillUnderMB", 8);
+pref("hal.processPriorityManager.gonk.BACKGROUND_HOMESCREEN.Nice", 18);
+
+pref("hal.processPriorityManager.gonk.BACKGROUND.OomScoreAdjust", 400);
+pref("hal.processPriorityManager.gonk.BACKGROUND.KillUnderMB", 20);
+pref("hal.processPriorityManager.gonk.BACKGROUND.Nice", 18);
+
+// Processes get this niceness when they have low CPU priority.
+pref("hal.processPriorityManager.gonk.LowCPUNice", 18);
+
+// Fire a memory pressure event when the system has less than Xmb of memory
+// remaining.  You should probably set this just above Y.KillUnderMB for
+// the highest priority class Y that you want to make an effort to keep alive.
+// (For example, we want BACKGROUND_PERCEIVABLE to stay alive.)  If you set
+// this too high, then we'll send out a memory pressure event every Z seconds
+// (see below), even while we have processes that we would happily kill in
+// order to free up memory.
+pref("hal.processPriorityManager.gonk.notifyLowMemUnderMB", 14);
+
+// We wait this long before polling the memory-pressure fd after seeing one
+// memory pressure event.  (When we're not under memory pressure, we sit
+// blocked on a poll(), and this pref has no effect.)
 pref("gonk.systemMemoryPressureRecoveryPollMS", 5000);
-pref("hal.processPriorityManager.gonk.masterOomScoreAdjust", 0);
-pref("hal.processPriorityManager.gonk.masterKillUnderMB", 1);
-pref("hal.processPriorityManager.gonk.foregroundOomScoreAdjust", 67);
-pref("hal.processPriorityManager.gonk.foregroundKillUnderMB", 4);
-pref("hal.processPriorityManager.gonk.backgroundPerceivableOomScoreAdjust", 134);
-pref("hal.processPriorityManager.gonk.backgroundPerceivebleKillUnderMB", 5);
-pref("hal.processPriorityManager.gonk.backgroundHomescreenOomScoreAdjust", 200);
-pref("hal.processPriorityManager.gonk.backgroundHomescreenKillUnderMB", 5);
-pref("hal.processPriorityManager.gonk.backgroundOomScoreAdjust", 400);
-pref("hal.processPriorityManager.gonk.backgroundKillUnderMB", 8);
-pref("hal.processPriorityManager.gonk.notifyLowMemUnderMB", 10);
-
-// Niceness values (i.e., CPU priorities) for B2G processes.
-pref("hal.processPriorityManager.gonk.masterNice", -1);
-pref("hal.processPriorityManager.gonk.foregroundNice", 0);
-pref("hal.processPriorityManager.gonk.backgroundNice", 10);
 
 #ifndef DEBUG
 // Enable pre-launching content processes for improved startup time
 // (hiding latency).
 pref("dom.ipc.processPrelaunch.enabled", true);
 // Wait this long before pre-launching a new subprocess.
-pref("dom.ipc.processPrelaunch.delayMs", 1000);
+pref("dom.ipc.processPrelaunch.delayMs", 5000);
 #endif
+
+// When a process receives a system message, we hold a CPU wake lock on its
+// behalf for this many seconds, or until it handles the system message,
+// whichever comes first.
+pref("dom.ipc.systemMessageCPULockTimeoutSec", 30);
 
 // Ignore the "dialog=1" feature in window.open.
 pref("dom.disable_window_open_dialog_feature", true);
 
 // Screen reader support
 pref("accessibility.accessfu.activate", 2);
+// Whether to skip images with empty alt text
+pref("accessibility.accessfu.skip_empty_images", true);
 
 // Enable hit-target fluffing
 pref("ui.touch.radius.enabled", false);
@@ -619,6 +692,8 @@ pref("memory.free_dirty_pages", true);
 pref("wap.UAProf.url", "");
 pref("wap.UAProf.tagname", "x-wap-profile");
 
+pref("layout.imagevisibility.enabled", false);
+
 // Enable native identity (persona/browserid)
 pref("dom.identity.enabled", true);
 
@@ -628,3 +703,37 @@ pref("layers.orientation.sync.timeout", 1000);
 // Don't discard WebGL contexts for foreground apps on memory
 // pressure.
 pref("webgl.can-lose-context-in-foreground", false);
+
+// Allow nsMemoryInfoDumper to create a fifo in the temp directory.  We use
+// this fifo to trigger about:memory dumps, among other things.
+pref("memory_info_dumper.watch_fifo.enabled", true);
+pref("memory_info_dumper.watch_fifo.directory", "/data/local");
+
+pref("general.useragent.enable_overrides", true);
+
+// Make <audio> and <video> talk to the AudioChannelService.
+pref("media.useAudioChannelService", true);
+
+pref("b2g.version", @MOZ_B2G_VERSION@);
+
+// Disable console buffering to save memory.
+pref("consoleservice.buffered", false);
+
+#ifdef MOZ_WIDGET_GONK
+// Performance testing suggests 2k is a better page size for SQLite.
+pref("toolkit.storage.pageSize", 2048);
+#endif
+
+// Enable captive portal detection.
+pref("captivedetect.canonicalURL", "http://detectportal.firefox.com/success.txt");
+pref("captivedetect.canonicalContent", "success\n");
+
+// The url of the manifest we use for ADU pings.
+pref("ping.manifestURL", "https://marketplace.firefox.com/packaged.webapp");
+
+// Enable the disk space watcher
+pref("disk_space_watcher.enabled", true);
+
+// Enable future
+pref("dom.future.enabled", false);
+

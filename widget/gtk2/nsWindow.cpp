@@ -6,6 +6,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Util.h"
+#include <algorithm>
 
 #ifdef MOZ_PLATFORM_MAEMO
 // needed to include hildon parts in gtk.h
@@ -13,7 +14,6 @@
 #endif
 
 #include "prlink.h"
-#include "nsWindow.h"
 #include "nsGTKToolkit.h"
 #include "nsIRollupListener.h"
 #include "nsIDOMNode.h"
@@ -68,7 +68,7 @@
 #include "nsIStringBundle.h"
 #include "nsGfxCIID.h"
 #include "nsIObserverService.h"
-#include "LayersTypes.h"
+#include "mozilla/layers/LayersTypes.h"
 #include "nsIIdleServiceInternal.h"
 #include "nsIPropertyBag2.h"
 
@@ -95,6 +95,7 @@ using namespace mozilla::widget;
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsAutoPtr.h"
 #include "BasicLayers.h"
+#include "ClientLayerManager.h"
 
 extern "C" {
 #define PIXMAN_DONT_DEFINE_STDINT
@@ -112,13 +113,16 @@ extern "C" {
 #include "gfxXlibSurface.h"
 #include "cairo-xlib.h"
 #endif
-
+  
 #include "nsShmImage.h"
 
 #include "nsIDOMWheelEvent.h"
 
+#include "nsWindow.h"
+
 using namespace mozilla;
 using namespace mozilla::widget;
+using namespace mozilla::layers;
 using mozilla::gl::GLContext;
 using mozilla::layers::LayerManagerOGL;
 
@@ -993,8 +997,9 @@ nsWindow::Show(bool aState)
 NS_IMETHODIMP
 nsWindow::Resize(double aWidth, double aHeight, bool aRepaint)
 {
-    int32_t width = NSToIntRound(aWidth);
-    int32_t height = NSToIntRound(aHeight);
+    double scale = BoundsUseDisplayPixels() ? GetDefaultScale() : 1.0;
+    int32_t width = NSToIntRound(scale * aWidth);
+    int32_t height = NSToIntRound(scale * aHeight);
     ConstrainSize(&width, &height);
 
     // For top-level windows, aWidth and aHeight should possibly be
@@ -1072,12 +1077,13 @@ NS_IMETHODIMP
 nsWindow::Resize(double aX, double aY, double aWidth, double aHeight,
                  bool aRepaint)
 {
-    int32_t width = NSToIntRound(aWidth);
-    int32_t height = NSToIntRound(aHeight);
+    double scale = BoundsUseDisplayPixels() ? GetDefaultScale() : 1.0;
+    int32_t width = NSToIntRound(scale * aWidth);
+    int32_t height = NSToIntRound(scale * aHeight);
     ConstrainSize(&width, &height);
 
-    int32_t x = NSToIntRound(aX);
-    int32_t y = NSToIntRound(aY);
+    int32_t x = NSToIntRound(scale * aX);
+    int32_t y = NSToIntRound(scale * aY);
     mBounds.x = x;
     mBounds.y = y;
     mBounds.SizeTo(width, height);
@@ -1159,8 +1165,9 @@ nsWindow::Move(double aX, double aY)
     LOG(("nsWindow::Move [%p] %f %f\n", (void *)this,
          aX, aY));
 
-    int32_t x = NSToIntRound(aX);
-    int32_t y = NSToIntRound(aY);
+    double scale = BoundsUseDisplayPixels() ? GetDefaultScale() : 1.0;
+    int32_t x = NSToIntRound(aX * scale);
+    int32_t y = NSToIntRound(aY * scale);
 
     if (mWindowType == eWindowType_toplevel ||
         mWindowType == eWindowType_dialog) {
@@ -1945,7 +1952,7 @@ gdk_window_flash(GdkWindow *    aGdkWindow,
                          &x,
                          &y);
 
-  gc = gdk_gc_new(GDK_ROOT_PARENT());
+  gc = gdk_gc_new(gdk_get_default_root_window());
 
   white.pixel = WhitePixel(gdk_display,DefaultScreen(gdk_display));
 
@@ -1962,7 +1969,7 @@ gdk_window_flash(GdkWindow *    aGdkWindow,
    */
   for (i = 0; i < aTimes * 2; i++)
   {
-    gdk_draw_rectangle(GDK_ROOT_PARENT(),
+    gdk_draw_rectangle(gdk_get_default_root_window(),
                        gc,
                        TRUE,
                        x,
@@ -2007,7 +2014,7 @@ nsWindow::OnExposeEvent(cairo_t *cr)
     // Dispatch WillPaintWindow notification to allow scripts etc. to run
     // before we paint
     {
-        listener->WillPaintWindow(this, true);
+        listener->WillPaintWindow(this);
 
         // If the window has been destroyed during the will paint notification,
         // there is nothing left to do.
@@ -2117,16 +2124,8 @@ nsWindow::OnExposeEvent(cairo_t *cr)
         return TRUE;
     }
     // If this widget uses OMTC...
-    if (GetLayerManager()->AsShadowForwarder() && GetLayerManager()->AsShadowForwarder()->HasShadowManager()) {
-#if defined(MOZ_WIDGET_GTK2)
-        nsRefPtr<gfxContext> ctx = new gfxContext(GetThebesSurface());
-#else
-        nsRefPtr<gfxContext> ctx = new gfxContext(GetThebesSurface(cr));
-#endif
-        nsBaseWidget::AutoLayerManagerSetup
-          setupLayerManager(this, ctx, mozilla::layers::BUFFER_NONE);
-
-        listener->PaintWindow(this, region, nsIWidgetListener::SENT_WILL_PAINT | nsIWidgetListener::WILL_SEND_DID_PAINT);
+    if (GetLayerManager()->AsShadowForwarder() && GetLayerManager()->AsShadowForwarder()->HasShadowManager() &&
+        Compositor::GetBackend() != LAYERS_BASIC) {
         listener->DidPaintWindow();
 
         g_free(rects);
@@ -2136,7 +2135,7 @@ nsWindow::OnExposeEvent(cairo_t *cr)
         LayerManagerOGL *manager = static_cast<LayerManagerOGL*>(GetLayerManager());
         manager->SetClippingRegion(region);
 
-        listener->PaintWindow(this, region, nsIWidgetListener::SENT_WILL_PAINT | nsIWidgetListener::WILL_SEND_DID_PAINT);
+        listener->PaintWindow(this, region);
         listener->DidPaintWindow();
 
         g_free(rects);
@@ -2198,8 +2197,14 @@ nsWindow::OnExposeEvent(cairo_t *cr)
 
     bool painted = false;
     {
-      AutoLayerManagerSetup setupLayerManager(this, ctx, layerBuffering);
-      painted = listener->PaintWindow(this, region, nsIWidgetListener::SENT_WILL_PAINT | nsIWidgetListener::WILL_SEND_DID_PAINT);
+      if (GetLayerManager()->GetBackendType() == LAYERS_BASIC) {
+        AutoLayerManagerSetup setupLayerManager(this, ctx, layerBuffering);
+        painted = listener->PaintWindow(this, region);
+      } else if (GetLayerManager()->GetBackendType() == LAYERS_CLIENT) {
+        ClientLayerManager *manager = static_cast<ClientLayerManager*>(GetLayerManager());
+        manager->SetShadowTarget(ctx);
+        painted = listener->PaintWindow(this, region);
+      }
     }
 
 #ifdef MOZ_X11
@@ -3708,8 +3713,10 @@ nsWindow::Create(nsIWidget        *aParent,
     }
 
     if (eventWidget) {
+#if defined(MOZ_WIDGET_GTK2)
         // Don't let GTK mess with the shapes of our GdkWindows
         GTK_PRIVATE_SET_FLAG(eventWidget, GTK_HAS_SHAPE_MASK);
+#endif
 
         // These events are sent to the owning widget of the relevant window
         // and propagate up to the first widget that handles the events, so we
@@ -4189,8 +4196,8 @@ nsWindow::ResizeTransparencyBitmap()
     memset(newBits, 0, newSize);
 
     // Now copy the intersection of the old and new areas into the new mask
-    int32_t copyWidth = NS_MIN(mBounds.width, mTransparencyBitmapWidth);
-    int32_t copyHeight = NS_MIN(mBounds.height, mTransparencyBitmapHeight);
+    int32_t copyWidth = std::min(mBounds.width, mTransparencyBitmapWidth);
+    int32_t copyHeight = std::min(mBounds.height, mTransparencyBitmapHeight);
     int32_t oldRowBytes = GetBitmapStride(mTransparencyBitmapWidth);
     int32_t copyBytes = GetBitmapStride(copyWidth);
 
@@ -5844,9 +5851,38 @@ nsChildWindow::~nsChildWindow()
 }
 
 NS_IMETHODIMP
-nsWindow::ResetInputState()
+nsWindow::NotifyIME(NotificationToIME aNotification)
 {
-    return mIMModule ? mIMModule->ResetInputState(this) : NS_OK;
+    if (MOZ_UNLIKELY(!mIMModule)) {
+        switch (aNotification) {
+            case NOTIFY_IME_OF_CURSOR_POS_CHANGED:
+            case REQUEST_TO_COMMIT_COMPOSITION:
+            case REQUEST_TO_CANCEL_COMPOSITION:
+            case NOTIFY_IME_OF_FOCUS:
+            case NOTIFY_IME_OF_BLUR:
+              return NS_ERROR_NOT_AVAILABLE;
+            default:
+              break;
+        }
+    }
+    switch (aNotification) {
+        // TODO: We should replace NOTIFY_IME_OF_CURSOR_POS_CHANGED with
+        //       NOTIFY_IME_OF_SELECTION_CHANGE.  The required behavior is
+        //       really different from committing composition.
+        case NOTIFY_IME_OF_CURSOR_POS_CHANGED:
+        case REQUEST_TO_COMMIT_COMPOSITION:
+            return mIMModule->CommitIMEComposition(this);
+        case REQUEST_TO_CANCEL_COMPOSITION:
+            return mIMModule->CancelIMEComposition(this);
+        case NOTIFY_IME_OF_FOCUS:
+            mIMModule->OnFocusChangeInGecko(true);
+            return NS_OK;
+        case NOTIFY_IME_OF_BLUR:
+            mIMModule->OnFocusChangeInGecko(false);
+            return NS_OK;
+        default:
+            return NS_ERROR_NOT_IMPLEMENTED;
+    }
 }
 
 NS_IMETHODIMP_(void)
@@ -5878,21 +5914,6 @@ nsWindow::GetInputContext()
 }
 
 NS_IMETHODIMP
-nsWindow::CancelIMEComposition()
-{
-    return mIMModule ? mIMModule->CancelIMEComposition(this) : NS_OK;
-}
-
-NS_IMETHODIMP
-nsWindow::OnIMEFocusChange(bool aFocus)
-{
-    if (mIMModule) {
-      mIMModule->OnFocusChangeInGecko(aFocus);
-    }
-    return NS_OK;
-}
-
-NS_IMETHODIMP
 nsWindow::GetToggledKeyState(uint32_t aKeyCode, bool* aLEDState)
 {
     NS_ENSURE_ARG_POINTER(aLEDState);
@@ -5921,7 +5942,7 @@ nsWindow::GetSurfaceForGdkDrawable(GdkDrawable* aDrawable,
     Display* xDisplay = DisplayOfScreen(xScreen);
     Drawable xDrawable = gdk_x11_drawable_get_xid(aDrawable);
 
-    gfxASurface* result = nullptr;
+    nsRefPtr<gfxASurface> result;
 
     if (visual) {
         Visual* xVisual = gdk_x11_visual_get_xvisual(visual);
@@ -5948,8 +5969,7 @@ nsWindow::GetSurfaceForGdkDrawable(GdkDrawable* aDrawable,
                                     gfxIntSize(aSize.width, aSize.height));
     }
 
-    NS_IF_ADDREF(result);
-    return result;
+    return result.forget();
 }
 #endif
 
@@ -5983,8 +6003,8 @@ nsWindow::GetThebesSurface(cairo_t *cr)
 #endif
 
     // Owen Taylor says this is the right thing to do!
-    width = NS_MIN(32767, width);
-    height = NS_MIN(32767, height);
+    width = std::min(32767, width);
+    height = std::min(32767, height);
     gfxIntSize size(width, height);
 
     GdkVisual *gdkVisual = gdk_window_get_visual(mGdkWindow);
@@ -6145,7 +6165,7 @@ nsWindow::BeginResizeDrag(nsGUIEvent* aEvent, int32_t aHorizontal, int32_t aVert
 }
 
 nsIWidget::LayerManager*
-nsWindow::GetLayerManager(PLayersChild* aShadowManager,
+nsWindow::GetLayerManager(PLayerTransactionChild* aShadowManager,
                           LayersBackend aBackendHint,
                           LayerManagerPersistence aPersistence,
                           bool* aAllowRetaining)

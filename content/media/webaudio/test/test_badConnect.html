@@ -12,10 +12,8 @@
 
 SimpleTest.waitForExplicitFinish();
 addLoadEvent(function() {
-  SpecialPowers.setBoolPref("media.webaudio.enabled", true);
-
-  var context1 = new mozAudioContext();
-  var context2 = new mozAudioContext();
+  var context1 = new AudioContext();
+  var context2 = new AudioContext();
 
   var destination1 = context1.destination;
   var destination2 = context2.destination;
@@ -41,7 +39,6 @@ addLoadEvent(function() {
     source1.disconnect(1);
   }, DOMException.INDEX_SIZE_ERR);
 
-  SpecialPowers.clearUserPref("media.webaudio.enabled");
   SimpleTest.finish();
 });
 

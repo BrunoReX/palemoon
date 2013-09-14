@@ -30,12 +30,16 @@
 #endif
 
 #ifdef MOZ_WIDGET_GONK
-#include "BootAnimation.h"
+#include "GonkDisplay.h"
 #endif
 
 #include "BinaryPath.h"
 
 #include "nsXPCOMPrivate.h" // for MAXPATHLEN and XPCOM_DLL
+
+#ifdef MOZ_WIDGET_GONK
+# include <binder/ProcessState.h>
+#endif
 
 #include "mozilla/Telemetry.h"
 
@@ -47,7 +51,7 @@ static void Output(const char *fmt, ... )
 #if defined(XP_WIN) && !MOZ_WINCONSOLE
   PRUnichar msg[2048];
   _vsnwprintf(msg, sizeof(msg)/sizeof(msg[0]), NS_ConvertUTF8toUTF16(fmt).get(), ap);
-  MessageBoxW(NULL, msg, L"XULRunner", MB_OK | MB_ICONERROR);
+  MessageBoxW(nullptr, msg, L"XULRunner", MB_OK | MB_ICONERROR);
 #else
   vfprintf(stderr, fmt, ap);
 #endif
@@ -146,7 +150,7 @@ static int do_main(int argc, char* argv[])
 
 #ifdef MOZ_WIDGET_GONK
   /* Called to start the boot animation */
-  (void) NativeWindow();
+  (void) mozilla::GetGonkDisplay();
 #endif
 
   if (appini) {
@@ -167,6 +171,14 @@ static int do_main(int argc, char* argv[])
 int main(int argc, char* argv[])
 {
   char exePath[MAXPATHLEN];
+
+#ifdef MOZ_WIDGET_GONK
+  // This creates a ThreadPool for binder ipc. A ThreadPool is necessary to
+  // receive binder calls, though not necessary to send binder calls.
+  // ProcessState::Self() also needs to be called once on the main thread to
+  // register the main thread with the binder driver.
+  android::ProcessState::self()->startThreadPool();
+#endif
 
   nsresult rv = mozilla::BinaryPath::Get(argv[0], exePath);
   if (NS_FAILED(rv)) {
@@ -249,6 +261,5 @@ int main(int argc, char* argv[])
     result = do_main(argc, argv);
   }
 
-  XPCOMGlueShutdown();
   return result;
 }

@@ -6,6 +6,7 @@
 #ifndef nsGenericHTMLElement_h___
 #define nsGenericHTMLElement_h___
 
+#include "mozilla/Attributes.h"
 #include "nsMappedAttributeElement.h"
 #include "nsIDOMHTMLElement.h"
 #include "nsINameSpaceManager.h"  // for kNameSpaceID_None
@@ -13,8 +14,8 @@
 #include "nsGkAtoms.h"
 #include "nsContentCreatorFunctions.h"
 #include "mozilla/ErrorResult.h"
-#include "nsContentUtils.h"
 #include "nsIDOMHTMLMenuElement.h"
+#include "mozilla/dom/ValidityState.h"
 
 class nsIDOMAttr;
 class nsIDOMEventListener;
@@ -23,7 +24,6 @@ class nsIFrame;
 class nsIStyleRule;
 class nsChildContentList;
 class nsDOMCSSDeclaration;
-class nsHTMLMenuElement;
 class nsIDOMCSSStyleDeclaration;
 class nsIURI;
 class nsIFormControlFrame;
@@ -33,15 +33,15 @@ class nsILayoutHistoryState;
 class nsIEditor;
 struct nsRect;
 struct nsSize;
-class nsHTMLFormElement;
 class nsIDOMHTMLMenuElement;
 class nsIDOMHTMLCollection;
 class nsDOMSettableTokenList;
-class nsIDOMDOMStringMap;
 
 namespace mozilla {
 namespace dom{
+class HTMLFormElement;
 class HTMLPropertiesCollection;
+class HTMLMenuElement;
 }
 }
 
@@ -198,11 +198,11 @@ public:
   void SetContentEditable(const nsAString& aContentEditable,
                           mozilla::ErrorResult& aError)
   {
-    if (nsContentUtils::EqualsLiteralIgnoreASCIICase(aContentEditable, "inherit")) {
+    if (aContentEditable.LowerCaseEqualsLiteral("inherit")) {
       UnsetHTMLAttr(nsGkAtoms::contenteditable, aError);
-    } else if (nsContentUtils::EqualsLiteralIgnoreASCIICase(aContentEditable, "true")) {
+    } else if (aContentEditable.LowerCaseEqualsLiteral("true")) {
       SetHTMLAttr(nsGkAtoms::contenteditable, NS_LITERAL_STRING("true"), aError);
-    } else if (nsContentUtils::EqualsLiteralIgnoreASCIICase(aContentEditable, "false")) {
+    } else if (aContentEditable.LowerCaseEqualsLiteral("false")) {
       SetHTMLAttr(nsGkAtoms::contenteditable, NS_LITERAL_STRING("false"), aError);
     } else {
       aError.Throw(NS_ERROR_DOM_SYNTAX_ERR);
@@ -221,7 +221,7 @@ public:
     }
     return false;
   }
-  nsHTMLMenuElement* GetContextMenu() const;
+  mozilla::dom::HTMLMenuElement* GetContextMenu() const;
   bool Spellcheck();
   void SetSpellcheck(bool aSpellcheck, mozilla::ErrorResult& aError)
   {
@@ -230,16 +230,12 @@ public:
                             : NS_LITERAL_STRING("false"),
                 aError);
   }
-  nsICSSDeclaration* GetStyle(mozilla::ErrorResult& aError)
-  {
-    nsresult rv;
-    nsICSSDeclaration* style = nsMappedAttributeElement::GetStyle(&rv);
-    if (NS_FAILED(rv)) {
-      aError.Throw(rv);
-    }
-    return style;
-  }
 
+  /**
+   * Determine whether an attribute is an event (onclick, etc.)
+   * @param aName the attribute
+   * @return whether the name is an event handler name
+   */
   virtual bool IsEventAttributeName(nsIAtom* aName) MOZ_OVERRIDE;
 
 #define EVENT(name_, id_, type_, struct_) /* nothing; handled by nsINode */
@@ -271,33 +267,33 @@ public:
   }
   mozilla::dom::Element* GetOffsetParent()
   {
-    nsRect rcFrame;
+    mozilla::CSSIntRect rcFrame;
     return GetOffsetRect(rcFrame);
   }
   int32_t OffsetTop()
   {
-    nsRect rcFrame;
+    mozilla::CSSIntRect rcFrame;
     GetOffsetRect(rcFrame);
 
     return rcFrame.y;
   }
   int32_t OffsetLeft()
   {
-    nsRect rcFrame;
+    mozilla::CSSIntRect rcFrame;
     GetOffsetRect(rcFrame);
 
     return rcFrame.x;
   }
   int32_t OffsetWidth()
   {
-    nsRect rcFrame;
+    mozilla::CSSIntRect rcFrame;
     GetOffsetRect(rcFrame);
 
     return rcFrame.width;
   }
   int32_t OffsetHeight()
   {
-    nsRect rcFrame;
+    mozilla::CSSIntRect rcFrame;
     GetOffsetRect(rcFrame);
 
     return rcFrame.height;
@@ -324,8 +320,8 @@ protected:
 public:
   nsresult SetContentEditable(const nsAString &aContentEditable);
   virtual already_AddRefed<mozilla::dom::UndoManager> GetUndoManager();
-  virtual bool UndoScope();
-  virtual void SetUndoScope(bool aUndoScope, mozilla::ErrorResult& aError);
+  virtual bool UndoScope() MOZ_OVERRIDE;
+  virtual void SetUndoScope(bool aUndoScope, mozilla::ErrorResult& aError) MOZ_OVERRIDE;
   nsresult GetDataset(nsISupports** aDataset);
   // Callback for destructor of of dataset to ensure to null out weak pointer.
   nsresult ClearDataset();
@@ -339,9 +335,9 @@ public:
   // Implementation for nsIContent
   virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                               nsIContent* aBindingParent,
-                              bool aCompileEventHandlers);
+                              bool aCompileEventHandlers) MOZ_OVERRIDE;
   virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true);
+                              bool aNullParent = true) MOZ_OVERRIDE;
   nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                    const nsAString& aValue, bool aNotify)
   {
@@ -349,10 +345,10 @@ public:
   }
   virtual nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                            nsIAtom* aPrefix, const nsAString& aValue,
-                           bool aNotify);
+                           bool aNotify) MOZ_OVERRIDE;
   virtual nsresult UnsetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                             bool aNotify);
-  virtual bool IsFocusable(int32_t *aTabIndex = nullptr, bool aWithMouse = false)
+                             bool aNotify) MOZ_OVERRIDE;
+  virtual bool IsFocusable(int32_t *aTabIndex = nullptr, bool aWithMouse = false) MOZ_OVERRIDE
   {
     bool isFocusable = false;
     IsHTMLFocusable(aWithMouse, &isFocusable, aTabIndex);
@@ -363,10 +359,10 @@ public:
    * in aIsFocusable.
    */
   virtual bool IsHTMLFocusable(bool aWithMouse,
-                                 bool *aIsFocusable,
-                                 int32_t *aTabIndex);
+                               bool *aIsFocusable,
+                               int32_t *aTabIndex);
   virtual void PerformAccesskey(bool aKeyCausesActivation,
-                                bool aIsTrustedEvent);
+                                bool aIsTrustedEvent) MOZ_OVERRIDE;
 
   /**
    * Check if an event for an anchor can be handled
@@ -380,9 +376,9 @@ public:
   // HTML element methods
   void Compact() { mAttrsAndChildren.Compact(); }
 
-  virtual void UpdateEditableState(bool aNotify);
+  virtual void UpdateEditableState(bool aNotify) MOZ_OVERRIDE;
 
-  virtual nsEventStates IntrinsicState() const;
+  virtual nsEventStates IntrinsicState() const MOZ_OVERRIDE;
 
   // Helper for setting our editable flag and notifying
   void DoSetEditableFlag(bool aEditable, bool aNotify) {
@@ -393,15 +389,15 @@ public:
   virtual bool ParseAttribute(int32_t aNamespaceID,
                               nsIAtom* aAttribute,
                               const nsAString& aValue,
-                              nsAttrValue& aResult);
+                              nsAttrValue& aResult) MOZ_OVERRIDE;
 
   bool ParseBackgroundAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
 
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const;
-  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const MOZ_OVERRIDE;
+  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const MOZ_OVERRIDE;
 
   /**
    * Get the base target for any links within this piece
@@ -513,7 +509,7 @@ public:
   /**
    * A style attribute mapping function for the most common attributes, to be
    * called by subclasses' attribute mapping functions.  Currently handles
-   * dir and lang, could handle others.
+   * dir, lang and hidden, could handle others.
    *
    * @param aAttributes the list of attributes to map
    * @param aData the returned rule data [INOUT]
@@ -521,13 +517,14 @@ public:
    */
   static void MapCommonAttributesInto(const nsMappedAttributes* aAttributes, 
                                       nsRuleData* aRuleData);
-
   /**
-   * This method is used by embed elements because they should ignore the hidden
-   * attribute for the moment.
-   * TODO: This should be removed when bug 614825 will be fixed.
+   * Same as MapCommonAttributesInto except that it does not handle hidden.
+   *
+   * @param aAttributes the list of attributes to map
+   * @param aData the returned rule data [INOUT]
+   * @see GetAttributeMappingFunction
    */
-  static void MapCommonAttributesExceptHiddenInto(const nsMappedAttributes* aAttributes,
+  static void MapCommonAttributesIntoExceptHidden(const nsMappedAttributes* aAttributes,
                                                   nsRuleData* aRuleData);
 
   static const MappedAttributeEntry sCommonAttributeMap[];
@@ -678,9 +675,10 @@ public:
    *        current form that they're not descendants of.
    * @note This method should not be called if the element has a form attribute.
    */
-  nsHTMLFormElement* FindAncestorForm(nsHTMLFormElement* aCurrentForm = nullptr);
+  mozilla::dom::HTMLFormElement*
+  FindAncestorForm(mozilla::dom::HTMLFormElement* aCurrentForm = nullptr);
 
-  virtual void RecompileScriptEventListeners();
+  virtual void RecompileScriptEventListeners() MOZ_OVERRIDE;
 
   /**
    * See if the document being tested has nav-quirks mode enabled.
@@ -726,9 +724,36 @@ public:
     return HasAttr(kNameSpaceID_None, nsGkAtoms::hidden);
   }
 
-  virtual bool IsLabelable() const;
+  virtual bool IsLabelable() const MOZ_OVERRIDE;
 
-  static bool PrefEnabled();
+  static bool TouchEventsEnabled(JSContext* /* unused */, JSObject* /* unused */);
+
+  static inline bool
+  CanHaveName(nsIAtom* aTag)
+  {
+    return aTag == nsGkAtoms::img ||
+           aTag == nsGkAtoms::form ||
+           aTag == nsGkAtoms::applet ||
+           aTag == nsGkAtoms::embed ||
+           aTag == nsGkAtoms::object;
+  }
+  static inline bool
+  ShouldExposeNameAsHTMLDocumentProperty(Element* aElement)
+  {
+    return aElement->IsHTML() && CanHaveName(aElement->Tag());
+  }
+  static inline bool
+  ShouldExposeIdAsHTMLDocumentProperty(Element* aElement)
+  {
+    if (!aElement->IsHTML()) {
+      return false;
+    }
+    nsIAtom* tag = aElement->Tag();
+    return tag == nsGkAtoms::img ||
+           tag == nsGkAtoms::applet ||
+           tag == nsGkAtoms::embed ||
+           tag == nsGkAtoms::object;
+  }
 
 protected:
   /**
@@ -773,22 +798,26 @@ private:
   void RegUnRegAccessKey(bool aDoReg);
 
 protected:
-  /**
-   * Determine whether an attribute is an event (onclick, etc.)
-   * @param aName the attribute
-   * @return whether the name is an event handler name
-   */
-  bool IsEventName(nsIAtom* aName);
-
   virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsIAtom* aName,
-                                const nsAttrValue* aValue, bool aNotify);
+                                const nsAttrValue* aValue, bool aNotify) MOZ_OVERRIDE;
 
   virtual nsEventListenerManager*
-    GetEventListenerManagerForAttr(nsIAtom* aAttrName, bool* aDefer);
+    GetEventListenerManagerForAttr(nsIAtom* aAttrName, bool* aDefer) MOZ_OVERRIDE;
 
-  virtual const nsAttrName* InternalGetExistingAttrNameFromQName(const nsAString& aStr) const;
+  virtual const nsAttrName* InternalGetExistingAttrNameFromQName(const nsAString& aStr) const MOZ_OVERRIDE;
+
+  /**
+   * Create a URI for the given aURISpec string.
+   * Returns INVALID_STATE_ERR and nulls *aURI if aURISpec is empty
+   * and the document's URI matches the element's base URI.
+   */
+  nsresult NewURIFromString(const nsAutoString& aURISpec, nsIURI** aURI);
 
   void GetHTMLAttr(nsIAtom* aName, nsAString& aResult) const
+  {
+    GetAttr(kNameSpaceID_None, aName, aResult);
+  }
+  void GetHTMLAttr(nsIAtom* aName, mozilla::dom::DOMString& aResult) const
   {
     GetAttr(kNameSpaceID_None, aName, aResult);
   }
@@ -828,13 +857,6 @@ protected:
 
     SetHTMLAttr(aName, value, aError);
   }
-  void SetHTMLUnsignedIntAttr(nsIAtom* aName, uint32_t aValue, mozilla::ErrorResult& aError)
-  {
-    nsAutoString value;
-    value.AppendInt(aValue);
-
-    SetHTMLAttr(aName, value, aError);
-  }
 
   /**
    * Helper method for NS_IMPL_STRING_ATTR macro.
@@ -846,29 +868,6 @@ protected:
    * @param aResult  result value [out]
    */
   NS_HIDDEN_(nsresult) SetAttrHelper(nsIAtom* aAttr, const nsAString& aValue);
-
-  /**
-   * Helper method for NS_IMPL_BOOL_ATTR macro.
-   * Gets value of boolean attribute. Only works for attributes in null
-   * namespace.
-   *
-   * @param aAttr    name of attribute.
-   * @param aValue   Boolean value of attribute.
-   */
-  NS_HIDDEN_(bool) GetBoolAttr(nsIAtom* aAttr) const
-  {
-    return HasAttr(kNameSpaceID_None, aAttr);
-  }
-
-  /**
-   * Helper method for NS_IMPL_BOOL_ATTR macro.
-   * Sets value of boolean attribute by removing attribute or setting it to
-   * the empty string. Only works for attributes in null namespace.
-   *
-   * @param aAttr    name of attribute.
-   * @param aValue   Boolean value of attribute.
-   */
-  NS_HIDDEN_(nsresult) SetBoolAttr(nsIAtom* aAttr, bool aValue);
 
   /**
    * Helper method for NS_IMPL_INT_ATTR macro.
@@ -899,10 +898,8 @@ protected:
    *
    * @param aAttr    name of attribute.
    * @param aDefault default-value to return if attribute isn't set.
-   * @param aResult  result value [out]
    */
-  NS_HIDDEN_(nsresult) GetUnsignedIntAttr(nsIAtom* aAttr, uint32_t aDefault,
-                                          uint32_t* aValue);
+  uint32_t GetUnsignedIntAttr(nsIAtom* aAttr, uint32_t aDefault) const;
 
   /**
    * Helper method for NS_IMPL_UINT_ATTR macro.
@@ -912,7 +909,14 @@ protected:
    * @param aAttr    name of attribute.
    * @param aValue   Integer value of attribute.
    */
-  NS_HIDDEN_(nsresult) SetUnsignedIntAttr(nsIAtom* aAttr, uint32_t aValue);
+  void SetUnsignedIntAttr(nsIAtom* aName, uint32_t aValue,
+                          mozilla::ErrorResult& aError)
+  {
+    nsAutoString value;
+    value.AppendInt(aValue);
+
+    SetHTMLAttr(aName, value, aError);
+  }
 
   /**
    * Sets value of attribute to specified double. Only works for attributes
@@ -951,6 +955,22 @@ protected:
                                nsAString& aResult) const;
 
   /**
+   * Helper method for NS_IMPL_ENUM_ATTR_DEFAULT_MISSING_INVALID_VALUES.
+   * Gets the enum value string of an attribute and using the default missing
+   * value if the attribute is missing or the default invalid value if the
+   * string is an invalid enum value.
+   *
+   * @param aType            the name of the attribute.
+   * @param aDefaultMissing  the default value if the attribute is missing.
+   * @param aDefaultInvalid  the default value if the attribute is invalid.
+   * @param aResult          string corresponding to the value [out].
+   */
+  NS_HIDDEN_(void) GetEnumAttr(nsIAtom* aAttr,
+                               const char* aDefaultMissing,
+                               const char* aDefaultInvalid,
+                               nsAString& aResult) const;
+
+  /**
    * Locates the nsIEditor associated with this node.  In general this is
    * equivalent to GetEditorInternal(), but for designmode or contenteditable,
    * this may need to get an editor that's not actually on this element's
@@ -966,7 +986,7 @@ protected:
    * @note This method flushes pending notifications (Flush_Layout).
    * @param aRect the offset information [OUT]
    */
-  virtual mozilla::dom::Element* GetOffsetRect(nsRect& aRect);
+  mozilla::dom::Element* GetOffsetRect(mozilla::CSSIntRect& aRect);
 
   /**
    * Returns true if this is the current document's body element
@@ -1027,21 +1047,26 @@ private:
   void ChangeEditableState(int32_t aChange);
 };
 
-class nsHTMLFieldSetElement;
+namespace mozilla {
+namespace dom {
+class HTMLFieldSetElement;
+}
+}
 
 #define FORM_ELEMENT_FLAG_BIT(n_) NODE_FLAG_BIT(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + (n_))
 
 // Form element specific bits
 enum {
-  // If this flag is set on an nsGenericHTMLFormElement, that means that we have
-  // added ourselves to our mForm.  It's possible to have a non-null mForm, but
-  // not have this flag set.  That happens when the form is set via the content
-  // sink.
+  // If this flag is set on an nsGenericHTMLFormElement or an HTMLImageElement,
+  // that means that we have added ourselves to our mForm.  It's possible to
+  // have a non-null mForm, but not have this flag set.  That happens when the
+  // form is set via the content sink.
   ADDED_TO_FORM =                         FORM_ELEMENT_FLAG_BIT(0),
 
-  // If this flag is set on an nsGenericHTMLFormElement, that means that its form
-  // is in the process of being unbound from the tree, and this form element
-  // hasn't re-found its form in nsGenericHTMLFormElement::UnbindFromTree yet.
+  // If this flag is set on an nsGenericHTMLFormElement or an HTMLImageElement,
+  // that means that its form is in the process of being unbound from the tree,
+  // and this form element hasn't re-found its form in
+  // nsGenericHTMLFormElement::UnbindFromTree yet.
   MAYBE_ORPHAN_FORM_ELEMENT =             FORM_ELEMENT_FLAG_BIT(1)
 };
 
@@ -1049,8 +1074,7 @@ enum {
 // same time, so if it becomes an issue we can probably merge them into the
 // same bit.  --bz
 
-// Make sure we have enough space for those bits
-PR_STATIC_ASSERT(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + 1 < 32);
+ASSERT_NODE_FLAGS_SPACE(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + 2);
 
 #undef FORM_ELEMENT_FLAG_BIT
 
@@ -1064,34 +1088,34 @@ public:
   nsGenericHTMLFormElement(already_AddRefed<nsINodeInfo> aNodeInfo);
   virtual ~nsGenericHTMLFormElement();
 
-  NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr);
+  NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr) MOZ_OVERRIDE;
 
   nsINode* GetParentObject() const;
 
-  virtual bool IsNodeOfType(uint32_t aFlags) const;
-  virtual void SaveSubtreeState();
+  virtual bool IsNodeOfType(uint32_t aFlags) const MOZ_OVERRIDE;
+  virtual void SaveSubtreeState() MOZ_OVERRIDE;
 
   // nsIFormControl
-  virtual mozilla::dom::Element* GetFormElement();
-  nsHTMLFormElement* GetForm() const
+  virtual mozilla::dom::Element* GetFormElement() MOZ_OVERRIDE;
+  mozilla::dom::HTMLFormElement* GetForm() const
   {
     return mForm;
   }
-  virtual void SetForm(nsIDOMHTMLFormElement* aForm);
-  virtual void ClearForm(bool aRemoveFromForm);
+  virtual void SetForm(nsIDOMHTMLFormElement* aForm) MOZ_OVERRIDE;
+  virtual void ClearForm(bool aRemoveFromForm) MOZ_OVERRIDE;
 
   nsresult GetForm(nsIDOMHTMLFormElement** aForm);
 
-  NS_IMETHOD SaveState()
+  NS_IMETHOD SaveState() MOZ_OVERRIDE
   {
     return NS_OK;
   }
 
-  virtual bool RestoreState(nsPresState* aState)
+  virtual bool RestoreState(nsPresState* aState) MOZ_OVERRIDE
   {
     return false;
   }
-  virtual bool AllowDrop()
+  virtual bool AllowDrop() MOZ_OVERRIDE
   {
     return true;
   }
@@ -1099,15 +1123,15 @@ public:
   // nsIContent
   virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                               nsIContent* aBindingParent,
-                              bool aCompileEventHandlers);
+                              bool aCompileEventHandlers) MOZ_OVERRIDE;
   virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true);
-  virtual IMEState GetDesiredIMEState();
-  virtual nsEventStates IntrinsicState() const;
+                              bool aNullParent = true) MOZ_OVERRIDE;
+  virtual IMEState GetDesiredIMEState() MOZ_OVERRIDE;
+  virtual nsEventStates IntrinsicState() const MOZ_OVERRIDE;
 
-  virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor);
+  virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor) MOZ_OVERRIDE;
 
-  virtual bool IsDisabled() const;
+  virtual bool IsDisabled() const MOZ_OVERRIDE;
 
   /**
    * This callback is called by a fieldest on all its elements whenever its
@@ -1139,17 +1163,17 @@ public:
   bool CanBeDisabled() const;
 
   virtual bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
-                                 int32_t* aTabIndex);
+                                 int32_t* aTabIndex) MOZ_OVERRIDE;
 
-  virtual bool IsLabelable() const;
+  virtual bool IsLabelable() const MOZ_OVERRIDE;
 
 protected:
   virtual nsresult BeforeSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                                  const nsAttrValueOrString* aValue,
-                                 bool aNotify);
+                                 bool aNotify) MOZ_OVERRIDE;
 
   virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                                const nsAttrValue* aValue, bool aNotify);
+                                const nsAttrValue* aValue, bool aNotify) MOZ_OVERRIDE;
 
   /**
    * This method will update the form owner, using @form or looking to a parent.
@@ -1207,10 +1231,10 @@ protected:
   FocusTristate FocusState();
 
   /** The form that contains this control */
-  nsHTMLFormElement* mForm;
+  mozilla::dom::HTMLFormElement* mForm;
 
   /* This is a pointer to our closest fieldset parent if any */
-  nsHTMLFieldSetElement* mFieldSet;
+  mozilla::dom::HTMLFieldSetElement* mFieldSet;
 };
 
 //----------------------------------------------------------------------
@@ -1232,24 +1256,6 @@ protected:
   _class::Set##_method(const nsAString& aValue)                              \
   {                                                                          \
     return SetAttrHelper(nsGkAtoms::_atom, aValue);                          \
-  }
-
-/**
- * A macro to implement the getter and setter for a given boolean
- * valued content property. The method uses the generic GetAttr and
- * SetAttr methods.
- */
-#define NS_IMPL_BOOL_ATTR(_class, _method, _atom)                     \
-  NS_IMETHODIMP                                                       \
-  _class::Get##_method(bool* aValue)                                \
-  {                                                                   \
-    *aValue = GetBoolAttr(nsGkAtoms::_atom);                          \
-    return NS_OK;                                                     \
-  }                                                                   \
-  NS_IMETHODIMP                                                       \
-  _class::Set##_method(bool aValue)                                 \
-  {                                                                   \
-    return SetBoolAttr(nsGkAtoms::_atom, aValue);                   \
   }
 
 /**
@@ -1285,12 +1291,15 @@ protected:
   NS_IMETHODIMP                                                           \
   _class::Get##_method(uint32_t* aValue)                                  \
   {                                                                       \
-    return GetUnsignedIntAttr(nsGkAtoms::_atom, _default, aValue);        \
+    *aValue = GetUnsignedIntAttr(nsGkAtoms::_atom, _default);             \
+    return NS_OK;                                                         \
   }                                                                       \
   NS_IMETHODIMP                                                           \
   _class::Set##_method(uint32_t aValue)                                   \
   {                                                                       \
-    return SetUnsignedIntAttr(nsGkAtoms::_atom, aValue);                  \
+    mozilla::ErrorResult rv;                                              \
+    SetUnsignedIntAttr(nsGkAtoms::_atom, aValue, rv);                     \
+    return rv.ErrorCode();                                                \
   }
 
 /**
@@ -1306,7 +1315,8 @@ protected:
   NS_IMETHODIMP                                                           \
   _class::Get##_method(uint32_t* aValue)                                  \
   {                                                                       \
-    return GetUnsignedIntAttr(nsGkAtoms::_atom, _default, aValue);        \
+    *aValue = GetUnsignedIntAttr(nsGkAtoms::_atom, _default);             \
+    return NS_OK;                                                         \
   }                                                                       \
   NS_IMETHODIMP                                                           \
   _class::Set##_method(uint32_t aValue)                                   \
@@ -1314,7 +1324,9 @@ protected:
     if (aValue == 0) {                                                    \
       return NS_ERROR_DOM_INDEX_SIZE_ERR;                                 \
     }                                                                     \
-    return SetUnsignedIntAttr(nsGkAtoms::_atom, aValue);                  \
+    mozilla::ErrorResult rv;                                              \
+    SetUnsignedIntAttr(nsGkAtoms::_atom, aValue, rv);                     \
+    return rv.ErrorCode();                                                \
   }
 
 /**
@@ -1416,40 +1428,42 @@ protected:
   }
 
 /**
+ * A macro to implement the getter and setter for a given content
+ * property that needs to set an enumerated string that has different
+ * default values for missing and invalid values. The method uses a
+ * specific GetEnumAttr and the generic SetAttrHelper methods.
+ */
+#define NS_IMPL_ENUM_ATTR_DEFAULT_MISSING_INVALID_VALUES(_class, _method, _atom, _defaultMissing, _defaultInvalid) \
+  NS_IMETHODIMP                                                                                   \
+  _class::Get##_method(nsAString& aValue)                                                         \
+  {                                                                                               \
+    GetEnumAttr(nsGkAtoms::_atom, _defaultMissing, _defaultInvalid, aValue);                      \
+    return NS_OK;                                                                                 \
+  }                                                                                               \
+  NS_IMETHODIMP                                                                                   \
+  _class::Set##_method(const nsAString& aValue)                                                   \
+  {                                                                                               \
+    return SetAttrHelper(nsGkAtoms::_atom, aValue);                                               \
+  }
+
+/**
  * QueryInterface() implementation helper macros
  */
 
-#define NS_HTML_CONTENT_INTERFACE_TABLE_AMBIGUOUS_BEGIN(_class, _base)        \
-  NS_NODE_OFFSET_AND_INTERFACE_TABLE_BEGIN(_class)                            \
-    NS_INTERFACE_TABLE_ENTRY_AMBIGUOUS(_class, nsIDOMNode, _base)             \
-    NS_INTERFACE_TABLE_ENTRY_AMBIGUOUS(_class, nsIDOMElement, _base)          \
-    NS_INTERFACE_TABLE_ENTRY_AMBIGUOUS(_class, nsIDOMHTMLElement, _base)
-
-#define NS_HTML_CONTENT_INTERFACE_TABLE_BEGIN(_class)                         \
-  NS_HTML_CONTENT_INTERFACE_TABLE_AMBIGUOUS_BEGIN(_class, nsIDOMHTMLElement)
-
-#define NS_HTML_CONTENT_INTERFACE_TABLE_TO_MAP_SEGUE_AMBIGUOUS(_class, _base, \
-                                                               _base_if)      \
-  rv = _base::QueryInterface(aIID, aInstancePtr);                             \
-  if (NS_SUCCEEDED(rv))                                                       \
-    return rv;                                                                \
+#define NS_HTML_CONTENT_INTERFACES_AMBIGUOUS(_base, _base_if)                 \
+  {                                                                           \
+    nsresult html_rv = _base::QueryInterface(aIID, aInstancePtr);             \
+    if (NS_SUCCEEDED(html_rv))                                                \
+      return html_rv;                                                         \
                                                                               \
-  rv = DOMQueryInterface(static_cast<_base_if *>(this), aIID, aInstancePtr);  \
-  if (NS_SUCCEEDED(rv))                                                       \
-    return rv;                                                                \
-                                                                              \
-  NS_OFFSET_AND_INTERFACE_TABLE_TO_MAP_SEGUE
+    html_rv = DOMQueryInterface(static_cast<_base_if *>(this), aIID,          \
+                                aInstancePtr);                                \
+    if (NS_SUCCEEDED(html_rv))                                                \
+      return html_rv;                                                         \
+  }
 
-#define NS_HTML_CONTENT_INTERFACE_TABLE_TO_MAP_SEGUE(_class, _base)           \
-  NS_HTML_CONTENT_INTERFACE_TABLE_TO_MAP_SEGUE_AMBIGUOUS(_class, _base,       \
-                                                         nsIDOMHTMLElement)
-
-#define NS_HTML_CONTENT_INTERFACE_MAP_END                                     \
-  NS_ELEMENT_INTERFACE_MAP_END
-
-#define NS_HTML_CONTENT_INTERFACE_TABLE_TAIL_CLASSINFO(_class)                \
-    NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(_class)                              \
-  NS_HTML_CONTENT_INTERFACE_MAP_END
+#define NS_HTML_CONTENT_INTERFACES(_base)                                     \
+  NS_HTML_CONTENT_INTERFACES_AMBIGUOUS(_base, nsIDOMHTMLElement)
 
 #define NS_INTERFACE_MAP_ENTRY_IF_TAG(_interface, _tag)                       \
   NS_INTERFACE_MAP_ENTRY_CONDITIONAL(_interface,                              \
@@ -1465,110 +1479,6 @@ protected:
       return NS_ERROR_OUT_OF_MEMORY;                         \
     }                                                        \
   } else
-
-#define NS_HTML_CONTENT_INTERFACE_TABLE0(_class)                              \
-  NS_HTML_CONTENT_INTERFACE_TABLE_BEGIN(_class)                               \
-  NS_OFFSET_AND_INTERFACE_TABLE_END
-
-#define NS_HTML_CONTENT_INTERFACE_TABLE1(_class, _i1)                         \
-  NS_HTML_CONTENT_INTERFACE_TABLE_BEGIN(_class)                               \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i1)                                     \
-  NS_OFFSET_AND_INTERFACE_TABLE_END
-
-#define NS_HTML_CONTENT_INTERFACE_TABLE2(_class, _i1, _i2)                    \
-  NS_HTML_CONTENT_INTERFACE_TABLE_BEGIN(_class)                               \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i1)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i2)                                     \
-  NS_OFFSET_AND_INTERFACE_TABLE_END
-
-#define NS_HTML_CONTENT_INTERFACE_TABLE3(_class, _i1, _i2, _i3)          \
-  NS_HTML_CONTENT_INTERFACE_TABLE_BEGIN(_class)                               \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i1)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i2)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i3)                                     \
-  NS_OFFSET_AND_INTERFACE_TABLE_END
-
-#define NS_HTML_CONTENT_INTERFACE_TABLE4(_class, _i1, _i2, _i3, _i4)          \
-  NS_HTML_CONTENT_INTERFACE_TABLE_BEGIN(_class)                               \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i1)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i2)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i3)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i4)                                     \
-  NS_OFFSET_AND_INTERFACE_TABLE_END
-
-#define NS_HTML_CONTENT_INTERFACE_TABLE5(_class, _i1, _i2, _i3, _i4, _i5)     \
-  NS_HTML_CONTENT_INTERFACE_TABLE_BEGIN(_class)                               \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i1)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i2)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i3)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i4)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i5)                                     \
-  NS_OFFSET_AND_INTERFACE_TABLE_END
-
-#define NS_HTML_CONTENT_INTERFACE_TABLE6(_class, _i1, _i2, _i3, _i4, _i5,     \
-                                         _i6)                                 \
-  NS_HTML_CONTENT_INTERFACE_TABLE_BEGIN(_class)                               \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i1)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i2)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i3)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i4)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i5)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i6)                                     \
-  NS_OFFSET_AND_INTERFACE_TABLE_END
-
-#define NS_HTML_CONTENT_INTERFACE_TABLE7(_class, _i1, _i2, _i3, _i4, _i5,     \
-                                         _i6, _i7)                            \
-  NS_HTML_CONTENT_INTERFACE_TABLE_BEGIN(_class)                               \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i1)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i2)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i3)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i4)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i5)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i6)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i7)                                     \
-  NS_OFFSET_AND_INTERFACE_TABLE_END
-
-#define NS_HTML_CONTENT_INTERFACE_TABLE8(_class, _i1, _i2, _i3, _i4, _i5,     \
-                                         _i6, _i7, _i8)                       \
-  NS_HTML_CONTENT_INTERFACE_TABLE_BEGIN(_class)                               \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i1)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i2)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i3)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i4)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i5)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i6)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i7)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i8)                                     \
-  NS_OFFSET_AND_INTERFACE_TABLE_END
-
-#define NS_HTML_CONTENT_INTERFACE_TABLE9(_class, _i1, _i2, _i3, _i4, _i5,     \
-                                         _i6, _i7, _i8, _i9)                  \
-  NS_HTML_CONTENT_INTERFACE_TABLE_BEGIN(_class)                               \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i1)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i2)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i3)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i4)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i5)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i6)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i7)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i8)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i9)                                     \
-  NS_OFFSET_AND_INTERFACE_TABLE_END
-
-#define NS_HTML_CONTENT_INTERFACE_TABLE10(_class, _i1, _i2, _i3, _i4, _i5,    \
-                                          _i6, _i7, _i8, _i9, _i10)           \
-  NS_HTML_CONTENT_INTERFACE_TABLE_BEGIN(_class)                               \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i1)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i2)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i3)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i4)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i5)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i6)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i7)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i8)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i9)                                     \
-    NS_INTERFACE_TABLE_ENTRY(_class, _i10)                                    \
-  NS_OFFSET_AND_INTERFACE_TABLE_END
 
 #define NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC                                \
   NS_IMETHOD GetId(nsAString& aId) MOZ_FINAL {                                 \
@@ -1908,21 +1818,20 @@ NS_NewHTMLElement(already_AddRefed<nsINodeInfo> aNodeInfo,
                   mozilla::dom::FromParser aFromParser = mozilla::dom::NOT_FROM_PARSER);
 
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Shared)
+NS_DECLARE_NS_NEW_HTML_ELEMENT(SharedList)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(SharedObject)
 
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Anchor)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Area)
-#if defined(MOZ_MEDIA)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Audio)
-#endif
 NS_DECLARE_NS_NEW_HTML_ELEMENT(BR)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Body)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Button)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Canvas)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Mod)
+NS_DECLARE_NS_NEW_HTML_ELEMENT(Data)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(DataList)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Div)
-NS_DECLARE_NS_NEW_HTML_ELEMENT(DList)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(FieldSet)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Font)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Form)
@@ -1945,7 +1854,6 @@ NS_DECLARE_NS_NEW_HTML_ELEMENT(MenuItem)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Meta)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Meter)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Object)
-NS_DECLARE_NS_NEW_HTML_ELEMENT(OList)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(OptGroup)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Option)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Output)
@@ -1954,9 +1862,7 @@ NS_DECLARE_NS_NEW_HTML_ELEMENT(Pre)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Progress)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Script)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Select)
-#if defined(MOZ_MEDIA)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Source)
-#endif
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Span)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Style)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(TableCaption)
@@ -1966,15 +1872,15 @@ NS_DECLARE_NS_NEW_HTML_ELEMENT(Table)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(TableRow)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(TableSection)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Tbody)
+NS_DECLARE_NS_NEW_HTML_ELEMENT(Template)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(TextArea)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Tfoot)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Thead)
+NS_DECLARE_NS_NEW_HTML_ELEMENT(Time)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Title)
-NS_DECLARE_NS_NEW_HTML_ELEMENT(UList)
+NS_DECLARE_NS_NEW_HTML_ELEMENT(Track)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Unknown)
-#if defined(MOZ_MEDIA)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Video)
-#endif
 
 inline nsISupports*
 ToSupports(nsGenericHTMLElement* aHTMLElement)

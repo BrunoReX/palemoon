@@ -7,7 +7,6 @@
 #define WEBGLPROGRAM_H_
 
 #include "WebGLObjectModel.h"
-#include "WebGLShader.h"
 
 #include "nsWrapperCache.h"
 
@@ -15,6 +14,9 @@
 #include "mozilla/CheckedInt.h"
 
 namespace mozilla {
+
+class WebGLShader;
+class WebGLUniformInfo;
 
 typedef nsDataHashtable<nsCStringHashKey, nsCString> CStringMap;
 typedef nsDataHashtable<nsCStringHashKey, WebGLUniformInfo> CStringToUniformInfoMap;
@@ -102,7 +104,8 @@ public:
         return Context();
     }
 
-    virtual JSObject* WrapObject(JSContext *cx, JSObject *scope, bool *triedToWrap);
+    virtual JSObject* WrapObject(JSContext *cx,
+                                 JS::Handle<JSObject*> scope) MOZ_OVERRIDE;
 
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
     NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(WebGLProgram)

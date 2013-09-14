@@ -9,9 +9,8 @@ VPATH		= @srcdir@
 relativesrcdir  = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
-include $(topsrcdir)/config/rules.mk
 
-_BROWSER_FILES = \
+MOCHITEST_BROWSER_FILES := \
 		browser_inspector_iframeTest.js \
 		browser_inspector_initialization.js \
 		browser_inspector_highlighter.js \
@@ -22,13 +21,13 @@ _BROWSER_FILES = \
 		browser_inspector_breadcrumbs.js \
 		browser_inspector_invalidate.js \
 		browser_inspector_menu.js \
+		browser_inspector_menu.html \
 		browser_inspector_pseudoClass_menu.js \
 		browser_inspector_destroyselection.html \
 		browser_inspector_destroyselection.js \
 		browser_inspector_bug_699308_iframe_navigation.js \
 		browser_inspector_bug_672902_keyboard_shortcuts.js \
-		browser_inspector_bug_566084_location_changed.js \
-		$(filter disabled-temporarily--bug-816990, browser_inspector_sidebarstate.js) \
+		browser_inspector_sidebarstate.js \
 		browser_inspector_pseudoclass_lock.js \
 		browser_inspector_cmd_inspect.js \
 		browser_inspector_cmd_inspect.html \
@@ -36,9 +35,15 @@ _BROWSER_FILES = \
 		browser_inspector_changes.js \
 		browser_inspector_bug_674871.js \
 		browser_inspector_bug_817558_delete_node.js \
+		browser_inspector_bug_650804_search.js \
+		browser_inspector_bug_650804_search.html \
+		browser_inspector_bug_831693_input_suggestion.js \
+		browser_inspector_bug_831693_searchbox_panel_navigation.js \
+		browser_inspector_bug_831693_combinator_suggestions.js \
+		browser_inspector_bug_831693_search_suggestions.html \
+		browser_inspector_bug_835722_infobar_reappears.js \
+		browser_inspector_bug_840156_destroy_after_navigation.js \
 		head.js \
-		helpers.js \
 		$(NULL)
 
-libs::	$(_BROWSER_FILES)
-	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/browser/$(relativesrcdir)
+include $(topsrcdir)/config/rules.mk

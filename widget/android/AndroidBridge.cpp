@@ -6,6 +6,7 @@
 #include "mozilla/Util.h"
 #include "mozilla/layers/CompositorChild.h"
 #include "mozilla/layers/CompositorParent.h"
+#include "mozilla/layers/AsyncPanZoomController.h"
 
 #include <android/log.h>
 #include <dlfcn.h>
@@ -16,13 +17,14 @@
 #include "nsXPCOMStrings.h"
 
 #include "AndroidBridge.h"
+#include "AndroidJNIWrapper.h"
 #include "nsAppShell.h"
 #include "nsOSHelperAppService.h"
 #include "nsWindow.h"
 #include "mozilla/Preferences.h"
 #include "nsThreadUtils.h"
 #include "nsIThreadManager.h"
-#include "mozilla/dom/sms/PSms.h"
+#include "mozilla/dom/mobilemessage/PSms.h"
 #include "gfxImageSurface.h"
 #include "gfxContext.h"
 #include "nsPresContext.h"
@@ -33,21 +35,19 @@
 #include "nsIDOMClientRect.h"
 #include "StrongPointer.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "nsPrintfCString.h"
 
 #ifdef DEBUG
 #define ALOG_BRIDGE(args...) ALOG(args)
 #else
-#define ALOG_BRIDGE(args...)
+#define ALOG_BRIDGE(args...) ((void)0)
 #endif
-
-#define IME_FULLSCREEN_PREF "widget.ime.android.landscape_fullscreen"
-#define IME_FULLSCREEN_THRESHOLD_PREF "widget.ime.android.fullscreen_threshold"
 
 using namespace mozilla;
 
 NS_IMPL_THREADSAFE_ISUPPORTS0(nsFilePickerCallback)
 
-AndroidBridge *AndroidBridge::sBridge = 0;
+nsRefPtr<AndroidBridge> AndroidBridge::sBridge = nullptr;
 static unsigned sJavaEnvThreadIndex = 0;
 static void JavaThreadDetachFunc(void *arg);
 
@@ -59,8 +59,6 @@ class AndroidRefable {
 
 // This isn't in AndroidBridge.h because including StrongPointer.h there is gross
 static android::sp<AndroidRefable> (*android_SurfaceTexture_getNativeWindow)(JNIEnv* env, jobject surfaceTexture) = nullptr;
-
-/* static */ StaticAutoPtr<nsTArray<nsCOMPtr<nsISmsRequest> > > AndroidBridge::sSmsRequests;
 
 void
 AndroidBridge::ConstructBridge(JNIEnv *jEnv,
@@ -94,6 +92,7 @@ AndroidBridge::Init(JNIEnv *jEnv,
 
     mJNIEnv = nullptr;
     mThread = nullptr;
+    mGLControllerObj = nullptr;
     mOpenedGraphicsLibraries = false;
     mHasNativeBitmapAccess = false;
     mHasNativeWindowAccess = false;
@@ -101,13 +100,16 @@ AndroidBridge::Init(JNIEnv *jEnv,
 
     mGeckoAppShellClass = (jclass) jEnv->NewGlobalRef(jGeckoAppShellClass);
 
+#ifdef MOZ_WEBSMS_BACKEND
     jclass jAndroidSmsMessageClass = jEnv->FindClass("android/telephony/SmsMessage");
     mAndroidSmsMessageClass = (jclass) jEnv->NewGlobalRef(jAndroidSmsMessageClass);
+    jCalculateLength = (jmethodID) jEnv->GetStaticMethodID(jAndroidSmsMessageClass, "calculateLength", "(Ljava/lang/CharSequence;Z)[I");
+#endif
 
-    jNotifyIME = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "notifyIME", "(II)V");
-    jNotifyIMEEnabled = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "notifyIMEEnabled", "(ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V");
+    jNotifyIME = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "notifyIME", "(I)V");
+    jNotifyIMEContext = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "notifyIMEContext", "(ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
     jNotifyIMEChange = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "notifyIMEChange", "(Ljava/lang/String;III)V");
-    jAcknowledgeEventSync = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "acknowledgeEventSync", "()V");
+    jAcknowledgeEvent = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "acknowledgeEvent", "()V");
 
     jEnableLocation = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "enableLocation", "(Z)V");
     jEnableLocationHighAccuracy = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "enableLocationHighAccuracy", "(Z)V");
@@ -121,8 +123,6 @@ AndroidBridge::Init(JNIEnv *jEnv,
     jGetMimeTypeFromExtensions = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getMimeTypeFromExtensions", "(Ljava/lang/String;)Ljava/lang/String;");
     jGetExtensionFromMimeType = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getExtensionFromMimeType", "(Ljava/lang/String;)Ljava/lang/String;");
     jMoveTaskToBack = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "moveTaskToBack", "()V");
-    jGetClipboardText = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getClipboardText", "()Ljava/lang/String;");
-    jSetClipboardText = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "setClipboardText", "(Ljava/lang/String;)V");
     jShowAlertNotification = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "showAlertNotification", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
     jShowFilePickerForExtensions = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "showFilePickerForExtensions", "(Ljava/lang/String;)Ljava/lang/String;");
     jShowFilePickerForMimeType = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "showFilePickerForMimeType", "(Ljava/lang/String;)Ljava/lang/String;");
@@ -130,7 +130,7 @@ AndroidBridge::Init(JNIEnv *jEnv,
     jUnlockProfile = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "unlockProfile", "()Z");
     jKillAnyZombies = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "killAnyZombies", "()V");
     jAlertsProgressListener_OnProgress = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "alertsProgressListener_OnProgress", "(Ljava/lang/String;JJLjava/lang/String;)V");
-    jAlertsProgressListener_OnCancel = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "alertsProgressListener_OnCancel", "(Ljava/lang/String;)V");
+    jCloseNotification = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "closeNotification", "(Ljava/lang/String;)V");
     jGetDpi = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getDpi", "()I");
     jSetFullScreen = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "setFullScreen", "(Z)V");
     jShowInputMethodPicker = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "showInputMethodPicker", "()V");
@@ -159,8 +159,8 @@ AndroidBridge::Init(JNIEnv *jEnv,
     jHandleGeckoMessage = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "handleGeckoMessage", "(Ljava/lang/String;)Ljava/lang/String;");
     jCheckUriVisited = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "checkUriVisited", "(Ljava/lang/String;)V");
     jMarkUriVisited = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "markUriVisited", "(Ljava/lang/String;)V");
+    jSetUriTitle = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "setUriTitle", "(Ljava/lang/String;Ljava/lang/String;)V");
 
-    jCalculateLength = (jmethodID) jEnv->GetStaticMethodID(jAndroidSmsMessageClass, "calculateLength", "(Ljava/lang/CharSequence;Z)[I");
     jSendMessage = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "sendMessage", "(Ljava/lang/String;Ljava/lang/String;I)V");
     jGetMessage = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getMessage", "(II)V");
     jDeleteMessage = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "deleteMessage", "(II)V");
@@ -178,15 +178,17 @@ AndroidBridge::Init(JNIEnv *jEnv,
     jLockScreenOrientation = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "lockScreenOrientation", "(I)V");
     jUnlockScreenOrientation = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "unlockScreenOrientation", "()V");
 
+    jGeckoJavaSamplerClass = (jclass) jEnv->NewGlobalRef(jEnv->FindClass("org/mozilla/gecko/GeckoJavaSampler"));
+    jStart = jEnv->GetStaticMethodID(jGeckoJavaSamplerClass, "start", "(II)V");
+    jStop = jEnv->GetStaticMethodID(jGeckoJavaSamplerClass, "stop", "()V");
+    jPause = jEnv->GetStaticMethodID(jGeckoJavaSamplerClass, "pause", "()V");
+    jUnpause = jEnv->GetStaticMethodID(jGeckoJavaSamplerClass, "unpause", "()V");
+    jGetThreadName = jEnv->GetStaticMethodID(jGeckoJavaSamplerClass, "getThreadName", "(I)Ljava/lang/String;");
+    jGetFrameName = jEnv->GetStaticMethodID(jGeckoJavaSamplerClass, "getFrameName", "(III)Ljava/lang/String;");
+    jGetSampleTime = jEnv->GetStaticMethodID(jGeckoJavaSamplerClass, "getSampleTime", "(II)D");
+
     jThumbnailHelperClass = (jclass) jEnv->NewGlobalRef(jEnv->FindClass("org/mozilla/gecko/ThumbnailHelper"));
     jNotifyThumbnail = jEnv->GetStaticMethodID(jThumbnailHelperClass, "notifyThumbnail", "(Ljava/nio/ByteBuffer;IZ)V");
-
-    jEGLContextClass = (jclass) jEnv->NewGlobalRef(jEnv->FindClass("javax/microedition/khronos/egl/EGLContext"));
-    jEGL10Class = (jclass) jEnv->NewGlobalRef(jEnv->FindClass("javax/microedition/khronos/egl/EGL10"));
-    jEGLSurfaceImplClass = (jclass) jEnv->NewGlobalRef(jEnv->FindClass("com/google/android/gles_jni/EGLSurfaceImpl"));
-    jEGLContextImplClass = (jclass) jEnv->NewGlobalRef(jEnv->FindClass("com/google/android/gles_jni/EGLContextImpl"));
-    jEGLConfigImplClass = (jclass) jEnv->NewGlobalRef(jEnv->FindClass("com/google/android/gles_jni/EGLConfigImpl"));
-    jEGLDisplayImplClass = (jclass) jEnv->NewGlobalRef(jEnv->FindClass("com/google/android/gles_jni/EGLDisplayImpl"));
 
     jStringClass = (jclass) jEnv->NewGlobalRef(jEnv->FindClass("java/lang/String"));
 
@@ -195,10 +197,17 @@ AndroidBridge::Init(JNIEnv *jEnv,
     if (!GetStaticIntField("android/os/Build$VERSION", "SDK_INT", &mAPIVersion, jEnv))
         ALOG_BRIDGE("Failed to find API version");
 
-    if (mAPIVersion <= 8 /* Froyo */)
+    if (mAPIVersion <= 8 /* Froyo */) {
         jSurfacePointerField = jEnv->GetFieldID(jSurfaceClass, "mSurface", "I");
-    else /* not Froyo */
+    } else {
         jSurfacePointerField = jEnv->GetFieldID(jSurfaceClass, "mNativeSurface", "I");
+
+        // Apparently mNativeSurface doesn't exist in Key Lime Pie, so just clear the
+        // exception if we have one and move on.
+        if (jEnv->ExceptionCheck()) {
+            jEnv->ExceptionClear();
+        }
+    }
 
     jNotifyWakeLockChanged = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "notifyWakeLockChanged", "(Ljava/lang/String;Ljava/lang/String;)V");
 
@@ -207,7 +216,6 @@ AndroidBridge::Init(JNIEnv *jEnv,
     jRegisterSurfaceTextureFrameListener = jEnv->GetStaticMethodID(jGeckoAppShellClass, "registerSurfaceTextureFrameListener", "(Ljava/lang/Object;I)V");
     jUnregisterSurfaceTextureFrameListener = jEnv->GetStaticMethodID(jGeckoAppShellClass, "unregisterSurfaceTextureFrameListener", "(Ljava/lang/Object;)V");
 
-#ifdef MOZ_ANDROID_OMTC
     jPumpMessageLoop = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "pumpMessageLoop", "()Z");
 
     jAddPluginView = jEnv->GetStaticMethodID(jGeckoAppShellClass, "addPluginView", "(Landroid/view/View;IIIIZ)V");
@@ -215,12 +223,26 @@ AndroidBridge::Init(JNIEnv *jEnv,
 
     jLayerView = (jclass) jEnv->NewGlobalRef(jEnv->FindClass("org/mozilla/gecko/gfx/LayerView"));
 
-    AndroidGLController::Init(jEnv);
-    AndroidEGLObject::Init(jEnv);
-#else
-    jAddPluginView = jEnv->GetStaticMethodID(jGeckoAppShellClass, "addPluginView", "(Landroid/view/View;DDDD)V");
-    jRemovePluginView = jEnv->GetStaticMethodID(jGeckoAppShellClass, "removePluginView", "(Landroid/view/View;)V");
-#endif
+    jclass glControllerClass = jEnv->FindClass("org/mozilla/gecko/gfx/GLController");
+    jProvideEGLSurfaceMethod = jEnv->GetMethodID(glControllerClass, "provideEGLSurface",
+                                                  "()Ljavax/microedition/khronos/egl/EGLSurface;");
+
+    jclass nativePanZoomControllerClass = jEnv->FindClass("org/mozilla/gecko/gfx/NativePanZoomController");
+    jRequestContentRepaint = jEnv->GetMethodID(nativePanZoomControllerClass, "requestContentRepaint", "(FFFFF)V");
+    jPostDelayedCallback = jEnv->GetMethodID(nativePanZoomControllerClass, "postDelayedCallback", "(J)V");
+
+    jclass eglClass = jEnv->FindClass("com/google/android/gles_jni/EGLSurfaceImpl");
+    if (eglClass) {
+        jEGLSurfacePointerField = jEnv->GetFieldID(eglClass, "mEGLSurface", "I");
+    } else {
+        jEGLSurfacePointerField = 0;
+    }
+
+    jGetContext = (jmethodID)jEnv->GetStaticMethodID(jGeckoAppShellClass, "getContext", "()Landroid/content/Context;");
+
+    jClipboardClass = (jclass) jEnv->NewGlobalRef(jEnv->FindClass("org/mozilla/gecko/util/Clipboard"));
+    jClipboardGetText = (jmethodID) jEnv->GetStaticMethodID(jClipboardClass, "getText", "()Ljava/lang/String;");
+    jClipboardSetText = (jmethodID) jEnv->GetStaticMethodID(jClipboardClass, "setText", "(Ljava/lang/CharSequence;)V");
 
     InitAndroidJavaWrappers(jEnv);
 
@@ -247,7 +269,7 @@ AndroidBridge::SetMainThread(void *thr)
 }
 
 void
-AndroidBridge::NotifyIME(int aType, int aState)
+AndroidBridge::NotifyIME(int aType)
 {
     ALOG_BRIDGE("AndroidBridge::NotifyIME");
 
@@ -257,7 +279,7 @@ AndroidBridge::NotifyIME(int aType, int aState)
 
     AutoLocalJNIFrame jniFrame(env, 0);
     env->CallStaticVoidMethod(sBridge->mGeckoAppShellClass,
-                              sBridge->jNotifyIME,  aType, aState);
+                              sBridge->jNotifyIME, aType);
 }
 
 jstring NewJavaString(AutoLocalJNIFrame* frame, const PRUnichar* string, uint32_t len) {
@@ -280,10 +302,10 @@ jstring NewJavaString(AutoLocalJNIFrame* frame, const nsACString& string) {
 }
 
 void
-AndroidBridge::NotifyIMEEnabled(int aState, const nsAString& aTypeHint,
+AndroidBridge::NotifyIMEContext(int aState, const nsAString& aTypeHint,
                                 const nsAString& aModeHint, const nsAString& aActionHint)
 {
-    ALOG_BRIDGE("AndroidBridge::NotifyIMEEnabled");
+    ALOG_BRIDGE("AndroidBridge::NotifyIMEContext");
     if (!sBridge)
         return;
 
@@ -293,34 +315,14 @@ AndroidBridge::NotifyIMEEnabled(int aState, const nsAString& aTypeHint,
 
     AutoLocalJNIFrame jniFrame(env);
 
-    jvalue args[5];
+    jvalue args[4];
     args[0].i = aState;
     args[1].l = NewJavaString(&jniFrame, aTypeHint);
     args[2].l = NewJavaString(&jniFrame, aModeHint);
     args[3].l = NewJavaString(&jniFrame, aActionHint);
-    args[4].z = false;
-
-    int32_t landscapeFS;
-    if (NS_SUCCEEDED(Preferences::GetInt(IME_FULLSCREEN_PREF, &landscapeFS))) {
-        if (landscapeFS == 1) {
-            args[4].z = true;
-        } else if (landscapeFS == -1){
-            if (NS_SUCCEEDED(
-                    Preferences::GetInt(IME_FULLSCREEN_THRESHOLD_PREF,
-                                        &landscapeFS))) {
-                // the threshold is hundreths of inches, so convert the
-                // threshold to pixels and multiply the height by 100
-                if (nsWindow::GetAndroidScreenBounds().height  * 100 <
-                    landscapeFS * Bridge()->GetDPI()) {
-                    args[4].z = true;
-                }
-            }
-
-        }
-    }
 
     env->CallStaticVoidMethodA(sBridge->mGeckoAppShellClass,
-                               sBridge->jNotifyIMEEnabled, args);
+                               sBridge->jNotifyIMEContext, args);
 }
 
 void
@@ -346,16 +348,16 @@ AndroidBridge::NotifyIMEChange(const PRUnichar *aText, uint32_t aTextLen,
 }
 
 void
-AndroidBridge::AcknowledgeEventSync()
+AndroidBridge::AcknowledgeEvent()
 {
-    ALOG_BRIDGE("AndroidBridge::AcknowledgeEventSync");
+    ALOG_BRIDGE("AndroidBridge::AcknowledgeEvent");
 
     JNIEnv *env = GetJNIEnv();
     if (!env)
         return;
 
     AutoLocalJNIFrame jniFrame(env, 0);
-    env->CallStaticVoidMethod(mGeckoAppShellClass, jAcknowledgeEventSync);
+    env->CallStaticVoidMethod(mGeckoAppShellClass, jAcknowledgeEvent);
 }
 
 void
@@ -632,8 +634,8 @@ AndroidBridge::GetClipboardText(nsAString& aText)
 
     AutoLocalJNIFrame jniFrame(env);
     jstring jstrType = static_cast<jstring>(
-        env->CallStaticObjectMethod(mGeckoAppShellClass,
-                                    jGetClipboardText));
+        env->CallStaticObjectMethod(jClipboardClass,
+                                    jClipboardGetText));
     if (jniFrame.CheckForException() || !jstrType)
         return false;
 
@@ -653,7 +655,7 @@ AndroidBridge::SetClipboardText(const nsAString& aText)
 
     AutoLocalJNIFrame jniFrame(env);
     jstring jstr = NewJavaString(&jniFrame, aText);
-    env->CallStaticVoidMethod(mGeckoAppShellClass, jSetClipboardText, jstr);
+    env->CallStaticVoidMethod(jClipboardClass, jClipboardSetText, jstr);
 }
 
 bool
@@ -667,8 +669,8 @@ AndroidBridge::ClipboardHasText()
 
     AutoLocalJNIFrame jniFrame(env);
     jstring jstrType = static_cast<jstring>(
-        env->CallStaticObjectMethod(mGeckoAppShellClass,
-                                    jGetClipboardText));
+        env->CallStaticObjectMethod(jClipboardClass,
+                                    jClipboardGetText));
     if (jniFrame.CheckForException() || !jstrType)
         return false;
 
@@ -685,7 +687,7 @@ AndroidBridge::EmptyClipboard()
         return;
 
     AutoLocalJNIFrame jniFrame(env, 0);
-    env->CallStaticVoidMethod(mGeckoAppShellClass, jSetClipboardText, nullptr);
+    env->CallStaticVoidMethod(jClipboardClass, jClipboardSetText, nullptr);
 }
 
 void
@@ -704,8 +706,10 @@ AndroidBridge::ShowAlertNotification(const nsAString& aImageUrl,
 
     AutoLocalJNIFrame jniFrame(env);
 
-    if (nsAppShell::gAppShell && aAlertListener)
-        nsAppShell::gAppShell->AddObserver(aAlertName, aAlertListener);
+    if (nsAppShell::gAppShell && aAlertListener) {
+        // This will remove any observers already registered for this id
+        nsAppShell::gAppShell->PostEvent(AndroidGeckoEvent::MakeAddObserver(aAlertName, aAlertListener));
+    }
 
     jvalue args[5];
     args[0].l = NewJavaString(&jniFrame, aImageUrl);
@@ -736,9 +740,9 @@ AndroidBridge::AlertsProgressListener_OnProgress(const nsAString& aAlertName,
 }
 
 void
-AndroidBridge::AlertsProgressListener_OnCancel(const nsAString& aAlertName)
+AndroidBridge::CloseNotification(const nsAString& aAlertName)
 {
-    ALOG_BRIDGE("AlertsProgressListener_OnCancel");
+    ALOG_BRIDGE("CloseNotification");
 
     JNIEnv *env = GetJNIEnv();
     if (!env)
@@ -747,7 +751,7 @@ AndroidBridge::AlertsProgressListener_OnCancel(const nsAString& aAlertName)
     AutoLocalJNIFrame jniFrame(env);
 
     jstring jstrName = NewJavaString(&jniFrame, aAlertName);
-    env->CallStaticVoidMethod(mGeckoAppShellClass, jAlertsProgressListener_OnCancel, jstrName);
+    env->CallStaticVoidMethod(mGeckoAppShellClass, jCloseNotification, jstrName);
 }
 
 
@@ -1083,12 +1087,6 @@ AndroidBridge::GetShowPasswordSetting()
 }
 
 void
-AndroidBridge::SetSurfaceView(jobject obj)
-{
-    mSurfaceView.Init(obj);
-}
-
-void
 AndroidBridge::SetLayerClient(JNIEnv* env, jobject jobj)
 {
     // if resetting is true, that means Android destroyed our GeckoApp activity
@@ -1109,7 +1107,10 @@ AndroidBridge::SetLayerClient(JNIEnv* env, jobject jobj)
     mLayerClient = client;
 
     if (resetting) {
-        RegisterCompositor(env, true);
+        // since we are re-linking the new java objects to Gecko, we need to get
+        // the viewport from the compositor (since the Java copy was thrown away)
+        // and we do that by setting the first-paint flag.
+        nsWindow::ForceIsFirstPaint();
     }
 }
 
@@ -1126,68 +1127,21 @@ AndroidBridge::ShowInputMethodPicker()
     env->CallStaticVoidMethod(mGeckoAppShellClass, jShowInputMethodPicker);
 }
 
-void *
-AndroidBridge::CallEglCreateWindowSurface(void *dpy, void *config, AndroidGeckoSurfaceView &sview)
-{
-    ALOG_BRIDGE("AndroidBridge::CallEglCreateWindowSurface");
-
-    JNIEnv *env = GetJNIForThread();        // called on the compositor thread
-    if (!env)
-        return NULL;
-
-    AutoLocalJNIFrame jniFrame(env);
-
-    /*
-     * This is basically:
-     *
-     *    s = EGLContext.getEGL().eglCreateWindowSurface(new EGLDisplayImpl(dpy),
-     *                                                   new EGLConfigImpl(config),
-     *                                                   view.getHolder(), null);
-     *    return s.mEGLSurface;
-     *
-     * We can't do it from java, because the EGLConfigImpl constructor is private.
-     */
-
-    jobject surfaceHolder = sview.GetSurfaceHolder(&jniFrame);
-    if (!surfaceHolder)
-        return nullptr;
-
-    // grab some fields and methods we'll need
-    jmethodID constructConfig = env->GetMethodID(jEGLConfigImplClass, "<init>", "(I)V");
-    jmethodID constructDisplay = env->GetMethodID(jEGLDisplayImplClass, "<init>", "(I)V");
-
-    jmethodID getEgl = env->GetStaticMethodID(jEGLContextClass, "getEGL", "()Ljavax/microedition/khronos/egl/EGL;");
-    jmethodID createWindowSurface = env->GetMethodID(jEGL10Class, "eglCreateWindowSurface", "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljava/lang/Object;[I)Ljavax/microedition/khronos/egl/EGLSurface;");
-
-    jobject egl = env->CallStaticObjectMethod(jEGLContextClass, getEgl);
-    if (jniFrame.CheckForException())
-        return nullptr;
-
-    jobject jdpy = env->NewObject(jEGLDisplayImplClass, constructDisplay, (int) dpy);
-    jobject jconf = env->NewObject(jEGLConfigImplClass, constructConfig, (int) config);
-
-    // make the call
-    jobject surf = env->CallObjectMethod(egl, createWindowSurface, jdpy, jconf, surfaceHolder, NULL);
-    if (jniFrame.CheckForException() || !surf)
-        return nullptr;
-
-    jfieldID sfield = env->GetFieldID(jEGLSurfaceImplClass, "mEGLSurface", "I");
-
-    jint realSurface = env->GetIntField(surf, sfield);
-
-    return (void*) realSurface;
-}
-
-static AndroidGLController sController;
-
 void
-AndroidBridge::RegisterCompositor(JNIEnv *env, bool resetting)
+AndroidBridge::RegisterCompositor(JNIEnv *env)
 {
     ALOG_BRIDGE("AndroidBridge::RegisterCompositor");
-    if (!env)
-        env = GetJNIForThread();    // called on the compositor thread
-    if (!env)
+    if (mGLControllerObj) {
+        // we already have this set up, no need to do it again
         return;
+    }
+
+    if (!env) {
+        env = GetJNIForThread();    // called on the compositor thread
+    }
+    if (!env) {
+        return;
+    }
 
     AutoLocalJNIFrame jniFrame(env);
 
@@ -1197,18 +1151,24 @@ AndroidBridge::RegisterCompositor(JNIEnv *env, bool resetting)
     if (jniFrame.CheckForException())
         return;
 
-    if (resetting) {
-        sController.Reacquire(env, glController);
-    } else {
-        sController.Acquire(env, glController);
-    }
+    mGLControllerObj = env->NewGlobalRef(glController);
 }
 
 EGLSurface
 AndroidBridge::ProvideEGLSurface()
 {
-    sController.WaitForValidSurface();
-    return sController.ProvideEGLSurface();
+    if (!jEGLSurfacePointerField) {
+        return NULL;
+    }
+    MOZ_ASSERT(mGLControllerObj, "AndroidBridge::ProvideEGLSurface called with a null GL controller ref");
+
+    JNIEnv* env = GetJNIForThread(); // called on the compositor thread
+    AutoLocalJNIFrame jniFrame(env);
+    jobject eglSurface = env->CallObjectMethod(mGLControllerObj, jProvideEGLSurfaceMethod);
+    if (jniFrame.CheckForException() || !eglSurface)
+        return NULL;
+
+    return reinterpret_cast<EGLSurface>(env->GetIntField(eglSurface, jEGLSurfacePointerField));
 }
 
 bool
@@ -1326,7 +1286,7 @@ AndroidBridge::CreateShortcut(const nsAString& aTitle, const nsAString& aURI, co
 
 void*
 AndroidBridge::GetNativeSurface(JNIEnv* env, jobject surface) {
-    if (!env || !mHasNativeWindowFallback)
+    if (!env || !mHasNativeWindowFallback || !jSurfacePointerField)
         return nullptr;
 
     return (void*)env->GetIntField(surface, jSurfacePointerField);
@@ -1659,10 +1619,26 @@ AndroidBridge::MarkURIVisited(const nsAString& aURI)
     env->CallStaticVoidMethod(mGeckoAppShellClass, jMarkUriVisited, jstrURI);
 }
 
+void
+AndroidBridge::SetURITitle(const nsAString& aURI, const nsAString& aTitle)
+{
+    JNIEnv *env = GetJNIEnv();
+    if (!env)
+        return;
+
+    AutoLocalJNIFrame jniFrame(env);
+    jstring jstrURI = NewJavaString(&jniFrame, aURI);
+    jstring jstrTitle = NewJavaString(&jniFrame, aTitle);
+    env->CallStaticVoidMethod(mGeckoAppShellClass, jSetUriTitle, jstrURI, jstrTitle);
+}
+
 nsresult
 AndroidBridge::GetSegmentInfoForText(const nsAString& aText,
-                                     dom::sms::SmsSegmentInfoData* aData)
+                                     dom::mobilemessage::SmsSegmentInfoData* aData)
 {
+#ifndef MOZ_WEBSMS_BACKEND
+    return NS_ERROR_FAILURE;
+#else
     ALOG_BRIDGE("AndroidBridge::GetSegmentInfoForText");
 
     aData->segments() = 0;
@@ -1693,10 +1669,13 @@ AndroidBridge::GetSegmentInfoForText(const nsAString& aText,
 
     env->ReleaseIntArrayElements(arr, info, JNI_ABORT);
     return NS_OK;
+#endif
 }
 
 void
-AndroidBridge::SendMessage(const nsAString& aNumber, const nsAString& aMessage, nsISmsRequest* aRequest)
+AndroidBridge::SendMessage(const nsAString& aNumber,
+                           const nsAString& aMessage,
+                           nsIMobileMessageCallback* aRequest)
 {
     ALOG_BRIDGE("AndroidBridge::SendMessage");
 
@@ -1704,8 +1683,9 @@ AndroidBridge::SendMessage(const nsAString& aNumber, const nsAString& aMessage, 
     if (!env)
         return;
 
-    int32_t requestId = QueueSmsRequest(aRequest);
-    NS_ENSURE_TRUE_VOID(requestId >= 0);
+    uint32_t requestId;
+    if (!QueueSmsRequest(aRequest, &requestId))
+        return;
 
     AutoLocalJNIFrame jniFrame(env);
     jstring jNumber = NewJavaString(&jniFrame, aNumber);
@@ -1715,7 +1695,7 @@ AndroidBridge::SendMessage(const nsAString& aNumber, const nsAString& aMessage, 
 }
 
 void
-AndroidBridge::GetMessage(int32_t aMessageId, nsISmsRequest* aRequest)
+AndroidBridge::GetMessage(int32_t aMessageId, nsIMobileMessageCallback* aRequest)
 {
     ALOG_BRIDGE("AndroidBridge::GetMessage");
 
@@ -1723,15 +1703,16 @@ AndroidBridge::GetMessage(int32_t aMessageId, nsISmsRequest* aRequest)
     if (!env)
         return;
 
-    int32_t requestId = QueueSmsRequest(aRequest);
-    NS_ENSURE_TRUE_VOID(requestId >= 0);
+    uint32_t requestId;
+    if (!QueueSmsRequest(aRequest, &requestId))
+        return;
 
     AutoLocalJNIFrame jniFrame(env, 0);
     env->CallStaticVoidMethod(mGeckoAppShellClass, jGetMessage, aMessageId, requestId);
 }
 
 void
-AndroidBridge::DeleteMessage(int32_t aMessageId, nsISmsRequest* aRequest)
+AndroidBridge::DeleteMessage(int32_t aMessageId, nsIMobileMessageCallback* aRequest)
 {
     ALOG_BRIDGE("AndroidBridge::DeleteMessage");
 
@@ -1739,16 +1720,17 @@ AndroidBridge::DeleteMessage(int32_t aMessageId, nsISmsRequest* aRequest)
     if (!env)
         return;
 
-    int32_t requestId = QueueSmsRequest(aRequest);
-    NS_ENSURE_TRUE_VOID(requestId >= 0);
+    uint32_t requestId;
+    if (!QueueSmsRequest(aRequest, &requestId))
+        return;
 
     AutoLocalJNIFrame jniFrame(env, 0);
     env->CallStaticVoidMethod(mGeckoAppShellClass, jDeleteMessage, aMessageId, requestId);
 }
 
 void
-AndroidBridge::CreateMessageList(const dom::sms::SmsFilterData& aFilter, bool aReverse,
-                                 nsISmsRequest* aRequest)
+AndroidBridge::CreateMessageList(const dom::mobilemessage::SmsFilterData& aFilter, bool aReverse,
+                                 nsIMobileMessageCallback* aRequest)
 {
     ALOG_BRIDGE("AndroidBridge::CreateMessageList");
 
@@ -1756,8 +1738,9 @@ AndroidBridge::CreateMessageList(const dom::sms::SmsFilterData& aFilter, bool aR
     if (!env)
         return;
 
-    int32_t requestId = QueueSmsRequest(aRequest);
-    NS_ENSURE_TRUE_VOID(requestId >= 0);
+    uint32_t requestId;
+    if (!QueueSmsRequest(aRequest, &requestId))
+        return;
 
     AutoLocalJNIFrame jniFrame(env);
 
@@ -1778,7 +1761,7 @@ AndroidBridge::CreateMessageList(const dom::sms::SmsFilterData& aFilter, bool aR
 }
 
 void
-AndroidBridge::GetNextMessageInList(int32_t aListId, nsISmsRequest* aRequest)
+AndroidBridge::GetNextMessageInList(int32_t aListId, nsIMobileMessageCallback* aRequest)
 {
     ALOG_BRIDGE("AndroidBridge::GetNextMessageInList");
 
@@ -1786,8 +1769,9 @@ AndroidBridge::GetNextMessageInList(int32_t aListId, nsISmsRequest* aRequest)
     if (!env)
         return;
 
-    int32_t requestId = QueueSmsRequest(aRequest);
-    NS_ENSURE_TRUE_VOID(requestId >= 0);
+    uint32_t requestId;
+    if (!QueueSmsRequest(aRequest, &requestId))
+        return;
 
     AutoLocalJNIFrame jniFrame(env, 0);
     env->CallStaticVoidMethod(mGeckoAppShellClass, jGetNextMessageinList, aListId, requestId);
@@ -1806,42 +1790,39 @@ AndroidBridge::ClearMessageList(int32_t aListId)
     env->CallStaticVoidMethod(mGeckoAppShellClass, jClearMessageList, aListId);
 }
 
-int32_t
-AndroidBridge::QueueSmsRequest(nsISmsRequest* aRequest)
+bool
+AndroidBridge::QueueSmsRequest(nsIMobileMessageCallback* aRequest, uint32_t* aRequestIdOut)
 {
-    NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+    MOZ_ASSERT(NS_IsMainThread(), "Wrong thread!");
+    MOZ_ASSERT(aRequest && aRequestIdOut);
 
-    // XXX: This method will always fail on Android because we do not
-    // init sSmsRequests. See bug 775997 and Bug 809459.
-
-    if (!sSmsRequests) {
-        // Probably shutting down.
-        return -1;
-    }
-
-    uint32_t length = sSmsRequests->Length();
-    for (int32_t i = 0; i < length; i++) {
-        if (!(*sSmsRequests)[i]) {
-            (*sSmsRequests)[i] = aRequest;
-            return i;
+    const uint32_t length = mSmsRequests.Length();
+    for (uint32_t i = 0; i < length; i++) {
+        if (!(mSmsRequests)[i]) {
+            (mSmsRequests)[i] = aRequest;
+            *aRequestIdOut = i;
+            return true;
         }
     }
 
-    sSmsRequests->AppendElement(aRequest);
+    mSmsRequests.AppendElement(aRequest);
 
-    return length;
+    // After AppendElement(), previous `length` points to the new tail element.
+    *aRequestIdOut = length;
+    return true;
 }
 
-already_AddRefed<nsISmsRequest>
-AndroidBridge::DequeueSmsRequest(int32_t aRequestId)
+already_AddRefed<nsIMobileMessageCallback>
+AndroidBridge::DequeueSmsRequest(uint32_t aRequestId)
 {
-    NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+    MOZ_ASSERT(NS_IsMainThread(), "Wrong thread!");
 
-    if (!sSmsRequests || (aRequestId >= sSmsRequests->Length())) {
+    MOZ_ASSERT(aRequestId < mSmsRequests.Length());
+    if (aRequestId >= mSmsRequests.Length()) {
         return nullptr;
     }
 
-    return (*sSmsRequests)[aRequestId].forget();
+    return mSmsRequests[aRequestId].forget();
 }
 
 void
@@ -1996,15 +1977,6 @@ AndroidBridge::ReleaseNativeWindowForSurfaceTexture(void *window)
 }
 
 bool
-AndroidBridge::SetNativeWindowFormat(void *window, int width, int height, int format)
-{
-    if (mHasNativeWindowAccess)
-        return ANativeWindow_setBuffersGeometry(window, width, height, format) == 0;
-    else
-        return false; //unimplemented in fallback
-}
-
-bool
 AndroidBridge::LockWindow(void *window, unsigned char **bits, int *width, int *height, int *format, int *stride)
 {
     /* Copied from native_window.h in Android NDK (platform-9) */
@@ -2076,6 +2048,38 @@ AndroidBridge::LockWindow(void *window, unsigned char **bits, int *width, int *h
     return true;
 }
 
+jobject
+AndroidBridge::GetContext() {
+    JNIEnv *env = GetJNIForThread();
+    if (!env)
+        return 0;
+
+    jobject context = env->CallStaticObjectMethod(mGeckoAppShellClass, jGetContext);
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+        return 0;
+    }
+
+    return context;
+}
+
+jobject
+AndroidBridge::GetGlobalContextRef() {
+    JNIEnv *env = GetJNIForThread();
+    if (!env)
+        return 0;
+
+    AutoLocalJNIFrame jniFrame(env, 0);
+
+    jobject context = GetContext();
+
+    jobject globalRef = env->NewGlobalRef(context);
+    MOZ_ASSERT(globalRef);
+
+    return globalRef;
+}
+
 bool
 AndroidBridge::UnlockWindow(void* window)
 {
@@ -2112,17 +2116,17 @@ AndroidBridge::IsTablet()
 }
 
 void
-AndroidBridge::SetFirstPaintViewport(const nsIntPoint& aOffset, float aZoom, const nsIntRect& aPageRect, const gfx::Rect& aCssPageRect)
+AndroidBridge::SetFirstPaintViewport(const LayerIntPoint& aOffset, const CSSToLayerScale& aZoom, const CSSRect& aCssPageRect)
 {
     AndroidGeckoLayerClient *client = mLayerClient;
     if (!client)
         return;
 
-    client->SetFirstPaintViewport(aOffset, aZoom, aPageRect, aCssPageRect);
+    client->SetFirstPaintViewport(aOffset, aZoom, aCssPageRect);
 }
 
 void
-AndroidBridge::SetPageRect(const gfx::Rect& aCssPageRect)
+AndroidBridge::SetPageRect(const CSSRect& aCssPageRect)
 {
     AndroidGeckoLayerClient *client = mLayerClient;
     if (!client)
@@ -2132,18 +2136,35 @@ AndroidBridge::SetPageRect(const gfx::Rect& aCssPageRect)
 }
 
 void
-AndroidBridge::SyncViewportInfo(const nsIntRect& aDisplayPort, float aDisplayResolution, bool aLayersUpdated,
-                                nsIntPoint& aScrollOffset, float& aScaleX, float& aScaleY)
+AndroidBridge::SyncViewportInfo(const LayerIntRect& aDisplayPort, const CSSToLayerScale& aDisplayResolution,
+                                bool aLayersUpdated, ScreenPoint& aScrollOffset, CSSToScreenScale& aScale,
+                                gfx::Margin& aFixedLayerMargins, ScreenPoint& aOffset)
 {
     AndroidGeckoLayerClient *client = mLayerClient;
     if (!client)
         return;
 
-    client->SyncViewportInfo(aDisplayPort, aDisplayResolution, aLayersUpdated, aScrollOffset, aScaleX, aScaleY);
+    client->SyncViewportInfo(aDisplayPort, aDisplayResolution, aLayersUpdated,
+                             aScrollOffset, aScale, aFixedLayerMargins,
+                             aOffset);
+}
+
+void AndroidBridge::SyncFrameMetrics(const ScreenPoint& aScrollOffset, float aZoom, const CSSRect& aCssPageRect,
+                                     bool aLayersUpdated, const CSSRect& aDisplayPort, const CSSToLayerScale& aDisplayResolution,
+                                     bool aIsFirstPaint, gfx::Margin& aFixedLayerMargins, ScreenPoint& aOffset)
+{
+    AndroidGeckoLayerClient *client = mLayerClient;
+    if (!client)
+        return;
+
+    client->SyncFrameMetrics(aScrollOffset, aZoom, aCssPageRect,
+                             aLayersUpdated, aDisplayPort, aDisplayResolution,
+                             aIsFirstPaint, aFixedLayerMargins, aOffset);
 }
 
 AndroidBridge::AndroidBridge()
-  : mLayerClient(NULL)
+  : mLayerClient(NULL),
+    mNativePanZoomController(NULL)
 {
 }
 
@@ -2166,6 +2187,27 @@ nsAndroidBridge::~nsAndroidBridge()
 NS_IMETHODIMP nsAndroidBridge::HandleGeckoMessage(const nsAString & message, nsAString &aRet)
 {
     AndroidBridge::Bridge()->HandleGeckoMessage(message, aRet);
+    return NS_OK;
+}
+
+/* nsIAndroidDisplayport getDisplayPort(in boolean aPageSizeUpdate, in boolean isBrowserContentDisplayed, in int32_t tabId, in nsIAndroidViewport metrics); */
+NS_IMETHODIMP nsAndroidBridge::GetDisplayPort(bool aPageSizeUpdate, bool aIsBrowserContentDisplayed, int32_t tabId, nsIAndroidViewport* metrics, nsIAndroidDisplayport** displayPort)
+{
+    AndroidBridge::Bridge()->GetDisplayPort(aPageSizeUpdate, aIsBrowserContentDisplayed, tabId, metrics, displayPort);
+    return NS_OK;
+}
+
+/* void displayedDocumentChanged(); */
+NS_IMETHODIMP nsAndroidBridge::ContentDocumentChanged()
+{
+    AndroidBridge::Bridge()->ContentDocumentChanged();
+    return NS_OK;
+}
+
+/* boolean isContentDocumentDisplayed(); */
+NS_IMETHODIMP nsAndroidBridge::IsContentDocumentDisplayed(bool *aRet)
+{
+    *aRet = AndroidBridge::Bridge()->IsContentDocumentDisplayed();
     return NS_OK;
 }
 
@@ -2295,7 +2337,6 @@ AndroidBridge::UnlockScreenOrientation()
 bool
 AndroidBridge::PumpMessageLoop()
 {
-#if MOZ_ANDROID_OMTC
     JNIEnv* env = GetJNIEnv();
     if (!env)
         return false;
@@ -2306,8 +2347,6 @@ AndroidBridge::PumpMessageLoop()
         return false;
 
     return env->CallStaticBooleanMethod(mGeckoAppShellClass, jPumpMessageLoop);
-#endif
-    return false;
 }
 
 void
@@ -2328,9 +2367,7 @@ AndroidBridge::NotifyWakeLockChanged(const nsAString& topic, const nsAString& st
 void
 AndroidBridge::ScheduleComposite()
 {
-#if MOZ_ANDROID_OMTC
     nsWindow::ScheduleComposite();
-#endif
 }
 
 void
@@ -2348,7 +2385,8 @@ AndroidBridge::RegisterSurfaceTextureFrameListener(jobject surfaceTexture, int i
 void
 AndroidBridge::UnregisterSurfaceTextureFrameListener(jobject surfaceTexture)
 {
-    JNIEnv* env = GetJNIEnv();
+    // This function is called on a worker thread when the Flash plugin is unloaded.
+    JNIEnv* env = GetJNIForThread();
     if (!env)
         return;
 
@@ -2427,16 +2465,10 @@ AndroidBridge::AddPluginView(jobject view, const gfxRect& rect, bool isFullScree
 
     AutoLocalJNIFrame jniFrame(env);
 
-#if MOZ_ANDROID_OMTC
     env->CallStaticVoidMethod(sBridge->mGeckoAppShellClass,
                               sBridge->jAddPluginView, view,
                               (int)rect.x, (int)rect.y, (int)rect.width, (int)rect.height,
                               isFullScreen);
-#else
-    env->CallStaticVoidMethod(sBridge->mGeckoAppShellClass,
-                              sBridge->jAddPluginView, view,
-                              rect.x, rect.y, rect.width, rect.height);
-#endif
 }
 
 void
@@ -2455,6 +2487,120 @@ __attribute__ ((visibility("default")))
 jobject JNICALL
 Java_org_mozilla_gecko_GeckoAppShell_allocateDirectBuffer(JNIEnv *env, jclass, jlong size);
 
+void
+AndroidBridge::StartJavaProfiling(int aInterval, int aSamples)
+{
+    JNIEnv* env = GetJNIForThread();
+    if (!env)
+        return;
+
+    AutoLocalJNIFrame jniFrame(env);
+
+    env->CallStaticVoidMethod(AndroidBridge::Bridge()->jGeckoJavaSamplerClass,
+                              AndroidBridge::Bridge()->jStart,
+                              aInterval, aSamples);
+}
+
+void
+AndroidBridge::StopJavaProfiling()
+{
+    JNIEnv* env = GetJNIForThread();
+    if (!env)
+        return;
+
+    AutoLocalJNIFrame jniFrame(env);
+
+    env->CallStaticVoidMethod(AndroidBridge::Bridge()->jGeckoJavaSamplerClass,
+                              AndroidBridge::Bridge()->jStop);
+}
+
+void
+AndroidBridge::PauseJavaProfiling()
+{
+    JNIEnv* env = GetJNIForThread();
+    if (!env)
+        return;
+
+    AutoLocalJNIFrame jniFrame(env);
+
+    env->CallStaticVoidMethod(AndroidBridge::Bridge()->jGeckoJavaSamplerClass,
+                              AndroidBridge::Bridge()->jPause);
+}
+
+void
+AndroidBridge::UnpauseJavaProfiling()
+{
+    JNIEnv* env = GetJNIForThread();
+    if (!env)
+        return;
+
+    AutoLocalJNIFrame jniFrame(env);
+
+    env->CallStaticVoidMethod(AndroidBridge::Bridge()->jGeckoJavaSamplerClass,
+                              AndroidBridge::Bridge()->jUnpause);
+}
+
+bool
+AndroidBridge::GetThreadNameJavaProfiling(uint32_t aThreadId, nsCString & aResult)
+{
+    JNIEnv* env = GetJNIForThread();
+    if (!env)
+        return false;
+
+    AutoLocalJNIFrame jniFrame(env);
+
+    jstring jstrThreadName = static_cast<jstring>(
+        env->CallStaticObjectMethod(AndroidBridge::Bridge()->jGeckoJavaSamplerClass,
+                                    AndroidBridge::Bridge()->jGetThreadName,
+                                    aThreadId));
+
+    if (!jstrThreadName)
+        return false;
+
+    nsJNIString jniStr(jstrThreadName, env);
+    CopyUTF16toUTF8(jniStr.get(), aResult);
+    return true;
+}
+
+bool
+AndroidBridge::GetFrameNameJavaProfiling(uint32_t aThreadId, uint32_t aSampleId,
+                                          uint32_t aFrameId, nsCString & aResult)
+{
+    JNIEnv* env = GetJNIForThread();
+    if (!env)
+        return false;
+
+    AutoLocalJNIFrame jniFrame(env);
+
+    jstring jstrSampleName = static_cast<jstring>(
+        env->CallStaticObjectMethod(AndroidBridge::Bridge()->jGeckoJavaSamplerClass,
+                                    AndroidBridge::Bridge()->jGetFrameName,
+                                    aThreadId, aSampleId, aFrameId));
+
+    if (!jstrSampleName)
+        return false;
+
+    nsJNIString jniStr(jstrSampleName, env);
+    CopyUTF16toUTF8(jniStr.get(), aResult);
+    return true;
+}
+
+double
+AndroidBridge::GetSampleTimeJavaProfiling(uint32_t aThreadId, uint32_t aSampleId)
+{
+    JNIEnv* env = GetJNIForThread();
+    if (!env)
+        return 0;
+
+    AutoLocalJNIFrame jniFrame(env);
+
+    jdouble jSampleTime =
+        env->CallStaticDoubleMethod(AndroidBridge::Bridge()->jGeckoJavaSamplerClass,
+                                    AndroidBridge::Bridge()->jGetSampleTime,
+                                    aThreadId, aSampleId);
+
+    return jSampleTime;
+}
 
 void
 AndroidBridge::SendThumbnail(jobject buffer, int32_t tabId, bool success) {
@@ -2559,26 +2705,38 @@ nsresult AndroidBridge::CaptureThumbnail(nsIDOMWindow *window, int32_t bufW, int
     return NS_OK;
 }
 
-nsresult
-nsAndroidBridge::GetDisplayPort(bool aPageSizeUpdate, bool aIsBrowserContentDisplayed, int32_t tabId, nsIAndroidViewport* metrics, nsIAndroidDisplayport** displayPort)
-{
-    return AndroidBridge::Bridge()->GetDisplayPort(aPageSizeUpdate, aIsBrowserContentDisplayed, tabId, metrics, displayPort);
-}
-
-nsresult
+void
 AndroidBridge::GetDisplayPort(bool aPageSizeUpdate, bool aIsBrowserContentDisplayed, int32_t tabId, nsIAndroidViewport* metrics, nsIAndroidDisplayport** displayPort)
 {
     JNIEnv* env = GetJNIEnv();
     if (!env || !mLayerClient)
-        return NS_OK;
+        return;
     AutoLocalJNIFrame jniFrame(env, 0);
     mLayerClient->GetDisplayPort(&jniFrame, aPageSizeUpdate, aIsBrowserContentDisplayed, tabId, metrics, displayPort);
+}
 
-    return NS_OK;
+void
+AndroidBridge::ContentDocumentChanged()
+{
+    JNIEnv* env = GetJNIEnv();
+    if (!env || !mLayerClient)
+        return;
+    AutoLocalJNIFrame jniFrame(env, 0);
+    mLayerClient->ContentDocumentChanged(&jniFrame);
 }
 
 bool
-AndroidBridge::ProgressiveUpdateCallback(bool aHasPendingNewThebesContent, const gfx::Rect& aDisplayPort, float aDisplayResolution, bool aDrawingCritical, gfx::Rect& aViewport, float& aScaleX, float& aScaleY)
+AndroidBridge::IsContentDocumentDisplayed()
+{
+    JNIEnv* env = GetJNIEnv();
+    if (!env || !mLayerClient)
+        return false;
+    AutoLocalJNIFrame jniFrame(env, 0);
+    return mLayerClient->IsContentDocumentDisplayed(&jniFrame);
+}
+
+bool
+AndroidBridge::ProgressiveUpdateCallback(bool aHasPendingNewThebesContent, const LayerRect& aDisplayPort, float aDisplayResolution, bool aDrawingCritical, gfx::Rect& aViewport, float& aScaleX, float& aScaleY)
 {
     AndroidGeckoLayerClient *client = mLayerClient;
     if (!client)
@@ -2611,54 +2769,115 @@ AndroidBridge::UnlockProfile()
     return ret;
 }
 
-extern "C" {
-  __attribute__ ((visibility("default")))
-  jclass
-  jsjni_FindClass(const char *className) {
-    JNIEnv *env = AndroidBridge::GetJNIEnv();
-    if (!env) return NULL;
-    return env->FindClass(className);
-  }
+jobject
+AndroidBridge::SetNativePanZoomController(jobject obj)
+{
+    jobject old = mNativePanZoomController;
+    mNativePanZoomController = obj;
+    return old;
+}
 
-  __attribute__ ((visibility("default")))
-  jmethodID
-  jsjni_GetStaticMethodID(jclass methodClass,
-                    const char *methodName,
-                    const char *signature) {
-    JNIEnv *env = AndroidBridge::GetJNIEnv();
-    if (!env) return NULL;
-    return env->GetStaticMethodID(methodClass, methodName, signature);
-  }
+void
+AndroidBridge::RequestContentRepaint(const mozilla::layers::FrameMetrics& aFrameMetrics)
+{
+    ALOG_BRIDGE("AndroidBridge::RequestContentRepaint");
+    JNIEnv* env = GetJNIForThread();    // called on the compositor thread
+    if (!env || !mNativePanZoomController) {
+        return;
+    }
 
-  __attribute__ ((visibility("default")))
-  bool
-  jsjni_ExceptionCheck() {
-    JNIEnv *env = AndroidBridge::GetJNIEnv();
-    if (!env) return NULL;
-    return env->ExceptionCheck();
-  }
+    CSSToScreenScale resolution =
+      mozilla::layers::AsyncPanZoomController::CalculateResolution(aFrameMetrics);
+    ScreenRect dp = (aFrameMetrics.mDisplayPort + aFrameMetrics.mScrollOffset) * resolution;
 
-  __attribute__ ((visibility("default")))
-  void
-  jsjni_CallStaticVoidMethodA(jclass cls,
-                        jmethodID method,
-                        jvalue *values) {
-    JNIEnv *env = AndroidBridge::GetJNIEnv();
-    if (!env) return;
+    AutoLocalJNIFrame jniFrame(env, 0);
+    env->CallVoidMethod(mNativePanZoomController, jRequestContentRepaint,
+        dp.x, dp.y, dp.width, dp.height, resolution.scale);
+}
 
-    AutoLocalJNIFrame jniFrame(env);
-    env->CallStaticVoidMethodA(cls, method, values);
-  }
+void
+AndroidBridge::HandleDoubleTap(const CSSIntPoint& aPoint)
+{
+    nsCString data = nsPrintfCString("{ \"x\": %d, \"y\": %d }", aPoint.x, aPoint.y);
+    nsAppShell::gAppShell->PostEvent(AndroidGeckoEvent::MakeBroadcastEvent(
+            NS_LITERAL_CSTRING("Gesture:DoubleTap"), data));
+}
 
-  __attribute__ ((visibility("default")))
-  int
-  jsjni_CallStaticIntMethodA(jclass cls,
-                       jmethodID method,
-                       jvalue *values) {
-    JNIEnv *env = AndroidBridge::GetJNIEnv();
-    if (!env) return -1;
+void
+AndroidBridge::HandleSingleTap(const CSSIntPoint& aPoint)
+{
+    nsCString data = nsPrintfCString("{ \"x\": %d, \"y\": %d }", aPoint.x, aPoint.y);
+    nsAppShell::gAppShell->PostEvent(AndroidGeckoEvent::MakeBroadcastEvent(
+            NS_LITERAL_CSTRING("Gesture:SingleTap"), data));
+}
 
-    AutoLocalJNIFrame jniFrame(env);
-    return env->CallStaticIntMethodA(cls, method, values);
-  }
+void
+AndroidBridge::HandleLongTap(const CSSIntPoint& aPoint)
+{
+    nsCString data = nsPrintfCString("{ \"x\": %d, \"y\": %d }", aPoint.x, aPoint.y);
+    nsAppShell::gAppShell->PostEvent(AndroidGeckoEvent::MakeBroadcastEvent(
+            NS_LITERAL_CSTRING("Gesture:LongPress"), data));
+}
+
+void
+AndroidBridge::SendAsyncScrollDOMEvent(const CSSRect& aContentRect, const CSSSize& aScrollableSize)
+{
+    // FIXME implement this
+}
+
+void
+AndroidBridge::PostDelayedTask(Task* aTask, int aDelayMs)
+{
+    JNIEnv* env = GetJNIForThread();
+    if (!env || !mNativePanZoomController) {
+        return;
+    }
+
+    // add the new task into the mDelayedTaskQueue, sorted with
+    // the earliest task first in the queue
+    DelayedTask* newTask = new DelayedTask(aTask, aDelayMs);
+    uint32_t i = 0;
+    while (i < mDelayedTaskQueue.Length()) {
+        if (newTask->IsEarlierThan(mDelayedTaskQueue[i])) {
+            mDelayedTaskQueue.InsertElementAt(i, newTask);
+            break;
+        }
+        i++;
+    }
+    if (i == mDelayedTaskQueue.Length()) {
+        // this new task will run after all the existing tasks in the queue
+        mDelayedTaskQueue.AppendElement(newTask);
+    }
+    if (i == 0) {
+        // if we're inserting it at the head of the queue, notify Java because
+        // we need to get a callback at an earlier time than the last scheduled
+        // callback
+        AutoLocalJNIFrame jniFrame(env, 0);
+        env->CallVoidMethod(mNativePanZoomController, jPostDelayedCallback, (int64_t)aDelayMs);
+    }
+}
+
+int64_t
+AndroidBridge::RunDelayedTasks()
+{
+    while (mDelayedTaskQueue.Length() > 0) {
+        DelayedTask* nextTask = mDelayedTaskQueue[0];
+        int64_t timeLeft = nextTask->MillisecondsToRunTime();
+        if (timeLeft > 0) {
+            // this task (and therefore all remaining tasks)
+            // have not yet reached their runtime. return the
+            // time left until we should be called again
+            return timeLeft;
+        }
+
+        // we have a delayed task to run. extract it from
+        // the wrapper and free the wrapper
+
+        mDelayedTaskQueue.RemoveElementAt(0);
+        Task* task = nextTask->GetTask();
+        delete nextTask;
+
+        task->Run();
+    }
+    return -1;
 }

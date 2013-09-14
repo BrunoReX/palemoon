@@ -42,26 +42,35 @@ extern "C" {
 /* Not good practice but making includes simpler */
 #include "transport_addr.h"
 #include "nr_socket.h"
+#include "nr_resolver.h"
 #include "stun_client_ctx.h"
 #include "stun_server_ctx.h"
 #include "turn_client_ctx.h"
 
+#define NR_ICE_STUN_SERVER_TYPE_ADDR    1
+#define NR_ICE_STUN_SERVER_TYPE_DNSNAME 2
+
 typedef struct nr_ice_stun_server_ {
-  nr_transport_addr addr;
+  int type;
+  union {
+    nr_transport_addr addr;
+    struct {
+      char host[256];  /* Limit from RFC 1034, plus a 0 byte */
+      UINT2 port;
+    } dnsname;
+  } u;
   int index;
 } nr_ice_stun_server;
 
 typedef struct nr_ice_turn_server_ {
     nr_ice_stun_server    turn_server;
-    UINT4                 bandwidth_kbps;
-    UINT4                 lifetime_secs;
     char                 *username;
     Data                 *password;
 } nr_ice_turn_server;
 
 typedef struct nr_ice_foundation_ {
   int index;
-  
+
   nr_transport_addr addr;
   int type;
   nr_ice_stun_server *stun_server;
@@ -103,7 +112,7 @@ struct nr_ice_ctx_ {
 #define NR_ICE_STATE_INITIALIZING     2
 #define NR_ICE_STATE_INITIALIZED      3
   char *label;
-  
+
   char *ufrag;
   char *pwd;
 
@@ -114,12 +123,14 @@ struct nr_ice_ctx_ {
   nr_ice_turn_server *turn_servers;           /* The list of turn servers */
   int turn_server_ct;
 
+  nr_resolver *resolver;                      /* The resolver to use */
+
   nr_ice_foundation_head foundations;
-  
+
   nr_ice_media_stream_head streams;           /* Media streams */
   int stream_ct;
   nr_ice_socket_head sockets;                 /* The sockets we're using */
-  int uninitialized_candidates;  
+  int uninitialized_candidates;
 
   UINT4 gather_rto;
   UINT4 stun_delay;
@@ -147,6 +158,9 @@ int nr_ice_ctx_deliver_packet(nr_ice_ctx *ctx, nr_ice_component *comp, nr_transp
 int nr_ice_ctx_is_known_id(nr_ice_ctx *ctx, UCHAR id[12]);
 int nr_ice_ctx_remember_id(nr_ice_ctx *ctx, nr_stun_message *msg);
 int nr_ice_ctx_finalize(nr_ice_ctx *ctx, nr_ice_peer_ctx *pctx);
+int nr_ice_ctx_set_stun_servers(nr_ice_ctx *ctx,nr_ice_stun_server *servers, int ct);
+int nr_ice_ctx_set_turn_servers(nr_ice_ctx *ctx,nr_ice_turn_server *servers, int ct);
+int nr_ice_ctx_set_resolver(nr_ice_ctx *ctx, nr_resolver *resolver);
 
 extern int LOG_ICE;
 

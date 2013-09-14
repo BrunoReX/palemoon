@@ -6,8 +6,10 @@
 #include "SimToolKit.idl"
 
 interface nsIDOMEventListener;
+interface nsIDOMDOMRequest;
+interface nsIDOMContact;
 
-[scriptable, builtinclass, uuid(9d898c66-3485-4cd5-ab8d-92ef2988887b)]
+[scriptable, builtinclass, uuid(b4e16bb0-a258-11e2-9e96-0800200c9a66)]
 interface nsIDOMMozIccManager : nsIDOMEventTarget
 {
   /**
@@ -256,6 +258,8 @@ interface nsIDOMMozIccManager : nsIDOMEventTarget
    *        one of events below:
    *        - MozStkLocationEvent
    *        - MozStkCallEvent
+   *        - MozStkLanguageSelectionEvent
+   *        - MozStkGeneralEvent
    */
   void sendStkEventDownload(in jsval event);
 
@@ -270,4 +274,217 @@ interface nsIDOMMozIccManager : nsIDOMEventTarget
    * ICC.
    */
   [implicit_jscontext] attribute jsval onstksessionend;
+
+  // UICC Card Lock interfaces.
+
+  /**
+   * Find out about the status of an ICC lock (e.g. the PIN lock).
+   *
+   * @param lockType
+   *        Identifies the lock type, e.g. "pin" for the PIN lock, "fdn" for
+   *        the FDN lock.
+   *
+   * @return a DOM Request.
+   *         The request's result will be an object containing
+   *         information about the specified lock's status,
+   *         e.g. {lockType: "pin", enabled: true}.
+   */
+  nsIDOMDOMRequest getCardLock(in DOMString lockType);
+
+  /**
+   * Unlock a card lock.
+   *
+   * @param info
+   *        An object containing the information necessary to unlock
+   *        the given lock. At a minimum, this object must have a
+   *        "lockType" attribute which specifies the type of lock, e.g.
+   *        "pin" for the PIN lock. Other attributes are dependent on
+   *        the lock type.
+   *
+   * Examples:
+   *
+   * (1) Unlocking the PIN:
+   *
+   *   unlockCardLock({lockType: "pin",
+   *                   pin: "..."});
+   *
+   * (2) Unlocking the PUK and supplying a new PIN:
+   *
+   *   unlockCardLock({lockType: "puk",
+   *                   puk: "...",
+   *                   newPin: "..."});
+   *
+   * (3) Network depersonalization. Unlocking the network control key (NCK).
+   *
+   *   unlockCardLock({lockType: "nck",
+   *                   pin: "..."});
+   *
+   * (4) Corporate depersonalization. Unlocking the corporate control key (CCK).
+   *
+   *   unlockCardLock({lockType: "cck",
+   *                   pin: "..."});
+   *
+   * (5) Service Provider depersonalization. Unlocking the service provider
+   *     control key (SPCK).
+   *
+   *   unlockCardLock({lockType: "spck",
+   *                   pin: "..."});
+   *
+   * @return a nsIDOMDOMRequest.
+   *         The request's result will be an object containing
+   *         information about the unlock operation.
+   *
+   * Examples:
+   *
+   * (1) Unlocking failed:
+   *
+   *     {
+   *       lockType:   "pin",
+   *       success:    false,
+   *       retryCount: 2
+   *     }
+   *
+   * (2) Unlocking succeeded:
+   *
+   *     {
+   *       lockType:  "pin",
+   *       success:   true
+   *     }
+   */
+  nsIDOMDOMRequest unlockCardLock(in jsval info);
+
+  /**
+   * Modify the state of a card lock.
+   *
+   * @param info
+   *        An object containing information about the lock and
+   *        how to modify its state. At a minimum, this object
+   *        must have a "lockType" attribute which specifies the
+   *        type of lock, e.g. "pin" for the PIN lock. Other
+   *        attributes are dependent on the lock type.
+   *
+   * Examples:
+   *
+   * (1a) Disabling the PIN lock:
+   *
+   *   setCardLock({lockType: "pin",
+   *                pin: "...",
+   *                enabled: false});
+   *
+   * (1b) Disabling the FDN lock:
+   *
+   *   setCardLock({lockType: "fdn",
+   *                pin2: "...",
+   *                enabled: false});
+   *
+   * (2) Changing the PIN:
+   *
+   *   setCardLock({lockType: "pin",
+   *                pin: "...",
+   *                newPin: "..."});
+   *
+   * @return a nsIDOMDOMRequest.
+   *         The request's result will be an object containing
+   *         information about the operation.
+   *
+   * Examples:
+   *
+   * (1) Enabling/Disabling card lock failed or change card lock failed.
+   *
+   *     {
+   *       lockType: "pin",
+   *       success: false,
+   *       retryCount: 2
+   *     }
+   *
+   * (2) Enabling/Disabling card lock succeed or change card lock succeed.
+   *
+   *     {
+   *       lockType: "pin",
+   *       success: true
+   *     }
+   */
+  nsIDOMDOMRequest setCardLock(in jsval info);
+
+  /**
+   * The 'icccardlockerror' event is notified whenever 'unlockCardLock' or
+   * 'setCardLock' fails.
+   *
+   * The result will be an object containing information
+   * about the specified lock's status,
+   * e.g. {lockType: "pin", retryCount: 2}.
+   */
+  [implicit_jscontext] attribute jsval onicccardlockerror;
+
+  // UICC Phonebook Interfaces.
+
+  /**
+   * Read ICC contacts.
+   *
+   * @param contactType
+   *        One of type as below,
+   *        - 'adn': Abbreviated Dialling Number
+   *        - 'fdn': Fixed Dialling Number
+   */
+  nsIDOMDOMRequest readContacts(in DOMString contactType);
+
+  /**
+   * Update ICC Phonebook contact.
+   *
+   * @param contactType
+   *        One of type as below,
+   *        - 'adn': Abbreviated Dialling Number
+   *        - 'fdn': Fixed Dialling Number
+   * @param contact
+   *        The contact will be updated in ICC
+   * @param [optional] pin2
+   *        PIN2 is only required for 'fdn'.
+   */
+  nsIDOMDOMRequest updateContact(in DOMString contactType,
+                                 in nsIDOMContact contact,
+                                 [optional] in DOMString pin2);
+
+  // End of UICC Phonebook Interfaces.
+
+  // UICC Secure Element Interfaces
+
+  /**
+   * A secure element is a smart card chip that can hold
+   * several different applications with the necessary security.
+   * The most known secure element is the Universal Integrated Circuit Card (UICC)
+   */
+
+  /**
+   * Send request to open a logical channel defined by its
+   * application identifier (AID)
+   *
+   * @param aid
+   *        The Application Identifier of the Applet to be selected on this channel
+   * return value : An instance of Channel (channelID) if available or null.
+   */
+  nsIDOMDOMRequest iccOpenChannel(in DOMString aid);
+
+  /**
+   * Interface, used to communicate with an applet through the
+   * Application Data Protocol Units (APDUs) and is
+   * used for all data that is exchanged between the UICC card and the terminal (ME).
+   *
+   * @param channel
+   *        The Application Identifier of the Applet to which APDU is directed
+   * @param apdu
+   *        Application Protocol Data Unit
+   * return value : Response APDU
+   */
+  nsIDOMDOMRequest iccExchangeAPDU(in long channel, in jsval apdu);
+
+  /**
+   * Send request to close the selected logical channel identified by its
+   * application identifier (AID)
+   *
+   * @param aid
+   *        The Application Identifier of the Applet , to be closed
+   */
+  nsIDOMDOMRequest iccCloseChannel(in long channel);
+
+  // End of UICC Secure Element Interfaces
 };

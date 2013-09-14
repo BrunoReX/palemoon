@@ -226,6 +226,13 @@ class MochitestOptions(optparse.OptionParser):
                     help = "repeats the test or set of tests the given number of times, ie: repeat=1 will run the test twice.")                   
     defaults["repeat"] = 0
 
+    self.add_option("--run-until-failure",
+                    action = "store_true", dest="runUntilFailure",
+                    help = "Run a test repeatedly and stops on the first time the test fails. "
+                           "Only available when running a single test. Default cap is 30 runs, "
+                           "which can be overwritten with the --repeat parameter.")
+    defaults["runUntilFailure"] = False
+
     self.add_option("--run-only-tests",
                     action = "store", type="string", dest = "runOnlyTests",
                     help = "JSON list of tests that we only want to run, cannot be specified with --exclude-tests. [DEPRECATED- please use --test-manifest]")
@@ -250,6 +257,16 @@ class MochitestOptions(optparse.OptionParser):
                     action = "store_true", dest = "runSlower",
                     help = "Delay execution between test files.")
     defaults["runSlower"] = False
+
+    self.add_option("--metro-immersive",
+                    action = "store_true", dest = "immersiveMode",
+                    help = "launches tests in immersive browser")
+    defaults["immersiveMode"] = False
+
+    self.add_option("--httpd-path", action = "store",
+                    type = "string", dest = "httpdPath",
+                    help = "path to the httpd.js file")
+    defaults["httpdPath"] = None
 
     # -h, --help are automatically handled by OptionParser
 
@@ -353,7 +370,7 @@ See <http://mochikit.com/doc/html/MochiKit/Logging.html> for details on the logg
       options.testingModulesDir = os.path.normpath(options.testingModulesDir)
 
       if not os.path.isabs(options.testingModulesDir):
-        options.testingModulesDir = os.path.abspath(testingModulesDir)
+        options.testingModulesDir = os.path.abspath(options.testingModulesDir)
 
       if not os.path.isdir(options.testingModulesDir):
         self.error('--testing-modules-dir not a directory: %s' %
@@ -362,6 +379,21 @@ See <http://mochikit.com/doc/html/MochiKit/Logging.html> for details on the logg
       options.testingModulesDir = options.testingModulesDir.replace('\\', '/')
       if options.testingModulesDir[-1] != '/':
         options.testingModulesDir += '/'
+
+    if options.immersiveMode:
+      if not self._automation.IS_WIN32:
+        self.error("immersive is only supported on Windows 8 and up.")
+      mochitest.immersiveHelperPath = os.path.join(
+        options.utilityPath, "metrotestharness.exe")
+      if not os.path.exists(mochitest.immersiveHelperPath):
+        self.error("%s not found, cannot launch immersive tests." %
+                   mochitest.immersiveHelperPath)
+
+    if options.runUntilFailure:
+      if not os.path.isfile(os.path.join(mochitest.oldcwd, os.path.dirname(__file__), mochitest.getTestRoot(options), options.testPath)):
+        self.error("--run-until-failure can only be used together with --test-path specifying a single test.")
+      if not options.repeat:
+        options.repeat = 29
 
     return options
 
@@ -383,18 +415,30 @@ class MochitestServer:
     self.httpPort = options.httpPort
     self.shutdownURL = "http://%(server)s:%(port)s/server/shutdown" % { "server" : self.webServer, "port" : self.httpPort }
     self.testPrefix = "'webapprt_'" if options.webapprtContent else "undefined"
+    if options.httpdPath:
+        self._httpdPath = options.httpdPath
+    else:
+        self._httpdPath = '.'
+    self._httpdPath = os.path.abspath(self._httpdPath)
 
   def start(self):
     "Run the Mochitest server, returning the process ID of the server."
     
     env = self._automation.environment(xrePath = self._xrePath)
     env["XPCOM_DEBUG_BREAK"] = "warn"
+
+    # When running with an ASan build, our xpcshell server will also be ASan-enabled,
+    # thus consuming too much resources when running together with the browser on
+    # the test slaves. Try to limit the amount of resources by disabling certain
+    # features.
+    env["ASAN_OPTIONS"] = "quarantine_size=1:redzone=32"
+
     if self._automation.IS_WIN32:
       env["PATH"] = env["PATH"] + ";" + self._xrePath
 
     args = ["-g", self._xrePath,
             "-v", "170",
-            "-f", "./" + "httpd.js",
+            "-f", self._httpdPath + "/httpd.js",
             "-e", """const _PROFILE_PATH = '%(profile)s';const _SERVER_PORT = '%(port)s'; const _SERVER_ADDR = '%(server)s';
                      const _TEST_PREFIX = %(testPrefix)s; const _DISPLAY_RESULTS = %(displayResults)s;""" %
                    {"profile" : self._profileDir.replace('\\', '\\\\'), "port" : self.httpPort, "server" : self.webServer,
@@ -478,7 +522,6 @@ class Mochitest(object):
   # Path to the test script on the server
   TEST_PATH = "tests"
   CHROME_PATH = "redirect.html"
-  PLAIN_LOOP_PATH = "plain-loop.html"
   urlOpts = []
   runSSLTunnel = True
   vmwareHelper = None
@@ -508,7 +551,7 @@ class Mochitest(object):
     testHost = "http://mochi.test:8888"
     testURL = ("/").join([testHost, self.TEST_PATH, options.testPath])
     if os.path.isfile(os.path.join(self.oldcwd, os.path.dirname(__file__), self.TEST_PATH, options.testPath)) and options.repeat > 0:
-       testURL = ("/").join([testHost, self.PLAIN_LOOP_PATH])
+       testURL = ("/").join([testHost, self.TEST_PATH, os.path.dirname(options.testPath)])
     if options.chrome or options.a11y:
        testURL = ("/").join([testHost, self.CHROME_PATH])
     elif options.browserChrome:
@@ -563,7 +606,13 @@ class Mochitest(object):
 
   def buildProfile(self, options):
     """ create the profile and add optional chrome bits and files if requested """
-    self.automation.initializeProfile(options.profilePath, options.extraPrefs, useServerLocations = True)
+    if options.browserChrome and options.timeout:
+      options.extraPrefs.append("testing.browserTestHarness.timeout=%d" % options.timeout)
+    self.automation.initializeProfile(options.profilePath,
+                                      options.extraPrefs,
+                                      useServerLocations=True,
+                                      prefsPath=os.path.join(self.SCRIPT_DIRECTORY,
+                                                        'profile_data', 'prefs_general.js'))
     manifest = self.addChromeToProfile(options)
     self.copyExtraFilesToProfile(options)
     self.installExtensionsToProfile(options)
@@ -632,6 +681,8 @@ class Mochitest(object):
         self.urlOpts.append("shuffle=1")
       if "MOZ_HIDE_RESULTS_TABLE" in env and env["MOZ_HIDE_RESULTS_TABLE"] == "1":
         self.urlOpts.append("hideResultsTable=1")
+      if options.runUntilFailure:
+        self.urlOpts.append("runUntilFailure=1")
       if options.repeat:
         self.urlOpts.append("repeat=%d" % options.repeat)
       if os.path.isfile(os.path.join(self.oldcwd, os.path.dirname(__file__), self.TEST_PATH, options.testPath)) and options.repeat > 0:
@@ -682,7 +733,7 @@ class Mochitest(object):
                                     "VMware recording: (%s)" % str(e))
       self.vmwareHelper = None
 
-  def runTests(self, options):
+  def runTests(self, options, onLaunch=None):
     """ Prepare, configure, run tests and cleanup """
     debuggerInfo = getDebuggerInfo(self.oldcwd, options.debugger, options.debuggerArgs,
                       options.debuggerInteractive);
@@ -709,6 +760,10 @@ class Mochitest(object):
       options.browserArgs.extend(('-test-mode', testURL))
       testURL = None
 
+    if options.immersiveMode:
+      options.browserArgs.extend(('-firefoxpath', options.app))
+      options.app = self.immersiveHelperPath
+
     # Remove the leak detection file so it can't "leak" to the tests run.
     # The file is not there if leak logging was not enabled in the application build.
     if os.path.exists(self.leak_report_file):
@@ -717,7 +772,7 @@ class Mochitest(object):
     # then again to actually run mochitest
     if options.timeout:
       timeout = options.timeout + 30
-    elif not options.autorun:
+    elif options.debugger or not options.autorun:
       timeout = None
     else:
       timeout = 330.0 # default JS harness timeout is 300 seconds
@@ -729,13 +784,14 @@ class Mochitest(object):
     try:
       status = self.automation.runApp(testURL, browserEnv, options.app,
                                   options.profilePath, options.browserArgs,
-                                  runSSLTunnel = self.runSSLTunnel,
-                                  utilityPath = options.utilityPath,
-                                  xrePath = options.xrePath,
+                                  runSSLTunnel=self.runSSLTunnel,
+                                  utilityPath=options.utilityPath,
+                                  xrePath=options.xrePath,
                                   certPath=options.certPath,
                                   debuggerInfo=debuggerInfo,
                                   symbolsPath=options.symbolsPath,
-                                  timeout = timeout)
+                                  timeout=timeout,
+                                  onLaunch=onLaunch)
     except KeyboardInterrupt:
       self.automation.log.info("INFO | runtests.py | Received keyboard interrupt.\n");
       status = -1
@@ -786,13 +842,7 @@ class Mochitest(object):
 
     options.logFile = options.logFile.replace("\\", "\\\\")
     options.testPath = options.testPath.replace("\\", "\\\\")
-    testRoot = 'chrome'
-    if (options.browserChrome):
-      testRoot = 'browser'
-    elif (options.a11y):
-      testRoot = 'a11y'
-    elif (options.webapprtChrome):
-      testRoot = 'webapprtChrome'
+    testRoot = self.getTestRoot(options)
 
     if "MOZ_HIDE_RESULTS_TABLE" in os.environ and os.environ["MOZ_HIDE_RESULTS_TABLE"] == "1":
       options.hideResultsTable = True
@@ -814,6 +864,19 @@ class Mochitest(object):
 
     with open(os.path.join(options.profilePath, "testConfig.js"), "w") as config:
       config.write(content)
+
+  def getTestRoot(self, options):
+    if (options.browserChrome):
+      if (options.immersiveMode):
+        return 'metro'
+      return 'browser'
+    elif (options.a11y):
+      return 'a11y'
+    elif (options.webapprtChrome):
+      return 'webapprtChrome'
+    elif (options.chrome):
+      return 'chrome'
+    return self.TEST_PATH
 
   def addChromeToProfile(self, options):
     "Adds MochiKit chrome tests to the profile."
@@ -906,16 +969,9 @@ overlay chrome://webapprt/content/webapp.xul chrome://mochikit/content/browser-t
         self.automation.log.warning("WARNING | runtests.py | Failed to copy %s to profile", abspath)
         continue
 
-  def installExtensionFromPath(self, options, path, extensionID = None):
-    extensionPath = self.getFullPath(path)
-
-    self.automation.log.info("INFO | runtests.py | Installing extension at %s to %s." %
-                            (extensionPath, options.profilePath))
-    self.automation.installExtension(extensionPath, options.profilePath,
-                                     extensionID)
-
-  def installExtensionsToProfile(self, options):
-    "Install special testing extensions, application distributed extensions, and specified on the command line ones to testing profile."
+  def getExtensionsToInstall(self, options):
+    "Return a list of extensions to install in the profile"
+    extensions = options.extensionsToInstall or []
     extensionDirs = [
       # Extensions distributed with the test harness.
       os.path.normpath(os.path.join(self.SCRIPT_DIRECTORY, "extensions")),
@@ -929,10 +985,20 @@ overlay chrome://webapprt/content/webapp.xul chrome://mochikit/content/browser-t
           if dirEntry not in options.extensionsToExclude:
             path = os.path.join(extensionDir, dirEntry)
             if os.path.isdir(path) or (os.path.isfile(path) and path.endswith(".xpi")):
-              self.installExtensionFromPath(options, path)
+              extensions.append(path)
+    return extensions
 
-    # Install custom extensions passed on the command line.
-    for path in options.extensionsToInstall:
+  def installExtensionFromPath(self, options, path, extensionID = None):
+    extensionPath = self.getFullPath(path)
+
+    self.automation.log.info("INFO | runtests.py | Installing extension at %s to %s." %
+                            (extensionPath, options.profilePath))
+    self.automation.installExtension(extensionPath, options.profilePath,
+                                     extensionID)
+
+  def installExtensionsToProfile(self, options):
+    "Install special testing extensions, application distributed extensions, and specified on the command line ones to testing profile."
+    for path in self.getExtensionsToInstall(options):
       self.installExtensionFromPath(options, path)
 
 def main():

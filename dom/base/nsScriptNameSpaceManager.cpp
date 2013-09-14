@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,11 +20,14 @@
 #include "nsIInterfaceInfo.h"
 #include "xptinfo.h"
 #include "nsXPIDLString.h"
+#include "nsPrintfCString.h"
 #include "nsReadableUtils.h"
 #include "nsHashKeys.h"
 #include "nsDOMClassInfo.h"
 #include "nsCRT.h"
 #include "nsIObserverService.h"
+
+#include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 
 #define NS_INTERFACE_PREFIX "nsI"
@@ -111,6 +115,24 @@ GlobalNameHashInitEntry(PLDHashTable *table, PLDHashEntryHdr *entry,
   return true;
 }
 
+class ScriptNameSpaceManagerReporter MOZ_FINAL : public MemoryReporterBase
+{
+public:
+  ScriptNameSpaceManagerReporter(nsScriptNameSpaceManager* aManager)
+    : MemoryReporterBase(
+        "explicit/script-namespace-manager",
+        KIND_HEAP,
+        nsIMemoryReporter::UNITS_BYTES,
+        "Memory used for the script namespace manager.")
+    , mManager(aManager)
+  {}
+
+private:
+  int64_t Amount() { return mManager->SizeOfIncludingThis(MallocSizeOf); }
+
+  nsScriptNameSpaceManager* mManager;
+};
+
 NS_IMPL_ISUPPORTS2(nsScriptNameSpaceManager,
                    nsIObserver,
                    nsISupportsWeakReference)
@@ -124,6 +146,7 @@ nsScriptNameSpaceManager::nsScriptNameSpaceManager()
 nsScriptNameSpaceManager::~nsScriptNameSpaceManager()
 {
   if (mIsInitialized) {
+    NS_UnregisterMemoryReporter(mReporter);
     // Destroy the hash
     PL_DHashTableFinish(&mGlobalNames);
     PL_DHashTableFinish(&mNavigatorNames);
@@ -397,6 +420,9 @@ nsScriptNameSpaceManager::Init()
 
     return NS_ERROR_OUT_OF_MEMORY;
   }
+
+  mReporter = new ScriptNameSpaceManagerReporter(this);
+  NS_RegisterMemoryReporter(mReporter);
 
   nsresult rv = NS_OK;
 
@@ -693,6 +719,18 @@ nsScriptNameSpaceManager::AddCategoryEntryToHash(nsICategoryManager* aCategoryMa
                                           getter_Copies(contractId));
   NS_ENSURE_SUCCESS(rv, rv);
 
+  if (type == nsGlobalNameStruct::eTypeNavigatorProperty ||
+      type == nsGlobalNameStruct::eTypeExternalConstructor) {
+    bool isNavProperty = type == nsGlobalNameStruct::eTypeNavigatorProperty;
+    nsPrintfCString prefName("dom.%s.disable.%s",
+                             isNavProperty ? "navigator-property" : "global-constructor",
+                             categoryEntry.get());
+    if (Preferences::GetType(prefName.get()) == nsIPrefBranch::PREF_BOOL &&
+        Preferences::GetBool(prefName.get(), false)) {
+        return NS_OK;
+    }
+  }
+
   nsCOMPtr<nsIComponentRegistrar> registrar;
   rv = NS_GetComponentRegistrar(getter_AddRefs(registrar));
   NS_ENSURE_SUCCESS(rv, rv);
@@ -787,7 +825,7 @@ nsScriptNameSpaceManager::Observe(nsISupports* aSubject, const char* aTopic,
 void
 nsScriptNameSpaceManager::RegisterDefineDOMInterface(const nsAFlatString& aName,
     mozilla::dom::DefineInterface aDefineDOMInterface,
-    mozilla::dom::PrefEnabled aPrefEnabled)
+    mozilla::dom::ConstructorEnabled* aConstructorEnabled)
 {
   nsGlobalNameStruct *s = AddToHash(&mGlobalNames, &aName);
   if (s) {
@@ -795,7 +833,23 @@ nsScriptNameSpaceManager::RegisterDefineDOMInterface(const nsAFlatString& aName,
       s->mType = nsGlobalNameStruct::eTypeNewDOMBinding;
     }
     s->mDefineDOMInterface = aDefineDOMInterface;
-    s->mPrefEnabled = aPrefEnabled;
+    s->mConstructorEnabled = aConstructorEnabled;
+  }
+}
+
+void
+nsScriptNameSpaceManager::RegisterNavigatorDOMConstructor(
+    const nsAFlatString& aName,
+    mozilla::dom::ConstructNavigatorProperty aNavConstructor,
+    mozilla::dom::ConstructorEnabled* aConstructorEnabled)
+{
+  nsGlobalNameStruct *s = AddToHash(&mNavigatorNames, &aName);
+  if (s) {
+    if (s->mType == nsGlobalNameStruct::eTypeNotInitialized) {
+      s->mType = nsGlobalNameStruct::eTypeNewDOMBinding;
+    }
+    s->mConstructNavigatorProperty = aNavConstructor;
+    s->mConstructorEnabled = aConstructorEnabled;
   }
 }
 

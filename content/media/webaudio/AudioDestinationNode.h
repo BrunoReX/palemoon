@@ -17,22 +17,37 @@ class AudioContext;
 class AudioDestinationNode : public AudioNode
 {
 public:
-  explicit AudioDestinationNode(AudioContext* aContext);
+  // This node type knows what MediaStreamGraph to use based on
+  // whether it's in offline mode.
+  AudioDestinationNode(AudioContext* aContext,
+                       bool aIsOffline,
+                       uint32_t aNumberOfChannels = 0,
+                       uint32_t aLength = 0,
+                       float aSampleRate = 0.0f);
 
   NS_DECL_ISUPPORTS_INHERITED
 
-  virtual JSObject* WrapObject(JSContext* aCx, JSObject* aScope,
-                               bool* aTriedToWrap);
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
 
-  virtual uint32_t MaxNumberOfInputs() const MOZ_FINAL MOZ_OVERRIDE
-  {
-    return 1;
-  }
-  virtual uint32_t MaxNumberOfOutputs() const MOZ_FINAL MOZ_OVERRIDE
+  virtual uint16_t NumberOfOutputs() const MOZ_FINAL MOZ_OVERRIDE
   {
     return 0;
   }
 
+  uint32_t MaxChannelCount() const;
+  virtual void SetChannelCount(uint32_t aChannelCount,
+                               ErrorResult& aRv) MOZ_OVERRIDE;
+
+  void Mute();
+  void Unmute();
+
+  void StartRendering();
+
+  void DestroyGraph();
+
+private:
+  uint32_t mFramesToProduce;
 };
 
 }

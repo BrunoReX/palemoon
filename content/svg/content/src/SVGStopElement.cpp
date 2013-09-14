@@ -6,33 +6,19 @@
 #include "mozilla/dom/SVGStopElement.h"
 #include "mozilla/dom/SVGStopElementBinding.h"
 
-DOMCI_NODE_DATA(SVGStopElement, mozilla::dom::SVGStopElement)
-
 NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(Stop)
 
 namespace mozilla {
 namespace dom {
 
 JSObject*
-SVGStopElement::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+SVGStopElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return SVGStopElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return SVGStopElementBinding::Wrap(aCx, aScope, this);
 }
 
 nsSVGElement::NumberInfo SVGStopElement::sNumberInfo =
 { &nsGkAtoms::offset, 0, true };
-
-//----------------------------------------------------------------------
-// nsISupports methods
-
-NS_IMPL_ADDREF_INHERITED(SVGStopElement, SVGStopElementBase)
-NS_IMPL_RELEASE_INHERITED(SVGStopElement, SVGStopElementBase)
-
-NS_INTERFACE_TABLE_HEAD(SVGStopElement)
-  NS_NODE_INTERFACE_TABLE4(SVGStopElement, nsIDOMNode, nsIDOMElement,
-                           nsIDOMSVGElement, nsIDOMSVGStopElement)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(SVGStopElement)
-NS_INTERFACE_MAP_END_INHERITING(SVGStopElementBase)
 
 //----------------------------------------------------------------------
 // Implementation
@@ -40,7 +26,6 @@ NS_INTERFACE_MAP_END_INHERITING(SVGStopElementBase)
 SVGStopElement::SVGStopElement(already_AddRefed<nsINodeInfo> aNodeInfo)
   : SVGStopElementBase(aNodeInfo)
 {
-  SetIsDOMBinding();
 }
 
 //----------------------------------------------------------------------
@@ -49,13 +34,6 @@ SVGStopElement::SVGStopElement(already_AddRefed<nsINodeInfo> aNodeInfo)
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGStopElement)
 
 //----------------------------------------------------------------------
-// nsIDOMSVGStopElement methods
-
-/* readonly attribute nsIDOMSVGAnimatedNumber offset; */
-NS_IMETHODIMP SVGStopElement::GetOffset(nsIDOMSVGAnimatedNumber * *aOffset)
-{
-  return mOffset.ToDOMAnimatedNumber(aOffset,this);
-}
 
 already_AddRefed<nsIDOMSVGAnimatedNumber>
 SVGStopElement::Offset()

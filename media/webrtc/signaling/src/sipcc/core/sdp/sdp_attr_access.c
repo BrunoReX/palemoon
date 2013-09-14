@@ -5,6 +5,7 @@
 #include "sdp_os_defs.h"
 #include "sdp.h"
 #include "sdp_private.h"
+#include "fsm.h"
 #include "CSFLog.h"
 
 static const char* logTag = "sdp_attr_access";
@@ -6659,6 +6660,7 @@ sdp_result_e sdp_attr_get_fmtp_streams (void *sdp_ptr, u16 level,
                       "not found.", sdp_p->debug_str, level, inst_num);
         }
         sdp_p->conf_p->num_invalid_param++;
+        *val = WEBRTC_DATACHANNEL_STREAMS_DEFAULT;
         return (SDP_INVALID_PARAMETER);
     } else {
         *val = attr_p->attr.fmtp.streams;
@@ -10231,7 +10233,7 @@ sdp_result_e sdp_set_group_num_id (void *sdp_ptr, u16 level,
         return (SDP_INVALID_PARAMETER);
     } else if ((group_num_id == 0) || (group_num_id > SDP_MAX_GROUP_STREAM_ID)){
         if (sdp_p->debug_flag[SDP_DEBUG_ERRORS]) {
-            CSFLogError(logTag, "%s Number of group id value provided - %u is invalid\n",
+            CSFLogError(logTag, "%s Number of group id value provided - %u is invalid",
                       sdp_p->debug_str, group_num_id);
         }
         sdp_p->conf_p->num_invalid_param++;
@@ -11870,3 +11872,333 @@ sdp_attr_set_sdescriptions_salt_size (void *sdp_ptr,
 
 }
 
+
+/* Function:    sdp_find_rtcp_fb_attr
+ * Description: Helper to find the nth instance of a rtcp-fb attribute of
+ *              the specified feedback type.
+ * Parameters:  sdp_p        The SDP handle returned by sdp_init_description.
+ *              level        The level to check for the attribute.
+ *              payload_type The payload to get the attribute for
+ *              fb_type      The feedback type to look for.
+ *              inst_num     The attribute instance number to check.
+ * Returns:     Pointer to the attribute, or NULL if not found.
+ */
+
+sdp_attr_t *
+sdp_find_rtcp_fb_attr (sdp_t *sdp_p,
+                       u16 level,
+                       u16 payload_type,
+                       sdp_rtcp_fb_type_e fb_type,
+                       u16 inst_num)
+{
+    u16          attr_count=0;
+    sdp_mca_t   *mca_p;
+    sdp_attr_t  *attr_p;
+
+    mca_p = sdp_find_media_level(sdp_p, level);
+    if (!mca_p) {
+        return (NULL);
+    }
+    for (attr_p = mca_p->media_attrs_p; attr_p; attr_p = attr_p->next_p) {
+        if (attr_p->type == SDP_ATTR_RTCP_FB &&
+            (attr_p->attr.rtcp_fb.payload_num == payload_type ||
+             attr_p->attr.rtcp_fb.payload_num == SDP_ALL_PAYLOADS) &&
+            attr_p->attr.rtcp_fb.feedback_type == fb_type) {
+            attr_count++;
+            if (attr_count == inst_num) {
+                return (attr_p);
+            }
+        }
+    }
+    return NULL;
+}
+
+/* Function:    sdp_attr_get_rtcp_fb_ack
+ * Description: Returns the value of the rtcp-fb:...ack attribute
+ * Parameters:  sdp_ptr      The SDP handle returned by sdp_init_description.
+ *              level        The level to check for the attribute.
+ *              payload_type The payload to get the attribute for
+ *              inst_num    The attribute instance number to check.
+ * Returns:     ACK type (SDP_RTCP_FB_ACK_NOT_FOUND if not present)
+ */
+sdp_rtcp_fb_ack_type_e
+sdp_attr_get_rtcp_fb_ack(void *sdp_ptr, u16 level, u16 payload_type, u16 inst)
+{
+    sdp_t       *sdp_p = (sdp_t *)sdp_ptr;
+    sdp_attr_t  *attr_p;
+
+    if (!sdp_verify_sdp_ptr(sdp_p)) {
+        return SDP_RTCP_FB_ACK_NOT_FOUND;
+    }
+
+    attr_p = sdp_find_rtcp_fb_attr(sdp_p, level, payload_type,
+                                   SDP_RTCP_FB_ACK, inst);
+    if (!attr_p) {
+        if (sdp_p->debug_flag[SDP_DEBUG_ERRORS]) {
+            CSFLogError(logTag, "%s rtcp-fb attribute, level %u, pt %u, "
+                      "instance %u not found.", sdp_p->debug_str, level,
+                      payload_type, inst);
+        }
+        sdp_p->conf_p->num_invalid_param++;
+        return SDP_RTCP_FB_ACK_NOT_FOUND;
+    }
+    return (attr_p->attr.rtcp_fb.param.ack);
+}
+
+/* Function:    sdp_attr_get_rtcp_fb_nack
+ * Description: Returns the value of the rtcp-fb:...nack attribute
+ * Parameters:  sdp_ptr      The SDP handle returned by sdp_init_description.
+ *              level        The level to check for the attribute.
+ *              payload_type The payload to get the attribute for
+ *              inst_num    The attribute instance number to check.
+ * Returns:     NACK type (SDP_RTCP_FB_NACK_NOT_FOUND if not present)
+ */
+sdp_rtcp_fb_nack_type_e
+sdp_attr_get_rtcp_fb_nack(void *sdp_ptr, u16 level, u16 payload_type, u16 inst)
+{
+    sdp_t       *sdp_p = (sdp_t *)sdp_ptr;
+    sdp_attr_t  *attr_p;
+
+    if (!sdp_verify_sdp_ptr(sdp_p)) {
+        return SDP_RTCP_FB_NACK_NOT_FOUND;
+    }
+
+    attr_p = sdp_find_rtcp_fb_attr(sdp_p, level, payload_type,
+                                   SDP_RTCP_FB_NACK, inst);
+    if (!attr_p) {
+        if (sdp_p->debug_flag[SDP_DEBUG_ERRORS]) {
+            CSFLogError(logTag, "%s rtcp-fb attribute, level %u, pt %u, "
+                      "instance %u not found.", sdp_p->debug_str, level,
+                      payload_type, inst);
+        }
+        sdp_p->conf_p->num_invalid_param++;
+        return SDP_RTCP_FB_NACK_NOT_FOUND;
+    }
+    return (attr_p->attr.rtcp_fb.param.nack);
+}
+
+/* Function:    sdp_attr_get_rtcp_fb_trr_int
+ * Description: Returns the value of the rtcp-fb:...trr-int attribute
+ * Parameters:  sdp_ptr      The SDP handle returned by sdp_init_description.
+ *              level        The level to check for the attribute.
+ *              payload_type The payload to get the attribute for
+ *              inst_num    The attribute instance number to check.
+ * Returns:     trr-int interval (0xFFFFFFFF if not found)
+ */
+u32
+sdp_attr_get_rtcp_fb_trr_int(void *sdp_ptr, u16 level,
+                             u16 payload_type, u16 inst)
+{
+    sdp_t       *sdp_p = (sdp_t *)sdp_ptr;
+    sdp_attr_t  *attr_p;
+
+    if (!sdp_verify_sdp_ptr(sdp_p)) {
+        return 0xFFFFFFFF;
+    }
+
+    attr_p = sdp_find_rtcp_fb_attr(sdp_p, level, payload_type,
+                                   SDP_RTCP_FB_TRR_INT, inst);
+    if (!attr_p) {
+        if (sdp_p->debug_flag[SDP_DEBUG_ERRORS]) {
+            CSFLogError(logTag, "%s rtcp-fb attribute, level %u, pt %u, "
+                      "instance %u not found.", sdp_p->debug_str, level,
+                      payload_type, inst);
+        }
+        sdp_p->conf_p->num_invalid_param++;
+        return 0xFFFFFFFF;
+    }
+    return (attr_p->attr.rtcp_fb.param.trr_int);
+}
+
+/* Function:    sdp_attr_get_rtcp_fb_ccm
+ * Description: Returns the value of the rtcp-fb:...ccm attribute
+ * Parameters:  sdp_ptr      The SDP handle returned by sdp_init_description.
+ *              level        The level to check for the attribute.
+ *              payload_type The payload to get the attribute for
+ *              inst_num    The attribute instance number to check.
+ * Returns:     CCM type (SDP_RTCP_FB_CCM_NOT_FOUND if not present)
+ */
+sdp_rtcp_fb_ccm_type_e
+sdp_attr_get_rtcp_fb_ccm(void *sdp_ptr, u16 level, u16 payload_type, u16 inst)
+{
+    sdp_t       *sdp_p = (sdp_t *)sdp_ptr;
+    sdp_attr_t  *attr_p;
+
+    if (!sdp_verify_sdp_ptr(sdp_p)) {
+        return SDP_RTCP_FB_CCM_NOT_FOUND;
+    }
+
+    attr_p = sdp_find_rtcp_fb_attr(sdp_p, level, payload_type,
+                                   SDP_RTCP_FB_CCM, inst);
+    if (!attr_p) {
+        if (sdp_p->debug_flag[SDP_DEBUG_ERRORS]) {
+            CSFLogError(logTag, "%s rtcp-fb attribute, level %u, pt %u, "
+                      "instance %u not found.", sdp_p->debug_str, level,
+                      payload_type, inst);
+        }
+        sdp_p->conf_p->num_invalid_param++;
+        return SDP_RTCP_FB_CCM_NOT_FOUND;
+    }
+    return (attr_p->attr.rtcp_fb.param.ccm);
+}
+
+/* Function:    sdp_attr_set_rtcp_fb_ack
+ * Description: Sets the value of an rtcp-fb:...ack attribute
+ * Parameters:  sdp_ptr        The SDP handle returned by sdp_init_description.
+ *              level          The level to set the attribute.
+ *              payload_type   The value to set the payload type to for
+ *                             this attribute. Can be SDP_ALL_PAYLOADS.
+ *              inst_num       The attribute instance number to check.
+ *              type           The ack type to indicate
+ * Returns:     SDP_SUCCESS            Attribute param was set successfully.
+ *              SDP_INVALID_PARAMETER  Specified attribute is not defined.
+ */
+sdp_result_e
+sdp_attr_set_rtcp_fb_ack(void *sdp_ptr, u16 level, u16 payload_type, u16 inst,
+                         sdp_rtcp_fb_ack_type_e type)
+{
+    sdp_t       *sdp_p = (sdp_t *)sdp_ptr;
+    sdp_attr_t  *attr_p;
+
+    if (!sdp_verify_sdp_ptr(sdp_p)) {
+        return (SDP_INVALID_SDP_PTR);
+    }
+
+    attr_p = sdp_find_attr(sdp_p, level, 0, SDP_ATTR_RTCP_FB, inst);
+    if (!attr_p) {
+        if (sdp_p->debug_flag[SDP_DEBUG_ERRORS]) {
+            CSFLogError(logTag, "%s rtcp_fb ack attribute, level %u "
+                      "instance %u not found.", sdp_p->debug_str, level,
+                      inst);
+        }
+        sdp_p->conf_p->num_invalid_param++;
+        return (SDP_INVALID_PARAMETER);
+    }
+
+    attr_p->attr.rtcp_fb.payload_num = payload_type;
+    attr_p->attr.rtcp_fb.feedback_type = SDP_RTCP_FB_ACK;
+    attr_p->attr.rtcp_fb.param.ack = type;
+    attr_p->attr.rtcp_fb.extra[0] = '\0';
+    return (SDP_SUCCESS);
+}
+
+
+/* Function:    sdp_attr_set_rtcp_fb_nack
+ * Description: Sets the value of an rtcp-fb:...nack attribute
+ * Parameters:  sdp_ptr        The SDP handle returned by sdp_init_description.
+ *              level          The level to set the attribute.
+ *              payload_type   The value to set the payload type to for
+ *                             this attribute. Can be SDP_ALL_PAYLOADS.
+ *              inst_num       The attribute instance number to check.
+ *              type           The nack type to indicate
+ * Returns:     SDP_SUCCESS            Attribute param was set successfully.
+ *              SDP_INVALID_PARAMETER  Specified attribute is not defined.
+ */
+sdp_result_e
+sdp_attr_set_rtcp_fb_nack(void *sdp_ptr, u16 level, u16 payload_type, u16 inst,
+                          sdp_rtcp_fb_nack_type_e type)
+{
+    sdp_t       *sdp_p = (sdp_t *)sdp_ptr;
+    sdp_attr_t  *attr_p;
+
+    if (!sdp_verify_sdp_ptr(sdp_p)) {
+        return (SDP_INVALID_SDP_PTR);
+    }
+
+    attr_p = sdp_find_attr(sdp_p, level, 0, SDP_ATTR_RTCP_FB, inst);
+    if (!attr_p) {
+        if (sdp_p->debug_flag[SDP_DEBUG_ERRORS]) {
+            CSFLogError(logTag, "%s rtcp_fb nack attribute, level %u "
+                      "instance %u not found.", sdp_p->debug_str, level,
+                      inst);
+        }
+        sdp_p->conf_p->num_invalid_param++;
+        return (SDP_INVALID_PARAMETER);
+    }
+
+    attr_p->attr.rtcp_fb.payload_num = payload_type;
+    attr_p->attr.rtcp_fb.feedback_type = SDP_RTCP_FB_NACK;
+    attr_p->attr.rtcp_fb.param.nack = type;
+    attr_p->attr.rtcp_fb.extra[0] = '\0';
+    return (SDP_SUCCESS);
+}
+
+/* Function:    sdp_attr_set_rtcp_fb_trr_int
+ * Description: Sets the value of an rtcp-fb:...trr-int attribute
+ * Parameters:  sdp_ptr        The SDP handle returned by sdp_init_description.
+ *              level          The level to set the attribute.
+ *              payload_type   The value to set the payload type to for
+ *                             this attribute. Can be SDP_ALL_PAYLOADS.
+ *              inst_num       The attribute instance number to check.
+ *              interval       The interval time to indicate
+ * Returns:     SDP_SUCCESS            Attribute param was set successfully.
+ *              SDP_INVALID_PARAMETER  Specified attribute is not defined.
+ */
+sdp_result_e
+sdp_attr_set_rtcp_fb_trr_int(void *sdp_ptr, u16 level, u16 payload_type,
+                             u16 inst, u32 interval)
+{
+    sdp_t       *sdp_p = (sdp_t *)sdp_ptr;
+    sdp_attr_t  *attr_p;
+
+    if (!sdp_verify_sdp_ptr(sdp_p)) {
+        return (SDP_INVALID_SDP_PTR);
+    }
+
+    attr_p = sdp_find_attr(sdp_p, level, 0, SDP_ATTR_RTCP_FB, inst);
+    if (!attr_p) {
+        if (sdp_p->debug_flag[SDP_DEBUG_ERRORS]) {
+            CSFLogError(logTag, "%s rtcp_fb trr-int attribute, level %u "
+                      "instance %u not found.", sdp_p->debug_str, level,
+                      inst);
+        }
+        sdp_p->conf_p->num_invalid_param++;
+        return (SDP_INVALID_PARAMETER);
+    }
+
+    attr_p->attr.rtcp_fb.payload_num = payload_type;
+    attr_p->attr.rtcp_fb.feedback_type = SDP_RTCP_FB_TRR_INT;
+    attr_p->attr.rtcp_fb.param.trr_int = interval;
+    attr_p->attr.rtcp_fb.extra[0] = '\0';
+    return (SDP_SUCCESS);
+}
+
+/* Function:    sdp_attr_set_rtcp_fb_ccm
+ * Description: Sets the value of an rtcp-fb:...ccm attribute
+ * Parameters:  sdp_ptr        The SDP handle returned by sdp_init_description.
+ *              level          The level to set the attribute.
+ *              payload_type   The value to set the payload type to for
+ *                             this attribute. Can be SDP_ALL_PAYLOADS.
+ *              inst_num       The attribute instance number to check.
+ *              type           The ccm type to indicate
+ * Returns:     SDP_SUCCESS            Attribute param was set successfully.
+ *              SDP_INVALID_PARAMETER  Specified attribute is not defined.
+ */
+sdp_result_e
+sdp_attr_set_rtcp_fb_ccm(void *sdp_ptr, u16 level, u16 payload_type, u16 inst,
+                         sdp_rtcp_fb_ccm_type_e type)
+{
+    sdp_t       *sdp_p = (sdp_t *)sdp_ptr;
+    sdp_attr_t  *attr_p;
+
+    if (!sdp_verify_sdp_ptr(sdp_p)) {
+        return (SDP_INVALID_SDP_PTR);
+    }
+
+    attr_p = sdp_find_attr(sdp_p, level, 0, SDP_ATTR_RTCP_FB, inst);
+    if (!attr_p) {
+        if (sdp_p->debug_flag[SDP_DEBUG_ERRORS]) {
+            CSFLogError(logTag, "%s rtcp_fb ccm attribute, level %u "
+                      "instance %u not found.", sdp_p->debug_str, level,
+                      inst);
+        }
+        sdp_p->conf_p->num_invalid_param++;
+        return (SDP_INVALID_PARAMETER);
+    }
+
+    attr_p->attr.rtcp_fb.payload_num = payload_type;
+    attr_p->attr.rtcp_fb.feedback_type = SDP_RTCP_FB_CCM;
+    attr_p->attr.rtcp_fb.param.ccm = type;
+    attr_p->attr.rtcp_fb.extra[0] = '\0';
+    return (SDP_SUCCESS);
+}

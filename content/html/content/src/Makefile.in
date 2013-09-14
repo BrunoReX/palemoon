@@ -10,130 +10,10 @@ VPATH		= @srcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-MODULE		= content
 LIBRARY_NAME	= gkconhtmlcon_s
+MSVC_ENABLE_PGO := 1
 LIBXUL_LIBRARY	= 1
-ifndef _MSC_VER
 FAIL_ON_WARNINGS = 1
-endif # !_MSC_VER
-
-
-EXPORTS		= \
-		HTMLPropertiesCollection.h \
-		nsGenericHTMLElement.h \
-		nsHTMLIFrameElement.h \
-		nsClientRect.h \
-		nsHTMLDNSPrefetch.h \
-		nsTimeRanges.h \
-		$(NULL)
-
-EXPORTS_NAMESPACES = mozilla/dom
-
-EXPORTS_mozilla/dom = \
-		HTMLAnchorElement.h \
-		HTMLBodyElement.h \
-		HTMLDataListElement.h \
-		HTMLDivElement.h \
-		HTMLFontElement.h \
-		HTMLFrameSetElement.h \
-		HTMLHeadingElement.h \
-		HTMLImageElement.h \
-		HTMLLabelElement.h \
-		HTMLLIElement.h \
-		HTMLParagraphElement.h \
-		HTMLPreElement.h \
-		HTMLScriptElement.h \
-		HTMLSharedListElement.h \
-		HTMLSpanElement.h \
-		HTMLTableCaptionElement.h \
-		HTMLTableCellElement.h \
-		HTMLTableColElement.h \
-		HTMLTableElement.h \
-		HTMLTableRowElement.h \
-		HTMLTableSectionElement.h \
-		HTMLTitleElement.h \
-		HTMLUnknownElement.h \
-		UndoManager.h \
-		$(NULL)
-
-CPPSRCS		= \
-		HTMLPropertiesCollection.cpp \
-		nsClientRect.cpp \
-		nsHTMLDNSPrefetch.cpp \
-		nsGenericHTMLElement.cpp \
-		nsGenericHTMLFrameElement.cpp \
-		nsFormSubmission.cpp \
-		nsTextEditorState.cpp \
-		HTMLElement.cpp \
-		HTMLAnchorElement.cpp \
-		nsHTMLAreaElement.cpp \
-		nsHTMLBRElement.cpp \
-		HTMLBodyElement.cpp \
-		nsHTMLButtonElement.cpp \
-		HTMLCanvasElement.cpp \
-		HTMLDataListElement.cpp \
-		HTMLDivElement.cpp \
-		nsHTMLFieldSetElement.cpp \
-		HTMLFontElement.cpp \
-		nsHTMLFormElement.cpp \
-		nsHTMLFrameElement.cpp \
-		HTMLFrameSetElement.cpp \
-		nsHTMLHRElement.cpp \
-		HTMLHeadingElement.cpp \
-		nsHTMLIFrameElement.cpp \
-		HTMLImageElement.cpp \
-		nsHTMLInputElement.cpp \
-		HTMLLIElement.cpp \
-		HTMLLabelElement.cpp \
-		nsHTMLLegendElement.cpp \
-		nsHTMLLinkElement.cpp \
-		nsHTMLMapElement.cpp \
-		nsHTMLMenuElement.cpp \
-		nsHTMLMenuItemElement.cpp \
-		nsHTMLMetaElement.cpp \
-		nsHTMLMeterElement.cpp \
-		nsHTMLModElement.cpp \
-		nsHTMLObjectElement.cpp \
-		nsHTMLSharedObjectElement.cpp \
-		nsHTMLOptionElement.cpp \
-		nsHTMLOptGroupElement.cpp \
-		nsHTMLOutputElement.cpp \
-		HTMLParagraphElement.cpp \
-		HTMLPreElement.cpp \
-		nsHTMLProgressElement.cpp \
-		HTMLScriptElement.cpp \
-		nsHTMLSelectElement.cpp \
-		nsHTMLSharedElement.cpp \
-		HTMLSpanElement.cpp \
-		HTMLSharedListElement.cpp \
-		nsHTMLStyleElement.cpp \
-		HTMLTableElement.cpp \
-		HTMLTableCaptionElement.cpp \
-		HTMLTableCellElement.cpp \
-		HTMLTableColElement.cpp \
-		HTMLTableRowElement.cpp \
-		HTMLTableSectionElement.cpp \
-		nsHTMLTextAreaElement.cpp \
-		HTMLTitleElement.cpp \
-		HTMLUnknownElement.cpp \
-		nsDOMValidityState.cpp \
-		nsIConstraintValidation.cpp \
-		nsRadioVisitor.cpp \
-		nsDOMStringMap.cpp \
-		UndoManager.cpp \
-		$(NULL)
-
-ifdef MOZ_MEDIA
-CPPSRCS		+= \
-		nsHTMLAudioElement.cpp \
-		nsHTMLMediaElement.cpp \
-		nsMediaError.cpp \
-		nsMediaFragmentURIParser.cpp \
-		nsHTMLSourceElement.cpp \
-		nsTimeRanges.cpp \
-		nsHTMLVideoElement.cpp \
-		$(NULL)
-endif
 
 # we don't want the shared lib, but we want to force the creation of a static lib.
 FORCE_STATIC_LIB = 1
@@ -156,8 +36,12 @@ INCLUDES	+= \
 		-I$(srcdir)/../../../../editor/libeditor/base \
 		-I$(srcdir)/../../../../editor/libeditor/text \
 		-I$(srcdir)/../../../../editor/txmgr/src \
+		-I$(srcdir)/../../../../netwerk/base/src \
 		-I$(srcdir) \
 		-I$(topsrcdir)/xpcom/ds \
+		-I$(topsrcdir)/content/media/ \
 		$(NULL)
 
-DEFINES += -D_IMPL_NS_LAYOUT
+DEFINES		+= \
+		-D_IMPL_NS_LAYOUT \
+		$(NULL)

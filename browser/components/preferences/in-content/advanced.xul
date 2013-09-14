@@ -83,6 +83,13 @@
   <preference id="app.update.auto"
               name="app.update.auto"
               type="bool"/>
+#ifdef XP_WIN
+#ifdef MOZ_METRO
+  <preference id="app.update.metro.enabled"
+              name="app.update.metro.enabled"
+              type="bool"/>
+#endif
+#endif
   <preference id="app.update.mode"
               name="app.update.mode"
               type="int"/>
@@ -103,22 +110,12 @@
               type="bool"/>
 
   <!-- Encryption tab -->
-  <preference id="security.enable_ssl3"
-              name="security.enable_ssl3"
-              type="bool"/>
-  <preference id="security.enable_tls"
-              name="security.enable_tls"
-              type="bool"/>
-
   <preference id="security.default_personal_cert"
               name="security.default_personal_cert"
               type="string"/>
 
   <preference id="security.disable_button.openCertManager"
               name="security.disable_button.openCertManager"
-              type="bool"/>
-  <preference id="security.OCSP.disable_button.managecrl"
-              name="security.OCSP.disable_button.managecrl"
               type="bool"/>
   <preference id="security.disable_button.openDeviceManager"
               name="security.disable_button.openDeviceManager"
@@ -129,6 +126,7 @@
   <stringbundle id="bundleShell" src="chrome://browser/locale/shellservice.properties"/>
   <stringbundle id="bundleBrand" src="chrome://branding/locale/brand.properties"/>
 #endif
+  <stringbundle id="bundlePreferences" src="chrome://browser/locale/preferences/preferences.properties"/>
 
 <hbox class="heading" data-category="paneAdvanced" hidden="true">
   <image class="preference-icon" type="advanced"/>
@@ -146,7 +144,7 @@
 #endif
     <tab id="networkTab" label="&networkTab.label;" helpTopic="prefs-advanced-network"/>
     <tab id="updateTab" label="&updateTab.label;"  helpTopic="prefs-advanced-update"/>
-    <tab id="encryptionTab" label="&encryptionTab.label;" helpTopic="prefs-advanced-encryption"/>
+    <tab id="encryptionTab" label="&certificateTab.label;" helpTopic="prefs-advanced-encryption"/>
   </tabs>
 
   <tabpanels flex="1">
@@ -359,9 +357,22 @@
         <caption label="&updateApp.label;"/>
         <radiogroup id="updateRadioGroup"
                     oncommand="gAdvancedPane.updateWritePrefs();">
-          <radio value="auto"
-                label="&updateAuto.label;"
-                accesskey="&updateAuto.accesskey;"/>
+#ifdef XP_WIN
+#ifdef MOZ_METRO
+              <radio id="autoMetro"
+                     value="autoMetro"
+                     label="&updateAutoMetro.label;"
+                     accesskey="&updateAutoMetro.accesskey;"/>
+              <hbox id="autoMetroIndent"
+                    class="indent">
+                <label value="&updateAutoMetroWarn.label;"/>
+              </hbox>
+#endif
+#endif
+          <radio id="autoDesktop"
+                 value="auto"
+                 label="&updateAuto1.label;"
+                 accesskey="&updateAuto1.accesskey;"/>
           <hbox class="indent">
             <checkbox id="warnIncompatible"
                       label="&updateAutoAddonWarn.label;"
@@ -403,38 +414,8 @@
       </groupbox>
     </tabpanel>
 
-    <!-- Encryption -->
+    <!-- Certificates -->
     <tabpanel id="encryptionPanel" orient="vertical">
-
-      <!-- Protocols -->
-      <groupbox id="protocolsGroup">
-        <caption label="&protocols.label;"/>
-
-        <grid>
-          <columns>
-            <column flex="1"/>
-            <column flex="1"/>
-          </columns>
-          <rows>
-            <row>
-              <hbox>
-                <checkbox id="useSSL3" label="&useSSL3.label;"
-                          accesskey="&useSSL3.accesskey;"
-                          preference="security.enable_ssl3"/>
-              </hbox>
-              <hbox>
-                <checkbox id="useTLS1" label="&useTLS1.label;"
-                          accesskey="&useTLS1.accesskey;"
-                          preference="security.enable_tls"/>
-              </hbox>
-            </row>
-          </rows>
-        </grid>
-      </groupbox>
-
-      <!-- Certificates -->
-      <groupbox id="certificatesGroup">
-        <caption id="CertGroupCaption" label="&certificates.label;"/>
 
         <description id="CertSelectionDesc" control="certSelection">&certSelection.description;</description>
 
@@ -445,7 +426,7 @@
         -->
         <radiogroup id="certSelection" orient="horizontal" preftype="string"
                     preference="security.default_personal_cert"
-                    aria-labelledby="CertGroupCaption CertSelectionDesc">
+                    aria-labelledby="CertSelectionDesc">
           <radio label="&certs.auto;" accesskey="&certs.auto.accesskey;"
                 value="Select Automatically"/>
           <radio label="&certs.ask;" accesskey="&certs.ask.accesskey;"
@@ -462,10 +443,6 @@
                   label="&viewCerts.label;" accesskey="&viewCerts.accesskey;"
                   oncommand="gAdvancedPane.showCertificates();"
                   preference="security.disable_button.openCertManager"/>
-          <button id="viewCRLButton"
-                  label="&viewCRLs.label;" accesskey="&viewCRLs.accesskey;"
-                  oncommand="gAdvancedPane.showCRLs();"
-                  preference="security.OCSP.disable_button.managecrl"/>
           <button id="verificationButton"
                   label="&verify2.label;" accesskey="&verify2.accesskey;"
                   oncommand="gAdvancedPane.showOCSP();"/>
@@ -481,7 +458,6 @@
 #ifdef XP_MACOSX
         </vbox>
 #endif
-      </groupbox>
     </tabpanel>
   </tabpanels>
 </tabbox>

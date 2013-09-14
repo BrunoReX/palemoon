@@ -1,9 +1,6 @@
 #filter substitution
 package @ANDROID_PACKAGE_NAME@.tests;
 
-import @ANDROID_PACKAGE_NAME@.*;
-import android.util.Log;
-
 public class testTabHistory extends PixelTest {
 
     @Override
@@ -29,25 +26,30 @@ public class testTabHistory extends PixelTest {
         loadAndPaint(url3);
 
         // Get the device information and create the navigation for it
-        Device mDevice = new Device();
         Navigation nav = new Navigation(mDevice);
+        mAsserter.dumpLog("device type: "+mDevice.type);
+        mAsserter.dumpLog("device version: "+mDevice.version);
+        mAsserter.dumpLog("device width: "+mDevice.width);
+        mAsserter.dumpLog("device height: "+mDevice.height);
 
         // Go to the 2nd page
         nav.back();
-        mSolo.waitForText("Browser Blank Page 02");
+        waitForText("Browser Blank Page 02");
+        verifyPageTitle("Browser Blank Page 02");
 
         // Go to the first page
         nav.back();
-        mSolo.waitForText("Browser Blank Page 01");
+        waitForText("Browser Blank Page 01");
         verifyPageTitle("Browser Blank Page 01");
 
         // Go forward to the second page
         nav.forward();
-        mSolo.waitForText("Browser Blank Page 02");
+        waitForText("Browser Blank Page 02");
         verifyPageTitle("Browser Blank Page 02");
 
         // Reload page
         nav.reload();
+        waitForText("Browser Blank Page 02");
         verifyPageTitle("Browser Blank Page 02");
     }
 }

@@ -4,7 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsIDOMEventTarget.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsIDocument.h"
@@ -26,15 +25,13 @@
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(Script)
 
-DOMCI_NODE_DATA(HTMLScriptElement, mozilla::dom::HTMLScriptElement)
-
 namespace mozilla {
 namespace dom {
 
 JSObject*
-HTMLScriptElement::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+HTMLScriptElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return HTMLScriptElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return HTMLScriptElementBinding::Wrap(aCx, aScope, this);
 }
 
 HTMLScriptElement::HTMLScriptElement(already_AddRefed<nsINodeInfo> aNodeInfo,
@@ -56,15 +53,14 @@ NS_IMPL_RELEASE_INHERITED(HTMLScriptElement, Element)
 
 // QueryInterface implementation for HTMLScriptElement
 NS_INTERFACE_TABLE_HEAD(HTMLScriptElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE4(HTMLScriptElement,
-                                   nsIDOMHTMLScriptElement,
-                                   nsIScriptLoaderObserver,
-                                   nsIScriptElement,
-                                   nsIMutationObserver)
-  NS_HTML_CONTENT_INTERFACE_TABLE_TO_MAP_SEGUE(HTMLScriptElement,
-                                               nsGenericHTMLElement)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(HTMLScriptElement)
-NS_HTML_CONTENT_INTERFACE_MAP_END
+  NS_HTML_CONTENT_INTERFACES(nsGenericHTMLElement)
+  NS_INTERFACE_TABLE_INHERITED4(HTMLScriptElement,
+                                nsIDOMHTMLScriptElement,
+                                nsIScriptLoaderObserver,
+                                nsIScriptElement,
+                                nsIMutationObserver)
+  NS_INTERFACE_TABLE_TO_MAP_SEGUE
+NS_ELEMENT_INTERFACE_MAP_END
 
 
 nsresult

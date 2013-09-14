@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "CSFLog.h"
+
 #include "CC_Common.h"
 
 #include "CC_SIPCCCallInfo.h"
@@ -11,13 +13,10 @@ extern "C"
 {
 #include "ccapi_call.h"
 #include "ccapi_call_info.h"
+#include "fsmdef_states.h"
 }
 
-#include "CSFLogStream.h"
-
-#ifdef DEBUG
 static const char* logTag = "CC_SIPCCCallInfo";
-#endif
 
 using namespace std;
 using namespace CSF;
@@ -56,6 +55,16 @@ CC_LinePtr CC_SIPCCCallInfo::getLine ()
 cc_call_state_t CC_SIPCCCallInfo::getCallState()
 {
     return CCAPI_CallInfo_getCallState(callinfo_ref);
+}
+
+fsmdef_states_t CC_SIPCCCallInfo::getFsmState() const
+{
+    return CCAPI_CallInfo_getFsmState(callinfo_ref);
+}
+
+std::string CC_SIPCCCallInfo::fsmStateToString (fsmdef_states_t state) const
+{
+  return fsmdef_state_name(state);
 }
 
 std::string CC_SIPCCCallInfo::callStateToString (cc_call_state_t state)
@@ -117,11 +126,11 @@ std::string CC_SIPCCCallInfo::callStateToString (cc_call_state_t state)
       case WAITINGFORDIGITS:
         statestr = "WAITINGFORDIGITS";
         break;
-      case CREATEOFFER:
-        statestr = "CREATEOFFER";
+      case CREATEOFFERSUCCESS:
+        statestr = "CREATEOFFERSUCCESS";
         break;
-      case CREATEANSWER:
-        statestr = "CREATEANSWER";
+      case CREATEANSWERSUCCESS:
+        statestr = "CREATEANSWERSUCCESS";
         break;
       case CREATEOFFERERROR:
         statestr = "CREATEOFFERERROR";
@@ -129,17 +138,14 @@ std::string CC_SIPCCCallInfo::callStateToString (cc_call_state_t state)
       case CREATEANSWERERROR:
         statestr = "CREATEANSWERERROR";
         break;
-      case SETLOCALDESC:
-        statestr = "SETLOCALDESC";
+      case SETLOCALDESCSUCCESS:
+        statestr = "SETLOCALDESCSUCCESS";
         break;
-      case SETREMOTEDESC:
-        statestr = "SETREMOTEDESC";
+      case SETREMOTEDESCSUCCESS:
+        statestr = "SETREMOTEDESCSUCCESS";
         break;
       case UPDATELOCALDESC:
         statestr = "UPDATELOCALDESC";
-        break;
-      case UPDATEREMOTEDESC:
-        statestr = "UPDATEREMOTEDESC";
         break;
       case SETLOCALDESCERROR:
         statestr = "SETLOCALDESCERROR";
@@ -149,6 +155,12 @@ std::string CC_SIPCCCallInfo::callStateToString (cc_call_state_t state)
         break;
       case REMOTESTREAMADD:
         statestr = "REMOTESTREAMADD";
+        break;
+      case ADDICECANDIDATE:
+        statestr = "ADDICECANDIDATE";
+        break;
+      case ADDICECANDIDATEERROR:
+        statestr = "ADDICECANDIDATEERROR";
         break;
       default:
         break;
@@ -285,7 +297,7 @@ string CC_SIPCCCallInfo::getAlternateNumber()
 CC_LinePtr CC_SIPCCCallInfo::getline ()
 {
     cc_lineid_t lineId = CCAPI_CallInfo_getLine(callinfo_ref);
-    return CC_SIPCCLine::wrap(lineId);
+    return CC_SIPCCLine::wrap(lineId).get();
 }
 
 string CC_SIPCCCallInfo::getOriginalCalledPartyName()
@@ -365,7 +377,7 @@ bool CC_SIPCCCallInfo::getIsConference()
 
 set<cc_int32_t> CC_SIPCCCallInfo::getStreamStatistics()
 {
-    CSFLogErrorS(logTag, "CCAPI_CallInfo_getCapabilitySet() NOT IMPLEMENTED IN PSIPCC.");
+    CSFLogError(logTag, "CCAPI_CallInfo_getCapabilitySet() NOT IMPLEMENTED IN PSIPCC.");
     set<cc_int32_t> stats;
     return stats;
 }
@@ -550,7 +562,8 @@ void CC_SIPCCCallInfo::generateCapabilities()
 	case WHISPER:
 	case WAITINGFORDIGITS:
 	default:
-		CSFLogErrorS( logTag, "State " << getCallState() << " not handled in generateCapabilities()");
+		CSFLogError( logTag, "State %d not handled in generateCapabilities()",
+      getCallState());
 		break;
 	}
 }

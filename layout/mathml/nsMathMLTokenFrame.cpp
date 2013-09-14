@@ -12,6 +12,7 @@
 #include "nsCSSFrameConstructor.h"
 #include "nsMathMLTokenFrame.h"
 #include "nsTextFrame.h"
+#include <algorithm>
 
 nsIFrame*
 NS_NewMathMLTokenFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
@@ -30,11 +31,6 @@ nsMathMLTokenFrame::InheritAutomaticData(nsIFrame* aParent)
 {
   // let the base class get the default from our parent
   nsMathMLContainerFrame::InheritAutomaticData(aParent);
-
-  if (mContent->Tag() != nsGkAtoms::mspace_) {
-    // see if the directionality attribute is there
-    nsMathMLFrame::FindAttrDirectionality(mContent, mPresentationData);
-  }
 
   ProcessTextData();
 
@@ -213,9 +209,9 @@ nsMathMLTokenFrame::Place(nsRenderingContext& aRenderingContext,
 
   aDesiredSize.mBoundingMetrics = mBoundingMetrics;
   aDesiredSize.width = mBoundingMetrics.width;
-  aDesiredSize.ascent = NS_MAX(mBoundingMetrics.ascent, ascent);
+  aDesiredSize.ascent = std::max(mBoundingMetrics.ascent, ascent);
   aDesiredSize.height = aDesiredSize.ascent +
-                        NS_MAX(mBoundingMetrics.descent, descent);
+                        std::max(mBoundingMetrics.descent, descent);
 
   if (aPlaceOrigin) {
     nscoord dy, dx = 0;

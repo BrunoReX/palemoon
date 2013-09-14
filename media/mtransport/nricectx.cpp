@@ -44,10 +44,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string>
 #include <vector>
 
+#include "logging.h"
 #include "nspr.h"
 #include "nss.h"
 #include "pk11pub.h"
-#include "prlog.h"
 
 #include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
@@ -64,6 +64,7 @@ extern "C" {
 #include "registry.h"
 #include "async_timer.h"
 #include "r_crc32.h"
+#include "r_memory.h"
 #include "ice_util.h"
 #include "transport_addr.h"
 #include "nr_crypto.h"
@@ -78,9 +79,9 @@ extern "C" {
 }
 
 // Local includes
-#include "logging.h"
 #include "nricectx.h"
 #include "nricemediastream.h"
+#include "nr_socket_prsock.h"
 
 namespace mozilla {
 
@@ -151,20 +152,98 @@ static int nr_crypto_nss_hmac(UCHAR *key, int keyl, UCHAR *buf, int bufl,
   return err;
 }
 
+static int nr_crypto_nss_md5(UCHAR *buf, int bufl, UCHAR *result) {
+  int err = R_INTERNAL;
+  SECStatus rv;
+
+  const SECHashObject *ho = HASH_GetHashObject(HASH_AlgMD5);
+  MOZ_ASSERT(ho);
+  if (!ho)
+    goto abort;
+
+  MOZ_ASSERT(ho->length == 16);
+
+  rv = HASH_HashBuf(ho->type, result, buf, bufl);
+  if (rv != SECSuccess)
+    goto abort;
+
+  err = 0;
+abort:
+  return err;
+}
+
 static nr_ice_crypto_vtbl nr_ice_crypto_nss_vtbl = {
   nr_crypto_nss_random_bytes,
-  nr_crypto_nss_hmac
+  nr_crypto_nss_hmac,
+  nr_crypto_nss_md5
 };
 
 
 
-// NrIceCtx
+
+nsresult NrIceStunServer::ToNicerStunStruct(nr_ice_stun_server *server) const {
+  int r;
+
+  memset(server, 0, sizeof(nr_ice_stun_server));
+
+  if (has_addr_) {
+    r = nr_praddr_to_transport_addr(&addr_, &server->u.addr, 0);
+    if (r) {
+      return NS_ERROR_FAILURE;
+    }
+    server->type=NR_ICE_STUN_SERVER_TYPE_ADDR;
+  }
+  else {
+    MOZ_ASSERT(sizeof(server->u.dnsname.host) > host_.size());
+    PL_strncpyz(server->u.dnsname.host, host_.c_str(),
+                sizeof(server->u.dnsname.host));
+    server->u.dnsname.port = port_;
+    server->type=NR_ICE_STUN_SERVER_TYPE_DNSNAME;
+  }
+
+  return NS_OK;
+}
+
+
+nsresult NrIceTurnServer::ToNicerTurnStruct(nr_ice_turn_server *server) const {
+  memset(server, 0, sizeof(nr_ice_turn_server));
+
+  nsresult rv = ToNicerStunStruct(&server->turn_server);
+  if (NS_FAILED(rv))
+    return rv;
+
+  if (username_.empty())
+    return NS_ERROR_INVALID_ARG;
+  if (password_.empty())
+    return NS_ERROR_INVALID_ARG;
+
+  if (!(server->username=r_strdup(username_.c_str())))
+    return NS_ERROR_OUT_OF_MEMORY;
+
+  // TODO(ekr@rtfm.com): handle non-ASCII passwords somehow?
+  // STUN requires they be SASLpreped, but we don't know if
+  // they are at this point.
+
+  // C++03 23.2.4, Paragraph 1 stipulates that the elements
+  // in std::vector must be contiguous, and can therefore be
+  // used as input to functions expecting C arrays.
+  int r = r_data_create(&server->password,
+                        const_cast<UCHAR *>(&password_[0]),
+                        password_.size());
+  if (r) {
+    RFREE(server->username);
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+
+  return NS_OK;
+}
 
 // Handler callbacks
 int NrIceCtx::select_pair(void *obj,nr_ice_media_stream *stream,
                    int component_id, nr_ice_cand_pair **potentials,
                    int potential_ct) {
-  MOZ_MTLOG(PR_LOG_DEBUG, "select pair called: potential_ct = " << potential_ct);
+  MOZ_MTLOG(PR_LOG_DEBUG, "select pair called: potential_ct = "
+            << potential_ct);
 
   return 0;
 }
@@ -208,9 +287,6 @@ int NrIceCtx::ice_completed(void *obj, nr_ice_peer_ctx *pctx) {
 
   ctx->SetState(ICE_CTX_OPEN);
 
-  // Signal that we are done
-  ctx->SignalCompleted(ctx);
-
   return 0;
 }
 
@@ -231,8 +307,8 @@ int NrIceCtx::msg_recvd(void *obj, nr_ice_peer_ctx *pctx,
 
 
 RefPtr<NrIceCtx> NrIceCtx::Create(const std::string& name,
-                                           bool offerer,
-                                           bool set_interface_priorities) {
+                                  bool offerer,
+                                  bool set_interface_priorities) {
   RefPtr<NrIceCtx> ctx = new NrIceCtx(name, offerer);
 
   // Initialize the crypto callbacks
@@ -275,8 +351,6 @@ RefPtr<NrIceCtx> NrIceCtx::Create(const std::string& name,
       NR_reg_set_uchar((char *)"ice.pref.interface.wlan0", 232);
     }
 
-    NR_reg_set_string((char *)"ice.stun.server.0.addr", (char *)"216.93.246.14");
-    NR_reg_set_uint2((char *)"ice.stun.server.0.port",3478);
     NR_reg_set_uint4((char *)"stun.client.maximum_transmits",4);
   }
 
@@ -357,15 +431,87 @@ nsresult NrIceCtx::SetControlling(Controlling controlling) {
   return NS_OK;
 }
 
+nsresult NrIceCtx::SetStunServers(const std::vector<NrIceStunServer>&
+                                  stun_servers) {
+  if (stun_servers.empty())
+    return NS_OK;
+
+  ScopedDeleteArray<nr_ice_stun_server> servers(
+      new nr_ice_stun_server[stun_servers.size()]);
+
+  for (size_t i=0; i < stun_servers.size(); ++i) {
+    nsresult rv = stun_servers[i].ToNicerStunStruct(&servers[i]);
+    if (NS_FAILED(rv)) {
+      MOZ_MTLOG(PR_LOG_ERROR, "Couldn't set STUN server for '" << name_ << "'");
+      return NS_ERROR_FAILURE;
+    }
+  }
+
+  int r = nr_ice_ctx_set_stun_servers(ctx_, servers, stun_servers.size());
+  if (r) {
+    MOZ_MTLOG(PR_LOG_ERROR, "Couldn't set STUN server for '" << name_ << "'");
+    return NS_ERROR_FAILURE;
+  }
+
+  return NS_OK;
+}
+
+// TODO(ekr@rtfm.com): This is just SetStunServers with s/Stun/Turn
+// Could we do a template or something?
+nsresult NrIceCtx::SetTurnServers(const std::vector<NrIceTurnServer>&
+                                  turn_servers) {
+  if (turn_servers.empty())
+    return NS_OK;
+
+  ScopedDeleteArray<nr_ice_turn_server> servers(
+      new nr_ice_turn_server[turn_servers.size()]);
+
+  for (size_t i=0; i < turn_servers.size(); ++i) {
+    nsresult rv = turn_servers[i].ToNicerTurnStruct(&servers[i]);
+    if (NS_FAILED(rv)) {
+      MOZ_MTLOG(PR_LOG_ERROR, "Couldn't set TURN server for '" << name_ << "'");
+      return NS_ERROR_FAILURE;
+    }
+  }
+
+  int r = nr_ice_ctx_set_turn_servers(ctx_, servers, turn_servers.size());
+  if (r) {
+    MOZ_MTLOG(PR_LOG_ERROR, "Couldn't set TURN server for '" << name_ << "'");
+    return NS_ERROR_FAILURE;
+  }
+
+  // TODO(ekr@rtfm.com): This leaks the username/password. Need to free that.
+
+  return NS_OK;
+}
+
+nsresult NrIceCtx::SetResolver(nr_resolver *resolver) {
+  int r = nr_ice_ctx_set_resolver(ctx_, resolver);
+
+  if (r) {
+    MOZ_MTLOG(PR_LOG_ERROR, "Couldn't set resolver for '" << name_ << "'");
+    return NS_ERROR_FAILURE;
+  }
+
+  return NS_OK;
+}
+
 nsresult NrIceCtx::StartGathering() {
-  this->AddRef();
+  MOZ_ASSERT(ctx_->state == ICE_CTX_INIT);
+  if (ctx_->state != ICE_CTX_INIT) {
+    MOZ_MTLOG(PR_LOG_ERROR, "ICE ctx in the wrong state for gathering: '"
+      << name_ << "'");
+    SetState(ICE_CTX_FAILED);
+    return NS_ERROR_FAILURE;
+  }
+
   int r = nr_ice_initialize(ctx_, &NrIceCtx::initialized_cb,
                             this);
 
   if (r && r != R_WOULDBLOCK) {
       MOZ_MTLOG(PR_LOG_ERROR, "Couldn't gather ICE candidates for '"
            << name_ << "'");
-      this->Release();
+      SetState(ICE_CTX_FAILED);
       return NS_ERROR_FAILURE;
   }
 
@@ -381,8 +527,6 @@ void NrIceCtx::EmitAllCandidates() {
   for(size_t i=0; i<streams_.size(); ++i) {
     streams_[i]->EmitAllCandidates();
   }
-
-  SignalGatheringCompleted(this);
 }
 
 RefPtr<NrIceMediaStream> NrIceCtx::FindStream(
@@ -445,6 +589,7 @@ nsresult NrIceCtx::StartChecks() {
   if (r) {
     MOZ_MTLOG(PR_LOG_ERROR, "Couldn't pair candidates on "
          << name_ << "'");
+    SetState(ICE_CTX_FAILED);
     return NS_ERROR_FAILURE;
   }
 
@@ -456,6 +601,7 @@ nsresult NrIceCtx::StartChecks() {
     } else {
       MOZ_MTLOG(PR_LOG_ERROR, "Couldn't start peer checks on "
            << name_ << "'");
+      SetState(ICE_CTX_FAILED);
       return NS_ERROR_FAILURE;
     }
   } else {
@@ -469,12 +615,9 @@ nsresult NrIceCtx::StartChecks() {
 void NrIceCtx::initialized_cb(NR_SOCKET s, int h, void *arg) {
   NrIceCtx *ctx = static_cast<NrIceCtx *>(arg);
 
-  ctx->SetState(ICE_CTX_GATHERED);
-
-  // Report that we are done gathering
   ctx->EmitAllCandidates();
 
-  ctx->Release();
+  ctx->SetState(ICE_CTX_GATHERED);
 }
 
 nsresult NrIceCtx::Finalize() {
@@ -490,12 +633,29 @@ nsresult NrIceCtx::Finalize() {
 }
 
 void NrIceCtx::SetState(State state) {
-  MOZ_MTLOG(PR_LOG_DEBUG, "NrIceCtx(" << name_ << "): state " <<
-       state_ << "->" << state);
-  state_ = state;
-}
-}  // close namespace
+  if (state == state_)
+    return;
 
+  MOZ_MTLOG(PR_LOG_DEBUG, "NrIceCtx(" << name_ << "): state " <<
+    state_ << "->" << state);
+  state_ = state;
+
+  switch(state_) {
+    case ICE_CTX_GATHERED:
+      SignalGatheringCompleted(this);
+      break;
+    case ICE_CTX_OPEN:
+      SignalCompleted(this);
+      break;
+    case ICE_CTX_FAILED:
+      SignalFailed(this);
+      break;
+    default:
+      break;
+  }
+}
+
+}  // close namespace
 
 
 extern "C" {

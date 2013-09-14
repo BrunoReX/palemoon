@@ -23,12 +23,16 @@
 #include "nsISupportsImpl.h"
 #include "nsIDOMMediaStream.h"
 
+class nsIDOMWindow;
+
 namespace mozilla {
    class MediaStreamGraph;
    class MediaSegment;
 };
 
 class Fake_SourceMediaStream;
+
+static const int64_t USECS_PER_S = 1000000;
 
 class Fake_MediaStreamListener
 {
@@ -106,8 +110,9 @@ class Fake_SourceMediaStream : public Fake_MediaStream {
 
   void AddTrack(mozilla::TrackID aID, mozilla::TrackRate aRate, mozilla::TrackTicks aStart,
                 mozilla::MediaSegment* aSegment) {}
+  void EndTrack(mozilla::TrackID aID) {}
 
-  void AppendToTrack(mozilla::TrackID aID, mozilla::MediaSegment* aSegment) {
+  bool AppendToTrack(mozilla::TrackID aID, mozilla::MediaSegment* aSegment) {
     bool nonZeroSample = false;
     MOZ_ASSERT(aSegment);
     if(aSegment->GetType() == mozilla::MediaSegment::AUDIO) {
@@ -120,11 +125,11 @@ class Fake_SourceMediaStream : public Fake_MediaStream {
         mozilla::AudioChunk& chunk = *(iter);
         MOZ_ASSERT(chunk.mBuffer);
         const int16_t* buf =
-                static_cast<const int16_t*>(chunk.mBuffer->Data());
+          static_cast<const int16_t*>(chunk.mChannelData[0]);
         for(int i=0; i<chunk.mDuration; i++) {
           if(buf[i]) {
             //atleast one non-zero sample found.
-            nonZeroSample = true; 
+            nonZeroSample = true;
             break;
           }
         }
@@ -141,6 +146,7 @@ class Fake_SourceMediaStream : public Fake_MediaStream {
       //segment count.
       ++mSegmentsAdded;
     }
+    return true;
   }
 
   void AdvanceKnownTracksTime(mozilla::StreamTime aKnownTime) {}
@@ -174,39 +180,38 @@ class Fake_SourceMediaStream : public Fake_MediaStream {
 };
 
 
-class Fake_nsDOMMediaStream : public nsIDOMMediaStream
+class Fake_DOMMediaStream : public nsIDOMMediaStream
 {
 public:
-  Fake_nsDOMMediaStream() : mMediaStream(new Fake_MediaStream()) {}
-  Fake_nsDOMMediaStream(Fake_MediaStream *stream) :
+  Fake_DOMMediaStream() : mMediaStream(new Fake_MediaStream()) {}
+  Fake_DOMMediaStream(Fake_MediaStream *stream) :
       mMediaStream(stream) {}
 
-  virtual ~Fake_nsDOMMediaStream() {
+  virtual ~Fake_DOMMediaStream() {
     // Note: memory leak
     mMediaStream->Stop();
   }
 
-
   NS_DECL_ISUPPORTS
-  NS_DECL_NSIDOMMEDIASTREAM
 
-  static already_AddRefed<Fake_nsDOMMediaStream> CreateSourceStream(uint32_t aHintContents) {
+  static already_AddRefed<Fake_DOMMediaStream>
+  CreateSourceStream(nsIDOMWindow* aWindow, uint32_t aHintContents) {
     Fake_SourceMediaStream *source = new Fake_SourceMediaStream();
 
-    Fake_nsDOMMediaStream *ds = new Fake_nsDOMMediaStream(source);
+    nsRefPtr<Fake_DOMMediaStream> ds = new Fake_DOMMediaStream(source);
     ds->SetHintContents(aHintContents);
-    ds->AddRef();
 
-    return ds;
+    return ds.forget();
   }
 
   Fake_MediaStream *GetStream() { return mMediaStream; }
 
   // Hints to tell the SDP generator about whether this
   // MediaStream probably has audio and/or video
+  typedef uint8_t TrackTypeHints;
   enum {
-    HINT_CONTENTS_AUDIO = 0x00000001U,
-    HINT_CONTENTS_VIDEO = 0x00000002U
+    HINT_CONTENTS_AUDIO = 0x01,
+    HINT_CONTENTS_VIDEO = 0x02
   };
   uint32_t GetHintContents() const { return mHintContents; }
   void SetHintContents(uint32_t aHintContents) { mHintContents = aHintContents; }
@@ -266,12 +271,11 @@ class Fake_VideoStreamSource : public Fake_MediaStreamBase {
 };
 
 
-typedef Fake_nsDOMMediaStream nsDOMMediaStream;
-
 namespace mozilla {
 typedef Fake_MediaStream MediaStream;
 typedef Fake_SourceMediaStream SourceMediaStream;
 typedef Fake_MediaStreamListener MediaStreamListener;
+typedef Fake_DOMMediaStream DOMMediaStream;
 }
 
 #endif

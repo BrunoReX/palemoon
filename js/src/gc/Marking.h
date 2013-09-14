@@ -1,25 +1,25 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- */
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef gc_marking_h___
-#define gc_marking_h___
+#ifndef gc_Marking_h
+#define gc_Marking_h
 
 #include "jsgc.h"
 #include "jscntxt.h"
 #include "jslock.h"
 
 #include "gc/Barrier.h"
+#include "gc/Nursery.h"
 #include "js/TemplateLib.h"
-#include "ion/IonCode.h"
+#include "jit/IonCode.h"
 
 extern "C" {
 struct JSContext;
 class JSFunction;
-struct JSObject;
+class JSObject;
 class JSScript;
 }
 
@@ -29,6 +29,7 @@ class JSLinearString;
 namespace js {
 
 class ArgumentsObject;
+class ArrayBufferObject;
 class BaseShape;
 class GlobalObject;
 class UnownedBaseShape;
@@ -91,15 +92,16 @@ bool Is##base##AboutToBeFinalized(EncapsulatedPtr<type> *thingp);
 
 DeclMarker(BaseShape, BaseShape)
 DeclMarker(BaseShape, UnownedBaseShape)
-DeclMarker(IonCode, ion::IonCode)
+DeclMarker(IonCode, jit::IonCode)
 DeclMarker(Object, ArgumentsObject)
+DeclMarker(Object, ArrayBufferObject)
 DeclMarker(Object, DebugScopeObject)
 DeclMarker(Object, GlobalObject)
 DeclMarker(Object, JSObject)
 DeclMarker(Object, JSFunction)
-DeclMarker(Object, RegExpObject)
 DeclMarker(Object, ScopeObject)
 DeclMarker(Script, JSScript)
+DeclMarker(LazyScript, LazyScript)
 DeclMarker(Shape, Shape)
 DeclMarker(String, JSAtom)
 DeclMarker(String, JSString)
@@ -107,11 +109,15 @@ DeclMarker(String, JSFlatString)
 DeclMarker(String, JSLinearString)
 DeclMarker(String, PropertyName)
 DeclMarker(TypeObject, types::TypeObject)
-#if JS_HAS_XML_SUPPORT
-DeclMarker(XML, JSXML)
-#endif
 
 #undef DeclMarker
+
+/* Return true if the pointer is NULL, or if it is a tagged pointer to NULL. */
+JS_ALWAYS_INLINE bool
+IsNullTaggedPointer(void *p)
+{
+    return uintptr_t(p) < 32;
+}
 
 /*** Externally Typed Marking ***/
 
@@ -176,9 +182,6 @@ MarkValueRootRange(JSTracer *trc, Value *begin, Value *end, const char *name)
 }
 
 void
-MarkValueRootRangeMaybeNullPayload(JSTracer *trc, size_t len, Value *vec, const char *name);
-
-void
 MarkTypeRoot(JSTracer *trc, types::Type *v, const char *name);
 
 bool
@@ -199,11 +202,11 @@ void
 MarkObjectSlots(JSTracer *trc, JSObject *obj, uint32_t start, uint32_t nslots);
 
 void
-MarkCrossCompartmentObjectUnbarriered(JSTracer *trc, RawObject src, JSObject **dst_obj,
+MarkCrossCompartmentObjectUnbarriered(JSTracer *trc, JSObject *src, JSObject **dst_obj,
                                       const char *name);
 
 void
-MarkCrossCompartmentScriptUnbarriered(JSTracer *trc, RawObject src, JSScript **dst_script,
+MarkCrossCompartmentScriptUnbarriered(JSTracer *trc, JSObject *src, JSScript **dst_script,
                                       const char *name);
 
 /*
@@ -211,7 +214,7 @@ MarkCrossCompartmentScriptUnbarriered(JSTracer *trc, RawObject src, JSScript **d
  * being GC'd. (Although it won't be marked if it's in the wrong compartment.)
  */
 void
-MarkCrossCompartmentSlot(JSTracer *trc, RawObject src, HeapSlot *dst_slot, const char *name);
+MarkCrossCompartmentSlot(JSTracer *trc, JSObject *src, HeapSlot *dst_slot, const char *name);
 
 
 /*** Special Cases ***/
@@ -240,7 +243,7 @@ MarkChildren(JSTracer *trc, JSObject *obj);
  * JS_TraceShapeCycleCollectorChildren.
  */
 void
-MarkCycleCollectorChildren(JSTracer *trc, UnrootedShape shape);
+MarkCycleCollectorChildren(JSTracer *trc, Shape *shape);
 
 void
 PushArena(GCMarker *gcmarker, ArenaHeader *aheader);
@@ -270,18 +273,24 @@ Mark(JSTracer *trc, EncapsulatedPtrScript *o, const char *name)
     MarkScript(trc, o, name);
 }
 
-#if JS_HAS_XML_SUPPORT
 inline void
-Mark(JSTracer *trc, HeapPtr<JSXML> *xml, const char *name)
-{
-    MarkXML(trc, xml, name);
-}
-#endif
-
-inline void
-Mark(JSTracer *trc, HeapPtr<ion::IonCode> *code, const char *name)
+Mark(JSTracer *trc, HeapPtr<jit::IonCode> *code, const char *name)
 {
     MarkIonCode(trc, code, name);
+}
+
+/* For use by WeakMap's HashKeyRef instantiation. */
+inline void
+Mark(JSTracer *trc, JSObject **objp, const char *name)
+{
+    MarkObjectUnbarriered(trc, objp, name);
+}
+
+/* For use by Debugger::WeakMap's proxiedScopes HashKeyRef instantiation. */
+inline void
+Mark(JSTracer *trc, ScopeObject **obj, const char *name)
+{
+    MarkObjectUnbarriered(trc, obj, name);
 }
 
 bool
@@ -334,7 +343,7 @@ IsAboutToBeFinalized(EncapsulatedPtrScript *scriptp)
 /* Nonsense to get WeakCache to work with new Marking semantics. */
 
 inline bool
-IsAboutToBeFinalized(const js::ion::VMFunction **vmfunc)
+IsAboutToBeFinalized(const js::jit::VMFunction **vmfunc)
 {
     /*
      * Preserves entries in the WeakCache<VMFunction, IonCode>
@@ -344,7 +353,7 @@ IsAboutToBeFinalized(const js::ion::VMFunction **vmfunc)
 }
 
 inline bool
-IsAboutToBeFinalized(ReadBarriered<js::ion::IonCode> code)
+IsAboutToBeFinalized(ReadBarriered<js::jit::IonCode> code)
 {
     return IsIonCodeAboutToBeFinalized(code.unsafeGet());
 }
@@ -385,14 +394,17 @@ TraceKind(JSScript *script)
     return JSTRACE_SCRIPT;
 }
 
+inline JSGCTraceKind
+TraceKind(LazyScript *lazy)
+{
+    return JSTRACE_LAZY_SCRIPT;
+}
+
 } /* namespace gc */
 
 void
 TraceChildren(JSTracer *trc, void *thing, JSGCTraceKind kind);
 
-void
-CallTracer(JSTracer *trc, void *thing, JSGCTraceKind kind);
-
 } /* namespace js */
 
-#endif /* gc_marking_h___ */
+#endif /* gc_Marking_h */

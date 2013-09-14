@@ -192,7 +192,7 @@ public:
   static nsCSSProperty OtherNameFor(nsCSSProperty aProperty);
 
   // Given a CSS Property and a Property Enum Value
-  // Return back a const nsString& representation of the 
+  // Return back a const nsString& representation of the
   // value. Return back nullstr if no value is found
   static const nsAFlatCString& LookupPropertyValue(nsCSSProperty aProperty, int32_t aValue);
 
@@ -228,6 +228,10 @@ public:
   {
     NS_ABORT_IF_FALSE(0 <= aProperty && aProperty < eCSSProperty_COUNT,
                       "out of range");
+    MOZ_ASSERT(!(aFlags & CSS_PROPERTY_PARSE_PROPERTY_MASK),
+               "The CSS_PROPERTY_PARSE_* values are not bitflags; don't pass "
+               "them to PropHasFlags.  You probably want PropertyParseType "
+               "instead.");
     return (nsCSSProps::kFlagsTable[aProperty] & aFlags) == aFlags;
   }
 
@@ -320,12 +324,13 @@ public:
   }
 
 private:
-  static bool gPropertyEnabled[eCSSProperty_COUNT];
+  static bool gPropertyEnabled[eCSSProperty_COUNT_with_aliases];
 
 public:
 
   static bool IsEnabled(nsCSSProperty aProperty) {
-    NS_ABORT_IF_FALSE(0 <= aProperty && aProperty < eCSSProperty_COUNT,
+    NS_ABORT_IF_FALSE(0 <= aProperty &&
+                      aProperty < eCSSProperty_COUNT_with_aliases,
                       "out of range");
     return gPropertyEnabled[aProperty];
   }
@@ -334,7 +339,8 @@ public:
 
 #define CSSPROPS_FOR_SHORTHAND_SUBPROPERTIES(iter_, prop_)                    \
   for (const nsCSSProperty* iter_ = nsCSSProps::SubpropertyEntryFor(prop_);   \
-       *iter_ != eCSSProperty_UNKNOWN; ++iter_)
+       *iter_ != eCSSProperty_UNKNOWN; ++iter_) \
+    if (nsCSSProps::IsEnabled(*iter_))
 
   // Keyword/Enum value tables
   static const int32_t kAnimationDirectionKTable[];
@@ -374,6 +380,7 @@ public:
   static const int32_t kTextAnchorKTable[];
   static const int32_t kTextRenderingKTable[];
   static const int32_t kColorInterpolationKTable[];
+  static const int32_t kColumnFillKTable[];
   static const int32_t kBoxPropSourceKTable[];
   static const int32_t kBoxShadowTypeKTable[];
   static const int32_t kBoxSizingKTable[];
@@ -387,19 +394,26 @@ public:
   static int32_t kDisplayKTable[];
   static const int32_t kElevationKTable[];
   static const int32_t kEmptyCellsKTable[];
-#ifdef MOZ_FLEXBOX
   static const int32_t kAlignItemsKTable[];
   static const int32_t kAlignSelfKTable[];
   static const int32_t kFlexDirectionKTable[];
   static const int32_t kJustifyContentKTable[];
-#endif // MOZ_FLEXBOX
   static const int32_t kFloatKTable[];
   static const int32_t kFloatEdgeKTable[];
   static const int32_t kFontKTable[];
+  static const int32_t kFontKerningKTable[];
   static const int32_t kFontSizeKTable[];
   static const int32_t kFontStretchKTable[];
   static const int32_t kFontStyleKTable[];
+  static const int32_t kFontSynthesisKTable[];
   static const int32_t kFontVariantKTable[];
+  static const int32_t kFontVariantAlternatesKTable[];
+  static const int32_t kFontVariantAlternatesFuncsKTable[];
+  static const int32_t kFontVariantCapsKTable[];
+  static const int32_t kFontVariantEastAsianKTable[];
+  static const int32_t kFontVariantLigaturesKTable[];
+  static const int32_t kFontVariantNumericKTable[];
+  static const int32_t kFontVariantPositionKTable[];
   static const int32_t kFontWeightKTable[];
   static const int32_t kIMEModeKTable[];
   static const int32_t kLineHeightKTable[];
@@ -452,6 +466,7 @@ public:
   static const int32_t kWindowShadowKTable[];
   static const int32_t kWordBreakKTable[];
   static const int32_t kWordWrapKTable[];
+  static const int32_t kWritingModeKTable[];
   static const int32_t kHyphensKTable[];
 };
 

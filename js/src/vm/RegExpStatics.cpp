@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99 ft=cpp:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,14 +21,14 @@ using namespace js;
  */
 
 static void
-resc_finalize(FreeOp *fop, RawObject obj)
+resc_finalize(FreeOp *fop, JSObject *obj)
 {
     RegExpStatics *res = static_cast<RegExpStatics *>(obj->getPrivate());
     fop->delete_(res);
 }
 
 static void
-resc_trace(JSTracer *trc, RawObject obj)
+resc_trace(JSTracer *trc, JSObject *obj)
 {
     void *pdata = obj->getPrivate();
     JS_ASSERT(pdata);
@@ -41,7 +40,7 @@ Class js::RegExpStaticsClass = {
     "RegExpStatics",
     JSCLASS_HAS_PRIVATE | JSCLASS_IMPLEMENTS_BARRIERS,
     JS_PropertyStub,         /* addProperty */
-    JS_PropertyStub,         /* delProperty */
+    JS_DeletePropertyStub,   /* delProperty */
     JS_PropertyStub,         /* getProperty */
     JS_StrictPropertyStub,   /* setProperty */
     JS_EnumerateStub,
@@ -74,9 +73,14 @@ RegExpStatics::executeLazy(JSContext *cx)
     if (!pendingLazyEvaluation)
         return true;
 
-    JS_ASSERT(regexp);
+    JS_ASSERT(lazySource);
     JS_ASSERT(matchesInput);
-    JS_ASSERT(lastIndex != size_t(-1));
+    JS_ASSERT(lazyIndex != size_t(-1));
+
+    /* Retrieve or create the RegExpShared in this compartment. */
+    RegExpGuard g(cx);
+    if (!cx->compartment()->regExps.get(cx, lazySource, lazyFlags, &g))
+        return false;
 
     /*
      * It is not necessary to call aboutToWrite(): evaluation of
@@ -87,17 +91,20 @@ RegExpStatics::executeLazy(JSContext *cx)
     const jschar *chars = matchesInput->chars();
 
     /* Execute the full regular expression. */
-    RegExpGuard shared(cx);
-    if (!regexp->getShared(cx, &shared))
-        return false;
-
-    RegExpRunStatus status = shared->execute(cx, chars, length, &this->lastIndex, this->matches);
+    RegExpRunStatus status = g->execute(cx, chars, length, &this->lazyIndex, this->matches);
     if (status == RegExpRunStatus_Error)
         return false;
 
+    /*
+     * RegExpStatics are only updated on successful (matching) execution.
+     * Re-running the same expression must therefore produce a matching result.
+     */
+    JS_ASSERT(status == RegExpRunStatus_Success);
+
     /* Unset lazy state and remove rooted values that now have no use. */
     pendingLazyEvaluation = false;
-    regexp = NULL;
+    lazySource = NULL;
+    lazyIndex = size_t(-1);
 
     return true;
 }

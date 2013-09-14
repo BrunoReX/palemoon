@@ -8,8 +8,7 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsDOMEventTargetHelper.h"
 #include "nsIDOMIccManager.h"
-#include "nsIMobileConnectionProvider.h"
-#include "nsIObserver.h"
+#include "nsIIccProvider.h"
 
 namespace mozilla {
 namespace dom {
@@ -17,32 +16,30 @@ namespace icc {
 
 class IccManager : public nsDOMEventTargetHelper
                  , public nsIDOMMozIccManager
-                 , public nsIObserver
 {
-public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIOBSERVER
-  NS_DECL_NSIDOMMOZICCMANAGER
+  /**
+   * Class IccManager doesn't actually inherit nsIIccListener. Instead, it owns
+   * an nsIIccListener derived instance mListener and passes it to
+   * nsIIccProvider. The onreceived events are first delivered to mListener and
+   * then forwarded to its owner, IccManager. See also bug 775997 comment #51.
+   */
+  class Listener;
 
-  NS_FORWARD_NSIDOMEVENTTARGET(nsDOMEventTargetHelper::)
+public:
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_NSIDOMMOZICCMANAGER
+  NS_DECL_NSIICCLISTENER
+
+  NS_REALLY_FORWARD_NSIDOMEVENTTARGET(nsDOMEventTargetHelper)
 
   IccManager();
 
   void Init(nsPIDOMWindow *aWindow);
   void Shutdown();
 
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(IccManager,
-                                           nsDOMEventTargetHelper)
-
 private:
-  nsCOMPtr<nsIMobileConnectionProvider> mProvider;
-
-  nsIDOMEventTarget*
-  ToIDOMEventTarget() const
-  {
-    return static_cast<nsDOMEventTargetHelper*>(
-           const_cast<IccManager*>(this));
-  }
+  nsCOMPtr<nsIIccProvider> mProvider;
+  nsRefPtr<Listener> mListener;
 };
 
 } // namespace icc

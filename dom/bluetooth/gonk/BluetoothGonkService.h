@@ -18,6 +18,7 @@
 #ifndef mozilla_dom_bluetooth_bluetoothgonkservice_h__
 #define mozilla_dom_bluetooth_bluetoothgonkservice_h__
 
+#include "mozilla/Attributes.h"
 #include "BluetoothCommon.h"
 #include "BluetoothDBusService.h"
 
@@ -35,23 +36,27 @@ BEGIN_BLUETOOTH_NAMESPACE
 class BluetoothGonkService : public BluetoothDBusService
 {
 public:
-  /** 
+  /**
    * Set up variables and start the platform specific connection. Must
-   * be called from main thread.
+   * be called from non-main thread.
    *
-   * @return NS_OK if connection starts successfully, NS_ERROR_FAILURE
-   * otherwise
+   * @return NS_OK if connection starts successfully, NS_ERROR_FAILURE otherwise
    */
-  virtual nsresult StartInternal();
+  virtual nsresult StartInternal() MOZ_OVERRIDE;
 
-  /** 
-   * Stop the platform specific connection. Must be called from main
-   * thread.
+  /**
+   * Stop the platform specific connection. Must be called from non-main thread.
    *
-   * @return NS_OK if connection starts successfully, NS_ERROR_FAILURE
-   * otherwise
+   * @return NS_OK if connection starts successfully, NS_ERROR_FAILURE otherwise
    */
-  virtual nsresult StopInternal();
+  virtual nsresult StopInternal() MOZ_OVERRIDE;
+
+  /**
+   * Get status of Bluetooth. Must be called from non-main thread.
+   *
+   * @return true if Bluetooth is enabled, false otherwise
+   */
+  virtual bool IsEnabledInternal() MOZ_OVERRIDE;
 };
 
 END_BLUETOOTH_NAMESPACE

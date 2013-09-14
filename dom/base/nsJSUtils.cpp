@@ -25,6 +25,9 @@
 
 #include "nsDOMJSUtils.h" // for GetScriptContextFromJSContext
 
+#include "nsContentUtils.h"
+#include "nsJSPrincipals.h"
+
 #include "mozilla/dom/BindingUtils.h"
 
 JSBool
@@ -78,7 +81,9 @@ nsJSUtils::GetStaticScriptGlobal(JSObject* aObj)
   nsCOMPtr<nsIScriptGlobalObject> sgo(do_QueryInterface(supports));
   if (!sgo) {
     nsCOMPtr<nsIXPConnectWrappedNative> wrapper(do_QueryInterface(supports));
-    NS_ENSURE_TRUE(wrapper, nullptr);
+    if (!wrapper) {
+      return nullptr;
+    }
     sgo = do_QueryWrappedNative(wrapper);
   }
 
@@ -138,9 +143,52 @@ nsJSUtils::ReportPendingException(JSContext *aContext)
 {
   if (JS_IsExceptionPending(aContext)) {
     bool saved = JS_SaveFrameChain(aContext);
-    JS_ReportPendingException(aContext);
+    {
+      JSAutoCompartment ac(aContext, js::GetDefaultGlobalForContext(aContext));
+      JS_ReportPendingException(aContext);
+    }
     if (saved) {
       JS_RestoreFrameChain(aContext);
     }
   }
+}
+
+nsresult
+nsJSUtils::CompileFunction(JSContext* aCx,
+                           JS::HandleObject aTarget,
+                           JS::CompileOptions& aOptions,
+                           const nsACString& aName,
+                           uint32_t aArgCount,
+                           const char** aArgArray,
+                           const nsAString& aBody,
+                           JSObject** aFunctionObject)
+{
+  MOZ_ASSERT(js::GetEnterCompartmentDepth(aCx) > 0);
+  MOZ_ASSERT_IF(aTarget, js::IsObjectInContextCompartment(aTarget, aCx));
+  MOZ_ASSERT_IF(aOptions.versionSet, aOptions.version != JSVERSION_UNKNOWN);
+  mozilla::DebugOnly<nsIScriptContext*> ctx = GetScriptContextFromJSContext(aCx);
+  MOZ_ASSERT_IF(ctx, ctx->IsContextInitialized());
+
+  // Since aTarget and aCx are same-compartment, there should be no distinction
+  // between the object principal and the cx principal.
+  // However, aTarget may be null in the wacky aShared case. So use the cx.
+  JSPrincipals* p = JS_GetCompartmentPrincipals(js::GetContextCompartment(aCx));
+  aOptions.setPrincipals(p);
+
+  // Do the junk Gecko is supposed to do before calling into JSAPI.
+  xpc_UnmarkGrayObject(aTarget);
+
+  // Compile.
+  JSFunction* fun = JS::CompileFunction(aCx, aTarget, aOptions,
+                                        PromiseFlatCString(aName).get(),
+                                        aArgCount, aArgArray,
+                                        PromiseFlatString(aBody).get(),
+                                        aBody.Length());
+  if (!fun) {
+    ReportPendingException(aCx);
+    return NS_ERROR_FAILURE;
+  }
+
+  *aFunctionObject = JS_GetFunctionObject(fun);
+  return NS_OK;
 }

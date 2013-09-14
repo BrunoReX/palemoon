@@ -10,6 +10,9 @@
 #include "skia/SkCanvas.h"
 #include "skia/SkDashPathEffect.h"
 #include "skia/SkShader.h"
+#ifdef USE_SKIA_GPU
+#include "skia/GrTypes.h"
+#endif
 #include "mozilla/Assertions.h"
 #include <vector>
 
@@ -36,6 +39,27 @@ GfxFormatToSkiaConfig(SurfaceFormat format)
   return SkBitmap::kARGB_8888_Config;
 }
 
+#ifdef USE_SKIA_GPU
+static inline GrPixelConfig
+GfxFormatToGrConfig(SurfaceFormat format)
+{
+  switch (format)
+  {
+    case FORMAT_B8G8R8A8:
+      return kBGRA_8888_GrPixelConfig;
+    case FORMAT_B8G8R8X8:
+      // We probably need to do something here.
+      return kBGRA_8888_GrPixelConfig;
+    case FORMAT_R5G6B5:
+      return kRGB_565_GrPixelConfig;
+    case FORMAT_A8:
+      return kAlpha_8_GrPixelConfig;
+    default:
+      return kRGBA_8888_GrPixelConfig;
+  }
+
+}
+#endif
 static inline void
 GfxMatrixToSkiaMatrix(const Matrix& mat, SkMatrix& retval)
 {
@@ -155,10 +179,39 @@ GfxOpToSkiaOp(CompositionOp op)
       return SkXfermode::kDstATop_Mode;
     case OP_XOR:
       return SkXfermode::kXor_Mode;
-    case OP_COUNT:
+    case OP_MULTIPLY:
+      return SkXfermode::kMultiply_Mode;
+    case OP_SCREEN:
+      return SkXfermode::kScreen_Mode;
+    case OP_OVERLAY:
+      return SkXfermode::kOverlay_Mode;
+    case OP_DARKEN:
+      return SkXfermode::kDarken_Mode;
+    case OP_LIGHTEN:
+      return SkXfermode::kLighten_Mode;
+    case OP_COLOR_DODGE:
+      return SkXfermode::kColorDodge_Mode;
+    case OP_COLOR_BURN:
+      return SkXfermode::kColorBurn_Mode;
+    case OP_HARD_LIGHT:
+      return SkXfermode::kHardLight_Mode;
+    case OP_SOFT_LIGHT:
+      return SkXfermode::kSoftLight_Mode;
+    case OP_DIFFERENCE:
+      return SkXfermode::kDifference_Mode;
+    case OP_EXCLUSION:
+      return SkXfermode::kExclusion_Mode;
+    case OP_HUE:
+      return SkXfermode::kHue_Mode;
+    case OP_SATURATION:
+      return SkXfermode::kSaturation_Mode;
+    case OP_COLOR:
+      return SkXfermode::kColor_Mode;
+    case OP_LUMINOSITY:
+      return SkXfermode::kLuminosity_Mode;
+    default:
       return SkXfermode::kSrcOver_Mode;
   }
-  return SkXfermode::kSrcOver_Mode;
 }
 
 static inline SkColor ColorToSkColor(const Color &color, Float aAlpha)

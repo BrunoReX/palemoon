@@ -37,10 +37,6 @@
 #define NS_TASKBAR_CONTRACTID "@mozilla.org/windows-taskbar;1"
 #endif
 
-#ifdef MOZ_WIDGET_ANDROID
-#include "APKOpen.h"
-#endif
-
 using mozilla::MonitorAutoLock;
 using mozilla::ipc::GeckoChildProcessHost;
 
@@ -73,6 +69,14 @@ struct RunnableMethodTraits<GeckoChildProcessHost>
     static void RetainCallee(GeckoChildProcessHost* obj) { }
     static void ReleaseCallee(GeckoChildProcessHost* obj) { }
 };
+
+/*static*/
+base::ChildPrivileges
+GeckoChildProcessHost::DefaultChildPrivileges()
+{
+  return (kLowRightsSubprocesses ?
+          base::PRIVILEGES_UNPRIVILEGED : base::PRIVILEGES_INHERIT);
+}
 
 GeckoChildProcessHost::GeckoChildProcessHost(GeckoProcessType aProcessType,
                                              ChildPrivileges aPrivileges)
@@ -490,8 +494,7 @@ GeckoChildProcessHost::PerformAsyncLaunchInternal(std::vector<std::string>& aExt
   base::environment_map newEnvVars;
   ChildPrivileges privs = mPrivileges;
   if (privs == base::PRIVILEGES_DEFAULT) {
-    privs = kLowRightsSubprocesses ?
-            base::PRIVILEGES_UNPRIVILEGED : base::PRIVILEGES_INHERIT;
+    privs = DefaultChildPrivileges();
   }
   // XPCOM may not be initialized in some subprocesses.  We don't want
   // to initialize XPCOM just for the directory service, especially
@@ -553,20 +556,6 @@ GeckoChildProcessHost::PerformAsyncLaunchInternal(std::vector<std::string>& aExt
 #ifdef MOZ_WIDGET_ANDROID
   // The java wrapper unpacks this for us but can't make it executable
   chmod(exePath.value().c_str(), 0700);
-  int cacheCount = 0;
-  const struct lib_cache_info * cache = getLibraryCache();
-  nsCString cacheStr;
-  while (cache &&
-         cacheCount++ < MAX_LIB_CACHE_ENTRIES &&
-         strlen(cache->name)) {
-    mFileMap.push_back(std::pair<int,int>(cache->fd, cache->fd));
-    cacheStr.Append(cache->name);
-    cacheStr.AppendPrintf(":%d;", cache->fd);
-    cache++;
-  }
-  // fill the last arg with something if there's no cache
-  if (cacheStr.IsEmpty())
-    cacheStr.AppendLiteral("-");
 #endif  // MOZ_WIDGET_ANDROID
 
 #ifdef ANDROID
@@ -660,10 +649,6 @@ GeckoChildProcessHost::PerformAsyncLaunchInternal(std::vector<std::string>& aExt
 #endif
 
   childArgv.push_back(childProcessType);
-
-#ifdef MOZ_WIDGET_ANDROID
-  childArgv.push_back(cacheStr.get());
-#endif
 
   base::LaunchApp(childArgv, mFileMap,
 #if defined(OS_LINUX) || defined(OS_MACOSX) || defined(OS_BSD)

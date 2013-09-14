@@ -13,7 +13,7 @@
 #if defined(OS_WIN)
 #include <windows.h>
 #include <tlhelp32.h>
-#elif defined(OS_LINUX)
+#elif defined(OS_LINUX) || defined(__GLIBC__)
 #include <dirent.h>
 #include <limits.h>
 #include <sys/types.h>
@@ -130,8 +130,8 @@ enum ChildPrivileges {
   PRIVILEGES_DEFAULT,
   PRIVILEGES_UNPRIVILEGED,
   PRIVILEGES_CAMERA,
-  PRIVILEGES_VIDEO,
-  PRIVILEGES_INHERIT
+  PRIVILEGES_INHERIT,
+  PRIVILEGES_LAST
 };
 
 #if defined(OS_WIN)
@@ -179,8 +179,11 @@ bool LaunchApp(const std::vector<std::string>& argv,
                const environment_map& env_vars_to_set,
                bool wait, ProcessHandle* process_handle,
                ProcessArchitecture arch=GetCurrentProcessArchitecture());
-
 #endif
+
+// Adjust the privileges of this process to match |privs|.  Only
+// returns if privileges were successfully adjusted.
+void SetCurrentProcessPrivileges(ChildPrivileges privs);
 
 // Executes the application specified by cl. This function delegates to one
 // of the above two platform-specific functions.
@@ -295,7 +298,7 @@ class NamedProcessIterator {
   const ProcessEntry* NextProcessEntry();
 
  private:
-#if !defined(OS_BSD)
+#if !defined(OS_BSD) || defined(__GLIBC__)
   // Determines whether there's another process (regardless of executable)
   // left in the list of all processes.  Returns true and sets entry_ to
   // that process's info if there is one, false otherwise.
@@ -313,7 +316,7 @@ class NamedProcessIterator {
 #if defined(OS_WIN)
   HANDLE snapshot_;
   bool started_iteration_;
-#elif defined(OS_LINUX)
+#elif defined(OS_LINUX) || defined(__GLIBC__)
   DIR *procfs_dir_;
 #elif defined(OS_BSD)
   std::vector<ProcessEntry> content;
@@ -322,7 +325,7 @@ class NamedProcessIterator {
   std::vector<kinfo_proc> kinfo_procs_;
   size_t index_of_kinfo_proc_;
 #endif
-#if !defined(OS_BSD)
+#if !defined(OS_BSD) || defined(__GLIBC__)
   ProcessEntry entry_;
   const ProcessFilter* filter_;
 #endif

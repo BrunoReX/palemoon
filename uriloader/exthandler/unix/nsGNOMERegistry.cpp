@@ -13,7 +13,7 @@
 #include "nsIGnomeVFSService.h"
 #include "nsIGIOService.h"
 
-#ifdef MOZ_WIDGET_GTK2
+#ifdef MOZ_WIDGET_GTK
 #include <glib.h>
 #include <glib-object.h>
 #endif
@@ -130,7 +130,12 @@ nsGNOMERegistry::GetFromExtension(const nsACString& aFileExt)
       return nullptr;
   }
 
-  return GetFromType(mimeType);
+  nsRefPtr<nsMIMEInfoBase> mi = GetFromType(mimeType);
+  if (mi) {
+    mi->AppendExtension(aFileExt);
+  }
+
+  return mi.forget();
 }
 
 /* static */ already_AddRefed<nsMIMEInfoBase>
@@ -181,7 +186,5 @@ nsGNOMERegistry::GetFromType(const nsACString& aMIMEType)
   mimeInfo->SetPreferredAction(nsIMIMEInfo::useSystemDefault);
   mimeInfo->SetDescription(NS_ConvertUTF8toUTF16(description));
 
-  nsMIMEInfoBase* retval;
-  NS_ADDREF((retval = mimeInfo));
-  return retval;
+  return mimeInfo.forget();
 }

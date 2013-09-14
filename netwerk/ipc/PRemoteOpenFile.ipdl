@@ -18,16 +18,9 @@ protocol PRemoteOpenFile
 {
   manager PNecko;
 
-parent:
-  // Tell parent to open file. URI to open was passed and vetted for security in
-  // IPDL constructor: see NeckoParent::AllocPRemoteOpenFile()
-  AsyncOpenFile();
-
-  __delete__();
-
 child:
-  // success/failure code, and if NS_SUCCEEDED(rv), an open file descriptor
-  FileOpened(FileDescriptor fd, nsresult rv);
+  // Your file handle is ready, Sir...
+  __delete__(FileDescriptor fd);
 };
 
 

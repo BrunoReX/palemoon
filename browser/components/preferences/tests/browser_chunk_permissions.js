@@ -28,27 +28,28 @@ const TEST_PERMS = {
 function test() {
   waitForExplicitFinish();
   registerCleanupFunction(cleanUp);
-  setup();
-  runNextTest();
+  setup(function() {
+    runNextTest();
+  });
 }
 
-function setup() {
+function setup(aCallback) {
   // add test history visit
-  PlacesUtils.history.addVisit(TEST_URI_1, Date.now() * 1000, null,
-    Ci.nsINavHistoryService.TRANSITION_LINK, false, 0);
-
-  // set permissions ourselves to avoid problems with different defaults
-  // from test harness configuration
-  for (let type in TEST_PERMS) {
-    if (type == "password") {
-      Services.logins.setLoginSavingEnabled(TEST_URI_2.prePath, true);
-    } else {
-      // set permissions on a site without history visits to test enumerateServices
-      Services.perms.add(TEST_URI_2, type, TEST_PERMS[type]);
+  addVisits(TEST_URI_1, function() {
+    // set permissions ourselves to avoid problems with different defaults
+    // from test harness configuration
+    for (let type in TEST_PERMS) {
+      if (type == "password") {
+        Services.logins.setLoginSavingEnabled(TEST_URI_2.prePath, true);
+      } else {
+        // set permissions on a site without history visits to test enumerateServices
+        Services.perms.add(TEST_URI_2, type, TEST_PERMS[type]);
+      }
     }
-  }
 
-  Services.perms.add(TEST_URI_3, "popup", TEST_PERMS["popup"]);
+    Services.perms.add(TEST_URI_3, "popup", TEST_PERMS["popup"]);
+    aCallback();
+  });
 }
 
 function cleanUp() {
@@ -71,13 +72,13 @@ function runNextTest() {
   info(nextTest.desc);
 
   function preinit_observer() {
-    Services.obs.removeObserver(preinit_observer, "browser-permissions-preinit", false);
+    Services.obs.removeObserver(preinit_observer, "browser-permissions-preinit");
     nextTest.preInit();
   }
   Services.obs.addObserver(preinit_observer, "browser-permissions-preinit", false);
 
   function init_observer() {
-    Services.obs.removeObserver(init_observer, "browser-permissions-initialized", false);
+    Services.obs.removeObserver(init_observer, "browser-permissions-initialized");
     nextTest.run();
   }
   Services.obs.addObserver(init_observer, "browser-permissions-initialized", false);

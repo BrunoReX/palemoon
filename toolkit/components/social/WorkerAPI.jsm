@@ -49,6 +49,16 @@ WorkerAPI.prototype = {
   },
 
   handlers: {
+    "social.manifest-get": function(data) {
+      // retreive the currently installed manifest from firefox
+      this._port.postMessage({topic: "social.manifest", data: this._provider.manifest});
+    },
+    "social.manifest-set": function(data) {
+      // the provider will get reloaded as a result of this call
+      let SocialService = Cu.import("resource://gre/modules/SocialService.jsm", {}).SocialService;
+      let document = this._port._window.document;
+      SocialService.updateProvider(document, data);
+    },
     "social.reload-worker": function(data) {
       getFrameWorkerHandle(this._provider.workerURL, null)._worker.reload();
       // the frameworker is going to be reloaded, send the initialization
@@ -58,14 +68,12 @@ WorkerAPI.prototype = {
     },
     "social.user-profile": function (data) {
       this._provider.updateUserProfile(data);
-      // get the info we need for 'recommend' support.
-      this._port.postMessage({topic: "social.user-recommend-prompt"});
     },
     "social.ambient-notification": function (data) {
       this._provider.setAmbientNotification(data);
     },
-    "social.user-recommend-prompt-response": function(data) {
-      this._provider.recommendInfo = data;
+    "social.page-mark-config": function(data) {
+      this._provider.pageMarkInfo = data;
     },
     "social.cookies-get": function(data) {
       let document = this._port._window.document;
@@ -80,7 +88,7 @@ WorkerAPI.prototype = {
                               data: results});
     },
     'social.request-chat': function(data) {
-      openChatWindow(null, this._provider, data, null, "minimized");
+      openChatWindow(null, this._provider, data);
     },
     'social.notification-create': function(data) {
       if (!Services.prefs.getBoolPref("social.toast-notifications.enabled"))

@@ -17,7 +17,7 @@
 
 #include "chrome/common/process_watcher.h"
 
-#include "AppProcessPermissions.h"
+#include "AppProcessChecker.h"
 #include "AudioChannelService.h"
 #include "CrashReporterParent.h"
 #include "IHistory.h"
@@ -26,12 +26,15 @@
 #include "IndexedDatabaseManager.h"
 #include "mozIApplication.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/ExternalHelperAppParent.h"
 #include "mozilla/dom/PMemoryReportRequestParent.h"
-#include "mozilla/dom/StorageParent.h"
+#include "mozilla/dom/power/PowerManagerService.h"
+#include "mozilla/dom/DOMStorageIPC.h"
 #include "mozilla/dom/bluetooth/PBluetoothParent.h"
 #include "mozilla/dom/devicestorage/DeviceStorageRequestParent.h"
 #include "SmsParent.h"
+#include "mozilla/Hal.h"
 #include "mozilla/hal_sandbox/PHalParent.h"
 #include "mozilla/ipc/TestShellParent.h"
 #include "mozilla/layers/CompositorParent.h"
@@ -57,12 +60,16 @@
 #include "nsFrameMessageManager.h"
 #include "nsHashPropertyBag.h"
 #include "nsIAlertsService.h"
+#include "nsIAppsService.h"
 #include "nsIClipboard.h"
 #include "nsIDOMApplicationRegistry.h"
 #include "nsIDOMGeoGeolocation.h"
+#include "nsIDOMWakeLock.h"
 #include "nsIDOMWindow.h"
 #include "nsIFilePicker.h"
 #include "nsIMemoryReporter.h"
+#include "nsIMozBrowserFrame.h"
+#include "nsIMutable.h"
 #include "nsIObserverService.h"
 #include "nsIPresShell.h"
 #include "nsIRemoteBlob.h"
@@ -70,17 +77,19 @@
 #include "nsIScriptSecurityManager.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIWindowWatcher.h"
-#include "nsMemoryReporterManager.h"
 #include "nsServiceManagerUtils.h"
 #include "nsSystemInfo.h"
 #include "nsThreadUtils.h"
 #include "nsToolkitCompsCID.h"
 #include "nsWidgetsCID.h"
+#include "PreallocatedProcessManager.h"
+#include "ProcessPriorityManager.h"
 #include "SandboxHal.h"
 #include "StructuredCloneUtils.h"
 #include "TabParent.h"
 #include "URIUtils.h"
-#include "nsGeolocation.h"
+#include "nsIWebBrowserChrome.h"
+#include "nsIDocShell.h"
 
 #ifdef ANDROID
 # include "gfxAndroidPlatform.h"
@@ -102,11 +111,19 @@
 #ifdef MOZ_WIDGET_GONK
 #include "nsIVolume.h"
 #include "nsIVolumeService.h"
+using namespace mozilla::system;
 #endif
 
 #ifdef MOZ_B2G_BT
 #include "BluetoothParent.h"
 #include "BluetoothService.h"
+#endif
+
+#include "JavaScriptParent.h"
+#include "Crypto.h"
+
+#ifdef MOZ_WEBSPEECH
+#include "mozilla/dom/SpeechSynthesisParent.h"
 #endif
 
 static NS_DEFINE_CID(kCClipboardCID, NS_CLIPBOARD_CID);
@@ -116,17 +133,42 @@ using base::ChildPrivileges;
 using base::KillProcess;
 using namespace mozilla::dom::bluetooth;
 using namespace mozilla::dom::devicestorage;
-using namespace mozilla::dom::sms;
 using namespace mozilla::dom::indexedDB;
-using namespace mozilla::hal_sandbox;
+using namespace mozilla::dom::power;
+using namespace mozilla::dom::mobilemessage;
+using namespace mozilla::hal;
+using namespace mozilla::idl;
 using namespace mozilla::ipc;
 using namespace mozilla::layers;
 using namespace mozilla::net;
+using namespace mozilla::jsipc;
 
 namespace mozilla {
 namespace dom {
 
 #define NS_IPC_IOSERVICE_SET_OFFLINE_TOPIC "ipc:network:set-offline"
+
+// This represents a single measurement taken by a memory reporter in a child
+// process and passed to this one.  Its process is non-empty, and its amount is
+// fixed.
+class ChildMemoryReporter MOZ_FINAL : public MemoryReporterBase
+{
+public:
+    ChildMemoryReporter(const char* aProcess, const char* aPath, int32_t aKind,
+                        int32_t aUnits, int64_t aAmount,
+                        const char* aDescription)
+      : MemoryReporterBase(aPath, aKind, aUnits, aDescription)
+      , mProcess(aProcess)
+      , mAmount(aAmount)
+    {
+    }
+
+private:
+    int64_t Amount() { return mAmount; }
+
+    nsCString mProcess;
+    int64_t   mAmount;
+};
 
 class MemoryReportRequestParent : public PMemoryReportRequestParent
 {
@@ -134,7 +176,7 @@ public:
     MemoryReportRequestParent();
     virtual ~MemoryReportRequestParent();
 
-    virtual bool    Recv__delete__(const InfallibleTArray<MemoryReport>& report);
+    virtual bool Recv__delete__(const InfallibleTArray<MemoryReport>& report);
 private:
     ContentParent* Owner()
     {
@@ -160,9 +202,10 @@ MemoryReportRequestParent::~MemoryReportRequestParent()
     MOZ_COUNT_DTOR(MemoryReportRequestParent);
 }
 
-nsDataHashtable<nsStringHashKey, ContentParent*>* ContentParent::gAppContentParents;
-nsTArray<ContentParent*>* ContentParent::gNonAppContentParents;
-nsTArray<ContentParent*>* ContentParent::gPrivateContent;
+nsDataHashtable<nsStringHashKey, ContentParent*>* ContentParent::sAppContentParents;
+nsTArray<ContentParent*>* ContentParent::sNonAppContentParents;
+nsTArray<ContentParent*>* ContentParent::sPrivateContent;
+LinkedList<ContentParent> ContentParent::sContentParents;
 
 // This is true when subprocess launching is enabled.  This is the
 // case between StartUp() and ShutDown() or JoinAllSubprocesses().
@@ -171,73 +214,49 @@ static bool sCanLaunchSubprocesses;
 // The first content child has ID 1, so the chrome process can have ID 0.
 static uint64_t gContentChildID = 1;
 
-// Try to keep an app process always preallocated, to get
-// initialization off the critical path of app startup.
-static bool sKeepAppProcessPreallocated;
-static StaticRefPtr<ContentParent> sPreallocatedAppProcess;
-static CancelableTask* sPreallocateAppProcessTask;
-// This number is fairly arbitrary ... the intention is to put off
-// launching another app process until the last one has finished
-// loading its content, to reduce CPU/memory/IO contention.
-static int sPreallocateDelayMs;
 // We want the prelaunched process to know that it's for apps, but not
 // actually for any app in particular.  Use a magic manifest URL.
 // Can't be a static constant.
 #define MAGIC_PREALLOCATED_APP_MANIFEST_URL NS_LITERAL_STRING("{{template}}")
 
-/*static*/ void
-ContentParent::PreallocateAppProcess()
-{
-    MOZ_ASSERT(!sPreallocatedAppProcess);
-
-    if (sPreallocateAppProcessTask) {
-        // We were called directly while a delayed task was scheduled.
-        sPreallocateAppProcessTask->Cancel();
-        sPreallocateAppProcessTask = nullptr;
-    }
-
-    sPreallocatedAppProcess =
-        new ContentParent(MAGIC_PREALLOCATED_APP_MANIFEST_URL,
-                          /*isBrowserElement=*/false,
-                          base::PRIVILEGES_DEFAULT);
-    sPreallocatedAppProcess->Init();
-}
-
-/*static*/ void
-ContentParent::DelayedPreallocateAppProcess()
-{
-    sPreallocateAppProcessTask = nullptr;
-    if (!sPreallocatedAppProcess) {
-        PreallocateAppProcess();
-    }
-}
-
-/*static*/ void
-ContentParent::ScheduleDelayedPreallocateAppProcess()
-{
-    if (!sKeepAppProcessPreallocated || sPreallocateAppProcessTask) {
-        return;
-    }
-    sPreallocateAppProcessTask =
-        NewRunnableFunction(DelayedPreallocateAppProcess);
-    MessageLoop::current()->PostDelayedTask(
-        FROM_HERE, sPreallocateAppProcessTask, sPreallocateDelayMs);
-}
+// PreallocateAppProcess is called by the PreallocatedProcessManager.
+// ContentParent then takes this process back within
+// MaybeTakePreallocatedAppProcess.
 
 /*static*/ already_AddRefed<ContentParent>
-ContentParent::MaybeTakePreallocatedAppProcess()
+ContentParent::PreallocateAppProcess()
 {
-    nsRefPtr<ContentParent> process = sPreallocatedAppProcess.get();
-    sPreallocatedAppProcess = nullptr;
+    nsRefPtr<ContentParent> process =
+        new ContentParent(/* app = */ nullptr,
+                          /* isForBrowserElement = */ false,
+                          /* isForPreallocated = */ true,
+                          // Final privileges are set when we
+                          // transform into our app.
+                          base::PRIVILEGES_INHERIT,
+                          PROCESS_PRIORITY_BACKGROUND);
+    process->Init();
     return process.forget();
 }
 
-/*static*/ void
-ContentParent::FirstIdle(void)
+/*static*/ already_AddRefed<ContentParent>
+ContentParent::MaybeTakePreallocatedAppProcess(const nsAString& aAppManifestURL,
+                                               ChildPrivileges aPrivs,
+                                               ProcessPriority aInitialPriority)
 {
-  // The parent has gone idle for the first time. This would be a good
-  // time to preallocate an app process.
-  ScheduleDelayedPreallocateAppProcess();
+    nsRefPtr<ContentParent> process = PreallocatedProcessManager::Take();
+    if (!process) {
+        return nullptr;
+    }
+
+    if (!process->SetPriorityAndCheckIsAlive(aInitialPriority) ||
+        !process->TransformPreallocatedIntoApp(aAppManifestURL, aPrivs)) {
+        // Kill the process just in case it's not actually dead; we don't want
+        // to "leak" this process!
+        process->KillHard();
+        return nullptr;
+    }
+
+    return process.forget();
 }
 
 /*static*/ void
@@ -247,22 +266,10 @@ ContentParent::StartUp()
         return;
     }
 
-    sKeepAppProcessPreallocated =
-        Preferences::GetBool("dom.ipc.processPrelaunch.enabled", false);
-    if (sKeepAppProcessPreallocated) {
-        ClearOnShutdown(&sPreallocatedAppProcess);
-
-        sPreallocateDelayMs = Preferences::GetUint(
-            "dom.ipc.processPrelaunch.delayMs", 1000);
-
-        MOZ_ASSERT(!sPreallocateAppProcessTask);
-
-        // Let's not slow down the main process initialization. Wait until
-        // the main process goes idle before we preallocate a process
-        MessageLoop::current()->PostIdleTask(FROM_HERE, NewRunnableFunction(FirstIdle));
-    }
-
     sCanLaunchSubprocesses = true;
+
+    // Try to preallocate a process that we can transform into an app later.
+    PreallocatedProcessManager::AllocateAfterDelay();
 }
 
 /*static*/ void
@@ -321,29 +328,32 @@ ContentParent::JoinAllSubprocesses()
     sCanLaunchSubprocesses = false;
 }
 
-/*static*/ ContentParent*
+/*static*/ already_AddRefed<ContentParent>
 ContentParent::GetNewOrUsed(bool aForBrowserElement)
 {
-    if (!gNonAppContentParents)
-        gNonAppContentParents = new nsTArray<ContentParent*>();
+    if (!sNonAppContentParents)
+        sNonAppContentParents = new nsTArray<ContentParent*>();
 
     int32_t maxContentProcesses = Preferences::GetInt("dom.ipc.processCount", 1);
     if (maxContentProcesses < 1)
         maxContentProcesses = 1;
 
-    if (gNonAppContentParents->Length() >= uint32_t(maxContentProcesses)) {
-        uint32_t idx = rand() % gNonAppContentParents->Length();
-        ContentParent* p = (*gNonAppContentParents)[idx];
-        NS_ASSERTION(p->IsAlive(), "Non-alive contentparent in gNonAppContentParents?");
-        return p;
+    if (sNonAppContentParents->Length() >= uint32_t(maxContentProcesses)) {
+        uint32_t idx = rand() % sNonAppContentParents->Length();
+        nsRefPtr<ContentParent> p = (*sNonAppContentParents)[idx];
+        NS_ASSERTION(p->IsAlive(), "Non-alive contentparent in sNonAppContentParents?");
+        return p.forget();
     }
 
     nsRefPtr<ContentParent> p =
-        new ContentParent(/* appManifestURL = */ EmptyString(),
-                          aForBrowserElement);
+        new ContentParent(/* app = */ nullptr,
+                          aForBrowserElement,
+                          /* isForPreallocated = */ false,
+                          base::PRIVILEGES_DEFAULT,
+                          PROCESS_PRIORITY_FOREGROUND);
     p->Init();
-    gNonAppContentParents->AppendElement(p);
-    return p;
+    sNonAppContentParents->AppendElement(p);
+    return p.forget();
 }
 
 namespace {
@@ -359,10 +369,7 @@ PrivilegesForApp(mozIApplication* aApp)
     const SpecialPermission specialPermissions[] = {
         // FIXME/bug 785592: implement a CameraBridge so we don't have
         // to hack around with OS permissions
-        { "camera", base::PRIVILEGES_INHERIT },
-        // FIXME/bug 793034: change our video architecture so that we
-        // can stream video from remote processes
-        { "deprecated-hwvideo", base::PRIVILEGES_VIDEO }
+        { "camera", base::PRIVILEGES_CAMERA }
     };
     for (size_t i = 0; i < ArrayLength(specialPermissions); ++i) {
         const char* const permission = specialPermissions[i].perm;
@@ -377,20 +384,69 @@ PrivilegesForApp(mozIApplication* aApp)
     return base::PRIVILEGES_DEFAULT;
 }
 
+/*static*/ ProcessPriority
+ContentParent::GetInitialProcessPriority(nsIDOMElement* aFrameElement)
+{
+    // Frames with mozapptype == critical which are expecting a system message
+    // get FOREGROUND_HIGH priority.  All other frames get FOREGROUND priority.
+
+    if (!aFrameElement) {
+        return PROCESS_PRIORITY_FOREGROUND;
+    }
+
+    nsAutoString appType;
+    nsCOMPtr<Element> frameElement = do_QueryInterface(aFrameElement);
+    frameElement->GetAttr(kNameSpaceID_None, nsGkAtoms::mozapptype, appType);
+    if (appType != NS_LITERAL_STRING("critical")) {
+        return PROCESS_PRIORITY_FOREGROUND;
+    }
+
+    nsCOMPtr<nsIMozBrowserFrame> browserFrame =
+        do_QueryInterface(aFrameElement);
+    if (!browserFrame) {
+        return PROCESS_PRIORITY_FOREGROUND;
+    }
+
+    return browserFrame->GetIsExpectingSystemMessage() ?
+               PROCESS_PRIORITY_FOREGROUND_HIGH :
+               PROCESS_PRIORITY_FOREGROUND;
+}
+
 /*static*/ TabParent*
-ContentParent::CreateBrowserOrApp(const TabContext& aContext)
+ContentParent::CreateBrowserOrApp(const TabContext& aContext,
+                                  nsIDOMElement* aFrameElement)
 {
     if (!sCanLaunchSubprocesses) {
         return nullptr;
     }
 
     if (aContext.IsBrowserElement() || !aContext.HasOwnApp()) {
-        if (ContentParent* cp = GetNewOrUsed(aContext.IsBrowserElement())) {
+        if (nsRefPtr<ContentParent> cp = GetNewOrUsed(aContext.IsBrowserElement())) {
             nsRefPtr<TabParent> tp(new TabParent(aContext));
+            tp->SetOwnerElement(aFrameElement);
+            uint32_t chromeFlags = 0;
+
+            // Propagate the private-browsing status of the element's parent
+            // docshell to the remote docshell, via the chrome flags.
+            nsCOMPtr<Element> frameElement = do_QueryInterface(aFrameElement);
+            MOZ_ASSERT(frameElement);
+            nsIDocShell* docShell =
+                frameElement->OwnerDoc()->GetWindow()->GetDocShell();
+            MOZ_ASSERT(docShell);
+            nsCOMPtr<nsILoadContext> loadContext = do_QueryInterface(docShell);
+            if (loadContext && loadContext->UsePrivateBrowsing()) {
+                chromeFlags |= nsIWebBrowserChrome::CHROME_PRIVATE_WINDOW;
+            }
+            bool affectLifetime;
+            docShell->GetAffectPrivateSessionLifetime(&affectLifetime);
+            if (affectLifetime) {
+                chromeFlags |= nsIWebBrowserChrome::CHROME_PRIVATE_LIFETIME;
+            }
+
             PBrowserParent* browser = cp->SendPBrowserConstructor(
                 tp.forget().get(), // DeallocPBrowserParent() releases this ref.
                 aContext.AsIPCTabContext(),
-                /* chromeFlags */ 0);
+                chromeFlags);
             return static_cast<TabParent*>(browser);
         }
         return nullptr;
@@ -401,10 +457,10 @@ ContentParent::CreateBrowserOrApp(const TabContext& aContext)
     // !HasOwnApp() branch above.
     nsCOMPtr<mozIApplication> ownApp = aContext.GetOwnApp();
 
-    if (!gAppContentParents) {
-        gAppContentParents =
+    if (!sAppContentParents) {
+        sAppContentParents =
             new nsDataHashtable<nsStringHashKey, ContentParent*>();
-        gAppContentParents->Init();
+        sAppContentParents->Init();
     }
 
     // Each app gets its own ContentParent instance.
@@ -414,42 +470,44 @@ ContentParent::CreateBrowserOrApp(const TabContext& aContext)
         return nullptr;
     }
 
-    nsRefPtr<ContentParent> p = gAppContentParents->Get(manifestURL);
+    ProcessPriority initialPriority = GetInitialProcessPriority(aFrameElement);
+
+    nsRefPtr<ContentParent> p = sAppContentParents->Get(manifestURL);
+    if (p) {
+        // Check that the process is still alive and set its priority.
+        // Hopefully the process won't die after this point, if this call
+        // succeeds.
+        if (!p->SetPriorityAndCheckIsAlive(initialPriority)) {
+            p = nullptr;
+        }
+    }
+
     if (!p) {
         ChildPrivileges privs = PrivilegesForApp(ownApp);
-        if (privs != base::PRIVILEGES_DEFAULT) {
-            p = new ContentParent(manifestURL, /* isBrowserElement = */ false,
-                                  privs);
+        p = MaybeTakePreallocatedAppProcess(manifestURL, privs,
+                                            initialPriority);
+        if (!p) {
+            NS_WARNING("Unable to use pre-allocated app process");
+            p = new ContentParent(ownApp,
+                                  /* isForBrowserElement = */ false,
+                                  /* isForPreallocated = */ false,
+                                  privs,
+                                  initialPriority);
             p->Init();
-        } else {
-            p = MaybeTakePreallocatedAppProcess();
-            if (p) {
-                p->SetManifestFromPreallocated(manifestURL);
-            } else {
-                NS_WARNING("Unable to use pre-allocated app process");
-                p = new ContentParent(manifestURL, /* isBrowserElement = */ false,
-                                      base::PRIVILEGES_DEFAULT);
-                p->Init();
-            }
         }
-        gAppContentParents->Put(manifestURL, p);
+        sAppContentParents->Put(manifestURL, p);
     }
 
     nsRefPtr<TabParent> tp = new TabParent(aContext);
+    tp->SetOwnerElement(aFrameElement);
     PBrowserParent* browser = p->SendPBrowserConstructor(
-        tp.forget().get(), // DeallocPBrowserParent() releases this ref.
+        nsRefPtr<TabParent>(tp).forget().get(), // DeallocPBrowserParent() releases this ref.
         aContext.AsIPCTabContext(),
         /* chromeFlags */ 0);
-    return static_cast<TabParent*>(browser);
-}
 
-static PLDHashOperator
-AppendToTArray(const nsAString& aKey, ContentParent* aValue, void* aArray)
-{
-    nsTArray<ContentParent*> *array =
-        static_cast<nsTArray<ContentParent*>*>(aArray);
-    array->AppendElement(aValue);
-    return PL_DHASH_NEXT;
+    p->MaybeTakeCPUWakeLock(aFrameElement);
+
+    return static_cast<TabParent*>(browser);
 }
 
 void
@@ -457,16 +515,9 @@ ContentParent::GetAll(nsTArray<ContentParent*>& aArray)
 {
     aArray.Clear();
 
-    if (gNonAppContentParents) {
-        aArray.AppendElements(*gNonAppContentParents);
-    }
-
-    if (gAppContentParents) {
-        gAppContentParents->EnumerateRead(&AppendToTArray, &aArray);
-    }
-
-    if (sPreallocatedAppProcess) {
-        aArray.AppendElement(sPreallocatedAppProcess);
+    for (ContentParent* cp = sContentParents.getFirst(); cp;
+         cp = cp->getNext()) {
+        aArray.AppendElement(cp);
     }
 }
 
@@ -507,15 +558,175 @@ ContentParent::Init()
         unused << SendActivateA11y();
     }
 #endif
+
+    DebugOnly<FileUpdateDispatcher*> observer = FileUpdateDispatcher::GetSingleton();
+    NS_ASSERTION(observer, "FileUpdateDispatcher is null");
 }
 
-void
-ContentParent::SetManifestFromPreallocated(const nsAString& aAppManifestURL)
+namespace {
+
+class SystemMessageHandledListener MOZ_FINAL
+    : public nsITimerCallback
+    , public LinkedListElement<SystemMessageHandledListener>
 {
-    MOZ_ASSERT(mAppManifestURL == MAGIC_PREALLOCATED_APP_MANIFEST_URL);
-    // Clients should think of mAppManifestURL as const ... we're
-    // bending the rules here just for the preallocation hack.
-    const_cast<nsString&>(mAppManifestURL) = aAppManifestURL;
+public:
+    NS_DECL_ISUPPORTS
+
+    SystemMessageHandledListener() {}
+
+    static void OnSystemMessageHandled()
+    {
+        if (!sListeners) {
+            return;
+        }
+
+        SystemMessageHandledListener* listener = sListeners->popFirst();
+        if (!listener) {
+            return;
+        }
+
+        // Careful: ShutDown() may delete |this|.
+        listener->ShutDown();
+    }
+
+    void Init(nsIDOMMozWakeLock* aWakeLock)
+    {
+        MOZ_ASSERT(!mWakeLock);
+        MOZ_ASSERT(!mTimer);
+
+        // mTimer keeps a strong reference to |this|.  When this object's
+        // destructor runs, it will remove itself from the LinkedList.
+
+        if (!sListeners) {
+            sListeners = new LinkedList<SystemMessageHandledListener>();
+            ClearOnShutdown(&sListeners);
+        }
+        sListeners->insertBack(this);
+
+        mWakeLock = aWakeLock;
+
+        mTimer = do_CreateInstance("@mozilla.org/timer;1");
+
+        uint32_t timeoutSec =
+            Preferences::GetInt("dom.ipc.systemMessageCPULockTimeoutSec", 30);
+        mTimer->InitWithCallback(this, timeoutSec * 1000,
+                                 nsITimer::TYPE_ONE_SHOT);
+    }
+
+    NS_IMETHOD Notify(nsITimer* aTimer)
+    {
+        // Careful: ShutDown() may delete |this|.
+        ShutDown();
+        return NS_OK;
+    }
+
+private:
+    static StaticAutoPtr<LinkedList<SystemMessageHandledListener> > sListeners;
+
+    void ShutDown()
+    {
+        nsRefPtr<SystemMessageHandledListener> kungFuDeathGrip = this;
+
+        mWakeLock->Unlock();
+
+        if (mTimer) {
+            mTimer->Cancel();
+            mTimer = nullptr;
+        }
+    }
+
+    nsCOMPtr<nsIDOMMozWakeLock> mWakeLock;
+    nsCOMPtr<nsITimer> mTimer;
+};
+
+StaticAutoPtr<LinkedList<SystemMessageHandledListener> >
+    SystemMessageHandledListener::sListeners;
+
+NS_IMPL_ISUPPORTS1(SystemMessageHandledListener,
+                   nsITimerCallback)
+
+} // anonymous namespace
+
+void
+ContentParent::MaybeTakeCPUWakeLock(nsIDOMElement* aFrameElement)
+{
+    // Take the CPU wake lock on behalf of this processs if it's expecting a
+    // system message.  We'll release the CPU lock once the message is
+    // delivered, or after some period of time, which ever comes first.
+
+    nsCOMPtr<nsIMozBrowserFrame> browserFrame =
+        do_QueryInterface(aFrameElement);
+    if (!browserFrame ||
+        !browserFrame->GetIsExpectingSystemMessage()) {
+        return;
+    }
+
+    nsRefPtr<PowerManagerService> pms = PowerManagerService::GetInstance();
+    nsCOMPtr<nsIDOMMozWakeLock> lock =
+        pms->NewWakeLockOnBehalfOfProcess(NS_LITERAL_STRING("cpu"), this);
+
+    // This object's Init() function keeps it alive.
+    nsRefPtr<SystemMessageHandledListener> listener =
+        new SystemMessageHandledListener();
+    listener->Init(lock);
+}
+
+bool
+ContentParent::SetPriorityAndCheckIsAlive(ProcessPriority aPriority)
+{
+    ProcessPriorityManager::SetProcessPriority(this, aPriority);
+
+    // Now that we've set this process's priority, check whether the process is
+    // still alive.  Hopefully we've set the priority to FOREGROUND*, so the
+    // process won't unexpectedly crash after this point!
+    //
+    // It's not legal to call DidProcessCrash on Windows if the process has not
+    // terminated yet, so we have to skip this check here.
+#ifndef XP_WIN
+    bool exited = false;
+    base::DidProcessCrash(&exited, mSubprocess->GetChildProcessHandle());
+    if (exited) {
+        return false;
+    }
+#endif
+
+    return true;
+}
+
+// Helper for ContentParent::TransformPreallocatedIntoApp.
+static void
+TryGetNameFromManifestURL(const nsAString& aManifestURL,
+                          nsAString& aName)
+{
+    aName.Truncate();
+    if (aManifestURL.IsEmpty() ||
+        aManifestURL == MAGIC_PREALLOCATED_APP_MANIFEST_URL) {
+        return;
+    }
+
+    nsCOMPtr<nsIAppsService> appsService = do_GetService(APPS_SERVICE_CONTRACTID);
+    NS_ENSURE_TRUE_VOID(appsService);
+
+    nsCOMPtr<mozIDOMApplication> domApp;
+    appsService->GetAppByManifestURL(aManifestURL, getter_AddRefs(domApp));
+
+    nsCOMPtr<mozIApplication> app = do_QueryInterface(domApp);
+    if (!app) {
+        return;
+    }
+
+    app->GetName(aName);
+}
+
+bool
+ContentParent::TransformPreallocatedIntoApp(const nsAString& aAppManifestURL,
+                                            ChildPrivileges aPrivs)
+{
+    MOZ_ASSERT(IsPreallocated());
+    mAppManifestURL = aAppManifestURL;
+    TryGetNameFromManifestURL(aAppManifestURL, mAppName);
+
+    return SendSetProcessPrivileges(aPrivs);
 }
 
 void
@@ -542,30 +753,35 @@ void
 ContentParent::MarkAsDead()
 {
     if (!mAppManifestURL.IsEmpty()) {
-        if (gAppContentParents) {
-            gAppContentParents->Remove(mAppManifestURL);
-            if (!gAppContentParents->Count()) {
-                delete gAppContentParents;
-                gAppContentParents = NULL;
+        if (sAppContentParents) {
+            sAppContentParents->Remove(mAppManifestURL);
+            if (!sAppContentParents->Count()) {
+                delete sAppContentParents;
+                sAppContentParents = NULL;
             }
         }
-    } else if (gNonAppContentParents) {
-        gNonAppContentParents->RemoveElement(this);
-        if (!gNonAppContentParents->Length()) {
-            delete gNonAppContentParents;
-            gNonAppContentParents = NULL;
+    } else if (sNonAppContentParents) {
+        sNonAppContentParents->RemoveElement(this);
+        if (!sNonAppContentParents->Length()) {
+            delete sNonAppContentParents;
+            sNonAppContentParents = NULL;
         }
     }
 
-    if (gPrivateContent) {
-        gPrivateContent->RemoveElement(this);
-        if (!gPrivateContent->Length()) {
-            delete gPrivateContent;
-            gPrivateContent = NULL;
+    if (sPrivateContent) {
+        sPrivateContent->RemoveElement(this);
+        if (!sPrivateContent->Length()) {
+            delete sPrivateContent;
+            sPrivateContent = NULL;
         }
     }
 
     mIsAlive = false;
+
+    // Remove from sContentParents.
+    if (isInList()) {
+         remove();
+    }
 }
 
 void
@@ -643,11 +859,16 @@ struct DelayedDeleteContentParentTask : public nsRunnable
 void
 ContentParent::ActorDestroy(ActorDestroyReason why)
 {
+    if (mForceKillTask) {
+        mForceKillTask->Cancel();
+        mForceKillTask = nullptr;
+    }
+
     nsRefPtr<nsFrameMessageManager> ppm = mMessageManager;
     if (ppm) {
       ppm->ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(ppm.get()),
                           CHILD_PROCESS_SHUTDOWN_MESSAGE, false,
-                          nullptr, nullptr, nullptr);
+                          nullptr, JS::NullPtr(), nullptr);
     }
     nsCOMPtr<nsIThreadObserver>
         kungFuDeathGrip(static_cast<nsIThreadObserver*>(this));
@@ -669,10 +890,6 @@ ContentParent::ActorDestroy(ActorDestroyReason why)
 #endif
     }
 
-    if (sPreallocatedAppProcess == this) {
-        sPreallocatedAppProcess = nullptr;
-    }
-
     mMessageManager->Disconnect();
 
     // clear the child memory reporters
@@ -690,8 +907,6 @@ ContentParent::ActorDestroy(ActorDestroyReason why)
         threadInt(do_QueryInterface(NS_GetCurrentThread()));
     if (threadInt)
         threadInt->RemoveObserver(this);
-    if (mRunToCompletionDepth)
-        mRunToCompletionDepth = 0;
 
     MarkAsDead();
 
@@ -712,8 +927,17 @@ ContentParent::ActorDestroy(ActorDestroyReason why)
                 CrashReporterParent* crashReporter =
                     static_cast<CrashReporterParent*>(ManagedPCrashReporterParent()[0]);
 
-                crashReporter->AnnotateCrashReport(NS_LITERAL_CSTRING("URL"),
-                                                   NS_ConvertUTF16toUTF8(mAppManifestURL));
+                // If we're an app process, always stomp the latest URI
+                // loaded in the child process with our manifest URL.  We
+                // would rather associate the crashes with apps than
+                // random child windows loaded in them.
+                //
+                // XXX would be nice if we could get both ...
+                if (!mAppManifestURL.IsEmpty()) {
+                    crashReporter->AnnotateCrashReport(NS_LITERAL_CSTRING("URL"),
+                                                       NS_ConvertUTF16toUTF8(mAppManifestURL));
+                }
+
                 crashReporter->GenerateCrashReport(this, NULL);
 
                 nsAutoString dumpID(crashReporter->ChildDumpID());
@@ -740,19 +964,60 @@ ContentParent::ActorDestroy(ActorDestroyReason why)
 }
 
 void
-ContentParent::NotifyTabDestroyed(PBrowserParent* aTab)
+ContentParent::NotifyTabDestroying(PBrowserParent* aTab)
 {
+    // There can be more than one PBrowser for a given app process
+    // because of popup windows.  PBrowsers can also destroy
+    // concurrently.  When all the PBrowsers are destroying, kick off
+    // another task to ensure the child process *really* shuts down,
+    // even if the PBrowsers themselves never finish destroying.
+    int32_t numLiveTabs = ManagedPBrowserParent().Length();
+    ++mNumDestroyingTabs;
+    if (mNumDestroyingTabs != numLiveTabs) {
+        return;
+    }
+
+    // We're dying now, so prevent this content process from being
+    // recycled during its shutdown procedure.
+    MarkAsDead();
+
+    MOZ_ASSERT(!mForceKillTask);
+    int32_t timeoutSecs =
+        Preferences::GetInt("dom.ipc.tabs.shutdownTimeoutSecs", 5);
+    if (timeoutSecs > 0) {
+        MessageLoop::current()->PostDelayedTask(
+            FROM_HERE,
+            mForceKillTask = NewRunnableMethod(this, &ContentParent::KillHard),
+            timeoutSecs * 1000);
+    }
+}
+
+void
+ContentParent::NotifyTabDestroyed(PBrowserParent* aTab,
+                                  bool aNotifiedDestroying)
+{
+    if (aNotifiedDestroying) {
+        --mNumDestroyingTabs;
+    }
+
     // There can be more than one PBrowser for a given app process
     // because of popup windows.  When the last one closes, shut
     // us down.
     if (ManagedPBrowserParent().Length() == 1) {
-        // Prevent this content process from being recycled, since
-        // it's dying.
-        MarkAsDead();
         MessageLoop::current()->PostTask(
             FROM_HERE,
             NewRunnableMethod(this, &ContentParent::ShutDownProcess));
     }
+}
+
+jsipc::JavaScriptParent*
+ContentParent::GetCPOWManager()
+{
+    if (ManagedPJavaScriptParent().Length()) {
+        return static_cast<JavaScriptParent*>(ManagedPJavaScriptParent()[0]);
+    }
+    JavaScriptParent* actor = static_cast<JavaScriptParent*>(SendPJavaScriptConstructor());
+    return actor;
 }
 
 TestShellParent*
@@ -775,21 +1040,36 @@ ContentParent::GetTestShellSingleton()
     return static_cast<TestShellParent*>(ManagedPTestShellParent()[0]);
 }
 
-ContentParent::ContentParent(const nsAString& aAppManifestURL,
+ContentParent::ContentParent(mozIApplication* aApp,
                              bool aIsForBrowser,
-                             ChildOSPrivileges aOSPrivileges)
+                             bool aIsForPreallocated,
+                             ChildPrivileges aOSPrivileges,
+                             ProcessPriority aInitialPriority /* = PROCESS_PRIORITY_FOREGROUND */)
     : mSubprocess(nullptr)
     , mOSPrivileges(aOSPrivileges)
-    , mChildID(CONTENT_PARENT_UNKNOWN_CHILD_ID)
+    , mChildID(gContentChildID++)
     , mGeolocationWatchID(-1)
-    , mRunToCompletionDepth(0)
-    , mShouldCallUnblockChild(false)
-    , mAppManifestURL(aAppManifestURL)
+    , mForceKillTask(nullptr)
+    , mNumDestroyingTabs(0)
     , mIsAlive(true)
     , mIsDestroyed(false)
     , mSendPermissionUpdates(false)
     , mIsForBrowser(aIsForBrowser)
 {
+    // No more than one of !!aApp, aIsForBrowser, and aIsForPreallocated should
+    // be true.
+    MOZ_ASSERT(!!aApp + aIsForBrowser + aIsForPreallocated <= 1);
+
+    // Insert ourselves into the global linked list of ContentParent objects.
+    sContentParents.insertBack(this);
+
+    if (aApp) {
+        aApp->GetManifestURL(mAppManifestURL);
+        aApp->GetName(mAppName);
+    } else if (aIsForPreallocated) {
+        mAppManifestURL = MAGIC_PREALLOCATED_APP_MANIFEST_URL;
+    }
+
     // From this point on, NS_WARNING, NS_ASSERTION, etc. should print out the
     // PID along with the warning.
     nsDebugImpl::SetMultiprocessMode("Parent");
@@ -798,15 +1078,17 @@ ContentParent::ContentParent(const nsAString& aAppManifestURL,
     mSubprocess = new GeckoChildProcessHost(GeckoProcessType_Content,
                                             aOSPrivileges);
 
-    bool useOffMainThreadCompositing = !!CompositorParent::CompositorLoop();
-    if (useOffMainThreadCompositing) {
-        // We need the subprocess's ProcessHandle to create the
-        // PCompositor channel below.  Block just until we have that.
-        mSubprocess->LaunchAndWaitForProcessHandle();
-    } else {
-        mSubprocess->AsyncLaunch();
-    }
+    mSubprocess->LaunchAndWaitForProcessHandle();
+
     Open(mSubprocess->GetChannel(), mSubprocess->GetChildProcessHandle());
+
+    // Set the subprocess's priority.  We do this early on because we're likely
+    // /lowering/ the process's CPU and memory priority, which it has inherited
+    // from this process.
+    //
+    // This call can cause us to send IPC messages to the child process, so it
+    // must come after the Open() call above.
+    ProcessPriorityManager::SetProcessPriority(this, aInitialPriority);
 
     // NB: internally, this will send an IPC message to the child
     // process to get it to create the CompositorChild.  This
@@ -816,6 +1098,7 @@ ContentParent::ContentParent(const nsAString& aAppManifestURL,
     // PBrowsers are created, because they rely on the Compositor
     // already being around.  (Creation is async, so can't happen
     // on demand.)
+    bool useOffMainThreadCompositing = !!CompositorParent::CompositorLoop();
     if (useOffMainThreadCompositing) {
         DebugOnly<bool> opened = PCompositor::Open(this);
         MOZ_ASSERT(opened);
@@ -843,23 +1126,27 @@ ContentParent::ContentParent(const nsAString& aAppManifestURL,
 
 ContentParent::~ContentParent()
 {
+    if (mForceKillTask) {
+        mForceKillTask->Cancel();
+    }
+
     if (OtherProcess())
         base::CloseProcessHandle(OtherProcess());
 
     NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
     // We should be removed from all these lists in ActorDestroy.
-    MOZ_ASSERT(!gPrivateContent || !gPrivateContent->Contains(this));
+    MOZ_ASSERT(!sPrivateContent || !sPrivateContent->Contains(this));
     if (mAppManifestURL.IsEmpty()) {
-        MOZ_ASSERT(!gNonAppContentParents ||
-                   !gNonAppContentParents->Contains(this));
+        MOZ_ASSERT(!sNonAppContentParents ||
+                   !sNonAppContentParents->Contains(this));
     } else {
-        // In general, we expect gAppContentParents->Get(mAppManifestURL) to be
+        // In general, we expect sAppContentParents->Get(mAppManifestURL) to be
         // NULL.  But it could be that we created another ContentParent for this
         // app after we did this->ActorDestroy(), so the right check is that
-        // gAppContentParent->Get(mAppManifestURL) != this.
-        MOZ_ASSERT(!gAppContentParents ||
-                   gAppContentParents->Get(mAppManifestURL) != this);
+        // sAppContentParents->Get(mAppManifestURL) != this.
+        MOZ_ASSERT(!sAppContentParents ||
+                   sAppContentParents->Get(mAppManifestURL) != this);
     }
 }
 
@@ -1080,24 +1367,26 @@ ContentParent::RecvGetShowPasswordSetting(bool* showPassword)
 bool
 ContentParent::RecvFirstIdle()
 {
-    // When the ContentChild goes idle, it sends us a FirstIdle message
-    // which we use as a good time to prelaunch another process. If we
-    // prelaunch any sooner than this, then we'll be competing with the
+    // When the ContentChild goes idle, it sends us a FirstIdle message which we
+    // use as an indicator that it's a good time to prelaunch another process.
+    // If we prelaunch any sooner than this, then we'll be competing with the
     // child process and slowing it down.
-    ScheduleDelayedPreallocateAppProcess();
+    PreallocatedProcessManager::AllocateAfterDelay();
     return true;
 }
 
 bool
 ContentParent::RecvAudioChannelGetMuted(const AudioChannelType& aType,
-                                        const bool& aMozHidden,
+                                        const bool& aElementHidden,
+                                        const bool& aElementWasHidden,
                                         bool* aValue)
 {
     nsRefPtr<AudioChannelService> service =
         AudioChannelService::GetAudioChannelService();
     *aValue = false;
     if (service) {
-        *aValue = service->GetMuted(aType, aMozHidden);
+        *aValue = service->GetMutedInternal(aType, mChildID,
+                                            aElementHidden, aElementWasHidden);
     }
     return true;
 }
@@ -1114,12 +1403,52 @@ ContentParent::RecvAudioChannelRegisterType(const AudioChannelType& aType)
 }
 
 bool
-ContentParent::RecvAudioChannelUnregisterType(const AudioChannelType& aType)
+ContentParent::RecvAudioChannelUnregisterType(const AudioChannelType& aType,
+                                              const bool& aElementHidden)
 {
     nsRefPtr<AudioChannelService> service =
         AudioChannelService::GetAudioChannelService();
     if (service) {
-        service->UnregisterType(aType, mChildID);
+        service->UnregisterType(aType, aElementHidden, mChildID);
+    }
+    return true;
+}
+
+bool
+ContentParent::RecvAudioChannelChangedNotification()
+{
+    nsRefPtr<AudioChannelService> service =
+        AudioChannelService::GetAudioChannelService();
+    if (service) {
+       service->SendAudioChannelChangedNotification(ChildID());
+    }
+    return true;
+}
+
+bool
+ContentParent::RecvBroadcastVolume(const nsString& aVolumeName)
+{
+#ifdef MOZ_WIDGET_GONK
+    nsresult rv;
+    nsCOMPtr<nsIVolumeService> vs = do_GetService(NS_VOLUMESERVICE_CONTRACTID, &rv);
+    if (vs) {
+        vs->BroadcastVolume(aVolumeName);
+    }
+    return true;
+#else
+    NS_WARNING("ContentParent::RecvBroadcastVolume shouldn't be called when MOZ_WIDGET_GONK is not defined");
+    return false;
+#endif
+}
+
+bool
+ContentParent::RecvRecordingDeviceEvents(const nsString& aRecordingStatus)
+{
+    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+    if (obs) {
+        obs->NotifyObservers(nullptr, "recording-device-events", aRecordingStatus.get());
+    } else {
+        NS_WARNING("Could not get the Observer service for ContentParent::RecvRecordingDeviceEvents.");
     }
     return true;
 }
@@ -1144,7 +1473,8 @@ ContentParent::Observe(nsISupports* aSubject,
 
     // listening for memory pressure event
     if (!strcmp(aTopic, "memory-pressure") &&
-        !NS_LITERAL_STRING("low-memory-no-forward").Equals(aData)) {
+        !StringEndsWith(nsDependentString(aData),
+                        NS_LITERAL_STRING("-no-forward"))) {
         unused << SendFlushMemory(nsDependentString(aData));
     }
     // listening for remotePrefs...
@@ -1166,7 +1496,8 @@ ContentParent::Observe(nsISupports* aSubject,
     }
     // listening for alert notifications
     else if (!strcmp(aTopic, "alertfinished") ||
-             !strcmp(aTopic, "alertclickcallback") ) {
+             !strcmp(aTopic, "alertclickcallback") ||
+             !strcmp(aTopic, "alertshow") ) {
         if (!SendNotifyAlertsObserver(nsDependentCString(aTopic),
                                       nsDependentString(aData)))
             return NS_ERROR_NOT_AVAILABLE;
@@ -1188,10 +1519,7 @@ ContentParent::Observe(nsISupports* aSubject,
         CopyUTF16toUTF8(aData, creason);
         DeviceStorageFile* file = static_cast<DeviceStorageFile*>(aSubject);
 
-        nsString path;
-        file->mFile->GetPath(path);
-
-        unused << SendFilePathUpdate(file->mStorageType, path, creason);
+        unused << SendFilePathUpdate(file->mStorageType, file->mStorageName, file->mPath, creason);
     }
 #ifdef MOZ_WIDGET_GONK
     else if(!strcmp(aTopic, NS_VOLUME_STATE_CHANGED)) {
@@ -1203,12 +1531,15 @@ ContentParent::Observe(nsISupports* aSubject,
         nsString volName;
         nsString mountPoint;
         int32_t  state;
+        int32_t  mountGeneration;
 
         vol->GetName(volName);
         vol->GetMountPoint(mountPoint);
         vol->GetState(&state);
+        vol->GetMountGeneration(&mountGeneration);
 
-        unused << SendFileSystemUpdate(volName, mountPoint, state);
+        unused << SendFileSystemUpdate(volName, mountPoint, state,
+                                       mountGeneration);
     }
 #endif
 #ifdef ACCESSIBILITY
@@ -1238,12 +1569,10 @@ ContentParent::AllocPImageBridge(mozilla::ipc::Transport* aTransport,
 }
 
 bool
-ContentParent::RecvGetProcessAttributes(uint64_t* aId, bool* aStartBackground,
+ContentParent::RecvGetProcessAttributes(uint64_t* aId,
                                         bool* aIsForApp, bool* aIsForBrowser)
 {
-    *aId = mChildID = gContentChildID++;
-    *aStartBackground =
-        (mAppManifestURL == MAGIC_PREALLOCATED_APP_MANIFEST_URL);
+    *aId = mChildID;
     *aIsForApp = IsForApp();
     *aIsForBrowser = mIsForBrowser;
 
@@ -1258,6 +1587,24 @@ ContentParent::RecvGetXPCOMProcessAttributes(bool* aIsOffline)
     DebugOnly<nsresult> rv = io->GetOffline(aIsOffline);
     NS_ASSERTION(NS_SUCCEEDED(rv), "Failed getting offline?");
 
+    return true;
+}
+
+mozilla::jsipc::PJavaScriptParent *
+ContentParent::AllocPJavaScript()
+{
+    mozilla::jsipc::JavaScriptParent *parent = new mozilla::jsipc::JavaScriptParent();
+    if (!parent->init()) {
+        delete parent;
+        return NULL;
+    }
+    return parent;
+}
+
+bool
+ContentParent::DeallocPJavaScript(PJavaScriptParent *parent)
+{
+    static_cast<mozilla::jsipc::JavaScriptParent *>(parent)->destroyFromContent();
     return true;
 }
 
@@ -1346,6 +1693,18 @@ ContentParent::GetOrCreateActorForBlob(nsIDOMBlob* aBlob)
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
   NS_ASSERTION(aBlob, "Null pointer!");
 
+  // XXX This is only safe so long as all blob implementations in our tree
+  //     inherit nsDOMFileBase. If that ever changes then this will need to grow
+  //     a real interface or something.
+  const nsDOMFileBase* blob = static_cast<nsDOMFileBase*>(aBlob);
+
+  // All blobs shared between processes must be immutable.
+  nsCOMPtr<nsIMutable> mutableBlob = do_QueryInterface(aBlob);
+  if (!mutableBlob || NS_FAILED(mutableBlob->SetMutable(false))) {
+    NS_WARNING("Failed to make blob immutable!");
+    return nullptr;
+  }
+
   nsCOMPtr<nsIRemoteBlob> remoteBlob = do_QueryInterface(aBlob);
   if (remoteBlob) {
     BlobParent* actor =
@@ -1358,12 +1717,7 @@ ContentParent::GetOrCreateActorForBlob(nsIDOMBlob* aBlob)
     }
   }
 
-  // XXX This is only safe so long as all blob implementations in our tree
-  //     inherit nsDOMFileBase. If that ever changes then this will need to grow
-  //     a real interface or something.
-  const nsDOMFileBase* blob = static_cast<nsDOMFileBase*>(aBlob);
-
-  BlobConstructorParams params;
+  ChildBlobConstructorParams params;
 
   if (blob->IsSizeUnknown() || blob->IsDateUnknown()) {
     // We don't want to call GetSize or GetLastModifiedDate
@@ -1401,7 +1755,7 @@ ContentParent::GetOrCreateActorForBlob(nsIDOMBlob* aBlob)
       blobParams.length() = length;
       params = blobParams;
     }
-  }
+      }
 
   BlobParent* actor = BlobParent::Create(aBlob);
   NS_ENSURE_TRUE(actor, nullptr);
@@ -1416,6 +1770,7 @@ ContentParent::GetOrCreateActorForBlob(nsIDOMBlob* aBlob)
 void
 ContentParent::KillHard()
 {
+    mForceKillTask = nullptr;
     // This ensures the process is eventually killed, but doesn't
     // immediately KILLITWITHFIRE because we want to get a minidump if
     // possible.  After a timeout though, the process is forceably
@@ -1427,6 +1782,30 @@ ContentParent::KillHard()
         FROM_HERE,
         NewRunnableFunction(&ProcessWatcher::EnsureProcessTerminated,
                             OtherProcess(), /*force=*/true));
+}
+
+bool
+ContentParent::IsPreallocated()
+{
+    return mAppManifestURL == MAGIC_PREALLOCATED_APP_MANIFEST_URL;
+}
+
+void
+ContentParent::FriendlyName(nsAString& aName)
+{
+    aName.Truncate();
+    if (IsPreallocated()) {
+        aName.AssignLiteral("(Preallocated)");
+    } else if (mIsForBrowser) {
+        aName.AssignLiteral("Browser");
+    } else if (!mAppName.IsEmpty()) {
+        aName = mAppName;
+    } else if (!mAppManifestURL.IsEmpty()) {
+        aName.AssignLiteral("Unknown app: ");
+        aName.Append(mAppManifestURL);
+    } else {
+        aName.AssignLiteral("???");
+    }
 }
 
 PCrashReporterParent*
@@ -1456,14 +1835,14 @@ ContentParent::DeallocPCrashReporter(PCrashReporterParent* crashreporter)
   return true;
 }
 
-PHalParent*
+hal_sandbox::PHalParent*
 ContentParent::AllocPHal()
 {
-    return CreateHalParent();
+    return hal_sandbox::CreateHalParent();
 }
 
 bool
-ContentParent::DeallocPHal(PHalParent* aHal)
+ContentParent::DeallocPHal(hal_sandbox::PHalParent* aHal)
 {
     delete aHal;
     return true;
@@ -1534,9 +1913,10 @@ ContentParent::SetChildMemoryReporters(const InfallibleTArray<MemoryReport>& rep
         int32_t   units    = report[i].units();
         int64_t   amount   = report[i].amount();
         nsCString desc     = report[i].desc();
-        
-        nsRefPtr<nsMemoryReporter> r =
-            new nsMemoryReporter(process, path, kind, units, amount, desc);
+
+        nsRefPtr<ChildMemoryReporter> r =
+            new ChildMemoryReporter(process.get(), path.get(), kind, units,
+                                    amount, desc.get());
 
         mMemoryReporters.AppendObject(r);
         mgr->RegisterReporter(r);
@@ -1616,15 +1996,16 @@ ContentParent::DeallocPSms(PSmsParent* aSms)
 }
 
 PStorageParent*
-ContentParent::AllocPStorage(const StorageConstructData& aData)
+ContentParent::AllocPStorage()
 {
-    return new StorageParent(aData);
+    return new DOMStorageDBParent();
 }
 
 bool
 ContentParent::DeallocPStorage(PStorageParent* aActor)
 {
-    delete aActor;
+    DOMStorageDBParent* child = static_cast<DOMStorageDBParent*>(aActor);
+    child->ReleaseIPDLReference();
     return true;
 }
 
@@ -1668,30 +2049,35 @@ ContentParent::RecvPBluetoothConstructor(PBluetoothParent* aActor)
 #endif
 }
 
-void
-ContentParent::ReportChildAlreadyBlocked()
+PSpeechSynthesisParent*
+ContentParent::AllocPSpeechSynthesis()
 {
-    if (!mRunToCompletionDepth) {
-#ifdef DEBUG
-        printf("Running to completion...\n");
+#ifdef MOZ_WEBSPEECH
+    return new mozilla::dom::SpeechSynthesisParent();
+#else
+    return nullptr;
 #endif
-        mRunToCompletionDepth = 1;
-        mShouldCallUnblockChild = false;
-    }
 }
-    
+
 bool
-ContentParent::RequestRunToCompletion()
+ContentParent::DeallocPSpeechSynthesis(PSpeechSynthesisParent* aActor)
 {
-    if (!mRunToCompletionDepth &&
-        BlockChild()) {
-#ifdef DEBUG
-        printf("Running to completion...\n");
+#ifdef MOZ_WEBSPEECH
+    delete aActor;
+    return true;
+#else
+    return false;
 #endif
-        mRunToCompletionDepth = 1;
-        mShouldCallUnblockChild = true;
-    }
-    return !!mRunToCompletionDepth;
+}
+
+bool
+ContentParent::RecvPSpeechSynthesisConstructor(PSpeechSynthesisParent* aActor)
+{
+#ifdef MOZ_WEBSPEECH
+    return true;
+#else
+    return false;
+#endif
 }
 
 bool
@@ -1818,6 +2204,22 @@ ContentParent::RecvShowFilePicker(const int16_t& mode,
 }
 
 bool
+ContentParent::RecvGetRandomValues(const uint32_t& length,
+                                   InfallibleTArray<uint8_t>* randomValues)
+{
+    uint8_t* buf = Crypto::GetRandomValues(length);
+
+    randomValues->SetCapacity(length);
+    randomValues->SetLength(length);
+
+    memcpy(randomValues->Elements(), buf, length);
+
+    NS_Free(buf);
+
+    return true;
+}
+
+bool
 ContentParent::RecvLoadURIExternal(const URIParams& uri)
 {
     nsCOMPtr<nsIExternalProtocolService> extProtService(do_GetService(NS_EXTERNALPROTOCOLSERVICE_CONTRACTID));
@@ -1846,9 +2248,6 @@ ContentParent::OnProcessNextEvent(nsIThreadInternal *thread,
                                   bool mayWait,
                                   uint32_t recursionDepth)
 {
-    if (mRunToCompletionDepth)
-        ++mRunToCompletionDepth;
-
     return NS_OK;
 }
 
@@ -1857,24 +2256,14 @@ NS_IMETHODIMP
 ContentParent::AfterProcessNextEvent(nsIThreadInternal *thread,
                                      uint32_t recursionDepth)
 {
-    if (mRunToCompletionDepth &&
-        !--mRunToCompletionDepth) {
-#ifdef DEBUG
-            printf("... ran to completion.\n");
-#endif
-            if (mShouldCallUnblockChild) {
-                mShouldCallUnblockChild = false;
-                UnblockChild();
-            }
-    }
-
     return NS_OK;
 }
 
 bool
 ContentParent::RecvShowAlertNotification(const nsString& aImageUrl, const nsString& aTitle,
                                          const nsString& aText, const bool& aTextClickable,
-                                         const nsString& aCookie, const nsString& aName)
+                                         const nsString& aCookie, const nsString& aName,
+                                         const nsString& aBidi, const nsString& aLang)
 {
     if (!AssertAppProcessPermission(this, "desktop-notification")) {
         return false;
@@ -1882,8 +2271,39 @@ ContentParent::RecvShowAlertNotification(const nsString& aImageUrl, const nsStri
     nsCOMPtr<nsIAlertsService> sysAlerts(do_GetService(NS_ALERTSERVICE_CONTRACTID));
     if (sysAlerts) {
         sysAlerts->ShowAlertNotification(aImageUrl, aTitle, aText, aTextClickable,
-                                         aCookie, this, aName);
+                                         aCookie, this, aName, aBidi, aLang);
     }
+
+    return true;
+}
+
+bool
+ContentParent::RecvCloseAlert(const nsString& aName)
+{
+    if (!AssertAppProcessPermission(this, "desktop-notification")) {
+        return false;
+    }
+    nsCOMPtr<nsIAlertsService> sysAlerts(do_GetService(NS_ALERTSERVICE_CONTRACTID));
+    if (sysAlerts) {
+        sysAlerts->CloseAlert(aName);
+    }
+
+    return true;
+}
+
+bool
+ContentParent::RecvTestPermissionFromPrincipal(const IPC::Principal& aPrincipal,
+                                               const nsCString& aType,
+                                               uint32_t* permission)
+{
+    nsCOMPtr<nsIPermissionManager> permissionManager =
+        do_GetService(NS_PERMISSIONMANAGER_CONTRACTID);
+    NS_ENSURE_TRUE(permissionManager, false);
+
+    nsresult rv = permissionManager->TestPermissionFromPrincipal(aPrincipal,
+                                                                 aType.get(),
+                                                                 permission);
+    NS_ENSURE_SUCCESS(rv, false);
 
     return true;
 }
@@ -1895,24 +2315,9 @@ ContentParent::RecvSyncMessage(const nsString& aMsg,
 {
   nsRefPtr<nsFrameMessageManager> ppm = mMessageManager;
   if (ppm) {
-    const SerializedStructuredCloneBuffer& buffer = aData.data();
-    const InfallibleTArray<PBlobParent*>& blobParents = aData.blobsParent();
-    StructuredCloneData cloneData;
-    cloneData.mData = buffer.data;
-    cloneData.mDataLength = buffer.dataLength;
-    if (!blobParents.IsEmpty()) {
-      uint32_t length = blobParents.Length();
-      cloneData.mClosure.mBlobs.SetCapacity(length);
-      for (uint32_t index = 0; index < length; index++) {
-        BlobParent* blobParent = static_cast<BlobParent*>(blobParents[index]);
-        MOZ_ASSERT(blobParent);
-        nsCOMPtr<nsIDOMBlob> blob = blobParent->GetBlob();
-        MOZ_ASSERT(blob);
-        cloneData.mClosure.mBlobs.AppendElement(blob);
-  }
-    }
+    StructuredCloneData cloneData = ipc::UnpackClonedMessageDataForParent(aData);
     ppm->ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(ppm.get()),
-                        aMsg, true, &cloneData, nullptr, aRetvals);
+                        aMsg, true, &cloneData, JS::NullPtr(), aRetvals);
   }
   return true;
 }
@@ -1923,31 +2328,50 @@ ContentParent::RecvAsyncMessage(const nsString& aMsg,
 {
   nsRefPtr<nsFrameMessageManager> ppm = mMessageManager;
   if (ppm) {
-    const SerializedStructuredCloneBuffer& buffer = aData.data();
-    const InfallibleTArray<PBlobParent*>& blobParents = aData.blobsParent();
-    StructuredCloneData cloneData;
-    cloneData.mData = buffer.data;
-    cloneData.mDataLength = buffer.dataLength;
-    if (!blobParents.IsEmpty()) {
-      uint32_t length = blobParents.Length();
-      cloneData.mClosure.mBlobs.SetCapacity(length);
-      for (uint32_t index = 0; index < length; index++) {
-        BlobParent* blobParent = static_cast<BlobParent*>(blobParents[index]);
-        MOZ_ASSERT(blobParent);
-        nsCOMPtr<nsIDOMBlob> blob = blobParent->GetBlob();
-        MOZ_ASSERT(blob);
-        cloneData.mClosure.mBlobs.AppendElement(blob);
-      }
-    }
-
+    StructuredCloneData cloneData = ipc::UnpackClonedMessageDataForParent(aData);
     ppm->ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(ppm.get()),
-                        aMsg, false, &cloneData, nullptr, nullptr);
+                        aMsg, false, &cloneData, JS::NullPtr(), nullptr);
   }
   return true;
 }
 
 bool
-ContentParent::RecvAddGeolocationListener(const IPC::Principal& aPrincipal)
+ContentParent::RecvFilePathUpdateNotify(const nsString& aType,
+                                        const nsString& aStorageName,
+                                        const nsString& aFilePath,
+                                        const nsCString& aReason)
+{
+    nsRefPtr<DeviceStorageFile> dsf = new DeviceStorageFile(aType,
+                                                            aStorageName,
+                                                            aFilePath);
+
+    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+    if (!obs) {
+        return false;
+    }
+    obs->NotifyObservers(dsf, "file-watcher-update",
+                         NS_ConvertASCIItoUTF16(aReason).get());
+    return true;
+}
+
+static int32_t
+AddGeolocationListener(nsIDOMGeoPositionCallback* watcher, bool highAccuracy)
+{
+  nsCOMPtr<nsIDOMGeoGeolocation> geo = do_GetService("@mozilla.org/geolocation;1");
+  if (!geo) {
+    return -1;
+  }
+
+  GeoPositionOptions* options = new GeoPositionOptions();
+  options->enableHighAccuracy = highAccuracy;
+  int32_t retval = 1;
+  geo->WatchPosition(watcher, nullptr, options, &retval);
+  return retval;
+}
+
+bool
+ContentParent::RecvAddGeolocationListener(const IPC::Principal& aPrincipal,
+                                          const bool& aHighAccuracy)
 {
 #ifdef MOZ_PERMISSIONS
   if (Preferences::GetBool("geo.testing.ignore_ipc_principal", false) == false) {
@@ -1999,17 +2423,7 @@ ContentParent::RecvAddGeolocationListener(const IPC::Principal& aPrincipal)
   // To ensure no geolocation updates are skipped, we always force the
   // creation of a new listener.
   RecvRemoveGeolocationListener();
-
-  nsCOMPtr<nsIDOMGeoGeolocation> geo = do_GetService("@mozilla.org/geolocation;1");
-  if (!geo) {
-    return true;
-  }
-
-  nsRefPtr<nsGeolocation> geosvc = static_cast<nsGeolocation*>(geo.get());
-  nsAutoPtr<mozilla::dom::GeoPositionOptions> options(new mozilla::dom::GeoPositionOptions());
-  jsval null = JS::NullValue();
-  options->Init(nullptr, &null);
-  geosvc->WatchPosition(this, nullptr, options.forget(), &mGeolocationWatchID);
+  mGeolocationWatchID = AddGeolocationListener(this, aHighAccuracy);
   return true;
 }
 
@@ -2030,10 +2444,13 @@ ContentParent::RecvRemoveGeolocationListener()
 bool
 ContentParent::RecvSetGeolocationHigherAccuracy(const bool& aEnable)
 {
-    nsRefPtr<nsGeolocationService> geoSvc =
-        nsGeolocationService::GetGeolocationService();
-    geoSvc->SetHigherAccuracy(aEnable);
-    return true;
+  // This should never be called without a listener already present,
+  // so this check allows us to forgo securing privileges.
+  if (mGeolocationWatchID != -1) {
+    RecvRemoveGeolocationListener();
+    mGeolocationWatchID = AddGeolocationListener(this, aEnable);
+  }
+  return true;
 }
 
 NS_IMETHODIMP
@@ -2100,17 +2517,17 @@ ContentParent::RecvScriptError(const nsString& aMessage,
 bool
 ContentParent::RecvPrivateDocShellsExist(const bool& aExist)
 {
-  if (!gPrivateContent)
-    gPrivateContent = new nsTArray<ContentParent*>();
+  if (!sPrivateContent)
+    sPrivateContent = new nsTArray<ContentParent*>();
   if (aExist) {
-    gPrivateContent->AppendElement(this);
+    sPrivateContent->AppendElement(this);
   } else {
-    gPrivateContent->RemoveElement(this);
-    if (!gPrivateContent->Length()) {
+    sPrivateContent->RemoveElement(this);
+    if (!sPrivateContent->Length()) {
       nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
       obs->NotifyObservers(nullptr, "last-pb-context-exited", nullptr);
-      delete gPrivateContent;
-      gPrivateContent = NULL;
+      delete sPrivateContent;
+      sPrivateContent = NULL;
     }
   }
   return true;
@@ -2121,23 +2538,9 @@ ContentParent::DoSendAsyncMessage(const nsAString& aMessage,
                                   const mozilla::dom::StructuredCloneData& aData)
 {
   ClonedMessageData data;
-  SerializedStructuredCloneBuffer& buffer = data.data();
-  buffer.data = aData.mData;
-  buffer.dataLength = aData.mDataLength;
-  const nsTArray<nsCOMPtr<nsIDOMBlob> >& blobs = aData.mClosure.mBlobs;
-  if (!blobs.IsEmpty()) {
-    InfallibleTArray<PBlobParent*>& blobParents = data.blobsParent();
-    uint32_t length = blobs.Length();
-    blobParents.SetCapacity(length);
-    for (uint32_t i = 0; i < length; ++i) {
-      BlobParent* blobParent = GetOrCreateActorForBlob(blobs[i]);
-      if (!blobParent) {
-        return false;
-      }
-      blobParents.AppendElement(blobParent);
-    }
+  if (!BuildClonedMessageDataForParent(this, aData, data)) {
+    return false;
   }
-
   return SendAsyncMessage(nsString(aMessage), data);
 }
 
@@ -2147,6 +2550,24 @@ ContentParent::CheckPermission(const nsAString& aPermission)
   return AssertAppProcessPermission(this, NS_ConvertUTF16toUTF8(aPermission).get());
 }
 
+bool
+ContentParent::CheckManifestURL(const nsAString& aManifestURL)
+{
+  return AssertAppProcessManifestURL(this, NS_ConvertUTF16toUTF8(aManifestURL).get());
+}
+
+bool
+ContentParent::CheckAppHasPermission(const nsAString& aPermission)
+{
+  return AssertAppHasPermission(this, NS_ConvertUTF16toUTF8(aPermission).get());
+}
+
+bool
+ContentParent::RecvSystemMessageHandled()
+{
+    SystemMessageHandledListener::OnSystemMessageHandled();
+    return true;
+}
 
 } // namespace dom
 } // namespace mozilla

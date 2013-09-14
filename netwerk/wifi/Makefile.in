@@ -9,11 +9,7 @@ VPATH     = @srcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-MODULE         = necko
-LIBRARY_NAME   = neckowifi_s
 LIBXUL_LIBRARY = 1
-XPIDL_MODULE   = necko_wifi
-GRE_MODULE     = 1
 
 FORCE_STATIC_LIB = 1
 
@@ -22,36 +18,15 @@ ifneq ($(OS_ARCH),Darwin)
 FAIL_ON_WARNINGS := 1
 endif
 
-XPIDLSRCS = \
-  nsIWifiAccessPoint.idl \
-  nsIWifiListener.idl \
-  nsIWifiMonitor.idl \
-  $(NULL)
-
-ifeq (gonk,$(MOZ_WIDGET_TOOLKIT))
-CPPSRCS += nsWifiMonitorGonk.cpp
-else
-CPPSRCS += nsWifiMonitor.cpp
-endif
-
-CPPSRCS += nsWifiAccessPoint.cpp
-
 ifeq ($(OS_ARCH),Darwin)
-CPPSRCS += nsWifiScannerMac.cpp
 CMMSRCS = osx_corewlan.mm
 endif
 
-ifneq (,$(filter WINNT,$(OS_ARCH)))
-CPPSRCS += nsWifiScannerWin.cpp
-endif
-
 ifeq ($(OS_ARCH),SunOS)
-CPPSRCS += nsWifiScannerSolaris.cpp
 OS_INCLUDES += $(GLIB_CFLAGS)
 endif
 
 ifdef MOZ_ENABLE_DBUS
-CPPSRCS += nsWifiScannerDBus.cpp
 OS_INCLUDES += $(MOZ_DBUS_GLIB_CFLAGS)
 endif
 

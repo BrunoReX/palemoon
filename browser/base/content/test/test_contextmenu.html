@@ -21,10 +21,11 @@ Browser context menu tests.
 /** Test for Login Manager: multiple login autocomplete. **/
 
 SpecialPowers.Cu.import("resource://gre/modules/InlineSpellChecker.jsm", window);
+SpecialPowers.Cu.import("resource://gre/modules/AsyncSpellCheckTestHelper.jsm", window);
 
 const Ci = SpecialPowers.Ci;
 
-function openContextMenuFor(element, shiftkey, shouldWaitForFocus) {
+function openContextMenuFor(element, shiftkey, waitForSpellCheck) {
     // Context menu should be closed before we open it again.
     is(SpecialPowers.wrap(contextMenu).state, "closed", "checking if popup is closed");
 
@@ -39,8 +40,9 @@ function openContextMenuFor(element, shiftkey, shouldWaitForFocus) {
       var eventDetails = { type : "contextmenu", button : 2, shiftKey : shiftkey };
       synthesizeMouse(element, 2, 2, eventDetails, element.ownerDocument.defaultView);
     }
-    if (shouldWaitForFocus)
-      SimpleTest.executeSoon(actuallyOpenContextMenuFor);
+
+    if (waitForSpellCheck)
+      onSpellCheck(element, actuallyOpenContextMenuFor);
     else
       actuallyOpenContextMenuFor();
 }
@@ -120,7 +122,8 @@ function getVisibleMenuItems(aMenu, aData) {
             } else if (isGenerated) {
               items.push("+" + label);
             } else if (item.id.indexOf("spell-check-dictionary-") != 0 &&
-                       item.id != "spell-no-suggestions") {
+                       item.id != "spell-no-suggestions" &&
+                       item.id != "spell-add-dictionaries-main") {
               ok(key, "menuitem " + item.id + " has an access key");
               if (accessKeys[key])
                   ok(false, "menuitem " + item.id + " has same accesskey as " + accessKeys[key]);
@@ -370,6 +373,11 @@ function runTest(testNum) {
         // Context menu for a video (with a VALID media source)
         checkContextMenu(["context-media-play",         true,
                           "context-media-mute",         true,
+                          "context-media-playbackrate", null,
+                              ["context-media-playbackrate-050x", true,
+                               "context-media-playbackrate-100x", true,
+                               "context-media-playbackrate-150x", true,
+                               "context-media-playbackrate-200x", true], null,
                           "context-media-hidecontrols", true,
                           "context-video-showstats",    true,
                           "context-video-fullscreen",   true,
@@ -389,6 +397,11 @@ function runTest(testNum) {
         // Context menu for a video (with an audio-only file)
           checkContextMenu(["context-media-play",         true,
                             "context-media-mute",         true,
+                            "context-media-playbackrate", null,
+                                ["context-media-playbackrate-050x", true,
+                                 "context-media-playbackrate-100x", true,
+                                 "context-media-playbackrate-150x", true,
+                                 "context-media-playbackrate-200x", true], null,
                             "context-media-showcontrols", true,
                             "---",                        null,
                             "context-copyaudiourl",       true,
@@ -404,6 +417,11 @@ function runTest(testNum) {
         // Context menu for a video (with an INVALID media source)
         checkContextMenu(["context-media-play",         false,
                           "context-media-mute",         false,
+                          "context-media-playbackrate", null,
+                              ["context-media-playbackrate-050x", false,
+                               "context-media-playbackrate-100x", false,
+                               "context-media-playbackrate-150x", false,
+                               "context-media-playbackrate-200x", false], null,
                           "context-media-hidecontrols", false,
                           "context-video-showstats",    false,
                           "context-video-fullscreen",   false,
@@ -423,6 +441,11 @@ function runTest(testNum) {
         // Context menu for a video (with an INVALID media source)
         checkContextMenu(["context-media-play",         false,
                           "context-media-mute",         false,
+                          "context-media-playbackrate", null,
+                              ["context-media-playbackrate-050x", false,
+                               "context-media-playbackrate-100x", false,
+                               "context-media-playbackrate-150x", false,
+                               "context-media-playbackrate-200x", false], null,
                           "context-media-hidecontrols", false,
                           "context-video-showstats",    false,
                           "context-video-fullscreen",   false,
@@ -475,6 +498,11 @@ function runTest(testNum) {
         // Context menu for a video in an iframe
         checkContextMenu(["context-media-play",         true,
                           "context-media-mute",         true,
+                          "context-media-playbackrate", null,
+                              ["context-media-playbackrate-050x", true,
+                               "context-media-playbackrate-100x", true,
+                               "context-media-playbackrate-150x", true,
+                               "context-media-playbackrate-200x", true], null,
                           "context-media-hidecontrols", true,
                           "context-video-showstats",    true,
                           "context-video-fullscreen",   true,
@@ -583,7 +611,7 @@ function runTest(testNum) {
                          ].concat(inspectItems));
         contextMenu.ownerDocument.getElementById("spell-undo-add-to-dictionary").doCommand(); // Undo add to dictionary
         closeContextMenu();
-        openContextMenuFor(contenteditable);
+        openContextMenuFor(contenteditable, false, true);
         break;
 
     case 18:
@@ -608,7 +636,7 @@ function runTest(testNum) {
                          ].concat(inspectItems));
 
         closeContextMenu();
-        openContextMenuFor(inputspell); // Invoke context menu for next test.
+        openContextMenuFor(inputspell, false, true); // Invoke context menu for next test.
         break;
 
     case 19:
@@ -633,16 +661,34 @@ function runTest(testNum) {
                          ].concat(inspectItems));
 
         closeContextMenu();
-        openContextMenuFor(link); // Invoke context menu for next test.
+        openContextMenuFor(inputspellfalse, false, true); // Invoke context menu for next test.
         break;
 
     case 20:
+        // Context menu for text input field with spellcheck=false
+        checkContextMenu(["context-undo",        false,
+                          "---",                 null,
+                          "context-cut",         false,
+                          "context-copy",        false,
+                          "context-paste",       null, // ignore clipboard state
+                          "context-delete",      false,
+                          "---",                 null,
+                          "context-selectall",   true,
+                          "---",                 null,
+                          "spell-add-dictionaries-main",  true,
+                         ].concat(inspectItems));
+
+        closeContextMenu();
+        openContextMenuFor(link); // Invoke context menu for next test.
+        break;
+
+    case 21:
         executeCopyCommand("cmd_copyLink", "http://mozilla.com/");
         closeContextMenu();
         openContextMenuFor(pagemenu); // Invoke context menu for next test.
         break;
 
-    case 21:
+    case 22:
         // Context menu for element with assigned content context menu
         checkContextMenu(["+Plain item",          {type: "", icon: "", checked: false, disabled: false},
                           "+Disabled item",       {type: "", icon: "", checked: false, disabled: true},
@@ -685,15 +731,15 @@ function runTest(testNum) {
         var full_screen_element = subwindow.document.getElementById("test-dom-full-screen");
         var openDomFullScreen = function() {
             subwindow.removeEventListener("mozfullscreenchange", openDomFullScreen, false);
-            SpecialPowers.clearUserPref("full-screen-api.allow-trusted-requests-only");
             openContextMenuFor(dom_full_screen, true); // Invoke context menu for next test.
         }
         subwindow.addEventListener("mozfullscreenchange", openDomFullScreen, false);
+        SpecialPowers.setBoolPref("full-screen-api.approval-required", false);
         SpecialPowers.setBoolPref("full-screen-api.allow-trusted-requests-only", false);
         full_screen_element.mozRequestFullScreen();
         break;
 
-        case 22:
+    case 23:
         // Context menu for DOM Fullscreen mode (NOTE: this is *NOT* on an img)
         checkContextMenu(["context-leave-dom-fullscreen", true,
                           "---",                          null,
@@ -714,15 +760,15 @@ function runTest(testNum) {
         var full_screen_element = subwindow.document.getElementById("test-dom-full-screen");
         var openPagemenu = function() {
             subwindow.removeEventListener("mozfullscreenchange", openPagemenu, false);
+            SpecialPowers.clearUserPref("full-screen-api.approval-required");
             SpecialPowers.clearUserPref("full-screen-api.allow-trusted-requests-only");
             openContextMenuFor(pagemenu, true); // Invoke context menu for next test.
         }
         subwindow.addEventListener("mozfullscreenchange", openPagemenu, false);
-        SpecialPowers.setBoolPref("full-screen-api.allow-trusted-requests-only", false);
         subwindow.document.mozCancelFullScreen();
         break;
 
-    case 23:
+    case 24:
         // Context menu for element with assigned content context menu
         // The shift key should bypass content context menu processing
         checkContextMenu(["context-back",         false,
@@ -743,7 +789,7 @@ function runTest(testNum) {
         openContextMenuFor(selecttext); // Invoke context menu for next test.
         return;
 
-    case 24:
+    case 25:
         // Context menu for selected text
         if (SpecialPowers.Services.appinfo.OS == "Darwin") {
           // This test is only enabled on Mac due to bug 736399.
@@ -759,7 +805,7 @@ function runTest(testNum) {
         openContextMenuFor(selecttextlink); // Invoke context menu for next test.
         return;
 
-    case 25:
+    case 26:
         // Context menu for selected text which matches valid URL pattern
         if (SpecialPowers.Services.appinfo.OS == "Darwin") {
           // This test is only enabled on Mac due to bug 736399.
@@ -799,7 +845,7 @@ function runTest(testNum) {
         openContextMenuFor(imagelink)
         break;
 
-    case 26:
+    case 27:
         // Context menu for image link
         if (perWindowPrivateBrowsing) {
           checkContextMenu(["context-openlinkintab", true,
@@ -842,7 +888,7 @@ function runTest(testNum) {
         openContextMenuFor(select_inputtext); // Invoke context menu for next test.
         return;
 
-    case 27:
+    case 28:
         // Context menu for selected text in input
         checkContextMenu(["context-undo",        false,
                           "---",                 null,
@@ -861,25 +907,57 @@ function runTest(testNum) {
         openContextMenuFor(select_inputtext_password); // Invoke context menu for next test.
         return;
 
-    case 28:
+    case 29:
         // Context menu for selected text in input[type="password"]
-          checkContextMenu(["context-undo",        false,
-                            "---",                 null,
-                            "context-cut",         true,
-                            "context-copy",        true,
-                            "context-paste",       null, // ignore clipboard state
-                            "context-delete",      true,
-                            "---",                 null,
-                            "context-selectall",   true,
-                            "---",                 null,
-                            "spell-check-enabled", true,
-                            //spell checker is shown on input[type="password"] on this testcase
-                            "spell-dictionaries",  true,
-                                ["spell-check-dictionary-en-US", true,
-                                 "---",                          null,
-                                 "spell-add-dictionaries",       true], null
-                           ].concat(inspectItems));
+        checkContextMenu(["context-undo",        false,
+                          "---",                 null,
+                          "context-cut",         true,
+                          "context-copy",        true,
+                          "context-paste",       null, // ignore clipboard state
+                          "context-delete",      true,
+                          "---",                 null,
+                          "context-selectall",   true,
+                          "---",                 null,
+                          "spell-check-enabled", true,
+                          //spell checker is shown on input[type="password"] on this testcase
+                          "spell-dictionaries",  true,
+                              ["spell-check-dictionary-en-US", true,
+                               "---",                          null,
+                               "spell-add-dictionaries",       true], null
+                         ].concat(inspectItems));
         closeContextMenu();
+        subwindow.getSelection().removeAllRanges();
+        openContextMenuFor(plugin);
+        return;
+
+    case 30:
+        // Context menu for click-to-play blocked plugin
+        checkContextMenu(["context-ctp-play",     true,
+                          "context-ctp-hide",     true,
+                          "---",                  null,
+                          "context-back",         false,
+                          "context-forward",      false,
+                          "context-reload",       true,
+                          "---",                  null,
+                          "context-bookmarkpage", true,
+                          "context-savepage",     true,
+                          "---",                  null,
+                          "context-viewbgimage",  false,
+                          "context-selectall",    true,
+                          "---",                  null,
+                          "context-viewsource",   true,
+                          "context-viewinfo",     true
+                         ].concat(inspectItems));
+        closeContextMenu();
+        SpecialPowers.clearUserPref("plugins.click_to_play");
+        var ph = SpecialPowers.Cc["@mozilla.org/plugin/host;1"]
+                                 .getService(SpecialPowers.Ci.nsIPluginHost);
+        var tags = ph.getPluginTags();
+        for (var tag of tags) {
+          if (tag.name == "Test Plug-in") {
+            tag.enabledState = SpecialPowers.Ci.nsIPluginTag.STATE_ENABLED;
+          }
+        }
 
         // finish test
         subwindow.close();
@@ -908,7 +986,8 @@ var subwindow, chromeWin, contextMenu, lastElement;
 var text, link, mailto, input, img, canvas, video_ok, video_bad, video_bad2,
     iframe, video_in_iframe, image_in_iframe, textarea, contenteditable,
     inputspell, pagemenu, dom_full_screen, plainTextItems, audio_in_video,
-    selecttext, selecttextlink, imagelink, select_inputtext, select_inputtext_password;
+    selecttext, selecttextlink, imagelink, select_inputtext, select_inputtext_password,
+    plugin, inputspellfalse;
 
 function startTest() {
     chromeWin = SpecialPowers.wrap(subwindow)
@@ -928,7 +1007,7 @@ function startTest() {
       return;
     }
 
-    subwindow.allowfullscreen = true;
+    subwindow.allowFullscreen = true;
     lastElement = null;
 
     text   = subwindow.document.getElementById("test-text");
@@ -950,12 +1029,14 @@ function startTest() {
     contenteditable = subwindow.document.getElementById("test-contenteditable");
     contenteditable.focus(); // content editable needs to be focused to enable spellcheck
     inputspell = subwindow.document.getElementById("test-input-spellcheck");
+    inputspellfalse = subwindow.document.getElementById("test-contenteditable-spellcheck-false");
     pagemenu = subwindow.document.getElementById("test-pagemenu");
     dom_full_screen = subwindow.document.getElementById("test-dom-full-screen");
     selecttext = subwindow.document.getElementById("test-select-text");
     selecttextlink = subwindow.document.getElementById("test-select-text-link");
     select_inputtext = subwindow.document.getElementById("test-select-input-text");
     select_inputtext_password = subwindow.document.getElementById("test-select-input-text-type-password");
+    plugin = subwindow.document.getElementById("test-plugin");
 
     contextMenu.addEventListener("popupshown", function() { runTest(++testNum); }, false);
     runTest(1);
@@ -980,11 +1061,27 @@ function waitForEvents(event)
   }
 }
 
-var subwindow = window.open("./subtst_contextmenu.html", "contextmenu-subtext", "width=600,height=800");
-subwindow.addEventListener("MozAfterPaint", waitForEvents, false);
-subwindow.onload = waitForEvents;
+const isOSXMtnLion = navigator.userAgent.indexOf("Mac OS X 10.8") != -1;
 
-SimpleTest.waitForExplicitFinish();
+if (isOSXMtnLion) {
+  todo(false, "Mountain Lion doesn't like this test (bug 792304)");
+} else {
+  SpecialPowers.setBoolPref("plugins.click_to_play", true);
+  var ph = SpecialPowers.Cc["@mozilla.org/plugin/host;1"]
+                           .getService(SpecialPowers.Ci.nsIPluginHost);
+  var tags = ph.getPluginTags();
+  for (var tag of tags) {
+    if (tag.name == "Test Plug-in") {
+      tag.enabledState = SpecialPowers.Ci.nsIPluginTag.STATE_CLICKTOPLAY;
+    }
+  }
+
+  var subwindow = window.open("./subtst_contextmenu.html", "contextmenu-subtext", "width=600,height=800");
+  subwindow.addEventListener("MozAfterPaint", waitForEvents, false);
+  subwindow.onload = waitForEvents;
+
+  SimpleTest.waitForExplicitFinish();
+}
 </script>
 </pre>
 </body>

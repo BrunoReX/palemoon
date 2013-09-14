@@ -12,7 +12,7 @@
  * implementation of this interface for non-Windows systems, for testing and
  * development purposes only.
  */
-[scriptable, uuid(45656788-B111-4317-B054-FFE881A0737E)]
+[scriptable, uuid(ac813696-3b0a-4259-bce1-1d078021ebbe)]
 interface nsIWinMetroUtils : nsISupports
 {
   /* Fullscreen landscape orientation */
@@ -45,9 +45,20 @@ interface nsIWinMetroUtils : nsISupports
   readonly attribute long handPreference;
 
   /**
+   * Determine the activation URI
+   */
+  readonly attribute AString activationURI;
+
+  /**
    * Attempts to unsnap the application from snapped state to filled state
    */
    void unsnap();
+
+
+   /**
+    * Show the settings flyout
+    */
+   void showSettingsFlyout();
 
   /**
    * Launches the specified application with the specified arguments and
@@ -65,6 +76,7 @@ interface nsIWinMetroUtils : nsISupports
    * Pins a new tile to the Windows 8 start screen.
    * 
    * @param aTileID         An ID which can later be used to remove the tile
+   *                        ID must only contain valid filesystem characters
    * @param aShortName      A short name for the tile
    * @param aDiplayName     The name that will be displayed on the tile
    * @param aActivationArgs The arguments to pass to the browser upon 
@@ -83,6 +95,7 @@ interface nsIWinMetroUtils : nsISupports
    * Unpins a tile from the Windows 8 start screen.
    * 
    * @param aTileID An existing ID which was previously pinned
+   *                ID must only contain valid filesystem characters
    */
   void unpinTileAsync(in AString aTileID);
 
@@ -90,9 +103,33 @@ interface nsIWinMetroUtils : nsISupports
    * Determines if a tile is pinned to the Windows 8 start screen.
    * 
    * @param aTileID An ID which may have been pinned with pinTileAsync
+   *                ID must only contain valid filesystem characters
    * @return true if the tile is pinned
    */
   bool isTilePinned(in AString aTileID);
+
+  /**
+   * Stores the sync info securely
+   *
+   * @param aEmail The sync account email
+   * @param aPassword The sync account password
+   * @param aKey The sync account key
+   */
+  void storeSyncInfo(in AString aEmail, in AString aPassword, in AString aKey);
+
+  /**
+   * Loads the sync info
+   *
+   * @param aEmail The sync account email
+   * @param aPassword The sync account password
+   * @param aKey The sync account key
+   */
+  void loadSyncInfo(out AString aEmail, out AString aPassword, out AString aKey);
+
+  /**
+   * Clears the stored sync info if any.
+   */
+  void clearSyncInfo();
 
   /**
    * Soft keyboard attributes. Used in unison with shown/hidden observer
@@ -115,8 +152,18 @@ interface nsIWinMetroUtils : nsISupports
    *
    * @param aChromePanelId panel id invoked via nsIBrowserDOMWindow's
    * ShowPanel api. Example: 'prefs-container'
-   * @param aLabel Localized string label displayed in the settings
-   * flyout panel for this option.
+   * @return a unique identifier that will be passed as "data" in the
+   * "metro-settings-entry-selected" notification when the entry is clicked
    */
-  void addSettingsPanelEntry(in AString aChromePanelId, in AString aLabel);
+  unsigned long addSettingsPanelEntry(in AString aLabel);
+
+  /**
+   * Change the value of the "switch primary and secondary buttons" preference.
+   * See the Windows SwapMouseButton API docs for details.
+   * Included here for use in automated tests (see bug 839460).
+   *
+   * @param aSwap true to enable the preference, false to disable it.
+   * @return original value of the preference.
+   */
+  bool swapMouseButton(in bool aSwap);
 };

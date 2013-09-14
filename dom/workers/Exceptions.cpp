@@ -29,9 +29,9 @@ namespace {
 class DOMException : public PrivatizableBase
 {
   static JSClass sClass;
-  static JSPropertySpec sProperties[];
-  static JSFunctionSpec sFunctions[];
-  static JSPropertySpec sStaticProperties[];
+  static const JSPropertySpec sProperties[];
+  static const JSFunctionSpec sFunctions[];
+  static const JSPropertySpec sStaticProperties[];
 
   enum SLOT {
     SLOT_code = 0,
@@ -45,9 +45,9 @@ public:
   static JSObject*
   InitClass(JSContext* aCx, JSObject* aObj)
   {
-    JSObject* proto = JS_InitClass(aCx, aObj, NULL, &sClass, Construct, 0,
-                                   sProperties, sFunctions, sStaticProperties,
-                                   NULL);
+    JS::Rooted<JSObject*> proto(aCx, JS_InitClass(aCx, aObj, nullptr, &sClass, Construct, 0,
+                                                  sProperties, sFunctions, sStaticProperties,
+                                                  nullptr));
     if (proto && !JS_DefineProperties(aCx, proto, sStaticProperties)) {
       return NULL;
     }
@@ -87,7 +87,7 @@ private:
   static JSBool
   ToString(JSContext* aCx, unsigned aArgc, jsval* aVp)
   {
-    JSObject* obj = JS_THIS_OBJECT(aCx, aVp);
+    JS::Rooted<JSObject*> obj(aCx, JS_THIS_OBJECT(aCx, aVp));
     if (!obj) {
       return false;
     }
@@ -100,7 +100,7 @@ private:
       return false;
     }
 
-    jsval name = JS_GetReservedSlot(obj, SLOT_name);
+    JS::Rooted<JS::Value> name(aCx, JS_GetReservedSlot(obj, SLOT_name));
     JS_ASSERT(name.isString());
 
     JSString *colon = JS_NewStringCopyN(aCx, ": ", 2);
@@ -126,7 +126,8 @@ private:
   }
 
   static JSBool
-  GetProperty(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, JSMutableHandleValue aVp)
+  GetProperty(JSContext* aCx, JS::Handle<JSObject*> aObj, JS::Handle<jsid> aIdval,
+              JS::MutableHandle<JS::Value> aVp)
   {
     JS_ASSERT(JSID_IS_INT(aIdval));
 
@@ -146,7 +147,8 @@ private:
   }
 
   static JSBool
-  GetConstant(JSContext* aCx, JSHandleObject aObj, JSHandleId idval, JSMutableHandleValue aVp)
+  GetConstant(JSContext* aCx, JS::Handle<JSObject*> aObj, JS::Handle<jsid> idval,
+              JS::MutableHandle<JS::Value> aVp)
   {
     JS_ASSERT(JSID_IS_INT(idval));
     aVp.set(INT_TO_JSVAL(JSID_TO_INT(idval)));
@@ -157,11 +159,11 @@ private:
 JSClass DOMException::sClass = {
   "DOMException",
   JSCLASS_HAS_PRIVATE | JSCLASS_HAS_RESERVED_SLOTS(SLOT_COUNT),
-  JS_PropertyStub, JS_PropertyStub, JS_PropertyStub, JS_StrictPropertyStub,
+  JS_PropertyStub, JS_DeletePropertyStub, JS_PropertyStub, JS_StrictPropertyStub,
   JS_EnumerateStub, JS_ResolveStub, JS_ConvertStub, Finalize
 };
 
-JSPropertySpec DOMException::sProperties[] = {
+const JSPropertySpec DOMException::sProperties[] = {
   { "code", SLOT_code, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
     JSOP_WRAPPER(js_GetterOnlyPropertyStub) },
   { "name", SLOT_name, PROPERTY_FLAGS, JSOP_WRAPPER(GetProperty),
@@ -171,12 +173,12 @@ JSPropertySpec DOMException::sProperties[] = {
   { 0, 0, 0, JSOP_NULLWRAPPER, JSOP_NULLWRAPPER }
 };
 
-JSFunctionSpec DOMException::sFunctions[] = {
+const JSFunctionSpec DOMException::sFunctions[] = {
   JS_FN("toString", ToString, 0, 0),
   JS_FS_END
 };
 
-JSPropertySpec DOMException::sStaticProperties[] = {
+const JSPropertySpec DOMException::sStaticProperties[] = {
 
 #define EXCEPTION_ENTRY(_name) \
   { #_name, _name, CONSTANT_FLAGS, JSOP_WRAPPER(GetConstant), JSOP_NULLWRAPPER },
@@ -216,7 +218,7 @@ JSPropertySpec DOMException::sStaticProperties[] = {
 JSObject*
 DOMException::Create(JSContext* aCx, nsresult aNSResult)
 {
-  JSObject* obj = JS_NewObject(aCx, &sClass, NULL, NULL);
+  JS::Rooted<JSObject*> obj(aCx, JS_NewObject(aCx, &sClass, NULL, NULL));
   if (!obj) {
     return NULL;
   }
@@ -230,12 +232,12 @@ DOMException::Create(JSContext* aCx, nsresult aNSResult)
     return NULL;
   }
 
-  JSString* jsname = JS_NewStringCopyZ(aCx, name);
+  JS::Rooted<JSString*> jsname(aCx, JS_NewStringCopyZ(aCx, name));
   if (!jsname) {
     return NULL;
   }
 
-  JSString* jsmessage = JS_NewStringCopyZ(aCx, message);
+  JS::Rooted<JSString*> jsmessage(aCx, JS_NewStringCopyZ(aCx, message));
   if (!jsmessage) {
     return NULL;
   }

@@ -20,9 +20,10 @@
 #include "nsCOMPtr.h"
 #include "SVGAttrValueWrapper.h"
 #include "nsTArrayForwardDeclare.h"
+#include "nsIAtom.h"
+#include "mozilla/dom/BindingDeclarations.h"
 
 class nsAString;
-class nsIAtom;
 class nsIDocument;
 class nsStyledElementNotElementCSSInlineStyle;
 struct MiscContainer;
@@ -81,26 +82,26 @@ public:
     ePercent =      0x0F, // 1111
     // Values below here won't matter, they'll be always stored in the 'misc'
     // struct.
-    eCSSStyleRule =    0x10
-    ,eURL =            0x11
-    ,eImage =          0x12
-    ,eAtomArray =      0x13
-    ,eDoubleValue  =   0x14
-    ,eIntMarginValue = 0x15
-    ,eSVGTypesBegin =  0x16
-    ,eSVGAngle =       eSVGTypesBegin
-    ,eSVGIntegerPair = 0x17
-    ,eSVGLength =      0x18
-    ,eSVGLengthList =  0x19
-    ,eSVGNumberList =  0x20
-    ,eSVGNumberPair =  0x21
-    ,eSVGPathData   =  0x22
-    ,eSVGPointList  =  0x23
-    ,eSVGPreserveAspectRatio = 0x24
-    ,eSVGStringList =  0x25
-    ,eSVGTransformList = 0x26
-    ,eSVGViewBox =     0x27
-    ,eSVGTypesEnd =    0x34
+    eCSSStyleRule =            0x10
+    ,eURL =                    0x11
+    ,eImage =                  0x12
+    ,eAtomArray =              0x13
+    ,eDoubleValue  =           0x14
+    ,eIntMarginValue =         0x15
+    ,eSVGAngle =               0x16
+    ,eSVGTypesBegin =          eSVGAngle
+    ,eSVGIntegerPair =         0x17
+    ,eSVGLength =              0x18
+    ,eSVGLengthList =          0x19
+    ,eSVGNumberList =          0x1A
+    ,eSVGNumberPair =          0x1B
+    ,eSVGPathData =            0x1C
+    ,eSVGPointList =           0x1D
+    ,eSVGPreserveAspectRatio = 0x1E
+    ,eSVGStringList =          0x1F
+    ,eSVGTransformList =       0x20
+    ,eSVGViewBox =             0x21
+    ,eSVGTypesEnd =            eSVGViewBox
   };
 
   nsAttrValue();
@@ -159,6 +160,8 @@ public:
   void SwapValueWith(nsAttrValue& aOther);
 
   void ToString(nsAString& aResult) const;
+  inline void ToString(mozilla::dom::DOMString& aResult) const;
+
   /**
    * Returns the value of this object as an atom. If necessary, the value will
    * first be serialised using ToString before converting to an atom.
@@ -412,7 +415,8 @@ private:
   // exist already.
   MiscContainer* EnsureEmptyMiscContainer();
   bool EnsureEmptyAtomArray();
-  nsStringBuffer* GetStringBuffer(const nsAString& aValue) const;
+  already_AddRefed<nsStringBuffer>
+    GetStringBuffer(const nsAString& aValue) const;
   // aStrict is set true if stringifying the return value equals with
   // aValue.
   int32_t StringToInteger(const nsAString& aValue,
@@ -462,6 +466,32 @@ inline bool
 nsAttrValue::IsEmptyString() const
 {
   return !mBits;
+}
+
+inline void
+nsAttrValue::ToString(mozilla::dom::DOMString& aResult) const
+{
+  switch (Type()) {
+    case eString:
+    {
+      nsStringBuffer* str = static_cast<nsStringBuffer*>(GetPtr());
+      if (str) {
+        aResult.SetStringBuffer(str, str->StorageSize()/sizeof(PRUnichar) - 1);
+      }
+      // else aResult is already empty
+      return;
+    }
+    case eAtom:
+    {
+      nsIAtom *atom = static_cast<nsIAtom*>(GetPtr());
+      aResult.SetStringBuffer(atom->GetStringBuffer(), atom->GetLength());
+      break;
+    }
+    default:
+    {
+      ToString(aResult.AsAString());
+    }
+  }
 }
 
 #endif

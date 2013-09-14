@@ -11,7 +11,6 @@
 #include "nsISupports.h"
 #include "nsPIDOMWindow.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsIEditorDocShell.h"
 #include "nsIContent.h"
 #include "nsIDocument.h"
 #include "nsPresContext.h"
@@ -32,7 +31,7 @@
 #include "mozilla/Services.h"
 #include "nsIFormControl.h"
 #include "nsIForm.h"
-#include "nsHTMLFormElement.h"
+#include "mozilla/dom/HTMLFormElement.h"
 #include "mozilla/Attributes.h"
 #include "nsEventDispatcher.h"
 #include "TextComposition.h"
@@ -91,7 +90,6 @@ private:
 nsIContent*    nsIMEStateManager::sContent      = nullptr;
 nsPresContext* nsIMEStateManager::sPresContext  = nullptr;
 bool           nsIMEStateManager::sInstalledMenuKeyboardListener = false;
-bool           nsIMEStateManager::sInSecureInputMode = false;
 bool           nsIMEStateManager::sIsTestingIME = false;
 
 nsTextStateManager* nsIMEStateManager::sTextStateObserver = nullptr;
@@ -242,29 +240,6 @@ nsIMEStateManager::OnChangeFocusInternal(nsPresContext* aPresContext,
                                      aPresContext->GetRootWidget();
   if (!widget) {
     return NS_OK;
-  }
-
-  // Handle secure input mode for password field input.
-  bool contentIsPassword = false;
-  if (aContent && aContent->GetNameSpaceID() == kNameSpaceID_XHTML) {
-    if (aContent->Tag() == nsGkAtoms::input) {
-      nsAutoString type;
-      aContent->GetAttr(kNameSpaceID_None, nsGkAtoms::type, type);
-      contentIsPassword = type.LowerCaseEqualsLiteral("password");
-    }
-  }
-  if (sInSecureInputMode) {
-    if (!contentIsPassword) {
-      if (NS_SUCCEEDED(widget->EndSecureKeyboardInput())) {
-        sInSecureInputMode = false;
-      }
-    }
-  } else {
-    if (contentIsPassword) {
-      if (NS_SUCCEEDED(widget->BeginSecureKeyboardInput())) {
-        sInSecureInputMode = true;
-      }
-    }
   }
 
   IMEState newState = GetNewIMEState(aPresContext, aContent);
@@ -485,10 +460,18 @@ nsIMEStateManager::SetIMEState(const IMEState &aState,
   if (aContent && aContent->GetNameSpaceID() == kNameSpaceID_XHTML &&
       (aContent->Tag() == nsGkAtoms::input ||
        aContent->Tag() == nsGkAtoms::textarea)) {
-    aContent->GetAttr(kNameSpaceID_None, nsGkAtoms::type,
-                      context.mHTMLInputType);
-    aContent->GetAttr(kNameSpaceID_None, nsGkAtoms::inputmode,
-                      context.mHTMLInputInputmode);
+    if (aContent->Tag() != nsGkAtoms::textarea) {
+      aContent->GetAttr(kNameSpaceID_None, nsGkAtoms::type,
+                        context.mHTMLInputType);
+    } else {
+      context.mHTMLInputType.Assign(nsGkAtoms::textarea->GetUTF16String());
+    }
+
+    if (Preferences::GetBool("dom.forms.inputmode", false)) {
+      aContent->GetAttr(kNameSpaceID_None, nsGkAtoms::inputmode,
+                        context.mHTMLInputInputmode);
+    }
+
     aContent->GetAttr(kNameSpaceID_None, nsGkAtoms::moz_action_hint,
                       context.mActionHint);
 
@@ -504,7 +487,7 @@ nsIMEStateManager::SetIMEState(const IMEState &aState,
           willSubmit = true;
         // is this an html form and does it only have a single text input element?
         } else if (formElement && formElement->Tag() == nsGkAtoms::form && formElement->IsHTML() &&
-                   static_cast<nsHTMLFormElement*>(formElement)->HasSingleTextControl()) {
+                   static_cast<dom::HTMLFormElement*>(formElement)->HasSingleTextControl()) {
           willSubmit = true;
         }
       }
@@ -599,11 +582,10 @@ nsIMEStateManager::NotifyIME(NotificationToIME aNotification,
   if (!composition || !composition->IsSynthesizedForTests()) {
     switch (aNotification) {
       case NOTIFY_IME_OF_CURSOR_POS_CHANGED:
-        return aWidget->ResetInputState();
+        return aWidget->NotifyIME(aNotification);
       case REQUEST_TO_COMMIT_COMPOSITION:
-        return composition ? aWidget->ResetInputState() : NS_OK;
       case REQUEST_TO_CANCEL_COMPOSITION:
-        return composition ? aWidget->CancelIMEComposition() : NS_OK;
+        return composition ? aWidget->NotifyIME(aNotification) : NS_OK;
       default:
         MOZ_NOT_REACHED("Unsupported notification");
         return NS_ERROR_INVALID_ARG;
@@ -746,9 +728,9 @@ nsTextStateManager::Init(nsIWidget* aWidget,
                          false, false))->RunDOMEventWhenSafe();
   }
 
-  aWidget->OnIMEFocusChange(true);
+  aWidget->NotifyIME(NOTIFY_IME_OF_FOCUS);
 
-  // OnIMEFocusChange(true) might cause recreating nsTextStateManager
+  // NOTIFY_IME_OF_FOCUS might cause recreating nsTextStateManager
   // instance via nsIMEStateManager::UpdateIMEState().  So, this
   // instance might already have been destroyed, check it.
   if (!mRootContent) {
@@ -784,14 +766,14 @@ void
 nsTextStateManager::Destroy(void)
 {
   // If CreateTextStateManager failed, mRootContent will be null,
-  // and we should not call OnIMEFocusChange(false)
+  // and we should not call NotifyIME(NOTIFY_IME_OF_BLUR)
   if (mRootContent) {
     if (nsIMEStateManager::sIsTestingIME && mEditableNode) {
       nsIDocument* doc = mEditableNode->OwnerDoc();
       (new nsAsyncDOMEvent(doc, NS_LITERAL_STRING("MozIMEFocusOut"),
                            false, false))->RunDOMEventWhenSafe();
     }
-    mWidget->OnIMEFocusChange(false);
+    mWidget->NotifyIME(NOTIFY_IME_OF_BLUR);
   }
   // Even if there are some pending notification, it'll never notify the widget.
   mWidget = nullptr;
@@ -838,7 +820,7 @@ public:
 
   NS_IMETHOD Run() {
     if (mDispatcher->mWidget) {
-      mDispatcher->mWidget->OnIMESelectionChange();
+      mDispatcher->mWidget->NotifyIME(NOTIFY_IME_OF_SELECTION_CHANGE);
     }
     return NS_OK;
   }
@@ -876,7 +858,7 @@ public:
 
   NS_IMETHOD Run() {
     if (mDispatcher->mWidget) {
-      mDispatcher->mWidget->OnIMETextChange(mStart, mOldEnd, mNewEnd);
+      mDispatcher->mWidget->NotifyIMEOfTextChange(mStart, mOldEnd, mNewEnd);
     }
     return NS_OK;
   }

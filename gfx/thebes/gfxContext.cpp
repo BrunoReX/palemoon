@@ -20,7 +20,12 @@
 #include "gfxPattern.h"
 #include "gfxPlatform.h"
 #include "gfxTeeSurface.h"
-#include "sampler.h"
+#include "GeckoProfiler.h"
+#include <algorithm>
+
+#if CAIRO_HAS_DWRITE_FONT
+#include "gfxWindowsPlatform.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -143,9 +148,8 @@ gfxContext::CurrentSurface(gfxFloat *dx, gfxFloat *dy)
     if (s == mSurface->CairoSurface()) {
         if (dx && dy)
             cairo_surface_get_device_offset(s, dx, dy);
-        gfxASurface *ret = mSurface;
-        NS_ADDREF(ret);
-        return ret;
+        nsRefPtr<gfxASurface> ret = mSurface;
+        return ret.forget();
     }
 
     if (dx && dy)
@@ -156,7 +160,7 @@ gfxContext::CurrentSurface(gfxFloat *dx, gfxFloat *dy)
       *dx = *dy = 0;
     }
     // An Azure context doesn't have a surface backing it.
-    return NULL;
+    return nullptr;
   }
 }
 
@@ -245,7 +249,7 @@ already_AddRefed<gfxPath> gfxContext::CopyPath() const
     return path.forget();
   } else {
     // XXX - This is not yet supported for Azure.
-    return NULL;
+    return nullptr;
   }
 }
 
@@ -298,7 +302,7 @@ gfxContext::Stroke()
 void
 gfxContext::Fill()
 {
-  SAMPLE_LABEL("gfxContext", "Fill");
+  PROFILER_LABEL("gfxContext", "Fill");
   if (mCairo) {
     cairo_fill_preserve(mCairo);
   } else {
@@ -745,10 +749,10 @@ gfxContext::UserToDevice(const gfxRect& rect) const
     ymax = ymin;
     for (int i = 0; i < 3; i++) {
         cairo_user_to_device(mCairo, &x[i], &y[i]);
-        xmin = NS_MIN(xmin, x[i]);
-        xmax = NS_MAX(xmax, x[i]);
-        ymin = NS_MIN(ymin, y[i]);
-        ymax = NS_MAX(ymax, y[i]);
+        xmin = std::min(xmin, x[i]);
+        xmax = std::max(xmax, x[i]);
+        ymin = std::min(ymin, y[i]);
+        ymax = std::max(ymax, y[i]);
     }
 
     return gfxRect(xmin, ymin, xmax - xmin, ymax - ymin);
@@ -799,9 +803,9 @@ gfxContext::UserToDevicePixelSnapped(gfxRect& rect, bool ignoreScale) const
       p1.Round();
       p3.Round();
 
-      rect.MoveTo(gfxPoint(NS_MIN(p1.x, p3.x), NS_MIN(p1.y, p3.y)));
-      rect.SizeTo(gfxSize(NS_MAX(p1.x, p3.x) - rect.X(),
-                          NS_MAX(p1.y, p3.y) - rect.Y()));
+      rect.MoveTo(gfxPoint(std::min(p1.x, p3.x), std::min(p1.y, p3.y)));
+      rect.SizeTo(gfxSize(std::max(p1.x, p3.x) - rect.X(),
+                          std::max(p1.y, p3.y) - rect.Y()));
       return true;
   }
 
@@ -1369,14 +1373,13 @@ gfxContext::GetPattern()
     cairo_pattern_t *pat = cairo_get_source(mCairo);
     NS_ASSERTION(pat, "I was told this couldn't be null");
 
-    gfxPattern *wrapper = nullptr;
+    nsRefPtr<gfxPattern> wrapper;
     if (pat)
         wrapper = new gfxPattern(pat);
     else
         wrapper = new gfxPattern(gfxRGBA(0,0,0,0));
 
-    NS_IF_ADDREF(wrapper);
-    return wrapper;
+    return wrapper.forget();
   } else {
     nsRefPtr<gfxPattern> pat;
     
@@ -1394,13 +1397,47 @@ gfxContext::GetPattern()
 
 
 // masking
-
 void
 gfxContext::Mask(gfxPattern *pattern)
 {
   if (mCairo) {
     cairo_mask(mCairo, pattern->CairoPattern());
   } else {
+    if (pattern->Extend() == gfxPattern::EXTEND_NONE) {
+      // In this situation the mask will be fully transparent (i.e. nothing
+      // will be drawn) outside of the bounds of the surface. We can support
+      // that by clipping out drawing to that area.
+      Point offset;
+      if (pattern->IsAzure()) {
+        // This is an Azure pattern. i.e. this was the result of a PopGroup and
+        // then the extend mode was changed to EXTEND_NONE.
+        // XXX - We may need some additional magic here in theory to support
+        // device offsets in these patterns, but no problems have been observed
+        // yet because of this. And it would complicate things a little further.
+        offset = Point(0.f, 0.f);
+      } else if (pattern->GetType() == gfxPattern::PATTERN_SURFACE) {
+        nsRefPtr<gfxASurface> asurf = pattern->GetSurface();
+        gfxPoint deviceOffset = asurf->GetDeviceOffset();
+        offset = Point(-deviceOffset.x, -deviceOffset.y);
+
+        // this lets GetAzureSurface work
+        pattern->GetPattern(mDT);
+      }
+
+      if (pattern->IsAzure() || pattern->GetType() == gfxPattern::PATTERN_SURFACE) {
+        RefPtr<SourceSurface> mask = pattern->GetAzureSurface();
+        Matrix mat = ToMatrix(pattern->GetInverseMatrix());
+        Matrix old = mTransform;
+        // add in the inverse of the pattern transform so that when we
+        // MaskSurface we are transformed to the place matching the pattern transform
+        mat = mat * mTransform;
+
+        ChangeTransform(mat);
+        mDT->MaskSurface(GeneralPattern(this), mask, offset, DrawOptions(1.0f, CurrentState().op, CurrentState().aaMode));
+        ChangeTransform(old);
+        return;
+      }
+    }
     mDT->Mask(GeneralPattern(this), *pattern->GetPattern(mDT), DrawOptions(1.0f, CurrentState().op, CurrentState().aaMode));
   }
 }
@@ -1408,7 +1445,7 @@ gfxContext::Mask(gfxPattern *pattern)
 void
 gfxContext::Mask(gfxASurface *surface, const gfxPoint& offset)
 {
-  SAMPLE_LABEL("gfxContext", "Mask");
+  PROFILER_LABEL("gfxContext", "Mask");
   if (mCairo) {
     cairo_mask_surface(mCairo, surface->CairoSurface(), offset.x, offset.y);
   } else {
@@ -1417,9 +1454,11 @@ gfxContext::Mask(gfxASurface *surface, const gfxPoint& offset)
       gfxPlatform::GetPlatform()->GetSourceSurfaceForSurface(mDT, surface);
 
     gfxPoint pt = surface->GetDeviceOffset();
-    mDT->Mask(GeneralPattern(this), 
-              SurfacePattern(sourceSurf, EXTEND_CLAMP,
-                             Matrix(1.0f, 0, 0, 1.0f, Float(offset.x - pt.x), Float(offset.y - pt.y))),
+
+    // We clip here to bind to the mask surface bounds, see above.
+    mDT->MaskSurface(GeneralPattern(this), 
+              sourceSurf,
+              Point(offset.x - pt.x, offset.y -  pt.y),
               DrawOptions(1.0f, CurrentState().op, CurrentState().aaMode));
   }
 }
@@ -1427,7 +1466,7 @@ gfxContext::Mask(gfxASurface *surface, const gfxPoint& offset)
 void
 gfxContext::Paint(gfxFloat alpha)
 {
-  SAMPLE_LABEL("gfxContext", "Paint");
+  PROFILER_LABEL("gfxContext", "Paint");
   if (mCairo) {
     cairo_paint_with_alpha(mCairo, alpha);
   } else {
@@ -1552,10 +1591,9 @@ gfxContext::PopGroup()
 {
   if (mCairo) {
     cairo_pattern_t *pat = cairo_pop_group(mCairo);
-    gfxPattern *wrapper = new gfxPattern(pat);
+    nsRefPtr<gfxPattern> wrapper = new gfxPattern(pat);
     cairo_pattern_destroy(pat);
-    NS_IF_ADDREF(wrapper);
-    return wrapper;
+    return wrapper.forget();
   } else {
     RefPtr<SourceSurface> src = mDT->Snapshot();
     Point deviceOffset = CurrentState().deviceOffset;
@@ -1659,13 +1697,12 @@ already_AddRefed<gfxFlattenedPath>
 gfxContext::GetFlattenedPath()
 {
   if (mCairo) {
-    gfxFlattenedPath *path =
+    nsRefPtr<gfxFlattenedPath> path =
         new gfxFlattenedPath(cairo_copy_path_flat(mCairo));
-    NS_IF_ADDREF(path);
-    return path;
+    return path.forget();
   } else {
     // XXX - Used by SVG, needs fixing.
-    return NULL;
+    return nullptr;
   }
 }
 
@@ -2190,8 +2227,8 @@ gfxContext::PushNewDT(gfxASurface::gfxContentType content)
   Rect clipBounds = GetAzureDeviceSpaceClipBounds();
   clipBounds.RoundOut();
 
-  clipBounds.width = NS_MAX(1.0f, clipBounds.width);
-  clipBounds.height = NS_MAX(1.0f, clipBounds.height);
+  clipBounds.width = std::max(1.0f, clipBounds.width);
+  clipBounds.height = std::max(1.0f, clipBounds.height);
 
   RefPtr<DrawTarget> newDT =
     mDT->CreateSimilarDrawTarget(IntSize(int32_t(clipBounds.width), int32_t(clipBounds.height)),
@@ -2203,4 +2240,78 @@ gfxContext::PushNewDT(gfxASurface::gfxContentType content)
   CurrentState().deviceOffset = clipBounds.TopLeft();
 
   mDT = newDT;
+}
+
+/**
+ * Work out whether cairo will snap inter-glyph spacing to pixels.
+ *
+ * Layout does not align text to pixel boundaries, so, with font drawing
+ * backends that snap glyph positions to pixels, it is important that
+ * inter-glyph spacing within words is always an integer number of pixels.
+ * This ensures that the drawing backend snaps all of the word's glyphs in the
+ * same direction and so inter-glyph spacing remains the same.
+ */
+void
+gfxContext::GetRoundOffsetsToPixels(bool *aRoundX, bool *aRoundY)
+{
+    *aRoundX = false;
+    // Could do something fancy here for ScaleFactors of
+    // AxisAlignedTransforms, but we leave things simple.
+    // Not much point rounding if a matrix will mess things up anyway.
+    // Also return false for non-cairo contexts.
+    if (CurrentMatrix().HasNonTranslation() || mDT) {
+        *aRoundY = false;
+        return;
+    }
+
+    // All raster backends snap glyphs to pixels vertically.
+    // Print backends set CAIRO_HINT_METRICS_OFF.
+    *aRoundY = true;
+
+    cairo_t *cr = GetCairo();
+    cairo_scaled_font_t *scaled_font = cairo_get_scaled_font(cr);
+    // Sometimes hint metrics gets set for us, most notably for printing.
+    cairo_font_options_t *font_options = cairo_font_options_create();
+    cairo_scaled_font_get_font_options(scaled_font, font_options);
+    cairo_hint_metrics_t hint_metrics =
+        cairo_font_options_get_hint_metrics(font_options);
+    cairo_font_options_destroy(font_options);
+
+    switch (hint_metrics) {
+    case CAIRO_HINT_METRICS_OFF:
+        *aRoundY = false;
+        return;
+    case CAIRO_HINT_METRICS_DEFAULT:
+        // Here we mimic what cairo surface/font backends do.  Printing
+        // surfaces have already been handled by hint_metrics.  The
+        // fallback show_glyphs implementation composites pixel-aligned
+        // glyph surfaces, so we just pick surface/font combinations that
+        // override this.
+        switch (cairo_scaled_font_get_type(scaled_font)) {
+#if CAIRO_HAS_DWRITE_FONT // dwrite backend is not in std cairo releases yet
+        case CAIRO_FONT_TYPE_DWRITE:
+            // show_glyphs is implemented on the font and so is used for
+            // all surface types; however, it may pixel-snap depending on
+            // the dwrite rendering mode
+            if (!cairo_dwrite_scaled_font_get_force_GDI_classic(scaled_font) &&
+                gfxWindowsPlatform::GetPlatform()->DWriteMeasuringMode() ==
+                    DWRITE_MEASURING_MODE_NATURAL) {
+                return;
+            }
+#endif
+        case CAIRO_FONT_TYPE_QUARTZ:
+            // Quartz surfaces implement show_glyphs for Quartz fonts
+            if (cairo_surface_get_type(cairo_get_target(cr)) ==
+                CAIRO_SURFACE_TYPE_QUARTZ) {
+                return;
+            }
+        default:
+            break;
+        }
+        // fall through:
+    case CAIRO_HINT_METRICS_ON:
+        break;
+    }
+    *aRoundX = true;
+    return;
 }

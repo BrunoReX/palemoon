@@ -23,10 +23,10 @@ public:
   NS_IMETHOD
   AttributeChanged(int32_t         aNameSpaceID,
                    nsIAtom*        aAttribute,
-                   int32_t         aModType);
+                   int32_t         aModType) MOZ_OVERRIDE;
 
   NS_IMETHOD
-  InheritAutomaticData(nsIFrame* aParent);
+  InheritAutomaticData(nsIFrame* aParent) MOZ_OVERRIDE;
 
   NS_IMETHOD
   TransmitAutomaticData() MOZ_OVERRIDE;
@@ -44,8 +44,6 @@ public:
 protected:
   nsMathMLmstyleFrame(nsStyleContext* aContext) : nsMathMLContainerFrame(aContext) {}
   virtual ~nsMathMLmstyleFrame();
-
-  virtual int GetSkipSides() const { return 0; }
 };
 
 #endif /* nsMathMLmstyleFrame_h___ */

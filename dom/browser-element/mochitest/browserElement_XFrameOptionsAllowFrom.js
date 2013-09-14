@@ -5,6 +5,8 @@
 "use strict";
 
 SimpleTest.waitForExplicitFinish();
+browserElementTestHelpers.setEnabledPref(true);
+browserElementTestHelpers.addPermission();
 
 var initialScreenshotArrayBuffer = null;
 
@@ -25,12 +27,10 @@ function arrayBuffersEqual(a, b) {
 }
 
 function runTest() {
-  browserElementTestHelpers.setEnabledPref(true);
-  browserElementTestHelpers.addPermission();
   var count = 0;
 
   var iframe = document.createElement('iframe');
-  iframe.mozbrowser = true;
+  SpecialPowers.wrap(iframe).mozbrowser = true;
   iframe.height = '1000px';
 
   // The innermost page we load will fire an alert when it successfully loads.
@@ -75,4 +75,4 @@ function runTest() {
   iframe.src = 'http://example.com/tests/dom/browser-element/mochitest/file_browserElement_XFrameOptionsAllowFrom.html';
 }
 
-runTest();
+addEventListener('testready', runTest);

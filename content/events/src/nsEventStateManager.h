@@ -6,28 +6,27 @@
 #ifndef nsEventStateManager_h__
 #define nsEventStateManager_h__
 
+#include "mozilla/TypedEnum.h"
+
 #include "nsEvent.h"
 #include "nsGUIEvent.h"
-#include "nsIContent.h"
 #include "nsIObserver.h"
 #include "nsWeakReference.h"
-#include "nsHashtable.h"
 #include "nsITimer.h"
 #include "nsCOMPtr.h"
-#include "nsIDocument.h"
 #include "nsCOMArray.h"
 #include "nsIFrameLoader.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIMarkupDocumentViewer.h"
 #include "nsIScrollableFrame.h"
 #include "nsFocusManager.h"
-#include "nsIDocument.h"
 #include "nsEventStates.h"
 #include "mozilla/TimeStamp.h"
-#include "nsContentUtils.h"
 #include "nsIFrame.h"
 
 class nsIPresShell;
+class nsIContent;
+class nsIDocument;
 class nsIDocShell;
 class nsIDocShellTreeNode;
 class nsIDocShellTreeItem;
@@ -173,15 +172,7 @@ public:
    * dom.event.handling-user-input-time-limit pref (default 1 second), this
    * function also returns false.
    */
-  static bool IsHandlingUserInput()
-  {
-    if (sUserInputEventDepth <= 0) {
-      return false;
-    }
-    TimeDuration timeout = nsContentUtils::HandlingUserInputTimeout();
-    return timeout <= TimeDuration(0) ||
-           (TimeStamp::Now() - sHandlingInputStart) <= timeout;
-  }
+  static bool IsHandlingUserInput();
 
   nsPresContext* GetPresContext() { return mPresContext; }
 
@@ -201,8 +192,13 @@ public:
   static void SetFullScreenState(mozilla::dom::Element* aElement, bool aIsFullScreen);
 
   static bool IsRemoteTarget(nsIContent* aTarget);
+  static nsIntPoint GetChildProcessOffset(nsFrameLoader* aFrameLoader,
+                                          const nsEvent& aEvent);
 
   static void MapEventCoordinatesForChildProcess(nsFrameLoader* aFrameLoader,
+                                                 nsEvent* aEvent);
+
+  static void MapEventCoordinatesForChildProcess(const nsIntPoint& aOffset,
                                                  nsEvent* aEvent);
 
   // Holds the point in screen coords that a mouse event was dispatched to,
@@ -535,7 +531,7 @@ protected:
    * @param aScrollableFrame    A frame which will be scrolled by the event.
    *                            The result of ComputeScrollTarget() is
    *                            expected for this value.
-   *                            This can be NULL if there is no scrollable
+   *                            This can be nullptr if there is no scrollable
    *                            frame.  Then, this method uses root frame's
    *                            line height or visible area's width and height.
    */

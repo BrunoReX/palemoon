@@ -148,7 +148,7 @@ if (typeof Components != "undefined") {
    */
   Object.defineProperty(OSError.prototype, "becauseClosed", {
     get: function becauseClosed() {
-      return this.winLastError == exports.OS.Constants.Win.INVALID_HANDLE_VALUE;
+      return this.winLastError == exports.OS.Constants.Win.ERROR_INVALID_HANDLE;
     }
   });
 
@@ -159,7 +159,7 @@ if (typeof Components != "undefined") {
   OSError.toMsg = function toMsg(error) {
     return {
       operation: error.operation,
-     winLastError: error.winLastError
+      winLastError: error.winLastError
     };
   };
 
@@ -171,6 +171,150 @@ if (typeof Components != "undefined") {
   };
 
   exports.OS.Shared.Win.Error = OSError;
+
+  /**
+   * Code shared by implementation of File.Info on Windows
+   *
+   * @constructor
+   */
+  let AbstractInfo = function AbstractInfo(isDir, isSymLink, size, winBirthDate,
+                                           lastAccessDate, lastWriteDate) {
+    this._isDir = isDir;
+    this._isSymLink = isSymLink;
+    this._size = size;
+    this._winBirthDate = winBirthDate;
+    this._lastAccessDate = lastAccessDate;
+    this._lastModificationDate = lastWriteDate;
+  };
+
+  AbstractInfo.prototype = {
+    /**
+     * |true| if this file is a directory, |false| otherwise
+     */
+    get isDir() {
+      return this._isDir;
+    },
+    /**
+     * |true| if this file is a symbolic link, |false| otherwise
+     */
+    get isSymLink() {
+      return this._isSymLink;
+    },
+    /**
+     * The size of the file, in bytes.
+     *
+     * Note that the result may be |NaN| if the size of the file cannot be
+     * represented in JavaScript.
+     *
+     * @type {number}
+     */
+    get size() {
+      return this._size;
+    },
+    // Deprecated
+    get creationDate() {
+      return this._winBirthDate;
+    },
+    /**
+     * The date of creation of this file.
+     *
+     * @type {Date}
+     */
+    get winBirthDate() {
+      return this._winBirthDate;
+    },
+    /**
+     * The date of last access to this file.
+     *
+     * Note that the definition of last access may depend on the underlying
+     * operating system and file system.
+     *
+     * @type {Date}
+     */
+    get lastAccessDate() {
+      return this._lastAccessDate;
+    },
+    /**
+     * The date of last modification of this file.
+     *
+     * Note that the definition of last access may depend on the underlying
+     * operating system and file system.
+     *
+     * @type {Date}
+     */
+    get lastModificationDate() {
+      return this._lastModificationDate;
+    }
+  };
+  exports.OS.Shared.Win.AbstractInfo = AbstractInfo;
+
+  /**
+   * Code shared by implementation of File.DirectoryIterator.Entry on Windows
+   *
+   * @constructor
+   */
+  let AbstractEntry = function AbstractEntry(isDir, isSymLink, name,
+                                             winCreationDate, winLastWriteDate,
+                                             winLastAccessDate, path) {
+    this._isDir = isDir;
+    this._isSymLink = isSymLink;
+    this._name = name;
+    this._winCreationDate = winCreationDate;
+    this._winLastWriteDate = winLastWriteDate;
+    this._winLastAccessDate = winLastAccessDate;
+    this._path = path;
+  };
+
+  AbstractEntry.prototype = {
+    /**
+     * |true| if the entry is a directory, |false| otherwise
+     */
+    get isDir() {
+      return this._isDir;
+    },
+    /**
+     * |true| if the entry is a symbolic link, |false| otherwise
+     */
+    get isSymLink() {
+      return this._isSymLink;
+    },
+    /**
+     * The name of the entry.
+     * @type {string}
+     */
+    get name() {
+      return this._name;
+    },
+    /**
+     * The creation time of this file.
+     * @type {Date}
+     */
+    get winCreationDate() {
+      return this._winCreationDate;
+    },
+    /**
+     * The last modification time of this file.
+     * @type {Date}
+     */
+    get winLastWriteDate() {
+      return this._winLastWriteDate;
+    },
+    /**
+     * The last access time of this file.
+     * @type {Date}
+     */
+    get winLastAccessDate() {
+      return this._winLastAccessDate;
+    },
+    /**
+     * The full path of the entry
+     * @type {string}
+     */
+    get path() {
+      return this._path;
+    }
+  };
+  exports.OS.Shared.Win.AbstractEntry = AbstractEntry;
 
   // Special constants that need to be defined on all platforms
 
@@ -192,10 +336,14 @@ if (typeof Components != "undefined") {
 
   // Special constructors that need to be defined on all threads
   OSError.closed = function closed(operation) {
-    return new OSError(operation, exports.OS.Constants.Win.INVALID_HANDLE_VALUE);
+    return new OSError(operation, exports.OS.Constants.Win.ERROR_INVALID_HANDLE);
   };
 
   OSError.exists = function exists(operation) {
     return new OSError(operation, exports.OS.Constants.Win.ERROR_FILE_EXISTS);
+  };
+
+  OSError.noSuchFile = function noSuchFile(operation) {
+    return new OSError(operation, exports.OS.Constants.Win.ERROR_FILE_NOT_FOUND);
   };
 })(this);

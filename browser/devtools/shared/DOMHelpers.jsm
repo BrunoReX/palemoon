@@ -64,7 +64,7 @@ DOMHelpers.prototype = {
       return null;
     }
 
-    if (node instanceof this.window.GetSVGDocument) {
+    if (node.getSVGDocument) {
       let svgDocument = node.getSVGDocument();
       if (svgDocument) {
         // then the node is a frame
@@ -96,7 +96,7 @@ DOMHelpers.prototype = {
   {
     let SHOW_ALL = Components.interfaces.nsIDOMNodeFilter.SHOW_ALL;
     this.treeWalker = node.ownerDocument.createTreeWalker(node,
-      SHOW_ALL, null, false);
+      SHOW_ALL, null);
     return this.treeWalker.firstChild();
   },
 

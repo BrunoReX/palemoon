@@ -10,17 +10,21 @@ this.EXPORTED_SYMBOLS = [
   "makeFakeAppDir",
   "createFakeCrash",
   "InspectedHealthReporter",
+  "getHealthReporter",
 ];
 
 
 const {classes: Cc, interfaces: Ci, results: Cr, utils: Cu} = Components;
 
-Cu.import("resource://gre/modules/commonjs/promise/core.js");
+Cu.import("resource://gre/modules/Preferences.jsm");
+Cu.import("resource://gre/modules/Promise.jsm");
 Cu.import("resource://gre/modules/FileUtils.jsm");
 Cu.import("resource://gre/modules/osfile.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/services-common/utils.js");
+Cu.import("resource://gre/modules/services/datareporting/policy.jsm");
 Cu.import("resource://gre/modules/services/healthreport/healthreporter.jsm");
+Cu.import("resource://gre/modules/services/healthreport/providers.jsm");
 
 
 let APP_INFO = {
@@ -216,12 +220,12 @@ this.createFakeCrash = function (submitted=false, date=new Date()) {
  *
  * The purpose of this type is to aid testing of startup and shutdown.
  */
-this.InspectedHealthReporter = function (branch, policy) {
-  HealthReporter.call(this, branch, policy);
+this.InspectedHealthReporter = function (branch, policy, recorder, stateLeaf) {
+  HealthReporter.call(this, branch, policy, recorder, stateLeaf);
 
   this.onStorageCreated = null;
-  this.onCollectorInitialized = null;
-  this.collectorShutdownCount = 0;
+  this.onProviderManagerInitialized = null;
+  this.providerManagerShutdownCount = 0;
   this.storageCloseCount = 0;
 }
 
@@ -236,18 +240,28 @@ InspectedHealthReporter.prototype = {
     return HealthReporter.prototype._onStorageCreated.call(this, storage);
   },
 
-  _onCollectorInitialized: function () {
-    if (this.onCollectorInitialized) {
-      this.onCollectorInitialized();
+  _initializeProviderManager: function () {
+    for (let result of HealthReporter.prototype._initializeProviderManager.call(this)) {
+      yield result;
     }
 
-    return HealthReporter.prototype._onCollectorInitialized.call(this);
+    if (this.onInitializeProviderManagerFinished) {
+      this.onInitializeProviderManagerFinished();
+    }
   },
 
-  _onCollectorShutdown: function () {
-    this.collectorShutdownCount++;
+  _onProviderManagerInitialized: function () {
+    if (this.onProviderManagerInitialized) {
+      this.onProviderManagerInitialized();
+    }
 
-    return HealthReporter.prototype._onCollectorShutdown.call(this);
+    return HealthReporter.prototype._onProviderManagerInitialized.call(this);
+  },
+
+  _onProviderManagerShutdown: function () {
+    this.providerManagerShutdownCount++;
+
+    return HealthReporter.prototype._onProviderManagerShutdown.call(this);
   },
 
   _onStorageClose: function () {
@@ -257,3 +271,33 @@ InspectedHealthReporter.prototype = {
   },
 };
 
+const DUMMY_URI="http://localhost:62013/";
+
+this.getHealthReporter = function (name, uri=DUMMY_URI, inspected=false) {
+  let branch = "healthreport.testing." + name + ".";
+
+  let prefs = new Preferences(branch + "healthreport.");
+  prefs.set("documentServerURI", uri);
+  prefs.set("dbName", name);
+
+  let reporter;
+
+  let policyPrefs = new Preferences(branch + "policy.");
+  let policy = new DataReportingPolicy(policyPrefs, prefs, {
+    onRequestDataUpload: function (request) {
+      reporter.requestDataUpload(request);
+    },
+
+    onNotifyDataPolicy: function (request) { },
+
+    onRequestRemoteDelete: function (request) {
+      reporter.deleteRemoteData(request);
+    },
+  });
+
+  let type = inspected ? InspectedHealthReporter : HealthReporter;
+  reporter = new type(branch + "healthreport.", policy, null,
+                      "state-" + name + ".json");
+
+  return reporter;
+};

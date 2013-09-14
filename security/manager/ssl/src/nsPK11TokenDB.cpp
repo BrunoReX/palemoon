@@ -4,11 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "nsISupports.h"
+#include "nsISupportsArray.h"
 #include "nsIPK11TokenDB.h"
 #include "prerror.h"
 #include "secerr.h"
 #include "nsReadableUtils.h"
 #include "nsNSSComponent.h"
+#include "nsServiceManagerUtils.h"
 
 #include "nsPK11TokenDB.h"
 

@@ -25,12 +25,14 @@ extern PRLogModuleInfo* GetMediaManagerLog();
 NS_IMPL_THREADSAFE_ISUPPORTS1(MediaEngineWebRTCVideoSource, nsIRunnable)
 
 // ViEExternalRenderer Callback.
+#ifndef MOZ_B2G_CAMERA
 int
 MediaEngineWebRTCVideoSource::FrameSizeChange(
    unsigned int w, unsigned int h, unsigned int streams)
 {
   mWidth = w;
   mHeight = h;
+  LOG(("Video FrameSizeChange: %ux%u", w, h));
   return 0;
 }
 
@@ -39,18 +41,24 @@ int
 MediaEngineWebRTCVideoSource::DeliverFrame(
    unsigned char* buffer, int size, uint32_t time_stamp, int64_t render_time)
 {
+  // mInSnapshotMode can only be set before the camera is turned on and
+  // the renderer is started, so this amounts to a 1-shot
   if (mInSnapshotMode) {
     // Set the condition variable to false and notify Snapshot().
-    PR_Lock(mSnapshotLock);
+    MonitorAutoLock lock(mMonitor);
     mInSnapshotMode = false;
-    PR_NotifyCondVar(mSnapshotCondVar);
-    PR_Unlock(mSnapshotLock);
+    lock.Notify();
     return 0;
   }
 
   // Check for proper state.
   if (mState != kStarted) {
     LOG(("DeliverFrame: video not started"));
+    return 0;
+  }
+
+  MOZ_ASSERT(mWidth*mHeight*3/2 == size);
+  if (mWidth*mHeight*3/2 != size) {
     return 0;
   }
 
@@ -82,18 +90,20 @@ MediaEngineWebRTCVideoSource::DeliverFrame(
 
 #ifdef DEBUG
   static uint32_t frame_num = 0;
-  LOGFRAME(("frame %d; timestamp %u, render_time %lu", frame_num++, time_stamp, render_time));
+  LOGFRAME(("frame %d (%dx%d); timestamp %u, render_time %lu", frame_num++,
+            mWidth, mHeight, time_stamp, render_time));
 #endif
 
   // we don't touch anything in 'this' until here (except for snapshot,
   // which has it's own lock)
-  ReentrantMonitorAutoEnter enter(mMonitor);
+  MonitorAutoLock lock(mMonitor);
 
   // implicitly releases last image
   mImage = image.forget();
 
   return 0;
 }
+#endif
 
 // Called if the graph thinks it's running out of buffered video; repeat
 // the last frame for whatever minimum period it think it needs.  Note that
@@ -107,7 +117,7 @@ MediaEngineWebRTCVideoSource::NotifyPull(MediaStreamGraph* aGraph,
 {
   VideoSegment segment;
 
-  ReentrantMonitorAutoEnter enter(mMonitor);
+  MonitorAutoLock lock(mMonitor);
   if (mState != kStarted)
     return;
 
@@ -117,11 +127,24 @@ MediaEngineWebRTCVideoSource::NotifyPull(MediaStreamGraph* aGraph,
   TrackTicks delta = target - aLastEndTime;
   LOGFRAME(("NotifyPull, desired = %ld, target = %ld, delta = %ld %s", (int64_t) aDesiredTime, 
             (int64_t) target, (int64_t) delta, image ? "" : "<null>"));
+
+  // Bug 846188 We may want to limit incoming frames to the requested frame rate
+  // mFps - if you want 30FPS, and the camera gives you 60FPS, this could
+  // cause issues.
+  // We may want to signal if the actual frame rate is below mMinFPS -
+  // cameras often don't return the requested frame rate especially in low
+  // light; we should consider surfacing this so that we can switch to a
+  // lower resolution (which may up the frame rate)
+
   // Don't append if we've already provided a frame that supposedly goes past the current aDesiredTime
   // Doing so means a negative delta and thus messes up handling of the graph
   if (delta > 0) {
     // NULL images are allowed
-    segment.AppendFrame(image ? image.forget() : nullptr, delta, gfxIntSize(mWidth, mHeight));
+    if (image) {
+      segment.AppendFrame(image.forget(), delta, gfxIntSize(mWidth, mHeight));
+    } else {
+      segment.AppendFrame(nullptr, delta, gfxIntSize(0,0));
+    }
     // This can fail if either a) we haven't added the track yet, or b)
     // we've removed or finished the track.
     if (aSource->AppendToTrack(aID, &(segment))) {
@@ -131,21 +154,23 @@ MediaEngineWebRTCVideoSource::NotifyPull(MediaStreamGraph* aGraph,
 }
 
 void
-MediaEngineWebRTCVideoSource::ChooseCapability(uint32_t aWidth, uint32_t aHeight, uint32_t aMinFPS)
+MediaEngineWebRTCVideoSource::ChooseCapability(const MediaEnginePrefs &aPrefs)
 {
+#ifdef MOZ_B2G_CAMERA
+  mCapability.width  = aPrefs.mWidth;
+  mCapability.height = aPrefs.mHeight;
+#else
   int num = mViECapture->NumberOfCapabilities(mUniqueId, KMaxUniqueIdLength);
 
-  NS_WARN_IF_FALSE(!mCapabilityChosen,"Shouldn't select capability of a device twice");
+  LOG(("ChooseCapability: prefs: %dx%d @%d-%dfps", aPrefs.mWidth, aPrefs.mHeight, aPrefs.mFPS, aPrefs.mMinFPS));
 
   if (num <= 0) {
     // Set to default values
-    mCapability.width  = mOpts.mWidth  = aWidth;
-    mCapability.height = mOpts.mHeight = aHeight;
-    mCapability.maxFPS = mOpts.mMaxFPS = DEFAULT_VIDEO_FPS;
-    mOpts.codecType = kVideoCodecI420;
+    mCapability.width  = aPrefs.mWidth;
+    mCapability.height = aPrefs.mHeight;
+    mCapability.maxFPS = MediaEngine::DEFAULT_VIDEO_FPS;
 
     // Mac doesn't support capabilities.
-    mCapabilityChosen = true;
     return;
   }
 
@@ -158,30 +183,27 @@ MediaEngineWebRTCVideoSource::ChooseCapability(uint32_t aWidth, uint32_t aHeight
     mViECapture->GetCaptureCapability(mUniqueId, KMaxUniqueIdLength, i, cap);
     if (higher) {
       if (i == 0 ||
-          (mOpts.mWidth > cap.width && mOpts.mHeight > cap.height)) {
-        mOpts.mWidth = cap.width;
-        mOpts.mHeight = cap.height;
-        mOpts.mMaxFPS = cap.maxFPS;
+          (mCapability.width > cap.width && mCapability.height > cap.height)) {
+        // closer than the current choice
         mCapability = cap;
         // FIXME: expose expected capture delay?
       }
-      if (cap.width <= aWidth && cap.height <= aHeight) {
+      if (cap.width <= (uint32_t) aPrefs.mWidth && cap.height <= (uint32_t) aPrefs.mHeight) {
         higher = false;
       }
     } else {
-      if (cap.width > aWidth || cap.height > aHeight || cap.maxFPS < aMinFPS) {
+      if (cap.width > (uint32_t) aPrefs.mWidth || cap.height > (uint32_t) aPrefs.mHeight ||
+          cap.maxFPS < (uint32_t) aPrefs.mMinFPS) {
         continue;
       }
-      if (mOpts.mWidth < cap.width && mOpts.mHeight < cap.height) {
-        mOpts.mWidth = cap.width;
-        mOpts.mHeight = cap.height;
-        mOpts.mMaxFPS = cap.maxFPS;
+      if (mCapability.width < cap.width && mCapability.height < cap.height) {
         mCapability = cap;
         // FIXME: expose expected capture delay?
       }
     }
   }
-  mCapabilityChosen = true;
+  LOG(("chose cap %dx%d @%dfps", mCapability.width, mCapability.height, mCapability.maxFPS));
+#endif
 }
 
 void
@@ -199,15 +221,27 @@ MediaEngineWebRTCVideoSource::GetUUID(nsAString& aUUID)
 }
 
 nsresult
-MediaEngineWebRTCVideoSource::Allocate()
+MediaEngineWebRTCVideoSource::Allocate(const MediaEnginePrefs &aPrefs)
 {
   LOG((__FUNCTION__));
-  if (!mCapabilityChosen) {
-    // XXX these should come from constraints
-    ChooseCapability(mWidth, mHeight, mMinFps);
-  }
-
+#ifdef MOZ_B2G_CAMERA
+  ReentrantMonitorAutoEnter sync(mCallbackMonitor);
   if (mState == kReleased && mInitDone) {
+    ChooseCapability(aPrefs);
+    NS_DispatchToMainThread(WrapRunnable(this,
+                                         &MediaEngineWebRTCVideoSource::AllocImpl));
+    mCallbackMonitor.Wait();
+    if (mState != kAllocated) {
+      return NS_ERROR_FAILURE;
+    }
+  }
+#else
+  if (mState == kReleased && mInitDone) {
+    // Note: if shared, we don't allow a later opener to affect the resolution.
+    // (This may change depending on spec changes for Constraints/settings)
+
+    ChooseCapability(aPrefs);
+
     if (mViECapture->AllocateCaptureDevice(mUniqueId, KMaxUniqueIdLength, mCaptureIndex)) {
       return NS_ERROR_FAILURE;
     }
@@ -218,6 +252,7 @@ MediaEngineWebRTCVideoSource::Allocate()
   } else {
     LOG(("Video device %d allocated shared", mCaptureIndex));
   }
+#endif
 
   return NS_OK;
 }
@@ -227,11 +262,22 @@ MediaEngineWebRTCVideoSource::Deallocate()
 {
   LOG((__FUNCTION__));
   if (mSources.IsEmpty()) {
+#ifdef MOZ_B2G_CAMERA
+    ReentrantMonitorAutoEnter sync(mCallbackMonitor);
+#endif
     if (mState != kStopped && mState != kAllocated) {
       return NS_ERROR_FAILURE;
     }
+#ifdef MOZ_B2G_CAMERA
+    // We do not register success callback here
 
-#ifdef XP_MACOSX
+    NS_DispatchToMainThread(WrapRunnable(this,
+                                         &MediaEngineWebRTCVideoSource::DeallocImpl));
+    mCallbackMonitor.Wait();
+    if (mState != kReleased) {
+      return NS_ERROR_FAILURE;
+    }
+#elif XP_MACOSX
     // Bug 829907 - on mac, in shutdown, the mainthread stops processing
     // 'native' events, and the QTKit code uses events to the main native CFRunLoop
     // in order to provide thread safety.  In order to avoid this locking us up,
@@ -259,15 +305,6 @@ MediaEngineWebRTCVideoSource::Deallocate()
   return NS_OK;
 }
 
-const MediaEngineVideoOptions*
-MediaEngineWebRTCVideoSource::GetOptions()
-{
-  if (!mCapabilityChosen) {
-    ChooseCapability(mWidth, mHeight, mMinFps);
-  }
-  return &mOpts;
-}
-
 nsresult
 MediaEngineWebRTCVideoSource::Start(SourceMediaStream* aStream, TrackID aID)
 {
@@ -282,13 +319,25 @@ MediaEngineWebRTCVideoSource::Start(SourceMediaStream* aStream, TrackID aID)
   aStream->AddTrack(aID, USECS_PER_S, 0, new VideoSegment());
   aStream->AdvanceKnownTracksTime(STREAM_TIME_MAX);
 
+#ifdef MOZ_B2G_CAMERA
+  ReentrantMonitorAutoEnter sync(mCallbackMonitor);
+#endif
+
   if (mState == kStarted) {
     return NS_OK;
   }
-  mState = kStarted;
-
   mImageContainer = layers::LayerManager::CreateImageContainer();
 
+#ifdef MOZ_B2G_CAMERA
+  NS_DispatchToMainThread(WrapRunnable(this,
+                                       &MediaEngineWebRTCVideoSource::StartImpl,
+                                       mCapability));
+  mCallbackMonitor.Wait();
+  if (mState != kStarted) {
+    return NS_ERROR_FAILURE;
+  }
+#else
+  mState = kStarted;
   error = mViERender->AddRenderer(mCaptureIndex, webrtc::kVideoI420, (webrtc::ExternalRenderer*)this);
   if (error == -1) {
     return NS_ERROR_FAILURE;
@@ -302,6 +351,7 @@ MediaEngineWebRTCVideoSource::Start(SourceMediaStream* aStream, TrackID aID)
   if (mViECapture->StartCapture(mCaptureIndex, mCapability) < 0) {
     return NS_ERROR_FAILURE;
   }
+#endif
 
   return NS_OK;
 }
@@ -317,23 +367,29 @@ MediaEngineWebRTCVideoSource::Stop(SourceMediaStream *aSource, TrackID aID)
   if (!mSources.IsEmpty()) {
     return NS_OK;
   }
-
+#ifdef MOZ_B2G_CAMERA
+  ReentrantMonitorAutoEnter sync(mCallbackMonitor);
+#endif
   if (mState != kStarted) {
     return NS_ERROR_FAILURE;
   }
 
   {
-    ReentrantMonitorAutoEnter enter(mMonitor);
+    MonitorAutoLock lock(mMonitor);
     mState = kStopped;
     aSource->EndTrack(aID);
     // Drop any cached image so we don't start with a stale image on next
     // usage
     mImage = nullptr;
   }
-
+#ifdef MOZ_B2G_CAMERA
+  NS_DispatchToMainThread(WrapRunnable(this,
+                                       &MediaEngineWebRTCVideoSource::StopImpl));
+#else
   mViERender->StopRender(mCaptureIndex);
   mViERender->RemoveRenderer(mCaptureIndex);
   mViECapture->StopCapture(mCaptureIndex);
+#endif
 
   return NS_OK;
 }
@@ -357,16 +413,43 @@ MediaEngineWebRTCVideoSource::Snapshot(uint32_t aDuration, nsIDOMFile** aFile)
    * return from this function after cleaning up the temporary stream object
    * and caling Stop() on the media source.
    */
+#ifdef MOZ_B2G_CAMERA
+  ReentrantMonitorAutoEnter sync(mCallbackMonitor);
+#endif
   *aFile = nullptr;
   if (!mInitDone || mState != kAllocated) {
     return NS_ERROR_FAILURE;
   }
+#ifdef MOZ_B2G_CAMERA
+  mLastCapture = nullptr;
 
-  mSnapshotLock = PR_NewLock();
-  mSnapshotCondVar = PR_NewCondVar(mSnapshotLock);
+  NS_DispatchToMainThread(WrapRunnable(this,
+                                       &MediaEngineWebRTCVideoSource::StartImpl,
+                                       mCapability));
+  mCallbackMonitor.Wait();
+  if (mState != kStarted) {
+    return NS_ERROR_FAILURE;
+  }
 
-  PR_Lock(mSnapshotLock);
-  mInSnapshotMode = true;
+  NS_DispatchToMainThread(WrapRunnable(this,
+                                       &MediaEngineWebRTCVideoSource::SnapshotImpl));
+  mCallbackMonitor.Wait();
+  if (mLastCapture == nullptr)
+    return NS_ERROR_FAILURE;
+
+  mState = kStopped;
+  NS_DispatchToMainThread(WrapRunnable(this,
+                                       &MediaEngineWebRTCVideoSource::StopImpl));
+
+  // The camera return nsDOMMemoryFile indeed, and the inheritance tree is:
+  // nsIDOMBlob <- nsIDOMFile <- nsDOMFileBase <- nsDOMFile <- nsDOMMemoryFile
+  *aFile = mLastCapture.get();
+  return NS_OK;
+#else
+  {
+    MonitorAutoLock lock(mMonitor);
+    mInSnapshotMode = true;
+  }
 
   // Start the rendering (equivalent to calling Start(), but without a track).
   int error = 0;
@@ -382,18 +465,23 @@ MediaEngineWebRTCVideoSource::Snapshot(uint32_t aDuration, nsIDOMFile** aFile)
     return NS_ERROR_FAILURE;
   }
 
+  if (mViECapture->StartCapture(mCaptureIndex, mCapability) < 0) {
+    return NS_ERROR_FAILURE;
+  }
+
   // Wait for the condition variable, will be set in DeliverFrame.
-  // We use a while loop, because even if PR_WaitCondVar returns, it's not
+  // We use a while loop, because even if Wait() returns, it's not
   // guaranteed that the condition variable changed.
-  while (mInSnapshotMode) {
-    PR_WaitCondVar(mSnapshotCondVar, PR_INTERVAL_NO_TIMEOUT);
+  // FIX: we need need a way to cancel this and to bail if it appears to not be working
+  // Perhaps a maximum time, though some cameras can take seconds to start.  10 seconds?
+  {
+    MonitorAutoLock lock(mMonitor);
+    while (mInSnapshotMode) {
+      lock.Wait();
+    }
   }
 
   // If we get here, DeliverFrame received at least one frame.
-  PR_Unlock(mSnapshotLock);
-  PR_DestroyCondVar(mSnapshotCondVar);
-  PR_DestroyLock(mSnapshotLock);
-
   webrtc::ViEFile* vieFile = webrtc::ViEFile::GetInterface(mVideoEngine);
   if (!vieFile) {
     return NS_ERROR_FAILURE;
@@ -427,7 +515,7 @@ MediaEngineWebRTCVideoSource::Snapshot(uint32_t aDuration, nsIDOMFile** aFile)
   NS_ENSURE_SUCCESS(rv, rv);
 
   NS_ADDREF(*aFile = new nsDOMFileFile(file));
-
+#endif
   return NS_OK;
 }
 
@@ -441,6 +529,20 @@ MediaEngineWebRTCVideoSource::Init()
 {
   mDeviceName[0] = '\0'; // paranoia
   mUniqueId[0] = '\0';
+#ifdef MOZ_B2G_CAMERA
+  nsCString deviceName;
+  mCameraManager->GetCameraName(mCaptureIndex, deviceName);
+
+  nsString deviceNameUTF16;
+  deviceNameUTF16.AssignASCII(deviceName.get());
+  char* UTF8Name = ToNewUTF8String(deviceNameUTF16);
+  memcpy(mDeviceName, UTF8Name, strlen(UTF8Name));
+  memcpy(mUniqueId, UTF8Name, strlen(UTF8Name));
+  NS_Free(UTF8Name);
+#else
+  // fix compile warning for these being unused. (remove once used)
+  (void) mFps;
+  (void) mMinFps;
 
   LOG((__FUNCTION__));
   if (mVideoEngine == NULL) {
@@ -465,6 +567,7 @@ MediaEngineWebRTCVideoSource::Init()
                                     mUniqueId, sizeof(mUniqueId))) {
     return;
   }
+#endif
 
   mInitDone = true;
 }
@@ -476,7 +579,9 @@ MediaEngineWebRTCVideoSource::Shutdown()
   if (!mInitDone) {
     return;
   }
-
+#ifdef MOZ_B2G_CAMERA
+  ReentrantMonitorAutoEnter sync(mCallbackMonitor);
+#endif
   if (mState == kStarted) {
     while (!mSources.IsEmpty()) {
       Stop(mSources[0], kVideoTrack); // XXX change to support multiple tracks
@@ -487,12 +592,139 @@ MediaEngineWebRTCVideoSource::Shutdown()
   if (mState == kAllocated || mState == kStopped) {
     Deallocate();
   }
-
+#ifndef MOZ_B2G_CAMERA
   mViECapture->Release();
   mViERender->Release();
   mViEBase->Release();
+#endif
   mState = kReleased;
   mInitDone = false;
 }
+
+#ifdef MOZ_B2G_CAMERA
+
+// All these functions must be run on MainThread!
+void
+MediaEngineWebRTCVideoSource::AllocImpl() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  mDOMCameraControl = new nsDOMCameraControl(mCaptureIndex,
+                                             mCameraThread,
+                                             this,
+                                             this,
+                                             mWindowId);
+  mCameraManager->Register(mDOMCameraControl);
+}
+
+void
+MediaEngineWebRTCVideoSource::DeallocImpl() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  mNativeCameraControl->ReleaseHardware(this, this);
+  mNativeCameraControl = nullptr;
+}
+
+void
+MediaEngineWebRTCVideoSource::StartImpl(webrtc::CaptureCapability aCapability) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  idl::CameraSize size;
+  size.width = aCapability.width;
+  size.height = aCapability.height;
+  mNativeCameraControl->GetPreviewStream(size, this, this);
+}
+
+void
+MediaEngineWebRTCVideoSource::StopImpl() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  mNativeCameraControl->StopPreview();
+  mPreviewStream = nullptr;
+}
+
+void
+MediaEngineWebRTCVideoSource::SnapshotImpl() {
+
+  MOZ_ASSERT(NS_IsMainThread());
+
+  idl::CameraSize size;
+  size.width = mCapability.width;
+  size.height = mCapability.height;
+
+  idl::CameraPosition cameraPosition;
+  cameraPosition.latitude = NAN;
+  cameraPosition.longitude = NAN;
+  cameraPosition.altitude = NAN;
+  cameraPosition.timestamp = NAN;
+
+  mNativeCameraControl->TakePicture(size, 0, NS_LITERAL_STRING("jpeg"), cameraPosition, PR_Now() / 1000000, this, this);
+}
+
+// nsICameraGetCameraCallback
+nsresult
+MediaEngineWebRTCVideoSource::HandleEvent(nsICameraControl* camera) {
+  MOZ_ASSERT(NS_IsMainThread());
+  ReentrantMonitorAutoEnter sync(mCallbackMonitor);
+  mNativeCameraControl = static_cast<nsGonkCameraControl*>(mDOMCameraControl->GetNativeCameraControl().get());
+  mState = kAllocated;
+  mCallbackMonitor.Notify();
+  return NS_OK;
+}
+
+// nsICameraPreviewStreamCallback
+nsresult
+MediaEngineWebRTCVideoSource::HandleEvent(nsIDOMMediaStream* stream) {
+  MOZ_ASSERT(NS_IsMainThread());
+  ReentrantMonitorAutoEnter sync(mCallbackMonitor);
+  mPreviewStream = static_cast<DOMCameraPreview*>(stream);
+  mPreviewStream->Start();
+  CameraPreviewMediaStream* cameraStream = static_cast<CameraPreviewMediaStream*>(mPreviewStream->GetStream());
+  cameraStream->SetFrameCallback(this);
+  mState = kStarted;
+  mCallbackMonitor.Notify();
+  return NS_OK;
+}
+
+// nsICameraTakePictureCallback
+nsresult
+MediaEngineWebRTCVideoSource::HandleEvent(nsIDOMBlob* picture) {
+  MOZ_ASSERT(NS_IsMainThread());
+  ReentrantMonitorAutoEnter sync(mCallbackMonitor);
+  mLastCapture = static_cast<nsIDOMFile*>(picture);
+  mCallbackMonitor.Notify();
+  return NS_OK;
+}
+
+// nsICameraReleaseCallback
+nsresult
+MediaEngineWebRTCVideoSource::HandleEvent() {
+  MOZ_ASSERT(NS_IsMainThread());
+  ReentrantMonitorAutoEnter sync(mCallbackMonitor);
+  mState = kReleased;
+  mCallbackMonitor.Notify();
+  return NS_OK;
+}
+
+// nsICameraErrorCallback
+nsresult
+MediaEngineWebRTCVideoSource::HandleEvent(const nsAString& error) {
+  MOZ_ASSERT(NS_IsMainThread());
+  ReentrantMonitorAutoEnter sync(mCallbackMonitor);
+  mCallbackMonitor.Notify();
+  return NS_OK;
+}
+
+//Except this one. This callback should called on camera preview thread.
+void
+MediaEngineWebRTCVideoSource::OnNewFrame(const gfxIntSize& aIntrinsicSize, layers::Image* aImage) {
+  MonitorAutoLock enter(mMonitor);
+  mImage = aImage;
+  if (mWidth != aIntrinsicSize.width || mHeight != aIntrinsicSize.height) {
+    mWidth = aIntrinsicSize.width;
+    mHeight = aIntrinsicSize.height;
+    LOG(("Video FrameSizeChange: %ux%u", mWidth, mHeight));
+  }
+}
+#endif
 
 }

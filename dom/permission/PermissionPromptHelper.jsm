@@ -45,9 +45,9 @@ XPCOMUtils.defineLazyServiceGetter(this, "permissionPromptService",
                                    "@mozilla.org/permission-prompt-service;1",
                                    "nsIPermissionPromptService");
 
-var permissionManager = Cc["@mozilla.org/permissionmanager;1"].getService(Ci.nsIPermissionManager);
-var secMan = Cc["@mozilla.org/scriptsecuritymanager;1"].getService(Ci.nsIScriptSecurityManager);
-var appsService = Cc["@mozilla.org/AppsService;1"].getService(Ci.nsIAppsService);
+let permissionManager = Cc["@mozilla.org/permissionmanager;1"].getService(Ci.nsIPermissionManager);
+let secMan = Cc["@mozilla.org/scriptsecuritymanager;1"].getService(Ci.nsIScriptSecurityManager);
+let appsService = Cc["@mozilla.org/AppsService;1"].getService(Ci.nsIAppsService);
 
 this.PermissionPromptHelper = {
   init: function init() {
@@ -59,59 +59,43 @@ this.PermissionPromptHelper = {
   askPermission: function askPermission(aMessage, aCallbacks) {
     let msg = aMessage.json;
 
-    let access;
-    if (PermissionsTable[msg.type].access) {
-      access = "readwrite"; // XXXddahl: Not sure if this should be set to READWRITE
-    }
-    // Expand permission names.
-    var expandedPermNames = expandPermissions(msg.type, access);
-    let installedPermValues = [];
-    let principal;
-
-    for (let idx in expandedPermNames) {
-      let uri = Services.io.newURI(msg.origin, null, null);
-      principal =
-        secMan.getAppCodebasePrincipal(uri, msg.appID, msg.browserFlag);
-      let access = msg.access ? msg.type + "-" + msg.access : msg.type;
-      let permValue =
-        permissionManager.testExactPermissionFromPrincipal(principal, access);
-      installedPermValues.push(permValue);
+    let access = msg.type;
+    if (msg.access) {
+      access = access + "-" + msg.access;
     }
 
-    // TODO: see bug 804623, We are preventing "read" operations
-    // even if just "write" has been set to DENY_ACTION
-    for (let idx in installedPermValues) {
-      // if any of the installedPermValues are deny, run aCallbacks.cancel
-      if (installedPermValues[idx] == Ci.nsIPermissionManager.DENY_ACTION ||
-          installedPermValues[idx] == Ci.nsIPermissionManager.UNKNOWN_ACTION) {
-        aCallbacks.cancel();
-        return;
-      }
+    let uri = Services.io.newURI(msg.origin, null, null);
+    let principal =
+      secMan.getAppCodebasePrincipal(uri, msg.appID, msg.browserFlag);
+
+    let permValue =
+      permissionManager.testExactPermissionFromPrincipal(principal, access);
+
+    if (permValue == Ci.nsIPermissionManager.DENY_ACTION ||
+        permValue == Ci.nsIPermissionManager.UNKNOWN_ACTION) {
+      aCallbacks.cancel();
+      return;
     }
 
-    for (let idx in installedPermValues) {
-      if (installedPermValues[idx] == Ci.nsIPermissionManager.PROMPT_ACTION) {
-        // create a nsIContentPermissionRequest
-        let request = {
-          type: msg.type,
-          access: msg.access ? msg.access : "unused",
-          principal: principal,
-          QueryInterface: XPCOMUtils.generateQI([Ci.nsIContentPermissionRequest]),
-          allow: aCallbacks.allow,
-          cancel: aCallbacks.cancel,
-          window: Services.wm.getMostRecentWindow("navigator:browser")
-        };
+    if (permValue == Ci.nsIPermissionManager.PROMPT_ACTION) {
+      // create a nsIContentPermissionRequest
+      let request = {
+        type: msg.type,
+        access: msg.access ? msg.access : "unused",
+        principal: principal,
+        QueryInterface: XPCOMUtils.generateQI([Ci.nsIContentPermissionRequest]),
+        allow: aCallbacks.allow,
+        cancel: aCallbacks.cancel,
+        window: Services.wm.getMostRecentWindow("navigator:browser")
+      };
 
-        permissionPromptService.getPermission(request);
-        return;
-      }
+      permissionPromptService.getPermission(request);
+      return;
     }
 
-    for (let idx in installedPermValues) {
-      if (installedPermValues[idx] == Ci.nsIPermissionManager.ALLOW_ACTION) {
-        aCallbacks.allow();
-        return;
-      }
+    if (permValue == Ci.nsIPermissionManager.ALLOW_ACTION) {
+      aCallbacks.allow();
+      return;
     }
   },
 

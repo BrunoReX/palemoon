@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -73,7 +75,6 @@ BoxBlurHorizontal(unsigned char* aInput,
             pos = min(pos, aWidth - 1);
             alphaSum += aInput[aWidth * y + pos];
         }
-		
         for (int32_t x = 0; x < aWidth; x++) {
             // Check whether we are within the skip rect. If so, go
             // to the next point outside the skip rect.
@@ -151,7 +152,6 @@ BoxBlurVertical(unsigned char* aInput,
             pos = min(pos, aRows - 1);
             alphaSum += aInput[aWidth * pos + x];
         }
-		
         for (int32_t y = 0; y < aRows; y++) {
             if (inSkipRectX && y >= aSkipRect.y &&
                 y < aSkipRect.YMost()) {
@@ -253,7 +253,7 @@ SpreadHorizontal(unsigned char* aInput,
             y = aSkipRect.YMost() - 1;
             continue;
         }
-		
+
         for (int32_t x = 0; x < aWidth; x++) {
             // Check whether we are within the skip rect. If so, go
             // to the next point outside the skip rect.
@@ -299,7 +299,7 @@ SpreadVertical(unsigned char* aInput,
             x = aSkipRect.XMost() - 1;
             continue;
         }
-		
+
         for (int32_t y = 0; y < aRows; y++) {
             // Check whether we are within the skip rect. If so, go
             // to the next point outside the skip rect.
@@ -341,8 +341,7 @@ AlphaBoxBlur::AlphaBoxBlur(const Rect& aRect,
                            const Rect* aSkipRect)
  : mSpreadRadius(aSpreadRadius),
    mBlurRadius(aBlurRadius),
-   mData(nullptr),
-   mFreeData(true)
+   mSurfaceAllocationSize(-1)
 {
   Rect rect(aRect);
   rect.Inflate(Size(aBlurRadius + aSpreadRadius));
@@ -393,38 +392,33 @@ AlphaBoxBlur::AlphaBoxBlur(const Rect& aRect,
     // in our blurring code.
     CheckedInt<int32_t> size = CheckedInt<int32_t>(mStride) * mRect.height + 3;
     if (size.isValid()) {
-      mData = new uint8_t[size.value()];
-      memset(mData, 0, size.value());
+      mSurfaceAllocationSize = size.value();
     }
   }
 }
 
-AlphaBoxBlur::AlphaBoxBlur(uint8_t* aData,
-                           const Rect& aRect,
+AlphaBoxBlur::AlphaBoxBlur(const Rect& aRect,
                            int32_t aStride,
                            float aSigma)
   : mRect(int32_t(aRect.x), int32_t(aRect.y),
           int32_t(aRect.width), int32_t(aRect.height)),
     mSpreadRadius(),
     mBlurRadius(CalculateBlurRadius(Point(aSigma, aSigma))),
-    mData(aData),
-    mFreeData(false),
-    mStride(aStride)
+    mStride(aStride),
+    mSurfaceAllocationSize(-1)
 {
+  IntRect intRect;
+  if (aRect.ToIntRect(&intRect)) {
+    CheckedInt<int32_t> minDataSize = CheckedInt<int32_t>(intRect.width)*intRect.height;
+    if (minDataSize.isValid()) {
+      mSurfaceAllocationSize = minDataSize.value();
+    }
+  }
 }
 
 
 AlphaBoxBlur::~AlphaBoxBlur()
 {
-  if (mFreeData) {
-    delete [] mData;
-  }
-}
-
-unsigned char*
-AlphaBoxBlur::GetData()
-{
-  return mData;
 }
 
 IntSize
@@ -456,10 +450,16 @@ AlphaBoxBlur::GetDirtyRect()
   return nullptr;
 }
 
-void
-AlphaBoxBlur::Blur()
+int32_t
+AlphaBoxBlur::GetSurfaceAllocationSize() const
 {
-  if (!mData) {
+  return mSurfaceAllocationSize;
+}
+
+void
+AlphaBoxBlur::Blur(uint8_t* aData)
+{
+  if (!aData) {
     return;
   }
 
@@ -472,12 +472,16 @@ AlphaBoxBlur::Blur()
     if (mSpreadRadius.width > 0 || mSpreadRadius.height > 0) {
       // No need to use CheckedInt here - we have validated it in the constructor.
       size_t szB = stride * size.height;
-      unsigned char* tmpData = new uint8_t[szB];
+      unsigned char* tmpData = new (std::nothrow) uint8_t[szB];
+
+      if (!tmpData) {
+        return;
+      }
 
       memset(tmpData, 0, szB);
 
-      SpreadHorizontal(mData, tmpData, mSpreadRadius.width, GetSize().width, GetSize().height, stride, mSkipRect);
-      SpreadVertical(tmpData, mData, mSpreadRadius.height, GetSize().width, GetSize().height, stride, mSkipRect);
+      SpreadHorizontal(aData, tmpData, mSpreadRadius.width, GetSize().width, GetSize().height, stride, mSkipRect);
+      SpreadVertical(tmpData, aData, mSpreadRadius.height, GetSize().width, GetSize().height, stride, mSkipRect);
 
       delete [] tmpData;
     }
@@ -502,7 +506,7 @@ AlphaBoxBlur::Blur()
       uint8_t* tmpData = new uint8_t[szB];
       memset(tmpData, 0, szB);
 
-      uint8_t* a = mData;
+      uint8_t* a = aData;
       uint8_t* b = tmpData;
       if (mBlurRadius.width > 0) {
         BoxBlurHorizontal(a, b, horizontalLobes[0][0], horizontalLobes[0][1], stride, GetSize().height, mSkipRect);
@@ -510,7 +514,7 @@ AlphaBoxBlur::Blur()
         BoxBlurHorizontal(a, b, horizontalLobes[2][0], horizontalLobes[2][1], stride, GetSize().height, mSkipRect);
       } else {
         a = tmpData;
-        b = mData;
+        b = aData;
       }
       // The result is in 'b' here.
       if (mBlurRadius.height > 0) {
@@ -522,7 +526,7 @@ AlphaBoxBlur::Blur()
       }
       // The result is in 'a' here.
       if (a == tmpData) {
-        memcpy(mData, tmpData, szB);
+        memcpy(aData, tmpData, szB);
       }
       delete [] tmpData;
     } else {
@@ -532,22 +536,25 @@ AlphaBoxBlur::Blur()
       // of 3 pixels in the blurring code.
       AlignedArray<uint32_t> integralImage((integralImageStride / 4) * integralImageSize.height + 12);
 
+      if (!integralImage) {
+        return;
+      }
 #ifdef USE_SSE2
       if (Factory::HasSSE2()) {
-        BoxBlur_SSE2(horizontalLobes[0][0], horizontalLobes[0][1], verticalLobes[0][0],
+        BoxBlur_SSE2(aData, horizontalLobes[0][0], horizontalLobes[0][1], verticalLobes[0][0],
                      verticalLobes[0][1], integralImage, integralImageStride);
-        BoxBlur_SSE2(horizontalLobes[1][0], horizontalLobes[1][1], verticalLobes[1][0],
+        BoxBlur_SSE2(aData, horizontalLobes[1][0], horizontalLobes[1][1], verticalLobes[1][0],
                      verticalLobes[1][1], integralImage, integralImageStride);
-        BoxBlur_SSE2(horizontalLobes[2][0], horizontalLobes[2][1], verticalLobes[2][0],
+        BoxBlur_SSE2(aData, horizontalLobes[2][0], horizontalLobes[2][1], verticalLobes[2][0],
                      verticalLobes[2][1], integralImage, integralImageStride);
       } else
 #endif
       {
-        BoxBlur_C(horizontalLobes[0][0], horizontalLobes[0][1], verticalLobes[0][0],
+        BoxBlur_C(aData, horizontalLobes[0][0], horizontalLobes[0][1], verticalLobes[0][0],
                   verticalLobes[0][1], integralImage, integralImageStride);
-        BoxBlur_C(horizontalLobes[1][0], horizontalLobes[1][1], verticalLobes[1][0],
+        BoxBlur_C(aData, horizontalLobes[1][0], horizontalLobes[1][1], verticalLobes[1][0],
                   verticalLobes[1][1], integralImage, integralImageStride);
-        BoxBlur_C(horizontalLobes[2][0], horizontalLobes[2][1], verticalLobes[2][0],
+        BoxBlur_C(aData, horizontalLobes[2][0], horizontalLobes[2][1], verticalLobes[2][0],
                   verticalLobes[2][1], integralImage, integralImageStride);
       }
     }
@@ -634,7 +641,8 @@ GenerateIntegralImage_C(int32_t aLeftInflation, int32_t aRightInflation,
  * Attempt to do an in-place box blur using an integral image.
  */
 void
-AlphaBoxBlur::BoxBlur_C(int32_t aLeftLobe,
+AlphaBoxBlur::BoxBlur_C(uint8_t* aData,
+                        int32_t aLeftLobe,
                         int32_t aRightLobe,
                         int32_t aTopLobe,
                         int32_t aBottomLobe,
@@ -658,12 +666,12 @@ AlphaBoxBlur::BoxBlur_C(int32_t aLeftLobe,
       return;
   }
 
-  uint32_t stride32bit = aIntegralImageStride / 4;
+  int32_t stride32bit = aIntegralImageStride / 4;
 
   int32_t leftInflation = RoundUpToMultipleOf4(aLeftLobe).value();
 
   GenerateIntegralImage_C(leftInflation, aRightLobe, aTopLobe, aBottomLobe,
-                          aIntegralImage, aIntegralImageStride, mData,
+                          aIntegralImage, aIntegralImageStride, aData,
                           mStride, size);
 
   uint32_t reciprocal = uint32_t((uint64_t(1) << 32) / boxSize);
@@ -673,7 +681,7 @@ AlphaBoxBlur::BoxBlur_C(int32_t aLeftLobe,
   // Storing these locally makes this about 30% faster! Presumably the compiler
   // can't be sure we're not altering the member variables in this loop.
   IntRect skipRect = mSkipRect;
-  uint8_t *data = mData;
+  uint8_t *data = aData;
   int32_t stride = mStride;
   #pragma omp parallel for
   for (int32_t y = 0; y < size.height; y++) {
@@ -683,7 +691,7 @@ AlphaBoxBlur::BoxBlur_C(int32_t aLeftLobe,
     uint32_t *topRightBase = innerIntegral + ((y - aTopLobe) * stride32bit + aRightLobe);
     uint32_t *bottomRightBase = innerIntegral + ((y + aBottomLobe) * stride32bit + aRightLobe);
     uint32_t *bottomLeftBase = innerIntegral + ((y + aBottomLobe) * stride32bit - aLeftLobe);
-	
+
     for (int32_t x = 0; x < size.width; x++) {
       if (inSkipRectY && x > skipRect.x && x < skipRect.XMost()) {
         x = skipRect.XMost() - 1;

@@ -5,6 +5,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// HttpLog.h should generally be included first
+#include "HttpLog.h"
+
 #include "mozilla/net/HttpBaseChannel.h"
 
 #include "nsHttpHandler.h"
@@ -22,6 +25,7 @@
 #include "nsStreamListenerWrapper.h"
 
 #include "prnetdb.h"
+#include <algorithm>
 
 namespace mozilla {
 namespace net {
@@ -333,7 +337,7 @@ HttpBaseChannel::SetContentType(const nsACString& aContentType)
     net_ParseContentType(aContentType, mContentTypeHint, mContentCharsetHint,
                          &dummy);
   }
-  
+
   return NS_OK;
 }
 
@@ -514,7 +518,7 @@ HttpBaseChannel::ExplicitSetUploadStream(nsIInputStream *aStream,
                                        const nsACString &aMethod,
                                        bool aStreamHasHeaders)
 {
-  // Ensure stream is set and method is valid 
+  // Ensure stream is set and method is valid
   NS_ENSURE_TRUE(aStream, NS_ERROR_FAILURE);
 
   if (aContentLength < 0 && !aStreamHasHeaders) {
@@ -529,12 +533,12 @@ HttpBaseChannel::ExplicitSetUploadStream(nsIInputStream *aStream,
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (!aStreamHasHeaders) {
-    // SetRequestHeader propagates headers to chrome if HttpChannelChild 
+    // SetRequestHeader propagates headers to chrome if HttpChannelChild
     nsAutoCString contentLengthStr;
     contentLengthStr.AppendInt(aContentLength);
-    SetRequestHeader(NS_LITERAL_CSTRING("Content-Length"), contentLengthStr, 
+    SetRequestHeader(NS_LITERAL_CSTRING("Content-Length"), contentLengthStr,
                      false);
-    SetRequestHeader(NS_LITERAL_CSTRING("Content-Type"), aContentType, 
+    SetRequestHeader(NS_LITERAL_CSTRING("Content-Type"), aContentType,
                      false);
   }
 
@@ -653,7 +657,7 @@ HttpBaseChannel::GetContentEncodings(nsIUTF8StringEnumerator** aEncodings)
     *aEncodings = nullptr;
     return NS_OK;
   }
-    
+
   const char *encoding = mResponseHead->PeekHeader(nsHttp::Content_Encoding);
   if (!encoding) {
     *aEncodings = nullptr;
@@ -677,7 +681,7 @@ HttpBaseChannel::nsContentEncodings::nsContentEncodings(nsIHttpChannel* aChannel
   mCurEnd = aEncodingHeader + strlen(aEncodingHeader);
   mCurStart = mCurEnd;
 }
-    
+
 HttpBaseChannel::nsContentEncodings::~nsContentEncodings()
 {
 }
@@ -729,7 +733,7 @@ HttpBaseChannel::nsContentEncodings::GetNext(nsACString& aNextEncoding)
       haveType = true;
     }
   }
-    
+
   if (!haveType) {
     encoding.BeginReading(start);
     if (CaseInsensitiveFindInReadable(NS_LITERAL_CSTRING("deflate"), start, end)) {
@@ -741,7 +745,7 @@ HttpBaseChannel::nsContentEncodings::GetNext(nsACString& aNextEncoding)
   // Prepare to fetch the next encoding
   mCurEnd = mCurStart;
   mReady = false;
-  
+
   if (haveType)
     return NS_OK;
 
@@ -762,11 +766,11 @@ NS_IMPL_ISUPPORTS1(HttpBaseChannel::nsContentEncodings, nsIUTF8StringEnumerator)
 nsresult
 HttpBaseChannel::nsContentEncodings::PrepareForNext(void)
 {
-  NS_ASSERTION(mCurStart == mCurEnd, "Indeterminate state");
-    
+  MOZ_ASSERT(mCurStart == mCurEnd, "Indeterminate state");
+
   // At this point both mCurStart and mCurEnd point to somewhere
   // past the end of the next thing we want to return
-    
+
   while (mCurEnd != mEncodingHeader) {
     --mCurEnd;
     if (*mCurEnd != ',' && !nsCRT::IsAsciiSpace(*mCurEnd))
@@ -775,17 +779,17 @@ HttpBaseChannel::nsContentEncodings::PrepareForNext(void)
   if (mCurEnd == mEncodingHeader)
     return NS_ERROR_NOT_AVAILABLE; // no more encodings
   ++mCurEnd;
-        
+
   // At this point mCurEnd points to the first char _after_ the
   // header we want.  Furthermore, mCurEnd - 1 != mEncodingHeader
-    
+
   mCurStart = mCurEnd - 1;
   while (mCurStart != mEncodingHeader &&
          *mCurStart != ',' && !nsCRT::IsAsciiSpace(*mCurStart))
     --mCurStart;
   if (*mCurStart == ',' || nsCRT::IsAsciiSpace(*mCurStart))
     ++mCurStart; // we stopped because of a weird char, so move up one
-        
+
   // At this point mCurStart and mCurEnd bracket the encoding string
   // we want.  Check that it's not "identity"
   if (Substring(mCurStart, mCurEnd).Equals("identity",
@@ -793,7 +797,7 @@ HttpBaseChannel::nsContentEncodings::PrepareForNext(void)
     mCurEnd = mCurStart;
     return PrepareForNext();
   }
-        
+
   mReady = true;
   return NS_OK;
 }
@@ -870,7 +874,7 @@ HttpBaseChannel::SetReferrer(nsIURI *referrer)
   //     perhaps some sort of generic nsINestedURI could be used.  then, if an URI
   //     fails the whitelist test, then we could check for an inner URI and try
   //     that instead.  though, that might be too automatic.
-  // 
+  //
   rv = referrer->SchemeIs("wyciwyg", &match);
   if (NS_FAILED(rv)) return rv;
   if (match) {
@@ -882,7 +886,7 @@ HttpBaseChannel::SetReferrer(nsIURI *referrer)
     if (pathLength <= 2) return NS_ERROR_FAILURE;
 
     // Path is of the form "//123/http://foo/bar", with a variable number of digits.
-    // To figure out where the "real" URL starts, search path for a '/', starting at 
+    // To figure out where the "real" URL starts, search path for a '/', starting at
     // the third character.
     int32_t slashIndex = path.FindChar('/', 2);
     if (slashIndex == kNotFound) return NS_ERROR_FAILURE;
@@ -1000,7 +1004,7 @@ HttpBaseChannel::SetRequestHeader(const nsACString& aHeader,
   // Header names are restricted to valid HTTP tokens.
   if (!nsHttp::IsValidToken(flatHeader))
     return NS_ERROR_INVALID_ARG;
-  
+
   // Header values MUST NOT contain line-breaks.  RFC 2616 technically
   // permits CTL characters, including CR and LF, in header values provided
   // they are quoted.  However, this can lead to problems if servers do not
@@ -1039,8 +1043,8 @@ HttpBaseChannel::GetResponseHeader(const nsACString &header, nsACString &value)
 }
 
 NS_IMETHODIMP
-HttpBaseChannel::SetResponseHeader(const nsACString& header, 
-                                   const nsACString& value, 
+HttpBaseChannel::SetResponseHeader(const nsACString& header,
+                                   const nsACString& value,
                                    bool merge)
 {
   LOG(("HttpBaseChannel::SetResponseHeader [this=%p header=\"%s\" value=\"%s\" merge=%u]\n",
@@ -1053,7 +1057,7 @@ HttpBaseChannel::SetResponseHeader(const nsACString& header,
   if (!atom)
     return NS_ERROR_NOT_AVAILABLE;
 
-  // these response headers must not be changed 
+  // these response headers must not be changed
   if (atom == nsHttp::Content_Type ||
       atom == nsHttp::Content_Length ||
       atom == nsHttp::Content_Encoding ||
@@ -1104,7 +1108,7 @@ HttpBaseChannel::SetRedirectionLimit(uint32_t value)
 {
   ENSURE_CALLED_BEFORE_CONNECT();
 
-  mRedirectionLimit = NS_MIN<uint32_t>(value, 0xff);
+  mRedirectionLimit = std::min<uint32_t>(value, 0xff);
   return NS_OK;
 }
 
@@ -1346,7 +1350,7 @@ HttpBaseChannel::HTTPUpgrade(const nsACString &aProtocolName,
 {
     NS_ENSURE_ARG(!aProtocolName.IsEmpty());
     NS_ENSURE_ARG_POINTER(aListener);
-    
+
     mUpgradeProtocol = aProtocolName;
     mUpgradeProtocolCallback = aListener;
     return NS_OK;
@@ -1523,7 +1527,7 @@ HttpBaseChannel::AddCookiesToRequest()
     return;
   }
 
-  bool useCookieService = 
+  bool useCookieService =
     (XRE_GetProcessType() == GeckoProcessType_Default);
   nsXPIDLCString cookie;
   if (useCookieService) {
@@ -1560,7 +1564,7 @@ CopyProperties(const nsAString& aKey, nsIVariant *aData, void *aClosure)
 }
 
 nsresult
-HttpBaseChannel::SetupReplacementChannel(nsIURI       *newURI, 
+HttpBaseChannel::SetupReplacementChannel(nsIURI       *newURI,
                                          nsIChannel   *newChannel,
                                          bool          preserveMethod)
 {
@@ -1582,7 +1586,7 @@ HttpBaseChannel::SetupReplacementChannel(nsIURI       *newURI,
   // Do not pass along LOAD_CHECK_OFFLINE_CACHE
   newLoadFlags &= ~nsICachingChannel::LOAD_CHECK_OFFLINE_CACHE;
 
-  newChannel->SetLoadGroup(mLoadGroup); 
+  newChannel->SetLoadGroup(mLoadGroup);
   newChannel->SetNotificationCallbacks(mCallbacks);
   newChannel->SetLoadFlags(newLoadFlags);
 
@@ -1641,8 +1645,8 @@ HttpBaseChannel::SetupReplacementChannel(nsIURI       *newURI,
         }
       }
     }
-    // since preserveMethod is true, we need to ensure that the appropriate 
-    // request method gets set on the channel, regardless of whether or not 
+    // since preserveMethod is true, we need to ensure that the appropriate
+    // request method gets set on the channel, regardless of whether or not
     // we set the upload stream above. This means SetRequestMethod() will
     // be called twice if ExplicitSetUploadStream() gets called above.
 
@@ -1680,7 +1684,7 @@ HttpBaseChannel::SetupReplacementChannel(nsIURI       *newURI,
         httpInternal->SetCacheKeysRedirectChain(mRedirectedCachekeys.forget());
     }
   }
-  
+
   // transfer application cache information
   nsCOMPtr<nsIApplicationCacheChannel> appCacheChannel =
     do_QueryInterface(newChannel);

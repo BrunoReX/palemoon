@@ -10,9 +10,6 @@
  * liability, trademark and document use rules apply.
  */
 
-interface HTMLOptionElement;
-interface HTMLOptGroupElement;
-
 interface HTMLOptionsCollection : HTMLCollection {
            attribute unsigned long length;
   [Throws]

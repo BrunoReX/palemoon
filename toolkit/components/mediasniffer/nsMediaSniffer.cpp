@@ -10,8 +10,13 @@
 #include "nsString.h"
 #include "nsMimeTypes.h"
 #include "mozilla/ModuleUtils.h"
+#include "mp3sniff.h"
+#ifdef MOZ_WEBM
+#include "nestegg/nestegg.h"
+#endif
 
 #include "nsIClassInfoImpl.h"
+#include <algorithm>
 
 // The minimum number of bytes that are needed to attempt to sniff an mp4 file.
 static const unsigned MP4_MIN_BYTES_COUNT = 12;
@@ -25,8 +30,6 @@ nsMediaSniffer::nsMediaSnifferEntry nsMediaSniffer::sSnifferEntries[] = {
   PATTERN_ENTRY("\xFF\xFF\xFF\xFF\xFF", "OggS", APPLICATION_OGG),
   // The string RIFF, followed by four bytes, followed by the string WAVE
   PATTERN_ENTRY("\xFF\xFF\xFF\xFF\x00\x00\x00\x00\xFF\xFF\xFF\xFF", "RIFF\x00\x00\x00\x00WAVE", AUDIO_WAV),
-  // WebM
-  PATTERN_ENTRY("\xFF\xFF\xFF\xFF", "\x1A\x45\xDF\xA3", VIDEO_WEBM),
   // mp3 with ID3 tags, the string "ID3".
   PATTERN_ENTRY("\xFF\xFF\xFF", "ID3", AUDIO_MP3)
 };
@@ -56,14 +59,37 @@ static bool MatchesMP4(const uint8_t* aData, const uint32_t aLength)
     if (i == 3) {
       continue;
     }
-    // The string "mp4".
+    // The string "mp42" or "mp41".
     if (aData[4*i]   == 0x6D &&
         aData[4*i+1] == 0x70 &&
         aData[4*i+2] == 0x34) {
       return true;
     }
+    // The string "isom" or "iso2".
+    if (aData[4*i]   == 0x69 &&
+        aData[4*i+1] == 0x73 &&
+        aData[4*i+2] == 0x6F &&
+        (aData[4*i+3] == 0x6D || aData[4*i+3] == 0x32)) {
+      return true;
+    }
   }
   return false;
+}
+
+static bool MatchesWebM(const uint8_t* aData, const uint32_t aLength)
+{
+#ifdef MOZ_WEBM
+  return nestegg_sniff((uint8_t*)aData, aLength) ? true : false;
+#else
+  return false;
+#endif
+}
+
+// This function implements mp3 sniffing based on parsing
+// packet headers and looking for expected boundaries.
+static bool MatchesMP3(const uint8_t* aData, const uint32_t aLength)
+{
+  return mp3_sniff(aData, (long)aLength);
 }
 
 NS_IMETHODIMP
@@ -86,7 +112,7 @@ nsMediaSniffer::GetMIMETypeFromContent(nsIRequest* aRequest,
     }
   }
 
-  const uint32_t clampedLength = NS_MIN(aLength, MAX_BYTES_SNIFFED);
+  const uint32_t clampedLength = std::min(aLength, MAX_BYTES_SNIFFED);
 
   for (uint32_t i = 0; i < NS_ARRAY_LENGTH(sSnifferEntries); ++i) {
     const nsMediaSnifferEntry& currentEntry = sSnifferEntries[i];
@@ -108,6 +134,16 @@ nsMediaSniffer::GetMIMETypeFromContent(nsIRequest* aRequest,
 
   if (MatchesMP4(aData, clampedLength)) {
     aSniffedType.AssignLiteral(VIDEO_MP4);
+    return NS_OK;
+  }
+
+  if (MatchesWebM(aData, clampedLength)) {
+    aSniffedType.AssignLiteral(VIDEO_WEBM);
+    return NS_OK;
+  }
+
+  if (MatchesMP3(aData, clampedLength)) {
+    aSniffedType.AssignLiteral(AUDIO_MP3);
     return NS_OK;
   }
 

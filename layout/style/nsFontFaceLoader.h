@@ -11,15 +11,12 @@
 
 #include "nsCOMPtr.h"
 #include "nsIStreamLoader.h"
-#include "nsIURI.h"
 #include "nsIChannel.h"
-#include "nsITimer.h"
 #include "gfxUserFontSet.h"
 #include "nsHashKeys.h"
 #include "nsTHashtable.h"
 #include "nsCSSRules.h"
 
-class nsIRequest;
 class nsISupports;
 class nsPresContext;
 class nsIPrincipal;
@@ -78,12 +75,15 @@ protected:
                               nsresult aStatus = NS_OK);
 
   virtual nsresult CheckFontLoad(const gfxFontFaceSrc *aFontFaceSrc,
-                                 nsIPrincipal **aPrincipal);
+                                 nsIPrincipal **aPrincipal,
+                                 bool *aBypassCache);
 
   virtual nsresult SyncLoadFontData(gfxProxyFontEntry *aFontToLoad,
                                     const gfxFontFaceSrc *aFontFaceSrc,
                                     uint8_t* &aBuffer,
                                     uint32_t &aBufferLength);
+
+  virtual bool GetPrivateBrowsing() MOZ_OVERRIDE;
 
   nsPresContext *mPresContext;  // weak reference
 

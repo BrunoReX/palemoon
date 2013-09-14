@@ -5,63 +5,65 @@
 
 package org.mozilla.gecko;
 
-import org.mozilla.gecko.db.BrowserDB;
 import org.mozilla.gecko.db.BrowserContract.Combined;
-import org.mozilla.gecko.util.GeckoAsyncTask;
+import org.mozilla.gecko.db.BrowserDB;
+import org.mozilla.gecko.gfx.BitmapUtils;
+import org.mozilla.gecko.health.BrowserHealthRecorder;
+import org.mozilla.gecko.util.GamepadUtils;
 import org.mozilla.gecko.util.StringUtils;
+import org.mozilla.gecko.util.ThreadUtils;
+import org.mozilla.gecko.util.UiAsyncTask;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.net.Uri;
-import android.os.AsyncTask;
-import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.util.AttributeSet;
 import android.util.Log;
 import android.view.ContextMenu;
 import android.view.ContextMenu.ContextMenuInfo;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
+import android.view.MenuInflater;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
-import android.widget.ListView;
 import android.widget.TabWidget;
 import android.widget.Toast;
 
-import java.net.URLEncoder;
-import java.util.Arrays;
-import java.util.Collection;
+import org.json.JSONObject;
 
-public class AwesomeBar extends GeckoActivity {
+import java.net.URLEncoder;
+
+interface AutocompleteHandler {
+    void onAutocomplete(String res);
+}
+
+public class AwesomeBar extends GeckoActivity
+                        implements AutocompleteHandler,
+                                   TextWatcher {
     private static final String LOGTAG = "GeckoAwesomeBar";
 
-    private static final Collection<String> sSwypeInputMethods = Arrays.asList(new String[] {
-                                                                 InputMethods.METHOD_SWYPE,
-                                                                 InputMethods.METHOD_SWYPE_BETA,
-                                                                 });
-
-    static final String URL_KEY = "url";
-    static final String CURRENT_URL_KEY = "currenturl";
-    static final String TARGET_KEY = "target";
-    static final String SEARCH_KEY = "search";
-    static final String TITLE_KEY = "title";
-    static final String USER_ENTERED_KEY = "user_entered";
-    static final String READING_LIST_KEY = "reading_list";
+    public static final String URL_KEY = "url";
+    public static final String TAB_KEY = "tab";
+    public static final String CURRENT_URL_KEY = "currenturl";
+    public static final String TARGET_KEY = "target";
+    public static final String SEARCH_KEY = "search";
+    public static final String TITLE_KEY = "title";
+    public static final String USER_ENTERED_KEY = "user_entered";
+    public static final String READING_LIST_KEY = "reading_list";
     public static enum Target { NEW_TAB, CURRENT_TAB, PICK_SITE };
 
     private String mTarget;
@@ -69,16 +71,20 @@ public class AwesomeBar extends GeckoActivity {
     private CustomEditText mText;
     private ImageButton mGoButton;
     private ContextMenuSubject mContextMenuSubject;
-    private boolean mIsUsingSwype;
     private boolean mDelayRestartInput;
+    // The previous autocomplete result returned to us
+    private String mAutoCompleteResult = "";
+    // The user typed part of the autocomplete result
+    private String mAutoCompletePrefix = null;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        LayoutInflater.from(this).setFactory(this);
+
         super.onCreate(savedInstanceState);
 
         Log.d(LOGTAG, "creating awesomebar");
 
-        LayoutInflater.from(this).setFactory(GeckoViewsFactory.getInstance());
         setContentView(R.layout.awesomebar);
 
         mGoButton = (ImageButton) findViewById(R.id.awesomebar_button);
@@ -89,28 +95,43 @@ public class AwesomeBar extends GeckoActivity {
 
         mAwesomeTabs = (AwesomeBarTabs) findViewById(R.id.awesomebar_tabs);
         mAwesomeTabs.setOnUrlOpenListener(new AwesomeBarTabs.OnUrlOpenListener() {
+            @Override
             public void onUrlOpen(String url, String title) {
                 openUrlAndFinish(url, title, false);
             }
 
-            public void onSearch(String engine, String text) {
-                openSearchAndFinish(text, engine);
+            @Override
+            public void onSearch(SearchEngine engine, String text) {
+                Intent resultIntent = new Intent();
+                resultIntent.putExtra(URL_KEY, text);
+                resultIntent.putExtra(TARGET_KEY, mTarget);
+                resultIntent.putExtra(SEARCH_KEY, engine.name);
+                recordSearch(engine.identifier, "barsuggest");
+                finishWithResult(resultIntent);
             }
 
+            @Override
             public void onEditSuggestion(final String text) {
-                GeckoApp.mAppContext.mMainHandler.post(new Runnable() {
+                ThreadUtils.postToUiThread(new Runnable() {
+                    @Override
                     public void run() {
                         mText.setText(text);
                         mText.setSelection(mText.getText().length());
                         mText.requestFocus();
-                        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-                        imm.showSoftInput(mText, InputMethodManager.SHOW_IMPLICIT);
                     }
                 });
+            }
+
+            @Override
+            public void onSwitchToTab(final int tabId) {
+                Intent resultIntent = new Intent();
+                resultIntent.putExtra(TAB_KEY, Integer.toString(tabId));
+                finishWithResult(resultIntent);
             }
         });
 
         mGoButton.setOnClickListener(new Button.OnClickListener() {
+            @Override
             public void onClick(View v) {
                 openUserEnteredAndFinish(mText.getText().toString());
             }
@@ -130,7 +151,7 @@ public class AwesomeBar extends GeckoActivity {
                 BrowserToolbarBackground mAddressBarBg = (BrowserToolbarBackground) findViewById(R.id.address_bar_bg);
                 mAddressBarBg.setPrivateMode(true);
 
-                TabsButton mTabs = (TabsButton) findViewById(R.id.dummy_tab);
+                ShapedButton mTabs = (ShapedButton) findViewById(R.id.dummy_tab);
                 if (mTabs != null)
                     mTabs.setPrivateMode(true);
 
@@ -140,6 +161,7 @@ public class AwesomeBar extends GeckoActivity {
         mAwesomeTabs.setTarget(mTarget);
 
         mText.setOnKeyPreImeListener(new CustomEditText.OnKeyPreImeListener() {
+            @Override
             public boolean onKeyPreIme(View v, int keyCode, KeyEvent event) {
                 // We only want to process one event per tap
                 if (event.getAction() != KeyEvent.ACTION_DOWN)
@@ -160,56 +182,26 @@ public class AwesomeBar extends GeckoActivity {
                 InputMethodManager imm =
                         (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
                 if (keyCode == KeyEvent.KEYCODE_BACK && !imm.isFullscreenMode()) {
-                    // Let mAwesomeTabs try to handle the back press, since we may be in a
-                    // bookmarks sub-folder.
-                    if (mAwesomeTabs.onBackPressed())
-                        return true;
-
-                    // If mAwesomeTabs.onBackPressed() returned false, we didn't move up
-                    // a folder level, so just exit the activity.
-                    cancelAndFinish();
-                    return true;
+                    return handleBackKey();
                 }
 
                 return false;
             }
         });
 
-        mText.addTextChangedListener(new TextWatcher() {
-            public void afterTextChanged(Editable s) {
-                String text = s.toString();
-                mAwesomeTabs.filter(text);
-
-                // If the AwesomeBar has a composition string, don't call updateGoButton().
-                // That method resets IME and composition state will be broken.
-                if (!hasCompositionString(s)) {
-                    updateGoButton(text);
-                }
-
-                if (Build.VERSION.SDK_INT >= 11) {
-                    getActionBar().hide();
-                }
-            }
-
-            public void beforeTextChanged(CharSequence s, int start, int count,
-                                          int after) {
-                // do nothing
-            }
-
-            public void onTextChanged(CharSequence s, int start, int before,
-                                      int count) {
-                // do nothing
-            }
-        });
+        mText.addTextChangedListener(this);
 
         mText.setOnKeyListener(new View.OnKeyListener() {
+            @Override
             public boolean onKey(View v, int keyCode, KeyEvent event) {
-                if (keyCode == KeyEvent.KEYCODE_ENTER) {
+                if (keyCode == KeyEvent.KEYCODE_ENTER || GamepadUtils.isActionKey(event)) {
                     if (event.getAction() != KeyEvent.ACTION_DOWN)
                         return true;
 
                     openUserEnteredAndFinish(mText.getText().toString());
                     return true;
+                } else if (GamepadUtils.isBackKey(event)) {
+                    return handleBackKey();
                 } else {
                     return false;
                 }
@@ -217,43 +209,19 @@ public class AwesomeBar extends GeckoActivity {
         });
 
         mText.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override
             public void onFocusChange(View v, boolean hasFocus) {
                 if (v == null || hasFocus) {
                     return;
                 }
 
-                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                InputMethodManager imm = (InputMethodManager)
+                    getSystemService(Context.INPUT_METHOD_SERVICE);
                 try {
                     imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
                 } catch (NullPointerException e) {
                     Log.e(LOGTAG, "InputMethodManagerService, why are you throwing"
                                   + " a NullPointerException? See bug 782096", e);
-                }
-            }
-        });
-
-        mText.setOnLongClickListener(new View.OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View v) {
-                if (Build.VERSION.SDK_INT >= 11) {
-                    CustomEditText text = (CustomEditText) v;
-
-                    if (text.getSelectionStart() == text.getSelectionEnd())
-                        return false;
-
-                    getActionBar().show();
-                    return false;
-                }
-
-                return false;
-            }
-        });
-
-        mText.setOnSelectionChangedListener(new CustomEditText.OnSelectionChangedListener() {
-            @Override
-            public void onSelectionChanged(int selStart, int selEnd) {
-                if (Build.VERSION.SDK_INT >= 11 && selStart == selEnd) {
-                    getActionBar().hide();
                 }
             }
         });
@@ -266,31 +234,31 @@ public class AwesomeBar extends GeckoActivity {
         }
     }
 
+    /*
+     * Only one factory can be set on the inflater; however, we want to use two
+     * factories (GeckoViewsFactory and the FragmentActivity factory).
+     * Overriding onCreateView() here allows us to dispatch view creation to
+     * both factories.
+     */
     @Override
-    public void onWindowFocusChanged(boolean hasFocus) {
-        super.onWindowFocusChanged(hasFocus);
+    public View onCreateView(String name, Context context, AttributeSet attrs) {
+        View view = GeckoViewsFactory.getInstance().onCreateView(name, context, attrs);
+        if (view == null) {
+            view = super.onCreateView(name, context, attrs);
+        }
+        return view;
+    }
 
-        // The Awesome Bar will receive focus when the Awesome Screen first opens or after the user
-        // closes the "Select Input Method" window. If the input method changes to or from Swype,
-        // then toggle the URL mode flag. Swype's URL mode disables the automatic word spacing that
-        // Swype users expect when entering search queries, but does not add any special VKB keys
-        // like ".com" or "/" that would be useful for entering URLs.
+    private boolean handleBackKey() {
+        // Let mAwesomeTabs try to handle the back press, since we may be in a
+        // bookmarks sub-folder.
+        if (mAwesomeTabs.onBackPressed())
+            return true;
 
-        if (!hasFocus)
-            return;
-
-        boolean wasUsingSwype = mIsUsingSwype;
-        mIsUsingSwype = sSwypeInputMethods.contains(InputMethods.getCurrentInputMethod(this));
-
-        if (mIsUsingSwype == wasUsingSwype)
-            return;
-
-        int currentInputType = mText.getInputType();
-        int newInputType = mIsUsingSwype
-                           ? (currentInputType & ~InputType.TYPE_TEXT_VARIATION_URI)    // URL=OFF
-                           : (currentInputType | InputType.TYPE_TEXT_VARIATION_URI);    // URL=ON
-
-        mText.setRawInputType(newInputType);
+        // If mAwesomeTabs.onBackPressed() returned false, we didn't move up
+        // a folder level, so just exit the activity.
+        cancelAndFinish();
+        return true;
     }
 
     @Override
@@ -315,33 +283,55 @@ public class AwesomeBar extends GeckoActivity {
         int imageResource = R.drawable.ic_awesomebar_go;
         String contentDescription = getString(R.string.go);
         int imeAction = EditorInfo.IME_ACTION_GO;
-        if (StringUtils.isSearchQuery(text)) {
+
+        int actionBits = mText.getImeOptions() & EditorInfo.IME_MASK_ACTION;
+        if (StringUtils.isSearchQuery(text, actionBits == EditorInfo.IME_ACTION_SEARCH)) {
             imageResource = R.drawable.ic_awesomebar_search;
             contentDescription = getString(R.string.search);
             imeAction = EditorInfo.IME_ACTION_SEARCH;
         }
-        mGoButton.setImageResource(imageResource);
-        mGoButton.setContentDescription(contentDescription);
 
         InputMethodManager imm = InputMethods.getInputMethodManager(mText.getContext());
         if (imm == null) {
             return;
         }
-        int actionBits = mText.getImeOptions() & EditorInfo.IME_MASK_ACTION;
+        boolean restartInput = false;
         if (actionBits != imeAction) {
             int optionBits = mText.getImeOptions() & ~EditorInfo.IME_MASK_ACTION;
             mText.setImeOptions(optionBits | imeAction);
 
-            mDelayRestartInput = InputMethods.shouldDelayAwesomebarUpdate(mText.getContext());
+            mDelayRestartInput = (imeAction == EditorInfo.IME_ACTION_GO) &&
+                                 (InputMethods.shouldDelayAwesomebarUpdate(mText.getContext()));
             if (!mDelayRestartInput) {
-                imm.restartInput(mText);
+                restartInput = true;
             }
         } else if (mDelayRestartInput) {
             // Only call delayed restartInput when actionBits == imeAction
             // so if there are two restarts in a row, the first restarts will
             // be discarded and the second restart will be properly delayed
             mDelayRestartInput = false;
+            restartInput = true;
+        }
+        if (restartInput) {
+            updateKeyboardInputType();
             imm.restartInput(mText);
+            mGoButton.setImageResource(imageResource);
+            mGoButton.setContentDescription(contentDescription);
+        }
+    }
+
+    private void updateKeyboardInputType() {
+        // If the user enters a space, then we know they are entering search terms, not a URL.
+        // We can then switch to text mode so,
+        // 1) the IME auto-inserts spaces between words
+        // 2) the IME doesn't reset input keyboard to Latin keyboard.
+        String text = mText.getText().toString();
+        int currentInputType = mText.getInputType();
+        int newInputType = StringUtils.isSearchQuery(text, false)
+                           ? (currentInputType & ~InputType.TYPE_TEXT_VARIATION_URI) // Text mode
+                           : (currentInputType | InputType.TYPE_TEXT_VARIATION_URI); // URL mode
+        if (newInputType != currentInputType) {
+            mText.setRawInputType(newInputType);
         }
     }
 
@@ -372,33 +362,60 @@ public class AwesomeBar extends GeckoActivity {
         finishWithResult(resultIntent);
     }
 
-    private void openUserEnteredAndFinish(String url) {
-        int index = url.indexOf(' ');
-        String keywordUrl = null;
-        String keywordSearch = null;
-
-        if (index == -1) {
-            keywordUrl = BrowserDB.getUrlForKeyword(getContentResolver(), url);
-            keywordSearch = "";
-        } else {
-            keywordUrl = BrowserDB.getUrlForKeyword(getContentResolver(), url.substring(0, index));
-            keywordSearch = url.substring(index + 1);
+    /**
+     * Record in Health Report that a search has occurred.
+     *
+     * @param identifier
+     *        a search identifier, such as "partnername". Can be null.
+     * @param where
+     *        where the search was initialized; one of the values in
+     *        {@link BrowserHealthRecorder#SEARCH_LOCATIONS}.
+     */
+    private static void recordSearch(String identifier, String where) {
+        Log.i(LOGTAG, "Recording search: " + identifier + ", " + where);
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", BrowserHealthRecorder.EVENT_SEARCH);
+            message.put("location", where);
+            message.put("identifier", identifier);
+            GeckoAppShell.getEventDispatcher().dispatchEvent(message);
+        } catch (Exception e) {
+            Log.w(LOGTAG, "Error recording search.", e);
         }
-
-        if (keywordUrl != null) {
-            String search = URLEncoder.encode(keywordSearch);
-            url = keywordUrl.replace("%s", search);
-        }
-
-        openUrlAndFinish(url, "", true);
     }
 
-    private void openSearchAndFinish(String url, String engine) {
-        Intent resultIntent = new Intent();
-        resultIntent.putExtra(URL_KEY, url);
-        resultIntent.putExtra(TARGET_KEY, mTarget);
-        resultIntent.putExtra(SEARCH_KEY, engine);
-        finishWithResult(resultIntent);
+    private void openUserEnteredAndFinish(final String url) {
+        final int index = url.indexOf(' ');
+
+        // Check for a keyword if the URL looks like a search query
+        if (!StringUtils.isSearchQuery(url, true)) {
+            openUrlAndFinish(url, "", true);
+            return;
+        }
+        ThreadUtils.postToBackgroundThread(new Runnable() {
+            @Override
+            public void run() {
+                final String keyword;
+                final String keywordSearch;
+
+                if (index == -1) {
+                    keyword = url;
+                    keywordSearch = "";
+                } else {
+                    keyword = url.substring(0, index);
+                    keywordSearch = url.substring(index + 1);
+                }
+
+                final String keywordUrl = BrowserDB.getUrlForKeyword(getContentResolver(), keyword);
+                final String searchUrl = (keywordUrl != null)
+                                       ? keywordUrl.replace("%s", URLEncoder.encode(keywordSearch))
+                                       : url;
+                if (keywordUrl != null) {
+                    recordSearch(null, "barkeyword");
+                }
+                openUrlAndFinish(searchUrl, "", true);
+            }
+        });
     }
 
     @Override
@@ -424,8 +441,6 @@ public class AwesomeBar extends GeckoActivity {
         } else if (keyCode == KeyEvent.KEYCODE_SEARCH) {
              mText.setText("");
              mText.requestFocus();
-             InputMethodManager imm = (InputMethodManager) mText.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
-             imm.showSoftInput(mText, InputMethodManager.SHOW_IMPLICIT);
              return true;
         } else {
             int prevSelStart = mText.getSelectionStart();
@@ -449,8 +464,13 @@ public class AwesomeBar extends GeckoActivity {
     @Override
     public void onResume() {
         super.onResume();
-        if (mText != null && mText.getText() != null)
+        if (mText != null && mText.getText() != null) {
             updateGoButton(mText.getText().toString());
+            if (mDelayRestartInput) {
+                // call updateGoButton again to force a restartInput call
+                updateGoButton(mText.getText().toString());
+            }
+        }
 
         // Invlidate the cached value that keeps track of whether or
         // not desktop bookmarks exist
@@ -499,7 +519,6 @@ public class AwesomeBar extends GeckoActivity {
     @Override
     public void onCreateContextMenu(ContextMenu menu, View view, ContextMenuInfo menuInfo) {
         super.onCreateContextMenu(menu, view, menuInfo);
-        ListView list = (ListView) view;
         AwesomeBarTab tab = mAwesomeTabs.getAwesomeBarTabForView(view);
         mContextMenuSubject = tab.getSubject(menu, view, menuInfo);
     }
@@ -517,8 +536,8 @@ public class AwesomeBar extends GeckoActivity {
         final int display = mContextMenuSubject.display;
 
         switch (item.getItemId()) {
-            case R.id.open_new_tab:
-            case R.id.open_private_tab: {
+            case R.id.open_private_tab:
+            case R.id.open_new_tab: {
                 if (url == null) {
                     Log.e(LOGTAG, "Can't open in new tab because URL is null");
                     break;
@@ -546,67 +565,11 @@ public class AwesomeBar extends GeckoActivity {
                 break;
             }
             case R.id.edit_bookmark: {
-                AlertDialog.Builder editPrompt = new AlertDialog.Builder(this);
-                View editView = getLayoutInflater().inflate(R.layout.bookmark_edit, null);
-                editPrompt.setTitle(R.string.bookmark_edit_title);
-                editPrompt.setView(editView);
-
-                final EditText nameText = ((EditText) editView.findViewById(R.id.edit_bookmark_name));
-                final EditText locationText = ((EditText) editView.findViewById(R.id.edit_bookmark_location));
-                final EditText keywordText = ((EditText) editView.findViewById(R.id.edit_bookmark_keyword));
-                nameText.setText(title);
-                locationText.setText(url);
-                keywordText.setText(keyword);
-
-                editPrompt.setPositiveButton(R.string.button_ok, new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface dialog, int whichButton) {
-                        (new GeckoAsyncTask<Void, Void, Void>(GeckoApp.mAppContext, GeckoAppShell.getHandler()) {
-                            @Override
-                            public Void doInBackground(Void... params) {
-                                String newUrl = locationText.getText().toString().trim();
-                                BrowserDB.updateBookmark(getContentResolver(), id, newUrl, nameText.getText().toString(),
-                                                         keywordText.getText().toString());
-                                return null;
-                            }
-
-                            @Override
-                            public void onPostExecute(Void result) {
-                                Toast.makeText(AwesomeBar.this, R.string.bookmark_updated, Toast.LENGTH_SHORT).show();
-                            }
-                        }).execute();
-                    }
-                });
-
-                editPrompt.setNegativeButton(R.string.button_cancel, new DialogInterface.OnClickListener() {
-                      public void onClick(DialogInterface dialog, int whichButton) {
-                          // do nothing
-                      }
-                });
-
-                final AlertDialog dialog = editPrompt.create();
-
-                // disable OK button if the URL is empty
-                locationText.addTextChangedListener(new TextWatcher() {
-                    private boolean mEnabled = true;
-
-                    public void afterTextChanged(Editable s) {}
-
-                    public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-
-                    public void onTextChanged(CharSequence s, int start, int before, int count) {
-                        boolean enabled = (s.toString().trim().length() > 0);
-                        if (mEnabled != enabled) {
-                            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(enabled);
-                            mEnabled = enabled;
-                        }
-                    }
-                });
-
-                dialog.show();
+                new EditBookmarkDialog(this).show(id, title, url, keyword);
                 break;
             }
             case R.id.remove_bookmark: {
-                (new AsyncTask<Void, Void, Void>() {
+                (new UiAsyncTask<Void, Void, Integer>(ThreadUtils.getBackgroundHandler()) {
                     private boolean mInReadingList;
 
                     @Override
@@ -615,18 +578,25 @@ public class AwesomeBar extends GeckoActivity {
                     }
 
                     @Override
-                    public Void doInBackground(Void... params) {
+                    public Integer doInBackground(Void... params) {
                         BrowserDB.removeBookmark(getContentResolver(), id);
-                        return null;
+                        Integer count = mInReadingList ?
+                            BrowserDB.getReadingListCount(getContentResolver()) : 0;
+
+                        return count;
                     }
 
                     @Override
-                    public void onPostExecute(Void result) {
+                    public void onPostExecute(Integer aCount) {
                         int messageId = R.string.bookmark_removed;
                         if (mInReadingList) {
                             messageId = R.string.reading_list_removed;
 
                             GeckoEvent e = GeckoEvent.createBroadcastEvent("Reader:Remove", url);
+                            GeckoAppShell.sendEventToGecko(e);
+
+                            // Delete from Awesomebar context menu can alter reading list bookmark count
+                            e = GeckoEvent.createBroadcastEvent("Reader:ListCountUpdated", Integer.toString(aCount));
                             GeckoAppShell.sendEventToGecko(e);
                         }
 
@@ -636,7 +606,7 @@ public class AwesomeBar extends GeckoActivity {
                 break;
             }
             case R.id.remove_history: {
-                (new GeckoAsyncTask<Void, Void, Void>(GeckoApp.mAppContext, GeckoAppShell.getHandler()) {
+                (new UiAsyncTask<Void, Void, Void>(ThreadUtils.getBackgroundHandler()) {
                     @Override
                     public Void doInBackground(Void... params) {
                         BrowserDB.removeHistoryEntry(getContentResolver(), id);
@@ -657,8 +627,9 @@ public class AwesomeBar extends GeckoActivity {
                 }
 
                 Bitmap bitmap = null;
-                if (b != null)
-                    bitmap = BitmapFactory.decodeByteArray(b, 0, b.length);
+                if (b != null) {
+                    bitmap = BitmapUtils.decodeByteArray(b);
+                }
 
                 String shortcutTitle = TextUtils.isEmpty(title) ? url.replaceAll("^([a-z]+://)?(www\\.)?", "") : title;
                 GeckoAppShell.createShortcut(shortcutTitle, url, bitmap, "");
@@ -698,5 +669,72 @@ public class AwesomeBar extends GeckoActivity {
             }
         }
         return false;
+    }
+
+    // return early if we're backspacing through the string, or have no autocomplete results
+    public void onAutocomplete(final String result) {
+        final String text = mText.getText().toString();
+
+        if (result == null) {
+            mAutoCompleteResult = "";
+            return;
+        }
+
+        if (!result.startsWith(text) || text.equals(result)) {
+            return;
+        }
+
+        mAutoCompleteResult = result;
+        mText.getText().append(result.substring(text.length()));
+        mText.setSelection(text.length(), result.length());
+    }
+
+    @Override
+    public void afterTextChanged(final Editable s) {
+        final String text = s.toString();
+        boolean useHandler = false;
+        boolean reuseAutocomplete = false;
+        if (!hasCompositionString(s) && !StringUtils.isSearchQuery(text, false)) {
+            useHandler = true;
+
+            // If you're hitting backspace (the string is getting smaller
+            // or is unchanged), don't autocomplete.
+            if (mAutoCompletePrefix != null && (mAutoCompletePrefix.length() >= text.length())) {
+                useHandler = false;
+            } else if (mAutoCompleteResult != null && mAutoCompleteResult.startsWith(text)) {
+                // If this text already matches our autocomplete text, autocomplete likely
+                // won't change. Just reuse the old autocomplete value.
+                useHandler = false;
+                reuseAutocomplete = true;
+            }
+        }
+
+        // If this is the autocomplete text being set, don't run the filter.
+        if (TextUtils.isEmpty(mAutoCompleteResult) || !mAutoCompleteResult.equals(text)) {
+            mAwesomeTabs.filter(text, useHandler ? this : null);
+            mAutoCompletePrefix = text;
+
+            if (reuseAutocomplete) {
+                onAutocomplete(mAutoCompleteResult);
+            }
+        }
+
+        // If the AwesomeBar has a composition string, don't call updateGoButton().
+        // That method resets IME and composition state will be broken.
+        if (!hasCompositionString(s)) {
+            updateGoButton(text);
+        }
+    }
+
+    @Override
+    public void beforeTextChanged(CharSequence s, int start, int count,
+                                  int after) {
+        // do nothing
+    }
+
+    @Override
+    public void onTextChanged(CharSequence s, int start, int before,
+                              int count) {
+        // do nothing
     }
 }

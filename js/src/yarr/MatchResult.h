@@ -1,4 +1,6 @@
-/*
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
+ *
  * Copyright (C) 2012 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -23,8 +25,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef MatchResult_h
-#define MatchResult_h
+#ifndef yarr_MatchResult_h
+#define yarr_MatchResult_h
 
 #include "wtfbridge.h"
 
@@ -73,4 +75,4 @@ struct MatchResult {
     int end;
 };
 
-#endif
+#endif /* yarr_MatchResult_h */

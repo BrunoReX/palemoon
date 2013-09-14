@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
+ * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,11 +9,12 @@
 **
 ** Author: Kipp E.B. Hickman
 */
+#include "jsprf.h"
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include "jsprf.h"
 #include "jsutil.h"
 #include "jspubtd.h"
 #include "jsstr.h"
@@ -360,8 +362,8 @@ static int cvt_s(SprintfState *ss, const char *s, int width, int prec,
     return fill2(ss, s ? s : "(null)", slen, width, flags);
 }
 
-static int cvt_ws(SprintfState *ss, const jschar *ws, int width, int prec,
-                  int flags)
+static int
+cvt_ws(SprintfState *ss, const jschar *ws, int width, int prec, int flags)
 {
     int result;
     /*
@@ -369,12 +371,15 @@ static int cvt_ws(SprintfState *ss, const jschar *ws, int width, int prec,
      * and malloc() is used to allocate the buffer buffer.
      */
     if (ws) {
-        int slen = js_strlen(ws);
-        char *s = DeflateString(NULL, ws, slen);
-        if (!s)
+        size_t wslen = js_strlen(ws);
+        char *latin1 = js_pod_malloc<char>(wslen + 1);
+        if (!latin1)
             return -1; /* JSStuffFunc error indicator. */
-        result = cvt_s(ss, s, width, prec, flags);
-        js_free(s);
+        for (size_t i = 0; i < wslen; ++i)
+            latin1[i] = (char)ws[i];
+        latin1[wslen] = '\0';
+        result = cvt_s(ss, latin1, width, prec, flags);
+        js_free(latin1);
     } else {
         result = cvt_s(ss, NULL, width, prec, flags);
     }

@@ -1,148 +1,27 @@
-/* vim: set shiftwidth=2 tabstop=8 autoindent cindent expandtab: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsDOMTouchEvent.h"
 #include "nsGUIEvent.h"
-#include "nsDOMClassInfoID.h"
-#include "nsIClassInfo.h"
-#include "nsIXPCScriptable.h"
 #include "nsContentUtils.h"
 #include "mozilla/Preferences.h"
 #include "nsPresContext.h"
+#include "mozilla/dom/Touch.h"
 
 using namespace mozilla;
-
-DOMCI_DATA(Touch, nsDOMTouch)
-
-NS_IMPL_CYCLE_COLLECTION_1(nsDOMTouch, mTarget)
-
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsDOMTouch)
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMTouch)
-  NS_INTERFACE_MAP_ENTRY(nsIDOMTouch)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(Touch)
-NS_INTERFACE_MAP_END
-
-NS_IMPL_CYCLE_COLLECTING_ADDREF(nsDOMTouch)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(nsDOMTouch)
-
-NS_IMETHODIMP
-nsDOMTouch::GetIdentifier(int32_t* aIdentifier)
-{
-  *aIdentifier = mIdentifier;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMTouch::GetTarget(nsIDOMEventTarget** aTarget)
-{
-  nsCOMPtr<nsIContent> content = do_QueryInterface(mTarget);
-  if (content && content->ChromeOnlyAccess() &&
-      !nsContentUtils::CanAccessNativeAnon()) {
-    content = content->FindFirstNonChromeOnlyAccessContent();
-    *aTarget = content.forget().get();
-    return NS_OK;
-  }
-  NS_IF_ADDREF(*aTarget = mTarget);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMTouch::GetScreenX(int32_t* aScreenX)
-{
-  *aScreenX = mScreenPoint.x;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMTouch::GetScreenY(int32_t* aScreenY)
-{
-  *aScreenY = mScreenPoint.y;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMTouch::GetClientX(int32_t* aClientX)
-{
-  *aClientX = mClientPoint.x;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMTouch::GetClientY(int32_t* aClientY)
-{
-  *aClientY = mClientPoint.y;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMTouch::GetPageX(int32_t* aPageX)
-{
-  *aPageX = mPagePoint.x;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMTouch::GetPageY(int32_t* aPageY)
-{
-  *aPageY = mPagePoint.y;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMTouch::GetRadiusX(int32_t* aRadiusX)
-{
-  *aRadiusX = mRadius.x;
-  return NS_OK;
-}
-                                             
-NS_IMETHODIMP
-nsDOMTouch::GetRadiusY(int32_t* aRadiusY)
-{
-  *aRadiusY = mRadius.y;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMTouch::GetRotationAngle(float* aRotationAngle)
-{
-  *aRotationAngle = mRotationAngle;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMTouch::GetForce(float* aForce)
-{
-  *aForce = mForce;
-  return NS_OK;
-}
-
-bool
-nsDOMTouch::Equals(nsIDOMTouch* aTouch)
-{
-  float force;
-  float orientation;
-  int32_t radiusX, radiusY;
-  aTouch->GetForce(&force);
-  aTouch->GetRotationAngle(&orientation);
-  aTouch->GetRadiusX(&radiusX);
-  aTouch->GetRadiusY(&radiusY);
-  return mRefPoint != aTouch->mRefPoint ||
-         (mForce != force) ||
-         (mRotationAngle != orientation) ||
-         (mRadius.x != radiusX) || (mRadius.y != radiusY);
-}
+using namespace mozilla::dom;
 
 // TouchList
 nsDOMTouchList::nsDOMTouchList(nsTArray<nsCOMPtr<nsIDOMTouch> > &aTouches)
 {
   mPoints.AppendElements(aTouches);
+  nsJSContext::LikelyShortLivingObjectCreated();
 }
 
 DOMCI_DATA(TouchList, nsDOMTouchList)
-
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsDOMTouchList)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsDOMTouchList)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
@@ -150,12 +29,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsDOMTouchList)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(TouchList)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsDOMTouchList)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPoints)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsDOMTouchList)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mPoints)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_1(nsDOMTouchList, mPoints)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsDOMTouchList)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsDOMTouchList)
@@ -192,17 +66,18 @@ nsDOMTouchList::IdentifiedTouch(int32_t aIdentifier, nsIDOMTouch** aRetVal)
 
 // TouchEvent
 
-nsDOMTouchEvent::nsDOMTouchEvent(nsPresContext* aPresContext,
+nsDOMTouchEvent::nsDOMTouchEvent(mozilla::dom::EventTarget* aOwner,
+                                 nsPresContext* aPresContext,
                                  nsTouchEvent* aEvent)
-  : nsDOMUIEvent(aPresContext, aEvent ? aEvent :
-                                        new nsTouchEvent(false, 0, nullptr))
+  : nsDOMUIEvent(aOwner, aPresContext,
+                 aEvent ? aEvent : new nsTouchEvent(false, 0, nullptr))
 {
   if (aEvent) {
     mEventIsInternal = false;
 
     for (uint32_t i = 0; i < aEvent->touches.Length(); ++i) {
       nsIDOMTouch *touch = aEvent->touches[i];
-      nsDOMTouch *domtouch = static_cast<nsDOMTouch*>(touch);
+      dom::Touch *domtouch = static_cast<dom::Touch*>(touch);
       domtouch->InitializePoints(mPresContext, aEvent);
     }
   } else {
@@ -219,25 +94,13 @@ nsDOMTouchEvent::~nsDOMTouchEvent()
   }
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsDOMTouchEvent)
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsDOMTouchEvent, nsDOMUIEvent)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mTouches)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mTargetTouches)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mChangedTouches)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsDOMTouchEvent, nsDOMUIEvent)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTouches)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTargetTouches)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mChangedTouches)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-DOMCI_DATA(TouchEvent, nsDOMTouchEvent)
+NS_IMPL_CYCLE_COLLECTION_INHERITED_3(nsDOMTouchEvent, nsDOMUIEvent,
+                                     mTouches,
+                                     mTargetTouches,
+                                     mChangedTouches)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(nsDOMTouchEvent)
   NS_INTERFACE_MAP_ENTRY(nsIDOMTouchEvent)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(TouchEvent)
 NS_INTERFACE_MAP_END_INHERITING(nsDOMUIEvent)
 
 NS_IMPL_ADDREF_INHERITED(nsDOMTouchEvent, nsDOMUIEvent)
@@ -267,9 +130,9 @@ nsDOMTouchEvent::InitTouchEvent(const nsAString& aType,
 
   static_cast<nsInputEvent*>(mEvent)->InitBasicModifiers(aCtrlKey, aAltKey,
                                                          aShiftKey, aMetaKey);
-  mTouches = aTouches;
-  mTargetTouches = aTargetTouches;
-  mChangedTouches = aChangedTouches;
+  mTouches = static_cast<nsDOMTouchList*>(aTouches);
+  mTargetTouches = static_cast<nsDOMTouchList*>(aTargetTouches);
+  mChangedTouches = static_cast<nsDOMTouchList*>(aChangedTouches);
   return NS_OK;
 }
 
@@ -277,106 +140,113 @@ NS_IMETHODIMP
 nsDOMTouchEvent::GetTouches(nsIDOMTouchList** aTouches)
 {
   NS_ENSURE_ARG_POINTER(aTouches);
-  NS_ENSURE_STATE(mEvent);
-  nsRefPtr<nsDOMTouchList> t;
+  NS_ADDREF(*aTouches = Touches());
+  return NS_OK;
+}
 
-  if (mTouches) {
-    return CallQueryInterface(mTouches, aTouches);
-  }
-
-  nsTouchEvent* touchEvent = static_cast<nsTouchEvent*>(mEvent);
-  if (mEvent->message == NS_TOUCH_END || mEvent->message == NS_TOUCH_CANCEL) {
-    // for touchend events, remove any changed touches from the touches array
-    nsTArray<nsCOMPtr<nsIDOMTouch> > unchangedTouches;
-    const nsTArray<nsCOMPtr<nsIDOMTouch> >& touches = touchEvent->touches;
-    for (uint32_t i = 0; i < touches.Length(); ++i) {
-      if (!touches[i]->mChanged) {
-        unchangedTouches.AppendElement(touches[i]);
+nsDOMTouchList*
+nsDOMTouchEvent::Touches()
+{
+  if (!mTouches) {
+    nsTouchEvent* touchEvent = static_cast<nsTouchEvent*>(mEvent);
+    if (mEvent->message == NS_TOUCH_END || mEvent->message == NS_TOUCH_CANCEL) {
+      // for touchend events, remove any changed touches from the touches array
+      nsTArray<nsCOMPtr<nsIDOMTouch> > unchangedTouches;
+      const nsTArray<nsCOMPtr<nsIDOMTouch> >& touches = touchEvent->touches;
+      for (uint32_t i = 0; i < touches.Length(); ++i) {
+        if (!touches[i]->mChanged) {
+          unchangedTouches.AppendElement(touches[i]);
+        }
       }
+      mTouches = new nsDOMTouchList(unchangedTouches);
+    } else {
+      mTouches = new nsDOMTouchList(touchEvent->touches);
     }
-    t = new nsDOMTouchList(unchangedTouches);
-  } else {
-    t = new nsDOMTouchList(touchEvent->touches);
   }
-  mTouches = t;
-  return CallQueryInterface(mTouches, aTouches);
+  return mTouches;
 }
 
 NS_IMETHODIMP
 nsDOMTouchEvent::GetTargetTouches(nsIDOMTouchList** aTargetTouches)
 {
   NS_ENSURE_ARG_POINTER(aTargetTouches);
-  NS_ENSURE_STATE(mEvent);
+  NS_ADDREF(*aTargetTouches = TargetTouches());
+  return NS_OK;
+}
 
-  if (mTargetTouches) {
-    return CallQueryInterface(mTargetTouches, aTargetTouches);
-  }
-
-  nsTArray<nsCOMPtr<nsIDOMTouch> > targetTouches;
-  nsTouchEvent* touchEvent = static_cast<nsTouchEvent*>(mEvent);
-  const nsTArray<nsCOMPtr<nsIDOMTouch> >& touches = touchEvent->touches;
-  for (uint32_t i = 0; i < touches.Length(); ++i) {
-    // for touchend/cancel events, don't append to the target list if this is a
-    // touch that is ending
-    if ((mEvent->message != NS_TOUCH_END &&
-         mEvent->message != NS_TOUCH_CANCEL) || !touches[i]->mChanged) {
-      nsIDOMEventTarget* targetPtr = touches[i]->GetTarget();
-      if (targetPtr == mEvent->originalTarget) {
-        targetTouches.AppendElement(touches[i]);
+nsDOMTouchList*
+nsDOMTouchEvent::TargetTouches()
+{
+  if (!mTargetTouches) {
+    nsTArray<nsCOMPtr<nsIDOMTouch> > targetTouches;
+    nsTouchEvent* touchEvent = static_cast<nsTouchEvent*>(mEvent);
+    const nsTArray<nsCOMPtr<nsIDOMTouch> >& touches = touchEvent->touches;
+    for (uint32_t i = 0; i < touches.Length(); ++i) {
+      // for touchend/cancel events, don't append to the target list if this is a
+      // touch that is ending
+      if ((mEvent->message != NS_TOUCH_END &&
+           mEvent->message != NS_TOUCH_CANCEL) || !touches[i]->mChanged) {
+        EventTarget* targetPtr = touches[i]->GetTarget();
+        if (targetPtr == mEvent->originalTarget) {
+          targetTouches.AppendElement(touches[i]);
+        }
       }
     }
+    mTargetTouches = new nsDOMTouchList(targetTouches);
   }
-  mTargetTouches = new nsDOMTouchList(targetTouches);
-  return CallQueryInterface(mTargetTouches, aTargetTouches);
+  return mTargetTouches;
 }
 
 NS_IMETHODIMP
 nsDOMTouchEvent::GetChangedTouches(nsIDOMTouchList** aChangedTouches)
 {
   NS_ENSURE_ARG_POINTER(aChangedTouches);
-  NS_ENSURE_STATE(mEvent);
+  NS_ADDREF(*aChangedTouches = ChangedTouches());
+  return NS_OK;
+}
 
-  if (mChangedTouches) {
-    return CallQueryInterface(mChangedTouches, aChangedTouches);
-  }
-
-  nsTArray<nsCOMPtr<nsIDOMTouch> > changedTouches;
-  nsTouchEvent* touchEvent = static_cast<nsTouchEvent*>(mEvent);
-  const nsTArray<nsCOMPtr<nsIDOMTouch> >& touches = touchEvent->touches;
-  for (uint32_t i = 0; i < touches.Length(); ++i) {
-    if (touches[i]->mChanged) {
-      changedTouches.AppendElement(touches[i]);
+nsDOMTouchList*
+nsDOMTouchEvent::ChangedTouches()
+{
+  if (!mChangedTouches) {
+    nsTArray<nsCOMPtr<nsIDOMTouch> > changedTouches;
+    nsTouchEvent* touchEvent = static_cast<nsTouchEvent*>(mEvent);
+    const nsTArray<nsCOMPtr<nsIDOMTouch> >& touches = touchEvent->touches;
+    for (uint32_t i = 0; i < touches.Length(); ++i) {
+      if (touches[i]->mChanged) {
+        changedTouches.AppendElement(touches[i]);
+      }
     }
+    mChangedTouches = new nsDOMTouchList(changedTouches);
   }
-  mChangedTouches = new nsDOMTouchList(changedTouches);
-  return CallQueryInterface(mChangedTouches, aChangedTouches);
+  return mChangedTouches;
 }
 
 NS_IMETHODIMP
 nsDOMTouchEvent::GetAltKey(bool* aAltKey)
 {
-  *aAltKey = static_cast<nsInputEvent*>(mEvent)->IsAlt();
+  *aAltKey = AltKey();
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsDOMTouchEvent::GetMetaKey(bool* aMetaKey)
 {
-  *aMetaKey = static_cast<nsInputEvent*>(mEvent)->IsMeta();
+  *aMetaKey = MetaKey();
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsDOMTouchEvent::GetCtrlKey(bool* aCtrlKey)
 {
-  *aCtrlKey = static_cast<nsInputEvent*>(mEvent)->IsControl();
+  *aCtrlKey = CtrlKey();
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsDOMTouchEvent::GetShiftKey(bool* aShiftKey)
 {
-  *aShiftKey = static_cast<nsInputEvent*>(mEvent)->IsShift();
+  *aShiftKey = ShiftKey();
   return NS_OK;
 }
 
@@ -418,10 +288,10 @@ nsDOMTouchEvent::PrefEnabled()
 
 nsresult
 NS_NewDOMTouchEvent(nsIDOMEvent** aInstancePtrResult,
+                    mozilla::dom::EventTarget* aOwner,
                     nsPresContext* aPresContext,
                     nsTouchEvent *aEvent)
 {
-  nsDOMTouchEvent* it = new nsDOMTouchEvent(aPresContext, aEvent);
-
+  nsDOMTouchEvent* it = new nsDOMTouchEvent(aOwner, aPresContext, aEvent);
   return CallQueryInterface(it, aInstancePtrResult);
 }

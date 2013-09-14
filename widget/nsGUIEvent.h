@@ -6,6 +6,8 @@
 #ifndef nsGUIEvent_h__
 #define nsGUIEvent_h__
 
+#include "mozilla/MathAlgorithms.h"
+
 #include "nsCOMArray.h"
 #include "nsPoint.h"
 #include "nsRect.h"
@@ -18,7 +20,6 @@
 #include "nsIDOMMouseEvent.h"
 #include "nsIDOMWheelEvent.h"
 #include "nsIDOMDataTransfer.h"
-#include "nsIDOMEventTarget.h"
 #include "nsIDOMTouchEvent.h"
 #include "nsWeakPtr.h"
 #include "nsIWidget.h"
@@ -28,8 +29,7 @@
 #include "nsIVariant.h"
 #include "nsStyleConsts.h"
 #include "nsAutoPtr.h"
-#include <cstdlib> // for std::abs(int/long)
-#include <cmath> // for std::abs(float/double)
+#include "mozilla/dom/EventTarget.h"
 
 namespace mozilla {
 namespace dom {
@@ -87,9 +87,9 @@ enum nsEventStructType {
   NS_MUTATION_EVENT,                 // nsMutationEvent
   NS_FORM_EVENT,                     // nsFormEvent
   NS_FOCUS_EVENT,                    // nsFocusEvent
+  NS_CLIPBOARD_EVENT,                // nsClipboardEvent
 
   // SVG events
-  NS_SVG_EVENT,                      // nsEvent or nsGUIEvent
   NS_SVGZOOM_EVENT,                  // nsGUIEvent
   NS_SMIL_TIME_EVENT,                // nsUIEvent
 
@@ -337,16 +337,21 @@ enum nsEventStructType {
 
 // Simple gesture events
 #define NS_SIMPLE_GESTURE_EVENT_START    3500
-#define NS_SIMPLE_GESTURE_SWIPE          (NS_SIMPLE_GESTURE_EVENT_START)
-#define NS_SIMPLE_GESTURE_MAGNIFY_START  (NS_SIMPLE_GESTURE_EVENT_START+1)
-#define NS_SIMPLE_GESTURE_MAGNIFY_UPDATE (NS_SIMPLE_GESTURE_EVENT_START+2)
-#define NS_SIMPLE_GESTURE_MAGNIFY        (NS_SIMPLE_GESTURE_EVENT_START+3)
-#define NS_SIMPLE_GESTURE_ROTATE_START   (NS_SIMPLE_GESTURE_EVENT_START+4)
-#define NS_SIMPLE_GESTURE_ROTATE_UPDATE  (NS_SIMPLE_GESTURE_EVENT_START+5)
-#define NS_SIMPLE_GESTURE_ROTATE         (NS_SIMPLE_GESTURE_EVENT_START+6)
-#define NS_SIMPLE_GESTURE_TAP            (NS_SIMPLE_GESTURE_EVENT_START+7)
-#define NS_SIMPLE_GESTURE_PRESSTAP       (NS_SIMPLE_GESTURE_EVENT_START+8)
-#define NS_SIMPLE_GESTURE_EDGEUI         (NS_SIMPLE_GESTURE_EVENT_START+9)
+#define NS_SIMPLE_GESTURE_SWIPE_START    (NS_SIMPLE_GESTURE_EVENT_START)
+#define NS_SIMPLE_GESTURE_SWIPE_UPDATE   (NS_SIMPLE_GESTURE_EVENT_START+1)
+#define NS_SIMPLE_GESTURE_SWIPE_END      (NS_SIMPLE_GESTURE_EVENT_START+2)
+#define NS_SIMPLE_GESTURE_SWIPE          (NS_SIMPLE_GESTURE_EVENT_START+3)
+#define NS_SIMPLE_GESTURE_MAGNIFY_START  (NS_SIMPLE_GESTURE_EVENT_START+4)
+#define NS_SIMPLE_GESTURE_MAGNIFY_UPDATE (NS_SIMPLE_GESTURE_EVENT_START+5)
+#define NS_SIMPLE_GESTURE_MAGNIFY        (NS_SIMPLE_GESTURE_EVENT_START+6)
+#define NS_SIMPLE_GESTURE_ROTATE_START   (NS_SIMPLE_GESTURE_EVENT_START+7)
+#define NS_SIMPLE_GESTURE_ROTATE_UPDATE  (NS_SIMPLE_GESTURE_EVENT_START+8)
+#define NS_SIMPLE_GESTURE_ROTATE         (NS_SIMPLE_GESTURE_EVENT_START+9)
+#define NS_SIMPLE_GESTURE_TAP            (NS_SIMPLE_GESTURE_EVENT_START+10)
+#define NS_SIMPLE_GESTURE_PRESSTAP       (NS_SIMPLE_GESTURE_EVENT_START+11)
+#define NS_SIMPLE_GESTURE_EDGE_STARTED   (NS_SIMPLE_GESTURE_EVENT_START+12)
+#define NS_SIMPLE_GESTURE_EDGE_CANCELED  (NS_SIMPLE_GESTURE_EVENT_START+13)
+#define NS_SIMPLE_GESTURE_EDGE_COMPLETED (NS_SIMPLE_GESTURE_EVENT_START+14)
 
 // These are used to send native events to plugins.
 #define NS_PLUGIN_EVENT_START            3600
@@ -395,6 +400,10 @@ enum nsEventStructType {
 #define NS_SMIL_BEGIN                (NS_SMIL_TIME_EVENT_START)
 #define NS_SMIL_END                  (NS_SMIL_TIME_EVENT_START + 1)
 #define NS_SMIL_REPEAT               (NS_SMIL_TIME_EVENT_START + 2)
+
+#define NS_WEBAUDIO_EVENT_START      4350
+#define NS_AUDIO_PROCESS             (NS_WEBAUDIO_EVENT_START)
+#define NS_AUDIO_COMPLETE            (NS_WEBAUDIO_EVENT_START + 1)
 
 // script notification events
 #define NS_NOTIFYSCRIPT_START        4500
@@ -451,6 +460,18 @@ enum nsEventStructType {
 #define NS_NETWORK_EVENT_START       5600
 #define NS_NETWORK_UPLOAD_EVENT      (NS_NETWORK_EVENT_START + 1)
 #define NS_NETWORK_DOWNLOAD_EVENT    (NS_NETWORK_EVENT_START + 2)
+
+#ifdef MOZ_GAMEPAD
+// Gamepad input events
+#define NS_GAMEPAD_START         6000
+#define NS_GAMEPAD_BUTTONDOWN    (NS_GAMEPAD_START)
+#define NS_GAMEPAD_BUTTONUP      (NS_GAMEPAD_START+1)
+#define NS_GAMEPAD_AXISMOVE      (NS_GAMEPAD_START+2)
+#define NS_GAMEPAD_CONNECTED     (NS_GAMEPAD_START+3)
+#define NS_GAMEPAD_DISCONNECTED  (NS_GAMEPAD_START+4)
+// Keep this defined to the same value as the event above
+#define NS_GAMEPAD_END           (NS_GAMEPAD_START+4)
+#endif
 
 /**
  * Return status for event processors, nsEventStatus, is defined in
@@ -661,9 +682,9 @@ public:
   // Additional type info for user defined events
   nsCOMPtr<nsIAtom>     userType;
   // Event targets, needed by DOM Events
-  nsCOMPtr<nsIDOMEventTarget> target;
-  nsCOMPtr<nsIDOMEventTarget> currentTarget;
-  nsCOMPtr<nsIDOMEventTarget> originalTarget;
+  nsCOMPtr<mozilla::dom::EventTarget> target;
+  nsCOMPtr<mozilla::dom::EventTarget> currentTarget;
+  nsCOMPtr<mozilla::dom::EventTarget> originalTarget;
 };
 
 /**
@@ -1047,7 +1068,8 @@ public:
   nsKeyEvent(bool isTrusted, uint32_t msg, nsIWidget *w)
     : nsInputEvent(isTrusted, msg, w, NS_KEY_EVENT),
       keyCode(0), charCode(0),
-      location(nsIDOMKeyEvent::DOM_KEY_LOCATION_STANDARD), isChar(0)
+      location(nsIDOMKeyEvent::DOM_KEY_LOCATION_STANDARD), isChar(0),
+      mKeyNameIndex(mozilla::widget::KEY_NAME_INDEX_Unidentified)
   {
   }
 
@@ -1062,6 +1084,28 @@ public:
   nsTArray<nsAlternativeCharCode> alternativeCharCodes;
   // indicates whether the event signifies a printable character
   bool            isChar;
+  // DOM KeyboardEvent.key
+  mozilla::widget::KeyNameIndex mKeyNameIndex;
+
+  void GetDOMKeyName(nsAString& aKeyName)
+  {
+    GetDOMKeyName(mKeyNameIndex, aKeyName);
+  }
+
+  static void GetDOMKeyName(mozilla::widget::KeyNameIndex aKeyNameIndex,
+                            nsAString& aKeyName)
+  {
+#define NS_DEFINE_KEYNAME(aCPPName, aDOMKeyName) \
+      case mozilla::widget::KEY_NAME_INDEX_##aCPPName: \
+        aKeyName.Assign(NS_LITERAL_STRING(aDOMKeyName)); return;
+    switch (aKeyNameIndex) {
+#include "nsDOMKeyNameList.h"
+      default:
+        aKeyName.Truncate();
+        return;
+    }
+#undef NS_DEFINE_KEYNAME
+  }
 };
 
 /**
@@ -1181,6 +1225,8 @@ struct nsTextRange
   uint32_t mRangeType;
 
   nsTextRangeStyle mRangeStyle;
+
+  uint32_t Length() const { return mEndOffset - mStartOffset; }
 };
 
 typedef nsTextRange* nsTextRangeArray;
@@ -1342,7 +1388,7 @@ public:
         (lineOrPageDeltaX > 0 && lineOrPageDeltaY < 0)) {
       return 0; // We cannot guess the answer in this case.
     }
-    return (std::abs(lineOrPageDeltaX) > std::abs(lineOrPageDeltaY)) ?
+    return (Abs(lineOrPageDeltaX) > Abs(lineOrPageDeltaY)) ?
              lineOrPageDeltaX : lineOrPageDeltaY;
   }
 
@@ -1500,20 +1546,6 @@ public:
   };
 };
 
-class nsFocusEvent : public nsEvent
-{
-public:
-  nsFocusEvent(bool isTrusted, uint32_t msg)
-    : nsEvent(isTrusted, msg, NS_FOCUS_EVENT),
-      fromRaise(false),
-      isRefocus(false)
-  {
-  }
-
-  bool fromRaise;
-  bool isRefocus;
-};
-
 class nsSelectionEvent : public nsGUIEvent
 {
 private:
@@ -1650,18 +1682,50 @@ public:
 };
 
 /**
+ * Clipboard event
+ */
+class nsClipboardEvent : public nsEvent
+{
+public:
+  nsClipboardEvent(bool isTrusted, uint32_t msg)
+    : nsEvent(isTrusted, msg, NS_CLIPBOARD_EVENT)
+  {
+  }
+
+  nsCOMPtr<nsIDOMDataTransfer> clipboardData;
+};
+
+/**
  * DOM UIEvent
  */
-class nsUIEvent : public nsEvent
+class nsUIEvent : public nsGUIEvent
 {
 public:
   nsUIEvent(bool isTrusted, uint32_t msg, int32_t d)
-    : nsEvent(isTrusted, msg, NS_UI_EVENT),
+    : nsGUIEvent(isTrusted, msg, nullptr, NS_UI_EVENT),
       detail(d)
   {
   }
 
   int32_t detail;
+};
+
+class nsFocusEvent : public nsUIEvent
+{
+public:
+  nsFocusEvent(bool isTrusted, uint32_t msg)
+    : nsUIEvent(isTrusted, msg, 0),
+      fromRaise(false),
+      isRefocus(false)
+  {
+    eventStructType = NS_FOCUS_EVENT;
+  }
+
+  /// The possible related target
+  nsCOMPtr<mozilla::dom::EventTarget> relatedTarget;
+
+  bool fromRaise;
+  bool isRefocus;
 };
 
 /**
@@ -1673,48 +1737,56 @@ public:
   nsSimpleGestureEvent(bool isTrusted, uint32_t msg, nsIWidget* w,
                          uint32_t directionArg, double deltaArg)
     : nsMouseEvent_base(isTrusted, msg, w, NS_SIMPLE_GESTURE_EVENT),
-      direction(directionArg), delta(deltaArg), clickCount(0)
+      allowedDirections(0), direction(directionArg), delta(deltaArg),
+      clickCount(0)
   {
   }
 
   nsSimpleGestureEvent(const nsSimpleGestureEvent& other)
     : nsMouseEvent_base(other.mFlags.mIsTrusted,
                         other.message, other.widget, NS_SIMPLE_GESTURE_EVENT),
-      direction(other.direction), delta(other.delta), clickCount(0)
+      allowedDirections(other.allowedDirections), direction(other.direction),
+      delta(other.delta), clickCount(0)
   {
   }
-
-  uint32_t direction;   // See nsIDOMSimpleGestureEvent for values
-  double delta;         // Delta for magnify and rotate events
-  uint32_t clickCount;  // The number of taps for tap events
+  uint32_t allowedDirections; // See nsIDOMSimpleGestureEvent for values
+  uint32_t direction;         // See nsIDOMSimpleGestureEvent for values
+  double delta;               // Delta for magnify and rotate events
+  uint32_t clickCount;        // The number of taps for tap events
 };
 
 class nsTransitionEvent : public nsEvent
 {
 public:
   nsTransitionEvent(bool isTrusted, uint32_t msg,
-                    const nsString &propertyNameArg, float elapsedTimeArg)
+                    const nsAString& propertyNameArg, float elapsedTimeArg,
+                    const nsAString& pseudoElementArg)
     : nsEvent(isTrusted, msg, NS_TRANSITION_EVENT),
-      propertyName(propertyNameArg), elapsedTime(elapsedTimeArg)
+      propertyName(propertyNameArg), elapsedTime(elapsedTimeArg),
+      pseudoElement(pseudoElementArg)
   {
   }
 
   nsString propertyName;
   float elapsedTime;
+  nsString pseudoElement;
 };
 
 class nsAnimationEvent : public nsEvent
 {
 public:
   nsAnimationEvent(bool isTrusted, uint32_t msg,
-                   const nsString &animationNameArg, float elapsedTimeArg)
+                   const nsAString &animationNameArg, float elapsedTimeArg,
+                   const nsAString &pseudoElementArg)
     : nsEvent(isTrusted, msg, NS_ANIMATION_EVENT),
-      animationName(animationNameArg), elapsedTime(elapsedTimeArg)
+      animationName(animationNameArg), elapsedTime(elapsedTimeArg),
+      pseudoElement(pseudoElementArg)
   {
   }
 
   nsString animationName;
   float elapsedTime;
+  nsString pseudoElement;
 };
 
 /**

@@ -7,19 +7,21 @@
 #ifndef mozilla_dom_indexeddb_idbtransaction_h__
 #define mozilla_dom_indexeddb_idbtransaction_h__
 
+#include "mozilla/Attributes.h"
 #include "mozilla/dom/indexedDB/IndexedDatabase.h"
 
 #include "mozIStorageConnection.h"
 #include "mozIStorageStatement.h"
 #include "mozIStorageFunction.h"
 #include "nsIIDBTransaction.h"
-#include "nsIDOMDOMError.h"
+#include "mozilla/dom/DOMError.h"
 #include "nsIRunnable.h"
 
 #include "nsAutoPtr.h"
 #include "nsClassHashtable.h"
 #include "nsHashKeys.h"
 #include "nsInterfaceHashtable.h"
+#include "nsRefPtrHashtable.h"
 
 #include "mozilla/dom/indexedDB/IDBDatabase.h"
 #include "mozilla/dom/indexedDB/IDBWrapperCache.h"
@@ -97,7 +99,7 @@ public:
   }
 
   // nsIDOMEventTarget
-  virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor);
+  virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor) MOZ_OVERRIDE;
 
   void OnNewRequest();
   void OnRequestFinished();
@@ -211,9 +213,18 @@ public:
     return mAbortCode;
   }
 
+#ifdef MOZ_ENABLE_PROFILER_SPS
+  uint64_t
+  GetSerialNumber() const
+  {
+    return mSerialNumber;
+  }
+#endif
+
 private:
   nsresult
-  AbortInternal(nsresult aAbortCode, already_AddRefed<nsIDOMDOMError> aError);
+  AbortInternal(nsresult aAbortCode,
+                already_AddRefed<mozilla::dom::DOMError> aError);
 
   // Should only be called directly through IndexedDBDatabaseChild.
   static already_AddRefed<IDBTransaction>
@@ -230,7 +241,7 @@ private:
 
   nsRefPtr<IDBDatabase> mDatabase;
   nsRefPtr<DatabaseInfo> mDatabaseInfo;
-  nsCOMPtr<nsIDOMDOMError> mError;
+  nsRefPtr<DOMError> mError;
   nsTArray<nsString> mObjectStoreNames;
   ReadyState mReadyState;
   Mode mMode;
@@ -257,6 +268,9 @@ private:
   IndexedDBTransactionParent* mActorParent;
 
   nsresult mAbortCode;
+#ifdef MOZ_ENABLE_PROFILER_SPS
+  uint64_t mSerialNumber;
+#endif
   bool mCreating;
 
 #ifdef DEBUG

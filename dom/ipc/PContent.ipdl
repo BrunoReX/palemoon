@@ -17,14 +17,18 @@ include protocol PIndexedDB;
 include protocol PMemoryReportRequest;
 include protocol PNecko;
 include protocol PSms;
+include protocol PSpeechSynthesis;
 include protocol PStorage;
 include protocol PTestShell;
+include protocol PJavaScript;
 include DOMTypes;
+include InputStreamParams;
 include URIParams;
 
 include "mozilla/chrome/RegistryMessageUtils.h";
 include "mozilla/dom/PermissionMessageUtils.h";
 include "mozilla/dom/TabMessageUtils.h";
+include "mozilla/HalTypes.h";
 include "mozilla/layout/RenderFrameUtils.h";
 include "mozilla/net/NeckoMessageUtils.h";
 include "nsGeoPositionIPCSerialiser.h";
@@ -35,34 +39,19 @@ using PrefTuple;
 using ChromePackage;
 using ResourceMapping;
 using OverrideMapping;
+using base::ChildPrivileges;
 using IPC::Permission;
 using IPC::Principal;
 using mozilla::null_t;
 using mozilla::void_t;
 using mozilla::dom::AudioChannelType;
 using mozilla::dom::NativeThreadId;
+using mozilla::hal::ProcessPriority;
 using mozilla::layout::ScrollingBehavior;
 using gfxIntSize;
 
 namespace mozilla {
 namespace dom {
-
-// Data required to clone an existing DOMStorageImpl in the parent
-struct StorageClone
-{
-    // Existing cross-process storage actor to clone
-    PStorage actor;
-    // Result of calling IsCallerSecure() in the child
-    bool callerSecure;
-};
-
-// When creating a new PStorage protocol, an existing one can be
-// cloned (see nsDOMStorage2::Clone)
-union StorageConstructData
-{
-    null_t;
-    StorageClone;
-};
 
 struct FontListEntry {
     nsString  familyName;
@@ -74,37 +63,52 @@ struct FontListEntry {
     uint8_t   index;
 };
 
-struct DeviceStorageStatParams
+struct DeviceStorageFreeSpaceParams
 {
   nsString type;
-  nsString fullpath;
+  nsString storageName;
+};
+
+struct DeviceStorageUsedSpaceParams
+{
+  nsString type;
+  nsString storageName;
+};
+
+struct DeviceStorageAvailableParams
+{
+  nsString type;
+  nsString storageName;
 };
 
 struct DeviceStorageAddParams
 {
   nsString type;
+  nsString storageName;
+  nsString relpath;
   PBlob blob;
-  nsString name;
-  nsString fullpath;
 };
 
 struct DeviceStorageGetParams
 {
   nsString type;
-  nsString name;
-  nsString fullpath;
+  nsString storageName;
+  nsString rootDir;
+  nsString relpath;
 };
 
 struct DeviceStorageDeleteParams
 {
   nsString type;
-  nsString fullpath;
+  nsString storageName;
+  nsString relpath;
 };
 
 struct DeviceStorageEnumerationParams
 {
   nsString type;
-  nsString fullpath;
+  nsString storageName;
+  nsString rootdir;
   uint64_t since;
 };
 
@@ -114,7 +118,9 @@ union DeviceStorageParams
   DeviceStorageGetParams;
   DeviceStorageDeleteParams;
   DeviceStorageEnumerationParams;
-  DeviceStorageStatParams;
+  DeviceStorageFreeSpaceParams;
+  DeviceStorageUsedSpaceParams;
+  DeviceStorageAvailableParams;
 };
 
 struct SlicedBlobConstructorParams
@@ -130,12 +136,24 @@ struct MysteryBlobConstructorParams
   // Nothing is known about this type of blob.
 };
 
-union BlobConstructorParams
+union ChildBlobConstructorParams
 {
   NormalBlobConstructorParams;
   FileBlobConstructorParams;
   SlicedBlobConstructorParams;
   MysteryBlobConstructorParams;
+};
+
+struct ParentBlobConstructorParams
+{
+  ChildBlobConstructorParams blobParams;
+  OptionalInputStreamParams optionalInputStreamParams;
+};
+
+union BlobConstructorParams
+{
+  ChildBlobConstructorParams;
+  ParentBlobConstructorParams;
 };
 
 // An IPCTabContext which corresponds to a PBrowser opened by a child when it
@@ -232,8 +250,10 @@ rpc protocol PContent
     manages PMemoryReportRequest;
     manages PNecko;
     manages PSms;
+    manages PSpeechSynthesis;
     manages PStorage;
     manages PTestShell;
+    manages PJavaScript;
 
 both:
     // Depending on exactly how the new browser is being created, it might be
@@ -242,7 +262,7 @@ both:
     // The child creates the PBrowser as part of
     // TabChild::BrowserFrameProvideWindow (which happens when the child's
     // content calls window.open()), and the parent creates the PBrowser as part
-    // of ContentParent::CreateTab.
+    // of ContentParent::CreateBrowserOrApp.
     //
     // When the parent constructs a PBrowser, the child trusts the app token it
     // receives from the parent.  In that case, context can be any of the
@@ -263,7 +283,16 @@ both:
 
     async PBlob(BlobConstructorParams params);
 
+    PJavaScript();
+
 child:
+    /**
+     * Update OS process privileges to |privs|.  Can usually only be
+     * performed zero or one times.  The child will abnormally exit if
+     * the privilege update fails.
+     */
+    async SetProcessPrivileges(ChildPrivileges privs);
+
     PMemoryReportRequest();
 
     /**
@@ -272,12 +301,12 @@ child:
     async AudioChannelNotify();
 
     /**
-     * Dump the contents of about:memory to a file in our temp directory.
+     * Do a memory info dump to a file in our temp directory.
      *
      * For documentation on the args, see
-     * MemoryInfoDumper::dumpMemoryReportsToFile.
+     * MemoryInfoDumper::dumpMemoryInfoToTempDir.
      */
-    async DumpMemoryReportsToFile(nsString identifier,
+    async DumpMemoryInfoToTempDir(nsString identifier,
                                   bool minimizeMemoryUsage,
                                   bool dumpChildProcesses);
 
@@ -325,9 +354,15 @@ child:
     // Notify child that last-pb-context-exited notification was observed
     LastPrivateDocShellDestroyed();
 
-    FilePathUpdate(nsString type, nsString filepath, nsCString reasons);
+    FilePathUpdate(nsString storageType, nsString storageName, nsString filepath,
+                   nsCString reasons);
 
-    FileSystemUpdate(nsString fsName, nsString mountPoint, int32_t fsState);
+    FileSystemUpdate(nsString fsName, nsString mountPoint, int32_t fsState,
+                     int32_t mountGeneration);
+
+    NotifyProcessPriorityChanged(ProcessPriority priority);
+    MinimizeMemoryUsage();
+    CancelMinimizeMemoryUsage();
 
 parent:
     /**
@@ -342,14 +377,16 @@ parent:
      * !isForBrowser|, we're probably loading <xul:browser remote>.
      */
     sync GetProcessAttributes()
-        returns (uint64_t id, bool startBackground,
-                 bool isForApp, bool isForBrowser);
+        returns (uint64_t id, bool isForApp, bool isForBrowser);
     sync GetXPCOMProcessAttributes()
         returns (bool isOffline);
 
     PDeviceStorageRequest(DeviceStorageParams params);
 
     sync PCrashReporter(NativeThreadId tid, uint32_t processType);
+
+    sync GetRandomValues(uint32_t length)
+        returns (uint8_t[] randomValues);
 
     PHal();
 
@@ -358,8 +395,10 @@ parent:
     PNecko();
 
     PSms();
-    
-    PStorage(StorageConstructData data);
+
+    PSpeechSynthesis();
+
+    PStorage();
 
     PBluetooth();
 
@@ -385,18 +424,38 @@ parent:
     sync SyncMessage(nsString aMessage, ClonedMessageData aData)
       returns (nsString[] retval);
 
-    ShowAlertNotification(nsString imageUrl, 
-                          nsString title, 
-                          nsString text, 
+    ShowAlertNotification(nsString imageUrl,
+                          nsString title,
+                          nsString text,
                           bool textClickable,
                           nsString cookie,
-                          nsString name);
+                          nsString name,
+                          nsString bidi,
+                          nsString lang);
+
+    CloseAlert(nsString name);
+
+    /**
+     * Tests permission for a provided principal using the permission
+     * manager.
+     *
+     * @param principal
+     *   The principal to test for the permissions.
+     * @param type
+     *   The type of permission to for the principal.
+     *
+     * NOTE: The principal is untrusted in the parent process. Only
+     *       principals that can live in the content process should
+     *       be provided.
+     */
+    sync TestPermissionFromPrincipal(Principal principal, nsCString type)
+        returns (uint32_t permission);
 
     PExternalHelperApp(OptionalURIParams uri, nsCString aMimeContentType,
                        nsCString aContentDisposition, bool aForceSave,
                        int64_t aContentLength, OptionalURIParams aReferrer);
 
-    AddGeolocationListener(Principal principal);
+    AddGeolocationListener(Principal principal, bool highAccuracy);
     RemoveGeolocationListener();
     SetGeolocationHigherAccuracy(bool enable);
 
@@ -433,11 +492,27 @@ parent:
     async FirstIdle();
 
     // Get Muted from the main AudioChannelService.
-    sync AudioChannelGetMuted(AudioChannelType aType, bool aMozHidden)
+    sync AudioChannelGetMuted(AudioChannelType aType, bool aElementHidden,
+                              bool aElementWasHidden)
         returns (bool value);
 
-    async AudioChannelRegisterType(AudioChannelType aType);
-    async AudioChannelUnregisterType(AudioChannelType aType);
+    sync AudioChannelRegisterType(AudioChannelType aType);
+    sync AudioChannelUnregisterType(AudioChannelType aType,
+                                    bool aElementHidden);
+
+    async AudioChannelChangedNotification();
+
+    async FilePathUpdateNotify(nsString aType,
+                               nsString aStorageName,
+                               nsString aFilepath,
+                               nsCString aReason);
+    // get nsIVolumeService to broadcast volume information
+    async BroadcastVolume(nsString volumeName);
+
+    async RecordingDeviceEvents(nsString recordingStatus);
+
+    // Notify the parent that the child has finished handling a system message.
+    async SystemMessageHandled();
 
 both:
      AsyncMessage(nsString aMessage, ClonedMessageData aData);

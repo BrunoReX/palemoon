@@ -18,9 +18,10 @@
 
 class gfxTextRun;
 class gfxFontFamily;
-class mozilla::gfx::DrawTarget;
 
-class THEBES_API gfxPlatformMac : public gfxPlatform {
+namespace mozilla { namespace gfx { class DrawTarget; }}
+
+class gfxPlatformMac : public gfxPlatform {
 public:
     gfxPlatformMac();
     virtual ~gfxPlatformMac();
@@ -34,10 +35,10 @@ public:
     virtual already_AddRefed<gfxASurface>
       CreateOffscreenImageSurface(const gfxIntSize& aSize,
                                   gfxASurface::gfxContentType aContentType);
-    
+
     already_AddRefed<gfxASurface> OptimizeImage(gfxImageSurface *aSurface,
                                                 gfxASurface::gfxImageFormat format);
-    
+
     mozilla::TemporaryRef<mozilla::gfx::ScaledFont>
       GetScaledFontForFont(mozilla::gfx::DrawTarget* aTarget, gfxFont *aFont);
 
@@ -87,10 +88,12 @@ public:
     CreateThebesSurfaceAliasForDrawTarget_hack(mozilla::gfx::DrawTarget *aTarget);
 private:
     virtual qcms_profile* GetPlatformCMSOutputProfile();
-    
+
+    virtual bool SupportsOffMainThreadCompositing();
+
     // read in the pref value for the lower threshold on font anti-aliasing
-    static uint32_t ReadAntiAliasingThreshold();    
-    
+    static uint32_t ReadAntiAliasingThreshold();
+
     int32_t mOSXVersion;
     uint32_t mFontAntiAliasingThreshold;
 };

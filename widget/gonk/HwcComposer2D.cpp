@@ -15,18 +15,17 @@
  */
 
 #include <android/log.h>
-#include <EGL/egl.h>
-#include <hardware/hardware.h>
+#include <string.h>
 
+#include "libdisplay/GonkDisplay.h"
 #include "Framebuffer.h"
 #include "HwcComposer2D.h"
-#include "LayerManagerOGL.h"
-#include "mozilla/layers/PLayers.h"
+#include "mozilla/layers/LayerManagerComposite.h"
+#include "mozilla/layers/PLayerTransaction.h"
 #include "mozilla/layers/ShadowLayerUtilsGralloc.h"
 #include "mozilla/StaticPtr.h"
-#include "nsIScreenManager.h"
-#include "nsMathUtils.h"
-#include "nsServiceManagerUtils.h"
+#include "cutils/properties.h"
+#include "gfxUtils.h"
 
 #define LOG_TAG "HWComposer"
 
@@ -49,6 +48,17 @@ enum {
     HWC_USE_COPYBIT
 };
 
+// HWC layer flags
+enum {
+    // Draw a solid color rectangle
+    // The color should be set on the transform member of the hwc_layer_t struct
+    // The expected format is a 32 bit ABGR with 8 bits per component
+    HWC_COLOR_FILL = 0x8,
+    // Swap the RB pixels of gralloc buffer, like RGBA<->BGRA or RGBX<->BGRX
+    // The flag will be set inside LayerRenderState
+    HWC_FORMAT_RB_SWAP = 0x40
+};
+
 namespace mozilla {
 
 static StaticRefPtr<HwcComposer2D> sInstance;
@@ -56,6 +66,7 @@ static StaticRefPtr<HwcComposer2D> sInstance;
 HwcComposer2D::HwcComposer2D()
     : mMaxLayerCount(0)
     , mList(nullptr)
+    , mHwc(nullptr)
 {
 }
 
@@ -68,16 +79,20 @@ HwcComposer2D::Init(hwc_display_t dpy, hwc_surface_t sur)
 {
     MOZ_ASSERT(!Initialized());
 
-    if (int err = init()) {
+    mHwc = (hwc_composer_device_t*)GetGonkDisplay()->GetHWCDevice();
+    if (!mHwc) {
         LOGE("Failed to initialize hwc");
-        return err;
+        return -1;
     }
 
     nsIntSize screenSize;
 
     mozilla::Framebuffer::GetSize(&screenSize);
-    mScreenWidth  = screenSize.width;
-    mScreenHeight = screenSize.height;
+    mScreenRect  = nsIntRect(nsIntPoint(0, 0), screenSize);
+
+    char propValue[PROPERTY_VALUE_MAX];
+    property_get("ro.display.colorfill", propValue, "0");
+    mColorFill = (atoi(propValue) == 1) ? true : false;
 
     mDpy = dpy;
     mSur = sur;
@@ -118,56 +133,17 @@ HwcComposer2D::ReallocLayerList()
     return true;
 }
 
-int
-HwcComposer2D::GetRotation()
-{
-    int halrotation = 0;
-    uint32_t screenrotation;
-
-    if (!mScreen) {
-        nsCOMPtr<nsIScreenManager> screenMgr =
-            do_GetService("@mozilla.org/gfx/screenmanager;1");
-        if (screenMgr) {
-            screenMgr->GetPrimaryScreen(getter_AddRefs(mScreen));
-        }
-    }
-
-    if (mScreen) {
-        if (NS_SUCCEEDED(mScreen->GetRotation(&screenrotation))) {
-            switch (screenrotation) {
-            case nsIScreen::ROTATION_0_DEG:
-                 halrotation = 0;
-                 break;
-
-            case nsIScreen::ROTATION_90_DEG:
-                 halrotation = HWC_TRANSFORM_ROT_90;
-                 break;
-
-            case nsIScreen::ROTATION_180_DEG:
-                 halrotation = HWC_TRANSFORM_ROT_180;
-                 break;
-
-            case nsIScreen::ROTATION_270_DEG:
-                 halrotation = HWC_TRANSFORM_ROT_270;
-                 break;
-            }
-        }
-    }
-
-    return halrotation;
-}
-
 /**
  * Sets hwc layer rectangles required for hwc composition
  *
  * @param aVisible Input. Layer's unclipped visible rectangle
- *        The origin is the layer's buffer
+ *        The origin is the top-left corner of the layer
  * @param aTransform Input. Layer's transformation matrix
  *        It transforms from layer space to screen space
  * @param aClip Input. A clipping rectangle.
  *        The origin is the top-left corner of the screen
  * @param aBufferRect Input. The layer's buffer bounds
- *        The origin is the buffer itself and hence always (0,0)
+ *        The origin is the top-left corner of the layer
  * @param aSurceCrop Output. Area of the source to consider,
  *        the origin is the top-left corner of the buffer
  * @param aVisibleRegionScreen Output. Visible region in screen space.
@@ -194,22 +170,22 @@ PrepareLayerRects(nsIntRect aVisible, const gfxMatrix& aTransform,
     gfxMatrix inverse(aTransform);
     inverse.Invert();
     gfxRect crop = inverse.TransformBounds(visibleRectScreen);
-    // Map to buffer space
-    crop -= visibleRect.TopLeft();
-    gfxRect bufferRect(aBufferRect);
+
     //clip to buffer size
     crop.IntersectRect(crop, aBufferRect);
-    crop.RoundOut();
+    crop.Round();
 
     if (crop.IsEmpty()) {
         LOGD("Skip layer");
         return false;
     }
 
-
     //propagate buffer clipping back to visible rect
-    visibleRectScreen = aTransform.TransformBounds(crop + visibleRect.TopLeft());
-    visibleRectScreen.RoundOut();
+    visibleRectScreen = aTransform.TransformBounds(crop);
+    visibleRectScreen.Round();
+
+    // Map from layer space to buffer space
+    crop -= aBufferRect.TopLeft();
 
     aSourceCrop->left = crop.x;
     aSourceCrop->top  = crop.y;
@@ -224,15 +200,103 @@ PrepareLayerRects(nsIntRect aVisible, const gfxMatrix& aTransform,
     return true;
 }
 
+/**
+ * Prepares hwc layer visible region required for hwc composition
+ *
+ * @param aVisible Input. Layer's unclipped visible region
+ *        The origin is the top-left corner of the layer
+ * @param aTransform Input. Layer's transformation matrix
+ *        It transforms from layer space to screen space
+ * @param aClip Input. A clipping rectangle.
+ *        The origin is the top-left corner of the screen
+ * @param aBufferRect Input. The layer's buffer bounds
+ *        The origin is the top-left corner of the layer
+ * @param aVisibleRegionScreen Output. Visible region in screen space.
+ *        The origin is the top-left corner of the screen
+ * @return true if the layer should be rendered.
+ *         false if the layer can be skipped
+ */
+static bool
+PrepareVisibleRegion(const nsIntRegion& aVisible,
+                     const gfxMatrix& aTransform,
+                     nsIntRect aClip, nsIntRect aBufferRect,
+                     RectVector* aVisibleRegionScreen) {
+
+    nsIntRegionRectIterator rect(aVisible);
+    bool isVisible = false;
+    while (const nsIntRect* visibleRect = rect.Next()) {
+        hwc_rect_t visibleRectScreen;
+        gfxRect screenRect;
+
+        screenRect.IntersectRect(gfxRect(*visibleRect), aBufferRect);
+        screenRect = aTransform.TransformBounds(screenRect);
+        screenRect.IntersectRect(screenRect, aClip);
+        screenRect.Round();
+        if (screenRect.IsEmpty()) {
+            continue;
+        }
+        visibleRectScreen.left = screenRect.x;
+        visibleRectScreen.top  = screenRect.y;
+        visibleRectScreen.right  = screenRect.XMost();
+        visibleRectScreen.bottom = screenRect.YMost();
+        aVisibleRegionScreen->push_back(visibleRectScreen);
+        isVisible = true;
+    }
+
+    return isVisible;
+}
+
+/**
+ * Calculates the layer's clipping rectangle
+ *
+ * @param aTransform Input. A transformation matrix
+ *        It transforms the clip rect to screen space
+ * @param aLayerClip Input. The layer's internal clipping rectangle.
+ *        This may be NULL which means the layer has no internal clipping
+ *        The origin is the top-left corner of the layer
+ * @param aParentClip Input. The parent layer's rendering clipping rectangle
+ *        The origin is the top-left corner of the screen
+ * @param aRenderClip Output. The layer's rendering clipping rectangle
+ *        The origin is the top-left corner of the screen
+ * @return true if the layer should be rendered.
+ *         false if the layer can be skipped
+ */
+static bool
+CalculateClipRect(const gfxMatrix& aTransform, const nsIntRect* aLayerClip,
+                  nsIntRect aParentClip, nsIntRect* aRenderClip) {
+
+    *aRenderClip = aParentClip;
+
+    if (!aLayerClip) {
+        return true;
+    }
+
+    if (aLayerClip->IsEmpty()) {
+        return false;
+    }
+
+    nsIntRect clip = *aLayerClip;
+
+    gfxRect r(clip);
+    gfxRect trClip = aTransform.TransformBounds(r);
+    trClip.Round();
+    gfxUtils::GfxRectToIntRect(trClip, &clip);
+
+    aRenderClip->IntersectRect(*aRenderClip, clip);
+    return true;
+}
+
 bool
 HwcComposer2D::PrepareLayerList(Layer* aLayer,
-                                const nsIntRect& aClip)
+                                const nsIntRect& aClip,
+                                const gfxMatrix& aParentTransform,
+                                const gfxMatrix& aGLWorldTransform)
 {
     // NB: we fall off this path whenever there are container layers
     // that require intermediate surfaces.  That means all the
     // GetEffective*() coordinates are relative to the framebuffer.
 
-    const bool TESTING = true;
+    bool fillColor = false;
 
     const nsIntRegion& visibleRegion = aLayer->GetEffectiveVisibleRegion();
     if (visibleRegion.IsEmpty()) {
@@ -240,19 +304,25 @@ HwcComposer2D::PrepareLayerList(Layer* aLayer,
     }
 
     float opacity = aLayer->GetEffectiveOpacity();
-    if (opacity <= 0) {
-        LOGD("Layer is fully transparent so skip rendering");
-        return true;
-    }
-    else if (opacity < 1) {
-        LOGD("Layer has planar semitransparency which is unsupported");
+    if (opacity < 1) {
+        LOGD("%s Layer has planar semitransparency which is unsupported", aLayer->Name());
         return false;
     }
 
-    if (!TESTING &&
-        visibleRegion.GetNumRects() > 1) {
-        // FIXME/bug 808339
-        LOGD("Layer has nontrivial visible region");
+    nsIntRect clip;
+    if (!CalculateClipRect(aParentTransform * aGLWorldTransform,
+                           aLayer->GetEffectiveClipRect(),
+                           aClip,
+                           &clip))
+    {
+        LOGD("%s Clip rect is empty. Skip layer", aLayer->Name());
+        return true;
+    }
+
+    gfxMatrix transform;
+    const gfx3DMatrix& transform3D = aLayer->GetEffectiveTransform();
+    if (!transform3D.Is2D(&transform) || !transform.PreservesAxisAlignedRectangles()) {
+        LOGD("Layer has a 3D transform or a non-square angle rotation");
         return false;
     }
 
@@ -265,34 +335,32 @@ HwcComposer2D::PrepareLayerList(Layer* aLayer,
         nsAutoTArray<Layer*, 12> children;
         container->SortChildrenBy3DZOrder(children);
 
-        //FIXME/bug 810334
-        for (PRUint32 i = 0; i < children.Length(); i++) {
-            if (!PrepareLayerList(children[i], aClip)) {
+        for (uint32_t i = 0; i < children.Length(); i++) {
+            if (!PrepareLayerList(children[i], clip, transform, aGLWorldTransform)) {
                 return false;
             }
         }
         return true;
     }
 
-    LayerOGL* layerGL = static_cast<LayerOGL*>(aLayer->ImplData());
-    LayerRenderState state = layerGL->GetRenderState();
+    LayerRenderState state = aLayer->GetRenderState();
+    nsIntSize surfaceSize;
 
-    if (!state.mSurface ||
-        state.mSurface->type() != SurfaceDescriptor::TSurfaceDescriptorGralloc) {
-        LOGD("Layer doesn't have a gralloc buffer");
-        return false;
+    if (state.mSurface.get()) {
+        surfaceSize = state.mSize;
+    } else {
+        if (aLayer->AsColorLayer() && mColorFill) {
+            fillColor = true;
+        } else {
+            LOGD("%s Layer doesn't have a gralloc buffer", aLayer->Name());
+            return false;
+        }
     }
     if (state.BufferRotated()) {
-        LOGD("Layer has a rotated buffer");
+        LOGD("%s Layer has a rotated buffer", aLayer->Name());
         return false;
     }
 
-    gfxMatrix transform;
-    const gfx3DMatrix& transform3D = aLayer->GetEffectiveTransform();
-    if (!transform3D.Is2D(&transform) || !transform.PreservesAxisAlignedRectangles()) {
-        LOGD("Layer has a 3D transform or a non-square angle rotation");
-        return false;
-    }
 
     // OK!  We can compose this layer with hwc.
 
@@ -304,58 +372,93 @@ HwcComposer2D::PrepareLayerList(Layer* aLayer,
         }
     }
 
-    sp<GraphicBuffer> buffer = GrallocBufferActor::GetFrom(*state.mSurface);
-
     nsIntRect visibleRect = visibleRegion.GetBounds();
 
-    nsIntRect bufferRect = nsIntRect(0, 0, int(buffer->getWidth()),
-        int(buffer->getHeight()));
+    nsIntRect bufferRect;
+    if (fillColor) {
+        bufferRect = nsIntRect(visibleRect);
+    } else {
+        if(state.mHasOwnOffset) {
+            bufferRect = nsIntRect(state.mOffset.x, state.mOffset.y,
+                                   state.mSize.width, state.mSize.height);
+        } else {
+            bufferRect = nsIntRect(visibleRect.x, visibleRect.y,
+                                   state.mSize.width, state.mSize.height);
+        }
+    }
 
     hwc_layer_t& hwcLayer = mList->hwLayers[current];
 
-    //FIXME/bug 810334
-    if(!PrepareLayerRects(visibleRect, transform, aClip, bufferRect,
-                          &(hwcLayer.sourceCrop), &(hwcLayer.displayFrame))) {
+    if(!PrepareLayerRects(visibleRect,
+                          transform * aGLWorldTransform,
+                          clip,
+                          bufferRect,
+                          &(hwcLayer.sourceCrop),
+                          &(hwcLayer.displayFrame)))
+    {
         return true;
     }
 
-    buffer_handle_t handle = buffer->getNativeBuffer()->handle;
+    buffer_handle_t handle = fillColor ? nullptr : state.mSurface->getNativeBuffer()->handle;
     hwcLayer.handle = handle;
 
-    hwcLayer.blending = HWC_BLENDING_NONE;
     hwcLayer.flags = 0;
     hwcLayer.hints = 0;
-
-
+    hwcLayer.blending = HWC_BLENDING_PREMULT;
     hwcLayer.compositionType = HWC_USE_COPYBIT;
 
-    if (transform.xx == 0) {
-        if (transform.xy < 0) {
-            hwcLayer.transform = HWC_TRANSFORM_ROT_90;
-            LOGD("Layer buffer rotated 90 degrees");
+    if (!fillColor) {
+        if (state.FormatRBSwapped()) {
+            hwcLayer.flags |= HWC_FORMAT_RB_SWAP;
         }
-        else {
-            hwcLayer.transform = HWC_TRANSFORM_ROT_270;
-            LOGD("Layer buffer rotated 270 degrees");
+
+        gfxMatrix rotation = transform * aGLWorldTransform;
+        // Compute fuzzy equal like PreservesAxisAlignedRectangles()
+        if (fabs(rotation.xx) < 1e-6) {
+            if (rotation.xy < 0) {
+                hwcLayer.transform = HWC_TRANSFORM_ROT_90;
+                LOGD("Layer buffer rotated 90 degrees");
+            } else {
+                hwcLayer.transform = HWC_TRANSFORM_ROT_270;
+                LOGD("Layer buffer rotated 270 degrees");
+            }
+        } else if (rotation.xx < 0) {
+            hwcLayer.transform = HWC_TRANSFORM_ROT_180;
+            LOGD("Layer buffer rotated 180 degrees");
+        } else {
+            hwcLayer.transform = 0;
         }
-    }
-    else if (transform.xx < 0) {
-        hwcLayer.transform = HWC_TRANSFORM_ROT_180;
-        LOGD("Layer buffer rotated 180 degrees");
-    }
-    else {
-        hwcLayer.transform = 0;
-    }
 
-    hwcLayer.transform |= state.YFlipped() ? HWC_TRANSFORM_FLIP_V : 0;
-
-    hwc_region_t region;
-    region.numRects = 1;
-    region.rects = &(hwcLayer.displayFrame);
-    hwcLayer.visibleRegionScreen = region;
+        hwcLayer.transform |= state.YFlipped() ? HWC_TRANSFORM_FLIP_V : 0;
+        hwc_region_t region;
+        if (visibleRegion.GetNumRects() > 1) {
+            mVisibleRegions.push_back(RectVector());
+            RectVector* visibleRects = &(mVisibleRegions.back());
+            if(!PrepareVisibleRegion(visibleRegion,
+                                     transform * aGLWorldTransform,
+                                     clip,
+                                     bufferRect,
+                                     visibleRects)) {
+                return true;
+            }
+            region.numRects = visibleRects->size();
+            region.rects = &((*visibleRects)[0]);
+        } else {
+            region.numRects = 1;
+            region.rects = &(hwcLayer.displayFrame);
+        }
+        hwcLayer.visibleRegionScreen = region;
+    } else {
+        hwcLayer.flags |= HWC_COLOR_FILL;
+        ColorLayer* colorLayer = aLayer->AsColorLayer();
+        if (colorLayer->GetColor().a < 1.0) {
+            LOGD("Color layer has semitransparency which is unsupported");
+            return false;
+        }
+        hwcLayer.transform = colorLayer->GetColor().Packed();
+    }
 
     mList->numHwLayers++;
-
     return true;
 }
 
@@ -363,24 +466,25 @@ bool
 HwcComposer2D::TryRender(Layer* aRoot,
                          const gfxMatrix& aGLWorldTransform)
 {
+    if (!aGLWorldTransform.PreservesAxisAlignedRectangles()) {
+        LOGD("Render aborted. World transform has non-square angle rotation");
+        return false;
+    }
+
     MOZ_ASSERT(Initialized());
     if (mList) {
         mList->numHwLayers = 0;
     }
-    // XXX use GL world transform instead of GetRotation()
-    int rotation = GetRotation();
 
-    int fbHeight, fbWidth;
+    // XXX: The clear() below means all rect vectors will be have to be
+    // reallocated. We may want to avoid this if possible
+    mVisibleRegions.clear();
 
-    if (rotation == 0 || rotation == HWC_TRANSFORM_ROT_180) {
-        fbWidth = mScreenWidth;
-        fbHeight = mScreenHeight;
-    } else {
-        fbWidth = mScreenHeight;
-        fbHeight = mScreenWidth;
-    }
-
-    if (!PrepareLayerList(aRoot, nsIntRect(0, 0, fbWidth, fbHeight))) {
+    if (!PrepareLayerList(aRoot,
+                          mScreenRect,
+                          gfxMatrix(),
+                          aGLWorldTransform))
+    {
         LOGD("Render aborted. Nothing was drawn to the screen");
         return false;
     }

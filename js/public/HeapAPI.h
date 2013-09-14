@@ -1,36 +1,19 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- */
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef js_heap_api_h___
-#define js_heap_api_h___
+#ifndef js_HeapAPI_h
+#define js_HeapAPI_h
 
-#include "jsfriendapi.h"
+#include "jspubtd.h"
 
 /* These values are private to the JS engine. */
 namespace js {
 namespace gc {
 
-/*
- * Page size must be static to support our arena pointer optimizations, so we
- * are forced to support each platform with non-4096 pages as a special case.
- * Note: The freelist supports a maximum arena shift of 15.
- * Note: Do not use JS_CPU_SPARC here, this header is used outside JS.
- */
-#if (defined(SOLARIS) || defined(__FreeBSD__)) && \
-    (defined(__sparc) || defined(__sparcv9) || defined(__ia64))
-const size_t PageShift = 13;
-const size_t ArenaShift = PageShift;
-#elif defined(__powerpc64__)
-const size_t PageShift = 16;
 const size_t ArenaShift = 12;
-#else
-const size_t PageShift = 12;
-const size_t ArenaShift = PageShift;
-#endif
-const size_t PageSize = size_t(1) << PageShift;
 const size_t ArenaSize = size_t(1) << ArenaShift;
 const size_t ArenaMask = ArenaSize - 1;
 
@@ -43,8 +26,9 @@ const size_t CellSize = size_t(1) << CellShift;
 const size_t CellMask = CellSize - 1;
 
 /* These are magic constants derived from actual offsets in gc/Heap.h. */
-const size_t ChunkMarkBitmapOffset = 1032376;
+const size_t ChunkMarkBitmapOffset = 1032368;
 const size_t ChunkMarkBitmapBits = 129024;
+const size_t ChunkRuntimeOffset = ChunkSize - sizeof(void*);
 
 /*
  * Live objects are marked black. How many other additional colors are available
@@ -58,18 +42,22 @@ static const uint32_t GRAY = 1;
 } /* namespace js */
 
 namespace JS {
+struct Zone;
+} /* namespace JS */
+
+namespace JS {
 namespace shadow {
 
 struct ArenaHeader
 {
-    JSCompartment *compartment;
+    js::Zone *zone;
 };
 
-struct Compartment
+struct Zone
 {
     bool needsBarrier_;
 
-    Compartment() : needsBarrier_(false) {}
+    Zone() : needsBarrier_(false) {}
 };
 
 } /* namespace shadow */
@@ -85,6 +73,15 @@ GetGCThingMarkBitmap(const void *thing)
     addr &= ~js::gc::ChunkMask;
     addr |= js::gc::ChunkMarkBitmapOffset;
     return reinterpret_cast<uintptr_t *>(addr);
+}
+
+static JS_ALWAYS_INLINE JS::shadow::Runtime *
+GetGCThingRuntime(const void *thing)
+{
+    uintptr_t addr = uintptr_t(thing);
+    addr &= ~js::gc::ChunkMask;
+    addr |= js::gc::ChunkRuntimeOffset;
+    return *reinterpret_cast<JS::shadow::Runtime **>(addr);
 }
 
 static JS_ALWAYS_INLINE void
@@ -108,21 +105,22 @@ GetGCThingArena(void *thing)
 }
 
 } /* namespace gc */
+
 } /* namespace js */
 
 namespace JS {
 
-static JS_ALWAYS_INLINE JSCompartment *
-GetGCThingCompartment(void *thing)
+static JS_ALWAYS_INLINE Zone *
+GetGCThingZone(void *thing)
 {
     JS_ASSERT(thing);
-    return js::gc::GetGCThingArena(thing)->compartment;
+    return js::gc::GetGCThingArena(thing)->zone;
 }
 
-static JS_ALWAYS_INLINE JSCompartment *
-GetObjectCompartment(JSObject *obj)
+static JS_ALWAYS_INLINE Zone *
+GetObjectZone(JSObject *obj)
 {
-    return GetGCThingCompartment(obj);
+    return GetGCThingZone(obj);
 }
 
 static JS_ALWAYS_INLINE bool
@@ -134,36 +132,14 @@ GCThingIsMarkedGray(void *thing)
 }
 
 static JS_ALWAYS_INLINE bool
-IsIncrementalBarrierNeededOnGCThing(void *thing, JSGCTraceKind kind)
+IsIncrementalBarrierNeededOnGCThing(shadow::Runtime *rt, void *thing, JSGCTraceKind kind)
 {
-    JSCompartment *comp = GetGCThingCompartment(thing);
-    return reinterpret_cast<shadow::Compartment *>(comp)->needsBarrier_;
-}
-
-/*
- * This should be called when an object that is marked gray is exposed to the JS
- * engine (by handing it to running JS code or writing it into live JS
- * data). During incremental GC, since the gray bits haven't been computed yet,
- * we conservatively mark the object black.
- */
-static JS_ALWAYS_INLINE void
-ExposeGCThingToActiveJS(void *thing, JSGCTraceKind kind)
-{
-    JS_ASSERT(kind != JSTRACE_SHAPE);
-
-    if (GCThingIsMarkedGray(thing))
-        js::UnmarkGrayGCThingRecursively(thing, kind);
-    else if (IsIncrementalBarrierNeededOnGCThing(thing, kind))
-        js::IncrementalReferenceBarrier(thing);
-}
-
-static JS_ALWAYS_INLINE void
-ExposeValueToActiveJS(const Value &v)
-{
-    if (v.isMarkable())
-        ExposeGCThingToActiveJS(v.toGCThing(), v.gcKind());
+    if (!rt->needsBarrier_)
+        return false;
+    js::Zone *zone = GetGCThingZone(thing);
+    return reinterpret_cast<shadow::Zone *>(zone)->needsBarrier_;
 }
 
 } /* namespace JS */
 
-#endif /* js_heap_api_h___ */
+#endif /* js_HeapAPI_h */

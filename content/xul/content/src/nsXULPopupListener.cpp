@@ -24,7 +24,6 @@
 #include "nsIDOMWindow.h"
 #include "nsIDOMXULDocument.h"
 #include "nsIDocument.h"
-#include "nsIDOMEventTarget.h"
 #include "nsServiceManagerUtils.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptSecurityManager.h"
@@ -33,6 +32,7 @@
 #include "nsHTMLReflowState.h"
 #include "nsIObjectLoadingContent.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/dom/EventTarget.h"
 #include "mozilla/dom/FragmentOrElement.h"
 
 // for event firing in context menus
@@ -43,8 +43,10 @@
 #include "nsViewManager.h"
 #include "nsError.h"
 #include "nsMenuFrame.h"
+#include "nsDOMEvent.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 // on win32 and os/2, context menus come up on mouse up. On other platforms,
 // they appear on mouse down. Certain bits of code care about this difference.
@@ -113,8 +115,7 @@ nsXULPopupListener::HandleEvent(nsIDOMEvent* aEvent)
   }
 
   // Get the node that was clicked on.
-  nsCOMPtr<nsIDOMEventTarget> target;
-  mouseEvent->GetTarget(getter_AddRefs(target));
+  EventTarget* target = mouseEvent->InternalDOMEvent()->GetTarget();
   nsCOMPtr<nsIDOMNode> targetNode = do_QueryInterface(target);
 
   if (!targetNode && mIsContext) {
@@ -136,7 +137,7 @@ nsXULPopupListener::HandleEvent(nsIDOMEvent* aEvent)
   }
 
   bool preventDefault;
-  mouseEvent->GetPreventDefault(&preventDefault);
+  mouseEvent->GetDefaultPrevented(&preventDefault);
   if (preventDefault && targetNode && mIsContext) {
     // Someone called preventDefault on a context menu.
     // Let's make sure they are allowed to do so.
@@ -200,10 +201,9 @@ nsXULPopupListener::HandleEvent(nsIDOMEvent* aEvent)
       return NS_OK;
   }
 
-  // Open the popup and cancel the default handling of the event.
+  // Open the popup. LaunchPopup will call StopPropagation and PreventDefault
+  // in the right situations.
   LaunchPopup(aEvent, targetContent);
-  aEvent->StopPropagation();
-  aEvent->PreventDefault();
 
   return NS_OK;
 }
@@ -232,7 +232,7 @@ nsXULPopupListener::FireFocusOnTargetContent(nsIDOMNode* aTargetNode)
     nsIFrame* targetFrame = content->GetPrimaryFrame();
     if (!targetFrame) return NS_ERROR_FAILURE;
 
-    const nsStyleUserInterface* ui = targetFrame->GetStyleUserInterface();
+    const nsStyleUserInterface* ui = targetFrame->StyleUserInterface();
     bool suppressBlur = (ui->mUserFocus == NS_STYLE_USER_FOCUS_IGNORE);
 
     nsCOMPtr<nsIDOMElement> element;
@@ -299,8 +299,8 @@ GetImmediateChild(nsIContent* aContent, nsIAtom *aTag)
        child;
        child = child->GetNextSibling()) {
     if (child->Tag() == aTag) {
-      NS_ADDREF(child);
-      return child;
+      nsCOMPtr<nsIContent> ret = child;
+      return ret.forget();
     }
   }
 
@@ -327,20 +327,23 @@ nsXULPopupListener::LaunchPopup(nsIDOMEvent* aEvent, nsIContent* aTargetContent)
 {
   nsresult rv = NS_OK;
 
-  nsIAtom* type = mIsContext ? nsGkAtoms::context : nsGkAtoms::popup;
-
   nsAutoString identifier;
-  mElement->GetAttr(kNameSpaceID_None, type, identifier);
+  nsIAtom* type = mIsContext ? nsGkAtoms::context : nsGkAtoms::popup;
+  bool hasPopupAttr = mElement->GetAttr(kNameSpaceID_None, type, identifier);
 
   if (identifier.IsEmpty()) {
-    if (type == nsGkAtoms::popup) {
-      mElement->GetAttr(kNameSpaceID_None, nsGkAtoms::menu, identifier);
-    } else {
-      mElement->GetAttr(kNameSpaceID_None, nsGkAtoms::contextmenu, identifier);
-    }
-    if (identifier.IsEmpty())
-      return rv;
+    hasPopupAttr = mElement->GetAttr(kNameSpaceID_None,
+                          mIsContext ? nsGkAtoms::contextmenu : nsGkAtoms::menu,
+                          identifier) || hasPopupAttr;
   }
+
+  if (hasPopupAttr) {
+    aEvent->StopPropagation();
+    aEvent->PreventDefault();
+  }
+
+  if (identifier.IsEmpty())
+    return rv;
 
   // Try to find the popup content and the document.
   nsCOMPtr<nsIDocument> document = mElement->GetDocument();

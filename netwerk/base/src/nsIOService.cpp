@@ -192,6 +192,8 @@ nsIOService::Init()
         prefBranch->AddObserver(PORT_PREF_PREFIX, this, true);
         prefBranch->AddObserver(AUTODIAL_PREF, this, true);
         prefBranch->AddObserver(MANAGE_OFFLINE_STATUS_PREF, this, true);
+        prefBranch->AddObserver(NECKO_BUFFER_CACHE_COUNT_PREF, this, true);
+        prefBranch->AddObserver(NECKO_BUFFER_CACHE_SIZE_PREF, this, true);
         PrefsChanged(prefBranch);
     }
     
@@ -823,7 +825,8 @@ nsIOService::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
 
     if (!pref || strcmp(pref, MANAGE_OFFLINE_STATUS_PREF) == 0) {
         bool manage;
-        if (NS_SUCCEEDED(prefs->GetBoolPref(MANAGE_OFFLINE_STATUS_PREF,
+        if (mNetworkLinkServiceInitialized &&
+            NS_SUCCEEDED(prefs->GetBoolPref(MANAGE_OFFLINE_STATUS_PREF,
                                             &manage)))
             SetManageOfflineStatus(manage);
     }
@@ -933,6 +936,10 @@ nsIOService::Observe(nsISupports *subject,
             // Set up the initilization flag regardless the actuall result.
             // If we fail here, we will fail always on.
             mNetworkLinkServiceInitialized = true;
+            // And now reflect the preference setting
+            nsCOMPtr<nsIPrefBranch> prefBranch;
+            GetPrefBranch(getter_AddRefs(prefBranch));
+            PrefsChanged(prefBranch, MANAGE_OFFLINE_STATUS_PREF);
         }
     }
     else if (!strcmp(topic, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) {

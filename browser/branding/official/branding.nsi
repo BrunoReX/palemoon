@@ -11,7 +11,7 @@
 !define BrandFullNameInternal "Pale Moon"
 !define CompanyName           "Moonchild Productions"
 !define URLInfoAbout          "http://www.palemoon.org/"
-!define URLUpdateInfo         "http://www.palemoon.org/"
+!define URLUpdateInfo         "http://www.palemoon.org/releasenotes-ng.shtml"
 
 ; The OFFICIAL define is a workaround to support different urls for Release and
 ; Beta since they share the same branding when building with other branches that
@@ -37,13 +37,13 @@
 !define INTRO_BLURB_RTL_TOP_DU "12u"
 
 # UI Colors that can be customized for each channel
-!define FOOTER_CONTROL_TEXT_COLOR_NORMAL 0x000000
-!define FOOTER_CONTROL_TEXT_COLOR_FADED 0x666666
+!define FOOTER_CONTROL_TEXT_COLOR_NORMAL 0x000033
+!define FOOTER_CONTROL_TEXT_COLOR_FADED 0x666699
 !define FOOTER_BKGRD_COLOR 0xFFFFFF
-!define INTRO_BLURB_TEXT_COLOR 0x666666
+!define INTRO_BLURB_TEXT_COLOR 0x666699
 !define OPTIONS_TEXT_COLOR_NORMAL 0x000000
-!define OPTIONS_TEXT_COLOR_FADED 0x666666
+!define OPTIONS_TEXT_COLOR_FADED 0x666699
 !define OPTIONS_BKGRD_COLOR 0xF0F0F0
-!define INSTALL_BLURB_TEXT_COLOR 0x666666
-!define INSTALL_PROGRESS_TEXT_COLOR_NORMAL 0x666666
-!define INSTALL_PROGRESS_TEXT_COLOR_FADED 0x999999
+!define INSTALL_BLURB_TEXT_COLOR 0x666699
+!define INSTALL_PROGRESS_TEXT_COLOR_NORMAL 0x666699
+!define INSTALL_PROGRESS_TEXT_COLOR_FADED 0x9999C0

@@ -6,10 +6,8 @@
 #ifndef mozilla_dom_SVGAnimationElement_h
 #define mozilla_dom_SVGAnimationElement_h
 
-#include "DOMSVGTests.h"
-#include "nsIDOMElementTimeControl.h"
-#include "nsIDOMSVGAnimationElement.h"
-#include "nsISMILAnimationElement.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/dom/SVGTests.h"
 #include "nsReferencedElement.h"
 #include "nsSMILTimedElement.h"
 #include "nsSVGElement.h"
@@ -19,10 +17,14 @@ typedef nsSVGElement SVGAnimationElementBase;
 namespace mozilla {
 namespace dom {
 
+enum nsSMILTargetAttrType {
+  eSMILTargetAttrType_auto,
+  eSMILTargetAttrType_CSS,
+  eSMILTargetAttrType_XML
+};
+
 class SVGAnimationElement : public SVGAnimationElementBase,
-                            public DOMSVGTests,
-                            public nsISMILAnimationElement,
-                            public nsIDOMElementTimeControl
+                            public SVGTests
 {
 protected:
   SVGAnimationElement(already_AddRefed<nsINodeInfo> aNodeInfo);
@@ -34,41 +36,39 @@ public:
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(SVGAnimationElement,
                                            SVGAnimationElementBase)
-  NS_DECL_NSIDOMSVGANIMATIONELEMENT
-  NS_DECL_NSIDOMELEMENTTIMECONTROL
+
+  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const MOZ_OVERRIDE = 0;
 
   // nsIContent specializations
   virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                               nsIContent* aBindingParent,
-                              bool aCompileEventHandlers);
-  virtual void UnbindFromTree(bool aDeep, bool aNullParent);
+                              bool aCompileEventHandlers) MOZ_OVERRIDE;
+  virtual void UnbindFromTree(bool aDeep, bool aNullParent) MOZ_OVERRIDE;
 
   virtual nsresult UnsetAttr(int32_t aNamespaceID, nsIAtom* aAttribute,
-                             bool aNotify);
+                             bool aNotify) MOZ_OVERRIDE;
 
-  virtual bool IsNodeOfType(uint32_t aFlags) const;
+  virtual bool IsNodeOfType(uint32_t aFlags) const MOZ_OVERRIDE;
 
   // Element specializations
   virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
-                                nsAttrValue& aResult);
+                                nsAttrValue& aResult) MOZ_OVERRIDE;
   virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsIAtom* aName,
-                                const nsAttrValue* aValue, bool aNotify);
+                                const nsAttrValue* aValue, bool aNotify) MOZ_OVERRIDE;
 
-  // nsISMILAnimationElement interface
-  virtual const Element& AsElement() const;
-  virtual Element& AsElement();
-  virtual bool PassesConditionalProcessingTests();
-  virtual const nsAttrValue* GetAnimAttr(nsIAtom* aName) const;
-  virtual bool GetAnimAttr(nsIAtom* aAttName, nsAString& aResult) const;
-  virtual bool HasAnimAttr(nsIAtom* aAttName) const;
-  virtual Element* GetTargetElementContent();
+  bool PassesConditionalProcessingTests();
+  const nsAttrValue* GetAnimAttr(nsIAtom* aName) const;
+  bool GetAnimAttr(nsIAtom* aAttName, nsAString& aResult) const;
+  bool HasAnimAttr(nsIAtom* aAttName) const;
+  Element* GetTargetElementContent();
   virtual bool GetTargetAttributeName(int32_t* aNamespaceID,
-                                        nsIAtom** aLocalName) const;
+                                      nsIAtom** aLocalName) const;
   virtual nsSMILTargetAttrType GetTargetAttributeType() const;
-  virtual nsSMILTimedElement& TimedElement();
-  virtual nsSMILTimeContainer* GetTimeContainer();
+  nsSMILTimedElement& TimedElement();
+  nsSMILTimeContainer* GetTimeContainer();
+  virtual nsSMILAnimationFunction& AnimationFunction() = 0;
 
   virtual bool IsEventAttributeName(nsIAtom* aName) MOZ_OVERRIDE;
 
@@ -100,14 +100,14 @@ public:
     // We need to be notified when target changes, in order to request a
     // sample (which will clear animation effects from old target and apply
     // them to the new target) and update any event registrations.
-    virtual void ElementChanged(Element* aFrom, Element* aTo) {
+    virtual void ElementChanged(Element* aFrom, Element* aTo) MOZ_OVERRIDE {
       nsReferencedElement::ElementChanged(aFrom, aTo);
       mAnimationElement->AnimationTargetChanged();
     }
 
     // We need to override IsPersistent to get persistent tracking (beyond the
     // first time the target changes)
-    virtual bool IsPersistent() { return true; }
+    virtual bool IsPersistent() MOZ_OVERRIDE { return true; }
   private:
     SVGAnimationElement* const mAnimationElement;
   };

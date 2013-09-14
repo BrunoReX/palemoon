@@ -1,6 +1,6 @@
-/* -*- Mode: C++; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil -*- */
-/* vim: set ts=4 sw=4 et tw=99: */
-/* This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
+ * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -29,7 +29,6 @@ const size_t WORKER_THREAD_STACK_SIZE = 1*1024*1024;
 class js::ThreadPoolWorker : public Monitor
 {
     const size_t workerId_;
-    ThreadPool *const threadPool_;
 
     // Current point in the worker's lifecycle.
     //
@@ -48,7 +47,7 @@ class js::ThreadPoolWorker : public Monitor
     void run();
 
   public:
-    ThreadPoolWorker(size_t workerId, ThreadPool *tp);
+    ThreadPoolWorker(size_t workerId);
     ~ThreadPoolWorker();
 
     bool init();
@@ -66,9 +65,8 @@ class js::ThreadPoolWorker : public Monitor
     void terminate();
 };
 
-ThreadPoolWorker::ThreadPoolWorker(size_t workerId, ThreadPool *tp)
+ThreadPoolWorker::ThreadPoolWorker(size_t workerId)
   : workerId_(workerId),
-    threadPool_(tp),
     state_(CREATED),
     worklist_()
 { }
@@ -120,8 +118,9 @@ ThreadPoolWorker::run()
 {
     // This is hokey in the extreme.  To compute the stack limit,
     // subtract the size of the stack from the address of a local
-    // variable and give a 2k buffer.  Is there a better way?
-    uintptr_t stackLimitOffset = WORKER_THREAD_STACK_SIZE - 2*1024;
+    // variable and give a 10k buffer.  Is there a better way?
+    // (Note: 2k proved to be fine on Mac, but too little on Linux)
+    uintptr_t stackLimitOffset = WORKER_THREAD_STACK_SIZE - 10*1024;
     uintptr_t stackLimit = (((uintptr_t)&stackLimitOffset) +
                              stackLimitOffset * JS_STACK_GROWTH_DIRECTION);
 
@@ -208,8 +207,8 @@ ThreadPool::init()
         numWorkers_ = 0;
 
 # ifdef DEBUG
-    if (char *pathreads = getenv("PATHREADS"))
-        numWorkers_ = strtol(pathreads, NULL, 10);
+    if (char *jsthreads = getenv("JS_THREADPOOL_SIZE"))
+        numWorkers_ = strtol(jsthreads, NULL, 10);
 # endif
 #endif
 
@@ -243,7 +242,7 @@ ThreadPool::lazyStartWorkers(JSContext *cx)
     // but workers_.length() is the number of *successfully
     // initialized* workers.
     for (size_t workerId = 0; workerId < numWorkers(); workerId++) {
-        ThreadPoolWorker *worker = js_new<ThreadPoolWorker>(workerId, this);
+        ThreadPoolWorker *worker = js_new<ThreadPoolWorker>(workerId);
         if (!worker) {
             terminateWorkersAndReportOOM(cx);
             return false;

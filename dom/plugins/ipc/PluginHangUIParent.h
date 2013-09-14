@@ -12,6 +12,7 @@
 #include "base/process.h"
 #include "base/process_util.h"
 
+#include "mozilla/Mutex.h"
 #include "mozilla/plugins/PluginMessageUtils.h"
 
 #include "MiniShmParent.h"
@@ -34,7 +35,9 @@ class PluginModuleParent;
 class PluginHangUIParent : public MiniShmObserver
 {
 public:
-  PluginHangUIParent(PluginModuleParent* aModule);
+  PluginHangUIParent(PluginModuleParent* aModule,
+                     const int32_t aHangUITimeoutPref,
+                     const int32_t aChildTimeoutPref);
   virtual ~PluginHangUIParent();
 
   /**
@@ -124,13 +127,19 @@ private:
   bool
   RecvUserResponse(const unsigned int& aResponse);
 
+  bool
+  UnwatchHangUIChildProcess(bool aWait);
+
   static
   VOID CALLBACK SOnHangUIProcessExit(PVOID aContext, BOOLEAN aIsTimer);
 
 private:
+  Mutex mMutex;
   PluginModuleParent* mModule;
+  const uint32_t mTimeoutPrefMs;
+  const uint32_t mIPCTimeoutMs;
   MessageLoop* mMainThreadMessageLoop;
-  volatile bool mIsShowing;
+  bool mIsShowing;
   unsigned int mLastUserResponse;
   base::ProcessHandle mHangUIProcessHandle;
   NativeWindowHandle mMainWindowHandle;
@@ -139,8 +148,6 @@ private:
   DWORD mShowTicks;
   DWORD mResponseTicks;
   MiniShmParent mMiniShm;
-
-  static const DWORD kTimeout;
 
   DISALLOW_COPY_AND_ASSIGN(PluginHangUIParent);
 };

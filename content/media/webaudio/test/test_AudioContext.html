@@ -11,19 +11,10 @@
 
 SimpleTest.waitForExplicitFinish();
 addLoadEvent(function() {
-  ok(!window.mozAudioContext, "mozAudioContext should be hidden behind a pref");
-  var accessThrows = false;
-  try {
-    new mozAudioContext();
-  } catch (e) {
-    accessThrows = true;
-  }
-  ok(accessThrows, "mozAudioContext should be hidden behind a pref");
-  SpecialPowers.setBoolPref("media.webaudio.enabled", true);
-  var ac = new mozAudioContext();
-  ok(ac, "Create a mozAudioContext object");
-  is(ac.sampleRate, 44100, "Correct sample rate");
-  SpecialPowers.clearUserPref("media.webaudio.enabled");
+  var ac = new AudioContext();
+  ok(ac, "Create a AudioContext object");
+  is(ac.sampleRate, 48000, "Correct sample rate");
+  ok(ac instanceof EventTarget, "AudioContexts must be EventTargets");
   SimpleTest.finish();
 });
 

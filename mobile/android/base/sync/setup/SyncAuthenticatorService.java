@@ -7,9 +7,8 @@ package org.mozilla.gecko.sync.setup;
 import java.io.UnsupportedEncodingException;
 import java.security.NoSuchAlgorithmException;
 
-import org.mozilla.gecko.sync.GlobalConstants;
+import org.mozilla.gecko.background.common.log.Logger;
 import org.mozilla.gecko.sync.SyncConstants;
-import org.mozilla.gecko.sync.Logger;
 import org.mozilla.gecko.sync.Utils;
 import org.mozilla.gecko.sync.setup.activities.SetupSyncActivity;
 
@@ -117,8 +116,10 @@ public class SyncAuthenticatorService extends Service {
       result.putString(Constants.OPTION_USERNAME, username);
     } catch (NoSuchAlgorithmException e) {
       // Do nothing. Calling code must check for missing value.
+      Logger.debug(LOG_TAG, "Exception in account lookup: " + e);
     } catch (UnsupportedEncodingException e) {
       // Do nothing. Calling code must check for missing value.
+      Logger.debug(LOG_TAG, "Exception in account lookup: " + e);
     }
 
     // Sync key.
@@ -248,7 +249,7 @@ public class SyncAuthenticatorService extends Service {
       final Intent intent = SyncAccounts.makeSyncAccountDeletedIntent(mContext, AccountManager.get(mContext), account);
       Logger.info(LOG_TAG, "Account named " + account.name + " being removed; " +
           "broadcasting secure intent " + intent.getAction() + ".");
-      mContext.sendBroadcast(intent, GlobalConstants.PER_ACCOUNT_TYPE_PERMISSION);
+      mContext.sendBroadcast(intent, SyncConstants.PER_ACCOUNT_TYPE_PERMISSION);
 
       return result;
     }

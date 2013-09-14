@@ -3,17 +3,24 @@
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 <?xml-stylesheet href="chrome://browser/skin/" type="text/css"?>
-<?xml-stylesheet href="chrome://browser/content/debugger.css" type="text/css"?>
+<?xml-stylesheet href="chrome://browser/content/devtools/widgets.css" type="text/css"?>
+<?xml-stylesheet href="chrome://browser/content/devtools/debugger.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/devtools/common.css" type="text/css"?>
+<?xml-stylesheet href="chrome://browser/skin/devtools/widgets.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/devtools/debugger.css" type="text/css"?>
 <!DOCTYPE window [
-<!ENTITY % debuggerDTD SYSTEM "chrome://browser/locale/devtools/debugger.dtd">
+  <!ENTITY % debuggerDTD SYSTEM "chrome://browser/locale/devtools/debugger.dtd">
   %debuggerDTD;
 ]>
 <?xul-overlay href="chrome://global/content/editMenuOverlay.xul"?>
-<?xul-overlay href="chrome://browser/content/source-editor-overlay.xul"?>
+<?xul-overlay href="chrome://browser/content/devtools/source-editor-overlay.xul"?>
 
-<window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+<window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        macanimationtype="document"
+        fullscreenbutton="true"
+        screenX="4" screenY="4"
+        width="960" height="480"
+        persist="screenX screenY width height sizemode">
 
   <script type="text/javascript" src="chrome://global/content/globalOverlay.js"/>
   <script type="text/javascript" src="debugger-controller.js"/>
@@ -25,6 +32,10 @@
   <commandset id="sourceEditorCommands"/>
 
   <commandset id="debuggerCommands">
+    <command id="nextSourceCommand"
+             oncommand="DebuggerView.Sources.selectNextItem()"/>
+    <command id="prevSourceCommand"
+             oncommand="DebuggerView.Sources.selectPrevItem()"/>
     <command id="resumeCommand"
              oncommand="DebuggerView.Toolbar._onResumePressed()"/>
     <command id="stepOverCommand"
@@ -37,16 +48,20 @@
              oncommand="DebuggerView.Filtering._doFileSearch()"/>
     <command id="globalSearchCommand"
              oncommand="DebuggerView.Filtering._doGlobalSearch()"/>
+    <command id="functionSearchCommand"
+             oncommand="DebuggerView.Filtering._doFunctionSearch()"/>
     <command id="tokenSearchCommand"
              oncommand="DebuggerView.Filtering._doTokenSearch()"/>
     <command id="lineSearchCommand"
              oncommand="DebuggerView.Filtering._doLineSearch()"/>
     <command id="variableSearchCommand"
              oncommand="DebuggerView.Filtering._doVariableSearch()"/>
+    <command id="variablesFocusCommand"
+             oncommand="DebuggerView.Filtering._doVariablesFocus()"/>
     <command id="addBreakpointCommand"
-             oncommand="DebuggerView.Breakpoints._onCmdAddBreakpoint()"/>
+             oncommand="DebuggerView.Sources._onCmdAddBreakpoint()"/>
     <command id="addConditionalBreakpointCommand"
-             oncommand="DebuggerView.Breakpoints._onCmdAddConditionalBreakpoint()"/>
+             oncommand="DebuggerView.Sources._onCmdAddConditionalBreakpoint()"/>
     <command id="addWatchExpressionCommand"
              oncommand="DebuggerView.WatchExpressions._onCmdAddExpression()"/>
     <command id="removeAllWatchExpressionsCommand"
@@ -59,6 +74,8 @@
              oncommand="DebuggerView.Options._toggleShowVariablesOnlyEnum()"/>
     <command id="toggleShowVariablesFilterBox"
              oncommand="DebuggerView.Options._toggleShowVariablesFilterBox()"/>
+    <command id="toggleShowOriginalSource"
+             oncommand="DebuggerView.Options._toggleShowOriginalSource()"/>
   </commandset>
 
   <popupset id="debuggerPopupset">
@@ -91,6 +108,11 @@
                 accesskey="&debuggerUI.searchGlobal.key;"
                 key="globalSearchKey"
                 command="globalSearchCommand"/>
+      <menuitem id="se-dbg-cMenu-findFunction"
+                label="&debuggerUI.searchFunction;"
+                accesskey="&debuggerUI.searchFunction.key;"
+                key="functionSearchKey"
+                command="functionSearchCommand"/>
       <menuseparator/>
       <menuitem id="se-dbg-cMenu-findToken"
                 label="&debuggerUI.searchToken;"
@@ -108,8 +130,12 @@
                 accesskey="&debuggerUI.searchVariable.key;"
                 key="variableSearchKey"
                 command="variableSearchCommand"/>
+      <menuitem id="se-dbg-cMenu-focusVariables"
+                label="&debuggerUI.focusVariables;"
+                accesskey="&debuggerUI.focusVariables.key;"
+                key="variablesFocusKey"
+                command="variablesFocusCommand"/>
     </menupopup>
-
     <menupopup id="debuggerWatchExpressionsContextMenu">
       <menuitem id="add-watch-expression"
                 label="&debuggerUI.addWatch;"
@@ -122,11 +148,11 @@
                 key="removeAllWatchExpressionsKey"
                 command="removeAllWatchExpressionsCommand"/>
     </menupopup>
-
     <menupopup id="debuggerPrefsContextMenu"
                position="before_end"
                onpopupshowing="DebuggerView.Options._onPopupShowing()"
-               onpopuphiding="DebuggerView.Options._onPopupHiding()">
+               onpopuphiding="DebuggerView.Options._onPopupHiding()"
+               onpopuphidden="DebuggerView.Options._onPopupHidden()">
       <menuitem id="pause-on-exceptions"
                 type="checkbox"
                 label="&debuggerUI.pauseExceptions;"
@@ -147,10 +173,23 @@
                 label="&debuggerUI.showVarsFilter;"
                 accesskey="&debuggerUI.showVarsFilter.key;"
                 command="toggleShowVariablesFilterBox"/>
+      <menuitem id="show-original-source"
+                type="checkbox"
+                label="&debuggerUI.showOriginalSource;"
+                accesskey="&debuggerUI.showOriginalSource.key;"
+                command="toggleShowOriginalSource"/>
     </menupopup>
   </popupset>
 
   <keyset id="debuggerKeys">
+    <key id="nextSourceKey"
+         keycode="VK_DOWN"
+         modifiers="accel alt"
+         command="nextSourceCommand"/>
+    <key id="prevSourceKey"
+         keycode="VK_UP"
+         modifiers="accel alt"
+         command="prevSourceCommand"/>
     <key id="resumeKey"
          keycode="&debuggerUI.stepping.resume;"
          command="resumeCommand"/>
@@ -168,10 +207,18 @@
          key="&debuggerUI.searchFile.key;"
          modifiers="accel"
          command="fileSearchCommand"/>
+    <key id="fileSearchKey"
+         key="&debuggerUI.searchFile.altkey;"
+         modifiers="accel"
+         command="fileSearchCommand"/>
     <key id="globalSearchKey"
          key="&debuggerUI.searchGlobal.key;"
          modifiers="accel alt"
          command="globalSearchCommand"/>
+    <key id="functionSearchKey"
+         key="&debuggerUI.searchFunction.key;"
+         modifiers="accel"
+         command="functionSearchCommand"/>
     <key id="tokenSearchKey"
          key="&debuggerUI.searchToken.key;"
          modifiers="accel"
@@ -184,6 +231,10 @@
          key="&debuggerUI.searchVariable.key;"
          modifiers="accel alt"
          command="variableSearchCommand"/>
+    <key id="variablesFocusKey"
+         key="&debuggerUI.focusVariables.key;"
+         modifiers="accel shift"
+         command="variablesFocusCommand"/>
     <key id="addBreakpointKey"
          key="&debuggerUI.seMenuBreak.key;"
          modifiers="accel"
@@ -203,7 +254,7 @@
   </keyset>
 
   <vbox id="body" flex="1">
-    <toolbar id="dbg-toolbar" class="devtools-toolbar">
+    <toolbar class="devtools-toolbar">
       <hbox id="debugger-controls">
         <toolbarbutton id="resume"
                        class="devtools-toolbarbutton"
@@ -221,83 +272,104 @@
       <menulist id="chrome-globals"
                 class="devtools-menulist"
                 sizetopopup="none" hidden="true"/>
-      <menulist id="sources"
-                class="devtools-menulist"
-                sizetopopup="none"/>
+      <vbox id="stackframes" flex="1"/>
       <textbox id="searchbox"
                class="devtools-searchinput" type="search"/>
-      <spacer flex="1"/>
-      <toolbarbutton id="toggle-panes"
+      <toolbarbutton id="instruments-pane-toggle"
                      class="devtools-toolbarbutton"
                      tooltiptext="&debuggerUI.panesButton.tooltip;"
                      tabindex="0"/>
       <toolbarbutton id="debugger-options"
                      class="devtools-option-toolbarbutton"
                      tooltiptext="&debuggerUI.optsButton.tooltip;"
-                     popup="debuggerPrefsContextMenu"/>
+                     popup="debuggerPrefsContextMenu"
+                     tabindex="0"/>
     </toolbar>
-
-    <panel id="searchbox-panel"
-           level="top"
-           type="arrow"
-           noautofocus="true"
-           position="before_start">
-      <vbox>
-        <label class="description" value="&debuggerUI.searchPanelTitle;"/>
-        <hbox align="center">
-          <button id="global-operator-button" class="operator"
-                  command="globalSearchCommand"/>
-          <label id="global-operator-label" class="plain operator"/>
-        </hbox>
-        <hbox align="center">
-          <button id="token-operator-button" class="operator"
-                  command="tokenSearchCommand"/>
-          <label id="token-operator-label" class="plain operator"/>
-        </hbox>
-        <hbox align="center">
-          <button id="line-operator-button" class="operator"
-                  command="lineSearchCommand"/>
-          <label id="line-operator-label" class="plain operator"/>
-        </hbox>
-        <hbox align="center">
-          <button id="variable-operator-button" class="operator"
-                  command="variableSearchCommand"/>
-          <label id="variable-operator-label" class="plain operator"/>
-        </hbox>
-      </vbox>
-    </panel>
-
-    <panel id="conditional-breakpoint-panel"
-           level="top"
-           type="arrow"
-           noautofocus="true"
-           position="after_start">
-      <vbox>
-        <label class="description" value="&debuggerUI.condBreakPanelTitle;"/>
-        <textbox id="conditional-breakpoint-textbox"/>
-      </vbox>
-    </panel>
-
-    <vbox id="dbg-content" flex="1">
-      <vbox id="globalsearch" hidden="true"/>
-      <splitter id="globalsearch-splitter"
-                class="devtools-horizontal-splitter" hidden="true"/>
+    <vbox flex="1">
+      <scrollbox id="globalsearch" orient="vertical" hidden="true"/>
+      <splitter class="devtools-horizontal-splitter" hidden="true"/>
       <hbox flex="1">
-        <vbox id="stackframes+breakpoints">
-          <vbox id="stackframes" flex="1"/>
-          <splitter class="devtools-horizontal-splitter"/>
-          <vbox id="breakpoints"/>
+        <vbox id="sources-pane">
+          <vbox id="sources" flex="1"/>
         </vbox>
         <splitter class="devtools-side-splitter"/>
         <vbox id="editor" flex="1"/>
         <splitter class="devtools-side-splitter"/>
-        <vbox id="variables+expressions">
+        <vbox id="instruments-pane" hidden="true">
           <vbox id="expressions"/>
           <splitter class="devtools-horizontal-splitter"/>
           <vbox id="variables" flex="1"/>
         </vbox>
       </hbox>
     </vbox>
-
   </vbox>
+
+  <panel id="searchbox-help-panel"
+         level="top"
+         type="arrow"
+         noautofocus="true"
+         position="before_start">
+    <vbox>
+      <label id="searchbox-panel-description"
+             value="&debuggerUI.searchPanelTitle;"/>
+      <hbox align="center">
+        <button id="global-operator-button"
+                class="searchbox-panel-operator-button"
+                command="globalSearchCommand"/>
+        <label id="global-operator-label"
+               class="plain searchbox-panel-operator-label"/>
+      </hbox>
+      <hbox align="center">
+        <button id="function-operator-button"
+                class="searchbox-panel-operator-button"
+                command="functionSearchCommand"/>
+        <label id="function-operator-label"
+               class="plain searchbox-panel-operator-label"/>
+      </hbox>
+      <hbox align="center">
+        <button id="token-operator-button"
+                class="searchbox-panel-operator-button"
+                command="tokenSearchCommand"/>
+        <label id="token-operator-label"
+               class="plain searchbox-panel-operator-label"/>
+      </hbox>
+      <hbox align="center">
+        <button id="line-operator-button"
+                class="searchbox-panel-operator-button"
+                command="lineSearchCommand"/>
+        <label id="line-operator-label"
+               class="plain searchbox-panel-operator-label"/>
+      </hbox>
+      <hbox align="center">
+        <button id="variable-operator-button"
+                class="searchbox-panel-operator-button"
+                command="variableSearchCommand"/>
+        <label id="variable-operator-label"
+               class="plain searchbox-panel-operator-label"/>
+      </hbox>
+    </vbox>
+  </panel>
+
+  <panel id="conditional-breakpoint-panel"
+         hidden="true"
+         level="top"
+         type="arrow"
+         noautofocus="true">
+    <vbox>
+      <label id="conditional-breakpoint-panel-description"
+             value="&debuggerUI.condBreakPanelTitle;"/>
+      <textbox id="conditional-breakpoint-panel-textbox"/>
+    </vbox>
+  </panel>
+
+  <panel id="resumption-order-panel"
+         type="arrow"
+         noautofocus="true"
+         position="before_start">
+    <hbox align="start">
+      <image class="alert-icon"/>
+      <label id="resumption-panel-desc" class="description"/>
+    </hbox>
+  </panel>
+
 </window>

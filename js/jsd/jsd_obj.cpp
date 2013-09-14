@@ -1,5 +1,6 @@
-/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
+ * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -80,10 +81,10 @@ _destroyJSDObject(JSDContext* jsdc, JSDObject* jsdobj)
 
 void
 jsd_Constructing(JSDContext* jsdc, JSContext *cx, JSObject *obj,
-                 JSStackFrame *fp)
+                 JSAbstractFramePtr frame)
 {
     JSDObject* jsdobj;
-    JSScript* script;
+    JS::RootedScript script(cx);
     JSDScript* jsdscript;
     const char* ctorURL;
     JSString* ctorNameStr;
@@ -93,7 +94,7 @@ jsd_Constructing(JSDContext* jsdc, JSContext *cx, JSObject *obj,
     jsdobj = jsd_GetJSDObjectForJSObject(jsdc, obj);
     if( jsdobj && !jsdobj->ctorURL )
     {
-        script = JS_GetFrameScript(cx, fp);
+        script = frame.script();
         if( script )
         {
             ctorURL = JS_GetScriptFilename(cx, script);
@@ -101,7 +102,7 @@ jsd_Constructing(JSDContext* jsdc, JSContext *cx, JSObject *obj,
                 jsdobj->ctorURL = jsd_AddAtom(jsdc, ctorURL);
 
             JSD_LOCK_SCRIPTS(jsdc);
-            jsdscript = jsd_FindOrCreateJSDScript(jsdc, cx, script, fp);
+            jsdscript = jsd_FindOrCreateJSDScript(jsdc, cx, script, frame);
             JSD_UNLOCK_SCRIPTS(jsdc);
             if( jsdscript && (ctorNameStr = jsd_GetScriptFunctionId(jsdc, jsdscript)) ) {
                 if( (ctorName = JS_EncodeString(cx, ctorNameStr)) ) {

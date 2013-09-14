@@ -3,11 +3,7 @@
 
 function test() {
   const Cu = Components.utils;
-  let tempScope = {};
-  Cu.import("resource:///modules/devtools/gDevTools.jsm", tempScope);
-  Cu.import("resource:///modules/devtools/Target.jsm", tempScope);
-  Cu.import("resource:///modules/devtools/Sidebar.jsm", tempScope);
-  let {TargetFactory: TargetFactory, gDevTools: gDevTools, ToolSidebar: ToolSidebar} = tempScope;
+  let {ToolSidebar} = devtools.require("devtools/framework/sidebar");
 
   const toolURL = "data:text/xml;charset=utf8,<?xml version='1.0'?>" +
                   "<?xml-stylesheet href='chrome://browser/skin/devtools/common.css' type='text/css'?>" +
@@ -22,13 +18,13 @@ function test() {
   const tab3URL = "data:text/html;charset=utf8,<title>3</title><p>3</p>";
 
   let panelDoc;
-
+  let tab1Selected = false;
   let registeredTabs = {};
   let readyTabs = {};
 
   let toolDefinition = {
     id: "fakeTool4242",
-    killswitch: "devtools.fakeTool4242.enabled",
+    visibilityswitch: "devtools.fakeTool4242.enabled",
     url: toolURL,
     label: "FAKE TOOL!!!",
     isTargetSupported: function() true,
@@ -56,31 +52,34 @@ function test() {
       ok(true, "Tool open");
 
       let tabbox = panel.panelDoc.getElementById("sidebar");
-      panel.sidebar = new ToolSidebar(tabbox, panel, true);
+      panel.sidebar = new ToolSidebar(tabbox, panel, "testbug865688", true);
 
       panel.sidebar.on("new-tab-registered", function(event, id) {
         registeredTabs[id] = true;
       });
 
       panel.sidebar.once("tab1-ready", function(event) {
+        info(event);
         readyTabs.tab1 = true;
-        if (readyTabs.tab1 && readyTabs.tab2 && readyTabs.tab3) {
-          allTabsReady(panel);
-        }
+        allTabsReady(panel);
       });
 
       panel.sidebar.once("tab2-ready", function(event) {
+        info(event);
         readyTabs.tab2 = true;
-        if (readyTabs.tab1 && readyTabs.tab2 && readyTabs.tab3) {
-          allTabsReady(panel);
-        }
+        allTabsReady(panel);
       });
 
       panel.sidebar.once("tab3-ready", function(event) {
+        info(event);
         readyTabs.tab3 = true;
-        if (readyTabs.tab1 && readyTabs.tab2 && readyTabs.tab3) {
-          allTabsReady(panel);
-        }
+        allTabsReady(panel);
+      });
+
+      panel.sidebar.once("tab1-selected", function(event) {
+        info(event);
+        tab1Selected = true;
+        allTabsReady(panel);
       });
 
       panel.sidebar.addTab("tab1", tab1URL, true);
@@ -92,6 +91,10 @@ function test() {
   });
 
   function allTabsReady(panel) {
+    if (!tab1Selected || !readyTabs.tab1 || !readyTabs.tab2 || !readyTabs.tab3) {
+      return;
+    }
+
     ok(registeredTabs.tab1, "tab1 registered");
     ok(registeredTabs.tab2, "tab2 registered");
     ok(registeredTabs.tab3, "tab3 registered");
@@ -116,11 +119,23 @@ function test() {
         panel.sidebar.hide();
         is(panel.sidebar._tabbox.getAttribute("hidden"), "true", "Sidebar hidden");
         is(panel.sidebar.getWindowForTab("tab1").location.href, tab1URL, "Window is accessible");
-        finishUp(panel);
+        testWidth(panel);
       });
     });
 
     panel.sidebar.select("tab2");
+  }
+
+  function testWidth(panel) {
+    let tabbox = panel.panelDoc.getElementById("sidebar");
+    tabbox.width = 420;
+    panel.sidebar.destroy().then(function() {
+      tabbox.width = 0;
+      panel.sidebar = new ToolSidebar(tabbox, panel, "testbug865688", true);
+      panel.sidebar.show();
+      is(panel.panelDoc.getElementById("sidebar").width, 420, "Width restored")
+      finishUp(panel);
+    });
   }
 
   function finishUp(panel) {

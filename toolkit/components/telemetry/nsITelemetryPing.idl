@@ -7,7 +7,7 @@
 
 interface nsIFile;
 
-[scriptable, uuid(077ee790-3a9d-11e2-81c1-0800200c9a66)]
+[scriptable, uuid(32fbb784-a20c-49aa-9db9-9a0da1c2f7d8)]
 interface nsITelemetryPing : nsIObserver {
   /**
    * Return the current telemetry payload.
@@ -33,6 +33,11 @@ interface nsITelemetryPing : nsIObserver {
   void enableLoadSaveNotifications();
 
   /**
+   * Cache the profile directory for later use.
+   */
+  void cacheProfileDirectory();
+
+  /**
    * Inform the ping which AddOns are installed.
    *
    * @param aAddOns - The AddOns.
@@ -53,4 +58,9 @@ interface nsITelemetryPing : nsIObserver {
    * @param aSync - Use sync reads.
    */
   void testLoadHistograms(in nsIFile aFile, in boolean aSync);
+
+  /**
+   * Return the path component of the current submission URL.
+   */
+  AString submissionPath();
 };

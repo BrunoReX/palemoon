@@ -4,8 +4,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsReadableUtils.h"
+
 #include "nsMemory.h"
 #include "nsString.h"
+#include "nsTArray.h"
 #include "nsUTF8Utils.h"
 
 void
@@ -313,28 +315,45 @@ ToNewUnicode( const nsACString& aSource )
     return result;
   }
 
-PRUnichar*
-UTF8ToNewUnicode( const nsACString& aSource, uint32_t *aUTF16Count )
+uint32_t
+CalcUTF8ToUnicodeLength( const nsACString& aSource)
   {
     nsACString::const_iterator start, end;
     CalculateUTF8Length calculator;
     copy_string(aSource.BeginReading(start), aSource.EndReading(end),
                 calculator);
+    return calculator.Length();
+  }
 
+PRUnichar*
+UTF8ToUnicodeBuffer( const nsACString& aSource, PRUnichar* aBuffer, uint32_t *aUTF16Count )
+  {
+    nsACString::const_iterator start, end;
+    ConvertUTF8toUTF16 converter(aBuffer);
+    copy_string(aSource.BeginReading(start),
+                aSource.EndReading(end),
+                converter).write_terminator();
     if (aUTF16Count)
-      *aUTF16Count = calculator.Length();
+      *aUTF16Count = converter.Length();
+    return aBuffer;
+  }
 
-    PRUnichar *result = static_cast<PRUnichar*>
-                                   (nsMemory::Alloc(sizeof(PRUnichar) * (calculator.Length() + 1)));
-    if (!result)
+PRUnichar*
+UTF8ToNewUnicode( const nsACString& aSource, uint32_t *aUTF16Count )
+  {
+    const uint32_t length = CalcUTF8ToUnicodeLength(aSource);
+    const size_t buffer_size = (length + 1) * sizeof(PRUnichar);
+    PRUnichar *buffer = static_cast<PRUnichar*>(nsMemory::Alloc(buffer_size));
+    if (!buffer)
       return nullptr;
 
-    ConvertUTF8toUTF16 converter(result);
-    copy_string(aSource.BeginReading(start), aSource.EndReading(end),
-                converter).write_terminator();
-    NS_ASSERTION(calculator.Length() == converter.Length(), "length mismatch");
+    uint32_t copied;
+    UTF8ToUnicodeBuffer(aSource, buffer, &copied);
+    NS_ASSERTION(length == copied, "length mismatch");
 
-    return result;
+    if (aUTF16Count)
+      *aUTF16Count = copied;
+    return buffer;
   }
 
 PRUnichar*
@@ -564,7 +583,7 @@ class CopyToUpperCase
       uint32_t
       write( const char* aSource, uint32_t aSourceLength )
         {
-          uint32_t len = NS_MIN(uint32_t(mIter.size_forward()), aSourceLength);
+          uint32_t len = XPCOM_MIN(uint32_t(mIter.size_forward()), aSourceLength);
           char* cp = mIter.get();
           const char* end = aSource + len;
           while (aSource != end) {
@@ -642,7 +661,7 @@ class CopyToLowerCase
       uint32_t
       write( const char* aSource, uint32_t aSourceLength )
         {
-          uint32_t len = NS_MIN(uint32_t(mIter.size_forward()), aSourceLength);
+          uint32_t len = XPCOM_MIN(uint32_t(mIter.size_forward()), aSourceLength);
           char* cp = mIter.get();
           const char* end = aSource + len;
           while (aSource != end) {

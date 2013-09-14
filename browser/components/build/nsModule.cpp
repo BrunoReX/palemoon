@@ -12,7 +12,7 @@
 #include "nsWindowsShellService.h"
 #elif defined(XP_MACOSX)
 #include "nsMacShellService.h"
-#elif defined(MOZ_WIDGET_GTK2)
+#elif defined(MOZ_WIDGET_GTK)
 #include "nsGNOMEShellService.h"
 #endif
 
@@ -25,9 +25,6 @@
 #include "AboutRedirector.h"
 #include "nsIAboutModule.h"
 
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-#include "nsPrivateBrowsingServiceWrapper.h"
-#endif
 #include "nsNetCID.h"
 
 using namespace mozilla::browser;
@@ -39,7 +36,7 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(DirectoryProvider)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsWindowsShellService)
 #elif defined(XP_MACOSX)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsMacShellService)
-#elif defined(MOZ_WIDGET_GTK2)
+#elif defined(MOZ_WIDGET_GTK)
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsGNOMEShellService, Init)
 #endif
 
@@ -49,14 +46,10 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(nsIEHistoryEnumerator)
 
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsFeedSniffer)
 
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsPrivateBrowsingServiceWrapper, Init)
-#endif
-
 NS_DEFINE_NAMED_CID(NS_BROWSERDIRECTORYPROVIDER_CID);
 #if defined(XP_WIN)
 NS_DEFINE_NAMED_CID(NS_SHELLSERVICE_CID);
-#elif defined(MOZ_WIDGET_GTK2)
+#elif defined(MOZ_WIDGET_GTK)
 NS_DEFINE_NAMED_CID(NS_SHELLSERVICE_CID);
 #endif
 NS_DEFINE_NAMED_CID(NS_FEEDSNIFFER_CID);
@@ -66,15 +59,12 @@ NS_DEFINE_NAMED_CID(NS_WINIEHISTORYENUMERATOR_CID);
 #elif defined(XP_MACOSX)
 NS_DEFINE_NAMED_CID(NS_SHELLSERVICE_CID);
 #endif
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-NS_DEFINE_NAMED_CID(NS_PRIVATE_BROWSING_SERVICE_WRAPPER_CID);
-#endif
 
 static const mozilla::Module::CIDEntry kBrowserCIDs[] = {
     { &kNS_BROWSERDIRECTORYPROVIDER_CID, false, NULL, DirectoryProviderConstructor },
 #if defined(XP_WIN)
     { &kNS_SHELLSERVICE_CID, false, NULL, nsWindowsShellServiceConstructor },
-#elif defined(MOZ_WIDGET_GTK2)
+#elif defined(MOZ_WIDGET_GTK)
     { &kNS_SHELLSERVICE_CID, false, NULL, nsGNOMEShellServiceConstructor },
 #endif
     { &kNS_FEEDSNIFFER_CID, false, NULL, nsFeedSnifferConstructor },
@@ -84,9 +74,6 @@ static const mozilla::Module::CIDEntry kBrowserCIDs[] = {
 #elif defined(XP_MACOSX)
     { &kNS_SHELLSERVICE_CID, false, NULL, nsMacShellServiceConstructor },
 #endif
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-    { &kNS_PRIVATE_BROWSING_SERVICE_WRAPPER_CID, false, NULL, nsPrivateBrowsingServiceWrapperConstructor },
-#endif
     { NULL }
 };
 
@@ -94,7 +81,7 @@ static const mozilla::Module::ContractIDEntry kBrowserContracts[] = {
     { NS_BROWSERDIRECTORYPROVIDER_CONTRACTID, &kNS_BROWSERDIRECTORYPROVIDER_CID },
 #if defined(XP_WIN)
     { NS_SHELLSERVICE_CONTRACTID, &kNS_SHELLSERVICE_CID },
-#elif defined(MOZ_WIDGET_GTK2)
+#elif defined(MOZ_WIDGET_GTK)
     { NS_SHELLSERVICE_CONTRACTID, &kNS_SHELLSERVICE_CID },
 #endif
     { NS_FEEDSNIFFER_CONTRACTID, &kNS_FEEDSNIFFER_CID },
@@ -125,9 +112,6 @@ static const mozilla::Module::ContractIDEntry kBrowserContracts[] = {
 #elif defined(XP_MACOSX)
     { NS_SHELLSERVICE_CONTRACTID, &kNS_SHELLSERVICE_CID },
 #endif
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-    { NS_PRIVATE_BROWSING_SERVICE_CONTRACTID, &kNS_PRIVATE_BROWSING_SERVICE_WRAPPER_CID },
-#endif
     { NULL }
 };
 
@@ -145,4 +129,3 @@ static const mozilla::Module kBrowserModule = {
 };
 
 NSMODULE_DEFN(nsBrowserCompsModule) = &kBrowserModule;
-

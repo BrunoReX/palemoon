@@ -12,13 +12,14 @@
 #include "OggReader.h"
 #include "VideoUtils.h"
 #include "theora/theoradec.h"
+#include <algorithm>
 #ifdef MOZ_OPUS
 #include "opus/opus.h"
 extern "C" {
 #include "opus/opus_multistream.h"
 }
 #endif
-#include "nsTimeRanges.h"
+#include "mozilla/dom/TimeRanges.h"
 #include "mozilla/TimeStamp.h"
 #include "VorbisUtils.h"
 #include "MediaMetadataManager.h"
@@ -106,7 +107,6 @@ OggReader::~OggReader()
 }
 
 nsresult OggReader::Init(MediaDecoderReader* aCloneDonor) {
-  mCodecStates.Init();
   int ret = ogg_sync_init(&mOggState);
   NS_ENSURE_TRUE(ret == 0, NS_ERROR_FAILURE);
   return NS_OK;
@@ -198,14 +198,13 @@ nsresult OggReader::ReadMetadata(VideoInfo* aInfo,
       // can follow in this Ogg segment, so there will be no other bitstreams
       // in the Ogg (unless it's invalid).
       readAllBOS = true;
-    } else if (!mCodecStates.Get(serial, nullptr)) {
+    } else if (!mCodecStore.Contains(serial)) {
       // We've not encountered a stream with this serial number before. Create
       // an OggCodecState to demux it, and map that to the OggCodecState
       // in mCodecStates.
       codecState = OggCodecState::Create(&page);
-      mCodecStates.Put(serial, codecState);
+      mCodecStore.Add(serial, codecState);
       bitstreams.AppendElement(codecState);
-      mKnownStreams.AppendElement(serial);
       if (codecState &&
           codecState->GetType() == OggCodecState::TYPE_VORBIS &&
           !mVorbisState)
@@ -241,8 +240,8 @@ nsresult OggReader::ReadMetadata(VideoInfo* aInfo,
       }
     }
 
-    mCodecStates.Get(serial, &codecState);
-    NS_ENSURE_TRUE(codecState, NS_ERROR_FAILURE);
+    codecState = mCodecStore.Get(serial);
+    NS_ENSURE_TRUE(codecState != nullptr, NS_ERROR_FAILURE);
 
     if (NS_FAILED(codecState->PageIn(&page))) {
       return NS_ERROR_FAILURE;
@@ -364,6 +363,12 @@ nsresult OggReader::ReadMetadata(VideoInfo* aInfo,
         LOG(PR_LOG_DEBUG, ("Got Ogg duration from seeking to end %lld", endTime));
       }
       mDecoder->GetResource()->EndSeekingForMetadata();
+    } else if (mDecoder->GetMediaDuration() == -1) {
+      // We don't have a duration, and we don't know enough about the resource
+      // to try a seek. Abort trying to get a duration. This happens for example
+      // when the server says it accepts range requests, but does not give us a
+      // Content-Length.
+      mDecoder->SetTransportSeekable(false);
     }
   } else {
     return NS_ERROR_FAILURE;
@@ -455,8 +460,8 @@ nsresult OggReader::DecodeOpus(ogg_packet* aPacket) {
   // If this is the last packet, perform end trimming.
   if (aPacket->e_o_s && mOpusState->mPrevPacketGranulepos != -1) {
     startFrame = mOpusState->mPrevPacketGranulepos;
-    frames = static_cast<int32_t>(NS_MAX(static_cast<int64_t>(0),
-                                         NS_MIN(endFrame - startFrame,
+    frames = static_cast<int32_t>(std::max(static_cast<int64_t>(0),
+                                         std::min(endFrame - startFrame,
                                                 static_cast<int64_t>(frames))));
   } else {
     startFrame = endFrame - frames;
@@ -464,7 +469,7 @@ nsresult OggReader::DecodeOpus(ogg_packet* aPacket) {
 
   // Trim the initial frames while the decoder is settling.
   if (mOpusState->mSkip > 0) {
-    int32_t skipFrames = NS_MIN(mOpusState->mSkip, frames);
+    int32_t skipFrames = std::min(mOpusState->mSkip, frames);
     if (skipFrames == frames) {
       // discard the whole packet
       mOpusState->mSkip -= frames;
@@ -516,13 +521,12 @@ nsresult OggReader::DecodeOpus(ogg_packet* aPacket) {
     if (channels > 8)
       return NS_ERROR_FAILURE;
 
-#ifdef MOZ_SAMPLE_TYPE_FLOAT32
     uint32_t out_channels;
     out_channels = 2;
-
     // dBuffer stores the downmixed sample data.
     nsAutoArrayPtr<AudioDataValue> dBuffer(new AudioDataValue[frames * out_channels]);
-    // Downmix matrix for channels up to 8, normalized to 2.0.
+#ifdef MOZ_SAMPLE_TYPE_FLOAT32
+    // Downmix matrix. Per-row normalization 1 for rows 3,4 and 2 for rows 5-8.
     static const float dmatrix[6][8][2]= {
         /*3*/{ {0.5858f,0}, {0.4142f,0.4142f}, {0,0.5858f}},
         /*4*/{ {0.4226f,0}, {0,0.4226f}, {0.366f,0.2114f}, {0.2114f,0.366f}},
@@ -541,11 +545,32 @@ nsresult OggReader::DecodeOpus(ogg_packet* aPacket) {
       dBuffer[i*out_channels]=sampL;
       dBuffer[i*out_channels+1]=sampR;
     }
+#else
+    // Downmix matrix. Per-row normalization 1 for rows 3,4 and 2 for rows 5-8.
+    // Coefficients in Q14.
+    static const int16_t dmatrix[6][8][2]= {
+        /*3*/{{9598, 0},{6786,6786},{0,   9598}},
+        /*4*/{{6925, 0},{0,   6925},{5997,3462},{3462,5997}},
+        /*5*/{{10663,0},{7540,7540},{0,  10663},{9234,5331},{5331,9234}},
+        /*6*/{{8668, 0},{6129,6129},{0,   8668},{7507,4335},{4335,7507},{6129,6129}},
+        /*7*/{{7459, 0},{5275,5275},{0,   7459},{6460,3731},{3731,6460},{4568,4568},{5275,5275}},
+        /*8*/{{6368, 0},{4502,4502},{0,   6368},{5514,3184},{3184,5514},{5514,3184},{3184,5514},{4502,4502}}
+    };
+    for (int32_t i = 0; i < frames; i++) {
+      int32_t sampL = 0;
+      int32_t sampR = 0;
+      for (uint32_t j = 0; j < channels; j++) {
+        sampL+=buffer[i*channels+j]*dmatrix[channels-3][j][0];
+        sampR+=buffer[i*channels+j]*dmatrix[channels-3][j][1];
+      }
+      sampL = (sampL + 8192)>>14;
+      dBuffer[i*out_channels]   = static_cast<AudioDataValue>(MOZ_CLIP_TO_15(sampL));
+      sampR = (sampR + 8192)>>14;
+      dBuffer[i*out_channels+1] = static_cast<AudioDataValue>(MOZ_CLIP_TO_15(sampR));
+    }
+#endif
     channels = out_channels;
     buffer = dBuffer;
-#else
-  return NS_ERROR_FAILURE;
-#endif
   }
 
   LOG(PR_LOG_DEBUG, ("Opus decoder pushing %d frames", frames));
@@ -624,7 +649,6 @@ void OggReader::SetChained(bool aIsChained) {
 
 bool OggReader::ReadOggChain()
 {
-
   bool chained = false;
   OpusState* newOpusState = nullptr;
   VorbisState* newVorbisState = nullptr;
@@ -643,7 +667,7 @@ bool OggReader::ReadOggChain()
   }
 
   int serial = ogg_page_serialno(&page);
-  if (mCodecStates.Get(serial, nullptr)) {
+  if (mCodecStore.Contains(serial)) {
     return false;
   }
 
@@ -664,13 +688,12 @@ bool OggReader::ReadOggChain()
   else {
     return false;
   }
+  OggCodecState* state;
 
-  mCodecStates.Put(serial, codecState.forget());
-  mKnownStreams.AppendElement(serial);
-  OggCodecState* state = nullptr;
-  mCodecStates.Get(serial, &state);
+  mCodecStore.Add(serial, codecState.forget());
+  state = mCodecStore.Get(serial);
 
-  NS_ENSURE_TRUE(state, false);
+  NS_ENSURE_TRUE(state != nullptr, false);
 
   if (NS_FAILED(state->PageIn(&page))) {
     return false;
@@ -711,6 +734,7 @@ bool OggReader::ReadOggChain()
                                channels,
                                rate,
                                HasAudio(),
+                               HasVideo(),
                                tags);
     }
     return true;
@@ -892,7 +916,7 @@ ogg_packet* OggReader::NextOggPacket(OggCodecState* aCodecState)
 
     uint32_t serial = ogg_page_serialno(&page);
     OggCodecState* codecState = nullptr;
-    mCodecStates.Get(serial, &codecState);
+    codecState = mCodecStore.Get(serial);
     if (codecState && NS_FAILED(codecState->PageIn(&page))) {
       return nullptr;
     }
@@ -989,20 +1013,20 @@ int64_t OggReader::RangeEndTime(int64_t aStartOffset,
         prevChecksumAfterSeek = checksumAfterSeek;
         checksumAfterSeek = 0;
         ogg_sync_reset(&sync.mState);
-        readStartOffset = NS_MAX(static_cast<int64_t>(0), readStartOffset - step);
+        readStartOffset = std::max(static_cast<int64_t>(0), readStartOffset - step);
         // There's no point reading more than the maximum size of
         // an Ogg page into data we've previously scanned. Any data
         // between readLimitOffset and aEndOffset must be garbage
         // and we can ignore it thereafter.
-        readLimitOffset = NS_MIN(readLimitOffset,
+        readLimitOffset = std::min(readLimitOffset,
                                  readStartOffset + maxOggPageSize);
-        readHead = NS_MAX(aStartOffset, readStartOffset);
+        readHead = std::max(aStartOffset, readStartOffset);
       }
 
-      int64_t limit = NS_MIN(static_cast<int64_t>(UINT32_MAX),
+      int64_t limit = std::min(static_cast<int64_t>(UINT32_MAX),
                              aEndOffset - readHead);
-      limit = NS_MAX(static_cast<int64_t>(0), limit);
-      limit = NS_MIN(limit, static_cast<int64_t>(step));
+      limit = std::max(static_cast<int64_t>(0), limit);
+      limit = std::min(limit, static_cast<int64_t>(step));
       uint32_t bytesToRead = static_cast<uint32_t>(limit);
       uint32_t bytesRead = 0;
       char* buffer = ogg_sync_buffer(&sync.mState, bytesToRead);
@@ -1061,7 +1085,7 @@ int64_t OggReader::RangeEndTime(int64_t aStartOffset,
     int serial = ogg_page_serialno(&page);
 
     OggCodecState* codecState = nullptr;
-    mCodecStates.Get(serial, &codecState);
+    codecState = mCodecStore.Get(serial);
 
     if (!codecState) {
       // This page is from a bitstream which we haven't encountered yet.
@@ -1222,8 +1246,7 @@ OggReader::IndexedSeekResult OggReader::SeekToKeyframeUsingIndex(int64_t aTarget
     // Assume the index is invalid.
     return RollbackIndexedSeek(tell);
   }
-  OggCodecState* codecState = nullptr;
-  mCodecStates.Get(serial, &codecState);
+  OggCodecState* codecState = mCodecStore.Get(serial);
   if (codecState &&
       codecState->mActive &&
       ogg_stream_pagein(&codecState->mState, &page) != 0)
@@ -1278,7 +1301,7 @@ nsresult OggReader::SeekInBufferedRange(int64_t aTarget,
       int64_t keyframeTime = mTheoraState->StartTime(keyframeGranulepos);
       SEEK_LOG(PR_LOG_DEBUG, ("Keyframe for %lld is at %lld, seeking back to it",
                               video->mTime, keyframeTime));
-      aAdjustedTarget = NS_MIN(aAdjustedTarget, keyframeTime);
+      aAdjustedTarget = std::min(aAdjustedTarget, keyframeTime);
     }
   }
   if (aAdjustedTarget < aTarget) {
@@ -1317,9 +1340,9 @@ nsresult OggReader::SeekInUnbuffered(int64_t aTarget,
   }
   // Add in the Opus pre-roll if necessary, as well.
   if (HasAudio() && mOpusState) {
-    keyframeOffsetMs = NS_MAX(keyframeOffsetMs, SEEK_OPUS_PREROLL);
+    keyframeOffsetMs = std::max(keyframeOffsetMs, SEEK_OPUS_PREROLL);
   }
-  int64_t seekTarget = NS_MAX(aStartTime, aTarget - keyframeOffsetMs);
+  int64_t seekTarget = std::max(aStartTime, aTarget - keyframeOffsetMs);
   // Minimize the bisection search space using the known timestamps from the
   // buffered ranges.
   SeekRange k = SelectSeekRange(aRanges, seekTarget, aStartTime, aEndTime, false);
@@ -1340,7 +1363,7 @@ nsresult OggReader::Seek(int64_t aTarget,
   NS_ENSURE_TRUE(resource != nullptr, NS_ERROR_FAILURE);
   int64_t adjustedTarget = aTarget;
   if (HasAudio() && mOpusState){
-    adjustedTarget = NS_MAX(aStartTime, aTarget - SEEK_OPUS_PREROLL);
+    adjustedTarget = std::max(aStartTime, aTarget - SEEK_OPUS_PREROLL);
   }
 
   if (adjustedTarget == aStartTime) {
@@ -1418,7 +1441,7 @@ PageSync(MediaResource* aResource,
       NS_ASSERTION(buffer, "Must have a buffer");
 
       // Read from the file into the buffer
-      int64_t bytesToRead = NS_MIN(static_cast<int64_t>(PAGE_STEP),
+      int64_t bytesToRead = std::min(static_cast<int64_t>(PAGE_STEP),
                                    aEndOffset - readHead);
       NS_ASSERTION(bytesToRead <= UINT32_MAX, "bytesToRead range check");
       if (bytesToRead <= 0) {
@@ -1489,7 +1512,7 @@ nsresult OggReader::SeekBisection(int64_t aTarget,
   ogg_int64_t endTime = aRange.mTimeEnd;
 
   ogg_int64_t seekTarget = aTarget;
-  int64_t seekLowerBound = NS_MAX(static_cast<int64_t>(0), aTarget - aFuzz);
+  int64_t seekLowerBound = std::max(static_cast<int64_t>(0), aTarget - aFuzz);
   int hops = 0;
   DebugOnly<ogg_int64_t> previousGuess = -1;
   int backsteps = 0;
@@ -1536,7 +1559,7 @@ nsresult OggReader::SeekBisection(int64_t aTarget,
       target = (double)(seekTarget - startTime) / (double)duration;
       guess = startOffset + startLength +
               static_cast<ogg_int64_t>((double)interval * target);
-      guess = NS_MIN(guess, endOffset - PAGE_STEP);
+      guess = std::min(guess, endOffset - PAGE_STEP);
       if (mustBackoff) {
         // We previously failed to determine the time at the guess offset,
         // probably because we ran out of data to decode. This usually happens
@@ -1556,14 +1579,14 @@ nsresult OggReader::SeekBisection(int64_t aTarget,
           break;
         }
 
-        backsteps = NS_MIN(backsteps + 1, maxBackStep);
+        backsteps = std::min(backsteps + 1, maxBackStep);
         // We reset mustBackoff. If we still need to backoff further, it will
         // be set to true again.
         mustBackoff = false;
       } else {
         backsteps = 0;
       }
-      guess = NS_MAX(guess, startOffset + startLength);
+      guess = std::max(guess, startOffset + startLength);
 
       SEEK_LOG(PR_LOG_DEBUG, ("Seek loop start[o=%lld..%lld t=%lld] "
                               "end[o=%lld t=%lld] "
@@ -1612,8 +1635,7 @@ nsresult OggReader::SeekBisection(int64_t aTarget,
       do {
         // Add the page to its codec state, determine its granule time.
         uint32_t serial = ogg_page_serialno(&page);
-        OggCodecState* codecState = nullptr;
-        mCodecStates.Get(serial, &codecState);
+        OggCodecState* codecState = mCodecStore.Get(serial);
         if (codecState && codecState->mActive) {
           int ret = ogg_stream_pagein(&codecState->mState, &page);
           NS_ENSURE_TRUE(ret == 0, NS_ERROR_FAILURE);
@@ -1674,7 +1696,7 @@ nsresult OggReader::SeekBisection(int64_t aTarget,
 
       // We've found appropriate time stamps here. Proceed to bisect
       // the search space.
-      granuleTime = NS_MAX(audioTime, videoTime);
+      granuleTime = std::max(audioTime, videoTime);
       NS_ASSERTION(granuleTime > 0, "Must get a granuletime");
       break;
     } // End of "until we determine time at guess offset" loop.
@@ -1728,7 +1750,7 @@ nsresult OggReader::SeekBisection(int64_t aTarget,
   return NS_OK;
 }
 
-nsresult OggReader::GetBuffered(nsTimeRanges* aBuffered, int64_t aStartTime)
+nsresult OggReader::GetBuffered(TimeRanges* aBuffered, int64_t aStartTime)
 {
   {
     mozilla::ReentrantMonitorAutoEnter mon(mMonitor);
@@ -1819,7 +1841,7 @@ nsresult OggReader::GetBuffered(nsTimeRanges* aBuffered, int64_t aStartTime)
         startTime = TheoraState::Time(&mTheoraInfo, granulepos);
         NS_ASSERTION(startTime > 0, "Must have positive start time");
       }
-      else if (IsKnownStream(serial)) {
+      else if (mCodecStore.Contains(serial)) {
         // Stream is not the theora or vorbis stream we're playing,
         // but is one that we have header data for.
         startOffset += page.header_len + page.body_len;
@@ -1850,16 +1872,28 @@ nsresult OggReader::GetBuffered(nsTimeRanges* aBuffered, int64_t aStartTime)
 #endif
 }
 
-bool OggReader::IsKnownStream(uint32_t aSerial)
+OggCodecStore::OggCodecStore()
+: mMonitor("CodecStore")
 {
-  for (uint32_t i = 0; i < mKnownStreams.Length(); i++) {
-    uint32_t serial = mKnownStreams[i];
-    if (serial == aSerial) {
-      return true;
-    }
-  }
+  mCodecStates.Init();
+}
 
-  return false;
+void OggCodecStore::Add(uint32_t serial, OggCodecState* codecState)
+{
+  MonitorAutoLock mon(mMonitor);
+  mCodecStates.Put(serial, codecState);
+}
+
+bool OggCodecStore::Contains(uint32_t serial)
+{
+  MonitorAutoLock mon(mMonitor);
+  return mCodecStates.Get(serial, nullptr);
+}
+
+OggCodecState* OggCodecStore::Get(uint32_t serial)
+{
+  MonitorAutoLock mon(mMonitor);
+  return mCodecStates.Get(serial);
 }
 
 } // namespace mozilla

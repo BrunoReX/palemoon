@@ -13,7 +13,6 @@ include $(DEPTH)/config/autoconf.mk
 
 MOCHITEST_FILES	= \
     frameAppIsolation.html \
-    frameBug624047.html \
     frameChromeSlave.html \
     frameKeySync.html \
     frameMasterEqual.html \
@@ -27,10 +26,10 @@ MOCHITEST_FILES	= \
     interOriginFrame.js \
     interOriginTest.js \
     interOriginTest2.js \
-    pbSwitch.js \
+    localStorageCommon.js \
     test_appIsolation.html \
     test_brokenUTF-16.html \
-    test_bug624047.html \
+    test_bug600307-DBOps.html \
     test_bug746272-1.html \
     test_bug746272-2.html \
     test_cookieBlock.html \
@@ -52,27 +51,18 @@ MOCHITEST_FILES	= \
     test_localStorageQuotaSessionOnly.html \
     test_localStorageQuotaSessionOnly2.html \
     test_localStorageKeyOrder.html \
+    test_lowDeviceStorage.html \
     test_storageConstructor.html \
     $(NULL)
 
-ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-MOCHITEST_FILES += \
-    test_localStorageBasePrivateBrowsing.html \
-    test_localStorageQuotaPrivateBrowsing.html \
-    $(NULL)
-else
-MOCHITEST_CHROME_FILES += \
-    test_localStorageBasePrivateBrowsing_perwindowpb.html \
-    page_blank.html \
-    test_localStorageQuotaPrivateBrowsing_perwindowpb.html \
-    $(NULL)
-endif
-
 MOCHITEST_CHROME_FILES = \
+    test_localStorageBasePrivateBrowsing_perwindowpb.html \
     test_localStorageFromChrome.xhtml \
+    test_localStorageQuotaPrivateBrowsing_perwindowpb.html \
     test_app_uninstall.html \
     test_clear_browser_data.html \
     frame_clear_browser_data.html \
+    page_blank.html \
     $(NULL)
 
 include $(topsrcdir)/config/rules.mk

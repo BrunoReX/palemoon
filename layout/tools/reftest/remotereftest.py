@@ -14,7 +14,8 @@ SCRIPT_DIRECTORY = os.path.abspath(os.path.realpath(os.path.dirname(sys.argv[0])
 from runreftest import RefTest
 from runreftest import ReftestOptions
 from automation import Automation
-import devicemanager, devicemanagerADB, devicemanagerSUT
+import devicemanager
+import droid
 from remoteautomation import RemoteAutomation, fennecLogcatFilters
 
 class RemoteOptions(ReftestOptions):
@@ -91,6 +92,11 @@ class RemoteOptions(ReftestOptions):
                     help = "remote directory to use as test root (eg. /mnt/sdcard/tests or /data/local/tests)")
         defaults["remoteTestRoot"] = None
 
+        self.add_option("--httpd-path", action = "store",
+                    type = "string", dest = "httpdPath",
+                    help = "path to the httpd.js file")
+        defaults["httpdPath"] = None
+
         defaults["localLogName"] = None
 
         self.set_defaults(**defaults)
@@ -149,6 +155,12 @@ class RemoteOptions(ReftestOptions):
             f.write("%s" % os.getpid())
             f.close()
 
+        # httpd-path is specified by standard makefile targets and may be specified
+        # on the command line to select a particular version of httpd.js. If not
+        # specified, try to select the one from hostutils.zip, as required in bug 882932.
+        if not options.httpdPath:
+            options.httpdPath = os.path.join(options.utilityPath, "components")
+
         # TODO: Copied from main, but I think these are no longer used in a post xulrunner world
         #options.xrePath = options.remoteTestRoot + self._automation._product + '/xulrunner'
         #options.utilityPath = options.testRoot + self._automation._product + '/bin'
@@ -170,6 +182,7 @@ class ReftestServer:
         self.httpPort = options.httpPort
         self.scriptDir = scriptDir
         self.pidFile = options.pidFile
+        self._httpdPath = os.path.abspath(options.httpdPath)
         self.shutdownURL = "http://%(server)s:%(port)s/server/shutdown" % { "server" : self.webServer, "port" : self.httpPort }
 
     def start(self):
@@ -182,13 +195,21 @@ class ReftestServer:
 
         args = ["-g", self._xrePath,
                 "-v", "170",
-                "-f", os.path.join(self.scriptDir, "reftest/components/httpd.js"),
+                "-f", os.path.join(self._httpdPath, "httpd.js"),
                 "-e", "const _PROFILE_PATH = '%(profile)s';const _SERVER_PORT = '%(port)s'; const _SERVER_ADDR ='%(server)s';" %
                        {"profile" : self._profileDir.replace('\\', '\\\\'), "port" : self.httpPort, "server" : self.webServer },
                 "-f", os.path.join(self.scriptDir, "server.js")]
 
         xpcshell = os.path.join(self._utilityPath,
                                 "xpcshell" + self._automation.BIN_SUFFIX)
+
+        if not os.access(xpcshell, os.F_OK):
+            raise Exception('xpcshell not found at %s' % xpcshell)
+        if self._automation.elf_arm(xpcshell):
+            raise Exception('xpcshell at %s is an ARM binary; please use '
+                            'the --utility-path argument to specify the path '
+                            'to a desktop version.' % xpcshell)
+
         self._process = self._automation.Process([xpcshell] + args, env = env)
         pid = self._process.pid
         if pid < 0:
@@ -246,6 +267,7 @@ class RemoteReftest(RefTest):
             self.SERVER_STARTUP_TIMEOUT = 180
         else:
             self.SERVER_STARTUP_TIMEOUT = 90
+        self.automation.deleteANRs()
 
     def findPath(self, paths, filename = None):
         for path in paths:
@@ -325,6 +347,29 @@ user_pref("toolkit.telemetry.prompted", 999);
 user_pref("toolkit.telemetry.notifiedOptOut", 999);
 user_pref("reftest.uri", "%s");
 user_pref("datareporting.policy.dataSubmissionPolicyBypassAcceptance", true);
+
+// Point the url-classifier to the local testing server for fast failures
+user_pref("browser.safebrowsing.gethashURL", "http://127.0.0.1:8888/safebrowsing-dummy/gethash");
+user_pref("browser.safebrowsing.keyURL", "http://127.0.0.1:8888/safebrowsing-dummy/newkey");
+user_pref("browser.safebrowsing.updateURL", "http://127.0.0.1:8888/safebrowsing-dummy/update");
+// Point update checks to the local testing server for fast failures
+user_pref("extensions.update.url", "http://127.0.0.1:8888/extensions-dummy/updateURL");
+user_pref("extensions.update.background.url", "http://127.0.0.1:8888/extensions-dummy/updateBackgroundURL");
+user_pref("extensions.blocklist.url", "http://127.0.0.1:8888/extensions-dummy/blocklistURL");
+user_pref("extensions.hotfix.url", "http://127.0.0.1:8888/extensions-dummy/hotfixURL");
+// Turn off extension updates so they don't bother tests
+user_pref("extensions.update.enabled", false);
+// Make sure opening about:addons won't hit the network
+user_pref("extensions.webservice.discoverURL", "http://127.0.0.1:8888/extensions-dummy/discoveryURL");
+// Make sure AddonRepository won't hit the network
+user_pref("extensions.getAddons.maxResults", 0);
+user_pref("extensions.getAddons.get.url", "http://127.0.0.1:8888/extensions-dummy/repositoryGetURL");
+user_pref("extensions.getAddons.getWithPerformance.url", "http://127.0.0.1:8888/extensions-dummy/repositoryGetWithPerformanceURL");
+user_pref("extensions.getAddons.search.browseURL", "http://127.0.0.1:8888/extensions-dummy/repositoryBrowseURL");
+user_pref("extensions.getAddons.search.url", "http://127.0.0.1:8888/extensions-dummy/repositorySearchURL");
+// Make sure that opening the plugins check page won't hit the network
+user_pref("plugins.update.url", "http://127.0.0.1:8888/plugins-dummy/updateCheckURL");
+
 """ % reftestlist)
 
         #workaround for jsreftests.
@@ -384,11 +429,11 @@ def main(args):
     try:
         if (options.dm_trans == "adb"):
             if (options.deviceIP):
-                dm = devicemanagerADB.DeviceManagerADB(options.deviceIP, options.devicePort, deviceRoot=options.remoteTestRoot)
+                dm = droid.DroidADB(options.deviceIP, options.devicePort, deviceRoot=options.remoteTestRoot)
             else:
-                dm = devicemanagerADB.DeviceManagerADB(None, None, deviceRoot=options.remoteTestRoot)
+                dm = droid.DroidADB(None, None, deviceRoot=options.remoteTestRoot)
         else:
-            dm = devicemanagerSUT.DeviceManagerSUT(options.deviceIP, options.devicePort, deviceRoot=options.remoteTestRoot)
+            dm = droid.DroidSUT(options.deviceIP, options.devicePort, deviceRoot=options.remoteTestRoot)
     except devicemanager.DMError:
         print "Error: exception while initializing devicemanager.  Most likely the device is not in a testable state."
         return 1
@@ -416,6 +461,7 @@ def main(args):
     automation.setRemoteProfile(options.remoteProfile)
     automation.setRemoteLog(options.remoteLogFile)
     reftest = RemoteReftest(automation, dm, options, SCRIPT_DIRECTORY)
+    options = parser.verifyCommonOptions(options, reftest)
 
     # Hack in a symbolic link for jsreftest
     os.system("ln -s ../jsreftest " + str(os.path.join(SCRIPT_DIRECTORY, "jsreftest")))

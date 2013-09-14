@@ -16,6 +16,11 @@
 #define PREF_BDM_SHOWWHENSTARTING "browser.download.manager.showWhenStarting"
 #define PREF_BDM_FOCUSWHENSTARTING "browser.download.manager.focusWhenStarting"
 
+// This class only exists because nsDownload cannot inherit from nsITransfer
+// directly. The reason for this is that nsDownloadManager (incorrectly) keeps
+// an nsCOMArray of nsDownloads, and nsCOMArray is only intended for use with
+// abstract classes. Using a concrete class that multiply inherits from classes
+// deriving from nsISupports will throw ambiguous base class errors.
 class nsDownloadProxy : public nsITransfer
 {
 public:
@@ -52,9 +57,6 @@ public:
       branch->GetBoolPref(PREF_BDM_SHOWWHENSTARTING, &showDM);
 
     if (showDM) {
-      uint32_t id;
-      mInner->GetId(&id);
-
       nsCOMPtr<nsIDownloadManagerUI> dmui =
         do_GetService("@mozilla.org/download-manager-ui;1", &rv);
       NS_ENSURE_SUCCESS(rv, rv);
@@ -70,7 +72,7 @@ public:
       if (visible && !focusWhenStarting)
         return NS_OK;
 
-      return dmui->Show(nullptr, id, nsIDownloadManagerUI::REASON_NEW_DOWNLOAD, aIsPrivate);
+      return dmui->Show(nullptr, mInner, nsIDownloadManagerUI::REASON_NEW_DOWNLOAD, aIsPrivate);
     }
     return rv;
   }
@@ -144,6 +146,12 @@ public:
   {
     NS_ENSURE_TRUE(mInner, NS_ERROR_NOT_INITIALIZED);
     return mInner->OnSecurityChange(aWebProgress, aRequest, aState);
+  }
+
+  NS_IMETHODIMP SetSha256Hash(const nsACString& aHash)
+  {
+    NS_ENSURE_TRUE(mInner, NS_ERROR_NOT_INITIALIZED);
+    return mInner->SetSha256Hash(aHash);
   }
 
 private:

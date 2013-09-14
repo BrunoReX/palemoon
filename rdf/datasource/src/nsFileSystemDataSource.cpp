@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include "nsArrayEnumerator.h"
 #include "nsCOMArray.h"
-#include "nsIEnumerator.h"
+#include "nsISupportsArray.h"
 #include "nsIRDFDataSource.h"
 #include "nsIRDFObserver.h"
 #include "nsIServiceManager.h"
@@ -213,13 +213,7 @@ FileSystemDataSource::Create(nsISupports* aOuter, const nsIID& aIID, void **aRes
     return self->QueryInterface(aIID, aResult);
 }
 
-NS_IMPL_CYCLE_COLLECTION_0(FileSystemDataSource) 
-NS_IMPL_CYCLE_COLLECTING_ADDREF(FileSystemDataSource)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(FileSystemDataSource)
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(FileSystemDataSource)
-    NS_INTERFACE_MAP_ENTRY(nsIRDFDataSource)
-    NS_INTERFACE_MAP_ENTRY(nsISupports)
-NS_INTERFACE_MAP_END
+NS_IMPL_ISUPPORTS1(FileSystemDataSource, nsIRDFDataSource)
 
 NS_IMETHODIMP
 FileSystemDataSource::GetURI(char **uri)
@@ -739,12 +733,10 @@ FileSystemDataSource::ArcLabelsOut(nsIRDFResource *source,
     if (! labels)
     return NS_ERROR_NULL_POINTER;
 
-    nsresult rv;
-
     if (source == mNC_FileSystemRoot)
     {
         nsCOMArray<nsIRDFResource> resources;
-        if (!resources.SetCapacity(2)) return NS_ERROR_OUT_OF_MEMORY;
+        resources.SetCapacity(2);
 
         resources.AppendObject(mNC_Child);
         resources.AppendObject(mNC_pulse);
@@ -754,7 +746,7 @@ FileSystemDataSource::ArcLabelsOut(nsIRDFResource *source,
     else if (isFileURI(source))
     {
         nsCOMArray<nsIRDFResource> resources;
-        if (!resources.SetCapacity(2)) return NS_ERROR_OUT_OF_MEMORY;
+        resources.SetCapacity(2);
 
         if (isDirURI(source))
         {

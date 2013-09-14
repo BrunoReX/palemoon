@@ -29,7 +29,7 @@ public:
   {
     nsString mResponseText;
     uint32_t mStatus;
-    nsString mStatusText;
+    nsCString mStatusText;
     uint16_t mReadyState;
     jsval mResponse;
     nsresult mResponseTextResult;
@@ -54,7 +54,6 @@ private:
   uint32_t mTimeout;
 
   bool mJSObjectRooted;
-  bool mMultipart;
   bool mBackgroundRequest;
   bool mWithCredentials;
   bool mCanceled;
@@ -74,22 +73,22 @@ public:
   _finalize(JSFreeOp* aFop) MOZ_OVERRIDE;
 
   static XMLHttpRequest*
-  Constructor(JSContext* aCx, JSObject* aGlobal,
+  Constructor(const WorkerGlobalObject& aGlobal,
               const MozXMLHttpRequestParametersWorkers& aParams,
               ErrorResult& aRv);
 
   static XMLHttpRequest*
-  Constructor(JSContext* aCx, JSObject* aGlobal,
-              const nsAString& ignored, ErrorResult& aRv)
+  Constructor(const WorkerGlobalObject& aGlobal, const nsAString& ignored,
+              ErrorResult& aRv)
   {
     // Pretend like someone passed null, so we can pick up the default values
     MozXMLHttpRequestParametersWorkers params;
-    if (!params.Init(aCx, nullptr, JS::NullValue())) {
+    if (!params.Init(aGlobal.GetContext(), JS::NullHandleValue)) {
       aRv.Throw(NS_ERROR_UNEXPECTED);
       return nullptr;
     }
 
-    return Constructor(aCx, aGlobal, params, aRv);
+    return Constructor(aGlobal, params, aRv);
   }
 
   void
@@ -106,7 +105,8 @@ public:
   }                                                                            \
                                                                                \
   void                                                                         \
-  SetOn##_type(JSContext* /* unused */, JSObject* aListener, ErrorResult& aRv) \
+  SetOn##_type(JSContext* /* unused */,  JS::Handle<JSObject*> aListener,      \
+               ErrorResult& aRv)                                               \
   {                                                                            \
     SetEventListener(NS_LITERAL_STRING(#_type), aListener, aRv);               \
   }
@@ -122,12 +122,12 @@ public:
   }
 
   void
-  Open(const nsAString& aMethod, const nsAString& aUrl, bool aAsync,
+  Open(const nsACString& aMethod, const nsAString& aUrl, bool aAsync,
        const Optional<nsAString>& aUser, const Optional<nsAString>& aPassword,
        ErrorResult& aRv);
 
   void
-  SetRequestHeader(const nsAString& aHeader, const nsAString& aValue,
+  SetRequestHeader(const nsACString& aHeader, const nsACString& aValue,
                    ErrorResult& aRv);
 
   uint32_t
@@ -147,15 +147,6 @@ public:
 
   void
   SetWithCredentials(bool aWithCredentials, ErrorResult& aRv);
-
-  bool
-  Multipart() const
-  {
-    return mMultipart;
-  }
-
-  void
-  SetMultipart(bool aMultipart, ErrorResult& aRv);
 
   bool
   MozBackgroundRequest() const
@@ -208,17 +199,17 @@ public:
   }
 
   void
-  GetStatusText(nsAString& aStatusText) const
+  GetStatusText(nsACString& aStatusText) const
   {
     aStatusText = mStateData.mStatusText;
   }
 
   void
-  GetResponseHeader(const nsAString& aHeader, nsAString& aResponseHeader,
+  GetResponseHeader(const nsACString& aHeader, nsACString& aResponseHeader,
                     ErrorResult& aRv);
 
   void
-  GetAllResponseHeaders(nsAString& aResponseHeaders, ErrorResult& aRv);
+  GetAllResponseHeaders(nsACString& aResponseHeaders, ErrorResult& aRv);
 
   void
   OverrideMimeType(const nsAString& aMimeType, ErrorResult& aRv);
@@ -251,7 +242,7 @@ public:
   }
 
   JS::Value
-  GetInterface(JSContext* cx, JSObject* aIID, ErrorResult& aRv)
+  GetInterface(JSContext* cx, JS::Handle<JSObject*> aIID, ErrorResult& aRv)
   {
     aRv.Throw(NS_ERROR_FAILURE);
     return JSVAL_NULL;
@@ -299,7 +290,7 @@ private:
   MaybeDispatchPrematureAbortEvents(ErrorResult& aRv);
 
   void
-  DispatchPrematureAbortEvent(JSObject* aTarget, uint8_t aEventType,
+  DispatchPrematureAbortEvent(JS::Handle<JSObject*> aTarget, uint8_t aEventType,
                               bool aUploadTarget, ErrorResult& aRv);
 
   bool

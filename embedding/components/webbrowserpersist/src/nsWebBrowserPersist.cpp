@@ -8,6 +8,7 @@
 #include "nspr.h"
 
 #include "nsIFileStreams.h"       // New Necko file streams
+#include <algorithm>
 
 #ifdef XP_OS2
 #include "nsILocalFileOS2.h"
@@ -42,7 +43,8 @@
 #include "nsIDOMTreeWalker.h"
 #include "nsIDOMNode.h"
 #include "nsIDOMComment.h"
-#include "nsIDOMNamedNodeMap.h"
+#include "nsIDOMMozNamedAttrMap.h"
+#include "nsIDOMAttr.h"
 #include "nsIDOMNodeList.h"
 #include "nsIWebProgressListener.h"
 #include "nsIAuthPrompt.h"
@@ -54,12 +56,9 @@
 
 #include "nsIDOMNodeFilter.h"
 #include "nsIDOMProcessingInstruction.h"
-#include "nsIDOMHTMLBodyElement.h"
-#include "nsIDOMHTMLTableElement.h"
-#include "nsIDOMHTMLTableRowElement.h"
-#include "nsIDOMHTMLTableCellElement.h"
 #include "nsIDOMHTMLAnchorElement.h"
 #include "nsIDOMHTMLAreaElement.h"
+#include "nsIDOMHTMLCollection.h"
 #include "nsIDOMHTMLImageElement.h"
 #include "nsIDOMHTMLScriptElement.h"
 #include "nsIDOMHTMLLinkElement.h"
@@ -73,12 +72,8 @@
 #include "nsIDOMHTMLOptionElement.h"
 #include "nsIDOMHTMLTextAreaElement.h"
 #include "nsIDOMHTMLDocument.h"
-#include "nsIDOMSVGImageElement.h"
-#include "nsIDOMSVGScriptElement.h"
-#ifdef MOZ_MEDIA
 #include "nsIDOMHTMLSourceElement.h"
 #include "nsIDOMHTMLMediaElement.h"
-#endif // MOZ_MEDIA
  
 #include "nsIImageLoadingContent.h"
 
@@ -89,6 +84,8 @@
 #include "nsIProtocolHandler.h"
 
 #include "nsWebBrowserPersist.h"
+
+#include "nsIContent.h"
 
 using namespace mozilla;
 
@@ -834,7 +831,7 @@ nsWebBrowserPersist::OnDataAvailable(
         {
             readError = true;
             rv = aIStream->Read(buffer,
-                                NS_MIN(uint32_t(sizeof(buffer)), bytesRemaining),
+                                std::min(uint32_t(sizeof(buffer)), bytesRemaining),
                                 &bytesRead);
             if (NS_SUCCEEDED(rv))
             {
@@ -1628,7 +1625,7 @@ nsresult nsWebBrowserPersist::SaveDocumentInternal(
             nsIDOMNodeFilter::SHOW_ELEMENT |
                 nsIDOMNodeFilter::SHOW_DOCUMENT |
                 nsIDOMNodeFilter::SHOW_PROCESSING_INSTRUCTION,
-            nullptr, true, getter_AddRefs(walker));
+            nullptr, 1, getter_AddRefs(walker));
         NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
 
         nsCOMPtr<nsIDOMNode> currentNode;
@@ -2369,7 +2366,7 @@ public:
     }
 };
 
-struct NS_STACK_CLASS FixRedirectData
+struct MOZ_STACK_CLASS FixRedirectData
 {
     nsCOMPtr<nsIChannel> mNewChannel;
     nsCOMPtr<nsIURI> mOriginalURI;
@@ -2700,6 +2697,12 @@ nsresult nsWebBrowserPersist::OnWalkDOMNode(nsIDOMNode *aNode)
         return NS_OK;
     }
 
+    nsCOMPtr<nsIContent> content = do_QueryInterface(aNode);
+    if (!content)
+    {
+        return NS_OK;
+    }
+
     // Test the node to see if it's an image, frame, iframe, css, js
     nsCOMPtr<nsIDOMHTMLImageElement> nodeAsImage = do_QueryInterface(aNode);
     if (nodeAsImage)
@@ -2708,14 +2711,12 @@ nsresult nsWebBrowserPersist::OnWalkDOMNode(nsIDOMNode *aNode)
         return NS_OK;
     }
 
-    nsCOMPtr<nsIDOMSVGImageElement> nodeAsSVGImage = do_QueryInterface(aNode);
-    if (nodeAsSVGImage)
+    if (content->IsSVG(nsGkAtoms::img))
     {
         StoreURIAttributeNS(aNode, "http://www.w3.org/1999/xlink", "href");
         return NS_OK;
     }
 
-#ifdef MOZ_MEDIA
     nsCOMPtr<nsIDOMHTMLMediaElement> nodeAsMedia = do_QueryInterface(aNode);
     if (nodeAsMedia)
     {
@@ -2728,32 +2729,23 @@ nsresult nsWebBrowserPersist::OnWalkDOMNode(nsIDOMNode *aNode)
         StoreURIAttribute(aNode, "src");
         return NS_OK;
     }
-#endif // MOZ_MEDIA
 
-    nsCOMPtr<nsIDOMHTMLBodyElement> nodeAsBody = do_QueryInterface(aNode);
-    if (nodeAsBody)
-    {
+    if (content->IsHTML(nsGkAtoms::body)) {
         StoreURIAttribute(aNode, "background");
         return NS_OK;
     }
 
-    nsCOMPtr<nsIDOMHTMLTableElement> nodeAsTable = do_QueryInterface(aNode);
-    if (nodeAsTable)
-    {
+    if (content->IsHTML(nsGkAtoms::table)) {
         StoreURIAttribute(aNode, "background");
         return NS_OK;
     }
 
-    nsCOMPtr<nsIDOMHTMLTableRowElement> nodeAsTableRow = do_QueryInterface(aNode);
-    if (nodeAsTableRow)
-    {
+    if (content->IsHTML(nsGkAtoms::tr)) {
         StoreURIAttribute(aNode, "background");
         return NS_OK;
     }
 
-    nsCOMPtr<nsIDOMHTMLTableCellElement> nodeAsTableCell = do_QueryInterface(aNode);
-    if (nodeAsTableCell)
-    {
+    if (content->IsHTML(nsGkAtoms::td) || content->IsHTML(nsGkAtoms::th)) {
         StoreURIAttribute(aNode, "background");
         return NS_OK;
     }
@@ -2765,8 +2757,7 @@ nsresult nsWebBrowserPersist::OnWalkDOMNode(nsIDOMNode *aNode)
         return NS_OK;
     }
 
-    nsCOMPtr<nsIDOMSVGScriptElement> nodeAsSVGScript = do_QueryInterface(aNode);
-    if (nodeAsSVGScript)
+    if (content->IsSVG(nsGkAtoms::script))
     {
         StoreURIAttributeNS(aNode, "http://www.w3.org/1999/xlink", "href");
         return NS_OK;
@@ -2991,6 +2982,12 @@ nsWebBrowserPersist::CloneNodeWithFixedUpAttributes(
         }
     }
 
+    nsCOMPtr<nsIContent> content = do_QueryInterface(aNodeIn);
+    if (!content)
+    {
+        return NS_OK;
+    }
+
     // Fix up href and file links in the elements
 
     nsCOMPtr<nsIDOMHTMLAnchorElement> nodeAsAnchor = do_QueryInterface(aNodeIn);
@@ -3015,9 +3012,7 @@ nsWebBrowserPersist::CloneNodeWithFixedUpAttributes(
         return rv;
     }
 
-    nsCOMPtr<nsIDOMHTMLBodyElement> nodeAsBody = do_QueryInterface(aNodeIn);
-    if (nodeAsBody)
-    {
+    if (content->IsHTML(nsGkAtoms::body)) {
         rv = GetNodeToFixup(aNodeIn, aNodeOut);
         if (NS_SUCCEEDED(rv) && *aNodeOut)
         {
@@ -3026,9 +3021,7 @@ nsWebBrowserPersist::CloneNodeWithFixedUpAttributes(
         return rv;
     }
 
-    nsCOMPtr<nsIDOMHTMLTableElement> nodeAsTable = do_QueryInterface(aNodeIn);
-    if (nodeAsTable)
-    {
+    if (content->IsHTML(nsGkAtoms::table)) {
         rv = GetNodeToFixup(aNodeIn, aNodeOut);
         if (NS_SUCCEEDED(rv) && *aNodeOut)
         {
@@ -3037,9 +3030,7 @@ nsWebBrowserPersist::CloneNodeWithFixedUpAttributes(
         return rv;
     }
 
-    nsCOMPtr<nsIDOMHTMLTableRowElement> nodeAsTableRow = do_QueryInterface(aNodeIn);
-    if (nodeAsTableRow)
-    {
+    if (content->IsHTML(nsGkAtoms::tr)) {
         rv = GetNodeToFixup(aNodeIn, aNodeOut);
         if (NS_SUCCEEDED(rv) && *aNodeOut)
         {
@@ -3048,9 +3039,7 @@ nsWebBrowserPersist::CloneNodeWithFixedUpAttributes(
         return rv;
     }
 
-    nsCOMPtr<nsIDOMHTMLTableCellElement> nodeAsTableCell = do_QueryInterface(aNodeIn);
-    if (nodeAsTableCell)
-    {
+    if (content->IsHTML(nsGkAtoms::td) || content->IsHTML(nsGkAtoms::th)) {
         rv = GetNodeToFixup(aNodeIn, aNodeOut);
         if (NS_SUCCEEDED(rv) && *aNodeOut)
         {
@@ -3077,7 +3066,6 @@ nsWebBrowserPersist::CloneNodeWithFixedUpAttributes(
         return rv;
     }
 
-#ifdef MOZ_MEDIA
     nsCOMPtr<nsIDOMHTMLMediaElement> nodeAsMedia = do_QueryInterface(aNodeIn);
     if (nodeAsMedia)
     {
@@ -3101,10 +3089,8 @@ nsWebBrowserPersist::CloneNodeWithFixedUpAttributes(
 
         return rv;
     }
-#endif // MOZ_MEDIA
 
-    nsCOMPtr<nsIDOMSVGImageElement> nodeAsSVGImage = do_QueryInterface(aNodeIn);
-    if (nodeAsSVGImage)
+    if (content->IsSVG(nsGkAtoms::img))
     {
         rv = GetNodeToFixup(aNodeIn, aNodeOut);
         if (NS_SUCCEEDED(rv) && *aNodeOut)
@@ -3132,8 +3118,7 @@ nsWebBrowserPersist::CloneNodeWithFixedUpAttributes(
         return rv;
     }
 
-    nsCOMPtr<nsIDOMSVGScriptElement> nodeAsSVGScript = do_QueryInterface(aNodeIn);
-    if (nodeAsSVGScript)
+    if (content->IsSVG(nsGkAtoms::script))
     {
         rv = GetNodeToFixup(aNodeIn, aNodeOut);
         if (NS_SUCCEEDED(rv) && *aNodeOut)
@@ -3264,7 +3249,10 @@ nsWebBrowserPersist::CloneNodeWithFixedUpAttributes(
                 case NS_FORM_INPUT_TEL:
                 case NS_FORM_INPUT_URL:
                 case NS_FORM_INPUT_NUMBER:
+                case NS_FORM_INPUT_RANGE:
                 case NS_FORM_INPUT_DATE:
+                case NS_FORM_INPUT_TIME:
+                case NS_FORM_INPUT_COLOR:
                     nodeAsInput->GetValue(valueStr);
                     // Avoid superfluous value="" serialization
                     if (valueStr.IsEmpty())
@@ -3380,23 +3368,24 @@ nsWebBrowserPersist::StoreURIAttributeNS(
     NS_ENSURE_ARG_POINTER(aNamespaceURI);
     NS_ENSURE_ARG_POINTER(aAttribute);
 
-    nsresult rv = NS_OK;
+    nsCOMPtr<nsIDOMElement> element = do_QueryInterface(aNode);
+    MOZ_ASSERT(element);
 
     // Find the named URI attribute on the (element) node and store
     // a reference to the URI that maps onto a local file name
 
-    nsCOMPtr<nsIDOMNamedNodeMap> attrMap;
-    nsCOMPtr<nsIDOMNode> attrNode;
-    rv = aNode->GetAttributes(getter_AddRefs(attrMap));
+    nsCOMPtr<nsIDOMMozNamedAttrMap> attrMap;
+    nsresult rv = element->GetAttributes(getter_AddRefs(attrMap));
     NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
 
     NS_ConvertASCIItoUTF16 namespaceURI(aNamespaceURI);
     NS_ConvertASCIItoUTF16 attribute(aAttribute);
-    rv = attrMap->GetNamedItemNS(namespaceURI, attribute, getter_AddRefs(attrNode));
-    if (attrNode)
+    nsCOMPtr<nsIDOMAttr> attr;
+    rv = attrMap->GetNamedItemNS(namespaceURI, attribute, getter_AddRefs(attr));
+    if (attr)
     {
         nsAutoString oldValue;
-        attrNode->GetNodeValue(oldValue);
+        attr->GetValue(oldValue);
         if (!oldValue.IsEmpty())
         {
             NS_ConvertUTF16toUTF8 oldCValue(oldValue);
@@ -3483,34 +3472,34 @@ nsWebBrowserPersist::FixupURI(nsAString &aURI)
 
 nsresult
 nsWebBrowserPersist::FixupNodeAttributeNS(nsIDOMNode *aNode,
-                                        const char *aNamespaceURI,
-                                        const char *aAttribute)
+                                          const char *aNamespaceURI,
+                                          const char *aAttribute)
 {
     NS_ENSURE_ARG_POINTER(aNode);
     NS_ENSURE_ARG_POINTER(aNamespaceURI);
     NS_ENSURE_ARG_POINTER(aAttribute);
 
-    nsresult rv = NS_OK;
-
     // Find the named URI attribute on the (element) node and change it to reference
     // a local file.
 
-    nsCOMPtr<nsIDOMNamedNodeMap> attrMap;
-    nsCOMPtr<nsIDOMNode> attrNode;
-    rv = aNode->GetAttributes(getter_AddRefs(attrMap));
+    nsCOMPtr<nsIDOMElement> element = do_QueryInterface(aNode);
+    MOZ_ASSERT(element);
+
+    nsCOMPtr<nsIDOMMozNamedAttrMap> attrMap;
+    nsresult rv = element->GetAttributes(getter_AddRefs(attrMap));
     NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
 
     NS_ConvertASCIItoUTF16 attribute(aAttribute);
     NS_ConvertASCIItoUTF16 namespaceURI(aNamespaceURI);
-    rv = attrMap->GetNamedItemNS(namespaceURI, attribute, getter_AddRefs(attrNode));
-    if (attrNode)
-    {
+    nsCOMPtr<nsIDOMAttr> attr;
+    rv = attrMap->GetNamedItemNS(namespaceURI, attribute, getter_AddRefs(attr));
+    if (attr) {
         nsString uri;
-        attrNode->GetNodeValue(uri);
+        attr->GetValue(uri);
         rv = FixupURI(uri);
         if (NS_SUCCEEDED(rv))
         {
-            attrNode->SetNodeValue(uri);
+            attr->SetValue(uri);
         }
     }
 
@@ -3522,9 +3511,11 @@ nsWebBrowserPersist::FixupAnchor(nsIDOMNode *aNode)
 {
     NS_ENSURE_ARG_POINTER(aNode);
 
-    nsCOMPtr<nsIDOMNamedNodeMap> attrMap;
-    nsCOMPtr<nsIDOMNode> attrNode;
-    nsresult rv = aNode->GetAttributes(getter_AddRefs(attrMap));
+    nsCOMPtr<nsIDOMElement> element = do_QueryInterface(aNode);
+    MOZ_ASSERT(element);
+
+    nsCOMPtr<nsIDOMMozNamedAttrMap> attrMap;
+    nsresult rv = element->GetAttributes(getter_AddRefs(attrMap));
     NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
 
     if (mPersistFlags & PERSIST_FLAGS_DONT_FIXUP_LINKS)
@@ -3534,11 +3525,12 @@ nsWebBrowserPersist::FixupAnchor(nsIDOMNode *aNode)
 
     // Make all anchor links absolute so they point off onto the Internet
     nsString attribute(NS_LITERAL_STRING("href"));
-    rv = attrMap->GetNamedItem(attribute, getter_AddRefs(attrNode));
-    if (attrNode)
+    nsCOMPtr<nsIDOMAttr> attr;
+    rv = attrMap->GetNamedItem(attribute, getter_AddRefs(attr));
+    if (attr)
     {
         nsString oldValue;
-        attrNode->GetNodeValue(oldValue);
+        attr->GetValue(oldValue);
         NS_ConvertUTF16toUTF8 oldCValue(oldValue);
 
         // Skip empty values and self-referencing bookmarks
@@ -3567,7 +3559,7 @@ nsWebBrowserPersist::FixupAnchor(nsIDOMNode *aNode)
             newURI->SetUserPass(EmptyCString());
             nsAutoCString uriSpec;
             newURI->GetSpec(uriSpec);
-            attrNode->SetNodeValue(NS_ConvertUTF8toUTF16(uriSpec));
+            attr->SetValue(NS_ConvertUTF8toUTF16(uriSpec));
         }
     }
 

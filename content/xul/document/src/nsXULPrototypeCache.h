@@ -24,11 +24,6 @@
 
 class nsCSSStyleSheet;
 
-struct CacheScriptEntry
-{
-    JSScript*   mScriptObject; // the script object.
-};
-
 /**
  * The XUL prototype cache can be used to store and retrieve shared data for
  * XUL documents, style sheets, XBL, and scripts.
@@ -69,7 +64,7 @@ public:
     nsresult PutPrototype(nsXULPrototypeDocument* aDocument);
 
     JSScript* GetScript(nsIURI* aURI);
-    nsresult PutScript(nsIURI* aURI, JSScript* aScriptObject);
+    nsresult PutScript(nsIURI* aURI, JS::Handle<JSScript*> aScriptObject);
 
     nsXBLDocumentInfo* GetXBLDocumentInfo(nsIURI* aURL) {
         return mXBLDocTable.GetWeak(aURL);
@@ -107,6 +102,7 @@ public:
     nsresult HasData(nsIURI* aURI, bool* exists);
 
     static nsXULPrototypeCache* GetInstance();
+    static nsXULPrototypeCache* MaybeGetInstance() { return sInstance; }
 
     static void ReleaseGlobals()
     {
@@ -114,6 +110,8 @@ public:
     }
 
     void MarkInCCGeneration(uint32_t aGeneration);
+    void MarkInGC(JSTracer* aTrc);
+    void FlushScripts();
 protected:
     friend nsresult
     NS_NewXULPrototypeCache(nsISupports* aOuter, REFNSIID aIID, void** aResult);
@@ -123,19 +121,18 @@ protected:
 
     static nsXULPrototypeCache* sInstance;
 
-    void FlushScripts();
     void FlushSkinFiles();
 
     nsRefPtrHashtable<nsURIHashKey,nsXULPrototypeDocument>  mPrototypeTable; // owns the prototypes
     nsRefPtrHashtable<nsURIHashKey,nsCSSStyleSheet>        mStyleSheetTable;
-    nsDataHashtable<nsURIHashKey,CacheScriptEntry>         mScriptTable;
+    nsDataHashtable<nsURIHashKey, JSScript*>               mScriptTable;
     nsRefPtrHashtable<nsURIHashKey,nsXBLDocumentInfo>  mXBLDocTable;
 
     nsTHashtable<nsURIHashKey> mCacheURITable;
 
     nsInterfaceHashtable<nsURIHashKey, nsIStorageStream> mOutputStreamTable;
     nsInterfaceHashtable<nsURIHashKey, nsIObjectInputStream> mInputStreamTable;
- 
+
     // Bootstrap caching service
     nsresult BeginCaching(nsIURI* aDocumentURI);
 };

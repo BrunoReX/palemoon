@@ -5,9 +5,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/layers/PLayers.h"
+#include "mozilla/layers/PLayerTransaction.h"
 #include "mozilla/layers/ShadowLayers.h"
- 
+#include "mozilla/layers/LayerManagerComposite.h"
+#include "mozilla/layers/CompositorTypes.h"
+
 #include "gfxPlatform.h"
 
 #include "gfxSharedQuartzSurface.h"
@@ -18,10 +20,10 @@ namespace mozilla {
 namespace layers {
 
 bool
-ShadowLayerForwarder::PlatformAllocBuffer(const gfxIntSize& aSize,
-                                          gfxASurface::gfxContentType aContent,
-                                          uint32_t aCaps,
-                                          SurfaceDescriptor* aBuffer)
+ISurfaceAllocator::PlatformAllocSurfaceDescriptor(const gfxIntSize& aSize,
+                                                  gfxASurface::gfxContentType aContent,
+                                                  uint32_t aCaps,
+                                                  SurfaceDescriptor* aBuffer)
 {
   return false;
 }
@@ -30,10 +32,22 @@ ShadowLayerForwarder::PlatformAllocBuffer(const gfxIntSize& aSize,
 ShadowLayerForwarder::PlatformOpenDescriptor(OpenMode aMode,
                                              const SurfaceDescriptor& aSurface)
 {
-  if (SurfaceDescriptor::TShmem != aSurface.type()) {
-    return nullptr;
+  if (aSurface.type() == SurfaceDescriptor::TShmem) {
+    return gfxSharedQuartzSurface::Open(aSurface.get_Shmem());
+  } else if (aSurface.type() == SurfaceDescriptor::TMemoryImage) {
+    const MemoryImage& image = aSurface.get_MemoryImage();
+    gfxASurface::gfxImageFormat format
+      = static_cast<gfxASurface::gfxImageFormat>(image.format());
+
+    nsRefPtr<gfxASurface> surf =
+      new gfxQuartzSurface((unsigned char*)image.data(),
+                           image.size(),
+                           image.stride(),
+                           format);
+    return surf.forget();
+
   }
-  return gfxSharedQuartzSurface::Open(aSurface.get_Shmem());
+  return nullptr;
 }
 
 /*static*/ bool
@@ -72,23 +86,30 @@ ShadowLayerForwarder::PlatformSyncBeforeUpdate()
 }
 
 /*static*/ void
-ShadowLayerManager::PlatformSyncBeforeReplyUpdate()
+LayerManagerComposite::PlatformSyncBeforeReplyUpdate()
 {
 }
 
 bool
-ShadowLayerManager::PlatformDestroySharedSurface(SurfaceDescriptor*)
+ISurfaceAllocator::PlatformDestroySharedSurface(SurfaceDescriptor*)
 {
   return false;
 }
 
 /*static*/ already_AddRefed<TextureImage>
-ShadowLayerManager::OpenDescriptorForDirectTexturing(GLContext*,
-                                                     const SurfaceDescriptor&,
-                                                     GLenum)
+LayerManagerComposite::OpenDescriptorForDirectTexturing(GLContext*,
+                                                        const SurfaceDescriptor&,
+                                                        GLenum)
 {
   return nullptr;
 }
+
+/*static*/ bool
+LayerManagerComposite::SupportsDirectTexturing()
+{
+  return false;
+}
+
 
 } // namespace layers
 } // namespace mozilla

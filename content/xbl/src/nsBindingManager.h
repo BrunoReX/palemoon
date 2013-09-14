@@ -6,6 +6,7 @@
 #ifndef nsBindingManager_h_
 #define nsBindingManager_h_
 
+#include "nsIContent.h"
 #include "nsStubMutationObserver.h"
 #include "pldhash.h"
 #include "nsInterfaceHashtable.h"
@@ -17,7 +18,6 @@
 #include "nsThreadUtils.h"
 
 struct ElementDependentRuleProcessorData;
-class nsIContent;
 class nsIXPConnectWrappedJS;
 class nsIAtom;
 class nsIDOMNodeList;
@@ -157,9 +157,7 @@ public:
   nsIContent* GetNestedSingleInsertionPoint(nsIContent* aParent,
                                             bool* aMultipleInsertionPoints);
 
-  nsresult AddLayeredBinding(nsIContent* aContent, nsIURI* aURL,
-                             nsIPrincipal* aOriginPrincipal);
-  nsresult RemoveLayeredBinding(nsIContent* aContent, nsIURI* aURL);
+  nsresult ClearBinding(nsIContent* aContent);
   nsresult LoadBindingDocument(nsIDocument* aBoundDoc, nsIURI* aURL,
                                nsIPrincipal* aOriginPrincipal);
 

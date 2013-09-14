@@ -7,7 +7,7 @@
 
 #include "Accessible-inl.h"
 #include "nsAccUtils.h"
-#include "DocAccessible.h"
+#include "DocAccessible-inl.h"
 #include "Role.h"
 #include "States.h"
 
@@ -109,22 +109,25 @@ OuterDocAccessible::Shutdown()
 {
   // XXX: sometimes outerdoc accessible is shutdown because of layout style
   // change however the presshell of underlying document isn't destroyed and
-  // the document doesn't get pagehide events. Shutdown underlying document if
-  // any to avoid hanging document accessible.
+  // the document doesn't get pagehide events. Schedule a document rebind
+  // to its parent document. Otherwise a document accessible may be lost if its
+  // outerdoc has being recreated (see bug 862863 for details).
+
 #ifdef A11Y_LOG
   if (logging::IsEnabled(logging::eDocDestroy))
     logging::OuterDocDestroy(this);
 #endif
 
-  Accessible* childAcc = mChildren.SafeElementAt(0, nullptr);
-  if (childAcc) {
+  Accessible* child = mChildren.SafeElementAt(0, nullptr);
+  if (child) {
 #ifdef A11Y_LOG
     if (logging::IsEnabled(logging::eDocDestroy)) {
-      logging::DocDestroy("outerdoc's child document shutdown",
-                          childAcc->AsDoc()->DocumentNode());
+      logging::DocDestroy("outerdoc's child document rebind is scheduled",
+                          child->AsDoc()->DocumentNode());
     }
 #endif
-    childAcc->Shutdown();
+    RemoveChild(child);
+    mDoc->BindChildDocument(child->AsDoc());
   }
 
   AccessibleWrap::Shutdown();
@@ -149,8 +152,10 @@ OuterDocAccessible::InvalidateChildren()
 }
 
 bool
-OuterDocAccessible::AppendChild(Accessible* aAccessible)
+OuterDocAccessible::InsertChildAt(uint32_t aIdx, Accessible* aAccessible)
 {
+  NS_ASSERTION(aAccessible->IsDoc(),
+               "OuterDocAccessible should only have document child!");
   // We keep showing the old document for a bit after creating the new one,
   // and while building the new DOM and frame tree. That's done on purpose
   // to avoid weird flashes of default background color.
@@ -159,7 +164,7 @@ OuterDocAccessible::AppendChild(Accessible* aAccessible)
   if (mChildren.Length())
     mChildren[0]->Shutdown();
 
-  if (!AccessibleWrap::AppendChild(aAccessible))
+  if (!AccessibleWrap::InsertChildAt(0, aAccessible))
     return false;
 
 #ifdef A11Y_LOG

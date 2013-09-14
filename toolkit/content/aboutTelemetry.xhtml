@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
 <!DOCTYPE html [
   <!ENTITY % htmlDTD PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd"> %htmlDTD;
@@ -52,8 +51,8 @@
       <span class="toggle-caption hidden">&aboutTelemetry.toggleOff;</span>
       <span class="empty-caption hidden">&aboutTelemetry.emptySection;</span>
       <div id="chrome-hangs" class="data hidden">
-        <a id="fetch-symbols" href="javascript:">&aboutTelemetry.fetchSymbols;</a>
-        <a id="hide-symbols" class="hidden" href="javascript:">&aboutTelemetry.hideSymbols;</a>
+        <a id="chrome-hangs-fetch-symbols" href="javascript:">&aboutTelemetry.fetchSymbols;</a>
+        <a id="chrome-hangs-hide-symbols" class="hidden" href="javascript:">&aboutTelemetry.hideSymbols;</a>
         <br/>
         <br/>
         <div id="chrome-hangs-data">
@@ -78,6 +77,21 @@
       <div id="simple-measurements" class="data hidden">
         <table id="simple-measurements-table">
         </table>
+      </div>
+    </section>
+
+    <section id="late-writes-section" class="data-section">
+      <h1 class="section-name">&aboutTelemetry.lateWritesSection;</h1>
+      <span class="toggle-caption">&aboutTelemetry.toggleOn;</span>
+      <span class="toggle-caption hidden">&aboutTelemetry.toggleOff;</span>
+      <span class="empty-caption hidden">&aboutTelemetry.emptySection;</span>
+      <div id="late-writes" class="data hidden">
+        <a id="late-writes-fetch-symbols" href="javascript:">&aboutTelemetry.fetchSymbols;</a>
+        <a id="late-writes-hide-symbols" class="hidden" href="javascript:">&aboutTelemetry.hideSymbols;</a>
+        <br/>
+        <br/>
+        <div id="late-writes-data">
+        </div>
       </div>
     </section>
 

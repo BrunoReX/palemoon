@@ -28,25 +28,20 @@
 
 #include <sys/socket.h>
 #include <bluetooth/bluetooth.h>
-#include <bluetooth/sco.h>
-#include <bluetooth/rfcomm.h>
 #include <bluetooth/l2cap.h>
+#include <bluetooth/rfcomm.h>
+#include <bluetooth/sco.h>
 
 #include "BluetoothUnixSocketConnector.h"
 #include "nsThreadUtils.h"
 
-#undef LOG
-#if defined(MOZ_WIDGET_GONK)
-#include <android/log.h>
-#define LOG(args...)  __android_log_print(ANDROID_LOG_INFO, "GonkDBus", args);
-#else
-#define BTDEBUG true
-#define LOG(args...) if (BTDEBUG) printf(args);
-#endif
-
+using namespace mozilla::ipc;
 USING_BLUETOOTH_NAMESPACE
 
-static const int RFCOMM_SO_SNDBUF = 70 * 1024; // 70 KB send buffer
+static const int RFCOMM_SO_SNDBUF = 70 * 1024;  // 70 KB send buffer
+static const int L2CAP_SO_SNDBUF = 400 * 1024;  // 400 KB send buffer
+static const int L2CAP_SO_RCVBUF = 400 * 1024;  // 400 KB receive buffer
+static const int L2CAP_MAX_MTU = 65000;
 
 static
 int get_bdaddr(const char *str, bdaddr_t *ba)
@@ -82,7 +77,8 @@ bool
 BluetoothUnixSocketConnector::SetUp(int aFd)
 {
   int lm = 0;
-  int sndbuf;
+  int sndbuf, rcvbuf;
+
   /* kernel does not yet support LM for SCO */
   switch (mType) {
   case BluetoothSocketType::RFCOMM:
@@ -90,15 +86,28 @@ BluetoothUnixSocketConnector::SetUp(int aFd)
     lm |= mEncrypt ? RFCOMM_LM_ENCRYPT : 0;
     break;
   case BluetoothSocketType::L2CAP:
+  case BluetoothSocketType::EL2CAP:
     lm |= mAuth ? L2CAP_LM_AUTH : 0;
     lm |= mEncrypt ? L2CAP_LM_ENCRYPT : 0;
     break;
+  case BluetoothSocketType::SCO:
+    break;
+  default:
+    MOZ_NOT_REACHED("Unknown socket type!");
   }
 
   if (lm) {
-    if (setsockopt(aFd, SOL_RFCOMM, RFCOMM_LM, &lm, sizeof(lm))) {
-      NS_WARNING("setsockopt(RFCOMM_LM) failed, throwing");
-      return false;
+    if (mType == BluetoothSocketType::RFCOMM) {
+      if (setsockopt(aFd, SOL_RFCOMM, RFCOMM_LM, &lm, sizeof(lm))) {
+        NS_WARNING("setsockopt(RFCOMM_LM) failed, throwing");
+        return false;
+      }
+    } else if (mType == BluetoothSocketType::L2CAP ||
+               mType == BluetoothSocketType::EL2CAP) {
+      if (setsockopt(aFd, SOL_L2CAP, L2CAP_LM, &lm, sizeof(lm))) {
+        NS_WARNING("setsockopt(L2CAP_LM) failed, throwing");
+        return false;
+      }
     }
   }
 
@@ -107,6 +116,45 @@ BluetoothUnixSocketConnector::SetUp(int aFd)
     if (setsockopt(aFd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf))) {
       NS_WARNING("setsockopt(SO_SNDBUF) failed, throwing");
       return false;
+    }
+  }
+
+  /* Setting L2CAP socket options */
+  if (mType == BluetoothSocketType::L2CAP ||
+      mType == BluetoothSocketType::EL2CAP) {
+    struct l2cap_options opts;
+    socklen_t optlen = sizeof(opts);
+    int err;
+    err = getsockopt(aFd, SOL_L2CAP, L2CAP_OPTIONS, &opts, &optlen);
+    if (!err) {
+      /* setting MTU for [E]L2CAP */
+      opts.omtu = opts.imtu = L2CAP_MAX_MTU;
+
+      /* Enable ERTM for [E]L2CAP */
+      if (mType == BluetoothSocketType::EL2CAP) {
+        opts.flush_to = 0xffff; /* infinite */
+        opts.mode = L2CAP_MODE_ERTM;
+        opts.fcs = 1;
+        opts.txwin_size = 64;
+        opts.max_tx = 10;
+      }
+
+      err = setsockopt(aFd, SOL_L2CAP, L2CAP_OPTIONS, &opts, optlen);
+    }
+
+    /* Set larger SNDBUF & RCVBUF for EL2CAP connections */
+    if (mType == BluetoothSocketType::EL2CAP) {
+      sndbuf = L2CAP_SO_SNDBUF;
+      if (setsockopt(aFd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf))) {
+        NS_WARNING("setsockopt(SO_SNDBUF) failed, throwing");
+        return false;
+      }
+
+      rcvbuf = L2CAP_SO_RCVBUF;
+      if (setsockopt(aFd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf))) {
+        NS_WARNING("setsockopt(SO_RCVBUF) failed, throwing");
+        return false;
+      }
     }
   }
 
@@ -129,6 +177,9 @@ BluetoothUnixSocketConnector::Create()
   case BluetoothSocketType::L2CAP:
     fd = socket(PF_BLUETOOTH, SOCK_SEQPACKET, BTPROTO_L2CAP);
     break;
+  case BluetoothSocketType::EL2CAP:
+    fd = socket(PF_BLUETOOTH, SOCK_STREAM, BTPROTO_L2CAP);
+    break;
   default:
     MOZ_NOT_REACHED();
   }
@@ -140,14 +191,16 @@ BluetoothUnixSocketConnector::Create()
 
   if (!SetUp(fd)) {
     NS_WARNING("Could not set up socket!");
+    return -1;
   }
+
   return fd;
 }
 
-void
+bool
 BluetoothUnixSocketConnector::CreateAddr(bool aIsServer,
                                          socklen_t& aAddrSize,
-                                         struct sockaddr* aAddr,
+                                         sockaddr_any& aAddr,
                                          const char* aAddress)
 {
   // Set to BDADDR_ANY, if it's not a server, we'll reset.
@@ -156,39 +209,60 @@ BluetoothUnixSocketConnector::CreateAddr(bool aIsServer,
   if (!aIsServer && aAddress && strlen(aAddress) > 0) {
     if (get_bdaddr(aAddress, &bd_address_obj)) {
       NS_WARNING("Can't get bluetooth address!");
-      return;
+      return false;
     }
   }
+
+  // Initialize
+  memset(&aAddr, 0, sizeof(aAddr));
 
   switch (mType) {
   case BluetoothSocketType::RFCOMM:
     struct sockaddr_rc addr_rc;
     aAddrSize = sizeof(addr_rc);
-    memset(aAddr, 0, aAddrSize);
-    addr_rc.rc_family = AF_BLUETOOTH;
-    addr_rc.rc_channel = mChannel;
-    memcpy(&addr_rc.rc_bdaddr, &bd_address_obj, sizeof(bdaddr_t));
-    memcpy(aAddr, &addr_rc, sizeof(addr_rc));
+    aAddr.rc.rc_family = AF_BLUETOOTH;
+    aAddr.rc.rc_channel = mChannel;
+    memcpy(&aAddr.rc.rc_bdaddr, &bd_address_obj, sizeof(bd_address_obj));
+    break;
+  case BluetoothSocketType::L2CAP:
+  case BluetoothSocketType::EL2CAP:
+    struct sockaddr_l2 addr_l2;
+    aAddrSize = sizeof(addr_l2);
+    aAddr.l2.l2_family = AF_BLUETOOTH;
+    aAddr.l2.l2_psm = mChannel;
+    memcpy(&aAddr.l2.l2_bdaddr, &bd_address_obj, sizeof(bdaddr_t));
     break;
   case BluetoothSocketType::SCO:
     struct sockaddr_sco addr_sco;
     aAddrSize = sizeof(addr_sco);
-
-    memset(aAddr, 0, aAddrSize);
-    addr_sco.sco_family = AF_BLUETOOTH;
-    memcpy(&addr_sco.sco_bdaddr, &bd_address_obj, sizeof(bdaddr_t));
-    memcpy(aAddr, &addr_sco, sizeof(addr_sco));
+    aAddr.sco.sco_family = AF_BLUETOOTH;
+    memcpy(&aAddr.sco.sco_bdaddr, &bd_address_obj, sizeof(bd_address_obj));
     break;
   default:
     NS_WARNING("Socket type unknown!");
+    return false;
   }
+  return true;
 }
 
 void
-BluetoothUnixSocketConnector::GetSocketAddr(const sockaddr& aAddr,
+BluetoothUnixSocketConnector::GetSocketAddr(const sockaddr_any& aAddr,
                                             nsAString& aAddrStr)
 {
   char addr[18];
-  get_bdaddr_as_string((bdaddr_t*)aAddr.sa_data, addr);
+  switch (mType) {
+  case BluetoothSocketType::RFCOMM:
+    get_bdaddr_as_string((bdaddr_t*)(&aAddr.rc.rc_bdaddr), addr);
+    break;
+  case BluetoothSocketType::SCO:
+    get_bdaddr_as_string((bdaddr_t*)(&aAddr.sco.sco_bdaddr), addr);
+    break;
+  case BluetoothSocketType::L2CAP:
+  case BluetoothSocketType::EL2CAP:
+    get_bdaddr_as_string((bdaddr_t*)(&aAddr.l2.l2_bdaddr), addr);
+    break;
+  default:
+    MOZ_NOT_REACHED("Socket should be either RFCOMM or SCO!");
+  }
   aAddrStr.AssignASCII(addr);
 }

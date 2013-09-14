@@ -1,13 +1,14 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sw=4 et tw=99:
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef ParseNode_inl_h__
-#define ParseNode_inl_h__
+#ifndef frontend_ParseNode_inl_h
+#define frontend_ParseNode_inl_h
 
 #include "frontend/ParseNode.h"
+#include "frontend/SharedContext.h"
 
 namespace js {
 namespace frontend {
@@ -36,38 +37,14 @@ ParseNode::name() const
     return atom->asPropertyName();
 }
 
-inline bool
-ParseNode::isConstant()
+inline JSAtom *
+ParseNode::atom() const
 {
-    switch (pn_type) {
-      case PNK_NUMBER:
-      case PNK_STRING:
-      case PNK_NULL:
-      case PNK_FALSE:
-      case PNK_TRUE:
-        return true;
-      case PNK_ARRAY:
-      case PNK_OBJECT:
-        return isOp(JSOP_NEWINIT) && !(pn_xflags & PNX_NONCONST);
-      default:
-        return false;
-    }
-}
-
-struct ParseContext;
-
-inline void
-NameNode::initCommon(ParseContext *pc)
-{
-    pn_expr = NULL;
-    pn_cookie.makeFree();
-    pn_dflags = (!pc->topStmt || pc->topStmt->type == STMT_BLOCK)
-                ? PND_BLOCKCHILD
-                : 0;
-    pn_blockid = pc->blockid();
+    JS_ASSERT(isKind(PNK_MODULE) || isKind(PNK_STRING));
+    return isKind(PNK_MODULE) ? pn_modulebox->module()->atom() : pn_atom;
 }
 
 } /* namespace frontend */
 } /* namespace js */
 
-#endif /* ParseNode_inl_h__ */
+#endif /* frontend_ParseNode_inl_h */

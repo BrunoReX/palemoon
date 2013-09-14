@@ -89,6 +89,7 @@ Tracker.prototype = {
       return;
     }
     Utils.namedTimer(function() {
+      this._log.debug("Saving changed IDs to " + this.file);
       Utils.jsonSave("changes/" + this.file, this, this.changedIDs, cb);
     }, 1000, this, "_lazySave");
   },
@@ -136,7 +137,7 @@ Tracker.prototype = {
 
     // Add/update the entry if we have a newer time
     if ((this.changedIDs[id] || -Infinity) < when) {
-      this._log.trace("Adding changed ID: " + [id, when]);
+      this._log.trace("Adding changed ID: " + id + ", " + when);
       this.changedIDs[id] = when;
       this.saveChangedIDs(this.onSavedChangedIDs);
     }
@@ -775,7 +776,7 @@ SyncEngine.prototype = {
     this._log.trace("Downloading & applying server changes");
 
     // Figure out how many total items to fetch this sync; do less on mobile.
-    let batchSize = Infinity;
+    let batchSize = this.downloadLimit || Infinity;
     let isMobile = (Svc.Prefs.get("client.type") == "mobile");
 
     if (!newitems) {

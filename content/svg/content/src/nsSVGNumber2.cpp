@@ -6,7 +6,6 @@
 #include "nsError.h"
 #include "nsSVGAttrTearoffTable.h"
 #include "nsSVGNumber2.h"
-#include "nsTextFormatter.h"
 #include "prdtoa.h"
 #include "nsMathUtils.h"
 #include "nsContentUtils.h" // NS_ENSURE_FINITE
@@ -151,9 +150,8 @@ nsSVGNumber2::SetAnimValue(float aValue, nsSVGElement *aSVGElement)
   aSVGElement->DidAnimateNumber(mAttrEnum);
 }
 
-nsresult
-nsSVGNumber2::ToDOMAnimatedNumber(nsIDOMSVGAnimatedNumber **aResult,
-                                  nsSVGElement *aSVGElement)
+already_AddRefed<nsIDOMSVGAnimatedNumber>
+nsSVGNumber2::ToDOMAnimatedNumber(nsSVGElement* aSVGElement)
 {
   nsRefPtr<DOMAnimatedNumber> domAnimatedNumber =
     sSVGAnimatedNumberTearoffTable.GetTearoff(this);
@@ -162,7 +160,14 @@ nsSVGNumber2::ToDOMAnimatedNumber(nsIDOMSVGAnimatedNumber **aResult,
     sSVGAnimatedNumberTearoffTable.AddTearoff(this, domAnimatedNumber);
   }
 
-  domAnimatedNumber.forget(aResult);
+  return domAnimatedNumber.forget();
+}
+
+nsresult
+nsSVGNumber2::ToDOMAnimatedNumber(nsIDOMSVGAnimatedNumber **aResult,
+                                  nsSVGElement *aSVGElement)
+{
+  *aResult = ToDOMAnimatedNumber(aSVGElement).get();
   return NS_OK;
 }
 
@@ -179,7 +184,7 @@ nsSVGNumber2::ToSMILAttr(nsSVGElement *aSVGElement)
 
 nsresult
 nsSVGNumber2::SMILNumber::ValueFromString(const nsAString& aStr,
-                                          const nsISMILAnimationElement* /*aSrcElement*/,
+                                          const mozilla::dom::SVGAnimationElement* /*aSrcElement*/,
                                           nsSMILValue& aValue,
                                           bool& aPreventCachingOfSandwich) const
 {
@@ -192,7 +197,7 @@ nsSVGNumber2::SMILNumber::ValueFromString(const nsAString& aStr,
     return rv;
   }
 
-  nsSMILValue val(&nsSMILFloatType::sSingleton);
+  nsSMILValue val(nsSMILFloatType::Singleton());
   val.mU.mDouble = value;
   aValue = val;
   aPreventCachingOfSandwich = false;
@@ -203,7 +208,7 @@ nsSVGNumber2::SMILNumber::ValueFromString(const nsAString& aStr,
 nsSMILValue
 nsSVGNumber2::SMILNumber::GetBaseValue() const
 {
-  nsSMILValue val(&nsSMILFloatType::sSingleton);
+  nsSMILValue val(nsSMILFloatType::Singleton());
   val.mU.mDouble = mVal->mBaseVal;
   return val;
 }
@@ -221,9 +226,9 @@ nsSVGNumber2::SMILNumber::ClearAnimValue()
 nsresult
 nsSVGNumber2::SMILNumber::SetAnimValue(const nsSMILValue& aValue)
 {
-  NS_ASSERTION(aValue.mType == &nsSMILFloatType::sSingleton,
+  NS_ASSERTION(aValue.mType == nsSMILFloatType::Singleton(),
                "Unexpected type to assign animated value");
-  if (aValue.mType == &nsSMILFloatType::sSingleton) {
+  if (aValue.mType == nsSMILFloatType::Singleton()) {
     mVal->SetAnimValue(float(aValue.mU.mDouble), mSVGElement);
   }
   return NS_OK;

@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
+ * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -17,8 +18,8 @@
 ** for all C files.
 **/
 
-#ifndef jstypes_h___
-#define jstypes_h___
+#ifndef jstypes_h
+#define jstypes_h
 
 #include "mozilla/Attributes.h"
 #include "mozilla/Util.h"
@@ -244,7 +245,6 @@ typedef int JSBool;
 #define JS_BITS_PER_BYTE_LOG2 3
 
 #define JS_BITS_PER_WORD (JS_BITS_PER_BYTE * JS_BYTES_PER_WORD)
-#define JS_BITS_PER_DOUBLE (JS_BITS_PER_BYTE * JS_BYTES_PER_DOUBLE)
 
 /***********************************************************************
 ** MACROS:      JS_FUNC_TO_DATA_PTR
@@ -279,4 +279,4 @@ typedef int JSBool;
 # define JS_EXTENSION_(s) s
 #endif
 
-#endif /* jstypes_h___ */
+#endif /* jstypes_h */

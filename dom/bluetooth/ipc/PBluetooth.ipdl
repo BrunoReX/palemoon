@@ -28,7 +28,6 @@ struct DefaultAdapterPathRequest
 struct SetPropertyRequest
 {
   BluetoothObjectType type;
-  nsString path;
   BluetoothNamedValue value;
 };
 
@@ -40,24 +39,20 @@ struct GetPropertyRequest
 
 struct StartDiscoveryRequest
 {
-  nsString path;
 };
 
 struct StopDiscoveryRequest
 {
-  nsString path;
 };
 
 struct PairRequest
 {
-  nsString path;
   nsString address;
   uint32_t timeoutMS;
 };
 
 struct UnpairRequest
 {
-  nsString path;
   nsString address;
 };
 
@@ -93,15 +88,18 @@ struct DenyAuthorizationRequest
   nsString path;
 };
 
-struct DevicePropertiesRequest
+struct PairedDevicePropertiesRequest
 {
   nsString[] addresses;
+};
+struct ConnectedDevicePropertiesRequest
+{
+  uint16_t profileId;
 };
 
 struct ConnectRequest
 {
   nsString address;
-  nsString adapterPath;
   uint16_t profileId;
 };
 
@@ -131,6 +129,18 @@ struct DenyReceivingFileRequest
   nsString devicePath;
 };
 
+struct ConnectScoRequest
+{
+};
+
+struct DisconnectScoRequest
+{
+};
+
+struct IsScoConnectedRequest
+{
+};
+
 union Request
 {
   DefaultAdapterPathRequest;
@@ -146,13 +156,17 @@ union Request
   DenyPairingConfirmationRequest;
   ConfirmAuthorizationRequest;
   DenyAuthorizationRequest;
-  DevicePropertiesRequest;
+  ConnectedDevicePropertiesRequest;
+  PairedDevicePropertiesRequest;
   ConnectRequest;
   DisconnectRequest;
   SendFileRequest;
   StopSendingFileRequest;
   ConfirmReceivingFileRequest;
   DenyReceivingFileRequest;
+  ConnectScoRequest;
+  DisconnectScoRequest;
+  IsScoConnectedRequest;
 };
 
 protocol PBluetooth

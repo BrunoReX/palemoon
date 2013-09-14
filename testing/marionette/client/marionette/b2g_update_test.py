@@ -70,7 +70,7 @@ class B2GUpdateTestRunner(MarionetteTestRunner):
         self.b2g = B2GInstance(homedir=kwargs.get('homedir'))
         self.update_tools = self.b2g.import_update_tools()
         self.adb = self.update_tools.AdbTool(path=self.b2g.adb_path,
-                                             device=self.device)
+                                             device=self.device_serial)
 
     def match(self, filename):
         return self.match_re.match(filename) is not None
@@ -203,7 +203,6 @@ class B2GUpdateTestCase(MarionetteTestCase):
         self.duration = time.time() - self.start_time
         if self.marionette.session is not None:
             self.loglines.extend(self.marionette.get_logs())
-            self.perfdata = self.marionette.get_perf_data()
             self.marionette.delete_session()
         self.marionette = None
 

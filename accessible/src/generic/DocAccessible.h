@@ -6,7 +6,6 @@
 #ifndef mozilla_a11y_DocAccessible_h__
 #define mozilla_a11y_DocAccessible_h__
 
-#include "nsIAccessibleCursorable.h"
 #include "nsIAccessibleDocument.h"
 #include "nsIAccessiblePivot.h"
 
@@ -45,7 +44,6 @@ class DocAccessible : public HyperTextAccessibleWrap,
                       public nsIObserver,
                       public nsIScrollPositionListener,
                       public nsSupportsWeakReference,
-                      public nsIAccessibleCursorable,
                       public nsIAccessiblePivotObserver
 {
   NS_DECL_ISUPPORTS_INHERITED
@@ -54,8 +52,6 @@ class DocAccessible : public HyperTextAccessibleWrap,
   NS_DECL_NSIACCESSIBLEDOCUMENT
 
   NS_DECL_NSIOBSERVER
-
-  NS_DECL_NSIACCESSIBLECURSORABLE
 
   NS_DECL_NSIACCESSIBLEPIVOTOBSERVER
 
@@ -492,11 +488,8 @@ protected:
     // Whether scroll listeners were added.
     eScrollInitialized = 1 << 0,
 
-    // Whether we support nsIAccessibleCursorable.
-    eCursorable = 1 << 1,
-
     // Whether the document is a tab document.
-    eTabDocument = 1 << 2
+    eTabDocument = 1 << 1
   };
 
   /**
@@ -506,7 +499,7 @@ protected:
   nsDataHashtable<nsPtrHashKey<const nsINode>, Accessible*>
     mNodeToAccessibleMap;
 
-    nsCOMPtr<nsIDocument> mDocumentNode;
+  nsIDocument* mDocumentNode;
     nsCOMPtr<nsITimer> mScrollWatchTimer;
     uint16_t mScrollPositionChangedTicks; // Used for tracking scroll events
 
@@ -539,7 +532,7 @@ protected:
   nsTArray<nsRefPtr<DocAccessible> > mChildDocuments;
 
   /**
-   * The virtual cursor of the document when it supports nsIAccessibleCursorable.
+   * The virtual cursor of the document.
    */
   nsRefPtr<nsAccessiblePivot> mVirtualCursor;
 
@@ -561,11 +554,19 @@ protected:
     AttrRelProvider& operator =(const AttrRelProvider&);
   };
 
+  typedef nsTArray<nsAutoPtr<AttrRelProvider> > AttrRelProviderArray;
+  typedef nsClassHashtable<nsStringHashKey, AttrRelProviderArray>
+    DependentIDsHashtable;
+
   /**
    * The cache of IDs pointed by relation attributes.
    */
-  typedef nsTArray<nsAutoPtr<AttrRelProvider> > AttrRelProviderArray;
-  nsClassHashtable<nsStringHashKey, AttrRelProviderArray> mDependentIDsHash;
+  DependentIDsHashtable mDependentIDsHash;
+
+  static PLDHashOperator
+    CycleCollectorTraverseDepIDsEntry(const nsAString& aKey,
+                                      AttrRelProviderArray* aProviders,
+                                      void* aUserArg);
 
   friend class RelatedAccIterator;
 
@@ -581,6 +582,7 @@ protected:
    * Used to process notification from core and accessible events.
    */
   nsRefPtr<NotificationController> mNotificationController;
+  friend class EventQueue;
   friend class NotificationController;
 
 private:

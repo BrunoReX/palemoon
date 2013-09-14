@@ -5,22 +5,21 @@
 
 #include "nsIDOMElement.idl"
 
-interface nsIDOMSVGSVGElement;
-interface nsIDOMSVGAnimatedString;
 interface nsIDOMCSSStyleDeclaration;
 interface nsIDOMCSSValue;
 
 
-[scriptable, uuid(7ccf8faf-29b4-4113-bb23-bc187bac27cf)]
+[scriptable, uuid(abdf347a-0063-42cc-b6fc-c9a19a65248e)]
 interface nsIDOMSVGElement : nsIDOMElement
 {
   attribute DOMString id;
             // raises DOMException on setting
-  readonly attribute nsIDOMSVGSVGElement ownerSVGElement;
+  readonly attribute nsIDOMSVGElement    ownerSVGElement;
   readonly attribute nsIDOMSVGElement    viewportElement;
 
-  readonly attribute nsIDOMSVGAnimatedString   className;
+  readonly attribute nsISupports   className;
   readonly attribute nsIDOMCSSStyleDeclaration style;
 
-  nsIDOMCSSValue getPresentationAttribute(in DOMString name);
+  // Not implemented
+  // nsIDOMCSSValue getPresentationAttribute(in DOMString name);
 };

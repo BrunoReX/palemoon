@@ -12,9 +12,6 @@ FAIL_ON_WARNINGS = 1
 
 include $(DEPTH)/config/autoconf.mk
 
-MODULE          = test_widget
-XPCSHELL_TESTS  = unit
-
 ifeq ($(MOZ_WIDGET_TOOLKIT),windows)
 
 ifdef NS_ENABLE_TSF
@@ -36,6 +33,7 @@ MOCHITEST_CHROME_FILES =	test_bug343416.xul \
 		window_bug429954.xul \
 		test_bug444800.xul \
 		$(filter disabled-for-intermittent-timeouts--bug-561929, test_bug478536.xul) \
+		test_bug462106_perwindow.xul \
 		window_bug478536.xul \
 		test_bug517396.xul \
 		test_bug538242.xul \
@@ -58,12 +56,6 @@ MOCHITEST_CHROME_FILES =	test_bug343416.xul \
 		test_bug760802.xul \
 		$(NULL)
 
-ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
-MOCHITEST_CHROME_FILES += test_bug462106_perwindow.xul
-else
-MOCHITEST_CHROME_FILES += test_bug462106.xul
-endif
-
 # test_bug413277.html mac-only based on 604789, 605178
 
 ifeq ($(MOZ_WIDGET_TOOLKIT),cocoa)
@@ -85,13 +77,15 @@ MOCHITEST_CHROME_FILES += native_menus_window.xul \
                test_key_event_counts.xul \
                test_bug596600.xul \
                test_bug673301.xul \
+               test_taskbar_progress.xul \
+               test_secure_input.html \
                $(NULL)
 endif
 
 ifeq ($(MOZ_WIDGET_TOOLKIT),windows)
 MOCHITEST_CHROME_FILES  += taskbar_previews.xul \
 		window_state_windows.xul \
-		taskbar_progress.xul \
+		$(warning test_taskbar_progress.xul disabled due to regression, see bug 605813) \
 		test_chrome_context_menus_win.xul \
 		test_plugin_input_event.html \
 		chrome_context_menus_win.xul \

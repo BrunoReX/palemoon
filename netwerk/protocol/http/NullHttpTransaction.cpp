@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// HttpLog.h should generally be included first
+#include "HttpLog.h"
+
 #include "nsHttp.h"
 #include "NullHttpTransaction.h"
 #include "nsProxyRelease.h"
@@ -127,7 +130,7 @@ NullHttpTransaction::RequestHead()
     // the NullHttpTransaction and let them be retried from the pending queue
     // with a bound transcation
   }
-  
+
   return mRequestHead;
 }
 
@@ -168,7 +171,7 @@ NullHttpTransaction::SetPipelinePosition(int32_t position)
 {
     return NS_OK;
 }
- 
+
 int32_t
 NullHttpTransaction::PipelinePosition()
 {

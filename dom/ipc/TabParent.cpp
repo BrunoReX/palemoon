@@ -30,10 +30,10 @@
 #include "nsFocusManager.h"
 #include "nsFrameLoader.h"
 #include "nsIContent.h"
+#include "nsIDocShell.h"
 #include "nsIDOMApplicationRegistry.h"
 #include "nsIDOMElement.h"
 #include "nsIDOMEvent.h"
-#include "nsIDOMEventTarget.h"
 #include "nsIDOMHTMLFrameElement.h"
 #include "nsIDOMWindow.h"
 #include "nsIDialogCreator.h"
@@ -50,8 +50,10 @@
 #include "nsSerializationHelper.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
+#include "private/pprio.h"
 #include "StructuredCloneUtils.h"
 #include "TabChild.h"
+#include <algorithm>
 
 using namespace mozilla::dom;
 using namespace mozilla::ipc;
@@ -64,6 +66,116 @@ using namespace mozilla::dom::indexedDB;
 // The flags passed by the webProgress notifications are 16 bits shifted
 // from the ones registered by webProgressListeners.
 #define NOTIFY_FLAG_SHIFT 16
+
+class OpenFileAndSendFDRunnable : public nsRunnable
+{
+    const nsString mPath;
+    nsRefPtr<TabParent> mTabParent;
+    nsCOMPtr<nsIEventTarget> mEventTarget;
+    PRFileDesc* mFD;
+
+public:
+    OpenFileAndSendFDRunnable(const nsAString& aPath, TabParent* aTabParent)
+      : mPath(aPath), mTabParent(aTabParent), mFD(nullptr)
+    {
+        MOZ_ASSERT(NS_IsMainThread());
+        MOZ_ASSERT(!aPath.IsEmpty());
+        MOZ_ASSERT(aTabParent);
+    }
+
+    void Dispatch()
+    {
+        MOZ_ASSERT(NS_IsMainThread());
+
+        mEventTarget = do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
+        NS_ENSURE_TRUE_VOID(mEventTarget);
+
+        nsresult rv = mEventTarget->Dispatch(this, NS_DISPATCH_NORMAL);
+        NS_ENSURE_SUCCESS_VOID(rv);
+    }
+
+private:
+    ~OpenFileAndSendFDRunnable()
+    {
+        MOZ_ASSERT(!mFD);
+    }
+
+    // This shouldn't be called directly except by the event loop. Use Dispatch
+    // to start the sequence.
+    NS_IMETHOD Run()
+    {
+        if (NS_IsMainThread()) {
+            SendResponse();
+        } else if (mFD) {
+            CloseFile();
+        } else {
+            OpenFile();
+        }
+
+        return NS_OK;
+    }
+
+    void SendResponse()
+    {
+        MOZ_ASSERT(NS_IsMainThread());
+        MOZ_ASSERT(mTabParent);
+        MOZ_ASSERT(mEventTarget);
+        MOZ_ASSERT(mFD);
+
+        nsRefPtr<TabParent> tabParent;
+        mTabParent.swap(tabParent);
+
+        FileDescriptor::PlatformHandleType handle =
+            FileDescriptor::PlatformHandleType(PR_FileDesc2NativeHandle(mFD));
+
+        mozilla::unused << tabParent->SendCacheFileDescriptor(mPath, handle);
+
+        nsCOMPtr<nsIEventTarget> eventTarget;
+        mEventTarget.swap(eventTarget);
+
+        if (NS_FAILED(eventTarget->Dispatch(this, NS_DISPATCH_NORMAL))) {
+            NS_WARNING("Failed to dispatch to stream transport service!");
+
+            // It's probably safer to take the main thread IO hit here rather
+            // than leak a file descriptor.
+            CloseFile();
+        }
+    }
+
+    void OpenFile()
+    {
+        MOZ_ASSERT(!NS_IsMainThread());
+        MOZ_ASSERT(!mFD);
+
+        nsCOMPtr<nsIFile> file;
+        nsresult rv = NS_NewLocalFile(mPath, false, getter_AddRefs(file));
+        NS_ENSURE_SUCCESS_VOID(rv);
+
+        PRFileDesc* fd;
+        rv = file->OpenNSPRFileDesc(PR_RDONLY, 0, &fd);
+        NS_ENSURE_SUCCESS_VOID(rv);
+
+        mFD = fd;
+
+        if (NS_FAILED(NS_DispatchToMainThread(this, NS_DISPATCH_NORMAL))) {
+            NS_WARNING("Failed to dispatch to main thread!");
+
+            CloseFile();
+        }
+    }
+
+    void CloseFile()
+    {
+        // It's possible for this to happen on the main thread if the dispatch
+        // to the stream service fails after we've already opened the file so
+        // we can't assert the thread we're running on.
+
+        MOZ_ASSERT(mFD);
+
+        PR_Close(mFD);
+        mFD = nullptr;
+    }
+};
 
 namespace mozilla {
 namespace dom {
@@ -84,10 +196,16 @@ TabParent::TabParent(const TabContext& aContext)
   , mIMECompositionStart(0)
   , mIMESeqno(0)
   , mEventCaptureDepth(0)
+  , mRect(0, 0, 0, 0)
   , mDimensions(0, 0)
+  , mOrientation(0)
   , mDPI(0)
+  , mDefaultScale(0)
   , mShown(false)
+  , mUpdatedDimensions(false)
+  , mMarkedDestroying(false)
   , mIsDestroyed(false)
+  , mAppPackageFileDescriptorSent(false)
 {
 }
 
@@ -99,7 +217,32 @@ void
 TabParent::SetOwnerElement(nsIDOMElement* aElement)
 {
   mFrameElement = aElement;
-  TryCacheDPI();
+  TryCacheDPIAndScale();
+}
+
+void
+TabParent::GetAppType(nsAString& aOut)
+{
+  aOut.Truncate();
+  nsCOMPtr<Element> elem = do_QueryInterface(mFrameElement);
+  if (!elem) {
+    return;
+  }
+
+  elem->GetAttr(kNameSpaceID_None, nsGkAtoms::mozapptype, aOut);
+}
+
+bool
+TabParent::IsVisible()
+{
+  nsRefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
+  if (!frameLoader) {
+    return false;
+  }
+
+  bool visible = false;
+  frameLoader->GetVisible(&visible);
+  return visible;
 }
 
 void
@@ -124,13 +267,17 @@ TabParent::Destroy()
     frame->Destroy();
   }
   mIsDestroyed = true;
+
+  ContentParent* cp = static_cast<ContentParent*>(Manager());
+  cp->NotifyTabDestroying(this);
+  mMarkedDestroying = true;
 }
 
 bool
 TabParent::Recv__delete__()
 {
   ContentParent* cp = static_cast<ContentParent*>(Manager());
-  cp->NotifyTabDestroyed(this);
+  cp->NotifyTabDestroyed(this, mMarkedDestroying);
   return true;
 }
 
@@ -144,17 +291,19 @@ TabParent::ActorDestroy(ActorDestroyReason why)
     mIMETabParent = nullptr;
   }
   nsRefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
+  nsCOMPtr<nsIObserverService> os = services::GetObserverService();
   if (frameLoader) {
     ReceiveMessage(CHILD_PROCESS_SHUTDOWN_MESSAGE, false, nullptr, nullptr);
     frameLoader->DestroyChild();
 
-    if (why == AbnormalShutdown) {
-      nsCOMPtr<nsIObserverService> os = services::GetObserverService();
-      if (os) {
-        os->NotifyObservers(NS_ISUPPORTS_CAST(nsIFrameLoader*, frameLoader),
-                            "oop-frameloader-crashed", nullptr);
-      }
+    if (why == AbnormalShutdown && os) {
+      os->NotifyObservers(NS_ISUPPORTS_CAST(nsIFrameLoader*, frameLoader),
+                          "oop-frameloader-crashed", nullptr);
     }
+  }
+
+  if (os) {
+    os->NotifyObservers(NS_ISUPPORTS_CAST(nsITabParent*, this), "ipc:browser-destroyed", nullptr);
   }
 }
 
@@ -178,8 +327,10 @@ TabParent::RecvEvent(const RemoteDOMEvent& aEvent)
   nsCOMPtr<nsIDOMEvent> event = do_QueryInterface(aEvent.mEvent);
   NS_ENSURE_TRUE(event, true);
 
-  nsCOMPtr<nsIDOMEventTarget> target = do_QueryInterface(mFrameElement);
+  nsCOMPtr<mozilla::dom::EventTarget> target = do_QueryInterface(mFrameElement);
   NS_ENSURE_TRUE(target, true);
+
+  event->SetOwner(target);
 
   bool dummy;
   target->DispatchEvent(event, &dummy);
@@ -221,23 +372,66 @@ TabParent::AnswerCreateWindow(PBrowserParent** retval)
 void
 TabParent::LoadURL(nsIURI* aURI)
 {
+    MOZ_ASSERT(aURI);
+
     if (mIsDestroyed) {
-      return;
-    }
-    if (!mShown) {
-      nsAutoCString spec;
-      if (aURI) {
-        aURI->GetSpec(spec);
-      }
-      NS_WARNING(nsPrintfCString("TabParent::LoadURL(%s) called before "
-                                 "Show(). Ignoring LoadURL.\n", spec.get()).get());
-      return;
+        return;
     }
 
     nsCString spec;
     aURI->GetSpec(spec);
 
+    if (!mShown) {
+        NS_WARNING(nsPrintfCString("TabParent::LoadURL(%s) called before "
+                                   "Show(). Ignoring LoadURL.\n",
+                                   spec.get()).get());
+        return;
+    }
+
     unused << SendLoadURL(spec);
+
+    // If this app is a packaged app then we can speed startup by sending over
+    // the file descriptor for the "application.zip" file that it will
+    // invariably request. Only do this once.
+    if (!mAppPackageFileDescriptorSent) {
+        mAppPackageFileDescriptorSent = true;
+
+        nsCOMPtr<mozIApplication> app = GetOwnOrContainingApp();
+        if (app) {
+            nsString manifestURL;
+            nsresult rv = app->GetManifestURL(manifestURL);
+            NS_ENSURE_SUCCESS_VOID(rv);
+
+            if (StringBeginsWith(manifestURL, NS_LITERAL_STRING("app:"))) {
+                nsString basePath;
+                rv = app->GetBasePath(basePath);
+                NS_ENSURE_SUCCESS_VOID(rv);
+
+                nsString appId;
+                rv = app->GetId(appId);
+                NS_ENSURE_SUCCESS_VOID(rv);
+
+                nsCOMPtr<nsIFile> packageFile;
+                rv = NS_NewLocalFile(basePath, false,
+                                     getter_AddRefs(packageFile));
+                NS_ENSURE_SUCCESS_VOID(rv);
+
+                rv = packageFile->Append(appId);
+                NS_ENSURE_SUCCESS_VOID(rv);
+
+                rv = packageFile->Append(NS_LITERAL_STRING("application.zip"));
+                NS_ENSURE_SUCCESS_VOID(rv);
+
+                nsString path;
+                rv = packageFile->GetPath(path);
+                NS_ENSURE_SUCCESS_VOID(rv);
+
+                nsRefPtr<OpenFileAndSendFDRunnable> openFileRunnable =
+                    new OpenFileAndSendFDRunnable(path, this);
+                openFileRunnable->Dispatch();
+            }
+        }
+    }
 }
 
 void
@@ -259,12 +453,21 @@ TabParent::UpdateDimensions(const nsRect& rect, const nsIntSize& size)
   }
   hal::ScreenConfiguration config;
   hal::GetCurrentScreenConfiguration(&config);
+  ScreenOrientation orientation = config.orientation();
 
-  unused << SendUpdateDimensions(rect, size, config.orientation());
-  if (RenderFrameParent* rfp = GetRenderFrame()) {
-    rfp->NotifyDimensionsChanged(size.width, size.height);
+  if (!mUpdatedDimensions || mOrientation != orientation ||
+      mDimensions != size || !mRect.IsEqualEdges(rect)) {
+    mUpdatedDimensions = true;
+    mRect = rect;
+    mDimensions = size;
+    mOrientation = orientation;
+
+    unused << SendUpdateDimensions(mRect, mDimensions, mOrientation);
+    if (RenderFrameParent* rfp = GetRenderFrame()) {
+      rfp->NotifyDimensionsChanged(ScreenIntSize::FromUnknownSize(
+        gfx::IntSize(mDimensions.width, mDimensions.height)));
+    }
   }
-  mDimensions = size;
 }
 
 void
@@ -275,21 +478,21 @@ TabParent::UpdateFrame(const FrameMetrics& aFrameMetrics)
   }
 }
 
-void TabParent::HandleDoubleTap(const nsIntPoint& aPoint)
+void TabParent::HandleDoubleTap(const CSSIntPoint& aPoint)
 {
   if (!mIsDestroyed) {
     unused << SendHandleDoubleTap(aPoint);
   }
 }
 
-void TabParent::HandleSingleTap(const nsIntPoint& aPoint)
+void TabParent::HandleSingleTap(const CSSIntPoint& aPoint)
 {
   if (!mIsDestroyed) {
     unused << SendHandleSingleTap(aPoint);
   }
 }
 
-void TabParent::HandleLongTap(const nsIntPoint& aPoint)
+void TabParent::HandleLongTap(const CSSIntPoint& aPoint)
 {
   if (!mIsDestroyed) {
     unused << SendHandleLongTap(aPoint);
@@ -328,9 +531,10 @@ TabParent::GetState(uint32_t *aState)
 }
 
 NS_IMETHODIMP
-TabParent::GetTooltipText(nsAString & aTooltipText)
+TabParent::SetDocShell(nsIDocShell *aDocShell)
 {
-  aTooltipText.Truncate();
+  NS_ENSURE_ARG(aDocShell);
+  NS_WARNING("No mDocShell member in TabParent so there is no docShell to set");
   return NS_OK;
 }
 
@@ -426,6 +630,18 @@ bool TabParent::SendRealTouchEvent(nsTouchEvent& event)
     return false;
   }
   if (event.message == NS_TOUCH_START) {
+    // Adjust the widget coordinates to be relative to our frame.
+    nsRefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
+    if (!frameLoader) {
+      // No frame anymore?
+      sEventCapturer = nullptr;
+      return false;
+    }
+
+    mChildProcessOffsetAtTouchStart =
+        nsEventStateManager::GetChildProcessOffset(frameLoader,
+                                                   event);
+
     MOZ_ASSERT((!sEventCapturer && mEventCaptureDepth == 0) ||
                (sEventCapturer == this && mEventCaptureDepth > 0));
     // We want to capture all remaining touch events in this series
@@ -483,16 +699,8 @@ TabParent::TryCapture(const nsGUIEvent& aEvent)
     return false;
   }
 
-  // Adjust the widget coordinates to be relative to our frame.
-  nsRefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
-
-  if (!frameLoader) {
-    // No frame anymore?
-    sEventCapturer = nullptr;
-    return false;
-  }
-
-  nsEventStateManager::MapEventCoordinatesForChildProcess(frameLoader, &event);
+  nsEventStateManager::MapEventCoordinatesForChildProcess(
+    mChildProcessOffsetAtTouchStart, &event);
 
   SendRealTouchEvent(event);
   return true;
@@ -503,22 +711,7 @@ TabParent::RecvSyncMessage(const nsString& aMessage,
                            const ClonedMessageData& aData,
                            InfallibleTArray<nsString>* aJSONRetVal)
 {
-  const SerializedStructuredCloneBuffer& buffer = aData.data();
-  const InfallibleTArray<PBlobParent*>& blobParents = aData.blobsParent();
-  StructuredCloneData cloneData;
-  cloneData.mData = buffer.data;
-  cloneData.mDataLength = buffer.dataLength;
-  if (!blobParents.IsEmpty()) {
-    uint32_t length = blobParents.Length();
-    cloneData.mClosure.mBlobs.SetCapacity(length);
-    for (uint32_t i = 0; i < length; ++i) {
-      BlobParent* blobParent = static_cast<BlobParent*>(blobParents[i]);
-      MOZ_ASSERT(blobParent);
-      nsCOMPtr<nsIDOMBlob> blob = blobParent->GetBlob();
-      MOZ_ASSERT(blob);
-      cloneData.mClosure.mBlobs.AppendElement(blob);
-    }
-  }
+  StructuredCloneData cloneData = ipc::UnpackClonedMessageDataForParent(aData);
   return ReceiveMessage(aMessage, true, &cloneData, aJSONRetVal);
 }
 
@@ -526,24 +719,7 @@ bool
 TabParent::RecvAsyncMessage(const nsString& aMessage,
                                   const ClonedMessageData& aData)
 {
-    const SerializedStructuredCloneBuffer& buffer = aData.data();
-  const InfallibleTArray<PBlobParent*>& blobParents = aData.blobsParent();
-
-    StructuredCloneData cloneData;
-    cloneData.mData = buffer.data;
-    cloneData.mDataLength = buffer.dataLength;
-
-  if (!blobParents.IsEmpty()) {
-    uint32_t length = blobParents.Length();
-      cloneData.mClosure.mBlobs.SetCapacity(length);
-    for (uint32_t i = 0; i < length; ++i) {
-      BlobParent* blobParent = static_cast<BlobParent*>(blobParents[i]);
-      MOZ_ASSERT(blobParent);
-      nsCOMPtr<nsIDOMBlob> blob = blobParent->GetBlob();
-        MOZ_ASSERT(blob);
-        cloneData.mClosure.mBlobs.AppendElement(blob);
-      }
-    }
+  StructuredCloneData cloneData = ipc::UnpackClonedMessageDataForParent(aData);
   return ReceiveMessage(aMessage, false, &cloneData, nullptr);
 }
 
@@ -582,7 +758,7 @@ TabParent::RecvNotifyIMEFocus(const bool& aFocus,
   mIMETabParent = aFocus ? this : nullptr;
   mIMESelectionAnchor = 0;
   mIMESelectionFocus = 0;
-  widget->OnIMEFocusChange(aFocus);
+  widget->NotifyIME(aFocus ? NOTIFY_IME_OF_FOCUS : NOTIFY_IME_OF_BLUR);
 
   if (aFocus) {
     *aPreference = widget->GetIMEUpdatePreference();
@@ -601,7 +777,7 @@ TabParent::RecvNotifyIMETextChange(const uint32_t& aStart,
   if (!widget)
     return true;
 
-  widget->OnIMETextChange(aStart, aEnd, aNewEnd);
+  widget->NotifyIMEOfTextChange(aStart, aEnd, aNewEnd);
   return true;
 }
 
@@ -617,7 +793,7 @@ TabParent::RecvNotifyIMESelection(const uint32_t& aSeqno,
   if (aSeqno == mIMESeqno) {
     mIMESelectionAnchor = aAnchor;
     mIMESelectionFocus = aFocus;
-    widget->OnIMESelectionChange();
+    widget->NotifyIME(NOTIFY_IME_OF_SELECTION_CHANGE);
   }
   return true;
 }
@@ -655,7 +831,7 @@ TabParent::HandleQueryContentEvent(nsQueryContentEvent& aEvent)
   {
   case NS_QUERY_SELECTED_TEXT:
     {
-      aEvent.mReply.mOffset = NS_MIN(mIMESelectionAnchor, mIMESelectionFocus);
+      aEvent.mReply.mOffset = std::min(mIMESelectionAnchor, mIMESelectionFocus);
       if (mIMESelectionAnchor == mIMESelectionFocus) {
         aEvent.mReply.mString.Truncate(0);
       } else {
@@ -704,7 +880,7 @@ TabParent::SendCompositionEvent(nsCompositionEvent& event)
     return false;
   }
   mIMEComposing = event.message != NS_COMPOSITION_END;
-  mIMECompositionStart = NS_MIN(mIMESelectionAnchor, mIMESelectionFocus);
+  mIMECompositionStart = std::min(mIMESelectionAnchor, mIMESelectionFocus);
   if (mIMECompositionEnding)
     return true;
   event.seqno = ++mIMESeqno;
@@ -712,8 +888,9 @@ TabParent::SendCompositionEvent(nsCompositionEvent& event)
 }
 
 /**
- * During ResetInputState or CancelComposition, widget usually sends a
- * NS_TEXT_TEXT event to finalize or clear the composition, respectively
+ * During REQUEST_TO_COMMIT_COMPOSITION or REQUEST_TO_CANCEL_COMPOSITION,
+ * widget usually sends a NS_TEXT_TEXT event to finalize or clear the
+ * composition, respectively
  *
  * Because the event will not reach content in time, we intercept it
  * here and pass the text as the EndIMEComposition return value
@@ -732,7 +909,7 @@ TabParent::SendTextEvent(nsTextEvent& event)
   // We must be able to simulate the selection because
   // we might not receive selection updates in time
   if (!mIMEComposing) {
-    mIMECompositionStart = NS_MIN(mIMESelectionAnchor, mIMESelectionFocus);
+    mIMECompositionStart = std::min(mIMESelectionAnchor, mIMESelectionFocus);
   }
   mIMESelectionAnchor = mIMESelectionFocus =
       mIMECompositionStart + event.theText.Length();
@@ -793,11 +970,8 @@ TabParent::RecvEndIMEComposition(const bool& aCancel,
 
   mIMECompositionEnding = true;
 
-  if (aCancel) {
-    widget->CancelIMEComposition();
-  } else {
-    widget->ResetInputState();
-  }
+  widget->NotifyIME(aCancel ? REQUEST_TO_CANCEL_COMPOSITION :
+                              REQUEST_TO_COMMIT_COMPOSITION);
 
   mIMECompositionEnding = false;
   *aComposition = mIMECompositionText;
@@ -868,11 +1042,22 @@ TabParent::RecvSetInputContext(const int32_t& aIMEEnabled,
 bool
 TabParent::RecvGetDPI(float* aValue)
 {
-  TryCacheDPI();
+  TryCacheDPIAndScale();
 
   NS_ABORT_IF_FALSE(mDPI > 0,
                     "Must not ask for DPI before OwnerElement is received!");
   *aValue = mDPI;
+  return true;
+}
+
+bool
+TabParent::RecvGetDefaultScale(double* aValue)
+{
+  TryCacheDPIAndScale();
+
+  NS_ABORT_IF_FALSE(mDefaultScale > 0,
+                    "Must not ask for scale before OwnerElement is received!");
+  *aValue = mDefaultScale;
   return true;
 }
 
@@ -906,12 +1091,11 @@ TabParent::ReceiveMessage(const nsString& aMessage,
   if (frameLoader && frameLoader->GetFrameMessageManager()) {
     nsRefPtr<nsFrameMessageManager> manager =
       frameLoader->GetFrameMessageManager();
-    JSContext* ctx = manager->GetJSContext();
-    JSAutoRequest ar(ctx);
+    AutoSafeJSContext ctx;
     uint32_t len = 0; //TODO: obtain a real value in bug 572685
     // Because we want JS messages to have always the same properties,
     // create array even if len == 0.
-    JSObject* objectsArray = JS_NewArrayObject(ctx, len, NULL);
+    JS::Rooted<JSObject*> objectsArray(ctx, JS_NewArrayObject(ctx, len, NULL));
     if (!objectsArray) {
       return false;
     }
@@ -982,6 +1166,14 @@ TabParent::RecvPIndexedDBConstructor(PIndexedDBParent* aActor,
 
   nsCOMPtr<nsPIDOMWindow> window = doc->GetInnerWindow();
   NS_ENSURE_TRUE(window, false);
+
+  // Let's do a current inner check to see if the inner is active or is in
+  // bf cache, and bail out if it's not active.
+  nsCOMPtr<nsPIDOMWindow> outer = doc->GetWindow();
+  if (!outer || outer->GetCurrentInnerWindow() != window) {
+    *aAllowed = false;
+    return true;
+  }
 
   ContentParent* contentParent = static_cast<ContentParent*>(Manager());
   NS_ASSERTION(contentParent, "Null manager?!");
@@ -1104,22 +1296,21 @@ TabParent::HandleDelayedDialogs()
 
 PRenderFrameParent*
 TabParent::AllocPRenderFrame(ScrollingBehavior* aScrolling,
-                             LayersBackend* aBackend,
-                             int32_t* aMaxTextureSize,
+                             TextureFactoryIdentifier* aTextureFactoryIdentifier,
                              uint64_t* aLayersId)
 {
   MOZ_ASSERT(ManagedPRenderFrameParent().IsEmpty());
 
   nsRefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
   if (!frameLoader) {
-    NS_ERROR("Can't allocate graphics resources, aborting subprocess");
+    NS_WARNING("Can't allocate graphics resources, aborting subprocess");
     return nullptr;
   }
 
   *aScrolling = UseAsyncPanZoom() ? ASYNC_PAN_ZOOM : DEFAULT_SCROLLING;
   return new RenderFrameParent(frameLoader,
                                *aScrolling,
-                               aBackend, aMaxTextureSize, aLayersId);
+                               aTextureFactoryIdentifier, aLayersId);
 }
 
 bool
@@ -1188,7 +1379,7 @@ TabParent::GetFrameLoader() const
 }
 
 void
-TabParent::TryCacheDPI()
+TabParent::TryCacheDPIAndScale()
 {
   if (mDPI > 0) {
     return;
@@ -1208,6 +1399,7 @@ TabParent::TryCacheDPI()
 
   if (widget) {
     mDPI = widget->GetDPI();
+    mDefaultScale = widget->GetDefaultScale();
   }
 }
 
@@ -1261,13 +1453,13 @@ TabParent::RecvBrowserFrameOpenWindow(PBrowserParent* aOpener,
 bool
 TabParent::RecvPRenderFrameConstructor(PRenderFrameParent* actor,
                                        ScrollingBehavior* scrolling,
-                                       LayersBackend* backend,
-                                       int32_t* maxTextureSize,
+                                       TextureFactoryIdentifier* factoryIdentifier,
                                        uint64_t* layersId)
 {
   RenderFrameParent* rfp = GetRenderFrame();
   if (mDimensions != nsIntSize() && rfp) {
-    rfp->NotifyDimensionsChanged(mDimensions.width, mDimensions.height);
+    rfp->NotifyDimensionsChanged(ScreenIntSize::FromUnknownSize(
+      gfx::IntSize(mDimensions.width, mDimensions.height)));
   }
 
   return true;

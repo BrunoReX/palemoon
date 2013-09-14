@@ -8,23 +8,28 @@
 #ifndef nsComputedDOMStyle_h__
 #define nsComputedDOMStyle_h__
 
-#include "mozilla/Attributes.h"
-#include "nsDOMCSSDeclaration.h"
-
-#include "nsDOMCSSRGBColor.h"
-#include "nsCSSProps.h"
-
-#include "nsIContent.h"
-#include "nsCOMPtr.h"
-#include "nsWeakReference.h"
 #include "nsAutoPtr.h"
-#include "nsStyleStruct.h"
+#include "mozilla/Attributes.h"
+#include "nsCOMPtr.h"
+#include "nscore.h"
+#include "nsCSSProperty.h"
+#include "nsDOMCSSDeclaration.h"
 #include "nsStyleContext.h"
+#include "nsStyleStruct.h"
+#include "nsIWeakReferenceUtils.h"
+#include "nsIContent.h"
+
+namespace mozilla {
+namespace dom {
+class Element;
+}
+}
 
 class nsIFrame;
 class nsIPresShell;
 class nsDOMCSSValueList;
 class nsROCSSPrimitiveValue;
+class nsStyleContext;
 
 class nsComputedDOMStyle MOZ_FINAL : public nsDOMCSSDeclaration
 {
@@ -40,7 +45,7 @@ public:
   GetPropertyCSSValue(const nsAString& aProp, mozilla::ErrorResult& aRv)
     MOZ_OVERRIDE;
   using nsICSSDeclaration::GetPropertyCSSValue;
-  virtual void IndexedGetter(uint32_t aIndex, bool& aFound, nsAString& aPropName);
+  virtual void IndexedGetter(uint32_t aIndex, bool& aFound, nsAString& aPropName) MOZ_OVERRIDE;
 
   enum StyleType {
     eDefaultOnly, // Only includes UA and user sheets
@@ -88,15 +93,19 @@ public:
   virtual nsIDocument* DocToUpdate() MOZ_OVERRIDE;
   virtual void GetCSSParsingEnvironment(CSSParsingEnvironment& aCSSParseEnv) MOZ_OVERRIDE;
 
+  static nsROCSSPrimitiveValue* MatrixToCSSValue(gfx3DMatrix& aMatrix);
+
 private:
   void AssertFlushedPendingReflows() {
     NS_ASSERTION(mFlushedPendingReflows,
                  "property getter should have been marked layout-dependent");
   }
 
-#define STYLE_STRUCT(name_, checkdata_cb_, ctor_args_)                  \
-  const nsStyle##name_ * GetStyle##name_() {                            \
-    return mStyleContextHolder->GetStyle##name_();                      \
+  nsMargin GetAdjustedValuesForBoxSizing();
+
+#define STYLE_STRUCT(name_, checkdata_cb_)                              \
+  const nsStyle##name_ * Style##name_() {                               \
+    return mStyleContextHolder->Style##name_();                         \
   }
 #include "nsStyleStructList.h"
 #undef STYLE_STRUCT
@@ -181,13 +190,21 @@ private:
   mozilla::dom::CSSValue* DoGetColor();
   mozilla::dom::CSSValue* DoGetFontFamily();
   mozilla::dom::CSSValue* DoGetFontFeatureSettings();
+  mozilla::dom::CSSValue* DoGetFontKerning();
   mozilla::dom::CSSValue* DoGetFontLanguageOverride();
   mozilla::dom::CSSValue* DoGetFontSize();
   mozilla::dom::CSSValue* DoGetFontSizeAdjust();
   mozilla::dom::CSSValue* DoGetFontStretch();
   mozilla::dom::CSSValue* DoGetFontStyle();
-  mozilla::dom::CSSValue* DoGetFontWeight();
+  mozilla::dom::CSSValue* DoGetFontSynthesis();
   mozilla::dom::CSSValue* DoGetFontVariant();
+  mozilla::dom::CSSValue* DoGetFontVariantAlternates();
+  mozilla::dom::CSSValue* DoGetFontVariantCaps();
+  mozilla::dom::CSSValue* DoGetFontVariantEastAsian();
+  mozilla::dom::CSSValue* DoGetFontVariantLigatures();
+  mozilla::dom::CSSValue* DoGetFontVariantNumeric();
+  mozilla::dom::CSSValue* DoGetFontVariantPosition();
+  mozilla::dom::CSSValue* DoGetFontWeight();
 
   /* Background properties */
   mozilla::dom::CSSValue* DoGetBackgroundAttachment();
@@ -310,6 +327,7 @@ private:
   mozilla::dom::CSSValue* DoGetOpacity();
   mozilla::dom::CSSValue* DoGetPointerEvents();
   mozilla::dom::CSSValue* DoGetVisibility();
+  mozilla::dom::CSSValue* DoGetWritingMode();
 
   /* Direction properties */
   mozilla::dom::CSSValue* DoGetDirection();
@@ -318,7 +336,7 @@ private:
   /* Display properties */
   mozilla::dom::CSSValue* DoGetBinding();
   mozilla::dom::CSSValue* DoGetClear();
-  mozilla::dom::CSSValue* DoGetCssFloat();
+  mozilla::dom::CSSValue* DoGetFloat();
   mozilla::dom::CSSValue* DoGetDisplay();
   mozilla::dom::CSSValue* DoGetPosition();
   mozilla::dom::CSSValue* DoGetClip();
@@ -348,6 +366,7 @@ private:
 
   /* Column properties */
   mozilla::dom::CSSValue* DoGetColumnCount();
+  mozilla::dom::CSSValue* DoGetColumnFill();
   mozilla::dom::CSSValue* DoGetColumnWidth();
   mozilla::dom::CSSValue* DoGetColumnGap();
   mozilla::dom::CSSValue* DoGetColumnRuleWidth();
@@ -370,7 +389,6 @@ private:
   mozilla::dom::CSSValue* DoGetAnimationIterationCount();
   mozilla::dom::CSSValue* DoGetAnimationPlayState();
 
-#ifdef MOZ_FLEXBOX
   /* CSS Flexbox properties */
   mozilla::dom::CSSValue* DoGetAlignItems();
   mozilla::dom::CSSValue* DoGetAlignSelf();
@@ -380,7 +398,6 @@ private:
   mozilla::dom::CSSValue* DoGetFlexShrink();
   mozilla::dom::CSSValue* DoGetOrder();
   mozilla::dom::CSSValue* DoGetJustifyContent();
-#endif // MOZ_FLEXBOX
 
   /* SVG properties */
   mozilla::dom::CSSValue* DoGetFill();
@@ -421,8 +438,8 @@ private:
   mozilla::dom::CSSValue* DoGetFilter();
   mozilla::dom::CSSValue* DoGetMask();
   mozilla::dom::CSSValue* DoGetMaskType();
+  mozilla::dom::CSSValue* DoGetPaintOrder();
 
-  nsROCSSPrimitiveValue* GetROCSSPrimitiveValue();
   nsDOMCSSValueList* GetROCSSValueList(bool aCommaDelimited);
   void SetToRGBAColor(nsROCSSPrimitiveValue* aValue, nscolor aColor);
   void SetValueToStyleImage(const nsStyleImage& aStyleImage,

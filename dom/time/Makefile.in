@@ -9,37 +9,12 @@ VPATH            = @srcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-MODULE           = dom
 LIBRARY_NAME     = dom_time_s
-XPIDL_MODULE     = dom_time
 LIBXUL_LIBRARY   = 1
 FORCE_STATIC_LIB = 1
-ifndef _MSC_VER
 FAIL_ON_WARNINGS := 1
-endif # !_MSC_VER
 
 include $(topsrcdir)/dom/dom-config.mk
-
-EXPORTS_NAMESPACES = mozilla/dom/time
-
-CPPSRCS = \
-  TimeManager.cpp \
-  TimeService.cpp \
-  TimeChangeObserver.cpp \
-  DateCacheCleaner.cpp \
-  $(NULL)
-
-EXPORTS_mozilla/dom/time = \
-  TimeService.h \
-  TimeChangeObserver.h \
-  DateCacheCleaner.h \
-  $(NULL)
-
-XPIDLSRCS = \
-  nsIDOMNavigatorTime.idl \
-  nsIDOMTimeManager.idl \
-  nsITimeService.idl \
-  $(NULL)
 
 include $(topsrcdir)/config/config.mk
 include $(topsrcdir)/ipc/chromium/chromium-config.mk

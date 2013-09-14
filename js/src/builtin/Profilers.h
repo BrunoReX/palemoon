@@ -1,6 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sw=4 et tw=99:
- *
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,10 +8,10 @@
  * Functions for controlling profilers from within JS: Valgrind, Perf,
  * Shark, etc.
  */
-#ifndef Profilers_h___
-#define Profilers_h___
+#ifndef builtin_Profilers_h
+#define builtin_Profilers_h
 
-#include "jsapi.h"
+#include "jstypes.h"
 
 /**
  * Start any profilers that are available and have been configured on for this
@@ -87,4 +86,4 @@ js_StopPerf();
 
 #endif /* __linux__ */
 
-#endif /* Profilers_h___ */
+#endif /* builtin_Profilers_h */

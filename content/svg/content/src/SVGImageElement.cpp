@@ -9,12 +9,10 @@
 #include "nsCOMPtr.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
-#include "imgIContainer.h"
 #include "imgINotificationObserver.h"
 #include "gfxContext.h"
 #include "mozilla/dom/SVGImageElementBinding.h"
-
-DOMCI_NODE_DATA(SVGImageElement, mozilla::dom::SVGImageElement)
+#include "nsContentUtils.h"
 
 NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(Image)
 
@@ -22,9 +20,9 @@ namespace mozilla {
 namespace dom {
 
 JSObject*
-SVGImageElement::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+SVGImageElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return SVGImageElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return SVGImageElementBinding::Wrap(aCx, aScope, this);
 }
 
 nsSVGElement::LengthInfo SVGImageElement::sLengthInfo[4] =
@@ -43,17 +41,11 @@ nsSVGElement::StringInfo SVGImageElement::sStringInfo[1] =
 //----------------------------------------------------------------------
 // nsISupports methods
 
-NS_IMPL_ADDREF_INHERITED(SVGImageElement,SVGImageElementBase)
-NS_IMPL_RELEASE_INHERITED(SVGImageElement,SVGImageElementBase)
-
-NS_INTERFACE_TABLE_HEAD(SVGImageElement)
-  NS_NODE_INTERFACE_TABLE8(SVGImageElement, nsIDOMNode, nsIDOMElement,
-                           nsIDOMSVGElement,
-                           nsIDOMSVGImageElement,
-                           nsIDOMSVGURIReference, imgINotificationObserver,
-                           nsIImageLoadingContent, imgIOnloadBlocker)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(SVGImageElement)
-NS_INTERFACE_MAP_END_INHERITING(SVGImageElementBase)
+NS_IMPL_ISUPPORTS_INHERITED6(SVGImageElement, SVGImageElementBase,
+                             nsIDOMNode, nsIDOMElement,
+                             nsIDOMSVGElement,
+                             imgINotificationObserver,
+                             nsIImageLoadingContent, imgIOnloadBlocker)
 
 //----------------------------------------------------------------------
 // Implementation
@@ -61,7 +53,6 @@ NS_INTERFACE_MAP_END_INHERITING(SVGImageElementBase)
 SVGImageElement::SVGImageElement(already_AddRefed<nsINodeInfo> aNodeInfo)
   : SVGImageElementBase(aNodeInfo)
 {
-  SetIsDOMBinding();
   // We start out broken
   AddStatesSilently(NS_EVENT_STATE_BROKEN);
 }
@@ -79,67 +70,29 @@ NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGImageElement)
 
 
 //----------------------------------------------------------------------
-// nsIDOMSVGImageElement methods:
 
-/* readonly attribute nsIDOMSVGAnimatedLength x; */
-NS_IMETHODIMP SVGImageElement::GetX(nsIDOMSVGAnimatedLength * *aX)
-{
-  *aX = X().get();
-  return NS_OK;
-}
-
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGImageElement::X()
 {
   return mLengthAttributes[ATTR_X].ToDOMAnimatedLength(this);
 }
 
-/* readonly attribute nsIDOMSVGAnimatedLength y; */
-NS_IMETHODIMP SVGImageElement::GetY(nsIDOMSVGAnimatedLength * *aY)
-{
-  *aY = Y().get();
-  return NS_OK;
-}
-
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGImageElement::Y()
 {
   return mLengthAttributes[ATTR_Y].ToDOMAnimatedLength(this);
 }
 
-/* readonly attribute nsIDOMSVGAnimatedLength width; */
-NS_IMETHODIMP SVGImageElement::GetWidth(nsIDOMSVGAnimatedLength * *aWidth)
-{
-  *aWidth = Width().get();
-  return NS_OK;
-}
-
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGImageElement::Width()
 {
   return mLengthAttributes[ATTR_WIDTH].ToDOMAnimatedLength(this);
 }
 
-/* readonly attribute nsIDOMSVGAnimatedLength height; */
-NS_IMETHODIMP SVGImageElement::GetHeight(nsIDOMSVGAnimatedLength * *aHeight)
-{
-  *aHeight = Height().get();
-  return NS_OK;
-}
-
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGImageElement::Height()
 {
   return mLengthAttributes[ATTR_HEIGHT].ToDOMAnimatedLength(this);
-}
-
-/* readonly attribute SVGPreserveAspectRatio preserveAspectRatio; */
-NS_IMETHODIMP
-SVGImageElement::GetPreserveAspectRatio(nsISupports
-                                        **aPreserveAspectRatio)
-{
-  *aPreserveAspectRatio = PreserveAspectRatio().get();
-  return NS_OK;
 }
 
 already_AddRefed<DOMSVGAnimatedPreserveAspectRatio>
@@ -150,23 +103,10 @@ SVGImageElement::PreserveAspectRatio()
   return ratio.forget();
 }
 
-//----------------------------------------------------------------------
-// nsIDOMSVGURIReference methods:
-
-/* readonly attribute nsIDOMSVGAnimatedString href; */
-NS_IMETHODIMP
-SVGImageElement::GetHref(nsIDOMSVGAnimatedString * *aHref)
-{
-  *aHref = Href().get();
-  return NS_OK;
-}
-
-already_AddRefed<nsIDOMSVGAnimatedString>
+already_AddRefed<SVGAnimatedString>
 SVGImageElement::Href()
 {
-  nsCOMPtr<nsIDOMSVGAnimatedString> href;
-  mStringAttributes[HREF].ToDOMAnimatedString(getter_AddRefs(href), this);
-  return href.forget();;
+  return mStringAttributes[HREF].ToDOMAnimatedString(this);
 }
 
 //----------------------------------------------------------------------

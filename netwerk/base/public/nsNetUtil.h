@@ -284,8 +284,7 @@ NS_OpenURI(nsIStreamListener     *listener,
 inline nsresult
 NS_MakeAbsoluteURI(nsACString       &result,
                    const nsACString &spec, 
-                   nsIURI           *baseURI, 
-                   nsIIOService     *unused = nullptr)
+                   nsIURI           *baseURI)
 {
     nsresult rv;
     if (!baseURI) {
@@ -303,8 +302,7 @@ NS_MakeAbsoluteURI(nsACString       &result,
 inline nsresult
 NS_MakeAbsoluteURI(char        **result,
                    const char   *spec, 
-                   nsIURI       *baseURI, 
-                   nsIIOService *unused = nullptr)
+                   nsIURI       *baseURI)
 {
     nsresult rv;
     nsAutoCString resultBuf;
@@ -320,8 +318,7 @@ NS_MakeAbsoluteURI(char        **result,
 inline nsresult
 NS_MakeAbsoluteURI(nsAString       &result,
                    const nsAString &spec, 
-                   nsIURI          *baseURI,
-                   nsIIOService    *unused = nullptr)
+                   nsIURI          *baseURI)
 {
     nsresult rv;
     if (!baseURI) {
@@ -387,8 +384,7 @@ NS_StringToACE(const nsACString &idn, nsACString &result)
  * concept of ports or if there was an error getting the port.
  */
 inline int32_t
-NS_GetRealPort(nsIURI* aURI,
-               nsIIOService* ioService = nullptr)     // pass in nsIIOService to optimize callers
+NS_GetRealPort(nsIURI* aURI)
 {
     int32_t port;
     nsresult rv = aURI->GetPort(&port);
@@ -661,13 +657,13 @@ NS_ImplementChannelOpen(nsIChannel      *channel,
 inline nsresult
 NS_NewRequestObserverProxy(nsIRequestObserver **result,
                            nsIRequestObserver  *observer,
-                           nsIEventTarget      *target = nullptr)
+                           nsISupports         *context)
 {
     nsresult rv;
     nsCOMPtr<nsIRequestObserverProxy> proxy =
         do_CreateInstance(NS_REQUESTOBSERVERPROXY_CONTRACTID, &rv);
     if (NS_SUCCEEDED(rv)) {
-        rv = proxy->Init(observer, target);
+        rv = proxy->Init(observer, context);
         if (NS_SUCCEEDED(rv))
             NS_ADDREF(*result = proxy);  // cannot use nsCOMPtr::swap
     }
@@ -1093,17 +1089,15 @@ NS_BufferOutputStream(nsIOutputStream *aOutputStream,
     if (NS_SUCCEEDED(rv))
         return bos.forget();
 
-    NS_ADDREF(aOutputStream);
-    return aOutputStream;
+    bos = aOutputStream;
+    return bos.forget();
 }
 
 // returns an input stream compatible with nsIUploadChannel::SetUploadStream()
 inline nsresult
 NS_NewPostDataStream(nsIInputStream  **result,
                      bool              isFile,
-                     const nsACString &data,
-                     uint32_t          encodeFlags,
-                     nsIIOService     *unused = nullptr)
+                     const nsACString &data)
 {
     nsresult rv;
 
@@ -1632,21 +1626,21 @@ NS_TryToMakeImmutable(nsIURI* uri,
     nsresult rv;
     nsCOMPtr<nsINetUtil> util = do_GetNetUtil(&rv);
 
-    nsIURI* result = nullptr;
+    nsCOMPtr<nsIURI> result;
     if (NS_SUCCEEDED(rv)) {
         NS_ASSERTION(util, "do_GetNetUtil lied");
-        rv = util->ToImmutableURI(uri, &result);
+        rv = util->ToImmutableURI(uri, getter_AddRefs(result));
     }
 
     if (NS_FAILED(rv)) {
-        NS_IF_ADDREF(result = uri);
+        result = uri;
     }
 
     if (outRv) {
         *outRv = rv;
     }
 
-    return result;
+    return result.forget();
 }
 
 /**
@@ -1670,22 +1664,23 @@ NS_URIChainHasFlags(nsIURI   *uri,
  * value could be just the object passed in if it's not a nested URI.
  */
 inline already_AddRefed<nsIURI>
-NS_GetInnermostURI(nsIURI *uri)
+NS_GetInnermostURI(nsIURI* aURI)
 {
-    NS_PRECONDITION(uri, "Must have URI");
+    NS_PRECONDITION(aURI, "Must have URI");
+
+    nsCOMPtr<nsIURI> uri = aURI;
     
     nsCOMPtr<nsINestedURI> nestedURI(do_QueryInterface(uri));
     if (!nestedURI) {
-        NS_ADDREF(uri);
-        return uri;
+        return uri.forget();
     }
 
-    nsresult rv = nestedURI->GetInnermostURI(&uri);
+    nsresult rv = nestedURI->GetInnermostURI(getter_AddRefs(uri));
     if (NS_FAILED(rv)) {
         return nullptr;
     }
 
-    return uri;
+    return uri.forget();
 }
 
 /**
@@ -1799,7 +1794,8 @@ NS_SecurityCompareURIs(nsIURI* aSourceURI,
         return false;
     }
 
-    // special handling for file: URIs
+    // For file scheme, reject unless the files are identical. See
+    // NS_RelaxStrictFileOriginPolicy for enforcing file same-origin checking
     if (targetScheme.EqualsLiteral("file"))
     {
         // in traditional unsafe behavior all files are the same origin
@@ -1866,6 +1862,100 @@ NS_SecurityCompareURIs(nsIURI* aSourceURI,
     }
 
     return NS_GetRealPort(targetBaseURI) == NS_GetRealPort(sourceBaseURI);
+}
+
+inline bool
+NS_URIIsLocalFile(nsIURI *aURI)
+{
+  nsCOMPtr<nsINetUtil> util = do_GetNetUtil();
+
+  bool isFile;
+  return util && NS_SUCCEEDED(util->ProtocolHasFlags(aURI,
+                                nsIProtocolHandler::URI_IS_LOCAL_FILE,
+                                &isFile)) &&
+         isFile;
+}
+
+// When strict file origin policy is enabled, SecurityCompareURIs will fail for
+// file URIs that do not point to the same local file. This call provides an
+// alternate file-specific origin check that allows target files that are
+// contained in the same directory as the source.
+//
+// https://developer.mozilla.org/en-US/docs/Same-origin_policy_for_file:_URIs
+inline bool
+NS_RelaxStrictFileOriginPolicy(nsIURI *aTargetURI,
+                               nsIURI *aSourceURI,
+                               bool aAllowDirectoryTarget = false)
+{
+  if (!NS_URIIsLocalFile(aTargetURI)) {
+    // This is probably not what the caller intended
+    NS_NOTREACHED("NS_RelaxStrictFileOriginPolicy called with non-file URI");
+    return false;
+  }
+
+  if (!NS_URIIsLocalFile(aSourceURI)) {
+    // If the source is not also a file: uri then forget it
+    // (don't want resource: principals in a file: doc)
+    //
+    // note: we're not de-nesting jar: uris here, we want to
+    // keep archive content bottled up in its own little island
+    return false;
+  }
+
+  //
+  // pull out the internal files
+  //
+  nsCOMPtr<nsIFileURL> targetFileURL(do_QueryInterface(aTargetURI));
+  nsCOMPtr<nsIFileURL> sourceFileURL(do_QueryInterface(aSourceURI));
+  nsCOMPtr<nsIFile> targetFile;
+  nsCOMPtr<nsIFile> sourceFile;
+  bool targetIsDir;
+
+  // Make sure targetFile is not a directory (bug 209234)
+  // and that it exists w/out unescaping (bug 395343)
+  if (!sourceFileURL || !targetFileURL ||
+      NS_FAILED(targetFileURL->GetFile(getter_AddRefs(targetFile))) ||
+      NS_FAILED(sourceFileURL->GetFile(getter_AddRefs(sourceFile))) ||
+      !targetFile || !sourceFile ||
+      NS_FAILED(targetFile->Normalize()) ||
+#ifndef MOZ_WIDGET_ANDROID
+      NS_FAILED(sourceFile->Normalize()) ||
+#endif
+      (!aAllowDirectoryTarget &&
+       (NS_FAILED(targetFile->IsDirectory(&targetIsDir)) || targetIsDir))) {
+    return false;
+  }
+
+  //
+  // If the file to be loaded is in a subdirectory of the source
+  // (or same-dir if source is not a directory) then it will
+  // inherit its source principal and be scriptable by that source.
+  //
+  bool sourceIsDir;
+  bool allowed = false;
+  nsresult rv = sourceFile->IsDirectory(&sourceIsDir);
+  if (NS_SUCCEEDED(rv) && sourceIsDir) {
+    rv = sourceFile->Contains(targetFile, true, &allowed);
+  } else {
+    nsCOMPtr<nsIFile> sourceParent;
+    rv = sourceFile->GetParent(getter_AddRefs(sourceParent));
+    if (NS_SUCCEEDED(rv) && sourceParent) {
+      rv = sourceParent->Equals(targetFile, &allowed);
+      if (NS_FAILED(rv) || !allowed) {
+        rv = sourceParent->Contains(targetFile, true, &allowed);
+      } else {
+        MOZ_ASSERT(aAllowDirectoryTarget,
+                   "sourceFile->Parent == targetFile, but targetFile "
+                   "should've been disallowed if it is a directory");
+      }
+    }
+  }
+
+  if (NS_SUCCEEDED(rv) && allowed) {
+    return true;
+  }
+
+  return false;
 }
 
 inline bool
@@ -2045,8 +2135,8 @@ NS_GetContentDispositionFromHeader(const nsACString& aHeader, nsIChannel *aChan 
   }
 
   nsAutoString dispToken;
-  rv = mimehdrpar->GetParameter(aHeader, "", fallbackCharset, true, nullptr,
-                                dispToken);
+  rv = mimehdrpar->GetParameterHTTP(aHeader, "", fallbackCharset, true, nullptr,
+                                    dispToken);
 
   if (NS_FAILED(rv)) {
     // special case (see bug 272541): empty disposition type handled as "inline"
@@ -2083,9 +2173,9 @@ NS_GetFilenameFromDisposition(nsAString& aFilename,
   if (url)
     url->GetOriginCharset(fallbackCharset);
   // Get the value of 'filename' parameter
-  rv = mimehdrpar->GetParameter(aDisposition, "filename",
-                                fallbackCharset, true, nullptr,
-                                aFilename);
+  rv = mimehdrpar->GetParameterHTTP(aDisposition, "filename",
+                                    fallbackCharset, true, nullptr,
+                                    aFilename);
 
   if (NS_FAILED(rv)) {
     aFilename.Truncate();

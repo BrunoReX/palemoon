@@ -1,23 +1,19 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- *
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jsatom_h___
-#define jsatom_h___
+#ifndef jsatom_h
+#define jsatom_h
 
 #include "mozilla/HashFunctions.h"
 
 #include <stddef.h>
 #include "jsalloc.h"
 #include "jsapi.h"
-#include "jsfriendapi.h"
-#include "jsprototypes.h"
 #include "jsprvtd.h"
 #include "jspubtd.h"
-#include "jslock.h"
-#include "jsversion.h"
 
 #include "gc/Barrier.h"
 #include "js/HashTable.h"
@@ -181,7 +177,7 @@ extern const char   js_send_str[];
 
 namespace js {
 
-extern const char * TypeStrings[];
+extern const char * const TypeStrings[];
 
 /*
  * Initialize atom state. Return true on success, false on failure to allocate
@@ -224,26 +220,18 @@ extern JSAtom *
 Atomize(JSContext *cx, const char *bytes, size_t length,
         js::InternBehavior ib = js::DoNotInternAtom);
 
+template <AllowGC allowGC>
 extern JSAtom *
 AtomizeChars(JSContext *cx, const jschar *chars, size_t length,
              js::InternBehavior ib = js::DoNotInternAtom);
 
+template <AllowGC allowGC>
 extern JSAtom *
 AtomizeString(JSContext *cx, JSString *str, js::InternBehavior ib = js::DoNotInternAtom);
 
-inline JSAtom *
-ToAtom(JSContext *cx, const js::Value &v);
-
-bool
-InternNonIntElementId(JSContext *cx, JSObject *obj, const Value &idval,
-                      jsid *idp, MutableHandleValue vp);
-
-inline bool
-InternNonIntElementId(JSContext *cx, JSObject *obj, const Value &idval, jsid *idp)
-{
-    RootedValue dummy(cx);
-    return InternNonIntElementId(cx, obj, idval, idp, &dummy);
-}
+template <AllowGC allowGC>
+extern JSAtom *
+ToAtom(JSContext *cx, typename MaybeRooted<Value, allowGC>::HandleType v);
 
 template<XDRMode mode>
 bool
@@ -251,4 +239,4 @@ XDRAtom(XDRState<mode> *xdr, js::MutableHandleAtom atomp);
 
 } /* namespace js */
 
-#endif /* jsatom_h___ */
+#endif /* jsatom_h */

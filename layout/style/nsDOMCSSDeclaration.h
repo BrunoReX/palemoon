@@ -13,8 +13,6 @@
 #include "nsCOMPtr.h"
 #include "mozilla/dom/CSS2PropertiesBinding.h"
 
-class nsCSSParser;
-class nsIURI;
 class nsIPrincipal;
 class nsIDocument;
 
@@ -31,20 +29,20 @@ class nsDOMCSSDeclaration : public nsICSSDeclaration
 public:
   // Only implement QueryInterface; subclasses have the responsibility
   // of implementing AddRef/Release.
-  NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr);
+  NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr) MOZ_OVERRIDE;
 
   // Declare addref and release so they can be called on us, but don't
   // implement them.  Our subclasses must handle their own
   // refcounting.
-  NS_IMETHOD_(nsrefcnt) AddRef() = 0;
-  NS_IMETHOD_(nsrefcnt) Release() = 0;
+  NS_IMETHOD_(nsrefcnt) AddRef() MOZ_OVERRIDE = 0;
+  NS_IMETHOD_(nsrefcnt) Release() MOZ_OVERRIDE = 0;
 
   NS_DECL_NSICSSDECLARATION
   using nsICSSDeclaration::GetLength;
 
   // Require subclasses to implement |GetParentRule|.
   //NS_DECL_NSIDOMCSSSTYLEDECLARATION
-  NS_IMETHOD GetCssText(nsAString & aCssText);
+  NS_IMETHOD GetCssText(nsAString & aCssText) MOZ_OVERRIDE;
   NS_IMETHOD SetCssText(const nsAString & aCssText) MOZ_OVERRIDE;
   NS_IMETHOD GetPropertyValue(const nsAString & propertyName,
                               nsAString & _retval) MOZ_OVERRIDE;
@@ -53,7 +51,7 @@ public:
                         mozilla::ErrorResult& aRv) MOZ_OVERRIDE;
   using nsICSSDeclaration::GetPropertyCSSValue;
   NS_IMETHOD RemoveProperty(const nsAString & propertyName,
-                            nsAString & _retval);
+                            nsAString & _retval) MOZ_OVERRIDE;
   NS_IMETHOD GetPropertyPriority(const nsAString & propertyName,
                                  nsAString & _retval) MOZ_OVERRIDE;
   NS_IMETHOD SetProperty(const nsAString & propertyName,
@@ -62,7 +60,7 @@ public:
   NS_IMETHOD GetParentRule(nsIDOMCSSRule * *aParentRule) MOZ_OVERRIDE = 0;
 
   // WebIDL interface for CSS2Properties
-#define CSS_PROP_DOMPROP_PREFIXED(prop_) Moz ## prop_
+#define CSS_PROP_PUBLIC_OR_PRIVATE(publicname_, privatename_) publicname_
 #define CSS_PROP(name_, id_, method_, flags_, pref_, parsevariant_,          \
                  kwtable_, stylestruct_, stylestructoffset_, animtype_)      \
   void                                                                       \
@@ -90,15 +88,14 @@ public:
 #undef CSS_PROP_SHORTHAND
 #undef CSS_PROP_LIST_EXCLUDE_INTERNAL
 #undef CSS_PROP
-#undef CSS_PROP_DOMPROP_PREFIXED
+#undef CSS_PROP_PUBLIC_OR_PRIVATE
 
-  virtual void IndexedGetter(uint32_t aIndex, bool& aFound, nsAString& aPropName);
+  virtual void IndexedGetter(uint32_t aIndex, bool& aFound, nsAString& aPropName) MOZ_OVERRIDE;
 
-  virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
-                               bool *triedToWrap)
+  virtual JSObject* WrapObject(JSContext *cx,
+                               JS::Handle<JSObject*> scope) MOZ_OVERRIDE
   {
-    return mozilla::dom::CSS2PropertiesBinding::Wrap(cx, scope, this,
-                                                     triedToWrap);
+    return mozilla::dom::CSS2PropertiesBinding::Wrap(cx, scope, this);
   }
 
 protected:

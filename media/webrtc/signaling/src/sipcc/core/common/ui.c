@@ -6,6 +6,7 @@
  * API provided by Platform to the Call Control for User Interface activities
  */
 
+#include <stdarg.h>
 #include "cpr.h"
 #include "cpr_in.h"
 #include "phone.h"
@@ -98,7 +99,7 @@ ui_call_state (call_events event, line_t nLine, callid_t nCallID, cc_causes_t ca
     session_update_t msg;
     memset( &msg, 0, sizeof(session_update_t));
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"event=%d \n", DEB_L_C_F_PREFIX_ARGS(UI_API, nLine, nCallID, __FUNCTION__),
+    TNP_DEBUG(DEB_L_C_F_PREFIX"event=%d", DEB_L_C_F_PREFIX_ARGS(UI_API, nLine, nCallID, __FUNCTION__),
               event);
 
     if (nCallID == CC_NO_CALL_ID) {
@@ -113,7 +114,7 @@ ui_call_state (call_events event, line_t nLine, callid_t nCallID, cc_causes_t ca
     msg.update.ccSessionUpd.data.state_data.cause = cause;
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_STATE(%d) msg \n", __FUNCTION__, event);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_STATE(%d) msg", __FUNCTION__, event);
     }
 }
 
@@ -135,7 +136,7 @@ ui_new_call (call_events event, line_t nLine, callid_t nCallID,
     session_update_t msg;
     memset( &msg, 0, sizeof(session_update_t));
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"state=%d attr=%d call_instance=%d, dialed_digits=%s\n",
+    TNP_DEBUG(DEB_L_C_F_PREFIX"state=%d attr=%d call_instance=%d, dialed_digits=%s",
               DEB_L_C_F_PREFIX_ARGS(UI_API, nLine, nCallID, __FUNCTION__), event, call_attr, call_instance_id, (dialed_digits)? "true" : "false");
 
     if (nCallID == CC_NO_CALL_ID) {
@@ -152,7 +153,7 @@ ui_new_call (call_events event, line_t nLine, callid_t nCallID,
     msg.update.ccSessionUpd.data.state_data.line_id = nLine;
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_STATE(%d) msg \n", __FUNCTION__, event);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_STATE(%d) msg", __FUNCTION__, event);
     }
 
     return;
@@ -177,7 +178,7 @@ ui_set_call_attr (line_t line_id, callid_t call_id, call_attr_t attr)
     session_update_t msg;
     memset( &msg, 0, sizeof(session_update_t));
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"attr=%d\n", DEB_L_C_F_PREFIX_ARGS(UI_API, line_id, call_id, __FUNCTION__), attr);
+    TNP_DEBUG(DEB_L_C_F_PREFIX"attr=%d", DEB_L_C_F_PREFIX_ARGS(UI_API, line_id, call_id, __FUNCTION__), attr);
 
     if (call_id == CC_NO_CALL_ID) {
         /* no operation when no call ID */
@@ -189,7 +190,7 @@ ui_set_call_attr (line_t line_id, callid_t call_id, call_attr_t attr)
     msg.update.ccSessionUpd.data.state_data.attr = attr;
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_ATTR(%d) msg \n", __FUNCTION__, attr);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_ATTR(%d) msg", __FUNCTION__, attr);
     }
 }
 
@@ -208,7 +209,7 @@ ui_update_callref (line_t line, callid_t call_id, unsigned int callref)
     session_update_t msg;
     memset( &msg, 0, sizeof(session_update_t));
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"callref = %d\n", DEB_L_C_F_PREFIX_ARGS(UI_API, line, call_id, __FUNCTION__), callref);
+    TNP_DEBUG(DEB_L_C_F_PREFIX"callref = %d", DEB_L_C_F_PREFIX_ARGS(UI_API, line, call_id, __FUNCTION__), callref);
 
     if ( callref == 0 ) return;
 
@@ -222,7 +223,7 @@ ui_update_callref (line_t line, callid_t call_id, unsigned int callref)
     msg.update.ccSessionUpd.data.callref = callref;
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_REF() msg \n", __FUNCTION__);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_REF() msg", __FUNCTION__);
     }
 
     return;
@@ -244,7 +245,7 @@ ui_update_gcid (line_t line, callid_t call_id, char *gcid)
     session_update_t msg;
     memset( &msg, 0, sizeof(session_update_t));
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"gcid = %s\n", DEB_L_C_F_PREFIX_ARGS(UI_API, line, call_id, __FUNCTION__), gcid);
+    TNP_DEBUG(DEB_L_C_F_PREFIX"gcid = %s", DEB_L_C_F_PREFIX_ARGS(UI_API, line, call_id, __FUNCTION__), gcid);
 
     if ( *gcid == '\0' ) return;
 
@@ -258,7 +259,7 @@ ui_update_gcid (line_t line, callid_t call_id, char *gcid)
     sstrncpy(msg.update.ccSessionUpd.data.gcid, gcid, CC_MAX_GCID);
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_GCID() msg \n", __FUNCTION__);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_GCID() msg", __FUNCTION__);
     }
 
     return;
@@ -290,7 +291,7 @@ ui_update_video_avail (line_t line, callid_t call_id, int avail)
     msg.update.ccSessionUpd.data.action = avail;
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send VIDEO_AVAIL() msg \n", __FUNCTION__);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send VIDEO_AVAIL() msg", __FUNCTION__);
     }
 
     return;
@@ -324,7 +325,7 @@ void ui_update_media_interface_change(line_t line, callid_t call_id, group_call_
     msg.eventID = event;
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS )     {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send media update () msg \n", __FUNCTION__);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send media update () msg", __FUNCTION__);
     }
 }
 
@@ -347,7 +348,7 @@ ui_call_stop_ringer (line_t line, callid_t call_id)
     msg.update.ccSessionUpd.data.ringer.mode = VCM_RING_OFF;
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send RINGER_STATE() msg \n", __FUNCTION__);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send RINGER_STATE() msg", __FUNCTION__);
     }
 
     return;
@@ -373,7 +374,7 @@ ui_call_start_ringer (vcm_ring_mode_t ringMode, short once, line_t line, callid_
     msg.update.ccSessionUpd.data.ringer.once = (cc_boolean) once;
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send RINGER_STATE() msg \n", __FUNCTION__);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send RINGER_STATE() msg", __FUNCTION__);
     }
 
     return;
@@ -405,7 +406,7 @@ ui_update_video_offered (line_t line, callid_t call_id, int avail)
     msg.update.ccSessionUpd.data.action = avail;
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send VIDEO_OFFERED() msg \n", __FUNCTION__);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send VIDEO_OFFERED() msg", __FUNCTION__);
     }
 
     return;
@@ -461,11 +462,11 @@ ui_call_info (string_t pCallingPartyNameStr,
     memset( &msg, 0, sizeof(session_update_t));
 
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"call instance=%d callednum=%s calledname=%s clngnum=%s clngname = %s\n",
+    TNP_DEBUG(DEB_L_C_F_PREFIX"call instance=%d callednum=%s calledname=%s clngnum=%s clngname = %s",
         DEB_L_C_F_PREFIX_ARGS(UI_API, line, call_id, __FUNCTION__), call_instance_id, pCalledPartyNumberStr,
         pCalledPartyNameStr, pCallingPartyNumberStr, pCallingPartyNameStr);
 
-    TNP_DEBUG(DEB_F_PREFIX"calltype=%d displayClng=%d displayCld=%d\n", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), call_type,
+    TNP_DEBUG(DEB_F_PREFIX"calltype=%d displayClng=%d displayCld=%d", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), call_type,
         displayCallingNumber, displayCalledNumber);
 
 
@@ -525,7 +526,7 @@ ui_call_info (string_t pCallingPartyNameStr,
     msg.update.ccSessionUpd.data.call_info.policy = call_policy;
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_INFO() msg \n", __FUNCTION__);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_INFO() msg", __FUNCTION__);
     }
 
     return;
@@ -546,7 +547,7 @@ ui_cc_capability (line_t line, callid_t call_id, string_t recv_info_list)
     session_update_t msg;
     memset( &msg, 0, sizeof(session_update_t));
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"recv_info_list:%s\n",
+    TNP_DEBUG(DEB_L_C_F_PREFIX"recv_info_list:%s",
         DEB_L_C_F_PREFIX_ARGS(UI_API, line, call_id, __FUNCTION__),
         recv_info_list);
 
@@ -555,7 +556,7 @@ ui_cc_capability (line_t line, callid_t call_id, string_t recv_info_list)
     msg.update.ccSessionUpd.data.recv_info_list = strlib_copy(recv_info_list);
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_RECV_INFO_LIST msg \n", __FUNCTION__);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_RECV_INFO_LIST msg", __FUNCTION__);
     }
 }
 
@@ -576,7 +577,7 @@ ui_info_received (line_t line, callid_t call_id, const char *info_package,
 {
     session_rcvd_info_t msg;
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"info_package:%s content_type:%s message_body:%s\n",
+    TNP_DEBUG(DEB_L_C_F_PREFIX"info_package:%s content_type:%s message_body:%s",
         DEB_L_C_F_PREFIX_ARGS(UI_API, line, call_id, __FUNCTION__),
         info_package, content_type, message_body);
 
@@ -587,7 +588,7 @@ ui_info_received (line_t line, callid_t call_id, const char *info_package,
     msg.info.generic_raw.message_body = message_body?strlib_malloc(message_body, strlen(message_body)):strlib_empty();
 
     if ( ccappTaskPostMsg(CCAPP_RCVD_INFO, &msg, sizeof(session_rcvd_info_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_INFO_RECEIVED msg \n", __FUNCTION__);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_INFO_RECEIVED msg", __FUNCTION__);
     }
 }
 
@@ -608,7 +609,7 @@ ui_set_call_status_display (string_t status, line_t line, callid_t callID, int t
     session_update_t msg;
     memset( &msg, 0, sizeof(session_update_t));
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"the stat string =%s, timeout= %d, priority=%d\n", DEB_L_C_F_PREFIX_ARGS(UI_API, line, callID, __FUNCTION__),
+    TNP_DEBUG(DEB_L_C_F_PREFIX"the stat string =%s, timeout= %d, priority=%d", DEB_L_C_F_PREFIX_ARGS(UI_API, line, callID, __FUNCTION__),
               status,
               timeout,
               priority);
@@ -629,7 +630,7 @@ ui_set_call_status_display (string_t status, line_t line, callid_t callID, int t
     }
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_STATUS(%s) msg \n", __FUNCTION__, status);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_STATUS(%s) msg", __FUNCTION__, status);
     }
 }
 
@@ -648,7 +649,7 @@ void
 ui_set_call_status (string_t status, line_t line, callid_t callID)
 {
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"the stat string =%s\n", DEB_L_C_F_PREFIX_ARGS(UI_API, line, callID, __FUNCTION__),
+    TNP_DEBUG(DEB_L_C_F_PREFIX"the stat string =%s", DEB_L_C_F_PREFIX_ARGS(UI_API, line, callID, __FUNCTION__),
               status);
 
     if (callID == CC_NO_CALL_ID) {
@@ -678,7 +679,7 @@ ui_set_notification (line_t line, callid_t call_id, char *promptString, int time
 {
     feature_update_t msg;
 
-    TNP_DEBUG(DEB_F_PREFIX"line=%d callid=%d str=%s tout=%d notifyProgress=%d pri=%d\n", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__),
+    TNP_DEBUG(DEB_F_PREFIX"line=%d callid=%d str=%s tout=%d notifyProgress=%d pri=%d", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__),
               line, call_id, promptString, timeout, notifyProgress, priority);
 
     if (line > 0 && call_id > 0) {
@@ -697,7 +698,7 @@ ui_set_notification (line_t line, callid_t call_id, char *promptString, int time
     }
 
     if ( ccappTaskPostMsg(CCAPP_FEATURE_UPDATE, &msg, sizeof(feature_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send DEVICE_NOTIFICATION(%s) msg \n", __FUNCTION__, promptString);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send DEVICE_NOTIFICATION(%s) msg", __FUNCTION__, promptString);
     }
 }
 
@@ -712,7 +713,7 @@ ui_set_notification (line_t line, callid_t call_id, char *promptString, int time
 void
 ui_clear_notification ()
 {
-    TNP_DEBUG(DEB_F_PREFIX"called..\n", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__));
+    TNP_DEBUG(DEB_F_PREFIX"called..", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__));
 
     // A promptString of NULL shall act as a clear
     ui_set_notification(CC_NO_LINE, CC_NO_CALL_ID, NULL, 0, FALSE, 1);
@@ -732,14 +733,14 @@ ui_change_mwi_lamp (int status)
     feature_update_t msg;
 
 
-    TNP_DEBUG(DEB_F_PREFIX"status=%d \n", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), status);
+    TNP_DEBUG(DEB_F_PREFIX"status=%d", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), status);
 
     msg.sessionType = SESSIONTYPE_CALLCONTROL;
     msg.featureID = DEVICE_FEATURE_MWILAMP;
-    msg.update.ccFeatUpd.data.state_data.state = status;
+    msg.update.ccFeatUpd.data.mwi_status.status = status;
 
     if ( ccappTaskPostMsg(CCAPP_FEATURE_UPDATE, &msg, sizeof(feature_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send DEVICE_FEATURE_MWILAMP(%d) msg \n", __FUNCTION__, status);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send DEVICE_FEATURE_MWILAMP(%d) msg", __FUNCTION__, status);
     }
 }
 
@@ -757,7 +758,7 @@ ui_set_mwi (line_t line, boolean status, int type, int newCount, int oldCount, i
 {
     feature_update_t msg;
 
-    TNP_DEBUG(DEB_F_PREFIX"line=%d count=%d \n", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), line, status);
+    TNP_DEBUG(DEB_F_PREFIX"line=%d count=%d", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), line, status);
 
     msg.sessionType = SESSIONTYPE_CALLCONTROL;
     msg.featureID = DEVICE_FEATURE_MWI;
@@ -770,7 +771,7 @@ ui_set_mwi (line_t line, boolean status, int type, int newCount, int oldCount, i
     msg.update.ccFeatUpd.data.mwi_status.hpOldCount = hpOldCount;
 
     if ( ccappTaskPostMsg(CCAPP_FEATURE_UPDATE, &msg, sizeof(feature_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send DEVICE_FEATURE_MWI(%d,%d) msg \n", __FUNCTION__, line, status);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send DEVICE_FEATURE_MWI(%d,%d) msg", __FUNCTION__, line, status);
     }
 }
 
@@ -790,7 +791,7 @@ void ui_mnc_reached (line_t line, boolean mnc_reached)
 {
     feature_update_t msg;
 
-    DEF_DEBUG(DEB_F_PREFIX"line %d: Max number of calls reached =%d \n",
+    DEF_DEBUG(DEB_F_PREFIX"line %d: Max number of calls reached =%d",
             DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__),
             line, mnc_reached);
 
@@ -800,7 +801,7 @@ void ui_mnc_reached (line_t line, boolean mnc_reached)
     msg.update.ccFeatUpd.data.line_info.info = mnc_reached;
 
     if ( ccappTaskPostMsg(CCAPP_FEATURE_UPDATE, &msg, sizeof(feature_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send DEVICE_FEATURE_MNC_REACHED(%d,%d) msg \n", __FUNCTION__,
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send DEVICE_FEATURE_MNC_REACHED(%d,%d) msg", __FUNCTION__,
 			line, mnc_reached);
     }
 
@@ -819,7 +820,7 @@ ui_line_has_mwi_active (line_t line)
 {
     session_mgmt_t msg;
 
-    TNP_DEBUG(DEB_F_PREFIX"line=%d\n", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), line);
+    TNP_DEBUG(DEB_F_PREFIX"line=%d", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), line);
 
     msg.func_id = SESSION_MGMT_LINE_HAS_MWI_ACTIVE;
     msg.data.line_mwi_active.line = line;
@@ -844,7 +845,7 @@ ui_update_label_n_speeddial (line_t line, line_t button_no, string_t speed_dial,
 {
     feature_update_t msg;
 
-    TNP_DEBUG(DEB_F_PREFIX"line=%d speeddial=%s displayname=%s\n", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), line,
+    TNP_DEBUG(DEB_F_PREFIX"line=%d speeddial=%s displayname=%s", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), line,
                    speed_dial, label);
 
     msg.sessionType = SESSIONTYPE_CALLCONTROL;
@@ -855,7 +856,7 @@ ui_update_label_n_speeddial (line_t line, line_t button_no, string_t speed_dial,
     msg.update.ccFeatUpd.data.cfg_lbl_n_spd.label = strlib_malloc(label, sizeof(label));
 
     if ( ccappTaskPostMsg(CCAPP_FEATURE_UPDATE, &msg, sizeof(feature_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send DEVICE_LABEL_N_SPEED(%d) msg \n", __FUNCTION__, button_no);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send DEVICE_LABEL_N_SPEED(%d) msg", __FUNCTION__, button_no);
     }
 }
 
@@ -873,7 +874,7 @@ ui_set_sip_registration_state (line_t line, boolean registered)
     feature_update_t msg;
     int value;
 
-    TNP_DEBUG(DEB_F_PREFIX"%s %d: %s\n", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__),
+    TNP_DEBUG(DEB_F_PREFIX"%s %d: %s", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__),
                 (line==CC_ALL_LINES) ? "ALL LINES":"LINE" ,line,
                         (registered)? "REGISTERED":"UN-REGISTERED");
 
@@ -887,7 +888,7 @@ ui_set_sip_registration_state (line_t line, boolean registered)
     }
 
     if ( ccappTaskPostMsg(CCAPP_FEATURE_UPDATE, &msg, sizeof(feature_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_STATE(%d, %d) msg \n", __FUNCTION__, line, registered);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_STATE(%d, %d) msg", __FUNCTION__, line, registered);
     }
 }
 
@@ -901,7 +902,7 @@ ui_set_sip_registration_state (line_t line, boolean registered)
 void
 ui_update_registration_state_all_lines (boolean registered)
 {
-    DEF_DEBUG(DEB_F_PREFIX"***********ALL LINES %s****************\n",
+    DEF_DEBUG(DEB_F_PREFIX"***********ALL LINES %s****************",
                         DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__),
                         (registered)? "REGISTERED":"UN-REGISTERED");
 
@@ -922,7 +923,7 @@ ui_reg_all_failed (void)
 {
     feature_update_t msg;
 
-    TNP_DEBUG(DEB_F_PREFIX"***********Registration to all CUCMs failed.***********\n",
+    TNP_DEBUG(DEB_F_PREFIX"***********Registration to all CUCMs failed.***********",
                         DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__));
 
     msg.sessionType = SESSIONTYPE_CALLCONTROL;
@@ -931,7 +932,7 @@ ui_reg_all_failed (void)
     msg.update.ccFeatUpd.data.line_info.info = FALSE;
 
     if ( ccappTaskPostMsg(CCAPP_REG_ALL_FAIL, &msg, sizeof(feature_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_STATE() msg \n", __FUNCTION__);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_STATE() msg", __FUNCTION__);
     }
 }
 
@@ -949,7 +950,7 @@ ui_set_ccm_conn_status (char * ccm_addr, int status)
 {
     feature_update_t msg;
 
-    DEF_DEBUG(DEB_F_PREFIX"***********CUCM %s %s***********\n",
+    DEF_DEBUG(DEB_F_PREFIX"***********CUCM %s %s***********",
             DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), ccm_addr,
             ((status == 0) ?"Not connected":((status == 1)?"STAND BY":
             ((status == 2)?"ACTIVE":"UNKNOWN"))));
@@ -960,7 +961,7 @@ ui_set_ccm_conn_status (char * ccm_addr, int status)
     msg.update.ccFeatUpd.data.ccm_conn.status = status;
 
     if ( ccappTaskPostMsg(CCAPP_FEATURE_UPDATE, &msg, sizeof(feature_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send DEVICE_CCM_CONN_STATUS(%d) msg \n", __FUNCTION__, status);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send DEVICE_CCM_CONN_STATUS(%d) msg", __FUNCTION__, status);
     }
 }
 
@@ -976,7 +977,7 @@ void
 ui_set_local_hold (line_t line, callid_t call_id)
 {
     /* THIS IS A NOP FOR TNP */
-    TNP_DEBUG(DEB_L_C_F_PREFIX"called\n", DEB_L_C_F_PREFIX_ARGS(UI_API, line, call_id, "ui_set_local_hold"));
+    TNP_DEBUG(DEB_L_C_F_PREFIX"called", DEB_L_C_F_PREFIX_ARGS(UI_API, line, call_id, "ui_set_local_hold"));
     return;
 }
 
@@ -1006,7 +1007,7 @@ ui_cfwd_status (line_t line, boolean cfa, char *cfa_number, boolean lcl_fwd)
     msg.update.ccFeatUpd.data.cfwd.cfa_num = cfa_number?strlib_malloc(cfa_number, strlen(cfa_number)):strlib_empty();
 
     if ( ccappTaskPostMsg(CCAPP_FEATURE_UPDATE, &msg, sizeof(feature_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send DEVICE_FEATURE_CFWD(%d) msg \n", __FUNCTION__, cfa);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send DEVICE_FEATURE_CFWD(%d) msg", __FUNCTION__, cfa);
     }
 }
 
@@ -1018,7 +1019,7 @@ ui_cfwd_status (line_t line, boolean cfa, char *cfa_number, boolean lcl_fwd)
 char *
 ui_get_idle_prompt_string (void)
 {
-    TNP_DEBUG(DEB_F_PREFIX"called\n", DEB_F_PREFIX_ARGS(UI_API, "ui_get_idle_prompt_string"));
+    TNP_DEBUG(DEB_F_PREFIX"called", DEB_F_PREFIX_ARGS(UI_API, "ui_get_idle_prompt_string"));
     return platform_get_phrase_index_str(IDLE_PROMPT);
 }
 
@@ -1033,7 +1034,7 @@ ui_get_idle_prompt_string (void)
 void
 ui_set_idle_prompt_string (string_t pString, int prompt)
 {
-    TNP_DEBUG(DEB_F_PREFIX"Prompt=%d, Prompt string=%s NOP operation\n", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), prompt, pString);
+    TNP_DEBUG(DEB_F_PREFIX"Prompt=%d, Prompt string=%s NOP operation", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), prompt, pString);
 }
 
 /**
@@ -1053,12 +1054,12 @@ ui_update_placed_call_info (line_t line, callid_t call_id, string_t cldName,
     session_update_t msg;
     memset( &msg, 0, sizeof(session_update_t));
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"calledName:calledNumber %s:%s\n",
+    TNP_DEBUG(DEB_L_C_F_PREFIX"calledName:calledNumber %s:%s",
               DEB_L_C_F_PREFIX_ARGS(UI_API, line, call_id, __FUNCTION__), cldName, cldNumber);
 
     if (call_id == CC_NO_CALL_ID) {
         /* no operation when no call ID */
-        TNP_DEBUG(DEB_F_PREFIX"invalid callid\n", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__));
+        TNP_DEBUG(DEB_F_PREFIX"invalid callid", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__));
         return;
     }
     msg.sessionID = createSessionId(line, call_id);
@@ -1076,7 +1077,7 @@ ui_update_placed_call_info (line_t line, callid_t call_id, string_t cldName,
 	}
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_PLACED_INFO(%s) msg \n", __FUNCTION__, cldNumber);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_PLACED_INFO(%s) msg", __FUNCTION__, cldNumber);
     }
 }
 
@@ -1095,7 +1096,7 @@ ui_delete_last_digit (line_t line_id, callid_t call_id)
     session_update_t msg;
     memset( &msg, 0, sizeof(session_update_t));
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"called\n", DEB_L_C_F_PREFIX_ARGS(UI_API, line_id, call_id, __FUNCTION__));
+    TNP_DEBUG(DEB_L_C_F_PREFIX"called", DEB_L_C_F_PREFIX_ARGS(UI_API, line_id, call_id, __FUNCTION__));
 
     if (call_id == CC_NO_CALL_ID) {
         /* no operation when no call ID */
@@ -1106,7 +1107,7 @@ ui_delete_last_digit (line_t line_id, callid_t call_id)
     msg.eventID = CALL_DELETE_LAST_DIGIT;
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_DELETE_LAST_DIGIT() msg \n", __FUNCTION__);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_DELETE_LAST_DIGIT() msg", __FUNCTION__);
     }
 }
 
@@ -1125,14 +1126,14 @@ ui_control_featurekey_bksp (line_t line_id, callid_t call_id, boolean enable)
     session_update_t msg;
     memset( &msg, 0, sizeof(session_update_t));
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"enable=%d\n", DEB_L_C_F_PREFIX_ARGS(UI_API, line_id, call_id, __FUNCTION__),
+    TNP_DEBUG(DEB_L_C_F_PREFIX"enable=%d", DEB_L_C_F_PREFIX_ARGS(UI_API, line_id, call_id, __FUNCTION__),
               enable);
 
     msg.sessionID = createSessionId(line_id, call_id);
     msg.eventID = CALL_ENABLE_BKSP;
     msg.update.ccSessionUpd.data.action = enable;
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_ENABLE_BKSP(%d) msg \n", __FUNCTION__, enable);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_ENABLE_BKSP(%d) msg", __FUNCTION__, enable);
     }
 }
 
@@ -1154,7 +1155,7 @@ ui_call_selected (line_t line_id, callid_t call_id, int selected)
     session_update_t msg;
     memset( &msg, 0, sizeof(session_update_t));
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"selected=%d\n",
+    TNP_DEBUG(DEB_L_C_F_PREFIX"selected=%d",
               DEB_L_C_F_PREFIX_ARGS(UI_API, line_id, call_id, __FUNCTION__), selected);
 
     msg.sessionID = createSessionId(line_id, call_id);
@@ -1162,7 +1163,7 @@ ui_call_selected (line_t line_id, callid_t call_id, int selected)
     msg.update.ccSessionUpd.data.action = selected;
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_SELECTED(%d) msg \n", __FUNCTION__, selected);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_SELECTED(%d) msg", __FUNCTION__, selected);
     }
 }
 
@@ -1177,7 +1178,7 @@ void ui_BLF_notification (int request_id, cc_blf_state_t blf_state, int app_id)
 {
     feature_update_t msg;
 
-    TNP_DEBUG(DEB_F_PREFIX"state=%d app_id=%d\n", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), blf_state, app_id);
+    TNP_DEBUG(DEB_F_PREFIX"state=%d app_id=%d", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), blf_state, app_id);
 
     msg.sessionType = SESSIONTYPE_CALLCONTROL;
     msg.featureID = DEVICE_FEATURE_BLF;
@@ -1186,7 +1187,7 @@ void ui_BLF_notification (int request_id, cc_blf_state_t blf_state, int app_id)
     msg.update.ccFeatUpd.data.blf_data.app_id = app_id;
 
     if ( ccappTaskPostMsg(CCAPP_FEATURE_UPDATE, &msg, sizeof(feature_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send DEVICE_FEATURE_BLF(state=%d, app_id=%d) msg \n",
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send DEVICE_FEATURE_BLF(state=%d, app_id=%d) msg",
                     __FUNCTION__, blf_state, app_id);
     }
 }
@@ -1208,7 +1209,7 @@ void ui_BLF_notification (int request_id, cc_blf_state_t blf_state, int app_id)
 void
 ui_call_in_preservation (line_t line_id, callid_t call_id)
 {
-    TNP_DEBUG(DEB_L_C_F_PREFIX"called\n", DEB_L_C_F_PREFIX_ARGS(UI_API, line_id, call_id, __FUNCTION__));
+    TNP_DEBUG(DEB_L_C_F_PREFIX"called", DEB_L_C_F_PREFIX_ARGS(UI_API, line_id, call_id, __FUNCTION__));
 
     /* simply update the state . A Preservation event from
        CUCM is just for the session */
@@ -1242,7 +1243,7 @@ ui_select_feature_key_set (line_t line_id, callid_t call_id, char *set_name,
     session_update_t msg;
     memset( &msg, 0, sizeof(session_update_t));
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"called\n", DEB_L_C_F_PREFIX_ARGS(UI_API, line_id, call_id, __FUNCTION__));
+    TNP_DEBUG(DEB_L_C_F_PREFIX"called", DEB_L_C_F_PREFIX_ARGS(UI_API, line_id, call_id, __FUNCTION__));
 
     if (call_id == CC_NO_CALL_ID) {
         /* no operation when no call ID */
@@ -1250,7 +1251,7 @@ ui_select_feature_key_set (line_t line_id, callid_t call_id, char *set_name,
     }
 
     if (len <= 0 || len > MAX_SOFT_KEYS) {
-        TNP_DEBUG(DEB_F_PREFIX"Incorrect softkey array length passed in : %d\n", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), len);
+        TNP_DEBUG(DEB_F_PREFIX"Incorrect softkey array length passed in : %d", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), len);
         return;
     }
 
@@ -1268,7 +1269,7 @@ ui_select_feature_key_set (line_t line_id, callid_t call_id, char *set_name,
     }
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_SELECT_FEATURE_SET() msg \n", __FUNCTION__);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_SELECT_FEATURE_SET() msg", __FUNCTION__);
     }
 }
 
@@ -1287,13 +1288,13 @@ ui_execute_uri (char *uri)
 {
     session_mgmt_t msg;
 
-    TNP_DEBUG(DEB_F_PREFIX"uri=%s\n", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), uri);
+    TNP_DEBUG(DEB_F_PREFIX"uri=%s", DEB_F_PREFIX_ARGS(UI_API, __FUNCTION__), uri);
 
     msg.func_id = SESSION_MGMT_EXECUTE_URI;
     msg.data.uri.uri = STRLIB_CREATE(uri);
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_MGMT, &msg, sizeof(session_mgmt_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(DEB_F_PREFIX"failed to send EXECUTE_URI() msg\n", DEB_F_PREFIX_ARGS(PLAT_API, __FUNCTION__));
+        CCAPP_ERROR(DEB_F_PREFIX"failed to send EXECUTE_URI() msg", DEB_F_PREFIX_ARGS(PLAT_API, __FUNCTION__));
     }
 }
 
@@ -1319,7 +1320,7 @@ ui_update_call_security (line_t line, callid_t call_id,
     session_update_t msg;
     memset( &msg, 0, sizeof(session_update_t));
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"security=%d\n", DEB_L_C_F_PREFIX_ARGS(UI_API, line, call_id, __FUNCTION__),
+    TNP_DEBUG(DEB_L_C_F_PREFIX"security=%d", DEB_L_C_F_PREFIX_ARGS(UI_API, line, call_id, __FUNCTION__),
               call_security);
 
     msg.sessionID = createSessionId(line, call_id);
@@ -1327,7 +1328,7 @@ ui_update_call_security (line_t line, callid_t call_id,
     msg.update.ccSessionUpd.data.security = call_security;
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_SECURITY(%d) msg \n", __FUNCTION__, call_security);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_SECURITY(%d) msg", __FUNCTION__, call_security);
 	}
 }
 
@@ -1359,7 +1360,7 @@ ui_terminate_feature (line_t line, callid_t call_id,
     session_update_t msg;
     memset( &msg, 0, sizeof(session_update_t));
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"target_call_id=%d\n", DEB_L_C_F_PREFIX_ARGS(UI_API, line, call_id, __FUNCTION__),
+    TNP_DEBUG(DEB_L_C_F_PREFIX"target_call_id=%d", DEB_L_C_F_PREFIX_ARGS(UI_API, line, call_id, __FUNCTION__),
               target_call_id);
 
     msg.sessionID = createSessionId(line, call_id);
@@ -1371,7 +1372,7 @@ ui_terminate_feature (line_t line, callid_t call_id,
     }
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_FEATURE_CANCEL(%d) msg \n", __FUNCTION__, target_call_id);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_FEATURE_CANCEL(%d) msg", __FUNCTION__, target_call_id);
     }
 }
 
@@ -1399,7 +1400,7 @@ ui_cfwdall_req (unsigned int line)
 char *
 Basic_is_phone_forwarded (line_t line)
 {
-    TNP_DEBUG(DEB_F_PREFIX"called for line %d\n", DEB_F_PREFIX_ARGS(UI_API, "Basic_is_phone_forwarded"), line);
+    TNP_DEBUG(DEB_F_PREFIX"called for line %d", DEB_F_PREFIX_ARGS(UI_API, "Basic_is_phone_forwarded"), line);
     return ((char *) lsm_is_phone_forwarded(line));
 }
 
@@ -1514,14 +1515,14 @@ void ui_log_disposition (callid_t call_id, int logdisp)
         return;
     }
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"called\n", DEB_L_C_F_PREFIX_ARGS(UI_API, dcb->line, call_id, __FUNCTION__));
+    TNP_DEBUG(DEB_L_C_F_PREFIX"called", DEB_L_C_F_PREFIX_ARGS(UI_API, dcb->line, call_id, __FUNCTION__));
 
     msg.sessionID = createSessionId(dcb->line, call_id);
     msg.eventID = CALL_LOGDISP;
     msg.update.ccSessionUpd.data.action = logdisp;
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR("%s: failed to send CALL_PRESERVATION_ACTIVE(%d) msg \n", __FUNCTION__, call_id);
+        CCAPP_ERROR("%s: failed to send CALL_PRESERVATION_ACTIVE(%d) msg", __FUNCTION__, call_id);
     }
 }
 
@@ -1543,19 +1544,22 @@ ui_control_feature (line_t line_id, callid_t call_id,
 }
 
 /*
- *  Helper for the following four functions which all load up a
+ *  Helper for the following several functions which all load up a
  *  session_update message and post it.
  *
  */
-static void post_message_helper(
-    group_call_event_t eventId,
-    call_events event,
-    line_t nLine,
-    callid_t nCallId,
-    uint16_t call_instance_id,
-    string_t sdp,
-    cc_int32_t status)
+static void post_message_helper(group_call_event_t eventId,
+                                call_events event,
+                                fsmdef_states_t new_state,
+                                line_t nLine,
+                                callid_t nCallId,
+                                uint16_t call_instance_id,
+                                string_t sdp,
+                                pc_error error,
+                                const char *format,
+                                va_list args)
 {
+    flex_string fs;
     session_update_t msg;
     memset( &msg, 0, sizeof(session_update_t));
 
@@ -1568,15 +1572,26 @@ static void post_message_helper(
 
     msg.eventID = eventId;
     msg.update.ccSessionUpd.data.state_data.state = event;
+    msg.update.ccSessionUpd.data.state_data.fsm_state = new_state;
     msg.update.ccSessionUpd.data.state_data.inst = call_instance_id;
     msg.update.ccSessionUpd.data.state_data.line_id = nLine;
     msg.update.ccSessionUpd.data.state_data.sdp = sdp;
-    if (eventId == SET_LOCAL_DESC || eventId == SET_REMOTE_DESC) {
-        msg.update.ccSessionUpd.data.state_data.cause = status;
+    msg.update.ccSessionUpd.data.state_data.cause = error;
+
+    if (format) {
+      flex_string_init(&fs);
+      flex_string_vsprintf(&fs, format, args);
+      msg.update.ccSessionUpd.data.state_data.reason_text =
+        strlib_malloc(fs.buffer, -1);
+      flex_string_free(&fs);
+    } else {
+      msg.update.ccSessionUpd.data.state_data.reason_text = strlib_empty();
     }
 
-    if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_STATE(%d) msg \n", __FUNCTION__, event);
+    if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t),
+                          CCAPP_CCPROVIER) != CPR_SUCCESS ) {
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_STATE(%d) msg",
+                    __FUNCTION__, event);
     }
 
     return;
@@ -1588,13 +1603,26 @@ static void post_message_helper(
  *
  *  @return none
  */
-void ui_create_offer(call_events event, line_t nLine, callid_t nCallID,
-                 	 uint16_t call_instance_id, string_t sdp)
+void ui_create_offer(call_events event,
+                     fsmdef_states_t new_state,
+                     line_t nLine,
+                     callid_t nCallID,
+                     uint16_t call_instance_id,
+                     string_t sdp,
+                     pc_error error,
+                     const char *format, ...)
 {
-    TNP_DEBUG(DEB_L_C_F_PREFIX"state=%d attr=%d call_instance=%d\n",
-              DEB_L_C_F_PREFIX_ARGS(UI_API, nLine, nCallID, __FUNCTION__), event, call_instance_id);
+    va_list ap;
 
-    post_message_helper(CREATE_OFFER, event, nLine, nCallID, call_instance_id, sdp, 0);
+    TNP_DEBUG(DEB_L_C_F_PREFIX"state=%d call_instance=%d",
+              DEB_L_C_F_PREFIX_ARGS(UI_API, nLine, nCallID, __FUNCTION__),
+              event, call_instance_id);
+
+
+    va_start(ap, format);
+    post_message_helper(CREATE_OFFER, event, new_state, nLine, nCallID,
+                        call_instance_id, sdp, error, format, ap);
+    va_end(ap);
 
     return;
 }
@@ -1605,13 +1633,23 @@ void ui_create_offer(call_events event, line_t nLine, callid_t nCallID,
  *
  *  @return none
  */
-void ui_create_answer(call_events event, line_t nLine, callid_t nCallID,
-                 	 uint16_t call_instance_id, string_t sdp)
+void ui_create_answer(call_events event,
+                      fsmdef_states_t new_state,
+                      line_t nLine,
+                      callid_t nCallID,
+                      uint16_t call_instance_id,
+                      string_t sdp,
+                      pc_error error,
+                      const char *format, ...)
 {
-    TNP_DEBUG(DEB_L_C_F_PREFIX"state=%d call_instance=%d\n",
+    va_list ap;
+    TNP_DEBUG(DEB_L_C_F_PREFIX"state=%d call_instance=%d",
               DEB_L_C_F_PREFIX_ARGS(UI_API, nLine, nCallID, __FUNCTION__), event, call_instance_id);
 
-    post_message_helper(CREATE_ANSWER, event, nLine, nCallID, call_instance_id, sdp, 0);
+    va_start(ap, format);
+    post_message_helper(CREATE_ANSWER, event, new_state, nLine, nCallID,
+                        call_instance_id, sdp, error, format, ap);
+    va_end(ap);
 
     return;
 }
@@ -1622,13 +1660,23 @@ void ui_create_answer(call_events event, line_t nLine, callid_t nCallID,
  *  @return none
  */
 
-void ui_set_local_description(call_events event, line_t nLine, callid_t nCallID,
-                 	 uint16_t call_instance_id, string_t sdp, cc_int32_t status)
+void ui_set_local_description(call_events event,
+                              fsmdef_states_t new_state,
+                              line_t nLine,
+                              callid_t nCallID,
+                              uint16_t call_instance_id,
+                              string_t sdp,
+                              pc_error error,
+                              const char *format, ...)
 {
-    TNP_DEBUG(DEB_L_C_F_PREFIX"state=%d call_instance=%d\n",
+    va_list ap;
+    TNP_DEBUG(DEB_L_C_F_PREFIX"state=%d call_instance=%d",
               DEB_L_C_F_PREFIX_ARGS(UI_API, nLine, nCallID, __FUNCTION__), event, call_instance_id);
 
-    post_message_helper(SET_LOCAL_DESC, event, nLine, nCallID, call_instance_id, sdp, status);
+    va_start(ap, format);
+    post_message_helper(SET_LOCAL_DESC, event, new_state, nLine, nCallID,
+                        call_instance_id, sdp, error, format, ap);
+    va_end(ap);
 
     return;
 }
@@ -1639,13 +1687,23 @@ void ui_set_local_description(call_events event, line_t nLine, callid_t nCallID,
  *  @return none
  */
 
-void ui_set_remote_description(call_events event, line_t nLine, callid_t nCallID,
-                 	 uint16_t call_instance_id, string_t sdp, cc_int32_t status)
+void ui_set_remote_description(call_events event,
+                               fsmdef_states_t new_state,
+                               line_t nLine,
+                               callid_t nCallID,
+                               uint16_t call_instance_id,
+                               string_t sdp,
+                               pc_error error,
+                               const char *format, ...)
 {
-    TNP_DEBUG(DEB_L_C_F_PREFIX"state=%d call_instance=%d\n",
+    va_list ap;
+    TNP_DEBUG(DEB_L_C_F_PREFIX"state=%d call_instance=%d",
               DEB_L_C_F_PREFIX_ARGS(UI_API, nLine, nCallID, __FUNCTION__), event, call_instance_id);
 
-    post_message_helper(SET_REMOTE_DESC, event, nLine, nCallID, call_instance_id, sdp, status);
+    va_start(ap, format);
+    post_message_helper(SET_REMOTE_DESC, event, new_state, nLine, nCallID,
+                        call_instance_id, sdp, error, format, ap);
+    va_end(ap);
 
     return;
 }
@@ -1656,38 +1714,52 @@ void ui_set_remote_description(call_events event, line_t nLine, callid_t nCallID
  *  @return none
  */
 
-void ui_update_local_description(call_events event, line_t nLine, callid_t nCallID,
-                 	 uint16_t call_instance_id, string_t sdp)
+void ui_update_local_description(call_events event,
+                                 fsmdef_states_t new_state,
+                                 line_t nLine,
+                                 callid_t nCallID,
+                                 uint16_t call_instance_id,
+                                 string_t sdp,
+                                 pc_error error,
+                                 const char *format, ...)
 {
-    TNP_DEBUG(DEB_L_C_F_PREFIX"state=%d call_instance=%d\n",
+    va_list ap;
+    TNP_DEBUG(DEB_L_C_F_PREFIX"state=%d call_instance=%d",
               DEB_L_C_F_PREFIX_ARGS(UI_API, nLine, nCallID, __FUNCTION__),
               event, call_instance_id);
 
-    post_message_helper(UPDATE_LOCAL_DESC, event, nLine, nCallID, call_instance_id,
-                        sdp, PC_OK);
+    va_start(ap, format);
+    post_message_helper(UPDATE_LOCAL_DESC, event, new_state, nLine, nCallID,
+                        call_instance_id, sdp, error, format, ap);
+    va_end(ap);
 
     return;
 }
 
 /**
- *  Let PeerConnection know about an updated remote session description
+ * Send data from addIceCandidate to the UI
  *
- *  @return none
+ * @return none
  */
 
-void ui_update_remote_description(call_events event, line_t nLine, callid_t nCallID,
-                 	 uint16_t call_instance_id, string_t sdp)
+void ui_ice_candidate_add(call_events event,
+                          fsmdef_states_t new_state,
+                          line_t nLine,
+                          callid_t nCallID,
+                          uint16_t call_instance_id,
+                          string_t sdp,
+                          pc_error error,
+                          const char *format, ...)
 {
-    TNP_DEBUG(DEB_L_C_F_PREFIX"state=%d call_instance=%d\n",
-              DEB_L_C_F_PREFIX_ARGS(UI_API, nLine, nCallID, __FUNCTION__),
-              event, call_instance_id);
+    va_list ap;
+    TNP_DEBUG(DEB_L_C_F_PREFIX"state=%d call_instance=%d",
+              DEB_L_C_F_PREFIX_ARGS(UI_API, nLine, nCallID, __FUNCTION__), event, call_instance_id);
 
-    post_message_helper(UPDATE_REMOTE_DESC, event, nLine, nCallID,
-                        call_instance_id, sdp, PC_OK);
-
-    return;
+    va_start(ap, format);
+    post_message_helper(ICE_CANDIDATE_ADD, event, new_state, nLine, nCallID,
+                        call_instance_id, sdp, error, format, ap);
+    va_end(ap);
 }
-
 
 /**
  *  Send Remote Stream data to the UI
@@ -1695,7 +1767,12 @@ void ui_update_remote_description(call_events event, line_t nLine, callid_t nCal
  *  @return none
  */
 
-void ui_on_remote_stream_added(call_events event, line_t nLine, callid_t nCallID, uint16_t call_instance_id, cc_media_remote_track_table_t media_track)
+void ui_on_remote_stream_added(call_events event,
+                               fsmdef_states_t new_state,
+                               line_t nLine,
+                               callid_t nCallID,
+                               uint16_t call_instance_id,
+                               cc_media_remote_track_table_t media_track)
 {
     session_update_t msg;
     fsmdef_dcb_t *dcb = fsmdef_get_dcb_by_call_id(nCallID);
@@ -1706,7 +1783,7 @@ void ui_on_remote_stream_added(call_events event, line_t nLine, callid_t nCallID
         return;
     }
 
-    TNP_DEBUG(DEB_L_C_F_PREFIX"state=%d call_instance=%d\n",
+    TNP_DEBUG(DEB_L_C_F_PREFIX"state=%d call_instance=%d",
               DEB_L_C_F_PREFIX_ARGS(UI_API, nLine, nCallID, __FUNCTION__), event, call_instance_id);
 
 
@@ -1714,13 +1791,15 @@ void ui_on_remote_stream_added(call_events event, line_t nLine, callid_t nCallID
 
     msg.eventID = REMOTE_STREAM_ADD;
     msg.update.ccSessionUpd.data.state_data.state = event;
+    msg.update.ccSessionUpd.data.state_data.fsm_state = new_state;
     msg.update.ccSessionUpd.data.state_data.inst = call_instance_id;
     msg.update.ccSessionUpd.data.state_data.line_id = nLine;
     msg.update.ccSessionUpd.data.state_data.media_stream_track_id = media_track.track[0].media_stream_track_id;
     msg.update.ccSessionUpd.data.state_data.media_stream_id = (unsigned int)media_track.media_stream_id;
+    msg.update.ccSessionUpd.data.state_data.cause = PC_NO_ERROR;
 
     if ( ccappTaskPostMsg(CCAPP_SESSION_UPDATE, &msg, sizeof(session_update_t), CCAPP_CCPROVIER) != CPR_SUCCESS ) {
-        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_STATE(%d) msg \n", __FUNCTION__, event);
+        CCAPP_ERROR(CCAPP_F_PREFIX"failed to send CALL_STATE(%d) msg", __FUNCTION__, event);
     }
 
     return;

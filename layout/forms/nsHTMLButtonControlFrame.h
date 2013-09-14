@@ -35,9 +35,9 @@ public:
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS
 
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists) MOZ_OVERRIDE;
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE;
 
   virtual nscoord GetMinWidth(nsRenderingContext *aRenderingContext) MOZ_OVERRIDE;
 
@@ -52,11 +52,11 @@ public:
                          nsGUIEvent* aEvent,
                          nsEventStatus* aEventStatus) MOZ_OVERRIDE;
 
-  NS_IMETHOD  Init(nsIContent*      aContent,
-                   nsIFrame*        aParent,
-                   nsIFrame*        asPrevInFlow) MOZ_OVERRIDE;
+  virtual void Init(nsIContent*      aContent,
+                    nsIFrame*        aParent,
+                    nsIFrame*        asPrevInFlow) MOZ_OVERRIDE;
 
-  virtual nsStyleContext* GetAdditionalStyleContext(int32_t aIndex) const;
+  virtual nsStyleContext* GetAdditionalStyleContext(int32_t aIndex) const MOZ_OVERRIDE;
   virtual void SetAdditionalStyleContext(int32_t aIndex, 
                                          nsStyleContext* aStyleContext) MOZ_OVERRIDE;
  
@@ -82,19 +82,18 @@ public:
   }
 #endif
 
-  virtual bool HonorPrintBackgroundSettings() { return false; }
+  virtual bool HonorPrintBackgroundSettings() MOZ_OVERRIDE { return false; }
 
   // nsIFormControlFrame
-  void SetFocus(bool aOn, bool aRepaint);
+  void SetFocus(bool aOn, bool aRepaint) MOZ_OVERRIDE;
   virtual nsresult SetFormProperty(nsIAtom* aName, const nsAString& aValue) MOZ_OVERRIDE;
-  virtual nsresult GetFormProperty(nsIAtom* aName, nsAString& aValue) const MOZ_OVERRIDE; 
 
   // Inserted child content gets its frames parented by our child block
-  virtual nsIFrame* GetContentInsertionFrame() {
+  virtual nsIFrame* GetContentInsertionFrame() MOZ_OVERRIDE {
     return GetFirstPrincipalChild()->GetContentInsertionFrame();
   }
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const MOZ_OVERRIDE
   {
     return nsContainerFrame::IsFrameOfType(aFlags &
       ~(nsIFrame::eReplaced | nsIFrame::eReplacedContainsBlock));
@@ -109,7 +108,6 @@ protected:
                             nsMargin aFocusPadding,
                             nsReflowStatus& aStatus);
 
-  int GetSkipSides() const;
   nsButtonFrameRenderer mRenderer;
 };
 

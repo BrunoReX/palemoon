@@ -33,17 +33,17 @@ public:
 
   NS_IMETHOD DoLayout(nsBoxLayoutState& aState) MOZ_OVERRIDE;
 
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists) MOZ_OVERRIDE;
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE;
 
-  NS_IMETHOD BuildDisplayListForChildren(nsDisplayListBuilder*   aBuilder,
-                                         const nsRect&           aDirtyRect,
-                                         const nsDisplayListSet& aLists) MOZ_OVERRIDE;
+  virtual void BuildDisplayListForChildren(nsDisplayListBuilder*   aBuilder,
+                                           const nsRect&           aDirtyRect,
+                                           const nsDisplayListSet& aLists) MOZ_OVERRIDE;
                                          
-  NS_IMETHOD Init(nsIContent*      aContent,
-                  nsIFrame*        aParent,
-                  nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
+  virtual void Init(nsIContent*      aContent,
+                    nsIFrame*        aParent,
+                    nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
 
   virtual nsIAtom* GetType() const MOZ_OVERRIDE;
 

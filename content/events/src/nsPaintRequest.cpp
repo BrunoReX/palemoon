@@ -5,7 +5,6 @@
 
 #include "nsPaintRequest.h"
 
-#include "nsDOMClassInfoID.h"
 #include "nsIFrame.h"
 #include "nsContentUtils.h"
 #include "mozilla/dom/PaintRequestBinding.h"
@@ -14,30 +13,27 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
-DOMCI_DATA(PaintRequest, nsPaintRequest)
-
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_1(nsPaintRequest, mParent)
 
 NS_INTERFACE_TABLE_HEAD(nsPaintRequest)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_TABLE1(nsPaintRequest, nsIDOMPaintRequest)
   NS_INTERFACE_TABLE_TO_MAP_SEGUE_CYCLE_COLLECTION(nsPaintRequest)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(PaintRequest)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsPaintRequest)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsPaintRequest)
 
 /* virtual */ JSObject*
-nsPaintRequest::WrapObject(JSContext* aCx, JSObject* aScope, bool* aTriedToWrap)
+nsPaintRequest::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
 {
-  return PaintRequestBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return PaintRequestBinding::Wrap(aCx, aScope, this);
 }
 
 already_AddRefed<nsClientRect>
 nsPaintRequest::ClientRect()
 {
-  nsRefPtr<nsClientRect> clientRect = new nsClientRect();
+  nsRefPtr<nsClientRect> clientRect = new nsClientRect(this);
   clientRect->SetLayoutRect(mRequest.mRect);
   return clientRect.forget();
 }
@@ -57,26 +53,21 @@ nsPaintRequest::GetXPCOMReason(nsAString& aResult)
   return NS_OK;
 }
 
-DOMCI_DATA(PaintRequestList, nsPaintRequestList)
-
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_1(nsPaintRequestList, mParent)
 
 NS_INTERFACE_TABLE_HEAD(nsPaintRequestList)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_TABLE1(nsPaintRequestList, nsIDOMPaintRequestList)
   NS_INTERFACE_TABLE_TO_MAP_SEGUE_CYCLE_COLLECTION(nsPaintRequestList)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(PaintRequestList)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsPaintRequestList)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsPaintRequestList)
 
 JSObject*
-nsPaintRequestList::WrapObject(JSContext *cx, JSObject *scope,
-                               bool *triedToWrap)
+nsPaintRequestList::WrapObject(JSContext *cx, JS::Handle<JSObject*> scope)
 {
-  return mozilla::dom::PaintRequestListBinding::Wrap(cx, scope, this,
-                                                     triedToWrap);
+  return mozilla::dom::PaintRequestListBinding::Wrap(cx, scope, this);
 }
 
 NS_IMETHODIMP    

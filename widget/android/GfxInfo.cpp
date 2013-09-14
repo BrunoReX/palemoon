@@ -299,17 +299,10 @@ const nsTArray<GfxDriverInfo>&
 GfxInfo::GetGfxDriverInfo()
 {
   if (mDriverInfo->IsEmpty()) {
-#ifdef MOZ_ANDROID_OMTC
     APPEND_TO_DRIVER_BLOCKLIST2( DRIVER_OS_ALL,
       (nsAString&) GfxDriverInfo::GetDeviceVendor(VendorAll), GfxDriverInfo::allDevices,
       nsIGfxInfo::FEATURE_OPENGL_LAYERS, nsIGfxInfo::FEATURE_NO_INFO,
       DRIVER_COMPARISON_IGNORED, GfxDriverInfo::allDriverVersions );
-#else
-    APPEND_TO_DRIVER_BLOCKLIST2( DRIVER_OS_ALL,
-      (nsAString&) GfxDriverInfo::GetDeviceVendor(VendorAll), GfxDriverInfo::allDevices,
-      nsIGfxInfo::FEATURE_OPENGL_LAYERS, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
-      DRIVER_COMPARISON_IGNORED, GfxDriverInfo::allDriverVersions );
-#endif
   }
 
   return *mDriverInfo;
@@ -345,23 +338,159 @@ GfxInfo::GetFeatureStatusImpl(int32_t aFeature,
         *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
         return NS_OK;
       }
+
+      if (mHardware.Equals(NS_LITERAL_STRING("ville"))) {
+        *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+        return NS_OK;
+      }
     }
 
     if (aFeature == FEATURE_STAGEFRIGHT) {
       NS_LossyConvertUTF16toASCII cManufacturer(mManufacturer);
       NS_LossyConvertUTF16toASCII cModel(mModel);
-      if (CompareVersions(mOSVersion.get(), "4.0.0") < 0)
+      NS_LossyConvertUTF16toASCII cHardware(mHardware);
+
+      if (cHardware.Equals("antares") ||
+          cHardware.Equals("endeavoru") ||
+          cHardware.Equals("harmony") ||
+          cHardware.Equals("picasso") ||
+          cHardware.Equals("picasso_e") ||
+          cHardware.Equals("ventana") ||
+          cHardware.Equals("rk30board"))
+      {
+        *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+        return NS_OK;
+      }
+
+      if (CompareVersions(mOSVersion.get(), "2.2.0") >= 0 &&
+          CompareVersions(mOSVersion.get(), "2.3.0") < 0)
+      {
+        // Froyo LG devices are whitelisted.
+        // All other Froyo
+        bool isWhitelisted =
+          cManufacturer.Equals("lge", nsCaseInsensitiveCStringComparator());
+
+        if (!isWhitelisted) {
+          *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+          return NS_OK;
+        }
+      }
+      else if (CompareVersions(mOSVersion.get(), "2.3.0") >= 0 &&
+          CompareVersions(mOSVersion.get(), "2.4.0") < 0)
+      {
+        // Gingerbread HTC devices are whitelisted.
+        // Gingerbread Samsung devices are whitelisted except for:
+        //   Samsung devices identified in Bug 847837
+        //   Samsung SGH-T989 (Bug 818363)
+        // All other Gingerbread devices are blacklisted.
+        bool isWhitelisted =
+          cManufacturer.Equals("htc", nsCaseInsensitiveCStringComparator()) ||
+          cManufacturer.Equals("samsung", nsCaseInsensitiveCStringComparator());
+
+        if (cModel.Equals("GT-I8160", nsCaseInsensitiveCStringComparator()) ||
+            cModel.Equals("GT-I8160L", nsCaseInsensitiveCStringComparator()) ||
+            cModel.Equals("GT-I8530", nsCaseInsensitiveCStringComparator()) ||
+            cModel.Equals("GT-I9070", nsCaseInsensitiveCStringComparator()) ||
+            cModel.Equals("GT-I9070P", nsCaseInsensitiveCStringComparator()) ||
+            cModel.Equals("GT-I8160P", nsCaseInsensitiveCStringComparator()) ||
+            cModel.Equals("GT-S7500", nsCaseInsensitiveCStringComparator()) ||
+            cModel.Equals("GT-S7500T", nsCaseInsensitiveCStringComparator()) ||
+            cModel.Equals("GT-S7500L", nsCaseInsensitiveCStringComparator()) ||
+            cModel.Equals("GT-S6500T", nsCaseInsensitiveCStringComparator()) ||
+            cModel.Equals("SGH-T989", nsCaseInsensitiveCStringComparator()) ||
+            cHardware.Equals("smdkc110", nsCaseInsensitiveCStringComparator()) ||
+            cHardware.Equals("smdkc210", nsCaseInsensitiveCStringComparator()) ||
+            cHardware.Equals("herring", nsCaseInsensitiveCStringComparator()) ||
+            cHardware.Equals("shw-m110s", nsCaseInsensitiveCStringComparator()) ||
+            cHardware.Equals("shw-m180s", nsCaseInsensitiveCStringComparator()) ||
+            cHardware.Equals("n1", nsCaseInsensitiveCStringComparator()) ||
+            cHardware.Equals("latona", nsCaseInsensitiveCStringComparator()) ||
+            cHardware.Equals("aalto", nsCaseInsensitiveCStringComparator()) ||
+            cHardware.Equals("atlas", nsCaseInsensitiveCStringComparator()) ||
+            cHardware.Equals("qcom", nsCaseInsensitiveCStringComparator()))
+        {
+          isWhitelisted = false;
+        }
+
+        if (!isWhitelisted) {
+          *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+          return NS_OK;
+        }
+      }
+      else if (CompareVersions(mOSVersion.get(), "3.0.0") >= 0 &&
+          CompareVersions(mOSVersion.get(), "4.0.0") < 0)
+      {
+        // Honeycomb Samsung devices are whitelisted.
+        // All other Honeycomb devices are blacklisted.
+	bool isWhitelisted =
+          cManufacturer.Equals("samsung", nsCaseInsensitiveCStringComparator());
+
+        if (!isWhitelisted) {
+          *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+          return NS_OK;
+        }
+      }
+      else if (CompareVersions(mOSVersion.get(), "4.0.0") < 0)
       {
         *aStatus = nsIGfxInfo::FEATURE_BLOCKED_OS_VERSION;
         return NS_OK;
       }
       else if (CompareVersions(mOSVersion.get(), "4.1.0") < 0)
       {
+        // Whitelist:
+        //   All Samsung ICS devices, except for:
+        //     Samsung SGH-I717 (Bug 845729)
+        //     Samsung SGH-I727 (Bug 845729)
+        //     Samsung SGH-I757 (Bug 845729)
+        //     Samsung SGH-T989 (Bug 845729)
+        //   All Galaxy nexus ICS devices
+        //   Sony Xperia Ion (LT28) ICS devices
         bool isWhitelisted =
+          cModel.Equals("LT28h", nsCaseInsensitiveCStringComparator()) ||
           cManufacturer.Equals("samsung", nsCaseInsensitiveCStringComparator()) ||
           cModel.Equals("galaxy nexus", nsCaseInsensitiveCStringComparator()); // some Galaxy Nexus have manufacturer=amazon
 
+        if (cModel.Find("SGH-I717", true) != -1 ||
+            cModel.Find("SGH-I727", true) != -1 ||
+            cModel.Find("SGH-I757", true) != -1 ||
+            cModel.Find("SGH-T989", true) != -1)
+        {
+          isWhitelisted = false;
+        }
+
         if (!isWhitelisted) {
+          *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+          return NS_OK;
+        }
+      }
+      else if (CompareVersions(mOSVersion.get(), "4.2.0") < 0)
+      {
+        // Whitelist:
+        //   All JB phones except for those in blocklist below
+        // Blocklist:
+        //   Samsung devices from bug 812881 and 853522.
+        //   Motorola XT890 from bug 882342.
+        //   All Sony devices (Bug 845734)
+
+        bool isBlocklisted =
+          cModel.Find("GT-P3100", true) != -1 ||
+          cModel.Find("GT-P3110", true) != -1 ||
+          cModel.Find("GT-P3113", true) != -1 ||
+          cModel.Find("GT-P5100", true) != -1 ||
+          cModel.Find("GT-P5110", true) != -1 ||
+          cModel.Find("GT-P5113", true) != -1 ||
+          cModel.Find("XT890", true) != -1 ||
+          cManufacturer.Find("Sony", true) != -1;
+
+        if (isBlocklisted) {
+          *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+          return NS_OK;
+        }
+      }
+      else if (CompareVersions(mOSVersion.get(), "4.3.0") < 0)
+      {
+        // Blocklist all Sony devices
+        if (cManufacturer.Find("Sony", true) != -1) {
           *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
           return NS_OK;
         }

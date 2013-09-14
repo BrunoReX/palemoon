@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/DebugOnly.h"
+#include <algorithm>
 
 #ifdef MOZ_LOGGING
 #define FORCE_PR_LOG /* Allow logging in the release build */
@@ -52,13 +53,6 @@ using namespace mozilla;
                                    PR_LOG_DEBUG)
 
 #endif // PR_LOGGING
-
-// font info loader constants
-
-// avoid doing this during startup even on slow machines but try to start
-// it soon enough so that system fallback doesn't happen first
-static const uint32_t kDelayBeforeLoadingFonts = 120 * 1000; // 2 minutes after init
-static const uint32_t kIntervalBetweenLoadingFonts = 2000;   // every 2 seconds until complete
 
 static __inline void
 BuildKeyNameFromFontName(nsAString &aName)
@@ -205,7 +199,7 @@ GDIFontEntry::ReadCMAP()
     nsresult rv;
 
     AutoFallibleTArray<uint8_t,16384> cmap;
-    rv = GetFontTable(kCMAP, cmap);
+    rv = CopyFontTable(kCMAP, cmap);
 
     bool unicodeFont = false, symbolFont = false; // currently ignored
 
@@ -269,8 +263,8 @@ GDIFontEntry::CreateFontInstance(const gfxFontStyle* aFontStyle, bool aNeedsBold
 }
 
 nsresult
-GDIFontEntry::GetFontTable(uint32_t aTableTag,
-                           FallibleTArray<uint8_t>& aBuffer)
+GDIFontEntry::CopyFontTable(uint32_t aTableTag,
+                            FallibleTArray<uint8_t>& aBuffer)
 {
     if (!IsTrueType()) {
         return NS_ERROR_FAILURE;
@@ -280,10 +274,12 @@ GDIFontEntry::GetFontTable(uint32_t aTableTag,
     AutoSelectFont font(dc.GetDC(), &mLogFont);
     if (font.IsValid()) {
         uint32_t tableSize =
-            ::GetFontData(dc.GetDC(), NS_SWAP32(aTableTag), 0, NULL, 0);
+            ::GetFontData(dc.GetDC(),
+                          NativeEndian::swapToBigEndian(aTableTag), 0, NULL, 0);
         if (tableSize != GDI_ERROR) {
             if (aBuffer.SetLength(tableSize)) {
-                ::GetFontData(dc.GetDC(), NS_SWAP32(aTableTag), 0,
+                ::GetFontData(dc.GetDC(),
+                              NativeEndian::swapToBigEndian(aTableTag), 0,
                               aBuffer.Elements(), tableSize);
                 return NS_OK;
             }
@@ -426,7 +422,7 @@ GDIFontEntry::InitLogFont(const nsAString& aName,
     mLogFont.lfItalic         = mItalic;
     mLogFont.lfWeight         = mWeight;
 
-    int len = NS_MIN<int>(aName.Length(), LF_FACESIZE - 1);
+    int len = std::min<int>(aName.Length(), LF_FACESIZE - 1);
     memcpy(&mLogFont.lfFaceName, aName.BeginReading(), len * sizeof(PRUnichar));
     mLogFont.lfFaceName[len] = '\0';
 }
@@ -559,7 +555,7 @@ GDIFontFamily::FindStyleVariations()
     memset(&logFont, 0, sizeof(LOGFONTW));
     logFont.lfCharSet = DEFAULT_CHARSET;
     logFont.lfPitchAndFamily = 0;
-    uint32_t l = NS_MIN<uint32_t>(mName.Length(), LF_FACESIZE - 1);
+    uint32_t l = std::min<uint32_t>(mName.Length(), LF_FACESIZE - 1);
     memcpy(logFont.lfFaceName, mName.get(), l * sizeof(PRUnichar));
 
     EnumFontFamiliesExW(hdc, &logFont,
@@ -708,7 +704,7 @@ gfxGDIFontList::InitFontList()
 
     GetFontSubstitutes();
 
-    StartLoader(kDelayBeforeLoadingFonts, kIntervalBetweenLoadingFonts);
+    GetPrefsAndStartLoader();
 
     return NS_OK;
 }
@@ -863,7 +859,7 @@ public:
 
         while (mCurrentChunk < mNumChunks && bytesLeft) {
             FontDataChunk& currentChunk = mDataChunks[mCurrentChunk];
-            uint32_t bytesToCopy = NS_MIN(bytesLeft, 
+            uint32_t bytesToCopy = std::min(bytesLeft, 
                                           currentChunk.mLength - mChunkOffset);
             memcpy(out, currentChunk.mData + mChunkOffset, bytesToCopy);
             bytesLeft -= bytesToCopy;
@@ -927,7 +923,7 @@ gfxGDIFontList::MakePlatformFont(const gfxProxyFontEntry *aProxyEntry,
         uint32_t eotlen;
 
         isEmbedded = true;
-        uint32_t nameLen = NS_MIN<uint32_t>(uniqueName.Length(), LF_FACESIZE - 1);
+        uint32_t nameLen = std::min<uint32_t>(uniqueName.Length(), LF_FACESIZE - 1);
         nsAutoString fontName(Substring(uniqueName, 0, nameLen));
         
         FontDataOverlay overlayNameData = {0, 0, 0};

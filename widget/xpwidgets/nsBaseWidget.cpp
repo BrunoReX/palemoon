@@ -7,6 +7,7 @@
 
 #include "mozilla/layers/CompositorChild.h"
 #include "mozilla/layers/CompositorParent.h"
+#include "mozilla/layers/ImageBridgeChild.h"
 #include "nsBaseWidget.h"
 #include "nsDeviceContext.h"
 #include "nsCOMPtr.h"
@@ -20,7 +21,9 @@
 #include "nsIServiceManager.h"
 #include "mozilla/Preferences.h"
 #include "BasicLayers.h"
+#include "ClientLayerManager.h"
 #include "LayerManagerOGL.h"
+#include "mozilla/layers/Compositor.h"
 #include "nsIXULRuntime.h"
 #include "nsIXULWindow.h"
 #include "nsIBaseWindow.h"
@@ -30,8 +33,11 @@
 #include "nsIGfxInfo.h"
 #include "npapi.h"
 #include "base/thread.h"
+#include "prdtoa.h"
 #include "prenv.h"
 #include "mozilla/Attributes.h"
+#include "nsContentUtils.h"
+#include "gfxPlatform.h"
 
 #ifdef ACCESSIBILITY
 #include "nsAccessibilityService.h"
@@ -42,7 +48,6 @@
 
 static void debug_RegisterPrefCallbacks();
 
-static bool debug_InSecureKeyboardInputMode = false;
 #endif
 
 #ifdef NOISY_WIDGET_LEAKS
@@ -114,13 +119,39 @@ nsBaseWidget::nsBaseWidget()
 #ifdef DEBUG
   debug_RegisterPrefCallbacks();
 #endif
+
+  mShutdownObserver = new WidgetShutdownObserver(this);
+  nsContentUtils::RegisterShutdownObserver(mShutdownObserver);
 }
 
+NS_IMPL_ISUPPORTS1(WidgetShutdownObserver, nsIObserver)
+
+NS_IMETHODIMP
+WidgetShutdownObserver::Observe(nsISupports *aSubject,
+                                const char *aTopic,
+                                const PRUnichar *aData)
+{
+  if (strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0 &&
+      mWidget) {
+    mWidget->Shutdown();
+    nsContentUtils::UnregisterShutdownObserver(this);
+  }
+ return NS_OK;
+}
+
+void
+nsBaseWidget::Shutdown()
+{
+  DestroyCompositor();
+  mShutdownObserver = nullptr;
+}
 
 static void DeferredDestroyCompositor(CompositorParent* aCompositorParent,
                               CompositorChild* aCompositorChild)
 {
-    aCompositorChild->Destroy();
+    // Bug 848949 needs to be fixed before
+    // we can close the channel properly
+    //aCompositorChild->Close();
     aCompositorParent->Release();
     aCompositorChild->Release();
 }
@@ -129,6 +160,7 @@ void nsBaseWidget::DestroyCompositor()
 {
   if (mCompositorChild) {
     mCompositorChild->SendWillStop();
+    mCompositorChild->Destroy();
 
     // The call just made to SendWillStop can result in IPC from the
     // CompositorParent to the CompositorChild (e.g. caused by the destruction
@@ -162,6 +194,15 @@ nsBaseWidget::~nsBaseWidget()
   if (mLayerManager) {
     mLayerManager->Destroy();
     mLayerManager = nullptr;
+  }
+
+  if (mShutdownObserver) {
+    // If the shutdown observer is currently processing observers,
+    // then UnregisterShutdownObserver won't stop our Observer
+    // function from being called. Make sure we don't try
+    // to reference the dead widget.
+    mShutdownObserver->mWidget = nullptr;
+    nsContentUtils::UnregisterShutdownObserver(mShutdownObserver);
   }
 
   DestroyCompositor();
@@ -379,18 +420,26 @@ float nsBaseWidget::GetDPI()
 
 double nsIWidget::GetDefaultScale()
 {
+  double devPixelsPerCSSPixel = DefaultScaleOverride();
+
+  if (devPixelsPerCSSPixel <= 0.0) {
+    devPixelsPerCSSPixel = GetDefaultScaleInternal();
+  }
+
+  return devPixelsPerCSSPixel;
+}
+
+/* static */
+double nsIWidget::DefaultScaleOverride()
+{
   // The number of device pixels per CSS pixel. A value <= 0 means choose
   // automatically based on the DPI. A positive value is used as-is. This effectively
   // controls the size of a CSS "px".
-  float devPixelsPerCSSPixel = -1.0;
+  double devPixelsPerCSSPixel = -1.0;
 
   nsAdoptingCString prefString = Preferences::GetCString("layout.css.devPixelsPerPx");
   if (!prefString.IsEmpty()) {
-    devPixelsPerCSSPixel = static_cast<float>(atof(prefString));
-  }
-
-  if (devPixelsPerCSSPixel <= 0) {
-    devPixelsPerCSSPixel = GetDefaultScaleInternal();
+    devPixelsPerCSSPixel = PR_strtod(prefString, nullptr);
   }
 
   return devPixelsPerCSSPixel;
@@ -426,7 +475,16 @@ void nsBaseWidget::AddChild(nsIWidget* aChild)
 //-------------------------------------------------------------------------
 void nsBaseWidget::RemoveChild(nsIWidget* aChild)
 {
+#ifdef DEBUG
+#ifdef XP_MACOSX
+  // nsCocoaWindow doesn't implement GetParent, so in that case parent will be
+  // null and we'll just have to do without this assertion.
+  nsIWidget* parent = aChild->GetParent();
+  NS_ASSERTION(!parent || parent == this, "Not one of our kids!");
+#else
   NS_ASSERTION(aChild->GetParent() == this, "Not one of our kids!");
+#endif
+#endif
 
   if (mLastChild == aChild) {
     mLastChild = mLastChild->GetPrevSibling();
@@ -539,17 +597,6 @@ NS_IMETHODIMP nsBaseWidget::SetSizeMode(int32_t aMode)
     return NS_OK;
   }
   return NS_ERROR_ILLEGAL_VALUE;
-}
-
-//-------------------------------------------------------------------------
-//
-// Get the size mode (minimized, maximized, that sort of thing...)
-//
-//-------------------------------------------------------------------------
-NS_IMETHODIMP nsBaseWidget::GetSizeMode(int32_t* aMode)
-{
-  *aMode = mSizeMode;
-  return NS_OK;
 }
 
 //-------------------------------------------------------------------------
@@ -699,6 +746,12 @@ NS_IMETHODIMP nsBaseWidget::MakeFullScreen(bool aFullScreen)
     if (!mOriginalBounds)
       mOriginalBounds = new nsIntRect();
     GetScreenBounds(*mOriginalBounds);
+    // convert dev pix to display pix for window manipulation 
+    double scale = GetDefaultScale();
+    mOriginalBounds->x = NSToIntRound(mOriginalBounds->x / scale);
+    mOriginalBounds->y = NSToIntRound(mOriginalBounds->y / scale);
+    mOriginalBounds->width = NSToIntRound(mOriginalBounds->width / scale);
+    mOriginalBounds->height = NSToIntRound(mOriginalBounds->height / scale);
 
     // Move to top-left corner of screen and size to the screen dimensions
     nsCOMPtr<nsIScreenManager> screenManager;
@@ -706,16 +759,14 @@ NS_IMETHODIMP nsBaseWidget::MakeFullScreen(bool aFullScreen)
     NS_ASSERTION(screenManager, "Unable to grab screenManager.");
     if (screenManager) {
       nsCOMPtr<nsIScreen> screen;
-      // convert dev pix to display/CSS pix for ScreenForRect
-      double scale = GetDefaultScale();
-      screenManager->ScreenForRect(mOriginalBounds->x / scale,
-                                   mOriginalBounds->y / scale,
-                                   mOriginalBounds->width / scale,
-                                   mOriginalBounds->height / scale,
+      screenManager->ScreenForRect(mOriginalBounds->x,
+                                   mOriginalBounds->y,
+                                   mOriginalBounds->width,
+                                   mOriginalBounds->height,
                                    getter_AddRefs(screen));
       if (screen) {
         int32_t left, top, width, height;
-        if (NS_SUCCEEDED(screen->GetRect(&left, &top, &width, &height))) {
+        if (NS_SUCCEEDED(screen->GetRectDisplayPix(&left, &top, &width, &height))) {
           Resize(left, top, width, height, true);
         }
       }
@@ -801,10 +852,8 @@ nsBaseWidget::ComputeShouldAccelerate(bool aDefault)
   bool isSmallPopup = ((mWindowType == eWindowType_popup) &&
                       (mPopupType != ePopupTypePanel));
   // we should use AddBoolPrefVarCache
-  bool disableAcceleration = isSmallPopup ||
-    Preferences::GetBool("layers.acceleration.disabled", false);
-  mForceLayersAcceleration =
-    Preferences::GetBool("layers.acceleration.force-enabled", false);
+  bool disableAcceleration = isSmallPopup || gfxPlatform::GetPrefLayersAccelerationDisabled() || (mWindowType == eWindowType_invisible);
+  mForceLayersAcceleration = gfxPlatform::GetPrefLayersAccelerationForceEnabled();
 
   const char *acceleratedEnv = PR_GetEnv("MOZ_ACCELERATED");
   accelerateByDefault = accelerateByDefault ||
@@ -840,10 +889,10 @@ nsBaseWidget::ComputeShouldAccelerate(bool aDefault)
     return true;
 
   if (!whitelisted) {
-    NS_WARNING("OpenGL-accelerated layers are not supported on this system.");
+    NS_WARNING("OpenGL-accelerated layers are not supported on this system");
 #ifdef MOZ_ANDROID_OMTC
     NS_RUNTIMEABORT("OpenGL-accelerated layers are a hard requirement on this platform. "
-                    "Cannot continue without support for them.");
+                    "Cannot continue without support for them");
 #endif
     return false;
   }
@@ -855,29 +904,54 @@ nsBaseWidget::ComputeShouldAccelerate(bool aDefault)
   return aDefault;
 }
 
+CompositorParent* nsBaseWidget::NewCompositorParent(int aSurfaceWidth,
+                                                    int aSurfaceHeight)
+{
+  return new CompositorParent(this, false, aSurfaceWidth, aSurfaceHeight);
+}
+
 void nsBaseWidget::CreateCompositor()
 {
-  bool renderToEGLSurface = false;
-#ifdef MOZ_ANDROID_OMTC
-  renderToEGLSurface = true;
-#endif
   nsIntRect rect;
   GetBounds(rect);
-  mCompositorParent =
-    new CompositorParent(this, renderToEGLSurface, rect.width, rect.height);
-  LayerManager* lm = CreateBasicLayerManager();
+  CreateCompositor(rect.width, rect.height);
+}
+
+mozilla::layers::LayersBackend
+nsBaseWidget::GetPreferredCompositorBackend()
+{
+  if (mUseLayersAcceleration) {
+    return mozilla::layers::LAYERS_OPENGL;
+  }
+
+  return mozilla::layers::LAYERS_BASIC;
+}
+
+void nsBaseWidget::CreateCompositor(int aWidth, int aHeight)
+{
+  // Recreating this is tricky, as we may still have an old and we need
+  // to make sure it's properly destroyed by calling DestroyCompositor!
+
+  // If we've already received a shutdown notification, don't try
+  // create a new compositor.
+  if (!mShutdownObserver) {
+    return;
+  }
+
+  mCompositorParent = NewCompositorParent(aWidth, aHeight);
+  AsyncChannel *parentChannel = mCompositorParent->GetIPCChannel();
+  LayerManager* lm = new ClientLayerManager(this);
   MessageLoop *childMessageLoop = CompositorParent::CompositorLoop();
   mCompositorChild = new CompositorChild(lm);
-  AsyncChannel *parentChannel = mCompositorParent->GetIPCChannel();
   AsyncChannel::Side childSide = mozilla::ipc::AsyncChannel::Child;
   mCompositorChild->Open(parentChannel, childMessageLoop, childSide);
-  int32_t maxTextureSize;
-  PLayersChild* shadowManager;
-  mozilla::layers::LayersBackend backendHint =
-    mUseLayersAcceleration ? mozilla::layers::LAYERS_OPENGL : mozilla::layers::LAYERS_BASIC;
-  mozilla::layers::LayersBackend parentBackend;
-  shadowManager = mCompositorChild->SendPLayersConstructor(
-    backendHint, 0, &parentBackend, &maxTextureSize);
+
+  TextureFactoryIdentifier textureFactoryIdentifier;
+  PLayerTransactionChild* shadowManager;
+  mozilla::layers::LayersBackend backendHint = GetPreferredCompositorBackend();
+
+  shadowManager = mCompositorChild->SendPLayerTransactionConstructor(
+    backendHint, 0, &textureFactoryIdentifier);
 
   if (shadowManager) {
     ShadowLayerForwarder* lf = lm->AsShadowForwarder();
@@ -887,26 +961,28 @@ void nsBaseWidget::CreateCompositor()
       return;
     }
     lf->SetShadowManager(shadowManager);
-    lf->SetParentBackendType(parentBackend);
-    lf->SetMaxTextureSize(maxTextureSize);
+    lf->IdentifyTextureHost(textureFactoryIdentifier);
+    ImageBridgeChild::IdentifyCompositorTextureHost(textureFactoryIdentifier);
 
     mLayerManager = lm;
-  } else {
-    // We don't currently want to support not having a LayersChild
-    NS_RUNTIMEABORT("failed to construct LayersChild");
-    delete lm;
-    mCompositorChild = nullptr;
+    return;
   }
+
+  // Failed to create a compositor!
+  NS_WARNING("Failed to create an OMT compositor.");
+  DestroyCompositor();
+  // Compositor child had the only reference to LayerManager and will have
+  // deallocated it when being freed.
 }
 
-bool nsBaseWidget::UseOffMainThreadCompositing()
+bool nsBaseWidget::ShouldUseOffMainThreadCompositing()
 {
   bool isSmallPopup = ((mWindowType == eWindowType_popup) &&
-                      (mPopupType != ePopupTypePanel));
+                      (mPopupType != ePopupTypePanel)) || (mWindowType == eWindowType_invisible);
   return CompositorParent::CompositorLoop() && !isSmallPopup;
 }
 
-LayerManager* nsBaseWidget::GetLayerManager(PLayersChild* aShadowManager,
+LayerManager* nsBaseWidget::GetLayerManager(PLayerTransactionChild* aShadowManager,
                                             LayersBackend aBackendHint,
                                             LayerManagerPersistence aPersistence,
                                             bool* aAllowRetaining)
@@ -916,7 +992,7 @@ LayerManager* nsBaseWidget::GetLayerManager(PLayersChild* aShadowManager,
     mUseLayersAcceleration = ComputeShouldAccelerate(mUseLayersAcceleration);
 
     // Try to use an async compositor first, if possible
-    if (UseOffMainThreadCompositing()) {
+    if (ShouldUseOffMainThreadCompositing()) {
       // e10s uses the parameter to pass in the shadow manager from the TabChild
       // so we don't expect to see it there since this doesn't support e10s.
       NS_ASSERTION(aShadowManager == nullptr, "Async Compositor not supported with e10s");
@@ -940,7 +1016,7 @@ LayerManager* nsBaseWidget::GetLayerManager(PLayersChild* aShadowManager,
       }
     }
     if (!mLayerManager) {
-      mBasicLayerManager = mLayerManager = CreateBasicLayerManager();
+      mLayerManager = CreateBasicLayerManager();
     }
   }
   if (mTemporarilyUseBasicLayerManager && !mBasicLayerManager) {
@@ -956,7 +1032,7 @@ LayerManager* nsBaseWidget::GetLayerManager(PLayersChild* aShadowManager,
 
 BasicLayerManager* nsBaseWidget::CreateBasicLayerManager()
 {
-      return new BasicShadowLayerManager(this);
+  return new BasicLayerManager(this);
 }
 
 CompositorChild* nsBaseWidget::GetRemoteRenderer()
@@ -1010,8 +1086,13 @@ NS_METHOD nsBaseWidget::SetWindowClass(const nsAString& xulWinType)
 NS_METHOD nsBaseWidget::MoveClient(double aX, double aY)
 {
   nsIntPoint clientOffset(GetClientOffset());
-  aX -= clientOffset.x;
-  aY -= clientOffset.y;
+
+  // GetClientOffset returns device pixels; scale back to display pixels
+  // if that's what this widget uses for the Move/Resize APIs
+  double scale = BoundsUseDisplayPixels() ? 1.0 / GetDefaultScale() : 1.0;
+  aX -= clientOffset.x * scale;
+  aY -= clientOffset.y * scale;
+
   return Move(aX, aY);
 }
 
@@ -1024,8 +1105,12 @@ NS_METHOD nsBaseWidget::ResizeClient(double aWidth,
 
   nsIntRect clientBounds;
   GetClientBounds(clientBounds);
-  aWidth = mBounds.width + (aWidth - clientBounds.width);
-  aHeight = mBounds.height + (aHeight - clientBounds.height);
+
+  // GetClientBounds and mBounds are device pixels; scale back to display pixels
+  // if that's what this widget uses for the Move/Resize APIs
+  double scale = BoundsUseDisplayPixels() ? 1.0 / GetDefaultScale() : 1.0;
+  aWidth = mBounds.width * scale + (aWidth - clientBounds.width * scale);
+  aHeight = mBounds.height * scale + (aHeight - clientBounds.height * scale);
 
   return Resize(aWidth, aHeight, aRepaint);
 }
@@ -1041,12 +1126,14 @@ NS_METHOD nsBaseWidget::ResizeClient(double aX,
 
   nsIntRect clientBounds;
   GetClientBounds(clientBounds);
-  aWidth = mBounds.width + (aWidth - clientBounds.width);
-  aHeight = mBounds.height + (aHeight - clientBounds.height);
+
+  double scale = BoundsUseDisplayPixels() ? 1.0 / GetDefaultScale() : 1.0;
+  aWidth = mBounds.width * scale + (aWidth - clientBounds.width * scale);
+  aHeight = mBounds.height * scale + (aHeight - clientBounds.height * scale);
 
   nsIntPoint clientOffset(GetClientOffset());
-  aX -= clientOffset.x;
-  aY -= clientOffset.y;
+  aX -= clientOffset.x * scale;
+  aY -= clientOffset.y * scale;
 
   return Resize(aX, aY, aWidth, aHeight, aRepaint);
 }
@@ -1131,26 +1218,6 @@ nsBaseWidget::SetIcon(const nsAString&)
 }
 
 NS_IMETHODIMP
-nsBaseWidget::BeginSecureKeyboardInput()
-{
-#ifdef DEBUG
-  NS_ASSERTION(!debug_InSecureKeyboardInputMode, "Attempting to nest call to BeginSecureKeyboardInput!");
-  debug_InSecureKeyboardInputMode = true;
-#endif
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsBaseWidget::EndSecureKeyboardInput()
-{
-#ifdef DEBUG
-  NS_ASSERTION(debug_InSecureKeyboardInputMode, "Calling EndSecureKeyboardInput when it hasn't been enabled!");
-  debug_InSecureKeyboardInputMode = false;
-#endif
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsBaseWidget::SetWindowTitlebarColor(nscolor aColor, bool aActive)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
@@ -1177,11 +1244,10 @@ nsBaseWidget::SetLayersAcceleration(bool aEnabled)
   if (usedAcceleration == mUseLayersAcceleration) {
     return NS_OK;
   }
-
   if (mLayerManager) {
     mLayerManager->Destroy();
   }
-  mLayerManager = NULL;
+  mLayerManager = nullptr;
   return NS_OK;
 }
 
@@ -1196,36 +1262,45 @@ NS_METHOD nsBaseWidget::UnregisterTouchWindow()
 }
 
 NS_IMETHODIMP
-nsBaseWidget::OverrideSystemMouseScrollSpeed(int32_t aOriginalDelta,
-                                             bool aIsHorizontal,
-                                             int32_t &aOverriddenDelta)
+nsBaseWidget::OverrideSystemMouseScrollSpeed(double aOriginalDeltaX,
+                                             double aOriginalDeltaY,
+                                             double& aOverriddenDeltaX,
+                                             double& aOverriddenDeltaY)
 {
-  aOverriddenDelta = aOriginalDelta;
+  aOverriddenDeltaX = aOriginalDeltaX;
+  aOverriddenDeltaY = aOriginalDeltaY;
 
-  const char* kPrefNameOverrideEnabled =
-    "mousewheel.system_scroll_override_on_root_content.enabled";
-  bool isOverrideEnabled =
-    Preferences::GetBool(kPrefNameOverrideEnabled, false);
-  if (!isOverrideEnabled) {
+  static bool sInitialized = false;
+  static bool sIsOverrideEnabled = false;
+  static int32_t sIntFactorX = 0;
+  static int32_t sIntFactorY = 0;
+
+  if (!sInitialized) {
+    Preferences::AddBoolVarCache(&sIsOverrideEnabled,
+      "mousewheel.system_scroll_override_on_root_content.enabled", false);
+    Preferences::AddIntVarCache(&sIntFactorX,
+      "mousewheel.system_scroll_override_on_root_content.horizontal.factor", 0);
+    Preferences::AddIntVarCache(&sIntFactorY,
+      "mousewheel.system_scroll_override_on_root_content.vertical.factor", 0);
+    sIntFactorX = std::max(sIntFactorX, 0);
+    sIntFactorY = std::max(sIntFactorY, 0);
+    sInitialized = true;
+  }
+
+  if (!sIsOverrideEnabled) {
     return NS_OK;
   }
 
-  nsAutoCString factorPrefName(
-    "mousewheel.system_scroll_override_on_root_content.");
-  if (aIsHorizontal) {
-    factorPrefName.AppendLiteral("horizontal.");
-  } else {
-    factorPrefName.AppendLiteral("vertical.");
-  }
-  factorPrefName.AppendLiteral("factor");
-  int32_t iFactor = Preferences::GetInt(factorPrefName.get(), 0);
   // The pref value must be larger than 100, otherwise, we don't override the
   // delta value.
-  if (iFactor <= 100) {
-    return NS_OK;
+  if (sIntFactorX > 100) {
+    double factor = static_cast<double>(sIntFactorX) / 100;
+    aOverriddenDeltaX *= factor;
   }
-  double factor = (double)iFactor / 100;
-  aOverriddenDelta = int32_t(NS_round((double)aOriginalDelta * factor));
+  if (sIntFactorY > 100) {
+    double factor = static_cast<double>(sIntFactorY) / 100;
+    aOverriddenDeltaY *= factor;
+  }
 
   return NS_OK;
 }
@@ -1402,6 +1477,9 @@ nsBaseWidget::NotifyUIStateChanged(UIStateChangeType aShowAccelerators,
     return;
 
   nsIPresShell* presShell = mWidgetListener->GetPresShell();
+  if (!presShell)
+    return;
+
   nsIDocument* doc = presShell->GetDocument();
   if (doc) {
     nsPIDOMWindow* win = doc->GetWindow();

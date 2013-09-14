@@ -54,6 +54,27 @@ using namespace google_breakpad;
 
 namespace {
 
+// Flush the instruction cache for a given memory range.
+// Only required on ARM.
+void FlushInstructionCache(const char* memory, uint32_t memory_size) {
+#if defined(__arm__)
+  long begin = reinterpret_cast<long>(memory);
+  long end = begin + static_cast<long>(memory_size);
+# if defined(__ANDROID__)
+  // Provided by Android's <unistd.h>
+  cacheflush(begin, end, 0);
+# elif defined(__linux__)
+  // GLibc/ARM doesn't provide a wrapper for it, do a direct syscall.
+#  ifndef __ARM_NR_cacheflush
+#  define __ARM_NR_cacheflush 0xf0002
+#  endif
+  syscall(__ARM_NR_cacheflush, begin, end, 0);
+# else
+#   error "Your operating system is not supported yet"
+# endif
+#endif
+}
+
 // Length of a formatted GUID string =
 // sizeof(MDGUID) * 2 + 4 (for dashes) + 1 (null terminator)
 const int kGUIDStringSize = 37;
@@ -108,9 +129,9 @@ void ReadMinidumpPathFromPipe(int fd, string* path) {
   ASSERT_EQ(1, r);
   ASSERT_TRUE(pfd.revents & POLLIN);
 
-  uint32_t len;
+  int32_t len;
   ASSERT_EQ(static_cast<ssize_t>(sizeof(len)), read(fd, &len, sizeof(len)));
-  ASSERT_LT(len, static_cast<uint32_t>(2048));
+  ASSERT_LT(len, 2048);
   char* filename = static_cast<char*>(malloc(len + 1));
   ASSERT_EQ(len, read(fd, filename, len));
   filename[len] = 0;
@@ -194,7 +215,7 @@ void ChildCrash(bool use_fd) {
 
   struct stat st;
   ASSERT_EQ(0, stat(minidump_path.c_str(), &st));
-  ASSERT_GT(st.st_size, 0u);
+  ASSERT_GT(st.st_size, 0);
   unlink(minidump_path.c_str());
 }
 
@@ -317,6 +338,39 @@ TEST(ExceptionHandlerTest, RedeliveryToDefaultHandler) {
   ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGSEGV));
 }
 
+// Check that saving and restoring the signal handler with 'signal'
+// instead of 'sigaction' doesn't make the Breakpad signal handler
+// crash. See comments in ExceptionHandler::SignalHandler for full
+// details.
+TEST(ExceptionHandlerTest, RedeliveryOnBadSignalHandlerFlag) {
+  AutoTempDir temp_dir;
+  const pid_t child = fork();
+  if (child == 0) {
+    // Install the RaiseSIGKILL handler for SIGSEGV.
+    ASSERT_TRUE(InstallRaiseSIGKILL());
+
+    // Create a new exception handler, this installs a new SIGSEGV
+    // handler, after saving the old one.
+    ExceptionHandler handler(
+        MinidumpDescriptor(temp_dir.path()), NULL,
+        DoneCallbackReturnFalse, NULL, true, -1);
+
+    // Install the default SIGSEGV handler, saving the current one.
+    // Then re-install the current one with 'signal', this loses the
+    // SA_SIGINFO flag associated with the Breakpad handler.
+    sighandler_t old_handler = signal(SIGSEGV, SIG_DFL);
+    ASSERT_NE(reinterpret_cast<void*>(old_handler),
+              reinterpret_cast<void*>(SIG_ERR));
+    ASSERT_NE(reinterpret_cast<void*>(signal(SIGSEGV, old_handler)),
+              reinterpret_cast<void*>(SIG_ERR));
+
+    // Crash with the exception handler in scope.
+    *reinterpret_cast<volatile int*>(NULL) = 0;
+  }
+  // SIGKILL means Breakpad's signal handler didn't crash.
+  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGKILL));
+}
+
 TEST(ExceptionHandlerTest, StackedHandlersDeliveredToTop) {
   AutoTempDir temp_dir;
 
@@ -390,7 +444,7 @@ TEST(ExceptionHandlerTest, InstructionPointerMemory) {
 
   // These are defined here so the parent can use them to check the
   // data from the minidump afterwards.
-  const u_int32_t kMemorySize = 256;  // bytes
+  const uint32_t kMemorySize = 256;  // bytes
   const int kOffset = kMemorySize / 2;
   // This crashes with SIGILL on x86/x86-64/arm.
   const unsigned char instructions[] = { 0xff, 0xff, 0xff, 0xff };
@@ -416,6 +470,7 @@ TEST(ExceptionHandlerTest, InstructionPointerMemory) {
     // of the block of memory, because the minidump should contain 128
     // bytes on either side of the instruction pointer.
     memcpy(memory + kOffset, instructions, sizeof(instructions));
+    FlushInstructionCache(memory, kMemorySize);
 
     // Now execute the instructions, which should crash.
     typedef void (*void_function)(void);
@@ -432,7 +487,7 @@ TEST(ExceptionHandlerTest, InstructionPointerMemory) {
 
   struct stat st;
   ASSERT_EQ(0, stat(minidump_path.c_str(), &st));
-  ASSERT_GT(st.st_size, 0u);
+  ASSERT_GT(st.st_size, 0);
 
   // Read the minidump. Locate the exception record and the
   // memory list, and then ensure that there is a memory region
@@ -445,12 +500,12 @@ TEST(ExceptionHandlerTest, InstructionPointerMemory) {
   MinidumpMemoryList* memory_list = minidump.GetMemoryList();
   ASSERT_TRUE(exception);
   ASSERT_TRUE(memory_list);
-  ASSERT_LT(0, memory_list->region_count());
+  ASSERT_LT(0U, memory_list->region_count());
 
   MinidumpContext* context = exception->GetContext();
   ASSERT_TRUE(context);
 
-  u_int64_t instruction_pointer;
+  uint64_t instruction_pointer;
   ASSERT_TRUE(context->GetInstructionPointer(&instruction_pointer));
 
   MinidumpMemoryRegion* region =
@@ -458,11 +513,11 @@ TEST(ExceptionHandlerTest, InstructionPointerMemory) {
   ASSERT_TRUE(region);
 
   EXPECT_EQ(kMemorySize, region->GetSize());
-  const u_int8_t* bytes = region->GetMemory();
+  const uint8_t* bytes = region->GetMemory();
   ASSERT_TRUE(bytes);
 
-  u_int8_t prefix_bytes[kOffset];
-  u_int8_t suffix_bytes[kMemorySize - kOffset - sizeof(instructions)];
+  uint8_t prefix_bytes[kOffset];
+  uint8_t suffix_bytes[kMemorySize - kOffset - sizeof(instructions)];
   memset(prefix_bytes, 0, sizeof(prefix_bytes));
   memset(suffix_bytes, 0, sizeof(suffix_bytes));
   EXPECT_TRUE(memcmp(bytes, prefix_bytes, sizeof(prefix_bytes)) == 0);
@@ -482,7 +537,7 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryMinBound) {
 
   // These are defined here so the parent can use them to check the
   // data from the minidump afterwards.
-  const u_int32_t kMemorySize = 256;  // bytes
+  const uint32_t kMemorySize = 256;  // bytes
   const int kOffset = 0;
   // This crashes with SIGILL on x86/x86-64/arm.
   const unsigned char instructions[] = { 0xff, 0xff, 0xff, 0xff };
@@ -508,6 +563,7 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryMinBound) {
     // of the block of memory, because the minidump should contain 128
     // bytes on either side of the instruction pointer.
     memcpy(memory + kOffset, instructions, sizeof(instructions));
+    FlushInstructionCache(memory, kMemorySize);
 
     // Now execute the instructions, which should crash.
     typedef void (*void_function)(void);
@@ -524,7 +580,7 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryMinBound) {
 
   struct stat st;
   ASSERT_EQ(0, stat(minidump_path.c_str(), &st));
-  ASSERT_GT(st.st_size, 0u);
+  ASSERT_GT(st.st_size, 0);
 
   // Read the minidump. Locate the exception record and the
   // memory list, and then ensure that there is a memory region
@@ -537,12 +593,12 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryMinBound) {
   MinidumpMemoryList* memory_list = minidump.GetMemoryList();
   ASSERT_TRUE(exception);
   ASSERT_TRUE(memory_list);
-  ASSERT_LT(0, memory_list->region_count());
+  ASSERT_LT(0U, memory_list->region_count());
 
   MinidumpContext* context = exception->GetContext();
   ASSERT_TRUE(context);
 
-  u_int64_t instruction_pointer;
+  uint64_t instruction_pointer;
   ASSERT_TRUE(context->GetInstructionPointer(&instruction_pointer));
 
   MinidumpMemoryRegion* region =
@@ -550,10 +606,10 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryMinBound) {
   ASSERT_TRUE(region);
 
   EXPECT_EQ(kMemorySize / 2, region->GetSize());
-  const u_int8_t* bytes = region->GetMemory();
+  const uint8_t* bytes = region->GetMemory();
   ASSERT_TRUE(bytes);
 
-  u_int8_t suffix_bytes[kMemorySize / 2 - sizeof(instructions)];
+  uint8_t suffix_bytes[kMemorySize / 2 - sizeof(instructions)];
   memset(suffix_bytes, 0, sizeof(suffix_bytes));
   EXPECT_TRUE(memcmp(bytes + kOffset, instructions, sizeof(instructions)) == 0);
   EXPECT_TRUE(memcmp(bytes + kOffset + sizeof(instructions),
@@ -573,7 +629,7 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryMaxBound) {
   // Use 4k here because the OS will hand out a single page even
   // if a smaller size is requested, and this test wants to
   // test the upper bound of the memory range.
-  const u_int32_t kMemorySize = 4096;  // bytes
+  const uint32_t kMemorySize = 4096;  // bytes
   // This crashes with SIGILL on x86/x86-64/arm.
   const unsigned char instructions[] = { 0xff, 0xff, 0xff, 0xff };
   const int kOffset = kMemorySize - sizeof(instructions);
@@ -599,6 +655,7 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryMaxBound) {
     // of the block of memory, because the minidump should contain 128
     // bytes on either side of the instruction pointer.
     memcpy(memory + kOffset, instructions, sizeof(instructions));
+    FlushInstructionCache(memory, kMemorySize);
 
     // Now execute the instructions, which should crash.
     typedef void (*void_function)(void);
@@ -615,7 +672,7 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryMaxBound) {
 
   struct stat st;
   ASSERT_EQ(0, stat(minidump_path.c_str(), &st));
-  ASSERT_GT(st.st_size, 0u);
+  ASSERT_GT(st.st_size, 0);
 
   // Read the minidump. Locate the exception record and the memory list, and
   // then ensure that there is a memory region in the memory list that covers
@@ -627,12 +684,12 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryMaxBound) {
   MinidumpMemoryList* memory_list = minidump.GetMemoryList();
   ASSERT_TRUE(exception);
   ASSERT_TRUE(memory_list);
-  ASSERT_LT(0, memory_list->region_count());
+  ASSERT_LT(0U, memory_list->region_count());
 
   MinidumpContext* context = exception->GetContext();
   ASSERT_TRUE(context);
 
-  u_int64_t instruction_pointer;
+  uint64_t instruction_pointer;
   ASSERT_TRUE(context->GetInstructionPointer(&instruction_pointer));
 
   MinidumpMemoryRegion* region =
@@ -641,10 +698,10 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryMaxBound) {
 
   const size_t kPrefixSize = 128;  // bytes
   EXPECT_EQ(kPrefixSize + sizeof(instructions), region->GetSize());
-  const u_int8_t* bytes = region->GetMemory();
+  const uint8_t* bytes = region->GetMemory();
   ASSERT_TRUE(bytes);
 
-  u_int8_t prefix_bytes[kPrefixSize];
+  uint8_t prefix_bytes[kPrefixSize];
   memset(prefix_bytes, 0, sizeof(prefix_bytes));
   EXPECT_TRUE(memcmp(bytes, prefix_bytes, sizeof(prefix_bytes)) == 0);
   EXPECT_TRUE(memcmp(bytes + kPrefixSize,
@@ -686,7 +743,7 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryNullPointer) {
 
   struct stat st;
   ASSERT_EQ(0, stat(minidump_path.c_str(), &st));
-  ASSERT_GT(st.st_size, 0u);
+  ASSERT_GT(st.st_size, 0);
 
   // Read the minidump. Locate the exception record and the
   // memory list, and then ensure that there is a memory region
@@ -709,9 +766,9 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryNullPointer) {
 TEST(ExceptionHandlerTest, ModuleInfo) {
   // These are defined here so the parent can use them to check the
   // data from the minidump afterwards.
-  const u_int32_t kMemorySize = sysconf(_SC_PAGESIZE);
+  const uint32_t kMemorySize = sysconf(_SC_PAGESIZE);
   const char* kMemoryName = "a fake module";
-  const u_int8_t kModuleGUID[sizeof(MDGUID)] = {
+  const uint8_t kModuleGUID[sizeof(MDGUID)] = {
     0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
     0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF
   };
@@ -854,9 +911,9 @@ TEST(ExceptionHandlerTest, ExternalDumper) {
   msg.msg_controllen = kControlMsgSize;
 
   const ssize_t n = HANDLE_EINTR(recvmsg(fds[0], &msg, 0));
-  ASSERT_EQ(kCrashContextSize, n);
+  ASSERT_EQ(static_cast<ssize_t>(kCrashContextSize), n);
   ASSERT_EQ(kControlMsgSize, msg.msg_controllen);
-  ASSERT_EQ(0, msg.msg_flags);
+  ASSERT_EQ(static_cast<typeof(msg.msg_flags)>(0), msg.msg_flags);
   ASSERT_EQ(0, close(fds[0]));
 
   pid_t crashing_pid = -1;
@@ -885,14 +942,14 @@ TEST(ExceptionHandlerTest, ExternalDumper) {
   ASSERT_TRUE(WriteMinidump(templ.c_str(), crashing_pid, context,
                             kCrashContextSize));
   static const char b = 0;
-  ASSERT_EQ(1U, (HANDLE_EINTR(write(signal_fd, &b, 1))));
+  ASSERT_EQ(1, (HANDLE_EINTR(write(signal_fd, &b, 1))));
   ASSERT_EQ(0, close(signal_fd));
 
   ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGSEGV));
 
   struct stat st;
   ASSERT_EQ(0, stat(templ.c_str(), &st));
-  ASSERT_GT(st.st_size, 0U);
+  ASSERT_GT(st.st_size, 0);
   unlink(templ.c_str());
 }
 
@@ -941,7 +998,7 @@ TEST(ExceptionHandlerTest, GenerateMultipleDumpsWithPath) {
   const MinidumpDescriptor& minidump_1 = handler.minidump_descriptor();
   struct stat st;
   ASSERT_EQ(0, stat(minidump_1.path(), &st));
-  ASSERT_GT(st.st_size, 0U);
+  ASSERT_GT(st.st_size, 0);
   string minidump_1_path(minidump_1.path());
   // Check it is a valid minidump.
   Minidump minidump1(minidump_1_path);
@@ -952,7 +1009,7 @@ TEST(ExceptionHandlerTest, GenerateMultipleDumpsWithPath) {
   ASSERT_TRUE(handler.WriteMinidump());
   const MinidumpDescriptor& minidump_2 = handler.minidump_descriptor();
   ASSERT_EQ(0, stat(minidump_2.path(), &st));
-  ASSERT_GT(st.st_size, 0U);
+  ASSERT_GT(st.st_size, 0);
   string minidump_2_path(minidump_2.path());
   // Check it is a valid minidump.
   Minidump minidump2(minidump_2_path);
@@ -965,15 +1022,15 @@ TEST(ExceptionHandlerTest, GenerateMultipleDumpsWithPath) {
 
 // Test that an additional memory region can be added to the minidump.
 TEST(ExceptionHandlerTest, AdditionalMemory) {
-  const u_int32_t kMemorySize = sysconf(_SC_PAGESIZE);
+  const uint32_t kMemorySize = sysconf(_SC_PAGESIZE);
 
   // Get some heap memory.
-  u_int8_t* memory = new u_int8_t[kMemorySize];
+  uint8_t* memory = new uint8_t[kMemorySize];
   const uintptr_t kMemoryAddress = reinterpret_cast<uintptr_t>(memory);
   ASSERT_TRUE(memory);
 
   // Stick some data into the memory so the contents can be verified.
-  for (u_int32_t i = 0; i < kMemorySize; ++i) {
+  for (uint32_t i = 0; i < kMemorySize; ++i) {
     memory[i] = i % 255;
   }
 
@@ -1009,10 +1066,10 @@ TEST(ExceptionHandlerTest, AdditionalMemory) {
 // Test that a memory region that was previously registered
 // can be unregistered.
 TEST(ExceptionHandlerTest, AdditionalMemoryRemove) {
-  const u_int32_t kMemorySize = sysconf(_SC_PAGESIZE);
+  const uint32_t kMemorySize = sysconf(_SC_PAGESIZE);
 
   // Get some heap memory.
-  u_int8_t* memory = new u_int8_t[kMemorySize];
+  uint8_t* memory = new uint8_t[kMemorySize];
   const uintptr_t kMemoryAddress = reinterpret_cast<uintptr_t>(memory);
   ASSERT_TRUE(memory);
 
@@ -1076,9 +1133,9 @@ TEST(ExceptionHandlerTest, WriteMinidumpForChild) {
   // Check that the crashing thread is the main thread of |child|
   MinidumpException* exception = minidump.GetException();
   ASSERT_TRUE(exception);
-  u_int32_t thread_id;
+  uint32_t thread_id;
   ASSERT_TRUE(exception->GetThreadID(&thread_id));
-  EXPECT_EQ(child, thread_id);
+  EXPECT_EQ(child, static_cast<int32_t>(thread_id));
 
   const MDRawExceptionStream* raw = exception->exception();
   ASSERT_TRUE(raw);

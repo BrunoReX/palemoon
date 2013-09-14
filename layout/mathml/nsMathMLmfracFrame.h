@@ -56,20 +56,20 @@ public:
 
   friend nsIFrame* NS_NewMathMLmfracFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
 
-  virtual eMathMLFrameType GetMathMLFrameType();
+  virtual eMathMLFrameType GetMathMLFrameType() MOZ_OVERRIDE;
 
   virtual nsresult
   MeasureForWidth(nsRenderingContext& aRenderingContext,
-                  nsHTMLReflowMetrics& aDesiredSize);
+                  nsHTMLReflowMetrics& aDesiredSize) MOZ_OVERRIDE;
 
   virtual nsresult
   Place(nsRenderingContext& aRenderingContext,
         bool                 aPlaceOrigin,
         nsHTMLReflowMetrics& aDesiredSize) MOZ_OVERRIDE;
 
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists) MOZ_OVERRIDE;
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE;
 
   NS_IMETHOD
   TransmitAutomaticData() MOZ_OVERRIDE;
@@ -96,18 +96,16 @@ protected:
   nsMathMLmfracFrame(nsStyleContext* aContext) : nsMathMLContainerFrame(aContext) {}
   virtual ~nsMathMLmfracFrame();
   
-  virtual int GetSkipSides() const { return 0; }
-
   nsresult PlaceInternal(nsRenderingContext& aRenderingContext,
                          bool                 aPlaceOrigin,
                          nsHTMLReflowMetrics& aDesiredSize,
                          bool                 aWidthOnly);
 
   // Display a slash
-  nsresult DisplaySlash(nsDisplayListBuilder* aBuilder,
-                        nsIFrame* aFrame, const nsRect& aRect,
-                        nscoord aThickness,
-                        const nsDisplayListSet& aLists);
+  void DisplaySlash(nsDisplayListBuilder* aBuilder,
+                    nsIFrame* aFrame, const nsRect& aRect,
+                    nscoord aThickness,
+                    const nsDisplayListSet& aLists);
 
   nsRect        mLineRect;
   nsMathMLChar* mSlashChar;

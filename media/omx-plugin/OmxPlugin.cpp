@@ -22,6 +22,12 @@
 
 #include "android/log.h"
 
+#if !defined(MOZ_ANDROID_FROYO)
+#define DEFAULT_STAGEFRIGHT_FLAGS OMXCodec::kClientNeedsFramebuffer
+#else
+#define DEFAULT_STAGEFRIGHT_FLAGS 0
+#endif
+
 #undef LOG
 #define LOG(args...)  __android_log_print(ANDROID_LOG_INFO, "OmxPlugin" , ## args)
 
@@ -61,7 +67,7 @@ private:
 
 #ifdef MOZ_ANDROID_HTC_WORKAROUND
   // libstagefright on some Jellybean HTC devices (at least the Tegra 3 One X)
-  // call this function and expect this magic number to be returned when
+  // calls this function and expects this magic number to be returned when
   // sniffing audio stream formats.
   // It is unclear what this is for or what it does.
   virtual uint32_t MagicalHTCIncantation() { return 0x3f0; }
@@ -92,6 +98,11 @@ ssize_t MediaStreamSource::readAt(MOZ_STAGEFRIGHT_OFF_T offset, void *data, size
     if (!mPluginHost->Read(mDecoder, ptr, offset, todo, &bytesRead)) {
       return ERROR_IO;
     }
+
+    if (bytesRead == 0) {
+      return size - todo;
+    }
+
     offset += bytesRead;
     todo -= bytesRead;
     ptr += bytesRead;
@@ -288,6 +299,9 @@ static uint32_t GetVideoCreationFlags(PluginHost* aPluginHost)
     }
 #endif
   }
+
+  flags |= DEFAULT_STAGEFRIGHT_FLAGS;
+
   return static_cast<uint32_t>(flags);
 #endif
 }
@@ -297,10 +311,10 @@ static sp<MediaSource> CreateVideoSource(PluginHost* aPluginHost,
                                          const sp<MediaSource>& aVideoTrack)
 {
   uint32_t flags = GetVideoCreationFlags(aPluginHost);
-  if (flags == 0) {
+  if (flags == DEFAULT_STAGEFRIGHT_FLAGS) {
     // Let Stagefright choose hardware or software decoder.
     sp<MediaSource> videoSource = OMXCodec::Create(aOmx, aVideoTrack->getFormat(),
-                                                   false, aVideoTrack, NULL, 0);
+                                                   false, aVideoTrack, NULL, flags);
     if (videoSource == NULL)
       return NULL;
 
@@ -340,13 +354,13 @@ static sp<MediaSource> CreateVideoSource(PluginHost* aPluginHost,
     LOG("Falling back to software decoder");
     videoSource.clear();
 #if defined(MOZ_ANDROID_V2_X_X)
-    flags = OMXCodec::kPreferSoftwareCodecs;
+    flags = DEFAULT_STAGEFRIGHT_FLAGS | OMXCodec::kPreferSoftwareCodecs;
 #else
-    flags = OMXCodec::kSoftwareCodecsOnly;
+    flags = DEFAULT_STAGEFRIGHT_FLAGS | OMXCodec::kSoftwareCodecsOnly;
 #endif
   }
 
-  MOZ_ASSERT(flags != 0);
+  MOZ_ASSERT(flags != DEFAULT_STAGEFRIGHT_FLAGS);
   return OMXCodec::Create(aOmx, aVideoTrack->getFormat(), false, aVideoTrack,
                           NULL, flags);
 }
@@ -988,8 +1002,11 @@ static bool CanDecode(const char *aMimeChars, size_t aMimeLen, const char* const
 static bool CreateDecoder(PluginHost *aPluginHost, Decoder *aDecoder, const char *aMimeChars, size_t aMimeLen)
 {
   OmxDecoder *omx = new OmxDecoder(aPluginHost, aDecoder);
-  if (!omx || !omx->Init())
+  if (!omx || !omx->Init()) {
+    if (omx)
+      delete omx;
     return false;
+  }
 
   aDecoder->mPrivate = omx;
   aDecoder->GetDuration = GetDuration;

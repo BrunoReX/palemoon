@@ -10,17 +10,11 @@ VPATH=@srcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-MODULE = toolkitcomps
 LIBRARY_NAME = toolkitcomps
-SHORT_LIBNAME = tkitcmps
 EXPORT_LIBRARY = 1
 IS_COMPONENT = 1
 MODULE_NAME = nsToolkitCompsModule
 LIBXUL_LIBRARY = 1
-
-EXPORTS = nsToolkitCompsCID.h
-
-CPPSRCS = nsToolkitCompsModule.cpp
 
 include $(topsrcdir)/config/config.mk
 

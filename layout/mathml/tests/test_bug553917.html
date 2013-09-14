@@ -62,7 +62,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=553917
         <math><mmultiscripts><mi>x</mi><mi>y</mi></mmultiscripts></math>*/
         MMultiscriptsErrors: {
           status: [false, false, false],
-          args: ["DuplicateMprescripts", "NoSubSup", "SubSupMismatch"]
+          args: ["NoBase","DuplicateMprescripts", "SubSupMismatch"]
         },
       /*<math><mo minsize="2">+</mo></math>*/
         UnitlessValuesAreDeprecated : {
@@ -76,11 +76,14 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=553917
       function getErrorMessage(name,idx)
       {
         if (name != "MMultiscriptsErrors") {
-          return g_bundl.formatStringFromName(name,g_errorInfo[name].args[idx], 
-                                            g_errorInfo[name].args[idx].length);
-        }
-        else {
-          return g_bundl.formatStringFromName(g_errorInfo[name].args[idx],[],0);
+          var formatParams = g_errorInfo[name].args[idx];
+          if (formatParams.length > 0) {
+            return g_bundl.formatStringFromName(name,formatParams,formatParams.length);
+          } else {
+            return g_bundl.GetStringFromName(name);
+          }
+        } else {
+          return g_bundl.GetStringFromName(g_errorInfo[name].args[idx]);
         }
       }
     

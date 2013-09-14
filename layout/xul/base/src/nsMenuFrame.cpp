@@ -42,6 +42,7 @@
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
+#include <algorithm>
 
 using namespace mozilla;
 
@@ -92,7 +93,7 @@ public:
     }
 
     nsCOMPtr<nsIDOMEvent> event;
-    if (NS_SUCCEEDED(nsEventDispatcher::CreateEvent(mPresContext, nullptr,
+    if (NS_SUCCEEDED(nsEventDispatcher::CreateEvent(mMenu, mPresContext, nullptr,
                                                     NS_LITERAL_STRING("Events"),
                                                     getter_AddRefs(event)))) {
       event->InitEvent(domEventToFire, true, true);
@@ -237,25 +238,21 @@ public:
   nsWeakFrame mWeakFrame;
 };
 
-NS_IMETHODIMP
+void
 nsMenuFrame::Init(nsIContent*      aContent,
                   nsIFrame*        aParent,
                   nsIFrame*        aPrevInFlow)
 {
-  nsresult  rv = nsBoxFrame::Init(aContent, aParent, aPrevInFlow);
+  nsBoxFrame::Init(aContent, aParent, aPrevInFlow);
 
   // Set up a mediator which can be used for callbacks on this frame.
   mTimerMediator = new nsMenuTimerMediator(this);
-  if (MOZ_UNLIKELY(!mTimerMediator))
-    return NS_ERROR_OUT_OF_MEMORY;
 
   InitMenuParent(aParent);
 
   BuildAcceleratorText(false);
   nsIReflowCallback* cb = new nsASyncMenuInitialization(this);
-  NS_ENSURE_TRUE(cb, NS_ERROR_OUT_OF_MEMORY);
   PresContext()->PresShell()->PostReflowCallback(cb);
-  return rv;
 }
 
 const nsFrameList&
@@ -309,7 +306,7 @@ nsMenuFrame::DestroyPopupList()
   NS_ASSERTION(prop && prop->IsEmpty(),
                "popup list must exist and be empty when destroying");
   RemoveStateBits(NS_STATE_MENU_HAS_POPUP_LIST);
-  delete prop;
+  prop->Delete(PresContext()->PresShell());
 }
 
 void
@@ -320,7 +317,7 @@ nsMenuFrame::SetPopupFrame(nsFrameList& aFrameList)
     if (popupFrame) {
       // Remove the frame from the list and store it in a nsFrameList* property.
       aFrameList.RemoveFrame(popupFrame);
-      nsFrameList* popupList = new nsFrameList(popupFrame, popupFrame);
+      nsFrameList* popupList = new (PresContext()->PresShell()) nsFrameList(popupFrame, popupFrame);
       Properties().Set(PopupListProperty(), popupList);
       AddStateBits(NS_STATE_MENU_HAS_POPUP_LIST);
       break;
@@ -374,19 +371,20 @@ nsMenuFrame::DestroyFrom(nsIFrame* aDestructRoot)
   nsBoxFrame::DestroyFrom(aDestructRoot);
 }
 
-NS_IMETHODIMP
+void
 nsMenuFrame::BuildDisplayListForChildren(nsDisplayListBuilder*   aBuilder,
                                          const nsRect&           aDirtyRect,
                                          const nsDisplayListSet& aLists)
 {
-  if (!aBuilder->IsForEventDelivery())
-    return nsBoxFrame::BuildDisplayListForChildren(aBuilder, aDirtyRect, aLists);
+  if (!aBuilder->IsForEventDelivery()) {
+    nsBoxFrame::BuildDisplayListForChildren(aBuilder, aDirtyRect, aLists);
+    return;
+  }
     
   nsDisplayListCollection set;
-  nsresult rv = nsBoxFrame::BuildDisplayListForChildren(aBuilder, aDirtyRect, set);
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsBoxFrame::BuildDisplayListForChildren(aBuilder, aDirtyRect, set);
   
-  return WrapListsInRedirector(aBuilder, set, aLists);
+  WrapListsInRedirector(aBuilder, set, aLists);
 }
 
 NS_IMETHODIMP
@@ -577,6 +575,22 @@ nsMenuFrame::PopupClosed(bool aDeselectMenu)
       // becoming active again.
       nsMenuFrame *current = mMenuParent->GetCurrentMenuItem();
       if (current) {
+        // However, if the menu is a descendant on a menubar, and the menubar
+        // has the 'stay active' flag set, it means that the menubar is switching
+        // to another toplevel menu entirely (for example from Edit to View), so
+        // don't fire the DOMMenuItemActive event or else we'll send extraneous
+        // events for submenus. nsMenuBarFrame::ChangeMenuItem has already deselected
+        // the old menu, so it doesn't need to happen again here, and the new
+        // menu can be selected right away.
+        nsIFrame* parent = current;
+        while (parent) {
+          nsMenuBarFrame* menubar = do_QueryFrame(parent);
+          if (menubar && menubar->GetStayActive())
+            return;
+
+          parent = parent->GetParent();
+        }
+
         nsCOMPtr<nsIRunnable> event =
           new nsMenuActivateEvent(current->GetContent(),
                                   PresContext(), true);
@@ -1263,7 +1277,9 @@ nsMenuFrame::RemoveFrame(ChildListID     aListID,
                          nsIFrame*       aOldFrame)
 {
   nsFrameList* popupList = GetPopupList();
-  if (popupList && popupList->DestroyFrameIfPresent(aOldFrame)) {
+  if (popupList && popupList->FirstChild() == aOldFrame) {
+    popupList->RemoveFirstChild();
+    aOldFrame->Destroy();
     DestroyPopupList();
     PresContext()->PresShell()->
       FrameNeedsReflow(this, nsIPresShell::eTreeChange,
@@ -1357,7 +1373,7 @@ nsMenuFrame::SizeToPopup(nsBoxLayoutState& aState, nsSize& aSize)
       }
 
       aSize.width =
-        tmpSize.width + NS_MAX(borderPadding.LeftRight(), scrollbarWidth);
+        tmpSize.width + std::max(borderPadding.LeftRight(), scrollbarWidth);
 
       return true;
     }

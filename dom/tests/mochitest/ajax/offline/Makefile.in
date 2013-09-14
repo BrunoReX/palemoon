@@ -11,8 +11,6 @@ relativesrcdir	= @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-DIRS = namespace1 namespace2
-
 MOCHITEST_FILES	= \
 	offlineTests.js \
 	test_badManifestMagic.html \
@@ -97,6 +95,8 @@ MOCHITEST_FILES	= \
 	missing.html \
 	jupiter.jpg \
 	test_cancelOfflineCache.html \
+	test_lowDeviceStorage.html \
+	test_lowDeviceStorageDuringUpdate.html \
 	$(NULL)
 
 # test_offlineMode.html disabled due to bug 656943

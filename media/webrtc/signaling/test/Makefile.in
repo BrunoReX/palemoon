@@ -9,10 +9,7 @@ VPATH = @srcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-MODULE = test_signaling
-
 LIBS = \
-  $(EXTRA_DSO_LIBS) \
   $(XPCOM_LIBS) \
   $(NSPR_LIBS) \
   $(NSS_LIBS) \
@@ -26,10 +23,15 @@ LIBS = \
   $(DEPTH)/netwerk/srtp/src/$(LIB_PREFIX)nksrtp_s.$(LIB_SUFFIX) \
   $(NULL)
 
-ifdef MOZ_SYDNEYAUDIO
-ifeq ($(OS_TARGET),Linux)
+ifdef MOZ_CUBEB
+ifdef MOZ_ALSA
 LIBS += \
   $(MOZ_ALSA_LIBS) \
+  $(NULL)
+endif
+ifdef MOZ_PULSEAUDIO
+LIBS += \
+  $(MOZ_PULSEAUDIO_LIBS) \
   $(NULL)
 endif
 endif
@@ -127,24 +129,33 @@ LOCAL_INCLUDES += \
  -I$(topsrcdir)/media/mtransport \
  -I$(topsrcdir)/media/mtransport/test \
  -I$(topsrcdir)/media/webrtc/signaling/include \
+ -I$(topsrcdir)/media/webrtc/signaling/src/sipcc/core/sdp \
+ -I$(topsrcdir)/media/webrtc/signaling/src/sipcc/cpr/include \
+ -I$(topsrcdir)/media/webrtc/signaling/src/sipcc/core/includes \
+ -I$(topsrcdir)/media/webrtc/signaling/src/common/browser_logging \
+ -I$(topsrcdir)/media/webrtc/signaling/src/media \
  -I$(topsrcdir)/media/webrtc/signaling/src/media-conduit \
  -I$(topsrcdir)/media/webrtc/signaling/src/mediapipeline \
  -I$(topsrcdir)/media/webrtc/signaling/src/sipcc/include \
  -I$(topsrcdir)/media/webrtc/signaling/src/peerconnection \
  -I$(topsrcdir)/media/webrtc/signaling/media-conduit\
  -I$(topsrcdir)/media/webrtc/trunk/third_party/libjingle/source/ \
+ -I$(topsrcdir)/xpcom/base/ \
  $(NULL)
 
 ifneq ($(OS_TARGET),WINNT)
+ifneq (gonk,$(MOZ_WIDGET_TOOLKIT))
 ifdef JS_SHARED_LIBRARY
 LIBS += $(MOZ_ZLIB_LIBS)
 endif
 
 CPP_UNIT_TESTS = \
+  sdp_unittests.cpp \
   signaling_unittests.cpp \
   mediapipeline_unittest.cpp \
   mediaconduit_unittests.cpp \
   $(NULL)
+endif
 endif
 
 include $(topsrcdir)/config/config.mk

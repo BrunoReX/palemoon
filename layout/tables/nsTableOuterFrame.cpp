@@ -18,6 +18,7 @@
 #include "nsIDOMNode.h"
 #include "nsDisplayList.h"
 #include "nsLayoutUtils.h"
+#include <algorithm>
 
 using namespace mozilla;
 using namespace mozilla::layout;
@@ -70,7 +71,7 @@ nsTableCaptionFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
   // wrapping inside of us should not apply font size inflation.
   AutoMaybeDisableFontInflation an(this);
 
-  uint8_t captionSide = GetStyleTableBorder()->mCaptionSide;
+  uint8_t captionSide = StyleTableBorder()->mCaptionSide;
   if (captionSide == NS_STYLE_CAPTION_SIDE_LEFT ||
       captionSide == NS_STYLE_CAPTION_SIDE_RIGHT) {
     result.width = GetMinWidth(aRenderingContext);
@@ -103,7 +104,7 @@ nsTableCaptionFrame::GetParentStyleContextFrame() const
     nsIFrame* innerFrame = outerFrame->GetFirstPrincipalChild();
     if (innerFrame) {
       return nsFrame::CorrectStyleParentFrame(innerFrame,
-                                              GetStyleContext()->GetPseudo());
+                                              StyleContext()->GetPseudo());
     }
   }
 
@@ -286,7 +287,7 @@ nsTableOuterFrame::RemoveFrame(ChildListID     aListID,
   return NS_OK;
 }
 
-NS_METHOD 
+void
 nsTableOuterFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                                     const nsRect&           aDirtyRect,
                                     const nsDisplayListSet& aLists)
@@ -296,26 +297,25 @@ nsTableOuterFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
 
   // If there's no caption, take a short cut to avoid having to create
   // the special display list set and then sort it.
-  if (mCaptionFrames.IsEmpty())
-    return BuildDisplayListForInnerTable(aBuilder, aDirtyRect, aLists);
-    
+  if (mCaptionFrames.IsEmpty()) {
+    BuildDisplayListForInnerTable(aBuilder, aDirtyRect, aLists);
+    return;
+  }
+
   nsDisplayListCollection set;
-  nsresult rv = BuildDisplayListForInnerTable(aBuilder, aDirtyRect, set);
-  NS_ENSURE_SUCCESS(rv, rv);
+  BuildDisplayListForInnerTable(aBuilder, aDirtyRect, set);
   
   nsDisplayListSet captionSet(set, set.BlockBorderBackgrounds());
-  rv = BuildDisplayListForChild(aBuilder, mCaptionFrames.FirstChild(),
-                                aDirtyRect, captionSet);
-  NS_ENSURE_SUCCESS(rv, rv);
+  BuildDisplayListForChild(aBuilder, mCaptionFrames.FirstChild(),
+                           aDirtyRect, captionSet);
   
   // Now we have to sort everything by content order, since the caption
   // may be somewhere inside the table
   set.SortAllByContentOrder(aBuilder, GetContent());
   set.MoveTo(aLists);
-  return NS_OK;
 }
 
-nsresult
+void
 nsTableOuterFrame::BuildDisplayListForInnerTable(nsDisplayListBuilder*   aBuilder,
                                                  const nsRect&           aDirtyRect,
                                                  const nsDisplayListSet& aLists)
@@ -325,11 +325,9 @@ nsTableOuterFrame::BuildDisplayListForInnerTable(nsDisplayListBuilder*   aBuilde
   nsIFrame* kid = mFrames.FirstChild();
   // The children should be in content order
   while (kid) {
-    nsresult rv = BuildDisplayListForChild(aBuilder, kid, aDirtyRect, aLists);
-    NS_ENSURE_SUCCESS(rv, rv);
+    BuildDisplayListForChild(aBuilder, kid, aDirtyRect, aLists);
     kid = kid->GetNextSibling();
   }
-  return NS_OK;
 }
 
 nsIFrame*
@@ -471,7 +469,7 @@ nsTableOuterFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
           nsLayoutUtils::IntrinsicForContainer(aRenderingContext,
                                                mCaptionFrames.FirstChild(),
                                                iwt);
-        maxWidth = NS_MAX(maxWidth, capPref);
+        maxWidth = std::max(maxWidth, capPref);
       }
       break;
     }
@@ -568,7 +566,7 @@ uint8_t
 nsTableOuterFrame::GetCaptionSide()
 {
   if (mCaptionFrames.NotEmpty()) {
-    return mCaptionFrames.FirstChild()->GetStyleTableBorder()->mCaptionSide;
+    return mCaptionFrames.FirstChild()->StyleTableBorder()->mCaptionSide;
   }
   else {
     return NO_SIDE; // no caption
@@ -579,7 +577,7 @@ uint8_t
 nsTableOuterFrame::GetCaptionVerticalAlign()
 {
   const nsStyleCoord& va =
-    mCaptionFrames.FirstChild()->GetStyleTextReset()->mVerticalAlign;
+    mCaptionFrames.FirstChild()->StyleTextReset()->mVerticalAlign;
   return (va.GetUnit() == eStyleUnit_Enumerated)
            ? va.GetIntValue()
            : NS_STYLE_VERTICAL_ALIGN_TOP;
@@ -605,23 +603,23 @@ nsTableOuterFrame::SetDesiredSize(uint8_t         aCaptionSide,
   }
   switch(aCaptionSide) {
     case NS_STYLE_CAPTION_SIDE_LEFT:
-      aWidth = NS_MAX(aInnerMargin.left, aCaptionMargin.left + captionWidth + aCaptionMargin.right) +
+      aWidth = std::max(aInnerMargin.left, aCaptionMargin.left + captionWidth + aCaptionMargin.right) +
                innerWidth + aInnerMargin.right;
       break;
     case NS_STYLE_CAPTION_SIDE_RIGHT:
-      aWidth = NS_MAX(aInnerMargin.right, aCaptionMargin.left + captionWidth + aCaptionMargin.right) +
+      aWidth = std::max(aInnerMargin.right, aCaptionMargin.left + captionWidth + aCaptionMargin.right) +
                innerWidth + aInnerMargin.left;
       break;
     default:
       aWidth = aInnerMargin.left + innerWidth + aInnerMargin.right;
-      aWidth = NS_MAX(aWidth, captionRect.XMost() + aCaptionMargin.right);
+      aWidth = std::max(aWidth, captionRect.XMost() + aCaptionMargin.right);
   }
   aHeight = innerRect.YMost() + aInnerMargin.bottom;
   if (NS_STYLE_CAPTION_SIDE_BOTTOM != aCaptionSide) {
-    aHeight = NS_MAX(aHeight, captionRect.YMost() + aCaptionMargin.bottom);
+    aHeight = std::max(aHeight, captionRect.YMost() + aCaptionMargin.bottom);
   }
   else {
-    aHeight = NS_MAX(aHeight, captionRect.YMost() + aCaptionMargin.bottom +
+    aHeight = std::max(aHeight, captionRect.YMost() + aCaptionMargin.bottom +
                               aInnerMargin.bottom);
   }
 
@@ -688,10 +686,10 @@ nsTableOuterFrame::GetCaptionOrigin(uint32_t         aCaptionSide,
       aOrigin.y = aInnerMargin.top;
       switch (GetCaptionVerticalAlign()) {
         case NS_STYLE_VERTICAL_ALIGN_MIDDLE:
-          aOrigin.y = NS_MAX(0, aInnerMargin.top + ((aInnerSize.height - aCaptionSize.height) / 2));
+          aOrigin.y = std::max(0, aInnerMargin.top + ((aInnerSize.height - aCaptionSize.height) / 2));
           break;
         case NS_STYLE_VERTICAL_ALIGN_BOTTOM:
-          aOrigin.y = NS_MAX(0, aInnerMargin.top + aInnerSize.height - aCaptionSize.height);
+          aOrigin.y = std::max(0, aInnerMargin.top + aInnerSize.height - aCaptionSize.height);
           break;
         default:
           break;
@@ -746,7 +744,7 @@ nsTableOuterFrame::GetInnerOrigin(uint32_t         aCaptionSide,
     if (aInnerMargin.left < minCapWidth) {
       // shift the inner table to get some place for the caption
       aInnerMargin.right += aInnerMargin.left - minCapWidth;
-      aInnerMargin.right  = NS_MAX(0, aInnerMargin.right);
+      aInnerMargin.right  = std::max(0, aInnerMargin.right);
       aInnerMargin.left   = minCapWidth;
     }
     aOrigin.x = aInnerMargin.left;
@@ -774,10 +772,10 @@ nsTableOuterFrame::GetInnerOrigin(uint32_t         aCaptionSide,
       aOrigin.y = aInnerMargin.top;
       switch (GetCaptionVerticalAlign()) {
         case NS_STYLE_VERTICAL_ALIGN_MIDDLE:
-          aOrigin.y = NS_MAX(aInnerMargin.top, (aCaptionSize.height - aInnerSize.height) / 2);
+          aOrigin.y = std::max(aInnerMargin.top, (aCaptionSize.height - aInnerSize.height) / 2);
           break;
         case NS_STYLE_VERTICAL_ALIGN_BOTTOM:
-          aOrigin.y = NS_MAX(aInnerMargin.top, aCaptionSize.height - aInnerSize.height);
+          aOrigin.y = std::max(aInnerMargin.top, aCaptionSize.height - aInnerSize.height);
           break;
         default:
           break;
@@ -853,8 +851,19 @@ nsTableOuterFrame::OuterDoReflowChild(nsPresContext*             aPresContext,
 
   // use the current position as a best guess for placement
   nsPoint childPt = aChildFrame->GetPosition();
+  uint32_t flags = NS_FRAME_NO_MOVE_FRAME;
+
+  // We don't want to delete our next-in-flow's child if it's an inner table
+  // frame, because outer table frames always assume that their inner table
+  // frames don't go away. If an outer table frame is removed because it is
+  // a next-in-flow of an already complete outer table frame, then it will
+  // take care of removing it's inner table frame.
+  if (aChildFrame == InnerTableFrame()) {
+    flags |= NS_FRAME_NO_DELETE_NEXT_IN_FLOW_CHILD;
+  }
+
   return ReflowChild(aChildFrame, aPresContext, aMetrics, aChildRS,
-                     childPt.x, childPt.y, NS_FRAME_NO_MOVE_FRAME, aStatus);
+                     childPt.x, childPt.y, flags, aStatus);
 }
 
 void 
@@ -996,7 +1005,7 @@ NS_METHOD nsTableOuterFrame::Reflow(nsPresContext*           aPresContext,
         }
       }
       innerRS->availableHeight =
-        NS_MAX(0, innerRS->availableHeight - captionHeight);
+        std::max(0, innerRS->availableHeight - captionHeight);
     }
   } else {
     captionSize.SizeTo(0,0);
@@ -1049,6 +1058,13 @@ NS_METHOD nsTableOuterFrame::Reflow(nsPresContext*           aPresContext,
   }
 
   UpdateReflowMetrics(captionSide, aDesiredSize, innerMargin, captionMargin);
+
+  if (GetPrevInFlow()) {
+    ReflowOverflowContainerChildren(aPresContext, aOuterRS,
+                                    aDesiredSize.mOverflowAreas, 0,
+                                    aStatus);
+  }
+
   FinishReflowWithAbsoluteFrames(aPresContext, aDesiredSize, aOuterRS, aStatus);
 
   // Return our desired rect

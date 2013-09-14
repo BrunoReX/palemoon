@@ -8,31 +8,16 @@
 #include "gfxContext.h"
 #include "SVGContentUtils.h"
 
-DOMCI_NODE_DATA(SVGPolygonElement, mozilla::dom::SVGPolygonElement)
-
 NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(Polygon)
 
 namespace mozilla {
 namespace dom {
 
 JSObject*
-SVGPolygonElement::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+SVGPolygonElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return SVGPolygonElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return SVGPolygonElementBinding::Wrap(aCx, aScope, this);
 }
-
-//----------------------------------------------------------------------
-// nsISupports methods
-
-NS_IMPL_ADDREF_INHERITED(SVGPolygonElement,SVGPolygonElementBase)
-NS_IMPL_RELEASE_INHERITED(SVGPolygonElement,SVGPolygonElementBase)
-
-NS_INTERFACE_TABLE_HEAD(SVGPolygonElement)
-  NS_NODE_INTERFACE_TABLE4(SVGPolygonElement, nsIDOMNode, nsIDOMElement,
-                           nsIDOMSVGElement,
-                           nsIDOMSVGPolygonElement)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(SVGPolygonElement)
-NS_INTERFACE_MAP_END_INHERITING(SVGPolygonElementBase)
 
 //----------------------------------------------------------------------
 // Implementation
@@ -40,7 +25,6 @@ NS_INTERFACE_MAP_END_INHERITING(SVGPolygonElementBase)
 SVGPolygonElement::SVGPolygonElement(already_AddRefed<nsINodeInfo> aNodeInfo)
   : SVGPolygonElementBase(aNodeInfo)
 {
-
 }
 
 //----------------------------------------------------------------------

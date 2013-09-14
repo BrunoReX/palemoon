@@ -10,10 +10,7 @@
 #include "nsGtkKeyUtils.h"
 
 #include <gdk/gdkkeysyms.h>
-#ifndef GDK_Sleep
-#define GDK_Sleep 0x1008ff2f
-#endif
-
+#include <algorithm>
 #include <gdk/gdk.h>
 #ifdef MOZ_X11
 #include <gdk/gdkx.h>
@@ -461,7 +458,7 @@ KeymapWrapper::InitBySystemSettings()
                     // If new modifier is more important than stored value,
                     // we should overwrite it with new modifier.
                     if (j == foundLevel[modIndex]) {
-                        mod[modIndex] = NS_MIN(modifier, mod[modIndex]);
+                        mod[modIndex] = std::min(modifier, mod[modIndex]);
                         break;
                     }
                     foundLevel[modIndex] = j;
@@ -820,6 +817,26 @@ KeymapWrapper::ComputeDOMKeyCode(const GdkEventKey* aGdkKeyEvent)
                 unmodifiedChar ? unmodifiedChar : shiftedChar);
 }
 
+KeyNameIndex
+KeymapWrapper::ComputeDOMKeyNameIndex(const GdkEventKey* aGdkKeyEvent)
+{
+    switch (aGdkKeyEvent->keyval) {
+
+#define NS_NATIVE_KEY_TO_DOM_KEY_NAME_INDEX(aNativeKey, aKeyNameIndex) \
+        case aNativeKey: return aKeyNameIndex;
+
+#include "NativeKeyToDOMKeyName.h"
+
+#undef NS_NATIVE_KEY_TO_DOM_KEY_NAME_INDEX
+
+        default:
+            break;
+    }
+
+    uint32_t ch = GetCharCodeFor(aGdkKeyEvent);
+    return ch ? KEY_NAME_INDEX_PrintableKey : KEY_NAME_INDEX_Unidentified;
+}
+
 /* static */ guint
 KeymapWrapper::GuessGDKKeyval(uint32_t aDOMKeyCode)
 {
@@ -908,6 +925,8 @@ KeymapWrapper::InitKeyEvent(nsKeyEvent& aKeyEvent,
 {
     KeymapWrapper* keymapWrapper = GetInstance();
 
+    aKeyEvent.mKeyNameIndex =
+        keymapWrapper->ComputeDOMKeyNameIndex(aGdkKeyEvent);
     aKeyEvent.keyCode = ComputeDOMKeyCode(aGdkKeyEvent);
 
     // NOTE: The state of given key event indicates adjacent state of

@@ -8,12 +8,23 @@
 #include <gst/gst.h>
 #include <gst/app/gstappsrc.h>
 #include <gst/app/gstappsink.h>
+// This include trips -Wreserved-user-defined-literal on clang. Ignoring it
+// trips -Wpragmas on GCC (unknown warning), but ignoring that trips
+// -Wunknown-pragmas on clang (unknown pragma).
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-pragmas"
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic ignored "-Wreserved-user-defined-literal"
 #include <gst/video/video.h>
+#pragma GCC diagnostic pop
+#include <map>
 #include "MediaDecoderReader.h"
 
-class nsTimeRanges;
-
 namespace mozilla {
+
+namespace dom {
+class TimeRanges;
+}
 
 class AbstractMediaDecoder;
 
@@ -34,7 +45,7 @@ public:
                         int64_t aStartTime,
                         int64_t aEndTime,
                         int64_t aCurrentTime);
-  virtual nsresult GetBuffered(nsTimeRanges* aBuffered, int64_t aStartTime);
+  virtual nsresult GetBuffered(dom::TimeRanges* aBuffered, int64_t aStartTime);
 
   virtual bool HasAudio() {
     return mInfo.mHasAudio;
@@ -47,65 +58,84 @@ public:
 private:
 
   void ReadAndPushData(guint aLength);
-  bool WaitForDecodedData(int *counter);
   void NotifyBytesConsumed();
   int64_t QueryDuration();
 
+  /* Called once the pipeline is setup to check that the stream only contains
+   * supported formats
+   */
+  nsresult CheckSupportedFormats();
+
   /* Gst callbacks */
+
+  static GstBusSyncReply ErrorCb(GstBus *aBus, GstMessage *aMessage, gpointer aUserData);
+  GstBusSyncReply Error(GstBus *aBus, GstMessage *aMessage);
 
   /* Called on the source-setup signal emitted by playbin. Used to
    * configure appsrc .
    */
-  static void PlayBinSourceSetupCb(GstElement *aPlayBin,
-                                   GstElement *aSource,
+  static void PlayBinSourceSetupCb(GstElement* aPlayBin,
+                                   GParamSpec* pspec,
                                    gpointer aUserData);
-  void PlayBinSourceSetup(GstAppSrc *aSource);
+  void PlayBinSourceSetup(GstAppSrc* aSource);
 
   /* Called from appsrc when we need to read more data from the resource */
-  static void NeedDataCb(GstAppSrc *aSrc, guint aLength, gpointer aUserData);
-  void NeedData(GstAppSrc *aSrc, guint aLength);
+  static void NeedDataCb(GstAppSrc* aSrc, guint aLength, gpointer aUserData);
+  void NeedData(GstAppSrc* aSrc, guint aLength);
 
   /* Called when appsrc has enough data and we can stop reading */
-  static void EnoughDataCb(GstAppSrc *aSrc, gpointer aUserData);
-  void EnoughData(GstAppSrc *aSrc);
+  static void EnoughDataCb(GstAppSrc* aSrc, gpointer aUserData);
+  void EnoughData(GstAppSrc* aSrc);
 
   /* Called when a seek is issued on the pipeline */
-  static gboolean SeekDataCb(GstAppSrc *aSrc,
+  static gboolean SeekDataCb(GstAppSrc* aSrc,
                              guint64 aOffset,
                              gpointer aUserData);
-  gboolean SeekData(GstAppSrc *aSrc, guint64 aOffset);
+  gboolean SeekData(GstAppSrc* aSrc, guint64 aOffset);
 
   /* Called when events reach the sinks. See inline comments */
-  static gboolean EventProbeCb(GstPad *aPad, GstEvent *aEvent, gpointer aUserData);
-  gboolean EventProbe(GstPad *aPad, GstEvent *aEvent);
+  static gboolean EventProbeCb(GstPad* aPad, GstEvent* aEvent, gpointer aUserData);
+  gboolean EventProbe(GstPad* aPad, GstEvent* aEvent);
+
+  /* Called when elements in the video branch of the pipeline call
+   * gst_pad_alloc_buffer(). Used to provide PlanarYCbCrImage backed GstBuffers
+   * to the pipeline so that a memory copy can be avoided when handling YUV
+   * buffers from the pipeline to the gfx side.
+   */
+  static GstFlowReturn AllocateVideoBufferCb(GstPad* aPad, guint64 aOffset, guint aSize,
+                                             GstCaps* aCaps, GstBuffer** aBuf);
+  GstFlowReturn AllocateVideoBufferFull(GstPad* aPad, guint64 aOffset, guint aSize,
+                                     GstCaps* aCaps, GstBuffer** aBuf, nsRefPtr<layers::PlanarYCbCrImage>& aImage);
+  GstFlowReturn AllocateVideoBuffer(GstPad* aPad, guint64 aOffset, guint aSize,
+                                     GstCaps* aCaps, GstBuffer** aBuf);
 
   /* Called when the pipeline is prerolled, that is when at start or after a
    * seek, the first audio and video buffers are queued in the sinks.
    */
-  static GstFlowReturn NewPrerollCb(GstAppSink *aSink, gpointer aUserData);
+  static GstFlowReturn NewPrerollCb(GstAppSink* aSink, gpointer aUserData);
   void VideoPreroll();
   void AudioPreroll();
 
   /* Called when buffers reach the sinks */
-  static GstFlowReturn NewBufferCb(GstAppSink *aSink, gpointer aUserData);
+  static GstFlowReturn NewBufferCb(GstAppSink* aSink, gpointer aUserData);
   void NewVideoBuffer();
   void NewAudioBuffer();
 
   /* Called at end of stream, when decoding has finished */
-  static void EosCb(GstAppSink *aSink, gpointer aUserData);
-  void Eos(GstAppSink *aSink);
+  static void EosCb(GstAppSink* aSink, gpointer aUserData);
+  void Eos();
 
-  GstElement *mPlayBin;
-  GstBus *mBus;
-  GstAppSrc *mSource;
+  GstElement* mPlayBin;
+  GstBus* mBus;
+  GstAppSrc* mSource;
   /* video sink bin */
-  GstElement *mVideoSink;
+  GstElement* mVideoSink;
   /* the actual video app sink */
-  GstAppSink *mVideoAppSink;
+  GstAppSink* mVideoAppSink;
   /* audio sink bin */
-  GstElement *mAudioSink;
+  GstElement* mAudioSink;
   /* the actual audio app sink */
-  GstAppSink *mAudioAppSink;
+  GstAppSink* mAudioAppSink;
   GstVideoFormat mFormat;
   nsIntRect mPicture;
   int mVideoSinkBufferCount;

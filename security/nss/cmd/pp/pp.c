@@ -5,8 +5,6 @@
 /*
  * Pretty-print some well-known BER or DER encoded data (e.g. certificates,
  * keys, pkcs7)
- *
- * $Id: pp.c,v 1.12 2012/08/16 06:57:24 kaie%kuix.de Exp $
  */
 
 #include "secutil.h"
@@ -107,7 +105,7 @@ int main(int argc, char **argv)
     }
     SECU_RegisterDynamicOids();
 
-    rv = SECU_ReadDERFromFile(&der, inFile, ascii);
+    rv = SECU_ReadDERFromFile(&der, inFile, ascii, PR_FALSE);
     if (rv != SECSuccess) {
 	fprintf(stderr, "%s: SECU_ReadDERFromFile failed\n", progName);
 	exit(1);

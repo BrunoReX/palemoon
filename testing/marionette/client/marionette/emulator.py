@@ -42,9 +42,13 @@ class LogcatProc(ProcessHandlerMixin):
 class Emulator(object):
 
     deviceRe = re.compile(r"^emulator-(\d+)(\s*)(.*)$")
+    _default_res = '320x480'
+    prefs = {'app.update.enabled': False,
+             'app.update.staging.enabled': False,
+             'app.update.service.enabled': False}
 
     def __init__(self, homedir=None, noWindow=False, logcat_dir=None,
-                 arch="x86", emulatorBinary=None, res='480x800', sdcard=None,
+                 arch="x86", emulatorBinary=None, res=None, sdcard=None,
                  userdata=None):
         self.port = None
         self.dm = None
@@ -60,7 +64,7 @@ class Emulator(object):
         self.logcat_proc = None
         self.arch = arch
         self.binary = emulatorBinary
-        self.res = res
+        self.res = res or self._default_res
         self.battery = EmulatorBattery(self)
         self.geo = EmulatorGeo(self)
         self.screen = EmulatorScreen(self)
@@ -73,7 +77,7 @@ class Emulator(object):
         self.copy_userdata = self.dataImg is None
 
     def _check_for_b2g(self):
-        self.b2g = B2GInstance(homedir=self.homedir)
+        self.b2g = B2GInstance(homedir=self.homedir, emulator=True)
         self.adb = self.b2g.adb_path
         self.homedir = self.b2g.homedir
 
@@ -160,6 +164,9 @@ class Emulator(object):
                                     and self.proc.poll() is not None):
             return True
         return False
+
+    def check_for_minidumps(self, symbols_path):
+        return self.b2g.check_for_crashes(symbols_path)
 
     def create_sdcard(self, sdcard):
         self._tmp_sdcard = tempfile.mktemp(prefix='sdcard')
@@ -273,7 +280,7 @@ waitFor(
         marionette.delete_session()
 
     def connect(self):
-        self.adb = B2GInstance.check_adb(self.homedir)
+        self.adb = B2GInstance.check_adb(self.homedir, emulator=True)
         self.start_adb()
 
         online, offline = self._get_adb_devices()
@@ -288,9 +295,7 @@ waitFor(
         self.dm = devicemanagerADB.DeviceManagerADB(adbPath=self.adb,
                                                     deviceSerial='emulator-%d' % self.port)
 
-    def add_prefs_to_profile(self, prefs=None):
-        if not prefs:
-            prefs = ['user_pref("marionette.loadearly", true);']
+    def add_prefs_to_profile(self, prefs=()):
         local_user_js = tempfile.mktemp(prefix='localuserjs')
         self.dm.getFile(self.remote_user_js, local_user_js)
         with open(local_user_js, 'a') as f:
@@ -338,23 +343,35 @@ waitFor(
         # setup DNS fix for networking
         self._run_adb(['shell', 'setprop', 'net.dns1', '10.0.2.3'])
 
-    def setup(self, marionette, gecko_path=None, load_early=False):
-        if gecko_path:
-            if load_early:
-                # Inject prefs into the profile now, since we have to restart
-                # B2G after installing a new gecko anyway.
-                self.add_prefs_to_profile()
-            self.install_gecko(gecko_path, marionette)
-        elif load_early:
-            self.add_prefs_to_profile()
-            self.restart_b2g()
+    def setup(self, marionette, gecko_path=None, busybox=None):
+        if busybox:
+            self.install_busybox(busybox)
 
-        if load_early:
-            # If we're loading early, we have to wait for the
-            # system-message-listener-ready event again after restarting B2G.
-            # If we're not loading early, we skip this because Marionette
-            # doesn't load until after this event has fired.
-            self.wait_for_system_message(marionette)
+        if gecko_path:
+            self.install_gecko(gecko_path, marionette)
+
+        self.wait_for_system_message(marionette)
+        self.set_prefs(marionette)
+
+    def set_prefs(self, marionette):
+        marionette.start_session()
+        marionette.set_context(marionette.CONTEXT_CHROME)
+        for pref in self.prefs:
+            marionette.execute_script("""
+            Components.utils.import("resource://gre/modules/Services.jsm");
+            let argtype = typeof(arguments[1]);
+            switch(argtype) {
+                case 'boolean':
+                    Services.prefs.setBoolPref(arguments[0], arguments[1]);
+                    break;
+                case 'number':
+                    Services.prefs.setIntPref(arguments[0], arguments[1]);
+                    break;
+                default:
+                    Services.prefs.setCharPref(arguments[0], arguments[1]);
+            }
+            """, [pref, self.prefs[pref]])
+        marionette.delete_session()
 
     def restart_b2g(self):
         print 'restarting B2G'
@@ -374,8 +391,6 @@ waitFor(
         # gecko in order to avoid an adb bug in which adb will sometimes
         # hang indefinitely while copying large files to the system
         # partition.
-        push_attempts = 10
-
         print 'installing gecko binaries...'
 
         # see bug 809437 for the path that lead to this madness
@@ -384,18 +399,7 @@ waitFor(
             self._run_adb(['remount'])
             self.dm.removeDir('/data/local/b2g')
             self.dm.mkDir('/data/local/b2g')
-            for root, dirs, files in os.walk(gecko_path):
-                for filename in files:
-                    rel_path = os.path.relpath(os.path.join(root, filename), gecko_path)
-                    data_local_file = os.path.join('/data/local/b2g', rel_path)
-                    for retry in range(1, push_attempts + 1):
-                        print 'pushing', data_local_file, '(attempt %s of %s)' % (retry, push_attempts)
-                        try:
-                            self.dm.pushFile(os.path.join(root, filename), data_local_file)
-                            break
-                        except DMError:
-                            if retry == push_attempts:
-                                raise
+            self.dm.pushDir(gecko_path, '/data/local/b2g', retryLimit=10)
 
             self.dm.shellCheckOutput(['stop', 'b2g'])
 
@@ -404,15 +408,11 @@ waitFor(
                     rel_path = os.path.relpath(os.path.join(root, filename), gecko_path)
                     data_local_file = os.path.join('/data/local/b2g', rel_path)
                     system_b2g_file = os.path.join('/system/b2g', rel_path)
-                    print 'copying', data_local_file, 'to', system_b2g_file
-                    try:
-                        self.dm.shellCheckOutput(['dd',
-                                                  'if=%s' % data_local_file,
-                                                  'of=%s' % system_b2g_file])
-                    except DMError:
-                        if retry == push_attempts:
-                            raise
 
+                    print 'copying', data_local_file, 'to', system_b2g_file
+                    self.dm.shellCheckOutput(['dd',
+                                              'if=%s' % data_local_file,
+                                              'of=%s' % system_b2g_file])
             self.restart_b2g()
 
         except (DMError, MarionetteException):

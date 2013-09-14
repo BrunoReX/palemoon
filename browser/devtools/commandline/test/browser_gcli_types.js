@@ -26,48 +26,45 @@ var exports = {};
 const TEST_URI = "data:text/html;charset=utf-8,<p id='gcli-input'>gcli-testTypes.js</p>";
 
 function test() {
-  var tests = Object.keys(exports);
-  // Push setup to the top and shutdown to the bottom
-  tests.sort(function(t1, t2) {
-    if (t1 == "setup" || t2 == "shutdown") return -1;
-    if (t2 == "setup" || t1 == "shutdown") return 1;
-    return 0;
-  });
-  info("Running tests: " + tests.join(", "))
-  tests = tests.map(function(test) { return exports[test]; });
-  DeveloperToolbarTest.test(TEST_URI, tests, true);
+  helpers.addTabWithToolbar(TEST_URI, function(options) {
+    return helpers.runTests(options, exports);
+  }).then(finish);
 }
 
 // <INJECTED SOURCE:END>
 
+'use strict';
+
 // var assert = require('test/assert');
 var types = require('gcli/types');
 
-exports.setup = function() {
-};
-
-exports.shutdown = function() {
-};
-
-function forEachType(options, callback) {
+function forEachType(options, typeSpec, callback) {
   types.getTypeNames().forEach(function(name) {
-    options.name = name;
+    typeSpec.name = name;
+    typeSpec.requisition = options.display.requisition;
 
-    // Provide some basic defaults to help selection/deferred/array work
+    // Provide some basic defaults to help selection/delegate/array work
     if (name === 'selection') {
-      options.data = [ 'a', 'b' ];
+      typeSpec.data = [ 'a', 'b' ];
     }
-    else if (name === 'deferred') {
-      options.defer = function() {
-        return types.getType('string');
+    else if (name === 'delegate') {
+      typeSpec.delegateType = function() {
+        return types.createType('string');
       };
     }
     else if (name === 'array') {
-      options.subtype = 'string';
+      typeSpec.subtype = 'string';
     }
 
-    var type = types.getType(options);
+    var type = types.createType(typeSpec);
     callback(type);
+
+    // Clean up
+    delete typeSpec.name;
+    delete typeSpec.requisition;
+    delete typeSpec.data;
+    delete typeSpec.delegateType;
+    delete typeSpec.subtype;
   });
 }
 
@@ -77,8 +74,9 @@ exports.testDefault = function(options) {
     return;
   }
 
-  forEachType({}, function(type) {
-    var blank = type.getBlank().value;
+  forEachType(options, {}, function(type) {
+    var context = options.display.requisition.executionContext;
+    var blank = type.getBlank(context).value;
 
     // boolean and array types are exempt from needing undefined blank values
     if (type.name === 'boolean') {
@@ -99,9 +97,10 @@ exports.testDefault = function(options) {
 };
 
 exports.testNullDefault = function(options) {
-  forEachType({ defaultValue: null }, function(type) {
-    assert.is(type.stringify(null), '', 'stringify(null) for ' + type.name);
+  forEachType(options, { defaultValue: null }, function(type) {
+    assert.is(type.stringify(null, null), '', 'stringify(null) for ' + type.name);
   });
 };
+
 
 // });

@@ -1006,7 +1006,7 @@ ROLE(NOTE,
      NSAccessibilityGroupRole,
      USE_ROLE_STRING,
      IA2_ROLE_NOTE,
-     eNameFromSubtreeRule)
+     eNameFromSubtreeIfReqRule)
 
 ROLE(FIGURE,
      "figure",
@@ -1046,4 +1046,12 @@ ROLE(DEFINITION,
      NSAccessibilityGroupRole,
      USE_ROLE_STRING,
      IA2_ROLE_PARAGRAPH,
+     eNameFromSubtreeRule)
+
+ROLE(KEY,
+     "key",
+     ATK_ROLE_PUSH_BUTTON,
+     NSAccessibilityButtonRole,
+     ROLE_SYSTEM_PUSHBUTTON,
+     ROLE_SYSTEM_PUSHBUTTON,
      eNameFromSubtreeRule)

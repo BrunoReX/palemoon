@@ -3,10 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Util.h"
 
 #include "nsMathMLElement.h"
-#include "nsDOMClassInfoID.h" // for eDOMClassInfo_MathElement_id.
+#include "base/compiler_specific.h"
+#include "mozilla/Util.h"
 #include "nsGkAtoms.h"
 #include "nsCRT.h"
 #include "nsRuleData.h"
@@ -21,23 +21,21 @@
 #include "nsIScriptError.h"
 #include "nsContentUtils.h"
 
+#include "mozilla/dom/ElementBinding.h"
+
 using namespace mozilla;
 using namespace mozilla::dom;
 
 //----------------------------------------------------------------------
 // nsISupports methods:
 
-DOMCI_NODE_DATA(MathMLElement, nsMathMLElement)
-
 NS_INTERFACE_TABLE_HEAD(nsMathMLElement)
-  NS_NODE_OFFSET_AND_INTERFACE_TABLE_BEGIN(nsMathMLElement)
-    NS_INTERFACE_TABLE_ENTRY(nsMathMLElement, nsIDOMNode)
-    NS_INTERFACE_TABLE_ENTRY(nsMathMLElement, nsIDOMElement)
-    NS_INTERFACE_TABLE_ENTRY(nsMathMLElement, nsILink)
-    NS_INTERFACE_TABLE_ENTRY(nsMathMLElement, Link)
-  NS_OFFSET_AND_INTERFACE_TABLE_END
+  NS_INTERFACE_TABLE_INHERITED4(nsMathMLElement,
+                                nsIDOMNode,
+                                nsIDOMElement,
+                                nsILink,
+                                Link)
   NS_ELEMENT_INTERFACE_TABLE_TO_MAP_SEGUE
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(MathMLElement)
 NS_ELEMENT_INTERFACE_MAP_END
 
 NS_IMPL_ADDREF_INHERITED(nsMathMLElement, nsMathMLElementBase)
@@ -76,6 +74,14 @@ ReportParseErrorNoTag(const nsString& aValue,
          ReportToConsole(nsIScriptError::errorFlag, "MathML", aDocument,
                          nsContentUtils::eMATHML_PROPERTIES,
                          "AttributeParsingErrorNoTag", argv, 2);
+}
+
+nsMathMLElement::nsMathMLElement(already_AddRefed<nsINodeInfo> aNodeInfo)
+: nsMathMLElementBase(aNodeInfo),
+  ALLOW_THIS_IN_INITIALIZER_LIST(Link(this)),
+  mIncrementScriptLevel(false)
+{
+  SetIsDOMBinding();
 }
 
 nsresult
@@ -184,6 +190,11 @@ static Element::MappedAttributeEntry sCommonPresStyles[] = {
   { nullptr }
 };
 
+static Element::MappedAttributeEntry sDirStyles[] = {
+  { &nsGkAtoms::dir },
+  { nullptr }
+};
+
 bool
 nsMathMLElement::IsAttributeMapped(const nsIAtom* aAttribute) const
 {
@@ -193,17 +204,23 @@ nsMathMLElement::IsAttributeMapped(const nsIAtom* aAttribute) const
   };
   static const MappedAttributeEntry* const tokenMap[] = {
     sTokenStyles,
-    sCommonPresStyles
+    sCommonPresStyles,
+    sDirStyles
   };
   static const MappedAttributeEntry* const mstyleMap[] = {
     sTokenStyles,
     sEnvironmentStyles,
-    sCommonPresStyles
+    sCommonPresStyles,
+    sDirStyles
   };
   static const MappedAttributeEntry* const commonPresMap[] = {
     sCommonPresStyles
   };
-  
+  static const MappedAttributeEntry* const mrowMap[] = {
+    sCommonPresStyles,
+    sDirStyles
+  };
+
   // We don't support mglyph (yet).
   nsIAtom* tag = Tag();
   if (tag == nsGkAtoms::ms_ || tag == nsGkAtoms::mi_ ||
@@ -217,6 +234,9 @@ nsMathMLElement::IsAttributeMapped(const nsIAtom* aAttribute) const
   if (tag == nsGkAtoms::mtable_)
     return FindAttributeDependence(aAttribute, mtableMap);
 
+  if (tag == nsGkAtoms::mrow_)
+    return FindAttributeDependence(aAttribute, mrowMap);
+
   if (tag == nsGkAtoms::maction_ ||
       tag == nsGkAtoms::maligngroup_ ||
       tag == nsGkAtoms::malignmark_ ||
@@ -229,7 +249,6 @@ nsMathMLElement::IsAttributeMapped(const nsIAtom* aAttribute) const
       tag == nsGkAtoms::mphantom_ ||
       tag == nsGkAtoms::mprescripts_ ||
       tag == nsGkAtoms::mroot_ ||
-      tag == nsGkAtoms::mrow_ ||
       tag == nsGkAtoms::msqrt_ ||
       tag == nsGkAtoms::msub_ ||
       tag == nsGkAtoms::msubsup_ ||
@@ -718,6 +737,44 @@ nsMathMLElement::MapMathMLAttributesInto(const nsMappedAttributes* aAttributes,
     }
   }
 
+  // dir
+  //
+  // Overall Directionality of Mathematics Formulas:
+  // "The overall directionality for a formula, basically the direction of the
+  // Layout Schemata, is specified by the dir attribute on the containing math
+  // element (see Section 2.2 The Top-Level math Element). The default is ltr.
+  // [...] The overall directionality is usually set on the math, but may also 
+  // be switched for individual subformula by using the dir attribute on mrow
+  // or mstyle elements." 
+  //
+  // Bidirectional Layout in Token Elements:
+  // "Specifies the initial directionality for text within the token:
+  // ltr (Left To Right) or rtl (Right To Left). This attribute should only be
+  // needed in rare cases involving weak or neutral characters;
+  // see Section 3.1.5.1 Overall Directionality of Mathematics Formulas for
+  // further discussion. It has no effect on mspace."
+  //
+  // values: "ltr" | "rtl"
+  // default: inherited
+  //
+  if (aData->mSIDs & NS_STYLE_INHERIT_BIT(Visibility)) {
+    const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::dir);
+    nsCSSValue* direction = aData->ValueForDirection();
+    if (value && value->Type() == nsAttrValue::eString &&
+        direction->GetUnit() == eCSSUnit_Null) {
+      nsAutoString str(value->GetStringValue());
+      static const char dirs[][4] = { "ltr", "rtl" };
+      static const int32_t dirValues[NS_ARRAY_LENGTH(dirs)] = {
+        NS_STYLE_DIRECTION_LTR, NS_STYLE_DIRECTION_RTL
+      };
+      for (uint32_t i = 0; i < ArrayLength(dirs); ++i) {
+        if (str.EqualsASCII(dirs[i])) {
+          direction->SetIntValue(dirValues[i], eCSSUnit_Enumerated);
+          break;
+        }
+      }
+    }
+  }
 }
 
 nsresult
@@ -881,12 +938,6 @@ nsMathMLElement::GetLinkTarget(nsAString& aTarget)
   }
 }
 
-nsLinkState
-nsMathMLElement::GetLinkState() const
-{
-  return Link::GetLinkState();
-}
-
 already_AddRefed<nsIURI>
 nsMathMLElement::GetHrefURI() const
 {
@@ -940,4 +991,10 @@ nsMathMLElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttr,
   }
 
   return rv;
+}
+
+JSObject*
+nsMathMLElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
+{
+  return ElementBinding::Wrap(aCx, aScope, this);
 }

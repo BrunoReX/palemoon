@@ -56,9 +56,9 @@ public:
   /**
    * Table columns never paint anything, nor receive events.
    */
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists) { return NS_OK; }
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE {}
 
   /**
    * Get the "type" of the frame
@@ -264,7 +264,7 @@ public:
     return mFinalWidth;
   }
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const MOZ_OVERRIDE
   {
     return nsSplittableFrame::IsFrameOfType(aFlags & ~(nsIFrame::eTablePart));
   }

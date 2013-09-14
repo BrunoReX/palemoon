@@ -9,8 +9,13 @@
 #include "nsIInputStream.h"
 #include "nsICharsetConverterManager.h"
 #include "nsIServiceManager.h"
+#include <algorithm>
 
-#define SNIFFING_BUFFER_SIZE 512 // specified in draft-abarth-mime-sniff-06
+// 1024 bytes is specified in
+// http://www.whatwg.org/specs/web-apps/current-work/#charset for HTML; for
+// other resource types (e.g. CSS) typically fewer bytes are fine too, since
+// they only look at things right at the beginning of the data.
+#define SNIFFING_BUFFER_SIZE 1024
 
 using namespace mozilla;
 
@@ -132,7 +137,7 @@ nsUnicharStreamLoader::OnDataAvailable(nsIRequest *aRequest,
     // wait for more data.
 
     uint32_t haveRead = mRawData.Length();
-    uint32_t toRead = NS_MIN(SNIFFING_BUFFER_SIZE - haveRead, aCount);
+    uint32_t toRead = std::min(SNIFFING_BUFFER_SIZE - haveRead, aCount);
     uint32_t n;
     char *here = mRawData.BeginWriting() + haveRead;
 

@@ -41,7 +41,7 @@ public:
   virtual nsresult GetResultCode() = 0;
 
   virtual nsresult GetSuccessResult(JSContext* aCx,
-                                    jsval* aVal) = 0;
+                                    JS::MutableHandle<JS::Value> aVal) = 0;
 
   IDBRequest* GetRequest() const
   {
@@ -61,7 +61,7 @@ protected:
    */
   nsresult WrapNative(JSContext* aCx,
                       nsISupports* aNative,
-                      jsval* aResult);
+                      JS::MutableHandle<JS::Value> aResult);
 
   /**
    * Gives the subclass a chance to release any objects that must be released
@@ -178,7 +178,8 @@ protected:
    * OnSuccess is called.  A subclass can override this to fire an event other
    * than "success" at the request.
    */
-  virtual already_AddRefed<nsDOMEvent> CreateSuccessEvent();
+  virtual already_AddRefed<nsIDOMEvent> CreateSuccessEvent(
+    mozilla::dom::EventTarget* aOwner);
 
   /**
    * This callback is run on the main thread if DoDatabaseWork returned NS_OK.
@@ -200,7 +201,7 @@ protected:
    * accesses the result property of the request.
    */
   virtual nsresult GetSuccessResult(JSContext* aCx,
-                                    jsval* aVal) MOZ_OVERRIDE;
+                                    JS::MutableHandle<JS::Value> aVal) MOZ_OVERRIDE;
 
   /**
    * Gives the subclass a chance to release any objects that must be released
@@ -212,10 +213,10 @@ protected:
   /**
    * Helper to make a JS array object out of an array of clone buffers.
    */
-  static nsresult ConvertCloneReadInfosToArray(
+  static nsresult ConvertToArrayAndCleanup(
                                 JSContext* aCx,
                                 nsTArray<StructuredCloneReadInfo>& aReadInfos,
-                                jsval* aResult);
+                                JS::MutableHandle<JS::Value> aResult);
 
   /**
    * This should only be called by AutoSetCurrentTransaction.
@@ -240,20 +241,19 @@ private:
   bool mDispatched;
 };
 
-NS_STACK_CLASS
-class StackBasedEventTarget : public nsIEventTarget
+class MOZ_STACK_CLASS StackBasedEventTarget : public nsIEventTarget
 {
 public:
   NS_DECL_ISUPPORTS_INHERITED
 };
 
-class MainThreadEventTarget : public StackBasedEventTarget
+class MOZ_STACK_CLASS ImmediateRunEventTarget : public StackBasedEventTarget
 {
 public:
   NS_DECL_NSIEVENTTARGET
 };
 
-class NoDispatchEventTarget : public StackBasedEventTarget
+class MOZ_STACK_CLASS NoDispatchEventTarget : public StackBasedEventTarget
 {
 public:
   NS_DECL_NSIEVENTTARGET

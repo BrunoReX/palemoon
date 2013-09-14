@@ -11,7 +11,6 @@
 #include "nsINameSpaceManager.h"
 #include "nsIURI.h"
 #include "nsIURL.h"
-#include "nsIDOMEventTarget.h"
 #include "nsIChannel.h"
 #include "nsXPIDLString.h"
 #include "nsReadableUtils.h"
@@ -21,13 +20,12 @@
 #include "nsIDocument.h"
 #include "nsIXMLContentSink.h"
 #include "nsContentCID.h"
-#include "nsXMLDocument.h"
+#include "mozilla/dom/XMLDocument.h"
 #include "nsXBLService.h"
 #include "nsXBLBinding.h"
 #include "nsXBLInsertionPoint.h"
 #include "nsXBLPrototypeBinding.h"
 #include "nsXBLContentSink.h"
-#include "nsFixedSizeAllocator.h"
 #include "xptinfo.h"
 #include "nsIInterfaceInfoManager.h"
 #include "nsIDocumentObserver.h"
@@ -36,12 +34,15 @@
 #include "nsCRT.h"
 #include "nsContentUtils.h"
 #include "nsTextFragment.h"
+#include "nsTextNode.h"
 
 #include "nsIScriptContext.h"
 #include "nsIScriptError.h"
 
 #include "nsIStyleRuleProcessor.h"
 #include "nsXBLResourceLoader.h"
+#include "mozilla/dom/CDATASection.h"
+#include "mozilla/dom/Comment.h"
 #include "mozilla/dom/Element.h"
 
 #ifdef MOZ_XUL
@@ -81,38 +82,8 @@ class nsIIDKey : public nsHashKey {
 
 class nsXBLAttributeEntry {
 public:
-  nsIAtom* GetSrcAttribute() { return mSrcAttribute; }
-  nsIAtom* GetDstAttribute() { return mDstAttribute; }
-  int32_t GetDstNameSpace() { return mDstNameSpace; }
-  
-  nsIContent* GetElement() { return mElement; }
-
-  nsXBLAttributeEntry* GetNext() { return mNext; }
-  void SetNext(nsXBLAttributeEntry* aEntry) { mNext = aEntry; }
-
-  static nsXBLAttributeEntry*
-  Create(nsIAtom* aSrcAtom, nsIAtom* aDstAtom, int32_t aDstNameSpace, nsIContent* aContent) {
-    void* place = nsXBLPrototypeBinding::kAttrPool->Alloc(sizeof(nsXBLAttributeEntry));
-    return place ? ::new (place) nsXBLAttributeEntry(aSrcAtom, aDstAtom, aDstNameSpace, 
-                                                     aContent) : nullptr;
-  }
-
-  static void
-  Destroy(nsXBLAttributeEntry* aSelf) {
-    aSelf->~nsXBLAttributeEntry();
-    nsXBLPrototypeBinding::kAttrPool->Free(aSelf, sizeof(*aSelf));
-  }
-
-protected:
-  nsIContent* mElement;
-
-  nsCOMPtr<nsIAtom> mSrcAttribute;
-  nsCOMPtr<nsIAtom> mDstAttribute;
-  int32_t mDstNameSpace;
-  nsXBLAttributeEntry* mNext;
-
-  nsXBLAttributeEntry(nsIAtom* aSrcAtom, nsIAtom* aDstAtom, int32_t aDstNameSpace,
-                      nsIContent* aContent)
+  nsXBLAttributeEntry(nsIAtom* aSrcAtom, nsIAtom* aDstAtom,
+                      int32_t aDstNameSpace, nsIContent* aContent)
     : mElement(aContent),
       mSrcAttribute(aSrcAtom),
       mDstAttribute(aDstAtom),
@@ -123,11 +94,22 @@ protected:
     NS_CONTENT_DELETE_LIST_MEMBER(nsXBLAttributeEntry, this, mNext);
   }
 
-private:
-  // Hide so that only Create() and Destroy() can be used to
-  // allocate and deallocate from the heap
-  static void* operator new(size_t) CPP_THROW_NEW { return 0; }
-  static void operator delete(void*, size_t) {}
+  nsIAtom* GetSrcAttribute() { return mSrcAttribute; }
+  nsIAtom* GetDstAttribute() { return mDstAttribute; }
+  int32_t GetDstNameSpace() { return mDstNameSpace; }
+
+  nsIContent* GetElement() { return mElement; }
+
+  nsXBLAttributeEntry* GetNext() { return mNext; }
+  void SetNext(nsXBLAttributeEntry* aEntry) { mNext = aEntry; }
+
+protected:
+  nsIContent* mElement;
+
+  nsCOMPtr<nsIAtom> mSrcAttribute;
+  nsCOMPtr<nsIAtom> mDstAttribute;
+  int32_t mDstNameSpace;
+  nsXBLAttributeEntry* mNext;
 };
 
 // nsXBLInsertionPointEntry and helpers.  This class stores all the necessary
@@ -137,6 +119,11 @@ private:
 
 class nsXBLInsertionPointEntry {
 public:
+  nsXBLInsertionPointEntry(nsIContent* aParent)
+    : mInsertionParent(aParent),
+      mInsertionIndex(0)
+  {}
+
   ~nsXBLInsertionPointEntry() {
     if (mDefaultContent) {
       nsAutoScriptBlocker scriptBlocker;
@@ -144,7 +131,7 @@ public:
       // document, and we own and manage it.  Unhook it here, since we're going
       // away.
       mDefaultContent->UnbindFromTree();
-    }      
+    }
   }
 
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(nsXBLInsertionPointEntry)
@@ -156,79 +143,14 @@ public:
   nsIContent* GetDefaultContent() { return mDefaultContent; }
   void SetDefaultContent(nsIContent* aChildren) { mDefaultContent = aChildren; }
 
-
-  // We keep kPool alive as long as there is at least either a
-  // nsXBLPrototypeBinding or a nsXBLInsertionPointEntry alive.
-  // nsXBLPrototypeBinding has its own global refcount so it only adds 1 to
-  // nsXBLInsertionPointEntry::gRefCnt as long as there's at least one
-  // nsXBLPrototypeBinding alive.
-
-  static void InitPool(int32_t aInitialSize)
-  {
-    if (++gRefCnt == 1) {
-      kPool = new nsFixedSizeAllocator();
-      if (kPool) {
-        static const size_t kBucketSizes[] = {
-          sizeof(nsXBLInsertionPointEntry)
-        };
-        kPool->Init("XBL Insertion Point Entries", kBucketSizes,
-                    ArrayLength(kBucketSizes), aInitialSize);
-      }
-    }
-  }
-  static bool PoolInited()
-  {
-    return kPool != nullptr;
-  }
-  static void ReleasePool()
-  {
-    if (--gRefCnt == 0) {
-      delete kPool;
-    }
-  }
-
-  static nsXBLInsertionPointEntry*
-  Create(nsIContent* aParent) {
-    void* place = kPool->Alloc(sizeof(nsXBLInsertionPointEntry));
-    if (!place) {
-      return nullptr;
-    }
-    ++gRefCnt;
-    return ::new (place) nsXBLInsertionPointEntry(aParent);
-  }
-
-  static void
-  Destroy(nsXBLInsertionPointEntry* aSelf) {
-    aSelf->~nsXBLInsertionPointEntry();
-    kPool->Free(aSelf, sizeof(*aSelf));
-    nsXBLInsertionPointEntry::ReleasePool();
-  }
-
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(nsXBLInsertionPointEntry)
 
 protected:
   nsCOMPtr<nsIContent> mInsertionParent;
   nsCOMPtr<nsIContent> mDefaultContent;
   uint32_t mInsertionIndex;
-
-  nsXBLInsertionPointEntry(nsIContent* aParent)
-    : mInsertionParent(aParent),
-      mInsertionIndex(0) { }
-
-private:
-  // Hide so that only Create() and Destroy() can be used to
-  // allocate and deallocate from the heap
-  static void* operator new(size_t) CPP_THROW_NEW { return 0; }
-  static void operator delete(void*, size_t) {}
-
-  static nsFixedSizeAllocator* kPool;
-  static uint32_t gRefCnt;
 };
 
-uint32_t nsXBLInsertionPointEntry::gRefCnt = 0;
-nsFixedSizeAllocator* nsXBLInsertionPointEntry::kPool;
-
-NS_IMPL_CYCLE_COLLECTION_NATIVE_CLASS(nsXBLInsertionPointEntry)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsXBLInsertionPointEntry)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mInsertionParent)
   if (tmp->mDefaultContent) {
@@ -249,29 +171,13 @@ NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(nsXBLInsertionPointEntry, Release)
 
 // =============================================================================
 
-// Static initialization
-uint32_t nsXBLPrototypeBinding::gRefCnt = 0;
-
-nsFixedSizeAllocator* nsXBLPrototypeBinding::kAttrPool;
-
-static const int32_t kNumElements = 128;
-
-static const size_t kAttrBucketSizes[] = {
-  sizeof(nsXBLAttributeEntry)
-};
-
-static const int32_t kAttrNumBuckets = sizeof(kAttrBucketSizes)/sizeof(size_t);
-static const int32_t kAttrInitialSize = sizeof(nsXBLAttributeEntry) * kNumElements;
-
-static const int32_t kInsInitialSize = sizeof(nsXBLInsertionPointEntry) * kNumElements;
-
 // Implementation /////////////////////////////////////////////////////////////////
 
 // Constructors/Destructors
 nsXBLPrototypeBinding::nsXBLPrototypeBinding()
 : mImplementation(nullptr),
   mBaseBinding(nullptr),
-  mInheritStyle(true), 
+  mInheritStyle(true),
   mCheckedBaseProto(false),
   mKeyHandlersRegistered(false),
   mChromeOnlyContent(false),
@@ -282,15 +188,6 @@ nsXBLPrototypeBinding::nsXBLPrototypeBinding()
   mBaseNameSpaceID(kNameSpaceID_None)
 {
   MOZ_COUNT_CTOR(nsXBLPrototypeBinding);
-  gRefCnt++;
-
-  if (gRefCnt == 1) {
-    kAttrPool = new nsFixedSizeAllocator();
-    if (kAttrPool) {
-      kAttrPool->Init("XBL Attribute Entries", kAttrBucketSizes, kAttrNumBuckets, kAttrInitialSize);
-    }
-    nsXBLInsertionPointEntry::InitPool(kInsInitialSize);
-  }
 }
 
 nsresult
@@ -299,10 +196,6 @@ nsXBLPrototypeBinding::Init(const nsACString& aID,
                             nsIContent* aElement,
                             bool aFirstBinding)
 {
-  if (!kAttrPool || !nsXBLInsertionPointEntry::PoolInited()) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
   nsresult rv = aInfo->DocumentURI()->Clone(getter_AddRefs(mBindingURI));
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -378,10 +271,10 @@ nsXBLPrototypeBinding::UnlinkJSObjects()
 }
 
 void
-nsXBLPrototypeBinding::Trace(TraceCallback aCallback, void *aClosure) const
+nsXBLPrototypeBinding::Trace(const TraceCallbacks& aCallbacks, void *aClosure) const
 {
   if (mImplementation)
-    mImplementation->Trace(aCallback, aClosure);
+    mImplementation->Trace(aCallbacks, aClosure);
 }
 
 void
@@ -404,11 +297,6 @@ nsXBLPrototypeBinding::~nsXBLPrototypeBinding(void)
   delete mInsertionPointTable;
   delete mInterfaceTable;
   delete mImplementation;
-  gRefCnt--;
-  if (gRefCnt == 0) {
-    delete kAttrPool;
-    nsXBLInsertionPointEntry::ReleasePool();
-  }
   MOZ_COUNT_DTOR(nsXBLPrototypeBinding);
 }
 
@@ -429,9 +317,8 @@ nsXBLPrototypeBinding::SetBasePrototype(nsXBLPrototypeBinding* aBinding)
 already_AddRefed<nsIContent>
 nsXBLPrototypeBinding::GetBindingElement()
 {
-  nsIContent* result = mBinding;
-  NS_IF_ADDREF(result);
-  return result;
+  nsCOMPtr<nsIContent> result = mBinding;
+  return result.forget();
 }
 
 void
@@ -542,10 +429,10 @@ nsXBLPrototypeBinding::SetDestructor(nsXBLProtoImplAnonymousMethod* aMethod)
 }
 
 nsresult
-nsXBLPrototypeBinding::InstallImplementation(nsIContent* aBoundElement)
+nsXBLPrototypeBinding::InstallImplementation(nsXBLBinding* aBinding)
 {
   if (mImplementation)
-    return mImplementation->InstallImplementation(this, aBoundElement);
+    return mImplementation->InstallImplementation(this, aBinding);
   return NS_OK;
 }
 
@@ -628,12 +515,8 @@ nsXBLPrototypeBinding::AttributeChanged(nsIAtom* aAttribute,
           nsAutoString value;
           aChangedElement->GetAttr(aNameSpaceID, aAttribute, value);
           if (!value.IsEmpty()) {
-            nsCOMPtr<nsIContent> textContent;
-            NS_NewTextNode(getter_AddRefs(textContent),
-                           realElement->NodeInfo()->NodeInfoManager());
-            if (!textContent) {
-              continue;
-            }
+            nsRefPtr<nsTextNode> textContent =
+              new nsTextNode(realElement->NodeInfo()->NodeInfoManager());
 
             textContent->SetText(value, true);
             realElement->AppendChildTo(textContent, true);
@@ -840,16 +723,14 @@ nsXBLPrototypeBinding::GetImmediateChild(nsIAtom* aTag)
  
 nsresult
 nsXBLPrototypeBinding::InitClass(const nsCString& aClassName,
-                                 JSContext * aContext, JSObject * aGlobal,
-                                 JSObject * aScriptObject,
-                                 JSObject** aClassObject)
+                                 JSContext * aContext,
+                                 JS::Handle<JSObject*> aGlobal,
+                                 JS::Handle<JSObject*> aScriptObject,
+                                 JS::MutableHandle<JSObject*> aClassObject,
+                                 bool* aNew)
 {
-  NS_ENSURE_ARG_POINTER(aClassObject); 
-
-  *aClassObject = nullptr;
-
   return nsXBLBinding::DoInitJSClass(aContext, aGlobal, aScriptObject,
-                                     aClassName, this, aClassObject);
+                                     aClassName, this, aClassObject, aNew);
 }
 
 nsIContent*
@@ -1006,12 +887,8 @@ bool SetAttrs(nsHashKey* aKey, void* aData, void* aClosure)
                                              kNameSpaceID_XUL) &&
              dst == nsGkAtoms::value && !value.IsEmpty())) {
 
-          nsCOMPtr<nsIContent> textContent;
-          NS_NewTextNode(getter_AddRefs(textContent),
-                         realElement->NodeInfo()->NodeInfoManager());
-          if (!textContent) {
-            continue;
-          }
+          nsRefPtr<nsTextNode> textContent =
+            new nsTextNode(realElement->NodeInfo()->NodeInfoManager());
 
           textContent->SetText(value, false);
           realElement->AppendChildTo(textContent, false);
@@ -1071,7 +948,7 @@ nsXBLPrototypeBinding::GetStyleSheets()
 static bool
 DeleteAttributeEntry(nsHashKey* aKey, void* aData, void* aClosure)
 {
-  nsXBLAttributeEntry::Destroy(static_cast<nsXBLAttributeEntry*>(aData));
+  delete static_cast<nsXBLAttributeEntry*>(aData);
   return true;
 }
 
@@ -1106,9 +983,9 @@ nsXBLPrototypeBinding::AddToAttributeTable(int32_t aSourceNamespaceID, nsIAtom* 
                                            nullptr, 4);
       mAttributeTable->Put(&nskey, attributesNS);
     }
-  
+
     nsXBLAttributeEntry* xblAttr =
-      nsXBLAttributeEntry::Create(aSourceTag, aDestTag, aDestNamespaceID, aContent);
+      new nsXBLAttributeEntry(aSourceTag, aDestTag, aDestNamespaceID, aContent);
 
     nsISupportsKey key(aSourceTag);
     nsXBLAttributeEntry* entry = static_cast<nsXBLAttributeEntry*>
@@ -1141,7 +1018,7 @@ nsXBLPrototypeBinding::ConstructAttributeTable(nsIContent* aElement)
       // so that we don't have to convert from Unicode to ASCII and then back
 
       char* token = nsCRT::strtok( str, ", ", &newStr );
-      while( token != NULL ) {
+      while( token != nullptr ) {
         // Build an atom out of this attribute.
         nsCOMPtr<nsIAtom> atom;
         int32_t atomNsID = kNameSpaceID_None;
@@ -1230,10 +1107,10 @@ nsXBLPrototypeBinding::ConstructInsertionTable(nsIContent* aContent)
   int32_t i;
   for (i = 0; i < count; i++) {
     nsIContent* child = childrenElements[i];
-    nsCOMPtr<nsIContent> parent = child->GetParent(); 
+    nsCOMPtr<nsIContent> parent = child->GetParent();
 
     // Create an XBL insertion point entry.
-    nsXBLInsertionPointEntry* xblIns = nsXBLInsertionPointEntry::Create(parent);
+    nsXBLInsertionPointEntry* xblIns = new nsXBLInsertionPointEntry(parent);
 
     nsAutoString includes;
     child->GetAttr(kNameSpaceID_None, nsGkAtoms::includes, includes);
@@ -1250,7 +1127,7 @@ nsXBLPrototypeBinding::ConstructInsertionTable(nsIContent* aContent)
       // so that we don't have to convert from Unicode to ASCII and then back
 
       char* token = nsCRT::strtok( str, "| ", &newStr );
-      while( token != NULL ) {
+      while( token != nullptr ) {
         nsAutoString tok;
         tok.AssignWithConversion(token);
 
@@ -1331,7 +1208,7 @@ nsXBLPrototypeBinding::ConstructInterfaceTable(const nsAString& aImpls)
     // so that we don't have to convert from Unicode to ASCII and then back
 
     char* token = nsCRT::strtok( str, ", ", &newStr );
-    while( token != NULL ) {
+    while( token != nullptr ) {
       // get the InterfaceInfo for the name
       nsCOMPtr<nsIInterfaceInfo> iinfo;
       infoManager->GetInfoForName(token, getter_AddRefs(iinfo));
@@ -1805,18 +1682,17 @@ nsXBLPrototypeBinding::ReadContentNode(nsIObjectInputStream* aStream,
       namespaceID == XBLBinding_Serialize_CommentNode) {
     switch (namespaceID) {
       case XBLBinding_Serialize_TextNode:
-        rv = NS_NewTextNode(getter_AddRefs(content), aNim);
+        content = new nsTextNode(aNim);
         break;
       case XBLBinding_Serialize_CDATANode:
-        rv = NS_NewXMLCDATASection(getter_AddRefs(content), aNim);
+        content = new CDATASection(aNim);
         break;
       case XBLBinding_Serialize_CommentNode:
-        rv = NS_NewCommentNode(getter_AddRefs(content), aNim);
+        content = new Comment(aNim);
         break;
       default:
         break;
     }
-    NS_ENSURE_SUCCESS(rv, rv);
 
     nsAutoString text;
     rv = aStream->ReadString(text);
@@ -1892,7 +1768,7 @@ nsXBLPrototypeBinding::ReadContentNode(nsIObjectInputStream* aStream,
                             namespaceID, nsIDOMNode::ATTRIBUTE_NODE);
         attrs[i].mName.SetTo(ni);
       }
-      
+
       rv = prototype->SetAttrAt(i, val, documentURI);
       NS_ENSURE_SUCCESS(rv, rv);
     }
@@ -1962,7 +1838,7 @@ nsXBLPrototypeBinding::ReadContentNode(nsIObjectInputStream* aStream,
   NS_ENSURE_SUCCESS(rv, rv);
   while (insertionPointIndex != XBLBinding_Serialize_NoMoreInsertionPoints) {
     nsRefPtr<nsXBLInsertionPointEntry> xblIns =
-      nsXBLInsertionPointEntry::Create(content);
+      new nsXBLInsertionPointEntry(content);
     xblIns->SetInsertionIndex(insertionPointIndex);
 
     // If the insertion point has default content, read it.

@@ -49,6 +49,7 @@ var padlock_PadLock =
           case wpl.STATE_IS_BROKEN:
             level = "broken";
             is_insecure = "insecure";
+            highlight_urlbar = true;
             break;
           default: // should not be reached
             level = null;

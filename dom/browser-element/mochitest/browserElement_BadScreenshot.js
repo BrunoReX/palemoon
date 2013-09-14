@@ -6,6 +6,8 @@
 "use strict";
 
 SimpleTest.waitForExplicitFinish();
+browserElementTestHelpers.setEnabledPref(true);
+browserElementTestHelpers.addPermission();
 
 var iframe;
 var numPendingTests = 0;
@@ -43,11 +45,8 @@ function checkScreenshotResult(expectSuccess, args) {
 }
 
 function runTest() {
-  browserElementTestHelpers.setEnabledPref(true);
-  browserElementTestHelpers.addPermission();
-
   iframe = document.createElement('iframe');
-  iframe.mozbrowser = true;
+  SpecialPowers.wrap(iframe).mozbrowser = true;
   document.body.appendChild(iframe);
   iframe.src = 'data:text/html,<html>' +
     '<body style="background:green">hello</body></html>';
@@ -70,4 +69,4 @@ function runTest() {
   });
 }
 
-runTest();
+addEventListener('testready', runTest);

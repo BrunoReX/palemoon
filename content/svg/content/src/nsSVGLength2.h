@@ -6,6 +6,7 @@
 #ifndef __NS_SVGLENGTH2_H__
 #define __NS_SVGLENGTH2_H__
 
+#include "mozilla/Attributes.h"
 #include "nsAutoPtr.h"
 #include "nsCoord.h"
 #include "nsCycleCollectionParticipant.h"
@@ -18,13 +19,19 @@
 #include "SVGContentUtils.h"
 
 class nsIFrame;
-class nsISMILAnimationElement;
 class nsSMILValue;
-class nsSVGSVGElement;
+
+namespace mozilla {
+namespace dom {
+class SVGAnimatedLength;
+class SVGAnimationElement;
+class SVGSVGElement;
+}
+}
 
 class nsSVGLength2
 {
-
+  friend class mozilla::dom::SVGAnimatedLength;
 public:
   void Init(uint8_t aCtxType = SVGContentUtils::XY,
             uint8_t aAttrEnum = 0xff,
@@ -67,9 +74,9 @@ public:
   float GetAnimValInSpecifiedUnits() const { return mAnimVal; }
   float GetBaseValInSpecifiedUnits() const { return mBaseVal; }
 
-  float GetBaseValue(nsSVGSVGElement* aCtx) const
+  float GetBaseValue(mozilla::dom::SVGSVGElement* aCtx) const
     { return mBaseVal / GetUnitScaleFactor(aCtx, mSpecifiedUnitType); }
-  float GetAnimValue(nsSVGSVGElement* aCtx) const
+  float GetAnimValue(mozilla::dom::SVGSVGElement* aCtx) const
     { return mAnimVal / GetUnitScaleFactor(aCtx, mSpecifiedUnitType); }
 
   bool HasBaseVal() const {
@@ -86,7 +93,7 @@ public:
   nsresult ToDOMAnimatedLength(nsIDOMSVGAnimatedLength **aResult,
                                nsSVGElement* aSVGElement);
 
-  already_AddRefed<nsIDOMSVGAnimatedLength>
+  already_AddRefed<mozilla::dom::SVGAnimatedLength>
   ToDOMAnimatedLength(nsSVGElement* aSVGElement);
 
   // Returns a new nsISMILAttr object that the caller must delete
@@ -110,14 +117,14 @@ private:
     { return SVGContentUtils::GetFontXHeight(aFrame); }
   float GetUnitScaleFactor(nsIFrame *aFrame, uint8_t aUnitType) const;
 
-  float GetMMPerPixel(nsSVGSVGElement *aCtx) const;
-  float GetAxisLength(nsSVGSVGElement *aCtx) const;
+  float GetMMPerPixel(mozilla::dom::SVGSVGElement *aCtx) const;
+  float GetAxisLength(mozilla::dom::SVGSVGElement *aCtx) const;
   static float GetEmLength(nsSVGElement *aSVGElement)
     { return SVGContentUtils::GetFontSize(aSVGElement); }
   static float GetExLength(nsSVGElement *aSVGElement)
     { return SVGContentUtils::GetFontXHeight(aSVGElement); }
   float GetUnitScaleFactor(nsSVGElement *aSVGElement, uint8_t aUnitType) const;
-  float GetUnitScaleFactor(nsSVGSVGElement *aCtx, uint8_t aUnitType) const;
+  float GetUnitScaleFactor(mozilla::dom::SVGSVGElement *aCtx, uint8_t aUnitType) const;
 
   // SetBaseValue and SetAnimValue set the value in user units
   void SetBaseValue(float aValue, nsSVGElement *aSVGElement, bool aDoSetAttr);
@@ -144,12 +151,12 @@ public:
     nsSVGLength2* mVal; // kept alive because it belongs to mSVGElement
     nsRefPtr<nsSVGElement> mSVGElement;
     
-    NS_IMETHOD GetUnitType(uint16_t* aResult)
+    NS_IMETHOD GetUnitType(uint16_t* aResult) MOZ_OVERRIDE
       { *aResult = mVal->mSpecifiedUnitType; return NS_OK; }
 
-    NS_IMETHOD GetValue(float* aResult)
+    NS_IMETHOD GetValue(float* aResult) MOZ_OVERRIDE
       { *aResult = mVal->GetBaseValue(mSVGElement); return NS_OK; }
-    NS_IMETHOD SetValue(float aValue)
+    NS_IMETHOD SetValue(float aValue) MOZ_OVERRIDE
       {
         if (!NS_finite(aValue)) {
           return NS_ERROR_ILLEGAL_VALUE;
@@ -158,9 +165,9 @@ public:
         return NS_OK;
       }
 
-    NS_IMETHOD GetValueInSpecifiedUnits(float* aResult)
+    NS_IMETHOD GetValueInSpecifiedUnits(float* aResult) MOZ_OVERRIDE
       { *aResult = mVal->mBaseVal; return NS_OK; }
-    NS_IMETHOD SetValueInSpecifiedUnits(float aValue)
+    NS_IMETHOD SetValueInSpecifiedUnits(float aValue) MOZ_OVERRIDE
       {
         if (!NS_finite(aValue)) {
           return NS_ERROR_ILLEGAL_VALUE;
@@ -169,18 +176,18 @@ public:
         return NS_OK;
       }
 
-    NS_IMETHOD SetValueAsString(const nsAString& aValue)
+    NS_IMETHOD SetValueAsString(const nsAString& aValue) MOZ_OVERRIDE
       { return mVal->SetBaseValueString(aValue, mSVGElement, true); }
-    NS_IMETHOD GetValueAsString(nsAString& aValue)
+    NS_IMETHOD GetValueAsString(nsAString& aValue) MOZ_OVERRIDE
       { mVal->GetBaseValueString(aValue); return NS_OK; }
 
     NS_IMETHOD NewValueSpecifiedUnits(uint16_t unitType,
-                                      float valueInSpecifiedUnits)
+                                      float valueInSpecifiedUnits) MOZ_OVERRIDE
       {
         return mVal->NewValueSpecifiedUnits(unitType, valueInSpecifiedUnits,
                                             mSVGElement); }
 
-    NS_IMETHOD ConvertToSpecifiedUnits(uint16_t unitType)
+    NS_IMETHOD ConvertToSpecifiedUnits(uint16_t unitType) MOZ_OVERRIDE
       { return mVal->ConvertToSpecifiedUnits(unitType, mSVGElement); }
   };
 
@@ -198,34 +205,34 @@ public:
     
     // Script may have modified animation parameters or timeline -- DOM getters
     // need to flush any resample requests to reflect these modifications.
-    NS_IMETHOD GetUnitType(uint16_t* aResult)
+    NS_IMETHOD GetUnitType(uint16_t* aResult) MOZ_OVERRIDE
     {
       mSVGElement->FlushAnimations();
       *aResult = mVal->mSpecifiedUnitType;
       return NS_OK;
     }
 
-    NS_IMETHOD GetValue(float* aResult)
+    NS_IMETHOD GetValue(float* aResult) MOZ_OVERRIDE
     {
       mSVGElement->FlushAnimations();
       *aResult = mVal->GetAnimValue(mSVGElement);
       return NS_OK;
     }
-    NS_IMETHOD SetValue(float aValue)
+    NS_IMETHOD SetValue(float aValue) MOZ_OVERRIDE
       { return NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR; }
 
-    NS_IMETHOD GetValueInSpecifiedUnits(float* aResult)
+    NS_IMETHOD GetValueInSpecifiedUnits(float* aResult) MOZ_OVERRIDE
     {
       mSVGElement->FlushAnimations();
       *aResult = mVal->mAnimVal;
       return NS_OK;
     }
-    NS_IMETHOD SetValueInSpecifiedUnits(float aValue)
+    NS_IMETHOD SetValueInSpecifiedUnits(float aValue) MOZ_OVERRIDE
       { return NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR; }
 
-    NS_IMETHOD SetValueAsString(const nsAString& aValue)
+    NS_IMETHOD SetValueAsString(const nsAString& aValue) MOZ_OVERRIDE
       { return NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR; }
-    NS_IMETHOD GetValueAsString(nsAString& aValue)
+    NS_IMETHOD GetValueAsString(nsAString& aValue) MOZ_OVERRIDE
     {
       mSVGElement->FlushAnimations();
       mVal->GetAnimValueString(aValue);
@@ -233,30 +240,11 @@ public:
     }
 
     NS_IMETHOD NewValueSpecifiedUnits(uint16_t unitType,
-                                      float valueInSpecifiedUnits)
+                                      float valueInSpecifiedUnits) MOZ_OVERRIDE
       { return NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR; }
 
-    NS_IMETHOD ConvertToSpecifiedUnits(uint16_t unitType)
+    NS_IMETHOD ConvertToSpecifiedUnits(uint16_t unitType) MOZ_OVERRIDE
       { return NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR; }
-  };
-
-  struct DOMAnimatedLength : public nsIDOMSVGAnimatedLength
-  {
-    NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-    NS_DECL_CYCLE_COLLECTION_CLASS(DOMAnimatedLength)
-
-    DOMAnimatedLength(nsSVGLength2* aVal, nsSVGElement *aSVGElement)
-      : mVal(aVal), mSVGElement(aSVGElement) {}
-    virtual ~DOMAnimatedLength();
-    
-    nsSVGLength2* mVal; // kept alive because it belongs to content
-    nsRefPtr<nsSVGElement> mSVGElement;
-
-    NS_IMETHOD GetBaseVal(nsIDOMSVGLength **aBaseVal)
-      { return mVal->ToDOMBaseVal(aBaseVal, mSVGElement); }
-
-    NS_IMETHOD GetAnimVal(nsIDOMSVGLength **aAnimVal)
-      { return mVal->ToDOMAnimVal(aAnimVal, mSVGElement); }
   };
 
   struct SMILLength : public nsISMILAttr
@@ -273,12 +261,12 @@ public:
 
     // nsISMILAttr methods
     virtual nsresult ValueFromString(const nsAString& aStr,
-                                     const nsISMILAnimationElement* aSrcElement,
+                                     const mozilla::dom::SVGAnimationElement* aSrcElement,
                                      nsSMILValue &aValue,
-                                     bool& aPreventCachingOfSandwich) const;
-    virtual nsSMILValue GetBaseValue() const;
-    virtual void ClearAnimValue();
-    virtual nsresult SetAnimValue(const nsSMILValue& aValue);
+                                     bool& aPreventCachingOfSandwich) const MOZ_OVERRIDE;
+    virtual nsSMILValue GetBaseValue() const MOZ_OVERRIDE;
+    virtual void ClearAnimValue() MOZ_OVERRIDE;
+    virtual nsresult SetAnimValue(const nsSMILValue& aValue) MOZ_OVERRIDE;
   };
 };
 

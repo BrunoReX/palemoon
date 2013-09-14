@@ -122,6 +122,15 @@ static DllBlockInfo sWindowsDllBlocklist[] = {
   { "mozdllblockingtest.dll", ALL_VERSIONS },
   { "mozdllblockingtest_versioned.dll", 0x0000000400000000ULL },
 
+  // Windows Media Foundation FLAC decoder and type sniffer (bug 839031).
+  { "mfflac.dll", ALL_VERSIONS },
+
+  // Older Relevant Knowledge DLLs cause us to crash (bug 904001).
+  { "rlnx.dll", MAKE_VERSION(1, 3, 334, 9) },
+  { "pmnx.dll", MAKE_VERSION(1, 3, 334, 9) },
+  { "opnx.dll", MAKE_VERSION(1, 3, 334, 9) },
+  { "prnx.dll", MAKE_VERSION(1, 3, 334, 9) },
+
   { NULL, 0 }
 };
 

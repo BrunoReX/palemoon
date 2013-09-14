@@ -12,24 +12,16 @@
 #include "nsDOMNavigationTiming.h"
 #include "nsContentUtils.h"
 #include "nsIDOMWindow.h"
-#include "nsDOMClassInfoID.h"
 #include "mozilla/dom/PerformanceBinding.h"
 #include "mozilla/dom/PerformanceTimingBinding.h"
 #include "mozilla/dom/PerformanceNavigationBinding.h"
 
 using namespace mozilla;
 
-DOMCI_DATA(PerformanceTiming, nsPerformanceTiming)
-
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_1(nsPerformanceTiming, mPerformance)
-NS_IMPL_CYCLE_COLLECTING_ADDREF(nsPerformanceTiming)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(nsPerformanceTiming)
 
-// QueryInterface implementation for nsPerformanceTiming
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsPerformanceTiming)
-  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
-NS_INTERFACE_MAP_END
+NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(nsPerformanceTiming, AddRef)
+NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(nsPerformanceTiming, Release)
 
 nsPerformanceTiming::nsPerformanceTiming(nsPerformance* aPerformance,
                                          nsITimedChannel* aChannel)
@@ -47,6 +39,9 @@ nsPerformanceTiming::~nsPerformanceTiming()
 DOMTimeMilliSec
 nsPerformanceTiming::DomainLookupStart() const
 {
+  if (!nsContentUtils::IsPerformanceTimingEnabled()) {
+    return 0;
+  }
   if (!mChannel) {
     return FetchStart();
   }
@@ -58,6 +53,9 @@ nsPerformanceTiming::DomainLookupStart() const
 DOMTimeMilliSec
 nsPerformanceTiming::DomainLookupEnd() const
 {
+  if (!nsContentUtils::IsPerformanceTimingEnabled()) {
+    return 0;
+  }
   if (!mChannel) {
     return FetchStart();
   }
@@ -69,6 +67,9 @@ nsPerformanceTiming::DomainLookupEnd() const
 DOMTimeMilliSec
 nsPerformanceTiming::ConnectStart() const
 {
+  if (!nsContentUtils::IsPerformanceTimingEnabled()) {
+    return 0;
+  }
   if (!mChannel) {
     return FetchStart();
   }
@@ -80,6 +81,9 @@ nsPerformanceTiming::ConnectStart() const
 DOMTimeMilliSec
 nsPerformanceTiming::ConnectEnd() const
 {
+  if (!nsContentUtils::IsPerformanceTimingEnabled()) {
+    return 0;
+  }
   if (!mChannel) {
     return FetchStart();
   }
@@ -91,6 +95,9 @@ nsPerformanceTiming::ConnectEnd() const
 DOMTimeMilliSec
 nsPerformanceTiming::RequestStart() const
 {
+  if (!nsContentUtils::IsPerformanceTimingEnabled()) {
+    return 0;
+  }
   if (!mChannel) {
     return FetchStart();
   }
@@ -102,6 +109,9 @@ nsPerformanceTiming::RequestStart() const
 DOMTimeMilliSec
 nsPerformanceTiming::ResponseStart() const
 {
+  if (!nsContentUtils::IsPerformanceTimingEnabled()) {
+    return 0;
+  }
   if (!mChannel) {
     return FetchStart();
   }
@@ -118,6 +128,9 @@ nsPerformanceTiming::ResponseStart() const
 DOMTimeMilliSec
 nsPerformanceTiming::ResponseEnd() const
 {
+  if (!nsContentUtils::IsPerformanceTimingEnabled()) {
+    return 0;
+  }
   if (!mChannel) {
     return FetchStart();
   }
@@ -132,26 +145,16 @@ nsPerformanceTiming::ResponseEnd() const
 }
 
 JSObject*
-nsPerformanceTiming::WrapObject(JSContext *cx, JSObject *scope,
-                                bool *triedToWrap)
+nsPerformanceTiming::WrapObject(JSContext *cx, JS::Handle<JSObject*> scope)
 {
-  return dom::PerformanceTimingBinding::Wrap(cx, scope, this,
-                                             triedToWrap);
+  return dom::PerformanceTimingBinding::Wrap(cx, scope, this);
 }
 
 
-
-DOMCI_DATA(PerformanceNavigation, nsPerformanceNavigation)
-
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_1(nsPerformanceNavigation, mPerformance)
-NS_IMPL_CYCLE_COLLECTING_ADDREF(nsPerformanceNavigation)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(nsPerformanceNavigation)
 
-// QueryInterface implementation for nsPerformanceNavigation
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsPerformanceNavigation)
-  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
-NS_INTERFACE_MAP_END
+NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(nsPerformanceNavigation, AddRef)
+NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(nsPerformanceNavigation, Release)
 
 nsPerformanceNavigation::nsPerformanceNavigation(nsPerformance* aPerformance)
   : mPerformance(aPerformance)
@@ -165,15 +168,11 @@ nsPerformanceNavigation::~nsPerformanceNavigation()
 }
 
 JSObject*
-nsPerformanceNavigation::WrapObject(JSContext *cx, JSObject *scope,
-                                    bool *triedToWrap)
+nsPerformanceNavigation::WrapObject(JSContext *cx, JS::Handle<JSObject*> scope)
 {
-  return dom::PerformanceNavigationBinding::Wrap(cx, scope, this,
-                                                 triedToWrap);
+  return dom::PerformanceNavigationBinding::Wrap(cx, scope, this);
 }
 
-
-DOMCI_DATA(Performance, nsPerformance)
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_3(nsPerformance,
                                         mWindow, mTiming,
@@ -228,10 +227,8 @@ nsPerformance::Now()
 }
 
 JSObject*
-nsPerformance::WrapObject(JSContext *cx, JSObject *scope,
-                          bool *triedToWrap)
+nsPerformance::WrapObject(JSContext *cx, JS::Handle<JSObject*> scope)
 {
-  return dom::PerformanceBinding::Wrap(cx, scope, this,
-                                       triedToWrap);
+  return dom::PerformanceBinding::Wrap(cx, scope, this);
 }
 

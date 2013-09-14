@@ -1,12 +1,13 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- *
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/*
- * PR time code.
- */
+/* PR time code. */
+
+#include "mozilla/MathAlgorithms.h"
+
 #ifdef SOLARIS
 #define _REENTRANT 1
 #endif
@@ -28,7 +29,6 @@
 #ifdef XP_WIN
 #include <windef.h>
 #include <winbase.h>
-#include <math.h>     /* for fabs */
 #include <mmsystem.h> /* for timeBegin/EndPeriod */
 /* VC++ 8.0 or later */
 #if _MSC_VER >= 1400
@@ -358,7 +358,7 @@ PRMJ_Now(void)
                itself, but I have only seen it triggered by another program
                doing some kind of file I/O. The symptoms are a negative diff
                followed by an equally large positive diff. */
-            if (fabs(diff) > 2*skewThreshold) {
+            if (mozilla::Abs(diff) > 2 * skewThreshold) {
                 /*fprintf(stderr,"Clock skew detected (diff = %f)!\n", diff);*/
 
                 if (calibrated) {

@@ -35,13 +35,11 @@ public:
   virtual nsresult Clone(nsINodeInfo* aNodeInfo,
                          nsINode** aResult) const MOZ_OVERRIDE;
 
-  virtual nsXPCClassInfo* GetClassInfo();
-
   virtual nsIDOMNode* AsDOMNode() { return this; }
 
 protected:
-  virtual JSObject* WrapNode(JSContext *aCx, JSObject *aScope,
-                             bool *aTriedToWrap) MOZ_OVERRIDE;
+  virtual JSObject* WrapNode(JSContext *aCx,
+                             JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
 };
 
 HTMLElement::HTMLElement(already_AddRefed<nsINodeInfo> aNodeInfo)
@@ -57,11 +55,9 @@ HTMLElement::~HTMLElement()
 NS_IMPL_ADDREF_INHERITED(HTMLElement, Element)
 NS_IMPL_RELEASE_INHERITED(HTMLElement, Element)
 
-NS_INTERFACE_TABLE_HEAD(HTMLElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE0(HTMLElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE_TO_MAP_SEGUE(HTMLElement,
-                                               nsGenericHTMLElement)
-NS_HTML_CONTENT_INTERFACE_TABLE_TAIL_CLASSINFO(HTMLElement)
+NS_INTERFACE_MAP_BEGIN(HTMLElement)
+  NS_HTML_CONTENT_INTERFACES(nsGenericHTMLElement)
+NS_ELEMENT_INTERFACE_MAP_END
 
 NS_IMPL_ELEMENT_CLONE(HTMLElement)
 
@@ -85,9 +81,9 @@ HTMLElement::GetInnerHTML(nsAString& aInnerHTML, ErrorResult& aError)
 }
 
 JSObject*
-HTMLElement::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+HTMLElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return dom::HTMLElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return dom::HTMLElementBinding::Wrap(aCx, aScope, this);
 }
 
 } // namespace dom
@@ -101,5 +97,3 @@ NS_NewHTMLElement(already_AddRefed<nsINodeInfo> aNodeInfo,
 {
   return new mozilla::dom::HTMLElement(aNodeInfo);
 }
-
-DOMCI_NODE_DATA(HTMLElement, mozilla::dom::HTMLElement)

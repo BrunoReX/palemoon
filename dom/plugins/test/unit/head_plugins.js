@@ -3,6 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+const Cc = Components.classes;
+const Ci = Components.interfaces;
+
+const gIsWindows = ("@mozilla.org/windows-registry-key;1" in Cc);
+const gIsOSX = ("nsILocalFileMac" in Ci);
+const gIsLinux = ("@mozilla.org/gnome-gconf-service;1" in Cc) ||
+  ("@mozilla.org/gio-service;1" in Cc);
+
 // Finds the test plugin library
 function get_test_plugin() {
   var pluginEnum = gDirSvc.get("APluginsDL", Ci.nsISimpleEnumerator);
@@ -34,15 +42,17 @@ function get_test_plugin() {
 }
 
 // Finds the test nsIPluginTag
-function get_test_plugintag() {
+function get_test_plugintag(aName) {
   const Cc = Components.classes;
   const Ci = Components.interfaces;
 
+  var name = aName || "Test Plug-in";
   var host = Cc["@mozilla.org/plugin/host;1"].
              getService(Ci.nsIPluginHost);
   var tags = host.getPluginTags();
+
   for (var i = 0; i < tags.length; i++) {
-    if (tags[i].name == "Test Plug-in")
+    if (tags[i].name == name)
       return tags[i];
   }
   return null;
@@ -79,4 +89,33 @@ function do_get_profile_startup() {
   dirSvc.QueryInterface(Components.interfaces.nsIDirectoryService)
         .registerProvider(provider);
   return file.clone();
+}
+
+function get_platform_specific_plugin_name() {
+  if (gIsWindows) return "nptest.dll";
+  else if (gIsOSX) return "Test.plugin";
+  else if (gIsLinux) return "libnptest.so";
+  else return null;
+}
+
+function get_platform_specific_plugin_suffix() {
+  if (gIsWindows) return ".dll";
+  else if (gIsOSX) return ".plugin";
+  else if (gIsLinux) return ".so";
+  else return null;
+}
+
+function get_test_plugin_no_symlink() {
+  let dirSvc = Cc["@mozilla.org/file/directory_service;1"]
+                .getService(Ci.nsIProperties);
+  let pluginEnum = dirSvc.get("APluginsDL", Ci.nsISimpleEnumerator);
+  while (pluginEnum.hasMoreElements()) {
+    let dir = pluginEnum.getNext().QueryInterface(Ci.nsILocalFile);
+    let plugin = dir.clone();
+    plugin.append(get_platform_specific_plugin_name());
+    if (plugin.exists()) {
+      return plugin;
+    }
+  }
+  return null;
 }

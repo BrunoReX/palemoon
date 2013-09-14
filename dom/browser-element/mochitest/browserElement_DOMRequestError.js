@@ -6,13 +6,12 @@
 "use strict";
 
 SimpleTest.waitForExplicitFinish();
+browserElementTestHelpers.setEnabledPref(true);
+browserElementTestHelpers.addPermission();
 
 function runTest() {
-  browserElementTestHelpers.setEnabledPref(true);
-  browserElementTestHelpers.addPermission();
-
   var iframe1 = document.createElement('iframe');
-  iframe1.mozbrowser = true;
+  SpecialPowers.wrap(iframe1).mozbrowser = true;
   iframe1.src = 'data:text/html,<html>' +
     '<body style="background:green">hello</body></html>';
   document.body.appendChild(iframe1);
@@ -61,4 +60,4 @@ function runTest() {
   iframe1.addEventListener('mozbrowserloadend', iframeLoadedHandler);
 }
 
-addEventListener('load', function() { SimpleTest.executeSoon(runTest); });
+addEventListener('testready', runTest);

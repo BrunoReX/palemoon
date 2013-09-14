@@ -21,7 +21,6 @@
 
 #include "nsEscape.h"
 #include "nsPIDOMWindow.h"
-#include "nsIDOMEventTarget.h"
 #include "nsIWebNavigation.h"
 #include "nsIWindowWatcher.h"
 
@@ -77,6 +76,7 @@
 #endif
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 /* Define Class IDs */
 static NS_DEFINE_CID(kWindowCID,           NS_WINDOW_CID);
@@ -294,11 +294,15 @@ nsWebShellWindow::RequestWindowClose(nsIWidget* aWidget)
   nsCOMPtr<nsIXULWindow> xulWindow(this);
 
   nsCOMPtr<nsPIDOMWindow> window(do_GetInterface(mDocShell));
-  nsCOMPtr<nsIDOMEventTarget> eventTarget = do_QueryInterface(window);
+  nsCOMPtr<EventTarget> eventTarget = do_QueryInterface(window);
 
   nsCOMPtr<nsIPresShell> presShell = mDocShell->GetPresShell();
 
-  if (eventTarget) {
+  if (!presShell) {
+    bool dying;
+    MOZ_ASSERT(NS_SUCCEEDED(mDocShell->IsBeingDestroyed(&dying)) && dying,
+               "No presShell, but window is not being destroyed");
+  } else if (eventTarget) {
     nsRefPtr<nsPresContext> presContext = presShell->GetPresContext();
 
     nsEventStatus status = nsEventStatus_eIgnore;
@@ -682,7 +686,7 @@ bool nsWebShellWindow::ExecuteCloseHandler()
   nsCOMPtr<nsIXULWindow> kungFuDeathGrip(this);
 
   nsCOMPtr<nsPIDOMWindow> window(do_GetInterface(mDocShell));
-  nsCOMPtr<nsIDOMEventTarget> eventTarget = do_QueryInterface(window);
+  nsCOMPtr<EventTarget> eventTarget = do_QueryInterface(window);
 
   if (eventTarget) {
     nsCOMPtr<nsIContentViewer> contentViewer;

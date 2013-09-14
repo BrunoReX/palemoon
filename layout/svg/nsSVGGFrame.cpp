@@ -8,7 +8,7 @@
 
 // Keep others in (case-insensitive) order:
 #include "nsGkAtoms.h"
-#include "nsIDOMSVGTransformable.h"
+#include "SVGTransformableElement.h"
 #include "nsIFrame.h"
 #include "SVGGraphicsElement.h"
 #include "nsSVGIntegrationUtils.h"
@@ -28,16 +28,16 @@ NS_NewSVGGFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
 NS_IMPL_FRAMEARENA_HELPERS(nsSVGGFrame)
 
 #ifdef DEBUG
-NS_IMETHODIMP
+void
 nsSVGGFrame::Init(nsIContent* aContent,
                   nsIFrame* aParent,
                   nsIFrame* aPrevInFlow)
 {
-  nsCOMPtr<nsIDOMSVGTransformable> transformable = do_QueryInterface(aContent);
-  NS_ASSERTION(transformable,
-               "The element doesn't support nsIDOMSVGTransformable\n");
+  NS_ASSERTION(aContent->IsSVG() &&
+               static_cast<nsSVGElement*>(aContent)->IsTransformable(),
+               "The element doesn't support nsIDOMSVGTransformable");
 
-  return nsSVGGFrameBase::Init(aContent, aParent, aPrevInFlow);
+  nsSVGGFrameBase::Init(aContent, aParent, aPrevInFlow);
 }
 #endif /* DEBUG */
 
@@ -93,8 +93,10 @@ nsSVGGFrame::AttributeChanged(int32_t         aNameSpaceID,
 {
   if (aNameSpaceID == kNameSpaceID_None &&
       aAttribute == nsGkAtoms::transform) {
-    nsSVGUtils::InvalidateBounds(this, false);
-    nsSVGUtils::ScheduleReflowSVG(this);
+    // We don't invalidate for transform changes (the layers code does that).
+    // Also note that SVGTransformableElement::GetAttributeChangeHint will
+    // return nsChangeHint_UpdateOverflow for "transform" attribute changes
+    // and cause DoApplyRenderingChangeToTree to make the SchedulePaint call.
     NotifySVGChanged(TRANSFORM_CHANGED);
   }
   

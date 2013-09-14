@@ -98,27 +98,27 @@ static const char* kNonUserInputEvent = ":system";
     
 static const GInterfaceInfo atk_if_infos[] = {
     {(GInterfaceInitFunc)componentInterfaceInitCB,
-     (GInterfaceFinalizeFunc) NULL, NULL}, 
+     (GInterfaceFinalizeFunc) nullptr, nullptr}, 
     {(GInterfaceInitFunc)actionInterfaceInitCB,
-     (GInterfaceFinalizeFunc) NULL, NULL},
+     (GInterfaceFinalizeFunc) nullptr, nullptr},
     {(GInterfaceInitFunc)valueInterfaceInitCB,
-     (GInterfaceFinalizeFunc) NULL, NULL},
+     (GInterfaceFinalizeFunc) nullptr, nullptr},
     {(GInterfaceInitFunc)editableTextInterfaceInitCB,
-     (GInterfaceFinalizeFunc) NULL, NULL},
+     (GInterfaceFinalizeFunc) nullptr, nullptr},
     {(GInterfaceInitFunc)hypertextInterfaceInitCB,
-     (GInterfaceFinalizeFunc) NULL, NULL},
+     (GInterfaceFinalizeFunc) nullptr, nullptr},
     {(GInterfaceInitFunc)hyperlinkImplInterfaceInitCB,
-     (GInterfaceFinalizeFunc) NULL, NULL},
+     (GInterfaceFinalizeFunc) nullptr, nullptr},
     {(GInterfaceInitFunc)selectionInterfaceInitCB,
-     (GInterfaceFinalizeFunc) NULL, NULL},
+     (GInterfaceFinalizeFunc) nullptr, nullptr},
     {(GInterfaceInitFunc)tableInterfaceInitCB,
-     (GInterfaceFinalizeFunc) NULL, NULL},
+     (GInterfaceFinalizeFunc) nullptr, nullptr},
     {(GInterfaceInitFunc)textInterfaceInitCB,
-     (GInterfaceFinalizeFunc) NULL, NULL},
+     (GInterfaceFinalizeFunc) nullptr, nullptr},
     {(GInterfaceInitFunc)documentInterfaceInitCB,
-     (GInterfaceFinalizeFunc) NULL, NULL},
+     (GInterfaceFinalizeFunc) nullptr, nullptr},
     {(GInterfaceInitFunc)imageInterfaceInitCB,
-     (GInterfaceFinalizeFunc) NULL, NULL}
+     (GInterfaceFinalizeFunc) nullptr, nullptr}
 };
 
 /**
@@ -140,6 +140,8 @@ struct MaiAtkObjectClass
 };
 
 static guint mai_atk_object_signals [LAST_SIGNAL] = { 0, };
+
+static void MaybeFireNameChange(AtkObject* aAtkObj, const nsString& aNewName);
 
 G_BEGIN_DECLS
 /* callbacks for MaiAtkObject */
@@ -197,7 +199,7 @@ G_END_DECLS
 static GType GetMaiAtkType(uint16_t interfacesBits);
 static const char * GetUniqueMaiAtkTypeName(uint16_t interfacesBits);
 
-static gpointer parent_class = NULL;
+static gpointer parent_class = nullptr;
 
 static GQuark quark_mai_hyperlink = 0;
 
@@ -209,15 +211,15 @@ mai_atk_object_get_type(void)
     if (!type) {
         static const GTypeInfo tinfo = {
             sizeof(MaiAtkObjectClass),
-            (GBaseInitFunc)NULL,
-            (GBaseFinalizeFunc)NULL,
+            (GBaseInitFunc)nullptr,
+            (GBaseFinalizeFunc)nullptr,
             (GClassInitFunc)classInitCB,
-            (GClassFinalizeFunc)NULL,
-            NULL, /* class data */
+            (GClassFinalizeFunc)nullptr,
+            nullptr, /* class data */
             sizeof(MaiAtkObject), /* instance size */
             0, /* nb preallocs */
-            (GInstanceInitFunc)NULL,
-            NULL /* value table */
+            (GInstanceInitFunc)nullptr,
+            nullptr /* value table */
         };
 
         type = g_type_register_static(ATK_TYPE_OBJECT,
@@ -310,7 +312,7 @@ AccessibleWrap::GetNativeInterface(void** aOutAccessible)
         NS_ENSURE_TRUE(type, NS_ERROR_FAILURE);
         mAtkObject =
             reinterpret_cast<AtkObject *>
-                            (g_object_new(type, NULL));
+                            (g_object_new(type, nullptr));
         NS_ENSURE_TRUE(mAtkObject, NS_ERROR_OUT_OF_MEMORY);
 
         atk_object_initialize(mAtkObject, this);
@@ -401,15 +403,15 @@ GetMaiAtkType(uint16_t interfacesBits)
     GType type;
     static const GTypeInfo tinfo = {
         sizeof(MaiAtkObjectClass),
-        (GBaseInitFunc) NULL,
-        (GBaseFinalizeFunc) NULL,
-        (GClassInitFunc) NULL,
-        (GClassFinalizeFunc) NULL,
-        NULL, /* class data */
+        (GBaseInitFunc) nullptr,
+        (GBaseFinalizeFunc) nullptr,
+        (GClassInitFunc) nullptr,
+        (GClassFinalizeFunc) nullptr,
+        nullptr, /* class data */
         sizeof(MaiAtkObject), /* instance size */
         0, /* nb preallocs */
-        (GInstanceInitFunc) NULL,
-        NULL /* value table */
+        (GInstanceInitFunc) nullptr,
+        nullptr /* value table */
     };
 
     /*
@@ -497,7 +499,7 @@ classInitCB(AtkObjectClass *aClass)
                   MAI_TYPE_ATK_OBJECT,
                   G_SIGNAL_RUN_LAST,
                   0, /* default signal handler */
-                  NULL, NULL,
+                  nullptr, nullptr,
                   g_cclosure_marshal_VOID__VOID,
                   G_TYPE_NONE, 0);
     mai_atk_object_signals [CREATE] =
@@ -505,7 +507,7 @@ classInitCB(AtkObjectClass *aClass)
                   MAI_TYPE_ATK_OBJECT,
                   G_SIGNAL_RUN_LAST,
                   0, /* default signal handler */
-                  NULL, NULL,
+                  nullptr, nullptr,
                   g_cclosure_marshal_VOID__VOID,
                   G_TYPE_NONE, 0);
     mai_atk_object_signals [DEACTIVATE] =
@@ -513,7 +515,7 @@ classInitCB(AtkObjectClass *aClass)
                   MAI_TYPE_ATK_OBJECT,
                   G_SIGNAL_RUN_LAST,
                   0, /* default signal handler */
-                  NULL, NULL,
+                  nullptr, nullptr,
                   g_cclosure_marshal_VOID__VOID,
                   G_TYPE_NONE, 0);
     mai_atk_object_signals [DESTROY] =
@@ -521,7 +523,7 @@ classInitCB(AtkObjectClass *aClass)
                   MAI_TYPE_ATK_OBJECT,
                   G_SIGNAL_RUN_LAST,
                   0, /* default signal handler */
-                  NULL, NULL,
+                  nullptr, nullptr,
                   g_cclosure_marshal_VOID__VOID,
                   G_TYPE_NONE, 0);
     mai_atk_object_signals [MAXIMIZE] =
@@ -529,7 +531,7 @@ classInitCB(AtkObjectClass *aClass)
                   MAI_TYPE_ATK_OBJECT,
                   G_SIGNAL_RUN_LAST,
                   0, /* default signal handler */
-                  NULL, NULL,
+                  nullptr, nullptr,
                   g_cclosure_marshal_VOID__VOID,
                   G_TYPE_NONE, 0);
     mai_atk_object_signals [MINIMIZE] =
@@ -537,7 +539,7 @@ classInitCB(AtkObjectClass *aClass)
                   MAI_TYPE_ATK_OBJECT,
                   G_SIGNAL_RUN_LAST,
                   0, /* default signal handler */
-                  NULL, NULL,
+                  nullptr, nullptr,
                   g_cclosure_marshal_VOID__VOID,
                   G_TYPE_NONE, 0);
     mai_atk_object_signals [RESIZE] =
@@ -545,7 +547,7 @@ classInitCB(AtkObjectClass *aClass)
                   MAI_TYPE_ATK_OBJECT,
                   G_SIGNAL_RUN_LAST,
                   0, /* default signal handler */
-                  NULL, NULL,
+                  nullptr, nullptr,
                   g_cclosure_marshal_VOID__VOID,
                   G_TYPE_NONE, 0);
     mai_atk_object_signals [RESTORE] =
@@ -553,7 +555,7 @@ classInitCB(AtkObjectClass *aClass)
                   MAI_TYPE_ATK_OBJECT,
                   G_SIGNAL_RUN_LAST,
                   0, /* default signal handler */
-                  NULL, NULL,
+                  nullptr, nullptr,
                   g_cclosure_marshal_VOID__VOID,
                   G_TYPE_NONE, 0);
 
@@ -600,14 +602,39 @@ getNameCB(AtkObject* aAtkObj)
   if (!accWrap)
     return nullptr;
 
-  nsAutoString uniName;
-  accWrap->Name(uniName);
+  nsAutoString name;
+  accWrap->Name(name);
 
-  NS_ConvertUTF8toUTF16 objName(aAtkObj->name);
-  if (!uniName.Equals(objName))
-    atk_object_set_name(aAtkObj, NS_ConvertUTF16toUTF8(uniName).get());
+  // XXX Firing an event from here does not seem right
+  MaybeFireNameChange(aAtkObj, name);
 
   return aAtkObj->name;
+}
+
+static void
+MaybeFireNameChange(AtkObject* aAtkObj, const nsString& aNewName)
+{
+  NS_ConvertUTF16toUTF8 newNameUTF8(aNewName);
+  if (aAtkObj->name && newNameUTF8.Equals(aAtkObj->name))
+    return;
+
+  // Below we duplicate the functionality of atk_object_set_name(),
+  // but without calling atk_object_get_name(). Instead of
+  // atk_object_get_name() we directly access aAtkObj->name. This is because
+  // atk_object_get_name() would call getNameCB() which would call
+  // MaybeFireNameChange() (or atk_object_set_name() before this problem was
+  // fixed) and we would get an infinite recursion.
+  // See http://bugzilla.mozilla.org/733712
+
+  // Do not notify for initial name setting.
+  // See bug http://bugzilla.gnome.org/665870
+  bool notify = !!aAtkObj->name;
+
+  free(aAtkObj->name);
+  aAtkObj->name = strdup(newNameUTF8.get());
+
+  if (notify)
+    g_object_notify(G_OBJECT(aAtkObj), "accessible-name");
 }
 
 const gchar *
@@ -617,7 +644,7 @@ getDescriptionCB(AtkObject *aAtkObj)
     if (!accWrap || accWrap->IsDefunct())
         return nullptr;
 
-    /* nsIAccessible is responsible for the non-NULL description */
+    /* nsIAccessible is responsible for the nonnull description */
     nsAutoString uniDesc;
     accWrap->Description(uniDesc);
 
@@ -853,21 +880,29 @@ refRelationSetCB(AtkObject *aAtkObj)
   if (!accWrap)
     return relation_set;
 
-  uint32_t relationTypes[] = {
-    nsIAccessibleRelation::RELATION_LABELLED_BY,
-    nsIAccessibleRelation::RELATION_LABEL_FOR,
-    nsIAccessibleRelation::RELATION_NODE_CHILD_OF,
+  // Keep in sync with AtkRelationType enum.
+  static const uint32_t relationTypes[] = {
     nsIAccessibleRelation::RELATION_CONTROLLED_BY,
     nsIAccessibleRelation::RELATION_CONTROLLER_FOR,
-    nsIAccessibleRelation::RELATION_EMBEDS,
+    nsIAccessibleRelation::RELATION_LABEL_FOR,
+    nsIAccessibleRelation::RELATION_LABELLED_BY,
+    nsIAccessibleRelation::RELATION_MEMBER_OF,
+    nsIAccessibleRelation::RELATION_NODE_CHILD_OF,
     nsIAccessibleRelation::RELATION_FLOWS_TO,
     nsIAccessibleRelation::RELATION_FLOWS_FROM,
+    nsIAccessibleRelation::RELATION_SUBWINDOW_OF,
+    nsIAccessibleRelation::RELATION_EMBEDS,
+    nsIAccessibleRelation::RELATION_EMBEDDED_BY,
+    nsIAccessibleRelation::RELATION_POPUP_FOR,
+    nsIAccessibleRelation::RELATION_PARENT_WINDOW_OF,
     nsIAccessibleRelation::RELATION_DESCRIBED_BY,
     nsIAccessibleRelation::RELATION_DESCRIPTION_FOR,
+    nsIAccessibleRelation::RELATION_NODE_PARENT_OF
   };
 
   for (uint32_t i = 0; i < ArrayLength(relationTypes); i++) {
-    AtkRelationType atkType = static_cast<AtkRelationType>(relationTypes[i]);
+    // Shift to 1 to skip ATK_RELATION_NULL.
+    AtkRelationType atkType = static_cast<AtkRelationType>(i + 1);
     AtkRelation* atkRelation =
       atk_relation_set_get_relation_by_type(relation_set, atkType);
     if (atkRelation)
@@ -916,14 +951,13 @@ AccessibleWrap::HandleAccEvent(AccEvent* aEvent)
   nsresult rv = Accessible::HandleAccEvent(aEvent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  return FirePlatformEvent(aEvent);
-}
-
-nsresult
-AccessibleWrap::FirePlatformEvent(AccEvent* aEvent)
-{
     Accessible* accessible = aEvent->GetAccessible();
     NS_ENSURE_TRUE(accessible, NS_ERROR_FAILURE);
+
+    // The accessible can become defunct if we have an xpcom event listener
+    // which decides it would be fun to change the DOM and flush layout.
+    if (accessible->IsDefunct())
+        return NS_OK;
 
     uint32_t type = aEvent->GetEventType();
 
@@ -967,9 +1001,8 @@ AccessibleWrap::FirePlatformEvent(AccEvent* aEvent)
       {
         nsAutoString newName;
         accessible->Name(newName);
-        NS_ConvertUTF16toUTF8 utf8Name(newName);
-        if (!atkObj->name || !utf8Name.Equals(atkObj->name))
-          atk_object_set_name(atkObj, utf8Name.get());
+
+        MaybeFireNameChange(atkObj, newName);
 
         break;
       }
@@ -1211,13 +1244,13 @@ AccessibleWrap::FireAtkTextChangedEvent(AccEvent* aEvent,
     // see bug 619002
     signal_name = g_strconcat(isInserted ? "text_changed::insert" :
                               "text_changed::delete",
-                              isFromUserInput ? "" : kNonUserInputEvent, NULL);
+                              isFromUserInput ? "" : kNonUserInputEvent, nullptr);
     g_signal_emit_by_name(aObject, signal_name, start, length);
   } else {
     nsAutoString text;
     event->GetModifiedText(text);
     signal_name = g_strconcat(isInserted ? "text-insert" : "text-remove",
-                              isFromUserInput ? "" : "::system", NULL);
+                              isFromUserInput ? "" : "::system", nullptr);
     g_signal_emit_by_name(aObject, signal_name, start, length,
                           NS_ConvertUTF16toUTF8(text).get());
   }
@@ -1236,8 +1269,8 @@ AccessibleWrap::FireAtkShowHideEvent(AccEvent* aEvent,
 
     bool isFromUserInput = aEvent->IsFromUserInput();
     char *signal_name = g_strconcat(aIsAdded ? "children_changed::add" :  "children_changed::remove",
-                                    isFromUserInput ? "" : kNonUserInputEvent, NULL);
-    g_signal_emit_by_name(parentObject, signal_name, indexInParent, aObject, NULL);
+                                    isFromUserInput ? "" : kNonUserInputEvent, nullptr);
+    g_signal_emit_by_name(parentObject, signal_name, indexInParent, aObject, nullptr);
     g_free(signal_name);
 
     return NS_OK;

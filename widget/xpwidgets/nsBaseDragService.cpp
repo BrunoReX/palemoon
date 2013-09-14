@@ -37,6 +37,7 @@
 
 #include "gfxContext.h"
 #include "gfxPlatform.h"
+#include <algorithm>
 
 using namespace mozilla;
 
@@ -606,9 +607,9 @@ nsBaseDragService::DrawDragForImage(nsPresContext* aPresContext,
   if (destSize.width > maxWidth || destSize.height > maxHeight) {
     float scale = 1.0;
     if (destSize.width > maxWidth)
-      scale = NS_MIN(scale, float(maxWidth) / destSize.width);
+      scale = std::min(scale, float(maxWidth) / destSize.width);
     if (destSize.height > maxHeight)
-      scale = NS_MIN(scale, float(maxHeight) / destSize.height);
+      scale = std::min(scale, float(maxHeight) / destSize.height);
 
     destSize.width = NSToIntFloor(float(destSize.width) * scale);
     destSize.height = NSToIntFloor(float(destSize.height) * scale);
@@ -638,7 +639,8 @@ nsBaseDragService::DrawDragForImage(nsPresContext* aPresContext,
       gfxMatrix().Scale(srcSize.width/outRect.Width(), srcSize.height/outRect.Height());
     nsIntRect imgSize(0, 0, srcSize.width, srcSize.height);
     imgContainer->Draw(ctx, gfxPattern::FILTER_GOOD, scale, outRect, imgSize,
-                       destSize, imgIContainer::FLAG_SYNC_DECODE);
+                       destSize, nullptr, imgIContainer::FRAME_CURRENT,
+                       imgIContainer::FLAG_SYNC_DECODE);
     return NS_OK;
   } else {
     return aCanvas->RenderContextsExternal(ctx, gfxPattern::FILTER_GOOD);

@@ -24,13 +24,12 @@ namespace {
 bool
 IsChromeType(nsIDocShell *aDocShell)
 {
-  nsCOMPtr<nsIDocShellTreeItem> ds = do_QueryInterface(aDocShell);
-  if (!ds) {
+  if (!aDocShell) {
     return false;
   }
 
   int32_t itemType;
-  ds->GetItemType(&itemType);
+  aDocShell->GetItemType(&itemType);
   return itemType == nsIDocShellTreeItem::typeChrome;
 }
 
@@ -66,37 +65,16 @@ nsScreen::nsScreen()
   SetIsDOMBinding();
 }
 
-void
-nsScreen::Reset()
-{
-  hal::UnlockScreenOrientation();
-
-  if (mEventListener) {
-    nsCOMPtr<nsIDOMEventTarget> target = do_QueryInterface(GetOwner());
-    if (target) {
-      target->RemoveSystemEventListener(NS_LITERAL_STRING("mozfullscreenchange"),
-                                        mEventListener, /* usecapture */ true);
-    }
-
-    mEventListener = nullptr;
-  }
-}
-
 nsScreen::~nsScreen()
 {
-  Reset();
+  MOZ_ASSERT(!mEventListener);
   hal::UnregisterScreenConfigurationObserver(this);
 }
 
 
-DOMCI_DATA(Screen, nsScreen)
-
-NS_IMPL_CYCLE_COLLECTION_INHERITED_0(nsScreen, nsDOMEventTargetHelper)
-
 // QueryInterface implementation for nsScreen
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(nsScreen)
+NS_INTERFACE_MAP_BEGIN(nsScreen)
   NS_INTERFACE_MAP_ENTRY(nsIDOMScreen)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(Screen)
 NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetHelper)
 
 NS_IMPL_ADDREF_INHERITED(nsScreen, nsDOMEventTargetHelper)
@@ -246,10 +224,8 @@ nsScreen::GetLockOrientationPermission() const
     return LOCK_ALLOWED;
   }
 
-  nsCOMPtr<nsIDOMDocument> domDoc;
-  owner->GetDocument(getter_AddRefs(domDoc));
-  nsCOMPtr<nsIDocument> doc = do_QueryInterface(domDoc);
-  if (!doc) {
+  nsCOMPtr<nsIDocument> doc = owner->GetDoc();
+  if (!doc || doc->Hidden()) {
     return LOCK_DENIED;
   }
 
@@ -260,54 +236,53 @@ nsScreen::GetLockOrientationPermission() const
   }
 
   // Other content must be full-screen in order to lock orientation.
-  bool fullscreen;
-  domDoc->GetMozFullScreen(&fullscreen);
-
-  return fullscreen ? FULLSCREEN_LOCK_ALLOWED : LOCK_DENIED;
+  return doc->MozFullScreen() ? FULLSCREEN_LOCK_ALLOWED : LOCK_DENIED;
 }
 
 NS_IMETHODIMP
 nsScreen::MozLockOrientation(const JS::Value& aOrientation, JSContext* aCx,
                              bool* aReturn)
 {
-  if (aOrientation.isObject() && IsArrayLike(aCx, &aOrientation.toObject())) {
-    JSObject* seq = &aOrientation.toObject();
-    uint32_t length;
-    // JS_GetArrayLength actually works on all objects
-    if (!JS_GetArrayLength(aCx, seq, &length)) {
-      return NS_ERROR_FAILURE;
-    }
-
-    Sequence<nsString> orientations;
-    if (!orientations.SetCapacity(length)) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-
-    for (uint32_t i = 0; i < length; ++i) {
-      JS::Value temp;
-      if (!JS_GetElement(aCx, seq, i, &temp)) {
+  if (aOrientation.isObject()) {
+    JS::Rooted<JSObject*> seq(aCx, &aOrientation.toObject());
+    if (IsArrayLike(aCx, seq)) {
+      uint32_t length;
+      // JS_GetArrayLength actually works on all objects
+      if (!JS_GetArrayLength(aCx, seq, &length)) {
         return NS_ERROR_FAILURE;
       }
 
-      js::RootedString jsString(aCx, JS_ValueToString(aCx, temp));
-      if (!jsString) {
-        return NS_ERROR_FAILURE;
+      Sequence<nsString> orientations;
+      if (!orientations.SetCapacity(length)) {
+        return NS_ERROR_OUT_OF_MEMORY;
       }
 
-      nsDependentJSString str;
-      if (!str.init(aCx, jsString)) {
-        return NS_ERROR_FAILURE;
+      for (uint32_t i = 0; i < length; ++i) {
+        JS::Rooted<JS::Value> temp(aCx);
+        if (!JS_GetElement(aCx, seq, i, temp.address())) {
+          return NS_ERROR_FAILURE;
+        }
+
+        JS::RootedString jsString(aCx, JS_ValueToString(aCx, temp));
+        if (!jsString) {
+          return NS_ERROR_FAILURE;
+        }
+
+        nsDependentJSString str;
+        if (!str.init(aCx, jsString)) {
+          return NS_ERROR_FAILURE;
+        }
+
+        *orientations.AppendElement() = str;
       }
 
-      *orientations.AppendElement() = str;
+      ErrorResult rv;
+      *aReturn = MozLockOrientation(orientations, rv);
+      return rv.ErrorCode();
     }
-
-    ErrorResult rv;
-    *aReturn = MozLockOrientation(orientations, rv);
-    return rv.ErrorCode();
   }
 
-  js::RootedString jsString(aCx, JS_ValueToString(aCx, aOrientation));
+  JS::RootedString jsString(aCx, JS_ValueToString(aCx, aOrientation));
   if (!jsString) {
     return NS_ERROR_FAILURE;
   }
@@ -374,7 +349,7 @@ nsScreen::MozLockOrientation(const Sequence<nsString>& aOrientations,
       // and when we will have to unlock the screen.
       // This needs to be done before LockScreenOrientation call to make sure
       // the locking can be unlocked.
-      nsCOMPtr<nsIDOMEventTarget> target = do_QueryInterface(GetOwner());
+      nsCOMPtr<EventTarget> target = do_QueryInterface(GetOwner()->GetDoc());
       if (!target) {
         return false;
       }
@@ -396,7 +371,7 @@ nsScreen::MozLockOrientation(const Sequence<nsString>& aOrientations,
 
   // This is only for compilers that don't understand that the previous switch
   // will always return.
-  MOZ_NOT_REACHED();
+  MOZ_NOT_REACHED("unexpected lock orientation permission value");
   return false;
 }
 
@@ -415,9 +390,9 @@ nsScreen::SlowMozUnlockOrientation()
 
 /* virtual */
 JSObject*
-nsScreen::WrapObject(JSContext* aCx, JSObject* aScope, bool* aTriedToWrap)
+nsScreen::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
 {
-  return ScreenBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return ScreenBinding::Wrap(aCx, aScope, this);
 }
 
 NS_IMPL_ISUPPORTS1(nsScreen::FullScreenEventListener, nsIDOMEventListener)
@@ -432,25 +407,17 @@ nsScreen::FullScreenEventListener::HandleEvent(nsIDOMEvent* aEvent)
   MOZ_ASSERT(eventType.EqualsLiteral("mozfullscreenchange"));
 #endif
 
-  nsCOMPtr<nsIDOMEventTarget> target;
-  aEvent->GetCurrentTarget(getter_AddRefs(target));
+  nsCOMPtr<EventTarget> target = aEvent->InternalDOMEvent()->GetCurrentTarget();
+  MOZ_ASSERT(target);
+
+  nsCOMPtr<nsIDocument> doc = do_QueryInterface(target);
+  MOZ_ASSERT(doc);
 
   // We have to make sure that the event we got is the event sent when
   // fullscreen is disabled because we could get one when fullscreen
   // got enabled if the lock call is done at the same moment.
-  nsCOMPtr<nsIDOMWindow> window = do_QueryInterface(target);
-  MOZ_ASSERT(window);
-
-  nsCOMPtr<nsIDOMDocument> doc;
-  window->GetDocument(getter_AddRefs(doc));
-  // If we have no doc, we will just continue, remove the event and unlock.
-  // This is an edge case were orientation lock and fullscreen is meaningless.
-  if (doc) {
-    bool fullscreen;
-    doc->GetMozFullScreen(&fullscreen);
-    if (fullscreen) {
-      return NS_OK;
-    }
+  if (doc->MozFullScreen()) {
+    return NS_OK;
   }
 
   target->RemoveSystemEventListener(NS_LITERAL_STRING("mozfullscreenchange"),

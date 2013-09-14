@@ -243,8 +243,6 @@ private:
   nsresult ResumeAllDownloads(nsCOMArray<nsDownload>& aDownloads, bool aResumeAll);
   nsresult RemoveDownloadsForURI(mozIStorageStatement* aStatement, nsIURI *aURI);
 
-  bool IsInGlobalPrivateBrowsing();
-
   nsCOMArray<nsIDownloadProgressListener> mListeners;
   nsCOMArray<nsIDownloadProgressListener> mPrivacyAwareListeners;
   nsCOMPtr<nsIStringBundle> mBundle;
@@ -423,6 +421,11 @@ private:
    */
   enum AutoResume { DONT_RESUME, AUTO_RESUME };
   AutoResume mAutoResume;
+
+  /**
+   * Stores the SHA-256 hash associated with the downloaded file.
+   */
+  nsAutoCString mHash;
 
   friend class nsDownloadManager;
 };

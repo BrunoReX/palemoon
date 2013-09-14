@@ -431,9 +431,6 @@ nsEditorEventListener::KeyPress(nsIDOMEvent* aKeyEvent)
     return NS_OK;
   }
 
-  // Transfer the event's trusted-ness to our editor
-  nsEditor::HandlingTrustedAction operation(mEditor, aKeyEvent);
-
   // DOM event handling happens in two passes, the client pass and the system
   // pass.  We do all of our processing in the system pass, to allow client
   // handlers the opportunity to cancel events and prevent typing in the editor.
@@ -584,9 +581,6 @@ nsEditorEventListener::HandleText(nsIDOMEvent* aTextEvent)
   if (mEditor->IsReadonly() || mEditor->IsDisabled()) {
     return NS_OK;
   }
-
-  // Transfer the event's trusted-ness to our editor
-  nsEditor::HandlingTrustedAction operation(mEditor, aTextEvent);
 
   return mEditor->UpdateIMEComposition(composedText, textRangeList);
 }
@@ -826,9 +820,6 @@ nsEditorEventListener::HandleEndComposition(nsIDOMEvent* aCompositionEvent)
     return;
   }
 
-  // Transfer the event's trusted-ness to our editor
-  nsEditor::HandlingTrustedAction operation(mEditor, aCompositionEvent);
-
   mEditor->EndIMEComposition();
 }
 
@@ -906,45 +897,7 @@ nsEditorEventListener::Blur(nsIDOMEvent* aEvent)
   if (element)
     return NS_OK;
 
-  // turn off selection and caret
-  nsCOMPtr<nsISelectionController>selCon;
-  mEditor->GetSelectionController(getter_AddRefs(selCon));
-  if (selCon)
-  {
-    nsCOMPtr<nsISelection> selection;
-    selCon->GetSelection(nsISelectionController::SELECTION_NORMAL,
-                         getter_AddRefs(selection));
-
-    nsCOMPtr<nsISelectionPrivate> selectionPrivate =
-      do_QueryInterface(selection);
-    if (selectionPrivate) {
-      selectionPrivate->SetAncestorLimiter(nullptr);
-    }
-
-    nsCOMPtr<nsIPresShell> presShell = GetPresShell();
-    if (presShell) {
-      nsRefPtr<nsCaret> caret = presShell->GetCaret();
-      if (caret) {
-        caret->SetIgnoreUserModify(true);
-      }
-    }
-
-    selCon->SetCaretEnabled(false);
-
-    if(mEditor->IsFormWidget() || mEditor->IsPasswordEditor() ||
-       mEditor->IsReadonly() || mEditor->IsDisabled() ||
-       mEditor->IsInputFiltered())
-    {
-      selCon->SetDisplaySelection(nsISelectionController::SELECTION_HIDDEN);//hide but do NOT turn off
-    }
-    else
-    {
-      selCon->SetDisplaySelection(nsISelectionController::SELECTION_DISABLED);
-    }
-
-    selCon->RepaintSelection(nsISelectionController::SELECTION_NORMAL);
-  }
-
+  mEditor->FinalizeSelection();
   return NS_OK;
 }
 

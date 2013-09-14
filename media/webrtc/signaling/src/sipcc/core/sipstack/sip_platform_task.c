@@ -23,7 +23,10 @@
 #include "sip_socket_api.h"
 #include "platform_api.h"
 #include <sys/stat.h>
+#include <stdio.h>
+#include <unistd.h>
 #include "prprf.h"
+#include "thread_monitor.h"
 
 /*---------------------------------------------------------
  *
@@ -46,7 +49,7 @@
 #else
 #define SIP_IPC_TEMP_BASEPATH "/tmp"
 #endif
-#define SIP_IPC_TEMP_DIRNAME "SIP-%d"
+#define SIP_IPC_TEMP_DIRNAME "SIP-XXXXXXXX"
 #define SIP_MSG_SERV_SUFFIX "/Main"
 #define SIP_MSG_CLNT_SUFFIX "/MsgQ"
 
@@ -136,11 +139,13 @@ sip_platform_task_init (void)
 }
 
 /**
- * sip_get_sock_dir_tmpl creates a template for the name of a directory
- * where IPC sockets will live. If the TMPDIR environment is set, that is used
- * as a base; otherwise SIP_IPC_TEMP_BASEPATH is used as a fallback.
- * SIP_IPC_TEMP_DIRNAME is added as a child directory, and if suffix is non-null,
- * that is appended to the end.
+ * sip_get_sock_dir returns the name of a temporary directory
+ * where IPC sockets will live, creating one if it does not yet exist.
+ *
+ * If the TMPDIR environment is set, that is used as a base; otherwise
+ * SIP_IPC_TEMP_BASEPATH is used as a fallback. SIP_IPC_TEMP_DIRAME is
+ * added as a child directory, and if suffix is non-null, that is
+ * appended to the end.
  *
  * The primary motivation for using TMPDIR is that that is how Fennec
  * (GeckoAppShell.java) passes in a scratch directory that is guaranteed to be
@@ -153,22 +158,33 @@ sip_platform_task_init (void)
  * @return            The length of the written output not including the NULL
  *                    terminator, or -1 if an error occurs.
  */
-static PRUint32 sip_get_sock_dir_tmpl(char *out, PRUint32 outlen,
-                                      const char *suffix) {
+static char sip_sock_dir[sizeof(sip_serv_sock_addr.sun_path)] = "\0";
+static size_t sip_sock_dir_len = 0;
+static uint32_t sip_get_sock_dir(char *out, uint32_t outlen,
+                                 const char *suffix) {
+    const char *fname = "sip_get_sock_dir";
+    // Initialize the base string and create the directory
+    // if it hasn't been created yet.
+    if (!sip_sock_dir_len) {
+        char *tmpdir;
+        tmpdir = getenv("TMPDIR");
+        if (!tmpdir) {
+          tmpdir = SIP_IPC_TEMP_BASEPATH;
+        }
+        sip_sock_dir_len = PR_snprintf(sip_sock_dir, sizeof(sip_sock_dir),
+                                       "%s/%s", tmpdir, SIP_IPC_TEMP_DIRNAME);
 
-    char *tmpdir;
-    tmpdir = getenv("TMPDIR");
-
-    if (suffix) {
-        return PR_snprintf(out, outlen, "%s/%s%s",
-                           tmpdir ? tmpdir : SIP_IPC_TEMP_BASEPATH,
-                           SIP_IPC_TEMP_DIRNAME,
-                           suffix);
+        // Note that mkdtemp modifies the string passed to it.
+        if (!mkdtemp(sip_sock_dir))
+        {
+          CCSIP_DEBUG_ERROR(SIP_F_PREFIX"mkdtemp() returned error"
+                            " errno=%d\n", fname, cpr_errno);
+          sip_sock_dir_len = 0;
+          return -1;
+        }
     }
 
-    return PR_snprintf(out, outlen, "%s/%s",
-                       tmpdir ? tmpdir : SIP_IPC_TEMP_BASEPATH,
-                       SIP_IPC_TEMP_DIRNAME);
+    return PR_snprintf(out, outlen, "%s%s", sip_sock_dir, suffix ? suffix : "");
 }
 
 /**
@@ -248,15 +264,15 @@ void sip_platform_task_msgqwait (void *arg)
     uint8_t       num_messages = 0;
     uint8_t       response = 0;
     boolean       quit_thread = FALSE;
-    char          template[sizeof(sip_serv_sock_addr.sun_path)];
+    char          tempdir[sizeof(sip_serv_sock_addr.sun_path)];
 
     if (msgq == NULL) {
-        CCSIP_DEBUG_ERROR(SIP_F_PREFIX"task msgq is null, exiting\n", fname);
+        CCSIP_DEBUG_ERROR(SIP_F_PREFIX"task msgq is null, exiting", fname);
         return;
     }
 
     if (platThreadInit("SIP IPCQ task") != 0) {
-        CCSIP_DEBUG_ERROR(SIP_F_PREFIX"failed to attach thread to JVM\n", fname);
+        CCSIP_DEBUG_ERROR(SIP_F_PREFIX"failed to attach thread to JVM", fname);
         return;
     }
 
@@ -285,8 +301,8 @@ void sip_platform_task_msgqwait (void *arg)
      * The main thread is ready. set global client socket address
      * so that the server can send back response.
      */
-    sip_get_sock_dir_tmpl(template, sizeof(template), SIP_MSG_CLNT_SUFFIX);
-    cpr_set_sockun_addr(&sip_clnt_sock_addr, template, getpid());
+    sip_get_sock_dir(tempdir, sizeof(tempdir), SIP_MSG_CLNT_SUFFIX);
+    cpr_set_sockun_addr(&sip_clnt_sock_addr, tempdir, 0);
 
     sip_ipc_clnt_socket = sip_create_IPC_sock(sip_clnt_sock_addr.sun_path);
 
@@ -309,6 +325,7 @@ void sip_platform_task_msgqwait (void *arg)
 
             switch (syshdr->Cmd) {
             case THREAD_UNLOAD:
+                thread_ended(THREADMON_MSGQ);
                 quit_thread = TRUE;
                     break;
                 default:
@@ -333,7 +350,7 @@ void sip_platform_task_msgqwait (void *arg)
         }
 
         if (num_messages) {
-            CCSIP_DEBUG_TASK(DEB_F_PREFIX"%d msg available on msgq\n", DEB_F_PREFIX_ARGS(SIP_MSG_QUE, fname), num_messages);
+            CCSIP_DEBUG_TASK(DEB_F_PREFIX"%d msg available on msgq", DEB_F_PREFIX_ARGS(SIP_MSG_QUE, fname), num_messages);
             /*
              * There are some number of messages sent to the main thread,
              * trigger the main SIP thread via IPC to process the message.
@@ -342,7 +359,7 @@ void sip_platform_task_msgqwait (void *arg)
                           sizeof(num_messages), 0,
                           (cpr_sockaddr_t *)&sip_serv_sock_addr,
                           cpr_sun_len(sip_serv_sock_addr)) < 0) {
-                CCSIP_DEBUG_ERROR(SIP_F_PREFIX"send IPC failed errno=%d\n", fname, cpr_errno);
+                CCSIP_DEBUG_ERROR(SIP_F_PREFIX"send IPC failed errno=%d", fname, cpr_errno);
             }
 
             if (FALSE == quit_thread) {
@@ -391,12 +408,12 @@ static void sip_process_int_msg (void)
     }
 
     if (num_messages == 0) {
-        CCSIP_DEBUG_ERROR(SIP_F_PREFIX"message queue is empty!\n", fname);
+        CCSIP_DEBUG_ERROR(SIP_F_PREFIX"message queue is empty!", fname);
         return;
     }
 
     if (num_messages > MAX_SIP_MESSAGES) {
-        CCSIP_DEBUG_ERROR(SIP_F_PREFIX"number of  messages on queue exceeds maximum %d\n", fname,
+        CCSIP_DEBUG_ERROR(SIP_F_PREFIX"number of  messages on queue exceeds maximum %d", fname,
                           num_messages);
         num_messages = MAX_SIP_MESSAGES;
     }
@@ -408,7 +425,6 @@ static void sip_process_int_msg (void)
         syshdr = int_msg->syshdr;
         if (msg != NULL && syshdr != NULL) {
             if (syshdr->Cmd == THREAD_UNLOAD) {
-                char template[sizeof(sip_serv_sock_addr.sun_path)];
                 char stmpdir[sizeof(sip_serv_sock_addr.sun_path)];
 
                 /*
@@ -418,10 +434,9 @@ static void sip_process_int_msg (void)
                 cprCloseSocket(sip_ipc_serv_socket);
                 unlink(sip_serv_sock_addr.sun_path);
 
-                sip_get_sock_dir_tmpl(template, sizeof(template), NULL);
-                PR_snprintf(stmpdir, sizeof(stmpdir), template, getpid());
+                sip_get_sock_dir(stmpdir, sizeof(stmpdir), NULL);
                 if (rmdir(stmpdir) != 0) {
-                    CCSIP_DEBUG_ERROR(SIP_F_PREFIX"failed to remove temp dir\n",
+                    CCSIP_DEBUG_ERROR(SIP_F_PREFIX"failed to remove temp dir",
                                       fname);
                 }
             }
@@ -444,7 +459,7 @@ static void sip_process_int_msg (void)
                   sizeof(response), 0,
                   (cpr_sockaddr_t *)&sip_clnt_sock_addr,
                   cpr_sun_len(sip_clnt_sock_addr)) < 0) {
-        CCSIP_DEBUG_ERROR(SIP_F_PREFIX"%d sending IPC\n", fname);
+        CCSIP_DEBUG_ERROR(SIP_F_PREFIX"sending IPC", fname);
     }
 }
 
@@ -471,7 +486,7 @@ sip_platform_task_loop (void *arg)
 
     sip_msgq = (cprMsgQueue_t) arg;
     if (!sip_msgq) {
-        CCSIP_DEBUG_ERROR(SIP_F_PREFIX"sip_msgq is null, exiting\n", fname);
+        CCSIP_DEBUG_ERROR(SIP_F_PREFIX"sip_msgq is null, exiting", fname);
         return;
     }
     sip.msgQueue = sip_msgq;
@@ -483,7 +498,7 @@ sip_platform_task_loop (void *arg)
     SIPTaskInit();
 
     if (platThreadInit("SIPStack Task") != 0) {
-        CCSIP_DEBUG_ERROR(SIP_F_PREFIX"failed to attach thread to JVM\n", fname);
+        CCSIP_DEBUG_ERROR(SIP_F_PREFIX"failed to attach thread to JVM", fname);
         return;
     }
 
@@ -496,19 +511,9 @@ sip_platform_task_loop (void *arg)
      * Setup IPC socket addresses for main thread (server)
      */
     {
-      char template[sizeof(sip_serv_sock_addr.sun_path)];
       char stmpdir[sizeof(sip_serv_sock_addr.sun_path)];
-
-      sip_get_sock_dir_tmpl(template, sizeof(template), NULL);
-      PR_snprintf(stmpdir, sizeof(stmpdir), template, getpid());
-
-      if (mkdir(stmpdir, 0700) != 0) {
-          CCSIP_DEBUG_ERROR(SIP_F_PREFIX"failed to create temp dir\n", fname);
-          return;
-      }
-
-      sip_get_sock_dir_tmpl(template, sizeof(template), SIP_MSG_SERV_SUFFIX);
-      cpr_set_sockun_addr(&sip_serv_sock_addr, template, getpid());
+      sip_get_sock_dir(stmpdir, sizeof(stmpdir), SIP_MSG_SERV_SUFFIX);
+      cpr_set_sockun_addr(&sip_serv_sock_addr, stmpdir, 0);
     }
 
     /*

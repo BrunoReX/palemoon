@@ -95,6 +95,7 @@ nrappkit copyright:
 #include "prio.h"
 #include "prnetdb.h"
 
+#include "mozilla/net/DNS.h"
 #include "nsCOMPtr.h"
 #include "nsASocketHandler.h"
 #include "nsISocketTransportService.h"
@@ -102,6 +103,7 @@ nrappkit copyright:
 #include "nsISupportsImpl.h"
 #include "nsServiceManagerUtils.h"
 #include "nsXPCOM.h"
+#include "runnable_utils.h"
 
 extern "C" {
 #include "nr_api.h"
@@ -109,7 +111,6 @@ extern "C" {
 #include "nr_socket.h"
 #include "nr_socket_local.h"
 }
-
 #include "nr_socket_prsock.h"
 
 // Implement the nsISupports ref counting
@@ -239,7 +240,31 @@ static int nr_transport_addr_to_praddr(nr_transport_addr *addr,
     return(_status);
   }
 
-static int nr_praddr_to_transport_addr(PRNetAddr *praddr,
+int nr_netaddr_to_transport_addr(const net::NetAddr *netaddr,
+  nr_transport_addr *addr)
+  {
+    int _status;
+    int r;
+
+    switch(netaddr->raw.family) {
+      case AF_INET:
+        if ((r = nr_ip4_port_to_transport_addr(ntohl(netaddr->inet.ip),
+                                               ntohs(netaddr->inet.port),
+                                               IPPROTO_UDP, addr)))
+          ABORT(r);
+        break;
+      case AF_INET6:
+        ABORT(R_BAD_ARGS);
+      default:
+        MOZ_ASSERT(false);
+        ABORT(R_BAD_ARGS);
+    }
+    _status=0;
+  abort:
+    return(_status);
+  }
+
+int nr_praddr_to_transport_addr(const PRNetAddr *praddr,
   nr_transport_addr *addr, int keep)
   {
     int _status;
@@ -252,9 +277,9 @@ static int nr_praddr_to_transport_addr(PRNetAddr *praddr,
         ip4.sin_addr.s_addr = praddr->inet.ip;
         ip4.sin_port = praddr->inet.port;
         if ((r = nr_sockaddr_to_transport_addr((sockaddr *)&ip4,
-                                              sizeof(ip4),
-                                              IPPROTO_UDP, 1,
-              addr)))
+                                               sizeof(ip4),
+                                               IPPROTO_UDP, keep,
+                                               addr)))
           ABORT(r);
         break;
       case PR_AF_INET6:
@@ -265,6 +290,7 @@ static int nr_praddr_to_transport_addr(PRNetAddr *praddr,
 #endif
         ABORT(R_BAD_ARGS);
       default:
+        MOZ_ASSERT(false);
         ABORT(R_BAD_ARGS);
     }
 
@@ -304,7 +330,7 @@ int NrSocket::create(nr_transport_addr *addr) {
     ABORT(R_INTERNAL);
   }
 
-  r_log(LOG_GENERIC,LOG_DEBUG,"Creating socket %d with addr %s",
+  r_log(LOG_GENERIC,LOG_DEBUG,"Creating socket %p with addr %s",
         fd_, addr->as_string);
   nr_transport_addr_copy(&my_addr_,addr);
 
@@ -331,6 +357,11 @@ int NrSocket::create(nr_transport_addr *addr) {
     ABORT(R_INTERNAL);
   }
 
+  // Remember our thread.
+  ststhread_ = do_QueryInterface(stservice, &rv);
+  if (!NS_SUCCEEDED(rv))
+    ABORT(R_INTERNAL);
+
   // Finally, register with the STS
   rv = stservice->AttachSocket(fd_, this);
   if (!NS_SUCCEEDED(rv)) {
@@ -346,6 +377,7 @@ abort:
 // This should be called on the STS thread.
 int NrSocket::sendto(const void *msg, size_t len,
                      int flags, nr_transport_addr *to) {
+  ASSERT_ON_THREAD(ststhread_);
   int r,_status;
   PRNetAddr naddr;
   int32_t status;
@@ -359,8 +391,10 @@ int NrSocket::sendto(const void *msg, size_t len,
   // TODO: Convert flags?
   status = PR_SendTo(fd_, msg, len, flags, &naddr, PR_INTERVAL_NO_WAIT);
   if (status < 0 || (size_t)status != len) {
-    r_log_e(LOG_GENERIC, LOG_INFO, "Error in sendto %s", to->as_string);
+    if (PR_GetError() == PR_WOULD_BLOCK_ERROR)
+      ABORT(R_WOULDBLOCK);
 
+    r_log_e(LOG_GENERIC, LOG_INFO, "Error in sendto %s", to->as_string);
     ABORT(R_IO_ERROR);
   }
 
@@ -372,6 +406,7 @@ abort:
 int NrSocket::recvfrom(void * buf, size_t maxlen,
                                        size_t *len, int flags,
                                        nr_transport_addr *from) {
+  ASSERT_ON_THREAD(ststhread_);
   int r,_status;
   PRNetAddr nfrom;
   int32_t status;
@@ -394,11 +429,13 @@ abort:
 }
 
 int NrSocket::getaddr(nr_transport_addr *addrp) {
+  ASSERT_ON_THREAD(ststhread_);
   return nr_transport_addr_copy(addrp, &my_addr_);
 }
 
 // Close the socket so that the STS will detach and then kill it
 void NrSocket::close() {
+  ASSERT_ON_THREAD(ststhread_);
   mCondition = NS_BASE_STREAM_CLOSED;
 }
 }  // close namespace

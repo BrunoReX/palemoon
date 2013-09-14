@@ -86,6 +86,24 @@ nsHostObjectProtocolHandler::GetDataEntryPrincipal(const nsACString& aUri)
   return res->mPrincipal;
 }
 
+void
+nsHostObjectProtocolHandler::Traverse(const nsACString& aUri,
+                                      nsCycleCollectionTraversalCallback& aCallback)
+{
+  if (!gDataTable) {
+    return;
+  }
+
+  DataInfo* res;
+  gDataTable->Get(aUri, &res);
+  if (!res) {
+    return;
+  }
+
+  NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(aCallback, "HostObjectProtocolHandler DataInfo.mObject");
+  aCallback.NoteXPCOMChild(res->mObject);
+}
+
 static DataInfo*
 GetDataInfo(const nsACString& aUri)
 {
@@ -190,9 +208,17 @@ nsHostObjectProtocolHandler::NewChannel(nsIURI* uri, nsIChannel* *result)
 
   nsCOMPtr<nsISupports> owner = do_QueryInterface(info->mPrincipal);
 
-  nsAutoString type;
+  nsString type;
   rv = blob->GetType(type);
   NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIDOMFile> file = do_QueryInterface(info->mObject);
+  if (file) {
+    nsString filename;
+    rv = file->GetName(filename);
+    NS_ENSURE_SUCCESS(rv, rv);
+    channel->SetContentDispositionFilename(filename);
+  }
 
   uint64_t size;
   rv = blob->GetSize(&size);

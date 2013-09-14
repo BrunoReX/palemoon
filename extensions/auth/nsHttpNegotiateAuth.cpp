@@ -104,6 +104,7 @@ nsHttpNegotiateAuth::ChallengeReceived(nsIHttpAuthenticableChannel *authChannel,
             return NS_ERROR_ABORT;
         }
 
+        req_flags |= nsIAuthModule::REQ_PROXY_AUTH;
         nsCOMPtr<nsIProxyInfo> proxyInfo;
         authChannel->GetProxyInfo(getter_AddRefs(proxyInfo));
         NS_ENSURE_STATE(proxyInfo);
@@ -237,7 +238,7 @@ nsHttpNegotiateAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChanne
         //
         // Decode the response that followed the "Negotiate" token
         //
-        if (PL_Base64Decode(challenge, len, (char *) inToken) == NULL) {
+        if (PL_Base64Decode(challenge, len, (char *) inToken) == nullptr) {
             free(inToken);
             return(NS_ERROR_UNEXPECTED);
         }

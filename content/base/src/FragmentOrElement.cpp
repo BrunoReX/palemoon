@@ -15,11 +15,11 @@
 
 #include "mozilla/dom/FragmentOrElement.h"
 
-#include "nsDOMAttribute.h"
+#include "mozilla/dom/Attr.h"
 #include "nsDOMAttributeMap.h"
 #include "nsIAtom.h"
 #include "nsINodeInfo.h"
-#include "nsIDocument.h"
+#include "nsIDocumentInlines.h"
 #include "nsIDOMNodeList.h"
 #include "nsIDOMDocument.h"
 #include "nsIContentIterator.h"
@@ -72,7 +72,6 @@
 #include "nsLayoutUtils.h"
 #include "nsGkAtoms.h"
 #include "nsContentUtils.h"
-#include "nsIJSContextStack.h"
 
 #include "nsIDOMEventListener.h"
 #include "nsIWebNavigation.h"
@@ -88,7 +87,6 @@
 #include "nsGenericHTMLElement.h"
 #include "nsIEditor.h"
 #include "nsIEditorIMESupport.h"
-#include "nsIEditorDocShell.h"
 #include "nsEventDispatcher.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsIControllers.h"
@@ -127,8 +125,6 @@
 
 using namespace mozilla;
 using namespace mozilla::dom;
-
-NS_DEFINE_IID(kThisPtrOffsetsSID, NS_THISPTROFFSETS_SID);
 
 int32_t nsIContent::sTabFocusModel = eTabFocus_any;
 bool nsIContent::sTabFocusModelAppliesToXUL = false;
@@ -216,7 +212,7 @@ nsIContent::HasIndependentSelection()
 dom::Element*
 nsIContent::GetEditingHost()
 {
-  // If this isn't editable, return NULL.
+  // If this isn't editable, return nullptr.
   NS_ENSURE_TRUE(IsEditableInternal(), nullptr);
 
   nsIDocument* doc = GetCurrentDoc();
@@ -227,9 +223,9 @@ nsIContent::GetEditingHost()
   }
 
   nsIContent* content = this;
-  for (dom::Element* parent = GetElementParent();
+  for (dom::Element* parent = GetParentElement();
        parent && parent->HasFlag(NODE_IS_EDITABLE);
-       parent = content->GetElementParent()) {
+       parent = content->GetParentElement()) {
     content = parent;
   }
   return content->AsElement();
@@ -341,14 +337,14 @@ nsIContent::GetBaseURI() const
 static inline JSObject*
 GetJSObjectChild(nsWrapperCache* aCache)
 {
-  return aCache->PreservingWrapper() ? aCache->GetWrapperPreserveColor() : NULL;
+  return aCache->PreservingWrapper() ? aCache->GetWrapperPreserveColor() : nullptr;
 }
 
 static bool
-NeedsScriptTraverse(nsWrapperCache* aCache)
+NeedsScriptTraverse(nsINode* aNode)
 {
-  JSObject* o = GetJSObjectChild(aCache);
-  return o && xpc_IsGrayGCThing(o);
+  return aNode->PreservingWrapper() && aNode->GetWrapperPreserveColor() &&
+         !aNode->IsBlackAndDoesNotNeedTracing(aNode);
 }
 
 //----------------------------------------------------------------------
@@ -364,11 +360,11 @@ NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_0(nsChildContentList)
 // nsChildContentList only ever has a single child, its wrapper, so if
 // the wrapper is black, the list can't be part of a garbage cycle.
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(nsChildContentList)
-  return !NeedsScriptTraverse(tmp);
+  return tmp->IsBlack();
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_END
 
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_IN_CC_BEGIN(nsChildContentList)
-  return !NeedsScriptTraverse(tmp);
+  return tmp->IsBlackAndDoesNotNeedTracing(tmp);
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_IN_CC_END
 
 // CanSkipThis returns false to avoid problems with incomplete unlinking.
@@ -377,20 +373,14 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_END
 
 NS_INTERFACE_TABLE_HEAD(nsChildContentList)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
-  NS_NODELIST_OFFSET_AND_INTERFACE_TABLE_BEGIN(nsChildContentList)
-    NS_INTERFACE_TABLE_ENTRY(nsChildContentList, nsINodeList)
-    NS_INTERFACE_TABLE_ENTRY(nsChildContentList, nsIDOMNodeList)
-  NS_OFFSET_AND_INTERFACE_TABLE_END
-  NS_OFFSET_AND_INTERFACE_TABLE_TO_MAP_SEGUE
-  NS_INTERFACE_MAP_ENTRIES_CYCLE_COLLECTION(nsChildContentList)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(NodeList)
+  NS_INTERFACE_TABLE2(nsChildContentList, nsINodeList, nsIDOMNodeList)
+  NS_INTERFACE_TABLE_TO_MAP_SEGUE_CYCLE_COLLECTION(nsChildContentList)
 NS_INTERFACE_MAP_END
 
 JSObject*
-nsChildContentList::WrapObject(JSContext *cx, JSObject *scope,
-                               bool *triedToWrap)
+nsChildContentList::WrapObject(JSContext *cx, JS::Handle<JSObject*> scope)
 {
-  return NodeListBinding::Wrap(cx, scope, this, triedToWrap);
+  return NodeListBinding::Wrap(cx, scope, this);
 }
 
 NS_IMETHODIMP
@@ -698,9 +688,7 @@ FragmentOrElement::GetChildren(uint32_t aFilter)
     }
   }
 
-  nsINodeList* returnList = nullptr;
-  list.forget(&returnList);
-  return returnList;
+  return list.forget();
 }
 
 static nsIContent*
@@ -843,6 +831,43 @@ nsIContent::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
   return NS_OK;
 }
 
+bool
+nsIContent::GetAttr(int32_t aNameSpaceID, nsIAtom* aName,
+                    nsAString& aResult) const
+{
+  if (IsElement()) {
+    return AsElement()->GetAttr(aNameSpaceID, aName, aResult);
+  }
+  aResult.Truncate();
+  return false;
+}
+
+bool
+nsIContent::HasAttr(int32_t aNameSpaceID, nsIAtom* aName) const
+{
+  return IsElement() && AsElement()->HasAttr(aNameSpaceID, aName);
+}
+
+bool
+nsIContent::AttrValueIs(int32_t aNameSpaceID,
+                        nsIAtom* aName,
+                        const nsAString& aValue,
+                        nsCaseTreatment aCaseSensitive) const
+{
+  return IsElement() &&
+    AsElement()->AttrValueIs(aNameSpaceID, aName, aValue, aCaseSensitive);
+}
+
+bool
+nsIContent::AttrValueIs(int32_t aNameSpaceID,
+                        nsIAtom* aName,
+                        nsIAtom* aValue,
+                        nsCaseTreatment aCaseSensitive) const
+{
+  return IsElement() &&
+    AsElement()->AttrValueIs(aNameSpaceID, aName, aValue, aCaseSensitive);
+}
+
 const nsAttrValue*
 FragmentOrElement::DoGetClasses() const
 {
@@ -962,8 +987,6 @@ FragmentOrElement::FireNodeInserted(nsIDocument* aDoc,
 //----------------------------------------------------------------------
 
 // nsISupports implementation
-
-NS_IMPL_CYCLE_COLLECTION_CLASS(FragmentOrElement)
 
 #define SUBTREE_UNBINDINGS_PER_RUNNABLE 500
 
@@ -1131,9 +1154,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FragmentOrElement)
   }
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(FragmentOrElement)
-  nsINode::Trace(tmp, aCallback, aClosure);
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
+NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(FragmentOrElement)
 
 void
 FragmentOrElement::MarkUserData(void* aObject, nsIAtom* aKey, void* aChild,
@@ -1666,6 +1687,7 @@ NS_INTERFACE_MAP_BEGIN(FragmentOrElement)
   NS_INTERFACE_MAP_ENTRY(nsIContent)
   NS_INTERFACE_MAP_ENTRY(nsINode)
   NS_INTERFACE_MAP_ENTRY(nsIDOMEventTarget)
+  NS_INTERFACE_MAP_ENTRY(mozilla::dom::EventTarget)
   NS_INTERFACE_MAP_ENTRY_TEAROFF(nsISupportsWeakReference,
                                  new nsNodeSupportsWeakRefTearoff(this))
   NS_INTERFACE_MAP_ENTRY_TEAROFF(nsIDOMNodeSelector,

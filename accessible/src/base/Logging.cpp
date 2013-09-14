@@ -65,7 +65,7 @@ EnableLogging(const char* aModulesStr)
     size_t tokenLen = strcspn(token, ",");
     for (unsigned int idx = 0; idx < ArrayLength(sModuleMap); idx++) {
       if (strncmp(token, sModuleMap[idx].mStr, tokenLen) == 0) {
-#if !defined(MOZ_PROFILING) && (!defined(MOZ_DEBUG) || defined(MOZ_OPTIMIZE))
+#if !defined(MOZ_PROFILING) && (!defined(DEBUG) || defined(MOZ_OPTIMIZE))
         // Stack tracing on profiling enabled or debug not optimized builds.
         if (strncmp(token, "stack", tokenLen) == 0)
           break;
@@ -166,6 +166,7 @@ LogDocState(nsIDocument* aDocumentNode)
   printf(", %sinitial", aDocumentNode->IsInitialDocument() ? "" : "not ");
   printf(", %sshowing", aDocumentNode->IsShowing() ? "" : "not ");
   printf(", %svisible", aDocumentNode->IsVisible() ? "" : "not ");
+  printf(", %svisible considering ancestors", aDocumentNode->IsVisibleConsideringAncestors() ? "" : "not ");
   printf(", %sactive", aDocumentNode->IsActive() ? "" : "not ");
   printf(", %sresource", aDocumentNode->IsResourceDoc() ? "" : "not ");
   printf(", has %srole content",
@@ -272,6 +273,9 @@ LogShellLoadType(nsIDocShell* aDocShell)
       break;
     case LOAD_RELOAD_BYPASS_PROXY_AND_CACHE:
       printf("reload bypass proxy and cache; ");
+      break;
+    case LOAD_RELOAD_ALLOW_MIXED_CONTENT:
+      printf("reload allow mixed content; ");
       break;
     case LOAD_LINK:
       printf("link; ");

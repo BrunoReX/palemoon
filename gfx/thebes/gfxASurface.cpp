@@ -16,6 +16,7 @@
 #include "nsRect.h"
 
 #include "cairo.h"
+#include <algorithm>
 
 #ifdef CAIRO_HAS_WIN32_SURFACE
 #include "gfxWindowsSurface.h"
@@ -125,14 +126,13 @@ gfxASurface::SetSurfaceWrapper(cairo_surface_t *csurf, gfxASurface *asurf)
 already_AddRefed<gfxASurface>
 gfxASurface::Wrap (cairo_surface_t *csurf)
 {
-    gfxASurface *result;
+    nsRefPtr<gfxASurface> result;
 
     /* Do we already have a wrapper for this surface? */
     result = GetSurfaceWrapper(csurf);
     if (result) {
         // fprintf(stderr, "Existing wrapper for %p -> %p\n", csurf, result);
-        NS_ADDREF(result);
-        return result;
+        return result.forget();
     }
 
     /* No wrapper; figure out the surface type and create it */
@@ -176,8 +176,7 @@ gfxASurface::Wrap (cairo_surface_t *csurf)
 
     // fprintf(stderr, "New wrapper for %p -> %p\n", csurf, result);
 
-    NS_ADDREF(result);
-    return result;
+    return result.forget();
 }
 
 void
@@ -307,6 +306,35 @@ gfxASurface::CreateSimilarSurface(gfxContentType aContent,
     nsRefPtr<gfxASurface> result = Wrap(surface);
     cairo_surface_destroy(surface);
     return result.forget();
+}
+
+already_AddRefed<gfxImageSurface>
+gfxASurface::GetAsReadableARGB32ImageSurface()
+{
+    nsRefPtr<gfxImageSurface> imgSurface = GetAsImageSurface();
+    if (!imgSurface || imgSurface->Format() != gfxASurface::ImageFormatARGB32) {
+      imgSurface = CopyToARGB32ImageSurface();
+    }
+    return imgSurface.forget();
+}
+
+already_AddRefed<gfxImageSurface>
+gfxASurface::CopyToARGB32ImageSurface()
+{
+    if (!mSurface || !mSurfaceValid) {
+      return nullptr;
+    }
+
+    const gfxIntSize size = GetSize();
+    nsRefPtr<gfxImageSurface> imgSurface =
+        new gfxImageSurface(size, gfxASurface::ImageFormatARGB32);
+
+    gfxContext ctx(imgSurface);
+    ctx.SetOperator(gfxContext::OPERATOR_SOURCE);
+    ctx.SetSource(this);
+    ctx.Paint();
+
+    return imgSurface.forget();
 }
 
 int
@@ -604,12 +632,6 @@ public:
 
         return NS_OK;
     }
-
-    NS_IMETHOD GetExplicitNonHeap(int64_t *n)
-    {
-        *n = 0; // this reporter makes neither "explicit" non NONHEAP reports
-        return NS_OK;
-    }
 };
 
 NS_IMPL_ISUPPORTS1(SurfaceMemoryReporter, nsIMemoryMultiReporter)
@@ -682,7 +704,6 @@ gfxASurface::BytesPerPixel(gfxImageFormat aImageFormat)
   }
 }
 
-#ifdef MOZ_DUMP_IMAGES
 void
 gfxASurface::WriteAsPNG(const char* aFile)
 {
@@ -725,7 +746,8 @@ gfxASurface::WriteAsPNG_internal(FILE* aFile, bool aBinary)
   nsRefPtr<gfxImageSurface> imgsurf = GetAsImageSurface();
   gfxIntSize size;
 
-  if (!imgsurf) {
+  // FIXME/bug 831898: hack r5g6b5 for now.
+  if (!imgsurf || imgsurf->Format() == ImageFormatRGB16_565) {
     size = GetSize();
     if (size.width == -1 && size.height == -1) {
       printf("Could not determine surface size\n");
@@ -756,8 +778,8 @@ gfxASurface::WriteAsPNG_internal(FILE* aFile, bool aBinary)
   nsCOMPtr<imgIEncoder> encoder =
     do_CreateInstance("@mozilla.org/image/encoder;2?type=image/png");
   if (!encoder) {
-    int32_t w = NS_MIN(size.width, 8);
-    int32_t h = NS_MIN(size.height, 8);
+    int32_t w = std::min(size.width, 8);
+    int32_t h = std::min(size.height, 8);
     printf("Could not create encoder. Printing %dx%d pixels.\n", w, h);
     for (int32_t y = 0; y < h; ++y) {
       for (int32_t x = 0; x < w; ++x) {
@@ -861,5 +883,3 @@ gfxASurface::WriteAsPNG_internal(FILE* aFile, bool aBinary)
 
   return;
 }
-#endif
-

@@ -209,7 +209,7 @@ nsAttrAndChildArray::TakeChildAt(uint32_t aPos)
   memmove(pos, pos + 1, (childCount - aPos - 1) * sizeof(nsIContent*));
   SetChildCount(childCount - 1);
 
-  return child;
+  return dont_AddRef(child);
 }
 
 int32_t
@@ -313,6 +313,23 @@ nsAttrAndChildArray::GetAttr(nsIAtom* aLocalName, int32_t aNamespaceID) const
         return &ATTRS(mImpl)[i].mValue;
       }
     }
+  }
+
+  return nullptr;
+}
+
+const nsAttrValue*
+nsAttrAndChildArray::GetAttr(const nsAString& aLocalName) const
+{
+  uint32_t i, slotCount = AttrSlotCount();
+  for (i = 0; i < slotCount && AttrSlotIsTaken(i); ++i) {
+    if (ATTRS(mImpl)[i].mName.Equals(aLocalName)) {
+      return &ATTRS(mImpl)[i].mValue;
+    }
+  }
+
+  if (mImpl && mImpl->mMappedAttrs) {
+    return mImpl->mMappedAttrs->GetAttr(aLocalName);
   }
 
   return nullptr;

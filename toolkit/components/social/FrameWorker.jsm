@@ -30,7 +30,7 @@ var _nextPortId = 1;
 // Retrieves a reference to a WorkerHandle associated with a FrameWorker and a
 // new ClientPort.
 this.getFrameWorkerHandle =
- function getFrameWorkerHandle(url, clientWindow, name, origin) {
+ function getFrameWorkerHandle(url, clientWindow, name, origin, exposeLocalStorage = false) {
   // first create the client port we are going to use.  Later we will
   // message the worker to create the worker port.
   let portid = _nextPortId++;
@@ -39,7 +39,7 @@ this.getFrameWorkerHandle =
   let existingWorker = workerCache[url];
   if (!existingWorker) {
     // setup the worker and add this connection to the pending queue
-    let worker = new FrameWorker(url, name, origin);
+    let worker = new FrameWorker(url, name, origin, exposeLocalStorage);
     worker.pendingPorts.push(clientPort);
     existingWorker = workerCache[url] = worker;
   } else {
@@ -69,14 +69,16 @@ this.getFrameWorkerHandle =
  * the script does not have a full DOM but is instead run in a sandbox
  * that has a select set of methods cloned from the URL's domain.
  */
-function FrameWorker(url, name, origin) {
+function FrameWorker(url, name, origin, exposeLocalStorage) {
   this.url = url;
   this.name = name || url;
-  this.ports = {};
+  this.ports = new Map();
   this.pendingPorts = [];
   this.loaded = false;
   this.reloading = false;
   this.origin = origin;
+  this._injectController = null;
+  this.exposeLocalStorage = exposeLocalStorage;
 
   this.frame = makeHiddenFrame();
   this.load();
@@ -84,30 +86,37 @@ function FrameWorker(url, name, origin) {
 
 FrameWorker.prototype = {
   load: function FrameWorker_loadWorker() {
-    var self = this;
-    Services.obs.addObserver(function injectController(doc, topic, data) {
-      if (!doc.defaultView || doc.defaultView != self.frame.contentWindow) {
+    this._injectController = function(doc, topic, data) {
+      if (!doc.defaultView || doc.defaultView != this.frame.contentWindow) {
         return;
       }
-      Services.obs.removeObserver(injectController, "document-element-inserted");
+      this._maybeRemoveInjectController();
       try {
-        self.createSandbox();
+        this.createSandbox();
       } catch (e) {
         Cu.reportError("FrameWorker: failed to create sandbox for " + url + ". " + e);
       }
-    }, "document-element-inserted", false);
+    }.bind(this);
 
+    Services.obs.addObserver(this._injectController, "document-element-inserted", false);
     this.frame.setAttribute("src", this.url);
+  },
+
+  _maybeRemoveInjectController: function() {
+    if (this._injectController) {
+      Services.obs.removeObserver(this._injectController, "document-element-inserted");
+      this._injectController = null;
+    }
   },
 
   reload: function FrameWorker_reloadWorker() {
     // push all the ports into pending ports, they will be re-entangled
     // during the call to createSandbox after the document is reloaded
-    for (let [portid, port] in Iterator(this.ports)) {
+    for (let [, port] of this.ports) {
       port._window = null;
       this.pendingPorts.push(port);
     }
-    this.ports = {};
+    this.ports.clear();
     // Mark the provider as unloaded now, so that any new ports created after
     // this point but before the unload has fired are properly queued up.
     this.loaded = false;
@@ -125,17 +134,29 @@ FrameWorker.prototype = {
     // copy the window apis onto the sandbox namespace only functions or
     // objects that are naturally a part of an iframe, I'm assuming they are
     // safe to import this way
-    let workerAPI = ['WebSocket', 'localStorage', 'atob', 'btoa',
+    let workerAPI = ['WebSocket', 'atob', 'btoa',
                      'clearInterval', 'clearTimeout', 'dump',
                      'setInterval', 'setTimeout', 'XMLHttpRequest',
-                     'MozBlobBuilder', 'FileReader', 'Blob',
+                     'FileReader', 'Blob', 'EventSource', 'indexedDB',
                      'location'];
+
+    // Only expose localStorage if the caller opted-in
+    if (this.exposeLocalStorage) {
+      workerAPI.push('localStorage');
+    }
+
+    // Bug 798660 - XHR and WebSocket have issues in a sandbox and need
+    // to be unwrapped to work
+    let needsWaive = ['XMLHttpRequest', 'WebSocket'];
+    // Methods need to be bound with the proper |this|.
+    let needsBind = ['atob', 'btoa', 'dump', 'setInterval', 'clearInterval',
+                     'setTimeout', 'clearTimeout'];
     workerAPI.forEach(function(fn) {
       try {
-        // Bug 798660 - XHR and WebSocket have issues in a sandbox and need
-        // to be unwrapped to work
-        if (fn == "XMLHttpRequest" || fn == "WebSocket")
+        if (needsWaive.indexOf(fn) != -1)
           sandbox[fn] = XPCNativeWrapper.unwrap(workerWindow)[fn];
+        else if (needsBind.indexOf(fn) != -1)
+          sandbox[fn] = workerWindow[fn].bind(workerWindow);
         else
           sandbox[fn] = workerWindow[fn];
       }
@@ -224,7 +245,7 @@ FrameWorker.prototype = {
       }
       catch (e) {
         Cu.reportError("FrameWorker: Error setting up event listener for chrome side of the worker: " + e + "\n" + e.stack);
-        notifyWorkerError();
+        notifyWorkerError(worker);
         return;
       }
 
@@ -257,7 +278,7 @@ FrameWorker.prototype = {
     // window unloading as part of shutdown.
     workerWindow.addEventListener("unload", function unloadListener() {
       workerWindow.removeEventListener("unload", unloadListener);
-      for (let [portid, port] in Iterator(worker.ports)) {
+      for (let [, port] of worker.ports) {
         try {
           port.close();
         } catch (ex) {
@@ -267,7 +288,7 @@ FrameWorker.prototype = {
       // Closing the ports also removed it from this.ports via port-close,
       // but be safe incase one failed to close.  This must remain an array
       // incase we are being reloaded.
-      worker.ports = [];
+      worker.ports.clear();
       // The worker window may not have fired a load event yet, so pendingPorts
       // might still have items in it - close them too.
       worker.loaded = false;
@@ -302,6 +323,7 @@ FrameWorker.prototype = {
       // terminating an already terminated worker - ignore it
       return;
     }
+    this._maybeRemoveInjectController();
     // we want to "forget" about this worker now even though the termination
     // may not be complete for a little while...
     delete workerCache[this.url];
@@ -330,8 +352,8 @@ function makeHiddenFrame() {
   docShell.allowAuth = false;
   docShell.allowPlugins = false;
   docShell.allowImages = false;
+  docShell.allowMedia = false;
   docShell.allowWindowControl = false;
-  // TODO: disable media (bug 759964)
   return iframe;
 }
 
@@ -370,20 +392,20 @@ function initClientMessageHandler(worker, workerWindow) {
         break;
       case "port-close":
         // the worker side of the port was closed, so close this side too.
-        port = worker.ports[portid];
+        port = worker.ports.get(portid);
         if (!port) {
           // port already closed (which will happen when we call port.close()
           // below - the worker side will send us this message but we've
           // already closed it.)
           return;
         }
-        delete worker.ports[portid];
+        worker.ports.delete(portid);
         port.close();
         break;
 
       case "port-message":
         // the client posted a message to this worker port.
-        port = worker.ports[portid];
+        port = worker.ports.get(portid);
         if (!port) {
           return;
         }
@@ -442,7 +464,7 @@ ClientPort.prototype = {
 
   _createWorkerAndEntangle: function fw_ClientPort_createWorkerAndEntangle(worker) {
     this._window = worker.frame.contentWindow;
-    worker.ports[this._portid] = this;
+    worker.ports.set(this._portid, this);
     this._postControlMessage("port-create");
     for (let message of this._pendingMessagesOutgoing) {
       this._dopost(message);
@@ -452,7 +474,7 @@ ClientPort.prototype = {
     // "entangled" with the worker, in which case we need to disentangle it
     if (this._closed) {
       this._window = null;
-      delete worker.ports[this._portid];
+      worker.ports.delete(this._portid);
     }
   },
 

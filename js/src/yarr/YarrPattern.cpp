@@ -1,4 +1,5 @@
-/* vim: set ts=4 sw=4 tw=99 et:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  *
  * Copyright (C) 2009 Apple Inc. All rights reserved.
  * Copyright (C) 2010 Peter Varga (pvarga@inf.u-szeged.hu), University of Szeged
@@ -89,21 +90,21 @@ public:
         }
 
         // Add multiple matches, if necessary.
-        UCS2CanonicalizationRange* info = rangeInfoFor(ch);
+        const UCS2CanonicalizationRange* info = rangeInfoFor(ch);
         if (info->type == CanonicalizeUnique)
             addSorted(m_matchesUnicode, ch);
         else
             putUnicodeIgnoreCase(ch, info);
     }
 
-    void putUnicodeIgnoreCase(UChar ch, UCS2CanonicalizationRange* info)
+    void putUnicodeIgnoreCase(UChar ch, const UCS2CanonicalizationRange* info)
     {
         ASSERT(m_isCaseInsensitive);
         ASSERT(ch > 0x7f);
         ASSERT(ch >= info->begin && ch <= info->end);
         ASSERT(info->type != CanonicalizeUnique);
         if (info->type == CanonicalizeSet) {
-            for (uint16_t* set = characterSetInfo[info->value]; (ch = *set); ++set)
+            for (const uint16_t* set = characterSetInfo[info->value]; (ch = *set); ++set)
                 addSorted(m_matchesUnicode, ch);
         } else {
             addSorted(m_matchesUnicode, ch);
@@ -134,7 +135,7 @@ public:
         if (!m_isCaseInsensitive)
             return;
 
-        UCS2CanonicalizationRange* info = rangeInfoFor(lo);
+        const UCS2CanonicalizationRange* info = rangeInfoFor(lo);
         while (true) {
             // Handle the range [lo .. end]
             UChar end = std::min<UChar>(info->end, hi);
@@ -145,7 +146,7 @@ public:
                 break;
             case CanonicalizeSet: {
                 UChar ch;
-                for (uint16_t* set = characterSetInfo[info->value]; (ch = *set); ++set)
+                for (const uint16_t* set = characterSetInfo[info->value]; (ch = *set); ++set)
                     addSorted(m_matchesUnicode, ch);
                 break;
             }
@@ -325,7 +326,7 @@ public:
             return;
         }
 
-        UCS2CanonicalizationRange* info = rangeInfoFor(ch);
+        const UCS2CanonicalizationRange* info = rangeInfoFor(ch);
         if (info->type == CanonicalizeUnique) {
             m_alternative->m_terms.append(PatternTerm(ch));
             return;
@@ -491,11 +492,12 @@ public:
                     newDisjunction->m_parent = disjunction->m_parent;
                 }
                 PatternAlternative* newAlternative = newDisjunction->addNewAlternative();
+                newAlternative->m_terms.reserve(alternative->m_terms.size());
                 for (unsigned i = 0; i < alternative->m_terms.size(); ++i)
                     newAlternative->m_terms.append(copyTerm(alternative->m_terms[i], filterStartsWithBOL));
             }
         }
-        
+
         if (newDisjunction)
             m_pattern.m_disjunctions.append(newDisjunction);
         return newDisjunction;

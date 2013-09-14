@@ -15,8 +15,14 @@ using namespace mozilla::dom;
 
 /* Implementation */
 
-static nsSVGAttrTearoffTable<nsSVGBoolean, SVGAnimatedBoolean>
-  sSVGAnimatedBooleanTearoffTable;
+static inline
+nsSVGAttrTearoffTable<nsSVGBoolean, SVGAnimatedBoolean>&
+SVGAnimatedBooleanTearoffTable()
+{
+  static nsSVGAttrTearoffTable<nsSVGBoolean, SVGAnimatedBoolean>
+    sSVGAnimatedBooleanTearoffTable;
+  return sSVGAnimatedBooleanTearoffTable;
+}
 
 static nsresult
 GetValueFromString(const nsAString &aValueAsString,
@@ -80,8 +86,6 @@ nsSVGBoolean::GetBaseValueAtom() const
 void
 nsSVGBoolean::SetBaseValue(bool aValue, nsSVGElement *aSVGElement)
 {
-  NS_PRECONDITION(aValue == true || aValue == false, "Boolean out of range");
-
   if (aValue == mBaseVal) {
     return;
   }
@@ -106,24 +110,22 @@ nsSVGBoolean::SetAnimValue(bool aValue, nsSVGElement *aSVGElement)
   aSVGElement->DidAnimateBoolean(mAttrEnum);
 }
 
-nsresult
-nsSVGBoolean::ToDOMAnimatedBoolean(nsISupports **aResult,
-                                   nsSVGElement *aSVGElement)
+already_AddRefed<SVGAnimatedBoolean>
+nsSVGBoolean::ToDOMAnimatedBoolean(nsSVGElement* aSVGElement)
 {
   nsRefPtr<SVGAnimatedBoolean> domAnimatedBoolean =
-    sSVGAnimatedBooleanTearoffTable.GetTearoff(this);
+    SVGAnimatedBooleanTearoffTable().GetTearoff(this);
   if (!domAnimatedBoolean) {
     domAnimatedBoolean = new SVGAnimatedBoolean(this, aSVGElement);
-    sSVGAnimatedBooleanTearoffTable.AddTearoff(this, domAnimatedBoolean);
+    SVGAnimatedBooleanTearoffTable().AddTearoff(this, domAnimatedBoolean);
   }
 
-  domAnimatedBoolean.forget(aResult);
-  return NS_OK;
+  return domAnimatedBoolean.forget();
 }
 
 SVGAnimatedBoolean::~SVGAnimatedBoolean()
 {
-  sSVGAnimatedBooleanTearoffTable.RemoveTearoff(mVal);
+  SVGAnimatedBooleanTearoffTable().RemoveTearoff(mVal);
 }
 
 nsISMILAttr*
@@ -134,7 +136,7 @@ nsSVGBoolean::ToSMILAttr(nsSVGElement *aSVGElement)
 
 nsresult
 nsSVGBoolean::SMILBool::ValueFromString(const nsAString& aStr,
-                                        const nsISMILAnimationElement* /*aSrcElement*/,
+                                        const SVGAnimationElement* /*aSrcElement*/,
                                         nsSMILValue& aValue,
                                         bool& aPreventCachingOfSandwich) const
 {
@@ -144,7 +146,7 @@ nsSVGBoolean::SMILBool::ValueFromString(const nsAString& aStr,
     return rv;
   }
 
-  nsSMILValue val(&SMILBoolType::sSingleton);
+  nsSMILValue val(SMILBoolType::Singleton());
   val.mU.mBool = value;
   aValue = val;
   aPreventCachingOfSandwich = false;
@@ -155,7 +157,7 @@ nsSVGBoolean::SMILBool::ValueFromString(const nsAString& aStr,
 nsSMILValue
 nsSVGBoolean::SMILBool::GetBaseValue() const
 {
-  nsSMILValue val(&SMILBoolType::sSingleton);
+  nsSMILValue val(SMILBoolType::Singleton());
   val.mU.mBool = mVal->mBaseVal;
   return val;
 }
@@ -173,9 +175,9 @@ nsSVGBoolean::SMILBool::ClearAnimValue()
 nsresult
 nsSVGBoolean::SMILBool::SetAnimValue(const nsSMILValue& aValue)
 {
-  NS_ASSERTION(aValue.mType == &SMILBoolType::sSingleton,
+  NS_ASSERTION(aValue.mType == SMILBoolType::Singleton(),
                "Unexpected type to assign animated value");
-  if (aValue.mType == &SMILBoolType::sSingleton) {
+  if (aValue.mType == SMILBoolType::Singleton()) {
     mVal->SetAnimValue(uint16_t(aValue.mU.mBool), mSVGElement);
   }
   return NS_OK;

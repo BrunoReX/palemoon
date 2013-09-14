@@ -290,9 +290,7 @@ public:
   bool HasWidget() const { return mWindow != nullptr; }
   
   void SetForcedRepaint(bool aForceRepaint) { 
-    if (!mInAlternatePaint) { 
-      mForcedRepaint = aForceRepaint; 
-    }
+    mForcedRepaint = aForceRepaint; 
   }
 
   /**
@@ -373,8 +371,8 @@ public:
   virtual bool WindowMoved(nsIWidget* aWidget, int32_t x, int32_t y) MOZ_OVERRIDE;
   virtual bool WindowResized(nsIWidget* aWidget, int32_t aWidth, int32_t aHeight) MOZ_OVERRIDE;
   virtual bool RequestWindowClose(nsIWidget* aWidget) MOZ_OVERRIDE;
-  virtual void WillPaintWindow(nsIWidget* aWidget, bool aWillSendDidPaint) MOZ_OVERRIDE;
-  virtual bool PaintWindow(nsIWidget* aWidget, nsIntRegion aRegion, uint32_t aFlags) MOZ_OVERRIDE;
+  virtual void WillPaintWindow(nsIWidget* aWidget) MOZ_OVERRIDE;
+  virtual bool PaintWindow(nsIWidget* aWidget, nsIntRegion aRegion) MOZ_OVERRIDE;
   virtual void DidPaintWindow() MOZ_OVERRIDE;
   virtual void RequestRepaint() MOZ_OVERRIDE;
   virtual nsEventStatus HandleEvent(nsGUIEvent* aEvent, bool aUseAttachedEvents) MOZ_OVERRIDE;
@@ -466,11 +464,9 @@ private:
   nsRect            mDimBounds;
   // in our appunits
   nsPoint           mViewToWidgetOffset;
-  float             mOpacity;
   uint32_t          mVFlags;
   bool              mWidgetIsTopLevel;
   bool              mForcedRepaint;
-  bool              mInAlternatePaint;
 };
 
 #endif

@@ -6,6 +6,7 @@
 #ifndef __NS_SVGMARKERFRAME_H__
 #define __NS_SVGMARKERFRAME_H__
 
+#include "mozilla/Attributes.h"
 #include "gfxMatrix.h"
 #include "gfxRect.h"
 #include "nsFrame.h"
@@ -21,7 +22,12 @@ class nsIPresShell;
 class nsRenderingContext;
 class nsStyleContext;
 class nsSVGPathGeometryFrame;
-class nsSVGSVGElement;
+
+namespace mozilla {
+namespace dom {
+class SVGSVGElement;
+}
+}
 
 struct nsSVGMark;
 
@@ -46,29 +52,27 @@ public:
 
   // nsIFrame interface:
 #ifdef DEBUG
-  NS_IMETHOD Init(nsIContent*      aContent,
-                  nsIFrame*        aParent,
-                  nsIFrame*        aPrevInFlow);
+  virtual void Init(nsIContent*      aContent,
+                    nsIFrame*        aParent,
+                    nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
 #endif
 
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists) {
-    return NS_OK;
-  }
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE {}
 
   NS_IMETHOD AttributeChanged(int32_t         aNameSpaceID,
                               nsIAtom*        aAttribute,
-                              int32_t         aModType);
+                              int32_t         aModType) MOZ_OVERRIDE;
   /**
    * Get the "type" of the frame
    *
    * @see nsGkAtoms::svgMarkerFrame
    */
-  virtual nsIAtom* GetType() const;
+  virtual nsIAtom* GetType() const MOZ_OVERRIDE;
 
 #ifdef DEBUG
-  NS_IMETHOD GetFrameName(nsAString& aResult) const
+  NS_IMETHOD GetFrameName(nsAString& aResult) const MOZ_OVERRIDE
   {
     return MakeFrameName(NS_LITERAL_STRING("SVGMarker"), aResult);
   }
@@ -92,7 +96,7 @@ private:
   float mStrokeWidth, mX, mY, mAutoAngle;
 
   // nsSVGContainerFrame methods:
-  virtual gfxMatrix GetCanvasTM(uint32_t aFor);
+  virtual gfxMatrix GetCanvasTM(uint32_t aFor) MOZ_OVERRIDE;
 
   // A helper class to allow us to paint markers safely. The helper
   // automatically sets and clears the mInUse flag on the marker frame (to
@@ -110,7 +114,7 @@ private:
   };
 
   // nsSVGMarkerFrame methods:
-  void SetParentCoordCtxProvider(nsSVGSVGElement *aContext);
+  void SetParentCoordCtxProvider(mozilla::dom::SVGSVGElement *aContext);
 
   // recursion prevention flag
   bool mInUse;

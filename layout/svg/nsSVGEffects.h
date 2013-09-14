@@ -124,7 +124,7 @@ protected:
   public:
     SourceReference(nsSVGIDRenderingObserver* aContainer) : mContainer(aContainer) {}
   protected:
-    virtual void ElementChanged(Element* aFrom, Element* aTo) {
+    virtual void ElementChanged(Element* aFrom, Element* aTo) MOZ_OVERRIDE {
       mContainer->StopListening();
       nsReferencedElement::ElementChanged(aFrom, aTo);
       mContainer->StartListening();
@@ -134,14 +134,14 @@ protected:
      * Override IsPersistent because we want to keep tracking the element
      * for the ID even when it changes.
      */
-    virtual bool IsPersistent() { return true; }
+    virtual bool IsPersistent() MOZ_OVERRIDE { return true; }
   private:
     nsSVGIDRenderingObserver* mContainer;
   };
   
   SourceReference mElement;
   // The frame that this property is attached to
-   nsIFrame *mFrame;
+  nsIFrame *mFrame;
   // When a presshell is torn down, we don't delete the properties for
   // each frame until after the frames are destroyed. So here we remember
   // the presshell for the frames we care about and, before we use the frame,
@@ -166,7 +166,7 @@ public:
   NS_DECL_ISUPPORTS
 
   // nsISVGFilterProperty
-  virtual void Invalidate() { DoUpdate(); }
+  virtual void Invalidate() MOZ_OVERRIDE { DoUpdate(); }
 
 private:
   // nsSVGRenderingObserver
@@ -185,12 +185,21 @@ protected:
 class nsSVGTextPathProperty : public nsSVGIDRenderingObserver {
 public:
   nsSVGTextPathProperty(nsIURI *aURI, nsIFrame *aFrame, bool aReferenceImage)
-    : nsSVGIDRenderingObserver(aURI, aFrame, aReferenceImage) {}
+    : nsSVGIDRenderingObserver(aURI, aFrame, aReferenceImage)
+    , mValid(true) {}
 
   virtual bool ObservesReflow() MOZ_OVERRIDE { return false; }
 
 protected:
   virtual void DoUpdate() MOZ_OVERRIDE;
+
+private:
+  /**
+   * Returns true if the target of the textPath is the frame of a 'path' element.
+   */
+  bool TargetIsValid();
+
+  bool mValid;
 };
  
 class nsSVGPaintingProperty : public nsSVGIDRenderingObserver {

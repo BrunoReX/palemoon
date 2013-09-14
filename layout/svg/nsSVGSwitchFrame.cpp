@@ -27,9 +27,9 @@ public:
   NS_DECL_FRAMEARENA_HELPERS
 
 #ifdef DEBUG
-  NS_IMETHOD Init(nsIContent*      aContent,
-                  nsIFrame*        aParent,
-                  nsIFrame*        aPrevInFlow);
+  virtual void Init(nsIContent*      aContent,
+                    nsIFrame*        aParent,
+                    nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
 #endif
 
   /**
@@ -46,9 +46,9 @@ public:
   }
 #endif
 
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists);
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE;
 
   // nsISVGChildFrame interface:
   NS_IMETHOD PaintSVG(nsRenderingContext* aContext, const nsIntRect *aDirtyRect);
@@ -74,15 +74,15 @@ NS_NewSVGSwitchFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
 NS_IMPL_FRAMEARENA_HELPERS(nsSVGSwitchFrame)
 
 #ifdef DEBUG
-NS_IMETHODIMP
+void
 nsSVGSwitchFrame::Init(nsIContent* aContent,
                        nsIFrame* aParent,
                        nsIFrame* aPrevInFlow)
 {
-  nsCOMPtr<nsIDOMSVGSwitchElement> svgSwitch = do_QueryInterface(aContent);
-  NS_ASSERTION(svgSwitch, "Content is not an SVG switch\n");
+  NS_ASSERTION(aContent->IsSVG(nsGkAtoms::svgSwitch),
+               "Content is not an SVG switch");
 
-  return nsSVGSwitchFrameBase::Init(aContent, aParent, aPrevInFlow);
+  nsSVGSwitchFrameBase::Init(aContent, aParent, aPrevInFlow);
 }
 #endif /* DEBUG */
 
@@ -92,16 +92,15 @@ nsSVGSwitchFrame::GetType() const
   return nsGkAtoms::svgSwitchFrame;
 }
 
-NS_IMETHODIMP
+void
 nsSVGSwitchFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                                    const nsRect&           aDirtyRect,
                                    const nsDisplayListSet& aLists)
 {
   nsIFrame* kid = GetActiveChildFrame();
   if (kid) {
-    return BuildDisplayListForChild(aBuilder, kid, aDirtyRect, aLists);
+    BuildDisplayListForChild(aBuilder, kid, aDirtyRect, aLists);
   }
-  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -113,8 +112,7 @@ nsSVGSwitchFrame::PaintSVG(nsRenderingContext* aContext,
                "If display lists are enabled, only painting of non-display "
                "SVG should take this code path");
 
-  const nsStyleDisplay *display = mStyleContext->GetStyleDisplay();
-  if (display->mOpacity == 0.0)
+  if (StyleDisplay()->mOpacity == 0.0)
     return NS_OK;
 
   nsIFrame *kid = GetActiveChildFrame();

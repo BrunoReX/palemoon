@@ -1,16 +1,21 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sw=4 et tw=78:
- *
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef ArgumentsObject_h___
-#define ArgumentsObject_h___
+#ifndef vm_ArgumentsObject_h
+#define vm_ArgumentsObject_h
 
 #include "jsfun.h"
 
 namespace js {
+
+class AbstractFramePtr;
+
+namespace jit {
+class IonJSFrameLayout;
+}
 
 /*
  * ArgumentsData stores the initial indexed arguments provided to the
@@ -100,9 +105,11 @@ class ArgumentsObject : public JSObject
     static const uint32_t DATA_SLOT = 1;
     static const uint32_t MAYBE_CALL_SLOT = 2;
 
+  public:
     static const uint32_t LENGTH_OVERRIDDEN_BIT = 0x1;
     static const uint32_t PACKED_BITS_COUNT = 1;
 
+  protected:
     template <typename CopyArgs>
     static ArgumentsObject *create(JSContext *cx, HandleScript script, HandleFunction callee,
                                    unsigned numActuals, CopyArgs &copy);
@@ -111,10 +118,10 @@ class ArgumentsObject : public JSObject
 
   public:
     static const uint32_t RESERVED_SLOTS = 3;
-    static const gc::AllocKind FINALIZE_KIND = gc::FINALIZE_OBJECT4;
+    static const gc::AllocKind FINALIZE_KIND = gc::FINALIZE_OBJECT4_BACKGROUND;
 
     /* Create an arguments object for a frame that is expecting them. */
-    static ArgumentsObject *createExpected(JSContext *cx, StackFrame *fp);
+    static ArgumentsObject *createExpected(JSContext *cx, AbstractFramePtr frame);
 
     /*
      * Purposefully disconnect the returned arguments object from the frame
@@ -122,8 +129,12 @@ class ArgumentsObject : public JSObject
      * This allows function-local analysis to determine that formals are
      * not aliased and generally simplifies arguments objects.
      */
-    static ArgumentsObject *createUnexpected(JSContext *cx, StackIter &iter);
-    static ArgumentsObject *createUnexpected(JSContext *cx, StackFrame *fp);
+    static ArgumentsObject *createUnexpected(JSContext *cx, ScriptFrameIter &iter);
+    static ArgumentsObject *createUnexpected(JSContext *cx, AbstractFramePtr frame);
+#if defined(JS_ION)
+    static ArgumentsObject *createForIon(JSContext *cx, jit::IonJSFrameLayout *frame,
+                                         HandleObject scopeChain);
+#endif
 
     /*
      * Return the initial length of the arguments.  This may differ from the
@@ -172,7 +183,7 @@ class ArgumentsObject : public JSObject
      *    needed, the frontend should have emitted JSOP_GETALIASEDVAR.
      */
     inline const Value &element(uint32_t i) const;
-    inline void setElement(uint32_t i, const Value &v);
+    inline void setElement(JSContext *cx, uint32_t i, const Value &v);
     inline const Value &arg(unsigned i) const;
     inline void setArg(unsigned i, const Value &v);
 
@@ -194,20 +205,29 @@ class ArgumentsObject : public JSObject
      */
     inline size_t sizeOfMisc(JSMallocSizeOfFun mallocSizeOf) const;
 
-    static void finalize(FreeOp *fop, RawObject obj);
-    static void trace(JSTracer *trc, RawObject obj);
+    static void finalize(FreeOp *fop, JSObject *obj);
+    static void trace(JSTracer *trc, JSObject *obj);
 
     /* For jit use: */
     static size_t getDataSlotOffset() {
         return getFixedSlotOffset(DATA_SLOT);
     }
+    static size_t getInitialLengthSlotOffset() {
+        return getFixedSlotOffset(INITIAL_LENGTH_SLOT);
+    }
 
-    static void MaybeForwardToCallObject(StackFrame *fp, JSObject *obj, ArgumentsData *data);
+    static void MaybeForwardToCallObject(AbstractFramePtr frame, JSObject *obj, ArgumentsData *data);
+#if defined(JS_ION)
+    static void MaybeForwardToCallObject(jit::IonJSFrameLayout *frame, HandleObject callObj,
+                                         JSObject *obj, ArgumentsData *data);
+#endif
 };
 
 class NormalArgumentsObject : public ArgumentsObject
 {
   public:
+    static Class class_;
+
     /*
      * Stores arguments.callee, or MagicValue(JS_ARGS_HOLE) if the callee has
      * been cleared.
@@ -219,36 +239,18 @@ class NormalArgumentsObject : public ArgumentsObject
 };
 
 class StrictArgumentsObject : public ArgumentsObject
-{};
+{
+  public:
+    static Class class_;
+};
 
 } // namespace js
 
-js::NormalArgumentsObject &
-JSObject::asNormalArguments()
+template<>
+inline bool
+JSObject::is<js::ArgumentsObject>() const
 {
-    JS_ASSERT(isNormalArguments());
-    return *static_cast<js::NormalArgumentsObject *>(this);
+    return is<js::NormalArgumentsObject>() || is<js::StrictArgumentsObject>();
 }
 
-js::StrictArgumentsObject &
-JSObject::asStrictArguments()
-{
-    JS_ASSERT(isStrictArguments());
-    return *static_cast<js::StrictArgumentsObject *>(this);
-}
-
-js::ArgumentsObject &
-JSObject::asArguments()
-{
-    JS_ASSERT(isArguments());
-    return *static_cast<js::ArgumentsObject *>(this);
-}
-
-const js::ArgumentsObject &
-JSObject::asArguments() const
-{
-    JS_ASSERT(isArguments());
-    return *static_cast<const js::ArgumentsObject *>(this);
-}
-
-#endif /* ArgumentsObject_h___ */
+#endif /* vm_ArgumentsObject_h */

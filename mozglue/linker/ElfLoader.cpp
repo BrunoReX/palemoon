@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <string>
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
@@ -14,9 +15,12 @@
 #include "Mappable.h"
 #include "Logging.h"
 
-#if defined(ANDROID) && ANDROID_VERSION < 8
-/* Android API < 8 doesn't provide sigaltstack */
+#if defined(ANDROID)
 #include <sys/syscall.h>
+
+#include <android/api-level.h>
+#if __ANDROID_API__ < 8
+/* Android API < 8 doesn't provide sigaltstack */
 
 extern "C" {
 
@@ -25,7 +29,8 @@ inline int sigaltstack(const stack_t *ss, stack_t *oss) {
 }
 
 } /* extern "C" */
-#endif
+#endif /* __ANDROID_API__ */
+#endif /* ANDROID */
 
 using namespace mozilla;
 
@@ -127,6 +132,34 @@ __wrap_dl_iterate_phdr(dl_phdr_cb callback, void *data)
   return 0;
 }
 
+/**
+ * faulty.lib public API
+ */
+
+MFBT_API size_t
+__dl_get_mappable_length(void *handle) {
+  if (!handle)
+    return 0;
+  return reinterpret_cast<LibHandle *>(handle)->GetMappableLength();
+}
+
+MFBT_API void *
+__dl_mmap(void *handle, void *addr, size_t length, off_t offset)
+{
+  if (!handle)
+    return NULL;
+  return reinterpret_cast<LibHandle *>(handle)->MappableMMap(addr, length,
+                                                             offset);
+}
+
+MFBT_API void
+__dl_munmap(void *handle, void *addr, size_t length)
+{
+  if (!handle)
+    return;
+  return reinterpret_cast<LibHandle *>(handle)->MappableMUnmap(addr, length);
+}
+
 namespace {
 
 /**
@@ -149,12 +182,48 @@ LeafName(const char *path)
 LibHandle::~LibHandle()
 {
   free(path);
+  if (mappable && mappable->GetKind() != Mappable::MAPPABLE_EXTRACT_FILE)
+    delete mappable;
 }
 
 const char *
 LibHandle::GetName() const
 {
   return path ? LeafName(path) : NULL;
+}
+
+size_t
+LibHandle::GetMappableLength() const
+{
+  MOZ_ASSERT(mappable != NULL, "GetMappableLength needs to be called first,"
+                               " and only once");
+  mappable = GetMappable();
+  if (!mappable)
+    return 0;
+  return mappable->GetLength();
+}
+
+void *
+LibHandle::MappableMMap(void *addr, size_t length, off_t offset) const
+{
+  MOZ_ASSERT(mappable == NULL, "MappableMMap must be called after"
+                               " GetMappableLength");
+  void* mapped = mappable->mmap(addr, length, PROT_READ, MAP_PRIVATE, offset);
+  if (mapped != MAP_FAILED) {
+    /* Ensure the availability of all pages within the mapping */
+    for (size_t off = 0; off < length; off += PAGE_SIZE) {
+      mappable->ensure(reinterpret_cast<char *>(mapped) + off);
+    }
+  }
+  return mapped;
+}
+
+void
+LibHandle::MappableMUnmap(void *addr, size_t length) const
+{
+  MOZ_ASSERT(mappable == NULL, "MappableMUnmap must be called after"
+                               " MappableMMap and GetMappableLength");
+  mappable->munmap(addr, length);
 }
 
 /**
@@ -200,6 +269,26 @@ SystemElf::GetSymbolPtr(const char *symbol) const
   return sym;
 }
 
+Mappable *
+SystemElf::GetMappable() const
+{
+  const char *path = GetPath();
+  if (!path)
+    return NULL;
+#ifdef ANDROID
+  /* On Android, if we don't have the full path, try in /system/lib */
+  const char *name = LeafName(path);
+  std::string systemPath;
+  if (name == path) {
+    systemPath = "/system/lib/";
+    systemPath += path;
+    path = systemPath.c_str();
+  }
+#endif
+
+  return MappableFile::Create(path);
+}
+
 /**
  * ElfLoader
  */
@@ -234,7 +323,9 @@ ElfLoader::Load(const char *path, int flags, LibHandle *parent)
   }
 
   char *abs_path = NULL;
+#ifdef MOZ_DEBUG_LINKER
   const char *requested_path = path;
+#endif
 
   /* When the path is not absolute and the library is being loaded for
    * another, first try to load the library from the directory containing
@@ -248,38 +339,7 @@ ElfLoader::Load(const char *path, int flags, LibHandle *parent)
     path = abs_path;
   }
 
-  /* Create a mappable object for the given path. Paths in the form
-   *   /foo/bar/baz/archive!/directory/lib.so
-   * try to load the directory/lib.so in /foo/bar/baz/archive, provided
-   * that file is a Zip archive. */
-  Mappable *mappable = NULL;
-  RefPtr<Zip> zip;
-  const char *subpath;
-  if ((subpath = strchr(path, '!'))) {
-    char *zip_path = strndup(path, subpath - path);
-    while (*(++subpath) == '/') { }
-    zip = zips.GetZip(zip_path);
-    Zip::Stream s;
-    if (zip && zip->GetStream(subpath, &s)) {
-      /* When the MOZ_LINKER_EXTRACT environment variable is set to "1",
-       * compressed libraries are going to be (temporarily) extracted as
-       * files, in the directory pointed by the MOZ_LINKER_CACHE
-       * environment variable. */
-      const char *extract = getenv("MOZ_LINKER_EXTRACT");
-      if (extract && !strncmp(extract, "1", 2 /* Including '\0' */))
-        mappable = MappableExtractFile::Create(name, zip, &s);
-      if (!mappable) {
-        if (s.GetType() == Zip::Stream::DEFLATE) {
-          mappable = MappableDeflate::Create(name, zip, &s);
-        } else if (s.GetType() == Zip::Stream::STORE) {
-          mappable = MappableSeekableZStream::Create(name, zip, &s);
-        }
-      }
-    }
-  }
-  /* If we couldn't load above, try with a MappableFile */
-  if (!mappable && !zip)
-    mappable = MappableFile::Create(path);
+  Mappable *mappable = GetMappableFromPath(path);
 
   /* Try loading with the custom linker if we have a Mappable */
   if (mappable)
@@ -311,6 +371,42 @@ ElfLoader::GetHandleByPtr(void *addr)
       return *it;
   }
   return NULL;
+}
+
+Mappable *
+ElfLoader::GetMappableFromPath(const char *path)
+{
+  const char *name = LeafName(path);
+  Mappable *mappable = NULL;
+  RefPtr<Zip> zip;
+  const char *subpath;
+  if ((subpath = strchr(path, '!'))) {
+    char *zip_path = strndup(path, subpath - path);
+    while (*(++subpath) == '/') { }
+    zip = ZipCollection::GetZip(zip_path);
+    Zip::Stream s;
+    if (zip && zip->GetStream(subpath, &s)) {
+      /* When the MOZ_LINKER_EXTRACT environment variable is set to "1",
+       * compressed libraries are going to be (temporarily) extracted as
+       * files, in the directory pointed by the MOZ_LINKER_CACHE
+       * environment variable. */
+      const char *extract = getenv("MOZ_LINKER_EXTRACT");
+      if (extract && !strncmp(extract, "1", 2 /* Including '\0' */))
+        mappable = MappableExtractFile::Create(name, zip, &s);
+      if (!mappable) {
+        if (s.GetType() == Zip::Stream::DEFLATE) {
+          mappable = MappableDeflate::Create(name, zip, &s);
+        } else if (s.GetType() == Zip::Stream::STORE) {
+          mappable = MappableSeekableZStream::Create(name, zip, &s);
+        }
+      }
+    }
+  }
+  /* If we couldn't load above, try with a MappableFile */
+  if (!mappable && !zip)
+    mappable = MappableFile::Create(path);
+
+  return mappable;
 }
 
 void
@@ -574,7 +670,7 @@ ElfLoader::DebuggerHelper::DebuggerHelper(): dbg(NULL)
       break;
     }
   }
-  debug("DT_DEBUG points at %p", dbg);
+  debug("DT_DEBUG points at %p", static_cast<void *>(dbg));
 }
 
 /**
@@ -586,26 +682,38 @@ class EnsureWritable
 {
 public:
   template <typename T>
-  EnsureWritable(T *&ptr)
+  EnsureWritable(T *ptr, size_t length_ = sizeof(T))
   {
-    prot = getProt((uintptr_t) &ptr);
-    if (prot == -1)
+    MOZ_ASSERT(length_ < PAGE_SIZE);
+    prot = -1;
+    page = MAP_FAILED;
+
+    uintptr_t firstPage = reinterpret_cast<uintptr_t>(ptr) & PAGE_MASK;
+    length = (reinterpret_cast<uintptr_t>(ptr) + length_ - firstPage
+              + PAGE_SIZE - 1) & PAGE_MASK;
+
+    uintptr_t end;
+
+    prot = getProt(firstPage, &end);
+    if (prot == -1 || (firstPage + length) > end)
       MOZ_CRASH();
-    /* Pointers are aligned such that their value can't be spanning across
-     * 2 pages. */
-    page = (void*)((uintptr_t) &ptr & PAGE_MASK);
-    if (!(prot & PROT_WRITE))
-      mprotect(page, PAGE_SIZE, prot | PROT_WRITE);
+
+    if (prot & PROT_WRITE)
+      return;
+
+    page = reinterpret_cast<void *>(firstPage);
+    mprotect(page, length, prot | PROT_WRITE);
   }
 
   ~EnsureWritable()
   {
-    if (!(prot & PROT_WRITE))
-      mprotect(page, PAGE_SIZE, prot);
+    if (page != MAP_FAILED) {
+      mprotect(page, length, prot);
+}
   }
 
 private:
-  int getProt(uintptr_t addr)
+  int getProt(uintptr_t addr, uintptr_t *end)
   {
     /* The interesting part of the /proc/self/maps format looks like:
      * startAddr-endAddr rwxp */
@@ -630,6 +738,7 @@ private:
         result |= PROT_EXEC;
       else if (perms[2] != '-')
         return -1;
+      *end = endAddr;
       return result;
     }
     return -1;
@@ -637,6 +746,7 @@ private:
 
   int prot;
   void *page;
+  size_t length;
 };
 
 /**
@@ -668,7 +778,7 @@ ElfLoader::DebuggerHelper::Add(ElfLoader::link_map *map)
     firstAdded = map;
     /* When adding a library for the first time, r_map points to data
      * handled by the system linker, and that data may be read-only */
-    EnsureWritable w(dbg->r_map->l_prev);
+    EnsureWritable w(&dbg->r_map->l_prev);
     dbg->r_map->l_prev = map;
   } else
     dbg->r_map->l_prev = map;
@@ -692,7 +802,7 @@ ElfLoader::DebuggerHelper::Remove(ElfLoader::link_map *map)
     firstAdded = map->l_prev;
     /* When removing the first added library, its l_next is going to be
      * data handled by the system linker, and that data may be read-only */
-    EnsureWritable w(map->l_next->l_prev);
+    EnsureWritable w(&map->l_next->l_prev);
     map->l_next->l_prev = map->l_prev;
   } else
     map->l_next->l_prev = map->l_prev;
@@ -700,8 +810,102 @@ ElfLoader::DebuggerHelper::Remove(ElfLoader::link_map *map)
   dbg->r_brk();
 }
 
-SEGVHandler::SEGVHandler()
+#if defined(ANDROID)
+/* As some system libraries may be calling signal() or sigaction() to
+ * set a SIGSEGV handler, effectively breaking MappableSeekableZStream,
+ * or worse, restore our SIGSEGV handler with wrong flags (which using
+ * signal() will do), we want to hook into the system's sigaction() to
+ * replace it with our own wrapper instead, so that our handler is never
+ * replaced. We used to only do that with libraries this linker loads,
+ * but it turns out at least one system library does call signal() and
+ * breaks us (libsc-a3xx.so on the Samsung Galaxy S4).
+ * As libc's signal (bsd_signal/sysv_signal, really) calls sigaction
+ * under the hood, instead of calling the signal system call directly,
+ * we only need to hook sigaction. This is true for both bionic and
+ * glibc.
+ */
+
+/* libc's sigaction */
+extern "C" int
+sigaction(int signum, const struct sigaction *act,
+          struct sigaction *oldact);
+
+/* Simple reimplementation of sigaction. This is roughly equivalent
+ * to the assembly that comes in bionic, but not quite equivalent to
+ * glibc's implementation, so we only use this on Android. */
+int
+sys_sigaction(int signum, const struct sigaction *act,
+              struct sigaction *oldact)
 {
+  return syscall(__NR_sigaction, signum, act, oldact);
+}
+
+/* Replace the first instructions of the given function with a jump
+ * to the given new function. */
+template <typename T>
+static bool
+Divert(T func, T new_func)
+{
+  void *ptr = FunctionPtr(func);
+  uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
+
+#if defined(__i386__)
+  // A 32-bit jump is a 5 bytes instruction.
+  EnsureWritable w(ptr, 5);
+  *reinterpret_cast<unsigned char *>(addr) = 0xe9; // jmp
+  *reinterpret_cast<intptr_t *>(addr + 1) =
+    reinterpret_cast<uintptr_t>(new_func) - addr - 5; // target displacement
+  return true;
+#elif defined(__arm__)
+  const unsigned char trampoline[] = {
+                            // .thumb
+    0x46, 0x04,             // nop
+    0x78, 0x47,             // bx pc
+    0x46, 0x04,             // nop
+                            // .arm
+    0x04, 0xf0, 0x1f, 0xe5, // ldr pc, [pc, #-4]
+                            // .word <new_func>
+  };
+  const unsigned char *start;
+  if (addr & 0x01) {
+    /* Function is thumb, the actual address of the code is without the
+     * least significant bit. */
+    addr--;
+    /* The arm part of the trampoline needs to be 32-bit aligned */
+    if (addr & 0x02)
+      start = trampoline;
+    else
+      start = trampoline + 2;
+  } else {
+    /* Function is arm, we only need the arm part of the trampoline */
+    start = trampoline + 6;
+  }
+
+  size_t len = sizeof(trampoline) - (start - trampoline);
+  EnsureWritable w(reinterpret_cast<void *>(addr), len + sizeof(void *));
+  memcpy(reinterpret_cast<void *>(addr), start, len);
+  *reinterpret_cast<void **>(addr + len) = FunctionPtr(new_func);
+  cacheflush(addr, addr + len + sizeof(void *), 0);
+  return true;
+#else
+  return false;
+#endif
+}
+#else
+#define sys_sigaction sigaction
+template <typename T>
+static bool
+Divert(T func, T new_func)
+{
+  return false;
+}
+#endif
+
+SEGVHandler::SEGVHandler()
+: registeredHandler(false)
+{
+  if (!Divert(sigaction, __wrap_sigaction))
+    return;
   /* Setup an alternative stack if the already existing one is not big
    * enough, or if there is none. */
   if (sigaltstack(NULL, &oldStack) == -1 || !oldStack.ss_sp ||
@@ -721,7 +925,7 @@ SEGVHandler::SEGVHandler()
   sigemptyset(&action.sa_mask);
   action.sa_flags = SA_SIGINFO | SA_NODEFER | SA_ONSTACK;
   action.sa_restorer = NULL;
-  sigaction(SIGSEGV, &action, &this->action);
+  registeredHandler = !sys_sigaction(SIGSEGV, &action, &this->action);
 }
 
 SEGVHandler::~SEGVHandler()
@@ -729,7 +933,7 @@ SEGVHandler::~SEGVHandler()
   /* Restore alternative stack for signals */
   sigaltstack(&oldStack, NULL);
   /* Restore original signal handler */
-  sigaction(SIGSEGV, &this->action, NULL);
+  sys_sigaction(SIGSEGV, &this->action, NULL);
 }
 
 /* TODO: "properly" handle signal masks and flags */
@@ -741,9 +945,8 @@ void SEGVHandler::handler(int signum, siginfo_t *info, void *context)
   /* Check whether we segfaulted in the address space of a CustomElf. We're
    * only expecting that to happen as an access error. */
   if (info->si_code == SEGV_ACCERR) {
-    /* We may segfault when running destructors in CustomElf::~CustomElf, so we
-     * can't hold a RefPtr on the handle. */
-    LibHandle *handle = ElfLoader::Singleton.GetHandleByPtr(info->si_addr).drop();
+    mozilla::RefPtr<LibHandle> handle =
+      ElfLoader::Singleton.GetHandleByPtr(info->si_addr);
     if (handle && !handle->IsSystemElf()) {
       debug("Within the address space of a CustomElf");
       CustomElf *elf = static_cast<CustomElf *>(static_cast<LibHandle *>(handle));
@@ -755,54 +958,30 @@ void SEGVHandler::handler(int signum, siginfo_t *info, void *context)
   /* Redispatch to the registered handler */
   SEGVHandler &that = ElfLoader::Singleton;
   if (that.action.sa_flags & SA_SIGINFO) {
-    debug("Redispatching to registered handler @%p", that.action.sa_sigaction);
+    debug("Redispatching to registered handler @%p",
+          FunctionPtr(that.action.sa_sigaction));
     that.action.sa_sigaction(signum, info, context);
   } else if (that.action.sa_handler == SIG_DFL) {
     debug("Redispatching to default handler");
     /* Reset the handler to the default one, and trigger it. */
-    sigaction(signum, &that.action, NULL);
+    sys_sigaction(signum, &that.action, NULL);
     raise(signum);
   } else if (that.action.sa_handler != SIG_IGN) {
-    debug("Redispatching to registered handler @%p", that.action.sa_handler);
+    debug("Redispatching to registered handler @%p",
+          FunctionPtr(that.action.sa_handler));
     that.action.sa_handler(signum);
   } else {
     debug("Ignoring");
   }
 }
-  
-sighandler_t
-__wrap_signal(int signum, sighandler_t handler)
-{
-  /* Use system signal() function for all but SIGSEGV signals. */
-  if (signum != SIGSEGV)
-    return signal(signum, handler);
-
-  SEGVHandler &that = ElfLoader::Singleton;
-  union {
-    sighandler_t signal;
-    void (*sigaction)(int, siginfo_t *, void *);
-  } oldHandler;
-
-  /* Keep the previous handler to return its value */
-  if (that.action.sa_flags & SA_SIGINFO) {
-    oldHandler.sigaction = that.action.sa_sigaction;
-  } else {
-    oldHandler.signal = that.action.sa_handler;
-  }
-  /* Set the new handler */
-  that.action.sa_handler = handler;
-  that.action.sa_flags = 0;
-
-  return oldHandler.signal;
-}
 
 int
-__wrap_sigaction(int signum, const struct sigaction *act,
-                 struct sigaction *oldact)
+SEGVHandler::__wrap_sigaction(int signum, const struct sigaction *act,
+                              struct sigaction *oldact)
 {
   /* Use system sigaction() function for all but SIGSEGV signals. */
   if (signum != SIGSEGV)
-    return sigaction(signum, act, oldact);
+    return sys_sigaction(signum, act, oldact);
 
   SEGVHandler &that = ElfLoader::Singleton;
   if (oldact)

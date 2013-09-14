@@ -28,16 +28,22 @@ const PREF_PREVIOUS_ACTION = PREF_PREFIX + '.previousHandler.preferredAction';
 const PREF_PREVIOUS_ASK = PREF_PREFIX + '.previousHandler.alwaysAskBeforeHandling';
 const PREF_DISABLED_PLUGIN_TYPES = 'plugin.disable_full_page_plugin_for_types';
 const TOPIC_PDFJS_HANDLER_CHANGED = 'pdfjs:handlerChanged';
+const TOPIC_PLUGINS_LIST_UPDATED = "plugins-list-updated";
+const TOPIC_PLUGIN_INFO_UPDATED = "plugin-info-updated";
 const PDF_CONTENT_TYPE = 'application/pdf';
 
 Cu.import('resource://gre/modules/XPCOMUtils.jsm');
 Cu.import('resource://gre/modules/Services.jsm');
 Cu.import('resource://pdf.js.components/PdfStreamConverter.js');
+Cu.import('resource://pdf.js.components/PdfRedirector.js');
 
 let Svc = {};
 XPCOMUtils.defineLazyServiceGetter(Svc, 'mime',
                                    '@mozilla.org/mime;1',
                                    'nsIMIMEService');
+XPCOMUtils.defineLazyServiceGetter(Svc, 'pluginHost',
+                                   '@mozilla.org/plugin/host;1',
+                                   'nsIPluginHost');
 
 function getBoolPref(aPref, aDefaultValue) {
   try {
@@ -55,8 +61,10 @@ function getIntPref(aPref, aDefaultValue) {
   }
 }
 
-// Register/unregister a constructor as a component.
-let Factory = {
+// Factory that registers/unregisters a constructor as a component.
+function Factory() {}
+
+Factory.prototype = {
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIFactory]),
   _targetConstructor: null,
 
@@ -106,7 +114,10 @@ let PdfJs = {
     // Listen for when pdf.js is completely disabled or a different pdf handler
     // is chosen.
     Services.prefs.addObserver(PREF_DISABLED, this, false);
+    Services.prefs.addObserver(PREF_DISABLED_PLUGIN_TYPES, this, false);
     Services.obs.addObserver(this, TOPIC_PDFJS_HANDLER_CHANGED, false);
+    Services.obs.addObserver(this, TOPIC_PLUGINS_LIST_UPDATED, false);
+    Services.obs.addObserver(this, TOPIC_PLUGIN_INFO_UPDATED, false);
   },
 
   _migrate: function migrate() {
@@ -180,20 +191,59 @@ let PdfJs = {
    */
   get enabled() {
     var disabled = getBoolPref(PREF_DISABLED, true);
-    if (disabled)
+    if (disabled) {
       return false;
+    }
 
-    var handlerInfo = Svc.mime.
-                        getFromTypeAndExtension('application/pdf', 'pdf');
-    return handlerInfo.alwaysAskBeforeHandling == false &&
-           handlerInfo.preferredAction == Ci.nsIHandlerInfo.handleInternally;
+    // the 'application/pdf' handler is selected as internal?
+    var handlerInfo = Svc.mime
+                         .getFromTypeAndExtension(PDF_CONTENT_TYPE, 'pdf');
+    if (handlerInfo.alwaysAskBeforeHandling ||
+        handlerInfo.preferredAction !== Ci.nsIHandlerInfo.handleInternally) {
+      return false;
+    }
+
+    // Check if we have disabled plugin handling of 'application/pdf' in prefs
+    if (Services.prefs.prefHasUserValue(PREF_DISABLED_PLUGIN_TYPES)) {
+      let disabledPluginTypes =
+        Services.prefs.getCharPref(PREF_DISABLED_PLUGIN_TYPES).split(',');
+      if (disabledPluginTypes.indexOf(PDF_CONTENT_TYPE) >= 0) {
+        return true;
+      }
+    }
+
+    // Check if there is an enabled pdf plugin.
+    // Note: this check is performed last because getPluginTags() triggers costly
+    // plugin list initialization (bug 881575)
+    let tags = Cc["@mozilla.org/plugin/host;1"].
+                  getService(Ci.nsIPluginHost).
+                  getPluginTags();
+    let enabledPluginFound = tags.some(function(tag) {
+      if (tag.disabled) {
+        return false;
+      }
+      let mimeTypes = tag.getMimeTypes();
+      return mimeTypes.some(function(mimeType) {
+        return mimeType === PDF_CONTENT_TYPE;
+      });
+    });
+
+    // Use pdf.js if pdf plugin is not present or disabled
+    return !enabledPluginFound;
   },
 
   _ensureRegistered: function _ensureRegistered() {
     if (this._registered)
       return;
 
-    Factory.register(PdfStreamConverter);
+    this._pdfStreamConverterFactory = new Factory();
+    this._pdfStreamConverterFactory.register(PdfStreamConverter);
+
+    this._pdfRedirectorFactory = new Factory();
+    this._pdfRedirectorFactory.register(PdfRedirector);
+    Svc.pluginHost.registerPlayPreviewMimeType(PDF_CONTENT_TYPE, true,
+      'data:application/x-moz-playpreview-pdfjs;,');
+
     this._registered = true;
   },
 
@@ -201,7 +251,13 @@ let PdfJs = {
     if (!this._registered)
       return;
 
-    Factory.unregister();
+    this._pdfStreamConverterFactory.unregister();
+    delete this._pdfStreamConverterFactory;
+
+    this._pdfRedirectorFactory.unregister;
+    delete this._pdfRedirectorFactory;
+    Svc.pluginHost.unregisterPlayPreviewMimeType(PDF_CONTENT_TYPE);
+
     this._registered = false;
   }
 };

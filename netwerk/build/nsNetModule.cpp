@@ -5,7 +5,7 @@
 
 #include "necko-config.h"
 
-#define ALLOW_LATE_NSHTTP_H_INCLUDE 1
+#define ALLOW_LATE_HTTPLOG_H_INCLUDE 1
 #include "base/basictypes.h"
 
 #include "nsCOMPtr.h"
@@ -37,6 +37,7 @@
 #include "nsCategoryCache.h"
 #include "nsIContentSniffer.h"
 #include "nsNetUtil.h"
+#include "mozilla/net/NeckoChild.h"
 
 #include "nsNetCID.h"
 
@@ -74,6 +75,9 @@ NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsSocketTransportService, Init)
 #include "nsServerSocket.h"
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsServerSocket)
 
+#include "nsUDPServerSocket.h"
+NS_GENERIC_FACTORY_CONSTRUCTOR(nsUDPServerSocket)
+
 #include "nsUDPSocketProvider.h"
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsUDPSocketProvider)
 
@@ -106,6 +110,9 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(nsFileStream)
 
 NS_GENERIC_AGGREGATED_CONSTRUCTOR_INIT(nsLoadGroup, Init)
 
+#include "ArrayBufferInputStream.h"
+NS_GENERIC_FACTORY_CONSTRUCTOR(ArrayBufferInputStream)
+
 #include "nsEffectiveTLDService.h"
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsEffectiveTLDService, Init)
 
@@ -121,8 +128,6 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(RedirectChannelRegistrar)
 extern nsresult
 net_NewIncrementalDownload(nsISupports *, const nsIID &, void **);
 
-#define NS_INCREMENTALDOWNLOAD_CLASSNAME \
-    "nsIncrementalDownload"
 #define NS_INCREMENTALDOWNLOAD_CID \
 { /* a62af1ba-79b3-4896-8aaf-b148bfce4280 */         \
     0xa62af1ba,                                      \
@@ -270,7 +275,7 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(nsViewSourceHandler)
 
 #ifdef NECKO_PROTOCOL_wyciwyg
 #include "nsWyciwygProtocolHandler.h"
-NS_GENERIC_FACTORY_CONSTRUCTOR(nsWyciwygProtocolHandler)
+NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsWyciwygProtocolHandler, Init)
 #endif
 
 #ifdef NECKO_PROTOCOL_websocket
@@ -676,6 +681,7 @@ NS_DEFINE_NAMED_CID(NS_IOSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_STREAMTRANSPORTSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_SOCKETTRANSPORTSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_SERVERSOCKET_CID);
+NS_DEFINE_NAMED_CID(NS_UDPSERVERSOCKET_CID);
 NS_DEFINE_NAMED_CID(NS_SOCKETPROVIDERSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_DNSSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_IDNSERVICE_CID);
@@ -706,6 +712,7 @@ NS_DEFINE_NAMED_CID(NS_STDURLPARSER_CID);
 NS_DEFINE_NAMED_CID(NS_NOAUTHURLPARSER_CID);
 NS_DEFINE_NAMED_CID(NS_AUTHURLPARSER_CID);
 NS_DEFINE_NAMED_CID(NS_STANDARDURL_CID);
+NS_DEFINE_NAMED_CID(NS_ARRAYBUFFERINPUTSTREAM_CID);
 NS_DEFINE_NAMED_CID(NS_BUFFEREDINPUTSTREAM_CID);
 NS_DEFINE_NAMED_CID(NS_BUFFEREDOUTPUTSTREAM_CID);
 NS_DEFINE_NAMED_CID(NS_MIMEINPUTSTREAM_CID);
@@ -811,6 +818,7 @@ static const mozilla::Module::CIDEntry kNeckoCIDs[] = {
     { &kNS_STREAMTRANSPORTSERVICE_CID, false, NULL, nsStreamTransportServiceConstructor },
     { &kNS_SOCKETTRANSPORTSERVICE_CID, false, NULL, nsSocketTransportServiceConstructor },
     { &kNS_SERVERSOCKET_CID, false, NULL, nsServerSocketConstructor },
+    { &kNS_UDPSERVERSOCKET_CID, false, NULL, nsUDPServerSocketConstructor },
     { &kNS_SOCKETPROVIDERSERVICE_CID, false, NULL, nsSocketProviderService::Create },
     { &kNS_DNSSERVICE_CID, false, NULL, nsDNSServiceConstructor },
     { &kNS_IDNSERVICE_CID, false, NULL, nsIDNServiceConstructor },
@@ -843,6 +851,7 @@ static const mozilla::Module::CIDEntry kNeckoCIDs[] = {
     { &kNS_NOAUTHURLPARSER_CID, false, NULL, nsNoAuthURLParserConstructor },
     { &kNS_AUTHURLPARSER_CID, false, NULL, nsAuthURLParserConstructor },
     { &kNS_STANDARDURL_CID, false, NULL, nsStandardURLConstructor },
+    { &kNS_ARRAYBUFFERINPUTSTREAM_CID, false, NULL, ArrayBufferInputStreamConstructor },
     { &kNS_BUFFEREDINPUTSTREAM_CID, false, NULL, nsBufferedInputStream::Create },
     { &kNS_BUFFEREDOUTPUTSTREAM_CID, false, NULL, nsBufferedOutputStream::Create },
     { &kNS_MIMEINPUTSTREAM_CID, false, NULL, nsMIMEInputStreamConstructor },
@@ -953,6 +962,7 @@ static const mozilla::Module::ContractIDEntry kNeckoContracts[] = {
     { NS_STREAMTRANSPORTSERVICE_CONTRACTID, &kNS_STREAMTRANSPORTSERVICE_CID },
     { NS_SOCKETTRANSPORTSERVICE_CONTRACTID, &kNS_SOCKETTRANSPORTSERVICE_CID },
     { NS_SERVERSOCKET_CONTRACTID, &kNS_SERVERSOCKET_CID },
+    { NS_UDPSERVERSOCKET_CONTRACTID, &kNS_UDPSERVERSOCKET_CID },
     { NS_SOCKETPROVIDERSERVICE_CONTRACTID, &kNS_SOCKETPROVIDERSERVICE_CID },
     { NS_DNSSERVICE_CONTRACTID, &kNS_DNSSERVICE_CID },
     { NS_IDNSERVICE_CONTRACTID, &kNS_IDNSERVICE_CID },
@@ -982,6 +992,7 @@ static const mozilla::Module::ContractIDEntry kNeckoContracts[] = {
     { NS_NOAUTHURLPARSER_CONTRACTID, &kNS_NOAUTHURLPARSER_CID },
     { NS_AUTHURLPARSER_CONTRACTID, &kNS_AUTHURLPARSER_CID },
     { NS_STANDARDURL_CONTRACTID, &kNS_STANDARDURL_CID },
+    { NS_ARRAYBUFFERINPUTSTREAM_CONTRACTID, &kNS_ARRAYBUFFERINPUTSTREAM_CID },
     { NS_BUFFEREDINPUTSTREAM_CONTRACTID, &kNS_BUFFEREDINPUTSTREAM_CID },
     { NS_BUFFEREDOUTPUTSTREAM_CONTRACTID, &kNS_BUFFEREDOUTPUTSTREAM_CID },
     { NS_MIMEINPUTSTREAM_CONTRACTID, &kNS_MIMEINPUTSTREAM_CID },

@@ -55,10 +55,9 @@
   <menupopup id="menu_mac_dockmenu">
     <!-- The command cannot be cmd_newNavigator because we need to activate
          the application. -->
-    <menuitem label="&newNavigatorCmd.label;" oncommand="OpenBrowserWindowFromDockMenu();" />
-#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
+    <menuitem label="&newNavigatorCmd.label;" oncommand="OpenBrowserWindowFromDockMenu();"
+              id="macDockMenuNewWindow" />
     <menuitem label="&newPrivateWindow.label;" oncommand="OpenBrowserWindowFromDockMenu({private: true});" />
-#endif
   </menupopup>
 </popupset>
 

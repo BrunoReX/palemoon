@@ -48,6 +48,7 @@ enum ButtonElementTypes {
 enum InputElementTypes {
   NS_FORM_INPUT_BUTTON = NS_FORM_INPUT_ELEMENT + 1,
   NS_FORM_INPUT_CHECKBOX,
+  NS_FORM_INPUT_COLOR,
   NS_FORM_INPUT_DATE,
   NS_FORM_INPUT_EMAIL,
   NS_FORM_INPUT_FILE,
@@ -61,7 +62,9 @@ enum InputElementTypes {
   NS_FORM_INPUT_SUBMIT,
   NS_FORM_INPUT_TEL,
   NS_FORM_INPUT_TEXT,
+  NS_FORM_INPUT_TIME,
   NS_FORM_INPUT_URL,
+  NS_FORM_INPUT_RANGE,
   eInputElementTypesMax
 };
 
@@ -237,8 +240,9 @@ nsIFormControl::IsSingleLineTextControl(bool aExcludePassword, uint32_t aType)
          aType == NS_FORM_INPUT_URL ||
          // TODO: this is temporary until bug 635240 is fixed.
          aType == NS_FORM_INPUT_NUMBER ||
-         // TODO: this is temporary until bug 773205 is fixed.
+         // TODO: those are temporary until bug 773205 is fixed.
          aType == NS_FORM_INPUT_DATE ||
+         aType == NS_FORM_INPUT_TIME ||
          (!aExcludePassword && aType == NS_FORM_INPUT_PASSWORD);
 }
 

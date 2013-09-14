@@ -33,10 +33,10 @@
 #include "nsISupportsPrimitives.h"
 #include "nsServiceManagerUtils.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "nsIURI.h"
 #include "nsIPermissionManager.h"
 #include "nsIObserverService.h"
-#include "nsIJSContextStack.h"
 #include "nsThreadUtils.h"
 #include "mozilla/Services.h"
 #include "mozilla/unused.h"
@@ -45,6 +45,8 @@
 #include "mozilla/ClearOnShutdown.h"
 
 #include <math.h>
+#include <algorithm>
+#include <limits>
 
 #ifdef MOZ_MAEMO_LIBLOCATION
 #include "MaemoLocationProvider.h"
@@ -76,6 +78,19 @@ using mozilla::unused;          // <snicker>
 using namespace mozilla;
 using namespace mozilla::dom;
 
+static mozilla::idl::GeoPositionOptions*
+GeoPositionOptionsFromPositionOptions(const PositionOptions& aOptions)
+{
+  nsAutoPtr<mozilla::idl::GeoPositionOptions> geoOptions(
+    new mozilla::idl::GeoPositionOptions());
+
+  geoOptions->enableHighAccuracy = aOptions.mEnableHighAccuracy;
+  geoOptions->maximumAge = aOptions.mMaximumAge;
+  geoOptions->timeout = aOptions.mTimeout;
+
+  return geoOptions.forget();
+}
+
 class GeolocationSettingsCallback : public nsISettingsServiceCallback
 {
 public:
@@ -89,7 +104,7 @@ public:
     MOZ_COUNT_DTOR(GeolocationSettingsCallback);
   }
 
-  NS_IMETHOD Handle(const nsAString& aName, const jsval& aResult)
+  NS_IMETHOD Handle(const nsAString& aName, const JS::Value& aResult)
   {
     MOZ_ASSERT(NS_IsMainThread());
 
@@ -121,7 +136,7 @@ public:
   }
 };
 
-NS_IMPL_ISUPPORTS1(GeolocationSettingsCallback, nsISettingsServiceCallback);
+NS_IMPL_ISUPPORTS1(GeolocationSettingsCallback, nsISettingsServiceCallback)
 
 class RequestPromptEvent : public nsRunnable
 {
@@ -169,31 +184,22 @@ private:
 class RequestSendLocationEvent : public nsRunnable
 {
 public:
-  // a bit funky.  if locator is passed, that means this
-  // event should remove the request from it.  If we ever
-  // have to do more, then we can change this around.
   RequestSendLocationEvent(nsIDOMGeoPosition* aPosition,
-                           nsGeolocationRequest* aRequest,
-                           nsGeolocation* aLocator)
+                           nsGeolocationRequest* aRequest)
     : mPosition(aPosition),
-      mRequest(aRequest),
-      mLocator(aLocator)
+      mRequest(aRequest)
   {
   }
 
   NS_IMETHOD Run() {
     mRequest->SendLocation(mPosition);
-    if (mLocator) {
-      mLocator->RemoveRequest(mRequest);
-    }
     return NS_OK;
   }
 
 private:
-  nsCOMPtr<nsIDOMGeoPosition>    mPosition;
+  nsCOMPtr<nsIDOMGeoPosition> mPosition;
   nsRefPtr<nsGeolocationRequest> mRequest;
-
-  nsRefPtr<nsGeolocation>        mLocator;
+  nsRefPtr<Geolocation> mLocator;
 };
 
 class RequestRestartTimerEvent : public nsRunnable
@@ -214,89 +220,88 @@ private:
 };
 
 ////////////////////////////////////////////////////
-// nsDOMGeoPositionError
+// PositionError
 ////////////////////////////////////////////////////
 
-class nsDOMGeoPositionError MOZ_FINAL : public nsIDOMGeoPositionError
-{
-public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIDOMGEOPOSITIONERROR
-
-  nsDOMGeoPositionError(int16_t aCode);
-  void NotifyCallback(nsIDOMGeoPositionErrorCallback* callback);
-
-private:
-  ~nsDOMGeoPositionError();
-  int16_t mCode;
-};
-
-DOMCI_DATA(GeoPositionError, nsDOMGeoPositionError)
-
-NS_INTERFACE_MAP_BEGIN(nsDOMGeoPositionError)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(PositionError)
+  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMGeoPositionError)
   NS_INTERFACE_MAP_ENTRY(nsIDOMGeoPositionError)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(GeoPositionError)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_THREADSAFE_ADDREF(nsDOMGeoPositionError)
-NS_IMPL_THREADSAFE_RELEASE(nsDOMGeoPositionError)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_1(PositionError, mParent)
+NS_IMPL_CYCLE_COLLECTING_ADDREF(PositionError)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(PositionError)
 
-nsDOMGeoPositionError::nsDOMGeoPositionError(int16_t aCode)
+PositionError::PositionError(Geolocation* aParent, int16_t aCode)
   : mCode(aCode)
+  , mParent(aParent)
 {
+  SetIsDOMBinding();
 }
 
-nsDOMGeoPositionError::~nsDOMGeoPositionError(){}
+PositionError::~PositionError(){}
 
 
 NS_IMETHODIMP
-nsDOMGeoPositionError::GetCode(int16_t *aCode)
+PositionError::GetCode(int16_t *aCode)
 {
   NS_ENSURE_ARG_POINTER(aCode);
-  *aCode = mCode;
+  *aCode = Code();
   return NS_OK;
 }
 
-void
-nsDOMGeoPositionError::NotifyCallback(nsIDOMGeoPositionErrorCallback* aCallback)
+Geolocation*
+PositionError::GetParentObject() const
 {
-  if (!aCallback) {
-    return;
-  }
+  return mParent;
+}
 
+JSObject*
+PositionError::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
+{
+  return PositionErrorBinding::Wrap(aCx, aScope, this);
+}
+
+void
+PositionError::NotifyCallback(const GeoPositionErrorCallback& aCallback)
+{
   // Ensure that the proper context is on the stack (bug 452762)
-  nsCOMPtr<nsIJSContextStack> stack(do_GetService("@mozilla.org/js/xpc/ContextStack;1"));
-  if (!stack || NS_FAILED(stack->Push(nullptr))) {
-    return;
-  }
+  nsCxPusher pusher;
+  pusher.PushNull();
 
   nsAutoMicroTask mt;
-  aCallback->HandleEvent(this);
+  if (aCallback.HasWebIDLCallback()) {
+    PositionErrorCallback* callback = aCallback.GetWebIDLCallback();
 
-  // remove the stack
-  JSContext* cx;
-  stack->Pop(&cx);
+    if (callback) {
+      ErrorResult err;
+      callback->Call(*this, err);
+    }
+  } else {
+    nsIDOMGeoPositionErrorCallback* callback = aCallback.GetXPCOMCallback();
+    if (callback) {
+      callback->HandleEvent(this);
+    }
+  }
 }
 ////////////////////////////////////////////////////
 // nsGeolocationRequest
 ////////////////////////////////////////////////////
 
-nsGeolocationRequest::nsGeolocationRequest(nsGeolocation* aLocator,
-                                           nsIDOMGeoPositionCallback* aCallback,
-                                           nsIDOMGeoPositionErrorCallback* aErrorCallback,
-                                           mozilla::dom::GeoPositionOptions* aOptions,
+nsGeolocationRequest::nsGeolocationRequest(Geolocation* aLocator,
+                                           const GeoPositionCallback& aCallback,
+                                           const GeoPositionErrorCallback& aErrorCallback,
+                                           mozilla::idl::GeoPositionOptions* aOptions,
                                            bool aWatchPositionRequest,
                                            int32_t aWatchId)
-  : mAllowed(false),
-    mCleared(false),
-    mIsFirstUpdate(true),
-    mIsWatchPositionRequest(aWatchPositionRequest),
+  : mIsWatchPositionRequest(aWatchPositionRequest),
     mCallback(aCallback),
     mErrorCallback(aErrorCallback),
     mOptions(aOptions),
     mLocator(aLocator),
-    mWatchId(aWatchId)
+    mWatchId(aWatchId),
+    mShutdown(false)
 {
 }
 
@@ -304,27 +309,11 @@ nsGeolocationRequest::~nsGeolocationRequest()
 {
 }
 
-
-static mozilla::dom::GeoPositionOptions*
-OptionsFromJSOptions(JSContext* aCx, const jsval& aOptions, nsresult* aRv)
-{
-  *aRv = NS_OK;
-  nsAutoPtr<mozilla::dom::GeoPositionOptions> options(nullptr);
-  if (aCx && !JSVAL_IS_VOID(aOptions) && !JSVAL_IS_NULL(aOptions)) {
-    options = new mozilla::dom::GeoPositionOptions();
-    nsresult rv = options->Init(aCx, &aOptions);
-    if (NS_FAILED(rv)) {
-      *aRv = rv;
-      return nullptr;
-    }
-  }
-  return options.forget();
-}
-
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsGeolocationRequest)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIContentPermissionRequest)
   NS_INTERFACE_MAP_ENTRY(nsIContentPermissionRequest)
   NS_INTERFACE_MAP_ENTRY(nsITimerCallback)
+  NS_INTERFACE_MAP_ENTRY(nsIGeolocationUpdate)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsGeolocationRequest)
@@ -332,35 +321,16 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(nsGeolocationRequest)
 
 NS_IMPL_CYCLE_COLLECTION_3(nsGeolocationRequest, mCallback, mErrorCallback, mLocator)
 
-
-void
-nsGeolocationRequest::NotifyError(int16_t errorCode)
-{
-  nsRefPtr<nsDOMGeoPositionError> positionError = new nsDOMGeoPositionError(errorCode);
-  if (!positionError) {
-    return;
-  }
-
-  positionError->NotifyCallback(mErrorCallback);
-}
-
-
 NS_IMETHODIMP
 nsGeolocationRequest::Notify(nsITimer* aTimer)
 {
-  if (mCleared) {
-    return NS_OK;
-  }
-
-  // If we haven't gotten an answer from the geolocation
-  // provider yet, fire a TIMEOUT error and reset the timer.
-  if (!mIsWatchPositionRequest) {
-    mLocator->RemoveRequest(this);
-  }
+  MOZ_ASSERT(!mShutdown, "timeout after shutdown");
 
   NotifyError(nsIDOMGeoPositionError::TIMEOUT);
-
-  if (mIsWatchPositionRequest) {
+  if (!mIsWatchPositionRequest) {
+    Shutdown();
+    mLocator->RemoveRequest(this);
+  } else if (!mShutdown) {
     SetTimeoutTimer();
   }
 
@@ -414,9 +384,6 @@ nsGeolocationRequest::GetElement(nsIDOMElement * *aRequestingElement)
 NS_IMETHODIMP
 nsGeolocationRequest::Cancel()
 {
-  // remove ourselves from the locators callback lists.
-  mLocator->RemoveRequest(this);
-
   NotifyError(nsIDOMGeoPositionError::PERMISSION_DENIED);
   return NS_OK;
 }
@@ -428,11 +395,10 @@ nsGeolocationRequest::Allow()
   GetWindow(getter_AddRefs(window));
   nsCOMPtr<nsIWebNavigation> webNav = do_GetInterface(window);
   nsCOMPtr<nsILoadContext> loadContext = do_QueryInterface(webNav);
-  bool isPrivate = loadContext && loadContext->UsePrivateBrowsing();
 
   // Kick off the geo device, if it isn't already running
   nsRefPtr<nsGeolocationService> gs = nsGeolocationService::GetGeolocationService();
-  nsresult rv = gs->StartDevice(GetPrincipal(), isPrivate);
+  nsresult rv = gs->StartDevice(GetPrincipal());
 
   if (NS_FAILED(rv)) {
     // Location provider error
@@ -458,26 +424,28 @@ nsGeolocationRequest::Allow()
     if (mOptions->maximumAge >= 0) {
       maximumAge = mOptions->maximumAge;
     }
-    if (mOptions->enableHighAccuracy) {
-      gs->SetHigherAccuracy(true);
-    }
+  }
+  gs->SetHigherAccuracy(mOptions && mOptions->enableHighAccuracy);
+
+  bool canUseCache = lastPosition && maximumAge > 0 &&
+    (PRTime(PR_Now() / PR_USEC_PER_MSEC) - maximumAge <=
+    PRTime(cachedPositionTime));
+
+  if (canUseCache) {
+    // okay, we can return a cached position
+    // getCurrentPosition requests serviced by the cache
+    // will now be owned by the RequestSendLocationEvent
+    Update(lastPosition);
   }
 
-  if (lastPosition && maximumAge > 0 &&
-      ( PRTime(PR_Now() / PR_USEC_PER_MSEC) - maximumAge <=
-        PRTime(cachedPositionTime) )) {
-    // okay, we can return a cached position
-    mAllowed = true;
-
-    nsCOMPtr<nsIRunnable> ev = new RequestSendLocationEvent(lastPosition,
-							    this,
-							    mIsWatchPositionRequest ? nullptr : mLocator);
-    NS_DispatchToMainThread(ev);
+  if (mIsWatchPositionRequest || !canUseCache) {
+    // let the locator know we're pending
+    // we will now be owned by the locator
+    mLocator->NotifyAllowedRequest(this);
   }
 
   SetTimeoutTimer();
 
-  mAllowed = true;
   return NS_OK;
 }
 
@@ -504,47 +472,51 @@ nsGeolocationRequest::SetTimeoutTimer()
 }
 
 void
-nsGeolocationRequest::MarkCleared()
-{
-  if (mTimeoutTimer) {
-    mTimeoutTimer->Cancel();
-    mTimeoutTimer = nullptr;
-  }
-  mCleared = true;
-}
-
-void
 nsGeolocationRequest::SendLocation(nsIDOMGeoPosition* aPosition)
 {
-  if (mCleared || !mAllowed) {
+  if (mShutdown) {
+    // Ignore SendLocationEvents issued before we were cleared.
     return;
   }
 
-  if (mTimeoutTimer) {
-    mTimeoutTimer->Cancel();
-    mTimeoutTimer = nullptr;
+  nsRefPtr<Position> wrapped, cachedWrapper = mLocator->GetCachedPosition();
+  if (cachedWrapper && aPosition == cachedWrapper->GetWrappedGeoPosition()) {
+    wrapped = cachedWrapper;
+  } else if (aPosition) {
+    nsCOMPtr<nsIDOMGeoPositionCoords> coords;
+    aPosition->GetCoords(getter_AddRefs(coords));
+    if (coords) {
+      wrapped = new Position(ToSupports(mLocator), aPosition);
+    }
   }
 
-  // we should not pass null back to the DOM.
-  if (!aPosition) {
+  if (!wrapped) {
     NotifyError(nsIDOMGeoPositionError::POSITION_UNAVAILABLE);
     return;
   }
 
+  mLocator->SetCachedPosition(wrapped);
+
   // Ensure that the proper context is on the stack (bug 452762)
-  nsCOMPtr<nsIJSContextStack> stack(do_GetService("@mozilla.org/js/xpc/ContextStack;1"));
-  if (!stack || NS_FAILED(stack->Push(nullptr))) {
-    return; // silently fail
+  nsCxPusher pusher;
+  pusher.PushNull();
+  nsAutoMicroTask mt;
+  if (mCallback.HasWebIDLCallback()) {
+    ErrorResult err;
+    PositionCallback* callback = mCallback.GetWebIDLCallback();
+
+    MOZ_ASSERT(callback);
+    callback->Call(*wrapped, err);
+  } else {
+    nsIDOMGeoPositionCallback* callback = mCallback.GetXPCOMCallback();
+
+    MOZ_ASSERT(callback);
+    callback->HandleEvent(aPosition);
   }
 
-  nsAutoMicroTask mt;
-  mCallback->HandleEvent(aPosition);
-
-  // remove the stack
-  JSContext* cx;
-  stack->Pop(&cx);
-
-  if (mIsWatchPositionRequest) {
+  if (!mIsWatchPositionRequest) {
+    Shutdown();
+  } else if (!mShutdown) { // The handler may have called clearWatch
     SetTimeoutTimer();
   }
 }
@@ -558,49 +530,43 @@ nsGeolocationRequest::GetPrincipal()
   return mLocator->GetPrincipal();
 }
 
-bool
-nsGeolocationRequest::Update(nsIDOMGeoPosition* aPosition, bool aIsBetter)
+NS_IMETHODIMP
+nsGeolocationRequest::Update(nsIDOMGeoPosition* aPosition)
 {
-  if (!mAllowed) {
-    return false;
-  }
-  // Only dispatch callbacks if this is the first position for this request, or
-  // if the accuracy is as good or improving.
-  //
-  // This ensures that all listeners get at least one position callback, particularly
-  // in the case when newly detected positions are all less accurate than the cached one.
-  //
-  // Fixes bug 596481
-  nsCOMPtr<nsIRunnable> ev;
-  if (mIsFirstUpdate || aIsBetter) {
-    mIsFirstUpdate = false;
-    ev  = new RequestSendLocationEvent(aPosition,
-                                       this,
-                                       mIsWatchPositionRequest ? nullptr : mLocator);
-  } else {
-    ev = new RequestRestartTimerEvent(this);
-  }
+  nsCOMPtr<nsIRunnable> ev = new RequestSendLocationEvent(aPosition, this);
   NS_DispatchToMainThread(ev);
-  return true;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsGeolocationRequest::NotifyError(uint16_t aErrorCode)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsRefPtr<PositionError> positionError = new PositionError(mLocator, aErrorCode);
+  positionError->NotifyCallback(mErrorCallback);
+  return NS_OK;
 }
 
 void
 nsGeolocationRequest::Shutdown()
 {
+  MOZ_ASSERT(!mShutdown, "request shutdown twice");
+  mShutdown = true;
+
+  if (mTimeoutTimer) {
+    mTimeoutTimer->Cancel();
+    mTimeoutTimer = nullptr;
+  }
+
+  // This should happen last, to ensure that this request isn't taken into consideration
+  // when deciding whether existing requests still require high accuracy.
   if (mOptions && mOptions->enableHighAccuracy) {
     nsRefPtr<nsGeolocationService> gs = nsGeolocationService::GetGeolocationService();
     if (gs) {
       gs->SetHigherAccuracy(false);
     }
   }
-
-  if (mTimeoutTimer) {
-    mTimeoutTimer->Cancel();
-    mTimeoutTimer = nullptr;
-  }
-  mCleared = true;
-  mCallback = nullptr;
-  mErrorCallback = nullptr;
 }
 
 bool nsGeolocationRequest::Recv__delete__(const bool& allow)
@@ -645,17 +611,6 @@ nsresult nsGeolocationService::Init()
     return NS_OK;
   }
 
-  nsCOMPtr<nsIGeolocationProvider> provider = do_GetService(NS_GEOLOCATION_PROVIDER_CONTRACTID);
-  if (provider) {
-    mProviders.AppendObject(provider);
-  }
-
-  // look up any providers that were registered via the category manager
-  nsCOMPtr<nsICategoryManager> catMan(do_GetService("@mozilla.org/categorymanager;1"));
-  if (!catMan) {
-    return NS_ERROR_FAILURE;
-  }
-
   // check if the geolocation service is enable from settings
   nsCOMPtr<nsISettingsService> settings =
     do_GetService("@mozilla.org/settingsService;1");
@@ -683,59 +638,26 @@ nsresult nsGeolocationService::Init()
   obs->AddObserver(this, "quit-application", false);
   obs->AddObserver(this, "mozsettings-changed", false);
 
-  nsCOMPtr<nsISimpleEnumerator> geoproviders;
-  catMan->EnumerateCategory("geolocation-provider", getter_AddRefs(geoproviders));
-  if (geoproviders) {
-
-    bool hasMore;
-    while (NS_SUCCEEDED(geoproviders->HasMoreElements(&hasMore)) && hasMore) {
-      nsCOMPtr<nsISupports> elem;
-      geoproviders->GetNext(getter_AddRefs(elem));
-
-      nsCOMPtr<nsISupportsCString> elemString = do_QueryInterface(elem);
-
-      nsAutoCString name;
-      elemString->GetData(name);
-
-      nsXPIDLCString spec;
-      catMan->GetCategoryEntry("geolocation-provider", name.get(), getter_Copies(spec));
-
-      provider = do_GetService(spec);
-      if (provider) {
-        mProviders.AppendObject(provider);
-      }
-    }
-  }
-
-  // we should move these providers outside of this file! dft
-
 #ifdef MOZ_MAEMO_LIBLOCATION
-  provider = new MaemoLocationProvider();
-  if (provider) {
-    mProviders.AppendObject(provider);
-  }
+  mProvider = new MaemoLocationProvider();
 #endif
 
 #ifdef MOZ_ENABLE_QTMOBILITY
-  provider = new QTMLocationProvider();
-  if (provider) {
-    mProviders.AppendObject(provider);
-  }
+  mProvider = new QTMLocationProvider();
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
-  provider = new AndroidLocationProvider();
-  if (provider) {
-    mProviders.AppendObject(provider);
-  }
+  mProvider = new AndroidLocationProvider();
 #endif
 
 #ifdef MOZ_WIDGET_GONK
-  provider = do_GetService(GONK_GPS_GEOLOCATION_PROVIDER_CONTRACTID);
-  if (provider) {
-    mProviders.AppendObject(provider);
-  }
+  mProvider = do_GetService(GONK_GPS_GEOLOCATION_PROVIDER_CONTRACTID);
 #endif
+
+  nsCOMPtr<nsIGeolocationProvider> providerOveride = do_GetService(NS_GEOLOCATION_PROVIDER_CONTRACTID); 
+  if (providerOveride) {
+    mProvider = providerOveride;
+  }
 
   return NS_OK;
 }
@@ -750,25 +672,17 @@ nsGeolocationService::HandleMozsettingChanged(const PRUnichar* aData)
     // The string that we're interested in will be a JSON string that looks like:
     //  {"key":"gelocation.enabled","value":true}
 
-    nsCOMPtr<nsIThreadJSContextStack> stack = do_GetService("@mozilla.org/js/xpc/ContextStack;1");
-    if (!stack) {
-      return;
-    }
-
-    JSContext *cx = stack->GetSafeJSContext();
-    if (!cx) {
-      return;
-    }
+    AutoSafeJSContext cx;
 
     nsDependentString dataStr(aData);
-    JS::Value val;
+    JS::Rooted<JS::Value> val(cx);
     if (!JS_ParseJSON(cx, dataStr.get(), dataStr.Length(), &val) || !val.isObject()) {
       return;
     }
 
-    JSObject &obj(val.toObject());
-    JS::Value key;
-    if (!JS_GetProperty(cx, &obj, "key", &key) || !key.isString()) {
+    JS::Rooted<JSObject*> obj(cx, &val.toObject());
+    JS::Rooted<JS::Value> key(cx);
+    if (!JS_GetProperty(cx, obj, "key", key.address()) || !key.isString()) {
       return;
     }
 
@@ -777,8 +691,8 @@ nsGeolocationService::HandleMozsettingChanged(const PRUnichar* aData)
       return;
     }
 
-    JS::Value value;
-    if (!JS_GetProperty(cx, &obj, "value", &value) || !value.isBoolean()) {
+    JS::Rooted<JS::Value> value(cx);
+    if (!JS_GetProperty(cx, obj, "value", value.address()) || !value.isBoolean()) {
       return;
     }
 
@@ -851,105 +765,22 @@ nsGeolocationService::Observe(nsISupports* aSubject,
 NS_IMETHODIMP
 nsGeolocationService::Update(nsIDOMGeoPosition *aSomewhere)
 {
-  // here we have to determine this aSomewhere is a "better"
-  // position than any previously recv'ed.
-
-  bool isBetter = IsBetterPosition(aSomewhere);
-
-  if (isBetter) {
-    SetCachedPosition(aSomewhere);
-  }
+  SetCachedPosition(aSomewhere);
 
   for (uint32_t i = 0; i< mGeolocators.Length(); i++) {
-    mGeolocators[i]->Update(aSomewhere, isBetter);
+    mGeolocators[i]->Update(aSomewhere);
   }
   return NS_OK;
 }
 
-PRBool
-nsGeolocationService::IsBetterPosition(nsIDOMGeoPosition *aSomewhere)
+NS_IMETHODIMP
+nsGeolocationService::NotifyError(uint16_t aErrorCode)
 {
-  if (!aSomewhere) {
-    return false;
+  for (uint32_t i = 0; i < mGeolocators.Length(); i++) {
+    mGeolocators[i]->NotifyError(aErrorCode);
   }
 
-  if (mProviders.Count() == 1 || !mLastPosition) {
-    return true;
-  }
-
-  nsCOMPtr<nsIDOMGeoPositionCoords> coords;
-  mLastPosition->GetCoords(getter_AddRefs(coords));
-  if (!coords) {
-    return false;
-  }
-
-  double oldAccuracy;
-  nsresult rv = coords->GetAccuracy(&oldAccuracy);
-  NS_ENSURE_SUCCESS(rv, false);
-
-  double oldLat, oldLon;
-  rv = coords->GetLongitude(&oldLon);
-  NS_ENSURE_SUCCESS(rv, false);
-
-  rv = coords->GetLatitude(&oldLat);
-  NS_ENSURE_SUCCESS(rv, false);
-
-  aSomewhere->GetCoords(getter_AddRefs(coords));
-  if (!coords) {
-    return false;
-  }
-
-  double newAccuracy;
-  rv = coords->GetAccuracy(&newAccuracy);
-  NS_ENSURE_SUCCESS(rv, false);
-
-  double newLat, newLon;
-  rv = coords->GetLongitude(&newLon);
-  NS_ENSURE_SUCCESS(rv, false);
-
-  rv = coords->GetLatitude(&newLat);
-  NS_ENSURE_SUCCESS(rv, false);
-
-  // Latitude and longitude is reported in degrees.
-  // However, it is easier to work in radian:
-  // see: http://en.wikipedia.org/wiki/Radian
-  double radsInDeg = M_PI / 180.0;
-
-  newLat *= radsInDeg;
-  newLon *= radsInDeg;
-  oldLat *= radsInDeg;
-  oldLon *= radsInDeg;
-
-  // WGS84 equatorial radius of earth = 6378137m
-  // http://en.wikipedia.org/wiki/WGS84
-  double radius = 6378137;
-
-  // We want to calculate the "Great Circle distance"
-  // between the point (lat1, lon1) and (lat2, lon2).  We
-  // will use the spherical law of cosines to the triangle
-  // formed by our two points and the north pole.
-  //
-  // a = sin ( lat1 ) * sin ( lat2 )  + cos ( lat1 ) * cos (lat2) * cos (lon1 - lon2)
-  // R = radius of circle
-  // distance = arccos ( a ) * R 
-  //
-  // http://en.wikipedia.org/wiki/Great-circle_distance
-
-  double delta = acos( (sin(newLat) * sin(oldLat)) +
-                       (cos(newLat) * cos(oldLat) * cos(oldLon - newLon)) ) * radius; 
-
-  // The threshold is when the distance between the two
-  // positions exceeds the worse (larger value) of the two
-  // accuracies.
-  double max_accuracy = NS_MAX(oldAccuracy, newAccuracy);
-  if (delta > max_accuracy)
-    return true;
-
-  // check to see if the aSomewhere position is more accurate
-  if (oldAccuracy >= newAccuracy)
-    return true;
-
-  return false;
+  return NS_OK;
 }
 
 void
@@ -965,7 +796,7 @@ nsGeolocationService::GetCachedPosition()
 }
 
 nsresult
-nsGeolocationService::StartDevice(nsIPrincipal *aPrincipal, bool aRequestPrivate)
+nsGeolocationService::StartDevice(nsIPrincipal *aPrincipal)
 {
   if (!sGeoEnabled || sGeoInitPending) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -978,7 +809,8 @@ nsGeolocationService::StartDevice(nsIPrincipal *aPrincipal, bool aRequestPrivate
 
   if (XRE_GetProcessType() == GeckoProcessType_Content) {
     ContentChild* cpc = ContentChild::GetSingleton();
-    cpc->SendAddGeolocationListener(IPC::Principal(aPrincipal));
+    cpc->SendAddGeolocationListener(IPC::Principal(aPrincipal),
+                                    HighAccuracyRequested());
     return NS_OK;
   }
 
@@ -988,13 +820,22 @@ nsGeolocationService::StartDevice(nsIPrincipal *aPrincipal, bool aRequestPrivate
     return NS_ERROR_FAILURE;
   }
 
-  for (int32_t i = 0; i < mProviders.Count(); i++) {
-    mProviders[i]->Startup();
-    mProviders[i]->Watch(this, aRequestPrivate);
-    obs->NotifyObservers(mProviders[i],
-                         "geolocation-device-events",
-                         NS_LITERAL_STRING("starting").get());
+  if (!mProvider) {
+    return NS_ERROR_FAILURE;
   }
+
+  nsresult rv;
+
+  if (NS_FAILED(rv = mProvider->Startup()) ||
+      NS_FAILED(rv = mProvider->Watch(this))) {
+
+    NotifyError(nsIDOMGeoPositionError::POSITION_UNAVAILABLE);
+    return rv;
+  }
+
+  obs->NotifyObservers(mProvider,
+                       "geolocation-device-events",
+                       NS_LITERAL_STRING("starting").get());
 
   return NS_OK;
 }
@@ -1013,28 +854,37 @@ nsGeolocationService::SetDisconnectTimer()
                          nsITimer::TYPE_ONE_SHOT);
 }
 
+bool
+nsGeolocationService::HighAccuracyRequested()
+{
+  for (uint32_t i = 0; i < mGeolocators.Length(); i++) {
+    if (mGeolocators[i]->HighAccuracyRequested()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void
 nsGeolocationService::SetHigherAccuracy(bool aEnable)
 {
+  bool highRequired = aEnable || HighAccuracyRequested();
+
   if (XRE_GetProcessType() == GeckoProcessType_Content) {
     ContentChild* cpc = ContentChild::GetSingleton();
-    cpc->SendSetGeolocationHigherAccuracy(aEnable);
+    cpc->SendSetGeolocationHigherAccuracy(highRequired);
     return;
   }
 
-  if (!mHigherAccuracy && aEnable) {
-    for (int32_t i = 0; i < mProviders.Count(); i++) {
-      mProviders[i]->SetHighAccuracy(true);
-    }
+  if (!mHigherAccuracy && highRequired) {
+      mProvider->SetHighAccuracy(true);
   }
 
-  if (mHigherAccuracy && !aEnable) {
-    for (int32_t i = 0; i < mProviders.Count(); i++) {
-      mProviders[i]->SetHighAccuracy(false);
-    }
+  if (mHigherAccuracy && !highRequired) {
+      mProvider->SetHighAccuracy(false);
   }
 
-  mHigherAccuracy = aEnable;
+  mHigherAccuracy = highRequired;
 }
 
 void
@@ -1056,15 +906,19 @@ nsGeolocationService::StopDevice()
     return;
   }
 
-  for (int32_t i = 0; i < mProviders.Count(); i++) {
-    mProviders[i]->Shutdown();
-    obs->NotifyObservers(mProviders[i],
-                         "geolocation-device-events",
-                         NS_LITERAL_STRING("shutdown").get());
+  if (!mProvider) {
+    return;
   }
+
+  mHigherAccuracy = false;
+
+  mProvider->Shutdown();
+  obs->NotifyObservers(mProvider,
+                       "geolocation-device-events",
+                       NS_LITERAL_STRING("shutdown").get());
 }
 
-nsRefPtr<nsGeolocationService> nsGeolocationService::sService;
+StaticRefPtr<nsGeolocationService> nsGeolocationService::sService;
 
 already_AddRefed<nsGeolocationService>
 nsGeolocationService::GetGeolocationService()
@@ -1085,57 +939,57 @@ nsGeolocationService::GetGeolocationService()
 }
 
 void
-nsGeolocationService::AddLocator(nsGeolocation* aLocator)
+nsGeolocationService::AddLocator(Geolocation* aLocator)
 {
   mGeolocators.AppendElement(aLocator);
 }
 
 void
-nsGeolocationService::RemoveLocator(nsGeolocation* aLocator)
+nsGeolocationService::RemoveLocator(Geolocation* aLocator)
 {
   mGeolocators.RemoveElement(aLocator);
 }
 
 ////////////////////////////////////////////////////
-// nsGeolocation
+// Geolocation
 ////////////////////////////////////////////////////
 
-DOMCI_DATA(GeoGeolocation, nsGeolocation)
-
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsGeolocation)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Geolocation)
+  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMGeoGeolocation)
   NS_INTERFACE_MAP_ENTRY(nsIDOMGeoGeolocation)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(GeoGeolocation)
+  NS_INTERFACE_MAP_ENTRY(nsIGeolocationUpdate)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_CYCLE_COLLECTING_ADDREF(nsGeolocation)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(nsGeolocation)
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsGeolocation)
+NS_IMPL_CYCLE_COLLECTING_ADDREF(Geolocation)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(Geolocation)
 
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGeolocation)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Geolocation)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mCachedPosition)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
   tmp->mPendingRequests.Clear();
-  tmp->mPendingCallbacks.Clear();
-  tmp->mWatchingCallbacks.Clear();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mPendingCallbacks)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mWatchingCallbacks)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsGeolocation)
-  uint32_t i;
-  for (i = 0; i < tmp->mPendingRequests.Length(); ++i)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Geolocation)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCachedPosition)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
+  for (uint32_t i = 0; i < tmp->mPendingRequests.Length(); ++i)
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPendingRequests[i].request)
 
-  for (i = 0; i < tmp->mPendingCallbacks.Length(); ++i)
-    NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPendingCallbacks[i])
-
-  for (i = 0; i < tmp->mWatchingCallbacks.Length(); ++i)
-    NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWatchingCallbacks[i])
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPendingCallbacks)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWatchingCallbacks)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(Geolocation)
 
-nsGeolocation::nsGeolocation()
+Geolocation::Geolocation()
 : mLastWatchId(0)
 {
+  SetIsDOMBinding();
 }
 
-nsGeolocation::~nsGeolocation()
+Geolocation::~Geolocation()
 {
   if (mService) {
     Shutdown();
@@ -1143,7 +997,7 @@ nsGeolocation::~nsGeolocation()
 }
 
 nsresult
-nsGeolocation::Init(nsIDOMWindow* aContentDom)
+Geolocation::Init(nsIDOMWindow* aContentDom)
 {
   // Remember the window
   if (aContentDom) {
@@ -1179,15 +1033,10 @@ nsGeolocation::Init(nsIDOMWindow* aContentDom)
 }
 
 void
-nsGeolocation::Shutdown()
+Geolocation::Shutdown()
 {
-  // Shutdown and release all callbacks
-  for (uint32_t i = 0; i< mPendingCallbacks.Length(); i++)
-    mPendingCallbacks[i]->Shutdown();
+  // Release all callbacks
   mPendingCallbacks.Clear();
-
-  for (uint32_t i = 0; i< mWatchingCallbacks.Length(); i++)
-    mWatchingCallbacks[i]->Shutdown();
   mWatchingCallbacks.Clear();
 
   if (mService) {
@@ -1198,71 +1047,140 @@ nsGeolocation::Shutdown()
   mPrincipal = nullptr;
 }
 
+nsIDOMWindow*
+Geolocation::GetParentObject() const {
+  nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mOwner);
+  return window.get();
+}
+
 bool
-nsGeolocation::HasActiveCallbacks()
+Geolocation::HasActiveCallbacks()
+{
+  return mPendingCallbacks.Length() || mWatchingCallbacks.Length();
+}
+
+bool
+Geolocation::HighAccuracyRequested()
 {
   for (uint32_t i = 0; i < mWatchingCallbacks.Length(); i++) {
-    if (mWatchingCallbacks[i]->IsActive()) {
+    if (mWatchingCallbacks[i]->WantsHighAccuracy()) {
       return true;
     }
   }
 
-  return mPendingCallbacks.Length() != 0;
-}
-
-void
-nsGeolocation::RemoveRequest(nsGeolocationRequest* aRequest)
-{
-  mPendingCallbacks.RemoveElement(aRequest);
-
-  // if it is in the mWatchingCallbacks, we can't do much
-  // since we passed back the position in the array to who
-  // ever called WatchPosition() and we do not want to mess
-  // around with the ordering of the array.  Instead, just
-  // mark the request as "cleared".
-
-  aRequest->MarkCleared();
-}
-
-void
-nsGeolocation::Update(nsIDOMGeoPosition *aSomewhere, bool aIsBetter)
-{
-  if (!WindowOwnerStillExists()) {
-    return Shutdown();
-  }
-
-  for (uint32_t i = mPendingCallbacks.Length(); i> 0; i--) {
-    if (mPendingCallbacks[i-1]->Update(aSomewhere, aIsBetter)) {
-      mPendingCallbacks.RemoveElementAt(i-1);
+  for (uint32_t i = 0; i < mPendingCallbacks.Length(); i++) {
+    if (mPendingCallbacks[i]->WantsHighAccuracy()) {
+      return true;
     }
   }
 
-  // notify everyone that is watching
-  for (uint32_t i = 0; i< mWatchingCallbacks.Length(); i++) {
-    mWatchingCallbacks[i]->Update(aSomewhere, aIsBetter);
-  }
+  return false;
+}
+
+void
+Geolocation::RemoveRequest(nsGeolocationRequest* aRequest)
+{
+  bool requestWasKnown =
+    (mPendingCallbacks.RemoveElement(aRequest) !=
+     mWatchingCallbacks.RemoveElement(aRequest));
+
+  // request must have been in one of the lists
+  MOZ_ASSERT(requestWasKnown);
+  unused << requestWasKnown;
 }
 
 NS_IMETHODIMP
-nsGeolocation::GetCurrentPosition(nsIDOMGeoPositionCallback *callback,
-                                  nsIDOMGeoPositionErrorCallback *errorCallback,
-                                  const jsval& jsoptions,
-                                  JSContext* cx)
+Geolocation::Update(nsIDOMGeoPosition *aSomewhere)
 {
-  nsresult rv;
-  nsAutoPtr<mozilla::dom::GeoPositionOptions> options(
-      OptionsFromJSOptions(cx, jsoptions, &rv));
-  NS_ENSURE_SUCCESS(rv, rv);
-  return GetCurrentPosition(callback, errorCallback, options.forget());
+  if (!WindowOwnerStillExists()) {
+    Shutdown();
+    return NS_OK;
+  }
+
+  for (uint32_t i = mPendingCallbacks.Length(); i > 0; i--) {
+    mPendingCallbacks[i-1]->Update(aSomewhere);
+    RemoveRequest(mPendingCallbacks[i-1]);
+  }
+
+  // notify everyone that is watching
+  for (uint32_t i = 0; i < mWatchingCallbacks.Length(); i++) {
+    mWatchingCallbacks[i]->Update(aSomewhere);
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+Geolocation::NotifyError(uint16_t aErrorCode)
+{
+  if (!WindowOwnerStillExists()) {
+    Shutdown();
+    return NS_OK;
+  }
+
+  for (uint32_t i = mPendingCallbacks.Length(); i > 0; i--) {
+    mPendingCallbacks[i-1]->NotifyError(aErrorCode);
+    RemoveRequest(mPendingCallbacks[i-1]);
+  }
+
+  // notify everyone that is watching
+  for (uint32_t i = 0; i < mWatchingCallbacks.Length(); i++) {
+    mWatchingCallbacks[i]->NotifyError(aErrorCode);
+  }
+
+  return NS_OK;
+}
+
+void
+Geolocation::SetCachedPosition(Position* aPosition)
+{
+  mCachedPosition = aPosition;
+}
+
+Position*
+Geolocation::GetCachedPosition()
+{
+  return mCachedPosition;
+}
+
+void
+Geolocation::GetCurrentPosition(PositionCallback& aCallback,
+                                PositionErrorCallback* aErrorCallback,
+                                const PositionOptions& aOptions,
+                                ErrorResult& aRv)
+{
+  GeoPositionCallback successCallback(&aCallback);
+  GeoPositionErrorCallback errorCallback(aErrorCallback);
+
+  nsresult rv =
+    GetCurrentPosition(successCallback, errorCallback,
+                       GeoPositionOptionsFromPositionOptions(aOptions));
+
+  if (NS_FAILED(rv)) {
+    aRv.Throw(rv);
+  }
+
+  return;
+}
+
+NS_IMETHODIMP
+Geolocation::GetCurrentPosition(nsIDOMGeoPositionCallback* aCallback,
+                                nsIDOMGeoPositionErrorCallback* aErrorCallback,
+                                mozilla::idl::GeoPositionOptions* aOptions)
+{
+  NS_ENSURE_ARG_POINTER(aCallback);
+
+  GeoPositionCallback successCallback(aCallback);
+  GeoPositionErrorCallback errorCallback(aErrorCallback);
+
+  return GetCurrentPosition(successCallback, errorCallback, aOptions);
 }
 
 nsresult
-nsGeolocation::GetCurrentPosition(nsIDOMGeoPositionCallback *callback,
-                                  nsIDOMGeoPositionErrorCallback *errorCallback,
-                                  mozilla::dom::GeoPositionOptions *options)
+Geolocation::GetCurrentPosition(GeoPositionCallback& callback,
+                                GeoPositionErrorCallback& errorCallback,
+                                mozilla::idl::GeoPositionOptions *options)
 {
-  NS_ENSURE_ARG_POINTER(callback);
-
   if (mPendingCallbacks.Length() > MAX_GEO_REQUESTS_PER_WINDOW) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -1283,8 +1201,6 @@ nsGeolocation::GetCurrentPosition(nsIDOMGeoPositionCallback *callback,
     return NS_ERROR_FAILURE;
   }
 
-  mPendingCallbacks.AppendElement(request);
-
   if (sGeoInitPending) {
     PendingRequest req = { request, PendingRequest::GetCurrentPosition };
     mPendingRequests.AppendElement(req);
@@ -1295,7 +1211,7 @@ nsGeolocation::GetCurrentPosition(nsIDOMGeoPositionCallback *callback,
 }
 
 nsresult
-nsGeolocation::GetCurrentPositionReady(nsGeolocationRequest* aRequest)
+Geolocation::GetCurrentPositionReady(nsGeolocationRequest* aRequest)
 {
   if (mOwner) {
     if (!RegisterRequestWithPrompt(aRequest)) {
@@ -1315,48 +1231,63 @@ nsGeolocation::GetCurrentPositionReady(nsGeolocationRequest* aRequest)
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsGeolocation::WatchPosition(nsIDOMGeoPositionCallback *callback,
-                             nsIDOMGeoPositionErrorCallback *errorCallback,
-                             const jsval& jsoptions,
-                             JSContext* cx,
-                             int32_t *_retval)
+int32_t
+Geolocation::WatchPosition(PositionCallback& aCallback,
+                           PositionErrorCallback* aErrorCallback,
+                           const PositionOptions& aOptions,
+                           ErrorResult& aRv)
 {
-  nsresult rv;
-  nsAutoPtr<mozilla::dom::GeoPositionOptions> options(
-      OptionsFromJSOptions(cx, jsoptions, &rv));
-  NS_ENSURE_SUCCESS(rv, rv);
-  return WatchPosition(callback, errorCallback, options.forget(), _retval);
+  int32_t ret;
+  GeoPositionCallback successCallback(&aCallback);
+  GeoPositionErrorCallback errorCallback(aErrorCallback);
+
+  nsresult rv =
+    WatchPosition(successCallback, errorCallback,
+                  GeoPositionOptionsFromPositionOptions(aOptions), &ret);
+
+  if (NS_FAILED(rv)) {
+    aRv.Throw(rv);
+  }
+
+  return ret;
+}
+
+NS_IMETHODIMP
+Geolocation::WatchPosition(nsIDOMGeoPositionCallback *aCallback,
+                           nsIDOMGeoPositionErrorCallback *aErrorCallback,
+                           mozilla::idl::GeoPositionOptions *aOptions,
+                           int32_t* aRv)
+{
+  NS_ENSURE_ARG_POINTER(aCallback);
+
+  GeoPositionCallback successCallback(aCallback);
+  GeoPositionErrorCallback errorCallback(aErrorCallback);
+
+  return WatchPosition(successCallback, errorCallback, aOptions, aRv);
 }
 
 nsresult
-nsGeolocation::WatchPosition(nsIDOMGeoPositionCallback *callback,
-                             nsIDOMGeoPositionErrorCallback *errorCallback,
-                             mozilla::dom::GeoPositionOptions *options,
-                             int32_t *_retval)
+Geolocation::WatchPosition(GeoPositionCallback& aCallback,
+                           GeoPositionErrorCallback& aErrorCallback,
+                           mozilla::idl::GeoPositionOptions* aOptions,
+                           int32_t* aRv)
 {
-  NS_ENSURE_ARG_POINTER(callback);
-
-  if (mPendingCallbacks.Length() > MAX_GEO_REQUESTS_PER_WINDOW) {
+  if (mWatchingCallbacks.Length() > MAX_GEO_REQUESTS_PER_WINDOW) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
   // The watch ID:
-  *_retval = mLastWatchId++;
+  *aRv = mLastWatchId++;
 
   nsRefPtr<nsGeolocationRequest> request = new nsGeolocationRequest(this,
-                                                                    callback,
-                                                                    errorCallback,
-                                                                    options,
+                                                                    aCallback,
+                                                                    aErrorCallback,
+                                                                    aOptions,
                                                                     true,
-                                                                    *_retval);
+                                                                    *aRv);
 
   if (!sGeoEnabled) {
     nsCOMPtr<nsIRunnable> ev = new RequestAllowEvent(false, request);
-
-    // need to hand back an index/reference.
-    mWatchingCallbacks.AppendElement(request);
-
     NS_DispatchToMainThread(ev);
     return NS_OK;
   }
@@ -1364,8 +1295,6 @@ nsGeolocation::WatchPosition(nsIDOMGeoPositionCallback *callback,
   if (!mOwner && !nsContentUtils::IsCallerChrome()) {
     return NS_ERROR_FAILURE;
   }
-
-  mWatchingCallbacks.AppendElement(request);
 
   if (sGeoInitPending) {
     PendingRequest req = { request, PendingRequest::WatchPosition };
@@ -1377,7 +1306,7 @@ nsGeolocation::WatchPosition(nsIDOMGeoPositionCallback *callback,
 }
 
 nsresult
-nsGeolocation::WatchPositionReady(nsGeolocationRequest* aRequest)
+Geolocation::WatchPositionReady(nsGeolocationRequest* aRequest)
 {
   if (mOwner) {
     if (!RegisterRequestWithPrompt(aRequest))
@@ -1396,7 +1325,7 @@ nsGeolocation::WatchPositionReady(nsGeolocationRequest* aRequest)
 }
 
 NS_IMETHODIMP
-nsGeolocation::ClearWatch(int32_t aWatchId)
+Geolocation::ClearWatch(int32_t aWatchId)
 {
   if (aWatchId < 0) {
     return NS_OK;
@@ -1404,7 +1333,8 @@ nsGeolocation::ClearWatch(int32_t aWatchId)
 
   for (uint32_t i = 0, length = mWatchingCallbacks.Length(); i < length; ++i) {
     if (mWatchingCallbacks[i]->WatchId() == aWatchId) {
-      mWatchingCallbacks[i]->MarkCleared();
+      mWatchingCallbacks[i]->Shutdown();
+      RemoveRequest(mWatchingCallbacks[i]);
       break;
     }
   }
@@ -1413,7 +1343,7 @@ nsGeolocation::ClearWatch(int32_t aWatchId)
 }
 
 void
-nsGeolocation::ServiceReady()
+Geolocation::ServiceReady()
 {
   for (uint32_t length = mPendingRequests.Length(); length > 0; --length) {
     switch (mPendingRequests[0].type) {
@@ -1431,9 +1361,9 @@ nsGeolocation::ServiceReady()
 }
 
 bool
-nsGeolocation::WindowOwnerStillExists()
+Geolocation::WindowOwnerStillExists()
 {
-  // an owner was never set when nsGeolocation
+  // an owner was never set when Geolocation
   // was created, which means that this object
   // is being used without a window.
   if (mOwner == nullptr) {
@@ -1458,8 +1388,18 @@ nsGeolocation::WindowOwnerStillExists()
   return true;
 }
 
+void
+Geolocation::NotifyAllowedRequest(nsGeolocationRequest* aRequest)
+{
+  if (aRequest->IsWatch()) {
+    mWatchingCallbacks.AppendElement(aRequest);
+  } else {
+    mPendingCallbacks.AppendElement(aRequest);
+  }
+}
+
 bool
-nsGeolocation::RegisterRequestWithPrompt(nsGeolocationRequest* request)
+Geolocation::RegisterRequestWithPrompt(nsGeolocationRequest* request)
 {
   if (Preferences::GetBool("geo.prompt.testing", false)) {
     bool allow = Preferences::GetBool("geo.prompt.testing.allow", false);
@@ -1497,4 +1437,10 @@ nsGeolocation::RegisterRequestWithPrompt(nsGeolocationRequest* request)
   nsCOMPtr<nsIRunnable> ev  = new RequestPromptEvent(request);
   NS_DispatchToMainThread(ev);
   return true;
+}
+
+JSObject*
+Geolocation::WrapObject(JSContext *aCtx, JS::Handle<JSObject*> aScope)
+{
+  return mozilla::dom::GeolocationBinding::Wrap(aCtx, aScope, this);
 }

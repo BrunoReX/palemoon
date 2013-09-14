@@ -37,6 +37,29 @@ function onProfileCreated(name, uid) {
 }
 
 function onProfileSwitched(name, uid) {
+  gPanel.once("profileCreated", onNamedProfileCreated);
+  gPanel.once("profileSwitched", onNamedProfileSwitched);
+
+  ok(gPanel.activeProfile.uid === uid, "Switched to a new profile");
+  gPanel.createProfile("Custom Profile");
+}
+
+function onNamedProfileCreated(name, uid) {
+  is(gPanel.profiles.size, 3, "There are three profiles now");
+  is(gPanel.getProfileByUID(uid).name, "Custom Profile", "Name is correct");
+
+  let profile = gPanel.profiles.get(uid);
+  let data = gPanel.sidebar.getItemByProfile(profile).attachment;
+
+  is(data.uid, uid, "UID is correct");
+  is(data.name, "Custom Profile", "Name is correct on the label");
+
+  let btn = gPanel.document.getElementById("profile-" + uid);
+  ok(btn, "Profile item has been added to the sidebar");
+  btn.click();
+}
+
+function onNamedProfileSwitched(name, uid) {
   ok(gPanel.activeProfile.uid === uid, "Switched to a new profile");
 
   tearDown(gTab, function onTearDown() {

@@ -60,6 +60,7 @@
 #include "nsIPrincipal.h"
 #include "Element.h"
 #include "nsSVGUtils.h"
+#include "harfbuzz/hb.h"
 
 #define SVG_CONTENT_TYPE NS_LITERAL_CSTRING("image/svg+xml")
 #define UTF8_CHARSET NS_LITERAL_CSTRING("utf-8")
@@ -72,32 +73,23 @@ const float gfxSVGGlyphs::SVG_UNITS_PER_EM = 1000.0f;
 
 const gfxRGBA SimpleTextObjectPaint::sZero = gfxRGBA(0.0f, 0.0f, 0.0f, 0.0f);
 
-gfxSVGGlyphs::gfxSVGGlyphs(FallibleTArray<uint8_t>& aSVGTable,
-                           const FallibleTArray<uint8_t>& aCmapTable)
+gfxSVGGlyphs::gfxSVGGlyphs(hb_blob_t *aSVGTable, hb_blob_t *aCmapTable)
 {
-    mSVGData.SwapElements(aSVGTable);
+    mSVGData = aSVGTable;
 
-    mHeader = reinterpret_cast<Header*>(mSVGData.Elements());
-    UnmangleHeaders();
+    const char* svgData = hb_blob_get_data(mSVGData, nullptr);
+    mHeader = reinterpret_cast<const Header*>(svgData);
+    mIndex = reinterpret_cast<const IndexEntry*>(svgData + sizeof(Header));
 
     mGlyphDocs.Init();
     mGlyphIdMap.Init();
     mCmapData = aCmapTable;
 }
 
-void
-gfxSVGGlyphs::UnmangleHeaders()
+gfxSVGGlyphs::~gfxSVGGlyphs()
 {
-    mHeader->mIndexLength = NS_SWAP16(mHeader->mIndexLength);
-
-    mIndex = reinterpret_cast<IndexEntry*>(mSVGData.Elements() + sizeof(Header));
-
-    for (uint16_t i = 0; i < mHeader->mIndexLength; i++) {
-        mIndex[i].mStartGlyph = NS_SWAP16(mIndex[i].mStartGlyph);
-        mIndex[i].mEndGlyph = NS_SWAP16(mIndex[i].mEndGlyph);
-        mIndex[i].mDocOffset = NS_SWAP32(mIndex[i].mDocOffset);
-        mIndex[i].mDocLength = NS_SWAP32(mIndex[i].mDocLength);
-    }
+    hb_blob_destroy(mSVGData);
+    hb_blob_destroy(mCmapData);
 }
 
 /*
@@ -112,13 +104,17 @@ gfxSVGGlyphs::UnmangleHeaders()
  *        sets intersecting of size > 1 -- so... don't do that)
  */
 /* static */ int
-gfxSVGGlyphs::CompareIndexEntries(const void *_key, const void *_entry)
+gfxSVGGlyphs::CompareIndexEntries(const void *aKey, const void *aEntry)
 {
-    const uint32_t key = *(uint32_t*)_key;
-    const IndexEntry *entry = (const IndexEntry*)_entry;
+    const uint32_t key = *(uint32_t*)aKey;
+    const IndexEntry *entry = (const IndexEntry*)aEntry;
 
-    if (key < entry->mStartGlyph) return -1;
-    if (key >= entry->mEndGlyph) return 1;
+    if (key < uint16_t(entry->mStartGlyph)) {
+        return -1;
+    }
+    if (key > uint16_t(entry->mEndGlyph)) {
+        return 1;
+    }
     return 0;
 }
 
@@ -126,7 +122,7 @@ gfxSVGGlyphsDocument *
 gfxSVGGlyphs::FindOrCreateGlyphsDocument(uint32_t aGlyphId)
 {
     IndexEntry *entry = (IndexEntry*)bsearch(&aGlyphId, mIndex,
-                                             mHeader->mIndexLength,
+                                             uint16_t(mHeader->mIndexLength),
                                              sizeof(IndexEntry),
                                              CompareIndexEntries);
     if (!entry) {
@@ -136,7 +132,8 @@ gfxSVGGlyphs::FindOrCreateGlyphsDocument(uint32_t aGlyphId)
     gfxSVGGlyphsDocument *result = mGlyphDocs.Get(entry->mDocOffset);
 
     if (!result) {
-        result = new gfxSVGGlyphsDocument(mSVGData.Elements() + entry->mDocOffset,
+        const uint8_t *data = (const uint8_t*)hb_blob_get_data(mSVGData, nullptr);
+        result = new gfxSVGGlyphsDocument(data + entry->mDocOffset,
                                           entry->mDocLength, mCmapData);
         mGlyphDocs.Put(entry->mDocOffset, result);
     }
@@ -193,8 +190,7 @@ gfxSVGGlyphsDocument::SetupPresentation()
  * @param aCmapTable Buffer containing the raw cmap table data
  */
 void
-gfxSVGGlyphsDocument::FindGlyphElements(Element *aElem,
-                                        const FallibleTArray<uint8_t> &aCmapTable)
+gfxSVGGlyphsDocument::FindGlyphElements(Element *aElem, hb_blob_t *aCmapTable)
 {
     for (nsIContent *child = aElem->GetLastChild(); child;
             child = child->GetPreviousSibling()) {
@@ -270,8 +266,8 @@ gfxSVGGlyphsDocument::GetGlyphElement(uint32_t aGlyphId)
     return mGlyphIdMap.Get(aGlyphId);
 }
 
-gfxSVGGlyphsDocument::gfxSVGGlyphsDocument(uint8_t *aBuffer, uint32_t aBufLen,
-                                           const FallibleTArray<uint8_t>& aCmapTable)
+gfxSVGGlyphsDocument::gfxSVGGlyphsDocument(const uint8_t *aBuffer, uint32_t aBufLen,
+                                           hb_blob_t *aCmapTable)
 {
     mGlyphIdMap.Init();
     ParseDocument(aBuffer, aBufLen);
@@ -296,7 +292,7 @@ gfxSVGGlyphsDocument::gfxSVGGlyphsDocument(uint8_t *aBuffer, uint32_t aBufLen,
 }
 
 static nsresult
-CreateBufferedStream(uint8_t *aBuffer, uint32_t aBufLen,
+CreateBufferedStream(const uint8_t *aBuffer, uint32_t aBufLen,
                      nsCOMPtr<nsIInputStream> &aResult)
 {
     nsCOMPtr<nsIInputStream> stream;
@@ -318,7 +314,7 @@ CreateBufferedStream(uint8_t *aBuffer, uint32_t aBufLen,
 }
 
 nsresult
-gfxSVGGlyphsDocument::ParseDocument(uint8_t *aBuffer, uint32_t aBufLen)
+gfxSVGGlyphsDocument::ParseDocument(const uint8_t *aBuffer, uint32_t aBufLen)
 {
     // Mostly pulled from nsDOMParser::ParseFromStream
 
@@ -402,7 +398,7 @@ gfxSVGGlyphsDocument::InsertGlyphId(Element *aGlyphElement)
     }
 
     nsresult rv;
-    uint32_t glyphId = glyphIdStr.ToInteger(&rv, kRadix10);
+    uint32_t glyphId = glyphIdStr.ToInteger(&rv);
 
     if (NS_FAILED(rv)) {
         return;
@@ -411,38 +407,65 @@ gfxSVGGlyphsDocument::InsertGlyphId(Element *aGlyphElement)
     mGlyphIdMap.Put(glyphId, aGlyphElement);
 }
 
+// Get the Unicode character at index aPos in the string, and update aPos to
+// point to the next char (i.e. advance by one or two, depending whether we
+// found a surrogate pair).
+// This will assert (and return junk) if the string is not well-formed UTF16.
+// However, this is only used to process an attribute that comes from the
+// SVG-glyph XML document, and is not exposed to modification via the DOM,
+// so it must be well-formed UTF16 data (no unpaired surrogate codepoints)
+// unless our Unicode handling is seriously broken.
+static uint32_t
+NextUSV(const nsAString& aString, uint32_t& aPos)
+{
+    mozilla::DebugOnly<uint32_t> len = aString.Length();
+    NS_ASSERTION(aPos < len, "already at end of string");
+
+    uint32_t c1 = aString[aPos++];
+    if (NS_IS_HIGH_SURROGATE(c1)) {
+        NS_ASSERTION(aPos < len, "trailing high surrogate");
+        uint32_t c2 = aString[aPos++];
+        NS_ASSERTION(NS_IS_LOW_SURROGATE(c2), "isolated high surrogate");
+        return SURROGATE_TO_UCS4(c1, c2);
+    }
+
+    NS_ASSERTION(!NS_IS_LOW_SURROGATE(c1), "isolated low surrogate");
+    return c1;
+}
+
 void
 gfxSVGGlyphsDocument::InsertGlyphChar(Element *aGlyphElement,
-                                      const FallibleTArray<uint8_t> &aCmapTable)
+                                      hb_blob_t *aCmapTable)
 {
     nsAutoString glyphChar;
-    if (!aGlyphElement->GetAttr(kNameSpaceID_None, nsGkAtoms::glyphchar, glyphChar)) {
+    if (!aGlyphElement->GetAttr(kNameSpaceID_None, nsGkAtoms::glyphchar,
+                                glyphChar)) {
         return;
     }
 
-    uint32_t varSelector;
-
-    switch (glyphChar.Length()) {
-        case 0:
-            NS_WARNING("glyphchar is empty");
-            return;
-        case 1:
-            varSelector = 0;
-            break;
-        case 2:
-            if (gfxFontUtils::IsVarSelector(glyphChar.CharAt(1))) {
-                varSelector = glyphChar.CharAt(1);
-                break;
-            }
-        default:
-            NS_WARNING("glyphchar contains more than one character");
-            return;
+    uint32_t charCode, varSelector = 0, len = glyphChar.Length(), index = 0;
+    if (!len) {
+        NS_WARNING("glyphchar is empty");
+        return;
     }
 
-    uint32_t glyphId = gfxFontUtils::MapCharToGlyph(aCmapTable.Elements(),
-                                                    aCmapTable.Length(),
-                                                    glyphChar.CharAt(0),
-                                                    varSelector);
+    charCode = NextUSV(glyphChar, index);
+    if (index < len) {
+        varSelector = NextUSV(glyphChar, index);
+        if (!gfxFontUtils::IsVarSelector(varSelector)) {
+            NS_WARNING("glyphchar contains more than one character");
+            return;
+        }
+    }
+
+    if (index < len) {
+        NS_WARNING("glyphchar contains more than one character");
+        return;
+    }
+
+    const uint8_t *data = (const uint8_t*)hb_blob_get_data(aCmapTable, &len);
+    uint32_t glyphId =
+        gfxFontUtils::MapCharToGlyph(data, len, charCode, varSelector);
 
     if (glyphId) {
         mGlyphIdMap.Put(glyphId, aGlyphElement);

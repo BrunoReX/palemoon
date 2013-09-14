@@ -18,6 +18,7 @@ Cu.import('resource://gre/modules/Payment.jsm');
 Cu.import("resource://gre/modules/AppsUtils.jsm");
 Cu.import('resource://gre/modules/UserAgentOverrides.jsm');
 Cu.import('resource://gre/modules/Keyboard.jsm');
+Cu.import('resource://gre/modules/ErrorPage.jsm');
 #ifdef MOZ_B2G_RIL
 Cu.import('resource://gre/modules/NetworkStatsService.jsm');
 #endif
@@ -69,6 +70,12 @@ XPCOMUtils.defineLazyGetter(this, "libcutils", function () {
 });
 #endif
 
+#ifdef MOZ_CAPTIVEDETECT
+XPCOMUtils.defineLazyServiceGetter(Services, 'captivePortalDetector',
+                                  '@mozilla.org/toolkit/captive-detector;1',
+                                  'nsICaptivePortalDetector');
+#endif
+
 function getContentWindow() {
   return shell.contentBrowser.contentWindow;
 }
@@ -76,6 +83,14 @@ function getContentWindow() {
 function debug(str) {
   dump(' -*- Shell.js: ' + str + '\n');
 }
+
+#ifdef MOZ_CRASHREPORTER
+function debugCrashReport(aStr) {
+  dump('Crash reporter : ' + aStr);
+}
+#else
+function debugCrashReport(aStr) {}
+#endif
 
 var shell = {
 
@@ -85,6 +100,7 @@ var shell = {
     Cu.import("resource://gre/modules/CrashSubmit.jsm", this);
     return this.CrashSubmit;
 #else
+    dump('Crash reporter : disabled at build time.');
     return this.CrashSubmit = null;
 #endif
   },
@@ -104,7 +120,10 @@ var shell = {
         crashID = Cc["@mozilla.org/xre/app-info;1"]
                     .getService(Ci.nsIXULRuntime).lastRunCrashID;
       }
-    } catch(e) { }
+    } catch(e) {
+      debugCrashReport('Failed to fetch crash id. Crash ID is "' + crashID
+                       + '" Exception: ' + e);
+    }
 
     // Bail if there isn't a valid crashID.
     if (!this.CrashSubmit || !crashID && !this.CrashSubmit.pendingIDs().length) {
@@ -116,17 +135,32 @@ var shell = {
 
     try {
       // Check if we should automatically submit this crash.
-      if (Services.prefs.getBoolPref("app.reportCrashes")) {
+      if (Services.prefs.getBoolPref('app.reportCrashes')) {
         this.submitCrash(crashID);
+      } else {
+        this.deleteCrash(crashID);
       }
-    } catch (e) { }
+    } catch (e) {
+      debugCrashReport('Can\'t fetch app.reportCrashes. Exception: ' + e);
+    }
 
-    // Let Gaia notify the user of the crash.
-    this.sendChromeEvent({
-      type: "handle-crash",
-      crashID: crashID,
-      chrome: isChrome
-    });
+    // We can get here if we're just submitting old pending crashes.
+    // Check that there's a valid crashID so that we only notify the
+    // user if a crash just happened and not when we OOM. Bug 829477
+    if (crashID) {
+      this.sendChromeEvent({
+        type: "handle-crash",
+        crashID: crashID,
+        chrome: isChrome
+      });
+    }
+  },
+
+  deleteCrash: function shell_deleteCrash(aCrashID) {
+    if (aCrashID) {
+      debugCrashReport('Deleting pending crash: ' + aCrashID);
+      shell.CrashSubmit.delete(aCrashID);
+    }
   },
 
   // this function submit the pending crashes.
@@ -135,6 +169,7 @@ var shell = {
     // submit the pending queue.
     let pending = shell.CrashSubmit.pendingIDs();
     for (let crashid of pending) {
+      debugCrashReport('Submitting crash: ' + crashid);
       shell.CrashSubmit.submit(crashid);
     }
   },
@@ -145,6 +180,8 @@ var shell = {
       this.submitQueuedCrashes();
       return;
     }
+
+    debugCrashReport('Not online, postponing.');
 
     Services.obs.addObserver(function observer(subject, topic, state) {
       let network = subject.QueryInterface(Ci.nsINetworkInterface);
@@ -221,8 +258,18 @@ var shell = {
       let androidVersion = libcutils.property_get("ro.build.version.sdk") +
                            "(" + libcutils.property_get("ro.build.version.codename") + ")";
       cr.annotateCrashReport("Android_Version", androidVersion);
+
+      SettingsListener.observe("deviceinfo.os", "", function(value) {
+        try {
+          let cr = Cc["@mozilla.org/xre/app-info;1"]
+                     .getService(Ci.nsICrashReporter);
+          cr.annotateCrashReport("B2G_OS_Version", value);
+        } catch(e) { }
+      });
 #endif
-    } catch(e) { }
+    } catch(e) {
+      debugCrashReport('exception: ' + e);
+    }
 
     let homeURL = this.homeURL;
     if (!homeURL) {
@@ -269,14 +316,8 @@ var shell = {
     WebappsHelper.init();
     AccessFu.attach(window);
     UserAgentOverrides.init();
-
-    // XXX could factor out into a settings->pref map.  Not worth it yet.
-    SettingsListener.observe("debug.fps.enabled", false, function(value) {
-      Services.prefs.setBoolPref("layers.acceleration.draw-fps", value);
-    });
-    SettingsListener.observe("debug.paint-flashing.enabled", false, function(value) {
-      Services.prefs.setBoolPref("nglayout.debug.paint_flashing", value);
-    });
+    IndexedDBPromptHelper.init();
+    CaptivePortalLoginHelper.init();
 
     this.contentBrowser.src = homeURL;
     this.isHomeLoaded = false;
@@ -286,6 +327,7 @@ var shell = {
     ppmm.addMessageListener("sms-handler", this);
     ppmm.addMessageListener("mail-handler", this);
     ppmm.addMessageListener("app-notification-send", AlertsHelper);
+    ppmm.addMessageListener("file-picker", this);
   },
 
   stop: function shell_stop() {
@@ -306,6 +348,7 @@ var shell = {
     delete Services.audioManager;
 #endif
     UserAgentOverrides.uninit();
+    IndexedDBPromptHelper.uninit();
   },
 
   // If this key event actually represents a hardware button, filter it here
@@ -336,8 +379,27 @@ var shell = {
       case evt.DOM_VK_F1: // headset button
         type = 'headset-button';
         break;
-      default:                      // Anything else is a real key
-        return;  // Don't filter it at all; let it propagate to Gaia
+    }
+
+    let mediaKeys = {
+      'MediaNextTrack': 'media-next-track-button',
+      'MediaPreviousTrack': 'media-previous-track-button',
+      'MediaPause': 'media-pause-button',
+      'MediaPlay': 'media-play-button',
+      'MediaPlayPause': 'media-play-pause-button',
+      'MediaStop': 'media-stop-button',
+      'MediaRewind': 'media-rewind-button',
+      'FastFwd': 'media-fast-forward-button'
+    };
+
+    let isMediaKey = false;
+    if (mediaKeys[evt.key]) {
+      isMediaKey = true;
+      type = mediaKeys[evt.key];
+    }
+
+    if (!type) {
+      return;
     }
 
     // If we didn't return, then the key event represents a hardware key
@@ -365,6 +427,12 @@ var shell = {
       return;
     }
 
+    if (isMediaKey) {
+      this.lastHardwareButtonEventType = type;
+      gSystemMessenger.broadcastMessage('media-button', type);
+      return;
+    }
+
     // On my device, the physical hardware buttons (sleep and volume)
     // send multiple events (press press release release), but the
     // soft home button just sends one.  This hack is to manually
@@ -379,9 +447,10 @@ var shell = {
   },
 
   lastHardwareButtonEventType: null, // property for the hack above
-  needBufferSysMsgs: true,
-  bufferedSysMsgs: [],
+  needBufferOpenAppReq: true,
+  bufferedOpenAppReqs: [],
   timer: null,
+  visibleNormalAudioActive: false,
 
   handleEvent: function shell_handleEvent(evt) {
     let content = this.contentBrowser.contentWindow;
@@ -399,7 +468,7 @@ var shell = {
           Services.fm.focusedWindow = window;
         break;
       case 'sizemodechange':
-        if (window.windowState == window.STATE_MINIMIZED) {
+        if (window.windowState == window.STATE_MINIMIZED && !this.visibleNormalAudioActive) {
           this.contentBrowser.setVisible(false);
         } else {
           this.contentBrowser.setVisible(true);
@@ -495,31 +564,47 @@ var shell = {
                    ObjectWrapper.wrap(details, getContentWindow()));
   },
 
-  sendSystemMessage: function shell_sendSystemMessage(msg) {
+  openAppForSystemMessage: function shell_openAppForSystemMessage(msg) {
     let origin = Services.io.newURI(msg.manifest, null, null).prePath;
     this.sendChromeEvent({
       type: 'open-app',
       url: msg.uri,
       manifestURL: msg.manifest,
       isActivity: (msg.type == 'activity'),
-      target: msg.target
+      target: msg.target,
+      expectingSystemMessage: true
     });
   },
 
   receiveMessage: function shell_receiveMessage(message) {
-    var names = { 'content-handler': 'view',
-                  'dial-handler'   : 'dial',
-                  'mail-handler'   : 'new',
-                  'sms-handler'    : 'new' }
+    var activities = { 'content-handler': { name: 'view', response: null },
+                       'dial-handler':    { name: 'dial', response: null },
+                       'mail-handler':    { name: 'new',  response: null },
+                       'sms-handler':     { name: 'new',  response: null },
+                       'file-picker':     { name: 'pick', response: 'file-picked' } };
 
-    if (!(message.name in names))
+    if (!(message.name in activities))
       return;
 
     let data = message.data;
-    new MozActivity({
-      name: names[message.name],
+    let activity = activities[message.name];
+
+    let a = new MozActivity({
+      name: activity.name,
       data: data
     });
+
+    if (activity.response) {
+      a.onsuccess = function() {
+        let sender = message.target.QueryInterface(Ci.nsIMessageSender);
+        sender.sendAsyncMessage(activity.response, { success: true,
+                                                     result:  a.result });
+      }
+      a.onerror = function() {
+        let sender = message.target.QueryInterface(Ci.nsIMessageSender);
+        sender.sendAsyncMessage(activity.response, { success: false });
+      }
+    }
   }
 };
 
@@ -554,16 +639,16 @@ nsBrowserAccess.prototype = {
   }
 };
 
-// Listen for system messages and relay them to Gaia.
-Services.obs.addObserver(function onSystemMessage(subject, topic, data) {
+// Listen for the request of opening app and relay them to Gaia.
+Services.obs.addObserver(function onSystemMessageOpenApp(subject, topic, data) {
   let msg = JSON.parse(data);
-  // Buffer non-activity messages until content starts to load for 10 seconds.
-  // We'll revisit this later if new kind of messages don't need to be cached.
-  if (shell.needBufferSysMsgs && msg.type !== 'activity') {
-    shell.bufferedSysMsgs.push(msg);
+  // Buffer non-activity request until content starts to load for 10 seconds.
+  // We'll revisit this later if new kind of requests don't need to be cached.
+  if (shell.needBufferOpenAppReq && msg.type !== 'activity') {
+    shell.bufferedOpenAppReqs.push(msg);
     return;
   }
-  shell.sendSystemMessage(msg);
+  shell.openAppForSystemMessage(msg);
 }, 'system-messages-open-app', false);
 
 Services.obs.addObserver(function(aSubject, aTopic, aData) {
@@ -593,14 +678,17 @@ var CustomEventManager = {
       content.addEventListener("mozContentEvent", this, false, true);
 
       // After content starts to load for 10 seconds, send and
-      // clean up the buffered system messages if there is any.
+      // clean up the buffered open-app requests if there is any.
+      //
+      // TODO: Bug 793420 - Remove the waiting timer for the 'open-app'
+      //                    mozChromeEvents requested by System Message
       shell.timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
       shell.timer.initWithCallback(function timerCallback() {
-        shell.bufferedSysMsgs.forEach(function sendSysMsg(msg) {
-          shell.sendSystemMessage(msg);
+        shell.bufferedOpenAppReqs.forEach(function bufferOpenAppReq(msg) {
+          shell.openAppForSystemMessage(msg);
         });
-        shell.bufferedSysMsgs.length = 0;
-        shell.needBufferSysMsgs = false;
+        shell.bufferedOpenAppReqs.length = 0;
+        shell.needBufferOpenAppReq = false;
         shell.timer = null;
       }, 10000, Ci.nsITimer.TYPE_ONE_SHOT);
     }).bind(this), false);
@@ -611,6 +699,7 @@ var CustomEventManager = {
     dump('XXX FIXME : Got a mozContentEvent: ' + detail.type + "\n");
 
     switch(detail.type) {
+      case 'desktop-notification-show':
       case 'desktop-notification-click':
       case 'desktop-notification-close':
         AlertsHelper.handleEvent(detail);
@@ -624,6 +713,12 @@ var CustomEventManager = {
         break;
       case 'system-message-listener-ready':
         Services.obs.notifyObservers(null, 'system-message-listener-ready', null);
+        break;
+      case 'remote-debugger-prompt':
+        RemoteDebugger.handleEvent(detail);
+        break;
+      case 'captive-portal-login-cancel':
+        CaptivePortalLoginHelper.handleEvent(detail);
         break;
     }
   }
@@ -642,8 +737,16 @@ var AlertsHelper = {
     if (!listener)
      return;
 
-    let topic = detail.type == "desktop-notification-click" ? "alertclickcallback"
-                                                            : "alertfinished";
+    let topic;
+    if (detail.type == "desktop-notification-click") {
+      topic = "alertclickcallback";
+    } else if (detail.type == "desktop-notification-show") {
+      topic = "alertshow";
+    } else {
+      /* desktop-notification-close */
+      topic = "alertfinished";
+    }
+
     if (uid.startsWith("app-notif")) {
       try {
         listener.mm.sendAsyncMessage("app-notification-return", {
@@ -652,13 +755,17 @@ var AlertsHelper = {
           target: listener.target
         });
       } catch(e) {
+        // we get an exception if the app is not launched yet
+
         gSystemMessenger.sendMessage("notification", {
-          title: listener.title,
-          body: listener.text,
-          imageURL: listener.imageURL
-        },
-        Services.io.newURI(listener.target, null, null),
-        Services.io.newURI(listener.manifestURL, null, null));
+            clicked: (detail.type === "desktop-notification-click"),
+            title: listener.title,
+            body: listener.text,
+            imageURL: listener.imageURL
+          },
+          Services.io.newURI(listener.target, null, null),
+          Services.io.newURI(listener.manifestURL, null, null)
+        );
       }
     } else if (uid.startsWith("alert")) {
       try {
@@ -672,10 +779,8 @@ var AlertsHelper = {
     }
   },
 
-  registerListener: function alert_registerListener(cookie, alertListener) {
-    let uid = "alert" + this._count++;
-    this._listeners[uid] = { observer: alertListener, cookie: cookie };
-    return uid;
+  registerListener: function alert_registerListener(alertId, cookie, alertListener) {
+    this._listeners[alertId] = { observer: alertListener, cookie: cookie };
   },
 
   registerAppListener: function alert_registerAppListener(uid, listener) {
@@ -710,7 +815,8 @@ var AlertsHelper = {
                                                     textClickable,
                                                     cookie,
                                                     uid,
-                                                    name,
+                                                    bidi,
+                                                    lang,
                                                     manifestUrl) {
     function send(appName, appIcon) {
       shell.sendChromeEvent({
@@ -719,8 +825,11 @@ var AlertsHelper = {
         icon: imageUrl,
         title: title,
         text: text,
+        bidi: bidi,
+        lang: lang,
         appName: appName,
-        appIcon: appIcon
+        appIcon: appIcon,
+        manifestURL: manifestUrl
       });
     }
 
@@ -743,14 +852,28 @@ var AlertsHelper = {
                                                               textClickable,
                                                               cookie,
                                                               alertListener,
-                                                              name) {
-    let uid = this.registerListener(null, alertListener);
+                                                              name,
+                                                              bidi,
+                                                              lang) {
+    let currentListener = this._listeners[name];
+    if (currentListener) {
+      currentListener.observer.observe(null, "alertfinished", currentListener.cookie);
+    }
+
+    this.registerListener(name, cookie, alertListener);
     this.showNotification(imageUrl, title, text, textClickable, cookie,
-                          uid, name, null);
+                          name, bidi, lang, null);
+  },
+
+  closeAlert: function alert_closeAlert(name) {
+    shell.sendChromeEvent({
+      type: "desktop-notification-close",
+      id: name
+    });
   },
 
   receiveMessage: function alert_receiveMessage(aMessage) {
-    if (!aMessage.target.assertPermission("desktop-notification")) {
+    if (!aMessage.target.assertAppHasPermission("desktop-notification")) {
       Cu.reportError("Desktop-notification message " + aMessage.name +
                      " from a content process with no desktop-notification privileges.");
       return null;
@@ -768,7 +891,7 @@ var AlertsHelper = {
 
     this.showNotification(data.imageURL, data.title, data.text,
                           data.textClickable, null,
-                          data.uid, null, data.manifestURL);
+                          data.uid, null, null, data.manifestURL);
   },
 }
 
@@ -779,6 +902,7 @@ var WebappsHelper = {
   init: function webapps_init() {
     Services.obs.addObserver(this, "webapps-launch", false);
     Services.obs.addObserver(this, "webapps-ask-install", false);
+    Services.obs.addObserver(this, "webapps-close", false);
   },
 
   registerInstaller: function webapps_registerInstaller(data) {
@@ -816,6 +940,7 @@ var WebappsHelper = {
           let manifest = new ManifestHelper(aManifest, json.origin);
           shell.sendChromeEvent({
             "type": "webapps-launch",
+            "timestamp": json.timestamp,
             "url": manifest.fullLaunchPath(json.startPoint),
             "manifestURL": json.manifestURL
           });
@@ -829,36 +954,108 @@ var WebappsHelper = {
           app: json.app
         });
         break;
+      case "webapps-close":
+        shell.sendChromeEvent({
+          "type": "webapps-close",
+          "manifestURL": json.manifestURL
+        });
+        break;
     }
   }
 }
 
-// Start the debugger server.
-function startDebugger() {
-  if (!DebuggerServer.initialized) {
-    // Allow remote connections.
-    DebuggerServer.init(function () { return true; });
-    DebuggerServer.addBrowserActors();
-    DebuggerServer.addActors('chrome://browser/content/dbg-browser-actors.js');
-  }
+let IndexedDBPromptHelper = {
+  _quotaPrompt: "indexedDB-quota-prompt",
+  _quotaResponse: "indexedDB-quota-response",
 
-  let port = Services.prefs.getIntPref('devtools.debugger.remote-port') || 6000;
-  try {
-    DebuggerServer.openListener(port);
-  } catch (e) {
-    dump('Unable to start debugger server: ' + e + '\n');
+  init:
+  function IndexedDBPromptHelper_init() {
+    Services.obs.addObserver(this, this._quotaPrompt, false);
+  },
+
+  uninit:
+  function IndexedDBPromptHelper_uninit() {
+    Services.obs.removeObserver(this, this._quotaPrompt);
+  },
+
+  observe:
+  function IndexedDBPromptHelper_observe(subject, topic, data) {
+    if (topic != this._quotaPrompt) {
+      throw new Error("Unexpected topic!");
+    }
+
+    let observer = subject.QueryInterface(Ci.nsIInterfaceRequestor)
+                          .getInterface(Ci.nsIObserver);
+    let responseTopic = this._quotaResponse;
+
+    setTimeout(function() {
+      observer.observe(null, responseTopic,
+                       Ci.nsIPermissionManager.DENY_ACTION);
+    }, 0);
   }
 }
 
-function stopDebugger() {
-  if (!DebuggerServer.initialized) {
-    return;
-  }
+let RemoteDebugger = {
+  _promptDone: false,
+  _promptAnswer: false,
 
-  try {
-    DebuggerServer.closeListener();
-  } catch (e) {
-    dump('Unable to stop debugger server: ' + e + '\n');
+  prompt: function debugger_prompt() {
+    this._promptDone = false;
+
+    shell.sendChromeEvent({
+      "type": "remote-debugger-prompt"
+    });
+
+    while(!this._promptDone) {
+      Services.tm.currentThread.processNextEvent(true);
+    }
+
+    return this._promptAnswer;
+  },
+
+  handleEvent: function debugger_handleEvent(detail) {
+    this._promptAnswer = detail.value;
+    this._promptDone = true;
+  },
+
+  // Start the debugger server.
+  start: function debugger_start() {
+    if (!DebuggerServer.initialized) {
+      // Ask for remote connections.
+      DebuggerServer.init(this.prompt.bind(this));
+      DebuggerServer.addActors("resource://gre/modules/devtools/server/actors/webbrowser.js");
+#ifndef MOZ_WIDGET_GONK
+      DebuggerServer.addActors("resource://gre/modules/devtools/server/actors/script.js");
+      DebuggerServer.addGlobalActor(DebuggerServer.ChromeDebuggerActor, "chromeDebugger");
+      DebuggerServer.addActors("resource://gre/modules/devtools/server/actors/webconsole.js");
+      DebuggerServer.addActors("resource://gre/modules/devtools/server/actors/gcli.js");
+#endif
+      if ("nsIProfiler" in Ci) {
+        DebuggerServer.addActors("resource://gre/modules/devtools/server/actors/profiler.js");
+      }
+      DebuggerServer.addActors("resource://gre/modules/devtools/server/actors/styleeditor.js");
+      DebuggerServer.addActors('chrome://browser/content/dbg-browser-actors.js');
+      DebuggerServer.addActors("resource://gre/modules/devtools/server/actors/webapps.js");
+    }
+
+    let port = Services.prefs.getIntPref('devtools.debugger.remote-port') || 6000;
+    try {
+      DebuggerServer.openListener(port);
+    } catch (e) {
+      dump('Unable to start debugger server: ' + e + '\n');
+    }
+  },
+
+  stop: function debugger_stop() {
+    if (!DebuggerServer.initialized) {
+      return;
+    }
+
+    try {
+      DebuggerServer.closeListener();
+    } catch (e) {
+      dump('Unable to stop debugger server: ' + e + '\n');
+    }
   }
 }
 
@@ -917,12 +1114,29 @@ window.addEventListener('ContentStart', function ss_onContentStart() {
     "ipc:content-shutdown", false);
 })();
 
+var CaptivePortalLoginHelper = {
+  init: function init() {
+    Services.obs.addObserver(this, 'captive-portal-login', false);
+    Services.obs.addObserver(this, 'captive-portal-login-abort', false);
+  },
+  handleEvent: function handleEvent(detail) {
+    Services.captivePortalDetector.cancelLogin(detail.id);
+  },
+  observe: function observe(subject, topic, data) {
+    shell.sendChromeEvent(JSON.parse(data));
+  }
+}
+
 // Listen for crashes submitted through the crash reporter UI.
 window.addEventListener('ContentStart', function cr_onContentStart() {
   let content = shell.contentBrowser.contentWindow;
   content.addEventListener("mozContentEvent", function cr_onMozContentEvent(e) {
     if (e.detail.type == "submit-crash" && e.detail.crashID) {
+      debugCrashReport("submitting crash at user request ", e.detail.crashID);
       shell.submitCrash(e.detail.crashID);
+    } else if (e.detail.type == "delete-crash" && e.detail.crashID) {
+      debugCrashReport("deleting crash at user request ", e.detail.crashID);
+      shell.deleteCrash(e.detail.crashID);
     }
   });
 });
@@ -930,27 +1144,28 @@ window.addEventListener('ContentStart', function cr_onContentStart() {
 window.addEventListener('ContentStart', function update_onContentStart() {
   let updatePrompt = Cc["@mozilla.org/updates/update-prompt;1"]
                        .createInstance(Ci.nsIUpdatePrompt);
+  if (!updatePrompt) {
+    return;
+  }
 
-  let content = shell.contentBrowser.contentWindow;
-  content.addEventListener("mozContentEvent", updatePrompt.wrappedJSObject);
+  updatePrompt.wrappedJSObject.handleContentStart(shell);
 });
 
 (function geolocationStatusTracker() {
-  let gGeolocationActiveCount = 0;
+  let gGeolocationActive = false;
 
   Services.obs.addObserver(function(aSubject, aTopic, aData) {
-    let oldCount = gGeolocationActiveCount;
+    let oldState = gGeolocationActive;
     if (aData == "starting") {
-      gGeolocationActiveCount += 1;
+      gGeolocationActive = true;
     } else if (aData == "shutdown") {
-      gGeolocationActiveCount -= 1;
+      gGeolocationActive = false;
     }
 
-    // We need to track changes from 1 <-> 0
-    if (gGeolocationActiveCount + oldCount == 1) {
+    if (gGeolocationActive != oldState) {
       shell.sendChromeEvent({
         type: 'geolocation-status',
-        active: (gGeolocationActiveCount == 1)
+        active: gGeolocationActive
       });
     }
 }, "geolocation-device-events", false);
@@ -974,13 +1189,14 @@ window.addEventListener('ContentStart', function update_onContentStart() {
 }, "audio-channel-changed", false);
 })();
 
-(function audioChannelChangedTracker() {
+(function visibleAudioChannelChangedTracker() {
   Services.obs.addObserver(function(aSubject, aTopic, aData) {
     shell.sendChromeEvent({
-      type: 'audio-channel-changed',
+      type: 'visible-audio-channel-changed',
       channel: aData
     });
-}, "audio-channel-changed", false);
+    shell.visibleNormalAudioActive = (aData == 'normal');
+}, "visible-audio-channel-changed", false);
 })();
 
 (function recordingStatusTracker() {
@@ -1022,3 +1238,19 @@ Services.obs.addObserver(function(aSubject, aTopic, aData) {
     pageURL: data.pageURL
   });
 }, "activity-done", false);
+
+#ifdef MOZ_WIDGET_GONK
+// Devices don't have all the same partition size for /cache where we
+// store the http cache.
+(function setHTTPCacheSize() {
+  let path = Services.prefs.getCharPref("browser.cache.disk.parent_directory");
+  let volumeService = Cc["@mozilla.org/telephony/volume-service;1"]
+                        .getService(Ci.nsIVolumeService);
+
+  let stats = volumeService.createOrGetVolumeByPath(path).getStats();
+
+  // We must set the size in KB, and keep a bit of free space.
+  let size = Math.floor(stats.totalBytes / 1024) - 1024;
+  Services.prefs.setIntPref("browser.cache.disk.capacity", size);
+}) ()
+#endif

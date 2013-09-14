@@ -10,23 +10,8 @@ VPATH = @srcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-MODULE = content
-LIBRARY_NAME = gkconraw_s
 LIBXUL_LIBRARY = 1
-ifndef _MSC_VER
 FAIL_ON_WARNINGS := 1
-endif # !_MSC_VER
-
-EXPORTS += \
-  RawDecoder.h \
-  RawReader.h \
-  RawStructs.h \
-  $(NULL)
-
-CPPSRCS += \
-  RawDecoder.cpp \
-  RawReader.cpp \
-  $(NULL)
 
 FORCE_STATIC_LIB = 1
 

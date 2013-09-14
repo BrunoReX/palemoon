@@ -8,6 +8,8 @@
   <title>NPAPI Private Mode Tests</title>
   <script type="application/javascript"
           src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
+  <script type="application/javascript"
+          src="chrome://mochikit/content/chrome-harness.js" />
 <body xmlns="http://www.w3.org/1999/xhtml" onload="runTests()">
 <embed id="plugin1" type="application/x-test" width="200" height="200"></embed>
 <embed id="plugin2" type="application/x-test" width="200" height="200"></embed>
@@ -20,6 +22,23 @@ const Cc = Components.classes;
 const Ci = Components.interfaces;
 
 function runTests() {
+  // Allow all cookies, then run the actual tests
+  SpecialPowers.pushPrefEnv({"set": [["network.cookie.cookieBehavior", 0]]}, runTestsCallback);
+}
+
+Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+Components.utils.import("resource://gre/modules/Services.jsm");
+
+function whenDelayedStartupFinished(aWindow, aCallback) {
+  Services.obs.addObserver(function observer(aSubject, aTopic) {
+    if (aWindow == aSubject) {
+      Services.obs.removeObserver(observer, aTopic);
+      SimpleTest.executeSoon(aCallback);
+    }
+  }, "browser-delayed-startup-finished", false);
+}
+
+function runTestsCallback() {
   var pluginElement1 = document.getElementById("plugin1");
   var pluginElement2 = document.getElementById("plugin2");
 
@@ -47,12 +66,11 @@ function runTests() {
                     .rootTreeItem
                     .QueryInterface(Ci.nsIInterfaceRequestor)
                     .getInterface(Ci.nsIDOMWindow);
-  var contentPage = "chrome://mochitests/content/chrome/dom/plugins/test/privatemode_perwindowpb.xul";
+  var contentPage = getRootDirectory(window.location.href) + "privatemode_perwindowpb.xul";
 
   function testOnWindow(aIsPrivate, aCallback) {
     var win = mainWindow.OpenBrowserWindow({private: aIsPrivate});
-    win.addEventListener("load", function onLoad() {
-      win.removeEventListener("load", onLoad, false);
+    whenDelayedStartupFinished(win, function () {
       win.addEventListener("DOMContentLoaded", function onInnerLoad() {
         if (win.content.location.href == "about:privatebrowsing") {
           win.gBrowser.loadURI(contentPage);
@@ -63,7 +81,7 @@ function runTests() {
         SimpleTest.executeSoon(function() { aCallback(win); });
       }, true);
       SimpleTest.executeSoon(function() { win.gBrowser.loadURI(contentPage); });
-    }, true);
+    });
   }
 
   testOnWindow(true, function(aWin) {

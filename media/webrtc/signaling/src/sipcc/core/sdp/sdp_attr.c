@@ -291,7 +291,7 @@ sdp_result_e sdp_parse_attr_simple_u32 (sdp_t *sdp_p, sdp_attr_t *attr_p,
         return (SDP_INVALID_PARAMETER);
     } else {
         if (sdp_p->debug_flag[SDP_DEBUG_TRACE]) {
-            SDP_PRINT("%s Parsed a=%s, %lu", sdp_p->debug_str,
+            SDP_PRINT("%s Parsed a=%s, %u", sdp_p->debug_str,
                       sdp_get_attr_name(attr_p->type), attr_p->attr.u32_val);
         }
         return (SDP_SUCCESS);
@@ -1782,7 +1782,7 @@ sdp_result_e sdp_parse_attr_fmtp (sdp_t *sdp_p, sdp_attr_t *attr_p,
     if (codec_info_found) {
 
         if (sdp_p->debug_flag[SDP_DEBUG_TRACE]) {
-            SDP_PRINT("%s Parsed a=%s, payload type %u, bitrate %lu, mode %u QCIF = %u, CIF = %u, MAXBR= %u, SQCIF=%u, CIF4= %u, CIF16=%u, CUSTOM=%u,%u,%u , PAR=%u:%u,CPCF=%u, BPP=%u, HRD=%u \n",
+            SDP_PRINT("%s Parsed a=%s, payload type %u, bitrate %u, mode %u QCIF = %u, CIF = %u, MAXBR= %u, SQCIF=%u, CIF4= %u, CIF16=%u, CUSTOM=%u,%u,%u , PAR=%u:%u,CPCF=%u, BPP=%u, HRD=%u \n",
                       sdp_p->debug_str,
                       sdp_get_attr_name(attr_p->type),
                       attr_p->attr.fmtp.payload_num,
@@ -1815,7 +1815,7 @@ sdp_result_e sdp_parse_attr_fmtp (sdp_t *sdp_p, sdp_attr_t *attr_p,
         }
 
 	if (sdp_p->debug_flag[SDP_DEBUG_TRACE]) {
-            SDP_PRINT("%s Parsed H.264 attributes: profile-level-id=%s, parameter-sets=%s, packetization-mode=%d level-asymmetry-allowed=%d interleaving-depth=%d deint-buf-req=%lu max-don-diff=%lu, init_buf-time=%lu\n",
+            SDP_PRINT("%s Parsed H.264 attributes: profile-level-id=%s, parameter-sets=%s, packetization-mode=%d level-asymmetry-allowed=%d interleaving-depth=%d deint-buf-req=%u max-don-diff=%u, init_buf-time=%u\n",
                       sdp_p->debug_str,
                       attr_p->attr.fmtp.profile_level_id,
                       attr_p->attr.fmtp.parameter_sets,
@@ -1829,7 +1829,7 @@ sdp_result_e sdp_parse_attr_fmtp (sdp_t *sdp_p, sdp_attr_t *attr_p,
         }
 
 	if (sdp_p->debug_flag[SDP_DEBUG_TRACE]) {
-            SDP_PRINT("\n%s Parsed H.264 opt attributes: max-mbps=%lu, max-fs=%lu, max-cpb=%lu max-dpb=%lu max-br=%lu redundant-pic-cap=%d, deint-buf-cap=%lu, max-rcmd-nalu-size=%lu , parameter-add=%d\n",
+            SDP_PRINT("\n%s Parsed H.264 opt attributes: max-mbps=%u, max-fs=%u, max-cpb=%u max-dpb=%u max-br=%u redundant-pic-cap=%d, deint-buf-cap=%u, max-rcmd-nalu-size=%u , parameter-add=%d\n",
                       sdp_p->debug_str,
                       attr_p->attr.fmtp.max_mbps,
                       attr_p->attr.fmtp.max_fs,
@@ -2641,7 +2641,7 @@ sdp_result_e sdp_parse_attr_transport_map (sdp_t *sdp_p, sdp_attr_t *attr_p,
 
     if (sdp_p->debug_flag[SDP_DEBUG_TRACE]) {
         SDP_PRINT("%s Parsed a=%s, payload type %u, encoding name %s, "
-                  "clockrate %lu", sdp_p->debug_str,
+                  "clockrate %u", sdp_p->debug_str,
                   sdp_get_attr_name(attr_p->type),
                   attr_p->attr.transport_map.payload_num,
                   attr_p->attr.transport_map.encname,
@@ -4754,4 +4754,243 @@ sdp_result_e sdp_parse_attr_rtcp_mux_attr (sdp_t *sdp_p, sdp_attr_t *attr_p, con
     attr_p->attr.boolean_val = TRUE;
 
     return (SDP_SUCCESS);
+}
+
+sdp_result_e sdp_build_attr_rtcp_fb(sdp_t *sdp_p,
+                                    sdp_attr_t *attr_p,
+                                    flex_string *fs)
+{
+    flex_string_sprintf(fs, "a=%s:", sdp_attr[attr_p->type].name);
+
+    /* Payload Type */
+    if (attr_p->attr.rtcp_fb.payload_num == SDP_ALL_PAYLOADS) {
+      flex_string_sprintf(fs, "* ");
+    } else {
+      flex_string_sprintf(fs, "%d ",attr_p->attr.rtcp_fb.payload_num);
+    }
+
+    /* Feedback Type */
+    if (attr_p->attr.rtcp_fb.feedback_type < SDP_RTCP_FB_UNKNOWN) {
+        flex_string_sprintf(fs, "%s",
+            sdp_rtcp_fb_type_val[attr_p->attr.rtcp_fb.feedback_type].name);
+    }
+
+    /* Feedback Type Parameters */
+    switch (attr_p->attr.rtcp_fb.feedback_type) {
+        case SDP_RTCP_FB_ACK:
+            if (attr_p->attr.rtcp_fb.param.ack < SDP_MAX_RTCP_FB_ACK) {
+                flex_string_sprintf(fs, " %s",
+                    sdp_rtcp_fb_ack_type_val[attr_p->attr.rtcp_fb.param.ack]
+                        .name);
+            }
+            break;
+        case SDP_RTCP_FB_CCM: /* RFC 5104 */
+            if (attr_p->attr.rtcp_fb.param.ccm < SDP_MAX_RTCP_FB_CCM) {
+                flex_string_sprintf(fs, " %s",
+                    sdp_rtcp_fb_ccm_type_val[attr_p->attr.rtcp_fb.param.ccm]
+                        .name);
+            }
+            break;
+        case SDP_RTCP_FB_NACK:
+            if (attr_p->attr.rtcp_fb.param.nack > SDP_RTCP_FB_NACK_UNSPECIFIED
+                && attr_p->attr.rtcp_fb.param.nack < SDP_MAX_RTCP_FB_NACK) {
+                flex_string_sprintf(fs, " %s",
+                    sdp_rtcp_fb_nack_type_val[attr_p->attr.rtcp_fb.param.nack]
+                        .name);
+            }
+            break;
+        case SDP_RTCP_FB_TRR_INT:
+            flex_string_sprintf(fs, " %u", attr_p->attr.rtcp_fb.param.trr_int);
+            break;
+
+        case SDP_RTCP_FB_UNKNOWN:
+            /* Contents are in the "extra" field */
+            break;
+
+        default:
+            CSFLogError(logTag, "%s Error: Invalid rtcp-fb enum (%d)",
+                        sdp_p->debug_str, attr_p->attr.rtcp_fb.feedback_type);
+            return SDP_FAILURE;
+    }
+
+    /* Tack on any information that cannot otherwise be represented by
+     * the sdp_fmtp_fb_t structure. */
+    if (attr_p->attr.rtcp_fb.extra[0]) {
+        flex_string_sprintf(fs, " %s", attr_p->attr.rtcp_fb.extra);
+    }
+
+    /* Line ending */
+    flex_string_sprintf(fs, "\r\n");
+
+    return SDP_SUCCESS;
+}
+
+static int find_token_enum(const char *attr_name,
+                           sdp_t *sdp_p,
+                           const char **ptr,
+                           const sdp_namearray_t *types,
+                           int type_count,
+                           int unknown_value)
+{
+    sdp_result_e  result = SDP_SUCCESS;
+    char          tmp[SDP_MAX_STRING_LEN+1];
+    int           i;
+
+    *ptr = sdp_getnextstrtok(*ptr, tmp, sizeof(tmp), " \t", &result);
+    if (result != SDP_SUCCESS) {
+        sdp_parse_error(sdp_p->peerconnection,
+            "%s Warning: problem parsing %s", sdp_p->debug_str, attr_name);
+        sdp_p->conf_p->num_invalid_param++;
+        return -1;
+    }
+
+    for (i=0; i < type_count; i++) {
+        if (!cpr_strncasecmp(tmp, types[i].name, types[i].strlen)) {
+            return i;
+        }
+    }
+    return unknown_value;
+}
+
+sdp_result_e sdp_parse_attr_rtcp_fb (sdp_t *sdp_p,
+                                     sdp_attr_t *attr_p,
+                                     const char *ptr)
+{
+    sdp_result_e     result = SDP_SUCCESS;
+    sdp_fmtp_fb_t   *rtcp_fb_p = &(attr_p->attr.rtcp_fb);
+    char             tmp[SDP_MAX_STRING_LEN+1];
+    int              i;
+
+    /* Set up attribute fields */
+    rtcp_fb_p->payload_num = 0;
+    rtcp_fb_p->feedback_type = SDP_RTCP_FB_UNKNOWN;
+    rtcp_fb_p->extra[0] = '\0';
+
+    /* Skip WS (just in case) */
+    while (*ptr == ' ' || *ptr == '\t') {
+        ptr++;
+    }
+
+    /* Look for the special "*" payload type */
+    if (*ptr == '*') {
+        rtcp_fb_p->payload_num = SDP_ALL_PAYLOADS;
+        ptr++;
+    } else {
+        /* If the pt is not '*', parse it out as an integer */
+        rtcp_fb_p->payload_num = (u16)sdp_getnextnumtok(ptr, &ptr,
+                                                        " \t", &result);
+        if (result != SDP_SUCCESS) {
+            sdp_parse_error(sdp_p->peerconnection,
+              "%s Warning: could not parse payload type for rtcp-fb attribute",
+              sdp_p->debug_str);
+            sdp_p->conf_p->num_invalid_param++;
+
+            return SDP_INVALID_PARAMETER;
+        }
+    }
+
+    /* Read feedback type */
+    i = find_token_enum("rtcp-fb attribute", sdp_p, &ptr, sdp_rtcp_fb_type_val,
+                        SDP_MAX_RTCP_FB, SDP_RTCP_FB_UNKNOWN);
+    if (i < 0) {
+        sdp_parse_error(sdp_p->peerconnection,
+          "%s Warning: could not parse feedback type for rtcp-fb attribute",
+          sdp_p->debug_str);
+        sdp_p->conf_p->num_invalid_param++;
+        return SDP_INVALID_PARAMETER;
+    }
+    rtcp_fb_p->feedback_type = (sdp_rtcp_fb_type_e) i;
+
+    switch(rtcp_fb_p->feedback_type) {
+        case SDP_RTCP_FB_ACK:
+            i = find_token_enum("rtcp-fb ack type", sdp_p, &ptr,
+                                sdp_rtcp_fb_ack_type_val,
+                                SDP_MAX_RTCP_FB_ACK, SDP_RTCP_FB_ACK_UNKNOWN);
+            if (i < 0) {
+                sdp_parse_error(sdp_p->peerconnection,
+                  "%s Warning: could not parse ack type for rtcp-fb attribute",
+                  sdp_p->debug_str);
+                sdp_p->conf_p->num_invalid_param++;
+                return SDP_INVALID_PARAMETER;
+            }
+            rtcp_fb_p->param.ack = (sdp_rtcp_fb_ack_type_e) i;
+            break;
+
+        case SDP_RTCP_FB_CCM:
+            i = find_token_enum("rtcp-fb ccm type", sdp_p, &ptr,
+                                sdp_rtcp_fb_ccm_type_val,
+                                SDP_MAX_RTCP_FB_CCM, SDP_RTCP_FB_CCM_UNKNOWN);
+            if (i < 0) {
+                sdp_parse_error(sdp_p->peerconnection,
+                  "%s Warning: could not parse ccm type for rtcp-fb attribute",
+                  sdp_p->debug_str);
+                sdp_p->conf_p->num_invalid_param++;
+                return SDP_INVALID_PARAMETER;
+            }
+            rtcp_fb_p->param.ccm = (sdp_rtcp_fb_ccm_type_e) i;
+
+            /* TODO -- We don't currently parse tmmbr parameters or vbcm
+               submessage types. If we decide to support these modes of
+               operation, we probably want to add parsing code for them.
+               For the time being, they'll just end up parsed into "extra". */
+            break;
+
+        case SDP_RTCP_FB_NACK:
+            /* Skip any remaining WS -- see
+               http://code.google.com/p/webrtc/issues/detail?id=1922 */
+            while (*ptr == ' ' || *ptr == '\t') {
+                ptr++;
+            }
+            /* Check for empty string */
+            if (*ptr == '\r') {
+                rtcp_fb_p->param.nack = SDP_RTCP_FB_NACK_UNSPECIFIED;
+                break;
+            }
+            i = find_token_enum("rtcp-fb nack type", sdp_p, &ptr,
+                                sdp_rtcp_fb_nack_type_val,
+                                SDP_MAX_RTCP_FB_NACK, SDP_RTCP_FB_NACK_UNKNOWN);
+            if (i < 0) {
+                sdp_parse_error(sdp_p->peerconnection,
+                  "%s Warning: could not parse nack type for rtcp-fb attribute",
+                  sdp_p->debug_str);
+                sdp_p->conf_p->num_invalid_param++;
+                return SDP_INVALID_PARAMETER;
+            }
+            rtcp_fb_p->param.nack = (sdp_rtcp_fb_nack_type_e) i;
+            break;
+
+        case SDP_RTCP_FB_TRR_INT:
+            rtcp_fb_p->param.trr_int = sdp_getnextnumtok(ptr, &ptr,
+                                                         " \t", &result);
+            if (result != SDP_SUCCESS) {
+                sdp_parse_error(sdp_p->peerconnection,
+                  "%s Warning: could not parse trr-int value for rtcp-fb "
+                  "attribute", sdp_p->debug_str);
+                sdp_p->conf_p->num_invalid_param++;
+                return SDP_INVALID_PARAMETER;
+            }
+            break;
+
+        case SDP_RTCP_FB_UNKNOWN:
+            /* Handled by "extra", below */
+            break;
+
+        default:
+            /* This is an internal error, not a parsing error */
+            CSFLogError(logTag, "%s Error: Invalid rtcp-fb enum (%d)",
+                        sdp_p->debug_str, attr_p->attr.rtcp_fb.feedback_type);
+            return SDP_FAILURE;
+    }
+
+    /* Skip any remaining WS  */
+    while (*ptr == ' ' || *ptr == '\t') {
+        ptr++;
+    }
+
+    /* Just store the rest of the line in "extra" -- this will return
+       a failure result if there is no more text, but that's fine. */
+    ptr = sdp_getnextstrtok(ptr, rtcp_fb_p->extra,
+                            sizeof(rtcp_fb_p->extra), "\r\n", &result);
+
+    return SDP_SUCCESS;
 }

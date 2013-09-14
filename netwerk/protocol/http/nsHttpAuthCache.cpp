@@ -3,9 +3,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <stdlib.h>
-#include "nsHttp.h"
+// HttpLog.h should generally be included first
+#include "HttpLog.h"
+
 #include "nsHttpAuthCache.h"
+#include <stdlib.h>
+#include "base/compiler_specific.h"
+#include "nsHttp.h"
 #include "nsString.h"
 #include "nsCRT.h"
 #include "prprf.h"
@@ -50,7 +54,7 @@ StrEquivalent(const PRUnichar *a, const PRUnichar *b)
 
 nsHttpAuthCache::nsHttpAuthCache()
     : mDB(nullptr)
-    , mObserver(new AppDataClearObserver(this))
+    , ALLOW_THIS_IN_INITIALIZER_LIST(mObserver(new AppDataClearObserver(this)))
 {
     nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
     if (obsSvc) {
@@ -330,7 +334,7 @@ nsHttpAuthIdentity::Set(const PRUnichar *domain,
 
     int domainLen = domain ? NS_strlen(domain) : 0;
     int userLen   = user   ? NS_strlen(user)   : 0;
-    int passLen   = pass   ? NS_strlen(pass)   : 0; 
+    int passLen   = pass   ? NS_strlen(pass)   : 0;
 
     int len = userLen + 1 + passLen + 1 + domainLen + 1;
     newUser = (PRUnichar *) malloc(len * sizeof(PRUnichar));
@@ -413,7 +417,7 @@ nsHttpAuthEntry::AddPath(const char *aPath)
         tempPtr = tempPtr->mNext;
 
     }
-    
+
     //Append the aPath
     nsHttpAuthPath *newAuthPath;
     int newpathLen = strlen(aPath);
@@ -470,7 +474,7 @@ nsHttpAuthEntry::Set(const char *path,
     nsresult rv = NS_OK;
     if (ident) {
         rv = mIdent.Set(*ident);
-    } 
+    }
     else if (mIdent.IsEmpty()) {
         // If we are not given an identity and our cached identity has not been
         // initialized yet (so is currently empty), initialize it now by

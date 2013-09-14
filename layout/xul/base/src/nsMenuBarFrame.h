@@ -40,9 +40,9 @@ public:
   NS_IMETHOD SetActive(bool aActiveFlag) MOZ_OVERRIDE; 
 
   virtual bool IsMenuBar() MOZ_OVERRIDE { return true; }
-  virtual bool IsContextMenu() { return false; }
+  virtual bool IsContextMenu() MOZ_OVERRIDE { return false; }
   virtual bool IsActive() MOZ_OVERRIDE { return mIsActive; }
-  virtual bool IsMenu() { return false; }
+  virtual bool IsMenu() MOZ_OVERRIDE { return false; }
   virtual bool IsOpen() MOZ_OVERRIDE { return true; } // menubars are considered always open
 
   bool IsMenuOpen() { return mCurrentMenu && mCurrentMenu->IsOpen(); }
@@ -50,9 +50,9 @@ public:
   void InstallKeyboardNavigator();
   void RemoveKeyboardNavigator();
 
-  NS_IMETHOD Init(nsIContent*      aContent,
-                  nsIFrame*        aParent,
-                  nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
+  virtual void Init(nsIContent*      aContent,
+                    nsIFrame*        aParent,
+                    nsIFrame*        aPrevInFlow) MOZ_OVERRIDE;
 
   virtual void DestroyFrom(nsIFrame* aDestructRoot) MOZ_OVERRIDE;
 
@@ -61,8 +61,11 @@ public:
 
 // Non-interface helpers
 
-  void
-  SetStayActive(bool aStayActive) { mStayActive = aStayActive; }
+  // The 'stay active' flag is set when navigating from one top-level menu
+  // to another, to prevent the menubar from deactivating and submenus from
+  // firing extra DOMMenuItemActive events.
+  bool GetStayActive() { return mStayActive; }
+  void SetStayActive(bool aStayActive) { mStayActive = aStayActive; }
 
   // Called when a menu on the menu bar is clicked on. Returns a menu if one
   // needs to be closed.
@@ -113,7 +116,7 @@ protected:
   // be null if no menu is active.
   nsMenuFrame* mCurrentMenu;
 
-  nsIDOMEventTarget* mTarget;
+  mozilla::dom::EventTarget* mTarget;
 
 }; // class nsMenuBarFrame
 

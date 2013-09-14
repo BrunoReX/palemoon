@@ -23,9 +23,11 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ContentChild.h"
 
-#include "mozilla/Util.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Likely.h"
+#include "mozilla/Poison.h"
+#include "mozilla/Telemetry.h"
+#include "mozilla/Util.h"
 
 #include "nsAppRunner.h"
 #include "mozilla/AppData.h"
@@ -194,7 +196,9 @@ using mozilla::scache::StartupCache;
 #endif
 
 #include "base/command_line.h"
-
+#ifdef MOZ_ENABLE_TESTS
+#include "GTestRunner.h"
+#endif
 
 #ifdef MOZ_WIDGET_ANDROID
 #include "AndroidBridge.h"
@@ -237,6 +241,10 @@ static char **gQtOnlyArgv;
 #include "nsGTKToolkit.h"
 #endif
 #include "BinaryPath.h"
+
+namespace mozilla {
+int (*RunGTest)() = 0;
+}
 
 using mozilla::dom::ContentParent;
 using mozilla::dom::ContentChild;
@@ -289,7 +297,7 @@ static already_AddRefed<nsIFile>
 GetFileFromEnv(const char *name)
 {
   nsresult rv;
-  nsIFile *file = nullptr;
+  nsCOMPtr<nsIFile> file;
 
 #ifdef XP_WIN
   WCHAR path[_MAX_PATH];
@@ -297,21 +305,22 @@ GetFileFromEnv(const char *name)
                                path, _MAX_PATH))
     return nullptr;
 
-  rv = NS_NewLocalFile(nsDependentString(path), true, &file);
+  rv = NS_NewLocalFile(nsDependentString(path), true, getter_AddRefs(file));
   if (NS_FAILED(rv))
     return nullptr;
 
-  return file;
+  return file.forget();
 #else
   const char *arg = PR_GetEnv(name);
   if (!arg || !*arg)
     return nullptr;
 
-  rv = NS_NewNativeLocalFile(nsDependentCString(arg), true, &file);
+  rv = NS_NewNativeLocalFile(nsDependentCString(arg), true,
+                             getter_AddRefs(file));
   if (NS_FAILED(rv))
     return nullptr;
 
-  return file;
+  return file.forget();
 #endif
 }
 
@@ -421,8 +430,9 @@ static void RemoveArg(char **argv)
  * @param aArg the parameter to check. Must be lowercase.
  * @param aCheckOSInt if true returns ARG_BAD if the osint argument is present
  *        when aArg is also present.
- * @param if non-null, the -arg <data> will be stored in this pointer. This is *not*
- *        allocated, but rather a pointer to the argv data.
+ * @param aParam if non-null, the -arg <data> will be stored in this pointer.
+ *        This is *not* allocated, but rather a pointer to the argv data.
+ * @param aRemArg if true, the argument is removed from the gArgv array.
  */
 static ArgResult
 CheckArg(const char* aArg, bool aCheckOSInt = false, const char **aParam = nullptr, bool aRemArg = true)
@@ -614,7 +624,6 @@ NS_IMETHODIMP
 nsXULAppInfo::GetVendor(nsACString& aResult)
 {
   if (XRE_GetProcessType() == GeckoProcessType_Content) {
-    NS_WARNING("Attempt to get unavailable information in content process.");
     return NS_ERROR_NOT_AVAILABLE;
   }
   aResult.Assign(gAppData->vendor);
@@ -626,7 +635,6 @@ NS_IMETHODIMP
 nsXULAppInfo::GetName(nsACString& aResult)
 {
   if (XRE_GetProcessType() == GeckoProcessType_Content) {
-    NS_WARNING("Attempt to get unavailable information in content process.");
     return NS_ERROR_NOT_AVAILABLE;
   }
   aResult.Assign(gAppData->name);
@@ -638,7 +646,6 @@ NS_IMETHODIMP
 nsXULAppInfo::GetID(nsACString& aResult)
 {
   if (XRE_GetProcessType() == GeckoProcessType_Content) {
-    NS_WARNING("Attempt to get unavailable information in content process.");
     return NS_ERROR_NOT_AVAILABLE;
   }
   aResult.Assign(gAppData->ID);
@@ -692,7 +699,6 @@ NS_IMETHODIMP
 nsXULAppInfo::GetUAName(nsACString& aResult)
 {
   if (XRE_GetProcessType() == GeckoProcessType_Content) {
-    NS_WARNING("Attempt to get unavailable information in content process.");
     return NS_ERROR_NOT_AVAILABLE;
   }
   aResult.Assign(gAppData->UAName);
@@ -777,7 +783,7 @@ nsXULAppInfo::EnsureContentProcess()
   if (XRE_GetProcessType() != GeckoProcessType_Default)
     return NS_ERROR_NOT_AVAILABLE;
 
-  unused << ContentParent::GetNewOrUsed();
+  nsRefPtr<ContentParent> unused = ContentParent::GetNewOrUsed();
   return NS_OK;
 }
 
@@ -917,6 +923,10 @@ nsXULAppInfo::SetEnabled(bool aEnabled)
       if (!xreDirectory)
         return NS_ERROR_FAILURE;
     }
+    AnnotateCrashReport(NS_LITERAL_CSTRING("FramePoisonBase"),
+                        nsPrintfCString("%.16llx", uint64_t(gMozillaPoisonBase)));
+    AnnotateCrashReport(NS_LITERAL_CSTRING("FramePoisonSize"),
+                        nsPrintfCString("%lu", uint32_t(gMozillaPoisonSize)));
     return CrashReporter::SetExceptionHandler(xreDirectory, true);
   }
   else {
@@ -1059,12 +1069,7 @@ static nsresult AppInfoConstructor(nsISupports* aOuter,
     QueryInterface(aIID, aResult);
 }
 
-bool gLogConsoleErrors
-#ifdef DEBUG
-         = true;
-#else
-         = false;
-#endif
+bool gLogConsoleErrors = false;
 
 #define NS_ENSURE_TRUE_LOG(x, ret)               \
   PR_BEGIN_MACRO                                 \
@@ -1117,7 +1122,7 @@ ScopedXPCOMStartup::~ScopedXPCOMStartup()
       appStartup->DestroyHiddenWindow();
 
     gDirServiceProvider->DoShutdown();
-    SAMPLE_MARKER("Shutdown early");
+    PROFILER_MARKER("Shutdown early");
 
     WriteConsoleLog();
 
@@ -1708,6 +1713,8 @@ ProfileLockedDialog(nsIFile* aProfileDir, nsIFile* aProfileLocalDir,
   ScopedXPCOMStartup xpcom;
   rv = xpcom.Initialize();
   NS_ENSURE_SUCCESS(rv, rv);
+
+  mozilla::Telemetry::WriteFailedProfileLock(aProfileDir);
 
   rv = xpcom.SetWindowCreator(aNative);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
@@ -2543,13 +2550,13 @@ static void RestoreStateForAppInitiatedRestart()
 static void MakeOrSetMinidumpPath(nsIFile* profD)
 {
   nsCOMPtr<nsIFile> dumpD;
-  nsresult rv = profD->Clone(getter_AddRefs(dumpD));
+  profD->Clone(getter_AddRefs(dumpD));
   
   if(dumpD) {
     bool fileExists;
     //XXX: do some more error checking here
     dumpD->Append(NS_LITERAL_STRING("minidumps"));
-    rv = dumpD->Exists(&fileExists);
+    dumpD->Exists(&fileExists);
     if(!fileExists) {
       dumpD->Create(nsIFile::DIRECTORY_TYPE, 0700);
     }
@@ -2607,73 +2614,52 @@ static void MOZ_gdk_display_close(GdkDisplay *display)
     g_free(theme_name);
   }
 
-  // gdk_display_close was broken prior to gtk+-2.10.0.
-  // (http://bugzilla.gnome.org/show_bug.cgi?id=85715)
-  // gdk_display_manager_set_default_display (gdk_display_manager_get(), NULL)
-  // was also broken.
-  if (gtk_check_version(2,10,0) != NULL) {
-#ifdef MOZ_X11
-    // Version check failed - broken gdk_display_close.
-    //
-    // Let the gdk structures leak but at least close the Display,
-    // assuming that gdk will not use it again.
-    Display* dpy = GDK_DISPLAY_XDISPLAY(display);
-    if (!theme_is_qt)
-      XCloseDisplay(dpy);
-#else
-    gdk_display_close(display);
-#endif /* MOZ_X11 */
-  }
-  else {
 #if CLEANUP_MEMORY
-    // Get a (new) Pango context that holds a reference to the fontmap that
-    // GTK has been using.  gdk_pango_context_get() must be called while GTK
-    // has a default display.
-    PangoContext *pangoContext = gdk_pango_context_get();
+  // Get a (new) Pango context that holds a reference to the fontmap that
+  // GTK has been using.  gdk_pango_context_get() must be called while GTK
+  // has a default display.
+  PangoContext *pangoContext = gdk_pango_context_get();
 #endif
 
-    bool buggyCairoShutdown = cairo_version() < CAIRO_VERSION_ENCODE(1, 4, 0);
+  bool buggyCairoShutdown = cairo_version() < CAIRO_VERSION_ENCODE(1, 4, 0);
 
-    if (!buggyCairoShutdown) {
-      // We should shut down GDK before we shut down libraries it depends on
-      // like Pango and cairo. But if cairo shutdown is buggy, we should
-      // shut down cairo first otherwise it may crash because of dangling
-      // references to Display objects (see bug 469831).
-      if (!theme_is_qt)
-        gdk_display_close(display);
-    }
+  if (!buggyCairoShutdown) {
+    // We should shut down GDK before we shut down libraries it depends on
+    // like Pango and cairo. But if cairo shutdown is buggy, we should
+    // shut down cairo first otherwise it may crash because of dangling
+    // references to Display objects (see bug 469831).
+    if (!theme_is_qt)
+      gdk_display_close(display);
+  }
 
 #if CLEANUP_MEMORY
-    // This doesn't take a reference.
-    PangoFontMap *fontmap = pango_context_get_font_map(pangoContext);
-    // Do some shutdown of the fontmap, which releases the fonts, clearing a
-    // bunch of circular references from the fontmap through the fonts back to
-    // itself.  The shutdown that this does is much less than what's done by
-    // the fontmap's finalize, though.
-    if (PANGO_IS_FC_FONT_MAP(fontmap))
-        pango_fc_font_map_shutdown(PANGO_FC_FONT_MAP(fontmap));
-    g_object_unref(pangoContext);
-    // PangoCairo still holds a reference to the fontmap.
-    // Now that we have finished with GTK and Pango, we could unref fontmap,
-    // which would allow us to call FcFini, but removing what is really
-    // Pango's ref feels a bit evil.  Pango-1.22 will have support for
-    // pango_cairo_font_map_set_default(NULL), which would release the
-    // reference on the old fontmap.
+  // This doesn't take a reference.
+  PangoFontMap *fontmap = pango_context_get_font_map(pangoContext);
+  // Do some shutdown of the fontmap, which releases the fonts, clearing a
+  // bunch of circular references from the fontmap through the fonts back to
+  // itself.  The shutdown that this does is much less than what's done by
+  // the fontmap's finalize, though.
+  if (PANGO_IS_FC_FONT_MAP(fontmap))
+      pango_fc_font_map_shutdown(PANGO_FC_FONT_MAP(fontmap));
+  g_object_unref(pangoContext);
+  // PangoCairo still holds a reference to the fontmap.
+  // Now that we have finished with GTK and Pango, we could unref fontmap,
+  // which would allow us to call FcFini, but removing what is really
+  // Pango's ref feels a bit evil.  Pango-1.22 will have support for
+  // pango_cairo_font_map_set_default(NULL), which would release the
+  // reference on the old fontmap.
 
-#if GTK_CHECK_VERSION(2,8,0)
-    // cairo_debug_reset_static_data() is prototyped through cairo.h included
-    // by gtk.h.
+  // cairo_debug_reset_static_data() is prototyped through cairo.h included
+  // by gtk.h.
 #ifdef cairo_debug_reset_static_data
 #error "Looks like we're including Mozilla's cairo instead of system cairo"
 #endif
-    cairo_debug_reset_static_data();
-#endif // 2.8.0
+  cairo_debug_reset_static_data();
 #endif // CLEANUP_MEMORY
 
-    if (buggyCairoShutdown) {
-      if (!theme_is_qt)
-        gdk_display_close(display);
-    }
+  if (buggyCairoShutdown) {
+    if (!theme_is_qt)
+      gdk_display_close(display);
   }
 }
 #endif // MOZ_WIDGET_GTK2
@@ -2758,7 +2744,7 @@ static DWORD InitDwriteBG(LPVOID lpdwThreadParam)
 bool fire_glxtest_process();
 #endif
 
-#include "sampler.h"
+#include "GeckoProfiler.h"
 
 // Encapsulates startup and shutdown state for XRE_main
 class XREMain
@@ -2788,7 +2774,7 @@ public:
   }
 
   int XRE_main(int argc, char* argv[], const nsXREAppData* aAppData);
-  int XRE_mainInit(const nsXREAppData* aAppData, bool* aExitFlag);
+  int XRE_mainInit(bool* aExitFlag);
   int XRE_mainStartup(bool* aExitFlag);
   nsresult XRE_mainRun();
   
@@ -2824,7 +2810,7 @@ public:
  * true.
  */
 int
-XREMain::XRE_mainInit(const nsXREAppData* aAppData, bool* aExitFlag)
+XREMain::XRE_mainInit(bool* aExitFlag)
 {
   if (!aExitFlag)
     return 1;
@@ -2848,18 +2834,6 @@ XREMain::XRE_mainInit(const nsXREAppData* aAppData, bool* aExitFlag)
   if (fire_glxtest_process()) {
     *aExitFlag = true;
     return 0;
-  }
-#endif
-
-#ifdef XP_WIN
-  {
-    // Vista API.  Mozilla is DPI Aware.
-    typedef BOOL (*SetProcessDPIAwareFunc)(VOID);
-    SetProcessDPIAwareFunc setDPIAware = (SetProcessDPIAwareFunc)
-      GetProcAddress(LoadLibraryW(L"user32.dll"), "SetProcessDPIAware");
-    if (setDPIAware) {
-      setDPIAware();
-    }
   }
 #endif
 
@@ -2929,8 +2903,7 @@ XREMain::XRE_mainInit(const nsXREAppData* aAppData, bool* aExitFlag)
       return 1;
     }
 
-    nsXREAppData* overrideAppData = const_cast<nsXREAppData*>(aAppData);
-    rv = XRE_ParseAppData(overrideLF, overrideAppData);
+    rv = XRE_ParseAppData(overrideLF, mAppData);
     if (NS_FAILED(rv)) {
       Output(true, "Couldn't read override.ini");
       return 1;
@@ -3208,7 +3181,57 @@ XREMain::XRE_mainInit(const nsXREAppData* aAppData, bool* aExitFlag)
     return 0;
   }
 
+  if (PR_GetEnv("MOZ_RUN_GTEST")) {
+    int result;
+    // RunGTest will only be set if we're in xul-unit
+    if (mozilla::RunGTest) {
+      result = mozilla::RunGTest();
+    } else {
+      result = 1;
+      printf("TEST-UNEXPECTED-FAIL | gtest | Not compiled with enable-tests\n");
+    }
+    *aExitFlag = true;
+    return result;
+  }
+
   return 0;
+}
+
+namespace mozilla {
+  ShutdownChecksMode gShutdownChecks = SCM_NOTHING;
+}
+
+static void SetShutdownChecks() {
+  // Set default first. On debug builds we crash. On nightly and local
+  // builds we record. Nightlies will then send the info via telemetry,
+  // but it is usefull to have the data in about:telemetry in local builds
+  // too.
+
+#ifdef DEBUG
+  gShutdownChecks = SCM_CRASH;
+#else
+  const char* releaseChannel = NS_STRINGIFY(MOZ_UPDATE_CHANNEL);
+  if (strcmp(releaseChannel, "nightly") == 0 ||
+      strcmp(releaseChannel, "default") == 0) {
+    gShutdownChecks = SCM_RECORD;
+  } else {
+    gShutdownChecks = SCM_NOTHING;
+  }
+#endif
+
+  // We let an environment variable override the default so that addons
+  // authors can use it for debugging shutdown with released firefox versions.
+  const char* mozShutdownChecksEnv = PR_GetEnv("MOZ_SHUTDOWN_CHECKS");
+  if (mozShutdownChecksEnv) {
+    if (strcmp(mozShutdownChecksEnv, "crash") == 0) {
+      gShutdownChecks = SCM_CRASH;
+    } else if (strcmp(mozShutdownChecksEnv, "record") == 0) {
+      gShutdownChecks = SCM_RECORD;
+    } else if (strcmp(mozShutdownChecksEnv, "nothing") == 0) {
+      gShutdownChecks = SCM_NOTHING;
+    }
+  }
+
 }
 
 /*
@@ -3224,6 +3247,8 @@ XREMain::XRE_mainStartup(bool* aExitFlag)
   if (!aExitFlag)
     return 1;
   *aExitFlag = false;
+
+  SetShutdownChecks();
 
 #if defined(MOZ_WIDGET_GTK) || defined(MOZ_ENABLE_XREMOTE)
   // Stash DESKTOP_STARTUP_ID in malloc'ed memory because gtk_init will clear it.
@@ -3349,7 +3374,8 @@ XREMain::XRE_mainStartup(bool* aExitFlag)
   // An environment variable is used instead of a pref on X11 platforms because we start having 
   // access to prefs long after the first call to XOpenDisplay which is hard to change due to 
   // interdependencies in the initialization.
-  if (PR_GetEnv("MOZ_USE_OMTC")) {
+  if (PR_GetEnv("MOZ_USE_OMTC") ||
+      PR_GetEnv("MOZ_OMTC_ENABLED")) {
     XInitThreads();
   }
 #endif
@@ -3448,8 +3474,14 @@ XREMain::XRE_mainStartup(bool* aExitFlag)
   if (CheckArg("process-updates")) {
     SaveToEnv("MOZ_PROCESS_UPDATES=1");
   }
+  nsCOMPtr<nsIFile> exeFile, exeDir;
+  rv = mDirProvider.GetFile(XRE_EXECUTABLE_FILE, &persistent,
+                            getter_AddRefs(exeFile));
+  NS_ENSURE_SUCCESS(rv, 1);
+  rv = exeFile->GetParent(getter_AddRefs(exeDir));
+  NS_ENSURE_SUCCESS(rv, 1);
   ProcessUpdates(mDirProvider.GetGREDir(),
-                 mDirProvider.GetAppDir(),
+                 exeDir,
                  updRoot,
                  gRestartArgc,
                  gRestartArgv,
@@ -3814,8 +3846,9 @@ XREMain::XRE_mainRun()
   }
 
 #ifdef MOZ_INSTRUMENT_EVENT_LOOP
-  if (PR_GetEnv("MOZ_INSTRUMENT_EVENT_LOOP") || SAMPLER_IS_ACTIVE()) {
-    mozilla::InitEventTracing();
+  if (PR_GetEnv("MOZ_INSTRUMENT_EVENT_LOOP") || profiler_is_active()) {
+    bool logToConsole = !!PR_GetEnv("MOZ_INSTRUMENT_EVENT_LOOP");
+    mozilla::InitEventTracing(logToConsole);
   }
 #endif /* MOZ_INSTRUMENT_EVENT_LOOP */
 
@@ -3836,8 +3869,9 @@ XREMain::XRE_mainRun()
 int
 XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
 {
-  SAMPLER_INIT();
-  SAMPLE_LABEL("Startup", "XRE_Main");
+  char aLocal;
+  GeckoProfilerInitRAII profilerGuard(&aLocal);
+  PROFILER_LABEL("Startup", "XRE_Main");
 
   nsresult rv = NS_OK;
 
@@ -3867,7 +3901,7 @@ XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
 
   // init
   bool exit = false;
-  int result = XRE_mainInit(aAppData, &exit);
+  int result = XRE_mainInit(&exit);
   if (result != 0 || exit)
     return result;
 
@@ -3937,7 +3971,6 @@ XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
     MOZ_gdk_display_close(mGdkDisplay);
 #endif
 
-    SAMPLER_SHUTDOWN();
     rv = LaunchChild(mNativeApp, true);
 
 #ifdef MOZ_CRASHREPORTER
@@ -3960,8 +3993,6 @@ XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
 
   XRE_DeinitCommandLine();
 
-  SAMPLER_SHUTDOWN();
-
   return NS_FAILED(rv) ? 1 : 0;
 }
 
@@ -3971,7 +4002,7 @@ static XREMain* xreMainPtr;
 
 // must be called by the thread we want as the main thread
 nsresult
-XRE_metroStartup()
+XRE_metroStartup(bool runXREMain)
 {
   nsresult rv;
 
@@ -3987,8 +4018,10 @@ XRE_metroStartup()
   rv = xreMainPtr->mScopedXPCom->Initialize();
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = xreMainPtr->XRE_mainRun();
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (runXREMain) {
+    rv = xreMainPtr->XRE_mainRun();
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
   return NS_OK;
 }
 
@@ -4032,8 +4065,9 @@ public:
 int
 XRE_mainMetro(int argc, char* argv[], const nsXREAppData* aAppData)
 {
-  SAMPLER_INIT();
-  SAMPLE_LABEL("Startup", "XRE_Main");
+  char aLocal;
+  GeckoProfilerInitRAII profilerGuard(&aLocal);
+  PROFILER_LABEL("Startup", "XRE_Main");
 
   nsresult rv = NS_OK;
 
@@ -4060,7 +4094,7 @@ XRE_mainMetro(int argc, char* argv[], const nsXREAppData* aAppData)
 
   // init
   bool exit = false;
-  if (xreMainPtr->XRE_mainInit(aAppData, &exit) != 0 || exit)
+  if (xreMainPtr->XRE_mainInit(&exit) != 0 || exit)
     return 1;
 
   // Located in widget, will call back into XRE_metroStartup and
@@ -4073,7 +4107,6 @@ XRE_mainMetro(int argc, char* argv[], const nsXREAppData* aAppData)
   // thread that called XRE_metroStartup.
   NS_ASSERTION(!xreMainPtr->mScopedXPCom,
                "XPCOM Shutdown hasn't occured, and we are exiting.");
-  SAMPLER_SHUTDOWN();
   return 0;
 }
 

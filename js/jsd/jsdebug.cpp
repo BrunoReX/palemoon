@@ -1,5 +1,6 @@
-/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
+ * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -59,11 +60,11 @@ JSD_GetMinorVersion(void)
     return JSD_MINOR_VERSION;
 }
 
-JSD_PUBLIC_API(JSContext*)
-JSD_GetDefaultJSContext(JSDContext* jsdc)
+JSD_PUBLIC_API(JSObject*)
+JSD_GetDefaultGlobal(JSDContext* jsdc)
 {
     JSD_ASSERT_VALID_CONTEXT(jsdc);
-    return jsdc->dumbContext;
+    return jsdc->glob;
 }
 
 JSD_PUBLIC_API(JSRuntime*)
@@ -765,17 +766,16 @@ JSD_EvaluateUCScriptInStackFrame(JSDContext* jsdc,
                                  JSDThreadState* jsdthreadstate,
                                  JSDStackFrameInfo* jsdframe,
                                  const jschar *bytes, unsigned length,
-                                 const char *filename, unsigned lineno, jsval *rval)
+                                 const char *filename, unsigned lineno, JS::MutableHandleValue rval)
 {
     JSD_ASSERT_VALID_CONTEXT(jsdc);
     JS_ASSERT(bytes);
     JS_ASSERT(length);
     JS_ASSERT(filename);
-    JS_ASSERT(rval);
 
     return jsd_EvaluateUCScriptInStackFrame(jsdc, jsdthreadstate,jsdframe,
                                             bytes, length, filename, lineno,
-                                             JS_TRUE, rval);
+                                            JS_TRUE, rval);
 }
 
 JSD_PUBLIC_API(JSBool)
@@ -784,13 +784,12 @@ JSD_AttemptUCScriptInStackFrame(JSDContext* jsdc,
                                 JSDStackFrameInfo* jsdframe,
                                 const jschar *bytes, unsigned length,
                                 const char *filename, unsigned lineno,
-                                jsval *rval)
+                                JS::MutableHandleValue rval)
 {
     JSD_ASSERT_VALID_CONTEXT(jsdc);
     JS_ASSERT(bytes);
     JS_ASSERT(length);
     JS_ASSERT(filename);
-    JS_ASSERT(rval);
 
     return jsd_EvaluateUCScriptInStackFrame(jsdc, jsdthreadstate,jsdframe,
                                             bytes, length, filename, lineno,
@@ -802,13 +801,12 @@ JSD_EvaluateScriptInStackFrame(JSDContext* jsdc,
                                JSDThreadState* jsdthreadstate,
                                JSDStackFrameInfo* jsdframe,
                                const char *bytes, unsigned length,
-                               const char *filename, unsigned lineno, jsval *rval)
+                               const char *filename, unsigned lineno, JS::MutableHandleValue rval)
 {
     JSD_ASSERT_VALID_CONTEXT(jsdc);
     JS_ASSERT(bytes);
     JS_ASSERT(length);
     JS_ASSERT(filename);
-    JS_ASSERT(rval);
 
     return jsd_EvaluateScriptInStackFrame(jsdc, jsdthreadstate,jsdframe,
                                           bytes, length,
@@ -820,13 +818,12 @@ JSD_AttemptScriptInStackFrame(JSDContext* jsdc,
                               JSDThreadState* jsdthreadstate,
                               JSDStackFrameInfo* jsdframe,
                               const char *bytes, unsigned length,
-                              const char *filename, unsigned lineno, jsval *rval)
+                              const char *filename, unsigned lineno, JS::MutableHandleValue rval)
 {
     JSD_ASSERT_VALID_CONTEXT(jsdc);
     JS_ASSERT(bytes);
     JS_ASSERT(length);
     JS_ASSERT(filename);
-    JS_ASSERT(rval);
 
     return jsd_EvaluateScriptInStackFrame(jsdc, jsdthreadstate,jsdframe,
                                           bytes, length,

@@ -6,11 +6,8 @@
 
 const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
-Cu.import("resource://gre/modules/services/datareporting/policy.jsm");
-Cu.import("resource://gre/modules/services/datareporting/sessions.jsm");
+Cu.import("resource://gre/modules/Preferences.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://services-common/observers.js");
-Cu.import("resource://services-common/preferences.js");
 Cu.import("resource://services-common/utils.js");
 
 
@@ -20,6 +17,7 @@ const SESSIONS_BRANCH = ROOT_BRANCH + "sessions.";
 const HEALTHREPORT_BRANCH = ROOT_BRANCH + "healthreport.";
 const HEALTHREPORT_LOGGING_BRANCH = HEALTHREPORT_BRANCH + "logging.";
 const DEFAULT_LOAD_DELAY_MSEC = 10 * 1000;
+const DEFAULT_LOAD_DELAY_FIRST_RUN_MSEC = 60 * 1000;
 
 /**
  * The Firefox Health Report XPCOM service.
@@ -32,7 +30,7 @@ const DEFAULT_LOAD_DELAY_MSEC = 10 * 1000;
  * EXAMPLE USAGE
  * =============
  *
- * let reporter = Cc["@mozilla.org/healthreport/service;1"]
+ * let reporter = Cc["@mozilla.org/datareporting/service;1"]
  *                  .getService(Ci.nsISupports)
  *                  .wrappedJSObject
  *                  .healthReporter;
@@ -47,7 +45,10 @@ const DEFAULT_LOAD_DELAY_MSEC = 10 * 1000;
  * In order to not adversely impact application start time, the `HealthReporter`
  * instance is not initialized until a few seconds after "final-ui-startup."
  * The exact delay is configurable via preferences so it can be adjusted with
- * a hotfix extension if the default value is ever problematic.
+ * a hotfix extension if the default value is ever problematic. Because of the
+ * overhead with the initial creation of the database, the first run is delayed
+ * even more than subsequent runs. This does mean that the first moments of
+ * browser activity may be lost by FHR.
  *
  * Shutdown of the `HealthReporter` instance is handled completely within the
  * instance (it registers observers on initialization). See the notes on that
@@ -131,16 +132,6 @@ DataReportingService.prototype = Object.freeze({
         this._os.removeObserver(this, "sessionstore-windows-restored");
         this._os.addObserver(this, "quit-application", false);
 
-        // When the session recorder starts up above, first paint and session
-        // restore times likely aren't available. So, we wait until they are (here)
-        // and record them. In the case of session restore time, that appears
-        // to be set by an observer of this notification. So, we delay
-        // recording until the next tick of the event loop.
-        if (this.sessionRecorder) {
-          CommonUtils.nextTick(this.sessionRecorder.recordStartupFields,
-                               this.sessionRecorder);
-        }
-
         this.policy.startPolling();
 
         // Don't initialize Firefox Health Reporter collection and submission
@@ -149,8 +140,16 @@ DataReportingService.prototype = Object.freeze({
           return;
         }
 
-        let delayInterval = this._prefs.get("service.loadDelayMsec") ||
-                            DEFAULT_LOAD_DELAY_MSEC;
+        let haveFirstRun = this._prefs.get("service.firstRun", false);
+        let delayInterval;
+
+        if (haveFirstRun) {
+          delayInterval = this._prefs.get("service.loadDelayMsec") ||
+                          DEFAULT_LOAD_DELAY_MSEC;
+        } else {
+          delayInterval = this._prefs.get("service.loadDelayFirstRunMsec") ||
+                          DEFAULT_LOAD_DELAY_FIRST_RUN_MSEC;
+        }
 
         // Delay service loading a little more so things have an opportunity
         // to cool down first.
@@ -223,7 +222,7 @@ DataReportingService.prototype = Object.freeze({
     // Lazy import so application startup isn't adversely affected.
 
     Cu.import("resource://gre/modules/Task.jsm", ns);
-    Cu.import("resource://gre/modules/services/healthreport/healthreporter.jsm", ns);
+    Cu.import("resource://gre/modules/HealthReport.jsm", ns);
     Cu.import("resource://services-common/log4moz.js", ns);
 
     // How many times will we rewrite this code before rolling it up into a
@@ -248,12 +247,37 @@ DataReportingService.prototype = Object.freeze({
       }
     }
 
-    // The reporter initializes in the background.
+    if (loggingPrefs.get("dumpEnabled", false)) {
+      let level = loggingPrefs.get("dumpLevel", "Debug");
+      let appender = new ns.Log4Moz.DumpAppender();
+      appender.level = ns.Log4Moz.Level[level] || ns.Log4Moz.Level.Debug;
+
+      for (let name of LOGGERS) {
+        let logger = ns.Log4Moz.repository.getLogger(name);
+        logger.addAppender(appender);
+      }
+    }
+
     this._healthReporter = new ns.HealthReporter(HEALTHREPORT_BRANCH,
                                                  this.policy,
                                                  this.sessionRecorder);
+
+    // Wait for initialization to finish so if a shutdown occurs before init
+    // has finished we don't adversely affect app startup on next run.
+    this._healthReporter.init().then(function onInit() {
+      this._prefs.set("service.firstRun", true);
+    }.bind(this));
   },
 });
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([DataReportingService]);
+
+#define MERGED_COMPARTMENT
+
+#include ../common/observers.js
+;
+#include policy.jsm
+;
+#include sessions.jsm
+;
 

@@ -18,7 +18,7 @@ public:
   NS_DECL_FRAMEARENA_HELPERS
 
   // nsISupports
-  virtual nsIAtom* GetType() const;
+  virtual nsIAtom* GetType() const MOZ_OVERRIDE;
   friend nsIFrame* NS_NewTableCaptionFrame(nsIPresShell* aPresShell, nsStyleContext*  aContext);
 
   virtual nsSize ComputeAutoSize(nsRenderingContext *aRenderingContext,
@@ -68,12 +68,12 @@ public:
   
   // nsIFrame overrides - see there for a description
 
-  virtual void DestroyFrom(nsIFrame* aDestructRoot);
+  virtual void DestroyFrom(nsIFrame* aDestructRoot) MOZ_OVERRIDE;
 
   NS_IMETHOD SetInitialChildList(ChildListID     aListID,
                                  nsFrameList&    aChildList) MOZ_OVERRIDE;
  
-  virtual const nsFrameList& GetChildList(ChildListID aListID) const;
+  virtual const nsFrameList& GetChildList(ChildListID aListID) const MOZ_OVERRIDE;
   virtual void GetChildLists(nsTArray<ChildList>* aLists) const MOZ_OVERRIDE;
 
   NS_IMETHOD AppendFrames(ChildListID     aListID,
@@ -86,7 +86,7 @@ public:
   NS_IMETHOD RemoveFrame(ChildListID     aListID,
                          nsIFrame*       aOldFrame) MOZ_OVERRIDE;
 
-  virtual nsIFrame* GetContentInsertionFrame() {
+  virtual nsIFrame* GetContentInsertionFrame() MOZ_OVERRIDE {
     return GetFirstPrincipalChild()->GetContentInsertionFrame();
   }
 
@@ -94,15 +94,15 @@ public:
   virtual mozilla::a11y::AccType AccessibleType() MOZ_OVERRIDE;
 #endif
 
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists) MOZ_OVERRIDE;
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE;
 
-  nsresult BuildDisplayListForInnerTable(nsDisplayListBuilder*   aBuilder,
-                                         const nsRect&           aDirtyRect,
-                                         const nsDisplayListSet& aLists);
+  void BuildDisplayListForInnerTable(nsDisplayListBuilder*   aBuilder,
+                                     const nsRect&           aDirtyRect,
+                                     const nsDisplayListSet& aLists);
 
-  virtual nscoord GetBaseline() const;
+  virtual nscoord GetBaseline() const MOZ_OVERRIDE;
 
   virtual nscoord GetMinWidth(nsRenderingContext *aRenderingContext) MOZ_OVERRIDE;
   virtual nscoord GetPrefWidth(nsRenderingContext *aRenderingContext) MOZ_OVERRIDE;
@@ -218,11 +218,6 @@ protected:
   void InitChildReflowState(nsPresContext&    aPresContext,                     
                             nsHTMLReflowState& aReflowState);
 
-  /** Always returns 0, since the outer table frame has no border of its own
-    * The inner table frame can answer this question in a meaningful way.
-    * @see nsContainerFrame::GetSkipSides */
-  virtual int GetSkipSides() const;
-
   uint8_t GetCaptionSide(); // NS_STYLE_CAPTION_SIDE_* or NO_SIDE
 
   bool HasSideCaption() {
@@ -282,6 +277,12 @@ protected:
                       nscoord                  aAvailableWidth,
                       nsMargin&                aMargin);
 
+  virtual bool IsFrameOfType(uint32_t aFlags) const MOZ_OVERRIDE
+  {
+    return nsContainerFrame::IsFrameOfType(aFlags &
+                                           (~eCanContainOverflowContainers));
+  }
+
   nsTableFrame* InnerTableFrame() const {
     return static_cast<nsTableFrame*>(mFrames.FirstChild());
   }
@@ -289,8 +290,5 @@ protected:
 private:
   nsFrameList   mCaptionFrames;
 };
-
-inline int nsTableOuterFrame::GetSkipSides() const
-{ return 0; }
 
 #endif

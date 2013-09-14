@@ -28,17 +28,22 @@
                 label="&openLinkCmd.label;"
                 accesskey="&openLinkCmd.accesskey;"
                 oncommand="gContextMenu.openLink();"/>
-#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
       <menuitem id="context-openlinkprivate"
                 label="&openLinkInPrivateWindowCmd.label;"
                 accesskey="&openLinkInPrivateWindowCmd.accesskey;"
                 oncommand="gContextMenu.openLinkInPrivateWindow();"/>
-#endif
       <menuseparator id="context-sep-open"/>
       <menuitem id="context-bookmarklink"
                 label="&bookmarkThisLinkCmd.label;"
                 accesskey="&bookmarkThisLinkCmd.accesskey;"
                 oncommand="gContextMenu.bookmarkLink();"/>
+      <menuitem id="context-marklink"
+                accesskey="&social.marklink.accesskey;"
+                oncommand="gContextMenu.markLink();"/>
+      <menuitem id="context-sharelink"
+                label="&shareLinkCmd.label;"
+                accesskey="&shareLinkCmd.accesskey;"
+                oncommand="gContextMenu.shareLink();"/>
       <menuitem id="context-savelink"
                 label="&saveLinkCmd.label;"
                 accesskey="&saveLinkCmd.accesskey;"
@@ -72,6 +77,35 @@
                 label="&mediaUnmute.label;"
                 accesskey="&mediaUnmute.accesskey;"
                 oncommand="gContextMenu.mediaCommand('unmute');"/>
+      <menu id="context-media-playbackrate" label="&mediaPlaybackRate.label;" accesskey="&mediaPlaybackRate.accesskey;">
+        <menupopup>
+          <menuitem id="context-media-playbackrate-050x"
+                    label="&mediaPlaybackRate050x.label;"
+                    accesskey="&mediaPlaybackRate050x.accesskey;"
+                    type="radio"
+                    name="playbackrate"
+                    oncommand="gContextMenu.mediaCommand('playbackRate', 0.5);"/>
+          <menuitem id="context-media-playbackrate-100x"
+                    label="&mediaPlaybackRate100x.label;"
+                    accesskey="&mediaPlaybackRate100x.accesskey;"
+                    type="radio"
+                    name="playbackrate"
+                    checked="true"
+                    oncommand="gContextMenu.mediaCommand('playbackRate', 1.0);"/>
+          <menuitem id="context-media-playbackrate-150x"
+                    label="&mediaPlaybackRate150x.label;"
+                    accesskey="&mediaPlaybackRate150x.accesskey;"
+                    type="radio"
+                    name="playbackrate"
+                    oncommand="gContextMenu.mediaCommand('playbackRate', 1.5);"/>
+          <menuitem id="context-media-playbackrate-200x"
+                    label="&mediaPlaybackRate200x.label;"
+                    accesskey="&mediaPlaybackRate200x.accesskey;"
+                    type="radio"
+                    name="playbackrate"
+                    oncommand="gContextMenu.mediaCommand('playbackRate', 2.0);"/>
+        </menupopup>
+      </menu>
       <menuitem id="context-media-showcontrols"
                 label="&mediaShowControls.label;"
                 accesskey="&mediaShowControls.accesskey;"
@@ -134,6 +168,10 @@
                 label="&saveImageCmd.label;"
                 accesskey="&saveImageCmd.accesskey;"
                 oncommand="gContextMenu.saveMedia();"/>
+      <menuitem id="context-shareimage"
+                label="&shareImageCmd.label;"
+                accesskey="&shareImageCmd.accesskey;"
+                oncommand="gContextMenu.shareImage();"/>
       <menuitem id="context-sendimage"
                 label="&emailImageCmd.label;"
                 accesskey="&emailImageCmd.accesskey;"
@@ -150,6 +188,10 @@
                 label="&saveVideoCmd.label;"
                 accesskey="&saveVideoCmd.accesskey;"
                 oncommand="gContextMenu.saveMedia();"/>
+      <menuitem id="context-sharevideo"
+                label="&shareVideoCmd.label;"
+                accesskey="&shareVideoCmd.accesskey;"
+                oncommand="gContextMenu.shareVideo();"/>
       <menuitem id="context-saveaudio"
                 label="&saveAudioCmd.label;"
                 accesskey="&saveAudioCmd.accesskey;"
@@ -166,6 +208,15 @@
                 label="&emailAudioCmd.label;"
                 accesskey="&emailAudioCmd.accesskey;"
                 oncommand="gContextMenu.sendMedia();"/>
+      <menuitem id="context-ctp-play"
+                label="&playPluginCmd.label;"
+                accesskey="&playPluginCmd.accesskey;"
+                oncommand="gContextMenu.playPlugin();"/>
+      <menuitem id="context-ctp-hide"
+                label="&hidePluginCmd.label;"
+                accesskey="&hidePluginCmd.accesskey;"
+                oncommand="gContextMenu.hidePlugin();"/>
+      <menuseparator id="context-sep-ctp"/>
       <menuitem id="context-back"
                 label="&backCmd.label;"
                 accesskey="&backCmd.accesskey;"
@@ -179,7 +230,7 @@
       <menuitem id="context-reload"
                 label="&reloadCmd.label;"
                 accesskey="&reloadCmd.accesskey;"
-                command="Browser:ReloadOrDuplicate"
+                oncommand="gContextMenu.reload(event);"
                 onclick="checkForMiddleClick(this, event);"/>
       <menuitem id="context-stop"
                 label="&stopCmd.label;"
@@ -190,6 +241,13 @@
                 label="&bookmarkPageCmd2.label;"
                 accesskey="&bookmarkPageCmd2.accesskey;"
                 oncommand="gContextMenu.bookmarkThisPage();"/>
+      <menuitem id="context-markpage"
+                accesskey="&social.markpage.accesskey;"
+                command="Social:TogglePageMark"/>
+      <menuitem id="context-sharepage"
+                label="&sharePageCmd.label;"
+                accesskey="&sharePageCmd.accesskey;"
+                oncommand="SocialShare.sharePage();"/>
       <menuitem id="context-savepage"
                 label="&savePageCmd.label;"
                 accesskey="&savePageCmd.accesskey2;"
@@ -236,8 +294,11 @@
                 accesskey="&keywordfield.accesskey;"
                 oncommand="AddKeywordForSearchField();"/>
       <menuitem id="context-searchselect"
-                oncommand="BrowserSearch.loadSearch(getBrowserSelection(), true,
-                                                    'application/x-moz-contextsearch');"/>
+                oncommand="BrowserSearch.loadSearchFromContext(getBrowserSelection());"/>
+      <menuitem id="context-shareselect"
+                label="&shareSelectCmd.label;"
+                accesskey="&shareSelectCmd.accesskey;"
+                oncommand="gContextMenu.shareSelect(getBrowserSelection());"/>
       <menuseparator id="frame-sep"/>
       <menu id="frame" label="&thisFrameMenu.label;" accesskey="&thisFrameMenu.accesskey;">
         <menupopup>

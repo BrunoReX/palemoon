@@ -14,7 +14,7 @@ var gTab = null;
 var gDebuggee = null;
 var gDebugger = null;
 var gEditor = null;
-var gScripts = null;
+var gSources = null;
 var gSearchView = null;
 var gSearchBox = null;
 
@@ -58,7 +58,7 @@ function test()
 function testScriptSearching() {
   gDebugger.DebuggerController.activeThread.resume(function() {
     gEditor = gDebugger.DebuggerView.editor;
-    gScripts = gDebugger.DebuggerView.Sources;
+    gSources = gDebugger.DebuggerView.Sources;
     gSearchView = gDebugger.DebuggerView.GlobalSearch;
     gSearchBox = gDebugger.DebuggerView.Filtering._searchbox;
 
@@ -67,31 +67,31 @@ function testScriptSearching() {
 }
 
 function doSearch() {
-  is(gSearchView._container._list.childNodes.length, 0,
+  is(gSearchView.widget._list.childNodes.length, 0,
     "The global search pane shouldn't have any child nodes yet.");
-  is(gSearchView._container._parent.hidden, true,
+  is(gSearchView.widget._parent.hidden, true,
     "The global search pane shouldn't be visible yet.");
   is(gSearchView._splitter.hidden, true,
     "The global search pane splitter shouldn't be visible yet.");
 
   gDebugger.addEventListener("Debugger:GlobalSearch:MatchFound", function _onEvent(aEvent) {
     gDebugger.removeEventListener(aEvent.type, _onEvent);
-    info("Current script url:\n" + gScripts.selectedValue + "\n");
+    info("Current script url:\n" + gSources.selectedValue + "\n");
     info("Debugger editor text:\n" + gEditor.getText() + "\n");
 
-    let url = gScripts.selectedValue;
+    let url = gSources.selectedValue;
     if (url.indexOf("-02.js") != -1) {
       executeSoon(function() {
         info("Editor caret position: " + gEditor.getCaretPosition().toSource() + "\n");
         ok(gEditor.getCaretPosition().line == 5 &&
            gEditor.getCaretPosition().col == 0,
           "The editor shouldn't have jumped to a matching line yet.");
-        is(gScripts.visibleItems.length, 2,
+        is(gSources.visibleItems.length, 2,
           "Not all the scripts are shown after the global search.");
 
-        isnot(gSearchView._container._list.childNodes.length, 0,
+        isnot(gSearchView.widget._list.childNodes.length, 0,
           "The global search pane should be visible now.");
-        isnot(gSearchView._container._parent.hidden, true,
+        isnot(gSearchView.widget._parent.hidden, true,
           "The global search pane should be visible now.");
         isnot(gSearchView._splitter.hidden, true,
           "The global search pane splitter should be visible now.");
@@ -120,7 +120,7 @@ function doFirstJump() {
         ok(gEditor.getCaretPosition().line == 4 &&
            gEditor.getCaretPosition().col == 6,
           "The editor didn't jump to the correct line. (1)");
-        is(gScripts.visibleItems.length, 2,
+        is(gSources.visibleItems.length, 2,
           "Not all the correct scripts are shown after the search. (1)");
 
         doSecondJump();
@@ -147,7 +147,7 @@ function doSecondJump() {
         ok(gEditor.getCaretPosition().line == 5 &&
            gEditor.getCaretPosition().col == 6,
           "The editor didn't jump to the correct line. (2)");
-        is(gScripts.visibleItems.length, 2,
+        is(gSources.visibleItems.length, 2,
           "Not all the correct scripts are shown after the search. (2)");
 
         doWrapAroundJump();
@@ -174,7 +174,7 @@ function doWrapAroundJump() {
         ok(gEditor.getCaretPosition().line == 4 &&
            gEditor.getCaretPosition().col == 6,
           "The editor didn't jump to the correct line. (3)");
-        is(gScripts.visibleItems.length, 2,
+        is(gSources.visibleItems.length, 2,
           "Not all the correct scripts are shown after the search. (3)");
 
         doBackwardsWrapAroundJump();
@@ -201,7 +201,7 @@ function doBackwardsWrapAroundJump() {
         ok(gEditor.getCaretPosition().line == 5 &&
            gEditor.getCaretPosition().col == 6,
           "The editor didn't jump to the correct line. (4)");
-        is(gScripts.visibleItems.length, 2,
+        is(gSources.visibleItems.length, 2,
           "Not all the correct scripts are shown after the search. (4)");
 
         testSearchTokenEmpty();
@@ -218,22 +218,22 @@ function doBackwardsWrapAroundJump() {
 function testSearchTokenEmpty() {
   gDebugger.addEventListener("Debugger:GlobalSearch:TokenEmpty", function _onEvent(aEvent) {
     gDebugger.removeEventListener(aEvent.type, _onEvent);
-    info("Current script url:\n" + gScripts.selectedValue + "\n");
+    info("Current script url:\n" + gSources.selectedValue + "\n");
     info("Debugger editor text:\n" + gEditor.getText() + "\n");
 
-    let url = gScripts.selectedValue;
+    let url = gSources.selectedValue;
     if (url.indexOf("-02.js") != -1) {
       executeSoon(function() {
         info("Editor caret position: " + gEditor.getCaretPosition().toSource() + "\n");
         ok(gEditor.getCaretPosition().line == 5 &&
            gEditor.getCaretPosition().col == 6,
           "The editor didn't remain at the correct line. (5)");
-        is(gScripts.visibleItems.length, 2,
+        is(gSources.visibleItems.length, 2,
           "Not all the correct scripts are shown after the search. (5)");
 
-        is(gSearchView._container._list.childNodes.length, 0,
+        is(gSearchView.widget._list.childNodes.length, 0,
           "The global search pane shouldn't have any child nodes after clear().");
-        is(gSearchView._container._parent.hidden, true,
+        is(gSearchView.widget._parent.hidden, true,
           "The global search pane shouldn't be visible after clear().");
         is(gSearchView._splitter.hidden, true,
           "The global search pane splitter shouldn't be visible after clear().");
@@ -279,7 +279,7 @@ registerCleanupFunction(function() {
   gDebuggee = null;
   gDebugger = null;
   gEditor = null;
-  gScripts = null;
+  gSources = null;
   gSearchView = null;
   gSearchBox = null;
 });

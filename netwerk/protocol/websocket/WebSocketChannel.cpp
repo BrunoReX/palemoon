@@ -44,6 +44,7 @@
 #include "prnetdb.h"
 #include "prbit.h"
 #include "zlib.h"
+#include <algorithm>
 
 // rather than slurp up all of nsIWebSocket.idl, which lives outside necko, just
 // dupe one constant we need from it
@@ -124,7 +125,8 @@ public:
     mLastFailure = TimeStamp::Now();
     // We use a truncated exponential backoff as suggested by RFC 6455,
     // but multiply by 1.5 instead of 2 to be more gradual.
-    mNextDelay = NS_MIN<double>(kWSReconnectMaxDelay, mNextDelay * 1.5);
+    mNextDelay = static_cast<uint32_t>(
+      std::min<double>(kWSReconnectMaxDelay, mNextDelay * 1.5));
     LOG(("WebSocket: FailedAgain: host=%s, port=%d: incremented delay to %lu",
          mAddress.get(), mPort, mNextDelay));
   }
@@ -919,8 +921,6 @@ WebSocketChannel::WebSocketChannel() :
   mCloseTimeout(20000),
   mOpenTimeout(20000),
   mConnecting(NOT_CONNECTING),
-  mPingTimeout(0),
-  mPingResponseTimeout(10000),
   mMaxConcurrentConnections(200),
   mGotUpgradeOK(0),
   mRecvdHttpUpgradeTransport(0),
@@ -934,7 +934,6 @@ WebSocketChannel::WebSocketChannel() :
   mAutoFollowRedirects(0),
   mReleaseOnTransmit(0),
   mTCPClosed(0),
-  mWasOpened(0),
   mOpenedHttpChannel(0),
   mDataStarted(0),
   mIncrementedSessionCount(0),
@@ -1151,15 +1150,11 @@ WebSocketChannel::ProcessInput(uint8_t *buffer, uint32_t count)
   LOG(("WebSocketChannel::ProcessInput %p [%d %d]\n", this, count, mBuffered));
   NS_ABORT_IF_FALSE(PR_GetCurrentThread() == gSocketThread, "not socket thread");
 
-  // reset the ping timer
-  if (mPingTimer) {
-    // The purpose of ping/pong is to actively probe the peer so that an
-    // unreachable peer is not mistaken for a period of idleness. This
-    // implementation accepts any application level read activity as a sign of
-    // life, it does not necessarily have to be a pong.
-    mPingOutstanding = 0;
-    mPingTimer->SetDelay(mPingTimeout);
-  }
+  // The purpose of ping/pong is to actively probe the peer so that an
+  // unreachable peer is not mistaken for a period of idleness. This
+  // implementation accepts any application level read activity as a sign of
+  // life, it does not necessarily have to be a pong.
+  ResetPingTimer();
 
   uint32_t avail;
 
@@ -1178,26 +1173,26 @@ WebSocketChannel::ProcessInput(uint8_t *buffer, uint32_t count)
   uint32_t totalAvail = avail;
 
   while (avail >= 2) {
-    int64_t payloadLength = mFramePtr[1] & 0x7F;
-    uint8_t finBit        = mFramePtr[0] & kFinalFragBit;
-    uint8_t rsvBits       = mFramePtr[0] & 0x70;
-    uint8_t maskBit       = mFramePtr[1] & kMaskBit;
-    uint8_t opcode        = mFramePtr[0] & 0x0F;
+    int64_t payloadLength64 = mFramePtr[1] & 0x7F;
+    uint8_t finBit  = mFramePtr[0] & kFinalFragBit;
+    uint8_t rsvBits = mFramePtr[0] & 0x70;
+    uint8_t maskBit = mFramePtr[1] & kMaskBit;
+    uint8_t opcode  = mFramePtr[0] & 0x0F;
 
     uint32_t framingLength = 2;
     if (maskBit)
       framingLength += 4;
 
-    if (payloadLength < 126) {
+    if (payloadLength64 < 126) {
       if (avail < framingLength)
         break;
-    } else if (payloadLength == 126) {
+    } else if (payloadLength64 == 126) {
       // 16 bit length field
       framingLength += 2;
       if (avail < framingLength)
         break;
 
-      payloadLength = mFramePtr[2] << 8 | mFramePtr[3];
+      payloadLength64 = mFramePtr[2] << 8 | mFramePtr[3];
     } else {
       // 64 bit length
       framingLength += 8;
@@ -1214,18 +1209,19 @@ WebSocketChannel::ProcessInput(uint8_t *buffer, uint32_t count)
       // copy this in case it is unaligned
       uint64_t tempLen;
       memcpy(&tempLen, mFramePtr + 2, 8);
-      payloadLength = PR_ntohll(tempLen);
+      payloadLength64 = PR_ntohll(tempLen);
     }
 
     payload = mFramePtr + framingLength;
     avail -= framingLength;
 
     LOG(("WebSocketChannel::ProcessInput: payload %lld avail %lu\n",
-         payloadLength, avail));
+         payloadLength64, avail));
 
-    if (payloadLength + mFragmentAccumulator > mMaxMessageSize) {
+    if (payloadLength64 + mFragmentAccumulator > mMaxMessageSize) {
       return NS_ERROR_FILE_TOO_BIG;
     }
+    uint32_t payloadLength = static_cast<uint32_t>(payloadLength64);
 
     if (avail < payloadLength)
       break;
@@ -1265,7 +1261,7 @@ WebSocketChannel::ProcessInput(uint8_t *buffer, uint32_t count)
         return NS_ERROR_ILLEGAL_VALUE;
       }
 
-      LOG(("WebSocketChannel:: Accumulating Fragment %lld\n", payloadLength));
+      LOG(("WebSocketChannel:: Accumulating Fragment %ld\n", payloadLength));
 
       if (opcode == kContinuation) {
 
@@ -1357,7 +1353,7 @@ WebSocketChannel::ProcessInput(uint8_t *buffer, uint32_t count)
           memcpy(&mServerCloseCode, payload, 2);
           mServerCloseCode = PR_ntohs(mServerCloseCode);
           LOG(("WebSocketChannel:: close recvd code %u\n", mServerCloseCode));
-          uint16_t msglen = payloadLength - 2;
+          uint16_t msglen = static_cast<uint16_t>(payloadLength - 2);
           if (msglen > 0) {
             mServerCloseReason.SetLength(msglen);
             memcpy(mServerCloseReason.BeginWriting(),
@@ -1636,7 +1632,8 @@ WebSocketChannel::PrimeNewOutgoingMessage()
     // and there isn't an internal error, use that.
     if (NS_SUCCEEDED(mStopOnClose)) {
       if (mScriptCloseCode) {
-        *((uint16_t *)payload) = PR_htons(mScriptCloseCode);
+        uint16_t temp = PR_htons(mScriptCloseCode);
+        memcpy(payload, &temp, 2);
         mOutHeader[1] += 2;
         mHdrOutToSend = 8;
         if (!mScriptCloseReason.IsEmpty()) {
@@ -1655,7 +1652,8 @@ WebSocketChannel::PrimeNewOutgoingMessage()
         mHdrOutToSend = 6;
       }
     } else {
-      *((uint16_t *)payload) = PR_htons(ResultToCloseCode(mStopOnClose));
+      uint16_t temp = PR_htons(ResultToCloseCode(mStopOnClose));
+      memcpy(payload, &temp, 2);
       mOutHeader[1] += 2;
       mHdrOutToSend = 8;
     }
@@ -1743,7 +1741,8 @@ WebSocketChannel::PrimeNewOutgoingMessage()
     mask = * reinterpret_cast<uint32_t *>(buffer);
     NS_Free(buffer);
   } while (!mask);
-  *(((uint32_t *)payload) - 1) = PR_htonl(mask);
+  uint32_t temp = PR_htonl(mask);
+  memcpy(payload - 4, &temp, 4);
 
   LOG(("WebSocketChannel::PrimeNewOutgoingMessage() using mask %08x\n", mask));
 
@@ -2230,6 +2229,20 @@ WebSocketChannel::StartWebsocketData()
   if (mListener)
     mListener->OnStart(mContext);
 
+  // Start keepalive ping timer, if we're using keepalive.
+  if (mPingInterval) {
+    nsresult rv;
+    mPingTimer = do_CreateInstance("@mozilla.org/timer;1", &rv);
+    if (NS_FAILED(rv)) {
+      NS_WARNING("unable to create ping timer. Carrying on.");
+    } else {
+      LOG(("WebSocketChannel will generate ping after %d ms of receive silence\n",
+           mPingInterval));
+      mPingTimer->SetTarget(mSocketThread);
+      mPingTimer->InitWithCallback(this, mPingInterval, nsITimer::TYPE_ONE_SHOT);
+    }
+  }
+
   return mSocketIn->AsyncWait(this, 0, 0, mSocketThread);
 }
 
@@ -2504,6 +2517,7 @@ WebSocketChannel::Notify(nsITimer *timer)
   return NS_OK;
 }
 
+// nsIWebSocketChannel
 
 NS_IMETHODIMP
 WebSocketChannel::GetSecurityInfo(nsISupports **aSecurityInfo)
@@ -2573,12 +2587,12 @@ WebSocketChannel::AsyncOpen(nsIURI *aURI,
     }
     rv = prefService->GetIntPref("network.websocket.timeout.ping.request",
                                  &intpref);
-    if (NS_SUCCEEDED(rv)) {
-      mPingTimeout = clamped(intpref, 0, 86400) * 1000;
+    if (NS_SUCCEEDED(rv) && !mClientSetPingInterval) {
+      mPingInterval = clamped(intpref, 0, 86400) * 1000;
     }
     rv = prefService->GetIntPref("network.websocket.timeout.ping.response",
                                  &intpref);
-    if (NS_SUCCEEDED(rv)) {
+    if (NS_SUCCEEDED(rv) && !mClientSetPingTimeout) {
       mPingResponseTimeout = clamped(intpref, 1, 3600) * 1000;
     }
     rv = prefService->GetBoolPref("network.websocket.extensions.stream-deflate",
@@ -2612,18 +2626,6 @@ WebSocketChannel::AsyncOpen(nsIURI *aURI,
     // WebSocket connections are expected to be long lived, so return
     // an error here instead of queueing
     return NS_ERROR_SOCKET_CREATE_FAILED;
-  }
-
-  if (mPingTimeout) {
-    mPingTimer = do_CreateInstance("@mozilla.org/timer;1", &rv);
-    if (NS_FAILED(rv)) {
-      NS_WARNING("unable to create ping timer. Carrying on.");
-    } else {
-      LOG(("WebSocketChannel will generate ping after %d ms of receive silence\n",
-           mPingTimeout));
-      mPingTimer->SetTarget(mSocketThread);
-      mPingTimer->InitWithCallback(this, mPingTimeout, nsITimer::TYPE_ONE_SHOT);
-    }
   }
 
   mOriginalURI = aURI;
@@ -2797,6 +2799,8 @@ WebSocketChannel::SendMsgCommon(const nsACString *aMsg, bool aIsBinary,
                                          new nsCString(*aMsg))),
     nsIEventTarget::DISPATCH_NORMAL);
 }
+
+// nsIHttpUpgradeListener
 
 NS_IMETHODIMP
 WebSocketChannel::OnTransportAvailable(nsISocketTransport *aTransport,
@@ -3171,7 +3175,7 @@ WebSocketChannel::OnDataAvailable(nsIRequest *aRequest,
       if (mStopped)
         return NS_BASE_STREAM_CLOSED;
 
-      maxRead = NS_MIN(2048U, aCount);
+      maxRead = std::min(2048U, aCount);
       rv = aInputStream->Read((char *)buffer, maxRead, &count);
       LOG(("WebSocketChannel::OnDataAvailable: InflateRead read %u rv %x\n",
            count, rv));
@@ -3201,7 +3205,7 @@ WebSocketChannel::OnDataAvailable(nsIRequest *aRequest,
       if (mStopped)
         return NS_BASE_STREAM_CLOSED;
 
-      maxRead = NS_MIN(2048U, aCount);
+      maxRead = std::min(2048U, aCount);
       EnsureHdrOut(mHdrOutToSend + aCount);
       rv = aInputStream->Read((char *)mHdrOut + mHdrOutToSend, maxRead, &count);
       LOG(("WebSocketChannel::OnDataAvailable: DeflateWrite read %u rv %x\n", 

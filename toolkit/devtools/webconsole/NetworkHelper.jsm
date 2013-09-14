@@ -87,15 +87,10 @@ this.NetworkHelper =
    */
   convertToUnicode: function NH_convertToUnicode(aText, aCharset)
   {
-    if (!aCharset) {
-      return aText;
-    }
-
     let conv = Cc["@mozilla.org/intl/scriptableunicodeconverter"].
                createInstance(Ci.nsIScriptableUnicodeConverter);
-    conv.charset = aCharset;
-
     try {
+      conv.charset = aCharset || "UTF-8";
       return conv.ConvertToUnicode(aText);
     }
     catch (ex) {
@@ -214,7 +209,10 @@ this.NetworkHelper =
   {
     try {
       return this.getRequestLoadContext(aRequest).associatedWindow;
-    } catch (ex) { }
+    } catch (ex) {
+      // TODO: bug 802246 - getWindowForRequest() throws on b2g: there is no
+      // associatedWindow property.
+    }
     return null;
   },
 
@@ -290,7 +288,9 @@ this.NetworkHelper =
     let result = [];
 
     cookies.forEach(function(aCookie) {
-      let [name, value] = aCookie.split("=");
+      let equal = aCookie.indexOf("=");
+      let name = aCookie.substr(0, equal);
+      let value = aCookie.substr(equal + 1);
       result.push({name: unescape(name.trim()),
                    value: unescape(value.trim())});
     });
@@ -314,8 +314,9 @@ this.NetworkHelper =
     let cookies = [];
 
     rawCookies.forEach(function(aCookie) {
-      let name = unescape(aCookie.substr(0, aCookie.indexOf("=")).trim());
-      let parts = aCookie.substr(aCookie.indexOf("=") + 1).split(";");
+      let equal = aCookie.indexOf("=");
+      let name = unescape(aCookie.substr(0, equal).trim());
+      let parts = aCookie.substr(equal + 1).split(";");
       let value = unescape(parts.shift().trim());
 
       let cookie = {name: name, value: value};

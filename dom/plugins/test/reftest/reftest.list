@@ -4,8 +4,8 @@ random-if(!haveTestPlugin) != plugin-asyncbitmap-sanity.html about:blank
 fails-if(!haveTestPlugin) == plugin-sanity.html div-sanity.html
 fails-if(!haveTestPlugin) == plugin-asyncbitmap-sanity.html div-sanity.html
 fails-if(!haveTestPlugin) == plugin-asyncdxgi-sanity.html div-sanity.html
-skip-if(!haveTestPlugin) == plugin-asyncbitmap-update.html plugin-async-update-ref.html
-skip-if(!haveTestPlugin) == plugin-asyncdxgi-update.html plugin-async-update-ref.html
+random-if(OSX==10.6||OSX==10.7) skip-if(!haveTestPlugin) == plugin-asyncbitmap-update.html plugin-async-update-ref.html
+random-if(OSX==10.6||OSX==10.7) skip-if(!haveTestPlugin) == plugin-asyncdxgi-update.html plugin-async-update-ref.html
 fails-if(!haveTestPlugin) == plugin-alpha-zindex.html div-alpha-zindex.html
 fails-if(!haveTestPlugin) == plugin-alpha-opacity.html div-alpha-opacity.html
 random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) fails-if(!haveTestPlugin) == windowless-clipping-1.html windowless-clipping-1-ref.html # bug 631832
@@ -27,4 +27,4 @@ random-if(!haveTestPlugin) == plugin-transform-1.html plugin-transform-1-ref.htm
 fails-if(!haveTestPlugin) == plugin-transform-2.html plugin-transform-2-ref.html
 skip-if(!haveTestPlugin) == shrink-1.html shrink-1-ref.html
 skip-if(!haveTestPlugin) == update-1.html update-1-ref.html
-fails-if(!haveTestPlugin) == windowless-layers.html windowless-layers-ref.html
+skip-if(!haveTestPlugin) == windowless-layers.html windowless-layers-ref.html

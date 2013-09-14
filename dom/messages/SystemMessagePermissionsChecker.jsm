@@ -55,6 +55,9 @@ this.SystemMessagePermissionsTable = {
   "bluetooth-hfp-status-changed": {
     "bluetooth": []
   },
+  "bluetooth-pairing-request": {
+    "bluetooth": []
+  },
   "bluetooth-opp-transfer-complete": {
     "bluetooth": []
   },
@@ -74,6 +77,12 @@ this.SystemMessagePermissionsTable = {
   "notification": {
     "desktop-notification": []
   },
+  "push": {
+  	"push": []
+  },
+  "push-register": {
+  	"push": []
+  },
   "sms-received": {
     "sms": []
   },
@@ -88,7 +97,10 @@ this.SystemMessagePermissionsTable = {
   },
   "ussd-received": {
     "mobileconnection": []
-  }
+  },
+  "wappush-received": {
+    "sms": []
+  },
 };
 
 this.SystemMessagePermissionsChecker = {

@@ -137,7 +137,7 @@ nsresult GenerateGUID(nsCString& _guid);
  *        The guid to test.
  * @return true if it is a valid guid, false otherwise.
  */
-bool IsValidGUID(const nsCString& aGUID);
+bool IsValidGUID(const nsACString& aGUID);
 
 /**
  * Truncates the title if it's longer than TITLE_LENGTH_MAX.
@@ -263,11 +263,6 @@ private:
   const Telemetry::ID mHistogramId;
   const TimeStamp mStart;
 };
-
-/**
- * Used to abort if global private browsing is in use.
- */
-void EnsureNotGlobalPrivateBrowsing();
 
 } // namespace places
 } // namespace mozilla

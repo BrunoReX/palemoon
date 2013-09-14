@@ -1,34 +1,16 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99 ft=cpp:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* A higher-order macro for enumerating all cached property names. */
 
-#ifndef CommonPropertyNames_h__
-#define CommonPropertyNames_h__
+#ifndef vm_CommonPropertyNames_h
+#define vm_CommonPropertyNames_h
 
 #include "jsprototypes.h"
 #include "jsversion.h"
-
-#if JS_HAS_XML_SUPPORT
-#define FOR_EACH_XML_ONLY_NAME(macro) \
-    macro(etago, etago, "</") \
-    macro(functionNamespaceURI, functionNamespaceURI, "@mozilla.org/js/function") \
-    macro(namespace, namespace_, "namespace") \
-    macro(ptagc, ptagc, "/>") \
-    macro(qualifier, qualifier, "::") \
-    macro(space, space, " ") \
-    macro(stago, stago, "<") \
-    macro(star, star, "*") \
-    macro(starQualifier, starQualifier, "*::") \
-    macro(tagc, tagc, ">") \
-    macro(XMLList, XMLList, "XMLList")
-#else
-#define FOR_EACH_XML_ONLY_NAME(macro) /* nothing */
-#endif /* JS_HAS_XML_SUPPORT */
 
 #define FOR_EACH_COMMON_PROPERTYNAME(macro) \
     macro(anonymous, anonymous, "anonymous") \
@@ -43,16 +25,19 @@
     macro(callee, callee, "callee") \
     macro(caller, caller, "caller") \
     macro(callFunction, callFunction, "callFunction") \
+    macro(caseFirst, caseFirst, "caseFirst") \
     macro(classPrototype, classPrototype, "prototype") \
     macro(Collator, Collator, "Collator") \
-    macro(CollatorCompare, CollatorCompare, "Intl_Collator_compare") \
+    macro(CollatorCompareGet, CollatorCompareGet, "Intl_Collator_compare_get") \
     macro(columnNumber, columnNumber, "columnNumber") \
     macro(compare, compare, "compare") \
     macro(configurable, configurable, "configurable") \
     macro(construct, construct, "construct") \
     macro(constructor, constructor, "constructor") \
+    macro(currency, currency, "currency") \
+    macro(currencyDisplay, currencyDisplay, "currencyDisplay") \
     macro(DateTimeFormat, DateTimeFormat, "DateTimeFormat") \
-    macro(DateTimeFormatFormat, DateTimeFormatFormat, "Intl_DateTimeFormat_format") \
+    macro(DateTimeFormatFormatGet, DateTimeFormatFormatGet, "Intl_DateTimeFormat_format_get") \
     macro(decodeURI, decodeURI, "decodeURI") \
     macro(decodeURIComponent, decodeURIComponent, "decodeURIComponent") \
     macro(defineProperty, defineProperty, "defineProperty") \
@@ -73,6 +58,7 @@
     macro(fix, fix, "fix") \
     macro(format, format, "format") \
     macro(get, get, "get") \
+    macro(getInternals, getInternals, "getInternals") \
     macro(getOwnPropertyDescriptor, getOwnPropertyDescriptor, "getOwnPropertyDescriptor") \
     macro(getOwnPropertyNames, getOwnPropertyNames, "getOwnPropertyNames") \
     macro(getPropertyDescriptor, getPropertyDescriptor, "getPropertyDescriptor") \
@@ -81,6 +67,7 @@
     macro(hasOwn, hasOwn, "hasOwn") \
     macro(hasOwnProperty, hasOwnProperty, "hasOwnProperty") \
     macro(ignoreCase, ignoreCase, "ignoreCase") \
+    macro(ignorePunctuation, ignorePunctuation, "ignorePunctuation") \
     macro(index, index, "index") \
     macro(InitializeCollator, InitializeCollator, "InitializeCollator") \
     macro(InitializeDateTimeFormat, InitializeDateTimeFormat, "InitializeDateTimeFormat") \
@@ -90,7 +77,6 @@
     macro(isFinite, isFinite, "isFinite") \
     macro(isNaN, isNaN, "isNaN") \
     macro(isPrototypeOf, isPrototypeOf, "isPrototypeOf") \
-    macro(isXMLName, isXMLName, "isXMLName") \
     macro(iterate, iterate, "iterate") \
     macro(Infinity, Infinity, "Infinity") \
     macro(iterator, iterator, "iterator") \
@@ -102,31 +88,46 @@
     macro(line, line, "line") \
     macro(lineNumber, lineNumber, "lineNumber") \
     macro(loc, loc, "loc") \
+    macro(locale, locale, "locale") \
     macro(lookupGetter, lookupGetter, "__lookupGetter__") \
     macro(lookupSetter, lookupSetter, "__lookupSetter__") \
+    macro(maximumFractionDigits, maximumFractionDigits, "maximumFractionDigits") \
+    macro(maximumSignificantDigits, maximumSignificantDigits, "maximumSignificantDigits") \
     macro(message, message, "message") \
+    macro(minimumFractionDigits, minimumFractionDigits, "minimumFractionDigits") \
+    macro(minimumIntegerDigits, minimumIntegerDigits, "minimumIntegerDigits") \
+    macro(minimumSignificantDigits, minimumSignificantDigits, "minimumSignificantDigits") \
+    macro(module, module, "module") \
     macro(multiline, multiline, "multiline") \
     macro(name, name, "name") \
     macro(NaN, NaN, "NaN") \
     macro(next, next, "next") \
     macro(noSuchMethod, noSuchMethod, "__noSuchMethod__") \
     macro(NumberFormat, NumberFormat, "NumberFormat") \
-    macro(NumberFormatFormat, NumberFormatFormat, "Intl_NumberFormat_format") \
+    macro(NumberFormatFormatGet, NumberFormatFormatGet, "Intl_NumberFormat_format_get") \
+    macro(numeric, numeric, "numeric") \
     macro(objectNull, objectNull, "[object Null]") \
     macro(objectUndefined, objectUndefined, "[object Undefined]") \
     macro(of, of, "of") \
+    macro(offset, offset, "offset") \
+    macro(outOfMemory, outOfMemory, "out of memory") \
     macro(parseFloat, parseFloat, "parseFloat") \
     macro(parseInt, parseInt, "parseInt") \
+    macro(pattern, pattern, "pattern") \
+    macro(preventExtensions, preventExtensions, "preventExtensions") \
     macro(propertyIsEnumerable, propertyIsEnumerable, "propertyIsEnumerable") \
     macro(proto, proto, "__proto__") \
     macro(return, return_, "return") \
+    macro(sensitivity, sensitivity, "sensitivity") \
     macro(set, set, "set") \
     macro(shape, shape, "shape") \
     macro(source, source, "source") \
     macro(stack, stack, "stack") \
     macro(sticky, sticky, "sticky") \
+    macro(style, style, "style") \
     macro(test, test, "test") \
     macro(throw, throw_, "throw") \
+    macro(timeZone, timeZone, "timeZone") \
     macro(toGMTString, toGMTString, "toGMTString") \
     macro(toISOString, toISOString, "toISOString") \
     macro(toJSON, toJSON, "toJSON") \
@@ -139,6 +140,9 @@
     macro(uneval, uneval, "uneval") \
     macro(unwatch, unwatch, "unwatch") \
     macro(url, url, "url") \
+    macro(usage, usage, "usage") \
+    macro(useGrouping, useGrouping, "useGrouping") \
+    macro(useAsm, useAsm, "use asm") \
     macro(useStrict, useStrict, "use strict") \
     macro(value, value, "value") \
     macro(valueOf, valueOf, "valueOf") \
@@ -153,8 +157,6 @@
     macro(string, string, "string") \
     macro(number, number, "number") \
     macro(boolean, boolean, "boolean") \
-    macro(null, null, "null") \
-    macro(xml, xml, "xml") \
-    FOR_EACH_XML_ONLY_NAME(macro)
+    macro(null, null, "null")
 
-#endif /* CommonPropertyNames_h__ */
+#endif /* vm_CommonPropertyNames_h */

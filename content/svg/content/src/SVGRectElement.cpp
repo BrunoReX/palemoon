@@ -7,18 +7,19 @@
 #include "nsGkAtoms.h"
 #include "gfxContext.h"
 #include "mozilla/dom/SVGRectElementBinding.h"
-
-DOMCI_NODE_DATA(SVGRectElement, mozilla::dom::SVGRectElement)
+#include <algorithm>
 
 NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(Rect)
 
 namespace mozilla {
 namespace dom {
 
+class SVGAnimatedLength;
+
 JSObject*
-SVGRectElement::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+SVGRectElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return SVGRectElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return SVGRectElementBinding::Wrap(aCx, aScope, this);
 }
 
 nsSVGElement::LengthInfo SVGRectElement::sLengthInfo[6] =
@@ -32,25 +33,11 @@ nsSVGElement::LengthInfo SVGRectElement::sLengthInfo[6] =
 };
 
 //----------------------------------------------------------------------
-// nsISupports methods
-
-NS_IMPL_ADDREF_INHERITED(SVGRectElement,SVGRectElementBase)
-NS_IMPL_RELEASE_INHERITED(SVGRectElement,SVGRectElementBase)
-
-NS_INTERFACE_TABLE_HEAD(SVGRectElement)
-  NS_NODE_INTERFACE_TABLE4(SVGRectElement, nsIDOMNode, nsIDOMElement,
-                           nsIDOMSVGElement,
-                           nsIDOMSVGRectElement)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(SVGRectElement)
-NS_INTERFACE_MAP_END_INHERITING(SVGRectElementBase)
-
-//----------------------------------------------------------------------
 // Implementation
 
 SVGRectElement::SVGRectElement(already_AddRefed<nsINodeInfo> aNodeInfo)
   : SVGRectElementBase(aNodeInfo)
 {
-  SetIsDOMBinding();
 }
 
 //----------------------------------------------------------------------
@@ -59,81 +46,38 @@ SVGRectElement::SVGRectElement(already_AddRefed<nsINodeInfo> aNodeInfo)
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGRectElement)
 
 //----------------------------------------------------------------------
-// nsIDOMSVGRectElement methods
 
-/* readonly attribute nsIDOMSVGAnimatedLength x; */
-NS_IMETHODIMP SVGRectElement::GetX(nsIDOMSVGAnimatedLength * *aX)
-{
-  *aX = X().get();
-  return NS_OK;
-}
-
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGRectElement::X()
 {
   return mLengthAttributes[ATTR_X].ToDOMAnimatedLength(this);
 }
 
-/* readonly attribute nsIDOMSVGAnimatedLength y; */
-NS_IMETHODIMP SVGRectElement::GetY(nsIDOMSVGAnimatedLength * *aY)
-{
-  *aY = Y().get();
-  return NS_OK;
-}
-
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGRectElement::Y()
 {
   return mLengthAttributes[ATTR_Y].ToDOMAnimatedLength(this);
 }
 
-/* readonly attribute nsIDOMSVGAnimatedLength width; */
-NS_IMETHODIMP SVGRectElement::GetWidth(nsIDOMSVGAnimatedLength * *aWidth)
-{
-  *aWidth = Width().get();
-  return NS_OK;
-}
-
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGRectElement::Width()
 {
   return mLengthAttributes[ATTR_WIDTH].ToDOMAnimatedLength(this);
 }
 
-/* readonly attribute nsIDOMSVGAnimatedLength height; */
-NS_IMETHODIMP SVGRectElement::GetHeight(nsIDOMSVGAnimatedLength * *aHeight)
-{
-  *aHeight = Height().get();
-  return NS_OK;
-}
-
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGRectElement::Height()
 {
   return mLengthAttributes[ATTR_HEIGHT].ToDOMAnimatedLength(this);
 }
 
-/* readonly attribute nsIDOMSVGAnimatedLength rx; */
-NS_IMETHODIMP SVGRectElement::GetRx(nsIDOMSVGAnimatedLength * *aRx)
-{
-  *aRx = Rx().get();
-  return NS_OK;
-}
-
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGRectElement::Rx()
 {
   return mLengthAttributes[ATTR_RX].ToDOMAnimatedLength(this);
 }
 
-/* readonly attribute nsIDOMSVGAnimatedLength ry; */
-NS_IMETHODIMP SVGRectElement::GetRy(nsIDOMSVGAnimatedLength * *aRy)
-{
-  *aRy = Ry().get();
-  return NS_OK;
-}
-
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGRectElement::Ry()
 {
   return mLengthAttributes[ATTR_RY].ToDOMAnimatedLength(this);
@@ -173,8 +117,8 @@ SVGRectElement::ConstructPath(gfxContext *aCtx)
   if (width <= 0 || height <= 0)
     return;
 
-  rx = NS_MAX(rx, 0.0f);
-  ry = NS_MAX(ry, 0.0f);
+  rx = std::max(rx, 0.0f);
+  ry = std::max(ry, 0.0f);
 
   /* optimize the no rounded corners case */
   if (rx == 0 && ry == 0) {

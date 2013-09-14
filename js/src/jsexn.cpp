@@ -1,6 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sw=4 et tw=78:
- *
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,53 +7,45 @@
 /*
  * JS standard exception implementation.
  */
-#include <stdlib.h>
+#include "jsexn.h"
+
 #include <string.h>
 
+#include "mozilla/PodOperations.h"
 #include "mozilla/Util.h"
 
 #include "jstypes.h"
 #include "jsutil.h"
-#include "jsprf.h"
 #include "jsapi.h"
 #include "jscntxt.h"
-#include "jsversion.h"
-#include "jsexn.h"
 #include "jsfun.h"
-#include "jsgc.h"
-#include "jsinterp.h"
 #include "jsnum.h"
 #include "jsobj.h"
-#include "jsopcode.h"
-#include "jsscope.h"
 #include "jsscript.h"
-#include "jswrapper.h"
 
 #include "gc/Marking.h"
 #include "vm/GlobalObject.h"
 #include "vm/StringBuffer.h"
 
-#include "jsinferinlines.h"
 #include "jsobjinlines.h"
-
-#include "vm/Stack-inl.h"
-#include "vm/String-inl.h"
 
 using namespace js;
 using namespace js::gc;
 using namespace js::types;
 
 using mozilla::ArrayLength;
+using mozilla::PodArrayZero;
+using mozilla::PodZero;
 
 /* Forward declarations for ErrorClass's initializer. */
 static JSBool
 Exception(JSContext *cx, unsigned argc, Value *vp);
 
 static void
-exn_trace(JSTracer *trc, RawObject obj);
+exn_trace(JSTracer *trc, JSObject *obj);
 
 static void
-exn_finalize(FreeOp *fop, RawObject obj);
+exn_finalize(FreeOp *fop, JSObject *obj);
 
 static JSBool
 exn_resolve(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
@@ -65,7 +56,7 @@ Class js::ErrorClass = {
     JSCLASS_HAS_PRIVATE | JSCLASS_IMPLEMENTS_BARRIERS | JSCLASS_NEW_RESOLVE |
     JSCLASS_HAS_CACHED_PROTO(JSProto_Error),
     JS_PropertyStub,         /* addProperty */
-    JS_PropertyStub,         /* delProperty */
+    JS_DeletePropertyStub,   /* delProperty */
     JS_PropertyStub,         /* getProperty */
     JS_StrictPropertyStub,   /* setProperty */
     JS_EnumerateStub,
@@ -249,7 +240,7 @@ struct SuppressErrorsGuard
 };
 
 static void
-SetExnPrivate(RawObject exnObject, JSExnPrivate *priv);
+SetExnPrivate(JSObject *exnObject, JSExnPrivate *priv);
 
 static bool
 InitExnPrivate(JSContext *cx, HandleObject exnObject, HandleString message,
@@ -259,7 +250,7 @@ InitExnPrivate(JSContext *cx, HandleObject exnObject, HandleString message,
     JS_ASSERT(exnObject->isError());
     JS_ASSERT(!exnObject->getPrivate());
 
-    JSCheckAccessOp checkAccess = cx->runtime->securityCallbacks->checkObjectAccess;
+    JSCheckAccessOp checkAccess = cx->runtime()->securityCallbacks->checkObjectAccess;
 
     Vector<JSStackTraceStackElem> frames(cx);
     {
@@ -279,20 +270,18 @@ InitExnPrivate(JSContext *cx, HandleObject exnObject, HandleString message,
                 return false;
             JSStackTraceStackElem &frame = frames.back();
             if (i.isNonEvalFunctionFrame()) {
-                RawAtom atom = i.callee()->displayAtom();
+                JSAtom *atom = i.callee()->displayAtom();
                 if (atom == NULL)
-                    atom = cx->runtime->emptyString;
+                    atom = cx->runtime()->emptyString;
                 frame.funName = atom;
             } else {
                 frame.funName = NULL;
             }
             RootedScript script(cx, i.script());
-            const char *cfilename = script->filename;
+            const char *cfilename = script->filename();
             if (!cfilename)
                 cfilename = "";
-            frame.filename = SaveScriptFilename(cx, cfilename);
-            if (!frame.filename)
-                return false;
+            frame.filename = cfilename;
             frame.ulineno = PCToLineNumber(script, i.pc());
         }
     }
@@ -334,7 +323,9 @@ InitExnPrivate(JSContext *cx, HandleObject exnObject, HandleString message,
     priv->exnType = exnType;
     for (size_t i = 0; i < frames.length(); ++i) {
         priv->stackElems[i].funName.init(frames[i].funName);
-        priv->stackElems[i].filename = frames[i].filename;
+        priv->stackElems[i].filename = JS_strdup(cx, frames[i].filename);
+        if (!priv->stackElems[i].filename)
+            return false;
         priv->stackElems[i].ulineno = frames[i].ulineno;
     }
 
@@ -343,14 +334,14 @@ InitExnPrivate(JSContext *cx, HandleObject exnObject, HandleString message,
 }
 
 static inline JSExnPrivate *
-GetExnPrivate(RawObject obj)
+GetExnPrivate(JSObject *obj)
 {
     JS_ASSERT(obj->isError());
     return (JSExnPrivate *) obj->getPrivate();
 }
 
 static void
-exn_trace(JSTracer *trc, RawObject obj)
+exn_trace(JSTracer *trc, JSObject *obj)
 {
     if (JSExnPrivate *priv = GetExnPrivate(obj)) {
         if (priv->message)
@@ -362,15 +353,13 @@ exn_trace(JSTracer *trc, RawObject obj)
             JSStackTraceElem &elem = priv->stackElems[i];
             if (elem.funName)
                 MarkString(trc, &elem.funName, "stack trace function name");
-            if (IS_GC_MARKING_TRACER(trc) && elem.filename)
-                MarkScriptFilename(trc->runtime, elem.filename);
         }
     }
 }
 
 /* NB: An error object's private must be set through this function. */
 static void
-SetExnPrivate(RawObject exnObject, JSExnPrivate *priv)
+SetExnPrivate(JSObject *exnObject, JSExnPrivate *priv)
 {
     JS_ASSERT(!exnObject->getPrivate());
     JS_ASSERT(exnObject->isError());
@@ -382,7 +371,7 @@ SetExnPrivate(RawObject exnObject, JSExnPrivate *priv)
 }
 
 static void
-exn_finalize(FreeOp *fop, RawObject obj)
+exn_finalize(FreeOp *fop, JSObject *obj)
 {
     if (JSExnPrivate *priv = GetExnPrivate(obj)) {
         if (JSErrorReport *report = priv->errorReport) {
@@ -391,6 +380,8 @@ exn_finalize(FreeOp *fop, RawObject obj)
                 JS_DropPrincipals(fop->runtime(), prin);
             fop->free_(report);
         }
+        for (size_t i = 0; i < priv->stackDepth; i++)
+            js_free(const_cast<char *>(priv->stackElems[i].filename));
         fop->free_(priv);
     }
 }
@@ -452,7 +443,7 @@ exn_resolve(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
 
         atom = cx->names().stack;
         if (str == atom) {
-            RawString stack = StackTraceToString(cx, priv);
+            JSString *stack = StackTraceToString(cx, priv);
             if (!stack)
                 return false;
 
@@ -477,7 +468,13 @@ js_ErrorFromException(jsval exn)
     if (JSVAL_IS_PRIMITIVE(exn))
         return NULL;
 
-    RawObject obj = JSVAL_TO_OBJECT(exn);
+    // It's ok to UncheckedUnwrap here, since all we do is get the
+    // JSErrorReport, and consumers are careful with the information they get
+    // from that anyway.  Anyone doing things that would expose anything in the
+    // JSErrorReport to page script either does a security check on the
+    // JSErrorReport's principal or also tries to do toString on our object and
+    // will fail if they can't unwrap it.
+    JSObject *obj = UncheckedUnwrap(JSVAL_TO_OBJECT(exn));
     if (!obj->isError())
         return NULL;
 
@@ -560,7 +557,7 @@ Exception(JSContext *cx, unsigned argc, Value *vp)
     /* Set the 'message' property. */
     RootedString message(cx);
     if (args.hasDefined(0)) {
-        message = ToString(cx, args[0]);
+        message = ToString<CanGC>(cx, args.handleAt(0));
         if (!message)
             return false;
         args[0].setString(message);
@@ -572,17 +569,17 @@ Exception(JSContext *cx, unsigned argc, Value *vp)
     NonBuiltinScriptFrameIter iter(cx);
 
     /* Set the 'fileName' property. */
-    RootedScript script(cx, iter.script());
+    RootedScript script(cx, iter.done() ? NULL : iter.script());
     RootedString filename(cx);
     if (args.length() > 1) {
-        filename = ToString(cx, args[1]);
+        filename = ToString<CanGC>(cx, args.handleAt(1));
         if (!filename)
             return false;
         args[1].setString(filename);
     } else {
-        filename = cx->runtime->emptyString;
+        filename = cx->runtime()->emptyString;
         if (!iter.done()) {
-            if (const char *cfilename = script->filename) {
+            if (const char *cfilename = script->filename()) {
                 filename = FilenameToString(cx, cfilename);
                 if (!filename)
                     return false;
@@ -599,7 +596,7 @@ Exception(JSContext *cx, unsigned argc, Value *vp)
         lineno = iter.done() ? 0 : PCToLineNumber(script, iter.pc(), &column);
     }
 
-    int exnType = args.callee().toFunction()->getExtendedSlot(0).toInt32();
+    int exnType = args.callee().as<JSFunction>().getExtendedSlot(0).toInt32();
     if (!InitExnPrivate(cx, obj, message, filename, lineno, column, NULL, exnType))
         return false;
 
@@ -633,7 +630,7 @@ exn_toString(JSContext *cx, unsigned argc, Value *vp)
     if (nameVal.isUndefined()) {
         name = cx->names().Error;
     } else {
-        name = ToString(cx, nameVal);
+        name = ToString<CanGC>(cx, nameVal);
         if (!name)
             return false;
     }
@@ -646,9 +643,9 @@ exn_toString(JSContext *cx, unsigned argc, Value *vp)
     /* Step 6. */
     RootedString message(cx);
     if (msgVal.isUndefined()) {
-        message = cx->runtime->emptyString;
+        message = cx->runtime()->emptyString;
     } else {
-        message = ToString(cx, msgVal);
+        message = ToString<CanGC>(cx, msgVal);
         if (!message)
             return false;
     }
@@ -676,7 +673,7 @@ exn_toString(JSContext *cx, unsigned argc, Value *vp)
     if (!sb.append(name) || !sb.append(": ") || !sb.append(message))
         return false;
 
-    RawString str = sb.finishString();
+    JSString *str = sb.finishString();
     if (!str)
         return false;
     args.rval().setString(str);
@@ -700,7 +697,7 @@ exn_toSource(JSContext *cx, unsigned argc, Value *vp)
     RootedValue nameVal(cx);
     RootedString name(cx);
     if (!JSObject::getProperty(cx, obj, obj, cx->names().name, &nameVal) ||
-        !(name = ToString(cx, nameVal)))
+        !(name = ToString<CanGC>(cx, nameVal)))
     {
         return false;
     }
@@ -708,7 +705,7 @@ exn_toSource(JSContext *cx, unsigned argc, Value *vp)
     RootedValue messageVal(cx);
     RootedString message(cx);
     if (!JSObject::getProperty(cx, obj, obj, cx->names().message, &messageVal) ||
-        !(message = js_ValueToSource(cx, messageVal)))
+        !(message = ValueToSource(cx, messageVal)))
     {
         return false;
     }
@@ -716,7 +713,7 @@ exn_toSource(JSContext *cx, unsigned argc, Value *vp)
     RootedValue filenameVal(cx);
     RootedString filename(cx);
     if (!JSObject::getProperty(cx, obj, obj, cx->names().fileName, &filenameVal) ||
-        !(filename = js_ValueToSource(cx, filenameVal)))
+        !(filename = ValueToSource(cx, filenameVal)))
     {
         return false;
     }
@@ -745,7 +742,7 @@ exn_toSource(JSContext *cx, unsigned argc, Value *vp)
         if (filename->empty() && !sb.append(", \"\""))
                 return false;
 
-        RawString linenumber = ToString(cx, linenoVal);
+        JSString *linenumber = ToString<CanGC>(cx, linenoVal);
         if (!linenumber)
             return false;
         if (!sb.append(", ") || !sb.append(linenumber))
@@ -755,7 +752,7 @@ exn_toSource(JSContext *cx, unsigned argc, Value *vp)
     if (!sb.append("))"))
         return false;
 
-    RawString str = sb.finishString();
+    JSString *str = sb.finishString();
     if (!str)
         return false;
     args.rval().setString(str);
@@ -763,7 +760,7 @@ exn_toSource(JSContext *cx, unsigned argc, Value *vp)
 }
 #endif
 
-static JSFunctionSpec exception_methods[] = {
+static const JSFunctionSpec exception_methods[] = {
 #if JS_HAS_TOSOURCE
     JS_FN(js_toSource_str,   exn_toSource,           0,0),
 #endif
@@ -792,7 +789,7 @@ InitErrorClass(JSContext *cx, Handle<GlobalObject*> global, int type, HandleObje
 
     RootedValue nameValue(cx, StringValue(name));
     RootedValue zeroValue(cx, Int32Value(0));
-    RootedValue empty(cx, StringValue(cx->runtime->emptyString));
+    RootedValue empty(cx, StringValue(cx->runtime()->emptyString));
     RootedId nameId(cx, NameToId(cx->names().name));
     RootedId messageId(cx, NameToId(cx->names().message));
     RootedId fileNameId(cx, NameToId(cx->names().fileName));
@@ -833,10 +830,10 @@ InitErrorClass(JSContext *cx, Handle<GlobalObject*> global, int type, HandleObje
 JSObject *
 js_InitExceptionClasses(JSContext *cx, HandleObject obj)
 {
-    JS_ASSERT(obj->isGlobal());
+    JS_ASSERT(obj->is<GlobalObject>());
     JS_ASSERT(obj->isNative());
 
-    Rooted<GlobalObject*> global(cx, &obj->asGlobal());
+    Rooted<GlobalObject*> global(cx, &obj->as<GlobalObject>());
 
     RootedObject objectProto(cx, global->getOrCreateObjectPrototype(cx));
     if (!objectProto)
@@ -866,9 +863,9 @@ js_GetLocalizedErrorMessage(JSContext* cx, void *userRef, const char *locale,
 {
     const JSErrorFormatString *errorString = NULL;
 
-    if (cx->localeCallbacks && cx->localeCallbacks->localeGetErrorMessage) {
-        errorString = cx->localeCallbacks
-                        ->localeGetErrorMessage(userRef, locale, errorNumber);
+    if (cx->runtime()->localeCallbacks && cx->runtime()->localeCallbacks->localeGetErrorMessage) {
+        errorString = cx->runtime()->localeCallbacks
+                                   ->localeGetErrorMessage(userRef, locale, errorNumber);
     }
     if (!errorString)
         errorString = js_GetErrorMessage(userRef, locale, errorNumber);
@@ -893,7 +890,7 @@ js::GetErrorTypeName(JSContext* cx, int16_t exnType)
 
 #if defined ( DEBUG_mccabe ) && defined ( PRINTNAMES )
 /* For use below... get character strings for error name and exception name */
-static struct exnname { char *name; char *exception; } errortoexnname[] = {
+static const struct exnname { char *name; char *exception; } errortoexnname[] = {
 #define MSG_DEF(name, number, count, exception, format) \
     {#name, #exception},
 #include "js.msg"
@@ -1043,7 +1040,7 @@ js_ReportUncaughtException(JSContext *cx)
     reportp = js_ErrorFromException(exn);
 
     /* XXX L10N angels cry once again. see also everywhere else */
-    RootedString str(cx, ToString(cx, exn));
+    RootedString str(cx, ToString<CanGC>(cx, exn));
     if (str)
         roots[1] = StringValue(str);
 
@@ -1071,10 +1068,10 @@ js_ReportUncaughtException(JSContext *cx)
             RootedString colon(cx, JS_NewStringCopyZ(cx, ": "));
             if (!colon)
                 return false;
-            RootedString nameColon(cx, js_ConcatStrings(cx, name, colon));
+            RootedString nameColon(cx, ConcatStrings<CanGC>(cx, name, colon));
             if (!nameColon)
                 return false;
-            str = js_ConcatStrings(cx, nameColon, msg);
+            str = ConcatStrings<CanGC>(cx, nameColon, msg);
             if (!str)
                 return false;
         } else if (name) {
@@ -1084,9 +1081,9 @@ js_ReportUncaughtException(JSContext *cx)
         }
 
         if (JS_GetProperty(cx, exnObject, filename_str, &roots[4])) {
-            RawString tmp = ToString(cx, roots[4]);
+            JSString *tmp = ToString<CanGC>(cx, HandleValue::fromMarkedLocation(&roots[4]));
             if (tmp)
-                filename.encode(cx, tmp);
+                filename.encodeLatin1(cx, tmp);
         }
 
         uint32_t lineno;
@@ -1118,7 +1115,7 @@ js_ReportUncaughtException(JSContext *cx)
     JSAutoByteString bytesStorage;
     const char *bytes = NULL;
     if (str)
-        bytes = bytesStorage.encode(cx, str);
+        bytes = bytesStorage.encodeLatin1(cx, str);
     if (!bytes)
         bytes = "unknown (can't convert to string)";
 
@@ -1147,7 +1144,7 @@ js_CopyErrorObject(JSContext *cx, HandleObject errobj, HandleObject scope)
     size_t size = offsetof(JSExnPrivate, stackElems) +
                   priv->stackDepth * sizeof(JSStackTraceElem);
 
-    js::ScopedFreePtr<JSExnPrivate> copy(static_cast<JSExnPrivate *>(cx->malloc_(size)));
+    ScopedJSFreePtr<JSExnPrivate> copy(static_cast<JSExnPrivate *>(cx->malloc_(size)));
     if (!copy)
         return NULL;
 
@@ -1158,14 +1155,14 @@ js_CopyErrorObject(JSContext *cx, HandleObject errobj, HandleObject scope)
     } else {
         copy->errorReport = NULL;
     }
-    js::ScopedFreePtr<JSErrorReport> autoFreeErrorReport(copy->errorReport);
+    ScopedJSFreePtr<JSErrorReport> autoFreeErrorReport(copy->errorReport);
 
     copy->message.init(priv->message);
-    if (!cx->compartment->wrap(cx, &copy->message))
+    if (!cx->compartment()->wrap(cx, &copy->message))
         return NULL;
     JS::Anchor<JSString *> messageAnchor(copy->message);
     copy->filename.init(priv->filename);
-    if (!cx->compartment->wrap(cx, &copy->filename))
+    if (!cx->compartment()->wrap(cx, &copy->filename))
         return NULL;
     JS::Anchor<JSString *> filenameAnchor(copy->filename);
     copy->lineno = priv->lineno;

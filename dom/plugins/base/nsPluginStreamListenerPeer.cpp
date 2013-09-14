@@ -25,7 +25,7 @@
 #include "nsContentUtils.h"
 #include "nsNetUtil.h"
 #include "nsPluginNativeWindow.h"
-#include "sampler.h"
+#include "GeckoProfiler.h"
 #include "nsPluginInstanceOwner.h"
 
 #define MAGIC_REQUEST_CONTEXT 0x01020304
@@ -368,7 +368,7 @@ nsPluginStreamListenerPeer::SetupPluginCacheFile(nsIChannel* channel)
   nsresult rv = NS_OK;
   
   bool useExistingCacheFile = false;
-  nsRefPtr<nsPluginHost> pluginHost = dont_AddRef(nsPluginHost::GetInst());
+  nsRefPtr<nsPluginHost> pluginHost = nsPluginHost::GetInst();
 
   // Look for an existing cache file for the URI.
   nsTArray< nsRefPtr<nsNPAPIPluginInstance> > *instances = pluginHost->InstanceArray();
@@ -443,7 +443,7 @@ nsPluginStreamListenerPeer::OnStartRequest(nsIRequest *request,
                                            nsISupports* aContext)
 {
   nsresult rv = NS_OK;
-  SAMPLE_LABEL("nsPluginStreamListenerPeer", "OnStartRequest");
+  PROFILER_LABEL("nsPluginStreamListenerPeer", "OnStartRequest");
 
   if (mRequests.IndexOfObject(GetBaseRequest(request)) == -1) {
     NS_ASSERTION(mRequests.Count() == 0,
@@ -514,7 +514,7 @@ nsPluginStreamListenerPeer::OnStartRequest(nsIRequest *request,
 
   // it's possible for the server to not send a Content-Length.
   // we should still work in this case.
-  if (NS_FAILED(rv) || length == -1) {
+  if (NS_FAILED(rv) || length < 0 || length > UINT32_MAX) {
     // check out if this is file channel
     nsCOMPtr<nsIFileChannel> fileChannel = do_QueryInterface(channel);
     if (fileChannel) {
@@ -525,7 +525,7 @@ nsPluginStreamListenerPeer::OnStartRequest(nsIRequest *request,
     mLength = 0;
   }
   else {
-    mLength = length;
+    mLength = uint32_t(length);
   }
 
   nsAutoCString aContentType; // XXX but we already got the type above!

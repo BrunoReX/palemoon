@@ -3,31 +3,29 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
- * Implementation of nsIDOMDOMTokenList specified by HTML5.
+ * Implementation of DOMTokenList specified by HTML5.
  */
 
 #ifndef nsDOMTokenList_h___
 #define nsDOMTokenList_h___
 
-#include "nsIDOMDOMTokenList.h"
 #include "nsCOMPtr.h"
 #include "nsDOMString.h"
 #include "nsWrapperCache.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/BindingDeclarations.h"
 
 namespace mozilla {
 class ErrorResult;
 
-namespace dom {
-class Element;
-} // namespace dom
 } // namespace mozilla
 
 class nsAttrValue;
 class nsIAtom;
 
-// nsISupports must be on the primary inheritance chain 
+// nsISupports must be on the primary inheritance chain
 // because nsDOMSettableTokenList is traversed by Element.
-class nsDOMTokenList : public nsIDOMDOMTokenList,
+class nsDOMTokenList : public nsISupports,
                        public nsWrapperCache
 {
 protected:
@@ -36,14 +34,13 @@ protected:
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsDOMTokenList)
-  NS_DECL_NSIDOMDOMTOKENLIST
 
   nsDOMTokenList(Element* aElement, nsIAtom* aAttrAtom);
 
   void DropReference();
 
-  virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
-                               bool *triedToWrap);
+  virtual JSObject* WrapObject(JSContext *cx,
+                               JS::Handle<JSObject*> scope) MOZ_OVERRIDE;
 
   Element* GetParentObject()
   {
@@ -63,7 +60,9 @@ public:
   bool Contains(const nsAString& aToken, mozilla::ErrorResult& aError);
   void Add(const nsAString& aToken, mozilla::ErrorResult& aError);
   void Remove(const nsAString& aToken, mozilla::ErrorResult& aError);
-  bool Toggle(const nsAString& aToken, mozilla::ErrorResult& aError);
+  bool Toggle(const nsAString& aToken,
+              const mozilla::dom::Optional<bool>& force,
+              mozilla::ErrorResult& aError);
   void Stringify(nsAString& aResult);
 
 protected:

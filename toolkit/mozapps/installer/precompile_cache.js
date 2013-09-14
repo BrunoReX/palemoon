@@ -66,12 +66,22 @@ function get_modules_under(uri) {
 
 function load_modules_under(spec, uri) {
   var entries = get_modules_under(uri);
+  // The precompilation of JS here sometimes reports errors, which we don't
+  // really care about. But if the errors are ever reported to xpcshell's
+  // error reporter, it will cause it to return an error code, which will break
+  // automation. Currently they won't be, because the component loader spins up
+  // its JSContext before xpcshell has time to set its context callback (which
+  // overrides the error reporter on all newly-created JSContexts). But as we
+  // move towards a singled-cxed browser, we'll run into this. So let's be
+  // forward-thinking and deal with it now.
+  ignoreReportedErrors(true);
   for each (let entry in entries) {
     try {
       dump(spec + entry + "\n");
       Cu.import(spec + entry, null);
     } catch(e) {}
   }
+  ignoreReportedErrors(false);
 }
 
 function resolveResource(spec) {
@@ -79,18 +89,6 @@ function resolveResource(spec) {
   return Services.io.newURI(rph.resolveURI(uri), null, null);
 }
 
-function populate_startupcache(startupcacheName) {
-  var scFile = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
-  scFile.append(startupcacheName);
-  let env = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
-  env.set('MOZ_STARTUP_CACHE', scFile.path);
-
-  var greURI = resolveResource("resource://gre/");
-  var appURI = resolveResource("resource://app/");
-
-  load_modules_under("resource://gre/", greURI);
-  if (!appURI.equals(greURI))
-    load_modules_under("resource://app/", appURI);
+function precompile_startupcache(uri) {
+  load_modules_under(uri, resolveResource(uri));
 }
-
-

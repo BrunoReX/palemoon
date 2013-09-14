@@ -22,6 +22,7 @@
 #include "nsIScriptRuntime.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIPrincipal.h"
+#include "nsJSPrincipals.h"
 #include "nsContentPolicyUtils.h"
 #include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
@@ -29,6 +30,7 @@
 #include "nsIDOMHTMLScriptElement.h"
 #include "nsIDocShell.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "nsUnicharUtils.h"
 #include "nsAutoPtr.h"
 #include "nsIXPConnect.h"
@@ -271,7 +273,7 @@ nsScriptLoader::StartLoad(nsScriptLoadRequest *aRequest, const nsAString &aType,
 
   nsCOMPtr<nsILoadGroup> loadGroup = mDocument->GetDocumentLoadGroup();
 
-  nsCOMPtr<nsPIDOMWindow> window(do_QueryInterface(mDocument->GetScriptGlobalObject()));
+  nsCOMPtr<nsPIDOMWindow> window(do_QueryInterface(mDocument->GetWindow()));
   if (!window) {
     return NS_ERROR_NULL_POINTER;
   }
@@ -397,20 +399,6 @@ ParseTypeAttribute(const nsAString& aType, JSVersion* aVersion)
     return false;
   }
 
-  nsAutoString value;
-  rv = parser.GetParameter("e4x", value);
-  if (NS_SUCCEEDED(rv)) {
-    if (value.Length() == 1 && value[0] == '1') {
-      // This happens in about 2 web pages. Enable E4X no matter what JS
-      // version number was selected.  We do this by turning on the "moar
-      // XML" version bit.  This is OK even if version has
-      // JSVERSION_UNKNOWN (-1).
-      *aVersion = js::VersionSetMoarXML(*aVersion, true);
-    }
-  } else if (rv != NS_ERROR_INVALID_ARG) {
-    return false;
-  }
-
   return true;
 }
 
@@ -442,7 +430,8 @@ nsScriptLoader::ProcessScriptElement(nsIScriptElement *aElement)
   // For now though, if JS is disabled we assume every language is
   // disabled.
   // XXX is this different from the mDocument->IsScriptEnabled() call?
-  nsIScriptGlobalObject *globalObject = mDocument->GetScriptGlobalObject();
+  nsCOMPtr<nsIScriptGlobalObject> globalObject =
+    do_QueryInterface(mDocument->GetWindow());
   if (!globalObject) {
     return false;
   }
@@ -471,14 +460,7 @@ nsScriptLoader::ProcessScriptElement(nsIScriptElement *aElement)
       nsAutoString language;
       scriptContent->GetAttr(kNameSpaceID_None, nsGkAtoms::language, language);
       if (!language.IsEmpty()) {
-        // IE, Opera, etc. do not respect language version, so neither should
-        // we at this late date in the browser wars saga.  Note that this change
-        // affects HTML but not XUL or SVG (but note also that XUL has its own
-        // code to check nsContentUtils::IsJavaScriptLanguage -- that's probably
-        // a separate bug, one we may not be able to fix short of XUL2).  See
-        // bug 255895 (https://bugzilla.mozilla.org/show_bug.cgi?id=255895).
-        uint32_t dummy;
-        if (!nsContentUtils::IsJavaScriptLanguage(language, &dummy)) {
+        if (!nsContentUtils::IsJavaScriptLanguage(language)) {
           return false;
         }
       }
@@ -633,12 +615,12 @@ nsScriptLoader::ProcessScriptElement(nsIScriptElement *aElement)
 
   if (csp) {
     PR_LOG(gCspPRLog, PR_LOG_DEBUG, ("New ScriptLoader i ****with CSP****"));
-    bool inlineOK;
-    rv = csp->GetAllowsInlineScript(&inlineOK);
+    bool inlineOK = true;
+    bool reportViolations = false;
+    rv = csp->GetAllowsInlineScript(&reportViolations, &inlineOK);
     NS_ENSURE_SUCCESS(rv, false);
 
-    if (!inlineOK) {
-      PR_LOG(gCspPRLog, PR_LOG_DEBUG, ("CSP blocked inline scripts (2)"));
+    if (reportViolations) {
       // gather information to log with violation report
       nsIURI* uri = mDocument->GetDocumentURI();
       nsAutoCString asciiSpec;
@@ -656,6 +638,10 @@ nsScriptLoader::ProcessScriptElement(nsIScriptElement *aElement)
                                NS_ConvertUTF8toUTF16(asciiSpec),
                                scriptText,
                                aElement->GetScriptLineNumber());
+    }
+
+    if (!inlineOK) {
+      PR_LOG(gCspPRLog, PR_LOG_DEBUG, ("CSP blocked inline scripts (2)"));
       return false;
     }
   }
@@ -821,7 +807,7 @@ nsScriptLoader::EvaluateScript(nsScriptLoadRequest* aRequest,
   }
 
   nsPIDOMWindow *pwin = mDocument->GetInnerWindow();
-  if (!pwin || !pwin->IsInnerWindow()) {
+  if (!pwin) {
     return NS_ERROR_FAILURE;
   }
   nsCOMPtr<nsIScriptGlobalObject> globalObject = do_QueryInterface(pwin);
@@ -842,6 +828,7 @@ nsScriptLoader::EvaluateScript(nsScriptLoadRequest* aRequest,
   if (!context) {
     return NS_ERROR_FAILURE;
   }
+  AutoPushJSContext cx(context->GetNativeContext());
 
   bool oldProcessingScriptTag = context->GetProcessingScriptTag();
   context->SetProcessingScriptTag(true);
@@ -855,20 +842,22 @@ nsScriptLoader::EvaluateScript(nsScriptLoadRequest* aRequest,
   nsAutoCString url;
   nsContentUtils::GetWrapperSafeScriptFilename(mDocument, aRequest->mURI, url);
 
-  bool isUndefined;
-  rv = context->EvaluateString(aScript, globalObject->GetGlobalJSObject(),
-                               mDocument->NodePrincipal(),
-                               aRequest->mOriginPrincipal,
-                               url.get(), aRequest->mLineNo,
-                               JSVersion(aRequest->mJSVersion), nullptr,
-                               &isUndefined);
+  JSVersion version = JSVersion(aRequest->mJSVersion);
+  if (version != JSVERSION_UNKNOWN) {
+    JS::CompileOptions options(cx);
+    options.setFileAndLine(url.get(), aRequest->mLineNo)
+           .setVersion(JSVersion(aRequest->mJSVersion));
+    if (aRequest->mOriginPrincipal) {
+      options.setOriginPrincipals(nsJSPrincipals::get(aRequest->mOriginPrincipal));
+    }
+    JS::Rooted<JSObject*> global(cx, globalObject->GetGlobalJSObject());
+    rv = context->EvaluateString(aScript, global,
+                                 options, /* aCoerceToString = */ false, nullptr);
+  }
 
   // Put the old script back in case it wants to do anything else.
   mCurrentScript = oldCurrent;
 
-  JSContext *cx = nullptr; // Initialize this to keep GCC happy.
-  cx = context->GetNativeContext();
-  JSAutoRequest ar(cx);
   context->SetProcessingScriptTag(oldProcessingScriptTag);
   return rv;
 }
@@ -994,14 +983,14 @@ DetectByteOrderMark(const unsigned char* aBytes, int32_t aLen, nsCString& oChars
     if (0xFF == aBytes[1]) {
       // FE FF
       // UTF-16, big-endian
-      oCharset.Assign("UTF-16");
+      oCharset.Assign("UTF-16BE");
     }
     break;
   case 0xFF:
     if (0xFE == aBytes[1]) {
       // FF FE
       // UTF-16, little-endian
-      oCharset.Assign("UTF-16");
+      oCharset.Assign("UTF-16LE");
     }
     break;
   }
@@ -1041,7 +1030,8 @@ nsScriptLoader::ConvertToUTF16(nsIChannel* aChannel, const uint8_t* aData,
 
   if (!unicodeDecoder &&
       aChannel &&
-      NS_SUCCEEDED(aChannel->GetContentCharset(charset))) {
+      NS_SUCCEEDED(aChannel->GetContentCharset(charset)) &&
+      !charset.IsEmpty()) {
     charsetConv->GetUnicodeDecoder(charset.get(),
                                    getter_AddRefs(unicodeDecoder));
   }
@@ -1074,7 +1064,7 @@ nsScriptLoader::ConvertToUTF16(nsIChannel* aChannel, const uint8_t* aData,
                                  aLength, &unicodeLength);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (!EnsureStringLength(aString, unicodeLength)) {
+  if (!aString.SetLength(unicodeLength, fallible_t())) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 

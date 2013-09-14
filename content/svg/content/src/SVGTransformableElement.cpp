@@ -3,45 +3,28 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/SVGAnimatedTransformList.h"
 #include "mozilla/dom/SVGTransformableElement.h"
-#include "DOMSVGAnimatedTransformList.h"
+#include "mozilla/dom/SVGMatrix.h"
+#include "mozilla/dom/SVGSVGElement.h"
+#include "nsContentUtils.h"
 #include "nsIDOMMutationEvent.h"
 #include "nsIFrame.h"
+#include "nsISVGChildFrame.h"
+#include "mozilla/dom/SVGRect.h"
 #include "nsSVGUtils.h"
-#include "nsContentUtils.h"
+#include "SVGContentUtils.h"
 
 namespace mozilla {
 namespace dom {
 
-//----------------------------------------------------------------------
-// nsISupports methods
-
-NS_IMPL_ADDREF_INHERITED(SVGTransformableElement, SVGLocatableElement)
-NS_IMPL_RELEASE_INHERITED(SVGTransformableElement, SVGLocatableElement)
-
-NS_INTERFACE_MAP_BEGIN(SVGTransformableElement)
-  NS_INTERFACE_MAP_ENTRY(nsIDOMSVGTransformable)
-NS_INTERFACE_MAP_END_INHERITING(SVGLocatableElement)
-
-
-//----------------------------------------------------------------------
-// nsIDOMSVGTransformable methods
-/* readonly attribute nsISupports transform; */
-
-NS_IMETHODIMP
-SVGTransformableElement::GetTransform(nsISupports **aTransform)
-{
-  *aTransform = Transform().get();
-  return NS_OK;
-}
-
-already_AddRefed<DOMSVGAnimatedTransformList>
+already_AddRefed<SVGAnimatedTransformList>
 SVGTransformableElement::Transform()
 {
   // We're creating a DOM wrapper, so we must tell GetAnimatedTransformList
   // to allocate the SVGAnimatedTransformList if it hasn't already done so:
-  return DOMSVGAnimatedTransformList::GetDOMWrapper(
-           GetAnimatedTransformList(DO_ALLOCATE), this).get();
+  return SVGAnimatedTransformList::GetDOMWrapper(
+           GetAnimatedTransformList(DO_ALLOCATE), this);
 
 }
 
@@ -58,7 +41,7 @@ SVGTransformableElement::IsAttributeMapped(const nsIAtom* name) const
   };
 
   return FindAttributeDependence(name, map) ||
-    SVGLocatableElement::IsAttributeMapped(name);
+    nsSVGElement::IsAttributeMapped(name);
 }
 
 nsChangeHint
@@ -66,7 +49,7 @@ SVGTransformableElement::GetAttributeChangeHint(const nsIAtom* aAttribute,
                                                 int32_t aModType) const
 {
   nsChangeHint retval =
-    SVGLocatableElement::GetAttributeChangeHint(aAttribute, aModType);
+    nsSVGElement::GetAttributeChangeHint(aAttribute, aModType);
   if (aAttribute == nsGkAtoms::transform ||
       aAttribute == nsGkAtoms::mozAnimateMotionDummyAttr) {
     // We add nsChangeHint_UpdateOverflow so that nsFrame::UpdateOverflow()
@@ -77,7 +60,9 @@ SVGTransformableElement::GetAttributeChangeHint(const nsIAtom* aAttribute,
       return retval; // no change
     }
     if (aModType == nsIDOMMutationEvent::ADDITION ||
-        aModType == nsIDOMMutationEvent::REMOVAL) {
+        aModType == nsIDOMMutationEvent::REMOVAL ||
+        (aModType == nsIDOMMutationEvent::MODIFICATION &&
+         !(mTransforms && mTransforms->HasTransform()))) {
       // Reconstruct the frame tree to handle stacking context changes:
       NS_UpdateHint(retval, nsChangeHint_ReconstructFrame);
     } else {
@@ -149,15 +134,100 @@ SVGTransformableElement::SetAnimateMotionTransform(const gfxMatrix* aMatrix)
   }
   mAnimateMotionTransform = aMatrix ? new gfxMatrix(*aMatrix) : nullptr;
   DidAnimateTransformList();
+  nsIFrame* frame = GetPrimaryFrame();
+  if (frame) {
+    // If the result of this transform and any other transforms on this frame
+    // is the identity matrix, then DoApplyRenderingChangeToTree won't handle
+    // our nsChangeHint_UpdateTransformLayer hint since aFrame->IsTransformed()
+    // will return false. That's fine, but we still need to schedule a repaint,
+    // and that won't otherwise happen. Since it's cheap to call SchedulePaint,
+    // we don't bother to check IsTransformed().
+    frame->SchedulePaint();
+  }
 }
 
-SVGAnimatedTransformList*
+nsSVGAnimatedTransformList*
 SVGTransformableElement::GetAnimatedTransformList(uint32_t aFlags)
 {
   if (!mTransforms && (aFlags & DO_ALLOCATE)) {
-    mTransforms = new SVGAnimatedTransformList();
+    mTransforms = new nsSVGAnimatedTransformList();
   }
   return mTransforms;
+}
+
+nsSVGElement*
+SVGTransformableElement::GetNearestViewportElement()
+{
+  return SVGContentUtils::GetNearestViewportElement(this);
+}
+
+nsSVGElement*
+SVGTransformableElement::GetFarthestViewportElement()
+{
+  return SVGContentUtils::GetOuterSVGElement(this);
+}
+
+already_AddRefed<SVGIRect>
+SVGTransformableElement::GetBBox(ErrorResult& rv)
+{
+  nsIFrame* frame = GetPrimaryFrame(Flush_Layout);
+
+  if (!frame || (frame->GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD)) {
+    rv.Throw(NS_ERROR_FAILURE);
+    return nullptr;
+  }
+
+  nsISVGChildFrame* svgframe = do_QueryFrame(frame);
+  if (!svgframe) {
+    rv.Throw(NS_ERROR_NOT_IMPLEMENTED); // XXX: outer svg
+    return nullptr;
+  }
+
+  return NS_NewSVGRect(this, nsSVGUtils::GetBBox(frame));
+}
+
+already_AddRefed<SVGMatrix>
+SVGTransformableElement::GetCTM()
+{
+  nsIDocument* currentDoc = GetCurrentDoc();
+  if (currentDoc) {
+    // Flush all pending notifications so that our frames are up to date
+    currentDoc->FlushPendingNotifications(Flush_Layout);
+  }
+  gfxMatrix m = SVGContentUtils::GetCTM(this, false);
+  nsRefPtr<SVGMatrix> mat = m.IsSingular() ? nullptr : new SVGMatrix(m);
+  return mat.forget();
+}
+
+already_AddRefed<SVGMatrix>
+SVGTransformableElement::GetScreenCTM()
+{
+  nsIDocument* currentDoc = GetCurrentDoc();
+  if (currentDoc) {
+    // Flush all pending notifications so that our frames are up to date
+    currentDoc->FlushPendingNotifications(Flush_Layout);
+  }
+  gfxMatrix m = SVGContentUtils::GetCTM(this, true);
+  nsRefPtr<SVGMatrix> mat = m.IsSingular() ? nullptr : new SVGMatrix(m);
+  return mat.forget();
+}
+
+already_AddRefed<SVGMatrix>
+SVGTransformableElement::GetTransformToElement(SVGGraphicsElement& aElement,
+                                               ErrorResult& rv)
+{
+  // the easiest way to do this (if likely to increase rounding error):
+  nsRefPtr<SVGMatrix> ourScreenCTM = GetScreenCTM();
+  nsRefPtr<SVGMatrix> targetScreenCTM = aElement.GetScreenCTM();
+  if (!ourScreenCTM || !targetScreenCTM) {
+    rv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    return nullptr;
+  }
+  nsRefPtr<SVGMatrix> tmp = targetScreenCTM->Inverse(rv);
+  if (rv.Failed()) return nullptr;
+
+  nsRefPtr<SVGMatrix> mat = tmp->Multiply(*ourScreenCTM);
+  return mat.forget();
 }
 
 } // namespace dom

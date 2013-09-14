@@ -10,8 +10,13 @@
 #include "mozilla/Attributes.h"
 #include "CallControlManager.h"
 #include "CC_Device.h"
+#include "CC_DeviceInfo.h"
 #include "CC_Call.h"
+#include "CC_CallInfo.h"
+#include "CC_Line.h"
+#include "CC_LineInfo.h"
 #include "CC_Observer.h"
+#include "CC_FeatureInfo.h"
 
 #include "StaticPtr.h"
 #include "PeerConnectionImpl.h"
@@ -31,6 +36,7 @@ class PeerConnectionCtx : public CSF::CC_Observer {
  public:
   static nsresult InitializeGlobal(nsIThread *mainThread);
   static PeerConnectionCtx* GetInstance();
+  static bool isActive();
   static void Destroy();
 
   // Implementations of CC_Observer methods
@@ -66,18 +72,14 @@ class PeerConnectionCtx : public CSF::CC_Observer {
     mSipccState = aState;
   }
 
-  virtual void onCallEvent_m(ccapi_call_event_e callEvent,
-			     CSF::CC_CallPtr call,
-			     CSF::CC_CallInfoPtr info);
-
   // SIPCC objects
   PeerConnectionImpl::SipccState mSipccState;  // TODO(ekr@rtfm.com): refactor this out? What does it do?
   CSF::CallControlManagerPtr mCCM;
   CSF::CC_DevicePtr mDevice;
 
   static PeerConnectionCtx *gInstance;
-  static nsIThread *gMainThread;
 public:
+  static nsIThread *gMainThread;
   static StaticRefPtr<mozilla::PeerConnectionCtxShutdown> gPeerConnectionCtxShutdown;
 };
 

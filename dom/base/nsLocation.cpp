@@ -25,7 +25,6 @@
 #include "nsIDocument.h"
 #include "nsIPresShell.h"
 #include "nsPresContext.h"
-#include "nsIJSContextStack.h"
 #include "nsXPIDLString.h"
 #include "nsError.h"
 #include "nsDOMClassInfoID.h"
@@ -45,9 +44,6 @@ GetDocumentCharacterSetForURI(const nsAString& aHref, nsACString& aCharset)
   aCharset.Truncate();
 
   nsresult rv;
-
-  nsCOMPtr<nsIJSContextStack> stack(do_GetService("@mozilla.org/js/xpc/ContextStack;1", &rv));
-  NS_ENSURE_SUCCESS(rv, rv);
 
   JSContext *cx = nsContentUtils::GetCurrentJSContext();
   if (cx) {
@@ -545,6 +541,26 @@ nsLocation::SetHrefWithBase(const nsAString& aHref, nsIURI* aBase,
 }
 
 NS_IMETHODIMP
+nsLocation::GetOrigin(nsAString& aOrigin)
+{
+  if (!CallerSubsumes())
+    return NS_ERROR_DOM_SECURITY_ERR;
+
+  aOrigin.Truncate();
+
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = GetURI(getter_AddRefs(uri), true);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsAutoString origin;
+  rv = nsContentUtils::GetUTFOrigin(uri, origin);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  aOrigin = origin;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsLocation::GetPathname(nsAString& aPathname)
 {
   if (!CallerSubsumes())
@@ -767,7 +783,7 @@ nsLocation::Reload(bool aForceget)
     // page since some sites may use this trick to work around gecko
     // reflow bugs, and this should have the same effect.
 
-    nsCOMPtr<nsIDocument> doc(do_QueryInterface(window->GetExtantDocument()));
+    nsCOMPtr<nsIDocument> doc = window->GetExtantDoc();
 
     nsIPresShell *shell;
     nsPresContext *pcx;

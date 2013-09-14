@@ -6,7 +6,7 @@
 #define MEDIAENGINE_H_
 
 #include "nsIDOMFile.h"
-#include "nsDOMMediaStream.h"
+#include "DOMMediaStream.h"
 #include "MediaStreamGraph.h"
 
 namespace mozilla {
@@ -20,6 +20,7 @@ namespace mozilla {
  */
 class MediaEngineVideoSource;
 class MediaEngineAudioSource;
+struct MediaEnginePrefs;
 
 enum MediaEngineState {
   kAllocated,
@@ -38,6 +39,12 @@ class MediaEngine
 {
 public:
   virtual ~MediaEngine() {}
+
+  static const int DEFAULT_VIDEO_FPS = 30;
+  static const int DEFAULT_VIDEO_MIN_FPS = 10;
+  static const int DEFAULT_VIDEO_WIDTH = 640;
+  static const int DEFAULT_VIDEO_HEIGHT = 480;
+  static const int DEFAULT_AUDIO_TIMER_MS = 10;
 
   /* Populate an array of video sources in the nsTArray. Also include devices
    * that are currently unavailable. */
@@ -63,7 +70,7 @@ public:
   virtual void GetUUID(nsAString&) = 0;
 
   /* This call reserves but does not start the device. */
-  virtual nsresult Allocate() = 0;
+  virtual nsresult Allocate(const MediaEnginePrefs &aPrefs) = 0;
 
   /* Release the device back to the system. */
   virtual nsresult Deallocate() = 0;
@@ -89,6 +96,11 @@ public:
   /* Stop the device and release the corresponding MediaStream */
   virtual nsresult Stop(SourceMediaStream *aSource, TrackID aID) = 0;
 
+  /* Change device configuration.  */
+  virtual nsresult Config(bool aEchoOn, uint32_t aEcho,
+                          bool aAgcOn, uint32_t aAGC,
+                          bool aNoiseOn, uint32_t aNoise) = 0;
+
   /* Return false if device is currently allocated or started */
   bool IsAvailable() {
     if (mState == kAllocated || mState == kStarted) {
@@ -108,27 +120,17 @@ protected:
 /**
  * Video source and friends.
  */
-enum MediaEngineVideoCodecType {
-  kVideoCodecH263,
-  kVideoCodecVP8,
-  kVideoCodecI420
-};
-
-struct MediaEngineVideoOptions {
-  uint32_t mWidth;
-  uint32_t mHeight;
-  uint32_t mMaxFPS;
-  MediaEngineVideoCodecType codecType;
+struct MediaEnginePrefs {
+  int32_t mWidth;
+  int32_t mHeight;
+  int32_t mFPS;
+  int32_t mMinFPS;
 };
 
 class MediaEngineVideoSource : public MediaEngineSource
 {
 public:
   virtual ~MediaEngineVideoSource() {}
-
-  /* Return a MediaEngineVideoOptions struct with appropriate values for all
-   * fields. */
-  virtual const MediaEngineVideoOptions *GetOptions() = 0;
 };
 
 /**

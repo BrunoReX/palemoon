@@ -19,7 +19,7 @@ namespace dom {
 
 /**
  * TabContext encapsulates information about an iframe that may be a mozbrowser
- * or mozapp.  You can ask whether a TabContext correspodns to a mozbrowser or
+ * or mozapp.  You can ask whether a TabContext corresponds to a mozbrowser or
  * mozapp, get the app that contains the browser, and so on.
  *
  * TabParent and TabChild both inherit from TabContext, and you can also have
@@ -159,9 +159,14 @@ protected:
 
 private:
   /**
-   * Translate an appId into a mozIApplication.
+   * Translate an appId into a mozIApplication, using lazy caching.
    */
   already_AddRefed<mozIApplication> GetAppForId(uint32_t aAppId) const;
+
+  /**
+   * Translate an appId into a mozIApplication.
+   */
+  already_AddRefed<mozIApplication> GetAppForIdNoCache(uint32_t aAppId) const;
 
   /**
    * Has this TabContext been initialized?  If so, mutator methods will fail.
@@ -175,12 +180,25 @@ private:
   uint32_t mOwnAppId;
 
   /**
+   * Cache of this TabContext's own app.  If mOwnAppId is NO_APP_ID, this is
+   * guaranteed to be nullptr.  Otherwise, it may or may not be null.
+   */
+  mutable nsCOMPtr<mozIApplication> mOwnApp;
+
+  /**
    * The id of the app which contains this TabContext's frame.  If mIsBrowser,
    * this corresponds to the ID of the app which contains the browser frame;
    * otherwise, this correspodns to the ID of the app which contains the app
    * frame.
    */
   uint32_t mContainingAppId;
+
+  /**
+   * Cache of the app that contains this TabContext's frame.  If mContainingAppId
+   * is NO_APP_ID, this is guaranteed to be nullptr.  Otherwise, it may or may not
+   * be null.
+   */
+  mutable nsCOMPtr<mozIApplication> mContainingApp;
 
   /**
    * The requested scrolling behavior for this frame.

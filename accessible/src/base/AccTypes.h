@@ -34,6 +34,7 @@ enum AccType {
   eHTMLSelectListType,
   eHTMLMediaType,
   eHTMLRadioButtonType,
+  eHTMLRangeType,
   eHTMLTableType,
   eHTMLTableCellType,
   eHTMLTableRowType,
@@ -48,10 +49,12 @@ enum AccType {
    * Other accessible types.
    */
   eApplicationType,
+  eHTMLOptGroupType,
   eImageMapType,
   eMenuPopupType,
   eProgressType,
   eRootType,
+  eXULLabelType,
   eXULTabpanelsType,
   eXULTreeType,
 

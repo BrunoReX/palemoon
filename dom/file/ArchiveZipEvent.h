@@ -7,6 +7,7 @@
 #ifndef mozilla_dom_file_domarchivezipevent_h__
 #define mozilla_dom_file_domarchivezipevent_h__
 
+#include "mozilla/Attributes.h"
 #include "ArchiveEvent.h"
 
 #include "FileCommon.h"
@@ -24,13 +25,13 @@ class ArchiveZipItem : public ArchiveItem
 public:
   ArchiveZipItem(const char* aFilename,
                  const ZipCentral& aCentralStruct,
-                 const ArchiveReaderOptions& aOptions);
+                 const nsAString& aEncoding);
   virtual ~ArchiveZipItem();
 
-  nsresult GetFilename(nsString& aFilename);
+  nsresult GetFilename(nsString& aFilename) MOZ_OVERRIDE;
 
   // From zipItem to DOMFile:
-  virtual nsIDOMFile* File(ArchiveReader* aArchiveReader);
+  virtual nsIDOMFile* File(ArchiveReader* aArchiveReader) MOZ_OVERRIDE;
 
 public: // for the event
   static uint32_t StrToInt32(const uint8_t* aStr);
@@ -45,7 +46,7 @@ private: // data
   nsString mFilenameU;
   ZipCentral mCentralStruct;
 
-  ArchiveReaderOptions mOptions;
+  nsString mEncoding;
 };
 
 /**
@@ -55,12 +56,12 @@ class ArchiveReaderZipEvent : public ArchiveReaderEvent
 {
 public:
   ArchiveReaderZipEvent(ArchiveReader* aArchiveReader,
-                        const ArchiveReaderOptions& aOptions);
+                        const nsAString& aEncoding);
 
-  nsresult Exec();
+  nsresult Exec() MOZ_OVERRIDE;
 
 private:
-  ArchiveReaderOptions mOptions;
+  nsString mEncoding;
 };
 
 END_FILE_NAMESPACE

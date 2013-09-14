@@ -225,6 +225,7 @@ SimpleTest.testPluginIsOOP = function () {
 
 SimpleTest._tests = [];
 SimpleTest._stopOnLoad = true;
+SimpleTest._cleanupFunctions = [];
 
 /**
  * Something like assert.
@@ -257,6 +258,17 @@ SimpleTest.ise = function (a, b, name) {
     var pass = (a === b);
     var diag = pass ? "" : "got " + repr(a) + ", strictly expected " + repr(b)
     SimpleTest.ok(pass, name, diag);
+};
+
+/**
+ * Check that the function call throws an exception.
+ */
+SimpleTest.doesThrow = function(fn, name) {
+    var gotException = false;
+    try {
+      fn();
+    } catch (ex) { gotException = true; }
+    ok(gotException, name);
 };
 
 //  --------------- Test.Builder/Test.More todo() -----------------
@@ -468,6 +480,44 @@ SimpleTest.requestLongerTimeout = function (factor) {
     }
 }
 
+/**
+ * Note that the given range of assertions is to be expected.  When
+ * this function is not called, 0 assertions are expected.  When only
+ * one argument is given, that number of assertions are expected.
+ *
+ * A test where we expect to have assertions (which should largely be a
+ * transitional mechanism to get assertion counts down from our current
+ * situation) can call the SimpleTest.expectAssertions() function, with
+ * either one or two arguments:  one argument gives an exact number
+ * expected, and two arguments give a range.  For example, a test might do
+ * one of the following:
+ *
+ *   // Currently triggers two assertions (bug NNNNNN).
+ *   SimpleTest.expectAssertions(2);
+ *
+ *   // Currently triggers one assertion on Mac (bug NNNNNN).
+ *   if (navigator.platform.indexOf("Mac") == 0) {
+ *     SimpleTest.expectAssertions(1);
+ *   }
+ *
+ *   // Currently triggers two assertions on all platforms (bug NNNNNN),
+ *   // but intermittently triggers two additional assertions (bug NNNNNN)
+ *   // on Windows.
+ *   if (navigator.platform.indexOf("Win") == 0) {
+ *     SimpleTest.expectAssertions(2, 4);
+ *   } else {
+ *     SimpleTest.expectAssertions(2);
+ *   }
+ *
+ *   // Intermittently triggers up to three assertions (bug NNNNNN).
+ *   SimpleTest.expectAssertions(0, 3);
+ */
+SimpleTest.expectAssertions = function(min, max) {
+    if (parentRunner) {
+        parentRunner.expectAssertions(min, max);
+    }
+}
+
 SimpleTest.waitForFocus_started = false;
 SimpleTest.waitForFocus_loaded = false;
 SimpleTest.waitForFocus_focused = false;
@@ -655,7 +705,11 @@ SimpleTest.executeSoon = function(aFunc) {
         return SpecialPowers.executeSoon(aFunc, window);
     }
     setTimeout(aFunc, 0);
-}
+};
+
+SimpleTest.registerCleanupFunction = function(aFunc) {
+    SimpleTest._cleanupFunctions.push(aFunc);
+};
 
 /**
  * Finishes the tests. This is automatically called, except when
@@ -668,6 +722,21 @@ SimpleTest.finish = function () {
 
     SimpleTest._alreadyFinished = true;
 
+    // Execute all of our cleanup functions.
+    var func;
+    while ((func = SimpleTest._cleanupFunctions.pop())) {
+      try {
+        func();
+      }
+      catch (ex) {
+        SimpleTest.ok(false, "Cleanup function threw exception: " + ex);
+      }
+    }
+
+    if (SpecialPowers.DOMWindowUtils.isTestControllingRefreshes) {
+        SimpleTest.ok(false, "test left refresh driver under test control");
+        SpecialPowers.DOMWindowUtils.restoreNormalRefresh();
+    }
     if (SimpleTest._expectingUncaughtException) {
         SimpleTest.ok(false, "expectUncaughtException was called but no uncaught exception was detected!");
     }

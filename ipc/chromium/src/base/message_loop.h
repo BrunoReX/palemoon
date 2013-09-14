@@ -219,6 +219,9 @@ public:
   // Returns the type passed to the constructor.
   Type type() const { return type_; }
 
+  // Unique, non-repeating ID for this message loop.
+  int32_t id() const { return id_; }
+
   // Optional call to connect the thread name with this loop.
   void set_thread_name(const std::string& thread_name) {
     DCHECK(thread_name_.empty()) << "Should not rename this thread!";
@@ -292,10 +295,10 @@ public:
 
   // This structure is copied around by value.
   struct PendingTask {
-    Task* task;                   // The task to run.
-    base::Time delayed_run_time;  // The time when the task should be run.
-    int sequence_num;             // Used to facilitate sorting by run time.
-    bool nestable;                // True if OK to dispatch from a nested loop.
+    Task* task;                        // The task to run.
+    base::TimeTicks delayed_run_time;  // The time when the task should be run.
+    int sequence_num;                  // Secondary sort key for run time.
+    bool nestable;                     // OK to dispatch from a nested loop.
 
     PendingTask(Task* task, bool nestable)
         : task(task), sequence_num(0), nestable(nestable) {
@@ -370,10 +373,11 @@ public:
 
   // base::MessagePump::Delegate methods:
   virtual bool DoWork();
-  virtual bool DoDelayedWork(base::Time* next_delayed_work_time);
+  virtual bool DoDelayedWork(base::TimeTicks* next_delayed_work_time);
   virtual bool DoIdleWork();
 
   Type type_;
+  int32_t id_;
 
   // A list of tasks that need to be processed by this instance.  Note that
   // this queue is only accessed (push/pop) by our current thread.

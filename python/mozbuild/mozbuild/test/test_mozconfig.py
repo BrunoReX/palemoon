@@ -12,8 +12,11 @@ from shutil import rmtree
 from tempfile import (
     gettempdir,
     mkdtemp,
-    NamedTemporaryFile,
 )
+
+from mozfile.mozfile import NamedTemporaryFile
+
+from mozunit import main
 
 from mozbuild.mozconfig import (
     MozconfigFindException,
@@ -25,6 +28,9 @@ from mozbuild.mozconfig import (
 class TestMozconfigLoader(unittest.TestCase):
     def setUp(self):
         self._old_env = dict(os.environ)
+        os.environ.pop('MOZCONFIG', None)
+        os.environ.pop('CC', None)
+        os.environ.pop('CXX', None)
         self._temp_dirs = set()
 
     def tearDown(self):
@@ -184,6 +190,24 @@ class TestMozconfigLoader(unittest.TestCase):
             self.assertEqual(result['configure_args'], [
                 '--foo=%s' % loader.topsrcdir])
 
+    def test_read_ac_app_options(self):
+        with NamedTemporaryFile(mode='w') as mozconfig:
+            mozconfig.write('ac_add_options --foo=@TOPSRCDIR@\n')
+            mozconfig.write('ac_add_app_options app1 --bar=@TOPSRCDIR@\n')
+            mozconfig.write('ac_add_app_options app2 --bar=x\n')
+            mozconfig.flush()
+
+            loader = self.get_loader()
+            result = loader.read_mozconfig(mozconfig.name, moz_build_app='app1')
+            self.assertEqual(result['configure_args'], [
+                '--foo=%s' % loader.topsrcdir,
+                '--bar=%s' % loader.topsrcdir])
+
+            result = loader.read_mozconfig(mozconfig.name, moz_build_app='app2')
+            self.assertEqual(result['configure_args'], [
+                '--foo=%s' % loader.topsrcdir,
+                '--bar=x'])
+
     def test_read_capture_mk_options(self):
         """Ensures mk_add_options calls are captured."""
         with NamedTemporaryFile(mode='w') as mozconfig:
@@ -314,3 +338,6 @@ class TestMozconfigLoader(unittest.TestCase):
                 mozconfig.name.replace(os.sep, '/'))
             self.assertEquals(e.exception.output, ['hello world'])
 
+
+if __name__ == '__main__':
+    main()

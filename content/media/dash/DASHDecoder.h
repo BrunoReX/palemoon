@@ -44,8 +44,12 @@ public:
   DASHDecoder();
   ~DASHDecoder();
 
-  // Clone not supported; just return nullptr.
-  MediaDecoder* Clone() { return nullptr; }
+  MediaDecoder* Clone() MOZ_OVERRIDE {
+    if (!IsDASHEnabled()) {
+      return nullptr;
+    }
+    return new DASHDecoder();
+  }
 
   // Creates a single state machine for all stream decoders.
   // Called from Load on the main thread only.
@@ -87,6 +91,10 @@ public:
   // decoders. Called on the decode thread.
   void OnReadMetadataCompleted(DASHRepDecoder* aRepDecoder);
 
+  // Returns true if all subsegments from current decode position are
+  // downloaded. Must be in monitor. Call from any thread.
+  bool IsDataCachedToEndOfResource() MOZ_OVERRIDE;
+
   // Refers to downloading data bytes, i.e. non metadata.
   // Returns true if |aRepDecoder| is an active audio or video sub decoder AND
   // if metadata for all audio or video decoders has been read.
@@ -113,6 +121,21 @@ public:
   // |mVideoSubsegmentIdx|.
   void SetSubsegmentIndex(DASHRepDecoder* aRepDecoder,
                           int32_t aSubsegmentIdx);
+
+  // Suspend any media downloads that are in progress. Called by the
+  // media element when it is sent to the bfcache, or when we need
+  // to throttle the download. Call on the main thread only. This can
+  // be called multiple times, there's an internal "suspend count".
+  void Suspend() MOZ_OVERRIDE;
+
+  // Resume any media downloads that have been suspended. Called by the
+  // media element when it is restored from the bfcache, or when we need
+  // to stop throttling the download. Call on the main thread only.
+  // The download will only actually resume once as many Resume calls
+  // have been made as Suspend calls. When aForceBuffering is true,
+  // we force the decoder to go into buffering state before resuming
+  // playback.
+  void Resume(bool aForceBuffering) MOZ_OVERRIDE;
 private:
   // Increments the byte range index for audio|video downloads. Will only
   // increment for current active decoders. Could be called from any thread.
@@ -143,6 +166,14 @@ public:
     return (-1);
   }
 
+  // Returns the total number of subsegments that have been loaded. Will enter
+  // monitor for read access off the decode thread.
+  uint32_t GetNumSubsegmentLoads() {
+    ReentrantMonitorConditionallyEnter mon(!OnDecodeThread(),
+                                           GetReentrantMonitor());
+    return mVideoSubsegmentLoads.Length();
+  }
+
   // Returns the index of the rep decoder used to load a subsegment. Will enter
   // monitor for read access off the decode thread.
   int32_t GetRepIdxForVideoSubsegmentLoad(int32_t aSubsegmentIdx)
@@ -157,6 +188,15 @@ public:
       return 0;
     }
   }
+
+  // Returns the index of the rep decoder used to load a subsegment, after a
+  // seek. Called on the decode thread, and will block if the subsegment
+  // previous to the one specified has not yet been loaded. This ensures that
+  // |DASHDecoder| has had a chance to determine which decoder should load the
+  // next subsegment, in the case where |DASHRepReader|::|DecodeToTarget| has
+  // read all the data for the current subsegment from the cache, and needs to
+  // know which reader (including itself) to use next.
+  int32_t GetRepIdxForVideoSubsegmentLoadAfterSeek(int32_t aSubsegmentIndex);
 
   int32_t GetSwitchCountAtVideoSubsegment(int32_t aSubsegmentIdx)
   {
@@ -187,6 +227,15 @@ public:
   // so recompute it. The monitor must be held. Will be forwarded to current
   // audio and video rep decoders.
   void UpdatePlaybackRate() MOZ_OVERRIDE;
+
+  // Stop updating the bytes downloaded for progress notifications. Called
+  // when seeking to prevent wild changes to the progress notification.
+  // Forwarded to sub-decoders. Must be called with the decoder monitor held.
+  void StopProgressUpdates() MOZ_OVERRIDE;
+
+  // Allow updating the bytes downloaded for progress notifications.
+  // Forwarded to sub-decoders. Must be called with the decoder monitor held.
+  void StartProgressUpdates() MOZ_OVERRIDE;
 
   // Used to estimate rates of data passing through the decoder's channel.
   // Records activity starting on the channel. The monitor must be held.
@@ -251,6 +300,9 @@ private:
   DASHRepDecoder* AudioRepDecoder() {
     ReentrantMonitorConditionallyEnter mon(!OnDecodeThread(),
                                            GetReentrantMonitor());
+    if (0 == mAudioRepDecoders.Length()) {
+      return nullptr;
+    }
     NS_ENSURE_TRUE((uint32_t)mAudioRepDecoderIdx < mAudioRepDecoders.Length(),
                    nullptr);
     if (mAudioRepDecoderIdx < 0) {
@@ -266,6 +318,9 @@ private:
   DASHRepDecoder* VideoRepDecoder() {
     ReentrantMonitorConditionallyEnter mon(!OnDecodeThread(),
                                            GetReentrantMonitor());
+    if (0 == mVideoRepDecoders.Length()) {
+      return nullptr;
+    }
     NS_ENSURE_TRUE((uint32_t)mVideoRepDecoderIdx < mVideoRepDecoders.Length(),
                    nullptr);
     if (mVideoRepDecoderIdx < 0) {

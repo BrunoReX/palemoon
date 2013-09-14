@@ -128,6 +128,7 @@ class ScopedXPCOM : public nsIDirectoryServiceProvider2
           MOZ_ALWAYS_TRUE(NS_SUCCEEDED(os->NotifyObservers(nullptr, "profile-change-net-teardown", nullptr)));
           MOZ_ALWAYS_TRUE(NS_SUCCEEDED(os->NotifyObservers(nullptr, "profile-change-teardown", nullptr)));
           MOZ_ALWAYS_TRUE(NS_SUCCEEDED(os->NotifyObservers(nullptr, "profile-before-change", nullptr)));
+          MOZ_ALWAYS_TRUE(NS_SUCCEEDED(os->NotifyObservers(nullptr, "profile-before-change2", nullptr)));
         }
 
         if (NS_FAILED(mProfD->Remove(true))) {
@@ -164,8 +165,10 @@ class ScopedXPCOM : public nsIDirectoryServiceProvider2
       }
 
       // Create a unique temporary folder to use for this test.
+      // Note that runcppunittests.py will run tests with a temp
+      // directory as the cwd, so just put something under that.
       nsCOMPtr<nsIFile> profD;
-      nsresult rv = NS_GetSpecialDirectory(NS_OS_TEMP_DIR,
+      nsresult rv = NS_GetSpecialDirectory(NS_OS_CURRENT_PROCESS_DIR,
                                            getter_AddRefs(profD));
       NS_ENSURE_SUCCESS(rv, nullptr);
 

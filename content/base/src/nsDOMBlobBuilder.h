@@ -10,6 +10,15 @@
 
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Attributes.h"
+#include <algorithm>
+
+#define NS_DOMMULTIPARTBLOB_CID { 0x47bf0b43, 0xf37e, 0x49ef, \
+  { 0x81, 0xa0, 0x18, 0xba, 0xc0, 0x57, 0xb5, 0xcc } }
+#define NS_DOMMULTIPARTBLOB_CONTRACTID "@mozilla.org/dom/multipart-blob;1"
+
+#define NS_DOMMULTIPARTFILE_CID { 0xc3361f77, 0x60d1, 0x4ea9, \
+  { 0x94, 0x96, 0xdf, 0x5d, 0x6f, 0xcd, 0xd7, 0x8f } }
+#define NS_DOMMULTIPARTFILE_CONTRACTID "@mozilla.org/dom/multipart-file;1"
 
 class nsDOMMultipartFile : public nsDOMFile,
                            public nsIJSNativeInitializer
@@ -50,23 +59,22 @@ public:
   NS_IMETHOD Initialize(nsISupports* aOwner,
                         JSContext* aCx,
                         JSObject* aObj,
-                        uint32_t aArgc,
-                        jsval* aArgv);
+                        const JS::CallArgs& aArgs) MOZ_OVERRIDE;
 
   typedef nsIDOMBlob* (*UnwrapFuncPtr)(JSContext*, JSObject*);
   nsresult InitBlob(JSContext* aCx,
                     uint32_t aArgc,
-                    jsval* aArgv,
+                    JS::Value* aArgv,
                     UnwrapFuncPtr aUnwrapFunc);
   nsresult InitFile(JSContext* aCx,
                     uint32_t aArgc,
-                    jsval* aArgv);
+                    JS::Value* aArgv);
 
   already_AddRefed<nsIDOMBlob>
-  CreateSlice(uint64_t aStart, uint64_t aLength, const nsAString& aContentType);
+  CreateSlice(uint64_t aStart, uint64_t aLength, const nsAString& aContentType) MOZ_OVERRIDE;
 
-  NS_IMETHOD GetSize(uint64_t*);
-  NS_IMETHOD GetInternalStream(nsIInputStream**);
+  NS_IMETHOD GetSize(uint64_t*) MOZ_OVERRIDE;
+  NS_IMETHOD GetInternalStream(nsIInputStream**) MOZ_OVERRIDE;
 
   static nsresult
   NewFile(const nsAString& aName, nsISupports* *aNewObject);
@@ -86,7 +94,7 @@ public:
   }
 
   virtual const nsTArray<nsCOMPtr<nsIDOMBlob> >*
-  GetSubBlobs() const { return &mBlobs; }
+  GetSubBlobs() const MOZ_OVERRIDE { return &mBlobs; }
 
 protected:
   nsTArray<nsCOMPtr<nsIDOMBlob> > mBlobs;
@@ -126,7 +134,7 @@ protected:
 
     // Start at 1 or we'll loop forever.
     CheckedUint32 bufferLen =
-      NS_MAX<uint32_t>(static_cast<uint32_t>(mDataBufferLen), 1);
+      std::max<uint32_t>(static_cast<uint32_t>(mDataBufferLen), 1);
     while (bufferLen.isValid() && bufferLen.value() < mDataLen + aSize)
       bufferLen *= 2;
 

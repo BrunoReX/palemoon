@@ -34,6 +34,36 @@ let gSyncPane = {
   },
 
   init: function () {
+    // If the Service hasn't finished initializing, wait for it.
+    let xps = Components.classes["@mozilla.org/weave/service;1"]
+                                .getService(Components.interfaces.nsISupports)
+                                .wrappedJSObject;
+
+    if (xps.ready) {
+      this._init();
+      return;
+    }
+
+    let onUnload = function () {
+      window.removeEventListener("unload", onUnload, false);
+      try {
+        Services.obs.removeObserver(onReady, "weave:service:ready");
+      } catch (e) {}
+    };
+
+    let onReady = function () {
+      Services.obs.removeObserver(onReady, "weave:service:ready");
+      window.removeEventListener("unload", onUnload, false);
+      this._init();
+    }.bind(this);
+
+    Services.obs.addObserver(onReady, "weave:service:ready", false);
+    window.addEventListener("unload", onUnload, false);
+
+    xps.ensureLoaded();
+  },
+
+  _init: function () {
     let topics = ["weave:service:login:error",
                   "weave:service:login:finish",
                   "weave:service:start-over",
@@ -86,8 +116,9 @@ let gSyncPane = {
                                   null, null, null, {});
 
       // If the user selects cancel, just bail
-      if (buttonChoice == 1)
+      if (buttonChoice == 1) {
         return;
+      }
     }
 
     Weave.Service.startOver();
@@ -95,22 +126,24 @@ let gSyncPane = {
   },
 
   updatePass: function () {
-    if (Weave.Status.login == Weave.LOGIN_FAILED_LOGIN_REJECTED)
+    if (Weave.Status.login == Weave.LOGIN_FAILED_LOGIN_REJECTED) {
       gSyncUtils.changePassword();
-    else
+    } else {
       gSyncUtils.updatePassphrase();
+    }
   },
 
   resetPass: function () {
-    if (Weave.Status.login == Weave.LOGIN_FAILED_LOGIN_REJECTED)
+    if (Weave.Status.login == Weave.LOGIN_FAILED_LOGIN_REJECTED) {
       gSyncUtils.resetPassword();
-    else
+    } else {
       gSyncUtils.resetPassphrase();
+    }
   },
 
   /**
    * Invoke the Sync setup wizard.
-   * 
+   *
    * @param wizardType
    *        Indicates type of wizard to launch:
    *          null    -- regular set up wizard
@@ -119,9 +152,9 @@ let gSyncPane = {
    */
   openSetup: function (wizardType) {
     let win = Services.wm.getMostRecentWindow("Weave:AccountSetup");
-    if (win)
+    if (win) {
       win.focus();
-    else {
+    } else {
       window.openDialog("chrome://browser/content/sync/setup.xul",
                         "weaveSetup", "centerscreen,chrome,resizable=no",
                         wizardType);
@@ -130,23 +163,26 @@ let gSyncPane = {
 
   openQuotaDialog: function () {
     let win = Services.wm.getMostRecentWindow("Sync:ViewQuota");
-    if (win)
+    if (win) {
       win.focus();
-    else 
+    } else {
       window.openDialog("chrome://browser/content/sync/quota.xul", "",
                         "centerscreen,chrome,dialog,modal");
+    }
   },
 
   openAddDevice: function () {
-    if (!Weave.Utils.ensureMPUnlocked())
+    if (!Weave.Utils.ensureMPUnlocked()) {
       return;
-    
+    }
+
     let win = Services.wm.getMostRecentWindow("Sync:AddDevice");
-    if (win)
+    if (win) {
       win.focus();
-    else 
+    } else {
       window.openDialog("chrome://browser/content/sync/addDevice.xul",
                         "syncAddDevice", "centerscreen,chrome,resizable=no");
+    }
   },
 
   resetSync: function () {

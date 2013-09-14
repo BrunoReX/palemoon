@@ -6,6 +6,7 @@
 #ifndef HTMLFrameSetElement_h
 #define HTMLFrameSetElement_h
 
+#include "mozilla/Attributes.h"
 #include "nsIDOMHTMLFrameSetElement.h"
 #include "nsGenericHTMLElement.h"
 
@@ -95,8 +96,8 @@ public:
   // forward to window that don't come from nsIDOMHTMLFrameSetElement.
 #define EVENT(name_, id_, type_, struct_) /* nothing; handled by the superclass */
 #define FORWARDED_EVENT(name_, id_, type_, struct_)                     \
-  NS_IMETHOD GetOn##name_(JSContext *cx, jsval *vp);                    \
-  NS_IMETHOD SetOn##name_(JSContext *cx, const jsval &v);
+  NS_IMETHOD GetOn##name_(JSContext *cx, JS::Value *vp);                \
+  NS_IMETHOD SetOn##name_(JSContext *cx, const JS::Value &v);
 #define WINDOW_EVENT_HELPER(name_, type_)                               \
   type_* GetOn##name_();                                                \
   void SetOn##name_(type_* handler, ErrorResult& error);
@@ -120,7 +121,7 @@ public:
   }
   virtual nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                            nsIAtom* aPrefix, const nsAString& aValue,
-                           bool aNotify);
+                           bool aNotify) MOZ_OVERRIDE;
 
    /**
     * GetRowSpec is used to get the "rows" spec.
@@ -143,17 +144,16 @@ public:
   virtual bool ParseAttribute(int32_t aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
-                                nsAttrValue& aResult);
+                                nsAttrValue& aResult) MOZ_OVERRIDE;
   virtual nsChangeHint GetAttributeChangeHint(const nsIAtom* aAttribute,
-                                              int32_t aModType) const;
+                                              int32_t aModType) const MOZ_OVERRIDE;
 
-  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
-  virtual nsXPCClassInfo* GetClassInfo();
-  virtual nsIDOMNode* AsDOMNode() { return this; }
+  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const MOZ_OVERRIDE;
+  virtual nsIDOMNode* AsDOMNode() MOZ_OVERRIDE { return this; }
 
 protected:
-  virtual JSObject* WrapNode(JSContext *aCx, JSObject *aScope,
-                             bool *aTriedToWrap) MOZ_OVERRIDE;
+  virtual JSObject* WrapNode(JSContext *aCx,
+                             JS::Handle<JSObject*> aScope) MOZ_OVERRIDE;
 
 private:
   nsresult ParseRowCol(const nsAString& aValue,

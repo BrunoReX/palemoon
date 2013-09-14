@@ -8,6 +8,7 @@
 
 // Keep others in (case-insensitive) order:
 #include "gfxDrawable.h"
+#include "nsCSSAnonBoxes.h"
 #include "nsDisplayList.h"
 #include "nsLayoutUtils.h"
 #include "nsRenderingContext.h"
@@ -104,7 +105,7 @@ private:
     // property set, that would be bad, since then our GetVisualOverflowRect()
     // call would give us the post-effects, and post-transform, overflow rect.
     //
-    NS_ASSERTION(aFrame->GetParent()->GetStyleContext()->GetPseudo() ==
+    NS_ASSERTION(aFrame->GetParent()->StyleContext()->GetPseudo() ==
                    nsCSSAnonBoxes::mozAnonymousBlock,
                  "How did we getting here, then?");
     NS_ASSERTION(!aFrame->Properties().Get(
@@ -148,7 +149,7 @@ nsSVGIntegrationUtils::UsingEffectsForFrame(const nsIFrame* aFrame)
   // does not adversely affect any of our callers. Therefore we don't bother
   // checking the SDL prefs here, since we don't know if we're being called for
   // painting or hit-testing anyway.
-  const nsStyleSVGReset *style = aFrame->GetStyleSVGReset();
+  const nsStyleSVGReset *style = aFrame->StyleSVGReset();
   return (style->mFilter || style->mClipPath || style->mMask);
 }
 
@@ -432,7 +433,7 @@ nsSVGIntegrationUtils::PaintFramesWithEffects(nsRenderingContext* aCtx,
     }
   }
 
-  float opacity = aFrame->GetStyleDisplay()->mOpacity;
+  float opacity = aFrame->StyleDisplay()->mOpacity;
   if (opacity == 0.0f) {
     return;
   }
@@ -465,7 +466,8 @@ nsSVGIntegrationUtils::PaintFramesWithEffects(nsRenderingContext* aCtx,
   nsPoint offset = aBuilder->ToReferenceFrame(firstFrame) - firstFrameOffset;
   nsPoint offsetWithoutSVGGeomFramePos = offset;
   nsPoint svgGeomFramePos;
-  if (aFrame->IsFrameOfType(nsIFrame::eSVGGeometry)) {
+  if (aFrame->IsFrameOfType(nsIFrame::eSVGGeometry) ||
+      aFrame->IsSVGText()) {
     // SVG leaf frames apply their offset themselves, we need to unapply it at
     // various points below to prevent it being double counted.
     svgGeomFramePos = aFrame->GetPosition();

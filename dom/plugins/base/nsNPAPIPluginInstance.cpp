@@ -19,12 +19,12 @@
 #include "nsNPAPIPlugin.h"
 #include "nsNPAPIPluginStreamListener.h"
 #include "nsPluginHost.h"
-#include "nsPluginSafety.h"
 #include "nsPluginLogging.h"
 #include "nsContentUtils.h"
 #include "nsPluginInstanceOwner.h"
 
 #include "nsIDocument.h"
+#include "nsIDocShell.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIScriptContext.h"
 #include "nsDirectoryServiceDefs.h"
@@ -53,7 +53,6 @@ using namespace mozilla;
 
 using namespace mozilla::gl;
 
-typedef nsNPAPIPluginInstance::TextureInfo TextureInfo;
 typedef nsNPAPIPluginInstance::VideoInfo VideoInfo;
 
 class PluginEventRunnable : public nsRunnable
@@ -83,7 +82,9 @@ static nsRefPtr<GLContext> sPluginContext = nullptr;
 static bool EnsureGLContext()
 {
   if (!sPluginContext) {
-    sPluginContext = GLContextProvider::CreateOffscreen(gfxIntSize(16, 16));
+    gfxIntSize dummySize(16, 16);
+    sPluginContext = GLContextProvider::CreateOffscreen(dummySize,
+                                                        GLContext::SurfaceCaps::Any());
   }
 
   return sPluginContext != nullptr;
@@ -101,7 +102,7 @@ public:
   {
   }
 
-  TextureInfo Lock()
+  nsNPAPIPluginInstance::TextureInfo Lock()
   {
     if (!EnsureGLContext()) {
       mTextureInfo.mTexture = 0;
@@ -116,7 +117,7 @@ public:
     return mTextureInfo;
   }
 
-  void Release(TextureInfo& aTextureInfo)
+  void Release(nsNPAPIPluginInstance::TextureInfo& aTextureInfo)
   { 
     mTextureInfo = aTextureInfo;
     mLock.Unlock();
@@ -146,7 +147,7 @@ public:
   }
 
 private:
-  TextureInfo mTextureInfo;
+  nsNPAPIPluginInstance::TextureInfo mTextureInfo;
  
   Mutex mLock;
 };
@@ -254,7 +255,7 @@ nsresult nsNPAPIPluginInstance::Initialize(nsNPAPIPlugin *aPlugin, nsPluginInsta
   mOwner = aOwner;
 
   if (aMIMEType) {
-    mMIMEType = (char*)PR_Malloc(PL_strlen(aMIMEType) + 1);
+    mMIMEType = (char*)PR_Malloc(strlen(aMIMEType) + 1);
     if (mMIMEType) {
       PL_strcpy(mMIMEType, aMIMEType);
     }
@@ -353,10 +354,9 @@ nsNPAPIPluginInstance::GetDOMWindow()
   if (!doc)
     return nullptr;
 
-  nsPIDOMWindow *window = doc->GetWindow();
-  NS_IF_ADDREF(window);
+  nsRefPtr<nsPIDOMWindow> window = doc->GetWindow();
 
-  return window;
+  return window.forget();
 }
 
 nsresult
@@ -958,13 +958,13 @@ GLContext* nsNPAPIPluginInstance::GLContext()
   return sPluginContext;
 }
 
-TextureInfo nsNPAPIPluginInstance::LockContentTexture()
+nsNPAPIPluginInstance::TextureInfo nsNPAPIPluginInstance::LockContentTexture()
 {
   EnsureSharedTexture();
   return mContentTexture->Lock();
 }
 
-void nsNPAPIPluginInstance::ReleaseContentTexture(TextureInfo& aTextureInfo)
+void nsNPAPIPluginInstance::ReleaseContentTexture(nsNPAPIPluginInstance::TextureInfo& aTextureInfo)
 {
   EnsureSharedTexture();
   mContentTexture->Release(aTextureInfo);
@@ -1170,7 +1170,7 @@ nsNPAPIPluginInstance::IsWindowless(bool* isWindowless)
   return NS_OK;
 }
 
-class NS_STACK_CLASS AutoPluginLibraryCall
+class MOZ_STACK_CLASS AutoPluginLibraryCall
 {
 public:
   AutoPluginLibraryCall(nsNPAPIPluginInstance* aThis)
@@ -1414,6 +1414,25 @@ nsNPAPIPluginInstance::PrivateModeStateChanged(bool enabled)
   return (error == NPERR_NO_ERROR) ? NS_OK : NS_ERROR_FAILURE;
 }
 
+nsresult
+nsNPAPIPluginInstance::IsPrivateBrowsing(bool* aEnabled)
+{
+  if (!mOwner)
+    return NS_ERROR_FAILURE;
+
+  nsCOMPtr<nsIDocument> doc;
+  mOwner->GetDocument(getter_AddRefs(doc));
+  NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
+
+  nsCOMPtr<nsPIDOMWindow> domwindow = doc->GetWindow();
+  NS_ENSURE_TRUE(domwindow, NS_ERROR_FAILURE);
+
+  nsCOMPtr<nsIDocShell> docShell = domwindow->GetDocShell();
+  nsCOMPtr<nsILoadContext> loadContext = do_QueryInterface(docShell);
+  *aEnabled = (loadContext && loadContext->UsePrivateBrowsing());
+  return NS_OK;
+}
+
 static void
 PluginTimerCallback(nsITimer *aTimer, void *aClosure)
 {
@@ -1599,7 +1618,8 @@ nsNPAPIPluginInstance::GetJSContext(JSContext* *outContext)
   nsresult rv = mOwner->GetDocument(getter_AddRefs(document));
 
   if (NS_SUCCEEDED(rv) && document) {
-    nsIScriptGlobalObject *global = document->GetScriptGlobalObject();
+    nsCOMPtr<nsIScriptGlobalObject> global =
+      do_QueryInterface(document->GetWindow());
 
     if (global) {
       nsIScriptContext *context = global->GetContext();
@@ -1766,16 +1786,8 @@ nsNPAPIPluginInstance::CheckJavaC2PJSObjectQuirk(uint16_t paramCount,
     return;
   }
 
-  nsRefPtr<nsPluginHost> pluginHost =
-    already_AddRefed<nsPluginHost>(nsPluginHost::GetInst());
+  nsRefPtr<nsPluginHost> pluginHost = nsPluginHost::GetInst();
   if (!pluginHost) {
-    return;
-  }
-
-  bool isClickToPlay;
-  nsAutoCString mimeType(mMIMEType);
-  rv = pluginHost->IsPluginClickToPlayForType(mimeType, &isClickToPlay);
-  if (NS_FAILED(rv) || !isClickToPlay) {
     return;
   }
 
@@ -1789,10 +1801,10 @@ nsNPAPIPluginInstance::CheckJavaC2PJSObjectQuirk(uint16_t paramCount,
   bool haveCodeParam = false;
   bool isCodeParamEmpty = true;
 
-  for (uint16_t i = 0; i < paramCount; ++i) {
-    if (PL_strcasecmp(paramNames[i], "code") == 0) {
+  for (uint16_t i = paramCount; i > 0; --i) {
+    if (PL_strcasecmp(paramNames[i - 1], "code") == 0) {
       haveCodeParam = true;
-      if (PL_strlen(paramValues[i]) > 0) {
+      if (strlen(paramValues[i - 1]) > 0) {
         isCodeParamEmpty = false;
       }
       break;

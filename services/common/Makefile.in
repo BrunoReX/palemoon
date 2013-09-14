@@ -10,20 +10,21 @@ VPATH     = @srcdir@
 include $(DEPTH)/config/autoconf.mk
 
 modules := \
-  async.js \
-  bagheeraclient.js \
   log4moz.js \
-  observers.js \
-  preferences.js \
-  rest.js \
   storageservice.js \
   stringbundle.js \
   tokenserverclient.js \
   utils.js \
   $(NULL)
 
+pp_modules := \
+  async.js \
+  bagheeraclient.js \
+  observers.js \
+  rest.js \
+  $(NULL)
+
 testing_modules := \
-  aitcserver.js \
   bagheeraserver.js \
   logging.js \
   storageserver.js \
@@ -34,8 +35,6 @@ EXTRA_COMPONENTS := \
   servicesComponents.manifest \
   $(NULL)
 
-TEST_DIRS += tests
-
 PREF_JS_EXPORTS = $(srcdir)/services-common.js
 
 MODULES_FILES := $(modules)
@@ -44,6 +43,10 @@ INSTALL_TARGETS += MODULES
 
 TESTING_JS_MODULES := $(addprefix modules-testing/,$(testing_modules))
 TESTING_JS_MODULE_DIR := services-common
+
+PP_JS_MODULES := $(pp_modules)
+PP_JS_MODULES_PATH = $(FINAL_TARGET)/modules/services-common
+PP_TARGETS += PP_JS_MODULES
 
 include $(topsrcdir)/config/rules.mk
 
@@ -57,10 +60,6 @@ server_port := 8080
 storage-server:
 	$(PYTHON) $(srcdir)/tests/run_server.py $(topsrcdir) \
 	  $(MOZ_BUILD_ROOT) run_storage_server.js --port $(server_port)
-
-aitc-server:
-	$(PYTHON) $(srcdir)/tests/run_server.py $(topsrcdir) \
-		$(MOZ_BUILD_ROOT) run_aitc_server.js --port $(server_port)
 
 bagheera-server:
 	$(PYTHON) $(srcdir)/tests/run_server.py $(topsrcdir) \

@@ -40,9 +40,7 @@
 #include "gfxUserFontSet.h"
 #include "nsUnicodeProperties.h"
 #include "harfbuzz/hb.h"
-#ifdef MOZ_GRAPHITE
 #include "gfxGraphiteShaper.h"
-#endif
 
 #include "nsUnicodeRange.h"
 #include "nsServiceManagerUtils.h"
@@ -63,6 +61,12 @@
 
 #ifdef MOZ_WIDGET_ANDROID
 #include "TexturePoolOGL.h"
+#endif
+
+#ifdef USE_SKIA_GPU
+#include "skia/GrContext.h"
+#include "skia/GrGLInterface.h"
+#include "GLContextSkia.h"
 #endif
 
 #include "mozilla/Preferences.h"
@@ -91,6 +95,8 @@ static int gCMSIntent = -2;
 
 static void ShutdownCMS();
 static void MigratePrefs();
+
+static bool sDrawLayerBorders = false;
 
 #include "mozilla/gfx/2D.h"
 using namespace mozilla::gfx;
@@ -129,7 +135,6 @@ SRGBOverrideObserver::Observe(nsISupports *aSubject,
 }
 
 #define GFX_DOWNLOADABLE_FONTS_ENABLED "gfx.downloadable_fonts.enabled"
-#define GFX_DOWNLOADABLE_FONTS_SANITIZE "gfx.downloadable_fonts.sanitize"
 
 #define GFX_PREF_HARFBUZZ_SCRIPTS "gfx.font_rendering.harfbuzz.scripts"
 #define HARFBUZZ_SCRIPTS_DEFAULT  mozilla::unicode::SHAPING_DEFAULT
@@ -137,9 +142,7 @@ SRGBOverrideObserver::Observe(nsISupports *aSubject,
 
 #define GFX_PREF_OPENTYPE_SVG "gfx.font_rendering.opentype_svg.enabled"
 
-#ifdef MOZ_GRAPHITE
 #define GFX_PREF_GRAPHITE_SHAPING "gfx.font_rendering.graphite.enabled"
-#endif
 
 #define BIDI_NUMERAL_PREF "bidi.numeral"
 
@@ -174,7 +177,7 @@ FontPrefsObserver::Observe(nsISupports *aSubject,
     return NS_OK;
 }
 
-class OrientationSyncPrefsObserver : public nsIObserver
+class OrientationSyncPrefsObserver MOZ_FINAL : public nsIObserver
 {
 public:
     NS_DECL_ISUPPORTS
@@ -240,12 +243,10 @@ gfxPlatform::gfxPlatform()
 {
     mUseHarfBuzzScripts = UNINITIALIZED_VALUE;
     mAllowDownloadableFonts = UNINITIALIZED_VALUE;
-    mDownloadableFontsSanitize = UNINITIALIZED_VALUE;
     mFallbackUsesCmaps = UNINITIALIZED_VALUE;
 
-#ifdef MOZ_GRAPHITE
     mGraphiteShapingEnabled = UNINITIALIZED_VALUE;
-#endif
+    mOpenTypeSVGEnabled = UNINITIALIZED_VALUE;
     mBidiNumeralOption = UNINITIALIZED_VALUE;
 
     uint32_t canvasMask = (1 << BACKEND_CAIRO) | (1 << BACKEND_SKIA);
@@ -260,6 +261,27 @@ gfxPlatform::GetPlatform()
         Init();
     }
     return gPlatform;
+}
+
+int RecordingPrefChanged(const char *aPrefName, void *aClosure)
+{
+  if (Preferences::GetBool("gfx.2d.recording", false)) {
+    nsAutoCString fileName;
+    nsAdoptingString prefFileName = Preferences::GetString("gfx.2d.recordingfile");
+
+    if (prefFileName) {
+      fileName.Append(NS_ConvertUTF16toUTF8(prefFileName));
+    } else {
+      fileName.AssignLiteral("browserrecording.aer");
+    }
+
+    gPlatform->mRecorder = Factory::CreateEventRecorderForFile(fileName.BeginReading());
+    Factory::SetGlobalEventRecorder(gPlatform->mRecorder);
+  } else {
+    Factory::SetGlobalEventRecorder(nullptr);
+  }
+
+  return 0;
 }
 
 void
@@ -277,26 +299,6 @@ gfxPlatform::Init()
     sTextrunuiLog = PR_NewLogModule("textrunui");;
     sCmapDataLog = PR_NewLogModule("cmapdata");;
 #endif
-
-    bool useOffMainThreadCompositing = false;
-#ifdef MOZ_X11
-    // On X11 platforms only use OMTC if firefox was initalized with thread-safe
-    // X11 (else it would crash).
-    useOffMainThreadCompositing = (PR_GetEnv("MOZ_USE_OMTC") != NULL);
-#else
-    useOffMainThreadCompositing = Preferences::GetBool(
-          "layers.offmainthreadcomposition.enabled",
-          false);
-#endif
-
-    if (useOffMainThreadCompositing && (XRE_GetProcessType() ==
-                                        GeckoProcessType_Default)) {
-        CompositorParent::StartUp();
-        if (Preferences::GetBool("layers.async-video.enabled",false)) {
-            ImageBridgeChild::StartUp();
-        }
-
-    }
 
     /* Initialize the GfxInfo service.
      * Note: we can't call functions on GfxInfo that depend
@@ -328,6 +330,19 @@ gfxPlatform::Init()
 #ifdef DEBUG
     mozilla::gl::GLContext::StaticInit();
 #endif
+
+    bool useOffMainThreadCompositing = GetPrefLayersOffMainThreadCompositionEnabled() ||
+        Preferences::GetBool("browser.tabs.remote", false);
+    useOffMainThreadCompositing &= GetPlatform()->SupportsOffMainThreadCompositing();
+
+    if (useOffMainThreadCompositing && (XRE_GetProcessType() ==
+                                        GeckoProcessType_Default)) {
+        CompositorParent::StartUp();
+        if (Preferences::GetBool("layers.async-video.enabled",false)) {
+            ImageBridgeChild::StartUp();
+        }
+
+    }
 
     nsresult rv;
 
@@ -380,12 +395,15 @@ gfxPlatform::Init()
     nsCOMPtr<nsISupports> forceReg
         = do_CreateInstance("@mozilla.org/gfx/init;1");
 
-    if (Preferences::GetBool("gfx.2d.recording", false)) {
-      gPlatform->mRecorder = Factory::CreateEventRecorderForFile("browserrecording.aer");
-      Factory::SetGlobalEventRecorder(gPlatform->mRecorder);
-    }
+    Preferences::RegisterCallbackAndCall(RecordingPrefChanged, "gfx.2d.recording", nullptr);
 
     gPlatform->mOrientationSyncMillis = Preferences::GetUint("layers.orientation.sync.timeout", (uint32_t)0);
+
+    mozilla::Preferences::AddBoolVarCache(&sDrawLayerBorders,
+                                          "layers.draw-borders",
+                                          false);
+
+    CreateCMSOutputProfile();
 }
 
 void
@@ -395,9 +413,7 @@ gfxPlatform::Shutdown()
     // started up. That's OK, they can handle it.
     gfxFontCache::Shutdown();
     gfxFontGroup::Shutdown();
-#ifdef MOZ_GRAPHITE
     gfxGraphiteShaper::Shutdown();
-#endif
 #if defined(XP_MACOSX) || defined(XP_WIN) // temporary, until this is implemented on others
     gfxPlatformFontList::Shutdown();
 #endif
@@ -500,9 +516,7 @@ gfxPlatform::OptimizeImage(gfxImageSurface *aSurface,
     tmpCtx.SetSource(aSurface);
     tmpCtx.Paint();
 
-    gfxASurface *ret = optSurface;
-    NS_ADDREF(ret);
-    return ret;
+    return optSurface.forget();
 }
 
 cairo_user_data_key_t kDrawTarget;
@@ -535,6 +549,7 @@ void SourceBufferDestroy(void *srcSurfUD)
   delete static_cast<SourceSurfaceUserData*>(srcSurfUD);
 }
 
+#if MOZ_TREE_CAIRO
 void SourceSnapshotDetached(cairo_surface_t *nullSurf)
 {
   gfxImageSurface* origSurf =
@@ -542,6 +557,13 @@ void SourceSnapshotDetached(cairo_surface_t *nullSurf)
 
   origSurf->SetData(&kSourceSurface, NULL, NULL);
 }
+#else
+void SourceSnapshotDetached(void *nullSurf)
+{
+  gfxImageSurface* origSurf = static_cast<gfxImageSurface*>(nullSurf);
+  origSurf->SetData(&kSourceSurface, NULL, NULL);
+}
+#endif
 
 RefPtr<SourceSurface>
 gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurface)
@@ -654,6 +676,7 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
 
     }
 
+#if MOZ_TREE_CAIRO
     cairo_surface_t *nullSurf =
 	cairo_null_surface_create(CAIRO_CONTENT_COLOR_ALPHA);
     cairo_surface_set_user_data(nullSurf,
@@ -662,6 +685,9 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
                                 NULL);
     cairo_surface_attach_snapshot(imgSurface->CairoSurface(), nullSurf, SourceSnapshotDetached);
     cairo_surface_destroy(nullSurf);
+#else
+    cairo_surface_set_mime_data(imgSurface->CairoSurface(), "mozilla/magic", (const unsigned char*) "data", 4, SourceSnapshotDetached, imgSurface.get());
+#endif
   }
 
   SourceSurfaceUserData *srcSurfUD = new SourceSurfaceUserData;
@@ -698,6 +724,23 @@ DataDrawTargetDestroy(void *aTarget)
   static_cast<DrawTarget*>(aTarget)->Release();
 }
 
+bool
+gfxPlatform::SupportsAzureContentForDrawTarget(DrawTarget* aTarget)
+{
+  if (!aTarget) {
+    return false;
+  }
+
+  return (1 << aTarget->GetType()) & mContentBackendBitmask;
+}
+
+bool
+gfxPlatform::UseAcceleratedSkiaCanvas()
+{
+  return Preferences::GetBool("gfx.canvas.azure.accelerated", false) &&
+         mPreferredCanvasBackend == BACKEND_SKIA;
+}
+
 already_AddRefed<gfxASurface>
 gfxPlatform::GetThebesSurfaceForDrawTarget(DrawTarget *aTarget)
 {
@@ -716,7 +759,7 @@ gfxPlatform::GetThebesSurfaceForDrawTarget(DrawTarget *aTarget)
   RefPtr<DataSourceSurface> data = source->GetDataSurface();
 
   if (!data) {
-    return NULL;
+    return nullptr;
   }
 
   IntSize size = data->GetSize();
@@ -749,7 +792,8 @@ gfxPlatform::CreateDrawTargetForBackend(BackendType aBackend, const IntSize& aSi
   if (aBackend == BACKEND_CAIRO) {
     nsRefPtr<gfxASurface> surf = CreateOffscreenSurface(ThebesIntSize(aSize),
                                                         ContentForFormat(aFormat));
-    if (!surf) {
+    if (!surf || surf->CairoStatus()) {
+//    if (!surf) {
       return NULL;
     }
 
@@ -778,6 +822,27 @@ gfxPlatform::CreateDrawTargetForData(unsigned char* aData, const IntSize& aSize,
 {
   NS_ASSERTION(mPreferredCanvasBackend, "No backend.");
   return Factory::CreateDrawTargetForData(mPreferredCanvasBackend, aData, aSize, aStride, aFormat);
+}
+
+RefPtr<DrawTarget>
+gfxPlatform::CreateDrawTargetForFBO(unsigned int aFBOID, mozilla::gl::GLContext* aGLContext, const IntSize& aSize, SurfaceFormat aFormat)
+{
+  NS_ASSERTION(mPreferredCanvasBackend, "No backend.");
+#ifdef USE_SKIA_GPU
+  if (mPreferredCanvasBackend == BACKEND_SKIA) {
+    static uint8_t sGrContextKey;
+    GrContext* ctx = reinterpret_cast<GrContext*>(aGLContext->GetUserData(&sGrContextKey));
+    if (!ctx) {
+      GrGLInterface* grInterface = CreateGrInterfaceFromGLContext(aGLContext);
+      ctx = GrContext::Create(kOpenGL_Shaders_GrEngine, (GrPlatform3DContext)grInterface);
+      aGLContext->SetUserData(&sGrContextKey, ctx);
+    }
+
+    // Unfortunately Factory can't depend on GLContext, so it needs to be passed a GrContext instead
+    return Factory::CreateSkiaDrawTargetForFBO(aFBOID, ctx, aSize, aFormat);
+  }
+#endif
+  return nullptr;
 }
 
 /* static */ BackendType
@@ -820,17 +885,6 @@ gfxPlatform::DownloadableFontsEnabled()
 }
 
 bool
-gfxPlatform::SanitizeDownloadedFonts()
-{
-    if (mDownloadableFontsSanitize == UNINITIALIZED_VALUE) {
-        mDownloadableFontsSanitize =
-            Preferences::GetBool(GFX_DOWNLOADABLE_FONTS_SANITIZE, true);
-    }
-
-    return mDownloadableFontsSanitize;
-}
-
-bool
 gfxPlatform::UseCmapsDuringSystemFallback()
 {
     if (mFallbackUsesCmaps == UNINITIALIZED_VALUE) {
@@ -841,7 +895,17 @@ gfxPlatform::UseCmapsDuringSystemFallback()
     return mFallbackUsesCmaps;
 }
 
-#ifdef MOZ_GRAPHITE
+bool
+gfxPlatform::OpenTypeSVGEnabled()
+{
+    if (mOpenTypeSVGEnabled == UNINITIALIZED_VALUE) {
+        mOpenTypeSVGEnabled =
+            Preferences::GetBool(GFX_PREF_OPENTYPE_SVG, false);
+    }
+
+    return mOpenTypeSVGEnabled > 0;
+}
+
 bool
 gfxPlatform::UseGraphiteShaping()
 {
@@ -852,7 +916,6 @@ gfxPlatform::UseGraphiteShaping()
 
     return mGraphiteShapingEnabled;
 }
-#endif
 
 bool
 gfxPlatform::UseHarfBuzzForScript(int32_t aScriptCode)
@@ -1077,6 +1140,13 @@ gfxPlatform::IsLangCJK(eFontPrefLang aLang)
     }
 }
 
+bool
+gfxPlatform::DrawLayerBorders()
+{
+    return sDrawLayerBorders;
+}
+
+
 void
 gfxPlatform::GetLangPrefs(eFontPrefLang aPrefLangs[], uint32_t &aLen, eFontPrefLang aCharLang, eFontPrefLang aPageLang)
 {
@@ -1223,6 +1293,7 @@ gfxPlatform::InitBackendPrefs(uint32_t aCanvasBitmask, uint32_t aContentBitmask)
     }
     mFallbackCanvasBackend = GetCanvasBackendPref(aCanvasBitmask & ~(1 << mPreferredCanvasBackend));
     mContentBackend = GetContentBackendPref(aContentBitmask);
+    mContentBackendBitmask = aContentBitmask;
 }
 
 /* static */ BackendType
@@ -1356,13 +1427,6 @@ gfxPlatform::GetCMSMode()
     return gCMSMode;
 }
 
-/* Chris Murphy (CM consultant) suggests this as a default in the event that we
-cannot reproduce relative + Black Point Compensation.  BPC brings an
-unacceptable performance overhead, so we go with perceptual. */
-#define INTENT_DEFAULT QCMS_INTENT_PERCEPTUAL
-#define INTENT_MIN 0
-#define INTENT_MAX 3
-
 int
 gfxPlatform::GetRenderingIntent()
 {
@@ -1372,7 +1436,7 @@ gfxPlatform::GetRenderingIntent()
         int32_t pIntent;
         if (NS_SUCCEEDED(Preferences::GetInt("gfx.color_management.rendering_intent", &pIntent))) {
             /* If the pref is within range, use it as an override. */
-            if ((pIntent >= INTENT_MIN) && (pIntent <= INTENT_MAX)) {
+            if ((pIntent >= QCMS_INTENT_MIN) && (pIntent <= QCMS_INTENT_MAX)) {
                 gCMSIntent = pIntent;
             }
             /* If the pref is out of range, use embedded profile. */
@@ -1382,7 +1446,7 @@ gfxPlatform::GetRenderingIntent()
         }
         /* If we didn't get a valid intent from prefs, use the default. */
         else {
-            gCMSIntent = INTENT_DEFAULT;
+            gCMSIntent = QCMS_INTENT_DEFAULT;
         }
     }
     return gCMSIntent;
@@ -1424,8 +1488,8 @@ gfxPlatform::GetPlatformCMSOutputProfile()
     return nullptr;
 }
 
-qcms_profile *
-gfxPlatform::GetCMSOutputProfile()
+void
+gfxPlatform::CreateCMSOutputProfile()
 {
     if (!gCMSOutputProfile) {
         /* Determine if we're using the internal override to force sRGB as
@@ -1467,7 +1531,11 @@ gfxPlatform::GetCMSOutputProfile()
            bug 444661 for details. */
         qcms_profile_precache_output_transform(gCMSOutputProfile);
     }
+}
 
+qcms_profile *
+gfxPlatform::GetCMSOutputProfile()
+{
     return gCMSOutputProfile;
 }
 
@@ -1619,11 +1687,8 @@ gfxPlatform::FontsPrefsChanged(const char *aPref)
     NS_ASSERTION(aPref != nullptr, "null preference");
     if (!strcmp(GFX_DOWNLOADABLE_FONTS_ENABLED, aPref)) {
         mAllowDownloadableFonts = UNINITIALIZED_VALUE;
-    } else if (!strcmp(GFX_DOWNLOADABLE_FONTS_SANITIZE, aPref)) {
-        mDownloadableFontsSanitize = UNINITIALIZED_VALUE;
     } else if (!strcmp(GFX_PREF_FALLBACK_USE_CMAPS, aPref)) {
         mFallbackUsesCmaps = UNINITIALIZED_VALUE;
-#ifdef MOZ_GRAPHITE
     } else if (!strcmp(GFX_PREF_GRAPHITE_SHAPING, aPref)) {
         mGraphiteShapingEnabled = UNINITIALIZED_VALUE;
         gfxFontCache *fontCache = gfxFontCache::GetCache();
@@ -1631,7 +1696,6 @@ gfxPlatform::FontsPrefsChanged(const char *aPref)
             fontCache->AgeAllGenerations();
             fontCache->FlushShapedWordCaches();
         }
-#endif
     } else if (!strcmp(GFX_PREF_HARFBUZZ_SCRIPTS, aPref)) {
         mUseHarfBuzzScripts = UNINITIALIZED_VALUE;
         gfxFontCache *fontCache = gfxFontCache::GetCache();
@@ -1642,6 +1706,7 @@ gfxPlatform::FontsPrefsChanged(const char *aPref)
     } else if (!strcmp(BIDI_NUMERAL_PREF, aPref)) {
         mBidiNumeralOption = UNINITIALIZED_VALUE;
     } else if (!strcmp(GFX_PREF_OPENTYPE_SVG, aPref)) {
+        mOpenTypeSVGEnabled = UNINITIALIZED_VALUE;
         gfxFontCache::GetCache()->AgeAllGenerations();
     }
 }
@@ -1736,4 +1801,75 @@ uint32_t
 gfxPlatform::GetOrientationSyncMillis() const
 {
   return mOrientationSyncMillis;
+}
+
+/**
+ * There are a number of layers acceleration (or layers in general) preferences
+ * that should be consistent for the lifetime of the application (bug 840967).
+ * As such, we will evaluate them all as soon as one of them is evaluated
+ * and remember the values.  Changing these preferences during the run will
+ * not have any effect until we restart.
+ */
+static bool sPrefLayersOffMainThreadCompositionEnabled = false;
+static bool sPrefLayersOffMainThreadCompositionTestingEnabled = false;
+static bool sPrefLayersOffMainThreadCompositionForceEnabled = false;
+static bool sPrefLayersAccelerationForceEnabled = false;
+static bool sPrefLayersAccelerationDisabled = false;
+static bool sPrefLayersPreferOpenGL = false;
+static bool sPrefLayersPreferD3D9 = false;
+
+void InitLayersAccelerationPrefs()
+{
+  static bool sLayersAccelerationPrefsInitialized = false;
+  if (!sLayersAccelerationPrefsInitialized)
+  {
+    sPrefLayersOffMainThreadCompositionEnabled = Preferences::GetBool("layers.offmainthreadcomposition.enabled", false);
+    sPrefLayersOffMainThreadCompositionTestingEnabled = Preferences::GetBool("layers.offmainthreadcomposition.testing.enabled", false);
+    sPrefLayersOffMainThreadCompositionForceEnabled = Preferences::GetBool("layers.offmainthreadcomposition.force-enabled", false);
+    sPrefLayersAccelerationForceEnabled = Preferences::GetBool("layers.acceleration.force-enabled", false);
+    sPrefLayersAccelerationDisabled = Preferences::GetBool("layers.acceleration.disabled", false);
+    sPrefLayersPreferOpenGL = Preferences::GetBool("layers.prefer-opengl", false);
+    sPrefLayersPreferD3D9 = Preferences::GetBool("layers.prefer-d3d9", false);
+
+    sLayersAccelerationPrefsInitialized = true;
+  }
+}
+
+bool gfxPlatform::GetPrefLayersOffMainThreadCompositionEnabled()
+{
+  InitLayersAccelerationPrefs();
+  return sPrefLayersOffMainThreadCompositionEnabled ||
+         sPrefLayersOffMainThreadCompositionForceEnabled ||
+         sPrefLayersOffMainThreadCompositionTestingEnabled;
+}
+
+bool gfxPlatform::GetPrefLayersOffMainThreadCompositionForceEnabled()
+{
+  InitLayersAccelerationPrefs();
+  return sPrefLayersOffMainThreadCompositionForceEnabled;
+}
+
+bool gfxPlatform::GetPrefLayersAccelerationForceEnabled()
+{
+  InitLayersAccelerationPrefs();
+  return sPrefLayersAccelerationForceEnabled;
+}
+
+bool
+gfxPlatform::GetPrefLayersAccelerationDisabled()
+{
+  InitLayersAccelerationPrefs();
+  return sPrefLayersAccelerationDisabled;
+}
+
+bool gfxPlatform::GetPrefLayersPreferOpenGL()
+{
+  InitLayersAccelerationPrefs();
+  return sPrefLayersPreferOpenGL;
+}
+
+bool gfxPlatform::GetPrefLayersPreferD3D9()
+{
+  InitLayersAccelerationPrefs();
+  return sPrefLayersPreferD3D9;
 }

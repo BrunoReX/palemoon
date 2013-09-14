@@ -27,6 +27,7 @@
 #include "nsIMEStateManager.h"
 #include "nsIObjectFrame.h"
 #include "mozilla/dom/Element.h"
+#include <algorithm>
 
 using namespace mozilla::dom;
 
@@ -186,7 +187,7 @@ static uint32_t CountNewlinesInXPLength(nsIContent* aContent,
   NS_ABORT_IF_FALSE(
     (aXPLength == UINT32_MAX || aXPLength <= text->GetLength()),
     "aXPLength is out-of-bounds");
-  const uint32_t length = NS_MIN(aXPLength, text->GetLength());
+  const uint32_t length = std::min(aXPLength, text->GetLength());
   uint32_t newlines = 0;
   for (uint32_t i = 0; i < length; ++i) {
     if (text->CharAt(i) == '\n') {
@@ -247,7 +248,7 @@ nsContentEventHandler::GetNativeTextLength(nsIContent* aContent, uint32_t aMaxLe
     const nsTextFragment* text = aContent->GetText();
     if (!text)
       return 0;
-    uint32_t length = NS_MIN(text->GetLength(), aMaxLength);
+    uint32_t length = std::min(text->GetLength(), aMaxLength);
     return length + textLengthDifference;
   } else if (IsContentBR(aContent)) {
 #if defined(XP_WIN)
@@ -514,7 +515,7 @@ nsContentEventHandler::OnQueryTextContent(nsQueryContentEvent* aEvent)
   NS_ASSERTION(aEvent->mReply.mString.IsEmpty(),
                "The reply string must be empty");
 
-  nsRefPtr<nsRange> range = new nsRange();
+  nsRefPtr<nsRange> range = new nsRange(mRootContent);
   rv = SetRangeFromFlatTextOffset(range, aEvent->mInput.mOffset,
                                   aEvent->mInput.mLength, false);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -571,7 +572,7 @@ nsContentEventHandler::OnQueryTextRect(nsQueryContentEvent* aEvent)
   if (NS_FAILED(rv))
     return rv;
 
-  nsRefPtr<nsRange> range = new nsRange();
+  nsRefPtr<nsRange> range = new nsRange(mRootContent);
   rv = SetRangeFromFlatTextOffset(range, aEvent->mInput.mOffset,
                                   aEvent->mInput.mLength, true);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -700,6 +701,13 @@ nsContentEventHandler::OnQueryCaretRect(nsQueryContentEvent* aEvent)
     uint32_t offset;
     rv = GetFlatTextOffsetOfRange(mRootContent, mFirstSelectedRange, &offset);
     NS_ENSURE_SUCCESS(rv, rv);
+    // strip out native new lines, we want the non-native offset. The offsets
+    // handed in here are from selection, caretPositionFromPoint, and editable
+    // element offset properties. We need to match those or things break. 
+    nsINode* startNode = mFirstSelectedRange->GetStartParent();
+    if (startNode && startNode->IsNodeOfType(nsINode::eTEXT)) {
+      offset = ConvertToXPOffset(static_cast<nsIContent*>(startNode), offset);
+    }
     if (offset == aEvent->mInput.mOffset) {
       nsRect rect;
       nsIFrame* caretFrame = caret->GetGeometry(mSelection, &rect);
@@ -715,7 +723,7 @@ nsContentEventHandler::OnQueryCaretRect(nsQueryContentEvent* aEvent)
   }
 
   // Otherwise, we should set the guessed caret rect.
-  nsRefPtr<nsRange> range = new nsRange();
+  nsRefPtr<nsRange> range = new nsRange(mRootContent);
   rv = SetRangeFromFlatTextOffset(range, aEvent->mInput.mOffset, 0, true);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -898,9 +906,10 @@ nsContentEventHandler::GetFlatTextOffsetOfRange(nsIContent* aRootContent,
                                                 int32_t aNodeOffset,
                                                 uint32_t* aNativeOffset)
 {
+  NS_ENSURE_STATE(aRootContent);
   NS_ASSERTION(aNativeOffset, "param is invalid");
 
-  nsRefPtr<nsRange> prev = new nsRange();
+  nsRefPtr<nsRange> prev = new nsRange(aRootContent);
   nsCOMPtr<nsIDOMNode> rootDOMNode(do_QueryInterface(aRootContent));
   prev->SetStart(rootDOMNode, 0);
 
@@ -1010,7 +1019,7 @@ static void AdjustRangeForSelection(nsIContent* aRoot,
     brContent = node->GetChildAt(--offset - 1);
   }
   *aNode = node;
-  *aOffset = NS_MAX(offset, 0);
+  *aOffset = std::max(offset, 0);
 }
 
 nsresult
@@ -1032,7 +1041,7 @@ nsContentEventHandler::OnSelectionEvent(nsSelectionEvent* aEvent)
   }
 
   // Get range from offset and length
-  nsRefPtr<nsRange> range = new nsRange();
+  nsRefPtr<nsRange> range = new nsRange(mRootContent);
   NS_ENSURE_TRUE(range, NS_ERROR_OUT_OF_MEMORY);
   rv = SetRangeFromFlatTextOffset(range, aEvent->mOffset, aEvent->mLength,
                                   aEvent->mExpandToClusterBoundary);

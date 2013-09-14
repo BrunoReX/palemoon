@@ -10,12 +10,18 @@
 #include "nsCOMPtr.h"
 #include "nsEvent.h"
 
-class nsPresContext;
+class nsEventTargetChainItem;
 class nsIDOMEvent;
 class nsIScriptGlobalObject;
-class nsIDOMEventTarget;
-class nsEventTargetChainItem;
+class nsPresContext;
+
 template<class E> class nsCOMArray;
+
+namespace mozilla {
+namespace dom {
+class EventTarget;
+}
+}
 
 /**
  * About event dispatching:
@@ -166,13 +172,13 @@ public:
   /**
    * Parent item in the event target chain.
    */
-  nsIDOMEventTarget*   mParentTarget;
+  mozilla::dom::EventTarget* mParentTarget;
 
   /**
    * If the event needs to be retargeted, this is the event target,
    * which should be used when the event is handled at mParentTarget.
    */
-  nsIDOMEventTarget*   mEventTargetAtParent;
+  mozilla::dom::EventTarget* mEventTargetAtParent;
 };
 
 class nsEventChainPostVisitor : public nsEventChainVisitor {
@@ -189,7 +195,7 @@ public:
  * before handling the system event group.
  * This is used in nsPresShell.
  */
-class NS_STACK_CLASS nsDispatchingCallback {
+class MOZ_STACK_CLASS nsDispatchingCallback {
 public:
   virtual void HandleEvent(nsEventChainPostVisitor& aVisitor) = 0;
 };
@@ -202,7 +208,7 @@ class nsEventDispatcher
 {
 public:
   /**
-   * aTarget should QI to nsIDOMEventTarget.
+   * aTarget should QI to EventTarget.
    * If the target of aEvent is set before calling this method, the target of 
    * aEvent is used as the target (unless there is event
    * retargeting) and the originalTarget of the DOM Event.
@@ -223,7 +229,7 @@ public:
                            nsIDOMEvent* aDOMEvent = nullptr,
                            nsEventStatus* aEventStatus = nullptr,
                            nsDispatchingCallback* aCallback = nullptr,
-                           nsCOMArray<nsIDOMEventTarget>* aTargets = nullptr);
+                           nsCOMArray<mozilla::dom::EventTarget>* aTargets = nullptr);
 
   /**
    * Dispatches an event.
@@ -241,7 +247,8 @@ public:
   /**
    * Creates a DOM Event.
    */
-  static nsresult CreateEvent(nsPresContext* aPresContext,
+  static nsresult CreateEvent(mozilla::dom::EventTarget* aOwner,
+                              nsPresContext* aPresContext,
                               nsEvent* aEvent,
                               const nsAString& aEventType,
                               nsIDOMEvent** aDOMEvent);

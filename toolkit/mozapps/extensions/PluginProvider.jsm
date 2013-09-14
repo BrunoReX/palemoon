@@ -295,17 +295,57 @@ function PluginWrapper(aId, aName, aDescription, aTags) {
 
   this.__defineGetter__("isActive", function() !aTags[0].blocklisted && !aTags[0].disabled);
   this.__defineGetter__("appDisabled", function() aTags[0].blocklisted);
-  this.__defineGetter__("userDisabled", function() aTags[0].disabled);
-  this.__defineSetter__("userDisabled", function(aVal) {
-    if (aTags[0].disabled == aVal)
-      return;
 
-    for (let tag of aTags)
-      tag.disabled = aVal;
-    AddonManagerPrivate.callAddonListeners(aVal ? "onDisabling" : "onEnabling", this, false);
-    AddonManagerPrivate.callAddonListeners(aVal ? "onDisabled" : "onEnabled", this);
+  this.__defineGetter__("userDisabled", function() {
+    if (aTags[0].disabled)
+      return true;
+
+    if ((Services.prefs.getBoolPref("plugins.click_to_play") && aTags[0].clicktoplay) ||
+        this.blocklistState == Ci.nsIBlocklistService.STATE_VULNERABLE_UPDATE_AVAILABLE ||
+        this.blocklistState == Ci.nsIBlocklistService.STATE_VULNERABLE_NO_UPDATE)
+      return AddonManager.STATE_ASK_TO_ACTIVATE;
+
+    return false;
+  });
+
+  this.__defineSetter__("userDisabled", function(aVal) {
+    let previousVal = this.userDisabled;
+    if (aVal === previousVal)
+      return aVal;
+
+    for (let tag of aTags) {
+      if (aVal === true)
+        tag.enabledState = Ci.nsIPluginTag.STATE_DISABLED;
+      else if (aVal === false)
+        tag.enabledState = Ci.nsIPluginTag.STATE_ENABLED;
+      else if (aVal == AddonManager.STATE_ASK_TO_ACTIVATE)
+        tag.enabledState = Ci.nsIPluginTag.STATE_CLICKTOPLAY;
+    }
+
+    // If 'userDisabled' was 'true' and we're going to a state that's not
+    // that, we're enabling, so call those listeners.
+    if (previousVal === true && aVal !== true) {
+      AddonManagerPrivate.callAddonListeners("onEnabling", this, false);
+      AddonManagerPrivate.callAddonListeners("onEnabled", this);
+    }
+
+    // If 'userDisabled' was not 'true' and we're going to a state where
+    // it is, we're disabling, so call those listeners.
+    if (previousVal !== true && aVal === true) {
+      AddonManagerPrivate.callAddonListeners("onDisabling", this, false);
+      AddonManagerPrivate.callAddonListeners("onDisabled", this);
+    }
+
+    // If the 'userDisabled' value involved AddonManager.STATE_ASK_TO_ACTIVATE,
+    // call the onPropertyChanged listeners.
+    if (previousVal == AddonManager.STATE_ASK_TO_ACTIVATE ||
+        aVal == AddonManager.STATE_ASK_TO_ACTIVATE) {
+      AddonManagerPrivate.callAddonListeners("onPropertyChanged", this, ["userDisabled"]);
+    }
+
     return aVal;
   });
+
 
   this.__defineGetter__("blocklistState", function() {
     let bs = Cc["@mozilla.org/extensions/blocklist;1"].
@@ -353,11 +393,28 @@ function PluginWrapper(aId, aName, aDescription, aTags) {
     return libs;
   });
 
+  this.__defineGetter__("pluginFullpath", function() {
+    let paths = [];
+    for (let tag of aTags)
+      paths.push(tag.fullpath);
+    return paths;
+  })
+
   this.__defineGetter__("pluginMimeTypes", function() {
     let types = [];
-    for (let tag of aTags)
-      for (let type of tag.getMimeTypes({}))
+    for (let tag of aTags) {
+      let mimeTypes = tag.getMimeTypes({});
+      let mimeDescriptions = tag.getMimeDescriptions({});
+      let extensions = tag.getExtensions({});
+      for (let i = 0; i < mimeTypes.length; i++) {
+        let type = {};
+        type.type = mimeTypes[i];
+        type.description = mimeDescriptions[i];
+        type.suffixes = extensions[i];
+
         types.push(type);
+      }
+    }
     return types;
   });
 
@@ -375,18 +432,23 @@ function PluginWrapper(aId, aName, aDescription, aTags) {
     let path = aTags[0].fullpath;
     // Plugins inside the application directory are in the application scope
     let dir = Services.dirsvc.get("APlugns", Ci.nsIFile);
-    if (path.substring(0, dir.path.length) == dir.path)
+    if (path.startsWith(dir.path))
       return AddonManager.SCOPE_APPLICATION;
 
     // Plugins inside the profile directory are in the profile scope
     dir = Services.dirsvc.get("ProfD", Ci.nsIFile);
-    if (path.substring(0, dir.path.length) == dir.path)
+    if (path.startsWith(dir.path))
       return AddonManager.SCOPE_PROFILE;
 
-    // Plugins anywhere else in the user's home are in the user scope
-    dir = Services.dirsvc.get("Home", Ci.nsIFile);
-    if (path.substring(0, dir.path.length) == dir.path)
-      return AddonManager.SCOPE_USER;
+    // Plugins anywhere else in the user's home are in the user scope,
+    // but not all platforms have a home directory.
+    try {
+      dir = Services.dirsvc.get("Home", Ci.nsIFile);
+      if (path.startsWith(dir.path))
+        return AddonManager.SCOPE_USER;
+    } catch (e if (e.result && e.result == Components.results.NS_ERROR_FAILURE)) {
+      // Do nothing: missing "Home".
+    }
 
     // Any other locations are system scope
     return AddonManager.SCOPE_SYSTEM;
@@ -403,17 +465,31 @@ function PluginWrapper(aId, aName, aDescription, aTags) {
   this.__defineGetter__("permissions", function() {
     let permissions = 0;
     if (!this.appDisabled) {
-      if (this.userDisabled)
-        permissions |= AddonManager.PERM_CAN_ENABLE;
-      else
+
+      if (this.userDisabled !== true)
         permissions |= AddonManager.PERM_CAN_DISABLE;
+
+      let blocklistState = this.blocklistState;
+      let isCTPBlocklisted =
+        (blocklistState == Ci.nsIBlocklistService.STATE_VULNERABLE_NO_UPDATE ||
+         blocklistState == Ci.nsIBlocklistService.STATE_VULNERABLE_UPDATE_AVAILABLE);
+
+      if (this.userDisabled !== AddonManager.STATE_ASK_TO_ACTIVATE &&
+          (Services.prefs.getBoolPref("plugins.click_to_play") ||
+           isCTPBlocklisted)) {
+        permissions |= AddonManager.PERM_CAN_ASK_TO_ACTIVATE;
+      }
+
+      if (this.userDisabled !== false && !isCTPBlocklisted) {
+        permissions |= AddonManager.PERM_CAN_ENABLE;
+      }
     }
     return permissions;
   });
 }
 
 PluginWrapper.prototype = {
-  optionsType: AddonManager.OPTIONS_TYPE_INLINE,
+  optionsType: AddonManager.OPTIONS_TYPE_INLINE_INFO,
   optionsURL: "chrome://mozapps/content/extensions/pluginPrefs.xul",
 
   get updateDate() {
@@ -453,5 +529,6 @@ PluginWrapper.prototype = {
 AddonManagerPrivate.registerProvider(PluginProvider, [
   new AddonManagerPrivate.AddonType("plugin", URI_EXTENSION_STRINGS,
                                     STRING_TYPE_NAME,
-                                    AddonManager.VIEW_TYPE_LIST, 6000)
+                                    AddonManager.VIEW_TYPE_LIST, 6000,
+                                    AddonManager.TYPE_SUPPORTS_ASK_TO_ACTIVATE)
 ]);

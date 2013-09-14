@@ -7,6 +7,7 @@
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 const Cr = Components.results;
+const Cu = Components.utils;
 
 const PREF_BLOCKLIST_PINGCOUNTVERSION = "extensions.blocklist.pingCountVersion";
 const PREF_EM_UPDATE_ENABLED          = "extensions.update.enabled";
@@ -436,6 +437,10 @@ var AddonManagerInternal = {
     }
   }),
 
+  recordTimestamp: function AMI_recordTimestamp(name, value) {
+    this.TelemetryTimestamps.add(name, value);
+  },
+
   /**
    * Initializes the AddonManager, loading any known providers and initializing
    * them.
@@ -443,6 +448,8 @@ var AddonManagerInternal = {
   startup: function AMI_startup() {
     if (gStarted)
       return;
+
+    this.recordTimestamp("AMI_startup_begin");
 
     Services.obs.addObserver(this, "xpcom-shutdown", false);
 
@@ -551,6 +558,7 @@ var AddonManagerInternal = {
     }
 
     gStartupComplete = true;
+    this.recordTimestamp("AMI_startup_end");
   },
 
   /**
@@ -1448,6 +1456,35 @@ var AddonManagerInternal = {
   },
 
   /**
+   * Synchronously map a URI to the corresponding Addon ID.
+   *
+   * Mappable URIs are limited to in-application resources belonging to the
+   * add-on, such as Javascript compartments, XUL windows, XBL bindings, etc.
+   * but do not include URIs from meta data, such as the add-on homepage.
+   *
+   * @param  aURI
+   *         nsIURI to map to an addon id
+   * @return string containing the Addon ID or null
+   * @see    amIAddonManager.mapURIToAddonID
+   */
+  mapURIToAddonID: function AMI_mapURIToAddonID(aURI) {
+    if (!(aURI instanceof Ci.nsIURI)) {
+      throw Components.Exception("aURI is not a nsIURI",
+                                 Cr.NS_ERROR_INVALID_ARG);
+    }
+    // Try all providers
+    let providers = this.providers.slice(0);
+    for (let provider of providers) {
+      var id = callProvider(provider, "mapURIToAddonID", null, aURI);
+      if (id !== null) {
+        return id;
+      }
+    }
+
+    return null;
+  },
+
+  /**
    * Checks whether installation is enabled for a particular mimetype.
    *
    * @param  aMimetype
@@ -2079,7 +2116,20 @@ this.AddonManagerPrivate = {
 
   AddonCompatibilityOverride: AddonCompatibilityOverride,
 
-  AddonType: AddonType
+  AddonType: AddonType,
+
+  recordTimestamp: function AMP_recordTimestamp(name, value) {
+    AddonManagerInternal.recordTimestamp(name, value);
+  },
+
+  _simpleMeasures: {},
+  recordSimpleMeasure: function AMP_recordSimpleMeasure(name, value) {
+    this._simpleMeasures[name] = value;
+  },
+
+  getSimpleMeasures: function AMP_getSimpleMeasures() {
+    return this._simpleMeasures;
+  }
 };
 
 /**
@@ -2179,6 +2229,9 @@ this.AddonManager = {
   PERM_CAN_DISABLE: 4,
   // Indicates that the Addon can be upgraded.
   PERM_CAN_UPGRADE: 8,
+  // Indicates that the Addon can be set to be optionally enabled
+  // on a case-by-case basis.
+  PERM_CAN_ASK_TO_ACTIVATE: 16,
 
   // General descriptions of where items are installed.
   // Installed in this profile.
@@ -2196,6 +2249,10 @@ this.AddonManager = {
   VIEW_TYPE_LIST: "list",
 
   TYPE_UI_HIDE_EMPTY: 16,
+  // Indicates that this add-on type supports the ask-to-activate state.
+  // That is, add-ons of this type can be set to be optionally enabled
+  // on a case-by-case basis.
+  TYPE_SUPPORTS_ASK_TO_ACTIVATE: 32,
 
   // Constants for Addon.applyBackgroundUpdates.
   // Indicates that the Addon should not update automatically.
@@ -2213,6 +2270,9 @@ this.AddonManager = {
   OPTIONS_TYPE_INLINE: 2,
   // Options will be displayed in a new tab, if possible
   OPTIONS_TYPE_TAB: 3,
+  // Same as OPTIONS_TYPE_INLINE, but no Preferences button will be shown.
+  // Used to indicate that only non-interactive information will be shown.
+  OPTIONS_TYPE_INLINE_INFO: 4,
 
   // Constants for displayed or hidden options notifications
   // Options notification will be displayed
@@ -2239,6 +2299,12 @@ this.AddonManager = {
   // an application change making an add-on compatible. Doesn't include
   // add-ons that were pending being enabled the last time the application ran.
   STARTUP_CHANGE_ENABLED: "enabled",
+
+  // Constants for the Addon.userDisabled property
+  // Indicates that the userDisabled state of this add-on is currently
+  // ask-to-activate. That is, it can be conditionally enabled on a
+  // case-by-case basis.
+  STATE_ASK_TO_ACTIVATE: "askToActivate",
 
 #ifdef MOZ_EM_DEBUG
   get __AddonManagerInternal__() {
@@ -2301,6 +2367,10 @@ this.AddonManager = {
 
   getAllInstalls: function AM_getAllInstalls(aCallback) {
     AddonManagerInternal.getAllInstalls(aCallback);
+  },
+
+  mapURIToAddonID: function AM_mapURIToAddonID(aURI) {
+    return AddonManagerInternal.mapURIToAddonID(aURI);
   },
 
   isInstallEnabled: function AM_isInstallEnabled(aType) {
@@ -2426,6 +2496,8 @@ this.AddonManager = {
   }
 };
 
+// load the timestamps module into AddonManagerInternal
+Cu.import("resource://gre/modules/TelemetryTimestamps.jsm", AddonManagerInternal);
 Object.freeze(AddonManagerInternal);
 Object.freeze(AddonManagerPrivate);
 Object.freeze(AddonManager);

@@ -12,6 +12,7 @@
 #include "nsXPIDLString.h"
 #include "nsCOMPtr.h"
 #include "nsAutoPtr.h"
+#include "nsProxyRelease.h"
 #include "prinrval.h"
 #include "ASpdySession.h"
 #include "mozilla/TimeStamp.h"
@@ -54,7 +55,7 @@ public:
     // Initialize the connection:
     //  info        - specifies the connection parameters.
     //  maxHangTime - limits the amount of time this connection can spend on a
-    //                single transaction before it should no longer be kept 
+    //                single transaction before it should no longer be kept
     //                alive.  a value of 0xffff indicates no limit.
     nsresult Init(nsHttpConnectionInfo *info, uint16_t maxHangTime,
                   nsISocketTransport *, nsIAsyncInputStream *,
@@ -119,10 +120,13 @@ public:
     nsresult ResumeRecv();
     int64_t  MaxBytesRead() {return mMaxBytesRead;}
 
+    friend class nsHttpConnectionForceRecv;
+    nsresult ForceRecv();
+
     static NS_METHOD ReadFromStream(nsIInputStream *, void *, const char *,
                                     uint32_t, uint32_t, uint32_t *);
 
-    // When a persistent connection is in the connection manager idle 
+    // When a persistent connection is in the connection manager idle
     // connection pool, the nsHttpConnection still reads errors and hangups
     // on the socket so that it can be proactively released if the server
     // initiates a termination. Only call on socket thread.
@@ -167,15 +171,11 @@ private:
     PRIntervalTime IdleTime();
     bool     IsAlive();
     bool     SupportsPipelining(nsHttpResponseHead *);
-    
+
     // Makes certain the SSL handshake is complete and NPN negotiation
     // has had a chance to happen
     bool     EnsureNPNComplete();
     void     SetupNPN(uint32_t caps);
-
-    // Inform the connection manager of any SPDY Alternate-Protocol
-    // redirections
-    void     HandleAlternateProtocol(nsHttpResponseHead *);
 
     // Start the Spdy transaction handler when NPN indicates spdy/*
     void     StartSpdy(uint8_t versionLevel);
@@ -199,7 +199,7 @@ private:
     nsRefPtr<nsAHttpTransaction>    mTransaction;
 
     mozilla::Mutex                  mCallbacksLock;
-    nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
+    nsMainThreadPtrHandle<nsIInterfaceRequestor> mCallbacks;
 
     nsRefPtr<nsHttpConnectionInfo> mConnInfo;
 

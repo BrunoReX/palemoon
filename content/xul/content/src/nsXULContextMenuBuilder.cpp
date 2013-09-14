@@ -4,6 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsContentCreatorFunctions.h"
+#include "nsIContent.h"
+#include "nsIDOMDocumentFragment.h"
 #include "nsIDOMHTMLElement.h"
 #include "nsIDOMHTMLMenuItemElement.h"
 #include "nsXULContextMenuBuilder.h"
@@ -20,20 +22,8 @@ nsXULContextMenuBuilder::~nsXULContextMenuBuilder()
 {
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsXULContextMenuBuilder)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsXULContextMenuBuilder)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFragment)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocument)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCurrentNode)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mElements)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsXULContextMenuBuilder)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFragment)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocument)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mCurrentNode)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mElements)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_4(nsXULContextMenuBuilder, mFragment, mDocument,
+                           mCurrentNode, mElements)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsXULContextMenuBuilder)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsXULContextMenuBuilder)
@@ -217,7 +207,6 @@ nsXULContextMenuBuilder::CreateElement(nsIAtom* aTag,
 
   nsCOMPtr<nsINodeInfo> nodeInfo = mDocument->NodeInfoManager()->GetNodeInfo(
     aTag, nullptr, kNameSpaceID_XUL, nsIDOMNode::ELEMENT_NODE);
-  NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
 
   nsresult rv = NS_NewElement(aResult, nodeInfo.forget(), NOT_FROM_PARSER);
   if (NS_FAILED(rv)) {

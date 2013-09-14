@@ -15,6 +15,7 @@
 #include "imgIRequest.h"
 #include "imgINotificationObserver.h"
 
+class imgIContainer;
 class imgRequestProxy;
 
 #define BULLET_FRAME_IMAGE_LOADING NS_FRAME_STATE_BIT(63)
@@ -54,10 +55,10 @@ public:
   NS_IMETHOD Notify(imgIRequest *aRequest, int32_t aType, const nsIntRect* aData);
 
   // nsIFrame
-  virtual void DestroyFrom(nsIFrame* aDestructRoot);
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists);
+  virtual void DestroyFrom(nsIFrame* aDestructRoot) MOZ_OVERRIDE;
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE;
   virtual nsIAtom* GetType() const MOZ_OVERRIDE;
   virtual void DidSetStyleContext(nsStyleContext* aOldStyleContext) MOZ_OVERRIDE;
 #ifdef DEBUG
@@ -87,11 +88,11 @@ public:
                          nsString& aResult);
                          
   void PaintBullet(nsRenderingContext& aRenderingContext, nsPoint aPt,
-                   const nsRect& aDirtyRect);
+                   const nsRect& aDirtyRect, uint32_t aFlags);
   
   virtual bool IsEmpty() MOZ_OVERRIDE;
   virtual bool IsSelfEmpty() MOZ_OVERRIDE;
-  virtual nscoord GetBaseline() const;
+  virtual nscoord GetBaseline() const MOZ_OVERRIDE;
 
   float GetFontSizeInflation() const;
   bool HasFontSizeInflation() const {
@@ -100,6 +101,8 @@ public:
   void SetFontSizeInflation(float aInflation);
 
   int32_t GetOrdinal() { return mOrdinal; }
+
+  already_AddRefed<imgIContainer> GetImage() const;
 
 protected:
   nsresult OnStartContainer(imgIRequest *aRequest, imgIContainer *aImage);

@@ -1,4 +1,5 @@
-/* vim: set ts=4 sw=4 tw=99 et:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  *
  * Copyright (C) 2009 Apple Inc. All rights reserved.
  *
@@ -24,8 +25,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef YarrJIT_h
-#define YarrJIT_h
+#ifndef yarr_YarrJIT_h
+#define yarr_YarrJIT_h
 
 #include "assembler/wtf/Platform.h"
 
@@ -195,4 +196,4 @@ void jitCompile(YarrPattern&, YarrCharSize, JSGlobalData*, YarrCodeBlock& jitObj
 
 #endif
 
-#endif // YarrJIT_h
+#endif /* yarr_YarrJIT_h */

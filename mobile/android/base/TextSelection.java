@@ -5,11 +5,11 @@
 package org.mozilla.gecko;
 
 import org.mozilla.gecko.gfx.Layer;
-import org.mozilla.gecko.gfx.Layer.RenderContext;
 import org.mozilla.gecko.gfx.LayerView;
 import org.mozilla.gecko.util.EventDispatcher;
 import org.mozilla.gecko.util.FloatUtils;
 import org.mozilla.gecko.util.GeckoEventListener;
+import org.mozilla.gecko.util.ThreadUtils;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -30,8 +30,6 @@ class TextSelection extends Layer implements GeckoEventListener {
     private float mViewTop;
     private float mViewZoom;
 
-    private GeckoApp mActivity;
-
     TextSelection(TextSelectionHandle startHandle,
                   TextSelectionHandle middleHandle,
                   TextSelectionHandle endHandle,
@@ -41,7 +39,6 @@ class TextSelection extends Layer implements GeckoEventListener {
         mMiddleHandle = middleHandle;
         mEndHandle = endHandle;
         mEventDispatcher = eventDispatcher;
-        mActivity = activity;
 
         // Only register listeners if we have valid start/middle/end handles
         if (mStartHandle == null || mMiddleHandle == null || mEndHandle == null) {
@@ -69,8 +66,10 @@ class TextSelection extends Layer implements GeckoEventListener {
         }
     }
 
+    @Override
     public void handleMessage(final String event, final JSONObject message) {
-        mActivity.runOnUiThread(new Runnable() {
+        ThreadUtils.postToUiThread(new Runnable() {
+            @Override
             public void run() {
                 try {
                     if (event.equals("TextSelection:ShowHandles")) {
@@ -83,21 +82,19 @@ class TextSelection extends Layer implements GeckoEventListener {
                         mViewLeft = 0.0f;
                         mViewTop = 0.0f;
                         mViewZoom = 0.0f;
-                        LayerView layerView = mActivity.getLayerView();
+                        LayerView layerView = GeckoAppShell.getLayerView();
                         if (layerView != null) {
                             layerView.addLayer(TextSelection.this);
                         }
                     } else if (event.equals("TextSelection:HideHandles")) {
-                        final JSONArray handles = message.getJSONArray("handles");
-                        LayerView layerView = mActivity.getLayerView();
+                        LayerView layerView = GeckoAppShell.getLayerView();
                         if (layerView != null) {
                             layerView.removeLayer(TextSelection.this);
                         }
 
-                        for (int i=0; i < handles.length(); i++) {
-                            String handle = handles.getString(i);
-                            getHandle(handle).setVisibility(View.GONE);
-                        }
+                        mStartHandle.setVisibility(View.GONE);
+                        mMiddleHandle.setVisibility(View.GONE);
+                        mEndHandle.setVisibility(View.GONE);
                     } else if (event.equals("TextSelection:PositionHandles")) {
                         final boolean rtl = message.getBoolean("rtl");
                         final JSONArray positions = message.getJSONArray("positions");
@@ -123,20 +120,25 @@ class TextSelection extends Layer implements GeckoEventListener {
         // cache the relevant values from the context and bail out if they are the same. we do this
         // because this draw function gets called a lot (once per compositor frame) and we want to
         // avoid doing a lot of extra work in cases where it's not needed.
-        if (FloatUtils.fuzzyEquals(mViewLeft, context.viewport.left)
-                && FloatUtils.fuzzyEquals(mViewTop, context.viewport.top)
-                && FloatUtils.fuzzyEquals(mViewZoom, context.zoomFactor)) {
+        final float viewLeft = context.viewport.left - context.offset.x;
+        final float viewTop = context.viewport.top - context.offset.y;
+        final float viewZoom = context.zoomFactor;
+
+        if (FloatUtils.fuzzyEquals(mViewLeft, viewLeft)
+                && FloatUtils.fuzzyEquals(mViewTop, viewTop)
+                && FloatUtils.fuzzyEquals(mViewZoom, viewZoom)) {
             return;
         }
-        mViewLeft = context.viewport.left;
-        mViewTop = context.viewport.top;
-        mViewZoom = context.zoomFactor;
+        mViewLeft = viewLeft;
+        mViewTop = viewTop;
+        mViewZoom = viewZoom;
 
-        mActivity.runOnUiThread(new Runnable() {
+        ThreadUtils.postToUiThread(new Runnable() {
+            @Override
             public void run() {
-                mStartHandle.repositionWithViewport(context.viewport.left, context.viewport.top, context.zoomFactor);
-                mMiddleHandle.repositionWithViewport(context.viewport.left, context.viewport.top, context.zoomFactor);
-                mEndHandle.repositionWithViewport(context.viewport.left, context.viewport.top, context.zoomFactor);
+                mStartHandle.repositionWithViewport(viewLeft, viewTop, viewZoom);
+                mMiddleHandle.repositionWithViewport(viewLeft, viewTop, viewZoom);
+                mEndHandle.repositionWithViewport(viewLeft, viewTop, viewZoom);
             }
         });
     }

@@ -12,7 +12,6 @@
 
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Paragraph)
-DOMCI_NODE_DATA(HTMLParagraphElement, mozilla::dom::HTMLParagraphElement)
 
 namespace mozilla {
 namespace dom {
@@ -26,11 +25,11 @@ NS_IMPL_RELEASE_INHERITED(HTMLParagraphElement, Element)
 
 // QueryInterface implementation for nsHTMLParagraphElement
 NS_INTERFACE_TABLE_HEAD(HTMLParagraphElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE1(HTMLParagraphElement,
-                                   nsIDOMHTMLParagraphElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE_TO_MAP_SEGUE(HTMLParagraphElement,
-                                               nsGenericHTMLElement)
-NS_HTML_CONTENT_INTERFACE_TABLE_TAIL_CLASSINFO(HTMLParagraphElement)
+  NS_HTML_CONTENT_INTERFACES(nsGenericHTMLElement)
+  NS_INTERFACE_TABLE_INHERITED1(HTMLParagraphElement,
+                                nsIDOMHTMLParagraphElement)
+  NS_INTERFACE_TABLE_TO_MAP_SEGUE
+NS_ELEMENT_INTERFACE_MAP_END
 
 NS_IMPL_ELEMENT_CLONE(HTMLParagraphElement)
 
@@ -76,9 +75,9 @@ HTMLParagraphElement::GetAttributeMappingFunction() const
 }
 
 JSObject*
-HTMLParagraphElement::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+HTMLParagraphElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return HTMLParagraphElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return HTMLParagraphElementBinding::Wrap(aCx, aScope, this);
 }
 
 } // namespace dom

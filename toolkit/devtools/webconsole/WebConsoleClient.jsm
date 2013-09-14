@@ -81,13 +81,35 @@ WebConsoleClient.prototype = {
    *        The code you want to evaluate.
    * @param function aOnResponse
    *        The function invoked when the response is received.
+   * @param object [aOptions={}]
+   *        Options for evaluation:
+   *
+   *        - bindObjectActor: an ObjectActor ID. The OA holds a reference to
+   *        a Debugger.Object that wraps a content object. This option allows
+   *        you to bind |_self| to the D.O of the given OA, during string
+   *        evaluation.
+   *
+   *        See: Debugger.Object.evalInGlobalWithBindings() for information
+   *        about bindings.
+   *
+   *        Use case: the variable view needs to update objects and it does so
+   *        by knowing the ObjectActor it inspects and binding |_self| to the
+   *        D.O of the OA. As such, variable view sends strings like these for
+   *        eval:
+   *          _self["prop"] = value;
+   *
+   *        - frameActor: a FrameActor ID. The FA holds a reference to
+   *        a Debugger.Frame. This option allows you to evaluate the string in
+   *        the frame of the given FA.
    */
-  evaluateJS: function WCC_evaluateJS(aString, aOnResponse)
+  evaluateJS: function WCC_evaluateJS(aString, aOnResponse, aOptions = {})
   {
     let packet = {
       to: this._actor,
       type: "evaluateJS",
       text: aString,
+      bindObjectActor: aOptions.bindObjectActor,
+      frameActor: aOptions.frameActor,
     };
     this._client.request(packet, aOnResponse);
   },
@@ -123,6 +145,24 @@ WebConsoleClient.prototype = {
       type: "clearMessagesCache",
     };
     this._client.request(packet);
+  },
+
+  /**
+   * Get Web Console-related preferences on the server.
+   *
+   * @param object aPreferences
+   *        An object with the preferences you want to retrieve.
+   * @param function [aOnResponse]
+   *        Optional function to invoke when the response is received.
+   */
+  getPreferences: function WCC_getPreferences(aPreferences, aOnResponse)
+  {
+    let packet = {
+      to: this._actor,
+      type: "getPreferences",
+      preferences: aPreferences,
+    };
+    this._client.request(packet, aOnResponse);
   },
 
   /**

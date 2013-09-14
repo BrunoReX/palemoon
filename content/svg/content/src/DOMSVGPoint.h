@@ -9,19 +9,18 @@
 #include "DOMSVGPointList.h"
 #include "gfxPoint.h"
 #include "nsAutoPtr.h"
-#include "nsCycleCollectionParticipant.h"
 #include "nsDebug.h"
 #include "nsISVGPoint.h"
-#include "nsTArray.h"
 #include "SVGPoint.h"
-#include "nsWrapperCache.h"
 #include "mozilla/Attributes.h"
 
 class nsSVGElement;
 
 namespace mozilla {
 
-class DOMSVGMatrix;
+namespace dom {
+class SVGMatrix;
+}
 
 /**
  * Class DOMSVGPoint
@@ -89,7 +88,7 @@ public:
   virtual void SetX(float aX, ErrorResult& rv);
   virtual float Y();
   virtual void SetY(float aY, ErrorResult& rv);
-  virtual already_AddRefed<nsISVGPoint> MatrixTransform(DOMSVGMatrix& matrix);
+  virtual already_AddRefed<nsISVGPoint> MatrixTransform(dom::SVGMatrix& matrix);
   nsISupports* GetParentObject() MOZ_OVERRIDE {
     return mList;
   }

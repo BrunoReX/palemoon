@@ -36,22 +36,24 @@ public:
   _finalize(JSFreeOp* aFop) MOZ_OVERRIDE;
 
   static FileReaderSync*
-  Constructor(JSContext* aCx, JSObject* aGlobal, ErrorResult& aRv);
+  Constructor(const WorkerGlobalObject& aGlobal, ErrorResult& aRv);
 
   NS_DECL_ISUPPORTS_INHERITED
 
   FileReaderSync(JSContext* aCx);
 
-  JSObject* ReadAsArrayBuffer(JSContext* aCx, JSObject* aBlob,
+  JSObject* ReadAsArrayBuffer(JSContext* aCx, JS::Handle<JSObject*> aBlob,
                               ErrorResult& aRv);
-  void ReadAsBinaryString(JSObject* aBlob, nsAString& aResult,
+  void ReadAsBinaryString(JS::Handle<JSObject*> aBlob, nsAString& aResult,
                           ErrorResult& aRv);
-  void ReadAsText(JSObject* aBlob, const Optional<nsAString>& aEncoding,
+  void ReadAsText(JS::Handle<JSObject*> aBlob,
+                  const Optional<nsAString>& aEncoding,
                   nsAString& aResult, ErrorResult& aRv);
-  void ReadAsDataURL(JSObject* aBlob, nsAString& aResult, ErrorResult& aRv);
+  void ReadAsDataURL(JS::Handle<JSObject*> aBlob, nsAString& aResult,
+                     ErrorResult& aRv);
 
   // From nsICharsetDetectionObserver
-  NS_IMETHOD Notify(const char *aCharset, nsDetectionConfident aConf);
+  NS_IMETHOD Notify(const char *aCharset, nsDetectionConfident aConf) MOZ_OVERRIDE;
 };
 
 END_WORKERS_NAMESPACE

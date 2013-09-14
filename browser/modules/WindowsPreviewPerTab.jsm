@@ -139,12 +139,10 @@ function PreviewController(win, tab) {
   this.win = win;
   this.tab = tab;
   this.linkedBrowser = tab.linkedBrowser;
+  this.preview = this.win.createTabPreview(this);
 
   this.linkedBrowser.addEventListener("MozAfterPaint", this, false);
   this.tab.addEventListener("TabAttrModified", this, false);
-
-  // Cannot perform the lookup during construction. See TabWindow.newTab 
-  XPCOMUtils.defineLazyGetter(this, "preview", function () this.win.previewFromTab(this.tab));
 
   XPCOMUtils.defineLazyGetter(this, "canvasPreview", function () {
     let canvas = this.win.win.document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
@@ -209,9 +207,11 @@ PreviewController.prototype = {
   },
 
   get zoom() {
-    // We use this property instead of the fullZoom property because this
-    // accurately reflects the actual zoom factor used when drawing.
-    return this.winutils.screenPixelsPerCSSPixel;
+    // Note that winutils.fullZoom accounts for "quantization" of the zoom factor
+    // from nsIMarkupDocumentViewer due to conversion through appUnits.
+    // We do -not- want screenPixelsPerCSSPixel here, because that would -also-
+    // incorporate any scaling that is applied due to hi-dpi resolution options.
+    return this.winutils.fullZoom;
   },
 
   // Updates the controller's canvas with the parts of the <browser> that need
@@ -301,18 +301,33 @@ PreviewController.prototype = {
   },
 
   previewTabCallback: function (ctx) {
+    // This will extract the resolution-scale component of the scaling we need,
+    // which should be applied to both chrome and content;
+    // the page zoom component is applied (to content only) within updateCanvasPreview.
+    let scale = this.winutils.screenPixelsPerCSSPixel / this.winutils.fullZoom;
+    ctx.save();
+    ctx.scale(scale, scale);
     let width = this.win.width;
     let height = this.win.height;
     // Draw our toplevel window
     ctx.drawWindow(this.win.win, 0, 0, width, height, "transparent");
 
-    // Compositor, where art thou?
-    // Draw the tab content on top of the toplevel window
-    this.updateCanvasPreview();
+    // XXX (jfkthame): Pending tabs don't seem to draw with the proper scaling
+    // unless we use this block of code; but doing this for "normal" (loaded) tabs
+    // results in blurry rendering on hidpi systems, so we avoid it if possible.
+    // I don't understand why pending and loaded tabs behave differently here...
+    // (see bug 857061).
+    if (this.tab.hasAttribute("pending")) {
+      // Compositor, where art thou?
+      // Draw the tab content on top of the toplevel window
+      this.updateCanvasPreview();
 
-    let boxObject = this.linkedBrowser.boxObject;
-    ctx.translate(boxObject.x, boxObject.y);
-    ctx.drawImage(this.canvasPreview, 0, 0);
+      let boxObject = this.linkedBrowser.boxObject;
+      ctx.translate(boxObject.x, boxObject.y);
+      ctx.drawImage(this.canvasPreview, 0, 0);
+    }
+
+    ctx.restore();
   },
 
   drawThumbnail: function (ctx, width, height) {
@@ -388,9 +403,6 @@ function TabWindow(win) {
     this.tabbrowser.tabContainer.addEventListener(this.tabEvents[i], this, false);
   this.tabbrowser.addTabsProgressListener(this);
 
-  for (let i = 0; i < this.winEvents.length; i++)
-    this.win.addEventListener(this.winEvents[i], this, false);
-
   AeroPeek.windows.push(this);
   let tabs = this.tabbrowser.tabs;
   for (let i = 0; i < tabs.length; i++)
@@ -403,7 +415,6 @@ function TabWindow(win) {
 TabWindow.prototype = {
   _enabled: false,
   tabEvents: ["TabOpen", "TabClose", "TabSelect", "TabMove"],
-  winEvents: ["tabviewshown", "tabviewhidden"],
 
   destroy: function () {
     this._destroying = true;
@@ -413,9 +424,6 @@ TabWindow.prototype = {
     this.tabbrowser.removeTabsProgressListener(this);
     for (let i = 0; i < this.tabEvents.length; i++)
       this.tabbrowser.tabContainer.removeEventListener(this.tabEvents[i], this, false);
-
-    for (let i = 0; i < this.winEvents.length; i++)
-      this.win.removeEventListener(this.winEvents[i], this, false);
 
     for (let i = 0; i < tabs.length; i++)
       this.removeTab(tabs[i]);
@@ -435,13 +443,22 @@ TabWindow.prototype = {
   // Invoked when the given tab is added to this window
   newTab: function (tab) {
     let controller = new PreviewController(this, tab);
+    // It's OK to add the preview now while the favicon still loads.
+    this.previews.splice(tab._tPos, 0, controller.preview);
+    AeroPeek.addPreview(controller.preview);
+    // updateTitleAndTooltip relies on having controller.preview which is lazily resolved.
+    // Now that we've updated this.previews, it will resolve successfully.
+    controller.updateTitleAndTooltip();
+  },
+
+  createTabPreview: function (controller) {
     let docShell = this.win
                   .QueryInterface(Ci.nsIInterfaceRequestor)
                   .getInterface(Ci.nsIWebNavigation)
                   .QueryInterface(Ci.nsIDocShell);
     let preview = AeroPeek.taskbar.createTaskbarTabPreview(docShell, controller);
     preview.visible = AeroPeek.enabled;
-    preview.active = this.tabbrowser.selectedTab == tab;
+    preview.active = this.tabbrowser.selectedTab == controller.tab;
     // Grab the default favicon
     getFaviconAsImage(null, PrivateBrowsingUtils.isWindowPrivate(this.win), function (img) {
       // It is possible that we've already gotten the real favicon, so make sure
@@ -450,12 +467,7 @@ TabWindow.prototype = {
         preview.icon = img;
     });
 
-    // It's OK to add the preview now while the favicon still loads.
-    this.previews.splice(tab._tPos, 0, preview);
-    AeroPeek.addPreview(preview);
-    // updateTitleAndTooltip relies on having controller.preview which is lazily resolved.
-    // Now that we've updated this.previews, it will resolve successfully.
-    controller.updateTitleAndTooltip();
+    return preview;
   },
 
   // Invoked when the given tab is closed
@@ -527,14 +539,6 @@ TabWindow.prototype = {
         this.previews.splice(oldPos, 1);
         this.previews.splice(newPos, 0, preview);
         this.updateTabOrdering();
-        break;
-      case "tabviewshown":
-        this.enabled = false;
-        break;
-      case "tabviewhidden":
-        if (!AeroPeek._prefenabled)
-          return;
-        this.enabled = true;
         break;
     }
   },

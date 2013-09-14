@@ -1,11 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sw=4 et tw=99 ft=cpp: */
-/* This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
+ * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef jswtfbridge_h__
-#define jswtfbridge_h__
+#ifndef yarr_wtfbridge_h
+#define yarr_wtfbridge_h
 
 /*
  * WTF compatibility layer. This file provides various type and data
@@ -133,8 +133,7 @@ class Vector {
     Vector() {}
 
     Vector(const Vector &v) {
-        // XXX yarr-oom
-        (void) append(v);
+        append(v);
     }
 
     size_t size() const {
@@ -167,19 +166,19 @@ class Vector {
 
     template <typename U>
     void append(const U &u) {
-        // XXX yarr-oom
-        (void) impl.append(static_cast<T>(u));
+        if (!impl.append(static_cast<T>(u)))
+            MOZ_CRASH();
     }
 
     template <size_t M>
     void append(const Vector<T,M> &v) {
-        // XXX yarr-oom
-        (void) impl.append(v.impl);
+        if (!impl.append(v.impl))
+            MOZ_CRASH();
     }
 
     void insert(size_t i, const T& t) {
-        // XXX yarr-oom
-        (void) impl.insert(&impl[i], t);
+        if (!impl.insert(&impl[i], t))
+            MOZ_CRASH();
     }
 
     void remove(size_t i) {
@@ -191,9 +190,9 @@ class Vector {
     }
 
     void shrink(size_t newLength) {
-        // XXX yarr-oom
         JS_ASSERT(newLength <= impl.length());
-        (void) impl.resize(newLength);
+        if (!impl.resize(newLength))
+            MOZ_CRASH();
     }
 
     void swap(Vector &other) {
@@ -203,6 +202,10 @@ class Vector {
     void deleteAllValues() {
         for (T *p = impl.begin(); p != impl.end(); ++p)
             js_delete(*p);
+    }
+
+    bool reserve(size_t capacity) {
+        return impl.reserve(capacity);
     }
 };
 
@@ -218,8 +221,8 @@ class Vector<OwnPtr<T> > {
     }
 
     void append(T *t) {
-        // XXX yarr-oom
-        (void) impl.append(t);
+        if (!impl.append(t))
+            MOZ_CRASH();
     }
 
     PassOwnPtr<T> operator[](size_t i) {
@@ -230,6 +233,11 @@ class Vector<OwnPtr<T> > {
         for (T **p = impl.begin(); p != impl.end(); ++p)
             delete_(*p);
         return impl.clear();
+    }
+
+    void reserve(size_t capacity) {
+        if (!impl.reserve(capacity))
+            MOZ_CRASH();
     }
 };
 
@@ -326,4 +334,4 @@ const size_t notFound = size_t(-1);
 
 #define JS_EXPORT_PRIVATE
 
-#endif
+#endif /* yarr_wtfbridge_h */

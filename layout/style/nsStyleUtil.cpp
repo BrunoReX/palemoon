@@ -3,23 +3,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <math.h>
-
-#include "mozilla/Util.h"
-
 #include "nsStyleUtil.h"
-#include "nsCRT.h"
 #include "nsStyleConsts.h"
 
-#include "nsGkAtoms.h"
 #include "nsIContent.h"
-#include "nsINameSpaceManager.h"
-#include "nsIURI.h"
-#include "nsNetUtil.h"
 #include "nsReadableUtils.h"
-#include "nsTextFormatter.h"
 #include "nsCSSProps.h"
 #include "nsRuleNode.h"
+#include "nsIContentSecurityPolicy.h"
 
 using namespace mozilla;
 
@@ -166,6 +157,67 @@ nsStyleUtil::AppendBitmaskCSSValue(nsCSSProperty aProperty,
 }
 
 /* static */ void
+nsStyleUtil::AppendPaintOrderValue(uint8_t aValue,
+                                   nsAString& aResult)
+{
+  MOZ_STATIC_ASSERT
+    (NS_STYLE_PAINT_ORDER_BITWIDTH * NS_STYLE_PAINT_ORDER_LAST_VALUE <= 8,
+     "SVGStyleStruct::mPaintOrder and local variables not big enough");
+
+  if (aValue == NS_STYLE_PAINT_ORDER_NORMAL) {
+    aResult.AppendLiteral("normal");
+    return;
+  }
+
+  // Append the minimal value necessary for the given paint order.
+  MOZ_STATIC_ASSERT(NS_STYLE_PAINT_ORDER_LAST_VALUE == 3,
+                    "paint-order values added; check serialization");
+
+  // The following relies on the default order being the order of the
+  // constant values.
+
+  const uint8_t MASK = (1 << NS_STYLE_PAINT_ORDER_BITWIDTH) - 1;
+
+  uint32_t lastPositionToSerialize = 0;
+  for (uint32_t position = NS_STYLE_PAINT_ORDER_LAST_VALUE - 1;
+       position > 0;
+       position--) {
+    uint8_t component =
+      (aValue >> (position * NS_STYLE_PAINT_ORDER_BITWIDTH)) & MASK;
+    uint8_t earlierComponent =
+      (aValue >> ((position - 1) * NS_STYLE_PAINT_ORDER_BITWIDTH)) & MASK;
+    if (component < earlierComponent) {
+      lastPositionToSerialize = position - 1;
+      break;
+    }
+  }
+
+  for (uint32_t position = 0; position <= lastPositionToSerialize; position++) {
+    if (position > 0) {
+      aResult.AppendLiteral(" ");
+    }
+    uint8_t component = aValue & MASK;
+    switch (component) {
+      case NS_STYLE_PAINT_ORDER_FILL:
+        aResult.AppendLiteral("fill");
+        break;
+
+      case NS_STYLE_PAINT_ORDER_STROKE:
+        aResult.AppendLiteral("stroke");
+        break;
+
+      case NS_STYLE_PAINT_ORDER_MARKERS:
+        aResult.AppendLiteral("markers");
+        break;
+
+      default:
+        NS_NOTREACHED("unexpected paint-order component value");
+    }
+    aValue >>= NS_STYLE_PAINT_ORDER_BITWIDTH;
+  }
+}
+
+/* static */ void
 nsStyleUtil::AppendFontFeatureSettings(const nsTArray<gfxFontFeature>& aFeatures,
                                        nsAString& aResult)
 {
@@ -218,6 +270,117 @@ nsStyleUtil::AppendFontFeatureSettings(const nsCSSValue& aSrc,
   AppendFontFeatureSettings(featureSettings, aResult);
 }
 
+/* static */ void
+nsStyleUtil::GetFunctionalAlternatesName(int32_t aFeature,
+                                         nsAString& aFeatureName)
+{
+  aFeatureName.Truncate();
+  nsCSSKeyword key =
+    nsCSSProps::ValueToKeywordEnum(aFeature,
+                           nsCSSProps::kFontVariantAlternatesFuncsKTable);
+
+  NS_ASSERTION(key != eCSSKeyword_UNKNOWN, "bad alternate feature type");
+  AppendUTF8toUTF16(nsCSSKeywords::GetStringValue(key), aFeatureName);
+}
+
+/* static */ void
+nsStyleUtil::SerializeFunctionalAlternates(
+    const nsTArray<gfxAlternateValue>& aAlternates,
+    nsAString& aResult)
+{
+  nsAutoString funcName, funcParams;
+  uint32_t numValues = aAlternates.Length();
+
+  uint32_t feature = 0;
+  for (uint32_t i = 0; i < numValues; i++) {
+    const gfxAlternateValue& v = aAlternates.ElementAt(i);
+    if (feature != v.alternate) {
+      feature = v.alternate;
+      if (!funcName.IsEmpty() && !funcParams.IsEmpty()) {
+        if (!aResult.IsEmpty()) {
+          aResult.Append(PRUnichar(' '));
+        }
+
+        // append the previous functional value
+        aResult.Append(funcName);
+        aResult.Append(PRUnichar('('));
+        aResult.Append(funcParams);
+        aResult.Append(PRUnichar(')'));
+      }
+
+      // function name
+      GetFunctionalAlternatesName(v.alternate, funcName);
+      NS_ASSERTION(!funcName.IsEmpty(), "unknown property value name");
+
+      // function params
+      funcParams.Truncate();
+      AppendEscapedCSSIdent(v.value, funcParams);
+    } else {
+      if (!funcParams.IsEmpty()) {
+        funcParams.Append(NS_LITERAL_STRING(", "));
+      }
+      AppendEscapedCSSIdent(v.value, funcParams);
+    }
+  }
+
+    // append the previous functional value
+  if (!funcName.IsEmpty() && !funcParams.IsEmpty()) {
+    if (!aResult.IsEmpty()) {
+      aResult.Append(PRUnichar(' '));
+    }
+
+    aResult.Append(funcName);
+    aResult.Append(PRUnichar('('));
+    aResult.Append(funcParams);
+    aResult.Append(PRUnichar(')'));
+  }
+}
+
+/* static */ void
+nsStyleUtil::ComputeFunctionalAlternates(const nsCSSValueList* aList,
+                                  nsTArray<gfxAlternateValue>& aAlternateValues)
+{
+  gfxAlternateValue v;
+
+  aAlternateValues.Clear();
+  for (const nsCSSValueList* curr = aList; curr != nullptr; curr = curr->mNext) {
+    // list contains function units
+    if (curr->mValue.GetUnit() != eCSSUnit_Function) {
+      continue;
+    }
+
+    // element 0 is the propval in ident form
+    const nsCSSValue::Array *func = curr->mValue.GetArrayValue();
+
+    // lookup propval
+    nsCSSKeyword key = func->Item(0).GetKeywordValue();
+    NS_ASSERTION(key != eCSSKeyword_UNKNOWN, "unknown alternate property value");
+
+    int32_t alternate;
+    if (key == eCSSKeyword_UNKNOWN ||
+        !nsCSSProps::FindKeyword(key,
+                                 nsCSSProps::kFontVariantAlternatesFuncsKTable,
+                                 alternate)) {
+      NS_NOTREACHED("keyword not a font-variant-alternates value");
+    }
+    v.alternate = alternate;
+
+    // other elements are the idents associated with the propval
+    // append one alternate value for each one
+    uint32_t numElems = func->Count();
+    for (uint32_t i = 1; i < numElems; i++) {
+      const nsCSSValue& value = func->Item(i);
+      NS_ASSERTION(value.GetUnit() == eCSSUnit_Ident,
+                   "weird unit found in variant alternate");
+      if (value.GetUnit() != eCSSUnit_Ident) {
+        continue;
+      }
+      value.GetStringValue(v.value);
+      aAlternateValues.AppendElement(v);
+    }
+  }
+}
+
 /* static */ float
 nsStyleUtil::ColorComponentToFloat(uint8_t aAlpha)
 {
@@ -252,3 +415,61 @@ nsStyleUtil::IsSignificantChild(nsIContent* aChild, bool aTextIsSignificant,
           !aChild->TextIsOnlyWhitespace());
 }
 
+/* static */ bool
+nsStyleUtil::CSPAllowsInlineStyle(nsIPrincipal* aPrincipal,
+                                  nsIURI* aSourceURI,
+                                  uint32_t aLineNumber,
+                                  const nsSubstring& aStyleText,
+                                  nsresult* aRv)
+{
+  nsresult rv;
+
+  if (aRv) {
+    *aRv = NS_OK;
+  }
+
+  nsCOMPtr<nsIContentSecurityPolicy> csp;
+  rv = aPrincipal->GetCsp(getter_AddRefs(csp));
+
+  if (NS_FAILED(rv)) {
+    if (aRv)
+      *aRv = rv;
+    return false;
+  }
+
+  if (csp) {
+    bool inlineOK = true;
+    bool reportViolation = false;
+    rv = csp->GetAllowsInlineStyle(&reportViolation, &inlineOK);
+    if (NS_FAILED(rv)) {
+      if (aRv)
+        *aRv = rv;
+      return false;
+    }
+
+    if (reportViolation) {
+      // Inline styles are not allowed by CSP, so report the violation
+      nsAutoCString asciiSpec;
+      aSourceURI->GetAsciiSpec(asciiSpec);
+      nsAutoString styleText(aStyleText);
+
+      // cap the length of the style sample at 40 chars.
+      if (styleText.Length() > 40) {
+        styleText.Truncate(40);
+        styleText.Append(NS_LITERAL_STRING("..."));
+      }
+
+      csp->LogViolationDetails(nsIContentSecurityPolicy::VIOLATION_TYPE_INLINE_STYLE,
+                              NS_ConvertUTF8toUTF16(asciiSpec),
+                              aStyleText,
+                              aLineNumber);
+    }
+
+    if (!inlineOK) {
+        // The inline style should be blocked.
+        return false;
+    }
+  }
+  // No CSP or a CSP that allows inline styles.
+  return true;
+}

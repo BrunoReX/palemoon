@@ -13,9 +13,6 @@
  * liability, trademark and document use rules apply.
  */
 
-interface Attr;
-interface NamedNodeMap;
-
 interface Element : Node {
 /*
   We haven't moved these from Node to Element like the spec wants.
@@ -26,8 +23,10 @@ interface Element : Node {
   readonly attribute DOMString localName;
 */
   // Not [Constant] because it depends on which document we're in
+  [Pure]
   readonly attribute DOMString tagName;
 
+  [Pure]
            attribute DOMString id;
 /*
   FIXME Bug 810677 Move className from HTMLElement to Element
@@ -36,7 +35,8 @@ interface Element : Node {
   [Constant]
   readonly attribute DOMTokenList? classList;
 
-  //readonly attribute Attr[] attributes;
+  [Constant]
+  readonly attribute MozNamedAttrMap attributes;
   DOMString? getAttribute(DOMString name);
   DOMString? getAttributeNS(DOMString? namespace, DOMString localName);
   [Throws]
@@ -57,23 +57,30 @@ interface Element : Node {
 
   [Constant]
   readonly attribute HTMLCollection children;
+  [Pure]
   readonly attribute Element? firstElementChild;
+  [Pure]
   readonly attribute Element? lastElementChild;
+  [Pure]
   readonly attribute Element? previousElementSibling;
+  [Pure]
   readonly attribute Element? nextElementSibling;
+  [Pure]
   readonly attribute unsigned long childElementCount;
 
-  // NEW
-/*
-  FIXME We haven't implemented these yet.
-
-  void prepend((Node or DOMString)... nodes);
-  void append((Node or DOMString)... nodes);
-  void before((Node or DOMString)... nodes);
-  void after((Node or DOMString)... nodes);
-  void replace((Node or DOMString)... nodes);
-  void remove();
-*/
+  /**
+   * The ratio of font-size-inflated text font size to computed font
+   * size for this element. This will query the element for its primary frame,
+   * and then use this to get font size inflation information about the frame.
+   * This will be 1.0 if font size inflation is not enabled, and -1.0 if an
+   * error occurred during the retrieval of the font size inflation.
+   *
+   * @note The font size inflation ratio that is returned is actually the
+   *       font size inflation data for the element's _primary frame_, not the
+   *       element itself, but for most purposes, this should be sufficient.
+   */
+  [ChromeOnly]
+  readonly attribute float fontSizeInflation;
 
   // Mozilla specific stuff
 
@@ -129,27 +136,24 @@ interface Element : Node {
   void mozRequestPointerLock();
 
   // Obsolete methods.
-  Attr getAttributeNode(DOMString name);
+  Attr? getAttributeNode(DOMString name);
   [Throws]
-  Attr setAttributeNode(Attr newAttr);
+  Attr? setAttributeNode(Attr newAttr);
   [Throws]
-  Attr removeAttributeNode(Attr oldAttr);
+  Attr? removeAttributeNode(Attr oldAttr);
+  Attr? getAttributeNodeNS(DOMString? namespaceURI, DOMString localName);
   [Throws]
-  Attr getAttributeNodeNS(DOMString? namespaceURI, DOMString localName);
-  [Throws]
-  Attr setAttributeNodeNS(Attr newAttr);
-/*
+  Attr? setAttributeNodeNS(Attr newAttr);
 };
 
 // http://dev.w3.org/csswg/cssom-view/#extensions-to-the-element-interface
 partial interface Element {
-*/
-  [Throws]
   ClientRectList getClientRects();
   ClientRect getBoundingClientRect();
 
   // scrolling
   void scrollIntoView(optional boolean top = true);
+  // None of the CSSOM attributes are [Pure], because they flush
            attribute long scrollTop;   // scroll on setting
            attribute long scrollLeft;  // scroll on setting
   readonly attribute long scrollWidth;
@@ -166,36 +170,32 @@ partial interface Element {
      set to arbitrarily large values. */
   readonly attribute long scrollTopMax;
   readonly attribute long scrollLeftMax;
-/*
 };
 
 // http://dvcs.w3.org/hg/undomanager/raw-file/tip/undomanager.html
 partial interface Element {
-*/
   [Pref="dom.undo_manager.enabled"]
   readonly attribute UndoManager? undoManager;
   [SetterThrows,Pref="dom.undo_manager.enabled"]
   attribute boolean undoScope;
-/*
 };
 
 // http://domparsing.spec.whatwg.org/#extensions-to-the-element-interface
 partial interface Element {
-*/
   [Throws,TreatNullAs=EmptyString]
   attribute DOMString innerHTML;
   [Throws,TreatNullAs=EmptyString]
   attribute DOMString outerHTML;
   [Throws]
   void insertAdjacentHTML(DOMString position, DOMString text);
-/*
 };
 
 // http://www.w3.org/TR/selectors-api/#interface-definitions
 partial interface Element {
-*/
   [Throws]
   Element?  querySelector(DOMString selectors);
   [Throws]
   NodeList  querySelectorAll(DOMString selectors);
 };
+
+Element implements ChildNode;

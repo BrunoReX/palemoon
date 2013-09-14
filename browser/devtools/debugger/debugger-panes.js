@@ -6,281 +6,205 @@
 "use strict";
 
 /**
- * Functions handling the stackframes UI.
+ * Functions handling the sources UI.
  */
-function StackFramesView() {
-  dumpn("StackFramesView was instantiated");
-  MenuContainer.call(this);
-  this._onClick = this._onClick.bind(this);
-  this._onScroll = this._onScroll.bind(this);
-}
+function SourcesView() {
+  dumpn("SourcesView was instantiated");
 
-create({ constructor: StackFramesView, proto: MenuContainer.prototype }, {
-  /**
-   * Initialization function, called when the debugger is started.
-   */
-  initialize: function DVSF_initialize() {
-    dumpn("Initializing the StackFramesView");
-    this._container = new StackList(document.getElementById("stackframes"));
-    this._container.emptyText = L10N.getStr("emptyStackText");
-
-    this._container.addEventListener("click", this._onClick, false);
-    this._container.addEventListener("scroll", this._onScroll, true);
-    window.addEventListener("resize", this._onScroll, true);
-
-    this._cache = new Map();
-  },
-
-  /**
-   * Destruction function, called when the debugger is closed.
-   */
-  destroy: function DVSF_destroy() {
-    dumpn("Destroying the StackFramesView");
-    this._container.removeEventListener("click", this._onClick, false);
-    this._container.removeEventListener("scroll", this._onScroll, true);
-    window.removeEventListener("resize", this._onScroll, true);
-  },
-
-  /**
-   * Adds a frame in this stackframes container.
-   *
-   * @param string aFrameName
-   *        Name to be displayed in the list.
-   * @param string aFrameDetails
-   *        Details to be displayed in the list.
-   * @param number aDepth
-   *        The frame depth specified by the debugger.
-   */
-  addFrame: function DVSF_addFrame(aFrameName, aFrameDetails, aDepth) {
-    // Stackframes are UI elements which benefit from visible panes.
-    DebuggerView.showPanesSoon();
-
-    // Append a stackframe item to this container.
-    let stackframeItem = this.push(aFrameName, aFrameDetails, {
-      forced: true,
-      unsorted: true,
-      relaxed: true,
-      attachment: {
-        depth: aDepth
-      }
-    });
-
-    // Check if stackframe was already appended.
-    if (!stackframeItem) {
-      return;
-    }
-
-    let element = stackframeItem.target;
-    element.id = "stackframe-" + aDepth;
-    element.className = "dbg-stackframe list-item";
-    element.labelNode.className = "dbg-stackframe-name plain";
-    element.valueNode.className = "dbg-stackframe-details plain";
-
-    this._cache.set(aDepth, stackframeItem);
-  },
-
-  /**
-   * Highlights a frame in this stackframes container.
-   *
-   * @param number aDepth
-   *        The frame depth specified by the debugger controller.
-   */
-  highlightFrame: function DVSF_highlightFrame(aDepth) {
-    this._container.selectedItem = this._cache.get(aDepth).target;
-  },
-
-  /**
-   * Specifies if the active thread has more frames that need to be loaded.
-   */
-  dirty: false,
-
-  /**
-   * The click listener for the stackframes container.
-   */
-  _onClick: function DVSF__onClick(e) {
-    let item = this.getItemForElement(e.target);
-    if (item) {
-      // The container is not empty and we clicked on an actual item.
-      DebuggerController.StackFrames.selectFrame(item.attachment.depth);
-    }
-  },
-
-  /**
-   * The scroll listener for the stackframes container.
-   */
-  _onScroll: function DVSF__onScroll() {
-    // Update the stackframes container only if we have to.
-    if (this.dirty) {
-      let list = this._container._list;
-
-      // If the stackframes container was scrolled past 95% of the height,
-      // load more content.
-      if (list.scrollTop >= (list.scrollHeight - list.clientHeight) * 0.95) {
-        DebuggerController.StackFrames.addMoreFrames();
-        this.dirty = false;
-      }
-    }
-  },
-
-  _cache: null
-});
-
-/**
- * Utility functions for handling stackframes.
- */
-let StackFrameUtils = {
-  /**
-   * Create a textual representation for the specified stack frame
-   * to display in the stack frame container.
-   *
-   * @param object aFrame
-   *        The stack frame to label.
-   */
-  getFrameTitle: function SFU_getFrameTitle(aFrame) {
-    if (aFrame.type == "call") {
-      let c = aFrame.callee;
-      return (c.name || c.userDisplayName || c.displayName || "(anonymous)");
-    }
-    return "(" + aFrame.type + ")";
-  }
-};
-
-/**
- * Functions handling the breakpoints UI.
- */
-function BreakpointsView() {
-  dumpn("BreakpointsView was instantiated");
-  MenuContainer.call(this);
-  this._createItemView = this._createItemView.bind(this);
-  this._onBreakpointRemoved = this._onBreakpointRemoved.bind(this);
   this._onEditorLoad = this._onEditorLoad.bind(this);
   this._onEditorUnload = this._onEditorUnload.bind(this);
   this._onEditorSelection = this._onEditorSelection.bind(this);
   this._onEditorContextMenu = this._onEditorContextMenu.bind(this);
-  this._onEditorContextMenuPopupHidden = this._onEditorContextMenuPopupHidden.bind(this);
+  this._onSourceSelect = this._onSourceSelect.bind(this);
+  this._onSourceClick = this._onSourceClick.bind(this);
+  this._onBreakpointRemoved = this._onBreakpointRemoved.bind(this);
   this._onBreakpointClick = this._onBreakpointClick.bind(this);
-  this._onCheckboxClick = this._onCheckboxClick.bind(this);
+  this._onBreakpointCheckboxClick = this._onBreakpointCheckboxClick.bind(this);
   this._onConditionalPopupShowing = this._onConditionalPopupShowing.bind(this);
   this._onConditionalPopupShown = this._onConditionalPopupShown.bind(this);
   this._onConditionalPopupHiding = this._onConditionalPopupHiding.bind(this);
+  this._onConditionalTextboxInput = this._onConditionalTextboxInput.bind(this);
   this._onConditionalTextboxKeyPress = this._onConditionalTextboxKeyPress.bind(this);
 }
 
-create({ constructor: BreakpointsView, proto: MenuContainer.prototype }, {
+SourcesView.prototype = Heritage.extend(WidgetMethods, {
   /**
    * Initialization function, called when the debugger is started.
    */
-  initialize: function DVB_initialize() {
-    dumpn("Initializing the BreakpointsView");
-    this._container = new StackList(document.getElementById("breakpoints"));
+  initialize: function() {
+    dumpn("Initializing the SourcesView");
+
+    this.widget = new SideMenuWidget(document.getElementById("sources"));
+    this.emptyText = L10N.getStr("noSourcesText");
+    this.unavailableText = L10N.getStr("noMatchingSourcesText");
+
     this._commandset = document.getElementById("debuggerCommands");
     this._popupset = document.getElementById("debuggerPopupset");
     this._cmPopup = document.getElementById("sourceEditorContextMenu");
     this._cbPanel = document.getElementById("conditional-breakpoint-panel");
-    this._cbTextbox = document.getElementById("conditional-breakpoint-textbox");
-
-    this._container.emptyText = L10N.getStr("emptyBreakpointsText");
-    this._container.itemFactory = this._createItemView;
-    this._container.uniquenessQualifier = 2;
+    this._cbTextbox = document.getElementById("conditional-breakpoint-panel-textbox");
 
     window.addEventListener("Debugger:EditorLoaded", this._onEditorLoad, false);
     window.addEventListener("Debugger:EditorUnloaded", this._onEditorUnload, false);
-    this._container.addEventListener("click", this._onBreakpointClick, false);
-    this._cmPopup.addEventListener("popuphidden", this._onEditorContextMenuPopupHidden, false);
+    this.widget.addEventListener("select", this._onSourceSelect, false);
+    this.widget.addEventListener("click", this._onSourceClick, false);
     this._cbPanel.addEventListener("popupshowing", this._onConditionalPopupShowing, false);
     this._cbPanel.addEventListener("popupshown", this._onConditionalPopupShown, false);
     this._cbPanel.addEventListener("popuphiding", this._onConditionalPopupHiding, false);
+    this._cbTextbox.addEventListener("input", this._onConditionalTextboxInput, false);
     this._cbTextbox.addEventListener("keypress", this._onConditionalTextboxKeyPress, false);
 
-    this._cache = new Map();
+    this.autoFocusOnSelection = false;
+
+    // Show an empty label by default.
+    this.empty();
   },
 
   /**
    * Destruction function, called when the debugger is closed.
    */
-  destroy: function DVB_destroy() {
-    dumpn("Destroying the BreakpointsView");
+  destroy: function() {
+    dumpn("Destroying the SourcesView");
+
     window.removeEventListener("Debugger:EditorLoaded", this._onEditorLoad, false);
     window.removeEventListener("Debugger:EditorUnloaded", this._onEditorUnload, false);
-    this._container.removeEventListener("click", this._onBreakpointClick, false);
-    this._cmPopup.removeEventListener("popuphidden", this._onEditorContextMenuPopupHidden, false);
+    this.widget.removeEventListener("select", this._onSourceSelect, false);
+    this.widget.removeEventListener("click", this._onSourceClick, false);
     this._cbPanel.removeEventListener("popupshowing", this._onConditionalPopupShowing, false);
-    this._cbPanel.removeEventListener("popupshown", this._onConditionalPopupShown, false);
+    this._cbPanel.removeEventListener("popupshowing", this._onConditionalPopupShown, false);
     this._cbPanel.removeEventListener("popuphiding", this._onConditionalPopupHiding, false);
+    this._cbTextbox.removeEventListener("input", this._onConditionalTextboxInput, false);
     this._cbTextbox.removeEventListener("keypress", this._onConditionalTextboxKeyPress, false);
-
-    this._cbPanel.hidePopup();
   },
 
   /**
-   * Adds a breakpoint in this breakpoints container.
-   *
+   * Sets the preferred location to be selected in this sources container.
    * @param string aSourceLocation
-   *        The breakpoint source location specified by the debugger controller.
-   * @param number aLineNumber
-   *        The breakpoint line number specified by the debugger controller.
-   * @param string aActor
-   *        A breakpoint identifier specified by the debugger controller.
-   * @param string aLineInfo
-   *        Line information (parent source etc.) to be displayed in the list.
-   * @param string aLineText
-   *        Line text to be displayed in the list.
-   * @param boolean aConditionalFlag [optional]
-   *        A flag specifying if this is a conditional breakpoint.
-   * @param boolean aOpenPopupFlag [optional]
-   *        A flag specifying if the expression popup should be shown.
    */
-  addBreakpoint: function DVB_addBreakpoint(aSourceLocation, aLineNumber,
-                                            aActor, aLineInfo, aLineText,
-                                            aConditionalFlag, aOpenPopupFlag) {
-    // Append a breakpoint item to this container.
-    let breakpointItem = this.push(aLineInfo.trim(), aLineText.trim(), {
-      forced: true,
+  set preferredSource(aSourceLocation) {
+    this._preferredValue = aSourceLocation;
+
+    // Selects the element with the specified value in this sources container,
+    // if already inserted.
+    if (this.containsValue(aSourceLocation)) {
+      this.selectedValue = aSourceLocation;
+    }
+  },
+
+  /**
+   * Adds a source to this sources container.
+   *
+   * @param object aSource
+   *        The source object coming from the active thread.
+   * @param object aOptions [optional]
+   *        Additional options for adding the source. Supported options:
+   *        - forced: force the source to be immediately added
+   */
+  addSource: function(aSource, aOptions = {}) {
+    let url = aSource.url;
+    let label = SourceUtils.getSourceLabel(url.split(" -> ").pop());
+    let group = SourceUtils.getSourceGroup(url.split(" -> ").pop());
+
+    // Append a source item to this container.
+    this.push([label, url, group], {
+      staged: aOptions.staged, /* stage the item to be appended later? */
       attachment: {
-        enabled: true,
-        sourceLocation: aSourceLocation,
-        lineNumber: aLineNumber,
-        isConditional: aConditionalFlag
+        source: aSource
       }
     });
+  },
 
-    // Check if breakpoint was already appended.
-    if (!breakpointItem) {
-      this.enableBreakpoint(aSourceLocation, aLineNumber, { id: aActor });
+  /**
+   * Adds a breakpoint to this sources container.
+   *
+   * @param object aOptions
+   *        Several options or flags supported by this operation:
+   *          - string sourceLocation
+   *            The breakpoint's source location.
+   *          - number lineNumber
+   *            The breakpoint's line number to be displayed.
+   *          - string lineText
+   *            The breakpoint's line text to be displayed.
+   *          - string actor
+   *            A breakpoint identifier specified by the debugger controller.
+   *          - boolean openPopupFlag [optional]
+   *            A flag specifying if the expression popup should be shown.
+   */
+  addBreakpoint: function(aOptions) {
+    let { sourceLocation: url, lineNumber: line } = aOptions;
+
+    // Make sure we're not duplicating anything. If a breakpoint at the
+    // specified source location and line number already exists, just enable it.
+    if (this.getBreakpoint(url, line)) {
+      this.enableBreakpoint(url, line, { id: aOptions.actor });
       return;
     }
 
-    let element = breakpointItem.target;
-    element.id = "breakpoint-" + aActor;
-    element.className = "dbg-breakpoint list-item";
-    element.infoNode.className = "dbg-breakpoint-info plain";
-    element.textNode.className = "dbg-breakpoint-text plain";
-    element.setAttribute("contextmenu", this._createContextMenu(element));
+    // Get the source item to which the breakpoint should be attached.
+    let sourceItem = this.getItemByValue(url);
 
-    breakpointItem.finalize = this._onBreakpointRemoved;
-    this._cache.set(this._key(aSourceLocation, aLineNumber), breakpointItem);
+    // Create the element node and menu popup for the breakpoint item.
+    let breakpointView = this._createBreakpointView.call(this, aOptions);
+    let contextMenu = this._createContextMenu.call(this, aOptions);
 
-    // If this is a conditional breakpoint, display the panes and a panel
-    // to input the corresponding conditional expression.
-    if (aConditionalFlag && aOpenPopupFlag) {
-      this.highlightBreakpoint(aSourceLocation, aLineNumber, { openPopup: true });
+    // Append a breakpoint child item to the corresponding source item.
+    let breakpointItem = sourceItem.append(breakpointView.container, {
+      attachment: Heritage.extend(aOptions, {
+        view: breakpointView,
+        popup: contextMenu
+      }),
+      attributes: [
+        ["contextmenu", contextMenu.menupopupId]
+      ],
+      // Make sure that when the breakpoint item is removed, the corresponding
+      // menupopup and commandset are also destroyed.
+      finalize: this._onBreakpointRemoved
+    });
+
+    // If this is a conditional breakpoint, display a panel to input the
+    // corresponding conditional expression.
+    if (aOptions.openPopupFlag) {
+      this.highlightBreakpoint(url, line, { openPopup: true });
     }
   },
 
   /**
-   * Removes a breakpoint from this breakpoints container.
+   * Removes a breakpoint from this sources container.
    *
    * @param string aSourceLocation
    *        The breakpoint source location.
    * @param number aLineNumber
    *        The breakpoint line number.
    */
-  removeBreakpoint: function DVB_removeBreakpoint(aSourceLocation, aLineNumber) {
-    let breakpointItem = this.getBreakpoint(aSourceLocation, aLineNumber);
-    if (breakpointItem) {
-      this.remove(breakpointItem);
-      this._cache.delete(this._key(aSourceLocation, aLineNumber));
+  removeBreakpoint: function(aSourceLocation, aLineNumber) {
+    // When a parent source item is removed, all the child breakpoint items are
+    // also automagically removed.
+    let sourceItem = this.getItemByValue(aSourceLocation);
+    if (!sourceItem) {
+      return;
     }
+    let breakpointItem = this.getBreakpoint(aSourceLocation, aLineNumber);
+    if (!breakpointItem) {
+      return;
+    }
+
+    sourceItem.remove(breakpointItem);
+  },
+
+  /**
+   * Returns the breakpoint at the specified source location and line number.
+   *
+   * @param string aSourceLocation
+   *        The breakpoint source location.
+   * @param number aLineNumber
+   *        The breakpoint line number.
+   * @return object
+   *         The corresponding breakpoint item if found, null otherwise.
+   */
+  getBreakpoint: function(aSourceLocation, aLineNumber) {
+    return this.getItemForPredicate((aItem) =>
+      aItem.attachment.sourceLocation == aSourceLocation &&
+      aItem.attachment.lineNumber == aLineNumber);
   },
 
   /**
@@ -295,36 +219,41 @@ create({ constructor: BreakpointsView, proto: MenuContainer.prototype }, {
    *          - silent: pass true to not update the checkbox checked state;
    *                    this is usually necessary when the checked state will
    *                    be updated automatically (e.g: on a checkbox click).
-   *          - callback: function to invoke once the breakpoint is disabled
+   *          - callback: function to invoke once the breakpoint is enabled
    *          - id: a new id to be applied to the corresponding element node
    * @return boolean
    *         True if breakpoint existed and was enabled, false otherwise.
    */
-  enableBreakpoint:
-  function DVB_enableBreakpoint(aSourceLocation, aLineNumber, aOptions = {}) {
+  enableBreakpoint: function(aSourceLocation, aLineNumber, aOptions = {}) {
     let breakpointItem = this.getBreakpoint(aSourceLocation, aLineNumber);
-    if (breakpointItem) {
-      // Set a new id to the corresponding breakpoint element if required.
-      if (aOptions.id) {
-        breakpointItem.target.id = "breakpoint-" + aOptions.id;
-      }
-
-      // Update the checkbox state if necessary.
-      if (!aOptions.silent) {
-        breakpointItem.target.checkbox.setAttribute("checked", "true");
-      }
-
-      let { sourceLocation: url, lineNumber: line } = breakpointItem.attachment;
-      let breakpointLocation = { url: url, line: line };
-      DebuggerController.Breakpoints.addBreakpoint(breakpointLocation, aOptions.callback, {
-        noPaneUpdate: true
-      });
-
-      // Breakpoint is now enabled.
-      breakpointItem.attachment.enabled = true;
-      return true;
+    if (!breakpointItem) {
+      return false;
     }
-    return false;
+
+    // Set a new id to the corresponding breakpoint element if required.
+    if (aOptions.id) {
+      breakpointItem.attachment.view.container.id = "breakpoint-" + aOptions.id;
+    }
+    // Update the checkbox state if necessary.
+    if (!aOptions.silent) {
+      breakpointItem.attachment.view.checkbox.setAttribute("checked", "true");
+    }
+
+    let { sourceLocation: url, lineNumber: line } = breakpointItem.attachment;
+    let breakpointLocation = { url: url, line: line };
+
+    // Only create a new breakpoint if it doesn't exist yet.
+    if (!DebuggerController.Breakpoints.getBreakpoint(url, line)) {
+      DebuggerController.Breakpoints.addBreakpoint(breakpointLocation, aOptions.callback, {
+        noPaneUpdate: true,
+        noPaneHighlight: true,
+        conditionalExpression: breakpointItem.attachment.conditionalExpression
+      });
+    }
+
+    // Breakpoint is now enabled.
+    breakpointItem.attachment.disabled = false;
+    return true;
   },
 
   /**
@@ -343,30 +272,37 @@ create({ constructor: BreakpointsView, proto: MenuContainer.prototype }, {
    * @return boolean
    *         True if breakpoint existed and was disabled, false otherwise.
    */
-  disableBreakpoint:
-  function DVB_disableBreakpoint(aSourceLocation, aLineNumber, aOptions = {}) {
+  disableBreakpoint: function(aSourceLocation, aLineNumber, aOptions = {}) {
     let breakpointItem = this.getBreakpoint(aSourceLocation, aLineNumber);
-    if (breakpointItem) {
-      // Update the checkbox state if necessary.
-      if (!aOptions.silent) {
-        breakpointItem.target.checkbox.removeAttribute("checked");
-      }
+    if (!breakpointItem) {
+      return false;
+    }
 
-      let { sourceLocation: url, lineNumber: line } = breakpointItem.attachment;
-      let breakpointClient = DebuggerController.Breakpoints.getBreakpoint(url, line);
+    // Update the checkbox state if necessary.
+    if (!aOptions.silent) {
+      breakpointItem.attachment.view.checkbox.removeAttribute("checked");
+    }
+
+    let { sourceLocation: url, lineNumber: line } = breakpointItem.attachment;
+    let breakpointClient = DebuggerController.Breakpoints.getBreakpoint(url, line);
+
+    // Only remove the breakpoint if it exists.
+    if (breakpointClient) {
       DebuggerController.Breakpoints.removeBreakpoint(breakpointClient, aOptions.callback, {
         noPaneUpdate: true
       });
-
-      // Breakpoint is now disabled.
-      breakpointItem.attachment.enabled = false;
-      return true;
+      // Remember the current conditional expression, to be reapplied when the
+      // breakpoint is re-enabled via enableBreakpoint().
+      breakpointItem.attachment.conditionalExpression = breakpointClient.conditionalExpression;
     }
-    return false;
+
+    // Breakpoint is now disabled.
+    breakpointItem.attachment.disabled = true;
+    return true;
   },
 
   /**
-   * Highlights a breakpoint in this breakpoints container.
+   * Highlights a breakpoint in this sources container.
    *
    * @param string aSourceLocation
    *        The breakpoint source location.
@@ -377,166 +313,205 @@ create({ constructor: BreakpointsView, proto: MenuContainer.prototype }, {
    *          - updateEditor: true if editor updates should be allowed
    *          - openPopup: true if the expression popup should be shown
    */
-  highlightBreakpoint:
-  function DVB_highlightBreakpoint(aSourceLocation, aLineNumber, aFlags = {}) {
+  highlightBreakpoint: function(aSourceLocation, aLineNumber, aFlags = {}) {
     let breakpointItem = this.getBreakpoint(aSourceLocation, aLineNumber);
-    if (breakpointItem) {
-      // Update the editor source location and line number if necessary.
-      if (aFlags.updateEditor) {
-        DebuggerView.updateEditor(aSourceLocation, aLineNumber, { noDebug: true });
-      }
-
-      // If the breakpoint requires a new conditional expression, display
-      // the panes and the panel to input the corresponding expression.
-      if (aFlags.openPopup && breakpointItem.attachment.isConditional) {
-        let { sourceLocation: url, lineNumber: line } = breakpointItem.attachment;
-        let breakpointClient = DebuggerController.Breakpoints.getBreakpoint(url, line);
-
-        // The conditional expression popup can only be shown with visible panes.
-        DebuggerView.showPanesSoon(function() {
-          // Verify if the breakpoint wasn't removed before the panes were shown.
-          if (this.getBreakpoint(aSourceLocation, aLineNumber)) {
-            this._cbTextbox.value = breakpointClient.conditionalExpression || "";
-            this._cbPanel.openPopup(breakpointItem.target,
-              BREAKPOINT_CONDITIONAL_POPUP_POSITION,
-              BREAKPOINT_CONDITIONAL_POPUP_OFFSET);
-          }
-        }.bind(this));
-      } else {
-        this._cbPanel.hidePopup();
-      }
-
-      // Breakpoint is now highlighted.
-      this._container.selectedItem = breakpointItem.target;
+    if (!breakpointItem) {
+      return;
     }
-    // Can't find a breakpoint at the requested source location and line number.
-    else {
-      this._container.selectedIndex = -1;
-      this._cbPanel.hidePopup();
+
+    // Breakpoint is now selected.
+    this._selectBreakpoint(breakpointItem);
+
+    // Update the editor source location and line number if necessary.
+    if (aFlags.updateEditor) {
+      DebuggerView.updateEditor(aSourceLocation, aLineNumber, { noDebug: true });
+    }
+
+    // If the breakpoint requires a new conditional expression, display
+    // the panel to input the corresponding expression.
+    if (aFlags.openPopup) {
+      this._openConditionalPopup();
+    } else {
+      this._hideConditionalPopup();
     }
   },
 
   /**
-   * Unhighlights the current breakpoint in this breakpoints container.
+   * Unhighlights the current breakpoint in this sources container.
    */
-  unhighlightBreakpoint: function DVB_highlightBreakpoint() {
-    this.highlightBreakpoint(null);
+  unhighlightBreakpoint: function() {
+    this._unselectBreakpoint();
+    this._hideConditionalPopup();
   },
 
   /**
-   * Checks whether a breakpoint with the specified source location and
-   * line number exists in this container, and returns the corresponding item
-   * if true, null otherwise.
-   *
-   * @param string aSourceLocation
-   *        The breakpoint source location.
-   * @param number aLineNumber
-   *        The breakpoint line number.
+   * Gets the currently selected breakpoint item.
    * @return object
-   *         The corresponding item.
    */
-  getBreakpoint: function DVB_getBreakpoint(aSourceLocation, aLineNumber) {
-    return this._cache.get(this._key(aSourceLocation, aLineNumber));
-  },
+  get selectedBreakpointItem() this._selectedBreakpoint,
 
   /**
    * Gets the currently selected breakpoint client.
    * @return object
    */
-  get selectedClient() {
-    let selectedItem = this.selectedItem;
-    if (selectedItem) {
-      let { sourceLocation: url, lineNumber: line } = selectedItem.attachment;
+  get selectedBreakpointClient() {
+    let breakpointItem = this._selectedBreakpoint;
+    if (breakpointItem) {
+      let { sourceLocation: url, lineNumber: line } = breakpointItem.attachment;
       return DebuggerController.Breakpoints.getBreakpoint(url, line);
     }
     return null;
   },
 
   /**
-   * Customization function for creating an item's UI.
+   * Marks a breakpoint as selected in this sources container.
    *
-   * @param nsIDOMNode aElementNode
-   *        The element associated with the displayed item.
-   * @param string aInfo
-   *        The breakpoint's line info.
-   * @param string aText
-   *        The breakpoint's line text.
-   * @param any aAttachment [optional]
-   *        Some attached primitive/object.
+   * @param object aItem
+   *        The breakpoint item to select.
    */
-  _createItemView: function DVB__createItemView(aElementNode, aInfo, aText, aAttachment) {
+  _selectBreakpoint: function(aItem) {
+    if (this._selectedBreakpoint == aItem) {
+      return;
+    }
+    this._unselectBreakpoint();
+    this._selectedBreakpoint = aItem;
+    this._selectedBreakpoint.target.classList.add("selected");
+
+    // Ensure the currently selected breakpoint is visible.
+    this.widget.ensureElementIsVisible(aItem.target);
+  },
+
+  /**
+   * Marks the current breakpoint as unselected in this sources container.
+   */
+  _unselectBreakpoint: function() {
+    if (this._selectedBreakpoint) {
+      this._selectedBreakpoint.target.classList.remove("selected");
+      this._selectedBreakpoint = null;
+    }
+  },
+
+  /**
+   * Opens a conditional breakpoint's expression input popup.
+   */
+  _openConditionalPopup: function() {
+    let selectedBreakpointItem = this.selectedBreakpointItem;
+    let selectedBreakpointClient = this.selectedBreakpointClient;
+
+    if (selectedBreakpointClient.conditionalExpression === undefined) {
+      this._cbTextbox.value = selectedBreakpointClient.conditionalExpression = "";
+    } else {
+      this._cbTextbox.value = selectedBreakpointClient.conditionalExpression;
+    }
+
+    this._cbPanel.hidden = false;
+    this._cbPanel.openPopup(selectedBreakpointItem.attachment.view.lineNumber,
+      BREAKPOINT_CONDITIONAL_POPUP_POSITION,
+      BREAKPOINT_CONDITIONAL_POPUP_OFFSET_X,
+      BREAKPOINT_CONDITIONAL_POPUP_OFFSET_Y);
+  },
+
+  /**
+   * Hides a conditional breakpoint's expression input popup.
+   */
+  _hideConditionalPopup: function() {
+    this._cbPanel.hidden = true;
+    this._cbPanel.hidePopup();
+  },
+
+  /**
+   * Customization function for creating a breakpoint item's UI.
+   *
+   * @param object aOptions
+   *        Additional options or flags supported by this operation:
+   *          - number lineNumber
+   *            The line number specified by the debugger controller.
+   *          - string lineText
+   *            The line text to be displayed.
+   * @return object
+   *         An object containing the breakpoint container, checkbox,
+   *         line number and line text nodes.
+   */
+  _createBreakpointView: function(aOptions) {
+    let { lineNumber, lineText } = aOptions;
+
     let checkbox = document.createElement("checkbox");
     checkbox.setAttribute("checked", "true");
-    checkbox.addEventListener("click", this._onCheckboxClick, false);
 
-    let lineInfo = document.createElement("label");
-    lineInfo.setAttribute("value", aInfo);
-    lineInfo.setAttribute("crop", "end");
+    let lineNumberNode = document.createElement("label");
+    lineNumberNode.className = "plain dbg-breakpoint-line";
+    lineNumberNode.setAttribute("value", lineNumber);
 
-    let lineText = document.createElement("label");
-    lineText.setAttribute("value", aText);
-    lineText.setAttribute("crop", "end");
-    lineText.setAttribute("tooltiptext",
-      aText.substr(0, BREAKPOINT_LINE_TOOLTIP_MAX_LENGTH));
+    let lineTextNode = document.createElement("label");
+    lineTextNode.className = "plain dbg-breakpoint-text";
+    lineTextNode.setAttribute("value", lineText);
+    lineTextNode.setAttribute("crop", "end");
+    lineTextNode.setAttribute("flex", "1");
+    lineTextNode.setAttribute("tooltiptext",
+      lineText.substr(0, BREAKPOINT_LINE_TOOLTIP_MAX_LENGTH));
 
-    let state = document.createElement("vbox");
-    state.className = "state";
-    state.setAttribute("pack", "center");
-    state.appendChild(checkbox);
+    let container = document.createElement("hbox");
+    container.id = "breakpoint-" + aOptions.actor;
+    container.className = "dbg-breakpoint side-menu-widget-item-other";
+    container.setAttribute("align", "center");
+    container.setAttribute("flex", "1");
 
-    let content = document.createElement("vbox");
-    content.className = "content";
-    content.setAttribute("flex", "1");
-    content.appendChild(lineInfo);
-    content.appendChild(lineText);
+    container.addEventListener("click", this._onBreakpointClick, false);
+    checkbox.addEventListener("click", this._onBreakpointCheckboxClick, false);
 
-    aElementNode.appendChild(state);
-    aElementNode.appendChild(content);
+    container.appendChild(checkbox);
+    container.appendChild(lineNumberNode);
+    container.appendChild(lineTextNode);
 
-    aElementNode.checkbox = checkbox;
-    aElementNode.infoNode = lineInfo;
-    aElementNode.textNode = lineText;
+    return {
+      container: container,
+      checkbox: checkbox,
+      lineNumber: lineNumberNode,
+      lineText: lineTextNode
+    };
   },
 
   /**
    * Creates a context menu for a breakpoint element.
    *
-   * @param nsIDOMNode aElementNode
-   *        The element associated with the displayed breakpoint item.
-   * @return string
-   *         The newly created menupopup id.
+   * @param aOptions
+   *        Additional options or flags supported by this operation:
+   *          - string actor
+   *            A breakpoint identifier specified by the debugger controller.
+   * @return object
+   *         An object containing the breakpoint commandset and menu popup ids.
    */
-  _createContextMenu: function DVB__createContextMenu(aElementNode) {
-    let breakpointId = aElementNode.id;
-    let commandsetId = "breakpointCommandset-" + breakpointId;
-    let menupopupId = "breakpointMenupopup-" + breakpointId;
+  _createContextMenu: function(aOptions) {
+    let commandsetId = "bp-cSet-" + aOptions.actor;
+    let menupopupId = "bp-mPop-" + aOptions.actor;
 
     let commandset = document.createElement("commandset");
     let menupopup = document.createElement("menupopup");
-    commandset.setAttribute("id", commandsetId);
-    menupopup.setAttribute("id", menupopupId);
+    commandset.id = commandsetId;
+    menupopup.id = menupopupId;
 
-    createMenuItem.call(this, "deleteAll");
+    createMenuItem.call(this, "enableSelf", true);
+    createMenuItem.call(this, "disableSelf");
+    createMenuItem.call(this, "deleteSelf");
     createMenuSeparator();
-    createMenuItem.call(this, "enableAll");
-    createMenuItem.call(this, "disableAll");
+    createMenuItem.call(this, "setConditional");
     createMenuSeparator();
     createMenuItem.call(this, "enableOthers");
     createMenuItem.call(this, "disableOthers");
     createMenuItem.call(this, "deleteOthers");
     createMenuSeparator();
-    createMenuItem.call(this, "setConditional");
+    createMenuItem.call(this, "enableAll");
+    createMenuItem.call(this, "disableAll");
     createMenuSeparator();
-    createMenuItem.call(this, "enableSelf", true);
-    createMenuItem.call(this, "disableSelf");
-    createMenuItem.call(this, "deleteSelf");
+    createMenuItem.call(this, "deleteAll");
 
     this._popupset.appendChild(menupopup);
     this._commandset.appendChild(commandset);
 
-    aElementNode.commandset = commandset;
-    aElementNode.menupopup = menupopup;
-    return menupopupId;
+    return {
+      commandsetId: commandsetId,
+      menupopupId: menupopupId
+    };
 
     /**
      * Creates a menu item specified by a name with the appropriate attributes
@@ -551,24 +526,23 @@ create({ constructor: BreakpointsView, proto: MenuContainer.prototype }, {
       let menuitem = document.createElement("menuitem");
       let command = document.createElement("command");
 
-      let prefix = "bp-cMenu-";
-      let commandId = prefix + aName + "-" + breakpointId + "-command";
-      let menuitemId = prefix + aName + "-" + breakpointId + "-menuitem";
+      let prefix = "bp-cMenu-"; // "breakpoints context menu"
+      let commandId = prefix + aName + "-" + aOptions.actor + "-command";
+      let menuitemId = prefix + aName + "-" + aOptions.actor + "-menuitem";
 
       let label = L10N.getStr("breakpointMenuItem." + aName);
-      let func = this["_on" + aName.charAt(0).toUpperCase() + aName.slice(1)];
+      let func = "_on" + aName.charAt(0).toUpperCase() + aName.slice(1);
 
-      command.setAttribute("id", commandId);
+      command.id = commandId;
       command.setAttribute("label", label);
-      command.addEventListener("command", func.bind(this, aElementNode), false);
+      command.addEventListener("command", () => this[func](aOptions.actor), false);
 
-      menuitem.setAttribute("id", menuitemId);
+      menuitem.id = menuitemId;
       menuitem.setAttribute("command", commandId);
-      menuitem.setAttribute("hidden", aHiddenFlag);
+      aHiddenFlag && menuitem.setAttribute("hidden", "true");
 
       commandset.appendChild(command);
       menupopup.appendChild(menuitem);
-      aElementNode[aName] = { menuitem: menuitem, command: command };
     }
 
     /**
@@ -582,30 +556,28 @@ create({ constructor: BreakpointsView, proto: MenuContainer.prototype }, {
   },
 
   /**
-   * Destroys a context menu for a breakpoint.
-   *
-   * @param nsIDOMNode aElementNode
-   *        The element associated with the displayed breakpoint item.
-   */
-  _destroyContextMenu: function DVB__destroyContextMenu(aElementNode) {
-    let commandset = aElementNode.commandset;
-    let menupopup = aElementNode.menupopup;
-
-    commandset.parentNode.removeChild(commandset);
-    menupopup.parentNode.removeChild(menupopup);
-  },
-
-  /**
    * Function called each time a breakpoint item is removed.
+   *
+   * @param object aItem
+   *        The corresponding item.
    */
-  _onBreakpointRemoved: function DVB__onBreakpointRemoved(aItem) {
-    this._destroyContextMenu(aItem.target);
+  _onBreakpointRemoved: function(aItem) {
+    dumpn("Finalizing breakpoint item: " + aItem);
+
+    // Destroy the context menu for the breakpoint.
+    let contextMenu = aItem.attachment.popup;
+    document.getElementById(contextMenu.commandsetId).remove();
+    document.getElementById(contextMenu.menupopupId).remove();
+
+    if (this._selectedBreakpoint == aItem) {
+      this._selectedBreakpoint = null;
+    }
   },
 
   /**
    * The load listener for the source editor.
    */
-  _onEditorLoad: function DVB__onEditorLoad({ detail: editor }) {
+  _onEditorLoad: function({ detail: editor }) {
     editor.addEventListener("Selection", this._onEditorSelection, false);
     editor.addEventListener("ContextMenu", this._onEditorContextMenu, false);
   },
@@ -613,7 +585,7 @@ create({ constructor: BreakpointsView, proto: MenuContainer.prototype }, {
   /**
    * The unload listener for the source editor.
    */
-  _onEditorUnload: function DVB__onEditorUnload({ detail: editor }) {
+  _onEditorUnload: function({ detail: editor }) {
     editor.removeEventListener("Selection", this._onEditorSelection, false);
     editor.removeEventListener("ContextMenu", this._onEditorContextMenu, false);
   },
@@ -621,10 +593,10 @@ create({ constructor: BreakpointsView, proto: MenuContainer.prototype }, {
   /**
    * The selection listener for the source editor.
    */
-  _onEditorSelection: function DVB__onEditorSelection(e) {
+  _onEditorSelection: function(e) {
     let { start, end } = e.newValue;
 
-    let sourceLocation = DebuggerView.Sources.selectedValue;
+    let sourceLocation = this.selectedValue;
     let lineStart = DebuggerView.editor.getLineAtOffset(start) + 1;
     let lineEnd = DebuggerView.editor.getLineAtOffset(end) + 1;
 
@@ -638,23 +610,111 @@ create({ constructor: BreakpointsView, proto: MenuContainer.prototype }, {
   /**
    * The context menu listener for the source editor.
    */
-  _onEditorContextMenu: function DVB__onEditorContextMenu({ x, y }) {
+  _onEditorContextMenu: function({ x, y }) {
     let offset = DebuggerView.editor.getOffsetAtLocation(x, y);
     let line = DebuggerView.editor.getLineAtOffset(offset);
     this._editorContextMenuLineNumber = line;
   },
 
   /**
-   * The context menu popup hidden listener for the source editor.
+   * The select listener for the sources container.
    */
-  _onEditorContextMenuPopupHidden: function DVB__onEditorContextMenuPopupHidden() {
-    this._editorContextMenuLineNumber = -1;
+  _onSourceSelect: function({ detail: sourceItem }) {
+    if (!sourceItem) {
+      return;
+    }
+    // The container is not empty and an actual item was selected.
+    let selectedSource = sourceItem.attachment.source;
+
+    if (DebuggerView.editorSource != selectedSource) {
+      DebuggerView.editorSource = selectedSource;
+    }
+  },
+
+  /**
+   * The click listener for the sources container.
+   */
+  _onSourceClick: function() {
+    // Use this container as a filtering target.
+    DebuggerView.Filtering.target = this;
+  },
+
+  /**
+   * The click listener for a breakpoint container.
+   */
+  _onBreakpointClick: function(e) {
+    let sourceItem = this.getItemForElement(e.target);
+    let breakpointItem = this.getItemForElement.call(sourceItem, e.target);
+    let { sourceLocation: url, lineNumber: line } = breakpointItem.attachment;
+
+    let breakpointClient = DebuggerController.Breakpoints.getBreakpoint(url, line);
+    let conditionalExpression = (breakpointClient || {}).conditionalExpression;
+
+    this.highlightBreakpoint(url, line, {
+      updateEditor: true,
+      openPopup: conditionalExpression !== undefined && e.button == 0
+    });
+  },
+
+  /**
+   * The click listener for a breakpoint checkbox.
+   */
+  _onBreakpointCheckboxClick: function(e) {
+    let sourceItem = this.getItemForElement(e.target);
+    let breakpointItem = this.getItemForElement.call(sourceItem, e.target);
+    let { sourceLocation: url, lineNumber: line, disabled } = breakpointItem.attachment;
+
+    this[disabled ? "enableBreakpoint" : "disableBreakpoint"](url, line, {
+      silent: true
+    });
+
+    // Don't update the editor location (avoid propagating into _onBreakpointClick).
+    e.preventDefault();
+    e.stopPropagation();
+  },
+
+  /**
+   * The popup showing listener for the breakpoints conditional expression panel.
+   */
+  _onConditionalPopupShowing: function() {
+    this._conditionalPopupVisible = true;
+  },
+
+  /**
+   * The popup shown listener for the breakpoints conditional expression panel.
+   */
+  _onConditionalPopupShown: function() {
+    this._cbTextbox.focus();
+    this._cbTextbox.select();
+  },
+
+  /**
+   * The popup hiding listener for the breakpoints conditional expression panel.
+   */
+  _onConditionalPopupHiding: function() {
+    this._conditionalPopupVisible = false;
+  },
+
+  /**
+   * The input listener for the breakpoints conditional expression textbox.
+   */
+  _onConditionalTextboxInput: function() {
+    this.selectedBreakpointClient.conditionalExpression = this._cbTextbox.value;
+  },
+
+  /**
+   * The keypress listener for the breakpoints conditional expression textbox.
+   */
+  _onConditionalTextboxKeyPress: function(e) {
+    if (e.keyCode == e.DOM_VK_RETURN || e.keyCode == e.DOM_VK_ENTER) {
+      this._hideConditionalPopup();
+    }
   },
 
   /**
    * Called when the add breakpoint key sequence was pressed.
    */
-  _onCmdAddBreakpoint: function BP__onCmdAddBreakpoint() {
+  _onCmdAddBreakpoint: function() {
     // If this command was executed via the context menu, add the breakpoint
     // on the currently hovered line in the source editor.
     if (this._editorContextMenuLineNumber >= 0) {
@@ -669,9 +729,8 @@ create({ constructor: BreakpointsView, proto: MenuContainer.prototype }, {
 
     // If a breakpoint already existed, remove it now.
     if (breakpointItem) {
-      let breakpointClient = DebuggerController.Breakpoints.getBreakpoint(url, line)
+      let breakpointClient = DebuggerController.Breakpoints.getBreakpoint(url, line);
       DebuggerController.Breakpoints.removeBreakpoint(breakpointClient);
-      DebuggerView.Breakpoints.unhighlightBreakpoint();
     }
     // No breakpoint existed at the required location, add one now.
     else {
@@ -683,7 +742,7 @@ create({ constructor: BreakpointsView, proto: MenuContainer.prototype }, {
   /**
    * Called when the add conditional breakpoint key sequence was pressed.
    */
-  _onCmdAddConditionalBreakpoint: function BP__onCmdAddConditionalBreakpoint() {
+  _onCmdAddConditionalBreakpoint: function() {
     // If this command was executed via the context menu, add the breakpoint
     // on the currently hovered line in the source editor.
     if (this._editorContextMenuLineNumber >= 0) {
@@ -698,8 +757,7 @@ create({ constructor: BreakpointsView, proto: MenuContainer.prototype }, {
 
     // If a breakpoint already existed or wasn't a conditional, morph it now.
     if (breakpointItem) {
-      breakpointItem.attachment.isConditional = true;
-      this.selectedClient.conditionalExpression = "";
+      let breakpointClient = DebuggerController.Breakpoints.getBreakpoint(url, line);
       this.highlightBreakpoint(url, line, { openPopup: true });
     }
     // No breakpoint existed at the required location, add one now.
@@ -712,239 +770,483 @@ create({ constructor: BreakpointsView, proto: MenuContainer.prototype }, {
   },
 
   /**
-   * The popup showing listener for the breakpoints conditional expression panel.
-   */
-  _onConditionalPopupShowing: function DVB__onConditionalPopupShowing() {
-    this._popupShown = true;
-  },
-
-  /**
-   * The popup shown listener for the breakpoints conditional expression panel.
-   */
-  _onConditionalPopupShown: function DVB__onConditionalPopupShown() {
-    this._cbTextbox.focus();
-    this._cbTextbox.select();
-  },
-
-  /**
-   * The popup hiding listener for the breakpoints conditional expression panel.
-   */
-  _onConditionalPopupHiding: function DVB__onConditionalPopupHiding() {
-    this._popupShown = false;
-    this.selectedClient.conditionalExpression = this._cbTextbox.value;
-  },
-
-  /**
-   * The keypress listener for the breakpoints conditional expression textbox.
-   */
-  _onConditionalTextboxKeyPress: function DVB__onConditionalTextboxKeyPress(e) {
-    if (e.keyCode == e.DOM_VK_RETURN || e.keyCode == e.DOM_VK_ENTER) {
-      this._cbPanel.hidePopup();
-    }
-  },
-
-  /**
-   * The click listener for the breakpoints container.
-   */
-  _onBreakpointClick: function DVB__onBreakpointClick(e) {
-    let breakpointItem = this.getItemForElement(e.target);
-    if (!breakpointItem) {
-      // The container is empty or we didn't click on an actual item.
-      return;
-    }
-    let { sourceLocation: url, lineNumber: line } = breakpointItem.attachment;
-    this.highlightBreakpoint(url, line, { updateEditor: true, openPopup: e.button == 0 });
-  },
-
-  /**
-   * The click listener for a breakpoint checkbox.
-   */
-  _onCheckboxClick: function DVB__onCheckboxClick(e) {
-    let breakpointItem = this.getItemForElement(e.target);
-    if (!breakpointItem) {
-      // The container is empty or we didn't click on an actual item.
-      return;
-    }
-    let { sourceLocation: url, lineNumber: line, enabled } = breakpointItem.attachment;
-    this[enabled ? "disableBreakpoint" : "enableBreakpoint"](url, line, { silent: true });
-
-    // Don't update the editor location.
-    e.preventDefault();
-    e.stopPropagation();
-  },
-
-  /**
-   * Listener handling the "setConditional" menuitem command.
+   * Function invoked on the "setConditional" menuitem command.
    *
-   * @param object aTarget
-   *        The corresponding breakpoint element node.
+   * @param string aId
+   *        The original breakpoint client actor. If a breakpoint was disabled
+   *        and then re-enabled, then this will not correspond to the entry in
+   *        the controller's breakpoints store.
+   * @param function aCallback [optional]
+   *        A function to invoke once this operation finishes.
    */
-  _onSetConditional: function DVB__onSetConditional(aTarget) {
-    if (!aTarget) {
-      return;
-    }
-    let breakpointItem = this.getItemForElement(aTarget);
-    let { sourceLocation: url, lineNumber: line } = breakpointItem.attachment;
+  _onSetConditional: function(aId, aCallback = () => {}) {
+    let targetBreakpoint = this.getItemForPredicate(aItem => aItem.attachment.actor == aId);
+    let { sourceLocation: url, lineNumber: line } = targetBreakpoint.attachment;
 
-    breakpointItem.attachment.isConditional = true;
+    // Highlight the breakpoint and show a conditional expression popup.
     this.highlightBreakpoint(url, line, { openPopup: true });
+
+    // Breakpoint is now highlighted.
+    aCallback();
   },
 
   /**
-   * Listener handling the "enableSelf" menuitem command.
+   * Function invoked on the "enableSelf" menuitem command.
    *
-   * @param object aTarget
-   *        The corresponding breakpoint element node.
+   * @param string aId
+   *        The original breakpoint client actor. If a breakpoint was disabled
+   *        and then re-enabled, then this will not correspond to the entry in
+   *        the controller's breakpoints store.
+   * @param function aCallback [optional]
+   *        A function to invoke once this operation finishes.
    */
-  _onEnableSelf: function DVB__onEnableSelf(aTarget) {
-    if (!aTarget) {
-      return;
-    }
-    let breakpointItem = this.getItemForElement(aTarget);
-    let { sourceLocation: url, lineNumber: line } = breakpointItem.attachment;
+  _onEnableSelf: function(aId, aCallback = () => {}) {
+    let targetBreakpoint = this.getItemForPredicate(aItem => aItem.attachment.actor == aId);
+    let { sourceLocation: url, lineNumber: line, actor } = targetBreakpoint.attachment;
 
+    // Enable the breakpoint, in this container and the controller store.
     if (this.enableBreakpoint(url, line)) {
-      aTarget.enableSelf.menuitem.setAttribute("hidden", "true");
-      aTarget.disableSelf.menuitem.removeAttribute("hidden");
+      let prefix = "bp-cMenu-"; // "breakpoints context menu"
+      let enableSelfId = prefix + "enableSelf-" + actor + "-menuitem";
+      let disableSelfId = prefix + "disableSelf-" + actor + "-menuitem";
+      document.getElementById(enableSelfId).setAttribute("hidden", "true");
+      document.getElementById(disableSelfId).removeAttribute("hidden");
+
+      // Breakpoint is now enabled.
+      // Breakpoints can only be set while the debuggee is paused, so if the
+      // active thread wasn't paused, wait for a resume before continuing.
+      if (gThreadClient.state != "paused") {
+        gThreadClient.addOneTimeListener("resumed", aCallback);
+      } else {
+        aCallback();
+      }
     }
   },
 
   /**
-   * Listener handling the "disableSelf" menuitem command.
+   * Function invoked on the "disableSelf" menuitem command.
    *
-   * @param object aTarget
-   *        The corresponding breakpoint element node.
+   * @param string aId
+   *        The original breakpoint client actor. If a breakpoint was disabled
+   *        and then re-enabled, then this will not correspond to the entry in
+   *        the controller's breakpoints store.
+   * @param function aCallback [optional]
+   *        A function to invoke once this operation finishes.
    */
-  _onDisableSelf: function DVB__onDisableSelf(aTarget) {
-    if (!aTarget) {
-      return;
-    }
-    let breakpointItem = this.getItemForElement(aTarget);
-    let { sourceLocation: url, lineNumber: line } = breakpointItem.attachment;
+  _onDisableSelf: function(aId, aCallback = () => {}) {
+    let targetBreakpoint = this.getItemForPredicate(aItem => aItem.attachment.actor == aId);
+    let { sourceLocation: url, lineNumber: line, actor } = targetBreakpoint.attachment;
 
+    // Disable the breakpoint, in this container and the controller store.
     if (this.disableBreakpoint(url, line)) {
-      aTarget.enableSelf.menuitem.removeAttribute("hidden");
-      aTarget.disableSelf.menuitem.setAttribute("hidden", "true");
+      let prefix = "bp-cMenu-"; // "breakpoints context menu"
+      let enableSelfId = prefix + "enableSelf-" + actor + "-menuitem";
+      let disableSelfId = prefix + "disableSelf-" + actor + "-menuitem";
+      document.getElementById(enableSelfId).removeAttribute("hidden");
+      document.getElementById(disableSelfId).setAttribute("hidden", "true");
+
+      // Breakpoint is now disabled.
+      aCallback();
     }
   },
 
   /**
-   * Listener handling the "deleteSelf" menuitem command.
+   * Function invoked on the "deleteSelf" menuitem command.
    *
-   * @param object aTarget
-   *        The corresponding breakpoint element node.
+   * @param string aId
+   *        The original breakpoint client actor. If a breakpoint was disabled
+   *        and then re-enabled, then this will not correspond to the entry in
+   *        the controller's breakpoints store.
+   * @param function aCallback [optional]
+   *        A function to invoke once this operation finishes.
    */
-  _onDeleteSelf: function DVB__onDeleteSelf(aTarget) {
-    if (!aTarget) {
-      return;
-    }
-    let breakpointItem = this.getItemForElement(aTarget);
-    let { sourceLocation: url, lineNumber: line } = breakpointItem.attachment;
-    let breakpointClient = DebuggerController.Breakpoints.getBreakpoint(url, line);
+  _onDeleteSelf: function(aId, aCallback = () => {}) {
+    let targetBreakpoint = this.getItemForPredicate(aItem => aItem.attachment.actor == aId);
+    let { sourceLocation: url, lineNumber: line } = targetBreakpoint.attachment;
 
+    // Remove the breakpoint, from this container and the controller store.
     this.removeBreakpoint(url, line);
-    DebuggerController.Breakpoints.removeBreakpoint(breakpointClient);
+    gBreakpoints.removeBreakpoint(gBreakpoints.getBreakpoint(url, line), aCallback);
   },
 
   /**
-   * Listener handling the "enableOthers" menuitem command.
+   * Function invoked on the "enableOthers" menuitem command.
    *
-   * @param object aTarget
-   *        The corresponding breakpoint element node.
+   * @param string aId
+   *        The original breakpoint client actor. If a breakpoint was disabled
+   *        and then re-enabled, then this will not correspond to the entry in
+   *        the controller's breakpoints store.
+   * @param function aCallback [optional]
+   *        A function to invoke once this operation finishes.
    */
-  _onEnableOthers: function DVB__onEnableOthers(aTarget) {
-    for (let item in this) {
-      if (item.target != aTarget) {
-        this._onEnableSelf(item.target);
+  _onEnableOthers: function(aId, aCallback = () => {}) {
+    let targetBreakpoint = this.getItemForPredicate(aItem => aItem.attachment.actor == aId);
+
+    // Find a disabled breakpoint and re-enable it. Do this recursively until
+    // all required breakpoints are enabled, because each operation is async.
+    for (let source in this) {
+      for (let otherBreakpoint in source) {
+        if (otherBreakpoint != targetBreakpoint &&
+            otherBreakpoint.attachment.disabled) {
+          this._onEnableSelf(otherBreakpoint.attachment.actor, () =>
+            this._onEnableOthers(aId, aCallback));
+          return;
+        }
       }
     }
+    // All required breakpoints are now enabled.
+    aCallback();
   },
 
   /**
-   * Listener handling the "disableOthers" menuitem command.
+   * Function invoked on the "disableOthers" menuitem command.
    *
-   * @param object aTarget
-   *        The corresponding breakpoint element node.
+   * @param string aId
+   *        The original breakpoint client actor. If a breakpoint was disabled
+   *        and then re-enabled, then this will not correspond to the entry in
+   *        the controller's breakpoints store.
+   * @param function aCallback [optional]
+   *        A function to invoke once this operation finishes.
    */
-  _onDisableOthers: function DVB__onDisableOthers(aTarget) {
-    for (let item in this) {
-      if (item.target != aTarget) {
-        this._onDisableSelf(item.target);
+  _onDisableOthers: function(aId, aCallback = () => {}) {
+    let targetBreakpoint = this.getItemForPredicate(aItem => aItem.attachment.actor == aId);
+
+    // Find an enabled breakpoint and disable it. Do this recursively until
+    // all required breakpoints are disabled, because each operation is async.
+    for (let source in this) {
+      for (let otherBreakpoint in source) {
+        if (otherBreakpoint != targetBreakpoint &&
+           !otherBreakpoint.attachment.disabled) {
+          this._onDisableSelf(otherBreakpoint.attachment.actor, () =>
+            this._onDisableOthers(aId, aCallback));
+          return;
+        }
       }
     }
+    // All required breakpoints are now disabled.
+    aCallback();
   },
 
   /**
-   * Listener handling the "deleteOthers" menuitem command.
+   * Function invoked on the "deleteOthers" menuitem command.
    *
-   * @param object aTarget
-   *        The corresponding breakpoint element node.
+   * @param string aId
+   *        The original breakpoint client actor. If a breakpoint was disabled
+   *        and then re-enabled, then this will not correspond to the entry in
+   *        the controller's breakpoints store.
+   * @param function aCallback [optional]
+   *        A function to invoke once this operation finishes.
    */
-  _onDeleteOthers: function DVB__onDeleteOthers(aTarget) {
-    for (let item in this) {
-      if (item.target != aTarget) {
-        this._onDeleteSelf(item.target);
+  _onDeleteOthers: function(aId, aCallback = () => {}) {
+    let targetBreakpoint = this.getItemForPredicate(aItem => aItem.attachment.actor == aId);
+
+    // Find a breakpoint and delete it. Do this recursively until all required
+    // breakpoints are deleted, because each operation is async.
+    for (let source in this) {
+      for (let otherBreakpoint in source) {
+        if (otherBreakpoint != targetBreakpoint) {
+          this._onDeleteSelf(otherBreakpoint.attachment.actor, () =>
+            this._onDeleteOthers(aId, aCallback));
+          return;
+        }
       }
     }
+    // All required breakpoints are now deleted.
+    aCallback();
   },
 
   /**
-   * Listener handling the "enableAll" menuitem command.
+   * Function invoked on the "enableAll" menuitem command.
    *
-   * @param object aTarget
-   *        The corresponding breakpoint element node.
+   * @param string aId
+   *        The original breakpoint client actor. If a breakpoint was disabled
+   *        and then re-enabled, then this will not correspond to the entry in
+   *        the controller's breakpoints store.
+   * @param function aCallback [optional]
+   *        A function to invoke once this operation finishes.
    */
-  _onEnableAll: function DVB__onEnableAll(aTarget) {
-    this._onEnableOthers(aTarget);
-    this._onEnableSelf(aTarget);
+  _onEnableAll: function(aId) {
+    this._onEnableOthers(aId, () => this._onEnableSelf(aId));
   },
 
   /**
-   * Listener handling the "disableAll" menuitem command.
+   * Function invoked on the "disableAll" menuitem command.
    *
-   * @param object aTarget
-   *        The corresponding breakpoint element node.
+   * @param string aId
+   *        The original breakpoint client actor. If a breakpoint was disabled
+   *        and then re-enabled, then this will not correspond to the entry in
+   *        the controller's breakpoints store.
+   * @param function aCallback [optional]
+   *        A function to invoke once this operation finishes.
    */
-  _onDisableAll: function DVB__onDisableAll(aTarget) {
-    this._onDisableOthers(aTarget);
-    this._onDisableSelf(aTarget);
+  _onDisableAll: function(aId) {
+    this._onDisableOthers(aId, () => this._onDisableSelf(aId));
   },
 
   /**
-   * Listener handling the "deleteAll" menuitem command.
+   * Function invoked on the "deleteAll" menuitem command.
    *
-   * @param object aTarget
-   *        The corresponding breakpoint element node.
+   * @param string aId
+   *        The original breakpoint client actor. If a breakpoint was disabled
+   *        and then re-enabled, then this will not correspond to the entry in
+   *        the controller's breakpoints store.
+   * @param function aCallback [optional]
+   *        A function to invoke once this operation finishes.
    */
-  _onDeleteAll: function DVB__onDeleteAll(aTarget) {
-    this._onDeleteOthers(aTarget);
-    this._onDeleteSelf(aTarget);
+  _onDeleteAll: function(aId) {
+    this._onDeleteOthers(aId, () => this._onDeleteSelf(aId));
   },
 
-  /**
-   * Gets an identifier for a breakpoint item in the current cache.
-   * @return string
-   */
-  _key: function DVB__key(aSourceLocation, aLineNumber) {
-    return aSourceLocation + aLineNumber;
-  },
-
-  _popupset: null,
   _commandset: null,
+  _popupset: null,
   _cmPopup: null,
   _cbPanel: null,
   _cbTextbox: null,
-  _popupShown: false,
-  _cache: null,
-  _editorContextMenuLineNumber: -1
+  _selectedBreakpoint: null,
+  _editorContextMenuLineNumber: -1,
+  _conditionalPopupVisible: false
 });
+
+/**
+ * Utility functions for handling sources.
+ */
+let SourceUtils = {
+  _labelsCache: new Map(), // Can't use WeakMaps because keys are strings.
+  _groupsCache: new Map(),
+
+  /**
+   * Clears the labels cache, populated by methods like
+   * SourceUtils.getSourceLabel or Source Utils.getSourceGroup.
+   * This should be done every time the content location changes.
+   */
+  clearCache: function() {
+    this._labelsCache.clear();
+    this._groupsCache.clear();
+  },
+
+  /**
+   * Gets a unique, simplified label from a source url.
+   *
+   * @param string aUrl
+   *        The source url.
+   * @return string
+   *         The simplified label.
+   */
+  getSourceLabel: function(aUrl) {
+    let cachedLabel = this._labelsCache.get(aUrl);
+    if (cachedLabel) {
+      return cachedLabel;
+    }
+
+    let sourceLabel = this.trimUrl(aUrl);
+    let unicodeLabel = NetworkHelper.convertToUnicode(unescape(sourceLabel));
+    this._labelsCache.set(aUrl, unicodeLabel);
+    return unicodeLabel;
+  },
+
+  /**
+   * Gets as much information as possible about the hostname and directory paths
+   * of an url to create a short url group identifier.
+   *
+   * @param string aUrl
+   *        The source url.
+   * @return string
+   *         The simplified group.
+   */
+  getSourceGroup: function(aUrl) {
+    let cachedGroup = this._groupsCache.get(aUrl);
+    if (cachedGroup) {
+      return cachedGroup;
+    }
+
+    try {
+      // Use an nsIURL to parse all the url path parts.
+      var uri = Services.io.newURI(aUrl, null, null).QueryInterface(Ci.nsIURL);
+    } catch (e) {
+      // This doesn't look like a url, or nsIURL can't handle it.
+      return "";
+    }
+
+    let { scheme, directory, fileName } = uri;
+    let hostPort;
+    // Add-on SDK jar: URLs will cause accessing hostPort to throw.
+    if (scheme != "jar") {
+      hostPort = uri.hostPort;
+    }
+    let lastDir = directory.split("/").reverse()[1];
+    let group = [];
+
+    // Only show interesting schemes, http is implicit.
+    if (scheme != "http") {
+      group.push(scheme);
+    }
+    // Hostnames don't always exist for files or some resource urls.
+    // e.g. file://foo/bar.js or resource:///foo/bar.js don't have a host.
+    if (hostPort) {
+      // If the hostname is a dot-separated identifier, show the first 2 parts.
+      group.push(hostPort.split(".").slice(0, 2).join("."));
+    }
+    // Append the last directory if the path leads to an actual file.
+    // e.g. http://foo.org/bar/ should only show "foo.org", not "foo.org bar"
+    if (fileName) {
+      group.push(lastDir);
+    }
+
+    let groupLabel = group.join(" ");
+    let unicodeLabel = NetworkHelper.convertToUnicode(unescape(groupLabel));
+    this._groupsCache.set(aUrl, unicodeLabel)
+    return unicodeLabel;
+  },
+
+  /**
+   * Trims the url by shortening it if it exceeds a certain length, adding an
+   * ellipsis at the end.
+   *
+   * @param string aUrl
+   *        The source url.
+   * @param number aLength [optional]
+   *        The expected source url length.
+   * @param number aSection [optional]
+   *        The section to trim. Supported values: "start", "center", "end"
+   * @return string
+   *         The shortened url.
+   */
+  trimUrlLength: function(aUrl, aLength, aSection) {
+    aLength = aLength || SOURCE_URL_DEFAULT_MAX_LENGTH;
+    aSection = aSection || "end";
+
+    if (aUrl.length > aLength) {
+      switch (aSection) {
+        case "start":
+          return L10N.ellipsis + aUrl.slice(-aLength);
+          break;
+        case "center":
+          return aUrl.substr(0, aLength / 2 - 1) + L10N.ellipsis + aUrl.slice(-aLength / 2 + 1);
+          break;
+        case "end":
+          return aUrl.substr(0, aLength) + L10N.ellipsis;
+          break;
+      }
+    }
+    return aUrl;
+  },
+
+  /**
+   * Trims the query part or reference identifier of a url string, if necessary.
+   *
+   * @param string aUrl
+   *        The source url.
+   * @return string
+   *         The shortened url.
+   */
+  trimUrlQuery: function(aUrl) {
+    let length = aUrl.length;
+    let q1 = aUrl.indexOf('?');
+    let q2 = aUrl.indexOf('&');
+    let q3 = aUrl.indexOf('#');
+    let q = Math.min(q1 != -1 ? q1 : length,
+                     q2 != -1 ? q2 : length,
+                     q3 != -1 ? q3 : length);
+
+    return aUrl.slice(0, q);
+  },
+
+  /**
+   * Trims as much as possible from a url, while keeping the label unique
+   * in the sources container.
+   *
+   * @param string | nsIURL aUrl
+   *        The source url.
+   * @param string aLabel [optional]
+   *        The resulting label at each step.
+   * @param number aSeq [optional]
+   *        The current iteration step.
+   * @return string
+   *         The resulting label at the final step.
+   */
+  trimUrl: function(aUrl, aLabel, aSeq) {
+    if (!(aUrl instanceof Ci.nsIURL)) {
+      try {
+        // Use an nsIURL to parse all the url path parts.
+        aUrl = Services.io.newURI(aUrl, null, null).QueryInterface(Ci.nsIURL);
+      } catch (e) {
+        // This doesn't look like a url, or nsIURL can't handle it.
+        return aUrl;
+      }
+    }
+    if (!aSeq) {
+      let name = aUrl.fileName;
+      if (name) {
+        // This is a regular file url, get only the file name (contains the
+        // base name and extension if available).
+
+        // If this url contains an invalid query, unfortunately nsIURL thinks
+        // it's part of the file extension. It must be removed.
+        aLabel = aUrl.fileName.replace(/\&.*/, "");
+      } else {
+        // This is not a file url, hence there is no base name, nor extension.
+        // Proceed using other available information.
+        aLabel = "";
+      }
+      aSeq = 1;
+    }
+
+    // If we have a label and it doesn't only contain a query...
+    if (aLabel && aLabel.indexOf("?") != 0) {
+      // A page may contain multiple requests to the same url but with different
+      // queries. It is *not* redundant to show each one.
+      if (!DebuggerView.Sources.containsLabel(aLabel)) {
+        return aLabel;
+      }
+    }
+
+    // Append the url query.
+    if (aSeq == 1) {
+      let query = aUrl.query;
+      if (query) {
+        return this.trimUrl(aUrl, aLabel + "?" + query, aSeq + 1);
+      }
+      aSeq++;
+    }
+    // Append the url reference.
+    if (aSeq == 2) {
+      let ref = aUrl.ref;
+      if (ref) {
+        return this.trimUrl(aUrl, aLabel + "#" + aUrl.ref, aSeq + 1);
+      }
+      aSeq++;
+    }
+    // Prepend the url directory.
+    if (aSeq == 3) {
+      let dir = aUrl.directory;
+      if (dir) {
+        return this.trimUrl(aUrl, dir.replace(/^\//, "") + aLabel, aSeq + 1);
+      }
+      aSeq++;
+    }
+    // Prepend the hostname and port number.
+    if (aSeq == 4) {
+      let host = aUrl.hostPort;
+      if (host) {
+        return this.trimUrl(aUrl, host + "/" + aLabel, aSeq + 1);
+      }
+      aSeq++;
+    }
+    // Use the whole url spec but ignoring the reference.
+    if (aSeq == 5) {
+      return this.trimUrl(aUrl, aUrl.specIgnoringRef, aSeq + 1);
+    }
+    // Give up.
+    return aUrl.spec;
+  }
+};
 
 /**
  * Functions handling the watch expressions UI.
  */
 function WatchExpressionsView() {
   dumpn("WatchExpressionsView was instantiated");
-  MenuContainer.call(this);
+
   this.switchExpression = this.switchExpression.bind(this);
   this.deleteExpression = this.deleteExpression.bind(this);
   this._createItemView = this._createItemView.bind(this);
@@ -952,33 +1254,29 @@ function WatchExpressionsView() {
   this._onClose = this._onClose.bind(this);
   this._onBlur = this._onBlur.bind(this);
   this._onKeyPress = this._onKeyPress.bind(this);
-  this._onMouseOver = this._onMouseOver.bind(this);
-  this._onMouseOut = this._onMouseOut.bind(this);
 }
 
-create({ constructor: WatchExpressionsView, proto: MenuContainer.prototype }, {
+WatchExpressionsView.prototype = Heritage.extend(WidgetMethods, {
   /**
    * Initialization function, called when the debugger is started.
    */
-  initialize: function DVWE_initialize() {
+  initialize: function() {
     dumpn("Initializing the WatchExpressionsView");
-    this._container = new StackList(document.getElementById("expressions"));
-    this._variables = document.getElementById("variables");
 
-    this._container.setAttribute("context", "debuggerWatchExpressionsContextMenu");
-    this._container.permaText = L10N.getStr("addWatchExpressionText");
-    this._container.itemFactory = this._createItemView;
-    this._container.addEventListener("click", this._onClick, false);
-
-    this._cache = [];
+    this.widget = new ListWidget(document.getElementById("expressions"));
+    this.widget.permaText = L10N.getStr("addWatchExpressionText");
+    this.widget.itemFactory = this._createItemView;
+    this.widget.setAttribute("context", "debuggerWatchExpressionsContextMenu");
+    this.widget.addEventListener("click", this._onClick, false);
   },
 
   /**
    * Destruction function, called when the debugger is closed.
    */
-  destroy: function DVWE_destroy() {
+  destroy: function() {
     dumpn("Destroying the WatchExpressionsView");
-    this._container.removeEventListener("click", this._onClick, false);
+
+    this.widget.removeEventListener("click", this._onClick, false);
   },
 
   /**
@@ -987,76 +1285,49 @@ create({ constructor: WatchExpressionsView, proto: MenuContainer.prototype }, {
    * @param string aExpression [optional]
    *        An optional initial watch expression text.
    */
-  addExpression: function DVWE_addExpression(aExpression = "") {
+  addExpression: function(aExpression = "") {
     // Watch expressions are UI elements which benefit from visible panes.
-    DebuggerView.showPanesSoon();
+    DebuggerView.showInstrumentsPane();
 
     // Append a watch expression item to this container.
-    let expressionItem = this.push("", aExpression, {
-      forced: { atIndex: 0 },
-      unsorted: true,
-      relaxed: true,
+    let expressionItem = this.push([, aExpression], {
+      index: 0, /* specifies on which position should the item be appended */
+      relaxed: true, /* this container should allow dupes & degenerates */
       attachment: {
-        expression: "",
         initialExpression: aExpression,
-        id: this._generateId()
+        currentExpression: ""
       }
     });
 
-    // Check if watch expression was already appended.
-    if (!expressionItem) {
-      return;
-    }
-
-    let element = expressionItem.target;
-    element.id = "expression-" + expressionItem.attachment.id;
-    element.className = "dbg-expression list-item";
-    element.arrowNode.className = "dbg-expression-arrow";
-    element.inputNode.className = "dbg-expression-input plain";
-    element.closeNode.className = "dbg-expression-delete plain devtools-closebutton";
-
-    // Automatically focus the new watch expression input and
-    // scroll the variables view to top.
-    element.inputNode.value = aExpression;
-    element.inputNode.select();
-    element.inputNode.focus();
-    this._variables.scrollTop = 0;
-
-    this._cache.splice(0, 0, expressionItem);
-  },
-
-  /**
-   * Removes the watch expression with the specified index from this container.
-   *
-   * @param number aIndex
-   *        The index used to identify the watch expression.
-   */
-  removeExpressionAt: function DVWE_removeExpressionAt(aIndex) {
-    this.remove(this._cache[aIndex]);
-    this._cache.splice(aIndex, 1);
+    // Automatically focus the new watch expression input.
+    expressionItem.attachment.inputNode.select();
+    expressionItem.attachment.inputNode.focus();
+    DebuggerView.Variables.parentNode.scrollTop = 0;
   },
 
   /**
    * Changes the watch expression corresponding to the specified variable item.
+   * This function is called whenever a watch expression's code is edited in
+   * the variables view container.
    *
    * @param Variable aVar
    *        The variable representing the watch expression evaluation.
    * @param string aExpression
    *        The new watch expression text.
    */
-  switchExpression: function DVWE_switchExpression(aVar, aExpression) {
+  switchExpression: function(aVar, aExpression) {
     let expressionItem =
-      [i for (i of this._cache) if (i.attachment.expression == aVar.name)][0];
+      [i for (i in this) if (i.attachment.currentExpression == aVar.name)][0];
 
-    // Remove the watch expression if it's going to be a duplicate.
-    if (!aExpression || this.getExpressions().indexOf(aExpression) != -1) {
+    // Remove the watch expression if it's going to be empty or a duplicate.
+    if (!aExpression || this.getAllStrings().indexOf(aExpression) != -1) {
       this.deleteExpression(aVar);
       return;
     }
 
     // Save the watch expression code string.
-    expressionItem.attachment.expression = aExpression;
-    expressionItem.target.inputNode.value = aExpression;
+    expressionItem.attachment.currentExpression = aExpression;
+    expressionItem.attachment.inputNode.value = aExpression;
 
     // Synchronize with the controller's watch expressions store.
     DebuggerController.StackFrames.syncWatchExpressions();
@@ -1064,16 +1335,18 @@ create({ constructor: WatchExpressionsView, proto: MenuContainer.prototype }, {
 
   /**
    * Removes the watch expression corresponding to the specified variable item.
+   * This function is called whenever a watch expression's value is edited in
+   * the variables view container.
    *
    * @param Variable aVar
    *        The variable representing the watch expression evaluation.
    */
-  deleteExpression: function DVWE_deleteExpression(aVar) {
+  deleteExpression: function(aVar) {
     let expressionItem =
-      [i for (i of this._cache) if (i.attachment.expression == aVar.name)][0];
+      [i for (i in this) if (i.attachment.currentExpression == aVar.name)][0];
 
-    // Remove the watch expression at its respective index.
-    this.removeExpressionAt(this._cache.indexOf(expressionItem));
+    // Remove the watch expression.
+    this.remove(expressionItem);
 
     // Synchronize with the controller's watch expressions store.
     DebuggerController.StackFrames.syncWatchExpressions();
@@ -1087,8 +1360,8 @@ create({ constructor: WatchExpressionsView, proto: MenuContainer.prototype }, {
    * @return string
    *         The watch expression code string.
    */
-  getExpression: function DVWE_getExpression(aIndex) {
-    return this._cache[aIndex].attachment.expression;
+  getString: function(aIndex) {
+    return this.getItemAtIndex(aIndex).attachment.currentExpression;
   },
 
   /**
@@ -1097,8 +1370,8 @@ create({ constructor: WatchExpressionsView, proto: MenuContainer.prototype }, {
    * @return array
    *         The watch expressions code strings.
    */
-  getExpressions: function DVWE_getExpressions() {
-    return [item.attachment.expression for (item of this._cache)];
+  getAllStrings: function() {
+    return this.orderedItems.map((e) => e.attachment.currentExpression);
   },
 
   /**
@@ -1106,37 +1379,41 @@ create({ constructor: WatchExpressionsView, proto: MenuContainer.prototype }, {
    *
    * @param nsIDOMNode aElementNode
    *        The element associated with the displayed item.
-   * @param string aExpression
-   *        The initial watch expression text.
+   * @param any aAttachment
+   *        Some attached primitive/object.
    */
-  _createItemView: function DVWE__createItemView(aElementNode, aExpression) {
+  _createItemView: function(aElementNode, aAttachment) {
     let arrowNode = document.createElement("box");
-    let inputNode = document.createElement("textbox");
-    let closeNode = document.createElement("toolbarbutton");
+    arrowNode.className = "dbg-expression-arrow";
 
-    inputNode.setAttribute("value", aExpression);
+    let inputNode = document.createElement("textbox");
+    inputNode.className = "plain dbg-expression-input";
+    inputNode.setAttribute("value", aAttachment.initialExpression);
     inputNode.setAttribute("flex", "1");
+
+    let closeNode = document.createElement("toolbarbutton");
+    closeNode.className = "plain variables-view-delete";
 
     closeNode.addEventListener("click", this._onClose, false);
     inputNode.addEventListener("blur", this._onBlur, false);
     inputNode.addEventListener("keypress", this._onKeyPress, false);
-    aElementNode.addEventListener("mouseover", this._onMouseOver, false);
-    aElementNode.addEventListener("mouseout", this._onMouseOut, false);
 
+    aElementNode.className = "dbg-expression";
     aElementNode.appendChild(arrowNode);
     aElementNode.appendChild(inputNode);
     aElementNode.appendChild(closeNode);
-    aElementNode.arrowNode = arrowNode;
-    aElementNode.inputNode = inputNode;
-    aElementNode.closeNode = closeNode;
+
+    aAttachment.arrowNode = arrowNode;
+    aAttachment.inputNode = inputNode;
+    aAttachment.closeNode = closeNode;
   },
 
   /**
    * Called when the add watch expression key sequence was pressed.
    */
-  _onCmdAddExpression: function BP__onCmdAddExpression(aText) {
+  _onCmdAddExpression: function(aText) {
     // Only add a new expression if there's no pending input.
-    if (this.getExpressions().indexOf("") == -1) {
+    if (this.getAllStrings().indexOf("") == -1) {
       this.addExpression(aText || DebuggerView.editor.getSelectedText());
     }
   },
@@ -1144,10 +1421,9 @@ create({ constructor: WatchExpressionsView, proto: MenuContainer.prototype }, {
   /**
    * Called when the remove all watch expressions key sequence was pressed.
    */
-  _onCmdRemoveAllExpressions: function BP__onCmdRemoveAllExpressions() {
+  _onCmdRemoveAllExpressions: function() {
     // Empty the view of all the watch expressions and clear the cache.
     this.empty();
-    this._cache = [];
 
     // Synchronize with the controller's watch expressions store.
     DebuggerController.StackFrames.syncWatchExpressions();
@@ -1156,7 +1432,7 @@ create({ constructor: WatchExpressionsView, proto: MenuContainer.prototype }, {
   /**
    * The click listener for this container.
    */
-  _onClick: function DVWE__onClick(e) {
+  _onClick: function(e) {
     if (e.button != 0) {
       // Only allow left-click to trigger this event.
       return;
@@ -1171,13 +1447,14 @@ create({ constructor: WatchExpressionsView, proto: MenuContainer.prototype }, {
   /**
    * The click listener for a watch expression's close button.
    */
-  _onClose: function DVWE__onClose(e) {
-    let expressionItem = this.getItemForElement(e.target);
-    this.removeExpressionAt(this._cache.indexOf(expressionItem));
+  _onClose: function(e) {
+    // Remove the watch expression.
+    this.remove(this.getItemForElement(e.target));
 
     // Synchronize with the controller's watch expressions store.
     DebuggerController.StackFrames.syncWatchExpressions();
 
+    // Prevent clicking the expression element itself.
     e.preventDefault();
     e.stopPropagation();
   },
@@ -1185,25 +1462,22 @@ create({ constructor: WatchExpressionsView, proto: MenuContainer.prototype }, {
   /**
    * The blur listener for a watch expression's textbox.
    */
-  _onBlur: function DVWE__onBlur({ target: textbox }) {
+  _onBlur: function({ target: textbox }) {
     let expressionItem = this.getItemForElement(textbox);
-    let oldExpression = expressionItem.attachment.expression;
+    let oldExpression = expressionItem.attachment.currentExpression;
     let newExpression = textbox.value.trim();
 
     // Remove the watch expression if it's empty.
     if (!newExpression) {
-      this.removeExpressionAt(this._cache.indexOf(expressionItem));
+      this.remove(expressionItem);
     }
     // Remove the watch expression if it's a duplicate.
-    else if (!oldExpression && this.getExpressions().indexOf(newExpression) != -1) {
-      this.removeExpressionAt(this._cache.indexOf(expressionItem));
+    else if (!oldExpression && this.getAllStrings().indexOf(newExpression) != -1) {
+      this.remove(expressionItem);
     }
     // Expression is eligible.
     else {
-      // Save the watch expression code string.
-      expressionItem.attachment.expression = newExpression;
-      // Make sure the close button is hidden when the textbox is unfocused.
-      expressionItem.target.closeNode.hidden = true;
+      expressionItem.attachment.currentExpression = newExpression;
     }
 
     // Synchronize with the controller's watch expressions store.
@@ -1213,7 +1487,7 @@ create({ constructor: WatchExpressionsView, proto: MenuContainer.prototype }, {
   /**
    * The keypress listener for a watch expression's textbox.
    */
-  _onKeyPress: function DVWE__onKeyPress(e) {
+  _onKeyPress: function(e) {
     switch(e.keyCode) {
       case e.DOM_VK_RETURN:
       case e.DOM_VK_ENTER:
@@ -1221,35 +1495,7 @@ create({ constructor: WatchExpressionsView, proto: MenuContainer.prototype }, {
         DebuggerView.editor.focus();
         return;
     }
-  },
-
-  /**
-   * The mouse over listener for a watch expression.
-   */
-  _onMouseOver: function DVWE__onMouseOver({ target: element }) {
-    this.getItemForElement(element).target.closeNode.hidden = false;
-  },
-
-  /**
-   * The mouse out listener for a watch expression.
-   */
-  _onMouseOut: function DVWE__onMouseOut({ target: element }) {
-    this.getItemForElement(element).target.closeNode.hidden = true;
-  },
-
-  /**
-   * Gets an identifier for a new watch expression item in the current cache.
-   * @return string
-   */
-  _generateId: (function() {
-    let count = 0;
-    return function DVWE__generateId() {
-      return (++count) + "";
-    };
-  })(),
-
-  _variables: null,
-  _cache: null
+  }
 });
 
 /**
@@ -1257,11 +1503,9 @@ create({ constructor: WatchExpressionsView, proto: MenuContainer.prototype }, {
  */
 function GlobalSearchView() {
   dumpn("GlobalSearchView was instantiated");
-  MenuContainer.call(this);
+
   this._startSearch = this._startSearch.bind(this);
-  this._onFetchSourceFinished = this._onFetchSourceFinished.bind(this);
-  this._onFetchSourceTimeout = this._onFetchSourceTimeout.bind(this);
-  this._onFetchSourcesFinished = this._onFetchSourcesFinished.bind(this);
+  this._performGlobalSearch = this._performGlobalSearch.bind(this);
   this._createItemView = this._createItemView.bind(this);
   this._onScroll = this._onScroll.bind(this);
   this._onHeaderClick = this._onHeaderClick.bind(this);
@@ -1269,66 +1513,61 @@ function GlobalSearchView() {
   this._onMatchClick = this._onMatchClick.bind(this);
 }
 
-create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
+GlobalSearchView.prototype = Heritage.extend(WidgetMethods, {
   /**
    * Initialization function, called when the debugger is started.
    */
-  initialize: function DVGS_initialize() {
+  initialize: function() {
     dumpn("Initializing the GlobalSearchView");
-    this._container = new StackList(document.getElementById("globalsearch"));
-    this._splitter = document.getElementById("globalsearch-splitter");
 
-    this._container.emptyText = L10N.getStr("noMatchingStringsText");
-    this._container.itemFactory = this._createItemView;
-    this._container.addEventListener("scroll", this._onScroll, false);
+    this.widget = new ListWidget(document.getElementById("globalsearch"));
+    this._splitter = document.querySelector("#globalsearch + .devtools-horizontal-splitter");
 
-    this._cache = new Map();
+    this.widget.emptyText = L10N.getStr("noMatchingStringsText");
+    this.widget.itemFactory = this._createItemView;
+    this.widget.addEventListener("scroll", this._onScroll, false);
   },
 
   /**
    * Destruction function, called when the debugger is closed.
    */
-  destroy: function DVGS_destroy() {
+  destroy: function() {
     dumpn("Destroying the GlobalSearchView");
-    this._container.removeEventListener("scroll", this._onScroll, false);
+
+    this.widget.removeEventListener("scroll", this._onScroll, false);
   },
 
   /**
    * Gets the visibility state of the global search container.
    * @return boolean
    */
-  get hidden() this._container.getAttribute("hidden") == "true",
+  get hidden()
+    this.widget.getAttribute("hidden") == "true" ||
+    this._splitter.getAttribute("hidden") == "true",
 
   /**
    * Sets the results container hidden or visible. It's hidden by default.
    * @param boolean aFlag
    */
   set hidden(aFlag) {
-    this._container.setAttribute("hidden", aFlag);
+    this.widget.setAttribute("hidden", aFlag);
     this._splitter.setAttribute("hidden", aFlag);
   },
 
   /**
-   * Removes all items from this container and hides it.
+   * Hides and removes all items from this search container.
    */
-  clearView: function DVGS_clearView() {
+  clearView: function() {
     this.hidden = true;
     this.empty();
-    window.dispatchEvent("Debugger:GlobalSearch:ViewCleared");
+    window.dispatchEvent(document, "Debugger:GlobalSearch:ViewCleared");
   },
 
   /**
-   * Clears all the fetched sources from cache.
+   * Selects the next found item in this container.
+   * Does not change the currently focused node.
    */
-  clearCache: function DVGS_clearCache() {
-    this._cache = new Map();
-    window.dispatchEvent("Debugger:GlobalSearch:CacheCleared");
-  },
-
-  /**
-   * Focuses the next found match in the source editor.
-   */
-  focusNextMatch: function DVGS_focusNextMatch() {
+  selectNext: function() {
     let totalLineResults = LineResults.size();
     if (!totalLineResults) {
       return;
@@ -1342,9 +1581,10 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
   },
 
   /**
-   * Focuses the previously found match in the source editor.
+   * Selects the previously found item in this container.
+   * Does not change the currently focused node.
    */
-  focusPrevMatch: function DVGS_focusPrevMatch() {
+  selectPrev: function() {
     let totalLineResults = LineResults.size();
     if (!totalLineResults) {
       return;
@@ -1368,12 +1608,12 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
    * @param string aQuery
    *        The string to search for.
    */
-  scheduleSearch: function DVGS_scheduleSearch(aQuery) {
+  scheduleSearch: function(aQuery) {
     if (!this.delayedSearch) {
       this.performSearch(aQuery);
       return;
     }
-    let delay = Math.max(GLOBAL_SEARCH_ACTION_MAX_DELAY / aQuery.length);
+    let delay = Math.max(GLOBAL_SEARCH_ACTION_MAX_DELAY / aQuery.length, 0);
 
     window.clearTimeout(this._searchTimeout);
     this._searchFunction = this._startSearch.bind(this, aQuery);
@@ -1386,7 +1626,7 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
    * @param string aQuery
    *        The string to search for.
    */
-  performSearch: function DVGS_performSearch(aQuery) {
+  performSearch: function(aQuery) {
     window.clearTimeout(this._searchTimeout);
     this._searchFunction = null;
     this._startSearch(aQuery);
@@ -1398,104 +1638,27 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
    * @param string aQuery
    *        The string to search for.
    */
-  _startSearch: function DVGS__startSearch(aQuery) {
-    let locations = DebuggerView.Sources.values;
-    this._sourcesCount = locations.length;
+  _startSearch: function(aQuery) {
     this._searchedToken = aQuery;
 
-    this._fetchSources(locations, {
-      onFetch: this._onFetchSourceFinished,
-      onTimeout: this._onFetchSourceTimeout,
-      onFinished: this._onFetchSourcesFinished
-    });
+    // Start fetching as many sources as possible, then perform the search.
+    DebuggerController.SourceScripts
+      .getTextForSources(DebuggerView.Sources.values)
+      .then(this._performGlobalSearch);
   },
 
   /**
-   * Starts fetching all the sources, silently.
-   *
-   * @param array aLocations
-   *        The locations for the sources to fetch.
-   * @param object aCallbacks
-   *        An object containing the callback functions to invoke:
-   *          - onFetch: called after each source is fetched
-   *          - onTimeout: called when a source's text takes too long to fetch
-   *          - onFinished: called if all the sources were already fetched
+   * Finds string matches in all the sources stored in the controller's cache,
+   * and groups them by location and line number.
    */
-  _fetchSources:
-  function DVGS__fetchSources(aLocations, { onFetch, onTimeout, onFinished }) {
-    // If all the sources were already fetched, then don't do anything.
-    if (this._cache.size == aLocations.length) {
-      onFinished();
-      return;
-    }
-
-    // Fetch each new source.
-    for (let location of aLocations) {
-      if (this._cache.has(location)) {
-        continue;
-      }
-      let sourceItem = DebuggerView.Sources.getItemByValue(location);
-      let sourceObject = sourceItem.attachment;
-      DebuggerController.SourceScripts.getText(sourceObject, onFetch, onTimeout);
-    }
-  },
-
-  /**
-   * Called when a source has been fetched.
-   *
-   * @param string aLocation
-   *        The location of the source.
-   * @param string aContents
-   *        The text contents of the source.
-   */
-  _onFetchSourceFinished: function DVGS__onFetchSourceFinished(aLocation, aContents) {
-    // Remember the source in a cache so we don't have to fetch it again.
-    this._cache.set(aLocation, aContents);
-
-    // Check if all sources were fetched and stored in the cache.
-    if (this._cache.size == this._sourcesCount) {
-      this._onFetchSourcesFinished();
-    }
-  },
-
-  /**
-   * Called when a source's text takes too long to fetch.
-   */
-  _onFetchSourceTimeout: function DVGS__onFetchSourceTimeout() {
-    // Remove the source from the load queue.
-    this._sourcesCount--;
-
-    // Check if the remaining sources were fetched and stored in the cache.
-    if (this._cache.size == this._sourcesCount) {
-      this._onFetchSourcesFinished();
-    }
-  },
-
-  /**
-   * Called when all the sources have been fetched.
-   */
-  _onFetchSourcesFinished: function DVGS__onFetchSourcesFinished() {
-    // At least one source needs to be present to perform a global search.
-    if (!this._sourcesCount) {
-      return;
-    }
-    // All sources are fetched and stored in the cache, we can start searching.
-    this._performGlobalSearch();
-    this._sourcesCount = 0;
-  },
-
-  /**
-   * Finds string matches in all the  sources stored in the cache, and groups
-   * them by location and line number.
-   */
-  _performGlobalSearch: function DVGS__performGlobalSearch() {
+  _performGlobalSearch: function(aSources) {
     // Get the currently searched token from the filtering input.
     let token = this._searchedToken;
 
     // Make sure we're actually searching for something.
     if (!token) {
       this.clearView();
-      window.dispatchEvent("Debugger:GlobalSearch:TokenEmpty");
+      window.dispatchEvent(document, "Debugger:GlobalSearch:TokenEmpty");
       return;
     }
 
@@ -1506,7 +1669,7 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
     // Prepare the results map, containing search details for each line.
     let globalResults = new GlobalResults();
 
-    for (let [location, contents] of this._cache) {
+    for (let [location, contents] of aSources) {
       // Verify that the search token is found anywhere in the source.
       if (!contents.toLowerCase().contains(lowerCaseToken)) {
         continue;
@@ -1526,7 +1689,7 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
         let lineNumber = i;
         let lineResults = new LineResults();
 
-        lowerCaseLine.split(lowerCaseToken).reduce(function(prev, curr, index, {length}) {
+        lowerCaseLine.split(lowerCaseToken).reduce((prev, curr, index, { length }) => {
           let prevLength = prev.length;
           let currLength = curr.length;
           let unmatched = line.substr(prevLength, currLength);
@@ -1561,9 +1724,9 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
       this.hidden = false;
       this._currentlyFocusedMatch = -1;
       this._createGlobalResultsUI(globalResults);
-      window.dispatchEvent("Debugger:GlobalSearch:MatchFound");
+      window.dispatchEvent(document, "Debugger:GlobalSearch:MatchFound");
     } else {
-      window.dispatchEvent("Debugger:GlobalSearch:MatchNotFound");
+      window.dispatchEvent(document, "Debugger:GlobalSearch:MatchNotFound");
     }
   },
 
@@ -1573,7 +1736,7 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
    * @param GlobalResults aGlobalResults
    *        An object containing all source results, grouped by source location.
    */
-  _createGlobalResultsUI: function DVGS__createGlobalResultsUI(aGlobalResults) {
+  _createGlobalResultsUI: function(aGlobalResults) {
     let i = 0;
 
     for (let [location, sourceResults] in aGlobalResults) {
@@ -1599,13 +1762,11 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
    * @param boolean aExpandFlag
    *        True to expand the source results.
    */
-  _createSourceResultsUI:
-  function DVGS__createSourceResultsUI(aLocation, aSourceResults, aExpandFlag) {
+  _createSourceResultsUI: function(aLocation, aSourceResults, aExpandFlag) {
     // Append a source results item to this container.
-    let sourceResultsItem = this.push(aLocation, aSourceResults.matchCount, {
-      forced: true,
-      unsorted: true,
-      relaxed: true,
+    let sourceResultsItem = this.push([aLocation, aSourceResults.matchCount], {
+      index: -1, /* specifies on which position should the item be appended */
+      relaxed: true, /* this container should allow dupes & degenerates */
       attachment: {
         sourceResults: aSourceResults,
         expandFlag: aExpandFlag
@@ -1618,15 +1779,14 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
    *
    * @param nsIDOMNode aElementNode
    *        The element associated with the displayed item.
+   * @param any aAttachment
+   *        Some attached primitive/object.
    * @param string aLocation
    *        The source result's location.
    * @param string aMatchCount
    *        The source result's match count.
-   * @param any aAttachment [optional]
-   *        Some attached primitive/object.
    */
-  _createItemView:
-  function DVGS__createItemView(aElementNode, aLocation, aMatchCount, aAttachment) {
+  _createItemView: function(aElementNode, aAttachment, aLocation, aMatchCount) {
     let { sourceResults, expandFlag } = aAttachment;
 
     sourceResults.createView(aElementNode, aLocation, aMatchCount, expandFlag, {
@@ -1639,7 +1799,7 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
   /**
    * The click listener for a results header.
    */
-  _onHeaderClick: function DVGS__onHeaderClick(e) {
+  _onHeaderClick: function(e) {
     let sourceResultsItem = SourceResults.getItemForElement(e.target);
     sourceResultsItem.instance.toggle(e);
   },
@@ -1647,7 +1807,7 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
   /**
    * The click listener for a results line.
    */
-  _onLineClick: function DVGLS__onLineClick(e) {
+  _onLineClick: function(e) {
     let lineResultsItem = LineResults.getItemForElement(e.target);
     this._onMatchClick({ target: lineResultsItem.firstMatch });
   },
@@ -1655,7 +1815,7 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
   /**
    * The click listener for a result match.
    */
-  _onMatchClick: function DVGLS__onMatchClick(e) {
+  _onMatchClick: function(e) {
     if (e instanceof Event) {
       e.preventDefault();
       e.stopPropagation();
@@ -1682,7 +1842,7 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
   /**
    * The scroll listener for the global search container.
    */
-  _onScroll: function DVGS__onScroll(e) {
+  _onScroll: function(e) {
     for (let item in this) {
       this._expandResultsIfNeeded(item.target);
     }
@@ -1694,14 +1854,14 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
    * @param nsIDOMNode aTarget
    *        The element associated with the displayed item.
    */
-  _expandResultsIfNeeded: function DVGS__expandResultsIfNeeded(aTarget) {
+  _expandResultsIfNeeded: function(aTarget) {
     let sourceResultsItem = SourceResults.getItemForElement(aTarget);
     if (sourceResultsItem.instance.toggled ||
         sourceResultsItem.instance.expanded) {
       return;
     }
     let { top, height } = aTarget.getBoundingClientRect();
-    let { clientHeight } = this._container._parent;
+    let { clientHeight } = this.widget._parent;
 
     if (top - height <= clientHeight || this._forceExpandResults) {
       sourceResultsItem.instance.expand();
@@ -1709,26 +1869,16 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
   },
 
   /**
-   * Scrolls a match into view.
+   * Scrolls a match into view if not already visible.
    *
    * @param nsIDOMNode aMatch
    *        The match to scroll into view.
    */
-  _scrollMatchIntoViewIfNeeded:  function DVGS__scrollMatchIntoViewIfNeeded(aMatch) {
-    let { top, height } = aMatch.getBoundingClientRect();
-    let { clientHeight } = this._container._parent;
-
-    let style = window.getComputedStyle(aMatch);
-    let topBorderSize = window.parseInt(style.getPropertyValue("border-top-width"));
-    let bottomBorderSize = window.parseInt(style.getPropertyValue("border-bottom-width"));
-
-    let marginY = top - (height + topBorderSize + bottomBorderSize) * 2;
-    if (marginY <= 0) {
-      this._container._parent.scrollTop += marginY;
-    }
-    if (marginY + height > clientHeight) {
-      this._container._parent.scrollTop += height - (clientHeight - marginY);
-    }
+  _scrollMatchIntoViewIfNeeded: function(aMatch) {
+    // TODO: Accessing private widget properties. Figure out what's the best
+    // way to expose such things. Bug 876271.
+    let boxObject = this.widget._parent.boxObject.QueryInterface(Ci.nsIScrollBoxObject);
+    boxObject.ensureElementIsVisible(aMatch);
   },
 
   /**
@@ -1737,7 +1887,7 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
    * @param nsIDOMNode aMatch
    *        The match to start a bounce animation for.
    */
-  _bounceMatch: function DVGS__bounceMatch(aMatch) {
+  _bounceMatch: function(aMatch) {
     Services.tm.currentThread.dispatch({ run: function() {
       aMatch.addEventListener("transitionend", function onEvent() {
         aMatch.removeEventListener("transitionend", onEvent);
@@ -1745,6 +1895,7 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
       });
       aMatch.setAttribute("focused", "");
     }}, 0);
+    aMatch.setAttribute("focusing", "");
   },
 
   _splitter: null,
@@ -1752,9 +1903,7 @@ create({ constructor: GlobalSearchView, proto: MenuContainer.prototype }, {
   _forceExpandResults: false,
   _searchTimeout: null,
   _searchFunction: null,
-  _searchedToken: "",
-  _sourcesCount: -1,
-  _cache: null
+  _searchedToken: ""
 });
 
 /**
@@ -1776,7 +1925,7 @@ GlobalResults.prototype = {
    * @param SourceResults aSourceResults
    *        An object containing all the matched lines for a specific source.
    */
-  add: function GR_add(aLocation, aSourceResults) {
+  add: function(aLocation, aSourceResults) {
     this._store.set(aLocation, aSourceResults);
   },
 
@@ -1806,7 +1955,7 @@ SourceResults.prototype = {
    * @param LineResults aLineResults
    *        An object containing all the matches for a specific line.
    */
-  add: function SR_add(aLineNumber, aLineResults) {
+  add: function(aLineNumber, aLineResults) {
     this._store.set(aLineNumber, aLineResults);
   },
 
@@ -1817,32 +1966,24 @@ SourceResults.prototype = {
 
   /**
    * Expands the element, showing all the added details.
-   *
-   * @param boolean aSkipAnimationFlag
-   *        Pass true to not show an opening animation.
    */
-  expand: function SR_expand(aSkipAnimationFlag) {
-    this._target.resultsContainer.setAttribute("open", "");
+  expand: function() {
+    this._target.resultsContainer.removeAttribute("hidden")
     this._target.arrow.setAttribute("open", "");
-
-    if (!aSkipAnimationFlag) {
-      this._target.resultsContainer.setAttribute("animated", "");
-    }
   },
 
   /**
    * Collapses the element, hiding all the added details.
    */
-  collapse: function SR_collapse() {
-    this._target.resultsContainer.removeAttribute("animated");
-    this._target.resultsContainer.removeAttribute("open");
+  collapse: function() {
+    this._target.resultsContainer.setAttribute("hidden", "true");
     this._target.arrow.removeAttribute("open");
   },
 
   /**
    * Toggles between the element collapse/expand state.
    */
-  toggle: function SR_toggle(e) {
+  toggle: function(e) {
     if (e instanceof Event) {
       this._userToggled = true;
     }
@@ -1858,7 +1999,9 @@ SourceResults.prototype = {
    * Gets this element's expanded state.
    * @return boolean
    */
-  get expanded() this._target.resultsContainer.hasAttribute("open"),
+  get expanded()
+    this._target.resultsContainer.getAttribute("hidden") != "true" &&
+    this._target.arrow.hasAttribute("open"),
 
   /**
    * Sets this element's expanded state.
@@ -1894,19 +2037,18 @@ SourceResults.prototype = {
    *          - onHeaderClick
    *          - onMatchClick
    */
-  createView:
-  function SR_createView(aElementNode, aLocation, aMatchCount, aExpandFlag, aCallbacks) {
+  createView: function(aElementNode, aLocation, aMatchCount, aExpandFlag, aCallbacks) {
     this._target = aElementNode;
 
     let arrow = document.createElement("box");
     arrow.className = "arrow";
 
     let locationNode = document.createElement("label");
-    locationNode.className = "plain location";
+    locationNode.className = "plain dbg-results-header-location";
     locationNode.setAttribute("value", SourceUtils.trimUrlLength(aLocation));
 
     let matchCountNode = document.createElement("label");
-    matchCountNode.className = "plain match-count";
+    matchCountNode.className = "plain dbg-results-header-match-count";
     matchCountNode.setAttribute("value", "(" + aMatchCount + ")");
 
     let resultsHeader = document.createElement("hbox");
@@ -1919,6 +2061,7 @@ SourceResults.prototype = {
 
     let resultsContainer = document.createElement("vbox");
     resultsContainer.className = "dbg-results-container";
+    resultsContainer.setAttribute("hidden", "true");
 
     for (let [lineNumber, lineResults] of this._store) {
       lineResults.createView(resultsContainer, lineNumber, aCallbacks)
@@ -1974,7 +2117,7 @@ LineResults.prototype = {
    * @param boolean aMatchFlag
    *        True if the chunk is a matched string, false if just text content.
    */
-  add: function LC_add(aString, aRange, aMatchFlag) {
+  add: function(aString, aRange, aMatchFlag) {
     this._store.push({
       string: aString,
       range: aRange,
@@ -2000,7 +2143,7 @@ LineResults.prototype = {
    *          - onMatchClick
    *          - onLineClick
    */
-  createView: function LR_createView(aContainer, aLineNumber, aCallbacks) {
+  createView: function(aContainer, aLineNumber, aCallbacks) {
     this._target = aContainer;
 
     let lineNumberNode = document.createElement("label");
@@ -2009,9 +2152,9 @@ LineResults.prototype = {
     let lineLength = 0;
     let firstMatch = null;
 
-    lineNumberNode.className = "plain line-number";
+    lineNumberNode.className = "plain dbg-results-line-number";
     lineNumberNode.setAttribute("value", aLineNumber + 1);
-    lineContentsNode.className = "line-contents";
+    lineContentsNode.className = "light list-widget-item dbg-results-line-contents";
     lineContentsNode.setAttribute("flex", "1");
 
     for (let chunk of this._store) {
@@ -2020,7 +2163,7 @@ LineResults.prototype = {
       lineLength += string.length;
 
       let label = document.createElement("label");
-      label.className = "plain string";
+      label.className = "plain dbg-results-line-contents-string";
       label.setAttribute("value", lineString);
       label.setAttribute("match", match);
       lineContentsNode.appendChild(label);
@@ -2052,7 +2195,7 @@ LineResults.prototype = {
    * @param nsIDOMNode aNode
    * @param object aMatchChunk
    */
-  _entangleMatch: function LR__entangleMatch(aLineNumber, aNode, aMatchChunk) {
+  _entangleMatch: function(aLineNumber, aNode, aMatchChunk) {
     LineResults._itemsByElement.set(aNode, {
       lineNumber: aLineNumber,
       lineData: aMatchChunk
@@ -2064,7 +2207,7 @@ LineResults.prototype = {
    * @param nsIDOMNode aNode
    * @param nsIDOMNode aFirstMatch
    */
-  _entangleLine: function LR__entangleLine(aNode, aFirstMatch) {
+  _entangleLine: function(aNode, aFirstMatch) {
     LineResults._itemsByElement.set(aNode, {
       firstMatch: aFirstMatch,
       nonenumerable: true
@@ -2076,7 +2219,7 @@ LineResults.prototype = {
    */
   _ellipsis: (function() {
     let label = document.createElement("label");
-    label.className = "plain string";
+    label.className = "plain dbg-results-line-contents-string";
     label.setAttribute("value", L10N.ellipsis);
     return label;
   })(),
@@ -2090,7 +2233,7 @@ LineResults.prototype = {
  */
 GlobalResults.prototype.__iterator__ =
 SourceResults.prototype.__iterator__ =
-LineResults.prototype.__iterator__ = function DVGS_iterator() {
+LineResults.prototype.__iterator__ = function() {
   for (let item of this._store) {
     yield item;
   }
@@ -2105,8 +2248,8 @@ LineResults.prototype.__iterator__ = function DVGS_iterator() {
  *         The matched item, or null if nothing is found.
  */
 SourceResults.getItemForElement =
-LineResults.getItemForElement = function DVGS_getItemForElement(aElement) {
-  return MenuContainer.prototype.getItemForElement.call(this, aElement);
+LineResults.getItemForElement = function(aElement) {
+  return WidgetMethods.getItemForElement.call(this, aElement);
 };
 
 /**
@@ -2118,22 +2261,25 @@ LineResults.getItemForElement = function DVGS_getItemForElement(aElement) {
  *         The matched element, or null if nothing is found.
  */
 SourceResults.getElementAtIndex =
-LineResults.getElementAtIndex = function DVGS_getElementAtIndex(aIndex) {
+LineResults.getElementAtIndex = function(aIndex) {
   for (let [element, item] of this._itemsByElement) {
     if (!item.nonenumerable && !aIndex--) {
       return element;
     }
   }
+  return null;
 };
 
 /**
  * Gets the index of an item associated with the specified element.
  *
+ * @param nsIDOMNode aElement
+ *        The element to get the index for.
  * @return number
- *         The index of the matched item, or -1 if nothing is found.
+ *         The index of the matched element, or -1 if nothing is found.
  */
 SourceResults.indexOfElement =
-LineResults.indexOfElement = function DVGS_indexOFElement(aElement) {
+LineResults.indexOfElement = function(aElement) {
   let count = 0;
   for (let [element, item] of this._itemsByElement) {
     if (element == aElement) {
@@ -2153,7 +2299,7 @@ LineResults.indexOfElement = function DVGS_indexOFElement(aElement) {
  *         The number of key/value pairs in the corresponding map.
  */
 SourceResults.size =
-LineResults.size = function DVGS_size() {
+LineResults.size = function() {
   let count = 0;
   for (let [, item] of this._itemsByElement) {
     if (!item.nonenumerable) {
@@ -2166,7 +2312,6 @@ LineResults.size = function DVGS_size() {
 /**
  * Preliminary setup for the DebuggerView object.
  */
-DebuggerView.StackFrames = new StackFramesView();
-DebuggerView.Breakpoints = new BreakpointsView();
+DebuggerView.Sources = new SourcesView();
 DebuggerView.WatchExpressions = new WatchExpressionsView();
 DebuggerView.GlobalSearch = new GlobalSearchView();

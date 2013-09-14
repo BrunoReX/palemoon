@@ -10,16 +10,12 @@ import java.net.URI;
 import java.util.List;
 import java.util.Locale;
 
-import org.mozilla.gecko.background.BackgroundConstants;
-import org.mozilla.gecko.sync.Logger;
+import org.mozilla.gecko.background.BackgroundService;
+import org.mozilla.gecko.background.common.GlobalConstants;
+import org.mozilla.gecko.background.common.log.Logger;
 
-import android.app.IntentService;
-import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
-import android.os.Build;
 import android.os.IBinder;
 
 /**
@@ -52,7 +48,7 @@ import android.os.IBinder;
  * * Persisting of multiple announcements.
  * * Prioritization.
  */
-public class AnnouncementsService extends IntentService implements AnnouncementsFetchDelegate {
+public class AnnouncementsService extends BackgroundService implements AnnouncementsFetchDelegate {
   private static final String WORKER_THREAD_NAME = "AnnouncementsServiceWorker";
   private static final String LOG_TAG = "AnnounceService";
 
@@ -132,29 +128,8 @@ public class AnnouncementsService extends IntentService implements Announcements
   }
 
   @Override
-  public void onDestroy() {
-    super.onDestroy();
-  }
-
-  @Override
   public IBinder onBind(Intent intent) {
     return null;
-  }
-
-  /**
-   * Returns true if the OS will allow us to perform background
-   * data operations. This logic varies by OS version.
-   */
-  protected boolean backgroundDataIsEnabled() {
-    ConnectivityManager connectivity = (ConnectivityManager) this.getSystemService(Context.CONNECTIVITY_SERVICE);
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
-      return connectivity.getBackgroundDataSetting();
-    }
-    NetworkInfo networkInfo = connectivity.getActiveNetworkInfo();
-    if (networkInfo == null) {
-      return false;
-    }
-    return networkInfo.isAvailable();
   }
 
   protected long getLastLaunch() {
@@ -162,7 +137,7 @@ public class AnnouncementsService extends IntentService implements Announcements
   }
 
   private SharedPreferences getSharedPreferences() {
-    return this.getSharedPreferences(AnnouncementsConstants.PREFS_BRANCH, BackgroundConstants.SHARED_PREFERENCES_MODE);
+    return this.getSharedPreferences(AnnouncementsConstants.PREFS_BRANCH, GlobalConstants.SHARED_PREFERENCES_MODE);
   }
 
   @Override

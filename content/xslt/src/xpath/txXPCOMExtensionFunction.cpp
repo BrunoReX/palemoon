@@ -17,6 +17,7 @@
 #include "xptcall.h"
 #include "txXPathObjectAdaptor.h"
 #include "mozilla/Attributes.h"
+#include "nsIClassInfo.h"
 
 NS_IMPL_ISUPPORTS1(txXPathObjectAdaptor, txIXPathObject)
 
@@ -187,7 +188,11 @@ LookupFunction(const char *aContractID, nsIAtom* aName, nsIID &aIID,
             upperNext = true;
         }
         else {
-            methodName.Append(upperNext ? nsCRT::ToUpper(letter) : letter);
+            MOZ_ASSERT(nsCRT::IsAscii(letter),
+                       "invalid static_cast coming up");
+            methodName.Append(upperNext ?
+                              nsCRT::ToUpper(static_cast<char>(letter)) :
+                              letter);
             upperNext = false;
         }
         ++name;

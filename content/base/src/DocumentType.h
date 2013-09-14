@@ -10,6 +10,7 @@
 #ifndef DocumentType_h
 #define DocumentType_h
 
+#include "mozilla/Attributes.h"
 #include "nsCOMPtr.h"
 #include "nsIDOMDocumentType.h"
 #include "nsIContent.h"
@@ -57,28 +58,27 @@ public:
   NS_DECL_NSIDOMDOCUMENTTYPE
 
   // nsINode
-  virtual bool IsNodeOfType(uint32_t aFlags) const;
-  virtual void GetNodeValueInternal(nsAString& aNodeValue)
+  virtual bool IsNodeOfType(uint32_t aFlags) const MOZ_OVERRIDE;
+  virtual void GetNodeValueInternal(nsAString& aNodeValue) MOZ_OVERRIDE
   {
     SetDOMStringToNull(aNodeValue);
   }
   virtual void SetNodeValueInternal(const nsAString& aNodeValue,
-                                    mozilla::ErrorResult& aError)
+                                    mozilla::ErrorResult& aError) MOZ_OVERRIDE
   {
   }
 
   // nsIContent overrides
-  virtual const nsTextFragment* GetText();
+  virtual const nsTextFragment* GetText() MOZ_OVERRIDE;
 
   virtual nsGenericDOMDataNode* CloneDataNode(nsINodeInfo *aNodeInfo,
-                                              bool aCloneText) const;
+                                              bool aCloneText) const MOZ_OVERRIDE;
 
-  virtual nsXPCClassInfo* GetClassInfo();
-
-  virtual nsIDOMNode* AsDOMNode() { return this; }
+  virtual nsIDOMNode* AsDOMNode() MOZ_OVERRIDE { return this; }
 
 protected:
-  virtual JSObject* WrapNode(JSContext *cx, JSObject *scope, bool *triedToWrap) MOZ_OVERRIDE;
+  virtual JSObject* WrapNode(JSContext *cx,
+                             JS::Handle<JSObject*> scope) MOZ_OVERRIDE;
 
   nsString mPublicId;
   nsString mSystemId;

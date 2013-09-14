@@ -31,22 +31,13 @@ XPCOMUtils.defineLazyModuleGetter(this, "DownloadsCommon",
 XPCOMUtils.defineLazyServiceGetter(this, "gSessionStartup",
                                    "@mozilla.org/browser/sessionstartup;1",
                                    "nsISessionStartup");
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-XPCOMUtils.defineLazyServiceGetter(this, "gPrivateBrowsingService",
-                                   "@mozilla.org/privatebrowsing;1",
-                                   "nsIPrivateBrowsingService");
-#endif
 
 const kObservedTopics = [
   "sessionstore-windows-restored",
   "sessionstore-browser-state-restored",
   "download-manager-initialized",
   "download-manager-change-retention",
-#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
   "last-pb-context-exited",
-#else
-  "private-browsing-transition-complete",
-#endif
   "browser-lastwindow-close-granted",
   "quit-application",
   "profile-change-teardown",
@@ -61,6 +52,16 @@ const kDownloadsUICid = Components.ID("{4d99321e-d156-455b-81f7-e7aa2308134f}");
  * Contract ID of the service implementing nsIDownloadManagerUI.
  */
 const kDownloadsUIContractId = "@mozilla.org/download-manager-ui;1";
+
+/**
+ * CID of the JavaScript implementation of nsITransfer.
+ */
+const kTransferCid = Components.ID("{1b4c85df-cbdd-4bb6-b04e-613caece083c}");
+
+/**
+ * Contract ID of the service implementing nsITransfer.
+ */
+const kTransferContractId = "@mozilla.org/transfer;1";
 
 ////////////////////////////////////////////////////////////////////////////////
 //// DownloadsStartup
@@ -84,7 +85,7 @@ DownloadsStartup.prototype = {
   observe: function DS_observe(aSubject, aTopic, aData)
   {
     switch (aTopic) {
-      case "app-startup":
+      case "profile-after-change":
         kObservedTopics.forEach(
           function (topic) Services.obs.addObserver(this, topic, true),
           this);
@@ -95,6 +96,24 @@ DownloadsStartup.prototype = {
         Components.manager.QueryInterface(Ci.nsIComponentRegistrar)
                           .registerFactory(kDownloadsUICid, "",
                                            kDownloadsUIContractId, null);
+
+        // If the integration preference is enabled, override Toolkit's
+        // nsITransfer implementation with the one from the JavaScript API for
+        // downloads.  This should be used only by developers while testing new
+        // code that uses the JavaScript API, and will eventually be removed
+        // when nsIDownloadManager will not be available anymore (bug 851471).
+        let useJSTransfer = false;
+        try {
+          useJSTransfer =
+            Services.prefs.getBoolPref("browser.download.useJSTransfer");
+        } catch (ex) {
+          // This is a hidden preference that does not exist by default.
+        }
+        if (useJSTransfer) {
+          Components.manager.QueryInterface(Ci.nsIComponentRegistrar)
+                            .registerFactory(kTransferCid, "",
+                                             kTransferContractId, null);
+        }
         break;
 
       case "sessionstore-windows-restored":
@@ -139,14 +158,6 @@ DownloadsStartup.prototype = {
         }
         break;
 
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-      case "private-browsing-transition-complete":
-        // Ensure that persistent data is reloaded only when the database
-        // connection is available again.
-        this._ensureDataLoaded();
-        break;
-#endif
-
       case "browser-lastwindow-close-granted":
         // When using the panel interface, downloads that are already completed
         // should be removed when the last full browser window is closed.  This
@@ -160,7 +171,6 @@ DownloadsStartup.prototype = {
         }
         break;
 
-#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
       case "last-pb-context-exited":
         // Similar to the above notification, but for private downloads.
         if (this._downloadsServiceInitialized &&
@@ -168,7 +178,6 @@ DownloadsStartup.prototype = {
           Services.downloads.cleanUpPrivate();
         }
         break;
-#endif
 
       case "quit-application":
         // When the application is shutting down, we must free all resources in
@@ -270,11 +279,7 @@ DownloadsStartup.prototype = {
    */
   _ensureDataLoaded: function DS_ensureDataLoaded()
   {
-    if (!this._downloadsServiceInitialized
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-        || gPrivateBrowsingService.privateBrowsingEnabled
-#endif
-       ) {
+    if (!this._downloadsServiceInitialized) {
       return;
     }
 

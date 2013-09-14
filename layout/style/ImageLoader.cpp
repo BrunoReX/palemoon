@@ -117,11 +117,12 @@ ImageLoader::AssociateRequestToFrame(imgIRequest* aRequest,
   }
 
   // Add these to the sets, but only if they're not already there.
-  uint32_t i;
-  if (!frameSet->GreatestIndexLtEq(aFrame, i)) {
+  uint32_t i = frameSet->IndexOfFirstElementGt(aFrame);
+  if (i == 0 || aFrame != frameSet->ElementAt(i-1)) {
     frameSet->InsertElementAt(i, aFrame);
   }
-  if (!requestSet->GreatestIndexLtEq(aRequest, i)) {
+  i = requestSet->IndexOfFirstElementGt(aRequest);
+  if (i == 0 || aRequest != requestSet->ElementAt(i-1)) {
     requestSet->InsertElementAt(i, aRequest);
   }
 }
@@ -340,7 +341,7 @@ ImageLoader::DoRedraw(FrameSet* aFrameSet)
   for (FrameSet::size_type i = 0; i < length; i++) {
     nsIFrame* frame = aFrameSet->ElementAt(i);
 
-    if (frame->GetStyleVisibility()->IsVisible()) {
+    if (frame->StyleVisibility()->IsVisible()) {
       if (frame->IsFrameOfType(nsIFrame::eTablePart)) {
         // Tables don't necessarily build border/background display items
         // for the individual table part frames, so IterateRetainedDataFor

@@ -3,10 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <math.h>
-
 #include "mozilla/DebugOnly.h"
-#include "mozilla/Util.h"
 
 #include "SVGPathSegListSMILType.h"
 #include "nsSMILValue.h"
@@ -19,8 +16,6 @@
 #define SWEEP_FLAG_IDX     5
 
 namespace mozilla {
-
-/*static*/ SVGPathSegListSMILType SVGPathSegListSMILType::sSingleton;
 
 //----------------------------------------------------------------------
 // nsISMILType implementation
@@ -39,7 +34,7 @@ SVGPathSegListSMILType::Destroy(nsSMILValue& aValue) const
   NS_PRECONDITION(aValue.mType == this, "Unexpected SMIL value type");
   delete static_cast<SVGPathDataAndOwner*>(aValue.mU.mPtr);
   aValue.mU.mPtr = nullptr;
-  aValue.mType = &nsSMILNullType::sSingleton;
+  aValue.mType = nsSMILNullType::Singleton();
 }
 
 nsresult

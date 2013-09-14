@@ -22,7 +22,6 @@
 #include "nsCRT.h"
 #include "nsEnumeratorUtils.h"
 #include "nsEscape.h"
-#include "nsIEnumerator.h"
 #include "nsIRDFService.h"
 #include "nsRDFCID.h"
 #include "rdf.h"
@@ -51,6 +50,8 @@
 #include "nsXPCOMCID.h"
 #include "nsIDocument.h"
 #include "mozilla/Preferences.h"
+#include "nsContentUtils.h"
+#include "nsCxPusher.h"
 
 using namespace mozilla;
 
@@ -157,30 +158,29 @@ nsHTTPIndex::OnFTPControlLog(bool server, const char *msg)
     nsIScriptContext *context = scriptGlobal->GetContext();
     NS_ENSURE_TRUE(context, NS_OK);
 
-    JSContext* cx = context->GetNativeContext();
+    AutoPushJSContext cx(context->GetNativeContext());
     NS_ENSURE_TRUE(cx, NS_OK);
 
-    JSObject* global = JS_GetGlobalForScopeChain(cx);
+    JS::Rooted<JSObject*> global(cx, JS_GetGlobalForScopeChain(cx));
     NS_ENSURE_TRUE(global, NS_OK);
 
-    jsval params[2];
+    JS::Value params[2];
 
     nsString unicodeMsg;
     unicodeMsg.AssignWithConversion(msg);
-    JSAutoRequest ar(cx);
     JSString* jsMsgStr = JS_NewUCStringCopyZ(cx, (jschar*) unicodeMsg.get());
     NS_ENSURE_TRUE(jsMsgStr, NS_ERROR_OUT_OF_MEMORY);
 
     params[0] = BOOLEAN_TO_JSVAL(server);
     params[1] = STRING_TO_JSVAL(jsMsgStr);
-    
-    jsval val;
+
+    JS::Rooted<JS::Value> val(cx);
     JS_CallFunctionName(cx,
-                        global, 
+                        global,
                         "OnFTPControlLog",
-                        2, 
-                        params, 
-                        &val);
+                        2,
+                        params,
+                        val.address());
     return NS_OK;
 }
 
@@ -235,8 +235,8 @@ nsHTTPIndex::OnStartRequest(nsIRequest *request, nsISupports* aContext)
     nsIScriptContext *context = scriptGlobal->GetContext();
     NS_ENSURE_TRUE(context, NS_ERROR_FAILURE);
 
-    JSContext* cx = context->GetNativeContext();
-    JSObject* global = JS_GetGlobalForScopeChain(cx);
+    AutoPushJSContext cx(context->GetNativeContext());
+    JS::Rooted<JSObject*> global(cx, JS_GetGlobalForScopeChain(cx));
 
     // Using XPConnect, wrap the HTTP index object...
     static NS_DEFINE_CID(kXPConnectCID, NS_XPCONNECT_CID);
@@ -253,17 +253,15 @@ nsHTTPIndex::OnStartRequest(nsIRequest *request, nsISupports* aContext)
     NS_ASSERTION(NS_SUCCEEDED(rv), "unable to xpconnect-wrap http-index");
     if (NS_FAILED(rv)) return rv;
 
-    JSObject* jsobj;
-    rv = wrapper->GetJSObject(&jsobj);
-    NS_ASSERTION(NS_SUCCEEDED(rv),
+    JS::Rooted<JSObject*> jsobj(cx, wrapper->GetJSObject());
+    NS_ASSERTION(jsobj,
                  "unable to get jsobj from xpconnect wrapper");
-    if (NS_FAILED(rv)) return rv;
+    if (!jsobj) return NS_ERROR_UNEXPECTED;
 
-    jsval jslistener = OBJECT_TO_JSVAL(jsobj);
+    JS::Rooted<JS::Value> jslistener(cx, OBJECT_TO_JSVAL(jsobj));
 
     // ...and stuff it into the global context
-    JSAutoRequest ar(cx);
-    bool ok = JS_SetProperty(cx, global, "HTTPIndex", &jslistener);
+    bool ok = JS_SetProperty(cx, global, "HTTPIndex", jslistener.address());
     NS_ASSERTION(ok, "unable to set Listener property");
     if (!ok)
       return NS_ERROR_FAILURE;

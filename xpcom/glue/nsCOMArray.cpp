@@ -45,12 +45,14 @@ nsCOMArray_base::~nsCOMArray_base()
 }
 
 int32_t
-nsCOMArray_base::IndexOf(nsISupports* aObject) const {
-    return mArray.IndexOf(aObject);
+nsCOMArray_base::IndexOf(nsISupports* aObject, uint32_t aStartIndex) const
+{
+  return mArray.IndexOf(aObject, aStartIndex);
 }
 
 int32_t
-nsCOMArray_base::IndexOfObject(nsISupports* aObject) const {
+nsCOMArray_base::IndexOfObject(nsISupports* aObject) const
+{
     nsCOMPtr<nsISupports> supports = do_QueryInterface(aObject);
     NS_ENSURE_TRUE(supports, -1);
 
@@ -96,7 +98,8 @@ nsCOMArray_base::nsCOMArrayComparator(const void* aElement1, const void* aElemen
                                    ctx->mData);
 }
 
-void nsCOMArray_base::Sort(nsBaseArrayComparatorFunc aFunc, void* aData)
+void
+nsCOMArray_base::Sort(nsBaseArrayComparatorFunc aFunc, void* aData)
 {
     if (mArray.Length() > 1) {
         nsCOMArrayComparatorContext ctx = {aFunc, aData};
@@ -106,7 +109,8 @@ void nsCOMArray_base::Sort(nsBaseArrayComparatorFunc aFunc, void* aData)
 }
 
 bool
-nsCOMArray_base::InsertObjectAt(nsISupports* aObject, int32_t aIndex) {
+nsCOMArray_base::InsertObjectAt(nsISupports* aObject, int32_t aIndex)
+{
     if ((uint32_t)aIndex > mArray.Length())
         return false;
 
@@ -117,8 +121,16 @@ nsCOMArray_base::InsertObjectAt(nsISupports* aObject, int32_t aIndex) {
     return true;
 }
 
+void
+nsCOMArray_base::InsertElementAt(uint32_t aIndex, nsISupports* aElement)
+{
+    mArray.InsertElementAt(aIndex, aElement);
+    NS_IF_ADDREF(aElement);
+}
+
 bool
-nsCOMArray_base::InsertObjectsAt(const nsCOMArray_base& aObjects, int32_t aIndex) {
+nsCOMArray_base::InsertObjectsAt(const nsCOMArray_base& aObjects, int32_t aIndex)
+{
     if ((uint32_t)aIndex > mArray.Length())
         return false;
 
@@ -126,24 +138,44 @@ nsCOMArray_base::InsertObjectsAt(const nsCOMArray_base& aObjects, int32_t aIndex
         return false;
 
     // need to addref all these
-    int32_t count = aObjects.Count();
-    for (int32_t i = 0; i < count; ++i)
-        NS_IF_ADDREF(aObjects.ObjectAt(i));
+    uint32_t count = aObjects.Length();
+    for (uint32_t i = 0; i < count; ++i)
+        NS_IF_ADDREF(aObjects[i]);
 
     return true;
+}
+
+void
+nsCOMArray_base::InsertElementsAt(uint32_t aIndex, const nsCOMArray_base& aElements)
+{
+    mArray.InsertElementsAt(aIndex, aElements.mArray);
+
+    // need to addref all these
+    uint32_t count = aElements.Length();
+    for (uint32_t i = 0; i < count; ++i)
+        NS_IF_ADDREF(aElements[i]);
+}
+
+void
+nsCOMArray_base::InsertElementsAt(uint32_t aIndex, nsISupports* const* aElements, uint32_t aCount)
+{
+    mArray.InsertElementsAt(aIndex, aElements, aCount);
+
+    // need to addref all these
+    for (uint32_t i = 0; i < aCount; ++i)
+        NS_IF_ADDREF(aElements[i]);
 }
 
 bool
 nsCOMArray_base::ReplaceObjectAt(nsISupports* aObject, int32_t aIndex)
 {
-    bool result = mArray.EnsureLengthAtLeast(aIndex + 1);
-    if (result) {
-        nsISupports *oldObject = mArray[aIndex];
-        // Make sure to addref first, in case aObject == oldObject
-        NS_IF_ADDREF(mArray[aIndex] = aObject);
-        NS_IF_RELEASE(oldObject);
-    }
-    return result;
+  mArray.EnsureLengthAtLeast(aIndex + 1);
+  nsISupports *oldObject = mArray[aIndex];
+  // Make sure to addref first, in case aObject == oldObject
+  NS_IF_ADDREF(mArray[aIndex] = aObject);
+  NS_IF_RELEASE(oldObject);
+  // XXX make this return void
+  return true;
 }
 
 bool
@@ -169,6 +201,14 @@ nsCOMArray_base::RemoveObjectAt(int32_t aIndex)
     return false;
 }
 
+void
+nsCOMArray_base::RemoveElementAt(uint32_t aIndex)
+{
+    nsISupports* element = mArray[aIndex];
+    mArray.RemoveElementAt(aIndex);
+    NS_IF_RELEASE(element);
+}
+
 bool
 nsCOMArray_base::RemoveObjectsAt(int32_t aIndex, int32_t aCount)
 {
@@ -181,6 +221,15 @@ nsCOMArray_base::RemoveObjectsAt(int32_t aIndex, int32_t aCount)
     }
 
     return false;
+}
+
+void
+nsCOMArray_base::RemoveElementsAt(uint32_t aIndex, uint32_t aCount)
+{
+    nsTArray<nsISupports*> elementsToDestroy(aCount);
+    elementsToDestroy.AppendElements(mArray.Elements() + aIndex, aCount);
+    mArray.RemoveElementsAt(aIndex, aCount);
+    ReleaseObjects(elementsToDestroy);
 }
 
 // useful for destructors

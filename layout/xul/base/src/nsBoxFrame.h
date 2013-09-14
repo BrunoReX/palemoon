@@ -59,23 +59,23 @@ public:
   // gets the rect inside our border and debug border. If you wish to paint inside a box
   // call this method to get the rect so you don't draw on the debug border or outer border.
 
-  virtual void SetLayoutManager(nsBoxLayout* aLayout) { mLayoutManager = aLayout; }
-  virtual nsBoxLayout* GetLayoutManager() { return mLayoutManager; }
+  virtual void SetLayoutManager(nsBoxLayout* aLayout) MOZ_OVERRIDE { mLayoutManager = aLayout; }
+  virtual nsBoxLayout* GetLayoutManager() MOZ_OVERRIDE { return mLayoutManager; }
 
-  NS_IMETHOD RelayoutChildAtOrdinal(nsBoxLayoutState& aState, nsIFrame* aChild);
+  NS_IMETHOD RelayoutChildAtOrdinal(nsBoxLayoutState& aState, nsIFrame* aChild) MOZ_OVERRIDE;
 
-  virtual nsSize GetPrefSize(nsBoxLayoutState& aBoxLayoutState);
-  virtual nsSize GetMinSize(nsBoxLayoutState& aBoxLayoutState);
-  virtual nsSize GetMaxSize(nsBoxLayoutState& aBoxLayoutState);
-  virtual nscoord GetFlex(nsBoxLayoutState& aBoxLayoutState);
-  virtual nscoord GetBoxAscent(nsBoxLayoutState& aBoxLayoutState);
+  virtual nsSize GetPrefSize(nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
+  virtual nsSize GetMinSize(nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
+  virtual nsSize GetMaxSize(nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
+  virtual nscoord GetFlex(nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
+  virtual nscoord GetBoxAscent(nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
 #ifdef DEBUG_LAYOUT
-  NS_IMETHOD SetDebug(nsBoxLayoutState& aBoxLayoutState, bool aDebug);
+  NS_IMETHOD SetDebug(nsBoxLayoutState& aBoxLayoutState, bool aDebug) MOZ_OVERRIDE;
   NS_IMETHOD GetDebug(bool& aDebug) MOZ_OVERRIDE;
 #endif
   virtual Valignment GetVAlign() const MOZ_OVERRIDE { return mValign; }
   virtual Halignment GetHAlign() const MOZ_OVERRIDE { return mHalign; }
-  NS_IMETHOD DoLayout(nsBoxLayoutState& aBoxLayoutState);
+  NS_IMETHOD DoLayout(nsBoxLayoutState& aBoxLayoutState) MOZ_OVERRIDE;
 
   virtual bool ComputesOwnOverflowArea() MOZ_OVERRIDE { return false; }
 
@@ -83,9 +83,9 @@ public:
 
   // ----- public methods -------
   
-  NS_IMETHOD  Init(nsIContent*      aContent,
-                   nsIFrame*        aParent,
-                   nsIFrame*        asPrevInFlow) MOZ_OVERRIDE;
+  virtual void Init(nsIContent*      aContent,
+                    nsIFrame*        aParent,
+                    nsIFrame*        asPrevInFlow) MOZ_OVERRIDE;
 
  
   NS_IMETHOD AttributeChanged(int32_t         aNameSpaceID,
@@ -111,7 +111,7 @@ public:
   NS_IMETHOD  RemoveFrame(ChildListID     aListID,
                           nsIFrame*       aOldFrame) MOZ_OVERRIDE;
 
-  virtual nsIFrame* GetContentInsertionFrame();
+  virtual nsIFrame* GetContentInsertionFrame() MOZ_OVERRIDE;
 
   NS_IMETHOD  SetInitialChildList(ChildListID     aListID,
                                   nsFrameList&    aChildList) MOZ_OVERRIDE;
@@ -120,7 +120,7 @@ public:
 
   virtual nsIAtom* GetType() const MOZ_OVERRIDE;
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const MOZ_OVERRIDE
   {
     // record that children that are ignorable whitespace should be excluded 
     // (When content was loaded via the XUL content sink, it's already
@@ -145,7 +145,7 @@ public:
                        const nsHTMLReflowState*  aReflowState,
                        nsDidReflowStatus         aStatus) MOZ_OVERRIDE;
 
-  virtual bool HonorPrintBackgroundSettings();
+  virtual bool HonorPrintBackgroundSettings() MOZ_OVERRIDE;
 
   virtual ~nsBoxFrame();
   
@@ -153,13 +153,13 @@ public:
 
   // virtual so nsStackFrame, nsButtonBoxFrame, nsSliderFrame and nsMenuFrame
   // can override it
-  NS_IMETHOD BuildDisplayListForChildren(nsDisplayListBuilder*   aBuilder,
-                                         const nsRect&           aDirtyRect,
-                                         const nsDisplayListSet& aLists);
+  virtual void BuildDisplayListForChildren(nsDisplayListBuilder*   aBuilder,
+                                           const nsRect&           aDirtyRect,
+                                           const nsDisplayListSet& aLists);
 
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists) MOZ_OVERRIDE;
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE;
   
 #ifdef DEBUG_LAYOUT
     virtual void SetDebugOnChildList(nsBoxLayoutState& aState, nsIFrame* aChild, bool aDebug);
@@ -174,9 +174,9 @@ public:
    * Supports 'allowevents' attribute on descendant elements to allow those
    * elements and their descendants to receive events.
    */
-  nsresult WrapListsInRedirector(nsDisplayListBuilder*   aBuilder,
-                                 const nsDisplayListSet& aIn,
-                                 const nsDisplayListSet& aOut);
+  void WrapListsInRedirector(nsDisplayListBuilder*   aBuilder,
+                             const nsDisplayListSet& aIn,
+                             const nsDisplayListSet& aOut);
 
   /**
    * This defaults to true, but some box frames (nsListBoxBodyFrame for
@@ -218,7 +218,7 @@ protected:
     bool GetEventPoint(nsGUIEvent *aEvent, nsIntPoint &aPoint);
 
 protected:
-    nsresult RegUnregAccessKey(bool aDoReg);
+    void RegUnregAccessKey(bool aDoReg);
 
   NS_HIDDEN_(void) CheckBoxOrder();
 

@@ -260,8 +260,7 @@ nsDOMFileBase::MozSlice(int64_t aStart, int64_t aEnd,
   if (sgo) {
     nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(sgo);
     if (window) {
-      nsCOMPtr<nsIDocument> document =
-        do_QueryInterface(window->GetExtantDocument());
+      nsCOMPtr<nsIDocument> document = window->GetExtantDoc();
       if (document) {
         document->WarnOnceAbout(nsIDocument::eMozSlice);
       }
@@ -276,7 +275,7 @@ nsDOMFileBase::GetInternalStream(nsIInputStream **aStream)
 {
   // Must be overridden
   NS_NOTREACHED("Must override GetInternalStream");
-  
+
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -453,7 +452,10 @@ NS_IMPL_THREADSAFE_RELEASE(nsDOMFile)
 ////////////////////////////////////////////////////////////////////////////
 // nsDOMFileCC implementation
 
-NS_IMPL_CYCLE_COLLECTION_0(nsDOMFileCC)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_0(nsDOMFileCC)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsDOMFileCC)
+  // We don't have anything to traverse, but some of our subclasses do.
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsDOMFileCC)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMFile)
@@ -609,6 +611,9 @@ nsDOMMemoryFile::GetInternalStream(nsIInputStream **aStream)
   return DataOwnerAdapter::Create(mDataOwner, mStart, mLength, aStream);
 }
 
+/* static */ StaticMutex
+nsDOMMemoryFile::DataOwner::sDataOwnerMutex;
+
 /* static */ StaticAutoPtr<LinkedList<nsDOMMemoryFile::DataOwner> >
 nsDOMMemoryFile::DataOwner::sDataOwners;
 
@@ -628,17 +633,12 @@ class nsDOMMemoryFileDataOwnerMemoryReporter MOZ_FINAL
     return NS_OK;
   }
 
-  NS_IMETHOD GetExplicitNonHeap(int64_t *aResult)
-  {
-    // All of this reporter's memory is on the heap.
-    *aResult = 0;
-    return NS_OK;
-  }
-
   NS_IMETHOD CollectReports(nsIMemoryMultiReporterCallback *aCallback,
                             nsISupports *aClosure)
   {
     typedef nsDOMMemoryFile::DataOwner DataOwner;
+
+    StaticMutexAutoLock lock(DataOwner::sDataOwnerMutex);
 
     if (!DataOwner::sDataOwners) {
       return NS_OK;
@@ -707,7 +707,7 @@ class nsDOMMemoryFileDataOwnerMemoryReporter MOZ_FINAL
 };
 
 NS_IMPL_ISUPPORTS1(nsDOMMemoryFileDataOwnerMemoryReporter,
-                   nsIMemoryMultiReporter);
+                   nsIMemoryMultiReporter)
 
 /* static */ void
 nsDOMMemoryFile::DataOwner::EnsureMemoryReporterRegistered()
@@ -726,25 +726,21 @@ nsDOMMemoryFile::DataOwner::EnsureMemoryReporterRegistered()
 ////////////////////////////////////////////////////////////////////////////
 // nsDOMFileList implementation
 
-DOMCI_DATA(FileList, nsDOMFileList)
-
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_0(nsDOMFileList)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsDOMFileList)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMFileList)
   NS_INTERFACE_MAP_ENTRY(nsIDOMFileList)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(FileList)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsDOMFileList)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsDOMFileList)
 
 JSObject*
-nsDOMFileList::WrapObject(JSContext *cx, JSObject *scope,
-                          bool *triedToWrap)
+nsDOMFileList::WrapObject(JSContext *cx, JS::Handle<JSObject*> scope)
 {
-  return FileListBinding::Wrap(cx, scope, this, triedToWrap);
+  return FileListBinding::Wrap(cx, scope, this);
 }
 
 NS_IMETHODIMP

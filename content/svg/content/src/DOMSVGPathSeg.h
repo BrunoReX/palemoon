@@ -68,9 +68,9 @@ namespace mozilla {
   }                                                                           \
                                                                               \
   virtual JSObject*                                                           \
-  WrapObject(JSContext* aCx, JSObject* aScope, bool* aTriedToWrap)            \
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope) MOZ_OVERRIDE       \
   {                                                                           \
-    return dom::SVGPathSeg##segName##Binding::Wrap(aCx, aScope, this, aTriedToWrap); \
+    return dom::SVGPathSeg##segName##Binding::Wrap(aCx, aScope, this);        \
   }
 
 
@@ -175,7 +175,8 @@ public:
   uint16_t PathSegType() const { return Type(); }
   void GetPathSegTypeAsLetter(nsAString &aPathSegTypeAsLetter)
     { aPathSegTypeAsLetter = SVGPathSegUtils::GetPathSegTypeAsLetter(Type()); }
-  virtual JSObject* WrapObject(JSContext* aCx, JSObject* aScope, bool* aTriedToWrap) = 0;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aScope) MOZ_OVERRIDE = 0;
 
 protected:
 
@@ -727,75 +728,6 @@ protected:
 };
 
 } // namespace mozilla
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegClosePath();
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegMovetoAbs(float x, float y);
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegMovetoRel(float x, float y);
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegLinetoAbs(float x, float y);
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegLinetoRel(float x, float y);
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegCurvetoCubicAbs(float x, float y,
-                                float x1, float y1,
-                                float x2, float y2);
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegCurvetoCubicRel(float x, float y,
-                                float x1, float y1,
-                                float x2, float y2);
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegCurvetoQuadraticAbs(float x, float y,
-                                    float x1, float y1);
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegCurvetoQuadraticRel(float x, float y,
-                                    float x1, float y1);
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegArcAbs(float x, float y,
-                       float r1, float r2, float angle,
-                       bool largeArcFlag, bool sweepFlag);
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegArcRel(float x, float y,
-                       float r1, float r2, float angle,
-                       bool largeArcFlag, bool sweepFlag);
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegLinetoHorizontalAbs(float x);
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegLinetoHorizontalRel(float x);
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegLinetoVerticalAbs(float y);
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegLinetoVerticalRel(float y);
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegCurvetoCubicSmoothAbs(float x, float y,
-                                      float x2, float y2);
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegCurvetoCubicSmoothRel(float x, float y,
-                                      float x2, float y2);
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegCurvetoQuadraticSmoothAbs(float x, float y);
-
-mozilla::DOMSVGPathSeg*
-NS_NewSVGPathSegCurvetoQuadraticSmoothRel(float x, float y);
 
 #undef MOZ_SVG_LIST_INDEX_BIT_COUNT
 

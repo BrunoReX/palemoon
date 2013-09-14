@@ -1,11 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim: set ts=4 sw=4 et tw=79: */
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#if !defined(TraceLogging_h__)
-#define TraceLogging_h__
+#ifndef TraceLogging_h
+#define TraceLogging_h
 
 #include "jsscript.h"
 
@@ -61,7 +61,7 @@ class TraceLogging
     int fileno;
     FILE *out;
 
-    const static char *type_name[];
+    static const char * const type_name[];
     static TraceLogging* _defaultLogger;
   public:
     TraceLogging();
@@ -113,5 +113,4 @@ class AutoTraceLog {
 
 }  /* namespace js */
 
-#endif // TraceLogging_h__
-
+#endif /* TraceLogging_h */

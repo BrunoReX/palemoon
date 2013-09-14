@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/Text.h"
+#include "nsTextNode.h"
 
 namespace mozilla {
 namespace dom {
@@ -16,7 +17,20 @@ Text::SplitText(uint32_t aOffset, ErrorResult& rv)
   if (rv.Failed()) {
     return nullptr;
   }
-  return static_cast<Text*>(newChild.forget().get());
+  return newChild.forget().downcast<Text>();
+}
+
+/* static */ already_AddRefed<Text>
+Text::Constructor(const GlobalObject& aGlobal, const nsAString& aData,
+                  ErrorResult& aRv)
+{
+  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aGlobal.Get());
+  if (!window || !window->GetDoc()) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return nullptr;
+  }
+
+  return window->GetDoc()->CreateTextNode(aData);
 }
 
 } // namespace dom

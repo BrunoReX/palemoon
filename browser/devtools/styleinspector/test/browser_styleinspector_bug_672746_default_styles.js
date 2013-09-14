@@ -2,7 +2,7 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-// Tests that the checkbox to show only user styles works properly.
+// Tests that the checkbox to include browser styles works properly.
 
 let doc;
 let inspector;
@@ -52,7 +52,7 @@ function SI_inspectNode()
 
 function SI_check()
 {
-  Services.obs.removeObserver(SI_check, "StyleInspector-populated", false);
+  Services.obs.removeObserver(SI_check, "StyleInspector-populated");
   is(propertyVisible("color"), true,
     "span #matches color property is visible");
   is(propertyVisible("background-color"), false,
@@ -65,7 +65,7 @@ function SI_toggleDefaultStyles()
 {
   // Click on the checkbox.
   let doc = computedView.styleDocument;
-  let checkbox = doc.querySelector(".onlyuserstyles");
+  let checkbox = doc.querySelector(".includebrowserstyles");
   Services.obs.addObserver(SI_checkDefaultStyles, "StyleInspector-populated", false);
 
   checkbox.click();
@@ -73,7 +73,7 @@ function SI_toggleDefaultStyles()
 
 function SI_checkDefaultStyles()
 {
-  Services.obs.removeObserver(SI_checkDefaultStyles, "StyleInspector-populated", false);
+  Services.obs.removeObserver(SI_checkDefaultStyles, "StyleInspector-populated");
   // Check that the default styles are now applied.
   is(propertyVisible("color"), true,
       "span color property is visible");

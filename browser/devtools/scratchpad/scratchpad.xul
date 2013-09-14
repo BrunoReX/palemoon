@@ -8,9 +8,11 @@
 <!ENTITY % scratchpadDTD SYSTEM "chrome://browser/locale/devtools/scratchpad.dtd" >
  %scratchpadDTD;
 ]>
-<?xml-stylesheet href="chrome://global/skin/global.css" type="text/css"?>
+<?xml-stylesheet href="chrome://global/skin/global.css"?>
+<?xml-stylesheet href="chrome://browser/skin/devtools/common.css"?>
+<?xml-stylesheet href="chrome://browser/skin/devtools/scratchpad.css"?>
 <?xul-overlay href="chrome://global/content/editMenuOverlay.xul"?>
-<?xul-overlay href="chrome://browser/content/source-editor-overlay.xul"?>
+<?xul-overlay href="chrome://browser/content/devtools/source-editor-overlay.xul"?>
 
 <window id="main-window"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
@@ -23,7 +25,7 @@
         persist="screenX screenY width height sizemode">
 
 <script type="application/javascript" src="chrome://global/content/globalOverlay.js"/>
-<script type="application/javascript" src="chrome://browser/content/scratchpad.js"/>
+<script type="application/javascript" src="chrome://browser/content/devtools/scratchpad.js"/>
 
 <commandset id="editMenuCommands"/>
 <commandset id="sourceEditorCommands"/>
@@ -51,6 +53,7 @@
   <command id="sp-cmd-errorConsole" oncommand="Scratchpad.openErrorConsole();" disabled="true"/>
   <command id="sp-cmd-webConsole" oncommand="Scratchpad.openWebConsole();"/>
   <command id="sp-cmd-documentationLink" oncommand="Scratchpad.openDocumentationPage();"/>
+  <command id="sp-cmd-hideSidebar" oncommand="Scratchpad.sidebar.hide();"/>
 </commandset>
 
 <keyset id="sourceEditorKeys"/>
@@ -100,6 +103,9 @@
        key="&errorConsoleCmd.commandkey;"
        command="sp-cmd-errorConsole"
        modifiers="accel,shift"/>
+  <key id="sp-key-hideSidebar"
+       keycode="VK_ESCAPE"
+       command="sp-cmd-hideSidebar"/>
   <key id="key_openHelp"
        keycode="VK_F1"
        command="sp-cmd-documentationLink"/>
@@ -280,7 +286,16 @@
 </popupset>
 
 <notificationbox id="scratchpad-notificationbox" flex="1">
-  <hbox id="scratchpad-editor" flex="1"/>
+  <hbox flex="1">
+    <vbox id="scratchpad-editor" flex="1"/>
+    <splitter class="devtools-side-splitter"/>
+    <tabbox id="scratchpad-sidebar" class="devtools-sidebar-tabs"
+                                    width="300"
+                                    hidden="true">
+      <tabs/>
+      <tabpanels flex="1"/>
+    </tabbox>
+  </hbox>
 </notificationbox>
 
 </window>

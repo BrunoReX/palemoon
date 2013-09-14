@@ -10,9 +10,9 @@
 #include "nsAttrValueInlines.h"
 #include "nsMappedAttributes.h"
 #include "nsRuleData.h"
+#include "nsContentUtils.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Font)
-DOMCI_NODE_DATA(HTMLFontElement, mozilla::dom::HTMLFontElement)
 
 namespace mozilla {
 namespace dom {
@@ -22,9 +22,9 @@ HTMLFontElement::~HTMLFontElement()
 }
 
 JSObject*
-HTMLFontElement::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
+HTMLFontElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
 {
-  return HTMLFontElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
+  return HTMLFontElementBinding::Wrap(aCx, aScope, this);
 }
 
 NS_IMPL_ADDREF_INHERITED(HTMLFontElement, Element)
@@ -32,10 +32,10 @@ NS_IMPL_RELEASE_INHERITED(HTMLFontElement, Element)
 
 // QueryInterface implementation for HTMLFontElement
 NS_INTERFACE_TABLE_HEAD(HTMLFontElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE1(HTMLFontElement, nsIDOMHTMLFontElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE_TO_MAP_SEGUE(HTMLFontElement,
-                                               nsGenericHTMLElement)
-NS_HTML_CONTENT_INTERFACE_TABLE_TAIL_CLASSINFO(HTMLFontElement)
+  NS_HTML_CONTENT_INTERFACES(nsGenericHTMLElement)
+  NS_INTERFACE_TABLE_INHERITED1(HTMLFontElement, nsIDOMHTMLFontElement)
+  NS_INTERFACE_TABLE_TO_MAP_SEGUE
+NS_ELEMENT_INTERFACE_MAP_END
 
 
 NS_IMPL_ELEMENT_CLONE(HTMLFontElement)

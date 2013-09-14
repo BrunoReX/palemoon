@@ -1,15 +1,15 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sw=4 et tw=99 ft=cpp:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef js_utility_h__
-#define js_utility_h__
+#ifndef js_Utility_h
+#define js_Utility_h
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Compiler.h"
 #include "mozilla/Scoped.h"
 
 #include <stdlib.h>
@@ -31,12 +31,7 @@ namespace JS {}
 namespace mozilla {}
 
 /* The private JS engine namespace. */
-namespace js {
-
-/* The private namespace is a superset of the public/shared namespaces. */
-using namespace JS;
-
-}  /* namespace js */
+namespace js {}
 
 /*
  * Pattern used to overwrite freed memory. If you are accessing an object with
@@ -60,6 +55,14 @@ using namespace JS;
 # define JS_THREADSAFE_ASSERT(expr) ((void) 0)
 #endif
 
+#if defined(DEBUG)
+# define JS_DIAGNOSTICS_ASSERT(expr) MOZ_ASSERT(expr)
+#elif defined(JS_CRASH_DIAGNOSTICS)
+# define JS_DIAGNOSTICS_ASSERT(expr) do { if (!(expr)) MOZ_CRASH(); } while(0)
+#else
+# define JS_DIAGNOSTICS_ASSERT(expr) ((void) 0)
+#endif
+
 #define JS_STATIC_ASSERT(cond)           MOZ_STATIC_ASSERT(cond, "JS_STATIC_ASSERT")
 #define JS_STATIC_ASSERT_IF(cond, expr)  MOZ_STATIC_ASSERT_IF(cond, expr, "JS_STATIC_ASSERT_IF")
 
@@ -81,10 +84,11 @@ extern JS_PUBLIC_API(void) JS_Abort(void);
 #else
 # ifdef DEBUG
 /*
- * In order to test OOM conditions, when the shell command-line option
- * |-A NUM| is passed, we fail continuously after the NUM'th allocation.
+ * In order to test OOM conditions, when the testing function
+ * oomAfterAllocations COUNT is passed, we fail continuously after the NUM'th
+ * allocation from now.
  */
-extern JS_PUBLIC_DATA(uint32_t) OOM_maxAllocations; /* set from shell/js.cpp */
+extern JS_PUBLIC_DATA(uint32_t) OOM_maxAllocations; /* set in builtins/TestingFunctions.cpp */
 extern JS_PUBLIC_DATA(uint32_t) OOM_counter; /* data race, who cares. */
 
 #ifdef JS_OOM_DO_BACKTRACES
@@ -200,43 +204,72 @@ __BitScanReverse32(unsigned int val)
 }
 # define js_bitscan_ctz32(val)  __BitScanForward32(val)
 # define js_bitscan_clz32(val)  __BitScanReverse32(val)
-# define JS_HAS_BUILTIN_BITSCAN32
 
 #if defined(_M_AMD64) || defined(_M_X64)
 unsigned char _BitScanForward64(unsigned long * Index, unsigned __int64 Mask);
 unsigned char _BitScanReverse64(unsigned long * Index, unsigned __int64 Mask);
 # pragma intrinsic(_BitScanForward64,_BitScanReverse64)
+#endif
 
 __forceinline static int
 __BitScanForward64(unsigned __int64 val)
 {
+#if defined(_M_AMD64) || defined(_M_X64)
     unsigned long idx;
 
     _BitScanForward64(&idx, val);
     return (int)idx;
+#else
+    uint32_t lo = (uint32_t)val;
+    uint32_t hi = (uint32_t)(val >> 32);
+    return lo != 0 ?
+           js_bitscan_ctz32(lo) :
+           32 + js_bitscan_ctz32(hi);
+#endif
 }
 __forceinline static int
 __BitScanReverse64(unsigned __int64 val)
 {
+#if defined(_M_AMD64) || defined(_M_X64)
     unsigned long idx;
 
     _BitScanReverse64(&idx, val);
     return (int)(63-idx);
+#else
+    uint32_t lo = (uint32_t)val;
+    uint32_t hi = (uint32_t)(val >> 32);
+    return hi != 0 ?
+           js_bitscan_clz32(hi) :
+           32 + js_bitscan_clz32(lo);
+#endif
 }
 # define js_bitscan_ctz64(val)  __BitScanForward64(val)
 # define js_bitscan_clz64(val)  __BitScanReverse64(val)
-# define JS_HAS_BUILTIN_BITSCAN64
-#endif
-#elif (__GNUC__ >= 4) || (__GNUC__ == 3 && __GNUC_MINOR__ >= 4)
+#elif MOZ_IS_GCC
 
+#if MOZ_GCC_VERSION_AT_LEAST(3, 4, 0)
+# define USE_BUILTIN_CTZ
+#endif
+
+#elif defined(__clang__)
+
+#if __has_builtin(__builtin_ctz)
+# define USE_BUILTIN_CTZ
+#endif
+
+#endif
+
+#if defined(USE_BUILTIN_CTZ)
+
+JS_STATIC_ASSERT(sizeof(unsigned int) == sizeof(uint32_t));
 # define js_bitscan_ctz32(val)  __builtin_ctz(val)
 # define js_bitscan_clz32(val)  __builtin_clz(val)
-# define JS_HAS_BUILTIN_BITSCAN32
-# if (JS_BYTES_PER_WORD == 8)
-#  define js_bitscan_ctz64(val)  __builtin_ctzll(val)
-#  define js_bitscan_clz64(val)  __builtin_clzll(val)
-#  define JS_HAS_BUILTIN_BITSCAN64
-# endif
+
+JS_STATIC_ASSERT(sizeof(unsigned long long) == sizeof(uint64_t));
+# define js_bitscan_ctz64(val)  __builtin_ctzll(val)
+# define js_bitscan_clz64(val)  __builtin_clzll(val)
+
+# undef USE_BUILTIN_CTZ
 
 #endif
 
@@ -244,7 +277,6 @@ __BitScanReverse64(unsigned __int64 val)
 ** Macro version of JS_CeilingLog2: Compute the log of the least power of
 ** 2 greater than or equal to _n. The result is returned in _log2.
 */
-#ifdef JS_HAS_BUILTIN_BITSCAN32
 /*
  * Use intrinsic function or count-leading-zeros to calculate ceil(log2(_n)).
  * The macro checks for "n <= 1" and not "n != 0" as js_bitscan_clz32(0) is
@@ -255,25 +287,6 @@ __BitScanReverse64(unsigned __int64 val)
         unsigned int j_ = (unsigned int)(_n);                                 \
         (_log2) = (j_ <= 1 ? 0 : 32 - js_bitscan_clz32(j_ - 1));              \
     JS_END_MACRO
-#else
-# define JS_CEILING_LOG2(_log2,_n)                                            \
-    JS_BEGIN_MACRO                                                            \
-        uint32_t j_ = (uint32_t)(_n);                                         \
-        (_log2) = 0;                                                          \
-        if ((j_) & ((j_)-1))                                                  \
-            (_log2) += 1;                                                     \
-        if ((j_) >> 16)                                                       \
-            (_log2) += 16, (j_) >>= 16;                                       \
-        if ((j_) >> 8)                                                        \
-            (_log2) += 8, (j_) >>= 8;                                         \
-        if ((j_) >> 4)                                                        \
-            (_log2) += 4, (j_) >>= 4;                                         \
-        if ((j_) >> 2)                                                        \
-            (_log2) += 2, (j_) >>= 2;                                         \
-        if ((j_) >> 1)                                                        \
-            (_log2) += 1;                                                     \
-    JS_END_MACRO
-#endif
 
 /*
 ** Macro version of JS_FloorLog2: Compute the log of the greatest power of
@@ -281,7 +294,6 @@ __BitScanReverse64(unsigned __int64 val)
 **
 ** This is equivalent to finding the highest set bit in the word.
 */
-#ifdef JS_HAS_BUILTIN_BITSCAN32
 /*
  * Use js_bitscan_clz32 or count-leading-zeros to calculate floor(log2(_n)).
  * Since js_bitscan_clz32(0) is undefined, the macro set the loweset bit to 1
@@ -291,38 +303,13 @@ __BitScanReverse64(unsigned __int64 val)
     JS_BEGIN_MACRO                                                            \
         (_log2) = 31 - js_bitscan_clz32(((unsigned int)(_n)) | 1);            \
     JS_END_MACRO
-#else
-# define JS_FLOOR_LOG2(_log2,_n)                                              \
-    JS_BEGIN_MACRO                                                            \
-        uint32_t j_ = (uint32_t)(_n);                                         \
-        (_log2) = 0;                                                          \
-        if ((j_) >> 16)                                                       \
-            (_log2) += 16, (j_) >>= 16;                                       \
-        if ((j_) >> 8)                                                        \
-            (_log2) += 8, (j_) >>= 8;                                         \
-        if ((j_) >> 4)                                                        \
-            (_log2) += 4, (j_) >>= 4;                                         \
-        if ((j_) >> 2)                                                        \
-            (_log2) += 2, (j_) >>= 2;                                         \
-        if ((j_) >> 1)                                                        \
-            (_log2) += 1;                                                     \
-    JS_END_MACRO
-#endif
 
 #if JS_BYTES_PER_WORD == 4
-# ifdef JS_HAS_BUILTIN_BITSCAN32
 #  define js_FloorLog2wImpl(n)                                                \
     ((size_t)(JS_BITS_PER_WORD - 1 - js_bitscan_clz32(n)))
-# else
-JS_PUBLIC_API(size_t) js_FloorLog2wImpl(size_t n);
-# endif
 #elif JS_BYTES_PER_WORD == 8
-# ifdef JS_HAS_BUILTIN_BITSCAN64
 #  define js_FloorLog2wImpl(n)                                                \
     ((size_t)(JS_BITS_PER_WORD - 1 - js_bitscan_clz64(n)))
-# else
-JS_PUBLIC_API(size_t) js_FloorLog2wImpl(size_t n);
-# endif
 #else
 # error "NOT SUPPORTED"
 #endif
@@ -505,6 +492,17 @@ js_delete(T *p)
     }
 }
 
+template<class T>
+static JS_ALWAYS_INLINE void
+js_delete_poison(T *p)
+{
+    if (p) {
+        p->~T();
+        memset(p, 0x3B, sizeof(T));
+        js_free(p);
+    }
+}
+
 template <class T>
 static JS_ALWAYS_INLINE T *
 js_pod_malloc()
@@ -546,14 +544,21 @@ struct ScopedFreePtrTraits
     static T* empty() { return NULL; }
     static void release(T* ptr) { js_free(ptr); }
 };
-SCOPED_TEMPLATE(ScopedFreePtr, ScopedFreePtrTraits)
+SCOPED_TEMPLATE(ScopedJSFreePtr, ScopedFreePtrTraits)
 
 template <typename T>
 struct ScopedDeletePtrTraits : public ScopedFreePtrTraits<T>
 {
     static void release(T *ptr) { js_delete(ptr); }
 };
-SCOPED_TEMPLATE(ScopedDeletePtr, ScopedDeletePtrTraits)
+SCOPED_TEMPLATE(ScopedJSDeletePtr, ScopedDeletePtrTraits)
+
+template <typename T>
+struct ScopedReleasePtrTraits : public ScopedFreePtrTraits<T>
+{
+    static void release(T *ptr) { if (ptr) ptr->release(); }
+};
+SCOPED_TEMPLATE(ScopedReleasePtr, ScopedReleasePtrTraits)
 
 } /* namespace js */
 
@@ -709,6 +714,15 @@ class ReentrancyGuard
     }
 };
 
+template <class T>
+JS_ALWAYS_INLINE static void
+Swap(T &t, T &u)
+{
+    T tmp(Move(t));
+    t = Move(u);
+    u = Move(tmp);
+}
+
 /*
  * Round x up to the nearest power of 2.  This function assumes that the most
  * significant bit of x is not set, which would lead to overflow.
@@ -846,4 +860,4 @@ typedef size_t(*JSMallocSizeOfFun)(const void *p);
 # define STATIC_SKIP_INFERENCE STATIC_INVARIANT(skip_inference())
 #endif /* HAVE_STATIC_ANNOTATIONS */
 
-#endif /* js_utility_h__ */
+#endif /* js_Utility_h */

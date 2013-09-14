@@ -202,6 +202,12 @@ win32-gdi-font-cache.patch: Bug 717178, cache GDI font faces to reduce usage of 
 
 win32-gdi-font-cache-no-HFONT.patch: Bug 717178, don't cache GDI font faces when an HFONT belonging to the caller is passed in
 
+fix-win32-font-assertion.patch: Bug 838617, fix assertion from bug 717178 that was in the wrong place
+
+xlib-flush-glyphs.patch: bug 839745, flush glyphs when necessary
+
+dasharray-zero-gap.patch: bug 885585, ensure strokes get painted when the gaps in a dash array are all zero length
+
 ==== pixman patches ====
 
 pixman-android-cpu-detect.patch: Add CPU detection support for Android, where we can't reliably access /proc/self/auxv.
@@ -231,3 +237,6 @@ pixman-enable-altivec-acceleration.patch: enable building the altivec accelerati
 ==== disable printing patch ====
 
 disable-printing.patch:  allows us to use NS_PRINTING to disable printing.
+
+==== cairo clamp bounday patch ====
+cairo-clamp-boundary.patch: don't call pixman_fill with negative starts or negative sizes

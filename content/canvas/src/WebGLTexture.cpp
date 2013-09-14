@@ -6,12 +6,14 @@
 #include "WebGLContext.h"
 #include "WebGLTexture.h"
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
+#include <algorithm>
+#include "nsContentUtils.h"
 
 using namespace mozilla;
 
 JSObject*
-WebGLTexture::WrapObject(JSContext *cx, JSObject *scope, bool *triedToWrap) {
-    return dom::WebGLTextureBinding::Wrap(cx, scope, this, triedToWrap);
+WebGLTexture::WrapObject(JSContext *cx, JS::Handle<JSObject*> scope) {
+    return dom::WebGLTextureBinding::Wrap(cx, scope, this);
 }
 
 WebGLTexture::WebGLTexture(WebGLContext *context)
@@ -81,8 +83,8 @@ WebGLTexture::DoesTexture2DMipmapHaveAllLevelsConsistentlyDefined(size_t face) c
         const ImageInfo& actual = ImageInfoAt(level, face);
         if (actual != expected)
             return false;
-        expected.mWidth = NS_MAX(1, expected.mWidth >> 1);
-        expected.mHeight = NS_MAX(1, expected.mHeight >> 1);
+        expected.mWidth = std::max(1, expected.mWidth >> 1);
+        expected.mHeight = std::max(1, expected.mHeight >> 1);
 
         // if the current level has size 1x1, we can stop here: the spec doesn't seem to forbid the existence
         // of extra useless levels.
@@ -172,7 +174,7 @@ WebGLTexture::SetCustomMipmap() {
         ImageInfo imageInfo = ImageInfoAt(0, 0);
         NS_ASSERTION(imageInfo.IsPowerOfTwo(), "this texture is NPOT, so how could GenerateMipmap() ever accept it?");
 
-        WebGLsizei size = NS_MAX(imageInfo.mWidth, imageInfo.mHeight);
+        WebGLsizei size = std::max(imageInfo.mWidth, imageInfo.mHeight);
 
         // so, the size is a power of two, let's find its log in base 2.
         size_t maxLevel = 0;
@@ -323,6 +325,28 @@ WebGLTexture::NeedFakeBlack() {
                                "different from CLAMP_TO_EDGE.", msg_rendering_as_black);
                     mFakeBlackStatus = DoNeedFakeBlack;
                 }
+            }
+        }
+
+        if (ImageInfoAt(0).mType == LOCAL_GL_FLOAT &&
+            !Context()->IsExtensionEnabled(WebGLContext::OES_texture_float_linear))
+        {
+            if (mMinFilter == LOCAL_GL_LINEAR ||
+                mMinFilter == LOCAL_GL_LINEAR_MIPMAP_LINEAR ||
+                mMinFilter == LOCAL_GL_LINEAR_MIPMAP_NEAREST ||
+                mMinFilter == LOCAL_GL_NEAREST_MIPMAP_LINEAR)
+            {
+                mContext->GenerateWarning("%s is a texture with a linear minification filter, "
+                                          "which is not compatible with gl.FLOAT by default. "
+                                          "Try enabling the OES_texture_float_linear extension if supported.", msg_rendering_as_black);
+                mFakeBlackStatus = DoNeedFakeBlack;
+            }
+            else if (mMagFilter == LOCAL_GL_LINEAR)
+            {
+                mContext->GenerateWarning("%s is a texture with a linear magnification filter, "
+                                          "which is not compatible with gl.FLOAT by default. "
+                                          "Try enabling the OES_texture_float_linear extension if supported.", msg_rendering_as_black);
+                mFakeBlackStatus = DoNeedFakeBlack;
             }
         }
 

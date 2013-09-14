@@ -9,9 +9,17 @@ const Ci = Components.interfaces;
 const Cu = Components.utils;
 const Cr = Components.results;
 
-Cu.import('resource://gre/modules/accessibility/Utils.jsm');
-Cu.import('resource://gre/modules/accessibility/UtteranceGenerator.jsm');
-Cu.import('resource://gre/modules/Geometry.jsm');
+Cu.import('resource://gre/modules/XPCOMUtils.jsm');
+XPCOMUtils.defineLazyModuleGetter(this, 'Utils',
+  'resource://gre/modules/accessibility/Utils.jsm');
+XPCOMUtils.defineLazyModuleGetter(this, 'Logger',
+  'resource://gre/modules/accessibility/Utils.jsm');
+XPCOMUtils.defineLazyModuleGetter(this, 'PivotContext',
+  'resource://gre/modules/accessibility/Utils.jsm');
+XPCOMUtils.defineLazyModuleGetter(this, 'UtteranceGenerator',
+  'resource://gre/modules/accessibility/OutputGenerator.jsm');
+XPCOMUtils.defineLazyModuleGetter(this, 'BrailleGenerator',
+  'resource://gre/modules/accessibility/OutputGenerator.jsm');
 
 this.EXPORTED_SYMBOLS = ['Presentation'];
 
@@ -28,19 +36,8 @@ Presenter.prototype = {
   type: 'Base',
 
   /**
-   * Attach function for presenter.
-   * @param {ChromeWindow} aWindow Chrome window the presenter could use.
-   */
-  attach: function attach(aWindow) {},
-
-  /**
-   * Detach function.
-   */
-  detach: function detach() {},
-
-  /**
    * The virtual cursor's position changed.
-   * @param {PresenterContext} aContext the context object for the new pivot
+   * @param {PivotContext} aContext the context object for the new pivot
    *   position.
    * @param {int} aReason the reason for the pivot change.
    *   See nsIAccessiblePivot.
@@ -64,7 +61,7 @@ Presenter.prototype = {
   /**
    * Text selection has changed. TODO.
    */
-  textSelectionChanged: function textSelectionChanged() {},
+  textSelectionChanged: function textSelectionChanged(aText, aStart, aEnd, aOldStart, aOldEnd) {},
 
   /**
    * Selection has changed. TODO.
@@ -83,9 +80,9 @@ Presenter.prototype = {
 
   /**
    * The current tab has changed.
-   * @param {PresenterContext} aDocContext context object for tab's
+   * @param {PivotContext} aDocContext context object for tab's
    *   document.
-   * @param {PresenterContext} aVCContext context object for tab's current
+   * @param {PivotContext} aVCContext context object for tab's current
    *   virtual cursor position.
    */
   tabSelected: function tabSelected(aDocContext, aVCContext) {},
@@ -126,7 +123,7 @@ VisualPresenter.prototype = {
 
   viewportChanged: function VisualPresenter_viewportChanged(aWindow) {
     if (this._currentAccessible) {
-      let context = new PresenterContext(this._currentAccessible);
+      let context = new PivotContext(this._currentAccessible);
       return {
         type: this.type,
         details: {
@@ -208,8 +205,10 @@ AndroidPresenter.prototype = {
   ANDROID_VIEW_HOVER_ENTER: 0x80,
   ANDROID_VIEW_HOVER_EXIT: 0x100,
   ANDROID_VIEW_SCROLLED: 0x1000,
+  ANDROID_VIEW_TEXT_SELECTION_CHANGED: 0x2000,
   ANDROID_ANNOUNCEMENT: 0x4000,
   ANDROID_VIEW_ACCESSIBILITY_FOCUSED: 0x8000,
+  ANDROID_VIEW_TEXT_TRAVERSED_AT_MOVEMENT_GRANULARITY: 0x20000,
 
   pivotChanged: function AndroidPresenter_pivotChanged(aContext, aReason) {
     if (!aContext.accessible)
@@ -229,27 +228,29 @@ AndroidPresenter.prototype = {
       androidEvents.push({eventType: this.ANDROID_VIEW_HOVER_EXIT, text: []});
     }
 
-    let output = [];
+    let state = Utils.getStates(aContext.accessible)[0];
 
-    aContext.newAncestry.forEach(
-      function(acc) {
-        output.push.apply(output, UtteranceGenerator.genForObject(acc));
+    let brailleText = '';
+    if (Utils.AndroidSdkVersion >= 16) {
+      if (!this._braillePresenter) {
+        this._braillePresenter = new BraillePresenter();
       }
-    );
-
-    output.push.apply(output,
-                      UtteranceGenerator.genForObject(aContext.accessible));
-
-    aContext.subtreePreorder.forEach(
-      function(acc) {
-        output.push.apply(output, UtteranceGenerator.genForObject(acc));
-      }
-    );
+      brailleText = this._braillePresenter.pivotChanged(aContext, aReason).
+                         details.text;
+    }
 
     androidEvents.push({eventType: (isExploreByTouch) ?
                           this.ANDROID_VIEW_HOVER_ENTER : focusEventType,
-                        text: output,
-                        bounds: aContext.bounds});
+                        text: UtteranceGenerator.genForContext(aContext),
+                        bounds: aContext.bounds,
+                        clickable: aContext.accessible.actionCount > 0,
+                        checkable: !!(state &
+                                      Ci.nsIAccessibleStates.STATE_CHECKABLE),
+                        checked: !!(state &
+                                    Ci.nsIAccessibleStates.STATE_CHECKED),
+                        brailleText: brailleText});
+
+
     return {
       type: this.type,
       details: androidEvents
@@ -257,11 +258,13 @@ AndroidPresenter.prototype = {
   },
 
   actionInvoked: function AndroidPresenter_actionInvoked(aObject, aActionName) {
+    let state = Utils.getStates(aObject)[0];
     return {
       type: this.type,
       details: [{
         eventType: this.ANDROID_VIEW_CLICKED,
-        text: UtteranceGenerator.genForAction(aObject, aActionName)
+        text: UtteranceGenerator.genForAction(aObject, aActionName),
+        checked: !!(state & Ci.nsIAccessibleStates.STATE_CHECKED)
       }]
     };
   },
@@ -299,6 +302,37 @@ AndroidPresenter.prototype = {
     }
 
     return {type: this.type, details: [eventDetails]};
+  },
+
+  textSelectionChanged: function AndroidPresenter_textSelectionChanged(aText, aStart,
+                                                                       aEnd, aOldStart,
+                                                                       aOldEnd) {
+    let androidEvents = [];
+
+    if (Utils.AndroidSdkVersion >= 14) {
+      androidEvents.push({
+        eventType: this.ANDROID_VIEW_TEXT_SELECTION_CHANGED,
+        text: [aText],
+        fromIndex: aStart,
+        toIndex: aEnd,
+        itemCount: aText.length
+      });
+    }
+
+    if (Utils.AndroidSdkVersion >= 16) {
+      let [from, to] = aOldStart < aStart ? [aOldStart, aStart] : [aStart, aOldStart];
+      androidEvents.push({
+        eventType: this.ANDROID_VIEW_TEXT_TRAVERSED_AT_MOVEMENT_GRANULARITY,
+        text: [aText],
+        fromIndex: from,
+        toIndex: to
+      });
+    }
+
+    return {
+      type: this.type,
+      details: androidEvents
+    };
   },
 
   viewportChanged: function AndroidPresenter_viewportChanged(aWindow) {
@@ -353,29 +387,14 @@ SpeechPresenter.prototype = {
     if (!aContext.accessible)
       return null;
 
-    let output = [];
-
-    aContext.newAncestry.forEach(
-      function(acc) {
-        output.push.apply(output, UtteranceGenerator.genForObject(acc));
-      }
-    );
-
-    output.push.apply(output,
-                      UtteranceGenerator.genForObject(aContext.accessible));
-
-    aContext.subtreePreorder.forEach(
-      function(acc) {
-        output.push.apply(output, UtteranceGenerator.genForObject(acc));
-      }
-    );
-
     return {
       type: this.type,
       details: {
         actions: [
           {method: 'playEarcon', data: 'tick', options: {}},
-          {method: 'speak', data: output.join(' '), options: {enqueue: true}}
+          {method: 'speak',
+            data: UtteranceGenerator.genForContext(aContext).join(' '),
+            options: {enqueue: true}}
         ]
       }
     };
@@ -401,117 +420,26 @@ HapticPresenter.prototype = {
 };
 
 /**
- * PresenterContext: An object that generates and caches context information
- * for a given accessible and its relationship with another accessible.
+ * A braille presenter
  */
-this.PresenterContext = function PresenterContext(aAccessible, aOldAccessible) {
-  this._accessible = aAccessible;
-  this._oldAccessible =
-    this._isDefunct(aOldAccessible) ? null : aOldAccessible;
-}
 
-PresenterContext.prototype = {
-  get accessible() {
-    return this._accessible;
-  },
+this.BraillePresenter = function BraillePresenter() {};
 
-  get oldAccessible() {
-    return this._oldAccessible;
-  },
+BraillePresenter.prototype = {
+  __proto__: Presenter.prototype,
 
-  /*
-   * This is a list of the accessible's ancestry up to the common ancestor
-   * of the accessible and the old accessible. It is useful for giving the
-   * user context as to where they are in the heirarchy.
-   */
-  get newAncestry() {
-    if (!this._newAncestry) {
-      let newLineage = [];
-      let oldLineage = [];
+  type: 'Braille',
 
-      let parent = this._accessible;
-      while (parent && (parent = parent.parent))
-        newLineage.push(parent);
-
-      parent = this._oldAccessible;
-      while (parent && (parent = parent.parent))
-        oldLineage.push(parent);
-
-      this._newAncestry = [];
-
-      while (true) {
-        let newAncestor = newLineage.pop();
-        let oldAncestor = oldLineage.pop();
-
-        if (newAncestor == undefined)
-          break;
-
-        if (newAncestor != oldAncestor)
-          this._newAncestry.push(newAncestor);
-      }
-
+  pivotChanged: function BraillePresenter_pivotChanged(aContext, aReason) {
+    if (!aContext.accessible) {
+      return null;
     }
 
-    return this._newAncestry;
-  },
+    let text = BrailleGenerator.genForContext(aContext);
 
-  /*
-   * This is a flattened list of the accessible's subtree in preorder.
-   * It only includes the accessible's visible chidren.
-   */
-  get subtreePreorder() {
-    function traversePreorder(aAccessible) {
-      let list = [];
-      let child = aAccessible.firstChild;
-      while (child) {
-        let state = {};
-        child.getState(state, {});
-
-        if (!(state.value & Ci.nsIAccessibleStates.STATE_INVISIBLE)) {
-          list.push(child);
-          list.push.apply(list, traversePreorder(child));
-        }
-
-        child = child.nextSibling;
-      }
-      return list;
-    }
-
-    if (!this._subtreePreOrder)
-      this._subtreePreOrder = traversePreorder(this._accessible);
-
-    return this._subtreePreOrder;
-  },
-
-  get bounds() {
-    if (!this._bounds) {
-      let objX = {}, objY = {}, objW = {}, objH = {};
-
-      this._accessible.getBounds(objX, objY, objW, objH);
-
-      // XXX: OOP content provides a screen offset of 0, while in-process provides a real
-      // offset. Removing the offset and using content-relative coords normalizes this.
-      let docX = {}, docY = {};
-      let docRoot = this._accessible.rootDocument.
-        QueryInterface(Ci.nsIAccessible);
-      docRoot.getBounds(docX, docY, {}, {});
-
-      this._bounds = new Rect(objX.value, objY.value, objW.value, objH.value).
-        translate(-docX.value, -docY.value);
-    }
-
-    return this._bounds.clone();
-  },
-
-  _isDefunct: function _isDefunct(aAccessible) {
-    try {
-      let extstate = {};
-      aAccessible.getState({}, extstate);
-      return !!(aAccessible.value & Ci.nsIAccessibleStates.EXT_STATE_DEFUNCT);
-    } catch (x) {
-      return true;
-    }
+    return { type: this.type, details: {text: text.join(' ')} };
   }
+
 };
 
 this.Presentation = {
@@ -519,11 +447,11 @@ this.Presentation = {
     delete this.presenters;
     this.presenters = [new VisualPresenter()];
 
-    if (Utils.MozBuildApp == 'b2g') {
+    if (Utils.MozBuildApp == 'mobile/android') {
+      this.presenters.push(new AndroidPresenter());
+    } else {
       this.presenters.push(new SpeechPresenter());
       this.presenters.push(new HapticPresenter());
-    } else if (Utils.MozBuildApp == 'mobile/android') {
-      this.presenters.push(new AndroidPresenter());
     }
 
     return this.presenters;
@@ -532,7 +460,7 @@ this.Presentation = {
   pivotChanged: function Presentation_pivotChanged(aPosition,
                                                    aOldPosition,
                                                    aReason) {
-    let context = new PresenterContext(aPosition, aOldPosition);
+    let context = new PivotContext(aPosition, aOldPosition);
     return [p.pivotChanged(context, aReason)
               for each (p in this.presenters)];
   },
@@ -547,6 +475,11 @@ this.Presentation = {
                                     aModifiedText) {
     return [p.textChanged(aIsInserted, aStartOffset, aLength,
                           aText, aModifiedText)
+              for each (p in this.presenters)];
+  },
+
+  textSelectionChanged: function textSelectionChanged(aText, aStart, aEnd, aOldStart, aOldEnd) {
+    return [p.textSelectionChanged(aText, aStart, aEnd, aOldStart, aOldEnd)
               for each (p in this.presenters)];
   },
 

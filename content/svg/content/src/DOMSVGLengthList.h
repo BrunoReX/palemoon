@@ -71,8 +71,8 @@ public:
     }
   }
 
-  virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
-                               bool *triedToWrap);
+  virtual JSObject* WrapObject(JSContext *cx,
+                               JS::Handle<JSObject*> scope) MOZ_OVERRIDE;
 
   nsISupports* GetParentObject()
   {
@@ -171,7 +171,7 @@ private:
 
   // Weak refs to our DOMSVGLength items. The items are friends and take care
   // of clearing our pointer to them when they die.
-  nsTArray<DOMSVGLength*> mItems;
+  FallibleTArray<DOMSVGLength*> mItems;
 
   nsRefPtr<DOMSVGAnimatedLengthList> mAList;
 };

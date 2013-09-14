@@ -13,6 +13,7 @@
 %}
 
 interface xpcIJSWeakReference;
+interface nsIClassInfo;
 
 /**
 * interface of Components.interfacesByID
@@ -118,7 +119,7 @@ interface ScheduledGCCallback : nsISupports
 /**
 * interface of Components.utils
 */
-[scriptable, uuid(0d0fd2f7-3250-4092-9340-ca9bcb7be470)]
+[scriptable, uuid(fdd32d38-9341-4067-9000-d781075a60c9)]
 interface nsIXPCComponents_Utils : nsISupports
 {
 
@@ -382,18 +383,6 @@ interface nsIXPCComponents_Utils : nsISupports
     attribute boolean werror;
 
     [implicit_jscontext]
-    attribute boolean atline;
-
-    [implicit_jscontext]
-    attribute boolean xml;
-
-    [implicit_jscontext]
-    attribute boolean methodjit;
-
-    [implicit_jscontext]
-    attribute boolean methodjit_always;
-
-    [implicit_jscontext]
     attribute boolean strict_mode;
 
     [implicit_jscontext]
@@ -405,7 +394,38 @@ interface nsIXPCComponents_Utils : nsISupports
     [implicit_jscontext]
     void nukeSandbox(in jsval obj);
 
+    /**
+     * Check whether the given object is an XrayWrapper.
+     */
     bool isXrayWrapper(in jsval obj);
+
+    /**
+     * Waive Xray on a given value. Identity op for primitives.
+     */
+    [implicit_jscontext]
+    jsval waiveXrays(in jsval aVal);
+
+    /**
+     * Strip off Xray waivers on a given value. Identity op for primitives.
+     */
+    [implicit_jscontext]
+    jsval unwaiveXrays(in jsval aVal);
+
+    /**
+     * Gets the name of the JSClass of the object.
+     *
+     * if |aUnwrap| is true, all wrappers are unwrapped first. Unless you're
+     * specifically trying to detect whether the object is a proxy, this is
+     * probably what you want.
+     */
+    [implicit_jscontext]
+    string getClassName(in jsval aObj, in bool aUnwrap);
+
+    /**
+     * Get a DOM classinfo for the given classname.  Only some class
+     * names are supported.
+     */
+    nsIClassInfo getDOMClassInfo(in AString aClassName);
 };
 
 /**

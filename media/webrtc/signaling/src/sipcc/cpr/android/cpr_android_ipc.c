@@ -56,7 +56,6 @@ typedef struct cpr_msg_queue_s
     const char *name;
     pthread_t thread;
     int32_t queueId;
-    uint16_t maxCount;
     uint16_t currentCount;
     uint32_t totalCount;
     uint32_t sendErrors;
@@ -180,6 +179,8 @@ cprCreateMessageQueue (const char *name, uint16_t depth)
     static const char fname[] = "cprCreateMessageQueue";
     cpr_msg_queue_t *msgq;
     static int key_id = 100; /* arbitrary starting number */
+    pthread_cond_t _cond = PTHREAD_COND_INITIALIZER;
+    pthread_mutex_t _lock = PTHREAD_MUTEX_INITIALIZER;
 
     msgq = cpr_calloc(1, sizeof(cpr_msg_queue_t));
     if (msgq == NULL) {
@@ -190,12 +191,9 @@ cprCreateMessageQueue (const char *name, uint16_t depth)
     }
 
     msgq->name = name ? name : unnamed_string;
-	msgq->queueId = key_id++;
-
-	pthread_cond_t _cond = PTHREAD_COND_INITIALIZER;
-	msgq->cond = _cond;
-	pthread_mutex_t _lock = PTHREAD_MUTEX_INITIALIZER;
-	msgq->mutex = _lock;
+    msgq->queueId = key_id++;
+    msgq->cond = _cond;
+    msgq->mutex = _lock;
 
     /*
      * Add message queue to list for statistics reporting
@@ -322,7 +320,7 @@ cprGetMessage (cprMsgQueue_t msgQueue, boolean waitForever, void **ppUserData)
     cpr_msgq_node_t *node;
     struct timespec timeout;
     struct timeval tv;
-    struct timezone *tz;
+    struct timezone tz;
 
     /* Initialize ppUserData */
     if (ppUserData) {
@@ -340,7 +338,7 @@ cprGetMessage (cprMsgQueue_t msgQueue, boolean waitForever, void **ppUserData)
     /*
      * If waitForever is set, block on the message queue
      * until a message is received, else return after
-	 * 25msec of waiting
+     * 25msec of waiting
      */
 	pthread_mutex_lock(&msgq->mutex);
 
@@ -352,7 +350,6 @@ cprGetMessage (cprMsgQueue_t msgQueue, boolean waitForever, void **ppUserData)
 		timeout.tv_sec = tv.tv_sec;
 
 		pthread_cond_timedwait(&msgq->cond, &msgq->mutex, &timeout);
-
 	}
 	else
 	{
@@ -512,9 +509,6 @@ cprPegSendMessageStats (cpr_msg_queue_t *msgq, uint16_t numAttempts)
      * Collect statistics
      */
     msgq->totalCount++;
-    if (msgq->currentCount > msgq->maxCount) {
-        msgq->maxCount = msgq->currentCount;
-    }
 
     if (numAttempts > msgq->highAttempts) {
         msgq->highAttempts = numAttempts;
@@ -583,80 +577,6 @@ cprPostMessage (cpr_msg_queue_t *msgq, void *msg, void **ppUserData)
 
 }
 
-
-/**
- * cprGetMessageQueueStats
- *
- * Get statistics for a given message queue
- *
- * @param msgQueue - message queue on which to gather stats
- * @param stats    - pointer to struct to place statistics
- *
- * @return none
- */
-STATIC void
-cprGetMessageQueueStats (cprMsgQueue_t msgQueue, cprMsgQueueStats_t *stats)
-{
-    cpr_msg_queue_t *msgq;
-
-    if (msgQueue && stats) {
-        msgq = (cpr_msg_queue_t *) msgQueue;
-
-        sstrncpy(stats->name, msgq->name ? msgq->name : "undefined",
-                sizeof(stats->name));
-
-        stats->extendedDepth = msgq->maxExtendedQDepth;
-        stats->maxCount = msgq->maxCount;
-        stats->currentCount = msgq->currentCount;
-        stats->totalCount = msgq->totalCount;
-        stats->reTries = msgq->reTries;
-        stats->sendErrors = msgq->sendErrors;
-        stats->highAttempts = msgq->highAttempts;
-        stats->selfQErrors = msgq->selfQErrors;
-    }
-}
-
-
-/**
- * Report statistics for all message queues
- *
- * @param argc - not used
- * @param argv - not used
- *
- * @return zero(0)
- *
- * @note Prototype is 'canned' so return of zero is necessary
- */
-int32_t
-cprShowMessageQueueStats (int32_t argc, const char *argv[])
-{
-    cpr_msg_queue_t *msgq;
-    cprMsgQueueStats_t stats;
-
-    debugif_printf("CPR Message Queues\n");
-
-    pthread_mutex_lock(&msgQueueListMutex);
-    msgq = msgQueueList;
-    while (msgq != NULL) {
-        memset(&stats, 0, sizeof(stats));
-        cprGetMessageQueueStats(msgq, &stats);
-
-        debugif_printf("Name: %s\n", stats.name);
-        debugif_printf("   extended depth: %d\n", stats.extendedDepth);
-        debugif_printf("   max: %d\n", stats.maxCount);
-        debugif_printf("   active: %d\n", stats.currentCount);
-        debugif_printf("   total: %d\n", stats.totalCount);
-        debugif_printf("   retries: %d\n", stats.reTries);
-        debugif_printf("   high attempts: %d\n", stats.highAttempts);
-        debugif_printf("   send errors: %d\n", stats.sendErrors);
-        debugif_printf("   self queue errors: %d\n\n", stats.selfQErrors);
-
-        msgq = msgq->next;
-    }
-    pthread_mutex_unlock(&msgQueueListMutex);
-
-    return 0;
-}
 
 /**
  * cprGetDepth

@@ -57,8 +57,8 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMSVGPointList)
 
-  virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
-                               bool *triedToWrap);
+  virtual JSObject* WrapObject(JSContext *cx,
+                               JS::Handle<JSObject*> scope) MOZ_OVERRIDE;
 
   nsISupports* GetParentObject()
   {
@@ -215,7 +215,7 @@ private:
 
   // Weak refs to our nsISVGPoint items. The items are friends and take care
   // of clearing our pointer to them when they die.
-  nsTArray<nsISVGPoint*> mItems;
+  FallibleTArray<nsISVGPoint*> mItems;
 
   // Strong ref to our element to keep it alive. We hold this not only for
   // ourself, but also for our nsISVGPoint items too.

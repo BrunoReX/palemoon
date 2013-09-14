@@ -4,16 +4,17 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-interface HTMLHeadElement;
 interface Selection;
 
+[OverrideBuiltins]
 interface HTMLDocument : Document {
            [Throws]
            attribute DOMString? domain;
            [Throws]
            attribute DOMString cookie;
   // DOM tree accessors
-  //(Not proxy yet)getter object (DOMString name);
+  [Throws]
+  getter object (DOMString name);
            [SetterThrows]
            attribute HTMLElement? body;
   readonly attribute HTMLHeadElement? head;
@@ -63,6 +64,9 @@ interface HTMLDocument : Document {
   readonly attribute HTMLCollection applets;
 
   void clear();
+
+  [Throws]
+  readonly attribute object all;
 
   // https://dvcs.w3.org/hg/editing/raw-file/tip/editing.html#selections
   [Throws]

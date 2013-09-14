@@ -286,7 +286,7 @@ class nsTString_CharT : public nsTSubstring_CharT
 
       size_type Right( self_type& aResult, size_type aCount ) const
         {
-          aCount = NS_MIN(mLength, aCount);
+          aCount = XPCOM_MIN(mLength, aCount);
           return Mid(aResult, mLength - aCount, aCount);
         }
 
@@ -433,7 +433,7 @@ class nsTFixedString_CharT : public nsTString_CharT
    *   nsAutoString for wide characters
    *   nsAutoCString for narrow characters
    */
-class NS_STACK_CLASS nsTAutoString_CharT : public nsTFixedString_CharT
+class nsTAutoString_CharT : public nsTFixedString_CharT
   {
     public:
 
@@ -595,7 +595,7 @@ class nsTXPIDLString_CharT : public nsTString_CharT
    *      // ...
    *    }
    */
-class NS_STACK_CLASS nsTGetterCopies_CharT
+class MOZ_STACK_CLASS nsTGetterCopies_CharT
   {
     public:
       typedef CharT char_type;

@@ -8,10 +8,12 @@
  * stream.
  */
 
+#include "mozilla/Attributes.h"
+#include "mozilla/MathAlgorithms.h"
+
 #include "base/basictypes.h"
 
 #include "nsMultiplexInputStream.h"
-#include "mozilla/Attributes.h"
 #include "nsIMultiplexInputStream.h"
 #include "nsISeekableStream.h"
 #include "nsCOMPtr.h"
@@ -19,10 +21,10 @@
 #include "nsIClassInfoImpl.h"
 #include "nsIIPCSerializableInputStream.h"
 #include "mozilla/ipc/InputStreamUtils.h"
-#include <cstdlib> // for std::abs(int/long)
-#include <cmath> // for std::abs(float/double)
 
 using namespace mozilla::ipc;
+
+using mozilla::DeprecatedAbs;
 
 class nsMultiplexInputStream MOZ_FINAL : public nsIMultiplexInputStream,
                                          public nsISeekableStream,
@@ -89,6 +91,7 @@ nsMultiplexInputStream::GetCount(uint32_t *aCount)
     return NS_OK;
 }
 
+#ifdef DEBUG
 static bool
 SeekableStreamAtBeginning(nsIInputStream *aStream)
 {
@@ -99,6 +102,7 @@ SeekableStreamAtBeginning(nsIInputStream *aStream)
     }
     return true;
 }
+#endif
 
 /* void appendStream (in nsIInputStream stream); */
 NS_IMETHODIMP
@@ -403,7 +407,7 @@ nsMultiplexInputStream::Seek(int32_t aWhence, int64_t aOffset)
                     rv = mStreams[i]->Available(&avail);
                     NS_ENSURE_SUCCESS(rv, rv);
 
-                    int64_t newPos = NS_MIN(remaining, streamPos + (int64_t)avail);
+                    int64_t newPos = XPCOM_MIN(remaining, streamPos + (int64_t)avail);
 
                     rv = stream->Seek(NS_SEEK_SET, newPos);
                     NS_ENSURE_SUCCESS(rv, rv);
@@ -434,7 +438,7 @@ nsMultiplexInputStream::Seek(int32_t aWhence, int64_t aOffset)
             rv = mStreams[i]->Available(&avail);
             NS_ENSURE_SUCCESS(rv, rv);
 
-            int64_t seek = NS_MIN((int64_t)avail, remaining);
+            int64_t seek = XPCOM_MIN((int64_t)avail, remaining);
 
             rv = stream->Seek(NS_SEEK_CUR, seek);
             NS_ENSURE_SUCCESS(rv, rv);
@@ -458,7 +462,7 @@ nsMultiplexInputStream::Seek(int32_t aWhence, int64_t aOffset)
             rv = stream->Tell(&pos);
             NS_ENSURE_SUCCESS(rv, rv);
 
-            int64_t seek = NS_MIN(pos, remaining);
+            int64_t seek = XPCOM_MIN(pos, remaining);
 
             rv = stream->Seek(NS_SEEK_CUR, -seek);
             NS_ENSURE_SUCCESS(rv, rv);
@@ -511,7 +515,7 @@ nsMultiplexInputStream::Seek(int32_t aWhence, int64_t aOffset)
             }
 
             // See if we have enough data in the current stream.
-            if (std::abs(remaining) < streamPos) {
+            if (DeprecatedAbs(remaining) < streamPos) {
                 rv = stream->Seek(NS_SEEK_END, remaining);
                 NS_ENSURE_SUCCESS(rv, rv);
 
@@ -519,7 +523,7 @@ nsMultiplexInputStream::Seek(int32_t aWhence, int64_t aOffset)
                 mStartedReadingCurrent = true;
 
                 remaining = 0;
-            } else if (std::abs(remaining) > streamPos) {
+            } else if (DeprecatedAbs(remaining) > streamPos) {
                 if (i > oldCurrentStream ||
                     (i == oldCurrentStream && !oldStartedReadingCurrent)) {
                     // We're already at start so no need to seek this stream
@@ -529,7 +533,7 @@ nsMultiplexInputStream::Seek(int32_t aWhence, int64_t aOffset)
                     rv = stream->Tell(&avail);
                     NS_ENSURE_SUCCESS(rv, rv);
 
-                    int64_t newPos = streamPos + NS_MIN(avail, std::abs(remaining));
+                    int64_t newPos = streamPos + XPCOM_MIN(avail, DeprecatedAbs(remaining));
 
                     rv = stream->Seek(NS_SEEK_END, -newPos);
                     NS_ENSURE_SUCCESS(rv, rv);

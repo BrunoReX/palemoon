@@ -146,7 +146,9 @@ protected:
   DoRequest(const UnpairRequest& aRequest);
 
   bool
-  DoRequest(const DevicePropertiesRequest& aRequest);
+  DoRequest(const PairedDevicePropertiesRequest& aRequest);
+  bool
+  DoRequest(const ConnectedDevicePropertiesRequest& aRequest);
 
   bool
   DoRequest(const SetPinCodeRequest& aRequest);
@@ -183,6 +185,15 @@ protected:
 
   bool
   DoRequest(const DenyReceivingFileRequest& aRequest);
+
+  bool
+  DoRequest(const ConnectScoRequest& aRequest);
+
+  bool
+  DoRequest(const DisconnectScoRequest& aRequest);
+
+  bool
+  DoRequest(const IsScoConnectedRequest& aRequest);
 };
 
 END_BLUETOOTH_NAMESPACE

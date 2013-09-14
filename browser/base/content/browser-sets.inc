@@ -78,12 +78,14 @@
     <command id="Browser:NextTab" oncommand="gBrowser.tabContainer.advanceSelectedTab(1, true);"/>
     <command id="Browser:PrevTab" oncommand="gBrowser.tabContainer.advanceSelectedTab(-1, true);"/>
     <command id="Browser:ShowAllTabs" oncommand="allTabs.open();"/>
-    <command id="Browser:ToggleTabView" oncommand="TabView.toggle();"/>
     <command id="Browser:FocusNextFrame" oncommand="focusNextFrame(event);"/>
     <command id="cmd_fullZoomReduce"  oncommand="FullZoom.reduce()"/>
     <command id="cmd_fullZoomEnlarge" oncommand="FullZoom.enlarge()"/>
     <command id="cmd_fullZoomReset"   oncommand="FullZoom.reset()"/>
     <command id="cmd_fullZoomToggle"  oncommand="ZoomManager.toggleZoom();"/>
+    <command id="cmd_gestureRotateLeft" oncommand="gGestureSupport.rotate(event.sourceEvent)"/>
+    <command id="cmd_gestureRotateRight" oncommand="gGestureSupport.rotate(event.sourceEvent)"/>
+    <command id="cmd_gestureRotateEnd" oncommand="gGestureSupport.rotateEnd()"/>
     <command id="Browser:OpenLocation" oncommand="openLocation();"/>
     <command id="Browser:RestoreLastSession" oncommand="restoreLastSession();" disabled="true"/>
 
@@ -92,7 +94,8 @@
     <command id="Tools:DevToolbox" oncommand="gDevToolsBrowser.toggleToolboxCommand(gBrowser);"/>
     <command id="Tools:DevToolbar" oncommand="DeveloperToolbar.toggle();" disabled="true" hidden="true"/>
     <command id="Tools:DevToolbarFocus" oncommand="DeveloperToolbar.focusToggle();" disabled="true"/>
-    <command id="Tools:ChromeDebugger" oncommand="DebuggerUI.toggleChromeDebugger();" disabled="true" hidden="true"/>
+    <command id="Tools:ChromeDebugger" oncommand="BrowserDebuggerProcess.init();" disabled="true" hidden="true"/>
+    <command id="Tools:BrowserConsole" oncommand="HUDConsoleUI.toggleBrowserConsole();"/>
     <command id="Tools:Scratchpad" oncommand="Scratchpad.openScratchpad();" disabled="true" hidden="true"/>
     <command id="Tools:ResponsiveUI" oncommand="ResponsiveUI.toggle();" disabled="true" hidden="true"/>
     <command id="Tools:Addons" oncommand="BrowserOpenAddonsMgr();"/>
@@ -101,21 +104,17 @@
     <command id="Tools:Sanitize"
      oncommand="Cc['@mozilla.org/browser/browserglue;1'].getService(Ci.nsIBrowserGlue).sanitize(window);"/>
     <command id="Tools:PrivateBrowsing"
-#ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
       oncommand="OpenBrowserWindow({private: true});"/>
-#else
-      oncommand="gPrivateBrowsingUI.toggleMode();"/>
-#endif
     <command id="History:UndoCloseTab" oncommand="undoCloseTab();"/>
     <command id="History:UndoCloseWindow" oncommand="undoCloseWindow();"/>
     <command id="Browser:ToggleAddonBar" oncommand="toggleAddonBar();"/>
-    <command id="Social:SharePage" oncommand="SocialShareButton.sharePage();" disabled="true"/>
-    <command id="Social:UnsharePage" oncommand="SocialShareButton.unsharePage();"/>
+    <command id="Social:TogglePageMark" oncommand="SocialMark.togglePageMark();" disabled="true"/>
+    <command id="Social:SharePage" oncommand="SocialShare.sharePage();" disabled="true"/>
     <command id="Social:ToggleSidebar" oncommand="Social.toggleSidebar();"/>
-    <command id="Social:ToggleNotifications" oncommand="Social.toggleNotifications();"/>
+    <command id="Social:ToggleNotifications" oncommand="Social.toggleNotifications();" hidden="true"/>
     <command id="Social:FocusChat" oncommand="SocialChatBar.focus();" hidden="true" disabled="true"/>
     <command id="Social:Toggle" oncommand="Social.toggle();" hidden="true"/>
-    <command id="Social:Remove" oncommand="SocialUI.disableWithConfirmation();"/>
+    <command id="Social:Addons" oncommand="BrowserOpenAddonsMgr('addons://list/service');"/>
   </commandset>
 
   <commandset id="placesCommands">
@@ -163,7 +162,6 @@
     <broadcaster id="isFrameImage"/>
     <broadcaster id="singleFeedMenuitemState" disabled="true"/>
     <broadcaster id="multipleFeedsMenuState" hidden="true"/>
-    <broadcaster id="tabviewGroupsNumber" groups="1"/>
 #ifdef MOZ_SERVICES_SYNC
     <broadcaster id="sync-setup-state"/>
     <broadcaster id="sync-syncnow-state"/>
@@ -185,6 +183,10 @@
     <broadcaster id="devtoolsMenuBroadcaster_ChromeDebugger"
                  label="&chromeDebuggerMenu.label;"
                  command="Tools:ChromeDebugger"/>
+    <broadcaster id="devtoolsMenuBroadcaster_BrowserConsole"
+                 label="&browserConsoleCmd.label;"
+                 key="key_browserConsole"
+                 command="Tools:BrowserConsole"/>
     <broadcaster id="devtoolsMenuBroadcaster_Scratchpad"
                  label="&scratchpad.label;"
                  command="Tools:Scratchpad"
@@ -200,7 +202,6 @@
                  command="View:PageSource"/>
     <broadcaster id="devtoolsMenuBroadcaster_ErrorConsole"
                  label="&errorConsoleCmd.label;"
-                 key="key_errorConsole"
                  command="Tools:ErrorConsole"/>
     <broadcaster id="devtoolsMenuBroadcaster_GetMoreTools"
                  label="&getMoreDevtoolsCmd.label;"
@@ -258,7 +259,7 @@
     <key id="key_openDownloads" key="&downloads.commandkey;" command="Tools:Downloads" modifiers="accel"/>
 #endif
     <key id="key_openAddons" key="&addons.commandkey;" command="Tools:Addons" modifiers="accel,shift"/>
-    <key id="key_errorConsole" key="&errorConsoleCmd.commandkey;" command="Tools:ErrorConsole" modifiers="accel,shift"/>
+    <key id="key_browserConsole" key="&browserConsoleCmd.commandkey;" command="Tools:BrowserConsole" modifiers="accel,shift"/>
     <key id="key_devToolbar" keycode="&devToolbar.keycode;" modifiers="shift"
          keytext="&devToolbar.keytext;" command="Tools:DevToolbarFocus"/>
     <key id="key_responsiveUI" key="&responsiveDesignTool.commandkey;" command="Tools:ResponsiveUI"
@@ -334,8 +335,8 @@
     <key keycode="&findAgainCmd.commandkey2;"  command="cmd_findPrevious" modifiers="shift"/>
 
     <key id="addBookmarkAsKb" key="&bookmarkThisPageCmd.commandkey;" command="Browser:AddBookmarkAs" modifiers="accel"/>
-# Accel+Shift+A-F are reserved on GTK2
-#ifndef MOZ_WIDGET_GTK2
+# Accel+Shift+A-F are reserved on GTK
+#ifndef MOZ_WIDGET_GTK
     <key id="bookmarkAllTabsKb" key="&bookmarkThisPageCmd.commandkey;" oncommand="PlacesCommandHook.bookmarkCurrentPages();" modifiers="accel,shift"/>
     <key id="manBookmarkKb" key="&bookmarksCmd.commandkey;" command="Browser:ShowAllBookmarks" modifiers="accel,shift"/>
 #else
@@ -347,8 +348,8 @@
 # overridden for other purposes there.
     <key id="viewBookmarksSidebarWinKb" key="&bookmarksWinCmd.commandkey;" command="viewBookmarksSidebar" modifiers="accel"/>
 #endif
-    
-    <key id="sharePage" key="&sharePageCmd.commandkey;" command="Social:SharePage" modifiers="accel,shift"/>
+
+    <key id="markPage" key="&markPageCmd.commandkey;" command="Social:TogglePageMark" modifiers="accel,shift"/>
     <key id="focusChatBar" key="&social.chatBar.commandkey;" command="Social:FocusChat" modifiers="accel,shift"/>
 
     <key id="key_stop" keycode="VK_ESCAPE" command="Browser:Stop"/>
@@ -378,15 +379,13 @@
 
     <key id="key_switchTextDirection" key="&bidiSwitchTextDirectionItem.commandkey;" command="cmd_switchTextDirection" modifiers="accel,shift" />
 
-    <key id="key_tabview" key="&tabView.commandkey;" command="Browser:ToggleTabView" modifiers="accel,shift"/>
-
     <key id="key_privatebrowsing" command="Tools:PrivateBrowsing" key="&privateBrowsingCmd.commandkey;" modifiers="accel,shift"/>
     <key id="key_sanitize" command="Tools:Sanitize" keycode="VK_DELETE" modifiers="accel,shift"/>
 #ifdef XP_MACOSX
     <key id="key_sanitize_mac" command="Tools:Sanitize" keycode="VK_BACK" modifiers="accel,shift"/>
 #endif
 #ifdef XP_UNIX
-    <key id="key_quitApplication" key="&quitApplicationCmdMac.key;" command="cmd_quitApplication" modifiers="accel"/>
+    <key id="key_quitApplication" key="&quitApplicationCmdUnix.key;" command="cmd_quitApplication" modifiers="accel"/>
 #endif
 
 #ifdef FULL_BROWSER_WINDOW

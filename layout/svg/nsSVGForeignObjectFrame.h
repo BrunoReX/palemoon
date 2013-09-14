@@ -31,47 +31,47 @@ public:
   NS_DECL_FRAMEARENA_HELPERS
 
   // nsIFrame:
-  NS_IMETHOD  Init(nsIContent* aContent,
-                   nsIFrame*   aParent,
-                   nsIFrame*   aPrevInFlow);
-  virtual void DestroyFrom(nsIFrame* aDestructRoot);
+  virtual void Init(nsIContent* aContent,
+                    nsIFrame*   aParent,
+                    nsIFrame*   aPrevInFlow) MOZ_OVERRIDE;
+  virtual void DestroyFrom(nsIFrame* aDestructRoot) MOZ_OVERRIDE;
   NS_IMETHOD  AttributeChanged(int32_t         aNameSpaceID,
                                nsIAtom*        aAttribute,
-                               int32_t         aModType);
+                               int32_t         aModType) MOZ_OVERRIDE;
 
   virtual void DidSetStyleContext(nsStyleContext* aOldStyleContext) MOZ_OVERRIDE;
 
-  virtual nsIFrame* GetContentInsertionFrame() {
+  virtual nsIFrame* GetContentInsertionFrame() MOZ_OVERRIDE {
     return GetFirstPrincipalChild()->GetContentInsertionFrame();
   }
 
   NS_IMETHOD Reflow(nsPresContext*           aPresContext,
                     nsHTMLReflowMetrics&     aDesiredSize,
                     const nsHTMLReflowState& aReflowState,
-                    nsReflowStatus&          aStatus);
+                    nsReflowStatus&          aStatus) MOZ_OVERRIDE;
 
-  NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                              const nsRect&           aDirtyRect,
-                              const nsDisplayListSet& aLists);
+  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
+                                const nsRect&           aDirtyRect,
+                                const nsDisplayListSet& aLists) MOZ_OVERRIDE;
 
   /**
    * Get the "type" of the frame
    *
    * @see nsGkAtoms::svgForeignObjectFrame
    */
-  virtual nsIAtom* GetType() const;
+  virtual nsIAtom* GetType() const MOZ_OVERRIDE;
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const
+  virtual bool IsFrameOfType(uint32_t aFlags) const MOZ_OVERRIDE
   {
     return nsSVGForeignObjectFrameBase::IsFrameOfType(aFlags &
       ~(nsIFrame::eSVG | nsIFrame::eSVGForeignObject));
   }
 
   virtual bool IsSVGTransformed(gfxMatrix *aOwnTransform,
-                                gfxMatrix *aFromParentTransform) const;
+                                gfxMatrix *aFromParentTransform) const MOZ_OVERRIDE;
 
 #ifdef DEBUG
-  NS_IMETHOD GetFrameName(nsAString& aResult) const
+  NS_IMETHOD GetFrameName(nsAString& aResult) const MOZ_OVERRIDE
   {
     return MakeFrameName(NS_LITERAL_STRING("SVGForeignObject"), aResult);
   }
@@ -79,7 +79,7 @@ public:
 
   // nsISVGChildFrame interface:
   NS_IMETHOD PaintSVG(nsRenderingContext *aContext,
-                      const nsIntRect *aDirtyRect);
+                      const nsIntRect *aDirtyRect) MOZ_OVERRIDE;
   NS_IMETHOD_(nsIFrame*) GetFrameForPoint(const nsPoint &aPoint) MOZ_OVERRIDE;
   NS_IMETHOD_(nsRect) GetCoveredRegion() MOZ_OVERRIDE;
   virtual void ReflowSVG() MOZ_OVERRIDE;

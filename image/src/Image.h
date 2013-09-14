@@ -26,7 +26,8 @@ public:
     eDecoderType_bmp     = 3,
     eDecoderType_ico     = 4,
     eDecoderType_icon    = 5,
-    eDecoderType_unknown = 6
+    eDecoderType_wbmp    = 6,
+    eDecoderType_unknown = 7
   };
   static eDecoderType GetDecoderType(const char *aMimeType);
 
@@ -54,21 +55,18 @@ public:
   /**
    * Creates a new image container.
    *
-   * @param aObserver Observer to send decoder and animation notifications to.
    * @param aMimeType The mimetype of the image.
    * @param aFlags Initialization flags of the INIT_FLAG_* variety.
    */
-  virtual nsresult Init(imgDecoderObserver* aObserver,
-                        const char* aMimeType,
+  virtual nsresult Init(const char* aMimeType,
                         uint32_t aFlags) = 0;
 
   virtual imgStatusTracker& GetStatusTracker() = 0;
 
   /**
-   * The rectangle defining the location and size of the currently displayed
-   * frame.
+   * The rectangle defining the location and size of the given frame.
    */
-  virtual void GetCurrentFrameRect(nsIntRect& aRect) = 0;
+  virtual nsIntRect FrameRect(uint32_t aWhichFrame) = 0;
 
   /**
    * The size, in bytes, occupied by the significant data portions of the image.
@@ -78,7 +76,7 @@ public:
 
   /**
    * The components that make up SizeOfData().
-   */      
+   */
   virtual size_t HeapSizeOfSourceWithComputedFallback(nsMallocSizeOfFun aMallocSizeOf) const = 0;
   virtual size_t HeapSizeOfDecodedWithComputedFallback(nsMallocSizeOfFun aMallocSizeOf) const = 0;
   virtual size_t NonHeapSizeOfDecoded() const = 0;
@@ -109,13 +107,16 @@ public:
 
   /**
    * Called from OnStopRequest when the image's underlying request completes.
-   * The arguments are the same as OnStopRequest's, but by separating this
-   * functionality into a different method we don't interfere with subclasses
-   * which wish to implement nsIStreamListener.
+   *
+   * @param aRequest  The completed request.
+   * @param aContext  Context from Necko's OnStopRequest.
+   * @param aStatus   A success or failure code.
+   * @param aLastPart Whether this is the final part of the underlying request.
    */
   virtual nsresult OnImageDataComplete(nsIRequest* aRequest,
                                        nsISupports* aContext,
-                                       nsresult status) = 0;
+                                       nsresult aStatus,
+                                       bool aLastPart) = 0;
 
   /**
    * Called for multipart images to allow for any necessary reinitialization

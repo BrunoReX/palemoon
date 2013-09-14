@@ -23,10 +23,10 @@ public:
   virtual nsresult
   Place(nsRenderingContext& aRenderingContext,
         bool                 aPlaceOrigin,
-        nsHTMLReflowMetrics& aDesiredSize);
+        nsHTMLReflowMetrics& aDesiredSize) MOZ_OVERRIDE;
 
   NS_IMETHOD
-  InheritAutomaticData(nsIFrame* aParent);
+  InheritAutomaticData(nsIFrame* aParent) MOZ_OVERRIDE;
 
   NS_IMETHOD
   TransmitAutomaticData() MOZ_OVERRIDE;
@@ -49,8 +49,6 @@ public:
 protected:
   nsMathMLmunderoverFrame(nsStyleContext* aContext) : nsMathMLContainerFrame(aContext) {}
   virtual ~nsMathMLmunderoverFrame();
-  
-  virtual int GetSkipSides() const { return 0; }
 };
 
 
